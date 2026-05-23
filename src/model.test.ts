@@ -18,6 +18,7 @@ import {
   getTerminalPoint,
   isGeneratorNode,
   getSwitchVisualState,
+  lockProjectEdgeTerminals,
   serializeProject,
   deserializeProject,
   type Edge,
@@ -62,6 +63,42 @@ describe("power system model", () => {
     expect(loaded.nodes[0].params.voltageRatio).toBe("110/10 kV");
   });
 
+  test("locks connection endpoints to explicit terminals for non-bus devices", () => {
+    const source = createDefaultNode("ac-switch", { x: 100, y: 100 });
+    const target = createDefaultNode("ac-load", { x: 240, y: 100 });
+    const bus = createDefaultNode("ac-bus", { x: 360, y: 100 });
+
+    const locked = lockProjectEdgeTerminals({
+      version: 1,
+      name: "端子锁定",
+      nodes: [source, target, bus],
+      edges: [
+        {
+          id: "non-bus-edge",
+          sourceId: source.id,
+          targetId: target.id,
+          sourcePoint: { x: 123, y: 456 },
+          targetPoint: { x: 222, y: 333 }
+        },
+        {
+          id: "bus-edge",
+          sourceId: source.id,
+          targetId: bus.id,
+          sourceTerminalId: "t2",
+          targetPoint: { x: 350, y: 100 }
+        }
+      ]
+    });
+
+    expect(locked.edges[0].sourceTerminalId).toBe("t1");
+    expect(locked.edges[0].targetTerminalId).toBe("t1");
+    expect(locked.edges[0].sourcePoint).toBeUndefined();
+    expect(locked.edges[0].targetPoint).toBeUndefined();
+    expect(locked.edges[1].sourceTerminalId).toBe("t2");
+    expect(locked.edges[1].targetTerminalId).toBe("t1");
+    expect(locked.edges[1].targetPoint).toEqual({ x: 350, y: 100 });
+  });
+
   test("creates generator parameters with readonly node numbers and control types", () => {
     const acWind = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
     const dcPv = createDefaultNode("dc-pv-source", { x: 240, y: 100 });
@@ -76,6 +113,69 @@ describe("power system model", () => {
 
     expect(dcPv.params.controlType).toBe("P");
     expect(dcPv.params.ratedCapacity).toBe("5 MW");
+  });
+
+  test("creates DC source with exactly one DC terminal and one DC node number", () => {
+    const dcSource = createDefaultNode("dc-source", { x: 100, y: 100 });
+
+    expect(dcSource.terminals).toHaveLength(1);
+    expect(dcSource.terminals[0].id).toBe("t1");
+    expect(dcSource.terminals[0].type).toBe("dc");
+    expect(dcSource.terminals[0].nodeNumber).toMatch(/^N\d+$/);
+    expect(new Set(dcSource.terminals.map((terminal) => terminal.nodeNumber)).size).toBe(1);
+  });
+
+  test("creates AC source with exactly one AC terminal and one AC node number", () => {
+    const acSource = createDefaultNode("ac-source", { x: 100, y: 100 });
+
+    expect(acSource.terminals).toHaveLength(1);
+    expect(acSource.terminals[0].id).toBe("t1");
+    expect(acSource.terminals[0].type).toBe("ac");
+    expect(acSource.terminals[0].nodeNumber).toMatch(/^N\d+$/);
+    expect(new Set(acSource.terminals.map((terminal) => terminal.nodeNumber)).size).toBe(1);
+  });
+
+  test("creates load devices with one terminal and one node number", () => {
+    const dcLoad = createDefaultNode("dc-load", { x: 100, y: 100 });
+    const acLoad = createDefaultNode("ac-load", { x: 220, y: 100 });
+
+    expect(dcLoad.terminals).toHaveLength(1);
+    expect(dcLoad.terminals[0].type).toBe("dc");
+    expect(dcLoad.terminals[0].nodeNumber).toMatch(/^N\d+$/);
+    expect(new Set(dcLoad.terminals.map((terminal) => terminal.nodeNumber)).size).toBe(1);
+
+    expect(acLoad.terminals).toHaveLength(1);
+    expect(acLoad.terminals[0].type).toBe("ac");
+    expect(acLoad.terminals[0].nodeNumber).toMatch(/^N\d+$/);
+    expect(new Set(acLoad.terminals.map((terminal) => terminal.nodeNumber)).size).toBe(1);
+  });
+
+  test("creates DC branch devices with two DC terminals and two DC node numbers", () => {
+    const dcKinds = ["dc-switch", "dc-disconnector", "dc-breaker", "dc-line"] as const;
+
+    for (const kind of dcKinds) {
+      const node = createDefaultNode(kind, { x: 100, y: 100 });
+      expect(node.terminals).toHaveLength(2);
+      expect(node.terminals.map((terminal) => terminal.id)).toEqual(["t1", "t2"]);
+      expect(node.terminals.every((terminal) => terminal.type === "dc")).toBe(true);
+      expect(node.terminals[0].nodeNumber).toMatch(/^N\d+$/);
+      expect(node.terminals[1].nodeNumber).toMatch(/^N\d+$/);
+      expect(new Set(node.terminals.map((terminal) => terminal.nodeNumber)).size).toBe(2);
+    }
+  });
+
+  test("creates AC branch devices with two AC terminals and two AC node numbers", () => {
+    const acKinds = ["ac-switch", "ac-disconnector", "ac-breaker", "ac-line"] as const;
+
+    for (const kind of acKinds) {
+      const node = createDefaultNode(kind, { x: 100, y: 100 });
+      expect(node.terminals).toHaveLength(2);
+      expect(node.terminals.map((terminal) => terminal.id)).toEqual(["t1", "t2"]);
+      expect(node.terminals.every((terminal) => terminal.type === "ac")).toBe(true);
+      expect(node.terminals[0].nodeNumber).toMatch(/^N\d+$/);
+      expect(node.terminals[1].nodeNumber).toMatch(/^N\d+$/);
+      expect(new Set(node.terminals.map((terminal) => terminal.nodeNumber)).size).toBe(2);
+    }
   });
 
   test("creates load, line, and transformer electrical parameter defaults", () => {
@@ -184,6 +284,30 @@ describe("power system model", () => {
     ).toBe(false);
   });
 
+  test("keeps every routed segment orthogonal without diagonal fallbacks", () => {
+    const left = createDefaultNode("ac-bus", { x: 100, y: 240 });
+    const right = createDefaultNode("ac-bus", { x: 500, y: 240 });
+    const top = createDefaultNode("ac-bus", { x: 300, y: 80 });
+    const bottom = createDefaultNode("ac-bus", { x: 300, y: 400 });
+    const load = createDefaultNode("ac-load", { x: 620, y: 160 });
+    const routes = routeEdgesForRendering(
+      [left, right, top, bottom, load],
+      [
+        { id: "horizontal", sourceId: left.id, targetId: right.id, sourceTerminalId: "t2", targetTerminalId: "t1" },
+        { id: "vertical", sourceId: top.id, targetId: bottom.id, sourceTerminalId: "t4", targetTerminalId: "t3" },
+        { id: "mixed", sourceId: right.id, targetId: load.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+      ]
+    );
+
+    for (const route of routes) {
+      for (let index = 1; index < route.points.length; index += 1) {
+        const previous = route.points[index - 1];
+        const point = route.points[index];
+        expect(previous.x === point.x || previous.y === point.y).toBe(true);
+      }
+    }
+  });
+
   test("anchors route endpoints on terminals and leaves terminals perpendicularly", () => {
     const source = createDefaultNode("ac-line", { x: 120, y: 120 });
     const target = createDefaultNode("ac-line", { x: 420, y: 120 });
@@ -230,7 +354,7 @@ describe("power system model", () => {
     expect(points[points.length - 2].y).toBeLessThan(targetTerminal.y);
   });
 
-  test("does not choose a shorter path that exits a top terminal sideways", () => {
+  test("connects buses perpendicularly even when legacy terminal ids are present", () => {
     const source = createDefaultNode("ac-bus", { x: 200, y: 220 });
     const target = createDefaultNode("ac-line", { x: 520, y: 220 });
     const edge: Edge = {
@@ -246,7 +370,29 @@ describe("power system model", () => {
 
     expect(points[0]).toEqual(sourceTerminal);
     expect(points[1].x).toBe(sourceTerminal.x);
-    expect(points[1].y).toBeLessThan(sourceTerminal.y);
+    expect(points[1].y).not.toBe(sourceTerminal.y);
+  });
+
+  test("connects to arbitrary bus points with a perpendicular final segment", () => {
+    const source = createDefaultNode("ac-line", { x: 160, y: 120 });
+    const bus = createDefaultNode("ac-bus", { x: 420, y: 220 });
+    const busPoint = { x: 380, y: 220 };
+    const edge: Edge = {
+      id: "e-bus-point",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      targetPoint: busPoint
+    };
+
+    const points = routeOrthogonalEdge(source, bus, [source, bus], edge);
+    const finalPoint = points[points.length - 1];
+    const beforeFinal = points[points.length - 2];
+
+    expect(finalPoint).toEqual(busPoint);
+    expect(beforeFinal.x).toBe(busPoint.x);
+    expect(beforeFinal.y).not.toBe(busPoint.y);
   });
 
   test("allows only terminals with the same electrical type to connect", () => {
@@ -383,7 +529,7 @@ describe("power system model", () => {
     expect(result.edges).toEqual([]);
   });
 
-  test("calculates separate AC and DC topology node numbers from graph connections", () => {
+  test("calculates terminal topology node numbers by contracting connection lines and buses", () => {
     const acSource = createDefaultNode("ac-source", { x: 100, y: 100 });
     const acBus = createDefaultNode("ac-bus", { x: 240, y: 100 });
     const dcBus = createDefaultNode("dc-bus", { x: 380, y: 100 });
@@ -398,10 +544,32 @@ describe("power system model", () => {
 
     expect(byId.get(acSource.id)?.acTopologyNode).toBe(1);
     expect(byId.get(acBus.id)?.acTopologyNode).toBe(1);
-    expect(byId.get(acSource.id)?.dcTopologyNode).toBe(0);
-    expect(byId.get(dcBus.id)?.dcTopologyNode).toBe(1);
-    expect(byId.get(dcLoad.id)?.dcTopologyNode).toBe(1);
+    expect(byId.get(acSource.id)?.terminals[0].nodeNumber).toBe("1");
+    expect(new Set(byId.get(acBus.id)?.terminals.map((terminal) => terminal.nodeNumber))).toEqual(new Set(["1"]));
+    expect(byId.get(dcBus.id)?.dcTopologyNode).toBe(2);
+    expect(byId.get(dcLoad.id)?.dcTopologyNode).toBe(2);
+    expect(byId.get(dcLoad.id)?.terminals[0].nodeNumber).toBe("2");
     expect(byId.get(dcLoad.id)?.acTopologyNode).toBe(0);
+  });
+
+  test("keeps two-terminal branch device endpoint node numbers separate unless connected", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const line = createDefaultNode("ac-line", { x: 240, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 380, y: 100 });
+
+    const calculated = calculateElectricalTopology(
+      [source, line, load],
+      [
+        { id: "source-line", sourceId: source.id, targetId: line.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+        { id: "line-load", sourceId: line.id, targetId: load.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+      ]
+    );
+    const byId = new Map(calculated.map((node) => [node.id, node]));
+
+    expect(byId.get(source.id)?.terminals[0].nodeNumber).toBe("1");
+    expect(byId.get(line.id)?.terminals[0].nodeNumber).toBe("1");
+    expect(byId.get(line.id)?.terminals[1].nodeNumber).toBe("2");
+    expect(byId.get(load.id)?.terminals[0].nodeNumber).toBe("2");
   });
 
   test("validates floating terminals, mixed terminal types, and voltage mismatch before topology", () => {

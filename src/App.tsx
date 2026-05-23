@@ -8,11 +8,14 @@ import {
   FileJson,
   Grid2X2,
   Copy,
+  ChevronDown,
+  ChevronRight,
   FolderOpen,
   Pencil,
   MousePointer2,
   Save,
-  Trash2
+  Trash2,
+  Undo2
 } from "lucide-react";
 import {
   alignNodes,
@@ -20,9 +23,11 @@ import {
   calculateElectricalTopology,
   canConnectTerminals,
   createTerminals,
+  createSavedScheme,
   createSavedProject,
   createDefaultNode,
   deleteNodesWithConnectedEdges,
+  deleteSavedScheme,
   deleteSavedProject,
   deserializeProject,
   DEVICE_LIBRARY,
@@ -34,31 +39,59 @@ import {
   getTerminalPoint,
   isBusNode,
   isGeneratorNode,
+  lockProjectEdgeTerminals,
+  projectPointToBusCenterline,
   validateTopology,
   type DeviceKind,
   type Edge,
   type ModelNode,
   type Point,
   type ProjectFile,
+  type TerminalType,
   type TopologyValidationError,
   routeEdgesForRendering,
+  moveProjectToScheme,
+  renameSavedScheme,
   renameSavedProject,
   serializeProject,
   upsertSavedProject,
+  type SavedSchemeRecord,
   type SavedProjectRecord
 } from "./model";
 
 type ToolMode = "select" | "connect";
 type EdgeEndpoint = "source" | "target";
 type TransformDrag =
-  | { kind: "rotate"; nodeId: string }
-  | { kind: "scale-x" | "scale-y" | "scale-both"; nodeId: string };
+  | { kind: "rotate"; nodeId: string; historyCaptured?: boolean }
+  | { kind: "scale-x" | "scale-y" | "scale-both"; nodeId: string; historyCaptured?: boolean };
 type Marquee = { start: Point; current: Point } | null;
 type ContextMenuState = { x: number; y: number } | null;
-type ProjectMenuState = { x: number; y: number; projectId?: string } | null;
+type ProjectMenuState = { x: number; y: number; schemeId?: string; projectId?: string } | null;
+type RewiringState = { edgeId: string; endpoint: EdgeEndpoint; previewPoint: Point; pointerId?: number } | null;
+type DraggingState = {
+  nodeIds: string[];
+  startPoint: Point;
+  originalPositions: Record<string, Point>;
+  originalEdgePoints: Record<string, { sourcePoint?: Point; targetPoint?: Point }>;
+  historyCaptured?: boolean;
+};
+type ClipboardRecord =
+  | { kind: "scheme"; scheme: SavedSchemeRecord }
+  | { kind: "project"; project: SavedProjectRecord };
+type UndoSnapshot = {
+  projectName: string;
+  nodes: ModelNode[];
+  edges: Edge[];
+  topologyErrors: TopologyValidationError[];
+};
+
+const busEndpointColor = (node: ModelNode) => (node.kind.startsWith("dc") ? "#0f766e" : "#2563eb");
 
 const CANVAS_WIDTH = 1800;
 const CANVAS_HEIGHT = 1200;
+const PROJECT_PANEL_MIN_HEIGHT = 150;
+const PROJECT_PANEL_MAX_HEIGHT = 430;
+const PROJECT_PANEL_DEFAULT_HEIGHT = 260;
 const SAMPLE_NODES: ModelNode[] = [
   createDefaultNode("ac-source", { x: 190, y: 210 }),
   createDefaultNode("ac-switch", { x: 360, y: 210 }),
@@ -73,14 +106,15 @@ const SAMPLE_NODES: ModelNode[] = [
 }));
 
 const SAMPLE_EDGES: Edge[] = [
-  { id: "seed-e1", sourceId: "seed-1", targetId: "seed-2" },
-  { id: "seed-e2", sourceId: "seed-2", targetId: "seed-3" },
-  { id: "seed-e3", sourceId: "seed-3", targetId: "seed-4" },
-  { id: "seed-e4", sourceId: "seed-4", targetId: "seed-5" },
-  { id: "seed-e5", sourceId: "seed-5", targetId: "seed-6" }
+  { id: "seed-e1", sourceId: "seed-1", targetId: "seed-2", sourceTerminalId: "t1", targetTerminalId: "t1" },
+  { id: "seed-e2", sourceId: "seed-2", targetId: "seed-3", sourceTerminalId: "t2", targetTerminalId: "t1" },
+  { id: "seed-e3", sourceId: "seed-3", targetId: "seed-4", sourceTerminalId: "t1", targetTerminalId: "t1" },
+  { id: "seed-e4", sourceId: "seed-4", targetId: "seed-5", sourceTerminalId: "t2", targetTerminalId: "t1" },
+  { id: "seed-e5", sourceId: "seed-5", targetId: "seed-6", sourceTerminalId: "t1", targetTerminalId: "t1" }
 ];
 
 const PROJECT_STORAGE_KEY = "power-system-model-projects";
+const SCHEME_STORAGE_KEY = "power-system-model-schemes";
 const PARAM_LABELS: Record<string, string> = {
   ratedCapacity: "额定容量",
   controlType: "控制类型",
@@ -152,6 +186,22 @@ function readSavedProjects(): SavedProjectRecord[] {
     return raw ? (JSON.parse(raw) as SavedProjectRecord[]) : [];
   } catch {
     return [];
+  }
+}
+
+function readSavedSchemes(): SavedSchemeRecord[] {
+  try {
+    const raw = window.localStorage.getItem(SCHEME_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as SavedSchemeRecord[];
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+    const legacyProjects = readSavedProjects();
+    return legacyProjects.length > 0 ? [createSavedScheme("默认方案", legacyProjects)] : [createSavedScheme("默认方案")];
+  } catch {
+    return [createSavedScheme("默认方案")];
   }
 }
 
@@ -239,7 +289,18 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (node.kind.includes("bus")) {
-    return <rect x={-w / 2} y={-h / 2 + h / 3} width={w} height={h / 3} rx="2" fill={stroke} />;
+    return (
+      <line
+        className="bus-glyph"
+        x1={-w / 2}
+        y1="0"
+        x2={w / 2}
+        y2="0"
+        stroke={stroke}
+        strokeWidth={Math.max(8, h / 3)}
+        strokeLinecap="round"
+      />
+    );
   }
 
   if (node.kind.includes("line")) {
@@ -314,12 +375,19 @@ function buildSvgDocument(nodes: ModelNode[], edges: Edge[]) {
     .map((route) => `<path d="${route.path}" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`)
     .join("\n");
   const nodeMarkup = nodes
-    .map(
-      (node) => `<g transform="translate(${node.position.x} ${node.position.y}) rotate(${node.rotation}) scale(${getNodeScaleX(node)} ${getNodeScaleY(node)})">
+    .map((node) => {
+      const stroke = node.kind.startsWith("dc") || node.kind.includes("dcdc") ? "#0f766e" : "#2563eb";
+      if (isBusNode(node)) {
+        return `<g transform="translate(${node.position.x} ${node.position.y}) rotate(${node.rotation}) scale(${getNodeScaleX(node)} ${getNodeScaleY(node)})">
+  <title>${node.name}</title>
+  <line x1="${-node.size.width / 2}" y1="0" x2="${node.size.width / 2}" y2="0" stroke="${stroke}" stroke-width="${Math.max(8, node.size.height / 3)}" stroke-linecap="round"/>
+</g>`;
+      }
+      return `<g transform="translate(${node.position.x} ${node.position.y}) rotate(${node.rotation}) scale(${getNodeScaleX(node)} ${getNodeScaleY(node)})">
+  <title>${node.name}</title>
   <rect x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" rx="8" fill="#ffffff" stroke="#94a3b8"/>
-  <text x="0" y="${node.size.height / 2 + 20}" text-anchor="middle" font-size="14" font-family="Arial, sans-serif" fill="#0f172a">${node.name}</text>
-</g>`
-    )
+</g>`;
+    })
     .join("\n");
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS_WIDTH}" height="${CANVAS_HEIGHT}" viewBox="0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}">
 <rect width="100%" height="100%" fill="#f8fafc"/>
@@ -331,52 +399,226 @@ ${nodeMarkup}
 export function App() {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const importRef = useRef<HTMLInputElement | null>(null);
+  const canvasInteractionRef = useRef(false);
   const [nodes, setNodes] = useState<ModelNode[]>(SAMPLE_NODES);
   const [edges, setEdges] = useState<Edge[]>(SAMPLE_EDGES);
   const [projectName, setProjectName] = useState("电力系统图上模型");
-  const [projects, setProjects] = useState<SavedProjectRecord[]>(() => readSavedProjects());
+  const [schemes, setSchemes] = useState<SavedSchemeRecord[]>(() => readSavedSchemes());
   const [activeProjectId, setActiveProjectId] = useState<string>("");
+  const [activeSchemeId, setActiveSchemeId] = useState<string>("");
   const [mode, setMode] = useState<ToolMode>("select");
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>(nodes[0] ? [nodes[0].id] : []);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string>("");
   const [connectSource, setConnectSource] = useState<{ nodeId: string; terminalId: string; point?: Point } | null>(null);
-  const [dragging, setDragging] = useState<{ nodeId: string; offset: Point } | null>(null);
-  const [rewiring, setRewiring] = useState<{ edgeId: string; endpoint: EdgeEndpoint } | null>(null);
+  const [dragging, setDragging] = useState<DraggingState | null>(null);
+  const [rewiring, setRewiring] = useState<RewiringState>(null);
   const [transformDrag, setTransformDrag] = useState<TransformDrag | null>(null);
   const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: CANVAS_WIDTH, height: CANVAS_HEIGHT });
   const [panning, setPanning] = useState<{ clientX: number; clientY: number; viewBox: typeof viewBox } | null>(null);
   const [marquee, setMarquee] = useState<Marquee>(null);
   const [clipboardNodes, setClipboardNodes] = useState<ModelNode[]>([]);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
-  const [inspectorTab, setInspectorTab] = useState<"graph" | "device">("graph");
+  const [inspectorTab, setInspectorTab] = useState<"model" | "graph" | "device">("graph");
   const [topologyErrors, setTopologyErrors] = useState<TopologyValidationError[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [selectedSchemeId, setSelectedSchemeId] = useState<string>("");
+  const [expandedSchemeIds, setExpandedSchemeIds] = useState<string[]>(() => schemes.map((scheme) => scheme.id));
   const [projectMenu, setProjectMenu] = useState<ProjectMenuState>(null);
+  const [projectPanelHeight, setProjectPanelHeight] = useState(PROJECT_PANEL_DEFAULT_HEIGHT);
+  const [projectPanelResize, setProjectPanelResize] = useState<{ startY: number; startHeight: number } | null>(null);
+  const [undoStack, setUndoStack] = useState<UndoSnapshot[]>([]);
+  const [recordClipboard, setRecordClipboard] = useState<ClipboardRecord | null>(null);
 
   const selectedNodeId = selectedNodeIds[0] ?? "";
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId);
+  const projects = useMemo(() => schemes.flatMap((scheme) => scheme.projects), [schemes]);
+  const selectedProjectRecord = projects.find((project) => project.id === selectedProjectId);
+  const selectedSchemeRecord = schemes.find((scheme) => scheme.id === selectedSchemeId);
   const selectedCount = selectedNodeIds.length;
   const topology = useMemo(() => buildTopology(nodes, edges), [nodes, edges]);
   const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
-  const routedEdges = useMemo(() => routeEdgesForRendering(nodes, edges), [nodes, edges]);
+  const rewiringPreview = useMemo(() => {
+    if (!rewiring) {
+      return { nodes, edges };
+    }
+    const edge = edges.find((item) => item.id === rewiring.edgeId);
+    if (!edge) {
+      return { nodes, edges };
+    }
+    const fixedNodeId = rewiring.endpoint === "source" ? edge.targetId : edge.sourceId;
+    const fixedNode = nodeById.get(fixedNodeId);
+    const fixedPoint = rewiring.endpoint === "source" ? edge.targetPoint : edge.sourcePoint;
+    if (!fixedNode && !fixedPoint) {
+      return { nodes, edges };
+    }
+    const fixedTerminalId = rewiring.endpoint === "source" ? edge.targetTerminalId : edge.sourceTerminalId;
+    const terminalType = fixedNode?.terminals.find((terminal) => terminal.id === fixedTerminalId)?.type ?? "ac";
+    const previewNode: ModelNode = {
+      id: "__rewiring-preview__",
+      kind: terminalType === "dc" ? "dc-bus" : "ac-bus",
+      name: "拖拽端点",
+      nodeNumber: "",
+      acTopologyNode: 0,
+      dcTopologyNode: 0,
+      position: rewiring.previewPoint,
+      size: { width: 0, height: 0 },
+      rotation: 0,
+      scale: 1,
+      scaleX: 1,
+      scaleY: 1,
+      terminals: [{ id: "t1", label: "拖拽端点", type: terminalType as TerminalType, anchor: { x: 0, y: 0 }, nodeNumber: "" }],
+      params: {}
+    };
+    const previewEdge: Edge =
+      rewiring.endpoint === "source"
+        ? { ...edge, sourceId: previewNode.id, sourceTerminalId: "t1", sourcePoint: undefined }
+        : { ...edge, targetId: previewNode.id, targetTerminalId: "t1", targetPoint: undefined };
+    return {
+      nodes: [...nodes, previewNode],
+      edges: edges.map((item) => (item.id === edge.id ? previewEdge : item))
+    };
+  }, [edges, nodeById, nodes, rewiring]);
+  const routedEdges = useMemo(
+    () => routeEdgesForRendering(rewiringPreview.nodes, rewiringPreview.edges),
+    [rewiringPreview]
+  );
+  const renderedRoutedEdges = useMemo(
+    () => [...routedEdges].sort((first, second) => Number(first.edgeId === selectedEdgeId) - Number(second.edgeId === selectedEdgeId)),
+    [routedEdges, selectedEdgeId]
+  );
 
   useEffect(() => {
-    window.localStorage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(projects));
-  }, [projects]);
+    window.localStorage.setItem(SCHEME_STORAGE_KEY, JSON.stringify(schemes));
+  }, [schemes]);
+
+  useEffect(() => {
+    setExpandedSchemeIds((current) => {
+      const schemeIds = new Set(schemes.map((scheme) => scheme.id));
+      const retained = current.filter((id) => schemeIds.has(id));
+      const retainedIds = new Set(retained);
+      const added = schemes.filter((scheme) => !retainedIds.has(scheme.id)).map((scheme) => scheme.id);
+      return [...retained, ...added];
+    });
+  }, [schemes]);
+
+  useEffect(() => {
+    const preventPageWheelZoom = (event: WheelEvent) => {
+      if ((event.target as Element | null)?.closest(".diagram-canvas")) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener("wheel", preventPageWheelZoom, { passive: false, capture: true });
+    return () => window.removeEventListener("wheel", preventPageWheelZoom, { capture: true });
+  }, []);
+
+  useEffect(() => {
+    const closeContextMenus = (event: globalThis.PointerEvent) => {
+      if (event.button !== 0) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (target?.closest(".context-menu")) {
+        return;
+      }
+      setContextMenu(null);
+      setProjectMenu(null);
+    };
+    window.addEventListener("pointerdown", closeContextMenus);
+    return () => window.removeEventListener("pointerdown", closeContextMenus);
+  }, []);
+
+  const cloneProjectState = (): UndoSnapshot => ({
+    projectName,
+    nodes: structuredClone(nodes),
+    edges: structuredClone(edges),
+    topologyErrors: structuredClone(topologyErrors)
+  });
+
+  const pushUndoSnapshot = () => {
+    const snapshot = cloneProjectState();
+    setUndoStack((current) => [...current.slice(-49), snapshot]);
+  };
+
+  const undoLastOperation = () => {
+    setUndoStack((current) => {
+      const snapshot = current.at(-1);
+      if (!snapshot) {
+        return current;
+      }
+      setProjectName(snapshot.projectName);
+      setNodes(snapshot.nodes);
+      setEdges(snapshot.edges);
+      setTopologyErrors(snapshot.topologyErrors);
+      setSelectedNodeIds(snapshot.nodes[0] ? [snapshot.nodes[0].id] : []);
+      setSelectedEdgeId("");
+      setConnectSource(null);
+      setRewiring(null);
+      setContextMenu(null);
+      setProjectMenu(null);
+      return current.slice(0, -1);
+    });
+  };
+
+  useEffect(() => {
+    if (!projectPanelResize) {
+      return;
+    }
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      const deltaY = event.clientY - projectPanelResize.startY;
+      setProjectPanelHeight(
+        Math.min(PROJECT_PANEL_MAX_HEIGHT, Math.max(PROJECT_PANEL_MIN_HEIGHT, projectPanelResize.startHeight + deltaY))
+      );
+    };
+    const handlePointerUp = () => {
+      setProjectPanelResize(null);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [projectPanelResize]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target && ["INPUT", "TEXTAREA"].includes(target.tagName)) {
+      const isCanvasShortcutTarget = Boolean(target?.closest(".diagram-canvas")) || canvasInteractionRef.current;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        undoLastOperation();
         return;
       }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
+        if (isCanvasShortcutTarget) {
+          event.preventDefault();
+          setSelectedNodeIds(nodes.map((node) => node.id));
+          setSelectedEdgeId("");
+          setConnectSource(null);
+          setRewiring(null);
+          setSelectedProjectId("");
+          setSelectedSchemeId("");
+        }
+      } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
         event.preventDefault();
-        copySelection();
+        if (selectedProjectId || selectedSchemeId) {
+          copySelectedRecord();
+        } else if (isCanvasShortcutTarget) {
+          copySelection();
+        }
       } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
         event.preventDefault();
-        pasteSelection();
+        if (recordClipboard) {
+          pasteSelectedRecord();
+        } else if (isCanvasShortcutTarget) {
+          pasteSelection();
+        }
       } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
         saveCurrentProject();
@@ -385,32 +627,37 @@ export function App() {
         if (selectedProjectId) {
           const project = projects.find((item) => item.id === selectedProjectId);
           if (project) deleteProjectRecord(project);
-        } else {
+        } else if (selectedSchemeId) {
+          const scheme = schemes.find((item) => item.id === selectedSchemeId);
+          if (scheme) deleteSchemeRecord(scheme);
+        } else if (isCanvasShortcutTarget) {
           deleteSelection();
         }
-      } else if (event.key === "ArrowLeft") {
+      } else if (isCanvasShortcutTarget && event.key === "ArrowLeft") {
         event.preventDefault();
         moveSelection(event.shiftKey ? -24 : -6, 0);
-      } else if (event.key === "ArrowRight") {
+      } else if (isCanvasShortcutTarget && event.key === "ArrowRight") {
         event.preventDefault();
         moveSelection(event.shiftKey ? 24 : 6, 0);
-      } else if (event.key === "ArrowUp") {
+      } else if (isCanvasShortcutTarget && event.key === "ArrowUp") {
         event.preventDefault();
         moveSelection(0, event.shiftKey ? -24 : -6);
-      } else if (event.key === "ArrowDown") {
+      } else if (isCanvasShortcutTarget && event.key === "ArrowDown") {
         event.preventDefault();
         moveSelection(0, event.shiftKey ? 24 : 6);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [clipboardNodes, nodes, projects, selectedEdgeId, selectedNodeIds, selectedProjectId]);
+  }, [clipboardNodes, edges, nodes, projectName, projects, recordClipboard, schemes, selectedEdgeId, selectedNodeIds, selectedProjectId, selectedSchemeId, topologyErrors]);
 
   const currentProject = (): ProjectFile => ({
-    version: 1,
-    name: projectName,
-    nodes,
-    edges
+    ...lockProjectEdgeTerminals({
+      version: 1,
+      name: projectName,
+      nodes,
+      edges
+    })
   });
 
   const clearTransientSelectionState = () => {
@@ -429,6 +676,7 @@ export function App() {
     if (clipboardNodes.length === 0) {
       return;
     }
+    pushUndoSnapshot();
     const idMap = new Map<string, string>();
     const pasted = clipboardNodes.map((node) => {
       const nextId = `node-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -470,6 +718,7 @@ export function App() {
 
   const deleteSelection = () => {
     if (selectedEdgeId) {
+      pushUndoSnapshot();
       setEdges((current) => current.filter((edge) => edge.id !== selectedEdgeId));
       setSelectedEdgeId("");
       return;
@@ -477,17 +726,44 @@ export function App() {
     if (selectedNodeIds.length === 0) {
       return;
     }
+    pushUndoSnapshot();
     const result = deleteNodesWithConnectedEdges(nodes, edges, selectedNodeIds);
     setNodes(result.nodes);
     setEdges(result.edges);
     setSelectedNodeIds([]);
   };
 
+  const moveAttachedBusPoints = (deltas: Record<string, Point>) => {
+    const movedBusIds = new Set(
+      nodes.filter((node) => isBusNode(node) && deltas[node.id] && (deltas[node.id].x !== 0 || deltas[node.id].y !== 0)).map((node) => node.id)
+    );
+    if (movedBusIds.size === 0) {
+      return;
+    }
+    setEdges((current) =>
+      current.map((edge) => {
+        const sourceDelta = movedBusIds.has(edge.sourceId) ? deltas[edge.sourceId] : undefined;
+        const targetDelta = movedBusIds.has(edge.targetId) ? deltas[edge.targetId] : undefined;
+        return {
+          ...edge,
+          sourcePoint: sourceDelta && edge.sourcePoint
+            ? { x: edge.sourcePoint.x + sourceDelta.x, y: edge.sourcePoint.y + sourceDelta.y }
+            : edge.sourcePoint,
+          targetPoint: targetDelta && edge.targetPoint
+            ? { x: edge.targetPoint.x + targetDelta.x, y: edge.targetPoint.y + targetDelta.y }
+            : edge.targetPoint
+        };
+      })
+    );
+  };
+
   const moveSelection = (dx: number, dy: number) => {
     if (selectedNodeIds.length === 0) {
       return;
     }
+    pushUndoSnapshot();
     const selected = new Set(selectedNodeIds);
+    moveAttachedBusPoints(Object.fromEntries(selectedNodeIds.map((id) => [id, { x: dx, y: dy }])));
     setNodes((current) =>
       current.map((node) =>
         selected.has(node.id) ? { ...node, position: { x: node.position.x + dx, y: node.position.y + dy } } : node
@@ -499,6 +775,15 @@ export function App() {
     if (!selectedNodeId) {
       return;
     }
+    pushUndoSnapshot();
+    if (patch.position && selectedNode) {
+      moveAttachedBusPoints({
+        [selectedNodeId]: {
+          x: patch.position.x - selectedNode.position.x,
+          y: patch.position.y - selectedNode.position.y
+        }
+      });
+    }
     setNodes((current) => current.map((node) => (node.id === selectedNodeId ? { ...node, ...patch } : node)));
   };
 
@@ -506,6 +791,7 @@ export function App() {
     if (!selectedNodeId) {
       return;
     }
+    pushUndoSnapshot();
     setNodes((current) =>
       current.map((node) =>
         node.id === selectedNodeId ? { ...node, params: { ...node.params, [key]: value } } : node
@@ -554,15 +840,118 @@ export function App() {
       return undefined;
     }
     const point = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
+    return busAnchorFromPoint(node, point);
+  };
+
+  const busAnchorFromPoint = (node: ModelNode, point: Point): Point | undefined => {
+    if (!isBusNode(node)) {
+      return undefined;
+    }
+    return projectPointToBusCenterline(node, point);
+  };
+
+  const isPointOnBus = (node: ModelNode, point: Point) => {
     const halfWidth = (node.size.width * getNodeScaleX(node)) / 2;
-    const clampedX = Math.max(node.position.x - halfWidth, Math.min(node.position.x + halfWidth, point.x));
-    return { x: Math.round(clampedX), y: node.position.y };
+    const halfHeight = (node.size.height * getNodeScaleY(node)) / 2;
+    return (
+      point.x >= node.position.x - halfWidth &&
+      point.x <= node.position.x + halfWidth &&
+      point.y >= node.position.y - halfHeight &&
+      point.y <= node.position.y + halfHeight
+    );
+  };
+
+  const findRewireTargetAtPoint = (point: Point, state: Exclude<RewiringState, null>) => {
+    const edge = edges.find((item) => item.id === state.edgeId);
+    if (!edge) {
+      return null;
+    }
+    const otherNode = nodeById.get(state.endpoint === "source" ? edge.targetId : edge.sourceId);
+    const otherTerminalId = state.endpoint === "source" ? edge.targetTerminalId : edge.sourceTerminalId;
+    if (!otherNode || !otherTerminalId) {
+      return null;
+    }
+    for (const node of nodes) {
+      if (node.id === otherNode.id) {
+        continue;
+      }
+      if (isBusNode(node) && isPointOnBus(node, point)) {
+        const terminalId = node.terminals[0]?.id;
+        if (terminalId && canConnectTerminals(node, terminalId, otherNode, otherTerminalId)) {
+          return { node, terminalId, point: busAnchorFromPoint(node, point) };
+        }
+        continue;
+      }
+      for (const terminal of node.terminals) {
+        const terminalPoint = getTerminalPoint(node, terminal.id);
+        const distance = Math.hypot(point.x - terminalPoint.x, point.y - terminalPoint.y);
+        if (distance <= 16 && canConnectTerminals(node, terminal.id, otherNode, otherTerminalId)) {
+          return { node, terminalId: terminal.id, point: undefined };
+        }
+      }
+    }
+    return null;
+  };
+
+  const finishRewiring = (event: PointerEvent<SVGSVGElement>) => {
+    if (!rewiring || !svgRef.current) {
+      return;
+    }
+    const point = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
+    const target = findRewireTargetAtPoint(point, rewiring);
+    if (target) {
+      pushUndoSnapshot();
+      setEdges((current) =>
+        current.map((edge) =>
+          edge.id === rewiring.edgeId
+            ? rewiring.endpoint === "source"
+              ? {
+                  ...edge,
+                  sourceId: target.node.id,
+                  sourceTerminalId: target.terminalId,
+                  sourcePoint: target.point
+                }
+              : {
+                  ...edge,
+                  targetId: target.node.id,
+                  targetTerminalId: target.terminalId,
+                  targetPoint: target.point
+                }
+            : edge
+        )
+      );
+    } else {
+      pushUndoSnapshot();
+      setEdges((current) =>
+        current.map((edge) =>
+          edge.id === rewiring.edgeId
+            ? rewiring.endpoint === "source"
+              ? {
+                  ...edge,
+                  sourceId: "",
+                  sourceTerminalId: undefined,
+                  sourcePoint: point
+                }
+              : {
+                  ...edge,
+                  targetId: "",
+                  targetTerminalId: undefined,
+                  targetPoint: point
+                }
+            : edge
+        )
+      );
+    }
+    setSelectedNodeIds([]);
+    setSelectedEdgeId(rewiring.edgeId);
+    setRewiring(null);
   };
 
   const updateTerminalCount = (count: number) => {
     if (!selectedNode) {
       return;
     }
+    pushUndoSnapshot();
     const type = selectedNode.terminals[0]?.type ?? (selectedNode.kind.startsWith("dc") ? "dc" : "ac");
     const terminals = createTerminals(type, count);
     setNodes((current) => current.map((node) => (node.id === selectedNode.id ? { ...node, terminals } : node)));
@@ -587,6 +976,7 @@ export function App() {
     }
     const position = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
     const node = createDefaultNode(kind, position);
+    pushUndoSnapshot();
     setNodes((current) => [...current, node]);
     setSelectedNodeIds([node.id]);
     setSelectedEdgeId("");
@@ -594,12 +984,26 @@ export function App() {
 
   const handleNodePointerDown = (event: PointerEvent<SVGGElement>, node: ModelNode) => {
     event.stopPropagation();
+    if (event.button !== 0) {
+      return;
+    }
+    if (event.ctrlKey && svgRef.current) {
+      setSelectedEdgeId("");
+      setConnectSource(null);
+      setRewiring(null);
+      setPanning({ clientX: event.clientX, clientY: event.clientY, viewBox });
+      event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
     setSelectedEdgeId("");
+    let dragNodeIds = selectedNodeIds.includes(node.id) ? selectedNodeIds : [node.id];
     if (event.ctrlKey || event.shiftKey || event.metaKey) {
-      setSelectedNodeIds((current) =>
-        current.includes(node.id) ? current.filter((id) => id !== node.id) : [...current, node.id]
-      );
+      dragNodeIds = selectedNodeIds.includes(node.id)
+        ? selectedNodeIds.filter((id) => id !== node.id)
+        : [...selectedNodeIds, node.id];
+      setSelectedNodeIds(dragNodeIds);
     } else if (!selectedNodeIds.includes(node.id)) {
+      dragNodeIds = [node.id];
       setSelectedNodeIds([node.id]);
     }
     if (mode === "connect") {
@@ -612,11 +1016,36 @@ export function App() {
       return;
     }
     const point = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
-    setDragging({ nodeId: node.id, offset: { x: point.x - node.position.x, y: point.y - node.position.y } });
+    if (dragNodeIds.length === 0) {
+      return;
+    }
+    const selectedForDrag = new Set(dragNodeIds);
+    setDragging({
+      nodeIds: dragNodeIds,
+      startPoint: point,
+      originalPositions: Object.fromEntries(
+        nodes
+          .filter((item) => selectedForDrag.has(item.id))
+          .map((item) => [item.id, { ...item.position }])
+      ),
+      originalEdgePoints: Object.fromEntries(
+        edges.map((edge) => [
+          edge.id,
+          {
+            sourcePoint: edge.sourcePoint ? { ...edge.sourcePoint } : undefined,
+            targetPoint: edge.targetPoint ? { ...edge.targetPoint } : undefined
+          }
+        ])
+      )
+    });
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const handlePointerMove = (event: PointerEvent<SVGSVGElement>) => {
+    if (rewiring && svgRef.current) {
+      setRewiring({ ...rewiring, previewPoint: screenToSvgPoint(svgRef.current, event.clientX, event.clientY) });
+      return;
+    }
     if (marquee && svgRef.current) {
       setMarquee({ ...marquee, current: screenToSvgPoint(svgRef.current, event.clientX, event.clientY) });
       return;
@@ -630,6 +1059,10 @@ export function App() {
     }
     if (transformDrag && svgRef.current) {
       const point = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
+      if (!transformDrag.historyCaptured) {
+        pushUndoSnapshot();
+        setTransformDrag({ ...transformDrag, historyCaptured: true });
+      }
       setNodes((current) =>
         current.map((node) => {
           if (node.id !== transformDrag.nodeId) {
@@ -659,17 +1092,43 @@ export function App() {
       return;
     }
     const point = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
+    if (!dragging.historyCaptured) {
+      pushUndoSnapshot();
+      setDragging({ ...dragging, historyCaptured: true });
+    }
+    const dx = point.x - dragging.startPoint.x;
+    const dy = point.y - dragging.startPoint.y;
+    const dragNodeIds = new Set(dragging.nodeIds);
+    const draggedBusIds = new Set(nodes.filter((node) => dragNodeIds.has(node.id) && isBusNode(node)).map((node) => node.id));
     setNodes((current) =>
-      current.map((node) =>
-        node.id === dragging.nodeId
-          ? { ...node, position: { x: point.x - dragging.offset.x, y: point.y - dragging.offset.y } }
-          : node
-      )
+      current.map((node) => {
+        const originalPosition = dragging.originalPositions[node.id];
+        return dragNodeIds.has(node.id) && originalPosition
+          ? { ...node, position: { x: originalPosition.x + dx, y: originalPosition.y + dy } }
+          : node;
+      })
     );
+    if (draggedBusIds.size > 0) {
+      setEdges((current) =>
+        current.map((edge) => {
+          const originalPoints = dragging.originalEdgePoints[edge.id];
+          return {
+            ...edge,
+            sourcePoint: draggedBusIds.has(edge.sourceId) && originalPoints?.sourcePoint
+              ? { x: originalPoints.sourcePoint.x + dx, y: originalPoints.sourcePoint.y + dy }
+              : edge.sourcePoint,
+            targetPoint: draggedBusIds.has(edge.targetId) && originalPoints?.targetPoint
+              ? { x: originalPoints.targetPoint.x + dx, y: originalPoints.targetPoint.y + dy }
+              : edge.targetPoint
+          };
+        })
+      );
+    }
   };
 
   const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
     event.preventDefault();
+    event.stopPropagation();
     if (!svgRef.current) {
       return;
     }
@@ -692,18 +1151,155 @@ export function App() {
   };
 
   const alignSelected = (direction: "horizontal" | "vertical") => {
-    setNodes((current) => alignNodes(current, selectedNodeIds, direction));
+    if (selectedNodeIds.length < 2) {
+      return;
+    }
+    pushUndoSnapshot();
+    const aligned = alignNodes(nodes, selectedNodeIds, direction);
+    const previousById = new Map(nodes.map((node) => [node.id, node]));
+    const deltas = Object.fromEntries(
+      aligned
+        .filter((node) => selectedNodeIds.includes(node.id))
+        .map((node) => {
+          const previous = previousById.get(node.id);
+          return [
+            node.id,
+            {
+              x: node.position.x - (previous?.position.x ?? node.position.x),
+              y: node.position.y - (previous?.position.y ?? node.position.y)
+            }
+          ];
+        })
+    );
+    moveAttachedBusPoints(deltas);
+    setNodes(aligned);
   };
 
-  const loadSavedProject = (project: SavedProjectRecord) => {
+  const findSchemeForProject = (projectId: string) =>
+    schemes.find((scheme) => scheme.projects.some((project) => project.id === projectId));
+
+  const toggleSchemeExpanded = (schemeId: string) => {
+    setExpandedSchemeIds((current) =>
+      current.includes(schemeId) ? current.filter((id) => id !== schemeId) : [...current, schemeId]
+    );
+  };
+
+  const updateProjectInSchemes = (projectId: string, updater: (project: SavedProjectRecord) => SavedProjectRecord) => {
+    setSchemes((current) =>
+      current.map((scheme) => ({
+        ...scheme,
+        updatedAt: scheme.projects.some((project) => project.id === projectId) ? new Date().toISOString() : scheme.updatedAt,
+        projects: scheme.projects.map((project) => (project.id === projectId ? updater(project) : project))
+      }))
+    );
+  };
+
+  const cloneProjectRecord = (project: SavedProjectRecord, suffix = "副本") =>
+    createSavedProject(`${project.name} ${suffix}`, project.project);
+
+  const cloneSchemeRecord = (scheme: SavedSchemeRecord, suffix = "副本"): SavedSchemeRecord =>
+    createSavedScheme(
+      `${scheme.name} ${suffix}`,
+      scheme.projects.map((project) => cloneProjectRecord(project))
+    );
+
+  const loadSavedProject = (project: SavedProjectRecord, schemeId = findSchemeForProject(project.id)?.id ?? "") => {
+    pushUndoSnapshot();
     setProjectName(project.name);
     setNodes(project.project.nodes);
     setEdges(project.project.edges);
     setActiveProjectId(project.id);
+    setActiveSchemeId(schemeId);
+    setSelectedSchemeId(schemeId);
     setSelectedNodeIds(project.project.nodes[0] ? [project.project.nodes[0].id] : []);
     setSelectedEdgeId("");
     setConnectSource(null);
     setRewiring(null);
+  };
+
+  const createSchemeRecord = () => {
+    const record = createSavedScheme("新建方案");
+    setSchemes((current) => [...current, record]);
+    setSelectedSchemeId(record.id);
+    setSelectedProjectId("");
+  };
+
+  const renameSchemeRecord = (scheme: SavedSchemeRecord) => {
+    const nextName = window.prompt("请输入新的方案名称", scheme.name);
+    if (!nextName) {
+      return;
+    }
+    setSchemes((current) => renameSavedScheme(current, scheme.id, nextName));
+  };
+
+  const duplicateSchemeRecord = (scheme: SavedSchemeRecord) => {
+    setSchemes((current) => [...current, cloneSchemeRecord(scheme)]);
+  };
+
+  const deleteSchemeRecord = (scheme: SavedSchemeRecord) => {
+    if (!window.confirm(`删除方案“${scheme.name}”及其全部模型？`)) {
+      return;
+    }
+    setSchemes((current) => {
+      const next = deleteSavedScheme(current, scheme.id);
+      return next.length > 0 ? next : [createSavedScheme("默认方案")];
+    });
+    if (selectedSchemeId === scheme.id) {
+      setSelectedSchemeId("");
+    }
+    if (activeSchemeId === scheme.id) {
+      setActiveSchemeId("");
+      setActiveProjectId("");
+    }
+  };
+
+  const copySelectedRecord = () => {
+    if (selectedProjectId) {
+      const project = projects.find((item) => item.id === selectedProjectId);
+      if (project) {
+        setRecordClipboard({ kind: "project", project });
+      }
+      return;
+    }
+    if (selectedSchemeId) {
+      const scheme = schemes.find((item) => item.id === selectedSchemeId);
+      if (scheme) {
+        setRecordClipboard({ kind: "scheme", scheme });
+      }
+    }
+  };
+
+  const pasteSelectedRecord = () => {
+    if (!recordClipboard) {
+      return;
+    }
+    if (recordClipboard.kind === "scheme") {
+      setSchemes((current) => [...current, cloneSchemeRecord(recordClipboard.scheme)]);
+      return;
+    }
+    const targetSchemeId = selectedSchemeId || activeSchemeId || schemes[0]?.id;
+    setSchemes((current) =>
+      current.map((scheme, index) =>
+        scheme.id === targetSchemeId || (!targetSchemeId && index === 0)
+          ? {
+              ...scheme,
+              updatedAt: new Date().toISOString(),
+              projects: [...scheme.projects, cloneProjectRecord(recordClipboard.project)]
+            }
+          : scheme
+      )
+    );
+  };
+
+  const moveProjectRecordToScheme = (projectId: string, schemeId: string) => {
+    setSchemes((current) => moveProjectToScheme(current, projectId, schemeId));
+    setExpandedSchemeIds((current) => (current.includes(schemeId) ? current : [...current, schemeId]));
+    if (selectedProjectId === projectId) {
+      setSelectedSchemeId(schemeId);
+    }
+    if (activeProjectId === projectId) {
+      setActiveSchemeId(schemeId);
+    }
   };
 
   const saveCurrentProject = (targetId = activeProjectId) => {
@@ -715,14 +1311,24 @@ export function App() {
           name: projectName,
           project: currentProject()
         };
-        setProjects((current) => upsertSavedProject(current, record));
+        updateProjectInSchemes(targetId, () => ({ ...record, updatedAt: new Date().toISOString() }));
         setActiveProjectId(targetId);
         return;
       }
     }
     const record = createSavedProject(projectName, currentProject());
-    setProjects((current) => upsertSavedProject(current, record));
+    const targetSchemeId = activeSchemeId || selectedSchemeId || schemes[0]?.id || createSavedScheme("默认方案").id;
+    setSchemes((current) => {
+      const fallback = current.length > 0 ? current : [createSavedScheme("默认方案")];
+      const schemeId = fallback.some((scheme) => scheme.id === targetSchemeId) ? targetSchemeId : fallback[0].id;
+      return fallback.map((scheme) =>
+        scheme.id === schemeId
+          ? { ...scheme, updatedAt: new Date().toISOString(), projects: upsertSavedProject(scheme.projects, record) }
+          : scheme
+      );
+    });
     setActiveProjectId(record.id);
+    setActiveSchemeId(targetSchemeId);
   };
 
   const renameProjectRecord = (project: SavedProjectRecord) => {
@@ -730,21 +1336,39 @@ export function App() {
     if (!nextName) {
       return;
     }
-    setProjects((current) => renameSavedProject(current, project.id, nextName));
+    setSchemes((current) =>
+      current.map((scheme) => ({
+        ...scheme,
+        updatedAt: scheme.projects.some((item) => item.id === project.id) ? new Date().toISOString() : scheme.updatedAt,
+        projects: renameSavedProject(scheme.projects, project.id, nextName)
+      }))
+    );
     if (activeProjectId === project.id) {
       setProjectName(nextName.trim() || "未命名模型");
     }
   };
 
   const duplicateProjectRecord = (project: SavedProjectRecord) => {
-    setProjects((current) => duplicateSavedProject(current, project.id));
+    setSchemes((current) =>
+      current.map((scheme) =>
+        scheme.projects.some((item) => item.id === project.id)
+          ? { ...scheme, updatedAt: new Date().toISOString(), projects: duplicateSavedProject(scheme.projects, project.id) }
+          : scheme
+      )
+    );
   };
 
   const deleteProjectRecord = (project: SavedProjectRecord) => {
     if (!window.confirm(`删除模型“${project.name}”？`)) {
       return;
     }
-    setProjects((current) => deleteSavedProject(current, project.id));
+    setSchemes((current) =>
+      current.map((scheme) =>
+        scheme.projects.some((item) => item.id === project.id)
+          ? { ...scheme, updatedAt: new Date().toISOString(), projects: deleteSavedProject(scheme.projects, project.id) }
+          : scheme
+      )
+    );
     if (selectedProjectId === project.id) {
       setSelectedProjectId("");
     }
@@ -755,9 +1379,17 @@ export function App() {
 
   const createBlankProject = () => {
     const record = createSavedProject("新建模型", { version: 1, name: "新建模型", nodes: [], edges: [] });
-    setProjects((current) => upsertSavedProject(current, record));
+    const targetSchemeId = selectedSchemeId || activeSchemeId || schemes[0]?.id;
+    setSchemes((current) =>
+      current.map((scheme, index) =>
+        scheme.id === targetSchemeId || (!targetSchemeId && index === 0)
+          ? { ...scheme, updatedAt: new Date().toISOString(), projects: upsertSavedProject(scheme.projects, record) }
+          : scheme
+      )
+    );
+    setSelectedSchemeId(targetSchemeId ?? schemes[0]?.id ?? "");
     setSelectedProjectId(record.id);
-    loadSavedProject(record);
+    loadSavedProject(record, targetSchemeId ?? schemes[0]?.id ?? "");
   };
 
   const locateTopologyError = (error: TopologyValidationError) => {
@@ -779,6 +1411,7 @@ export function App() {
     const errors = validateTopology(nodes, edges);
     setTopologyErrors(errors);
     if (errors.length === 0) {
+      pushUndoSnapshot();
       setNodes((current) => calculateElectricalTopology(current, edges));
     } else {
       locateTopologyError(errors[0]);
@@ -787,11 +1420,11 @@ export function App() {
 
   const getEdgeEndpointPoint = (edge: Edge, endpoint: EdgeEndpoint): Point | null => {
     const node = nodeById.get(endpoint === "source" ? edge.sourceId : edge.targetId);
-    if (!node) {
-      return null;
-    }
     const terminalId = endpoint === "source" ? edge.sourceTerminalId : edge.targetTerminalId;
     const endpointPoint = endpoint === "source" ? edge.sourcePoint : edge.targetPoint;
+    if (!node) {
+      return endpointPoint ?? null;
+    }
     return getModelEdgeEndpointPoint(node, endpointPoint, terminalId);
   };
 
@@ -809,6 +1442,7 @@ export function App() {
       const otherNode = edge ? nodeById.get(rewiring.endpoint === "source" ? edge.targetId : edge.sourceId) : undefined;
       const otherTerminalId = rewiring.endpoint === "source" ? edge?.targetTerminalId : edge?.sourceTerminalId;
       if (edge && otherNode && otherTerminalId && canConnectTerminals(node, terminalId, otherNode, otherTerminalId)) {
+        pushUndoSnapshot();
         setEdges((current) =>
           current.map((item) =>
             item.id === edge.id
@@ -843,6 +1477,7 @@ export function App() {
       targetTerminalId: terminalId,
       targetPoint: busPoint
     };
+    pushUndoSnapshot();
     setEdges((current) => [
       ...current,
       newEdge
@@ -863,6 +1498,37 @@ export function App() {
     downloadText("power-system-diagram.svg", buildSvgDocument(nodes, edges), "image/svg+xml");
   };
 
+  const safeFilePart = (name: string) => name.trim().replace(/[\\/:*?"<>|]+/g, "_") || "未命名";
+
+  const buildDeviceParameterFile = (project: ProjectFile) =>
+    JSON.stringify(
+      {
+        version: 1,
+        name: project.name,
+        devices: project.nodes.map((node) => ({
+          id: node.id,
+          kind: node.kind,
+          name: node.name,
+          nodeNumber: node.nodeNumber,
+          acTopologyNode: node.acTopologyNode,
+          dcTopologyNode: node.dcTopologyNode,
+          terminals: node.terminals,
+          params: node.params
+        })),
+        edges: project.edges
+      },
+      null,
+      2
+    );
+
+  const exportSchemeRecord = (scheme: SavedSchemeRecord) => {
+    for (const project of scheme.projects) {
+      const prefix = `${safeFilePart(scheme.name)}_${safeFilePart(project.name)}`;
+      downloadText(`${prefix}.svg`, buildSvgDocument(project.project.nodes, project.project.edges), "image/svg+xml");
+      downloadText(`${prefix}.e`, buildDeviceParameterFile(project.project), "application/json");
+    }
+  };
+
   const importModel = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
@@ -870,12 +1536,119 @@ export function App() {
     }
     const text = await file.text();
     const project = deserializeProject(text);
+    pushUndoSnapshot();
     setProjectName(project.name);
     setNodes(project.nodes);
     setEdges(project.edges);
     setSelectedNodeIds(project.nodes[0] ? [project.nodes[0].id] : []);
     setSelectedEdgeId("");
     event.target.value = "";
+  };
+
+  const renderProjectPanel = () => (
+    <section className="project-panel" style={{ height: projectPanelHeight }}>
+      <div className="project-panel-title">
+        <h2>方案 / 模型</h2>
+      </div>
+      <div className="project-list listbox" role="listbox" aria-label="绘图模型列表">
+        {schemes.length === 0 ? (
+          <p className="project-empty">暂无方案</p>
+        ) : (
+          schemes.map((scheme) => {
+            const isExpanded = expandedSchemeIds.includes(scheme.id);
+            return (
+            <div className="scheme-group" key={scheme.id}>
+              <div
+                role="option"
+                aria-selected={scheme.id === selectedSchemeId && !selectedProjectId}
+                aria-expanded={isExpanded}
+                tabIndex={0}
+                className={`scheme-option ${scheme.id === selectedSchemeId && !selectedProjectId ? "selected" : ""} ${scheme.id === activeSchemeId ? "active" : ""}`}
+                onClick={() => {
+                  setSelectedSchemeId(scheme.id);
+                  setSelectedProjectId("");
+                  toggleSchemeExpanded(scheme.id);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
+                    event.preventDefault();
+                    setSelectedSchemeId(scheme.id);
+                    setSelectedProjectId("");
+                    toggleSchemeExpanded(scheme.id);
+                  }
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const projectId = event.dataTransfer.getData("application/project-id");
+                  if (projectId) {
+                    moveProjectRecordToScheme(projectId, scheme.id);
+                  }
+                }}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setSelectedSchemeId(scheme.id);
+                  setSelectedProjectId("");
+                  setProjectMenu({ x: event.clientX, y: event.clientY, schemeId: scheme.id });
+                }}
+              >
+                {isExpanded ? <ChevronDown className="scheme-toggle-icon" size={14} /> : <ChevronRight className="scheme-toggle-icon" size={14} />}
+                <FolderOpen size={14} />
+                <span>{scheme.name}</span>
+              </div>
+              {isExpanded && <div className="scheme-projects">
+                {scheme.projects.length === 0 ? (
+                  <p className="project-empty">暂无模型</p>
+                ) : (
+                  scheme.projects.map((project) => (
+                    <div
+                      role="option"
+                      aria-selected={project.id === selectedProjectId}
+                      tabIndex={0}
+                      draggable
+                      className={`project-option ${project.id === selectedProjectId ? "selected" : ""} ${project.id === activeProjectId ? "active" : ""}`}
+                      key={project.id}
+                      onClick={() => {
+                        setSelectedSchemeId(scheme.id);
+                        setSelectedProjectId(project.id);
+                        setInspectorTab("model");
+                      }}
+                      onDoubleClick={() => loadSavedProject(project, scheme.id)}
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData("application/project-id", project.id);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          loadSavedProject(project, scheme.id);
+                        } else if (event.key === " " || event.key === "Spacebar") {
+                          event.preventDefault();
+                          setSelectedSchemeId(scheme.id);
+                          setSelectedProjectId(project.id);
+                        }
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        setSelectedSchemeId(scheme.id);
+                        setSelectedProjectId(project.id);
+                        setProjectMenu({ x: event.clientX, y: event.clientY, schemeId: scheme.id, projectId: project.id });
+                      }}
+                    >
+                      <FileJson className="project-item-icon" size={14} />
+                      <span>{project.name}</span>
+                    </div>
+                  ))
+                )}
+              </div>}
+            </div>
+            );
+          })
+        )}
+      </div>
+    </section>
+  );
+
+  const resizeProjectPanelByKeyboard = (delta: number) => {
+    setProjectPanelHeight((height) => Math.min(PROJECT_PANEL_MAX_HEIGHT, Math.max(PROJECT_PANEL_MIN_HEIGHT, height + delta)));
   };
 
   return (
@@ -898,6 +1671,32 @@ export function App() {
             联络线
           </button>
         </div>
+        {renderProjectPanel()}
+        <div
+          className={`library-splitter ${projectPanelResize ? "dragging" : ""}`}
+          role="separator"
+          aria-label="调整绘图模型和元件库高度"
+          aria-orientation="horizontal"
+          aria-valuemin={PROJECT_PANEL_MIN_HEIGHT}
+          aria-valuemax={PROJECT_PANEL_MAX_HEIGHT}
+          aria-valuenow={projectPanelHeight}
+          tabIndex={0}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            setProjectPanelResize({ startY: event.clientY, startHeight: projectPanelHeight });
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowUp") {
+              event.preventDefault();
+              resizeProjectPanelByKeyboard(event.shiftKey ? -40 : -12);
+            } else if (event.key === "ArrowDown") {
+              event.preventDefault();
+              resizeProjectPanelByKeyboard(event.shiftKey ? 40 : 12);
+            }
+          }}
+        >
+          <span />
+        </div>
         <div className="library-scroll">
           {Object.entries(groupedLibrary).map(([group, items]) => (
             <section className="library-group" key={group}>
@@ -908,13 +1707,13 @@ export function App() {
                   <button
                     className="library-item"
                     draggable
+                    title={item.label}
                     key={item.kind}
                     onDragStart={(event) => event.dataTransfer.setData("application/device-kind", item.kind)}
                   >
                     <svg viewBox="-40 -28 80 56" aria-hidden="true">
                       <DeviceGlyph node={preview} miniature />
                     </svg>
-                    <span>{item.label}</span>
                   </button>
                 );
               })}
@@ -977,38 +1776,49 @@ export function App() {
             onDragOver={(event) => event.preventDefault()}
             onWheel={handleWheel}
             onPointerMove={handlePointerMove}
-            onPointerUp={() => {
+            onPointerEnter={() => {
+              canvasInteractionRef.current = true;
+            }}
+            onPointerUp={(event) => {
+              finishRewiring(event);
               finishMarqueeSelection();
               setDragging(null);
               setTransformDrag(null);
               setPanning(null);
             }}
             onPointerLeave={() => {
+              canvasInteractionRef.current = false;
               setDragging(null);
               setTransformDrag(null);
               setPanning(null);
               setMarquee(null);
+              setRewiring(null);
             }}
             onPointerCancel={() => {
               setDragging(null);
               setTransformDrag(null);
               setPanning(null);
               setMarquee(null);
+              setRewiring(null);
             }}
             onLostPointerCapture={() => {
               setDragging(null);
               setTransformDrag(null);
             }}
             onPointerDown={(event) => {
+              if (event.button !== 0) {
+                return;
+              }
+              canvasInteractionRef.current = true;
               setSelectedNodeIds([]);
               setSelectedEdgeId("");
               setConnectSource(null);
               setRewiring(null);
-              if (event.shiftKey) {
+              if (event.ctrlKey) {
+                setPanning({ clientX: event.clientX, clientY: event.clientY, viewBox });
+              } else {
                 const point = screenToSvgPoint(event.currentTarget, event.clientX, event.clientY);
                 setMarquee({ start: point, current: point });
-              } else {
-                setPanning({ clientX: event.clientX, clientY: event.clientY, viewBox });
               }
             }}
             onContextMenu={(event) => {
@@ -1024,9 +1834,6 @@ export function App() {
                 <rect width="120" height="120" fill="url(#small-grid)" />
                 <path d="M 120 0 L 0 0 0 120" fill="none" stroke="#cbd5e1" strokeWidth="1.2" />
               </pattern>
-              <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155" />
-              </marker>
             </defs>
             <rect width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#f8fafc" />
             <rect width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="url(#large-grid)" />
@@ -1039,45 +1846,138 @@ export function App() {
                 height={Math.abs(marquee.current.y - marquee.start.y)}
               />
             )}
-            {routedEdges.map((route) => {
+            {renderedRoutedEdges.map((route) => {
               const edge = edges.find((item) => item.id === route.edgeId);
               if (!edge) return null;
               const selected = edge.id === selectedEdgeId;
               const sourcePoint = getEdgeEndpointPoint(edge, "source");
               const targetPoint = getEdgeEndpointPoint(edge, "target");
+              const sourceNode = nodeById.get(edge.sourceId);
+              const targetNode = nodeById.get(edge.targetId);
+              const rewiringSource = rewiring?.edgeId === edge.id && rewiring.endpoint === "source";
+              const rewiringTarget = rewiring?.edgeId === edge.id && rewiring.endpoint === "target";
+              const rewireTarget = rewiring?.edgeId === edge.id ? findRewireTargetAtPoint(rewiring.previewPoint, rewiring) : null;
+              const sourceBusDotPoint = rewiringSource
+                ? rewireTarget?.node && isBusNode(rewireTarget.node)
+                  ? rewireTarget.point
+                  : undefined
+                : sourcePoint && sourceNode && isBusNode(sourceNode)
+                  ? sourcePoint
+                  : undefined;
+              const targetBusDotPoint = rewiringTarget
+                ? rewireTarget?.node && isBusNode(rewireTarget.node)
+                  ? rewireTarget.point
+                  : undefined
+                : targetPoint && targetNode && isBusNode(targetNode)
+                  ? targetPoint
+                  : undefined;
               return (
                 <g key={edge.id} className={`connection-group ${selected ? "selected" : ""}`}>
                   <path
                     d={route.path}
-                    className="connection-line"
-                    markerEnd="url(#arrow)"
+                    className="connection-hitline"
                     onPointerDown={(event) => {
                       event.stopPropagation();
                       setSelectedNodeIds([]);
                       setSelectedEdgeId(edge.id);
                     }}
                   />
+                  <path
+                    d={route.path}
+                    className="connection-line"
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                      setSelectedNodeIds([]);
+                      setSelectedEdgeId(edge.id);
+                    }}
+                  />
+                  {sourceBusDotPoint && (
+                    <circle
+                      className="bus-connection-dot"
+                      cx={sourceBusDotPoint.x}
+                      cy={sourceBusDotPoint.y}
+                      r={7}
+                      fill={busEndpointColor((rewiringSource ? rewireTarget?.node : sourceNode) ?? sourceNode!)}
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                        if (event.button !== 0 || !svgRef.current) {
+                          return;
+                        }
+                        setSelectedNodeIds([]);
+                        setSelectedEdgeId(edge.id);
+                        setRewiring({
+                          edgeId: edge.id,
+                          endpoint: "source",
+                          previewPoint: screenToSvgPoint(svgRef.current, event.clientX, event.clientY),
+                          pointerId: event.pointerId
+                        });
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                      }}
+                    />
+                  )}
+                  {targetBusDotPoint && (
+                    <circle
+                      className="bus-connection-dot"
+                      cx={targetBusDotPoint.x}
+                      cy={targetBusDotPoint.y}
+                      r={7}
+                      fill={busEndpointColor((rewiringTarget ? rewireTarget?.node : targetNode) ?? targetNode!)}
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                        if (event.button !== 0 || !svgRef.current) {
+                          return;
+                        }
+                        setSelectedNodeIds([]);
+                        setSelectedEdgeId(edge.id);
+                        setRewiring({
+                          edgeId: edge.id,
+                          endpoint: "target",
+                          previewPoint: screenToSvgPoint(svgRef.current, event.clientX, event.clientY),
+                          pointerId: event.pointerId
+                        });
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                      }}
+                    />
+                  )}
                   {selected && sourcePoint && (
                     <circle
                       className="edge-endpoint-handle"
-                      cx={sourcePoint.x}
-                      cy={sourcePoint.y}
+                      cx={rewiring?.edgeId === edge.id && rewiring.endpoint === "source" ? rewiring.previewPoint.x : sourcePoint.x}
+                      cy={rewiring?.edgeId === edge.id && rewiring.endpoint === "source" ? rewiring.previewPoint.y : sourcePoint.y}
                       r={8}
                       onPointerDown={(event) => {
                         event.stopPropagation();
-                        setRewiring({ edgeId: edge.id, endpoint: "source" });
+                        if (event.button !== 0 || !svgRef.current) {
+                          return;
+                        }
+                        setRewiring({
+                          edgeId: edge.id,
+                          endpoint: "source",
+                          previewPoint: screenToSvgPoint(svgRef.current, event.clientX, event.clientY),
+                          pointerId: event.pointerId
+                        });
+                        event.currentTarget.setPointerCapture(event.pointerId);
                       }}
                     />
                   )}
                   {selected && targetPoint && (
                     <circle
                       className="edge-endpoint-handle"
-                      cx={targetPoint.x}
-                      cy={targetPoint.y}
+                      cx={rewiring?.edgeId === edge.id && rewiring.endpoint === "target" ? rewiring.previewPoint.x : targetPoint.x}
+                      cy={rewiring?.edgeId === edge.id && rewiring.endpoint === "target" ? rewiring.previewPoint.y : targetPoint.y}
                       r={8}
                       onPointerDown={(event) => {
                         event.stopPropagation();
-                        setRewiring({ edgeId: edge.id, endpoint: "target" });
+                        if (event.button !== 0 || !svgRef.current) {
+                          return;
+                        }
+                        setRewiring({
+                          edgeId: edge.id,
+                          endpoint: "target",
+                          previewPoint: screenToSvgPoint(svgRef.current, event.clientX, event.clientY),
+                          pointerId: event.pointerId
+                        });
+                        event.currentTarget.setPointerCapture(event.pointerId);
                       }}
                     />
                   )}
@@ -1090,22 +1990,20 @@ export function App() {
               return (
                 <g
                   key={node.id}
-                  className={`diagram-node ${selected ? "selected" : ""} ${isConnectSource ? "connect-source" : ""}`}
+                  className={`diagram-node ${isBusNode(node) ? "bus-node" : ""} ${selected ? "selected" : ""} ${isConnectSource ? "connect-source" : ""}`}
                   transform={`translate(${node.position.x} ${node.position.y}) rotate(${node.rotation}) scale(${getNodeScaleX(node)} ${getNodeScaleY(node)})`}
                   onPointerDown={(event) => handleNodePointerDown(event, node)}
                 >
+                  <title>{node.name}</title>
                   <rect
                     x={-node.size.width / 2}
                     y={-node.size.height / 2}
                     width={node.size.width}
                     height={node.size.height}
                     rx="8"
-                    className="node-hitbox"
+                    className={`node-hitbox ${isBusNode(node) ? "bus-hitbox" : ""}`}
                   />
                   <DeviceGlyph node={node} />
-                  <text y={node.size.height / 2 + 22} textAnchor="middle">
-                    {node.name}
-                  </text>
                   {node.terminals.map((terminal) => {
                     const sourceNode = connectSource ? nodeById.get(connectSource.nodeId) : undefined;
                     const hideFixedTerminal = isBusNode(node);
@@ -1194,16 +2092,21 @@ export function App() {
                 ? "修改后自动更新模型文件"
                 : selectedEdge
                   ? "可删除联络线或拖拽端点重接"
-                  : "选择画布元件查看参数"}
+                  : selectedProjectRecord
+                    ? "查看当前模型信息"
+                    : "选择画布元件查看参数"}
             </p>
           </div>
           <button onClick={deleteSelected} disabled={!selectedNode && !selectedEdge} title="删除选中对象">
             <Trash2 size={17} />
           </button>
         </div>
-        {selectedNode ? (
+        {selectedNode || selectedProjectRecord ? (
           <div className="form-stack">
             <div className="inspector-tabs">
+              <button className={inspectorTab === "model" ? "active" : ""} onClick={() => setInspectorTab("model")} disabled={!selectedProjectRecord}>
+                模型信息
+              </button>
               <button className={inspectorTab === "graph" ? "active" : ""} onClick={() => setInspectorTab("graph")}>
                 图形参数
               </button>
@@ -1211,7 +2114,40 @@ export function App() {
                 设备参数
               </button>
             </div>
-            {inspectorTab === "graph" ? (
+            {inspectorTab === "model" && selectedProjectRecord ? (
+              <table className="param-table">
+                <tbody>
+                  <tr>
+                    <th>模型名称</th>
+                    <td><input value={selectedProjectRecord.name} readOnly /></td>
+                  </tr>
+                  <tr>
+                    <th>所属方案</th>
+                    <td><input value={selectedSchemeRecord?.name ?? "未选择方案"} readOnly /></td>
+                  </tr>
+                  <tr>
+                    <th>模型更新时间</th>
+                    <td><input value={new Date(selectedProjectRecord.updatedAt).toLocaleString()} readOnly /></td>
+                  </tr>
+                  <tr>
+                    <th>设备数量</th>
+                    <td><input value={selectedProjectRecord.project.nodes.length} readOnly /></td>
+                  </tr>
+                  <tr>
+                    <th>联络线数量</th>
+                    <td><input value={selectedProjectRecord.project.edges.length} readOnly /></td>
+                  </tr>
+                  <tr>
+                    <th>SVG文件</th>
+                    <td><input value={`${safeFilePart(selectedProjectRecord.name)}.svg`} readOnly /></td>
+                  </tr>
+                  <tr>
+                    <th>设备参数文件</th>
+                    <td><input value={`${safeFilePart(selectedProjectRecord.name)}.e`} readOnly /></td>
+                  </tr>
+                </tbody>
+              </table>
+            ) : inspectorTab === "graph" && selectedNode ? (
               <table className="param-table">
                 <tbody>
                   <tr>
@@ -1264,7 +2200,7 @@ export function App() {
                   ))}
                 </tbody>
               </table>
-            ) : (
+            ) : selectedNode ? (
               <table className="param-table">
                 <tbody>
                   {Object.entries(selectedNode.params).map(([key, value]) => (
@@ -1275,8 +2211,14 @@ export function App() {
                   ))}
                 </tbody>
               </table>
+            ) : (
+              <div className="empty-state">
+                <FileJson size={28} />
+                <p>选择画布设备后，可切换查看图形参数和设备参数。</p>
+              </div>
             )}
-            <div className="topology-card">
+            {selectedNode && (
+              <div className="topology-card">
               <span>连接度</span>
               <strong>{topology.nodes[selectedNode.id]?.degree ?? 0}</strong>
               <small>
@@ -1286,6 +2228,7 @@ export function App() {
                   .join("、") || "暂无相邻元件"}
               </small>
             </div>
+            )}
           </div>
         ) : selectedEdge ? (
           <div className="form-stack">
@@ -1309,43 +2252,6 @@ export function App() {
             <p>从左侧拖入元件，或使用联络线模式点击两个元件建立拓扑关系。</p>
           </div>
         )}
-        <section className="project-panel inspector-projects">
-          <div className="project-panel-title">
-            <h2>绘图模型</h2>
-            <button onClick={createBlankProject} title="新增模型">
-              <FolderOpen size={15} />
-              新增
-            </button>
-          </div>
-          <input
-            className="project-name-input"
-            value={projectName}
-            onChange={(event) => setProjectName(event.target.value)}
-            aria-label="当前模型名称"
-          />
-          <div className="project-list listbox" role="listbox" aria-label="绘图模型列表">
-            {projects.length === 0 ? (
-              <p className="project-empty">暂无已保存模型</p>
-            ) : (
-              projects.map((project) => (
-                <button
-                  className={`project-option ${project.id === selectedProjectId ? "selected" : ""} ${project.id === activeProjectId ? "active" : ""}`}
-                  key={project.id}
-                  onClick={() => setSelectedProjectId(project.id)}
-                  onDoubleClick={() => loadSavedProject(project)}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    setSelectedProjectId(project.id);
-                    setProjectMenu({ x: event.clientX, y: event.clientY, projectId: project.id });
-                  }}
-                >
-                  <span>{project.name}</span>
-                  <small>{new Date(project.updatedAt).toLocaleString()}</small>
-                </button>
-              ))
-            )}
-          </div>
-        </section>
         {topologyErrors.length > 0 && (
           <section className="validation-panel">
             <h2>拓扑错误</h2>
@@ -1360,6 +2266,10 @@ export function App() {
       </aside>
       {contextMenu && (
         <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+          <button onClick={undoLastOperation} disabled={undoStack.length === 0}>
+            <Undo2 size={14} />
+            撤销
+          </button>
           <button onClick={copySelection} disabled={selectedNodeIds.length === 0}>
             <Copy size={14} />
             复制
@@ -1392,14 +2302,29 @@ export function App() {
       )}
       {projectMenu && (
         <div className="context-menu" style={{ left: projectMenu.x, top: projectMenu.y }}>
-          <button onClick={createBlankProject}>
+          <button
+            onClick={() => {
+              createSchemeRecord();
+              setProjectMenu(null);
+            }}
+          >
             <FolderOpen size={14} />
+            新增方案
+          </button>
+          <button
+            onClick={() => {
+              createBlankProject();
+              setProjectMenu(null);
+            }}
+            disabled={!projectMenu.schemeId}
+          >
+            <FileJson size={14} />
             新增模型
           </button>
           <button
             onClick={() => {
               const project = projects.find((item) => item.id === projectMenu.projectId);
-              if (project) loadSavedProject(project);
+              if (project) loadSavedProject(project, projectMenu.schemeId);
               setProjectMenu(null);
             }}
             disabled={!projectMenu.projectId}
@@ -1409,35 +2334,70 @@ export function App() {
           <button
             onClick={() => {
               const project = projects.find((item) => item.id === projectMenu.projectId);
+              const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
               if (project) duplicateProjectRecord(project);
+              else if (scheme) duplicateSchemeRecord(scheme);
               setProjectMenu(null);
             }}
-            disabled={!projectMenu.projectId}
+            disabled={!projectMenu.projectId && !projectMenu.schemeId}
           >
             <Copy size={14} />
-            复制模型
+            复制
+          </button>
+          <button
+            onClick={() => {
+              copySelectedRecord();
+              setProjectMenu(null);
+            }}
+            disabled={!projectMenu.projectId && !projectMenu.schemeId}
+          >
+            复制到剪贴板
+          </button>
+          <button
+            onClick={() => {
+              pasteSelectedRecord();
+              setProjectMenu(null);
+            }}
+            disabled={!recordClipboard || !projectMenu.schemeId}
+          >
+            粘贴
           </button>
           <button
             onClick={() => {
               const project = projects.find((item) => item.id === projectMenu.projectId);
+              const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
               if (project) renameProjectRecord(project);
+              else if (scheme) renameSchemeRecord(scheme);
               setProjectMenu(null);
             }}
-            disabled={!projectMenu.projectId}
+            disabled={!projectMenu.projectId && !projectMenu.schemeId}
           >
             <Pencil size={14} />
             重命名
           </button>
           <button
             onClick={() => {
-              const project = projects.find((item) => item.id === projectMenu.projectId);
-              if (project) deleteProjectRecord(project);
+              const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
+              if (scheme) exportSchemeRecord(scheme);
               setProjectMenu(null);
             }}
-            disabled={!projectMenu.projectId}
+            disabled={!projectMenu.schemeId}
+          >
+            <Download size={14} />
+            导出方案
+          </button>
+          <button
+            onClick={() => {
+              const project = projects.find((item) => item.id === projectMenu.projectId);
+              const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
+              if (project) deleteProjectRecord(project);
+              else if (scheme) deleteSchemeRecord(scheme);
+              setProjectMenu(null);
+            }}
+            disabled={!projectMenu.projectId && !projectMenu.schemeId}
           >
             <Trash2 size={14} />
-            删除模型
+            删除
           </button>
         </div>
       )}

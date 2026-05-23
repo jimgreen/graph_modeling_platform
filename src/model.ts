@@ -100,6 +100,13 @@ export type SavedProjectRecord = {
   project: ProjectFile;
 };
 
+export type SavedSchemeRecord = {
+  id: string;
+  name: string;
+  updatedAt: string;
+  projects: SavedProjectRecord[];
+};
+
 export type Topology = {
   nodes: Record<
     string,
@@ -628,8 +635,25 @@ export function isBusNode(node: ModelNode): boolean {
   return node.kind === "ac-bus" || node.kind === "dc-bus";
 }
 
+export function projectPointToBusCenterline(node: ModelNode, point: Point): Point {
+  const radians = (-node.rotation * Math.PI) / 180;
+  const dx = point.x - node.position.x;
+  const dy = point.y - node.position.y;
+  const local = {
+    x: dx * Math.cos(radians) - dy * Math.sin(radians),
+    y: dx * Math.sin(radians) + dy * Math.cos(radians)
+  };
+  const halfWidth = (node.size.width * getNodeScaleX(node)) / 2;
+  const clampedX = Math.max(-halfWidth, Math.min(halfWidth, local.x));
+  const forwardRadians = (node.rotation * Math.PI) / 180;
+  return {
+    x: Math.round(node.position.x + clampedX * Math.cos(forwardRadians)),
+    y: Math.round(node.position.y + clampedX * Math.sin(forwardRadians))
+  };
+}
+
 export function getEdgeEndpointPoint(node: ModelNode, endpointPoint?: Point, terminalId?: string): Point {
-  return endpointPoint && isBusNode(node) ? endpointPoint : getTerminalPoint(node, terminalId);
+  return endpointPoint && isBusNode(node) ? projectPointToBusCenterline(node, endpointPoint) : getTerminalPoint(node, terminalId);
 }
 
 export function getTerminalNormal(node: ModelNode, terminalId?: string): Point {
@@ -645,6 +669,20 @@ export function getTerminalNormal(node: ModelNode, terminalId?: string): Point {
     x: Math.round(raw.x * cos - raw.y * sin),
     y: Math.round(raw.x * sin + raw.y * cos)
   };
+}
+
+function getBusNormalToward(node: ModelNode, otherPoint: Point): Point {
+  const radians = (node.rotation * Math.PI) / 180;
+  const normal = { x: -Math.sin(radians), y: Math.cos(radians) };
+  const vector = { x: otherPoint.x - node.position.x, y: otherPoint.y - node.position.y };
+  const dot = normal.x * vector.x + normal.y * vector.y;
+  const direction = dot >= 0 ? 1 : -1;
+  const x = Math.round(normal.x * direction);
+  const y = Math.round(normal.y * direction);
+  if (x === 0 && y === 0) {
+    return { x: 0, y: -1 };
+  }
+  return { x, y };
 }
 
 export function canConnectTerminals(
@@ -693,10 +731,46 @@ export function deleteNodesWithConnectedEdges(nodes: ModelNode[], edges: Edge[],
 
 export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): ModelNode[] {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const adjacency = new Map<string, string[]>();
+  const terminalKey = (nodeId: string, terminalId: string) => `${nodeId}:${terminalId}`;
+  const parent = new Map<string, string>();
+  const terminalTypes = new Map<string, TerminalType>();
+  const find = (key: string): string => {
+    const current = parent.get(key);
+    if (!current || current === key) {
+      return key;
+    }
+    const root = find(current);
+    parent.set(key, root);
+    return root;
+  };
+  const union = (first: string, second: string) => {
+    const firstRoot = find(first);
+    const secondRoot = find(second);
+    if (firstRoot !== secondRoot) {
+      parent.set(secondRoot, firstRoot);
+    }
+  };
+
   for (const node of nodes) {
-    adjacency.set(node.id, []);
+    for (const terminal of node.terminals) {
+      const key = terminalKey(node.id, terminal.id);
+      parent.set(key, key);
+      terminalTypes.set(key, terminal.type);
+    }
+    if (isBusNode(node)) {
+      const terminalsByType = new Map<TerminalType, Terminal[]>();
+      for (const terminal of node.terminals) {
+        terminalsByType.set(terminal.type, [...(terminalsByType.get(terminal.type) ?? []), terminal]);
+      }
+      for (const terminals of terminalsByType.values()) {
+        const [first, ...rest] = terminals;
+        for (const terminal of rest) {
+          union(terminalKey(node.id, first.id), terminalKey(node.id, terminal.id));
+        }
+      }
+    }
   }
+
   for (const edge of edges) {
     const source = nodeById.get(edge.sourceId);
     const target = nodeById.get(edge.targetId);
@@ -704,66 +778,37 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
     const sourceTerminal = getTerminal(source, edge.sourceTerminalId);
     const targetTerminal = getTerminal(target, edge.targetTerminalId);
     if (sourceTerminal.type !== targetTerminal.type) continue;
-    adjacency.get(source.id)?.push(target.id);
-    adjacency.get(target.id)?.push(source.id);
+    union(terminalKey(source.id, sourceTerminal.id), terminalKey(target.id, targetTerminal.id));
   }
 
-  const nextNodes = nodes.map((node) => ({ ...node, acTopologyNode: 0, dcTopologyNode: 0 }));
-  const nextById = new Map(nextNodes.map((node) => [node.id, node]));
-  const visitedByType = {
-    ac: new Set<string>(),
-    dc: new Set<string>()
+  let nextTopologyNumber = 1;
+  const numberByRoot = new Map<string, string>();
+  const getTopologyNumber = (key: string) => {
+    const root = find(key);
+    const existing = numberByRoot.get(root);
+    if (existing) {
+      return existing;
+    }
+    const next = String(nextTopologyNumber++);
+    numberByRoot.set(root, next);
+    return next;
   };
 
-  for (const type of ["ac", "dc"] as const) {
-    let topologyNumber = 1;
-    for (const node of nodes) {
-      if (visitedByType[type].has(node.id) || !node.terminals.some((terminal) => terminal.type === type)) {
-        continue;
-      }
-      const stack = [node.id];
-      const component: string[] = [];
-      visitedByType[type].add(node.id);
-      while (stack.length > 0) {
-        const id = stack.pop()!;
-        const current = nodeById.get(id);
-        if (!current || !current.terminals.some((terminal) => terminal.type === type)) continue;
-        component.push(id);
-        for (const neighborId of adjacency.get(id) ?? []) {
-          const neighbor = nodeById.get(neighborId);
-          if (!neighbor || visitedByType[type].has(neighborId)) continue;
-          const hasSameTypeEdge = edges.some((edge) => {
-            if (
-              !((edge.sourceId === id && edge.targetId === neighborId) || (edge.sourceId === neighborId && edge.targetId === id))
-            ) {
-              return false;
-            }
-            const source = nodeById.get(edge.sourceId);
-            const target = nodeById.get(edge.targetId);
-            return (
-              source &&
-              target &&
-              getTerminal(source, edge.sourceTerminalId).type === type &&
-              getTerminal(target, edge.targetTerminalId).type === type
-            );
-          });
-          if (hasSameTypeEdge) {
-            visitedByType[type].add(neighborId);
-            stack.push(neighborId);
-          }
-        }
-      }
-      for (const id of component) {
-        const next = nextById.get(id);
-        if (next) {
-          if (type === "ac") next.acTopologyNode = topologyNumber;
-          else next.dcTopologyNode = topologyNumber;
-        }
-      }
-      topologyNumber += 1;
-    }
-  }
-  return nextNodes;
+  return nodes.map((node) => {
+    const terminals = node.terminals.map((terminal) => {
+      const key = terminalKey(node.id, terminal.id);
+      return { ...terminal, nodeNumber: getTopologyNumber(key) };
+    });
+    const acTopologyNode = Number(terminals.find((terminal) => terminal.type === "ac")?.nodeNumber ?? 0);
+    const dcTopologyNode = Number(terminals.find((terminal) => terminal.type === "dc")?.nodeNumber ?? 0);
+    return {
+      ...node,
+      acTopologyNode,
+      dcTopologyNode,
+      nodeNumber: terminals.length === 1 ? terminals[0].nodeNumber : node.nodeNumber,
+      terminals
+    };
+  });
 }
 
 function normalizeVoltage(value?: string): string {
@@ -894,7 +939,7 @@ export function buildTopology(nodes: ModelNode[], edges: Edge[]): Topology {
 }
 
 export function serializeProject(project: ProjectFile): string {
-  return JSON.stringify(project, null, 2);
+  return JSON.stringify(lockProjectEdgeTerminals(project), null, 2);
 }
 
 export function deserializeProject(json: string): ProjectFile {
@@ -902,20 +947,48 @@ export function deserializeProject(json: string): ProjectFile {
   if (parsed.version !== 1 || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
     throw new Error("Unsupported or invalid model file");
   }
-  return parsed;
+  return lockProjectEdgeTerminals(parsed);
+}
+
+export function lockProjectEdgeTerminals(project: ProjectFile): ProjectFile {
+  const nodeById = new Map(project.nodes.map((node) => [node.id, node]));
+  return {
+    ...project,
+    nodes: project.nodes,
+    edges: project.edges.map((edge) => {
+      const source = nodeById.get(edge.sourceId);
+      const target = nodeById.get(edge.targetId);
+      const sourceTerminalId =
+        source?.terminals.some((terminal) => terminal.id === edge.sourceTerminalId)
+          ? edge.sourceTerminalId
+          : source?.terminals[0]?.id;
+      const targetTerminalId =
+        target?.terminals.some((terminal) => terminal.id === edge.targetTerminalId)
+          ? edge.targetTerminalId
+          : target?.terminals[0]?.id;
+      return {
+        ...edge,
+        sourceTerminalId,
+        targetTerminalId,
+        sourcePoint: source ? (isBusNode(source) ? edge.sourcePoint : undefined) : edge.sourcePoint,
+        targetPoint: target ? (isBusNode(target) ? edge.targetPoint : undefined) : edge.targetPoint
+      };
+    })
+  };
 }
 
 export function createSavedProject(name: string, project: ProjectFile): SavedProjectRecord {
   const savedName = name.trim() || "未命名模型";
+  const lockedProject = lockProjectEdgeTerminals(project);
   return {
     id: makeId("project"),
     name: savedName,
     updatedAt: new Date().toISOString(),
     project: {
-      ...project,
+      ...lockedProject,
       name: savedName,
-      nodes: project.nodes.map((node) => ({ ...node, params: { ...node.params }, terminals: node.terminals.map((terminal) => ({ ...terminal, anchor: { ...terminal.anchor } })) })),
-      edges: project.edges.map((edge) => ({ ...edge }))
+      nodes: lockedProject.nodes.map((node) => ({ ...node, params: { ...node.params }, terminals: node.terminals.map((terminal) => ({ ...terminal, anchor: { ...terminal.anchor } })) })),
+      edges: lockedProject.edges.map((edge) => ({ ...edge }))
     }
   };
 }
@@ -952,6 +1025,52 @@ export function duplicateSavedProject(projects: SavedProjectRecord[], projectId:
 
 export function deleteSavedProject(projects: SavedProjectRecord[], projectId: string): SavedProjectRecord[] {
   return projects.filter((project) => project.id !== projectId);
+}
+
+export function createSavedScheme(name: string, projects: SavedProjectRecord[] = []): SavedSchemeRecord {
+  return {
+    id: makeId("scheme"),
+    name: name.trim() || "未命名方案",
+    updatedAt: new Date().toISOString(),
+    projects
+  };
+}
+
+export function renameSavedScheme(
+  schemes: SavedSchemeRecord[],
+  schemeId: string,
+  nextName: string
+): SavedSchemeRecord[] {
+  const name = nextName.trim() || "未命名方案";
+  return schemes.map((scheme) =>
+    scheme.id === schemeId ? { ...scheme, name, updatedAt: new Date().toISOString() } : scheme
+  );
+}
+
+export function deleteSavedScheme(schemes: SavedSchemeRecord[], schemeId: string): SavedSchemeRecord[] {
+  return schemes.filter((scheme) => scheme.id !== schemeId);
+}
+
+export function moveProjectToScheme(
+  schemes: SavedSchemeRecord[],
+  projectId: string,
+  targetSchemeId: string
+): SavedSchemeRecord[] {
+  const sourceScheme = schemes.find((scheme) => scheme.projects.some((project) => project.id === projectId));
+  const project = sourceScheme?.projects.find((item) => item.id === projectId);
+  if (!sourceScheme || !project || sourceScheme.id === targetSchemeId) {
+    return schemes;
+  }
+  const now = new Date().toISOString();
+  return schemes.map((scheme) => {
+    if (scheme.id === sourceScheme.id) {
+      return { ...scheme, updatedAt: now, projects: scheme.projects.filter((item) => item.id !== projectId) };
+    }
+    if (scheme.id === targetSchemeId) {
+      return { ...scheme, updatedAt: now, projects: [...scheme.projects, project] };
+    }
+    return scheme;
+  });
 }
 
 function boxFor(node: ModelNode, padding = 0) {
@@ -1014,6 +1133,22 @@ function compactRoute(points: Point[]) {
     }
     return !(prev.x === point.x && point.x === next.x) && !(prev.y === point.y && point.y === next.y);
   });
+}
+
+function orthogonalizeRoute(points: Point[]): Point[] {
+  if (points.length <= 1) {
+    return points;
+  }
+  const orthogonal: Point[] = [points[0]];
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = orthogonal[orthogonal.length - 1];
+    const current = points[index];
+    if (previous.x !== current.x && previous.y !== current.y) {
+      orthogonal.push({ x: current.x, y: previous.y });
+    }
+    orthogonal.push(current);
+  }
+  return compactRoute(orthogonal);
 }
 
 export function pointsToOrthogonalPath(points: Point[]): string {
@@ -1097,7 +1232,7 @@ function separateOverlaps(routes: RoutedEdge[]): RoutedEdge[] {
       }
       return { x: point.x, y: point.y + offset };
     });
-    return { ...route, points };
+    return { ...route, points: orthogonalizeRoute(points) };
   });
 }
 
@@ -1152,8 +1287,8 @@ function pathWithCrossingArcs(route: RoutedEdge, allRoutes: RoutedEdge[], routeI
 export function routeEdgesForRendering(nodes: ModelNode[], edges: Edge[]): RoutedEdge[] {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const baseRoutes = edges.flatMap((edge) => {
-    const source = nodeById.get(edge.sourceId);
-    const target = nodeById.get(edge.targetId);
+    const source = nodeById.get(edge.sourceId) ?? (edge.sourcePoint ? createFloatingEndpointNode(edge.sourcePoint, edge.targetId ? nodeById.get(edge.targetId) : undefined) : undefined);
+    const target = nodeById.get(edge.targetId) ?? (edge.targetPoint ? createFloatingEndpointNode(edge.targetPoint, edge.sourceId ? nodeById.get(edge.sourceId) : undefined) : undefined);
     if (!source || !target) {
       return [];
     }
@@ -1165,7 +1300,7 @@ export function routeEdgesForRendering(nodes: ModelNode[], edges: Edge[]): Route
       }
     ];
   });
-  const separated = separateOverlaps(baseRoutes);
+  const separated = separateOverlaps(baseRoutes).map((route) => ({ ...route, points: orthogonalizeRoute(route.points) }));
   return separated.map((route, index, allRoutes) => ({
     ...route,
     path: pathWithCrossingArcs(route, allRoutes, index)
@@ -1176,11 +1311,31 @@ function samePoint(a: Point, b: Point) {
   return a.x === b.x && a.y === b.y;
 }
 
+function createFloatingEndpointNode(point: Point, relatedNode?: ModelNode): ModelNode {
+  const type = relatedNode?.terminals[0]?.type ?? "ac";
+  return {
+    id: `floating-${point.x}-${point.y}`,
+    kind: type === "dc" ? "dc-bus" : "ac-bus",
+    name: "悬空端点",
+    nodeNumber: "",
+    acTopologyNode: 0,
+    dcTopologyNode: 0,
+    position: point,
+    size: { width: 0, height: 0 },
+    rotation: 0,
+    scale: 1,
+    scaleX: 1,
+    scaleY: 1,
+    terminals: [{ id: "t1", label: "悬空端点", type, anchor: { x: 0, y: 0 }, nodeNumber: "" }],
+    params: {}
+  };
+}
+
 export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes: ModelNode[], edge?: Edge): Point[] {
   const start = getEdgeEndpointPoint(source, edge?.sourcePoint, edge?.sourceTerminalId);
   const end = getEdgeEndpointPoint(target, edge?.targetPoint, edge?.targetTerminalId);
-  const sourceNormal = getTerminalNormal(source, edge?.sourceTerminalId);
-  const targetNormal = getTerminalNormal(target, edge?.targetTerminalId);
+  const sourceNormal = isBusNode(source) ? getBusNormalToward(source, end) : getTerminalNormal(source, edge?.sourceTerminalId);
+  const targetNormal = isBusNode(target) ? getBusNormalToward(target, start) : getTerminalNormal(target, edge?.targetTerminalId);
   const stubLength = 28;
   const startOut = {
     x: start.x + sourceNormal.x * stubLength,
@@ -1209,9 +1364,17 @@ export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes:
   ].map(compactRoute);
 
   const routedMiddle = candidates.sort((a, b) => scoreRoute(a, blockers) - scoreRoute(b, blockers))[0];
-  const route = [start, ...(!samePoint(start, startOut) ? [startOut] : []), ...routedMiddle, ...(!samePoint(endOut, end) ? [end] : [])];
-  return route.filter((point, index) => {
+  const middlePoints = routedMiddle.slice(1, -1);
+  const route = [
+    start,
+    ...(!samePoint(start, startOut) ? [startOut] : []),
+    ...middlePoints,
+    ...(!samePoint(endOut, end) ? [endOut] : []),
+    end
+  ];
+  const compacted = route.filter((point, index) => {
     const previous = route[index - 1];
     return !previous || !samePoint(previous, point);
   });
+  return orthogonalizeRoute(compacted);
 }
