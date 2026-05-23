@@ -1,4 +1,4 @@
-import { ChangeEvent, DragEvent, PointerEvent, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
@@ -7,6 +7,9 @@ import {
   FileInput,
   FileJson,
   Grid2X2,
+  Copy,
+  FolderOpen,
+  Pencil,
   MousePointer2,
   Save,
   Trash2
@@ -14,20 +17,33 @@ import {
 import {
   alignNodes,
   buildTopology,
+  calculateElectricalTopology,
   canConnectTerminals,
   createTerminals,
+  createSavedProject,
   createDefaultNode,
+  deleteNodesWithConnectedEdges,
+  deleteSavedProject,
   deserializeProject,
   DEVICE_LIBRARY,
+  duplicateSavedProject,
+  getEdgeEndpointPoint as getModelEdgeEndpointPoint,
   getNodeScaleX,
   getNodeScaleY,
+  getSwitchVisualState,
   getTerminalPoint,
+  isBusNode,
+  isGeneratorNode,
   type DeviceKind,
   type Edge,
   type ModelNode,
   type Point,
+  type ProjectFile,
   routeEdgesForRendering,
-  serializeProject
+  renameSavedProject,
+  serializeProject,
+  upsertSavedProject,
+  type SavedProjectRecord
 } from "./model";
 
 type ToolMode = "select" | "connect";
@@ -35,6 +51,8 @@ type EdgeEndpoint = "source" | "target";
 type TransformDrag =
   | { kind: "rotate"; nodeId: string }
   | { kind: "scale-x" | "scale-y" | "scale-both"; nodeId: string };
+type Marquee = { start: Point; current: Point } | null;
+type ContextMenuState = { x: number; y: number } | null;
 
 const CANVAS_WIDTH = 1800;
 const CANVAS_HEIGHT = 1200;
@@ -58,6 +76,74 @@ const SAMPLE_EDGES: Edge[] = [
   { id: "seed-e4", sourceId: "seed-4", targetId: "seed-5" },
   { id: "seed-e5", sourceId: "seed-5", targetId: "seed-6" }
 ];
+
+const PROJECT_STORAGE_KEY = "power-system-model-projects";
+const PARAM_LABELS: Record<string, string> = {
+  ratedCapacity: "额定容量",
+  controlType: "控制类型",
+  cutInWindSpeed: "切入风速",
+  ratedWindSpeed: "额定风速",
+  cutOutWindSpeed: "切出风速",
+  ratedActivePower: "额定有功",
+  pv0: "pv0系数",
+  pv1: "pv1系数",
+  pv2: "pv2系数",
+  ratedReactivePower: "额定无功",
+  qv0: "qv0系数",
+  qv1: "qv1系数",
+  qv2: "qv2系数",
+  resistancePu: "电阻（标幺值）",
+  reactancePu: "电抗（标幺值）",
+  halfChargingSusceptancePu: "半充电电纳（标幺值）",
+  magnetizingConductancePu: "励磁电导（标幺值）",
+  magnetizingSusceptancePu: "励磁电纳（标幺值）",
+  tapRatio: "分接头档位/变比",
+  highRatedCapacity: "高压侧额定容量",
+  highResistancePu: "高压侧电阻（标幺值）",
+  highReactancePu: "高压侧电抗（标幺值）",
+  highMagnetizingConductancePu: "高压侧励磁电导（标幺值）",
+  highMagnetizingSusceptancePu: "高压侧励磁电纳（标幺值）",
+  highTapRatio: "高压侧分接头档位/变比",
+  mediumRatedCapacity: "中压侧额定容量",
+  mediumResistancePu: "中压侧电阻（标幺值）",
+  mediumReactancePu: "中压侧电抗（标幺值）",
+  mediumMagnetizingConductancePu: "中压侧励磁电导（标幺值）",
+  mediumMagnetizingSusceptancePu: "中压侧励磁电纳（标幺值）",
+  mediumTapRatio: "中压侧分接头档位/变比",
+  lowRatedCapacity: "低压侧额定容量",
+  lowResistancePu: "低压侧电阻（标幺值）",
+  lowReactancePu: "低压侧电抗（标幺值）",
+  lowMagnetizingConductancePu: "低压侧励磁电导（标幺值）",
+  lowMagnetizingSusceptancePu: "低压侧励磁电纳（标幺值）",
+  lowTapRatio: "低压侧分接头档位/变比",
+  sourceEquivalentResistance: "首端等值电阻",
+  targetEquivalentResistance: "末端等值电阻",
+  sourceControlType: "首端控制类型",
+  targetControlType: "末端控制类型",
+  acControlType: "AC端控制类型",
+  dcControlType: "DC端控制类型",
+  closedStatus: "闭合状态",
+  run_stat: "运行状态"
+};
+
+const PARAM_OPTIONS: Record<string, string[]> = {
+  controlType: ["PV", "PQ", "PH", "P", "V"],
+  sourceControlType: ["定P", "定V", "定I", "定PQ", "定PV", "定PH", "不定"],
+  targetControlType: ["定P", "定V", "定I", "定PQ", "定PV", "定PH", "不定"],
+  acControlType: ["定PQ", "定PV", "定PH", "不定"],
+  dcControlType: ["定P", "定V", "定I", "不定"],
+  closedStatus: ["闭合", "打开"],
+  run_stat: ["运行", "停运", "检修"]
+};
+
+function readSavedProjects(): SavedProjectRecord[] {
+  try {
+    const raw = window.localStorage.getItem(PROJECT_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as SavedProjectRecord[]) : [];
+  } catch {
+    return [];
+  }
+}
 
 const groupedLibrary = DEVICE_LIBRARY.reduce<Record<string, typeof DEVICE_LIBRARY>>((groups, item) => {
   groups[item.group] = groups[item.group] ? [...groups[item.group], item] : [item];
@@ -165,11 +251,24 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (node.kind.includes("switch")) {
+    const closed = getSwitchVisualState(node) === "closed";
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round">
         <line x1={-w / 2 + 10} y1="0" x2="-8" y2="0" />
         <line x1="8" y1="0" x2={w / 2 - 10} y2="0" />
-        <line x1="-8" y1="0" x2="11" y2="-14" />
+        <line x1="-8" y1="0" x2={closed ? "8" : "11"} y2={closed ? "0" : "-14"} />
+      </g>
+    );
+  }
+
+  if (node.kind.includes("disconnector") || node.kind.includes("breaker")) {
+    const closed = getSwitchVisualState(node) === "closed";
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <line x1={-w / 2 + 10} y1="0" x2="-10" y2="0" />
+        <line x1="10" y1="0" x2={w / 2 - 10} y2="0" />
+        {node.kind.includes("breaker") && <rect x="-10" y="-12" width="20" height="24" rx="3" fill={fill} />}
+        <line x1="-10" y1="0" x2={closed ? "10" : "12"} y2={closed ? "0" : "-14"} />
       </g>
     );
   }
@@ -224,15 +323,21 @@ export function App() {
   const importRef = useRef<HTMLInputElement | null>(null);
   const [nodes, setNodes] = useState<ModelNode[]>(SAMPLE_NODES);
   const [edges, setEdges] = useState<Edge[]>(SAMPLE_EDGES);
+  const [projectName, setProjectName] = useState("电力系统图上模型");
+  const [projects, setProjects] = useState<SavedProjectRecord[]>(() => readSavedProjects());
+  const [activeProjectId, setActiveProjectId] = useState<string>("");
   const [mode, setMode] = useState<ToolMode>("select");
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>(nodes[0] ? [nodes[0].id] : []);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string>("");
-  const [connectSource, setConnectSource] = useState<{ nodeId: string; terminalId: string } | null>(null);
+  const [connectSource, setConnectSource] = useState<{ nodeId: string; terminalId: string; point?: Point } | null>(null);
   const [dragging, setDragging] = useState<{ nodeId: string; offset: Point } | null>(null);
   const [rewiring, setRewiring] = useState<{ edgeId: string; endpoint: EdgeEndpoint } | null>(null);
   const [transformDrag, setTransformDrag] = useState<TransformDrag | null>(null);
   const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: CANVAS_WIDTH, height: CANVAS_HEIGHT });
   const [panning, setPanning] = useState<{ clientX: number; clientY: number; viewBox: typeof viewBox } | null>(null);
+  const [marquee, setMarquee] = useState<Marquee>(null);
+  const [clipboardNodes, setClipboardNodes] = useState<ModelNode[]>([]);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
 
   const selectedNodeId = selectedNodeIds[0] ?? "";
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
@@ -241,6 +346,135 @@ export function App() {
   const topology = useMemo(() => buildTopology(nodes, edges), [nodes, edges]);
   const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
   const routedEdges = useMemo(() => routeEdgesForRendering(nodes, edges), [nodes, edges]);
+
+  useEffect(() => {
+    window.localStorage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(projects));
+  }, [projects]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA"].includes(target.tagName)) {
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
+        event.preventDefault();
+        copySelection();
+      } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
+        event.preventDefault();
+        pasteSelection();
+      } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        saveCurrentProject();
+      } else if (event.key === "Delete" || event.key === "Backspace") {
+        event.preventDefault();
+        deleteSelection();
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        moveSelection(event.shiftKey ? -24 : -6, 0);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        moveSelection(event.shiftKey ? 24 : 6, 0);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        moveSelection(0, event.shiftKey ? -24 : -6);
+      } else if (event.key === "ArrowDown") {
+        event.preventDefault();
+        moveSelection(0, event.shiftKey ? 24 : 6);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [clipboardNodes, nodes, selectedEdgeId, selectedNodeIds]);
+
+  const currentProject = (): ProjectFile => ({
+    version: 1,
+    name: projectName,
+    nodes,
+    edges
+  });
+
+  const clearTransientSelectionState = () => {
+    setSelectedEdgeId("");
+    setConnectSource(null);
+    setRewiring(null);
+    setContextMenu(null);
+  };
+
+  const copySelection = () => {
+    const selected = nodes.filter((node) => selectedNodeIds.includes(node.id));
+    setClipboardNodes(selected);
+  };
+
+  const pasteSelection = () => {
+    if (clipboardNodes.length === 0) {
+      return;
+    }
+    const idMap = new Map<string, string>();
+    const pasted = clipboardNodes.map((node) => {
+      const nextId = `node-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      idMap.set(node.id, nextId);
+      return {
+        ...node,
+        id: nextId,
+        name: `${node.name} 副本`,
+        position: { x: node.position.x + 36, y: node.position.y + 36 },
+        params: { ...node.params },
+        terminals: node.terminals.map((terminal) => ({ ...terminal, anchor: { ...terminal.anchor } }))
+      };
+    });
+    setNodes((current) => [...current, ...pasted]);
+    setSelectedNodeIds(pasted.map((node) => node.id));
+    clearTransientSelectionState();
+  };
+
+  const finishMarqueeSelection = () => {
+    if (!marquee) {
+      return;
+    }
+    const left = Math.min(marquee.start.x, marquee.current.x);
+    const right = Math.max(marquee.start.x, marquee.current.x);
+    const top = Math.min(marquee.start.y, marquee.current.y);
+    const bottom = Math.max(marquee.start.y, marquee.current.y);
+    if (right - left < 8 || bottom - top < 8) {
+      setMarquee(null);
+      return;
+    }
+    setSelectedNodeIds(
+      nodes
+        .filter((node) => node.position.x >= left && node.position.x <= right && node.position.y >= top && node.position.y <= bottom)
+        .map((node) => node.id)
+    );
+    clearTransientSelectionState();
+    setMarquee(null);
+  };
+
+  const deleteSelection = () => {
+    if (selectedEdgeId) {
+      setEdges((current) => current.filter((edge) => edge.id !== selectedEdgeId));
+      setSelectedEdgeId("");
+      return;
+    }
+    if (selectedNodeIds.length === 0) {
+      return;
+    }
+    const result = deleteNodesWithConnectedEdges(nodes, edges, selectedNodeIds);
+    setNodes(result.nodes);
+    setEdges(result.edges);
+    setSelectedNodeIds([]);
+  };
+
+  const moveSelection = (dx: number, dy: number) => {
+    if (selectedNodeIds.length === 0) {
+      return;
+    }
+    const selected = new Set(selectedNodeIds);
+    setNodes((current) =>
+      current.map((node) =>
+        selected.has(node.id) ? { ...node, position: { x: node.position.x + dx, y: node.position.y + dy } } : node
+      )
+    );
+  };
 
   const updateSelectedNode = (patch: Partial<ModelNode>) => {
     if (!selectedNodeId) {
@@ -260,6 +494,27 @@ export function App() {
     );
   };
 
+  const renderParamEditor = (key: string, value: string) => {
+    const label = PARAM_LABELS[key] ?? key;
+    const options = PARAM_OPTIONS[key];
+    return (
+      <label key={key}>
+        {label}
+        {options ? (
+          <select value={value} onChange={(event) => updateParam(key, event.target.value)}>
+            {options.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input value={value} onChange={(event) => updateParam(key, event.target.value)} />
+        )}
+      </label>
+    );
+  };
+
   const clampScale = (value: number) => Math.max(0.2, Math.min(5, value));
 
   const toLocalNodePoint = (node: ModelNode, point: Point): Point => {
@@ -270,6 +525,16 @@ export function App() {
       x: dx * Math.cos(radians) - dy * Math.sin(radians),
       y: dx * Math.sin(radians) + dy * Math.cos(radians)
     };
+  };
+
+  const busAnchorFromEvent = (node: ModelNode, event: PointerEvent<SVGGElement | SVGCircleElement>): Point | undefined => {
+    if (!isBusNode(node) || !svgRef.current) {
+      return undefined;
+    }
+    const point = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
+    const halfWidth = (node.size.width * getNodeScaleX(node)) / 2;
+    const clampedX = Math.max(node.position.x - halfWidth, Math.min(node.position.x + halfWidth, point.x));
+    return { x: Math.round(clampedX), y: node.position.y };
   };
 
   const updateTerminalCount = (count: number) => {
@@ -316,6 +581,9 @@ export function App() {
       setSelectedNodeIds([node.id]);
     }
     if (mode === "connect") {
+      if (isBusNode(node)) {
+        handleTerminalPointerDown(event as unknown as PointerEvent<SVGCircleElement>, node, node.terminals[0].id);
+      }
       return;
     }
     if (!svgRef.current) {
@@ -327,6 +595,10 @@ export function App() {
   };
 
   const handlePointerMove = (event: PointerEvent<SVGSVGElement>) => {
+    if (marquee && svgRef.current) {
+      setMarquee({ ...marquee, current: screenToSvgPoint(svgRef.current, event.clientX, event.clientY) });
+      return;
+    }
     if (panning && svgRef.current) {
       const rect = svgRef.current.getBoundingClientRect();
       const dx = ((event.clientX - panning.clientX) / rect.width) * panning.viewBox.width;
@@ -394,21 +666,66 @@ export function App() {
   };
 
   const deleteSelected = () => {
-    if (selectedEdgeId) {
-      setEdges((current) => current.filter((edge) => edge.id !== selectedEdgeId));
-      setSelectedEdgeId("");
-      return;
-    }
-    if (!selectedNodeId) {
-      return;
-    }
-    setNodes((current) => current.filter((node) => node.id !== selectedNodeId));
-    setEdges((current) => current.filter((edge) => edge.sourceId !== selectedNodeId && edge.targetId !== selectedNodeId));
-    setSelectedNodeIds([]);
+    deleteSelection();
   };
 
   const alignSelected = (direction: "horizontal" | "vertical") => {
     setNodes((current) => alignNodes(current, selectedNodeIds, direction));
+  };
+
+  const loadSavedProject = (project: SavedProjectRecord) => {
+    setProjectName(project.name);
+    setNodes(project.project.nodes);
+    setEdges(project.project.edges);
+    setActiveProjectId(project.id);
+    setSelectedNodeIds(project.project.nodes[0] ? [project.project.nodes[0].id] : []);
+    setSelectedEdgeId("");
+    setConnectSource(null);
+    setRewiring(null);
+  };
+
+  const saveCurrentProject = (targetId = activeProjectId) => {
+    if (targetId) {
+      const existing = projects.find((project) => project.id === targetId);
+      if (existing) {
+        const record: SavedProjectRecord = {
+          ...existing,
+          name: projectName,
+          project: currentProject()
+        };
+        setProjects((current) => upsertSavedProject(current, record));
+        setActiveProjectId(targetId);
+        return;
+      }
+    }
+    const record = createSavedProject(projectName, currentProject());
+    setProjects((current) => upsertSavedProject(current, record));
+    setActiveProjectId(record.id);
+  };
+
+  const renameProjectRecord = (project: SavedProjectRecord) => {
+    const nextName = window.prompt("请输入新的模型名称", project.name);
+    if (!nextName) {
+      return;
+    }
+    setProjects((current) => renameSavedProject(current, project.id, nextName));
+    if (activeProjectId === project.id) {
+      setProjectName(nextName.trim() || "未命名模型");
+    }
+  };
+
+  const duplicateProjectRecord = (project: SavedProjectRecord) => {
+    setProjects((current) => duplicateSavedProject(current, project.id));
+  };
+
+  const deleteProjectRecord = (project: SavedProjectRecord) => {
+    if (!window.confirm(`删除模型“${project.name}”？`)) {
+      return;
+    }
+    setProjects((current) => deleteSavedProject(current, project.id));
+    if (activeProjectId === project.id) {
+      setActiveProjectId("");
+    }
   };
 
   const getEdgeEndpointPoint = (edge: Edge, endpoint: EdgeEndpoint): Point | null => {
@@ -417,7 +734,8 @@ export function App() {
       return null;
     }
     const terminalId = endpoint === "source" ? edge.sourceTerminalId : edge.targetTerminalId;
-    return getTerminalPoint(node, terminalId);
+    const endpointPoint = endpoint === "source" ? edge.sourcePoint : edge.targetPoint;
+    return getModelEdgeEndpointPoint(node, endpointPoint, terminalId);
   };
 
   const handleTerminalPointerDown = (
@@ -428,6 +746,7 @@ export function App() {
     event.stopPropagation();
     setSelectedNodeIds([node.id]);
     setSelectedEdgeId("");
+    const busPoint = busAnchorFromEvent(node, event);
     if (rewiring) {
       const edge = edges.find((item) => item.id === rewiring.edgeId);
       const otherNode = edge ? nodeById.get(rewiring.endpoint === "source" ? edge.targetId : edge.sourceId) : undefined;
@@ -437,8 +756,8 @@ export function App() {
           current.map((item) =>
             item.id === edge.id
               ? rewiring.endpoint === "source"
-                ? { ...item, sourceId: node.id, sourceTerminalId: terminalId }
-                : { ...item, targetId: node.id, targetTerminalId: terminalId }
+                ? { ...item, sourceId: node.id, sourceTerminalId: terminalId, sourcePoint: busPoint }
+                : { ...item, targetId: node.id, targetTerminalId: terminalId, targetPoint: busPoint }
               : item
           )
         );
@@ -450,7 +769,7 @@ export function App() {
       return;
     }
     if (!connectSource) {
-      setConnectSource({ nodeId: node.id, terminalId });
+      setConnectSource({ nodeId: node.id, terminalId, point: busPoint });
       return;
     }
     const sourceNode = nodeById.get(connectSource.nodeId);
@@ -463,7 +782,9 @@ export function App() {
       sourceId: sourceNode.id,
       targetId: node.id,
       sourceTerminalId: connectSource.terminalId,
-      targetTerminalId: terminalId
+      sourcePoint: connectSource.point,
+      targetTerminalId: terminalId,
+      targetPoint: busPoint
     };
     setEdges((current) => [
       ...current,
@@ -476,7 +797,7 @@ export function App() {
   const exportModel = () => {
     downloadText(
       "power-system-model.json",
-      serializeProject({ version: 1, name: "电力系统图上模型", nodes, edges }),
+      serializeProject(currentProject()),
       "application/json"
     );
   };
@@ -492,6 +813,7 @@ export function App() {
     }
     const text = await file.text();
     const project = deserializeProject(text);
+    setProjectName(project.name);
     setNodes(project.nodes);
     setEdges(project.edges);
     setSelectedNodeIds(project.nodes[0] ? [project.nodes[0].id] : []);
@@ -519,6 +841,47 @@ export function App() {
             联络线
           </button>
         </div>
+        <section className="project-panel">
+          <div className="project-panel-title">
+            <h2>绘图模型</h2>
+            <button onClick={() => saveCurrentProject()} title="保存当前模型">
+              <Save size={15} />
+              保存
+            </button>
+          </div>
+          <input
+            className="project-name-input"
+            value={projectName}
+            onChange={(event) => setProjectName(event.target.value)}
+            aria-label="当前模型名称"
+          />
+          <div className="project-list">
+            {projects.length === 0 ? (
+              <p className="project-empty">暂无已保存模型</p>
+            ) : (
+              projects.map((project) => (
+                <div className={`project-row ${project.id === activeProjectId ? "active" : ""}`} key={project.id}>
+                  <button className="project-load" onClick={() => loadSavedProject(project)} title="加载模型">
+                    <FolderOpen size={15} />
+                    <span>{project.name}</span>
+                  </button>
+                  <button onClick={() => saveCurrentProject(project.id)} title="保存到该模型">
+                    <Save size={14} />
+                  </button>
+                  <button onClick={() => duplicateProjectRecord(project)} title="复制模型">
+                    <Copy size={14} />
+                  </button>
+                  <button onClick={() => renameProjectRecord(project)} title="重命名模型">
+                    <Pencil size={14} />
+                  </button>
+                  <button onClick={() => deleteProjectRecord(project)} title="删除模型">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
         <div className="library-scroll">
           {Object.entries(groupedLibrary).map(([group, items]) => (
             <section className="library-group" key={group}>
@@ -565,6 +928,14 @@ export function App() {
               <AlignCenterVertical size={16} />
               纵向对齐
             </button>
+            <button onClick={() => saveCurrentProject()} title="保存当前模型">
+              <Save size={16} />
+              保存
+            </button>
+            <button onClick={() => setNodes((current) => calculateElectricalTopology(current, edges))} title="图上拓扑">
+              <Grid2X2 size={16} />
+              图上拓扑
+            </button>
             <input ref={importRef} type="file" accept="application/json,.json" hidden onChange={importModel} />
             <button onClick={() => importRef.current?.click()}>
               <FileInput size={16} />
@@ -591,6 +962,7 @@ export function App() {
             onWheel={handleWheel}
             onPointerMove={handlePointerMove}
             onPointerUp={() => {
+              finishMarqueeSelection();
               setDragging(null);
               setTransformDrag(null);
               setPanning(null);
@@ -599,11 +971,13 @@ export function App() {
               setDragging(null);
               setTransformDrag(null);
               setPanning(null);
+              setMarquee(null);
             }}
             onPointerCancel={() => {
               setDragging(null);
               setTransformDrag(null);
               setPanning(null);
+              setMarquee(null);
             }}
             onLostPointerCapture={() => {
               setDragging(null);
@@ -614,7 +988,16 @@ export function App() {
               setSelectedEdgeId("");
               setConnectSource(null);
               setRewiring(null);
-              setPanning({ clientX: event.clientX, clientY: event.clientY, viewBox });
+              if (event.shiftKey) {
+                const point = screenToSvgPoint(event.currentTarget, event.clientX, event.clientY);
+                setMarquee({ start: point, current: point });
+              } else {
+                setPanning({ clientX: event.clientX, clientY: event.clientY, viewBox });
+              }
+            }}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setContextMenu({ x: event.clientX, y: event.clientY });
             }}
           >
             <defs>
@@ -631,6 +1014,15 @@ export function App() {
             </defs>
             <rect width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#f8fafc" />
             <rect width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="url(#large-grid)" />
+            {marquee && (
+              <rect
+                className="marquee-box"
+                x={Math.min(marquee.start.x, marquee.current.x)}
+                y={Math.min(marquee.start.y, marquee.current.y)}
+                width={Math.abs(marquee.current.x - marquee.start.x)}
+                height={Math.abs(marquee.current.y - marquee.start.y)}
+              />
+            )}
             {routedEdges.map((route) => {
               const edge = edges.find((item) => item.id === route.edgeId);
               if (!edge) return null;
@@ -700,11 +1092,13 @@ export function App() {
                   </text>
                   {node.terminals.map((terminal) => {
                     const sourceNode = connectSource ? nodeById.get(connectSource.nodeId) : undefined;
+                    const hideFixedTerminal = isBusNode(node);
                     const disabled =
+                      !hideFixedTerminal &&
                       mode === "connect" &&
                       Boolean(sourceNode) &&
                       !canConnectTerminals(sourceNode!, connectSource!.terminalId, node, terminal.id);
-                    return (
+                    return hideFixedTerminal ? null : (
                       <circle
                         key={terminal.id}
                         className={`terminal-dot ${terminal.type} ${disabled ? "disabled" : ""}`}
@@ -798,6 +1192,18 @@ export function App() {
               <input value={selectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
             </label>
             <label>
+              节点号
+              <input value={selectedNode.nodeNumber} readOnly />
+            </label>
+            <label>
+              交流拓扑节点序号
+              <input value={selectedNode.acTopologyNode ?? 0} readOnly />
+            </label>
+            <label>
+              直流拓扑节点序号
+              <input value={selectedNode.dcTopologyNode ?? 0} readOnly />
+            </label>
+            <label>
               X坐标
               <input
                 type="number"
@@ -865,16 +1271,11 @@ export function App() {
             </label>
             <div className="terminal-list">
               {selectedNode.terminals.map((terminal) => (
-                <span key={terminal.id}>{`${terminal.label} / ${terminal.type.toUpperCase()}`}</span>
+                <span key={terminal.id}>{`${terminal.label} / ${terminal.type.toUpperCase()} / ${terminal.nodeNumber}`}</span>
               ))}
             </div>
             <div className="param-divider">设备参数</div>
-            {Object.entries(selectedNode.params).map(([key, value]) => (
-              <label key={key}>
-                {key}
-                <input value={value} onChange={(event) => updateParam(key, event.target.value)} />
-              </label>
-            ))}
+            {Object.entries(selectedNode.params).map(([key, value]) => renderParamEditor(key, value))}
             <div className="topology-card">
               <span>连接度</span>
               <strong>{topology.nodes[selectedNode.id]?.degree ?? 0}</strong>
@@ -909,6 +1310,38 @@ export function App() {
           </div>
         )}
       </aside>
+      {contextMenu && (
+        <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+          <button onClick={copySelection} disabled={selectedNodeIds.length === 0}>
+            <Copy size={14} />
+            复制
+          </button>
+          <button onClick={() => saveCurrentProject()}>
+            <Save size={14} />
+            保存
+          </button>
+          <button onClick={pasteSelection} disabled={clipboardNodes.length === 0}>
+            <FileInput size={14} />
+            粘贴
+          </button>
+          <button onClick={() => moveSelection(24, 0)} disabled={selectedNodeIds.length === 0}>
+            右移
+          </button>
+          <button onClick={() => moveSelection(-24, 0)} disabled={selectedNodeIds.length === 0}>
+            左移
+          </button>
+          <button onClick={() => moveSelection(0, -24)} disabled={selectedNodeIds.length === 0}>
+            上移
+          </button>
+          <button onClick={() => moveSelection(0, 24)} disabled={selectedNodeIds.length === 0}>
+            下移
+          </button>
+          <button onClick={deleteSelection} disabled={selectedNodeIds.length === 0 && !selectedEdgeId}>
+            <Trash2 size={14} />
+            删除
+          </button>
+        </div>
+      )}
     </div>
   );
 }

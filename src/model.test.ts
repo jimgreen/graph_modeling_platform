@@ -2,12 +2,21 @@ import { describe, expect, test } from "vitest";
 import {
   alignNodes,
   buildTopology,
+  calculateElectricalTopology,
   canConnectTerminals,
+  createSavedProject,
   createDefaultNode,
+  deleteNodesWithConnectedEdges,
+  deleteSavedProject,
   DEVICE_LIBRARY,
+  duplicateSavedProject,
   routeOrthogonalEdge,
   routeEdgesForRendering,
+  renameSavedProject,
+  upsertSavedProject,
   getTerminalPoint,
+  isGeneratorNode,
+  getSwitchVisualState,
   serializeProject,
   deserializeProject,
   type Edge,
@@ -50,6 +59,98 @@ describe("power system model", () => {
     expect(loaded.name).toBe("测试模型");
     expect(loaded.nodes[0].name).toBe("1号主变");
     expect(loaded.nodes[0].params.voltageRatio).toBe("110/10 kV");
+  });
+
+  test("creates generator parameters with readonly node numbers and control types", () => {
+    const acWind = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
+    const dcPv = createDefaultNode("dc-pv-source", { x: 240, y: 100 });
+
+    expect(isGeneratorNode(acWind)).toBe(true);
+    expect(acWind.nodeNumber).toMatch(/^N\d+$/);
+    expect(acWind.params.ratedCapacity).toBe("50 MW");
+    expect(acWind.params.controlType).toBe("PV");
+    expect(acWind.params.cutInWindSpeed).toBe("3 m/s");
+    expect(acWind.params.ratedWindSpeed).toBe("12 m/s");
+    expect(acWind.params.cutOutWindSpeed).toBe("25 m/s");
+
+    expect(dcPv.params.controlType).toBe("P");
+    expect(dcPv.params.ratedCapacity).toBe("5 MW");
+  });
+
+  test("creates load, line, and transformer electrical parameter defaults", () => {
+    const acLoad = createDefaultNode("ac-load", { x: 100, y: 100 });
+    const dcLoad = createDefaultNode("dc-load", { x: 200, y: 100 });
+    const acLine = createDefaultNode("ac-line", { x: 300, y: 100 });
+    const twoWinding = createDefaultNode("ac-two-winding-transformer", { x: 400, y: 100 });
+    const threeWinding = createDefaultNode("ac-three-winding-transformer", { x: 500, y: 100 });
+
+    expect(acLoad.nodeNumber).toMatch(/^N\d+$/);
+    expect(acLoad.params.ratedActivePower).toBe("5 MW");
+    expect(acLoad.params.pv0).toBe("1.0");
+    expect(acLoad.params.pv1).toBe("0.0");
+    expect(acLoad.params.pv2).toBe("0.0");
+    expect(acLoad.params.ratedReactivePower).toBe("1.2 Mvar");
+    expect(acLoad.params.qv0).toBe("1.0");
+    expect(acLoad.params.qv1).toBe("0.0");
+    expect(acLoad.params.qv2).toBe("0.0");
+    expect(dcLoad.params.ratedReactivePower).toBeUndefined();
+
+    expect(acLine.terminals[0].nodeNumber).toMatch(/^N\d+$/);
+    expect(acLine.terminals[1].nodeNumber).toMatch(/^N\d+$/);
+    expect(acLine.params.resistancePu).toBe("0.0");
+    expect(acLine.params.reactancePu).toBe("0.1");
+    expect(acLine.params.halfChargingSusceptancePu).toBe("0.0");
+
+    expect(twoWinding.terminals).toHaveLength(2);
+    expect(twoWinding.params.ratedCapacity).toBe("50 MVA");
+    expect(twoWinding.params.resistancePu).toBe("0.0");
+    expect(twoWinding.params.reactancePu).toBe("0.1");
+    expect(twoWinding.params.magnetizingConductancePu).toBe("0.0");
+    expect(twoWinding.params.magnetizingSusceptancePu).toBe("0.0");
+    expect(twoWinding.params.tapRatio).toBe("1.0");
+
+    expect(threeWinding.terminals).toHaveLength(3);
+    expect(threeWinding.params.highRatedCapacity).toBe("90 MVA");
+    expect(threeWinding.params.mediumRatedCapacity).toBe("90 MVA");
+    expect(threeWinding.params.lowRatedCapacity).toBe("90 MVA");
+    expect(threeWinding.params.highTapRatio).toBe("1.0");
+    expect(threeWinding.params.mediumTapRatio).toBe("1.0");
+    expect(threeWinding.params.lowTapRatio).toBe("1.0");
+
+    const dcdc = createDefaultNode("dcdc-converter", { x: 600, y: 100 });
+    expect(dcdc.terminals[0].nodeNumber).toMatch(/^N\d+$/);
+    expect(dcdc.terminals[1].nodeNumber).toMatch(/^N\d+$/);
+    expect(dcdc.params.sourceEquivalentResistance).toBe("0.0");
+    expect(dcdc.params.targetEquivalentResistance).toBe("0.0");
+    expect(dcdc.params.sourceControlType).toBe("定P");
+    expect(dcdc.params.targetControlType).toBe("不定");
+
+    const acdc = createDefaultNode("acdc-converter", { x: 700, y: 100 });
+    expect(acdc.params.sourceEquivalentResistance).toBe("0.0");
+    expect(acdc.params.targetEquivalentResistance).toBe("0.0");
+    expect(acdc.params.acControlType).toBe("定PQ");
+    expect(acdc.params.dcControlType).toBe("不定");
+
+    const acac = createDefaultNode("acac-converter", { x: 800, y: 100 });
+    expect(acac.params.sourceEquivalentResistance).toBe("0.0");
+    expect(acac.params.targetEquivalentResistance).toBe("0.0");
+    expect(acac.params.sourceControlType).toBe("定PQ");
+    expect(acac.params.targetControlType).toBe("不定");
+
+    const dcLine = createDefaultNode("dc-line", { x: 900, y: 100 });
+    expect(dcLine.params.resistancePu).toBe("0.0");
+    expect(dcLine.params.reactancePu).toBeUndefined();
+    expect(dcLine.params.halfChargingSusceptancePu).toBeUndefined();
+
+    const acSwitch = createDefaultNode("ac-disconnector", { x: 1000, y: 100 });
+    const dcBreaker = createDefaultNode("dc-breaker", { x: 1100, y: 100 });
+    expect(acSwitch.terminals[0].nodeNumber).toMatch(/^N\d+$/);
+    expect(acSwitch.terminals[1].nodeNumber).toMatch(/^N\d+$/);
+    expect(acSwitch.params.ratedCapacity).toBe("1250 A");
+    expect(acSwitch.params.closedStatus).toBe("闭合");
+    expect(getSwitchVisualState(acSwitch)).toBe("closed");
+    dcBreaker.params.closedStatus = "打开";
+    expect(getSwitchVisualState(dcBreaker)).toBe("open");
   });
 
   test("routes orthogonal connection around interfering devices", () => {
@@ -192,6 +293,23 @@ describe("power system model", () => {
     }
   });
 
+  test("adds run_stat operating status to every device type", () => {
+    for (const template of DEVICE_LIBRARY) {
+      const node = createDefaultNode(template.kind, { x: 100, y: 100 });
+      expect(node.params.run_stat).toBe("运行");
+    }
+  });
+
+  test("includes two-winding and three-winding transformer device types", () => {
+    const twoWinding = DEVICE_LIBRARY.find((item) => item.kind === "ac-two-winding-transformer");
+    const threeWinding = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer");
+
+    expect(twoWinding?.terminalType).toBe("ac");
+    expect(twoWinding?.terminalCount).toBe(2);
+    expect(threeWinding?.terminalType).toBe("ac");
+    expect(threeWinding?.terminalCount).toBe(3);
+  });
+
   test("renders crossing connection lines with local arc transitions", () => {
     const left = createDefaultNode("ac-bus", { x: 100, y: 240 });
     const right = createDefaultNode("ac-bus", { x: 500, y: 240 });
@@ -206,5 +324,68 @@ describe("power system model", () => {
 
     expect(routes[0].path).not.toContain("Q");
     expect(routes[1].path).toContain("Q");
+  });
+
+  test("manages saved drawing model records", () => {
+    const project = createSavedProject("模型A", {
+      version: 1,
+      name: "模型A",
+      nodes: [createDefaultNode("ac-bus", { x: 100, y: 100 })],
+      edges: []
+    });
+
+    const saved = upsertSavedProject([], project);
+    expect(saved).toHaveLength(1);
+
+    const renamed = renameSavedProject(saved, project.id, "模型B");
+    expect(renamed[0].name).toBe("模型B");
+    expect(renamed[0].project.name).toBe("模型B");
+
+    const copied = duplicateSavedProject(renamed, project.id);
+    expect(copied).toHaveLength(2);
+    expect(copied[1].name).toBe("模型B 副本");
+    expect(copied[1].id).not.toBe(project.id);
+
+    const deleted = deleteSavedProject(copied, project.id);
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0].name).toBe("模型B 副本");
+  });
+
+  test("deletes selected devices and automatically removes their connected lines", () => {
+    const nodes: ModelNode[] = [
+      createDefaultNode("ac-source", { x: 100, y: 100 }),
+      createDefaultNode("ac-switch", { x: 240, y: 100 }),
+      createDefaultNode("ac-load", { x: 380, y: 100 })
+    ];
+    const edges: Edge[] = [
+      { id: "e1", sourceId: nodes[0].id, targetId: nodes[1].id },
+      { id: "e2", sourceId: nodes[1].id, targetId: nodes[2].id }
+    ];
+
+    const result = deleteNodesWithConnectedEdges(nodes, edges, [nodes[1].id]);
+
+    expect(result.nodes.map((node) => node.id)).toEqual([nodes[0].id, nodes[2].id]);
+    expect(result.edges).toEqual([]);
+  });
+
+  test("calculates separate AC and DC topology node numbers from graph connections", () => {
+    const acSource = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const acBus = createDefaultNode("ac-bus", { x: 240, y: 100 });
+    const dcBus = createDefaultNode("dc-bus", { x: 380, y: 100 });
+    const dcLoad = createDefaultNode("dc-load", { x: 520, y: 100 });
+    const edges: Edge[] = [
+      { id: "ac", sourceId: acSource.id, targetId: acBus.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+      { id: "dc", sourceId: dcBus.id, targetId: dcLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
+    ];
+
+    const calculated = calculateElectricalTopology([acSource, acBus, dcBus, dcLoad], edges);
+    const byId = new Map(calculated.map((node) => [node.id, node]));
+
+    expect(byId.get(acSource.id)?.acTopologyNode).toBe(1);
+    expect(byId.get(acBus.id)?.acTopologyNode).toBe(1);
+    expect(byId.get(acSource.id)?.dcTopologyNode).toBe(0);
+    expect(byId.get(dcBus.id)?.dcTopologyNode).toBe(1);
+    expect(byId.get(dcLoad.id)?.dcTopologyNode).toBe(1);
+    expect(byId.get(dcLoad.id)?.acTopologyNode).toBe(0);
   });
 });

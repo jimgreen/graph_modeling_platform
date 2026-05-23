@@ -10,16 +10,23 @@ export type DeviceKind =
   | "ac-line"
   | "ac-bus"
   | "ac-switch"
+  | "ac-disconnector"
+  | "ac-breaker"
   | "ac-load"
   | "ac-transformer"
+  | "ac-two-winding-transformer"
+  | "ac-three-winding-transformer"
   | "dc-source"
   | "dc-line"
   | "dc-bus"
   | "dc-switch"
+  | "dc-disconnector"
+  | "dc-breaker"
   | "dc-load"
   | "dc-transformer"
   | "dcdc-converter"
-  | "acdc-converter";
+  | "acdc-converter"
+  | "acac-converter";
 
 export type Point = {
   x: number;
@@ -33,6 +40,7 @@ export type Terminal = {
   label: string;
   type: TerminalType;
   anchor: Point;
+  nodeNumber: string;
 };
 
 export type DeviceTemplate = {
@@ -52,6 +60,9 @@ export type ModelNode = {
   id: string;
   kind: DeviceKind;
   name: string;
+  nodeNumber: string;
+  acTopologyNode: number;
+  dcTopologyNode: number;
   position: Point;
   size: {
     width: number;
@@ -71,6 +82,8 @@ export type Edge = {
   targetId: string;
   sourceTerminalId?: string;
   targetTerminalId?: string;
+  sourcePoint?: Point;
+  targetPoint?: Point;
 };
 
 export type ProjectFile = {
@@ -78,6 +91,13 @@ export type ProjectFile = {
   name: string;
   nodes: ModelNode[];
   edges: Edge[];
+};
+
+export type SavedProjectRecord = {
+  id: string;
+  name: string;
+  updatedAt: string;
+  project: ProjectFile;
 };
 
 export type Topology = {
@@ -184,6 +204,24 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalCount: 2
   },
   {
+    kind: "ac-disconnector",
+    label: "交流刀闸",
+    group: "交流系统",
+    size: { width: 74, height: 48 },
+    params: {},
+    terminalType: "ac",
+    terminalCount: 2
+  },
+  {
+    kind: "ac-breaker",
+    label: "交流断路器",
+    group: "交流系统",
+    size: { width: 78, height: 50 },
+    params: {},
+    terminalType: "ac",
+    terminalCount: 2
+  },
+  {
     kind: "ac-load",
     label: "交流负荷",
     group: "交流系统",
@@ -200,6 +238,24 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     params: { ratedCapacity: "50 MVA", voltageRatio: "110/10 kV", impedance: "10.5%" },
     terminalType: "ac",
     terminalCount: 2
+  },
+  {
+    kind: "ac-two-winding-transformer",
+    label: "两绕组主变",
+    group: "交流系统",
+    size: { width: 94, height: 70 },
+    params: { ratedCapacity: "50 MVA", voltageRatio: "110/10 kV", windingType: "两绕组", impedance: "10.5%" },
+    terminalType: "ac",
+    terminalCount: 2
+  },
+  {
+    kind: "ac-three-winding-transformer",
+    label: "三绕组主变",
+    group: "交流系统",
+    size: { width: 104, height: 76 },
+    params: { ratedCapacity: "90 MVA", voltageRatio: "220/110/10 kV", windingType: "三绕组", impedance: "12.0%" },
+    terminalType: "ac",
+    terminalCount: 3
   },
   {
     kind: "dc-source",
@@ -256,6 +312,24 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalCount: 2
   },
   {
+    kind: "dc-disconnector",
+    label: "直流刀闸",
+    group: "直流系统",
+    size: { width: 74, height: 48 },
+    params: {},
+    terminalType: "dc",
+    terminalCount: 2
+  },
+  {
+    kind: "dc-breaker",
+    label: "直流断路器",
+    group: "直流系统",
+    size: { width: 78, height: 50 },
+    params: {},
+    terminalType: "dc",
+    terminalCount: 2
+  },
+  {
     kind: "dc-load",
     label: "直流负荷",
     group: "直流系统",
@@ -290,10 +364,152 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     params: { ratedPower: "10 MW", acVoltage: "10 kV", dcVoltage: "750 V" },
     terminalType: "ac",
     terminalCount: 2
+  },
+  {
+    kind: "acac-converter",
+    label: "ACAC变流器",
+    group: "变流设备",
+    size: { width: 112, height: 66 },
+    params: {},
+    terminalType: "ac",
+    terminalCount: 2
   }
 ];
 
+let nodeNumberSeed = 1;
 const makeId = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
+const makeNodeNumber = () => `N${nodeNumberSeed++}`;
+
+export function isGeneratorKind(kind: DeviceKind): boolean {
+  return kind.includes("source");
+}
+
+export function isGeneratorNode(node: ModelNode): boolean {
+  return isGeneratorKind(node.kind);
+}
+
+export function getSwitchVisualState(node: ModelNode): "open" | "closed" {
+  return node.params.closedStatus === "打开" ? "open" : "closed";
+}
+
+function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
+  const withRunStat = (params: Record<string, string>) => ({ run_stat: "运行", ...params });
+  const type = template.terminalType;
+  if (isGeneratorKind(template.kind)) {
+    const base: Record<string, string> = {
+      ratedCapacity: template.params.ratedPower ?? template.params.ratedCapacity ?? "10 MW",
+      controlType: type === "ac" ? "PV" : "P"
+    };
+    if (template.kind.includes("wind-source")) {
+      base.cutInWindSpeed = "3 m/s";
+      base.ratedWindSpeed = "12 m/s";
+      base.cutOutWindSpeed = "25 m/s";
+    }
+    return withRunStat({ ...template.params, ...base });
+  }
+  if (template.kind === "ac-load") {
+    return withRunStat({
+      ratedActivePower: "5 MW",
+      pv0: "1.0",
+      pv1: "0.0",
+      pv2: "0.0",
+      ratedReactivePower: "1.2 Mvar",
+      qv0: "1.0",
+      qv1: "0.0",
+      qv2: "0.0"
+    });
+  }
+  if (template.kind === "dc-load") {
+    return withRunStat({
+      ratedActivePower: "1.5 MW",
+      pv0: "1.0",
+      pv1: "0.0",
+      pv2: "0.0"
+    });
+  }
+  if (template.kind === "ac-line" || template.kind === "dc-line") {
+    if (template.kind === "dc-line") {
+      return withRunStat({
+        resistancePu: "0.0"
+      });
+    }
+    return withRunStat({
+      resistancePu: "0.0",
+      reactancePu: "0.1",
+      halfChargingSusceptancePu: "0.0"
+    });
+  }
+  if (template.kind === "ac-two-winding-transformer" || template.kind === "ac-transformer") {
+    return withRunStat({
+      ratedCapacity: "50 MVA",
+      resistancePu: "0.0",
+      reactancePu: "0.1",
+      magnetizingConductancePu: "0.0",
+      magnetizingSusceptancePu: "0.0",
+      tapRatio: "1.0"
+    });
+  }
+  if (template.kind === "ac-three-winding-transformer") {
+    return withRunStat({
+      highRatedCapacity: "90 MVA",
+      highResistancePu: "0.0",
+      highReactancePu: "0.1",
+      highMagnetizingConductancePu: "0.0",
+      highMagnetizingSusceptancePu: "0.0",
+      highTapRatio: "1.0",
+      mediumRatedCapacity: "90 MVA",
+      mediumResistancePu: "0.0",
+      mediumReactancePu: "0.1",
+      mediumMagnetizingConductancePu: "0.0",
+      mediumMagnetizingSusceptancePu: "0.0",
+      mediumTapRatio: "1.0",
+      lowRatedCapacity: "90 MVA",
+      lowResistancePu: "0.0",
+      lowReactancePu: "0.1",
+      lowMagnetizingConductancePu: "0.0",
+      lowMagnetizingSusceptancePu: "0.0",
+      lowTapRatio: "1.0"
+    });
+  }
+  if (template.kind === "dcdc-converter") {
+    return withRunStat({
+      sourceEquivalentResistance: "0.0",
+      targetEquivalentResistance: "0.0",
+      sourceControlType: "定P",
+      targetControlType: "不定"
+    });
+  }
+  if (template.kind === "acdc-converter") {
+    return withRunStat({
+      sourceEquivalentResistance: "0.0",
+      targetEquivalentResistance: "0.0",
+      acControlType: "定PQ",
+      dcControlType: "不定"
+    });
+  }
+  if (template.kind === "acac-converter") {
+    return withRunStat({
+      sourceEquivalentResistance: "0.0",
+      targetEquivalentResistance: "0.0",
+      sourceControlType: "定PQ",
+      targetControlType: "不定"
+    });
+  }
+  if (
+    template.kind === "ac-switch" ||
+    template.kind === "dc-switch" ||
+    template.kind === "ac-disconnector" ||
+    template.kind === "dc-disconnector" ||
+    template.kind === "ac-breaker" ||
+    template.kind === "dc-breaker"
+  ) {
+    return withRunStat({
+      ratedCapacity: template.terminalType === "ac" ? "1250 A" : "1600 A",
+      closedStatus: "闭合"
+    });
+  }
+  return withRunStat({ ...template.params });
+}
 
 export function getTemplate(kind: DeviceKind): DeviceTemplate {
   const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
@@ -309,6 +525,9 @@ export function createDefaultNode(kind: DeviceKind, position: Point): ModelNode 
     id: makeId(kind),
     kind,
     name: template.label,
+    nodeNumber: makeNodeNumber(),
+    acTopologyNode: 0,
+    dcTopologyNode: 0,
     position,
     size: { ...template.size },
     rotation: 0,
@@ -316,7 +535,7 @@ export function createDefaultNode(kind: DeviceKind, position: Point): ModelNode 
     scaleX: 1,
     scaleY: 1,
     terminals: createTerminals(template.terminalType, template.terminalCount),
-    params: { ...template.params }
+    params: buildDefaultParams(template)
   };
 }
 
@@ -331,12 +550,12 @@ export function getNodeScaleY(node: ModelNode): number {
 export function createTerminals(type: TerminalType, count: number): Terminal[] {
   const safeCount = Math.max(1, Math.min(8, Math.round(count)));
   if (safeCount === 1) {
-    return [{ id: "t1", label: "端子1", type, anchor: { x: 0.5, y: 0 } }];
+    return [{ id: "t1", label: "端子1", type, anchor: { x: 0.5, y: 0 }, nodeNumber: makeNodeNumber() }];
   }
   if (safeCount === 2) {
     return [
-      { id: "t1", label: "端子1", type, anchor: { x: -0.5, y: 0 } },
-      { id: "t2", label: "端子2", type, anchor: { x: 0.5, y: 0 } }
+      { id: "t1", label: "端子1", type, anchor: { x: -0.5, y: 0 }, nodeNumber: makeNodeNumber() },
+      { id: "t2", label: "端子2", type, anchor: { x: 0.5, y: 0 }, nodeNumber: makeNodeNumber() }
     ];
   }
   const anchors = [
@@ -353,7 +572,8 @@ export function createTerminals(type: TerminalType, count: number): Terminal[] {
     id: `t${index + 1}`,
     label: `端子${index + 1}`,
     type,
-    anchor
+    anchor,
+    nodeNumber: makeNodeNumber()
   }));
 }
 
@@ -376,6 +596,14 @@ export function getTerminalPoint(node: ModelNode, terminalId?: string): Point {
     x: Math.round(node.position.x + local.x * cos - local.y * sin),
     y: Math.round(node.position.y + local.x * sin + local.y * cos)
   };
+}
+
+export function isBusNode(node: ModelNode): boolean {
+  return node.kind === "ac-bus" || node.kind === "dc-bus";
+}
+
+export function getEdgeEndpointPoint(node: ModelNode, endpointPoint?: Point, terminalId?: string): Point {
+  return endpointPoint && isBusNode(node) ? endpointPoint : getTerminalPoint(node, terminalId);
 }
 
 export function getTerminalNormal(node: ModelNode, terminalId?: string): Point {
@@ -427,6 +655,89 @@ export function alignNodes(nodes: ModelNode[], selectedIds: string[], direction:
           : { ...node.position, x: alignedCoordinate }
     };
   });
+}
+
+export function deleteNodesWithConnectedEdges(nodes: ModelNode[], edges: Edge[], selectedIds: string[]) {
+  const selected = new Set(selectedIds);
+  return {
+    nodes: nodes.filter((node) => !selected.has(node.id)),
+    edges: edges.filter((edge) => !selected.has(edge.sourceId) && !selected.has(edge.targetId))
+  };
+}
+
+export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): ModelNode[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const adjacency = new Map<string, string[]>();
+  for (const node of nodes) {
+    adjacency.set(node.id, []);
+  }
+  for (const edge of edges) {
+    const source = nodeById.get(edge.sourceId);
+    const target = nodeById.get(edge.targetId);
+    if (!source || !target) continue;
+    const sourceTerminal = getTerminal(source, edge.sourceTerminalId);
+    const targetTerminal = getTerminal(target, edge.targetTerminalId);
+    if (sourceTerminal.type !== targetTerminal.type) continue;
+    adjacency.get(source.id)?.push(target.id);
+    adjacency.get(target.id)?.push(source.id);
+  }
+
+  const nextNodes = nodes.map((node) => ({ ...node, acTopologyNode: 0, dcTopologyNode: 0 }));
+  const nextById = new Map(nextNodes.map((node) => [node.id, node]));
+  const visitedByType = {
+    ac: new Set<string>(),
+    dc: new Set<string>()
+  };
+
+  for (const type of ["ac", "dc"] as const) {
+    let topologyNumber = 1;
+    for (const node of nodes) {
+      if (visitedByType[type].has(node.id) || !node.terminals.some((terminal) => terminal.type === type)) {
+        continue;
+      }
+      const stack = [node.id];
+      const component: string[] = [];
+      visitedByType[type].add(node.id);
+      while (stack.length > 0) {
+        const id = stack.pop()!;
+        const current = nodeById.get(id);
+        if (!current || !current.terminals.some((terminal) => terminal.type === type)) continue;
+        component.push(id);
+        for (const neighborId of adjacency.get(id) ?? []) {
+          const neighbor = nodeById.get(neighborId);
+          if (!neighbor || visitedByType[type].has(neighborId)) continue;
+          const hasSameTypeEdge = edges.some((edge) => {
+            if (
+              !((edge.sourceId === id && edge.targetId === neighborId) || (edge.sourceId === neighborId && edge.targetId === id))
+            ) {
+              return false;
+            }
+            const source = nodeById.get(edge.sourceId);
+            const target = nodeById.get(edge.targetId);
+            return (
+              source &&
+              target &&
+              getTerminal(source, edge.sourceTerminalId).type === type &&
+              getTerminal(target, edge.targetTerminalId).type === type
+            );
+          });
+          if (hasSameTypeEdge) {
+            visitedByType[type].add(neighborId);
+            stack.push(neighborId);
+          }
+        }
+      }
+      for (const id of component) {
+        const next = nextById.get(id);
+        if (next) {
+          if (type === "ac") next.acTopologyNode = topologyNumber;
+          else next.dcTopologyNode = topologyNumber;
+        }
+      }
+      topologyNumber += 1;
+    }
+  }
+  return nextNodes;
 }
 
 export function buildTopology(nodes: ModelNode[], edges: Edge[]): Topology {
@@ -494,6 +805,55 @@ export function deserializeProject(json: string): ProjectFile {
     throw new Error("Unsupported or invalid model file");
   }
   return parsed;
+}
+
+export function createSavedProject(name: string, project: ProjectFile): SavedProjectRecord {
+  const savedName = name.trim() || "未命名模型";
+  return {
+    id: makeId("project"),
+    name: savedName,
+    updatedAt: new Date().toISOString(),
+    project: {
+      ...project,
+      name: savedName,
+      nodes: project.nodes.map((node) => ({ ...node, params: { ...node.params }, terminals: node.terminals.map((terminal) => ({ ...terminal, anchor: { ...terminal.anchor } })) })),
+      edges: project.edges.map((edge) => ({ ...edge }))
+    }
+  };
+}
+
+export function upsertSavedProject(projects: SavedProjectRecord[], record: SavedProjectRecord): SavedProjectRecord[] {
+  const nextRecord = { ...record, updatedAt: new Date().toISOString() };
+  const index = projects.findIndex((project) => project.id === record.id);
+  if (index === -1) {
+    return [...projects, nextRecord];
+  }
+  return projects.map((project) => (project.id === record.id ? nextRecord : project));
+}
+
+export function renameSavedProject(
+  projects: SavedProjectRecord[],
+  projectId: string,
+  nextName: string
+): SavedProjectRecord[] {
+  const name = nextName.trim() || "未命名模型";
+  return projects.map((project) =>
+    project.id === projectId
+      ? { ...project, name, updatedAt: new Date().toISOString(), project: { ...project.project, name } }
+      : project
+  );
+}
+
+export function duplicateSavedProject(projects: SavedProjectRecord[], projectId: string): SavedProjectRecord[] {
+  const source = projects.find((project) => project.id === projectId);
+  if (!source) {
+    return projects;
+  }
+  return [...projects, createSavedProject(`${source.name} 副本`, source.project)];
+}
+
+export function deleteSavedProject(projects: SavedProjectRecord[], projectId: string): SavedProjectRecord[] {
+  return projects.filter((project) => project.id !== projectId);
 }
 
 function boxFor(node: ModelNode, padding = 0) {
@@ -719,8 +1079,8 @@ function samePoint(a: Point, b: Point) {
 }
 
 export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes: ModelNode[], edge?: Edge): Point[] {
-  const start = getTerminalPoint(source, edge?.sourceTerminalId);
-  const end = getTerminalPoint(target, edge?.targetTerminalId);
+  const start = getEdgeEndpointPoint(source, edge?.sourcePoint, edge?.sourceTerminalId);
+  const end = getEdgeEndpointPoint(target, edge?.targetPoint, edge?.targetTerminalId);
   const sourceNormal = getTerminalNormal(source, edge?.sourceTerminalId);
   const targetNormal = getTerminalNormal(target, edge?.targetTerminalId);
   const stubLength = 28;

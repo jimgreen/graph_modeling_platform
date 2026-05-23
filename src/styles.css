@@ -119,6 +119,93 @@ button:disabled {
   padding: 0 14px 18px;
 }
 
+.project-panel {
+  padding: 0 14px 12px;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.project-panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 4px 8px;
+}
+
+.project-panel-title h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.project-panel-title button,
+.project-row button,
+.context-menu button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 28px;
+  border: 1px solid #d8dee8;
+  border-radius: 7px;
+  color: #334155;
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.project-name-input {
+  width: 100%;
+  height: 34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #0f172a;
+  background: #ffffff;
+  font-size: 13px;
+}
+
+.project-list {
+  display: grid;
+  gap: 6px;
+  max-height: 150px;
+  overflow: auto;
+  margin-top: 8px;
+}
+
+.project-empty {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.project-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(4, 30px);
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.project-row.active {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.project-load {
+  justify-content: flex-start !important;
+  min-width: 0;
+}
+
+.project-load span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .library-group {
   margin-top: 14px;
 }
@@ -229,6 +316,14 @@ button:disabled {
   stroke-linecap: round;
   stroke-linejoin: round;
   pointer-events: stroke;
+}
+
+.marquee-box {
+  fill: rgba(37, 99, 235, 0.12);
+  stroke: #2563eb;
+  stroke-width: 1.5;
+  stroke-dasharray: 8 5;
+  pointer-events: none;
 }
 
 .connection-group.selected .connection-line {
@@ -411,6 +506,24 @@ button:disabled {
   color: #475569;
   background: #f8fafc;
   font-size: 12px;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 50;
+  display: grid;
+  gap: 4px;
+  min-width: 128px;
+  padding: 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.18);
+}
+
+.context-menu button {
+  justify-content: flex-start;
+  padding: 0 9px;
 }
 
 .topology-card span {
