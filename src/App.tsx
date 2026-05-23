@@ -23,6 +23,8 @@ import {
   canConnectTerminals,
   clampNodePositionToBounds,
   clampPointToBounds,
+  copySavedProjectWithUniqueName,
+  copySavedSchemeWithUniqueName,
   createTerminals,
   createSavedScheme,
   createSavedProject,
@@ -2130,7 +2132,7 @@ export function App() {
   };
 
   const cloneProjectRecord = (project: SavedProjectRecord, suffix = "副本", existingNames: string[] = []) =>
-    createSavedProject(uniqueRecordName(`${project.name} ${suffix}`, existingNames, "未命名模型"), project.project);
+    copySavedProjectWithUniqueName(project, existingNames, suffix);
 
   const cloneProjectRecordWithName = (project: SavedProjectRecord, name: string) =>
     createSavedProject(name, project.project);
@@ -2138,16 +2140,7 @@ export function App() {
   const hasSameName = (name: string, names: string[]) => names.some((item) => item.trim() === name.trim());
 
   const cloneSchemeRecord = (scheme: SavedSchemeRecord, existingSchemes = schemes, suffix = "副本"): SavedSchemeRecord => {
-    const schemeName = uniqueRecordName(
-      `${scheme.name} ${suffix}`,
-      existingSchemes.map((item) => item.name),
-      "未命名方案"
-    );
-    const projects = scheme.projects.reduce<SavedProjectRecord[]>(
-      (current, project) => upsertSavedProject(current, cloneProjectRecord(project, "副本", current.map((item) => item.name))),
-      []
-    );
-    return createSavedScheme(schemeName, projects);
+    return copySavedSchemeWithUniqueName(scheme, existingSchemes.map((item) => item.name), suffix);
   };
 
   const cloneSchemeRecordWithName = (scheme: SavedSchemeRecord, name: string): SavedSchemeRecord => {
@@ -2311,45 +2304,20 @@ export function App() {
       return;
     }
     if (recordClipboard.kind === "scheme") {
-      const defaultName = uniqueRecordName(
-        `${recordClipboard.scheme.name} 副本`,
-        schemes.map((item) => item.name),
-        "未命名方案"
-      );
-      const name = promptUniqueRecordName(
-        "请输入新方案名称",
-        defaultName,
-        schemes.map((item) => item.name),
-        "方案名称不能为空。",
-        "方案名称重复，无法复制。"
-      );
-      if (!name) {
-        return;
-      }
-      setSchemes((current) => [...current, cloneSchemeRecordWithName(recordClipboard.scheme, name)]);
+      setSchemes((current) => [...current, copySavedSchemeWithUniqueName(recordClipboard.scheme, current.map((item) => item.name))]);
       return;
     }
     const targetSchemeId = selectedSchemeId || activeSchemeId || schemes[0]?.id;
-    const targetScheme = schemes.find((scheme) => scheme.id === targetSchemeId) ?? schemes[0];
-    const existingNames = targetScheme?.projects.map((project) => project.name) ?? [];
-    const defaultName = uniqueRecordName(`${recordClipboard.project.name} 副本`, existingNames, "未命名模型");
-    const name = promptUniqueRecordName(
-      "请输入新模型名称",
-      defaultName,
-      existingNames,
-      "模型名称不能为空。",
-      "模型名称重复，无法复制。"
-    );
-    if (!name) {
-      return;
-    }
     setSchemes((current) =>
       current.map((scheme, index) =>
         scheme.id === targetSchemeId || (!targetSchemeId && index === 0)
           ? {
               ...scheme,
               updatedAt: new Date().toISOString(),
-              projects: upsertSavedProject(scheme.projects, cloneProjectRecordWithName(recordClipboard.project, name))
+              projects: upsertSavedProject(
+                scheme.projects,
+                copySavedProjectWithUniqueName(recordClipboard.project, scheme.projects.map((project) => project.name))
+              )
             }
           : scheme
       )

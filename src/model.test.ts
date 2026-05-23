@@ -7,6 +7,8 @@ import {
   clampNodePositionToBounds,
   createSavedProject,
   createSavedScheme,
+  copySavedProjectWithUniqueName,
+  copySavedSchemeWithUniqueName,
   createDefaultNode,
   deleteNodesWithConnectedEdges,
   deleteSavedProject,
@@ -765,6 +767,23 @@ describe("power system model", () => {
     const moved = moveProjectToScheme([firstScheme, secondScheme], sourceProject.id, secondScheme.id);
     const target = moved.find((scheme) => scheme.id === secondScheme.id);
     expect(target?.projects.map((project) => project.name)).toEqual(["模型A", "模型A (2)"]);
+  });
+
+  test("copies saved project and scheme records with automatic unique names", () => {
+    const project = createSavedProject("模型A", { version: 1, name: "模型A", nodes: [], edges: [] });
+    const copiedProject = copySavedProjectWithUniqueName(project, ["模型A", "模型A 副本"]);
+
+    expect(copiedProject.name).toBe("模型A 副本 (2)");
+    expect(copiedProject.project.name).toBe("模型A 副本 (2)");
+
+    const scheme = createSavedScheme("方案A", [
+      createSavedProject("模型A", { version: 1, name: "模型A", nodes: [], edges: [] }),
+      createSavedProject("模型A 副本", { version: 1, name: "模型A 副本", nodes: [], edges: [] })
+    ]);
+    const copiedScheme = copySavedSchemeWithUniqueName(scheme, ["方案A", "方案A 副本"]);
+
+    expect(copiedScheme.name).toBe("方案A 副本 (2)");
+    expect(copiedScheme.projects.map((item) => item.name)).toEqual(["模型A 副本", "模型A 副本 副本"]);
   });
 
   test("deletes selected devices and automatically removes their connected lines", () => {

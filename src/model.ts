@@ -1194,6 +1194,20 @@ export function uniqueRecordName(baseName: string, existingNames: string[], fall
   return `${base} (${index})`;
 }
 
+export function copySavedProjectWithUniqueName(project: SavedProjectRecord, existingNames: string[], suffix = "副本"): SavedProjectRecord {
+  const name = uniqueRecordName(`${project.name} ${suffix}`, existingNames, "未命名模型");
+  return createSavedProject(name, project.project);
+}
+
+export function copySavedSchemeWithUniqueName(scheme: SavedSchemeRecord, existingNames: string[], suffix = "副本"): SavedSchemeRecord {
+  const name = uniqueRecordName(`${scheme.name} ${suffix}`, existingNames, "未命名方案");
+  const projects = scheme.projects.reduce<SavedProjectRecord[]>(
+    (current, project) => upsertSavedProject(current, copySavedProjectWithUniqueName(project, current.map((item) => item.name))),
+    []
+  );
+  return createSavedScheme(name, projects);
+}
+
 export function upsertSavedProject(projects: SavedProjectRecord[], record: SavedProjectRecord): SavedProjectRecord[] {
   const index = projects.findIndex((project) => project.id === record.id);
   const name = uniqueRecordName(
