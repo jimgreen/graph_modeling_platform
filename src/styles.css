@@ -125,6 +125,13 @@ button:disabled {
   border-bottom: 1px solid #e2e8f0;
 }
 
+.inspector-projects {
+  margin-top: 18px;
+  padding: 0 0 14px;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
 .project-panel-title {
   display: flex;
   align-items: center;
@@ -171,6 +178,43 @@ button:disabled {
   max-height: 150px;
   overflow: auto;
   margin-top: 8px;
+}
+
+.project-list.listbox {
+  max-height: 220px;
+}
+
+.project-option {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #0f172a;
+  background: #ffffff;
+  text-align: left;
+}
+
+.project-option.selected {
+  border-color: #2563eb;
+}
+
+.project-option.active {
+  background: #eff6ff;
+}
+
+.project-option span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.project-option small {
+  color: #64748b;
+  font-size: 11px;
 }
 
 .project-empty {
@@ -524,6 +568,96 @@ button:disabled {
 .context-menu button {
   justify-content: flex-start;
   padding: 0 9px;
+}
+
+.inspector-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.inspector-tabs button {
+  min-height: 34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  color: #334155;
+  background: #ffffff;
+  font-size: 13px;
+}
+
+.inspector-tabs button.active {
+  color: #ffffff;
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+}
+
+.param-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.param-table th,
+.param-table td {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 7px;
+  vertical-align: middle;
+}
+
+.param-table th {
+  width: 44%;
+  color: #475569;
+  background: #f8fafc;
+  text-align: left;
+  font-weight: 700;
+}
+
+.param-table input,
+.param-table select {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  padding: 0 8px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 12px;
+}
+
+.param-table input[readonly] {
+  color: #64748b;
+  background: #f8fafc;
+}
+
+.validation-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.validation-panel h2 {
+  margin: 0;
+  color: #991b1b;
+  font-size: 13px;
+}
+
+.validation-panel button {
+  display: grid;
+  gap: 4px;
+  padding: 9px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #7f1d1d;
+  background: #fef2f2;
+  text-align: left;
+}
+
+.validation-panel span {
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .topology-card span {

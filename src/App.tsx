@@ -34,11 +34,13 @@ import {
   getTerminalPoint,
   isBusNode,
   isGeneratorNode,
+  validateTopology,
   type DeviceKind,
   type Edge,
   type ModelNode,
   type Point,
   type ProjectFile,
+  type TopologyValidationError,
   routeEdgesForRendering,
   renameSavedProject,
   serializeProject,
@@ -53,6 +55,7 @@ type TransformDrag =
   | { kind: "scale-x" | "scale-y" | "scale-both"; nodeId: string };
 type Marquee = { start: Point; current: Point } | null;
 type ContextMenuState = { x: number; y: number } | null;
+type ProjectMenuState = { x: number; y: number; projectId?: string } | null;
 
 const CANVAS_WIDTH = 1800;
 const CANVAS_HEIGHT = 1200;
@@ -124,6 +127,13 @@ const PARAM_LABELS: Record<string, string> = {
   dcControlType: "DC端控制类型",
   closedStatus: "闭合状态",
   run_stat: "运行状态"
+  ,
+  vbase: "电压等级",
+  highVbase: "高压侧电压等级",
+  mediumVbase: "中压侧电压等级",
+  lowVbase: "低压侧电压等级",
+  sourceVbase: "首端电压等级",
+  targetVbase: "末端电压等级"
 };
 
 const PARAM_OPTIONS: Record<string, string[]> = {
@@ -338,6 +348,10 @@ export function App() {
   const [marquee, setMarquee] = useState<Marquee>(null);
   const [clipboardNodes, setClipboardNodes] = useState<ModelNode[]>([]);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
+  const [inspectorTab, setInspectorTab] = useState<"graph" | "device">("graph");
+  const [topologyErrors, setTopologyErrors] = useState<TopologyValidationError[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [projectMenu, setProjectMenu] = useState<ProjectMenuState>(null);
 
   const selectedNodeId = selectedNodeIds[0] ?? "";
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
@@ -368,7 +382,12 @@ export function App() {
         saveCurrentProject();
       } else if (event.key === "Delete" || event.key === "Backspace") {
         event.preventDefault();
-        deleteSelection();
+        if (selectedProjectId) {
+          const project = projects.find((item) => item.id === selectedProjectId);
+          if (project) deleteProjectRecord(project);
+        } else {
+          deleteSelection();
+        }
       } else if (event.key === "ArrowLeft") {
         event.preventDefault();
         moveSelection(event.shiftKey ? -24 : -6, 0);
@@ -385,7 +404,7 @@ export function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [clipboardNodes, nodes, selectedEdgeId, selectedNodeIds]);
+  }, [clipboardNodes, nodes, projects, selectedEdgeId, selectedNodeIds, selectedProjectId]);
 
   const currentProject = (): ProjectFile => ({
     version: 1,
@@ -494,24 +513,27 @@ export function App() {
     );
   };
 
-  const renderParamEditor = (key: string, value: string) => {
+  const renderParamEditor = (key: string, value: string, wrapLabel = true) => {
     const label = PARAM_LABELS[key] ?? key;
     const options = PARAM_OPTIONS[key];
-    return (
+    const control = options ? (
+      <select value={value} onChange={(event) => updateParam(key, event.target.value)}>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    ) : (
+      <input value={value} onChange={(event) => updateParam(key, event.target.value)} />
+    );
+    return wrapLabel ? (
       <label key={key}>
         {label}
-        {options ? (
-          <select value={value} onChange={(event) => updateParam(key, event.target.value)}>
-            {options.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <input value={value} onChange={(event) => updateParam(key, event.target.value)} />
-        )}
+        {control}
       </label>
+    ) : (
+      control
     );
   };
 
@@ -723,8 +745,43 @@ export function App() {
       return;
     }
     setProjects((current) => deleteSavedProject(current, project.id));
+    if (selectedProjectId === project.id) {
+      setSelectedProjectId("");
+    }
     if (activeProjectId === project.id) {
       setActiveProjectId("");
+    }
+  };
+
+  const createBlankProject = () => {
+    const record = createSavedProject("新建模型", { version: 1, name: "新建模型", nodes: [], edges: [] });
+    setProjects((current) => upsertSavedProject(current, record));
+    setSelectedProjectId(record.id);
+    loadSavedProject(record);
+  };
+
+  const locateTopologyError = (error: TopologyValidationError) => {
+    const firstNodeId = error.relatedNodeIds[0] ?? error.nodeId;
+    const node = firstNodeId ? nodeById.get(firstNodeId) : undefined;
+    setSelectedNodeIds(firstNodeId ? [firstNodeId] : []);
+    setSelectedEdgeId(error.edgeId ?? "");
+    if (node) {
+      setViewBox({
+        x: node.position.x - viewBox.width / 2,
+        y: node.position.y - viewBox.height / 2,
+        width: viewBox.width,
+        height: viewBox.height
+      });
+    }
+  };
+
+  const runTopologyCalculation = () => {
+    const errors = validateTopology(nodes, edges);
+    setTopologyErrors(errors);
+    if (errors.length === 0) {
+      setNodes((current) => calculateElectricalTopology(current, edges));
+    } else {
+      locateTopologyError(errors[0]);
     }
   };
 
@@ -841,47 +898,6 @@ export function App() {
             联络线
           </button>
         </div>
-        <section className="project-panel">
-          <div className="project-panel-title">
-            <h2>绘图模型</h2>
-            <button onClick={() => saveCurrentProject()} title="保存当前模型">
-              <Save size={15} />
-              保存
-            </button>
-          </div>
-          <input
-            className="project-name-input"
-            value={projectName}
-            onChange={(event) => setProjectName(event.target.value)}
-            aria-label="当前模型名称"
-          />
-          <div className="project-list">
-            {projects.length === 0 ? (
-              <p className="project-empty">暂无已保存模型</p>
-            ) : (
-              projects.map((project) => (
-                <div className={`project-row ${project.id === activeProjectId ? "active" : ""}`} key={project.id}>
-                  <button className="project-load" onClick={() => loadSavedProject(project)} title="加载模型">
-                    <FolderOpen size={15} />
-                    <span>{project.name}</span>
-                  </button>
-                  <button onClick={() => saveCurrentProject(project.id)} title="保存到该模型">
-                    <Save size={14} />
-                  </button>
-                  <button onClick={() => duplicateProjectRecord(project)} title="复制模型">
-                    <Copy size={14} />
-                  </button>
-                  <button onClick={() => renameProjectRecord(project)} title="重命名模型">
-                    <Pencil size={14} />
-                  </button>
-                  <button onClick={() => deleteProjectRecord(project)} title="删除模型">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
         <div className="library-scroll">
           {Object.entries(groupedLibrary).map(([group, items]) => (
             <section className="library-group" key={group}>
@@ -932,7 +948,7 @@ export function App() {
               <Save size={16} />
               保存
             </button>
-            <button onClick={() => setNodes((current) => calculateElectricalTopology(current, edges))} title="图上拓扑">
+            <button onClick={runTopologyCalculation} title="图上拓扑">
               <Grid2X2 size={16} />
               图上拓扑
             </button>
@@ -1187,95 +1203,79 @@ export function App() {
         </div>
         {selectedNode ? (
           <div className="form-stack">
-            <label>
-              元件名称
-              <input value={selectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
-            </label>
-            <label>
-              节点号
-              <input value={selectedNode.nodeNumber} readOnly />
-            </label>
-            <label>
-              交流拓扑节点序号
-              <input value={selectedNode.acTopologyNode ?? 0} readOnly />
-            </label>
-            <label>
-              直流拓扑节点序号
-              <input value={selectedNode.dcTopologyNode ?? 0} readOnly />
-            </label>
-            <label>
-              X坐标
-              <input
-                type="number"
-                value={Math.round(selectedNode.position.x)}
-                onChange={(event) =>
-                  updateSelectedNode({ position: { ...selectedNode.position, x: Number(event.target.value) } })
-                }
-              />
-            </label>
-            <label>
-              Y坐标
-              <input
-                type="number"
-                value={Math.round(selectedNode.position.y)}
-                onChange={(event) =>
-                  updateSelectedNode({ position: { ...selectedNode.position, y: Number(event.target.value) } })
-                }
-              />
-            </label>
-            <label>
-              旋转角度
-              <input
-                type="number"
-                value={selectedNode.rotation}
-                onChange={(event) => updateSelectedNode({ rotation: Number(event.target.value) })}
-              />
-            </label>
-            <label>
-              横向倍率
-              <input
-                type="number"
-                min="0.2"
-                max="5"
-                step="0.1"
-                value={getNodeScaleX(selectedNode)}
-                onChange={(event) => {
-                  const scaleX = clampScale(Number(event.target.value));
-                  updateSelectedNode({ scale: scaleX, scaleX });
-                }}
-              />
-            </label>
-            <label>
-              纵向倍率
-              <input
-                type="number"
-                min="0.2"
-                max="5"
-                step="0.1"
-                value={getNodeScaleY(selectedNode)}
-                onChange={(event) => {
-                  const scaleY = clampScale(Number(event.target.value));
-                  updateSelectedNode({ scale: scaleY, scaleY });
-                }}
-              />
-            </label>
-            <label>
-              端子数量
-              <input
-                type="number"
-                min="1"
-                max="8"
-                value={selectedNode.terminals.length}
-                onChange={(event) => updateTerminalCount(Number(event.target.value))}
-              />
-            </label>
-            <div className="terminal-list">
-              {selectedNode.terminals.map((terminal) => (
-                <span key={terminal.id}>{`${terminal.label} / ${terminal.type.toUpperCase()} / ${terminal.nodeNumber}`}</span>
-              ))}
+            <div className="inspector-tabs">
+              <button className={inspectorTab === "graph" ? "active" : ""} onClick={() => setInspectorTab("graph")}>
+                图形参数
+              </button>
+              <button className={inspectorTab === "device" ? "active" : ""} onClick={() => setInspectorTab("device")}>
+                设备参数
+              </button>
             </div>
-            <div className="param-divider">设备参数</div>
-            {Object.entries(selectedNode.params).map(([key, value]) => renderParamEditor(key, value))}
+            {inspectorTab === "graph" ? (
+              <table className="param-table">
+                <tbody>
+                  <tr>
+                    <th>元件名称</th>
+                    <td>
+                      <input value={selectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
+                    </td>
+                  </tr>
+                  <tr>
+                    <th>节点号</th>
+                    <td><input value={selectedNode.nodeNumber} readOnly /></td>
+                  </tr>
+                  <tr>
+                    <th>交流拓扑节点序号</th>
+                    <td><input value={selectedNode.acTopologyNode ?? 0} readOnly /></td>
+                  </tr>
+                  <tr>
+                    <th>直流拓扑节点序号</th>
+                    <td><input value={selectedNode.dcTopologyNode ?? 0} readOnly /></td>
+                  </tr>
+                  <tr>
+                    <th>X坐标</th>
+                    <td><input type="number" value={Math.round(selectedNode.position.x)} onChange={(event) => updateSelectedNode({ position: { ...selectedNode.position, x: Number(event.target.value) } })} /></td>
+                  </tr>
+                  <tr>
+                    <th>Y坐标</th>
+                    <td><input type="number" value={Math.round(selectedNode.position.y)} onChange={(event) => updateSelectedNode({ position: { ...selectedNode.position, y: Number(event.target.value) } })} /></td>
+                  </tr>
+                  <tr>
+                    <th>旋转角度</th>
+                    <td><input type="number" value={selectedNode.rotation} onChange={(event) => updateSelectedNode({ rotation: Number(event.target.value) })} /></td>
+                  </tr>
+                  <tr>
+                    <th>横向倍率</th>
+                    <td><input type="number" min="0.2" max="5" step="0.1" value={getNodeScaleX(selectedNode)} onChange={(event) => { const scaleX = clampScale(Number(event.target.value)); updateSelectedNode({ scale: scaleX, scaleX }); }} /></td>
+                  </tr>
+                  <tr>
+                    <th>纵向倍率</th>
+                    <td><input type="number" min="0.2" max="5" step="0.1" value={getNodeScaleY(selectedNode)} onChange={(event) => { const scaleY = clampScale(Number(event.target.value)); updateSelectedNode({ scale: scaleY, scaleY }); }} /></td>
+                  </tr>
+                  <tr>
+                    <th>端子数量</th>
+                    <td><input type="number" min="1" max="8" value={selectedNode.terminals.length} onChange={(event) => updateTerminalCount(Number(event.target.value))} /></td>
+                  </tr>
+                  {selectedNode.terminals.map((terminal) => (
+                    <tr key={terminal.id}>
+                      <th>{terminal.label}</th>
+                      <td>{`${terminal.type.toUpperCase()} / ${terminal.nodeNumber}`}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <table className="param-table">
+                <tbody>
+                  {Object.entries(selectedNode.params).map(([key, value]) => (
+                    <tr key={key}>
+                      <th>{PARAM_LABELS[key] ?? key}</th>
+                      <td>{renderParamEditor(key, value, false)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
             <div className="topology-card">
               <span>连接度</span>
               <strong>{topology.nodes[selectedNode.id]?.degree ?? 0}</strong>
@@ -1309,6 +1309,54 @@ export function App() {
             <p>从左侧拖入元件，或使用联络线模式点击两个元件建立拓扑关系。</p>
           </div>
         )}
+        <section className="project-panel inspector-projects">
+          <div className="project-panel-title">
+            <h2>绘图模型</h2>
+            <button onClick={createBlankProject} title="新增模型">
+              <FolderOpen size={15} />
+              新增
+            </button>
+          </div>
+          <input
+            className="project-name-input"
+            value={projectName}
+            onChange={(event) => setProjectName(event.target.value)}
+            aria-label="当前模型名称"
+          />
+          <div className="project-list listbox" role="listbox" aria-label="绘图模型列表">
+            {projects.length === 0 ? (
+              <p className="project-empty">暂无已保存模型</p>
+            ) : (
+              projects.map((project) => (
+                <button
+                  className={`project-option ${project.id === selectedProjectId ? "selected" : ""} ${project.id === activeProjectId ? "active" : ""}`}
+                  key={project.id}
+                  onClick={() => setSelectedProjectId(project.id)}
+                  onDoubleClick={() => loadSavedProject(project)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setSelectedProjectId(project.id);
+                    setProjectMenu({ x: event.clientX, y: event.clientY, projectId: project.id });
+                  }}
+                >
+                  <span>{project.name}</span>
+                  <small>{new Date(project.updatedAt).toLocaleString()}</small>
+                </button>
+              ))
+            )}
+          </div>
+        </section>
+        {topologyErrors.length > 0 && (
+          <section className="validation-panel">
+            <h2>拓扑错误</h2>
+            {topologyErrors.map((error) => (
+              <button key={error.id} onClick={() => locateTopologyError(error)}>
+                <strong>{error.type}</strong>
+                <span>{error.message}</span>
+              </button>
+            ))}
+          </section>
+        )}
       </aside>
       {contextMenu && (
         <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
@@ -1339,6 +1387,57 @@ export function App() {
           <button onClick={deleteSelection} disabled={selectedNodeIds.length === 0 && !selectedEdgeId}>
             <Trash2 size={14} />
             删除
+          </button>
+        </div>
+      )}
+      {projectMenu && (
+        <div className="context-menu" style={{ left: projectMenu.x, top: projectMenu.y }}>
+          <button onClick={createBlankProject}>
+            <FolderOpen size={14} />
+            新增模型
+          </button>
+          <button
+            onClick={() => {
+              const project = projects.find((item) => item.id === projectMenu.projectId);
+              if (project) loadSavedProject(project);
+              setProjectMenu(null);
+            }}
+            disabled={!projectMenu.projectId}
+          >
+            加载模型
+          </button>
+          <button
+            onClick={() => {
+              const project = projects.find((item) => item.id === projectMenu.projectId);
+              if (project) duplicateProjectRecord(project);
+              setProjectMenu(null);
+            }}
+            disabled={!projectMenu.projectId}
+          >
+            <Copy size={14} />
+            复制模型
+          </button>
+          <button
+            onClick={() => {
+              const project = projects.find((item) => item.id === projectMenu.projectId);
+              if (project) renameProjectRecord(project);
+              setProjectMenu(null);
+            }}
+            disabled={!projectMenu.projectId}
+          >
+            <Pencil size={14} />
+            重命名
+          </button>
+          <button
+            onClick={() => {
+              const project = projects.find((item) => item.id === projectMenu.projectId);
+              if (project) deleteProjectRecord(project);
+              setProjectMenu(null);
+            }}
+            disabled={!projectMenu.projectId}
+          >
+            <Trash2 size={14} />
+            删除模型
           </button>
         </div>
       )}

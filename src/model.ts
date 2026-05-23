@@ -121,6 +121,17 @@ export type RoutedEdge = {
   path: string;
 };
 
+export type TopologyValidationErrorType = "floating-terminal" | "terminal-type-mismatch" | "voltage-mismatch";
+
+export type TopologyValidationError = {
+  id: string;
+  type: TopologyValidationErrorType;
+  message: string;
+  nodeId?: string;
+  edgeId?: string;
+  relatedNodeIds: string[];
+};
+
 export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-source",
@@ -394,6 +405,10 @@ export function getSwitchVisualState(node: ModelNode): "open" | "closed" {
 
 function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   const withRunStat = (params: Record<string, string>) => ({ run_stat: "运行", ...params });
+  const withDefaultVbase = (params: Record<string, string>) => ({
+    vbase: template.terminalType === "ac" ? "10 kV" : "750 V",
+    ...params
+  });
   const type = template.terminalType;
   if (isGeneratorKind(template.kind)) {
     const base: Record<string, string> = {
@@ -405,10 +420,10 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       base.ratedWindSpeed = "12 m/s";
       base.cutOutWindSpeed = "25 m/s";
     }
-    return withRunStat({ ...template.params, ...base });
+    return withRunStat(withDefaultVbase({ ...template.params, ...base }));
   }
   if (template.kind === "ac-load") {
-    return withRunStat({
+    return withRunStat(withDefaultVbase({
       ratedActivePower: "5 MW",
       pv0: "1.0",
       pv1: "0.0",
@@ -417,30 +432,32 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       qv0: "1.0",
       qv1: "0.0",
       qv2: "0.0"
-    });
+    }));
   }
   if (template.kind === "dc-load") {
-    return withRunStat({
+    return withRunStat(withDefaultVbase({
       ratedActivePower: "1.5 MW",
       pv0: "1.0",
       pv1: "0.0",
       pv2: "0.0"
-    });
+    }));
   }
   if (template.kind === "ac-line" || template.kind === "dc-line") {
     if (template.kind === "dc-line") {
-      return withRunStat({
+      return withRunStat(withDefaultVbase({
         resistancePu: "0.0"
-      });
+      }));
     }
-    return withRunStat({
+    return withRunStat(withDefaultVbase({
       resistancePu: "0.0",
       reactancePu: "0.1",
       halfChargingSusceptancePu: "0.0"
-    });
+    }));
   }
   if (template.kind === "ac-two-winding-transformer" || template.kind === "ac-transformer") {
     return withRunStat({
+      highVbase: "110 kV",
+      lowVbase: "10 kV",
       ratedCapacity: "50 MVA",
       resistancePu: "0.0",
       reactancePu: "0.1",
@@ -451,6 +468,9 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   }
   if (template.kind === "ac-three-winding-transformer") {
     return withRunStat({
+      highVbase: "220 kV",
+      mediumVbase: "110 kV",
+      lowVbase: "10 kV",
       highRatedCapacity: "90 MVA",
       highResistancePu: "0.0",
       highReactancePu: "0.1",
@@ -473,6 +493,8 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   }
   if (template.kind === "dcdc-converter") {
     return withRunStat({
+      sourceVbase: "1500 V",
+      targetVbase: "750 V",
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
       sourceControlType: "定P",
@@ -481,6 +503,8 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   }
   if (template.kind === "acdc-converter") {
     return withRunStat({
+      sourceVbase: "10 kV",
+      targetVbase: "750 V",
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
       acControlType: "定PQ",
@@ -489,6 +513,8 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   }
   if (template.kind === "acac-converter") {
     return withRunStat({
+      sourceVbase: "10 kV",
+      targetVbase: "10 kV",
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
       sourceControlType: "定PQ",
@@ -503,12 +529,12 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
     template.kind === "ac-breaker" ||
     template.kind === "dc-breaker"
   ) {
-    return withRunStat({
+    return withRunStat(withDefaultVbase({
       ratedCapacity: template.terminalType === "ac" ? "1250 A" : "1600 A",
       closedStatus: "闭合"
-    });
+    }));
   }
-  return withRunStat({ ...template.params });
+  return withRunStat(withDefaultVbase({ ...template.params }));
 }
 
 export function getTemplate(kind: DeviceKind): DeviceTemplate {
@@ -738,6 +764,78 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
     }
   }
   return nextNodes;
+}
+
+function normalizeVoltage(value?: string): string {
+  return (value ?? "").trim().toLowerCase().replace(/\s+/g, "");
+}
+
+export function getNodeVoltageLevel(node: ModelNode): string {
+  return normalizeVoltage(
+    node.params.vbase ??
+      node.params.voltageLevel ??
+      node.params.ratedVoltage ??
+      node.params.voltage ??
+      node.params.acVoltage ??
+      node.params.dcVoltage ??
+      ""
+  );
+}
+
+export function validateTopology(nodes: ModelNode[], edges: Edge[]): TopologyValidationError[] {
+  const errors: TopologyValidationError[] = [];
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const connectedTerminals = new Set<string>();
+
+  for (const edge of edges) {
+    const source = nodeById.get(edge.sourceId);
+    const target = nodeById.get(edge.targetId);
+    if (!source || !target) continue;
+    const sourceTerminal = getTerminal(source, edge.sourceTerminalId);
+    const targetTerminal = getTerminal(target, edge.targetTerminalId);
+    connectedTerminals.add(`${source.id}:${sourceTerminal.id}`);
+    connectedTerminals.add(`${target.id}:${targetTerminal.id}`);
+
+    if (sourceTerminal.type !== targetTerminal.type) {
+      errors.push({
+        id: `terminal-type-mismatch:${edge.id}`,
+        type: "terminal-type-mismatch",
+        edgeId: edge.id,
+        relatedNodeIds: [source.id, target.id],
+        message: `${source.name} 与 ${target.name} 的端子类型不一致，不能连接 ${sourceTerminal.type.toUpperCase()} 与 ${targetTerminal.type.toUpperCase()}。`
+      });
+      continue;
+    }
+
+    const sourceVoltage = getNodeVoltageLevel(source);
+    const targetVoltage = getNodeVoltageLevel(target);
+    if (sourceVoltage && targetVoltage && sourceVoltage !== targetVoltage) {
+      errors.push({
+        id: `voltage-mismatch:${edge.id}`,
+        type: "voltage-mismatch",
+        edgeId: edge.id,
+        relatedNodeIds: [source.id, target.id],
+        message: `${source.name} 与 ${target.name} 电压等级不一致（${sourceVoltage} / ${targetVoltage}）。`
+      });
+    }
+  }
+
+  for (const node of nodes) {
+    if (isBusNode(node)) continue;
+    for (const terminal of node.terminals) {
+      if (!connectedTerminals.has(`${node.id}:${terminal.id}`)) {
+        errors.push({
+          id: `floating-terminal:${node.id}:${terminal.id}`,
+          type: "floating-terminal",
+          nodeId: node.id,
+          relatedNodeIds: [node.id],
+          message: `${node.name} 的 ${terminal.label} 悬空，未连接到任何设备。`
+        });
+      }
+    }
+  }
+
+  return errors;
 }
 
 export function buildTopology(nodes: ModelNode[], edges: Edge[]): Topology {

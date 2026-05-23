@@ -14,6 +14,7 @@ import {
   routeEdgesForRendering,
   renameSavedProject,
   upsertSavedProject,
+  validateTopology,
   getTerminalPoint,
   isGeneratorNode,
   getSwitchVisualState,
@@ -300,6 +301,20 @@ describe("power system model", () => {
     }
   });
 
+  test("adds voltage base parameters to devices, transformers, and converters", () => {
+    expect(createDefaultNode("ac-load", { x: 100, y: 100 }).params.vbase).toBe("10 kV");
+    const twoWinding = createDefaultNode("ac-two-winding-transformer", { x: 200, y: 100 });
+    expect(twoWinding.params.highVbase).toBe("110 kV");
+    expect(twoWinding.params.lowVbase).toBe("10 kV");
+    const threeWinding = createDefaultNode("ac-three-winding-transformer", { x: 300, y: 100 });
+    expect(threeWinding.params.highVbase).toBe("220 kV");
+    expect(threeWinding.params.mediumVbase).toBe("110 kV");
+    expect(threeWinding.params.lowVbase).toBe("10 kV");
+    const converter = createDefaultNode("acdc-converter", { x: 400, y: 100 });
+    expect(converter.params.sourceVbase).toBe("10 kV");
+    expect(converter.params.targetVbase).toBe("750 V");
+  });
+
   test("includes two-winding and three-winding transformer device types", () => {
     const twoWinding = DEVICE_LIBRARY.find((item) => item.kind === "ac-two-winding-transformer");
     const threeWinding = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer");
@@ -387,5 +402,27 @@ describe("power system model", () => {
     expect(byId.get(dcBus.id)?.dcTopologyNode).toBe(1);
     expect(byId.get(dcLoad.id)?.dcTopologyNode).toBe(1);
     expect(byId.get(dcLoad.id)?.acTopologyNode).toBe(0);
+  });
+
+  test("validates floating terminals, mixed terminal types, and voltage mismatch before topology", () => {
+    const acSource = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const dcLoad = createDefaultNode("dc-load", { x: 220, y: 100 });
+    const acLoad = createDefaultNode("ac-load", { x: 340, y: 100 });
+    acSource.params.vbase = "10 kV";
+    acLoad.params.vbase = "35 kV";
+    const errors = validateTopology(
+      [acSource, dcLoad, acLoad],
+      [
+        { id: "mixed", sourceId: acSource.id, targetId: dcLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+        { id: "voltage", sourceId: acSource.id, targetId: acLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
+      ]
+    );
+
+    expect(errors.some((error) => error.type === "terminal-type-mismatch" && error.edgeId === "mixed")).toBe(true);
+    expect(errors.some((error) => error.type === "voltage-mismatch" && error.edgeId === "voltage")).toBe(true);
+
+    const loneLoad = createDefaultNode("ac-load", { x: 460, y: 100 });
+    const floatingErrors = validateTopology([loneLoad], []);
+    expect(floatingErrors.some((error) => error.type === "floating-terminal" && error.nodeId === loneLoad.id)).toBe(true);
   });
 });
