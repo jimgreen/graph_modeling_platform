@@ -5,6 +5,7 @@ import {
   calculateElectricalTopology,
   canConnectTerminals,
   createSavedProject,
+  createSavedScheme,
   createDefaultNode,
   deleteNodesWithConnectedEdges,
   deleteSavedProject,
@@ -13,6 +14,8 @@ import {
   routeOrthogonalEdge,
   routeEdgesForRendering,
   renameSavedProject,
+  renameSavedScheme,
+  moveProjectToScheme,
   upsertSavedProject,
   validateTopology,
   getTerminalPoint,
@@ -529,6 +532,41 @@ describe("power system model", () => {
     const deleted = deleteSavedProject(copied, project.id);
     expect(deleted).toHaveLength(1);
     expect(deleted[0].name).toBe("模型B 副本");
+  });
+
+  test("keeps project names unique inside the same scheme", () => {
+    const first = createSavedProject("模型A", {
+      version: 1,
+      name: "模型A",
+      nodes: [],
+      edges: []
+    });
+    const second = createSavedProject("模型A", {
+      version: 1,
+      name: "模型A",
+      nodes: [],
+      edges: []
+    });
+
+    const saved = upsertSavedProject(upsertSavedProject([], first), second);
+    expect(saved.map((project) => project.name)).toEqual(["模型A", "模型A (2)"]);
+
+    const renamed = renameSavedProject(saved, saved[1].id, "模型A");
+    expect(renamed.map((project) => project.name)).toEqual(["模型A", "模型A (2)"]);
+  });
+
+  test("keeps scheme names unique and renames moved projects on conflict", () => {
+    const sourceProject = createSavedProject("模型A", { version: 1, name: "模型A", nodes: [], edges: [] });
+    const targetProject = createSavedProject("模型A", { version: 1, name: "模型A", nodes: [], edges: [] });
+    const firstScheme = createSavedScheme("方案A", [sourceProject]);
+    const secondScheme = createSavedScheme("方案B", upsertSavedProject([], targetProject));
+    const renamedSchemes = renameSavedScheme([firstScheme, secondScheme], secondScheme.id, "方案A");
+
+    expect(renamedSchemes.map((scheme) => scheme.name)).toEqual(["方案A", "方案A (2)"]);
+
+    const moved = moveProjectToScheme([firstScheme, secondScheme], sourceProject.id, secondScheme.id);
+    const target = moved.find((scheme) => scheme.id === secondScheme.id);
+    expect(target?.projects.map((project) => project.name)).toEqual(["模型A", "模型A (2)"]);
   });
 
   test("deletes selected devices and automatically removes their connected lines", () => {

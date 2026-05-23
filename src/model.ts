@@ -84,6 +84,7 @@ export type Edge = {
   targetTerminalId?: string;
   sourcePoint?: Point;
   targetPoint?: Point;
+  manualPoints?: Point[];
 };
 
 export type ProjectFile = {
@@ -988,14 +989,42 @@ export function createSavedProject(name: string, project: ProjectFile): SavedPro
       ...lockedProject,
       name: savedName,
       nodes: lockedProject.nodes.map((node) => ({ ...node, params: { ...node.params }, terminals: node.terminals.map((terminal) => ({ ...terminal, anchor: { ...terminal.anchor } })) })),
-      edges: lockedProject.edges.map((edge) => ({ ...edge }))
+      edges: lockedProject.edges.map((edge) => ({
+        ...edge,
+        sourcePoint: edge.sourcePoint ? { ...edge.sourcePoint } : undefined,
+        targetPoint: edge.targetPoint ? { ...edge.targetPoint } : undefined,
+        manualPoints: edge.manualPoints?.map((point) => ({ ...point }))
+      }))
     }
   };
 }
 
+export function uniqueRecordName(baseName: string, existingNames: string[], fallback: string): string {
+  const base = baseName.trim() || fallback;
+  const used = new Set(existingNames.map((name) => name.trim()).filter(Boolean));
+  if (!used.has(base)) {
+    return base;
+  }
+  let index = 2;
+  while (used.has(`${base} (${index})`)) {
+    index += 1;
+  }
+  return `${base} (${index})`;
+}
+
 export function upsertSavedProject(projects: SavedProjectRecord[], record: SavedProjectRecord): SavedProjectRecord[] {
-  const nextRecord = { ...record, updatedAt: new Date().toISOString() };
   const index = projects.findIndex((project) => project.id === record.id);
+  const name = uniqueRecordName(
+    record.name,
+    projects.filter((project) => project.id !== record.id).map((project) => project.name),
+    "未命名模型"
+  );
+  const nextRecord = {
+    ...record,
+    name,
+    updatedAt: new Date().toISOString(),
+    project: { ...record.project, name }
+  };
   if (index === -1) {
     return [...projects, nextRecord];
   }
@@ -1007,7 +1036,11 @@ export function renameSavedProject(
   projectId: string,
   nextName: string
 ): SavedProjectRecord[] {
-  const name = nextName.trim() || "未命名模型";
+  const name = uniqueRecordName(
+    nextName,
+    projects.filter((project) => project.id !== projectId).map((project) => project.name),
+    "未命名模型"
+  );
   return projects.map((project) =>
     project.id === projectId
       ? { ...project, name, updatedAt: new Date().toISOString(), project: { ...project.project, name } }
@@ -1020,7 +1053,7 @@ export function duplicateSavedProject(projects: SavedProjectRecord[], projectId:
   if (!source) {
     return projects;
   }
-  return [...projects, createSavedProject(`${source.name} 副本`, source.project)];
+  return upsertSavedProject(projects, createSavedProject(`${source.name} 副本`, source.project));
 }
 
 export function deleteSavedProject(projects: SavedProjectRecord[], projectId: string): SavedProjectRecord[] {
@@ -1041,7 +1074,11 @@ export function renameSavedScheme(
   schemeId: string,
   nextName: string
 ): SavedSchemeRecord[] {
-  const name = nextName.trim() || "未命名方案";
+  const name = uniqueRecordName(
+    nextName,
+    schemes.filter((scheme) => scheme.id !== schemeId).map((scheme) => scheme.name),
+    "未命名方案"
+  );
   return schemes.map((scheme) =>
     scheme.id === schemeId ? { ...scheme, name, updatedAt: new Date().toISOString() } : scheme
   );
@@ -1067,7 +1104,7 @@ export function moveProjectToScheme(
       return { ...scheme, updatedAt: now, projects: scheme.projects.filter((item) => item.id !== projectId) };
     }
     if (scheme.id === targetSchemeId) {
-      return { ...scheme, updatedAt: now, projects: [...scheme.projects, project] };
+      return { ...scheme, updatedAt: now, projects: upsertSavedProject(scheme.projects, project) };
     }
     return scheme;
   });
@@ -1357,6 +1394,9 @@ function createFloatingEndpointNode(point: Point, relatedNode?: ModelNode): Mode
 export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes: ModelNode[], edge?: Edge): Point[] {
   const start = getEdgeEndpointPoint(source, edge?.sourcePoint, edge?.sourceTerminalId);
   const end = getEdgeEndpointPoint(target, edge?.targetPoint, edge?.targetTerminalId);
+  if (edge?.manualPoints?.length) {
+    return orthogonalizeRoute([start, ...edge.manualPoints, end]);
+  }
   const sourceNormal = isBusNode(source) ? getBusNormalToward(source, end) : getTerminalNormal(source, edge?.sourceTerminalId);
   const targetNormal = isBusNode(target) ? getBusNormalToward(target, start) : getTerminalNormal(target, edge?.targetTerminalId);
   const stubLength = 28;

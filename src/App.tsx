@@ -55,6 +55,7 @@ import {
   renameSavedProject,
   serializeProject,
   upsertSavedProject,
+  uniqueRecordName,
   type SavedSchemeRecord,
   type SavedProjectRecord
 } from "./model";
@@ -68,11 +69,21 @@ type Marquee = { start: Point; current: Point } | null;
 type ContextMenuState = { x: number; y: number } | null;
 type ProjectMenuState = { x: number; y: number; schemeId?: string; projectId?: string } | null;
 type RewiringState = { edgeId: string; endpoint: EdgeEndpoint; previewPoint: Point; pointerId?: number } | null;
+type ManualPathDrag =
+  | {
+      edgeId: string;
+      segmentIndex: number;
+      orientation: "horizontal" | "vertical";
+      startPoint: Point;
+      originalManualPoints: Point[];
+      historyCaptured?: boolean;
+    }
+  | null;
 type DraggingState = {
   nodeIds: string[];
   startPoint: Point;
   originalPositions: Record<string, Point>;
-  originalEdgePoints: Record<string, { sourcePoint?: Point; targetPoint?: Point }>;
+  originalEdgePoints: Record<string, { sourcePoint?: Point; targetPoint?: Point; manualPoints?: Point[] }>;
   historyCaptured?: boolean;
 };
 type ClipboardRecord =
@@ -412,6 +423,7 @@ export function App() {
   const [connectSource, setConnectSource] = useState<{ nodeId: string; terminalId: string; point?: Point } | null>(null);
   const [dragging, setDragging] = useState<DraggingState | null>(null);
   const [rewiring, setRewiring] = useState<RewiringState>(null);
+  const [manualPathDrag, setManualPathDrag] = useState<ManualPathDrag>(null);
   const [transformDrag, setTransformDrag] = useState<TransformDrag | null>(null);
   const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: CANVAS_WIDTH, height: CANVAS_HEIGHT });
   const [panning, setPanning] = useState<{ clientX: number; clientY: number; viewBox: typeof viewBox } | null>(null);
@@ -422,6 +434,8 @@ export function App() {
   const [topologyErrors, setTopologyErrors] = useState<TopologyValidationError[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedSchemeId, setSelectedSchemeId] = useState<string>("");
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
+  const [selectedSchemeIds, setSelectedSchemeIds] = useState<string[]>([]);
   const [expandedSchemeIds, setExpandedSchemeIds] = useState<string[]>(() => schemes.map((scheme) => scheme.id));
   const [projectMenu, setProjectMenu] = useState<ProjectMenuState>(null);
   const [projectPanelHeight, setProjectPanelHeight] = useState(PROJECT_PANEL_DEFAULT_HEIGHT);
@@ -528,6 +542,47 @@ export function App() {
     return () => window.removeEventListener("pointerdown", closeContextMenus);
   }, []);
 
+  const clearRecordSelection = () => {
+    setSelectedProjectId("");
+    setSelectedSchemeId("");
+    setSelectedProjectIds([]);
+    setSelectedSchemeIds([]);
+  };
+
+  const selectSingleScheme = (schemeId: string) => {
+    setSelectedSchemeId(schemeId);
+    setSelectedSchemeIds([schemeId]);
+    setSelectedProjectId("");
+    setSelectedProjectIds([]);
+  };
+
+  const selectSingleProject = (schemeId: string, projectId: string) => {
+    setSelectedSchemeId(schemeId);
+    setSelectedProjectId(projectId);
+    setSelectedProjectIds([projectId]);
+    setSelectedSchemeIds([]);
+  };
+
+  const toggleSchemeSelection = (schemeId: string) => {
+    setSelectedProjectId("");
+    setSelectedProjectIds([]);
+    setSelectedSchemeIds((current) => {
+      const next = current.includes(schemeId) ? current.filter((id) => id !== schemeId) : [...current, schemeId];
+      setSelectedSchemeId(next[0] ?? "");
+      return next;
+    });
+  };
+
+  const toggleProjectSelection = (schemeId: string, projectId: string) => {
+    setSelectedSchemeIds([]);
+    setSelectedProjectIds((current) => {
+      const next = current.includes(projectId) ? current.filter((id) => id !== projectId) : [...current, projectId];
+      setSelectedProjectId(next[0] ?? "");
+      setSelectedSchemeId(next.length > 0 ? schemeId : "");
+      return next;
+    });
+  };
+
   const cloneProjectState = (): UndoSnapshot => ({
     projectName,
     nodes: structuredClone(nodes),
@@ -602,12 +657,11 @@ export function App() {
           setSelectedEdgeId("");
           setConnectSource(null);
           setRewiring(null);
-          setSelectedProjectId("");
-          setSelectedSchemeId("");
+          clearRecordSelection();
         }
       } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
         event.preventDefault();
-        if (selectedProjectId || selectedSchemeId) {
+        if (selectedProjectId || selectedSchemeId || selectedProjectIds.length > 0 || selectedSchemeIds.length > 0) {
           copySelectedRecord();
         } else if (isCanvasShortcutTarget) {
           copySelection();
@@ -624,7 +678,9 @@ export function App() {
         saveCurrentProject();
       } else if (event.key === "Delete" || event.key === "Backspace") {
         event.preventDefault();
-        if (selectedProjectId) {
+        if (selectedProjectIds.length > 1 || selectedSchemeIds.length > 1) {
+          deleteSelectedRecords();
+        } else if (selectedProjectId) {
           const project = projects.find((item) => item.id === selectedProjectId);
           if (project) deleteProjectRecord(project);
         } else if (selectedSchemeId) {
@@ -649,7 +705,7 @@ export function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [clipboardNodes, edges, nodes, projectName, projects, recordClipboard, schemes, selectedEdgeId, selectedNodeIds, selectedProjectId, selectedSchemeId, topologyErrors]);
+  }, [clipboardNodes, edges, nodes, projectName, projects, recordClipboard, schemes, selectedEdgeId, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors]);
 
   const currentProject = (): ProjectFile => ({
     ...lockProjectEdgeTerminals({
@@ -733,17 +789,31 @@ export function App() {
     setSelectedNodeIds([]);
   };
 
+  const manualPointDeltaForEdge = (edge: Edge, deltas: Record<string, Point>): Point | null => {
+    const endpointDeltas = [deltas[edge.sourceId], deltas[edge.targetId]].filter(Boolean);
+    if (endpointDeltas.length === 0) {
+      return null;
+    }
+    return {
+      x: endpointDeltas.reduce((sum, delta) => sum + delta.x, 0) / endpointDeltas.length,
+      y: endpointDeltas.reduce((sum, delta) => sum + delta.y, 0) / endpointDeltas.length
+    };
+  };
+
   const moveAttachedBusPoints = (deltas: Record<string, Point>) => {
-    const movedBusIds = new Set(
-      nodes.filter((node) => isBusNode(node) && deltas[node.id] && (deltas[node.id].x !== 0 || deltas[node.id].y !== 0)).map((node) => node.id)
+    const activeDeltas = Object.fromEntries(
+      Object.entries(deltas).filter(([, delta]) => delta && (delta.x !== 0 || delta.y !== 0))
     );
-    if (movedBusIds.size === 0) {
+    const movedIds = new Set(Object.keys(activeDeltas));
+    if (movedIds.size === 0) {
       return;
     }
+    const movedBusIds = new Set(nodes.filter((node) => isBusNode(node) && movedIds.has(node.id)).map((node) => node.id));
     setEdges((current) =>
       current.map((edge) => {
         const sourceDelta = movedBusIds.has(edge.sourceId) ? deltas[edge.sourceId] : undefined;
         const targetDelta = movedBusIds.has(edge.targetId) ? deltas[edge.targetId] : undefined;
+        const manualDelta = manualPointDeltaForEdge(edge, activeDeltas);
         return {
           ...edge,
           sourcePoint: sourceDelta && edge.sourcePoint
@@ -751,7 +821,10 @@ export function App() {
             : edge.sourcePoint,
           targetPoint: targetDelta && edge.targetPoint
             ? { x: edge.targetPoint.x + targetDelta.x, y: edge.targetPoint.y + targetDelta.y }
-            : edge.targetPoint
+            : edge.targetPoint,
+          manualPoints: manualDelta && edge.manualPoints
+            ? edge.manualPoints.map((point) => ({ x: point.x + manualDelta.x, y: point.y + manualDelta.y }))
+            : edge.manualPoints
         };
       })
     );
@@ -1150,6 +1223,12 @@ export function App() {
     deleteSelection();
   };
 
+  const runContextMenuAction = (action: () => void) => {
+    action();
+    setContextMenu(null);
+    setProjectMenu(null);
+  };
+
   const alignSelected = (direction: "horizontal" | "vertical") => {
     if (selectedNodeIds.length < 2) {
       return;
@@ -1197,11 +1276,18 @@ export function App() {
   const cloneProjectRecord = (project: SavedProjectRecord, suffix = "副本") =>
     createSavedProject(`${project.name} ${suffix}`, project.project);
 
-  const cloneSchemeRecord = (scheme: SavedSchemeRecord, suffix = "副本"): SavedSchemeRecord =>
-    createSavedScheme(
+  const cloneSchemeRecord = (scheme: SavedSchemeRecord, existingSchemes = schemes, suffix = "副本"): SavedSchemeRecord => {
+    const schemeName = uniqueRecordName(
       `${scheme.name} ${suffix}`,
-      scheme.projects.map((project) => cloneProjectRecord(project))
+      existingSchemes.map((item) => item.name),
+      "未命名方案"
     );
+    const projects = scheme.projects.reduce<SavedProjectRecord[]>(
+      (current, project) => upsertSavedProject(current, cloneProjectRecord(project)),
+      []
+    );
+    return createSavedScheme(schemeName, projects);
+  };
 
   const loadSavedProject = (project: SavedProjectRecord, schemeId = findSchemeForProject(project.id)?.id ?? "") => {
     pushUndoSnapshot();
@@ -1210,7 +1296,7 @@ export function App() {
     setEdges(project.project.edges);
     setActiveProjectId(project.id);
     setActiveSchemeId(schemeId);
-    setSelectedSchemeId(schemeId);
+    selectSingleProject(schemeId, project.id);
     setSelectedNodeIds(project.project.nodes[0] ? [project.project.nodes[0].id] : []);
     setSelectedEdgeId("");
     setConnectSource(null);
@@ -1218,10 +1304,11 @@ export function App() {
   };
 
   const createSchemeRecord = () => {
-    const record = createSavedScheme("新建方案");
+    const record = createSavedScheme(
+      uniqueRecordName("新建方案", schemes.map((scheme) => scheme.name), "未命名方案")
+    );
     setSchemes((current) => [...current, record]);
-    setSelectedSchemeId(record.id);
-    setSelectedProjectId("");
+    selectSingleScheme(record.id);
   };
 
   const renameSchemeRecord = (scheme: SavedSchemeRecord) => {
@@ -1233,7 +1320,7 @@ export function App() {
   };
 
   const duplicateSchemeRecord = (scheme: SavedSchemeRecord) => {
-    setSchemes((current) => [...current, cloneSchemeRecord(scheme)]);
+    setSchemes((current) => [...current, cloneSchemeRecord(scheme, current)]);
   };
 
   const deleteSchemeRecord = (scheme: SavedSchemeRecord) => {
@@ -1245,7 +1332,7 @@ export function App() {
       return next.length > 0 ? next : [createSavedScheme("默认方案")];
     });
     if (selectedSchemeId === scheme.id) {
-      setSelectedSchemeId("");
+      clearRecordSelection();
     }
     if (activeSchemeId === scheme.id) {
       setActiveSchemeId("");
@@ -1254,17 +1341,56 @@ export function App() {
   };
 
   const copySelectedRecord = () => {
-    if (selectedProjectId) {
-      const project = projects.find((item) => item.id === selectedProjectId);
+    const projectId = selectedProjectIds[0] ?? selectedProjectId;
+    if (projectId) {
+      const project = projects.find((item) => item.id === projectId);
       if (project) {
         setRecordClipboard({ kind: "project", project });
       }
       return;
     }
-    if (selectedSchemeId) {
-      const scheme = schemes.find((item) => item.id === selectedSchemeId);
+    const schemeId = selectedSchemeIds[0] ?? selectedSchemeId;
+    if (schemeId) {
+      const scheme = schemes.find((item) => item.id === schemeId);
       if (scheme) {
         setRecordClipboard({ kind: "scheme", scheme });
+      }
+    }
+  };
+
+  const deleteSelectedRecords = () => {
+    if (selectedProjectIds.length > 0) {
+      const names = projects.filter((project) => selectedProjectIds.includes(project.id)).map((project) => project.name);
+      if (!window.confirm(`删除选中的 ${names.length} 个模型？`)) {
+        return;
+      }
+      const selected = new Set(selectedProjectIds);
+      setSchemes((current) =>
+        current.map((scheme) => ({
+          ...scheme,
+          updatedAt: scheme.projects.some((project) => selected.has(project.id)) ? new Date().toISOString() : scheme.updatedAt,
+          projects: scheme.projects.filter((project) => !selected.has(project.id))
+        }))
+      );
+      clearRecordSelection();
+      if (selected.has(activeProjectId)) {
+        setActiveProjectId("");
+      }
+      return;
+    }
+    if (selectedSchemeIds.length > 0) {
+      if (!window.confirm(`删除选中的 ${selectedSchemeIds.length} 个方案及其全部模型？`)) {
+        return;
+      }
+      const selected = new Set(selectedSchemeIds);
+      setSchemes((current) => {
+        const next = current.filter((scheme) => !selected.has(scheme.id));
+        return next.length > 0 ? next : [createSavedScheme("默认方案")];
+      });
+      clearRecordSelection();
+      if (selected.has(activeSchemeId)) {
+        setActiveSchemeId("");
+        setActiveProjectId("");
       }
     }
   };
@@ -1274,7 +1400,7 @@ export function App() {
       return;
     }
     if (recordClipboard.kind === "scheme") {
-      setSchemes((current) => [...current, cloneSchemeRecord(recordClipboard.scheme)]);
+      setSchemes((current) => [...current, cloneSchemeRecord(recordClipboard.scheme, current)]);
       return;
     }
     const targetSchemeId = selectedSchemeId || activeSchemeId || schemes[0]?.id;
@@ -1284,7 +1410,7 @@ export function App() {
           ? {
               ...scheme,
               updatedAt: new Date().toISOString(),
-              projects: [...scheme.projects, cloneProjectRecord(recordClipboard.project)]
+              projects: upsertSavedProject(scheme.projects, cloneProjectRecord(recordClipboard.project))
             }
           : scheme
       )
@@ -1296,6 +1422,8 @@ export function App() {
     setExpandedSchemeIds((current) => (current.includes(schemeId) ? current : [...current, schemeId]));
     if (selectedProjectId === projectId) {
       setSelectedSchemeId(schemeId);
+      setSelectedProjectIds((current) => (current.includes(projectId) ? current : [projectId]));
+      setSelectedSchemeIds([]);
     }
     if (activeProjectId === projectId) {
       setActiveSchemeId(schemeId);
@@ -1370,7 +1498,7 @@ export function App() {
       )
     );
     if (selectedProjectId === project.id) {
-      setSelectedProjectId("");
+      clearRecordSelection();
     }
     if (activeProjectId === project.id) {
       setActiveProjectId("");
@@ -1378,8 +1506,10 @@ export function App() {
   };
 
   const createBlankProject = () => {
-    const record = createSavedProject("新建模型", { version: 1, name: "新建模型", nodes: [], edges: [] });
     const targetSchemeId = selectedSchemeId || activeSchemeId || schemes[0]?.id;
+    const targetScheme = schemes.find((scheme) => scheme.id === targetSchemeId) ?? schemes[0];
+    const name = uniqueRecordName("新建模型", targetScheme?.projects.map((project) => project.name) ?? [], "未命名模型");
+    const record = createSavedProject(name, { version: 1, name, nodes: [], edges: [] });
     setSchemes((current) =>
       current.map((scheme, index) =>
         scheme.id === targetSchemeId || (!targetSchemeId && index === 0)
@@ -1387,8 +1517,7 @@ export function App() {
           : scheme
       )
     );
-    setSelectedSchemeId(targetSchemeId ?? schemes[0]?.id ?? "");
-    setSelectedProjectId(record.id);
+    selectSingleProject(targetSchemeId ?? schemes[0]?.id ?? "", record.id);
     loadSavedProject(record, targetSchemeId ?? schemes[0]?.id ?? "");
   };
 
@@ -1556,24 +1685,31 @@ export function App() {
         ) : (
           schemes.map((scheme) => {
             const isExpanded = expandedSchemeIds.includes(scheme.id);
+            const isSchemeSelected = selectedSchemeIds.includes(scheme.id) || (scheme.id === selectedSchemeId && !selectedProjectId);
             return (
             <div className="scheme-group" key={scheme.id}>
               <div
                 role="option"
-                aria-selected={scheme.id === selectedSchemeId && !selectedProjectId}
+                aria-selected={isSchemeSelected}
                 aria-expanded={isExpanded}
                 tabIndex={0}
-                className={`scheme-option ${scheme.id === selectedSchemeId && !selectedProjectId ? "selected" : ""} ${scheme.id === activeSchemeId ? "active" : ""}`}
-                onClick={() => {
-                  setSelectedSchemeId(scheme.id);
-                  setSelectedProjectId("");
+                className={`scheme-option ${isSchemeSelected ? "selected" : ""} ${scheme.id === activeSchemeId ? "active" : ""}`}
+                onClick={(event) => {
+                  if (event.ctrlKey || event.metaKey || event.shiftKey) {
+                    toggleSchemeSelection(scheme.id);
+                  } else {
+                    selectSingleScheme(scheme.id);
+                  }
                   toggleSchemeExpanded(scheme.id);
                 }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
                     event.preventDefault();
-                    setSelectedSchemeId(scheme.id);
-                    setSelectedProjectId("");
+                    if (event.ctrlKey || event.metaKey || event.shiftKey) {
+                      toggleSchemeSelection(scheme.id);
+                    } else {
+                      selectSingleScheme(scheme.id);
+                    }
                     toggleSchemeExpanded(scheme.id);
                   }
                 }}
@@ -1587,8 +1723,9 @@ export function App() {
                 }}
                 onContextMenu={(event) => {
                   event.preventDefault();
-                  setSelectedSchemeId(scheme.id);
-                  setSelectedProjectId("");
+                  if (!selectedSchemeIds.includes(scheme.id)) {
+                    selectSingleScheme(scheme.id);
+                  }
                   setProjectMenu({ x: event.clientX, y: event.clientY, schemeId: scheme.id });
                 }}
               >
@@ -1600,17 +1737,22 @@ export function App() {
                 {scheme.projects.length === 0 ? (
                   <p className="project-empty">暂无模型</p>
                 ) : (
-                  scheme.projects.map((project) => (
+                  scheme.projects.map((project) => {
+                    const isProjectSelected = selectedProjectIds.includes(project.id) || project.id === selectedProjectId;
+                    return (
                     <div
                       role="option"
-                      aria-selected={project.id === selectedProjectId}
+                      aria-selected={isProjectSelected}
                       tabIndex={0}
                       draggable
-                      className={`project-option ${project.id === selectedProjectId ? "selected" : ""} ${project.id === activeProjectId ? "active" : ""}`}
+                      className={`project-option ${isProjectSelected ? "selected" : ""} ${project.id === activeProjectId ? "active" : ""}`}
                       key={project.id}
-                      onClick={() => {
-                        setSelectedSchemeId(scheme.id);
-                        setSelectedProjectId(project.id);
+                      onClick={(event) => {
+                        if (event.ctrlKey || event.metaKey || event.shiftKey) {
+                          toggleProjectSelection(scheme.id, project.id);
+                        } else {
+                          selectSingleProject(scheme.id, project.id);
+                        }
                         setInspectorTab("model");
                       }}
                       onDoubleClick={() => loadSavedProject(project, scheme.id)}
@@ -1622,21 +1764,26 @@ export function App() {
                           loadSavedProject(project, scheme.id);
                         } else if (event.key === " " || event.key === "Spacebar") {
                           event.preventDefault();
-                          setSelectedSchemeId(scheme.id);
-                          setSelectedProjectId(project.id);
+                          if (event.ctrlKey || event.metaKey || event.shiftKey) {
+                            toggleProjectSelection(scheme.id, project.id);
+                          } else {
+                            selectSingleProject(scheme.id, project.id);
+                          }
                         }
                       }}
                       onContextMenu={(event) => {
                         event.preventDefault();
-                        setSelectedSchemeId(scheme.id);
-                        setSelectedProjectId(project.id);
+                        if (!selectedProjectIds.includes(project.id)) {
+                          selectSingleProject(scheme.id, project.id);
+                        }
                         setProjectMenu({ x: event.clientX, y: event.clientY, schemeId: scheme.id, projectId: project.id });
                       }}
                     >
                       <FileJson className="project-item-icon" size={14} />
                       <span>{project.name}</span>
                     </div>
-                  ))
+                    );
+                  })
                 )}
               </div>}
             </div>
@@ -2266,35 +2413,35 @@ export function App() {
       </aside>
       {contextMenu && (
         <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
-          <button onClick={undoLastOperation} disabled={undoStack.length === 0}>
+          <button onClick={() => runContextMenuAction(undoLastOperation)} disabled={undoStack.length === 0}>
             <Undo2 size={14} />
             撤销
           </button>
-          <button onClick={copySelection} disabled={selectedNodeIds.length === 0}>
+          <button onClick={() => runContextMenuAction(copySelection)} disabled={selectedNodeIds.length === 0}>
             <Copy size={14} />
             复制
           </button>
-          <button onClick={() => saveCurrentProject()}>
+          <button onClick={() => runContextMenuAction(() => saveCurrentProject())}>
             <Save size={14} />
             保存
           </button>
-          <button onClick={pasteSelection} disabled={clipboardNodes.length === 0}>
+          <button onClick={() => runContextMenuAction(pasteSelection)} disabled={clipboardNodes.length === 0}>
             <FileInput size={14} />
             粘贴
           </button>
-          <button onClick={() => moveSelection(24, 0)} disabled={selectedNodeIds.length === 0}>
+          <button onClick={() => runContextMenuAction(() => moveSelection(24, 0))} disabled={selectedNodeIds.length === 0}>
             右移
           </button>
-          <button onClick={() => moveSelection(-24, 0)} disabled={selectedNodeIds.length === 0}>
+          <button onClick={() => runContextMenuAction(() => moveSelection(-24, 0))} disabled={selectedNodeIds.length === 0}>
             左移
           </button>
-          <button onClick={() => moveSelection(0, -24)} disabled={selectedNodeIds.length === 0}>
+          <button onClick={() => runContextMenuAction(() => moveSelection(0, -24))} disabled={selectedNodeIds.length === 0}>
             上移
           </button>
-          <button onClick={() => moveSelection(0, 24)} disabled={selectedNodeIds.length === 0}>
+          <button onClick={() => runContextMenuAction(() => moveSelection(0, 24))} disabled={selectedNodeIds.length === 0}>
             下移
           </button>
-          <button onClick={deleteSelection} disabled={selectedNodeIds.length === 0 && !selectedEdgeId}>
+          <button onClick={() => runContextMenuAction(deleteSelection)} disabled={selectedNodeIds.length === 0 && !selectedEdgeId}>
             <Trash2 size={14} />
             删除
           </button>
@@ -2303,97 +2450,71 @@ export function App() {
       {projectMenu && (
         <div className="context-menu" style={{ left: projectMenu.x, top: projectMenu.y }}>
           <button
-            onClick={() => {
+            onClick={() => runContextMenuAction(() => {
               createSchemeRecord();
-              setProjectMenu(null);
-            }}
+            })}
           >
             <FolderOpen size={14} />
             新增方案
           </button>
           <button
-            onClick={() => {
+            onClick={() => runContextMenuAction(() => {
               createBlankProject();
-              setProjectMenu(null);
-            }}
+            })}
             disabled={!projectMenu.schemeId}
           >
             <FileJson size={14} />
             新增模型
           </button>
           <button
-            onClick={() => {
-              const project = projects.find((item) => item.id === projectMenu.projectId);
-              if (project) loadSavedProject(project, projectMenu.schemeId);
-              setProjectMenu(null);
-            }}
-            disabled={!projectMenu.projectId}
-          >
-            加载模型
-          </button>
-          <button
-            onClick={() => {
+            onClick={() => runContextMenuAction(() => {
               const project = projects.find((item) => item.id === projectMenu.projectId);
               const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
               if (project) duplicateProjectRecord(project);
               else if (scheme) duplicateSchemeRecord(scheme);
-              setProjectMenu(null);
-            }}
+            })}
             disabled={!projectMenu.projectId && !projectMenu.schemeId}
           >
             <Copy size={14} />
             复制
           </button>
           <button
-            onClick={() => {
-              copySelectedRecord();
-              setProjectMenu(null);
-            }}
-            disabled={!projectMenu.projectId && !projectMenu.schemeId}
-          >
-            复制到剪贴板
-          </button>
-          <button
-            onClick={() => {
+            onClick={() => runContextMenuAction(() => {
               pasteSelectedRecord();
-              setProjectMenu(null);
-            }}
+            })}
             disabled={!recordClipboard || !projectMenu.schemeId}
           >
             粘贴
           </button>
           <button
-            onClick={() => {
+            onClick={() => runContextMenuAction(() => {
               const project = projects.find((item) => item.id === projectMenu.projectId);
               const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
               if (project) renameProjectRecord(project);
               else if (scheme) renameSchemeRecord(scheme);
-              setProjectMenu(null);
-            }}
+            })}
             disabled={!projectMenu.projectId && !projectMenu.schemeId}
           >
             <Pencil size={14} />
             重命名
           </button>
           <button
-            onClick={() => {
+            onClick={() => runContextMenuAction(() => {
               const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
               if (scheme) exportSchemeRecord(scheme);
-              setProjectMenu(null);
-            }}
+            })}
             disabled={!projectMenu.schemeId}
           >
             <Download size={14} />
             导出方案
           </button>
           <button
-            onClick={() => {
+            onClick={() => runContextMenuAction(() => {
               const project = projects.find((item) => item.id === projectMenu.projectId);
               const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
               if (project) deleteProjectRecord(project);
               else if (scheme) deleteSchemeRecord(scheme);
-              setProjectMenu(null);
-            }}
+            })}
             disabled={!projectMenu.projectId && !projectMenu.schemeId}
           >
             <Trash2 size={14} />
