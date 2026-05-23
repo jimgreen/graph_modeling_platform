@@ -1088,6 +1088,10 @@ function pointInsideBox(point: Point, box: ReturnType<typeof boxFor>) {
   return point.x > box.left && point.x < box.right && point.y > box.top && point.y < box.bottom;
 }
 
+function boxesOverlap(first: ReturnType<typeof boxFor>, second: ReturnType<typeof boxFor>) {
+  return first.left <= second.right && first.right >= second.left && first.top <= second.bottom && first.bottom >= second.top;
+}
+
 function segmentIntersectsBox(a: Point, b: Point, box: ReturnType<typeof boxFor>) {
   if (pointInsideBox(a, box) || pointInsideBox(b, box)) {
     return true;
@@ -1103,6 +1107,25 @@ function segmentIntersectsBox(a: Point, b: Point, box: ReturnType<typeof boxFor>
     return a.y > box.top && a.y < box.bottom && xMax > box.left && xMin < box.right;
   }
   return false;
+}
+
+function routeCorridor(a: Point, b: Point, margin: number) {
+  return {
+    left: Math.min(a.x, b.x) - margin,
+    right: Math.max(a.x, b.x) + margin,
+    top: Math.min(a.y, b.y) - margin,
+    bottom: Math.max(a.y, b.y) + margin
+  };
+}
+
+function relevantBlockersForRoute(source: ModelNode, target: ModelNode, nodes: ModelNode[], startOut: Point, endOut: Point) {
+  const corridor = routeCorridor(startOut, endOut, 96);
+  return nodes.filter((node) => {
+    if (node.id === source.id || node.id === target.id || node.id.startsWith("floating-")) {
+      return false;
+    }
+    return boxesOverlap(boxFor(node, 24), corridor);
+  });
 }
 
 function scoreRoute(points: Point[], blockers: ModelNode[]) {
@@ -1345,7 +1368,7 @@ export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes:
     x: end.x + targetNormal.x * stubLength,
     y: end.y + targetNormal.y * stubLength
   };
-  const blockers = nodes;
+  const blockers = relevantBlockersForRoute(source, target, nodes, startOut, endOut);
   const midX = Math.round((startOut.x + endOut.x) / 2);
   const midY = Math.round((startOut.y + endOut.y) / 2);
   const blockerExtents = blockers.map((node) => boxFor(node, 24));

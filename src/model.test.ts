@@ -308,6 +308,25 @@ describe("power system model", () => {
     }
   });
 
+  test("does not reroute unrelated lines when a far non-interfering device moves", () => {
+    const source = createDefaultNode("ac-source", { x: 120, y: 140 });
+    const target = createDefaultNode("ac-load", { x: 420, y: 140 });
+    const unrelated = createDefaultNode("ac-switch", { x: 1200, y: 840 });
+    const movedUnrelated = { ...unrelated, position: { x: 1400, y: 980 } };
+    const edge: Edge = {
+      id: "stable-line",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+
+    const before = routeEdgesForRendering([source, target, unrelated], [edge])[0].points;
+    const after = routeEdgesForRendering([source, target, movedUnrelated], [edge])[0].points;
+
+    expect(after).toEqual(before);
+  });
+
   test("anchors route endpoints on terminals and leaves terminals perpendicularly", () => {
     const source = createDefaultNode("ac-line", { x: 120, y: 120 });
     const target = createDefaultNode("ac-line", { x: 420, y: 120 });
