@@ -1,5 +1,7 @@
 import { ChangeEvent, DragEvent, PointerEvent, useMemo, useRef, useState } from "react";
 import {
+  AlignCenterHorizontal,
+  AlignCenterVertical,
   Cable,
   Download,
   FileInput,
@@ -10,21 +12,29 @@ import {
   Trash2
 } from "lucide-react";
 import {
+  alignNodes,
   buildTopology,
   canConnectTerminals,
   createTerminals,
   createDefaultNode,
   deserializeProject,
   DEVICE_LIBRARY,
+  getNodeScaleX,
+  getNodeScaleY,
+  getTerminalPoint,
   type DeviceKind,
   type Edge,
   type ModelNode,
   type Point,
-  routeOrthogonalEdge,
+  routeEdgesForRendering,
   serializeProject
 } from "./model";
 
 type ToolMode = "select" | "connect";
+type EdgeEndpoint = "source" | "target";
+type TransformDrag =
+  | { kind: "rotate"; nodeId: string }
+  | { kind: "scale-x" | "scale-y" | "scale-both"; nodeId: string };
 
 const CANVAS_WIDTH = 1800;
 const CANVAS_HEIGHT = 1200;
@@ -66,10 +76,6 @@ function screenToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number):
   return { x: Math.round(transformed.x), y: Math.round(transformed.y) };
 }
 
-function pointsToPath(points: Point[]) {
-  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
-}
-
 function downloadText(filename: string, text: string, mime: string) {
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -85,6 +91,56 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   const h = miniature ? 38 : node.size.height;
   const stroke = node.kind.startsWith("dc") || node.kind.includes("dcdc") ? "#0f766e" : "#2563eb";
   const fill = node.kind.includes("converter") ? "#ecfeff" : node.kind.includes("switch") ? "#fff7ed" : "#ffffff";
+
+  if (node.kind.includes("wind-source")) {
+    return (
+      <g fill={fill} stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="0" cy="0" r={miniature ? 4 : 6} />
+        <path d="M 0 0 L 0 -18 M 0 0 L 16 10 M 0 0 L -16 10" />
+        <path d="M 0 6 V 22" />
+      </g>
+    );
+  }
+
+  if (node.kind.includes("pv-source")) {
+    return (
+      <g fill={fill} stroke={stroke} strokeWidth="2.2" strokeLinejoin="round">
+        <path d="M -22 -12 H 22 V 14 H -22 Z" />
+        <path d="M -7 -12 V 14 M 8 -12 V 14 M -22 1 H 22" />
+        <path d="M 0 -22 V -17 M -18 -20 L -14 -16 M 18 -20 L 14 -16" />
+      </g>
+    );
+  }
+
+  if (node.kind.includes("thermal-source")) {
+    return (
+      <g fill={fill} stroke={stroke} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M -20 18 H 20 V -4 L 8 4 V -4 L -4 4 V -4 L -20 8 Z" />
+        <path d="M -6 -12 C -12 -22 6 -22 0 -32 M 10 -12 C 4 -22 22 -22 16 -32" fill="none" />
+      </g>
+    );
+  }
+
+  if (node.kind.includes("hydro-source")) {
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M -20 -12 C -8 -24 8 -24 20 -12 C 12 10 4 20 0 22 C -4 20 -12 10 -20 -12 Z" fill={fill} />
+        <path d="M -16 6 C -8 0 -2 12 6 6 C 12 1 15 5 18 8" />
+      </g>
+    );
+  }
+
+  if (node.kind.includes("nuclear-source")) {
+    return (
+      <g fill={fill} stroke={stroke} strokeWidth="2.2">
+        <circle cx="0" cy="0" r={miniature ? 16 : 22} />
+        <ellipse cx="0" cy="0" rx="6" ry="20" fill="none" transform="rotate(0)" />
+        <ellipse cx="0" cy="0" rx="6" ry="20" fill="none" transform="rotate(60)" />
+        <ellipse cx="0" cy="0" rx="6" ry="20" fill="none" transform="rotate(120)" />
+        <circle cx="0" cy="0" r="3" fill={stroke} />
+      </g>
+    );
+  }
 
   if (node.kind.includes("bus")) {
     return <rect x={-w / 2} y={-h / 2 + h / 3} width={w} height={h / 3} rx="2" fill={stroke} />;
@@ -145,21 +201,12 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
 }
 
 function buildSvgDocument(nodes: ModelNode[], edges: Edge[]) {
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const edgeMarkup = edges
-    .map((edge) => {
-      const source = nodeById.get(edge.sourceId);
-      const target = nodeById.get(edge.targetId);
-      if (!source || !target) {
-        return "";
-      }
-      const d = pointsToPath(routeOrthogonalEdge(source, target, nodes, edge));
-      return `<path d="${d}" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
-    })
+  const edgeMarkup = routeEdgesForRendering(nodes, edges)
+    .map((route) => `<path d="${route.path}" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`)
     .join("\n");
   const nodeMarkup = nodes
     .map(
-      (node) => `<g transform="translate(${node.position.x} ${node.position.y}) rotate(${node.rotation}) scale(${node.scale})">
+      (node) => `<g transform="translate(${node.position.x} ${node.position.y}) rotate(${node.rotation}) scale(${getNodeScaleX(node)} ${getNodeScaleY(node)})">
   <rect x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" rx="8" fill="#ffffff" stroke="#94a3b8"/>
   <text x="0" y="${node.size.height / 2 + 20}" text-anchor="middle" font-size="14" font-family="Arial, sans-serif" fill="#0f172a">${node.name}</text>
 </g>`
@@ -178,13 +225,22 @@ export function App() {
   const [nodes, setNodes] = useState<ModelNode[]>(SAMPLE_NODES);
   const [edges, setEdges] = useState<Edge[]>(SAMPLE_EDGES);
   const [mode, setMode] = useState<ToolMode>("select");
-  const [selectedNodeId, setSelectedNodeId] = useState(nodes[0]?.id ?? "");
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>(nodes[0] ? [nodes[0].id] : []);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string>("");
   const [connectSource, setConnectSource] = useState<{ nodeId: string; terminalId: string } | null>(null);
   const [dragging, setDragging] = useState<{ nodeId: string; offset: Point } | null>(null);
+  const [rewiring, setRewiring] = useState<{ edgeId: string; endpoint: EdgeEndpoint } | null>(null);
+  const [transformDrag, setTransformDrag] = useState<TransformDrag | null>(null);
+  const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: CANVAS_WIDTH, height: CANVAS_HEIGHT });
+  const [panning, setPanning] = useState<{ clientX: number; clientY: number; viewBox: typeof viewBox } | null>(null);
 
+  const selectedNodeId = selectedNodeIds[0] ?? "";
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
+  const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId);
+  const selectedCount = selectedNodeIds.length;
   const topology = useMemo(() => buildTopology(nodes, edges), [nodes, edges]);
   const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
+  const routedEdges = useMemo(() => routeEdgesForRendering(nodes, edges), [nodes, edges]);
 
   const updateSelectedNode = (patch: Partial<ModelNode>) => {
     if (!selectedNodeId) {
@@ -202,6 +258,18 @@ export function App() {
         node.id === selectedNodeId ? { ...node, params: { ...node.params, [key]: value } } : node
       )
     );
+  };
+
+  const clampScale = (value: number) => Math.max(0.2, Math.min(5, value));
+
+  const toLocalNodePoint = (node: ModelNode, point: Point): Point => {
+    const radians = (-node.rotation * Math.PI) / 180;
+    const dx = point.x - node.position.x;
+    const dy = point.y - node.position.y;
+    return {
+      x: dx * Math.cos(radians) - dy * Math.sin(radians),
+      y: dx * Math.sin(radians) + dy * Math.cos(radians)
+    };
   };
 
   const updateTerminalCount = (count: number) => {
@@ -233,12 +301,20 @@ export function App() {
     const position = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
     const node = createDefaultNode(kind, position);
     setNodes((current) => [...current, node]);
-    setSelectedNodeId(node.id);
+    setSelectedNodeIds([node.id]);
+    setSelectedEdgeId("");
   };
 
   const handleNodePointerDown = (event: PointerEvent<SVGGElement>, node: ModelNode) => {
     event.stopPropagation();
-    setSelectedNodeId(node.id);
+    setSelectedEdgeId("");
+    if (event.ctrlKey || event.shiftKey || event.metaKey) {
+      setSelectedNodeIds((current) =>
+        current.includes(node.id) ? current.filter((id) => id !== node.id) : [...current, node.id]
+      );
+    } else if (!selectedNodeIds.includes(node.id)) {
+      setSelectedNodeIds([node.id]);
+    }
     if (mode === "connect") {
       return;
     }
@@ -251,6 +327,40 @@ export function App() {
   };
 
   const handlePointerMove = (event: PointerEvent<SVGSVGElement>) => {
+    if (panning && svgRef.current) {
+      const rect = svgRef.current.getBoundingClientRect();
+      const dx = ((event.clientX - panning.clientX) / rect.width) * panning.viewBox.width;
+      const dy = ((event.clientY - panning.clientY) / rect.height) * panning.viewBox.height;
+      setViewBox({ ...panning.viewBox, x: panning.viewBox.x - dx, y: panning.viewBox.y - dy });
+      return;
+    }
+    if (transformDrag && svgRef.current) {
+      const point = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
+      setNodes((current) =>
+        current.map((node) => {
+          if (node.id !== transformDrag.nodeId) {
+            return node;
+          }
+          if (transformDrag.kind === "rotate") {
+            const angle = (Math.atan2(point.y - node.position.y, point.x - node.position.x) * 180) / Math.PI + 90;
+            const snapped = ((Math.round(angle / 90) * 90) % 360 + 360) % 360;
+            return { ...node, rotation: snapped };
+          }
+          const local = toLocalNodePoint(node, point);
+          const nextScaleX = clampScale((Math.abs(local.x) * 2) / node.size.width);
+          const nextScaleY = clampScale((Math.abs(local.y) * 2) / node.size.height);
+          if (transformDrag.kind === "scale-x") {
+            return { ...node, scale: nextScaleX, scaleX: nextScaleX };
+          }
+          if (transformDrag.kind === "scale-y") {
+            return { ...node, scale: nextScaleY, scaleY: nextScaleY };
+          }
+          const nextScale = clampScale(Math.max(nextScaleX, nextScaleY));
+          return { ...node, scale: nextScale, scaleX: nextScale, scaleY: nextScale };
+        })
+      );
+      return;
+    }
     if (!dragging || !svgRef.current) {
       return;
     }
@@ -264,13 +374,50 @@ export function App() {
     );
   };
 
+  const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
+    event.preventDefault();
+    if (!svgRef.current) {
+      return;
+    }
+    const pointer = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
+    const zoomFactor = event.deltaY > 0 ? 1.12 : 0.88;
+    const nextWidth = Math.max(240, Math.min(CANVAS_WIDTH * 3, viewBox.width * zoomFactor));
+    const nextHeight = Math.max(160, Math.min(CANVAS_HEIGHT * 3, viewBox.height * zoomFactor));
+    const ratioX = (pointer.x - viewBox.x) / viewBox.width;
+    const ratioY = (pointer.y - viewBox.y) / viewBox.height;
+    setViewBox({
+      x: pointer.x - ratioX * nextWidth,
+      y: pointer.y - ratioY * nextHeight,
+      width: nextWidth,
+      height: nextHeight
+    });
+  };
+
   const deleteSelected = () => {
+    if (selectedEdgeId) {
+      setEdges((current) => current.filter((edge) => edge.id !== selectedEdgeId));
+      setSelectedEdgeId("");
+      return;
+    }
     if (!selectedNodeId) {
       return;
     }
     setNodes((current) => current.filter((node) => node.id !== selectedNodeId));
     setEdges((current) => current.filter((edge) => edge.sourceId !== selectedNodeId && edge.targetId !== selectedNodeId));
-    setSelectedNodeId("");
+    setSelectedNodeIds([]);
+  };
+
+  const alignSelected = (direction: "horizontal" | "vertical") => {
+    setNodes((current) => alignNodes(current, selectedNodeIds, direction));
+  };
+
+  const getEdgeEndpointPoint = (edge: Edge, endpoint: EdgeEndpoint): Point | null => {
+    const node = nodeById.get(endpoint === "source" ? edge.sourceId : edge.targetId);
+    if (!node) {
+      return null;
+    }
+    const terminalId = endpoint === "source" ? edge.sourceTerminalId : edge.targetTerminalId;
+    return getTerminalPoint(node, terminalId);
   };
 
   const handleTerminalPointerDown = (
@@ -279,7 +426,26 @@ export function App() {
     terminalId: string
   ) => {
     event.stopPropagation();
-    setSelectedNodeId(node.id);
+    setSelectedNodeIds([node.id]);
+    setSelectedEdgeId("");
+    if (rewiring) {
+      const edge = edges.find((item) => item.id === rewiring.edgeId);
+      const otherNode = edge ? nodeById.get(rewiring.endpoint === "source" ? edge.targetId : edge.sourceId) : undefined;
+      const otherTerminalId = rewiring.endpoint === "source" ? edge?.targetTerminalId : edge?.sourceTerminalId;
+      if (edge && otherNode && otherTerminalId && canConnectTerminals(node, terminalId, otherNode, otherTerminalId)) {
+        setEdges((current) =>
+          current.map((item) =>
+            item.id === edge.id
+              ? rewiring.endpoint === "source"
+                ? { ...item, sourceId: node.id, sourceTerminalId: terminalId }
+                : { ...item, targetId: node.id, targetTerminalId: terminalId }
+              : item
+          )
+        );
+      }
+      setRewiring(null);
+      return;
+    }
     if (mode !== "connect") {
       return;
     }
@@ -292,16 +458,18 @@ export function App() {
       setConnectSource(null);
       return;
     }
+    const newEdge: Edge = {
+      id: `edge-${Date.now()}`,
+      sourceId: sourceNode.id,
+      targetId: node.id,
+      sourceTerminalId: connectSource.terminalId,
+      targetTerminalId: terminalId
+    };
     setEdges((current) => [
       ...current,
-      {
-        id: `edge-${Date.now()}`,
-        sourceId: sourceNode.id,
-        targetId: node.id,
-        sourceTerminalId: connectSource.terminalId,
-        targetTerminalId: terminalId
-      }
+      newEdge
     ]);
+    setSelectedEdgeId(newEdge.id);
     setConnectSource(null);
   };
 
@@ -326,7 +494,8 @@ export function App() {
     const project = deserializeProject(text);
     setNodes(project.nodes);
     setEdges(project.edges);
-    setSelectedNodeId(project.nodes[0]?.id ?? "");
+    setSelectedNodeIds(project.nodes[0] ? [project.nodes[0].id] : []);
+    setSelectedEdgeId("");
     event.target.value = "";
   };
 
@@ -384,9 +553,18 @@ export function App() {
             </span>
             <span>联络线 {edges.length}</span>
             <span>拓扑岛 {topology.connectedComponents.length}</span>
+            <span>选中 {selectedCount}</span>
             {mode === "connect" && <strong>{connectSource ? "选择同类型目标端子" : "选择起点端子"}</strong>}
           </div>
           <div className="action-cluster">
+            <button onClick={() => alignSelected("horizontal")} disabled={selectedCount < 2} title="横向对齐">
+              <AlignCenterHorizontal size={16} />
+              横向对齐
+            </button>
+            <button onClick={() => alignSelected("vertical")} disabled={selectedCount < 2} title="纵向对齐">
+              <AlignCenterVertical size={16} />
+              纵向对齐
+            </button>
             <input ref={importRef} type="file" accept="application/json,.json" hidden onChange={importModel} />
             <button onClick={() => importRef.current?.click()}>
               <FileInput size={16} />
@@ -407,15 +585,36 @@ export function App() {
           <svg
             ref={svgRef}
             className="diagram-canvas"
-            viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`}
+            viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
             onDrop={handleDrop}
             onDragOver={(event) => event.preventDefault()}
+            onWheel={handleWheel}
             onPointerMove={handlePointerMove}
-            onPointerUp={() => setDragging(null)}
-            onPointerLeave={() => setDragging(null)}
-            onPointerDown={() => {
-              setSelectedNodeId("");
+            onPointerUp={() => {
+              setDragging(null);
+              setTransformDrag(null);
+              setPanning(null);
+            }}
+            onPointerLeave={() => {
+              setDragging(null);
+              setTransformDrag(null);
+              setPanning(null);
+            }}
+            onPointerCancel={() => {
+              setDragging(null);
+              setTransformDrag(null);
+              setPanning(null);
+            }}
+            onLostPointerCapture={() => {
+              setDragging(null);
+              setTransformDrag(null);
+            }}
+            onPointerDown={(event) => {
+              setSelectedNodeIds([]);
+              setSelectedEdgeId("");
               setConnectSource(null);
+              setRewiring(null);
+              setPanning({ clientX: event.clientX, clientY: event.clientY, viewBox });
             }}
           >
             <defs>
@@ -432,34 +631,59 @@ export function App() {
             </defs>
             <rect width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#f8fafc" />
             <rect width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="url(#large-grid)" />
-            {edges.map((edge) => {
-              const source = nodeById.get(edge.sourceId);
-              const target = nodeById.get(edge.targetId);
-              if (!source || !target) {
-                return null;
-              }
-              const path = pointsToPath(routeOrthogonalEdge(source, target, nodes, edge));
+            {routedEdges.map((route) => {
+              const edge = edges.find((item) => item.id === route.edgeId);
+              if (!edge) return null;
+              const selected = edge.id === selectedEdgeId;
+              const sourcePoint = getEdgeEndpointPoint(edge, "source");
+              const targetPoint = getEdgeEndpointPoint(edge, "target");
               return (
-                <path
-                  key={edge.id}
-                  d={path}
-                  className="connection-line"
-                  markerEnd="url(#arrow)"
-                  onPointerDown={(event) => {
-                    event.stopPropagation();
-                    setSelectedNodeId("");
-                  }}
-                />
+                <g key={edge.id} className={`connection-group ${selected ? "selected" : ""}`}>
+                  <path
+                    d={route.path}
+                    className="connection-line"
+                    markerEnd="url(#arrow)"
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                      setSelectedNodeIds([]);
+                      setSelectedEdgeId(edge.id);
+                    }}
+                  />
+                  {selected && sourcePoint && (
+                    <circle
+                      className="edge-endpoint-handle"
+                      cx={sourcePoint.x}
+                      cy={sourcePoint.y}
+                      r={8}
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                        setRewiring({ edgeId: edge.id, endpoint: "source" });
+                      }}
+                    />
+                  )}
+                  {selected && targetPoint && (
+                    <circle
+                      className="edge-endpoint-handle"
+                      cx={targetPoint.x}
+                      cy={targetPoint.y}
+                      r={8}
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                        setRewiring({ edgeId: edge.id, endpoint: "target" });
+                      }}
+                    />
+                  )}
+                </g>
               );
             })}
             {nodes.map((node) => {
-              const selected = node.id === selectedNodeId;
+              const selected = selectedNodeIds.includes(node.id);
               const isConnectSource = node.id === connectSource?.nodeId;
               return (
                 <g
                   key={node.id}
                   className={`diagram-node ${selected ? "selected" : ""} ${isConnectSource ? "connect-source" : ""}`}
-                  transform={`translate(${node.position.x} ${node.position.y}) rotate(${node.rotation}) scale(${node.scale})`}
+                  transform={`translate(${node.position.x} ${node.position.y}) rotate(${node.rotation}) scale(${getNodeScaleX(node)} ${getNodeScaleY(node)})`}
                   onPointerDown={(event) => handleNodePointerDown(event, node)}
                 >
                   <rect
@@ -493,6 +717,57 @@ export function App() {
                       </circle>
                     );
                   })}
+                  {selected && selectedCount === 1 && (
+                    <g className="transform-handles">
+                      <line x1="0" y1={-node.size.height / 2 - 12} x2="0" y2={-node.size.height / 2 - 36} />
+                      <circle
+                        className="rotate-handle"
+                        cx="0"
+                        cy={-node.size.height / 2 - 42}
+                        r="8"
+                        onPointerDown={(event) => {
+                          event.stopPropagation();
+                          setTransformDrag({ kind: "rotate", nodeId: node.id });
+                        }}
+                      />
+                      <rect
+                        className="scale-handle horizontal"
+                        x={node.size.width / 2 + 6}
+                        y="-8"
+                        width="16"
+                        height="16"
+                        rx="3"
+                        onPointerDown={(event) => {
+                          event.stopPropagation();
+                          setTransformDrag({ kind: "scale-x", nodeId: node.id });
+                        }}
+                      />
+                      <rect
+                        className="scale-handle vertical"
+                        x="-8"
+                        y={node.size.height / 2 + 6}
+                        width="16"
+                        height="16"
+                        rx="3"
+                        onPointerDown={(event) => {
+                          event.stopPropagation();
+                          setTransformDrag({ kind: "scale-y", nodeId: node.id });
+                        }}
+                      />
+                      <rect
+                        className="scale-handle proportional"
+                        x={node.size.width / 2 + 6}
+                        y={node.size.height / 2 + 6}
+                        width="16"
+                        height="16"
+                        rx="3"
+                        onPointerDown={(event) => {
+                          event.stopPropagation();
+                          setTransformDrag({ kind: "scale-both", nodeId: node.id });
+                        }}
+                      />
+                    </g>
+                  )}
                 </g>
               );
             })}
@@ -504,9 +779,15 @@ export function App() {
         <div className="inspector-title">
           <div>
             <h2>参数面板</h2>
-            <p>{selectedNode ? "修改后自动更新模型文件" : "选择画布元件查看参数"}</p>
+            <p>
+              {selectedNode
+                ? "修改后自动更新模型文件"
+                : selectedEdge
+                  ? "可删除联络线或拖拽端点重接"
+                  : "选择画布元件查看参数"}
+            </p>
           </div>
-          <button onClick={deleteSelected} disabled={!selectedNode} title="删除元件">
+          <button onClick={deleteSelected} disabled={!selectedNode && !selectedEdge} title="删除选中对象">
             <Trash2 size={17} />
           </button>
         </div>
@@ -545,14 +826,31 @@ export function App() {
               />
             </label>
             <label>
-              缩放倍率
+              横向倍率
               <input
                 type="number"
-                min="0.5"
-                max="2"
+                min="0.2"
+                max="5"
                 step="0.1"
-                value={selectedNode.scale}
-                onChange={(event) => updateSelectedNode({ scale: Number(event.target.value) })}
+                value={getNodeScaleX(selectedNode)}
+                onChange={(event) => {
+                  const scaleX = clampScale(Number(event.target.value));
+                  updateSelectedNode({ scale: scaleX, scaleX });
+                }}
+              />
+            </label>
+            <label>
+              纵向倍率
+              <input
+                type="number"
+                min="0.2"
+                max="5"
+                step="0.1"
+                value={getNodeScaleY(selectedNode)}
+                onChange={(event) => {
+                  const scaleY = clampScale(Number(event.target.value));
+                  updateSelectedNode({ scale: scaleY, scaleY });
+                }}
               />
             </label>
             <label>
@@ -586,6 +884,22 @@ export function App() {
                   .filter(Boolean)
                   .join("、") || "暂无相邻元件"}
               </small>
+            </div>
+          </div>
+        ) : selectedEdge ? (
+          <div className="form-stack">
+            <div className="topology-card">
+              <span>联络线</span>
+              <strong>{selectedEdge.id}</strong>
+              <small>
+                {(nodeById.get(selectedEdge.sourceId)?.name ?? "未知设备") +
+                  " -> " +
+                  (nodeById.get(selectedEdge.targetId)?.name ?? "未知设备")}
+              </small>
+            </div>
+            <div className="empty-state">
+              <Cable size={28} />
+              <p>拖拽线两端的圆形控制点到其他同类型端子，可调整联络线首端或末端。</p>
             </div>
           </div>
         ) : (

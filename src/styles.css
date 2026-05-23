@@ -231,6 +231,22 @@ button:disabled {
   pointer-events: stroke;
 }
 
+.connection-group.selected .connection-line {
+  stroke: #dc2626;
+  stroke-width: 4;
+}
+
+.edge-endpoint-handle {
+  fill: #ffffff;
+  stroke: #dc2626;
+  stroke-width: 3;
+  cursor: grab;
+}
+
+.edge-endpoint-handle:active {
+  cursor: grabbing;
+}
+
 .diagram-node {
   cursor: grab;
 }
@@ -280,6 +296,41 @@ button:disabled {
 .terminal-dot.disabled {
   fill: #cbd5e1;
   cursor: not-allowed;
+}
+
+.transform-handles {
+  pointer-events: all;
+}
+
+.transform-handles line {
+  stroke: #1d4ed8;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.rotate-handle {
+  fill: #ffffff;
+  stroke: #1d4ed8;
+  stroke-width: 2.5;
+  cursor: grab;
+}
+
+.scale-handle {
+  fill: #ffffff;
+  stroke: #0f766e;
+  stroke-width: 2.5;
+}
+
+.scale-handle.horizontal {
+  cursor: ew-resize;
+}
+
+.scale-handle.vertical {
+  cursor: ns-resize;
+}
+
+.scale-handle.proportional {
+  cursor: nwse-resize;
 }
 
 .inspector-title {

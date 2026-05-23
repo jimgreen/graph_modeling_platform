@@ -1,5 +1,12 @@
 export type DeviceKind =
   | "ac-source"
+  | "ac-wind-source"
+  | "dc-wind-source"
+  | "ac-pv-source"
+  | "dc-pv-source"
+  | "ac-thermal-source"
+  | "ac-hydro-source"
+  | "ac-nuclear-source"
   | "ac-line"
   | "ac-bus"
   | "ac-switch"
@@ -52,6 +59,8 @@ export type ModelNode = {
   };
   rotation: number;
   scale: number;
+  scaleX?: number;
+  scaleY?: number;
   terminals: Terminal[];
   params: Record<string, string>;
 };
@@ -84,6 +93,14 @@ export type Topology = {
   connectedComponents: string[][];
 };
 
+export type AlignDirection = "horizontal" | "vertical";
+
+export type RoutedEdge = {
+  edgeId: string;
+  points: Point[];
+  path: string;
+};
+
 export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-source",
@@ -91,6 +108,51 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     group: "交流系统",
     size: { width: 84, height: 56 },
     params: { ratedVoltage: "10 kV", frequency: "50 Hz", shortCircuitCapacity: "500 MVA" },
+    terminalType: "ac",
+    terminalCount: 1
+  },
+  {
+    kind: "ac-wind-source",
+    label: "交流风电",
+    group: "交流系统",
+    size: { width: 92, height: 58 },
+    params: { ratedVoltage: "35 kV", ratedPower: "50 MW", sourceType: "风电" },
+    terminalType: "ac",
+    terminalCount: 1
+  },
+  {
+    kind: "ac-pv-source",
+    label: "交流光伏",
+    group: "交流系统",
+    size: { width: 92, height: 58 },
+    params: { ratedVoltage: "10 kV", ratedPower: "20 MW", sourceType: "光伏" },
+    terminalType: "ac",
+    terminalCount: 1
+  },
+  {
+    kind: "ac-thermal-source",
+    label: "交流火电",
+    group: "交流系统",
+    size: { width: 92, height: 58 },
+    params: { ratedVoltage: "220 kV", ratedPower: "600 MW", sourceType: "火电" },
+    terminalType: "ac",
+    terminalCount: 1
+  },
+  {
+    kind: "ac-hydro-source",
+    label: "交流水电",
+    group: "交流系统",
+    size: { width: 92, height: 58 },
+    params: { ratedVoltage: "220 kV", ratedPower: "300 MW", sourceType: "水电" },
+    terminalType: "ac",
+    terminalCount: 1
+  },
+  {
+    kind: "ac-nuclear-source",
+    label: "交流核电",
+    group: "交流系统",
+    size: { width: 92, height: 58 },
+    params: { ratedVoltage: "500 kV", ratedPower: "1000 MW", sourceType: "核电" },
     terminalType: "ac",
     terminalCount: 1
   },
@@ -145,6 +207,24 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     group: "直流系统",
     size: { width: 84, height: 56 },
     params: { ratedVoltage: "750 V", maxCurrent: "2000 A" },
+    terminalType: "dc",
+    terminalCount: 1
+  },
+  {
+    kind: "dc-wind-source",
+    label: "直流风电",
+    group: "直流系统",
+    size: { width: 92, height: 58 },
+    params: { ratedVoltage: "1500 V", ratedPower: "10 MW", sourceType: "风电" },
+    terminalType: "dc",
+    terminalCount: 1
+  },
+  {
+    kind: "dc-pv-source",
+    label: "直流光伏",
+    group: "直流系统",
+    size: { width: 92, height: 58 },
+    params: { ratedVoltage: "1500 V", ratedPower: "5 MW", sourceType: "光伏" },
     terminalType: "dc",
     terminalCount: 1
   },
@@ -233,9 +313,19 @@ export function createDefaultNode(kind: DeviceKind, position: Point): ModelNode 
     size: { ...template.size },
     rotation: 0,
     scale: 1,
+    scaleX: 1,
+    scaleY: 1,
     terminals: createTerminals(template.terminalType, template.terminalCount),
     params: { ...template.params }
   };
+}
+
+export function getNodeScaleX(node: ModelNode): number {
+  return node.scaleX ?? node.scale ?? 1;
+}
+
+export function getNodeScaleY(node: ModelNode): number {
+  return node.scaleY ?? node.scale ?? 1;
 }
 
 export function createTerminals(type: TerminalType, count: number): Terminal[] {
@@ -273,8 +363,8 @@ export function getTerminal(node: ModelNode, terminalId?: string): Terminal {
 
 export function getTerminalPoint(node: ModelNode, terminalId?: string): Point {
   const terminal = getTerminal(node, terminalId);
-  const width = node.size.width * node.scale;
-  const height = node.size.height * node.scale;
+  const width = node.size.width * getNodeScaleX(node);
+  const height = node.size.height * getNodeScaleY(node);
   const local = {
     x: terminal.anchor.x * width,
     y: terminal.anchor.y * height
@@ -288,6 +378,21 @@ export function getTerminalPoint(node: ModelNode, terminalId?: string): Point {
   };
 }
 
+export function getTerminalNormal(node: ModelNode, terminalId?: string): Point {
+  const terminal = getTerminal(node, terminalId);
+  const raw =
+    Math.abs(terminal.anchor.x) >= Math.abs(terminal.anchor.y)
+      ? { x: Math.sign(terminal.anchor.x || 1), y: 0 }
+      : { x: 0, y: Math.sign(terminal.anchor.y || 1) };
+  const radians = (node.rotation * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return {
+    x: Math.round(raw.x * cos - raw.y * sin),
+    y: Math.round(raw.x * sin + raw.y * cos)
+  };
+}
+
 export function canConnectTerminals(
   source: ModelNode,
   sourceTerminalId: string,
@@ -298,6 +403,30 @@ export function canConnectTerminals(
     return false;
   }
   return getTerminal(source, sourceTerminalId).type === getTerminal(target, targetTerminalId).type;
+}
+
+export function alignNodes(nodes: ModelNode[], selectedIds: string[], direction: AlignDirection): ModelNode[] {
+  const selected = nodes.filter((node) => selectedIds.includes(node.id));
+  if (selected.length < 2) {
+    return nodes;
+  }
+  const average =
+    selected.reduce((sum, node) => sum + (direction === "horizontal" ? node.position.y : node.position.x), 0) /
+    selected.length;
+  const alignedCoordinate = Math.round(average);
+
+  return nodes.map((node) => {
+    if (!selectedIds.includes(node.id)) {
+      return node;
+    }
+    return {
+      ...node,
+      position:
+        direction === "horizontal"
+          ? { ...node.position, y: alignedCoordinate }
+          : { ...node.position, x: alignedCoordinate }
+    };
+  });
 }
 
 export function buildTopology(nodes: ModelNode[], edges: Edge[]): Topology {
@@ -368,8 +497,8 @@ export function deserializeProject(json: string): ProjectFile {
 }
 
 function boxFor(node: ModelNode, padding = 0) {
-  const width = node.size.width * node.scale;
-  const height = node.size.height * node.scale;
+  const width = node.size.width * getNodeScaleX(node);
+  const height = node.size.height * getNodeScaleY(node);
   return {
     left: node.position.x - width / 2 - padding,
     right: node.position.x + width / 2 + padding,
@@ -416,6 +545,10 @@ function scoreRoute(points: Point[], blockers: ModelNode[]) {
 
 function compactRoute(points: Point[]) {
   return points.filter((point, index) => {
+    const previous = points[index - 1];
+    if (previous && samePoint(previous, point)) {
+      return false;
+    }
     const prev = points[index - 1];
     const next = points[index + 1];
     if (!prev || !next) {
@@ -425,26 +558,202 @@ function compactRoute(points: Point[]) {
   });
 }
 
+export function pointsToOrthogonalPath(points: Point[]): string {
+  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+}
+
+type Segment = {
+  edgeId: string;
+  edgeIndex: number;
+  segmentIndex: number;
+  a: Point;
+  b: Point;
+  orientation: "horizontal" | "vertical";
+};
+
+function getSegments(edgeId: string, edgeIndex: number, points: Point[]): Segment[] {
+  const segments: Segment[] = [];
+  for (let index = 1; index < points.length; index += 1) {
+    const a = points[index - 1];
+    const b = points[index];
+    if (a.x === b.x && a.y !== b.y) {
+      segments.push({ edgeId, edgeIndex, segmentIndex: index - 1, a, b, orientation: "vertical" });
+    } else if (a.y === b.y && a.x !== b.x) {
+      segments.push({ edgeId, edgeIndex, segmentIndex: index - 1, a, b, orientation: "horizontal" });
+    }
+  }
+  return segments;
+}
+
+function between(value: number, a: number, b: number, margin = 0) {
+  return value > Math.min(a, b) + margin && value < Math.max(a, b) - margin;
+}
+
+function intersection(a: Segment, b: Segment): Point | null {
+  if (a.orientation === b.orientation) {
+    return null;
+  }
+  const horizontal = a.orientation === "horizontal" ? a : b;
+  const vertical = a.orientation === "vertical" ? a : b;
+  const point = { x: vertical.a.x, y: horizontal.a.y };
+  if (between(point.x, horizontal.a.x, horizontal.b.x, 10) && between(point.y, vertical.a.y, vertical.b.y, 10)) {
+    return point;
+  }
+  return null;
+}
+
+function overlapAmount(a: Segment, b: Segment) {
+  if (a.orientation !== b.orientation) {
+    return 0;
+  }
+  if (a.orientation === "horizontal" && a.a.y === b.a.y) {
+    const left = Math.max(Math.min(a.a.x, a.b.x), Math.min(b.a.x, b.b.x));
+    const right = Math.min(Math.max(a.a.x, a.b.x), Math.max(b.a.x, b.b.x));
+    return Math.max(0, right - left);
+  }
+  if (a.orientation === "vertical" && a.a.x === b.a.x) {
+    const top = Math.max(Math.min(a.a.y, a.b.y), Math.min(b.a.y, b.b.y));
+    const bottom = Math.min(Math.max(a.a.y, a.b.y), Math.max(b.a.y, b.b.y));
+    return Math.max(0, bottom - top);
+  }
+  return 0;
+}
+
+function separateOverlaps(routes: RoutedEdge[]): RoutedEdge[] {
+  return routes.map((route, routeIndex) => {
+    if (routeIndex === 0) {
+      return route;
+    }
+    const previousSegments = routes.slice(0, routeIndex).flatMap((item, index) => getSegments(item.edgeId, index, item.points));
+    const currentSegments = getSegments(route.edgeId, routeIndex, route.points);
+    const hasOverlap = currentSegments.some((segment) =>
+      previousSegments.some((previous) => overlapAmount(segment, previous) > 18)
+    );
+    if (!hasOverlap || route.points.length <= 4) {
+      return route;
+    }
+    const offset = 12 * ((routeIndex % 2 === 0 ? 1 : -1) * Math.ceil(routeIndex / 2));
+    const points = route.points.map((point, index) => {
+      if (index === 0 || index === 1 || index === route.points.length - 1 || index === route.points.length - 2) {
+        return point;
+      }
+      return { x: point.x, y: point.y + offset };
+    });
+    return { ...route, points };
+  });
+}
+
+function pathWithCrossingArcs(route: RoutedEdge, allRoutes: RoutedEdge[], routeIndex: number) {
+  const crossingsBySegment = new Map<number, Point[]>();
+  const currentSegments = getSegments(route.edgeId, routeIndex, route.points);
+  const previousSegments = allRoutes.slice(0, routeIndex).flatMap((item, index) => getSegments(item.edgeId, index, item.points));
+
+  for (const segment of currentSegments) {
+    for (const previous of previousSegments) {
+      const point = intersection(segment, previous);
+      if (point) {
+        crossingsBySegment.set(segment.segmentIndex, [...(crossingsBySegment.get(segment.segmentIndex) ?? []), point]);
+      }
+    }
+  }
+
+  if (crossingsBySegment.size === 0) {
+    return pointsToOrthogonalPath(route.points);
+  }
+
+  const radius = 7;
+  const commands = [`M ${route.points[0].x} ${route.points[0].y}`];
+  for (let index = 1; index < route.points.length; index += 1) {
+    const a = route.points[index - 1];
+    const b = route.points[index];
+    const crossings = crossingsBySegment.get(index - 1) ?? [];
+    if (crossings.length === 0) {
+      commands.push(`L ${b.x} ${b.y}`);
+      continue;
+    }
+
+    const ordered = crossings.sort((first, second) =>
+      a.x === b.x ? Math.abs(first.y - a.y) - Math.abs(second.y - a.y) : Math.abs(first.x - a.x) - Math.abs(second.x - a.x)
+    );
+    for (const crossing of ordered) {
+      if (a.y === b.y) {
+        const direction = Math.sign(b.x - a.x);
+        commands.push(`L ${crossing.x - direction * radius} ${crossing.y}`);
+        commands.push(`Q ${crossing.x} ${crossing.y - radius} ${crossing.x + direction * radius} ${crossing.y}`);
+      } else {
+        const direction = Math.sign(b.y - a.y);
+        commands.push(`L ${crossing.x} ${crossing.y - direction * radius}`);
+        commands.push(`Q ${crossing.x + radius} ${crossing.y} ${crossing.x} ${crossing.y + direction * radius}`);
+      }
+    }
+    commands.push(`L ${b.x} ${b.y}`);
+  }
+  return commands.join(" ");
+}
+
+export function routeEdgesForRendering(nodes: ModelNode[], edges: Edge[]): RoutedEdge[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const baseRoutes = edges.flatMap((edge) => {
+    const source = nodeById.get(edge.sourceId);
+    const target = nodeById.get(edge.targetId);
+    if (!source || !target) {
+      return [];
+    }
+    return [
+      {
+        edgeId: edge.id,
+        points: routeOrthogonalEdge(source, target, nodes, edge),
+        path: ""
+      }
+    ];
+  });
+  const separated = separateOverlaps(baseRoutes);
+  return separated.map((route, index, allRoutes) => ({
+    ...route,
+    path: pathWithCrossingArcs(route, allRoutes, index)
+  }));
+}
+
+function samePoint(a: Point, b: Point) {
+  return a.x === b.x && a.y === b.y;
+}
+
 export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes: ModelNode[], edge?: Edge): Point[] {
   const start = getTerminalPoint(source, edge?.sourceTerminalId);
   const end = getTerminalPoint(target, edge?.targetTerminalId);
-  const blockers = nodes.filter((node) => node.id !== source.id && node.id !== target.id);
-  const midX = Math.round((start.x + end.x) / 2);
-  const midY = Math.round((start.y + end.y) / 2);
+  const sourceNormal = getTerminalNormal(source, edge?.sourceTerminalId);
+  const targetNormal = getTerminalNormal(target, edge?.targetTerminalId);
+  const stubLength = 28;
+  const startOut = {
+    x: start.x + sourceNormal.x * stubLength,
+    y: start.y + sourceNormal.y * stubLength
+  };
+  const endOut = {
+    x: end.x + targetNormal.x * stubLength,
+    y: end.y + targetNormal.y * stubLength
+  };
+  const blockers = nodes;
+  const midX = Math.round((startOut.x + endOut.x) / 2);
+  const midY = Math.round((startOut.y + endOut.y) / 2);
   const blockerExtents = blockers.map((node) => boxFor(node, 24));
-  const topLane = Math.min(start.y, end.y, ...blockerExtents.map((box) => box.top)) - 24;
-  const bottomLane = Math.max(start.y, end.y, ...blockerExtents.map((box) => box.bottom)) + 24;
-  const leftLane = Math.min(start.x, end.x, ...blockerExtents.map((box) => box.left)) - 24;
-  const rightLane = Math.max(start.x, end.x, ...blockerExtents.map((box) => box.right)) + 24;
+  const topLane = Math.min(startOut.y, endOut.y, ...blockerExtents.map((box) => box.top)) - 24;
+  const bottomLane = Math.max(startOut.y, endOut.y, ...blockerExtents.map((box) => box.bottom)) + 24;
+  const leftLane = Math.min(startOut.x, endOut.x, ...blockerExtents.map((box) => box.left)) - 24;
+  const rightLane = Math.max(startOut.x, endOut.x, ...blockerExtents.map((box) => box.right)) + 24;
 
   const candidates = [
-    [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end],
-    [start, { x: start.x, y: midY }, { x: end.x, y: midY }, end],
-    [start, { x: start.x, y: topLane }, { x: end.x, y: topLane }, end],
-    [start, { x: start.x, y: bottomLane }, { x: end.x, y: bottomLane }, end],
-    [start, { x: leftLane, y: start.y }, { x: leftLane, y: end.y }, end],
-    [start, { x: rightLane, y: start.y }, { x: rightLane, y: end.y }, end]
+    [startOut, { x: midX, y: startOut.y }, { x: midX, y: endOut.y }, endOut],
+    [startOut, { x: startOut.x, y: midY }, { x: endOut.x, y: midY }, endOut],
+    [startOut, { x: startOut.x, y: topLane }, { x: endOut.x, y: topLane }, endOut],
+    [startOut, { x: startOut.x, y: bottomLane }, { x: endOut.x, y: bottomLane }, endOut],
+    [startOut, { x: leftLane, y: startOut.y }, { x: leftLane, y: endOut.y }, endOut],
+    [startOut, { x: rightLane, y: startOut.y }, { x: rightLane, y: endOut.y }, endOut]
   ].map(compactRoute);
 
-  return candidates.sort((a, b) => scoreRoute(a, blockers) - scoreRoute(b, blockers))[0];
+  const routedMiddle = candidates.sort((a, b) => scoreRoute(a, blockers) - scoreRoute(b, blockers))[0];
+  const route = [start, ...(!samePoint(start, startOut) ? [startOut] : []), ...routedMiddle, ...(!samePoint(endOut, end) ? [end] : [])];
+  return route.filter((point, index) => {
+    const previous = route[index - 1];
+    return !previous || !samePoint(previous, point);
+  });
 }
