@@ -64,6 +64,7 @@ import {
   type SavedProjectRecord
 } from "./model";
 import { resolveKeyboardShortcutScope } from "./keyboardShortcuts";
+import { resolveCanvasDeleteAction } from "./selectionActions";
 
 type ToolMode = "select" | "connect";
 type LibraryGroup = "静态图元" | "交流系统" | "直流系统" | "变流设备";
@@ -1252,7 +1253,7 @@ export function App() {
       } else if (event.key === "Delete" || event.key === "Backspace") {
         if (isCanvasShortcutTarget) {
           event.preventDefault();
-          deleteSelectedNodesOnly();
+          deleteSelectedGraphicsFromCanvas();
         } else if (isRecordShortcutTarget) {
           event.preventDefault();
           if (selectedProjectIds.length > 1 || selectedSchemeIds.length > 1) {
@@ -1416,17 +1417,16 @@ export function App() {
     setSelectedNodeIds([]);
   };
 
-  const deleteSelectedNodesOnly = () => {
-    if (selectedNodeIds.length === 0) {
-      window.alert("当前没有被选中设备。");
+  const deleteSelectedGraphicsFromCanvas = () => {
+    const action = resolveCanvasDeleteAction({
+      selectedNodeCount: selectedNodeIds.length,
+      hasSelectedEdge: Boolean(selectedEdgeId)
+    });
+    if (action.kind === "warn") {
+      window.alert(action.message);
       return;
     }
-    pushUndoSnapshot();
-    const result = deleteNodesWithConnectedEdges(nodes, edges, selectedNodeIds);
-    setNodes(result.nodes);
-    setEdges(result.edges);
-    setSelectedNodeIds([]);
-    setSelectedEdgeId("");
+    deleteSelection();
   };
 
   const manualPointDeltaForEdge = (edge: Edge, deltas: Record<string, Point>): Point | null => {
