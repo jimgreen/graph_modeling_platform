@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "dev": "node server/dev.mjs",
+    "dev:frontend": "vite --host 127.0.0.1",
+    "backend": "node server/image-server.mjs",
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "preview": "vite preview --host 127.0.0.1"

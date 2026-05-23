@@ -1,4 +1,17 @@
 export type DeviceKind =
+  | "static-text"
+  | "static-line"
+  | "static-polyline"
+  | "static-circle"
+  | "static-ellipse"
+  | "static-rect"
+  | "static-image"
+  | "static-web"
+  | "static-date"
+  | "static-time"
+  | "static-datetime"
+  | "static-input"
+  | "static-button"
   | "ac-source"
   | "ac-wind-source"
   | "dc-wind-source"
@@ -33,6 +46,11 @@ export type Point = {
   y: number;
 };
 
+export type CanvasBounds = {
+  width: number;
+  height: number;
+};
+
 export type TerminalType = "ac" | "dc";
 
 export type Terminal = {
@@ -46,7 +64,7 @@ export type Terminal = {
 export type DeviceTemplate = {
   kind: DeviceKind;
   label: string;
-  group: "交流系统" | "直流系统" | "变流设备";
+  group: "静态图元" | "交流系统" | "直流系统" | "变流设备";
   size: {
     width: number;
     height: number;
@@ -90,6 +108,11 @@ export type Edge = {
 export type ProjectFile = {
   version: 1;
   name: string;
+  canvasWidth?: number;
+  canvasHeight?: number;
+  canvasBackgroundColor?: string;
+  canvasBackgroundImage?: string;
+  canvasBackgroundImageAssetId?: string;
   nodes: ModelNode[];
   edges: Edge[];
 };
@@ -141,6 +164,135 @@ export type TopologyValidationError = {
 };
 
 export const DEVICE_LIBRARY: DeviceTemplate[] = [
+  {
+    kind: "static-text",
+    label: "文字",
+    group: "静态图元",
+    size: { width: 120, height: 40 },
+    params: {
+      text: "文字",
+      fillColor: "transparent",
+      strokeColor: "transparent",
+      textColor: "#111827",
+      lineWidth: "0",
+      strokeStyle: "solid",
+      fontSize: "24",
+      fontFamily: "Arial",
+      fontWeight: "400",
+      fontStyle: "normal",
+      textDecoration: "none"
+    },
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-line",
+    label: "直线",
+    group: "静态图元",
+    size: { width: 140, height: 24 },
+    params: { fillColor: "transparent", strokeColor: "#334155", textColor: "#111827", lineWidth: "3", strokeStyle: "solid", fontSize: "16" },
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-polyline",
+    label: "折线",
+    group: "静态图元",
+    size: { width: 140, height: 70 },
+    params: { fillColor: "transparent", strokeColor: "#334155", textColor: "#111827", lineWidth: "3", strokeStyle: "solid", fontSize: "16" },
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-circle",
+    label: "正圆",
+    group: "静态图元",
+    size: { width: 72, height: 72 },
+    params: { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-ellipse",
+    label: "椭圆",
+    group: "静态图元",
+    size: { width: 112, height: 70 },
+    params: { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-rect",
+    label: "方框",
+    group: "静态图元",
+    size: { width: 112, height: 70 },
+    params: { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-image",
+    label: "图片",
+    group: "静态图元",
+    size: { width: 140, height: 90 },
+    params: { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#64748b", lineWidth: "0", strokeStyle: "solid", fontSize: "16", backgroundImage: "", backgroundImageAssetId: "" },
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-web",
+    label: "WEB",
+    group: "静态图元",
+    size: { width: 180, height: 110 },
+    params: { text: "https://", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#334155", lineWidth: "0", strokeStyle: "solid", fontSize: "14" },
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-date",
+    label: "日期",
+    group: "静态图元",
+    size: { width: 130, height: 36 },
+    params: { text: "2026-01-01", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-time",
+    label: "时刻",
+    group: "静态图元",
+    size: { width: 110, height: 36 },
+    params: { text: "12:00", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-datetime",
+    label: "日期时刻",
+    group: "静态图元",
+    size: { width: 190, height: 36 },
+    params: { text: "2026-01-01 12:00", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-input",
+    label: "输入框",
+    group: "静态图元",
+    size: { width: 150, height: 38 },
+    params: { text: "请输入", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#334155", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-button",
+    label: "按钮",
+    group: "静态图元",
+    size: { width: 96, height: 38 },
+    params: { text: "按钮", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
+    terminalType: "ac",
+    terminalCount: 0
+  },
   {
     kind: "ac-source",
     label: "交流电源",
@@ -411,7 +563,18 @@ export function getSwitchVisualState(node: ModelNode): "open" | "closed" {
   return node.params.closedStatus === "打开" ? "open" : "closed";
 }
 
+export function isStaticKind(kind: DeviceKind): boolean {
+  return kind.startsWith("static-");
+}
+
+export function isStaticNode(node: ModelNode): boolean {
+  return isStaticKind(node.kind);
+}
+
 function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
+  if (isStaticKind(template.kind)) {
+    return { ...template.params };
+  }
   const withRunStat = (params: Record<string, string>) => ({ run_stat: "运行", ...params });
   const withDefaultVbase = (params: Record<string, string>) => ({
     vbase: template.terminalType === "ac" ? "10 kV" : "750 V",
@@ -581,7 +744,26 @@ export function getNodeScaleY(node: ModelNode): number {
   return node.scaleY ?? node.scale ?? 1;
 }
 
+export function clampPointToBounds(point: Point, bounds: CanvasBounds): Point {
+  return {
+    x: Math.round(Math.max(0, Math.min(bounds.width, point.x))),
+    y: Math.round(Math.max(0, Math.min(bounds.height, point.y)))
+  };
+}
+
+export function clampNodePositionToBounds(node: ModelNode, bounds: CanvasBounds, position = node.position): Point {
+  const halfWidth = Math.min(bounds.width / 2, (node.size.width * Math.abs(getNodeScaleX(node))) / 2);
+  const halfHeight = Math.min(bounds.height / 2, (node.size.height * Math.abs(getNodeScaleY(node))) / 2);
+  return {
+    x: Math.round(Math.max(halfWidth, Math.min(bounds.width - halfWidth, position.x))),
+    y: Math.round(Math.max(halfHeight, Math.min(bounds.height - halfHeight, position.y)))
+  };
+}
+
 export function createTerminals(type: TerminalType, count: number): Terminal[] {
+  if (count <= 0) {
+    return [];
+  }
   const safeCount = Math.max(1, Math.min(8, Math.round(count)));
   if (safeCount === 1) {
     return [{ id: "t1", label: "端子1", type, anchor: { x: 0.5, y: 0 }, nodeNumber: makeNodeNumber() }];
@@ -867,7 +1049,7 @@ export function validateTopology(nodes: ModelNode[], edges: Edge[]): TopologyVal
   }
 
   for (const node of nodes) {
-    if (isBusNode(node)) continue;
+    if (isBusNode(node) || isStaticNode(node)) continue;
     for (const terminal of node.terminals) {
       if (!connectedTerminals.has(`${node.id}:${terminal.id}`)) {
         errors.push({
@@ -1036,11 +1218,11 @@ export function renameSavedProject(
   projectId: string,
   nextName: string
 ): SavedProjectRecord[] {
-  const name = uniqueRecordName(
-    nextName,
-    projects.filter((project) => project.id !== projectId).map((project) => project.name),
-    "未命名模型"
-  );
+  const name = nextName.trim() || "未命名模型";
+  const hasConflict = projects.some((project) => project.id !== projectId && project.name.trim() === name);
+  if (hasConflict) {
+    return projects;
+  }
   return projects.map((project) =>
     project.id === projectId
       ? { ...project, name, updatedAt: new Date().toISOString(), project: { ...project.project, name } }
@@ -1074,11 +1256,11 @@ export function renameSavedScheme(
   schemeId: string,
   nextName: string
 ): SavedSchemeRecord[] {
-  const name = uniqueRecordName(
-    nextName,
-    schemes.filter((scheme) => scheme.id !== schemeId).map((scheme) => scheme.name),
-    "未命名方案"
-  );
+  const name = nextName.trim() || "未命名方案";
+  const hasConflict = schemes.some((scheme) => scheme.id !== schemeId && scheme.name.trim() === name);
+  if (hasConflict) {
+    return schemes;
+  }
   return schemes.map((scheme) =>
     scheme.id === schemeId ? { ...scheme, name, updatedAt: new Date().toISOString() } : scheme
   );
@@ -1111,8 +1293,8 @@ export function moveProjectToScheme(
 }
 
 function boxFor(node: ModelNode, padding = 0) {
-  const width = node.size.width * getNodeScaleX(node);
-  const height = node.size.height * getNodeScaleY(node);
+  const width = node.size.width * Math.abs(getNodeScaleX(node));
+  const height = node.size.height * Math.abs(getNodeScaleY(node));
   return {
     left: node.position.x - width / 2 - padding,
     right: node.position.x + width / 2 + padding,
@@ -1155,25 +1337,182 @@ function routeCorridor(a: Point, b: Point, margin: number) {
   };
 }
 
-function relevantBlockersForRoute(source: ModelNode, target: ModelNode, nodes: ModelNode[], startOut: Point, endOut: Point) {
+function relevantBlockersForRoute(source: ModelNode, target: ModelNode, nodes: ModelNode[], startOut: Point, endOut: Point, useCorridor = true) {
   const corridor = routeCorridor(startOut, endOut, 96);
   return nodes.filter((node) => {
     if (node.id === source.id || node.id === target.id || node.id.startsWith("floating-")) {
       return false;
     }
-    return boxesOverlap(boxFor(node, 24), corridor);
+    return !useCorridor || boxesOverlap(boxFor(node, 24), corridor);
   });
 }
 
-function scoreRoute(points: Point[], blockers: ModelNode[]) {
-  let score = points.length * 8;
+function segmentOverlapAmount(a: Point, b: Point, segment: Segment) {
+  if (a.x === b.x && segment.orientation === "vertical" && a.x === segment.a.x) {
+    const top = Math.max(Math.min(a.y, b.y), Math.min(segment.a.y, segment.b.y));
+    const bottom = Math.min(Math.max(a.y, b.y), Math.max(segment.a.y, segment.b.y));
+    return Math.max(0, bottom - top);
+  }
+  if (a.y === b.y && segment.orientation === "horizontal" && a.y === segment.a.y) {
+    const left = Math.max(Math.min(a.x, b.x), Math.min(segment.a.x, segment.b.x));
+    const right = Math.min(Math.max(a.x, b.x), Math.max(segment.a.x, segment.b.x));
+    return Math.max(0, right - left);
+  }
+  return 0;
+}
+
+function pointOutsideRoutingBounds(point: Point, bounds: ReturnType<typeof routeBounds>) {
+  return point.x < bounds.left || point.x > bounds.right || point.y < bounds.top || point.y > bounds.bottom;
+}
+
+function routeBounds(points: Point[], blockers: ModelNode[]) {
+  const boxes = blockers.map((node) => boxFor(node, 36));
+  return {
+    left: Math.min(0, ...points.map((point) => point.x), ...boxes.map((box) => box.left)) - 96,
+    right: Math.max(1980, ...points.map((point) => point.x), ...boxes.map((box) => box.right)) + 96,
+    top: Math.min(0, ...points.map((point) => point.y), ...boxes.map((box) => box.top)) - 96,
+    bottom: Math.max(1200, ...points.map((point) => point.y), ...boxes.map((box) => box.bottom)) + 96
+  };
+}
+
+const ROUTE_BLOCKER_PADDING = 8;
+const ROUTE_CLEARANCE = 6;
+
+function routeIntersectsBlockers(points: Point[], blockers: ModelNode[], padding = ROUTE_BLOCKER_PADDING) {
   for (let index = 1; index < points.length; index += 1) {
     const a = points[index - 1];
     const b = points[index];
+    if (blockers.some((blocker) => segmentIntersectsBox(a, b, boxFor(blocker, padding)))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function routeOverlapsSegments(points: Point[], avoidedSegments: Segment[]) {
+  for (let index = 1; index < points.length; index += 1) {
+    const a = points[index - 1];
+    const b = points[index];
+    if (avoidedSegments.some((segment) => segmentOverlapAmount(a, b, segment) > 2)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function firstRouteBlockerIntersection(points: Point[], blockers: ModelNode[], padding = ROUTE_BLOCKER_PADDING, protectedEndpointSegments = 0) {
+  for (let segmentIndex = 1; segmentIndex < points.length; segmentIndex += 1) {
+    const routeSegmentIndex = segmentIndex - 1;
+    if (
+      routeSegmentIndex < protectedEndpointSegments ||
+      routeSegmentIndex >= points.length - 1 - protectedEndpointSegments
+    ) {
+      continue;
+    }
+    const a = points[segmentIndex - 1];
+    const b = points[segmentIndex];
+    for (const blocker of blockers) {
+      const box = boxFor(blocker, padding);
+      if (segmentIntersectsBox(a, b, box)) {
+        return { segmentIndex: segmentIndex - 1, box };
+      }
+    }
+  }
+  return null;
+}
+
+function clampLane(value: number, min: number, max: number, bounds?: CanvasBounds) {
+  if (!bounds) {
+    return value;
+  }
+  return Math.max(min, Math.min(max, value));
+}
+
+function repairRouteAroundBlockers(points: Point[], blockers: ModelNode[], bounds?: CanvasBounds, protectedEndpointSegments = 0) {
+  let route = orthogonalizeRouteKeepingCollinear(points);
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const intersection = firstRouteBlockerIntersection(route, blockers, ROUTE_BLOCKER_PADDING, protectedEndpointSegments);
+    if (!intersection) {
+      return route;
+    }
+    const a = route[intersection.segmentIndex];
+    const b = route[intersection.segmentIndex + 1];
+    const box = intersection.box;
+    let replacement: Point[];
+    if (a.y === b.y) {
+      const topLane = clampLane(box.top - 24, 0, bounds?.height ?? box.top - 24, bounds);
+      const bottomLane = clampLane(box.bottom + 24, 0, bounds?.height ?? box.bottom + 24, bounds);
+      const lane = Math.abs(a.y - bottomLane) <= Math.abs(a.y - topLane) ? bottomLane : topLane;
+      replacement = [a, { x: a.x, y: lane }, { x: b.x, y: lane }, b];
+    } else if (a.x === b.x) {
+      const leftLane = clampLane(box.left - 24, 0, bounds?.width ?? box.left - 24, bounds);
+      const rightLane = clampLane(box.right + 24, 0, bounds?.width ?? box.right + 24, bounds);
+      const lane = Math.abs(a.x - rightLane) <= Math.abs(a.x - leftLane) ? rightLane : leftLane;
+      replacement = [a, { x: lane, y: a.y }, { x: lane, y: b.y }, b];
+    } else {
+      replacement = orthogonalizeRoute([a, b]);
+    }
+    route = orthogonalizeRouteKeepingCollinear([
+      ...route.slice(0, intersection.segmentIndex),
+      ...replacement,
+      ...route.slice(intersection.segmentIndex + 2)
+    ]);
+  }
+  return route;
+}
+
+function safeStubPoint(point: Point, normal: Point, blockers: ModelNode[], maxLength: number): Point {
+  let length = maxLength;
+  const safeLengthBefore = (distance: number) => (distance > 0 ? Math.max(1, distance) : ROUTE_CLEARANCE);
+  for (const blocker of blockers) {
+    const box = boxFor(blocker, ROUTE_BLOCKER_PADDING);
+    if (normal.x > 0 && point.y > box.top && point.y < box.bottom && box.left >= point.x) {
+      length = Math.min(length, safeLengthBefore(box.left - point.x - 1));
+    } else if (normal.x < 0 && point.y > box.top && point.y < box.bottom && box.right <= point.x) {
+      length = Math.min(length, safeLengthBefore(point.x - box.right - 1));
+    } else if (normal.y > 0 && point.x > box.left && point.x < box.right && box.top >= point.y) {
+      length = Math.min(length, safeLengthBefore(box.top - point.y - 1));
+    } else if (normal.y < 0 && point.x > box.left && point.x < box.right && box.bottom <= point.y) {
+      length = Math.min(length, safeLengthBefore(point.y - box.bottom - 1));
+    }
+  }
+  return {
+    x: Math.round(point.x + normal.x * length),
+    y: Math.round(point.y + normal.y * length)
+  };
+}
+
+function buildFullRoute(start: Point, startOut: Point, middle: Point[], endOut: Point, end: Point, bounds?: CanvasBounds) {
+  const route = [
+    start,
+    ...(!samePoint(start, startOut) ? [startOut] : []),
+    ...middle,
+    ...(!samePoint(endOut, end) ? [endOut] : []),
+    end
+  ];
+  const bounded = bounds ? route.map((point) => clampPointToBounds(point, bounds)) : route;
+  return orthogonalizeRouteKeepingCollinear(bounded);
+}
+
+function scoreRoute(points: Point[], blockers: ModelNode[], avoidedSegments: Segment[] = []) {
+  let score = points.length * 8;
+  const bounds = routeBounds(points, blockers);
+  for (let index = 1; index < points.length; index += 1) {
+    const a = points[index - 1];
+    const b = points[index];
+    if (pointOutsideRoutingBounds(a, bounds) || pointOutsideRoutingBounds(b, bounds)) {
+      score += 1000000;
+    }
     score += Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
     for (const blocker of blockers) {
-      if (segmentIntersectsBox(a, b, boxFor(blocker, 8))) {
-        score += 100000;
+      if (segmentIntersectsBox(a, b, boxFor(blocker, ROUTE_BLOCKER_PADDING))) {
+        score += 10000000;
+      }
+    }
+    for (const segment of avoidedSegments) {
+      const overlap = segmentOverlapAmount(a, b, segment);
+      if (overlap > 2) {
+        score += 10000000 + overlap * 1000;
       }
     }
   }
@@ -1209,6 +1548,25 @@ function orthogonalizeRoute(points: Point[]): Point[] {
     orthogonal.push(current);
   }
   return compactRoute(orthogonal);
+}
+
+function orthogonalizeRouteKeepingCollinear(points: Point[]): Point[] {
+  if (points.length <= 1) {
+    return points;
+  }
+  const orthogonal: Point[] = [points[0]];
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = orthogonal[orthogonal.length - 1];
+    const current = points[index];
+    if (previous.x !== current.x && previous.y !== current.y) {
+      orthogonal.push({ x: current.x, y: previous.y });
+    }
+    orthogonal.push(current);
+  }
+  return orthogonal.filter((point, index) => {
+    const previous = orthogonal[index - 1];
+    return !previous || !samePoint(previous, point);
+  });
 }
 
 export function pointsToOrthogonalPath(points: Point[]): string {
@@ -1296,6 +1654,61 @@ function separateOverlaps(routes: RoutedEdge[]): RoutedEdge[] {
   });
 }
 
+function uniqueSorted(values: number[]) {
+  return [...new Set(values.map((value) => Math.round(value)))].sort((a, b) => a - b);
+}
+
+function candidateLanes(startOut: Point, endOut: Point, blockers: ModelNode[], avoidedSegments: Segment[], bounds?: CanvasBounds) {
+  const blockerBoxes = blockers.map((node) => boxFor(node, 32));
+  const clampX = (value: number) => bounds ? Math.max(0, Math.min(bounds.width, value)) : value;
+  const clampY = (value: number) => bounds ? Math.max(0, Math.min(bounds.height, value)) : value;
+  const xValues = [
+    startOut.x,
+    endOut.x,
+    Math.round((startOut.x + endOut.x) / 2),
+    ...blockerBoxes.flatMap((box) => [box.left - 24, box.right + 24, box.left - 56, box.right + 56]),
+    ...avoidedSegments.filter((segment) => segment.orientation === "vertical").flatMap((segment) => [segment.a.x - 18, segment.a.x + 18])
+  ].map(clampX);
+  const yValues = [
+    startOut.y,
+    endOut.y,
+    Math.round((startOut.y + endOut.y) / 2),
+    ...blockerBoxes.flatMap((box) => [box.top - 24, box.bottom + 24, box.top - 56, box.bottom + 56]),
+    ...avoidedSegments.filter((segment) => segment.orientation === "horizontal").flatMap((segment) => [segment.a.y - 18, segment.a.y + 18])
+  ].map(clampY);
+  return { xs: uniqueSorted(xValues), ys: uniqueSorted(yValues) };
+}
+
+function buildRouteCandidates(startOut: Point, endOut: Point, blockers: ModelNode[], avoidedSegments: Segment[], bounds?: CanvasBounds) {
+  const { xs, ys } = candidateLanes(startOut, endOut, blockers, avoidedSegments, bounds);
+  const candidates: Point[][] = [
+    [startOut, { x: endOut.x, y: startOut.y }, endOut],
+    [startOut, { x: startOut.x, y: endOut.y }, endOut]
+  ];
+
+  for (const x of xs) {
+    candidates.push([startOut, { x, y: startOut.y }, { x, y: endOut.y }, endOut]);
+  }
+  for (const y of ys) {
+    candidates.push([startOut, { x: startOut.x, y }, { x: endOut.x, y }, endOut]);
+  }
+  for (const x of xs) {
+    for (const y of ys) {
+      candidates.push([startOut, { x, y: startOut.y }, { x, y }, { x: endOut.x, y }, endOut]);
+      candidates.push([startOut, { x: startOut.x, y }, { x, y }, { x, y: endOut.y }, endOut]);
+    }
+  }
+
+  return candidates.map(compactRoute);
+}
+
+function selectRouteCandidate(candidates: Point[][], blockers: ModelNode[], avoidedSegments: Segment[]) {
+  const nonIntersecting = candidates.filter((candidate) => !routeIntersectsBlockers(candidate, blockers));
+  const nonOverlapping = nonIntersecting.filter((candidate) => !routeOverlapsSegments(candidate, avoidedSegments));
+  const pool = nonOverlapping.length > 0 ? nonOverlapping : nonIntersecting.length > 0 ? nonIntersecting : candidates;
+  return pool.sort((a, b) => scoreRoute(a, blockers, avoidedSegments) - scoreRoute(b, blockers, avoidedSegments))[0];
+}
+
 function pathWithCrossingArcs(route: RoutedEdge, allRoutes: RoutedEdge[], routeIndex: number) {
   const crossingsBySegment = new Map<number, Point[]>();
   const currentSegments = getSegments(route.edgeId, routeIndex, route.points);
@@ -1344,24 +1757,24 @@ function pathWithCrossingArcs(route: RoutedEdge, allRoutes: RoutedEdge[], routeI
   return commands.join(" ");
 }
 
-export function routeEdgesForRendering(nodes: ModelNode[], edges: Edge[]): RoutedEdge[] {
+export function routeEdgesForRendering(nodes: ModelNode[], edges: Edge[], bounds?: CanvasBounds): RoutedEdge[] {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const baseRoutes = edges.flatMap((edge) => {
+  const routed: RoutedEdge[] = [];
+  edges.forEach((edge) => {
     const source = nodeById.get(edge.sourceId) ?? (edge.sourcePoint ? createFloatingEndpointNode(edge.sourcePoint, edge.targetId ? nodeById.get(edge.targetId) : undefined) : undefined);
     const target = nodeById.get(edge.targetId) ?? (edge.targetPoint ? createFloatingEndpointNode(edge.targetPoint, edge.sourceId ? nodeById.get(edge.sourceId) : undefined) : undefined);
     if (!source || !target) {
-      return [];
+      return;
     }
-    return [
-      {
-        edgeId: edge.id,
-        points: routeOrthogonalEdge(source, target, nodes, edge),
-        path: ""
-      }
-    ];
+    const avoidedSegments = routed.flatMap((route, index) => getSegments(route.edgeId, index, route.points));
+    routed.push({
+      edgeId: edge.id,
+      points: routeOrthogonalEdge(source, target, nodes, edge, avoidedSegments, bounds),
+      path: ""
+    });
   });
-  const separated = separateOverlaps(baseRoutes).map((route) => ({ ...route, points: orthogonalizeRoute(route.points) }));
-  return separated.map((route, index, allRoutes) => ({
+  const compacted = routed.map((route) => ({ ...route, points: orthogonalizeRoute(route.points) }));
+  return compacted.map((route, index, allRoutes) => ({
     ...route,
     path: pathWithCrossingArcs(route, allRoutes, index)
   }));
@@ -1391,53 +1804,44 @@ function createFloatingEndpointNode(point: Point, relatedNode?: ModelNode): Mode
   };
 }
 
-export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes: ModelNode[], edge?: Edge): Point[] {
+export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes: ModelNode[], edge?: Edge, avoidedSegments: Segment[] = [], bounds?: CanvasBounds): Point[] {
   const start = getEdgeEndpointPoint(source, edge?.sourcePoint, edge?.sourceTerminalId);
   const end = getEdgeEndpointPoint(target, edge?.targetPoint, edge?.targetTerminalId);
-  if (edge?.manualPoints?.length) {
-    return orthogonalizeRoute([start, ...edge.manualPoints, end]);
-  }
   const sourceNormal = isBusNode(source) ? getBusNormalToward(source, end) : getTerminalNormal(source, edge?.sourceTerminalId);
   const targetNormal = isBusNode(target) ? getBusNormalToward(target, start) : getTerminalNormal(target, edge?.targetTerminalId);
   const stubLength = 28;
-  const startOut = {
+  const initialStartOut = {
     x: start.x + sourceNormal.x * stubLength,
     y: start.y + sourceNormal.y * stubLength
   };
-  const endOut = {
+  const initialEndOut = {
     x: end.x + targetNormal.x * stubLength,
     y: end.y + targetNormal.y * stubLength
   };
-  const blockers = relevantBlockersForRoute(source, target, nodes, startOut, endOut);
-  const midX = Math.round((startOut.x + endOut.x) / 2);
-  const midY = Math.round((startOut.y + endOut.y) / 2);
-  const blockerExtents = blockers.map((node) => boxFor(node, 24));
-  const topLane = Math.min(startOut.y, endOut.y, ...blockerExtents.map((box) => box.top)) - 24;
-  const bottomLane = Math.max(startOut.y, endOut.y, ...blockerExtents.map((box) => box.bottom)) + 24;
-  const leftLane = Math.min(startOut.x, endOut.x, ...blockerExtents.map((box) => box.left)) - 24;
-  const rightLane = Math.max(startOut.x, endOut.x, ...blockerExtents.map((box) => box.right)) + 24;
-
-  const candidates = [
-    [startOut, { x: midX, y: startOut.y }, { x: midX, y: endOut.y }, endOut],
-    [startOut, { x: startOut.x, y: midY }, { x: endOut.x, y: midY }, endOut],
-    [startOut, { x: startOut.x, y: topLane }, { x: endOut.x, y: topLane }, endOut],
-    [startOut, { x: startOut.x, y: bottomLane }, { x: endOut.x, y: bottomLane }, endOut],
-    [startOut, { x: leftLane, y: startOut.y }, { x: leftLane, y: endOut.y }, endOut],
-    [startOut, { x: rightLane, y: startOut.y }, { x: rightLane, y: endOut.y }, endOut]
-  ].map(compactRoute);
-
-  const routedMiddle = candidates.sort((a, b) => scoreRoute(a, blockers) - scoreRoute(b, blockers))[0];
-  const middlePoints = routedMiddle.slice(1, -1);
-  const route = [
-    start,
-    ...(!samePoint(start, startOut) ? [startOut] : []),
-    ...middlePoints,
-    ...(!samePoint(endOut, end) ? [endOut] : []),
-    end
-  ];
-  const compacted = route.filter((point, index) => {
-    const previous = route[index - 1];
-    return !previous || !samePoint(previous, point);
-  });
-  return orthogonalizeRoute(compacted);
+  const blockers = relevantBlockersForRoute(source, target, nodes, initialStartOut, initialEndOut, false);
+  const startOut = safeStubPoint(start, sourceNormal, blockers, stubLength);
+  const endOut = safeStubPoint(end, targetNormal, blockers, stubLength);
+  if (edge?.manualPoints?.length) {
+    const manualRoute = orthogonalizeRoute([start, startOut, ...edge.manualPoints, endOut, end]);
+    const boundedManualRoute = bounds ? orthogonalizeRoute(manualRoute.map((point) => clampPointToBounds(point, bounds))) : manualRoute;
+    if (!routeIntersectsBlockers(boundedManualRoute, blockers)) {
+      return boundedManualRoute;
+    }
+    const candidates = buildRouteCandidates(startOut, endOut, blockers, avoidedSegments, bounds);
+    const repairedMiddle = selectRouteCandidate(candidates, blockers, avoidedSegments);
+    return repairRouteAroundBlockers(
+      buildFullRoute(start, startOut, repairedMiddle.slice(1, -1), endOut, end, bounds),
+      blockers,
+      bounds,
+      1
+    );
+  }
+  const candidates = buildRouteCandidates(startOut, endOut, blockers, avoidedSegments, bounds);
+  const routedMiddle = selectRouteCandidate(candidates, blockers, avoidedSegments);
+  return repairRouteAroundBlockers(
+    buildFullRoute(start, startOut, routedMiddle.slice(1, -1), endOut, end, bounds),
+    blockers,
+    bounds,
+    1
+  );
 }

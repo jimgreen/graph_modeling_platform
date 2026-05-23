@@ -4,6 +4,7 @@ import {
   buildTopology,
   calculateElectricalTopology,
   canConnectTerminals,
+  clampNodePositionToBounds,
   createSavedProject,
   createSavedScheme,
   createDefaultNode,
@@ -20,12 +21,14 @@ import {
   validateTopology,
   getTerminalPoint,
   isGeneratorNode,
+  isStaticNode,
   getSwitchVisualState,
   lockProjectEdgeTerminals,
   serializeProject,
   deserializeProject,
   type Edge,
-  type ModelNode
+  type ModelNode,
+  type Point
 } from "./model";
 
 describe("power system model", () => {
@@ -56,12 +59,18 @@ describe("power system model", () => {
     const json = serializeProject({
       version: 1,
       name: "测试模型",
+      canvasBackgroundColor: "#f1f5f9",
+      canvasBackgroundImage: "/api/images/background",
+      canvasBackgroundImageAssetId: "background",
       nodes: [node],
       edges: []
     });
     const loaded = deserializeProject(json);
 
     expect(loaded.name).toBe("测试模型");
+    expect(loaded.canvasBackgroundColor).toBe("#f1f5f9");
+    expect(loaded.canvasBackgroundImage).toBe("/api/images/background");
+    expect(loaded.canvasBackgroundImageAssetId).toBe("background");
     expect(loaded.nodes[0].name).toBe("1号主变");
     expect(loaded.nodes[0].params.voltageRatio).toBe("110/10 kV");
   });
@@ -285,6 +294,132 @@ describe("power system model", () => {
           point.y < blockerBox.bottom
       )
     ).toBe(false);
+    for (let index = 1; index < points.length; index += 1) {
+      const prev = points[index - 1];
+      const point = points[index];
+      if (prev.x === point.x) {
+        const yMin = Math.min(prev.y, point.y);
+        const yMax = Math.max(prev.y, point.y);
+        expect(prev.x > blockerBox.left && prev.x < blockerBox.right && yMax > blockerBox.top && yMin < blockerBox.bottom).toBe(false);
+      }
+      if (prev.y === point.y) {
+        const xMin = Math.min(prev.x, point.x);
+        const xMax = Math.max(prev.x, point.x);
+        expect(prev.y > blockerBox.top && prev.y < blockerBox.bottom && xMax > blockerBox.left && xMin < blockerBox.right).toBe(false);
+      }
+    }
+  });
+
+  test("repairs manual connection paths that would be covered by a device", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const target = createDefaultNode("ac-load", { x: 460, y: 100 });
+    const blocker = createDefaultNode("ac-switch", { x: 280, y: 100 });
+    const edge: Edge = {
+      id: "manual-covered",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: 220, y: 100 },
+        { x: 340, y: 100 }
+      ]
+    };
+    const blockerBox = {
+      left: blocker.position.x - blocker.size.width / 2 - 8,
+      right: blocker.position.x + blocker.size.width / 2 + 8,
+      top: blocker.position.y - blocker.size.height / 2 - 8,
+      bottom: blocker.position.y + blocker.size.height / 2 + 8
+    };
+
+    const route = routeEdgesForRendering([source, target, blocker], [edge], { width: 640, height: 260 })[0];
+
+    for (let index = 1; index < route.points.length; index += 1) {
+      const prev = route.points[index - 1];
+      const point = route.points[index];
+      expect(prev.x === point.x || prev.y === point.y).toBe(true);
+      if (prev.x === point.x) {
+        const yMin = Math.min(prev.y, point.y);
+        const yMax = Math.max(prev.y, point.y);
+        expect(prev.x > blockerBox.left && prev.x < blockerBox.right && yMax > blockerBox.top && yMin < blockerBox.bottom).toBe(false);
+      }
+      if (prev.y === point.y) {
+        const xMin = Math.min(prev.x, point.x);
+        const xMax = Math.max(prev.x, point.x);
+        expect(prev.y > blockerBox.top && prev.y < blockerBox.bottom && xMax > blockerBox.left && xMin < blockerBox.right).toBe(false);
+      }
+    }
+  });
+
+  test("keeps terminal stubs perpendicular after local obstacle repair", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const target = createDefaultNode("ac-load", { x: 420, y: 100 });
+    const blocker = createDefaultNode("ac-switch", { x: 190, y: 100 });
+    const edge: Edge = {
+      id: "near-terminal-obstacle",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+
+    const route = routeEdgesForRendering([source, target, blocker], [edge], { width: 640, height: 260 })[0];
+    const sourceTerminal = getTerminalPoint(source, "t1");
+    const targetTerminal = getTerminalPoint(target, "t1");
+
+    expect(route.points[0]).toEqual(sourceTerminal);
+    expect(route.points[1].y).toBe(sourceTerminal.y);
+    expect(route.points[1].x).toBeGreaterThan(sourceTerminal.x);
+    expect(route.points[route.points.length - 1]).toEqual(targetTerminal);
+    expect(route.points[route.points.length - 2].y).toBe(targetTerminal.y);
+    expect(route.points[route.points.length - 2].x).toBeGreaterThan(targetTerminal.x);
+  });
+
+  test("keeps automatic obstacle detours local instead of routing to canvas edges", () => {
+    const source = createDefaultNode("ac-bus", { x: 100, y: 100 });
+    const target = createDefaultNode("ac-load", { x: 420, y: 100 });
+    const blocker = createDefaultNode("ac-switch", { x: 260, y: 100 });
+    const route = routeEdgesForRendering(
+      [source, target, blocker],
+      [{ id: "local-detour", sourceId: source.id, targetId: target.id, sourceTerminalId: "t1", targetTerminalId: "t1" }],
+      { width: 640, height: 260 }
+    )[0];
+
+    const yValues = route.points.map((point) => point.y);
+    expect(Math.max(...yValues)).toBeLessThanOrEqual(blocker.position.y + blocker.size.height / 2 + 40);
+    expect(Math.min(...yValues)).toBeGreaterThanOrEqual(blocker.position.y - blocker.size.height / 2 - 40);
+  });
+
+  test("clamps a moved device inside the display area", () => {
+    const node = createDefaultNode("ac-source", { x: -100, y: 900 });
+    const position = clampNodePositionToBounds(node, { width: 1980, height: 1024 });
+
+    expect(position.x).toBeGreaterThanOrEqual((node.size.width * Math.abs(node.scaleX ?? node.scale)) / 2);
+    expect(position.y).toBeLessThanOrEqual(1024 - (node.size.height * Math.abs(node.scaleY ?? node.scale)) / 2);
+  });
+
+  test("keeps routed connection points inside the display area", () => {
+    const source = createDefaultNode("ac-source", { x: 42, y: 120 });
+    const target = createDefaultNode("ac-load", { x: 330, y: 120 });
+    const edge: Edge = {
+      id: "bounded-route",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+
+    const route = routeEdgesForRendering([source, target], [edge], { width: 360, height: 240 })[0];
+
+    for (const point of route.points) {
+      expect(point.x).toBeGreaterThanOrEqual(0);
+      expect(point.x).toBeLessThanOrEqual(360);
+      expect(point.y).toBeGreaterThanOrEqual(0);
+      expect(point.y).toBeLessThanOrEqual(240);
+    }
+    for (let index = 1; index < route.points.length; index += 1) {
+      expect(route.points[index - 1].x === route.points[index].x || route.points[index - 1].y === route.points[index].y).toBe(true);
+    }
   });
 
   test("keeps every routed segment orthogonal without diagonal fallbacks", () => {
@@ -309,6 +444,40 @@ describe("power system model", () => {
         expect(previous.x === point.x || previous.y === point.y).toBe(true);
       }
     }
+  });
+
+  test("keeps routed connection segments from overlapping previous routed lines", () => {
+    const leftA = createDefaultNode("ac-source", { x: 120, y: 120 });
+    const rightA = createDefaultNode("ac-load", { x: 520, y: 120 });
+    const leftB = createDefaultNode("ac-source", { x: 120, y: 220 });
+    const rightB = createDefaultNode("ac-load", { x: 520, y: 220 });
+
+    const routes = routeEdgesForRendering(
+      [leftA, rightA, leftB, rightB],
+      [
+        { id: "edge-a", sourceId: leftA.id, targetId: rightA.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+        { id: "edge-b", sourceId: leftB.id, targetId: rightB.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
+      ]
+    );
+
+    const segments = routes.map((route) =>
+      route.points.slice(1).map((point, index) => ({ a: route.points[index], b: point }))
+    );
+    const overlapAmount = (first: { a: Point; b: Point }, second: { a: Point; b: Point }) => {
+      if (first.a.y === first.b.y && second.a.y === second.b.y && first.a.y === second.a.y) {
+        const left = Math.max(Math.min(first.a.x, first.b.x), Math.min(second.a.x, second.b.x));
+        const right = Math.min(Math.max(first.a.x, first.b.x), Math.max(second.a.x, second.b.x));
+        return Math.max(0, right - left);
+      }
+      if (first.a.x === first.b.x && second.a.x === second.b.x && first.a.x === second.a.x) {
+        const top = Math.max(Math.min(first.a.y, first.b.y), Math.min(second.a.y, second.b.y));
+        const bottom = Math.min(Math.max(first.a.y, first.b.y), Math.max(second.a.y, second.b.y));
+        return Math.max(0, bottom - top);
+      }
+      return 0;
+    };
+
+    expect(segments[1].some((segment) => segments[0].some((previous) => overlapAmount(segment, previous) > 2))).toBe(false);
   });
 
   test("does not reroute unrelated lines when a far non-interfering device moves", () => {
@@ -462,8 +631,37 @@ describe("power system model", () => {
     }
   });
 
+  test("creates static drawing primitives without electrical terminals", () => {
+    const expected = [
+      "static-text",
+      "static-line",
+      "static-polyline",
+      "static-circle",
+      "static-ellipse",
+      "static-rect",
+      "static-image",
+      "static-web",
+      "static-date",
+      "static-time",
+      "static-datetime",
+      "static-input",
+      "static-button"
+    ] as const;
+
+    for (const kind of expected) {
+      const node = createDefaultNode(kind, { x: 100, y: 100 });
+      expect(isStaticNode(node)).toBe(true);
+      expect(node.terminals).toEqual([]);
+      expect(node.params.fillColor).toBeDefined();
+      expect(node.params.strokeColor).toBeDefined();
+    }
+
+    const errors = validateTopology([createDefaultNode("static-text", { x: 100, y: 100 })], []);
+    expect(errors).toEqual([]);
+  });
+
   test("adds run_stat operating status to every device type", () => {
-    for (const template of DEVICE_LIBRARY) {
+    for (const template of DEVICE_LIBRARY.filter((item) => !item.kind.startsWith("static-"))) {
       const node = createDefaultNode(template.kind, { x: 100, y: 100 });
       expect(node.params.run_stat).toBe("运行");
     }
@@ -534,7 +732,7 @@ describe("power system model", () => {
     expect(deleted[0].name).toBe("模型B 副本");
   });
 
-  test("keeps project names unique inside the same scheme", () => {
+  test("rejects duplicate project names when renaming inside the same scheme", () => {
     const first = createSavedProject("模型A", {
       version: 1,
       name: "模型A",
@@ -555,14 +753,14 @@ describe("power system model", () => {
     expect(renamed.map((project) => project.name)).toEqual(["模型A", "模型A (2)"]);
   });
 
-  test("keeps scheme names unique and renames moved projects on conflict", () => {
+  test("rejects duplicate scheme names and renames moved projects on conflict", () => {
     const sourceProject = createSavedProject("模型A", { version: 1, name: "模型A", nodes: [], edges: [] });
     const targetProject = createSavedProject("模型A", { version: 1, name: "模型A", nodes: [], edges: [] });
     const firstScheme = createSavedScheme("方案A", [sourceProject]);
     const secondScheme = createSavedScheme("方案B", upsertSavedProject([], targetProject));
     const renamedSchemes = renameSavedScheme([firstScheme, secondScheme], secondScheme.id, "方案A");
 
-    expect(renamedSchemes.map((scheme) => scheme.name)).toEqual(["方案A", "方案A (2)"]);
+    expect(renamedSchemes.map((scheme) => scheme.name)).toEqual(["方案A", "方案B"]);
 
     const moved = moveProjectToScheme([firstScheme, secondScheme], sourceProject.id, secondScheme.id);
     const target = moved.find((scheme) => scheme.id === secondScheme.id);
