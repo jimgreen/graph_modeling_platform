@@ -63,6 +63,7 @@ import {
   type SavedSchemeRecord,
   type SavedProjectRecord
 } from "./model";
+import { resolveKeyboardShortcutScope } from "./keyboardShortcuts";
 
 type ToolMode = "select" | "connect";
 type LibraryGroup = "静态图元" | "交流系统" | "直流系统" | "变流设备";
@@ -830,6 +831,7 @@ export function App() {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const canvasInteractionRef = useRef(false);
   const lastCanvasPointerRef = useRef<Point | null>(null);
+  const projectListPointerInsideRef = useRef(false);
   const backendSchemesLoadedRef = useRef(false);
   const suppressNextBackendSchemeSyncRef = useRef(false);
   const [nodes, setNodes] = useState<ModelNode[]>(() => initialDraft?.nodes ?? SAMPLE_NODES);
@@ -1203,7 +1205,13 @@ export function App() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      const isCanvasShortcutTarget = Boolean(target?.closest(".diagram-canvas")) || canvasInteractionRef.current;
+      const shortcutScope = resolveKeyboardShortcutScope({
+        isCanvasTarget: Boolean(target?.closest(".diagram-canvas")),
+        isCanvasInteractionActive: canvasInteractionRef.current,
+        isProjectListPointerInside: projectListPointerInsideRef.current
+      });
+      const isCanvasShortcutTarget = shortcutScope === "canvas";
+      const isRecordShortcutTarget = shortcutScope === "records";
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
         undoLastOperation();
@@ -1223,34 +1231,39 @@ export function App() {
           clearRecordSelection();
         }
       } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
-        event.preventDefault();
-        if (selectedProjectId || selectedSchemeId || selectedProjectIds.length > 0 || selectedSchemeIds.length > 0) {
+        if (isRecordShortcutTarget && (selectedProjectId || selectedSchemeId || selectedProjectIds.length > 0 || selectedSchemeIds.length > 0)) {
+          event.preventDefault();
           copySelectedRecord();
         } else if (isCanvasShortcutTarget) {
+          event.preventDefault();
           copySelection();
         }
       } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
-        event.preventDefault();
-        if (recordClipboard) {
+        if (isRecordShortcutTarget && recordClipboard) {
+          event.preventDefault();
           pasteSelectedRecord();
         } else if (isCanvasShortcutTarget) {
+          event.preventDefault();
           pasteSelection();
         }
       } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
         saveCurrentProject();
       } else if (event.key === "Delete" || event.key === "Backspace") {
-        event.preventDefault();
         if (isCanvasShortcutTarget) {
+          event.preventDefault();
           deleteSelectedNodesOnly();
-        } else if (selectedProjectIds.length > 1 || selectedSchemeIds.length > 1) {
-          deleteSelectedRecords();
-        } else if (selectedProjectId) {
-          const project = projects.find((item) => item.id === selectedProjectId);
-          if (project) deleteProjectRecord(project);
-        } else if (selectedSchemeId) {
-          const scheme = schemes.find((item) => item.id === selectedSchemeId);
-          if (scheme) deleteSchemeRecord(scheme);
+        } else if (isRecordShortcutTarget) {
+          event.preventDefault();
+          if (selectedProjectIds.length > 1 || selectedSchemeIds.length > 1) {
+            deleteSelectedRecords();
+          } else if (selectedProjectId) {
+            const project = projects.find((item) => item.id === selectedProjectId);
+            if (project) deleteProjectRecord(project);
+          } else if (selectedSchemeId) {
+            const scheme = schemes.find((item) => item.id === selectedSchemeId);
+            if (scheme) deleteSchemeRecord(scheme);
+          }
         }
       } else if (isCanvasShortcutTarget && event.key === "ArrowLeft") {
         event.preventDefault();
@@ -1269,6 +1282,12 @@ export function App() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [clipboardNodes, edges, nodes, projectName, projects, recordClipboard, schemes, selectedEdgeId, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors]);
+
+  useEffect(() => {
+    if (leftPanelTab !== "projects") {
+      projectListPointerInsideRef.current = false;
+    }
+  }, [leftPanelTab]);
 
   const currentProject = (): ProjectFile => ({
     ...lockProjectEdgeTerminals({
@@ -2990,7 +3009,17 @@ export function App() {
 
   const renderProjectPanel = () => (
     <section className="project-panel">
-      <div className="project-list listbox" role="listbox" aria-label="绘图模型列表">
+      <div
+        className="project-list listbox"
+        role="listbox"
+        aria-label="绘图模型列表"
+        onPointerEnter={() => {
+          projectListPointerInsideRef.current = true;
+        }}
+        onPointerLeave={() => {
+          projectListPointerInsideRef.current = false;
+        }}
+      >
         {schemes.length === 0 ? (
           <p className="project-empty">暂无方案</p>
         ) : (
@@ -3228,6 +3257,7 @@ export function App() {
             onPointerMove={handlePointerMove}
             onPointerEnter={() => {
               canvasInteractionRef.current = true;
+              projectListPointerInsideRef.current = false;
             }}
             onPointerUp={(event) => {
               finishRewiring(event);
@@ -3268,6 +3298,7 @@ export function App() {
                 return;
               }
               canvasInteractionRef.current = true;
+              projectListPointerInsideRef.current = false;
               lastCanvasPointerRef.current = clampPointToCanvas(screenToSvgPoint(event.currentTarget, event.clientX, event.clientY));
               if (connectSource) {
                 setConnectPreviewPoint(lastCanvasPointerRef.current);

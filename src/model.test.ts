@@ -524,6 +524,112 @@ describe("power system model", () => {
     expect(points[points.length - 2].x).toBeLessThan(targetTerminal.x);
   });
 
+  test("keeps same-side endpoint stubs outside device bodies", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 120 });
+    const target = createDefaultNode("ac-load", { x: 420, y: 120 });
+    const edge: Edge = {
+      id: "same-side-terminals",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+
+    const points = routeOrthogonalEdge(source, target, [source, target], edge);
+    const sourceTerminal = getTerminalPoint(source, "t1");
+    const targetTerminal = getTerminalPoint(target, "t1");
+    const targetBox = {
+      left: target.position.x - target.size.width / 2 - 8,
+      right: target.position.x + target.size.width / 2 + 8,
+      top: target.position.y - target.size.height / 2 - 8,
+      bottom: target.position.y + target.size.height / 2 + 8
+    };
+
+    expect(points[0]).toEqual(sourceTerminal);
+    expect(points[1].y).toBe(sourceTerminal.y);
+    expect(points[1].x).toBeGreaterThan(sourceTerminal.x);
+    expect(points[1].x - sourceTerminal.x).toBeLessThanOrEqual(40);
+    expect(points[points.length - 1]).toEqual(targetTerminal);
+    expect(points[points.length - 2].y).toBe(targetTerminal.y);
+    expect(points[points.length - 2].x).toBeGreaterThan(targetTerminal.x);
+    expect(points[points.length - 2].x - targetTerminal.x).toBeLessThanOrEqual(40);
+
+    const yValues = points.map((point) => point.y);
+    expect(Math.min(...yValues)).toBeGreaterThanOrEqual(Math.min(source.position.y - source.size.height / 2, target.position.y - target.size.height / 2) - 48);
+    expect(Math.max(...yValues)).toBeLessThanOrEqual(Math.max(source.position.y + source.size.height / 2, target.position.y + target.size.height / 2) + 48);
+
+    for (let index = 2; index < points.length - 1; index += 1) {
+      const prev = points[index - 1];
+      const point = points[index];
+      if (prev.y === point.y) {
+        const xMin = Math.min(prev.x, point.x);
+        const xMax = Math.max(prev.x, point.x);
+        expect(prev.y > targetBox.top && prev.y < targetBox.bottom && xMax > targetBox.left && xMin < targetBox.right).toBe(false);
+      }
+      if (prev.x === point.x) {
+        const yMin = Math.min(prev.y, point.y);
+        const yMax = Math.max(prev.y, point.y);
+        expect(prev.x > targetBox.left && prev.x < targetBox.right && yMax > targetBox.top && yMin < targetBox.bottom).toBe(false);
+      }
+    }
+  });
+
+  test("routes around rotated device bodies using their visual bounds", () => {
+    const source = createDefaultNode("ac-line", { x: 100, y: 150 });
+    const target = createDefaultNode("ac-line", { x: 420, y: 150 });
+    const blocker = { ...createDefaultNode("ac-line", { x: 260, y: 100 }), rotation: 90 };
+    const edge: Edge = {
+      id: "rotated-blocker",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1"
+    };
+
+    const route = routeEdgesForRendering([source, target, blocker], [edge], { width: 640, height: 260 })[0];
+    const blockerBox = {
+      left: blocker.position.x - blocker.size.height / 2 - 8,
+      right: blocker.position.x + blocker.size.height / 2 + 8,
+      top: blocker.position.y - blocker.size.width / 2 - 8,
+      bottom: blocker.position.y + blocker.size.width / 2 + 8
+    };
+
+    for (let index = 1; index < route.points.length; index += 1) {
+      const prev = route.points[index - 1];
+      const point = route.points[index];
+      expect(prev.x === point.x || prev.y === point.y).toBe(true);
+      if (prev.x === point.x) {
+        const yMin = Math.min(prev.y, point.y);
+        const yMax = Math.max(prev.y, point.y);
+        expect(prev.x > blockerBox.left && prev.x < blockerBox.right && yMax > blockerBox.top && yMin < blockerBox.bottom).toBe(false);
+      }
+      if (prev.y === point.y) {
+        const xMin = Math.min(prev.x, point.x);
+        const xMax = Math.max(prev.x, point.x);
+        expect(prev.y > blockerBox.top && prev.y < blockerBox.bottom && xMax > blockerBox.left && xMin < blockerBox.right).toBe(false);
+      }
+    }
+  });
+
+  test("uses mirrored terminal normals after horizontal flips", () => {
+    const source = { ...createDefaultNode("ac-source", { x: 200, y: 120 }), scaleX: -1 };
+    const target = createDefaultNode("ac-line", { x: 80, y: 120 });
+    const edge: Edge = {
+      id: "mirrored-terminal",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t2"
+    };
+
+    const points = routeOrthogonalEdge(source, target, [source, target], edge);
+    const sourceTerminal = getTerminalPoint(source, "t1");
+
+    expect(points[0]).toEqual(sourceTerminal);
+    expect(points[1].y).toBe(sourceTerminal.y);
+    expect(points[1].x).toBeLessThan(sourceTerminal.x);
+  });
+
   test("uses vertical terminal normals for top and bottom terminals", () => {
     const source = createDefaultNode("ac-bus", { x: 200, y: 220 });
     const target = createDefaultNode("ac-bus", { x: 200, y: 520 });

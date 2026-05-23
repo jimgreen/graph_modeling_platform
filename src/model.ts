@@ -841,10 +841,14 @@ export function getEdgeEndpointPoint(node: ModelNode, endpointPoint?: Point, ter
 
 export function getTerminalNormal(node: ModelNode, terminalId?: string): Point {
   const terminal = getTerminal(node, terminalId);
+  const scaledAnchor = {
+    x: terminal.anchor.x * (Math.sign(getNodeScaleX(node)) || 1),
+    y: terminal.anchor.y * (Math.sign(getNodeScaleY(node)) || 1)
+  };
   const raw =
-    Math.abs(terminal.anchor.x) >= Math.abs(terminal.anchor.y)
-      ? { x: Math.sign(terminal.anchor.x || 1), y: 0 }
-      : { x: 0, y: Math.sign(terminal.anchor.y || 1) };
+    Math.abs(scaledAnchor.x) >= Math.abs(scaledAnchor.y)
+      ? { x: Math.sign(scaledAnchor.x || 1), y: 0 }
+      : { x: 0, y: Math.sign(scaledAnchor.y || 1) };
   const radians = (node.rotation * Math.PI) / 180;
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
@@ -1307,13 +1311,18 @@ export function moveProjectToScheme(
 }
 
 function boxFor(node: ModelNode, padding = 0) {
-  const width = node.size.width * Math.abs(getNodeScaleX(node));
-  const height = node.size.height * Math.abs(getNodeScaleY(node));
+  const halfWidth = (node.size.width * Math.abs(getNodeScaleX(node))) / 2;
+  const halfHeight = (node.size.height * Math.abs(getNodeScaleY(node))) / 2;
+  const radians = (node.rotation * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(radians));
+  const sin = Math.abs(Math.sin(radians));
+  const visualHalfWidth = halfWidth * cos + halfHeight * sin;
+  const visualHalfHeight = halfWidth * sin + halfHeight * cos;
   return {
-    left: node.position.x - width / 2 - padding,
-    right: node.position.x + width / 2 + padding,
-    top: node.position.y - height / 2 - padding,
-    bottom: node.position.y + height / 2 + padding
+    left: node.position.x - visualHalfWidth - padding,
+    right: node.position.x + visualHalfWidth + padding,
+    top: node.position.y - visualHalfHeight - padding,
+    bottom: node.position.y + visualHalfHeight + padding
   };
 }
 
@@ -1392,8 +1401,15 @@ function routeBounds(points: Point[], blockers: ModelNode[]) {
 const ROUTE_BLOCKER_PADDING = 8;
 const ROUTE_CLEARANCE = 6;
 
-function routeIntersectsBlockers(points: Point[], blockers: ModelNode[], padding = ROUTE_BLOCKER_PADDING) {
+function routeIntersectsBlockers(points: Point[], blockers: ModelNode[], padding = ROUTE_BLOCKER_PADDING, protectedEndpointSegments = 0) {
   for (let index = 1; index < points.length; index += 1) {
+    const routeSegmentIndex = index - 1;
+    if (
+      routeSegmentIndex < protectedEndpointSegments ||
+      routeSegmentIndex >= points.length - 1 - protectedEndpointSegments
+    ) {
+      continue;
+    }
     const a = points[index - 1];
     const b = points[index];
     if (blockers.some((blocker) => segmentIntersectsBox(a, b, boxFor(blocker, padding)))) {
@@ -1832,13 +1848,17 @@ export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes:
     x: end.x + targetNormal.x * stubLength,
     y: end.y + targetNormal.y * stubLength
   };
-  const blockers = relevantBlockersForRoute(source, target, nodes, initialStartOut, initialEndOut, false);
+  const blockers = [
+    source,
+    target,
+    ...relevantBlockersForRoute(source, target, nodes, initialStartOut, initialEndOut, false)
+  ];
   const startOut = safeStubPoint(start, sourceNormal, blockers, stubLength);
   const endOut = safeStubPoint(end, targetNormal, blockers, stubLength);
   if (edge?.manualPoints?.length) {
-    const manualRoute = orthogonalizeRoute([start, startOut, ...edge.manualPoints, endOut, end]);
-    const boundedManualRoute = bounds ? orthogonalizeRoute(manualRoute.map((point) => clampPointToBounds(point, bounds))) : manualRoute;
-    if (!routeIntersectsBlockers(boundedManualRoute, blockers)) {
+    const manualRoute = orthogonalizeRouteKeepingCollinear([start, startOut, ...edge.manualPoints, endOut, end]);
+    const boundedManualRoute = bounds ? orthogonalizeRouteKeepingCollinear(manualRoute.map((point) => clampPointToBounds(point, bounds))) : manualRoute;
+    if (!routeIntersectsBlockers(boundedManualRoute, blockers, ROUTE_BLOCKER_PADDING, 1)) {
       return boundedManualRoute;
     }
     const candidates = buildRouteCandidates(startOut, endOut, blockers, avoidedSegments, bounds);
