@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import {
   alignNodes,
+  buildDefaultDeviceParameterDefinitions,
   buildElementTree,
   assignMissingDeviceIndexes,
   assignPermanentDeviceIndex,
@@ -56,6 +57,8 @@ import {
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
   getElementFocusPoint,
+  getContainerTerminalRoleSourceIndex,
+  getEffectiveContainerTerminalRole,
   getSwitchVisualState,
   getEParameterKeys,
   getEParamValue,
@@ -63,6 +66,8 @@ import {
   getTerminalPoint,
   normalizeVoltageBaseInput,
   isBusNode,
+  isContainerTerminalRoleDependent,
+  isDoubleContainerTerminalRole,
   isGeneratorNode,
   isStaticNode,
   lockProjectEdgeTerminals,
@@ -81,6 +86,7 @@ import {
   type Point,
   type ProjectFile,
   type CanvasBounds,
+  type ContainerTerminalRole,
   type TerminalType,
   type TopologyValidationError,
   routeEdgesForRendering,
@@ -94,6 +100,7 @@ import {
   terminalTypeColor,
   upsertSavedProject,
   uniqueRecordName,
+  validateContainerTerminalRoles,
   type SavedSchemeRecord,
   type SavedProjectRecord
 } from "./model";
@@ -224,6 +231,8 @@ type CustomDeviceDraft = {
   backgroundImage: string;
   terminalCount: number;
   terminalTypes: TerminalType[];
+  terminalRoles: ContainerTerminalRole[];
+  isContainer: boolean;
   params: CustomParamDraft[];
   error: string;
 };
@@ -255,6 +264,12 @@ const TERMINAL_TYPE_OPTIONS: Array<{ value: TerminalType; label: string }> = [
   { value: "dc", label: "直流电" },
   { value: "h2", label: "氢能" },
   { value: "heat", label: "热能" }
+];
+const CONTAINER_TERMINAL_ROLE_OPTIONS: Array<{ value: ContainerTerminalRole; label: string }> = [
+  { value: "single-load", label: "单端荷" },
+  { value: "single-source", label: "单端源" },
+  { value: "double-load", label: "双端荷" },
+  { value: "double-source", label: "双端源" }
 ];
 const PARAM_VALUE_TYPE_OPTIONS: Array<{ value: DeviceParameterValueType; label: string }> = [
   { value: "integer", label: "整数" },
@@ -326,6 +341,7 @@ const PARAM_LABELS: Record<string, string> = {
   layerOrder: "图层顺序",
   terminalCount: "端子数量",
   terminalVbase: "端子电压基值",
+  is_container: "是否容器",
   ratedCapacity: "额定容量",
   ratedVoltage: "额定电压",
   frequency: "频率",
@@ -735,6 +751,8 @@ function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[] {
       terminalCount: Math.max(0, Math.min(4, Number((item as DeviceTemplate).terminalCount ?? 0))),
       terminalTypes: ((item as DeviceTemplate).terminalTypes ?? []).slice(0, 4) as TerminalType[],
       terminalLabels: ((item as DeviceTemplate).terminalLabels ?? []).slice(0, 4),
+      terminalRoles: ((item as DeviceTemplate).terminalRoles ?? []).slice(0, 4) as ContainerTerminalRole[],
+      isContainer: Boolean((item as DeviceTemplate).isContainer),
       custom: true,
       parameterDefinitions: ((item as DeviceTemplate).parameterDefinitions ?? []).map((definition) => ({ ...definition }))
     }))
@@ -839,29 +857,18 @@ function createEmptyCustomDeviceDraft(groupName = "交流设备"): CustomDeviceD
     backgroundImage: "",
     terminalCount: 2,
     terminalTypes: ["ac", "ac", "ac", "ac"],
+    terminalRoles: ["single-load", "single-load", "single-load", "single-load"],
+    isContainer: false,
     params: [],
     error: ""
   };
 }
 
-function customDefaultDefinitions(terminalTypes: TerminalType[]): DeviceParameterDefinition[] {
-  const nodeDefinitions = terminalTypes.map<DeviceParameterDefinition>((type, index) => {
-    const prefix = type === "ac" ? "交流" : type === "dc" ? "直流" : type === "h2" ? "氢能" : "热能";
-    const enName = terminalTypes.length === 1 ? "node" : `t${index + 1}_node`;
-    return {
-      cnName: `${prefix}端${index + 1}节点号`,
-      enName,
-      valueType: "integer",
-      typicalValue: "",
-      readonly: true
-    };
-  });
-  return [
-    { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
-    { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
-    { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true },
-    ...nodeDefinitions
-  ];
+function customDefaultDefinitions(
+  terminalTypes: TerminalType[],
+  options: { isContainer?: boolean; terminalRoles?: ContainerTerminalRole[] } = {}
+): DeviceParameterDefinition[] {
+  return buildDefaultDeviceParameterDefinitions(terminalTypes, options);
 }
 
 function generateCustomDeviceImage(label: string, terminalTypes: TerminalType[]) {
@@ -4224,7 +4231,11 @@ export function App() {
   );
 
   const customDraftTerminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
-  const customDraftDefaultParams = customDefaultDefinitions(customDraftTerminalTypes);
+  const customDraftTerminalRoles = customDeviceDraft.terminalRoles.slice(0, customDeviceDraft.terminalCount);
+  const customDraftDefaultParams = customDefaultDefinitions(customDraftTerminalTypes, {
+    isContainer: customDeviceDraft.isContainer,
+    terminalRoles: customDraftTerminalRoles
+  });
   const customDevicePreviewImage =
     customDeviceDraft.backgroundImage ||
     generateCustomDeviceImage(customDeviceDraft.deviceType || "Unit", customDraftTerminalTypes.length > 0 ? customDraftTerminalTypes : ["ac"]);
@@ -4347,7 +4358,11 @@ export function App() {
       while (terminalTypes.length < count) {
         terminalTypes.push(fallback);
       }
-      return { ...current, terminalCount: count, terminalTypes, error: "" };
+      const terminalRoles = [...current.terminalRoles];
+      while (terminalRoles.length < count) {
+        terminalRoles.push("single-load");
+      }
+      return { ...current, terminalCount: count, terminalTypes, terminalRoles, error: "" };
     });
   };
 
@@ -4384,6 +4399,15 @@ export function App() {
       return;
     }
     const terminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
+    const terminalRoles = customDeviceDraft.terminalRoles.slice(0, customDeviceDraft.terminalCount);
+    if (customDeviceDraft.isContainer) {
+      const terminalRoleValidation = validateContainerTerminalRoles(terminalTypes, terminalRoles);
+      if (!terminalRoleValidation.valid) {
+        window.alert(terminalRoleValidation.message);
+        setCustomDeviceDraft((current) => ({ ...current, error: terminalRoleValidation.message }));
+        return;
+      }
+    }
     const customRows: DeviceParameterDefinition[] = customDeviceDraft.params
       .map((row) => ({
         cnName: row.cnName.trim(),
@@ -4396,7 +4420,10 @@ export function App() {
       setCustomDeviceDraft((current) => ({ ...current, error: "属性行的中文名称和英文名称不能为空。" }));
       return;
     }
-    const definitions = [...customDefaultDefinitions(terminalTypes), ...customRows];
+    const definitions = [...customDefaultDefinitions(terminalTypes, {
+      isContainer: customDeviceDraft.isContainer,
+      terminalRoles
+    }), ...customRows];
     const duplicateDefinition = definitions.find(
       (definition, index) => definitions.findIndex((item) => item.enName.toLowerCase() === definition.enName.toLowerCase()) !== index
     );
@@ -4420,7 +4447,9 @@ export function App() {
       terminalType: terminalTypes[0] ?? "ac",
       terminalCount: terminalTypes.length,
       terminalTypes,
+      terminalRoles: customDeviceDraft.isContainer ? terminalRoles : undefined,
       terminalLabels: terminalTypes.map((type, index) => `${TERMINAL_TYPE_OPTIONS.find((item) => item.value === type)?.label ?? type}端${index + 1}`),
+      isContainer: customDeviceDraft.isContainer,
       custom: true,
       parameterDefinitions: definitions
     };
@@ -5857,6 +5886,10 @@ export function App() {
                         <strong>{selectedDefinitionTemplate.terminalCount}</strong>
                       </div>
                       <div>
+                        <span>是否容器</span>
+                        <strong>{selectedDefinitionTemplate.isContainer ? "是" : "否"}</strong>
+                      </div>
+                      <div>
                         <span>能源属性</span>
                         <strong>
                           {(selectedDefinitionTemplate.terminalTypes ?? Array.from({ length: selectedDefinitionTemplate.terminalCount }, () => selectedDefinitionTemplate.terminalType))
@@ -5995,6 +6028,22 @@ export function App() {
                 />
               </label>
               <label>
+                是否容器
+                <select
+                  value={customDeviceDraft.isContainer ? "1" : "0"}
+                  onChange={(event) =>
+                    setCustomDeviceDraft((current) => ({
+                      ...current,
+                      isContainer: event.target.value === "1",
+                      error: ""
+                    }))
+                  }
+                >
+                  <option value="0">否</option>
+                  <option value="1">是</option>
+                </select>
+              </label>
+              <label>
                 端子数量
                 <input
                   type="number"
@@ -6031,27 +6080,75 @@ export function App() {
               <small>{customDeviceDraft.backgroundImage ? "当前显示本地图片预览" : "当前显示默认样例预览"}</small>
             </div>
             <div className="custom-terminal-grid">
-              {Array.from({ length: customDeviceDraft.terminalCount }).map((_, index) => (
-                <label key={index}>
-                  {`端子${index + 1}能源属性`}
-                  <select
-                    value={customDeviceDraft.terminalTypes[index] ?? "ac"}
-                    onChange={(event) =>
-                      setCustomDeviceDraft((current) => {
-                        const terminalTypes = [...current.terminalTypes];
-                        terminalTypes[index] = event.target.value as TerminalType;
-                        return { ...current, terminalTypes, error: "" };
-                      })
-                    }
-                  >
-                    {TERMINAL_TYPE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ))}
+              {Array.from({ length: customDeviceDraft.terminalCount }).map((_, index) => {
+                const terminalRoles = customDeviceDraft.terminalRoles.slice(0, customDeviceDraft.terminalCount);
+                const roleSourceIndex = getContainerTerminalRoleSourceIndex(terminalRoles, index);
+                const roleDependent = customDeviceDraft.isContainer && isContainerTerminalRoleDependent(terminalRoles, index);
+                const effectiveRole = getEffectiveContainerTerminalRole(terminalRoles, index);
+                return (
+                  <label key={index} className={roleDependent ? "custom-terminal-dependent" : ""}>
+                    {`端子${index + 1}能源属性`}
+                    <select
+                      value={customDeviceDraft.terminalTypes[index] ?? "ac"}
+                      disabled={roleDependent}
+                      onChange={(event) =>
+                        setCustomDeviceDraft((current) => {
+                          const terminalTypes = [...current.terminalTypes];
+                          terminalTypes[index] = event.target.value as TerminalType;
+                          const terminalRoles = [...current.terminalRoles];
+                          if (current.isContainer && isDoubleContainerTerminalRole(terminalRoles[index]) && index + 1 < current.terminalCount) {
+                            terminalTypes[index + 1] = event.target.value as TerminalType;
+                          }
+                          return { ...current, terminalTypes, error: "" };
+                        })
+                      }
+                    >
+                      {TERMINAL_TYPE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    {customDeviceDraft.isContainer && (
+                      <>
+                        <span>端子角色</span>
+                        <select
+                          value={roleDependent ? effectiveRole : customDeviceDraft.terminalRoles[index] ?? "single-load"}
+                          disabled={roleDependent}
+                          onChange={(event) =>
+                            setCustomDeviceDraft((current) => {
+                              const selectedRole = event.target.value as ContainerTerminalRole;
+                              if (isDoubleContainerTerminalRole(selectedRole) && index + 1 >= current.terminalCount) {
+                                const message = `端子${index + 1}是最后一个端子，不能设置为双端源/荷。`;
+                                window.alert(message);
+                                return { ...current, error: message };
+                              }
+                              const terminalRoles = [...current.terminalRoles];
+                              const terminalTypes = [...current.terminalTypes];
+                              const previousRole = terminalRoles[index];
+                              terminalRoles[index] = selectedRole;
+                              if (isDoubleContainerTerminalRole(selectedRole) && index + 1 < current.terminalCount) {
+                                terminalRoles[index + 1] = selectedRole;
+                                terminalTypes[index + 1] = terminalTypes[index] ?? terminalTypes[index + 1] ?? "ac";
+                              } else if (isDoubleContainerTerminalRole(previousRole) && index + 1 < current.terminalCount) {
+                                terminalRoles[index + 1] = "single-load";
+                              }
+                              return { ...current, terminalTypes, terminalRoles, error: "" };
+                            })
+                          }
+                        >
+                          {CONTAINER_TERMINAL_ROLE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        {roleDependent && <small>{`随端子${roleSourceIndex + 1}分配到同一个双端元件`}</small>}
+                      </>
+                    )}
+                  </label>
+                );
+              })}
             </div>
             <div className="custom-param-table-wrap">
               <table className="custom-param-table">

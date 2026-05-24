@@ -1355,6 +1355,18 @@ button:disabled {
   font-size: 13px;
 }
 
+.custom-terminal-grid select:disabled {
+  color: #64748b;
+  background: #f1f5f9;
+  cursor: not-allowed;
+}
+
+.custom-terminal-dependent small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .custom-device-image-row,
 .custom-device-actions {
   display: flex;

@@ -6,6 +6,7 @@ import {
   buildEDeviceParameterFile,
   calculateElectricalTopology,
   canConnectTerminals,
+  buildDefaultDeviceParameterDefinitions,
   clampNodePositionToBounds,
   assignPermanentDeviceIndex,
   createSavedProject,
@@ -35,7 +36,10 @@ import {
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
   getElementFocusPoint,
+  getContainerRelationKey,
+  getEParameterKeys,
   getTemplateParameterDefinitions,
+  validateContainerTerminalRoles,
   isGeneratorNode,
   isStaticNode,
   getSwitchVisualState,
@@ -1274,6 +1278,167 @@ describe("power system model", () => {
     const secondIndexed = assignPermanentDeviceIndex(createNodeFromTemplate(template, { x: 180, y: 120 }), firstIndexed.counters);
     expect(firstIndexed.node.params.idx).toBe("1");
     expect(secondIndexed.node.params.idx).toBe("2");
+  });
+
+  test("creates container device definitions with association idx fields instead of topology node fields", () => {
+    const terminalTypes = ["ac", "dc", "heat", "heat"] as const;
+    const terminalRoles = ["single-load", "single-source", "double-source", "single-load"] as const;
+    const definitions = buildDefaultDeviceParameterDefinitions(terminalTypes, {
+      isContainer: true,
+      terminalRoles
+    });
+
+    expect(getContainerRelationKey("ac", "single-load", 0)).toBe("idx_ac_load_t1");
+    expect(getContainerRelationKey("dc", "single-source", 1)).toBe("idx_dc_unit_t2");
+    expect(getContainerRelationKey("heat", "double-source", 2)).toBe("idx_heat2_unit_t3");
+    expect(getContainerRelationKey("heat", "single-load", 3)).toBe("idx_heat_load_t4");
+    expect(definitions.map((definition) => definition.enName)).toEqual([
+      "idx",
+      "name",
+      "run_stat",
+      "is_container",
+      "idx_ac_load_t1",
+      "idx_dc_unit_t2",
+      "idx_heat2_unit_t3",
+      "idx_heat2_unit_t4"
+    ]);
+    expect(definitions.some((definition) => definition.enName.includes("node"))).toBe(false);
+
+    const template: DeviceTemplate = {
+      kind: "CustomContainer",
+      label: "CustomContainer",
+      group: "自定义元件库",
+      size: { width: 104, height: 64 },
+      params: { backgroundImage: "data:image/svg+xml,custom", fillColor: "transparent", strokeColor: "transparent", lineWidth: "0" },
+      terminalType: "ac",
+      terminalCount: terminalTypes.length,
+      terminalTypes: [...terminalTypes],
+      terminalRoles: [...terminalRoles],
+      isContainer: true,
+      custom: true,
+      parameterDefinitions: definitions
+    };
+    const node = createNodeFromTemplate(template, { x: 100, y: 100 });
+
+    expect(node.params.is_container).toBe("1");
+    expect(node.params.idx_ac_load_t1).toBe("");
+    expect(node.params.idx_dc_unit_t2).toBe("");
+    expect(node.params.idx_heat2_unit_t3).toBe("");
+    expect(node.params.idx_heat2_unit_t4).toBe("");
+    expect(node.params.t1_node).toBeUndefined();
+    expect(node.params.t2_node).toBeUndefined();
+  });
+
+  test("pairs the next terminal with a double-port container association", () => {
+    const terminalTypes = ["heat", "heat", "heat", "heat"] as const;
+    const terminalRoles = ["double-source", "single-load", "double-source", "single-load"] as const;
+    const definitions = buildDefaultDeviceParameterDefinitions(terminalTypes, {
+      isContainer: true,
+      terminalRoles
+    });
+
+    expect(definitions.map((definition) => definition.enName)).toEqual([
+      "idx",
+      "name",
+      "run_stat",
+      "is_container",
+      "idx_heat2_unit_t1",
+      "idx_heat2_unit_t2",
+      "idx_heat2_unit_t3",
+      "idx_heat2_unit_t4"
+    ]);
+
+    const template: DeviceTemplate = {
+      kind: "CustomDoubleContainer",
+      label: "CustomDoubleContainer",
+      group: "自定义元件库",
+      size: { width: 104, height: 64 },
+      params: { backgroundImage: "data:image/svg+xml,custom", fillColor: "transparent", strokeColor: "transparent", lineWidth: "0" },
+      terminalType: "heat",
+      terminalCount: terminalTypes.length,
+      terminalTypes: [...terminalTypes],
+      terminalRoles: [...terminalRoles],
+      isContainer: true,
+      custom: true,
+      parameterDefinitions: definitions
+    };
+    const indexed = assignPermanentDeviceIndex(createNodeFromTemplate(template, { x: 100, y: 100 }), {});
+
+    expect(indexed.node.params.idx_heat2_unit_t1).toBe("1");
+    expect(indexed.node.params.idx_heat2_unit_t2).toBe("1");
+    expect(indexed.node.params.idx_heat2_unit_t3).toBe("2");
+    expect(indexed.node.params.idx_heat2_unit_t4).toBe("2");
+    expect(indexed.counters.TwoPortHeatSource).toBe(2);
+  });
+
+  test("rejects double-port container association on the last terminal", () => {
+    const invalid = validateContainerTerminalRoles(["heat"], ["double-source"]);
+    expect(invalid.valid).toBe(false);
+    expect(invalid.message).toContain("最后一个端子");
+
+    const validDependentLast = validateContainerTerminalRoles(["heat", "heat"], ["double-source", "double-load"]);
+    expect(validDependentLast.valid).toBe(true);
+  });
+
+  test("marks built-in cross-energy devices as containers with clarified source-load associations", () => {
+    const expected = [
+      ["ac-fuel-cell", ["idx_ac_unit_t1", "idx_h2_load_t2"]],
+      ["dc-fuel-cell", ["idx_dc_unit_t1", "idx_h2_load_t2"]],
+      ["ac-electrolyzer", ["idx_ac_load_t1", "idx_h2_unit_t2"]],
+      ["dc-electrolyzer", ["idx_dc_load_t1", "idx_h2_unit_t2"]],
+      ["ac-heater", ["idx_ac_load_t1", "idx_heat_unit_t2"]],
+      ["dc-heater", ["idx_dc_load_t1", "idx_heat_unit_t2"]],
+      ["ac-two-port-heater", ["idx_ac_load_t1", "idx_heat2_unit_t2", "idx_heat2_unit_t3"]],
+      ["dc-two-port-heater", ["idx_dc_load_t1", "idx_heat2_unit_t2", "idx_heat2_unit_t3"]]
+    ] as const;
+
+    for (const [kind, relationKeys] of expected) {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
+      expect(template?.isContainer).toBe(true);
+      const definitions = getTemplateParameterDefinitions(template!);
+      expect(definitions.map((definition) => definition.enName)).toEqual(expect.arrayContaining(["is_container", ...relationKeys]));
+      expect(definitions.some((definition) => definition.enName === "node" || definition.enName.endsWith("_node"))).toBe(false);
+      const node = createDefaultNode(kind, { x: 100, y: 100 });
+      expect(node.params.is_container).toBe("1");
+      for (const relationKey of relationKeys) {
+        expect(node.params[relationKey]).toBe("");
+      }
+      expect(getEParameterKeys(kind, node.params)).toEqual([]);
+    }
+  });
+
+  test("allocates permanent idx values for container-associated child devices", () => {
+    const electrolyzer = createDefaultNode("ac-electrolyzer", { x: 100, y: 100 });
+    const indexedElectrolyzer = assignPermanentDeviceIndex(electrolyzer, {});
+    expect(indexedElectrolyzer.node.params.idx).toBe("1");
+    expect(indexedElectrolyzer.node.params.idx_ac_load_t1).toBe("1");
+    expect(indexedElectrolyzer.node.params.idx_h2_unit_t2).toBe("1");
+    expect(indexedElectrolyzer.counters).toMatchObject({
+      "ac-electrolyzer": 1,
+      ACLoad: 1,
+      HydrogenSource: 1
+    });
+
+    const heater = createDefaultNode("ac-two-port-heater", { x: 100, y: 100 });
+    const indexedHeater = assignPermanentDeviceIndex(heater, indexedElectrolyzer.counters);
+    expect(indexedHeater.node.params.idx).toBe("1");
+    expect(indexedHeater.node.params.idx_ac_load_t1).toBe("2");
+    expect(indexedHeater.node.params.idx_heat2_unit_t2).toBe("1");
+    expect(indexedHeater.node.params.idx_heat2_unit_t3).toBe("1");
+    expect(indexedHeater.counters).toMatchObject({
+      "ac-two-port-heater": 1,
+      ACLoad: 2,
+      TwoPortHeatSource: 1
+    });
+
+    const derived = deriveDeviceIndexCounters([indexedElectrolyzer.node, indexedHeater.node]);
+    expect(derived).toMatchObject({
+      "ac-electrolyzer": 1,
+      "ac-two-port-heater": 1,
+      ACLoad: 2,
+      HydrogenSource: 1,
+      TwoPortHeatSource: 1
+    });
   });
 
   test("applies edited built-in template definitions when creating new nodes", () => {

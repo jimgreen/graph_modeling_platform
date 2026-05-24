@@ -141,6 +141,8 @@ export type ViewBox = CanvasBounds & {
 
 export type TerminalType = "ac" | "dc" | "h2" | "heat";
 
+export type ContainerTerminalRole = "single-source" | "double-source" | "single-load" | "double-load";
+
 export type DeviceParameterValueType = "integer" | "float" | "string" | "enum";
 
 export type DeviceParameterDefinition = {
@@ -174,6 +176,8 @@ export type DeviceTemplate = {
   terminalTypes?: TerminalType[];
   terminalLabels?: string[];
   terminalAnchors?: Point[];
+  terminalRoles?: ContainerTerminalRole[];
+  isContainer?: boolean;
   custom?: boolean;
   parameterDefinitions?: DeviceParameterDefinition[];
 };
@@ -274,7 +278,14 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"]
 };
 
+function isContainerParams(params: Record<string, string> = {}) {
+  return params.is_container === "1" || params.is_container === "true" || params.isContainer === "true";
+}
+
 export function inferESection(kind: string, params: Record<string, string> = {}) {
+  if (isContainerParams(params)) {
+    return "";
+  }
   if (kind === "ac-bus") return "ACRealBs";
   if (kind === "dc-bus") return "DCRealBs";
   if (params.source_section && E_SECTION_COLUMNS[params.source_section]) {
@@ -304,6 +315,9 @@ export function inferESection(kind: string, params: Record<string, string> = {})
 export type DeviceIndexCounters = Record<string, number>;
 
 function deviceIndexCounterKey(node: Pick<ModelNode, "kind" | "params">): string {
+  if (isContainerParams(node.params)) {
+    return String(node.kind);
+  }
   const section = inferESection(node.kind, node.params);
   if (section) {
     return section;
@@ -319,17 +333,129 @@ function parseDeviceIndex(value?: string): number {
   return Number.parseInt(text, 10);
 }
 
+function parseContainerRelationField(fieldName: string) {
+  const match = /^idx_(ac2|dc2|h22|heat2|ac|dc|h2|heat)_(unit|load)_t(\d+)$/.exec(fieldName);
+  if (!match) {
+    return null;
+  }
+  const [, energy, role, terminalNumber] = match;
+  return {
+    energy,
+    role,
+    terminalNumber: Number.parseInt(terminalNumber, 10),
+    doublePort: energy.endsWith("2")
+  };
+}
+
+function containerRelationCounterKey(fieldName: string): string {
+  const parsed = parseContainerRelationField(fieldName);
+  if (!parsed) {
+    return "";
+  }
+  const { energy, role } = parsed;
+  const mapping: Record<string, string> = {
+    ac_unit: "ACGenerator",
+    ac_load: "ACLoad",
+    ac2_unit: "TwoPortACGenerator",
+    ac2_load: "TwoPortACLoad",
+    dc_unit: "DCGenerator",
+    dc_load: "DCLoad",
+    dc2_unit: "TwoPortDCGenerator",
+    dc2_load: "TwoPortDCLoad",
+    h2_unit: "HydrogenSource",
+    h2_load: "HydrogenLoad",
+    h22_unit: "TwoPortHydrogenSource",
+    h22_load: "TwoPortHydrogenLoad",
+    heat_unit: "HeatSource",
+    heat_load: "HeatLoad",
+    heat2_unit: "TwoPortHeatSource",
+    heat2_load: "TwoPortHeatLoad"
+  };
+  return mapping[`${energy}_${role}`] ?? `ContainerRelation:${energy}_${role}`;
+}
+
+function deriveContainerRelationCounters(params: Record<string, string>, counters: DeviceIndexCounters) {
+  for (const [fieldName, value] of Object.entries(params)) {
+    const counterKey = containerRelationCounterKey(fieldName);
+    if (!counterKey) {
+      continue;
+    }
+    const idx = parseDeviceIndex(value);
+    if (idx > (counters[counterKey] ?? 0)) {
+      counters[counterKey] = idx;
+    }
+  }
+}
+
+function assignContainerRelationIndexes<T extends Pick<ModelNode, "params">>(
+  node: T,
+  counters: DeviceIndexCounters
+): { node: T; counters: DeviceIndexCounters; changed: boolean } {
+  if (!isContainerParams(node.params)) {
+    return { node, counters, changed: false };
+  }
+  const relationEntries = Object.keys(node.params)
+    .map((fieldName) => {
+      const parsed = parseContainerRelationField(fieldName);
+      const counterKey = containerRelationCounterKey(fieldName);
+      return parsed && counterKey ? { ...parsed, counterKey, fieldName } : null;
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    .sort((left, right) => left.terminalNumber - right.terminalNumber || left.fieldName.localeCompare(right.fieldName));
+  const relationGroups: Array<{ counterKey: string; fields: string[] }> = [];
+  const consumedFields = new Set<string>();
+  for (const entry of relationEntries) {
+    if (consumedFields.has(entry.fieldName)) {
+      continue;
+    }
+    consumedFields.add(entry.fieldName);
+    const fields = [entry.fieldName];
+    if (entry.doublePort) {
+      const pairedEntry = relationEntries.find(
+        (candidate) =>
+          !consumedFields.has(candidate.fieldName) &&
+          candidate.doublePort &&
+          candidate.counterKey === entry.counterKey &&
+          candidate.terminalNumber === entry.terminalNumber + 1
+      );
+      if (pairedEntry) {
+        consumedFields.add(pairedEntry.fieldName);
+        fields.push(pairedEntry.fieldName);
+      }
+    }
+    relationGroups.push({ counterKey: entry.counterKey, fields });
+  }
+  if (relationGroups.length === 0) {
+    return { node, counters, changed: false };
+  }
+  let nextParams = node.params;
+  let nextCounters = counters;
+  let changed = false;
+  for (const group of relationGroups) {
+    const existingIdx = Math.max(0, ...group.fields.map((fieldName) => parseDeviceIndex(nextParams[fieldName])));
+    const idx = existingIdx > 0 ? existingIdx : (nextCounters[group.counterKey] ?? 0) + 1;
+    nextCounters = { ...nextCounters, [group.counterKey]: Math.max(nextCounters[group.counterKey] ?? 0, idx) };
+    for (const fieldName of group.fields) {
+      if (nextParams[fieldName] !== String(idx)) {
+        nextParams = { ...nextParams, [fieldName]: String(idx) };
+        changed = true;
+      }
+    }
+  }
+  return { node: changed ? { ...node, params: nextParams } : node, counters: nextCounters, changed };
+}
+
 export function deriveDeviceIndexCounters(nodes: Pick<ModelNode, "kind" | "params">[]): DeviceIndexCounters {
   const counters: DeviceIndexCounters = {};
   for (const node of nodes) {
     const key = deviceIndexCounterKey(node);
-    if (!key) {
-      continue;
+    if (key) {
+      const idx = parseDeviceIndex(node.params.idx);
+      if (idx > (counters[key] ?? 0)) {
+        counters[key] = idx;
+      }
     }
-    const idx = parseDeviceIndex(node.params.idx);
-    if (idx > (counters[key] ?? 0)) {
-      counters[key] = idx;
-    }
+    deriveContainerRelationCounters(node.params, counters);
   }
   return counters;
 }
@@ -358,20 +484,19 @@ export function assignPermanentDeviceIndex<T extends Pick<ModelNode, "kind" | "p
 ): { node: T; counters: DeviceIndexCounters } {
   const key = deviceIndexCounterKey(node);
   if (!key) {
-    return { node, counters };
+    const relationResult = assignContainerRelationIndexes(node, counters);
+    return { node: relationResult.node, counters: relationResult.counters };
   }
   const existingIdx = parseDeviceIndex(node.params.idx);
   if (existingIdx > 0) {
-    if (existingIdx <= (counters[key] ?? 0)) {
-      return { node, counters };
-    }
-    return { node, counters: { ...counters, [key]: existingIdx } };
+    const nextCounters = existingIdx <= (counters[key] ?? 0) ? counters : { ...counters, [key]: existingIdx };
+    const relationResult = assignContainerRelationIndexes(node, nextCounters);
+    return { node: relationResult.node, counters: relationResult.counters };
   }
   const idx = (counters[key] ?? 0) + 1;
-  return {
-    node: { ...node, params: { ...node.params, idx: String(idx) } },
-    counters: { ...counters, [key]: idx }
-  };
+  const indexedNode = { ...node, params: { ...node.params, idx: String(idx) } };
+  const relationResult = assignContainerRelationIndexes(indexedNode, { ...counters, [key]: idx });
+  return { node: relationResult.node, counters: relationResult.counters };
 }
 
 export function assignMissingDeviceIndexes<T extends Pick<ModelNode, "kind" | "params">>(
@@ -858,7 +983,9 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalType: "ac",
     terminalCount: 2,
     terminalTypes: ["ac", "h2"],
-    terminalLabels: ["交流端", "氢能端"]
+    terminalLabels: ["交流端", "氢能端"],
+    terminalRoles: ["single-load", "single-source"],
+    isContainer: true
   },
   {
     kind: "dc-electrolyzer",
@@ -869,7 +996,9 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalType: "dc",
     terminalCount: 2,
     terminalTypes: ["dc", "h2"],
-    terminalLabels: ["直流端", "氢能端"]
+    terminalLabels: ["直流端", "氢能端"],
+    terminalRoles: ["single-load", "single-source"],
+    isContainer: true
   },
   {
     kind: "hydrogen-source",
@@ -907,7 +1036,9 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalType: "ac",
     terminalCount: 2,
     terminalTypes: ["ac", "h2"],
-    terminalLabels: ["交流端", "氢能端"]
+    terminalLabels: ["交流端", "氢能端"],
+    terminalRoles: ["single-source", "single-load"],
+    isContainer: true
   },
   {
     kind: "dc-fuel-cell",
@@ -918,7 +1049,9 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalType: "dc",
     terminalCount: 2,
     terminalTypes: ["dc", "h2"],
-    terminalLabels: ["直流端", "氢能端"]
+    terminalLabels: ["直流端", "氢能端"],
+    terminalRoles: ["single-source", "single-load"],
+    isContainer: true
   },
   {
     kind: "hydrogen-bus",
@@ -1057,7 +1190,9 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalType: "ac",
     terminalCount: 2,
     terminalTypes: ["ac", "heat"],
-    terminalLabels: ["交流端", "热力端"]
+    terminalLabels: ["交流端", "热力端"],
+    terminalRoles: ["single-load", "single-source"],
+    isContainer: true
   },
   {
     kind: "ac-two-port-heater",
@@ -1069,6 +1204,8 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalCount: 3,
     terminalTypes: ["ac", "heat", "heat"],
     terminalLabels: ["交流端", "供水端", "回水端"],
+    terminalRoles: ["single-load", "double-source", "double-source"],
+    isContainer: true,
     terminalAnchors: [
       { x: -0.5, y: 0 },
       { x: 0.5, y: -0.25 },
@@ -1084,7 +1221,9 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalType: "dc",
     terminalCount: 2,
     terminalTypes: ["dc", "heat"],
-    terminalLabels: ["直流端", "热力端"]
+    terminalLabels: ["直流端", "热力端"],
+    terminalRoles: ["single-load", "single-source"],
+    isContainer: true
   },
   {
     kind: "dc-two-port-heater",
@@ -1096,6 +1235,8 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalCount: 3,
     terminalTypes: ["dc", "heat", "heat"],
     terminalLabels: ["直流端", "供水端", "回水端"],
+    terminalRoles: ["single-load", "double-source", "double-source"],
+    isContainer: true,
     terminalAnchors: [
       { x: -0.5, y: 0 },
       { x: 0.5, y: -0.25 },
@@ -1407,6 +1548,130 @@ export function terminalVoltageBaseNumber(value?: string): string {
   return normalizeVoltageBaseInput(value);
 }
 
+const terminalTypeLabel = (type: TerminalType) => {
+  if (type === "ac") return "交流";
+  if (type === "dc") return "直流";
+  if (type === "h2") return "氢能";
+  return "热能";
+};
+
+const containerTerminalRoleLabel = (role: ContainerTerminalRole) => {
+  if (role === "double-source") return "双端源";
+  if (role === "single-source") return "单端源";
+  if (role === "double-load") return "双端荷";
+  return "单端荷";
+};
+
+export function isDoubleContainerTerminalRole(role?: ContainerTerminalRole): boolean {
+  return role === "double-source" || role === "double-load";
+}
+
+function getContainerTerminalRoleDependencyIndex(terminalRoles: readonly ContainerTerminalRole[], terminalIndex: number): number {
+  for (let index = 0; index < terminalRoles.length; index += 1) {
+    const role = terminalRoles[index] ?? "single-load";
+    if (!isDoubleContainerTerminalRole(role)) {
+      continue;
+    }
+    if (index + 1 === terminalIndex) {
+      return index;
+    }
+    index += 1;
+  }
+  return -1;
+}
+
+export function getContainerTerminalRoleSourceIndex(
+  terminalRoles: readonly ContainerTerminalRole[],
+  terminalIndex: number
+): number {
+  const dependencyIndex = getContainerTerminalRoleDependencyIndex(terminalRoles, terminalIndex);
+  return dependencyIndex >= 0 ? dependencyIndex : terminalIndex;
+}
+
+export function isContainerTerminalRoleDependent(
+  terminalRoles: readonly ContainerTerminalRole[],
+  terminalIndex: number
+): boolean {
+  return getContainerTerminalRoleDependencyIndex(terminalRoles, terminalIndex) >= 0;
+}
+
+export function getEffectiveContainerTerminalRole(
+  terminalRoles: readonly ContainerTerminalRole[] | undefined,
+  terminalIndex: number
+): ContainerTerminalRole {
+  const roles = terminalRoles ?? [];
+  const sourceIndex = getContainerTerminalRoleSourceIndex(roles, terminalIndex);
+  return roles[sourceIndex] ?? "single-load";
+}
+
+export function validateContainerTerminalRoles(
+  terminalTypes: readonly TerminalType[],
+  terminalRoles: readonly ContainerTerminalRole[]
+): { valid: true; message: "" } | { valid: false; message: string; terminalIndex: number } {
+  for (let index = 0; index < terminalTypes.length; index += 1) {
+    const role = terminalRoles[index] ?? "single-load";
+    if (!isDoubleContainerTerminalRole(role)) {
+      continue;
+    }
+    if (index + 1 >= terminalTypes.length) {
+      return {
+        valid: false,
+        terminalIndex: index,
+        message: `端子${index + 1}是最后一个端子，不能设置为双端源/荷；双端源/荷必须同时占用端子${index + 1}和端子${index + 2}。`
+      };
+    }
+    index += 1;
+  }
+  return { valid: true, message: "" };
+}
+
+export function getContainerRelationKey(type: TerminalType, role: ContainerTerminalRole, terminalIndex: number): string {
+  const energyKey = `${type}${role.startsWith("double") ? "2" : ""}`;
+  const deviceRole = role.endsWith("load") ? "load" : "unit";
+  return `idx_${energyKey}_${deviceRole}_t${terminalIndex + 1}`;
+}
+
+export function buildDefaultDeviceParameterDefinitions(
+  terminalTypes: readonly TerminalType[],
+  options: { isContainer?: boolean; terminalRoles?: readonly ContainerTerminalRole[] } = {}
+): DeviceParameterDefinition[] {
+  const baseDefinitions: DeviceParameterDefinition[] = [
+    { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
+    { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
+    { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true }
+  ];
+  if (options.isContainer) {
+    const relationDefinitions = terminalTypes.map<DeviceParameterDefinition>((type, index) => {
+      const sourceIndex = getContainerTerminalRoleSourceIndex(options.terminalRoles ?? [], index);
+      const role = getEffectiveContainerTerminalRole(options.terminalRoles, index);
+      const relationType = terminalTypes[sourceIndex] ?? type;
+      return {
+        cnName: `${terminalTypeLabel(relationType)}端${index + 1}${containerTerminalRoleLabel(role)}关联idx`,
+        enName: getContainerRelationKey(relationType, role, index),
+        valueType: "integer",
+        typicalValue: "",
+        readonly: true
+      };
+    });
+    return [
+      ...baseDefinitions,
+      { cnName: "是否容器", enName: "is_container", valueType: "integer", typicalValue: "1", readonly: true },
+      ...relationDefinitions
+    ];
+  }
+  const nodeDefinitions = terminalTypes.map<DeviceParameterDefinition>((type, index) => {
+    const enName = terminalTypes.length === 1 ? "node" : `t${index + 1}_node`;
+    return {
+      cnName: `${terminalTypeLabel(type)}端${index + 1}节点号`,
+      enName,
+      valueType: "integer",
+      typicalValue: "",
+      readonly: true
+    };
+  });
+  return [...baseDefinitions, ...nodeDefinitions];
+}
+
 export function isGeneratorKind(kind: DeviceKind): boolean {
   return kind.includes("source");
 }
@@ -1629,11 +1894,37 @@ function normalizeTemplateDefinition(definition: DeviceParameterDefinition): Dev
   };
 }
 
+function templateTerminalTypes(template: DeviceTemplate): TerminalType[] {
+  const terminalTypes = (template.terminalTypes ?? []).slice(0, template.terminalCount);
+  while (terminalTypes.length < template.terminalCount) {
+    terminalTypes.push(template.terminalType);
+  }
+  return terminalTypes;
+}
+
 export function getTemplateParameterDefinitions(template: DeviceTemplate): DeviceParameterDefinition[] {
   if (template.parameterDefinitions?.length) {
     return template.parameterDefinitions
       .map((definition) => normalizeTemplateDefinition(definition))
       .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
+  }
+  if (template.isContainer) {
+    const defaultDefinitions = buildDefaultDeviceParameterDefinitions(templateTerminalTypes(template), {
+      isContainer: true,
+      terminalRoles: template.terminalRoles
+    });
+    const defaultKeys = new Set(defaultDefinitions.map((definition) => definition.enName));
+    const extraKeys = Object.keys(template.params).filter((key) => key && !key.startsWith("_") && !defaultKeys.has(key));
+    return [
+      ...defaultDefinitions,
+      ...extraKeys.map((key) => ({
+        cnName: key,
+        enName: key,
+        valueType: inferDefinitionValueType(key, template.params[key] ?? ""),
+        typicalValue: template.params[key] ?? "",
+        readonly: TEMPLATE_DEFINITION_READONLY_KEYS.has(key)
+      }))
+    ];
   }
   const eKeys = getEParameterKeys(template.kind, template.params);
   const keys = eKeys.length > 0 ? eKeys : Object.keys(template.params);
@@ -1690,8 +1981,26 @@ function applyTemplateDefinitionDefaults(params: Record<string, string>, templat
   return next;
 }
 
+function applyContainerRelationDefaults(params: Record<string, string>, template: DeviceTemplate): Record<string, string> {
+  if (!template.isContainer) {
+    return params;
+  }
+  const next = { ...params };
+  for (const definition of buildDefaultDeviceParameterDefinitions(templateTerminalTypes(template), {
+    isContainer: true,
+    terminalRoles: template.terminalRoles
+  })) {
+    if (definition.enName === "name") {
+      continue;
+    }
+    next[definition.enName] = next[definition.enName] ?? definition.typicalValue;
+  }
+  return next;
+}
+
 function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
-  const withTemplateDefinitions = (params: Record<string, string>) => applyTemplateDefinitionDefaults(params, template);
+  const withTemplateDefinitions = (params: Record<string, string>) =>
+    applyTemplateDefinitionDefaults(applyContainerRelationDefaults(params, template), template);
   if (isStaticKind(template.kind)) {
     return withTemplateDefinitions({ ...template.params });
   }
