@@ -143,6 +143,20 @@ export type TerminalType = "ac" | "dc" | "h2" | "heat";
 
 export type ContainerTerminalRole = "single-source" | "double-source" | "single-load" | "double-load";
 
+export type ContainerTerminalAssociationType =
+  | "ac-generator"
+  | "ac-load"
+  | "dc-generator"
+  | "dc-load"
+  | "h2-source"
+  | "h2-load"
+  | "heat-source"
+  | "heat2-source"
+  | "heat-load"
+  | "heat2-load";
+
+export type ContainerTerminalAssociationValue = ContainerTerminalAssociationType | "";
+
 export type DeviceParameterValueType = "integer" | "float" | "string" | "enum";
 
 export type DeviceParameterDefinition = {
@@ -177,6 +191,7 @@ export type DeviceTemplate = {
   terminalLabels?: string[];
   terminalAnchors?: Point[];
   terminalRoles?: ContainerTerminalRole[];
+  terminalAssociations?: ContainerTerminalAssociationValue[];
   isContainer?: boolean;
   custom?: boolean;
   parameterDefinitions?: DeviceParameterDefinition[];
@@ -187,6 +202,34 @@ export type DeviceTemplateDefinitionOverride = {
   params?: Record<string, string>;
   parameterDefinitions?: DeviceParameterDefinition[];
   updatedAt?: string;
+};
+
+export type ContainerTerminalAssociation = {
+  terminalIndex: number;
+  terminalLabel: string;
+  terminalType: TerminalType;
+  relationKey: string;
+  relationName: string;
+  roleLabel: string;
+  sourceTerminalIndex: number;
+  dependent: boolean;
+};
+
+export type ContainerDeviceParameterViewRow = {
+  key: string;
+  label: string;
+  value: string;
+  readonly: boolean;
+};
+
+export type ContainerDeviceParameterView = {
+  id: string;
+  label: string;
+  kind: "container" | "associated";
+  deviceType?: string;
+  relationKeys?: string[];
+  terminalIndexes?: number[];
+  rows: ContainerDeviceParameterViewRow[];
 };
 
 export type ModelNode = {
@@ -1096,6 +1139,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalTypes: ["ac", "h2"],
     terminalLabels: ["交流端", "氢能端"],
     terminalRoles: ["single-load", "single-source"],
+    terminalAssociations: ["ac-load", "h2-source"],
     isContainer: true
   },
   {
@@ -1109,6 +1153,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalTypes: ["dc", "h2"],
     terminalLabels: ["直流端", "氢能端"],
     terminalRoles: ["single-load", "single-source"],
+    terminalAssociations: ["dc-load", "h2-source"],
     isContainer: true
   },
   {
@@ -1149,6 +1194,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalTypes: ["ac", "h2"],
     terminalLabels: ["交流端", "氢能端"],
     terminalRoles: ["single-source", "single-load"],
+    terminalAssociations: ["ac-generator", "h2-load"],
     isContainer: true
   },
   {
@@ -1162,6 +1208,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalTypes: ["dc", "h2"],
     terminalLabels: ["直流端", "氢能端"],
     terminalRoles: ["single-source", "single-load"],
+    terminalAssociations: ["dc-generator", "h2-load"],
     isContainer: true
   },
   {
@@ -1216,7 +1263,12 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 94, height: 60 },
     params: { heatPower: "10 MW", supplyTemperature: "95 degC" },
     terminalType: "heat",
-    terminalCount: 1
+    terminalCount: 1,
+    terminalTypes: ["heat"],
+    terminalLabels: ["热力端"],
+    terminalRoles: ["single-source"],
+    terminalAssociations: ["heat-source"],
+    isContainer: true
   },
   {
     kind: "two-port-heat-boiler",
@@ -1227,6 +1279,9 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalType: "heat",
     terminalCount: 2,
     terminalLabels: ["供水端", "回水端"],
+    terminalRoles: ["double-source", "double-source"],
+    terminalAssociations: ["heat2-source", ""],
+    isContainer: true,
     terminalAnchors: [
       { x: 0.5, y: -0.25 },
       { x: 0.5, y: 0.25 }
@@ -1303,6 +1358,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalTypes: ["ac", "heat"],
     terminalLabels: ["交流端", "热力端"],
     terminalRoles: ["single-load", "single-source"],
+    terminalAssociations: ["ac-load", "heat-source"],
     isContainer: true
   },
   {
@@ -1316,6 +1372,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalTypes: ["ac", "heat", "heat"],
     terminalLabels: ["交流端", "供水端", "回水端"],
     terminalRoles: ["single-load", "double-source", "double-source"],
+    terminalAssociations: ["ac-load", "heat2-source", ""],
     isContainer: true,
     terminalAnchors: [
       { x: -0.5, y: 0 },
@@ -1334,6 +1391,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalTypes: ["dc", "heat"],
     terminalLabels: ["直流端", "热力端"],
     terminalRoles: ["single-load", "single-source"],
+    terminalAssociations: ["dc-load", "heat-source"],
     isContainer: true
   },
   {
@@ -1347,6 +1405,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalTypes: ["dc", "heat", "heat"],
     terminalLabels: ["直流端", "供水端", "回水端"],
     terminalRoles: ["single-load", "double-source", "double-source"],
+    terminalAssociations: ["dc-load", "heat2-source", ""],
     isContainer: true,
     terminalAnchors: [
       { x: -0.5, y: 0 },
@@ -1668,12 +1727,106 @@ const terminalTypeLabel = (type: TerminalType) => {
   return "热能";
 };
 
+const terminalPortLabel = (type: TerminalType) => {
+  if (type === "ac") return "交流电";
+  if (type === "dc") return "直流电";
+  if (type === "h2") return "氢能";
+  return "热能";
+};
+
 const containerTerminalRoleLabel = (role: ContainerTerminalRole) => {
   if (role === "double-source") return "双端源";
   if (role === "single-source") return "单端源";
   if (role === "double-load") return "双端荷";
   return "单端荷";
 };
+
+const containerTerminalAssociationDefinitions: Record<
+  ContainerTerminalAssociationType,
+  { terminalType: TerminalType; energyKey: string; deviceRole: "unit" | "load"; label: string; doublePort?: boolean }
+> = {
+  "ac-generator": { terminalType: "ac", energyKey: "ac", deviceRole: "unit", label: "交流电源" },
+  "ac-load": { terminalType: "ac", energyKey: "ac", deviceRole: "load", label: "交流电负荷" },
+  "dc-generator": { terminalType: "dc", energyKey: "dc", deviceRole: "unit", label: "直流电源" },
+  "dc-load": { terminalType: "dc", energyKey: "dc", deviceRole: "load", label: "直流电负荷" },
+  "h2-source": { terminalType: "h2", energyKey: "h2", deviceRole: "unit", label: "氢源" },
+  "h2-load": { terminalType: "h2", energyKey: "h2", deviceRole: "load", label: "氢荷" },
+  "heat-source": { terminalType: "heat", energyKey: "heat", deviceRole: "unit", label: "单端热源" },
+  "heat2-source": { terminalType: "heat", energyKey: "heat2", deviceRole: "unit", label: "双端热源", doublePort: true },
+  "heat-load": { terminalType: "heat", energyKey: "heat", deviceRole: "load", label: "单端热荷" },
+  "heat2-load": { terminalType: "heat", energyKey: "heat2", deviceRole: "load", label: "双端热荷", doublePort: true }
+};
+
+const containerTerminalAssociationLabel = (association: ContainerTerminalAssociationType) =>
+  containerTerminalAssociationDefinitions[association]?.label ?? association;
+
+function defaultContainerAssociationFor(type: TerminalType, role: ContainerTerminalRole = "single-load"): ContainerTerminalAssociationType {
+  const source = role.endsWith("source");
+  const doublePort = role.startsWith("double");
+  if (type === "ac") return source ? "ac-generator" : "ac-load";
+  if (type === "dc") return source ? "dc-generator" : "dc-load";
+  if (type === "h2") return source ? "h2-source" : "h2-load";
+  if (doublePort) return source ? "heat2-source" : "heat2-load";
+  return source ? "heat-source" : "heat-load";
+}
+
+export function isDoubleContainerTerminalAssociation(association?: ContainerTerminalAssociationValue): boolean {
+  return Boolean(association && containerTerminalAssociationDefinitions[association]?.doublePort);
+}
+
+function getContainerTerminalAssociationDependencyIndex(
+  terminalAssociations: readonly ContainerTerminalAssociationValue[],
+  terminalIndex: number
+): number {
+  for (let index = 0; index < terminalAssociations.length; index += 1) {
+    const association = terminalAssociations[index];
+    if (!isDoubleContainerTerminalAssociation(association)) {
+      continue;
+    }
+    if (index + 1 === terminalIndex) {
+      return index;
+    }
+    index += 1;
+  }
+  return -1;
+}
+
+export function getContainerTerminalAssociationSourceIndex(
+  terminalAssociations: readonly ContainerTerminalAssociationValue[],
+  terminalIndex: number
+): number {
+  const dependencyIndex = getContainerTerminalAssociationDependencyIndex(terminalAssociations, terminalIndex);
+  return dependencyIndex >= 0 ? dependencyIndex : terminalIndex;
+}
+
+export function isContainerTerminalAssociationDependent(
+  terminalAssociations: readonly ContainerTerminalAssociationValue[],
+  terminalIndex: number
+): boolean {
+  return getContainerTerminalAssociationDependencyIndex(terminalAssociations, terminalIndex) >= 0;
+}
+
+export function getEffectiveContainerTerminalAssociation(
+  terminalAssociations: readonly ContainerTerminalAssociationValue[] | undefined,
+  terminalTypes: readonly TerminalType[],
+  terminalIndex: number,
+  terminalRoles?: readonly ContainerTerminalRole[]
+): ContainerTerminalAssociationType {
+  if (terminalAssociations?.length) {
+    const sourceIndex = getContainerTerminalAssociationSourceIndex(terminalAssociations, terminalIndex);
+    const sourceType = terminalTypes[sourceIndex] ?? terminalTypes[terminalIndex] ?? "ac";
+    return terminalAssociations[sourceIndex] || defaultContainerAssociationFor(sourceType);
+  }
+  const role = getEffectiveContainerTerminalRole(terminalRoles, terminalIndex);
+  const roleSourceIndex = getContainerTerminalRoleSourceIndex(terminalRoles ?? [], terminalIndex);
+  const sourceType = terminalTypes[roleSourceIndex] ?? terminalTypes[terminalIndex] ?? "ac";
+  return defaultContainerAssociationFor(sourceType, role);
+}
+
+export function getContainerAssociationRelationKey(association: ContainerTerminalAssociationType, terminalIndex: number): string {
+  const definition = containerTerminalAssociationDefinitions[association];
+  return `idx_${definition.energyKey}_${definition.deviceRole}_t${terminalIndex + 1}`;
+}
 
 export function isDoubleContainerTerminalRole(role?: ContainerTerminalRole): boolean {
   return role === "double-source" || role === "double-load";
@@ -1738,15 +1891,203 @@ export function validateContainerTerminalRoles(
   return { valid: true, message: "" };
 }
 
+export function validateContainerTerminalAssociations(
+  terminalTypes: readonly TerminalType[],
+  terminalAssociations: readonly ContainerTerminalAssociationValue[]
+): { valid: true; message: "" } | { valid: false; message: string; terminalIndex: number } {
+  for (let index = 0; index < terminalTypes.length; index += 1) {
+    const association = terminalAssociations[index] || defaultContainerAssociationFor(terminalTypes[index] ?? "ac");
+    const definition = containerTerminalAssociationDefinitions[association];
+    const terminalType = terminalTypes[index] ?? definition.terminalType;
+    if (definition.terminalType !== terminalType) {
+      return {
+        valid: false,
+        terminalIndex: index,
+        message: `端子${index + 1}是${terminalPortLabel(terminalType)}端口，不能关联${definition.label}。`
+      };
+    }
+    if (!definition.doublePort) {
+      continue;
+    }
+    if (index + 1 >= terminalTypes.length) {
+      return {
+        valid: false,
+        terminalIndex: index,
+        message: `端子${index + 1}是最后一个端子，不能设置为${definition.label}；双端热源/热荷必须同时占用端子${index + 1}和端子${index + 2}。`
+      };
+    }
+    if (terminalTypes[index + 1] !== definition.terminalType) {
+      return {
+        valid: false,
+        terminalIndex: index + 1,
+        message: `端子${index + 2}必须是${terminalPortLabel(definition.terminalType)}端口，才能与端子${index + 1}共同关联${definition.label}。`
+      };
+    }
+    if (terminalAssociations[index + 1]) {
+      return {
+        valid: false,
+        terminalIndex: index + 1,
+        message: `端子${index + 2}已随端子${index + 1}分配给${definition.label}，关联属性应为空。`
+      };
+    }
+    index += 1;
+  }
+  return { valid: true, message: "" };
+}
+
 export function getContainerRelationKey(type: TerminalType, role: ContainerTerminalRole, terminalIndex: number): string {
   const energyKey = `${type}${role.startsWith("double") ? "2" : ""}`;
   const deviceRole = role.endsWith("load") ? "load" : "unit";
   return `idx_${energyKey}_${deviceRole}_t${terminalIndex + 1}`;
 }
 
+export function describeContainerTerminalAssociations(template: DeviceTemplate): ContainerTerminalAssociation[] {
+  if (!template.isContainer || template.terminalCount <= 0) {
+    return [];
+  }
+  const terminalTypes = templateTerminalTypes(template);
+  const terminalRoles = template.terminalRoles ?? [];
+  const terminalAssociations = template.terminalAssociations ?? [];
+  const definitions = getTemplateParameterDefinitions(template);
+
+  return terminalTypes.map((type, index) => {
+    const dependent = terminalAssociations.length
+      ? isContainerTerminalAssociationDependent(terminalAssociations, index)
+      : isContainerTerminalRoleDependent(terminalRoles, index);
+    const associationSourceIndex = terminalAssociations.length
+      ? getContainerTerminalAssociationSourceIndex(terminalAssociations, index)
+      : getContainerTerminalRoleSourceIndex(terminalRoles, index);
+    const role = getEffectiveContainerTerminalRole(terminalRoles, index);
+    const association = getEffectiveContainerTerminalAssociation(terminalAssociations, terminalTypes, index, terminalRoles);
+    const relationType = terminalTypes[associationSourceIndex] ?? type;
+    const expectedRelationKey = dependent
+      ? ""
+      : terminalAssociations.length
+        ? getContainerAssociationRelationKey(association, index)
+        : template.terminalRoles?.length
+          ? getContainerRelationKey(relationType, role, index)
+          : "";
+    const relationDefinition =
+      definitions.find((definition) => expectedRelationKey && definition.enName === expectedRelationKey) ??
+      (dependent ? undefined : definitions.find((definition) => new RegExp(`^idx_.+_t${index + 1}$`).test(definition.enName)));
+    const relationKey = relationDefinition?.enName ?? expectedRelationKey;
+    const transformerAssociation = /_transformer_t\d+$/.test(relationKey);
+    const roleLabel = transformerAssociation
+      ? "双绕组主变首端"
+      : terminalAssociations.length
+        ? containerTerminalAssociationLabel(association)
+        : containerTerminalRoleLabel(role);
+    const terminalLabel = template.terminalLabels?.[index] ?? `${terminalTypeLabel(type)}端${index + 1}`;
+    return {
+      terminalIndex: index,
+      terminalLabel,
+      terminalType: type,
+      relationKey,
+      relationName: dependent
+        ? `随端子${associationSourceIndex + 1}关联${roleLabel}`
+        : relationDefinition?.cnName ?? `${terminalLabel}${roleLabel}关联idx`,
+      roleLabel,
+      sourceTerminalIndex: associationSourceIndex,
+      dependent
+    };
+  });
+}
+
+function uniqueNonEmpty(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function viewRow(key: string, label: string, value: string, readonly = true): ContainerDeviceParameterViewRow {
+  return { key, label, value, readonly };
+}
+
+export function buildContainerDeviceParameterViews(
+  node: Pick<ModelNode, "kind" | "name" | "terminals" | "params">,
+  template?: DeviceTemplate
+): ContainerDeviceParameterView[] {
+  if (!isContainerParams(node.params)) {
+    return [];
+  }
+  const fallbackTemplate: DeviceTemplate = template ?? {
+    kind: node.kind,
+    label: node.name,
+    group: "",
+    size: { width: 0, height: 0 },
+    params: node.params,
+    terminalType: node.terminals[0]?.type ?? "ac",
+    terminalCount: node.terminals.length,
+    terminalTypes: node.terminals.map((terminal) => terminal.type),
+    terminalLabels: node.terminals.map((terminal) => terminal.label),
+    isContainer: true
+  };
+  const associations = describeContainerTerminalAssociations(fallbackTemplate);
+  if (associations.length === 0) {
+    return [];
+  }
+  const groups = new Map<number, ContainerTerminalAssociation[]>();
+  for (const association of associations) {
+    const group = groups.get(association.sourceTerminalIndex) ?? [];
+    group.push(association);
+    groups.set(association.sourceTerminalIndex, group);
+  }
+  const associatedViews = Array.from(groups.entries()).map<ContainerDeviceParameterView>(([sourceTerminalIndex, group]) => {
+    const first = group[0];
+    const relationKeys = group.map((association) => association.relationKey).filter(Boolean);
+    const relationIdx = firstText(relationKeys.map((key) => node.params[key]));
+    const sourceTerminal = node.terminals[sourceTerminalIndex];
+    const terminalIndexes = group.map((association) => association.terminalIndex);
+    const terminals = terminalIndexes.map((index) => node.terminals[index]).filter((terminal): terminal is Terminal => Boolean(terminal));
+    const deviceType = containerRelationCounterKey(first.relationKey) || first.roleLabel;
+    const label = `${sourceTerminal?.label ?? first.terminalLabel}${first.roleLabel}`;
+    const rows = [
+      viewRow("idx", "idx", relationIdx),
+      viewRow("name", "name", `${node.name}_${label}`),
+      viewRow("device_model", "device_model", deviceType),
+      viewRow("relation_fields", "relation_fields", relationKeys.join(", ")),
+      viewRow("terminals", "terminals", terminals.map((terminal) => terminal.label).join(", ")),
+      viewRow("energy", "energy", uniqueNonEmpty(terminals.map((terminal) => terminal.type.toUpperCase())).join(" / "))
+    ];
+    if (first.relationKey.includes("_transformer_")) {
+      rows.push(viewRow("i_node", "i_node", sourceTerminal?.nodeNumber ?? ""));
+      rows.push(viewRow("j_node", "j_node", node.params.neutral_node ?? ""));
+    } else if (terminals.length === 1) {
+      rows.push(viewRow("node", "node", terminals[0]?.nodeNumber ?? ""));
+    } else if (terminals.length >= 2) {
+      rows.push(viewRow("i_node", "i_node", terminals[0]?.nodeNumber ?? ""));
+      rows.push(viewRow("j_node", "j_node", terminals[1]?.nodeNumber ?? ""));
+    }
+    const vbaseValues = uniqueNonEmpty(terminals.map((terminal) => terminal.vbase ?? ""));
+    if (vbaseValues.length > 0) {
+      rows.push(viewRow("vbase", "vbase", vbaseValues.join(" / ")));
+    }
+    return {
+      id: `associated-${sourceTerminalIndex + 1}`,
+      label,
+      kind: "associated",
+      deviceType,
+      relationKeys,
+      terminalIndexes,
+      rows
+    };
+  });
+  return [
+    {
+      id: "container",
+      label: "容器本体",
+      kind: "container",
+      rows: []
+    },
+    ...associatedViews
+  ];
+}
+
 export function buildDefaultDeviceParameterDefinitions(
   terminalTypes: readonly TerminalType[],
-  options: { isContainer?: boolean; terminalRoles?: readonly ContainerTerminalRole[] } = {}
+  options: {
+    isContainer?: boolean;
+    terminalRoles?: readonly ContainerTerminalRole[];
+    terminalAssociations?: readonly ContainerTerminalAssociationValue[];
+  } = {}
 ): DeviceParameterDefinition[] {
   const baseDefinitions: DeviceParameterDefinition[] = [
     { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
@@ -1754,18 +2095,31 @@ export function buildDefaultDeviceParameterDefinitions(
     { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true }
   ];
   if (options.isContainer) {
-    const relationDefinitions = terminalTypes.map<DeviceParameterDefinition>((type, index) => {
-      const sourceIndex = getContainerTerminalRoleSourceIndex(options.terminalRoles ?? [], index);
+    const relationDefinitions: DeviceParameterDefinition[] = [];
+    for (let index = 0; index < terminalTypes.length; index += 1) {
+      const hasExplicitAssociations = Boolean(options.terminalAssociations?.length);
+      const dependent = hasExplicitAssociations
+        ? isContainerTerminalAssociationDependent(options.terminalAssociations ?? [], index)
+        : isContainerTerminalRoleDependent(options.terminalRoles ?? [], index);
+      if (dependent) {
+        continue;
+      }
+      const type = terminalTypes[index];
+      const sourceIndex = hasExplicitAssociations
+        ? getContainerTerminalAssociationSourceIndex(options.terminalAssociations ?? [], index)
+        : getContainerTerminalRoleSourceIndex(options.terminalRoles ?? [], index);
       const role = getEffectiveContainerTerminalRole(options.terminalRoles, index);
+      const association = getEffectiveContainerTerminalAssociation(options.terminalAssociations, terminalTypes, index, options.terminalRoles);
       const relationType = terminalTypes[sourceIndex] ?? type;
-      return {
-        cnName: `${terminalTypeLabel(relationType)}端${index + 1}${containerTerminalRoleLabel(role)}关联idx`,
-        enName: getContainerRelationKey(relationType, role, index),
+      const associationLabel = hasExplicitAssociations ? containerTerminalAssociationLabel(association) : containerTerminalRoleLabel(role);
+      relationDefinitions.push({
+        cnName: `${terminalTypeLabel(relationType)}端${index + 1}${associationLabel}关联idx`,
+        enName: hasExplicitAssociations ? getContainerAssociationRelationKey(association, index) : getContainerRelationKey(relationType, role, index),
         valueType: "integer",
         typicalValue: "",
         readonly: true
-      };
-    });
+      });
+    }
     return [
       ...baseDefinitions,
       { cnName: "是否容器", enName: "is_container", valueType: "integer", typicalValue: "1", readonly: true },
@@ -2024,7 +2378,8 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
   if (template.isContainer) {
     const defaultDefinitions = buildDefaultDeviceParameterDefinitions(templateTerminalTypes(template), {
       isContainer: true,
-      terminalRoles: template.terminalRoles
+      terminalRoles: template.terminalRoles,
+      terminalAssociations: template.terminalAssociations
     });
     const defaultKeys = new Set(defaultDefinitions.map((definition) => definition.enName));
     const extraKeys = Object.keys(template.params).filter((key) => key && !key.startsWith("_") && !defaultKeys.has(key));
@@ -2101,7 +2456,8 @@ function applyContainerRelationDefaults(params: Record<string, string>, template
   const next = { ...params };
   for (const definition of buildDefaultDeviceParameterDefinitions(templateTerminalTypes(template), {
     isContainer: true,
-    terminalRoles: template.terminalRoles
+    terminalRoles: template.terminalRoles,
+    terminalAssociations: template.terminalAssociations
   })) {
     if (definition.enName === "name") {
       continue;

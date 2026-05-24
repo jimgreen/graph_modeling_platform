@@ -1310,8 +1310,41 @@ button:disabled {
   font-size: 13px;
 }
 
+.device-definition-associations {
+  display: grid;
+  gap: 8px;
+}
+
+.device-definition-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.device-definition-section-title h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.device-definition-section-title span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .device-definition-table-wrap {
   max-height: 390px;
+}
+
+.compact-table-wrap {
+  max-height: 180px;
+}
+
+.custom-param-table code {
+  color: #1e40af;
+  font-size: 12px;
 }
 
 .custom-device-error {
@@ -1365,6 +1398,10 @@ button:disabled {
   color: #64748b;
   font-size: 11px;
   font-weight: 700;
+}
+
+.custom-terminal-dependent {
+  opacity: 0.78;
 }
 
 .custom-device-image-row,
@@ -1687,6 +1724,43 @@ button:disabled {
   border-radius: 8px;
   overflow: hidden;
   font-size: 12px;
+}
+
+.device-param-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.container-param-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.container-param-tabs button {
+  min-height: 30px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  padding: 0 10px;
+  color: #334155;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.container-param-tabs button:hover,
+.container-param-tabs button:focus-visible {
+  color: #1d4ed8;
+  border-color: #93c5fd;
+  background: #eff6ff;
+  outline: none;
+}
+
+.container-param-tabs button.active {
+  color: #ffffff;
+  border-color: #1d4ed8;
+  background: #1d4ed8;
 }
 
 .param-table th,

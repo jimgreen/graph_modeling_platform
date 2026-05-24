@@ -7,6 +7,8 @@ import {
   calculateElectricalTopology,
   canConnectTerminals,
   buildDefaultDeviceParameterDefinitions,
+  buildContainerDeviceParameterViews,
+  describeContainerTerminalAssociations,
   clampNodePositionToBounds,
   assignPermanentDeviceIndex,
   createSavedProject,
@@ -36,9 +38,11 @@ import {
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
   getElementFocusPoint,
+  getContainerAssociationRelationKey,
   getContainerRelationKey,
   getEParameterKeys,
   getTemplateParameterDefinitions,
+  validateContainerTerminalAssociations,
   validateContainerTerminalRoles,
   isGeneratorNode,
   isStaticNode,
@@ -1354,8 +1358,7 @@ describe("power system model", () => {
       "is_container",
       "idx_ac_load_t1",
       "idx_dc_unit_t2",
-      "idx_heat2_unit_t3",
-      "idx_heat2_unit_t4"
+      "idx_heat2_unit_t3"
     ]);
     expect(definitions.some((definition) => definition.enName.includes("node"))).toBe(false);
 
@@ -1379,9 +1382,213 @@ describe("power system model", () => {
     expect(node.params.idx_ac_load_t1).toBe("");
     expect(node.params.idx_dc_unit_t2).toBe("");
     expect(node.params.idx_heat2_unit_t3).toBe("");
-    expect(node.params.idx_heat2_unit_t4).toBe("");
+    expect(node.params.idx_heat2_unit_t4).toBeUndefined();
     expect(node.params.t1_node).toBeUndefined();
     expect(node.params.t2_node).toBeUndefined();
+  });
+
+  test("creates container definitions from explicit terminal association choices", () => {
+    const terminalTypes = ["ac", "dc", "h2", "heat", "heat"] as const;
+    const terminalAssociations = ["ac-generator", "dc-load", "h2-source", "heat2-load", ""] as const;
+    const definitions = buildDefaultDeviceParameterDefinitions(terminalTypes, {
+      isContainer: true,
+      terminalAssociations
+    });
+
+    expect(getContainerAssociationRelationKey("ac-generator", 0)).toBe("idx_ac_unit_t1");
+    expect(getContainerAssociationRelationKey("dc-load", 1)).toBe("idx_dc_load_t2");
+    expect(getContainerAssociationRelationKey("h2-source", 2)).toBe("idx_h2_unit_t3");
+    expect(getContainerAssociationRelationKey("heat2-load", 3)).toBe("idx_heat2_load_t4");
+    expect(definitions.map((definition) => definition.enName)).toEqual([
+      "idx",
+      "name",
+      "run_stat",
+      "is_container",
+      "idx_ac_unit_t1",
+      "idx_dc_load_t2",
+      "idx_h2_unit_t3",
+      "idx_heat2_load_t4"
+    ]);
+    expect(definitions.find((definition) => definition.enName === "idx_ac_unit_t1")?.cnName).toContain("交流电源");
+    expect(definitions.find((definition) => definition.enName === "idx_heat2_load_t4")?.cnName).toContain("双端热荷");
+    expect(definitions.some((definition) => definition.enName.includes("node"))).toBe(false);
+  });
+
+  test("validates explicit container associations against terminal energy types", () => {
+    const wrongEnergy = validateContainerTerminalAssociations(["ac"], ["dc-load"]);
+    expect(wrongEnergy.valid).toBe(false);
+    expect(wrongEnergy.message).toContain("交流电");
+
+    const invalidLast = validateContainerTerminalAssociations(["heat"], ["heat2-source"]);
+    expect(invalidLast.valid).toBe(false);
+    expect(invalidLast.message).toContain("最后一个端子");
+
+    const invalidDependentValue = validateContainerTerminalAssociations(["heat", "heat"], ["heat2-source", "heat2-source"]);
+    expect(invalidDependentValue.valid).toBe(false);
+    expect(invalidDependentValue.message).toContain("关联属性应为空");
+
+    const valid = validateContainerTerminalAssociations(["heat", "heat"], ["heat2-source", ""]);
+    expect(valid.valid).toBe(true);
+  });
+
+  test("describes container terminal association metadata for definition dialogs", () => {
+    const template: DeviceTemplate = {
+      kind: "CustomContainerAssociations",
+      label: "CustomContainerAssociations",
+      group: "自定义元件库",
+      size: { width: 104, height: 64 },
+      params: {},
+      terminalType: "heat",
+      terminalCount: 3,
+      terminalTypes: ["heat", "heat", "ac"],
+      terminalLabels: ["供水端", "回水端", "交流端"],
+      terminalRoles: ["double-source", "single-load", "single-load"],
+      isContainer: true,
+      custom: true,
+      parameterDefinitions: buildDefaultDeviceParameterDefinitions(["heat", "heat", "ac"], {
+        isContainer: true,
+        terminalRoles: ["double-source", "single-load", "single-load"]
+      })
+    };
+
+    expect(describeContainerTerminalAssociations(template)).toEqual([
+      expect.objectContaining({
+        terminalIndex: 0,
+        terminalLabel: "供水端",
+        terminalType: "heat",
+        relationKey: "idx_heat2_unit_t1",
+        relationName: "热能端1双端源关联idx",
+        roleLabel: "双端源",
+        sourceTerminalIndex: 0,
+        dependent: false
+      }),
+      expect.objectContaining({
+        terminalIndex: 1,
+        terminalLabel: "回水端",
+        terminalType: "heat",
+        relationKey: "",
+        relationName: "随端子1关联双端源",
+        roleLabel: "双端源",
+        sourceTerminalIndex: 0,
+        dependent: true
+      }),
+      expect.objectContaining({
+        terminalIndex: 2,
+        terminalLabel: "交流端",
+        terminalType: "ac",
+        relationKey: "idx_ac_load_t3",
+        relationName: "交流端3单端荷关联idx",
+        roleLabel: "单端荷",
+        sourceTerminalIndex: 2,
+        dependent: false
+      })
+    ]);
+  });
+
+  test("describes three-winding transformer terminal associations as internal two-winding transformers", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer")!;
+
+    expect(describeContainerTerminalAssociations(template)).toEqual([
+      expect.objectContaining({
+        terminalIndex: 0,
+        terminalType: "ac",
+        relationKey: "idx_ac_transformer_t1",
+        relationName: "高压绕组双绕组主变idx",
+        roleLabel: "双绕组主变首端"
+      }),
+      expect.objectContaining({
+        terminalIndex: 1,
+        terminalType: "ac",
+        relationKey: "idx_ac_transformer_t2",
+        relationName: "中压绕组双绕组主变idx",
+        roleLabel: "双绕组主变首端"
+      }),
+      expect.objectContaining({
+        terminalIndex: 2,
+        terminalType: "ac",
+        relationKey: "idx_ac_transformer_t3",
+        relationName: "低压绕组双绕组主变idx",
+        roleLabel: "双绕组主变首端"
+      })
+    ]);
+  });
+
+  test("builds one body view plus associated device views for container parameters", () => {
+    const node = assignPermanentDeviceIndex(createDefaultNode("ac-electrolyzer", { x: 100, y: 100 }), {}).node;
+    node.name = "EL1";
+    node.terminals[0].nodeNumber = "5";
+    node.terminals[1].nodeNumber = "2";
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-electrolyzer")!;
+
+    const views = buildContainerDeviceParameterViews(node, template);
+
+    expect(views.map((view) => view.label)).toEqual(["容器本体", "交流端交流电负荷", "氢能端氢源"]);
+    expect(views[0]).toMatchObject({ id: "container", kind: "container" });
+    expect(views[1]).toMatchObject({
+      kind: "associated",
+      deviceType: "ACLoad",
+      relationKeys: ["idx_ac_load_t1"],
+      terminalIndexes: [0]
+    });
+    expect(views[1].rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "idx", value: "1" }),
+      expect.objectContaining({ key: "device_model", value: "ACLoad" }),
+      expect.objectContaining({ key: "node", value: "5" })
+    ]));
+    expect(views[2]).toMatchObject({
+      kind: "associated",
+      deviceType: "HydrogenSource",
+      relationKeys: ["idx_h2_unit_t2"],
+      terminalIndexes: [1]
+    });
+  });
+
+  test("deduplicates double-port container associations into one associated device view", () => {
+    const node = assignPermanentDeviceIndex(createDefaultNode("ac-two-port-heater", { x: 100, y: 100 }), {}).node;
+    node.terminals[0].nodeNumber = "1";
+    node.terminals[1].nodeNumber = "2";
+    node.terminals[2].nodeNumber = "3";
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-two-port-heater")!;
+
+    const views = buildContainerDeviceParameterViews(node, template);
+
+    expect(views.map((view) => view.label)).toEqual(["容器本体", "交流端交流电负荷", "供水端双端热源"]);
+    expect(views[2]).toMatchObject({
+      kind: "associated",
+      deviceType: "TwoPortHeatSource",
+      relationKeys: ["idx_heat2_unit_t2"],
+      terminalIndexes: [1, 2]
+    });
+    expect(views[2].rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "idx", value: "1" }),
+      expect.objectContaining({ key: "i_node", value: "2" }),
+      expect.objectContaining({ key: "j_node", value: "3" })
+    ]));
+  });
+
+  test("builds associated device parameter views for three-winding transformer branches", () => {
+    const node = assignPermanentDeviceIndex(createDefaultNode("ac-three-winding-transformer", { x: 100, y: 100 }), {}).node;
+    node.name = "T3";
+    node.terminals[0].nodeNumber = "1";
+    node.terminals[1].nodeNumber = "2";
+    node.terminals[2].nodeNumber = "3";
+    node.params.neutral_node = "4";
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer")!;
+
+    const views = buildContainerDeviceParameterViews(node, template);
+
+    expect(views.map((view) => view.label)).toEqual(["容器本体", "端子1双绕组主变首端", "端子2双绕组主变首端", "端子3双绕组主变首端"]);
+    expect(views[1]).toMatchObject({
+      kind: "associated",
+      deviceType: "ACTransformer",
+      relationKeys: ["idx_ac_transformer_t1"],
+      terminalIndexes: [0]
+    });
+    expect(views[1].rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "idx", value: "1" }),
+      expect.objectContaining({ key: "i_node", value: "1" }),
+      expect.objectContaining({ key: "j_node", value: "4" })
+    ]));
   });
 
   test("pairs the next terminal with a double-port container association", () => {
@@ -1398,9 +1605,7 @@ describe("power system model", () => {
       "run_stat",
       "is_container",
       "idx_heat2_unit_t1",
-      "idx_heat2_unit_t2",
-      "idx_heat2_unit_t3",
-      "idx_heat2_unit_t4"
+      "idx_heat2_unit_t3"
     ]);
 
     const template: DeviceTemplate = {
@@ -1420,9 +1625,9 @@ describe("power system model", () => {
     const indexed = assignPermanentDeviceIndex(createNodeFromTemplate(template, { x: 100, y: 100 }), {});
 
     expect(indexed.node.params.idx_heat2_unit_t1).toBe("1");
-    expect(indexed.node.params.idx_heat2_unit_t2).toBe("1");
+    expect(indexed.node.params.idx_heat2_unit_t2).toBeUndefined();
     expect(indexed.node.params.idx_heat2_unit_t3).toBe("2");
-    expect(indexed.node.params.idx_heat2_unit_t4).toBe("2");
+    expect(indexed.node.params.idx_heat2_unit_t4).toBeUndefined();
     expect(indexed.counters.TwoPortHeatSource).toBe(2);
   });
 
@@ -1443,8 +1648,10 @@ describe("power system model", () => {
       ["dc-electrolyzer", ["idx_dc_load_t1", "idx_h2_unit_t2"]],
       ["ac-heater", ["idx_ac_load_t1", "idx_heat_unit_t2"]],
       ["dc-heater", ["idx_dc_load_t1", "idx_heat_unit_t2"]],
-      ["ac-two-port-heater", ["idx_ac_load_t1", "idx_heat2_unit_t2", "idx_heat2_unit_t3"]],
-      ["dc-two-port-heater", ["idx_dc_load_t1", "idx_heat2_unit_t2", "idx_heat2_unit_t3"]]
+      ["ac-two-port-heater", ["idx_ac_load_t1", "idx_heat2_unit_t2"]],
+      ["dc-two-port-heater", ["idx_dc_load_t1", "idx_heat2_unit_t2"]],
+      ["heat-boiler", ["idx_heat_unit_t1"]],
+      ["two-port-heat-boiler", ["idx_heat2_unit_t1"]]
     ] as const;
 
     for (const [kind, relationKeys] of expected) {
@@ -1479,7 +1686,7 @@ describe("power system model", () => {
     expect(indexedHeater.node.params.idx).toBe("1");
     expect(indexedHeater.node.params.idx_ac_load_t1).toBe("2");
     expect(indexedHeater.node.params.idx_heat2_unit_t2).toBe("1");
-    expect(indexedHeater.node.params.idx_heat2_unit_t3).toBe("1");
+    expect(indexedHeater.node.params.idx_heat2_unit_t3).toBeUndefined();
     expect(indexedHeater.counters).toMatchObject({
       "ac-two-port-heater": 1,
       ACLoad: 2,
@@ -1494,6 +1701,12 @@ describe("power system model", () => {
       HydrogenSource: 1,
       TwoPortHeatSource: 1
     });
+
+    const boiler = createDefaultNode("two-port-heat-boiler", { x: 100, y: 100 });
+    const indexedBoiler = assignPermanentDeviceIndex(boiler, indexedHeater.counters);
+    expect(indexedBoiler.node.params.idx_heat2_unit_t1).toBe("2");
+    expect(indexedBoiler.node.params.idx_heat2_unit_t2).toBeUndefined();
+    expect(indexedBoiler.counters.TwoPortHeatSource).toBe(2);
   });
 
   test("applies edited built-in template definitions when creating new nodes", () => {

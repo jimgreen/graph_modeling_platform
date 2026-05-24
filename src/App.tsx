@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import {
   alignNodes,
+  buildContainerDeviceParameterViews,
   buildDefaultDeviceParameterDefinitions,
   buildElementTree,
   assignMissingDeviceIndexes,
@@ -45,6 +46,7 @@ import {
   createNodeFromTemplate,
   CUSTOM_DEVICE_TEMPLATE_KEY,
   CUSTOM_PARAM_DEFINITIONS_KEY,
+  describeContainerTerminalAssociations,
   deleteNodesWithConnectedEdges,
   deleteSavedScheme,
   deleteSavedProject,
@@ -57,8 +59,7 @@ import {
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
   getElementFocusPoint,
-  getContainerTerminalRoleSourceIndex,
-  getEffectiveContainerTerminalRole,
+  getContainerTerminalAssociationSourceIndex,
   getSwitchVisualState,
   getEParameterKeys,
   getEParamValue,
@@ -66,8 +67,8 @@ import {
   getTerminalPoint,
   normalizeVoltageBaseInput,
   isBusNode,
-  isContainerTerminalRoleDependent,
-  isDoubleContainerTerminalRole,
+  isContainerTerminalAssociationDependent,
+  isDoubleContainerTerminalAssociation,
   isGeneratorNode,
   isStaticNode,
   lockProjectEdgeTerminals,
@@ -86,6 +87,8 @@ import {
   type Point,
   type ProjectFile,
   type CanvasBounds,
+  type ContainerTerminalAssociationType,
+  type ContainerTerminalAssociationValue,
   type ContainerTerminalRole,
   type TerminalType,
   type TopologyValidationError,
@@ -100,7 +103,7 @@ import {
   terminalTypeColor,
   upsertSavedProject,
   uniqueRecordName,
-  validateContainerTerminalRoles,
+  validateContainerTerminalAssociations,
   type SavedSchemeRecord,
   type SavedProjectRecord
 } from "./model";
@@ -232,6 +235,7 @@ type CustomDeviceDraft = {
   terminalCount: number;
   terminalTypes: TerminalType[];
   terminalRoles: ContainerTerminalRole[];
+  terminalAssociations: ContainerTerminalAssociationValue[];
   isContainer: boolean;
   params: CustomParamDraft[];
   error: string;
@@ -265,12 +269,26 @@ const TERMINAL_TYPE_OPTIONS: Array<{ value: TerminalType; label: string }> = [
   { value: "h2", label: "氢能" },
   { value: "heat", label: "热能" }
 ];
-const CONTAINER_TERMINAL_ROLE_OPTIONS: Array<{ value: ContainerTerminalRole; label: string }> = [
-  { value: "single-load", label: "单端荷" },
-  { value: "single-source", label: "单端源" },
-  { value: "double-load", label: "双端荷" },
-  { value: "double-source", label: "双端源" }
-];
+const CONTAINER_TERMINAL_ASSOCIATION_OPTIONS: Record<TerminalType, Array<{ value: ContainerTerminalAssociationType; label: string }>> = {
+  ac: [
+    { value: "ac-generator", label: "交流电源" },
+    { value: "ac-load", label: "交流电负荷" }
+  ],
+  dc: [
+    { value: "dc-generator", label: "直流电源" },
+    { value: "dc-load", label: "直流电负荷" }
+  ],
+  h2: [
+    { value: "h2-source", label: "氢源" },
+    { value: "h2-load", label: "氢荷" }
+  ],
+  heat: [
+    { value: "heat-source", label: "单端热源" },
+    { value: "heat2-source", label: "双端热源" },
+    { value: "heat-load", label: "单端热荷" },
+    { value: "heat2-load", label: "双端热荷" }
+  ]
+};
 const PARAM_VALUE_TYPE_OPTIONS: Array<{ value: DeviceParameterValueType; label: string }> = [
   { value: "integer", label: "整数" },
   { value: "float", label: "浮点数" },
@@ -752,6 +770,7 @@ function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[] {
       terminalTypes: ((item as DeviceTemplate).terminalTypes ?? []).slice(0, 4) as TerminalType[],
       terminalLabels: ((item as DeviceTemplate).terminalLabels ?? []).slice(0, 4),
       terminalRoles: ((item as DeviceTemplate).terminalRoles ?? []).slice(0, 4) as ContainerTerminalRole[],
+      terminalAssociations: ((item as DeviceTemplate).terminalAssociations ?? []).slice(0, 4) as ContainerTerminalAssociationValue[],
       isContainer: Boolean((item as DeviceTemplate).isContainer),
       custom: true,
       parameterDefinitions: ((item as DeviceTemplate).parameterDefinitions ?? []).map((definition) => ({ ...definition }))
@@ -858,15 +877,50 @@ function createEmptyCustomDeviceDraft(groupName = "交流设备"): CustomDeviceD
     terminalCount: 2,
     terminalTypes: ["ac", "ac", "ac", "ac"],
     terminalRoles: ["single-load", "single-load", "single-load", "single-load"],
+    terminalAssociations: ["ac-load", "ac-load", "ac-load", "ac-load"],
     isContainer: false,
     params: [],
     error: ""
   };
 }
 
+function defaultContainerAssociationForTerminalType(type: TerminalType): ContainerTerminalAssociationType {
+  return CONTAINER_TERMINAL_ASSOCIATION_OPTIONS[type][0].value;
+}
+
+function isAssociationAllowedForTerminal(type: TerminalType, association: ContainerTerminalAssociationValue): association is ContainerTerminalAssociationType {
+  return Boolean(association && CONTAINER_TERMINAL_ASSOCIATION_OPTIONS[type].some((option) => option.value === association));
+}
+
+function normalizeContainerTerminalAssociations(
+  terminalTypes: TerminalType[],
+  terminalAssociations: ContainerTerminalAssociationValue[],
+  terminalCount: number
+): ContainerTerminalAssociationValue[] {
+  const next = terminalAssociations.slice(0, terminalCount);
+  while (next.length < terminalCount) {
+    next.push(defaultContainerAssociationForTerminalType(terminalTypes[next.length] ?? "ac"));
+  }
+  for (let index = 0; index < terminalCount; index += 1) {
+    if (index > 0 && isDoubleContainerTerminalAssociation(next[index - 1])) {
+      next[index] = "";
+      continue;
+    }
+    const type = terminalTypes[index] ?? "ac";
+    if (!isAssociationAllowedForTerminal(type, next[index])) {
+      next[index] = defaultContainerAssociationForTerminalType(type);
+    }
+  }
+  return next;
+}
+
 function customDefaultDefinitions(
   terminalTypes: TerminalType[],
-  options: { isContainer?: boolean; terminalRoles?: ContainerTerminalRole[] } = {}
+  options: {
+    isContainer?: boolean;
+    terminalRoles?: ContainerTerminalRole[];
+    terminalAssociations?: ContainerTerminalAssociationValue[];
+  } = {}
 ): DeviceParameterDefinition[] {
   return buildDefaultDeviceParameterDefinitions(terminalTypes, options);
 }
@@ -1638,6 +1692,7 @@ export function App() {
   const [rightPanelMode, setRightPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(RIGHT_PANEL_MODE_STORAGE_KEY));
   const [leftPanelAutoVisible, setLeftPanelAutoVisible] = useState(false);
   const [rightPanelAutoVisible, setRightPanelAutoVisible] = useState(false);
+  const [containerParamViewId, setContainerParamViewId] = useState("container");
   const [expandedLibraryGroups, setExpandedLibraryGroups] = useState<LibraryGroup[]>([...DEFAULT_LIBRARY_GROUPS]);
   const [customDeviceTemplates, setCustomDeviceTemplates] = useState<DeviceTemplate[]>(() => readCustomDeviceTemplates());
   const [customDeviceDialogOpen, setCustomDeviceDialogOpen] = useState(false);
@@ -1683,6 +1738,16 @@ export function App() {
   );
   const selectedDefinitionTemplate = libraryTemplates.find((template) => template.kind === selectedDefinitionKind) ?? libraryTemplates[0];
   const selectedDefinitionBaseTemplate = baseLibraryTemplates.find((template) => template.kind === selectedDefinitionTemplate?.kind);
+  const selectedDefinitionTerminalAssociations = selectedDefinitionTemplate
+    ? describeContainerTerminalAssociations(selectedDefinitionTemplate)
+    : [];
+  const selectedNodeTemplate = selectedNode ? libraryTemplates.find((template) => template.kind === selectedNode.kind) : undefined;
+  const selectedContainerParameterViews = useMemo(
+    () => (selectedNode ? buildContainerDeviceParameterViews(selectedNode, selectedNodeTemplate) : []),
+    [selectedNode, selectedNodeTemplate]
+  );
+  const selectedContainerParameterView =
+    selectedContainerParameterViews.find((view) => view.id === containerParamViewId) ?? selectedContainerParameterViews[0];
   const selectedProjectRecord = projects.find((project) => project.id === selectedProjectId);
   const activeProjectRecord = projects.find((project) => project.id === activeProjectId);
   const currentModelRecord: SavedProjectRecord = selectedProjectRecord ?? activeProjectRecord ?? {
@@ -1782,6 +1847,18 @@ export function App() {
     [routedEdges, selectedEdgeId]
   );
   const selectedRoutedEdge = routedEdges.find((route) => route.edgeId === selectedEdgeId);
+
+  useEffect(() => {
+    if (selectedContainerParameterViews.length === 0) {
+      if (containerParamViewId !== "container") {
+        setContainerParamViewId("container");
+      }
+      return;
+    }
+    if (!selectedContainerParameterViews.some((view) => view.id === containerParamViewId)) {
+      setContainerParamViewId(selectedContainerParameterViews[0].id);
+    }
+  }, [containerParamViewId, selectedContainerParameterViews]);
 
   useEffect(() => {
     fetchBackendSchemes()
@@ -4231,10 +4308,14 @@ export function App() {
   );
 
   const customDraftTerminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
-  const customDraftTerminalRoles = customDeviceDraft.terminalRoles.slice(0, customDeviceDraft.terminalCount);
+  const customDraftTerminalAssociations = normalizeContainerTerminalAssociations(
+    customDraftTerminalTypes,
+    customDeviceDraft.terminalAssociations,
+    customDeviceDraft.terminalCount
+  );
   const customDraftDefaultParams = customDefaultDefinitions(customDraftTerminalTypes, {
     isContainer: customDeviceDraft.isContainer,
-    terminalRoles: customDraftTerminalRoles
+    terminalAssociations: customDraftTerminalAssociations
   });
   const customDevicePreviewImage =
     customDeviceDraft.backgroundImage ||
@@ -4362,7 +4443,8 @@ export function App() {
       while (terminalRoles.length < count) {
         terminalRoles.push("single-load");
       }
-      return { ...current, terminalCount: count, terminalTypes, terminalRoles, error: "" };
+      const terminalAssociations = normalizeContainerTerminalAssociations([...terminalTypes], current.terminalAssociations, count);
+      return { ...current, terminalCount: count, terminalTypes, terminalRoles, terminalAssociations, error: "" };
     });
   };
 
@@ -4399,12 +4481,16 @@ export function App() {
       return;
     }
     const terminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
-    const terminalRoles = customDeviceDraft.terminalRoles.slice(0, customDeviceDraft.terminalCount);
+    const terminalAssociations = normalizeContainerTerminalAssociations(
+      terminalTypes,
+      customDeviceDraft.terminalAssociations,
+      customDeviceDraft.terminalCount
+    );
     if (customDeviceDraft.isContainer) {
-      const terminalRoleValidation = validateContainerTerminalRoles(terminalTypes, terminalRoles);
-      if (!terminalRoleValidation.valid) {
-        window.alert(terminalRoleValidation.message);
-        setCustomDeviceDraft((current) => ({ ...current, error: terminalRoleValidation.message }));
+      const terminalAssociationValidation = validateContainerTerminalAssociations(terminalTypes, terminalAssociations);
+      if (!terminalAssociationValidation.valid) {
+        window.alert(terminalAssociationValidation.message);
+        setCustomDeviceDraft((current) => ({ ...current, terminalAssociations, error: terminalAssociationValidation.message }));
         return;
       }
     }
@@ -4422,7 +4508,7 @@ export function App() {
     }
     const definitions = [...customDefaultDefinitions(terminalTypes, {
       isContainer: customDeviceDraft.isContainer,
-      terminalRoles
+      terminalAssociations
     }), ...customRows];
     const duplicateDefinition = definitions.find(
       (definition, index) => definitions.findIndex((item) => item.enName.toLowerCase() === definition.enName.toLowerCase()) !== index
@@ -4447,7 +4533,7 @@ export function App() {
       terminalType: terminalTypes[0] ?? "ac",
       terminalCount: terminalTypes.length,
       terminalTypes,
-      terminalRoles: customDeviceDraft.isContainer ? terminalRoles : undefined,
+      terminalAssociations: customDeviceDraft.isContainer ? terminalAssociations : undefined,
       terminalLabels: terminalTypes.map((type, index) => `${TERMINAL_TYPE_OPTIONS.find((item) => item.value === type)?.label ?? type}端${index + 1}`),
       isContainer: customDeviceDraft.isContainer,
       custom: true,
@@ -5594,41 +5680,70 @@ export function App() {
                 </tbody>
               </table>
             ) : selectedNode ? (
-              <table className="param-table">
-                <tbody>
-                  {(() => {
-                    const eKeys = getEParameterKeys(selectedNode.kind, selectedNode.params);
-                    const customDefinitions = parseCustomDefinitions(selectedNode.params);
-                    const customKeys = customDefinitions.map((definition) => definition.enName);
-                    const customExtraKeys = customKeys.filter((key) => !eKeys.includes(key));
-                    const keys =
-                      eKeys.length > 0
-                        ? [...eKeys, ...customExtraKeys]
-                        : customKeys.length > 0
-                          ? customKeys
-                          : Object.keys(selectedNode.params).filter((key) => !key.startsWith("_"));
-                    const readonlyKeys = new Set(customDefinitions.filter((definition) => definition.readonly).map((definition) => definition.enName));
-                    return keys.map((key) => {
-                      const value = eKeys.length > 0 ? getEParamValue(key, selectedNode) : key === "name" ? selectedNode.name : selectedNode.params[key] ?? "";
-                      const definition = customDefinitions.find((item) => item.enName === key);
-                      return (
-                        <tr key={key}>
-                          {renderParamHeader(key, key, definition?.cnName ?? PARAM_LABELS[key] ?? key)}
-                          <td>
-                            {key === "name" ? (
-                              <input value={selectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
-                            ) : READONLY_E_PARAM_KEYS.has(key) || readonlyKeys.has(key) ? (
-                              <input value={value} readOnly />
-                            ) : (
-                              renderParamEditor(key, value, false)
-                            )}
-                          </td>
+              <div className="device-param-stack">
+                {selectedContainerParameterViews.length > 0 && (
+                  <div className="container-param-tabs" role="tablist" aria-label="容器设备参数切换">
+                    {selectedContainerParameterViews.map((view) => (
+                      <button
+                        key={view.id}
+                        type="button"
+                        className={selectedContainerParameterView?.id === view.id ? "active" : ""}
+                        onClick={() => setContainerParamViewId(view.id)}
+                      >
+                        {view.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {selectedContainerParameterView?.kind === "associated" ? (
+                  <table className="param-table">
+                    <tbody>
+                      {selectedContainerParameterView.rows.map((row) => (
+                        <tr key={row.key}>
+                          {renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
+                          <td><input value={row.value} readOnly /></td>
                         </tr>
-                      );
-                    });
-                  })()}
-                </tbody>
-              </table>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <table className="param-table">
+                    <tbody>
+                      {(() => {
+                        const eKeys = getEParameterKeys(selectedNode.kind, selectedNode.params);
+                        const customDefinitions = parseCustomDefinitions(selectedNode.params);
+                        const customKeys = customDefinitions.map((definition) => definition.enName);
+                        const customExtraKeys = customKeys.filter((key) => !eKeys.includes(key));
+                        const keys =
+                          eKeys.length > 0
+                            ? [...eKeys, ...customExtraKeys]
+                            : customKeys.length > 0
+                              ? customKeys
+                              : Object.keys(selectedNode.params).filter((key) => !key.startsWith("_"));
+                        const readonlyKeys = new Set(customDefinitions.filter((definition) => definition.readonly).map((definition) => definition.enName));
+                        return keys.map((key) => {
+                          const value = eKeys.length > 0 ? getEParamValue(key, selectedNode) : key === "name" ? selectedNode.name : selectedNode.params[key] ?? "";
+                          const definition = customDefinitions.find((item) => item.enName === key);
+                          return (
+                            <tr key={key}>
+                              {renderParamHeader(key, key, definition?.cnName ?? PARAM_LABELS[key] ?? key)}
+                              <td>
+                                {key === "name" ? (
+                                  <input value={selectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
+                                ) : READONLY_E_PARAM_KEYS.has(key) || readonlyKeys.has(key) ? (
+                                  <input value={value} readOnly />
+                                ) : (
+                                  renderParamEditor(key, value, false)
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             ) : (
               <div className="empty-state">
                 <FileJson size={28} />
@@ -5906,6 +6021,42 @@ export function App() {
                         <strong>{deviceDefinitionOverrides[selectedDefinitionTemplate.kind]?.updatedAt ? "已自定义" : "默认"}</strong>
                       </div>
                     </div>
+                    {selectedDefinitionTemplate.isContainer && selectedDefinitionTerminalAssociations.length > 0 && (
+                      <section className="device-definition-associations">
+                        <div className="device-definition-section-title">
+                          <h3>端子关联信息</h3>
+                          <span>{selectedDefinitionTerminalAssociations.length} 个端子</span>
+                        </div>
+                        <div className="custom-param-table-wrap compact-table-wrap">
+                          <table className="custom-param-table">
+                            <thead>
+                              <tr>
+                                <th>端子</th>
+                                <th>能源属性</th>
+                                <th>关联对象</th>
+                                <th>关联字段</th>
+                                <th>说明</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {selectedDefinitionTerminalAssociations.map((association) => (
+                                <tr key={`${selectedDefinitionTemplate.kind}-terminal-${association.terminalIndex}`}>
+                                  <td>{association.terminalLabel}</td>
+                                  <td>{TERMINAL_TYPE_OPTIONS.find((option) => option.value === association.terminalType)?.label ?? association.terminalType}</td>
+                                  <td>{association.roleLabel}</td>
+                                  <td><code>{association.relationKey || "-"}</code></td>
+                                  <td>
+                                    {association.dependent
+                                      ? `随端子${association.sourceTerminalIndex + 1}分配到同一个关联设备`
+                                      : association.relationName}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+                    )}
                     {definitionDraftError && <p className="custom-device-error">{definitionDraftError}</p>}
                     <div className="custom-param-table-wrap device-definition-table-wrap">
                       <table className="custom-param-table">
@@ -6081,25 +6232,43 @@ export function App() {
             </div>
             <div className="custom-terminal-grid">
               {Array.from({ length: customDeviceDraft.terminalCount }).map((_, index) => {
-                const terminalRoles = customDeviceDraft.terminalRoles.slice(0, customDeviceDraft.terminalCount);
-                const roleSourceIndex = getContainerTerminalRoleSourceIndex(terminalRoles, index);
-                const roleDependent = customDeviceDraft.isContainer && isContainerTerminalRoleDependent(terminalRoles, index);
-                const effectiveRole = getEffectiveContainerTerminalRole(terminalRoles, index);
+                const terminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
+                const terminalAssociations = normalizeContainerTerminalAssociations(
+                  terminalTypes,
+                  customDeviceDraft.terminalAssociations,
+                  customDeviceDraft.terminalCount
+                );
+                const associationSourceIndex = getContainerTerminalAssociationSourceIndex(terminalAssociations, index);
+                const associationDependent = customDeviceDraft.isContainer && isContainerTerminalAssociationDependent(terminalAssociations, index);
+                const terminalType = customDeviceDraft.terminalTypes[index] ?? "ac";
+                const associationOptions = CONTAINER_TERMINAL_ASSOCIATION_OPTIONS[terminalType];
                 return (
-                  <label key={index} className={roleDependent ? "custom-terminal-dependent" : ""}>
+                  <label key={index} className={associationDependent ? "custom-terminal-dependent" : ""}>
                     {`端子${index + 1}能源属性`}
                     <select
-                      value={customDeviceDraft.terminalTypes[index] ?? "ac"}
-                      disabled={roleDependent}
+                      value={terminalType}
+                      disabled={associationDependent}
                       onChange={(event) =>
                         setCustomDeviceDraft((current) => {
                           const terminalTypes = [...current.terminalTypes];
                           terminalTypes[index] = event.target.value as TerminalType;
-                          const terminalRoles = [...current.terminalRoles];
-                          if (current.isContainer && isDoubleContainerTerminalRole(terminalRoles[index]) && index + 1 < current.terminalCount) {
-                            terminalTypes[index + 1] = event.target.value as TerminalType;
+                          const terminalAssociations = [...current.terminalAssociations];
+                          if (current.isContainer) {
+                            if (isDoubleContainerTerminalAssociation(terminalAssociations[index]) && index + 1 < current.terminalCount) {
+                              terminalAssociations[index + 1] = defaultContainerAssociationForTerminalType(terminalTypes[index + 1] ?? "ac");
+                            }
+                            terminalAssociations[index] = defaultContainerAssociationForTerminalType(terminalTypes[index]);
                           }
-                          return { ...current, terminalTypes, error: "" };
+                          return {
+                            ...current,
+                            terminalTypes,
+                            terminalAssociations: normalizeContainerTerminalAssociations(
+                              terminalTypes.slice(0, current.terminalCount),
+                              terminalAssociations,
+                              current.terminalCount
+                            ),
+                            error: ""
+                          };
                         })
                       }
                     >
@@ -6111,39 +6280,49 @@ export function App() {
                     </select>
                     {customDeviceDraft.isContainer && (
                       <>
-                        <span>端子角色</span>
+                        <span>关联设备</span>
                         <select
-                          value={roleDependent ? effectiveRole : customDeviceDraft.terminalRoles[index] ?? "single-load"}
-                          disabled={roleDependent}
+                          value={associationDependent ? "" : terminalAssociations[index] || defaultContainerAssociationForTerminalType(terminalType)}
+                          disabled={associationDependent}
                           onChange={(event) =>
                             setCustomDeviceDraft((current) => {
-                              const selectedRole = event.target.value as ContainerTerminalRole;
-                              if (isDoubleContainerTerminalRole(selectedRole) && index + 1 >= current.terminalCount) {
-                                const message = `端子${index + 1}是最后一个端子，不能设置为双端源/荷。`;
+                              const selectedAssociation = event.target.value as ContainerTerminalAssociationType;
+                              if (isDoubleContainerTerminalAssociation(selectedAssociation) && index + 1 >= current.terminalCount) {
+                                const message = `端子${index + 1}是最后一个端子，不能设置为双端热源/热荷。`;
                                 window.alert(message);
                                 return { ...current, error: message };
                               }
-                              const terminalRoles = [...current.terminalRoles];
                               const terminalTypes = [...current.terminalTypes];
-                              const previousRole = terminalRoles[index];
-                              terminalRoles[index] = selectedRole;
-                              if (isDoubleContainerTerminalRole(selectedRole) && index + 1 < current.terminalCount) {
-                                terminalRoles[index + 1] = selectedRole;
-                                terminalTypes[index + 1] = terminalTypes[index] ?? terminalTypes[index + 1] ?? "ac";
-                              } else if (isDoubleContainerTerminalRole(previousRole) && index + 1 < current.terminalCount) {
-                                terminalRoles[index + 1] = "single-load";
+                              const terminalAssociations = [...current.terminalAssociations];
+                              const previousAssociation = terminalAssociations[index];
+                              terminalAssociations[index] = selectedAssociation;
+                              if (isDoubleContainerTerminalAssociation(selectedAssociation) && index + 1 < current.terminalCount) {
+                                terminalTypes[index + 1] = terminalTypes[index] ?? "heat";
+                                terminalAssociations[index + 1] = "";
+                              } else if (isDoubleContainerTerminalAssociation(previousAssociation) && index + 1 < current.terminalCount) {
+                                terminalAssociations[index + 1] = defaultContainerAssociationForTerminalType(terminalTypes[index + 1] ?? "ac");
                               }
-                              return { ...current, terminalTypes, terminalRoles, error: "" };
+                              return {
+                                ...current,
+                                terminalTypes,
+                                terminalAssociations: normalizeContainerTerminalAssociations(
+                                  terminalTypes.slice(0, current.terminalCount),
+                                  terminalAssociations,
+                                  current.terminalCount
+                                ),
+                                error: ""
+                              };
                             })
                           }
                         >
-                          {CONTAINER_TERMINAL_ROLE_OPTIONS.map((option) => (
+                          {associationDependent && <option value="">随上一个端子关联同一个双端元件</option>}
+                          {associationOptions.map((option) => (
                             <option key={option.value} value={option.value}>
                               {option.label}
                             </option>
                           ))}
                         </select>
-                        {roleDependent && <small>{`随端子${roleSourceIndex + 1}分配到同一个双端元件`}</small>}
+                        {associationDependent && <small>{`随端子${associationSourceIndex + 1}分配到同一个双端元件，关联属性为空。`}</small>}
                       </>
                     )}
                   </label>
