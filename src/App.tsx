@@ -59,6 +59,7 @@ import {
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
   getElementFocusPoint,
+  getMovableRouteSegmentIndexes,
   getContainerTerminalAssociationSourceIndex,
   getSwitchVisualState,
   getEParameterKeys,
@@ -97,6 +98,7 @@ import {
   mirrorNodes,
   renameSavedScheme,
   renameSavedProject,
+  moveOrthogonalRouteSegment,
   serializeProject,
   terminalStubSegment,
   terminalVoltageBaseNumber,
@@ -3066,18 +3068,11 @@ export function App() {
           });
         }
       } else {
-        const delta = manualPathDrag.orientation === "horizontal"
-          ? point.y - manualPathDrag.startPoint.y
-          : point.x - manualPathDrag.startPoint.x;
-        const movePoint = (source: Point) =>
-          manualPathDrag.orientation === "horizontal"
-            ? clampPointToCanvas({ x: source.x, y: source.y + delta })
-            : clampPointToCanvas({ x: source.x + delta, y: source.y });
-        [manualPathDrag.segmentIndex, manualPathDrag.segmentIndex + 1].forEach((routeIndex) => {
-          if (routeIndex > 0 && routeIndex < originalRoutePoints.length - 1) {
-            nextPoints[routeIndex] = movePoint(originalRoutePoints[routeIndex]);
-          }
-        });
+        nextPoints.splice(
+          0,
+          nextPoints.length,
+          ...moveOrthogonalRouteSegment(originalRoutePoints, manualPathDrag.segmentIndex, manualPathDrag.orientation, point, canvasBounds)
+        );
       }
       setEdgeManualPoints(manualPathDrag.edgeId, routeManualPoints(nextPoints));
       return;
@@ -3758,6 +3753,14 @@ export function App() {
 
   const routeManualPoints = (routePoints: Point[]) => routePoints.slice(1, -1).map((point) => ({ ...point }));
 
+  const captureCanvasPointer = (pointerId: number) => {
+    try {
+      svgRef.current?.setPointerCapture(pointerId);
+    } catch {
+      // Pointer capture can fail if the browser has already canceled the pointer.
+    }
+  };
+
   const startManualSegmentDrag = (
     event: PointerEvent<SVGPathElement>,
     edgeId: string,
@@ -3779,7 +3782,7 @@ export function App() {
       originalManualPoints: routeManualPoints(routePoints),
       originalRoutePoints: routePoints.map((point) => ({ ...point }))
     });
-    event.currentTarget.setPointerCapture(event.pointerId);
+    captureCanvasPointer(event.pointerId);
   };
 
   const startManualPointDrag = (event: PointerEvent<SVGCircleElement>, edgeId: string, pointIndex: number, routePoints: Point[]) => {
@@ -3796,7 +3799,7 @@ export function App() {
       originalManualPoints: routeManualPoints(routePoints),
       originalRoutePoints: routePoints.map((point) => ({ ...point }))
     });
-    event.currentTarget.setPointerCapture(event.pointerId);
+    captureCanvasPointer(event.pointerId);
   };
 
   const insertManualBendPoint = (event: MouseEvent<SVGPathElement>, edgeId: string, segmentIndex: number, routePoints: Point[]) => {
@@ -4742,6 +4745,9 @@ export function App() {
             }}
             onPointerLeave={() => {
               canvasInteractionRef.current = false;
+              if (manualPathDrag) {
+                return;
+              }
               setDragging(null);
               setTerminalPress(null);
               setManualPathDrag(null);
@@ -5208,6 +5214,7 @@ export function App() {
               const route = selectedRoutedEdge;
               const sourcePoint = getEdgeEndpointPoint(edge, "source");
               const targetPoint = getEdgeEndpointPoint(edge, "target");
+              const movableSegmentIndexes = new Set(getMovableRouteSegmentIndexes(route.points));
               return (
                 <g className="connection-group selected topmost">
                   <path d={route.path} className="connection-hitline" />
@@ -5215,7 +5222,7 @@ export function App() {
                   {route.points.slice(1).map((point, index) => {
                     const from = route.points[index];
                     const segmentIndex = index;
-                    if (segmentIndex === 0 || segmentIndex >= route.points.length - 2) {
+                    if (!movableSegmentIndexes.has(segmentIndex)) {
                       return null;
                     }
                     const orientation = from.y === point.y ? "horizontal" : "vertical";

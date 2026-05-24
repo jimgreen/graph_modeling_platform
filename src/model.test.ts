@@ -29,9 +29,11 @@ import {
   renameSavedProject,
   renameSavedScheme,
   moveProjectToScheme,
+  moveOrthogonalRouteSegment,
   upsertSavedProject,
   validateTopology,
   getTerminalPoint,
+  getMovableRouteSegmentIndexes,
   getNodeScaleX,
   getNodeScaleY,
   getDeviceGlyphVariant,
@@ -837,6 +839,80 @@ describe("power system model", () => {
     }
   });
 
+  test("keeps endpoint stub points so a straight connection exposes a draggable middle segment", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const branch = createDefaultNode("ac-line", { x: 360, y: 100 });
+    const edge: Edge = {
+      id: "straight",
+      sourceId: source.id,
+      targetId: branch.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+
+    const route = routeEdgesForRendering([source, branch], [edge], { width: 640, height: 260 })[0];
+
+    expect(route.points.length).toBeGreaterThanOrEqual(4);
+    expect(route.points[1].y).toBe(route.points[2].y);
+    expect(route.points[1].x).not.toBe(route.points[2].x);
+  });
+
+  test("removes redundant collinear middle points while preserving endpoint stubs", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const branch = createDefaultNode("ac-line", { x: 420, y: 100 });
+    const edge: Edge = {
+      id: "redundant-collinear",
+      sourceId: source.id,
+      targetId: branch.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: 180, y: 100 },
+        { x: 260, y: 100 },
+        { x: 340, y: 100 }
+      ]
+    };
+
+    const route = routeEdgesForRendering([source, branch], [edge], { width: 640, height: 260 })[0];
+
+    expect(route.points).toHaveLength(4);
+    expect(route.points[0]).toEqual(getTerminalPoint(source, "t1"));
+    expect(route.points[1].y).toBe(route.points[2].y);
+    expect(route.points[3]).toEqual(getTerminalPoint(branch, "t1"));
+  });
+
+  test("moves a manual horizontal or vertical segment directly to the pointer coordinate", () => {
+    const routePoints: Point[] = [
+      { x: 20, y: 20 },
+      { x: 80, y: 20 },
+      { x: 80, y: 120 },
+      { x: 220, y: 120 },
+      { x: 220, y: 20 },
+      { x: 280, y: 20 }
+    ];
+
+    const movedVertical = moveOrthogonalRouteSegment(routePoints, 1, "vertical", { x: 140, y: 74 }, { width: 320, height: 180 });
+    expect(movedVertical[1]).toEqual({ x: 140, y: 20 });
+    expect(movedVertical[2]).toEqual({ x: 140, y: 120 });
+
+    const movedHorizontal = moveOrthogonalRouteSegment(routePoints, 2, "horizontal", { x: 150, y: 88 }, { width: 320, height: 180 });
+    expect(movedHorizontal[2]).toEqual({ x: 80, y: 88 });
+    expect(movedHorizontal[3]).toEqual({ x: 220, y: 88 });
+  });
+
+  test("marks every non-end route segment as movable", () => {
+    const routePoints: Point[] = [
+      { x: 20, y: 20 },
+      { x: 80, y: 20 },
+      { x: 80, y: 120 },
+      { x: 220, y: 120 },
+      { x: 220, y: 20 },
+      { x: 280, y: 20 }
+    ];
+
+    expect(getMovableRouteSegmentIndexes(routePoints)).toEqual([1, 2, 3]);
+  });
+
   test("keeps routed connection segments from overlapping previous routed lines", () => {
     const leftA = createDefaultNode("ac-source", { x: 120, y: 120 });
     const rightA = createDefaultNode("ac-load", { x: 520, y: 120 });
@@ -1100,6 +1176,48 @@ describe("power system model", () => {
     expect(finalPoint).toEqual(busPoint);
     expect(beforeFinal.x).toBe(busPoint.x);
     expect(beforeFinal.y).not.toBe(busPoint.y);
+  });
+
+  test("connects to thermal storage tank boundary with a perpendicular movable middle segment", () => {
+    const source = createDefaultNode("heat-pipeline", { x: 160, y: 120 });
+    const tank = createDefaultNode("thermal-storage-tank", { x: 420, y: 120 });
+    const edge: Edge = {
+      id: "e-thermal-storage",
+      sourceId: source.id,
+      targetId: tank.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1"
+    };
+
+    const points = routeOrthogonalEdge(source, tank, [source, tank], edge);
+    const targetPoint = points[points.length - 1];
+    const beforeTarget = points[points.length - 2];
+
+    expect(targetPoint).toEqual({ x: tank.position.x - tank.size.width / 2, y: tank.position.y });
+    expect(beforeTarget.y).toBe(targetPoint.y);
+    expect(beforeTarget.x).toBeLessThan(targetPoint.x);
+    expect(getMovableRouteSegmentIndexes(points)).toContain(1);
+  });
+
+  test("connects to hydrogen tank boundary with a perpendicular movable middle segment", () => {
+    const source = createDefaultNode("hydrogen-pipeline", { x: 160, y: 120 });
+    const tank = createDefaultNode("hydrogen-tank", { x: 420, y: 120 });
+    const edge: Edge = {
+      id: "e-hydrogen-tank",
+      sourceId: source.id,
+      targetId: tank.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1"
+    };
+
+    const points = routeOrthogonalEdge(source, tank, [source, tank], edge);
+    const targetPoint = points[points.length - 1];
+    const beforeTarget = points[points.length - 2];
+
+    expect(targetPoint).toEqual({ x: tank.position.x - tank.size.width / 2, y: tank.position.y });
+    expect(beforeTarget.y).toBe(targetPoint.y);
+    expect(beforeTarget.x).toBeLessThan(targetPoint.x);
+    expect(getMovableRouteSegmentIndexes(points)).toContain(1);
   });
 
   test("allows only terminals with the same electrical type to connect", () => {

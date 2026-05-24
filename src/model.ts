@@ -2862,7 +2862,51 @@ export function isBusNode(node: ModelNode): boolean {
   );
 }
 
+function isBoundaryBusNode(node: Pick<ModelNode, "kind">): boolean {
+  return node.kind === "hydrogen-tank" || node.kind === "thermal-storage-tank";
+}
+
+function pointToNodeLocal(node: ModelNode, point: Point): Point {
+  const radians = (-node.rotation * Math.PI) / 180;
+  const dx = point.x - node.position.x;
+  const dy = point.y - node.position.y;
+  return {
+    x: dx * Math.cos(radians) - dy * Math.sin(radians),
+    y: dx * Math.sin(radians) + dy * Math.cos(radians)
+  };
+}
+
+function nodeLocalToPoint(node: ModelNode, local: Point): Point {
+  const radians = (node.rotation * Math.PI) / 180;
+  return {
+    x: Math.round(node.position.x + local.x * Math.cos(radians) - local.y * Math.sin(radians)),
+    y: Math.round(node.position.y + local.x * Math.sin(radians) + local.y * Math.cos(radians))
+  };
+}
+
+function projectPointToNodeBoundary(node: ModelNode, point: Point): Point {
+  const local = pointToNodeLocal(node, point);
+  const halfWidth = Math.max(1, (node.size.width * Math.abs(getNodeScaleX(node))) / 2);
+  const halfHeight = Math.max(1, (node.size.height * Math.abs(getNodeScaleY(node))) / 2);
+  const xRatio = Math.abs(local.x) / halfWidth;
+  const yRatio = Math.abs(local.y) / halfHeight;
+  const projected =
+    xRatio >= yRatio
+      ? {
+          x: local.x >= 0 ? halfWidth : -halfWidth,
+          y: Math.max(-halfHeight, Math.min(halfHeight, local.y))
+        }
+      : {
+          x: Math.max(-halfWidth, Math.min(halfWidth, local.x)),
+          y: local.y >= 0 ? halfHeight : -halfHeight
+        };
+  return nodeLocalToPoint(node, projected);
+}
+
 export function projectPointToBusCenterline(node: ModelNode, point: Point): Point {
+  if (isBoundaryBusNode(node)) {
+    return projectPointToNodeBoundary(node, point);
+  }
   const radians = (-node.rotation * Math.PI) / 180;
   const dx = point.x - node.position.x;
   const dy = point.y - node.position.y;
@@ -2989,6 +3033,28 @@ function getBusNormalToward(node: ModelNode, otherPoint: Point): Point {
     return { x: 0, y: -1 };
   }
   return { x, y };
+}
+
+function getBoundaryNormalAtPoint(node: ModelNode, point: Point): Point {
+  const local = pointToNodeLocal(node, point);
+  const halfWidth = Math.max(1, (node.size.width * Math.abs(getNodeScaleX(node))) / 2);
+  const halfHeight = Math.max(1, (node.size.height * Math.abs(getNodeScaleY(node))) / 2);
+  const xRatio = Math.abs(local.x) / halfWidth;
+  const yRatio = Math.abs(local.y) / halfHeight;
+  const raw = xRatio >= yRatio
+    ? { x: Math.sign(local.x || 1), y: 0 }
+    : { x: 0, y: Math.sign(local.y || 1) };
+  const radians = (node.rotation * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return {
+    x: Math.round(raw.x * cos - raw.y * sin),
+    y: Math.round(raw.x * sin + raw.y * cos)
+  };
+}
+
+function getBusEndpointNormal(node: ModelNode, endpointPoint: Point, otherPoint: Point): Point {
+  return isBoundaryBusNode(node) ? getBoundaryNormalAtPoint(node, endpointPoint) : getBusNormalToward(node, otherPoint);
 }
 
 export function canConnectTerminals(
@@ -3824,8 +3890,69 @@ function orthogonalizeRouteKeepingCollinear(points: Point[]): Point[] {
   });
 }
 
+function simplifyRoutePreservingEndpointStubs(points: Point[]): Point[] {
+  const route = orthogonalizeRouteKeepingCollinear(points);
+  if (route.length <= 4) {
+    return route;
+  }
+  const protectedIndexes = new Set([0, 1, route.length - 2, route.length - 1]);
+  return route.filter((point, index) => {
+    if (protectedIndexes.has(index)) {
+      return true;
+    }
+    const previous = route[index - 1];
+    const next = route[index + 1];
+    if (!previous || !next) {
+      return true;
+    }
+    return !(previous.x === point.x && point.x === next.x) && !(previous.y === point.y && point.y === next.y);
+  });
+}
+
 export function pointsToOrthogonalPath(points: Point[]): string {
   return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+}
+
+export function moveOrthogonalRouteSegment(
+  routePoints: Point[],
+  segmentIndex: number,
+  orientation: "horizontal" | "vertical",
+  pointerPoint: Point,
+  bounds?: CanvasBounds
+): Point[] {
+  const nextPoints = routePoints.map((point) => ({ ...point }));
+  if (segmentIndex < 0 || segmentIndex >= routePoints.length - 1) {
+    return nextPoints;
+  }
+  const targetCoordinate = Math.round(orientation === "horizontal" ? pointerPoint.y : pointerPoint.x);
+  const movePoint = (source: Point) => {
+    const moved = orientation === "horizontal"
+      ? { x: source.x, y: targetCoordinate }
+      : { x: targetCoordinate, y: source.y };
+    return bounds ? clampPointToBounds(moved, bounds) : moved;
+  };
+  [segmentIndex, segmentIndex + 1].forEach((routeIndex) => {
+    if (routeIndex > 0 && routeIndex < routePoints.length - 1) {
+      nextPoints[routeIndex] = movePoint(routePoints[routeIndex]);
+    }
+  });
+  return nextPoints;
+}
+
+export function getMovableRouteSegmentIndexes(routePoints: Point[]): number[] {
+  const indexes: number[] = [];
+  for (let segmentIndex = 1; segmentIndex < routePoints.length - 2; segmentIndex += 1) {
+    const from = routePoints[segmentIndex];
+    const to = routePoints[segmentIndex + 1];
+    if (!from || !to || samePoint(from, to)) {
+      continue;
+    }
+    if (from.x !== to.x && from.y !== to.y) {
+      continue;
+    }
+    indexes.push(segmentIndex);
+  }
+  return indexes;
 }
 
 type Segment = {
@@ -4028,8 +4155,8 @@ export function routeEdgesForRendering(nodes: ModelNode[], edges: Edge[], bounds
       path: ""
     });
   });
-  const compacted = routed.map((route) => ({ ...route, points: orthogonalizeRoute(route.points) }));
-  return compacted.map((route, index, allRoutes) => ({
+  const renderRoutes = routed.map((route) => ({ ...route, points: simplifyRoutePreservingEndpointStubs(route.points) }));
+  return renderRoutes.map((route, index, allRoutes) => ({
     ...route,
     path: pathWithCrossingArcs(route, allRoutes, index)
   }));
@@ -4062,8 +4189,8 @@ function createFloatingEndpointNode(point: Point, relatedNode?: ModelNode): Mode
 export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes: ModelNode[], edge?: Edge, avoidedSegments: Segment[] = [], bounds?: CanvasBounds): Point[] {
   const start = getEdgeEndpointPoint(source, edge?.sourcePoint, edge?.sourceTerminalId);
   const end = getEdgeEndpointPoint(target, edge?.targetPoint, edge?.targetTerminalId);
-  const sourceNormal = isBusNode(source) ? getBusNormalToward(source, end) : getTerminalNormal(source, edge?.sourceTerminalId);
-  const targetNormal = isBusNode(target) ? getBusNormalToward(target, start) : getTerminalNormal(target, edge?.targetTerminalId);
+  const sourceNormal = isBusNode(source) ? getBusEndpointNormal(source, start, end) : getTerminalNormal(source, edge?.sourceTerminalId);
+  const targetNormal = isBusNode(target) ? getBusEndpointNormal(target, end, start) : getTerminalNormal(target, edge?.targetTerminalId);
   const stubLength = 28;
   const initialStartOut = {
     x: start.x + sourceNormal.x * stubLength,
@@ -4084,23 +4211,23 @@ export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes:
     const manualRoute = orthogonalizeRouteKeepingCollinear([start, startOut, ...edge.manualPoints, endOut, end]);
     const boundedManualRoute = bounds ? orthogonalizeRouteKeepingCollinear(manualRoute.map((point) => clampPointToBounds(point, bounds))) : manualRoute;
     if (!routeIntersectsBlockers(boundedManualRoute, blockers, ROUTE_BLOCKER_PADDING, 1)) {
-      return boundedManualRoute;
+      return simplifyRoutePreservingEndpointStubs(boundedManualRoute);
     }
     const candidates = buildRouteCandidates(startOut, endOut, blockers, avoidedSegments, bounds);
     const repairedMiddle = selectRouteCandidate(candidates, blockers, avoidedSegments);
-    return repairRouteAroundBlockers(
+    return simplifyRoutePreservingEndpointStubs(repairRouteAroundBlockers(
       buildFullRoute(start, startOut, repairedMiddle.slice(1, -1), endOut, end, bounds),
       blockers,
       bounds,
       1
-    );
+    ));
   }
   const candidates = buildRouteCandidates(startOut, endOut, blockers, avoidedSegments, bounds);
   const routedMiddle = selectRouteCandidate(candidates, blockers, avoidedSegments);
-  return repairRouteAroundBlockers(
+  return simplifyRoutePreservingEndpointStubs(repairRouteAroundBlockers(
     buildFullRoute(start, startOut, routedMiddle.slice(1, -1), endOut, end, bounds),
     blockers,
     bounds,
     1
-  );
+  ));
 }
