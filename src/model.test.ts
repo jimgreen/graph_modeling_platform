@@ -2,14 +2,21 @@ import { describe, expect, test } from "vitest";
 import {
   alignNodes,
   buildTopology,
+  buildElementTree,
+  buildEDeviceParameterFile,
   calculateElectricalTopology,
   canConnectTerminals,
   clampNodePositionToBounds,
+  assignPermanentDeviceIndex,
   createSavedProject,
   createSavedScheme,
   copySavedProjectWithUniqueName,
   copySavedSchemeWithUniqueName,
   createDefaultNode,
+  createNodeFromTemplate,
+  CUSTOM_DEVICE_TEMPLATE_KEY,
+  CUSTOM_PARAM_DEFINITIONS_KEY,
+  deriveDeviceIndexCounters,
   deleteNodesWithConnectedEdges,
   deleteSavedProject,
   DEVICE_LIBRARY,
@@ -22,13 +29,24 @@ import {
   upsertSavedProject,
   validateTopology,
   getTerminalPoint,
+  getNodeScaleX,
+  getNodeScaleY,
+  getDeviceGlyphVariant,
+  getDeviceStrokeColor,
+  getDeviceStrokeWidth,
+  getElementFocusPoint,
   isGeneratorNode,
   isStaticNode,
   getSwitchVisualState,
   lockProjectEdgeTerminals,
+  mirrorNodes,
+  normalizeVoltageBaseInput,
+  terminalStubSegment,
+  terminalVoltageBaseNumber,
   serializeProject,
   deserializeProject,
   type Edge,
+  type DeviceTemplate,
   type ModelNode,
   type Point
 } from "./model";
@@ -64,6 +82,10 @@ describe("power system model", () => {
       canvasBackgroundColor: "#f1f5f9",
       canvasBackgroundImage: "/api/images/background",
       canvasBackgroundImageAssetId: "background",
+      powerUnit: "MW",
+      voltageUnit: "kV",
+      currentUnit: "kA",
+      powerBaseValue: 100,
       nodes: [node],
       edges: []
     });
@@ -73,6 +95,10 @@ describe("power system model", () => {
     expect(loaded.canvasBackgroundColor).toBe("#f1f5f9");
     expect(loaded.canvasBackgroundImage).toBe("/api/images/background");
     expect(loaded.canvasBackgroundImageAssetId).toBe("background");
+    expect(loaded.powerUnit).toBe("MW");
+    expect(loaded.voltageUnit).toBe("kV");
+    expect(loaded.currentUnit).toBe("kA");
+    expect(loaded.powerBaseValue).toBe(100);
     expect(loaded.nodes[0].name).toBe("1号主变");
     expect(loaded.nodes[0].params.voltageRatio).toBe("110/10 kV");
   });
@@ -165,7 +191,7 @@ describe("power system model", () => {
   });
 
   test("creates DC branch devices with two DC terminals and two DC node numbers", () => {
-    const dcKinds = ["dc-switch", "dc-disconnector", "dc-breaker", "dc-line"] as const;
+    const dcKinds = ["dc-switch", "dc-breaker", "dc-line"] as const;
 
     for (const kind of dcKinds) {
       const node = createDefaultNode(kind, { x: 100, y: 100 });
@@ -179,7 +205,7 @@ describe("power system model", () => {
   });
 
   test("creates AC branch devices with two AC terminals and two AC node numbers", () => {
-    const acKinds = ["ac-switch", "ac-disconnector", "ac-breaker", "ac-line"] as const;
+    const acKinds = ["ac-switch", "ac-breaker", "ac-line"] as const;
 
     for (const kind of acKinds) {
       const node = createDefaultNode(kind, { x: 100, y: 100 });
@@ -190,6 +216,267 @@ describe("power system model", () => {
       expect(node.terminals[1].nodeNumber).toMatch(/^N\d+$/);
       expect(new Set(node.terminals.map((terminal) => terminal.nodeNumber)).size).toBe(2);
     }
+  });
+
+  test("includes AC and DC zero-impedance branch elements in the library and E export", () => {
+    const acTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-zero-branch");
+    const dcTemplate = DEVICE_LIBRARY.find((item) => item.kind === "dc-zero-branch");
+    expect(acTemplate).toMatchObject({ label: "交流零阻抗支路", group: "交流系统", terminalType: "ac", terminalCount: 2 });
+    expect(dcTemplate).toMatchObject({ label: "直流零阻抗支路", group: "直流系统", terminalType: "dc", terminalCount: 2 });
+
+    const acZeroBranch = createDefaultNode("ac-zero-branch", { x: 100, y: 100 });
+    const dcZeroBranch = createDefaultNode("dc-zero-branch", { x: 260, y: 100 });
+    expect(acZeroBranch.terminals.map((terminal) => terminal.type)).toEqual(["ac", "ac"]);
+    expect(dcZeroBranch.terminals.map((terminal) => terminal.type)).toEqual(["dc", "dc"]);
+    expect(getDeviceGlyphVariant("ac-zero-branch")).toBe("line");
+    expect(getDeviceGlyphVariant("dc-zero-branch")).toBe("line");
+
+    const exported = JSON.parse(buildEDeviceParameterFile({
+      version: 1,
+      name: "零阻抗支路测试",
+      nodes: [acZeroBranch, dcZeroBranch],
+      edges: []
+    }));
+    expect(exported.devices.some((device: { section: string }) => device.section === "ACZeroBranch")).toBe(true);
+    expect(exported.devices.some((device: { section: string }) => device.section === "DCZeroBranch")).toBe(true);
+  });
+
+  test("adds editable voltage base defaults to every electrical terminal", () => {
+    const acLine = createDefaultNode("ac-line", { x: 100, y: 100 });
+    const dcLine = createDefaultNode("dc-line", { x: 220, y: 100 });
+
+    expect(acLine.terminals.map((terminal) => terminal.vbase)).toEqual(["10 kV", "10 kV"]);
+    expect(dcLine.terminals.map((terminal) => terminal.vbase)).toEqual(["750 V", "750 V"]);
+  });
+
+  test("normalizes terminal voltage base values to numeric-only input text", () => {
+    expect(terminalVoltageBaseNumber("10 kV")).toBe("10");
+    expect(terminalVoltageBaseNumber("750 V")).toBe("750");
+    expect(terminalVoltageBaseNumber("1.05")).toBe("1.05");
+    expect(normalizeVoltageBaseInput("abc10.5kV")).toBe("10.5");
+    expect(normalizeVoltageBaseInput("12..34 V")).toBe("12.34");
+    expect(normalizeVoltageBaseInput("kV")).toBe("");
+  });
+
+  test("draws fixed-length terminal stubs from the device body toward visible terminals", () => {
+    expect(terminalStubSegment({ anchor: { x: 0.5, y: 0 } })).toEqual({
+      from: { x: -16, y: 0 },
+      to: { x: 0, y: 0 }
+    });
+    expect(terminalStubSegment({ anchor: { x: -0.5, y: 0 } })).toEqual({
+      from: { x: 16, y: 0 },
+      to: { x: 0, y: 0 }
+    });
+    expect(terminalStubSegment({ anchor: { x: 0, y: -0.5 } })).toEqual({
+      from: { x: 0, y: 16 },
+      to: { x: 0, y: 0 }
+    });
+    expect(terminalStubSegment({ anchor: { x: 0, y: 0.5 } })).toEqual({
+      from: { x: 0, y: -16 },
+      to: { x: 0, y: 0 }
+    });
+    expect(terminalStubSegment({ anchor: { x: 0.5, y: 0 } }, -1, 1)).toEqual({
+      from: { x: 16, y: 0 },
+      to: { x: 0, y: 0 }
+    });
+  });
+
+  test("uses the device glyph line color and width for terminal stubs", () => {
+    const acLine = createDefaultNode("ac-line", { x: 100, y: 100 });
+    expect(getDeviceStrokeColor(acLine)).toBe("#2563eb");
+    expect(getDeviceStrokeWidth(acLine)).toBe(4);
+
+    const customColored = { ...acLine, params: { ...acLine.params, foregroundColor: "#123456", lineWidth: "3.5" } };
+    expect(getDeviceStrokeColor(customColored)).toBe("#123456");
+    expect(getDeviceStrokeWidth(customColored)).toBe(3.5);
+
+    const dcLoad = createDefaultNode("dc-load", { x: 220, y: 100 });
+    expect(getDeviceStrokeColor(dcLoad)).toBe("#0f766e");
+    expect(getDeviceStrokeWidth(dcLoad)).toBe(2.5);
+
+    const electrolyzer = createDefaultNode("ac-electrolyzer", { x: 340, y: 100 });
+    expect(getDeviceStrokeColor(electrolyzer)).toBe("#7c3aed");
+    expect(getDeviceStrokeWidth(electrolyzer)).toBe(2.3);
+  });
+
+  test("allocates permanent device idx by E section without reusing deleted gaps", () => {
+    const firstLoad = createDefaultNode("ac-load", { x: 100, y: 100 });
+    const fourthLoad = createDefaultNode("ac-load", { x: 220, y: 100 });
+    firstLoad.params = { ...firstLoad.params, idx: "1" };
+    fourthLoad.params = { ...fourthLoad.params, idx: "4" };
+
+    const counters = deriveDeviceIndexCounters([firstLoad, fourthLoad]);
+    const { node: nextLoad, counters: nextCounters } = assignPermanentDeviceIndex(
+      createDefaultNode("ac-load", { x: 340, y: 100 }),
+      counters
+    );
+
+    expect(nextLoad.params.idx).toBe("5");
+    expect(nextCounters.ACLoad).toBe(5);
+  });
+
+  test("keeps idx counters independent for each E device section and skips static graphics", () => {
+    const acLoad = createDefaultNode("ac-load", { x: 100, y: 100 });
+    const acGenerator = createDefaultNode("ac-source", { x: 220, y: 100 });
+    const text = createDefaultNode("static-text", { x: 340, y: 100 });
+    acLoad.params = { ...acLoad.params, idx: "8" };
+    acGenerator.params = { ...acGenerator.params, idx: "2" };
+
+    const counters = deriveDeviceIndexCounters([acLoad, acGenerator, text]);
+    const { node: nextGenerator, counters: generatorCounters } = assignPermanentDeviceIndex(
+      createDefaultNode("ac-source", { x: 460, y: 100 }),
+      counters
+    );
+    const { node: staticNode, counters: staticCounters } = assignPermanentDeviceIndex(
+      createDefaultNode("static-rect", { x: 580, y: 100 }),
+      generatorCounters
+    );
+
+    expect(counters).toMatchObject({ ACLoad: 8, ACGenerator: 2 });
+    expect(counters).not.toHaveProperty("static-text");
+    expect(nextGenerator.params.idx).toBe("3");
+    expect(staticNode.params.idx).toBeUndefined();
+    expect(staticCounters).toEqual(generatorCounters);
+  });
+
+  test("builds E parameter files without platform-only device fields", () => {
+    const acLoad = createDefaultNode("ac-load", { x: 100, y: 100 });
+    const staticText = createDefaultNode("static-text", { x: 200, y: 100 });
+    acLoad.name = "load_1";
+    acLoad.params = {
+      ...acLoad.params,
+      source_section: "ACLoad",
+      idx: "7",
+      node: "3",
+      pbase: "9.5",
+      ratedActivePower: "不要导出",
+      backgroundImage: "/api/images/asset"
+    };
+
+    const payload = JSON.parse(
+      buildEDeviceParameterFile({
+        version: 1,
+        name: "E导出模型",
+        powerUnit: "MW",
+        voltageUnit: "kV",
+        currentUnit: "A",
+        powerBaseValue: 100,
+        nodes: [acLoad, staticText],
+        edges: []
+      })
+    );
+
+    const exportedLoad = payload.devices.find((device: { section: string; kind: string }) => device.section === "ACLoad" && device.kind === "ac-load");
+    expect(payload.devices.map((device: { section: string }) => device.section)).toContain("ACNode");
+    expect(exportedLoad).toMatchObject({
+      id: acLoad.id,
+      kind: "ac-load",
+      section: "ACLoad",
+      params: {
+        idx: "7",
+        name: "load_1",
+        node: "1",
+        pbase: "9.5",
+        run_stat: "1"
+      }
+    });
+    expect(exportedLoad).not.toHaveProperty("nodeNumber");
+    expect(exportedLoad).not.toHaveProperty("terminals");
+    expect(JSON.stringify(exportedLoad)).not.toContain("ratedActivePower");
+    expect(JSON.stringify(exportedLoad)).not.toContain("backgroundImage");
+  });
+
+  test("maps graphical AC and DC buses to real bus sections in E parameter files", () => {
+    const acBus = createDefaultNode("ac-bus", { x: 100, y: 100 });
+    const dcBus = createDefaultNode("dc-bus", { x: 220, y: 100 });
+    acBus.name = "ac_bus";
+    dcBus.name = "dc_bus";
+    acBus.params = { ...acBus.params, source_section: "ACNode", idx: "21", vbase: "380", run_stat: "1" };
+    dcBus.params = { ...dcBus.params, source_section: "DCNode", idx: "1", vbase: "720", run_stat: "1" };
+    acBus.terminals[0].nodeNumber = "21";
+    dcBus.terminals[0].nodeNumber = "1";
+
+    const payload = JSON.parse(
+      buildEDeviceParameterFile({
+        version: 1,
+        name: "母线分组",
+        nodes: [acBus, dcBus],
+        edges: []
+      })
+    );
+
+    const acRealBus = payload.devices.find((device: { section: string }) => device.section === "ACRealBs");
+    const dcRealBus = payload.devices.find((device: { section: string }) => device.section === "DCRealBs");
+    expect(payload.devices.map((device: { section: string }) => device.section)).toEqual(["ACNode", "DCNode", "ACRealBs", "DCRealBs"]);
+    expect(acRealBus?.params).toEqual({
+      idx: "21",
+      name: "ac_bus",
+      node: "1",
+      run_stat: "1"
+    });
+    expect(dcRealBus?.params).toEqual({
+      idx: "1",
+      name: "dc_bus",
+      node: "1",
+      run_stat: "1"
+    });
+  });
+
+  test("exports ACNode and DCNode records from calculated graph topology", () => {
+    const acSource = createDefaultNode("ac-source", { x: 80, y: 100 });
+    const acLine = createDefaultNode("ac-line", { x: 220, y: 100 });
+    const acLoad = createDefaultNode("ac-load", { x: 360, y: 100 });
+    const dcSource = createDefaultNode("dc-source", { x: 80, y: 240 });
+    const dcLine = createDefaultNode("dc-line", { x: 220, y: 240 });
+    const dcLoad = createDefaultNode("dc-load", { x: 360, y: 240 });
+    acSource.name = "ac_src";
+    acLoad.name = "ac_load";
+    dcSource.name = "dc_src";
+    dcLoad.name = "dc_load";
+    acSource.terminals[0].vbase = "10 kV";
+    acLine.terminals[0].vbase = "10 kV";
+    acLine.terminals[1].vbase = "10 kV";
+    acLoad.terminals[0].vbase = "10 kV";
+    dcSource.terminals[0].vbase = "750 V";
+    dcLine.terminals[0].vbase = "750 V";
+    dcLine.terminals[1].vbase = "750 V";
+    dcLoad.terminals[0].vbase = "750 V";
+    acLine.params = { ...acLine.params, idx: "1", i_node: "99", j_node: "100" };
+    acLoad.params = { ...acLoad.params, idx: "1", node: "100" };
+    dcLine.params = { ...dcLine.params, idx: "1", i_node: "88", j_node: "89" };
+    dcLoad.params = { ...dcLoad.params, idx: "1", node: "89" };
+
+    const payload = JSON.parse(
+      buildEDeviceParameterFile({
+        version: 1,
+        name: "拓扑节点导出",
+        nodes: [acSource, acLine, acLoad, dcSource, dcLine, dcLoad],
+        edges: [
+          { id: "ac-source-line", sourceId: acSource.id, targetId: acLine.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+          { id: "ac-line-load", sourceId: acLine.id, targetId: acLoad.id, sourceTerminalId: "t2", targetTerminalId: "t1" },
+          { id: "dc-source-line", sourceId: dcSource.id, targetId: dcLine.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+          { id: "dc-line-load", sourceId: dcLine.id, targetId: dcLoad.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+        ]
+      })
+    );
+
+    const acNodes = payload.devices.filter((device: { section: string }) => device.section === "ACNode");
+    const dcNodes = payload.devices.filter((device: { section: string }) => device.section === "DCNode");
+    const acBranch = payload.devices.find((device: { section: string }) => device.section === "ACBranch");
+    const dcBranch = payload.devices.find((device: { section: string }) => device.section === "DCBranch");
+    const exportedAcLoad = payload.devices.find((device: { section: string; kind: string }) => device.section === "ACLoad" && device.kind === "ac-load");
+    const exportedDcLoad = payload.devices.find((device: { section: string; kind: string }) => device.section === "DCLoad" && device.kind === "dc-load");
+
+    expect(acNodes.map((device: { params: Record<string, string> }) => device.params.idx)).toEqual(["1", "2"]);
+    expect(acNodes.map((device: { params: Record<string, string> }) => device.params.name)).toEqual(["ac_src", "ac_load"]);
+    expect(acNodes.map((device: { params: Record<string, string> }) => device.params.vbase)).toEqual(["10", "10"]);
+    expect(dcNodes.map((device: { params: Record<string, string> }) => device.params.idx)).toEqual(["1", "2"]);
+    expect(dcNodes.map((device: { params: Record<string, string> }) => device.params.name)).toEqual(["dc_src", "dc_load"]);
+    expect(dcNodes.map((device: { params: Record<string, string> }) => device.params.vbase)).toEqual(["750", "750"]);
+    expect(acBranch?.params).toMatchObject({ i_node: "1", j_node: "2" });
+    expect(dcBranch?.params).toMatchObject({ i_node: "1", j_node: "2" });
+    expect(exportedAcLoad?.params.node).toBe("2");
+    expect(exportedDcLoad?.params.node).toBe("2");
   });
 
   test("creates load, line, and transformer electrical parameter defaults", () => {
@@ -257,15 +544,22 @@ describe("power system model", () => {
     expect(dcLine.params.reactancePu).toBeUndefined();
     expect(dcLine.params.halfChargingSusceptancePu).toBeUndefined();
 
-    const acSwitch = createDefaultNode("ac-disconnector", { x: 1000, y: 100 });
+    const acSwitch = createDefaultNode("ac-switch", { x: 1000, y: 100 });
     const dcBreaker = createDefaultNode("dc-breaker", { x: 1100, y: 100 });
     expect(acSwitch.terminals[0].nodeNumber).toMatch(/^N\d+$/);
     expect(acSwitch.terminals[1].nodeNumber).toMatch(/^N\d+$/);
     expect(acSwitch.params.ratedCapacity).toBe("1250 A");
     expect(acSwitch.params.closedStatus).toBe("闭合");
     expect(getSwitchVisualState(acSwitch)).toBe("closed");
+    acSwitch.params.status = "0";
+    expect(getSwitchVisualState(acSwitch)).toBe("open");
+    acSwitch.params.status = "1";
+    expect(getSwitchVisualState(acSwitch)).toBe("closed");
+    delete dcBreaker.params.status;
     dcBreaker.params.closedStatus = "打开";
     expect(getSwitchVisualState(dcBreaker)).toBe("open");
+    dcBreaker.params.status = "1";
+    expect(getSwitchVisualState(dcBreaker)).toBe("closed");
   });
 
   test("routes orthogonal connection around interfering devices", () => {
@@ -630,6 +924,25 @@ describe("power system model", () => {
     expect(points[1].x).toBeLessThan(sourceTerminal.x);
   });
 
+  test("mirrors selected graphical nodes by flipping only the requested scale axis", () => {
+    const selected = { ...createDefaultNode("ac-source", { x: 200, y: 120 }), scale: 1.5, scaleX: 1.5, scaleY: 1.5 };
+    const other = createDefaultNode("static-rect", { x: 320, y: 120 });
+
+    const horizontallyMirrored = mirrorNodes([selected, other], [selected.id], "horizontal");
+    expect(getNodeScaleX(horizontallyMirrored[0])).toBe(-1.5);
+    expect(getNodeScaleY(horizontallyMirrored[0])).toBe(1.5);
+    expect(horizontallyMirrored[0].position).toEqual(selected.position);
+    expect(getNodeScaleX(horizontallyMirrored[1])).toBe(getNodeScaleX(other));
+
+    const verticallyMirrored = mirrorNodes(horizontallyMirrored, [selected.id], "vertical");
+    expect(getNodeScaleX(verticallyMirrored[0])).toBe(-1.5);
+    expect(getNodeScaleY(verticallyMirrored[0])).toBe(-1.5);
+
+    const restoredHorizontal = mirrorNodes(verticallyMirrored, [selected.id], "horizontal");
+    expect(getNodeScaleX(restoredHorizontal[0])).toBe(1.5);
+    expect(getNodeScaleY(restoredHorizontal[0])).toBe(-1.5);
+  });
+
   test("uses vertical terminal normals for top and bottom terminals", () => {
     const source = createDefaultNode("ac-bus", { x: 200, y: 220 });
     const target = createDefaultNode("ac-bus", { x: 200, y: 520 });
@@ -737,6 +1050,249 @@ describe("power system model", () => {
       const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
       expect(template?.terminalType).toBe(terminalType);
     }
+  });
+
+  test("includes DC electrochemical storage as a single-port DC device", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "dc-storage");
+    expect(template).toMatchObject({
+      label: "电化学储能",
+      group: "直流系统",
+      terminalType: "dc",
+      terminalCount: 1
+    });
+
+    const node = createDefaultNode("dc-storage", { x: 100, y: 100 });
+    expect(node.terminals).toHaveLength(1);
+    expect(node.terminals[0].type).toBe("dc");
+    expect(node.params.vbase).toBe("750 V");
+    expect(getDeviceGlyphVariant("dc-storage")).toBe("battery-storage");
+  });
+
+  test("includes AC electrochemical storage as a single-port AC device", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-storage");
+    expect(template).toMatchObject({
+      label: "电化学储能",
+      group: "交流系统",
+      terminalType: "ac",
+      terminalCount: 1
+    });
+
+    const node = createDefaultNode("ac-storage", { x: 100, y: 100 });
+    expect(node.terminals).toHaveLength(1);
+    expect(node.terminals[0].type).toBe("ac");
+    expect(node.params.vbase).toBe("10 kV");
+    expect(getDeviceGlyphVariant("ac-storage")).toBe("battery-storage");
+  });
+
+  test("includes hydrogen equipment library with mixed electric-hydrogen ports", () => {
+    const expected = [
+      ["ac-electrolyzer", "交流电制氢", ["ac", "h2"], "hydrogen-electrolyzer"],
+      ["dc-electrolyzer", "直流电制氢", ["dc", "h2"], "hydrogen-electrolyzer"],
+      ["hydrogen-source", "氢源", ["h2"], "hydrogen-source"],
+      ["hydrogen-tank", "储氢罐", ["h2", "h2", "h2", "h2"], "hydrogen-storage"],
+      ["hydrogen-load", "氢荷", ["h2"], "hydrogen-load"],
+      ["ac-fuel-cell", "交流燃料电池", ["ac", "h2"], "hydrogen-fuel-cell"],
+      ["dc-fuel-cell", "直流燃料电池", ["dc", "h2"], "hydrogen-fuel-cell"],
+      ["hydrogen-bus", "氢能母线", ["h2", "h2", "h2", "h2"], "hydrogen-bus"],
+      ["hydrogen-compressor", "氢压机", ["h2", "h2"], "hydrogen-compressor"],
+      ["hydrogen-pressure-reducer", "减压阀", ["h2", "h2"], "hydrogen-regulator"],
+      ["hydrogen-shutoff-valve", "截止阀", ["h2", "h2"], "hydrogen-valve"],
+      ["hydrogen-pipeline", "输氢管道", ["h2", "h2"], "hydrogen-pipeline"]
+    ] as const;
+
+    for (const [kind, label, terminalTypes, glyphVariant] of expected) {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
+      expect(template).toMatchObject({ label, group: "氢能设备", terminalCount: terminalTypes.length });
+      const node = createDefaultNode(kind, { x: 100, y: 100 });
+      expect(node.terminals.map((terminal) => terminal.type)).toEqual([...terminalTypes]);
+      expect(getDeviceGlyphVariant(kind)).toBe(glyphVariant);
+    }
+
+    const acElectrolyzer = createDefaultNode("ac-electrolyzer", { x: 100, y: 100 });
+    const dcElectrolyzer = createDefaultNode("dc-electrolyzer", { x: 240, y: 100 });
+    const hydrogenBus = createDefaultNode("hydrogen-bus", { x: 380, y: 100 });
+    const hydrogenPipeline = createDefaultNode("hydrogen-pipeline", { x: 520, y: 100 });
+    expect(canConnectTerminals(acElectrolyzer, "t1", dcElectrolyzer, "t1")).toBe(false);
+    expect(canConnectTerminals(acElectrolyzer, "t2", hydrogenPipeline, "t1")).toBe(true);
+    expect(canConnectTerminals(hydrogenBus, "t1", hydrogenPipeline, "t1")).toBe(true);
+
+    const calculated = calculateElectricalTopology(
+      [acElectrolyzer, hydrogenBus, hydrogenPipeline],
+      [
+        { id: "h2-bus", sourceId: acElectrolyzer.id, targetId: hydrogenBus.id, sourceTerminalId: "t2", targetTerminalId: "t1" },
+        { id: "h2-pipe", sourceId: hydrogenBus.id, targetId: hydrogenPipeline.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+      ]
+    );
+    const calculatedElectrolyzer = calculated.find((node) => node.id === acElectrolyzer.id)!;
+    const calculatedPipeline = calculated.find((node) => node.id === hydrogenPipeline.id)!;
+    expect(calculatedElectrolyzer.terminals[1].nodeNumber).toBe(calculatedPipeline.terminals[0].nodeNumber);
+  });
+
+  test("includes thermal equipment library with heat network and mixed electric-thermal ports", () => {
+    const expected = [
+      ["heat-boiler", "供热锅炉", ["heat"], "heat-boiler"],
+      ["heat-source", "单端热源", ["heat"], "heat-source"],
+      ["two-port-heat-source", "双端热源", ["heat", "heat"], "heat-source"],
+      ["heat-exchanger", "双端热交换器", ["heat", "heat"], "heat-exchanger-two"],
+      ["three-port-heat-exchanger", "三端热交换器", ["heat", "heat", "heat"], "heat-exchanger-three"],
+      ["four-port-heat-exchanger", "四端热交换器", ["heat", "heat", "heat", "heat"], "heat-exchanger-four"],
+      ["ac-heater", "交流电制热", ["ac", "heat"], "heat-electric-heater"],
+      ["dc-heater", "直流电制热", ["dc", "heat"], "heat-electric-heater"],
+      ["thermal-storage-tank", "储热罐", ["heat", "heat", "heat", "heat"], "heat-storage"],
+      ["heat-load", "热负荷", ["heat"], "heat-load"],
+      ["single-port-heat-load", "单端热荷", ["heat"], "heat-load"],
+      ["two-port-heat-load", "双端热荷", ["heat", "heat"], "heat-load"],
+      ["heat-bus", "热力母线", ["heat", "heat", "heat", "heat"], "heat-bus"],
+      ["heat-pipeline", "输热管道", ["heat", "heat"], "heat-pipeline"],
+      ["heat-pump", "循环水泵", ["heat", "heat"], "heat-pump"],
+      ["heat-shutoff-valve", "截止阀", ["heat", "heat"], "heat-valve"]
+    ] as const;
+
+    for (const [kind, label, terminalTypes, glyphVariant] of expected) {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
+      expect(template).toMatchObject({ label, group: "热能设备", terminalCount: terminalTypes.length });
+      const node = createDefaultNode(kind, { x: 100, y: 100 });
+      expect(node.terminals.map((terminal) => terminal.type)).toEqual([...terminalTypes]);
+      expect(getDeviceGlyphVariant(kind)).toBe(glyphVariant);
+    }
+
+    const threePort = createDefaultNode("three-port-heat-exchanger", { x: 100, y: 100 });
+    expect(threePort.terminals.map((terminal) => terminal.label)).toEqual(["单端侧", "双端侧供水", "双端侧回水"]);
+    expect(threePort.terminals.map((terminal) => terminal.anchor)).toEqual([
+      { x: -0.5, y: 0 },
+      { x: 0.5, y: -0.25 },
+      { x: 0.5, y: 0.25 }
+    ]);
+
+    const fourPort = createDefaultNode("four-port-heat-exchanger", { x: 100, y: 100 });
+    expect(fourPort.terminals.map((terminal) => terminal.label)).toEqual(["一侧供水", "一侧回水", "二侧供水", "二侧回水"]);
+    expect(fourPort.terminals.map((terminal) => terminal.anchor)).toEqual([
+      { x: -0.5, y: -0.25 },
+      { x: -0.5, y: 0.25 },
+      { x: 0.5, y: -0.25 },
+      { x: 0.5, y: 0.25 }
+    ]);
+
+    const acHeater = createDefaultNode("ac-heater", { x: 100, y: 100 });
+    const dcHeater = createDefaultNode("dc-heater", { x: 240, y: 100 });
+    const heatBus = createDefaultNode("heat-bus", { x: 380, y: 100 });
+    const heatPipeline = createDefaultNode("heat-pipeline", { x: 520, y: 100 });
+    expect(canConnectTerminals(acHeater, "t1", dcHeater, "t1")).toBe(false);
+    expect(canConnectTerminals(acHeater, "t2", heatPipeline, "t1")).toBe(true);
+    expect(canConnectTerminals(heatBus, "t1", heatPipeline, "t1")).toBe(true);
+
+    const calculated = calculateElectricalTopology(
+      [acHeater, heatBus, heatPipeline],
+      [
+        { id: "heat-bus-edge", sourceId: acHeater.id, targetId: heatBus.id, sourceTerminalId: "t2", targetTerminalId: "t1" },
+        { id: "heat-pipeline-edge", sourceId: heatBus.id, targetId: heatPipeline.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+      ]
+    );
+    const calculatedHeater = calculated.find((node) => node.id === acHeater.id)!;
+    const calculatedPipeline = calculated.find((node) => node.id === heatPipeline.id)!;
+    expect(calculatedHeater.terminals[1].nodeNumber).toBe(calculatedPipeline.terminals[0].nodeNumber);
+  });
+
+  test("creates user-defined device templates with custom terminal energy types and default parameters", () => {
+    const template: DeviceTemplate = {
+      kind: "ACUnit",
+      label: "ACUnit",
+      group: "自定义元件库",
+      size: { width: 104, height: 64 },
+      params: { backgroundImage: "data:image/svg+xml,custom", fillColor: "transparent", strokeColor: "transparent", lineWidth: "0" },
+      terminalType: "ac",
+      terminalCount: 4,
+      terminalTypes: ["ac", "dc", "h2", "heat"],
+      terminalLabels: ["交流端", "直流端", "氢能端", "热能端"],
+      custom: true,
+      parameterDefinitions: [
+        { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
+        { cnName: "名称", enName: "name", valueType: "enum", typicalValue: "", readonly: true },
+        { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true },
+        { cnName: "额定效率", enName: "eta", valueType: "float", typicalValue: "0.95" }
+      ]
+    };
+
+    const node = createNodeFromTemplate(template, { x: 100, y: 120 });
+    expect(node.kind).toBe("ACUnit");
+    expect(node.terminals.map((terminal) => terminal.type)).toEqual(["ac", "dc", "h2", "heat"]);
+    expect(node.terminals.map((terminal) => terminal.label)).toEqual(["交流端", "直流端", "氢能端", "热能端"]);
+    expect(node.params[CUSTOM_DEVICE_TEMPLATE_KEY]).toBe("1");
+    expect(JSON.parse(node.params[CUSTOM_PARAM_DEFINITIONS_KEY])).toHaveLength(4);
+    expect(node.params.eta).toBe("0.95");
+    expect(node.params.strokeColor).toBe("transparent");
+    expect(canConnectTerminals(node, "t3", createDefaultNode("hydrogen-pipeline", { x: 240, y: 120 }), "t1")).toBe(true);
+    expect(canConnectTerminals(node, "t4", createDefaultNode("hydrogen-pipeline", { x: 300, y: 120 }), "t1")).toBe(false);
+
+    const firstIndexed = assignPermanentDeviceIndex(node, {});
+    const secondIndexed = assignPermanentDeviceIndex(createNodeFromTemplate(template, { x: 180, y: 120 }), firstIndexed.counters);
+    expect(firstIndexed.node.params.idx).toBe("1");
+    expect(secondIndexed.node.params.idx).toBe("2");
+  });
+
+  test("builds a two-level element tree and focus points for canvas elements", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 260, y: 100 });
+    const text = createDefaultNode("static-text", { x: 180, y: 180 });
+    source.name = "电源A";
+    load.name = "负荷A";
+    text.name = "说明文字";
+    const edge: Edge = {
+      id: "edge-a",
+      sourceId: source.id,
+      targetId: load.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      manualPoints: [{ x: 180, y: 140 }]
+    };
+
+    const tree = buildElementTree([source, load, text], [edge]);
+
+    expect(tree.map((group) => group.typeLabel)).toEqual(["交流电源", "交流负荷", "文字", "联络线"]);
+    expect(tree.find((group) => group.typeLabel === "交流电源")?.items).toEqual([
+      { kind: "node", id: source.id, name: "电源A" }
+    ]);
+    expect(tree.find((group) => group.typeLabel === "联络线")?.items[0]).toMatchObject({
+      kind: "edge",
+      id: "edge-a",
+      name: "电源A -> 负荷A"
+    });
+    expect(getElementFocusPoint({ kind: "node", id: text.id }, [source, load, text], [edge])).toEqual(text.position);
+    expect(getElementFocusPoint({ kind: "edge", id: "edge-a" }, [source, load, text], [edge])).toEqual({ x: 223, y: 120 });
+  });
+
+  test("omits retired disconnectors and DC transformer from the element library", () => {
+    const retiredKinds = ["ac-disconnector", "dc-disconnector", "dc-transformer"];
+    const libraryKinds = DEVICE_LIBRARY.map((item) => item.kind);
+    const libraryLabels = DEVICE_LIBRARY.map((item) => item.label);
+
+    for (const kind of retiredKinds) {
+      expect(libraryKinds).not.toContain(kind);
+    }
+    expect(libraryLabels).not.toContain("交流刀闸");
+    expect(libraryLabels).not.toContain("直流刀闸");
+    expect(libraryLabels).not.toContain("直流主变");
+    expect(libraryLabels).not.toContain("直流变压器");
+  });
+
+  test("uses distinct glyph variants for switches, breakers, and converter families", () => {
+    expect(getDeviceGlyphVariant("ac-source")).toBe("ac-generator");
+    expect(getDeviceGlyphVariant("dc-source")).toBe("dc-generator");
+    expect(getDeviceGlyphVariant("ac-wind-source")).toBe("wind-source");
+    expect(getDeviceGlyphVariant("dc-pv-source")).toBe("pv-source");
+
+    expect(getDeviceGlyphVariant("ac-switch")).toBe("switch");
+    expect(getDeviceGlyphVariant("dc-switch")).toBe("switch");
+    expect(getDeviceGlyphVariant("ac-breaker")).toBe("breaker");
+    expect(getDeviceGlyphVariant("dc-breaker")).toBe("breaker");
+    expect(getDeviceGlyphVariant("ac-switch")).not.toBe(getDeviceGlyphVariant("ac-breaker"));
+
+    const converterVariants = new Set([
+      getDeviceGlyphVariant("dcdc-converter"),
+      getDeviceGlyphVariant("acdc-converter"),
+      getDeviceGlyphVariant("acac-converter")
+    ]);
+    expect(converterVariants).toEqual(new Set(["dcdc-converter", "acdc-converter", "acac-converter"]));
   });
 
   test("creates static drawing primitives without electrical terminals", () => {
@@ -926,10 +1482,39 @@ describe("power system model", () => {
     expect(byId.get(acBus.id)?.acTopologyNode).toBe(1);
     expect(byId.get(acSource.id)?.terminals[0].nodeNumber).toBe("1");
     expect(new Set(byId.get(acBus.id)?.terminals.map((terminal) => terminal.nodeNumber))).toEqual(new Set(["1"]));
-    expect(byId.get(dcBus.id)?.dcTopologyNode).toBe(2);
-    expect(byId.get(dcLoad.id)?.dcTopologyNode).toBe(2);
-    expect(byId.get(dcLoad.id)?.terminals[0].nodeNumber).toBe("2");
+    expect(byId.get(dcBus.id)?.dcTopologyNode).toBe(1);
+    expect(byId.get(dcLoad.id)?.dcTopologyNode).toBe(1);
+    expect(byId.get(dcLoad.id)?.terminals[0].nodeNumber).toBe("1");
     expect(byId.get(dcLoad.id)?.acTopologyNode).toBe(0);
+  });
+
+  test("contracts all lines connected to the same bus and numbers AC and DC independently", () => {
+    const acBus = createDefaultNode("ac-bus", { x: 200, y: 100 });
+    const acLoadA = createDefaultNode("ac-load", { x: 80, y: 100 });
+    const acLoadB = createDefaultNode("ac-load", { x: 320, y: 100 });
+    const dcBus = createDefaultNode("dc-bus", { x: 200, y: 260 });
+    const dcLoadA = createDefaultNode("dc-load", { x: 80, y: 260 });
+    const dcLoadB = createDefaultNode("dc-load", { x: 320, y: 260 });
+
+    const calculated = calculateElectricalTopology(
+      [acBus, acLoadA, acLoadB, dcBus, dcLoadA, dcLoadB],
+      [
+        { id: "ac-a", sourceId: acLoadA.id, targetId: acBus.id, sourceTerminalId: "t1", targetTerminalId: "t1", targetPoint: { x: 160, y: 100 } },
+        { id: "ac-b", sourceId: acLoadB.id, targetId: acBus.id, sourceTerminalId: "t1", targetTerminalId: "t1", targetPoint: { x: 240, y: 100 } },
+        { id: "dc-a", sourceId: dcLoadA.id, targetId: dcBus.id, sourceTerminalId: "t1", targetTerminalId: "t1", targetPoint: { x: 160, y: 260 } },
+        { id: "dc-b", sourceId: dcLoadB.id, targetId: dcBus.id, sourceTerminalId: "t1", targetTerminalId: "t1", targetPoint: { x: 240, y: 260 } }
+      ]
+    );
+    const byId = new Map(calculated.map((node) => [node.id, node]));
+
+    expect(byId.get(acBus.id)?.acTopologyNode).toBe(1);
+    expect(byId.get(acLoadA.id)?.terminals[0].nodeNumber).toBe("1");
+    expect(byId.get(acLoadB.id)?.terminals[0].nodeNumber).toBe("1");
+    expect(new Set(byId.get(acBus.id)?.terminals.map((terminal) => terminal.nodeNumber))).toEqual(new Set(["1"]));
+    expect(byId.get(dcBus.id)?.dcTopologyNode).toBe(1);
+    expect(byId.get(dcLoadA.id)?.terminals[0].nodeNumber).toBe("1");
+    expect(byId.get(dcLoadB.id)?.terminals[0].nodeNumber).toBe("1");
+    expect(new Set(byId.get(dcBus.id)?.terminals.map((terminal) => terminal.nodeNumber))).toEqual(new Set(["1"]));
   });
 
   test("keeps two-terminal branch device endpoint node numbers separate unless connected", () => {
@@ -958,6 +1543,7 @@ describe("power system model", () => {
     const acLoad = createDefaultNode("ac-load", { x: 340, y: 100 });
     acSource.params.vbase = "10 kV";
     acLoad.params.vbase = "35 kV";
+    acLoad.terminals[0].vbase = "35 kV";
     const errors = validateTopology(
       [acSource, dcLoad, acLoad],
       [
@@ -972,5 +1558,41 @@ describe("power system model", () => {
     const loneLoad = createDefaultNode("ac-load", { x: 460, y: 100 });
     const floatingErrors = validateTopology([loneLoad], []);
     expect(floatingErrors.some((error) => error.type === "floating-terminal" && error.nodeId === loneLoad.id)).toBe(true);
+  });
+
+  test("validates voltage mismatch from the connected terminal voltage bases", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 240, y: 100 });
+    source.params.vbase = "10 kV";
+    load.params.vbase = "10 kV";
+    source.terminals[0].vbase = "10 kV";
+    load.terminals[0].vbase = "35 kV";
+
+    const errors = validateTopology(
+      [source, load],
+      [{ id: "e-terminal-vbase", sourceId: source.id, targetId: load.id, sourceTerminalId: "t1", targetTerminalId: "t1" }]
+    );
+
+    expect(errors.some((error) => error.type === "voltage-mismatch" && error.edgeId === "e-terminal-vbase")).toBe(true);
+  });
+
+  test("validates voltage mismatch across terminals contracted through the same bus", () => {
+    const bus = createDefaultNode("ac-bus", { x: 200, y: 100 });
+    const load10 = createDefaultNode("ac-load", { x: 80, y: 100 });
+    const load35 = createDefaultNode("ac-load", { x: 320, y: 100 });
+    bus.params.vbase = "";
+    bus.terminals = bus.terminals.map((terminal) => ({ ...terminal, vbase: "" }));
+    load10.terminals[0].vbase = "10 kV";
+    load35.terminals[0].vbase = "35 kV";
+
+    const errors = validateTopology(
+      [bus, load10, load35],
+      [
+        { id: "load10-bus", sourceId: load10.id, targetId: bus.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+        { id: "load35-bus", sourceId: load35.id, targetId: bus.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
+      ]
+    );
+
+    expect(errors.some((error) => error.type === "voltage-mismatch" && error.relatedNodeIds.includes(load10.id) && error.relatedNodeIds.includes(load35.id))).toBe(true);
   });
 });

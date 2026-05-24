@@ -20,7 +20,37 @@ export type DeviceKind =
   | "ac-thermal-source"
   | "ac-hydro-source"
   | "ac-nuclear-source"
+  | "ac-storage"
+  | "ac-electrolyzer"
+  | "dc-electrolyzer"
+  | "hydrogen-source"
+  | "hydrogen-tank"
+  | "hydrogen-load"
+  | "ac-fuel-cell"
+  | "dc-fuel-cell"
+  | "hydrogen-bus"
+  | "hydrogen-compressor"
+  | "hydrogen-pressure-reducer"
+  | "hydrogen-shutoff-valve"
+  | "hydrogen-pipeline"
+  | "heat-boiler"
+  | "heat-source"
+  | "two-port-heat-source"
+  | "heat-exchanger"
+  | "three-port-heat-exchanger"
+  | "four-port-heat-exchanger"
+  | "ac-heater"
+  | "dc-heater"
+  | "thermal-storage-tank"
+  | "heat-load"
+  | "single-port-heat-load"
+  | "two-port-heat-load"
+  | "heat-bus"
+  | "heat-pipeline"
+  | "heat-pump"
+  | "heat-shutoff-valve"
   | "ac-line"
+  | "ac-zero-branch"
   | "ac-bus"
   | "ac-switch"
   | "ac-disconnector"
@@ -30,7 +60,9 @@ export type DeviceKind =
   | "ac-two-winding-transformer"
   | "ac-three-winding-transformer"
   | "dc-source"
+  | "dc-storage"
   | "dc-line"
+  | "dc-zero-branch"
   | "dc-bus"
   | "dc-switch"
   | "dc-disconnector"
@@ -39,7 +71,53 @@ export type DeviceKind =
   | "dc-transformer"
   | "dcdc-converter"
   | "acdc-converter"
-  | "acac-converter";
+  | "acac-converter"
+  | (string & {});
+
+export type DeviceGlyphVariant =
+  | "static"
+  | "ac-generator"
+  | "dc-generator"
+  | "wind-source"
+  | "pv-source"
+  | "thermal-source"
+  | "hydro-source"
+  | "nuclear-source"
+  | "battery-storage"
+  | "hydrogen-electrolyzer"
+  | "hydrogen-source"
+  | "hydrogen-storage"
+  | "hydrogen-load"
+  | "hydrogen-fuel-cell"
+  | "hydrogen-bus"
+  | "hydrogen-compressor"
+  | "hydrogen-regulator"
+  | "hydrogen-valve"
+  | "hydrogen-pipeline"
+  | "heat-boiler"
+  | "heat-source"
+  | "heat-electric-heater"
+  | "heat-exchanger-two"
+  | "heat-exchanger-three"
+  | "heat-exchanger-four"
+  | "heat-storage"
+  | "heat-load"
+  | "heat-bus"
+  | "heat-pipeline"
+  | "heat-pump"
+  | "heat-valve"
+  | "custom-device"
+  | "bus"
+  | "line"
+  | "transformer"
+  | "switch"
+  | "disconnector"
+  | "breaker"
+  | "load"
+  | "dcdc-converter"
+  | "acdc-converter"
+  | "acac-converter"
+  | "default";
 
 export type Point = {
   x: number;
@@ -51,7 +129,17 @@ export type CanvasBounds = {
   height: number;
 };
 
-export type TerminalType = "ac" | "dc";
+export type TerminalType = "ac" | "dc" | "h2" | "heat";
+
+export type DeviceParameterValueType = "integer" | "float" | "enum";
+
+export type DeviceParameterDefinition = {
+  cnName: string;
+  enName: string;
+  valueType: DeviceParameterValueType;
+  typicalValue: string;
+  readonly?: boolean;
+};
 
 export type Terminal = {
   id: string;
@@ -59,12 +147,13 @@ export type Terminal = {
   type: TerminalType;
   anchor: Point;
   nodeNumber: string;
+  vbase?: string;
 };
 
 export type DeviceTemplate = {
   kind: DeviceKind;
   label: string;
-  group: "静态图元" | "交流系统" | "直流系统" | "变流设备";
+  group: string;
   size: {
     width: number;
     height: number;
@@ -72,6 +161,11 @@ export type DeviceTemplate = {
   params: Record<string, string>;
   terminalType: TerminalType;
   terminalCount: number;
+  terminalTypes?: TerminalType[];
+  terminalLabels?: string[];
+  terminalAnchors?: Point[];
+  custom?: boolean;
+  parameterDefinitions?: DeviceParameterDefinition[];
 };
 
 export type ModelNode = {
@@ -105,6 +199,18 @@ export type Edge = {
   manualPoints?: Point[];
 };
 
+export type ElementTreeItem = {
+  kind: "node" | "edge";
+  id: string;
+  name: string;
+};
+
+export type ElementTreeGroup = {
+  typeKey: string;
+  typeLabel: string;
+  items: ElementTreeItem[];
+};
+
 export type ProjectFile = {
   version: 1;
   name: string;
@@ -113,9 +219,379 @@ export type ProjectFile = {
   canvasBackgroundColor?: string;
   canvasBackgroundImage?: string;
   canvasBackgroundImageAssetId?: string;
+  powerUnit?: string;
+  voltageUnit?: string;
+  currentUnit?: string;
+  powerBaseValue?: number;
+  deviceIndexCounters?: DeviceIndexCounters;
   nodes: ModelNode[];
   edges: Edge[];
 };
+
+export const DEFAULT_POWER_UNIT = "MW";
+export const DEFAULT_VOLTAGE_UNIT = "kV";
+export const DEFAULT_CURRENT_UNIT = "A";
+export const DEFAULT_POWER_BASE_VALUE = 100;
+
+export const E_SECTION_COLUMNS: Record<string, string[]> = {
+  ACRealBs: ["idx", "name", "node", "run_stat"],
+  DCRealBs: ["idx", "name", "node", "run_stat"],
+  ACNode: ["idx", "name", "vbase", "voltage", "angle", "isl", "run_stat"],
+  DCNode: ["idx", "name", "vbase", "voltage", "isl", "run_stat"],
+  ACBranch: ["idx", "name", "i_node", "j_node", "r", "x", "b", "run_stat"],
+  DCBranch: ["idx", "name", "i_node", "j_node", "r", "run_stat"],
+  ACLoad: ["idx", "name", "node", "pbase", "pv0", "pv1", "pv2", "qbase", "qv0", "qv1", "qv2", "run_stat"],
+  DCLoad: ["idx", "name", "node", "pbase", "pv0", "pv1", "pv2", "run_stat"],
+  ACGenerator: ["idx", "name", "node", "control_type", "p_set", "q_set", "v_set", "alpha", "run_stat"],
+  DCGenerator: ["idx", "name", "node", "control_type", "v_set", "p_set", "i_set", "run_stat"],
+  ACShuntCompensator: ["idx", "name", "node", "control_type", "q_set", "g_set", "b_set", "v_set", "run_stat"],
+  ACZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
+  DCZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
+  ACSwitch: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
+  DCSwitch: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
+  ACBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
+  DCBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
+  ACTransformer: ["idx", "name", "i_node", "j_node", "r", "x", "gt", "bt", "tap", "shift", "run_stat"],
+  DCDCConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_set", "v_set", "run_stat"],
+  DCACConverter: ["idx", "name", "ac_node", "dc_node", "r1", "r2", "control_type", "p_ac_set", "q_ac_set", "v_ac_set", "v_dc_set", "run_stat"],
+  ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"]
+};
+
+export function inferESection(kind: string, params: Record<string, string> = {}) {
+  if (kind === "ac-bus") return "ACRealBs";
+  if (kind === "dc-bus") return "DCRealBs";
+  if (params.source_section && E_SECTION_COLUMNS[params.source_section]) {
+    return params.source_section;
+  }
+  if (kind === "ac-line") return "ACBranch";
+  if (kind === "dc-line") return "DCBranch";
+  if (kind === "ac-zero-branch") return "ACZeroBranch";
+  if (kind === "dc-zero-branch") return "DCZeroBranch";
+  if (kind === "ac-load") return "ACLoad";
+  if (kind === "dc-load") return "DCLoad";
+  if (kind === "ac-storage") return "ACGenerator";
+  if (kind === "dc-storage") return "DCGenerator";
+  if (kind.startsWith("ac-") && kind.includes("source")) return "ACGenerator";
+  if (kind.startsWith("dc-") && kind.includes("source")) return "DCGenerator";
+  if (kind === "ac-switch" || kind === "ac-disconnector") return "ACSwitch";
+  if (kind === "dc-switch" || kind === "dc-disconnector") return "DCSwitch";
+  if (kind === "ac-breaker") return "ACBreak";
+  if (kind === "dc-breaker") return "DCBreak";
+  if (kind === "ac-transformer" || kind === "ac-two-winding-transformer") return "ACTransformer";
+  if (kind === "dcdc-converter") return "DCDCConverter";
+  if (kind === "acdc-converter") return "DCACConverter";
+  if (kind === "acac-converter") return "ACACConverter";
+  return "";
+}
+
+export type DeviceIndexCounters = Record<string, number>;
+
+function deviceIndexCounterKey(node: Pick<ModelNode, "kind" | "params">): string {
+  const section = inferESection(node.kind, node.params);
+  if (section) {
+    return section;
+  }
+  return node.params[CUSTOM_DEVICE_TEMPLATE_KEY] === "1" ? String(node.kind) : "";
+}
+
+function parseDeviceIndex(value?: string): number {
+  const text = String(value ?? "").trim();
+  if (!/^[1-9]\d*$/.test(text)) {
+    return 0;
+  }
+  return Number.parseInt(text, 10);
+}
+
+export function deriveDeviceIndexCounters(nodes: Pick<ModelNode, "kind" | "params">[]): DeviceIndexCounters {
+  const counters: DeviceIndexCounters = {};
+  for (const node of nodes) {
+    const key = deviceIndexCounterKey(node);
+    if (!key) {
+      continue;
+    }
+    const idx = parseDeviceIndex(node.params.idx);
+    if (idx > (counters[key] ?? 0)) {
+      counters[key] = idx;
+    }
+  }
+  return counters;
+}
+
+export function normalizeDeviceIndexCounters(
+  counters: DeviceIndexCounters | undefined,
+  nodes: Pick<ModelNode, "kind" | "params">[] = []
+): DeviceIndexCounters {
+  const normalized: DeviceIndexCounters = {};
+  for (const [section, value] of Object.entries(counters ?? {})) {
+    const numeric = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+    if (numeric > 0) {
+      normalized[section] = numeric;
+    }
+  }
+  const derived = deriveDeviceIndexCounters(nodes);
+  for (const [section, value] of Object.entries(derived)) {
+    normalized[section] = Math.max(normalized[section] ?? 0, value);
+  }
+  return normalized;
+}
+
+export function assignPermanentDeviceIndex<T extends Pick<ModelNode, "kind" | "params">>(
+  node: T,
+  counters: DeviceIndexCounters = {}
+): { node: T; counters: DeviceIndexCounters } {
+  const key = deviceIndexCounterKey(node);
+  if (!key) {
+    return { node, counters };
+  }
+  const existingIdx = parseDeviceIndex(node.params.idx);
+  if (existingIdx > 0) {
+    if (existingIdx <= (counters[key] ?? 0)) {
+      return { node, counters };
+    }
+    return { node, counters: { ...counters, [key]: existingIdx } };
+  }
+  const idx = (counters[key] ?? 0) + 1;
+  return {
+    node: { ...node, params: { ...node.params, idx: String(idx) } },
+    counters: { ...counters, [key]: idx }
+  };
+}
+
+export function assignMissingDeviceIndexes<T extends Pick<ModelNode, "kind" | "params">>(
+  nodes: T[],
+  counters?: DeviceIndexCounters
+): { nodes: T[]; counters: DeviceIndexCounters } {
+  let nextCounters = normalizeDeviceIndexCounters(counters, nodes);
+  let changed = false;
+  const nextNodes = nodes.map((node) => {
+    const result = assignPermanentDeviceIndex(node, nextCounters);
+    nextCounters = result.counters;
+    if (result.node !== node) {
+      changed = true;
+    }
+    return result.node;
+  });
+  return { nodes: changed ? nextNodes : nodes, counters: nextCounters };
+}
+
+function normalizeRunStatForE(value?: string) {
+  if (!value) return "";
+  if (value === "运行") return "1";
+  if (value === "停运" || value === "检修") return "0";
+  return value;
+}
+
+function normalizeSwitchStatusForE(value?: string) {
+  if (!value) return "";
+  if (value === "闭合") return "1";
+  if (value === "合闸") return "1";
+  if (value === "打开") return "0";
+  if (value === "分闸") return "0";
+  return value;
+}
+
+function terminalNodeNumber(node: Pick<ModelNode, "nodeNumber" | "terminals">, index: number) {
+  return node.terminals[index]?.nodeNumber ?? (index === 0 ? node.nodeNumber : "") ?? "";
+}
+
+function mappedLegacyEValue(key: string, params: Record<string, string>) {
+  if (key === "pbase") return params.pbase ?? params.ratedActivePower ?? "";
+  if (key === "qbase") return params.qbase ?? params.ratedReactivePower ?? "";
+  if (key === "r") return params.r ?? params.resistancePu ?? "";
+  if (key === "x") return params.x ?? params.reactancePu ?? "";
+  if (key === "b") return params.b ?? params.halfChargingSusceptancePu ?? "";
+  if (key === "gt") return params.gt ?? params.magnetizingConductancePu ?? "";
+  if (key === "bt") return params.bt ?? params.magnetizingSusceptancePu ?? "";
+  if (key === "tap") return params.tap ?? params.tapRatio ?? "";
+  if (key === "r1") return params.r1 ?? params.sourceEquivalentResistance ?? "";
+  if (key === "r2") return params.r2 ?? params.targetEquivalentResistance ?? "";
+  return params[key] ?? "";
+}
+
+type EDeviceExport = {
+  id: string;
+  kind: string;
+  section: string;
+  params: Record<string, string>;
+};
+
+type EParamValueOptions = {
+  preferTopologyNodeNumbers?: boolean;
+};
+
+export function getEParamValue(
+  key: string,
+  node: Pick<ModelNode, "kind" | "name" | "nodeNumber" | "terminals" | "params">,
+  options: EParamValueOptions = {}
+) {
+  if (key === "name") {
+    return node.name;
+  }
+  if (key === "run_stat") {
+    return normalizeRunStatForE(node.params.run_stat);
+  }
+  if (key === "status") {
+    return normalizeSwitchStatusForE(node.params.status ?? node.params.closedStatus);
+  }
+  if (key === "control_type") {
+    return node.params.control_type ?? node.params.controlType ?? node.params.sourceControlType ?? "";
+  }
+  if (key === "vbase") {
+    return node.params.vbase ?? node.terminals[0]?.vbase ?? "";
+  }
+  if (key === "node") {
+    return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 0) : node.params.node ?? terminalNodeNumber(node, 0);
+  }
+  if (key === "i_node") {
+    return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 0) : node.params.i_node ?? terminalNodeNumber(node, 0);
+  }
+  if (key === "j_node") {
+    return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 1) : node.params.j_node ?? terminalNodeNumber(node, 1);
+  }
+  if (key === "ac_node") {
+    const acNodeNumber = node.terminals.find((terminal) => terminal.type === "ac")?.nodeNumber ?? terminalNodeNumber(node, 0);
+    return options.preferTopologyNodeNumbers ? acNodeNumber : node.params.ac_node ?? acNodeNumber;
+  }
+  if (key === "dc_node") {
+    const dcNodeNumber = node.terminals.find((terminal) => terminal.type === "dc")?.nodeNumber ?? terminalNodeNumber(node, 1);
+    return options.preferTopologyNodeNumbers ? dcNodeNumber : node.params.dc_node ?? dcNodeNumber;
+  }
+  return mappedLegacyEValue(key, node.params);
+}
+
+export function getEParameterKeys(kind: string, params: Record<string, string>) {
+  const section = inferESection(kind, params);
+  return section ? E_SECTION_COLUMNS[section] ?? [] : [];
+}
+
+export function buildEDeviceValues(
+  node: Pick<ModelNode, "kind" | "name" | "nodeNumber" | "terminals" | "params">,
+  options: EParamValueOptions = {}
+) {
+  const values: Record<string, string> = {};
+  for (const key of getEParameterKeys(node.kind, node.params)) {
+    const value = getEParamValue(key, node, options);
+    if (value !== "") {
+      values[key] = value;
+    }
+  }
+  return values;
+}
+
+function firstText(values: Array<string | undefined>): string {
+  return values.find((value) => value !== undefined && value.trim() !== "") ?? "";
+}
+
+function terminalVoltageDisplay(node: ModelNode, terminal: Terminal): string {
+  return terminalVoltageBaseNumber(firstText([
+    terminal.vbase,
+    node.params.vbase,
+    node.params.highVbase,
+    node.params.mediumVbase,
+    node.params.lowVbase,
+    node.params.sourceVbase,
+    node.params.targetVbase,
+    node.params.voltageLevel,
+    node.params.ratedVoltage,
+    node.params.voltage
+  ]));
+}
+
+function topologyRepresentativeScore(node: ModelNode): number {
+  if (isBusNode(node)) return 0;
+  if (node.terminals.length === 1) return 1;
+  if (node.kind.includes("converter") || node.kind.includes("transformer")) return 2;
+  return 3;
+}
+
+function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
+  type ElectricalTerminalType = Extract<TerminalType, "ac" | "dc">;
+  const groups: Record<ElectricalTerminalType, Map<string, Array<{ node: ModelNode; terminal: Terminal }>>> = {
+    ac: new Map(),
+    dc: new Map()
+  };
+  for (const node of nodes) {
+    if (isStaticNode(node)) {
+      continue;
+    }
+    for (const terminal of node.terminals) {
+      const terminalType = terminal.type;
+      if (terminalType !== "ac" && terminalType !== "dc") {
+        continue;
+      }
+      if (!terminal.nodeNumber) {
+        continue;
+      }
+      const candidates = groups[terminalType].get(terminal.nodeNumber) ?? [];
+      candidates.push({ node, terminal });
+      groups[terminalType].set(terminal.nodeNumber, candidates);
+    }
+  }
+
+  const buildForType = (type: ElectricalTerminalType, section: "ACNode" | "DCNode"): EDeviceExport[] =>
+    Array.from(groups[type].entries())
+      .sort(([first], [second]) => Number(first) - Number(second))
+      .map(([idx, candidates]) => {
+        const representative = [...candidates].sort(
+          (first, second) => topologyRepresentativeScore(first.node) - topologyRepresentativeScore(second.node)
+        )[0];
+        const vbase = firstText(candidates.map(({ node, terminal }) => terminalVoltageDisplay(node, terminal)));
+        const voltage = firstText([representative.node.params.voltage, vbase]);
+        const runStat = normalizeRunStatForE(representative.node.params.run_stat) || "1";
+        const commonParams = {
+          idx,
+          name: representative.node.name || `${section}_${idx}`,
+          vbase,
+          voltage,
+          isl: representative.node.params.isl ?? "0",
+          run_stat: runStat
+        };
+        return {
+          id: `${section}-${idx}`,
+          kind: type === "ac" ? "ac-node" : "dc-node",
+          section,
+          params: section === "ACNode" ? { ...commonParams, angle: representative.node.params.angle ?? "0" } : commonParams
+        };
+      });
+
+  return [...buildForType("ac", "ACNode"), ...buildForType("dc", "DCNode")];
+}
+
+export function buildEDeviceParameterFile(project: ProjectFile) {
+  const topologyNodes = calculateElectricalTopology(project.nodes, project.edges);
+  const topologyNodeDevices = buildTopologyNodeDevices(topologyNodes);
+  const deviceRecords = topologyNodes
+    .map<EDeviceExport | null>((node) => {
+      const section = inferESection(node.kind, node.params);
+      if (!section || section === "ACNode" || section === "DCNode") {
+        return null;
+      }
+      return {
+        id: node.id,
+        kind: node.kind,
+        section,
+        params: buildEDeviceValues(node, { preferTopologyNodeNumbers: true })
+      };
+    })
+    .filter((device): device is EDeviceExport => Boolean(device));
+
+  return JSON.stringify(
+    {
+      version: 1,
+      name: project.name,
+      modelParameters: {
+        powerUnit: project.powerUnit ?? DEFAULT_POWER_UNIT,
+        voltageUnit: project.voltageUnit ?? DEFAULT_VOLTAGE_UNIT,
+        currentUnit: project.currentUnit ?? DEFAULT_CURRENT_UNIT,
+        powerBaseValue: project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE
+      },
+      devices: [...topologyNodeDevices, ...deviceRecords],
+      edges: project.edges
+    },
+    null,
+    2
+  );
+}
 
 export type SavedProjectRecord = {
   id: string;
@@ -348,11 +824,309 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalCount: 1
   },
   {
+    kind: "ac-storage",
+    label: "电化学储能",
+    group: "交流系统",
+    size: { width: 90, height: 56 },
+    params: { ratedVoltage: "10 kV", ratedPower: "5 MW", energyCapacity: "20 MWh", stateOfCharge: "50%" },
+    terminalType: "ac",
+    terminalCount: 1
+  },
+  {
+    kind: "ac-electrolyzer",
+    label: "交流电制氢",
+    group: "氢能设备",
+    size: { width: 108, height: 62 },
+    params: { ratedVoltage: "10 kV", ratedPower: "5 MW", hydrogenFlow: "1000 Nm3/h" },
+    terminalType: "ac",
+    terminalCount: 2,
+    terminalTypes: ["ac", "h2"],
+    terminalLabels: ["交流端", "氢能端"]
+  },
+  {
+    kind: "dc-electrolyzer",
+    label: "直流电制氢",
+    group: "氢能设备",
+    size: { width: 108, height: 62 },
+    params: { ratedVoltage: "750 V", ratedPower: "5 MW", hydrogenFlow: "1000 Nm3/h" },
+    terminalType: "dc",
+    terminalCount: 2,
+    terminalTypes: ["dc", "h2"],
+    terminalLabels: ["直流端", "氢能端"]
+  },
+  {
+    kind: "hydrogen-source",
+    label: "氢源",
+    group: "氢能设备",
+    size: { width: 84, height: 56 },
+    params: { pressure: "20 MPa", hydrogenFlow: "1000 Nm3/h" },
+    terminalType: "h2",
+    terminalCount: 1
+  },
+  {
+    kind: "hydrogen-tank",
+    label: "储氢罐",
+    group: "氢能设备",
+    size: { width: 126, height: 58 },
+    params: { pressure: "35 MPa", capacity: "1000 kg" },
+    terminalType: "h2",
+    terminalCount: 4
+  },
+  {
+    kind: "hydrogen-load",
+    label: "氢荷",
+    group: "氢能设备",
+    size: { width: 86, height: 58 },
+    params: { pressure: "2 MPa", hydrogenDemand: "500 Nm3/h" },
+    terminalType: "h2",
+    terminalCount: 1
+  },
+  {
+    kind: "ac-fuel-cell",
+    label: "交流燃料电池",
+    group: "氢能设备",
+    size: { width: 108, height: 62 },
+    params: { ratedVoltage: "10 kV", ratedPower: "3 MW", hydrogenFlow: "600 Nm3/h" },
+    terminalType: "ac",
+    terminalCount: 2,
+    terminalTypes: ["ac", "h2"],
+    terminalLabels: ["交流端", "氢能端"]
+  },
+  {
+    kind: "dc-fuel-cell",
+    label: "直流燃料电池",
+    group: "氢能设备",
+    size: { width: 108, height: 62 },
+    params: { ratedVoltage: "750 V", ratedPower: "3 MW", hydrogenFlow: "600 Nm3/h" },
+    terminalType: "dc",
+    terminalCount: 2,
+    terminalTypes: ["dc", "h2"],
+    terminalLabels: ["直流端", "氢能端"]
+  },
+  {
+    kind: "hydrogen-bus",
+    label: "氢能母线",
+    group: "氢能设备",
+    size: { width: 120, height: 28 },
+    params: { pressure: "20 MPa" },
+    terminalType: "h2",
+    terminalCount: 4
+  },
+  {
+    kind: "hydrogen-compressor",
+    label: "氢压机",
+    group: "氢能设备",
+    size: { width: 86, height: 58 },
+    params: { inletPressure: "2 MPa", outletPressure: "20 MPa" },
+    terminalType: "h2",
+    terminalCount: 2
+  },
+  {
+    kind: "hydrogen-pressure-reducer",
+    label: "减压阀",
+    group: "氢能设备",
+    size: { width: 82, height: 54 },
+    params: { inletPressure: "20 MPa", outletPressure: "2 MPa" },
+    terminalType: "h2",
+    terminalCount: 2
+  },
+  {
+    kind: "hydrogen-shutoff-valve",
+    label: "截止阀",
+    group: "氢能设备",
+    size: { width: 82, height: 54 },
+    params: { status: "1" },
+    terminalType: "h2",
+    terminalCount: 2
+  },
+  {
+    kind: "hydrogen-pipeline",
+    label: "输氢管道",
+    group: "氢能设备",
+    size: { width: 108, height: 36 },
+    params: { length: "1 km", diameter: "DN200" },
+    terminalType: "h2",
+    terminalCount: 2
+  },
+  {
+    kind: "heat-boiler",
+    label: "供热锅炉",
+    group: "热能设备",
+    size: { width: 94, height: 60 },
+    params: { heatPower: "10 MW", supplyTemperature: "95 degC" },
+    terminalType: "heat",
+    terminalCount: 1
+  },
+  {
+    kind: "heat-source",
+    label: "单端热源",
+    group: "热能设备",
+    size: { width: 88, height: 56 },
+    params: { heatPower: "10 MW", supplyTemperature: "95 degC" },
+    terminalType: "heat",
+    terminalCount: 1
+  },
+  {
+    kind: "two-port-heat-source",
+    label: "双端热源",
+    group: "热能设备",
+    size: { width: 96, height: 60 },
+    params: { heatPower: "10 MW", supplyTemperature: "95 degC", returnTemperature: "70 degC" },
+    terminalType: "heat",
+    terminalCount: 2,
+    terminalLabels: ["供水端", "回水端"]
+  },
+  {
+    kind: "heat-exchanger",
+    label: "双端热交换器",
+    group: "热能设备",
+    size: { width: 96, height: 66 },
+    params: { heatPower: "8 MW", efficiency: "0.98" },
+    terminalType: "heat",
+    terminalCount: 2,
+    terminalLabels: ["一次侧", "二次侧"]
+  },
+  {
+    kind: "three-port-heat-exchanger",
+    label: "三端热交换器",
+    group: "热能设备",
+    size: { width: 104, height: 72 },
+    params: { heatPower: "8 MW", efficiency: "0.98" },
+    terminalType: "heat",
+    terminalCount: 3,
+    terminalLabels: ["单端侧", "双端侧供水", "双端侧回水"],
+    terminalAnchors: [
+      { x: -0.5, y: 0 },
+      { x: 0.5, y: -0.25 },
+      { x: 0.5, y: 0.25 }
+    ]
+  },
+  {
+    kind: "four-port-heat-exchanger",
+    label: "四端热交换器",
+    group: "热能设备",
+    size: { width: 110, height: 76 },
+    params: { heatPower: "8 MW", efficiency: "0.98" },
+    terminalType: "heat",
+    terminalCount: 4,
+    terminalLabels: ["一侧供水", "一侧回水", "二侧供水", "二侧回水"],
+    terminalAnchors: [
+      { x: -0.5, y: -0.25 },
+      { x: -0.5, y: 0.25 },
+      { x: 0.5, y: -0.25 },
+      { x: 0.5, y: 0.25 }
+    ]
+  },
+  {
+    kind: "ac-heater",
+    label: "交流电制热",
+    group: "热能设备",
+    size: { width: 108, height: 62 },
+    params: { ratedVoltage: "10 kV", ratedPower: "5 MW", heatPower: "4.8 MW" },
+    terminalType: "ac",
+    terminalCount: 2,
+    terminalTypes: ["ac", "heat"],
+    terminalLabels: ["交流端", "热力端"]
+  },
+  {
+    kind: "dc-heater",
+    label: "直流电制热",
+    group: "热能设备",
+    size: { width: 108, height: 62 },
+    params: { ratedVoltage: "750 V", ratedPower: "5 MW", heatPower: "4.8 MW" },
+    terminalType: "dc",
+    terminalCount: 2,
+    terminalTypes: ["dc", "heat"],
+    terminalLabels: ["直流端", "热力端"]
+  },
+  {
+    kind: "thermal-storage-tank",
+    label: "储热罐",
+    group: "热能设备",
+    size: { width: 126, height: 58 },
+    params: { capacity: "100 MWh", temperature: "90 degC" },
+    terminalType: "heat",
+    terminalCount: 4
+  },
+  {
+    kind: "heat-load",
+    label: "热负荷",
+    group: "热能设备",
+    size: { width: 86, height: 58 },
+    params: { heatDemand: "5 MW" },
+    terminalType: "heat",
+    terminalCount: 1
+  },
+  {
+    kind: "single-port-heat-load",
+    label: "单端热荷",
+    group: "热能设备",
+    size: { width: 86, height: 58 },
+    params: { heatDemand: "5 MW" },
+    terminalType: "heat",
+    terminalCount: 1
+  },
+  {
+    kind: "two-port-heat-load",
+    label: "双端热荷",
+    group: "热能设备",
+    size: { width: 94, height: 60 },
+    params: { heatDemand: "5 MW", supplyTemperature: "95 degC", returnTemperature: "70 degC" },
+    terminalType: "heat",
+    terminalCount: 2,
+    terminalLabels: ["供水端", "回水端"]
+  },
+  {
+    kind: "heat-bus",
+    label: "热力母线",
+    group: "热能设备",
+    size: { width: 120, height: 28 },
+    params: { temperature: "90 degC" },
+    terminalType: "heat",
+    terminalCount: 4
+  },
+  {
+    kind: "heat-pipeline",
+    label: "输热管道",
+    group: "热能设备",
+    size: { width: 108, height: 36 },
+    params: { length: "1 km", diameter: "DN200" },
+    terminalType: "heat",
+    terminalCount: 2
+  },
+  {
+    kind: "heat-pump",
+    label: "循环水泵",
+    group: "热能设备",
+    size: { width: 86, height: 58 },
+    params: { flowRate: "200 t/h", head: "30 m" },
+    terminalType: "heat",
+    terminalCount: 2
+  },
+  {
+    kind: "heat-shutoff-valve",
+    label: "截止阀",
+    group: "热能设备",
+    size: { width: 82, height: 54 },
+    params: { status: "1" },
+    terminalType: "heat",
+    terminalCount: 2
+  },
+  {
     kind: "ac-line",
     label: "交流线路",
     group: "交流系统",
     size: { width: 108, height: 36 },
     params: { length: "10 km", r: "0.12 ohm/km", x: "0.38 ohm/km" },
+    terminalType: "ac",
+    terminalCount: 2
+  },
+  {
+    kind: "ac-zero-branch",
+    label: "交流零阻抗支路",
+    group: "交流系统",
+    size: { width: 108, height: 36 },
+    params: {},
     terminalType: "ac",
     terminalCount: 2
   },
@@ -371,15 +1145,6 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     group: "交流系统",
     size: { width: 72, height: 48 },
     params: { status: "合闸", ratedCurrent: "1250 A" },
-    terminalType: "ac",
-    terminalCount: 2
-  },
-  {
-    kind: "ac-disconnector",
-    label: "交流刀闸",
-    group: "交流系统",
-    size: { width: 74, height: 48 },
-    params: {},
     terminalType: "ac",
     terminalCount: 2
   },
@@ -456,11 +1221,29 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalCount: 1
   },
   {
+    kind: "dc-storage",
+    label: "电化学储能",
+    group: "直流系统",
+    size: { width: 90, height: 56 },
+    params: { ratedVoltage: "750 V", ratedPower: "5 MW", energyCapacity: "20 MWh", stateOfCharge: "50%" },
+    terminalType: "dc",
+    terminalCount: 1
+  },
+  {
     kind: "dc-line",
     label: "直流线路",
     group: "直流系统",
     size: { width: 108, height: 36 },
     params: { length: "2 km", resistance: "0.08 ohm/km" },
+    terminalType: "dc",
+    terminalCount: 2
+  },
+  {
+    kind: "dc-zero-branch",
+    label: "直流零阻抗支路",
+    group: "直流系统",
+    size: { width: 108, height: 36 },
+    params: {},
     terminalType: "dc",
     terminalCount: 2
   },
@@ -483,15 +1266,6 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalCount: 2
   },
   {
-    kind: "dc-disconnector",
-    label: "直流刀闸",
-    group: "直流系统",
-    size: { width: 74, height: 48 },
-    params: {},
-    terminalType: "dc",
-    terminalCount: 2
-  },
-  {
     kind: "dc-breaker",
     label: "直流断路器",
     group: "直流系统",
@@ -508,15 +1282,6 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     params: { power: "1.5 MW", voltage: "750 V" },
     terminalType: "dc",
     terminalCount: 1
-  },
-  {
-    kind: "dc-transformer",
-    label: "直流主变",
-    group: "直流系统",
-    size: { width: 92, height: 70 },
-    params: { ratedCapacity: "20 MW", voltageRatio: "1500/750 V" },
-    terminalType: "dc",
-    terminalCount: 2
   },
   {
     kind: "dcdc-converter",
@@ -550,6 +1315,34 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
 let nodeNumberSeed = 1;
 const makeId = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 const makeNodeNumber = () => `N${nodeNumberSeed++}`;
+export const CUSTOM_PARAM_DEFINITIONS_KEY = "_customParamDefinitions";
+export const CUSTOM_DEVICE_TEMPLATE_KEY = "_customDeviceTemplate";
+
+const defaultTerminalVbase = (type: TerminalType) => {
+  if (type === "ac") return "10 kV";
+  if (type === "dc") return "750 V";
+  return "";
+};
+
+export function normalizeVoltageBaseInput(value?: string): string {
+  let normalized = "";
+  let hasDecimalPoint = false;
+  for (const char of String(value ?? "")) {
+    if (/\d/.test(char)) {
+      normalized += char;
+      continue;
+    }
+    if (char === "." && !hasDecimalPoint) {
+      normalized += char;
+      hasDecimalPoint = true;
+    }
+  }
+  return normalized;
+}
+
+export function terminalVoltageBaseNumber(value?: string): string {
+  return normalizeVoltageBaseInput(value);
+}
 
 export function isGeneratorKind(kind: DeviceKind): boolean {
   return kind.includes("source");
@@ -559,8 +1352,137 @@ export function isGeneratorNode(node: ModelNode): boolean {
   return isGeneratorKind(node.kind);
 }
 
+export function getDeviceGlyphVariant(kind: DeviceKind): DeviceGlyphVariant {
+  if (kind.startsWith("static-")) return "static";
+  if (kind === "ac-source") return "ac-generator";
+  if (kind === "dc-source") return "dc-generator";
+  if (kind === "ac-storage") return "battery-storage";
+  if (kind === "dc-storage") return "battery-storage";
+  if (kind === "ac-electrolyzer" || kind === "dc-electrolyzer") return "hydrogen-electrolyzer";
+  if (kind === "hydrogen-source") return "hydrogen-source";
+  if (kind === "hydrogen-tank") return "hydrogen-storage";
+  if (kind === "hydrogen-load") return "hydrogen-load";
+  if (kind === "ac-fuel-cell" || kind === "dc-fuel-cell") return "hydrogen-fuel-cell";
+  if (kind === "hydrogen-bus") return "hydrogen-bus";
+  if (kind === "hydrogen-compressor") return "hydrogen-compressor";
+  if (kind === "hydrogen-pressure-reducer") return "hydrogen-regulator";
+  if (kind === "hydrogen-shutoff-valve") return "hydrogen-valve";
+  if (kind === "hydrogen-pipeline") return "hydrogen-pipeline";
+  if (kind === "heat-boiler") return "heat-boiler";
+  if (kind === "heat-source" || kind === "two-port-heat-source") return "heat-source";
+  if (kind === "heat-exchanger") return "heat-exchanger-two";
+  if (kind === "three-port-heat-exchanger") return "heat-exchanger-three";
+  if (kind === "four-port-heat-exchanger") return "heat-exchanger-four";
+  if (kind === "ac-heater" || kind === "dc-heater") return "heat-electric-heater";
+  if (kind === "thermal-storage-tank") return "heat-storage";
+  if (kind === "heat-load" || kind === "single-port-heat-load" || kind === "two-port-heat-load") return "heat-load";
+  if (kind === "heat-bus") return "heat-bus";
+  if (kind === "heat-pipeline") return "heat-pipeline";
+  if (kind === "heat-pump") return "heat-pump";
+  if (kind === "heat-shutoff-valve") return "heat-valve";
+  if (kind.includes("wind-source")) return "wind-source";
+  if (kind.includes("pv-source")) return "pv-source";
+  if (kind.includes("thermal-source")) return "thermal-source";
+  if (kind.includes("hydro-source")) return "hydro-source";
+  if (kind.includes("nuclear-source")) return "nuclear-source";
+  if (kind.includes("bus")) return "bus";
+  if (kind.includes("line") || kind.includes("zero-branch")) return "line";
+  if (kind.includes("transformer")) return "transformer";
+  if (kind.includes("switch")) return "switch";
+  if (kind.includes("disconnector")) return "disconnector";
+  if (kind.includes("breaker")) return "breaker";
+  if (kind.includes("load")) return "load";
+  if (kind === "dcdc-converter") return "dcdc-converter";
+  if (kind === "acdc-converter") return "acdc-converter";
+  if (kind === "acac-converter") return "acac-converter";
+  if (kind.startsWith("custom-") || kind.startsWith("custom:")) return "custom-device";
+  return "default";
+}
+
+export const TERMINAL_TYPE_COLORS: Record<TerminalType, string> = {
+  ac: "#2563eb",
+  dc: "#0f766e",
+  h2: "#7c3aed",
+  heat: "#dc2626"
+};
+
+export function terminalTypeColor(type?: TerminalType): string {
+  return type ? TERMINAL_TYPE_COLORS[type] : TERMINAL_TYPE_COLORS.ac;
+}
+
+function isHydrogenVisualKind(kind: string): boolean {
+  return kind.startsWith("hydrogen-") || kind.includes("electrolyzer") || kind.includes("fuel-cell");
+}
+
+function isThermalVisualKind(kind: string): boolean {
+  return (
+    kind.startsWith("heat-") ||
+    kind === "ac-heater" ||
+    kind === "dc-heater" ||
+    kind === "thermal-storage-tank" ||
+    kind.includes("port-heat-")
+  );
+}
+
+function isPureHydrogenNetworkKind(kind: string): boolean {
+  return kind.startsWith("hydrogen-");
+}
+
+function isPureThermalNetworkKind(kind: string): boolean {
+  return isThermalVisualKind(kind) && kind !== "ac-heater" && kind !== "dc-heater";
+}
+
+export function getDeviceStrokeColor(node: Pick<ModelNode, "kind" | "terminals" | "params">): string {
+  return node.params.foregroundColor || (
+    isHydrogenVisualKind(node.kind)
+      ? terminalTypeColor("h2")
+      : isThermalVisualKind(node.kind)
+        ? terminalTypeColor("heat")
+        : terminalTypeColor(node.terminals[0]?.type)
+  );
+}
+
+const DEVICE_STROKE_WIDTH_BY_VARIANT: Partial<Record<DeviceGlyphVariant, number>> = {
+  "wind-source": 2.4,
+  "pv-source": 2.2,
+  "thermal-source": 2.3,
+  "nuclear-source": 2.2,
+  "battery-storage": 2.4,
+  "hydrogen-electrolyzer": 2.3,
+  "hydrogen-fuel-cell": 2.3,
+  "hydrogen-storage": 2.4,
+  "hydrogen-compressor": 2.4,
+  "hydrogen-regulator": 2.4,
+  "hydrogen-valve": 2.4,
+  "hydrogen-pipeline": 2.8,
+  "heat-boiler": 2.4,
+  "heat-source": 2.4,
+  "heat-electric-heater": 2.3,
+  "heat-exchanger-two": 2.4,
+  "heat-exchanger-three": 2.4,
+  "heat-exchanger-four": 2.4,
+  "heat-storage": 2.4,
+  "heat-load": 2.4,
+  "heat-pipeline": 2.8,
+  "heat-pump": 2.4,
+  "heat-valve": 2.4,
+  line: 4,
+  "dcdc-converter": 2.2,
+  "acdc-converter": 2.2,
+  "acac-converter": 2.2
+};
+
+export function getDeviceStrokeWidth(node: Pick<ModelNode, "kind" | "params">): number {
+  const explicitWidth = Number(node.params.lineWidth ?? "");
+  if (Number.isFinite(explicitWidth) && explicitWidth > 0) {
+    return explicitWidth;
+  }
+  return DEVICE_STROKE_WIDTH_BY_VARIANT[getDeviceGlyphVariant(node.kind)] ?? 2.5;
+}
+
 export function getSwitchVisualState(node: ModelNode): "open" | "closed" {
-  return node.params.closedStatus === "打开" ? "open" : "closed";
+  const status = normalizeSwitchStatusForE(node.params.status ?? node.params.closedStatus);
+  return status === "0" ? "open" : "closed";
 }
 
 export function isStaticKind(kind: DeviceKind): boolean {
@@ -577,10 +1499,28 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   }
   const withRunStat = (params: Record<string, string>) => ({ run_stat: "运行", ...params });
   const withDefaultVbase = (params: Record<string, string>) => ({
-    vbase: template.terminalType === "ac" ? "10 kV" : "750 V",
+    vbase: defaultTerminalVbase(template.terminalType),
     ...params
   });
   const type = template.terminalType;
+  if (template.custom) {
+    const params: Record<string, string> = {
+      ...template.params,
+      [CUSTOM_DEVICE_TEMPLATE_KEY]: "1",
+      [CUSTOM_PARAM_DEFINITIONS_KEY]: JSON.stringify(template.parameterDefinitions ?? []),
+      run_stat: template.params.run_stat ?? "运行"
+    };
+    for (const definition of template.parameterDefinitions ?? []) {
+      if (definition.enName === "name") {
+        continue;
+      }
+      params[definition.enName] = params[definition.enName] ?? definition.typicalValue;
+    }
+    return params;
+  }
+  if (isPureHydrogenNetworkKind(template.kind) || isPureThermalNetworkKind(template.kind)) {
+    return withRunStat({ ...template.params });
+  }
   if (isGeneratorKind(template.kind)) {
     const base: Record<string, string> = {
       ratedCapacity: template.params.ratedPower ?? template.params.ratedCapacity ?? "10 MW",
@@ -611,6 +1551,46 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       pv0: "1.0",
       pv1: "0.0",
       pv2: "0.0"
+    }));
+  }
+  if (template.kind === "ac-storage") {
+    return withRunStat(withDefaultVbase({
+      ...template.params,
+      ratedCapacity: template.params.ratedPower ?? "5 MW",
+      controlType: "PQ",
+      p_set: "0.0",
+      q_set: "0.0",
+      v_set: "10",
+      alpha: "1.0"
+    }));
+  }
+  if (template.kind === "dc-storage") {
+    return withRunStat(withDefaultVbase({
+      ...template.params,
+      ratedCapacity: template.params.ratedPower ?? "5 MW",
+      controlType: "P",
+      v_set: "750",
+      p_set: "0.0",
+      i_set: "0.0"
+    }));
+  }
+  if (
+    template.kind === "ac-electrolyzer" ||
+    template.kind === "dc-electrolyzer" ||
+    template.kind === "ac-fuel-cell" ||
+    template.kind === "dc-fuel-cell"
+  ) {
+    return withRunStat(withDefaultVbase({
+      ...template.params,
+      ratedCapacity: template.params.ratedPower ?? "5 MW",
+      controlType: template.terminalType === "ac" ? "PQ" : "P"
+    }));
+  }
+  if (template.kind === "ac-heater" || template.kind === "dc-heater") {
+    return withRunStat(withDefaultVbase({
+      ...template.params,
+      ratedCapacity: template.params.ratedPower ?? "5 MW",
+      controlType: template.terminalType === "ac" ? "PQ" : "P"
     }));
   }
   if (template.kind === "ac-line" || template.kind === "dc-line") {
@@ -702,6 +1682,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   ) {
     return withRunStat(withDefaultVbase({
       ratedCapacity: template.terminalType === "ac" ? "1250 A" : "1600 A",
+      status: "1",
       closedStatus: "闭合"
     }));
   }
@@ -718,9 +1699,13 @@ export function getTemplate(kind: DeviceKind): DeviceTemplate {
 
 export function createDefaultNode(kind: DeviceKind, position: Point): ModelNode {
   const template = getTemplate(kind);
+  return createNodeFromTemplate(template, position);
+}
+
+export function createNodeFromTemplate(template: DeviceTemplate, position: Point): ModelNode {
   return {
-    id: makeId(kind),
-    kind,
+    id: makeId(template.kind),
+    kind: template.kind,
     name: template.label,
     nodeNumber: makeNodeNumber(),
     acTopologyNode: 0,
@@ -731,7 +1716,7 @@ export function createDefaultNode(kind: DeviceKind, position: Point): ModelNode 
     scale: 1,
     scaleX: 1,
     scaleY: 1,
-    terminals: createTerminals(template.terminalType, template.terminalCount),
+    terminals: createTemplateTerminals(template),
     params: buildDefaultParams(template)
   };
 }
@@ -742,6 +1727,19 @@ export function getNodeScaleX(node: ModelNode): number {
 
 export function getNodeScaleY(node: ModelNode): number {
   return node.scaleY ?? node.scale ?? 1;
+}
+
+export function mirrorNodes(nodes: ModelNode[], nodeIds: string[], axis: "horizontal" | "vertical"): ModelNode[] {
+  const selected = new Set(nodeIds);
+  return nodes.map((node) => {
+    if (!selected.has(node.id)) {
+      return node;
+    }
+    if (axis === "horizontal") {
+      return { ...node, scaleX: -getNodeScaleX(node) };
+    }
+    return { ...node, scaleY: -getNodeScaleY(node) };
+  });
 }
 
 export function clampPointToBounds(point: Point, bounds: CanvasBounds): Point {
@@ -766,12 +1764,12 @@ export function createTerminals(type: TerminalType, count: number): Terminal[] {
   }
   const safeCount = Math.max(1, Math.min(8, Math.round(count)));
   if (safeCount === 1) {
-    return [{ id: "t1", label: "端子1", type, anchor: { x: 0.5, y: 0 }, nodeNumber: makeNodeNumber() }];
+    return [{ id: "t1", label: "端子1", type, anchor: { x: 0.5, y: 0 }, nodeNumber: makeNodeNumber(), vbase: defaultTerminalVbase(type) }];
   }
   if (safeCount === 2) {
     return [
-      { id: "t1", label: "端子1", type, anchor: { x: -0.5, y: 0 }, nodeNumber: makeNodeNumber() },
-      { id: "t2", label: "端子2", type, anchor: { x: 0.5, y: 0 }, nodeNumber: makeNodeNumber() }
+      { id: "t1", label: "端子1", type, anchor: { x: -0.5, y: 0 }, nodeNumber: makeNodeNumber(), vbase: defaultTerminalVbase(type) },
+      { id: "t2", label: "端子2", type, anchor: { x: 0.5, y: 0 }, nodeNumber: makeNodeNumber(), vbase: defaultTerminalVbase(type) }
     ];
   }
   const anchors = [
@@ -789,8 +1787,49 @@ export function createTerminals(type: TerminalType, count: number): Terminal[] {
     label: `端子${index + 1}`,
     type,
     anchor,
-    nodeNumber: makeNodeNumber()
+    nodeNumber: makeNodeNumber(),
+    vbase: defaultTerminalVbase(type)
   }));
+}
+
+function createTemplateTerminals(template: DeviceTemplate): Terminal[] {
+  if (!template.terminalTypes?.length) {
+    return createTerminals(template.terminalType, template.terminalCount).map((terminal, index) => ({
+      ...terminal,
+      label: template.terminalLabels?.[index] ?? terminal.label,
+      anchor: template.terminalAnchors?.[index] ?? terminal.anchor
+    }));
+  }
+  const anchors = createTerminals(template.terminalType, template.terminalTypes.length);
+  return template.terminalTypes.map((type, index) => ({
+    ...anchors[index],
+    label: template.terminalLabels?.[index] ?? `端子${index + 1}`,
+    anchor: template.terminalAnchors?.[index] ?? anchors[index].anchor,
+    type,
+    vbase: defaultTerminalVbase(type)
+  }));
+}
+
+export function terminalStubSegment(
+  terminal: Pick<Terminal, "anchor">,
+  scaleX = 1,
+  scaleY = 1,
+  length = 16
+): { from: Point; to: Point } {
+  const displayedAnchor = {
+    x: terminal.anchor.x * (Math.sign(scaleX) || 1),
+    y: terminal.anchor.y * (Math.sign(scaleY) || 1)
+  };
+  if (Math.abs(displayedAnchor.x) >= Math.abs(displayedAnchor.y)) {
+    return {
+      from: { x: displayedAnchor.x >= 0 ? -length : length, y: 0 },
+      to: { x: 0, y: 0 }
+    };
+  }
+  return {
+    from: { x: 0, y: displayedAnchor.y >= 0 ? -length : length },
+    to: { x: 0, y: 0 }
+  };
 }
 
 export function getTerminal(node: ModelNode, terminalId?: string): Terminal {
@@ -815,7 +1854,14 @@ export function getTerminalPoint(node: ModelNode, terminalId?: string): Point {
 }
 
 export function isBusNode(node: ModelNode): boolean {
-  return node.kind === "ac-bus" || node.kind === "dc-bus";
+  return (
+    node.kind === "ac-bus" ||
+    node.kind === "dc-bus" ||
+    node.kind === "hydrogen-bus" ||
+    node.kind === "hydrogen-tank" ||
+    node.kind === "heat-bus" ||
+    node.kind === "thermal-storage-tank"
+  );
 }
 
 export function projectPointToBusCenterline(node: ModelNode, point: Point): Point {
@@ -826,7 +1872,7 @@ export function projectPointToBusCenterline(node: ModelNode, point: Point): Poin
     x: dx * Math.cos(radians) - dy * Math.sin(radians),
     y: dx * Math.sin(radians) + dy * Math.cos(radians)
   };
-  const halfWidth = (node.size.width * getNodeScaleX(node)) / 2;
+  const halfWidth = (node.size.width * Math.abs(getNodeScaleX(node))) / 2;
   const clampedX = Math.max(-halfWidth, Math.min(halfWidth, local.x));
   const forwardRadians = (node.rotation * Math.PI) / 180;
   return {
@@ -837,6 +1883,81 @@ export function projectPointToBusCenterline(node: ModelNode, point: Point): Poin
 
 export function getEdgeEndpointPoint(node: ModelNode, endpointPoint?: Point, terminalId?: string): Point {
   return endpointPoint && isBusNode(node) ? projectPointToBusCenterline(node, endpointPoint) : getTerminalPoint(node, terminalId);
+}
+
+function getElementTreeTypeLabel(node: ModelNode): string {
+  return DEVICE_LIBRARY.find((template) => template.kind === node.kind)?.label ?? node.kind;
+}
+
+function edgeDisplayName(edge: Edge, nodeById: Map<string, ModelNode>): string {
+  const sourceName = nodeById.get(edge.sourceId)?.name;
+  const targetName = nodeById.get(edge.targetId)?.name;
+  if (sourceName || targetName) {
+    return `${sourceName ?? edge.sourceId} -> ${targetName ?? edge.targetId}`;
+  }
+  return `联络线 ${edge.id}`;
+}
+
+export function buildElementTree(nodes: ModelNode[], edges: Edge[]): ElementTreeGroup[] {
+  const groups: ElementTreeGroup[] = [];
+  const groupByKey = new Map<string, ElementTreeGroup>();
+  const appendItem = (typeKey: string, typeLabel: string, item: ElementTreeItem) => {
+    let group = groupByKey.get(typeKey);
+    if (!group) {
+      group = { typeKey, typeLabel, items: [] };
+      groupByKey.set(typeKey, group);
+      groups.push(group);
+    }
+    group.items.push(item);
+  };
+
+  for (const node of nodes) {
+    appendItem(`node:${node.kind}`, getElementTreeTypeLabel(node), {
+      kind: "node",
+      id: node.id,
+      name: node.name || getElementTreeTypeLabel(node)
+    });
+  }
+
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  for (const edge of edges) {
+    appendItem("edge:connection", "联络线", {
+      kind: "edge",
+      id: edge.id,
+      name: edgeDisplayName(edge, nodeById)
+    });
+  }
+
+  return groups;
+}
+
+export function getElementFocusPoint(
+  target: Pick<ElementTreeItem, "kind" | "id">,
+  nodes: ModelNode[],
+  edges: Edge[]
+): Point | null {
+  if (target.kind === "node") {
+    return nodes.find((node) => node.id === target.id)?.position ?? null;
+  }
+  const edge = edges.find((item) => item.id === target.id);
+  if (!edge) {
+    return null;
+  }
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const sourceNode = nodeById.get(edge.sourceId);
+  const targetNode = nodeById.get(edge.targetId);
+  const sourcePoint = sourceNode ? getEdgeEndpointPoint(sourceNode, edge.sourcePoint, edge.sourceTerminalId) : edge.sourcePoint;
+  const targetPoint = targetNode ? getEdgeEndpointPoint(targetNode, edge.targetPoint, edge.targetTerminalId) : edge.targetPoint;
+  const points = [sourcePoint, ...(edge.manualPoints ?? []), targetPoint].filter((point): point is Point => Boolean(point));
+  if (points.length === 0) {
+    return null;
+  }
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  return {
+    x: Math.round((Math.min(...xs) + Math.max(...xs)) / 2),
+    y: Math.round((Math.min(...ys) + Math.max(...ys)) / 2)
+  };
 }
 
 export function getTerminalNormal(node: ModelNode, terminalId?: string): Point {
@@ -968,15 +2089,21 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
     union(terminalKey(source.id, sourceTerminal.id), terminalKey(target.id, targetTerminal.id));
   }
 
-  let nextTopologyNumber = 1;
-  const numberByRoot = new Map<string, string>();
-  const getTopologyNumber = (key: string) => {
+  const nextTopologyNumberByType: Record<TerminalType, number> = { ac: 1, dc: 1, h2: 1, heat: 1 };
+  const numberByTypeAndRoot: Record<TerminalType, Map<string, string>> = {
+    ac: new Map<string, string>(),
+    dc: new Map<string, string>(),
+    h2: new Map<string, string>(),
+    heat: new Map<string, string>()
+  };
+  const getTopologyNumber = (key: string, type: TerminalType) => {
     const root = find(key);
+    const numberByRoot = numberByTypeAndRoot[type];
     const existing = numberByRoot.get(root);
     if (existing) {
       return existing;
     }
-    const next = String(nextTopologyNumber++);
+    const next = String(nextTopologyNumberByType[type]++);
     numberByRoot.set(root, next);
     return next;
   };
@@ -984,7 +2111,7 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
   return nodes.map((node) => {
     const terminals = node.terminals.map((terminal) => {
       const key = terminalKey(node.id, terminal.id);
-      return { ...terminal, nodeNumber: getTopologyNumber(key) };
+      return { ...terminal, nodeNumber: getTopologyNumber(key, terminal.type) };
     });
     const acTopologyNode = Number(terminals.find((terminal) => terminal.type === "ac")?.nodeNumber ?? 0);
     const dcTopologyNode = Number(terminals.find((terminal) => terminal.type === "dc")?.nodeNumber ?? 0);
@@ -999,7 +2126,7 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
 }
 
 function normalizeVoltage(value?: string): string {
-  return (value ?? "").trim().toLowerCase().replace(/\s+/g, "");
+  return terminalVoltageBaseNumber(value) || (value ?? "").trim().toLowerCase().replace(/\s+/g, "");
 }
 
 export function getNodeVoltageLevel(node: ModelNode): string {
@@ -1014,10 +2141,57 @@ export function getNodeVoltageLevel(node: ModelNode): string {
   );
 }
 
+export function getTerminalVoltageLevel(node: ModelNode, terminalId?: string): string {
+  return normalizeVoltage(getTerminal(node, terminalId)?.vbase ?? getNodeVoltageLevel(node));
+}
+
 export function validateTopology(nodes: ModelNode[], edges: Edge[]): TopologyValidationError[] {
   const errors: TopologyValidationError[] = [];
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const terminalKey = (nodeId: string, terminalId: string) => `${nodeId}:${terminalId}`;
+  const parent = new Map<string, string>();
   const connectedTerminals = new Set<string>();
+  const directVoltageMismatchEdges: Array<{
+    source: ModelNode;
+    sourceTerminal: Terminal;
+    target: ModelNode;
+    targetTerminal: Terminal;
+  }> = [];
+  const find = (key: string): string => {
+    const current = parent.get(key);
+    if (!current || current === key) {
+      return key;
+    }
+    const root = find(current);
+    parent.set(key, root);
+    return root;
+  };
+  const union = (first: string, second: string) => {
+    const firstRoot = find(first);
+    const secondRoot = find(second);
+    if (firstRoot !== secondRoot) {
+      parent.set(secondRoot, firstRoot);
+    }
+  };
+
+  for (const node of nodes) {
+    for (const terminal of node.terminals) {
+      const key = terminalKey(node.id, terminal.id);
+      parent.set(key, key);
+    }
+    if (isBusNode(node)) {
+      const terminalsByType = new Map<TerminalType, Terminal[]>();
+      for (const terminal of node.terminals) {
+        terminalsByType.set(terminal.type, [...(terminalsByType.get(terminal.type) ?? []), terminal]);
+      }
+      for (const terminals of terminalsByType.values()) {
+        const [first, ...rest] = terminals;
+        for (const terminal of rest) {
+          union(terminalKey(node.id, first.id), terminalKey(node.id, terminal.id));
+        }
+      }
+    }
+  }
 
   for (const edge of edges) {
     const source = nodeById.get(edge.sourceId);
@@ -1034,22 +2208,62 @@ export function validateTopology(nodes: ModelNode[], edges: Edge[]): TopologyVal
         type: "terminal-type-mismatch",
         edgeId: edge.id,
         relatedNodeIds: [source.id, target.id],
-        message: `${source.name} 与 ${target.name} 的端子类型不一致，不能连接 ${sourceTerminal.type.toUpperCase()} 与 ${targetTerminal.type.toUpperCase()}。`
+        message: `图上拓扑失败：${source.name} 与 ${target.name} 的端子类型不一致，不能连接 ${sourceTerminal.type.toUpperCase()} 与 ${targetTerminal.type.toUpperCase()}。`
       });
       continue;
     }
 
-    const sourceVoltage = getNodeVoltageLevel(source);
-    const targetVoltage = getNodeVoltageLevel(target);
+    union(terminalKey(source.id, sourceTerminal.id), terminalKey(target.id, targetTerminal.id));
+
+    const sourceVoltage = getTerminalVoltageLevel(source, sourceTerminal.id);
+    const targetVoltage = getTerminalVoltageLevel(target, targetTerminal.id);
     if (sourceVoltage && targetVoltage && sourceVoltage !== targetVoltage) {
+      directVoltageMismatchEdges.push({ source, sourceTerminal, target, targetTerminal });
       errors.push({
         id: `voltage-mismatch:${edge.id}`,
         type: "voltage-mismatch",
         edgeId: edge.id,
         relatedNodeIds: [source.id, target.id],
-        message: `${source.name} 与 ${target.name} 电压等级不一致（${sourceVoltage} / ${targetVoltage}）。`
+        message: `图上拓扑失败：${source.name} 与 ${target.name} 电压基值不一致（${sourceVoltage} / ${targetVoltage}）。`
       });
     }
+  }
+
+  const directVoltageMismatchRoots = new Set(
+    directVoltageMismatchEdges.map(({ source, sourceTerminal }) => find(terminalKey(source.id, sourceTerminal.id)))
+  );
+  const voltageGroups = new Map<
+    string,
+    {
+      relatedNodeIds: Set<string>;
+      voltages: Map<string, string>;
+    }
+  >();
+  for (const node of nodes) {
+    for (const terminal of node.terminals) {
+      const key = terminalKey(node.id, terminal.id);
+      const root = find(key);
+      const group = voltageGroups.get(root) ?? { relatedNodeIds: new Set<string>(), voltages: new Map<string, string>() };
+      group.relatedNodeIds.add(node.id);
+      const voltage = getTerminalVoltageLevel(node, terminal.id);
+      if (voltage) {
+        group.voltages.set(voltage, terminal.vbase ?? node.params.vbase ?? voltage);
+      }
+      voltageGroups.set(root, group);
+    }
+  }
+  for (const [root, group] of voltageGroups) {
+    if (group.voltages.size <= 1 || directVoltageMismatchRoots.has(root)) {
+      continue;
+    }
+    const relatedNodeIds = Array.from(group.relatedNodeIds);
+    errors.push({
+      id: `voltage-mismatch:${root}`,
+      type: "voltage-mismatch",
+      nodeId: relatedNodeIds[0],
+      relatedNodeIds,
+      message: `图上拓扑失败：同一拓扑节点内存在不同电压基值（${Array.from(group.voltages.values()).join(" / ")}）。`
+    });
   }
 
   for (const node of nodes) {
@@ -1818,7 +3032,7 @@ function createFloatingEndpointNode(point: Point, relatedNode?: ModelNode): Mode
   const type = relatedNode?.terminals[0]?.type ?? "ac";
   return {
     id: `floating-${point.x}-${point.y}`,
-    kind: type === "dc" ? "dc-bus" : "ac-bus",
+    kind: type === "dc" ? "dc-bus" : type === "h2" ? "hydrogen-bus" : type === "heat" ? "heat-bus" : "ac-bus",
     name: "悬空端点",
     nodeNumber: "",
     acTopologyNode: 0,

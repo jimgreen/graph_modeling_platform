@@ -1,4 +1,4 @@
-import { ChangeEvent, DragEvent, MouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, Fragment, MouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
@@ -6,6 +6,8 @@ import {
   Download,
   FileInput,
   FileJson,
+  FlipHorizontal,
+  FlipVertical,
   Grid2X2,
   Copy,
   ChevronDown,
@@ -18,6 +20,10 @@ import {
 } from "lucide-react";
 import {
   alignNodes,
+  buildElementTree,
+  assignMissingDeviceIndexes,
+  assignPermanentDeviceIndex,
+  buildEDeviceParameterFile,
   buildTopology,
   calculateElectricalTopology,
   canConnectTerminals,
@@ -29,6 +35,9 @@ import {
   createSavedScheme,
   createSavedProject,
   createDefaultNode,
+  createNodeFromTemplate,
+  CUSTOM_DEVICE_TEMPLATE_KEY,
+  CUSTOM_PARAM_DEFINITIONS_KEY,
   deleteNodesWithConnectedEdges,
   deleteSavedScheme,
   deleteSavedProject,
@@ -37,8 +46,15 @@ import {
   getEdgeEndpointPoint as getModelEdgeEndpointPoint,
   getNodeScaleX,
   getNodeScaleY,
+  getDeviceGlyphVariant,
+  getDeviceStrokeColor,
+  getDeviceStrokeWidth,
+  getElementFocusPoint,
   getSwitchVisualState,
+  getEParameterKeys,
+  getEParamValue,
   getTerminalPoint,
+  normalizeVoltageBaseInput,
   isBusNode,
   isGeneratorNode,
   isStaticNode,
@@ -46,6 +62,11 @@ import {
   projectPointToBusCenterline,
   validateTopology,
   type DeviceKind,
+  type DeviceIndexCounters,
+  type DeviceParameterDefinition,
+  type DeviceParameterValueType,
+  type DeviceTemplate,
+  type ElementTreeItem,
   type Edge,
   type ModelNode,
   type Point,
@@ -55,9 +76,13 @@ import {
   type TopologyValidationError,
   routeEdgesForRendering,
   moveProjectToScheme,
+  mirrorNodes,
   renameSavedScheme,
   renameSavedProject,
   serializeProject,
+  terminalStubSegment,
+  terminalVoltageBaseNumber,
+  terminalTypeColor,
   upsertSavedProject,
   uniqueRecordName,
   type SavedSchemeRecord,
@@ -67,7 +92,7 @@ import { resolveKeyboardShortcutScope } from "./keyboardShortcuts";
 import { resolveCanvasDeleteAction } from "./selectionActions";
 
 type ToolMode = "select" | "connect";
-type LibraryGroup = "静态图元" | "交流系统" | "直流系统" | "变流设备";
+type LibraryGroup = string;
 type EdgeEndpoint = "source" | "target";
 type TransformDrag =
   | { kind: "rotate"; nodeId: string; historyCaptured?: boolean }
@@ -116,9 +141,19 @@ type ClipboardRecord =
   | { kind: "project"; project: SavedProjectRecord };
 type UndoSnapshot = {
   projectName: string;
+  canvasWidth: number;
+  canvasHeight: number;
+  canvasBackgroundColor: string;
+  canvasBackgroundImage: string;
+  canvasBackgroundImageAssetId: string;
+  powerUnit: string;
+  voltageUnit: string;
+  currentUnit: string;
+  powerBaseValue: number;
   nodes: ModelNode[];
   edges: Edge[];
   topologyErrors: TopologyValidationError[];
+  deviceIndexCounters: DeviceIndexCounters;
 };
 type DraftProjectState = {
   projectName: string;
@@ -129,6 +164,11 @@ type DraftProjectState = {
   canvasBackgroundColor?: string;
   canvasBackgroundImage?: string;
   canvasBackgroundImageAssetId?: string;
+  powerUnit?: string;
+  voltageUnit?: string;
+  currentUnit?: string;
+  powerBaseValue?: number;
+  deviceIndexCounters?: DeviceIndexCounters;
   nodes: ModelNode[];
   edges: Edge[];
 };
@@ -158,8 +198,22 @@ type CanvasRenderOptions = CanvasBounds & {
 type BackendSchemesResponse = {
   schemes: SavedSchemeRecord[];
 };
+type CustomParamDraft = DeviceParameterDefinition & {
+  id: string;
+};
+type CustomDeviceDraft = {
+  groupName: string;
+  newGroupName: string;
+  deviceType: string;
+  backgroundImage: string;
+  terminalCount: number;
+  terminalTypes: TerminalType[];
+  params: CustomParamDraft[];
+  error: string;
+};
 
-const busEndpointColor = (node: ModelNode) => (node.kind.startsWith("dc") ? "#0f766e" : "#2563eb");
+const terminalColor = terminalTypeColor;
+const busEndpointColor = (node: ModelNode) => terminalColor(node.terminals[0]?.type);
 
 const DEFAULT_CANVAS_WIDTH = 1980;
 const DEFAULT_CANVAS_HEIGHT = 1024;
@@ -168,6 +222,26 @@ const MIN_CANVAS_HEIGHT = 360;
 const MAX_CANVAS_WIDTH = 5000;
 const MAX_CANVAS_HEIGHT = 3000;
 const DEFAULT_CANVAS_BACKGROUND = "#f1f5f9";
+const DEFAULT_POWER_UNIT = "MW";
+const DEFAULT_VOLTAGE_UNIT = "kV";
+const DEFAULT_CURRENT_UNIT = "A";
+const DEFAULT_POWER_BASE_VALUE = 100;
+const POWER_UNIT_OPTIONS = ["W", "kW", "MW"];
+const VOLTAGE_UNIT_OPTIONS = ["V", "kV"];
+const CURRENT_UNIT_OPTIONS = ["A", "kA"];
+const DEFAULT_LIBRARY_GROUPS: LibraryGroup[] = ["静态图元", "交流系统", "直流系统", "变流设备", "氢能设备", "热能设备"];
+const CUSTOM_LIBRARY_BASE_GROUPS: LibraryGroup[] = ["交流系统", "直流系统", "变流设备", "氢能设备", "热能设备"];
+const TERMINAL_TYPE_OPTIONS: Array<{ value: TerminalType; label: string }> = [
+  { value: "ac", label: "交流电" },
+  { value: "dc", label: "直流电" },
+  { value: "h2", label: "氢能" },
+  { value: "heat", label: "热能" }
+];
+const PARAM_VALUE_TYPE_OPTIONS: Array<{ value: DeviceParameterValueType; label: string }> = [
+  { value: "integer", label: "整数" },
+  { value: "float", label: "浮点数" },
+  { value: "enum", label: "枚举量" }
+];
 const PROJECT_PANEL_MIN_HEIGHT = 150;
 const PROJECT_PANEL_MAX_HEIGHT = 430;
 const PROJECT_PANEL_DEFAULT_HEIGHT = 260;
@@ -197,8 +271,42 @@ const SCHEME_STORAGE_KEY = "power-system-model-schemes";
 const ACTIVE_PROJECT_STORAGE_KEY = "power-system-active-project";
 const DRAFT_PROJECT_STORAGE_KEY = "power-system-current-draft";
 const IMAGE_STORAGE_KEY = "power-system-image-assets";
+const CUSTOM_DEVICE_LIBRARY_STORAGE_KEY = "power-system-custom-device-library";
 const PARAM_LABELS: Record<string, string> = {
+  name: "名称",
+  schemeName: "所属方案",
+  updatedAt: "更新时间",
+  canvasWidth: "显示宽度",
+  canvasHeight: "显示高度",
+  canvasBackgroundColor: "背景色",
+  canvasBackgroundImage: "背景图片",
+  powerUnit: "功率单位",
+  voltageUnit: "电压单位",
+  currentUnit: "电流单位",
+  powerBaseValue: "功率基值",
+  p_unit: "功率单位",
+  u_unit: "电压单位",
+  i_unit: "电流单位",
+  p_base: "功率基值",
+  device_count: "设备数量",
+  edge_count: "联络线数量",
+  svg_file: "SVG文件",
+  e_file: "设备参数文件",
+  nodeNumber: "节点号",
+  acTopologyNode: "交流拓扑节点序号",
+  dcTopologyNode: "直流拓扑节点序号",
+  graph_x: "X坐标",
+  graph_y: "Y坐标",
+  rotation: "旋转角度",
+  scaleX: "横向倍率",
+  scaleY: "纵向倍率",
+  layerOrder: "图层顺序",
+  terminalCount: "端子数量",
+  terminalVbase: "端子电压基值",
   ratedCapacity: "额定容量",
+  ratedVoltage: "额定电压",
+  frequency: "频率",
+  shortCircuitCapacity: "短路容量",
   controlType: "控制类型",
   cutInWindSpeed: "切入风速",
   ratedWindSpeed: "额定风速",
@@ -242,8 +350,8 @@ const PARAM_LABELS: Record<string, string> = {
   acControlType: "AC端控制类型",
   dcControlType: "DC端控制类型",
   closedStatus: "闭合状态",
-  run_stat: "运行状态"
-  ,
+  status: "开关状态",
+  run_stat: "运行状态",
   backgroundImage: "背景图片",
   backgroundImageAssetId: "背景图片资产",
   foregroundColor: "前景色",
@@ -265,17 +373,63 @@ const PARAM_LABELS: Record<string, string> = {
   mediumVbase: "中压侧电压等级",
   lowVbase: "低压侧电压等级",
   sourceVbase: "首端电压等级",
-  targetVbase: "末端电压等级"
+  targetVbase: "末端电压等级",
+  i_vbase: "首端电压等级",
+  j_vbase: "末端电压等级",
+  voltageLevel: "电压等级",
+  section: "母线分段",
+  pole: "极性",
+  source_file: "参数来源文件",
+  source_section: "参数来源分组",
+  idx: "外部序号",
+  node: "节点号",
+  i_node: "首端节点号",
+  j_node: "末端节点号",
+  ac_node: "交流侧节点号",
+  dc_node: "直流侧节点号",
+  voltage: "电压初值",
+  angle: "电压相角",
+  isl: "孤岛标志",
+  control_type: "控制类型",
+  p_set: "有功设定值",
+  q_set: "无功设定值",
+  p_ac_set: "交流侧有功设定值",
+  q_ac_set: "交流侧无功设定值",
+  v_set: "电压设定值",
+  v_ac_set: "交流侧电压设定值",
+  v_dc_set: "直流电压设定值",
+  i_v_set: "首端电压设定值",
+  j_v_set: "末端电压设定值",
+  i_set: "电流设定值",
+  i_q_set: "首端无功设定值",
+  j_q_set: "末端无功设定值",
+  alpha: "调节系数",
+  shift: "相移角",
+  r: "电阻（标幺值）",
+  x_pu: "电抗（标幺值）",
+  x: "电抗（标幺值）",
+  b: "半充电电纳（标幺值）",
+  gt: "励磁电导（标幺值）",
+  bt: "励磁电纳（标幺值）",
+  tap: "分接头档位/变比",
+  r1: "首端等值电阻",
+  r2: "末端等值电阻",
+  g_set: "电导设定值",
+  b_set: "电纳设定值",
+  pbase: "有功基准",
+  qbase: "无功基准"
 };
 
 const PARAM_OPTIONS: Record<string, string[]> = {
   controlType: ["PV", "PQ", "PH", "P", "V"],
+  control_type: ["PV", "PQ", "PH", "P", "V", "I", "Q", "Z", "DCV", "ACV", "ACP", "PQQ"],
   sourceControlType: ["定P", "定V", "定I", "定PQ", "定PV", "定PH", "不定"],
   targetControlType: ["定P", "定V", "定I", "定PQ", "定PV", "定PH", "不定"],
   acControlType: ["定PQ", "定PV", "定PH", "不定"],
   dcControlType: ["定P", "定V", "定I", "不定"],
   closedStatus: ["闭合", "打开"],
-  run_stat: ["运行", "停运", "检修"],
+  status: ["1", "0"],
+  run_stat: ["1", "0"],
   fontFamily: ["Arial", "Microsoft YaHei", "SimSun", "KaiTi", "SimHei"],
   fontWeight: ["400", "700", "900"],
   fontStyle: ["normal", "italic"],
@@ -283,13 +437,35 @@ const PARAM_OPTIONS: Record<string, string[]> = {
   strokeStyle: ["solid", "dashed", "dotted"]
 };
 
+const READONLY_E_PARAM_KEYS = new Set(["idx", "node", "i_node", "j_node", "ac_node", "dc_node"]);
+
 function readSavedProjects(): SavedProjectRecord[] {
   try {
     const raw = window.localStorage.getItem(PROJECT_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as SavedProjectRecord[]) : [];
+    const parsed = raw ? (JSON.parse(raw) as SavedProjectRecord[]) : [];
+    return Array.isArray(parsed) ? parsed.map(normalizeSavedProjectIndexes) : [];
   } catch {
     return [];
   }
+}
+
+function normalizeSavedProjectIndexes(project: SavedProjectRecord): SavedProjectRecord {
+  const indexed = assignMissingDeviceIndexes(project.project.nodes ?? [], project.project.deviceIndexCounters);
+  return {
+    ...project,
+    project: {
+      ...project.project,
+      nodes: indexed.nodes,
+      deviceIndexCounters: indexed.counters
+    }
+  };
+}
+
+function normalizeSavedSchemeIndexes(scheme: SavedSchemeRecord): SavedSchemeRecord {
+  return {
+    ...scheme,
+    projects: Array.isArray(scheme.projects) ? scheme.projects.map(normalizeSavedProjectIndexes) : []
+  };
 }
 
 function readSavedSchemes(): SavedSchemeRecord[] {
@@ -298,7 +474,7 @@ function readSavedSchemes(): SavedSchemeRecord[] {
     if (raw) {
       const parsed = JSON.parse(raw) as SavedSchemeRecord[];
       if (Array.isArray(parsed)) {
-        return parsed;
+        return parsed.map(normalizeSavedSchemeIndexes);
       }
     }
     const legacyProjects = readSavedProjects();
@@ -427,11 +603,20 @@ function normalizeProjectForBackend(project: ProjectFile): ProjectFile {
     project.canvasBackgroundImageAssetId && typeof project.canvasBackgroundImage === "string" && project.canvasBackgroundImage.startsWith("data:")
       ? `/api/images/${project.canvasBackgroundImageAssetId}`
       : project.canvasBackgroundImage;
+  const indexed = assignMissingDeviceIndexes(project.nodes, project.deviceIndexCounters);
   return {
     ...project,
     canvasBackgroundColor: project.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND,
     canvasBackgroundImage: projectBackground,
-    nodes: project.nodes.map((node) => {
+    powerUnit: project.powerUnit ?? DEFAULT_POWER_UNIT,
+    voltageUnit: project.voltageUnit ?? DEFAULT_VOLTAGE_UNIT,
+    currentUnit: project.currentUnit ?? DEFAULT_CURRENT_UNIT,
+    powerBaseValue:
+      typeof project.powerBaseValue === "number" && Number.isFinite(project.powerBaseValue)
+        ? project.powerBaseValue
+        : DEFAULT_POWER_BASE_VALUE,
+    deviceIndexCounters: indexed.counters,
+    nodes: indexed.nodes.map((node) => {
       const assetId = node.params.backgroundImageAssetId;
       const backgroundImage = node.params.backgroundImage;
       const params: Record<string, string> =
@@ -476,7 +661,8 @@ async function fetchBackendSchemes(): Promise<SavedSchemeRecord[]> {
     throw new Error("读取后台方案/模型失败。");
   }
   const payload = (await response.json()) as BackendSchemesResponse | SavedSchemeRecord[];
-  return Array.isArray(payload) ? payload : Array.isArray(payload.schemes) ? payload.schemes : [];
+  const schemes = Array.isArray(payload) ? payload : Array.isArray(payload.schemes) ? payload.schemes : [];
+  return schemes.map(normalizeSavedSchemeIndexes);
 }
 
 async function saveBackendSchemes(schemes: SavedSchemeRecord[]): Promise<void> {
@@ -491,10 +677,97 @@ async function saveBackendSchemes(schemes: SavedSchemeRecord[]): Promise<void> {
   }
 }
 
-const groupedLibrary = DEVICE_LIBRARY.reduce<Record<string, typeof DEVICE_LIBRARY>>((groups, item) => {
-  groups[item.group] = groups[item.group] ? [...groups[item.group], item] : [item];
-  return groups;
-}, {});
+function groupDeviceTemplates(templates: DeviceTemplate[]): Record<string, DeviceTemplate[]> {
+  return templates.reduce<Record<string, DeviceTemplate[]>>((groups, item) => {
+    groups[item.group] = groups[item.group] ? [...groups[item.group], item] : [item];
+    return groups;
+  }, {});
+}
+
+function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is DeviceTemplate => Boolean(item && typeof item === "object"))
+    .map((item) => ({
+      ...item,
+      kind: String((item as DeviceTemplate).kind ?? ""),
+      label: String((item as DeviceTemplate).label ?? (item as DeviceTemplate).kind ?? ""),
+      group: String((item as DeviceTemplate).group ?? "自定义元件库"),
+      size: (item as DeviceTemplate).size ?? { width: 96, height: 62 },
+      params: (item as DeviceTemplate).params ?? {},
+      terminalType: ((item as DeviceTemplate).terminalType ?? "ac") as TerminalType,
+      terminalCount: Math.max(0, Math.min(4, Number((item as DeviceTemplate).terminalCount ?? 0))),
+      terminalTypes: ((item as DeviceTemplate).terminalTypes ?? []).slice(0, 4) as TerminalType[],
+      terminalLabels: ((item as DeviceTemplate).terminalLabels ?? []).slice(0, 4),
+      custom: true,
+      parameterDefinitions: ((item as DeviceTemplate).parameterDefinitions ?? []).map((definition) => ({ ...definition }))
+    }))
+    .filter((item) => item.kind.trim() && item.label.trim());
+}
+
+function readCustomDeviceTemplates(): DeviceTemplate[] {
+  try {
+    return normalizeCustomDeviceTemplates(JSON.parse(window.localStorage.getItem(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY) ?? "[]"));
+  } catch {
+    return [];
+  }
+}
+
+function customParamId() {
+  return `param-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function createEmptyCustomDeviceDraft(groupName = "交流系统"): CustomDeviceDraft {
+  return {
+    groupName,
+    newGroupName: "",
+    deviceType: "",
+    backgroundImage: "",
+    terminalCount: 2,
+    terminalTypes: ["ac", "ac", "ac", "ac"],
+    params: [],
+    error: ""
+  };
+}
+
+function customDefaultDefinitions(terminalTypes: TerminalType[]): DeviceParameterDefinition[] {
+  const nodeDefinitions = terminalTypes.map<DeviceParameterDefinition>((type, index) => {
+    const prefix = type === "ac" ? "交流" : type === "dc" ? "直流" : type === "h2" ? "氢能" : "热能";
+    const enName = terminalTypes.length === 1 ? "node" : `t${index + 1}_node`;
+    return {
+      cnName: `${prefix}端${index + 1}节点号`,
+      enName,
+      valueType: "integer",
+      typicalValue: "",
+      readonly: true
+    };
+  });
+  return [
+    { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
+    { cnName: "名称", enName: "name", valueType: "enum", typicalValue: "", readonly: true },
+    { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true },
+    ...nodeDefinitions
+  ];
+}
+
+function generateCustomDeviceImage(label: string, terminalTypes: TerminalType[]) {
+  const first = terminalTypes[0] ?? "ac";
+  const color = terminalColor(first);
+  const safeLabel = escapeXml(label || "Unit");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160"><rect width="240" height="160" rx="18" fill="#f8fafc"/><circle cx="70" cy="80" r="38" fill="${color}" fill-opacity="0.14"/><path d="M48 80h44M70 58v44" stroke="${color}" stroke-width="9" stroke-linecap="round"/><text x="132" y="77" font-family="Arial, Microsoft YaHei" font-size="22" font-weight="700" fill="#0f172a">${safeLabel}</text><text x="132" y="104" font-family="Arial" font-size="15" fill="${color}">${terminalTypes.map((type) => type.toUpperCase()).join(" / ")}</text></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function parseCustomDefinitions(params: Record<string, string>): DeviceParameterDefinition[] {
+  try {
+    const parsed = JSON.parse(params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 function screenToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number): Point {
   const point = svg.createSVGPoint();
@@ -539,8 +812,25 @@ function escapeXml(value: string) {
 function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?: boolean }) {
   const w = miniature ? 58 : node.size.width;
   const h = miniature ? 38 : node.size.height;
-  const stroke = node.params.foregroundColor || (node.kind.startsWith("dc") || node.kind.includes("dcdc") ? "#0f766e" : "#2563eb");
-  const fill = node.kind.includes("converter") ? "#ecfeff" : node.kind.includes("switch") ? "#fff7ed" : "#ffffff";
+  const glyphVariant = getDeviceGlyphVariant(node.kind);
+  const stroke = getDeviceStrokeColor(node);
+  const fill = glyphVariant.includes("converter")
+    ? "#ecfeff"
+    : glyphVariant === "ac-generator"
+      ? "#eff6ff"
+      : glyphVariant === "dc-generator"
+        ? "#ecfdf5"
+        : glyphVariant === "battery-storage"
+          ? "#f0fdf4"
+          : glyphVariant.startsWith("hydrogen")
+            ? "#faf5ff"
+            : glyphVariant.startsWith("heat")
+              ? "#fff1f2"
+              : glyphVariant === "switch" || glyphVariant === "disconnector"
+                ? "#fff7ed"
+                : glyphVariant === "breaker"
+                  ? "#eef2ff"
+                  : "#ffffff";
   if (isStaticNode(node)) {
     const staticStroke = node.params.strokeColor || stroke;
     const staticFill = node.params.fillColor || "transparent";
@@ -627,6 +917,274 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
     return <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="4" fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />;
   }
 
+  if (glyphVariant === "ac-generator" || glyphVariant === "dc-generator") {
+    const radius = miniature ? 15 : Math.min(w, h) * 0.36;
+    const centerTextSize = miniature ? 15 : 22;
+    const markerTextSize = miniature ? 7 : 10;
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="0" cy="0" r={radius} fill={fill} />
+        <text
+          x="0"
+          y="-2"
+          fill={stroke}
+          stroke="none"
+          fontSize={centerTextSize}
+          fontWeight="800"
+          textAnchor="middle"
+          dominantBaseline="middle"
+        >
+          G
+        </text>
+        {glyphVariant === "ac-generator" ? (
+          <>
+            <path d={`M ${-radius * 0.52} ${radius * 0.48} C ${-radius * 0.28} ${radius * 0.18}, ${-radius * 0.06} ${radius * 0.18}, 0 ${radius * 0.48} C ${radius * 0.08} ${radius * 0.82}, ${radius * 0.34} ${radius * 0.82}, ${radius * 0.56} ${radius * 0.48}`} />
+            <text x={radius + 9} y={-radius * 0.42} fill={stroke} stroke="none" fontSize={markerTextSize} fontWeight="800" textAnchor="middle">
+              AC
+            </text>
+          </>
+        ) : (
+          <>
+            <path d={`M ${-radius * 0.55} ${radius * 0.46} H ${-radius * 0.15} M ${radius * 0.15} ${radius * 0.46} H ${radius * 0.55} M ${radius * 0.35} ${radius * 0.26} V ${radius * 0.66}`} />
+            <text x={radius + 9} y={-radius * 0.42} fill={stroke} stroke="none" fontSize={markerTextSize} fontWeight="800" textAnchor="middle">
+              DC
+            </text>
+          </>
+        )}
+        <path d={`M ${radius * 0.72} ${-radius * 0.72} L ${radius * 1.08} ${-radius * 0.72} L ${radius * 0.82} ${-radius * 0.2} L ${radius * 1.18} ${-radius * 0.2}`} />
+      </g>
+    );
+  }
+
+  if (glyphVariant === "battery-storage") {
+    const bodyWidth = miniature ? 34 : Math.min(w * 0.68, 56);
+    const bodyHeight = miniature ? 20 : Math.min(h * 0.58, 32);
+    const capWidth = miniature ? 4 : 6;
+    const capHeight = bodyHeight * 0.44;
+    const cellGap = bodyWidth / 6;
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <rect x={-bodyWidth / 2} y={-bodyHeight / 2} width={bodyWidth} height={bodyHeight} rx="4" fill={fill} />
+        <rect x={bodyWidth / 2} y={-capHeight / 2} width={capWidth} height={capHeight} rx="1.5" fill={fill} />
+        <path d={`M ${-bodyWidth / 2 + cellGap * 2} ${-bodyHeight / 2 + 5} V ${bodyHeight / 2 - 5}`} />
+        <path d={`M ${-bodyWidth / 2 + cellGap * 4} ${-bodyHeight / 2 + 5} V ${bodyHeight / 2 - 5}`} />
+        <path d={`M ${-bodyWidth / 2 + 7} 0 H ${-bodyWidth / 2 + 15} M ${bodyWidth / 2 - 15} 0 H ${bodyWidth / 2 - 7} M ${bodyWidth / 2 - 11} -4 V 4`} />
+      </g>
+    );
+  }
+
+  if (glyphVariant === "hydrogen-source") {
+    const radius = miniature ? 15 : Math.min(w, h) * 0.35;
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="0" cy="0" r={radius} fill={fill} />
+        <text x="0" y="1" fill={stroke} stroke="none" fontSize={miniature ? 9 : 13} fontWeight="800" textAnchor="middle" dominantBaseline="middle">
+          H2
+        </text>
+        <path d={`M ${radius * 0.8} ${-radius * 0.65} H ${radius * 1.22} M ${radius * 1.02} ${-radius * 0.85} L ${radius * 1.22} ${-radius * 0.65} L ${radius * 1.02} ${-radius * 0.45}`} />
+      </g>
+    );
+  }
+
+  if (glyphVariant === "hydrogen-load") {
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d={`M ${-w / 3} ${-h / 3} L ${w / 3} ${-h / 3} L 0 ${h / 3} Z`} fill={fill} />
+        <text x="0" y="-4" fill={stroke} stroke="none" fontSize={miniature ? 8 : 12} fontWeight="800" textAnchor="middle" dominantBaseline="middle">
+          H2
+        </text>
+      </g>
+    );
+  }
+
+  if (glyphVariant === "hydrogen-electrolyzer") {
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+        <rect x={-w / 2 + 6} y={-h / 2 + 5} width={w - 12} height={h - 10} rx="6" fill={fill} />
+        <path d="M -24 0 H -12 M 12 0 H 24" />
+        <path d="M -7 -12 L -1 -2 H -7 L -1 12" />
+        <text x="11" y="1" fill={stroke} stroke="none" fontSize={miniature ? 9 : 13} fontWeight="800" textAnchor="middle" dominantBaseline="middle">
+          H2
+        </text>
+      </g>
+    );
+  }
+
+  if (glyphVariant === "hydrogen-fuel-cell") {
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+        <rect x={-w / 2 + 7} y={-h / 2 + 6} width={w - 14} height={h - 12} rx="6" fill={fill} />
+        <path d="M -24 0 H -12 M 12 0 H 24" />
+        <path d="M -10 -10 H 8 M -10 0 H 8 M -10 10 H 8" />
+        <path d="M 13 -8 L 20 0 L 13 8" />
+        <text x="-20" y="-12" fill={stroke} stroke="none" fontSize={miniature ? 7 : 10} fontWeight="800" textAnchor="middle">
+          H2
+        </text>
+      </g>
+    );
+  }
+
+  if (glyphVariant === "hydrogen-storage") {
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d={`M ${-w / 2 + 10} ${-h / 4} C ${-w / 3} ${-h / 2}, ${w / 3} ${-h / 2}, ${w / 2 - 10} ${-h / 4} V ${h / 4} C ${w / 3} ${h / 2}, ${-w / 3} ${h / 2}, ${-w / 2 + 10} ${h / 4} Z`} fill={fill} />
+        <path d={`M ${-w / 2 + 10} ${-h / 4} C ${-w / 3} 0, ${w / 3} 0, ${w / 2 - 10} ${-h / 4}`} />
+        <text x="0" y="4" fill={stroke} stroke="none" fontSize={miniature ? 9 : 13} fontWeight="800" textAnchor="middle" dominantBaseline="middle">
+          H2
+        </text>
+      </g>
+    );
+  }
+
+  if (glyphVariant === "hydrogen-bus") {
+    return (
+      <line
+        className="bus-glyph"
+        x1={-w / 2}
+        y1="0"
+        x2={w / 2}
+        y2="0"
+        stroke={stroke}
+        strokeWidth={Math.max(8, h / 3)}
+        strokeLinecap="round"
+      />
+    );
+  }
+
+  if (glyphVariant === "hydrogen-pipeline") {
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+        <line x1={-w / 2 + 8} y1="-5" x2={w / 2 - 8} y2="-5" />
+        <line x1={-w / 2 + 8} y1="5" x2={w / 2 - 8} y2="5" />
+        <path d="M -20 -10 V 10 M 0 -10 V 10 M 20 -10 V 10" strokeWidth="1.6" />
+      </g>
+    );
+  }
+
+  if (glyphVariant === "hydrogen-compressor") {
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="0" cy="0" r={miniature ? 15 : 20} fill={fill} />
+        <path d="M -24 0 H -9 M 10 0 H 24" />
+        <path d="M -5 -10 L 10 0 L -5 10 Z" fill={fill} />
+      </g>
+    );
+  }
+
+  if (glyphVariant === "hydrogen-regulator" || glyphVariant === "hydrogen-valve") {
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M -28 0 H -12 M 12 0 H 28" />
+        <path d="M -12 -12 L 0 0 L -12 12 Z M 12 -12 L 0 0 L 12 12 Z" fill={fill} />
+        {glyphVariant === "hydrogen-regulator" ? <path d="M 0 -20 V -8 M -6 -14 H 6 M -5 10 H 5" /> : <path d="M 0 -18 V -3 M -8 -18 H 8" />}
+      </g>
+    );
+  }
+
+  if (glyphVariant === "heat-boiler" || glyphVariant === "heat-source") {
+    const bodyWidth = miniature ? 34 : Math.min(w * 0.66, 58);
+    const bodyHeight = miniature ? 26 : Math.min(h * 0.66, 40);
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <rect x={-bodyWidth / 2} y={-bodyHeight / 2 + 5} width={bodyWidth} height={bodyHeight} rx="6" fill={fill} />
+        <path d="M -8 2 C -16 -8 -2 -13 -6 -24 C 4 -17 13 -10 6 2 C 3 8 -4 8 -8 2 Z" fill={fill} />
+        <path d="M -18 18 H 18" />
+        {glyphVariant === "heat-source" && <path d="M 22 -8 H 30 M 27 -12 L 31 -8 L 27 -4" />}
+      </g>
+    );
+  }
+
+  if (glyphVariant === "heat-electric-heater") {
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+        <rect x={-w / 2 + 7} y={-h / 2 + 6} width={w - 14} height={h - 12} rx="6" fill={fill} />
+        <path d="M -28 0 H -16 M 16 0 H 28" />
+        <path d="M -8 -13 L -1 -2 H -8 L -1 13" />
+        <path d="M 9 -12 C 15 -7 15 -2 9 3 C 15 8 15 13 9 18" />
+      </g>
+    );
+  }
+
+  if (glyphVariant === "heat-exchanger-two" || glyphVariant === "heat-exchanger-three" || glyphVariant === "heat-exchanger-four") {
+    const tag = glyphVariant === "heat-exchanger-two" ? "2" : glyphVariant === "heat-exchanger-three" ? "3" : "4";
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="-13" cy="0" r={miniature ? 10 : 16} fill={fill} />
+        <circle cx="13" cy="0" r={miniature ? 10 : 16} fill={fill} />
+        <path d="M -28 0 H -23 M 23 0 H 28" />
+        <path d="M -15 -9 C -6 -3 -22 3 -13 9 M 15 -9 C 6 -3 22 3 13 9" />
+        <text x="0" y={miniature ? 15 : 23} fill={stroke} stroke="none" fontSize={miniature ? 7 : 10} fontWeight="800" textAnchor="middle">
+          {tag}P
+        </text>
+      </g>
+    );
+  }
+
+  if (glyphVariant === "heat-storage") {
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d={`M ${-w / 2 + 10} ${-h / 4} C ${-w / 3} ${-h / 2}, ${w / 3} ${-h / 2}, ${w / 2 - 10} ${-h / 4} V ${h / 4} C ${w / 3} ${h / 2}, ${-w / 3} ${h / 2}, ${-w / 2 + 10} ${h / 4} Z`} fill={fill} />
+        <path d={`M ${-w / 2 + 10} ${-h / 4} C ${-w / 3} 0, ${w / 3} 0, ${w / 2 - 10} ${-h / 4}`} />
+        <path d="M -10 -1 C -4 4 -4 9 -10 14 M 3 -1 C 9 4 9 9 3 14" />
+      </g>
+    );
+  }
+
+  if (glyphVariant === "heat-load") {
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d={`M ${-w / 3} ${-h / 3} L ${w / 3} ${-h / 3} L 0 ${h / 3} Z`} fill={fill} />
+        <path d="M -13 -4 H 13 M -10 3 H 10 M -7 10 H 7" />
+      </g>
+    );
+  }
+
+  if (glyphVariant === "heat-bus") {
+    return (
+      <line
+        className="bus-glyph"
+        x1={-w / 2}
+        y1="0"
+        x2={w / 2}
+        y2="0"
+        stroke={stroke}
+        strokeWidth={Math.max(8, h / 3)}
+        strokeLinecap="round"
+      />
+    );
+  }
+
+  if (glyphVariant === "heat-pipeline") {
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+        <line x1={-w / 2 + 8} y1="-5" x2={w / 2 - 8} y2="-5" />
+        <line x1={-w / 2 + 8} y1="5" x2={w / 2 - 8} y2="5" />
+        <path d="M -24 0 C -18 -8 -12 8 -6 0 C 0 -8 6 8 12 0 C 18 -8 24 8 30 0" strokeWidth="1.6" />
+      </g>
+    );
+  }
+
+  if (glyphVariant === "heat-pump") {
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="0" cy="0" r={miniature ? 15 : 20} fill={fill} />
+        <path d="M -24 0 H -10 M 10 0 H 24" />
+        <path d="M -5 -11 L 12 0 L -5 11 Z" fill={fill} />
+        <path d="M -3 -15 C 5 -20 15 -13 15 -4" />
+      </g>
+    );
+  }
+
+  if (glyphVariant === "heat-valve") {
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M -28 0 H -12 M 12 0 H 28" />
+        <path d="M -12 -12 L 0 0 L -12 12 Z M 12 -12 L 0 0 L 12 12 Z" fill={fill} />
+        <path d="M 0 -18 V -3 M -8 -18 H 8" />
+      </g>
+    );
+  }
+
   if (node.kind.includes("wind-source")) {
     return (
       <g fill={fill} stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
@@ -692,7 +1250,7 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
     );
   }
 
-  if (node.kind.includes("line")) {
+  if (glyphVariant === "line") {
     return (
       <g stroke={stroke} strokeWidth="4" strokeLinecap="round">
         <line x1={-w / 2 + 8} y1="0" x2={w / 2 - 8} y2="0" />
@@ -710,25 +1268,29 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
     );
   }
 
-  if (node.kind.includes("switch")) {
+  if (glyphVariant === "switch" || glyphVariant === "disconnector") {
     const closed = getSwitchVisualState(node) === "closed";
     return (
-      <g fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round">
-        <line x1={-w / 2 + 10} y1="0" x2="-8" y2="0" />
-        <line x1="8" y1="0" x2={w / 2 - 10} y2="0" />
-        <line x1="-8" y1="0" x2={closed ? "8" : "11"} y2={closed ? "0" : "-14"} />
+      <g fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <line x1={-w / 2 + 8} y1="0" x2="-13" y2="0" />
+        <line x1="13" y1="0" x2={w / 2 - 8} y2="0" />
+        <circle cx="-13" cy="0" r="3.2" fill="#ffffff" />
+        <circle cx="13" cy="0" r="3.2" fill="#ffffff" />
+        <line x1="-13" y1="0" x2={closed ? "13" : "10"} y2={closed ? "0" : "-15"} />
+        {!closed && <line x1="8" y1="-15" x2="16" y2="-15" />}
       </g>
     );
   }
 
-  if (node.kind.includes("disconnector") || node.kind.includes("breaker")) {
+  if (glyphVariant === "breaker") {
     const closed = getSwitchVisualState(node) === "closed";
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <line x1={-w / 2 + 10} y1="0" x2="-10" y2="0" />
-        <line x1="10" y1="0" x2={w / 2 - 10} y2="0" />
-        {node.kind.includes("breaker") && <rect x="-10" y="-12" width="20" height="24" rx="3" fill={fill} />}
-        <line x1="-10" y1="0" x2={closed ? "10" : "12"} y2={closed ? "0" : "-14"} />
+        <line x1={-w / 2 + 8} y1="0" x2="-20" y2="0" />
+        <line x1="20" y1="0" x2={w / 2 - 8} y2="0" />
+        <rect x="-20" y="-15" width="40" height="30" rx="5" fill={fill} />
+        <path d="M -10 -8 V 8 M 10 -8 V 8" />
+        {closed ? <path d="M -10 0 H 10" /> : <path d="M -8 8 L 8 -8" />}
       </g>
     );
   }
@@ -741,12 +1303,43 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
     );
   }
 
-  if (node.kind.includes("converter")) {
-    return (
+  if (glyphVariant === "dcdc-converter" || glyphVariant === "acdc-converter" || glyphVariant === "acac-converter") {
+    const leftX = -w / 2 + 10;
+    const rightX = w / 2 - 24;
+    const symbolY = miniature ? 0 : -2;
+    const labelY = h / 2 - (miniature ? 7 : 10);
+    const label = glyphVariant === "dcdc-converter" ? "DC/DC" : glyphVariant === "acdc-converter" ? "AC/DC" : "AC/AC";
+    const dcSymbol = (x: number) => (
       <g>
-        <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="6" fill={fill} stroke={stroke} strokeWidth="2.5" />
-        <path d={`M ${-w / 4} 0 H ${w / 4}`} stroke={stroke} strokeWidth="2.5" strokeLinecap="round" />
-        <path d={`M ${w / 8} -8 L ${w / 4} 0 L ${w / 8} 8`} fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" />
+        <path d={`M ${x} ${symbolY - 7} H ${x + 14} M ${x + 3} ${symbolY + 7} H ${x + 11}`} />
+        <path d={`M ${x + 7} ${symbolY - 7} V ${symbolY + 7}`} strokeWidth="1.4" />
+      </g>
+    );
+    const acSymbol = (x: number) => (
+      <path d={`M ${x} ${symbolY} C ${x + 3} ${symbolY - 9}, ${x + 8} ${symbolY - 9}, ${x + 11} ${symbolY} C ${x + 14} ${symbolY + 9}, ${x + 19} ${symbolY + 9}, ${x + 22} ${symbolY}`} />
+    );
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="6" fill={fill} />
+        {glyphVariant === "dcdc-converter" ? dcSymbol(leftX) : acSymbol(leftX - 1)}
+        {glyphVariant === "acdc-converter" ? dcSymbol(rightX + 4) : glyphVariant === "acac-converter" ? acSymbol(rightX) : dcSymbol(rightX + 4)}
+        <path d={glyphVariant === "acac-converter" ? "M -5 -8 L 0 0 L -5 8 M 5 -8 L 0 0 L 5 8" : "M -7 0 H 7 M 2 -5 L 7 0 L 2 5"} />
+        <text x="0" y={labelY} fill={stroke} stroke="none" fontSize={miniature ? 7 : 10} fontWeight="800" textAnchor="middle" dominantBaseline="middle">
+          {label}
+        </text>
+      </g>
+    );
+  }
+
+  if (glyphVariant === "custom-device" || node.params[CUSTOM_DEVICE_TEMPLATE_KEY] === "1") {
+    const label = node.name || node.kind;
+    const abbreviation = label.slice(0, 4).toUpperCase();
+    return (
+      <g fill="none" stroke="none">
+        <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="6" fill={node.params.fillColor || "#f8fafc"} />
+        <text x="0" y="-2" fill={stroke} fontSize={miniature ? 10 : 15} fontWeight="800" textAnchor="middle" dominantBaseline="middle">
+          {abbreviation}
+        </text>
       </g>
     );
   }
@@ -768,7 +1361,7 @@ function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: CanvasR
     .join("\n");
   const nodeMarkup = nodes
     .map((node) => {
-      const stroke = node.params.foregroundColor || (node.kind.startsWith("dc") || node.kind.includes("dcdc") ? "#0f766e" : "#2563eb");
+      const stroke = getDeviceStrokeColor(node);
       if (isBusNode(node)) {
         return `<g transform="translate(${node.position.x} ${node.position.y}) rotate(${node.rotation}) scale(${getNodeScaleX(node)} ${getNodeScaleY(node)})">
   <title>${node.name}</title>
@@ -778,13 +1371,13 @@ function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: CanvasR
       const imageHref = resolveNodeImage(node, imageAssets);
       const foregroundHref = resolveNodeForegroundImage(node, imageAssets);
       const shapeFill = node.params.fillColor || "#ffffff";
-      const shapeStroke = node.params.strokeColor || node.params.foregroundColor || "#94a3b8";
+      const shapeStroke = node.params.strokeColor || "transparent";
       const lineWidth = Number(node.params.lineWidth || 2);
       const dashArray = svgStrokeDashArray(node.params.strokeStyle);
       const dashAttribute = dashArray ? ` stroke-dasharray="${dashArray}"` : "";
       const staticShapeMarkup = (() => {
         if (!isStaticNode(node)) {
-          return `<rect x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" rx="8" fill="#ffffff" stroke="${shapeStroke}"/>`;
+          return `<rect x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" rx="8" fill="transparent" stroke="none"/>`;
         }
         if (node.kind === "static-text") {
           const fontSize = Number(node.params.fontSize || 24);
@@ -827,22 +1420,32 @@ ${nodeMarkup}
 
 export function App() {
   const initialDraft = useMemo(() => readDraftProject(), []);
+  const initialIndexedNodes = useMemo(
+    () => assignMissingDeviceIndexes(initialDraft?.nodes ?? SAMPLE_NODES, initialDraft?.deviceIndexCounters),
+    [initialDraft]
+  );
   const svgRef = useRef<SVGSVGElement | null>(null);
   const importRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const customDeviceImageInputRef = useRef<HTMLInputElement | null>(null);
   const canvasInteractionRef = useRef(false);
   const lastCanvasPointerRef = useRef<Point | null>(null);
   const projectListPointerInsideRef = useRef(false);
   const backendSchemesLoadedRef = useRef(false);
   const suppressNextBackendSchemeSyncRef = useRef(false);
-  const [nodes, setNodes] = useState<ModelNode[]>(() => initialDraft?.nodes ?? SAMPLE_NODES);
+  const [nodes, setNodes] = useState<ModelNode[]>(() => initialIndexedNodes.nodes);
   const [edges, setEdges] = useState<Edge[]>(() => initialDraft?.edges ?? SAMPLE_EDGES);
+  const [deviceIndexCounters, setDeviceIndexCounters] = useState<DeviceIndexCounters>(() => initialIndexedNodes.counters);
   const [projectName, setProjectName] = useState(() => initialDraft?.projectName ?? "电力系统图上模型");
   const [canvasWidth, setCanvasWidth] = useState(() => initialDraft?.canvasWidth ?? DEFAULT_CANVAS_WIDTH);
   const [canvasHeight, setCanvasHeight] = useState(() => initialDraft?.canvasHeight ?? DEFAULT_CANVAS_HEIGHT);
   const [canvasBackgroundColor, setCanvasBackgroundColor] = useState(() => initialDraft?.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND);
   const [canvasBackgroundImage, setCanvasBackgroundImage] = useState(() => initialDraft?.canvasBackgroundImage ?? "");
   const [canvasBackgroundImageAssetId, setCanvasBackgroundImageAssetId] = useState(() => initialDraft?.canvasBackgroundImageAssetId ?? "");
+  const [powerUnit, setPowerUnit] = useState(() => initialDraft?.powerUnit ?? DEFAULT_POWER_UNIT);
+  const [voltageUnit, setVoltageUnit] = useState(() => initialDraft?.voltageUnit ?? DEFAULT_VOLTAGE_UNIT);
+  const [currentUnit, setCurrentUnit] = useState(() => initialDraft?.currentUnit ?? DEFAULT_CURRENT_UNIT);
+  const [powerBaseValue, setPowerBaseValue] = useState(() => initialDraft?.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE);
   const [schemes, setSchemes] = useState<SavedSchemeRecord[]>(() => readSavedSchemes());
   const [activeProjectId, setActiveProjectId] = useState<string>(() => initialDraft?.activeProjectId ?? "");
   const [activeSchemeId, setActiveSchemeId] = useState<string>(() => initialDraft?.activeSchemeId ?? "");
@@ -861,9 +1464,12 @@ export function App() {
   const [marquee, setMarquee] = useState<Marquee>(null);
   const [clipboardNodes, setClipboardNodes] = useState<ModelNode[]>([]);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
-  const [inspectorTab, setInspectorTab] = useState<"model" | "graph" | "device">("graph");
+  const [inspectorTab, setInspectorTab] = useState<"model" | "tree" | "graph" | "device">("graph");
   const [leftPanelTab, setLeftPanelTab] = useState<"projects" | "library">("projects");
-  const [expandedLibraryGroups, setExpandedLibraryGroups] = useState<LibraryGroup[]>(["静态图元", "交流系统", "直流系统", "变流设备"]);
+  const [expandedLibraryGroups, setExpandedLibraryGroups] = useState<LibraryGroup[]>([...DEFAULT_LIBRARY_GROUPS]);
+  const [customDeviceTemplates, setCustomDeviceTemplates] = useState<DeviceTemplate[]>(() => readCustomDeviceTemplates());
+  const [customDeviceDialogOpen, setCustomDeviceDialogOpen] = useState(false);
+  const [customDeviceDraft, setCustomDeviceDraft] = useState<CustomDeviceDraft>(() => createEmptyCustomDeviceDraft());
   const [topologyErrors, setTopologyErrors] = useState<TopologyValidationError[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedSchemeId, setSelectedSchemeId] = useState<string>("");
@@ -887,6 +1493,12 @@ export function App() {
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId);
   const projects = useMemo(() => schemes.flatMap((scheme) => scheme.projects), [schemes]);
+  const libraryTemplates = useMemo<DeviceTemplate[]>(() => [...DEVICE_LIBRARY, ...customDeviceTemplates], [customDeviceTemplates]);
+  const groupedLibrary = useMemo(() => groupDeviceTemplates(libraryTemplates), [libraryTemplates]);
+  const libraryGroups = useMemo<LibraryGroup[]>(
+    () => Array.from(new Set([...DEFAULT_LIBRARY_GROUPS, ...libraryTemplates.map((item) => item.group)])),
+    [libraryTemplates]
+  );
   const selectedProjectRecord = projects.find((project) => project.id === selectedProjectId);
   const activeProjectRecord = projects.find((project) => project.id === activeProjectId);
   const currentModelRecord: SavedProjectRecord = selectedProjectRecord ?? activeProjectRecord ?? {
@@ -901,6 +1513,11 @@ export function App() {
       canvasBackgroundColor,
       canvasBackgroundImage,
       canvasBackgroundImageAssetId,
+      powerUnit,
+      voltageUnit,
+      currentUnit,
+      powerBaseValue,
+      deviceIndexCounters,
       nodes,
       edges
     }
@@ -908,6 +1525,7 @@ export function App() {
   const selectedSchemeRecord = schemes.find((scheme) => scheme.id === selectedSchemeId);
   const selectedCount = selectedNodeIds.length;
   const topology = useMemo(() => buildTopology(nodes, edges), [nodes, edges]);
+  const elementTree = useMemo(() => buildElementTree(nodes, edges), [edges, nodes]);
   const canvasBounds = useMemo<CanvasBounds>(() => ({ width: canvasWidth, height: canvasHeight }), [canvasHeight, canvasWidth]);
   const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
   const nodeImage = (node: ModelNode) => resolveNodeImage(node, imageAssets);
@@ -946,7 +1564,7 @@ export function App() {
     const terminalType = fixedNode?.terminals.find((terminal) => terminal.id === fixedTerminalId)?.type ?? "ac";
     const previewNode: ModelNode = {
       id: "__rewiring-preview__",
-      kind: terminalType === "dc" ? "dc-bus" : "ac-bus",
+      kind: terminalType === "dc" ? "dc-bus" : terminalType === "h2" ? "hydrogen-bus" : terminalType === "heat" ? "heat-bus" : "ac-bus",
       name: "拖拽端点",
       nodeNumber: "",
       acTopologyNode: 0,
@@ -1020,6 +1638,10 @@ export function App() {
     });
   }, [schemes]);
 
+  useEffect(() => {
+    window.localStorage.setItem(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, JSON.stringify(customDeviceTemplates));
+  }, [customDeviceTemplates]);
+
   const refreshImageFolders = () =>
     fetchBackendImageFolders()
       .then((folders) => {
@@ -1063,12 +1685,17 @@ export function App() {
         canvasBackgroundColor,
         canvasBackgroundImage,
         canvasBackgroundImageAssetId,
+        powerUnit,
+        voltageUnit,
+        currentUnit,
+        powerBaseValue,
+        deviceIndexCounters,
         nodes,
         edges
       })
     );
     window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, JSON.stringify({ activeProjectId, activeSchemeId }));
-  }, [activeProjectId, activeSchemeId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, edges, nodes, projectName]);
+  }, [activeProjectId, activeSchemeId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, nodes, powerBaseValue, powerUnit, projectName, voltageUnit]);
 
   useEffect(() => {
     setExpandedSchemeIds((current) => {
@@ -1149,6 +1776,16 @@ export function App() {
 
   const cloneProjectState = (): UndoSnapshot => ({
     projectName,
+    canvasWidth,
+    canvasHeight,
+    canvasBackgroundColor,
+    canvasBackgroundImage,
+    canvasBackgroundImageAssetId,
+    powerUnit,
+    voltageUnit,
+    currentUnit,
+    powerBaseValue,
+    deviceIndexCounters: structuredClone(deviceIndexCounters),
     nodes: structuredClone(nodes),
     edges: structuredClone(edges),
     topologyErrors: structuredClone(topologyErrors)
@@ -1166,6 +1803,16 @@ export function App() {
         return current;
       }
       setProjectName(snapshot.projectName);
+      setCanvasWidth(snapshot.canvasWidth);
+      setCanvasHeight(snapshot.canvasHeight);
+      setCanvasBackgroundColor(snapshot.canvasBackgroundColor);
+      setCanvasBackgroundImage(snapshot.canvasBackgroundImage);
+      setCanvasBackgroundImageAssetId(snapshot.canvasBackgroundImageAssetId);
+      setPowerUnit(snapshot.powerUnit);
+      setVoltageUnit(snapshot.voltageUnit);
+      setCurrentUnit(snapshot.currentUnit);
+      setPowerBaseValue(snapshot.powerBaseValue);
+      setDeviceIndexCounters(snapshot.deviceIndexCounters);
       setNodes(snapshot.nodes);
       setEdges(snapshot.edges);
       setTopologyErrors(snapshot.topologyErrors);
@@ -1282,7 +1929,7 @@ export function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [clipboardNodes, edges, nodes, projectName, projects, recordClipboard, schemes, selectedEdgeId, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors]);
+  }, [clipboardNodes, deviceIndexCounters, edges, nodes, projectName, projects, recordClipboard, schemes, selectedEdgeId, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors]);
 
   useEffect(() => {
     if (leftPanelTab !== "projects") {
@@ -1299,6 +1946,11 @@ export function App() {
       canvasBackgroundColor,
       canvasBackgroundImage,
       canvasBackgroundImageAssetId,
+      powerUnit,
+      voltageUnit,
+      currentUnit,
+      powerBaseValue,
+      deviceIndexCounters,
       nodes,
       edges
     })
@@ -1362,18 +2014,25 @@ export function App() {
     const dy = targetPoint.y - bounds.top;
     pushUndoSnapshot();
     const idMap = new Map<string, string>();
+    let nextDeviceIndexCounters = deviceIndexCounters;
     const pasted = clipboardNodes.map((node) => {
       const nextId = `node-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       idMap.set(node.id, nextId);
-      return {
+      const params = { ...node.params };
+      delete params.idx;
+      const draftNode = {
         ...node,
         id: nextId,
         name: `${node.name} 副本`,
         position: clampNodeToCanvas(node, { x: Math.round(node.position.x + dx), y: Math.round(node.position.y + dy) }),
-        params: { ...node.params },
+        params,
         terminals: node.terminals.map((terminal) => ({ ...terminal, anchor: { ...terminal.anchor } }))
       };
+      const result = assignPermanentDeviceIndex(draftNode, nextDeviceIndexCounters);
+      nextDeviceIndexCounters = result.counters;
+      return result.node;
     });
+    setDeviceIndexCounters(nextDeviceIndexCounters);
     setNodes((current) => [...current, ...pasted]);
     setSelectedNodeIds(pasted.map((node) => node.id));
     clearTransientSelectionState();
@@ -1559,6 +2218,15 @@ export function App() {
     });
   };
 
+  const mirrorSelectedNodes = (axis: "horizontal" | "vertical") => {
+    if (selectedNodeIds.length === 0) {
+      return;
+    }
+    pushUndoSnapshot();
+    setSelectedEdgeId("");
+    setNodes((current) => mirrorNodes(current, selectedNodeIds, axis));
+  };
+
   const updateCanvasSize = (nextWidth: number, nextHeight: number) => {
     const width = clampCanvasDimension(nextWidth, MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH, DEFAULT_CANVAS_WIDTH);
     const height = clampCanvasDimension(nextHeight, MIN_CANVAS_HEIGHT, MAX_CANVAS_HEIGHT, DEFAULT_CANVAS_HEIGHT);
@@ -1590,6 +2258,35 @@ export function App() {
     setNodes((current) =>
       current.map((node) =>
         node.id === selectedNodeId ? { ...node, params: { ...node.params, [key]: value } } : node
+      )
+    );
+  };
+
+  const terminalVbaseFallback = (node: ModelNode, terminalIndex: number) => {
+    if (node.kind === "ac-three-winding-transformer") {
+      return [node.params.highVbase, node.params.mediumVbase, node.params.lowVbase][terminalIndex] ?? node.params.vbase ?? "";
+    }
+    const sourceSide = node.params.i_vbase ?? node.params.sourceVbase ?? node.params.highVbase;
+    const targetSide = node.params.j_vbase ?? node.params.targetVbase ?? node.params.lowVbase;
+    return (terminalIndex === 0 ? sourceSide : targetSide) ?? node.params.vbase ?? node.params.voltageLevel ?? node.params.ratedVoltage ?? "";
+  };
+
+  const updateTerminalVbase = (terminalId: string, value: string) => {
+    if (!selectedNodeId) {
+      return;
+    }
+    const numericValue = normalizeVoltageBaseInput(value);
+    pushUndoSnapshot();
+    setNodes((current) =>
+      current.map((node) =>
+        node.id === selectedNodeId
+          ? {
+              ...node,
+              terminals: node.terminals.map((terminal) =>
+                terminal.id === terminalId ? { ...terminal, vbase: numericValue } : terminal
+              )
+            }
+          : node
       )
     );
   };
@@ -1629,7 +2326,26 @@ export function App() {
     );
   };
 
+  const renderParamHeader = (key: string, displayName = key, title = PARAM_LABELS[key] ?? displayName) => (
+    <th title={title}>{displayName}</th>
+  );
+
+  const renderChineseParamHeader = (key: string, fallback = key) => (
+    <th title={key}>{PARAM_LABELS[key] ?? fallback}</th>
+  );
+
+  const contextMenuStyle = (menu: ContextMenuState | ProjectMenuState) => {
+    const viewportHeight = typeof window === "undefined" ? 720 : window.innerHeight;
+    const top = Math.max(8, Math.min(menu?.y ?? 8, Math.max(8, viewportHeight - 180)));
+    return {
+      left: menu?.x ?? 8,
+      top,
+      maxHeight: Math.max(120, viewportHeight - top - 8)
+    };
+  };
+
   const clampScale = (value: number) => Math.max(0.2, Math.min(5, value));
+  const signedScale = (value: number, signSource: number) => clampScale(value) * (Math.sign(signSource) || 1);
 
   const toLocalNodePoint = (node: ModelNode, point: Point): Point => {
     const radians = (-node.rotation * Math.PI) / 180;
@@ -1685,8 +2401,8 @@ export function App() {
   };
 
   const isPointOnBus = (node: ModelNode, point: Point) => {
-    const halfWidth = (node.size.width * getNodeScaleX(node)) / 2;
-    const halfHeight = (node.size.height * getNodeScaleY(node)) / 2;
+    const halfWidth = (node.size.width * Math.abs(getNodeScaleX(node))) / 2;
+    const halfHeight = (node.size.height * Math.abs(getNodeScaleY(node))) / 2;
     return (
       point.x >= node.position.x - halfWidth &&
       point.x <= node.position.x + halfWidth &&
@@ -1809,11 +2525,17 @@ export function App() {
       return;
     }
     const position = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
-    const node = createDefaultNode(kind, position);
+    const template = libraryTemplates.find((item) => item.kind === kind);
+    if (!template) {
+      return;
+    }
+    const node = createNodeFromTemplate(template, position);
     node.position = clampNodeToCanvas(node, position);
+    const indexed = assignPermanentDeviceIndex(node, deviceIndexCounters);
     pushUndoSnapshot();
-    setNodes((current) => [...current, node]);
-    setSelectedNodeIds([node.id]);
+    setDeviceIndexCounters(indexed.counters);
+    setNodes((current) => [...current, indexed.node]);
+    setSelectedNodeIds([indexed.node.id]);
     setSelectedEdgeId("");
   };
 
@@ -1997,14 +2719,26 @@ export function App() {
           const local = toLocalNodePoint(node, point);
           const nextScaleX = clampScale((Math.abs(local.x) * 2) / node.size.width);
           const nextScaleY = clampScale((Math.abs(local.y) * 2) / node.size.height);
+          const nextSignedScaleX = signedScale(nextScaleX, getNodeScaleX(node));
+          const nextSignedScaleY = signedScale(nextScaleY, getNodeScaleY(node));
           if (transformDrag.kind === "scale-x") {
-            return { ...node, scale: nextScaleX, scaleX: nextScaleX, position: clampNodeToCanvas({ ...node, scale: nextScaleX, scaleX: nextScaleX }) };
+            return { ...node, scale: nextScaleX, scaleX: nextSignedScaleX, position: clampNodeToCanvas({ ...node, scale: nextScaleX, scaleX: nextSignedScaleX }) };
           }
           if (transformDrag.kind === "scale-y") {
-            return { ...node, scale: nextScaleY, scaleY: nextScaleY, position: clampNodeToCanvas({ ...node, scale: nextScaleY, scaleY: nextScaleY }) };
+            return { ...node, scale: nextScaleY, scaleY: nextSignedScaleY, position: clampNodeToCanvas({ ...node, scale: nextScaleY, scaleY: nextSignedScaleY }) };
           }
           const nextScale = clampScale(Math.max(nextScaleX, nextScaleY));
-          return { ...node, scale: nextScale, scaleX: nextScale, scaleY: nextScale, position: clampNodeToCanvas({ ...node, scale: nextScale, scaleX: nextScale, scaleY: nextScale }) };
+          const nextSignedScale = {
+            x: signedScale(nextScale, getNodeScaleX(node)),
+            y: signedScale(nextScale, getNodeScaleY(node))
+          };
+          return {
+            ...node,
+            scale: nextScale,
+            scaleX: nextSignedScale.x,
+            scaleY: nextSignedScale.y,
+            position: clampNodeToCanvas({ ...node, scale: nextScale, scaleX: nextSignedScale.x, scaleY: nextSignedScale.y })
+          };
         })
       );
       return;
@@ -2171,6 +2905,7 @@ export function App() {
   };
 
   const loadSavedProject = (project: SavedProjectRecord, schemeId = findSchemeForProject(project.id)?.id ?? "") => {
+    const indexed = assignMissingDeviceIndexes(project.project.nodes, project.project.deviceIndexCounters);
     pushUndoSnapshot();
     setProjectName(project.name);
     setCanvasWidth(project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH);
@@ -2178,13 +2913,18 @@ export function App() {
     setCanvasBackgroundColor(project.project.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND);
     setCanvasBackgroundImage(project.project.canvasBackgroundImage ?? "");
     setCanvasBackgroundImageAssetId(project.project.canvasBackgroundImageAssetId ?? "");
+    setPowerUnit(project.project.powerUnit ?? DEFAULT_POWER_UNIT);
+    setVoltageUnit(project.project.voltageUnit ?? DEFAULT_VOLTAGE_UNIT);
+    setCurrentUnit(project.project.currentUnit ?? DEFAULT_CURRENT_UNIT);
+    setPowerBaseValue(project.project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE);
     setViewBox({ x: 0, y: 0, width: project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH, height: project.project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT });
-    setNodes(project.project.nodes);
+    setDeviceIndexCounters(indexed.counters);
+    setNodes(indexed.nodes);
     setEdges(project.project.edges);
     setActiveProjectId(project.id);
     setActiveSchemeId(schemeId);
     selectSingleProject(schemeId, project.id);
-    setSelectedNodeIds(project.project.nodes[0] ? [project.project.nodes[0].id] : []);
+    setSelectedNodeIds(indexed.nodes[0] ? [indexed.nodes[0].id] : []);
     setSelectedEdgeId("");
     setConnectSource(null);
     setRewiring(null);
@@ -2512,7 +3252,20 @@ export function App() {
       window.alert("模型名称重复，无法新建模型。");
       return;
     }
-    const record = createSavedProject(name, { version: 1, name, canvasWidth, canvasHeight, nodes: [], edges: [] });
+    const record = createSavedProject(name, {
+      version: 1,
+      name,
+      canvasWidth,
+      canvasHeight,
+      canvasBackgroundColor: DEFAULT_CANVAS_BACKGROUND,
+      powerUnit: DEFAULT_POWER_UNIT,
+      voltageUnit: DEFAULT_VOLTAGE_UNIT,
+      currentUnit: DEFAULT_CURRENT_UNIT,
+      powerBaseValue: DEFAULT_POWER_BASE_VALUE,
+      deviceIndexCounters: {},
+      nodes: [],
+      edges: []
+    });
     setSchemes((current) =>
       current.map((scheme, index) =>
         scheme.id === targetSchemeId || (!targetSchemeId && index === 0)
@@ -2560,6 +3313,34 @@ export function App() {
       return endpointPoint ?? null;
     }
     return getModelEdgeEndpointPoint(node, endpointPoint, terminalId);
+  };
+
+  const centerViewOnPoint = (point: Point) => {
+    setViewBox(clampViewBoxToCanvas({
+      x: point.x - viewBox.width / 2,
+      y: point.y - viewBox.height / 2,
+      width: viewBox.width,
+      height: viewBox.height
+    }));
+  };
+
+  const focusElementTreeItem = (item: ElementTreeItem) => {
+    if (item.kind === "node") {
+      setSelectedNodeIds([item.id]);
+      setSelectedEdgeId("");
+    } else {
+      setSelectedNodeIds([]);
+      setSelectedEdgeId(item.id);
+    }
+    setConnectSource(null);
+    setConnectPreviewPoint(null);
+    setRewiring(null);
+    setContextMenu(null);
+    clearRecordSelection();
+    const point = getElementFocusPoint(item, nodes, edges);
+    if (point) {
+      centerViewOnPoint(point);
+    }
   };
 
   const setEdgeManualPoints = (edgeId: string, manualPoints: Point[]) => {
@@ -2786,27 +3567,6 @@ export function App() {
 
   const safeFilePart = (name: string) => name.trim().replace(/[\\/:*?"<>|]+/g, "_") || "未命名";
 
-  const buildDeviceParameterFile = (project: ProjectFile) =>
-    JSON.stringify(
-      {
-        version: 1,
-        name: project.name,
-        devices: project.nodes.map((node) => ({
-          id: node.id,
-          kind: node.kind,
-          name: node.name,
-          nodeNumber: node.nodeNumber,
-          acTopologyNode: node.acTopologyNode,
-          dcTopologyNode: node.dcTopologyNode,
-          terminals: node.terminals,
-          params: node.params
-        })),
-        edges: project.edges
-      },
-      null,
-      2
-    );
-
   const exportSchemeRecord = (scheme: SavedSchemeRecord) => {
     for (const project of scheme.projects) {
       const prefix = `${safeFilePart(scheme.name)}_${safeFilePart(project.name)}`;
@@ -2820,7 +3580,7 @@ export function App() {
         }),
         "image/svg+xml"
       );
-      downloadText(`${prefix}.e`, buildDeviceParameterFile(project.project), "application/json");
+      downloadText(`${prefix}.e`, buildEDeviceParameterFile(project.project), "application/json");
     }
   };
 
@@ -2831,6 +3591,7 @@ export function App() {
     }
     const text = await file.text();
     const project = deserializeProject(text);
+    const indexed = assignMissingDeviceIndexes(project.nodes, project.deviceIndexCounters);
     pushUndoSnapshot();
     setProjectName(project.name);
     setCanvasWidth(project.canvasWidth ?? DEFAULT_CANVAS_WIDTH);
@@ -2838,10 +3599,15 @@ export function App() {
     setCanvasBackgroundColor(project.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND);
     setCanvasBackgroundImage(project.canvasBackgroundImage ?? "");
     setCanvasBackgroundImageAssetId(project.canvasBackgroundImageAssetId ?? "");
+    setPowerUnit(project.powerUnit ?? DEFAULT_POWER_UNIT);
+    setVoltageUnit(project.voltageUnit ?? DEFAULT_VOLTAGE_UNIT);
+    setCurrentUnit(project.currentUnit ?? DEFAULT_CURRENT_UNIT);
+    setPowerBaseValue(project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE);
     setViewBox({ x: 0, y: 0, width: project.canvasWidth ?? DEFAULT_CANVAS_WIDTH, height: project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT });
-    setNodes(project.nodes);
+    setDeviceIndexCounters(indexed.counters);
+    setNodes(indexed.nodes);
     setEdges(project.edges);
-    setSelectedNodeIds(project.nodes[0] ? [project.nodes[0].id] : []);
+    setSelectedNodeIds(indexed.nodes[0] ? [indexed.nodes[0].id] : []);
     setSelectedEdgeId("");
     event.target.value = "";
   };
@@ -3133,9 +3899,117 @@ export function App() {
     </section>
   );
 
+  const customDraftTerminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
+  const customDraftDefaultParams = customDefaultDefinitions(customDraftTerminalTypes);
+
+  const updateCustomDraftTerminalCount = (value: number) => {
+    const count = Math.max(0, Math.min(4, Math.round(value || 0)));
+    setCustomDeviceDraft((current) => {
+      const fallback = current.groupName.includes("直流")
+        ? "dc"
+        : current.groupName.includes("氢")
+          ? "h2"
+          : current.groupName.includes("热")
+            ? "heat"
+            : "ac";
+      const terminalTypes = [...current.terminalTypes];
+      while (terminalTypes.length < count) {
+        terminalTypes.push(fallback);
+      }
+      return { ...current, terminalCount: count, terminalTypes, error: "" };
+    });
+  };
+
+  const chooseCustomDeviceBackground = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCustomDeviceDraft((current) => ({ ...current, backgroundImage: String(reader.result ?? ""), error: "" }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const saveCustomDeviceTemplate = () => {
+    const newGroupName = customDeviceDraft.newGroupName.trim();
+    const groupName = newGroupName || customDeviceDraft.groupName;
+    const existingGroups = new Set(libraryGroups.map((group) => group.toLowerCase()));
+    if (newGroupName && existingGroups.has(newGroupName.toLowerCase())) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "元件库名称已存在，无法新增同名元件库。" }));
+      return;
+    }
+    const deviceType = customDeviceDraft.deviceType.trim();
+    if (!deviceType) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "请输入设备类型名称。" }));
+      return;
+    }
+    const existingDeviceTypes = new Set(libraryTemplates.map((template) => template.kind.toLowerCase()));
+    if (existingDeviceTypes.has(deviceType.toLowerCase())) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "设备类型已存在，无法新增同名设备。" }));
+      return;
+    }
+    const terminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
+    const customRows: DeviceParameterDefinition[] = customDeviceDraft.params
+      .map((row) => ({
+        cnName: row.cnName.trim(),
+        enName: row.enName.trim(),
+        valueType: row.valueType,
+        typicalValue: row.typicalValue.trim()
+      }))
+      .filter((row) => row.cnName || row.enName);
+    if (customRows.some((row) => !row.cnName || !row.enName)) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "属性行的中文名称和英文名称不能为空。" }));
+      return;
+    }
+    const definitions = [...customDefaultDefinitions(terminalTypes), ...customRows];
+    const duplicateDefinition = definitions.find(
+      (definition, index) => definitions.findIndex((item) => item.enName.toLowerCase() === definition.enName.toLowerCase()) !== index
+    );
+    if (duplicateDefinition) {
+      setCustomDeviceDraft((current) => ({ ...current, error: `属性英文名称重复：${duplicateDefinition.enName}` }));
+      return;
+    }
+    const backgroundImage =
+      customDeviceDraft.backgroundImage || generateCustomDeviceImage(deviceType, terminalTypes.length > 0 ? terminalTypes : ["ac"]);
+    const template: DeviceTemplate = {
+      kind: deviceType,
+      label: deviceType,
+      group: groupName,
+      size: { width: 104, height: 64 },
+      params: {
+        fillColor: "transparent",
+        strokeColor: "transparent",
+        lineWidth: "0",
+        backgroundImage
+      },
+      terminalType: terminalTypes[0] ?? "ac",
+      terminalCount: terminalTypes.length,
+      terminalTypes,
+      terminalLabels: terminalTypes.map((type, index) => `${TERMINAL_TYPE_OPTIONS.find((item) => item.value === type)?.label ?? type}端${index + 1}`),
+      custom: true,
+      parameterDefinitions: definitions
+    };
+    setCustomDeviceTemplates((current) => [...current, template]);
+    setExpandedLibraryGroups((current) => Array.from(new Set([...current, groupName])));
+    setCustomDeviceDialogOpen(false);
+  };
+
   const renderLibraryPanel = () => (
     <div className="library-scroll">
-      {(["静态图元", "交流系统", "直流系统", "变流设备"] as LibraryGroup[]).map((group) => {
+      <button
+        type="button"
+        className="custom-device-create-button"
+        onClick={() => {
+          setCustomDeviceDraft(createEmptyCustomDeviceDraft("交流系统"));
+          setCustomDeviceDialogOpen(true);
+        }}
+      >
+        新增自定义图元设备
+      </button>
+      {libraryGroups.map((group) => {
         const expanded = expandedLibraryGroups.includes(group);
         return (
           <section className="library-group-section" key={group}>
@@ -3153,7 +4027,7 @@ export function App() {
             {expanded && (
               <div className="library-group">
                 {(groupedLibrary[group] ?? []).map((item) => {
-                  const preview = createDefaultNode(item.kind, { x: 0, y: 0 });
+                  const preview = createNodeFromTemplate(item, { x: 0, y: 0 });
                   return (
                     <button
                       className="library-item"
@@ -3173,6 +4047,44 @@ export function App() {
           </section>
         );
       })}
+    </div>
+  );
+
+  const renderElementTreePanel = () => (
+    <div className="element-tree" role="tree" aria-label="图元树">
+      {elementTree.length === 0 ? (
+        <div className="empty-state compact">
+          <Grid2X2 size={24} />
+          <p>当前画布暂无图元。</p>
+        </div>
+      ) : (
+        elementTree.map((group) => (
+          <section className="element-tree-group" key={group.typeKey}>
+            <div className="element-tree-type" role="treeitem" aria-expanded="true">
+              <span>{group.typeLabel}</span>
+              <strong>{group.items.length}</strong>
+            </div>
+            <div className="element-tree-items" role="group">
+              {group.items.map((item) => {
+                const selected = item.kind === "node" ? selectedNodeIds.includes(item.id) : selectedEdgeId === item.id;
+                return (
+                  <button
+                    type="button"
+                    role="treeitem"
+                    aria-selected={selected}
+                    className={`element-tree-item ${selected ? "selected" : ""}`}
+                    key={`${item.kind}:${item.id}`}
+                    title="双击定位并选中图元"
+                    onDoubleClick={() => focusElementTreeItem(item)}
+                  >
+                    <span>{item.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        ))
+      )}
     </div>
   );
 
@@ -3230,6 +4142,7 @@ export function App() {
             </button>
             <input ref={importRef} type="file" accept="application/json,.json" hidden onChange={importModel} />
             <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={chooseImage} />
+            <input ref={customDeviceImageInputRef} type="file" accept="image/*" hidden onChange={chooseCustomDeviceBackground} />
             <button onClick={() => importRef.current?.click()}>
               <FileInput size={16} />
               导入模型
@@ -3526,6 +4439,26 @@ export function App() {
                   className={`diagram-node ${isBusNode(node) ? "bus-node" : ""} ${selected ? "selected" : ""} ${isConnectSource ? "connect-source" : ""}`}
                   transform={`translate(${node.position.x} ${node.position.y}) rotate(${node.rotation}) scale(${getNodeScaleX(node)} ${getNodeScaleY(node)})`}
                   onPointerDown={(event) => handleNodePointerDown(event, node)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    canvasInteractionRef.current = true;
+                    projectListPointerInsideRef.current = false;
+                    if (svgRef.current) {
+                      lastCanvasPointerRef.current = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+                    }
+                    if (connectSource) {
+                      setConnectSource(null);
+                      setConnectPreviewPoint(null);
+                      setMode("select");
+                      return;
+                    }
+                    if (!selectedNodeIds.includes(node.id)) {
+                      setSelectedNodeIds([node.id]);
+                    }
+                    setSelectedEdgeId("");
+                    setContextMenu({ x: event.clientX, y: event.clientY });
+                  }}
                   onDoubleClick={(event) => {
                     event.stopPropagation();
                     if (isBusNode(node)) {
@@ -3611,20 +4544,32 @@ export function App() {
                       mode === "connect" &&
                       Boolean(sourceNode) &&
                       !canConnectTerminals(sourceNode!, connectSource!.terminalId, node, terminal.id);
+                    const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY);
                     return hideFixedTerminal ? null : (
                       <g
                         key={terminal.id}
                         transform={controlTransform(terminal.anchor.x * node.size.width, terminal.anchor.y * node.size.height)}
                       >
-                      <circle
-                        className={`terminal-dot ${terminal.type} ${disabled ? "disabled" : ""}`}
-                        cx="0"
-                        cy="0"
-                        r={6}
-                        onPointerDown={(event) => handleTerminalPointerDown(event, node, terminal.id)}
-                      >
-                        <title>{`${terminal.label} / ${terminal.type.toUpperCase()}`}</title>
-                      </circle>
+                        <line
+                          className={`terminal-stub ${terminal.type} ${disabled ? "disabled" : ""}`}
+                          style={{
+                            stroke: disabled ? "#cbd5e1" : getDeviceStrokeColor(node),
+                            strokeWidth: getDeviceStrokeWidth(node)
+                          }}
+                          x1={stub.from.x}
+                          y1={stub.from.y}
+                          x2={stub.to.x}
+                          y2={stub.to.y}
+                        />
+                        <circle
+                          className={`terminal-dot ${terminal.type} ${disabled ? "disabled" : ""}`}
+                          cx="0"
+                          cy="0"
+                          r={6}
+                          onPointerDown={(event) => handleTerminalPointerDown(event, node, terminal.id)}
+                        >
+                          <title>{`${terminal.label} / ${terminal.type.toUpperCase()}`}</title>
+                        </circle>
                       </g>
                     );
                   })}
@@ -3819,6 +4764,9 @@ export function App() {
               <button className={inspectorTab === "model" ? "active" : ""} onClick={() => setInspectorTab("model")} disabled={!currentModelRecord}>
                 模型信息
               </button>
+              <button className={inspectorTab === "tree" ? "active" : ""} onClick={() => setInspectorTab("tree")}>
+                图元树
+              </button>
               <button className={inspectorTab === "graph" ? "active" : ""} onClick={() => setInspectorTab("graph")}>
                 图形参数
               </button>
@@ -3830,19 +4778,19 @@ export function App() {
               <table className="param-table">
                 <tbody>
                   <tr>
-                    <th>模型名称</th>
+                    {renderChineseParamHeader("name", "模型名称")}
                     <td><input value={currentModelRecord.name} readOnly /></td>
                   </tr>
                   <tr>
-                    <th>所属方案</th>
+                    {renderChineseParamHeader("schemeName")}
                     <td><input value={selectedSchemeRecord?.name ?? "未选择方案"} readOnly /></td>
                   </tr>
                   <tr>
-                    <th>模型更新时间</th>
+                    {renderChineseParamHeader("updatedAt", "模型更新时间")}
                     <td><input value={new Date(currentModelRecord.updatedAt).toLocaleString()} readOnly /></td>
                   </tr>
                   <tr>
-                    <th>显示宽度</th>
+                    {renderChineseParamHeader("canvasWidth")}
                     <td>
                       <input
                         type="number"
@@ -3855,7 +4803,7 @@ export function App() {
                     </td>
                   </tr>
                   <tr>
-                    <th>显示高度</th>
+                    {renderChineseParamHeader("canvasHeight")}
                     <td>
                       <input
                         type="number"
@@ -3868,7 +4816,74 @@ export function App() {
                     </td>
                   </tr>
                   <tr>
-                    <th>背景色</th>
+                    {renderChineseParamHeader("powerUnit")}
+                    <td>
+                      <select
+                        value={powerUnit}
+                        onChange={(event) => {
+                          pushUndoSnapshot();
+                          setPowerUnit(event.target.value);
+                        }}
+                      >
+                        {POWER_UNIT_OPTIONS.map((unit) => (
+                          <option key={unit} value={unit}>{unit}</option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                  <tr>
+                    {renderChineseParamHeader("voltageUnit")}
+                    <td>
+                      <select
+                        value={voltageUnit}
+                        onChange={(event) => {
+                          pushUndoSnapshot();
+                          setVoltageUnit(event.target.value);
+                        }}
+                      >
+                        {VOLTAGE_UNIT_OPTIONS.map((unit) => (
+                          <option key={unit} value={unit}>{unit}</option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                  <tr>
+                    {renderChineseParamHeader("currentUnit")}
+                    <td>
+                      <select
+                        value={currentUnit}
+                        onChange={(event) => {
+                          pushUndoSnapshot();
+                          setCurrentUnit(event.target.value);
+                        }}
+                      >
+                        {CURRENT_UNIT_OPTIONS.map((unit) => (
+                          <option key={unit} value={unit}>{unit}</option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                  <tr>
+                    {renderChineseParamHeader("powerBaseValue")}
+                    <td>
+                      <div className="unit-value-field">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={powerBaseValue}
+                          onChange={(event) => {
+                            pushUndoSnapshot();
+                            const nextValue = Number(event.target.value);
+                            setPowerBaseValue(Number.isFinite(nextValue) ? nextValue : DEFAULT_POWER_BASE_VALUE);
+                          }}
+                        />
+                        <span>{powerUnit}</span>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    {renderChineseParamHeader("canvasBackgroundColor")}
                     <td>
                       <div className="color-field">
                         <input
@@ -3890,7 +4905,7 @@ export function App() {
                     </td>
                   </tr>
                   <tr>
-                    <th>背景图片</th>
+                    {renderChineseParamHeader("canvasBackgroundImage")}
                     <td>
                       <div className="image-field-actions">
                         <input value={canvasBackgroundImage ? "已设置" : "未设置"} readOnly />
@@ -3910,48 +4925,50 @@ export function App() {
                     </td>
                   </tr>
                   <tr>
-                    <th>设备数量</th>
+                    {renderChineseParamHeader("device_count")}
                     <td><input value={currentModelRecord.project.nodes.length} readOnly /></td>
                   </tr>
                   <tr>
-                    <th>联络线数量</th>
+                    {renderChineseParamHeader("edge_count")}
                     <td><input value={currentModelRecord.project.edges.length} readOnly /></td>
                   </tr>
                   <tr>
-                    <th>SVG文件</th>
+                    {renderChineseParamHeader("svg_file")}
                     <td><input value={`${safeFilePart(currentModelRecord.name)}.svg`} readOnly /></td>
                   </tr>
                   <tr>
-                    <th>设备参数文件</th>
+                    {renderChineseParamHeader("e_file")}
                     <td><input value={`${safeFilePart(currentModelRecord.name)}.e`} readOnly /></td>
                   </tr>
                 </tbody>
               </table>
+            ) : inspectorTab === "tree" ? (
+              renderElementTreePanel()
             ) : inspectorTab === "graph" && selectedNode ? (
               <table className="param-table">
                 <tbody>
                   <tr>
-                    <th>X坐标</th>
+                    {renderChineseParamHeader("graph_x", "X坐标")}
                     <td><input type="number" value={Math.round(selectedNode.position.x)} onChange={(event) => updateSelectedNode({ position: { ...selectedNode.position, x: Number(event.target.value) } })} /></td>
                   </tr>
                   <tr>
-                    <th>Y坐标</th>
+                    {renderChineseParamHeader("graph_y", "Y坐标")}
                     <td><input type="number" value={Math.round(selectedNode.position.y)} onChange={(event) => updateSelectedNode({ position: { ...selectedNode.position, y: Number(event.target.value) } })} /></td>
                   </tr>
                   <tr>
-                    <th>旋转角度</th>
+                    {renderChineseParamHeader("rotation")}
                     <td><input type="number" value={selectedNode.rotation} onChange={(event) => updateSelectedNode({ rotation: Number(event.target.value) })} /></td>
                   </tr>
                   <tr>
-                    <th>横向倍率</th>
+                    {renderChineseParamHeader("scaleX")}
                     <td><input type="number" min="0.2" max="5" step="0.1" value={getNodeScaleX(selectedNode)} onChange={(event) => { const scaleX = clampScale(Number(event.target.value)); updateSelectedNode({ scale: scaleX, scaleX }); }} /></td>
                   </tr>
                   <tr>
-                    <th>纵向倍率</th>
+                    {renderChineseParamHeader("scaleY")}
                     <td><input type="number" min="0.2" max="5" step="0.1" value={getNodeScaleY(selectedNode)} onChange={(event) => { const scaleY = clampScale(Number(event.target.value)); updateSelectedNode({ scale: scaleY, scaleY }); }} /></td>
                   </tr>
                   <tr>
-                    <th>图层顺序</th>
+                    {renderChineseParamHeader("layerOrder")}
                     <td>
                       <div className="layer-actions">
                         <button type="button" onClick={() => moveSelectedLayer("back")}>置底</button>
@@ -3961,6 +4978,37 @@ export function App() {
                       </div>
                     </td>
                   </tr>
+                  {!isStaticNode(selectedNode) && (
+                    <>
+                      <tr>
+                        {renderChineseParamHeader("terminalCount")}
+                        <td><input type="number" min="1" max="8" value={selectedNode.terminals.length} onChange={(event) => updateTerminalCount(Number(event.target.value))} /></td>
+                      </tr>
+                      {selectedNode.terminals.map((terminal, terminalIndex) => (
+                        <Fragment key={terminal.id}>
+                          <tr>
+                            <th title={terminal.id}>{terminal.label}</th>
+                            <td>{`${terminal.type.toUpperCase()} / ${terminal.nodeNumber}`}</td>
+                          </tr>
+                          {(terminal.type === "ac" || terminal.type === "dc") && (
+                            <tr>
+                              <th title={`${terminal.id}:vbase`}>{`${terminal.label}电压基值`}</th>
+                              <td>
+                                <div className="unit-value-field">
+                                  <input
+                                    inputMode="decimal"
+                                    value={terminalVoltageBaseNumber(terminal.vbase ?? terminalVbaseFallback(selectedNode, terminalIndex))}
+                                    onChange={(event) => updateTerminalVbase(terminal.id, event.target.value)}
+                                  />
+                                  <span>{voltageUnit}</span>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      ))}
+                    </>
+                  )}
                   {isStaticNode(selectedNode) && (
                     <>
                       {["static-text", "static-web", "static-date", "static-time", "static-datetime", "static-input", "static-button"].includes(selectedNode.kind) && (
@@ -4007,31 +5055,31 @@ export function App() {
                         </>
                       )}
                       <tr>
-                        <th>背景色</th>
+                        {renderChineseParamHeader("fillColor")}
                         <td>{renderColorEditor("fillColor", selectedNode.params.fillColor || "transparent", "#ffffff")}</td>
                       </tr>
                       <tr>
-                        <th>线条颜色</th>
+                        {renderChineseParamHeader("strokeColor")}
                         <td>{renderColorEditor("strokeColor", selectedNode.params.strokeColor || "transparent", "#334155")}</td>
                       </tr>
                       <tr>
-                        <th>文字颜色</th>
+                        {renderChineseParamHeader("textColor")}
                         <td>{renderColorEditor("textColor", selectedNode.params.textColor || "#111827", "#111827")}</td>
                       </tr>
                       <tr>
-                        <th>线条宽度</th>
+                        {renderChineseParamHeader("lineWidth")}
                         <td><input type="number" min="0" max="20" value={selectedNode.params.lineWidth || "2"} onChange={(event) => updateParam("lineWidth", event.target.value)} /></td>
                       </tr>
                       <tr>
-                        <th>边框样式</th>
+                        {renderChineseParamHeader("strokeStyle")}
                         <td>{renderParamEditor("strokeStyle", selectedNode.params.strokeStyle || "solid", false)}</td>
                       </tr>
                       <tr>
-                        <th>字号</th>
+                        {renderChineseParamHeader("fontSize")}
                         <td><input type="number" min="8" max="160" value={selectedNode.params.fontSize || "24"} onChange={(event) => updateParam("fontSize", event.target.value)} /></td>
                       </tr>
                       <tr>
-                        <th>背景图片</th>
+                        {renderChineseParamHeader("backgroundImage")}
                         <td>
                           <div className="image-field-actions">
                             <input value={selectedNode.params.backgroundImage ? "已设置" : "未设置"} readOnly />
@@ -4045,11 +5093,11 @@ export function App() {
                   {!isStaticNode(selectedNode) && (
                     <>
                       <tr>
-                        <th>前景色</th>
-                        <td>{renderColorEditor("foregroundColor", selectedNode.params.foregroundColor || "", selectedNode.kind.startsWith("dc") || selectedNode.kind.includes("dcdc") ? "#0f766e" : "#2563eb")}</td>
+                        {renderChineseParamHeader("foregroundColor")}
+                        <td>{renderColorEditor("foregroundColor", selectedNode.params.foregroundColor || "", terminalColor(selectedNode.terminals[0]?.type))}</td>
                       </tr>
                       <tr>
-                        <th>前景图片</th>
+                        {renderChineseParamHeader("foregroundImage")}
                         <td>
                           <div className="image-field-actions">
                             <input value={selectedNode.params.foregroundImage ? "已设置" : "未设置"} readOnly />
@@ -4065,40 +5113,30 @@ export function App() {
             ) : selectedNode ? (
               <table className="param-table">
                 <tbody>
-                  <tr>
-                    <th>元件名称</th>
-                    <td>
-                      <input value={selectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
-                    </td>
-                  </tr>
-                  <tr>
-                    <th>节点号</th>
-                    <td><input value={selectedNode.nodeNumber} readOnly /></td>
-                  </tr>
-                  <tr>
-                    <th>交流拓扑节点序号</th>
-                    <td><input value={selectedNode.acTopologyNode ?? 0} readOnly /></td>
-                  </tr>
-                  <tr>
-                    <th>直流拓扑节点序号</th>
-                    <td><input value={selectedNode.dcTopologyNode ?? 0} readOnly /></td>
-                  </tr>
-                  <tr>
-                    <th>端子数量</th>
-                    <td><input type="number" min="1" max="8" value={selectedNode.terminals.length} onChange={(event) => updateTerminalCount(Number(event.target.value))} /></td>
-                  </tr>
-                  {selectedNode.terminals.map((terminal) => (
-                    <tr key={terminal.id}>
-                      <th>{terminal.label}</th>
-                      <td>{`${terminal.type.toUpperCase()} / ${terminal.nodeNumber}`}</td>
-                    </tr>
-                  ))}
-                  {Object.entries(selectedNode.params).filter(([key]) => !["backgroundImage", "backgroundImageAssetId", "foregroundColor", "foregroundImage", "foregroundImageAssetId", "fillColor", "strokeColor", "textColor", "lineWidth", "strokeStyle", "fontSize", "fontFamily", "fontWeight", "fontStyle", "textDecoration", "text"].includes(key)).map(([key, value]) => (
-                    <tr key={key}>
-                      <th>{PARAM_LABELS[key] ?? key}</th>
-                      <td>{renderParamEditor(key, value, false)}</td>
-                    </tr>
-                  ))}
+                  {(() => {
+                    const eKeys = getEParameterKeys(selectedNode.kind, selectedNode.params);
+                    const customDefinitions = parseCustomDefinitions(selectedNode.params);
+                    const keys = eKeys.length > 0 ? eKeys : customDefinitions.map((definition) => definition.enName);
+                    const readonlyKeys = new Set(customDefinitions.filter((definition) => definition.readonly).map((definition) => definition.enName));
+                    return keys.map((key) => {
+                      const value = eKeys.length > 0 ? getEParamValue(key, selectedNode) : key === "name" ? selectedNode.name : selectedNode.params[key] ?? "";
+                      const definition = customDefinitions.find((item) => item.enName === key);
+                      return (
+                        <tr key={key}>
+                          {renderParamHeader(key, key, definition?.cnName ?? PARAM_LABELS[key] ?? key)}
+                          <td>
+                            {key === "name" ? (
+                              <input value={selectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
+                            ) : READONLY_E_PARAM_KEYS.has(key) || readonlyKeys.has(key) ? (
+                              <input value={value} readOnly />
+                            ) : (
+                              renderParamEditor(key, value, false)
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
             ) : (
@@ -4144,7 +5182,7 @@ export function App() {
         )}
         {topologyErrors.length > 0 && (
           <section className="validation-panel">
-            <h2>拓扑错误</h2>
+            <h2>拓扑告警</h2>
             {topologyErrors.map((error) => (
               <button key={error.id} onClick={() => locateTopologyError(error)} onDoubleClick={() => locateTopologyError(error)}>
                 <strong>{error.type}</strong>
@@ -4155,7 +5193,7 @@ export function App() {
         )}
       </aside>
       {contextMenu && (
-        <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+        <div className="context-menu" style={contextMenuStyle(contextMenu)}>
           <button onClick={() => runContextMenuAction(undoLastOperation)} disabled={undoStack.length === 0}>
             <Undo2 size={14} />
             撤销
@@ -4171,6 +5209,14 @@ export function App() {
           <button onClick={() => runContextMenuAction(pasteSelection)} disabled={clipboardNodes.length === 0}>
             <FileInput size={14} />
             粘贴
+          </button>
+          <button onClick={() => runContextMenuAction(() => mirrorSelectedNodes("horizontal"))} disabled={selectedNodeIds.length === 0}>
+            <FlipHorizontal size={14} />
+            水平镜像
+          </button>
+          <button onClick={() => runContextMenuAction(() => mirrorSelectedNodes("vertical"))} disabled={selectedNodeIds.length === 0}>
+            <FlipVertical size={14} />
+            垂直镜像
           </button>
           <button onClick={() => runContextMenuAction(() => moveSelectedLayer("forward"))} disabled={selectedNodeIds.length === 0}>
             图层向上
@@ -4191,7 +5237,7 @@ export function App() {
         </div>
       )}
       {projectMenu && (
-        <div className="context-menu" style={{ left: projectMenu.x, top: projectMenu.y }}>
+        <div className="context-menu" style={contextMenuStyle(projectMenu)}>
           <button
             onClick={() => runContextMenuAction(() => {
               createSchemeRecord();
@@ -4274,6 +5320,239 @@ export function App() {
             <Trash2 size={14} />
             删除
           </button>
+        </div>
+      )}
+      {customDeviceDialogOpen && (
+        <div className="image-picker-backdrop" onPointerDown={() => setCustomDeviceDialogOpen(false)}>
+          <section className="custom-device-dialog" onPointerDown={(event) => event.stopPropagation()}>
+            <div className="image-picker-title">
+              <div>
+                <h2>新增自定义图元设备</h2>
+                <p>定义后会出现在左侧图元库，可拖拽到画布建模。</p>
+              </div>
+              <button onClick={() => setCustomDeviceDialogOpen(false)}>关闭</button>
+            </div>
+            {customDeviceDraft.error && <p className="custom-device-error">{customDeviceDraft.error}</p>}
+            <div className="custom-device-form-grid">
+              <label>
+                元件库类型
+                <select
+                  value={customDeviceDraft.groupName}
+                  onChange={(event) => setCustomDeviceDraft((current) => ({ ...current, groupName: event.target.value, error: "" }))}
+                >
+                  {Array.from(new Set([...CUSTOM_LIBRARY_BASE_GROUPS, ...libraryGroups.filter((group) => group !== "静态图元")])).map((group) => (
+                    <option key={group} value={group}>
+                      {group}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                新增自定义元件库
+                <input
+                  value={customDeviceDraft.newGroupName}
+                  placeholder="不填则使用左侧类型"
+                  onChange={(event) => setCustomDeviceDraft((current) => ({ ...current, newGroupName: event.target.value, error: "" }))}
+                />
+              </label>
+              <label>
+                设备类型
+                <input
+                  value={customDeviceDraft.deviceType}
+                  placeholder="例如 ACUnit"
+                  onChange={(event) => setCustomDeviceDraft((current) => ({ ...current, deviceType: event.target.value, error: "" }))}
+                />
+              </label>
+              <label>
+                端子数量
+                <input
+                  type="number"
+                  min="0"
+                  max="4"
+                  value={customDeviceDraft.terminalCount}
+                  onChange={(event) => updateCustomDraftTerminalCount(Number(event.target.value))}
+                />
+              </label>
+            </div>
+            <div className="custom-device-image-row">
+              <span>背景照片</span>
+              <button type="button" onClick={() => customDeviceImageInputRef.current?.click()}>选择本地图片</button>
+              <button
+                type="button"
+                onClick={() =>
+                  setCustomDeviceDraft((current) => ({
+                    ...current,
+                    backgroundImage: generateCustomDeviceImage(current.deviceType || "Unit", current.terminalTypes.slice(0, current.terminalCount)),
+                    error: ""
+                  }))
+                }
+              >
+                程序自动生成
+              </button>
+              <button type="button" onClick={() => setCustomDeviceDraft((current) => ({ ...current, backgroundImage: "", error: "" }))}>清除</button>
+              <strong>{customDeviceDraft.backgroundImage ? "已设置" : "未设置"}</strong>
+            </div>
+            <div className="custom-terminal-grid">
+              {Array.from({ length: customDeviceDraft.terminalCount }).map((_, index) => (
+                <label key={index}>
+                  {`端子${index + 1}能源属性`}
+                  <select
+                    value={customDeviceDraft.terminalTypes[index] ?? "ac"}
+                    onChange={(event) =>
+                      setCustomDeviceDraft((current) => {
+                        const terminalTypes = [...current.terminalTypes];
+                        terminalTypes[index] = event.target.value as TerminalType;
+                        return { ...current, terminalTypes, error: "" };
+                      })
+                    }
+                  >
+                    {TERMINAL_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+            <div className="custom-param-table-wrap">
+              <table className="custom-param-table">
+                <thead>
+                  <tr>
+                    <th>中文名称</th>
+                    <th>英文名称</th>
+                    <th>取值类型</th>
+                    <th>典型取值</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {customDraftDefaultParams.map((row) => (
+                    <tr key={`default-${row.enName}`} className="readonly-row">
+                      <td>{row.cnName}</td>
+                      <td>{row.enName}</td>
+                      <td>{PARAM_VALUE_TYPE_OPTIONS.find((option) => option.value === row.valueType)?.label ?? row.valueType}</td>
+                      <td>{row.typicalValue}</td>
+                      <td>默认</td>
+                    </tr>
+                  ))}
+                  {customDeviceDraft.params.map((row, index) => (
+                    <tr key={row.id}>
+                      <td>
+                        <input
+                          value={row.cnName}
+                          onChange={(event) =>
+                            setCustomDeviceDraft((current) => ({
+                              ...current,
+                              params: current.params.map((item) => (item.id === row.id ? { ...item, cnName: event.target.value } : item)),
+                              error: ""
+                            }))
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={row.enName}
+                          onChange={(event) =>
+                            setCustomDeviceDraft((current) => ({
+                              ...current,
+                              params: current.params.map((item) => (item.id === row.id ? { ...item, enName: event.target.value } : item)),
+                              error: ""
+                            }))
+                          }
+                        />
+                      </td>
+                      <td>
+                        <select
+                          value={row.valueType}
+                          onChange={(event) =>
+                            setCustomDeviceDraft((current) => ({
+                              ...current,
+                              params: current.params.map((item) => (item.id === row.id ? { ...item, valueType: event.target.value as DeviceParameterValueType } : item)),
+                              error: ""
+                            }))
+                          }
+                        >
+                          {PARAM_VALUE_TYPE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <input
+                          value={row.typicalValue}
+                          onChange={(event) =>
+                            setCustomDeviceDraft((current) => ({
+                              ...current,
+                              params: current.params.map((item) => (item.id === row.id ? { ...item, typicalValue: event.target.value } : item)),
+                              error: ""
+                            }))
+                          }
+                        />
+                      </td>
+                      <td>
+                        <div className="custom-param-actions">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCustomDeviceDraft((current) => {
+                                if (index === 0) return current;
+                                const params = [...current.params];
+                                [params[index - 1], params[index]] = [params[index], params[index - 1]];
+                                return { ...current, params };
+                              })
+                            }
+                            disabled={index === 0}
+                          >
+                            上移
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCustomDeviceDraft((current) => {
+                                if (index >= current.params.length - 1) return current;
+                                const params = [...current.params];
+                                [params[index + 1], params[index]] = [params[index], params[index + 1]];
+                                return { ...current, params };
+                              })
+                            }
+                            disabled={index >= customDeviceDraft.params.length - 1}
+                          >
+                            下移
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCustomDeviceDraft((current) => ({ ...current, params: current.params.filter((item) => item.id !== row.id) }))}
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="custom-device-actions">
+              <button
+                type="button"
+                onClick={() =>
+                  setCustomDeviceDraft((current) => ({
+                    ...current,
+                    params: [
+                      ...current.params,
+                      { id: customParamId(), cnName: "", enName: "", valueType: "float", typicalValue: "" }
+                    ]
+                  }))
+                }
+              >
+                新增属性
+              </button>
+              <button type="button" onClick={saveCustomDeviceTemplate}>保存自定义设备</button>
+            </div>
+          </section>
         </div>
       )}
       {imageTarget && (

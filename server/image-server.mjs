@@ -13,6 +13,33 @@ const schemeDataDir = resolve(repoRoot, "data", "schemes");
 const schemeManifestPath = join(schemeDataDir, "schemes.json");
 const maxImageBodyBytes = 16 * 1024 * 1024;
 const maxSchemeBodyBytes = 64 * 1024 * 1024;
+const defaultPowerUnit = "MW";
+const defaultVoltageUnit = "kV";
+const defaultCurrentUnit = "A";
+const defaultPowerBaseValue = 100;
+const eSectionColumns = {
+  ACRealBs: ["idx", "name", "node", "run_stat"],
+  DCRealBs: ["idx", "name", "node", "run_stat"],
+  ACNode: ["idx", "name", "vbase", "voltage", "angle", "isl", "run_stat"],
+  DCNode: ["idx", "name", "vbase", "voltage", "isl", "run_stat"],
+  ACBranch: ["idx", "name", "i_node", "j_node", "r", "x", "b", "run_stat"],
+  DCBranch: ["idx", "name", "i_node", "j_node", "r", "run_stat"],
+  ACLoad: ["idx", "name", "node", "pbase", "pv0", "pv1", "pv2", "qbase", "qv0", "qv1", "qv2", "run_stat"],
+  DCLoad: ["idx", "name", "node", "pbase", "pv0", "pv1", "pv2", "run_stat"],
+  ACGenerator: ["idx", "name", "node", "control_type", "p_set", "q_set", "v_set", "alpha", "run_stat"],
+  DCGenerator: ["idx", "name", "node", "control_type", "v_set", "p_set", "i_set", "run_stat"],
+  ACShuntCompensator: ["idx", "name", "node", "control_type", "q_set", "g_set", "b_set", "v_set", "run_stat"],
+  ACZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
+  DCZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
+  ACSwitch: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
+  DCSwitch: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
+  ACBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
+  DCBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
+  ACTransformer: ["idx", "name", "i_node", "j_node", "r", "x", "gt", "bt", "tap", "shift", "run_stat"],
+  DCDCConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_set", "v_set", "run_stat"],
+  DCACConverter: ["idx", "name", "ac_node", "dc_node", "r1", "r2", "control_type", "p_ac_set", "q_ac_set", "v_ac_set", "v_dc_set", "run_stat"],
+  ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"]
+};
 
 const mimeExt = {
   "image/png": ".png",
@@ -172,21 +199,28 @@ function safeFilePart(name, fallback = "未命名") {
 }
 
 function normalizeProjectForStorage(project) {
+  const indexed = assignMissingDeviceIndexes(Array.isArray(project?.nodes) ? project.nodes : [], project?.deviceIndexCounters);
   return {
     ...project,
-    nodes: Array.isArray(project?.nodes)
-      ? project.nodes.map((node) => {
-          const assetId = node?.params?.backgroundImageAssetId;
-          const backgroundImage = node?.params?.backgroundImage;
-          const params = {
-            ...(node?.params ?? {}),
-            ...(assetId && typeof backgroundImage === "string" && backgroundImage.startsWith("data:")
-              ? { backgroundImage: `/api/images/${assetId}` }
-              : {})
-          };
-          return { ...node, params };
-        })
-      : [],
+    powerUnit: project.powerUnit ?? defaultPowerUnit,
+    voltageUnit: project.voltageUnit ?? defaultVoltageUnit,
+    currentUnit: project.currentUnit ?? defaultCurrentUnit,
+    powerBaseValue:
+      typeof project.powerBaseValue === "number" && Number.isFinite(project.powerBaseValue)
+        ? project.powerBaseValue
+        : defaultPowerBaseValue,
+    deviceIndexCounters: indexed.counters,
+    nodes: indexed.nodes.map((node) => {
+      const assetId = node?.params?.backgroundImageAssetId;
+      const backgroundImage = node?.params?.backgroundImage;
+      const params = {
+        ...(node?.params ?? {}),
+        ...(assetId && typeof backgroundImage === "string" && backgroundImage.startsWith("data:")
+          ? { backgroundImage: `/api/images/${assetId}` }
+          : {})
+      };
+      return { ...node, params };
+    }),
     edges: Array.isArray(project?.edges) ? project.edges : []
   };
 }
@@ -203,21 +237,367 @@ function normalizeSchemesForStorage(schemes) {
   }));
 }
 
+function inferESection(kind, params = {}) {
+  if (kind === "ac-bus") return "ACRealBs";
+  if (kind === "dc-bus") return "DCRealBs";
+  if (params.source_section && eSectionColumns[params.source_section]) return params.source_section;
+  if (kind === "ac-line") return "ACBranch";
+  if (kind === "dc-line") return "DCBranch";
+  if (kind === "ac-load") return "ACLoad";
+  if (kind === "dc-load") return "DCLoad";
+  if (kind?.startsWith("ac-") && kind.includes("source")) return "ACGenerator";
+  if (kind?.startsWith("dc-") && kind.includes("source")) return "DCGenerator";
+  if (kind === "ac-switch" || kind === "ac-disconnector") return "ACSwitch";
+  if (kind === "dc-switch" || kind === "dc-disconnector") return "DCSwitch";
+  if (kind === "ac-breaker") return "ACBreak";
+  if (kind === "dc-breaker") return "DCBreak";
+  if (kind === "ac-transformer" || kind === "ac-two-winding-transformer") return "ACTransformer";
+  if (kind === "dcdc-converter") return "DCDCConverter";
+  if (kind === "acdc-converter") return "DCACConverter";
+  if (kind === "acac-converter") return "ACACConverter";
+  return "";
+}
+
+function parseDeviceIndex(value) {
+  const text = String(value ?? "").trim();
+  if (!/^[1-9]\d*$/.test(text)) {
+    return 0;
+  }
+  return Number.parseInt(text, 10);
+}
+
+function deriveDeviceIndexCounters(nodes) {
+  const counters = {};
+  for (const node of nodes) {
+    const section = inferESection(node?.kind, node?.params ?? {});
+    if (!section) {
+      continue;
+    }
+    const idx = parseDeviceIndex(node?.params?.idx);
+    if (idx > (counters[section] ?? 0)) {
+      counters[section] = idx;
+    }
+  }
+  return counters;
+}
+
+function normalizeDeviceIndexCounters(counters, nodes = []) {
+  const normalized = {};
+  for (const [section, value] of Object.entries(counters ?? {})) {
+    const numeric = Number(value);
+    const safeValue = Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
+    if (safeValue > 0) {
+      normalized[section] = safeValue;
+    }
+  }
+  const derived = deriveDeviceIndexCounters(nodes);
+  for (const [section, value] of Object.entries(derived)) {
+    normalized[section] = Math.max(normalized[section] ?? 0, value);
+  }
+  return normalized;
+}
+
+function assignPermanentDeviceIndex(node, counters = {}) {
+  const section = inferESection(node?.kind, node?.params ?? {});
+  if (!section) {
+    return { node, counters };
+  }
+  const existingIdx = parseDeviceIndex(node?.params?.idx);
+  if (existingIdx > 0) {
+    if (existingIdx <= (counters[section] ?? 0)) {
+      return { node, counters };
+    }
+    return { node, counters: { ...counters, [section]: existingIdx } };
+  }
+  const idx = (counters[section] ?? 0) + 1;
+  return {
+    node: { ...node, params: { ...(node?.params ?? {}), idx: String(idx) } },
+    counters: { ...counters, [section]: idx }
+  };
+}
+
+function assignMissingDeviceIndexes(nodes, counters) {
+  let nextCounters = normalizeDeviceIndexCounters(counters, nodes);
+  let changed = false;
+  const nextNodes = nodes.map((node) => {
+    const result = assignPermanentDeviceIndex(node, nextCounters);
+    nextCounters = result.counters;
+    if (result.node !== node) {
+      changed = true;
+    }
+    return result.node;
+  });
+  return { nodes: changed ? nextNodes : nodes, counters: nextCounters };
+}
+
+function normalizeRunStatForE(value) {
+  if (!value) return "";
+  if (value === "运行") return "1";
+  if (value === "停运" || value === "检修") return "0";
+  return value;
+}
+
+function normalizeSwitchStatusForE(value) {
+  if (!value) return "";
+  if (value === "闭合") return "1";
+  if (value === "合闸") return "1";
+  if (value === "打开") return "0";
+  if (value === "分闸") return "0";
+  return value;
+}
+
+function terminalNodeNumber(node, index) {
+  return node?.terminals?.[index]?.nodeNumber ?? (index === 0 ? node?.nodeNumber : "") ?? "";
+}
+
+function mappedLegacyEValue(key, params = {}) {
+  if (key === "pbase") return params.pbase ?? params.ratedActivePower ?? "";
+  if (key === "qbase") return params.qbase ?? params.ratedReactivePower ?? "";
+  if (key === "r") return params.r ?? params.resistancePu ?? "";
+  if (key === "x") return params.x ?? params.reactancePu ?? "";
+  if (key === "b") return params.b ?? params.halfChargingSusceptancePu ?? "";
+  if (key === "gt") return params.gt ?? params.magnetizingConductancePu ?? "";
+  if (key === "bt") return params.bt ?? params.magnetizingSusceptancePu ?? "";
+  if (key === "tap") return params.tap ?? params.tapRatio ?? "";
+  if (key === "r1") return params.r1 ?? params.sourceEquivalentResistance ?? "";
+  if (key === "r2") return params.r2 ?? params.targetEquivalentResistance ?? "";
+  return params[key] ?? "";
+}
+
+function getEParamValue(key, node, options = {}) {
+  const params = node?.params ?? {};
+  if (key === "name") return node?.name ?? "";
+  if (key === "run_stat") return normalizeRunStatForE(params.run_stat);
+  if (key === "status") return normalizeSwitchStatusForE(params.status ?? params.closedStatus);
+  if (key === "control_type") return params.control_type ?? params.controlType ?? params.sourceControlType ?? "";
+  if (key === "vbase") return params.vbase ?? node?.terminals?.[0]?.vbase ?? "";
+  if (key === "node") return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 0) : params.node ?? terminalNodeNumber(node, 0);
+  if (key === "i_node") return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 0) : params.i_node ?? terminalNodeNumber(node, 0);
+  if (key === "j_node") return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 1) : params.j_node ?? terminalNodeNumber(node, 1);
+  if (key === "ac_node") {
+    const acNodeNumber = node?.terminals?.find((terminal) => terminal.type === "ac")?.nodeNumber ?? terminalNodeNumber(node, 0);
+    return options.preferTopologyNodeNumbers ? acNodeNumber : params.ac_node ?? acNodeNumber;
+  }
+  if (key === "dc_node") {
+    const dcNodeNumber = node?.terminals?.find((terminal) => terminal.type === "dc")?.nodeNumber ?? terminalNodeNumber(node, 1);
+    return options.preferTopologyNodeNumbers ? dcNodeNumber : params.dc_node ?? dcNodeNumber;
+  }
+  return mappedLegacyEValue(key, params);
+}
+
+function getEParameterKeys(kind, params = {}) {
+  const section = inferESection(kind, params);
+  return section ? eSectionColumns[section] ?? [] : [];
+}
+
+function buildEDeviceValues(node, options = {}) {
+  const values = {};
+  for (const key of getEParameterKeys(node.kind, node.params)) {
+    const value = getEParamValue(key, node, options);
+    if (value !== "") {
+      values[key] = value;
+    }
+  }
+  return values;
+}
+
+function isBusNode(node) {
+  return node?.kind === "ac-bus" || node?.kind === "dc-bus";
+}
+
+function isStaticNode(node) {
+  return String(node?.kind ?? "").startsWith("static-");
+}
+
+function getTerminal(node, terminalId) {
+  return node?.terminals?.find((terminal) => terminal.id === terminalId) ?? node?.terminals?.[0];
+}
+
+function calculateElectricalTopology(nodes = [], edges = []) {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const terminalKey = (nodeId, terminalId) => `${nodeId}:${terminalId}`;
+  const parent = new Map();
+  const find = (key) => {
+    const current = parent.get(key);
+    if (!current || current === key) return key;
+    const root = find(current);
+    parent.set(key, root);
+    return root;
+  };
+  const union = (first, second) => {
+    const firstRoot = find(first);
+    const secondRoot = find(second);
+    if (firstRoot !== secondRoot) parent.set(secondRoot, firstRoot);
+  };
+
+  for (const node of nodes) {
+    for (const terminal of node.terminals ?? []) {
+      const key = terminalKey(node.id, terminal.id);
+      parent.set(key, key);
+    }
+    if (isBusNode(node)) {
+      const terminalsByType = new Map();
+      for (const terminal of node.terminals ?? []) {
+        terminalsByType.set(terminal.type, [...(terminalsByType.get(terminal.type) ?? []), terminal]);
+      }
+      for (const terminals of terminalsByType.values()) {
+        const [first, ...rest] = terminals;
+        for (const terminal of rest) {
+          union(terminalKey(node.id, first.id), terminalKey(node.id, terminal.id));
+        }
+      }
+    }
+  }
+
+  for (const edge of edges) {
+    const source = nodeById.get(edge.sourceId);
+    const target = nodeById.get(edge.targetId);
+    if (!source || !target) continue;
+    const sourceTerminal = getTerminal(source, edge.sourceTerminalId);
+    const targetTerminal = getTerminal(target, edge.targetTerminalId);
+    if (!sourceTerminal || !targetTerminal || sourceTerminal.type !== targetTerminal.type) continue;
+    union(terminalKey(source.id, sourceTerminal.id), terminalKey(target.id, targetTerminal.id));
+  }
+
+  const nextTopologyNumberByType = { ac: 1, dc: 1 };
+  const numberByTypeAndRoot = { ac: new Map(), dc: new Map() };
+  const getTopologyNumber = (key, type) => {
+    const root = find(key);
+    const numberByRoot = numberByTypeAndRoot[type];
+    const existing = numberByRoot.get(root);
+    if (existing) return existing;
+    const next = String(nextTopologyNumberByType[type]++);
+    numberByRoot.set(root, next);
+    return next;
+  };
+
+  return nodes.map((node) => {
+    const terminals = (node.terminals ?? []).map((terminal) => {
+      const key = terminalKey(node.id, terminal.id);
+      return { ...terminal, nodeNumber: getTopologyNumber(key, terminal.type) };
+    });
+    const acTopologyNode = Number(terminals.find((terminal) => terminal.type === "ac")?.nodeNumber ?? 0);
+    const dcTopologyNode = Number(terminals.find((terminal) => terminal.type === "dc")?.nodeNumber ?? 0);
+    return {
+      ...node,
+      acTopologyNode,
+      dcTopologyNode,
+      nodeNumber: terminals.length === 1 ? terminals[0].nodeNumber : node.nodeNumber,
+      terminals
+    };
+  });
+}
+
+function firstText(values) {
+  return values.find((value) => value !== undefined && String(value).trim() !== "") ?? "";
+}
+
+function normalizeVoltageBaseInput(value) {
+  let normalized = "";
+  let hasDecimalPoint = false;
+  for (const char of String(value ?? "")) {
+    if (/\d/.test(char)) {
+      normalized += char;
+      continue;
+    }
+    if (char === "." && !hasDecimalPoint) {
+      normalized += char;
+      hasDecimalPoint = true;
+    }
+  }
+  return normalized;
+}
+
+function terminalVoltageDisplay(node, terminal) {
+  const params = node?.params ?? {};
+  return normalizeVoltageBaseInput(firstText([
+    terminal?.vbase,
+    params.vbase,
+    params.highVbase,
+    params.mediumVbase,
+    params.lowVbase,
+    params.sourceVbase,
+    params.targetVbase,
+    params.voltageLevel,
+    params.ratedVoltage,
+    params.voltage
+  ]));
+}
+
+function topologyRepresentativeScore(node) {
+  if (isBusNode(node)) return 0;
+  if ((node?.terminals ?? []).length === 1) return 1;
+  if (String(node?.kind ?? "").includes("converter") || String(node?.kind ?? "").includes("transformer")) return 2;
+  return 3;
+}
+
+function buildTopologyNodeDevices(nodes) {
+  const groups = { ac: new Map(), dc: new Map() };
+  for (const node of nodes) {
+    if (isStaticNode(node)) continue;
+    for (const terminal of node.terminals ?? []) {
+      if (!terminal.nodeNumber) continue;
+      const candidates = groups[terminal.type].get(terminal.nodeNumber) ?? [];
+      candidates.push({ node, terminal });
+      groups[terminal.type].set(terminal.nodeNumber, candidates);
+    }
+  }
+
+  const buildForType = (type, section) =>
+    Array.from(groups[type].entries())
+      .sort(([first], [second]) => Number(first) - Number(second))
+      .map(([idx, candidates]) => {
+        const representative = [...candidates].sort(
+          (first, second) => topologyRepresentativeScore(first.node) - topologyRepresentativeScore(second.node)
+        )[0];
+        const vbase = firstText(candidates.map(({ node, terminal }) => terminalVoltageDisplay(node, terminal)));
+        const voltage = firstText([representative.node?.params?.voltage, vbase]);
+        const runStat = normalizeRunStatForE(representative.node?.params?.run_stat) || "1";
+        const commonParams = {
+          idx,
+          name: representative.node?.name || `${section}_${idx}`,
+          vbase,
+          voltage,
+          isl: representative.node?.params?.isl ?? "0",
+          run_stat: runStat
+        };
+        return {
+          id: `${section}-${idx}`,
+          kind: type === "ac" ? "ac-node" : "dc-node",
+          section,
+          params: section === "ACNode" ? { ...commonParams, angle: representative.node?.params?.angle ?? "0" } : commonParams
+        };
+      });
+
+  return [...buildForType("ac", "ACNode"), ...buildForType("dc", "DCNode")];
+}
+
 function buildDeviceParameterFile(project) {
+  const topologyNodes = calculateElectricalTopology(project.nodes ?? [], project.edges ?? []);
+  const topologyNodeDevices = buildTopologyNodeDevices(topologyNodes);
+  const deviceRecords = topologyNodes
+    .map((node) => {
+      const section = inferESection(node.kind, node.params ?? {});
+      if (!section || section === "ACNode" || section === "DCNode") return null;
+      return {
+        id: node.id,
+        kind: node.kind,
+        section,
+        params: buildEDeviceValues(node, { preferTopologyNodeNumbers: true })
+      };
+    })
+    .filter(Boolean);
   return JSON.stringify(
     {
       version: 1,
       name: project.name,
-      devices: (project.nodes ?? []).map((node) => ({
-        id: node.id,
-        kind: node.kind,
-        name: node.name,
-        nodeNumber: node.nodeNumber,
-        acTopologyNode: node.acTopologyNode,
-        dcTopologyNode: node.dcTopologyNode,
-        terminals: node.terminals,
-        params: node.params
-      })),
+      modelParameters: {
+        powerUnit: project.powerUnit ?? defaultPowerUnit,
+        voltageUnit: project.voltageUnit ?? defaultVoltageUnit,
+        currentUnit: project.currentUnit ?? defaultCurrentUnit,
+        powerBaseValue: project.powerBaseValue ?? defaultPowerBaseValue
+      },
+      devices: [...topologyNodeDevices, ...deviceRecords],
       edges: project.edges ?? []
     },
     null,
