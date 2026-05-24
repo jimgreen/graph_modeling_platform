@@ -35,6 +35,7 @@ import {
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
   getElementFocusPoint,
+  getTemplateParameterDefinitions,
   isGeneratorNode,
   isStaticNode,
   getSwitchVisualState,
@@ -221,8 +222,8 @@ describe("power system model", () => {
   test("includes AC and DC zero-impedance branch elements in the library and E export", () => {
     const acTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-zero-branch");
     const dcTemplate = DEVICE_LIBRARY.find((item) => item.kind === "dc-zero-branch");
-    expect(acTemplate).toMatchObject({ label: "交流零阻抗支路", group: "交流系统", terminalType: "ac", terminalCount: 2 });
-    expect(dcTemplate).toMatchObject({ label: "直流零阻抗支路", group: "直流系统", terminalType: "dc", terminalCount: 2 });
+    expect(acTemplate).toMatchObject({ label: "交流零阻抗支路", group: "交流设备", terminalType: "ac", terminalCount: 2 });
+    expect(dcTemplate).toMatchObject({ label: "直流零阻抗支路", group: "直流设备", terminalType: "dc", terminalCount: 2 });
 
     const acZeroBranch = createDefaultNode("ac-zero-branch", { x: 100, y: 100 });
     const dcZeroBranch = createDefaultNode("dc-zero-branch", { x: 260, y: 100 });
@@ -239,6 +240,13 @@ describe("power system model", () => {
     }));
     expect(exported.devices.some((device: { section: string }) => device.section === "ACZeroBranch")).toBe(true);
     expect(exported.devices.some((device: { section: string }) => device.section === "DCZeroBranch")).toBe(true);
+  });
+
+  test("uses impedance glyphs for AC lines and resistance-only glyphs for DC lines", () => {
+    expect(getDeviceGlyphVariant("ac-line")).toBe("ac-line");
+    expect(getDeviceGlyphVariant("dc-line")).toBe("dc-line");
+    expect(getDeviceGlyphVariant("ac-zero-branch")).toBe("line");
+    expect(getDeviceGlyphVariant("dc-zero-branch")).toBe("line");
   });
 
   test("adds editable voltage base defaults to every electrical terminal", () => {
@@ -1056,7 +1064,7 @@ describe("power system model", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "dc-storage");
     expect(template).toMatchObject({
       label: "电化学储能",
-      group: "直流系统",
+      group: "直流设备",
       terminalType: "dc",
       terminalCount: 1
     });
@@ -1072,7 +1080,7 @@ describe("power system model", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-storage");
     expect(template).toMatchObject({
       label: "电化学储能",
-      group: "交流系统",
+      group: "交流设备",
       terminalType: "ac",
       terminalCount: 1
     });
@@ -1207,7 +1215,7 @@ describe("power system model", () => {
       custom: true,
       parameterDefinitions: [
         { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
-        { cnName: "名称", enName: "name", valueType: "enum", typicalValue: "", readonly: true },
+        { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
         { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true },
         { cnName: "额定效率", enName: "eta", valueType: "float", typicalValue: "0.95" }
       ]
@@ -1228,6 +1236,80 @@ describe("power system model", () => {
     const secondIndexed = assignPermanentDeviceIndex(createNodeFromTemplate(template, { x: 180, y: 120 }), firstIndexed.counters);
     expect(firstIndexed.node.params.idx).toBe("1");
     expect(secondIndexed.node.params.idx).toBe("2");
+  });
+
+  test("applies edited built-in template definitions when creating new nodes", () => {
+    const baseTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-line");
+    expect(baseTemplate).toBeDefined();
+    const template: DeviceTemplate = {
+      ...baseTemplate!,
+      params: { ...baseTemplate!.params, owner: "运维班" },
+      parameterDefinitions: [
+        {
+          cnName: "巡视单位",
+          enName: "owner",
+          valueType: "enum",
+          typicalValue: "运维班"
+        }
+      ]
+    };
+
+    const node = createNodeFromTemplate(template, { x: 100, y: 100 });
+
+    expect(node.params.owner).toBe("运维班");
+    expect(JSON.parse(node.params[CUSTOM_PARAM_DEFINITIONS_KEY])).toEqual(template.parameterDefinitions);
+  });
+
+  test("infers expected value types for built-in component definitions", () => {
+    const definitionTypes = (kind: string) => {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
+      expect(template).toBeDefined();
+      return Object.fromEntries(getTemplateParameterDefinitions(template!).map((definition) => [definition.enName, definition.valueType]));
+    };
+
+    expect(definitionTypes("ac-source")).toMatchObject({
+      idx: "integer",
+      node: "integer",
+      p_set: "float",
+      q_set: "float",
+      v_set: "float"
+    });
+    expect(definitionTypes("dc-source")).toMatchObject({
+      idx: "integer",
+      node: "integer",
+      p_set: "float",
+      i_set: "float",
+      v_set: "float"
+    });
+    expect(definitionTypes("ac-load")).toMatchObject({
+      pbase: "float",
+      qbase: "float",
+      pv0: "float",
+      pv1: "float",
+      pv2: "float",
+      qv0: "float",
+      qv1: "float",
+      qv2: "float"
+    });
+    expect(definitionTypes("ac-line")).toMatchObject({
+      i_node: "integer",
+      j_node: "integer",
+      r: "float",
+      x: "float",
+      b: "float"
+    });
+    expect(definitionTypes("ac-transformer")).toMatchObject({
+      gt: "float",
+      bt: "float",
+      r: "float",
+      x: "float"
+    });
+    expect(definitionTypes("dcdc-converter")).toMatchObject({
+      i_node: "integer",
+      j_node: "integer",
+      r1: "float",
+      r2: "float"
+    });
   });
 
   test("builds a two-level element tree and focus points for canvas elements", () => {

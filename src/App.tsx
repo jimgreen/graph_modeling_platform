@@ -12,8 +12,13 @@ import {
   Copy,
   ChevronDown,
   ChevronRight,
+  EyeOff,
   FolderOpen,
+  MousePointer2,
+  PanelLeftOpen,
+  PanelRightOpen,
   Pencil,
+  Pin,
   Save,
   Trash2,
   Undo2
@@ -23,6 +28,7 @@ import {
   buildElementTree,
   assignMissingDeviceIndexes,
   assignPermanentDeviceIndex,
+  applyDeviceTemplateDefinitionOverride,
   buildEDeviceParameterFile,
   buildTopology,
   calculateElectricalTopology,
@@ -53,6 +59,7 @@ import {
   getSwitchVisualState,
   getEParameterKeys,
   getEParamValue,
+  getTemplateParameterDefinitions,
   getTerminalPoint,
   normalizeVoltageBaseInput,
   isBusNode,
@@ -66,6 +73,7 @@ import {
   type DeviceParameterDefinition,
   type DeviceParameterValueType,
   type DeviceTemplate,
+  type DeviceTemplateDefinitionOverride,
   type ElementTreeItem,
   type Edge,
   type ModelNode,
@@ -90,6 +98,13 @@ import {
 } from "./model";
 import { resolveKeyboardShortcutScope } from "./keyboardShortcuts";
 import { resolveCanvasDeleteAction } from "./selectionActions";
+import {
+  isSidePanelVisible,
+  nextSidePanelAutoVisible,
+  normalizeSidePanelMode,
+  type SidePanelMode,
+  type SidePanelSide
+} from "./sidePanelVisibility";
 
 type ToolMode = "select" | "connect";
 type LibraryGroup = string;
@@ -211,6 +226,9 @@ type CustomDeviceDraft = {
   params: CustomParamDraft[];
   error: string;
 };
+type DeviceDefinitionDraftRow = DeviceParameterDefinition & {
+  id: string;
+};
 
 const terminalColor = terminalTypeColor;
 const busEndpointColor = (node: ModelNode) => terminalColor(node.terminals[0]?.type);
@@ -229,8 +247,8 @@ const DEFAULT_POWER_BASE_VALUE = 100;
 const POWER_UNIT_OPTIONS = ["W", "kW", "MW"];
 const VOLTAGE_UNIT_OPTIONS = ["V", "kV"];
 const CURRENT_UNIT_OPTIONS = ["A", "kA"];
-const DEFAULT_LIBRARY_GROUPS: LibraryGroup[] = ["静态图元", "交流系统", "直流系统", "变流设备", "氢能设备", "热能设备"];
-const CUSTOM_LIBRARY_BASE_GROUPS: LibraryGroup[] = ["交流系统", "直流系统", "变流设备", "氢能设备", "热能设备"];
+const DEFAULT_LIBRARY_GROUPS: LibraryGroup[] = ["静态图元", "交流设备", "直流设备", "变流设备", "氢能设备", "热能设备"];
+const CUSTOM_LIBRARY_BASE_GROUPS: LibraryGroup[] = ["交流设备", "直流设备", "变流设备", "氢能设备", "热能设备"];
 const TERMINAL_TYPE_OPTIONS: Array<{ value: TerminalType; label: string }> = [
   { value: "ac", label: "交流电" },
   { value: "dc", label: "直流电" },
@@ -240,6 +258,7 @@ const TERMINAL_TYPE_OPTIONS: Array<{ value: TerminalType; label: string }> = [
 const PARAM_VALUE_TYPE_OPTIONS: Array<{ value: DeviceParameterValueType; label: string }> = [
   { value: "integer", label: "整数" },
   { value: "float", label: "浮点数" },
+  { value: "string", label: "字符串" },
   { value: "enum", label: "枚举量" }
 ];
 const PROJECT_PANEL_MIN_HEIGHT = 150;
@@ -272,6 +291,9 @@ const ACTIVE_PROJECT_STORAGE_KEY = "power-system-active-project";
 const DRAFT_PROJECT_STORAGE_KEY = "power-system-current-draft";
 const IMAGE_STORAGE_KEY = "power-system-image-assets";
 const CUSTOM_DEVICE_LIBRARY_STORAGE_KEY = "power-system-custom-device-library";
+const DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY = "power-system-device-definition-overrides";
+const LEFT_PANEL_MODE_STORAGE_KEY = "power-system-left-panel-mode";
+const RIGHT_PANEL_MODE_STORAGE_KEY = "power-system-right-panel-mode";
 const PARAM_LABELS: Record<string, string> = {
   name: "名称",
   schemeName: "所属方案",
@@ -679,9 +701,20 @@ async function saveBackendSchemes(schemes: SavedSchemeRecord[]): Promise<void> {
 
 function groupDeviceTemplates(templates: DeviceTemplate[]): Record<string, DeviceTemplate[]> {
   return templates.reduce<Record<string, DeviceTemplate[]>>((groups, item) => {
-    groups[item.group] = groups[item.group] ? [...groups[item.group], item] : [item];
+    const group = normalizeLibraryGroupName(item.group);
+    groups[group] = groups[group] ? [...groups[group], { ...item, group }] : [{ ...item, group }];
     return groups;
   }, {});
+}
+
+function normalizeLibraryGroupName(groupName: string): string {
+  if (groupName === "交流系统") {
+    return "交流设备";
+  }
+  if (groupName === "直流系统") {
+    return "直流设备";
+  }
+  return groupName;
 }
 
 function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[] {
@@ -694,7 +727,7 @@ function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[] {
       ...item,
       kind: String((item as DeviceTemplate).kind ?? ""),
       label: String((item as DeviceTemplate).label ?? (item as DeviceTemplate).kind ?? ""),
-      group: String((item as DeviceTemplate).group ?? "自定义元件库"),
+      group: normalizeLibraryGroupName(String((item as DeviceTemplate).group ?? "自定义元件库")),
       size: (item as DeviceTemplate).size ?? { width: 96, height: 62 },
       params: (item as DeviceTemplate).params ?? {},
       terminalType: ((item as DeviceTemplate).terminalType ?? "ac") as TerminalType,
@@ -707,6 +740,56 @@ function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[] {
     .filter((item) => item.kind.trim() && item.label.trim());
 }
 
+function normalizeDefinitionRows(value: unknown): DeviceParameterDefinition[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is DeviceParameterDefinition => Boolean(item && typeof item === "object"))
+    .map((item) => {
+      const enName = String((item as DeviceParameterDefinition).enName ?? "").trim();
+      const cnName = String((item as DeviceParameterDefinition).cnName ?? enName).trim() || enName;
+      const valueType = (["integer", "float", "string", "enum"].includes((item as DeviceParameterDefinition).valueType)
+        ? (item as DeviceParameterDefinition).valueType
+        : "string") as DeviceParameterValueType;
+      return {
+        cnName,
+        enName,
+        valueType,
+        typicalValue: String((item as DeviceParameterDefinition).typicalValue ?? ""),
+        readonly: Boolean((item as DeviceParameterDefinition).readonly)
+      };
+    })
+    .filter((item) => item.enName);
+}
+
+function normalizeDeviceDefinitionOverrides(value: unknown): Record<string, DeviceTemplateDefinitionOverride> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return Object.entries(value as Record<string, DeviceTemplateDefinitionOverride>).reduce<Record<string, DeviceTemplateDefinitionOverride>>(
+    (overrides, [kind, override]) => {
+      if (!override || typeof override !== "object") {
+        return overrides;
+      }
+      const normalizedKind = String(override.kind ?? kind).trim();
+      if (!normalizedKind) {
+        return overrides;
+      }
+      overrides[normalizedKind] = {
+        kind: normalizedKind,
+        params: Object.fromEntries(
+          Object.entries(override.params ?? {}).map(([key, val]) => [key, String(val ?? "")])
+        ),
+        parameterDefinitions: normalizeDefinitionRows(override.parameterDefinitions),
+        updatedAt: typeof override.updatedAt === "string" ? override.updatedAt : undefined
+      };
+      return overrides;
+    },
+    {}
+  );
+}
+
 function readCustomDeviceTemplates(): DeviceTemplate[] {
   try {
     return normalizeCustomDeviceTemplates(JSON.parse(window.localStorage.getItem(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY) ?? "[]"));
@@ -715,11 +798,39 @@ function readCustomDeviceTemplates(): DeviceTemplate[] {
   }
 }
 
+function readDeviceDefinitionOverrides(): Record<string, DeviceTemplateDefinitionOverride> {
+  try {
+    return normalizeDeviceDefinitionOverrides(JSON.parse(window.localStorage.getItem(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY) ?? "{}"));
+  } catch {
+    return {};
+  }
+}
+
+function readSidePanelMode(storageKey: string): SidePanelMode {
+  try {
+    return normalizeSidePanelMode(window.localStorage.getItem(storageKey));
+  } catch {
+    return "pinned";
+  }
+}
+
 function customParamId() {
   return `param-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function createEmptyCustomDeviceDraft(groupName = "交流系统"): CustomDeviceDraft {
+function deviceDefinitionRowId() {
+  return `def-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function createDefinitionDraftRows(template: DeviceTemplate): DeviceDefinitionDraftRow[] {
+  return getTemplateParameterDefinitions(template).map((definition) => ({
+    ...definition,
+    cnName: definition.cnName === definition.enName ? PARAM_LABELS[definition.enName] ?? definition.cnName : definition.cnName,
+    id: deviceDefinitionRowId()
+  }));
+}
+
+function createEmptyCustomDeviceDraft(groupName = "交流设备"): CustomDeviceDraft {
   return {
     groupName,
     newGroupName: "",
@@ -746,7 +857,7 @@ function customDefaultDefinitions(terminalTypes: TerminalType[]): DeviceParamete
   });
   return [
     { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
-    { cnName: "名称", enName: "name", valueType: "enum", typicalValue: "", readonly: true },
+    { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
     { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true },
     ...nodeDefinitions
   ];
@@ -1250,6 +1361,53 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
     );
   }
 
+  if (glyphVariant === "ac-line") {
+    const left = -w / 2 + 8;
+    const right = w / 2 - 8;
+    const symbolWidth = Math.min(Math.max(w - 24, 34), miniature ? 36 : 54);
+    const symbolLeft = -symbolWidth / 2;
+    const resistorWidth = symbolWidth * 0.34;
+    const resistorLeft = symbolLeft;
+    const resistorRight = resistorLeft + resistorWidth;
+    const coilGap = 4;
+    const coilStart = resistorRight + coilGap;
+    const coilEnd = symbolLeft + symbolWidth;
+    const loopWidth = (coilEnd - coilStart) / 3;
+    const resistorHeight = miniature ? 9 : 12;
+    const coilHeight = miniature ? 8 : 11;
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round">
+        <line x1={left} y1="0" x2={resistorLeft} y2="0" />
+        <rect x={resistorLeft} y={-resistorHeight / 2} width={resistorWidth} height={resistorHeight} rx="1.5" />
+        <line x1={resistorRight} y1="0" x2={coilStart} y2="0" />
+        <path
+          d={[
+            `M ${coilStart} 0`,
+            `C ${coilStart + loopWidth * 0.25} ${-coilHeight} ${coilStart + loopWidth * 0.75} ${-coilHeight} ${coilStart + loopWidth} 0`,
+            `C ${coilStart + loopWidth * 1.25} ${-coilHeight} ${coilStart + loopWidth * 1.75} ${-coilHeight} ${coilStart + loopWidth * 2} 0`,
+            `C ${coilStart + loopWidth * 2.25} ${-coilHeight} ${coilStart + loopWidth * 2.75} ${-coilHeight} ${coilEnd} 0`
+          ].join(" ")}
+        />
+        <line x1={coilEnd} y1="0" x2={right} y2="0" />
+      </g>
+    );
+  }
+
+  if (glyphVariant === "dc-line") {
+    const left = -w / 2 + 8;
+    const right = w / 2 - 8;
+    const resistorWidth = Math.min(Math.max(w * 0.32, 20), miniature ? 22 : 34);
+    const resistorLeft = -resistorWidth / 2;
+    const resistorHeight = miniature ? 9 : 12;
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round">
+        <line x1={left} y1="0" x2={resistorLeft} y2="0" />
+        <rect x={resistorLeft} y={-resistorHeight / 2} width={resistorWidth} height={resistorHeight} rx="1.5" />
+        <line x1={resistorWidth / 2} y1="0" x2={right} y2="0" />
+      </g>
+    );
+  }
+
   if (glyphVariant === "line") {
     return (
       <g stroke={stroke} strokeWidth="4" strokeLinecap="round">
@@ -1466,10 +1624,19 @@ export function App() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [inspectorTab, setInspectorTab] = useState<"model" | "tree" | "graph" | "device">("graph");
   const [leftPanelTab, setLeftPanelTab] = useState<"projects" | "library">("projects");
+  const [leftPanelMode, setLeftPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(LEFT_PANEL_MODE_STORAGE_KEY));
+  const [rightPanelMode, setRightPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(RIGHT_PANEL_MODE_STORAGE_KEY));
+  const [leftPanelAutoVisible, setLeftPanelAutoVisible] = useState(false);
+  const [rightPanelAutoVisible, setRightPanelAutoVisible] = useState(false);
   const [expandedLibraryGroups, setExpandedLibraryGroups] = useState<LibraryGroup[]>([...DEFAULT_LIBRARY_GROUPS]);
   const [customDeviceTemplates, setCustomDeviceTemplates] = useState<DeviceTemplate[]>(() => readCustomDeviceTemplates());
   const [customDeviceDialogOpen, setCustomDeviceDialogOpen] = useState(false);
   const [customDeviceDraft, setCustomDeviceDraft] = useState<CustomDeviceDraft>(() => createEmptyCustomDeviceDraft());
+  const [deviceDefinitionOverrides, setDeviceDefinitionOverrides] = useState<Record<string, DeviceTemplateDefinitionOverride>>(() => readDeviceDefinitionOverrides());
+  const [deviceDefinitionDialogOpen, setDeviceDefinitionDialogOpen] = useState(false);
+  const [selectedDefinitionKind, setSelectedDefinitionKind] = useState<DeviceKind | "">("");
+  const [definitionDraftRows, setDefinitionDraftRows] = useState<DeviceDefinitionDraftRow[]>([]);
+  const [definitionDraftError, setDefinitionDraftError] = useState("");
   const [topologyErrors, setTopologyErrors] = useState<TopologyValidationError[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedSchemeId, setSelectedSchemeId] = useState<string>("");
@@ -1493,12 +1660,18 @@ export function App() {
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId);
   const projects = useMemo(() => schemes.flatMap((scheme) => scheme.projects), [schemes]);
-  const libraryTemplates = useMemo<DeviceTemplate[]>(() => [...DEVICE_LIBRARY, ...customDeviceTemplates], [customDeviceTemplates]);
+  const baseLibraryTemplates = useMemo<DeviceTemplate[]>(() => [...DEVICE_LIBRARY, ...customDeviceTemplates], [customDeviceTemplates]);
+  const libraryTemplates = useMemo<DeviceTemplate[]>(
+    () => baseLibraryTemplates.map((template) => applyDeviceTemplateDefinitionOverride(template, deviceDefinitionOverrides[template.kind])),
+    [baseLibraryTemplates, deviceDefinitionOverrides]
+  );
   const groupedLibrary = useMemo(() => groupDeviceTemplates(libraryTemplates), [libraryTemplates]);
   const libraryGroups = useMemo<LibraryGroup[]>(
-    () => Array.from(new Set([...DEFAULT_LIBRARY_GROUPS, ...libraryTemplates.map((item) => item.group)])),
+    () => Array.from(new Set([...DEFAULT_LIBRARY_GROUPS, ...libraryTemplates.map((item) => normalizeLibraryGroupName(item.group))])),
     [libraryTemplates]
   );
+  const selectedDefinitionTemplate = libraryTemplates.find((template) => template.kind === selectedDefinitionKind) ?? libraryTemplates[0];
+  const selectedDefinitionBaseTemplate = baseLibraryTemplates.find((template) => template.kind === selectedDefinitionTemplate?.kind);
   const selectedProjectRecord = projects.find((project) => project.id === selectedProjectId);
   const activeProjectRecord = projects.find((project) => project.id === activeProjectId);
   const currentModelRecord: SavedProjectRecord = selectedProjectRecord ?? activeProjectRecord ?? {
@@ -1527,6 +1700,8 @@ export function App() {
   const topology = useMemo(() => buildTopology(nodes, edges), [nodes, edges]);
   const elementTree = useMemo(() => buildElementTree(nodes, edges), [edges, nodes]);
   const canvasBounds = useMemo<CanvasBounds>(() => ({ width: canvasWidth, height: canvasHeight }), [canvasHeight, canvasWidth]);
+  const leftPanelVisible = isSidePanelVisible(leftPanelMode, leftPanelAutoVisible);
+  const rightPanelVisible = isSidePanelVisible(rightPanelMode, rightPanelAutoVisible);
   const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
   const nodeImage = (node: ModelNode) => resolveNodeImage(node, imageAssets);
   const nodeForegroundImage = (node: ModelNode) => resolveNodeForegroundImage(node, imageAssets);
@@ -1641,6 +1816,10 @@ export function App() {
   useEffect(() => {
     window.localStorage.setItem(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, JSON.stringify(customDeviceTemplates));
   }, [customDeviceTemplates]);
+
+  useEffect(() => {
+    window.localStorage.setItem(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, JSON.stringify(deviceDefinitionOverrides));
+  }, [deviceDefinitionOverrides]);
 
   const refreshImageFolders = () =>
     fetchBackendImageFolders()
@@ -1936,6 +2115,22 @@ export function App() {
       projectListPointerInsideRef.current = false;
     }
   }, [leftPanelTab]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LEFT_PANEL_MODE_STORAGE_KEY, leftPanelMode);
+    } catch {
+      // Ignore storage failures; panel mode still works for the active session.
+    }
+  }, [leftPanelMode]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(RIGHT_PANEL_MODE_STORAGE_KEY, rightPanelMode);
+    } catch {
+      // Ignore storage failures; panel mode still works for the active session.
+    }
+  }, [rightPanelMode]);
 
   const currentProject = (): ProjectFile => ({
     ...lockProjectEdgeTerminals({
@@ -2344,6 +2539,97 @@ export function App() {
     };
   };
 
+  const setSidePanelMode = (side: SidePanelSide, mode: SidePanelMode) => {
+    if (side === "left") {
+      setLeftPanelMode(mode);
+      setLeftPanelAutoVisible(mode === "auto");
+    } else {
+      setRightPanelMode(mode);
+      setRightPanelAutoVisible(mode === "auto");
+    }
+  };
+
+  const updateAutoPanelVisibility = (side: SidePanelSide, event: Parameters<typeof nextSidePanelAutoVisible>[3]) => {
+    if (side === "left") {
+      setLeftPanelAutoVisible((current) => nextSidePanelAutoVisible("left", leftPanelMode, current, event));
+    } else {
+      setRightPanelAutoVisible((current) => nextSidePanelAutoVisible("right", rightPanelMode, current, event));
+    }
+  };
+
+  const activateInspectorFromCanvas = () => {
+    updateAutoPanelVisibility("right", "canvas-activate");
+  };
+
+  const hideAutoPanelsFromWorkspace = () => {
+    if (leftPanelMode === "auto") {
+      setLeftPanelAutoVisible(false);
+    }
+    if (rightPanelMode === "auto") {
+      setRightPanelAutoVisible(false);
+    }
+  };
+
+  const renderSidePanelModeControls = (side: SidePanelSide) => {
+    const mode = side === "left" ? leftPanelMode : rightPanelMode;
+    const label = side === "left" ? "左侧栏" : "右侧栏";
+    const options: Array<{ mode: SidePanelMode; title: string; icon: typeof Pin }> = [
+      { mode: "pinned", title: `${label}永久显示`, icon: Pin },
+      { mode: "auto", title: `${label}自动显示/隐藏`, icon: MousePointer2 },
+      { mode: "hidden", title: `${label}永久隐藏`, icon: EyeOff }
+    ];
+    return (
+      <div className="side-panel-mode-controls" role="group" aria-label={`${label}显示模式`}>
+        {options.map((option) => {
+          const Icon = option.icon;
+          return (
+            <button
+              type="button"
+              key={option.mode}
+              className={mode === option.mode ? "active" : ""}
+              title={option.title}
+              aria-label={option.title}
+              onClick={() => setSidePanelMode(side, option.mode)}
+            >
+              <Icon size={15} />
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderSidePanelEdgeTrigger = (side: SidePanelSide) => {
+    const mode = side === "left" ? leftPanelMode : rightPanelMode;
+    const visible = side === "left" ? leftPanelVisible : rightPanelVisible;
+    if (visible) {
+      return null;
+    }
+    const Icon = side === "left" ? PanelLeftOpen : PanelRightOpen;
+    const label = side === "left" ? "显示左侧栏" : "显示右侧栏";
+    return (
+      <div
+        className={`side-panel-edge-trigger ${side} mode-${mode}`}
+        onPointerEnter={() => updateAutoPanelVisibility(side, "edge-enter")}
+      >
+        <button
+          type="button"
+          title={mode === "hidden" ? `${label}并切换为永久显示` : label}
+          aria-label={label}
+          onClick={() => {
+            if (mode === "hidden") {
+              setSidePanelMode(side, "pinned");
+            } else {
+              updateAutoPanelVisibility(side, "edge-enter");
+            }
+          }}
+        >
+          <Icon size={17} />
+        </button>
+      </div>
+    );
+  };
+
   const clampScale = (value: number) => Math.max(0.2, Math.min(5, value));
   const signedScale = (value: number, signSource: number) => clampScale(value) * (Math.sign(signSource) || 1);
 
@@ -2537,6 +2823,7 @@ export function App() {
     setNodes((current) => [...current, indexed.node]);
     setSelectedNodeIds([indexed.node.id]);
     setSelectedEdgeId("");
+    activateInspectorFromCanvas();
   };
 
   const handleNodePointerDown = (event: PointerEvent<SVGGElement>, node: ModelNode) => {
@@ -2544,6 +2831,7 @@ export function App() {
     if (event.button !== 0) {
       return;
     }
+    activateInspectorFromCanvas();
     if (event.ctrlKey && svgRef.current) {
       setSelectedEdgeId("");
       setConnectSource(null);
@@ -3278,6 +3566,7 @@ export function App() {
   };
 
   const locateTopologyError = (error: TopologyValidationError) => {
+    activateInspectorFromCanvas();
     const firstNodeId = error.relatedNodeIds[0] ?? error.nodeId;
     const node = firstNodeId ? nodeById.get(firstNodeId) : undefined;
     setSelectedNodeIds(firstNodeId ? [firstNodeId] : []);
@@ -3901,6 +4190,105 @@ export function App() {
 
   const customDraftTerminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
   const customDraftDefaultParams = customDefaultDefinitions(customDraftTerminalTypes);
+  const customDevicePreviewImage =
+    customDeviceDraft.backgroundImage ||
+    generateCustomDeviceImage(customDeviceDraft.deviceType || "Unit", customDraftTerminalTypes.length > 0 ? customDraftTerminalTypes : ["ac"]);
+
+  const loadDefinitionTemplateDraft = (template: DeviceTemplate) => {
+    setSelectedDefinitionKind(template.kind);
+    setDefinitionDraftRows(createDefinitionDraftRows(template));
+    setDefinitionDraftError("");
+  };
+
+  const openDeviceDefinitionDialog = () => {
+    const template = selectedDefinitionTemplate ?? libraryTemplates[0];
+    if (template) {
+      loadDefinitionTemplateDraft(template);
+    }
+    setDeviceDefinitionDialogOpen(true);
+  };
+
+  const updateDefinitionDraftRow = (rowId: string, patch: Partial<DeviceDefinitionDraftRow>) => {
+    setDefinitionDraftRows((current) => current.map((row) => (row.id === rowId ? { ...row, ...patch } : row)));
+    setDefinitionDraftError("");
+  };
+
+  const addDefinitionDraftRow = () => {
+    setDefinitionDraftRows((current) => [
+      ...current,
+      {
+        id: deviceDefinitionRowId(),
+        cnName: "",
+        enName: "",
+        valueType: "string",
+        typicalValue: ""
+      }
+    ]);
+    setDefinitionDraftError("");
+  };
+
+  const deleteDefinitionDraftRow = (rowId: string) => {
+    setDefinitionDraftRows((current) => current.filter((row) => row.id !== rowId || row.readonly));
+    setDefinitionDraftError("");
+  };
+
+  const saveDeviceDefinitionDraft = () => {
+    if (!selectedDefinitionTemplate) {
+      return;
+    }
+    const normalizedRows: DeviceParameterDefinition[] = [];
+    const seenNames = new Set<string>();
+    for (const row of definitionDraftRows) {
+      const enName = row.enName.trim();
+      const cnName = row.cnName.trim();
+      if (!enName || !cnName) {
+        setDefinitionDraftError("中文名称和英文名称不能为空。");
+        return;
+      }
+      const key = enName.toLowerCase();
+      if (seenNames.has(key)) {
+        setDefinitionDraftError(`英文名称 ${enName} 重复，无法保存。`);
+        return;
+      }
+      seenNames.add(key);
+      normalizedRows.push({
+        cnName,
+        enName,
+        valueType: row.valueType,
+        typicalValue: row.typicalValue,
+        readonly: Boolean(row.readonly)
+      });
+    }
+    const params = normalizedRows.reduce<Record<string, string>>((acc, row) => {
+      if (row.enName !== "name") {
+        acc[row.enName] = row.typicalValue;
+      }
+      return acc;
+    }, {});
+    setDeviceDefinitionOverrides((current) => ({
+      ...current,
+      [selectedDefinitionTemplate.kind]: {
+        kind: selectedDefinitionTemplate.kind,
+        params,
+        parameterDefinitions: normalizedRows,
+        updatedAt: new Date().toISOString()
+      }
+    }));
+    setDefinitionDraftRows(normalizedRows.map((row) => ({ ...row, id: deviceDefinitionRowId() })));
+    setDefinitionDraftError("");
+  };
+
+  const resetDeviceDefinitionDraft = () => {
+    if (!selectedDefinitionBaseTemplate) {
+      return;
+    }
+    loadDefinitionTemplateDraft(selectedDefinitionBaseTemplate);
+    setDeviceDefinitionOverrides((current) => {
+      const next = { ...current };
+      delete next[selectedDefinitionBaseTemplate.kind];
+      return next;
+    });
+  };
 
   const updateCustomDraftTerminalCount = (value: number) => {
     const count = Math.max(0, Math.min(4, Math.round(value || 0)));
@@ -3935,9 +4323,10 @@ export function App() {
 
   const saveCustomDeviceTemplate = () => {
     const newGroupName = customDeviceDraft.newGroupName.trim();
-    const groupName = newGroupName || customDeviceDraft.groupName;
+    const normalizedNewGroupName = newGroupName ? normalizeLibraryGroupName(newGroupName) : "";
+    const groupName = normalizedNewGroupName || normalizeLibraryGroupName(customDeviceDraft.groupName);
     const existingGroups = new Set(libraryGroups.map((group) => group.toLowerCase()));
-    if (newGroupName && existingGroups.has(newGroupName.toLowerCase())) {
+    if (normalizedNewGroupName && existingGroups.has(normalizedNewGroupName.toLowerCase())) {
       setCustomDeviceDraft((current) => ({ ...current, error: "元件库名称已存在，无法新增同名元件库。" }));
       return;
     }
@@ -3999,16 +4388,21 @@ export function App() {
 
   const renderLibraryPanel = () => (
     <div className="library-scroll">
-      <button
-        type="button"
-        className="custom-device-create-button"
-        onClick={() => {
-          setCustomDeviceDraft(createEmptyCustomDeviceDraft("交流系统"));
-          setCustomDeviceDialogOpen(true);
-        }}
-      >
-        新增自定义图元设备
-      </button>
+      <div className="library-definition-actions">
+        <button
+          type="button"
+          className="custom-device-create-button"
+          onClick={() => {
+            setCustomDeviceDraft(createEmptyCustomDeviceDraft("交流设备"));
+            setCustomDeviceDialogOpen(true);
+          }}
+        >
+          新建元件
+        </button>
+        <button type="button" className="custom-device-create-button" onClick={openDeviceDefinitionDialog}>
+          修改元件
+        </button>
+      </div>
       {libraryGroups.map((group) => {
         const expanded = expandedLibraryGroups.includes(group);
         return (
@@ -4089,8 +4483,14 @@ export function App() {
   );
 
   return (
-    <div className="app-shell">
-      <aside className="library-panel">
+    <div className={`app-shell left-panel-${leftPanelMode} right-panel-${rightPanelMode}`}>
+      {renderSidePanelEdgeTrigger("left")}
+      {renderSidePanelEdgeTrigger("right")}
+      <aside
+        className={`library-panel floating-side-panel ${leftPanelVisible ? "visible" : "hidden"}`}
+        onPointerEnter={() => updateAutoPanelVisibility("left", "panel-enter")}
+        onPointerLeave={() => updateAutoPanelVisibility("left", "panel-leave")}
+      >
         <div className="brand">
           <div className="brand-mark">PS</div>
           <div>
@@ -4098,6 +4498,7 @@ export function App() {
             <p>拖拽建模、拓扑关联、参数维护</p>
           </div>
         </div>
+        {renderSidePanelModeControls("left")}
         <div className="left-panel-tabs" role="tablist" aria-label="左侧资源库">
           <button className={leftPanelTab === "projects" ? "active" : ""} onClick={() => setLeftPanelTab("projects")} role="tab" aria-selected={leftPanelTab === "projects"}>
             模型库
@@ -4111,7 +4512,7 @@ export function App() {
         </div>
       </aside>
 
-      <main className="workspace">
+      <main className="workspace" onPointerEnter={hideAutoPanelsFromWorkspace}>
         <header className="topbar">
           <div className="status-cluster">
             <span>
@@ -4210,6 +4611,7 @@ export function App() {
               if (event.button !== 0) {
                 return;
               }
+              activateInspectorFromCanvas();
               canvasInteractionRef.current = true;
               projectListPointerInsideRef.current = false;
               lastCanvasPointerRef.current = clampPointToCanvas(screenToSvgPoint(event.currentTarget, event.clientX, event.clientY));
@@ -4312,6 +4714,7 @@ export function App() {
                     className="connection-hitline"
                     onPointerDown={(event) => {
                       event.stopPropagation();
+                      activateInspectorFromCanvas();
                       setSelectedNodeIds([]);
                       setSelectedEdgeId(edge.id);
                     }}
@@ -4321,6 +4724,7 @@ export function App() {
                     className="connection-line"
                     onPointerDown={(event) => {
                       event.stopPropagation();
+                      activateInspectorFromCanvas();
                       setSelectedNodeIds([]);
                       setSelectedEdgeId(edge.id);
                     }}
@@ -4740,7 +5144,11 @@ export function App() {
         </section>
       </main>
 
-      <aside className="inspector-panel">
+      <aside
+        className={`inspector-panel floating-side-panel ${rightPanelVisible ? "visible" : "hidden"}`}
+        onPointerEnter={() => updateAutoPanelVisibility("right", "panel-enter")}
+        onPointerLeave={() => updateAutoPanelVisibility("right", "panel-leave")}
+      >
         <div className="inspector-title">
           <div>
             <h2>参数面板</h2>
@@ -4754,9 +5162,12 @@ export function App() {
                     : "选择画布元件查看参数"}
             </p>
           </div>
-          <button onClick={deleteSelected} disabled={!selectedNode && !selectedEdge} title="删除选中对象">
-            <Trash2 size={17} />
-          </button>
+          <div className="inspector-title-actions">
+            {renderSidePanelModeControls("right")}
+            <button onClick={deleteSelected} disabled={!selectedNode && !selectedEdge} title="删除选中对象">
+              <Trash2 size={17} />
+            </button>
+          </div>
         </div>
         {selectedNode || currentModelRecord ? (
           <div className="form-stack">
@@ -5116,7 +5527,14 @@ export function App() {
                   {(() => {
                     const eKeys = getEParameterKeys(selectedNode.kind, selectedNode.params);
                     const customDefinitions = parseCustomDefinitions(selectedNode.params);
-                    const keys = eKeys.length > 0 ? eKeys : customDefinitions.map((definition) => definition.enName);
+                    const customKeys = customDefinitions.map((definition) => definition.enName);
+                    const customExtraKeys = customKeys.filter((key) => !eKeys.includes(key));
+                    const keys =
+                      eKeys.length > 0
+                        ? [...eKeys, ...customExtraKeys]
+                        : customKeys.length > 0
+                          ? customKeys
+                          : Object.keys(selectedNode.params).filter((key) => !key.startsWith("_"));
                     const readonlyKeys = new Set(customDefinitions.filter((definition) => definition.readonly).map((definition) => definition.enName));
                     return keys.map((key) => {
                       const value = eKeys.length > 0 ? getEParamValue(key, selectedNode) : key === "name" ? selectedNode.name : selectedNode.params[key] ?? "";
@@ -5322,12 +5740,168 @@ export function App() {
           </button>
         </div>
       )}
+      {deviceDefinitionDialogOpen && (
+        <div className="image-picker-backdrop" onPointerDown={() => setDeviceDefinitionDialogOpen(false)}>
+          <section className="device-definition-dialog" onPointerDown={(event) => event.stopPropagation()}>
+            <div className="image-picker-title">
+              <div>
+                <h2>修改元件</h2>
+                <p>查看内置和自定义元件定义，维护新建图元时使用的设备属性。</p>
+              </div>
+              <button onClick={() => setDeviceDefinitionDialogOpen(false)}>关闭</button>
+            </div>
+            <div className="device-definition-layout">
+              <aside className="device-definition-list" aria-label="元件定义列表">
+                {libraryGroups.map((group) => {
+                  const templates = libraryTemplates.filter((template) => normalizeLibraryGroupName(template.group) === group);
+                  if (templates.length === 0) {
+                    return null;
+                  }
+                  return (
+                    <section key={group}>
+                      <h3>{group}</h3>
+                      {templates.map((template) => (
+                        <button
+                          type="button"
+                          key={template.kind}
+                          className={selectedDefinitionTemplate?.kind === template.kind ? "active" : ""}
+                          onClick={() => loadDefinitionTemplateDraft(template)}
+                        >
+                          <span>{template.label}</span>
+                          <small>{template.kind}</small>
+                        </button>
+                      ))}
+                    </section>
+                  );
+                })}
+              </aside>
+              <section className="device-definition-detail">
+                {selectedDefinitionTemplate ? (
+                  <>
+                    <div className="device-definition-summary">
+                      <div>
+                        <span>元件名称</span>
+                        <strong>{selectedDefinitionTemplate.label}</strong>
+                      </div>
+                      <div>
+                        <span>设备类型</span>
+                        <strong>{selectedDefinitionTemplate.kind}</strong>
+                      </div>
+                      <div>
+                        <span>元件库</span>
+                        <strong>{normalizeLibraryGroupName(selectedDefinitionTemplate.group)}</strong>
+                      </div>
+                      <div>
+                        <span>来源</span>
+                        <strong>{selectedDefinitionTemplate.custom ? "自定义" : "内置"}</strong>
+                      </div>
+                      <div>
+                        <span>端子数量</span>
+                        <strong>{selectedDefinitionTemplate.terminalCount}</strong>
+                      </div>
+                      <div>
+                        <span>能源属性</span>
+                        <strong>
+                          {(selectedDefinitionTemplate.terminalTypes ?? Array.from({ length: selectedDefinitionTemplate.terminalCount }, () => selectedDefinitionTemplate.terminalType))
+                            .map((type) => TERMINAL_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? type)
+                            .join(" / ") || "无端子"}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>默认尺寸</span>
+                        <strong>{selectedDefinitionTemplate.size.width} x {selectedDefinitionTemplate.size.height}</strong>
+                      </div>
+                      <div>
+                        <span>定义状态</span>
+                        <strong>{deviceDefinitionOverrides[selectedDefinitionTemplate.kind]?.updatedAt ? "已自定义" : "默认"}</strong>
+                      </div>
+                    </div>
+                    {definitionDraftError && <p className="custom-device-error">{definitionDraftError}</p>}
+                    <div className="custom-param-table-wrap device-definition-table-wrap">
+                      <table className="custom-param-table">
+                        <thead>
+                          <tr>
+                            <th>中文名称</th>
+                            <th>英文名称</th>
+                            <th>取值类型</th>
+                            <th>典型取值</th>
+                            <th>操作</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {definitionDraftRows.map((row) => (
+                            <tr key={row.id} className={row.readonly ? "readonly-row" : ""}>
+                              <td>
+                                <input
+                                  value={row.cnName}
+                                  disabled={row.readonly}
+                                  onChange={(event) => updateDefinitionDraftRow(row.id, { cnName: event.target.value })}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  value={row.enName}
+                                  disabled={row.readonly}
+                                  onChange={(event) => updateDefinitionDraftRow(row.id, { enName: event.target.value })}
+                                />
+                              </td>
+                              <td>
+                                <select
+                                  value={row.valueType}
+                                  disabled={row.readonly}
+                                  onChange={(event) => updateDefinitionDraftRow(row.id, { valueType: event.target.value as DeviceParameterValueType })}
+                                >
+                                  {PARAM_VALUE_TYPE_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td>
+                                <input
+                                  value={row.typicalValue}
+                                  disabled={row.readonly}
+                                  onChange={(event) => updateDefinitionDraftRow(row.id, { typicalValue: event.target.value })}
+                                />
+                              </td>
+                              <td>
+                                <div className="custom-param-actions">
+                                  <button type="button" onClick={() => deleteDefinitionDraftRow(row.id)} disabled={row.readonly}>
+                                    删除
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="custom-device-actions">
+                      <button type="button" onClick={addDefinitionDraftRow}>新增属性</button>
+                      <button type="button" onClick={saveDeviceDefinitionDraft}>保存定义</button>
+                      <button type="button" onClick={resetDeviceDefinitionDraft} disabled={!selectedDefinitionBaseTemplate}>
+                        恢复默认
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="empty-state compact">
+                    <Grid2X2 size={24} />
+                    <p>当前元件库暂无元件。</p>
+                  </div>
+                )}
+              </section>
+            </div>
+          </section>
+        </div>
+      )}
       {customDeviceDialogOpen && (
         <div className="image-picker-backdrop" onPointerDown={() => setCustomDeviceDialogOpen(false)}>
           <section className="custom-device-dialog" onPointerDown={(event) => event.stopPropagation()}>
             <div className="image-picker-title">
               <div>
-                <h2>新增自定义图元设备</h2>
+                <h2>新建元件</h2>
                 <p>定义后会出现在左侧图元库，可拖拽到画布建模。</p>
               </div>
               <button onClick={() => setCustomDeviceDialogOpen(false)}>关闭</button>
@@ -5391,6 +5965,13 @@ export function App() {
               </button>
               <button type="button" onClick={() => setCustomDeviceDraft((current) => ({ ...current, backgroundImage: "", error: "" }))}>清除</button>
               <strong>{customDeviceDraft.backgroundImage ? "已设置" : "未设置"}</strong>
+            </div>
+            <div className="custom-device-preview">
+              <span>背景预览</span>
+              <div>
+                <img src={customDevicePreviewImage} alt="自定义元件背景图片预览" />
+              </div>
+              <small>{customDeviceDraft.backgroundImage ? "当前显示本地图片预览" : "当前显示默认样例预览"}</small>
             </div>
             <div className="custom-terminal-grid">
               {Array.from({ length: customDeviceDraft.terminalCount }).map((_, index) => (
@@ -5543,7 +6124,7 @@ export function App() {
                     ...current,
                     params: [
                       ...current.params,
-                      { id: customParamId(), cnName: "", enName: "", valueType: "float", typicalValue: "" }
+                      { id: customParamId(), cnName: "", enName: "", valueType: "string", typicalValue: "" }
                     ]
                   }))
                 }

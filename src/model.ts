@@ -108,6 +108,8 @@ export type DeviceGlyphVariant =
   | "heat-valve"
   | "custom-device"
   | "bus"
+  | "ac-line"
+  | "dc-line"
   | "line"
   | "transformer"
   | "switch"
@@ -131,7 +133,7 @@ export type CanvasBounds = {
 
 export type TerminalType = "ac" | "dc" | "h2" | "heat";
 
-export type DeviceParameterValueType = "integer" | "float" | "enum";
+export type DeviceParameterValueType = "integer" | "float" | "string" | "enum";
 
 export type DeviceParameterDefinition = {
   cnName: string;
@@ -166,6 +168,13 @@ export type DeviceTemplate = {
   terminalAnchors?: Point[];
   custom?: boolean;
   parameterDefinitions?: DeviceParameterDefinition[];
+};
+
+export type DeviceTemplateDefinitionOverride = {
+  kind: string;
+  params?: Record<string, string>;
+  parameterDefinitions?: DeviceParameterDefinition[];
+  updatedAt?: string;
 };
 
 export type ModelNode = {
@@ -772,7 +781,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-source",
     label: "交流电源",
-    group: "交流系统",
+    group: "交流设备",
     size: { width: 84, height: 56 },
     params: { ratedVoltage: "10 kV", frequency: "50 Hz", shortCircuitCapacity: "500 MVA" },
     terminalType: "ac",
@@ -781,7 +790,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-wind-source",
     label: "交流风电",
-    group: "交流系统",
+    group: "交流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "35 kV", ratedPower: "50 MW", sourceType: "风电" },
     terminalType: "ac",
@@ -790,7 +799,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-pv-source",
     label: "交流光伏",
-    group: "交流系统",
+    group: "交流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "10 kV", ratedPower: "20 MW", sourceType: "光伏" },
     terminalType: "ac",
@@ -799,7 +808,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-thermal-source",
     label: "交流火电",
-    group: "交流系统",
+    group: "交流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "220 kV", ratedPower: "600 MW", sourceType: "火电" },
     terminalType: "ac",
@@ -808,7 +817,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-hydro-source",
     label: "交流水电",
-    group: "交流系统",
+    group: "交流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "220 kV", ratedPower: "300 MW", sourceType: "水电" },
     terminalType: "ac",
@@ -817,7 +826,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-nuclear-source",
     label: "交流核电",
-    group: "交流系统",
+    group: "交流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "500 kV", ratedPower: "1000 MW", sourceType: "核电" },
     terminalType: "ac",
@@ -826,7 +835,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-storage",
     label: "电化学储能",
-    group: "交流系统",
+    group: "交流设备",
     size: { width: 90, height: 56 },
     params: { ratedVoltage: "10 kV", ratedPower: "5 MW", energyCapacity: "20 MWh", stateOfCharge: "50%" },
     terminalType: "ac",
@@ -1115,7 +1124,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-line",
     label: "交流线路",
-    group: "交流系统",
+    group: "交流设备",
     size: { width: 108, height: 36 },
     params: { length: "10 km", r: "0.12 ohm/km", x: "0.38 ohm/km" },
     terminalType: "ac",
@@ -1124,7 +1133,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-zero-branch",
     label: "交流零阻抗支路",
-    group: "交流系统",
+    group: "交流设备",
     size: { width: 108, height: 36 },
     params: {},
     terminalType: "ac",
@@ -1133,7 +1142,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-bus",
     label: "交流母线",
-    group: "交流系统",
+    group: "交流设备",
     size: { width: 120, height: 28 },
     params: { voltageLevel: "10 kV", section: "I段" },
     terminalType: "ac",
@@ -1142,7 +1151,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-switch",
     label: "交流开关",
-    group: "交流系统",
+    group: "交流设备",
     size: { width: 72, height: 48 },
     params: { status: "合闸", ratedCurrent: "1250 A" },
     terminalType: "ac",
@@ -1151,7 +1160,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-breaker",
     label: "交流断路器",
-    group: "交流系统",
+    group: "交流设备",
     size: { width: 78, height: 50 },
     params: {},
     terminalType: "ac",
@@ -1160,7 +1169,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-load",
     label: "交流负荷",
-    group: "交流系统",
+    group: "交流设备",
     size: { width: 86, height: 58 },
     params: { activePower: "5 MW", reactivePower: "1.2 Mvar", powerFactor: "0.95" },
     terminalType: "ac",
@@ -1169,7 +1178,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-transformer",
     label: "交流主变",
-    group: "交流系统",
+    group: "交流设备",
     size: { width: 92, height: 70 },
     params: { ratedCapacity: "50 MVA", voltageRatio: "110/10 kV", impedance: "10.5%" },
     terminalType: "ac",
@@ -1178,7 +1187,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-two-winding-transformer",
     label: "两绕组主变",
-    group: "交流系统",
+    group: "交流设备",
     size: { width: 94, height: 70 },
     params: { ratedCapacity: "50 MVA", voltageRatio: "110/10 kV", windingType: "两绕组", impedance: "10.5%" },
     terminalType: "ac",
@@ -1187,7 +1196,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-three-winding-transformer",
     label: "三绕组主变",
-    group: "交流系统",
+    group: "交流设备",
     size: { width: 104, height: 76 },
     params: { ratedCapacity: "90 MVA", voltageRatio: "220/110/10 kV", windingType: "三绕组", impedance: "12.0%" },
     terminalType: "ac",
@@ -1196,7 +1205,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-source",
     label: "直流电源",
-    group: "直流系统",
+    group: "直流设备",
     size: { width: 84, height: 56 },
     params: { ratedVoltage: "750 V", maxCurrent: "2000 A" },
     terminalType: "dc",
@@ -1205,7 +1214,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-wind-source",
     label: "直流风电",
-    group: "直流系统",
+    group: "直流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "1500 V", ratedPower: "10 MW", sourceType: "风电" },
     terminalType: "dc",
@@ -1214,7 +1223,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-pv-source",
     label: "直流光伏",
-    group: "直流系统",
+    group: "直流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "1500 V", ratedPower: "5 MW", sourceType: "光伏" },
     terminalType: "dc",
@@ -1223,7 +1232,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-storage",
     label: "电化学储能",
-    group: "直流系统",
+    group: "直流设备",
     size: { width: 90, height: 56 },
     params: { ratedVoltage: "750 V", ratedPower: "5 MW", energyCapacity: "20 MWh", stateOfCharge: "50%" },
     terminalType: "dc",
@@ -1232,7 +1241,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-line",
     label: "直流线路",
-    group: "直流系统",
+    group: "直流设备",
     size: { width: 108, height: 36 },
     params: { length: "2 km", resistance: "0.08 ohm/km" },
     terminalType: "dc",
@@ -1241,7 +1250,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-zero-branch",
     label: "直流零阻抗支路",
-    group: "直流系统",
+    group: "直流设备",
     size: { width: 108, height: 36 },
     params: {},
     terminalType: "dc",
@@ -1250,7 +1259,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-bus",
     label: "直流母线",
-    group: "直流系统",
+    group: "直流设备",
     size: { width: 120, height: 28 },
     params: { voltageLevel: "750 V", pole: "正负极" },
     terminalType: "dc",
@@ -1259,7 +1268,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-switch",
     label: "直流开关",
-    group: "直流系统",
+    group: "直流设备",
     size: { width: 72, height: 48 },
     params: { status: "合闸", ratedCurrent: "1600 A" },
     terminalType: "dc",
@@ -1268,7 +1277,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-breaker",
     label: "直流断路器",
-    group: "直流系统",
+    group: "直流设备",
     size: { width: 78, height: 50 },
     params: {},
     terminalType: "dc",
@@ -1277,7 +1286,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-load",
     label: "直流负荷",
-    group: "直流系统",
+    group: "直流设备",
     size: { width: 86, height: 58 },
     params: { power: "1.5 MW", voltage: "750 V" },
     terminalType: "dc",
@@ -1386,6 +1395,8 @@ export function getDeviceGlyphVariant(kind: DeviceKind): DeviceGlyphVariant {
   if (kind.includes("hydro-source")) return "hydro-source";
   if (kind.includes("nuclear-source")) return "nuclear-source";
   if (kind.includes("bus")) return "bus";
+  if (kind === "ac-line") return "ac-line";
+  if (kind === "dc-line") return "dc-line";
   if (kind.includes("line") || kind.includes("zero-branch")) return "line";
   if (kind.includes("transformer")) return "transformer";
   if (kind.includes("switch")) return "switch";
@@ -1466,6 +1477,8 @@ const DEVICE_STROKE_WIDTH_BY_VARIANT: Partial<Record<DeviceGlyphVariant, number>
   "heat-pipeline": 2.8,
   "heat-pump": 2.4,
   "heat-valve": 2.4,
+  "ac-line": 4,
+  "dc-line": 4,
   line: 4,
   "dcdc-converter": 2.2,
   "acdc-converter": 2.2,
@@ -1493,9 +1506,138 @@ export function isStaticNode(node: ModelNode): boolean {
   return isStaticKind(node.kind);
 }
 
+const TEMPLATE_DEFINITION_READONLY_KEYS = new Set(["idx", "name", "node", "i_node", "j_node", "ac_node", "dc_node"]);
+const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> = {
+  idx: "integer",
+  node: "integer",
+  i_node: "integer",
+  j_node: "integer",
+  ac_node: "integer",
+  dc_node: "integer",
+  p_set: "float",
+  q_set: "float",
+  v_set: "float",
+  i_set: "float",
+  p_ac_set: "float",
+  q_ac_set: "float",
+  v_ac_set: "float",
+  v_dc_set: "float",
+  i_v_set: "float",
+  j_v_set: "float",
+  i_q_set: "float",
+  j_q_set: "float",
+  pv0: "float",
+  pv1: "float",
+  pv2: "float",
+  qv0: "float",
+  qv1: "float",
+  qv2: "float",
+  pbase: "float",
+  qbase: "float",
+  r1: "float",
+  r2: "float",
+  r: "float",
+  x: "float",
+  x_pu: "float",
+  b: "float",
+  gt: "float",
+  bt: "float"
+};
+
+function inferDefinitionValueType(key: string, value: string): DeviceParameterValueType {
+  const definedType = TEMPLATE_DEFINITION_VALUE_TYPES[key];
+  if (definedType) {
+    return definedType;
+  }
+  if (/^-?\d+$/.test(value.trim())) {
+    return "integer";
+  }
+  if (/^-?\d+(\.\d+)?(?:\s*[a-zA-Z/%]+)?$/.test(value.trim())) {
+    return "float";
+  }
+  return "string";
+}
+
+function normalizeTemplateDefinition(definition: DeviceParameterDefinition): DeviceParameterDefinition | null {
+  const enName = String(definition.enName ?? "").trim();
+  if (!enName) {
+    return null;
+  }
+  const valueType = TEMPLATE_DEFINITION_VALUE_TYPES[enName] ?? (["integer", "float", "string", "enum"].includes(definition.valueType) ? definition.valueType : "string");
+  return {
+    cnName: String(definition.cnName ?? enName).trim() || enName,
+    enName,
+    valueType,
+    typicalValue: String(definition.typicalValue ?? ""),
+    readonly: Boolean(definition.readonly || TEMPLATE_DEFINITION_READONLY_KEYS.has(enName))
+  };
+}
+
+export function getTemplateParameterDefinitions(template: DeviceTemplate): DeviceParameterDefinition[] {
+  if (template.parameterDefinitions?.length) {
+    return template.parameterDefinitions
+      .map((definition) => normalizeTemplateDefinition(definition))
+      .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
+  }
+  const eKeys = getEParameterKeys(template.kind, template.params);
+  const keys = eKeys.length > 0 ? eKeys : Object.keys(template.params);
+  const uniqueKeys = Array.from(new Set(keys.filter((key) => key && !key.startsWith("_"))));
+  return uniqueKeys.map((key) => ({
+    cnName: key,
+    enName: key,
+    valueType: inferDefinitionValueType(key, template.params[key] ?? ""),
+    typicalValue: template.params[key] ?? "",
+    readonly: TEMPLATE_DEFINITION_READONLY_KEYS.has(key)
+  }));
+}
+
+export function applyDeviceTemplateDefinitionOverride(
+  template: DeviceTemplate,
+  override?: DeviceTemplateDefinitionOverride
+): DeviceTemplate {
+  if (!override) {
+    return template;
+  }
+  const parameterDefinitions = (override.parameterDefinitions ?? [])
+    .map((definition) => normalizeTemplateDefinition(definition))
+    .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
+  const params = { ...(override.params ?? template.params) };
+  for (const definition of parameterDefinitions) {
+    if (definition.enName === "name") {
+      continue;
+    }
+    params[definition.enName] = definition.typicalValue;
+  }
+  return {
+    ...template,
+    params,
+    parameterDefinitions
+  };
+}
+
+function applyTemplateDefinitionDefaults(params: Record<string, string>, template: DeviceTemplate): Record<string, string> {
+  const parameterDefinitions = template.parameterDefinitions ?? [];
+  if (parameterDefinitions.length === 0) {
+    return params;
+  }
+  const next: Record<string, string> = {
+    ...params,
+    [CUSTOM_PARAM_DEFINITIONS_KEY]: JSON.stringify(parameterDefinitions)
+  };
+  for (const definition of parameterDefinitions) {
+    const enName = definition.enName.trim();
+    if (!enName || enName === "name") {
+      continue;
+    }
+    next[enName] = definition.typicalValue;
+  }
+  return next;
+}
+
 function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
+  const withTemplateDefinitions = (params: Record<string, string>) => applyTemplateDefinitionDefaults(params, template);
   if (isStaticKind(template.kind)) {
-    return { ...template.params };
+    return withTemplateDefinitions({ ...template.params });
   }
   const withRunStat = (params: Record<string, string>) => ({ run_stat: "运行", ...params });
   const withDefaultVbase = (params: Record<string, string>) => ({
@@ -1516,10 +1658,10 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       }
       params[definition.enName] = params[definition.enName] ?? definition.typicalValue;
     }
-    return params;
+    return withTemplateDefinitions(params);
   }
   if (isPureHydrogenNetworkKind(template.kind) || isPureThermalNetworkKind(template.kind)) {
-    return withRunStat({ ...template.params });
+    return withTemplateDefinitions(withRunStat({ ...template.params }));
   }
   if (isGeneratorKind(template.kind)) {
     const base: Record<string, string> = {
@@ -1531,10 +1673,10 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       base.ratedWindSpeed = "12 m/s";
       base.cutOutWindSpeed = "25 m/s";
     }
-    return withRunStat(withDefaultVbase({ ...template.params, ...base }));
+    return withTemplateDefinitions(withRunStat(withDefaultVbase({ ...template.params, ...base })));
   }
   if (template.kind === "ac-load") {
-    return withRunStat(withDefaultVbase({
+    return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ratedActivePower: "5 MW",
       pv0: "1.0",
       pv1: "0.0",
@@ -1543,18 +1685,18 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       qv0: "1.0",
       qv1: "0.0",
       qv2: "0.0"
-    }));
+    })));
   }
   if (template.kind === "dc-load") {
-    return withRunStat(withDefaultVbase({
+    return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ratedActivePower: "1.5 MW",
       pv0: "1.0",
       pv1: "0.0",
       pv2: "0.0"
-    }));
+    })));
   }
   if (template.kind === "ac-storage") {
-    return withRunStat(withDefaultVbase({
+    return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ...template.params,
       ratedCapacity: template.params.ratedPower ?? "5 MW",
       controlType: "PQ",
@@ -1562,17 +1704,17 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       q_set: "0.0",
       v_set: "10",
       alpha: "1.0"
-    }));
+    })));
   }
   if (template.kind === "dc-storage") {
-    return withRunStat(withDefaultVbase({
+    return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ...template.params,
       ratedCapacity: template.params.ratedPower ?? "5 MW",
       controlType: "P",
       v_set: "750",
       p_set: "0.0",
       i_set: "0.0"
-    }));
+    })));
   }
   if (
     template.kind === "ac-electrolyzer" ||
@@ -1580,33 +1722,33 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
     template.kind === "ac-fuel-cell" ||
     template.kind === "dc-fuel-cell"
   ) {
-    return withRunStat(withDefaultVbase({
+    return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ...template.params,
       ratedCapacity: template.params.ratedPower ?? "5 MW",
       controlType: template.terminalType === "ac" ? "PQ" : "P"
-    }));
+    })));
   }
   if (template.kind === "ac-heater" || template.kind === "dc-heater") {
-    return withRunStat(withDefaultVbase({
+    return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ...template.params,
       ratedCapacity: template.params.ratedPower ?? "5 MW",
       controlType: template.terminalType === "ac" ? "PQ" : "P"
-    }));
+    })));
   }
   if (template.kind === "ac-line" || template.kind === "dc-line") {
     if (template.kind === "dc-line") {
-      return withRunStat(withDefaultVbase({
+      return withTemplateDefinitions(withRunStat(withDefaultVbase({
         resistancePu: "0.0"
-      }));
+      })));
     }
-    return withRunStat(withDefaultVbase({
+    return withTemplateDefinitions(withRunStat(withDefaultVbase({
       resistancePu: "0.0",
       reactancePu: "0.1",
       halfChargingSusceptancePu: "0.0"
-    }));
+    })));
   }
   if (template.kind === "ac-two-winding-transformer" || template.kind === "ac-transformer") {
-    return withRunStat({
+    return withTemplateDefinitions(withRunStat({
       highVbase: "110 kV",
       lowVbase: "10 kV",
       ratedCapacity: "50 MVA",
@@ -1615,10 +1757,10 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       magnetizingConductancePu: "0.0",
       magnetizingSusceptancePu: "0.0",
       tapRatio: "1.0"
-    });
+    }));
   }
   if (template.kind === "ac-three-winding-transformer") {
-    return withRunStat({
+    return withTemplateDefinitions(withRunStat({
       highVbase: "220 kV",
       mediumVbase: "110 kV",
       lowVbase: "10 kV",
@@ -1640,37 +1782,37 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       lowMagnetizingConductancePu: "0.0",
       lowMagnetizingSusceptancePu: "0.0",
       lowTapRatio: "1.0"
-    });
+    }));
   }
   if (template.kind === "dcdc-converter") {
-    return withRunStat({
+    return withTemplateDefinitions(withRunStat({
       sourceVbase: "1500 V",
       targetVbase: "750 V",
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
       sourceControlType: "定P",
       targetControlType: "不定"
-    });
+    }));
   }
   if (template.kind === "acdc-converter") {
-    return withRunStat({
+    return withTemplateDefinitions(withRunStat({
       sourceVbase: "10 kV",
       targetVbase: "750 V",
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
       acControlType: "定PQ",
       dcControlType: "不定"
-    });
+    }));
   }
   if (template.kind === "acac-converter") {
-    return withRunStat({
+    return withTemplateDefinitions(withRunStat({
       sourceVbase: "10 kV",
       targetVbase: "10 kV",
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
       sourceControlType: "定PQ",
       targetControlType: "不定"
-    });
+    }));
   }
   if (
     template.kind === "ac-switch" ||
@@ -1680,13 +1822,13 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
     template.kind === "ac-breaker" ||
     template.kind === "dc-breaker"
   ) {
-    return withRunStat(withDefaultVbase({
+    return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ratedCapacity: template.terminalType === "ac" ? "1250 A" : "1600 A",
       status: "1",
       closedStatus: "闭合"
-    }));
+    })));
   }
-  return withRunStat(withDefaultVbase({ ...template.params }));
+  return withTemplateDefinitions(withRunStat(withDefaultVbase({ ...template.params })));
 }
 
 export function getTemplate(kind: DeviceKind): DeviceTemplate {
