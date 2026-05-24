@@ -271,12 +271,12 @@ const TERMINAL_TYPE_OPTIONS: Array<{ value: TerminalType; label: string }> = [
 ];
 const CONTAINER_TERMINAL_ASSOCIATION_OPTIONS: Record<TerminalType, Array<{ value: ContainerTerminalAssociationType; label: string }>> = {
   ac: [
-    { value: "ac-generator", label: "交流电源" },
-    { value: "ac-load", label: "交流电负荷" }
+    { value: "ac-generator", label: "交流电源 / ACGenerator" },
+    { value: "ac-load", label: "交流电负荷 / ACLoad" }
   ],
   dc: [
-    { value: "dc-generator", label: "直流电源" },
-    { value: "dc-load", label: "直流电负荷" }
+    { value: "dc-generator", label: "直流电源 / DCGenerator" },
+    { value: "dc-load", label: "直流电负荷 / DCLoad" }
   ],
   h2: [
     { value: "h2-source", label: "氢源" },
@@ -6043,7 +6043,7 @@ export function App() {
                                 <tr key={`${selectedDefinitionTemplate.kind}-terminal-${association.terminalIndex}`}>
                                   <td>{association.terminalLabel}</td>
                                   <td>{TERMINAL_TYPE_OPTIONS.find((option) => option.value === association.terminalType)?.label ?? association.terminalType}</td>
-                                  <td>{association.roleLabel}</td>
+                                  <td>{association.deviceModel ? `${association.roleLabel} / ${association.deviceModel}` : association.roleLabel}</td>
                                   <td><code>{association.relationKey || "-"}</code></td>
                                   <td>
                                     {association.dependent

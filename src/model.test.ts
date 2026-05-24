@@ -535,9 +535,20 @@ describe("power system model", () => {
     const transformerBranches = payload.devices.filter(
       (device: { section: string; id: string }) => device.section === "ACTransformer" && device.id.startsWith(`${transformer.id}:w`)
     );
+    const threePowerTransformer = payload.devices.find(
+      (device: { section: string; id: string }) => device.section === "ThreePowerTransformer" && device.id === transformer.id
+    );
 
     expect(acNodes.map((device: { params: Record<string, string> }) => device.params.idx)).toEqual(["1", "2", "3", "4"]);
     expect(neutralNode?.params).toMatchObject({ name: "T3_neutral", vbase: "1.0", voltage: "1.0" });
+    expect(threePowerTransformer?.params).toEqual({
+      idx: "1",
+      name: "T3",
+      run_stat: "1",
+      idx_xf_t1: "1",
+      idx_xf_t2: "2",
+      idx_xf_t3: "3"
+    });
     expect(transformerBranches.map((device: { params: Record<string, string> }) => device.params)).toEqual([
       expect.objectContaining({ idx: "1", name: "T3_高压绕组", i_node: "1", j_node: "4", r: "0.0", x: "0.1", tap: "1.0" }),
       expect.objectContaining({ idx: "2", name: "T3_中压绕组", i_node: "2", j_node: "4", r: "0.0", x: "0.1", tap: "1.0" }),
@@ -549,7 +560,7 @@ describe("power system model", () => {
     const acLoad = createDefaultNode("ac-load", { x: 100, y: 100 });
     const dcLoad = createDefaultNode("dc-load", { x: 200, y: 100 });
     const acLine = createDefaultNode("ac-line", { x: 300, y: 100 });
-    const twoWinding = createDefaultNode("ac-two-winding-transformer", { x: 400, y: 100 });
+    const twoWinding = createDefaultNode("ac-transformer", { x: 400, y: 100 });
     const threeWinding = createDefaultNode("ac-three-winding-transformer", { x: 500, y: 100 });
 
     expect(acLoad.nodeNumber).toMatch(/^N\d+$/);
@@ -587,9 +598,10 @@ describe("power system model", () => {
     expect(threeWinding.params.is_container).toBe("1");
     expect(threeWinding.params.neutral_node).toBe("");
     expect(threeWinding.params.neutral_vbase).toBe("1.0");
-    expect(threeWinding.params.idx_ac_transformer_t1).toBe("");
-    expect(threeWinding.params.idx_ac_transformer_t2).toBe("");
-    expect(threeWinding.params.idx_ac_transformer_t3).toBe("");
+    expect(threeWinding.params.idx_xf_t1).toBe("");
+    expect(threeWinding.params.idx_xf_t2).toBe("");
+    expect(threeWinding.params.idx_xf_t3).toBe("");
+    expect(threeWinding.params.idx_ac_transformer_t1).toBeUndefined();
 
     const dcdc = createDefaultNode("dcdc-converter", { x: 600, y: 100 });
     expect(dcdc.terminals[0].nodeNumber).toMatch(/^N\d+$/);
@@ -1412,6 +1424,36 @@ describe("power system model", () => {
     expect(definitions.find((definition) => definition.enName === "idx_ac_unit_t1")?.cnName).toContain("交流电源");
     expect(definitions.find((definition) => definition.enName === "idx_heat2_load_t4")?.cnName).toContain("双端热荷");
     expect(definitions.some((definition) => definition.enName.includes("node"))).toBe(false);
+
+    const template: DeviceTemplate = {
+      kind: "CustomAssociationDeviceModel",
+      label: "CustomAssociationDeviceModel",
+      group: "自定义元件库",
+      size: { width: 104, height: 64 },
+      params: {},
+      terminalType: "ac",
+      terminalCount: 2,
+      terminalTypes: ["ac", "dc"],
+      terminalAssociations: ["ac-generator", "dc-generator"],
+      isContainer: true,
+      custom: true,
+      parameterDefinitions: buildDefaultDeviceParameterDefinitions(["ac", "dc"], {
+        isContainer: true,
+        terminalAssociations: ["ac-generator", "dc-generator"]
+      })
+    };
+    expect(describeContainerTerminalAssociations(template)).toEqual([
+      expect.objectContaining({
+        relationKey: "idx_ac_unit_t1",
+        roleLabel: "交流电源",
+        deviceModel: "ACGenerator"
+      }),
+      expect.objectContaining({
+        relationKey: "idx_dc_unit_t2",
+        roleLabel: "直流电源",
+        deviceModel: "DCGenerator"
+      })
+    ]);
   });
 
   test("validates explicit container associations against terminal energy types", () => {
@@ -1492,23 +1534,26 @@ describe("power system model", () => {
       expect.objectContaining({
         terminalIndex: 0,
         terminalType: "ac",
-        relationKey: "idx_ac_transformer_t1",
+        relationKey: "idx_xf_t1",
         relationName: "高压绕组双绕组主变idx",
-        roleLabel: "双绕组主变首端"
+        roleLabel: "双绕组主变首端",
+        deviceModel: "ACTransformer"
       }),
       expect.objectContaining({
         terminalIndex: 1,
         terminalType: "ac",
-        relationKey: "idx_ac_transformer_t2",
+        relationKey: "idx_xf_t2",
         relationName: "中压绕组双绕组主变idx",
-        roleLabel: "双绕组主变首端"
+        roleLabel: "双绕组主变首端",
+        deviceModel: "ACTransformer"
       }),
       expect.objectContaining({
         terminalIndex: 2,
         terminalType: "ac",
-        relationKey: "idx_ac_transformer_t3",
+        relationKey: "idx_xf_t3",
         relationName: "低压绕组双绕组主变idx",
-        roleLabel: "双绕组主变首端"
+        roleLabel: "双绕组主变首端",
+        deviceModel: "ACTransformer"
       })
     ]);
   });
@@ -1581,7 +1626,7 @@ describe("power system model", () => {
     expect(views[1]).toMatchObject({
       kind: "associated",
       deviceType: "ACTransformer",
-      relationKeys: ["idx_ac_transformer_t1"],
+      relationKeys: ["idx_xf_t1"],
       terminalIndexes: [0]
     });
     expect(views[1].rows).toEqual(expect.arrayContaining([
@@ -1886,7 +1931,7 @@ describe("power system model", () => {
 
   test("adds voltage base parameters to devices, transformers, and converters", () => {
     expect(createDefaultNode("ac-load", { x: 100, y: 100 }).params.vbase).toBe("10 kV");
-    const twoWinding = createDefaultNode("ac-two-winding-transformer", { x: 200, y: 100 });
+    const twoWinding = createDefaultNode("ac-transformer", { x: 200, y: 100 });
     expect(twoWinding.params.highVbase).toBe("110 kV");
     expect(twoWinding.params.lowVbase).toBe("10 kV");
     const threeWinding = createDefaultNode("ac-three-winding-transformer", { x: 300, y: 100 });
@@ -1898,15 +1943,22 @@ describe("power system model", () => {
     expect(converter.params.targetVbase).toBe("750 V");
   });
 
-  test("includes two-winding and three-winding transformer device types", () => {
+  test("removes the explicit two-winding transformer glyph and keeps the three-winding container definition", () => {
     const twoWinding = DEVICE_LIBRARY.find((item) => item.kind === "ac-two-winding-transformer");
     const threeWinding = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer");
 
-    expect(twoWinding?.terminalType).toBe("ac");
-    expect(twoWinding?.terminalCount).toBe(2);
+    expect(twoWinding).toBeUndefined();
     expect(threeWinding?.terminalType).toBe("ac");
     expect(threeWinding?.terminalCount).toBe(3);
     expect(threeWinding?.isContainer).toBe(true);
+    expect(getTemplateParameterDefinitions(threeWinding!).map((definition) => definition.enName)).toEqual([
+      "idx",
+      "name",
+      "run_stat",
+      "idx_xf_t1",
+      "idx_xf_t2",
+      "idx_xf_t3"
+    ]);
     expect(getEParameterKeys("ac-three-winding-transformer", createDefaultNode("ac-three-winding-transformer", { x: 100, y: 100 }).params)).toEqual([]);
   });
 

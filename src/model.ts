@@ -211,6 +211,7 @@ export type ContainerTerminalAssociation = {
   relationKey: string;
   relationName: string;
   roleLabel: string;
+  deviceModel: string;
   sourceTerminalIndex: number;
   dependent: boolean;
 };
@@ -316,6 +317,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   ACBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   DCBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   ACTransformer: ["idx", "name", "i_node", "j_node", "r", "x", "gt", "bt", "tap", "shift", "run_stat"],
+  ThreePowerTransformer: ["idx", "name", "run_stat", "idx_xf_t1", "idx_xf_t2", "idx_xf_t3"],
   DCDCConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_set", "v_set", "run_stat"],
   DCACConverter: ["idx", "name", "ac_node", "dc_node", "r1", "r2", "control_type", "p_ac_set", "q_ac_set", "v_ac_set", "v_dc_set", "run_stat"],
   ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"]
@@ -377,6 +379,15 @@ function parseDeviceIndex(value?: string): number {
 }
 
 function parseContainerRelationField(fieldName: string) {
+  const transformerMatch = /^idx_xf_t(\d+)$/.exec(fieldName);
+  if (transformerMatch) {
+    return {
+      energy: "ac",
+      role: "transformer",
+      terminalNumber: Number.parseInt(transformerMatch[1], 10),
+      doublePort: false
+    };
+  }
   const match = /^idx_(ac2|dc2|h22|heat2|ac|dc|h2|heat)_(unit|load|transformer)_t(\d+)$/.exec(fieldName);
   if (!match) {
     return null;
@@ -416,6 +427,10 @@ function containerRelationCounterKey(fieldName: string): string {
     heat2_load: "TwoPortHeatLoad"
   };
   return mapping[`${energy}_${role}`] ?? `ContainerRelation:${energy}_${role}`;
+}
+
+function isContainerTransformerRelationKey(fieldName: string): boolean {
+  return /^idx_xf_t\d+$/.test(fieldName) || /_transformer_t\d+$/.test(fieldName);
 }
 
 function deriveContainerRelationCounters(params: Record<string, string>, counters: DeviceIndexCounters) {
@@ -767,9 +782,9 @@ function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
 }
 
 const THREE_WINDING_TRANSFORMER_SIDES = [
-  { suffix: "high", label: "高压绕组", terminalIndex: 0, idxKey: "idx_ac_transformer_t1" },
-  { suffix: "medium", label: "中压绕组", terminalIndex: 1, idxKey: "idx_ac_transformer_t2" },
-  { suffix: "low", label: "低压绕组", terminalIndex: 2, idxKey: "idx_ac_transformer_t3" }
+  { suffix: "high", label: "高压绕组", terminalIndex: 0, idxKey: "idx_xf_t1" },
+  { suffix: "medium", label: "中压绕组", terminalIndex: 1, idxKey: "idx_xf_t2" },
+  { suffix: "low", label: "低压绕组", terminalIndex: 2, idxKey: "idx_xf_t3" }
 ] as const;
 
 function threeWindingSideParam(params: Record<string, string>, suffix: string, key: string, fallback = ""): string {
@@ -811,9 +826,28 @@ function buildThreeWindingTransformerBranchDevices(nodes: ModelNode[]): EDeviceE
   return records;
 }
 
+function buildThreePowerTransformerDevices(nodes: ModelNode[]): EDeviceExport[] {
+  return nodes
+    .filter((node) => isThreeWindingTransformer(node))
+    .map((node) => ({
+      id: node.id,
+      kind: node.kind,
+      section: "ThreePowerTransformer",
+      params: {
+        idx: node.params.idx ?? "",
+        name: node.name,
+        run_stat: normalizeRunStatForE(node.params.run_stat),
+        idx_xf_t1: node.params.idx_xf_t1 ?? "",
+        idx_xf_t2: node.params.idx_xf_t2 ?? "",
+        idx_xf_t3: node.params.idx_xf_t3 ?? ""
+      }
+    }));
+}
+
 export function buildEDeviceParameterFile(project: ProjectFile) {
   const topologyNodes = calculateElectricalTopology(project.nodes, project.edges);
   const topologyNodeDevices = buildTopologyNodeDevices(topologyNodes);
+  const threePowerTransformerDevices = buildThreePowerTransformerDevices(topologyNodes);
   const threeWindingTransformerBranchDevices = buildThreeWindingTransformerBranchDevices(topologyNodes);
   const deviceRecords = topologyNodes
     .map<EDeviceExport | null>((node) => {
@@ -840,7 +874,7 @@ export function buildEDeviceParameterFile(project: ProjectFile) {
         currentUnit: project.currentUnit ?? DEFAULT_CURRENT_UNIT,
         powerBaseValue: project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE
       },
-      devices: [...topologyNodeDevices, ...deviceRecords, ...threeWindingTransformerBranchDevices],
+      devices: [...topologyNodeDevices, ...deviceRecords, ...threePowerTransformerDevices, ...threeWindingTransformerBranchDevices],
       edges: project.edges
     },
     null,
@@ -906,33 +940,9 @@ const threeWindingTransformerParameterDefinitions: DeviceParameterDefinition[] =
   readonlyIntegerDefinition("序号", "idx"),
   { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
   { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true },
-  readonlyIntegerDefinition("是否容器", "is_container", "1"),
-  readonlyIntegerDefinition("中性点节点号", "neutral_node"),
-  { cnName: "中性点电压基值", enName: "neutral_vbase", valueType: "float", typicalValue: "1.0", readonly: true },
-  readonlyIntegerDefinition("高压绕组双绕组主变idx", "idx_ac_transformer_t1"),
-  readonlyIntegerDefinition("中压绕组双绕组主变idx", "idx_ac_transformer_t2"),
-  readonlyIntegerDefinition("低压绕组双绕组主变idx", "idx_ac_transformer_t3"),
-  { cnName: "高压侧电压等级", enName: "highVbase", valueType: "string", typicalValue: "220 kV" },
-  { cnName: "中压侧电压等级", enName: "mediumVbase", valueType: "string", typicalValue: "110 kV" },
-  { cnName: "低压侧电压等级", enName: "lowVbase", valueType: "string", typicalValue: "10 kV" },
-  { cnName: "高压绕组额定容量", enName: "highRatedCapacity", valueType: "string", typicalValue: "90 MVA" },
-  { cnName: "高压绕组电阻", enName: "highResistancePu", valueType: "float", typicalValue: "0.0" },
-  { cnName: "高压绕组电抗", enName: "highReactancePu", valueType: "float", typicalValue: "0.1" },
-  { cnName: "高压绕组励磁电导", enName: "highMagnetizingConductancePu", valueType: "float", typicalValue: "0.0" },
-  { cnName: "高压绕组励磁电纳", enName: "highMagnetizingSusceptancePu", valueType: "float", typicalValue: "0.0" },
-  { cnName: "高压绕组分接头变比", enName: "highTapRatio", valueType: "float", typicalValue: "1.0" },
-  { cnName: "中压绕组额定容量", enName: "mediumRatedCapacity", valueType: "string", typicalValue: "90 MVA" },
-  { cnName: "中压绕组电阻", enName: "mediumResistancePu", valueType: "float", typicalValue: "0.0" },
-  { cnName: "中压绕组电抗", enName: "mediumReactancePu", valueType: "float", typicalValue: "0.1" },
-  { cnName: "中压绕组励磁电导", enName: "mediumMagnetizingConductancePu", valueType: "float", typicalValue: "0.0" },
-  { cnName: "中压绕组励磁电纳", enName: "mediumMagnetizingSusceptancePu", valueType: "float", typicalValue: "0.0" },
-  { cnName: "中压绕组分接头变比", enName: "mediumTapRatio", valueType: "float", typicalValue: "1.0" },
-  { cnName: "低压绕组额定容量", enName: "lowRatedCapacity", valueType: "string", typicalValue: "90 MVA" },
-  { cnName: "低压绕组电阻", enName: "lowResistancePu", valueType: "float", typicalValue: "0.0" },
-  { cnName: "低压绕组电抗", enName: "lowReactancePu", valueType: "float", typicalValue: "0.1" },
-  { cnName: "低压绕组励磁电导", enName: "lowMagnetizingConductancePu", valueType: "float", typicalValue: "0.0" },
-  { cnName: "低压绕组励磁电纳", enName: "lowMagnetizingSusceptancePu", valueType: "float", typicalValue: "0.0" },
-  { cnName: "低压绕组分接头变比", enName: "lowTapRatio", valueType: "float", typicalValue: "1.0" }
+  readonlyIntegerDefinition("高压绕组双绕组主变idx", "idx_xf_t1"),
+  readonlyIntegerDefinition("中压绕组双绕组主变idx", "idx_xf_t2"),
+  readonlyIntegerDefinition("低压绕组双绕组主变idx", "idx_xf_t3")
 ];
 
 export const DEVICE_LIBRARY: DeviceTemplate[] = [
@@ -1550,15 +1560,6 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalCount: 2
   },
   {
-    kind: "ac-two-winding-transformer",
-    label: "两绕组主变",
-    group: "交流设备",
-    size: { width: 94, height: 70 },
-    params: { ratedCapacity: "50 MVA", voltageRatio: "110/10 kV", windingType: "两绕组", impedance: "10.5%" },
-    terminalType: "ac",
-    terminalCount: 2
-  },
-  {
     kind: "ac-three-winding-transformer",
     label: "三绕组主变",
     group: "交流设备",
@@ -1743,18 +1744,18 @@ const containerTerminalRoleLabel = (role: ContainerTerminalRole) => {
 
 const containerTerminalAssociationDefinitions: Record<
   ContainerTerminalAssociationType,
-  { terminalType: TerminalType; energyKey: string; deviceRole: "unit" | "load"; label: string; doublePort?: boolean }
+  { terminalType: TerminalType; energyKey: string; deviceRole: "unit" | "load"; label: string; deviceModel: string; doublePort?: boolean }
 > = {
-  "ac-generator": { terminalType: "ac", energyKey: "ac", deviceRole: "unit", label: "交流电源" },
-  "ac-load": { terminalType: "ac", energyKey: "ac", deviceRole: "load", label: "交流电负荷" },
-  "dc-generator": { terminalType: "dc", energyKey: "dc", deviceRole: "unit", label: "直流电源" },
-  "dc-load": { terminalType: "dc", energyKey: "dc", deviceRole: "load", label: "直流电负荷" },
-  "h2-source": { terminalType: "h2", energyKey: "h2", deviceRole: "unit", label: "氢源" },
-  "h2-load": { terminalType: "h2", energyKey: "h2", deviceRole: "load", label: "氢荷" },
-  "heat-source": { terminalType: "heat", energyKey: "heat", deviceRole: "unit", label: "单端热源" },
-  "heat2-source": { terminalType: "heat", energyKey: "heat2", deviceRole: "unit", label: "双端热源", doublePort: true },
-  "heat-load": { terminalType: "heat", energyKey: "heat", deviceRole: "load", label: "单端热荷" },
-  "heat2-load": { terminalType: "heat", energyKey: "heat2", deviceRole: "load", label: "双端热荷", doublePort: true }
+  "ac-generator": { terminalType: "ac", energyKey: "ac", deviceRole: "unit", label: "交流电源", deviceModel: "ACGenerator" },
+  "ac-load": { terminalType: "ac", energyKey: "ac", deviceRole: "load", label: "交流电负荷", deviceModel: "ACLoad" },
+  "dc-generator": { terminalType: "dc", energyKey: "dc", deviceRole: "unit", label: "直流电源", deviceModel: "DCGenerator" },
+  "dc-load": { terminalType: "dc", energyKey: "dc", deviceRole: "load", label: "直流电负荷", deviceModel: "DCLoad" },
+  "h2-source": { terminalType: "h2", energyKey: "h2", deviceRole: "unit", label: "氢源", deviceModel: "HydrogenSource" },
+  "h2-load": { terminalType: "h2", energyKey: "h2", deviceRole: "load", label: "氢荷", deviceModel: "HydrogenLoad" },
+  "heat-source": { terminalType: "heat", energyKey: "heat", deviceRole: "unit", label: "单端热源", deviceModel: "HeatSource" },
+  "heat2-source": { terminalType: "heat", energyKey: "heat2", deviceRole: "unit", label: "双端热源", deviceModel: "TwoPortHeatSource", doublePort: true },
+  "heat-load": { terminalType: "heat", energyKey: "heat", deviceRole: "load", label: "单端热荷", deviceModel: "HeatLoad" },
+  "heat2-load": { terminalType: "heat", energyKey: "heat2", deviceRole: "load", label: "双端热荷", deviceModel: "TwoPortHeatLoad", doublePort: true }
 };
 
 const containerTerminalAssociationLabel = (association: ContainerTerminalAssociationType) =>
@@ -1971,12 +1972,17 @@ export function describeContainerTerminalAssociations(template: DeviceTemplate):
       definitions.find((definition) => expectedRelationKey && definition.enName === expectedRelationKey) ??
       (dependent ? undefined : definitions.find((definition) => new RegExp(`^idx_.+_t${index + 1}$`).test(definition.enName)));
     const relationKey = relationDefinition?.enName ?? expectedRelationKey;
-    const transformerAssociation = /_transformer_t\d+$/.test(relationKey);
+    const transformerAssociation = isContainerTransformerRelationKey(relationKey);
     const roleLabel = transformerAssociation
       ? "双绕组主变首端"
       : terminalAssociations.length
         ? containerTerminalAssociationLabel(association)
         : containerTerminalRoleLabel(role);
+    const deviceModel = transformerAssociation
+      ? "ACTransformer"
+      : terminalAssociations.length
+        ? containerTerminalAssociationDefinitions[association].deviceModel
+        : containerRelationCounterKey(relationKey || getContainerAssociationRelationKey(association, associationSourceIndex));
     const terminalLabel = template.terminalLabels?.[index] ?? `${terminalTypeLabel(type)}端${index + 1}`;
     return {
       terminalIndex: index,
@@ -1987,6 +1993,7 @@ export function describeContainerTerminalAssociations(template: DeviceTemplate):
         ? `随端子${associationSourceIndex + 1}关联${roleLabel}`
         : relationDefinition?.cnName ?? `${terminalLabel}${roleLabel}关联idx`,
       roleLabel,
+      deviceModel,
       sourceTerminalIndex: associationSourceIndex,
       dependent
     };
@@ -2047,7 +2054,7 @@ export function buildContainerDeviceParameterViews(
       viewRow("terminals", "terminals", terminals.map((terminal) => terminal.label).join(", ")),
       viewRow("energy", "energy", uniqueNonEmpty(terminals.map((terminal) => terminal.type.toUpperCase())).join(" / "))
     ];
-    if (first.relationKey.includes("_transformer_")) {
+    if (isContainerTransformerRelationKey(first.relationKey)) {
       rows.push(viewRow("i_node", "i_node", sourceTerminal?.nodeNumber ?? ""));
       rows.push(viewRow("j_node", "j_node", node.params.neutral_node ?? ""));
     } else if (terminals.length === 1) {
@@ -2450,10 +2457,13 @@ function applyTemplateDefinitionDefaults(params: Record<string, string>, templat
 }
 
 function applyContainerRelationDefaults(params: Record<string, string>, template: DeviceTemplate): Record<string, string> {
-  if (!template.isContainer || template.parameterDefinitions?.length) {
+  if (!template.isContainer) {
     return params;
   }
-  const next = { ...params };
+  const next: Record<string, string> = { ...params, is_container: params.is_container ?? "1" };
+  if (template.parameterDefinitions?.length) {
+    return next;
+  }
   for (const definition of buildDefaultDeviceParameterDefinitions(templateTerminalTypes(template), {
     isContainer: true,
     terminalRoles: template.terminalRoles,
@@ -2595,6 +2605,8 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   }
   if (template.kind === "ac-three-winding-transformer") {
     return withTemplateDefinitions(withRunStat({
+      neutral_node: "",
+      neutral_vbase: "1.0",
       highVbase: "220 kV",
       mediumVbase: "110 kV",
       lowVbase: "10 kV",
