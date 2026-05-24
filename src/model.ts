@@ -34,13 +34,16 @@ export type DeviceKind =
   | "hydrogen-shutoff-valve"
   | "hydrogen-pipeline"
   | "heat-boiler"
+  | "two-port-heat-boiler"
   | "heat-source"
   | "two-port-heat-source"
   | "heat-exchanger"
   | "three-port-heat-exchanger"
   | "four-port-heat-exchanger"
   | "ac-heater"
+  | "ac-two-port-heater"
   | "dc-heater"
+  | "dc-two-port-heater"
   | "thermal-storage-tank"
   | "heat-load"
   | "single-port-heat-load"
@@ -129,6 +132,11 @@ export type Point = {
 export type CanvasBounds = {
   width: number;
   height: number;
+};
+
+export type ViewBox = CanvasBounds & {
+  x: number;
+  y: number;
 };
 
 export type TerminalType = "ac" | "dc" | "h2" | "heat";
@@ -967,6 +975,20 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalCount: 1
   },
   {
+    kind: "two-port-heat-boiler",
+    label: "供热锅炉2",
+    group: "热能设备",
+    size: { width: 100, height: 64 },
+    params: { heatPower: "10 MW", supplyTemperature: "95 degC", returnTemperature: "70 degC" },
+    terminalType: "heat",
+    terminalCount: 2,
+    terminalLabels: ["供水端", "回水端"],
+    terminalAnchors: [
+      { x: 0.5, y: -0.25 },
+      { x: 0.5, y: 0.25 }
+    ]
+  },
+  {
     kind: "heat-source",
     label: "单端热源",
     group: "热能设备",
@@ -1038,6 +1060,22 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalLabels: ["交流端", "热力端"]
   },
   {
+    kind: "ac-two-port-heater",
+    label: "交流电制热2",
+    group: "热能设备",
+    size: { width: 116, height: 68 },
+    params: { ratedVoltage: "10 kV", ratedPower: "5 MW", heatPower: "4.8 MW", supplyTemperature: "95 degC", returnTemperature: "70 degC" },
+    terminalType: "ac",
+    terminalCount: 3,
+    terminalTypes: ["ac", "heat", "heat"],
+    terminalLabels: ["交流端", "供水端", "回水端"],
+    terminalAnchors: [
+      { x: -0.5, y: 0 },
+      { x: 0.5, y: -0.25 },
+      { x: 0.5, y: 0.25 }
+    ]
+  },
+  {
     kind: "dc-heater",
     label: "直流电制热",
     group: "热能设备",
@@ -1047,6 +1085,22 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalCount: 2,
     terminalTypes: ["dc", "heat"],
     terminalLabels: ["直流端", "热力端"]
+  },
+  {
+    kind: "dc-two-port-heater",
+    label: "直流电制热2",
+    group: "热能设备",
+    size: { width: 116, height: 68 },
+    params: { ratedVoltage: "750 V", ratedPower: "5 MW", heatPower: "4.8 MW", supplyTemperature: "95 degC", returnTemperature: "70 degC" },
+    terminalType: "dc",
+    terminalCount: 3,
+    terminalTypes: ["dc", "heat", "heat"],
+    terminalLabels: ["直流端", "供水端", "回水端"],
+    terminalAnchors: [
+      { x: -0.5, y: 0 },
+      { x: 0.5, y: -0.25 },
+      { x: 0.5, y: 0.25 }
+    ]
   },
   {
     kind: "thermal-storage-tank",
@@ -1377,12 +1431,12 @@ export function getDeviceGlyphVariant(kind: DeviceKind): DeviceGlyphVariant {
   if (kind === "hydrogen-pressure-reducer") return "hydrogen-regulator";
   if (kind === "hydrogen-shutoff-valve") return "hydrogen-valve";
   if (kind === "hydrogen-pipeline") return "hydrogen-pipeline";
-  if (kind === "heat-boiler") return "heat-boiler";
+  if (kind === "heat-boiler" || kind === "two-port-heat-boiler") return "heat-boiler";
   if (kind === "heat-source" || kind === "two-port-heat-source") return "heat-source";
   if (kind === "heat-exchanger") return "heat-exchanger-two";
   if (kind === "three-port-heat-exchanger") return "heat-exchanger-three";
   if (kind === "four-port-heat-exchanger") return "heat-exchanger-four";
-  if (kind === "ac-heater" || kind === "dc-heater") return "heat-electric-heater";
+  if (kind === "ac-heater" || kind === "dc-heater" || kind === "ac-two-port-heater" || kind === "dc-two-port-heater") return "heat-electric-heater";
   if (kind === "thermal-storage-tank") return "heat-storage";
   if (kind === "heat-load" || kind === "single-port-heat-load" || kind === "two-port-heat-load") return "heat-load";
   if (kind === "heat-bus") return "heat-bus";
@@ -1430,6 +1484,8 @@ function isThermalVisualKind(kind: string): boolean {
     kind.startsWith("heat-") ||
     kind === "ac-heater" ||
     kind === "dc-heater" ||
+    kind === "ac-two-port-heater" ||
+    kind === "dc-two-port-heater" ||
     kind === "thermal-storage-tank" ||
     kind.includes("port-heat-")
   );
@@ -1440,7 +1496,7 @@ function isPureHydrogenNetworkKind(kind: string): boolean {
 }
 
 function isPureThermalNetworkKind(kind: string): boolean {
-  return isThermalVisualKind(kind) && kind !== "ac-heater" && kind !== "dc-heater";
+  return isThermalVisualKind(kind) && kind !== "ac-heater" && kind !== "dc-heater" && kind !== "ac-two-port-heater" && kind !== "dc-two-port-heater";
 }
 
 export function getDeviceStrokeColor(node: Pick<ModelNode, "kind" | "terminals" | "params">): string {
@@ -1728,7 +1784,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       controlType: template.terminalType === "ac" ? "PQ" : "P"
     })));
   }
-  if (template.kind === "ac-heater" || template.kind === "dc-heater") {
+  if (template.kind === "ac-heater" || template.kind === "dc-heater" || template.kind === "ac-two-port-heater" || template.kind === "dc-two-port-heater") {
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ...template.params,
       ratedCapacity: template.params.ratedPower ?? "5 MW",
@@ -1897,6 +1953,16 @@ export function clampNodePositionToBounds(node: ModelNode, bounds: CanvasBounds,
   return {
     x: Math.round(Math.max(halfWidth, Math.min(bounds.width - halfWidth, position.x))),
     y: Math.round(Math.max(halfHeight, Math.min(bounds.height - halfHeight, position.y)))
+  };
+}
+
+export function normalizeViewBoxToCanvas(box: ViewBox, bounds: CanvasBounds): ViewBox {
+  const maxX = bounds.width - box.width;
+  const maxY = bounds.height - box.height;
+  return {
+    ...box,
+    x: box.width >= bounds.width ? maxX / 2 : Math.max(0, Math.min(maxX, box.x)),
+    y: box.height >= bounds.height ? maxY / 2 : Math.max(0, Math.min(maxY, box.y))
   };
 }
 

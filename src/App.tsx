@@ -68,6 +68,7 @@ import {
   lockProjectEdgeTerminals,
   projectPointToBusCenterline,
   validateTopology,
+  normalizeViewBoxToCanvas,
   type DeviceKind,
   type DeviceIndexCounters,
   type DeviceParameterDefinition,
@@ -1586,6 +1587,7 @@ export function App() {
   const importRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const customDeviceImageInputRef = useRef<HTMLInputElement | null>(null);
+  const canvasFrameRef = useRef<HTMLDivElement | null>(null);
   const canvasInteractionRef = useRef(false);
   const lastCanvasPointerRef = useRef<Point | null>(null);
   const projectListPointerInsideRef = useRef(false);
@@ -1618,6 +1620,7 @@ export function App() {
   const [manualPathDrag, setManualPathDrag] = useState<ManualPathDrag>(null);
   const [transformDrag, setTransformDrag] = useState<TransformDrag | null>(null);
   const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT });
+  const [canvasCenterRequest, setCanvasCenterRequest] = useState(0);
   const [panning, setPanning] = useState<{ clientX: number; clientY: number; viewBox: typeof viewBox } | null>(null);
   const [marquee, setMarquee] = useState<Marquee>(null);
   const [clipboardNodes, setClipboardNodes] = useState<ModelNode[]>([]);
@@ -1635,6 +1638,7 @@ export function App() {
   const [deviceDefinitionOverrides, setDeviceDefinitionOverrides] = useState<Record<string, DeviceTemplateDefinitionOverride>>(() => readDeviceDefinitionOverrides());
   const [deviceDefinitionDialogOpen, setDeviceDefinitionDialogOpen] = useState(false);
   const [selectedDefinitionKind, setSelectedDefinitionKind] = useState<DeviceKind | "">("");
+  const [expandedDefinitionGroups, setExpandedDefinitionGroups] = useState<LibraryGroup[]>([...DEFAULT_LIBRARY_GROUPS]);
   const [definitionDraftRows, setDefinitionDraftRows] = useState<DeviceDefinitionDraftRow[]>([]);
   const [definitionDraftError, setDefinitionDraftError] = useState("");
   const [topologyErrors, setTopologyErrors] = useState<TopologyValidationError[]>([]);
@@ -1975,6 +1979,10 @@ export function App() {
     setUndoStack((current) => [...current.slice(-49), snapshot]);
   };
 
+  const requestCanvasFrameCenter = () => {
+    setCanvasCenterRequest((current) => current + 1);
+  };
+
   const undoLastOperation = () => {
     setUndoStack((current) => {
       const snapshot = current.at(-1);
@@ -2005,6 +2013,22 @@ export function App() {
       return current.slice(0, -1);
     });
   };
+
+  useEffect(() => {
+    setViewBox((current) => normalizeViewBoxToCanvas(current, canvasBounds));
+  }, [canvasBounds]);
+
+  useEffect(() => {
+    const frame = canvasFrameRef.current;
+    if (!frame) {
+      return;
+    }
+    const frameId = window.requestAnimationFrame(() => {
+      frame.scrollLeft = Math.max(0, (frame.scrollWidth - frame.clientWidth) / 2);
+      frame.scrollTop = Math.max(0, (frame.scrollHeight - frame.clientHeight) / 2);
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [canvasCenterRequest, canvasHeight, canvasWidth]);
 
   useEffect(() => {
     if (!projectPanelResize) {
@@ -2326,11 +2350,7 @@ export function App() {
 
   const clampPointToCanvas = (point: Point) => clampPointToBounds(point, canvasBounds);
   const clampNodeToCanvas = (node: ModelNode, position = node.position) => clampNodePositionToBounds(node, canvasBounds, position);
-  const clampViewBoxToCanvas = (box: typeof viewBox) => ({
-    ...box,
-    x: Math.max(0, Math.min(Math.max(0, canvasWidth - box.width), box.x)),
-    y: Math.max(0, Math.min(Math.max(0, canvasHeight - box.height), box.y))
-  });
+  const clampViewBoxToCanvas = (box: typeof viewBox) => normalizeViewBoxToCanvas(box, canvasBounds);
   const boundedDeltaForNodes = (nodeIds: string[], originalPositions: Record<string, Point>, dx: number, dy: number) => {
     let boundedDx = dx;
     let boundedDy = dy;
@@ -2428,12 +2448,17 @@ export function App() {
     pushUndoSnapshot();
     setCanvasWidth(width);
     setCanvasHeight(height);
-    setViewBox((current) => ({
-      x: Math.max(0, Math.min(width - Math.min(current.width, width), current.x)),
-      y: Math.max(0, Math.min(height - Math.min(current.height, height), current.y)),
-      width: Math.min(current.width, width * 3),
-      height: Math.min(current.height, height * 3)
-    }));
+    setViewBox((current) =>
+      normalizeViewBoxToCanvas(
+        {
+          x: current.x,
+          y: current.y,
+          width: Math.min(current.width, width * 3),
+          height: Math.min(current.height, height * 3)
+        },
+        { width, height }
+      )
+    );
     setNodes((current) => current.map((node) => ({ ...node, position: clampNodePositionToBounds(node, { width, height }) })));
     setEdges((current) =>
       current.map((edge) => ({
@@ -2985,7 +3010,7 @@ export function App() {
       const rect = svgRef.current.getBoundingClientRect();
       const dx = ((event.clientX - panning.clientX) / rect.width) * panning.viewBox.width;
       const dy = ((event.clientY - panning.clientY) / rect.height) * panning.viewBox.height;
-      setViewBox({ ...panning.viewBox, x: panning.viewBox.x - dx, y: panning.viewBox.y - dy });
+      setViewBox(clampViewBoxToCanvas({ ...panning.viewBox, x: panning.viewBox.x - dx, y: panning.viewBox.y - dy }));
       return;
     }
     if (transformDrag && svgRef.current) {
@@ -3087,12 +3112,12 @@ export function App() {
     const nextHeight = Math.max(160, Math.min(canvasHeight * 3, viewBox.height * zoomFactor));
     const ratioX = (pointer.x - viewBox.x) / viewBox.width;
     const ratioY = (pointer.y - viewBox.y) / viewBox.height;
-    setViewBox({
+    setViewBox(clampViewBoxToCanvas({
       x: pointer.x - ratioX * nextWidth,
       y: pointer.y - ratioY * nextHeight,
       width: nextWidth,
       height: nextHeight
-    });
+    }));
   };
 
   const deleteSelected = () => {
@@ -3194,10 +3219,14 @@ export function App() {
 
   const loadSavedProject = (project: SavedProjectRecord, schemeId = findSchemeForProject(project.id)?.id ?? "") => {
     const indexed = assignMissingDeviceIndexes(project.project.nodes, project.project.deviceIndexCounters);
+    const nextCanvasBounds = {
+      width: project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
+      height: project.project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT
+    };
     pushUndoSnapshot();
     setProjectName(project.name);
-    setCanvasWidth(project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH);
-    setCanvasHeight(project.project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT);
+    setCanvasWidth(nextCanvasBounds.width);
+    setCanvasHeight(nextCanvasBounds.height);
     setCanvasBackgroundColor(project.project.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND);
     setCanvasBackgroundImage(project.project.canvasBackgroundImage ?? "");
     setCanvasBackgroundImageAssetId(project.project.canvasBackgroundImageAssetId ?? "");
@@ -3205,7 +3234,7 @@ export function App() {
     setVoltageUnit(project.project.voltageUnit ?? DEFAULT_VOLTAGE_UNIT);
     setCurrentUnit(project.project.currentUnit ?? DEFAULT_CURRENT_UNIT);
     setPowerBaseValue(project.project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE);
-    setViewBox({ x: 0, y: 0, width: project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH, height: project.project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT });
+    setViewBox(normalizeViewBoxToCanvas({ x: 0, y: 0, ...nextCanvasBounds }, nextCanvasBounds));
     setDeviceIndexCounters(indexed.counters);
     setNodes(indexed.nodes);
     setEdges(project.project.edges);
@@ -3216,6 +3245,7 @@ export function App() {
     setSelectedEdgeId("");
     setConnectSource(null);
     setRewiring(null);
+    requestCanvasFrameCenter();
   };
 
   const createSchemeRecord = () => {
@@ -3881,10 +3911,14 @@ export function App() {
     const text = await file.text();
     const project = deserializeProject(text);
     const indexed = assignMissingDeviceIndexes(project.nodes, project.deviceIndexCounters);
+    const nextCanvasBounds = {
+      width: project.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
+      height: project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT
+    };
     pushUndoSnapshot();
     setProjectName(project.name);
-    setCanvasWidth(project.canvasWidth ?? DEFAULT_CANVAS_WIDTH);
-    setCanvasHeight(project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT);
+    setCanvasWidth(nextCanvasBounds.width);
+    setCanvasHeight(nextCanvasBounds.height);
     setCanvasBackgroundColor(project.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND);
     setCanvasBackgroundImage(project.canvasBackgroundImage ?? "");
     setCanvasBackgroundImageAssetId(project.canvasBackgroundImageAssetId ?? "");
@@ -3892,13 +3926,14 @@ export function App() {
     setVoltageUnit(project.voltageUnit ?? DEFAULT_VOLTAGE_UNIT);
     setCurrentUnit(project.currentUnit ?? DEFAULT_CURRENT_UNIT);
     setPowerBaseValue(project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE);
-    setViewBox({ x: 0, y: 0, width: project.canvasWidth ?? DEFAULT_CANVAS_WIDTH, height: project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT });
+    setViewBox(normalizeViewBoxToCanvas({ x: 0, y: 0, ...nextCanvasBounds }, nextCanvasBounds));
     setDeviceIndexCounters(indexed.counters);
     setNodes(indexed.nodes);
     setEdges(project.edges);
     setSelectedNodeIds(indexed.nodes[0] ? [indexed.nodes[0].id] : []);
     setSelectedEdgeId("");
     event.target.value = "";
+    requestCanvasFrameCenter();
   };
 
   const chooseImage = (event: ChangeEvent<HTMLInputElement>) => {
@@ -4196,6 +4231,8 @@ export function App() {
 
   const loadDefinitionTemplateDraft = (template: DeviceTemplate) => {
     setSelectedDefinitionKind(template.kind);
+    const group = normalizeLibraryGroupName(template.group);
+    setExpandedDefinitionGroups((current) => (current.includes(group) ? current : [...current, group]));
     setDefinitionDraftRows(createDefinitionDraftRows(template));
     setDefinitionDraftError("");
   };
@@ -4206,6 +4243,12 @@ export function App() {
       loadDefinitionTemplateDraft(template);
     }
     setDeviceDefinitionDialogOpen(true);
+  };
+
+  const toggleDefinitionGroup = (group: LibraryGroup) => {
+    setExpandedDefinitionGroups((current) =>
+      current.includes(group) ? current.filter((item) => item !== group) : [...current, group]
+    );
   };
 
   const updateDefinitionDraftRow = (rowId: string, patch: Partial<DeviceDefinitionDraftRow>) => {
@@ -4559,7 +4602,7 @@ export function App() {
           </div>
         </header>
 
-        <section className="canvas-frame">
+        <section className="canvas-frame" ref={canvasFrameRef}>
           <svg
             ref={svgRef}
             className="diagram-canvas"
@@ -5757,20 +5800,34 @@ export function App() {
                   if (templates.length === 0) {
                     return null;
                   }
+                  const expanded = expandedDefinitionGroups.includes(group);
                   return (
-                    <section key={group}>
-                      <h3>{group}</h3>
-                      {templates.map((template) => (
-                        <button
-                          type="button"
-                          key={template.kind}
-                          className={selectedDefinitionTemplate?.kind === template.kind ? "active" : ""}
-                          onClick={() => loadDefinitionTemplateDraft(template)}
-                        >
-                          <span>{template.label}</span>
-                          <small>{template.kind}</small>
-                        </button>
-                      ))}
+                    <section className="device-definition-group" key={group}>
+                      <button
+                        type="button"
+                        className="device-definition-group-toggle"
+                        aria-expanded={expanded}
+                        onClick={() => toggleDefinitionGroup(group)}
+                      >
+                        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        <span>{group}</span>
+                        <strong>{templates.length}</strong>
+                      </button>
+                      {expanded && (
+                        <div className="device-definition-items" role="group" aria-label={`${group}元件列表`}>
+                          {templates.map((template) => (
+                            <button
+                              type="button"
+                              key={template.kind}
+                              className={`device-definition-item ${selectedDefinitionTemplate?.kind === template.kind ? "active" : ""}`}
+                              onClick={() => loadDefinitionTemplateDraft(template)}
+                            >
+                              <span>{template.label}</span>
+                              <small>{template.kind}</small>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </section>
                   );
                 })}

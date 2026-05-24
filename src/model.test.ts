@@ -42,6 +42,7 @@ import {
   lockProjectEdgeTerminals,
   mirrorNodes,
   normalizeVoltageBaseInput,
+  normalizeViewBoxToCanvas,
   terminalStubSegment,
   terminalVoltageBaseNumber,
   serializeProject,
@@ -702,6 +703,17 @@ describe("power system model", () => {
     expect(position.y).toBeLessThanOrEqual(1024 - (node.size.height * Math.abs(node.scaleY ?? node.scale)) / 2);
   });
 
+  test("centers the drawing area when the SVG view box is larger than the canvas", () => {
+    expect(normalizeViewBoxToCanvas({ x: 0, y: 0, width: 3000, height: 1800 }, { width: 1980, height: 1024 })).toMatchObject({
+      x: -510,
+      y: -388
+    });
+    expect(normalizeViewBoxToCanvas({ x: 900, y: 600, width: 1200, height: 800 }, { width: 1980, height: 1024 })).toMatchObject({
+      x: 780,
+      y: 224
+    });
+  });
+
   test("keeps routed connection points inside the display area", () => {
     const source = createDefaultNode("ac-source", { x: 42, y: 120 });
     const target = createDefaultNode("ac-load", { x: 330, y: 120 });
@@ -1139,13 +1151,16 @@ describe("power system model", () => {
   test("includes thermal equipment library with heat network and mixed electric-thermal ports", () => {
     const expected = [
       ["heat-boiler", "供热锅炉", ["heat"], "heat-boiler"],
+      ["two-port-heat-boiler", "供热锅炉2", ["heat", "heat"], "heat-boiler"],
       ["heat-source", "单端热源", ["heat"], "heat-source"],
       ["two-port-heat-source", "双端热源", ["heat", "heat"], "heat-source"],
       ["heat-exchanger", "双端热交换器", ["heat", "heat"], "heat-exchanger-two"],
       ["three-port-heat-exchanger", "三端热交换器", ["heat", "heat", "heat"], "heat-exchanger-three"],
       ["four-port-heat-exchanger", "四端热交换器", ["heat", "heat", "heat", "heat"], "heat-exchanger-four"],
       ["ac-heater", "交流电制热", ["ac", "heat"], "heat-electric-heater"],
+      ["ac-two-port-heater", "交流电制热2", ["ac", "heat", "heat"], "heat-electric-heater"],
       ["dc-heater", "直流电制热", ["dc", "heat"], "heat-electric-heater"],
+      ["dc-two-port-heater", "直流电制热2", ["dc", "heat", "heat"], "heat-electric-heater"],
       ["thermal-storage-tank", "储热罐", ["heat", "heat", "heat", "heat"], "heat-storage"],
       ["heat-load", "热负荷", ["heat"], "heat-load"],
       ["single-port-heat-load", "单端热荷", ["heat"], "heat-load"],
@@ -1177,6 +1192,29 @@ describe("power system model", () => {
     expect(fourPort.terminals.map((terminal) => terminal.anchor)).toEqual([
       { x: -0.5, y: -0.25 },
       { x: -0.5, y: 0.25 },
+      { x: 0.5, y: -0.25 },
+      { x: 0.5, y: 0.25 }
+    ]);
+
+    const twoPortBoiler = createDefaultNode("two-port-heat-boiler", { x: 100, y: 100 });
+    expect(twoPortBoiler.terminals.map((terminal) => terminal.label)).toEqual(["供水端", "回水端"]);
+    expect(twoPortBoiler.terminals.map((terminal) => terminal.anchor)).toEqual([
+      { x: 0.5, y: -0.25 },
+      { x: 0.5, y: 0.25 }
+    ]);
+
+    const acTwoPortHeater = createDefaultNode("ac-two-port-heater", { x: 100, y: 100 });
+    expect(acTwoPortHeater.terminals.map((terminal) => terminal.label)).toEqual(["交流端", "供水端", "回水端"]);
+    expect(acTwoPortHeater.terminals.map((terminal) => terminal.anchor)).toEqual([
+      { x: -0.5, y: 0 },
+      { x: 0.5, y: -0.25 },
+      { x: 0.5, y: 0.25 }
+    ]);
+
+    const dcTwoPortHeater = createDefaultNode("dc-two-port-heater", { x: 100, y: 100 });
+    expect(dcTwoPortHeater.terminals.map((terminal) => terminal.label)).toEqual(["直流端", "供水端", "回水端"]);
+    expect(dcTwoPortHeater.terminals.map((terminal) => terminal.anchor)).toEqual([
+      { x: -0.5, y: 0 },
       { x: 0.5, y: -0.25 },
       { x: 0.5, y: 0.25 }
     ]);
