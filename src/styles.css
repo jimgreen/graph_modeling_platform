@@ -55,9 +55,12 @@ button:disabled {
 
 .inspector-panel {
   border-width: 0 0 0 1px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   width: var(--right-panel-width);
   padding: 20px;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .floating-side-panel {
@@ -895,6 +898,7 @@ button:disabled {
 }
 
 .inspector-title {
+  flex: 0 0 auto;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -927,6 +931,12 @@ button:disabled {
 .form-stack {
   display: grid;
   gap: 12px;
+  align-content: start;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+  scrollbar-width: thin;
 }
 
 .form-stack label {
@@ -1620,9 +1630,14 @@ button:disabled {
 }
 
 .inspector-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 6;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
+  padding: 0 0 8px;
+  background: #ffffff;
 }
 
 .inspector-tabs button {
@@ -1658,13 +1673,36 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
   min-height: 30px;
+  border: 0;
   padding: 0 8px;
   border-radius: 7px;
   color: #0f172a;
   background: #f1f5f9;
   font-size: 12px;
   font-weight: 800;
+  text-align: left;
+}
+
+.element-tree-type:hover,
+.element-tree-type:focus-visible {
+  color: #1d4ed8;
+  background: #eff6ff;
+  outline: none;
+}
+
+.element-tree-type-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.element-tree-type-label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .element-tree-type strong {

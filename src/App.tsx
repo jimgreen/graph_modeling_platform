@@ -1,4 +1,4 @@
-import { ChangeEvent, DragEvent, Fragment, MouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, Fragment, isValidElement, MouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
@@ -19,6 +19,7 @@ import {
   PanelRightOpen,
   Pencil,
   Pin,
+  Route,
   Save,
   Trash2,
   Undo2
@@ -31,6 +32,7 @@ import {
   assignMissingDeviceIndexes,
   assignPermanentDeviceIndex,
   applyDeviceTemplateDefinitionOverride,
+  buildEFileExport,
   buildEDeviceParameterFile,
   buildTopology,
   calculateElectricalTopology,
@@ -67,6 +69,7 @@ import {
   getTemplateParameterDefinitions,
   getTerminalPoint,
   normalizeVoltageBaseInput,
+  normalizeScaleValue,
   isBusNode,
   isContainerTerminalAssociationDependent,
   isDoubleContainerTerminalAssociation,
@@ -103,6 +106,8 @@ import {
   terminalStubSegment,
   terminalVoltageBaseNumber,
   terminalTypeColor,
+  tidyOrthogonalRoute,
+  topologyCalculationMessage,
   upsertSavedProject,
   uniqueRecordName,
   validateContainerTerminalAssociations,
@@ -110,7 +115,15 @@ import {
   type SavedProjectRecord
 } from "./model";
 import { resolveKeyboardShortcutScope } from "./keyboardShortcuts";
-import { resolveCanvasDeleteAction } from "./selectionActions";
+import {
+  EMPTY_CANVAS_CLIPBOARD,
+  buildCanvasClipboard,
+  canvasClipboardBounds,
+  cloneCanvasClipboard,
+  resolveCanvasDeleteAction,
+  selectGraphicsInRect,
+  type CanvasClipboard
+} from "./selectionActions";
 import {
   isSidePanelVisible,
   nextSidePanelAutoVisible,
@@ -956,6 +969,15 @@ function screenToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number):
   return { x: Math.round(transformed.x), y: Math.round(transformed.y) };
 }
 
+function constrainPointToOrthogonalAxis(start: Point, point: Point): Point {
+  const dx = point.x - start.x;
+  const dy = point.y - start.y;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return { x: point.x, y: start.y };
+  }
+  return { x: start.x, y: point.y };
+}
+
 function downloadText(filename: string, text: string, mime: string) {
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -964,6 +986,70 @@ function downloadText(filename: string, text: string, mime: string) {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+type SaveFilePickerWindow = Window & {
+  showSaveFilePicker?: (options?: {
+    id?: string;
+    suggestedName?: string;
+    types?: Array<{
+      description?: string;
+      accept: Record<string, string[]>;
+    }>;
+    excludeAcceptAllOption?: boolean;
+  }) => Promise<{
+    createWritable: () => Promise<{
+      write: (data: Blob) => Promise<void>;
+      close: () => Promise<void>;
+    }>;
+  }>;
+};
+
+type TextSaveOptions = {
+  filename: string;
+  text: string;
+  mime: string;
+  description: string;
+  extensions: string[];
+};
+
+const EXPORT_SAVE_PICKER_ID = "model-export";
+
+function isPickerAbort(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+async function saveTextFile(options: TextSaveOptions) {
+  const picker = (window as SaveFilePickerWindow).showSaveFilePicker;
+  if (typeof picker !== "function") {
+    downloadText(options.filename, options.text, options.mime);
+    return;
+  }
+  try {
+    const handle = await picker.call(window, {
+      // Chromium uses this id to reopen the save dialog in the last directory used for this export purpose.
+      id: EXPORT_SAVE_PICKER_ID,
+      suggestedName: options.filename,
+      types: [
+        {
+          description: options.description,
+          accept: {
+            [options.mime]: options.extensions
+          }
+        }
+      ],
+      excludeAcceptAllOption: false
+    });
+    const writable = await handle.createWritable();
+    await writable.write(new Blob([options.text], { type: options.mime }));
+    await writable.close();
+  } catch (error) {
+    if (isPickerAbort(error)) {
+      return;
+    }
+    window.alert("保存文件失败，已改为浏览器下载。");
+    downloadText(options.filename, options.text, options.mime);
+  }
 }
 
 function svgStrokeDashArray(style?: string) {
@@ -982,6 +1068,87 @@ function escapeXml(value: string) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+const SVG_ATTRIBUTE_NAMES: Record<string, string> = {
+  className: "class",
+  dominantBaseline: "dominant-baseline",
+  fillOpacity: "fill-opacity",
+  fontFamily: "font-family",
+  fontSize: "font-size",
+  fontStyle: "font-style",
+  fontWeight: "font-weight",
+  strokeDasharray: "stroke-dasharray",
+  strokeLinecap: "stroke-linecap",
+  strokeLinejoin: "stroke-linejoin",
+  strokeWidth: "stroke-width",
+  textAnchor: "text-anchor",
+  textDecoration: "text-decoration"
+};
+
+function styleObjectToSvgAttribute(style: Record<string, string | number>) {
+  return Object.entries(style)
+    .map(([key, value]) => `${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}:${String(value)}`)
+    .join(";");
+}
+
+function renderSvgElementMarkup(value: unknown): string {
+  if (value === null || value === undefined || typeof value === "boolean") {
+    return "";
+  }
+  if (typeof value === "string" || typeof value === "number") {
+    return escapeXml(String(value));
+  }
+  if (Array.isArray(value)) {
+    return value.map(renderSvgElementMarkup).join("");
+  }
+  if (!isValidElement(value)) {
+    return "";
+  }
+  const props = value.props as Record<string, unknown>;
+  if (value.type === Fragment) {
+    return renderSvgElementMarkup(props.children);
+  }
+  if (typeof value.type !== "string") {
+    return "";
+  }
+  const attrs = Object.entries(props)
+    .filter(([key, attrValue]) => key !== "children" && key !== "key" && key !== "ref" && attrValue !== undefined && attrValue !== null && attrValue !== false)
+    .map(([key, attrValue]) => {
+      const attrName = SVG_ATTRIBUTE_NAMES[key] ?? key;
+      const renderedValue =
+        key === "style" && typeof attrValue === "object" && !Array.isArray(attrValue)
+          ? styleObjectToSvgAttribute(attrValue as Record<string, string | number>)
+          : attrValue === true
+            ? "true"
+            : String(attrValue);
+      return ` ${attrName}="${escapeXml(renderedValue)}"`;
+    })
+    .join("");
+  return `<${value.type}${attrs}>${renderSvgElementMarkup(props.children)}</${value.type}>`;
+}
+
+function buildSvgTerminalMarkup(node: ModelNode) {
+  if (isBusNode(node) || isStaticNode(node)) {
+    return "";
+  }
+  const nodeScaleX = getNodeScaleX(node);
+  const nodeScaleY = getNodeScaleY(node);
+  const inverseScaleX = nodeScaleX === 0 ? 1 : 1 / nodeScaleX;
+  const inverseScaleY = nodeScaleY === 0 ? 1 : 1 / nodeScaleY;
+  const stroke = getDeviceStrokeColor(node);
+  const strokeWidth = getDeviceStrokeWidth(node);
+  return node.terminals
+    .map((terminal) => {
+      const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY);
+      const terminalColor = terminalTypeColor(terminal.type);
+      const label = `${terminal.label} / ${terminal.type.toUpperCase()}`;
+      return `<g class="export-terminal ${terminal.type}" transform="translate(${terminal.anchor.x * node.size.width} ${terminal.anchor.y * node.size.height}) scale(${inverseScaleX} ${inverseScaleY})">
+  <line class="export-terminal-stub ${terminal.type}" x1="${stub.from.x}" y1="${stub.from.y}" x2="${stub.to.x}" y2="${stub.to.y}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+  <circle class="export-terminal-dot ${terminal.type}" cx="0" cy="0" r="6" fill="${terminalColor}" stroke="#ffffff" stroke-width="2" vector-effect="non-scaling-stroke"><title>${escapeXml(label)}</title></circle>
+</g>`;
+    })
+    .join("\n");
 }
 
 function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?: boolean }) {
@@ -1574,7 +1741,7 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   );
 }
 
-function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: CanvasRenderOptions = { width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT }) {
+export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: CanvasRenderOptions = { width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT }) {
   const imageAssets = readImageAssets();
   const backgroundColor = canvasSize.backgroundColor ?? DEFAULT_CANVAS_BACKGROUND;
   const backgroundImage = canvasSize.backgroundImage ?? "";
@@ -1583,52 +1750,31 @@ function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: CanvasR
     .join("\n");
   const nodeMarkup = nodes
     .map((node) => {
-      const stroke = getDeviceStrokeColor(node);
-      if (isBusNode(node)) {
-        return `<g transform="translate(${node.position.x} ${node.position.y}) rotate(${node.rotation}) scale(${getNodeScaleX(node)} ${getNodeScaleY(node)})">
-  <title>${node.name}</title>
-  <line x1="${-node.size.width / 2}" y1="0" x2="${node.size.width / 2}" y2="0" stroke="${stroke}" stroke-width="${Math.max(8, node.size.height / 3)}" stroke-linecap="round"/>
-</g>`;
-      }
       const imageHref = resolveNodeImage(node, imageAssets);
       const foregroundHref = resolveNodeForegroundImage(node, imageAssets);
-      const shapeFill = node.params.fillColor || "#ffffff";
-      const shapeStroke = node.params.strokeColor || "transparent";
-      const lineWidth = Number(node.params.lineWidth || 2);
-      const dashArray = svgStrokeDashArray(node.params.strokeStyle);
-      const dashAttribute = dashArray ? ` stroke-dasharray="${dashArray}"` : "";
-      const staticShapeMarkup = (() => {
-        if (!isStaticNode(node)) {
-          return `<rect x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" rx="8" fill="transparent" stroke="none"/>`;
-        }
-        if (node.kind === "static-text") {
-          const fontSize = Number(node.params.fontSize || 24);
-          const lines = (node.params.text || node.name).split(/\r?\n/);
-          const startY = -((lines.length - 1) * fontSize * 0.6);
-          const tspans = lines
-            .map((line, index) => `<tspan x="0" dy="${index === 0 ? 0 : fontSize * 1.2}">${escapeXml(line || " ")}</tspan>`)
-            .join("");
-          return `<text x="0" y="${startY}" fill="${node.params.textColor || "#111827"}" font-size="${fontSize}" font-family="${escapeXml(node.params.fontFamily || "Arial")}" font-weight="${node.params.fontWeight || "400"}" font-style="${node.params.fontStyle || "normal"}" text-decoration="${node.params.textDecoration || "none"}" text-anchor="middle" dominant-baseline="middle">${tspans}</text>`;
-        }
-        if (node.kind === "static-line") {
-          return `<line x1="${-node.size.width / 2}" y1="0" x2="${node.size.width / 2}" y2="0" stroke="${shapeStroke}" stroke-width="${lineWidth}"${dashAttribute} stroke-linecap="round"/>`;
-        }
-        if (node.kind === "static-polyline") {
-          return `<polyline points="${-node.size.width / 2},${node.size.height / 3} 0,${-node.size.height / 3} ${node.size.width / 2},${node.size.height / 3}" fill="none" stroke="${shapeStroke}" stroke-width="${lineWidth}"${dashAttribute} stroke-linecap="round" stroke-linejoin="round"/>`;
-        }
-        if (node.kind === "static-circle") {
-          return `<circle cx="0" cy="0" r="${Math.min(node.size.width, node.size.height) / 2}" fill="${shapeFill}" stroke="${shapeStroke}" stroke-width="${lineWidth}"${dashAttribute}/>`;
-        }
-        if (node.kind === "static-ellipse") {
-          return `<ellipse cx="0" cy="0" rx="${node.size.width / 2}" ry="${node.size.height / 2}" fill="${shapeFill}" stroke="${shapeStroke}" stroke-width="${lineWidth}"${dashAttribute}/>`;
-        }
-        return `<rect x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" rx="4" fill="${shapeFill}" stroke="${shapeStroke}" stroke-width="${lineWidth}"${dashAttribute}/>`;
-      })();
+      const allowNodeImage = !isBusNode(node);
+      const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node }));
+      const escapedImageHref = escapeXml(imageHref);
+      const escapedForegroundHref = escapeXml(foregroundHref);
+      const imageMarkup = imageHref
+        ? `<image href="${escapedImageHref}" x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" preserveAspectRatio="xMidYMid slice"/>`
+        : "";
+      const foregroundMarkup = foregroundHref
+        ? `<image href="${escapedForegroundHref}" x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" preserveAspectRatio="xMidYMid slice"/>`
+        : "";
+      const imageCoverMarkup =
+        imageHref && allowNodeImage && !isStaticNode(node)
+          ? `<rect x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" rx="8" fill="#ffffff" stroke="none"/>`
+          : "";
+      const terminalMarkup = buildSvgTerminalMarkup(node);
       return `<g transform="translate(${node.position.x} ${node.position.y}) rotate(${node.rotation}) scale(${getNodeScaleX(node)} ${getNodeScaleY(node)})">
   <title>${escapeXml(node.name)}</title>
-  ${imageHref ? `<image href="${imageHref}" x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" preserveAspectRatio="xMidYMid slice"/>` : ""}
-  ${staticShapeMarkup}
-  ${foregroundHref ? `<image href="${foregroundHref}" x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" preserveAspectRatio="xMidYMid slice"/>` : ""}
+  ${isStaticNode(node) ? imageMarkup : ""}
+  ${glyphMarkup}
+  ${imageCoverMarkup}
+  ${allowNodeImage && !isStaticNode(node) ? imageMarkup : ""}
+  ${allowNodeImage ? foregroundMarkup : ""}
+  ${terminalMarkup}
 </g>`;
     })
     .join("\n");
@@ -1675,6 +1821,7 @@ export function App() {
   const [mode, setMode] = useState<ToolMode>("select");
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>(nodes[0] ? [nodes[0].id] : []);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string>("");
+  const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
   const [connectSource, setConnectSource] = useState<{ nodeId: string; terminalId: string; point?: Point } | null>(null);
   const [connectPreviewPoint, setConnectPreviewPoint] = useState<Point | null>(null);
   const [dragging, setDragging] = useState<DraggingState | null>(null);
@@ -1686,9 +1833,9 @@ export function App() {
   const [canvasCenterRequest, setCanvasCenterRequest] = useState(0);
   const [panning, setPanning] = useState<{ clientX: number; clientY: number; viewBox: typeof viewBox } | null>(null);
   const [marquee, setMarquee] = useState<Marquee>(null);
-  const [clipboardNodes, setClipboardNodes] = useState<ModelNode[]>([]);
+  const [canvasClipboard, setCanvasClipboard] = useState<CanvasClipboard>(EMPTY_CANVAS_CLIPBOARD);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
-  const [inspectorTab, setInspectorTab] = useState<"model" | "tree" | "graph" | "device">("graph");
+  const [inspectorTab, setInspectorTab] = useState<"model" | "graph" | "device" | "tree">("graph");
   const [leftPanelTab, setLeftPanelTab] = useState<"projects" | "library">("projects");
   const [leftPanelMode, setLeftPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(LEFT_PANEL_MODE_STORAGE_KEY));
   const [rightPanelMode, setRightPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(RIGHT_PANEL_MODE_STORAGE_KEY));
@@ -1696,6 +1843,7 @@ export function App() {
   const [rightPanelAutoVisible, setRightPanelAutoVisible] = useState(false);
   const [containerParamViewId, setContainerParamViewId] = useState("container");
   const [expandedLibraryGroups, setExpandedLibraryGroups] = useState<LibraryGroup[]>([...DEFAULT_LIBRARY_GROUPS]);
+  const [collapsedElementTreeGroups, setCollapsedElementTreeGroups] = useState<string[]>([]);
   const [customDeviceTemplates, setCustomDeviceTemplates] = useState<DeviceTemplate[]>(() => readCustomDeviceTemplates());
   const [customDeviceDialogOpen, setCustomDeviceDialogOpen] = useState(false);
   const [customDeviceDraft, setCustomDeviceDraft] = useState<CustomDeviceDraft>(() => createEmptyCustomDeviceDraft());
@@ -1726,6 +1874,10 @@ export function App() {
 
   const selectedNodeId = selectedNodeIds[0] ?? "";
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
+  const activeSelectedEdgeIds = useMemo(
+    () => selectedEdgeIds.length > 0 ? selectedEdgeIds : selectedEdgeId ? [selectedEdgeId] : [],
+    [selectedEdgeId, selectedEdgeIds]
+  );
   const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId);
   const projects = useMemo(() => schemes.flatMap((scheme) => scheme.projects), [schemes]);
   const baseLibraryTemplates = useMemo<DeviceTemplate[]>(() => [...DEVICE_LIBRARY, ...customDeviceTemplates], [customDeviceTemplates]);
@@ -1774,9 +1926,25 @@ export function App() {
     }
   };
   const selectedSchemeRecord = schemes.find((scheme) => scheme.id === selectedSchemeId);
-  const selectedCount = selectedNodeIds.length;
+  const selectedNodeCount = selectedNodeIds.length;
+  const selectedCount = selectedNodeCount + activeSelectedEdgeIds.length;
   const topology = useMemo(() => buildTopology(nodes, edges), [nodes, edges]);
   const elementTree = useMemo(() => buildElementTree(nodes, edges), [edges, nodes]);
+
+  useEffect(() => {
+    setSelectedEdgeIds((current) => {
+      if (!selectedEdgeId) {
+        return current.length === 0 ? current : [];
+      }
+      return current.includes(selectedEdgeId) ? current : [selectedEdgeId];
+    });
+  }, [selectedEdgeId]);
+
+  useEffect(() => {
+    const existingKeys = new Set(elementTree.map((group) => group.typeKey));
+    setCollapsedElementTreeGroups((current) => current.filter((key) => existingKeys.has(key)));
+  }, [elementTree]);
+
   const canvasBounds = useMemo<CanvasBounds>(() => ({ width: canvasWidth, height: canvasHeight }), [canvasHeight, canvasWidth]);
   const leftPanelVisible = isSidePanelVisible(leftPanelMode, leftPanelAutoVisible);
   const rightPanelVisible = isSidePanelVisible(rightPanelMode, rightPanelAutoVisible);
@@ -1796,6 +1964,9 @@ export function App() {
       return "";
     }
     const start = connectSource.point ?? getModelEdgeEndpointPoint(sourceNode, undefined, connectSource.terminalId);
+    if (start.x === connectPreviewPoint.x || start.y === connectPreviewPoint.y) {
+      return `M ${start.x} ${start.y} L ${connectPreviewPoint.x} ${connectPreviewPoint.y}`;
+    }
     const midX = Math.round((start.x + connectPreviewPoint.x) / 2);
     return `M ${start.x} ${start.y} L ${midX} ${start.y} L ${midX} ${connectPreviewPoint.y} L ${connectPreviewPoint.x} ${connectPreviewPoint.y}`;
   }, [connectPreviewPoint, connectSource, nodeById]);
@@ -1845,8 +2016,8 @@ export function App() {
     [canvasBounds, rewiringPreview]
   );
   const renderedRoutedEdges = useMemo(
-    () => [...routedEdges].sort((first, second) => Number(first.edgeId === selectedEdgeId) - Number(second.edgeId === selectedEdgeId)),
-    [routedEdges, selectedEdgeId]
+    () => [...routedEdges].sort((first, second) => Number(activeSelectedEdgeIds.includes(first.edgeId)) - Number(activeSelectedEdgeIds.includes(second.edgeId))),
+    [activeSelectedEdgeIds, routedEdges]
   );
   const selectedRoutedEdge = routedEdges.find((route) => route.edgeId === selectedEdgeId);
 
@@ -2091,6 +2262,7 @@ export function App() {
       setTopologyErrors(snapshot.topologyErrors);
       setSelectedNodeIds(snapshot.nodes[0] ? [snapshot.nodes[0].id] : []);
       setSelectedEdgeId("");
+      setSelectedEdgeIds([]);
       setConnectSource(null);
       setConnectPreviewPoint(null);
       setRewiring(null);
@@ -2162,6 +2334,7 @@ export function App() {
           event.preventDefault();
           setSelectedNodeIds(nodes.map((node) => node.id));
           setSelectedEdgeId("");
+          setSelectedEdgeIds([]);
           setConnectSource(null);
           setConnectPreviewPoint(null);
           setRewiring(null);
@@ -2218,7 +2391,7 @@ export function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [clipboardNodes, deviceIndexCounters, edges, nodes, projectName, projects, recordClipboard, schemes, selectedEdgeId, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors]);
+  }, [canvasClipboard, deviceIndexCounters, edges, nodes, projectName, projects, recordClipboard, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors]);
 
   useEffect(() => {
     if (leftPanelTab !== "projects") {
@@ -2263,6 +2436,7 @@ export function App() {
 
   const clearTransientSelectionState = () => {
     setSelectedEdgeId("");
+    setSelectedEdgeIds([]);
     setConnectSource(null);
     setConnectPreviewPoint(null);
     setRewiring(null);
@@ -2270,34 +2444,11 @@ export function App() {
   };
 
   const copySelection = () => {
-    const selected = nodes.filter((node) => selectedNodeIds.includes(node.id));
-    setClipboardNodes(selected);
-  };
-
-  const clipboardBounds = (items: ModelNode[]) => {
-    if (items.length === 0) {
-      return null;
-    }
-    const boxes = items.map((node) => {
-      const width = node.size.width * Math.abs(getNodeScaleX(node));
-      const height = node.size.height * Math.abs(getNodeScaleY(node));
-      return {
-        left: node.position.x - width / 2,
-        right: node.position.x + width / 2,
-        top: node.position.y - height / 2,
-        bottom: node.position.y + height / 2
-      };
-    });
-    return {
-      left: Math.min(...boxes.map((box) => box.left)),
-      right: Math.max(...boxes.map((box) => box.right)),
-      top: Math.min(...boxes.map((box) => box.top)),
-      bottom: Math.max(...boxes.map((box) => box.bottom))
-    };
+    setCanvasClipboard(buildCanvasClipboard(nodes, edges, routedEdges, selectedNodeIds, activeSelectedEdgeIds));
   };
 
   const pasteSelection = () => {
-    if (clipboardNodes.length === 0) {
+    if (canvasClipboard.nodes.length === 0 && canvasClipboard.edges.length === 0) {
       return;
     }
     const targetPoint = lastCanvasPointerRef.current;
@@ -2305,7 +2456,7 @@ export function App() {
       window.alert("请先将鼠标移动到画布内，再执行粘贴操作。");
       return;
     }
-    const bounds = clipboardBounds(clipboardNodes);
+    const bounds = canvasClipboardBounds(canvasClipboard);
     if (!bounds) {
       return;
     }
@@ -2315,32 +2466,36 @@ export function App() {
       window.alert("粘贴位置超过显示边界，请调整鼠标位置后重试。");
       return;
     }
-    const dx = targetPoint.x - bounds.left;
-    const dy = targetPoint.y - bounds.top;
     pushUndoSnapshot();
-    const idMap = new Map<string, string>();
+    const cloned = cloneCanvasClipboard(
+      canvasClipboard,
+      targetPoint,
+      () => `node-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      () => `edge-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    );
     let nextDeviceIndexCounters = deviceIndexCounters;
-    const pasted = clipboardNodes.map((node) => {
-      const nextId = `node-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      idMap.set(node.id, nextId);
-      const params = { ...node.params };
-      delete params.idx;
-      const draftNode = {
-        ...node,
-        id: nextId,
-        name: `${node.name} 副本`,
-        position: clampNodeToCanvas(node, { x: Math.round(node.position.x + dx), y: Math.round(node.position.y + dy) }),
-        params,
-        terminals: node.terminals.map((terminal) => ({ ...terminal, anchor: { ...terminal.anchor } }))
-      };
+    const pasted = cloned.nodes.map((node) => {
+      const draftNode = { ...node, position: clampNodeToCanvas(node, node.position) };
       const result = assignPermanentDeviceIndex(draftNode, nextDeviceIndexCounters);
       nextDeviceIndexCounters = result.counters;
       return result.node;
     });
+    const pastedEdges = cloned.edges.map((edge) => ({
+      ...edge,
+      sourcePoint: edge.sourcePoint ? clampPointToCanvas(edge.sourcePoint) : undefined,
+      targetPoint: edge.targetPoint ? clampPointToCanvas(edge.targetPoint) : undefined,
+      manualPoints: edge.manualPoints?.map((point) => clampPointToCanvas(point))
+    }));
     setDeviceIndexCounters(nextDeviceIndexCounters);
     setNodes((current) => [...current, ...pasted]);
+    setEdges((current) => [...current, ...pastedEdges]);
     setSelectedNodeIds(pasted.map((node) => node.id));
-    clearTransientSelectionState();
+    setSelectedEdgeIds(pastedEdges.map((edge) => edge.id));
+    setSelectedEdgeId(pastedEdges[0]?.id ?? "");
+    setConnectSource(null);
+    setConnectPreviewPoint(null);
+    setRewiring(null);
+    setContextMenu(null);
   };
 
   const finishMarqueeSelection = () => {
@@ -2355,36 +2510,42 @@ export function App() {
       setMarquee(null);
       return;
     }
-    setSelectedNodeIds(
-      nodes
-        .filter((node) => node.position.x >= left && node.position.x <= right && node.position.y >= top && node.position.y <= bottom)
-        .map((node) => node.id)
-    );
-    clearTransientSelectionState();
+    const selection = selectGraphicsInRect(nodes, routedEdges, { left, right, top, bottom });
+    setSelectedNodeIds(selection.nodeIds);
+    setSelectedEdgeIds(selection.edgeIds);
+    setSelectedEdgeId(selection.edgeIds[0] ?? "");
+    setConnectSource(null);
+    setConnectPreviewPoint(null);
+    setRewiring(null);
+    setContextMenu(null);
     setMarquee(null);
   };
 
   const deleteSelection = () => {
-    if (selectedEdgeId) {
-      pushUndoSnapshot();
-      setEdges((current) => current.filter((edge) => edge.id !== selectedEdgeId));
-      setSelectedEdgeId("");
+    if (selectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0) {
       return;
     }
+    const selectedEdges = new Set(activeSelectedEdgeIds);
     if (selectedNodeIds.length === 0) {
+      pushUndoSnapshot();
+      setEdges((current) => current.filter((edge) => !selectedEdges.has(edge.id)));
+      setSelectedEdgeId("");
+      setSelectedEdgeIds([]);
       return;
     }
     pushUndoSnapshot();
     const result = deleteNodesWithConnectedEdges(nodes, edges, selectedNodeIds);
     setNodes(result.nodes);
-    setEdges(result.edges);
+    setEdges(result.edges.filter((edge) => !selectedEdges.has(edge.id)));
     setSelectedNodeIds([]);
+    setSelectedEdgeId("");
+    setSelectedEdgeIds([]);
   };
 
   const deleteSelectedGraphicsFromCanvas = () => {
     const action = resolveCanvasDeleteAction({
       selectedNodeCount: selectedNodeIds.length,
-      hasSelectedEdge: Boolean(selectedEdgeId)
+      hasSelectedEdge: activeSelectedEdgeIds.length > 0
     });
     if (action.kind === "warn") {
       window.alert(action.message);
@@ -2437,6 +2598,17 @@ export function App() {
   const clampPointToCanvas = (point: Point) => clampPointToBounds(point, canvasBounds);
   const clampNodeToCanvas = (node: ModelNode, position = node.position) => clampNodePositionToBounds(node, canvasBounds, position);
   const clampViewBoxToCanvas = (box: typeof viewBox) => normalizeViewBoxToCanvas(box, canvasBounds);
+  const resolveConnectPreviewPoint = (point: Point, event: { shiftKey: boolean; ctrlKey: boolean }) => {
+    if (!connectSource || (!event.shiftKey && !event.ctrlKey)) {
+      return point;
+    }
+    const sourceNode = nodeById.get(connectSource.nodeId);
+    if (!sourceNode) {
+      return point;
+    }
+    const start = connectSource.point ?? getModelEdgeEndpointPoint(sourceNode, undefined, connectSource.terminalId);
+    return clampPointToCanvas(constrainPointToOrthogonalAxis(start, point));
+  };
   const boundedDeltaForNodes = (nodeIds: string[], originalPositions: Record<string, Point>, dx: number, dy: number) => {
     let boundedDx = dx;
     let boundedDy = dy;
@@ -2741,8 +2913,8 @@ export function App() {
     );
   };
 
-  const clampScale = (value: number) => Math.max(0.2, Math.min(5, value));
-  const signedScale = (value: number, signSource: number) => clampScale(value) * (Math.sign(signSource) || 1);
+  const normalizeScale = (value: number, fallback = 1) => normalizeScaleValue(value, fallback);
+  const signedScale = (value: number, signSource: number) => Math.abs(normalizeScale(value)) * (Math.sign(signSource) || 1);
 
   const toLocalNodePoint = (node: ModelNode, point: Point): Point => {
     const radians = (-node.rotation * Math.PI) / 180;
@@ -2891,6 +3063,7 @@ export function App() {
     }
     setSelectedNodeIds([]);
     setSelectedEdgeId(rewiring.edgeId);
+    setSelectedEdgeIds([rewiring.edgeId]);
     setRewiring(null);
   };
 
@@ -2934,6 +3107,7 @@ export function App() {
     setNodes((current) => [...current, indexed.node]);
     setSelectedNodeIds([indexed.node.id]);
     setSelectedEdgeId("");
+    setSelectedEdgeIds([]);
     activateInspectorFromCanvas();
   };
 
@@ -2945,6 +3119,7 @@ export function App() {
     activateInspectorFromCanvas();
     if (event.ctrlKey && svgRef.current) {
       setSelectedEdgeId("");
+      setSelectedEdgeIds([]);
       setConnectSource(null);
       setRewiring(null);
       setPanning({ clientX: event.clientX, clientY: event.clientY, viewBox });
@@ -2952,6 +3127,7 @@ export function App() {
       return;
     }
     setSelectedEdgeId("");
+    setSelectedEdgeIds([]);
     let dragNodeIds = selectedNodeIds.includes(node.id) ? selectedNodeIds : [node.id];
     if (event.ctrlKey || event.shiftKey || event.metaKey) {
       dragNodeIds = selectedNodeIds.includes(node.id)
@@ -3004,9 +3180,10 @@ export function App() {
 
   const handlePointerMove = (event: PointerEvent<SVGSVGElement>) => {
     if (svgRef.current) {
-      lastCanvasPointerRef.current = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      lastCanvasPointerRef.current = pointer;
       if (connectSource) {
-        setConnectPreviewPoint(lastCanvasPointerRef.current);
+        setConnectPreviewPoint(resolveConnectPreviewPoint(pointer, event));
       }
     }
     if (terminalPress && svgRef.current) {
@@ -3109,8 +3286,8 @@ export function App() {
             return { ...node, rotation: snapped };
           }
           const local = toLocalNodePoint(node, point);
-          const nextScaleX = clampScale((Math.abs(local.x) * 2) / node.size.width);
-          const nextScaleY = clampScale((Math.abs(local.y) * 2) / node.size.height);
+          const nextScaleX = normalizeScale((Math.abs(local.x) * 2) / node.size.width);
+          const nextScaleY = normalizeScale((Math.abs(local.y) * 2) / node.size.height);
           const nextSignedScaleX = signedScale(nextScaleX, getNodeScaleX(node));
           const nextSignedScaleY = signedScale(nextScaleY, getNodeScaleY(node));
           if (transformDrag.kind === "scale-x") {
@@ -3119,7 +3296,7 @@ export function App() {
           if (transformDrag.kind === "scale-y") {
             return { ...node, scale: nextScaleY, scaleY: nextSignedScaleY, position: clampNodeToCanvas({ ...node, scale: nextScaleY, scaleY: nextSignedScaleY }) };
           }
-          const nextScale = clampScale(Math.max(nextScaleX, nextScaleY));
+          const nextScale = normalizeScale(Math.max(nextScaleX, nextScaleY));
           const nextSignedScale = {
             x: signedScale(nextScale, getNodeScaleX(node)),
             y: signedScale(nextScale, getNodeScaleY(node))
@@ -3680,6 +3857,7 @@ export function App() {
     const node = firstNodeId ? nodeById.get(firstNodeId) : undefined;
     setSelectedNodeIds(firstNodeId ? [firstNodeId] : []);
     setSelectedEdgeId(error.edgeId ?? "");
+    setSelectedEdgeIds(error.edgeId ? [error.edgeId] : []);
     if (node) {
       setViewBox(clampViewBoxToCanvas({
         x: node.position.x - viewBox.width / 2,
@@ -3698,8 +3876,10 @@ export function App() {
     if (errors.length === 0) {
       pushUndoSnapshot();
       setNodes((current) => calculateElectricalTopology(current, edges));
+      window.alert(topologyCalculationMessage(0));
     } else {
       locateTopologyError(errors[0]);
+      window.alert(topologyCalculationMessage(errors.length));
     }
   };
 
@@ -3726,9 +3906,11 @@ export function App() {
     if (item.kind === "node") {
       setSelectedNodeIds([item.id]);
       setSelectedEdgeId("");
+      setSelectedEdgeIds([]);
     } else {
       setSelectedNodeIds([]);
       setSelectedEdgeId(item.id);
+      setSelectedEdgeIds([item.id]);
     }
     setConnectSource(null);
     setConnectPreviewPoint(null);
@@ -3753,6 +3935,38 @@ export function App() {
 
   const routeManualPoints = (routePoints: Point[]) => routePoints.slice(1, -1).map((point) => ({ ...point }));
 
+  const tidySelectedEdgeRoute = () => {
+    if (!selectedEdge || !selectedRoutedEdge) {
+      return;
+    }
+    const tidiedPoints = tidyOrthogonalRoute(selectedRoutedEdge.points, { blockers: nodes });
+    const nextManualPoints = routeManualPoints(tidiedPoints);
+    const currentManualPoints = selectedEdge.manualPoints ?? [];
+    const unchanged =
+      currentManualPoints.length === nextManualPoints.length &&
+      currentManualPoints.every((point, index) => point.x === nextManualPoints[index]?.x && point.y === nextManualPoints[index]?.y);
+    if (unchanged) {
+      return;
+    }
+    pushUndoSnapshot();
+    setEdgeManualPoints(selectedEdge.id, nextManualPoints);
+  };
+
+  const openEdgeContextMenu = (event: MouseEvent<SVGPathElement>, edgeId: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    activateInspectorFromCanvas();
+    canvasInteractionRef.current = true;
+    projectListPointerInsideRef.current = false;
+    if (svgRef.current) {
+      lastCanvasPointerRef.current = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+    }
+    setSelectedNodeIds([]);
+    setSelectedEdgeId(edgeId);
+    setSelectedEdgeIds([edgeId]);
+    setContextMenu({ x: event.clientX, y: event.clientY });
+  };
+
   const captureCanvasPointer = (pointerId: number) => {
     try {
       svgRef.current?.setPointerCapture(pointerId);
@@ -3774,6 +3988,7 @@ export function App() {
     }
     setSelectedNodeIds([]);
     setSelectedEdgeId(edgeId);
+    setSelectedEdgeIds([edgeId]);
     setManualPathDrag({
       edgeId,
       segmentIndex,
@@ -3792,6 +4007,7 @@ export function App() {
     }
     setSelectedNodeIds([]);
     setSelectedEdgeId(edgeId);
+    setSelectedEdgeIds([edgeId]);
     setManualPathDrag({
       edgeId,
       pointIndex,
@@ -3845,6 +4061,7 @@ export function App() {
     setMode("connect");
     setSelectedNodeIds([]);
     setSelectedEdgeId("");
+    setSelectedEdgeIds([]);
   };
 
   const finishTerminalPress = () => {
@@ -3888,6 +4105,7 @@ export function App() {
     event.stopPropagation();
     setSelectedNodeIds([node.id]);
     setSelectedEdgeId("");
+    setSelectedEdgeIds([]);
     if (event.button !== 0 || !svgRef.current) {
       return;
     }
@@ -3946,6 +4164,7 @@ export function App() {
       newEdge
     ]);
     setSelectedEdgeId(newEdge.id);
+    setSelectedEdgeIds([newEdge.id]);
     setConnectSource(null);
     setConnectPreviewPoint(null);
     setMode("select");
@@ -3959,16 +4178,29 @@ export function App() {
     );
   };
 
-  const exportSvg = () => {
-    downloadText(
-      "power-system-diagram.svg",
-      buildSvgDocument(nodes, edges, {
+  const exportSvg = async () => {
+    await saveTextFile({
+      filename: `${safeFilePart(projectName)}.svg`,
+      text: buildSvgDocument(nodes, edges, {
         ...canvasBounds,
         backgroundColor: canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND,
         backgroundImage: canvasBackgroundImageUrl
       }),
-      "image/svg+xml"
-    );
+      mime: "image/svg+xml",
+      description: "SVG 图形文件",
+      extensions: [".svg"]
+    });
+  };
+
+  const exportEFile = async () => {
+    const file = buildEFileExport(currentProject());
+    await saveTextFile({
+      filename: file.filename,
+      text: file.text,
+      mime: file.mime,
+      description: "E 模型文件",
+      extensions: [".e"]
+    });
   };
 
   const safeFilePart = (name: string) => name.trim().replace(/[\\/:*?"<>|]+/g, "_") || "未命名";
@@ -3986,7 +4218,7 @@ export function App() {
         }),
         "image/svg+xml"
       );
-      downloadText(`${prefix}.e`, buildEDeviceParameterFile(project.project), "application/json");
+      downloadText(`${prefix}.e`, buildEDeviceParameterFile(project.project), "text/plain");
     }
   };
 
@@ -4346,6 +4578,12 @@ export function App() {
     );
   };
 
+  const toggleElementTreeGroup = (typeKey: string) => {
+    setCollapsedElementTreeGroups((current) =>
+      current.includes(typeKey) ? current.filter((item) => item !== typeKey) : [...current, typeKey]
+    );
+  };
+
   const updateDefinitionDraftRow = (rowId: string, patch: Partial<DeviceDefinitionDraftRow>) => {
     setDefinitionDraftRows((current) => current.map((row) => (row.id === rowId ? { ...row, ...patch } : row)));
     setDefinitionDraftError("");
@@ -4613,32 +4851,47 @@ export function App() {
           <p>当前画布暂无图元。</p>
         </div>
       ) : (
-        elementTree.map((group) => (
-          <section className="element-tree-group" key={group.typeKey}>
-            <div className="element-tree-type" role="treeitem" aria-expanded="true">
-              <span>{group.typeLabel}</span>
-              <strong>{group.items.length}</strong>
-            </div>
-            <div className="element-tree-items" role="group">
-              {group.items.map((item) => {
-                const selected = item.kind === "node" ? selectedNodeIds.includes(item.id) : selectedEdgeId === item.id;
-                return (
-                  <button
-                    type="button"
-                    role="treeitem"
-                    aria-selected={selected}
-                    className={`element-tree-item ${selected ? "selected" : ""}`}
-                    key={`${item.kind}:${item.id}`}
-                    title="双击定位并选中图元"
-                    onDoubleClick={() => focusElementTreeItem(item)}
-                  >
-                    <span>{item.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        ))
+        elementTree.map((group) => {
+          const expanded = !collapsedElementTreeGroups.includes(group.typeKey);
+          return (
+            <section className="element-tree-group" key={group.typeKey}>
+              <button
+                type="button"
+                className="element-tree-type"
+                role="treeitem"
+                aria-expanded={expanded}
+                onClick={() => toggleElementTreeGroup(group.typeKey)}
+              >
+                <span className="element-tree-type-label">
+                  {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <span>{group.typeLabel}</span>
+                </span>
+                <strong>{group.items.length}</strong>
+              </button>
+              {expanded && (
+                <div className="element-tree-items" role="group">
+                  {group.items.map((item) => {
+                    const selected = item.kind === "node" ? selectedNodeIds.includes(item.id) : activeSelectedEdgeIds.includes(item.id);
+                    return (
+                      <button
+                        type="button"
+                        role="treeitem"
+                        aria-level={2}
+                        aria-selected={selected}
+                        className={`element-tree-item ${selected ? "selected" : ""}`}
+                        key={`${item.kind}:${item.id}`}
+                        title="双击定位并选中图元"
+                        onDoubleClick={() => focusElementTreeItem(item)}
+                      >
+                        <span>{item.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          );
+        })
       )}
     </div>
   );
@@ -4686,11 +4939,11 @@ export function App() {
             {mode === "connect" && <strong>{connectSource ? "选择同类型目标端子" : "选择起点端子"}</strong>}
           </div>
           <div className="action-cluster">
-            <button onClick={() => alignSelected("horizontal")} disabled={selectedCount < 2} title="横向对齐">
+            <button onClick={() => alignSelected("horizontal")} disabled={selectedNodeCount < 2} title="横向对齐">
               <AlignCenterHorizontal size={16} />
               横向对齐
             </button>
-            <button onClick={() => alignSelected("vertical")} disabled={selectedCount < 2} title="纵向对齐">
+            <button onClick={() => alignSelected("vertical")} disabled={selectedNodeCount < 2} title="纵向对齐">
               <AlignCenterVertical size={16} />
               纵向对齐
             </button>
@@ -4716,6 +4969,10 @@ export function App() {
             <button onClick={exportSvg}>
               <Download size={16} />
               保存SVG
+            </button>
+            <button onClick={exportEFile}>
+              <FileJson size={16} />
+              保存E文件
             </button>
           </div>
         </header>
@@ -4778,13 +5035,15 @@ export function App() {
               activateInspectorFromCanvas();
               canvasInteractionRef.current = true;
               projectListPointerInsideRef.current = false;
-              lastCanvasPointerRef.current = clampPointToCanvas(screenToSvgPoint(event.currentTarget, event.clientX, event.clientY));
+              const pointer = clampPointToCanvas(screenToSvgPoint(event.currentTarget, event.clientX, event.clientY));
+              lastCanvasPointerRef.current = pointer;
               if (connectSource) {
-                setConnectPreviewPoint(lastCanvasPointerRef.current);
+                setConnectPreviewPoint(resolveConnectPreviewPoint(pointer, event));
                 return;
               }
               setSelectedNodeIds([]);
               setSelectedEdgeId("");
+              setSelectedEdgeIds([]);
               setConnectSource(null);
               setConnectPreviewPoint(null);
               setRewiring(null);
@@ -4849,7 +5108,7 @@ export function App() {
             {renderedRoutedEdges.map((route) => {
               const edge = edges.find((item) => item.id === route.edgeId);
               if (!edge) return null;
-              const selected = edge.id === selectedEdgeId;
+              const selected = activeSelectedEdgeIds.includes(edge.id);
               const sourcePoint = getEdgeEndpointPoint(edge, "source");
               const targetPoint = getEdgeEndpointPoint(edge, "target");
               const sourceNode = nodeById.get(edge.sourceId);
@@ -4876,21 +5135,25 @@ export function App() {
                   <path
                     d={route.path}
                     className="connection-hitline"
+                    onContextMenu={(event) => openEdgeContextMenu(event, edge.id)}
                     onPointerDown={(event) => {
                       event.stopPropagation();
                       activateInspectorFromCanvas();
                       setSelectedNodeIds([]);
                       setSelectedEdgeId(edge.id);
+                      setSelectedEdgeIds([edge.id]);
                     }}
                   />
                   <path
                     d={route.path}
                     className="connection-line"
+                    onContextMenu={(event) => openEdgeContextMenu(event, edge.id)}
                     onPointerDown={(event) => {
                       event.stopPropagation();
                       activateInspectorFromCanvas();
                       setSelectedNodeIds([]);
                       setSelectedEdgeId(edge.id);
+                      setSelectedEdgeIds([edge.id]);
                     }}
                   />
                   {sourceBusDotPoint && (
@@ -4907,6 +5170,7 @@ export function App() {
                         }
                         setSelectedNodeIds([]);
                         setSelectedEdgeId(edge.id);
+                        setSelectedEdgeIds([edge.id]);
                         setRewiring({
                           edgeId: edge.id,
                           endpoint: "source",
@@ -4931,6 +5195,7 @@ export function App() {
                         }
                         setSelectedNodeIds([]);
                         setSelectedEdgeId(edge.id);
+                        setSelectedEdgeIds([edge.id]);
                         setRewiring({
                           edgeId: edge.id,
                           endpoint: "target",
@@ -5025,6 +5290,7 @@ export function App() {
                       setSelectedNodeIds([node.id]);
                     }
                     setSelectedEdgeId("");
+                    setSelectedEdgeIds([]);
                     setContextMenu({ x: event.clientX, y: event.clientY });
                   }}
                   onDoubleClick={(event) => {
@@ -5034,6 +5300,7 @@ export function App() {
                     }
                     setSelectedNodeIds([node.id]);
                     setSelectedEdgeId("");
+                    setSelectedEdgeIds([]);
                     setImageTarget({ kind: "node", nodeId: node.id });
                   }}
                 >
@@ -5141,7 +5408,7 @@ export function App() {
                       </g>
                     );
                   })}
-                  {selected && selectedCount === 1 && (
+                  {selected && selectedNodeCount === 1 && (
                     <g className="transform-handles">
                       <line x1="0" y1={-node.size.height / 2 - rotateStemStart} x2="0" y2={-node.size.height / 2 - rotateStemEnd} />
                       <g transform={controlTransform(0, -node.size.height / 2 - rotateHandleGap)}>
@@ -5217,8 +5484,8 @@ export function App() {
               const movableSegmentIndexes = new Set(getMovableRouteSegmentIndexes(route.points));
               return (
                 <g className="connection-group selected topmost">
-                  <path d={route.path} className="connection-hitline" />
-                  <path d={route.path} className="connection-line" />
+                  <path d={route.path} className="connection-hitline" onContextMenu={(event) => openEdgeContextMenu(event, edge.id)} />
+                  <path d={route.path} className="connection-line" onContextMenu={(event) => openEdgeContextMenu(event, edge.id)} />
                   {route.points.slice(1).map((point, index) => {
                     const from = route.points[index];
                     const segmentIndex = index;
@@ -5338,16 +5605,16 @@ export function App() {
           <div className="form-stack">
             <div className="inspector-tabs">
               <button className={inspectorTab === "model" ? "active" : ""} onClick={() => setInspectorTab("model")} disabled={!currentModelRecord}>
-                模型信息
+                模型
+              </button>
+              <button className={inspectorTab === "graph" ? "active" : ""} onClick={() => setInspectorTab("graph")}>
+                图形
+              </button>
+              <button className={inspectorTab === "device" ? "active" : ""} onClick={() => setInspectorTab("device")}>
+                设备
               </button>
               <button className={inspectorTab === "tree" ? "active" : ""} onClick={() => setInspectorTab("tree")}>
                 图元树
-              </button>
-              <button className={inspectorTab === "graph" ? "active" : ""} onClick={() => setInspectorTab("graph")}>
-                图形参数
-              </button>
-              <button className={inspectorTab === "device" ? "active" : ""} onClick={() => setInspectorTab("device")}>
-                设备参数
               </button>
             </div>
             {inspectorTab === "model" && currentModelRecord ? (
@@ -5537,11 +5804,11 @@ export function App() {
                   </tr>
                   <tr>
                     {renderChineseParamHeader("scaleX")}
-                    <td><input type="number" min="0.2" max="5" step="0.1" value={getNodeScaleX(selectedNode)} onChange={(event) => { const scaleX = clampScale(Number(event.target.value)); updateSelectedNode({ scale: scaleX, scaleX }); }} /></td>
+                    <td><input type="number" step="0.1" value={getNodeScaleX(selectedNode)} onChange={(event) => { const scaleX = normalizeScale(Number(event.target.value), getNodeScaleX(selectedNode)); updateSelectedNode({ scale: Math.abs(scaleX), scaleX }); }} /></td>
                   </tr>
                   <tr>
                     {renderChineseParamHeader("scaleY")}
-                    <td><input type="number" min="0.2" max="5" step="0.1" value={getNodeScaleY(selectedNode)} onChange={(event) => { const scaleY = clampScale(Number(event.target.value)); updateSelectedNode({ scale: scaleY, scaleY }); }} /></td>
+                    <td><input type="number" step="0.1" value={getNodeScaleY(selectedNode)} onChange={(event) => { const scaleY = normalizeScale(Number(event.target.value), getNodeScaleY(selectedNode)); updateSelectedNode({ scale: Math.abs(scaleY), scaleY }); }} /></td>
                   </tr>
                   <tr>
                     {renderChineseParamHeader("layerOrder")}
@@ -5754,7 +6021,7 @@ export function App() {
             ) : (
               <div className="empty-state">
                 <FileJson size={28} />
-                <p>选择画布设备后，可切换查看图形参数和设备参数。</p>
+                <p>选择画布设备后，可切换查看图形和设备。</p>
               </div>
             )}
             {selectedNode && (
@@ -5810,7 +6077,7 @@ export function App() {
             <Undo2 size={14} />
             撤销
           </button>
-          <button onClick={() => runContextMenuAction(copySelection)} disabled={selectedNodeIds.length === 0}>
+          <button onClick={() => runContextMenuAction(copySelection)} disabled={selectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0}>
             <Copy size={14} />
             复制
           </button>
@@ -5818,7 +6085,7 @@ export function App() {
             <Save size={14} />
             保存
           </button>
-          <button onClick={() => runContextMenuAction(pasteSelection)} disabled={clipboardNodes.length === 0}>
+          <button onClick={() => runContextMenuAction(pasteSelection)} disabled={canvasClipboard.nodes.length === 0 && canvasClipboard.edges.length === 0}>
             <FileInput size={14} />
             粘贴
           </button>
@@ -5842,7 +6109,11 @@ export function App() {
           <button onClick={() => runContextMenuAction(() => moveSelectedLayer("back"))} disabled={selectedNodeIds.length === 0}>
             图层置底
           </button>
-          <button onClick={() => runContextMenuAction(deleteSelection)} disabled={selectedNodeIds.length === 0 && !selectedEdgeId}>
+          <button onClick={() => runContextMenuAction(tidySelectedEdgeRoute)} disabled={!selectedEdgeId}>
+            <Route size={14} />
+            整理连接线
+          </button>
+          <button onClick={() => runContextMenuAction(deleteSelection)} disabled={selectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0}>
             <Trash2 size={14} />
             删除
           </button>

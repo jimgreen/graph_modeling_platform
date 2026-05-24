@@ -3,6 +3,7 @@ import {
   alignNodes,
   buildTopology,
   buildElementTree,
+  buildEFileExport,
   buildEDeviceParameterFile,
   calculateElectricalTopology,
   canConnectTerminals,
@@ -26,6 +27,7 @@ import {
   duplicateSavedProject,
   routeOrthogonalEdge,
   routeEdgesForRendering,
+  tidyOrthogonalRoute,
   renameSavedProject,
   renameSavedScheme,
   moveProjectToScheme,
@@ -51,17 +53,44 @@ import {
   getSwitchVisualState,
   lockProjectEdgeTerminals,
   mirrorNodes,
+  normalizeScaleValue,
   normalizeVoltageBaseInput,
   normalizeViewBoxToCanvas,
   terminalStubSegment,
   terminalVoltageBaseNumber,
+  topologyCalculationMessage,
   serializeProject,
   deserializeProject,
   type Edge,
   type DeviceTemplate,
   type ModelNode,
-  type Point
+  type Point,
+  type ProjectFile
 } from "./model";
+
+type ParsedESection = {
+  columns: string[];
+  rows: Record<string, string>[];
+};
+
+function parseESections(text: string): Record<string, ParsedESection> {
+  const sections: Record<string, ParsedESection> = {};
+  const sectionPattern = /<([^/][^>]*)>\s*\r?\n@ ([^\r\n]+)\r?\n([\s\S]*?)<\/\1>/g;
+  for (const match of text.matchAll(sectionPattern)) {
+    const [, sectionName, header, body] = match;
+    const columns = header.trim().split(/\s+/);
+    const rows = body
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("#"))
+      .map((line) => {
+        const values = line.replace(/^#\s*/, "").trim().split(/\s+/);
+        return Object.fromEntries(columns.map((column, index) => [column, values[index] ?? ""]));
+      });
+    sections[sectionName] = { columns, rows };
+  }
+  return sections;
+}
 
 describe("power system model", () => {
   test("builds adjacency topology from connection lines", () => {
@@ -243,14 +272,33 @@ describe("power system model", () => {
     expect(getDeviceGlyphVariant("ac-zero-branch")).toBe("line");
     expect(getDeviceGlyphVariant("dc-zero-branch")).toBe("line");
 
-    const exported = JSON.parse(buildEDeviceParameterFile({
+    const exported = parseESections(buildEDeviceParameterFile({
       version: 1,
       name: "零阻抗支路测试",
       nodes: [acZeroBranch, dcZeroBranch],
       edges: []
     }));
-    expect(exported.devices.some((device: { section: string }) => device.section === "ACZeroBranch")).toBe(true);
-    expect(exported.devices.some((device: { section: string }) => device.section === "DCZeroBranch")).toBe(true);
+    expect(exported.ACZeroBranch.rows).toHaveLength(1);
+    expect(exported.DCZeroBranch.rows).toHaveLength(1);
+  });
+
+  test("builds a downloadable E file export for the current model", () => {
+    const node = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const project: ProjectFile = {
+      version: 1,
+      name: "混合/能源:模型",
+      nodes: [node],
+      edges: []
+    };
+
+    const file = buildEFileExport(project);
+
+    expect(file.filename).toBe("混合_能源_模型.e");
+    expect(file.mime).toBe("text/plain");
+    expect(file.text).toContain("<PowerBase>");
+    expect(file.text).toContain("@ p_base u_unit p_unit i_unit");
+    expect(file.text).toContain("<ACGenerator>");
+    expect(() => JSON.parse(file.text)).toThrow();
   });
 
   test("uses impedance glyphs for AC lines and resistance-only glyphs for DC lines", () => {
@@ -372,7 +420,7 @@ describe("power system model", () => {
       backgroundImage: "/api/images/asset"
     };
 
-    const payload = JSON.parse(
+    const payload = parseESections(
       buildEDeviceParameterFile({
         version: 1,
         name: "E导出模型",
@@ -385,24 +433,23 @@ describe("power system model", () => {
       })
     );
 
-    const exportedLoad = payload.devices.find((device: { section: string; kind: string }) => device.section === "ACLoad" && device.kind === "ac-load");
-    expect(payload.devices.map((device: { section: string }) => device.section)).toContain("ACNode");
+    const exportedLoad = payload.ACLoad.rows.find((row) => row.name === "load_1");
+    expect(payload.ACNode.rows).toHaveLength(1);
     expect(exportedLoad).toMatchObject({
-      id: acLoad.id,
-      kind: "ac-load",
-      section: "ACLoad",
-      params: {
-        idx: "7",
-        name: "load_1",
-        node: "1",
-        pbase: "9.5",
-        run_stat: "1"
-      }
+      idx: "7",
+      name: "load_1",
+      node: "1",
+      pbase: "9.5",
+      run_stat: "1"
     });
-    expect(exportedLoad).not.toHaveProperty("nodeNumber");
-    expect(exportedLoad).not.toHaveProperty("terminals");
-    expect(JSON.stringify(exportedLoad)).not.toContain("ratedActivePower");
-    expect(JSON.stringify(exportedLoad)).not.toContain("backgroundImage");
+    expect(payload.ACLoad.columns).not.toContain("ratedActivePower");
+    expect(payload.ACLoad.columns).not.toContain("backgroundImage");
+    expect(buildEDeviceParameterFile({
+      version: 1,
+      name: "E导出模型",
+      nodes: [acLoad, staticText],
+      edges: []
+    })).not.toContain("ratedActivePower");
   });
 
   test("maps graphical AC and DC buses to real bus sections in E parameter files", () => {
@@ -415,7 +462,7 @@ describe("power system model", () => {
     acBus.terminals[0].nodeNumber = "21";
     dcBus.terminals[0].nodeNumber = "1";
 
-    const payload = JSON.parse(
+    const payload = parseESections(
       buildEDeviceParameterFile({
         version: 1,
         name: "母线分组",
@@ -424,16 +471,16 @@ describe("power system model", () => {
       })
     );
 
-    const acRealBus = payload.devices.find((device: { section: string }) => device.section === "ACRealBs");
-    const dcRealBus = payload.devices.find((device: { section: string }) => device.section === "DCRealBs");
-    expect(payload.devices.map((device: { section: string }) => device.section)).toEqual(["ACNode", "DCNode", "ACRealBs", "DCRealBs"]);
-    expect(acRealBus?.params).toEqual({
+    const acRealBus = payload.ACRealBs.rows[0];
+    const dcRealBus = payload.DCRealBs.rows[0];
+    expect(Object.keys(payload)).toEqual(["PowerBase", "ACNode", "ACRealBs", "DCNode", "DCRealBs"]);
+    expect(acRealBus).toEqual({
       idx: "21",
       name: "ac_bus",
       node: "1",
       run_stat: "1"
     });
-    expect(dcRealBus?.params).toEqual({
+    expect(dcRealBus).toEqual({
       idx: "1",
       name: "dc_bus",
       node: "1",
@@ -465,7 +512,7 @@ describe("power system model", () => {
     dcLine.params = { ...dcLine.params, idx: "1", i_node: "88", j_node: "89" };
     dcLoad.params = { ...dcLoad.params, idx: "1", node: "89" };
 
-    const payload = JSON.parse(
+    const payload = parseESections(
       buildEDeviceParameterFile({
         version: 1,
         name: "拓扑节点导出",
@@ -479,23 +526,23 @@ describe("power system model", () => {
       })
     );
 
-    const acNodes = payload.devices.filter((device: { section: string }) => device.section === "ACNode");
-    const dcNodes = payload.devices.filter((device: { section: string }) => device.section === "DCNode");
-    const acBranch = payload.devices.find((device: { section: string }) => device.section === "ACBranch");
-    const dcBranch = payload.devices.find((device: { section: string }) => device.section === "DCBranch");
-    const exportedAcLoad = payload.devices.find((device: { section: string; kind: string }) => device.section === "ACLoad" && device.kind === "ac-load");
-    const exportedDcLoad = payload.devices.find((device: { section: string; kind: string }) => device.section === "DCLoad" && device.kind === "dc-load");
+    const acNodes = payload.ACNode.rows;
+    const dcNodes = payload.DCNode.rows;
+    const acBranch = payload.ACBranch.rows[0];
+    const dcBranch = payload.DCBranch.rows[0];
+    const exportedAcLoad = payload.ACLoad.rows.find((row) => row.name === "ac_load");
+    const exportedDcLoad = payload.DCLoad.rows.find((row) => row.name === "dc_load");
 
-    expect(acNodes.map((device: { params: Record<string, string> }) => device.params.idx)).toEqual(["1", "2"]);
-    expect(acNodes.map((device: { params: Record<string, string> }) => device.params.name)).toEqual(["ac_src", "ac_load"]);
-    expect(acNodes.map((device: { params: Record<string, string> }) => device.params.vbase)).toEqual(["10", "10"]);
-    expect(dcNodes.map((device: { params: Record<string, string> }) => device.params.idx)).toEqual(["1", "2"]);
-    expect(dcNodes.map((device: { params: Record<string, string> }) => device.params.name)).toEqual(["dc_src", "dc_load"]);
-    expect(dcNodes.map((device: { params: Record<string, string> }) => device.params.vbase)).toEqual(["750", "750"]);
-    expect(acBranch?.params).toMatchObject({ i_node: "1", j_node: "2" });
-    expect(dcBranch?.params).toMatchObject({ i_node: "1", j_node: "2" });
-    expect(exportedAcLoad?.params.node).toBe("2");
-    expect(exportedDcLoad?.params.node).toBe("2");
+    expect(acNodes.map((row) => row.idx)).toEqual(["1", "2"]);
+    expect(acNodes.map((row) => row.name)).toEqual(["ac_src", "ac_load"]);
+    expect(acNodes.map((row) => row.vbase)).toEqual(["10", "10"]);
+    expect(dcNodes.map((row) => row.idx)).toEqual(["1", "2"]);
+    expect(dcNodes.map((row) => row.name)).toEqual(["dc_src", "dc_load"]);
+    expect(dcNodes.map((row) => row.vbase)).toEqual(["750", "750"]);
+    expect(acBranch).toMatchObject({ i_node: "1", j_node: "2" });
+    expect(dcBranch).toMatchObject({ i_node: "1", j_node: "2" });
+    expect(exportedAcLoad?.node).toBe("2");
+    expect(exportedDcLoad?.node).toBe("2");
   });
 
   test("expands three-winding transformers into three ACTransformer branches with an auto neutral node", () => {
@@ -524,7 +571,7 @@ describe("power system model", () => {
     expect(calculatedTransformer.params.neutral_node).toBe("4");
     expect(calculatedTransformer.params.neutral_vbase).toBe("1.0");
 
-    const payload = JSON.parse(
+    const payload = parseESections(
       buildEDeviceParameterFile({
         version: 1,
         name: "三绕组主变导出",
@@ -532,18 +579,14 @@ describe("power system model", () => {
         edges
       })
     );
-    const acNodes = payload.devices.filter((device: { section: string }) => device.section === "ACNode");
-    const neutralNode = acNodes.find((device: { params: Record<string, string> }) => device.params.idx === "4");
-    const transformerBranches = payload.devices.filter(
-      (device: { section: string; id: string }) => device.section === "ACTransformer" && device.id.startsWith(`${transformer.id}:w`)
-    );
-    const threePowerTransformer = payload.devices.find(
-      (device: { section: string; id: string }) => device.section === "ThreePowerTransformer" && device.id === transformer.id
-    );
+    const acNodes = payload.ACNode.rows;
+    const neutralNode = acNodes.find((row) => row.idx === "4");
+    const transformerBranches = payload.ACTransformer.rows.filter((row) => row.name.startsWith("T3_"));
+    const threePowerTransformer = payload.ThreePowerTransformer.rows.find((row) => row.name === "T3");
 
-    expect(acNodes.map((device: { params: Record<string, string> }) => device.params.idx)).toEqual(["1", "2", "3", "4"]);
-    expect(neutralNode?.params).toMatchObject({ name: "T3_neutral", vbase: "1.0", voltage: "1.0" });
-    expect(threePowerTransformer?.params).toEqual({
+    expect(acNodes.map((row) => row.idx)).toEqual(["1", "2", "3", "4"]);
+    expect(neutralNode).toMatchObject({ name: "T3_neutral", vbase: "1.0", voltage: "1.0" });
+    expect(threePowerTransformer).toEqual({
       idx: "1",
       name: "T3",
       run_stat: "1",
@@ -551,7 +594,7 @@ describe("power system model", () => {
       idx_xf_t2: "2",
       idx_xf_t3: "3"
     });
-    expect(transformerBranches.map((device: { params: Record<string, string> }) => device.params)).toEqual([
+    expect(transformerBranches).toEqual([
       expect.objectContaining({ idx: "1", name: "T3_高压绕组", i_node: "1", j_node: "4", r: "0.0", x: "0.1", tap: "1.0" }),
       expect.objectContaining({ idx: "2", name: "T3_中压绕组", i_node: "2", j_node: "4", r: "0.0", x: "0.1", tap: "1.0" }),
       expect.objectContaining({ idx: "3", name: "T3_低压绕组", i_node: "3", j_node: "4", r: "0.0", x: "0.1", tap: "1.0" })
@@ -791,6 +834,14 @@ describe("power system model", () => {
     });
   });
 
+  test("normalizes scale values without enforcing user-facing min or max ratios", () => {
+    expect(normalizeScaleValue(0)).toBe(0);
+    expect(normalizeScaleValue(0.05)).toBe(0.05);
+    expect(normalizeScaleValue(8)).toBe(8);
+    expect(normalizeScaleValue(-2)).toBe(-2);
+    expect(normalizeScaleValue(Number.NaN, 1.5)).toBe(1.5);
+  });
+
   test("keeps routed connection points inside the display area", () => {
     const source = createDefaultNode("ac-source", { x: 42, y: 120 });
     const target = createDefaultNode("ac-load", { x: 330, y: 120 });
@@ -879,6 +930,58 @@ describe("power system model", () => {
     expect(route.points[0]).toEqual(getTerminalPoint(source, "t1"));
     expect(route.points[1].y).toBe(route.points[2].y);
     expect(route.points[3]).toEqual(getTerminalPoint(branch, "t1"));
+  });
+
+  test("tidies tiny dogleg bends while preserving endpoint stubs", () => {
+    const routePoints: Point[] = [
+      { x: 20, y: 80 },
+      { x: 60, y: 80 },
+      { x: 60, y: 86 },
+      { x: 180, y: 86 },
+      { x: 180, y: 80 },
+      { x: 240, y: 80 }
+    ];
+
+    const tidied = tidyOrthogonalRoute(routePoints);
+
+    expect(tidied).toEqual([
+      { x: 20, y: 80 },
+      { x: 60, y: 80 },
+      { x: 180, y: 80 },
+      { x: 240, y: 80 }
+    ]);
+  });
+
+  test("does not tidy tiny doglegs when the simplified path would hit a blocker", () => {
+    const blocker = {
+      ...createDefaultNode("static-rect", { x: 120, y: 80 }),
+      size: { width: 80, height: 12 }
+    };
+    const routePoints: Point[] = [
+      { x: 20, y: 80 },
+      { x: 60, y: 80 },
+      { x: 60, y: 96 },
+      { x: 180, y: 96 },
+      { x: 180, y: 80 },
+      { x: 240, y: 80 }
+    ];
+
+    const tidied = tidyOrthogonalRoute(routePoints, { blockers: [blocker] });
+
+    expect(tidied).toEqual(routePoints);
+  });
+
+  test("ignores tiny internal route segments as drag targets when longer segments are available", () => {
+    const routePoints: Point[] = [
+      { x: 20, y: 80 },
+      { x: 60, y: 80 },
+      { x: 60, y: 86 },
+      { x: 180, y: 86 },
+      { x: 180, y: 80 },
+      { x: 240, y: 80 }
+    ];
+
+    expect(getMovableRouteSegmentIndexes(routePoints)).toEqual([2]);
   });
 
   test("moves a manual horizontal or vertical segment directly to the pointer coordinate", () => {
@@ -2019,14 +2122,16 @@ describe("power system model", () => {
       "static-circle",
       "static-ellipse",
       "static-rect",
-      "static-image",
+      "static-image"
+    ] as const;
+    const removedControlKinds = [
       "static-web",
       "static-date",
       "static-time",
       "static-datetime",
       "static-input",
       "static-button"
-    ] as const;
+    ];
 
     for (const kind of expected) {
       const node = createDefaultNode(kind, { x: 100, y: 100 });
@@ -2035,6 +2140,9 @@ describe("power system model", () => {
       expect(node.params.fillColor).toBeDefined();
       expect(node.params.strokeColor).toBeDefined();
     }
+
+    expect(DEVICE_LIBRARY.filter((template) => removedControlKinds.includes(template.kind)).map((template) => template.kind)).toEqual([]);
+    expect(DEVICE_LIBRARY.filter((template) => template.group === "静态图元").map((template) => template.kind)).toEqual([...expected]);
 
     const errors = validateTopology([createDefaultNode("static-text", { x: 100, y: 100 })], []);
     expect(errors).toEqual([]);
@@ -2211,6 +2319,11 @@ describe("power system model", () => {
     expect(byId.get(dcLoad.id)?.dcTopologyNode).toBe(1);
     expect(byId.get(dcLoad.id)?.terminals[0].nodeNumber).toBe("1");
     expect(byId.get(dcLoad.id)?.acTopologyNode).toBe(0);
+  });
+
+  test("builds topology calculation success and failure prompts", () => {
+    expect(topologyCalculationMessage(0)).toBe("图上拓扑成功。");
+    expect(topologyCalculationMessage(2)).toBe("图上拓扑失败：发现 2 条错误，已定位到第一条错误。");
   });
 
   test("contracts all lines connected to the same bus and numbers AC and DC independently", () => {

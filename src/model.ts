@@ -591,6 +591,21 @@ function normalizeSwitchStatusForE(value?: string) {
   return value;
 }
 
+function normalizeControlTypeForE(value?: string) {
+  if (!value) return "";
+  const trimmed = value.trim();
+  const map: Record<string, string> = {
+    定P: "P",
+    定V: "V",
+    定I: "I",
+    定PQ: "PQ",
+    定PV: "PV",
+    定PH: "PH",
+    不定: "0"
+  };
+  return map[trimmed] ?? trimmed;
+}
+
 function terminalNodeNumber(node: Pick<ModelNode, "nodeNumber" | "terminals">, index: number) {
   return node.terminals[index]?.nodeNumber ?? (index === 0 ? node.nodeNumber : "") ?? "";
 }
@@ -620,6 +635,84 @@ type EParamValueOptions = {
   preferTopologyNodeNumbers?: boolean;
 };
 
+const E_SECTION_OUTPUT_ORDER = [
+  "ACNode",
+  "ACRealBs",
+  "ACBranch",
+  "ACLoad",
+  "ACGenerator",
+  "ACShuntCompensator",
+  "ACZeroBranch",
+  "ACSwitch",
+  "ACBreak",
+  "ACTransformer",
+  "ThreePowerTransformer",
+  "DCNode",
+  "DCRealBs",
+  "DCBranch",
+  "DCLoad",
+  "DCGenerator",
+  "DCZeroBranch",
+  "DCSwitch",
+  "DCBreak",
+  "DCDCConverter",
+  "DCACConverter",
+  "ACACConverter"
+];
+
+const E_INTEGER_COLUMNS = new Set([
+  "idx",
+  "node",
+  "i_node",
+  "j_node",
+  "ac_node",
+  "dc_node",
+  "isl",
+  "status",
+  "run_stat",
+  "idx_xf_t1",
+  "idx_xf_t2",
+  "idx_xf_t3"
+]);
+
+const E_FLOAT_COLUMNS = new Set([
+  "vbase",
+  "voltage",
+  "angle",
+  "pbase",
+  "qbase",
+  "pv0",
+  "pv1",
+  "pv2",
+  "qv0",
+  "qv1",
+  "qv2",
+  "p_set",
+  "q_set",
+  "i_set",
+  "v_set",
+  "alpha",
+  "g_set",
+  "b_set",
+  "r",
+  "x",
+  "b",
+  "gt",
+  "bt",
+  "tap",
+  "shift",
+  "r1",
+  "r2",
+  "p_ac_set",
+  "q_ac_set",
+  "v_ac_set",
+  "v_dc_set",
+  "i_q_set",
+  "j_q_set",
+  "i_v_set",
+  "j_v_set"
+]);
+
 export function getEParamValue(
   key: string,
   node: Pick<ModelNode, "kind" | "name" | "nodeNumber" | "terminals" | "params">,
@@ -635,7 +728,14 @@ export function getEParamValue(
     return normalizeSwitchStatusForE(node.params.status ?? node.params.closedStatus);
   }
   if (key === "control_type") {
-    return node.params.control_type ?? node.params.controlType ?? node.params.sourceControlType ?? "";
+    return normalizeControlTypeForE(
+      node.params.control_type ??
+        node.params.controlType ??
+        node.params.acControlType ??
+        node.params.dcControlType ??
+        node.params.sourceControlType ??
+        ""
+    );
   }
   if (key === "vbase") {
     return node.params.vbase ?? node.terminals[0]?.vbase ?? "";
@@ -844,7 +944,7 @@ function buildThreePowerTransformerDevices(nodes: ModelNode[]): EDeviceExport[] 
     }));
 }
 
-export function buildEDeviceParameterFile(project: ProjectFile) {
+function buildEDeviceRecords(project: ProjectFile): EDeviceExport[] {
   const topologyNodes = calculateElectricalTopology(project.nodes, project.edges);
   const topologyNodeDevices = buildTopologyNodeDevices(topologyNodes);
   const threePowerTransformerDevices = buildThreePowerTransformerDevices(topologyNodes);
@@ -864,22 +964,111 @@ export function buildEDeviceParameterFile(project: ProjectFile) {
     })
     .filter((device): device is EDeviceExport => Boolean(device));
 
-  return JSON.stringify(
-    {
-      version: 1,
-      name: project.name,
-      modelParameters: {
-        powerUnit: project.powerUnit ?? DEFAULT_POWER_UNIT,
-        voltageUnit: project.voltageUnit ?? DEFAULT_VOLTAGE_UNIT,
-        currentUnit: project.currentUnit ?? DEFAULT_CURRENT_UNIT,
-        powerBaseValue: project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE
-      },
-      devices: [...topologyNodeDevices, ...deviceRecords, ...threePowerTransformerDevices, ...threeWindingTransformerBranchDevices],
-      edges: project.edges
-    },
-    null,
-    2
-  );
+  return [...topologyNodeDevices, ...deviceRecords, ...threePowerTransformerDevices, ...threeWindingTransformerBranchDevices];
+}
+
+function normalizeEFileToken(value: string) {
+  return value.trim().replace(/\s+/g, "_") || "0";
+}
+
+function firstNumericToken(value: string) {
+  return value.trim().match(/[-+]?\d+(?:\.\d+)?/)?.[0] ?? "";
+}
+
+function defaultEColumnValue(column: string, rowIndex: number) {
+  if (column === "idx") return String(rowIndex + 1);
+  if (column === "name") return `unnamed_${rowIndex + 1}`;
+  if (column === "run_stat") return "1";
+  if (column === "status") return "1";
+  if (column === "control_type") return "0";
+  if (column === "tap" || column === "alpha" || column === "voltage" || column === "vbase") return "1.0";
+  return "0";
+}
+
+function formatEColumnValue(section: string, column: string, value: string | undefined, rowIndex: number) {
+  const fallback = defaultEColumnValue(column, rowIndex);
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return fallback;
+  }
+  if (column === "name") {
+    return normalizeEFileToken(text);
+  }
+  if (column === "control_type") {
+    return normalizeEFileToken(normalizeControlTypeForE(text));
+  }
+  if (column === "run_stat") {
+    return normalizeRunStatForE(text) || fallback;
+  }
+  if (column === "status") {
+    return normalizeSwitchStatusForE(text) || fallback;
+  }
+  if (E_INTEGER_COLUMNS.has(column)) {
+    return firstNumericToken(text) || fallback;
+  }
+  if (E_FLOAT_COLUMNS.has(column)) {
+    return firstNumericToken(text) || fallback;
+  }
+  return normalizeEFileToken(text);
+}
+
+function formatESection(section: string, rows: EDeviceExport[]) {
+  const columns = E_SECTION_COLUMNS[section] ?? [];
+  const bodyRows = rows
+    .map((record, rowIndex) => `# ${columns.map((column) => formatEColumnValue(section, column, record.params[column], rowIndex)).join(" ")}`)
+    .join("\n");
+  return `<${section}>\n@ ${columns.join(" ")}\n${bodyRows}\n</${section}>`;
+}
+
+function buildPowerBaseSection(project: ProjectFile) {
+  const row: EDeviceExport = {
+    id: "PowerBase-1",
+    kind: "power-base",
+    section: "PowerBase",
+    params: {
+      p_base: String(project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE),
+      u_unit: project.voltageUnit ?? DEFAULT_VOLTAGE_UNIT,
+      p_unit: project.powerUnit ?? DEFAULT_POWER_UNIT,
+      i_unit: project.currentUnit ?? DEFAULT_CURRENT_UNIT
+    }
+  };
+  return `<PowerBase>\n@ p_base u_unit p_unit i_unit\n# ${["p_base", "u_unit", "p_unit", "i_unit"].map((column) => formatEColumnValue("PowerBase", column, row.params[column], 0)).join(" ")}\n</PowerBase>`;
+}
+
+export function buildEDeviceParameterFile(project: ProjectFile) {
+  const records = buildEDeviceRecords(project);
+  const recordsBySection = new Map<string, EDeviceExport[]>();
+  for (const record of records) {
+    const columns = E_SECTION_COLUMNS[record.section];
+    if (!columns) {
+      continue;
+    }
+    const sectionRecords = recordsBySection.get(record.section) ?? [];
+    sectionRecords.push(record);
+    recordsBySection.set(record.section, sectionRecords);
+  }
+  const sectionBlocks = E_SECTION_OUTPUT_ORDER
+    .filter((section) => recordsBySection.has(section))
+    .map((section) => formatESection(section, recordsBySection.get(section) ?? []));
+  return [buildPowerBaseSection(project), ...sectionBlocks].join("\n\n") + "\n";
+}
+
+export type TextFileExport = {
+  filename: string;
+  text: string;
+  mime: string;
+};
+
+function safeModelFilePart(name: string) {
+  return name.trim().replace(/[\\/:*?"<>|]+/g, "_") || "未命名";
+}
+
+export function buildEFileExport(project: ProjectFile): TextFileExport {
+  return {
+    filename: `${safeModelFilePart(project.name)}.e`,
+    text: buildEDeviceParameterFile(project),
+    mime: "text/plain"
+  };
 }
 
 export type SavedProjectRecord = {
@@ -1018,60 +1207,6 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     group: "静态图元",
     size: { width: 140, height: 90 },
     params: { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#64748b", lineWidth: "0", strokeStyle: "solid", fontSize: "16", backgroundImage: "", backgroundImageAssetId: "" },
-    terminalType: "ac",
-    terminalCount: 0
-  },
-  {
-    kind: "static-web",
-    label: "WEB",
-    group: "静态图元",
-    size: { width: 180, height: 110 },
-    params: { text: "https://", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#334155", lineWidth: "0", strokeStyle: "solid", fontSize: "14" },
-    terminalType: "ac",
-    terminalCount: 0
-  },
-  {
-    kind: "static-date",
-    label: "日期",
-    group: "静态图元",
-    size: { width: 130, height: 36 },
-    params: { text: "2026-01-01", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
-    terminalType: "ac",
-    terminalCount: 0
-  },
-  {
-    kind: "static-time",
-    label: "时刻",
-    group: "静态图元",
-    size: { width: 110, height: 36 },
-    params: { text: "12:00", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
-    terminalType: "ac",
-    terminalCount: 0
-  },
-  {
-    kind: "static-datetime",
-    label: "日期时刻",
-    group: "静态图元",
-    size: { width: 190, height: 36 },
-    params: { text: "2026-01-01 12:00", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
-    terminalType: "ac",
-    terminalCount: 0
-  },
-  {
-    kind: "static-input",
-    label: "输入框",
-    group: "静态图元",
-    size: { width: 150, height: 38 },
-    params: { text: "请输入", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#334155", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
-    terminalType: "ac",
-    terminalCount: 0
-  },
-  {
-    kind: "static-button",
-    label: "按钮",
-    group: "静态图元",
-    size: { width: 96, height: 38 },
-    params: { text: "按钮", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2717,6 +2852,10 @@ export function getNodeScaleY(node: ModelNode): number {
   return node.scaleY ?? node.scale ?? 1;
 }
 
+export function normalizeScaleValue(value: number, fallback = 1) {
+  return Number.isFinite(value) ? value : fallback;
+}
+
 export function mirrorNodes(nodes: ModelNode[], nodeIds: string[], axis: "horizontal" | "vertical"): ModelNode[] {
   const selected = new Set(nodeIds);
   return nodes.map((node) => {
@@ -3361,6 +3500,12 @@ export function validateTopology(nodes: ModelNode[], edges: Edge[]): TopologyVal
   return errors;
 }
 
+export function topologyCalculationMessage(errorCount: number) {
+  return errorCount === 0
+    ? "图上拓扑成功。"
+    : `图上拓扑失败：发现 ${errorCount} 条错误，已定位到第一条错误。`;
+}
+
 export function buildTopology(nodes: ModelNode[], edges: Edge[]): Topology {
   const topology: Topology = {
     nodes: Object.fromEntries(
@@ -3691,6 +3836,8 @@ function routeBounds(points: Point[], blockers: ModelNode[]) {
 
 const ROUTE_BLOCKER_PADDING = 8;
 const ROUTE_CLEARANCE = 6;
+const ROUTE_TINY_DOGLEG_LIMIT = 18;
+const ROUTE_MIN_MOVABLE_SEGMENT_LENGTH = 18;
 
 function routeIntersectsBlockers(points: Point[], blockers: ModelNode[], padding = ROUTE_BLOCKER_PADDING, protectedEndpointSegments = 0) {
   for (let index = 1; index < points.length; index += 1) {
@@ -3890,22 +4037,149 @@ function orthogonalizeRouteKeepingCollinear(points: Point[]): Point[] {
   });
 }
 
-function simplifyRoutePreservingEndpointStubs(points: Point[]): Point[] {
-  const route = orthogonalizeRouteKeepingCollinear(points);
-  if (route.length <= 4) {
-    return route;
+type InternalRouteSimplifyOptions = {
+  blockers?: ModelNode[];
+  avoidedSegments?: Segment[];
+  reduceTinyDoglegs?: boolean;
+};
+
+export type TidyRouteOptions = {
+  blockers?: ModelNode[];
+};
+
+function isProtectedRoutePointIndex(index: number, length: number) {
+  return index === 0 || index === 1 || index === length - 2 || index === length - 1;
+}
+
+function segmentManhattanLength(a: Point, b: Point) {
+  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+}
+
+function compactRoutePreservingEndpointStubs(points: Point[]) {
+  if (points.length <= 4) {
+    return points.filter((point, index) => !points[index - 1] || !samePoint(points[index - 1], point));
   }
-  const protectedIndexes = new Set([0, 1, route.length - 2, route.length - 1]);
-  return route.filter((point, index) => {
-    if (protectedIndexes.has(index)) {
+  return points.filter((point, index) => {
+    if (isProtectedRoutePointIndex(index, points.length)) {
       return true;
     }
-    const previous = route[index - 1];
-    const next = route[index + 1];
+    const previous = points[index - 1];
+    if (previous && samePoint(previous, point)) {
+      return false;
+    }
+    const next = points[index + 1];
     if (!previous || !next) {
       return true;
     }
     return !(previous.x === point.x && point.x === next.x) && !(previous.y === point.y && point.y === next.y);
+  });
+}
+
+function routeCandidateIsSafe(points: Point[], options: InternalRouteSimplifyOptions) {
+  const route = orthogonalizeRouteKeepingCollinear(points);
+  if (options.blockers?.length && routeIntersectsBlockers(route, options.blockers, ROUTE_BLOCKER_PADDING, 1)) {
+    return false;
+  }
+  if (options.avoidedSegments?.length && routeOverlapsSegments(route, options.avoidedSegments)) {
+    return false;
+  }
+  return true;
+}
+
+function reduceTinyDoglegs(points: Point[], options: InternalRouteSimplifyOptions) {
+  let route = compactRoutePreservingEndpointStubs(orthogonalizeRouteKeepingCollinear(points));
+  for (let attempt = 0; attempt < 16; attempt += 1) {
+    let changed = false;
+    for (let index = 1; index < route.length - 3; index += 1) {
+      const a = route[index];
+      const b = route[index + 1];
+      const c = route[index + 2];
+      const d = route[index + 3];
+      if (isProtectedRoutePointIndex(index + 1, route.length) || isProtectedRoutePointIndex(index + 2, route.length)) {
+        continue;
+      }
+      const verticalDetour = a.x === b.x && b.y === c.y && c.x === d.x && a.y === d.y && Math.abs(a.y - b.y) <= ROUTE_TINY_DOGLEG_LIMIT;
+      const horizontalDetour = a.y === b.y && b.x === c.x && c.y === d.y && a.x === d.x && Math.abs(a.x - b.x) <= ROUTE_TINY_DOGLEG_LIMIT;
+      if (!verticalDetour && !horizontalDetour) {
+        continue;
+      }
+      const candidate = compactRoutePreservingEndpointStubs([
+        ...route.slice(0, index + 1),
+        ...route.slice(index + 3)
+      ]);
+      if (candidate.length < route.length && routeCandidateIsSafe(candidate, options)) {
+        route = candidate;
+        changed = true;
+        break;
+      }
+    }
+    if (changed) {
+      continue;
+    }
+    for (let index = 1; index < route.length - 2; index += 1) {
+      const before = route[index - 1];
+      const first = route[index];
+      const second = route[index + 1];
+      const after = route[index + 2];
+      const tinySegmentLength = segmentManhattanLength(first, second);
+      if (tinySegmentLength === 0 || tinySegmentLength > ROUTE_TINY_DOGLEG_LIMIT) {
+        continue;
+      }
+
+      const firstProtected = isProtectedRoutePointIndex(index, route.length);
+      const secondProtected = isProtectedRoutePointIndex(index + 1, route.length);
+      const candidate = route.map((point) => ({ ...point }));
+      if (before.y === first.y && first.x === second.x && second.y === after.y) {
+        const previousLength = Math.abs(first.x - before.x);
+        const nextLength = Math.abs(after.x - second.x);
+        const lane = firstProtected ? first.y : secondProtected ? second.y : previousLength >= nextLength ? first.y : second.y;
+        if (!firstProtected) {
+          candidate[index].y = lane;
+        }
+        if (!secondProtected) {
+          candidate[index + 1].y = lane;
+        }
+      } else if (before.x === first.x && first.y === second.y && second.x === after.x) {
+        const previousLength = Math.abs(first.y - before.y);
+        const nextLength = Math.abs(after.y - second.y);
+        const lane = firstProtected ? first.x : secondProtected ? second.x : previousLength >= nextLength ? first.x : second.x;
+        if (!firstProtected) {
+          candidate[index].x = lane;
+        }
+        if (!secondProtected) {
+          candidate[index + 1].x = lane;
+        }
+      } else {
+        continue;
+      }
+
+      const compacted = compactRoutePreservingEndpointStubs(candidate);
+      if (compacted.length < route.length && routeCandidateIsSafe(compacted, options)) {
+        route = compacted;
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) {
+      return route;
+    }
+  }
+  return route;
+}
+
+function simplifyRoutePreservingEndpointStubs(points: Point[], options: InternalRouteSimplifyOptions = {}): Point[] {
+  const route = orthogonalizeRouteKeepingCollinear(points);
+  if (route.length <= 4) {
+    return route;
+  }
+  const compacted = compactRoutePreservingEndpointStubs(route);
+  return options.reduceTinyDoglegs ? reduceTinyDoglegs(compacted, options) : compacted;
+}
+
+export function tidyOrthogonalRoute(points: Point[], options: TidyRouteOptions = {}): Point[] {
+  return simplifyRoutePreservingEndpointStubs(points, {
+    blockers: options.blockers,
+    reduceTinyDoglegs: true
   });
 }
 
@@ -3940,7 +4214,7 @@ export function moveOrthogonalRouteSegment(
 }
 
 export function getMovableRouteSegmentIndexes(routePoints: Point[]): number[] {
-  const indexes: number[] = [];
+  const segments: Array<{ index: number; length: number }> = [];
   for (let segmentIndex = 1; segmentIndex < routePoints.length - 2; segmentIndex += 1) {
     const from = routePoints[segmentIndex];
     const to = routePoints[segmentIndex + 1];
@@ -3950,9 +4224,10 @@ export function getMovableRouteSegmentIndexes(routePoints: Point[]): number[] {
     if (from.x !== to.x && from.y !== to.y) {
       continue;
     }
-    indexes.push(segmentIndex);
+    segments.push({ index: segmentIndex, length: segmentManhattanLength(from, to) });
   }
-  return indexes;
+  const longerSegments = segments.filter((segment) => segment.length >= ROUTE_MIN_MOVABLE_SEGMENT_LENGTH);
+  return (longerSegments.length > 0 ? longerSegments : segments).map((segment) => segment.index);
 }
 
 type Segment = {
@@ -4220,7 +4495,7 @@ export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes:
       blockers,
       bounds,
       1
-    ));
+    ), { blockers, avoidedSegments, reduceTinyDoglegs: true });
   }
   const candidates = buildRouteCandidates(startOut, endOut, blockers, avoidedSegments, bounds);
   const routedMiddle = selectRouteCandidate(candidates, blockers, avoidedSegments);
@@ -4229,5 +4504,5 @@ export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes:
     blockers,
     bounds,
     1
-  ));
+  ), { blockers, avoidedSegments, reduceTinyDoglegs: true });
 }
