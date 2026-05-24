@@ -334,7 +334,7 @@ function parseDeviceIndex(value?: string): number {
 }
 
 function parseContainerRelationField(fieldName: string) {
-  const match = /^idx_(ac2|dc2|h22|heat2|ac|dc|h2|heat)_(unit|load)_t(\d+)$/.exec(fieldName);
+  const match = /^idx_(ac2|dc2|h22|heat2|ac|dc|h2|heat)_(unit|load|transformer)_t(\d+)$/.exec(fieldName);
   if (!match) {
     return null;
   }
@@ -356,6 +356,7 @@ function containerRelationCounterKey(fieldName: string): string {
   const mapping: Record<string, string> = {
     ac_unit: "ACGenerator",
     ac_load: "ACLoad",
+    ac_transformer: "ACTransformer",
     ac2_unit: "TwoPortACGenerator",
     ac2_load: "TwoPortACLoad",
     dc_unit: "DCGenerator",
@@ -646,9 +647,14 @@ function topologyRepresentativeScore(node: ModelNode): number {
   return 3;
 }
 
+function isThreeWindingTransformer(node: Pick<ModelNode, "kind">): boolean {
+  return node.kind === "ac-three-winding-transformer";
+}
+
 function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
   type ElectricalTerminalType = Extract<TerminalType, "ac" | "dc">;
-  const groups: Record<ElectricalTerminalType, Map<string, Array<{ node: ModelNode; terminal: Terminal }>>> = {
+  type TopologyNodeCandidate = { node: ModelNode; terminal: Terminal; name?: string; voltage?: string };
+  const groups: Record<ElectricalTerminalType, Map<string, TopologyNodeCandidate[]>> = {
     ac: new Map(),
     dc: new Map()
   };
@@ -668,6 +674,24 @@ function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
       candidates.push({ node, terminal });
       groups[terminalType].set(terminal.nodeNumber, candidates);
     }
+    if (isThreeWindingTransformer(node) && node.params.neutral_node) {
+      const neutralTerminal: Terminal = {
+        id: "neutral",
+        label: "中性点",
+        type: "ac",
+        anchor: { x: 0, y: 0 },
+        nodeNumber: node.params.neutral_node,
+        vbase: node.params.neutral_vbase || "1.0"
+      };
+      const candidates = groups.ac.get(neutralTerminal.nodeNumber) ?? [];
+      candidates.push({
+        node,
+        terminal: neutralTerminal,
+        name: `${node.name}_neutral`,
+        voltage: node.params.neutral_vbase || "1.0"
+      });
+      groups.ac.set(neutralTerminal.nodeNumber, candidates);
+    }
   }
 
   const buildForType = (type: ElectricalTerminalType, section: "ACNode" | "DCNode"): EDeviceExport[] =>
@@ -678,11 +702,11 @@ function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
           (first, second) => topologyRepresentativeScore(first.node) - topologyRepresentativeScore(second.node)
         )[0];
         const vbase = firstText(candidates.map(({ node, terminal }) => terminalVoltageDisplay(node, terminal)));
-        const voltage = firstText([representative.node.params.voltage, vbase]);
+        const voltage = firstText([representative.voltage, representative.node.params.voltage, vbase]);
         const runStat = normalizeRunStatForE(representative.node.params.run_stat) || "1";
         const commonParams = {
           idx,
-          name: representative.node.name || `${section}_${idx}`,
+          name: representative.name || representative.node.name || `${section}_${idx}`,
           vbase,
           voltage,
           isl: representative.node.params.isl ?? "0",
@@ -699,9 +723,55 @@ function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
   return [...buildForType("ac", "ACNode"), ...buildForType("dc", "DCNode")];
 }
 
+const THREE_WINDING_TRANSFORMER_SIDES = [
+  { suffix: "high", label: "高压绕组", terminalIndex: 0, idxKey: "idx_ac_transformer_t1" },
+  { suffix: "medium", label: "中压绕组", terminalIndex: 1, idxKey: "idx_ac_transformer_t2" },
+  { suffix: "low", label: "低压绕组", terminalIndex: 2, idxKey: "idx_ac_transformer_t3" }
+] as const;
+
+function threeWindingSideParam(params: Record<string, string>, suffix: string, key: string, fallback = ""): string {
+  const paramKey = `${suffix}${key}`;
+  return params[paramKey] ?? fallback;
+}
+
+function buildThreeWindingTransformerBranchDevices(nodes: ModelNode[]): EDeviceExport[] {
+  const records: EDeviceExport[] = [];
+  for (const node of nodes) {
+    if (!isThreeWindingTransformer(node) || !node.params.neutral_node) {
+      continue;
+    }
+    for (const side of THREE_WINDING_TRANSFORMER_SIDES) {
+      const terminal = node.terminals[side.terminalIndex];
+      if (!terminal?.nodeNumber) {
+        continue;
+      }
+      records.push({
+        id: `${node.id}:w${side.terminalIndex + 1}`,
+        kind: "ac-two-winding-transformer",
+        section: "ACTransformer",
+        params: {
+          idx: node.params[side.idxKey] ?? "",
+          name: `${node.name}_${side.label}`,
+          i_node: terminal.nodeNumber,
+          j_node: node.params.neutral_node,
+          r: threeWindingSideParam(node.params, side.suffix, "ResistancePu"),
+          x: threeWindingSideParam(node.params, side.suffix, "ReactancePu"),
+          gt: threeWindingSideParam(node.params, side.suffix, "MagnetizingConductancePu"),
+          bt: threeWindingSideParam(node.params, side.suffix, "MagnetizingSusceptancePu"),
+          tap: threeWindingSideParam(node.params, side.suffix, "TapRatio"),
+          shift: threeWindingSideParam(node.params, side.suffix, "Shift", "0"),
+          run_stat: normalizeRunStatForE(node.params.run_stat)
+        }
+      });
+    }
+  }
+  return records;
+}
+
 export function buildEDeviceParameterFile(project: ProjectFile) {
   const topologyNodes = calculateElectricalTopology(project.nodes, project.edges);
   const topologyNodeDevices = buildTopologyNodeDevices(topologyNodes);
+  const threeWindingTransformerBranchDevices = buildThreeWindingTransformerBranchDevices(topologyNodes);
   const deviceRecords = topologyNodes
     .map<EDeviceExport | null>((node) => {
       const section = inferESection(node.kind, node.params);
@@ -727,7 +797,7 @@ export function buildEDeviceParameterFile(project: ProjectFile) {
         currentUnit: project.currentUnit ?? DEFAULT_CURRENT_UNIT,
         powerBaseValue: project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE
       },
-      devices: [...topologyNodeDevices, ...deviceRecords],
+      devices: [...topologyNodeDevices, ...deviceRecords, ...threeWindingTransformerBranchDevices],
       edges: project.edges
     },
     null,
@@ -780,6 +850,47 @@ export type TopologyValidationError = {
   edgeId?: string;
   relatedNodeIds: string[];
 };
+
+const readonlyIntegerDefinition = (cnName: string, enName: string, typicalValue = ""): DeviceParameterDefinition => ({
+  cnName,
+  enName,
+  valueType: "integer",
+  typicalValue,
+  readonly: true
+});
+
+const threeWindingTransformerParameterDefinitions: DeviceParameterDefinition[] = [
+  readonlyIntegerDefinition("序号", "idx"),
+  { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
+  { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true },
+  readonlyIntegerDefinition("是否容器", "is_container", "1"),
+  readonlyIntegerDefinition("中性点节点号", "neutral_node"),
+  { cnName: "中性点电压基值", enName: "neutral_vbase", valueType: "float", typicalValue: "1.0", readonly: true },
+  readonlyIntegerDefinition("高压绕组双绕组主变idx", "idx_ac_transformer_t1"),
+  readonlyIntegerDefinition("中压绕组双绕组主变idx", "idx_ac_transformer_t2"),
+  readonlyIntegerDefinition("低压绕组双绕组主变idx", "idx_ac_transformer_t3"),
+  { cnName: "高压侧电压等级", enName: "highVbase", valueType: "string", typicalValue: "220 kV" },
+  { cnName: "中压侧电压等级", enName: "mediumVbase", valueType: "string", typicalValue: "110 kV" },
+  { cnName: "低压侧电压等级", enName: "lowVbase", valueType: "string", typicalValue: "10 kV" },
+  { cnName: "高压绕组额定容量", enName: "highRatedCapacity", valueType: "string", typicalValue: "90 MVA" },
+  { cnName: "高压绕组电阻", enName: "highResistancePu", valueType: "float", typicalValue: "0.0" },
+  { cnName: "高压绕组电抗", enName: "highReactancePu", valueType: "float", typicalValue: "0.1" },
+  { cnName: "高压绕组励磁电导", enName: "highMagnetizingConductancePu", valueType: "float", typicalValue: "0.0" },
+  { cnName: "高压绕组励磁电纳", enName: "highMagnetizingSusceptancePu", valueType: "float", typicalValue: "0.0" },
+  { cnName: "高压绕组分接头变比", enName: "highTapRatio", valueType: "float", typicalValue: "1.0" },
+  { cnName: "中压绕组额定容量", enName: "mediumRatedCapacity", valueType: "string", typicalValue: "90 MVA" },
+  { cnName: "中压绕组电阻", enName: "mediumResistancePu", valueType: "float", typicalValue: "0.0" },
+  { cnName: "中压绕组电抗", enName: "mediumReactancePu", valueType: "float", typicalValue: "0.1" },
+  { cnName: "中压绕组励磁电导", enName: "mediumMagnetizingConductancePu", valueType: "float", typicalValue: "0.0" },
+  { cnName: "中压绕组励磁电纳", enName: "mediumMagnetizingSusceptancePu", valueType: "float", typicalValue: "0.0" },
+  { cnName: "中压绕组分接头变比", enName: "mediumTapRatio", valueType: "float", typicalValue: "1.0" },
+  { cnName: "低压绕组额定容量", enName: "lowRatedCapacity", valueType: "string", typicalValue: "90 MVA" },
+  { cnName: "低压绕组电阻", enName: "lowResistancePu", valueType: "float", typicalValue: "0.0" },
+  { cnName: "低压绕组电抗", enName: "lowReactancePu", valueType: "float", typicalValue: "0.1" },
+  { cnName: "低压绕组励磁电导", enName: "lowMagnetizingConductancePu", valueType: "float", typicalValue: "0.0" },
+  { cnName: "低压绕组励磁电纳", enName: "lowMagnetizingSusceptancePu", valueType: "float", typicalValue: "0.0" },
+  { cnName: "低压绕组分接头变比", enName: "lowTapRatio", valueType: "float", typicalValue: "1.0" }
+];
 
 export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
@@ -1395,7 +1506,9 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 104, height: 76 },
     params: { ratedCapacity: "90 MVA", voltageRatio: "220/110/10 kV", windingType: "三绕组", impedance: "12.0%" },
     terminalType: "ac",
-    terminalCount: 3
+    terminalCount: 3,
+    isContainer: true,
+    parameterDefinitions: threeWindingTransformerParameterDefinitions
   },
   {
     kind: "dc-source",
@@ -1982,7 +2095,7 @@ function applyTemplateDefinitionDefaults(params: Record<string, string>, templat
 }
 
 function applyContainerRelationDefaults(params: Record<string, string>, template: DeviceTemplate): Record<string, string> {
-  if (!template.isContainer) {
+  if (!template.isContainer || template.parameterDefinitions?.length) {
     return params;
   }
   const next = { ...params };
@@ -2625,7 +2738,7 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
     return next;
   };
 
-  return nodes.map((node) => {
+  const numberedNodes = nodes.map((node) => {
     const terminals = node.terminals.map((terminal) => {
       const key = terminalKey(node.id, terminal.id);
       return { ...terminal, nodeNumber: getTopologyNumber(key, terminal.type) };
@@ -2638,6 +2751,19 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
       dcTopologyNode,
       nodeNumber: terminals.length === 1 ? terminals[0].nodeNumber : node.nodeNumber,
       terminals
+    };
+  });
+  return numberedNodes.map((node) => {
+    if (!isThreeWindingTransformer(node)) {
+      return node;
+    }
+    return {
+      ...node,
+      params: {
+        ...node.params,
+        neutral_node: String(nextTopologyNumberByType.ac++),
+        neutral_vbase: node.params.neutral_vbase || "1.0"
+      }
     };
   });
 }

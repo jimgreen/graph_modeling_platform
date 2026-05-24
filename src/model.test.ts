@@ -492,6 +492,55 @@ describe("power system model", () => {
     expect(exportedDcLoad?.params.node).toBe("2");
   });
 
+  test("expands three-winding transformers into three ACTransformer branches with an auto neutral node", () => {
+    const highBus = createDefaultNode("ac-bus", { x: 80, y: 100 });
+    const mediumBus = createDefaultNode("ac-bus", { x: 80, y: 220 });
+    const lowBus = createDefaultNode("ac-bus", { x: 80, y: 340 });
+    const transformer = assignPermanentDeviceIndex(createDefaultNode("ac-three-winding-transformer", { x: 260, y: 220 }), {}).node;
+    transformer.name = "T3";
+    transformer.terminals[0].vbase = "220 kV";
+    transformer.terminals[1].vbase = "110 kV";
+    transformer.terminals[2].vbase = "10 kV";
+    highBus.terminals.forEach((terminal) => { terminal.vbase = "220 kV"; });
+    mediumBus.terminals.forEach((terminal) => { terminal.vbase = "110 kV"; });
+    lowBus.terminals.forEach((terminal) => { terminal.vbase = "10 kV"; });
+
+    const edges: Edge[] = [
+      { id: "high", sourceId: highBus.id, targetId: transformer.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+      { id: "medium", sourceId: mediumBus.id, targetId: transformer.id, sourceTerminalId: "t1", targetTerminalId: "t2" },
+      { id: "low", sourceId: lowBus.id, targetId: transformer.id, sourceTerminalId: "t1", targetTerminalId: "t3" }
+    ];
+
+    const calculated = calculateElectricalTopology([highBus, mediumBus, lowBus, transformer], edges);
+    const calculatedTransformer = calculated.find((node) => node.id === transformer.id)!;
+
+    expect(calculatedTransformer.terminals.map((terminal) => terminal.nodeNumber)).toEqual(["1", "2", "3"]);
+    expect(calculatedTransformer.params.neutral_node).toBe("4");
+    expect(calculatedTransformer.params.neutral_vbase).toBe("1.0");
+
+    const payload = JSON.parse(
+      buildEDeviceParameterFile({
+        version: 1,
+        name: "三绕组主变导出",
+        nodes: [highBus, mediumBus, lowBus, transformer],
+        edges
+      })
+    );
+    const acNodes = payload.devices.filter((device: { section: string }) => device.section === "ACNode");
+    const neutralNode = acNodes.find((device: { params: Record<string, string> }) => device.params.idx === "4");
+    const transformerBranches = payload.devices.filter(
+      (device: { section: string; id: string }) => device.section === "ACTransformer" && device.id.startsWith(`${transformer.id}:w`)
+    );
+
+    expect(acNodes.map((device: { params: Record<string, string> }) => device.params.idx)).toEqual(["1", "2", "3", "4"]);
+    expect(neutralNode?.params).toMatchObject({ name: "T3_neutral", vbase: "1.0", voltage: "1.0" });
+    expect(transformerBranches.map((device: { params: Record<string, string> }) => device.params)).toEqual([
+      expect.objectContaining({ idx: "1", name: "T3_高压绕组", i_node: "1", j_node: "4", r: "0.0", x: "0.1", tap: "1.0" }),
+      expect.objectContaining({ idx: "2", name: "T3_中压绕组", i_node: "2", j_node: "4", r: "0.0", x: "0.1", tap: "1.0" }),
+      expect.objectContaining({ idx: "3", name: "T3_低压绕组", i_node: "3", j_node: "4", r: "0.0", x: "0.1", tap: "1.0" })
+    ]);
+  });
+
   test("creates load, line, and transformer electrical parameter defaults", () => {
     const acLoad = createDefaultNode("ac-load", { x: 100, y: 100 });
     const dcLoad = createDefaultNode("dc-load", { x: 200, y: 100 });
@@ -531,6 +580,12 @@ describe("power system model", () => {
     expect(threeWinding.params.highTapRatio).toBe("1.0");
     expect(threeWinding.params.mediumTapRatio).toBe("1.0");
     expect(threeWinding.params.lowTapRatio).toBe("1.0");
+    expect(threeWinding.params.is_container).toBe("1");
+    expect(threeWinding.params.neutral_node).toBe("");
+    expect(threeWinding.params.neutral_vbase).toBe("1.0");
+    expect(threeWinding.params.idx_ac_transformer_t1).toBe("");
+    expect(threeWinding.params.idx_ac_transformer_t2).toBe("");
+    expect(threeWinding.params.idx_ac_transformer_t3).toBe("");
 
     const dcdc = createDefaultNode("dcdc-converter", { x: 600, y: 100 });
     expect(dcdc.terminals[0].nodeNumber).toMatch(/^N\d+$/);
@@ -1638,6 +1693,8 @@ describe("power system model", () => {
     expect(twoWinding?.terminalCount).toBe(2);
     expect(threeWinding?.terminalType).toBe("ac");
     expect(threeWinding?.terminalCount).toBe(3);
+    expect(threeWinding?.isContainer).toBe(true);
+    expect(getEParameterKeys("ac-three-winding-transformer", createDefaultNode("ac-three-winding-transformer", { x: 100, y: 100 }).params)).toEqual([]);
   });
 
   test("renders crossing connection lines with local arc transitions", () => {
