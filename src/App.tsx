@@ -82,6 +82,7 @@ import {
   getTemplateParameterDefinitions,
   getTerminalPoint,
   normalizeDeviceIndexCounters,
+  normalizeNodeTerminalsByTemplate,
   normalizeVoltageBaseInput,
   normalizeScaleValue,
   isBusNode,
@@ -603,7 +604,8 @@ function normalizeLegacyPowerSystemLabel(value: string) {
 }
 
 function normalizeSavedProjectIndexes(project: SavedProjectRecord): SavedProjectRecord {
-  const indexed = assignMissingDeviceIndexes(project.project.nodes ?? [], project.project.deviceIndexCounters);
+  const normalizedNodes = (project.project.nodes ?? []).map(normalizeNodeTerminalsByTemplate);
+  const indexed = assignMissingDeviceIndexes(normalizedNodes, project.project.deviceIndexCounters);
   const normalizedName = normalizeLegacyPowerSystemLabel(project.name);
   return {
     ...project,
@@ -653,7 +655,8 @@ function readDraftProject(): DraftProjectState | null {
     }
     return {
       ...parsed,
-      projectName: normalizeLegacyPowerSystemLabel(parsed.projectName)
+      projectName: normalizeLegacyPowerSystemLabel(parsed.projectName),
+      nodes: parsed.nodes.map(normalizeNodeTerminalsByTemplate)
     };
   } catch {
     return null;
@@ -4717,7 +4720,8 @@ export function App() {
   };
 
   const loadSavedProject = (project: SavedProjectRecord, schemeId = findSchemeForProject(project.id)?.id ?? "") => {
-    const indexed = assignMissingDeviceIndexes(project.project.nodes, project.project.deviceIndexCounters);
+    const normalizedNodes = project.project.nodes.map(normalizeNodeTerminalsByTemplate);
+    const indexed = assignMissingDeviceIndexes(normalizedNodes, project.project.deviceIndexCounters);
     const lockedProject = lockProjectEdgeTerminals({
       ...project.project,
       nodes: indexed.nodes

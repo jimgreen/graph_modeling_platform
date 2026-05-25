@@ -69,6 +69,7 @@ import {
   lockProjectEdgeTerminals,
   mirrorNodes,
   normalizeScaleValue,
+  normalizeNodeTerminalsByTemplate,
   normalizeVoltageBaseInput,
   normalizeViewBoxToCanvas,
   terminalStubSegment,
@@ -715,6 +716,8 @@ describe("power system model", () => {
     expect(dcdc.params.targetControlType).toBe("不定");
 
     const acdc = createDefaultNode("acdc-converter", { x: 700, y: 100 });
+    expect(acdc.terminals.map((terminal) => terminal.type)).toEqual(["ac", "dc"]);
+    expect(acdc.terminals.map((terminal) => terminal.vbase)).toEqual(["10 kV", "750 V"]);
     expect(acdc.params.sourceEquivalentResistance).toBe("0.0");
     expect(acdc.params.targetEquivalentResistance).toBe("0.0");
     expect(acdc.params.acControlType).toBe("定PQ");
@@ -2730,6 +2733,27 @@ describe("power system model", () => {
     const converter = createDefaultNode("acdc-converter", { x: 400, y: 100 });
     expect(converter.params.sourceVbase).toBe("10 kV");
     expect(converter.params.targetVbase).toBe("750 V");
+    expect(converter.terminals.map((terminal) => terminal.type)).toEqual(["ac", "dc"]);
+    expect(converter.terminals.map((terminal) => terminal.vbase)).toEqual(["10 kV", "750 V"]);
+  });
+
+  test("keeps ACDC converter terminal 1 as AC and terminal 2 as DC for connection rules and legacy nodes", () => {
+    const converter = createDefaultNode("acdc-converter", { x: 100, y: 100 });
+    const acLoad = createDefaultNode("ac-load", { x: 220, y: 100 });
+    const dcLoad = createDefaultNode("dc-load", { x: 340, y: 100 });
+
+    expect(canConnectTerminals(converter, "t1", acLoad, "t1")).toBe(true);
+    expect(canConnectTerminals(converter, "t2", dcLoad, "t1")).toBe(true);
+    expect(canConnectTerminals(converter, "t1", dcLoad, "t1")).toBe(false);
+    expect(canConnectTerminals(converter, "t2", acLoad, "t1")).toBe(false);
+
+    const legacyConverter: ModelNode = {
+      ...converter,
+      terminals: converter.terminals.map((terminal) => ({ ...terminal, type: "ac", vbase: "10 kV" }))
+    };
+    const normalized = normalizeNodeTerminalsByTemplate(legacyConverter);
+    expect(normalized.terminals.map((terminal) => terminal.type)).toEqual(["ac", "dc"]);
+    expect(normalized.terminals.map((terminal) => terminal.vbase)).toEqual(["10 kV", "750 V"]);
   });
 
   test("removes the explicit two-winding transformer glyph and keeps the three-winding container definition", () => {

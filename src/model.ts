@@ -2120,7 +2120,8 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 112, height: 66 },
     params: { ratedPower: "10 MW", acVoltage: "10 kV", dcVoltage: "750 V" },
     terminalType: "ac",
-    terminalCount: 2
+    terminalCount: 2,
+    terminalTypes: ["ac", "dc"]
   },
   {
     kind: "acac-converter",
@@ -3387,6 +3388,31 @@ function createTemplateTerminals(template: DeviceTemplate): Terminal[] {
   }));
 }
 
+export function normalizeNodeTerminalsByTemplate(node: ModelNode): ModelNode {
+  const template = DEVICE_LIBRARY.find((item) => item.kind === node.kind);
+  if (!template?.terminalTypes?.length || node.terminals.length === 0) {
+    return node;
+  }
+  let changed = false;
+  const expectedTypes = templateTerminalTypes(template);
+  const terminals = node.terminals.map((terminal, index) => {
+    const expectedType = expectedTypes[index];
+    if (!expectedType || terminal.type === expectedType) {
+      return terminal;
+    }
+    changed = true;
+    const currentDefaultVbase = defaultTerminalVbase(terminal.type);
+    return {
+      ...terminal,
+      type: expectedType,
+      vbase: !terminal.vbase || terminal.vbase === currentDefaultVbase
+        ? defaultTerminalVbase(expectedType)
+        : terminal.vbase
+    };
+  });
+  return changed ? { ...node, terminals } : node;
+}
+
 export function terminalStubSegment(
   terminal: Pick<Terminal, "anchor">,
   scaleX = 1,
@@ -4235,7 +4261,8 @@ export function deserializeProject(json: string): ProjectFile {
 }
 
 export function lockProjectEdgeTerminals(project: ProjectFile): ProjectFile {
-  const nodeById = new Map(project.nodes.map((node) => [node.id, node]));
+  const nodes = project.nodes.map(normalizeNodeTerminalsByTemplate);
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const resolveTerminalId = (node: ModelNode | undefined, terminalId?: string) => {
     if (!node || node.terminals.length === 0) {
       return undefined;
@@ -4246,7 +4273,7 @@ export function lockProjectEdgeTerminals(project: ProjectFile): ProjectFile {
   };
   return {
     ...project,
-    nodes: project.nodes,
+    nodes,
     edges: project.edges.flatMap((edge) => {
       const source = nodeById.get(edge.sourceId);
       const target = nodeById.get(edge.targetId);
