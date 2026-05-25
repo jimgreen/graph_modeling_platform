@@ -88,6 +88,7 @@ import {
   isContainerTerminalAssociationDependent,
   isDoubleContainerTerminalAssociation,
   isGeneratorNode,
+  isRepeatedEdgePointerClick,
   isStaticNode,
   inferESection,
   insertOrthogonalRouteBend,
@@ -170,7 +171,13 @@ type ScaleHandleConfig = {
   className: string;
 };
 type Marquee = { start: Point; current: Point } | null;
-type ContextMenuState = { x: number; y: number } | null;
+type ContextMenuState = {
+  x: number;
+  y: number;
+  canvasPoint?: Point;
+  edgeId?: string;
+  routePoints?: Point[];
+} | null;
 type ProjectMenuState = { x: number; y: number; schemeId?: string; projectId?: string } | null;
 type SidePanelResizeState = { side: SidePanelSide; startX: number; startWidth: number } | null;
 type StatusbarResizeState = { startY: number; startHeight: number } | null;
@@ -1990,6 +1997,7 @@ export function App() {
   const skipNextTopologyStaleRef = useRef(false);
   const skipCanvasSizeBlurCommitRef = useRef(false);
   const edgePointerBendInsertRef = useRef<{ edgeId: string; clientX: number; clientY: number; at: number } | null>(null);
+  const lastEdgePointerClickRef = useRef<{ edgeId: string; clientX: number; clientY: number; at: number } | null>(null);
   const [nodes, setNodes] = useState<ModelNode[]>(() => initialIndexedNodes.nodes);
   const [edges, setEdges] = useState<Edge[]>(() => initialDraft?.edges ?? SAMPLE_EDGES);
   const [deviceIndexCounters, setDeviceIndexCounters] = useState<DeviceIndexCounters>(() => initialIndexedNodes.counters);
@@ -5240,21 +5248,28 @@ export function App() {
     setEdgeManualPoints(selectedEdge.id, nextManualPoints);
   };
 
-  const openEdgeContextMenu = (event: MouseEvent<SVGPathElement>, edgeId: string) => {
+  const openEdgeContextMenu = (event: MouseEvent<SVGPathElement>, edgeId: string, routePoints?: Point[]) => {
     event.preventDefault();
     event.stopPropagation();
     activateInspectorFromCanvas();
     canvasInteractionRef.current = true;
     projectListPointerInsideRef.current = false;
+    let pointer: Point | undefined;
     if (svgRef.current) {
-      const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
       lastCanvasPointerRef.current = pointer;
       updateMouseStatus(pointer);
     }
     setSelectedNodeIds([]);
     setSelectedEdgeId(edgeId);
     setSelectedEdgeIds([edgeId]);
-    setContextMenu({ x: event.clientX, y: event.clientY });
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      canvasPoint: pointer,
+      edgeId,
+      routePoints: routePoints?.map((point) => ({ ...point }))
+    });
   };
 
   const captureCanvasPointer = (pointerId: number) => {
@@ -5310,7 +5325,7 @@ export function App() {
     const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
     if (event.detail >= 2) {
       event.preventDefault();
-      const segmentIndex = findEditableRouteSegmentIndex(routePoints, pointer);
+      const segmentIndex = findBendInsertRouteSegmentIndex(routePoints, pointer);
       if (segmentIndex >= 0) {
         edgePointerBendInsertRef.current = {
           edgeId,
@@ -5374,6 +5389,46 @@ export function App() {
     }, null)?.index ?? -1;
   };
 
+  const findBendInsertRouteSegmentIndex = (routePoints: Point[], point: Point) =>
+    routePoints
+      .slice(0, -1)
+      .map((from, segmentIndex) => ({ from, to: routePoints[segmentIndex + 1], segmentIndex }))
+      .filter(({ from, to }) => to && !sameOptionalPoint(from, to) && (from.x === to.x || from.y === to.y))
+      .reduce<{ index: number; distance: number } | null>((nearest, candidate) => {
+        const distance = routeSegmentPointerDistance(point, candidate.from, candidate.to);
+        return !nearest || distance < nearest.distance ? { index: candidate.segmentIndex, distance } : nearest;
+      }, null)?.index ?? -1;
+
+  const connectionHitTolerance = () => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      return 16;
+    }
+    const xTolerance = (viewBox.width / rect.width) * 18;
+    const yTolerance = (viewBox.height / rect.height) * 18;
+    return Math.max(12, Math.max(xTolerance, yTolerance));
+  };
+
+  const findConnectionRouteHitAtPoint = (point: Point) => {
+    const tolerance = connectionHitTolerance();
+    return renderedRoutedEdges
+      .flatMap((route, routeOrder) =>
+        route.points.slice(0, -1).map((from, segmentIndex) => ({
+          edgeId: route.edgeId,
+          routePoints: route.points,
+          distance: routeSegmentPointerDistance(point, from, route.points[segmentIndex + 1]),
+          routeOrder,
+          segmentIndex
+        }))
+      )
+      .filter((candidate) => candidate.distance <= tolerance)
+      .sort((first, second) =>
+        first.distance - second.distance ||
+        second.routeOrder - first.routeOrder ||
+        first.segmentIndex - second.segmentIndex
+      )[0] ?? null;
+  };
+
   const insertManualBendAtPoint = (edgeId: string, segmentIndex: number, routePoints: Point[], clickPoint: Point) => {
     const from = routePoints[segmentIndex];
     const to = routePoints[segmentIndex + 1];
@@ -5383,6 +5438,25 @@ export function App() {
     pushUndoSnapshot();
     const nextPoints = insertOrthogonalRouteBend(routePoints, segmentIndex, clickPoint, canvasBounds);
     setEdgeManualPoints(edgeId, routeManualPoints(nextPoints));
+  };
+
+  const insertManualBendFromPointer = (edgeId: string, routePoints: Point[], clickPoint: Point) => {
+    const segmentIndex = findBendInsertRouteSegmentIndex(routePoints, clickPoint);
+    if (segmentIndex >= 0) {
+      insertManualBendAtPoint(edgeId, segmentIndex, routePoints, clickPoint);
+      return true;
+    }
+    return false;
+  };
+
+  const addManualBendFromContextMenu = () => {
+    const edgeId = contextMenu?.edgeId ?? selectedEdgeId;
+    const routePoints = contextMenu?.routePoints ?? selectedRoutedEdge?.points;
+    const point = contextMenu?.canvasPoint ?? lastCanvasPointerRef.current;
+    if (!edgeId || !routePoints?.length || !point) {
+      return;
+    }
+    insertManualBendFromPointer(edgeId, routePoints, point);
   };
 
   const insertManualBendFromEdgePath = (event: MouseEvent<SVGElement>, edgeId: string, routePoints: Point[]) => {
@@ -5406,10 +5480,7 @@ export function App() {
     setSelectedEdgeId(edgeId);
     setSelectedEdgeIds([edgeId]);
     const clickPoint = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-    const segmentIndex = findEditableRouteSegmentIndex(routePoints, clickPoint);
-    if (segmentIndex >= 0) {
-      insertManualBendAtPoint(edgeId, segmentIndex, routePoints, clickPoint);
-    }
+    insertManualBendFromPointer(edgeId, routePoints, clickPoint);
   };
 
   const handleEdgePathPointerDown = (event: PointerEvent<SVGPathElement>, edgeId: string, routePoints: Point[]) => {
@@ -5421,20 +5492,27 @@ export function App() {
     setSelectedNodeIds([]);
     setSelectedEdgeId(edgeId);
     setSelectedEdgeIds([edgeId]);
-    if (event.detail < 2) {
+    const clickPoint = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+    const edgeClick = {
+      edgeId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      at: Date.now()
+    };
+    const repeatedClick = isRepeatedEdgePointerClick(lastEdgePointerClickRef.current, edgeClick);
+    lastEdgePointerClickRef.current = edgeClick;
+    if (event.detail < 2 && !repeatedClick) {
       return;
     }
     event.preventDefault();
-    const clickPoint = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-    const segmentIndex = findEditableRouteSegmentIndex(routePoints, clickPoint);
-    if (segmentIndex >= 0) {
+    if (insertManualBendFromPointer(edgeId, routePoints, clickPoint)) {
       edgePointerBendInsertRef.current = {
         edgeId,
         clientX: event.clientX,
         clientY: event.clientY,
         at: Date.now()
       };
-      insertManualBendAtPoint(edgeId, segmentIndex, routePoints, clickPoint);
+      lastEdgePointerClickRef.current = null;
     }
   };
 
@@ -6613,6 +6691,30 @@ export function App() {
                 event.currentTarget.setPointerCapture(event.pointerId);
                 return;
               }
+              const routeHit = findConnectionRouteHitAtPoint(pointer);
+              if (routeHit) {
+                const edgeClick = {
+                  edgeId: routeHit.edgeId,
+                  clientX: event.clientX,
+                  clientY: event.clientY,
+                  at: Date.now()
+                };
+                const repeatedClick = isRepeatedEdgePointerClick(lastEdgePointerClickRef.current, edgeClick);
+                lastEdgePointerClickRef.current = edgeClick;
+                setSelectedNodeIds([]);
+                setSelectedEdgeId(routeHit.edgeId);
+                setSelectedEdgeIds([routeHit.edgeId]);
+                setConnectSource(null);
+                resetConnectPreviewState();
+                setRewiring(null);
+                clearRecordSelection();
+                if (event.detail >= 2 || repeatedClick) {
+                  insertManualBendFromPointer(routeHit.edgeId, routeHit.routePoints, pointer);
+                  lastEdgePointerClickRef.current = null;
+                }
+                return;
+              }
+              lastEdgePointerClickRef.current = null;
               setSelectedNodeIds([]);
               setSelectedEdgeId("");
               setSelectedEdgeIds([]);
@@ -6640,7 +6742,25 @@ export function App() {
                 setMode("select");
                 return;
               }
-              setContextMenu({ x: event.clientX, y: event.clientY });
+              const routeHit = findConnectionRouteHitAtPoint(pointer);
+              if (routeHit) {
+                setSelectedNodeIds([]);
+                setSelectedEdgeId(routeHit.edgeId);
+                setSelectedEdgeIds([routeHit.edgeId]);
+                setConnectSource(null);
+                resetConnectPreviewState();
+                setRewiring(null);
+                clearRecordSelection();
+                setContextMenu({
+                  x: event.clientX,
+                  y: event.clientY,
+                  canvasPoint: pointer,
+                  edgeId: routeHit.edgeId,
+                  routePoints: routeHit.routePoints.map((point) => ({ ...point }))
+                });
+                return;
+              }
+              setContextMenu({ x: event.clientX, y: event.clientY, canvasPoint: pointer });
             }}
           >
             <defs>
@@ -6746,14 +6866,14 @@ export function App() {
                   <path
                     d={route.path}
                     className="connection-hitline"
-                    onContextMenu={(event) => openEdgeContextMenu(event, edge.id)}
+                    onContextMenu={(event) => openEdgeContextMenu(event, edge.id, route.points)}
                     onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, route.points)}
                     onPointerDown={(event) => handleEdgePathPointerDown(event, edge.id, route.points)}
                   />
                   <path
                     d={route.path}
                     className="connection-line"
-                    onContextMenu={(event) => openEdgeContextMenu(event, edge.id)}
+                    onContextMenu={(event) => openEdgeContextMenu(event, edge.id, route.points)}
                     onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, route.points)}
                     onPointerDown={(event) => handleEdgePathPointerDown(event, edge.id, route.points)}
                   />
@@ -7099,14 +7219,14 @@ export function App() {
                   <path
                     d={displayPath}
                     className="connection-hitline"
-                    onContextMenu={(event) => openEdgeContextMenu(event, edge.id)}
+                    onContextMenu={(event) => openEdgeContextMenu(event, edge.id, routePoints)}
                     onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, routePoints)}
                     onPointerDown={(event) => handleEdgePathPointerDown(event, edge.id, routePoints)}
                   />
                   <path
                     d={displayPath}
                     className="connection-line"
-                    onContextMenu={(event) => openEdgeContextMenu(event, edge.id)}
+                    onContextMenu={(event) => openEdgeContextMenu(event, edge.id, routePoints)}
                     onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, routePoints)}
                     onPointerDown={(event) => handleEdgePathPointerDown(event, edge.id, routePoints)}
                   />
@@ -7124,12 +7244,7 @@ export function App() {
                         className={`manual-segment-handle ${orientation}`}
                         onPointerDown={(event) => startManualSegmentDrag(event, edge.id, segmentIndex, orientation, routePoints)}
                         onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, routePoints)}
-                        onContextMenu={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          const removeIndex = segmentIndex > 0 ? segmentIndex : segmentIndex + 1;
-                          deleteManualBendPoint(edge.id, removeIndex, routePoints);
-                        }}
+                        onContextMenu={(event) => openEdgeContextMenu(event, edge.id, routePoints)}
                       />
                     );
                   })}
@@ -7808,6 +7923,10 @@ export function App() {
           <button onClick={() => runContextMenuAction(tidySelectedEdgeRoute)} disabled={!selectedEdgeId}>
             <Route size={14} />
             整理连接线
+          </button>
+          <button onClick={() => runContextMenuAction(addManualBendFromContextMenu)} disabled={!contextMenu.edgeId}>
+            <Pencil size={14} />
+            添加拐点
           </button>
           <button onClick={() => runContextMenuAction(deleteSelection)} disabled={selectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0}>
             <Trash2 size={14} />

@@ -53,6 +53,7 @@ import {
   getDeviceStrokeWidth,
   getConnectionStrokeColor,
   getElementFocusPoint,
+  isRepeatedEdgePointerClick,
   getContainerAssociationRelationKey,
   getContainerRelationKey,
   getEExportWarnings,
@@ -1207,6 +1208,15 @@ describe("power system model", () => {
         expect(route[index - 1].x === route[index].x || route[index - 1].y === route[index].y).toBe(true);
       }
     }
+  });
+
+  test("recognizes repeated connection-line pointer clicks across rerendered path elements", () => {
+    const firstClick = { edgeId: "edge-1", clientX: 120, clientY: 80, at: 1000 };
+
+    expect(isRepeatedEdgePointerClick(firstClick, { edgeId: "edge-1", clientX: 124, clientY: 82, at: 1300 })).toBe(true);
+    expect(isRepeatedEdgePointerClick(firstClick, { edgeId: "edge-2", clientX: 124, clientY: 82, at: 1300 })).toBe(false);
+    expect(isRepeatedEdgePointerClick(firstClick, { edgeId: "edge-1", clientX: 150, clientY: 82, at: 1300 })).toBe(false);
+    expect(isRepeatedEdgePointerClick(firstClick, { edgeId: "edge-1", clientX: 124, clientY: 82, at: 1600 })).toBe(false);
   });
 
   test("inserts a visible bend on short segments away from adjacent turns", () => {

@@ -5006,6 +5006,28 @@ export function pointsToOrthogonalPath(points: Point[]): string {
   return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
 }
 
+export type EdgePointerClick = {
+  edgeId: string;
+  clientX: number;
+  clientY: number;
+  at: number;
+};
+
+export function isRepeatedEdgePointerClick(
+  previous: EdgePointerClick | null | undefined,
+  next: EdgePointerClick,
+  maxIntervalMs = 450,
+  maxDistance = 8
+): boolean {
+  return Boolean(
+    previous &&
+    previous.edgeId === next.edgeId &&
+    next.at - previous.at >= 0 &&
+    next.at - previous.at <= maxIntervalMs &&
+    Math.hypot(next.clientX - previous.clientX, next.clientY - previous.clientY) <= maxDistance
+  );
+}
+
 export function moveOrthogonalRouteSegment(
   routePoints: Point[],
   segmentIndex: number,
