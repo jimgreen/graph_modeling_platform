@@ -90,6 +90,7 @@ import {
   isBusNode,
   isContainerTerminalAssociationDependent,
   isDoubleContainerTerminalAssociation,
+  isBlockingTopologyValidationError,
   isGeneratorNode,
   isRepeatedEdgePointerClick,
   isStaticNode,
@@ -500,6 +501,8 @@ const PARAM_LABELS: Record<string, string> = {
   targetEquivalentResistance: "末端等值电阻",
   sourceControlType: "首端控制类型",
   targetControlType: "末端控制类型",
+  i_control_type: "首端控制类型",
+  j_control_type: "末端控制类型",
   acControlType: "AC端控制类型",
   dcControlType: "DC端控制类型",
   closedStatus: "闭合状态",
@@ -578,6 +581,8 @@ const PARAM_OPTIONS: Record<string, string[]> = {
   control_type: ["PV", "PQ", "PH", "P", "V", "I", "Q", "Z", "DCV", "ACV", "ACP", "PQQ"],
   sourceControlType: ["定P", "定V", "定I", "定PQ", "定PV", "定PH", "不定"],
   targetControlType: ["定P", "定V", "定I", "定PQ", "定PV", "定PH", "不定"],
+  i_control_type: ["CTRL_P", "CTRL_V", "CTRL_I", "SLACK"],
+  j_control_type: ["CTRL_P", "CTRL_V", "CTRL_I", "SLACK"],
   acControlType: ["定PQ", "定PV", "定PH", "不定"],
   dcControlType: ["定P", "定V", "定I", "不定"],
   closedStatus: ["闭合", "打开"],
@@ -5152,32 +5157,35 @@ export function App() {
 
   const runTopologyCalculation = () => {
     const errors = validateTopology(nodes, edges, { includeVoltageSetpointDeviations: false });
+    const blockingErrors = errors.filter(isBlockingTopologyValidationError);
+    const nonBlockingWarnings = errors.filter((error) => !isBlockingTopologyValidationError(error));
     setTopologyErrors(errors);
-    if (errors.length === 0) {
+    if (blockingErrors.length === 0) {
       pushUndoSnapshot();
       const calculatedNodes = calculateElectricalTopology(nodes, edges);
       const nextTopology = buildTopology(calculatedNodes, edges);
       const voltageSetpointWarnings = validateVoltageSetpointDeviations(calculatedNodes, edges);
+      const nextWarnings = [...nonBlockingWarnings, ...voltageSetpointWarnings];
       skipNextTopologyStaleRef.current = true;
       setNodes(calculatedNodes);
       setTopology(nextTopology);
-      setTopologyErrors(voltageSetpointWarnings);
-      if (voltageSetpointWarnings.length === 0) {
+      setTopologyErrors(nextWarnings);
+      if (nextWarnings.length === 0) {
         setTopologyStatus({ state: "success", message: `成功，${nextTopology.connectedComponents.length} 个拓扑岛` });
         writeOperationLog(`图上拓扑成功，${nextTopology.connectedComponents.length} 个拓扑岛`);
         window.alert(topologyCalculationMessage(0));
       } else {
-        setTopologyStatus({ state: "failed", message: `完成，${voltageSetpointWarnings.length} 条告警` });
-        writeOperationLog(`图上拓扑完成，${voltageSetpointWarnings.length} 条电压设定值告警`);
-        locateTopologyError(voltageSetpointWarnings[0]);
-        window.alert(topologyCalculationMessage(voltageSetpointWarnings.length));
+        setTopologyStatus({ state: "failed", message: `完成，${nextWarnings.length} 条告警` });
+        writeOperationLog(`图上拓扑完成，${nextWarnings.length} 条告警`);
+        locateTopologyError(nextWarnings[0]);
+        window.alert(topologyCalculationMessage(nextWarnings.length));
       }
     } else {
       setTopology(EMPTY_TOPOLOGY);
-      setTopologyStatus({ state: "failed", message: `失败，${errors.length} 条告警` });
-      writeOperationLog(`图上拓扑失败，${errors.length} 条告警`);
-      locateTopologyError(errors[0]);
-      window.alert(topologyCalculationMessage(errors.length));
+      setTopologyStatus({ state: "failed", message: `失败，${blockingErrors.length} 条阻断错误` });
+      writeOperationLog(`图上拓扑失败，${blockingErrors.length} 条阻断错误`);
+      locateTopologyError(blockingErrors[0]);
+      window.alert(topologyCalculationMessage(blockingErrors.length));
     }
   };
 

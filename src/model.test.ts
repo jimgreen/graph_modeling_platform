@@ -57,6 +57,7 @@ import {
   getDeviceStrokeWidth,
   getConnectionStrokeColor,
   getElementFocusPoint,
+  isBlockingTopologyValidationError,
   isRepeatedEdgePointerClick,
   getContainerAssociationRelationKey,
   getContainerRelationKey,
@@ -758,8 +759,9 @@ describe("power system model", () => {
     expect(dcdc.terminals[1].nodeNumber).toMatch(/^N\d+$/);
     expect(dcdc.params.sourceEquivalentResistance).toBe("0.0");
     expect(dcdc.params.targetEquivalentResistance).toBe("0.0");
-    expect(dcdc.params.sourceControlType).toBe("定P");
-    expect(dcdc.params.targetControlType).toBe("不定");
+    expect(dcdc.params.i_control_type).toBe("CTRL_P");
+    expect(dcdc.params.j_control_type).toBe("SLACK");
+    expect(dcdc.params.control_type).toBeUndefined();
 
     const acdc = createDefaultNode("acdc-converter", { x: 700, y: 100 });
     expect(acdc.terminals.map((terminal) => terminal.type)).toEqual(["ac", "dc"]);
@@ -2795,7 +2797,9 @@ describe("power system model", () => {
       i_node: "integer",
       j_node: "integer",
       r1: "float",
-      r2: "float"
+      r2: "float",
+      i_control_type: "enum",
+      j_control_type: "enum"
     });
   });
 
@@ -2994,6 +2998,33 @@ describe("power system model", () => {
     const normalized = normalizeNodeTerminalsByTemplate(legacyConverter);
     expect(normalized.terminals.map((terminal) => terminal.type)).toEqual(["ac", "dc"]);
     expect(normalized.terminals.map((terminal) => terminal.vbase)).toEqual(["10 kV", "750 V"]);
+  });
+
+  test("exports DCDC converter endpoint control types with supported values", () => {
+    const defaultConverter = createDefaultNode("dcdc-converter", { x: 100, y: 100 });
+    const legacyConverter = createDefaultNode("dcdc-converter", { x: 240, y: 100 });
+    const invalidConverter = createDefaultNode("dcdc-converter", { x: 380, y: 100 });
+    defaultConverter.params.i_control_type = "CTRL_V";
+    defaultConverter.params.j_control_type = "CTRL_I";
+    legacyConverter.params.i_control_type = "";
+    legacyConverter.params.j_control_type = "";
+    legacyConverter.params.sourceControlType = "定P";
+    legacyConverter.params.targetControlType = "不定";
+    invalidConverter.params.i_control_type = "BAD";
+    invalidConverter.params.j_control_type = "V";
+
+    const payload = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "DCDC控制类型测试",
+      nodes: [defaultConverter, legacyConverter, invalidConverter],
+      edges: []
+    }));
+
+    expect(payload.DCDCConverter.columns).toContain("i_control_type");
+    expect(payload.DCDCConverter.columns).toContain("j_control_type");
+    expect(payload.DCDCConverter.columns).not.toContain("control_type");
+    expect(payload.DCDCConverter.rows.map((row) => row.i_control_type)).toEqual(["CTRL_V", "CTRL_P", "SLACK"]);
+    expect(payload.DCDCConverter.rows.map((row) => row.j_control_type)).toEqual(["CTRL_I", "SLACK", "CTRL_V"]);
   });
 
   test("exports DCAC converter control_type with only supported values", () => {
@@ -3227,8 +3258,8 @@ describe("power system model", () => {
   test("fills zero converter voltage setpoints from the related topology node rated voltage", () => {
     const dcdc = createDefaultNode("dcdc-converter", { x: 100, y: 100 });
     dcdc.params.v_set = "0.0";
-    dcdc.params.sourceControlType = "定P";
-    dcdc.params.targetControlType = "定V";
+    dcdc.params.i_control_type = "CTRL_P";
+    dcdc.params.j_control_type = "CTRL_V";
     dcdc.terminals[0].vbase = "1500 V";
     dcdc.terminals[1].vbase = "750 V";
     const acdc = createDefaultNode("acdc-converter", { x: 260, y: 100 });
@@ -3409,6 +3440,23 @@ describe("power system model", () => {
     expect(errors.some((error) => error.type === "voltage-mismatch" && error.edgeId === "e-terminal-vbase")).toBe(true);
   });
 
+  test("ignores zero terminal voltage bases during validation and fills them after topology", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 240, y: 100 });
+    source.terminals[0].vbase = "10 kV";
+    load.terminals[0].vbase = "0";
+
+    const edges: Edge[] = [
+      { id: "zero-vbase", sourceId: source.id, targetId: load.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
+    ];
+    const errors = validateTopology([source, load], edges, { includeVoltageSetpointDeviations: false });
+    const calculated = calculateElectricalTopology([source, load], edges);
+    const byId = new Map(calculated.map((node) => [node.id, node]));
+
+    expect(errors.some((error) => error.type === "voltage-mismatch")).toBe(false);
+    expect(byId.get(load.id)?.terminals[0].vbase).toBe("10");
+  });
+
   test("warns when voltage setpoints deviate more than 30 percent from rated topology voltage", () => {
     const acBus10 = createDefaultNode("ac-bus", { x: 160, y: 100 });
     const acBus35 = createDefaultNode("ac-bus", { x: 160, y: 260 });
@@ -3538,6 +3586,15 @@ describe("power system model", () => {
     ]));
     expect(errors.some((error) => error.type === "duplicate-device-idx" && error.relatedNodeIds.includes(dcLoad.id))).toBe(false);
     expect(errors.some((error) => error.type === "duplicate-device-name" && error.relatedNodeIds.includes(dcLoad.id))).toBe(false);
+  });
+
+  test("treats duplicate identity and voltage setpoint deviations as non-blocking topology warnings", () => {
+    expect(isBlockingTopologyValidationError({ type: "floating-terminal" })).toBe(true);
+    expect(isBlockingTopologyValidationError({ type: "terminal-type-mismatch" })).toBe(true);
+    expect(isBlockingTopologyValidationError({ type: "voltage-mismatch" })).toBe(true);
+    expect(isBlockingTopologyValidationError({ type: "duplicate-device-idx" })).toBe(false);
+    expect(isBlockingTopologyValidationError({ type: "duplicate-device-name" })).toBe(false);
+    expect(isBlockingTopologyValidationError({ type: "voltage-setpoint-deviation" })).toBe(false);
   });
 
   test("validates duplicate idx and names between container-associated devices and ordinary devices", () => {

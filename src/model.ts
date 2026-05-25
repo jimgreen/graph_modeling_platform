@@ -334,7 +334,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   DCBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   ACTransformer: ["idx", "name", "i_node", "j_node", "r", "x", "gt", "bt", "tap", "shift", "run_stat"],
   ThreePowerTransformer: ["idx", "name", "run_stat", "idx_xf_t1", "idx_xf_t2", "idx_xf_t3"],
-  DCDCConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_set", "v_set", "run_stat"],
+  DCDCConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_set", "v_set", "run_stat"],
   DCACConverter: ["idx", "name", "ac_node", "dc_node", "r1", "r2", "control_type", "p_ac_set", "q_ac_set", "v_ac_set", "v_dc_set", "run_stat"],
   ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"],
   HydroSource: ["idx", "name", "node", "run_stat"],
@@ -806,6 +806,20 @@ function normalizeControlTypeForE(value?: string) {
 
 export const DCAC_CONVERTER_CONTROL_TYPES = ["DCV", "ACV", "ACP"] as const;
 export const ACAC_CONVERTER_CONTROL_TYPES = ["PQQ", "PVQ", "PQV", "PVV"] as const;
+export const DCDC_CONVERTER_CONTROL_TYPES = ["CTRL_P", "CTRL_V", "CTRL_I", "SLACK"] as const;
+
+function normalizeDcdcEndpointControlTypeForE(value?: string) {
+  if (!value) return "SLACK";
+  const normalized = normalizeControlTypeForE(value);
+  const map: Record<string, string> = {
+    P: "CTRL_P",
+    V: "CTRL_V",
+    I: "CTRL_I",
+    "0": "SLACK"
+  };
+  const mapped = map[normalized] ?? normalized;
+  return (DCDC_CONVERTER_CONTROL_TYPES as readonly string[]).includes(mapped) ? mapped : "SLACK";
+}
 
 function normalizeDcacConverterControlTypeForE(params: Record<string, string>) {
   const explicit = normalizeControlTypeForE(params.control_type);
@@ -1016,6 +1030,12 @@ export function getEParamValue(
         node.params.sourceControlType ??
         ""
     );
+  }
+  if (key === "i_control_type") {
+    return normalizeDcdcEndpointControlTypeForE(node.params.i_control_type || node.params.sourceControlType || node.params.control_type);
+  }
+  if (key === "j_control_type") {
+    return normalizeDcdcEndpointControlTypeForE(node.params.j_control_type || node.params.targetControlType);
   }
   if (key === "vbase") {
     return node.params.vbase ?? node.terminals[0]?.vbase ?? "";
@@ -1361,6 +1381,7 @@ function defaultEColumnValue(column: string, rowIndex: number) {
   if (column === "run_stat") return "1";
   if (column === "status") return "1";
   if (column === "control_type") return "0";
+  if (column === "i_control_type" || column === "j_control_type") return "SLACK";
   if (column === "tap" || column === "alpha" || column === "voltage" || column === "vbase") return "1.0";
   return "0";
 }
@@ -1386,6 +1407,9 @@ function formatEColumnValue(section: string, column: string, value: string | und
   }
   if (column === "control_type") {
     return normalizeEFileToken(normalizeControlTypeForE(text));
+  }
+  if (column === "i_control_type" || column === "j_control_type") {
+    return normalizeEFileToken(normalizeDcdcEndpointControlTypeForE(text));
   }
   if (column === "run_stat") {
     return normalizeRunStatForE(text) || fallback;
@@ -1532,6 +1556,10 @@ export type TopologyValidationError = {
   edgeId?: string;
   relatedNodeIds: string[];
 };
+
+export function isBlockingTopologyValidationError(error: Pick<TopologyValidationError, "type">): boolean {
+  return error.type === "floating-terminal" || error.type === "terminal-type-mismatch" || error.type === "voltage-mismatch";
+}
 
 const readonlyIntegerDefinition = (cnName: string, enName: string, typicalValue = ""): DeviceParameterDefinition => ({
   cnName,
@@ -2953,6 +2981,8 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   q_set: "float",
   v_set: "float",
   i_set: "float",
+  i_control_type: "enum",
+  j_control_type: "enum",
   p_ac_set: "float",
   q_ac_set: "float",
   v_ac_set: "float",
@@ -3276,8 +3306,8 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       targetVbase: "750 V",
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
-      sourceControlType: "定P",
-      targetControlType: "不定"
+      i_control_type: "CTRL_P",
+      j_control_type: "SLACK"
     }));
   }
   if (template.kind === "acdc-converter") {
@@ -4095,13 +4125,15 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
   };
   for (const type of Object.keys(voltageCandidatesByTypeAndRoot) as TerminalType[]) {
     for (const [root, candidates] of voltageCandidatesByTypeAndRoot[type]) {
-      const voltage = candidates
-        .slice()
-        .sort((first, second) => topologyRepresentativeScore(first.node) - topologyRepresentativeScore(second.node))
-        .map(({ node, terminal }) => terminalVoltageDisplay(node, terminal))
-        .find((value) => value.trim() !== "" && !isZeroNumericText(value));
-      if (voltage) {
-        voltageByTypeAndRoot[type].set(root, voltage);
+      const nonZeroVoltages = new Set(
+        candidates
+          .slice()
+          .sort((first, second) => topologyRepresentativeScore(first.node) - topologyRepresentativeScore(second.node))
+          .map(({ node, terminal }) => terminalVoltageDisplay(node, terminal))
+          .filter((value) => value.trim() !== "" && !isZeroNumericText(value))
+      );
+      if (nonZeroVoltages.size === 1) {
+        voltageByTypeAndRoot[type].set(root, Array.from(nonZeroVoltages)[0]);
       }
     }
   }
@@ -4130,11 +4162,11 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
       assignIfZero("v_set", terminals.find((terminal) => terminal.type === type) ?? terminals[0]);
     }
     if (section === "DCDCConverter") {
-      const sourceControl = normalizeControlTypeForE(params.sourceControlType);
-      const targetControl = normalizeControlTypeForE(params.targetControlType);
-      const controlledTerminal = targetControl === "V"
+      const sourceControl = normalizeDcdcEndpointControlTypeForE(params.i_control_type || params.sourceControlType || params.control_type);
+      const targetControl = normalizeDcdcEndpointControlTypeForE(params.j_control_type || params.targetControlType);
+      const controlledTerminal = targetControl === "CTRL_V"
         ? terminals[1]
-        : sourceControl === "V"
+        : sourceControl === "CTRL_V"
           ? terminals[0]
           : terminals[0];
       assignIfZero("v_set", controlledTerminal);
@@ -4169,7 +4201,13 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
   const numberedNodes = nodes.map((node) => {
     const terminals = node.terminals.map((terminal) => {
       const key = terminalKey(node.id, terminal.id);
-      return { ...terminal, nodeNumber: getTopologyNumber(key, terminal.type) };
+      const voltage = voltageForTerminal(node.id, terminal);
+      const shouldFillTerminalVbase = voltage && isZeroNumericText(terminal.vbase ?? node.params.vbase);
+      return {
+        ...terminal,
+        vbase: shouldFillTerminalVbase ? voltage : terminal.vbase,
+        nodeNumber: getTopologyNumber(key, terminal.type)
+      };
     });
     const acTopologyNode = Number(terminals.find((terminal) => terminal.type === "ac")?.nodeNumber ?? 0);
     const dcTopologyNode = Number(terminals.find((terminal) => terminal.type === "dc")?.nodeNumber ?? 0);
@@ -4287,7 +4325,7 @@ export function validateVoltageSetpointDeviations(nodes: ModelNode[], edges: Edg
       const root = find(terminalKey(node.id, terminal.id));
       const group = voltageGroups.get(root) ?? { voltages: new Map<string, string>() };
       const voltage = getTerminalVoltageLevel(node, terminal.id);
-      if (voltage) {
+      if (voltage && !isZeroNumericText(voltage)) {
         group.voltages.set(voltage, terminal.vbase ?? node.params.vbase ?? voltage);
       }
       voltageGroups.set(root, group);
@@ -4350,9 +4388,9 @@ export function validateVoltageSetpointDeviations(nodes: ModelNode[], edges: Edg
       addNodeVoltageSetpointDeviation("v_set", node.terminals.find((terminal) => terminal.type === expectedType) ?? node.terminals[0]);
     }
     if (section === "DCDCConverter") {
-      const sourceControl = normalizeControlTypeForE(node.params.sourceControlType);
-      const targetControl = normalizeControlTypeForE(node.params.targetControlType);
-      addNodeVoltageSetpointDeviation("v_set", targetControl === "V" ? node.terminals[1] : sourceControl === "V" ? node.terminals[0] : node.terminals[0]);
+      const sourceControl = normalizeDcdcEndpointControlTypeForE(node.params.i_control_type || node.params.sourceControlType || node.params.control_type);
+      const targetControl = normalizeDcdcEndpointControlTypeForE(node.params.j_control_type || node.params.targetControlType);
+      addNodeVoltageSetpointDeviation("v_set", targetControl === "CTRL_V" ? node.terminals[1] : sourceControl === "CTRL_V" ? node.terminals[0] : node.terminals[0]);
     }
     if (section === "DCACConverter") {
       addNodeVoltageSetpointDeviation("v_ac_set", node.terminals.find((terminal) => terminal.type === "ac") ?? node.terminals[0]);
@@ -4571,7 +4609,13 @@ export function validateTopology(
 
     const sourceVoltage = getTerminalVoltageLevel(source, sourceTerminal.id);
     const targetVoltage = getTerminalVoltageLevel(target, targetTerminal.id);
-    if (sourceVoltage && targetVoltage && sourceVoltage !== targetVoltage) {
+    if (
+      sourceVoltage &&
+      targetVoltage &&
+      !isZeroNumericText(sourceVoltage) &&
+      !isZeroNumericText(targetVoltage) &&
+      sourceVoltage !== targetVoltage
+    ) {
       directVoltageMismatchEdges.push({ source, sourceTerminal, target, targetTerminal });
       errors.push({
         id: `voltage-mismatch:${edge.id}`,
@@ -4600,7 +4644,7 @@ export function validateTopology(
       const group = voltageGroups.get(root) ?? { relatedNodeIds: new Set<string>(), voltages: new Map<string, string>() };
       group.relatedNodeIds.add(node.id);
       const voltage = getTerminalVoltageLevel(node, terminal.id);
-      if (voltage) {
+      if (voltage && !isZeroNumericText(voltage)) {
         group.voltages.set(voltage, terminal.vbase ?? node.params.vbase ?? voltage);
       }
       voltageGroups.set(root, group);
