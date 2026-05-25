@@ -1,8 +1,12 @@
-import { ChangeEvent, DragEvent, Fragment, isValidElement, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, Fragment, isValidElement, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlignEndHorizontal,
+  AlignEndVertical,
   AlignHorizontalDistributeCenter,
   AlignCenterHorizontal,
   AlignCenterVertical,
+  AlignStartHorizontal,
+  AlignStartVertical,
   AlignVerticalDistributeCenter,
   Cable,
   Download,
@@ -40,6 +44,7 @@ import {
   buildTopology,
   calculateElectricalTopology,
   calculateModelContentSize,
+  clampEdgeGeometryToBounds,
   canConnectTerminals,
   clampNodePositionToBounds,
   clampPointToBounds,
@@ -64,6 +69,7 @@ import {
   getNodeScaleX,
   getNodeScaleY,
   getDeviceGlyphVariant,
+  getConnectionStrokeColor,
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
   getElementFocusPoint,
@@ -75,6 +81,7 @@ import {
   getEExportWarnings,
   getTemplateParameterDefinitions,
   getTerminalPoint,
+  normalizeDeviceIndexCounters,
   normalizeVoltageBaseInput,
   normalizeScaleValue,
   isBusNode,
@@ -99,6 +106,7 @@ import {
   type DeviceTemplate,
   type DeviceTemplateDefinitionOverride,
   type ElementTreeItem,
+  type AlignMode,
   type Edge,
   type ModelNode,
   type Point,
@@ -163,6 +171,9 @@ type ScaleHandleConfig = {
 type Marquee = { start: Point; current: Point } | null;
 type ContextMenuState = { x: number; y: number } | null;
 type ProjectMenuState = { x: number; y: number; schemeId?: string; projectId?: string } | null;
+type SidePanelResizeState = { side: SidePanelSide; startX: number; startWidth: number } | null;
+type StatusbarResizeState = { startY: number; startHeight: number } | null;
+type ValidationPanelResizeState = { startY: number; startHeight: number } | null;
 type RewiringState = { edgeId: string; endpoint: EdgeEndpoint; previewPoint: Point; pointerId?: number } | null;
 type TerminalPressState = {
   nodeId: string;
@@ -360,6 +371,16 @@ const PARAM_VALUE_TYPE_OPTIONS: Array<{ value: DeviceParameterValueType; label: 
 const PROJECT_PANEL_MIN_HEIGHT = 150;
 const PROJECT_PANEL_MAX_HEIGHT = 430;
 const PROJECT_PANEL_DEFAULT_HEIGHT = 260;
+const LEFT_PANEL_DEFAULT_WIDTH = 288;
+const RIGHT_PANEL_DEFAULT_WIDTH = 320;
+const SIDE_PANEL_MIN_WIDTH = 240;
+const SIDE_PANEL_MAX_WIDTH = 640;
+const STATUSBAR_DEFAULT_HEIGHT = 36;
+const STATUSBAR_MIN_HEIGHT = 32;
+const STATUSBAR_MAX_HEIGHT = 160;
+const VALIDATION_PANEL_DEFAULT_HEIGHT = 180;
+const VALIDATION_PANEL_MIN_HEIGHT = 96;
+const VALIDATION_PANEL_MAX_HEIGHT = 420;
 const SAMPLE_NODES: ModelNode[] = [
   createDefaultNode("ac-source", { x: 190, y: 210 }),
   createDefaultNode("ac-switch", { x: 360, y: 210 }),
@@ -370,7 +391,7 @@ const SAMPLE_NODES: ModelNode[] = [
 ].map((node, index) => ({
   ...node,
   id: `seed-${index + 1}`,
-  name: ["交流电源A", "进线开关", "10kV母线", "交流主变", "750V直流母线", "直流负荷"][index]
+  name: ["交流电源A", "进线开关", "10kV母线", "双绕组主变", "750V直流母线", "直流负荷"][index]
 }));
 
 const SAMPLE_EDGES: Edge[] = [
@@ -390,6 +411,10 @@ const CUSTOM_DEVICE_LIBRARY_STORAGE_KEY = "power-system-custom-device-library";
 const DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY = "power-system-device-definition-overrides";
 const LEFT_PANEL_MODE_STORAGE_KEY = "power-system-left-panel-mode";
 const RIGHT_PANEL_MODE_STORAGE_KEY = "power-system-right-panel-mode";
+const LEFT_PANEL_WIDTH_STORAGE_KEY = "power-system-left-panel-width";
+const RIGHT_PANEL_WIDTH_STORAGE_KEY = "power-system-right-panel-width";
+const STATUSBAR_HEIGHT_STORAGE_KEY = "power-system-statusbar-height";
+const VALIDATION_PANEL_HEIGHT_STORAGE_KEY = "power-system-validation-panel-height";
 const PARAM_LABELS: Record<string, string> = {
   name: "名称",
   schemeName: "所属方案",
@@ -983,6 +1008,19 @@ function readSidePanelMode(storageKey: string): SidePanelMode {
     return normalizeSidePanelMode(window.localStorage.getItem(storageKey));
   } catch {
     return "pinned";
+  }
+}
+
+function clampPanelDimension(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function readStoredPanelDimension(storageKey: string, fallback: number, min: number, max: number) {
+  try {
+    const value = Number(window.localStorage.getItem(storageKey));
+    return Number.isFinite(value) ? clampPanelDimension(value, min, max) : fallback;
+  } catch {
+    return fallback;
   }
 }
 
@@ -1867,8 +1905,14 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
   const imageAssets = readImageAssets();
   const backgroundColor = canvasSize.backgroundColor ?? DEFAULT_CANVAS_BACKGROUND;
   const backgroundImage = canvasSize.backgroundImage ?? "";
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const edgeById = new Map(edges.map((edge) => [edge.id, edge]));
   const edgeMarkup = routeEdgesForRendering(nodes, edges, canvasSize)
-    .map((route) => `<path d="${route.path}" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`)
+    .map((route) => {
+      const edge = edgeById.get(route.edgeId);
+      const stroke = edge ? getConnectionStrokeColor(edge, nodeById) : "#334155";
+      return `<path d="${route.path}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+    })
     .join("\n");
   const nodeMarkup = nodes
     .map((node) => {
@@ -1979,6 +2023,21 @@ export function App() {
   const [leftPanelTab, setLeftPanelTab] = useState<"projects" | "library">("projects");
   const [leftPanelMode, setLeftPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(LEFT_PANEL_MODE_STORAGE_KEY));
   const [rightPanelMode, setRightPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(RIGHT_PANEL_MODE_STORAGE_KEY));
+  const [leftPanelWidth, setLeftPanelWidth] = useState(() =>
+    readStoredPanelDimension(LEFT_PANEL_WIDTH_STORAGE_KEY, LEFT_PANEL_DEFAULT_WIDTH, SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH)
+  );
+  const [rightPanelWidth, setRightPanelWidth] = useState(() =>
+    readStoredPanelDimension(RIGHT_PANEL_WIDTH_STORAGE_KEY, RIGHT_PANEL_DEFAULT_WIDTH, SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH)
+  );
+  const [statusbarHeight, setStatusbarHeight] = useState(() =>
+    readStoredPanelDimension(STATUSBAR_HEIGHT_STORAGE_KEY, STATUSBAR_DEFAULT_HEIGHT, STATUSBAR_MIN_HEIGHT, STATUSBAR_MAX_HEIGHT)
+  );
+  const [validationPanelHeight, setValidationPanelHeight] = useState(() =>
+    readStoredPanelDimension(VALIDATION_PANEL_HEIGHT_STORAGE_KEY, VALIDATION_PANEL_DEFAULT_HEIGHT, VALIDATION_PANEL_MIN_HEIGHT, VALIDATION_PANEL_MAX_HEIGHT)
+  );
+  const [sidePanelResize, setSidePanelResize] = useState<SidePanelResizeState>(null);
+  const [statusbarResize, setStatusbarResize] = useState<StatusbarResizeState>(null);
+  const [validationPanelResize, setValidationPanelResize] = useState<ValidationPanelResizeState>(null);
   const [leftPanelAutoVisible, setLeftPanelAutoVisible] = useState(false);
   const [rightPanelAutoVisible, setRightPanelAutoVisible] = useState(false);
   const [containerParamViewId, setContainerParamViewId] = useState("container");
@@ -2030,6 +2089,10 @@ export function App() {
   );
   const activeSelectedEdgeSet = useMemo(() => new Set(activeSelectedEdgeIds), [activeSelectedEdgeIds]);
   const selectedEdge = edgeById.get(selectedEdgeId);
+  const connectionLineStyle = (edgeId: string) => {
+    const edge = edgeById.get(edgeId);
+    return edge ? ({ "--connection-color": getConnectionStrokeColor(edge, nodeById) } as CSSProperties) : undefined;
+  };
   const projects = useMemo(() => schemes.flatMap((scheme) => scheme.projects), [schemes]);
   const normalizedSchemesForPersistence = useMemo(() => normalizeSchemesForBackend(schemes), [schemes]);
   const normalizedSchemesPayload = useMemo(() => JSON.stringify(normalizedSchemesForPersistence), [normalizedSchemesForPersistence]);
@@ -2101,8 +2164,8 @@ export function App() {
   const deferredElementTreeNodes = useDeferredValue(nodes);
   const deferredElementTreeEdges = useDeferredValue(edges);
   const elementTree = useMemo(
-    () => (inspectorTab === "tree" ? buildElementTree(deferredElementTreeNodes, deferredElementTreeEdges) : []),
-    [deferredElementTreeEdges, deferredElementTreeNodes, inspectorTab]
+    () => (inspectorTab === "tree" ? buildElementTree(deferredElementTreeNodes, deferredElementTreeEdges, libraryTemplates) : []),
+    [deferredElementTreeEdges, deferredElementTreeNodes, inspectorTab, libraryTemplates]
   );
 
   useEffect(() => {
@@ -2159,6 +2222,14 @@ export function App() {
     const midX = Math.round((start.x + connectPreviewPoint.x) / 2);
     return `M ${start.x} ${start.y} L ${midX} ${start.y} L ${midX} ${connectPreviewPoint.y} L ${connectPreviewPoint.x} ${connectPreviewPoint.y}`;
   }, [connectPreviewPoint, connectSource, nodeById]);
+  const connectPreviewColor = useMemo(() => {
+    if (!connectSource) {
+      return "";
+    }
+    const sourceNode = nodeById.get(connectSource.nodeId);
+    const terminalType = sourceNode?.terminals.find((terminal) => terminal.id === connectSource.terminalId)?.type ?? sourceNode?.terminals[0]?.type;
+    return terminalType ? terminalColor(terminalType) : "";
+  }, [connectSource, nodeById]);
   const deferredRoutingNodes = useDeferredValue(nodes);
   const deferredRoutingEdges = useDeferredValue(edges);
   const requiresLiveRouting = Boolean(manualPathDrag);
@@ -2751,6 +2822,82 @@ export function App() {
   }, [projectPanelResize]);
 
   useEffect(() => {
+    if (!sidePanelResize) {
+      return;
+    }
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      const viewportMax = Math.max(SIDE_PANEL_MIN_WIDTH, Math.min(SIDE_PANEL_MAX_WIDTH, window.innerWidth - 96));
+      const deltaX = event.clientX - sidePanelResize.startX;
+      const nextWidth =
+        sidePanelResize.side === "left"
+          ? sidePanelResize.startWidth + deltaX
+          : sidePanelResize.startWidth - deltaX;
+      const clampedWidth = clampPanelDimension(nextWidth, SIDE_PANEL_MIN_WIDTH, viewportMax);
+      if (sidePanelResize.side === "left") {
+        setLeftPanelWidth(clampedWidth);
+      } else {
+        setRightPanelWidth(clampedWidth);
+      }
+    };
+    const handlePointerUp = () => {
+      setSidePanelResize(null);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [sidePanelResize]);
+
+  useEffect(() => {
+    if (!statusbarResize) {
+      return;
+    }
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      const deltaY = statusbarResize.startY - event.clientY;
+      setStatusbarHeight(clampPanelDimension(statusbarResize.startHeight + deltaY, STATUSBAR_MIN_HEIGHT, STATUSBAR_MAX_HEIGHT));
+    };
+    const handlePointerUp = () => {
+      setStatusbarResize(null);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [statusbarResize]);
+
+  useEffect(() => {
+    if (!validationPanelResize) {
+      return;
+    }
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      const deltaY = event.clientY - validationPanelResize.startY;
+      const viewportMax = Math.max(VALIDATION_PANEL_MIN_HEIGHT, Math.min(VALIDATION_PANEL_MAX_HEIGHT, window.innerHeight - 240));
+      setValidationPanelHeight(
+        clampPanelDimension(validationPanelResize.startHeight - deltaY, VALIDATION_PANEL_MIN_HEIGHT, viewportMax)
+      );
+    };
+    const handlePointerUp = () => {
+      setValidationPanelResize(null);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [validationPanelResize]);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const shortcutScope = resolveKeyboardShortcutScope({
@@ -2871,6 +3018,38 @@ export function App() {
     }
   }, [rightPanelMode]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LEFT_PANEL_WIDTH_STORAGE_KEY, String(leftPanelWidth));
+    } catch {
+      // Ignore storage failures; panel width still works for the active session.
+    }
+  }, [leftPanelWidth]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(RIGHT_PANEL_WIDTH_STORAGE_KEY, String(rightPanelWidth));
+    } catch {
+      // Ignore storage failures; panel width still works for the active session.
+    }
+  }, [rightPanelWidth]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STATUSBAR_HEIGHT_STORAGE_KEY, String(statusbarHeight));
+    } catch {
+      // Ignore storage failures; status bar height still works for the active session.
+    }
+  }, [statusbarHeight]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(VALIDATION_PANEL_HEIGHT_STORAGE_KEY, String(validationPanelHeight));
+    } catch {
+      // Ignore storage failures; validation panel height still works for the active session.
+    }
+  }, [validationPanelHeight]);
+
   const currentProject = (): ProjectFile => ({
     ...lockProjectEdgeTerminals({
       version: 1,
@@ -2969,7 +3148,7 @@ export function App() {
       return;
     }
     pushUndoSnapshot(false);
-    let nextDeviceIndexCounters = deviceIndexCounters;
+    let nextDeviceIndexCounters = normalizeDeviceIndexCounters(deviceIndexCounters, nodes);
     const pasted = cloned.nodes.map((node) => {
       const draftNode = { ...node, position: clampNodeToCanvas(node, node.position) };
       const result = assignPermanentDeviceIndex(draftNode, nextDeviceIndexCounters);
@@ -3153,15 +3332,16 @@ export function App() {
             return { ...nextEdgeWithSlide, manualPoints: preservedRoute.slice(1, -1).map((point) => ({ ...point })) };
           })()
         : nextEdgeWithSlide;
+      const boundedNextEdge = clampEdgeGeometryToBounds(nextEdge, canvasBounds);
       if (
-        sameOptionalPoint(nextEdge.sourcePoint, edge.sourcePoint) &&
-        sameOptionalPoint(nextEdge.targetPoint, edge.targetPoint) &&
-        sameOptionalPointList(nextEdge.manualPoints, edge.manualPoints)
+        sameOptionalPoint(boundedNextEdge.sourcePoint, edge.sourcePoint) &&
+        sameOptionalPoint(boundedNextEdge.targetPoint, edge.targetPoint) &&
+        sameOptionalPointList(boundedNextEdge.manualPoints, edge.manualPoints)
       ) {
         return edge;
       }
       changed = true;
-      return nextEdge;
+      return boundedNextEdge;
     });
     return changed ? nextEdges : currentEdges;
   };
@@ -3413,14 +3593,7 @@ export function App() {
       normalizeViewBoxToCanvas({ ...current, ...clampViewBoxDimensionsForZoom(current, { width, height }) }, { width, height })
     );
     setNodes((current) => current.map((node) => ({ ...node, position: clampNodePositionToBounds(node, { width, height }) })));
-    setEdges((current) =>
-      current.map((edge) => ({
-        ...edge,
-        sourcePoint: edge.sourcePoint ? clampPointToBounds(edge.sourcePoint, { width, height }) : undefined,
-        targetPoint: edge.targetPoint ? clampPointToBounds(edge.targetPoint, { width, height }) : undefined,
-        manualPoints: edge.manualPoints?.map((point) => clampPointToBounds(point, { width, height }))
-      }))
-    );
+    setEdges((current) => current.map((edge) => clampEdgeGeometryToBounds(edge, { width, height })));
   };
 
   const commitCanvasSizeDraft = (draft = canvasSizeDraft) => {
@@ -3428,7 +3601,13 @@ export function App() {
     const nextHeight = draft.height.trim() === "" ? canvasHeight : Number(draft.height);
     const requestedWidth = clampCanvasDimension(nextWidth, MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH, canvasWidth);
     const requestedHeight = clampCanvasDimension(nextHeight, MIN_CANVAS_HEIGHT, MAX_CANVAS_HEIGHT, canvasHeight);
-    const contentSize = calculateModelContentSize(nodes, edges, routedEdges);
+    const requestedRoutes = routeEdgesForRendering(nodes, edges, { width: requestedWidth, height: requestedHeight });
+    const currentContentSize = calculateModelContentSize(nodes, edges, routedEdges);
+    const requestedContentSize = calculateModelContentSize(nodes, edges, requestedRoutes);
+    const contentSize = {
+      width: Math.max(currentContentSize.width, requestedContentSize.width),
+      height: Math.max(currentContentSize.height, requestedContentSize.height)
+    };
     const requiredWidth = clampCanvasDimension(contentSize.width, MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH, requestedWidth);
     const requiredHeight = clampCanvasDimension(contentSize.height, MIN_CANVAS_HEIGHT, MAX_CANVAS_HEIGHT, requestedHeight);
     const width = Math.max(requestedWidth, requiredWidth);
@@ -3476,6 +3655,35 @@ export function App() {
     setNodes((current) =>
       current.map((node) =>
         node.id === selectedNodeId ? { ...node, params: { ...node.params, [key]: value } } : node
+      )
+    );
+  };
+
+  const updateElementTreeNodeIdentity = (nodeId: string, field: "idx" | "name", value: string) => {
+    pushUndoSnapshot();
+    setNodes((current) =>
+      current.map((node) => {
+        if (node.id !== nodeId) {
+          return node;
+        }
+        if (field === "name") {
+          return { ...node, name: value };
+        }
+        return { ...node, params: { ...node.params, idx: value } };
+      })
+    );
+  };
+
+  const updateElementTreeContainerChildParam = (nodeId: string, key: string, value: string) => {
+    if (!key) {
+      return;
+    }
+    pushUndoSnapshot();
+    setNodes((current) =>
+      current.map((node) =>
+        node.id === nodeId
+          ? { ...node, params: { ...node.params, [key]: value } }
+          : node
       )
     );
   };
@@ -3573,6 +3781,9 @@ export function App() {
   };
 
   const updateAutoPanelVisibility = (side: SidePanelSide, event: Parameters<typeof nextSidePanelAutoVisible>[3]) => {
+    if (sidePanelResize || validationPanelResize) {
+      return;
+    }
     if (side === "left") {
       setLeftPanelAutoVisible((current) => nextSidePanelAutoVisible("left", leftPanelMode, current, event));
     } else {
@@ -3585,12 +3796,46 @@ export function App() {
   };
 
   const hideAutoPanelsFromWorkspace = () => {
+    if (sidePanelResize || validationPanelResize) {
+      return;
+    }
     if (leftPanelMode === "auto") {
       setLeftPanelAutoVisible(false);
     }
     if (rightPanelMode === "auto") {
       setRightPanelAutoVisible(false);
     }
+  };
+
+  const startSidePanelResize = (event: PointerEvent<HTMLDivElement>, side: SidePanelSide) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setSidePanelResize({
+      side,
+      startX: event.clientX,
+      startWidth: side === "left" ? leftPanelWidth : rightPanelWidth
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const startStatusbarResize = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setStatusbarResize({
+      startY: event.clientY,
+      startHeight: statusbarHeight
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const startValidationPanelResize = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setValidationPanelResize({
+      startY: event.clientY,
+      startHeight: validationPanelHeight
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const renderSidePanelModeControls = (side: SidePanelSide) => {
@@ -4251,10 +4496,18 @@ export function App() {
     );
   };
 
-  const alignSelected = (direction: "horizontal" | "vertical") => {
+  const alignSelected = (direction: AlignMode) => {
     applySelectedNodeLayout(2, (currentNodes, currentSelectedNodeIds) => alignNodes(currentNodes, currentSelectedNodeIds, direction));
     if (selectedNodeIds.length >= 2) {
-      writeOperationLog(`${direction === "horizontal" ? "横向" : "纵向"}对齐 ${selectedNodeIds.length} 个图元`);
+      const labelByDirection: Record<AlignMode, string> = {
+        horizontal: "横向",
+        vertical: "纵向",
+        left: "左",
+        right: "右",
+        top: "上",
+        bottom: "下"
+      };
+      writeOperationLog(`${labelByDirection[direction]}对齐 ${selectedNodeIds.length} 个图元`);
     }
   };
 
@@ -4785,7 +5038,7 @@ export function App() {
     }));
   };
 
-  const focusElementTreeItem = (item: ElementTreeItem) => {
+  const focusElementTreeItem = (item: ElementTreeItem, openDeviceTab = false) => {
     if (item.kind === "node") {
       setSelectedNodeIds([item.id]);
       setSelectedEdgeId("");
@@ -4800,6 +5053,9 @@ export function App() {
     setRewiring(null);
     setContextMenu(null);
     clearRecordSelection();
+    if (openDeviceTab) {
+      setInspectorTab("device");
+    }
     const point = getElementFocusPoint(item, nodes, edges);
     if (point) {
       centerViewOnPoint(point);
@@ -5924,19 +6180,98 @@ export function App() {
                 <div className="element-tree-items" role="group">
                   {group.items.map((item) => {
                     const selected = item.kind === "node" ? selectedNodeIdSet.has(item.id) : activeSelectedEdgeSet.has(item.id);
+                    const selectTreeItem = () => {
+                      if (item.kind === "node") {
+                        setSelectedNodeIds([item.id]);
+                        setSelectedEdgeId("");
+                        setSelectedEdgeIds([]);
+                        clearRecordSelection();
+                      } else {
+                        setSelectedNodeIds([]);
+                        setSelectedEdgeId(item.id);
+                        setSelectedEdgeIds([item.id]);
+                      }
+                    };
                     return (
-                      <button
-                        type="button"
+                      <div
                         role="treeitem"
                         aria-level={2}
                         aria-selected={selected}
                         className={`element-tree-item ${selected ? "selected" : ""}`}
                         key={`${item.kind}:${item.id}`}
                         title="双击定位并选中图元"
-                        onDoubleClick={() => focusElementTreeItem(item)}
+                        tabIndex={0}
+                        onClick={selectTreeItem}
+                        onDoubleClick={() => focusElementTreeItem(item, true)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            focusElementTreeItem(item);
+                          }
+                        }}
                       >
-                        <span>{item.name}</span>
-                      </button>
+                        <div className="element-tree-item-main">
+                          {item.kind === "node" && item.editableDevice ? (
+                            <div className="element-tree-device-fields">
+                              <label>
+                                <span>idx</span>
+                                <input
+                                  value={item.idx ?? ""}
+                                  inputMode="numeric"
+                                  onClick={(event) => event.stopPropagation()}
+                                  onDoubleClick={(event) => event.stopPropagation()}
+                                  onKeyDown={(event) => event.stopPropagation()}
+                                  onChange={(event) => updateElementTreeNodeIdentity(item.id, "idx", event.target.value)}
+                                />
+                              </label>
+                              <label>
+                                <span>name</span>
+                                <input
+                                  value={item.name}
+                                  onClick={(event) => event.stopPropagation()}
+                                  onDoubleClick={(event) => event.stopPropagation()}
+                                  onKeyDown={(event) => event.stopPropagation()}
+                                  onChange={(event) => updateElementTreeNodeIdentity(item.id, "name", event.target.value)}
+                                />
+                              </label>
+                            </div>
+                          ) : (
+                            <span>{item.name}</span>
+                          )}
+                        </div>
+                        {item.children?.length ? (
+                          <div className="element-tree-child-list" role="group" aria-label={`${item.name}关联子设备`}>
+                            {item.children.map((child) => (
+                              <div className="element-tree-child-item" key={child.id}>
+                                <span className="element-tree-child-type" title={child.deviceType}>
+                                  {child.deviceType}
+                                </span>
+                                <label>
+                                  <span>idx</span>
+                                  <input
+                                    value={child.idx}
+                                    inputMode="numeric"
+                                    onClick={(event) => event.stopPropagation()}
+                                    onDoubleClick={(event) => event.stopPropagation()}
+                                    onKeyDown={(event) => event.stopPropagation()}
+                                    onChange={(event) => updateElementTreeContainerChildParam(item.id, child.relationKeys[0] ?? "", event.target.value)}
+                                  />
+                                </label>
+                                <label className="element-tree-child-name-field">
+                                  <span>name</span>
+                                  <input
+                                    value={child.name}
+                                    onClick={(event) => event.stopPropagation()}
+                                    onDoubleClick={(event) => event.stopPropagation()}
+                                    onKeyDown={(event) => event.stopPropagation()}
+                                    onChange={(event) => updateElementTreeContainerChildParam(item.id, child.nameKey, event.target.value)}
+                                  />
+                                </label>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
                     );
                   })}
                 </div>
@@ -5954,9 +6289,18 @@ export function App() {
     ? topologyErrors.slice(0, 5).map((error, index) => `${index + 1}. ${error.message}`).join("\n")
     : "当前没有拓扑告警。";
   const currentZoomPercent = viewBoxZoomPercent(viewBox, canvasBounds);
+  const appShellStyle = {
+    "--left-panel-width": `${leftPanelWidth}px`,
+    "--right-panel-width": `${rightPanelWidth}px`,
+    "--statusbar-height": `${statusbarHeight}px`,
+    "--validation-panel-height": `${validationPanelHeight}px`
+  } as CSSProperties;
 
   return (
-    <div className={`app-shell left-panel-${leftPanelMode} right-panel-${rightPanelMode}`}>
+    <div
+      className={`app-shell left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${validationPanelResize ? "validation-panel-resizing" : ""}`}
+      style={appShellStyle}
+    >
       {renderSidePanelEdgeTrigger("left")}
       {renderSidePanelEdgeTrigger("right")}
       <aside
@@ -5964,6 +6308,14 @@ export function App() {
         onPointerEnter={() => updateAutoPanelVisibility("left", "panel-enter")}
         onPointerLeave={() => updateAutoPanelVisibility("left", "panel-leave")}
       >
+        <div
+          className="side-panel-resize-handle right-edge"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="调整左侧栏宽度"
+          title="拖拽调整左侧栏宽度"
+          onPointerDown={(event) => startSidePanelResize(event, "left")}
+        />
         {renderSidePanelModeControls("left")}
         <div className="left-panel-tabs" role="tablist" aria-label="左侧资源库">
           <button className={leftPanelTab === "projects" ? "active" : ""} onClick={() => setLeftPanelTab("projects")} role="tab" aria-selected={leftPanelTab === "projects"}>
@@ -5991,6 +6343,19 @@ export function App() {
             <span>当前模型</span>
             <strong>{activeModelPathName}</strong>
           </div>
+          <button className="topbar-primary-button" onClick={runTopologyCalculation} title="图上拓扑">
+            <Grid2X2 size={16} />
+            图上拓扑
+          </button>
+          <button
+            className="topbar-primary-button"
+            onClick={() => saveCurrentProject()}
+            disabled={!saveRequired}
+            title={saveRequired ? "保存当前模型" : "当前模型没有新的修改"}
+          >
+            <Save size={16} />
+            保存
+          </button>
           <div className="action-cluster">
             <button onClick={() => alignSelected("horizontal")} disabled={selectedNodeCount < 2} title="横向对齐">
               <AlignCenterHorizontal size={16} />
@@ -6000,6 +6365,22 @@ export function App() {
               <AlignCenterVertical size={16} />
               纵向对齐
             </button>
+            <button onClick={() => alignSelected("left")} disabled={selectedNodeCount < 2} title="左对齐">
+              <AlignStartVertical size={16} />
+              左对齐
+            </button>
+            <button onClick={() => alignSelected("right")} disabled={selectedNodeCount < 2} title="右对齐">
+              <AlignEndVertical size={16} />
+              右对齐
+            </button>
+            <button onClick={() => alignSelected("top")} disabled={selectedNodeCount < 2} title="上对齐">
+              <AlignStartHorizontal size={16} />
+              上对齐
+            </button>
+            <button onClick={() => alignSelected("bottom")} disabled={selectedNodeCount < 2} title="下对齐">
+              <AlignEndHorizontal size={16} />
+              下对齐
+            </button>
             <button onClick={() => distributeSelected("horizontal")} disabled={selectedNodeCount < 3} title="横向平均">
               <AlignHorizontalDistributeCenter size={16} />
               横向平均
@@ -6007,14 +6388,6 @@ export function App() {
             <button onClick={() => distributeSelected("vertical")} disabled={selectedNodeCount < 3} title="纵向平均">
               <AlignVerticalDistributeCenter size={16} />
               纵向平均
-            </button>
-            <button onClick={() => saveCurrentProject()} disabled={!saveRequired} title={saveRequired ? "保存当前模型" : "当前模型没有新的修改"}>
-              <Save size={16} />
-              保存
-            </button>
-            <button onClick={runTopologyCalculation} title="图上拓扑">
-              <Grid2X2 size={16} />
-              图上拓扑
             </button>
             <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={chooseImage} />
             <input ref={customDeviceImageInputRef} type="file" accept="image/*" hidden onChange={chooseCustomDeviceBackground} />
@@ -6172,7 +6545,7 @@ export function App() {
               />
             )}
             {dragGhostEdgeRoutes.map((route) => (
-              <path key={`drag-ghost-edge-${route.edgeId}`} d={route.path} className="connection-line drag-ghost" />
+              <path key={`drag-ghost-edge-${route.edgeId}`} d={route.path} className="connection-line drag-ghost" style={connectionLineStyle(route.edgeId)} />
             ))}
             {dragging?.historyCaptured && dragging.nodeIds.map((nodeId) => {
               const node = nodeById.get(nodeId);
@@ -6200,10 +6573,10 @@ export function App() {
               );
             })}
             {dragPreviewEdgeRoutes.map((route) => (
-              <path key={`drag-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" />
+              <path key={`drag-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
             ))}
             {terminalPressPreviewEdgeRoutes.map((route) => (
-              <path key={`terminal-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" />
+              <path key={`terminal-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
             ))}
             {renderedRoutedEdges.map((route) => {
               const edge = edgeById.get(route.edgeId);
@@ -6238,7 +6611,7 @@ export function App() {
                   ? targetPoint
                   : undefined;
               return (
-                <g key={edge.id} className={`connection-group ${selected ? "selected" : ""}`}>
+                <g key={edge.id} className={`connection-group ${selected ? "selected" : ""}`} style={connectionLineStyle(edge.id)}>
                   <path
                     d={route.path}
                     className="connection-hitline"
@@ -6353,6 +6726,7 @@ export function App() {
                 key={`rewiring-preview-edge-${rewiringPreviewRoute.edgeId}`}
                 d={rewiringPreviewRoute.path}
                 className="connection-line drag-preview"
+                style={connectionLineStyle(rewiringPreviewRoute.edgeId)}
               />
             )}
             {nodes.map((node) => {
@@ -6572,6 +6946,7 @@ export function App() {
               <path
                 d={connectPreviewPath}
                 className="connection-preview-line"
+                style={connectPreviewColor ? ({ "--connection-color": connectPreviewColor } as CSSProperties) : undefined}
               />
             )}
             {selectedRoutedEdge && selectedEdge && (() => {
@@ -6589,7 +6964,7 @@ export function App() {
               const targetPoint = getEdgeEndpointPoint(edge, "target");
               const movableSegmentIndexes = new Set(getMovableRouteSegmentIndexes(routePoints));
               return (
-                <g className="connection-group selected topmost">
+                <g className="connection-group selected topmost" style={connectionLineStyle(edge.id)}>
                   <path
                     d={displayPath}
                     className="connection-hitline"
@@ -6694,6 +7069,14 @@ export function App() {
           </svg>
         </section>
         <footer className="bottom-statusbar" aria-label="运行状态">
+          <div
+            className="statusbar-resize-handle"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="调整提示信息栏高度"
+            title="拖拽调整提示信息栏高度"
+            onPointerDown={startStatusbarResize}
+          />
           <span className="status-pill">
             坐标 {mousePosition ? `X:${mousePosition.x} Y:${mousePosition.y}` : "X:- Y:-"}
           </span>
@@ -6725,19 +7108,15 @@ export function App() {
         onPointerEnter={() => updateAutoPanelVisibility("right", "panel-enter")}
         onPointerLeave={() => updateAutoPanelVisibility("right", "panel-leave")}
       >
+        <div
+          className="side-panel-resize-handle left-edge"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="调整右侧栏宽度"
+          title="拖拽调整右侧栏宽度"
+          onPointerDown={(event) => startSidePanelResize(event, "right")}
+        />
         <div className="inspector-title">
-          <div>
-            <h2>参数面板</h2>
-            <p>
-              {selectedNode
-                ? "修改后自动更新模型文件"
-                : selectedEdge
-                  ? "可删除联络线或拖拽端点重接"
-                  : currentModelRecord
-                    ? "查看当前模型信息"
-                    : "选择画布元件查看参数"}
-            </p>
-          </div>
           <div className="inspector-title-actions">
             {renderSidePanelModeControls("right")}
             <button onClick={deleteSelected} disabled={!selectedNode && !selectedEdge} title="删除选中对象">
@@ -7172,17 +7551,17 @@ export function App() {
                 <p>选择画布设备后，可切换查看图形和设备。</p>
               </div>
             )}
-            {selectedNode && (
+            {selectedNode && inspectorTab === "graph" && (
               <div className="topology-card">
-              <span>连接度</span>
-              <strong>{topology.nodes[selectedNode.id]?.degree ?? 0}</strong>
-              <small>
-                {(topology.nodes[selectedNode.id]?.neighbors ?? [])
-                  .map((id) => nodeById.get(id)?.name)
-                  .filter(Boolean)
-                  .join("、") || "暂无相邻元件"}
-              </small>
-            </div>
+                <span>连接度</span>
+                <strong>{topology.nodes[selectedNode.id]?.degree ?? 0}</strong>
+                <small>
+                  {(topology.nodes[selectedNode.id]?.neighbors ?? [])
+                    .map((id) => nodeById.get(id)?.name)
+                    .filter(Boolean)
+                    .join("、") || "暂无相邻元件"}
+                </small>
+              </div>
             )}
           </div>
         ) : selectedEdge ? (
@@ -7209,6 +7588,13 @@ export function App() {
         )}
         {topologyErrors.length > 0 && (
           <section className="validation-panel">
+            <div
+              className="validation-panel-resize-handle"
+              role="separator"
+              aria-orientation="horizontal"
+              title="拖拽调整拓扑告警栏高度"
+              onPointerDown={startValidationPanelResize}
+            />
             <div className="validation-panel-title">
               <h2>拓扑告警</h2>
               <span>{topologyErrors.length} 条</span>

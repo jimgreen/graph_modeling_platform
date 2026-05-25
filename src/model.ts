@@ -268,6 +268,20 @@ export type ElementTreeItem = {
   kind: "node" | "edge";
   id: string;
   name: string;
+  idx?: string;
+  editableDevice?: boolean;
+  children?: ElementTreeChildItem[];
+};
+
+export type ElementTreeChildItem = {
+  id: string;
+  label: string;
+  deviceType: string;
+  idx: string;
+  name: string;
+  nameKey: string;
+  relationKeys: string[];
+  terminalLabels: string;
 };
 
 export type ElementTreeGroup = {
@@ -461,8 +475,18 @@ function parseContainerRelationField(fieldName: string) {
     energy,
     role,
     terminalNumber: Number.parseInt(terminalNumber, 10),
-    doublePort: energy.endsWith("2")
+    doublePort: energy === "ac2" || energy === "dc2" || energy === "h22" || energy === "heat2"
   };
+}
+
+function containerRelationBaseEnergy(energy: string) {
+  if (energy === "h22") {
+    return "h2";
+  }
+  if (energy === "ac2" || energy === "dc2" || energy === "heat2") {
+    return energy.slice(0, -1);
+  }
+  return energy;
 }
 
 function containerRelationCounterKey(fieldName: string): string {
@@ -495,6 +519,67 @@ function containerRelationCounterKey(fieldName: string): string {
 
 function isContainerTransformerRelationKey(fieldName: string): boolean {
   return /^idx_xf_t\d+$/.test(fieldName) || /_transformer_t\d+$/.test(fieldName);
+}
+
+function containerRelationNameKey(fieldName: string): string {
+  return fieldName.replace(/^idx_/, "name_");
+}
+
+function containerRelationRoleDisplayLabel(fieldName: string): string {
+  const parsed = parseContainerRelationField(fieldName);
+  if (!parsed) {
+    return fieldName;
+  }
+  if (parsed.role === "transformer") {
+    return "双绕组主变首端";
+  }
+  const energy = containerRelationBaseEnergy(parsed.energy);
+  const doublePort = parsed.doublePort;
+  if (energy === "ac") {
+    return parsed.role === "load" ? "交流电负荷" : "交流电源";
+  }
+  if (energy === "dc") {
+    return parsed.role === "load" ? "直流电负荷" : "直流电源";
+  }
+  if (energy === "h2") {
+    return parsed.role === "load" ? "氢荷" : "氢源";
+  }
+  if (parsed.role === "load") {
+    return doublePort ? "双端热荷" : "单端热荷";
+  }
+  return doublePort ? "双端热源" : "单端热源";
+}
+
+function containerRelationDisplayLabel(
+  node: Pick<ModelNode, "name" | "terminals">,
+  fieldName: string
+): string {
+  const parsed = parseContainerRelationField(fieldName);
+  if (!parsed) {
+    return fieldName;
+  }
+  if (/^idx_xf_t\d+$/.test(fieldName)) {
+    const sideLabel = THREE_WINDING_TRANSFORMER_SIDES[parsed.terminalNumber - 1]?.label;
+    if (sideLabel) {
+      return sideLabel;
+    }
+  }
+  const terminalLabel = node.terminals[parsed.terminalNumber - 1]?.label ?? `端子${parsed.terminalNumber}`;
+  return `${terminalLabel}${containerRelationRoleDisplayLabel(fieldName)}`;
+}
+
+function containerAssociatedDeviceDisplayName(
+  node: Pick<ModelNode, "name" | "terminals">,
+  fieldName: string
+): string {
+  return `${node.name.trim() || "未命名容器"}_${containerRelationDisplayLabel(node, fieldName)}`;
+}
+
+function containerAssociatedDeviceName(
+  node: Pick<ModelNode, "name" | "terminals" | "params">,
+  fieldName: string
+): string {
+  return node.params[containerRelationNameKey(fieldName)]?.trim() || containerAssociatedDeviceDisplayName(node, fieldName);
 }
 
 function deriveContainerRelationCounters(params: Record<string, string>, counters: DeviceIndexCounters) {
@@ -620,6 +705,24 @@ export function assignPermanentDeviceIndex<T extends Pick<ModelNode, "kind" | "p
   const indexedNode = { ...node, params: { ...node.params, idx: String(idx) } };
   const relationResult = assignContainerRelationIndexes(indexedNode, { ...counters, [key]: idx });
   return { node: relationResult.node, counters: relationResult.counters };
+}
+
+export function resetDeviceIndexesForPaste<T extends Pick<ModelNode, "params">>(node: T): T {
+  let changed = false;
+  const nextParams = { ...node.params };
+  if (Object.prototype.hasOwnProperty.call(nextParams, "idx")) {
+    delete nextParams.idx;
+    changed = true;
+  }
+  if (isContainerParams(node.params)) {
+    for (const fieldName of Object.keys(nextParams)) {
+      if (parseContainerRelationField(fieldName) && nextParams[fieldName] !== "") {
+        nextParams[fieldName] = "";
+        changed = true;
+      }
+    }
+  }
+  return changed ? { ...node, params: nextParams } : node;
 }
 
 export function assignMissingDeviceIndexes<T extends Pick<ModelNode, "kind" | "params">>(
@@ -1074,7 +1177,7 @@ function buildContainerAssociatedDevices(nodes: ModelNode[]): EDeviceExport[] {
       const secondTerminal = entry.doublePort ? node.terminals[terminalIndex + 1] : undefined;
       const params: Record<string, string> = {
         idx,
-        name: `${node.name}_${entry.fieldName}`,
+        name: containerAssociatedDeviceName(node, entry.fieldName),
         run_stat: normalizeRunStatForE(node.params.run_stat)
       };
       if (secondTerminal) {
@@ -1299,6 +1402,7 @@ export type Topology = {
 };
 
 export type AlignDirection = "horizontal" | "vertical";
+export type AlignMode = AlignDirection | "left" | "right" | "top" | "bottom";
 
 export type RoutedEdge = {
   edgeId: string;
@@ -1306,7 +1410,12 @@ export type RoutedEdge = {
   path: string;
 };
 
-export type TopologyValidationErrorType = "floating-terminal" | "terminal-type-mismatch" | "voltage-mismatch";
+export type TopologyValidationErrorType =
+  | "floating-terminal"
+  | "terminal-type-mismatch"
+  | "voltage-mismatch"
+  | "duplicate-device-idx"
+  | "duplicate-device-name";
 
 export type TopologyValidationError = {
   id: string;
@@ -1887,7 +1996,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   },
   {
     kind: "ac-transformer",
-    label: "交流主变",
+    label: "双绕组主变",
     group: "交流设备",
     size: { width: 92, height: 70 },
     params: { ratedCapacity: "50 MVA", voltageRatio: "110/10 kV", impedance: "10.5%" },
@@ -2383,7 +2492,7 @@ export function buildContainerDeviceParameterViews(
     const label = `${sourceTerminal?.label ?? first.terminalLabel}${first.roleLabel}`;
     const rows = [
       viewRow("idx", "idx", relationIdx),
-      viewRow("name", "name", `${node.name}_${label}`),
+      viewRow("name", "name", first.relationKey ? containerAssociatedDeviceName(node, first.relationKey) : `${node.name}_${label}`),
       viewRow("device_model", "device_model", deviceType),
       viewRow("relation_fields", "relation_fields", relationKeys.join(", ")),
       viewRow("terminals", "terminals", terminals.map((terminal) => terminal.label).join(", ")),
@@ -2547,6 +2656,21 @@ export const TERMINAL_TYPE_COLORS: Record<TerminalType, string> = {
 
 export function terminalTypeColor(type?: TerminalType): string {
   return type ? TERMINAL_TYPE_COLORS[type] : TERMINAL_TYPE_COLORS.ac;
+}
+
+export const DEFAULT_CONNECTION_STROKE_COLOR = "#334155";
+
+function findTerminalType(node: Pick<ModelNode, "terminals"> | undefined, terminalId?: string): TerminalType | undefined {
+  return node?.terminals.find((terminal) => terminal.id === terminalId)?.type ?? node?.terminals[0]?.type;
+}
+
+export function getConnectionStrokeColor(
+  edge: Pick<Edge, "id" | "sourceId" | "targetId" | "sourceTerminalId" | "targetTerminalId">,
+  nodeById: ReadonlyMap<string, Pick<ModelNode, "terminals">>
+): string {
+  const sourceType = findTerminalType(nodeById.get(edge.sourceId), edge.sourceTerminalId);
+  const targetType = findTerminalType(nodeById.get(edge.targetId), edge.targetTerminalId);
+  return sourceType || targetType ? terminalTypeColor(sourceType ?? targetType) : DEFAULT_CONNECTION_STROKE_COLOR;
 }
 
 function isHydrogenVisualKind(kind: string): boolean {
@@ -3076,6 +3200,27 @@ export function clampPointToBounds(point: Point, bounds: CanvasBounds): Point {
   };
 }
 
+export function clampEdgeGeometryToBounds(edge: Edge, bounds: CanvasBounds): Edge {
+  let changed = false;
+  const clampOptionalPoint = (point?: Point) => {
+    if (!point) {
+      return undefined;
+    }
+    const clamped = clampPointToBounds(point, bounds);
+    if (clamped.x !== point.x || clamped.y !== point.y) {
+      changed = true;
+    }
+    return clamped;
+  };
+  const sourcePoint = clampOptionalPoint(edge.sourcePoint);
+  const targetPoint = clampOptionalPoint(edge.targetPoint);
+  const manualPoints = edge.manualPoints?.map(clampOptionalPoint).filter((point): point is Point => Boolean(point));
+  if (manualPoints && (!edge.manualPoints || manualPoints.some((point, index) => point.x !== edge.manualPoints?.[index]?.x || point.y !== edge.manualPoints?.[index]?.y))) {
+    changed = true;
+  }
+  return changed ? { ...edge, sourcePoint, targetPoint, manualPoints } : edge;
+}
+
 export function clampNodePositionToBounds(node: ModelNode, bounds: CanvasBounds, position = node.position): Point {
   const halfWidth = Math.min(bounds.width / 2, (node.size.width * Math.abs(getNodeScaleX(node))) / 2);
   const halfHeight = Math.min(bounds.height / 2, (node.size.height * Math.abs(getNodeScaleY(node))) / 2);
@@ -3317,8 +3462,8 @@ export function getEdgeEndpointPoint(node: ModelNode, endpointPoint?: Point, ter
   return endpointPoint && isBusNode(node) ? projectPointToBusCenterline(node, endpointPoint) : getTerminalPoint(node, terminalId);
 }
 
-function getElementTreeTypeLabel(node: ModelNode): string {
-  return DEVICE_LIBRARY.find((template) => template.kind === node.kind)?.label ?? node.kind;
+function getElementTreeTypeLabel(node: ModelNode, templates: readonly DeviceTemplate[] = DEVICE_LIBRARY): string {
+  return templates.find((template) => template.kind === node.kind)?.label ?? node.kind;
 }
 
 function edgeDisplayName(edge: Edge, nodeById: Map<string, ModelNode>): string {
@@ -3330,9 +3475,14 @@ function edgeDisplayName(edge: Edge, nodeById: Map<string, ModelNode>): string {
   return `联络线 ${edge.id}`;
 }
 
-export function buildElementTree(nodes: ModelNode[], edges: Edge[]): ElementTreeGroup[] {
+export function buildElementTree(
+  nodes: ModelNode[],
+  edges: Edge[],
+  templates: readonly DeviceTemplate[] = DEVICE_LIBRARY
+): ElementTreeGroup[] {
   const groups: ElementTreeGroup[] = [];
   const groupByKey = new Map<string, ElementTreeGroup>();
+  const templateByKind = new Map(templates.map((template) => [template.kind, template]));
   const appendItem = (typeKey: string, typeLabel: string, item: ElementTreeItem) => {
     let group = groupByKey.get(typeKey);
     if (!group) {
@@ -3344,11 +3494,30 @@ export function buildElementTree(nodes: ModelNode[], edges: Edge[]): ElementTree
   };
 
   for (const node of nodes) {
-    appendItem(`node:${node.kind}`, getElementTreeTypeLabel(node), {
+    const typeLabel = getElementTreeTypeLabel(node, templates);
+    const containerChildren = buildContainerDeviceParameterViews(node, templateByKind.get(node.kind))
+      .filter((view) => view.kind === "associated")
+      .map<ElementTreeChildItem>((view) => ({
+        id: `${node.id}:${view.id}`,
+        label: view.label,
+        deviceType: view.deviceType ?? "",
+        idx: view.rows.find((row) => row.key === "idx")?.value ?? "",
+        name: view.rows.find((row) => row.key === "name")?.value ?? "",
+        nameKey: view.relationKeys?.[0] ? containerRelationNameKey(view.relationKeys[0]) : "",
+        relationKeys: view.relationKeys ?? [],
+        terminalLabels: view.rows.find((row) => row.key === "terminals")?.value ?? ""
+      }));
+    const item: ElementTreeItem = {
       kind: "node",
       id: node.id,
-      name: node.name || getElementTreeTypeLabel(node)
-    });
+      name: node.name || typeLabel,
+      idx: node.params.idx ?? "",
+      editableDevice: !isStaticNode(node)
+    };
+    if (containerChildren.length > 0) {
+      item.children = containerChildren;
+    }
+    appendItem(`node:${node.kind}`, typeLabel, item);
   }
 
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
@@ -3459,10 +3628,52 @@ export function canConnectTerminals(
   return getTerminal(source, sourceTerminalId).type === getTerminal(target, targetTerminalId).type;
 }
 
-export function alignNodes(nodes: ModelNode[], selectedIds: string[], direction: AlignDirection): ModelNode[] {
+function nodeLayoutBounds(node: ModelNode) {
+  const halfWidth = (node.size.width * Math.abs(getNodeScaleX(node))) / 2;
+  const halfHeight = (node.size.height * Math.abs(getNodeScaleY(node))) / 2;
+  return {
+    left: node.position.x - halfWidth,
+    right: node.position.x + halfWidth,
+    top: node.position.y - halfHeight,
+    bottom: node.position.y + halfHeight,
+    halfWidth,
+    halfHeight
+  };
+}
+
+export function alignNodes(nodes: ModelNode[], selectedIds: string[], direction: AlignMode): ModelNode[] {
   const selected = nodes.filter((node) => selectedIds.includes(node.id));
   if (selected.length < 2) {
     return nodes;
+  }
+  if (direction === "left" || direction === "right" || direction === "top" || direction === "bottom") {
+    const selectedBounds = selected.map(nodeLayoutBounds);
+    const alignedCoordinate =
+      direction === "left"
+        ? Math.min(...selectedBounds.map((bounds) => bounds.left))
+        : direction === "right"
+          ? Math.max(...selectedBounds.map((bounds) => bounds.right))
+          : direction === "top"
+            ? Math.min(...selectedBounds.map((bounds) => bounds.top))
+            : Math.max(...selectedBounds.map((bounds) => bounds.bottom));
+
+    return nodes.map((node) => {
+      if (!selectedIds.includes(node.id)) {
+        return node;
+      }
+      const bounds = nodeLayoutBounds(node);
+      return {
+        ...node,
+        position:
+          direction === "left"
+            ? { ...node.position, x: Math.round(alignedCoordinate + bounds.halfWidth) }
+            : direction === "right"
+              ? { ...node.position, x: Math.round(alignedCoordinate - bounds.halfWidth) }
+              : direction === "top"
+                ? { ...node.position, y: Math.round(alignedCoordinate + bounds.halfHeight) }
+                : { ...node.position, y: Math.round(alignedCoordinate - bounds.halfHeight) }
+      };
+    });
   }
   const average =
     selected.reduce((sum, node) => sum + (direction === "horizontal" ? node.position.y : node.position.x), 0) /
@@ -3644,8 +3855,95 @@ export function getTerminalVoltageLevel(node: ModelNode, terminalId?: string): s
   return normalizeVoltage(getTerminal(node, terminalId)?.vbase ?? getNodeVoltageLevel(node));
 }
 
-export function validateTopology(nodes: ModelNode[], edges: Edge[]): TopologyValidationError[] {
+type DeviceIdentityValidationEntry = {
+  typeKey: string;
+  idx: string;
+  name: string;
+  node: ModelNode;
+};
+
+function identityValidationEntriesForNode(node: ModelNode): DeviceIdentityValidationEntry[] {
+  if (isStaticNode(node)) {
+    return [];
+  }
+  const entries: DeviceIdentityValidationEntry[] = [];
+  const primaryTypeKey = deviceIndexCounterKey(node);
+  const idx = parseDeviceIndex(node.params.idx);
+  if (primaryTypeKey) {
+    entries.push({
+      typeKey: primaryTypeKey,
+      idx: idx > 0 ? String(idx) : "",
+      name: node.name.trim(),
+      node
+    });
+  }
+  if (isContainerParams(node.params)) {
+    for (const [fieldName, value] of Object.entries(node.params)) {
+      const relationTypeKey = containerRelationCounterKey(fieldName);
+      const relationIdx = parseDeviceIndex(value);
+      if (!relationTypeKey || relationIdx <= 0) {
+        continue;
+      }
+      entries.push({
+        typeKey: relationTypeKey,
+        idx: String(relationIdx),
+        name: containerAssociatedDeviceName(node, fieldName),
+        node
+      });
+    }
+  }
+  return entries;
+}
+
+function duplicateDeviceIdentityErrors(nodes: ModelNode[]): TopologyValidationError[] {
   const errors: TopologyValidationError[] = [];
+  const entries = nodes.flatMap(identityValidationEntriesForNode);
+  const addDuplicateErrors = (
+    type: Extract<TopologyValidationErrorType, "duplicate-device-idx" | "duplicate-device-name">,
+    valueOf: (entry: DeviceIdentityValidationEntry) => string,
+    messageOf: (typeKey: string, value: string, entries: DeviceIdentityValidationEntry[]) => string
+  ) => {
+    const groups = new Map<string, DeviceIdentityValidationEntry[]>();
+    for (const entry of entries) {
+      const value = valueOf(entry).trim();
+      if (!value) {
+        continue;
+      }
+      const key = `${entry.typeKey}\u0000${value}`;
+      groups.set(key, [...(groups.get(key) ?? []), entry]);
+    }
+    for (const [key, group] of groups) {
+      const uniqueNodeIds = Array.from(new Set(group.map((entry) => entry.node.id)));
+      if (group.length <= 1) {
+        continue;
+      }
+      const [typeKey, value] = key.split("\u0000");
+      errors.push({
+        id: `${type}:${encodeURIComponent(typeKey)}:${encodeURIComponent(value)}`,
+        type,
+        nodeId: uniqueNodeIds[0],
+        relatedNodeIds: uniqueNodeIds,
+        message: messageOf(typeKey, value, group)
+      });
+    }
+  };
+
+  addDuplicateErrors(
+    "duplicate-device-idx",
+    (entry) => entry.idx,
+    (typeKey, value, group) =>
+      `图上拓扑失败：同类型设备 ${typeKey} 的 idx=${value} 重复（${group.map((entry) => entry.node.name).join("、")}）。`
+  );
+  addDuplicateErrors(
+    "duplicate-device-name",
+    (entry) => entry.name,
+    (typeKey, value) => `图上拓扑失败：同类型设备 ${typeKey} 的 name=${value} 重复。`
+  );
+  return errors;
+}
+
+export function validateTopology(nodes: ModelNode[], edges: Edge[]): TopologyValidationError[] {
+  const errors: TopologyValidationError[] = duplicateDeviceIdentityErrors(nodes);
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const terminalKey = (nodeId: string, terminalId: string) => `${nodeId}:${terminalId}`;
   const resolveEdgeTerminal = (node: ModelNode, terminalId?: string) => {

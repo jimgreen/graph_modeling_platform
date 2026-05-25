@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { createDefaultNode, routeEdgesForRendering, type Edge } from "./model";
+import {
+  assignPermanentDeviceIndex,
+  createDefaultNode,
+  normalizeDeviceIndexCounters,
+  routeEdgesForRendering,
+  type Edge
+} from "./model";
 import {
   CANVAS_EMPTY_SELECTION_MESSAGE,
   buildCanvasClipboard,
@@ -122,5 +128,30 @@ describe("canvas selection actions", () => {
 
     expect(pasted.nodes).toHaveLength(0);
     expect(pasted.edges).toHaveLength(0);
+  });
+
+  test("resets pasted container indexes so body and associated device idx values stay globally unique", () => {
+    let counters = {};
+    const first = assignPermanentDeviceIndex(createDefaultNode("ac-electrolyzer", { x: 100, y: 100 }), counters);
+    counters = first.counters;
+    const second = assignPermanentDeviceIndex(createDefaultNode("ac-electrolyzer", { x: 260, y: 100 }), counters);
+    counters = second.counters;
+    const routes = routeEdgesForRendering([first.node, second.node], [], { width: 800, height: 500 });
+    const clipboard = buildCanvasClipboard([first.node, second.node], [], routes, [second.node.id], []);
+
+    const cloned = cloneCanvasClipboard(clipboard, { x: 420, y: 220 }, () => "pasted-electrolyzer", () => "unused-edge");
+    const currentPageCounters = normalizeDeviceIndexCounters({}, [first.node, second.node]);
+    const pasted = assignPermanentDeviceIndex(cloned.nodes[0], currentPageCounters).node;
+
+    expect(second.node.params).toMatchObject({
+      idx: "2",
+      idx_ac_load_t1: "2",
+      idx_h2_unit_t2: "2"
+    });
+    expect(pasted.params).toMatchObject({
+      idx: "3",
+      idx_ac_load_t1: "3",
+      idx_h2_unit_t2: "3"
+    });
   });
 });

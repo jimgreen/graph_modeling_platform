@@ -1,6 +1,7 @@
 import {
   getNodeScaleX,
   getNodeScaleY,
+  resetDeviceIndexesForPaste,
   type Edge,
   type ModelNode,
   type Point,
@@ -176,16 +177,14 @@ export function cloneCanvasClipboard(
   const nodes = clipboard.nodes.map((node) => {
     const nextId = createNodeId();
     idMap.set(node.id, nextId);
-    const params = { ...node.params };
-    delete params.idx;
-    return {
+    return resetDeviceIndexesForPaste({
       ...node,
       id: nextId,
       name: `${node.name} 副本`,
       position: { x: Math.round(node.position.x + dx), y: Math.round(node.position.y + dy) },
-      params,
+      params: { ...node.params },
       terminals: node.terminals.map((terminal) => ({ ...terminal, anchor: { ...terminal.anchor } }))
-    };
+    });
   });
   const edges = clipboard.edges.flatMap(({ edge, routePoints }) => {
     const sourceCopied = idMap.has(edge.sourceId);

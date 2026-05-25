@@ -48,6 +48,7 @@ import {
   getDeviceGlyphVariant,
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
+  getConnectionStrokeColor,
   getElementFocusPoint,
   getContainerAssociationRelationKey,
   getContainerRelationKey,
@@ -1780,6 +1781,36 @@ describe("power system model", () => {
     expect(vertical.find((node) => node.id === nodes[1].id)?.position).toEqual({ x: 260, y: 180 });
   });
 
+  test("aligns selected nodes to left, right, top, and bottom edges", () => {
+    const nodes: ModelNode[] = [
+      createDefaultNode("ac-source", { x: 100, y: 100 }),
+      createDefaultNode("ac-switch", { x: 280, y: 220 }),
+      createDefaultNode("ac-load", { x: 440, y: 320 })
+    ];
+    const selectedIds = [nodes[0].id, nodes[2].id];
+    const firstHalfWidth = nodes[0].size.width / 2;
+    const thirdHalfWidth = nodes[2].size.width / 2;
+    const firstHalfHeight = nodes[0].size.height / 2;
+    const thirdHalfHeight = nodes[2].size.height / 2;
+
+    const left = alignNodes(nodes, selectedIds, "left");
+    expect(left.find((node) => node.id === nodes[0].id)?.position.x).toBe(100);
+    expect(left.find((node) => node.id === nodes[2].id)?.position.x).toBe(100 - firstHalfWidth + thirdHalfWidth);
+    expect(left.find((node) => node.id === nodes[1].id)?.position).toEqual({ x: 280, y: 220 });
+
+    const right = alignNodes(nodes, selectedIds, "right");
+    expect(right.find((node) => node.id === nodes[0].id)?.position.x).toBe(440 + thirdHalfWidth - firstHalfWidth);
+    expect(right.find((node) => node.id === nodes[2].id)?.position.x).toBe(440);
+
+    const top = alignNodes(nodes, selectedIds, "top");
+    expect(top.find((node) => node.id === nodes[0].id)?.position.y).toBe(100);
+    expect(top.find((node) => node.id === nodes[2].id)?.position.y).toBe(100 - firstHalfHeight + thirdHalfHeight);
+
+    const bottom = alignNodes(nodes, selectedIds, "bottom");
+    expect(bottom.find((node) => node.id === nodes[0].id)?.position.y).toBe(320 + thirdHalfHeight - firstHalfHeight);
+    expect(bottom.find((node) => node.id === nodes[2].id)?.position.y).toBe(320);
+  });
+
   test("distributes selected nodes horizontally and vertically while keeping edge nodes fixed", () => {
     const nodes: ModelNode[] = [
       createDefaultNode("ac-source", { x: 100, y: 80 }),
@@ -2520,7 +2551,10 @@ describe("power system model", () => {
 
     expect(tree.map((group) => group.typeLabel)).toEqual(["交流电源", "交流负荷", "文字", "联络线"]);
     expect(tree.find((group) => group.typeLabel === "交流电源")?.items).toEqual([
-      { kind: "node", id: source.id, name: "电源A" }
+      { kind: "node", id: source.id, name: "电源A", idx: "", editableDevice: true }
+    ]);
+    expect(tree.find((group) => group.typeLabel === "文字")?.items).toEqual([
+      { kind: "node", id: text.id, name: "说明文字", idx: "", editableDevice: false }
     ]);
     expect(tree.find((group) => group.typeLabel === "联络线")?.items[0]).toMatchObject({
       kind: "edge",
@@ -2529,6 +2563,59 @@ describe("power system model", () => {
     });
     expect(getElementFocusPoint({ kind: "node", id: text.id }, [source, load, text], [edge])).toEqual(text.position);
     expect(getElementFocusPoint({ kind: "edge", id: "edge-a" }, [source, load, text], [edge])).toEqual({ x: 223, y: 120 });
+  });
+
+  test("colors connection lines by their connected terminal energy type", () => {
+    const acSource = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const acLoad = createDefaultNode("ac-load", { x: 240, y: 100 });
+    const dcSource = createDefaultNode("dc-source", { x: 100, y: 180 });
+    const dcLoad = createDefaultNode("dc-load", { x: 240, y: 180 });
+    const hydrogenSource = createDefaultNode("hydrogen-source", { x: 100, y: 260 });
+    const hydrogenLoad = createDefaultNode("hydrogen-load", { x: 240, y: 260 });
+    const heatSource = createDefaultNode("heat-source", { x: 100, y: 340 });
+    const heatLoad = createDefaultNode("heat-load", { x: 240, y: 340 });
+    const nodeById = new Map([acSource, acLoad, dcSource, dcLoad, hydrogenSource, hydrogenLoad, heatSource, heatLoad].map((node) => [node.id, node]));
+
+    expect(getConnectionStrokeColor({ id: "ac", sourceId: acSource.id, targetId: acLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }, nodeById)).toBe("#2563eb");
+    expect(getConnectionStrokeColor({ id: "dc", sourceId: dcSource.id, targetId: dcLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }, nodeById)).toBe("#0f766e");
+    expect(getConnectionStrokeColor({ id: "h2", sourceId: hydrogenSource.id, targetId: hydrogenLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }, nodeById)).toBe("#7c3aed");
+    expect(getConnectionStrokeColor({ id: "heat", sourceId: heatSource.id, targetId: heatLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }, nodeById)).toBe("#dc2626");
+    expect(getConnectionStrokeColor({ id: "floating", sourceId: "missing", targetId: "missing" }, nodeById)).toBe("#334155");
+  });
+
+  test("shows associated container devices as child rows in the element tree", () => {
+    const electrolyzer = assignPermanentDeviceIndex(createDefaultNode("ac-electrolyzer", { x: 100, y: 100 }), {}).node;
+    electrolyzer.name = "EL1";
+    electrolyzer.params.name_ac_load_t1 = "自定义交流负荷";
+
+    const tree = buildElementTree([electrolyzer], [], DEVICE_LIBRARY);
+    const item = tree.find((group) => group.typeLabel === "交流电制氢")?.items[0];
+
+    expect(item).toMatchObject({
+      kind: "node",
+      id: electrolyzer.id,
+      name: "EL1",
+      idx: electrolyzer.params.idx,
+      editableDevice: true
+    });
+    expect(item?.children).toEqual([
+      expect.objectContaining({
+        deviceType: "ACLoad",
+        idx: electrolyzer.params.idx_ac_load_t1,
+        name: "自定义交流负荷",
+        nameKey: "name_ac_load_t1",
+        relationKeys: ["idx_ac_load_t1"],
+        terminalLabels: "交流端"
+      }),
+      expect.objectContaining({
+        deviceType: "HydroSource",
+        idx: electrolyzer.params.idx_h2_unit_t2,
+        name: "EL1_氢能端氢源",
+        nameKey: "name_h2_unit_t2",
+        relationKeys: ["idx_h2_unit_t2"],
+        terminalLabels: "氢能端"
+      })
+    ]);
   });
 
   test("omits retired disconnectors and DC transformer from the element library", () => {
@@ -2621,9 +2708,11 @@ describe("power system model", () => {
   });
 
   test("removes the explicit two-winding transformer glyph and keeps the three-winding container definition", () => {
+    const acTransformer = DEVICE_LIBRARY.find((item) => item.kind === "ac-transformer");
     const twoWinding = DEVICE_LIBRARY.find((item) => item.kind === "ac-two-winding-transformer");
     const threeWinding = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer");
 
+    expect(acTransformer?.label).toBe("双绕组主变");
     expect(twoWinding).toBeUndefined();
     expect(threeWinding?.terminalType).toBe("ac");
     expect(threeWinding?.terminalCount).toBe(3);
@@ -2875,6 +2964,84 @@ describe("power system model", () => {
     );
 
     expect(errors.some((error) => error.type === "voltage-mismatch" && error.edgeId === "e-terminal-vbase")).toBe(true);
+  });
+
+  test("validates duplicate idx and names within the same device type", () => {
+    const firstLoad = createDefaultNode("ac-load", { x: 100, y: 100 });
+    const secondLoad = createDefaultNode("ac-load", { x: 240, y: 100 });
+    const dcLoad = createDefaultNode("dc-load", { x: 380, y: 100 });
+    firstLoad.name = "重复负荷";
+    secondLoad.name = "重复负荷";
+    dcLoad.name = "重复负荷";
+    firstLoad.params = { ...firstLoad.params, idx: "3" };
+    secondLoad.params = { ...secondLoad.params, idx: "3" };
+    dcLoad.params = { ...dcLoad.params, idx: "3" };
+
+    const errors = validateTopology([firstLoad, secondLoad, dcLoad], []);
+
+    expect(errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "duplicate-device-idx",
+        relatedNodeIds: expect.arrayContaining([firstLoad.id, secondLoad.id]),
+        message: expect.stringContaining("ACLoad")
+      }),
+      expect.objectContaining({
+        type: "duplicate-device-name",
+        relatedNodeIds: expect.arrayContaining([firstLoad.id, secondLoad.id]),
+        message: expect.stringContaining("重复负荷")
+      })
+    ]));
+    expect(errors.some((error) => error.type === "duplicate-device-idx" && error.relatedNodeIds.includes(dcLoad.id))).toBe(false);
+    expect(errors.some((error) => error.type === "duplicate-device-name" && error.relatedNodeIds.includes(dcLoad.id))).toBe(false);
+  });
+
+  test("validates duplicate idx and names between container-associated devices and ordinary devices", () => {
+    const load = createDefaultNode("ac-load", { x: 100, y: 100 });
+    const electrolyzer = assignPermanentDeviceIndex(createDefaultNode("ac-electrolyzer", { x: 260, y: 100 }), {}).node;
+    electrolyzer.name = "EL1";
+    electrolyzer.params.name_ac_load_t1 = "自定义交流负荷";
+    load.name = "自定义交流负荷";
+    load.params = { ...load.params, idx: electrolyzer.params.idx_ac_load_t1 ?? "1" };
+
+    const errors = validateTopology([load, electrolyzer], []);
+
+    expect(errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "duplicate-device-idx",
+        relatedNodeIds: expect.arrayContaining([load.id, electrolyzer.id]),
+        message: expect.stringContaining("ACLoad")
+      }),
+      expect.objectContaining({
+        type: "duplicate-device-name",
+        relatedNodeIds: expect.arrayContaining([load.id, electrolyzer.id]),
+        message: expect.stringContaining("自定义交流负荷")
+      })
+    ]));
+  });
+
+  test("exports edited container-associated device names to E sections", () => {
+    const electrolyzer = assignPermanentDeviceIndex(createDefaultNode("ac-electrolyzer", { x: 100, y: 100 }), {}).node;
+    electrolyzer.name = "EL1";
+    electrolyzer.params.name_ac_load_t1 = "自定义交流负荷";
+    electrolyzer.params.name_h2_unit_t2 = "自定义氢源";
+
+    const payload = parseESections(
+      buildEDeviceParameterFile({
+        version: 1,
+        name: "容器子设备导出",
+        nodes: [electrolyzer],
+        edges: []
+      })
+    );
+
+    expect(payload.ACLoad.rows[0]).toMatchObject({
+      idx: electrolyzer.params.idx_ac_load_t1,
+      name: "自定义交流负荷"
+    });
+    expect(payload.HydroSource.rows[0]).toMatchObject({
+      idx: electrolyzer.params.idx_h2_unit_t2,
+      name: "自定义氢源"
+    });
   });
 
   test("validates voltage mismatch across terminals contracted through the same bus", () => {

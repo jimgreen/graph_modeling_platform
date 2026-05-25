@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { buildSvgDocument } from "./App";
-import { createDefaultNode } from "./model";
+import { createDefaultNode, type Edge } from "./model";
 
 describe("SVG export", () => {
   test("exports the actual device glyph markup for built-in devices", () => {
@@ -33,5 +33,21 @@ describe("SVG export", () => {
     expect(svg).toContain(">H2<");
     expect(svg).toContain("C -42 -29");
     expect(svg).toContain("M -10 -1 C -4 4 -4 9 -10 14");
+  });
+
+  test("exports connection line colors by terminal energy type", () => {
+    const acSource = createDefaultNode("ac-source", { x: 120, y: 120 });
+    const acLoad = createDefaultNode("ac-load", { x: 240, y: 120 });
+    const dcSource = createDefaultNode("dc-source", { x: 120, y: 220 });
+    const dcLoad = createDefaultNode("dc-load", { x: 240, y: 220 });
+    const edges: Edge[] = [
+      { id: "ac-edge", sourceId: acSource.id, targetId: acLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+      { id: "dc-edge", sourceId: dcSource.id, targetId: dcLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
+    ];
+
+    const svg = buildSvgDocument([acSource, acLoad, dcSource, dcLoad], edges, { width: 500, height: 300 });
+
+    expect(svg).toContain('stroke="#2563eb"');
+    expect(svg).toContain('stroke="#0f766e"');
   });
 });
