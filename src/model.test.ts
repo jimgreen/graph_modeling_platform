@@ -1205,17 +1205,42 @@ describe("power system model", () => {
     };
     const baseRoute = routeOrthogonalEdge(source, target, [source, target], edge);
     const bendRoute = insertOrthogonalRouteBend(baseRoute, 1, { x: 230, y: 190 }, { width: 700, height: 320 });
-    const manualEdge = { ...edge, manualPoints: bendRoute.slice(1, -1) };
+    const manualEdge = { ...edge, manualPoints: bendRoute.slice(2, -2) };
     const rerouted = routeOrthogonalEdge(source, target, [source, target], manualEdge, [], { width: 700, height: 320 });
     const sourceTerminal = getTerminalPoint(source, "t1");
     const targetTerminal = getTerminalPoint(target, "t1");
 
+    expect(rerouted.some((point) => point.y > sourceTerminal.y)).toBe(true);
     expect(rerouted[0]).toEqual(sourceTerminal);
     expect(rerouted[1].y).toBe(sourceTerminal.y);
     expect(rerouted[1].x).toBeGreaterThan(sourceTerminal.x);
     expect(rerouted[rerouted.length - 1]).toEqual(targetTerminal);
     expect(rerouted[rerouted.length - 2].y).toBe(targetTerminal.y);
     expect(rerouted[rerouted.length - 2].x).toBeGreaterThan(targetTerminal.x);
+  });
+
+  test("repairs a manual bend path around blockers instead of discarding the manual route", () => {
+    const source = createDefaultNode("ac-source", { x: 120, y: 120 });
+    const target = createDefaultNode("ac-load", { x: 520, y: 120 });
+    const blocker = createDefaultNode("ac-switch", { x: 330, y: 190 });
+    const edge: Edge = {
+      id: "manual-bend-repair",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const baseRoute = routeOrthogonalEdge(source, target, [source, target], edge);
+    const bendRoute = insertOrthogonalRouteBend(baseRoute, 1, { x: 260, y: 190 }, { width: 700, height: 320 });
+    const manualEdge = { ...edge, manualPoints: bendRoute.slice(2, -2) };
+
+    const rerouted = routeOrthogonalEdge(source, target, [source, target, blocker], manualEdge, [], { width: 700, height: 320 });
+
+    expect(rerouted.some((point) => point.y !== 120)).toBe(true);
+    expect(rerouted.length).toBeGreaterThan(4);
+    for (let index = 1; index < rerouted.length; index += 1) {
+      expect(rerouted[index - 1].x === rerouted[index].x || rerouted[index - 1].y === rerouted[index].y).toBe(true);
+    }
   });
 
   test("preserves the dragged connection route shape when only one endpoint moves", () => {

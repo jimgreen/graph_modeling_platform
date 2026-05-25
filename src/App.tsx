@@ -4823,7 +4823,10 @@ export function App() {
     });
   };
 
-  const routeManualPoints = (routePoints: Point[]) => routePoints.slice(1, -1).map((point) => ({ ...point }));
+  const routeManualPoints = (routePoints: Point[]) => {
+    const manualPoints = routePoints.length > 4 ? routePoints.slice(2, -2) : routePoints.slice(1, -1);
+    return manualPoints.map((point) => ({ ...point }));
+  };
 
   const finishManualPathDrag = () => {
     if (!manualPathDrag) {

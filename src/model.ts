@@ -5111,6 +5111,10 @@ export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes:
     if (!routeIntersectsBlockers(boundedManualRoute, blockers, ROUTE_BLOCKER_PADDING, 1)) {
       return simplifyRoutePreservingEndpointStubs(boundedManualRoute);
     }
+    const repairedManualRoute = repairRouteAroundBlockers(boundedManualRoute, blockers, bounds, 1);
+    if (!routeIntersectsBlockers(repairedManualRoute, blockers, ROUTE_BLOCKER_PADDING, 1)) {
+      return simplifyRoutePreservingEndpointStubs(repairedManualRoute);
+    }
     const candidates = buildRouteCandidates(startOut, endOut, blockers, avoidedSegments, bounds);
     const repairedMiddle = selectRouteCandidate(candidates, blockers, avoidedSegments);
     return simplifyRoutePreservingEndpointStubs(repairRouteAroundBlockers(
