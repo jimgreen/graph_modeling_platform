@@ -4916,13 +4916,22 @@ export function App() {
     if (event.button !== 0 || !svgRef.current) {
       return;
     }
+    const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+    if (event.detail >= 2) {
+      event.preventDefault();
+      const segmentIndex = findEditableRouteSegmentIndex(routePoints, pointer);
+      if (segmentIndex >= 0) {
+        insertManualBendAtPoint(edgeId, segmentIndex, routePoints, pointer);
+      }
+      return;
+    }
     setSelectedNodeIds([]);
     setSelectedEdgeId(edgeId);
     setSelectedEdgeIds([edgeId]);
     setManualPathDrag({
       edgeId,
       pointIndex,
-      startPoint: clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY)),
+      startPoint: pointer,
       originalManualPoints: routeManualPoints(routePoints),
       originalRoutePoints: routePoints.map((point) => ({ ...point }))
     });
@@ -6549,12 +6558,26 @@ export function App() {
                     className="connection-hitline"
                     onContextMenu={(event) => openEdgeContextMenu(event, edge.id)}
                     onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, routePoints)}
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                      activateInspectorFromCanvas();
+                      setSelectedNodeIds([]);
+                      setSelectedEdgeId(edge.id);
+                      setSelectedEdgeIds([edge.id]);
+                    }}
                   />
                   <path
                     d={displayPath}
                     className="connection-line"
                     onContextMenu={(event) => openEdgeContextMenu(event, edge.id)}
                     onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, routePoints)}
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                      activateInspectorFromCanvas();
+                      setSelectedNodeIds([]);
+                      setSelectedEdgeId(edge.id);
+                      setSelectedEdgeIds([edge.id]);
+                    }}
                   />
                   {!isRewiringSelectedEdge && routePoints.slice(1).map((point, index) => {
                     const from = routePoints[index];
