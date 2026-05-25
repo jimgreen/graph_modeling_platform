@@ -2442,7 +2442,6 @@ button:disabled {
 
 .validation-list button {
   display: grid;
-  gap: 4px;
   padding: 9px;
   border: 1px solid #fecaca;
   border-radius: 8px;

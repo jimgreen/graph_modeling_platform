@@ -589,12 +589,19 @@ function readSavedProjects(): SavedProjectRecord[] {
   }
 }
 
+function normalizeLegacyPowerSystemLabel(value: string) {
+  return value.replace(/电力系统/g, "电力能源系统");
+}
+
 function normalizeSavedProjectIndexes(project: SavedProjectRecord): SavedProjectRecord {
   const indexed = assignMissingDeviceIndexes(project.project.nodes ?? [], project.project.deviceIndexCounters);
+  const normalizedName = normalizeLegacyPowerSystemLabel(project.name);
   return {
     ...project,
+    name: normalizedName,
     project: {
       ...project.project,
+      name: normalizeLegacyPowerSystemLabel(project.project.name ?? normalizedName),
       nodes: indexed.nodes,
       deviceIndexCounters: indexed.counters
     }
@@ -604,6 +611,7 @@ function normalizeSavedProjectIndexes(project: SavedProjectRecord): SavedProject
 function normalizeSavedSchemeIndexes(scheme: SavedSchemeRecord): SavedSchemeRecord {
   return {
     ...scheme,
+    name: normalizeLegacyPowerSystemLabel(scheme.name),
     projects: Array.isArray(scheme.projects) ? scheme.projects.map(normalizeSavedProjectIndexes) : []
   };
 }
@@ -634,7 +642,10 @@ function readDraftProject(): DraftProjectState | null {
     if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
       return null;
     }
-    return parsed;
+    return {
+      ...parsed,
+      projectName: normalizeLegacyPowerSystemLabel(parsed.projectName)
+    };
   } catch {
     return null;
   }
@@ -1980,7 +1991,7 @@ export function App() {
   const [nodes, setNodes] = useState<ModelNode[]>(() => initialIndexedNodes.nodes);
   const [edges, setEdges] = useState<Edge[]>(() => initialDraft?.edges ?? SAMPLE_EDGES);
   const [deviceIndexCounters, setDeviceIndexCounters] = useState<DeviceIndexCounters>(() => initialIndexedNodes.counters);
-  const [projectName, setProjectName] = useState(() => initialDraft?.projectName ?? "电力系统图上模型");
+  const [projectName, setProjectName] = useState(() => initialDraft?.projectName ?? "电力能源系统图上模型");
   const [canvasWidth, setCanvasWidth] = useState(() => initialDraft?.canvasWidth ?? DEFAULT_CANVAS_WIDTH);
   const [canvasHeight, setCanvasHeight] = useState(() => initialDraft?.canvasHeight ?? DEFAULT_CANVAS_HEIGHT);
   const [canvasSizeDraft, setCanvasSizeDraft] = useState(() => ({
@@ -6281,11 +6292,14 @@ export function App() {
     </div>
   );
 
+  const topologyWarningDisplayMessage = (message: string) =>
+    message.replace(/^(?:图上拓扑失败|拓扑失败)\s*[:：]\s*/, "");
+
   const warningStatusText = topologyErrors.length > 0
-    ? `告警 ${topologyErrors.length} 条：${topologyErrors[0]?.message ?? "请查看拓扑告警"}`
+    ? `告警 ${topologyErrors.length} 条：${topologyWarningDisplayMessage(topologyErrors[0]?.message ?? "请查看拓扑告警")}`
     : "告警 无";
   const warningStatusTitle = topologyErrors.length > 0
-    ? topologyErrors.slice(0, 5).map((error, index) => `${index + 1}. ${error.message}`).join("\n")
+    ? topologyErrors.slice(0, 5).map((error, index) => `${index + 1}. ${topologyWarningDisplayMessage(error.message)}`).join("\n")
     : "当前没有拓扑告警。";
   const currentZoomPercent = viewBoxZoomPercent(viewBox, canvasBounds);
   const appShellStyle = {
@@ -6334,7 +6348,7 @@ export function App() {
           <div className="brand topbar-brand">
             <div className="brand-mark">PS</div>
             <div>
-              <h1>电力系统图上建模平台</h1>
+              <h1>电力能源系统图上建模平台</h1>
               <p>拖拽建模、拓扑关联、参数维护</p>
             </div>
           </div>
@@ -7621,8 +7635,7 @@ export function App() {
             <div className="validation-list">
               {visibleTopologyErrors.map((error) => (
                 <button key={error.id} onClick={() => locateTopologyError(error)} onDoubleClick={() => locateTopologyError(error)}>
-                  <strong>{error.type}</strong>
-                  <span>{error.message}</span>
+                  <span>{topologyWarningDisplayMessage(error.message)}</span>
                 </button>
               ))}
               {hiddenTopologyErrorCount > 0 && (
