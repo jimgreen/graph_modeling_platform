@@ -1226,6 +1226,23 @@ button:disabled {
   scrollbar-width: thin;
 }
 
+.graph-form-stack {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-content: stretch;
+  overflow: hidden;
+}
+
+.graph-param-table-wrap {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+  scrollbar-width: thin;
+}
+
+.graph-param-table-wrap .param-table {
+  margin-bottom: 0;
+}
+
 .form-stack label {
   display: grid;
   gap: 6px;

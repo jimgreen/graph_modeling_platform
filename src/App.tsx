@@ -7125,7 +7125,7 @@ export function App() {
           </div>
         </div>
         {selectedNode || currentModelRecord ? (
-          <div className="form-stack">
+          <div className={`form-stack ${inspectorTab === "graph" && selectedNode ? "graph-form-stack" : ""}`}>
             <div className="inspector-tabs">
               <button className={inspectorTab === "model" ? "active" : ""} onClick={() => setInspectorTab("model")} disabled={!currentModelRecord}>
                 模型
@@ -7315,171 +7315,173 @@ export function App() {
             ) : inspectorTab === "tree" ? (
               renderElementTreePanel()
             ) : inspectorTab === "graph" && selectedNode ? (
-              <table className="param-table">
-                <tbody>
-                  <tr>
-                    {renderChineseParamHeader("graph_x", "X坐标")}
-                    <td><input type="number" value={Math.round(selectedNode.position.x)} onChange={(event) => updateSelectedNode({ position: { ...selectedNode.position, x: Number(event.target.value) } })} /></td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("graph_y", "Y坐标")}
-                    <td><input type="number" value={Math.round(selectedNode.position.y)} onChange={(event) => updateSelectedNode({ position: { ...selectedNode.position, y: Number(event.target.value) } })} /></td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("rotation")}
-                    <td><input type="number" value={selectedNode.rotation} onChange={(event) => updateSelectedNode({ rotation: Number(event.target.value) })} /></td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("scaleX")}
-                    <td><input type="number" step="0.1" value={getNodeScaleX(selectedNode)} onChange={(event) => { const scaleX = normalizeScale(Number(event.target.value), getNodeScaleX(selectedNode)); updateSelectedNode({ scale: Math.abs(scaleX), scaleX }); }} /></td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("scaleY")}
-                    <td><input type="number" step="0.1" value={getNodeScaleY(selectedNode)} onChange={(event) => { const scaleY = normalizeScale(Number(event.target.value), getNodeScaleY(selectedNode)); updateSelectedNode({ scale: Math.abs(scaleY), scaleY }); }} /></td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("layerOrder")}
-                    <td>
-                      <div className="layer-actions">
-                        <button type="button" onClick={() => moveSelectedLayer("back")}>置底</button>
-                        <button type="button" onClick={() => moveSelectedLayer("backward")}>下移</button>
-                        <button type="button" onClick={() => moveSelectedLayer("forward")}>上移</button>
-                        <button type="button" onClick={() => moveSelectedLayer("front")}>置顶</button>
-                      </div>
-                    </td>
-                  </tr>
-                  {!isStaticNode(selectedNode) && (
-                    <>
-                      <tr>
-                        {renderChineseParamHeader("terminalCount")}
-                        <td><input type="number" min="1" max="8" value={selectedNode.terminals.length} onChange={(event) => updateTerminalCount(Number(event.target.value))} /></td>
-                      </tr>
-                      {selectedNode.terminals.map((terminal, terminalIndex) => (
-                        <Fragment key={terminal.id}>
-                          <tr>
-                            <th title={terminal.id}>{terminal.label}</th>
-                            <td>{`${terminal.type.toUpperCase()} / ${terminal.nodeNumber}`}</td>
-                          </tr>
-                          {(terminal.type === "ac" || terminal.type === "dc") && (
+              <div className="graph-param-table-wrap">
+                <table className="param-table">
+                  <tbody>
+                    <tr>
+                      {renderChineseParamHeader("graph_x", "X坐标")}
+                      <td><input type="number" value={Math.round(selectedNode.position.x)} onChange={(event) => updateSelectedNode({ position: { ...selectedNode.position, x: Number(event.target.value) } })} /></td>
+                    </tr>
+                    <tr>
+                      {renderChineseParamHeader("graph_y", "Y坐标")}
+                      <td><input type="number" value={Math.round(selectedNode.position.y)} onChange={(event) => updateSelectedNode({ position: { ...selectedNode.position, y: Number(event.target.value) } })} /></td>
+                    </tr>
+                    <tr>
+                      {renderChineseParamHeader("rotation")}
+                      <td><input type="number" value={selectedNode.rotation} onChange={(event) => updateSelectedNode({ rotation: Number(event.target.value) })} /></td>
+                    </tr>
+                    <tr>
+                      {renderChineseParamHeader("scaleX")}
+                      <td><input type="number" step="0.1" value={getNodeScaleX(selectedNode)} onChange={(event) => { const scaleX = normalizeScale(Number(event.target.value), getNodeScaleX(selectedNode)); updateSelectedNode({ scale: Math.abs(scaleX), scaleX }); }} /></td>
+                    </tr>
+                    <tr>
+                      {renderChineseParamHeader("scaleY")}
+                      <td><input type="number" step="0.1" value={getNodeScaleY(selectedNode)} onChange={(event) => { const scaleY = normalizeScale(Number(event.target.value), getNodeScaleY(selectedNode)); updateSelectedNode({ scale: Math.abs(scaleY), scaleY }); }} /></td>
+                    </tr>
+                    <tr>
+                      {renderChineseParamHeader("layerOrder")}
+                      <td>
+                        <div className="layer-actions">
+                          <button type="button" onClick={() => moveSelectedLayer("back")}>置底</button>
+                          <button type="button" onClick={() => moveSelectedLayer("backward")}>下移</button>
+                          <button type="button" onClick={() => moveSelectedLayer("forward")}>上移</button>
+                          <button type="button" onClick={() => moveSelectedLayer("front")}>置顶</button>
+                        </div>
+                      </td>
+                    </tr>
+                    {!isStaticNode(selectedNode) && (
+                      <>
+                        <tr>
+                          {renderChineseParamHeader("terminalCount")}
+                          <td><input type="number" min="1" max="8" value={selectedNode.terminals.length} onChange={(event) => updateTerminalCount(Number(event.target.value))} /></td>
+                        </tr>
+                        {selectedNode.terminals.map((terminal, terminalIndex) => (
+                          <Fragment key={terminal.id}>
                             <tr>
-                              <th title={`${terminal.id}:vbase`}>{`${terminal.label}电压基值`}</th>
+                              <th title={terminal.id}>{terminal.label}</th>
+                              <td>{`${terminal.type.toUpperCase()} / ${terminal.nodeNumber}`}</td>
+                            </tr>
+                            {(terminal.type === "ac" || terminal.type === "dc") && (
+                              <tr>
+                                <th title={`${terminal.id}:vbase`}>{`${terminal.label}电压基值`}</th>
+                                <td>
+                                  <div className="unit-value-field">
+                                    <input
+                                      inputMode="decimal"
+                                      value={terminalVoltageBaseNumber(terminal.vbase ?? terminalVbaseFallback(selectedNode, terminalIndex))}
+                                      onChange={(event) => updateTerminalVbase(terminal.id, event.target.value)}
+                                    />
+                                    <span>{voltageUnit}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        ))}
+                      </>
+                    )}
+                    {isStaticNode(selectedNode) && (
+                      <>
+                        {["static-text", "static-web", "static-date", "static-time", "static-datetime", "static-input", "static-button"].includes(selectedNode.kind) && (
+                          <>
+                            <tr>
+                              <th>{selectedNode.kind === "static-web" ? "网页地址" : "文字内容"}</th>
                               <td>
-                                <div className="unit-value-field">
-                                  <input
-                                    inputMode="decimal"
-                                    value={terminalVoltageBaseNumber(terminal.vbase ?? terminalVbaseFallback(selectedNode, terminalIndex))}
-                                    onChange={(event) => updateTerminalVbase(terminal.id, event.target.value)}
-                                  />
-                                  <span>{voltageUnit}</span>
+                                {selectedNode.kind === "static-text" ? (
+                                  <textarea rows={4} value={selectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
+                                ) : selectedNode.kind === "static-date" ? (
+                                  <input type="date" value={selectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
+                                ) : selectedNode.kind === "static-time" ? (
+                                  <input type="time" value={selectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
+                                ) : selectedNode.kind === "static-datetime" ? (
+                                  <input type="datetime-local" value={(selectedNode.params.text || "").replace(" ", "T")} onChange={(event) => updateParam("text", event.target.value.replace("T", " "))} />
+                                ) : (
+                                  <input value={selectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
+                                )}
+                              </td>
+                            </tr>
+                            <tr>
+                              <th>字体</th>
+                              <td>{renderParamEditor("fontFamily", selectedNode.params.fontFamily || "Arial", false)}</td>
+                            </tr>
+                            <tr>
+                              <th>文字样式</th>
+                              <td>
+                                <div className="text-style-actions">
+                                  <label>
+                                    <input type="checkbox" checked={(selectedNode.params.fontWeight || "400") !== "400"} onChange={(event) => updateParam("fontWeight", event.target.checked ? "700" : "400")} />
+                                    加粗
+                                  </label>
+                                  <label>
+                                    <input type="checkbox" checked={(selectedNode.params.fontStyle || "normal") === "italic"} onChange={(event) => updateParam("fontStyle", event.target.checked ? "italic" : "normal")} />
+                                    斜体
+                                  </label>
+                                  <label>
+                                    <input type="checkbox" checked={(selectedNode.params.textDecoration || "none") === "underline"} onChange={(event) => updateParam("textDecoration", event.target.checked ? "underline" : "none")} />
+                                    下划线
+                                  </label>
                                 </div>
                               </td>
                             </tr>
-                          )}
-                        </Fragment>
-                      ))}
-                    </>
-                  )}
-                  {isStaticNode(selectedNode) && (
-                    <>
-                      {["static-text", "static-web", "static-date", "static-time", "static-datetime", "static-input", "static-button"].includes(selectedNode.kind) && (
-                        <>
-                          <tr>
-                            <th>{selectedNode.kind === "static-web" ? "网页地址" : "文字内容"}</th>
-                            <td>
-                              {selectedNode.kind === "static-text" ? (
-                                <textarea rows={4} value={selectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
-                              ) : selectedNode.kind === "static-date" ? (
-                                <input type="date" value={selectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
-                              ) : selectedNode.kind === "static-time" ? (
-                                <input type="time" value={selectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
-                              ) : selectedNode.kind === "static-datetime" ? (
-                                <input type="datetime-local" value={(selectedNode.params.text || "").replace(" ", "T")} onChange={(event) => updateParam("text", event.target.value.replace("T", " "))} />
-                              ) : (
-                                <input value={selectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
-                              )}
-                            </td>
-                          </tr>
-                          <tr>
-                            <th>字体</th>
-                            <td>{renderParamEditor("fontFamily", selectedNode.params.fontFamily || "Arial", false)}</td>
-                          </tr>
-                          <tr>
-                            <th>文字样式</th>
-                            <td>
-                              <div className="text-style-actions">
-                                <label>
-                                  <input type="checkbox" checked={(selectedNode.params.fontWeight || "400") !== "400"} onChange={(event) => updateParam("fontWeight", event.target.checked ? "700" : "400")} />
-                                  加粗
-                                </label>
-                                <label>
-                                  <input type="checkbox" checked={(selectedNode.params.fontStyle || "normal") === "italic"} onChange={(event) => updateParam("fontStyle", event.target.checked ? "italic" : "normal")} />
-                                  斜体
-                                </label>
-                                <label>
-                                  <input type="checkbox" checked={(selectedNode.params.textDecoration || "none") === "underline"} onChange={(event) => updateParam("textDecoration", event.target.checked ? "underline" : "none")} />
-                                  下划线
-                                </label>
-                              </div>
-                            </td>
-                          </tr>
-                        </>
-                      )}
-                      <tr>
-                        {renderChineseParamHeader("fillColor")}
-                        <td>{renderColorEditor("fillColor", selectedNode.params.fillColor || "transparent", "#ffffff")}</td>
-                      </tr>
-                      <tr>
-                        {renderChineseParamHeader("strokeColor")}
-                        <td>{renderColorEditor("strokeColor", selectedNode.params.strokeColor || "transparent", "#334155")}</td>
-                      </tr>
-                      <tr>
-                        {renderChineseParamHeader("textColor")}
-                        <td>{renderColorEditor("textColor", selectedNode.params.textColor || "#111827", "#111827")}</td>
-                      </tr>
-                      <tr>
-                        {renderChineseParamHeader("lineWidth")}
-                        <td><input type="number" min="0" max="20" value={selectedNode.params.lineWidth || "2"} onChange={(event) => updateParam("lineWidth", event.target.value)} /></td>
-                      </tr>
-                      <tr>
-                        {renderChineseParamHeader("strokeStyle")}
-                        <td>{renderParamEditor("strokeStyle", selectedNode.params.strokeStyle || "solid", false)}</td>
-                      </tr>
-                      <tr>
-                        {renderChineseParamHeader("fontSize")}
-                        <td><input type="number" min="8" max="160" value={selectedNode.params.fontSize || "24"} onChange={(event) => updateParam("fontSize", event.target.value)} /></td>
-                      </tr>
-                      <tr>
-                        {renderChineseParamHeader("backgroundImage")}
-                        <td>
-                          <div className="image-field-actions">
-                            <input value={selectedNode.params.backgroundImage ? "已设置" : "未设置"} readOnly />
-                            <button type="button" onClick={() => setImageTarget({ kind: "node", nodeId: selectedNode.id })}>选择</button>
-                            <button type="button" onClick={() => clearSelectedImageForNode(selectedNode.id, "background")} disabled={!selectedNode.params.backgroundImage}>清除</button>
-                          </div>
-                        </td>
-                      </tr>
-                    </>
-                  )}
-                  {!isStaticNode(selectedNode) && (
-                    <>
-                      <tr>
-                        {renderChineseParamHeader("foregroundColor")}
-                        <td>{renderColorEditor("foregroundColor", selectedNode.params.foregroundColor || "", terminalColor(selectedNode.terminals[0]?.type))}</td>
-                      </tr>
-                      <tr>
-                        {renderChineseParamHeader("foregroundImage")}
-                        <td>
-                          <div className="image-field-actions">
-                            <input value={selectedNode.params.foregroundImage ? "已设置" : "未设置"} readOnly />
-                            <button type="button" onClick={() => setImageTarget({ kind: "nodeForeground", nodeId: selectedNode.id })}>选择</button>
-                            <button type="button" onClick={() => clearSelectedImageForNode(selectedNode.id, "foreground")} disabled={!selectedNode.params.foregroundImage}>清除</button>
-                          </div>
-                        </td>
-                      </tr>
-                    </>
-                  )}
-                </tbody>
-              </table>
+                          </>
+                        )}
+                        <tr>
+                          {renderChineseParamHeader("fillColor")}
+                          <td>{renderColorEditor("fillColor", selectedNode.params.fillColor || "transparent", "#ffffff")}</td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("strokeColor")}
+                          <td>{renderColorEditor("strokeColor", selectedNode.params.strokeColor || "transparent", "#334155")}</td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("textColor")}
+                          <td>{renderColorEditor("textColor", selectedNode.params.textColor || "#111827", "#111827")}</td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("lineWidth")}
+                          <td><input type="number" min="0" max="20" value={selectedNode.params.lineWidth || "2"} onChange={(event) => updateParam("lineWidth", event.target.value)} /></td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("strokeStyle")}
+                          <td>{renderParamEditor("strokeStyle", selectedNode.params.strokeStyle || "solid", false)}</td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("fontSize")}
+                          <td><input type="number" min="8" max="160" value={selectedNode.params.fontSize || "24"} onChange={(event) => updateParam("fontSize", event.target.value)} /></td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("backgroundImage")}
+                          <td>
+                            <div className="image-field-actions">
+                              <input value={selectedNode.params.backgroundImage ? "已设置" : "未设置"} readOnly />
+                              <button type="button" onClick={() => setImageTarget({ kind: "node", nodeId: selectedNode.id })}>选择</button>
+                              <button type="button" onClick={() => clearSelectedImageForNode(selectedNode.id, "background")} disabled={!selectedNode.params.backgroundImage}>清除</button>
+                            </div>
+                          </td>
+                        </tr>
+                      </>
+                    )}
+                    {!isStaticNode(selectedNode) && (
+                      <>
+                        <tr>
+                          {renderChineseParamHeader("foregroundColor")}
+                          <td>{renderColorEditor("foregroundColor", selectedNode.params.foregroundColor || "", terminalColor(selectedNode.terminals[0]?.type))}</td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("foregroundImage")}
+                          <td>
+                            <div className="image-field-actions">
+                              <input value={selectedNode.params.foregroundImage ? "已设置" : "未设置"} readOnly />
+                              <button type="button" onClick={() => setImageTarget({ kind: "nodeForeground", nodeId: selectedNode.id })}>选择</button>
+                              <button type="button" onClick={() => clearSelectedImageForNode(selectedNode.id, "foreground")} disabled={!selectedNode.params.foregroundImage}>清除</button>
+                            </div>
+                          </td>
+                        </tr>
+                      </>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             ) : selectedNode ? (
               <div className="device-param-stack">
                 {selectedContainerParameterViews.length > 0 && (
