@@ -6356,61 +6356,60 @@ export function App() {
             <span>当前模型</span>
             <strong>{activeModelPathName}</strong>
           </div>
-          <button className="topbar-primary-button" onClick={runTopologyCalculation} title="图上拓扑">
+          <button className="topbar-primary-button" onClick={runTopologyCalculation} title="图上拓扑" aria-label="图上拓扑">
             <Grid2X2 size={16} />
-            图上拓扑
           </button>
           <button
             className="topbar-primary-button"
             onClick={() => saveCurrentProject()}
             disabled={!saveRequired}
             title={saveRequired ? "保存当前模型" : "当前模型没有新的修改"}
+            aria-label="保存"
           >
             <Save size={16} />
-            保存
           </button>
           <div className="action-cluster">
-            <button onClick={() => alignSelected("horizontal")} disabled={selectedNodeCount < 2} title="横向对齐">
+            <button onClick={() => alignSelected("horizontal")} disabled={selectedNodeCount < 2} title="横向对齐" aria-label="横向对齐">
               <AlignCenterHorizontal size={16} />
-              横向对齐
             </button>
-            <button onClick={() => alignSelected("vertical")} disabled={selectedNodeCount < 2} title="纵向对齐">
+            <button onClick={() => alignSelected("vertical")} disabled={selectedNodeCount < 2} title="纵向对齐" aria-label="纵向对齐">
               <AlignCenterVertical size={16} />
-              纵向对齐
             </button>
-            <button onClick={() => alignSelected("left")} disabled={selectedNodeCount < 2} title="左对齐">
+            <button onClick={() => alignSelected("left")} disabled={selectedNodeCount < 2} title="左对齐" aria-label="左对齐">
               <AlignStartVertical size={16} />
-              左对齐
             </button>
-            <button onClick={() => alignSelected("right")} disabled={selectedNodeCount < 2} title="右对齐">
+            <button onClick={() => alignSelected("right")} disabled={selectedNodeCount < 2} title="右对齐" aria-label="右对齐">
               <AlignEndVertical size={16} />
-              右对齐
             </button>
-            <button onClick={() => alignSelected("top")} disabled={selectedNodeCount < 2} title="上对齐">
+            <button onClick={() => alignSelected("top")} disabled={selectedNodeCount < 2} title="上对齐" aria-label="上对齐">
               <AlignStartHorizontal size={16} />
-              上对齐
             </button>
-            <button onClick={() => alignSelected("bottom")} disabled={selectedNodeCount < 2} title="下对齐">
+            <button onClick={() => alignSelected("bottom")} disabled={selectedNodeCount < 2} title="下对齐" aria-label="下对齐">
               <AlignEndHorizontal size={16} />
-              下对齐
             </button>
-            <button onClick={() => distributeSelected("horizontal")} disabled={selectedNodeCount < 3} title="横向平均">
+            <button onClick={() => distributeSelected("horizontal")} disabled={selectedNodeCount < 3} title="横向平均" aria-label="横向平均">
               <AlignHorizontalDistributeCenter size={16} />
-              横向平均
             </button>
-            <button onClick={() => distributeSelected("vertical")} disabled={selectedNodeCount < 3} title="纵向平均">
+            <button onClick={() => distributeSelected("vertical")} disabled={selectedNodeCount < 3} title="纵向平均" aria-label="纵向平均">
               <AlignVerticalDistributeCenter size={16} />
-              纵向平均
             </button>
             <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={chooseImage} />
             <input ref={customDeviceImageInputRef} type="file" accept="image/*" hidden onChange={chooseCustomDeviceBackground} />
-            <button onClick={exportSvg} disabled={!canExportCurrentModel} title={canExportCurrentModel ? "导出 SVG 图形文件" : "请先保存当前模型后再导出图形文件"}>
+            <button
+              onClick={exportSvg}
+              disabled={!canExportCurrentModel}
+              title={canExportCurrentModel ? "导出 SVG 图形文件" : "请先保存当前模型后再导出图形文件"}
+              aria-label="导出图形文件"
+            >
               <Download size={16} />
-              导出图形文件
             </button>
-            <button onClick={exportEFile} disabled={!canExportCurrentModel} title={canExportCurrentModel ? "导出 E 模型文件" : "请先保存当前模型后再导出模型文件"}>
+            <button
+              onClick={exportEFile}
+              disabled={!canExportCurrentModel}
+              title={canExportCurrentModel ? "导出 E 模型文件" : "请先保存当前模型后再导出模型文件"}
+              aria-label="导出模型文件"
+            >
               <FileJson size={16} />
-              导出模型文件
             </button>
           </div>
         </header>
