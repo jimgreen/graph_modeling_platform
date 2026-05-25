@@ -1,4 +1,4 @@
-import { ChangeEvent, DragEvent, Fragment, isValidElement, MouseEvent, PointerEvent, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, Fragment, isValidElement, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlignHorizontalDistributeCenter,
   AlignCenterHorizontal,
@@ -39,9 +39,11 @@ import {
   buildEDeviceParameterFile,
   buildTopology,
   calculateElectricalTopology,
+  calculateModelContentSize,
   canConnectTerminals,
   clampNodePositionToBounds,
   clampPointToBounds,
+  clampViewBoxDimensionsForZoom,
   copySavedProjectWithUniqueName,
   copySavedSchemeWithUniqueName,
   createTerminals,
@@ -81,6 +83,7 @@ import {
   isGeneratorNode,
   isStaticNode,
   inferESection,
+  insertOrthogonalRouteBend,
   keyboardMoveStepForViewBox,
   lockProjectEdgeTerminals,
   preserveDraggedRouteShape,
@@ -178,6 +181,7 @@ type ManualPathDrag =
       startPoint: Point;
       originalManualPoints: Point[];
       originalRoutePoints: Point[];
+      previewRoutePoints?: Point[];
       historyCaptured?: boolean;
     }
   | {
@@ -186,6 +190,7 @@ type ManualPathDrag =
       startPoint: Point;
       originalManualPoints: Point[];
       originalRoutePoints: Point[];
+      previewRoutePoints?: Point[];
       historyCaptured?: boolean;
     }
   | null;
@@ -788,6 +793,51 @@ function normalizeSchemesForBackend(schemes: SavedSchemeRecord[]): SavedSchemeRe
   }));
 }
 
+function serializeSchemesForStorage(schemes: SavedSchemeRecord[]) {
+  return JSON.stringify(normalizeSchemesForBackend(schemes));
+}
+
+const clonePoint = (point: Point): Point => ({ x: point.x, y: point.y });
+
+function cloneNodesForUndo(sourceNodes: ModelNode[]): ModelNode[] {
+  return sourceNodes.map((node) => ({
+    ...node,
+    position: clonePoint(node.position),
+    size: { ...node.size },
+    terminals: node.terminals.map((terminal) => ({ ...terminal, anchor: clonePoint(terminal.anchor) })),
+    params: { ...node.params }
+  }));
+}
+
+function cloneEdgesForUndo(sourceEdges: Edge[]): Edge[] {
+  return sourceEdges.map((edge) => ({
+    ...edge,
+    sourcePoint: edge.sourcePoint ? clonePoint(edge.sourcePoint) : undefined,
+    targetPoint: edge.targetPoint ? clonePoint(edge.targetPoint) : undefined,
+    manualPoints: edge.manualPoints?.map(clonePoint)
+  }));
+}
+
+function cloneTopologyForUndo(sourceTopology: Topology): Topology {
+  return {
+    nodes: Object.fromEntries(
+      Object.entries(sourceTopology.nodes).map(([id, node]) => [
+        id,
+        {
+          ...node,
+          neighbors: [...node.neighbors],
+          edgeIds: [...node.edgeIds]
+        }
+      ])
+    ),
+    connectedComponents: sourceTopology.connectedComponents.map((component) => [...component])
+  };
+}
+
+function cloneTopologyErrorsForUndo(errors: TopologyValidationError[]): TopologyValidationError[] {
+  return errors.map((error) => ({ ...error, relatedNodeIds: [...error.relatedNodeIds] }));
+}
+
 function clampCanvasDimension(value: number, min: number, max: number, fallback: number) {
   return Math.round(Math.max(min, Math.min(max, Number.isFinite(value) ? value : fallback)));
 }
@@ -803,10 +853,14 @@ async function fetchBackendSchemes(): Promise<SavedSchemeRecord[]> {
 }
 
 async function saveBackendSchemes(schemes: SavedSchemeRecord[]): Promise<void> {
+  return saveBackendSchemesPayload(serializeSchemesForStorage(schemes));
+}
+
+async function saveBackendSchemesPayload(normalizedSchemesPayload: string): Promise<void> {
   const response = await fetch("/api/schemes", {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ schemes: normalizeSchemesForBackend(schemes) })
+    body: `{"schemes":${normalizedSchemesPayload}}`
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
@@ -1345,40 +1399,28 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (glyphVariant === "ac-generator" || glyphVariant === "dc-generator") {
-    const radius = miniature ? 15 : Math.min(w, h) * 0.36;
-    const centerTextSize = miniature ? 15 : 22;
+    const radius = miniature ? 15 : Math.min(w, h) * 0.37;
     const markerTextSize = miniature ? 7 : 10;
+    const symbolY = miniature ? 2 : 1;
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="0" cy="0" r={radius} fill={fill} />
-        <text
-          x="0"
-          y="-2"
-          fill={stroke}
-          stroke="none"
-          fontSize={centerTextSize}
-          fontWeight="800"
-          textAnchor="middle"
-          dominantBaseline="middle"
-        >
-          G
-        </text>
         {glyphVariant === "ac-generator" ? (
           <>
-            <path d={`M ${-radius * 0.52} ${radius * 0.48} C ${-radius * 0.28} ${radius * 0.18}, ${-radius * 0.06} ${radius * 0.18}, 0 ${radius * 0.48} C ${radius * 0.08} ${radius * 0.82}, ${radius * 0.34} ${radius * 0.82}, ${radius * 0.56} ${radius * 0.48}`} />
+            <path d={`M ${-radius * 0.58} ${symbolY} C ${-radius * 0.35} ${symbolY - radius * 0.42}, ${-radius * 0.12} ${symbolY - radius * 0.42}, 0 ${symbolY} C ${radius * 0.14} ${symbolY + radius * 0.42}, ${radius * 0.38} ${symbolY + radius * 0.42}, ${radius * 0.6} ${symbolY}`} />
             <text x={radius + 9} y={-radius * 0.42} fill={stroke} stroke="none" fontSize={markerTextSize} fontWeight="800" textAnchor="middle">
               AC
             </text>
           </>
         ) : (
           <>
-            <path d={`M ${-radius * 0.55} ${radius * 0.46} H ${-radius * 0.15} M ${radius * 0.15} ${radius * 0.46} H ${radius * 0.55} M ${radius * 0.35} ${radius * 0.26} V ${radius * 0.66}`} />
+            <path d={`M ${-radius * 0.58} ${symbolY - radius * 0.18} H ${radius * 0.58} M ${-radius * 0.42} ${symbolY + radius * 0.28} H ${radius * 0.42} M ${radius * 0.24} ${symbolY + radius * 0.12} V ${symbolY + radius * 0.44}`} />
             <text x={radius + 9} y={-radius * 0.42} fill={stroke} stroke="none" fontSize={markerTextSize} fontWeight="800" textAnchor="middle">
               DC
             </text>
           </>
         )}
-        <path d={`M ${radius * 0.72} ${-radius * 0.72} L ${radius * 1.08} ${-radius * 0.72} L ${radius * 0.82} ${-radius * 0.2} L ${radius * 1.18} ${-radius * 0.2}`} />
+        <path d={`M ${radius * 0.58} ${-radius * 0.76} L ${radius * 0.96} ${-radius * 0.76} L ${radius * 0.72} ${-radius * 0.28} L ${radius * 1.08} ${-radius * 0.28}`} />
       </g>
     );
   }
@@ -1780,9 +1822,7 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   if (glyphVariant === "dcdc-converter" || glyphVariant === "acdc-converter" || glyphVariant === "acac-converter") {
     const leftX = -w / 2 + 10;
     const rightX = w / 2 - 24;
-    const symbolY = miniature ? 0 : -2;
-    const labelY = h / 2 - (miniature ? 7 : 10);
-    const label = glyphVariant === "dcdc-converter" ? "DC/DC" : glyphVariant === "acdc-converter" ? "AC/DC" : "AC/AC";
+    const symbolY = 0;
     const dcSymbol = (x: number) => (
       <g>
         <path d={`M ${x} ${symbolY - 7} H ${x + 14} M ${x + 3} ${symbolY + 7} H ${x + 11}`} />
@@ -1798,9 +1838,6 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
         {glyphVariant === "dcdc-converter" ? dcSymbol(leftX) : acSymbol(leftX - 1)}
         {glyphVariant === "acdc-converter" ? dcSymbol(rightX + 4) : glyphVariant === "acac-converter" ? acSymbol(rightX) : dcSymbol(rightX + 4)}
         <path d={glyphVariant === "acac-converter" ? "M -5 -8 L 0 0 L -5 8 M 5 -8 L 0 0 L 5 8" : "M -7 0 H 7 M 2 -5 L 7 0 L 2 5"} />
-        <text x="0" y={labelY} fill={stroke} stroke="none" fontSize={miniature ? 7 : 10} fontWeight="800" textAnchor="middle" dominantBaseline="middle">
-          {label}
-        </text>
       </g>
     );
   }
@@ -1877,6 +1914,8 @@ export function App() {
     () => assignMissingDeviceIndexes(initialDraft?.nodes ?? SAMPLE_NODES, initialDraft?.deviceIndexCounters),
     [initialDraft]
   );
+  const initialSavedSchemes = useMemo(() => readSavedSchemes(), []);
+  const initialSchemesPayload = useMemo(() => serializeSchemesForStorage(initialSavedSchemes), [initialSavedSchemes]);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const customDeviceImageInputRef = useRef<HTMLInputElement | null>(null);
@@ -1886,16 +1925,27 @@ export function App() {
   const projectListPointerInsideRef = useRef(false);
   const backendSchemesLoadedRef = useRef(false);
   const suppressNextBackendSchemeSyncRef = useRef(false);
-  const lastPersistedSchemesPayloadRef = useRef("");
+  const lastPersistedSchemesPayloadRef = useRef(initialSchemesPayload);
   const imageLibraryInitializedRef = useRef(false);
   const lastMouseStatusRef = useRef<Point | null>(null);
+  const pendingMouseStatusRef = useRef<Point | null>(null);
+  const mouseStatusFrameRef = useRef<number | null>(null);
+  const connectPreviewPointRef = useRef<Point | null>(null);
+  const connectDropReadyRef = useRef(false);
+  const pendingConnectPreviewRef = useRef<{ point: Point | null; ready: boolean } | null>(null);
+  const connectPreviewFrameRef = useRef<number | null>(null);
   const skipNextTopologyStaleRef = useRef(false);
+  const skipCanvasSizeBlurCommitRef = useRef(false);
   const [nodes, setNodes] = useState<ModelNode[]>(() => initialIndexedNodes.nodes);
   const [edges, setEdges] = useState<Edge[]>(() => initialDraft?.edges ?? SAMPLE_EDGES);
   const [deviceIndexCounters, setDeviceIndexCounters] = useState<DeviceIndexCounters>(() => initialIndexedNodes.counters);
   const [projectName, setProjectName] = useState(() => initialDraft?.projectName ?? "电力系统图上模型");
   const [canvasWidth, setCanvasWidth] = useState(() => initialDraft?.canvasWidth ?? DEFAULT_CANVAS_WIDTH);
   const [canvasHeight, setCanvasHeight] = useState(() => initialDraft?.canvasHeight ?? DEFAULT_CANVAS_HEIGHT);
+  const [canvasSizeDraft, setCanvasSizeDraft] = useState(() => ({
+    width: String(initialDraft?.canvasWidth ?? DEFAULT_CANVAS_WIDTH),
+    height: String(initialDraft?.canvasHeight ?? DEFAULT_CANVAS_HEIGHT)
+  }));
   const [canvasBackgroundColor, setCanvasBackgroundColor] = useState(() => initialDraft?.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND);
   const [canvasBackgroundImage, setCanvasBackgroundImage] = useState(() => initialDraft?.canvasBackgroundImage ?? "");
   const [canvasBackgroundImageAssetId, setCanvasBackgroundImageAssetId] = useState(() => initialDraft?.canvasBackgroundImageAssetId ?? "");
@@ -1903,7 +1953,7 @@ export function App() {
   const [voltageUnit, setVoltageUnit] = useState(() => initialDraft?.voltageUnit ?? DEFAULT_VOLTAGE_UNIT);
   const [currentUnit, setCurrentUnit] = useState(() => initialDraft?.currentUnit ?? DEFAULT_CURRENT_UNIT);
   const [powerBaseValue, setPowerBaseValue] = useState(() => initialDraft?.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE);
-  const [schemes, setSchemes] = useState<SavedSchemeRecord[]>(() => readSavedSchemes());
+  const [schemes, setSchemes] = useState<SavedSchemeRecord[]>(initialSavedSchemes);
   const [activeProjectId, setActiveProjectId] = useState<string>(() => initialDraft?.activeProjectId ?? "");
   const [activeSchemeId, setActiveSchemeId] = useState<string>(() => initialDraft?.activeSchemeId ?? "");
   const [mode, setMode] = useState<ToolMode>("select");
@@ -1980,6 +2030,8 @@ export function App() {
   const activeSelectedEdgeSet = useMemo(() => new Set(activeSelectedEdgeIds), [activeSelectedEdgeIds]);
   const selectedEdge = edgeById.get(selectedEdgeId);
   const projects = useMemo(() => schemes.flatMap((scheme) => scheme.projects), [schemes]);
+  const normalizedSchemesForPersistence = useMemo(() => normalizeSchemesForBackend(schemes), [schemes]);
+  const normalizedSchemesPayload = useMemo(() => JSON.stringify(normalizedSchemesForPersistence), [normalizedSchemesForPersistence]);
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const baseLibraryTemplates = useMemo<DeviceTemplate[]>(() => [...DEVICE_LIBRARY, ...customDeviceTemplates], [customDeviceTemplates]);
   const libraryTemplates = useMemo<DeviceTemplate[]>(
@@ -2072,12 +2124,25 @@ export function App() {
   const canvasBounds = useMemo<CanvasBounds>(() => ({ width: canvasWidth, height: canvasHeight }), [canvasHeight, canvasWidth]);
   const leftPanelVisible = isSidePanelVisible(leftPanelMode, leftPanelAutoVisible);
   const rightPanelVisible = isSidePanelVisible(rightPanelMode, rightPanelAutoVisible);
-  const nodeImage = (node: ModelNode) => resolveNodeImage(node, imageAssets);
-  const nodeForegroundImage = (node: ModelNode) => resolveNodeForegroundImage(node, imageAssets);
+  const nodeImageById = useMemo(
+    () => new Map(nodes.map((node) => [node.id, resolveNodeImage(node, imageAssets)])),
+    [imageAssets, nodes]
+  );
+  const nodeForegroundImageById = useMemo(
+    () => new Map(nodes.map((node) => [node.id, resolveNodeForegroundImage(node, imageAssets)])),
+    [imageAssets, nodes]
+  );
+  const nodeImage = (node: ModelNode) => nodeImageById.get(node.id) ?? "";
+  const nodeForegroundImage = (node: ModelNode) => nodeForegroundImageById.get(node.id) ?? "";
   const canvasBackgroundImageUrl = resolveProjectImage(
     { canvasBackgroundImage, canvasBackgroundImageAssetId },
     imageAssets
   );
+
+  useEffect(() => {
+    setCanvasSizeDraft({ width: String(canvasWidth), height: String(canvasHeight) });
+  }, [canvasHeight, canvasWidth]);
+
   const connectPreviewPath = useMemo(() => {
     if (!connectSource || !connectPreviewPoint) {
       return "";
@@ -2146,6 +2211,16 @@ export function App() {
       path: pointsToPreviewPath(simpleOrthogonalPolyline(sourcePoint, targetPoint, edge.manualPoints ?? []))
     };
   }, [edgeById, nodeById, nodes, rewiring]);
+  const manualPathPreviewRoute = useMemo(() => {
+    if (!manualPathDrag?.previewRoutePoints?.length) {
+      return null;
+    }
+    return {
+      edgeId: manualPathDrag.edgeId,
+      points: manualPathDrag.previewRoutePoints,
+      path: pointsToPreviewPath(manualPathDrag.previewRoutePoints)
+    };
+  }, [manualPathDrag]);
   const terminalPressPreviewEdgeRoutes = useMemo(() => {
     if (!terminalPress?.moved) {
       return [];
@@ -2210,6 +2285,10 @@ export function App() {
     }
     return preview;
   }, [canvasBounds, dragging, draggingDelta, nodeById]);
+  const dragPreviewNodes = useMemo(
+    () => (dragging && draggingDelta ? Array.from(dragPreviewNodeById.values()) : nodes),
+    [dragPreviewNodeById, dragging, draggingDelta, nodes]
+  );
   const dragPreviewEdgeRoutes = useMemo(() => {
     if (!dragging || !draggingDelta) {
       return [];
@@ -2260,7 +2339,7 @@ export function App() {
             nextTargetNode: target,
             movingEndpoint: sourceMoved ? "source" : "target",
             nodes,
-            nextNodes: Array.from(dragPreviewNodeById.values())
+            nextNodes: dragPreviewNodes
           })
         : null;
       const slidablePreviewEdge = slidePatch ? { ...previewEdge, ...slidePatch } : previewEdge;
@@ -2283,7 +2362,7 @@ export function App() {
           : orthogonalPoints(adjustedStart, end);
       return [{ edgeId: edge.id, path: straightPath(points) }];
     });
-  }, [dragPreviewNodeById, draggedBusIds, dragging, draggingDelta, draggingNodeIdSet, edges, nodeById, nodes]);
+  }, [dragPreviewNodeById, dragPreviewNodes, draggedBusIds, dragging, draggingDelta, draggingNodeIdSet, edges, nodeById, nodes]);
   const dragPreviewEdgeIdSet = useMemo(
     () => new Set(dragPreviewEdgeRoutes.map((route) => route.edgeId)),
     [dragPreviewEdgeRoutes]
@@ -2319,8 +2398,11 @@ export function App() {
       .then((backendSchemes) => {
         backendSchemesLoadedRef.current = true;
         if (backendSchemes.length > 0) {
-          suppressNextBackendSchemeSyncRef.current = true;
-          setSchemes(backendSchemes);
+          const backendPayload = serializeSchemesForStorage(backendSchemes);
+          if (backendPayload !== lastPersistedSchemesPayloadRef.current) {
+            suppressNextBackendSchemeSyncRef.current = true;
+            setSchemes(backendSchemes);
+          }
           setExpandedSchemeIds((current) => {
             const backendSchemeIds = new Set(backendSchemes.map((scheme) => scheme.id));
             const retained = current.filter((schemeId) => backendSchemeIds.has(schemeId));
@@ -2335,8 +2417,8 @@ export function App() {
           });
           return;
         }
-        if (schemes.length > 0) {
-          void saveBackendSchemes(schemes).catch(() => {
+        if (initialSavedSchemes.length > 0) {
+          void saveBackendSchemesPayload(initialSchemesPayload).catch(() => {
             // 后台暂不可写时仍保留本地缓存，避免打断画布编辑。
           });
         }
@@ -2351,17 +2433,15 @@ export function App() {
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      const normalizedSchemes = normalizeSchemesForBackend(schemes);
-      const payload = JSON.stringify(normalizedSchemes);
-      if (payload === lastPersistedSchemesPayloadRef.current) {
+      if (normalizedSchemesPayload === lastPersistedSchemesPayloadRef.current) {
         if (suppressNextBackendSchemeSyncRef.current) {
           suppressNextBackendSchemeSyncRef.current = false;
         }
         return;
       }
-      lastPersistedSchemesPayloadRef.current = payload;
+      lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload;
       try {
-        window.localStorage.setItem(SCHEME_STORAGE_KEY, payload);
+        window.localStorage.setItem(SCHEME_STORAGE_KEY, normalizedSchemesPayload);
       } catch {
         // 浏览器缓存不可写时不阻断当前编辑，后台同步仍会继续尝试。
       }
@@ -2372,12 +2452,12 @@ export function App() {
         suppressNextBackendSchemeSyncRef.current = false;
         return;
       }
-      void saveBackendSchemes(normalizedSchemes).catch(() => {
+      void saveBackendSchemesPayload(normalizedSchemesPayload).catch(() => {
         // 后台保存失败时不阻塞本地编辑；下一次方案/模型变更会继续尝试同步。
       });
     }, 800);
     return () => window.clearTimeout(timeoutId);
-  }, [schemes]);
+  }, [normalizedSchemesPayload]);
 
   useEffect(() => {
     window.localStorage.setItem(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, JSON.stringify(customDeviceTemplates));
@@ -2503,6 +2583,24 @@ export function App() {
     return () => window.removeEventListener("pointerdown", closeContextMenus);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (mouseStatusFrameRef.current !== null) {
+        window.cancelAnimationFrame(mouseStatusFrameRef.current);
+        mouseStatusFrameRef.current = null;
+      }
+      if (connectPreviewFrameRef.current !== null) {
+        window.cancelAnimationFrame(connectPreviewFrameRef.current);
+        connectPreviewFrameRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    connectPreviewPointRef.current = connectPreviewPoint;
+    connectDropReadyRef.current = connectDropReady;
+  }, [connectDropReady, connectPreviewPoint]);
+
   const clearRecordSelection = () => {
     setSelectedProjectId("");
     setSelectedSchemeId("");
@@ -2555,12 +2653,12 @@ export function App() {
     voltageUnit,
     currentUnit,
     powerBaseValue,
-    deviceIndexCounters: structuredClone(deviceIndexCounters),
-    nodes: structuredClone(nodes),
-    edges: structuredClone(edges),
-    topologyErrors: structuredClone(topologyErrors),
-    topology: structuredClone(topology),
-    topologyStatus: structuredClone(topologyStatus)
+    deviceIndexCounters: { ...deviceIndexCounters },
+    nodes: cloneNodesForUndo(nodes),
+    edges: cloneEdgesForUndo(edges),
+    topologyErrors: cloneTopologyErrorsForUndo(topologyErrors),
+    topology: cloneTopologyForUndo(topology),
+    topologyStatus: { ...topologyStatus }
   });
 
   const pushUndoSnapshot = (markDirty = true) => {
@@ -2602,8 +2700,7 @@ export function App() {
       setSelectedEdgeId("");
       setSelectedEdgeIds([]);
       setConnectSource(null);
-      setConnectPreviewPoint(null);
-      setConnectDropReady(false);
+      resetConnectPreviewState();
       setRewiring(null);
       setContextMenu(null);
       setProjectMenu(null);
@@ -2677,8 +2774,7 @@ export function App() {
           setSelectedEdgeId("");
           setSelectedEdgeIds([]);
           setConnectSource(null);
-          setConnectPreviewPoint(null);
-          setConnectDropReady(false);
+          resetConnectPreviewState();
           setRewiring(null);
           clearRecordSelection();
         }
@@ -2797,8 +2893,7 @@ export function App() {
     setSelectedEdgeId("");
     setSelectedEdgeIds([]);
     setConnectSource(null);
-    setConnectPreviewPoint(null);
-    setConnectDropReady(false);
+    resetConnectPreviewState();
     setRewiring(null);
     setContextMenu(null);
   };
@@ -2835,8 +2930,7 @@ export function App() {
     setSelectedEdgeId("");
     setSelectedEdgeIds([]);
     setConnectSource(null);
-    setConnectPreviewPoint(null);
-    setConnectDropReady(false);
+    resetConnectPreviewState();
     setRewiring(null);
     setContextMenu(null);
     writeOperationLog(`剪切 ${clipboard.nodes.length} 个图元、${clipboard.edges.length} 条联络线`);
@@ -2894,8 +2988,7 @@ export function App() {
     setSelectedEdgeIds(pastedEdges.map((edge) => edge.id));
     setSelectedEdgeId(pastedEdges[0]?.id ?? "");
     setConnectSource(null);
-    setConnectPreviewPoint(null);
-    setConnectDropReady(false);
+    resetConnectPreviewState();
     setRewiring(null);
     setContextMenu(null);
     writeOperationLog(`粘贴 ${pasted.length} 个图元、${pastedEdges.length} 条联络线`);
@@ -2918,8 +3011,7 @@ export function App() {
     setSelectedEdgeIds(selection.edgeIds);
     setSelectedEdgeId(selection.edgeIds[0] ?? "");
     setConnectSource(null);
-    setConnectPreviewPoint(null);
-    setConnectDropReady(false);
+    resetConnectPreviewState();
     setRewiring(null);
     setContextMenu(null);
     setMarquee(null);
@@ -3082,8 +3174,58 @@ export function App() {
     if (previous?.x === rounded.x && previous.y === rounded.y) {
       return;
     }
-    lastMouseStatusRef.current = rounded;
-    setMousePosition(rounded);
+    pendingMouseStatusRef.current = rounded;
+    if (mouseStatusFrameRef.current !== null) {
+      return;
+    }
+    mouseStatusFrameRef.current = window.requestAnimationFrame(() => {
+      mouseStatusFrameRef.current = null;
+      const next = pendingMouseStatusRef.current;
+      pendingMouseStatusRef.current = null;
+      if (!next) {
+        return;
+      }
+      const latest = lastMouseStatusRef.current;
+      if (latest?.x === next.x && latest.y === next.y) {
+        return;
+      }
+      lastMouseStatusRef.current = next;
+      setMousePosition(next);
+    });
+  };
+  const applyConnectPreviewState = (point: Point | null, ready: boolean) => {
+    const previousPoint = connectPreviewPointRef.current;
+    if (!sameOptionalPoint(previousPoint ?? undefined, point ?? undefined)) {
+      connectPreviewPointRef.current = point;
+      setConnectPreviewPoint(point);
+    }
+    if (connectDropReadyRef.current !== ready) {
+      connectDropReadyRef.current = ready;
+      setConnectDropReady(ready);
+    }
+  };
+  const scheduleConnectPreviewState = (point: Point | null, ready: boolean) => {
+    pendingConnectPreviewRef.current = { point, ready };
+    if (connectPreviewFrameRef.current !== null) {
+      return;
+    }
+    connectPreviewFrameRef.current = window.requestAnimationFrame(() => {
+      connectPreviewFrameRef.current = null;
+      const next = pendingConnectPreviewRef.current;
+      pendingConnectPreviewRef.current = null;
+      if (!next) {
+        return;
+      }
+      applyConnectPreviewState(next.point, next.ready);
+    });
+  };
+  const resetConnectPreviewState = () => {
+    pendingConnectPreviewRef.current = null;
+    if (connectPreviewFrameRef.current !== null) {
+      window.cancelAnimationFrame(connectPreviewFrameRef.current);
+      connectPreviewFrameRef.current = null;
+    }
+    applyConnectPreviewState(null, false);
   };
   const resolveConnectPreviewPoint = (point: Point, event: { shiftKey: boolean; ctrlKey: boolean }) => {
     if (!connectSource || (!event.shiftKey && !event.ctrlKey)) {
@@ -3260,19 +3402,14 @@ export function App() {
   const updateCanvasSize = (nextWidth: number, nextHeight: number) => {
     const width = clampCanvasDimension(nextWidth, MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH, DEFAULT_CANVAS_WIDTH);
     const height = clampCanvasDimension(nextHeight, MIN_CANVAS_HEIGHT, MAX_CANVAS_HEIGHT, DEFAULT_CANVAS_HEIGHT);
+    if (width === canvasWidth && height === canvasHeight) {
+      return;
+    }
     pushUndoSnapshot();
     setCanvasWidth(width);
     setCanvasHeight(height);
     setViewBox((current) =>
-      normalizeViewBoxToCanvas(
-        {
-          x: current.x,
-          y: current.y,
-          width: Math.min(current.width, width * 3),
-          height: Math.min(current.height, height * 3)
-        },
-        { width, height }
-      )
+      normalizeViewBoxToCanvas({ ...current, ...clampViewBoxDimensionsForZoom(current, { width, height }) }, { width, height })
     );
     setNodes((current) => current.map((node) => ({ ...node, position: clampNodePositionToBounds(node, { width, height }) })));
     setEdges((current) =>
@@ -3283,6 +3420,51 @@ export function App() {
         manualPoints: edge.manualPoints?.map((point) => clampPointToBounds(point, { width, height }))
       }))
     );
+  };
+
+  const commitCanvasSizeDraft = (draft = canvasSizeDraft) => {
+    const nextWidth = draft.width.trim() === "" ? canvasWidth : Number(draft.width);
+    const nextHeight = draft.height.trim() === "" ? canvasHeight : Number(draft.height);
+    const requestedWidth = clampCanvasDimension(nextWidth, MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH, canvasWidth);
+    const requestedHeight = clampCanvasDimension(nextHeight, MIN_CANVAS_HEIGHT, MAX_CANVAS_HEIGHT, canvasHeight);
+    const contentSize = calculateModelContentSize(nodes, edges, routedEdges);
+    const requiredWidth = clampCanvasDimension(contentSize.width, MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH, requestedWidth);
+    const requiredHeight = clampCanvasDimension(contentSize.height, MIN_CANVAS_HEIGHT, MAX_CANVAS_HEIGHT, requestedHeight);
+    const width = Math.max(requestedWidth, requiredWidth);
+    const height = Math.max(requestedHeight, requiredHeight);
+    if (width !== requestedWidth || height !== requestedHeight) {
+      const message = `输入的显示区域小于当前图上内容实际占用范围，已调整为 ${width} x ${height}。`;
+      window.alert(message);
+      writeOperationLog(message);
+    }
+    setCanvasSizeDraft({ width: String(width), height: String(height) });
+    updateCanvasSize(width, height);
+  };
+
+  const resetCanvasSizeDraft = () => {
+    setCanvasSizeDraft({ width: String(canvasWidth), height: String(canvasHeight) });
+  };
+
+  const handleCanvasSizeBlur = () => {
+    if (skipCanvasSizeBlurCommitRef.current) {
+      skipCanvasSizeBlurCommitRef.current = false;
+      return;
+    }
+    commitCanvasSizeDraft();
+  };
+
+  const handleCanvasSizeKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      skipCanvasSizeBlurCommitRef.current = true;
+      commitCanvasSizeDraft();
+      event.currentTarget.blur();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      skipCanvasSizeBlurCommitRef.current = true;
+      resetCanvasSizeDraft();
+      event.currentTarget.blur();
+    }
   };
 
   const updateParam = (key: string, value: string) => {
@@ -3628,8 +3810,7 @@ export function App() {
     setSelectedEdgeId(newEdge.id);
     setSelectedEdgeIds([newEdge.id]);
     setConnectSource(null);
-    setConnectPreviewPoint(null);
-    setConnectDropReady(false);
+    resetConnectPreviewState();
     setMode("select");
     writeOperationLog(`新增联络线：${sourceNode.name} -> ${target.node.name}`);
     return true;
@@ -3816,8 +3997,7 @@ export function App() {
       updateMouseStatus(pointer);
       if (connectSource) {
         const previewPoint = resolveConnectPreviewPoint(pointer, event);
-        setConnectPreviewPoint(previewPoint);
-        setConnectDropReady(Boolean(findConnectTargetAtPoint(previewPoint)));
+        scheduleConnectPreviewState(previewPoint, Boolean(findConnectTargetAtPoint(previewPoint)));
       }
     }
     if (terminalPress && svgRef.current) {
@@ -3861,46 +4041,74 @@ export function App() {
       if (!point) {
         return;
       }
-      if (!manualPathDrag.historyCaptured) {
+      const nextDrag = { ...manualPathDrag };
+      if (!nextDrag.historyCaptured) {
         pushUndoSnapshot();
-        setManualPathDrag({ ...manualPathDrag, historyCaptured: true });
+        nextDrag.historyCaptured = true;
       }
-      const originalRoutePoints = manualPathDrag.originalRoutePoints;
+      const originalRoutePoints = nextDrag.originalRoutePoints;
       if (originalRoutePoints.length < 2) {
         return;
       }
       const nextPoints = originalRoutePoints.map((item) => ({ ...item }));
-      if ("pointIndex" in manualPathDrag) {
-        if (manualPathDrag.pointIndex > 0 && manualPathDrag.pointIndex < originalRoutePoints.length - 1) {
-          const originalPoint = originalRoutePoints[manualPathDrag.pointIndex];
-          nextPoints[manualPathDrag.pointIndex] = clampPointToCanvas({
-            x: originalPoint.x + point.x - manualPathDrag.startPoint.x,
-            y: originalPoint.y + point.y - manualPathDrag.startPoint.y
+      if ("pointIndex" in nextDrag) {
+        if (nextDrag.pointIndex > 0 && nextDrag.pointIndex < originalRoutePoints.length - 1) {
+          const originalPoint = originalRoutePoints[nextDrag.pointIndex];
+          nextPoints[nextDrag.pointIndex] = clampPointToCanvas({
+            x: originalPoint.x + point.x - nextDrag.startPoint.x,
+            y: originalPoint.y + point.y - nextDrag.startPoint.y
           });
         }
       } else {
         nextPoints.splice(
           0,
           nextPoints.length,
-          ...moveOrthogonalRouteSegment(originalRoutePoints, manualPathDrag.segmentIndex, manualPathDrag.orientation, point, canvasBounds)
+          ...moveOrthogonalRouteSegment(originalRoutePoints, nextDrag.segmentIndex, nextDrag.orientation, point, canvasBounds)
         );
       }
-      setEdgeManualPoints(manualPathDrag.edgeId, routeManualPoints(nextPoints));
+      const previewRoutePoints = nextPoints.map((item) => ({ ...item }));
+      if (
+        nextDrag.historyCaptured === manualPathDrag.historyCaptured &&
+        sameOptionalPointList(previewRoutePoints, manualPathDrag.previewRoutePoints)
+      ) {
+        return;
+      }
+      setManualPathDrag({ ...nextDrag, previewRoutePoints });
       return;
     }
     if (rewiring && svgRef.current) {
-      setRewiring({ ...rewiring, previewPoint: lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY)) });
+      const previewPoint = lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      setRewiring((current) =>
+        current && current.edgeId === rewiring.edgeId && current.endpoint === rewiring.endpoint
+          ? sameOptionalPoint(current.previewPoint, previewPoint)
+            ? current
+            : { ...current, previewPoint }
+          : current
+      );
       return;
     }
     if (marquee && svgRef.current) {
-      setMarquee({ ...marquee, current: lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY)) });
+      const currentPoint = lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      setMarquee((current) =>
+        current && !sameOptionalPoint(current.current, currentPoint)
+          ? { ...current, current: currentPoint }
+          : current
+      );
       return;
     }
     if (panning && svgRef.current) {
       const rect = svgRef.current.getBoundingClientRect();
       const dx = ((event.clientX - panning.clientX) / rect.width) * panning.viewBox.width;
       const dy = ((event.clientY - panning.clientY) / rect.height) * panning.viewBox.height;
-      setViewBox(clampViewBoxToCanvas({ ...panning.viewBox, x: panning.viewBox.x - dx, y: panning.viewBox.y - dy }));
+      const nextViewBox = clampViewBoxToCanvas({ ...panning.viewBox, x: panning.viewBox.x - dx, y: panning.viewBox.y - dy });
+      setViewBox((current) =>
+        current.x === nextViewBox.x &&
+        current.y === nextViewBox.y &&
+        current.width === nextViewBox.width &&
+        current.height === nextViewBox.height
+          ? current
+          : nextViewBox
+      );
       return;
     }
     if (transformDrag && svgRef.current) {
@@ -3959,11 +4167,15 @@ export function App() {
     const boundedDelta = boundedDeltaForNodes(dragging.nodeIds, dragging.originalPositions, movementDelta.x, movementDelta.y);
     setDragging((current) =>
       current
-        ? {
-            ...current,
-            currentDelta: boundedDelta,
-            historyCaptured: true
-          }
+        ? current.historyCaptured &&
+          current.currentDelta?.x === boundedDelta.x &&
+          current.currentDelta?.y === boundedDelta.y
+          ? current
+          : {
+              ...current,
+              currentDelta: boundedDelta,
+              historyCaptured: true
+            }
         : current
     );
   };
@@ -3976,8 +4188,10 @@ export function App() {
     }
     const pointer = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
     const zoomFactor = event.deltaY > 0 ? 1.12 : 0.88;
-    const nextWidth = Math.max(240, Math.min(canvasWidth * 3, viewBox.width * zoomFactor));
-    const nextHeight = Math.max(160, Math.min(canvasHeight * 3, viewBox.height * zoomFactor));
+    const { width: nextWidth, height: nextHeight } = clampViewBoxDimensionsForZoom(
+      { width: viewBox.width * zoomFactor, height: viewBox.height * zoomFactor },
+      canvasBounds
+    );
     const ratioX = (pointer.x - viewBox.x) / viewBox.width;
     const ratioY = (pointer.y - viewBox.y) / viewBox.height;
     setViewBox(clampViewBoxToCanvas({
@@ -4146,8 +4360,7 @@ export function App() {
     setSelectedNodeIds(indexed.nodes[0] ? [indexed.nodes[0].id] : []);
     setSelectedEdgeId("");
     setConnectSource(null);
-    setConnectPreviewPoint(null);
-    setConnectDropReady(false);
+    resetConnectPreviewState();
     setRewiring(null);
     setHasUnsavedChanges(false);
     writeOperationLog(`加载模型：${project.name}`);
@@ -4582,8 +4795,7 @@ export function App() {
       setSelectedEdgeIds([item.id]);
     }
     setConnectSource(null);
-    setConnectPreviewPoint(null);
-    setConnectDropReady(false);
+    resetConnectPreviewState();
     setRewiring(null);
     setContextMenu(null);
     clearRecordSelection();
@@ -4594,16 +4806,34 @@ export function App() {
   };
 
   const setEdgeManualPoints = (edgeId: string, manualPoints: Point[]) => {
-    setEdges((current) =>
-      current.map((edge) =>
-        edge.id === edgeId
-          ? { ...edge, manualPoints: manualPoints.map((point) => ({ x: Math.round(point.x), y: Math.round(point.y) })) }
-          : edge
-      )
-    );
+    const normalizedManualPoints = manualPoints.map((point) => ({ x: Math.round(point.x), y: Math.round(point.y) }));
+    setEdges((current) => {
+      let changed = false;
+      const nextEdges = current.map((edge) => {
+        if (edge.id !== edgeId) {
+          return edge;
+        }
+        if (sameOptionalPointList(edge.manualPoints, normalizedManualPoints)) {
+          return edge;
+        }
+        changed = true;
+        return { ...edge, manualPoints: normalizedManualPoints };
+      });
+      return changed ? nextEdges : current;
+    });
   };
 
   const routeManualPoints = (routePoints: Point[]) => routePoints.slice(1, -1).map((point) => ({ ...point }));
+
+  const finishManualPathDrag = () => {
+    if (!manualPathDrag) {
+      return;
+    }
+    if (manualPathDrag.historyCaptured && manualPathDrag.previewRoutePoints?.length) {
+      setEdgeManualPoints(manualPathDrag.edgeId, routeManualPoints(manualPathDrag.previewRoutePoints));
+    }
+    setManualPathDrag(null);
+  };
 
   const tidySelectedEdgeRoute = () => {
     if (!selectedEdge || !selectedRoutedEdge) {
@@ -4658,6 +4888,12 @@ export function App() {
     if (event.button !== 0 || !svgRef.current) {
       return;
     }
+    const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+    if (event.detail >= 2) {
+      event.preventDefault();
+      insertManualBendAtPoint(edgeId, segmentIndex, routePoints, pointer);
+      return;
+    }
     setSelectedNodeIds([]);
     setSelectedEdgeId(edgeId);
     setSelectedEdgeIds([edgeId]);
@@ -4665,7 +4901,7 @@ export function App() {
       edgeId,
       segmentIndex,
       orientation,
-      startPoint: clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY)),
+      startPoint: pointer,
       originalManualPoints: routeManualPoints(routePoints),
       originalRoutePoints: routePoints.map((point) => ({ ...point }))
     });
@@ -4690,31 +4926,71 @@ export function App() {
     captureCanvasPointer(event.pointerId);
   };
 
-  const insertManualBendPoint = (event: MouseEvent<SVGPathElement>, edgeId: string, segmentIndex: number, routePoints: Point[]) => {
+  const routeSegmentPointerDistance = (point: Point, from: Point, to: Point) => {
+    if (from.y === to.y) {
+      const minX = Math.min(from.x, to.x);
+      const maxX = Math.max(from.x, to.x);
+      if (point.x >= minX && point.x <= maxX) {
+        return Math.abs(point.y - from.y);
+      }
+    } else if (from.x === to.x) {
+      const minY = Math.min(from.y, to.y);
+      const maxY = Math.max(from.y, to.y);
+      if (point.y >= minY && point.y <= maxY) {
+        return Math.abs(point.x - from.x);
+      }
+    }
+    return Math.min(
+      Math.hypot(point.x - from.x, point.y - from.y),
+      Math.hypot(point.x - to.x, point.y - to.y)
+    );
+  };
+
+  const findEditableRouteSegmentIndex = (routePoints: Point[], point: Point) => {
+    const candidates = routePoints
+      .slice(1, -2)
+      .map((from, offset) => {
+        const segmentIndex = offset + 1;
+        const to = routePoints[segmentIndex + 1];
+        return { from, to, segmentIndex };
+      })
+      .filter(({ from, to }) => to && !sameOptionalPoint(from, to) && (from.x === to.x || from.y === to.y));
+    const fallbackCandidates = candidates.length > 0
+      ? candidates
+      : routePoints.slice(0, -1).map((from, segmentIndex) => ({ from, to: routePoints[segmentIndex + 1], segmentIndex }))
+        .filter(({ from, to }) => to && !sameOptionalPoint(from, to) && (from.x === to.x || from.y === to.y));
+    return fallbackCandidates.reduce<{ index: number; distance: number } | null>((nearest, candidate) => {
+      const distance = routeSegmentPointerDistance(point, candidate.from, candidate.to);
+      return !nearest || distance < nearest.distance ? { index: candidate.segmentIndex, distance } : nearest;
+    }, null)?.index ?? -1;
+  };
+
+  const insertManualBendAtPoint = (edgeId: string, segmentIndex: number, routePoints: Point[], clickPoint: Point) => {
+    const from = routePoints[segmentIndex];
+    const to = routePoints[segmentIndex + 1];
+    if (!from || !to || (from.x !== to.x && from.y !== to.y)) {
+      return;
+    }
+    pushUndoSnapshot();
+    const nextPoints = insertOrthogonalRouteBend(routePoints, segmentIndex, clickPoint, canvasBounds);
+    setEdgeManualPoints(edgeId, routeManualPoints(nextPoints));
+  };
+
+  const insertManualBendFromEdgePath = (event: MouseEvent<SVGPathElement>, edgeId: string, routePoints: Point[]) => {
+    event.preventDefault();
     event.stopPropagation();
     if (!svgRef.current) {
       return;
     }
+    activateInspectorFromCanvas();
+    setSelectedNodeIds([]);
+    setSelectedEdgeId(edgeId);
+    setSelectedEdgeIds([edgeId]);
     const clickPoint = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-    const from = routePoints[segmentIndex];
-    const to = routePoints[segmentIndex + 1];
-    if (!from || !to) {
-      return;
+    const segmentIndex = findEditableRouteSegmentIndex(routePoints, clickPoint);
+    if (segmentIndex >= 0) {
+      insertManualBendAtPoint(edgeId, segmentIndex, routePoints, clickPoint);
     }
-    pushUndoSnapshot();
-    const nextPoints = routePoints.map((point) => ({ ...point }));
-    if (from.y === to.y) {
-      const x = Math.max(Math.min(clickPoint.x, Math.max(from.x, to.x) - 12), Math.min(from.x, to.x) + 12);
-      const y = from.y;
-      const offsetY = y + (clickPoint.y >= y ? 32 : -32);
-      nextPoints.splice(segmentIndex + 1, 0, { x, y }, { x, y: offsetY }, { x: x + (to.x >= from.x ? 32 : -32), y: offsetY });
-    } else {
-      const y = Math.max(Math.min(clickPoint.y, Math.max(from.y, to.y) - 12), Math.min(from.y, to.y) + 12);
-      const x = from.x;
-      const offsetX = x + (clickPoint.x >= x ? 32 : -32);
-      nextPoints.splice(segmentIndex + 1, 0, { x, y }, { x: offsetX, y }, { x: offsetX, y: y + (to.y >= from.y ? 32 : -32) });
-    }
-    setEdgeManualPoints(edgeId, routeManualPoints(nextPoints));
   };
 
   const deleteManualBendPoint = (edgeId: string, routePointIndex: number, routePoints: Point[]) => {
@@ -4729,8 +5005,7 @@ export function App() {
   const startConnectFromTerminal = (node: ModelNode, terminalId: string, point?: Point) => {
     const sourcePoint = point ?? getModelEdgeEndpointPoint(node, undefined, terminalId);
     setConnectSource({ nodeId: node.id, terminalId, point });
-    setConnectPreviewPoint(sourcePoint);
-    setConnectDropReady(false);
+    applyConnectPreviewState(sourcePoint, false);
     setMode("connect");
     setSelectedNodeIds([]);
     setSelectedEdgeId("");
@@ -4886,8 +5161,7 @@ export function App() {
     setSelectedEdgeId(newEdge.id);
     setSelectedEdgeIds([newEdge.id]);
     setConnectSource(null);
-    setConnectPreviewPoint(null);
-    setConnectDropReady(false);
+    resetConnectPreviewState();
     setMode("select");
   };
 
@@ -5496,61 +5770,67 @@ export function App() {
     setCustomDeviceDialogOpen(false);
   };
 
+  const renderLibraryDefinitionActions = () => (
+    <div className="library-definition-actions">
+      <button
+        type="button"
+        className="custom-device-create-button"
+        onClick={() => {
+          setCustomDeviceDraft(createEmptyCustomDeviceDraft("交流设备"));
+          setCustomDeviceDialogOpen(true);
+        }}
+      >
+        新建元件
+      </button>
+      <button type="button" className="custom-device-create-button" onClick={openDeviceDefinitionDialog}>
+        修改元件
+      </button>
+    </div>
+  );
+
   const renderLibraryPanel = () => (
-    <div className="library-scroll">
-      <div className="library-definition-actions">
-        <button
-          type="button"
-          className="custom-device-create-button"
-          onClick={() => {
-            setCustomDeviceDraft(createEmptyCustomDeviceDraft("交流设备"));
-            setCustomDeviceDialogOpen(true);
-          }}
-        >
-          新建元件
-        </button>
-        <button type="button" className="custom-device-create-button" onClick={openDeviceDefinitionDialog}>
-          修改元件
-        </button>
+    <div className="library-panel-stack">
+      <div className="library-scroll">
+        {libraryGroups.map((group) => {
+          const expanded = expandedLibraryGroups.includes(group);
+          return (
+            <section className="library-group-section" key={group}>
+              <button
+                className={`library-group-toggle ${expanded ? "active" : ""}`}
+                onClick={() =>
+                  setExpandedLibraryGroups((current) =>
+                    current.includes(group) ? current.filter((item) => item !== group) : [...current, group]
+                  )
+                }
+              >
+                {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                {group}
+              </button>
+              {expanded && (
+                <div className="library-group">
+                  {(groupedLibrary[group] ?? []).map((item) => {
+                    const preview = libraryPreviewByKind.get(item.kind) ?? createNodeFromTemplate(item, { x: 0, y: 0 });
+                    return (
+                      <button
+                        key={item.kind}
+                        className="library-item"
+                        draggable
+                        title={item.label}
+                        onDragStart={(event) => event.dataTransfer.setData("application/device-kind", item.kind)}
+                      >
+                        <svg viewBox="-40 -28 80 56" aria-hidden="true">
+                          <DeviceGlyph node={preview} miniature />
+                        </svg>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          );
+        })}
       </div>
-      {libraryGroups.map((group) => {
-        const expanded = expandedLibraryGroups.includes(group);
-        return (
-          <section className="library-group-section" key={group}>
-            <button
-              className={`library-group-toggle ${expanded ? "active" : ""}`}
-              onClick={() =>
-                setExpandedLibraryGroups((current) =>
-                  current.includes(group) ? current.filter((item) => item !== group) : [...current, group]
-                )
-              }
-            >
-              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              {group}
-            </button>
-            {expanded && (
-              <div className="library-group">
-                {(groupedLibrary[group] ?? []).map((item) => {
-                  const preview = libraryPreviewByKind.get(item.kind) ?? createNodeFromTemplate(item, { x: 0, y: 0 });
-                  return (
-                    <button
-                      className="library-item"
-                      draggable
-                      title={item.label}
-                      key={item.kind}
-                      onDragStart={(event) => event.dataTransfer.setData("application/device-kind", item.kind)}
-                    >
-                      <svg viewBox="-40 -28 80 56" aria-hidden="true">
-                        <DeviceGlyph node={preview} miniature />
-                      </svg>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        );
-      })}
+      {renderLibraryDefinitionActions()}
     </div>
   );
 
@@ -5707,7 +5987,7 @@ export function App() {
               finishTerminalPress();
               finishMarqueeSelection();
               finishNodeDrag();
-              setManualPathDrag(null);
+              finishManualPathDrag();
               setTransformDrag(null);
               setPanning(null);
             }}
@@ -5718,7 +5998,7 @@ export function App() {
               }
               finishNodeDrag();
               setTerminalPress(null);
-              setManualPathDrag(null);
+              finishManualPathDrag();
               setTransformDrag(null);
               setPanning(null);
               setMarquee(null);
@@ -5727,7 +6007,7 @@ export function App() {
             onPointerCancel={() => {
               finishNodeDrag();
               setTerminalPress(null);
-              setManualPathDrag(null);
+              finishManualPathDrag();
               setTransformDrag(null);
               setPanning(null);
               setMarquee(null);
@@ -5736,7 +6016,7 @@ export function App() {
             onLostPointerCapture={() => {
               finishNodeDrag();
               setTerminalPress(null);
-              setManualPathDrag(null);
+              finishManualPathDrag();
               setTransformDrag(null);
             }}
             onPointerDown={(event) => {
@@ -5751,19 +6031,18 @@ export function App() {
               updateMouseStatus(pointer);
               if (connectSource) {
                 const previewPoint = resolveConnectPreviewPoint(pointer, event);
-                setConnectPreviewPoint(previewPoint);
+                applyConnectPreviewState(previewPoint, connectDropReadyRef.current);
                 const target = findConnectTargetAtPoint(previewPoint);
                 if (target) {
                   finishConnectToTarget(target, previewPoint);
                 } else {
-                  setConnectDropReady(false);
+                  applyConnectPreviewState(previewPoint, false);
                 }
                 return;
               }
               if (event.ctrlKey || event.shiftKey) {
                 setConnectSource(null);
-                setConnectPreviewPoint(null);
-                setConnectDropReady(false);
+                resetConnectPreviewState();
                 setRewiring(null);
                 setPanning({ clientX: event.clientX, clientY: event.clientY, viewBox });
                 event.currentTarget.setPointerCapture(event.pointerId);
@@ -5773,8 +6052,7 @@ export function App() {
               setSelectedEdgeId("");
               setSelectedEdgeIds([]);
               setConnectSource(null);
-              setConnectPreviewPoint(null);
-              setConnectDropReady(false);
+              resetConnectPreviewState();
               setRewiring(null);
               setInspectorTab("model");
               if (activeProjectId) {
@@ -5793,8 +6071,7 @@ export function App() {
               updateMouseStatus(pointer);
               if (connectSource) {
                 setConnectSource(null);
-                setConnectPreviewPoint(null);
-                setConnectDropReady(false);
+                resetConnectPreviewState();
                 setMode("select");
                 return;
               }
@@ -5905,6 +6182,7 @@ export function App() {
                     d={route.path}
                     className="connection-hitline"
                     onContextMenu={(event) => openEdgeContextMenu(event, edge.id)}
+                    onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, route.points)}
                     onPointerDown={(event) => {
                       event.stopPropagation();
                       activateInspectorFromCanvas();
@@ -5917,6 +6195,7 @@ export function App() {
                     d={route.path}
                     className="connection-line"
                     onContextMenu={(event) => openEdgeContextMenu(event, edge.id)}
+                    onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, route.points)}
                     onPointerDown={(event) => {
                       event.stopPropagation();
                       activateInspectorFromCanvas();
@@ -6068,8 +6347,7 @@ export function App() {
                     }
                     if (connectSource) {
                       setConnectSource(null);
-                      setConnectPreviewPoint(null);
-                      setConnectDropReady(false);
+                      resetConnectPreviewState();
                       setMode("select");
                       return;
                     }
@@ -6251,16 +6529,32 @@ export function App() {
               const edge = selectedEdge;
               const route = selectedRoutedEdge;
               const isRewiringSelectedEdge = rewiring?.edgeId === edge.id;
-              const displayPath = isRewiringSelectedEdge && rewiringPreviewRoute ? rewiringPreviewRoute.path : route.path;
+              const isManualPathSelectedEdge = manualPathPreviewRoute?.edgeId === edge.id;
+              const routePoints = isManualPathSelectedEdge ? manualPathPreviewRoute.points : route.points;
+              const displayPath = isRewiringSelectedEdge && rewiringPreviewRoute
+                ? rewiringPreviewRoute.path
+                : isManualPathSelectedEdge
+                  ? manualPathPreviewRoute.path
+                  : route.path;
               const sourcePoint = getEdgeEndpointPoint(edge, "source");
               const targetPoint = getEdgeEndpointPoint(edge, "target");
-              const movableSegmentIndexes = new Set(getMovableRouteSegmentIndexes(route.points));
+              const movableSegmentIndexes = new Set(getMovableRouteSegmentIndexes(routePoints));
               return (
                 <g className="connection-group selected topmost">
-                  <path d={displayPath} className="connection-hitline" onContextMenu={(event) => openEdgeContextMenu(event, edge.id)} />
-                  <path d={displayPath} className="connection-line" onContextMenu={(event) => openEdgeContextMenu(event, edge.id)} />
-                  {!isRewiringSelectedEdge && route.points.slice(1).map((point, index) => {
-                    const from = route.points[index];
+                  <path
+                    d={displayPath}
+                    className="connection-hitline"
+                    onContextMenu={(event) => openEdgeContextMenu(event, edge.id)}
+                    onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, routePoints)}
+                  />
+                  <path
+                    d={displayPath}
+                    className="connection-line"
+                    onContextMenu={(event) => openEdgeContextMenu(event, edge.id)}
+                    onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, routePoints)}
+                  />
+                  {!isRewiringSelectedEdge && routePoints.slice(1).map((point, index) => {
+                    const from = routePoints[index];
                     const segmentIndex = index;
                     if (!movableSegmentIndexes.has(segmentIndex)) {
                       return null;
@@ -6271,18 +6565,17 @@ export function App() {
                         key={`segment-${segmentIndex}`}
                         d={`M ${from.x} ${from.y} L ${point.x} ${point.y}`}
                         className={`manual-segment-handle ${orientation}`}
-                        onDoubleClick={(event) => insertManualBendPoint(event, edge.id, segmentIndex, route.points)}
-                        onPointerDown={(event) => startManualSegmentDrag(event, edge.id, segmentIndex, orientation, route.points)}
+                        onPointerDown={(event) => startManualSegmentDrag(event, edge.id, segmentIndex, orientation, routePoints)}
                         onContextMenu={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
                           const removeIndex = segmentIndex > 0 ? segmentIndex : segmentIndex + 1;
-                          deleteManualBendPoint(edge.id, removeIndex, route.points);
+                          deleteManualBendPoint(edge.id, removeIndex, routePoints);
                         }}
                       />
                     );
                   })}
-                  {!isRewiringSelectedEdge && route.points.slice(2, -2).map((point, index) => {
+                  {!isRewiringSelectedEdge && routePoints.slice(2, -2).map((point, index) => {
                     const routePointIndex = index + 2;
                     return (
                       <circle
@@ -6291,11 +6584,11 @@ export function App() {
                         cx={point.x}
                         cy={point.y}
                         r={5.5}
-                        onPointerDown={(event) => startManualPointDrag(event, edge.id, routePointIndex, route.points)}
+                        onPointerDown={(event) => startManualPointDrag(event, edge.id, routePointIndex, routePoints)}
                         onContextMenu={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
-                          deleteManualBendPoint(edge.id, routePointIndex, route.points);
+                          deleteManualBendPoint(edge.id, routePointIndex, routePoints);
                         }}
                       />
                     );
@@ -6438,8 +6731,10 @@ export function App() {
                         min={MIN_CANVAS_WIDTH}
                         max={MAX_CANVAS_WIDTH}
                         step="10"
-                        value={canvasWidth}
-                        onChange={(event) => updateCanvasSize(Number(event.target.value), canvasHeight)}
+                        value={canvasSizeDraft.width}
+                        onChange={(event) => setCanvasSizeDraft((current) => ({ ...current, width: event.target.value }))}
+                        onBlur={handleCanvasSizeBlur}
+                        onKeyDown={handleCanvasSizeKeyDown}
                       />
                     </td>
                   </tr>
@@ -6451,8 +6746,10 @@ export function App() {
                         min={MIN_CANVAS_HEIGHT}
                         max={MAX_CANVAS_HEIGHT}
                         step="10"
-                        value={canvasHeight}
-                        onChange={(event) => updateCanvasSize(canvasWidth, Number(event.target.value))}
+                        value={canvasSizeDraft.height}
+                        onChange={(event) => setCanvasSizeDraft((current) => ({ ...current, height: event.target.value }))}
+                        onBlur={handleCanvasSizeBlur}
+                        onKeyDown={handleCanvasSizeKeyDown}
                       />
                     </td>
                   </tr>

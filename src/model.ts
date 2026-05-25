@@ -3115,6 +3115,22 @@ export function viewBoxZoomPercent(viewBox: ViewBox, bounds: CanvasBounds): numb
   return Math.max(1, Math.round(100 / zoomRatio));
 }
 
+export function clampViewBoxDimensionsForZoom(
+  size: Pick<ViewBox, "width" | "height">,
+  bounds: CanvasBounds,
+  minZoomPercent = 5,
+  maxZoomPercent = 2000
+): Pick<ViewBox, "width" | "height"> {
+  const safeMinZoom = Math.max(1, minZoomPercent);
+  const safeMaxZoom = Math.max(safeMinZoom, maxZoomPercent);
+  const minRatio = 100 / safeMaxZoom;
+  const maxRatio = 100 / safeMinZoom;
+  return {
+    width: Math.max(bounds.width * minRatio, Math.min(bounds.width * maxRatio, size.width)),
+    height: Math.max(bounds.height * minRatio, Math.min(bounds.height * maxRatio, size.height))
+  };
+}
+
 export function createTerminals(type: TerminalType, count: number): Terminal[] {
   if (count <= 0) {
     return [];
@@ -4055,6 +4071,42 @@ function boxFor(node: ModelNode, padding = 0) {
   };
 }
 
+export function calculateModelContentSize(
+  nodes: ModelNode[],
+  edges: Edge[],
+  routedEdges: RoutedEdge[] = [],
+  padding = 0
+): CanvasBounds {
+  let right = 0;
+  let bottom = 0;
+  const includePoint = (point?: Point) => {
+    if (!point) {
+      return;
+    }
+    right = Math.max(right, point.x + padding);
+    bottom = Math.max(bottom, point.y + padding);
+  };
+
+  for (const node of nodes) {
+    const box = boxFor(node, padding);
+    right = Math.max(right, box.right);
+    bottom = Math.max(bottom, box.bottom);
+  }
+  for (const edge of edges) {
+    includePoint(edge.sourcePoint);
+    includePoint(edge.targetPoint);
+    edge.manualPoints?.forEach(includePoint);
+  }
+  for (const route of routedEdges) {
+    route.points.forEach(includePoint);
+  }
+
+  return {
+    width: Math.max(0, Math.ceil(right)),
+    height: Math.max(0, Math.ceil(bottom))
+  };
+}
+
 function pointInsideBox(point: Point, box: ReturnType<typeof boxFor>) {
   return point.x > box.left && point.x < box.right && point.y > box.top && point.y < box.bottom;
 }
@@ -4508,8 +4560,8 @@ function reduceTinyDoglegs(points: Point[], options: InternalRouteSimplifyOption
       if (isProtectedRoutePointIndex(index + 1, route.length) || isProtectedRoutePointIndex(index + 2, route.length)) {
         continue;
       }
-      const verticalDetour = a.x === b.x && b.y === c.y && c.x === d.x && a.y === d.y && Math.abs(a.y - b.y) <= ROUTE_TINY_DOGLEG_LIMIT;
-      const horizontalDetour = a.y === b.y && b.x === c.x && c.y === d.y && a.x === d.x && Math.abs(a.x - b.x) <= ROUTE_TINY_DOGLEG_LIMIT;
+      const verticalDetour = a.x === b.x && b.y === c.y && c.x === d.x && a.y === d.y;
+      const horizontalDetour = a.y === b.y && b.x === c.x && c.y === d.y && a.x === d.x;
       if (!verticalDetour && !horizontalDetour) {
         continue;
       }
@@ -4621,6 +4673,55 @@ export function moveOrthogonalRouteSegment(
     }
   });
   return nextPoints;
+}
+
+export function insertOrthogonalRouteBend(
+  routePoints: Point[],
+  segmentIndex: number,
+  pointerPoint: Point,
+  bounds?: CanvasBounds,
+  offset = 32,
+  preferredMargin = 12
+): Point[] {
+  const nextPoints = routePoints.map((point) => ({ ...point }));
+  const from = routePoints[segmentIndex];
+  const to = routePoints[segmentIndex + 1];
+  if (!from || !to || samePoint(from, to) || (from.x !== to.x && from.y !== to.y)) {
+    return nextPoints;
+  }
+  const clampCoordinate = (value: number, first: number, second: number) => {
+    const min = Math.min(first, second);
+    const max = Math.max(first, second);
+    const margin = Math.min(preferredMargin, Math.max(0, (max - min) / 2));
+    return Math.round(Math.max(min + margin, Math.min(max - margin, value)));
+  };
+  if (from.y === to.y) {
+    const x = clampCoordinate(pointerPoint.x, from.x, to.x);
+    const y = from.y;
+    const direction = to.x >= from.x ? 1 : -1;
+    const bendOffsetY = Math.round(y + (pointerPoint.y >= y ? Math.abs(offset) : -Math.abs(offset)));
+    nextPoints.splice(
+      segmentIndex + 1,
+      0,
+      { x, y },
+      { x, y: bendOffsetY },
+      { x: Math.round(x + direction * Math.abs(offset)), y: bendOffsetY }
+    );
+  } else {
+    const y = clampCoordinate(pointerPoint.y, from.y, to.y);
+    const x = from.x;
+    const direction = to.y >= from.y ? 1 : -1;
+    const bendOffsetX = Math.round(x + (pointerPoint.x >= x ? Math.abs(offset) : -Math.abs(offset)));
+    nextPoints.splice(
+      segmentIndex + 1,
+      0,
+      { x, y },
+      { x: bendOffsetX, y },
+      { x: bendOffsetX, y: Math.round(y + direction * Math.abs(offset)) }
+    );
+  }
+  const bounded = bounds ? nextPoints.map((point) => clampPointToBounds(point, bounds)) : nextPoints;
+  return orthogonalizeRouteKeepingCollinear(bounded);
 }
 
 type PreserveDraggedRouteShapeOptions = {

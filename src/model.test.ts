@@ -6,11 +6,13 @@ import {
   buildEFileExport,
   buildEDeviceParameterFile,
   calculateElectricalTopology,
+  calculateModelContentSize,
   canConnectTerminals,
   buildDefaultDeviceParameterDefinitions,
   buildContainerDeviceParameterViews,
   describeContainerTerminalAssociations,
   clampNodePositionToBounds,
+  clampViewBoxDimensionsForZoom,
   assignPermanentDeviceIndex,
   createSavedProject,
   createSavedScheme,
@@ -35,6 +37,7 @@ import {
   resolveStraightBusSlideEndpointToPoint,
   moveProjectToScheme,
   moveOrthogonalRouteSegment,
+  insertOrthogonalRouteBend,
   preserveDraggedRouteShape,
   upsertSavedProject,
   validateTopology,
@@ -902,6 +905,53 @@ describe("power system model", () => {
     expect(viewBoxZoomPercent({ x: 0, y: 0, width: 3960, height: 2048 }, bounds)).toBe(50);
   });
 
+  test("clamps wheel zoom dimensions between 5 percent and 2000 percent", () => {
+    const bounds = { width: 1980, height: 1024 };
+
+    const maximumZoom = clampViewBoxDimensionsForZoom({ width: 10, height: 10 }, bounds);
+    expect(maximumZoom.width).toBeCloseTo(99);
+    expect(maximumZoom.height).toBeCloseTo(51.2);
+    expect(viewBoxZoomPercent({ x: 0, y: 0, ...maximumZoom }, bounds)).toBe(2000);
+
+    const minimumZoom = clampViewBoxDimensionsForZoom({ width: 100000, height: 100000 }, bounds);
+    expect(minimumZoom.width).toBeCloseTo(39600);
+    expect(minimumZoom.height).toBeCloseTo(20480);
+    expect(viewBoxZoomPercent({ x: 0, y: 0, ...minimumZoom }, bounds)).toBe(5);
+  });
+
+  test("measures the displayed model content size from nodes and connection paths", () => {
+    const node: ModelNode = {
+      id: "node-1",
+      kind: "static-rect",
+      name: "图元1",
+      nodeNumber: "",
+      acTopologyNode: 0,
+      dcTopologyNode: 0,
+      position: { x: 100, y: 80 },
+      size: { width: 60, height: 40 },
+      rotation: 0,
+      scale: 1,
+      terminals: [],
+      params: {}
+    };
+    const edge: Edge = {
+      id: "edge-1",
+      sourceId: "missing-source",
+      targetId: "missing-target",
+      sourcePoint: { x: 250, y: 180 },
+      targetPoint: { x: 270, y: 190 },
+      manualPoints: [{ x: 320, y: 210 }]
+    };
+
+    expect(
+      calculateModelContentSize(
+        [node],
+        [edge],
+        [{ edgeId: "edge-1", points: [{ x: 10, y: 10 }, { x: 430, y: 220 }], path: "" }]
+      )
+    ).toEqual({ width: 430, height: 220 });
+  });
+
   test("normalizes scale values without enforcing user-facing min or max ratios", () => {
     expect(normalizeScaleValue(0)).toBe(0);
     expect(normalizeScaleValue(0.05)).toBe(0.05);
@@ -1020,6 +1070,45 @@ describe("power system model", () => {
     ]);
   });
 
+  test("removes redundant large dogleg bends when the direct segment is clear", () => {
+    const routePoints: Point[] = [
+      { x: 20, y: 80 },
+      { x: 60, y: 80 },
+      { x: 60, y: 150 },
+      { x: 180, y: 150 },
+      { x: 180, y: 80 },
+      { x: 240, y: 80 }
+    ];
+
+    const tidied = tidyOrthogonalRoute(routePoints);
+
+    expect(tidied).toEqual([
+      { x: 20, y: 80 },
+      { x: 60, y: 80 },
+      { x: 180, y: 80 },
+      { x: 240, y: 80 }
+    ]);
+  });
+
+  test("keeps large dogleg bends when the direct segment would hit a blocker", () => {
+    const blocker = {
+      ...createDefaultNode("static-rect", { x: 120, y: 80 }),
+      size: { width: 90, height: 18 }
+    };
+    const routePoints: Point[] = [
+      { x: 20, y: 80 },
+      { x: 60, y: 80 },
+      { x: 60, y: 150 },
+      { x: 180, y: 150 },
+      { x: 180, y: 80 },
+      { x: 240, y: 80 }
+    ];
+
+    const tidied = tidyOrthogonalRoute(routePoints, { blockers: [blocker] });
+
+    expect(tidied).toEqual(routePoints);
+  });
+
   test("does not tidy tiny doglegs when the simplified path would hit a blocker", () => {
     const blocker = {
       ...createDefaultNode("static-rect", { x: 120, y: 80 }),
@@ -1069,6 +1158,64 @@ describe("power system model", () => {
     const movedHorizontal = moveOrthogonalRouteSegment(routePoints, 2, "horizontal", { x: 150, y: 88 }, { width: 320, height: 180 });
     expect(movedHorizontal[2]).toEqual({ x: 80, y: 88 });
     expect(movedHorizontal[3]).toEqual({ x: 220, y: 88 });
+  });
+
+  test("inserts an orthogonal manual bend into a horizontal or vertical segment", () => {
+    const routePoints: Point[] = [
+      { x: 20, y: 20 },
+      { x: 80, y: 20 },
+      { x: 80, y: 120 },
+      { x: 220, y: 120 },
+      { x: 220, y: 20 },
+      { x: 280, y: 20 }
+    ];
+
+    const horizontalBend = insertOrthogonalRouteBend(routePoints, 2, { x: 150, y: 160 }, { width: 320, height: 220 });
+    expect(horizontalBend.slice(2, 6)).toEqual([
+      { x: 80, y: 120 },
+      { x: 150, y: 120 },
+      { x: 150, y: 152 },
+      { x: 182, y: 152 }
+    ]);
+
+    const verticalBend = insertOrthogonalRouteBend(routePoints, 1, { x: 120, y: 72 }, { width: 320, height: 220 });
+    expect(verticalBend.slice(1, 5)).toEqual([
+      { x: 80, y: 20 },
+      { x: 80, y: 72 },
+      { x: 112, y: 72 },
+      { x: 112, y: 104 }
+    ]);
+
+    for (const route of [horizontalBend, verticalBend]) {
+      for (let index = 1; index < route.length; index += 1) {
+        expect(route[index - 1].x === route[index].x || route[index - 1].y === route[index].y).toBe(true);
+      }
+    }
+  });
+
+  test("keeps endpoint stubs perpendicular after routing through inserted manual bends", () => {
+    const source = createDefaultNode("ac-source", { x: 120, y: 120 });
+    const target = createDefaultNode("ac-load", { x: 520, y: 120 });
+    const edge: Edge = {
+      id: "manual-bend-perpendicular",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const baseRoute = routeOrthogonalEdge(source, target, [source, target], edge);
+    const bendRoute = insertOrthogonalRouteBend(baseRoute, 1, { x: 230, y: 190 }, { width: 700, height: 320 });
+    const manualEdge = { ...edge, manualPoints: bendRoute.slice(1, -1) };
+    const rerouted = routeOrthogonalEdge(source, target, [source, target], manualEdge, [], { width: 700, height: 320 });
+    const sourceTerminal = getTerminalPoint(source, "t1");
+    const targetTerminal = getTerminalPoint(target, "t1");
+
+    expect(rerouted[0]).toEqual(sourceTerminal);
+    expect(rerouted[1].y).toBe(sourceTerminal.y);
+    expect(rerouted[1].x).toBeGreaterThan(sourceTerminal.x);
+    expect(rerouted[rerouted.length - 1]).toEqual(targetTerminal);
+    expect(rerouted[rerouted.length - 2].y).toBe(targetTerminal.y);
+    expect(rerouted[rerouted.length - 2].x).toBeGreaterThan(targetTerminal.x);
   });
 
   test("preserves the dragged connection route shape when only one endpoint moves", () => {
