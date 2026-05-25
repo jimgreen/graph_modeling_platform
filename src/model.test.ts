@@ -47,6 +47,7 @@ import {
   preserveDraggedRouteShape,
   upsertSavedProject,
   validateTopology,
+  validateVoltageSetpointDeviations,
   getTerminalPoint,
   getMovableRouteSegmentIndexes,
   getNodeScaleX,
@@ -3231,6 +3232,7 @@ describe("power system model", () => {
     dcdc.terminals[0].vbase = "1500 V";
     dcdc.terminals[1].vbase = "750 V";
     const acdc = createDefaultNode("acdc-converter", { x: 260, y: 100 });
+    acdc.params.v_set = "0.0";
     acdc.params.v_ac_set = "0.0";
     acdc.params.v_dc_set = "0.0";
     acdc.terminals[0].vbase = "35 kV";
@@ -3245,10 +3247,61 @@ describe("power system model", () => {
     const byId = new Map(calculated.map((node) => [node.id, node]));
 
     expect(byId.get(dcdc.id)?.params.v_set).toBe("750");
+    expect(byId.get(acdc.id)?.params.v_set).toBe("35");
     expect(byId.get(acdc.id)?.params.v_ac_set).toBe("35");
     expect(byId.get(acdc.id)?.params.v_dc_set).toBe("800");
     expect(byId.get(acac.id)?.params.i_v_set).toBe("110");
     expect(byId.get(acac.id)?.params.j_v_set).toBe("10");
+  });
+
+  test("checks voltage setpoint deviations after topology fills zero defaults", () => {
+    const acBus = createDefaultNode("ac-bus", { x: 160, y: 100 });
+    const acdc = createDefaultNode("acdc-converter", { x: 360, y: 100 });
+    acBus.terminals.forEach((terminal) => {
+      terminal.vbase = "35 kV";
+    });
+    acdc.terminals[0].vbase = "35 kV";
+    acdc.terminals[1].vbase = "800 V";
+    acdc.params.v_set = "0.0";
+    acdc.params.v_ac_set = "0.0";
+
+    const calculated = calculateElectricalTopology(
+      [acBus, acdc],
+      [{ id: "acdc-ac", sourceId: acdc.id, targetId: acBus.id, sourceTerminalId: "t1", targetTerminalId: "t1" }]
+    );
+    const byId = new Map(calculated.map((node) => [node.id, node]));
+
+    expect(byId.get(acdc.id)?.params.v_set).toBe("35");
+    expect(byId.get(acdc.id)?.params.v_ac_set).toBe("35");
+    expect(validateVoltageSetpointDeviations(calculated, []).some((error) => error.type === "voltage-setpoint-deviation")).toBe(false);
+  });
+
+  test("fills missing AC/DC converter voltage setpoints from topology rated voltages", () => {
+    const acBus = createDefaultNode("ac-bus", { x: 160, y: 100 });
+    const dcBus = createDefaultNode("dc-bus", { x: 160, y: 260 });
+    const acdc = createDefaultNode("acdc-converter", { x: 360, y: 180 });
+    acBus.terminals.forEach((terminal) => {
+      terminal.vbase = "35 kV";
+    });
+    dcBus.terminals.forEach((terminal) => {
+      terminal.vbase = "800 V";
+    });
+    acdc.terminals[0].vbase = "35 kV";
+    acdc.terminals[1].vbase = "800 V";
+    delete acdc.params.v_ac_set;
+    acdc.params.v_dc_set = "";
+
+    const calculated = calculateElectricalTopology(
+      [acBus, dcBus, acdc],
+      [
+        { id: "acdc-ac", sourceId: acdc.id, targetId: acBus.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+        { id: "acdc-dc", sourceId: acdc.id, targetId: dcBus.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+      ]
+    );
+    const byId = new Map(calculated.map((node) => [node.id, node]));
+
+    expect(byId.get(acdc.id)?.params.v_ac_set).toBe("35");
+    expect(byId.get(acdc.id)?.params.v_dc_set).toBe("800");
   });
 
   test("builds topology calculation success and failure prompts", () => {
@@ -3361,8 +3414,11 @@ describe("power system model", () => {
     const acBus35 = createDefaultNode("ac-bus", { x: 160, y: 260 });
     const dcBus750 = createDefaultNode("dc-bus", { x: 160, y: 420 });
     const source = createDefaultNode("ac-source", { x: 40, y: 100 });
+    const dcdc = createDefaultNode("dcdc-converter", { x: 360, y: 420 });
     const acdc = createDefaultNode("acdc-converter", { x: 360, y: 100 });
     const acac = createDefaultNode("acac-converter", { x: 360, y: 260 });
+    acBus10.name = "交流母线10";
+    acBus35.name = "交流母线35";
     acBus10.terminals.forEach((terminal) => {
       terminal.vbase = "10 kV";
     });
@@ -3374,6 +3430,9 @@ describe("power system model", () => {
     });
     source.terminals[0].vbase = "10 kV";
     source.params.v_set = "14";
+    dcdc.terminals[0].vbase = "750 V";
+    dcdc.terminals[1].vbase = "750 V";
+    dcdc.params.v_set = "1000";
     acdc.terminals[0].vbase = "10 kV";
     acdc.terminals[1].vbase = "750 V";
     acdc.params.v_ac_set = "12";
@@ -3384,9 +3443,11 @@ describe("power system model", () => {
     acac.params.j_v_set = "40";
 
     const errors = validateTopology(
-      [acBus10, acBus35, dcBus750, source, acdc, acac],
+      [acBus10, acBus35, dcBus750, source, dcdc, acdc, acac],
       [
         { id: "source-ac", sourceId: source.id, targetId: acBus10.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+        { id: "dcdc-i", sourceId: dcdc.id, targetId: dcBus750.id, sourceTerminalId: "t1", targetTerminalId: "t2" },
+        { id: "dcdc-j", sourceId: dcdc.id, targetId: dcBus750.id, sourceTerminalId: "t2", targetTerminalId: "t3" },
         { id: "acdc-ac", sourceId: acdc.id, targetId: acBus10.id, sourceTerminalId: "t1", targetTerminalId: "t2" },
         { id: "acdc-dc", sourceId: acdc.id, targetId: dcBus750.id, sourceTerminalId: "t2", targetTerminalId: "t1" },
         { id: "acac-i", sourceId: acac.id, targetId: acBus10.id, sourceTerminalId: "t1", targetTerminalId: "t3" },
@@ -3396,11 +3457,58 @@ describe("power system model", () => {
 
     expect(errors).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "voltage-setpoint-deviation", nodeId: source.id, message: expect.stringContaining("v_set=14") }),
+      expect.objectContaining({ type: "voltage-setpoint-deviation", nodeId: dcdc.id, message: expect.stringContaining("v_set=1000") }),
       expect.objectContaining({ type: "voltage-setpoint-deviation", nodeId: acdc.id, message: expect.stringContaining("v_dc_set=1000") }),
       expect.objectContaining({ type: "voltage-setpoint-deviation", nodeId: acac.id, message: expect.stringContaining("i_v_set=14") })
     ]));
     expect(errors.some((error) => error.message.includes("v_ac_set=12"))).toBe(false);
     expect(errors.some((error) => error.message.includes("j_v_set=40"))).toBe(false);
+  });
+
+  test("does not warn zero voltage setpoints before topology can fill them", () => {
+    const bus = createDefaultNode("ac-bus", { x: 160, y: 100 });
+    const source = createDefaultNode("ac-source", { x: 40, y: 100 });
+    bus.terminals.forEach((terminal) => {
+      terminal.vbase = "10 kV";
+    });
+    source.terminals[0].vbase = "10 kV";
+    source.params.v_set = "0.0";
+
+    const errors = validateTopology(
+      [bus, source],
+      [{ id: "source-bus", sourceId: source.id, targetId: bus.id, sourceTerminalId: "t1", targetTerminalId: "t1" }]
+    );
+
+    expect(errors.some((error) => error.type === "voltage-setpoint-deviation")).toBe(false);
+  });
+
+  test("checks legacy ac_v_set and dc_v_set converter voltage setpoint aliases", () => {
+    const acBus = createDefaultNode("ac-bus", { x: 160, y: 100 });
+    const dcBus = createDefaultNode("dc-bus", { x: 160, y: 260 });
+    const acdc = createDefaultNode("acdc-converter", { x: 360, y: 180 });
+    acBus.terminals.forEach((terminal) => {
+      terminal.vbase = "10 kV";
+    });
+    dcBus.terminals.forEach((terminal) => {
+      terminal.vbase = "750 V";
+    });
+    acdc.terminals[0].vbase = "10 kV";
+    acdc.terminals[1].vbase = "750 V";
+    acdc.params.ac_v_set = "14";
+    acdc.params.dc_v_set = "1000";
+
+    const errors = validateTopology(
+      [acBus, dcBus, acdc],
+      [
+        { id: "acdc-ac", sourceId: acdc.id, targetId: acBus.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+        { id: "acdc-dc", sourceId: acdc.id, targetId: dcBus.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+      ]
+    );
+
+    expect(errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "voltage-setpoint-deviation", nodeId: acdc.id, message: expect.stringContaining("ac_v_set=14") }),
+      expect.objectContaining({ type: "voltage-setpoint-deviation", nodeId: acdc.id, message: expect.stringContaining("dc_v_set=1000") })
+    ]));
   });
 
   test("validates duplicate idx and names within the same device type", () => {

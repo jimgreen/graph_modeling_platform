@@ -1088,6 +1088,10 @@ function isZeroNumericText(value?: string): boolean {
   return normalized !== "" && Number(normalized) === 0;
 }
 
+function shouldAssignVoltageSetpointDefault(value?: string): boolean {
+  return value === undefined || value.trim() === "" || isZeroNumericText(value);
+}
+
 function topologyRepresentativeScore(node: ModelNode): number {
   if (isBusNode(node)) return 0;
   if (node.terminals.length === 1) return 1;
@@ -3283,6 +3287,8 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
       control_type: "DCV",
+      v_ac_set: "0.0",
+      v_dc_set: "0.0",
       acControlType: "定PQ",
       dcControlType: "不定"
     }));
@@ -4106,7 +4112,7 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
   const applyVoltageSetpointDefaults = (node: ModelNode, terminals: Terminal[]): Record<string, string> => {
     let params = node.params;
     const assignIfZero = (paramKey: string, terminal?: Terminal) => {
-      if (!terminal || !isZeroNumericText(params[paramKey])) {
+      if (!terminal || !shouldAssignVoltageSetpointDefault(params[paramKey])) {
         return;
       }
       const voltage = voltageForTerminal(node.id, terminal);
@@ -4140,6 +4146,9 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
     if (section === "ACACConverter") {
       assignIfZero("i_v_set", terminals[0]);
       assignIfZero("j_v_set", terminals[1]);
+    }
+    if (section === "DCDCConverter" || section === "DCACConverter" || section === "ACACConverter") {
+      assignIfZero("v_set", terminals[0]);
     }
     if (isContainerParams(node.params)) {
       for (const fieldName of Object.keys(node.params)) {
@@ -4207,6 +4216,175 @@ export function getNodeVoltageLevel(node: ModelNode): string {
 
 export function getTerminalVoltageLevel(node: ModelNode, terminalId?: string): string {
   return normalizeVoltage(getTerminal(node, terminalId)?.vbase ?? getNodeVoltageLevel(node));
+}
+
+export function validateVoltageSetpointDeviations(nodes: ModelNode[], edges: Edge[]): TopologyValidationError[] {
+  const errors: TopologyValidationError[] = [];
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const terminalKey = (nodeId: string, terminalId: string) => `${nodeId}:${terminalId}`;
+  const resolveEdgeTerminal = (node: ModelNode, terminalId?: string) => {
+    if (terminalId) {
+      return node.terminals.find((terminal) => terminal.id === terminalId);
+    }
+    return node.terminals[0];
+  };
+  const parent = new Map<string, string>();
+  const find = (key: string): string => {
+    const current = parent.get(key);
+    if (!current || current === key) {
+      return key;
+    }
+    const root = find(current);
+    parent.set(key, root);
+    return root;
+  };
+  const union = (first: string, second: string) => {
+    const firstRoot = find(first);
+    const secondRoot = find(second);
+    if (firstRoot !== secondRoot) {
+      parent.set(secondRoot, firstRoot);
+    }
+  };
+
+  for (const node of nodes) {
+    for (const terminal of node.terminals) {
+      const key = terminalKey(node.id, terminal.id);
+      parent.set(key, key);
+    }
+    if (isBusNode(node)) {
+      const terminalsByType = new Map<TerminalType, Terminal[]>();
+      for (const terminal of node.terminals) {
+        terminalsByType.set(terminal.type, [...(terminalsByType.get(terminal.type) ?? []), terminal]);
+      }
+      for (const terminals of terminalsByType.values()) {
+        const [first, ...rest] = terminals;
+        for (const terminal of rest) {
+          union(terminalKey(node.id, first.id), terminalKey(node.id, terminal.id));
+        }
+      }
+    }
+  }
+
+  for (const edge of edges) {
+    const source = nodeById.get(edge.sourceId);
+    const target = nodeById.get(edge.targetId);
+    const sourceTerminal = source ? resolveEdgeTerminal(source, edge.sourceTerminalId) : undefined;
+    const targetTerminal = target ? resolveEdgeTerminal(target, edge.targetTerminalId) : undefined;
+    if (!source || !target || !sourceTerminal || !targetTerminal || sourceTerminal.type !== targetTerminal.type) {
+      continue;
+    }
+    union(terminalKey(source.id, sourceTerminal.id), terminalKey(target.id, targetTerminal.id));
+  }
+
+  const voltageGroups = new Map<
+    string,
+    {
+      voltages: Map<string, string>;
+    }
+  >();
+  for (const node of nodes) {
+    for (const terminal of node.terminals) {
+      const root = find(terminalKey(node.id, terminal.id));
+      const group = voltageGroups.get(root) ?? { voltages: new Map<string, string>() };
+      const voltage = getTerminalVoltageLevel(node, terminal.id);
+      if (voltage) {
+        group.voltages.set(voltage, terminal.vbase ?? node.params.vbase ?? voltage);
+      }
+      voltageGroups.set(root, group);
+    }
+  }
+
+  const ratedVoltageForTerminal = (node: ModelNode, terminal?: Terminal) => {
+    if (!terminal) {
+      return "";
+    }
+    const root = find(terminalKey(node.id, terminal.id));
+    const group = voltageGroups.get(root);
+    if (group?.voltages.size === 1) {
+      return terminalVoltageBaseNumber(Array.from(group.voltages.values())[0]);
+    }
+    return terminalVoltageDisplay(node, terminal);
+  };
+  const addVoltageSetpointDeviation = (node: ModelNode, paramKey: string, terminal?: Terminal) => {
+    if (isZeroNumericText(node.params[paramKey])) {
+      return;
+    }
+    const setpoint = terminalVoltageBaseNumber(node.params[paramKey]);
+    const ratedVoltage = ratedVoltageForTerminal(node, terminal);
+    if (!setpoint || !ratedVoltage) {
+      return;
+    }
+    const setpointValue = Number(setpoint);
+    const ratedVoltageValue = Number(ratedVoltage);
+    if (!Number.isFinite(setpointValue) || !Number.isFinite(ratedVoltageValue) || ratedVoltageValue <= 0) {
+      return;
+    }
+    const deviation = Math.abs(setpointValue - ratedVoltageValue) / ratedVoltageValue;
+    if (deviation <= 0.3) {
+      return;
+    }
+    errors.push({
+      id: `voltage-setpoint-deviation:${node.id}:${paramKey}`,
+      type: "voltage-setpoint-deviation",
+      nodeId: node.id,
+      relatedNodeIds: [node.id],
+      message: `${node.name} 的 ${paramKey}=${setpoint} 与节点额定电压 ${ratedVoltage} 偏差超过 30%。`
+    });
+  };
+
+  for (const node of nodes) {
+    if (isStaticNode(node)) {
+      continue;
+    }
+    const section = inferESection(node.kind, node.params);
+    const checkedVoltageSetpointKeys = new Set<string>();
+    const addNodeVoltageSetpointDeviation = (paramKey: string, terminal?: Terminal) => {
+      if (checkedVoltageSetpointKeys.has(paramKey)) {
+        return;
+      }
+      checkedVoltageSetpointKeys.add(paramKey);
+      addVoltageSetpointDeviation(node, paramKey, terminal);
+    };
+    if (section === "ACGenerator" || section === "DCGenerator" || section === "ACShuntCompensator") {
+      const expectedType: TerminalType = section === "DCGenerator" ? "dc" : "ac";
+      addNodeVoltageSetpointDeviation("v_set", node.terminals.find((terminal) => terminal.type === expectedType) ?? node.terminals[0]);
+    }
+    if (section === "DCDCConverter") {
+      const sourceControl = normalizeControlTypeForE(node.params.sourceControlType);
+      const targetControl = normalizeControlTypeForE(node.params.targetControlType);
+      addNodeVoltageSetpointDeviation("v_set", targetControl === "V" ? node.terminals[1] : sourceControl === "V" ? node.terminals[0] : node.terminals[0]);
+    }
+    if (section === "DCACConverter") {
+      addNodeVoltageSetpointDeviation("v_ac_set", node.terminals.find((terminal) => terminal.type === "ac") ?? node.terminals[0]);
+      addNodeVoltageSetpointDeviation("v_dc_set", node.terminals.find((terminal) => terminal.type === "dc") ?? node.terminals[1]);
+      addNodeVoltageSetpointDeviation("ac_v_set", node.terminals.find((terminal) => terminal.type === "ac") ?? node.terminals[0]);
+      addNodeVoltageSetpointDeviation("dc_v_set", node.terminals.find((terminal) => terminal.type === "dc") ?? node.terminals[1]);
+    }
+    if (section === "ACACConverter") {
+      addNodeVoltageSetpointDeviation("i_v_set", node.terminals[0]);
+      addNodeVoltageSetpointDeviation("j_v_set", node.terminals[1]);
+    }
+    if (section === "DCDCConverter" || section === "DCACConverter" || section === "ACACConverter") {
+      addNodeVoltageSetpointDeviation("v_set", node.terminals[0]);
+      addNodeVoltageSetpointDeviation("v_ac_set", node.terminals.find((terminal) => terminal.type === "ac") ?? node.terminals[0]);
+      addNodeVoltageSetpointDeviation("v_dc_set", node.terminals.find((terminal) => terminal.type === "dc") ?? node.terminals[1]);
+    }
+    if (isContainerParams(node.params)) {
+      for (const fieldName of Object.keys(node.params)) {
+        const relationSection = containerRelationCounterKey(fieldName);
+        if (relationSection !== "ACGenerator" && relationSection !== "DCGenerator") {
+          continue;
+        }
+        const parsed = parseContainerRelationField(fieldName);
+        if (!parsed) {
+          continue;
+        }
+        addNodeVoltageSetpointDeviation(containerRelationParamKey(fieldName, "v_set"), node.terminals[parsed.terminalNumber - 1]);
+      }
+    }
+  }
+
+  return errors;
 }
 
 type DeviceIdentityValidationEntry = {
@@ -4296,7 +4474,11 @@ function duplicateDeviceIdentityErrors(nodes: ModelNode[]): TopologyValidationEr
   return errors;
 }
 
-export function validateTopology(nodes: ModelNode[], edges: Edge[]): TopologyValidationError[] {
+export function validateTopology(
+  nodes: ModelNode[],
+  edges: Edge[],
+  options: { includeVoltageSetpointDeviations?: boolean } = {}
+): TopologyValidationError[] {
   const errors: TopologyValidationError[] = duplicateDeviceIdentityErrors(nodes);
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const terminalKey = (nodeId: string, terminalId: string) => `${nodeId}:${terminalId}`;
@@ -4453,78 +4635,10 @@ export function validateTopology(nodes: ModelNode[], edges: Edge[]): TopologyVal
     }
   }
 
-  const ratedVoltageForTerminal = (node: ModelNode, terminal?: Terminal) => {
-    if (!terminal) {
-      return "";
-    }
-    const root = find(terminalKey(node.id, terminal.id));
-    const group = voltageGroups.get(root);
-    if (group?.voltages.size === 1) {
-      return terminalVoltageBaseNumber(Array.from(group.voltages.values())[0]);
-    }
-    return terminalVoltageDisplay(node, terminal);
-  };
-  const addVoltageSetpointDeviation = (node: ModelNode, paramKey: string, terminal?: Terminal) => {
-    const setpoint = terminalVoltageBaseNumber(node.params[paramKey]);
-    const ratedVoltage = ratedVoltageForTerminal(node, terminal);
-    if (!setpoint || !ratedVoltage) {
-      return;
-    }
-    const setpointValue = Number(setpoint);
-    const ratedVoltageValue = Number(ratedVoltage);
-    if (!Number.isFinite(setpointValue) || !Number.isFinite(ratedVoltageValue) || ratedVoltageValue <= 0) {
-      return;
-    }
-    const deviation = Math.abs(setpointValue - ratedVoltageValue) / ratedVoltageValue;
-    if (deviation <= 0.3) {
-      return;
-    }
-    errors.push({
-      id: `voltage-setpoint-deviation:${node.id}:${paramKey}`,
-      type: "voltage-setpoint-deviation",
-      nodeId: node.id,
-      relatedNodeIds: [node.id],
-      message: `${node.name} 的 ${paramKey}=${setpoint} 与节点额定电压 ${ratedVoltage} 偏差超过 30%。`
-    });
-  };
-  for (const node of nodes) {
-    if (isStaticNode(node)) {
-      continue;
-    }
-    const section = inferESection(node.kind, node.params);
-    if (section === "ACGenerator" || section === "DCGenerator" || section === "ACShuntCompensator") {
-      const expectedType: TerminalType = section === "DCGenerator" ? "dc" : "ac";
-      addVoltageSetpointDeviation(node, "v_set", node.terminals.find((terminal) => terminal.type === expectedType) ?? node.terminals[0]);
-    }
-    if (section === "DCDCConverter") {
-      const sourceControl = normalizeControlTypeForE(node.params.sourceControlType);
-      const targetControl = normalizeControlTypeForE(node.params.targetControlType);
-      addVoltageSetpointDeviation(node, "v_set", targetControl === "V" ? node.terminals[1] : sourceControl === "V" ? node.terminals[0] : node.terminals[0]);
-    }
-    if (section === "DCACConverter") {
-      addVoltageSetpointDeviation(node, "v_ac_set", node.terminals.find((terminal) => terminal.type === "ac") ?? node.terminals[0]);
-      addVoltageSetpointDeviation(node, "v_dc_set", node.terminals.find((terminal) => terminal.type === "dc") ?? node.terminals[1]);
-    }
-    if (section === "ACACConverter") {
-      addVoltageSetpointDeviation(node, "i_v_set", node.terminals[0]);
-      addVoltageSetpointDeviation(node, "j_v_set", node.terminals[1]);
-    }
-    if (isContainerParams(node.params)) {
-      for (const fieldName of Object.keys(node.params)) {
-        const relationSection = containerRelationCounterKey(fieldName);
-        if (relationSection !== "ACGenerator" && relationSection !== "DCGenerator") {
-          continue;
-        }
-        const parsed = parseContainerRelationField(fieldName);
-        if (!parsed) {
-          continue;
-        }
-        addVoltageSetpointDeviation(node, containerRelationParamKey(fieldName, "v_set"), node.terminals[parsed.terminalNumber - 1]);
-      }
-    }
+  if (errors.length > 0 || options.includeVoltageSetpointDeviations === false) {
+    return errors;
   }
-
-  return errors;
+  return validateVoltageSetpointDeviations(calculateElectricalTopology(nodes, edges), edges);
 }
 
 export function topologyCalculationMessage(errorCount: number) {
