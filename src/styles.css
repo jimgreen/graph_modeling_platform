@@ -1232,6 +1232,51 @@ button:disabled {
   overflow: hidden;
 }
 
+.graph-info-panel {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.graph-info-toolbar {
+  display: flex;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0 0 8px;
+}
+
+.graph-info-toolbar button {
+  min-height: 30px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #334155;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.graph-info-toolbar button:hover,
+.graph-info-toolbar button:focus-visible {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  outline: none;
+}
+
+.graph-info-toolbar button.active {
+  color: #ffffff;
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+}
+
+.graph-info-panel > .element-tree {
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+}
+
 .graph-param-table-wrap {
   min-height: 0;
   overflow: auto;
@@ -1857,6 +1902,10 @@ button:disabled {
   grid-template-columns: 42px minmax(0, 1fr) auto;
 }
 
+.color-field.with-clear {
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+}
+
 .color-field button {
   min-height: 30px;
   border: 1px solid #cbd5e1;
@@ -1953,7 +2002,7 @@ button:disabled {
   top: 0;
   z-index: 6;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   padding: 0 0 8px;
   background: #ffffff;

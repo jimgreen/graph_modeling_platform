@@ -431,10 +431,6 @@ const PARAM_LABELS: Record<string, string> = {
   u_unit: "电压单位",
   i_unit: "电流单位",
   p_base: "功率基值",
-  device_count: "设备数量",
-  edge_count: "联络线数量",
-  svg_file: "SVG文件",
-  e_file: "设备参数文件",
   nodeNumber: "节点号",
   acTopologyNode: "交流拓扑节点序号",
   dcTopologyNode: "直流拓扑节点序号",
@@ -2019,7 +2015,8 @@ export function App() {
   const [marquee, setMarquee] = useState<Marquee>(null);
   const [canvasClipboard, setCanvasClipboard] = useState<CanvasClipboard>(EMPTY_CANVAS_CLIPBOARD);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
-  const [inspectorTab, setInspectorTab] = useState<"model" | "graph" | "device" | "tree">("graph");
+  const [inspectorTab, setInspectorTab] = useState<"model" | "graph" | "device">("graph");
+  const [graphInfoView, setGraphInfoView] = useState<"tree" | "selected">("tree");
   const [leftPanelTab, setLeftPanelTab] = useState<"projects" | "library">("projects");
   const [leftPanelMode, setLeftPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(LEFT_PANEL_MODE_STORAGE_KEY));
   const [rightPanelMode, setRightPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(RIGHT_PANEL_MODE_STORAGE_KEY));
@@ -2163,9 +2160,10 @@ export function App() {
   const draggingNodeIdSet = useMemo(() => new Set(dragging?.nodeIds ?? []), [dragging?.nodeIds]);
   const deferredElementTreeNodes = useDeferredValue(nodes);
   const deferredElementTreeEdges = useDeferredValue(edges);
+  const graphTreePanelActive = inspectorTab === "graph" && graphInfoView === "tree";
   const elementTree = useMemo(
-    () => (inspectorTab === "tree" ? buildElementTree(deferredElementTreeNodes, deferredElementTreeEdges, libraryTemplates) : []),
-    [deferredElementTreeEdges, deferredElementTreeNodes, inspectorTab, libraryTemplates]
+    () => (graphTreePanelActive ? buildElementTree(deferredElementTreeNodes, deferredElementTreeEdges, libraryTemplates) : []),
+    [deferredElementTreeEdges, deferredElementTreeNodes, graphTreePanelActive, libraryTemplates]
   );
 
   useEffect(() => {
@@ -2178,12 +2176,12 @@ export function App() {
   }, [selectedEdgeId]);
 
   useEffect(() => {
-    if (inspectorTab !== "tree") {
+    if (!graphTreePanelActive) {
       return;
     }
     const existingKeys = new Set(elementTree.map((group) => group.typeKey));
     setCollapsedElementTreeGroups((current) => current.filter((key) => existingKeys.has(key)));
-  }, [elementTree, inspectorTab]);
+  }, [elementTree, graphTreePanelActive]);
 
   const canvasBounds = useMemo<CanvasBounds>(() => ({ width: canvasWidth, height: canvasHeight }), [canvasHeight, canvasWidth]);
   const leftPanelVisible = isSidePanelVisible(leftPanelMode, leftPanelAutoVisible);
@@ -6282,6 +6280,7 @@ export function App() {
       )}
     </div>
   );
+
   const warningStatusText = topologyErrors.length > 0
     ? `告警 ${topologyErrors.length} 条：${topologyErrors[0]?.message ?? "请查看拓扑告警"}`
     : "告警 无";
@@ -7119,25 +7118,19 @@ export function App() {
         <div className="inspector-title">
           <div className="inspector-title-actions">
             {renderSidePanelModeControls("right")}
-            <button onClick={deleteSelected} disabled={!selectedNode && !selectedEdge} title="删除选中对象">
-              <Trash2 size={17} />
-            </button>
           </div>
         </div>
         {selectedNode || currentModelRecord ? (
-          <div className={`form-stack ${inspectorTab === "graph" && selectedNode ? "graph-form-stack" : ""}`}>
+          <div className={`form-stack ${inspectorTab === "graph" ? "graph-form-stack" : ""}`}>
             <div className="inspector-tabs">
               <button className={inspectorTab === "model" ? "active" : ""} onClick={() => setInspectorTab("model")} disabled={!currentModelRecord}>
-                模型
+                基础信息
               </button>
               <button className={inspectorTab === "graph" ? "active" : ""} onClick={() => setInspectorTab("graph")}>
-                图形
+                图元信息
               </button>
               <button className={inspectorTab === "device" ? "active" : ""} onClick={() => setInspectorTab("device")}>
-                设备
-              </button>
-              <button className={inspectorTab === "tree" ? "active" : ""} onClick={() => setInspectorTab("tree")}>
-                图元树
+                设备信息
               </button>
             </div>
             {inspectorTab === "model" && currentModelRecord ? (
@@ -7183,6 +7176,58 @@ export function App() {
                         onBlur={handleCanvasSizeBlur}
                         onKeyDown={handleCanvasSizeKeyDown}
                       />
+                    </td>
+                  </tr>
+                  <tr>
+                    {renderChineseParamHeader("canvasBackgroundColor")}
+                    <td>
+                      <div className="color-field with-clear">
+                        <input
+                          type="color"
+                          value={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND}
+                          onChange={(event) => {
+                            pushUndoSnapshot();
+                            setCanvasBackgroundColor(event.target.value);
+                          }}
+                        />
+                        <input
+                          value={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND}
+                          onChange={(event) => {
+                            pushUndoSnapshot();
+                            setCanvasBackgroundColor(event.target.value || DEFAULT_CANVAS_BACKGROUND);
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            pushUndoSnapshot();
+                            setCanvasBackgroundColor("");
+                          }}
+                          disabled={!canvasBackgroundColor || canvasBackgroundColor === DEFAULT_CANVAS_BACKGROUND}
+                        >
+                          删除背景色
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    {renderChineseParamHeader("canvasBackgroundImage")}
+                    <td>
+                      <div className="image-field-actions">
+                        <input value={canvasBackgroundImage ? "已设置" : "未设置"} readOnly />
+                        <button type="button" onClick={() => setImageTarget({ kind: "canvas" })}>选择</button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            pushUndoSnapshot();
+                            setCanvasBackgroundImage("");
+                            setCanvasBackgroundImageAssetId("");
+                          }}
+                          disabled={!canvasBackgroundImage}
+                        >
+                          清除
+                        </button>
+                      </div>
                     </td>
                   </tr>
                   <tr>
@@ -7252,71 +7297,36 @@ export function App() {
                       </div>
                     </td>
                   </tr>
-                  <tr>
-                    {renderChineseParamHeader("canvasBackgroundColor")}
-                    <td>
-                      <div className="color-field">
-                        <input
-                          type="color"
-                          value={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND}
-                          onChange={(event) => {
-                            pushUndoSnapshot();
-                            setCanvasBackgroundColor(event.target.value);
-                          }}
-                        />
-                        <input
-                          value={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND}
-                          onChange={(event) => {
-                            pushUndoSnapshot();
-                            setCanvasBackgroundColor(event.target.value || DEFAULT_CANVAS_BACKGROUND);
-                          }}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("canvasBackgroundImage")}
-                    <td>
-                      <div className="image-field-actions">
-                        <input value={canvasBackgroundImage ? "已设置" : "未设置"} readOnly />
-                        <button type="button" onClick={() => setImageTarget({ kind: "canvas" })}>选择</button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            pushUndoSnapshot();
-                            setCanvasBackgroundImage("");
-                            setCanvasBackgroundImageAssetId("");
-                          }}
-                          disabled={!canvasBackgroundImage}
-                        >
-                          清除
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("device_count")}
-                    <td><input value={currentModelRecord.project.nodes.length} readOnly /></td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("edge_count")}
-                    <td><input value={currentModelRecord.project.edges.length} readOnly /></td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("svg_file")}
-                    <td><input value={`${safeFilePart(currentModelRecord.name)}.svg`} readOnly /></td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("e_file")}
-                    <td><input value={`${safeFilePart(currentModelRecord.name)}.e`} readOnly /></td>
-                  </tr>
                 </tbody>
               </table>
-            ) : inspectorTab === "tree" ? (
-              renderElementTreePanel()
-            ) : inspectorTab === "graph" && selectedNode ? (
-              <div className="graph-param-table-wrap">
-                <table className="param-table">
+            ) : inspectorTab === "graph" ? (
+              <div className="graph-info-panel">
+                <div className="graph-info-toolbar" role="tablist" aria-label="图元信息子页面">
+                  <button
+                    type="button"
+                    className={graphInfoView === "selected" ? "active" : ""}
+                    onClick={() => setGraphInfoView("selected")}
+                    role="tab"
+                    aria-selected={graphInfoView === "selected"}
+                    disabled={!selectedNode}
+                  >
+                    选中图元
+                  </button>
+                  <button
+                    type="button"
+                    className={graphInfoView === "tree" ? "active" : ""}
+                    onClick={() => setGraphInfoView("tree")}
+                    role="tab"
+                    aria-selected={graphInfoView === "tree"}
+                  >
+                    图元树
+                  </button>
+                </div>
+                {graphInfoView === "tree" ? (
+                  renderElementTreePanel()
+                ) : selectedNode ? (
+                  <div className="graph-param-table-wrap">
+                  <table className="param-table">
                   <tbody>
                     <tr>
                       {renderChineseParamHeader("graph_x", "X坐标")}
@@ -7479,8 +7489,15 @@ export function App() {
                         </tr>
                       </>
                     )}
-                  </tbody>
-                </table>
+                    </tbody>
+                  </table>
+                  </div>
+                ) : (
+                  <div className="empty-state compact">
+                    <FileJson size={24} />
+                    <p>当前没有被选中图元。</p>
+                  </div>
+                )}
               </div>
             ) : selectedNode ? (
               <div className="device-param-stack">
@@ -7550,10 +7567,10 @@ export function App() {
             ) : (
               <div className="empty-state">
                 <FileJson size={28} />
-                <p>选择画布设备后，可切换查看图形和设备。</p>
+                <p>选择画布设备后，可切换查看图元和设备。</p>
               </div>
             )}
-            {selectedNode && inspectorTab === "graph" && (
+            {selectedNode && inspectorTab === "graph" && graphInfoView === "selected" && (
               <div className="topology-card">
                 <span>连接度</span>
                 <strong>{topology.nodes[selectedNode.id]?.degree ?? 0}</strong>
