@@ -32,6 +32,9 @@ import {
   duplicateSavedProject,
   routeOrthogonalEdge,
   routeEdgesForRendering,
+  ACAC_CONVERTER_CONTROL_TYPES,
+  DCAC_CONVERTER_CONTROL_TYPES,
+  E_SECTION_COLUMNS,
   tidyOrthogonalRoute,
   renameSavedProject,
   renameSavedScheme,
@@ -342,7 +345,7 @@ describe("power system model", () => {
       edges: []
     }));
 
-    expect(exported.Elec2Hydro.rows).toHaveLength(1);
+    expect(exported.AcE2Hydro.rows).toHaveLength(1);
     expect(exported.ACLoad.rows).toHaveLength(1);
     expect(exported.HydroSource.rows).toHaveLength(1);
     expect(exported.HydroPipe.rows).toHaveLength(1);
@@ -509,6 +512,48 @@ describe("power system model", () => {
       nodes: [acLoad, staticText],
       edges: []
     })).not.toContain("ratedActivePower");
+  });
+
+  test("sorts E section rows by numeric idx before exporting", () => {
+    const load10 = createDefaultNode("ac-load", { x: 100, y: 100 });
+    const load2 = createDefaultNode("ac-load", { x: 220, y: 100 });
+    const load1 = createDefaultNode("ac-load", { x: 340, y: 100 });
+    load10.name = "load10";
+    load2.name = "load2";
+    load1.name = "load1";
+    load10.params = { ...load10.params, idx: "10" };
+    load2.params = { ...load2.params, idx: "2" };
+    load1.params = { ...load1.params, idx: "1" };
+
+    const payload = parseESections(
+      buildEDeviceParameterFile({
+        version: 1,
+        name: "idx排序测试",
+        nodes: [load10, load2, load1],
+        edges: []
+      })
+    );
+
+    expect(payload.ACLoad.rows.map((row) => row.idx)).toEqual(["1", "2", "10"]);
+    expect(payload.ACLoad.rows.map((row) => row.name)).toEqual(["load1", "load2", "load10"]);
+  });
+
+  test("uses requested default impedance values for new AC and DC lines", () => {
+    const acLine = createDefaultNode("ac-line", { x: 100, y: 100 });
+    const dcLine = createDefaultNode("dc-line", { x: 240, y: 100 });
+
+    expect(acLine.params).toMatchObject({ r: "0.1", x: "1.0", b: "0.0" });
+    expect(dcLine.params).toMatchObject({ r: "1.0" });
+
+    const payload = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "线路默认参数测试",
+      nodes: [acLine, dcLine],
+      edges: []
+    }));
+
+    expect(payload.ACBranch.rows[0]).toMatchObject({ r: "0.1", x: "1.0", b: "0.0" });
+    expect(payload.DCBranch.rows[0]).toMatchObject({ r: "1.0" });
   });
 
   test("maps graphical AC and DC buses to real bus sections in E parameter files", () => {
@@ -680,9 +725,9 @@ describe("power system model", () => {
 
     expect(acLine.terminals[0].nodeNumber).toMatch(/^N\d+$/);
     expect(acLine.terminals[1].nodeNumber).toMatch(/^N\d+$/);
-    expect(acLine.params.resistancePu).toBe("0.0");
-    expect(acLine.params.reactancePu).toBe("0.1");
-    expect(acLine.params.halfChargingSusceptancePu).toBe("0.0");
+    expect(acLine.params.r).toBe("0.1");
+    expect(acLine.params.x).toBe("1.0");
+    expect(acLine.params.b).toBe("0.0");
 
     expect(twoWinding.terminals).toHaveLength(2);
     expect(twoWinding.params.ratedCapacity).toBe("50 MVA");
@@ -720,19 +765,21 @@ describe("power system model", () => {
     expect(acdc.terminals.map((terminal) => terminal.vbase)).toEqual(["10 kV", "750 V"]);
     expect(acdc.params.sourceEquivalentResistance).toBe("0.0");
     expect(acdc.params.targetEquivalentResistance).toBe("0.0");
+    expect(acdc.params.control_type).toBe("DCV");
     expect(acdc.params.acControlType).toBe("定PQ");
     expect(acdc.params.dcControlType).toBe("不定");
 
     const acac = createDefaultNode("acac-converter", { x: 800, y: 100 });
     expect(acac.params.sourceEquivalentResistance).toBe("0.0");
     expect(acac.params.targetEquivalentResistance).toBe("0.0");
+    expect(acac.params.control_type).toBe("PQQ");
     expect(acac.params.sourceControlType).toBe("定PQ");
     expect(acac.params.targetControlType).toBe("不定");
 
     const dcLine = createDefaultNode("dc-line", { x: 900, y: 100 });
-    expect(dcLine.params.resistancePu).toBe("0.0");
-    expect(dcLine.params.reactancePu).toBeUndefined();
-    expect(dcLine.params.halfChargingSusceptancePu).toBeUndefined();
+    expect(dcLine.params.r).toBe("1.0");
+    expect(dcLine.params.x).toBeUndefined();
+    expect(dcLine.params.b).toBeUndefined();
 
     const acSwitch = createDefaultNode("ac-switch", { x: 1000, y: 100 });
     const dcBreaker = createDefaultNode("dc-breaker", { x: 1100, y: 100 });
@@ -2308,8 +2355,11 @@ describe("power system model", () => {
     });
     expect(views[1].rows).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: "idx", value: "1" }),
-      expect.objectContaining({ key: "device_model", value: "ACLoad" }),
-      expect.objectContaining({ key: "node", value: "5" })
+      expect.objectContaining({ key: "node", value: "5" }),
+      expect.objectContaining({ key: "pbase", value: "0" }),
+      expect.objectContaining({ key: "pv0", value: "1.0" }),
+      expect.objectContaining({ key: "qbase", value: "0" }),
+      expect.objectContaining({ key: "qv0", value: "1.0" })
     ]));
     expect(views[2]).toMatchObject({
       kind: "associated",
@@ -2317,6 +2367,195 @@ describe("power system model", () => {
       relationKeys: ["idx_h2_unit_t2"],
       terminalIndexes: [1]
     });
+  });
+
+  test("shows container-associated electric port parameters using the associated E section columns", () => {
+    const node = assignPermanentDeviceIndex(createDefaultNode("ac-electrolyzer", { x: 100, y: 100 }), {}).node;
+    node.name = "EL1";
+    node.terminals[0].nodeNumber = "5";
+    node.params.pbase_ac_load_t1 = "6.5";
+    node.params.pv0_ac_load_t1 = "1.0";
+    node.params.qbase_ac_load_t1 = "1.2";
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-electrolyzer")!;
+
+    const views = buildContainerDeviceParameterViews(node, template);
+
+    expect(views[1]).toMatchObject({
+      kind: "associated",
+      deviceType: "ACLoad",
+      relationKeys: ["idx_ac_load_t1"],
+      terminalIndexes: [0]
+    });
+    expect(views[1].rows.map((row) => row.key)).toEqual(E_SECTION_COLUMNS.ACLoad);
+    expect(views[1].rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "idx", value: node.params.idx_ac_load_t1, readonly: true }),
+      expect.objectContaining({ key: "name", value: "EL1_交流端交流电负荷", readonly: false }),
+      expect.objectContaining({ key: "node", value: "5", readonly: true }),
+      expect.objectContaining({ key: "pbase", value: "6.5", readonly: false }),
+      expect.objectContaining({ key: "pv0", value: "1.0", readonly: false }),
+      expect.objectContaining({ key: "qbase", value: "1.2", readonly: false })
+    ]));
+  });
+
+  test("shows DC fuel-cell electric port parameters using DCGenerator columns", () => {
+    const node = assignPermanentDeviceIndex(createDefaultNode("dc-fuel-cell", { x: 100, y: 100 }), {}).node;
+    node.name = "FC1";
+    node.terminals[0].nodeNumber = "7";
+    node.params.control_type_dc_unit_t1 = "V";
+    node.params.v_set_dc_unit_t1 = "750";
+    node.params.p_set_dc_unit_t1 = "3.2";
+    node.params.i_set_dc_unit_t1 = "4.5";
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "dc-fuel-cell")!;
+
+    const views = buildContainerDeviceParameterViews(node, template);
+    const exported = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "直流燃料电池参数测试",
+      nodes: [node],
+      edges: []
+    }));
+
+    expect(views[1]).toMatchObject({
+      kind: "associated",
+      deviceType: "DCGenerator",
+      relationKeys: ["idx_dc_unit_t1"],
+      terminalIndexes: [0]
+    });
+    expect(views[1].rows.map((row) => row.key)).toEqual(E_SECTION_COLUMNS.DCGenerator);
+    expect(views[1].rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "idx", value: node.params.idx_dc_unit_t1, readonly: true }),
+      expect.objectContaining({ key: "name", value: "FC1_直流端直流电源", readonly: false }),
+      expect.objectContaining({ key: "node", value: "7", readonly: true }),
+      expect.objectContaining({ key: "control_type", value: "V", readonly: false }),
+      expect.objectContaining({ key: "v_set", value: "750", readonly: false }),
+      expect.objectContaining({ key: "p_set", value: "3.2", readonly: false }),
+      expect.objectContaining({ key: "i_set", value: "4.5", readonly: false })
+    ]));
+    expect(exported.DCGenerator.rows[0]).toMatchObject({
+      idx: node.params.idx_dc_unit_t1,
+      name: "FC1_直流端直流电源",
+      node: "1",
+      control_type: "V",
+      v_set: "750",
+      p_set: "3.2",
+      i_set: "4.5"
+    });
+  });
+
+  test("uses associated E section columns for every built-in container-associated device view", () => {
+    for (const template of DEVICE_LIBRARY.filter((item) => item.isContainer)) {
+      const node = assignPermanentDeviceIndex(createDefaultNode(template.kind, { x: 100, y: 100 }), {}).node;
+      const views = buildContainerDeviceParameterViews(node, template).filter((view) => view.kind === "associated");
+
+      expect(views.length, template.kind).toBeGreaterThan(0);
+      for (const view of views) {
+        expect(view.deviceType, `${template.kind}:${view.label}`).toBeTruthy();
+        const columns = E_SECTION_COLUMNS[view.deviceType ?? ""];
+        expect(columns, `${template.kind}:${view.label}:${view.deviceType}`).toBeDefined();
+        expect(view.rows.map((row) => row.key), `${template.kind}:${view.label}`).toEqual(columns);
+      }
+    }
+  });
+
+  test("filters container body parameters to the current container variant", () => {
+    const expected = [
+      ["ac-electrolyzer", ["idx", "name", "run_stat", "is_container", "idx_ac_load_t1", "idx_h2_unit_t2"], ["idx_dc_load_t1"]],
+      ["dc-electrolyzer", ["idx", "name", "run_stat", "is_container", "idx_dc_load_t1", "idx_h2_unit_t2"], ["idx_ac_load_t1"]],
+      ["ac-fuel-cell", ["idx", "name", "run_stat", "is_container", "idx_ac_unit_t1", "idx_h2_load_t2"], ["idx_dc_unit_t1"]],
+      ["dc-fuel-cell", ["idx", "name", "run_stat", "is_container", "idx_dc_unit_t1", "idx_h2_load_t2"], ["idx_ac_unit_t1"]],
+      ["ac-heater", ["idx", "name", "run_stat", "is_container", "idx_ac_load_t1", "idx_heat_unit_t2"], ["idx_dc_load_t1"]],
+      ["dc-heater", ["idx", "name", "run_stat", "is_container", "idx_dc_load_t1", "idx_heat_unit_t2"], ["idx_ac_load_t1"]]
+    ] as const;
+
+    for (const [kind, includedKeys, excludedKeys] of expected) {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+      const node = assignPermanentDeviceIndex(createDefaultNode(kind, { x: 100, y: 100 }), {}).node;
+      const bodyView = buildContainerDeviceParameterViews(node, template)[0];
+      const keys = bodyView.rows.map((row) => row.key);
+
+      expect(bodyView).toMatchObject({ id: "container", kind: "container" });
+      expect(keys, kind).toEqual(expect.arrayContaining([...includedKeys]));
+      for (const excludedKey of excludedKeys) {
+        expect(keys, `${kind}:${excludedKey}`).not.toContain(excludedKey);
+      }
+    }
+  });
+
+  test("shows three-winding transformer associated branches with ACTransformer side parameters", () => {
+    const node = assignPermanentDeviceIndex(createDefaultNode("ac-three-winding-transformer", { x: 100, y: 100 }), {}).node;
+    node.name = "T3";
+    node.terminals[0].nodeNumber = "11";
+    node.params.neutral_node = "99";
+    node.params.highResistancePu = "0.01";
+    node.params.highReactancePu = "0.11";
+    node.params.highMagnetizingConductancePu = "0.001";
+    node.params.highMagnetizingSusceptancePu = "0.002";
+    node.params.highTapRatio = "1.03";
+    node.params.highShift = "2.5";
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer")!;
+
+    const views = buildContainerDeviceParameterViews(node, template);
+
+    expect(views[1]).toMatchObject({
+      kind: "associated",
+      deviceType: "ACTransformer",
+      relationKeys: ["idx_xf_t1"],
+      terminalIndexes: [0]
+    });
+    expect(views[1].rows.map((row) => row.key)).toEqual(E_SECTION_COLUMNS.ACTransformer);
+    expect(views[1].rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "idx", value: node.params.idx_xf_t1, readonly: true }),
+      expect.objectContaining({ key: "name", value: "T3_高压绕组", readonly: false }),
+      expect.objectContaining({ key: "i_node", value: "11", readonly: true }),
+      expect.objectContaining({ key: "j_node", value: "99", readonly: true }),
+      expect.objectContaining({ key: "r", value: "0.01", readonly: false }),
+      expect.objectContaining({ key: "x", value: "0.11", readonly: false }),
+      expect.objectContaining({ key: "gt", value: "0.001", readonly: false }),
+      expect.objectContaining({ key: "bt", value: "0.002", readonly: false }),
+      expect.objectContaining({ key: "tap", value: "1.03", readonly: false }),
+      expect.objectContaining({ key: "shift", value: "2.5", readonly: false })
+    ]));
+  });
+
+  test("maps electrolysis electric terminals to loads and fuel-cell electric terminals to generators", () => {
+    const expected = [
+      ["ac-electrolyzer", "idx_ac_load_t1", "ACLoad", "ACLoad", "idx_h2_unit_t2", "HydroSource"],
+      ["dc-electrolyzer", "idx_dc_load_t1", "DCLoad", "DCLoad", "idx_h2_unit_t2", "HydroSource"],
+      ["ac-fuel-cell", "idx_ac_unit_t1", "ACGenerator", "ACGenerator", "idx_h2_load_t2", "HydroLoad"],
+      ["dc-fuel-cell", "idx_dc_unit_t1", "DCGenerator", "DCGenerator", "idx_h2_load_t2", "HydroLoad"]
+    ] as const;
+
+    for (const [kind, electricRelationKey, electricDeviceType, electricSection, hydrogenRelationKey, hydrogenSection] of expected) {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+      const node = assignPermanentDeviceIndex(createDefaultNode(kind, { x: 100, y: 100 }), {}).node;
+      const associations = describeContainerTerminalAssociations(template);
+      const views = buildContainerDeviceParameterViews(node, template);
+      const exported = parseESections(buildEDeviceParameterFile({
+        version: 1,
+        name: `${kind}-关联测试`,
+        nodes: [node],
+        edges: []
+      }));
+
+      expect(associations[0]).toMatchObject({
+        terminalIndex: 0,
+        relationKey: electricRelationKey,
+        deviceModel: electricDeviceType
+      });
+      expect(associations[1]).toMatchObject({
+        terminalIndex: 1,
+        relationKey: hydrogenRelationKey,
+        deviceModel: hydrogenSection
+      });
+      expect(views[1]).toMatchObject({
+        kind: "associated",
+        deviceType: electricDeviceType,
+        relationKeys: [electricRelationKey],
+        terminalIndexes: [0]
+      });
+      expect(exported[electricSection].rows[0].idx).toBe(node.params[electricRelationKey]);
+      expect(exported[hydrogenSection].rows[0].idx).toBe(node.params[hydrogenRelationKey]);
+    }
   });
 
   test("deduplicates double-port container associations into one associated device view", () => {
@@ -2756,6 +2995,51 @@ describe("power system model", () => {
     expect(normalized.terminals.map((terminal) => terminal.vbase)).toEqual(["10 kV", "750 V"]);
   });
 
+  test("exports DCAC converter control_type with only supported values", () => {
+    const defaultConverter = createDefaultNode("acdc-converter", { x: 100, y: 100 });
+    const invalidConverter = createDefaultNode("acdc-converter", { x: 240, y: 100 });
+    const acVoltageConverter = createDefaultNode("acdc-converter", { x: 380, y: 100 });
+    defaultConverter.params.control_type = "DCV";
+    invalidConverter.params.control_type = "PQ";
+    invalidConverter.params.acControlType = "定PQ";
+    acVoltageConverter.params.control_type = "ACV";
+
+    const payload = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "DCAC控制类型测试",
+      nodes: [defaultConverter, invalidConverter, acVoltageConverter],
+      edges: []
+    }));
+    const values = payload.DCACConverter.rows.map((row) => row.control_type);
+
+    expect(values).toEqual(["DCV", "ACP", "ACV"]);
+    expect(values.every((value) => (DCAC_CONVERTER_CONTROL_TYPES as readonly string[]).includes(value))).toBe(true);
+  });
+
+  test("exports ACAC converter control_type with only supported values", () => {
+    const defaultConverter = createDefaultNode("acac-converter", { x: 100, y: 100 });
+    const sourceVoltageConverter = createDefaultNode("acac-converter", { x: 240, y: 100 });
+    const targetVoltageConverter = createDefaultNode("acac-converter", { x: 380, y: 100 });
+    const bothVoltageConverter = createDefaultNode("acac-converter", { x: 520, y: 100 });
+    defaultConverter.params.control_type = "PQQ";
+    sourceVoltageConverter.params.control_type = "PQ";
+    sourceVoltageConverter.params.sourceControlType = "定PV";
+    targetVoltageConverter.params.control_type = "PQ";
+    targetVoltageConverter.params.targetControlType = "定PV";
+    bothVoltageConverter.params.control_type = "PVV";
+
+    const payload = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "ACAC控制类型测试",
+      nodes: [defaultConverter, sourceVoltageConverter, targetVoltageConverter, bothVoltageConverter],
+      edges: []
+    }));
+    const values = payload.ACACConverter.rows.map((row) => row.control_type);
+
+    expect(values).toEqual(["PQQ", "PVQ", "PQV", "PVV"]);
+    expect(values.every((value) => (ACAC_CONVERTER_CONTROL_TYPES as readonly string[]).includes(value))).toBe(true);
+  });
+
   test("removes the explicit two-winding transformer glyph and keeps the three-winding container definition", () => {
     const acTransformer = DEVICE_LIBRARY.find((item) => item.kind === "ac-transformer");
     const twoWinding = DEVICE_LIBRARY.find((item) => item.kind === "ac-two-winding-transformer");
@@ -2910,6 +3194,63 @@ describe("power system model", () => {
     expect(byId.get(dcLoad.id)?.acTopologyNode).toBe(0);
   });
 
+  test("fills zero generator voltage setpoints from the topology node rated voltage", () => {
+    const acSource = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const acBus = createDefaultNode("ac-bus", { x: 240, y: 100 });
+    const dcFuelCell = assignPermanentDeviceIndex(createDefaultNode("dc-fuel-cell", { x: 100, y: 240 }), {}).node;
+    const dcBus = createDefaultNode("dc-bus", { x: 240, y: 240 });
+    acSource.params.v_set = "0.0";
+    acSource.terminals[0].vbase = "35 kV";
+    acBus.terminals.forEach((terminal) => {
+      terminal.vbase = "35 kV";
+    });
+    dcFuelCell.params.v_set_dc_unit_t1 = "0.0";
+    dcFuelCell.terminals[0].vbase = "1500 V";
+    dcBus.terminals.forEach((terminal) => {
+      terminal.vbase = "1500 V";
+    });
+
+    const calculated = calculateElectricalTopology(
+      [acSource, acBus, dcFuelCell, dcBus],
+      [
+        { id: "ac", sourceId: acSource.id, targetId: acBus.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+        { id: "dc", sourceId: dcFuelCell.id, targetId: dcBus.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
+      ]
+    );
+    const byId = new Map(calculated.map((node) => [node.id, node]));
+
+    expect(byId.get(acSource.id)?.params.v_set).toBe("35");
+    expect(byId.get(dcFuelCell.id)?.params.v_set_dc_unit_t1).toBe("1500");
+  });
+
+  test("fills zero converter voltage setpoints from the related topology node rated voltage", () => {
+    const dcdc = createDefaultNode("dcdc-converter", { x: 100, y: 100 });
+    dcdc.params.v_set = "0.0";
+    dcdc.params.sourceControlType = "定P";
+    dcdc.params.targetControlType = "定V";
+    dcdc.terminals[0].vbase = "1500 V";
+    dcdc.terminals[1].vbase = "750 V";
+    const acdc = createDefaultNode("acdc-converter", { x: 260, y: 100 });
+    acdc.params.v_ac_set = "0.0";
+    acdc.params.v_dc_set = "0.0";
+    acdc.terminals[0].vbase = "35 kV";
+    acdc.terminals[1].vbase = "800 V";
+    const acac = createDefaultNode("acac-converter", { x: 420, y: 100 });
+    acac.params.i_v_set = "0.0";
+    acac.params.j_v_set = "0.0";
+    acac.terminals[0].vbase = "110 kV";
+    acac.terminals[1].vbase = "10 kV";
+
+    const calculated = calculateElectricalTopology([dcdc, acdc, acac], []);
+    const byId = new Map(calculated.map((node) => [node.id, node]));
+
+    expect(byId.get(dcdc.id)?.params.v_set).toBe("750");
+    expect(byId.get(acdc.id)?.params.v_ac_set).toBe("35");
+    expect(byId.get(acdc.id)?.params.v_dc_set).toBe("800");
+    expect(byId.get(acac.id)?.params.i_v_set).toBe("110");
+    expect(byId.get(acac.id)?.params.j_v_set).toBe("10");
+  });
+
   test("builds topology calculation success and failure prompts", () => {
     expect(topologyCalculationMessage(0)).toBe("图上拓扑成功。");
     expect(topologyCalculationMessage(2)).toBe("图上拓扑失败：发现 2 条错误，已定位到第一条错误。");
@@ -3013,6 +3354,53 @@ describe("power system model", () => {
     );
 
     expect(errors.some((error) => error.type === "voltage-mismatch" && error.edgeId === "e-terminal-vbase")).toBe(true);
+  });
+
+  test("warns when voltage setpoints deviate more than 30 percent from rated topology voltage", () => {
+    const acBus10 = createDefaultNode("ac-bus", { x: 160, y: 100 });
+    const acBus35 = createDefaultNode("ac-bus", { x: 160, y: 260 });
+    const dcBus750 = createDefaultNode("dc-bus", { x: 160, y: 420 });
+    const source = createDefaultNode("ac-source", { x: 40, y: 100 });
+    const acdc = createDefaultNode("acdc-converter", { x: 360, y: 100 });
+    const acac = createDefaultNode("acac-converter", { x: 360, y: 260 });
+    acBus10.terminals.forEach((terminal) => {
+      terminal.vbase = "10 kV";
+    });
+    acBus35.terminals.forEach((terminal) => {
+      terminal.vbase = "35 kV";
+    });
+    dcBus750.terminals.forEach((terminal) => {
+      terminal.vbase = "750 V";
+    });
+    source.terminals[0].vbase = "10 kV";
+    source.params.v_set = "14";
+    acdc.terminals[0].vbase = "10 kV";
+    acdc.terminals[1].vbase = "750 V";
+    acdc.params.v_ac_set = "12";
+    acdc.params.v_dc_set = "1000";
+    acac.terminals[0].vbase = "10 kV";
+    acac.terminals[1].vbase = "35 kV";
+    acac.params.i_v_set = "14";
+    acac.params.j_v_set = "40";
+
+    const errors = validateTopology(
+      [acBus10, acBus35, dcBus750, source, acdc, acac],
+      [
+        { id: "source-ac", sourceId: source.id, targetId: acBus10.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+        { id: "acdc-ac", sourceId: acdc.id, targetId: acBus10.id, sourceTerminalId: "t1", targetTerminalId: "t2" },
+        { id: "acdc-dc", sourceId: acdc.id, targetId: dcBus750.id, sourceTerminalId: "t2", targetTerminalId: "t1" },
+        { id: "acac-i", sourceId: acac.id, targetId: acBus10.id, sourceTerminalId: "t1", targetTerminalId: "t3" },
+        { id: "acac-j", sourceId: acac.id, targetId: acBus35.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+      ]
+    );
+
+    expect(errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "voltage-setpoint-deviation", nodeId: source.id, message: expect.stringContaining("v_set=14") }),
+      expect.objectContaining({ type: "voltage-setpoint-deviation", nodeId: acdc.id, message: expect.stringContaining("v_dc_set=1000") }),
+      expect.objectContaining({ type: "voltage-setpoint-deviation", nodeId: acac.id, message: expect.stringContaining("i_v_set=14") })
+    ]));
+    expect(errors.some((error) => error.message.includes("v_ac_set=12"))).toBe(false);
+    expect(errors.some((error) => error.message.includes("j_v_set=40"))).toBe(false);
   });
 
   test("validates duplicate idx and names within the same device type", () => {

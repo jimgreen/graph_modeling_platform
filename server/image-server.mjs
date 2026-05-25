@@ -36,9 +36,38 @@ const eSectionColumns = {
   ACBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   DCBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   ACTransformer: ["idx", "name", "i_node", "j_node", "r", "x", "gt", "bt", "tap", "shift", "run_stat"],
+  ThreePowerTransformer: ["idx", "name", "run_stat", "idx_xf_t1", "idx_xf_t2", "idx_xf_t3"],
   DCDCConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_set", "v_set", "run_stat"],
   DCACConverter: ["idx", "name", "ac_node", "dc_node", "r1", "r2", "control_type", "p_ac_set", "q_ac_set", "v_ac_set", "v_dc_set", "run_stat"],
-  ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"]
+  ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"],
+  HydroSource: ["idx", "name", "node", "run_stat"],
+  HydroLoad: ["idx", "name", "node", "run_stat"],
+  HydroPipe: ["idx", "name", "i_node", "j_node", "run_stat"],
+  HydroCompressor: ["idx", "name", "i_node", "j_node", "run_stat"],
+  HydroPressRegulator: ["idx", "name", "i_node", "j_node", "run_stat"],
+  HydroStopValve: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
+  HydroBus: ["idx", "name", "node", "run_stat"],
+  HydroTank: ["idx", "name", "node", "run_stat"],
+  AcE2Hydro: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_h2_unit_t2"],
+  DcE2Hydro: ["idx", "name", "run_stat", "idx_dc_load_t1", "idx_h2_unit_t2"],
+  Hydro2AcE: ["idx", "name", "run_stat", "idx_ac_unit_t1", "idx_h2_load_t2"],
+  Hydro2DcE: ["idx", "name", "run_stat", "idx_dc_unit_t1", "idx_h2_load_t2"],
+  HeatSource: ["idx", "name", "node", "run_stat"],
+  HeatSource2: ["idx", "name", "i_node", "j_node", "run_stat"],
+  HeatLoad: ["idx", "name", "node", "run_stat"],
+  HeatLoad2: ["idx", "name", "i_node", "j_node", "run_stat"],
+  HeatPipe: ["idx", "name", "i_node", "j_node", "run_stat"],
+  HeatStopValve: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
+  HeatBus: ["idx", "name", "node", "run_stat"],
+  HeatTank: ["idx", "name", "node", "run_stat"],
+  HeatBoiler: ["idx", "name", "run_stat", "idx_heat_unit_t1"],
+  HeatBoiler2: ["idx", "name", "run_stat", "idx_heat2_unit_t1"],
+  Elec2Heat: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_dc_load_t1", "idx_heat_unit_t2"],
+  Elec2Heat2: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_dc_load_t1", "idx_heat2_unit_t2"],
+  HeatExchanger: ["idx", "name", "i_node", "j_node", "run_stat"],
+  HeatExchanger3: ["idx", "name", "node1", "node2", "node3", "run_stat"],
+  HeatExchanger4: ["idx", "name", "node1", "node2", "node3", "node4", "run_stat"],
+  HeatPump: ["idx", "name", "i_node", "j_node", "run_stat"]
 };
 
 const mimeExt = {
@@ -257,6 +286,34 @@ function inferESection(kind, params = {}) {
   if (kind === "dc-line") return "DCBranch";
   if (kind === "ac-load") return "ACLoad";
   if (kind === "dc-load") return "DCLoad";
+  if (kind === "hydrogen-source") return "HydroSource";
+  if (kind === "hydrogen-load") return "HydroLoad";
+  if (kind === "hydrogen-pipeline") return "HydroPipe";
+  if (kind === "hydrogen-compressor") return "HydroCompressor";
+  if (kind === "hydrogen-pressure-reducer") return "HydroPressRegulator";
+  if (kind === "hydrogen-shutoff-valve") return "HydroStopValve";
+  if (kind === "hydrogen-bus") return "HydroBus";
+  if (kind === "hydrogen-tank") return "HydroTank";
+  if (kind === "ac-electrolyzer") return "AcE2Hydro";
+  if (kind === "dc-electrolyzer") return "DcE2Hydro";
+  if (kind === "ac-fuel-cell") return "Hydro2AcE";
+  if (kind === "dc-fuel-cell") return "Hydro2DcE";
+  if (kind === "heat-source" || kind === "single-port-heat-source") return "HeatSource";
+  if (kind === "two-port-heat-source") return "HeatSource2";
+  if (kind === "single-port-heat-load" || kind === "heat-load") return "HeatLoad";
+  if (kind === "two-port-heat-load") return "HeatLoad2";
+  if (kind === "heat-pipeline") return "HeatPipe";
+  if (kind === "heat-shutoff-valve") return "HeatStopValve";
+  if (kind === "heat-bus") return "HeatBus";
+  if (kind === "thermal-storage-tank") return "HeatTank";
+  if (kind === "heat-boiler") return "HeatBoiler";
+  if (kind === "two-port-heat-boiler") return "HeatBoiler2";
+  if (kind === "ac-heater" || kind === "dc-heater") return "Elec2Heat";
+  if (kind === "ac-two-port-heater" || kind === "dc-two-port-heater") return "Elec2Heat2";
+  if (kind === "heat-exchanger") return "HeatExchanger";
+  if (kind === "three-port-heat-exchanger") return "HeatExchanger3";
+  if (kind === "four-port-heat-exchanger") return "HeatExchanger4";
+  if (kind === "heat-pump") return "HeatPump";
   if (kind?.startsWith("ac-") && kind.includes("source")) return "ACGenerator";
   if (kind?.startsWith("dc-") && kind.includes("source")) return "DCGenerator";
   if (kind === "ac-switch" || kind === "ac-disconnector") return "ACSwitch";
@@ -264,6 +321,7 @@ function inferESection(kind, params = {}) {
   if (kind === "ac-breaker") return "ACBreak";
   if (kind === "dc-breaker") return "DCBreak";
   if (kind === "ac-transformer" || kind === "ac-two-winding-transformer") return "ACTransformer";
+  if (kind === "ac-three-winding-transformer") return "ThreePowerTransformer";
   if (kind === "dcdc-converter") return "DCDCConverter";
   if (kind === "acdc-converter") return "DCACConverter";
   if (kind === "acac-converter") return "ACACConverter";

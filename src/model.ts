@@ -221,6 +221,7 @@ export type ContainerDeviceParameterViewRow = {
   label: string;
   value: string;
   readonly: boolean;
+  paramKey?: string;
 };
 
 export type ContainerDeviceParameterView = {
@@ -230,6 +231,7 @@ export type ContainerDeviceParameterView = {
   deviceType?: string;
   relationKeys?: string[];
   terminalIndexes?: number[];
+  terminalLabels?: string;
   rows: ContainerDeviceParameterViewRow[];
 };
 
@@ -343,8 +345,10 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   HydroStopValve: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   HydroBus: ["idx", "name", "node", "run_stat"],
   HydroTank: ["idx", "name", "node", "run_stat"],
-  Elec2Hydro: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_dc_load_t1", "idx_h2_unit_t2"],
-  Hydro2Elec: ["idx", "name", "run_stat", "idx_ac_unit_t1", "idx_dc_unit_t1", "idx_h2_load_t2"],
+  AcE2Hydro: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_h2_unit_t2"],
+  DcE2Hydro: ["idx", "name", "run_stat", "idx_dc_load_t1", "idx_h2_unit_t2"],
+  Hydro2AcE: ["idx", "name", "run_stat", "idx_ac_unit_t1", "idx_h2_load_t2"],
+  Hydro2DcE: ["idx", "name", "run_stat", "idx_dc_unit_t1", "idx_h2_load_t2"],
   HeatSource: ["idx", "name", "node", "run_stat"],
   HeatSource2: ["idx", "name", "i_node", "j_node", "run_stat"],
   HeatLoad: ["idx", "name", "node", "run_stat"],
@@ -372,10 +376,10 @@ const E_KIND_SECTION_MAP: Record<string, string> = {
   "hydrogen-shutoff-valve": "HydroStopValve",
   "hydrogen-bus": "HydroBus",
   "hydrogen-tank": "HydroTank",
-  "ac-electrolyzer": "Elec2Hydro",
-  "dc-electrolyzer": "Elec2Hydro",
-  "ac-fuel-cell": "Hydro2Elec",
-  "dc-fuel-cell": "Hydro2Elec",
+  "ac-electrolyzer": "AcE2Hydro",
+  "dc-electrolyzer": "DcE2Hydro",
+  "ac-fuel-cell": "Hydro2AcE",
+  "dc-fuel-cell": "Hydro2DcE",
   "heat-source": "HeatSource",
   "single-port-heat-load": "HeatLoad",
   "heat-load": "HeatLoad",
@@ -523,6 +527,33 @@ function isContainerTransformerRelationKey(fieldName: string): boolean {
 
 function containerRelationNameKey(fieldName: string): string {
   return fieldName.replace(/^idx_/, "name_");
+}
+
+function containerRelationParamKey(fieldName: string, column: string): string {
+  if (!fieldName) {
+    return column;
+  }
+  const transformerSide = THREE_WINDING_TRANSFORMER_SIDES.find((side) => side.idxKey === fieldName);
+  if (transformerSide) {
+    const sideColumnMap: Record<string, string> = {
+      r: `${transformerSide.suffix}ResistancePu`,
+      x: `${transformerSide.suffix}ReactancePu`,
+      gt: `${transformerSide.suffix}MagnetizingConductancePu`,
+      bt: `${transformerSide.suffix}MagnetizingSusceptancePu`,
+      tap: `${transformerSide.suffix}TapRatio`,
+      shift: `${transformerSide.suffix}Shift`
+    };
+    if (column in sideColumnMap) {
+      return sideColumnMap[column];
+    }
+  }
+  if (column === "idx") {
+    return fieldName;
+  }
+  if (column === "name") {
+    return containerRelationNameKey(fieldName);
+  }
+  return `${column}_${fieldName.replace(/^idx_/, "")}`;
 }
 
 function containerRelationRoleDisplayLabel(fieldName: string): string {
@@ -773,6 +804,49 @@ function normalizeControlTypeForE(value?: string) {
   return map[trimmed] ?? trimmed;
 }
 
+export const DCAC_CONVERTER_CONTROL_TYPES = ["DCV", "ACV", "ACP"] as const;
+export const ACAC_CONVERTER_CONTROL_TYPES = ["PQQ", "PVQ", "PQV", "PVV"] as const;
+
+function normalizeDcacConverterControlTypeForE(params: Record<string, string>) {
+  const explicit = normalizeControlTypeForE(params.control_type);
+  if ((DCAC_CONVERTER_CONTROL_TYPES as readonly string[]).includes(explicit)) {
+    return explicit;
+  }
+  const dcControl = normalizeControlTypeForE(params.dcControlType);
+  if (dcControl === "V") {
+    return "DCV";
+  }
+  const acControl = normalizeControlTypeForE(params.acControlType);
+  if (acControl === "PV" || acControl === "V" || acControl === "ACV") {
+    return "ACV";
+  }
+  if (acControl === "PQ" || acControl === "PH" || acControl === "P" || acControl === "ACP") {
+    return "ACP";
+  }
+  return "DCV";
+}
+
+function normalizeAcacConverterControlTypeForE(params: Record<string, string>) {
+  const explicit = normalizeControlTypeForE(params.control_type);
+  if ((ACAC_CONVERTER_CONTROL_TYPES as readonly string[]).includes(explicit)) {
+    return explicit;
+  }
+  const sourceControl = normalizeControlTypeForE(params.sourceControlType);
+  const targetControl = normalizeControlTypeForE(params.targetControlType);
+  const sourceVoltageControlled = sourceControl === "PV" || sourceControl === "V";
+  const targetVoltageControlled = targetControl === "PV" || targetControl === "V";
+  if (sourceVoltageControlled && targetVoltageControlled) {
+    return "PVV";
+  }
+  if (sourceVoltageControlled) {
+    return "PVQ";
+  }
+  if (targetVoltageControlled) {
+    return "PQV";
+  }
+  return "PQQ";
+}
+
 function terminalNodeNumber(node: Pick<ModelNode, "nodeNumber" | "terminals">, index: number) {
   return node.terminals[index]?.nodeNumber ?? (index === 0 ? node.nodeNumber : "") ?? "";
 }
@@ -833,8 +907,10 @@ const E_SECTION_OUTPUT_ORDER = [
   "HydroStopValve",
   "HydroBus",
   "HydroTank",
-  "Elec2Hydro",
-  "Hydro2Elec",
+  "AcE2Hydro",
+  "DcE2Hydro",
+  "Hydro2AcE",
+  "Hydro2DcE",
   "HeatSource",
   "HeatSource2",
   "HeatLoad",
@@ -925,6 +1001,13 @@ export function getEParamValue(
     return normalizeSwitchStatusForE(node.params.status ?? node.params.closedStatus);
   }
   if (key === "control_type") {
+    const section = inferESection(node.kind, node.params);
+    if (section === "DCACConverter") {
+      return normalizeDcacConverterControlTypeForE(node.params);
+    }
+    if (section === "ACACConverter") {
+      return normalizeAcacConverterControlTypeForE(node.params);
+    }
     return normalizeControlTypeForE(
       node.params.control_type ??
         node.params.controlType ??
@@ -998,6 +1081,11 @@ function terminalVoltageDisplay(node: ModelNode, terminal: Terminal): string {
     node.params.ratedVoltage,
     node.params.voltage
   ]));
+}
+
+function isZeroNumericText(value?: string): boolean {
+  const normalized = normalizeVoltageBaseInput(value);
+  return normalized !== "" && Number(normalized) === 0;
 }
 
 function topologyRepresentativeScore(node: ModelNode): number {
@@ -1089,11 +1177,6 @@ const THREE_WINDING_TRANSFORMER_SIDES = [
   { suffix: "low", label: "低压绕组", terminalIndex: 2, idxKey: "idx_xf_t3" }
 ] as const;
 
-function threeWindingSideParam(params: Record<string, string>, suffix: string, key: string, fallback = ""): string {
-  const paramKey = `${suffix}${key}`;
-  return params[paramKey] ?? fallback;
-}
-
 function buildThreeWindingTransformerBranchDevices(nodes: ModelNode[]): EDeviceExport[] {
   const records: EDeviceExport[] = [];
   for (const node of nodes) {
@@ -1105,23 +1188,17 @@ function buildThreeWindingTransformerBranchDevices(nodes: ModelNode[]): EDeviceE
       if (!terminal?.nodeNumber) {
         continue;
       }
+      const params = Object.fromEntries(
+        E_SECTION_COLUMNS.ACTransformer.map((column) => [
+          column,
+          associatedNodeColumnValue(node, side.idxKey, "ACTransformer", column, [terminal])
+        ])
+      );
       records.push({
         id: `${node.id}:w${side.terminalIndex + 1}`,
         kind: "ac-two-winding-transformer",
         section: "ACTransformer",
-        params: {
-          idx: node.params[side.idxKey] ?? "",
-          name: `${node.name}_${side.label}`,
-          i_node: terminal.nodeNumber,
-          j_node: node.params.neutral_node,
-          r: threeWindingSideParam(node.params, side.suffix, "ResistancePu"),
-          x: threeWindingSideParam(node.params, side.suffix, "ReactancePu"),
-          gt: threeWindingSideParam(node.params, side.suffix, "MagnetizingConductancePu"),
-          bt: threeWindingSideParam(node.params, side.suffix, "MagnetizingSusceptancePu"),
-          tap: threeWindingSideParam(node.params, side.suffix, "TapRatio"),
-          shift: threeWindingSideParam(node.params, side.suffix, "Shift", "0"),
-          run_stat: normalizeRunStatForE(node.params.run_stat)
-        }
+        params
       });
     }
   }
@@ -1175,17 +1252,13 @@ function buildContainerAssociatedDevices(nodes: ModelNode[]): EDeviceExport[] {
       const terminalIndex = entry.terminalNumber - 1;
       const firstTerminal = node.terminals[terminalIndex];
       const secondTerminal = entry.doublePort ? node.terminals[terminalIndex + 1] : undefined;
-      const params: Record<string, string> = {
-        idx,
-        name: containerAssociatedDeviceName(node, entry.fieldName),
-        run_stat: normalizeRunStatForE(node.params.run_stat)
-      };
-      if (secondTerminal) {
-        params.i_node = firstTerminal?.nodeNumber ?? "";
-        params.j_node = secondTerminal.nodeNumber ?? "";
-      } else {
-        params.node = firstTerminal?.nodeNumber ?? "";
-      }
+      const terminals = [firstTerminal, secondTerminal].filter((terminal): terminal is Terminal => Boolean(terminal));
+      const params = Object.fromEntries(
+        (E_SECTION_COLUMNS[entry.section] ?? []).map((column) => [
+          column,
+          associatedNodeColumnValue(node, entry.fieldName, entry.section, column, terminals)
+        ])
+      );
       records.push({
         id: `${node.id}:${entry.fieldName}`,
         kind: `${node.kind}:${entry.fieldName}`,
@@ -1288,6 +1361,16 @@ function defaultEColumnValue(column: string, rowIndex: number) {
   return "0";
 }
 
+function defaultContainerAssociatedColumnValue(section: string, column: string, rowIndex = 0) {
+  if (section === "ACLoad" || section === "DCLoad") {
+    if (column === "pv0" || column === "qv0") return "1.0";
+    if (column === "pv1" || column === "pv2" || column === "qv1" || column === "qv2") return "0.0";
+  }
+  if (section === "ACGenerator" && column === "control_type") return "PV";
+  if (section === "DCGenerator" && column === "control_type") return "P";
+  return defaultEColumnValue(column, rowIndex);
+}
+
 function formatEColumnValue(section: string, column: string, value: string | undefined, rowIndex: number) {
   const fallback = defaultEColumnValue(column, rowIndex);
   const text = String(value ?? "").trim();
@@ -1315,9 +1398,28 @@ function formatEColumnValue(section: string, column: string, value: string | und
   return normalizeEFileToken(text);
 }
 
+function eRecordIdxSortValue(record: EDeviceExport): number {
+  const value = firstNumericToken(String(record.params.idx ?? ""));
+  if (!value) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : Number.POSITIVE_INFINITY;
+}
+
+function sortESectionRecordsByIdx(rows: EDeviceExport[]): EDeviceExport[] {
+  return rows
+    .map((record, order) => ({ record, order }))
+    .sort((first, second) => {
+      const idxDelta = eRecordIdxSortValue(first.record) - eRecordIdxSortValue(second.record);
+      return idxDelta !== 0 ? idxDelta : first.order - second.order;
+    })
+    .map(({ record }) => record);
+}
+
 function formatESection(section: string, rows: EDeviceExport[]) {
   const columns = E_SECTION_COLUMNS[section] ?? [];
-  const bodyRows = rows
+  const bodyRows = sortESectionRecordsByIdx(rows)
     .map((record, rowIndex) => `# ${columns.map((column) => formatEColumnValue(section, column, record.params[column], rowIndex)).join(" ")}`)
     .join("\n");
   return `<${section}>\n@ ${columns.join(" ")}\n${bodyRows}\n</${section}>`;
@@ -1414,6 +1516,7 @@ export type TopologyValidationErrorType =
   | "floating-terminal"
   | "terminal-type-mismatch"
   | "voltage-mismatch"
+  | "voltage-setpoint-deviation"
   | "duplicate-device-idx"
   | "duplicate-device-name";
 
@@ -1945,7 +2048,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流线路",
     group: "交流设备",
     size: { width: 108, height: 36 },
-    params: { length: "10 km", r: "0.12 ohm/km", x: "0.38 ohm/km" },
+    params: { r: "0.1", x: "1.0", b: "0.0" },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -2055,7 +2158,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流线路",
     group: "直流设备",
     size: { width: 108, height: 36 },
-    params: { length: "2 km", resistance: "0.08 ohm/km" },
+    params: { r: "1.0" },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -2449,8 +2552,69 @@ function uniqueNonEmpty(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
-function viewRow(key: string, label: string, value: string, readonly = true): ContainerDeviceParameterViewRow {
-  return { key, label, value, readonly };
+function viewRow(key: string, label: string, value: string, readonly = true, paramKey?: string): ContainerDeviceParameterViewRow {
+  return { key, label, value, readonly, paramKey };
+}
+
+function associatedNodeColumnValue(
+  node: Pick<ModelNode, "name" | "terminals" | "params">,
+  relationKey: string,
+  section: string,
+  column: string,
+  terminals: Terminal[]
+): string {
+  const paramKey = containerRelationParamKey(relationKey, column);
+  const transformerSide = THREE_WINDING_TRANSFORMER_SIDES.find((side) => side.idxKey === relationKey);
+  if (column === "idx") {
+    return node.params[relationKey] ?? "";
+  }
+  if (column === "name") {
+    return relationKey ? containerAssociatedDeviceName(node, relationKey) : node.name;
+  }
+  if (column === "node") {
+    return terminals[0]?.nodeNumber ?? "";
+  }
+  if (column === "i_node") {
+    return terminals[0]?.nodeNumber ?? "";
+  }
+  if (column === "j_node") {
+    return isContainerTransformerRelationKey(relationKey)
+      ? node.params.neutral_node ?? ""
+      : terminals[1]?.nodeNumber ?? "";
+  }
+  if (column === "run_stat") {
+    return node.params[paramKey] ?? (normalizeRunStatForE(node.params.run_stat) || "1");
+  }
+  if (transformerSide) {
+    const sideValue = node.params[paramKey];
+    if (sideValue !== undefined && sideValue !== "") {
+      return sideValue;
+    }
+    if (column === "shift") {
+      return "0";
+    }
+  }
+  return node.params[paramKey] ?? defaultContainerAssociatedColumnValue(section, column);
+}
+
+function associatedDeviceRows(
+  node: Pick<ModelNode, "name" | "terminals" | "params">,
+  relationKey: string,
+  section: string,
+  terminals: Terminal[]
+): ContainerDeviceParameterViewRow[] {
+  const columns = E_SECTION_COLUMNS[section] ?? [];
+  return columns.map((column) => {
+    const readonly = column === "idx" || column === "node" || column === "i_node" || column === "j_node";
+    const paramKey = readonly ? undefined : containerRelationParamKey(relationKey, column);
+    return viewRow(
+      column,
+      column,
+      associatedNodeColumnValue(node, relationKey, section, column, terminals),
+      readonly,
+      paramKey
+    );
+  });
 }
 
 export function buildContainerDeviceParameterViews(
@@ -2476,6 +2640,12 @@ export function buildContainerDeviceParameterViews(
   if (associations.length === 0) {
     return [];
   }
+  const containerRows = getTemplateParameterDefinitions(fallbackTemplate).map((definition) => {
+    const value = definition.enName === "name"
+      ? node.name
+      : node.params[definition.enName] ?? definition.typicalValue;
+    return viewRow(definition.enName, definition.enName, value, Boolean(definition.readonly), definition.readonly ? undefined : definition.enName);
+  });
   const groups = new Map<number, ContainerTerminalAssociation[]>();
   for (const association of associations) {
     const group = groups.get(association.sourceTerminalIndex) ?? [];
@@ -2491,26 +2661,31 @@ export function buildContainerDeviceParameterViews(
     const terminals = terminalIndexes.map((index) => node.terminals[index]).filter((terminal): terminal is Terminal => Boolean(terminal));
     const deviceType = containerRelationCounterKey(first.relationKey) || first.roleLabel;
     const label = `${sourceTerminal?.label ?? first.terminalLabel}${first.roleLabel}`;
-    const rows = [
-      viewRow("idx", "idx", relationIdx),
-      viewRow("name", "name", first.relationKey ? containerAssociatedDeviceName(node, first.relationKey) : `${node.name}_${label}`),
-      viewRow("device_model", "device_model", deviceType),
-      viewRow("relation_fields", "relation_fields", relationKeys.join(", ")),
-      viewRow("terminals", "terminals", terminals.map((terminal) => terminal.label).join(", ")),
-      viewRow("energy", "energy", uniqueNonEmpty(terminals.map((terminal) => terminal.type.toUpperCase())).join(" / "))
-    ];
-    if (isContainerTransformerRelationKey(first.relationKey)) {
-      rows.push(viewRow("i_node", "i_node", sourceTerminal?.nodeNumber ?? ""));
-      rows.push(viewRow("j_node", "j_node", node.params.neutral_node ?? ""));
-    } else if (terminals.length === 1) {
-      rows.push(viewRow("node", "node", terminals[0]?.nodeNumber ?? ""));
-    } else if (terminals.length >= 2) {
-      rows.push(viewRow("i_node", "i_node", terminals[0]?.nodeNumber ?? ""));
-      rows.push(viewRow("j_node", "j_node", terminals[1]?.nodeNumber ?? ""));
-    }
-    const vbaseValues = uniqueNonEmpty(terminals.map((terminal) => terminal.vbase ?? ""));
-    if (vbaseValues.length > 0) {
-      rows.push(viewRow("vbase", "vbase", vbaseValues.join(" / ")));
+    const sectionColumns = E_SECTION_COLUMNS[deviceType] ?? [];
+    const rows = sectionColumns.length > 0
+      ? associatedDeviceRows(node, first.relationKey, deviceType, terminals)
+      : [
+          viewRow("idx", "idx", relationIdx),
+          viewRow("name", "name", first.relationKey ? containerAssociatedDeviceName(node, first.relationKey) : `${node.name}_${label}`),
+          viewRow("device_model", "device_model", deviceType),
+          viewRow("relation_fields", "relation_fields", relationKeys.join(", ")),
+          viewRow("terminals", "terminals", terminals.map((terminal) => terminal.label).join(", ")),
+          viewRow("energy", "energy", uniqueNonEmpty(terminals.map((terminal) => terminal.type.toUpperCase())).join(" / "))
+        ];
+    if (sectionColumns.length === 0) {
+      if (isContainerTransformerRelationKey(first.relationKey)) {
+        rows.push(viewRow("i_node", "i_node", sourceTerminal?.nodeNumber ?? ""));
+        rows.push(viewRow("j_node", "j_node", node.params.neutral_node ?? ""));
+      } else if (terminals.length === 1) {
+        rows.push(viewRow("node", "node", terminals[0]?.nodeNumber ?? ""));
+      } else if (terminals.length >= 2) {
+        rows.push(viewRow("i_node", "i_node", terminals[0]?.nodeNumber ?? ""));
+        rows.push(viewRow("j_node", "j_node", terminals[1]?.nodeNumber ?? ""));
+      }
+      const vbaseValues = uniqueNonEmpty(terminals.map((terminal) => terminal.vbase ?? ""));
+      if (vbaseValues.length > 0) {
+        rows.push(viewRow("vbase", "vbase", vbaseValues.join(" / ")));
+      }
     }
     return {
       id: `associated-${sourceTerminalIndex + 1}`,
@@ -2519,6 +2694,7 @@ export function buildContainerDeviceParameterViews(
       deviceType,
       relationKeys,
       terminalIndexes,
+      terminalLabels: terminals.map((terminal) => terminal.label).join(", "),
       rows
     };
   });
@@ -2527,7 +2703,7 @@ export function buildContainerDeviceParameterViews(
       id: "container",
       label: "容器本体",
       kind: "container",
-      rows: []
+      rows: containerRows
     },
     ...associatedViews
   ];
@@ -3042,13 +3218,13 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   if (template.kind === "ac-line" || template.kind === "dc-line") {
     if (template.kind === "dc-line") {
       return withTemplateDefinitions(withRunStat(withDefaultVbase({
-        resistancePu: "0.0"
+        r: "1.0"
       })));
     }
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
-      resistancePu: "0.0",
-      reactancePu: "0.1",
-      halfChargingSusceptancePu: "0.0"
+      r: "0.1",
+      x: "1.0",
+      b: "0.0"
     })));
   }
   if (template.kind === "ac-two-winding-transformer" || template.kind === "ac-transformer") {
@@ -3106,6 +3282,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       targetVbase: "750 V",
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
+      control_type: "DCV",
       acControlType: "定PQ",
       dcControlType: "不定"
     }));
@@ -3116,6 +3293,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       targetVbase: "10 kV",
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
+      control_type: "PQQ",
       sourceControlType: "定PQ",
       targetControlType: "不定"
     }));
@@ -3590,7 +3768,7 @@ export function buildElementTree(
         name: view.rows.find((row) => row.key === "name")?.value ?? "",
         nameKey: view.relationKeys?.[0] ? containerRelationNameKey(view.relationKeys[0]) : "",
         relationKeys: view.relationKeys ?? [],
-        terminalLabels: view.rows.find((row) => row.key === "terminals")?.value ?? ""
+        terminalLabels: view.terminalLabels ?? view.rows.find((row) => row.key === "terminals")?.value ?? ""
       }));
     const item: ElementTreeItem = {
       kind: "node",
@@ -3889,6 +4067,95 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
     numberByRoot.set(root, next);
     return next;
   };
+  const voltageCandidatesByTypeAndRoot: Record<TerminalType, Map<string, Array<{ node: ModelNode; terminal: Terminal }>>> = {
+    ac: new Map<string, Array<{ node: ModelNode; terminal: Terminal }>>(),
+    dc: new Map<string, Array<{ node: ModelNode; terminal: Terminal }>>(),
+    h2: new Map<string, Array<{ node: ModelNode; terminal: Terminal }>>(),
+    heat: new Map<string, Array<{ node: ModelNode; terminal: Terminal }>>()
+  };
+  for (const node of nodes) {
+    for (const terminal of node.terminals) {
+      const root = find(terminalKey(node.id, terminal.id));
+      const candidates = voltageCandidatesByTypeAndRoot[terminal.type].get(root) ?? [];
+      candidates.push({ node, terminal });
+      voltageCandidatesByTypeAndRoot[terminal.type].set(root, candidates);
+    }
+  }
+  const voltageByTypeAndRoot: Record<TerminalType, Map<string, string>> = {
+    ac: new Map<string, string>(),
+    dc: new Map<string, string>(),
+    h2: new Map<string, string>(),
+    heat: new Map<string, string>()
+  };
+  for (const type of Object.keys(voltageCandidatesByTypeAndRoot) as TerminalType[]) {
+    for (const [root, candidates] of voltageCandidatesByTypeAndRoot[type]) {
+      const voltage = candidates
+        .slice()
+        .sort((first, second) => topologyRepresentativeScore(first.node) - topologyRepresentativeScore(second.node))
+        .map(({ node, terminal }) => terminalVoltageDisplay(node, terminal))
+        .find((value) => value.trim() !== "" && !isZeroNumericText(value));
+      if (voltage) {
+        voltageByTypeAndRoot[type].set(root, voltage);
+      }
+    }
+  }
+  const voltageForTerminal = (nodeId: string, terminal: Terminal): string => {
+    const root = find(terminalKey(nodeId, terminal.id));
+    return voltageByTypeAndRoot[terminal.type].get(root) ?? "";
+  };
+  const applyVoltageSetpointDefaults = (node: ModelNode, terminals: Terminal[]): Record<string, string> => {
+    let params = node.params;
+    const assignIfZero = (paramKey: string, terminal?: Terminal) => {
+      if (!terminal || !isZeroNumericText(params[paramKey])) {
+        return;
+      }
+      const voltage = voltageForTerminal(node.id, terminal);
+      if (!voltage) {
+        return;
+      }
+      if (params === node.params) {
+        params = { ...node.params };
+      }
+      params[paramKey] = voltage;
+    };
+    const section = inferESection(node.kind, node.params);
+    if (section === "ACGenerator" || section === "DCGenerator") {
+      const type: TerminalType = section === "ACGenerator" ? "ac" : "dc";
+      assignIfZero("v_set", terminals.find((terminal) => terminal.type === type) ?? terminals[0]);
+    }
+    if (section === "DCDCConverter") {
+      const sourceControl = normalizeControlTypeForE(params.sourceControlType);
+      const targetControl = normalizeControlTypeForE(params.targetControlType);
+      const controlledTerminal = targetControl === "V"
+        ? terminals[1]
+        : sourceControl === "V"
+          ? terminals[0]
+          : terminals[0];
+      assignIfZero("v_set", controlledTerminal);
+    }
+    if (section === "DCACConverter") {
+      assignIfZero("v_ac_set", terminals.find((terminal) => terminal.type === "ac") ?? terminals[0]);
+      assignIfZero("v_dc_set", terminals.find((terminal) => terminal.type === "dc") ?? terminals[1]);
+    }
+    if (section === "ACACConverter") {
+      assignIfZero("i_v_set", terminals[0]);
+      assignIfZero("j_v_set", terminals[1]);
+    }
+    if (isContainerParams(node.params)) {
+      for (const fieldName of Object.keys(node.params)) {
+        const relationSection = containerRelationCounterKey(fieldName);
+        if (relationSection !== "ACGenerator" && relationSection !== "DCGenerator") {
+          continue;
+        }
+        const parsed = parseContainerRelationField(fieldName);
+        if (!parsed) {
+          continue;
+        }
+        assignIfZero(containerRelationParamKey(fieldName, "v_set"), terminals[parsed.terminalNumber - 1]);
+      }
+    }
+    return params;
+  };
 
   const numberedNodes = nodes.map((node) => {
     const terminals = node.terminals.map((terminal) => {
@@ -3897,11 +4164,13 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
     });
     const acTopologyNode = Number(terminals.find((terminal) => terminal.type === "ac")?.nodeNumber ?? 0);
     const dcTopologyNode = Number(terminals.find((terminal) => terminal.type === "dc")?.nodeNumber ?? 0);
+    const params = applyVoltageSetpointDefaults(node, terminals);
     return {
       ...node,
       acTopologyNode,
       dcTopologyNode,
       nodeNumber: terminals.length === 1 ? terminals[0].nodeNumber : node.nodeNumber,
+      params,
       terminals
     };
   });
@@ -4180,6 +4449,77 @@ export function validateTopology(nodes: ModelNode[], edges: Edge[]): TopologyVal
           relatedNodeIds: [node.id],
           message: `${node.name} 的 ${terminal.label} 悬空，未连接到任何设备。`
         });
+      }
+    }
+  }
+
+  const ratedVoltageForTerminal = (node: ModelNode, terminal?: Terminal) => {
+    if (!terminal) {
+      return "";
+    }
+    const root = find(terminalKey(node.id, terminal.id));
+    const group = voltageGroups.get(root);
+    if (group?.voltages.size === 1) {
+      return terminalVoltageBaseNumber(Array.from(group.voltages.values())[0]);
+    }
+    return terminalVoltageDisplay(node, terminal);
+  };
+  const addVoltageSetpointDeviation = (node: ModelNode, paramKey: string, terminal?: Terminal) => {
+    const setpoint = terminalVoltageBaseNumber(node.params[paramKey]);
+    const ratedVoltage = ratedVoltageForTerminal(node, terminal);
+    if (!setpoint || !ratedVoltage) {
+      return;
+    }
+    const setpointValue = Number(setpoint);
+    const ratedVoltageValue = Number(ratedVoltage);
+    if (!Number.isFinite(setpointValue) || !Number.isFinite(ratedVoltageValue) || ratedVoltageValue <= 0) {
+      return;
+    }
+    const deviation = Math.abs(setpointValue - ratedVoltageValue) / ratedVoltageValue;
+    if (deviation <= 0.3) {
+      return;
+    }
+    errors.push({
+      id: `voltage-setpoint-deviation:${node.id}:${paramKey}`,
+      type: "voltage-setpoint-deviation",
+      nodeId: node.id,
+      relatedNodeIds: [node.id],
+      message: `${node.name} 的 ${paramKey}=${setpoint} 与节点额定电压 ${ratedVoltage} 偏差超过 30%。`
+    });
+  };
+  for (const node of nodes) {
+    if (isStaticNode(node)) {
+      continue;
+    }
+    const section = inferESection(node.kind, node.params);
+    if (section === "ACGenerator" || section === "DCGenerator" || section === "ACShuntCompensator") {
+      const expectedType: TerminalType = section === "DCGenerator" ? "dc" : "ac";
+      addVoltageSetpointDeviation(node, "v_set", node.terminals.find((terminal) => terminal.type === expectedType) ?? node.terminals[0]);
+    }
+    if (section === "DCDCConverter") {
+      const sourceControl = normalizeControlTypeForE(node.params.sourceControlType);
+      const targetControl = normalizeControlTypeForE(node.params.targetControlType);
+      addVoltageSetpointDeviation(node, "v_set", targetControl === "V" ? node.terminals[1] : sourceControl === "V" ? node.terminals[0] : node.terminals[0]);
+    }
+    if (section === "DCACConverter") {
+      addVoltageSetpointDeviation(node, "v_ac_set", node.terminals.find((terminal) => terminal.type === "ac") ?? node.terminals[0]);
+      addVoltageSetpointDeviation(node, "v_dc_set", node.terminals.find((terminal) => terminal.type === "dc") ?? node.terminals[1]);
+    }
+    if (section === "ACACConverter") {
+      addVoltageSetpointDeviation(node, "i_v_set", node.terminals[0]);
+      addVoltageSetpointDeviation(node, "j_v_set", node.terminals[1]);
+    }
+    if (isContainerParams(node.params)) {
+      for (const fieldName of Object.keys(node.params)) {
+        const relationSection = containerRelationCounterKey(fieldName);
+        if (relationSection !== "ACGenerator" && relationSection !== "DCGenerator") {
+          continue;
+        }
+        const parsed = parseContainerRelationField(fieldName);
+        if (!parsed) {
+          continue;
+        }
+        addVoltageSetpointDeviation(node, containerRelationParamKey(fieldName, "v_set"), node.terminals[parsed.terminalNumber - 1]);
       }
     }
   }

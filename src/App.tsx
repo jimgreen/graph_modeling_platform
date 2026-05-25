@@ -63,6 +63,8 @@ import {
   deleteSavedScheme,
   deleteSavedProject,
   DEVICE_LIBRARY,
+  ACAC_CONVERTER_CONTROL_TYPES,
+  DCAC_CONVERTER_CONTROL_TYPES,
   distributeNodes,
   E_SECTION_COLUMNS,
   getEdgeEndpointPoint as getModelEdgeEndpointPoint,
@@ -586,6 +588,16 @@ const PARAM_OPTIONS: Record<string, string[]> = {
   textDecoration: ["none", "underline"],
   strokeStyle: ["solid", "dashed", "dotted"]
 };
+
+function paramOptionsForSection(key: string, section?: string) {
+  if (key === "control_type" && section === "DCACConverter") {
+    return [...DCAC_CONVERTER_CONTROL_TYPES];
+  }
+  if (key === "control_type" && section === "ACACConverter") {
+    return [...ACAC_CONVERTER_CONTROL_TYPES];
+  }
+  return PARAM_OPTIONS[key];
+}
 
 const READONLY_E_PARAM_KEYS = new Set(["idx", "node", "i_node", "j_node", "ac_node", "dc_node"]);
 
@@ -3857,7 +3869,7 @@ export function App() {
 
   const renderParamEditor = (key: string, value: string, wrapLabel = true) => {
     const label = PARAM_LABELS[key] ?? key;
-    const options = PARAM_OPTIONS[key];
+    const options = paramOptionsForSection(key, selectedNode ? inferESection(selectedNode.kind, selectedNode.params) : undefined);
     const control = options ? (
       <select value={value} onChange={(event) => updateParam(key, event.target.value)}>
         {options.map((option) => (
@@ -7766,15 +7778,34 @@ export function App() {
                     ))}
                   </div>
                 )}
-                {selectedContainerParameterView?.kind === "associated" ? (
+                {selectedContainerParameterView ? (
                   <table className="param-table">
                     <tbody>
-                      {selectedContainerParameterView.rows.map((row) => (
-                        <tr key={row.key}>
-                          {renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
-                          <td><input value={row.value} readOnly /></td>
-                        </tr>
-                      ))}
+                      {selectedContainerParameterView.rows.map((row) => {
+                        const options = paramOptionsForSection(row.key, selectedContainerParameterView.deviceType);
+                        return (
+                          <tr key={row.key}>
+                            {renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
+                            <td>
+                              {row.key === "name" && selectedContainerParameterView.kind === "container" ? (
+                                <input value={selectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
+                              ) : row.readonly || !row.paramKey ? (
+                                <input value={row.value} readOnly />
+                              ) : options ? (
+                                <select value={row.value} onChange={(event) => updateParam(row.paramKey!, event.target.value)}>
+                                  {options.map((option) => (
+                                    <option key={option} value={option}>
+                                      {option}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input value={row.value} onChange={(event) => updateParam(row.paramKey!, event.target.value)} />
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 ) : (
