@@ -1,6 +1,7 @@
 node_modules/
 dist/
 data/
+.codex-logs/
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
