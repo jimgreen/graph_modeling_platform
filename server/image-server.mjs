@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -135,9 +135,21 @@ async function readSchemes() {
   }
 }
 
+async function writeTextIfChanged(filePath, content) {
+  try {
+    const current = await readFile(filePath, "utf-8");
+    if (current === content) {
+      return;
+    }
+  } catch {
+    // File is missing or unreadable; write a fresh copy below.
+  }
+  await writeFile(filePath, content, "utf-8");
+}
+
 async function writeSchemes(schemes) {
   await ensureSchemeStore();
-  await writeFile(schemeManifestPath, JSON.stringify(schemes, null, 2), "utf-8");
+  await writeTextIfChanged(schemeManifestPath, JSON.stringify(schemes, null, 2));
   await writeSchemeFiles(schemes);
 }
 
@@ -657,21 +669,66 @@ ${nodeMarkup}
 </svg>`;
 }
 
-async function writeSchemeFiles(schemes) {
-  const filesRoot = join(schemeDataDir, "files");
-  await rm(filesRoot, { recursive: true, force: true });
-  await mkdir(filesRoot, { recursive: true });
-  for (const scheme of schemes) {
-    const schemeDir = join(filesRoot, `${safeFilePart(scheme.name, "方案")}__${scheme.id}`);
-    await mkdir(schemeDir, { recursive: true });
-    await writeFile(join(schemeDir, "scheme.json"), JSON.stringify(scheme, null, 2), "utf-8");
-    for (const record of scheme.projects ?? []) {
-      const baseName = `${safeFilePart(record.name, "模型")}__${record.id}`;
-      await writeFile(join(schemeDir, `${baseName}.json`), JSON.stringify(record.project, null, 2), "utf-8");
-      await writeFile(join(schemeDir, `${baseName}.e`), buildDeviceParameterFile(record.project), "utf-8");
-      await writeFile(join(schemeDir, `${baseName}.svg`), buildSvgFile(record.project), "utf-8");
+async function listSchemeStoreEntries(root) {
+  const files = [];
+  const dirs = [];
+  const walk = async (dir) => {
+    let entries = [];
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const entryPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(entryPath);
+        dirs.push(entryPath);
+      } else if (entry.isFile()) {
+        files.push(entryPath);
+      }
+    }
+  };
+  await walk(root);
+  return { files, dirs };
+}
+
+async function removeStaleSchemeFiles(filesRoot, expectedFiles, expectedDirs) {
+  const { files, dirs } = await listSchemeStoreEntries(filesRoot);
+  await Promise.all(files.filter((filePath) => !expectedFiles.has(filePath)).map((filePath) => rm(filePath, { force: true })));
+  for (const dir of dirs.sort((first, second) => second.length - first.length)) {
+    if (!expectedDirs.has(dir)) {
+      await rm(dir, { recursive: true, force: true });
     }
   }
+}
+
+async function writeSchemeFiles(schemes) {
+  const filesRoot = join(schemeDataDir, "files");
+  await mkdir(filesRoot, { recursive: true });
+  const expectedFiles = new Set();
+  const expectedDirs = new Set([filesRoot]);
+  for (const scheme of schemes) {
+    const schemeDir = join(filesRoot, `${safeFilePart(scheme.name, "方案")}__${scheme.id}`);
+    expectedDirs.add(schemeDir);
+    await mkdir(schemeDir, { recursive: true });
+    const schemeFilePath = join(schemeDir, "scheme.json");
+    expectedFiles.add(schemeFilePath);
+    await writeTextIfChanged(schemeFilePath, JSON.stringify(scheme, null, 2));
+    for (const record of scheme.projects ?? []) {
+      const baseName = `${safeFilePart(record.name, "模型")}__${record.id}`;
+      const jsonPath = join(schemeDir, `${baseName}.json`);
+      const ePath = join(schemeDir, `${baseName}.e`);
+      const svgPath = join(schemeDir, `${baseName}.svg`);
+      expectedFiles.add(jsonPath);
+      expectedFiles.add(ePath);
+      expectedFiles.add(svgPath);
+      await writeTextIfChanged(jsonPath, JSON.stringify(record.project, null, 2));
+      await writeTextIfChanged(ePath, buildDeviceParameterFile(record.project));
+      await writeTextIfChanged(svgPath, buildSvgFile(record.project));
+    }
+  }
+  await removeStaleSchemeFiles(filesRoot, expectedFiles, expectedDirs);
 }
 
 function publicAsset(item) {

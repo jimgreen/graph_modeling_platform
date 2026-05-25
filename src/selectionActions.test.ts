@@ -22,7 +22,7 @@ describe("canvas selection actions", () => {
     });
   });
 
-  test("selects nodes and routed connection lines intersecting the marquee rectangle", () => {
+  test("selects nodes and routed connection lines fully enclosed by the marquee rectangle", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
     const target = createDefaultNode("ac-load", { x: 300, y: 100 });
     const outside = createDefaultNode("dc-load", { x: 500, y: 300 });
@@ -38,11 +38,33 @@ describe("canvas selection actions", () => {
     const selection = selectGraphicsInRect(
       [source, target, outside],
       routes,
-      { left: 120, right: 260, top: 70, bottom: 130 }
+      { left: 0, right: 400, top: 0, bottom: 200 }
     );
 
     expect(selection.nodeIds).toEqual([source.id, target.id]);
     expect(selection.edgeIds).toEqual([edge.id]);
+  });
+
+  test("does not select a graphic that is only partially covered by the marquee rectangle", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const target = createDefaultNode("ac-load", { x: 300, y: 100 });
+    const edge: Edge = {
+      id: "edge-partial",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const routes = routeEdgesForRendering([source, target], [edge], { width: 800, height: 500 });
+
+    const selection = selectGraphicsInRect(
+      [source, target],
+      routes,
+      { left: 120, right: 260, top: 70, bottom: 130 }
+    );
+
+    expect(selection.nodeIds).toEqual([]);
+    expect(selection.edgeIds).toEqual([]);
   });
 
   test("copies and pastes selected nodes with their selected connection lines", () => {
@@ -83,7 +105,7 @@ describe("canvas selection actions", () => {
     expect(pasted.edges[0].manualPoints?.length).toBeGreaterThan(0);
   });
 
-  test("pastes a selected connection line as a movable floating line when its endpoint devices are not copied", () => {
+  test("does not paste a selected connection line when its endpoint devices are not copied", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
     const target = createDefaultNode("ac-load", { x: 300, y: 100 });
     const edge: Edge = {
@@ -99,16 +121,6 @@ describe("canvas selection actions", () => {
     const pasted = cloneCanvasClipboard(clipboard, { x: 400, y: 300 }, () => "unused-node", () => "edge-copy");
 
     expect(pasted.nodes).toHaveLength(0);
-    expect(pasted.edges).toHaveLength(1);
-    expect(pasted.edges[0]).toEqual(expect.objectContaining({
-      id: "edge-copy",
-      sourceId: "",
-      targetId: "",
-      sourceTerminalId: undefined,
-      targetTerminalId: undefined,
-      sourcePoint: { x: 400, y: 300 },
-      targetPoint: expect.objectContaining({ y: 300 })
-    }));
-    expect(pasted.edges[0].manualPoints?.length).toBeGreaterThan(0);
+    expect(pasted.edges).toHaveLength(0);
   });
 });

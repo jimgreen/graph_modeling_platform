@@ -1,7 +1,9 @@
-import { ChangeEvent, DragEvent, Fragment, isValidElement, MouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, Fragment, isValidElement, MouseEvent, PointerEvent, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlignHorizontalDistributeCenter,
   AlignCenterHorizontal,
   AlignCenterVertical,
+  AlignVerticalDistributeCenter,
   Cable,
   Download,
   FileInput,
@@ -12,6 +14,7 @@ import {
   Copy,
   ChevronDown,
   ChevronRight,
+  Scissors,
   EyeOff,
   FolderOpen,
   MousePointer2,
@@ -52,8 +55,9 @@ import {
   deleteNodesWithConnectedEdges,
   deleteSavedScheme,
   deleteSavedProject,
-  deserializeProject,
   DEVICE_LIBRARY,
+  distributeNodes,
+  E_SECTION_COLUMNS,
   getEdgeEndpointPoint as getModelEdgeEndpointPoint,
   getNodeScaleX,
   getNodeScaleY,
@@ -66,6 +70,7 @@ import {
   getSwitchVisualState,
   getEParameterKeys,
   getEParamValue,
+  getEExportWarnings,
   getTemplateParameterDefinitions,
   getTerminalPoint,
   normalizeVoltageBaseInput,
@@ -75,8 +80,13 @@ import {
   isDoubleContainerTerminalAssociation,
   isGeneratorNode,
   isStaticNode,
+  inferESection,
+  keyboardMoveStepForViewBox,
   lockProjectEdgeTerminals,
+  preserveDraggedRouteShape,
   projectPointToBusCenterline,
+  resolveStraightBusSlideEndpoint,
+  resolveStraightBusSlideEndpointToPoint,
   validateTopology,
   normalizeViewBoxToCanvas,
   type DeviceKind,
@@ -91,6 +101,7 @@ import {
   type Point,
   type ProjectFile,
   type CanvasBounds,
+  type Topology,
   type ContainerTerminalAssociationType,
   type ContainerTerminalAssociationValue,
   type ContainerTerminalRole,
@@ -102,7 +113,6 @@ import {
   renameSavedScheme,
   renameSavedProject,
   moveOrthogonalRouteSegment,
-  serializeProject,
   terminalStubSegment,
   terminalVoltageBaseNumber,
   terminalTypeColor,
@@ -111,6 +121,7 @@ import {
   upsertSavedProject,
   uniqueRecordName,
   validateContainerTerminalAssociations,
+  viewBoxZoomPercent,
   type SavedSchemeRecord,
   type SavedProjectRecord
 } from "./model";
@@ -138,6 +149,14 @@ type EdgeEndpoint = "source" | "target";
 type TransformDrag =
   | { kind: "rotate"; nodeId: string; historyCaptured?: boolean }
   | { kind: "scale-x" | "scale-y" | "scale-both"; nodeId: string; historyCaptured?: boolean };
+type ScaleHandleKind = Extract<TransformDrag["kind"], "scale-x" | "scale-y" | "scale-both">;
+type ScaleHandleConfig = {
+  id: string;
+  kind: ScaleHandleKind;
+  xDirection: -1 | 0 | 1;
+  yDirection: -1 | 0 | 1;
+  className: string;
+};
 type Marquee = { start: Point; current: Point } | null;
 type ContextMenuState = { x: number; y: number } | null;
 type ProjectMenuState = { x: number; y: number; schemeId?: string; projectId?: string } | null;
@@ -172,14 +191,21 @@ type ManualPathDrag =
   | null;
 type DraggingState = {
   nodeIds: string[];
+  edgeIds: string[];
   startPoint: Point;
   originalPositions: Record<string, Point>;
   originalEdgePoints: Record<string, { sourcePoint?: Point; targetPoint?: Point; manualPoints?: Point[] }>;
+  originalRoutePoints: Record<string, Point[]>;
+  currentDelta?: Point;
   historyCaptured?: boolean;
 };
 type ClipboardRecord =
   | { kind: "scheme"; scheme: SavedSchemeRecord }
   | { kind: "project"; project: SavedProjectRecord };
+type TopologyRunStatus = {
+  state: "idle" | "success" | "failed";
+  message: string;
+};
 type UndoSnapshot = {
   projectName: string;
   canvasWidth: number;
@@ -194,6 +220,8 @@ type UndoSnapshot = {
   nodes: ModelNode[];
   edges: Edge[];
   topologyErrors: TopologyValidationError[];
+  topology: Topology;
+  topologyStatus: TopologyRunStatus;
   deviceIndexCounters: DeviceIndexCounters;
 };
 type DraftProjectState = {
@@ -246,6 +274,7 @@ type CustomDeviceDraft = {
   groupName: string;
   newGroupName: string;
   deviceType: string;
+  exportSection: string;
   backgroundImage: string;
   terminalCount: number;
   terminalTypes: TerminalType[];
@@ -273,6 +302,19 @@ const DEFAULT_POWER_UNIT = "MW";
 const DEFAULT_VOLTAGE_UNIT = "kV";
 const DEFAULT_CURRENT_UNIT = "A";
 const DEFAULT_POWER_BASE_VALUE = 100;
+const EMPTY_TOPOLOGY: Topology = { nodes: {}, connectedComponents: [] };
+const INITIAL_TOPOLOGY_STATUS: TopologyRunStatus = { state: "idle", message: "未拓扑" };
+const E_SECTION_OPTIONS = Object.keys(E_SECTION_COLUMNS);
+const SCALE_HANDLE_CONFIGS: ScaleHandleConfig[] = [
+  { id: "north-west", kind: "scale-both", xDirection: -1, yDirection: -1, className: "diagonal-nwse" },
+  { id: "north", kind: "scale-y", xDirection: 0, yDirection: -1, className: "vertical" },
+  { id: "north-east", kind: "scale-both", xDirection: 1, yDirection: -1, className: "diagonal-nesw" },
+  { id: "east", kind: "scale-x", xDirection: 1, yDirection: 0, className: "horizontal" },
+  { id: "south-east", kind: "scale-both", xDirection: 1, yDirection: 1, className: "diagonal-nwse" },
+  { id: "south", kind: "scale-y", xDirection: 0, yDirection: 1, className: "vertical" },
+  { id: "south-west", kind: "scale-both", xDirection: -1, yDirection: 1, className: "diagonal-nesw" },
+  { id: "west", kind: "scale-x", xDirection: -1, yDirection: 0, className: "horizontal" }
+];
 const POWER_UNIT_OPTIONS = ["W", "kW", "MW"];
 const VOLTAGE_UNIT_OPTIONS = ["V", "kV"];
 const CURRENT_UNIT_OPTIONS = ["A", "kA"];
@@ -605,6 +647,29 @@ function resolveProjectImage(project: Pick<ProjectFile, "canvasBackgroundImage" 
 const imageAssetsToMap = (assets: ImageAsset[]) =>
   Object.fromEntries(assets.map((asset) => [asset.id, asset.url]));
 
+const localImageAssetsFromStorage = (): ImageAsset[] =>
+  Object.entries(readImageAssets()).map(([id, url], index) => ({ id, name: `本地图片 ${index + 1}`, folderId: "root", url }));
+
+function simpleOrthogonalPolyline(start: Point, end: Point, manualPoints: Point[] = []): Point[] {
+  const source = [start, ...manualPoints, end];
+  const points: Point[] = [source[0]];
+  for (let index = 1; index < source.length; index += 1) {
+    const previous = points[points.length - 1];
+    const current = source[index];
+    if (previous.x !== current.x && previous.y !== current.y) {
+      points.push({ x: current.x, y: previous.y });
+    }
+    if (points[points.length - 1].x !== current.x || points[points.length - 1].y !== current.y) {
+      points.push(current);
+    }
+  }
+  return points;
+}
+
+function pointsToPreviewPath(points: Point[]) {
+  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${Math.round(point.x)} ${Math.round(point.y)}`).join(" ");
+}
+
 async function fetchBackendImageFolders(): Promise<ImageFolder[]> {
   const response = await fetch("/api/image-folders");
   if (!response.ok) {
@@ -875,12 +940,31 @@ function deviceDefinitionRowId() {
   return `def-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function defaultExportSectionForGroup(groupName: string) {
+  const normalized = normalizeLibraryGroupName(groupName);
+  if (normalized.includes("直流")) return "DCLoad";
+  if (normalized.includes("变流")) return "DCDCConverter";
+  if (normalized.includes("氢")) return "HydroLoad";
+  if (normalized.includes("热")) return "HeatLoad";
+  return "ACLoad";
+}
+
+function resolveTemplateExportSection(template: DeviceTemplate) {
+  const inferred = inferESection(template.kind, template.params);
+  if (inferred && E_SECTION_OPTIONS.includes(inferred)) {
+    return inferred;
+  }
+  return defaultExportSectionForGroup(template.group);
+}
+
 function createDefinitionDraftRows(template: DeviceTemplate): DeviceDefinitionDraftRow[] {
-  return getTemplateParameterDefinitions(template).map((definition) => ({
-    ...definition,
-    cnName: definition.cnName === definition.enName ? PARAM_LABELS[definition.enName] ?? definition.cnName : definition.cnName,
-    id: deviceDefinitionRowId()
-  }));
+  return getTemplateParameterDefinitions(template)
+    .filter((definition) => definition.enName !== "source_section")
+    .map((definition) => ({
+      ...definition,
+      cnName: definition.cnName === definition.enName ? PARAM_LABELS[definition.enName] ?? definition.cnName : definition.cnName,
+      id: deviceDefinitionRowId()
+    }));
 }
 
 function createEmptyCustomDeviceDraft(groupName = "交流设备"): CustomDeviceDraft {
@@ -888,6 +972,7 @@ function createEmptyCustomDeviceDraft(groupName = "交流设备"): CustomDeviceD
     groupName,
     newGroupName: "",
     deviceType: "",
+    exportSection: defaultExportSectionForGroup(groupName),
     backgroundImage: "",
     terminalCount: 2,
     terminalTypes: ["ac", "ac", "ac", "ac"],
@@ -1793,7 +1878,6 @@ export function App() {
     [initialDraft]
   );
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const importRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const customDeviceImageInputRef = useRef<HTMLInputElement | null>(null);
   const canvasFrameRef = useRef<HTMLDivElement | null>(null);
@@ -1802,6 +1886,10 @@ export function App() {
   const projectListPointerInsideRef = useRef(false);
   const backendSchemesLoadedRef = useRef(false);
   const suppressNextBackendSchemeSyncRef = useRef(false);
+  const lastPersistedSchemesPayloadRef = useRef("");
+  const imageLibraryInitializedRef = useRef(false);
+  const lastMouseStatusRef = useRef<Point | null>(null);
+  const skipNextTopologyStaleRef = useRef(false);
   const [nodes, setNodes] = useState<ModelNode[]>(() => initialIndexedNodes.nodes);
   const [edges, setEdges] = useState<Edge[]>(() => initialDraft?.edges ?? SAMPLE_EDGES);
   const [deviceIndexCounters, setDeviceIndexCounters] = useState<DeviceIndexCounters>(() => initialIndexedNodes.counters);
@@ -1824,6 +1912,7 @@ export function App() {
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
   const [connectSource, setConnectSource] = useState<{ nodeId: string; terminalId: string; point?: Point } | null>(null);
   const [connectPreviewPoint, setConnectPreviewPoint] = useState<Point | null>(null);
+  const [connectDropReady, setConnectDropReady] = useState(false);
   const [dragging, setDragging] = useState<DraggingState | null>(null);
   const [rewiring, setRewiring] = useState<RewiringState>(null);
   const [terminalPress, setTerminalPress] = useState<TerminalPressState>(null);
@@ -1852,13 +1941,22 @@ export function App() {
   const [selectedDefinitionKind, setSelectedDefinitionKind] = useState<DeviceKind | "">("");
   const [expandedDefinitionGroups, setExpandedDefinitionGroups] = useState<LibraryGroup[]>([...DEFAULT_LIBRARY_GROUPS]);
   const [definitionDraftRows, setDefinitionDraftRows] = useState<DeviceDefinitionDraftRow[]>([]);
+  const [definitionDraftSection, setDefinitionDraftSection] = useState("");
   const [definitionDraftError, setDefinitionDraftError] = useState("");
   const [topologyErrors, setTopologyErrors] = useState<TopologyValidationError[]>([]);
+  const [topology, setTopology] = useState<Topology>(EMPTY_TOPOLOGY);
+  const [topologyStatus, setTopologyStatus] = useState<TopologyRunStatus>(INITIAL_TOPOLOGY_STATUS);
+  const [mousePosition, setMousePosition] = useState<Point | null>(null);
+  const [operationLog, setOperationLog] = useState("就绪");
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedSchemeId, setSelectedSchemeId] = useState<string>("");
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
   const [selectedSchemeIds, setSelectedSchemeIds] = useState<string[]>([]);
-  const [expandedSchemeIds, setExpandedSchemeIds] = useState<string[]>(() => schemes.map((scheme) => scheme.id));
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [expandedSchemeIds, setExpandedSchemeIds] = useState<string[]>(() => {
+    const preferredSchemeId = initialDraft?.activeSchemeId || schemes[0]?.id;
+    return preferredSchemeId ? [preferredSchemeId] : [];
+  });
   const [projectMenu, setProjectMenu] = useState<ProjectMenuState>(null);
   const [projectPanelHeight, setProjectPanelHeight] = useState(PROJECT_PANEL_DEFAULT_HEIGHT);
   const [projectPanelResize, setProjectPanelResize] = useState<{ startY: number; startHeight: number } | null>(null);
@@ -1867,43 +1965,59 @@ export function App() {
   const [imageTarget, setImageTarget] = useState<ImageTarget | null>(null);
   const [imageFolders, setImageFolders] = useState<ImageFolder[]>([{ id: "root", name: "默认文件夹", imageCount: 0 }]);
   const [activeImageFolderId, setActiveImageFolderId] = useState("root");
-  const [imageAssetList, setImageAssetList] = useState<ImageAsset[]>(() =>
-    Object.entries(readImageAssets()).map(([id, url], index) => ({ id, name: `本地图片 ${index + 1}`, folderId: "root", url }))
-  );
+  const [imageAssetList, setImageAssetList] = useState<ImageAsset[]>([]);
   const [imageAssets, setImageAssets] = useState<Record<string, string>>(() => imageAssetsToMap(imageAssetList));
 
   const selectedNodeId = selectedNodeIds[0] ?? "";
-  const selectedNode = nodes.find((node) => node.id === selectedNodeId);
+  const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
+  const edgeById = useMemo(() => new Map(edges.map((edge) => [edge.id, edge])), [edges]);
+  const selectedNodeIdSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
+  const selectedNode = nodeById.get(selectedNodeId);
   const activeSelectedEdgeIds = useMemo(
     () => selectedEdgeIds.length > 0 ? selectedEdgeIds : selectedEdgeId ? [selectedEdgeId] : [],
     [selectedEdgeId, selectedEdgeIds]
   );
-  const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId);
+  const activeSelectedEdgeSet = useMemo(() => new Set(activeSelectedEdgeIds), [activeSelectedEdgeIds]);
+  const selectedEdge = edgeById.get(selectedEdgeId);
   const projects = useMemo(() => schemes.flatMap((scheme) => scheme.projects), [schemes]);
+  const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const baseLibraryTemplates = useMemo<DeviceTemplate[]>(() => [...DEVICE_LIBRARY, ...customDeviceTemplates], [customDeviceTemplates]);
   const libraryTemplates = useMemo<DeviceTemplate[]>(
     () => baseLibraryTemplates.map((template) => applyDeviceTemplateDefinitionOverride(template, deviceDefinitionOverrides[template.kind])),
     [baseLibraryTemplates, deviceDefinitionOverrides]
   );
+  const libraryTemplateByKind = useMemo(() => new Map(libraryTemplates.map((template) => [template.kind, template])), [libraryTemplates]);
+  const baseLibraryTemplateByKind = useMemo(() => new Map(baseLibraryTemplates.map((template) => [template.kind, template])), [baseLibraryTemplates]);
   const groupedLibrary = useMemo(() => groupDeviceTemplates(libraryTemplates), [libraryTemplates]);
+  const libraryPreviewByKind = useMemo(
+    () => new Map(libraryTemplates.map((template) => [template.kind, createNodeFromTemplate(template, { x: 0, y: 0 })])),
+    [libraryTemplates]
+  );
   const libraryGroups = useMemo<LibraryGroup[]>(
     () => Array.from(new Set([...DEFAULT_LIBRARY_GROUPS, ...libraryTemplates.map((item) => normalizeLibraryGroupName(item.group))])),
     [libraryTemplates]
   );
-  const selectedDefinitionTemplate = libraryTemplates.find((template) => template.kind === selectedDefinitionKind) ?? libraryTemplates[0];
-  const selectedDefinitionBaseTemplate = baseLibraryTemplates.find((template) => template.kind === selectedDefinitionTemplate?.kind);
+  const selectedDefinitionTemplate = selectedDefinitionKind ? libraryTemplateByKind.get(selectedDefinitionKind) ?? libraryTemplates[0] : libraryTemplates[0];
+  const selectedDefinitionBaseTemplate = selectedDefinitionTemplate ? baseLibraryTemplateByKind.get(selectedDefinitionTemplate.kind) : undefined;
   const selectedDefinitionTerminalAssociations = selectedDefinitionTemplate
     ? describeContainerTerminalAssociations(selectedDefinitionTemplate)
     : [];
-  const selectedNodeTemplate = selectedNode ? libraryTemplates.find((template) => template.kind === selectedNode.kind) : undefined;
+  const selectedNodeTemplate = selectedNode ? libraryTemplateByKind.get(selectedNode.kind) : undefined;
   const selectedContainerParameterViews = useMemo(
     () => (selectedNode ? buildContainerDeviceParameterViews(selectedNode, selectedNodeTemplate) : []),
     [selectedNode, selectedNodeTemplate]
   );
   const selectedContainerParameterView =
     selectedContainerParameterViews.find((view) => view.id === containerParamViewId) ?? selectedContainerParameterViews[0];
-  const selectedProjectRecord = projects.find((project) => project.id === selectedProjectId);
-  const activeProjectRecord = projects.find((project) => project.id === activeProjectId);
+  const selectedProjectRecord = projectById.get(selectedProjectId);
+  const activeProjectRecord = projectById.get(activeProjectId);
+  const saveRequired = hasUnsavedChanges;
+  const canExportCurrentModel = !saveRequired;
+  const activeModelName = projectName || activeProjectRecord?.name || "未命名模型";
+  const activeSchemeRecord =
+    schemes.find((scheme) => scheme.id === activeSchemeId) ??
+    schemes.find((scheme) => scheme.projects.some((project) => project.id === activeProjectId));
+  const activeModelPathName = `${activeSchemeRecord?.name ?? "未选择方案"} / ${activeModelName}`;
   const currentModelRecord: SavedProjectRecord = selectedProjectRecord ?? activeProjectRecord ?? {
     id: activeProjectId || "current-project",
     name: projectName,
@@ -1928,8 +2042,15 @@ export function App() {
   const selectedSchemeRecord = schemes.find((scheme) => scheme.id === selectedSchemeId);
   const selectedNodeCount = selectedNodeIds.length;
   const selectedCount = selectedNodeCount + activeSelectedEdgeIds.length;
-  const topology = useMemo(() => buildTopology(nodes, edges), [nodes, edges]);
-  const elementTree = useMemo(() => buildElementTree(nodes, edges), [edges, nodes]);
+  const visibleTopologyErrors = topologyErrors.slice(0, 100);
+  const hiddenTopologyErrorCount = Math.max(0, topologyErrors.length - visibleTopologyErrors.length);
+  const draggingNodeIdSet = useMemo(() => new Set(dragging?.nodeIds ?? []), [dragging?.nodeIds]);
+  const deferredElementTreeNodes = useDeferredValue(nodes);
+  const deferredElementTreeEdges = useDeferredValue(edges);
+  const elementTree = useMemo(
+    () => (inspectorTab === "tree" ? buildElementTree(deferredElementTreeNodes, deferredElementTreeEdges) : []),
+    [deferredElementTreeEdges, deferredElementTreeNodes, inspectorTab]
+  );
 
   useEffect(() => {
     setSelectedEdgeIds((current) => {
@@ -1941,14 +2062,16 @@ export function App() {
   }, [selectedEdgeId]);
 
   useEffect(() => {
+    if (inspectorTab !== "tree") {
+      return;
+    }
     const existingKeys = new Set(elementTree.map((group) => group.typeKey));
     setCollapsedElementTreeGroups((current) => current.filter((key) => existingKeys.has(key)));
-  }, [elementTree]);
+  }, [elementTree, inspectorTab]);
 
   const canvasBounds = useMemo<CanvasBounds>(() => ({ width: canvasWidth, height: canvasHeight }), [canvasHeight, canvasWidth]);
   const leftPanelVisible = isSidePanelVisible(leftPanelMode, leftPanelAutoVisible);
   const rightPanelVisible = isSidePanelVisible(rightPanelMode, rightPanelAutoVisible);
-  const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
   const nodeImage = (node: ModelNode) => resolveNodeImage(node, imageAssets);
   const nodeForegroundImage = (node: ModelNode) => resolveNodeForegroundImage(node, imageAssets);
   const canvasBackgroundImageUrl = resolveProjectImage(
@@ -1970,56 +2093,214 @@ export function App() {
     const midX = Math.round((start.x + connectPreviewPoint.x) / 2);
     return `M ${start.x} ${start.y} L ${midX} ${start.y} L ${midX} ${connectPreviewPoint.y} L ${connectPreviewPoint.x} ${connectPreviewPoint.y}`;
   }, [connectPreviewPoint, connectSource, nodeById]);
-  const rewiringPreview = useMemo(() => {
-    if (!rewiring) {
-      return { nodes, edges };
-    }
-    const edge = edges.find((item) => item.id === rewiring.edgeId);
-    if (!edge) {
-      return { nodes, edges };
-    }
-    const fixedNodeId = rewiring.endpoint === "source" ? edge.targetId : edge.sourceId;
-    const fixedNode = nodeById.get(fixedNodeId);
-    const fixedPoint = rewiring.endpoint === "source" ? edge.targetPoint : edge.sourcePoint;
-    if (!fixedNode && !fixedPoint) {
-      return { nodes, edges };
-    }
-    const fixedTerminalId = rewiring.endpoint === "source" ? edge.targetTerminalId : edge.sourceTerminalId;
-    const terminalType = fixedNode?.terminals.find((terminal) => terminal.id === fixedTerminalId)?.type ?? "ac";
-    const previewNode: ModelNode = {
-      id: "__rewiring-preview__",
-      kind: terminalType === "dc" ? "dc-bus" : terminalType === "h2" ? "hydrogen-bus" : terminalType === "heat" ? "heat-bus" : "ac-bus",
-      name: "拖拽端点",
-      nodeNumber: "",
-      acTopologyNode: 0,
-      dcTopologyNode: 0,
-      position: rewiring.previewPoint,
-      size: { width: 0, height: 0 },
-      rotation: 0,
-      scale: 1,
-      scaleX: 1,
-      scaleY: 1,
-      terminals: [{ id: "t1", label: "拖拽端点", type: terminalType as TerminalType, anchor: { x: 0, y: 0 }, nodeNumber: "" }],
-      params: {}
-    };
-    const previewEdge: Edge =
-      rewiring.endpoint === "source"
-        ? { ...edge, sourceId: previewNode.id, sourceTerminalId: "t1", sourcePoint: undefined }
-        : { ...edge, targetId: previewNode.id, targetTerminalId: "t1", targetPoint: undefined };
-    return {
-      nodes: [...nodes, previewNode],
-      edges: edges.map((item) => (item.id === edge.id ? previewEdge : item))
-    };
-  }, [edges, nodeById, nodes, rewiring]);
+  const deferredRoutingNodes = useDeferredValue(nodes);
+  const deferredRoutingEdges = useDeferredValue(edges);
+  const requiresLiveRouting = Boolean(manualPathDrag);
+  const routingNodes = requiresLiveRouting ? nodes : deferredRoutingNodes;
+  const routingEdges = requiresLiveRouting ? edges : deferredRoutingEdges;
   const routedEdges = useMemo(
-    () => routeEdgesForRendering(rewiringPreview.nodes, rewiringPreview.edges, canvasBounds),
-    [canvasBounds, rewiringPreview]
+    () => routeEdgesForRendering(routingNodes, routingEdges, canvasBounds),
+    [canvasBounds, routingEdges, routingNodes]
   );
   const renderedRoutedEdges = useMemo(
-    () => [...routedEdges].sort((first, second) => Number(activeSelectedEdgeIds.includes(first.edgeId)) - Number(activeSelectedEdgeIds.includes(second.edgeId))),
-    [activeSelectedEdgeIds, routedEdges]
+    () => [...routedEdges].sort((first, second) => Number(activeSelectedEdgeSet.has(first.edgeId)) - Number(activeSelectedEdgeSet.has(second.edgeId))),
+    [activeSelectedEdgeSet, routedEdges]
   );
-  const selectedRoutedEdge = routedEdges.find((route) => route.edgeId === selectedEdgeId);
+  const routedEdgeById = useMemo(() => new Map(routedEdges.map((route) => [route.edgeId, route])), [routedEdges]);
+  const selectedRoutedEdge = routedEdgeById.get(selectedEdgeId);
+  const rewiringPreviewRoute = useMemo(() => {
+    if (!rewiring) {
+      return null;
+    }
+    const edge = edgeById.get(rewiring.edgeId);
+    if (!edge) {
+      return null;
+    }
+    const sourceNode = nodeById.get(edge.sourceId);
+    const targetNode = nodeById.get(edge.targetId);
+    if (!sourceNode || !targetNode) {
+      return null;
+    }
+    const slidePatch = resolveStraightBusSlideEndpointToPoint({
+      edge,
+      sourceNode,
+      targetNode,
+      movingEndpoint: rewiring.endpoint,
+      movingPoint: rewiring.previewPoint,
+      nodes
+    });
+    const previewEdge = slidePatch ? { ...edge, ...slidePatch } : edge;
+    const sourcePoint =
+      rewiring.endpoint === "source"
+        ? rewiring.previewPoint
+        : getModelEdgeEndpointPoint(sourceNode, previewEdge.sourcePoint, previewEdge.sourceTerminalId);
+    const targetPoint =
+      rewiring.endpoint === "target"
+        ? rewiring.previewPoint
+        : getModelEdgeEndpointPoint(targetNode, previewEdge.targetPoint, previewEdge.targetTerminalId);
+    if (!sourcePoint || !targetPoint) {
+      return null;
+    }
+    return {
+      edgeId: edge.id,
+      path: pointsToPreviewPath(simpleOrthogonalPolyline(sourcePoint, targetPoint, edge.manualPoints ?? []))
+    };
+  }, [edgeById, nodeById, nodes, rewiring]);
+  const terminalPressPreviewEdgeRoutes = useMemo(() => {
+    if (!terminalPress?.moved) {
+      return [];
+    }
+    return edges.flatMap((edge) => {
+      const sourceAffected = edge.sourceId === terminalPress.nodeId && edge.sourceTerminalId === terminalPress.terminalId;
+      const targetAffected = edge.targetId === terminalPress.nodeId && edge.targetTerminalId === terminalPress.terminalId;
+      if (!sourceAffected && !targetAffected) {
+        return [];
+      }
+      const sourceNode = nodeById.get(edge.sourceId);
+      const targetNode = nodeById.get(edge.targetId);
+      if (!sourceNode || !targetNode) {
+        return [];
+      }
+      const slidePatch = resolveStraightBusSlideEndpoint({
+        edge,
+        sourceNode,
+        targetNode,
+        nextSourceNode: sourceNode,
+        nextTargetNode: targetNode,
+        movingEndpoint: sourceAffected ? "source" : "target",
+        nodes,
+        originalMovingPoint: terminalPress.startPoint
+      });
+      const previewEdge = slidePatch ? { ...edge, ...slidePatch } : edge;
+      const sourcePoint = getModelEdgeEndpointPoint(sourceNode, previewEdge.sourcePoint, previewEdge.sourceTerminalId);
+      const targetPoint = getModelEdgeEndpointPoint(targetNode, previewEdge.targetPoint, previewEdge.targetTerminalId);
+      return [{
+        edgeId: edge.id,
+        path: pointsToPreviewPath(simpleOrthogonalPolyline(sourcePoint, targetPoint, previewEdge.manualPoints ?? []))
+      }];
+    });
+  }, [edges, nodeById, nodes, terminalPress]);
+  const terminalPressPreviewEdgeIdSet = useMemo(
+    () => new Set(terminalPressPreviewEdgeRoutes.map((route) => route.edgeId)),
+    [terminalPressPreviewEdgeRoutes]
+  );
+  const draggingDelta = dragging?.currentDelta;
+  const draggedBusIds = useMemo(
+    () => new Set(nodes.filter((node) => draggingNodeIdSet.has(node.id) && isBusNode(node)).map((node) => node.id)),
+    [draggingNodeIdSet, nodes]
+  );
+  const dragPreviewNodeById = useMemo(() => {
+    if (!dragging || !draggingDelta) {
+      return nodeById;
+    }
+    const preview = new Map(nodeById);
+    for (const nodeId of dragging.nodeIds) {
+      const node = nodeById.get(nodeId);
+      const originalPosition = dragging.originalPositions[nodeId];
+      if (!node || !originalPosition) {
+        continue;
+      }
+      preview.set(nodeId, {
+        ...node,
+        position: clampNodePositionToBounds(node, canvasBounds, {
+          x: originalPosition.x + draggingDelta.x,
+          y: originalPosition.y + draggingDelta.y
+        })
+      });
+    }
+    return preview;
+  }, [canvasBounds, dragging, draggingDelta, nodeById]);
+  const dragPreviewEdgeRoutes = useMemo(() => {
+    if (!dragging || !draggingDelta) {
+      return [];
+    }
+    const draggedEdgeIds = new Set(dragging.edgeIds);
+    const straightPath = (points: Point[]) =>
+      points.map((point, index) => `${index === 0 ? "M" : "L"} ${Math.round(point.x)} ${Math.round(point.y)}`).join(" ");
+    const orthogonalPoints = (start: Point, end: Point) => {
+      if (start.x === end.x || start.y === end.y) {
+        return [start, end];
+      }
+      const midX = Math.round((start.x + end.x) / 2);
+      return [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end];
+    };
+    return edges.flatMap((edge) => {
+      const affected = draggingNodeIdSet.has(edge.sourceId) || draggingNodeIdSet.has(edge.targetId) || draggedEdgeIds.has(edge.id);
+      if (!affected) {
+        return [];
+      }
+      const originalPoints = dragging.originalEdgePoints[edge.id];
+      const previewEdge = {
+        ...edge,
+        sourcePoint: draggedBusIds.has(edge.sourceId) && originalPoints?.sourcePoint
+          ? { x: originalPoints.sourcePoint.x + draggingDelta.x, y: originalPoints.sourcePoint.y + draggingDelta.y }
+          : edge.sourcePoint,
+        targetPoint: draggedBusIds.has(edge.targetId) && originalPoints?.targetPoint
+          ? { x: originalPoints.targetPoint.x + draggingDelta.x, y: originalPoints.targetPoint.y + draggingDelta.y }
+          : edge.targetPoint,
+        manualPoints: originalPoints?.manualPoints
+          ? originalPoints.manualPoints.map((point) => ({ x: point.x + draggingDelta.x, y: point.y + draggingDelta.y }))
+          : edge.manualPoints
+      };
+      const sourceMoved = draggingNodeIdSet.has(edge.sourceId);
+      const targetMoved = draggingNodeIdSet.has(edge.targetId);
+      const source = dragPreviewNodeById.get(previewEdge.sourceId);
+      const target = dragPreviewNodeById.get(previewEdge.targetId);
+      const originalSource = nodeById.get(edge.sourceId);
+      const originalTarget = nodeById.get(edge.targetId);
+      if (!source || !target || !originalSource || !originalTarget) {
+        return [];
+      }
+      const slidePatch = sourceMoved !== targetMoved
+        ? resolveStraightBusSlideEndpoint({
+            edge: previewEdge,
+            sourceNode: originalSource,
+            targetNode: originalTarget,
+            nextSourceNode: source,
+            nextTargetNode: target,
+            movingEndpoint: sourceMoved ? "source" : "target",
+            nodes,
+            nextNodes: Array.from(dragPreviewNodeById.values())
+          })
+        : null;
+      const slidablePreviewEdge = slidePatch ? { ...previewEdge, ...slidePatch } : previewEdge;
+      const end = getModelEdgeEndpointPoint(target, slidablePreviewEdge.targetPoint, slidablePreviewEdge.targetTerminalId);
+      const adjustedStart = getModelEdgeEndpointPoint(source, slidablePreviewEdge.sourcePoint, slidablePreviewEdge.sourceTerminalId);
+      const originalRoutePoints = dragging.originalRoutePoints[edge.id];
+      const originalStart = originalRoutePoints?.[0];
+      const originalEnd = originalRoutePoints?.[originalRoutePoints.length - 1];
+      const points = originalRoutePoints?.length && originalStart && originalEnd
+        ? preserveDraggedRouteShape({
+            routePoints: originalRoutePoints,
+            nextStart: adjustedStart,
+            nextEnd: end,
+            sourceDelta: { x: adjustedStart.x - originalStart.x, y: adjustedStart.y - originalStart.y },
+            targetDelta: { x: end.x - originalEnd.x, y: end.y - originalEnd.y },
+            routeDelta: draggedEdgeIds.has(edge.id) ? draggingDelta : undefined
+          })
+        : slidablePreviewEdge.manualPoints && slidablePreviewEdge.manualPoints.length > 0
+          ? [adjustedStart, ...slidablePreviewEdge.manualPoints, end]
+          : orthogonalPoints(adjustedStart, end);
+      return [{ edgeId: edge.id, path: straightPath(points) }];
+    });
+  }, [dragPreviewNodeById, draggedBusIds, dragging, draggingDelta, draggingNodeIdSet, edges, nodeById, nodes]);
+  const dragPreviewEdgeIdSet = useMemo(
+    () => new Set(dragPreviewEdgeRoutes.map((route) => route.edgeId)),
+    [dragPreviewEdgeRoutes]
+  );
+  const dragGhostEdgeRoutes = useMemo(() => {
+    if (!dragging || !draggingDelta) {
+      return [];
+    }
+    const draggedEdgeIds = new Set(dragging.edgeIds);
+    return edges.flatMap((edge) => {
+      if (!draggingNodeIdSet.has(edge.sourceId) && !draggingNodeIdSet.has(edge.targetId) && !draggedEdgeIds.has(edge.id)) {
+        return [];
+      }
+      const points = dragging.originalRoutePoints[edge.id];
+      return points?.length ? [{ edgeId: edge.id, path: pointsToPreviewPath(points) }] : [];
+    });
+  }, [dragging, draggingDelta, draggingNodeIdSet, edges]);
 
   useEffect(() => {
     if (selectedContainerParameterViews.length === 0) {
@@ -2040,9 +2321,18 @@ export function App() {
         if (backendSchemes.length > 0) {
           suppressNextBackendSchemeSyncRef.current = true;
           setSchemes(backendSchemes);
-          setExpandedSchemeIds((current) =>
-            current.length > 0 ? Array.from(new Set([...current, ...backendSchemes.map((scheme) => scheme.id)])) : backendSchemes.map((scheme) => scheme.id)
-          );
+          setExpandedSchemeIds((current) => {
+            const backendSchemeIds = new Set(backendSchemes.map((scheme) => scheme.id));
+            const retained = current.filter((schemeId) => backendSchemeIds.has(schemeId));
+            if (retained.length > 0) {
+              return retained;
+            }
+            const preferredSchemeId =
+              (activeSchemeId && backendSchemeIds.has(activeSchemeId) ? activeSchemeId : "") ||
+              backendSchemes[0]?.id ||
+              "";
+            return preferredSchemeId ? [preferredSchemeId] : [];
+          });
           return;
         }
         if (schemes.length > 0) {
@@ -2060,18 +2350,33 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const normalizedSchemes = normalizeSchemesForBackend(schemes);
-    window.localStorage.setItem(SCHEME_STORAGE_KEY, JSON.stringify(normalizedSchemes));
-    if (!backendSchemesLoadedRef.current) {
-      return;
-    }
-    if (suppressNextBackendSchemeSyncRef.current) {
-      suppressNextBackendSchemeSyncRef.current = false;
-      return;
-    }
-    void saveBackendSchemes(normalizedSchemes).catch(() => {
-      // 后台保存失败时不阻塞本地编辑；下一次方案/模型变更会继续尝试同步。
-    });
+    const timeoutId = window.setTimeout(() => {
+      const normalizedSchemes = normalizeSchemesForBackend(schemes);
+      const payload = JSON.stringify(normalizedSchemes);
+      if (payload === lastPersistedSchemesPayloadRef.current) {
+        if (suppressNextBackendSchemeSyncRef.current) {
+          suppressNextBackendSchemeSyncRef.current = false;
+        }
+        return;
+      }
+      lastPersistedSchemesPayloadRef.current = payload;
+      try {
+        window.localStorage.setItem(SCHEME_STORAGE_KEY, payload);
+      } catch {
+        // 浏览器缓存不可写时不阻断当前编辑，后台同步仍会继续尝试。
+      }
+      if (!backendSchemesLoadedRef.current) {
+        return;
+      }
+      if (suppressNextBackendSchemeSyncRef.current) {
+        suppressNextBackendSchemeSyncRef.current = false;
+        return;
+      }
+      void saveBackendSchemes(normalizedSchemes).catch(() => {
+        // 后台保存失败时不阻塞本地编辑；下一次方案/模型变更会继续尝试同步。
+      });
+    }, 800);
+    return () => window.clearTimeout(timeoutId);
   }, [schemes]);
 
   useEffect(() => {
@@ -2102,50 +2407,75 @@ export function App() {
       });
 
   useEffect(() => {
-    void refreshImageFolders();
-    void refreshImagesForFolder("root");
-    // 只在启动时初始化后台图片库。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
+    if (!imageTarget) {
+      return;
+    }
+    if (!imageLibraryInitializedRef.current) {
+      imageLibraryInitializedRef.current = true;
+      const localAssets = localImageAssetsFromStorage();
+      if (localAssets.length > 0) {
+        setImageAssetList(localAssets);
+        setImageAssets((current) => ({ ...imageAssetsToMap(localAssets), ...current }));
+      }
+      void refreshImageFolders();
+    }
     void refreshImagesForFolder(activeImageFolderId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeImageFolderId]);
+  }, [activeImageFolderId, imageTarget]);
 
   useEffect(() => {
-    window.localStorage.setItem(
-      DRAFT_PROJECT_STORAGE_KEY,
-      JSON.stringify({
-        projectName,
-        activeProjectId,
-        activeSchemeId,
-        canvasWidth,
-        canvasHeight,
-        canvasBackgroundColor,
-        canvasBackgroundImage,
-        canvasBackgroundImageAssetId,
-        powerUnit,
-        voltageUnit,
-        currentUnit,
-        powerBaseValue,
-        deviceIndexCounters,
-        nodes,
-        edges
-      })
-    );
-    window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, JSON.stringify({ activeProjectId, activeSchemeId }));
+    try {
+      window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, JSON.stringify({ activeProjectId, activeSchemeId }));
+    } catch {
+      // 忽略浏览器缓存写入失败，避免影响画布编辑。
+    }
+  }, [activeProjectId, activeSchemeId]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(
+          DRAFT_PROJECT_STORAGE_KEY,
+          JSON.stringify({
+            projectName,
+            activeProjectId,
+            activeSchemeId,
+            canvasWidth,
+            canvasHeight,
+            canvasBackgroundColor,
+            canvasBackgroundImage,
+            canvasBackgroundImageAssetId,
+            powerUnit,
+            voltageUnit,
+            currentUnit,
+            powerBaseValue,
+            deviceIndexCounters,
+            nodes,
+            edges
+          })
+        );
+      } catch {
+        // 草稿缓存过大或不可写时不打断当前操作。
+      }
+    }, 500);
+    return () => window.clearTimeout(timeoutId);
   }, [activeProjectId, activeSchemeId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, nodes, powerBaseValue, powerUnit, projectName, voltageUnit]);
 
   useEffect(() => {
     setExpandedSchemeIds((current) => {
       const schemeIds = new Set(schemes.map((scheme) => scheme.id));
       const retained = current.filter((id) => schemeIds.has(id));
-      const retainedIds = new Set(retained);
-      const added = schemes.filter((scheme) => !retainedIds.has(scheme.id)).map((scheme) => scheme.id);
-      return [...retained, ...added];
+      if (retained.length > 0) {
+        return retained;
+      }
+      const preferredSchemeId =
+        (activeSchemeId && schemeIds.has(activeSchemeId) ? activeSchemeId : "") ||
+        (selectedSchemeId && schemeIds.has(selectedSchemeId) ? selectedSchemeId : "") ||
+        schemes[0]?.id ||
+        "";
+      return preferredSchemeId ? [preferredSchemeId] : [];
     });
-  }, [schemes]);
+  }, [activeSchemeId, schemes, selectedSchemeId]);
 
   useEffect(() => {
     const preventPageWheelZoom = (event: WheelEvent) => {
@@ -2228,12 +2558,17 @@ export function App() {
     deviceIndexCounters: structuredClone(deviceIndexCounters),
     nodes: structuredClone(nodes),
     edges: structuredClone(edges),
-    topologyErrors: structuredClone(topologyErrors)
+    topologyErrors: structuredClone(topologyErrors),
+    topology: structuredClone(topology),
+    topologyStatus: structuredClone(topologyStatus)
   });
 
-  const pushUndoSnapshot = () => {
+  const pushUndoSnapshot = (markDirty = true) => {
     const snapshot = cloneProjectState();
     setUndoStack((current) => [...current.slice(-49), snapshot]);
+    if (markDirty) {
+      setHasUnsavedChanges(true);
+    }
   };
 
   const requestCanvasFrameCenter = () => {
@@ -2257,17 +2592,23 @@ export function App() {
       setCurrentUnit(snapshot.currentUnit);
       setPowerBaseValue(snapshot.powerBaseValue);
       setDeviceIndexCounters(snapshot.deviceIndexCounters);
+      skipNextTopologyStaleRef.current = true;
       setNodes(snapshot.nodes);
       setEdges(snapshot.edges);
       setTopologyErrors(snapshot.topologyErrors);
+      setTopology(snapshot.topology);
+      setTopologyStatus(snapshot.topologyStatus);
       setSelectedNodeIds(snapshot.nodes[0] ? [snapshot.nodes[0].id] : []);
       setSelectedEdgeId("");
       setSelectedEdgeIds([]);
       setConnectSource(null);
       setConnectPreviewPoint(null);
+      setConnectDropReady(false);
       setRewiring(null);
       setContextMenu(null);
       setProjectMenu(null);
+      setHasUnsavedChanges(true);
+      setOperationLog("撤销上一步操作");
       return current.slice(0, -1);
     });
   };
@@ -2337,6 +2678,7 @@ export function App() {
           setSelectedEdgeIds([]);
           setConnectSource(null);
           setConnectPreviewPoint(null);
+          setConnectDropReady(false);
           setRewiring(null);
           clearRecordSelection();
         }
@@ -2348,6 +2690,11 @@ export function App() {
           event.preventDefault();
           copySelection();
         }
+      } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "x") {
+        if (isCanvasShortcutTarget) {
+          event.preventDefault();
+          cutSelection();
+        }
       } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
         if (isRecordShortcutTarget && recordClipboard) {
           event.preventDefault();
@@ -2358,7 +2705,9 @@ export function App() {
         }
       } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
-        saveCurrentProject();
+        if (saveRequired) {
+          saveCurrentProject();
+        }
       } else if (event.key === "Delete" || event.key === "Backspace") {
         if (isCanvasShortcutTarget) {
           event.preventDefault();
@@ -2368,7 +2717,7 @@ export function App() {
           if (selectedProjectIds.length > 1 || selectedSchemeIds.length > 1) {
             deleteSelectedRecords();
           } else if (selectedProjectId) {
-            const project = projects.find((item) => item.id === selectedProjectId);
+            const project = projectById.get(selectedProjectId);
             if (project) deleteProjectRecord(project);
           } else if (selectedSchemeId) {
             const scheme = schemes.find((item) => item.id === selectedSchemeId);
@@ -2377,27 +2726,37 @@ export function App() {
         }
       } else if (isCanvasShortcutTarget && event.key === "ArrowLeft") {
         event.preventDefault();
-        moveSelection(event.shiftKey ? -24 : -6, 0);
+        moveSelection(-keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6), 0);
       } else if (isCanvasShortcutTarget && event.key === "ArrowRight") {
         event.preventDefault();
-        moveSelection(event.shiftKey ? 24 : 6, 0);
+        moveSelection(keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6), 0);
       } else if (isCanvasShortcutTarget && event.key === "ArrowUp") {
         event.preventDefault();
-        moveSelection(0, event.shiftKey ? -24 : -6);
+        moveSelection(0, -keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6));
       } else if (isCanvasShortcutTarget && event.key === "ArrowDown") {
         event.preventDefault();
-        moveSelection(0, event.shiftKey ? 24 : 6);
+        moveSelection(0, keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6));
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [canvasClipboard, deviceIndexCounters, edges, nodes, projectName, projects, recordClipboard, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors]);
+  }, [canvasBounds, canvasClipboard, deviceIndexCounters, edges, hasUnsavedChanges, nodes, projectById, projectName, recordClipboard, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors, viewBox]);
 
   useEffect(() => {
     if (leftPanelTab !== "projects") {
       projectListPointerInsideRef.current = false;
     }
   }, [leftPanelTab]);
+
+  useEffect(() => {
+    if (skipNextTopologyStaleRef.current) {
+      skipNextTopologyStaleRef.current = false;
+      return;
+    }
+    setTopologyStatus((current) =>
+      current.state === "idle" ? current : { state: "idle", message: "拓扑结果已过期" }
+    );
+  }, [edges, nodes]);
 
   useEffect(() => {
     try {
@@ -2439,12 +2798,48 @@ export function App() {
     setSelectedEdgeIds([]);
     setConnectSource(null);
     setConnectPreviewPoint(null);
+    setConnectDropReady(false);
     setRewiring(null);
     setContextMenu(null);
   };
 
+  const writeOperationLog = (message: string) => {
+    const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    setOperationLog(`${time} ${message}`);
+  };
+
   const copySelection = () => {
     setCanvasClipboard(buildCanvasClipboard(nodes, edges, routedEdges, selectedNodeIds, activeSelectedEdgeIds));
+    writeOperationLog(`复制 ${selectedNodeIds.length} 个图元、${activeSelectedEdgeIds.length} 条联络线`);
+  };
+
+  const cutSelection = () => {
+    const action = resolveCanvasDeleteAction({
+      selectedNodeCount: selectedNodeIds.length,
+      hasSelectedEdge: activeSelectedEdgeIds.length > 0
+    });
+    if (action.kind === "warn") {
+      window.alert(action.message);
+      return;
+    }
+    const clipboard = buildCanvasClipboard(nodes, edges, routedEdges, selectedNodeIds, activeSelectedEdgeIds);
+    setCanvasClipboard(clipboard);
+    pushUndoSnapshot();
+    const selectedEdges = new Set(activeSelectedEdgeIds);
+    const result = selectedNodeIds.length > 0
+      ? deleteNodesWithConnectedEdges(nodes, edges, selectedNodeIds)
+      : { nodes, edges };
+    setNodes(result.nodes);
+    setEdges(result.edges.filter((edge) => !selectedEdges.has(edge.id)));
+    setSelectedNodeIds([]);
+    setSelectedEdgeId("");
+    setSelectedEdgeIds([]);
+    setConnectSource(null);
+    setConnectPreviewPoint(null);
+    setConnectDropReady(false);
+    setRewiring(null);
+    setContextMenu(null);
+    writeOperationLog(`剪切 ${clipboard.nodes.length} 个图元、${clipboard.edges.length} 条联络线`);
   };
 
   const pasteSelection = () => {
@@ -2466,13 +2861,19 @@ export function App() {
       window.alert("粘贴位置超过显示边界，请调整鼠标位置后重试。");
       return;
     }
-    pushUndoSnapshot();
     const cloned = cloneCanvasClipboard(
       canvasClipboard,
       targetPoint,
       () => `node-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       () => `edge-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
     );
+    if (cloned.nodes.length === 0 && cloned.edges.length === 0) {
+      if (canvasClipboard.edges.length > 0) {
+        window.alert("不能粘贴悬空联络线：请同时复制联络线两端连接的设备或母线。");
+      }
+      return;
+    }
+    pushUndoSnapshot(false);
     let nextDeviceIndexCounters = deviceIndexCounters;
     const pasted = cloned.nodes.map((node) => {
       const draftNode = { ...node, position: clampNodeToCanvas(node, node.position) };
@@ -2494,8 +2895,10 @@ export function App() {
     setSelectedEdgeId(pastedEdges[0]?.id ?? "");
     setConnectSource(null);
     setConnectPreviewPoint(null);
+    setConnectDropReady(false);
     setRewiring(null);
     setContextMenu(null);
+    writeOperationLog(`粘贴 ${pasted.length} 个图元、${pastedEdges.length} 条联络线`);
   };
 
   const finishMarqueeSelection = () => {
@@ -2516,6 +2919,7 @@ export function App() {
     setSelectedEdgeId(selection.edgeIds[0] ?? "");
     setConnectSource(null);
     setConnectPreviewPoint(null);
+    setConnectDropReady(false);
     setRewiring(null);
     setContextMenu(null);
     setMarquee(null);
@@ -2531,6 +2935,7 @@ export function App() {
       setEdges((current) => current.filter((edge) => !selectedEdges.has(edge.id)));
       setSelectedEdgeId("");
       setSelectedEdgeIds([]);
+      writeOperationLog(`删除 ${selectedEdges.size} 条联络线`);
       return;
     }
     pushUndoSnapshot();
@@ -2540,6 +2945,7 @@ export function App() {
     setSelectedNodeIds([]);
     setSelectedEdgeId("");
     setSelectedEdgeIds([]);
+    writeOperationLog(`删除 ${selectedNodeIds.length} 个图元`);
   };
 
   const deleteSelectedGraphicsFromCanvas = () => {
@@ -2565,39 +2971,120 @@ export function App() {
     };
   };
 
-  const moveAttachedBusPoints = (deltas: Record<string, Point>) => {
-    const activeDeltas = Object.fromEntries(
-      Object.entries(deltas).filter(([, delta]) => delta && (delta.x !== 0 || delta.y !== 0))
+  const snapshotEdgePoints = (sourceEdges = edges) =>
+    Object.fromEntries(
+      sourceEdges.map((edge) => [
+        edge.id,
+        {
+          sourcePoint: edge.sourcePoint ? { ...edge.sourcePoint } : undefined,
+          targetPoint: edge.targetPoint ? { ...edge.targetPoint } : undefined,
+          manualPoints: edge.manualPoints?.map((point) => ({ ...point }))
+        }
+      ])
     );
-    const movedIds = new Set(Object.keys(activeDeltas));
-    if (movedIds.size === 0) {
-      return;
-    }
-    const movedBusIds = new Set(nodes.filter((node) => isBusNode(node) && movedIds.has(node.id)).map((node) => node.id));
-    setEdges((current) =>
-      current.map((edge) => {
-        const sourceDelta = movedBusIds.has(edge.sourceId) ? deltas[edge.sourceId] : undefined;
-        const targetDelta = movedBusIds.has(edge.targetId) ? deltas[edge.targetId] : undefined;
-        const manualDelta = manualPointDeltaForEdge(edge, activeDeltas);
-        return {
-          ...edge,
-          sourcePoint: sourceDelta && edge.sourcePoint
-            ? { x: edge.sourcePoint.x + sourceDelta.x, y: edge.sourcePoint.y + sourceDelta.y }
-            : edge.sourcePoint,
-          targetPoint: targetDelta && edge.targetPoint
-            ? { x: edge.targetPoint.x + targetDelta.x, y: edge.targetPoint.y + targetDelta.y }
-            : edge.targetPoint,
-          manualPoints: manualDelta && edge.manualPoints
-            ? edge.manualPoints.map((point) => ({ x: point.x + manualDelta.x, y: point.y + manualDelta.y }))
-            : edge.manualPoints
-        };
-      })
-    );
+
+  const sameOptionalPoint = (first?: Point, second?: Point) =>
+    (!first && !second) || (Boolean(first && second) && first?.x === second?.x && first?.y === second?.y);
+
+  const sameOptionalPointList = (first?: Point[], second?: Point[]) =>
+    (!first && !second) ||
+    (Boolean(first && second) &&
+      first?.length === second?.length &&
+      first?.every((point, index) => point.x === second?.[index]?.x && point.y === second?.[index]?.y));
+
+  const adjustEdgesAfterNodeMove = (
+    currentEdges: Edge[],
+    nextNodes: ModelNode[],
+    movedNodeIds: Set<string>,
+    originalEdgePoints: DraggingState["originalEdgePoints"],
+    deltasByNode: Record<string, Point>,
+    originalRoutePoints: DraggingState["originalRoutePoints"] = {},
+    preserveRouteEdgeIds = new Set<string>()
+  ) => {
+    const movedBusIds = new Set(nodes.filter((node) => movedNodeIds.has(node.id) && isBusNode(node)).map((node) => node.id));
+    const nextNodeById = new Map(nextNodes.map((node) => [node.id, node]));
+    let changed = false;
+    const nextEdges = currentEdges.map((edge) => {
+      const originalPoints = originalEdgePoints[edge.id];
+      const sourceDelta = movedBusIds.has(edge.sourceId) ? deltasByNode[edge.sourceId] : undefined;
+      const targetDelta = movedBusIds.has(edge.targetId) ? deltasByNode[edge.targetId] : undefined;
+      const manualDelta = manualPointDeltaForEdge(edge, deltasByNode);
+      const baseEdge = {
+        ...edge,
+        sourcePoint: sourceDelta && originalPoints?.sourcePoint
+          ? { x: originalPoints.sourcePoint.x + sourceDelta.x, y: originalPoints.sourcePoint.y + sourceDelta.y }
+          : edge.sourcePoint,
+        targetPoint: targetDelta && originalPoints?.targetPoint
+          ? { x: originalPoints.targetPoint.x + targetDelta.x, y: originalPoints.targetPoint.y + targetDelta.y }
+          : edge.targetPoint,
+        manualPoints: manualDelta && originalPoints?.manualPoints
+          ? originalPoints.manualPoints.map((point) => ({ x: point.x + manualDelta.x, y: point.y + manualDelta.y }))
+          : edge.manualPoints
+      };
+      const sourceMoved = movedNodeIds.has(edge.sourceId);
+      const targetMoved = movedNodeIds.has(edge.targetId);
+      const originalSource = nodeById.get(edge.sourceId);
+      const originalTarget = nodeById.get(edge.targetId);
+      const nextSource = nextNodeById.get(edge.sourceId);
+      const nextTarget = nextNodeById.get(edge.targetId);
+      const slidePatch =
+        sourceMoved !== targetMoved && originalSource && originalTarget && nextSource && nextTarget
+          ? resolveStraightBusSlideEndpoint({
+              edge: baseEdge,
+              sourceNode: originalSource,
+              targetNode: originalTarget,
+              nextSourceNode: nextSource,
+              nextTargetNode: nextTarget,
+              movingEndpoint: sourceMoved ? "source" : "target",
+              nodes,
+              nextNodes
+            })
+          : null;
+      const nextEdgeWithSlide = slidePatch ? { ...baseEdge, ...slidePatch } : baseEdge;
+      const originalRoute = originalRoutePoints[edge.id];
+      const shouldPreserveRoute = originalRoute?.length && (preserveRouteEdgeIds.has(edge.id) || Boolean(edge.manualPoints?.length));
+      const nextEdge = shouldPreserveRoute && nextSource && nextTarget
+        ? (() => {
+            const nextStart = getModelEdgeEndpointPoint(nextSource, nextEdgeWithSlide.sourcePoint, nextEdgeWithSlide.sourceTerminalId);
+            const nextEnd = getModelEdgeEndpointPoint(nextTarget, nextEdgeWithSlide.targetPoint, nextEdgeWithSlide.targetTerminalId);
+            const originalStart = originalRoute[0];
+            const originalEnd = originalRoute[originalRoute.length - 1];
+            const preservedRoute = preserveDraggedRouteShape({
+              routePoints: originalRoute,
+              nextStart,
+              nextEnd,
+              sourceDelta: { x: nextStart.x - originalStart.x, y: nextStart.y - originalStart.y },
+              targetDelta: { x: nextEnd.x - originalEnd.x, y: nextEnd.y - originalEnd.y },
+              routeDelta: preserveRouteEdgeIds.has(edge.id) ? manualPointDeltaForEdge(edge, deltasByNode) ?? undefined : undefined
+            });
+            return { ...nextEdgeWithSlide, manualPoints: preservedRoute.slice(1, -1).map((point) => ({ ...point })) };
+          })()
+        : nextEdgeWithSlide;
+      if (
+        sameOptionalPoint(nextEdge.sourcePoint, edge.sourcePoint) &&
+        sameOptionalPoint(nextEdge.targetPoint, edge.targetPoint) &&
+        sameOptionalPointList(nextEdge.manualPoints, edge.manualPoints)
+      ) {
+        return edge;
+      }
+      changed = true;
+      return nextEdge;
+    });
+    return changed ? nextEdges : currentEdges;
   };
 
   const clampPointToCanvas = (point: Point) => clampPointToBounds(point, canvasBounds);
   const clampNodeToCanvas = (node: ModelNode, position = node.position) => clampNodePositionToBounds(node, canvasBounds, position);
   const clampViewBoxToCanvas = (box: typeof viewBox) => normalizeViewBoxToCanvas(box, canvasBounds);
+  const updateMouseStatus = (point: Point) => {
+    const rounded = { x: Math.round(point.x), y: Math.round(point.y) };
+    const previous = lastMouseStatusRef.current;
+    if (previous?.x === rounded.x && previous.y === rounded.y) {
+      return;
+    }
+    lastMouseStatusRef.current = rounded;
+    setMousePosition(rounded);
+  };
   const resolveConnectPreviewPoint = (point: Point, event: { shiftKey: boolean; ctrlKey: boolean }) => {
     if (!connectSource || (!event.shiftKey && !event.ctrlKey)) {
       return point;
@@ -2609,6 +3096,9 @@ export function App() {
     const start = connectSource.point ?? getModelEdgeEndpointPoint(sourceNode, undefined, connectSource.terminalId);
     return clampPointToCanvas(constrainPointToOrthogonalAxis(start, point));
   };
+  const axisLockedDelta = (dx: number, dy: number): Point => (
+    Math.abs(dx) >= Math.abs(dy) ? { x: dx, y: 0 } : { x: 0, y: dy }
+  );
   const boundedDeltaForNodes = (nodeIds: string[], originalPositions: Record<string, Point>, dx: number, dy: number) => {
     let boundedDx = dx;
     let boundedDy = dy;
@@ -2625,6 +3115,47 @@ export function App() {
     return { x: boundedDx, y: boundedDy };
   };
 
+  const finishNodeDrag = () => {
+    if (!dragging) {
+      return;
+    }
+    const delta = dragging.currentDelta;
+    if (!delta || (delta.x === 0 && delta.y === 0)) {
+      setDragging(null);
+      return;
+    }
+    if (!dragging.historyCaptured) {
+      pushUndoSnapshot();
+    }
+    const dragNodeIds = new Set(dragging.nodeIds);
+    const nextNodes = nodes.map((node) => {
+      const originalPosition = dragging.originalPositions[node.id];
+      return dragNodeIds.has(node.id) && originalPosition
+        ? { ...node, position: clampNodeToCanvas(node, { x: originalPosition.x + delta.x, y: originalPosition.y + delta.y }) }
+        : node;
+    });
+    setNodes(nextNodes);
+    if (edges.some((edge) => dragNodeIds.has(edge.sourceId) || dragNodeIds.has(edge.targetId))) {
+      const deltasByNode = Object.fromEntries(dragging.nodeIds.map((id) => [id, delta]));
+      const preserveRouteEdgeIds = new Set(dragging.edgeIds);
+      setEdges((current) => {
+        const currentOriginalEdgePoints = current === edges ? dragging.originalEdgePoints : snapshotEdgePoints(current);
+        const currentOriginalRoutePoints = current === edges ? dragging.originalRoutePoints : {};
+        return adjustEdgesAfterNodeMove(
+          current,
+          nextNodes,
+          dragNodeIds,
+          currentOriginalEdgePoints,
+          deltasByNode,
+          currentOriginalRoutePoints,
+          preserveRouteEdgeIds
+        );
+      });
+    }
+    setDragging(null);
+    writeOperationLog(`拖拽 ${dragging.nodeIds.length} 个图元 (${Math.round(delta.x)}, ${Math.round(delta.y)})`);
+  };
+
   const moveSelection = (dx: number, dy: number) => {
     if (selectedNodeIds.length === 0) {
       return;
@@ -2633,12 +3164,24 @@ export function App() {
     const selected = new Set(selectedNodeIds);
     const originalPositions = Object.fromEntries(nodes.filter((node) => selected.has(node.id)).map((node) => [node.id, node.position]));
     const boundedDelta = boundedDeltaForNodes(selectedNodeIds, originalPositions, dx, dy);
-    moveAttachedBusPoints(Object.fromEntries(selectedNodeIds.map((id) => [id, boundedDelta])));
-    setNodes((current) =>
-      current.map((node) =>
-        selected.has(node.id) ? { ...node, position: clampNodeToCanvas(node, { x: node.position.x + boundedDelta.x, y: node.position.y + boundedDelta.y }) } : node
+    const deltasByNode = Object.fromEntries(selectedNodeIds.map((id) => [id, boundedDelta]));
+    const originalEdgePoints = snapshotEdgePoints();
+    const nextNodes = nodes.map((node) =>
+      selected.has(node.id)
+        ? { ...node, position: clampNodeToCanvas(node, { x: node.position.x + boundedDelta.x, y: node.position.y + boundedDelta.y }) }
+        : node
+    );
+    setNodes(nextNodes);
+    setEdges((current) =>
+      adjustEdgesAfterNodeMove(
+        current,
+        nextNodes,
+        selected,
+        current === edges ? originalEdgePoints : snapshotEdgePoints(current),
+        deltasByNode
       )
     );
+    writeOperationLog(`移动 ${selectedNodeIds.length} 个图元 (${Math.round(boundedDelta.x)}, ${Math.round(boundedDelta.y)})`);
   };
 
   const updateSelectedNode = (patch: Partial<ModelNode>) => {
@@ -2650,15 +3193,26 @@ export function App() {
     if (selectedNode) {
       nextPatch.position = clampNodeToCanvas({ ...selectedNode, ...nextPatch }, nextPatch.position ?? selectedNode.position);
     }
+    const nextNodes = nodes.map((node) => (node.id === selectedNodeId ? { ...node, ...nextPatch } : node));
     if (patch.position && selectedNode) {
-      moveAttachedBusPoints({
-        [selectedNodeId]: {
-          x: nextPatch.position!.x - selectedNode.position.x,
-          y: nextPatch.position!.y - selectedNode.position.y
-        }
-      });
+      const delta = {
+        x: nextPatch.position!.x - selectedNode.position.x,
+        y: nextPatch.position!.y - selectedNode.position.y
+      };
+      const originalEdgePoints = snapshotEdgePoints();
+      setEdges((current) =>
+        adjustEdgesAfterNodeMove(
+          current,
+          nextNodes,
+          new Set([selectedNodeId]),
+          current === edges ? originalEdgePoints : snapshotEdgePoints(current),
+          {
+            [selectedNodeId]: delta
+          }
+        )
+      );
     }
-    setNodes((current) => current.map((node) => (node.id === selectedNodeId ? { ...node, ...nextPatch } : node)));
+    setNodes(nextNodes);
   };
 
   const moveSelectedLayer = (direction: "front" | "back" | "forward" | "backward") => {
@@ -2689,6 +3243,8 @@ export function App() {
       }
       return next;
     });
+    const labels = { front: "置顶", back: "置底", forward: "上移", backward: "下移" };
+    writeOperationLog(`图层${labels[direction]} ${selectedNodeIds.length} 个图元`);
   };
 
   const mirrorSelectedNodes = (axis: "horizontal" | "vertical") => {
@@ -2698,6 +3254,7 @@ export function App() {
     pushUndoSnapshot();
     setSelectedEdgeId("");
     setNodes((current) => mirrorNodes(current, selectedNodeIds, axis));
+    writeOperationLog(`${axis === "horizontal" ? "水平" : "垂直"}镜像 ${selectedNodeIds.length} 个图元`);
   };
 
   const updateCanvasSize = (nextWidth: number, nextHeight: number) => {
@@ -2981,7 +3538,7 @@ export function App() {
   };
 
   const findRewireTargetAtPoint = (point: Point, state: Exclude<RewiringState, null>) => {
-    const edge = edges.find((item) => item.id === state.edgeId);
+    const edge = edgeById.get(state.edgeId);
     if (!edge) {
       return null;
     }
@@ -3012,6 +3569,72 @@ export function App() {
     return null;
   };
 
+  const findConnectTargetAtPoint = (point: Point) => {
+    if (!connectSource) {
+      return null;
+    }
+    const sourceNode = nodeById.get(connectSource.nodeId);
+    if (!sourceNode) {
+      return null;
+    }
+    for (const node of nodes) {
+      if (isBusNode(node) && isPointOnBus(node, point)) {
+        const terminalId = node.terminals[0]?.id;
+        if (
+          terminalId &&
+          !(node.id === sourceNode.id && terminalId === connectSource.terminalId) &&
+          canConnectTerminals(sourceNode, connectSource.terminalId, node, terminalId)
+        ) {
+          return { node, terminalId, point: busAnchorFromPoint(node, point) };
+        }
+        continue;
+      }
+      for (const terminal of node.terminals) {
+        if (node.id === sourceNode.id && terminal.id === connectSource.terminalId) {
+          continue;
+        }
+        const terminalPoint = getTerminalPoint(node, terminal.id);
+        const distance = Math.hypot(point.x - terminalPoint.x, point.y - terminalPoint.y);
+        if (distance <= 16 && canConnectTerminals(sourceNode, connectSource.terminalId, node, terminal.id)) {
+          return { node, terminalId: terminal.id, point: undefined };
+        }
+      }
+    }
+    return null;
+  };
+
+  const finishConnectToTarget = (target: NonNullable<ReturnType<typeof findConnectTargetAtPoint>>, endpointPoint = connectPreviewPoint) => {
+    if (!connectSource) {
+      return false;
+    }
+    const sourceNode = nodeById.get(connectSource.nodeId);
+    if (!sourceNode || !canConnectTerminals(sourceNode, connectSource.terminalId, target.node, target.terminalId)) {
+      return false;
+    }
+    const newEdge: Edge = {
+      id: `edge-${Date.now()}`,
+      sourceId: sourceNode.id,
+      targetId: target.node.id,
+      sourceTerminalId: connectSource.terminalId,
+      sourcePoint: connectSource.point,
+      targetTerminalId: target.terminalId,
+      targetPoint: isBusNode(target.node)
+        ? busAnchorFromPoint(target.node, endpointPoint ?? target.point ?? getTerminalPoint(target.node, target.terminalId))
+        : target.point
+    };
+    pushUndoSnapshot();
+    setEdges((current) => [...current, newEdge]);
+    setSelectedNodeIds([]);
+    setSelectedEdgeId(newEdge.id);
+    setSelectedEdgeIds([newEdge.id]);
+    setConnectSource(null);
+    setConnectPreviewPoint(null);
+    setConnectDropReady(false);
+    setMode("select");
+    writeOperationLog(`新增联络线：${sourceNode.name} -> ${target.node.name}`);
+    return true;
+  };
+
   const finishRewiring = (event: PointerEvent<SVGSVGElement>) => {
     if (!rewiring || !svgRef.current) {
       return;
@@ -3020,46 +3643,49 @@ export function App() {
     const target = findRewireTargetAtPoint(point, rewiring);
     if (target) {
       pushUndoSnapshot();
+      const movingPoint = target.point ?? getTerminalPoint(target.node, target.terminalId);
       setEdges((current) =>
         current.map((edge) =>
-          edge.id === rewiring.edgeId
-            ? rewiring.endpoint === "source"
-              ? {
-                  ...edge,
-                  sourceId: target.node.id,
-                  sourceTerminalId: target.terminalId,
-                  sourcePoint: target.point
-                }
-              : {
-                  ...edge,
-                  targetId: target.node.id,
-                  targetTerminalId: target.terminalId,
-                  targetPoint: target.point
-                }
-            : edge
+          {
+            if (edge.id !== rewiring.edgeId) {
+              return edge;
+            }
+            const sourceNode = nodeById.get(edge.sourceId);
+            const targetNode = nodeById.get(edge.targetId);
+            const rewiredEdge =
+              rewiring.endpoint === "source"
+                ? {
+                    ...edge,
+                    sourceId: target.node.id,
+                    sourceTerminalId: target.terminalId,
+                    sourcePoint: target.point
+                  }
+                : {
+                    ...edge,
+                    targetId: target.node.id,
+                    targetTerminalId: target.terminalId,
+                    targetPoint: target.point
+                  };
+            const slidePatch = sourceNode && targetNode
+              ? resolveStraightBusSlideEndpointToPoint({
+                  edge,
+                  sourceNode,
+                  targetNode,
+                  movingEndpoint: rewiring.endpoint,
+                  movingPoint,
+                  nodes,
+                  movingNode: target.node,
+                  movingTerminalId: target.terminalId
+                })
+              : null;
+            return slidePatch ? { ...rewiredEdge, ...slidePatch } : rewiredEdge;
+          }
         )
       );
+      writeOperationLog(`调整联络线端子：${rewiring.edgeId}`);
     } else {
-      pushUndoSnapshot();
-      setEdges((current) =>
-        current.map((edge) =>
-          edge.id === rewiring.edgeId
-            ? rewiring.endpoint === "source"
-              ? {
-                  ...edge,
-                  sourceId: "",
-                  sourceTerminalId: undefined,
-                  sourcePoint: point
-                }
-              : {
-                  ...edge,
-                  targetId: "",
-                  targetTerminalId: undefined,
-                  targetPoint: point
-                }
-            : edge
-        )
-      );
+      window.alert("联络线端子必须连接到同类型端子或母线，已保持原连接。");
+      writeOperationLog("联络线端子调整失败");
     }
     setSelectedNodeIds([]);
     setSelectedEdgeId(rewiring.edgeId);
@@ -3109,6 +3735,7 @@ export function App() {
     setSelectedEdgeId("");
     setSelectedEdgeIds([]);
     activateInspectorFromCanvas();
+    writeOperationLog(`新增图元：${indexed.node.name}`);
   };
 
   const handleNodePointerDown = (event: PointerEvent<SVGGElement>, node: ModelNode) => {
@@ -3117,24 +3744,19 @@ export function App() {
       return;
     }
     activateInspectorFromCanvas();
-    if (event.ctrlKey && svgRef.current) {
+    const nodeWasSelected = selectedNodeIdSet.has(node.id);
+    const keepEdgeSelection = nodeWasSelected && activeSelectedEdgeIds.length > 0;
+    if (!keepEdgeSelection) {
       setSelectedEdgeId("");
       setSelectedEdgeIds([]);
-      setConnectSource(null);
-      setRewiring(null);
-      setPanning({ clientX: event.clientX, clientY: event.clientY, viewBox });
-      event.currentTarget.setPointerCapture(event.pointerId);
-      return;
     }
-    setSelectedEdgeId("");
-    setSelectedEdgeIds([]);
-    let dragNodeIds = selectedNodeIds.includes(node.id) ? selectedNodeIds : [node.id];
+    let dragNodeIds = nodeWasSelected ? selectedNodeIds : [node.id];
     if (event.ctrlKey || event.shiftKey || event.metaKey) {
-      dragNodeIds = selectedNodeIds.includes(node.id)
-        ? selectedNodeIds.filter((id) => id !== node.id)
-        : [...selectedNodeIds, node.id];
-      setSelectedNodeIds(dragNodeIds);
-    } else if (!selectedNodeIds.includes(node.id)) {
+      dragNodeIds = nodeWasSelected ? selectedNodeIds : [...selectedNodeIds, node.id];
+      if (!nodeWasSelected) {
+        setSelectedNodeIds(dragNodeIds);
+      }
+    } else if (!nodeWasSelected) {
       dragNodeIds = [node.id];
       setSelectedNodeIds([node.id]);
     }
@@ -3156,8 +3778,11 @@ export function App() {
       return;
     }
     const selectedForDrag = new Set(dragNodeIds);
+    const edgeIdsForDrag = keepEdgeSelection ? activeSelectedEdgeIds : [];
+    const routeByEdgeId = new Map(routedEdges.map((route) => [route.edgeId, route.points]));
     setDragging({
       nodeIds: dragNodeIds,
+      edgeIds: edgeIdsForDrag,
       startPoint: point,
       originalPositions: Object.fromEntries(
         nodes
@@ -3173,6 +3798,12 @@ export function App() {
             manualPoints: edge.manualPoints?.map((point) => ({ ...point }))
           }
         ])
+      ),
+      originalRoutePoints: Object.fromEntries(
+        edges.map((edge) => [
+          edge.id,
+          (routeByEdgeId.get(edge.id) ?? []).map((routePoint) => ({ ...routePoint }))
+        ])
       )
     });
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -3182,8 +3813,11 @@ export function App() {
     if (svgRef.current) {
       const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
       lastCanvasPointerRef.current = pointer;
+      updateMouseStatus(pointer);
       if (connectSource) {
-        setConnectPreviewPoint(resolveConnectPreviewPoint(pointer, event));
+        const previewPoint = resolveConnectPreviewPoint(pointer, event);
+        setConnectPreviewPoint(previewPoint);
+        setConnectDropReady(Boolean(findConnectTargetAtPoint(previewPoint)));
       }
     }
     if (terminalPress && svgRef.current) {
@@ -3318,42 +3952,20 @@ export function App() {
     const point = lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
     if (!dragging.historyCaptured) {
       pushUndoSnapshot();
-      setDragging({ ...dragging, historyCaptured: true });
     }
-    const dragNodeIds = new Set(dragging.nodeIds);
     const rawDx = point.x - dragging.startPoint.x;
     const rawDy = point.y - dragging.startPoint.y;
-    const boundedDelta = boundedDeltaForNodes(dragging.nodeIds, dragging.originalPositions, rawDx, rawDy);
-    const dx = boundedDelta.x;
-    const dy = boundedDelta.y;
-    const draggedBusIds = new Set(nodes.filter((node) => dragNodeIds.has(node.id) && isBusNode(node)).map((node) => node.id));
-    setNodes((current) =>
-      current.map((node) => {
-        const originalPosition = dragging.originalPositions[node.id];
-        return dragNodeIds.has(node.id) && originalPosition
-          ? { ...node, position: clampNodeToCanvas(node, { x: originalPosition.x + dx, y: originalPosition.y + dy }) }
-          : node;
-      })
+    const movementDelta = event.ctrlKey || event.shiftKey ? axisLockedDelta(rawDx, rawDy) : { x: rawDx, y: rawDy };
+    const boundedDelta = boundedDeltaForNodes(dragging.nodeIds, dragging.originalPositions, movementDelta.x, movementDelta.y);
+    setDragging((current) =>
+      current
+        ? {
+            ...current,
+            currentDelta: boundedDelta,
+            historyCaptured: true
+          }
+        : current
     );
-    if (draggedBusIds.size > 0 || edges.some((edge) => dragNodeIds.has(edge.sourceId) || dragNodeIds.has(edge.targetId))) {
-      setEdges((current) =>
-        current.map((edge) => {
-          const originalPoints = dragging.originalEdgePoints[edge.id];
-          return {
-            ...edge,
-            sourcePoint: draggedBusIds.has(edge.sourceId) && originalPoints?.sourcePoint
-              ? { x: originalPoints.sourcePoint.x + dx, y: originalPoints.sourcePoint.y + dy }
-              : edge.sourcePoint,
-            targetPoint: draggedBusIds.has(edge.targetId) && originalPoints?.targetPoint
-              ? { x: originalPoints.targetPoint.x + dx, y: originalPoints.targetPoint.y + dy }
-              : edge.targetPoint,
-            manualPoints: originalPoints?.manualPoints && (dragNodeIds.has(edge.sourceId) || dragNodeIds.has(edge.targetId))
-              ? originalPoints.manualPoints.map((point) => ({ x: point.x + dx, y: point.y + dy }))
-              : edge.manualPoints
-          };
-        })
-      );
-    }
   };
 
   const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
@@ -3386,16 +3998,20 @@ export function App() {
     setProjectMenu(null);
   };
 
-  const alignSelected = (direction: "horizontal" | "vertical") => {
-    if (selectedNodeIds.length < 2) {
+  const applySelectedNodeLayout = (
+    minimumSelectionCount: number,
+    layoutNodes: (currentNodes: ModelNode[], currentSelectedNodeIds: string[]) => ModelNode[]
+  ) => {
+    if (selectedNodeIds.length < minimumSelectionCount) {
       return;
     }
     pushUndoSnapshot();
-    const aligned = alignNodes(nodes, selectedNodeIds, direction);
+    const arranged = layoutNodes(nodes, selectedNodeIds);
     const previousById = new Map(nodes.map((node) => [node.id, node]));
+    const selected = new Set(selectedNodeIds);
     const deltas = Object.fromEntries(
-      aligned
-        .filter((node) => selectedNodeIds.includes(node.id))
+      arranged
+        .filter((node) => selected.has(node.id))
         .map((node) => {
           const previous = previousById.get(node.id);
           return [
@@ -3407,8 +4023,31 @@ export function App() {
           ];
         })
     );
-    moveAttachedBusPoints(deltas);
-    setNodes(aligned);
+    setNodes(arranged);
+    const originalEdgePoints = snapshotEdgePoints();
+    setEdges((current) =>
+      adjustEdgesAfterNodeMove(
+        current,
+        arranged,
+        selected,
+        current === edges ? originalEdgePoints : snapshotEdgePoints(current),
+        deltas
+      )
+    );
+  };
+
+  const alignSelected = (direction: "horizontal" | "vertical") => {
+    applySelectedNodeLayout(2, (currentNodes, currentSelectedNodeIds) => alignNodes(currentNodes, currentSelectedNodeIds, direction));
+    if (selectedNodeIds.length >= 2) {
+      writeOperationLog(`${direction === "horizontal" ? "横向" : "纵向"}对齐 ${selectedNodeIds.length} 个图元`);
+    }
+  };
+
+  const distributeSelected = (direction: "horizontal" | "vertical") => {
+    applySelectedNodeLayout(3, (currentNodes, currentSelectedNodeIds) => distributeNodes(currentNodes, currentSelectedNodeIds, direction));
+    if (selectedNodeIds.length >= 3) {
+      writeOperationLog(`${direction === "horizontal" ? "横向" : "纵向"}平均 ${selectedNodeIds.length} 个图元`);
+    }
   };
 
   const findSchemeForProject = (projectId: string) =>
@@ -3475,6 +4114,10 @@ export function App() {
 
   const loadSavedProject = (project: SavedProjectRecord, schemeId = findSchemeForProject(project.id)?.id ?? "") => {
     const indexed = assignMissingDeviceIndexes(project.project.nodes, project.project.deviceIndexCounters);
+    const lockedProject = lockProjectEdgeTerminals({
+      ...project.project,
+      nodes: indexed.nodes
+    });
     const nextCanvasBounds = {
       width: project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
       height: project.project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT
@@ -3493,14 +4136,21 @@ export function App() {
     setViewBox(normalizeViewBoxToCanvas({ x: 0, y: 0, ...nextCanvasBounds }, nextCanvasBounds));
     setDeviceIndexCounters(indexed.counters);
     setNodes(indexed.nodes);
-    setEdges(project.project.edges);
+    setEdges(lockedProject.edges);
+    setTopology(EMPTY_TOPOLOGY);
+    setTopologyErrors([]);
+    setTopologyStatus(INITIAL_TOPOLOGY_STATUS);
     setActiveProjectId(project.id);
     setActiveSchemeId(schemeId);
     selectSingleProject(schemeId, project.id);
     setSelectedNodeIds(indexed.nodes[0] ? [indexed.nodes[0].id] : []);
     setSelectedEdgeId("");
     setConnectSource(null);
+    setConnectPreviewPoint(null);
+    setConnectDropReady(false);
     setRewiring(null);
+    setHasUnsavedChanges(false);
+    writeOperationLog(`加载模型：${project.name}`);
     requestCanvasFrameCenter();
   };
 
@@ -3521,6 +4171,7 @@ export function App() {
     const record = createSavedScheme(name);
     setSchemes((current) => [...current, record]);
     selectSingleScheme(record.id);
+    writeOperationLog(`新建方案：${record.name}`);
   };
 
   const renameSchemeRecord = (scheme: SavedSchemeRecord) => {
@@ -3579,9 +4230,10 @@ export function App() {
   const copySelectedRecord = () => {
     const projectId = selectedProjectIds[0] ?? selectedProjectId;
     if (projectId) {
-      const project = projects.find((item) => item.id === projectId);
+      const project = projectById.get(projectId);
       if (project) {
         setRecordClipboard({ kind: "project", project });
+        writeOperationLog(`复制模型记录：${project.name}`);
       }
       return;
     }
@@ -3590,6 +4242,7 @@ export function App() {
       const scheme = schemes.find((item) => item.id === schemeId);
       if (scheme) {
         setRecordClipboard({ kind: "scheme", scheme });
+        writeOperationLog(`复制方案记录：${scheme.name}`);
       }
     }
   };
@@ -3638,6 +4291,7 @@ export function App() {
     }
     if (recordClipboard.kind === "scheme") {
       setSchemes((current) => [...current, copySavedSchemeWithUniqueName(recordClipboard.scheme, current.map((item) => item.name))]);
+      writeOperationLog(`粘贴方案记录：${recordClipboard.scheme.name}`);
       return;
     }
     const targetSchemeId = selectedSchemeId || activeSchemeId || schemes[0]?.id;
@@ -3655,6 +4309,7 @@ export function App() {
           : scheme
       )
     );
+    writeOperationLog(`粘贴模型记录：${recordClipboard.project.name}`);
   };
 
   const moveProjectRecordToScheme = (projectId: string, schemeId: string) => {
@@ -3672,7 +4327,7 @@ export function App() {
 
   const saveCurrentProject = (targetId = activeProjectId) => {
     if (targetId) {
-      const existing = projects.find((project) => project.id === targetId);
+      const existing = projectById.get(targetId);
       if (existing) {
         const record: SavedProjectRecord = {
           ...existing,
@@ -3681,6 +4336,8 @@ export function App() {
         };
         updateProjectInSchemes(targetId, () => ({ ...record, updatedAt: new Date().toISOString() }));
         setActiveProjectId(targetId);
+        setHasUnsavedChanges(false);
+        writeOperationLog(`保存模型：${projectName}`);
         return;
       }
     }
@@ -3697,6 +4354,8 @@ export function App() {
     });
     setActiveProjectId(record.id);
     setActiveSchemeId(targetSchemeId);
+    setHasUnsavedChanges(false);
+    writeOperationLog(`保存模型：${projectName}`);
   };
 
   const renameProjectRecord = (project: SavedProjectRecord) => {
@@ -3751,7 +4410,7 @@ export function App() {
 
   const duplicateSelectedProjectRecords = () => {
     if (selectedProjectIds.length <= 1) {
-      const project = projects.find((item) => item.id === (selectedProjectIds[0] ?? selectedProjectId));
+      const project = projectById.get(selectedProjectIds[0] ?? selectedProjectId);
       if (project) {
         duplicateProjectRecord(project);
       }
@@ -3849,6 +4508,7 @@ export function App() {
     );
     selectSingleProject(targetSchemeId ?? schemes[0]?.id ?? "", record.id);
     loadSavedProject(record, targetSchemeId ?? schemes[0]?.id ?? "");
+    writeOperationLog(`新建模型：${record.name}`);
   };
 
   const locateTopologyError = (error: TopologyValidationError) => {
@@ -3875,9 +4535,18 @@ export function App() {
     setTopologyErrors(errors);
     if (errors.length === 0) {
       pushUndoSnapshot();
-      setNodes((current) => calculateElectricalTopology(current, edges));
+      const calculatedNodes = calculateElectricalTopology(nodes, edges);
+      const nextTopology = buildTopology(calculatedNodes, edges);
+      skipNextTopologyStaleRef.current = true;
+      setNodes(calculatedNodes);
+      setTopology(nextTopology);
+      setTopologyStatus({ state: "success", message: `成功，${nextTopology.connectedComponents.length} 个拓扑岛` });
+      writeOperationLog(`图上拓扑成功，${nextTopology.connectedComponents.length} 个拓扑岛`);
       window.alert(topologyCalculationMessage(0));
     } else {
+      setTopology(EMPTY_TOPOLOGY);
+      setTopologyStatus({ state: "failed", message: `失败，${errors.length} 条告警` });
+      writeOperationLog(`图上拓扑失败，${errors.length} 条告警`);
       locateTopologyError(errors[0]);
       window.alert(topologyCalculationMessage(errors.length));
     }
@@ -3914,6 +4583,7 @@ export function App() {
     }
     setConnectSource(null);
     setConnectPreviewPoint(null);
+    setConnectDropReady(false);
     setRewiring(null);
     setContextMenu(null);
     clearRecordSelection();
@@ -3959,7 +4629,9 @@ export function App() {
     canvasInteractionRef.current = true;
     projectListPointerInsideRef.current = false;
     if (svgRef.current) {
-      lastCanvasPointerRef.current = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      lastCanvasPointerRef.current = pointer;
+      updateMouseStatus(pointer);
     }
     setSelectedNodeIds([]);
     setSelectedEdgeId(edgeId);
@@ -4058,6 +4730,7 @@ export function App() {
     const sourcePoint = point ?? getModelEdgeEndpointPoint(node, undefined, terminalId);
     setConnectSource({ nodeId: node.id, terminalId, point });
     setConnectPreviewPoint(sourcePoint);
+    setConnectDropReady(false);
     setMode("connect");
     setSelectedNodeIds([]);
     setSelectedEdgeId("");
@@ -4081,17 +4754,44 @@ export function App() {
     }
     if (!isBusNode(node) && node.terminals.length === 1) {
       const anchor = snapSingleTerminalAnchor(node, terminalPress.currentPoint);
-      setNodes((current) =>
-        current.map((item) =>
-          item.id === terminalPress.nodeId
-            ? {
-                ...item,
-                terminals: item.terminals.map((terminal) =>
-                  terminal.id === terminalPress.terminalId ? { ...terminal, anchor } : terminal
-                )
-              }
-            : item
-        )
+      const nextNodes = nodes.map((item) =>
+        item.id === terminalPress.nodeId
+          ? {
+              ...item,
+              terminals: item.terminals.map((terminal) =>
+                terminal.id === terminalPress.terminalId ? { ...terminal, anchor } : terminal
+              )
+            }
+          : item
+      );
+      const nextNodeById = new Map(nextNodes.map((item) => [item.id, item]));
+      setNodes(nextNodes);
+      setEdges((current) =>
+        current.map((edge) => {
+          const sourceAffected = edge.sourceId === terminalPress.nodeId && edge.sourceTerminalId === terminalPress.terminalId;
+          const targetAffected = edge.targetId === terminalPress.nodeId && edge.targetTerminalId === terminalPress.terminalId;
+          if (!sourceAffected && !targetAffected) {
+            return edge;
+          }
+          const sourceNode = nodeById.get(edge.sourceId);
+          const targetNode = nodeById.get(edge.targetId);
+          const nextSourceNode = nextNodeById.get(edge.sourceId);
+          const nextTargetNode = nextNodeById.get(edge.targetId);
+          const slidePatch = sourceNode && targetNode && nextSourceNode && nextTargetNode
+            ? resolveStraightBusSlideEndpoint({
+                edge,
+                sourceNode,
+                targetNode,
+                nextSourceNode,
+                nextTargetNode,
+                movingEndpoint: sourceAffected ? "source" : "target",
+                nodes,
+                nextNodes,
+                originalMovingPoint: terminalPress.startPoint
+              })
+            : null;
+          return slidePatch ? { ...edge, ...slidePatch } : edge;
+        })
       );
     }
     setTerminalPress(null);
@@ -4111,18 +4811,38 @@ export function App() {
     }
     const busPoint = busAnchorFromEvent(node, event);
     if (rewiring) {
-      const edge = edges.find((item) => item.id === rewiring.edgeId);
+      const edge = edgeById.get(rewiring.edgeId);
       const otherNode = edge ? nodeById.get(rewiring.endpoint === "source" ? edge.targetId : edge.sourceId) : undefined;
       const otherTerminalId = rewiring.endpoint === "source" ? edge?.targetTerminalId : edge?.sourceTerminalId;
       if (edge && otherNode && otherTerminalId && canConnectTerminals(node, terminalId, otherNode, otherTerminalId)) {
         pushUndoSnapshot();
+        const movingPoint = busPoint ?? getTerminalPoint(node, terminalId);
+        const sourceNode = nodeById.get(edge.sourceId);
+        const targetNode = nodeById.get(edge.targetId);
         setEdges((current) =>
           current.map((item) =>
-            item.id === edge.id
-              ? rewiring.endpoint === "source"
-                ? { ...item, sourceId: node.id, sourceTerminalId: terminalId, sourcePoint: busPoint }
-                : { ...item, targetId: node.id, targetTerminalId: terminalId, targetPoint: busPoint }
-              : item
+            {
+              if (item.id !== edge.id) {
+                return item;
+              }
+              const rewiredEdge =
+                rewiring.endpoint === "source"
+                  ? { ...item, sourceId: node.id, sourceTerminalId: terminalId, sourcePoint: busPoint }
+                  : { ...item, targetId: node.id, targetTerminalId: terminalId, targetPoint: busPoint };
+              const slidePatch = sourceNode && targetNode
+                ? resolveStraightBusSlideEndpointToPoint({
+                    edge: item,
+                    sourceNode,
+                    targetNode,
+                    movingEndpoint: rewiring.endpoint,
+                    movingPoint,
+                    nodes,
+                    movingNode: node,
+                    movingTerminalId: terminalId
+                  })
+                : null;
+              return slidePatch ? { ...rewiredEdge, ...slidePatch } : rewiredEdge;
+            }
           )
         );
       }
@@ -4156,7 +4876,7 @@ export function App() {
       sourceTerminalId: connectSource.terminalId,
       sourcePoint: connectSource.point,
       targetTerminalId: terminalId,
-      targetPoint: busPoint
+      targetPoint: isBusNode(node) ? busAnchorFromPoint(node, connectPreviewPoint ?? busPoint ?? getTerminalPoint(node, terminalId)) : busPoint
     };
     pushUndoSnapshot();
     setEdges((current) => [
@@ -4167,18 +4887,22 @@ export function App() {
     setSelectedEdgeIds([newEdge.id]);
     setConnectSource(null);
     setConnectPreviewPoint(null);
+    setConnectDropReady(false);
     setMode("select");
   };
 
-  const exportModel = () => {
-    downloadText(
-      "power-system-model.json",
-      serializeProject(currentProject()),
-      "application/json"
-    );
+  const ensureSavedBeforeExport = () => {
+    if (canExportCurrentModel) {
+      return true;
+    }
+    window.alert("当前模型存在未保存修改，请先保存后再导出文件。");
+    return false;
   };
 
   const exportSvg = async () => {
+    if (!ensureSavedBeforeExport()) {
+      return;
+    }
     await saveTextFile({
       filename: `${safeFilePart(projectName)}.svg`,
       text: buildSvgDocument(nodes, edges, {
@@ -4190,10 +4914,25 @@ export function App() {
       description: "SVG 图形文件",
       extensions: [".svg"]
     });
+    writeOperationLog(`导出图形文件：${projectName}.svg`);
   };
 
   const exportEFile = async () => {
-    const file = buildEFileExport(currentProject());
+    if (!ensureSavedBeforeExport()) {
+      return;
+    }
+    const project = currentProject();
+    const warnings = getEExportWarnings(project);
+    if (warnings.length > 0) {
+      window.alert(
+        [
+          `有 ${warnings.length} 个图上设备未导出到 E 文件：`,
+          ...warnings.slice(0, 20).map((warning) => `- ${warning.nodeName}（${warning.kind}）：${warning.reason}`),
+          warnings.length > 20 ? `... 还有 ${warnings.length - 20} 个设备未列出。` : ""
+        ].filter(Boolean).join("\n")
+      );
+    }
+    const file = buildEFileExport(project);
     await saveTextFile({
       filename: file.filename,
       text: file.text,
@@ -4201,6 +4940,7 @@ export function App() {
       description: "E 模型文件",
       extensions: [".e"]
     });
+    writeOperationLog(`导出模型文件：${file.filename}`);
   };
 
   const safeFilePart = (name: string) => name.trim().replace(/[\\/:*?"<>|]+/g, "_") || "未命名";
@@ -4220,39 +4960,6 @@ export function App() {
       );
       downloadText(`${prefix}.e`, buildEDeviceParameterFile(project.project), "text/plain");
     }
-  };
-
-  const importModel = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-    const text = await file.text();
-    const project = deserializeProject(text);
-    const indexed = assignMissingDeviceIndexes(project.nodes, project.deviceIndexCounters);
-    const nextCanvasBounds = {
-      width: project.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
-      height: project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT
-    };
-    pushUndoSnapshot();
-    setProjectName(project.name);
-    setCanvasWidth(nextCanvasBounds.width);
-    setCanvasHeight(nextCanvasBounds.height);
-    setCanvasBackgroundColor(project.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND);
-    setCanvasBackgroundImage(project.canvasBackgroundImage ?? "");
-    setCanvasBackgroundImageAssetId(project.canvasBackgroundImageAssetId ?? "");
-    setPowerUnit(project.powerUnit ?? DEFAULT_POWER_UNIT);
-    setVoltageUnit(project.voltageUnit ?? DEFAULT_VOLTAGE_UNIT);
-    setCurrentUnit(project.currentUnit ?? DEFAULT_CURRENT_UNIT);
-    setPowerBaseValue(project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE);
-    setViewBox(normalizeViewBoxToCanvas({ x: 0, y: 0, ...nextCanvasBounds }, nextCanvasBounds));
-    setDeviceIndexCounters(indexed.counters);
-    setNodes(indexed.nodes);
-    setEdges(project.edges);
-    setSelectedNodeIds(indexed.nodes[0] ? [indexed.nodes[0].id] : []);
-    setSelectedEdgeId("");
-    event.target.value = "";
-    requestCanvasFrameCenter();
   };
 
   const chooseImage = (event: ChangeEvent<HTMLInputElement>) => {
@@ -4561,6 +5268,7 @@ export function App() {
     const group = normalizeLibraryGroupName(template.group);
     setExpandedDefinitionGroups((current) => (current.includes(group) ? current : [...current, group]));
     setDefinitionDraftRows(createDefinitionDraftRows(template));
+    setDefinitionDraftSection(resolveTemplateExportSection(template));
     setDefinitionDraftError("");
   };
 
@@ -4640,7 +5348,9 @@ export function App() {
         acc[row.enName] = row.typicalValue;
       }
       return acc;
-    }, {});
+    }, {
+      source_section: definitionDraftSection || resolveTemplateExportSection(selectedDefinitionTemplate)
+    });
     setDeviceDefinitionOverrides((current) => ({
       ...current,
       [selectedDefinitionTemplate.kind]: {
@@ -4766,6 +5476,7 @@ export function App() {
       group: groupName,
       size: { width: 104, height: 64 },
       params: {
+        source_section: customDeviceDraft.exportSection || defaultExportSectionForGroup(groupName),
         fillColor: "transparent",
         strokeColor: "transparent",
         lineWidth: "0",
@@ -4820,7 +5531,7 @@ export function App() {
             {expanded && (
               <div className="library-group">
                 {(groupedLibrary[group] ?? []).map((item) => {
-                  const preview = createNodeFromTemplate(item, { x: 0, y: 0 });
+                  const preview = libraryPreviewByKind.get(item.kind) ?? createNodeFromTemplate(item, { x: 0, y: 0 });
                   return (
                     <button
                       className="library-item"
@@ -4871,7 +5582,7 @@ export function App() {
               {expanded && (
                 <div className="element-tree-items" role="group">
                   {group.items.map((item) => {
-                    const selected = item.kind === "node" ? selectedNodeIds.includes(item.id) : activeSelectedEdgeIds.includes(item.id);
+                    const selected = item.kind === "node" ? selectedNodeIdSet.has(item.id) : activeSelectedEdgeSet.has(item.id);
                     return (
                       <button
                         type="button"
@@ -4895,6 +5606,13 @@ export function App() {
       )}
     </div>
   );
+  const warningStatusText = topologyErrors.length > 0
+    ? `告警 ${topologyErrors.length} 条：${topologyErrors[0]?.message ?? "请查看拓扑告警"}`
+    : "告警 无";
+  const warningStatusTitle = topologyErrors.length > 0
+    ? topologyErrors.slice(0, 5).map((error, index) => `${index + 1}. ${error.message}`).join("\n")
+    : "当前没有拓扑告警。";
+  const currentZoomPercent = viewBoxZoomPercent(viewBox, canvasBounds);
 
   return (
     <div className={`app-shell left-panel-${leftPanelMode} right-panel-${rightPanelMode}`}>
@@ -4905,13 +5623,6 @@ export function App() {
         onPointerEnter={() => updateAutoPanelVisibility("left", "panel-enter")}
         onPointerLeave={() => updateAutoPanelVisibility("left", "panel-leave")}
       >
-        <div className="brand">
-          <div className="brand-mark">PS</div>
-          <div>
-            <h1>电力系统图上建模平台</h1>
-            <p>拖拽建模、拓扑关联、参数维护</p>
-          </div>
-        </div>
         {renderSidePanelModeControls("left")}
         <div className="left-panel-tabs" role="tablist" aria-label="左侧资源库">
           <button className={leftPanelTab === "projects" ? "active" : ""} onClick={() => setLeftPanelTab("projects")} role="tab" aria-selected={leftPanelTab === "projects"}>
@@ -4928,15 +5639,16 @@ export function App() {
 
       <main className="workspace" onPointerEnter={hideAutoPanelsFromWorkspace}>
         <header className="topbar">
-          <div className="status-cluster">
-            <span>
-              <Grid2X2 size={16} />
-              元件 {nodes.length}
-            </span>
-            <span>联络线 {edges.length}</span>
-            <span>拓扑岛 {topology.connectedComponents.length}</span>
-            <span>选中 {selectedCount}</span>
-            {mode === "connect" && <strong>{connectSource ? "选择同类型目标端子" : "选择起点端子"}</strong>}
+          <div className="brand topbar-brand">
+            <div className="brand-mark">PS</div>
+            <div>
+              <h1>电力系统图上建模平台</h1>
+              <p>拖拽建模、拓扑关联、参数维护</p>
+            </div>
+          </div>
+          <div className="topbar-model" title={`当前模型：${activeModelPathName}`}>
+            <span>当前模型</span>
+            <strong>{activeModelPathName}</strong>
           </div>
           <div className="action-cluster">
             <button onClick={() => alignSelected("horizontal")} disabled={selectedNodeCount < 2} title="横向对齐">
@@ -4947,7 +5659,15 @@ export function App() {
               <AlignCenterVertical size={16} />
               纵向对齐
             </button>
-            <button onClick={() => saveCurrentProject()} title="保存当前模型">
+            <button onClick={() => distributeSelected("horizontal")} disabled={selectedNodeCount < 3} title="横向平均">
+              <AlignHorizontalDistributeCenter size={16} />
+              横向平均
+            </button>
+            <button onClick={() => distributeSelected("vertical")} disabled={selectedNodeCount < 3} title="纵向平均">
+              <AlignVerticalDistributeCenter size={16} />
+              纵向平均
+            </button>
+            <button onClick={() => saveCurrentProject()} disabled={!saveRequired} title={saveRequired ? "保存当前模型" : "当前模型没有新的修改"}>
               <Save size={16} />
               保存
             </button>
@@ -4955,24 +5675,15 @@ export function App() {
               <Grid2X2 size={16} />
               图上拓扑
             </button>
-            <input ref={importRef} type="file" accept="application/json,.json" hidden onChange={importModel} />
             <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={chooseImage} />
             <input ref={customDeviceImageInputRef} type="file" accept="image/*" hidden onChange={chooseCustomDeviceBackground} />
-            <button onClick={() => importRef.current?.click()}>
-              <FileInput size={16} />
-              导入模型
-            </button>
-            <button onClick={exportModel}>
-              <FileJson size={16} />
-              保存文件
-            </button>
-            <button onClick={exportSvg}>
+            <button onClick={exportSvg} disabled={!canExportCurrentModel} title={canExportCurrentModel ? "导出 SVG 图形文件" : "请先保存当前模型后再导出图形文件"}>
               <Download size={16} />
-              保存SVG
+              导出图形文件
             </button>
-            <button onClick={exportEFile}>
+            <button onClick={exportEFile} disabled={!canExportCurrentModel} title={canExportCurrentModel ? "导出 E 模型文件" : "请先保存当前模型后再导出模型文件"}>
               <FileJson size={16} />
-              保存E文件
+              导出模型文件
             </button>
           </div>
         </header>
@@ -4980,7 +5691,7 @@ export function App() {
         <section className="canvas-frame" ref={canvasFrameRef}>
           <svg
             ref={svgRef}
-            className="diagram-canvas"
+            className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${connectDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""}`}
             style={{ width: canvasWidth, height: canvasHeight }}
             viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
             onDrop={handleDrop}
@@ -4995,7 +5706,7 @@ export function App() {
               finishRewiring(event);
               finishTerminalPress();
               finishMarqueeSelection();
-              setDragging(null);
+              finishNodeDrag();
               setManualPathDrag(null);
               setTransformDrag(null);
               setPanning(null);
@@ -5005,7 +5716,7 @@ export function App() {
               if (manualPathDrag) {
                 return;
               }
-              setDragging(null);
+              finishNodeDrag();
               setTerminalPress(null);
               setManualPathDrag(null);
               setTransformDrag(null);
@@ -5014,7 +5725,7 @@ export function App() {
               setRewiring(null);
             }}
             onPointerCancel={() => {
-              setDragging(null);
+              finishNodeDrag();
               setTerminalPress(null);
               setManualPathDrag(null);
               setTransformDrag(null);
@@ -5023,7 +5734,7 @@ export function App() {
               setRewiring(null);
             }}
             onLostPointerCapture={() => {
-              setDragging(null);
+              finishNodeDrag();
               setTerminalPress(null);
               setManualPathDrag(null);
               setTransformDrag(null);
@@ -5037,8 +5748,25 @@ export function App() {
               projectListPointerInsideRef.current = false;
               const pointer = clampPointToCanvas(screenToSvgPoint(event.currentTarget, event.clientX, event.clientY));
               lastCanvasPointerRef.current = pointer;
+              updateMouseStatus(pointer);
               if (connectSource) {
-                setConnectPreviewPoint(resolveConnectPreviewPoint(pointer, event));
+                const previewPoint = resolveConnectPreviewPoint(pointer, event);
+                setConnectPreviewPoint(previewPoint);
+                const target = findConnectTargetAtPoint(previewPoint);
+                if (target) {
+                  finishConnectToTarget(target, previewPoint);
+                } else {
+                  setConnectDropReady(false);
+                }
+                return;
+              }
+              if (event.ctrlKey || event.shiftKey) {
+                setConnectSource(null);
+                setConnectPreviewPoint(null);
+                setConnectDropReady(false);
+                setRewiring(null);
+                setPanning({ clientX: event.clientX, clientY: event.clientY, viewBox });
+                event.currentTarget.setPointerCapture(event.pointerId);
                 return;
               }
               setSelectedNodeIds([]);
@@ -5046,6 +5774,7 @@ export function App() {
               setSelectedEdgeIds([]);
               setConnectSource(null);
               setConnectPreviewPoint(null);
+              setConnectDropReady(false);
               setRewiring(null);
               setInspectorTab("model");
               if (activeProjectId) {
@@ -5054,19 +5783,18 @@ export function App() {
                 setSelectedSchemeId(activeSchemeId);
                 setSelectedSchemeIds([]);
               }
-              if (event.ctrlKey) {
-                setPanning({ clientX: event.clientX, clientY: event.clientY, viewBox });
-              } else {
-                const point = lastCanvasPointerRef.current;
-                setMarquee({ start: point, current: point });
-              }
+              const point = lastCanvasPointerRef.current;
+              setMarquee({ start: point, current: point });
             }}
             onContextMenu={(event) => {
               event.preventDefault();
-              lastCanvasPointerRef.current = clampPointToCanvas(screenToSvgPoint(event.currentTarget, event.clientX, event.clientY));
+              const pointer = clampPointToCanvas(screenToSvgPoint(event.currentTarget, event.clientX, event.clientY));
+              lastCanvasPointerRef.current = pointer;
+              updateMouseStatus(pointer);
               if (connectSource) {
                 setConnectSource(null);
                 setConnectPreviewPoint(null);
+                setConnectDropReady(false);
                 setMode("select");
                 return;
               }
@@ -5105,10 +5833,51 @@ export function App() {
                 height={Math.abs(marquee.current.y - marquee.start.y)}
               />
             )}
+            {dragGhostEdgeRoutes.map((route) => (
+              <path key={`drag-ghost-edge-${route.edgeId}`} d={route.path} className="connection-line drag-ghost" />
+            ))}
+            {dragging?.historyCaptured && dragging.nodeIds.map((nodeId) => {
+              const node = nodeById.get(nodeId);
+              const originalPosition = dragging.originalPositions[nodeId];
+              if (!node || !originalPosition) {
+                return null;
+              }
+              const ghostNode = { ...node, position: originalPosition };
+              return (
+                <g
+                  key={`drag-ghost-${node.id}`}
+                  className={`node-drag-ghost ${isBusNode(node) ? "bus-node" : ""}`}
+                  transform={`translate(${ghostNode.position.x} ${ghostNode.position.y}) rotate(${ghostNode.rotation}) scale(${getNodeScaleX(ghostNode)} ${getNodeScaleY(ghostNode)})`}
+                >
+                  <rect
+                    x={-ghostNode.size.width / 2}
+                    y={-ghostNode.size.height / 2}
+                    width={ghostNode.size.width}
+                    height={ghostNode.size.height}
+                    rx="8"
+                    className="node-drag-ghost-box"
+                  />
+                  <DeviceGlyph node={ghostNode} />
+                </g>
+              );
+            })}
+            {dragPreviewEdgeRoutes.map((route) => (
+              <path key={`drag-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" />
+            ))}
+            {terminalPressPreviewEdgeRoutes.map((route) => (
+              <path key={`terminal-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" />
+            ))}
             {renderedRoutedEdges.map((route) => {
-              const edge = edges.find((item) => item.id === route.edgeId);
+              const edge = edgeById.get(route.edgeId);
               if (!edge) return null;
-              const selected = activeSelectedEdgeIds.includes(edge.id);
+              if (
+                (draggingDelta && dragPreviewEdgeIdSet.has(edge.id)) ||
+                terminalPressPreviewEdgeIdSet.has(edge.id) ||
+                rewiring?.edgeId === edge.id
+              ) {
+                return null;
+              }
+              const selected = activeSelectedEdgeSet.has(edge.id);
               const sourcePoint = getEdgeEndpointPoint(edge, "source");
               const targetPoint = getEdgeEndpointPoint(edge, "target");
               const sourceNode = nodeById.get(edge.sourceId);
@@ -5251,9 +6020,24 @@ export function App() {
                 </g>
               );
             })}
+            {rewiringPreviewRoute && (
+              <path
+                key={`rewiring-preview-edge-${rewiringPreviewRoute.edgeId}`}
+                d={rewiringPreviewRoute.path}
+                className="connection-line drag-preview"
+              />
+            )}
             {nodes.map((node) => {
-              const selected = selectedNodeIds.includes(node.id);
+              const selected = selectedNodeIdSet.has(node.id);
+              const isStorageBus = node.kind === "hydrogen-tank" || node.kind === "thermal-storage-tank";
               const isConnectSource = node.id === connectSource?.nodeId;
+              const originalDragPosition = dragging?.originalPositions[node.id];
+              const renderPosition = draggingDelta && originalDragPosition
+                ? clampNodeToCanvas(node, {
+                    x: originalDragPosition.x + draggingDelta.x,
+                    y: originalDragPosition.y + draggingDelta.y
+                  })
+                : node.position;
               const imageHref = nodeImage(node);
               const foregroundImageHref = nodeForegroundImage(node);
               const nodeScaleX = getNodeScaleX(node);
@@ -5269,8 +6053,8 @@ export function App() {
               return (
                 <g
                   key={node.id}
-                  className={`diagram-node ${isBusNode(node) ? "bus-node" : ""} ${selected ? "selected" : ""} ${isConnectSource ? "connect-source" : ""}`}
-                  transform={`translate(${node.position.x} ${node.position.y}) rotate(${node.rotation}) scale(${getNodeScaleX(node)} ${getNodeScaleY(node)})`}
+                  className={`diagram-node ${isBusNode(node) ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${selected ? "selected" : ""} ${isConnectSource ? "connect-source" : ""}`}
+                  transform={`translate(${renderPosition.x} ${renderPosition.y}) rotate(${node.rotation}) scale(${getNodeScaleX(node)} ${getNodeScaleY(node)})`}
                   onPointerDown={(event) => handleNodePointerDown(event, node)}
                   onContextMenu={(event) => {
                     event.preventDefault();
@@ -5278,15 +6062,18 @@ export function App() {
                     canvasInteractionRef.current = true;
                     projectListPointerInsideRef.current = false;
                     if (svgRef.current) {
-                      lastCanvasPointerRef.current = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+                      const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+                      lastCanvasPointerRef.current = pointer;
+                      updateMouseStatus(pointer);
                     }
                     if (connectSource) {
                       setConnectSource(null);
                       setConnectPreviewPoint(null);
+                      setConnectDropReady(false);
                       setMode("select");
                       return;
                     }
-                    if (!selectedNodeIds.includes(node.id)) {
+                    if (!selectedNodeIdSet.has(node.id)) {
                       setSelectedNodeIds([node.id]);
                     }
                     setSelectedEdgeId("");
@@ -5423,48 +6210,32 @@ export function App() {
                           }}
                         />
                       </g>
-                      <g transform={controlTransform(node.size.width / 2 + handleGapX, 0)}>
-                        <rect
-                          className="scale-handle horizontal"
-                          x="-8"
-                          y="-8"
-                          width="16"
-                          height="16"
-                          rx="3"
-                          onPointerDown={(event) => {
-                            event.stopPropagation();
-                            setTransformDrag({ kind: "scale-x", nodeId: node.id });
-                          }}
-                        />
-                      </g>
-                      <g transform={controlTransform(0, node.size.height / 2 + handleGapY)}>
-                        <rect
-                          className="scale-handle vertical"
-                          x="-8"
-                          y="-8"
-                          width="16"
-                          height="16"
-                          rx="3"
-                          onPointerDown={(event) => {
-                            event.stopPropagation();
-                            setTransformDrag({ kind: "scale-y", nodeId: node.id });
-                          }}
-                        />
-                      </g>
-                      <g transform={controlTransform(node.size.width / 2 + handleGapX, node.size.height / 2 + handleGapY)}>
-                        <rect
-                          className="scale-handle proportional"
-                          x="-8"
-                          y="-8"
-                          width="16"
-                          height="16"
-                          rx="3"
-                          onPointerDown={(event) => {
-                            event.stopPropagation();
-                            setTransformDrag({ kind: "scale-both", nodeId: node.id });
-                          }}
-                        />
-                      </g>
+                      {SCALE_HANDLE_CONFIGS.map((handle) => {
+                        const x =
+                          handle.xDirection === 0
+                            ? 0
+                            : handle.xDirection * (node.size.width / 2 + handleGapX);
+                        const y =
+                          handle.yDirection === 0
+                            ? 0
+                            : handle.yDirection * (node.size.height / 2 + handleGapY);
+                        return (
+                          <g key={handle.id} transform={controlTransform(x, y)}>
+                            <rect
+                              className={`scale-handle ${handle.className}`}
+                              x="-8"
+                              y="-8"
+                              width="16"
+                              height="16"
+                              rx="3"
+                              onPointerDown={(event) => {
+                                event.stopPropagation();
+                                setTransformDrag({ kind: handle.kind, nodeId: node.id });
+                              }}
+                            />
+                          </g>
+                        );
+                      })}
                     </g>
                   )}
                 </g>
@@ -5479,14 +6250,16 @@ export function App() {
             {selectedRoutedEdge && selectedEdge && (() => {
               const edge = selectedEdge;
               const route = selectedRoutedEdge;
+              const isRewiringSelectedEdge = rewiring?.edgeId === edge.id;
+              const displayPath = isRewiringSelectedEdge && rewiringPreviewRoute ? rewiringPreviewRoute.path : route.path;
               const sourcePoint = getEdgeEndpointPoint(edge, "source");
               const targetPoint = getEdgeEndpointPoint(edge, "target");
               const movableSegmentIndexes = new Set(getMovableRouteSegmentIndexes(route.points));
               return (
                 <g className="connection-group selected topmost">
-                  <path d={route.path} className="connection-hitline" onContextMenu={(event) => openEdgeContextMenu(event, edge.id)} />
-                  <path d={route.path} className="connection-line" onContextMenu={(event) => openEdgeContextMenu(event, edge.id)} />
-                  {route.points.slice(1).map((point, index) => {
+                  <path d={displayPath} className="connection-hitline" onContextMenu={(event) => openEdgeContextMenu(event, edge.id)} />
+                  <path d={displayPath} className="connection-line" onContextMenu={(event) => openEdgeContextMenu(event, edge.id)} />
+                  {!isRewiringSelectedEdge && route.points.slice(1).map((point, index) => {
                     const from = route.points[index];
                     const segmentIndex = index;
                     if (!movableSegmentIndexes.has(segmentIndex)) {
@@ -5509,7 +6282,7 @@ export function App() {
                       />
                     );
                   })}
-                  {route.points.slice(2, -2).map((point, index) => {
+                  {!isRewiringSelectedEdge && route.points.slice(2, -2).map((point, index) => {
                     const routePointIndex = index + 2;
                     return (
                       <circle
@@ -5574,6 +6347,31 @@ export function App() {
             })()}
           </svg>
         </section>
+        <footer className="bottom-statusbar" aria-label="运行状态">
+          <span className="status-pill">
+            坐标 {mousePosition ? `X:${mousePosition.x} Y:${mousePosition.y}` : "X:- Y:-"}
+          </span>
+          <span className="status-pill" title={`当前视图缩放比 ${currentZoomPercent}%`}>
+            缩放 {currentZoomPercent}%
+          </span>
+          <span className={`status-pill topology-${topologyStatus.state}`} title={topologyStatus.message}>
+            拓扑 {topologyStatus.message}
+          </span>
+          <span className={`status-pill warning-${topologyErrors.length > 0 ? "active" : "idle"}`} title={warningStatusTitle}>
+            {warningStatusText}
+          </span>
+          <span className="status-pill status-log" title={operationLog}>
+            日志 {operationLog}
+          </span>
+          <span className="status-pill">
+            <Grid2X2 size={15} />
+            元件 {nodes.length}
+          </span>
+          <span className="status-pill">联络线 {edges.length}</span>
+          <span className="status-pill">选中 {selectedCount}</span>
+          {saveRequired && <strong>未保存</strong>}
+          {mode === "connect" && <strong>{connectSource ? "选择同类型目标端子" : "选择起点端子"}</strong>}
+        </footer>
       </main>
 
       <aside
@@ -6061,13 +6859,21 @@ export function App() {
         )}
         {topologyErrors.length > 0 && (
           <section className="validation-panel">
-            <h2>拓扑告警</h2>
-            {topologyErrors.map((error) => (
-              <button key={error.id} onClick={() => locateTopologyError(error)} onDoubleClick={() => locateTopologyError(error)}>
-                <strong>{error.type}</strong>
-                <span>{error.message}</span>
-              </button>
-            ))}
+            <div className="validation-panel-title">
+              <h2>拓扑告警</h2>
+              <span>{topologyErrors.length} 条</span>
+            </div>
+            <div className="validation-list">
+              {visibleTopologyErrors.map((error) => (
+                <button key={error.id} onClick={() => locateTopologyError(error)} onDoubleClick={() => locateTopologyError(error)}>
+                  <strong>{error.type}</strong>
+                  <span>{error.message}</span>
+                </button>
+              ))}
+              {hiddenTopologyErrorCount > 0 && (
+                <p className="validation-more">还有 {hiddenTopologyErrorCount} 条告警未显示，请先处理已显示告警或重新拓扑。</p>
+              )}
+            </div>
           </section>
         )}
       </aside>
@@ -6081,7 +6887,11 @@ export function App() {
             <Copy size={14} />
             复制
           </button>
-          <button onClick={() => runContextMenuAction(() => saveCurrentProject())}>
+          <button onClick={() => runContextMenuAction(cutSelection)} disabled={selectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0}>
+            <Scissors size={14} />
+            剪切
+          </button>
+          <button onClick={() => runContextMenuAction(() => saveCurrentProject())} disabled={!saveRequired}>
             <Save size={14} />
             保存
           </button>
@@ -6140,7 +6950,7 @@ export function App() {
           </button>
           <button
             onClick={() => runContextMenuAction(() => {
-              const project = projects.find((item) => item.id === projectMenu.projectId);
+              const project = projectById.get(projectMenu.projectId ?? "");
               const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
               if (project) {
                 if (selectedProjectIds.length > 1 && selectedProjectIds.includes(project.id)) {
@@ -6171,7 +6981,7 @@ export function App() {
           </button>
           <button
             onClick={() => runContextMenuAction(() => {
-              const project = projects.find((item) => item.id === projectMenu.projectId);
+              const project = projectById.get(projectMenu.projectId ?? "");
               const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
               if (project) renameProjectRecord(project);
               else if (scheme) renameSchemeRecord(scheme);
@@ -6193,7 +7003,7 @@ export function App() {
           </button>
           <button
             onClick={() => runContextMenuAction(() => {
-              const project = projects.find((item) => item.id === projectMenu.projectId);
+              const project = projectById.get(projectMenu.projectId ?? "");
               const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
               if (project) deleteProjectRecord(project);
               else if (scheme) deleteSchemeRecord(scheme);
@@ -6218,7 +7028,7 @@ export function App() {
             <div className="device-definition-layout">
               <aside className="device-definition-list" aria-label="元件定义列表">
                 {libraryGroups.map((group) => {
-                  const templates = libraryTemplates.filter((template) => normalizeLibraryGroupName(template.group) === group);
+                  const templates = groupedLibrary[group] ?? [];
                   if (templates.length === 0) {
                     return null;
                   }
@@ -6297,6 +7107,22 @@ export function App() {
                       <div>
                         <span>定义状态</span>
                         <strong>{deviceDefinitionOverrides[selectedDefinitionTemplate.kind]?.updatedAt ? "已自定义" : "默认"}</strong>
+                      </div>
+                      <div>
+                        <span>导出Section</span>
+                        <select
+                          value={definitionDraftSection}
+                          onChange={(event) => {
+                            setDefinitionDraftSection(event.target.value);
+                            setDefinitionDraftError("");
+                          }}
+                        >
+                          {E_SECTION_OPTIONS.map((section) => (
+                            <option key={section} value={section}>
+                              {section}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                     {selectedDefinitionTemplate.isContainer && selectedDefinitionTerminalAssociations.length > 0 && (
@@ -6431,7 +7257,12 @@ export function App() {
                 元件库类型
                 <select
                   value={customDeviceDraft.groupName}
-                  onChange={(event) => setCustomDeviceDraft((current) => ({ ...current, groupName: event.target.value, error: "" }))}
+                  onChange={(event) => setCustomDeviceDraft((current) => ({
+                    ...current,
+                    groupName: event.target.value,
+                    exportSection: defaultExportSectionForGroup(event.target.value),
+                    error: ""
+                  }))}
                 >
                   {Array.from(new Set([...CUSTOM_LIBRARY_BASE_GROUPS, ...libraryGroups.filter((group) => group !== "静态图元")])).map((group) => (
                     <option key={group} value={group}>
@@ -6455,6 +7286,19 @@ export function App() {
                   placeholder="例如 ACUnit"
                   onChange={(event) => setCustomDeviceDraft((current) => ({ ...current, deviceType: event.target.value, error: "" }))}
                 />
+              </label>
+              <label>
+                导出Section
+                <select
+                  value={customDeviceDraft.exportSection}
+                  onChange={(event) => setCustomDeviceDraft((current) => ({ ...current, exportSection: event.target.value, error: "" }))}
+                >
+                  {E_SECTION_OPTIONS.map((section) => (
+                    <option key={section} value={section}>
+                      {section}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label>
                 是否容器

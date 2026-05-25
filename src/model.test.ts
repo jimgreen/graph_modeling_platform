@@ -24,14 +24,18 @@ import {
   deleteNodesWithConnectedEdges,
   deleteSavedProject,
   DEVICE_LIBRARY,
+  distributeNodes,
   duplicateSavedProject,
   routeOrthogonalEdge,
   routeEdgesForRendering,
   tidyOrthogonalRoute,
   renameSavedProject,
   renameSavedScheme,
+  resolveStraightBusSlideEndpoint,
+  resolveStraightBusSlideEndpointToPoint,
   moveProjectToScheme,
   moveOrthogonalRouteSegment,
+  preserveDraggedRouteShape,
   upsertSavedProject,
   validateTopology,
   getTerminalPoint,
@@ -44,12 +48,15 @@ import {
   getElementFocusPoint,
   getContainerAssociationRelationKey,
   getContainerRelationKey,
+  getEExportWarnings,
   getEParameterKeys,
   getTemplateParameterDefinitions,
   validateContainerTerminalAssociations,
   validateContainerTerminalRoles,
   isGeneratorNode,
   isStaticNode,
+  keyboardMoveStepForViewBox,
+  viewBoxZoomPercent,
   getSwitchVisualState,
   lockProjectEdgeTerminals,
   mirrorNodes,
@@ -167,10 +174,18 @@ describe("power system model", () => {
           targetId: bus.id,
           sourceTerminalId: "t2",
           targetPoint: { x: 350, y: 100 }
+        },
+        {
+          id: "floating-edge",
+          sourceId: source.id,
+          targetId: "",
+          sourceTerminalId: "t1",
+          targetPoint: { x: 500, y: 100 }
         }
       ]
     });
 
+    expect(locked.edges).toHaveLength(2);
     expect(locked.edges[0].sourceTerminalId).toBe("t1");
     expect(locked.edges[0].targetTerminalId).toBe("t1");
     expect(locked.edges[0].sourcePoint).toBeUndefined();
@@ -299,6 +314,41 @@ describe("power system model", () => {
     expect(file.text).toContain("@ p_base u_unit p_unit i_unit");
     expect(file.text).toContain("<ACGenerator>");
     expect(() => JSON.parse(file.text)).toThrow();
+  });
+
+  test("exports hydrogen, heat, and cross-energy devices to E sections and reports unsupported devices", () => {
+    const electrolyzer = assignPermanentDeviceIndex(createDefaultNode("ac-electrolyzer", { x: 100, y: 100 }), {}).node;
+    const hydrogenPipe = assignPermanentDeviceIndex(createDefaultNode("hydrogen-pipeline", { x: 240, y: 100 }), {}).node;
+    const heatTank = assignPermanentDeviceIndex(createDefaultNode("thermal-storage-tank", { x: 380, y: 100 }), {}).node;
+    const custom: ModelNode = {
+      ...createDefaultNode("ac-load", { x: 520, y: 100 }),
+      kind: "unknown-device-kind",
+      name: "未支持设备",
+      params: {}
+    };
+    const exported = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "综合能源导出",
+      nodes: [electrolyzer, hydrogenPipe, heatTank, custom],
+      edges: []
+    }));
+
+    expect(exported.Elec2Hydro.rows).toHaveLength(1);
+    expect(exported.ACLoad.rows).toHaveLength(1);
+    expect(exported.HydroSource.rows).toHaveLength(1);
+    expect(exported.HydroPipe.rows).toHaveLength(1);
+    expect(exported.HeatTank.rows).toHaveLength(1);
+    expect(getEExportWarnings({
+      version: 1,
+      name: "综合能源导出",
+      nodes: [electrolyzer, hydrogenPipe, heatTank, custom],
+      edges: []
+    })).toEqual([
+      expect.objectContaining({
+        nodeId: custom.id,
+        reason: "设备类型没有对应的 E 文件段定义。"
+      })
+    ]);
   });
 
   test("uses impedance glyphs for AC lines and resistance-only glyphs for DC lines", () => {
@@ -834,6 +884,24 @@ describe("power system model", () => {
     });
   });
 
+  test("scales keyboard move steps with the current view box zoom", () => {
+    const bounds = { width: 1980, height: 1024 };
+
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 1980, height: 1024 }, bounds)).toBe(6);
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 990, height: 512 }, bounds)).toBe(3);
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 3960, height: 2048 }, bounds)).toBe(12);
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 120, height: 80 }, bounds)).toBe(1);
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 990, height: 512 }, bounds, 24)).toBe(12);
+  });
+
+  test("reports the current view box zoom as a percentage", () => {
+    const bounds = { width: 1980, height: 1024 };
+
+    expect(viewBoxZoomPercent({ x: 0, y: 0, width: 1980, height: 1024 }, bounds)).toBe(100);
+    expect(viewBoxZoomPercent({ x: 0, y: 0, width: 990, height: 512 }, bounds)).toBe(200);
+    expect(viewBoxZoomPercent({ x: 0, y: 0, width: 3960, height: 2048 }, bounds)).toBe(50);
+  });
+
   test("normalizes scale values without enforcing user-facing min or max ratios", () => {
     expect(normalizeScaleValue(0)).toBe(0);
     expect(normalizeScaleValue(0.05)).toBe(0.05);
@@ -1001,6 +1069,37 @@ describe("power system model", () => {
     const movedHorizontal = moveOrthogonalRouteSegment(routePoints, 2, "horizontal", { x: 150, y: 88 }, { width: 320, height: 180 });
     expect(movedHorizontal[2]).toEqual({ x: 80, y: 88 });
     expect(movedHorizontal[3]).toEqual({ x: 220, y: 88 });
+  });
+
+  test("preserves the dragged connection route shape when only one endpoint moves", () => {
+    const routePoints: Point[] = [
+      { x: 100, y: 100 },
+      { x: 130, y: 100 },
+      { x: 130, y: 180 },
+      { x: 240, y: 180 },
+      { x: 300, y: 180 },
+      { x: 300, y: 140 }
+    ];
+
+    const preserved = preserveDraggedRouteShape({
+      routePoints,
+      nextStart: { x: 140, y: 140 },
+      nextEnd: { x: 300, y: 140 },
+      sourceDelta: { x: 40, y: 40 },
+      targetDelta: { x: 0, y: 0 }
+    });
+
+    expect(preserved).toEqual([
+      { x: 140, y: 140 },
+      { x: 170, y: 140 },
+      { x: 170, y: 220 },
+      { x: 280, y: 220 },
+      { x: 300, y: 220 },
+      { x: 300, y: 140 }
+    ]);
+    for (let index = 1; index < preserved.length; index += 1) {
+      expect(preserved[index - 1].x === preserved[index].x || preserved[index - 1].y === preserved[index].y).toBe(true);
+    }
   });
 
   test("marks every non-end route segment as movable", () => {
@@ -1281,6 +1380,119 @@ describe("power system model", () => {
     expect(beforeFinal.y).not.toBe(busPoint.y);
   });
 
+  test("slides the bus endpoint when the opposite device moves so a straight line remains straight", () => {
+    const load = createDefaultNode("ac-load", { x: 200, y: 100 });
+    const movedLoad = { ...load, position: { x: 260, y: 100 } };
+    const bus = createDefaultNode("ac-bus", { x: 300, y: 100 });
+    const edge: Edge = {
+      id: "slide-straight-bus",
+      sourceId: load.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: { x: 243, y: 100 }
+    };
+
+    const patch = resolveStraightBusSlideEndpoint({
+      edge,
+      sourceNode: load,
+      targetNode: bus,
+      nextSourceNode: movedLoad,
+      nextTargetNode: bus,
+      movingEndpoint: "source",
+      nodes: [load, bus],
+      nextNodes: [movedLoad, bus]
+    });
+
+    expect(patch).toEqual({ targetPoint: { x: 303, y: 100 } });
+  });
+
+  test("slides bus endpoints for manual and non-straight connections instead of limiting the behavior to straight lines", () => {
+    const load = createDefaultNode("ac-load", { x: 200, y: 100 });
+    const movedLoad = { ...load, position: { x: 260, y: 140 } };
+    const bus = createDefaultNode("ac-bus", { x: 300, y: 100 });
+    const edge: Edge = {
+      id: "slide-manual-bus",
+      sourceId: load.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: { x: 243, y: 100 },
+      manualPoints: [
+        { x: 260, y: 130 },
+        { x: 320, y: 130 }
+      ]
+    };
+
+    const patch = resolveStraightBusSlideEndpoint({
+      edge,
+      sourceNode: load,
+      targetNode: bus,
+      nextSourceNode: movedLoad,
+      nextTargetNode: bus,
+      movingEndpoint: "source",
+      nodes: [load, bus],
+      nextNodes: [movedLoad, bus]
+    });
+
+    expect(patch).toEqual({ targetPoint: { x: 303, y: 100 } });
+  });
+
+  test("keeps the moved bus endpoint connected by clamping it to the bus range", () => {
+    const load = createDefaultNode("ac-load", { x: 200, y: 100 });
+    const movedLoad = { ...load, position: { x: 520, y: 100 } };
+    const bus = createDefaultNode("ac-bus", { x: 300, y: 100 });
+    const edge: Edge = {
+      id: "slide-clamped-bus",
+      sourceId: load.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: { x: 243, y: 100 }
+    };
+
+    const patch = resolveStraightBusSlideEndpoint({
+      edge,
+      sourceNode: load,
+      targetNode: bus,
+      nextSourceNode: movedLoad,
+      nextTargetNode: bus,
+      movingEndpoint: "source",
+      nodes: [load, bus],
+      nextNodes: [movedLoad, bus]
+    });
+
+    expect(patch).toEqual({ targetPoint: { x: 360, y: 100 } });
+  });
+
+  test("slides the opposite bus endpoint while a connection endpoint is being rewired or dragged", () => {
+    const bus = createDefaultNode("ac-bus", { x: 300, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 460, y: 180 });
+    const edge: Edge = {
+      id: "slide-rewire-bus",
+      sourceId: bus.id,
+      targetId: load.id,
+      sourceTerminalId: "t1",
+      sourcePoint: { x: 260, y: 100 },
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: 300, y: 150 },
+        { x: 420, y: 150 }
+      ]
+    };
+
+    const patch = resolveStraightBusSlideEndpointToPoint({
+      edge,
+      sourceNode: bus,
+      targetNode: load,
+      movingEndpoint: "target",
+      movingPoint: { x: 330, y: 190 },
+      nodes: [bus, load]
+    });
+
+    expect(patch).toEqual({ sourcePoint: { x: 330, y: 100 } });
+  });
+
   test("connects to thermal storage tank boundary with a perpendicular movable middle segment", () => {
     const source = createDefaultNode("heat-pipeline", { x: 160, y: 120 });
     const tank = createDefaultNode("thermal-storage-tank", { x: 420, y: 120 });
@@ -1349,6 +1561,28 @@ describe("power system model", () => {
     expect(vertical.find((node) => node.id === nodes[0].id)?.position.x).toBe(260);
     expect(vertical.find((node) => node.id === nodes[2].id)?.position.x).toBe(260);
     expect(vertical.find((node) => node.id === nodes[1].id)?.position).toEqual({ x: 260, y: 180 });
+  });
+
+  test("distributes selected nodes horizontally and vertically while keeping edge nodes fixed", () => {
+    const nodes: ModelNode[] = [
+      createDefaultNode("ac-source", { x: 100, y: 80 }),
+      createDefaultNode("ac-switch", { x: 430, y: 360 }),
+      createDefaultNode("ac-load", { x: 220, y: 220 }),
+      createDefaultNode("dc-load", { x: 800, y: 800 })
+    ];
+    const selectedIds = [nodes[0].id, nodes[1].id, nodes[2].id];
+
+    const horizontal = distributeNodes(nodes, selectedIds, "horizontal");
+    expect(horizontal.find((node) => node.id === nodes[0].id)?.position.x).toBe(100);
+    expect(horizontal.find((node) => node.id === nodes[2].id)?.position.x).toBe(265);
+    expect(horizontal.find((node) => node.id === nodes[1].id)?.position.x).toBe(430);
+    expect(horizontal.find((node) => node.id === nodes[3].id)?.position).toEqual({ x: 800, y: 800 });
+
+    const vertical = distributeNodes(nodes, selectedIds, "vertical");
+    expect(vertical.find((node) => node.id === nodes[0].id)?.position.y).toBe(80);
+    expect(vertical.find((node) => node.id === nodes[2].id)?.position.y).toBe(220);
+    expect(vertical.find((node) => node.id === nodes[1].id)?.position.y).toBe(360);
+    expect(vertical.find((node) => node.id === nodes[3].id)?.position).toEqual({ x: 800, y: 800 });
   });
 
   test("includes specialized AC and DC source device types with matching terminal types", () => {
@@ -1803,7 +2037,7 @@ describe("power system model", () => {
     ]));
     expect(views[2]).toMatchObject({
       kind: "associated",
-      deviceType: "HydrogenSource",
+      deviceType: "HydroSource",
       relationKeys: ["idx_h2_unit_t2"],
       terminalIndexes: [1]
     });
@@ -1821,7 +2055,7 @@ describe("power system model", () => {
     expect(views.map((view) => view.label)).toEqual(["容器本体", "交流端交流电负荷", "供水端双端热源"]);
     expect(views[2]).toMatchObject({
       kind: "associated",
-      deviceType: "TwoPortHeatSource",
+      deviceType: "HeatSource2",
       relationKeys: ["idx_heat2_unit_t2"],
       terminalIndexes: [1, 2]
     });
@@ -1894,7 +2128,7 @@ describe("power system model", () => {
     expect(indexed.node.params.idx_heat2_unit_t2).toBeUndefined();
     expect(indexed.node.params.idx_heat2_unit_t3).toBe("2");
     expect(indexed.node.params.idx_heat2_unit_t4).toBeUndefined();
-    expect(indexed.counters.TwoPortHeatSource).toBe(2);
+    expect(indexed.counters.HeatSource2).toBe(2);
   });
 
   test("rejects double-port container association on the last terminal", () => {
@@ -1931,7 +2165,7 @@ describe("power system model", () => {
       for (const relationKey of relationKeys) {
         expect(node.params[relationKey]).toBe("");
       }
-      expect(getEParameterKeys(kind, node.params)).toEqual([]);
+      expect(getEParameterKeys(kind, node.params)).toEqual(expect.arrayContaining(["idx", "name", "run_stat"]));
     }
   });
 
@@ -1944,7 +2178,7 @@ describe("power system model", () => {
     expect(indexedElectrolyzer.counters).toMatchObject({
       "ac-electrolyzer": 1,
       ACLoad: 1,
-      HydrogenSource: 1
+      HydroSource: 1
     });
 
     const heater = createDefaultNode("ac-two-port-heater", { x: 100, y: 100 });
@@ -1956,7 +2190,7 @@ describe("power system model", () => {
     expect(indexedHeater.counters).toMatchObject({
       "ac-two-port-heater": 1,
       ACLoad: 2,
-      TwoPortHeatSource: 1
+      HeatSource2: 1
     });
 
     const derived = deriveDeviceIndexCounters([indexedElectrolyzer.node, indexedHeater.node]);
@@ -1964,15 +2198,15 @@ describe("power system model", () => {
       "ac-electrolyzer": 1,
       "ac-two-port-heater": 1,
       ACLoad: 2,
-      HydrogenSource: 1,
-      TwoPortHeatSource: 1
+      HydroSource: 1,
+      HeatSource2: 1
     });
 
     const boiler = createDefaultNode("two-port-heat-boiler", { x: 100, y: 100 });
     const indexedBoiler = assignPermanentDeviceIndex(boiler, indexedHeater.counters);
     expect(indexedBoiler.node.params.idx_heat2_unit_t1).toBe("2");
     expect(indexedBoiler.node.params.idx_heat2_unit_t2).toBeUndefined();
-    expect(indexedBoiler.counters.TwoPortHeatSource).toBe(2);
+    expect(indexedBoiler.counters.HeatSource2).toBe(2);
   });
 
   test("applies edited built-in template definitions when creating new nodes", () => {
@@ -2395,7 +2629,19 @@ describe("power system model", () => {
 
     const loneLoad = createDefaultNode("ac-load", { x: 460, y: 100 });
     const floatingErrors = validateTopology([loneLoad], []);
-    expect(floatingErrors.some((error) => error.type === "floating-terminal" && error.nodeId === loneLoad.id)).toBe(true);
+    expect(floatingErrors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "floating-terminal",
+        nodeId: loneLoad.id,
+        message: expect.stringContaining("悬空")
+      })
+    ]));
+
+    const floatingEdgeErrors = validateTopology(
+      [acSource],
+      [{ id: "floating-edge", sourceId: acSource.id, targetId: "", sourceTerminalId: "t1", targetPoint: { x: 500, y: 100 } }]
+    );
+    expect(floatingEdgeErrors.some((error) => error.type === "floating-terminal" && error.edgeId === "floating-edge")).toBe(true);
   });
 
   test("validates voltage mismatch from the connected terminal voltage bases", () => {

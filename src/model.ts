@@ -320,7 +320,67 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   ThreePowerTransformer: ["idx", "name", "run_stat", "idx_xf_t1", "idx_xf_t2", "idx_xf_t3"],
   DCDCConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_set", "v_set", "run_stat"],
   DCACConverter: ["idx", "name", "ac_node", "dc_node", "r1", "r2", "control_type", "p_ac_set", "q_ac_set", "v_ac_set", "v_dc_set", "run_stat"],
-  ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"]
+  ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"],
+  HydroSource: ["idx", "name", "node", "run_stat"],
+  HydroLoad: ["idx", "name", "node", "run_stat"],
+  HydroPipe: ["idx", "name", "i_node", "j_node", "run_stat"],
+  HydroCompressor: ["idx", "name", "i_node", "j_node", "run_stat"],
+  HydroPressRegulator: ["idx", "name", "i_node", "j_node", "run_stat"],
+  HydroStopValve: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
+  HydroBus: ["idx", "name", "node", "run_stat"],
+  HydroTank: ["idx", "name", "node", "run_stat"],
+  Elec2Hydro: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_dc_load_t1", "idx_h2_unit_t2"],
+  Hydro2Elec: ["idx", "name", "run_stat", "idx_ac_unit_t1", "idx_dc_unit_t1", "idx_h2_load_t2"],
+  HeatSource: ["idx", "name", "node", "run_stat"],
+  HeatSource2: ["idx", "name", "i_node", "j_node", "run_stat"],
+  HeatLoad: ["idx", "name", "node", "run_stat"],
+  HeatLoad2: ["idx", "name", "i_node", "j_node", "run_stat"],
+  HeatPipe: ["idx", "name", "i_node", "j_node", "run_stat"],
+  HeatStopValve: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
+  HeatBus: ["idx", "name", "node", "run_stat"],
+  HeatTank: ["idx", "name", "node", "run_stat"],
+  HeatBoiler: ["idx", "name", "run_stat", "idx_heat_unit_t1"],
+  HeatBoiler2: ["idx", "name", "run_stat", "idx_heat2_unit_t1"],
+  Elec2Heat: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_dc_load_t1", "idx_heat_unit_t2"],
+  Elec2Heat2: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_dc_load_t1", "idx_heat2_unit_t2"],
+  HeatExchanger: ["idx", "name", "i_node", "j_node", "run_stat"],
+  HeatExchanger3: ["idx", "name", "node1", "node2", "node3", "run_stat"],
+  HeatExchanger4: ["idx", "name", "node1", "node2", "node3", "node4", "run_stat"],
+  HeatPump: ["idx", "name", "i_node", "j_node", "run_stat"]
+};
+
+const E_KIND_SECTION_MAP: Record<string, string> = {
+  "hydrogen-source": "HydroSource",
+  "hydrogen-load": "HydroLoad",
+  "hydrogen-pipeline": "HydroPipe",
+  "hydrogen-compressor": "HydroCompressor",
+  "hydrogen-pressure-reducer": "HydroPressRegulator",
+  "hydrogen-shutoff-valve": "HydroStopValve",
+  "hydrogen-bus": "HydroBus",
+  "hydrogen-tank": "HydroTank",
+  "ac-electrolyzer": "Elec2Hydro",
+  "dc-electrolyzer": "Elec2Hydro",
+  "ac-fuel-cell": "Hydro2Elec",
+  "dc-fuel-cell": "Hydro2Elec",
+  "heat-source": "HeatSource",
+  "single-port-heat-load": "HeatLoad",
+  "heat-load": "HeatLoad",
+  "two-port-heat-source": "HeatSource2",
+  "two-port-heat-load": "HeatLoad2",
+  "heat-pipeline": "HeatPipe",
+  "heat-shutoff-valve": "HeatStopValve",
+  "heat-bus": "HeatBus",
+  "thermal-storage-tank": "HeatTank",
+  "heat-boiler": "HeatBoiler",
+  "two-port-heat-boiler": "HeatBoiler2",
+  "ac-heater": "Elec2Heat",
+  "dc-heater": "Elec2Heat",
+  "ac-two-port-heater": "Elec2Heat2",
+  "dc-two-port-heater": "Elec2Heat2",
+  "heat-exchanger": "HeatExchanger",
+  "three-port-heat-exchanger": "HeatExchanger3",
+  "four-port-heat-exchanger": "HeatExchanger4",
+  "heat-pump": "HeatPump"
 };
 
 function isContainerParams(params: Record<string, string> = {}) {
@@ -328,13 +388,17 @@ function isContainerParams(params: Record<string, string> = {}) {
 }
 
 export function inferESection(kind: string, params: Record<string, string> = {}) {
-  if (isContainerParams(params)) {
-    return "";
-  }
   if (kind === "ac-bus") return "ACRealBs";
   if (kind === "dc-bus") return "DCRealBs";
   if (params.source_section && E_SECTION_COLUMNS[params.source_section]) {
     return params.source_section;
+  }
+  const mappedSection = E_KIND_SECTION_MAP[kind];
+  if (mappedSection) {
+    return mappedSection;
+  }
+  if (isContainerParams(params)) {
+    return "";
   }
   if (kind === "ac-line") return "ACBranch";
   if (kind === "dc-line") return "DCBranch";
@@ -417,14 +481,14 @@ function containerRelationCounterKey(fieldName: string): string {
     dc_load: "DCLoad",
     dc2_unit: "TwoPortDCGenerator",
     dc2_load: "TwoPortDCLoad",
-    h2_unit: "HydrogenSource",
-    h2_load: "HydrogenLoad",
+    h2_unit: "HydroSource",
+    h2_load: "HydroLoad",
     h22_unit: "TwoPortHydrogenSource",
     h22_load: "TwoPortHydrogenLoad",
     heat_unit: "HeatSource",
     heat_load: "HeatLoad",
-    heat2_unit: "TwoPortHeatSource",
-    heat2_load: "TwoPortHeatLoad"
+    heat2_unit: "HeatSource2",
+    heat2_load: "HeatLoad2"
   };
   return mapping[`${energy}_${role}`] ?? `ContainerRelation:${energy}_${role}`;
 }
@@ -657,7 +721,33 @@ const E_SECTION_OUTPUT_ORDER = [
   "DCBreak",
   "DCDCConverter",
   "DCACConverter",
-  "ACACConverter"
+  "ACACConverter",
+  "HydroSource",
+  "HydroLoad",
+  "HydroPipe",
+  "HydroCompressor",
+  "HydroPressRegulator",
+  "HydroStopValve",
+  "HydroBus",
+  "HydroTank",
+  "Elec2Hydro",
+  "Hydro2Elec",
+  "HeatSource",
+  "HeatSource2",
+  "HeatLoad",
+  "HeatLoad2",
+  "HeatPipe",
+  "HeatStopValve",
+  "HeatBus",
+  "HeatTank",
+  "HeatBoiler",
+  "HeatBoiler2",
+  "Elec2Heat",
+  "Elec2Heat2",
+  "HeatExchanger",
+  "HeatExchanger3",
+  "HeatExchanger4",
+  "HeatPump"
 ];
 
 const E_INTEGER_COLUMNS = new Set([
@@ -667,6 +757,10 @@ const E_INTEGER_COLUMNS = new Set([
   "j_node",
   "ac_node",
   "dc_node",
+  "node1",
+  "node2",
+  "node3",
+  "node4",
   "isl",
   "status",
   "run_stat",
@@ -748,6 +842,11 @@ export function getEParamValue(
   }
   if (key === "j_node") {
     return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 1) : node.params.j_node ?? terminalNodeNumber(node, 1);
+  }
+  const numberedNodeMatch = /^node(\d+)$/.exec(key);
+  if (numberedNodeMatch) {
+    const index = Number.parseInt(numberedNodeMatch[1], 10) - 1;
+    return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, index) : node.params[key] ?? terminalNodeNumber(node, index);
   }
   if (key === "ac_node") {
     const acNodeNumber = node.terminals.find((terminal) => terminal.type === "ac")?.nodeNumber ?? terminalNodeNumber(node, 0);
@@ -944,11 +1043,63 @@ function buildThreePowerTransformerDevices(nodes: ModelNode[]): EDeviceExport[] 
     }));
 }
 
+function buildContainerAssociatedDevices(nodes: ModelNode[]): EDeviceExport[] {
+  const records: EDeviceExport[] = [];
+  for (const node of nodes) {
+    if (!isContainerParams(node.params)) {
+      continue;
+    }
+    const consumed = new Set<string>();
+    const entries = Object.keys(node.params)
+      .map((fieldName) => {
+        const parsed = parseContainerRelationField(fieldName);
+        const section = containerRelationCounterKey(fieldName);
+        return parsed && section && !isContainerTransformerRelationKey(fieldName)
+          ? { ...parsed, fieldName, section }
+          : null;
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+      .sort((left, right) => left.terminalNumber - right.terminalNumber || left.fieldName.localeCompare(right.fieldName));
+    for (const entry of entries) {
+      if (consumed.has(entry.fieldName) || !E_SECTION_COLUMNS[entry.section]) {
+        continue;
+      }
+      consumed.add(entry.fieldName);
+      const idx = node.params[entry.fieldName] ?? "";
+      if (!idx) {
+        continue;
+      }
+      const terminalIndex = entry.terminalNumber - 1;
+      const firstTerminal = node.terminals[terminalIndex];
+      const secondTerminal = entry.doublePort ? node.terminals[terminalIndex + 1] : undefined;
+      const params: Record<string, string> = {
+        idx,
+        name: `${node.name}_${entry.fieldName}`,
+        run_stat: normalizeRunStatForE(node.params.run_stat)
+      };
+      if (secondTerminal) {
+        params.i_node = firstTerminal?.nodeNumber ?? "";
+        params.j_node = secondTerminal.nodeNumber ?? "";
+      } else {
+        params.node = firstTerminal?.nodeNumber ?? "";
+      }
+      records.push({
+        id: `${node.id}:${entry.fieldName}`,
+        kind: `${node.kind}:${entry.fieldName}`,
+        section: entry.section,
+        params
+      });
+    }
+  }
+  return records;
+}
+
 function buildEDeviceRecords(project: ProjectFile): EDeviceExport[] {
   const topologyNodes = calculateElectricalTopology(project.nodes, project.edges);
   const topologyNodeDevices = buildTopologyNodeDevices(topologyNodes);
   const threePowerTransformerDevices = buildThreePowerTransformerDevices(topologyNodes);
   const threeWindingTransformerBranchDevices = buildThreeWindingTransformerBranchDevices(topologyNodes);
+  const containerAssociatedDevices = buildContainerAssociatedDevices(topologyNodes);
   const deviceRecords = topologyNodes
     .map<EDeviceExport | null>((node) => {
       const section = inferESection(node.kind, node.params);
@@ -964,7 +1115,56 @@ function buildEDeviceRecords(project: ProjectFile): EDeviceExport[] {
     })
     .filter((device): device is EDeviceExport => Boolean(device));
 
-  return [...topologyNodeDevices, ...deviceRecords, ...threePowerTransformerDevices, ...threeWindingTransformerBranchDevices];
+  return [
+    ...topologyNodeDevices,
+    ...deviceRecords,
+    ...threePowerTransformerDevices,
+    ...threeWindingTransformerBranchDevices,
+    ...containerAssociatedDevices
+  ];
+}
+
+export type EExportWarning = {
+  nodeId: string;
+  nodeName: string;
+  kind: string;
+  reason: string;
+};
+
+export function getEExportWarnings(project: ProjectFile): EExportWarning[] {
+  const records = buildEDeviceRecords(project);
+  const exportedNodeIds = new Set(records.map((record) => record.id).filter((id) => !id.includes(":")));
+  return project.nodes.flatMap((node) => {
+    if (isStaticNode(node)) {
+      return [];
+    }
+    if (exportedNodeIds.has(node.id)) {
+      return [];
+    }
+    const section = inferESection(node.kind, node.params);
+    if (!section) {
+      return [{
+        nodeId: node.id,
+        nodeName: node.name,
+        kind: node.kind,
+        reason: isContainerParams(node.params) ? "容器设备没有对应的 E 文件段定义。" : "设备类型没有对应的 E 文件段定义。"
+      }];
+    }
+    if (!E_SECTION_COLUMNS[section]) {
+      return [{
+        nodeId: node.id,
+        nodeName: node.name,
+        kind: node.kind,
+        reason: `E 文件段 ${section} 未定义列。`
+      }];
+    }
+    return [{
+      nodeId: node.id,
+      nodeName: node.name,
+      kind: node.kind,
+      reason: `E 文件段 ${section} 被导出逻辑过滤。`
+    }];
+  });
 }
 
 function normalizeEFileToken(value: string) {
@@ -1885,12 +2085,12 @@ const containerTerminalAssociationDefinitions: Record<
   "ac-load": { terminalType: "ac", energyKey: "ac", deviceRole: "load", label: "交流电负荷", deviceModel: "ACLoad" },
   "dc-generator": { terminalType: "dc", energyKey: "dc", deviceRole: "unit", label: "直流电源", deviceModel: "DCGenerator" },
   "dc-load": { terminalType: "dc", energyKey: "dc", deviceRole: "load", label: "直流电负荷", deviceModel: "DCLoad" },
-  "h2-source": { terminalType: "h2", energyKey: "h2", deviceRole: "unit", label: "氢源", deviceModel: "HydrogenSource" },
-  "h2-load": { terminalType: "h2", energyKey: "h2", deviceRole: "load", label: "氢荷", deviceModel: "HydrogenLoad" },
+  "h2-source": { terminalType: "h2", energyKey: "h2", deviceRole: "unit", label: "氢源", deviceModel: "HydroSource" },
+  "h2-load": { terminalType: "h2", energyKey: "h2", deviceRole: "load", label: "氢荷", deviceModel: "HydroLoad" },
   "heat-source": { terminalType: "heat", energyKey: "heat", deviceRole: "unit", label: "单端热源", deviceModel: "HeatSource" },
-  "heat2-source": { terminalType: "heat", energyKey: "heat2", deviceRole: "unit", label: "双端热源", deviceModel: "TwoPortHeatSource", doublePort: true },
+  "heat2-source": { terminalType: "heat", energyKey: "heat2", deviceRole: "unit", label: "双端热源", deviceModel: "HeatSource2", doublePort: true },
   "heat-load": { terminalType: "heat", energyKey: "heat", deviceRole: "load", label: "单端热荷", deviceModel: "HeatLoad" },
-  "heat2-load": { terminalType: "heat", energyKey: "heat2", deviceRole: "load", label: "双端热荷", deviceModel: "TwoPortHeatLoad", doublePort: true }
+  "heat2-load": { terminalType: "heat", energyKey: "heat2", deviceRole: "load", label: "双端热荷", deviceModel: "HeatLoad2", doublePort: true }
 };
 
 const containerTerminalAssociationLabel = (association: ContainerTerminalAssociationType) =>
@@ -2895,6 +3095,26 @@ export function normalizeViewBoxToCanvas(box: ViewBox, bounds: CanvasBounds): Vi
   };
 }
 
+function viewBoxScaleRatio(viewBox: ViewBox, bounds: CanvasBounds): number {
+  if (viewBox.width <= 0 || viewBox.height <= 0 || bounds.width <= 0 || bounds.height <= 0) {
+    return 1;
+  }
+  const widthRatio = viewBox.width / bounds.width;
+  const heightRatio = viewBox.height / bounds.height;
+  return Math.sqrt(widthRatio * heightRatio);
+}
+
+export function keyboardMoveStepForViewBox(viewBox: ViewBox, bounds: CanvasBounds, baseStep = 6): number {
+  const safeBase = Math.max(1, Math.abs(baseStep));
+  const zoomRatio = viewBoxScaleRatio(viewBox, bounds);
+  return Math.max(1, Math.round(safeBase * zoomRatio));
+}
+
+export function viewBoxZoomPercent(viewBox: ViewBox, bounds: CanvasBounds): number {
+  const zoomRatio = viewBoxScaleRatio(viewBox, bounds);
+  return Math.max(1, Math.round(100 / zoomRatio));
+}
+
 export function createTerminals(type: TerminalType, count: number): Terminal[] {
   if (count <= 0) {
     return [];
@@ -3060,6 +3280,21 @@ export function projectPointToBusCenterline(node: ModelNode, point: Point): Poin
     x: Math.round(node.position.x + clampedX * Math.cos(forwardRadians)),
     y: Math.round(node.position.y + clampedX * Math.sin(forwardRadians))
   };
+}
+
+export function projectPointToBusCenterlineIfInRange(node: ModelNode, point: Point): Point | null {
+  if (!isBusNode(node)) {
+    return null;
+  }
+  if (isBoundaryBusNode(node)) {
+    return projectPointToNodeBoundary(node, point);
+  }
+  const local = pointToNodeLocal(node, point);
+  const halfWidth = (node.size.width * Math.abs(getNodeScaleX(node))) / 2;
+  if (local.x < -halfWidth || local.x > halfWidth) {
+    return null;
+  }
+  return projectPointToBusCenterline(node, point);
 }
 
 export function getEdgeEndpointPoint(node: ModelNode, endpointPoint?: Point, terminalId?: string): Point {
@@ -3232,6 +3467,38 @@ export function alignNodes(nodes: ModelNode[], selectedIds: string[], direction:
   });
 }
 
+export function distributeNodes(nodes: ModelNode[], selectedIds: string[], direction: AlignDirection): ModelNode[] {
+  const selected = nodes.filter((node) => selectedIds.includes(node.id));
+  if (selected.length < 3) {
+    return nodes;
+  }
+  const axis = direction === "horizontal" ? "x" : "y";
+  const ordered = [...selected].sort((first, second) => first.position[axis] - second.position[axis]);
+  const start = ordered[0].position[axis];
+  const end = ordered[ordered.length - 1].position[axis];
+  if (start === end) {
+    return nodes;
+  }
+  const step = (end - start) / (ordered.length - 1);
+  const coordinateById = new Map(
+    ordered.map((node, index) => [node.id, Math.round(start + step * index)])
+  );
+
+  return nodes.map((node) => {
+    const coordinate = coordinateById.get(node.id);
+    if (coordinate === undefined) {
+      return node;
+    }
+    return {
+      ...node,
+      position:
+        direction === "horizontal"
+          ? { ...node.position, x: coordinate }
+          : { ...node.position, y: coordinate }
+    };
+  });
+}
+
 export function deleteNodesWithConnectedEdges(nodes: ModelNode[], edges: Edge[], selectedIds: string[]) {
   const selected = new Set(selectedIds);
   return {
@@ -3365,6 +3632,12 @@ export function validateTopology(nodes: ModelNode[], edges: Edge[]): TopologyVal
   const errors: TopologyValidationError[] = [];
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const terminalKey = (nodeId: string, terminalId: string) => `${nodeId}:${terminalId}`;
+  const resolveEdgeTerminal = (node: ModelNode, terminalId?: string) => {
+    if (terminalId) {
+      return node.terminals.find((terminal) => terminal.id === terminalId);
+    }
+    return node.terminals[0];
+  };
   const parent = new Map<string, string>();
   const connectedTerminals = new Set<string>();
   const directVoltageMismatchEdges: Array<{
@@ -3412,9 +3685,24 @@ export function validateTopology(nodes: ModelNode[], edges: Edge[]): TopologyVal
   for (const edge of edges) {
     const source = nodeById.get(edge.sourceId);
     const target = nodeById.get(edge.targetId);
-    if (!source || !target) continue;
-    const sourceTerminal = getTerminal(source, edge.sourceTerminalId);
-    const targetTerminal = getTerminal(target, edge.targetTerminalId);
+    const sourceTerminal = source ? resolveEdgeTerminal(source, edge.sourceTerminalId) : undefined;
+    const targetTerminal = target ? resolveEdgeTerminal(target, edge.targetTerminalId) : undefined;
+    if (!source || !target || !sourceTerminal || !targetTerminal) {
+      const floatingEnds = [
+        !source || !sourceTerminal ? "首端" : "",
+        !target || !targetTerminal ? "末端" : ""
+      ].filter(Boolean).join("、");
+      const relatedNodeIds = [source?.id, target?.id].filter((id): id is string => Boolean(id));
+      errors.push({
+        id: `floating-terminal:${edge.id}`,
+        type: "floating-terminal",
+        edgeId: edge.id,
+        nodeId: relatedNodeIds[0],
+        relatedNodeIds,
+        message: `图上拓扑失败：联络线 ${edge.id} 的${floatingEnds || "端子"}悬空，必须连接到设备端子或母线。`
+      });
+      continue;
+    }
     connectedTerminals.add(`${source.id}:${sourceTerminal.id}`);
     connectedTerminals.add(`${target.id}:${targetTerminal.id}`);
 
@@ -3575,27 +3863,32 @@ export function deserializeProject(json: string): ProjectFile {
 
 export function lockProjectEdgeTerminals(project: ProjectFile): ProjectFile {
   const nodeById = new Map(project.nodes.map((node) => [node.id, node]));
+  const resolveTerminalId = (node: ModelNode | undefined, terminalId?: string) => {
+    if (!node || node.terminals.length === 0) {
+      return undefined;
+    }
+    return node.terminals.some((terminal) => terminal.id === terminalId)
+      ? terminalId
+      : node.terminals[0]?.id;
+  };
   return {
     ...project,
     nodes: project.nodes,
-    edges: project.edges.map((edge) => {
+    edges: project.edges.flatMap((edge) => {
       const source = nodeById.get(edge.sourceId);
       const target = nodeById.get(edge.targetId);
-      const sourceTerminalId =
-        source?.terminals.some((terminal) => terminal.id === edge.sourceTerminalId)
-          ? edge.sourceTerminalId
-          : source?.terminals[0]?.id;
-      const targetTerminalId =
-        target?.terminals.some((terminal) => terminal.id === edge.targetTerminalId)
-          ? edge.targetTerminalId
-          : target?.terminals[0]?.id;
-      return {
+      const sourceTerminalId = resolveTerminalId(source, edge.sourceTerminalId);
+      const targetTerminalId = resolveTerminalId(target, edge.targetTerminalId);
+      if (!source || !target || !sourceTerminalId || !targetTerminalId) {
+        return [];
+      }
+      return [{
         ...edge,
         sourceTerminalId,
         targetTerminalId,
         sourcePoint: source ? (isBusNode(source) ? edge.sourcePoint : undefined) : edge.sourcePoint,
         targetPoint: target ? (isBusNode(target) ? edge.targetPoint : undefined) : edge.targetPoint
-      };
+      }];
     })
   };
 }
@@ -3787,6 +4080,121 @@ function segmentIntersectsBox(a: Point, b: Point, box: ReturnType<typeof boxFor>
   return false;
 }
 
+export function segmentIntersectsNodeBody(a: Point, b: Point, node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
+  return segmentIntersectsBox(a, b, boxFor(node, padding));
+}
+
+type EdgeSide = "source" | "target";
+
+function oppositeEdgeSide(side: EdgeSide): EdgeSide {
+  return side === "source" ? "target" : "source";
+}
+
+function edgeTerminalId(edge: Edge, side: EdgeSide) {
+  return side === "source" ? edge.sourceTerminalId : edge.targetTerminalId;
+}
+
+function edgeEndpointStoredPoint(edge: Edge, side: EdgeSide) {
+  return side === "source" ? edge.sourcePoint : edge.targetPoint;
+}
+
+function isOrthogonalDirectSegment(a: Point, b: Point) {
+  return Math.round(a.x) === Math.round(b.x) || Math.round(a.y) === Math.round(b.y);
+}
+
+function directSegmentMatchesTerminalNormal(a: Point, b: Point, node: ModelNode, terminalId?: string) {
+  const normal = getTerminalNormal(node, terminalId);
+  const vertical = Math.round(a.x) === Math.round(b.x);
+  const horizontal = Math.round(a.y) === Math.round(b.y);
+  return (vertical && normal.y !== 0) || (horizontal && normal.x !== 0);
+}
+
+function directSegmentClearOfNodeBodies(a: Point, b: Point, nodes: ModelNode[], excludedNodeIds: Set<string>) {
+  return nodes.every((node) =>
+    excludedNodeIds.has(node.id) ||
+    node.id.startsWith("floating-") ||
+    !segmentIntersectsNodeBody(a, b, node)
+  );
+}
+
+export function resolveStraightBusSlideEndpointToPoint(options: {
+  edge: Edge;
+  sourceNode: ModelNode;
+  targetNode: ModelNode;
+  movingEndpoint: EdgeSide;
+  movingPoint: Point;
+  nodes: ModelNode[];
+  nextNodes?: ModelNode[];
+  busNode?: ModelNode;
+  movingNode?: ModelNode;
+  movingTerminalId?: string;
+  originalMovingPoint?: Point;
+}): Pick<Edge, "sourcePoint"> | Pick<Edge, "targetPoint"> | null {
+  const { edge, movingEndpoint } = options;
+  const busEndpoint = oppositeEdgeSide(movingEndpoint);
+  const sourceBySide = {
+    source: options.sourceNode,
+    target: options.targetNode
+  };
+  const originalBusNode = sourceBySide[busEndpoint];
+  const busNode = options.busNode ?? originalBusNode;
+  const movingNode = options.movingNode;
+  if (!isBusNode(busNode) || !isBusNode(originalBusNode) || (movingNode && isBusNode(movingNode))) {
+    return null;
+  }
+  const candidateBusPoint = projectPointToBusCenterline(busNode, options.movingPoint);
+  if (!candidateBusPoint) {
+    return null;
+  }
+  return busEndpoint === "source"
+    ? { sourcePoint: candidateBusPoint }
+    : { targetPoint: candidateBusPoint };
+}
+
+export function resolveStraightBusSlideEndpoint(options: {
+  edge: Edge;
+  sourceNode: ModelNode;
+  targetNode: ModelNode;
+  nextSourceNode: ModelNode;
+  nextTargetNode: ModelNode;
+  movingEndpoint: EdgeSide;
+  nodes: ModelNode[];
+  nextNodes?: ModelNode[];
+  originalMovingPoint?: Point;
+}): Pick<Edge, "sourcePoint"> | Pick<Edge, "targetPoint"> | null {
+  const { edge, movingEndpoint } = options;
+  const busEndpoint = oppositeEdgeSide(movingEndpoint);
+  const sourceBySide = {
+    source: options.sourceNode,
+    target: options.targetNode
+  };
+  const nextBySide = {
+    source: options.nextSourceNode,
+    target: options.nextTargetNode
+  };
+  const busNode = nextBySide[busEndpoint];
+  const originalBusNode = sourceBySide[busEndpoint];
+  const movingNode = nextBySide[movingEndpoint];
+  if (!isBusNode(busNode) || !isBusNode(originalBusNode) || isBusNode(movingNode)) {
+    return null;
+  }
+  const movingTerminalId = edgeTerminalId(edge, movingEndpoint);
+  const movedPoint = getEdgeEndpointPoint(movingNode, edgeEndpointStoredPoint(edge, movingEndpoint), movingTerminalId);
+  return resolveStraightBusSlideEndpointToPoint({
+    edge,
+    sourceNode: options.sourceNode,
+    targetNode: options.targetNode,
+    movingEndpoint,
+    movingPoint: movedPoint,
+    nodes: options.nodes,
+    nextNodes: options.nextNodes,
+    busNode,
+    movingNode,
+    movingTerminalId,
+    originalMovingPoint: options.originalMovingPoint
+  });
+}
+
 function routeCorridor(a: Point, b: Point, margin: number) {
   return {
     left: Math.min(a.x, b.x) - margin,
@@ -3836,6 +4244,8 @@ function routeBounds(points: Point[], blockers: ModelNode[]) {
 
 const ROUTE_BLOCKER_PADDING = 8;
 const ROUTE_CLEARANCE = 6;
+const ROUTE_LANE_SEARCH_MARGIN = 180;
+const ROUTE_LANE_SEGMENT_MARGIN = 36;
 const ROUTE_TINY_DOGLEG_LIMIT = 18;
 const ROUTE_MIN_MOVABLE_SEGMENT_LENGTH = 18;
 
@@ -4213,6 +4623,79 @@ export function moveOrthogonalRouteSegment(
   return nextPoints;
 }
 
+type PreserveDraggedRouteShapeOptions = {
+  routePoints: Point[];
+  nextStart: Point;
+  nextEnd: Point;
+  sourceDelta?: Point;
+  targetDelta?: Point;
+  routeDelta?: Point;
+};
+
+function roundPoint(point: Point): Point {
+  return { x: Math.round(point.x), y: Math.round(point.y) };
+}
+
+function sameDelta(first?: Point, second?: Point) {
+  return Boolean(first && second && Math.round(first.x) === Math.round(second.x) && Math.round(first.y) === Math.round(second.y));
+}
+
+function nonZeroDelta(delta?: Point) {
+  return Boolean(delta && (Math.round(delta.x) !== 0 || Math.round(delta.y) !== 0));
+}
+
+function draggedRouteShapeDelta(options: PreserveDraggedRouteShapeOptions): Point {
+  if (options.routeDelta) {
+    return options.routeDelta;
+  }
+  if (sameDelta(options.sourceDelta, options.targetDelta) && options.sourceDelta) {
+    return options.sourceDelta;
+  }
+  if (nonZeroDelta(options.sourceDelta)) {
+    return options.sourceDelta!;
+  }
+  if (nonZeroDelta(options.targetDelta)) {
+    return options.targetDelta!;
+  }
+  return options.sourceDelta ?? options.targetDelta ?? { x: 0, y: 0 };
+}
+
+function alignTranslatedEndpointStub(points: Point[], original: Point[], endpoint: "source" | "target") {
+  if (points.length < 2 || original.length < 2) {
+    return;
+  }
+  const endpointIndex = endpoint === "source" ? 0 : points.length - 1;
+  const stubIndex = endpoint === "source" ? 1 : points.length - 2;
+  const originalEndpoint = original[endpointIndex];
+  const originalStub = original[stubIndex];
+  if (!originalEndpoint || !originalStub) {
+    return;
+  }
+  if (Math.round(originalEndpoint.x) === Math.round(originalStub.x)) {
+    points[stubIndex] = { ...points[stubIndex], x: points[endpointIndex].x };
+  } else if (Math.round(originalEndpoint.y) === Math.round(originalStub.y)) {
+    points[stubIndex] = { ...points[stubIndex], y: points[endpointIndex].y };
+  }
+}
+
+export function preserveDraggedRouteShape(options: PreserveDraggedRouteShapeOptions): Point[] {
+  if (options.routePoints.length === 0) {
+    return [];
+  }
+  if (options.routePoints.length === 1) {
+    return [roundPoint(options.nextStart)];
+  }
+  const delta = draggedRouteShapeDelta(options);
+  const translated = options.routePoints.map((point) =>
+    roundPoint({ x: point.x + delta.x, y: point.y + delta.y })
+  );
+  translated[0] = roundPoint(options.nextStart);
+  translated[translated.length - 1] = roundPoint(options.nextEnd);
+  alignTranslatedEndpointStub(translated, options.routePoints, "source");
+  alignTranslatedEndpointStub(translated, options.routePoints, "target");
+  return orthogonalizeRouteKeepingCollinear(translated);
+}
+
 export function getMovableRouteSegmentIndexes(routePoints: Point[]): number[] {
   const segments: Array<{ index: number; length: number }> = [];
   for (let segmentIndex = 1; segmentIndex < routePoints.length - 2; segmentIndex += 1) {
@@ -4251,6 +4734,15 @@ function getSegments(edgeId: string, edgeIndex: number, points: Point[]): Segmen
     }
   }
   return segments;
+}
+
+function segmentBox(segment: Segment, padding = 0) {
+  return {
+    left: Math.min(segment.a.x, segment.b.x) - padding,
+    right: Math.max(segment.a.x, segment.b.x) + padding,
+    top: Math.min(segment.a.y, segment.b.y) - padding,
+    bottom: Math.max(segment.a.y, segment.b.y) + padding
+  };
 }
 
 function between(value: number, a: number, b: number, margin = 0) {
@@ -4316,7 +4808,13 @@ function uniqueSorted(values: number[]) {
 }
 
 function candidateLanes(startOut: Point, endOut: Point, blockers: ModelNode[], avoidedSegments: Segment[], bounds?: CanvasBounds) {
-  const blockerBoxes = blockers.map((node) => boxFor(node, 32));
+  const laneCorridor = routeCorridor(startOut, endOut, ROUTE_LANE_SEARCH_MARGIN);
+  const blockerBoxes = blockers
+    .map((node) => boxFor(node, 32))
+    .filter((box) => boxesOverlap(box, laneCorridor));
+  const laneAvoidedSegments = avoidedSegments.filter((segment) =>
+    boxesOverlap(segmentBox(segment, ROUTE_LANE_SEGMENT_MARGIN), laneCorridor)
+  );
   const clampX = (value: number) => bounds ? Math.max(0, Math.min(bounds.width, value)) : value;
   const clampY = (value: number) => bounds ? Math.max(0, Math.min(bounds.height, value)) : value;
   const xValues = [
@@ -4324,14 +4822,14 @@ function candidateLanes(startOut: Point, endOut: Point, blockers: ModelNode[], a
     endOut.x,
     Math.round((startOut.x + endOut.x) / 2),
     ...blockerBoxes.flatMap((box) => [box.left - 24, box.right + 24, box.left - 56, box.right + 56]),
-    ...avoidedSegments.filter((segment) => segment.orientation === "vertical").flatMap((segment) => [segment.a.x - 18, segment.a.x + 18])
+    ...laneAvoidedSegments.filter((segment) => segment.orientation === "vertical").flatMap((segment) => [segment.a.x - 18, segment.a.x + 18])
   ].map(clampX);
   const yValues = [
     startOut.y,
     endOut.y,
     Math.round((startOut.y + endOut.y) / 2),
     ...blockerBoxes.flatMap((box) => [box.top - 24, box.bottom + 24, box.top - 56, box.bottom + 56]),
-    ...avoidedSegments.filter((segment) => segment.orientation === "horizontal").flatMap((segment) => [segment.a.y - 18, segment.a.y + 18])
+    ...laneAvoidedSegments.filter((segment) => segment.orientation === "horizontal").flatMap((segment) => [segment.a.y - 18, segment.a.y + 18])
   ].map(clampY);
   return { xs: uniqueSorted(xValues), ys: uniqueSorted(yValues) };
 }
@@ -4360,16 +4858,32 @@ function buildRouteCandidates(startOut: Point, endOut: Point, blockers: ModelNod
 }
 
 function selectRouteCandidate(candidates: Point[][], blockers: ModelNode[], avoidedSegments: Segment[]) {
-  const nonIntersecting = candidates.filter((candidate) => !routeIntersectsBlockers(candidate, blockers));
-  const nonOverlapping = nonIntersecting.filter((candidate) => !routeOverlapsSegments(candidate, avoidedSegments));
-  const pool = nonOverlapping.length > 0 ? nonOverlapping : nonIntersecting.length > 0 ? nonIntersecting : candidates;
-  return pool.sort((a, b) => scoreRoute(a, blockers, avoidedSegments) - scoreRoute(b, blockers, avoidedSegments))[0];
+  let bestCandidate = candidates[0];
+  let bestTier = Number.POSITIVE_INFINITY;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (const candidate of candidates) {
+    const intersectsBlocker = routeIntersectsBlockers(candidate, blockers);
+    const tier = !intersectsBlocker
+      ? routeOverlapsSegments(candidate, avoidedSegments) ? 1 : 0
+      : 2;
+    if (tier > bestTier) {
+      continue;
+    }
+    const candidateScore = scoreRoute(candidate, blockers, avoidedSegments);
+    if (tier < bestTier || candidateScore < bestScore) {
+      bestTier = tier;
+      bestScore = candidateScore;
+      bestCandidate = candidate;
+    }
+  }
+
+  return bestCandidate;
 }
 
-function pathWithCrossingArcs(route: RoutedEdge, allRoutes: RoutedEdge[], routeIndex: number) {
+function pathWithCrossingArcs(route: RoutedEdge, previousSegments: Segment[], routeIndex: number) {
   const crossingsBySegment = new Map<number, Point[]>();
   const currentSegments = getSegments(route.edgeId, routeIndex, route.points);
-  const previousSegments = allRoutes.slice(0, routeIndex).flatMap((item, index) => getSegments(item.edgeId, index, item.points));
 
   for (const segment of currentSegments) {
     for (const previous of previousSegments) {
@@ -4417,24 +4931,32 @@ function pathWithCrossingArcs(route: RoutedEdge, allRoutes: RoutedEdge[], routeI
 export function routeEdgesForRendering(nodes: ModelNode[], edges: Edge[], bounds?: CanvasBounds): RoutedEdge[] {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const routed: RoutedEdge[] = [];
+  const avoidedSegments: Segment[] = [];
   edges.forEach((edge) => {
     const source = nodeById.get(edge.sourceId) ?? (edge.sourcePoint ? createFloatingEndpointNode(edge.sourcePoint, edge.targetId ? nodeById.get(edge.targetId) : undefined) : undefined);
     const target = nodeById.get(edge.targetId) ?? (edge.targetPoint ? createFloatingEndpointNode(edge.targetPoint, edge.sourceId ? nodeById.get(edge.sourceId) : undefined) : undefined);
     if (!source || !target) {
       return;
     }
-    const avoidedSegments = routed.flatMap((route, index) => getSegments(route.edgeId, index, route.points));
+    const routeIndex = routed.length;
+    const points = routeOrthogonalEdge(source, target, nodes, edge, avoidedSegments, bounds);
     routed.push({
       edgeId: edge.id,
-      points: routeOrthogonalEdge(source, target, nodes, edge, avoidedSegments, bounds),
+      points,
       path: ""
     });
+    avoidedSegments.push(...getSegments(edge.id, routeIndex, points));
   });
   const renderRoutes = routed.map((route) => ({ ...route, points: simplifyRoutePreservingEndpointStubs(route.points) }));
-  return renderRoutes.map((route, index, allRoutes) => ({
-    ...route,
-    path: pathWithCrossingArcs(route, allRoutes, index)
-  }));
+  const crossingSegments: Segment[] = [];
+  return renderRoutes.map((route, index) => {
+    const routedEdge = {
+      ...route,
+      path: pathWithCrossingArcs(route, crossingSegments, index)
+    };
+    crossingSegments.push(...getSegments(route.edgeId, index, route.points));
+    return routedEdge;
+  });
 }
 
 function samePoint(a: Point, b: Point) {

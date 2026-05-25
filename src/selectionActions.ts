@@ -60,8 +60,8 @@ function pointInRect(point: Point, rect: SelectionRect) {
   return point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom;
 }
 
-function rectsIntersect(first: SelectionRect, second: SelectionRect) {
-  return first.left <= second.right && first.right >= second.left && first.top <= second.bottom && first.bottom >= second.top;
+function rectContainsRect(outer: SelectionRect, inner: SelectionRect) {
+  return inner.left >= outer.left && inner.right <= outer.right && inner.top >= outer.top && inner.bottom <= outer.bottom;
 }
 
 function nodeSelectionBounds(node: ModelNode): SelectionRect {
@@ -80,46 +80,18 @@ function nodeSelectionBounds(node: ModelNode): SelectionRect {
   };
 }
 
-function segmentIntersectsRect(a: Point, b: Point, rect: SelectionRect) {
-  if (pointInRect(a, rect) || pointInRect(b, rect)) {
-    return true;
-  }
-  if (a.y === b.y) {
-    const left = Math.min(a.x, b.x);
-    const right = Math.max(a.x, b.x);
-    return a.y >= rect.top && a.y <= rect.bottom && right >= rect.left && left <= rect.right;
-  }
-  if (a.x === b.x) {
-    const top = Math.min(a.y, b.y);
-    const bottom = Math.max(a.y, b.y);
-    return a.x >= rect.left && a.x <= rect.right && bottom >= rect.top && top <= rect.bottom;
-  }
-  const segmentBounds = {
-    left: Math.min(a.x, b.x),
-    right: Math.max(a.x, b.x),
-    top: Math.min(a.y, b.y),
-    bottom: Math.max(a.y, b.y)
-  };
-  return rectsIntersect(segmentBounds, rect);
-}
-
-function routeIntersectsRect(points: Point[], rect: SelectionRect) {
-  for (let index = 1; index < points.length; index += 1) {
-    if (segmentIntersectsRect(points[index - 1], points[index], rect)) {
-      return true;
-    }
-  }
-  return false;
+function routeContainedInRect(points: Point[], rect: SelectionRect) {
+  return points.length > 0 && points.every((point) => pointInRect(point, rect));
 }
 
 export function selectGraphicsInRect(nodes: ModelNode[], routedEdges: RoutedEdge[], rect: SelectionRect) {
   const selectionRect = normalizedRect(rect);
   return {
     nodeIds: nodes
-      .filter((node) => rectsIntersect(nodeSelectionBounds(node), selectionRect))
+      .filter((node) => rectContainsRect(selectionRect, nodeSelectionBounds(node)))
       .map((node) => node.id),
     edgeIds: routedEdges
-      .filter((route) => routeIntersectsRect(route.points, selectionRect))
+      .filter((route) => routeContainedInRect(route.points, selectionRect))
       .map((route) => route.edgeId)
   };
 }
@@ -215,22 +187,25 @@ export function cloneCanvasClipboard(
       terminals: node.terminals.map((terminal) => ({ ...terminal, anchor: { ...terminal.anchor } }))
     };
   });
-  const edges = clipboard.edges.map(({ edge, routePoints }) => {
+  const edges = clipboard.edges.flatMap(({ edge, routePoints }) => {
     const sourceCopied = idMap.has(edge.sourceId);
     const targetCopied = idMap.has(edge.targetId);
+    if (!sourceCopied || !targetCopied) {
+      return [];
+    }
     const firstRoutePoint = routePoints[0];
     const lastRoutePoint = routePoints[routePoints.length - 1];
-    return {
+    return [{
       ...edge,
       id: createEdgeId(),
-      sourceId: sourceCopied ? idMap.get(edge.sourceId)! : "",
-      targetId: targetCopied ? idMap.get(edge.targetId)! : "",
-      sourceTerminalId: sourceCopied ? edge.sourceTerminalId : undefined,
-      targetTerminalId: targetCopied ? edge.targetTerminalId : undefined,
-      sourcePoint: sourceCopied ? offsetPoint(edge.sourcePoint, dx, dy) : offsetPoint(firstRoutePoint, dx, dy),
-      targetPoint: targetCopied ? offsetPoint(edge.targetPoint, dx, dy) : offsetPoint(lastRoutePoint, dx, dy),
+      sourceId: idMap.get(edge.sourceId)!,
+      targetId: idMap.get(edge.targetId)!,
+      sourceTerminalId: edge.sourceTerminalId,
+      targetTerminalId: edge.targetTerminalId,
+      sourcePoint: offsetPoint(edge.sourcePoint ?? firstRoutePoint, dx, dy),
+      targetPoint: offsetPoint(edge.targetPoint ?? lastRoutePoint, dx, dy),
       manualPoints: routePoints.slice(1, -1).map((point) => offsetPoint(point, dx, dy)!)
-    };
+    }];
   });
   return { nodes, edges };
 }
