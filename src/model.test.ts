@@ -1193,6 +1193,51 @@ describe("power system model", () => {
     }
   });
 
+  test("inserts a visible bend on short segments away from adjacent turns", () => {
+    const shortHorizontalNearTurn: Point[] = [
+      { x: 498, y: 455 },
+      { x: 526, y: 455 },
+      { x: 548, y: 455 },
+      { x: 548, y: 487 },
+      { x: 648, y: 487 }
+    ];
+    const horizontalBend = insertOrthogonalRouteBend(
+      shortHorizontalNearTurn,
+      1,
+      { x: 537, y: 455 },
+      { width: 1980, height: 1024 }
+    );
+    expect(horizontalBend.slice(1, 7)).toEqual([
+      { x: 526, y: 455 },
+      { x: 537, y: 455 },
+      { x: 537, y: 423 },
+      { x: 548, y: 423 },
+      { x: 548, y: 455 },
+      { x: 548, y: 487 }
+    ]);
+
+    const shortVerticalNearTurn: Point[] = [
+      { x: 100, y: 100 },
+      { x: 100, y: 128 },
+      { x: 100, y: 150 },
+      { x: 132, y: 150 }
+    ];
+    const verticalBend = insertOrthogonalRouteBend(
+      shortVerticalNearTurn,
+      1,
+      { x: 100, y: 139 },
+      { width: 400, height: 400 }
+    );
+    expect(verticalBend.slice(1, 7)).toEqual([
+      { x: 100, y: 128 },
+      { x: 100, y: 139 },
+      { x: 68, y: 139 },
+      { x: 68, y: 150 },
+      { x: 100, y: 150 },
+      { x: 132, y: 150 }
+    ]);
+  });
+
   test("keeps endpoint stubs perpendicular after routing through inserted manual bends", () => {
     const source = createDefaultNode("ac-source", { x: 120, y: 120 });
     const target = createDefaultNode("ac-load", { x: 520, y: 120 });

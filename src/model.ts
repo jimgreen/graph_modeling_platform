@@ -4689,6 +4689,39 @@ export function insertOrthogonalRouteBend(
   if (!from || !to || samePoint(from, to) || (from.x !== to.x && from.y !== to.y)) {
     return nextPoints;
   }
+  const sideAwayFromAdjacent = (axis: "x" | "y") => {
+    const sides: number[] = [];
+    const previous = routePoints[segmentIndex - 1];
+    const next = routePoints[segmentIndex + 2];
+    if (axis === "y") {
+      if (previous && previous.x === from.x && previous.y !== from.y) {
+        sides.push(Math.sign(previous.y - from.y));
+      }
+      if (next && next.x === to.x && next.y !== to.y) {
+        sides.push(Math.sign(next.y - to.y));
+      }
+    } else {
+      if (previous && previous.y === from.y && previous.x !== from.x) {
+        sides.push(Math.sign(previous.x - from.x));
+      }
+      if (next && next.y === to.y && next.x !== to.x) {
+        sides.push(Math.sign(next.x - to.x));
+      }
+    }
+    const adjacentBias = sides.reduce((sum, side) => sum + side, 0);
+    return adjacentBias === 0 ? 0 : -Math.sign(adjacentBias);
+  };
+  const offsetSide = (pointerDelta: number, adjacentAxis: "x" | "y") => {
+    if (Math.abs(pointerDelta) > 2) {
+      return pointerDelta > 0 ? 1 : -1;
+    }
+    return sideAwayFromAdjacent(adjacentAxis) || 1;
+  };
+  const stepTowardTarget = (pivot: number, target: number) => {
+    const direction = target >= pivot ? 1 : -1;
+    const step = Math.min(Math.abs(offset), Math.abs(target - pivot));
+    return Math.round(pivot + direction * step);
+  };
   const clampCoordinate = (value: number, first: number, second: number) => {
     const min = Math.min(first, second);
     const max = Math.max(first, second);
@@ -4698,26 +4731,24 @@ export function insertOrthogonalRouteBend(
   if (from.y === to.y) {
     const x = clampCoordinate(pointerPoint.x, from.x, to.x);
     const y = from.y;
-    const direction = to.x >= from.x ? 1 : -1;
-    const bendOffsetY = Math.round(y + (pointerPoint.y >= y ? Math.abs(offset) : -Math.abs(offset)));
+    const bendOffsetY = Math.round(y + offsetSide(pointerPoint.y - y, "y") * Math.abs(offset));
     nextPoints.splice(
       segmentIndex + 1,
       0,
       { x, y },
       { x, y: bendOffsetY },
-      { x: Math.round(x + direction * Math.abs(offset)), y: bendOffsetY }
+      { x: stepTowardTarget(x, to.x), y: bendOffsetY }
     );
   } else {
     const y = clampCoordinate(pointerPoint.y, from.y, to.y);
     const x = from.x;
-    const direction = to.y >= from.y ? 1 : -1;
-    const bendOffsetX = Math.round(x + (pointerPoint.x >= x ? Math.abs(offset) : -Math.abs(offset)));
+    const bendOffsetX = Math.round(x + offsetSide(pointerPoint.x - x, "x") * Math.abs(offset));
     nextPoints.splice(
       segmentIndex + 1,
       0,
       { x, y },
       { x: bendOffsetX, y },
-      { x: bendOffsetX, y: Math.round(y + direction * Math.abs(offset)) }
+      { x: bendOffsetX, y: stepTowardTarget(y, to.y) }
     );
   }
   const bounded = bounds ? nextPoints.map((point) => clampPointToBounds(point, bounds)) : nextPoints;
