@@ -807,6 +807,20 @@ function normalizeControlTypeForE(value?: string) {
 export const DCAC_CONVERTER_CONTROL_TYPES = ["DCV", "ACV", "ACP"] as const;
 export const ACAC_CONVERTER_CONTROL_TYPES = ["PQQ", "PVQ", "PQV", "PVV"] as const;
 export const DCDC_CONVERTER_CONTROL_TYPES = ["CTRL_P", "CTRL_V", "CTRL_I", "SLACK"] as const;
+export const AC_GENERATOR_CONTROL_TYPES = ["PV", "PQ", "PH"] as const;
+export const DC_GENERATOR_CONTROL_TYPES = ["P", "V", "I"] as const;
+
+function normalizeAcGeneratorControlTypeForE(value?: string) {
+  if (!value) return "PV";
+  const normalized = normalizeControlTypeForE(value);
+  return (AC_GENERATOR_CONTROL_TYPES as readonly string[]).includes(normalized) ? normalized : "PV";
+}
+
+function normalizeDcGeneratorControlTypeForE(value?: string) {
+  if (!value) return "P";
+  const normalized = normalizeControlTypeForE(value);
+  return (DC_GENERATOR_CONTROL_TYPES as readonly string[]).includes(normalized) ? normalized : "P";
+}
 
 function normalizeDcdcEndpointControlTypeForE(value?: string) {
   if (!value) return "SLACK";
@@ -1016,6 +1030,16 @@ export function getEParamValue(
   }
   if (key === "control_type") {
     const section = inferESection(node.kind, node.params);
+    if (section === "ACGenerator") {
+      return normalizeAcGeneratorControlTypeForE(
+        node.params.control_type ?? node.params.controlType ?? node.params.acControlType ?? node.params.sourceControlType ?? ""
+      );
+    }
+    if (section === "DCGenerator") {
+      return normalizeDcGeneratorControlTypeForE(
+        node.params.control_type ?? node.params.controlType ?? node.params.dcControlType ?? node.params.sourceControlType ?? ""
+      );
+    }
     if (section === "DCACConverter") {
       return normalizeDcacConverterControlTypeForE(node.params);
     }
@@ -1406,6 +1430,12 @@ function formatEColumnValue(section: string, column: string, value: string | und
     return normalizeEFileToken(text);
   }
   if (column === "control_type") {
+    if (section === "ACGenerator") {
+      return normalizeEFileToken(normalizeAcGeneratorControlTypeForE(text));
+    }
+    if (section === "DCGenerator") {
+      return normalizeEFileToken(normalizeDcGeneratorControlTypeForE(text));
+    }
     return normalizeEFileToken(normalizeControlTypeForE(text));
   }
   if (column === "i_control_type" || column === "j_control_type") {

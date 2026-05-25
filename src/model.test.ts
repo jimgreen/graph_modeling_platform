@@ -33,7 +33,9 @@ import {
   routeOrthogonalEdge,
   routeEdgesForRendering,
   ACAC_CONVERTER_CONTROL_TYPES,
+  AC_GENERATOR_CONTROL_TYPES,
   DCAC_CONVERTER_CONTROL_TYPES,
+  DC_GENERATOR_CONTROL_TYPES,
   E_SECTION_COLUMNS,
   tidyOrthogonalRoute,
   renameSavedProject,
@@ -3025,6 +3027,50 @@ describe("power system model", () => {
     expect(payload.DCDCConverter.columns).not.toContain("control_type");
     expect(payload.DCDCConverter.rows.map((row) => row.i_control_type)).toEqual(["CTRL_V", "CTRL_P", "SLACK"]);
     expect(payload.DCDCConverter.rows.map((row) => row.j_control_type)).toEqual(["CTRL_I", "SLACK", "CTRL_V"]);
+  });
+
+  test("exports AC generator control_type with only PV PQ PH values", () => {
+    const voltageControlledGenerator = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const powerControlledGenerator = createDefaultNode("ac-source", { x: 240, y: 100 });
+    const phaseControlledGenerator = createDefaultNode("ac-source", { x: 380, y: 100 });
+    const invalidGenerator = createDefaultNode("ac-source", { x: 520, y: 100 });
+    voltageControlledGenerator.params.control_type = "PV";
+    powerControlledGenerator.params.control_type = "定PQ";
+    phaseControlledGenerator.params.control_type = "PH";
+    invalidGenerator.params.control_type = "P";
+
+    const payload = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "交流电源控制类型测试",
+      nodes: [voltageControlledGenerator, powerControlledGenerator, phaseControlledGenerator, invalidGenerator],
+      edges: []
+    }));
+    const values = payload.ACGenerator.rows.map((row) => row.control_type);
+
+    expect(values).toEqual(["PV", "PQ", "PH", "PV"]);
+    expect(values.every((value) => (AC_GENERATOR_CONTROL_TYPES as readonly string[]).includes(value))).toBe(true);
+  });
+
+  test("exports DC generator control_type with only P V I values", () => {
+    const powerControlledGenerator = createDefaultNode("dc-source", { x: 100, y: 100 });
+    const voltageControlledGenerator = createDefaultNode("dc-source", { x: 240, y: 100 });
+    const currentControlledGenerator = createDefaultNode("dc-source", { x: 380, y: 100 });
+    const invalidGenerator = createDefaultNode("dc-source", { x: 520, y: 100 });
+    powerControlledGenerator.params.control_type = "P";
+    voltageControlledGenerator.params.control_type = "定V";
+    currentControlledGenerator.params.control_type = "I";
+    invalidGenerator.params.control_type = "PQ";
+
+    const payload = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "直流电源控制类型测试",
+      nodes: [powerControlledGenerator, voltageControlledGenerator, currentControlledGenerator, invalidGenerator],
+      edges: []
+    }));
+    const values = payload.DCGenerator.rows.map((row) => row.control_type);
+
+    expect(values).toEqual(["P", "V", "I", "P"]);
+    expect(values.every((value) => (DC_GENERATOR_CONTROL_TYPES as readonly string[]).includes(value))).toBe(true);
   });
 
   test("exports DCAC converter control_type with only supported values", () => {

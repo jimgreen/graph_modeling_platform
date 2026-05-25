@@ -64,7 +64,9 @@ import {
   deleteSavedProject,
   DEVICE_LIBRARY,
   ACAC_CONVERTER_CONTROL_TYPES,
+  AC_GENERATOR_CONTROL_TYPES,
   DCAC_CONVERTER_CONTROL_TYPES,
+  DC_GENERATOR_CONTROL_TYPES,
   distributeNodes,
   E_SECTION_COLUMNS,
   getEdgeEndpointPoint as getModelEdgeEndpointPoint,
@@ -596,6 +598,12 @@ const PARAM_OPTIONS: Record<string, string[]> = {
 };
 
 function paramOptionsForSection(key: string, section?: string) {
+  if (key === "control_type" && section === "ACGenerator") {
+    return [...AC_GENERATOR_CONTROL_TYPES];
+  }
+  if (key === "control_type" && section === "DCGenerator") {
+    return [...DC_GENERATOR_CONTROL_TYPES];
+  }
   if (key === "control_type" && section === "DCACConverter") {
     return [...DCAC_CONVERTER_CONTROL_TYPES];
   }
