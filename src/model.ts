@@ -3230,6 +3230,65 @@ export function clampNodePositionToBounds(node: ModelNode, bounds: CanvasBounds,
   };
 }
 
+export type GeometryBounds = {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+};
+
+export function calculateModelGeometryBounds(
+  nodes: ModelNode[],
+  routedEdges: Pick<RoutedEdge, "points">[] = [],
+  padding = 0
+): GeometryBounds | null {
+  const boxes: GeometryBounds[] = [];
+  for (const node of nodes) {
+    boxes.push(boxFor(node, padding));
+  }
+  for (const route of routedEdges) {
+    if (route.points.length === 0) {
+      continue;
+    }
+    boxes.push({
+      left: Math.min(...route.points.map((point) => point.x)) - padding,
+      right: Math.max(...route.points.map((point) => point.x)) + padding,
+      top: Math.min(...route.points.map((point) => point.y)) - padding,
+      bottom: Math.max(...route.points.map((point) => point.y)) + padding
+    });
+  }
+  if (boxes.length === 0) {
+    return null;
+  }
+  return {
+    left: Math.min(...boxes.map((box) => box.left)),
+    right: Math.max(...boxes.map((box) => box.right)),
+    top: Math.min(...boxes.map((box) => box.top)),
+    bottom: Math.max(...boxes.map((box) => box.bottom))
+  };
+}
+
+export function geometryBoundsInsideCanvas(bounds: GeometryBounds | null, canvasBounds: CanvasBounds, margin = 0): boolean {
+  if (!bounds) {
+    return true;
+  }
+  return (
+    bounds.left >= margin &&
+    bounds.top >= margin &&
+    bounds.right <= canvasBounds.width - margin &&
+    bounds.bottom <= canvasBounds.height - margin
+  );
+}
+
+export function modelGeometryInsideCanvasBounds(
+  nodes: ModelNode[],
+  routedEdges: Pick<RoutedEdge, "points">[],
+  canvasBounds: CanvasBounds,
+  margin = 0
+): boolean {
+  return geometryBoundsInsideCanvas(calculateModelGeometryBounds(nodes, routedEdges), canvasBounds, margin);
+}
+
 export function normalizeViewBoxToCanvas(box: ViewBox, bounds: CanvasBounds): ViewBox {
   const maxX = bounds.width - box.width;
   const maxY = bounds.height - box.height;

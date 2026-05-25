@@ -11,8 +11,10 @@ import {
   buildDefaultDeviceParameterDefinitions,
   buildContainerDeviceParameterViews,
   describeContainerTerminalAssociations,
+  calculateModelGeometryBounds,
   clampNodePositionToBounds,
   clampViewBoxDimensionsForZoom,
+  geometryBoundsInsideCanvas,
   assignPermanentDeviceIndex,
   createSavedProject,
   createSavedScheme,
@@ -37,6 +39,7 @@ import {
   resolveStraightBusSlideEndpointToPoint,
   moveProjectToScheme,
   moveOrthogonalRouteSegment,
+  modelGeometryInsideCanvasBounds,
   insertOrthogonalRouteBend,
   preserveDraggedRouteShape,
   upsertSavedProject,
@@ -951,6 +954,18 @@ describe("power system model", () => {
         [{ edgeId: "edge-1", points: [{ x: 10, y: 10 }, { x: 430, y: 220 }], path: "" }]
       )
     ).toEqual({ width: 430, height: 220 });
+  });
+
+  test("checks display boundary clearance with both graphics and connection paths", () => {
+    const node = createDefaultNode("ac-source", { x: 120, y: 90 });
+    const routeNearBoundary = [{ edgeId: "edge-near", points: [{ x: 4, y: 80 }, { x: 160, y: 80 }], path: "" }];
+    const routeClear = [{ edgeId: "edge-clear", points: [{ x: 24, y: 80 }, { x: 160, y: 80 }], path: "" }];
+    const bounds = calculateModelGeometryBounds([node], routeNearBoundary);
+
+    expect(bounds?.left).toBe(4);
+    expect(geometryBoundsInsideCanvas(bounds, { width: 360, height: 240 }, 8)).toBe(false);
+    expect(modelGeometryInsideCanvasBounds([node], routeNearBoundary, { width: 360, height: 240 }, 8)).toBe(false);
+    expect(modelGeometryInsideCanvasBounds([node], routeClear, { width: 360, height: 240 }, 8)).toBe(true);
   });
 
   test("normalizes scale values without enforcing user-facing min or max ratios", () => {

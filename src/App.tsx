@@ -120,6 +120,7 @@ import {
   type TopologyValidationError,
   routeEdgesForRendering,
   moveProjectToScheme,
+  modelGeometryInsideCanvasBounds,
   mirrorNodes,
   renameSavedScheme,
   renameSavedProject,
@@ -314,6 +315,7 @@ const MIN_CANVAS_HEIGHT = 360;
 const MAX_CANVAS_WIDTH = 5000;
 const MAX_CANVAS_HEIGHT = 3000;
 const DEFAULT_CANVAS_BACKGROUND = "#f1f5f9";
+const MOVE_BOUNDARY_GUARD = 8;
 const DEFAULT_POWER_UNIT = "MW";
 const DEFAULT_VOLTAGE_UNIT = "kV";
 const DEFAULT_CURRENT_UNIT = "A";
@@ -2993,7 +2995,7 @@ export function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [canvasBounds, canvasClipboard, deviceIndexCounters, edges, hasUnsavedChanges, nodes, projectById, projectName, recordClipboard, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors, viewBox]);
+  }, [canvasBounds, canvasClipboard, deviceIndexCounters, edges, hasUnsavedChanges, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors, viewBox]);
 
   useEffect(() => {
     if (leftPanelTab !== "projects") {
@@ -3447,6 +3449,91 @@ export function App() {
     return { x: boundedDx, y: boundedDy };
   };
 
+  const nodeMoveGeometryInsideCanvas = (
+    nodeIds: string[],
+    edgeIds: string[],
+    originalPositions: Record<string, Point>,
+    originalEdgePoints: DraggingState["originalEdgePoints"],
+    originalRoutePoints: DraggingState["originalRoutePoints"],
+    delta: Point
+  ) => {
+    const movedNodeIds = new Set(nodeIds);
+    const preserveRouteEdgeIds = new Set(edgeIds);
+    const selectedEdgeIds = new Set(edgeIds);
+    const nextNodes = nodes.map((node) => {
+      const originalPosition = originalPositions[node.id];
+      return movedNodeIds.has(node.id) && originalPosition
+        ? { ...node, position: clampNodeToCanvas(node, { x: originalPosition.x + delta.x, y: originalPosition.y + delta.y }) }
+        : node;
+    });
+    const movedNodes = nextNodes.filter((node) => movedNodeIds.has(node.id));
+    const deltasByNode = Object.fromEntries(nodeIds.map((id) => [id, delta]));
+    const affectedEdges = edges.filter(
+      (edge) => movedNodeIds.has(edge.sourceId) || movedNodeIds.has(edge.targetId) || selectedEdgeIds.has(edge.id)
+    );
+    const nextAffectedEdges =
+      affectedEdges.length > 0
+        ? adjustEdgesAfterNodeMove(
+            affectedEdges,
+            nextNodes,
+            movedNodeIds,
+            originalEdgePoints,
+            deltasByNode,
+            originalRoutePoints,
+            preserveRouteEdgeIds
+          )
+        : [];
+    const affectedRoutes =
+      nextAffectedEdges.length > 0 ? routeEdgesForRendering(nextNodes, nextAffectedEdges, canvasBounds) : [];
+    return modelGeometryInsideCanvasBounds(movedNodes, affectedRoutes, canvasBounds, MOVE_BOUNDARY_GUARD);
+  };
+
+  const nearestBoundarySafeDelta = (
+    requestedDelta: Point,
+    isSafeDelta: (delta: Point) => boolean,
+    fallbackDelta: Point = { x: 0, y: 0 }
+  ): Point => {
+    if (isSafeDelta(requestedDelta)) {
+      return requestedDelta;
+    }
+    const safeFallback = isSafeDelta(fallbackDelta) ? fallbackDelta : { x: 0, y: 0 };
+    if (!isSafeDelta(safeFallback)) {
+      return safeFallback;
+    }
+    let low = safeFallback;
+    let high = requestedDelta;
+    for (let index = 0; index < 12; index += 1) {
+      const middle = {
+        x: (low.x + high.x) / 2,
+        y: (low.y + high.y) / 2
+      };
+      if (isSafeDelta(middle)) {
+        low = middle;
+      } else {
+        high = middle;
+      }
+    }
+    return { x: Math.round(low.x), y: Math.round(low.y) };
+  };
+
+  const boundedDeltaForMoveGeometry = (
+    nodeIds: string[],
+    edgeIds: string[],
+    originalPositions: Record<string, Point>,
+    originalEdgePoints: DraggingState["originalEdgePoints"],
+    originalRoutePoints: DraggingState["originalRoutePoints"],
+    dx: number,
+    dy: number,
+    fallbackDelta?: Point
+  ) => {
+    const nodeBoundedDelta = boundedDeltaForNodes(nodeIds, originalPositions, dx, dy);
+    return nearestBoundarySafeDelta(
+      nodeBoundedDelta,
+      (delta) => nodeMoveGeometryInsideCanvas(nodeIds, edgeIds, originalPositions, originalEdgePoints, originalRoutePoints, delta),
+      fallbackDelta
+    );
+  };
+
   const finishNodeDrag = () => {
     if (!dragging) {
       return;
@@ -3492,12 +3579,30 @@ export function App() {
     if (selectedNodeIds.length === 0) {
       return;
     }
-    pushUndoSnapshot();
     const selected = new Set(selectedNodeIds);
     const originalPositions = Object.fromEntries(nodes.filter((node) => selected.has(node.id)).map((node) => [node.id, node.position]));
-    const boundedDelta = boundedDeltaForNodes(selectedNodeIds, originalPositions, dx, dy);
-    const deltasByNode = Object.fromEntries(selectedNodeIds.map((id) => [id, boundedDelta]));
     const originalEdgePoints = snapshotEdgePoints();
+    const originalRoutePoints = Object.fromEntries(
+      edges.map((edge) => [
+        edge.id,
+        (routedEdgeById.get(edge.id)?.points ?? []).map((point) => ({ ...point }))
+      ])
+    );
+    const boundedDelta = boundedDeltaForMoveGeometry(
+      selectedNodeIds,
+      activeSelectedEdgeIds,
+      originalPositions,
+      originalEdgePoints,
+      originalRoutePoints,
+      dx,
+      dy
+    );
+    if (boundedDelta.x === 0 && boundedDelta.y === 0) {
+      writeOperationLog("移动已到显示边界，联络线或图元接近边界，已停止移动");
+      return;
+    }
+    pushUndoSnapshot();
+    const deltasByNode = Object.fromEntries(selectedNodeIds.map((id) => [id, boundedDelta]));
     const nextNodes = nodes.map((node) =>
       selected.has(node.id)
         ? { ...node, position: clampNodeToCanvas(node, { x: node.position.x + boundedDelta.x, y: node.position.y + boundedDelta.y }) }
@@ -3510,7 +3615,9 @@ export function App() {
         nextNodes,
         selected,
         current === edges ? originalEdgePoints : snapshotEdgePoints(current),
-        deltasByNode
+        deltasByNode,
+        current === edges ? originalRoutePoints : {},
+        new Set(activeSelectedEdgeIds)
       )
     );
     writeOperationLog(`移动 ${selectedNodeIds.length} 个图元 (${Math.round(boundedDelta.x)}, ${Math.round(boundedDelta.y)})`);
@@ -4322,6 +4429,9 @@ export function App() {
         );
       }
       const previewRoutePoints = nextPoints.map((item) => ({ ...item }));
+      if (!modelGeometryInsideCanvasBounds([], [{ points: previewRoutePoints }], canvasBounds, MOVE_BOUNDARY_GUARD)) {
+        return;
+      }
       if (
         nextDrag.historyCaptured === manualPathDrag.historyCaptured &&
         sameOptionalPointList(previewRoutePoints, manualPathDrag.previewRoutePoints)
@@ -4419,7 +4529,16 @@ export function App() {
     const rawDx = point.x - dragging.startPoint.x;
     const rawDy = point.y - dragging.startPoint.y;
     const movementDelta = event.ctrlKey || event.shiftKey ? axisLockedDelta(rawDx, rawDy) : { x: rawDx, y: rawDy };
-    const boundedDelta = boundedDeltaForNodes(dragging.nodeIds, dragging.originalPositions, movementDelta.x, movementDelta.y);
+    const boundedDelta = boundedDeltaForMoveGeometry(
+      dragging.nodeIds,
+      dragging.edgeIds,
+      dragging.originalPositions,
+      dragging.originalEdgePoints,
+      dragging.originalRoutePoints,
+      movementDelta.x,
+      movementDelta.y,
+      dragging.currentDelta ?? { x: 0, y: 0 }
+    );
     setDragging((current) =>
       current
         ? current.historyCaptured &&
