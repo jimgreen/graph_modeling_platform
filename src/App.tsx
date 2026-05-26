@@ -350,8 +350,8 @@ const SCALE_HANDLE_CONFIGS: ScaleHandleConfig[] = [
 const POWER_UNIT_OPTIONS = ["W", "kW", "MW"];
 const VOLTAGE_UNIT_OPTIONS = ["V", "kV"];
 const CURRENT_UNIT_OPTIONS = ["A", "kA"];
-const DEFAULT_LIBRARY_GROUPS: LibraryGroup[] = ["静态图元", "交流设备", "直流设备", "变流设备", "氢能设备", "热能设备"];
-const CUSTOM_LIBRARY_BASE_GROUPS: LibraryGroup[] = ["交流设备", "直流设备", "变流设备", "氢能设备", "热能设备"];
+const DEFAULT_LIBRARY_GROUPS: LibraryGroup[] = ["静态图元", "交流设备", "直流设备", "氢能设备", "热能设备"];
+const CUSTOM_LIBRARY_BASE_GROUPS: LibraryGroup[] = ["交流设备", "直流设备", "氢能设备", "热能设备"];
 const TERMINAL_TYPE_OPTIONS: Array<{ value: TerminalType; label: string }> = [
   { value: "ac", label: "交流电" },
   { value: "dc", label: "直流电" },
@@ -951,6 +951,9 @@ function normalizeLibraryGroupName(groupName: string): string {
     return "交流设备";
   }
   if (groupName === "直流系统") {
+    return "直流设备";
+  }
+  if (groupName === "变流设备") {
     return "直流设备";
   }
   return groupName;
@@ -7679,13 +7682,13 @@ export function App() {
           <div className={`form-stack ${inspectorTab === "graph" ? "graph-form-stack" : ""}`}>
             <div className="inspector-tabs">
               <button className={inspectorTab === "model" ? "active" : ""} onClick={() => setInspectorTab("model")} disabled={!currentModelRecord}>
-                基础信息
+                基础
               </button>
               <button className={inspectorTab === "graph" ? "active" : ""} onClick={() => setInspectorTab("graph")}>
-                图元信息
+                图元
               </button>
               <button className={inspectorTab === "device" ? "active" : ""} onClick={() => setInspectorTab("device")}>
-                设备信息
+                设备
               </button>
             </div>
             {inspectorTab === "model" && currentModelRecord ? (

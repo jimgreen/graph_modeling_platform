@@ -313,6 +313,12 @@ describe("power system model", () => {
     expect(exported.DCZeroBranch.rows).toHaveLength(1);
   });
 
+  test("places converter elements under AC/DC device library groups", () => {
+    expect(DEVICE_LIBRARY.find((item) => item.kind === "acac-converter")).toMatchObject({ group: "交流设备" });
+    expect(DEVICE_LIBRARY.find((item) => item.kind === "acdc-converter")).toMatchObject({ group: "直流设备" });
+    expect(DEVICE_LIBRARY.find((item) => item.kind === "dcdc-converter")).toMatchObject({ group: "直流设备" });
+  });
+
   test("builds a downloadable E file export for the current model", () => {
     const node = createDefaultNode("ac-source", { x: 100, y: 100 });
     const project: ProjectFile = {

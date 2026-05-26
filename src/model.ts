@@ -2272,7 +2272,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dcdc-converter",
     label: "DCDC变流器",
-    group: "变流设备",
+    group: "直流设备",
     size: { width: 112, height: 66 },
     params: { ratedPower: "5 MW", inputVoltage: "1500 V", outputVoltage: "750 V" },
     terminalType: "dc",
@@ -2281,7 +2281,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "acdc-converter",
     label: "ACDC变流器",
-    group: "变流设备",
+    group: "直流设备",
     size: { width: 112, height: 66 },
     params: { ratedPower: "10 MW", acVoltage: "10 kV", dcVoltage: "750 V" },
     terminalType: "ac",
@@ -2291,7 +2291,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "acac-converter",
     label: "ACAC变流器",
-    group: "变流设备",
+    group: "交流设备",
     size: { width: 112, height: 66 },
     params: {},
     terminalType: "ac",
