@@ -51,7 +51,6 @@ import {
   clampViewBoxDimensionsForZoom,
   copySavedProjectWithUniqueName,
   copySavedSchemeWithUniqueName,
-  createTerminals,
   createSavedScheme,
   createSavedProject,
   createDefaultNode,
@@ -78,6 +77,7 @@ import {
   getDeviceStrokeWidth,
   getElementFocusPoint,
   getMovableRouteSegmentIndexes,
+  getBusTerminalType,
   getContainerTerminalAssociationSourceIndex,
   getSwitchVisualState,
   getEParameterKeys,
@@ -104,6 +104,7 @@ import {
   projectPointToBusCenterline,
   resolveStraightBusSlideEndpoint,
   resolveStraightBusSlideEndpointToPoint,
+  synchronizeBusTerminalsWithEdges,
   validateTopology,
   validateVoltageSetpointDeviations,
   normalizeViewBoxToCanvas,
@@ -145,7 +146,7 @@ import {
   type SavedSchemeRecord,
   type SavedProjectRecord
 } from "./model";
-import { resolveKeyboardShortcutScope } from "./keyboardShortcuts";
+import { isGlobalSaveShortcut, resolveKeyboardShortcutScope } from "./keyboardShortcuts";
 import {
   EMPTY_CANVAS_CLIPBOARD,
   buildCanvasClipboard,
@@ -189,7 +190,8 @@ type ProjectMenuState = { x: number; y: number; schemeId?: string; projectId?: s
 type SidePanelResizeState = { side: SidePanelSide; startX: number; startWidth: number } | null;
 type StatusbarResizeState = { startY: number; startHeight: number } | null;
 type ValidationPanelResizeState = { startY: number; startHeight: number } | null;
-type RewiringState = { edgeId: string; endpoint: EdgeEndpoint; previewPoint: Point; pointerId?: number } | null;
+type RewiringState = { edgeId: string; endpoint: EdgeEndpoint; previewPoint: Point; dropTargetPoint?: Point; pointerId?: number } | null;
+type ConnectTarget = { node: ModelNode; terminalId: string; point?: Point };
 type TerminalPressState = {
   nodeId: string;
   terminalId: string;
@@ -397,6 +399,8 @@ const STATUSBAR_MAX_HEIGHT = 160;
 const VALIDATION_PANEL_DEFAULT_HEIGHT = 180;
 const VALIDATION_PANEL_MIN_HEIGHT = 96;
 const VALIDATION_PANEL_MAX_HEIGHT = 420;
+const CONNECT_TERMINAL_SNAP_TOLERANCE = 28;
+const CONNECT_BUS_SNAP_TOLERANCE = 18;
 const SAMPLE_NODES: ModelNode[] = [
   createDefaultNode("ac-source", { x: 190, y: 210 }),
   createDefaultNode("ac-switch", { x: 360, y: 210 }),
@@ -2264,8 +2268,9 @@ export function App() {
   const pendingMouseStatusRef = useRef<Point | null>(null);
   const mouseStatusFrameRef = useRef<number | null>(null);
   const connectPreviewPointRef = useRef<Point | null>(null);
+  const connectDropTargetPointRef = useRef<Point | null>(null);
   const connectDropReadyRef = useRef(false);
-  const pendingConnectPreviewRef = useRef<{ point: Point | null; ready: boolean } | null>(null);
+  const pendingConnectPreviewRef = useRef<{ point: Point | null; ready: boolean; targetPoint: Point | null } | null>(null);
   const connectPreviewFrameRef = useRef<number | null>(null);
   const skipNextTopologyStaleRef = useRef(false);
   const skipCanvasSizeBlurCommitRef = useRef(false);
@@ -2297,6 +2302,7 @@ export function App() {
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
   const [connectSource, setConnectSource] = useState<{ nodeId: string; terminalId: string; point?: Point } | null>(null);
   const [connectPreviewPoint, setConnectPreviewPoint] = useState<Point | null>(null);
+  const [connectDropTargetPoint, setConnectDropTargetPoint] = useState<Point | null>(null);
   const [connectDropReady, setConnectDropReady] = useState(false);
   const [dragging, setDragging] = useState<DraggingState | null>(null);
   const [rewiring, setRewiring] = useState<RewiringState>(null);
@@ -2470,6 +2476,16 @@ export function App() {
   }, [selectedEdgeId]);
 
   useEffect(() => {
+    const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
+    if (synchronized.nodes !== nodes) {
+      setNodes(synchronized.nodes);
+    }
+    if (synchronized.edges !== edges) {
+      setEdges(synchronized.edges);
+    }
+  }, [edges, nodes]);
+
+  useEffect(() => {
     if (!graphTreePanelActive) {
       return;
     }
@@ -2500,7 +2516,8 @@ export function App() {
   }, [canvasHeight, canvasWidth]);
 
   const connectPreviewPath = useMemo(() => {
-    if (!connectSource || !connectPreviewPoint) {
+    const endPoint = connectDropTargetPoint ?? connectPreviewPoint;
+    if (!connectSource || !endPoint) {
       return "";
     }
     const sourceNode = nodeById.get(connectSource.nodeId);
@@ -2508,20 +2525,30 @@ export function App() {
       return "";
     }
     const start = connectSource.point ?? getModelEdgeEndpointPoint(sourceNode, undefined, connectSource.terminalId);
-    if (start.x === connectPreviewPoint.x || start.y === connectPreviewPoint.y) {
-      return `M ${start.x} ${start.y} L ${connectPreviewPoint.x} ${connectPreviewPoint.y}`;
+    if (start.x === endPoint.x || start.y === endPoint.y) {
+      return `M ${start.x} ${start.y} L ${endPoint.x} ${endPoint.y}`;
     }
-    const midX = Math.round((start.x + connectPreviewPoint.x) / 2);
-    return `M ${start.x} ${start.y} L ${midX} ${start.y} L ${midX} ${connectPreviewPoint.y} L ${connectPreviewPoint.x} ${connectPreviewPoint.y}`;
-  }, [connectPreviewPoint, connectSource, nodeById]);
+    const midX = Math.round((start.x + endPoint.x) / 2);
+    return `M ${start.x} ${start.y} L ${midX} ${start.y} L ${midX} ${endPoint.y} L ${endPoint.x} ${endPoint.y}`;
+  }, [connectDropTargetPoint, connectPreviewPoint, connectSource, nodeById]);
   const connectPreviewColor = useMemo(() => {
     if (!connectSource) {
       return "";
     }
     const sourceNode = nodeById.get(connectSource.nodeId);
-    const terminalType = sourceNode?.terminals.find((terminal) => terminal.id === connectSource.terminalId)?.type ?? sourceNode?.terminals[0]?.type;
+    const terminalType =
+      sourceNode?.terminals.find((terminal) => terminal.id === connectSource.terminalId)?.type ??
+      sourceNode?.terminals[0]?.type ??
+      (sourceNode ? getBusTerminalType(sourceNode) : undefined);
     return terminalType ? terminalColor(terminalType) : "";
   }, [connectSource, nodeById]);
+  const activeDropHintPoint = connectDropTargetPoint ?? rewiring?.dropTargetPoint ?? null;
+  const activeDropReady = connectDropReady || Boolean(rewiring?.dropTargetPoint);
+  const activeDropHintStyle = connectDropTargetPoint
+    ? (connectPreviewColor ? ({ "--connection-color": connectPreviewColor } as CSSProperties) : undefined)
+    : rewiring
+      ? connectionLineStyle(rewiring.edgeId)
+      : undefined;
   const deferredRoutingNodes = useDeferredValue(nodes);
   const deferredRoutingEdges = useDeferredValue(edges);
   const requiresLiveRouting = Boolean(manualPathDrag);
@@ -3191,6 +3218,13 @@ export function App() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (isGlobalSaveShortcut(event)) {
+        event.preventDefault();
+        if (saveRequired) {
+          saveCurrentProject();
+        }
+        return;
+      }
       const target = event.target as HTMLElement | null;
       const shortcutScope = resolveKeyboardShortcutScope({
         isCanvasTarget: Boolean(target?.closest(".diagram-canvas")),
@@ -3238,11 +3272,6 @@ export function App() {
         } else if (isCanvasShortcutTarget) {
           event.preventDefault();
           pasteSelection();
-        }
-      } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        if (saveRequired) {
-          saveCurrentProject();
         }
       } else if (event.key === "Delete" || event.key === "Backspace") {
         if (isCanvasShortcutTarget) {
@@ -3666,19 +3695,25 @@ export function App() {
       setMousePosition(next);
     });
   };
-  const applyConnectPreviewState = (point: Point | null, ready: boolean) => {
+  const applyConnectPreviewState = (point: Point | null, ready: boolean, targetPoint: Point | null = null) => {
     const previousPoint = connectPreviewPointRef.current;
     if (!sameOptionalPoint(previousPoint ?? undefined, point ?? undefined)) {
       connectPreviewPointRef.current = point;
       setConnectPreviewPoint(point);
+    }
+    const previousTargetPoint = connectDropTargetPointRef.current;
+    const nextTargetPoint = ready ? targetPoint : null;
+    if (!sameOptionalPoint(previousTargetPoint ?? undefined, nextTargetPoint ?? undefined)) {
+      connectDropTargetPointRef.current = nextTargetPoint;
+      setConnectDropTargetPoint(nextTargetPoint);
     }
     if (connectDropReadyRef.current !== ready) {
       connectDropReadyRef.current = ready;
       setConnectDropReady(ready);
     }
   };
-  const scheduleConnectPreviewState = (point: Point | null, ready: boolean) => {
-    pendingConnectPreviewRef.current = { point, ready };
+  const scheduleConnectPreviewState = (point: Point | null, ready: boolean, targetPoint: Point | null = null) => {
+    pendingConnectPreviewRef.current = { point, ready, targetPoint };
     if (connectPreviewFrameRef.current !== null) {
       return;
     }
@@ -3689,7 +3724,7 @@ export function App() {
       if (!next) {
         return;
       }
-      applyConnectPreviewState(next.point, next.ready);
+      applyConnectPreviewState(next.point, next.ready, next.targetPoint);
     });
   };
   const resetConnectPreviewState = () => {
@@ -4352,15 +4387,22 @@ export function App() {
   };
 
   const isPointOnBus = (node: ModelNode, point: Point) => {
+    return isPointNearBus(node, point, 0);
+  };
+
+  const isPointNearBus = (node: ModelNode, point: Point, tolerance = 0) => {
     const halfWidth = (node.size.width * Math.abs(getNodeScaleX(node))) / 2;
     const halfHeight = (node.size.height * Math.abs(getNodeScaleY(node))) / 2;
     return (
-      point.x >= node.position.x - halfWidth &&
-      point.x <= node.position.x + halfWidth &&
-      point.y >= node.position.y - halfHeight &&
-      point.y <= node.position.y + halfHeight
+      point.x >= node.position.x - halfWidth - tolerance &&
+      point.x <= node.position.x + halfWidth + tolerance &&
+      point.y >= node.position.y - halfHeight - tolerance &&
+      point.y <= node.position.y + halfHeight + tolerance
     );
   };
+
+  const connectTargetSnapPoint = (target: ConnectTarget): Point =>
+    target.point ?? getTerminalPoint(target.node, target.terminalId);
 
   const findRewireTargetAtPoint = (point: Point, state: Exclude<RewiringState, null>) => {
     const edge = edgeById.get(state.edgeId);
@@ -4376,9 +4418,9 @@ export function App() {
       if (node.id === otherNode.id) {
         continue;
       }
-      if (isBusNode(node) && isPointOnBus(node, point)) {
-        const terminalId = node.terminals[0]?.id;
-        if (terminalId && canConnectTerminals(node, terminalId, otherNode, otherTerminalId)) {
+      if (isBusNode(node) && isPointNearBus(node, point, CONNECT_BUS_SNAP_TOLERANCE)) {
+        const terminalId = node.terminals[0]?.id ?? "t1";
+        if (canConnectTerminals(node, terminalId, otherNode, otherTerminalId)) {
           return { node, terminalId, point: busAnchorFromPoint(node, point) };
         }
         continue;
@@ -4386,7 +4428,7 @@ export function App() {
       for (const terminal of node.terminals) {
         const terminalPoint = getTerminalPoint(node, terminal.id);
         const distance = Math.hypot(point.x - terminalPoint.x, point.y - terminalPoint.y);
-        if (distance <= 16 && canConnectTerminals(node, terminal.id, otherNode, otherTerminalId)) {
+        if (distance <= CONNECT_TERMINAL_SNAP_TOLERANCE && canConnectTerminals(node, terminal.id, otherNode, otherTerminalId)) {
           return { node, terminalId: terminal.id, point: undefined };
         }
       }
@@ -4394,7 +4436,7 @@ export function App() {
     return null;
   };
 
-  const findConnectTargetAtPoint = (point: Point) => {
+  const findConnectTargetAtPoint = (point: Point): ConnectTarget | null => {
     if (!connectSource) {
       return null;
     }
@@ -4403,10 +4445,9 @@ export function App() {
       return null;
     }
     for (const node of nodes) {
-      if (isBusNode(node) && isPointOnBus(node, point)) {
-        const terminalId = node.terminals[0]?.id;
+      if (isBusNode(node) && isPointNearBus(node, point, CONNECT_BUS_SNAP_TOLERANCE)) {
+        const terminalId = node.terminals[0]?.id ?? "t1";
         if (
-          terminalId &&
           !(node.id === sourceNode.id && terminalId === connectSource.terminalId) &&
           canConnectTerminals(sourceNode, connectSource.terminalId, node, terminalId)
         ) {
@@ -4420,7 +4461,7 @@ export function App() {
         }
         const terminalPoint = getTerminalPoint(node, terminal.id);
         const distance = Math.hypot(point.x - terminalPoint.x, point.y - terminalPoint.y);
-        if (distance <= 16 && canConnectTerminals(sourceNode, connectSource.terminalId, node, terminal.id)) {
+        if (distance <= CONNECT_TERMINAL_SNAP_TOLERANCE && canConnectTerminals(sourceNode, connectSource.terminalId, node, terminal.id)) {
           return { node, terminalId: terminal.id, point: undefined };
         }
       }
@@ -4444,7 +4485,7 @@ export function App() {
       sourcePoint: connectSource.point,
       targetTerminalId: target.terminalId,
       targetPoint: isBusNode(target.node)
-        ? busAnchorFromPoint(target.node, endpointPoint ?? target.point ?? getTerminalPoint(target.node, target.terminalId))
+        ? target.point ?? busAnchorFromPoint(target.node, endpointPoint ?? getTerminalPoint(target.node, target.terminalId))
         : target.point
     };
     pushUndoSnapshot();
@@ -4517,27 +4558,6 @@ export function App() {
     setRewiring(null);
   };
 
-  const updateTerminalCount = (count: number) => {
-    if (!selectedNode) {
-      return;
-    }
-    pushUndoSnapshot();
-    const type = selectedNode.terminals[0]?.type ?? (selectedNode.kind.startsWith("dc") ? "dc" : "ac");
-    const terminals = createTerminals(type, count);
-    setNodes((current) => current.map((node) => (node.id === selectedNode.id ? { ...node, terminals } : node)));
-    setEdges((current) =>
-      current.filter((edge) => {
-        if (edge.sourceId === selectedNode.id && !terminals.some((terminal) => terminal.id === edge.sourceTerminalId)) {
-          return false;
-        }
-        if (edge.targetId === selectedNode.id && !terminals.some((terminal) => terminal.id === edge.targetTerminalId)) {
-          return false;
-        }
-        return true;
-      })
-    );
-  };
-
   const handleDrop = (event: DragEvent<SVGSVGElement>) => {
     event.preventDefault();
     const kind = event.dataTransfer.getData("application/device-kind") as DeviceKind;
@@ -4568,6 +4588,18 @@ export function App() {
       return;
     }
     activateInspectorFromCanvas();
+    if (connectSource && svgRef.current) {
+      const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      lastCanvasPointerRef.current = pointer;
+      updateMouseStatus(pointer);
+      const previewPoint = resolveConnectPreviewPoint(pointer, event);
+      const target = findConnectTargetAtPoint(previewPoint);
+      applyConnectPreviewState(previewPoint, Boolean(target), target ? connectTargetSnapPoint(target) : null);
+      if (target) {
+        finishConnectToTarget(target, previewPoint);
+      }
+      return;
+    }
     const nodeWasSelected = selectedNodeIdSet.has(node.id);
     const keepEdgeSelection = nodeWasSelected && activeSelectedEdgeIds.length > 0;
     if (!keepEdgeSelection) {
@@ -4586,12 +4618,12 @@ export function App() {
     }
     if (mode === "connect") {
       if (isBusNode(node)) {
-        handleTerminalPointerDown(event as unknown as PointerEvent<SVGCircleElement>, node, node.terminals[0].id);
+        handleTerminalPointerDown(event as unknown as PointerEvent<SVGCircleElement>, node, node.terminals[0]?.id ?? "t1");
       }
       return;
     }
     if (connectSource && isBusNode(node)) {
-      handleTerminalPointerDown(event as unknown as PointerEvent<SVGCircleElement>, node, node.terminals[0].id);
+      handleTerminalPointerDown(event as unknown as PointerEvent<SVGCircleElement>, node, node.terminals[0]?.id ?? "t1");
       return;
     }
     if (!svgRef.current) {
@@ -4640,7 +4672,8 @@ export function App() {
       updateMouseStatus(pointer);
       if (connectSource) {
         const previewPoint = resolveConnectPreviewPoint(pointer, event);
-        scheduleConnectPreviewState(previewPoint, Boolean(findConnectTargetAtPoint(previewPoint)));
+        const target = findConnectTargetAtPoint(previewPoint);
+        scheduleConnectPreviewState(previewPoint, Boolean(target), target ? connectTargetSnapPoint(target) : null);
       }
     }
     if (terminalPress && svgRef.current) {
@@ -4724,11 +4757,15 @@ export function App() {
     }
     if (rewiring && svgRef.current) {
       const previewPoint = lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      const target = findRewireTargetAtPoint(previewPoint, rewiring);
+      const snappedPreviewPoint = target ? connectTargetSnapPoint(target) : previewPoint;
+      const dropTargetPoint = target ? connectTargetSnapPoint(target) : undefined;
       setRewiring((current) =>
         current && current.edgeId === rewiring.edgeId && current.endpoint === rewiring.endpoint
-          ? sameOptionalPoint(current.previewPoint, previewPoint)
+          ? sameOptionalPoint(current.previewPoint, snappedPreviewPoint) &&
+            sameOptionalPoint(current.dropTargetPoint, dropTargetPoint)
             ? current
-            : { ...current, previewPoint }
+            : { ...current, previewPoint: snappedPreviewPoint, dropTargetPoint }
           : current
       );
       return;
@@ -6906,7 +6943,7 @@ export function App() {
         <section className="canvas-frame" ref={canvasFrameRef}>
           <svg
             ref={svgRef}
-            className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${connectDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""}`}
+            className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""}`}
             style={{ width: canvasWidth, height: canvasHeight }}
             viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
             onDrop={handleDrop}
@@ -6966,8 +7003,8 @@ export function App() {
               updateMouseStatus(pointer);
               if (connectSource) {
                 const previewPoint = resolveConnectPreviewPoint(pointer, event);
-                applyConnectPreviewState(previewPoint, connectDropReadyRef.current);
                 const target = findConnectTargetAtPoint(previewPoint);
+                applyConnectPreviewState(previewPoint, Boolean(target), target ? connectTargetSnapPoint(target) : null);
                 if (target) {
                   finishConnectToTarget(target, previewPoint);
                 } else {
@@ -7511,6 +7548,16 @@ export function App() {
                 style={connectPreviewColor ? ({ "--connection-color": connectPreviewColor } as CSSProperties) : undefined}
               />
             )}
+            {activeDropHintPoint && (
+              <g
+                className="connect-drop-hint"
+                transform={`translate(${activeDropHintPoint.x} ${activeDropHintPoint.y})`}
+                style={activeDropHintStyle}
+              >
+                <circle className="connect-drop-hint-ring" cx="0" cy="0" r="16" />
+                <circle className="connect-drop-hint-core" cx="0" cy="0" r="5" />
+              </g>
+            )}
             {selectedRoutedEdge && selectedEdge && (() => {
               const edge = selectedEdge;
               const route = selectedRoutedEdge;
@@ -7921,7 +7968,14 @@ export function App() {
                       <>
                         <tr>
                           {renderChineseParamHeader("terminalCount")}
-                          <td><input type="number" min="1" max="8" value={selectedNode.terminals.length} onChange={(event) => updateTerminalCount(Number(event.target.value))} /></td>
+                          <td>
+                            <span
+                              className="graph-readonly-value"
+                              title={isBusNode(selectedNode) ? "母线端子数量由已连接联络线端点数自动生成" : "端子数量由元件定义决定"}
+                            >
+                              {selectedNode.terminals.length}
+                            </span>
+                          </td>
                         </tr>
                         {selectedNode.terminals.map((terminal, terminalIndex) => (
                           <Fragment key={terminal.id}>

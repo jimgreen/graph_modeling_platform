@@ -211,6 +211,47 @@ describe("power system model", () => {
     expect(locked.edges[1].targetPoint).toEqual({ x: 350, y: 100 });
   });
 
+  test("creates buses without default terminals while still allowing compatible line drops", () => {
+    const acBus = createDefaultNode("ac-bus", { x: 100, y: 100 });
+    const dcBus = createDefaultNode("dc-bus", { x: 240, y: 100 });
+    const acLoad = createDefaultNode("ac-load", { x: 100, y: 220 });
+    const dcLoad = createDefaultNode("dc-load", { x: 240, y: 220 });
+
+    expect(acBus.terminals).toHaveLength(0);
+    expect(dcBus.terminals).toHaveLength(0);
+    expect(canConnectTerminals(acBus, "t1", acLoad, "t1")).toBe(true);
+    expect(canConnectTerminals(acBus, "t1", dcLoad, "t1")).toBe(false);
+    expect(canConnectTerminals(dcBus, "t1", dcLoad, "t1")).toBe(true);
+  });
+
+  test("sizes each bus terminal list from the number of connected line endpoints", () => {
+    const bus = createDefaultNode("ac-bus", { x: 200, y: 100 });
+    const loadA = createDefaultNode("ac-load", { x: 80, y: 100 });
+    const loadB = createDefaultNode("ac-load", { x: 320, y: 100 });
+    const loadC = createDefaultNode("ac-load", { x: 440, y: 100 });
+
+    const locked = lockProjectEdgeTerminals({
+      version: 1,
+      name: "母线动态端子",
+      nodes: [bus, loadA, loadB, loadC],
+      edges: [
+        { id: "a", sourceId: loadA.id, targetId: bus.id, sourceTerminalId: "t1", targetTerminalId: "t1", targetPoint: { x: 160, y: 100 } },
+        { id: "b", sourceId: loadB.id, targetId: bus.id, sourceTerminalId: "t1", targetTerminalId: "t1", targetPoint: { x: 200, y: 100 } },
+        { id: "c", sourceId: bus.id, targetId: loadC.id, sourceTerminalId: "t1", targetTerminalId: "t1", sourcePoint: { x: 240, y: 100 } }
+      ]
+    });
+    const lockedBus = locked.nodes.find((node) => node.id === bus.id)!;
+
+    expect(lockedBus.terminals.map((terminal) => terminal.id)).toEqual(["t1", "t2", "t3"]);
+    expect(locked.edges.map((edge) => (edge.targetId === bus.id ? edge.targetTerminalId : edge.sourceTerminalId))).toEqual(["t1", "t2", "t3"]);
+
+    const afterDelete = lockProjectEdgeTerminals({
+      ...locked,
+      edges: locked.edges.filter((edge) => edge.id !== "b")
+    });
+    expect(afterDelete.nodes.find((node) => node.id === bus.id)?.terminals.map((terminal) => terminal.id)).toEqual(["t1", "t2"]);
+  });
+
   test("creates generator parameters with readonly node numbers and control types", () => {
     const acWind = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
     const dcPv = createDefaultNode("dc-pv-source", { x: 240, y: 100 });
@@ -380,12 +421,12 @@ describe("power system model", () => {
     expect(getDeviceGlyphVariant("dc-zero-branch")).toBe("line");
   });
 
-  test("adds editable voltage base defaults to every electrical terminal", () => {
+  test("initializes editable terminal voltage bases to zero", () => {
     const acLine = createDefaultNode("ac-line", { x: 100, y: 100 });
     const dcLine = createDefaultNode("dc-line", { x: 220, y: 100 });
 
-    expect(acLine.terminals.map((terminal) => terminal.vbase)).toEqual(["10 kV", "10 kV"]);
-    expect(dcLine.terminals.map((terminal) => terminal.vbase)).toEqual(["750 V", "750 V"]);
+    expect(acLine.terminals.map((terminal) => terminal.vbase)).toEqual(["0", "0"]);
+    expect(dcLine.terminals.map((terminal) => terminal.vbase)).toEqual(["0", "0"]);
   });
 
   test("normalizes terminal voltage base values to numeric-only input text", () => {
@@ -569,25 +610,31 @@ describe("power system model", () => {
   test("maps graphical AC and DC buses to real bus sections in E parameter files", () => {
     const acBus = createDefaultNode("ac-bus", { x: 100, y: 100 });
     const dcBus = createDefaultNode("dc-bus", { x: 220, y: 100 });
+    const acLoad = createDefaultNode("ac-load", { x: 100, y: 220 });
+    const dcLoad = createDefaultNode("dc-load", { x: 220, y: 220 });
     acBus.name = "ac_bus";
     dcBus.name = "dc_bus";
     acBus.params = { ...acBus.params, source_section: "ACNode", idx: "21", vbase: "380", run_stat: "1" };
     dcBus.params = { ...dcBus.params, source_section: "DCNode", idx: "1", vbase: "720", run_stat: "1" };
-    acBus.terminals[0].nodeNumber = "21";
-    dcBus.terminals[0].nodeNumber = "1";
+    acLoad.terminals[0].vbase = "380";
+    dcLoad.terminals[0].vbase = "720";
 
     const payload = parseESections(
       buildEDeviceParameterFile({
         version: 1,
         name: "母线分组",
-        nodes: [acBus, dcBus],
-        edges: []
+        nodes: [acBus, dcBus, acLoad, dcLoad],
+        edges: [
+          { id: "ac-bus-load", sourceId: acBus.id, targetId: acLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+          { id: "dc-bus-load", sourceId: dcBus.id, targetId: dcLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
+        ]
       })
     );
 
     const acRealBus = payload.ACRealBs.rows[0];
     const dcRealBus = payload.DCRealBs.rows[0];
-    expect(Object.keys(payload)).toEqual(["PowerBase", "ACNode", "ACRealBs", "DCNode", "DCRealBs"]);
+    expect(payload.ACNode.rows).toHaveLength(1);
+    expect(payload.DCNode.rows).toHaveLength(1);
     expect(acRealBus).toEqual({
       idx: "21",
       name: "ac_bus",
@@ -773,7 +820,7 @@ describe("power system model", () => {
 
     const acdc = createDefaultNode("acdc-converter", { x: 700, y: 100 });
     expect(acdc.terminals.map((terminal) => terminal.type)).toEqual(["ac", "dc"]);
-    expect(acdc.terminals.map((terminal) => terminal.vbase)).toEqual(["10 kV", "750 V"]);
+    expect(acdc.terminals.map((terminal) => terminal.vbase)).toEqual(["0", "0"]);
     expect(acdc.params.sourceEquivalentResistance).toBe("0.0");
     expect(acdc.params.targetEquivalentResistance).toBe("0.0");
     expect(acdc.params.control_type).toBe("DCV");
@@ -1866,8 +1913,8 @@ describe("power system model", () => {
     const acLoad = createDefaultNode("ac-load", { x: 240, y: 100 });
     const dcLoad = createDefaultNode("dc-load", { x: 380, y: 100 });
 
-    expect(canConnectTerminals(acBus, acBus.terminals[0].id, acLoad, acLoad.terminals[0].id)).toBe(true);
-    expect(canConnectTerminals(acBus, acBus.terminals[0].id, dcLoad, dcLoad.terminals[0].id)).toBe(false);
+    expect(canConnectTerminals(acBus, "t1", acLoad, acLoad.terminals[0].id)).toBe(true);
+    expect(canConnectTerminals(acBus, "t1", dcLoad, dcLoad.terminals[0].id)).toBe(false);
   });
 
   test("aligns selected nodes horizontally and vertically without moving unselected nodes", () => {
@@ -1970,7 +2017,7 @@ describe("power system model", () => {
     const node = createDefaultNode("dc-storage", { x: 100, y: 100 });
     expect(node.terminals).toHaveLength(1);
     expect(node.terminals[0].type).toBe("dc");
-    expect(node.params.vbase).toBe("750 V");
+    expect(node.params.vbase).toBe("0");
     expect(getDeviceGlyphVariant("dc-storage")).toBe("battery-storage");
   });
 
@@ -1986,7 +2033,7 @@ describe("power system model", () => {
     const node = createDefaultNode("ac-storage", { x: 100, y: 100 });
     expect(node.terminals).toHaveLength(1);
     expect(node.terminals[0].type).toBe("ac");
-    expect(node.params.vbase).toBe("10 kV");
+    expect(node.params.vbase).toBe("0");
     expect(getDeviceGlyphVariant("ac-storage")).toBe("battery-storage");
   });
 
@@ -1995,11 +2042,11 @@ describe("power system model", () => {
       ["ac-electrolyzer", "交流电制氢", ["ac", "h2"], "hydrogen-electrolyzer"],
       ["dc-electrolyzer", "直流电制氢", ["dc", "h2"], "hydrogen-electrolyzer"],
       ["hydrogen-source", "氢源", ["h2"], "hydrogen-source"],
-      ["hydrogen-tank", "储氢罐", ["h2", "h2", "h2", "h2"], "hydrogen-storage"],
+      ["hydrogen-tank", "储氢罐", [], "hydrogen-storage"],
       ["hydrogen-load", "氢荷", ["h2"], "hydrogen-load"],
       ["ac-fuel-cell", "交流燃料电池", ["ac", "h2"], "hydrogen-fuel-cell"],
       ["dc-fuel-cell", "直流燃料电池", ["dc", "h2"], "hydrogen-fuel-cell"],
-      ["hydrogen-bus", "氢能母线", ["h2", "h2", "h2", "h2"], "hydrogen-bus"],
+      ["hydrogen-bus", "氢能母线", [], "hydrogen-bus"],
       ["hydrogen-compressor", "氢压机", ["h2", "h2"], "hydrogen-compressor"],
       ["hydrogen-pressure-reducer", "减压阀", ["h2", "h2"], "hydrogen-regulator"],
       ["hydrogen-shutoff-valve", "截止阀", ["h2", "h2"], "hydrogen-valve"],
@@ -2047,11 +2094,11 @@ describe("power system model", () => {
       ["ac-two-port-heater", "交流电制热2", ["ac", "heat", "heat"], "heat-electric-heater"],
       ["dc-heater", "直流电制热", ["dc", "heat"], "heat-electric-heater"],
       ["dc-two-port-heater", "直流电制热2", ["dc", "heat", "heat"], "heat-electric-heater"],
-      ["thermal-storage-tank", "储热罐", ["heat", "heat", "heat", "heat"], "heat-storage"],
+      ["thermal-storage-tank", "储热罐", [], "heat-storage"],
       ["heat-load", "热负荷", ["heat"], "heat-load"],
       ["single-port-heat-load", "单端热荷", ["heat"], "heat-load"],
       ["two-port-heat-load", "双端热荷", ["heat", "heat"], "heat-load"],
-      ["heat-bus", "热力母线", ["heat", "heat", "heat", "heat"], "heat-bus"],
+      ["heat-bus", "热力母线", [], "heat-bus"],
       ["heat-pipeline", "输热管道", ["heat", "heat"], "heat-pipeline"],
       ["heat-pump", "循环水泵", ["heat", "heat"], "heat-pump"],
       ["heat-shutoff-valve", "截止阀", ["heat", "heat"], "heat-valve"]
@@ -2996,19 +3043,19 @@ describe("power system model", () => {
   });
 
   test("adds voltage base parameters to devices, transformers, and converters", () => {
-    expect(createDefaultNode("ac-load", { x: 100, y: 100 }).params.vbase).toBe("10 kV");
+    expect(createDefaultNode("ac-load", { x: 100, y: 100 }).params.vbase).toBe("0");
     const twoWinding = createDefaultNode("ac-transformer", { x: 200, y: 100 });
-    expect(twoWinding.params.highVbase).toBe("110 kV");
-    expect(twoWinding.params.lowVbase).toBe("10 kV");
+    expect(twoWinding.params.highVbase).toBe("0");
+    expect(twoWinding.params.lowVbase).toBe("0");
     const threeWinding = createDefaultNode("ac-three-winding-transformer", { x: 300, y: 100 });
-    expect(threeWinding.params.highVbase).toBe("220 kV");
-    expect(threeWinding.params.mediumVbase).toBe("110 kV");
-    expect(threeWinding.params.lowVbase).toBe("10 kV");
+    expect(threeWinding.params.highVbase).toBe("0");
+    expect(threeWinding.params.mediumVbase).toBe("0");
+    expect(threeWinding.params.lowVbase).toBe("0");
     const converter = createDefaultNode("acdc-converter", { x: 400, y: 100 });
-    expect(converter.params.sourceVbase).toBe("10 kV");
-    expect(converter.params.targetVbase).toBe("750 V");
+    expect(converter.params.sourceVbase).toBe("0");
+    expect(converter.params.targetVbase).toBe("0");
     expect(converter.terminals.map((terminal) => terminal.type)).toEqual(["ac", "dc"]);
-    expect(converter.terminals.map((terminal) => terminal.vbase)).toEqual(["10 kV", "750 V"]);
+    expect(converter.terminals.map((terminal) => terminal.vbase)).toEqual(["0", "0"]);
   });
 
   test("keeps ACDC converter terminal 1 as AC and terminal 2 as DC for connection rules and legacy nodes", () => {
@@ -3027,7 +3074,7 @@ describe("power system model", () => {
     };
     const normalized = normalizeNodeTerminalsByTemplate(legacyConverter);
     expect(normalized.terminals.map((terminal) => terminal.type)).toEqual(["ac", "dc"]);
-    expect(normalized.terminals.map((terminal) => terminal.vbase)).toEqual(["10 kV", "750 V"]);
+    expect(normalized.terminals.map((terminal) => terminal.vbase)).toEqual(["10 kV", "0"]);
   });
 
   test("exports DCDC converter endpoint control types with supported values", () => {
@@ -3463,23 +3510,158 @@ describe("power system model", () => {
     expect(byId.get(load.id)?.terminals[0].nodeNumber).toBe("2");
   });
 
+  test("rejects two-terminal devices whose endpoints fall on the same topology node", () => {
+    const line = createDefaultNode("ac-line", { x: 240, y: 100 });
+    const bus = createDefaultNode("ac-bus", { x: 240, y: 220 });
+    line.terminals.forEach((terminal) => {
+      terminal.vbase = "10 kV";
+    });
+
+    const errors = validateTopology(
+      [line, bus],
+      [
+        { id: "line-i-bus", sourceId: line.id, targetId: bus.id, sourceTerminalId: "t1", targetTerminalId: "t1", targetPoint: { x: 180, y: 220 } },
+        { id: "line-j-bus", sourceId: line.id, targetId: bus.id, sourceTerminalId: "t2", targetTerminalId: "t2", targetPoint: { x: 300, y: 220 } }
+      ],
+      { includeVoltageSetpointDeviations: false }
+    );
+
+    expect(errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "same-topology-node-endpoints",
+        nodeId: line.id,
+        relatedNodeIds: [line.id],
+        message: expect.stringContaining("首末端不能位于同一个拓扑节点")
+      })
+    ]));
+  });
+
+  test("fills zero voltage bases across topology islands without merging topology node numbers", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const line = createDefaultNode("ac-line", { x: 240, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 380, y: 100 });
+    source.terminals[0].vbase = "10 kV";
+    source.params.v_set = "0.0";
+
+    const calculated = calculateElectricalTopology(
+      [source, line, load],
+      [
+        { id: "source-line", sourceId: source.id, targetId: line.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+        { id: "line-load", sourceId: line.id, targetId: load.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+      ]
+    );
+    const byId = new Map(calculated.map((node) => [node.id, node]));
+
+    expect(byId.get(source.id)?.terminals[0].nodeNumber).toBe("1");
+    expect(byId.get(line.id)?.terminals[0].nodeNumber).toBe("1");
+    expect(byId.get(line.id)?.terminals[1].nodeNumber).toBe("2");
+    expect(byId.get(load.id)?.terminals[0].nodeNumber).toBe("2");
+    expect(byId.get(source.id)?.terminals[0].vbase).toBe("10");
+    expect(byId.get(line.id)?.terminals.map((terminal) => terminal.vbase)).toEqual(["10", "10"]);
+    expect(byId.get(load.id)?.terminals[0].vbase).toBe("10");
+    expect(byId.get(load.id)?.params.vbase).toBe("10");
+    expect(byId.get(source.id)?.params.v_set).toBe("10");
+  });
+
+  test("reports topology islands with missing or conflicting non-zero voltage bases", () => {
+    const zeroSource = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const zeroLine = createDefaultNode("ac-line", { x: 240, y: 100 });
+    const zeroLoad = createDefaultNode("ac-load", { x: 380, y: 100 });
+    const missingErrors = validateTopology(
+      [zeroSource, zeroLine, zeroLoad],
+      [
+        { id: "zero-source-line", sourceId: zeroSource.id, targetId: zeroLine.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+        { id: "zero-line-load", sourceId: zeroLine.id, targetId: zeroLoad.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+      ],
+      { includeVoltageSetpointDeviations: false }
+    );
+    expect(missingErrors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "missing-island-voltage", relatedNodeIds: expect.arrayContaining([zeroSource.id, zeroLine.id, zeroLoad.id]) })
+    ]));
+
+    const source10 = createDefaultNode("ac-source", { x: 100, y: 260 });
+    const zeroBranch = createDefaultNode("ac-zero-branch", { x: 240, y: 260 });
+    const load35 = createDefaultNode("ac-load", { x: 380, y: 260 });
+    source10.terminals[0].vbase = "10 kV";
+    load35.terminals[0].vbase = "35 kV";
+    const conflictingErrors = validateTopology(
+      [source10, zeroBranch, load35],
+      [
+        { id: "source-zero", sourceId: source10.id, targetId: zeroBranch.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+        { id: "zero-load", sourceId: zeroBranch.id, targetId: load35.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+      ],
+      { includeVoltageSetpointDeviations: false }
+    );
+    expect(conflictingErrors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "island-voltage-mismatch", relatedNodeIds: expect.arrayContaining([source10.id, zeroBranch.id, load35.id]) })
+    ]));
+  });
+
+  test("reports transformer terminals that fall inside the same topology island", () => {
+    const transformer = createDefaultNode("ac-transformer", { x: 100, y: 100 });
+    const line = createDefaultNode("ac-line", { x: 240, y: 100 });
+    transformer.terminals[0].vbase = "10 kV";
+    transformer.terminals[1].vbase = "10 kV";
+
+    const errors = validateTopology(
+      [transformer, line],
+      [
+        { id: "xf-i-line", sourceId: transformer.id, targetId: line.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+        { id: "xf-j-line", sourceId: transformer.id, targetId: line.id, sourceTerminalId: "t2", targetTerminalId: "t2" }
+      ],
+      { includeVoltageSetpointDeviations: false }
+    );
+
+    expect(errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "transformer-island-short", nodeId: transformer.id })
+    ]));
+
+    const threeWinding = createDefaultNode("ac-three-winding-transformer", { x: 100, y: 260 });
+    const zeroBranch = createDefaultNode("ac-zero-branch", { x: 240, y: 260 });
+    threeWinding.terminals.forEach((terminal) => {
+      terminal.vbase = "10 kV";
+    });
+    const threeWindingErrors = validateTopology(
+      [threeWinding, zeroBranch],
+      [
+        { id: "t3-i-zero", sourceId: threeWinding.id, targetId: zeroBranch.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+        { id: "t3-j-zero", sourceId: threeWinding.id, targetId: zeroBranch.id, sourceTerminalId: "t2", targetTerminalId: "t2" }
+      ],
+      { includeVoltageSetpointDeviations: false }
+    );
+    expect(threeWindingErrors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "transformer-island-short", nodeId: threeWinding.id })
+    ]));
+  });
+
   test("validates floating terminals, mixed terminal types, and voltage mismatch before topology", () => {
     const acSource = createDefaultNode("ac-source", { x: 100, y: 100 });
     const dcLoad = createDefaultNode("dc-load", { x: 220, y: 100 });
     const acLoad = createDefaultNode("ac-load", { x: 340, y: 100 });
+    const acBus = createDefaultNode("ac-bus", { x: 100, y: 220 });
     acSource.params.vbase = "10 kV";
+    acSource.terminals[0].vbase = "10 kV";
     acLoad.params.vbase = "35 kV";
     acLoad.terminals[0].vbase = "35 kV";
     const errors = validateTopology(
-      [acSource, dcLoad, acLoad],
+      [acSource, dcLoad, acLoad, acBus],
       [
         { id: "mixed", sourceId: acSource.id, targetId: dcLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
-        { id: "voltage", sourceId: acSource.id, targetId: acLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
+        { id: "voltage", sourceId: acSource.id, targetId: acLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+        { id: "same-bus", sourceId: acBus.id, targetId: acBus.id, sourceTerminalId: "t1", targetTerminalId: "t2" }
       ]
     );
 
     expect(errors.some((error) => error.type === "terminal-type-mismatch" && error.edgeId === "mixed")).toBe(true);
     expect(errors.some((error) => error.type === "voltage-mismatch" && error.edgeId === "voltage")).toBe(true);
+    expect(errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "same-bus-endpoints",
+        edgeId: "same-bus",
+        nodeId: acBus.id,
+        message: expect.stringContaining("首末端不能位于同一个母线")
+      })
+    ]));
 
     const loneLoad = createDefaultNode("ac-load", { x: 460, y: 100 });
     const floatingErrors = validateTopology([loneLoad], []);
@@ -3535,12 +3717,15 @@ describe("power system model", () => {
     const acBus10 = createDefaultNode("ac-bus", { x: 160, y: 100 });
     const acBus35 = createDefaultNode("ac-bus", { x: 160, y: 260 });
     const dcBus750 = createDefaultNode("dc-bus", { x: 160, y: 420 });
+    const dcBus750B = createDefaultNode("dc-bus", { x: 560, y: 420 });
     const source = createDefaultNode("ac-source", { x: 40, y: 100 });
     const dcdc = createDefaultNode("dcdc-converter", { x: 360, y: 420 });
     const acdc = createDefaultNode("acdc-converter", { x: 360, y: 100 });
     const acac = createDefaultNode("acac-converter", { x: 360, y: 260 });
     acBus10.name = "交流母线10";
     acBus35.name = "交流母线35";
+    dcBus750.name = "直流母线750A";
+    dcBus750B.name = "直流母线750B";
     acBus10.terminals.forEach((terminal) => {
       terminal.vbase = "10 kV";
     });
@@ -3548,6 +3733,9 @@ describe("power system model", () => {
       terminal.vbase = "35 kV";
     });
     dcBus750.terminals.forEach((terminal) => {
+      terminal.vbase = "750 V";
+    });
+    dcBus750B.terminals.forEach((terminal) => {
       terminal.vbase = "750 V";
     });
     source.terminals[0].vbase = "10 kV";
@@ -3565,11 +3753,11 @@ describe("power system model", () => {
     acac.params.j_v_set = "40";
 
     const errors = validateTopology(
-      [acBus10, acBus35, dcBus750, source, dcdc, acdc, acac],
+      [acBus10, acBus35, dcBus750, dcBus750B, source, dcdc, acdc, acac],
       [
         { id: "source-ac", sourceId: source.id, targetId: acBus10.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
         { id: "dcdc-i", sourceId: dcdc.id, targetId: dcBus750.id, sourceTerminalId: "t1", targetTerminalId: "t2" },
-        { id: "dcdc-j", sourceId: dcdc.id, targetId: dcBus750.id, sourceTerminalId: "t2", targetTerminalId: "t3" },
+        { id: "dcdc-j", sourceId: dcdc.id, targetId: dcBus750B.id, sourceTerminalId: "t2", targetTerminalId: "t1" },
         { id: "acdc-ac", sourceId: acdc.id, targetId: acBus10.id, sourceTerminalId: "t1", targetTerminalId: "t2" },
         { id: "acdc-dc", sourceId: acdc.id, targetId: dcBus750.id, sourceTerminalId: "t2", targetTerminalId: "t1" },
         { id: "acac-i", sourceId: acac.id, targetId: acBus10.id, sourceTerminalId: "t1", targetTerminalId: "t3" },
@@ -3665,7 +3853,12 @@ describe("power system model", () => {
   test("treats duplicate identity and voltage setpoint deviations as non-blocking topology warnings", () => {
     expect(isBlockingTopologyValidationError({ type: "floating-terminal" })).toBe(true);
     expect(isBlockingTopologyValidationError({ type: "terminal-type-mismatch" })).toBe(true);
+    expect(isBlockingTopologyValidationError({ type: "same-bus-endpoints" })).toBe(true);
+    expect(isBlockingTopologyValidationError({ type: "same-topology-node-endpoints" })).toBe(true);
     expect(isBlockingTopologyValidationError({ type: "voltage-mismatch" })).toBe(true);
+    expect(isBlockingTopologyValidationError({ type: "missing-island-voltage" })).toBe(true);
+    expect(isBlockingTopologyValidationError({ type: "island-voltage-mismatch" })).toBe(true);
+    expect(isBlockingTopologyValidationError({ type: "transformer-island-short" })).toBe(true);
     expect(isBlockingTopologyValidationError({ type: "duplicate-device-idx" })).toBe(false);
     expect(isBlockingTopologyValidationError({ type: "duplicate-device-name" })).toBe(false);
     expect(isBlockingTopologyValidationError({ type: "voltage-setpoint-deviation" })).toBe(false);

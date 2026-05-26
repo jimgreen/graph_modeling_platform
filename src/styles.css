@@ -874,11 +874,14 @@ button:disabled {
 }
 
 .diagram-canvas.connect-drop-ready {
-  cursor: cell;
+  cursor: none;
 }
 
+.diagram-canvas.connect-drop-ready .diagram-node,
+.diagram-canvas.connect-drop-ready .node-hitbox,
+.diagram-canvas.connect-drop-ready .bus-connection-dot,
 .diagram-canvas.connect-drop-ready .terminal-dot:not(.disabled) {
-  cursor: cell;
+  cursor: none;
 }
 
 .diagram-canvas.panning {
@@ -937,6 +940,41 @@ button:disabled {
   stroke-dasharray: 10 8;
   opacity: 0.72;
   pointer-events: none;
+}
+
+.connect-drop-hint {
+  pointer-events: none;
+}
+
+.connect-drop-hint-ring {
+  fill: rgba(34, 197, 94, 0.18);
+  stroke: var(--connection-color, #22c55e);
+  stroke-width: 2.5;
+  opacity: 0.9;
+  animation: connectDropPulse 900ms ease-in-out infinite;
+}
+
+.connect-drop-hint-core {
+  fill: var(--connection-color, #22c55e);
+  stroke: #ffffff;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 8px rgba(34, 197, 94, 0.8));
+  animation: connectDropPulse 900ms ease-in-out infinite reverse;
+}
+
+@keyframes connectDropPulse {
+  0% {
+    transform: scale(0.72);
+    opacity: 0.52;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.72);
+    opacity: 0.52;
+  }
 }
 
 .marquee-box {
@@ -1292,6 +1330,14 @@ button:disabled {
 
 .graph-param-table-wrap .param-table {
   margin-bottom: 0;
+}
+
+.graph-readonly-value {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  color: #475569;
+  font-weight: 700;
 }
 
 .form-stack label {

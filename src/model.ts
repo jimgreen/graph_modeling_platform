@@ -1573,7 +1573,12 @@ export type RoutedEdge = {
 export type TopologyValidationErrorType =
   | "floating-terminal"
   | "terminal-type-mismatch"
+  | "same-bus-endpoints"
+  | "same-topology-node-endpoints"
   | "voltage-mismatch"
+  | "missing-island-voltage"
+  | "island-voltage-mismatch"
+  | "transformer-island-short"
   | "voltage-setpoint-deviation"
   | "duplicate-device-idx"
   | "duplicate-device-name";
@@ -1588,7 +1593,16 @@ export type TopologyValidationError = {
 };
 
 export function isBlockingTopologyValidationError(error: Pick<TopologyValidationError, "type">): boolean {
-  return error.type === "floating-terminal" || error.type === "terminal-type-mismatch" || error.type === "voltage-mismatch";
+  return (
+    error.type === "floating-terminal" ||
+    error.type === "terminal-type-mismatch" ||
+    error.type === "same-bus-endpoints" ||
+    error.type === "same-topology-node-endpoints" ||
+    error.type === "voltage-mismatch" ||
+    error.type === "missing-island-voltage" ||
+    error.type === "island-voltage-mismatch" ||
+    error.type === "transformer-island-short"
+  );
 }
 
 const readonlyIntegerDefinition = (cnName: string, enName: string, typicalValue = ""): DeviceParameterDefinition => ({
@@ -1791,7 +1805,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 126, height: 58 },
     params: { pressure: "35 MPa", capacity: "1000 kg" },
     terminalType: "h2",
-    terminalCount: 4
+    terminalCount: 0
   },
   {
     kind: "hydrogen-load",
@@ -1837,7 +1851,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 120, height: 28 },
     params: { pressure: "20 MPa" },
     terminalType: "h2",
-    terminalCount: 4
+    terminalCount: 0
   },
   {
     kind: "hydrogen-compressor",
@@ -2039,7 +2053,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 126, height: 58 },
     params: { capacity: "100 MWh", temperature: "90 degC" },
     terminalType: "heat",
-    terminalCount: 4
+    terminalCount: 0
   },
   {
     kind: "heat-load",
@@ -2076,7 +2090,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 120, height: 28 },
     params: { temperature: "90 degC" },
     terminalType: "heat",
-    terminalCount: 4
+    terminalCount: 0
   },
   {
     kind: "heat-pipeline",
@@ -2130,7 +2144,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 120, height: 28 },
     params: { voltageLevel: "10 kV", section: "I段" },
     terminalType: "ac",
-    terminalCount: 4
+    terminalCount: 0
   },
   {
     kind: "ac-switch",
@@ -2240,7 +2254,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 120, height: 28 },
     params: { voltageLevel: "750 V", pole: "正负极" },
     terminalType: "dc",
-    terminalCount: 4
+    terminalCount: 0
   },
   {
     kind: "dc-switch",
@@ -2305,11 +2319,27 @@ const makeNodeNumber = () => `N${nodeNumberSeed++}`;
 export const CUSTOM_PARAM_DEFINITIONS_KEY = "_customParamDefinitions";
 export const CUSTOM_DEVICE_TEMPLATE_KEY = "_customDeviceTemplate";
 
-const defaultTerminalVbase = (type: TerminalType) => {
-  if (type === "ac") return "10 kV";
-  if (type === "dc") return "750 V";
-  return "";
-};
+const DEFAULT_INITIAL_TERMINAL_VBASE = "0";
+
+const defaultTerminalVbase = (_type: TerminalType) => DEFAULT_INITIAL_TERMINAL_VBASE;
+
+function isImplicitTerminalVbaseForType(value: string | undefined, type: TerminalType): boolean {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) {
+    return true;
+  }
+  if (isZeroNumericText(trimmed)) {
+    return true;
+  }
+  const normalized = terminalVoltageBaseNumber(trimmed);
+  if (type === "ac") {
+    return normalized === "10";
+  }
+  if (type === "dc") {
+    return normalized === "750";
+  }
+  return false;
+}
 
 export function normalizeVoltageBaseInput(value?: string): string {
   let normalized = "";
@@ -3293,8 +3323,8 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   }
   if (template.kind === "ac-two-winding-transformer" || template.kind === "ac-transformer") {
     return withTemplateDefinitions(withRunStat({
-      highVbase: "110 kV",
-      lowVbase: "10 kV",
+      highVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
+      lowVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       ratedCapacity: "50 MVA",
       resistancePu: "0.0",
       reactancePu: "0.1",
@@ -3307,9 +3337,9 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
     return withTemplateDefinitions(withRunStat({
       neutral_node: "",
       neutral_vbase: "1.0",
-      highVbase: "220 kV",
-      mediumVbase: "110 kV",
-      lowVbase: "10 kV",
+      highVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
+      mediumVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
+      lowVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       highRatedCapacity: "90 MVA",
       highResistancePu: "0.0",
       highReactancePu: "0.1",
@@ -3332,8 +3362,8 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   }
   if (template.kind === "dcdc-converter") {
     return withTemplateDefinitions(withRunStat({
-      sourceVbase: "1500 V",
-      targetVbase: "750 V",
+      sourceVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
+      targetVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
       i_control_type: "CTRL_P",
@@ -3342,8 +3372,8 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   }
   if (template.kind === "acdc-converter") {
     return withTemplateDefinitions(withRunStat({
-      sourceVbase: "10 kV",
-      targetVbase: "750 V",
+      sourceVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
+      targetVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
       control_type: "DCV",
@@ -3355,8 +3385,8 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   }
   if (template.kind === "acac-converter") {
     return withTemplateDefinitions(withRunStat({
-      sourceVbase: "10 kV",
-      targetVbase: "10 kV",
+      sourceVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
+      targetVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
       control_type: "PQQ",
@@ -3633,6 +3663,50 @@ function createTemplateTerminals(template: DeviceTemplate): Terminal[] {
   }));
 }
 
+const BUS_TERMINAL_TYPE_BY_KIND: Partial<Record<string, TerminalType>> = {
+  "ac-bus": "ac",
+  "dc-bus": "dc",
+  "hydrogen-bus": "h2",
+  "hydrogen-tank": "h2",
+  "heat-bus": "heat",
+  "thermal-storage-tank": "heat"
+};
+
+const BUS_LEGACY_TERMINAL_ANCHORS: Point[] = [
+  { x: -0.5, y: 0 },
+  { x: 0.5, y: 0 },
+  { x: 0, y: -0.5 },
+  { x: 0, y: 0.5 },
+  { x: -0.5, y: -0.25 },
+  { x: 0.5, y: -0.25 },
+  { x: -0.5, y: 0.25 },
+  { x: 0.5, y: 0.25 }
+];
+
+function busTerminalAnchor(index: number): Point {
+  return BUS_LEGACY_TERMINAL_ANCHORS[index] ?? { x: 0, y: 0 };
+}
+
+export function getBusTerminalType(node: Pick<ModelNode, "kind" | "terminals">): TerminalType | undefined {
+  return node.terminals[0]?.type ?? BUS_TERMINAL_TYPE_BY_KIND[node.kind];
+}
+
+function virtualBusTerminal(node: Pick<ModelNode, "kind" | "terminals">, terminalId?: string): Terminal | undefined {
+  const type = getBusTerminalType(node);
+  if (!type) {
+    return undefined;
+  }
+  const index = Math.max(1, Number.parseInt(terminalId?.replace(/^t/, "") ?? "1", 10) || 1);
+  return {
+    id: terminalId || `t${index}`,
+    label: `端子${index}`,
+    type,
+    anchor: busTerminalAnchor(index - 1),
+    nodeNumber: "0",
+    vbase: defaultTerminalVbase(type)
+  };
+}
+
 export function normalizeNodeTerminalsByTemplate(node: ModelNode): ModelNode {
   const template = DEVICE_LIBRARY.find((item) => item.kind === node.kind);
   if (!template?.terminalTypes?.length || node.terminals.length === 0) {
@@ -3646,11 +3720,11 @@ export function normalizeNodeTerminalsByTemplate(node: ModelNode): ModelNode {
       return terminal;
     }
     changed = true;
-    const currentDefaultVbase = defaultTerminalVbase(terminal.type);
+    const shouldResetVbase = isImplicitTerminalVbaseForType(terminal.vbase, terminal.type);
     return {
       ...terminal,
       type: expectedType,
-      vbase: !terminal.vbase || terminal.vbase === currentDefaultVbase
+      vbase: shouldResetVbase
         ? defaultTerminalVbase(expectedType)
         : terminal.vbase
     };
@@ -3681,7 +3755,7 @@ export function terminalStubSegment(
 }
 
 export function getTerminal(node: ModelNode, terminalId?: string): Terminal {
-  return node.terminals.find((terminal) => terminal.id === terminalId) ?? node.terminals[0];
+  return node.terminals.find((terminal) => terminal.id === terminalId) ?? node.terminals[0] ?? virtualBusTerminal(node, terminalId) ?? node.terminals[0];
 }
 
 export function getTerminalPoint(node: ModelNode, terminalId?: string): Point {
@@ -3702,18 +3776,105 @@ export function getTerminalPoint(node: ModelNode, terminalId?: string): Point {
 }
 
 export function isBusNode(node: ModelNode): boolean {
-  return (
-    node.kind === "ac-bus" ||
-    node.kind === "dc-bus" ||
-    node.kind === "hydrogen-bus" ||
-    node.kind === "hydrogen-tank" ||
-    node.kind === "heat-bus" ||
-    node.kind === "thermal-storage-tank"
-  );
+  return Boolean(BUS_TERMINAL_TYPE_BY_KIND[node.kind]);
 }
 
 function isBoundaryBusNode(node: Pick<ModelNode, "kind">): boolean {
   return node.kind === "hydrogen-tank" || node.kind === "thermal-storage-tank";
+}
+
+function createDynamicBusTerminal(node: ModelNode, index: number): Terminal {
+  const id = `t${index + 1}`;
+  const existing = node.terminals.find((terminal) => terminal.id === id);
+  const type = existing?.type ?? getBusTerminalType(node) ?? "ac";
+  const sameTypeFallback = node.terminals.find((terminal) => terminal.type === type);
+  return {
+    id,
+    label: existing?.label ?? `端子${index + 1}`,
+    type,
+    anchor: existing?.anchor ?? busTerminalAnchor(index),
+    nodeNumber: existing?.nodeNumber ?? makeNodeNumber(),
+    vbase: existing?.vbase ?? sameTypeFallback?.vbase ?? defaultTerminalVbase(type)
+  };
+}
+
+function terminalEquals(first: Terminal, second: Terminal): boolean {
+  return (
+    first.id === second.id &&
+    first.label === second.label &&
+    first.type === second.type &&
+    first.nodeNumber === second.nodeNumber &&
+    first.vbase === second.vbase &&
+    first.anchor.x === second.anchor.x &&
+    first.anchor.y === second.anchor.y
+  );
+}
+
+function syncBusNodeTerminals(node: ModelNode, connectionEndpointCount: number): ModelNode {
+  if (!isBusNode(node)) {
+    return node;
+  }
+  const safeCount = Math.max(0, Math.round(connectionEndpointCount));
+  const terminals = Array.from({ length: safeCount }, (_, index) => createDynamicBusTerminal(node, index));
+  if (
+    node.terminals.length === terminals.length &&
+    node.terminals.every((terminal, index) => terminalEquals(terminal, terminals[index]))
+  ) {
+    return node;
+  }
+  return { ...node, terminals };
+}
+
+export function synchronizeBusTerminalsWithEdges(nodes: ModelNode[], edges: Edge[]): { nodes: ModelNode[]; edges: Edge[] } {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const endpointCountByBusId = new Map<string, number>();
+  const nextEndpointIndexByBusId = new Map<string, number>();
+  let edgesChanged = false;
+  const nextEdges = edges.map((edge) => {
+    const source = nodeById.get(edge.sourceId);
+    const target = nodeById.get(edge.targetId);
+    if (!source || !target) {
+      return edge;
+    }
+    let nextEdge = edge;
+    const assignBusEndpoint = (endpoint: "source" | "target", busNode: ModelNode) => {
+      const nextIndex = nextEndpointIndexByBusId.get(busNode.id) ?? 0;
+      nextEndpointIndexByBusId.set(busNode.id, nextIndex + 1);
+      endpointCountByBusId.set(busNode.id, (endpointCountByBusId.get(busNode.id) ?? 0) + 1);
+      const terminalId = `t${nextIndex + 1}`;
+      if (endpoint === "source") {
+        if (nextEdge.sourceTerminalId !== terminalId) {
+          nextEdge = { ...nextEdge, sourceTerminalId: terminalId };
+          edgesChanged = true;
+        }
+      } else if (nextEdge.targetTerminalId !== terminalId) {
+        nextEdge = { ...nextEdge, targetTerminalId: terminalId };
+        edgesChanged = true;
+      }
+    };
+    if (isBusNode(source)) {
+      assignBusEndpoint("source", source);
+    }
+    if (isBusNode(target)) {
+      assignBusEndpoint("target", target);
+    }
+    return nextEdge;
+  });
+  let nodesChanged = false;
+  const nextNodes = nodes.map((node) => {
+    if (!isBusNode(node)) {
+      return node;
+    }
+    const nextNode = syncBusNodeTerminals(node, endpointCountByBusId.get(node.id) ?? 0);
+    if (nextNode !== node) {
+      nodesChanged = true;
+    }
+    return nextNode;
+  });
+  return {
+    nodes: nodesChanged ? nextNodes : nodes,
+    edges: edgesChanged ? nextEdges : edges
+  };
 }
 
 function pointToNodeLocal(node: ModelNode, point: Point): Point {
@@ -4063,12 +4224,21 @@ export function deleteNodesWithConnectedEdges(nodes: ModelNode[], edges: Edge[],
   };
 }
 
-export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): ModelNode[] {
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const terminalKey = (nodeId: string, terminalId: string) => `${nodeId}:${terminalId}`;
+type DisjointSet = {
+  ensure: (key: string) => void;
+  find: (key: string) => string;
+  union: (first: string, second: string) => void;
+};
+
+function createDisjointSet(): DisjointSet {
   const parent = new Map<string, string>();
-  const terminalTypes = new Map<string, TerminalType>();
+  const ensure = (key: string) => {
+    if (!parent.has(key)) {
+      parent.set(key, key);
+    }
+  };
   const find = (key: string): string => {
+    ensure(key);
     const current = parent.get(key);
     if (!current || current === key) {
       return key;
@@ -4084,12 +4254,61 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
       parent.set(secondRoot, firstRoot);
     }
   };
+  return { ensure, find, union };
+}
+
+type ElectricalTerminalType = Extract<TerminalType, "ac" | "dc">;
+
+function isElectricalTerminalType(type: TerminalType): type is ElectricalTerminalType {
+  return type === "ac" || type === "dc";
+}
+
+function resolveTopologyEdgeTerminal(node: ModelNode | undefined, terminalId?: string): Terminal | undefined {
+  if (!node) {
+    return undefined;
+  }
+  if (terminalId) {
+    return node.terminals.find((terminal) => terminal.id === terminalId);
+  }
+  return node.terminals[0];
+}
+
+function shouldContractTopologyIslandNode(node: ModelNode): boolean {
+  const section = inferESection(node.kind, node.params);
+  if (section === "ACBranch" || section === "DCBranch" || section === "ACZeroBranch" || section === "DCZeroBranch") {
+    return true;
+  }
+  if (section === "ACSwitch" || section === "DCSwitch" || section === "ACBreak" || section === "DCBreak") {
+    return normalizeSwitchStatusForE(node.params.status ?? node.params.closedStatus) !== "0";
+  }
+  return false;
+}
+
+function isTwoWindingTransformerNode(node: Pick<ModelNode, "kind">): boolean {
+  return node.kind === "ac-transformer" || node.kind === "ac-two-winding-transformer";
+}
+
+function isTwoTerminalTopologyDevice(node: ModelNode): boolean {
+  return !isBusNode(node) && !isStaticNode(node) && node.terminals.length === 2;
+}
+
+type TopologyConnectivity = {
+  terminalKey: (nodeId: string, terminalId: string) => string;
+  topologyRoot: (nodeId: string, terminalId: string) => string;
+  islandRoot: (nodeId: string, terminalId: string) => string;
+};
+
+function buildTopologyConnectivity(nodes: ModelNode[], edges: Edge[]): TopologyConnectivity {
+  const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
+  nodes = synchronized.nodes;
+  edges = synchronized.edges;
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const terminalKey = (nodeId: string, terminalId: string) => `${nodeId}:${terminalId}`;
+  const topology = createDisjointSet();
 
   for (const node of nodes) {
     for (const terminal of node.terminals) {
-      const key = terminalKey(node.id, terminal.id);
-      parent.set(key, key);
-      terminalTypes.set(key, terminal.type);
+      topology.ensure(terminalKey(node.id, terminal.id));
     }
     if (isBusNode(node)) {
       const terminalsByType = new Map<TerminalType, Terminal[]>();
@@ -4099,7 +4318,7 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
       for (const terminals of terminalsByType.values()) {
         const [first, ...rest] = terminals;
         for (const terminal of rest) {
-          union(terminalKey(node.id, first.id), terminalKey(node.id, terminal.id));
+          topology.union(terminalKey(node.id, first.id), terminalKey(node.id, terminal.id));
         }
       }
     }
@@ -4108,12 +4327,75 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
   for (const edge of edges) {
     const source = nodeById.get(edge.sourceId);
     const target = nodeById.get(edge.targetId);
-    if (!source || !target) continue;
-    const sourceTerminal = getTerminal(source, edge.sourceTerminalId);
-    const targetTerminal = getTerminal(target, edge.targetTerminalId);
-    if (sourceTerminal.type !== targetTerminal.type) continue;
-    union(terminalKey(source.id, sourceTerminal.id), terminalKey(target.id, targetTerminal.id));
+    const sourceTerminal = resolveTopologyEdgeTerminal(source, edge.sourceTerminalId);
+    const targetTerminal = resolveTopologyEdgeTerminal(target, edge.targetTerminalId);
+    if (!source || !target || !sourceTerminal || !targetTerminal || sourceTerminal.type !== targetTerminal.type) {
+      continue;
+    }
+    topology.union(terminalKey(source.id, sourceTerminal.id), terminalKey(target.id, targetTerminal.id));
   }
+
+  const island = createDisjointSet();
+  for (const node of nodes) {
+    for (const terminal of node.terminals) {
+      island.ensure(topology.find(terminalKey(node.id, terminal.id)));
+    }
+  }
+  for (const node of nodes) {
+    if (!shouldContractTopologyIslandNode(node)) {
+      continue;
+    }
+    const electricalTerminals = node.terminals.filter((terminal) => isElectricalTerminalType(terminal.type));
+    const [first, ...rest] = electricalTerminals;
+    if (!first) {
+      continue;
+    }
+    for (const terminal of rest) {
+      if (terminal.type === first.type) {
+        island.union(topology.find(terminalKey(node.id, first.id)), topology.find(terminalKey(node.id, terminal.id)));
+      }
+    }
+  }
+
+  return {
+    terminalKey,
+    topologyRoot: (nodeId, terminalId) => topology.find(terminalKey(nodeId, terminalId)),
+    islandRoot: (nodeId, terminalId) => island.find(topology.find(terminalKey(nodeId, terminalId)))
+  };
+}
+
+type IslandVoltageGroup = {
+  type: ElectricalTerminalType;
+  relatedNodeIds: Set<string>;
+  voltages: Map<string, string>;
+};
+
+function collectElectricalIslandVoltageGroups(nodes: ModelNode[], connectivity: TopologyConnectivity) {
+  const groups = new Map<string, IslandVoltageGroup>();
+  for (const node of nodes) {
+    for (const terminal of node.terminals) {
+      if (!isElectricalTerminalType(terminal.type)) {
+        continue;
+      }
+      const root = connectivity.islandRoot(node.id, terminal.id);
+      const key = `${terminal.type}:${root}`;
+      const group = groups.get(key) ?? { type: terminal.type, relatedNodeIds: new Set<string>(), voltages: new Map<string, string>() };
+      group.relatedNodeIds.add(node.id);
+      const voltage = terminalVoltageDisplay(node, terminal);
+      if (voltage && !isZeroNumericText(voltage)) {
+        group.voltages.set(voltage, terminal.vbase ?? node.params.vbase ?? voltage);
+      }
+      groups.set(key, group);
+    }
+  }
+  return groups;
+}
+
+export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): ModelNode[] {
+  const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
+  nodes = synchronized.nodes;
+  edges = synchronized.edges;
+  const connectivity = buildTopologyConnectivity(nodes, edges);
 
   const nextTopologyNumberByType: Record<TerminalType, number> = { ac: 1, dc: 1, h2: 1, heat: 1 };
   const numberByTypeAndRoot: Record<TerminalType, Map<string, string>> = {
@@ -4122,8 +4404,9 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
     h2: new Map<string, string>(),
     heat: new Map<string, string>()
   };
-  const getTopologyNumber = (key: string, type: TerminalType) => {
-    const root = find(key);
+  const getTopologyNumber = (nodeId: string, terminal: Terminal) => {
+    const root = connectivity.topologyRoot(nodeId, terminal.id);
+    const type = terminal.type;
     const numberByRoot = numberByTypeAndRoot[type];
     const existing = numberByRoot.get(root);
     if (existing) {
@@ -4133,46 +4416,60 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
     numberByRoot.set(root, next);
     return next;
   };
-  const voltageCandidatesByTypeAndRoot: Record<TerminalType, Map<string, Array<{ node: ModelNode; terminal: Terminal }>>> = {
-    ac: new Map<string, Array<{ node: ModelNode; terminal: Terminal }>>(),
-    dc: new Map<string, Array<{ node: ModelNode; terminal: Terminal }>>(),
-    h2: new Map<string, Array<{ node: ModelNode; terminal: Terminal }>>(),
-    heat: new Map<string, Array<{ node: ModelNode; terminal: Terminal }>>()
-  };
-  for (const node of nodes) {
-    for (const terminal of node.terminals) {
-      const root = find(terminalKey(node.id, terminal.id));
-      const candidates = voltageCandidatesByTypeAndRoot[terminal.type].get(root) ?? [];
-      candidates.push({ node, terminal });
-      voltageCandidatesByTypeAndRoot[terminal.type].set(root, candidates);
-    }
-  }
-  const voltageByTypeAndRoot: Record<TerminalType, Map<string, string>> = {
-    ac: new Map<string, string>(),
-    dc: new Map<string, string>(),
-    h2: new Map<string, string>(),
-    heat: new Map<string, string>()
-  };
-  for (const type of Object.keys(voltageCandidatesByTypeAndRoot) as TerminalType[]) {
-    for (const [root, candidates] of voltageCandidatesByTypeAndRoot[type]) {
-      const nonZeroVoltages = new Set(
-        candidates
-          .slice()
-          .sort((first, second) => topologyRepresentativeScore(first.node) - topologyRepresentativeScore(second.node))
-          .map(({ node, terminal }) => terminalVoltageDisplay(node, terminal))
-          .filter((value) => value.trim() !== "" && !isZeroNumericText(value))
-      );
-      if (nonZeroVoltages.size === 1) {
-        voltageByTypeAndRoot[type].set(root, Array.from(nonZeroVoltages)[0]);
-      }
-    }
-  }
+  const islandVoltageGroups = collectElectricalIslandVoltageGroups(nodes, connectivity);
   const voltageForTerminal = (nodeId: string, terminal: Terminal): string => {
-    const root = find(terminalKey(nodeId, terminal.id));
-    return voltageByTypeAndRoot[terminal.type].get(root) ?? "";
+    if (!isElectricalTerminalType(terminal.type)) {
+      return "";
+    }
+    const root = connectivity.islandRoot(nodeId, terminal.id);
+    const group = islandVoltageGroups.get(`${terminal.type}:${root}`);
+    return group?.voltages.size === 1 ? Array.from(group.voltages.keys())[0] : "";
+  };
+  const applyTerminalVoltageBaseParams = (node: ModelNode, terminals: Terminal[]): Record<string, string> => {
+    let params = node.params;
+    const voltageByTerminalId = new Map(terminals.map((terminal) => [terminal.id, voltageForTerminal(node.id, terminal)]));
+    const ensureParams = () => {
+      if (params === node.params) {
+        params = { ...node.params };
+      }
+    };
+    const assignTerminalParam = (paramKey: string, terminal?: Terminal) => {
+      const voltage = terminal ? voltageByTerminalId.get(terminal.id) : "";
+      if (!voltage) {
+        return;
+      }
+      ensureParams();
+      params[paramKey] = voltage;
+    };
+    const terminalVoltages = Array.from(new Set(terminals.map((terminal) => voltageByTerminalId.get(terminal.id) ?? "").filter(Boolean)));
+    if (Object.prototype.hasOwnProperty.call(params, "vbase") && terminalVoltages.length === 1) {
+      ensureParams();
+      params.vbase = terminalVoltages[0];
+    }
+    if (isThreeWindingTransformer(node)) {
+      assignTerminalParam("highVbase", terminals[0]);
+      assignTerminalParam("mediumVbase", terminals[1]);
+      assignTerminalParam("lowVbase", terminals[2]);
+    } else if (isTwoWindingTransformerNode(node)) {
+      assignTerminalParam("highVbase", terminals[0]);
+      assignTerminalParam("lowVbase", terminals[1]);
+    }
+    if (Object.prototype.hasOwnProperty.call(params, "sourceVbase")) {
+      assignTerminalParam("sourceVbase", terminals[0]);
+    }
+    if (Object.prototype.hasOwnProperty.call(params, "targetVbase")) {
+      assignTerminalParam("targetVbase", terminals[1]);
+    }
+    if (Object.prototype.hasOwnProperty.call(params, "i_vbase")) {
+      assignTerminalParam("i_vbase", terminals[0]);
+    }
+    if (Object.prototype.hasOwnProperty.call(params, "j_vbase")) {
+      assignTerminalParam("j_vbase", terminals[1]);
+    }
+    return params;
   };
   const applyVoltageSetpointDefaults = (node: ModelNode, terminals: Terminal[]): Record<string, string> => {
-    let params = node.params;
+    let params = applyTerminalVoltageBaseParams(node, terminals);
     const assignIfZero = (paramKey: string, terminal?: Terminal) => {
       if (!terminal || !shouldAssignVoltageSetpointDefault(params[paramKey])) {
         return;
@@ -4204,6 +4501,8 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
     if (section === "DCACConverter") {
       assignIfZero("v_ac_set", terminals.find((terminal) => terminal.type === "ac") ?? terminals[0]);
       assignIfZero("v_dc_set", terminals.find((terminal) => terminal.type === "dc") ?? terminals[1]);
+      assignIfZero("ac_v_set", terminals.find((terminal) => terminal.type === "ac") ?? terminals[0]);
+      assignIfZero("dc_v_set", terminals.find((terminal) => terminal.type === "dc") ?? terminals[1]);
     }
     if (section === "ACACConverter") {
       assignIfZero("i_v_set", terminals[0]);
@@ -4230,13 +4529,11 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
 
   const numberedNodes = nodes.map((node) => {
     const terminals = node.terminals.map((terminal) => {
-      const key = terminalKey(node.id, terminal.id);
       const voltage = voltageForTerminal(node.id, terminal);
-      const shouldFillTerminalVbase = voltage && isZeroNumericText(terminal.vbase ?? node.params.vbase);
       return {
         ...terminal,
-        vbase: shouldFillTerminalVbase ? voltage : terminal.vbase,
-        nodeNumber: getTopologyNumber(key, terminal.type)
+        vbase: voltage || terminal.vbase,
+        nodeNumber: getTopologyNumber(node.id, terminal)
       };
     });
     const acTopologyNode = Number(terminals.find((terminal) => terminal.type === "ac")?.nodeNumber ?? 0);
@@ -4287,6 +4584,9 @@ export function getTerminalVoltageLevel(node: ModelNode, terminalId?: string): s
 }
 
 export function validateVoltageSetpointDeviations(nodes: ModelNode[], edges: Edge[]): TopologyValidationError[] {
+  const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
+  nodes = synchronized.nodes;
+  edges = synchronized.edges;
   const errors: TopologyValidationError[] = [];
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const terminalKey = (nodeId: string, terminalId: string) => `${nodeId}:${terminalId}`;
@@ -4547,6 +4847,9 @@ export function validateTopology(
   edges: Edge[],
   options: { includeVoltageSetpointDeviations?: boolean } = {}
 ): TopologyValidationError[] {
+  const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
+  nodes = synchronized.nodes;
+  edges = synchronized.edges;
   const errors: TopologyValidationError[] = duplicateDeviceIdentityErrors(nodes);
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const terminalKey = (nodeId: string, terminalId: string) => `${nodeId}:${terminalId}`;
@@ -4624,6 +4927,18 @@ export function validateTopology(
     connectedTerminals.add(`${source.id}:${sourceTerminal.id}`);
     connectedTerminals.add(`${target.id}:${targetTerminal.id}`);
 
+    if (source.id === target.id && isBusNode(source) && isBusNode(target)) {
+      errors.push({
+        id: `same-bus-endpoints:${edge.id}`,
+        type: "same-bus-endpoints",
+        edgeId: edge.id,
+        nodeId: source.id,
+        relatedNodeIds: [source.id],
+        message: `图上拓扑失败：联络线 ${edge.id} 的首末端不能位于同一个母线 ${source.name} 上。`
+      });
+      continue;
+    }
+
     if (sourceTerminal.type !== targetTerminal.type) {
       errors.push({
         id: `terminal-type-mismatch:${edge.id}`,
@@ -4692,6 +5007,79 @@ export function validateTopology(
       relatedNodeIds,
       message: `图上拓扑失败：同一拓扑节点内存在不同电压基值（${Array.from(group.voltages.values()).join(" / ")}）。`
     });
+  }
+
+  for (const node of nodes) {
+    if (!isTwoTerminalTopologyDevice(node)) {
+      continue;
+    }
+    const firstTerminal = node.terminals[0];
+    const lastTerminal = node.terminals[node.terminals.length - 1];
+    if (!firstTerminal || !lastTerminal) {
+      continue;
+    }
+    const firstRoot = find(terminalKey(node.id, firstTerminal.id));
+    const lastRoot = find(terminalKey(node.id, lastTerminal.id));
+    if (firstRoot !== lastRoot) {
+      continue;
+    }
+    errors.push({
+      id: `same-topology-node-endpoints:${node.id}:${firstTerminal.id}:${lastTerminal.id}`,
+      type: "same-topology-node-endpoints",
+      nodeId: node.id,
+      relatedNodeIds: [node.id],
+      message: `图上拓扑失败：双端设备 ${node.name} 的 ${firstTerminal.label} 与 ${lastTerminal.label} 位于同一个拓扑节点，首末端不能位于同一个拓扑节点。`
+    });
+  }
+
+  const connectivity = buildTopologyConnectivity(nodes, edges);
+  const islandVoltageGroups = collectElectricalIslandVoltageGroups(nodes, connectivity);
+  for (const [root, group] of islandVoltageGroups) {
+    const relatedNodeIds = Array.from(group.relatedNodeIds);
+    if (group.voltages.size === 0) {
+      errors.push({
+        id: `missing-island-voltage:${root}`,
+        type: "missing-island-voltage",
+        nodeId: relatedNodeIds[0],
+        relatedNodeIds,
+        message: `图上拓扑失败：拓扑岛内没有非零电压基值，请至少设置一个${group.type.toUpperCase()}端子电压基值。`
+      });
+      continue;
+    }
+    if (group.voltages.size > 1) {
+      errors.push({
+        id: `island-voltage-mismatch:${root}`,
+        type: "island-voltage-mismatch",
+        nodeId: relatedNodeIds[0],
+        relatedNodeIds,
+        message: `图上拓扑失败：同一拓扑岛内存在多套非零电压基值（${Array.from(group.voltages.values()).join(" / ")}）。`
+      });
+    }
+  }
+
+  for (const node of nodes) {
+    if (!isTwoWindingTransformerNode(node) && !isThreeWindingTransformer(node)) {
+      continue;
+    }
+    const rootByTerminal = node.terminals
+      .filter((terminal) => isElectricalTerminalType(terminal.type))
+      .map((terminal) => ({ terminal, root: connectivity.islandRoot(node.id, terminal.id) }));
+    const seenRoots = new Map<string, Terminal>();
+    for (const { terminal, root } of rootByTerminal) {
+      const existing = seenRoots.get(root);
+      if (!existing) {
+        seenRoots.set(root, terminal);
+        continue;
+      }
+      errors.push({
+        id: `transformer-island-short:${node.id}:${existing.id}:${terminal.id}`,
+        type: "transformer-island-short",
+        nodeId: node.id,
+        relatedNodeIds: [node.id],
+        message: `图上拓扑失败：${node.name} 的 ${existing.label} 与 ${terminal.label} 位于同一拓扑岛，变压器两侧不能被开关、断路器、线路或零阻抗支路短接。`
+      });
+      break;
+    }
   }
 
   for (const node of nodes) {
@@ -4789,7 +5177,8 @@ export function deserializeProject(json: string): ProjectFile {
 }
 
 export function lockProjectEdgeTerminals(project: ProjectFile): ProjectFile {
-  const nodes = project.nodes.map(normalizeNodeTerminalsByTemplate);
+  const synchronized = synchronizeBusTerminalsWithEdges(project.nodes.map(normalizeNodeTerminalsByTemplate), project.edges);
+  const nodes = synchronized.nodes;
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const resolveTerminalId = (node: ModelNode | undefined, terminalId?: string) => {
     if (!node || node.terminals.length === 0) {
@@ -4802,7 +5191,7 @@ export function lockProjectEdgeTerminals(project: ProjectFile): ProjectFile {
   return {
     ...project,
     nodes,
-    edges: project.edges.flatMap((edge) => {
+    edges: synchronized.edges.flatMap((edge) => {
       const source = nodeById.get(edge.sourceId);
       const target = nodeById.get(edge.targetId);
       const sourceTerminalId = resolveTerminalId(source, edge.sourceTerminalId);
