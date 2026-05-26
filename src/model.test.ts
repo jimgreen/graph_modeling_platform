@@ -47,6 +47,7 @@ import {
   modelGeometryInsideCanvasBounds,
   insertOrthogonalRouteBend,
   preserveDraggedRouteShape,
+  rebuildSingleConnectionRoute,
   upsertSavedProject,
   rerouteEdgesAroundMovedNodes,
   validateConnectionEdgeRoute,
@@ -1696,6 +1697,39 @@ describe("power system model", () => {
     expect(validation.ok).toBe(true);
     expect(validation.issues).toEqual([]);
     expect(validation.route?.points).not.toEqual(beforeRoutes[0].points);
+  });
+
+  test("rebuilds a single affected connection from scratch instead of preserving old manual doglegs", () => {
+    const source = { ...createDefaultNode("ac-line", { x: 120, y: 140 }), id: "source" };
+    const target = { ...createDefaultNode("ac-line", { x: 520, y: 140 }), id: "target" };
+    const edge: Edge = {
+      id: "single-affected-edge",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: 200, y: 80 },
+        { x: 320, y: 80 },
+        { x: 320, y: 220 },
+        { x: 460, y: 220 }
+      ]
+    };
+
+    const rebuiltEdges = rebuildSingleConnectionRoute(
+      [source, target],
+      [edge],
+      edge.id,
+      { width: 700, height: 320 }
+    );
+    const rebuiltEdge = rebuiltEdges[0];
+    const validation = validateConnectionEdgeRoute([source, target], rebuiltEdges, edge.id, { width: 700, height: 320 });
+    const route = routeEdgesForRendering([source, target], rebuiltEdges, { width: 700, height: 320 })[0];
+
+    expect(validation.ok).toBe(true);
+    expect(validation.issues).toEqual([]);
+    expect(rebuiltEdge.manualPoints?.length ?? 0).toBeLessThan(edge.manualPoints!.length);
+    expect(new Set(route.points.map((point) => point.y))).toEqual(new Set([140]));
   });
 
   test("anchors route endpoints on terminals and leaves terminals perpendicularly", () => {

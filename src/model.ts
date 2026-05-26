@@ -7017,6 +7017,25 @@ export function prepareConnectionEdgeForCommit(
   return { ...validation };
 }
 
+export function rebuildSingleConnectionRoute(
+  nodes: ModelNode[],
+  edges: Edge[],
+  edgeId: string,
+  bounds?: CanvasBounds
+): Edge[] {
+  const edge = edges.find((item) => item.id === edgeId);
+  if (!edge) {
+    return edges;
+  }
+  const edgeForDesign = edgeWithoutManualPoints(edge);
+  const candidateEdges = edges.map((item) => item.id === edgeId ? edgeForDesign : item);
+  const prepared = prepareConnectionEdgeForCommit(nodes, candidateEdges, edgeId, bounds);
+  if (!prepared.ok || !prepared.edge) {
+    return edges;
+  }
+  return edges.map((item) => item.id === edgeId ? prepared.edge! : item);
+}
+
 function routeIntersectsSpecificNodes(points: Point[], edge: Edge, blockers: ModelNode[]) {
   if (points.length < 2 || blockers.length === 0) {
     return false;

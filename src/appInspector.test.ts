@@ -163,6 +163,23 @@ describe("graph inspector panel", () => {
     expect(finishBlock).not.toContain("setDragging(null);\n    writeOperationLog");
   });
 
+  test("rebuilds one affected connection globally after a single graphic move", async () => {
+    const source = await readAppSource();
+    const helperStart = source.indexOf("const rebuildSingleAffectedConnectionRoute");
+    const helperEnd = source.indexOf("const finishNodeDrag", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+    const finishStart = source.indexOf("const finishNodeDrag = () =>");
+    const finishEnd = source.indexOf("const moveSelection", finishStart);
+    const finishBlock = source.slice(finishStart, finishEnd);
+
+    expect(source).toContain("rebuildSingleConnectionRoute");
+    expect(helperStart).toBeGreaterThan(-1);
+    expect(helperBlock).toContain("affectedEdgeIds.length === 1");
+    expect(helperBlock).toContain("rebuildSingleConnectionRoute");
+    expect(finishBlock).toContain("rebuildSingleAffectedConnectionRoute");
+    expect(finishBlock.indexOf("rebuildSingleAffectedConnectionRoute")).toBeLessThan(finishBlock.indexOf("rerouteEdgesAroundMovedNodes"));
+  });
+
   test("uses live routing data while deferred routes are stale after a drag commit", async () => {
     const source = await readAppSource();
     const routingStart = source.indexOf("const deferredRoutingNodes = useDeferredValue(nodes);");

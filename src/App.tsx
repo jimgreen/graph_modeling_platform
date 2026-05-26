@@ -104,6 +104,7 @@ import {
   preserveDraggedRouteShape,
   prepareConnectionEdgeForCommit,
   projectPointToBusCenterline,
+  rebuildSingleConnectionRoute,
   rerouteEdgesAroundMovedNodes,
   resolveStraightBusSlideEndpoint,
   resolveStraightBusSlideEndpointToPoint,
@@ -3721,6 +3722,24 @@ export function App() {
     return changed ? nextEdges : currentEdges;
   };
 
+  const rebuildSingleAffectedConnectionRoute = (
+    nextNodes: ModelNode[],
+    candidateEdges: Edge[],
+    movedNodeIds: Iterable<string>,
+    selectedEdgeIds = new Set<string>()
+  ) => {
+    const movedIds = new Set(movedNodeIds);
+    if (movedIds.size !== 1) {
+      return candidateEdges;
+    }
+    const affectedEdgeIds = candidateEdges
+      .filter((edge) => movedIds.has(edge.sourceId) || movedIds.has(edge.targetId) || selectedEdgeIds.has(edge.id))
+      .map((edge) => edge.id);
+    return affectedEdgeIds.length === 1
+      ? rebuildSingleConnectionRoute(nextNodes, candidateEdges, affectedEdgeIds[0], canvasBounds)
+      : candidateEdges;
+  };
+
   const clampPointToCanvas = (point: Point) => clampPointToBounds(point, canvasBounds);
   const clampNodeToCanvas = (node: ModelNode, position = node.position) => clampNodePositionToBounds(node, canvasBounds, position);
   const clampViewBoxToCanvas = (box: typeof viewBox) => normalizeViewBoxToCanvas(box, canvasBounds);
@@ -3935,9 +3954,15 @@ export function App() {
           new Set(dragging.edgeIds)
         )
       : edges;
-    const nextEdges = rerouteEdgesAroundMovedNodes(
+    const rebuiltAdjustedEdges = rebuildSingleAffectedConnectionRoute(
       nextNodes,
       adjustedEdges,
+      dragging.nodeIds,
+      new Set(dragging.edgeIds)
+    );
+    const nextEdges = rerouteEdgesAroundMovedNodes(
+      nextNodes,
+      rebuiltAdjustedEdges,
       dragging.nodeIds,
       routePointSnapshotToRoutes(dragging.originalRoutePoints),
       canvasBounds
@@ -3994,9 +4019,15 @@ export function App() {
       originalRoutePoints,
       new Set(activeSelectedEdgeIds)
     );
-    const nextEdges = rerouteEdgesAroundMovedNodes(
+    const rebuiltAdjustedEdges = rebuildSingleAffectedConnectionRoute(
       nextNodes,
       adjustedEdges,
+      selectedNodeIds,
+      new Set(activeSelectedEdgeIds)
+    );
+    const nextEdges = rerouteEdgesAroundMovedNodes(
+      nextNodes,
+      rebuiltAdjustedEdges,
       selectedNodeIds,
       routePointSnapshotToRoutes(originalRoutePoints),
       canvasBounds
@@ -4038,9 +4069,14 @@ export function App() {
         },
         originalRoutePoints
       );
-      setEdges(rerouteEdgesAroundMovedNodes(
+      const rebuiltAdjustedEdges = rebuildSingleAffectedConnectionRoute(
         nextNodes,
         adjustedEdges,
+        [selectedNodeId]
+      );
+      setEdges(rerouteEdgesAroundMovedNodes(
+        nextNodes,
+        rebuiltAdjustedEdges,
         [selectedNodeId],
         routePointSnapshotToRoutes(originalRoutePoints),
         canvasBounds
