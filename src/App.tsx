@@ -1,4 +1,5 @@
 import { ChangeEvent, DragEvent, Fragment, isValidElement, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   AlignEndHorizontal,
   AlignEndVertical,
@@ -101,7 +102,9 @@ import {
   keyboardMoveStepForViewBox,
   lockProjectEdgeTerminals,
   preserveDraggedRouteShape,
+  prepareConnectionEdgeForCommit,
   projectPointToBusCenterline,
+  rerouteEdgesAroundMovedNodes,
   resolveStraightBusSlideEndpoint,
   resolveStraightBusSlideEndpointToPoint,
   synchronizeBusTerminalsWithEdges,
@@ -190,7 +193,14 @@ type ProjectMenuState = { x: number; y: number; schemeId?: string; projectId?: s
 type SidePanelResizeState = { side: SidePanelSide; startX: number; startWidth: number } | null;
 type StatusbarResizeState = { startY: number; startHeight: number } | null;
 type ValidationPanelResizeState = { startY: number; startHeight: number } | null;
-type RewiringState = { edgeId: string; endpoint: EdgeEndpoint; previewPoint: Point; dropTargetPoint?: Point; pointerId?: number } | null;
+type RewiringState = {
+  edgeId: string;
+  endpoint: EdgeEndpoint;
+  previewPoint: Point;
+  dropTargetPoint?: Point;
+  dropTarget?: ConnectTarget;
+  pointerId?: number;
+} | null;
 type ConnectTarget = { node: ModelNode; terminalId: string; point?: Point };
 type TerminalPressState = {
   nodeId: string;
@@ -728,22 +738,6 @@ const imageAssetsToMap = (assets: ImageAsset[]) =>
 
 const localImageAssetsFromStorage = (): ImageAsset[] =>
   Object.entries(readImageAssets()).map(([id, url], index) => ({ id, name: `本地图片 ${index + 1}`, folderId: "root", url }));
-
-function simpleOrthogonalPolyline(start: Point, end: Point, manualPoints: Point[] = []): Point[] {
-  const source = [start, ...manualPoints, end];
-  const points: Point[] = [source[0]];
-  for (let index = 1; index < source.length; index += 1) {
-    const previous = points[points.length - 1];
-    const current = source[index];
-    if (previous.x !== current.x && previous.y !== current.y) {
-      points.push({ x: current.x, y: previous.y });
-    }
-    if (points[points.length - 1].x !== current.x || points[points.length - 1].y !== current.y) {
-      points.push(current);
-    }
-  }
-  return points;
-}
 
 function pointsToPreviewPath(points: Point[]) {
   return points.map((point, index) => `${index === 0 ? "M" : "L"} ${Math.round(point.x)} ${Math.round(point.y)}`).join(" ");
@@ -2524,13 +2518,22 @@ export function App() {
     if (!sourceNode) {
       return "";
     }
-    const start = connectSource.point ?? getModelEdgeEndpointPoint(sourceNode, undefined, connectSource.terminalId);
-    if (start.x === endPoint.x || start.y === endPoint.y) {
-      return `M ${start.x} ${start.y} L ${endPoint.x} ${endPoint.y}`;
-    }
-    const midX = Math.round((start.x + endPoint.x) / 2);
-    return `M ${start.x} ${start.y} L ${midX} ${start.y} L ${midX} ${endPoint.y} L ${endPoint.x} ${endPoint.y}`;
-  }, [connectDropTargetPoint, connectPreviewPoint, connectSource, nodeById]);
+    const sourcePoint = connectSource.point ?? getModelEdgeEndpointPoint(sourceNode, undefined, connectSource.terminalId);
+    const route = routeEdgesForRendering(
+      nodes,
+      [{
+        id: "connect-preview",
+        sourceId: sourceNode.id,
+        targetId: "floating-connect-preview-target",
+        sourceTerminalId: connectSource.terminalId,
+        targetTerminalId: "t1",
+        sourcePoint,
+        targetPoint: endPoint
+      }],
+      canvasBounds
+    )[0];
+    return route?.path ?? "";
+  }, [canvasBounds, connectDropTargetPoint, connectPreviewPoint, connectSource, nodeById, nodes]);
   const connectPreviewColor = useMemo(() => {
     if (!connectSource) {
       return "";
@@ -2551,7 +2554,8 @@ export function App() {
       : undefined;
   const deferredRoutingNodes = useDeferredValue(nodes);
   const deferredRoutingEdges = useDeferredValue(edges);
-  const requiresLiveRouting = Boolean(manualPathDrag);
+  const deferredRoutingIsCurrent = deferredRoutingNodes === nodes && deferredRoutingEdges === edges;
+  const requiresLiveRouting = Boolean(manualPathDrag || !deferredRoutingIsCurrent);
   const routingNodes = requiresLiveRouting ? nodes : deferredRoutingNodes;
   const routingEdges = requiresLiveRouting ? edges : deferredRoutingEdges;
   const routedEdges = useMemo(
@@ -2586,22 +2590,44 @@ export function App() {
       nodes
     });
     const previewEdge = slidePatch ? { ...edge, ...slidePatch } : edge;
-    const sourcePoint =
-      rewiring.endpoint === "source"
-        ? rewiring.previewPoint
-        : getModelEdgeEndpointPoint(sourceNode, previewEdge.sourcePoint, previewEdge.sourceTerminalId);
-    const targetPoint =
-      rewiring.endpoint === "target"
-        ? rewiring.previewPoint
-        : getModelEdgeEndpointPoint(targetNode, previewEdge.targetPoint, previewEdge.targetTerminalId);
-    if (!sourcePoint || !targetPoint) {
-      return null;
-    }
+    const movingTarget = rewiring.dropTarget;
+    const previewRouteEdge: Edge = {
+      ...previewEdge,
+      sourceId:
+        rewiring.endpoint === "source"
+          ? movingTarget?.node.id ?? "floating-rewire-source"
+          : edge.sourceId,
+      targetId:
+        rewiring.endpoint === "target"
+          ? movingTarget?.node.id ?? "floating-rewire-target"
+          : edge.targetId,
+      sourceTerminalId:
+        rewiring.endpoint === "source"
+          ? movingTarget?.terminalId ?? "t1"
+          : previewEdge.sourceTerminalId,
+      targetTerminalId:
+        rewiring.endpoint === "target"
+          ? movingTarget?.terminalId ?? "t1"
+          : previewEdge.targetTerminalId,
+      sourcePoint:
+        rewiring.endpoint === "source"
+          ? movingTarget && isBusNode(movingTarget.node)
+            ? movingTarget.point
+            : rewiring.previewPoint
+          : previewEdge.sourcePoint,
+      targetPoint:
+        rewiring.endpoint === "target"
+          ? movingTarget && isBusNode(movingTarget.node)
+            ? movingTarget.point
+            : rewiring.previewPoint
+          : previewEdge.targetPoint
+    };
+    const route = routeEdgesForRendering(nodes, [previewRouteEdge], canvasBounds)[0];
     return {
       edgeId: edge.id,
-      path: pointsToPreviewPath(simpleOrthogonalPolyline(sourcePoint, targetPoint, edge.manualPoints ?? []))
+      path: route?.path ?? ""
     };
-  }, [edgeById, nodeById, nodes, rewiring]);
+  }, [canvasBounds, edgeById, nodeById, nodes, rewiring]);
   const manualPathPreviewRoute = useMemo(() => {
     if (!manualPathDrag?.previewRoutePoints?.length) {
       return null;
@@ -2638,14 +2664,13 @@ export function App() {
         originalMovingPoint: terminalPress.startPoint
       });
       const previewEdge = slidePatch ? { ...edge, ...slidePatch } : edge;
-      const sourcePoint = getModelEdgeEndpointPoint(sourceNode, previewEdge.sourcePoint, previewEdge.sourceTerminalId);
-      const targetPoint = getModelEdgeEndpointPoint(targetNode, previewEdge.targetPoint, previewEdge.targetTerminalId);
-      return [{
+      const route = routeEdgesForRendering(nodes, [previewEdge], canvasBounds)[0];
+      return route ? [{
         edgeId: edge.id,
-        path: pointsToPreviewPath(simpleOrthogonalPolyline(sourcePoint, targetPoint, previewEdge.manualPoints ?? []))
-      }];
+        path: route.path
+      }] : [];
     });
-  }, [edges, nodeById, nodes, terminalPress]);
+  }, [canvasBounds, edges, nodeById, nodes, terminalPress]);
   const terminalPressPreviewEdgeIdSet = useMemo(
     () => new Set(terminalPressPreviewEdgeRoutes.map((route) => route.edgeId)),
     [terminalPressPreviewEdgeRoutes]
@@ -3404,6 +3429,18 @@ export function App() {
     setOperationLog(`${time} ${message}`);
   };
 
+  const connectionCommitFailureMessage = (issues: { type?: string; message?: string }[] = []) => {
+    const needsReroute = issues.some((issue) =>
+      issue.type === "blocked-by-node" ||
+      issue.type === "overlaps-connection" ||
+      issue.type === "out-of-bounds"
+    );
+    if (needsReroute) {
+      return "已自动尝试避让图元和已有联络线，但当前空间不足以形成安全正交路径，请稍微移动相关图元或扩大显示区域后重试。";
+    }
+    return issues[0]?.message ?? "联络线不满足正交、避让、端子垂直或最优路径约束。";
+  };
+
   const copySelection = () => {
     setCanvasClipboard(buildCanvasClipboard(nodes, edges, routedEdges, selectedNodeIds, activeSelectedEdgeIds));
     writeOperationLog(`复制 ${selectedNodeIds.length} 个图元、${activeSelectedEdgeIds.length} 条联络线`);
@@ -3576,8 +3613,25 @@ export function App() {
       ])
     );
 
+  const routePointSnapshotToRoutes = (routePoints: Record<string, Point[]>): { edgeId: string; points: Point[]; path: string }[] =>
+    Object.entries(routePoints).map(([edgeId, points]) => ({
+      edgeId,
+      points: points.map((point) => ({ ...point })),
+      path: ""
+    }));
+
   const sameOptionalPoint = (first?: Point, second?: Point) =>
     (!first && !second) || (Boolean(first && second) && first?.x === second?.x && first?.y === second?.y);
+
+  const sameConnectTarget = (first?: ConnectTarget, second?: ConnectTarget | null) =>
+    (!first && !second) ||
+    Boolean(
+      first &&
+        second &&
+        first.node.id === second.node.id &&
+        first.terminalId === second.terminalId &&
+        sameOptionalPoint(first.point, second.point)
+    );
 
   const sameOptionalPointList = (first?: Point[], second?: Point[]) =>
     (!first && !second) ||
@@ -3869,25 +3923,32 @@ export function App() {
         ? { ...node, position: clampNodeToCanvas(node, { x: originalPosition.x + delta.x, y: originalPosition.y + delta.y }) }
         : node;
     });
-    setNodes(nextNodes);
-    if (edges.some((edge) => dragNodeIds.has(edge.sourceId) || dragNodeIds.has(edge.targetId))) {
-      const deltasByNode = Object.fromEntries(dragging.nodeIds.map((id) => [id, delta]));
-      const preserveRouteEdgeIds = new Set(dragging.edgeIds);
-      setEdges((current) => {
-        const currentOriginalEdgePoints = current === edges ? dragging.originalEdgePoints : snapshotEdgePoints(current);
-        const currentOriginalRoutePoints = current === edges ? dragging.originalRoutePoints : {};
-        return adjustEdgesAfterNodeMove(
-          current,
+    const hasAffectedEdges = edges.some((edge) => dragNodeIds.has(edge.sourceId) || dragNodeIds.has(edge.targetId));
+    const adjustedEdges = hasAffectedEdges
+      ? adjustEdgesAfterNodeMove(
+          edges,
           nextNodes,
           dragNodeIds,
-          currentOriginalEdgePoints,
-          deltasByNode,
-          currentOriginalRoutePoints,
-          preserveRouteEdgeIds
-        );
-      });
-    }
-    setDragging(null);
+          dragging.originalEdgePoints,
+          Object.fromEntries(dragging.nodeIds.map((id) => [id, delta])),
+          dragging.originalRoutePoints,
+          new Set(dragging.edgeIds)
+        )
+      : edges;
+    const nextEdges = rerouteEdgesAroundMovedNodes(
+      nextNodes,
+      adjustedEdges,
+      dragging.nodeIds,
+      routePointSnapshotToRoutes(dragging.originalRoutePoints),
+      canvasBounds
+    );
+    flushSync(() => {
+      setNodes(nextNodes);
+      if (nextEdges !== edges) {
+        setEdges(nextEdges);
+      }
+      setDragging(null);
+    });
     writeOperationLog(`拖拽 ${dragging.nodeIds.length} 个图元 (${Math.round(delta.x)}, ${Math.round(delta.y)})`);
   };
 
@@ -3924,18 +3985,24 @@ export function App() {
         ? { ...node, position: clampNodeToCanvas(node, { x: node.position.x + boundedDelta.x, y: node.position.y + boundedDelta.y }) }
         : node
     );
-    setNodes(nextNodes);
-    setEdges((current) =>
-      adjustEdgesAfterNodeMove(
-        current,
-        nextNodes,
-        selected,
-        current === edges ? originalEdgePoints : snapshotEdgePoints(current),
-        deltasByNode,
-        current === edges ? originalRoutePoints : {},
-        new Set(activeSelectedEdgeIds)
-      )
+    const adjustedEdges = adjustEdgesAfterNodeMove(
+      edges,
+      nextNodes,
+      selected,
+      originalEdgePoints,
+      deltasByNode,
+      originalRoutePoints,
+      new Set(activeSelectedEdgeIds)
     );
+    const nextEdges = rerouteEdgesAroundMovedNodes(
+      nextNodes,
+      adjustedEdges,
+      selectedNodeIds,
+      routePointSnapshotToRoutes(originalRoutePoints),
+      canvasBounds
+    );
+    setNodes(nextNodes);
+    setEdges(nextEdges);
     writeOperationLog(`移动 ${selectedNodeIds.length} 个图元 (${Math.round(boundedDelta.x)}, ${Math.round(boundedDelta.y)})`);
   };
 
@@ -3955,17 +4022,29 @@ export function App() {
         y: nextPatch.position!.y - selectedNode.position.y
       };
       const originalEdgePoints = snapshotEdgePoints();
-      setEdges((current) =>
-        adjustEdgesAfterNodeMove(
-          current,
-          nextNodes,
-          new Set([selectedNodeId]),
-          current === edges ? originalEdgePoints : snapshotEdgePoints(current),
-          {
-            [selectedNodeId]: delta
-          }
-        )
+      const originalRoutePoints = Object.fromEntries(
+        edges.map((edge) => [
+          edge.id,
+          (routedEdgeById.get(edge.id)?.points ?? []).map((point) => ({ ...point }))
+        ])
       );
+      const adjustedEdges = adjustEdgesAfterNodeMove(
+        edges,
+        nextNodes,
+        new Set([selectedNodeId]),
+        originalEdgePoints,
+        {
+          [selectedNodeId]: delta
+        },
+        originalRoutePoints
+      );
+      setEdges(rerouteEdgesAroundMovedNodes(
+        nextNodes,
+        adjustedEdges,
+        [selectedNodeId],
+        routePointSnapshotToRoutes(originalRoutePoints),
+        canvasBounds
+      ));
     }
     setNodes(nextNodes);
   };
@@ -4469,6 +4548,27 @@ export function App() {
     return null;
   };
 
+  const commitNewConnectionEdge = (newEdge: Edge, sourceName: string, targetName: string) => {
+    const prepared = prepareConnectionEdgeForCommit(nodes, [...edges, newEdge], newEdge.id, canvasBounds);
+    if (!prepared.ok || !prepared.edge) {
+      const message = connectionCommitFailureMessage(prepared.issues);
+      window.alert(`联络线绘制失败：${message}`);
+      writeOperationLog(`联络线绘制失败：${message}`);
+      return false;
+    }
+    const preparedEdge = prepared.edge;
+    pushUndoSnapshot();
+    setEdges((current) => [...current, preparedEdge]);
+    setSelectedNodeIds([]);
+    setSelectedEdgeId(preparedEdge.id);
+    setSelectedEdgeIds([preparedEdge.id]);
+    setConnectSource(null);
+    resetConnectPreviewState();
+    setMode("select");
+    writeOperationLog(`新增联络线：${sourceName} -> ${targetName}`);
+    return true;
+  };
+
   const finishConnectToTarget = (target: NonNullable<ReturnType<typeof findConnectTargetAtPoint>>, endpointPoint = connectPreviewPoint) => {
     if (!connectSource) {
       return false;
@@ -4488,16 +4588,7 @@ export function App() {
         ? target.point ?? busAnchorFromPoint(target.node, endpointPoint ?? getTerminalPoint(target.node, target.terminalId))
         : target.point
     };
-    pushUndoSnapshot();
-    setEdges((current) => [...current, newEdge]);
-    setSelectedNodeIds([]);
-    setSelectedEdgeId(newEdge.id);
-    setSelectedEdgeIds([newEdge.id]);
-    setConnectSource(null);
-    resetConnectPreviewState();
-    setMode("select");
-    writeOperationLog(`新增联络线：${sourceNode.name} -> ${target.node.name}`);
-    return true;
+    return commitNewConnectionEdge(newEdge, sourceNode.name, target.node.name);
   };
 
   const finishRewiring = (event: PointerEvent<SVGSVGElement>) => {
@@ -4507,47 +4598,56 @@ export function App() {
     const point = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
     const target = findRewireTargetAtPoint(point, rewiring);
     if (target) {
-      pushUndoSnapshot();
+      const edge = edgeById.get(rewiring.edgeId);
       const movingPoint = target.point ?? getTerminalPoint(target.node, target.terminalId);
-      setEdges((current) =>
-        current.map((edge) =>
-          {
-            if (edge.id !== rewiring.edgeId) {
-              return edge;
+      const sourceNode = edge ? nodeById.get(edge.sourceId) : undefined;
+      const targetNode = edge ? nodeById.get(edge.targetId) : undefined;
+      const rewiredEdge = edge
+        ? rewiring.endpoint === "source"
+          ? {
+              ...edge,
+              sourceId: target.node.id,
+              sourceTerminalId: target.terminalId,
+              sourcePoint: target.point
             }
-            const sourceNode = nodeById.get(edge.sourceId);
-            const targetNode = nodeById.get(edge.targetId);
-            const rewiredEdge =
-              rewiring.endpoint === "source"
-                ? {
-                    ...edge,
-                    sourceId: target.node.id,
-                    sourceTerminalId: target.terminalId,
-                    sourcePoint: target.point
-                  }
-                : {
-                    ...edge,
-                    targetId: target.node.id,
-                    targetTerminalId: target.terminalId,
-                    targetPoint: target.point
-                  };
-            const slidePatch = sourceNode && targetNode
-              ? resolveStraightBusSlideEndpointToPoint({
-                  edge,
-                  sourceNode,
-                  targetNode,
-                  movingEndpoint: rewiring.endpoint,
-                  movingPoint,
-                  nodes,
-                  movingNode: target.node,
-                  movingTerminalId: target.terminalId
-                })
-              : null;
-            return slidePatch ? { ...rewiredEdge, ...slidePatch } : rewiredEdge;
-          }
-        )
-      );
-      writeOperationLog(`调整联络线端子：${rewiring.edgeId}`);
+          : {
+              ...edge,
+              targetId: target.node.id,
+              targetTerminalId: target.terminalId,
+              targetPoint: target.point
+            }
+        : null;
+      const slidePatch = edge && sourceNode && targetNode
+        ? resolveStraightBusSlideEndpointToPoint({
+            edge,
+            sourceNode,
+            targetNode,
+            movingEndpoint: rewiring.endpoint,
+            movingPoint,
+            nodes,
+            movingNode: target.node,
+            movingTerminalId: target.terminalId
+          })
+        : null;
+      const candidateEdge = rewiredEdge ? (slidePatch ? { ...rewiredEdge, ...slidePatch } : rewiredEdge) : null;
+      const prepared = candidateEdge
+        ? prepareConnectionEdgeForCommit(
+            nodes,
+            edges.map((item) => item.id === rewiring.edgeId ? candidateEdge : item),
+            rewiring.edgeId,
+            canvasBounds
+          )
+        : null;
+      if (prepared?.ok && prepared.edge) {
+        const preparedEdge = prepared.edge;
+        pushUndoSnapshot();
+        setEdges((current) => current.map((item) => item.id === rewiring.edgeId ? preparedEdge : item));
+        writeOperationLog(`调整联络线端子：${rewiring.edgeId}`);
+      } else {
+        const message = connectionCommitFailureMessage(prepared?.issues);
+        window.alert(`联络线端子调整失败：${message}`);
+        writeOperationLog(`联络线端子调整失败：${message}`);
+      }
     } else {
       window.alert("联络线端子必须连接到同类型端子或母线，已保持原连接。");
       writeOperationLog("联络线端子调整失败");
@@ -4763,9 +4863,10 @@ export function App() {
       setRewiring((current) =>
         current && current.edgeId === rewiring.edgeId && current.endpoint === rewiring.endpoint
           ? sameOptionalPoint(current.previewPoint, snappedPreviewPoint) &&
-            sameOptionalPoint(current.dropTargetPoint, dropTargetPoint)
+            sameOptionalPoint(current.dropTargetPoint, dropTargetPoint) &&
+            sameConnectTarget(current.dropTarget, target)
             ? current
-            : { ...current, previewPoint: snappedPreviewPoint, dropTargetPoint }
+            : { ...current, previewPoint: snappedPreviewPoint, dropTargetPoint, dropTarget: target ?? undefined }
           : current
       );
       return;
@@ -4931,15 +5032,27 @@ export function App() {
     );
     setNodes(arranged);
     const originalEdgePoints = snapshotEdgePoints();
-    setEdges((current) =>
-      adjustEdgesAfterNodeMove(
-        current,
-        arranged,
-        selected,
-        current === edges ? originalEdgePoints : snapshotEdgePoints(current),
-        deltas
-      )
+    const originalRoutePoints = Object.fromEntries(
+      edges.map((edge) => [
+        edge.id,
+        (routedEdgeById.get(edge.id)?.points ?? []).map((point) => ({ ...point }))
+      ])
     );
+    const adjustedEdges = adjustEdgesAfterNodeMove(
+      edges,
+      arranged,
+      selected,
+      originalEdgePoints,
+      deltas,
+      originalRoutePoints
+    );
+    setEdges(rerouteEdgesAroundMovedNodes(
+      arranged,
+      adjustedEdges,
+      selectedNodeIds,
+      routePointSnapshotToRoutes(originalRoutePoints),
+      canvasBounds
+    ));
   };
 
   const alignSelected = (direction: AlignMode) => {
@@ -5936,36 +6049,41 @@ export function App() {
       const otherNode = edge ? nodeById.get(rewiring.endpoint === "source" ? edge.targetId : edge.sourceId) : undefined;
       const otherTerminalId = rewiring.endpoint === "source" ? edge?.targetTerminalId : edge?.sourceTerminalId;
       if (edge && otherNode && otherTerminalId && canConnectTerminals(node, terminalId, otherNode, otherTerminalId)) {
-        pushUndoSnapshot();
         const movingPoint = busPoint ?? getTerminalPoint(node, terminalId);
         const sourceNode = nodeById.get(edge.sourceId);
         const targetNode = nodeById.get(edge.targetId);
-        setEdges((current) =>
-          current.map((item) =>
-            {
-              if (item.id !== edge.id) {
-                return item;
-              }
-              const rewiredEdge =
-                rewiring.endpoint === "source"
-                  ? { ...item, sourceId: node.id, sourceTerminalId: terminalId, sourcePoint: busPoint }
-                  : { ...item, targetId: node.id, targetTerminalId: terminalId, targetPoint: busPoint };
-              const slidePatch = sourceNode && targetNode
-                ? resolveStraightBusSlideEndpointToPoint({
-                    edge: item,
-                    sourceNode,
-                    targetNode,
-                    movingEndpoint: rewiring.endpoint,
-                    movingPoint,
-                    nodes,
-                    movingNode: node,
-                    movingTerminalId: terminalId
-                  })
-                : null;
-              return slidePatch ? { ...rewiredEdge, ...slidePatch } : rewiredEdge;
-            }
-          )
+        const rewiredEdge =
+          rewiring.endpoint === "source"
+            ? { ...edge, sourceId: node.id, sourceTerminalId: terminalId, sourcePoint: busPoint }
+            : { ...edge, targetId: node.id, targetTerminalId: terminalId, targetPoint: busPoint };
+        const slidePatch = sourceNode && targetNode
+          ? resolveStraightBusSlideEndpointToPoint({
+              edge,
+              sourceNode,
+              targetNode,
+              movingEndpoint: rewiring.endpoint,
+              movingPoint,
+              nodes,
+              movingNode: node,
+              movingTerminalId: terminalId
+            })
+          : null;
+        const candidateEdge = slidePatch ? { ...rewiredEdge, ...slidePatch } : rewiredEdge;
+        const prepared = prepareConnectionEdgeForCommit(
+          nodes,
+          edges.map((item) => item.id === edge.id ? candidateEdge : item),
+          edge.id,
+          canvasBounds
         );
+        if (prepared.ok && prepared.edge) {
+          const preparedEdge = prepared.edge;
+          pushUndoSnapshot();
+          setEdges((current) => current.map((item) => item.id === edge.id ? preparedEdge : item));
+        } else {
+          const message = connectionCommitFailureMessage(prepared.issues);
+          window.alert(`联络线端子调整失败：${message}`);
+          writeOperationLog(`联络线端子调整失败：${message}`);
+        }
       }
       setRewiring(null);
       return;
@@ -5999,16 +6117,7 @@ export function App() {
       targetTerminalId: terminalId,
       targetPoint: isBusNode(node) ? busAnchorFromPoint(node, connectPreviewPoint ?? busPoint ?? getTerminalPoint(node, terminalId)) : busPoint
     };
-    pushUndoSnapshot();
-    setEdges((current) => [
-      ...current,
-      newEdge
-    ]);
-    setSelectedEdgeId(newEdge.id);
-    setSelectedEdgeIds([newEdge.id]);
-    setConnectSource(null);
-    resetConnectPreviewState();
-    setMode("select");
+    commitNewConnectionEdge(newEdge, sourceNode.name, node.name);
   };
 
   const ensureSavedBeforeExport = () => {
@@ -7156,12 +7265,6 @@ export function App() {
                 </g>
               );
             })}
-            {dragPreviewEdgeRoutes.map((route) => (
-              <path key={`drag-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
-            ))}
-            {terminalPressPreviewEdgeRoutes.map((route) => (
-              <path key={`terminal-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
-            ))}
             {renderedRoutedEdges.map((route) => {
               const edge = edgeById.get(route.edgeId);
               if (!edge) return null;
@@ -7541,6 +7644,12 @@ export function App() {
                 </g>
               );
             })}
+            {dragPreviewEdgeRoutes.map((route) => (
+              <path key={`drag-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
+            ))}
+            {terminalPressPreviewEdgeRoutes.map((route) => (
+              <path key={`terminal-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
+            ))}
             {connectPreviewPath && (
               <path
                 d={connectPreviewPath}
@@ -7558,7 +7667,11 @@ export function App() {
                 <circle className="connect-drop-hint-core" cx="0" cy="0" r="5" />
               </g>
             )}
-            {selectedRoutedEdge && selectedEdge && (() => {
+            {selectedRoutedEdge &&
+              selectedEdge &&
+              !(draggingDelta && dragPreviewEdgeIdSet.has(selectedEdge.id)) &&
+              !terminalPressPreviewEdgeIdSet.has(selectedEdge.id) &&
+              (() => {
               const edge = selectedEdge;
               const route = selectedRoutedEdge;
               const isRewiringSelectedEdge = rewiring?.edgeId === edge.id;

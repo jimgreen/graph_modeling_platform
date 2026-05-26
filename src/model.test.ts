@@ -48,6 +48,8 @@ import {
   insertOrthogonalRouteBend,
   preserveDraggedRouteShape,
   upsertSavedProject,
+  rerouteEdgesAroundMovedNodes,
+  validateConnectionEdgeRoute,
   validateTopology,
   validateVoltageSetpointDeviations,
   getTerminalPoint,
@@ -79,6 +81,7 @@ import {
   normalizeNodeTerminalsByTemplate,
   normalizeVoltageBaseInput,
   normalizeViewBoxToCanvas,
+  prepareConnectionEdgeForCommit,
   terminalStubSegment,
   terminalVoltageBaseNumber,
   topologyCalculationMessage,
@@ -981,6 +984,148 @@ describe("power system model", () => {
     expect(Math.min(...yValues)).toBeGreaterThanOrEqual(blocker.position.y - blocker.size.height / 2 - 40);
   });
 
+  test("accepts a newly drawn connection only when the final route satisfies connection constraints", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 120 });
+    const target = createDefaultNode("ac-load", { x: 420, y: 120 });
+    const edge: Edge = {
+      id: "new-clear-connection",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+
+    const result = validateConnectionEdgeRoute([source, target], [edge], edge.id, { width: 640, height: 260 });
+
+    expect(result.ok).toBe(true);
+    expect(result.issues).toEqual([]);
+    expect(result.route?.points[0]).toEqual(getTerminalPoint(source, "t1"));
+    expect(result.route?.points[result.route.points.length - 1]).toEqual(getTerminalPoint(target, "t1"));
+  });
+
+  test("rejects a newly drawn connection when the final route still crosses a graphic", () => {
+    const source = createDefaultNode("ac-source", { x: 80, y: 60 });
+    const target = createDefaultNode("ac-load", { x: 330, y: 60 });
+    const blocker = {
+      ...createDefaultNode("static-rect", { x: 205, y: 60 }),
+      size: { width: 90, height: 260 }
+    };
+    const edge: Edge = {
+      id: "new-blocked-connection",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+
+    const result = validateConnectionEdgeRoute([source, target, blocker], [edge], edge.id, { width: 400, height: 120 });
+
+    expect(result.ok).toBe(false);
+    expect(result.issues.some((issue) => issue.type === "blocked-by-node" && issue.nodeId === blocker.id)).toBe(true);
+  });
+
+  test("redesigns a connection to the fewest safe bends before committing it", () => {
+    const source = createDefaultNode("ac-line", { x: 100, y: 120 });
+    const target = createDefaultNode("ac-line", { x: 460, y: 120 });
+    const edge: Edge = {
+      id: "over-bent-connection",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: 180, y: 120 },
+        { x: 180, y: 220 },
+        { x: 280, y: 220 },
+        { x: 280, y: 80 },
+        { x: 380, y: 80 },
+        { x: 380, y: 120 }
+      ]
+    };
+
+    const prepared = prepareConnectionEdgeForCommit([source, target], [edge], edge.id, { width: 640, height: 320 });
+    const route = prepared.edge
+      ? routeEdgesForRendering([source, target], [prepared.edge], { width: 640, height: 320 })[0]
+      : undefined;
+
+    expect(prepared.ok).toBe(true);
+    expect(prepared.issues).toEqual([]);
+    expect(prepared.edge?.manualPoints ?? []).toHaveLength(2);
+    expect(route?.points).toHaveLength(4);
+    expect(route?.points[1].y).toBe(route?.points[2].y);
+    expect(new Set(route?.points.map((point) => point.y))).toEqual(new Set([120]));
+  });
+
+  test("reroutes committed connection endpoints around nearby graphics instead of surfacing blocker failures", () => {
+    const source = { ...createDefaultNode("ac-source", { x: 100, y: 100 }), id: "source" };
+    const target = { ...createDefaultNode("ac-load", { x: 460, y: 100 }), id: "target" };
+    const blocker = {
+      ...createDefaultNode("ac-pv-source", { x: 180, y: 140 }),
+      id: "pv-blocker",
+      name: "交流光伏"
+    };
+    const edge: Edge = {
+      id: "rewired-near-pv",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+
+    const prepared = prepareConnectionEdgeForCommit([source, target, blocker], [edge], edge.id, { width: 640, height: 300 });
+    const validation = prepared.edge
+      ? validateConnectionEdgeRoute([source, target, blocker], [prepared.edge], prepared.edge.id, { width: 640, height: 300 })
+      : prepared;
+
+    expect(prepared.ok).toBe(true);
+    expect(prepared.edge).toBeDefined();
+    expect(validation.ok).toBe(true);
+    expect(validation.issues).toEqual([]);
+    expect(validation.route?.points[0]).toEqual(getTerminalPoint(source, "t1"));
+    expect(validation.route?.points[validation.route.points.length - 1]).toEqual(getTerminalPoint(target, "t1"));
+  });
+
+  test("branches a second connection from the same terminal without treating the shared endpoint stub as impossible", () => {
+    const source = { ...createDefaultNode("ac-source", { x: 120, y: 140 }), id: "source" };
+    const loadA = { ...createDefaultNode("ac-load", { x: 420, y: 80 }), id: "load-a" };
+    const loadB = { ...createDefaultNode("ac-load", { x: 420, y: 220 }), id: "load-b" };
+    const firstEdge: Edge = {
+      id: "first-branch",
+      sourceId: source.id,
+      targetId: loadA.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const firstPrepared = prepareConnectionEdgeForCommit([source, loadA, loadB], [firstEdge], firstEdge.id, { width: 700, height: 320 });
+    const secondEdge: Edge = {
+      id: "second-branch",
+      sourceId: source.id,
+      targetId: loadB.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+
+    const secondPrepared = prepareConnectionEdgeForCommit(
+      [source, loadA, loadB],
+      [firstPrepared.edge!, secondEdge],
+      secondEdge.id,
+      { width: 700, height: 320 }
+    );
+    const routes = secondPrepared.edge
+      ? routeEdgesForRendering([source, loadA, loadB], [firstPrepared.edge!, secondPrepared.edge], { width: 700, height: 320 })
+      : [];
+    const secondRoute = routes.find((route) => route.edgeId === secondEdge.id);
+    const validation = secondPrepared.edge
+      ? validateConnectionEdgeRoute([source, loadA, loadB], [firstPrepared.edge!, secondPrepared.edge], secondEdge.id, { width: 700, height: 320 })
+      : secondPrepared;
+
+    expect(secondPrepared.ok).toBe(true);
+    expect(secondPrepared.edge).toBeDefined();
+    expect(validation.ok).toBe(true);
+    expect(validation.issues).toEqual([]);
+    expect(secondRoute?.points.some((point) => point.y !== 140 && point.y !== 220)).toBe(true);
+  });
+
   test("clamps a moved device inside the display area", () => {
     const node = createDefaultNode("ac-source", { x: -100, y: 900 });
     const position = clampNodePositionToBounds(node, { width: 1980, height: 1024 });
@@ -1517,6 +1662,40 @@ describe("power system model", () => {
     const after = routeEdgesForRendering([source, target, movedUnrelated], [edge])[0].points;
 
     expect(after).toEqual(before);
+  });
+
+  test("reroutes unrelated connection lines when a moved graphic blocks their previous path", () => {
+    const source = { ...createDefaultNode("ac-source", { x: 120, y: 140 }), id: "source" };
+    const target = { ...createDefaultNode("ac-load", { x: 520, y: 140 }), id: "target" };
+    const blocker = { ...createDefaultNode("ac-pv-source", { x: 900, y: 140 }), id: "moved-pv", name: "交流光伏" };
+    const movedBlocker = { ...blocker, position: { x: 300, y: 201 } };
+    const edge: Edge = {
+      id: "blocked-after-move",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const beforeRoutes = routeEdgesForRendering([source, target, blocker], [edge], { width: 700, height: 320 });
+
+    const nextEdges = rerouteEdgesAroundMovedNodes(
+      [source, target, movedBlocker],
+      [edge],
+      [movedBlocker.id],
+      beforeRoutes,
+      { width: 700, height: 320 }
+    );
+    const validation = validateConnectionEdgeRoute(
+      [source, target, movedBlocker],
+      nextEdges,
+      edge.id,
+      { width: 700, height: 320 }
+    );
+
+    expect(nextEdges[0].manualPoints?.length).toBeGreaterThan(0);
+    expect(validation.ok).toBe(true);
+    expect(validation.issues).toEqual([]);
+    expect(validation.route?.points).not.toEqual(beforeRoutes[0].points);
   });
 
   test("anchors route endpoints on terminals and leaves terminals perpendicularly", () => {

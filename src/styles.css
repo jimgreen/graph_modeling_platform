@@ -916,10 +916,9 @@ button:disabled {
 }
 
 .connection-line.drag-preview {
-  stroke: var(--connection-color, #2563eb);
-  stroke-width: 3;
-  stroke-dasharray: 8 6;
-  opacity: 0.82;
+  stroke: #dc2626;
+  stroke-width: 4;
+  opacity: 1;
   pointer-events: none;
 }
 

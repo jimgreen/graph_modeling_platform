@@ -1570,6 +1570,33 @@ export type RoutedEdge = {
   path: string;
 };
 
+export type ConnectionRouteValidationIssueType =
+  | "missing-endpoint"
+  | "endpoint-mismatch"
+  | "non-orthogonal"
+  | "endpoint-not-perpendicular"
+  | "blocked-by-node"
+  | "overlaps-connection"
+  | "out-of-bounds";
+
+export type ConnectionRouteValidationIssue = {
+  type: ConnectionRouteValidationIssueType;
+  edgeId: string;
+  message: string;
+  nodeId?: string;
+  conflictingEdgeId?: string;
+};
+
+export type ConnectionRouteValidationResult = {
+  ok: boolean;
+  route?: RoutedEdge;
+  issues: ConnectionRouteValidationIssue[];
+};
+
+export type PreparedConnectionEdgeCommit = ConnectionRouteValidationResult & {
+  edge?: Edge;
+};
+
 export type TopologyValidationErrorType =
   | "floating-terminal"
   | "terminal-type-mismatch"
@@ -5624,8 +5651,11 @@ const ROUTE_BLOCKER_PADDING = 8;
 const ROUTE_CLEARANCE = 6;
 const ROUTE_LANE_SEARCH_MARGIN = 180;
 const ROUTE_LANE_SEGMENT_MARGIN = 36;
+const ROUTE_LANE_OFFSETS = [24, 56, 96, 144];
+const ROUTE_AVOIDED_SEGMENT_OFFSETS = [18, 36, 54];
 const ROUTE_TINY_DOGLEG_LIMIT = 18;
 const ROUTE_MIN_MOVABLE_SEGMENT_LENGTH = 18;
+const ROUTE_SHARED_ENDPOINT_STUB_LIMIT = 36;
 
 function routeIntersectsBlockers(points: Point[], blockers: ModelNode[], padding = ROUTE_BLOCKER_PADDING, protectedEndpointSegments = 0) {
   for (let index = 1; index < points.length; index += 1) {
@@ -5645,15 +5675,108 @@ function routeIntersectsBlockers(points: Point[], blockers: ModelNode[], padding
   return false;
 }
 
-function routeOverlapsSegments(points: Point[], avoidedSegments: Segment[]) {
-  for (let index = 1; index < points.length; index += 1) {
-    const a = points[index - 1];
-    const b = points[index];
-    if (avoidedSegments.some((segment) => segmentOverlapAmount(a, b, segment) > 2)) {
-      return true;
+type RouteOverlapPolicy = {
+  currentEdge?: Edge;
+  edgeById?: Map<string, Edge>;
+  nodeById?: Map<string, ModelNode>;
+  allowSharedEndpointStubs?: boolean;
+  sharedEndpointStubLimit?: number;
+};
+
+type RouteOverlapConflict = {
+  segment: Segment;
+  conflictingSegment: Segment;
+  overlap: number;
+};
+
+function routeEndpointSideForSegment(segment: Pick<Segment, "segmentIndex" | "lastSegmentIndex">): EdgeSide | null {
+  if (segment.segmentIndex === 0) {
+    return "source";
+  }
+  if (segment.segmentIndex === segment.lastSegmentIndex) {
+    return "target";
+  }
+  return null;
+}
+
+function edgeNodeId(edge: Edge, side: EdgeSide) {
+  return side === "source" ? edge.sourceId : edge.targetId;
+}
+
+function pointsAreNear(a: Point, b: Point, tolerance = 2) {
+  return Math.abs(a.x - b.x) <= tolerance && Math.abs(a.y - b.y) <= tolerance;
+}
+
+function edgesShareEndpoint(
+  currentEdge: Edge,
+  currentSide: EdgeSide,
+  otherEdge: Edge,
+  otherSide: EdgeSide,
+  nodeById: Map<string, ModelNode>
+) {
+  const currentNodeId = edgeNodeId(currentEdge, currentSide);
+  const otherNodeId = edgeNodeId(otherEdge, otherSide);
+  if (currentNodeId !== otherNodeId) {
+    return false;
+  }
+  const node = nodeById.get(currentNodeId);
+  if (!node) {
+    return false;
+  }
+  const currentTerminalId = edgeTerminalId(currentEdge, currentSide);
+  const otherTerminalId = edgeTerminalId(otherEdge, otherSide);
+  if (!isBusNode(node)) {
+    return getTerminal(node, currentTerminalId).id === getTerminal(node, otherTerminalId).id;
+  }
+  const currentPoint = getEdgeEndpointPoint(node, edgeEndpointStoredPoint(currentEdge, currentSide), currentTerminalId);
+  const otherPoint = getEdgeEndpointPoint(node, edgeEndpointStoredPoint(otherEdge, otherSide), otherTerminalId);
+  return pointsAreNear(currentPoint, otherPoint);
+}
+
+function isAllowedSharedEndpointOverlap(
+  currentSegment: Segment,
+  conflictingSegment: Segment,
+  overlap: number,
+  policy: RouteOverlapPolicy
+) {
+  if (!policy.allowSharedEndpointStubs || !policy.currentEdge || !policy.edgeById || !policy.nodeById) {
+    return false;
+  }
+  const limit = policy.sharedEndpointStubLimit ?? ROUTE_SHARED_ENDPOINT_STUB_LIMIT;
+  if (overlap > limit) {
+    return false;
+  }
+  const currentSide = routeEndpointSideForSegment(currentSegment);
+  const conflictingSide = routeEndpointSideForSegment(conflictingSegment);
+  if (!currentSide || !conflictingSide) {
+    return false;
+  }
+  const conflictingEdge = policy.edgeById.get(conflictingSegment.edgeId);
+  if (!conflictingEdge) {
+    return false;
+  }
+  return edgesShareEndpoint(policy.currentEdge, currentSide, conflictingEdge, conflictingSide, policy.nodeById);
+}
+
+function findRouteOverlapConflict(points: Point[], avoidedSegments: Segment[], policy: RouteOverlapPolicy = {}): RouteOverlapConflict | null {
+  const currentSegments = getSegments(policy.currentEdge?.id ?? "__current_route__", 0, points);
+  for (const segment of currentSegments) {
+    for (const conflictingSegment of avoidedSegments) {
+      const overlap = segmentOverlapAmount(segment.a, segment.b, conflictingSegment);
+      if (overlap <= 2) {
+        continue;
+      }
+      if (isAllowedSharedEndpointOverlap(segment, conflictingSegment, overlap, policy)) {
+        continue;
+      }
+      return { segment, conflictingSegment, overlap };
     }
   }
-  return false;
+  return null;
+}
+
+function routeOverlapsSegments(points: Point[], avoidedSegments: Segment[], policy: RouteOverlapPolicy = {}) {
+  return Boolean(findRouteOverlapConflict(points, avoidedSegments, policy));
 }
 
 function firstRouteBlockerIntersection(points: Point[], blockers: ModelNode[], padding = ROUTE_BLOCKER_PADDING, protectedEndpointSegments = 0) {
@@ -5841,6 +5964,36 @@ function isProtectedRoutePointIndex(index: number, length: number) {
 
 function segmentManhattanLength(a: Point, b: Point) {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+}
+
+function routeManhattanLength(points: Point[]) {
+  let length = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    length += segmentManhattanLength(points[index - 1], points[index]);
+  }
+  return length;
+}
+
+function routeBendCount(points: Point[]) {
+  let bends = 0;
+  let previousOrientation: "horizontal" | "vertical" | null = null;
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1];
+    const point = points[index];
+    const orientation = previous.y === point.y
+      ? "horizontal"
+      : previous.x === point.x
+        ? "vertical"
+        : null;
+    if (!orientation) {
+      continue;
+    }
+    if (previousOrientation && previousOrientation !== orientation) {
+      bends += 1;
+    }
+    previousOrientation = orientation;
+  }
+  return bends;
 }
 
 function compactRoutePreservingEndpointStubs(points: Point[]) {
@@ -6197,6 +6350,7 @@ type Segment = {
   edgeId: string;
   edgeIndex: number;
   segmentIndex: number;
+  lastSegmentIndex: number;
   a: Point;
   b: Point;
   orientation: "horizontal" | "vertical";
@@ -6204,13 +6358,14 @@ type Segment = {
 
 function getSegments(edgeId: string, edgeIndex: number, points: Point[]): Segment[] {
   const segments: Segment[] = [];
+  const lastSegmentIndex = points.length - 2;
   for (let index = 1; index < points.length; index += 1) {
     const a = points[index - 1];
     const b = points[index];
     if (a.x === b.x && a.y !== b.y) {
-      segments.push({ edgeId, edgeIndex, segmentIndex: index - 1, a, b, orientation: "vertical" });
+      segments.push({ edgeId, edgeIndex, segmentIndex: index - 1, lastSegmentIndex, a, b, orientation: "vertical" });
     } else if (a.y === b.y && a.x !== b.x) {
-      segments.push({ edgeId, edgeIndex, segmentIndex: index - 1, a, b, orientation: "horizontal" });
+      segments.push({ edgeId, edgeIndex, segmentIndex: index - 1, lastSegmentIndex, a, b, orientation: "horizontal" });
     }
   }
   return segments;
@@ -6297,19 +6452,33 @@ function candidateLanes(startOut: Point, endOut: Point, blockers: ModelNode[], a
   );
   const clampX = (value: number) => bounds ? Math.max(0, Math.min(bounds.width, value)) : value;
   const clampY = (value: number) => bounds ? Math.max(0, Math.min(bounds.height, value)) : value;
+  const xLaneOffsets = blockerBoxes.flatMap((box) =>
+    ROUTE_LANE_OFFSETS.flatMap((offset) => [box.left - offset, box.right + offset])
+  );
+  const yLaneOffsets = blockerBoxes.flatMap((box) =>
+    ROUTE_LANE_OFFSETS.flatMap((offset) => [box.top - offset, box.bottom + offset])
+  );
+  const verticalSegmentLanes = laneAvoidedSegments
+    .filter((segment) => segment.orientation === "vertical")
+    .flatMap((segment) => ROUTE_AVOIDED_SEGMENT_OFFSETS.flatMap((offset) => [segment.a.x - offset, segment.a.x + offset]));
+  const horizontalSegmentLanes = laneAvoidedSegments
+    .filter((segment) => segment.orientation === "horizontal")
+    .flatMap((segment) => ROUTE_AVOIDED_SEGMENT_OFFSETS.flatMap((offset) => [segment.a.y - offset, segment.a.y + offset]));
   const xValues = [
     startOut.x,
     endOut.x,
     Math.round((startOut.x + endOut.x) / 2),
-    ...blockerBoxes.flatMap((box) => [box.left - 24, box.right + 24, box.left - 56, box.right + 56]),
-    ...laneAvoidedSegments.filter((segment) => segment.orientation === "vertical").flatMap((segment) => [segment.a.x - 18, segment.a.x + 18])
+    ...(bounds ? [ROUTE_CLEARANCE, bounds.width - ROUTE_CLEARANCE] : []),
+    ...xLaneOffsets,
+    ...verticalSegmentLanes
   ].map(clampX);
   const yValues = [
     startOut.y,
     endOut.y,
     Math.round((startOut.y + endOut.y) / 2),
-    ...blockerBoxes.flatMap((box) => [box.top - 24, box.bottom + 24, box.top - 56, box.bottom + 56]),
-    ...laneAvoidedSegments.filter((segment) => segment.orientation === "horizontal").flatMap((segment) => [segment.a.y - 18, segment.a.y + 18])
+    ...(bounds ? [ROUTE_CLEARANCE, bounds.height - ROUTE_CLEARANCE] : []),
+    ...yLaneOffsets,
+    ...horizontalSegmentLanes
   ].map(clampY);
   return { xs: uniqueSorted(xValues), ys: uniqueSorted(yValues) };
 }
@@ -6340,6 +6509,8 @@ function buildRouteCandidates(startOut: Point, endOut: Point, blockers: ModelNod
 function selectRouteCandidate(candidates: Point[][], blockers: ModelNode[], avoidedSegments: Segment[]) {
   let bestCandidate = candidates[0];
   let bestTier = Number.POSITIVE_INFINITY;
+  let bestBends = Number.POSITIVE_INFINITY;
+  let bestLength = Number.POSITIVE_INFINITY;
   let bestScore = Number.POSITIVE_INFINITY;
 
   for (const candidate of candidates) {
@@ -6350,9 +6521,20 @@ function selectRouteCandidate(candidates: Point[][], blockers: ModelNode[], avoi
     if (tier > bestTier) {
       continue;
     }
+    const candidateBends = routeBendCount(candidate);
+    const candidateLength = routeManhattanLength(candidate);
     const candidateScore = scoreRoute(candidate, blockers, avoidedSegments);
-    if (tier < bestTier || candidateScore < bestScore) {
+    if (
+      tier < bestTier ||
+      (tier === bestTier &&
+        (candidateBends < bestBends ||
+          (candidateBends === bestBends &&
+            (candidateLength < bestLength ||
+              (candidateLength === bestLength && candidateScore < bestScore)))))
+    ) {
       bestTier = tier;
+      bestBends = candidateBends;
+      bestLength = candidateLength;
       bestScore = candidateScore;
       bestCandidate = candidate;
     }
@@ -6437,6 +6619,473 @@ export function routeEdgesForRendering(nodes: ModelNode[], edges: Edge[], bounds
     crossingSegments.push(...getSegments(route.edgeId, index, route.points));
     return routedEdge;
   });
+}
+
+function routeEndpointNormal(node: ModelNode, endpointPoint: Point, otherPoint: Point, terminalId?: string): Point {
+  return isBusNode(node) ? getBusEndpointNormal(node, endpointPoint, otherPoint) : getTerminalNormal(node, terminalId);
+}
+
+function routeSegmentMatchesNormal(endpoint: Point, adjacent: Point, normal: Point) {
+  const vertical = Math.round(endpoint.x) === Math.round(adjacent.x);
+  const horizontal = Math.round(endpoint.y) === Math.round(adjacent.y);
+  return (vertical && normal.y !== 0) || (horizontal && normal.x !== 0);
+}
+
+function segmentIntersectsRouteBlocker(
+  a: Point,
+  b: Point,
+  segmentIndex: number,
+  lastSegmentIndex: number,
+  node: ModelNode,
+  sourceId: string,
+  targetId: string
+) {
+  if (node.id.startsWith("floating-")) {
+    return false;
+  }
+  if (node.id === sourceId && segmentIndex === 0) {
+    return false;
+  }
+  if (node.id === targetId && segmentIndex === lastSegmentIndex) {
+    return false;
+  }
+  return segmentIntersectsNodeBody(a, b, node);
+}
+
+export function validateConnectionEdgeRoute(
+  nodes: ModelNode[],
+  edges: Edge[],
+  edgeId: string,
+  bounds?: CanvasBounds
+): ConnectionRouteValidationResult {
+  const issues: ConnectionRouteValidationIssue[] = [];
+  const edge = edges.find((item) => item.id === edgeId);
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const source = edge ? nodeById.get(edge.sourceId) : undefined;
+  const target = edge ? nodeById.get(edge.targetId) : undefined;
+  if (!edge || !source || !target) {
+    issues.push({
+      type: "missing-endpoint",
+      edgeId,
+      message: "联络线缺少首端或末端设备，不能生成悬空联络线。"
+    });
+    return { ok: false, issues };
+  }
+
+  const routes = routeEdgesForRendering(nodes, edges, bounds);
+  const route = routes.find((item) => item.edgeId === edgeId);
+  if (!route || route.points.length < 2) {
+    issues.push({
+      type: "missing-endpoint",
+      edgeId,
+      message: "联络线无法生成有效正交路径。"
+    });
+    return { ok: false, issues };
+  }
+
+  const start = getEdgeEndpointPoint(source, edge.sourcePoint, edge.sourceTerminalId);
+  const end = getEdgeEndpointPoint(target, edge.targetPoint, edge.targetTerminalId);
+  const first = route.points[0];
+  const last = route.points[route.points.length - 1];
+  if (!samePoint(first, start) || !samePoint(last, end)) {
+    issues.push({
+      type: "endpoint-mismatch",
+      edgeId,
+      message: "联络线路径首末点没有准确落在设备端子或母线连接点上。"
+    });
+  }
+
+  const sourceNormal = routeEndpointNormal(source, start, end, edge.sourceTerminalId);
+  const targetNormal = routeEndpointNormal(target, end, start, edge.targetTerminalId);
+  if (!routeSegmentMatchesNormal(route.points[0], route.points[1], sourceNormal)) {
+    issues.push({
+      type: "endpoint-not-perpendicular",
+      edgeId,
+      nodeId: source.id,
+      message: `联络线首端没有与 ${source.name} 的端子法平面保持垂直。`
+    });
+  }
+  if (!routeSegmentMatchesNormal(route.points[route.points.length - 1], route.points[route.points.length - 2], targetNormal)) {
+    issues.push({
+      type: "endpoint-not-perpendicular",
+      edgeId,
+      nodeId: target.id,
+      message: `联络线末端没有与 ${target.name} 的端子法平面保持垂直。`
+    });
+  }
+
+  const lastSegmentIndex = route.points.length - 2;
+  for (let index = 1; index < route.points.length; index += 1) {
+    const a = route.points[index - 1];
+    const b = route.points[index];
+    if (a.x !== b.x && a.y !== b.y) {
+      issues.push({
+        type: "non-orthogonal",
+        edgeId,
+        message: "联络线路径存在斜线段，必须保持横平竖直。"
+      });
+      continue;
+    }
+    if (bounds && (a.x < 0 || a.x > bounds.width || a.y < 0 || a.y > bounds.height || b.x < 0 || b.x > bounds.width || b.y < 0 || b.y > bounds.height)) {
+      issues.push({
+        type: "out-of-bounds",
+        edgeId,
+        message: "联络线路径超出模型显示区域。"
+      });
+    }
+    for (const node of nodes) {
+      if (segmentIntersectsRouteBlocker(a, b, index - 1, lastSegmentIndex, node, source.id, target.id)) {
+        issues.push({
+          type: "blocked-by-node",
+          edgeId,
+          nodeId: node.id,
+          message: `联络线路径被图元 ${node.name} 遮挡或穿越。`
+        });
+      }
+    }
+  }
+
+  const edgeById = new Map(edges.map((item) => [item.id, item]));
+  const otherSegments = routes
+    .flatMap((item, index) => item.edgeId === edgeId ? [] : getSegments(item.edgeId, index, item.points));
+  const overlapConflict = findRouteOverlapConflict(route.points, otherSegments, {
+    currentEdge: edge,
+    edgeById,
+    nodeById,
+    allowSharedEndpointStubs: true
+  });
+  if (overlapConflict) {
+    const conflict = overlapConflict.conflictingSegment;
+    issues.push({
+      type: "overlaps-connection",
+      edgeId,
+      conflictingEdgeId: conflict.edgeId,
+      message: conflict.edgeId
+        ? `联络线路径与已有联络线 ${conflict.edgeId} 存在线段重叠。`
+        : "联络线路径与已有联络线存在线段重叠。"
+    });
+  }
+
+  return { ok: issues.length === 0, route, issues };
+}
+
+function commitManualPointsFromRoute(points: Point[]) {
+  const manualPoints = points.length > 4 ? points.slice(2, -2) : points.slice(1, -1);
+  return manualPoints.map((point) => ({ ...point }));
+}
+
+function edgeWithoutManualPoints(edge: Edge): Edge {
+  const next = { ...edge };
+  delete next.manualPoints;
+  return next;
+}
+
+function edgeWithCommitManualPoints(edge: Edge, route: RoutedEdge): Edge {
+  const manualPoints = commitManualPointsFromRoute(route.points);
+  const withoutManualPoints = edgeWithoutManualPoints(edge);
+  return manualPoints.length > 0
+    ? { ...withoutManualPoints, manualPoints }
+    : withoutManualPoints;
+}
+
+type EdgeRoutingContext = {
+  start: Point;
+  end: Point;
+  startOut: Point;
+  endOut: Point;
+  blockers: ModelNode[];
+};
+
+function buildEdgeRoutingContext(source: ModelNode, target: ModelNode, nodes: ModelNode[], edge?: Edge): EdgeRoutingContext {
+  const start = getEdgeEndpointPoint(source, edge?.sourcePoint, edge?.sourceTerminalId);
+  const end = getEdgeEndpointPoint(target, edge?.targetPoint, edge?.targetTerminalId);
+  const sourceNormal = isBusNode(source) ? getBusEndpointNormal(source, start, end) : getTerminalNormal(source, edge?.sourceTerminalId);
+  const targetNormal = isBusNode(target) ? getBusEndpointNormal(target, end, start) : getTerminalNormal(target, edge?.targetTerminalId);
+  const stubLength = 28;
+  const initialStartOut = {
+    x: start.x + sourceNormal.x * stubLength,
+    y: start.y + sourceNormal.y * stubLength
+  };
+  const initialEndOut = {
+    x: end.x + targetNormal.x * stubLength,
+    y: end.y + targetNormal.y * stubLength
+  };
+  const blockers = [
+    source,
+    target,
+    ...relevantBlockersForRoute(source, target, nodes, initialStartOut, initialEndOut, false)
+  ];
+  return {
+    start,
+    end,
+    startOut: safeStubPoint(start, sourceNormal, blockers, stubLength),
+    endOut: safeStubPoint(end, targetNormal, blockers, stubLength),
+    blockers
+  };
+}
+
+function routeHasCommitBlockingIssue(points: Point[], nodes: ModelNode[], source: ModelNode, target: ModelNode, bounds?: CanvasBounds) {
+  if (points.length < 2) {
+    return true;
+  }
+  const lastSegmentIndex = points.length - 2;
+  for (let index = 1; index < points.length; index += 1) {
+    const a = points[index - 1];
+    const b = points[index];
+    if (a.x !== b.x && a.y !== b.y) {
+      return true;
+    }
+    if (
+      bounds &&
+      (a.x < 0 || a.x > bounds.width || a.y < 0 || a.y > bounds.height ||
+        b.x < 0 || b.x > bounds.width || b.y < 0 || b.y > bounds.height)
+    ) {
+      return true;
+    }
+    for (const node of nodes) {
+      if (segmentIntersectsRouteBlocker(a, b, index - 1, lastSegmentIndex, node, source.id, target.id)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function routeEndpointSegmentsAreValid(points: Point[], source: ModelNode, target: ModelNode, edge: Edge) {
+  if (points.length < 2) {
+    return false;
+  }
+  const start = getEdgeEndpointPoint(source, edge.sourcePoint, edge.sourceTerminalId);
+  const end = getEdgeEndpointPoint(target, edge.targetPoint, edge.targetTerminalId);
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (!samePoint(first, start) || !samePoint(last, end)) {
+    return false;
+  }
+  const sourceNormal = routeEndpointNormal(source, start, end, edge.sourceTerminalId);
+  const targetNormal = routeEndpointNormal(target, end, start, edge.targetTerminalId);
+  return (
+    routeSegmentMatchesNormal(points[0], points[1], sourceNormal) &&
+    routeSegmentMatchesNormal(points[points.length - 1], points[points.length - 2], targetNormal)
+  );
+}
+
+function routeIsSafeForCommit(
+  points: Point[],
+  nodes: ModelNode[],
+  source: ModelNode,
+  target: ModelNode,
+  edge: Edge,
+  avoidedSegments: Segment[],
+  nodeById: Map<string, ModelNode>,
+  edgeById: Map<string, Edge>,
+  bounds?: CanvasBounds
+) {
+  return (
+    routeEndpointSegmentsAreValid(points, source, target, edge) &&
+    !routeHasCommitBlockingIssue(points, nodes, source, target, bounds) &&
+    !routeOverlapsSegments(points, avoidedSegments, {
+      currentEdge: edge,
+      edgeById,
+      nodeById,
+      allowSharedEndpointStubs: true
+    })
+  );
+}
+
+function routeSignature(points: Point[]) {
+  return points.map((point) => `${Math.round(point.x)},${Math.round(point.y)}`).join(";");
+}
+
+function selectCommitSafeRoute(
+  candidates: Point[][],
+  nodes: ModelNode[],
+  source: ModelNode,
+  target: ModelNode,
+  edge: Edge,
+  avoidedSegments: Segment[],
+  nodeById: Map<string, ModelNode>,
+  edgeById: Map<string, Edge>,
+  bounds?: CanvasBounds
+): Point[] | null {
+  let bestRoute: Point[] | null = null;
+  let bestBends = Number.POSITIVE_INFINITY;
+  let bestLength = Number.POSITIVE_INFINITY;
+  let bestScore = Number.POSITIVE_INFINITY;
+  const seen = new Set<string>();
+  const scoreBlockers = nodes.filter((node) => node.id !== source.id && node.id !== target.id);
+
+  for (const candidate of candidates) {
+    const simplified = simplifyRoutePreservingEndpointStubs(candidate, {
+      blockers: nodes,
+      avoidedSegments,
+      reduceTinyDoglegs: true
+    });
+    const signature = routeSignature(simplified);
+    if (seen.has(signature)) {
+      continue;
+    }
+    seen.add(signature);
+    if (!routeIsSafeForCommit(simplified, nodes, source, target, edge, avoidedSegments, nodeById, edgeById, bounds)) {
+      continue;
+    }
+    const candidateBends = routeBendCount(simplified);
+    const candidateLength = routeManhattanLength(simplified);
+    const candidateScore = scoreRoute(simplified, scoreBlockers, avoidedSegments);
+    if (
+      !bestRoute ||
+      candidateBends < bestBends ||
+      (candidateBends === bestBends &&
+        (candidateLength < bestLength ||
+          (candidateLength === bestLength && candidateScore < bestScore)))
+    ) {
+      bestRoute = simplified;
+      bestBends = candidateBends;
+      bestLength = candidateLength;
+      bestScore = candidateScore;
+    }
+  }
+
+  return bestRoute;
+}
+
+function designCommitSafeRoute(nodes: ModelNode[], edges: Edge[], edgeId: string, bounds?: CanvasBounds): RoutedEdge | null {
+  const edge = edges.find((item) => item.id === edgeId);
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const source = edge ? nodeById.get(edge.sourceId) : undefined;
+  const target = edge ? nodeById.get(edge.targetId) : undefined;
+  if (!edge || !source || !target) {
+    return null;
+  }
+
+  const edgeForDesign = edgeWithoutManualPoints(edge);
+  const otherEdges = edges.filter((item) => item.id !== edgeId);
+  const avoidedSegments = routeEdgesForRendering(nodes, otherEdges, bounds)
+    .flatMap((route, routeIndex) => getSegments(route.edgeId, routeIndex, route.points));
+  const context = buildEdgeRoutingContext(source, target, nodes, edgeForDesign);
+  const middleCandidates = buildRouteCandidates(context.startOut, context.endOut, context.blockers, avoidedSegments, bounds);
+  const fullCandidates: Point[][] = [];
+  for (const middle of middleCandidates) {
+    const route = buildFullRoute(context.start, context.startOut, middle.slice(1, -1), context.endOut, context.end, bounds);
+    fullCandidates.push(route);
+    fullCandidates.push(repairRouteAroundBlockers(route, context.blockers, bounds, 1));
+  }
+
+  const edgeById = new Map(edges.map((item) => [item.id, item]));
+  const selected = selectCommitSafeRoute(fullCandidates, nodes, source, target, edgeForDesign, avoidedSegments, nodeById, edgeById, bounds);
+  return selected ? { edgeId, points: selected, path: "" } : null;
+}
+
+export function prepareConnectionEdgeForCommit(
+  nodes: ModelNode[],
+  edges: Edge[],
+  edgeId: string,
+  bounds?: CanvasBounds
+): PreparedConnectionEdgeCommit {
+  const edge = edges.find((item) => item.id === edgeId);
+  if (!edge) {
+    const validation = validateConnectionEdgeRoute(nodes, edges, edgeId, bounds);
+    return { ...validation };
+  }
+
+  const edgeForDesign = edgeWithoutManualPoints(edge);
+  const otherEdges = edges.filter((item) => item.id !== edgeId);
+  const designedRoute = routeEdgesForRendering(nodes, [...otherEdges, edgeForDesign], bounds)
+    .find((route) => route.edgeId === edgeId);
+  if (!designedRoute) {
+    const validation = validateConnectionEdgeRoute(nodes, edges, edgeId, bounds);
+    return { ...validation };
+  }
+
+  const preparedEdge = edgeWithCommitManualPoints(edgeForDesign, designedRoute);
+  const preparedEdges = edges.map((item) => item.id === edgeId ? preparedEdge : item);
+  const validation = validateConnectionEdgeRoute(nodes, preparedEdges, edgeId, bounds);
+  if (validation.ok) {
+    return { ...validation, edge: preparedEdge };
+  }
+
+  const safeRoute = designCommitSafeRoute(nodes, edges, edgeId, bounds);
+  if (safeRoute) {
+    const safeEdge = edgeWithCommitManualPoints(edgeForDesign, safeRoute);
+    const safeEdges = edges.map((item) => item.id === edgeId ? safeEdge : item);
+    const safeValidation = validateConnectionEdgeRoute(nodes, safeEdges, edgeId, bounds);
+    if (safeValidation.ok) {
+      return { ...safeValidation, edge: safeEdge };
+    }
+  }
+
+  return { ...validation };
+}
+
+function routeIntersectsSpecificNodes(points: Point[], edge: Edge, blockers: ModelNode[]) {
+  if (points.length < 2 || blockers.length === 0) {
+    return false;
+  }
+  const lastSegmentIndex = points.length - 2;
+  for (let index = 1; index < points.length; index += 1) {
+    const a = points[index - 1];
+    const b = points[index];
+    if (a.x !== b.x && a.y !== b.y) {
+      return true;
+    }
+    if (blockers.some((node) => segmentIntersectsRouteBlocker(a, b, index - 1, lastSegmentIndex, node, edge.sourceId, edge.targetId))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function rerouteEdgesAroundMovedNodes(
+  nodes: ModelNode[],
+  edges: Edge[],
+  movedNodeIds: string[],
+  previousRoutes: RoutedEdge[] = [],
+  bounds?: CanvasBounds
+): Edge[] {
+  const movedIds = new Set(movedNodeIds);
+  if (movedIds.size === 0 || edges.length === 0) {
+    return edges;
+  }
+  const movedNodes = nodes.filter((node) => movedIds.has(node.id));
+  if (movedNodes.length === 0) {
+    return edges;
+  }
+
+  const previousRouteById = new Map(previousRoutes.map((route) => [route.edgeId, route]));
+  const fallbackRoutes = previousRoutes.length > 0 ? [] : routeEdgesForRendering(nodes, edges, bounds);
+  const fallbackRouteById = new Map(fallbackRoutes.map((route) => [route.edgeId, route]));
+  const blockedEdgeIds = edges
+    .filter((edge) => {
+      const route = previousRouteById.get(edge.id) ?? fallbackRouteById.get(edge.id);
+      if (!route) {
+        return false;
+      }
+      const blockers = movedNodes.filter((node) => node.id !== edge.sourceId && node.id !== edge.targetId);
+      return routeIntersectsSpecificNodes(route.points, edge, blockers);
+    })
+    .map((edge) => edge.id);
+
+  if (blockedEdgeIds.length === 0) {
+    return edges;
+  }
+
+  let nextEdges = edges;
+  let changed = false;
+  for (const edgeId of blockedEdgeIds) {
+    const prepared = prepareConnectionEdgeForCommit(nodes, nextEdges, edgeId, bounds);
+    if (!prepared.ok || !prepared.edge) {
+      continue;
+    }
+    nextEdges = nextEdges.map((edge) => {
+      if (edge.id !== edgeId) {
+        return edge;
+      }
+      changed = true;
+      return prepared.edge!;
+    });
+  }
+
+  return changed ? nextEdges : edges;
 }
 
 function samePoint(a: Point, b: Point) {
