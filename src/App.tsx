@@ -9,6 +9,7 @@ import {
   AlignStartHorizontal,
   AlignStartVertical,
   AlignVerticalDistributeCenter,
+  BringToFront,
   Cable,
   Download,
   FileInput,
@@ -22,13 +23,18 @@ import {
   Scissors,
   EyeOff,
   FolderOpen,
+  Layers,
+  Layers2,
   MousePointer2,
   PanelLeftOpen,
   PanelRightOpen,
+  Palette,
+  Paintbrush,
   Pencil,
   Pin,
   Route,
   Save,
+  SendToBack,
   Trash2,
   Undo2
 } from "lucide-react";
@@ -58,6 +64,7 @@ import {
   createNodeFromTemplate,
   CUSTOM_DEVICE_TEMPLATE_KEY,
   CUSTOM_PARAM_DEFINITIONS_KEY,
+  DEFAULT_COLOR_PALETTE,
   describeContainerTerminalAssociations,
   deleteNodesWithConnectedEdges,
   deleteSavedScheme,
@@ -76,6 +83,7 @@ import {
   getConnectionStrokeColor,
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
+  getTerminalDisplayColor,
   getElementFocusPoint,
   getMovableRouteSegmentIndexes,
   getBusTerminalType,
@@ -85,9 +93,13 @@ import {
   getEParamValue,
   getEExportWarnings,
   getTemplateParameterDefinitions,
+  getOverlappingTerminalGroups,
+  getRouteEndpointNormal,
+  getTerminalBusContactGroups,
   getTerminalPoint,
   normalizeDeviceIndexCounters,
   normalizeNodeTerminalsByTemplate,
+  normalizeColorPalette,
   normalizeVoltageBaseInput,
   normalizeScaleValue,
   isBusNode,
@@ -105,6 +117,7 @@ import {
   prepareConnectionEdgeForCommit,
   projectPointToBusCenterline,
   rebuildSingleConnectionRoute,
+  reconcileOverlappingTerminalConnections,
   rerouteEdgesAroundMovedNodes,
   resolveStraightBusSlideEndpoint,
   resolveStraightBusSlideEndpointToPoint,
@@ -125,6 +138,8 @@ import {
   type Point,
   type ProjectFile,
   type CanvasBounds,
+  type ColorPalette,
+  type ColorDisplayMode,
   type Topology,
   type ContainerTerminalAssociationType,
   type ContainerTerminalAssociationValue,
@@ -132,6 +147,8 @@ import {
   type TerminalType,
   type TopologyValidationError,
   routeEdgesForRendering,
+  routeEdgesForIncrementalRendering,
+  routeEdgesForStoredRendering,
   moveProjectToScheme,
   modelGeometryInsideCanvasBounds,
   mirrorNodes,
@@ -191,6 +208,12 @@ type ContextMenuState = {
   routePoints?: Point[];
 } | null;
 type ProjectMenuState = { x: number; y: number; schemeId?: string; projectId?: string } | null;
+type UnsavedChangeAction = {
+  kind: "load-project";
+  project: SavedProjectRecord;
+  schemeId: string;
+  label: string;
+};
 type SidePanelResizeState = { side: SidePanelSide; startX: number; startWidth: number } | null;
 type StatusbarResizeState = { startY: number; startHeight: number } | null;
 type ValidationPanelResizeState = { startY: number; startHeight: number } | null;
@@ -203,6 +226,16 @@ type RewiringState = {
   pointerId?: number;
 } | null;
 type ConnectTarget = { node: ModelNode; terminalId: string; point?: Point };
+type NodeTerminalSnapTarget = {
+  movingNodeId: string;
+  movingTerminalId: string;
+  targetNodeId: string;
+  targetTerminalId: string;
+  point: Point;
+  delta: Point;
+  distance: number;
+  kind?: "terminal" | "bus";
+};
 type TerminalPressState = {
   nodeId: string;
   terminalId: string;
@@ -307,6 +340,8 @@ type ImageTarget =
 type CanvasRenderOptions = CanvasBounds & {
   backgroundColor?: string;
   backgroundImage?: string;
+  colorDisplayMode?: ColorDisplayMode;
+  colorPalette?: ColorPalette;
 };
 type BackendSchemesResponse = {
   schemes: SavedSchemeRecord[];
@@ -333,7 +368,18 @@ type DeviceDefinitionDraftRow = DeviceParameterDefinition & {
 };
 
 const terminalColor = terminalTypeColor;
-const busEndpointColor = (node: ModelNode) => terminalColor(node.terminals[0]?.type);
+const busEndpointColor = (node: ModelNode, colorPalette?: ColorPalette) => terminalColor(node.terminals[0]?.type, colorPalette);
+const ENERGY_COLOR_ROWS: Array<{ type: TerminalType; label: string }> = [
+  { type: "ac", label: "交流电" },
+  { type: "dc", label: "直流电" },
+  { type: "h2", label: "氢能" },
+  { type: "heat", label: "热能" }
+];
+const ELECTRIC_COLOR_TYPES: Array<"ac" | "dc"> = ["ac", "dc"];
+const ELECTRIC_COLOR_TYPE_LABELS: Record<"ac" | "dc", string> = {
+  ac: "AC",
+  dc: "DC"
+};
 
 const DEFAULT_CANVAS_WIDTH = 1980;
 const DEFAULT_CANVAS_HEIGHT = 1024;
@@ -412,6 +458,124 @@ const VALIDATION_PANEL_MIN_HEIGHT = 96;
 const VALIDATION_PANEL_MAX_HEIGHT = 420;
 const CONNECT_TERMINAL_SNAP_TOLERANCE = 28;
 const CONNECT_BUS_SNAP_TOLERANCE = 18;
+const findNodeTerminalSnapTarget = (
+  candidateNodes: ModelNode[],
+  movedNodeIds: ReadonlySet<string>,
+  tolerance = CONNECT_TERMINAL_SNAP_TOLERANCE
+): NodeTerminalSnapTarget | null => {
+  if (movedNodeIds.size === 0) {
+    return null;
+  }
+  const fixedTerminalsByType = new Map<TerminalType, Array<{ node: ModelNode; terminalId: string; point: Point }>>();
+  for (const node of candidateNodes) {
+    if (movedNodeIds.has(node.id) || isBusNode(node) || isStaticNode(node)) {
+      continue;
+    }
+    for (const terminal of node.terminals) {
+      fixedTerminalsByType.set(terminal.type, [
+        ...(fixedTerminalsByType.get(terminal.type) ?? []),
+        { node, terminalId: terminal.id, point: getTerminalPoint(node, terminal.id) }
+      ]);
+    }
+  }
+  let best: NodeTerminalSnapTarget | null = null;
+  for (const node of candidateNodes) {
+    if (!movedNodeIds.has(node.id) || isBusNode(node) || isStaticNode(node)) {
+      continue;
+    }
+    for (const terminal of node.terminals) {
+      const fixedTerminals = fixedTerminalsByType.get(terminal.type) ?? [];
+      if (fixedTerminals.length === 0) {
+        continue;
+      }
+      const movingPoint = getTerminalPoint(node, terminal.id);
+      for (const target of fixedTerminals) {
+        const dx = target.point.x - movingPoint.x;
+        const dy = target.point.y - movingPoint.y;
+        const distance = Math.hypot(dx, dy);
+        if (distance > tolerance || (best && distance >= best.distance)) {
+          continue;
+        }
+        best = {
+          movingNodeId: node.id,
+          movingTerminalId: terminal.id,
+          targetNodeId: target.node.id,
+          targetTerminalId: target.terminalId,
+          point: target.point,
+          delta: { x: dx, y: dy },
+          distance,
+          kind: "terminal"
+        };
+      }
+    }
+  }
+  return best;
+};
+const applyNodeTerminalSnap = (delta: Point, snapTarget: NodeTerminalSnapTarget | null): Point =>
+  snapTarget ? { x: delta.x + snapTarget.delta.x, y: delta.y + snapTarget.delta.y } : delta;
+const pointOnBusForSnap = (bus: ModelNode, point: Point, tolerance = CONNECT_BUS_SNAP_TOLERANCE): Point | null => {
+  if (!isBusNode(bus)) {
+    return null;
+  }
+  const radians = (-bus.rotation * Math.PI) / 180;
+  const dx = point.x - bus.position.x;
+  const dy = point.y - bus.position.y;
+  const local = {
+    x: dx * Math.cos(radians) - dy * Math.sin(radians),
+    y: dx * Math.sin(radians) + dy * Math.cos(radians)
+  };
+  const halfWidth = (bus.size.width * Math.abs(getNodeScaleX(bus))) / 2;
+  const halfHeight = Math.max(4, (bus.size.height * Math.abs(getNodeScaleY(bus))) / 2);
+  if (local.x < -halfWidth - tolerance || local.x > halfWidth + tolerance || Math.abs(local.y) > halfHeight + tolerance) {
+    return null;
+  }
+  return projectPointToBusCenterline(bus, point);
+};
+const findNodeBusSnapTarget = (
+  candidateNodes: ModelNode[],
+  movedNodeIds: ReadonlySet<string>,
+  tolerance = CONNECT_BUS_SNAP_TOLERANCE
+): NodeTerminalSnapTarget | null => {
+  if (movedNodeIds.size === 0) {
+    return null;
+  }
+  const buses = candidateNodes.filter(isBusNode);
+  const devices = candidateNodes.filter((node) => !isBusNode(node) && !isStaticNode(node));
+  let best: NodeTerminalSnapTarget | null = null;
+  for (const device of devices) {
+    const deviceMoved = movedNodeIds.has(device.id);
+    for (const terminal of device.terminals) {
+      const terminalPoint = getTerminalPoint(device, terminal.id);
+      for (const bus of buses) {
+        const busMoved = movedNodeIds.has(bus.id);
+        if (deviceMoved === busMoved || getBusTerminalType(bus) !== terminal.type) {
+          continue;
+        }
+        const snappedPoint = pointOnBusForSnap(bus, terminalPoint, tolerance);
+        if (!snappedPoint) {
+          continue;
+        }
+        const dx = snappedPoint.x - terminalPoint.x;
+        const dy = snappedPoint.y - terminalPoint.y;
+        const distance = Math.hypot(dx, dy);
+        if (distance > tolerance || (best && distance >= best.distance)) {
+          continue;
+        }
+        best = {
+          movingNodeId: deviceMoved ? device.id : bus.id,
+          movingTerminalId: deviceMoved ? terminal.id : bus.terminals[0]?.id ?? "t1",
+          targetNodeId: deviceMoved ? bus.id : device.id,
+          targetTerminalId: deviceMoved ? bus.terminals[0]?.id ?? "t1" : terminal.id,
+          point: snappedPoint,
+          delta: deviceMoved ? { x: dx, y: dy } : { x: -dx, y: -dy },
+          distance,
+          kind: "bus"
+        };
+      }
+    }
+  }
+  return best;
+};
 const SAMPLE_NODES: ModelNode[] = [
   createDefaultNode("ac-source", { x: 190, y: 210 }),
   createDefaultNode("ac-switch", { x: 360, y: 210 }),
@@ -440,6 +604,8 @@ const DRAFT_PROJECT_STORAGE_KEY = "power-system-current-draft";
 const IMAGE_STORAGE_KEY = "power-system-image-assets";
 const CUSTOM_DEVICE_LIBRARY_STORAGE_KEY = "power-system-custom-device-library";
 const DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY = "power-system-device-definition-overrides";
+const COLOR_DISPLAY_MODE_STORAGE_KEY = "power-system-color-display-mode";
+const COLOR_PALETTE_STORAGE_KEY = "power-system-color-palette";
 const LEFT_PANEL_MODE_STORAGE_KEY = "power-system-left-panel-mode";
 const RIGHT_PANEL_MODE_STORAGE_KEY = "power-system-right-panel-mode";
 const LEFT_PANEL_WIDTH_STORAGE_KEY = "power-system-left-panel-width";
@@ -645,17 +811,13 @@ function normalizeLegacyPowerSystemLabel(value: string) {
 }
 
 function normalizeSavedProjectIndexes(project: SavedProjectRecord): SavedProjectRecord {
-  const normalizedNodes = (project.project.nodes ?? []).map(normalizeNodeTerminalsByTemplate);
-  const indexed = assignMissingDeviceIndexes(normalizedNodes, project.project.deviceIndexCounters);
   const normalizedName = normalizeLegacyPowerSystemLabel(project.name);
   return {
     ...project,
     name: normalizedName,
     project: {
       ...project.project,
-      name: normalizeLegacyPowerSystemLabel(project.project.name ?? normalizedName),
-      nodes: indexed.nodes,
-      deviceIndexCounters: indexed.counters
+      name: normalizeLegacyPowerSystemLabel(project.project.name ?? normalizedName)
     }
   };
 }
@@ -814,7 +976,6 @@ function normalizeProjectForBackend(project: ProjectFile): ProjectFile {
     project.canvasBackgroundImageAssetId && typeof project.canvasBackgroundImage === "string" && project.canvasBackgroundImage.startsWith("data:")
       ? `/api/images/${project.canvasBackgroundImageAssetId}`
       : project.canvasBackgroundImage;
-  const indexed = assignMissingDeviceIndexes(project.nodes, project.deviceIndexCounters);
   return {
     ...project,
     canvasBackgroundColor: project.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND,
@@ -826,8 +987,7 @@ function normalizeProjectForBackend(project: ProjectFile): ProjectFile {
       typeof project.powerBaseValue === "number" && Number.isFinite(project.powerBaseValue)
         ? project.powerBaseValue
         : DEFAULT_POWER_BASE_VALUE,
-    deviceIndexCounters: indexed.counters,
-    nodes: indexed.nodes.map((node) => {
+    nodes: project.nodes.map((node) => {
       const assetId = node.params.backgroundImageAssetId;
       const backgroundImage = node.params.backgroundImage;
       const params: Record<string, string> =
@@ -1047,6 +1207,22 @@ function readDeviceDefinitionOverrides(): Record<string, DeviceTemplateDefinitio
     return normalizeDeviceDefinitionOverrides(JSON.parse(window.localStorage.getItem(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY) ?? "{}"));
   } catch {
     return {};
+  }
+}
+
+function readColorDisplayMode(): ColorDisplayMode {
+  try {
+    return window.localStorage.getItem(COLOR_DISPLAY_MODE_STORAGE_KEY) === "voltage" ? "voltage" : "energy";
+  } catch {
+    return "energy";
+  }
+}
+
+function readColorPalette(): ColorPalette {
+  try {
+    return normalizeColorPalette(JSON.parse(window.localStorage.getItem(COLOR_PALETTE_STORAGE_KEY) ?? "{}"));
+  } catch {
+    return normalizeColorPalette(DEFAULT_COLOR_PALETTE);
   }
 }
 
@@ -1413,7 +1589,7 @@ function uprightText(
   );
 }
 
-function buildSvgTerminalMarkup(node: ModelNode) {
+function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorDisplayMode = "energy", colorPalette: ColorPalette = DEFAULT_COLOR_PALETTE) {
   if (isBusNode(node) || isStaticNode(node)) {
     return "";
   }
@@ -1421,12 +1597,12 @@ function buildSvgTerminalMarkup(node: ModelNode) {
   const nodeScaleY = getNodeScaleY(node);
   const inverseScaleX = nodeScaleX === 0 ? 1 : 1 / nodeScaleX;
   const inverseScaleY = nodeScaleY === 0 ? 1 : 1 / nodeScaleY;
-  const stroke = getDeviceStrokeColor(node);
+  const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
   const strokeWidth = getDeviceStrokeWidth(node);
   return node.terminals
     .map((terminal) => {
       const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY);
-      const terminalColor = terminalTypeColor(terminal.type);
+      const terminalColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
       const label = `${terminal.label} / ${terminal.type.toUpperCase()}`;
       return `<g class="export-terminal ${terminal.type}" transform="translate(${terminal.anchor.x * node.size.width} ${terminal.anchor.y * node.size.height}) scale(${inverseScaleX} ${inverseScaleY})">
   <line class="export-terminal-stub ${terminal.type}" x1="${stub.from.x}" y1="${stub.from.y}" x2="${stub.to.x}" y2="${stub.to.y}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
@@ -1436,13 +1612,13 @@ function buildSvgTerminalMarkup(node: ModelNode) {
     .join("\n");
 }
 
-function DeviceGlyph({ node, miniature = false, mode = "full" }: { node: ModelNode; miniature?: boolean; mode?: DeviceGlyphMode }) {
+function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode = "energy", colorPalette = DEFAULT_COLOR_PALETTE }: { node: ModelNode; miniature?: boolean; mode?: DeviceGlyphMode; colorDisplayMode?: ColorDisplayMode; colorPalette?: ColorPalette }) {
   const w = miniature ? 58 : node.size.width;
   const h = miniature ? 38 : node.size.height;
   const glyphVariant = getDeviceGlyphVariant(node.kind);
   const renderGeometry = mode !== "text";
   const renderText = mode !== "geometry";
-  const stroke = getDeviceStrokeColor(node);
+  const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
   const fill = glyphVariant.includes("converter")
     ? "#ecfeff"
     : glyphVariant === "ac-generator"
@@ -2183,12 +2359,14 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
   const imageAssets = readImageAssets();
   const backgroundColor = canvasSize.backgroundColor ?? DEFAULT_CANVAS_BACKGROUND;
   const backgroundImage = canvasSize.backgroundImage ?? "";
+  const colorDisplayMode = canvasSize.colorDisplayMode ?? "energy";
+  const colorPalette = normalizeColorPalette(canvasSize.colorPalette ?? DEFAULT_COLOR_PALETTE);
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const edgeById = new Map(edges.map((edge) => [edge.id, edge]));
   const edgeMarkup = routeEdgesForRendering(nodes, edges, canvasSize)
     .map((route) => {
       const edge = edgeById.get(route.edgeId);
-      const stroke = edge ? getConnectionStrokeColor(edge, nodeById) : "#334155";
+      const stroke = edge ? getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette) : "#334155";
       return `<path d="${route.path}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
     })
     .join("\n");
@@ -2197,8 +2375,8 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
       const imageHref = resolveNodeImage(node, imageAssets);
       const foregroundHref = resolveNodeForegroundImage(node, imageAssets);
       const allowNodeImage = !isBusNode(node);
-      const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry" }));
-      const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text" }));
+      const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette }));
+      const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette }));
       const escapedImageHref = escapeXml(imageHref);
       const escapedForegroundHref = escapeXml(foregroundHref);
       const geometryTransform = nodeGeometryTransform(node);
@@ -2213,7 +2391,7 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
         imageHref && allowNodeImage && !isStaticNode(node)
           ? `<rect x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" rx="8" fill="#ffffff" stroke="none"/>`
           : "";
-      const terminalMarkup = buildSvgTerminalMarkup(node);
+      const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
       return `<g class="export-node" transform="translate(${node.position.x} ${node.position.y})">
   <title>${escapeXml(node.name)}</title>
   <g class="export-node-geometry" transform="${geometryTransform}">
@@ -2247,7 +2425,6 @@ export function App() {
     [initialDraft]
   );
   const initialSavedSchemes = useMemo(() => readSavedSchemes(), []);
-  const initialSchemesPayload = useMemo(() => serializeSchemesForStorage(initialSavedSchemes), [initialSavedSchemes]);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const customDeviceImageInputRef = useRef<HTMLInputElement | null>(null);
@@ -2257,7 +2434,7 @@ export function App() {
   const projectListPointerInsideRef = useRef(false);
   const backendSchemesLoadedRef = useRef(false);
   const suppressNextBackendSchemeSyncRef = useRef(false);
-  const lastPersistedSchemesPayloadRef = useRef(initialSchemesPayload);
+  const lastPersistedSchemesPayloadRef = useRef<string | null>(null);
   const imageLibraryInitializedRef = useRef(false);
   const lastMouseStatusRef = useRef<Point | null>(null);
   const pendingMouseStatusRef = useRef<Point | null>(null);
@@ -2348,6 +2525,13 @@ export function App() {
   const [topologyErrors, setTopologyErrors] = useState<TopologyValidationError[]>([]);
   const [topology, setTopology] = useState<Topology>(EMPTY_TOPOLOGY);
   const [topologyStatus, setTopologyStatus] = useState<TopologyRunStatus>(INITIAL_TOPOLOGY_STATUS);
+  const [routeRenderingReady, setRouteRenderingReady] = useState(false);
+  const [colorDisplayMode, setColorDisplayMode] = useState<ColorDisplayMode>(() => readColorDisplayMode());
+  const [colorPalette, setColorPalette] = useState<ColorPalette>(() => readColorPalette());
+  const [colorPaletteDraft, setColorPaletteDraft] = useState<ColorPalette>(() => readColorPalette());
+  const [colorPaletteDialogOpen, setColorPaletteDialogOpen] = useState(false);
+  const [colorPaletteTab, setColorPaletteTab] = useState<ColorDisplayMode>(() => readColorDisplayMode());
+  const [pendingUnsavedAction, setPendingUnsavedAction] = useState<UnsavedChangeAction | null>(null);
   const [mousePosition, setMousePosition] = useState<Point | null>(null);
   const [operationLog, setOperationLog] = useState("就绪");
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
@@ -2383,11 +2567,89 @@ export function App() {
   const selectedEdge = edgeById.get(selectedEdgeId);
   const connectionLineStyle = (edgeId: string) => {
     const edge = edgeById.get(edgeId);
-    return edge ? ({ "--connection-color": getConnectionStrokeColor(edge, nodeById) } as CSSProperties) : undefined;
+    return edge ? ({ "--connection-color": getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette) } as CSSProperties) : undefined;
+  };
+  const toggleColorDisplayMode = (nextMode?: ColorDisplayMode) => {
+    setColorDisplayMode((current) => nextMode ?? (current === "energy" ? "voltage" : "energy"));
+  };
+  const openColorPaletteDialog = () => {
+    setColorPaletteDraft(normalizeColorPalette(colorPalette));
+    setColorPaletteTab(colorDisplayMode);
+    setColorPaletteDialogOpen(true);
+  };
+  const saveColorPalette = () => {
+    const normalized = normalizeColorPalette(colorPaletteDraft);
+    setColorPalette(normalized);
+    setColorDisplayMode(colorPaletteTab);
+    setColorPaletteDialogOpen(false);
+  };
+  const resetEnergyColors = () => {
+    setColorPaletteDraft((current) => ({
+      ...current,
+      energy: { ...DEFAULT_COLOR_PALETTE.energy }
+    }));
+  };
+  const resetVoltageColors = () => {
+    setColorPaletteDraft((current) => ({
+      ...current,
+      voltage: { ...DEFAULT_COLOR_PALETTE.voltage }
+    }));
+  };
+  const updateEnergyColor = (type: TerminalType, color: string) => {
+    setColorPaletteDraft((current) => ({
+      ...current,
+      energy: {
+        ...current.energy,
+        [type]: color
+      }
+    }));
+  };
+  const voltageColorRows = useMemo(
+    () => Object.entries(colorPaletteDraft.voltage)
+      .filter(([key]) => key.startsWith("ac:") || key.startsWith("dc:"))
+      .map(([key, color]) => {
+        const [type, ...voltageParts] = key.split(":");
+        return {
+          key,
+          type: (type === "dc" ? "dc" : "ac") as "ac" | "dc",
+          voltage: voltageParts.join(":") || "0",
+          color
+        };
+      })
+      .sort((left, right) => left.type.localeCompare(right.type) || Number(left.voltage) - Number(right.voltage) || left.voltage.localeCompare(right.voltage)),
+    [colorPaletteDraft.voltage]
+  );
+  const setVoltageColorRows = (rows: Array<{ type: "ac" | "dc"; voltage: string; color: string }>) => {
+    const fallbackNumericEntries = Object.fromEntries(
+      Object.entries(colorPaletteDraft.voltage).filter(([key]) => !key.startsWith("ac:") && !key.startsWith("dc:"))
+    );
+    const typedEntries = rows.reduce<Record<string, string>>((result, row) => {
+      const voltage = normalizeVoltageBaseInput(row.voltage) || row.voltage.trim() || "0";
+      result[`${row.type}:${voltage}`] = row.color;
+      return result;
+    }, {});
+    setColorPaletteDraft((current) => ({
+      ...current,
+      voltage: {
+        ...fallbackNumericEntries,
+        ...typedEntries
+      }
+    }));
+  };
+  const updateVoltageColorRow = (rowKey: string, patch: Partial<{ type: "ac" | "dc"; voltage: string; color: string }>) => {
+    const rows = voltageColorRows.map((row) => row.key === rowKey ? { ...row, ...patch } : row);
+    setVoltageColorRows(rows);
+  };
+  const deleteVoltageColorRow = (rowKey: string) => {
+    setVoltageColorRows(voltageColorRows.filter((row) => row.key !== rowKey));
+  };
+  const addVoltageColorRow = () => {
+    const existingKeys = new Set(voltageColorRows.map((row) => row.key));
+    const baseVoltages = ["10", "35", "110", "220", "500", "750", "800"];
+    const voltage = baseVoltages.find((item) => !existingKeys.has(`ac:${item}`)) ?? `${voltageColorRows.length + 1}`;
+    setVoltageColorRows([...voltageColorRows, { type: "ac", voltage, color: DEFAULT_COLOR_PALETTE.voltage[`ac:${voltage}`] ?? "#2563eb" }]);
   };
   const projects = useMemo(() => schemes.flatMap((scheme) => scheme.projects), [schemes]);
-  const normalizedSchemesForPersistence = useMemo(() => normalizeSchemesForBackend(schemes), [schemes]);
-  const normalizedSchemesPayload = useMemo(() => JSON.stringify(normalizedSchemesForPersistence), [normalizedSchemesForPersistence]);
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const baseLibraryTemplates = useMemo<DeviceTemplate[]>(() => [...DEVICE_LIBRARY, ...customDeviceTemplates], [customDeviceTemplates]);
   const libraryTemplates = useMemo<DeviceTemplate[]>(
@@ -2540,28 +2802,56 @@ export function App() {
       return "";
     }
     const sourceNode = nodeById.get(connectSource.nodeId);
-    const terminalType =
-      sourceNode?.terminals.find((terminal) => terminal.id === connectSource.terminalId)?.type ??
-      sourceNode?.terminals[0]?.type ??
-      (sourceNode ? getBusTerminalType(sourceNode) : undefined);
-    return terminalType ? terminalColor(terminalType) : "";
-  }, [connectSource, nodeById]);
-  const activeDropHintPoint = connectDropTargetPoint ?? rewiring?.dropTargetPoint ?? null;
-  const activeDropReady = connectDropReady || Boolean(rewiring?.dropTargetPoint);
-  const activeDropHintStyle = connectDropTargetPoint
-    ? (connectPreviewColor ? ({ "--connection-color": connectPreviewColor } as CSSProperties) : undefined)
-    : rewiring
-      ? connectionLineStyle(rewiring.edgeId)
-      : undefined;
+    const terminal =
+      sourceNode?.terminals.find((item) => item.id === connectSource.terminalId) ??
+      sourceNode?.terminals[0];
+    const terminalType = terminal?.type ?? (sourceNode ? getBusTerminalType(sourceNode) : undefined);
+    return sourceNode && terminal
+      ? getTerminalDisplayColor(sourceNode, terminal, colorDisplayMode, colorPalette)
+      : terminalType
+        ? terminalColor(terminalType, colorPalette)
+        : "";
+  }, [colorDisplayMode, colorPalette, connectSource, nodeById]);
+  useEffect(() => {
+    if (routeRenderingReady) {
+      return;
+    }
+    if (hasUnsavedChanges || manualPathDrag || rewiring || terminalPress?.moved || dragging || connectSource) {
+      setRouteRenderingReady(true);
+    }
+  }, [connectSource, dragging, hasUnsavedChanges, manualPathDrag, rewiring, routeRenderingReady, terminalPress?.moved]);
+
   const deferredRoutingNodes = useDeferredValue(nodes);
   const deferredRoutingEdges = useDeferredValue(edges);
   const deferredRoutingIsCurrent = deferredRoutingNodes === nodes && deferredRoutingEdges === edges;
   const requiresLiveRouting = Boolean(manualPathDrag || !deferredRoutingIsCurrent);
   const routingNodes = requiresLiveRouting ? nodes : deferredRoutingNodes;
   const routingEdges = requiresLiveRouting ? edges : deferredRoutingEdges;
+  const affectedRoutingEdgeIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (manualPathDrag) {
+      ids.add(manualPathDrag.edgeId);
+    }
+    if (rewiring) {
+      ids.add(rewiring.edgeId);
+    }
+    if (terminalPress?.moved) {
+      edges.forEach((edge) => {
+        const sourceAffected = edge.sourceId === terminalPress.nodeId && edge.sourceTerminalId === terminalPress.terminalId;
+        const targetAffected = edge.targetId === terminalPress.nodeId && edge.targetTerminalId === terminalPress.terminalId;
+        if (sourceAffected || targetAffected) {
+          ids.add(edge.id);
+        }
+      });
+    }
+    return ids;
+  }, [edges, manualPathDrag, rewiring, terminalPress]);
+  const routeRenderingEnabled = routeRenderingReady;
   const routedEdges = useMemo(
-    () => routeEdgesForRendering(routingNodes, routingEdges, canvasBounds),
-    [canvasBounds, routingEdges, routingNodes]
+    () => routeRenderingEnabled
+      ? routeEdgesForIncrementalRendering(routingNodes, routingEdges, affectedRoutingEdgeIds, canvasBounds)
+      : routeEdgesForStoredRendering(routingNodes, routingEdges, canvasBounds),
+    [affectedRoutingEdgeIds, canvasBounds, routeRenderingEnabled, routingEdges, routingNodes]
   );
   const renderedRoutedEdges = useMemo(
     () => [...routedEdges].sort((first, second) => Number(activeSelectedEdgeSet.has(first.edgeId)) - Number(activeSelectedEdgeSet.has(second.edgeId))),
@@ -2706,6 +2996,45 @@ export function App() {
     () => (dragging && draggingDelta ? Array.from(dragPreviewNodeById.values()) : nodes),
     [dragPreviewNodeById, dragging, draggingDelta, nodes]
   );
+  const overlappedTerminalKeys = useMemo(
+    () => new Set(
+      [
+        ...getOverlappingTerminalGroups(dragPreviewNodes).flatMap((group) =>
+          group.terminals.map((terminal) => `${terminal.nodeId}:${terminal.terminalId}`)
+        ),
+        ...getTerminalBusContactGroups(dragPreviewNodes).flatMap((group) =>
+          group.contacts.map((contact) => `${contact.nodeId}:${contact.terminalId}`)
+        )
+      ]
+    ),
+    [dragPreviewNodes]
+  );
+  const nodeTerminalSnapTarget = useMemo(
+    () => (
+      dragging && draggingDelta
+        ? findNodeTerminalSnapTarget(dragPreviewNodes, draggingNodeIdSet) ??
+          findNodeBusSnapTarget(dragPreviewNodes, draggingNodeIdSet)
+        : null
+    ),
+    [dragPreviewNodes, dragging, draggingDelta, draggingNodeIdSet]
+  );
+  const nodeTerminalSnapHintStyle = useMemo(() => {
+    if (!nodeTerminalSnapTarget) {
+      return undefined;
+    }
+    const targetNode = dragPreviewNodeById.get(nodeTerminalSnapTarget.targetNodeId);
+    const terminalType = targetNode && isBusNode(targetNode)
+      ? getBusTerminalType(targetNode)
+      : targetNode?.terminals.find((terminal) => terminal.id === nodeTerminalSnapTarget.targetTerminalId)?.type;
+    return terminalType ? ({ "--connection-color": terminalColor(terminalType, colorPalette) } as CSSProperties) : undefined;
+  }, [colorPalette, dragPreviewNodeById, nodeTerminalSnapTarget]);
+  const activeDropHintPoint = connectDropTargetPoint ?? rewiring?.dropTargetPoint ?? nodeTerminalSnapTarget?.point ?? null;
+  const activeDropReady = connectDropReady || Boolean(rewiring?.dropTargetPoint) || Boolean(nodeTerminalSnapTarget);
+  const activeDropHintStyle = connectDropTargetPoint
+    ? (connectPreviewColor ? ({ "--connection-color": connectPreviewColor } as CSSProperties) : undefined)
+    : rewiring?.dropTargetPoint
+      ? connectionLineStyle(rewiring.edgeId)
+      : nodeTerminalSnapHintStyle;
   const dragPreviewEdgeRoutes = useMemo(() => {
     if (!dragging || !draggingDelta) {
       return [];
@@ -2762,6 +3091,8 @@ export function App() {
       const slidablePreviewEdge = slidePatch ? { ...previewEdge, ...slidePatch } : previewEdge;
       const end = getModelEdgeEndpointPoint(target, slidablePreviewEdge.targetPoint, slidablePreviewEdge.targetTerminalId);
       const adjustedStart = getModelEdgeEndpointPoint(source, slidablePreviewEdge.sourcePoint, slidablePreviewEdge.sourceTerminalId);
+      const sourceNormal = getRouteEndpointNormal(source, adjustedStart, end, slidablePreviewEdge.sourceTerminalId);
+      const targetNormal = getRouteEndpointNormal(target, end, adjustedStart, slidablePreviewEdge.targetTerminalId);
       const originalRoutePoints = dragging.originalRoutePoints[edge.id];
       const originalStart = originalRoutePoints?.[0];
       const originalEnd = originalRoutePoints?.[originalRoutePoints.length - 1];
@@ -2772,7 +3103,9 @@ export function App() {
             nextEnd: end,
             sourceDelta: { x: adjustedStart.x - originalStart.x, y: adjustedStart.y - originalStart.y },
             targetDelta: { x: end.x - originalEnd.x, y: end.y - originalEnd.y },
-            routeDelta: draggedEdgeIds.has(edge.id) ? draggingDelta : undefined
+            routeDelta: draggedEdgeIds.has(edge.id) ? draggingDelta : undefined,
+            sourceNormal,
+            targetNormal
           })
         : slidablePreviewEdge.manualPoints && slidablePreviewEdge.manualPoints.length > 0
           ? [adjustedStart, ...slidablePreviewEdge.manualPoints, end]
@@ -2816,10 +3149,9 @@ export function App() {
         backendSchemesLoadedRef.current = true;
         if (backendSchemes.length > 0) {
           const backendPayload = serializeSchemesForStorage(backendSchemes);
-          if (backendPayload !== lastPersistedSchemesPayloadRef.current) {
-            suppressNextBackendSchemeSyncRef.current = true;
-            setSchemes(backendSchemes);
-          }
+          lastPersistedSchemesPayloadRef.current = backendPayload;
+          suppressNextBackendSchemeSyncRef.current = true;
+          setSchemes(backendSchemes);
           setExpandedSchemeIds((current) => {
             const backendSchemeIds = new Set(backendSchemes.map((scheme) => scheme.id));
             const retained = current.filter((schemeId) => backendSchemeIds.has(schemeId));
@@ -2835,7 +3167,9 @@ export function App() {
           return;
         }
         if (initialSavedSchemes.length > 0) {
-          void saveBackendSchemesPayload(initialSchemesPayload).catch(() => {
+          const initialPayload = serializeSchemesForStorage(initialSavedSchemes);
+          lastPersistedSchemesPayloadRef.current = initialPayload;
+          void saveBackendSchemesPayload(initialPayload).catch(() => {
             // 后台暂不可写时仍保留本地缓存，避免打断画布编辑。
           });
         }
@@ -2850,6 +3184,7 @@ export function App() {
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
+      const normalizedSchemesPayload = serializeSchemesForStorage(schemes);
       if (normalizedSchemesPayload === lastPersistedSchemesPayloadRef.current) {
         if (suppressNextBackendSchemeSyncRef.current) {
           suppressNextBackendSchemeSyncRef.current = false;
@@ -2874,7 +3209,7 @@ export function App() {
       });
     }, 800);
     return () => window.clearTimeout(timeoutId);
-  }, [normalizedSchemesPayload]);
+  }, [schemes]);
 
   useEffect(() => {
     window.localStorage.setItem(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, JSON.stringify(customDeviceTemplates));
@@ -2883,6 +3218,14 @@ export function App() {
   useEffect(() => {
     window.localStorage.setItem(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, JSON.stringify(deviceDefinitionOverrides));
   }, [deviceDefinitionOverrides]);
+
+  useEffect(() => {
+    window.localStorage.setItem(COLOR_DISPLAY_MODE_STORAGE_KEY, colorDisplayMode);
+  }, [colorDisplayMode]);
+
+  useEffect(() => {
+    window.localStorage.setItem(COLOR_PALETTE_STORAGE_KEY, JSON.stringify(colorPalette));
+  }, [colorPalette]);
 
   const refreshImageFolders = () =>
     fetchBackendImageFolders()
@@ -3012,6 +3355,19 @@ export function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!saveRequired) {
+        return;
+      }
+      event.preventDefault();
+      event.returnValue = "当前模型尚未保存，关闭网页会丢失未保存修改。";
+      return event.returnValue;
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [saveRequired]);
 
   useEffect(() => {
     connectPreviewPointRef.current = connectPreviewPoint;
@@ -3697,13 +4053,17 @@ export function App() {
             const nextEnd = getModelEdgeEndpointPoint(nextTarget, nextEdgeWithSlide.targetPoint, nextEdgeWithSlide.targetTerminalId);
             const originalStart = originalRoute[0];
             const originalEnd = originalRoute[originalRoute.length - 1];
+            const sourceNormal = getRouteEndpointNormal(nextSource, nextStart, nextEnd, nextEdgeWithSlide.sourceTerminalId);
+            const targetNormal = getRouteEndpointNormal(nextTarget, nextEnd, nextStart, nextEdgeWithSlide.targetTerminalId);
             const preservedRoute = preserveDraggedRouteShape({
               routePoints: originalRoute,
               nextStart,
               nextEnd,
               sourceDelta: { x: nextStart.x - originalStart.x, y: nextStart.y - originalStart.y },
               targetDelta: { x: nextEnd.x - originalEnd.x, y: nextEnd.y - originalEnd.y },
-              routeDelta: preserveRouteEdgeIds.has(edge.id) ? manualPointDeltaForEdge(edge, deltasByNode) ?? undefined : undefined
+              routeDelta: preserveRouteEdgeIds.has(edge.id) ? manualPointDeltaForEdge(edge, deltasByNode) ?? undefined : undefined,
+              sourceNormal,
+              targetNormal
             });
             return { ...nextEdgeWithSlide, manualPoints: preservedRoute.slice(1, -1).map((point) => ({ ...point })) };
           })()
@@ -3738,6 +4098,42 @@ export function App() {
     return affectedEdgeIds.length === 1
       ? rebuildSingleConnectionRoute(nextNodes, candidateEdges, affectedEdgeIds[0], canvasBounds)
       : candidateEdges;
+  };
+
+  const finalizeMovedNodeEdges = (
+    previousNodes: ModelNode[],
+    nextNodes: ModelNode[],
+    candidateEdges: Edge[],
+    movedNodeIds: string[],
+    originalRoutePoints: DraggingState["originalRoutePoints"],
+    selectedEdgeIds = new Set<string>()
+  ) => {
+    const reconciled = reconcileOverlappingTerminalConnections(
+      previousNodes,
+      nextNodes,
+      candidateEdges,
+      (_first, _second, index) => `edge-overlap-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`
+    );
+    let nextEdges = reconciled.edges;
+    for (const edgeId of reconciled.addedEdgeIds) {
+      const prepared = prepareConnectionEdgeForCommit(nextNodes, nextEdges, edgeId, canvasBounds);
+      if (prepared.ok && prepared.edge) {
+        nextEdges = nextEdges.map((edge) => edge.id === edgeId ? prepared.edge! : edge);
+      }
+    }
+    const rebuiltAdjustedEdges = rebuildSingleAffectedConnectionRoute(
+      nextNodes,
+      nextEdges,
+      movedNodeIds,
+      selectedEdgeIds
+    );
+    return rerouteEdgesAroundMovedNodes(
+      nextNodes,
+      rebuiltAdjustedEdges,
+      movedNodeIds,
+      routePointSnapshotToRoutes(originalRoutePoints),
+      canvasBounds
+    );
   };
 
   const clampPointToCanvas = (point: Point) => clampPointToBounds(point, canvasBounds);
@@ -3873,7 +4269,7 @@ export function App() {
           )
         : [];
     const affectedRoutes =
-      nextAffectedEdges.length > 0 ? routeEdgesForRendering(nextNodes, nextAffectedEdges, canvasBounds) : [];
+      nextAffectedEdges.length > 0 ? routeEdgesForStoredRendering(nextNodes, nextAffectedEdges, canvasBounds) : [];
     return modelGeometryInsideCanvasBounds(movedNodes, affectedRoutes, canvasBounds, MOVE_BOUNDARY_GUARD);
   };
 
@@ -3936,10 +4332,28 @@ export function App() {
       pushUndoSnapshot();
     }
     const dragNodeIds = new Set(dragging.nodeIds);
+    const snappedDelta = applyNodeTerminalSnap(delta, nodeTerminalSnapTarget);
+    const finalDelta =
+      snappedDelta.x !== delta.x || snappedDelta.y !== delta.y
+        ? boundedDeltaForMoveGeometry(
+            dragging.nodeIds,
+            dragging.edgeIds,
+            dragging.originalPositions,
+            dragging.originalEdgePoints,
+            dragging.originalRoutePoints,
+            snappedDelta.x,
+            snappedDelta.y,
+            delta
+          )
+        : delta;
+    if (finalDelta.x === 0 && finalDelta.y === 0) {
+      setDragging(null);
+      return;
+    }
     const nextNodes = nodes.map((node) => {
       const originalPosition = dragging.originalPositions[node.id];
       return dragNodeIds.has(node.id) && originalPosition
-        ? { ...node, position: clampNodeToCanvas(node, { x: originalPosition.x + delta.x, y: originalPosition.y + delta.y }) }
+        ? { ...node, position: clampNodeToCanvas(node, { x: originalPosition.x + finalDelta.x, y: originalPosition.y + finalDelta.y }) }
         : node;
     });
     const hasAffectedEdges = edges.some((edge) => dragNodeIds.has(edge.sourceId) || dragNodeIds.has(edge.targetId));
@@ -3949,23 +4363,18 @@ export function App() {
           nextNodes,
           dragNodeIds,
           dragging.originalEdgePoints,
-          Object.fromEntries(dragging.nodeIds.map((id) => [id, delta])),
+          Object.fromEntries(dragging.nodeIds.map((id) => [id, finalDelta])),
           dragging.originalRoutePoints,
           new Set(dragging.edgeIds)
         )
       : edges;
-    const rebuiltAdjustedEdges = rebuildSingleAffectedConnectionRoute(
+    const nextEdges = finalizeMovedNodeEdges(
+      nodes,
       nextNodes,
       adjustedEdges,
       dragging.nodeIds,
+      dragging.originalRoutePoints,
       new Set(dragging.edgeIds)
-    );
-    const nextEdges = rerouteEdgesAroundMovedNodes(
-      nextNodes,
-      rebuiltAdjustedEdges,
-      dragging.nodeIds,
-      routePointSnapshotToRoutes(dragging.originalRoutePoints),
-      canvasBounds
     );
     flushSync(() => {
       setNodes(nextNodes);
@@ -3974,7 +4383,13 @@ export function App() {
       }
       setDragging(null);
     });
-    writeOperationLog(`拖拽 ${dragging.nodeIds.length} 个图元 (${Math.round(delta.x)}, ${Math.round(delta.y)})`);
+    const snapText =
+      nodeTerminalSnapTarget &&
+      finalDelta.x === snappedDelta.x &&
+      finalDelta.y === snappedDelta.y
+        ? "，端子已吸附"
+        : "";
+    writeOperationLog(`拖拽 ${dragging.nodeIds.length} 个图元 (${Math.round(finalDelta.x)}, ${Math.round(finalDelta.y)})${snapText}`);
   };
 
   const moveSelection = (dx: number, dy: number) => {
@@ -4019,18 +4434,13 @@ export function App() {
       originalRoutePoints,
       new Set(activeSelectedEdgeIds)
     );
-    const rebuiltAdjustedEdges = rebuildSingleAffectedConnectionRoute(
+    const nextEdges = finalizeMovedNodeEdges(
+      nodes,
       nextNodes,
       adjustedEdges,
       selectedNodeIds,
+      originalRoutePoints,
       new Set(activeSelectedEdgeIds)
-    );
-    const nextEdges = rerouteEdgesAroundMovedNodes(
-      nextNodes,
-      rebuiltAdjustedEdges,
-      selectedNodeIds,
-      routePointSnapshotToRoutes(originalRoutePoints),
-      canvasBounds
     );
     setNodes(nextNodes);
     setEdges(nextEdges);
@@ -4069,17 +4479,12 @@ export function App() {
         },
         originalRoutePoints
       );
-      const rebuiltAdjustedEdges = rebuildSingleAffectedConnectionRoute(
+      setEdges(finalizeMovedNodeEdges(
+        nodes,
         nextNodes,
         adjustedEdges,
-        [selectedNodeId]
-      );
-      setEdges(rerouteEdgesAroundMovedNodes(
-        nextNodes,
-        rebuiltAdjustedEdges,
         [selectedNodeId],
-        routePointSnapshotToRoutes(originalRoutePoints),
-        canvasBounds
+        originalRoutePoints
       ));
     }
     setNodes(nextNodes);
@@ -5082,12 +5487,12 @@ export function App() {
       deltas,
       originalRoutePoints
     );
-    setEdges(rerouteEdgesAroundMovedNodes(
+    setEdges(finalizeMovedNodeEdges(
+      nodes,
       arranged,
       adjustedEdges,
       selectedNodeIds,
-      routePointSnapshotToRoutes(originalRoutePoints),
-      canvasBounds
+      originalRoutePoints
     ));
   };
 
@@ -5186,7 +5591,7 @@ export function App() {
       width: project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
       height: project.project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT
     };
-    pushUndoSnapshot();
+    pushUndoSnapshot(false);
     setProjectName(project.name);
     setCanvasWidth(nextCanvasBounds.width);
     setCanvasHeight(nextCanvasBounds.height);
@@ -5204,6 +5609,7 @@ export function App() {
     setTopology(EMPTY_TOPOLOGY);
     setTopologyErrors([]);
     setTopologyStatus(INITIAL_TOPOLOGY_STATUS);
+    setRouteRenderingReady(false);
     setActiveProjectId(project.id);
     setActiveSchemeId(schemeId);
     selectSingleProject(schemeId, project.id);
@@ -5215,6 +5621,38 @@ export function App() {
     setHasUnsavedChanges(false);
     writeOperationLog(`加载模型：${project.name}`);
     requestCanvasFrameCenter();
+  };
+
+  const requestUnsavedChangeAction = (action: UnsavedChangeAction) => {
+    if (!saveRequired) {
+      loadSavedProject(action.project, action.schemeId);
+      return;
+    }
+    setPendingUnsavedAction(action);
+  };
+
+  const requestLoadSavedProject = (project: SavedProjectRecord, schemeId = findSchemeForProject(project.id)?.id ?? "") => {
+    requestUnsavedChangeAction({
+      kind: "load-project",
+      project,
+      schemeId,
+      label: `切换到模型“${project.name}”`
+    });
+  };
+
+  const resolveUnsavedChangeAction = (resolution: "discard" | "save" | "cancel") => {
+    const action = pendingUnsavedAction;
+    if (!action || resolution === "cancel") {
+      setPendingUnsavedAction(null);
+      return;
+    }
+    if (resolution === "save") {
+      saveCurrentProject();
+    }
+    setPendingUnsavedAction(null);
+    if (action.kind === "load-project") {
+      loadSavedProject(action.project, action.schemeId);
+    }
   };
 
   const createSchemeRecord = () => {
@@ -5570,7 +6008,7 @@ export function App() {
       )
     );
     selectSingleProject(targetSchemeId ?? schemes[0]?.id ?? "", record.id);
-    loadSavedProject(record, targetSchemeId ?? schemes[0]?.id ?? "");
+    requestLoadSavedProject(record, targetSchemeId ?? schemes[0]?.id ?? "");
     writeOperationLog(`新建模型：${record.name}`);
   };
 
@@ -6173,7 +6611,9 @@ export function App() {
       text: buildSvgDocument(nodes, edges, {
         ...canvasBounds,
         backgroundColor: canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND,
-        backgroundImage: canvasBackgroundImageUrl
+        backgroundImage: canvasBackgroundImageUrl,
+        colorDisplayMode,
+        colorPalette
       }),
       mime: "image/svg+xml",
       description: "SVG 图形文件",
@@ -6219,7 +6659,9 @@ export function App() {
           width: project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
           height: project.project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT,
           backgroundColor: project.project.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND,
-          backgroundImage: resolveProjectImage(project.project)
+          backgroundImage: resolveProjectImage(project.project),
+          colorDisplayMode,
+          colorPalette
         }),
         "image/svg+xml"
       );
@@ -6475,13 +6917,13 @@ export function App() {
                         }
                         setInspectorTab("model");
                       }}
-                      onDoubleClick={() => loadSavedProject(project, scheme.id)}
+                      onDoubleClick={() => requestLoadSavedProject(project, scheme.id)}
                       onDragStart={(event) => {
                         event.dataTransfer.setData("application/project-id", project.id);
                       }}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") {
-                          loadSavedProject(project, scheme.id);
+                          requestLoadSavedProject(project, scheme.id);
                         } else if (event.key === " " || event.key === "Spacebar") {
                           event.preventDefault();
                           if (event.ctrlKey || event.metaKey || event.shiftKey) {
@@ -6810,7 +7252,7 @@ export function App() {
                         onDragStart={(event) => event.dataTransfer.setData("application/device-kind", item.kind)}
                       >
                         <svg viewBox="-40 -28 80 56" aria-hidden="true">
-                          <DeviceGlyph node={preview} miniature />
+                          <DeviceGlyph node={preview} miniature colorPalette={colorPalette} />
                         </svg>
                       </button>
                     );
@@ -7033,6 +7475,22 @@ export function App() {
           >
             <Save size={16} />
           </button>
+          <button
+            className={`topbar-primary-button ${colorDisplayMode === "voltage" ? "active" : ""}`}
+            onClick={() => toggleColorDisplayMode()}
+            title={colorDisplayMode === "voltage" ? "当前交流/直流按电压等级显示，点击切换为按能源类型显示；氢能、热能始终按能源类型显示" : "当前交流/直流按能源类型显示，点击切换为按电压等级显示；氢能、热能始终按能源类型显示"}
+            aria-label="颜色切换"
+          >
+            <Paintbrush size={16} />
+          </button>
+          <button
+            className="topbar-primary-button"
+            onClick={openColorPaletteDialog}
+            title="配色设置"
+            aria-label="配色设置"
+          >
+            <Palette size={16} />
+          </button>
           <div className="action-cluster">
             <button onClick={() => alignSelected("horizontal")} disabled={selectedNodeCount < 2} title="横向对齐" aria-label="横向对齐">
               <AlignCenterHorizontal size={16} />
@@ -7063,6 +7521,18 @@ export function App() {
             </button>
             <button onClick={() => mirrorSelectedNodes("vertical")} disabled={selectedNodeCount < 1} title="垂直翻转端点" aria-label="垂直翻转端点">
               <FlipVertical size={16} />
+            </button>
+            <button onClick={() => moveSelectedLayer("forward")} disabled={selectedNodeCount < 1} title="图层向上" aria-label="图层向上">
+              <Layers2 size={16} />
+            </button>
+            <button onClick={() => moveSelectedLayer("backward")} disabled={selectedNodeCount < 1} title="图层向下" aria-label="图层向下">
+              <Layers size={16} />
+            </button>
+            <button onClick={() => moveSelectedLayer("front")} disabled={selectedNodeCount < 1} title="图层置顶" aria-label="图层置顶">
+              <BringToFront size={16} />
+            </button>
+            <button onClick={() => moveSelectedLayer("back")} disabled={selectedNodeCount < 1} title="图层置底" aria-label="图层置底">
+              <SendToBack size={16} />
             </button>
             <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={chooseImage} />
             <input ref={customDeviceImageInputRef} type="file" accept="image/*" hidden onChange={chooseCustomDeviceBackground} />
@@ -7295,8 +7765,8 @@ export function App() {
                       rx="8"
                       className="node-drag-ghost-box"
                     />
-                    <DeviceGlyph node={ghostNode} mode="geometry" />
-                    <DeviceGlyph node={ghostNode} mode="text" />
+                    <DeviceGlyph node={ghostNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                    <DeviceGlyph node={ghostNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
                   </g>
                 </g>
               );
@@ -7355,7 +7825,7 @@ export function App() {
                       cx={sourceBusDotPoint.x}
                       cy={sourceBusDotPoint.y}
                       r={7}
-                      fill={busEndpointColor((rewiringSource ? rewireTarget?.node : sourceNode) ?? sourceNode!)}
+                      fill={busEndpointColor((rewiringSource ? rewireTarget?.node : sourceNode) ?? sourceNode!, colorPalette)}
                       onPointerDown={(event) => {
                         event.stopPropagation();
                         if (event.button !== 0 || !svgRef.current) {
@@ -7380,7 +7850,7 @@ export function App() {
                       cx={targetBusDotPoint.x}
                       cy={targetBusDotPoint.y}
                       r={7}
-                      fill={busEndpointColor((rewiringTarget ? rewireTarget?.node : targetNode) ?? targetNode!)}
+                      fill={busEndpointColor((rewiringTarget ? rewireTarget?.node : targetNode) ?? targetNode!, colorPalette)}
                       onPointerDown={(event) => {
                         event.stopPropagation();
                         if (event.button !== 0 || !svgRef.current) {
@@ -7542,8 +8012,8 @@ export function App() {
                       rx="8"
                       className={`node-hitbox ${nodeIsBus ? "bus-hitbox" : ""} ${isStaticNode(node) ? "static-hitbox" : ""}`}
                     />
-                    <DeviceGlyph node={node} mode="geometry" />
-                    <DeviceGlyph node={node} mode="text" />
+                    <DeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                    <DeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
                   </g>
                   {!nodeIsBus && (imageHref || foregroundImageHref) && (
                     <g className="node-upright-content" transform={nodeUprightScaleTransform(node)}>
@@ -7604,7 +8074,9 @@ export function App() {
                         mode === "connect" &&
                         Boolean(sourceNode) &&
                         !canConnectTerminals(sourceNode!, connectSource!.terminalId, node, terminal.id);
+                      const overlapped = overlappedTerminalKeys.has(`${node.id}:${terminal.id}`);
                       const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY);
+                      const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
                       return hideFixedTerminal ? null : (
                         <g
                           key={terminal.id}
@@ -7613,7 +8085,7 @@ export function App() {
                           <line
                             className={`terminal-stub ${terminal.type} ${disabled ? "disabled" : ""}`}
                             style={{
-                              stroke: disabled ? "#cbd5e1" : getDeviceStrokeColor(node),
+                              stroke: disabled ? "#cbd5e1" : terminalDisplayColor,
                               strokeWidth: getDeviceStrokeWidth(node)
                             }}
                             x1={stub.from.x}
@@ -7622,10 +8094,11 @@ export function App() {
                             y2={stub.to.y}
                           />
                           <circle
-                            className={`terminal-dot ${terminal.type} ${disabled ? "disabled" : ""}`}
+                            className={`terminal-dot ${terminal.type} ${overlapped ? "overlapped" : ""} ${disabled ? "disabled" : ""}`}
+                            style={{ "--terminal-color": terminalDisplayColor } as CSSProperties}
                             cx="0"
                             cy="0"
-                            r={6}
+                            r={overlapped ? 7.2 : 6}
                             onPointerDown={(event) => handleTerminalPointerDown(event, node, terminal.id)}
                           >
                             <title>{`${terminal.label} / ${terminal.type.toUpperCase()}`}</title>
@@ -8236,7 +8709,7 @@ export function App() {
                       <>
                         <tr>
                           {renderChineseParamHeader("foregroundColor")}
-                          <td>{renderColorEditor("foregroundColor", selectedNode.params.foregroundColor || "", terminalColor(selectedNode.terminals[0]?.type))}</td>
+                          <td>{renderColorEditor("foregroundColor", selectedNode.params.foregroundColor || "", terminalColor(selectedNode.terminals[0]?.type, colorPalette))}</td>
                         </tr>
                         <tr>
                           {renderChineseParamHeader("foregroundImage")}
@@ -8433,18 +8906,6 @@ export function App() {
             <FileInput size={14} />
             粘贴
           </button>
-          <button onClick={() => runContextMenuAction(() => moveSelectedLayer("forward"))} disabled={selectedNodeIds.length === 0}>
-            图层向上
-          </button>
-          <button onClick={() => runContextMenuAction(() => moveSelectedLayer("backward"))} disabled={selectedNodeIds.length === 0}>
-            图层向下
-          </button>
-          <button onClick={() => runContextMenuAction(() => moveSelectedLayer("front"))} disabled={selectedNodeIds.length === 0}>
-            图层置顶
-          </button>
-          <button onClick={() => runContextMenuAction(() => moveSelectedLayer("back"))} disabled={selectedNodeIds.length === 0}>
-            图层置底
-          </button>
           <button onClick={() => runContextMenuAction(tidySelectedEdgeRoute)} disabled={!selectedEdgeId}>
             <Route size={14} />
             整理连接线
@@ -8543,6 +9004,132 @@ export function App() {
             <Trash2 size={14} />
             删除
           </button>
+        </div>
+      )}
+      {pendingUnsavedAction && (
+        <div className="image-picker-backdrop" onPointerDown={() => resolveUnsavedChangeAction("cancel")}>
+          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="unsaved-change-title">
+            <div className="image-picker-title">
+              <div>
+                <h2 id="unsaved-change-title">当前模型尚未保存</h2>
+                <p>当前模型“{projectName}”存在未保存修改。{pendingUnsavedAction.label}之前，请选择如何处理这些修改。</p>
+              </div>
+            </div>
+            <div className="unsaved-change-actions">
+              <button type="button" onClick={() => resolveUnsavedChangeAction("discard")}>不保存继续切换/关闭</button>
+              <button type="button" onClick={() => resolveUnsavedChangeAction("save")}>保存后切换/关闭</button>
+              <button type="button" onClick={() => resolveUnsavedChangeAction("cancel")}>退出操作</button>
+            </div>
+            <p className="unsaved-change-note">关闭网页时，浏览器也会在离开前提示当前模型未保存。</p>
+          </section>
+        </div>
+      )}
+      {colorPaletteDialogOpen && (
+        <div className="image-picker-backdrop" onPointerDown={() => setColorPaletteDialogOpen(false)}>
+          <section className="color-palette-dialog" onPointerDown={(event) => event.stopPropagation()}>
+            <div className="image-picker-title">
+              <div>
+                <h2>配色设置</h2>
+                <p>配置能流类型和电压等级颜色，保存后用于图元、端子、联络线和导出图形。</p>
+              </div>
+              <button onClick={() => setColorPaletteDialogOpen(false)}>关闭</button>
+            </div>
+            <div className="color-palette-tabs" role="tablist" aria-label="配色方式">
+              <button
+                className={colorPaletteTab === "energy" ? "active" : ""}
+                onClick={() => {
+                  setColorPaletteTab("energy");
+                  toggleColorDisplayMode("energy");
+                }}
+                type="button"
+              >
+                按能流类型
+              </button>
+              <button
+                className={colorPaletteTab === "voltage" ? "active" : ""}
+                onClick={() => {
+                  setColorPaletteTab("voltage");
+                  toggleColorDisplayMode("voltage");
+                }}
+                type="button"
+              >
+                按电压等级
+              </button>
+            </div>
+            {colorPaletteTab === "energy" ? (
+              <div className="color-palette-table" aria-label="能流类型配色">
+                {ENERGY_COLOR_ROWS.map((row) => {
+                  const color = colorPaletteDraft.energy[row.type] ?? DEFAULT_COLOR_PALETTE.energy[row.type];
+                  return (
+                    <label className="color-palette-row" key={row.type}>
+                      <span>{row.label}</span>
+                      <input
+                        type="color"
+                        value={color.startsWith("#") ? color : DEFAULT_COLOR_PALETTE.energy[row.type]}
+                        onChange={(event) => updateEnergyColor(row.type, event.target.value)}
+                        aria-label={`${row.label}颜色`}
+                      />
+                      <input
+                        value={color}
+                        onChange={(event) => updateEnergyColor(row.type, event.target.value)}
+                        aria-label={`${row.label}颜色值`}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="voltage-color-panel">
+                <div className="voltage-color-header">
+                  <span>AC/DC</span>
+                  <span>电压基值</span>
+                  <span>颜色</span>
+                  <span>操作</span>
+                </div>
+                <div className="voltage-color-list">
+                  {voltageColorRows.map((row) => (
+                    <div className="voltage-color-row" key={row.key}>
+                      <select
+                        value={row.type}
+                        onChange={(event) => updateVoltageColorRow(row.key, { type: event.target.value as "ac" | "dc" })}
+                        aria-label="AC/DC"
+                      >
+                        {ELECTRIC_COLOR_TYPES.map((type) => (
+                          <option key={type} value={type}>{ELECTRIC_COLOR_TYPE_LABELS[type]}</option>
+                        ))}
+                      </select>
+                      <input
+                        value={row.voltage}
+                        onChange={(event) => updateVoltageColorRow(row.key, { voltage: event.target.value })}
+                        aria-label="电压基值"
+                      />
+                      <div className="color-field">
+                        <input
+                          type="color"
+                          value={row.color.startsWith("#") ? row.color : "#64748b"}
+                          onChange={(event) => updateVoltageColorRow(row.key, { color: event.target.value })}
+                          aria-label={`${row.type.toUpperCase()} ${row.voltage}颜色`}
+                        />
+                        <input
+                          value={row.color}
+                          onChange={(event) => updateVoltageColorRow(row.key, { color: event.target.value })}
+                          aria-label={`${row.type.toUpperCase()} ${row.voltage}颜色值`}
+                        />
+                      </div>
+                      <button type="button" onClick={() => deleteVoltageColorRow(row.key)}>删除</button>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" className="secondary-action" onClick={addVoltageColorRow}>新增电压等级</button>
+              </div>
+            )}
+            <div className="image-picker-actions color-palette-actions">
+              <button type="button" onClick={colorPaletteTab === "energy" ? resetEnergyColors : resetVoltageColors}>
+                {colorPaletteTab === "energy" ? "恢复默认能流配色" : "恢复默认电压配色"}
+              </button>
+              <button type="button" onClick={saveColorPalette}>保存</button>
+            </div>
+          </section>
         </div>
       )}
       {deviceDefinitionDialogOpen && (

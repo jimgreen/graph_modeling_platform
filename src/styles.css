@@ -709,6 +709,12 @@ button:disabled {
   padding: 0;
 }
 
+.topbar-primary-button.active {
+  color: #ffffff;
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+}
+
 .topbar-model {
   display: inline-flex;
   align-items: center;
@@ -1157,6 +1163,7 @@ button:disabled {
 }
 
 .terminal-dot {
+  fill: var(--terminal-color, #2563eb);
   stroke: #ffffff;
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
@@ -1164,24 +1171,30 @@ button:disabled {
 }
 
 .terminal-dot.ac {
-  fill: #2563eb;
+  fill: var(--terminal-color, #2563eb);
 }
 
 .terminal-dot.dc {
-  fill: #0f766e;
+  fill: var(--terminal-color, #0f766e);
 }
 
 .terminal-dot.h2 {
-  fill: #7c3aed;
+  fill: var(--terminal-color, #7c3aed);
 }
 
 .terminal-dot.heat {
-  fill: #dc2626;
+  fill: var(--terminal-color, #dc2626);
 }
 
 .terminal-dot.disabled {
   fill: #cbd5e1;
   cursor: not-allowed;
+}
+
+.terminal-dot.overlapped {
+  stroke: #ffffff;
+  stroke-width: 2;
+  filter: none;
 }
 
 .transform-handles {
@@ -1529,6 +1542,209 @@ button:disabled {
 .image-picker-actions select {
   color: #334155;
   background: #ffffff;
+}
+
+.unsaved-change-dialog {
+  display: grid;
+  gap: 16px;
+  width: min(520px, calc(100vw - 48px));
+  padding: 20px;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.unsaved-change-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.unsaved-change-actions button {
+  min-height: 34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  color: #334155;
+  background: #ffffff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.unsaved-change-actions button:hover,
+.unsaved-change-actions button:focus-visible {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  outline: none;
+}
+
+.unsaved-change-actions button:nth-child(2) {
+  color: #ffffff;
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+}
+
+.unsaved-change-actions button:nth-child(2):hover,
+.unsaved-change-actions button:nth-child(2):focus-visible {
+  border-color: #1e40af;
+  background: #1e40af;
+}
+
+.unsaved-change-note {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.color-palette-dialog {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 14px;
+  width: min(720px, calc(100vw - 48px));
+  max-height: min(720px, calc(100vh - 48px));
+  overflow: hidden;
+  padding: 18px;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.color-palette-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.color-palette-tabs button,
+.voltage-color-row button,
+.voltage-color-panel .secondary-action {
+  min-height: 32px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  color: #334155;
+  background: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.color-palette-tabs button:hover,
+.color-palette-tabs button:focus-visible,
+.voltage-color-row button:hover,
+.voltage-color-row button:focus-visible,
+.voltage-color-panel .secondary-action:hover,
+.voltage-color-panel .secondary-action:focus-visible {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  outline: none;
+}
+
+.color-palette-tabs button.active {
+  color: #1d4ed8;
+  border-color: #93c5fd;
+  background: #dbeafe;
+}
+
+.color-palette-table,
+.voltage-color-panel {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.color-palette-table {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.color-palette-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.8fr) 44px minmax(120px, 1.4fr);
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.color-palette-row span {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.color-palette-row input,
+.voltage-color-row input,
+.voltage-color-row select {
+  min-width: 0;
+  height: 32px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 8px;
+  color: #0f172a;
+  background: #ffffff;
+  font-size: 13px;
+}
+
+.color-palette-row input[type="color"],
+.voltage-color-row input[type="color"] {
+  width: 40px;
+  padding: 2px;
+}
+
+.voltage-color-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.voltage-color-header,
+.voltage-color-row {
+  display: grid;
+  grid-template-columns: 82px minmax(92px, 0.9fr) minmax(180px, 1.4fr) 64px;
+  align-items: center;
+  gap: 8px;
+}
+
+.voltage-color-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 10px 12px;
+  color: #475569;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.voltage-color-list {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.voltage-color-row {
+  padding: 8px;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.color-field {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.voltage-color-panel .secondary-action {
+  margin: 0 12px 12px;
+}
+
+.color-palette-actions {
+  justify-content: flex-end;
 }
 
 .custom-device-create-button {

@@ -32,6 +32,8 @@ import {
   duplicateSavedProject,
   routeOrthogonalEdge,
   routeEdgesForRendering,
+  routeEdgesForIncrementalRendering,
+  routeEdgesForStoredRendering,
   ACAC_CONVERTER_CONTROL_TYPES,
   AC_GENERATOR_CONTROL_TYPES,
   DCAC_CONVERTER_CONTROL_TYPES,
@@ -61,6 +63,7 @@ import {
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
   getConnectionStrokeColor,
+  getTerminalDisplayColor,
   getElementFocusPoint,
   isBlockingTopologyValidationError,
   isRepeatedEdgePointerClick,
@@ -69,6 +72,8 @@ import {
   getEExportWarnings,
   getEParameterKeys,
   getTemplateParameterDefinitions,
+  getOverlappingTerminalGroups,
+  getTerminalBusContactGroups,
   validateContainerTerminalAssociations,
   validateContainerTerminalRoles,
   isGeneratorNode,
@@ -83,9 +88,13 @@ import {
   normalizeVoltageBaseInput,
   normalizeViewBoxToCanvas,
   prepareConnectionEdgeForCommit,
+  projectPointToBusCenterline,
+  reconcileOverlappingTerminalConnections,
   terminalStubSegment,
   terminalVoltageBaseNumber,
   topologyCalculationMessage,
+  voltageLevelColor,
+  DEFAULT_COLOR_PALETTE,
   serializeProject,
   deserializeProject,
   type Edge,
@@ -136,6 +145,72 @@ describe("power system model", () => {
     expect(topology.nodes[nodes[1].id].degree).toBe(2);
     expect(topology.nodes[nodes[0].id].neighbors).toEqual([nodes[1].id]);
     expect(topology.connectedComponents).toEqual([[nodes[0].id, nodes[1].id, nodes[2].id]]);
+  });
+
+  test("can render saved connection geometry without full obstacle-aware rerouting", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const target = createDefaultNode("ac-load", { x: 360, y: 180 });
+    const blocker = createDefaultNode("ac-load", { x: 210, y: 180 });
+    const manualPoints = [
+      { x: 160, y: 100 },
+      { x: 160, y: 220 },
+      { x: 300, y: 220 }
+    ];
+    const edge: Edge = {
+      id: "e1",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: source.terminals[0].id,
+      targetTerminalId: target.terminals[0].id,
+      manualPoints
+    };
+
+    const route = routeEdgesForStoredRendering([source, target, blocker], [edge], { width: 520, height: 320 })[0];
+
+    expect(route.points).toEqual(expect.arrayContaining(manualPoints.slice(0, 2)));
+    expect(route.points.some((point) => point.y === 220)).toBe(true);
+    expect(route.path).toContain("M");
+    expect(route.path).toContain("L");
+  });
+
+  test("incremental rendering reroutes only affected connections and keeps others stored", () => {
+    const unaffectedSource = createDefaultNode("ac-source", { x: 100, y: 220 });
+    const unaffectedTarget = createDefaultNode("ac-load", { x: 360, y: 220 });
+    const affectedSource = createDefaultNode("ac-line", { x: 100, y: 100 });
+    const affectedTarget = createDefaultNode("ac-line", { x: 360, y: 100 });
+    const blocker = createDefaultNode("ac-load", { x: 230, y: 100 });
+    const unaffectedManualPoints = [
+      { x: 160, y: 100 },
+      { x: 160, y: 220 },
+      { x: 300, y: 220 }
+    ];
+    const unaffected: Edge = {
+      id: "unaffected",
+      sourceId: unaffectedSource.id,
+      targetId: unaffectedTarget.id,
+      sourceTerminalId: unaffectedSource.terminals[0].id,
+      targetTerminalId: unaffectedTarget.terminals[0].id,
+      manualPoints: unaffectedManualPoints
+    };
+    const affected: Edge = {
+      id: "affected",
+      sourceId: affectedSource.id,
+      targetId: affectedTarget.id,
+      sourceTerminalId: affectedSource.terminals[1].id,
+      targetTerminalId: affectedTarget.terminals[0].id
+    };
+    const nodes = [unaffectedSource, unaffectedTarget, affectedSource, affectedTarget, blocker];
+    const edges = [unaffected, affected];
+
+    const stored = routeEdgesForStoredRendering(nodes, edges, { width: 520, height: 360 });
+    const incremental = routeEdgesForIncrementalRendering(nodes, edges, new Set(["affected"]), { width: 520, height: 360 });
+
+    expect(incremental.find((route) => route.edgeId === "unaffected")?.points).toEqual(
+      stored.find((route) => route.edgeId === "unaffected")?.points
+    );
+    expect(incremental.find((route) => route.edgeId === "affected")?.points).not.toEqual(
+      stored.find((route) => route.edgeId === "affected")?.points
+    );
   });
 
   test("round-trips project files without losing device parameters", () => {
@@ -444,23 +519,23 @@ describe("power system model", () => {
 
   test("draws fixed-length terminal stubs from the device body toward visible terminals", () => {
     expect(terminalStubSegment({ anchor: { x: 0.5, y: 0 } })).toEqual({
-      from: { x: -16, y: 0 },
+      from: { x: -24, y: 0 },
       to: { x: 0, y: 0 }
     });
     expect(terminalStubSegment({ anchor: { x: -0.5, y: 0 } })).toEqual({
-      from: { x: 16, y: 0 },
+      from: { x: 24, y: 0 },
       to: { x: 0, y: 0 }
     });
     expect(terminalStubSegment({ anchor: { x: 0, y: -0.5 } })).toEqual({
-      from: { x: 0, y: 16 },
+      from: { x: 0, y: 24 },
       to: { x: 0, y: 0 }
     });
     expect(terminalStubSegment({ anchor: { x: 0, y: 0.5 } })).toEqual({
-      from: { x: 0, y: -16 },
+      from: { x: 0, y: -24 },
       to: { x: 0, y: 0 }
     });
     expect(terminalStubSegment({ anchor: { x: 0.5, y: 0 } }, -1, 1)).toEqual({
-      from: { x: 16, y: 0 },
+      from: { x: 24, y: 0 },
       to: { x: 0, y: 0 }
     });
   });
@@ -859,6 +934,45 @@ describe("power system model", () => {
     expect(getSwitchVisualState(dcBreaker)).toBe("open");
     dcBreaker.params.status = "1";
     expect(getSwitchVisualState(dcBreaker)).toBe("closed");
+  });
+
+  test("places three-winding transformer terminals on visible winding lead exits", () => {
+    const node = createDefaultNode("ac-three-winding-transformer", { x: 500, y: 100 });
+    const terminalPoints = node.terminals.map((terminal) => ({
+      x: terminal.anchor.x * node.size.width,
+      y: terminal.anchor.y * node.size.height
+    }));
+
+    expect(terminalPoints).toEqual([
+      { x: -52, y: -8 },
+      { x: 52, y: -8 },
+      { x: 0, y: 38 }
+    ]);
+    expect(node.terminals.map((terminal) => terminalStubSegment(terminal))).toEqual([
+      { from: { x: 24, y: 0 }, to: { x: 0, y: 0 } },
+      { from: { x: -24, y: 0 }, to: { x: 0, y: 0 } },
+      { from: { x: 0, y: -24 }, to: { x: 0, y: 0 } }
+    ]);
+  });
+
+  test("normalizes legacy three-winding transformer terminal anchors to winding lead exits", () => {
+    const legacy = createDefaultNode("ac-three-winding-transformer", { x: 500, y: 100 });
+    legacy.terminals = [
+      { ...legacy.terminals[0], anchor: { x: -0.5, y: 0 } },
+      { ...legacy.terminals[1], anchor: { x: 0.5, y: 0 } },
+      { ...legacy.terminals[2], anchor: { x: 0, y: -0.5 } }
+    ];
+
+    const normalized = normalizeNodeTerminalsByTemplate(legacy);
+
+    expect(normalized.terminals.map((terminal) => ({
+      x: terminal.anchor.x * normalized.size.width,
+      y: terminal.anchor.y * normalized.size.height
+    }))).toEqual([
+      { x: -52, y: -8 },
+      { x: 52, y: -8 },
+      { x: 0, y: 38 }
+    ]);
   });
 
   test("routes orthogonal connection around interfering devices", () => {
@@ -1597,6 +1711,29 @@ describe("power system model", () => {
     for (let index = 1; index < preserved.length; index += 1) {
       expect(preserved[index - 1].x === preserved[index].x || preserved[index - 1].y === preserved[index].y).toBe(true);
     }
+  });
+
+  test("keeps a dragged bus endpoint stub perpendicular instead of extending along the bus", () => {
+    const options = {
+      routePoints: [
+        { x: 100, y: 80 },
+        { x: 128, y: 80 },
+        { x: 240, y: 80 },
+        { x: 240, y: 100 },
+        { x: 200, y: 100 }
+      ],
+      nextStart: { x: 260, y: 80 },
+      nextEnd: { x: 200, y: 100 },
+      sourceDelta: { x: 160, y: 0 },
+      targetDelta: { x: 0, y: 0 },
+      targetNormal: { x: 0, y: -1 }
+    } as Parameters<typeof preserveDraggedRouteShape>[0] & { targetNormal: Point };
+
+    const preserved = preserveDraggedRouteShape(options);
+    const targetStub = preserved[preserved.length - 2];
+
+    expect(targetStub).toEqual({ x: 200, y: 72 });
+    expect(preserved[preserved.length - 1]).toEqual({ x: 200, y: 100 });
   });
 
   test("marks every non-end route segment as movable", () => {
@@ -3145,6 +3282,90 @@ describe("power system model", () => {
     expect(getConnectionStrokeColor({ id: "floating", sourceId: "missing", targetId: "missing" }, nodeById)).toBe("#334155");
   });
 
+  test("colors only AC and DC electric graphics by voltage level in voltage color mode", () => {
+    const acSource = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const acLoad = createDefaultNode("ac-load", { x: 240, y: 100 });
+    const dcSource = createDefaultNode("dc-source", { x: 100, y: 180 });
+    const dcLoad = createDefaultNode("dc-load", { x: 240, y: 180 });
+    const hydrogenSource = createDefaultNode("hydrogen-source", { x: 100, y: 260 });
+    const hydrogenLoad = createDefaultNode("hydrogen-load", { x: 240, y: 260 });
+    const heatSource = createDefaultNode("heat-source", { x: 100, y: 340 });
+    const heatLoad = createDefaultNode("heat-load", { x: 240, y: 340 });
+    acSource.terminals[0].vbase = "10";
+    acLoad.terminals[0].vbase = "10";
+    dcSource.terminals[0].vbase = "750";
+    dcLoad.terminals[0].vbase = "750";
+    hydrogenSource.terminals[0].vbase = "30";
+    heatSource.terminals[0].vbase = "95";
+    const nodeById = new Map([acSource, acLoad, dcSource, dcLoad, hydrogenSource, hydrogenLoad, heatSource, heatLoad].map((node) => [node.id, node]));
+
+    expect(voltageLevelColor("10")).toBe("#f97316");
+    expect(voltageLevelColor("750")).toBe("#0891b2");
+    expect(getDeviceStrokeColor(acSource, "voltage")).toBe("#f97316");
+    expect(getTerminalDisplayColor(acSource, acSource.terminals[0], "voltage")).toBe("#f97316");
+    expect(getConnectionStrokeColor({ id: "ac", sourceId: acSource.id, targetId: acLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }, nodeById, "voltage")).toBe("#f97316");
+    expect(getDeviceStrokeColor(dcSource, "voltage")).toBe("#0891b2");
+    expect(getTerminalDisplayColor(dcSource, dcSource.terminals[0], "voltage")).toBe("#0891b2");
+    expect(getConnectionStrokeColor({ id: "dc", sourceId: dcSource.id, targetId: dcLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }, nodeById, "voltage")).toBe("#0891b2");
+    expect(getDeviceStrokeColor(hydrogenSource, "voltage")).toBe("#7c3aed");
+    expect(getTerminalDisplayColor(hydrogenSource, hydrogenSource.terminals[0], "voltage")).toBe("#7c3aed");
+    expect(getConnectionStrokeColor({ id: "h2", sourceId: hydrogenSource.id, targetId: hydrogenLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }, nodeById, "voltage")).toBe("#7c3aed");
+    expect(getDeviceStrokeColor(heatSource, "voltage")).toBe("#dc2626");
+    expect(getTerminalDisplayColor(heatSource, heatSource.terminals[0], "voltage")).toBe("#dc2626");
+    expect(getConnectionStrokeColor({ id: "heat", sourceId: heatSource.id, targetId: heatLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }, nodeById, "voltage")).toBe("#dc2626");
+  });
+
+  test("uses configurable energy colors for terminals, devices, and connection lines", () => {
+    const acSource = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const dcSource = createDefaultNode("dc-source", { x: 220, y: 100 });
+    const hydrogenSource = createDefaultNode("hydrogen-source", { x: 340, y: 100 });
+    const palette = {
+      ...DEFAULT_COLOR_PALETTE,
+      energy: {
+        ...DEFAULT_COLOR_PALETTE.energy,
+        ac: "#111111",
+        dc: "#222222",
+        h2: "#333333",
+        heat: "#444444"
+      }
+    };
+    const nodeById = new Map([acSource, dcSource, hydrogenSource].map((node) => [node.id, node]));
+
+    expect(getTerminalDisplayColor(acSource, acSource.terminals[0], "energy", palette)).toBe("#111111");
+    expect(getDeviceStrokeColor(dcSource, "energy", palette)).toBe("#222222");
+    expect(getDeviceStrokeColor(hydrogenSource, "voltage", palette)).toBe("#333333");
+    expect(getConnectionStrokeColor({ id: "ac", sourceId: acSource.id, targetId: dcSource.id, sourceTerminalId: "t1", targetTerminalId: "t1" }, nodeById, "energy", palette)).toBe("#111111");
+  });
+
+  test("keys voltage colors by both AC/DC type and voltage base", () => {
+    const acSource = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const acLoad = createDefaultNode("ac-load", { x: 220, y: 100 });
+    const dcSource = createDefaultNode("dc-source", { x: 100, y: 200 });
+    const dcLoad = createDefaultNode("dc-load", { x: 220, y: 200 });
+    acSource.terminals[0].vbase = "10";
+    acLoad.terminals[0].vbase = "10";
+    dcSource.terminals[0].vbase = "10";
+    dcLoad.terminals[0].vbase = "10";
+    const palette = {
+      ...DEFAULT_COLOR_PALETTE,
+      voltage: {
+        ...DEFAULT_COLOR_PALETTE.voltage,
+        "ac:10": "#ff0000",
+        "dc:10": "#00ff00"
+      }
+    };
+    const nodeById = new Map([acSource, acLoad, dcSource, dcLoad].map((node) => [node.id, node]));
+
+    expect(voltageLevelColor("10", "ac", palette)).toBe("#ff0000");
+    expect(voltageLevelColor("10", "dc", palette)).toBe("#00ff00");
+    expect(getTerminalDisplayColor(acSource, acSource.terminals[0], "voltage", palette)).toBe("#ff0000");
+    expect(getTerminalDisplayColor(dcSource, dcSource.terminals[0], "voltage", palette)).toBe("#00ff00");
+    expect(getDeviceStrokeColor(acSource, "voltage", palette)).toBe("#ff0000");
+    expect(getDeviceStrokeColor(dcSource, "voltage", palette)).toBe("#00ff00");
+    expect(getConnectionStrokeColor({ id: "ac", sourceId: acSource.id, targetId: acLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }, nodeById, "voltage", palette)).toBe("#ff0000");
+    expect(getConnectionStrokeColor({ id: "dc", sourceId: dcSource.id, targetId: dcLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }, nodeById, "voltage", palette)).toBe("#00ff00");
+  });
+
   test("shows associated container devices as child rows in the element tree", () => {
     const electrolyzer = assignPermanentDeviceIndex(createDefaultNode("ac-electrolyzer", { x: 100, y: 100 }), {}).node;
     electrolyzer.name = "EL1";
@@ -3558,6 +3779,193 @@ describe("power system model", () => {
     expect(byId.get(dcLoad.id)?.dcTopologyNode).toBe(1);
     expect(byId.get(dcLoad.id)?.terminals[0].nodeNumber).toBe("1");
     expect(byId.get(dcLoad.id)?.acTopologyNode).toBe(0);
+  });
+
+  test("contracts overlapping same-type device terminals into one topology node", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 260, y: 100 });
+    const sourceTerminalPoint = getTerminalPoint(source, "t1");
+    const loadTerminalPoint = getTerminalPoint(load, "t1");
+    load.position = {
+      x: load.position.x + sourceTerminalPoint.x - loadTerminalPoint.x,
+      y: load.position.y + sourceTerminalPoint.y - loadTerminalPoint.y
+    };
+
+    const calculated = calculateElectricalTopology([source, load], []);
+    const byId = new Map(calculated.map((node) => [node.id, node]));
+
+    expect(getTerminalPoint(source, "t1")).toEqual(getTerminalPoint(load, "t1"));
+    expect(byId.get(source.id)?.terminals[0].nodeNumber).toBe(byId.get(load.id)?.terminals[0].nodeNumber);
+    expect(byId.get(source.id)?.acTopologyNode).toBe(1);
+    expect(byId.get(load.id)?.acTopologyNode).toBe(1);
+  });
+
+  test("reports same-type overlapping device terminals for special canvas styling", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 260, y: 100 });
+    const dcLoad = createDefaultNode("dc-load", { x: 420, y: 100 });
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const loadPoint = getTerminalPoint(load, "t1");
+    const dcPoint = getTerminalPoint(dcLoad, "t1");
+    load.position = { x: load.position.x + sourcePoint.x - loadPoint.x, y: load.position.y + sourcePoint.y - loadPoint.y };
+    dcLoad.position = { x: dcLoad.position.x + sourcePoint.x - dcPoint.x, y: dcLoad.position.y + sourcePoint.y - dcPoint.y };
+
+    const groups = getOverlappingTerminalGroups([source, load, dcLoad]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].type).toBe("ac");
+    expect(groups[0].terminals.map((terminal) => terminal.nodeId).sort()).toEqual([load.id, source.id].sort());
+  });
+
+  test("adds an explicit same-type connection when previously overlapping terminals are moved apart", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 260, y: 100 });
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const loadPoint = getTerminalPoint(load, "t1");
+    load.position = { x: load.position.x + sourcePoint.x - loadPoint.x, y: load.position.y + sourcePoint.y - loadPoint.y };
+    const nextLoad = { ...load, position: { x: load.position.x + 120, y: load.position.y } };
+
+    const result = reconcileOverlappingTerminalConnections(
+      [source, load],
+      [source, nextLoad],
+      [],
+      () => "auto-edge"
+    );
+
+    expect(result.addedEdgeIds).toEqual(["auto-edge"]);
+    expect(result.removedEdgeIds).toEqual([]);
+    expect(result.edges).toEqual([
+      expect.objectContaining({
+        id: "auto-edge",
+        sourceId: source.id,
+        targetId: nextLoad.id,
+        sourceTerminalId: "t1",
+        targetTerminalId: "t1"
+      })
+    ]);
+  });
+
+  test("removes an explicit connection when its same-type endpoints are moved onto the same coordinate", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 260, y: 100 });
+    const edge: Edge = {
+      id: "connected-overlap",
+      sourceId: source.id,
+      targetId: load.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const loadPoint = getTerminalPoint(load, "t1");
+    const nextLoad = {
+      ...load,
+      position: { x: load.position.x + sourcePoint.x - loadPoint.x, y: load.position.y + sourcePoint.y - loadPoint.y }
+    };
+
+    const result = reconcileOverlappingTerminalConnections([source, load], [source, nextLoad], [edge], () => "unused");
+
+    expect(result.addedEdgeIds).toEqual([]);
+    expect(result.removedEdgeIds).toEqual(["connected-overlap"]);
+    expect(result.edges).toEqual([]);
+  });
+
+  test("contracts device terminals touching a same-type bus into one topology node", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const bus = createDefaultNode("ac-bus", { x: 220, y: 100 });
+    const sourcePoint = getTerminalPoint(source, "t1");
+    source.position = { x: source.position.x + 180 - sourcePoint.x, y: source.position.y };
+
+    const contacts = getTerminalBusContactGroups([source, bus]);
+    const calculated = calculateElectricalTopology([source, bus], []);
+    const byId = new Map(calculated.map((node) => [node.id, node]));
+
+    expect(contacts).toHaveLength(1);
+    expect(contacts[0].contacts[0]).toEqual(expect.objectContaining({ nodeId: source.id, terminalId: "t1", busId: bus.id }));
+    expect(byId.get(source.id)?.terminals[0].nodeNumber).toBe(byId.get(bus.id)?.terminals[0].nodeNumber);
+  });
+
+  test("adds an explicit same-type connection when a bus-terminal contact is moved apart", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const bus = createDefaultNode("ac-bus", { x: 220, y: 100 });
+    const sourcePoint = getTerminalPoint(source, "t1");
+    source.position = { x: source.position.x + 180 - sourcePoint.x, y: source.position.y };
+    const movedBus = { ...bus, position: { x: bus.position.x + 160, y: bus.position.y } };
+    const expectedBusPoint = projectPointToBusCenterline(movedBus, getTerminalPoint(source, "t1"));
+
+    const result = reconcileOverlappingTerminalConnections([source, bus], [source, movedBus], [], () => "bus-edge");
+
+    expect(result.addedEdgeIds).toEqual(["bus-edge"]);
+    expect(result.edges).toEqual([
+      expect.objectContaining({
+        id: "bus-edge",
+        sourceId: source.id,
+        targetId: bus.id,
+        sourceTerminalId: "t1",
+        targetTerminalId: "t1",
+        targetPoint: expectedBusPoint
+      })
+    ]);
+  });
+
+  test("places the generated bus endpoint opposite the moved device terminal when device-bus contact separates", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const bus = createDefaultNode("ac-bus", { x: 220, y: 100 });
+    const sourcePoint = getTerminalPoint(source, "t1");
+    source.position = { x: source.position.x + 180 - sourcePoint.x, y: source.position.y };
+    const movedSource = { ...source, position: { x: source.position.x, y: source.position.y - 120 } };
+    const expectedBusPoint = projectPointToBusCenterline(bus, getTerminalPoint(movedSource, "t1"));
+
+    const result = reconcileOverlappingTerminalConnections([source, bus], [movedSource, bus], [], () => "bus-edge");
+
+    expect(result.addedEdgeIds).toEqual(["bus-edge"]);
+    expect(result.edges[0]).toEqual(expect.objectContaining({
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: expectedBusPoint
+    }));
+  });
+
+  test("removes an explicit bus connection when the device terminal touches the bus again", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const bus = createDefaultNode("ac-bus", { x: 380, y: 100 });
+    const edge: Edge = {
+      id: "bus-explicit",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const nextSource = { ...source, position: { x: source.position.x + 340 - sourcePoint.x, y: source.position.y } };
+
+    const result = reconcileOverlappingTerminalConnections([source, bus], [nextSource, bus], [edge], () => "unused");
+
+    expect(result.removedEdgeIds).toEqual(["bus-explicit"]);
+    expect(result.edges).toEqual([]);
+  });
+
+  test("does not contract overlapping terminals with different energy types", () => {
+    const acSource = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const dcLoad = createDefaultNode("dc-load", { x: 260, y: 100 });
+    const acTerminalPoint = getTerminalPoint(acSource, "t1");
+    const dcTerminalPoint = getTerminalPoint(dcLoad, "t1");
+    dcLoad.position = {
+      x: dcLoad.position.x + acTerminalPoint.x - dcTerminalPoint.x,
+      y: dcLoad.position.y + acTerminalPoint.y - dcTerminalPoint.y
+    };
+
+    const calculated = calculateElectricalTopology([acSource, dcLoad], []);
+    const byId = new Map(calculated.map((node) => [node.id, node]));
+
+    expect(getTerminalPoint(acSource, "t1")).toEqual(getTerminalPoint(dcLoad, "t1"));
+    expect(byId.get(acSource.id)?.terminals[0].nodeNumber).toBe("1");
+    expect(byId.get(dcLoad.id)?.terminals[0].nodeNumber).toBe("1");
+    expect(byId.get(acSource.id)?.acTopologyNode).toBe(1);
+    expect(byId.get(acSource.id)?.dcTopologyNode).toBe(0);
+    expect(byId.get(dcLoad.id)?.acTopologyNode).toBe(0);
+    expect(byId.get(dcLoad.id)?.dcTopologyNode).toBe(1);
   });
 
   test("fills zero generator voltage setpoints from the topology node rated voltage", () => {

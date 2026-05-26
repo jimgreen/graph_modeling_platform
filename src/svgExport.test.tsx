@@ -77,5 +77,8 @@ describe("SVG export", () => {
     expect(twoWindingSvg).not.toContain("three-winding-transformer-glyph");
     expect(threeWindingSvg).toContain("three-winding-transformer-glyph");
     expect(threeWindingSvg.match(/class="transformer-winding"/g)?.length).toBe(3);
+    expect(threeWindingSvg).toContain('class="export-terminal ac" transform="translate(-52 -8) scale(1 1)"');
+    expect(threeWindingSvg).toContain('class="export-terminal ac" transform="translate(52 -8) scale(1 1)"');
+    expect(threeWindingSvg).toContain('class="export-terminal ac" transform="translate(0 38) scale(1 1)"');
   });
 });

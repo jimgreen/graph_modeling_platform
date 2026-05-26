@@ -129,6 +129,12 @@ export type Point = {
   y: number;
 };
 
+const THREE_WINDING_TRANSFORMER_TERMINAL_ANCHORS: Point[] = [
+  { x: -0.5, y: -8 / 76 },
+  { x: 0.5, y: -8 / 76 },
+  { x: 0, y: 0.5 }
+];
+
 export type CanvasBounds = {
   width: number;
   height: number;
@@ -264,6 +270,42 @@ export type Edge = {
   sourcePoint?: Point;
   targetPoint?: Point;
   manualPoints?: Point[];
+};
+
+export type OverlappingTerminalRef = {
+  nodeId: string;
+  terminalId: string;
+  type: TerminalType;
+  point: Point;
+};
+
+export type OverlappingTerminalGroup = {
+  key: string;
+  type: TerminalType;
+  point: Point;
+  terminals: OverlappingTerminalRef[];
+};
+
+export type OverlappingTerminalConnectionReconcileResult = {
+  edges: Edge[];
+  addedEdgeIds: string[];
+  removedEdgeIds: string[];
+};
+
+export type TerminalBusContact = {
+  nodeId: string;
+  terminalId: string;
+  busId: string;
+  busTerminalId: string;
+  type: TerminalType;
+  point: Point;
+};
+
+export type TerminalBusContactGroup = {
+  key: string;
+  type: TerminalType;
+  point: Point;
+  contacts: TerminalBusContact[];
 };
 
 export type ElementTreeItem = {
@@ -2217,6 +2259,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     params: { ratedCapacity: "90 MVA", voltageRatio: "220/110/10 kV", windingType: "三绕组", impedance: "12.0%" },
     terminalType: "ac",
     terminalCount: 3,
+    terminalAnchors: THREE_WINDING_TRANSFORMER_TERMINAL_ANCHORS,
     isContainer: true,
     parameterDefinitions: threeWindingTransformerParameterDefinitions
   },
@@ -2950,23 +2993,155 @@ export const TERMINAL_TYPE_COLORS: Record<TerminalType, string> = {
   heat: "#dc2626"
 };
 
-export function terminalTypeColor(type?: TerminalType): string {
-  return type ? TERMINAL_TYPE_COLORS[type] : TERMINAL_TYPE_COLORS.ac;
+export type ColorDisplayMode = "energy" | "voltage";
+
+export type ColorPalette = {
+  energy: Record<TerminalType, string>;
+  voltage: Record<string, string>;
+};
+
+export const VOLTAGE_LEVEL_COLORS: Record<string, string> = {
+  "0": "#64748b",
+  "0.4": "#22c55e",
+  "6": "#0ea5e9",
+  "10": "#f97316",
+  "10.5": "#f97316",
+  "35": "#a855f7",
+  "66": "#6366f1",
+  "110": "#ef4444",
+  "220": "#b91c1c",
+  "330": "#7f1d1d",
+  "500": "#dc2626",
+  "750": "#0891b2",
+  "800": "#0e7490"
+};
+
+function buildDefaultVoltagePalette(): Record<string, string> {
+  const typedEntries = Object.entries(VOLTAGE_LEVEL_COLORS).flatMap(([voltage, color]) => [
+    [`ac:${voltage}`, color],
+    [`dc:${voltage}`, color]
+  ]);
+  return {
+    ...VOLTAGE_LEVEL_COLORS,
+    ...Object.fromEntries(typedEntries)
+  };
+}
+
+export const DEFAULT_COLOR_PALETTE: ColorPalette = {
+  energy: { ...TERMINAL_TYPE_COLORS },
+  voltage: buildDefaultVoltagePalette()
+};
+
+function normalizeColorRecord(source: unknown, fallback: Record<string, string>): Record<string, string> {
+  if (!source || typeof source !== "object") {
+    return { ...fallback };
+  }
+  return Object.entries(source as Record<string, unknown>).reduce<Record<string, string>>((result, [key, value]) => {
+    if (typeof value === "string" && value.trim()) {
+      result[key] = value.trim();
+    }
+    return result;
+  }, { ...fallback });
+}
+
+export function normalizeColorPalette(value?: Partial<ColorPalette> | null): ColorPalette {
+  return {
+    energy: normalizeColorRecord(value?.energy, DEFAULT_COLOR_PALETTE.energy) as Record<TerminalType, string>,
+    voltage: normalizeColorRecord(value?.voltage, DEFAULT_COLOR_PALETTE.voltage)
+  };
+}
+
+export function terminalTypeColor(type?: TerminalType, palette: ColorPalette = DEFAULT_COLOR_PALETTE): string {
+  return type ? palette.energy[type] ?? DEFAULT_COLOR_PALETTE.energy[type] : palette.energy.ac ?? DEFAULT_COLOR_PALETTE.energy.ac;
 }
 
 export const DEFAULT_CONNECTION_STROKE_COLOR = "#334155";
 
-function findTerminalType(node: Pick<ModelNode, "terminals"> | undefined, terminalId?: string): TerminalType | undefined {
-  return node?.terminals.find((terminal) => terminal.id === terminalId)?.type ?? node?.terminals[0]?.type;
+function voltageColorFallback(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) % 360;
+  }
+  return `hsl(${hash} 72% 42%)`;
+}
+
+function voltageColorKey(value?: string): string {
+  return terminalVoltageBaseNumber(value) || "0";
+}
+
+export function voltageLevelColor(value?: string, type?: TerminalType, palette: ColorPalette = DEFAULT_COLOR_PALETTE): string {
+  const key = voltageColorKey(value);
+  if (isElectricColorType(type)) {
+    const typedKey = `${type}:${key}`;
+    return palette.voltage[typedKey] ?? palette.voltage[key] ?? DEFAULT_COLOR_PALETTE.voltage[typedKey] ?? DEFAULT_COLOR_PALETTE.voltage[key] ?? voltageColorFallback(typedKey);
+  }
+  return palette.voltage[key] ?? DEFAULT_COLOR_PALETTE.voltage[key] ?? voltageColorFallback(key);
+}
+
+function isElectricColorType(type?: TerminalType): type is "ac" | "dc" {
+  return type === "ac" || type === "dc";
+}
+
+function findDisplayTerminal(
+  node: Pick<ModelNode, "kind" | "terminals" | "params"> | undefined,
+  terminalId?: string
+): Terminal | undefined {
+  if (!node) {
+    return undefined;
+  }
+  return node.terminals.find((terminal) => terminal.id === terminalId) ?? node.terminals[0] ?? virtualBusTerminal(node, terminalId);
+}
+
+function terminalVoltageDisplayForColor(node: Pick<ModelNode, "params">, terminal?: Pick<Terminal, "vbase">): string {
+  return terminalVoltageBaseNumber(firstText([
+    terminal?.vbase,
+    node.params.vbase,
+    node.params.highVbase,
+    node.params.mediumVbase,
+    node.params.lowVbase,
+    node.params.sourceVbase,
+    node.params.targetVbase,
+    node.params.voltageLevel,
+    node.params.ratedVoltage,
+    node.params.voltage
+  ]));
+}
+
+export function getTerminalDisplayColor(
+  node: Pick<ModelNode, "kind" | "terminals" | "params">,
+  terminal: Pick<Terminal, "type" | "vbase">,
+  mode: ColorDisplayMode = "energy",
+  palette: ColorPalette = DEFAULT_COLOR_PALETTE
+): string {
+  return mode === "voltage" && isElectricColorType(terminal.type)
+    ? voltageLevelColor(terminalVoltageDisplayForColor(node, terminal), terminal.type, palette)
+    : terminalTypeColor(terminal.type, palette);
+}
+
+function findTerminalType(node: Pick<ModelNode, "kind" | "terminals" | "params"> | undefined, terminalId?: string): TerminalType | undefined {
+  return findDisplayTerminal(node, terminalId)?.type;
 }
 
 export function getConnectionStrokeColor(
   edge: Pick<Edge, "id" | "sourceId" | "targetId" | "sourceTerminalId" | "targetTerminalId">,
-  nodeById: ReadonlyMap<string, Pick<ModelNode, "terminals">>
+  nodeById: ReadonlyMap<string, Pick<ModelNode, "kind" | "terminals" | "params">>,
+  mode: ColorDisplayMode = "energy",
+  palette: ColorPalette = DEFAULT_COLOR_PALETTE
 ): string {
-  const sourceType = findTerminalType(nodeById.get(edge.sourceId), edge.sourceTerminalId);
-  const targetType = findTerminalType(nodeById.get(edge.targetId), edge.targetTerminalId);
-  return sourceType || targetType ? terminalTypeColor(sourceType ?? targetType) : DEFAULT_CONNECTION_STROKE_COLOR;
+  const sourceNode = nodeById.get(edge.sourceId);
+  const targetNode = nodeById.get(edge.targetId);
+  const sourceTerminal = findDisplayTerminal(sourceNode, edge.sourceTerminalId);
+  const targetTerminal = findDisplayTerminal(targetNode, edge.targetTerminalId);
+  const type = sourceTerminal?.type ?? targetTerminal?.type;
+  if (!type) {
+    return DEFAULT_CONNECTION_STROKE_COLOR;
+  }
+  if (mode === "voltage" && isElectricColorType(type)) {
+    const sourceVoltage = sourceNode && sourceTerminal?.type === type ? terminalVoltageDisplayForColor(sourceNode, sourceTerminal) : "";
+    const targetVoltage = targetNode && targetTerminal?.type === type ? terminalVoltageDisplayForColor(targetNode, targetTerminal) : "";
+    return voltageLevelColor(sourceVoltage && sourceVoltage !== "0" ? sourceVoltage : targetVoltage, type, palette);
+  }
+  return terminalTypeColor(type, palette);
 }
 
 function isHydrogenVisualKind(kind: string): boolean {
@@ -2993,13 +3168,16 @@ function isPureThermalNetworkKind(kind: string): boolean {
   return isThermalVisualKind(kind) && kind !== "ac-heater" && kind !== "dc-heater" && kind !== "ac-two-port-heater" && kind !== "dc-two-port-heater";
 }
 
-export function getDeviceStrokeColor(node: Pick<ModelNode, "kind" | "terminals" | "params">): string {
+export function getDeviceStrokeColor(node: Pick<ModelNode, "kind" | "terminals" | "params">, mode: ColorDisplayMode = "energy", palette: ColorPalette = DEFAULT_COLOR_PALETTE): string {
+  const primaryTerminal = node.terminals.find((terminal) => isElectricColorType(terminal.type)) ?? node.terminals[0] ?? virtualBusTerminal(node);
   return node.params.foregroundColor || (
     isHydrogenVisualKind(node.kind)
-      ? terminalTypeColor("h2")
+      ? terminalTypeColor("h2", palette)
       : isThermalVisualKind(node.kind)
-        ? terminalTypeColor("heat")
-        : terminalTypeColor(node.terminals[0]?.type)
+        ? terminalTypeColor("heat", palette)
+        : primaryTerminal
+          ? getTerminalDisplayColor(node, primaryTerminal, mode, palette)
+          : terminalTypeColor(undefined, palette)
   );
 }
 
@@ -3736,25 +3914,34 @@ function virtualBusTerminal(node: Pick<ModelNode, "kind" | "terminals">, termina
 
 export function normalizeNodeTerminalsByTemplate(node: ModelNode): ModelNode {
   const template = DEVICE_LIBRARY.find((item) => item.kind === node.kind);
-  if (!template?.terminalTypes?.length || node.terminals.length === 0) {
+  if (!template || node.terminals.length === 0) {
     return node;
   }
   let changed = false;
   const expectedTypes = templateTerminalTypes(template);
   const terminals = node.terminals.map((terminal, index) => {
     const expectedType = expectedTypes[index];
-    if (!expectedType || terminal.type === expectedType) {
-      return terminal;
+    const expectedAnchor = template.terminalAnchors?.[index];
+    let nextTerminal = terminal;
+    if (expectedType && terminal.type !== expectedType) {
+      changed = true;
+      const shouldResetVbase = isImplicitTerminalVbaseForType(terminal.vbase, terminal.type);
+      nextTerminal = {
+        ...nextTerminal,
+        type: expectedType,
+        vbase: shouldResetVbase
+          ? defaultTerminalVbase(expectedType)
+          : terminal.vbase
+      };
     }
-    changed = true;
-    const shouldResetVbase = isImplicitTerminalVbaseForType(terminal.vbase, terminal.type);
-    return {
-      ...terminal,
-      type: expectedType,
-      vbase: shouldResetVbase
-        ? defaultTerminalVbase(expectedType)
-        : terminal.vbase
-    };
+    if (expectedAnchor && !samePoint(nextTerminal.anchor, expectedAnchor)) {
+      changed = true;
+      nextTerminal = {
+        ...nextTerminal,
+        anchor: { ...expectedAnchor }
+      };
+    }
+    return nextTerminal;
   });
   return changed ? { ...node, terminals } : node;
 }
@@ -3763,7 +3950,7 @@ export function terminalStubSegment(
   terminal: Pick<Terminal, "anchor">,
   scaleX = 1,
   scaleY = 1,
-  length = 16
+  length = 24
 ): { from: Point; to: Point } {
   const displayedAnchor = {
     x: terminal.anchor.x * (Math.sign(scaleX) || 1),
@@ -3799,6 +3986,271 @@ export function getTerminalPoint(node: ModelNode, terminalId?: string): Point {
   return {
     x: Math.round(node.position.x + local.x * cos - local.y * sin),
     y: Math.round(node.position.y + local.x * sin + local.y * cos)
+  };
+}
+
+function terminalRefKey(nodeId: string, terminalId: string): string {
+  return `${nodeId}:${terminalId}`;
+}
+
+function terminalPairKey(first: Pick<OverlappingTerminalRef, "nodeId" | "terminalId">, second: Pick<OverlappingTerminalRef, "nodeId" | "terminalId">): string {
+  const refs = [terminalRefKey(first.nodeId, first.terminalId), terminalRefKey(second.nodeId, second.terminalId)].sort();
+  return `${refs[0]}|${refs[1]}`;
+}
+
+export function getOverlappingTerminalGroups(nodes: ModelNode[]): OverlappingTerminalGroup[] {
+  const groups = new Map<string, OverlappingTerminalGroup>();
+  for (const node of nodes) {
+    if (isBusNode(node) || isStaticNode(node)) {
+      continue;
+    }
+    for (const terminal of node.terminals) {
+      const point = getTerminalPoint(node, terminal.id);
+      const key = `${terminal.type}:${point.x}:${point.y}`;
+      const group = groups.get(key) ?? { key, type: terminal.type, point, terminals: [] };
+      group.terminals.push({ nodeId: node.id, terminalId: terminal.id, type: terminal.type, point });
+      groups.set(key, group);
+    }
+  }
+  return Array.from(groups.values()).filter((group) => group.terminals.length > 1);
+}
+
+function terminalPointOnBus(bus: ModelNode, point: Point, tolerance = 0): Point | null {
+  if (!isBusNode(bus)) {
+    return null;
+  }
+  if (isBoundaryBusNode(bus)) {
+    const projected = projectPointToNodeBoundary(bus, point);
+    return Math.hypot(projected.x - point.x, projected.y - point.y) <= tolerance ? projected : null;
+  }
+  const local = pointToNodeLocal(bus, point);
+  const halfWidth = (bus.size.width * Math.abs(getNodeScaleX(bus))) / 2;
+  const halfHeight = Math.max(4, (bus.size.height * Math.abs(getNodeScaleY(bus))) / 2);
+  if (local.x < -halfWidth - tolerance || local.x > halfWidth + tolerance || Math.abs(local.y) > halfHeight + tolerance) {
+    return null;
+  }
+  return projectPointToBusCenterline(bus, point);
+}
+
+export function getTerminalBusContactGroups(nodes: ModelNode[], tolerance = 0): TerminalBusContactGroup[] {
+  const buses = nodes.filter(isBusNode);
+  if (buses.length === 0) {
+    return [];
+  }
+  const groups = new Map<string, TerminalBusContactGroup>();
+  for (const node of nodes) {
+    if (isBusNode(node) || isStaticNode(node)) {
+      continue;
+    }
+    for (const terminal of node.terminals) {
+      const point = getTerminalPoint(node, terminal.id);
+      for (const bus of buses) {
+        const busType = getBusTerminalType(bus);
+        if (busType !== terminal.type) {
+          continue;
+        }
+        const contactPoint = terminalPointOnBus(bus, point, tolerance);
+        if (!contactPoint) {
+          continue;
+        }
+        const key = `${terminal.type}:${contactPoint.x}:${contactPoint.y}`;
+        const terminalId = bus.terminals[0]?.id ?? "t1";
+        const group = groups.get(key) ?? { key, type: terminal.type, point: contactPoint, contacts: [] };
+        group.contacts.push({
+          nodeId: node.id,
+          terminalId: terminal.id,
+          busId: bus.id,
+          busTerminalId: terminalId,
+          type: terminal.type,
+          point: contactPoint
+        });
+        groups.set(key, group);
+      }
+    }
+  }
+  return Array.from(groups.values());
+}
+
+function collectOverlappingTerminalPairs(nodes: ModelNode[]) {
+  const pairs = new Map<string, { first: OverlappingTerminalRef; second: OverlappingTerminalRef }>();
+  for (const group of getOverlappingTerminalGroups(nodes)) {
+    for (let firstIndex = 0; firstIndex < group.terminals.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < group.terminals.length; secondIndex += 1) {
+        const first = group.terminals[firstIndex];
+        const second = group.terminals[secondIndex];
+        if (first.nodeId === second.nodeId) {
+          continue;
+        }
+        pairs.set(terminalPairKey(first, second), { first, second });
+      }
+    }
+  }
+  return pairs;
+}
+
+function terminalBusPairKey(contact: Pick<TerminalBusContact, "nodeId" | "terminalId" | "busId">): string {
+  return `${terminalRefKey(contact.nodeId, contact.terminalId)}|bus:${contact.busId}`;
+}
+
+function collectTerminalBusContacts(nodes: ModelNode[]) {
+  const contacts = new Map<string, TerminalBusContact>();
+  for (const group of getTerminalBusContactGroups(nodes)) {
+    for (const contact of group.contacts) {
+      contacts.set(terminalBusPairKey(contact), contact);
+    }
+  }
+  return contacts;
+}
+
+function explicitEdgeTerminalPairKey(edge: Edge): string | null {
+  if (!edge.sourceTerminalId || !edge.targetTerminalId || edge.sourceId === edge.targetId) {
+    return null;
+  }
+  return terminalPairKey(
+    { nodeId: edge.sourceId, terminalId: edge.sourceTerminalId },
+    { nodeId: edge.targetId, terminalId: edge.targetTerminalId }
+  );
+}
+
+function sameTypeEndpointTerminalsOverlap(nodesById: Map<string, ModelNode>, edge: Edge): boolean {
+  const source = nodesById.get(edge.sourceId);
+  const target = nodesById.get(edge.targetId);
+  if (!source || !target || isBusNode(source) || isBusNode(target) || isStaticNode(source) || isStaticNode(target)) {
+    return false;
+  }
+  const sourceTerminal = source.terminals.find((terminal) => terminal.id === edge.sourceTerminalId);
+  const targetTerminal = target.terminals.find((terminal) => terminal.id === edge.targetTerminalId);
+  if (!sourceTerminal || !targetTerminal || sourceTerminal.type !== targetTerminal.type) {
+    return false;
+  }
+  const sourcePoint = getTerminalPoint(source, sourceTerminal.id);
+  const targetPoint = getTerminalPoint(target, targetTerminal.id);
+  return sourcePoint.x === targetPoint.x && sourcePoint.y === targetPoint.y;
+}
+
+function sameTypeEndpointTouchesBus(nodesById: Map<string, ModelNode>, edge: Edge): boolean {
+  const source = nodesById.get(edge.sourceId);
+  const target = nodesById.get(edge.targetId);
+  if (!source || !target) {
+    return false;
+  }
+  const bus = isBusNode(source) ? source : isBusNode(target) ? target : null;
+  const device = bus === source ? target : bus === target ? source : null;
+  if (!bus || !device || isStaticNode(device)) {
+    return false;
+  }
+  const deviceTerminalId = bus === source ? edge.targetTerminalId : edge.sourceTerminalId;
+  const deviceTerminal = device.terminals.find((terminal) => terminal.id === deviceTerminalId);
+  const busType = getBusTerminalType(bus);
+  if (!deviceTerminal || !busType || deviceTerminal.type !== busType) {
+    return false;
+  }
+  return Boolean(terminalPointOnBus(bus, getTerminalPoint(device, deviceTerminal.id), 0));
+}
+
+export function reconcileOverlappingTerminalConnections(
+  previousNodes: ModelNode[],
+  nextNodes: ModelNode[],
+  edges: Edge[],
+  createEdgeId: (first: OverlappingTerminalRef, second: OverlappingTerminalRef, index: number) => string = (_first, _second, index) => `overlap-edge-${index + 1}`
+): OverlappingTerminalConnectionReconcileResult {
+  const nextNodeById = new Map(nextNodes.map((node) => [node.id, node]));
+  const previousPairs = collectOverlappingTerminalPairs(previousNodes);
+  const nextPairs = collectOverlappingTerminalPairs(nextNodes);
+  const previousBusContacts = collectTerminalBusContacts(previousNodes);
+  const nextBusContacts = collectTerminalBusContacts(nextNodes);
+  const existingPairKeys = new Set(edges.flatMap((edge) => {
+    const key = explicitEdgeTerminalPairKey(edge);
+    return key ? [key] : [];
+  }));
+  const existingBusContactKeys = new Set(edges.flatMap((edge) => {
+    const source = nextNodeById.get(edge.sourceId);
+    const target = nextNodeById.get(edge.targetId);
+    if (!source || !target) {
+      return [];
+    }
+    const bus = isBusNode(source) ? source : isBusNode(target) ? target : null;
+    const device = bus === source ? target : bus === target ? source : null;
+    const terminalId = bus === source ? edge.targetTerminalId : edge.sourceTerminalId;
+    return bus && device && terminalId ? [`${terminalRefKey(device.id, terminalId)}|bus:${bus.id}`] : [];
+  }));
+  const removedEdgeIds: string[] = [];
+  const retainedEdges = edges.filter((edge) => {
+    if (!sameTypeEndpointTerminalsOverlap(nextNodeById, edge) && !sameTypeEndpointTouchesBus(nextNodeById, edge)) {
+      return true;
+    }
+    removedEdgeIds.push(edge.id);
+    return false;
+  });
+  const usedEdgeIds = new Set(retainedEdges.map((edge) => edge.id));
+  const addedEdges: Edge[] = [];
+  let addedIndex = 0;
+  for (const [pairKey, pair] of previousPairs.entries()) {
+    if (nextPairs.has(pairKey) || existingPairKeys.has(pairKey)) {
+      continue;
+    }
+    const nextFirst = nextNodeById.get(pair.first.nodeId)?.terminals.find((terminal) => terminal.id === pair.first.terminalId);
+    const nextSecond = nextNodeById.get(pair.second.nodeId)?.terminals.find((terminal) => terminal.id === pair.second.terminalId);
+    if (!nextFirst || !nextSecond || nextFirst.type !== nextSecond.type) {
+      continue;
+    }
+    const baseId = createEdgeId(pair.first, pair.second, addedIndex);
+    let edgeId = baseId;
+    let suffix = 2;
+    while (usedEdgeIds.has(edgeId)) {
+      edgeId = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+    usedEdgeIds.add(edgeId);
+    addedIndex += 1;
+    addedEdges.push({
+      id: edgeId,
+      sourceId: pair.first.nodeId,
+      targetId: pair.second.nodeId,
+      sourceTerminalId: pair.first.terminalId,
+      targetTerminalId: pair.second.terminalId
+    });
+  }
+  for (const [contactKey, contact] of previousBusContacts.entries()) {
+    if (nextBusContacts.has(contactKey) || existingBusContactKeys.has(contactKey)) {
+      continue;
+    }
+    const device = nextNodeById.get(contact.nodeId);
+    const deviceTerminal = device?.terminals.find((terminal) => terminal.id === contact.terminalId);
+    const bus = nextNodeById.get(contact.busId);
+    if (!device || !deviceTerminal || !bus || getBusTerminalType(bus) !== deviceTerminal.type) {
+      continue;
+    }
+    const busPoint = projectPointToBusCenterline(bus, getTerminalPoint(device, deviceTerminal.id));
+    const baseId = createEdgeId(
+      { nodeId: contact.nodeId, terminalId: contact.terminalId, type: contact.type, point: contact.point },
+      { nodeId: contact.busId, terminalId: contact.busTerminalId, type: contact.type, point: busPoint },
+      addedIndex
+    );
+    let edgeId = baseId;
+    let suffix = 2;
+    while (usedEdgeIds.has(edgeId)) {
+      edgeId = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+    usedEdgeIds.add(edgeId);
+    addedIndex += 1;
+    addedEdges.push({
+      id: edgeId,
+      sourceId: contact.nodeId,
+      targetId: contact.busId,
+      sourceTerminalId: contact.terminalId,
+      targetTerminalId: contact.busTerminalId,
+      targetPoint: busPoint
+    });
+  }
+  if (removedEdgeIds.length === 0 && addedEdges.length === 0) {
+    return { edges, addedEdgeIds: [], removedEdgeIds: [] };
+  }
+  return {
+    edges: [...retainedEdges, ...addedEdges],
+    addedEdgeIds: addedEdges.map((edge) => edge.id),
+    removedEdgeIds
   };
 }
 
@@ -3856,6 +4308,10 @@ export function synchronizeBusTerminalsWithEdges(nodes: ModelNode[], edges: Edge
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const endpointCountByBusId = new Map<string, number>();
   const nextEndpointIndexByBusId = new Map<string, number>();
+  const implicitContactCountByBusId = new Map<string, number>();
+  for (const contact of collectTerminalBusContacts(nodes).values()) {
+    implicitContactCountByBusId.set(contact.busId, (implicitContactCountByBusId.get(contact.busId) ?? 0) + 1);
+  }
   let edgesChanged = false;
   const nextEdges = edges.map((edge) => {
     const source = nodeById.get(edge.sourceId);
@@ -3892,7 +4348,10 @@ export function synchronizeBusTerminalsWithEdges(nodes: ModelNode[], edges: Edge
     if (!isBusNode(node)) {
       return node;
     }
-    const nextNode = syncBusNodeTerminals(node, endpointCountByBusId.get(node.id) ?? 0);
+    const nextNode = syncBusNodeTerminals(
+      node,
+      (endpointCountByBusId.get(node.id) ?? 0) + (implicitContactCountByBusId.get(node.id) ?? 0)
+    );
     if (nextNode !== node) {
       nodesChanged = true;
     }
@@ -4134,6 +4593,10 @@ function getBusEndpointNormal(node: ModelNode, endpointPoint: Point, otherPoint:
   return isBoundaryBusNode(node) ? getBoundaryNormalAtPoint(node, endpointPoint) : getBusNormalToward(node, otherPoint);
 }
 
+export function getRouteEndpointNormal(node: ModelNode, endpointPoint: Point, otherPoint: Point, terminalId?: string): Point {
+  return isBusNode(node) ? getBusEndpointNormal(node, endpointPoint, otherPoint) : getTerminalNormal(node, terminalId);
+}
+
 export function canConnectTerminals(
   source: ModelNode,
   sourceTerminalId: string,
@@ -4348,6 +4811,18 @@ function buildTopologyConnectivity(nodes: ModelNode[], edges: Edge[]): TopologyC
           topology.union(terminalKey(node.id, first.id), terminalKey(node.id, terminal.id));
         }
       }
+    }
+  }
+
+  for (const overlappingGroup of getOverlappingTerminalGroups(nodes)) {
+    const [first, ...rest] = overlappingGroup.terminals;
+    for (const item of rest) {
+      topology.union(terminalKey(first.nodeId, first.terminalId), terminalKey(item.nodeId, item.terminalId));
+    }
+  }
+  for (const contactGroup of getTerminalBusContactGroups(nodes)) {
+    for (const contact of contactGroup.contacts) {
+      topology.union(terminalKey(contact.nodeId, contact.terminalId), terminalKey(contact.busId, contact.busTerminalId));
     }
   }
 
@@ -5656,6 +6131,7 @@ const ROUTE_AVOIDED_SEGMENT_OFFSETS = [18, 36, 54];
 const ROUTE_TINY_DOGLEG_LIMIT = 18;
 const ROUTE_MIN_MOVABLE_SEGMENT_LENGTH = 18;
 const ROUTE_SHARED_ENDPOINT_STUB_LIMIT = 36;
+const ROUTE_ENDPOINT_STUB_LENGTH = 28;
 
 function routeIntersectsBlockers(points: Point[], blockers: ModelNode[], padding = ROUTE_BLOCKER_PADDING, protectedEndpointSegments = 0) {
   for (let index = 1; index < points.length; index += 1) {
@@ -6263,6 +6739,8 @@ type PreserveDraggedRouteShapeOptions = {
   sourceDelta?: Point;
   targetDelta?: Point;
   routeDelta?: Point;
+  sourceNormal?: Point;
+  targetNormal?: Point;
 };
 
 function roundPoint(point: Point): Point {
@@ -6311,6 +6789,32 @@ function alignTranslatedEndpointStub(points: Point[], original: Point[], endpoin
   }
 }
 
+function alignEndpointStubToNormal(points: Point[], endpoint: "source" | "target", normal?: Point) {
+  if (!normal || points.length < 3 || (normal.x === 0 && normal.y === 0)) {
+    return;
+  }
+  const endpointIndex = endpoint === "source" ? 0 : points.length - 1;
+  const stubIndex = endpoint === "source" ? 1 : points.length - 2;
+  if (endpointIndex === stubIndex) {
+    return;
+  }
+  const endpointPoint = points[endpointIndex];
+  if (!endpointPoint) {
+    return;
+  }
+  if (normal.x !== 0) {
+    points[stubIndex] = {
+      x: Math.round(endpointPoint.x + Math.sign(normal.x) * ROUTE_ENDPOINT_STUB_LENGTH),
+      y: endpointPoint.y
+    };
+    return;
+  }
+  points[stubIndex] = {
+    x: endpointPoint.x,
+    y: Math.round(endpointPoint.y + Math.sign(normal.y) * ROUTE_ENDPOINT_STUB_LENGTH)
+  };
+}
+
 export function preserveDraggedRouteShape(options: PreserveDraggedRouteShapeOptions): Point[] {
   if (options.routePoints.length === 0) {
     return [];
@@ -6326,6 +6830,8 @@ export function preserveDraggedRouteShape(options: PreserveDraggedRouteShapeOpti
   translated[translated.length - 1] = roundPoint(options.nextEnd);
   alignTranslatedEndpointStub(translated, options.routePoints, "source");
   alignTranslatedEndpointStub(translated, options.routePoints, "target");
+  alignEndpointStubToNormal(translated, "source", options.sourceNormal);
+  alignEndpointStubToNormal(translated, "target", options.targetNormal);
   return orthogonalizeRouteKeepingCollinear(translated);
 }
 
@@ -6621,8 +7127,94 @@ export function routeEdgesForRendering(nodes: ModelNode[], edges: Edge[], bounds
   });
 }
 
+export function routeEdgesForStoredRendering(nodes: ModelNode[], edges: Edge[], bounds?: CanvasBounds): RoutedEdge[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  return edges.flatMap((edge) => {
+    const source = nodeById.get(edge.sourceId) ?? (edge.sourcePoint ? createFloatingEndpointNode(edge.sourcePoint, edge.targetId ? nodeById.get(edge.targetId) : undefined) : undefined);
+    const target = nodeById.get(edge.targetId) ?? (edge.targetPoint ? createFloatingEndpointNode(edge.targetPoint, edge.sourceId ? nodeById.get(edge.sourceId) : undefined) : undefined);
+    if (!source || !target) {
+      return [];
+    }
+    const start = getEdgeEndpointPoint(source, edge.sourcePoint, edge.sourceTerminalId);
+    const end = getEdgeEndpointPoint(target, edge.targetPoint, edge.targetTerminalId);
+    const sourceNormal = routeEndpointNormal(source, start, end, edge.sourceTerminalId);
+    const targetNormal = routeEndpointNormal(target, end, start, edge.targetTerminalId);
+    const stubLength = ROUTE_ENDPOINT_STUB_LENGTH;
+    const startOut = {
+      x: start.x + sourceNormal.x * stubLength,
+      y: start.y + sourceNormal.y * stubLength
+    };
+    const endOut = {
+      x: end.x + targetNormal.x * stubLength,
+      y: end.y + targetNormal.y * stubLength
+    };
+    const middle = edge.manualPoints?.length
+      ? edge.manualPoints
+      : startOut.x === endOut.x || startOut.y === endOut.y
+        ? []
+        : [{ x: endOut.x, y: startOut.y }];
+    const boundedPoints = [start, startOut, ...middle, endOut, end].map((point) =>
+      bounds ? clampPointToBounds(point, bounds) : point
+    );
+    const points = simplifyRoutePreservingEndpointStubs(orthogonalizeRouteKeepingCollinear(boundedPoints));
+    return [{
+      edgeId: edge.id,
+      points,
+      path: pointsToOrthogonalPath(points)
+    }];
+  });
+}
+
+export function routeEdgesForIncrementalRendering(
+  nodes: ModelNode[],
+  edges: Edge[],
+  affectedEdgeIds: ReadonlySet<string>,
+  bounds?: CanvasBounds
+): RoutedEdge[] {
+  if (affectedEdgeIds.size === 0) {
+    return routeEdgesForStoredRendering(nodes, edges, bounds);
+  }
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const storedRoutes = routeEdgesForStoredRendering(nodes, edges, bounds);
+  const storedRouteById = new Map(storedRoutes.map((route) => [route.edgeId, route]));
+  const avoidedSegments = storedRoutes.flatMap((route, routeIndex) =>
+    affectedEdgeIds.has(route.edgeId) ? [] : getSegments(route.edgeId, routeIndex, route.points)
+  );
+  const routedRouteById = new Map<string, RoutedEdge>();
+  edges.forEach((edge, routeIndex) => {
+    if (!affectedEdgeIds.has(edge.id)) {
+      return;
+    }
+    const source = nodeById.get(edge.sourceId) ?? (edge.sourcePoint ? createFloatingEndpointNode(edge.sourcePoint, edge.targetId ? nodeById.get(edge.targetId) : undefined) : undefined);
+    const target = nodeById.get(edge.targetId) ?? (edge.targetPoint ? createFloatingEndpointNode(edge.targetPoint, edge.sourceId ? nodeById.get(edge.sourceId) : undefined) : undefined);
+    if (!source || !target) {
+      return;
+    }
+    const points = routeOrthogonalEdge(source, target, nodes, edge, avoidedSegments, bounds);
+    routedRouteById.set(edge.id, {
+      edgeId: edge.id,
+      points,
+      path: ""
+    });
+    avoidedSegments.push(...getSegments(edge.id, routeIndex, points));
+  });
+  const combinedRoutes = edges.flatMap((edge) => {
+    const route = routedRouteById.get(edge.id) ?? storedRouteById.get(edge.id);
+    return route ? [{ ...route }] : [];
+  });
+  const crossingSegments: Segment[] = [];
+  return combinedRoutes.map((route, index) => {
+    const routedEdge = {
+      ...route,
+      path: pathWithCrossingArcs(route, crossingSegments, index)
+    };
+    crossingSegments.push(...getSegments(route.edgeId, index, route.points));
+    return routedEdge;
+  });
+}
+
 function routeEndpointNormal(node: ModelNode, endpointPoint: Point, otherPoint: Point, terminalId?: string): Point {
-  return isBusNode(node) ? getBusEndpointNormal(node, endpointPoint, otherPoint) : getTerminalNormal(node, terminalId);
+  return getRouteEndpointNormal(node, endpointPoint, otherPoint, terminalId);
 }
 
 function routeSegmentMatchesNormal(endpoint: Point, adjacent: Point, normal: Point) {
@@ -6801,7 +7393,7 @@ function buildEdgeRoutingContext(source: ModelNode, target: ModelNode, nodes: Mo
   const end = getEdgeEndpointPoint(target, edge?.targetPoint, edge?.targetTerminalId);
   const sourceNormal = isBusNode(source) ? getBusEndpointNormal(source, start, end) : getTerminalNormal(source, edge?.sourceTerminalId);
   const targetNormal = isBusNode(target) ? getBusEndpointNormal(target, end, start) : getTerminalNormal(target, edge?.targetTerminalId);
-  const stubLength = 28;
+  const stubLength = ROUTE_ENDPOINT_STUB_LENGTH;
   const initialStartOut = {
     x: start.x + sourceNormal.x * stubLength,
     y: start.y + sourceNormal.y * stubLength
