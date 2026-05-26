@@ -1,4 +1,4 @@
-import { ChangeEvent, DragEvent, Fragment, isValidElement, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, Fragment, isValidElement, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlignEndHorizontal,
   AlignEndVertical,
@@ -1350,6 +1350,67 @@ function renderSvgElementMarkup(value: unknown): string {
   return `<${value.type}${attrs}>${renderSvgElementMarkup(props.children)}</${value.type}>`;
 }
 
+type DeviceGlyphMode = "full" | "geometry" | "text";
+
+function formatSvgNumber(value: number) {
+  const rounded = Math.round(value * 100000) / 100000;
+  return String(Object.is(rounded, -0) ? 0 : rounded);
+}
+
+function nodeGeometryTransform(node: ModelNode) {
+  return `rotate(${formatSvgNumber(node.rotation)}) scale(${formatSvgNumber(getNodeScaleX(node))} ${formatSvgNumber(getNodeScaleY(node))})`;
+}
+
+function nodeUprightScaleTransform(node: ModelNode) {
+  return `scale(${formatSvgNumber(Math.abs(getNodeScaleX(node)) || 1)} ${formatSvgNumber(Math.abs(getNodeScaleY(node)) || 1)})`;
+}
+
+function nodeTransformedHalfExtents(node: ModelNode, includeUprightContent = false) {
+  const halfWidth = (node.size.width * Math.abs(getNodeScaleX(node))) / 2;
+  const halfHeight = (node.size.height * Math.abs(getNodeScaleY(node))) / 2;
+  const radians = (node.rotation * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(radians));
+  const sin = Math.abs(Math.sin(radians));
+  const rotatedHalfWidth = halfWidth * cos + halfHeight * sin;
+  const rotatedHalfHeight = halfWidth * sin + halfHeight * cos;
+  return {
+    halfWidth: includeUprightContent ? Math.max(halfWidth, rotatedHalfWidth) : rotatedHalfWidth,
+    halfHeight: includeUprightContent ? Math.max(halfHeight, rotatedHalfHeight) : rotatedHalfHeight
+  };
+}
+
+function nodeCounterTransformMatrix(node: ModelNode, preserveScale = true) {
+  const scaleX = getNodeScaleX(node) || 1;
+  const scaleY = getNodeScaleY(node) || 1;
+  const desiredScaleX = preserveScale ? Math.abs(scaleX) || 1 : 1;
+  const desiredScaleY = preserveScale ? Math.abs(scaleY) || 1 : 1;
+  const radians = (node.rotation * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const a = (cos * desiredScaleX) / scaleX;
+  const b = (-sin * desiredScaleX) / scaleY;
+  const c = (sin * desiredScaleY) / scaleX;
+  const d = (cos * desiredScaleY) / scaleY;
+  return `matrix(${formatSvgNumber(a)} ${formatSvgNumber(b)} ${formatSvgNumber(c)} ${formatSvgNumber(d)} 0 0)`;
+}
+
+function uprightText(
+  node: ModelNode,
+  x: number,
+  y: number,
+  props: Record<string, string | number | CSSProperties | undefined>,
+  children: ReactNode
+) {
+  const { style, ...textProps } = props;
+  return (
+    <g transform={`translate(${formatSvgNumber(x)} ${formatSvgNumber(y)}) ${nodeCounterTransformMatrix(node)}`}>
+      <text x="0" y="0" {...textProps} style={style as CSSProperties | undefined}>
+        {children}
+      </text>
+    </g>
+  );
+}
+
 function buildSvgTerminalMarkup(node: ModelNode) {
   if (isBusNode(node) || isStaticNode(node)) {
     return "";
@@ -1373,10 +1434,12 @@ function buildSvgTerminalMarkup(node: ModelNode) {
     .join("\n");
 }
 
-function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?: boolean }) {
+function DeviceGlyph({ node, miniature = false, mode = "full" }: { node: ModelNode; miniature?: boolean; mode?: DeviceGlyphMode }) {
   const w = miniature ? 58 : node.size.width;
   const h = miniature ? 38 : node.size.height;
   const glyphVariant = getDeviceGlyphVariant(node.kind);
+  const renderGeometry = mode !== "text";
+  const renderText = mode !== "geometry";
   const stroke = getDeviceStrokeColor(node);
   const fill = glyphVariant.includes("converter")
     ? "#ecfeff"
@@ -1401,106 +1464,143 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
     const lineWidth = Number(node.params.lineWidth || 2);
     const dashArray = svgStrokeDashArray(node.params.strokeStyle);
     if (node.kind === "static-text") {
+      if (!renderText) {
+        return null;
+      }
       const fontSize = miniature ? 18 : Number(node.params.fontSize || 24);
       const textLines = (miniature ? "文" : node.params.text || node.name).split(/\r?\n/);
-      return (
-        <text
-          x="0"
-          y={-((textLines.length - 1) * fontSize * 0.6)}
-          fill={node.params.textColor || staticStroke}
-          fontSize={fontSize}
-          fontFamily={node.params.fontFamily || "Arial"}
-          fontWeight={node.params.fontWeight || "400"}
-          fontStyle={node.params.fontStyle || "normal"}
-          textDecoration={node.params.textDecoration || "none"}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          style={{ userSelect: "none" }}
-        >
+      return uprightText(
+        node,
+        0,
+        -((textLines.length - 1) * fontSize * 0.6),
+        {
+          fill: node.params.textColor || staticStroke,
+          fontSize,
+          fontFamily: node.params.fontFamily || "Arial",
+          fontWeight: node.params.fontWeight || "400",
+          fontStyle: node.params.fontStyle || "normal",
+          textDecoration: node.params.textDecoration || "none",
+          textAnchor: "middle",
+          dominantBaseline: "middle",
+          style: { userSelect: "none" }
+        },
+        <>
           {textLines.map((line, index) => (
             <tspan key={index} x="0" dy={index === 0 ? 0 : fontSize * 1.2}>
               {line || " "}
             </tspan>
           ))}
-        </text>
+        </>
       );
     }
     if (node.kind === "static-line") {
-      return <line x1={-w / 2} y1="0" x2={w / 2} y2="0" stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" />;
+      return renderGeometry ? <line x1={-w / 2} y1="0" x2={w / 2} y2="0" stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" /> : null;
     }
     if (node.kind === "static-polyline") {
-      return <polyline points={`${-w / 2},${h / 3} 0,${-h / 3} ${w / 2},${h / 3}`} fill="none" stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" strokeLinejoin="round" />;
+      return renderGeometry ? <polyline points={`${-w / 2},${h / 3} 0,${-h / 3} ${w / 2},${h / 3}`} fill="none" stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" strokeLinejoin="round" /> : null;
     }
     if (node.kind === "static-circle") {
-      return <circle cx="0" cy="0" r={Math.min(w, h) / 2} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />;
+      return renderGeometry ? <circle cx="0" cy="0" r={Math.min(w, h) / 2} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} /> : null;
     }
     if (node.kind === "static-ellipse") {
-      return <ellipse cx="0" cy="0" rx={w / 2} ry={h / 2} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />;
+      return renderGeometry ? <ellipse cx="0" cy="0" rx={w / 2} ry={h / 2} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} /> : null;
     }
     if (node.kind === "static-image") {
+      if (mode === "text") {
+        return !node.params.backgroundImage
+          ? uprightText(
+              node,
+              0,
+              0,
+              {
+                fill: node.params.textColor || "#64748b",
+                fontSize: miniature ? 14 : Number(node.params.fontSize || 16),
+                textAnchor: "middle",
+                dominantBaseline: "middle"
+              },
+              "图片"
+            )
+          : null;
+      }
+      if (!renderGeometry) {
+        return null;
+      }
       return (
         <g>
           <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="4" fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          {!node.params.backgroundImage && (
-            <text x="0" y="0" fill={node.params.textColor || "#64748b"} fontSize={miniature ? 14 : Number(node.params.fontSize || 16)} textAnchor="middle" dominantBaseline="middle">
-              图片
-            </text>
-          )}
+          {renderText && !node.params.backgroundImage && uprightText(node, 0, 0, { fill: node.params.textColor || "#64748b", fontSize: miniature ? 14 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, "图片")}
         </g>
       );
     }
     if (node.kind === "static-web") {
+      if (mode === "text") {
+        return uprightText(node, 0, 12, { fill: node.params.textColor || "#334155", fontSize: miniature ? 10 : 13, textAnchor: "middle" }, miniature ? "WEB" : node.params.text || "https://");
+      }
+      if (!renderGeometry) {
+        return null;
+      }
       return (
         <g>
           <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="4" fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
           <rect x={-w / 2} y={-h / 2} width={w} height="22" rx="4" fill="#e2e8f0" />
-          <text x="0" y="12" fill={node.params.textColor || "#334155"} fontSize={miniature ? 10 : 13} textAnchor="middle">{miniature ? "WEB" : node.params.text || "https://"}</text>
+          {renderText && uprightText(node, 0, 12, { fill: node.params.textColor || "#334155", fontSize: miniature ? 10 : 13, textAnchor: "middle" }, miniature ? "WEB" : node.params.text || "https://")}
         </g>
       );
     }
     if (["static-date", "static-time", "static-datetime", "static-input"].includes(node.kind)) {
+      if (mode === "text") {
+        return uprightText(node, -w / 2 + 10, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 11 : Number(node.params.fontSize || 16), dominantBaseline: "middle" }, miniature ? "控件" : node.params.text || node.name);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
       return (
         <g>
           <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="5" fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          <text x={-w / 2 + 10} y="0" fill={node.params.textColor || "#111827"} fontSize={miniature ? 11 : Number(node.params.fontSize || 16)} dominantBaseline="middle">
-            {miniature ? "控件" : node.params.text || node.name}
-          </text>
+          {renderText && uprightText(node, -w / 2 + 10, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 11 : Number(node.params.fontSize || 16), dominantBaseline: "middle" }, miniature ? "控件" : node.params.text || node.name)}
         </g>
       );
     }
     if (node.kind === "static-button") {
+      if (mode === "text") {
+        return uprightText(node, 0, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 12 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, miniature ? "按钮" : node.params.text || node.name);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
       return (
         <g>
           <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="6" fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          <text x="0" y="0" fill={node.params.textColor || "#111827"} fontSize={miniature ? 12 : Number(node.params.fontSize || 16)} textAnchor="middle" dominantBaseline="middle">
-            {miniature ? "按钮" : node.params.text || node.name}
-          </text>
+          {renderText && uprightText(node, 0, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 12 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, miniature ? "按钮" : node.params.text || node.name)}
         </g>
       );
     }
-    return <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="4" fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />;
+    return renderGeometry ? <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="4" fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} /> : null;
   }
 
   if (glyphVariant === "ac-generator" || glyphVariant === "dc-generator") {
     const radius = miniature ? 15 : Math.min(w, h) * 0.37;
     const markerTextSize = miniature ? 7 : 10;
     const symbolY = miniature ? 2 : 1;
+    const markerText = glyphVariant === "ac-generator" ? "AC" : "DC";
+    if (mode === "text") {
+      return uprightText(node, radius + 9, -radius * 0.42, { fill: stroke, stroke: "none", fontSize: markerTextSize, fontWeight: "800", textAnchor: "middle" }, markerText);
+    }
+    if (!renderGeometry) {
+      return null;
+    }
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="0" cy="0" r={radius} fill={fill} />
         {glyphVariant === "ac-generator" ? (
           <>
             <path d={`M ${-radius * 0.58} ${symbolY} C ${-radius * 0.35} ${symbolY - radius * 0.42}, ${-radius * 0.12} ${symbolY - radius * 0.42}, 0 ${symbolY} C ${radius * 0.14} ${symbolY + radius * 0.42}, ${radius * 0.38} ${symbolY + radius * 0.42}, ${radius * 0.6} ${symbolY}`} />
-            <text x={radius + 9} y={-radius * 0.42} fill={stroke} stroke="none" fontSize={markerTextSize} fontWeight="800" textAnchor="middle">
-              AC
-            </text>
+            {renderText && uprightText(node, radius + 9, -radius * 0.42, { fill: stroke, stroke: "none", fontSize: markerTextSize, fontWeight: "800", textAnchor: "middle" }, "AC")}
           </>
         ) : (
           <>
             <path d={`M ${-radius * 0.58} ${symbolY - radius * 0.18} H ${radius * 0.58} M ${-radius * 0.42} ${symbolY + radius * 0.28} H ${radius * 0.42} M ${radius * 0.24} ${symbolY + radius * 0.12} V ${symbolY + radius * 0.44}`} />
-            <text x={radius + 9} y={-radius * 0.42} fill={stroke} stroke="none" fontSize={markerTextSize} fontWeight="800" textAnchor="middle">
-              DC
-            </text>
+            {renderText && uprightText(node, radius + 9, -radius * 0.42, { fill: stroke, stroke: "none", fontSize: markerTextSize, fontWeight: "800", textAnchor: "middle" }, "DC")}
           </>
         )}
         <path d={`M ${radius * 0.58} ${-radius * 0.76} L ${radius * 0.96} ${-radius * 0.76} L ${radius * 0.72} ${-radius * 0.28} L ${radius * 1.08} ${-radius * 0.28}`} />
@@ -1509,6 +1609,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (glyphVariant === "battery-storage") {
+    if (mode === "text") {
+      return null;
+    }
     const bodyWidth = miniature ? 34 : Math.min(w * 0.68, 56);
     const bodyHeight = miniature ? 20 : Math.min(h * 0.58, 32);
     const capWidth = miniature ? 4 : 6;
@@ -1527,68 +1630,91 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
 
   if (glyphVariant === "hydrogen-source") {
     const radius = miniature ? 15 : Math.min(w, h) * 0.35;
+    if (mode === "text") {
+      return uprightText(node, 0, 1, { fill: stroke, stroke: "none", fontSize: miniature ? 9 : 13, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2");
+    }
+    if (!renderGeometry) {
+      return null;
+    }
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="0" cy="0" r={radius} fill={fill} />
-        <text x="0" y="1" fill={stroke} stroke="none" fontSize={miniature ? 9 : 13} fontWeight="800" textAnchor="middle" dominantBaseline="middle">
-          H2
-        </text>
+        {renderText && uprightText(node, 0, 1, { fill: stroke, stroke: "none", fontSize: miniature ? 9 : 13, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2")}
         <path d={`M ${radius * 0.8} ${-radius * 0.65} H ${radius * 1.22} M ${radius * 1.02} ${-radius * 0.85} L ${radius * 1.22} ${-radius * 0.65} L ${radius * 1.02} ${-radius * 0.45}`} />
       </g>
     );
   }
 
   if (glyphVariant === "hydrogen-load") {
+    if (mode === "text") {
+      return uprightText(node, 0, -4, { fill: stroke, stroke: "none", fontSize: miniature ? 8 : 12, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2");
+    }
+    if (!renderGeometry) {
+      return null;
+    }
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
         <path d={`M ${-w / 3} ${-h / 3} L ${w / 3} ${-h / 3} L 0 ${h / 3} Z`} fill={fill} />
-        <text x="0" y="-4" fill={stroke} stroke="none" fontSize={miniature ? 8 : 12} fontWeight="800" textAnchor="middle" dominantBaseline="middle">
-          H2
-        </text>
+        {renderText && uprightText(node, 0, -4, { fill: stroke, stroke: "none", fontSize: miniature ? 8 : 12, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2")}
       </g>
     );
   }
 
   if (glyphVariant === "hydrogen-electrolyzer") {
+    if (mode === "text") {
+      return uprightText(node, 11, 1, { fill: stroke, stroke: "none", fontSize: miniature ? 9 : 13, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2");
+    }
+    if (!renderGeometry) {
+      return null;
+    }
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
         <rect x={-w / 2 + 6} y={-h / 2 + 5} width={w - 12} height={h - 10} rx="6" fill={fill} />
         <path d="M -24 0 H -12 M 12 0 H 24" />
         <path d="M -7 -12 L -1 -2 H -7 L -1 12" />
-        <text x="11" y="1" fill={stroke} stroke="none" fontSize={miniature ? 9 : 13} fontWeight="800" textAnchor="middle" dominantBaseline="middle">
-          H2
-        </text>
+        {renderText && uprightText(node, 11, 1, { fill: stroke, stroke: "none", fontSize: miniature ? 9 : 13, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2")}
       </g>
     );
   }
 
   if (glyphVariant === "hydrogen-fuel-cell") {
+    if (mode === "text") {
+      return uprightText(node, -20, -12, { fill: stroke, stroke: "none", fontSize: miniature ? 7 : 10, fontWeight: "800", textAnchor: "middle" }, "H2");
+    }
+    if (!renderGeometry) {
+      return null;
+    }
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
         <rect x={-w / 2 + 7} y={-h / 2 + 6} width={w - 14} height={h - 12} rx="6" fill={fill} />
         <path d="M -24 0 H -12 M 12 0 H 24" />
         <path d="M -10 -10 H 8 M -10 0 H 8 M -10 10 H 8" />
         <path d="M 13 -8 L 20 0 L 13 8" />
-        <text x="-20" y="-12" fill={stroke} stroke="none" fontSize={miniature ? 7 : 10} fontWeight="800" textAnchor="middle">
-          H2
-        </text>
+        {renderText && uprightText(node, -20, -12, { fill: stroke, stroke: "none", fontSize: miniature ? 7 : 10, fontWeight: "800", textAnchor: "middle" }, "H2")}
       </g>
     );
   }
 
   if (glyphVariant === "hydrogen-storage") {
+    if (mode === "text") {
+      return uprightText(node, 0, 4, { fill: stroke, stroke: "none", fontSize: miniature ? 9 : 13, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2");
+    }
+    if (!renderGeometry) {
+      return null;
+    }
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
         <path d={`M ${-w / 2 + 10} ${-h / 4} C ${-w / 3} ${-h / 2}, ${w / 3} ${-h / 2}, ${w / 2 - 10} ${-h / 4} V ${h / 4} C ${w / 3} ${h / 2}, ${-w / 3} ${h / 2}, ${-w / 2 + 10} ${h / 4} Z`} fill={fill} />
         <path d={`M ${-w / 2 + 10} ${-h / 4} C ${-w / 3} 0, ${w / 3} 0, ${w / 2 - 10} ${-h / 4}`} />
-        <text x="0" y="4" fill={stroke} stroke="none" fontSize={miniature ? 9 : 13} fontWeight="800" textAnchor="middle" dominantBaseline="middle">
-          H2
-        </text>
+        {renderText && uprightText(node, 0, 4, { fill: stroke, stroke: "none", fontSize: miniature ? 9 : 13, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2")}
       </g>
     );
   }
 
   if (glyphVariant === "hydrogen-bus") {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <line
         className="bus-glyph"
@@ -1604,6 +1730,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (glyphVariant === "hydrogen-pipeline") {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
         <line x1={-w / 2 + 8} y1="-5" x2={w / 2 - 8} y2="-5" />
@@ -1614,6 +1743,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (glyphVariant === "hydrogen-compressor") {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="0" cy="0" r={miniature ? 15 : 20} fill={fill} />
@@ -1624,6 +1756,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (glyphVariant === "hydrogen-regulator" || glyphVariant === "hydrogen-valve") {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
         <path d="M -28 0 H -12 M 12 0 H 28" />
@@ -1634,6 +1769,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (glyphVariant === "heat-boiler" || glyphVariant === "heat-source") {
+    if (mode === "text") {
+      return null;
+    }
     const bodyWidth = miniature ? 34 : Math.min(w * 0.66, 58);
     const bodyHeight = miniature ? 26 : Math.min(h * 0.66, 40);
     return (
@@ -1647,6 +1785,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (glyphVariant === "heat-electric-heater") {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
         <rect x={-w / 2 + 7} y={-h / 2 + 6} width={w - 14} height={h - 12} rx="6" fill={fill} />
@@ -1659,20 +1800,27 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
 
   if (glyphVariant === "heat-exchanger-two" || glyphVariant === "heat-exchanger-three" || glyphVariant === "heat-exchanger-four") {
     const tag = glyphVariant === "heat-exchanger-two" ? "2" : glyphVariant === "heat-exchanger-three" ? "3" : "4";
+    if (mode === "text") {
+      return uprightText(node, 0, miniature ? 15 : 23, { fill: stroke, stroke: "none", fontSize: miniature ? 7 : 10, fontWeight: "800", textAnchor: "middle" }, `${tag}P`);
+    }
+    if (!renderGeometry) {
+      return null;
+    }
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="-13" cy="0" r={miniature ? 10 : 16} fill={fill} />
         <circle cx="13" cy="0" r={miniature ? 10 : 16} fill={fill} />
         <path d="M -28 0 H -23 M 23 0 H 28" />
         <path d="M -15 -9 C -6 -3 -22 3 -13 9 M 15 -9 C 6 -3 22 3 13 9" />
-        <text x="0" y={miniature ? 15 : 23} fill={stroke} stroke="none" fontSize={miniature ? 7 : 10} fontWeight="800" textAnchor="middle">
-          {tag}P
-        </text>
+        {renderText && uprightText(node, 0, miniature ? 15 : 23, { fill: stroke, stroke: "none", fontSize: miniature ? 7 : 10, fontWeight: "800", textAnchor: "middle" }, `${tag}P`)}
       </g>
     );
   }
 
   if (glyphVariant === "heat-storage") {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
         <path d={`M ${-w / 2 + 10} ${-h / 4} C ${-w / 3} ${-h / 2}, ${w / 3} ${-h / 2}, ${w / 2 - 10} ${-h / 4} V ${h / 4} C ${w / 3} ${h / 2}, ${-w / 3} ${h / 2}, ${-w / 2 + 10} ${h / 4} Z`} fill={fill} />
@@ -1683,6 +1831,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (glyphVariant === "heat-load") {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
         <path d={`M ${-w / 3} ${-h / 3} L ${w / 3} ${-h / 3} L 0 ${h / 3} Z`} fill={fill} />
@@ -1692,6 +1843,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (glyphVariant === "heat-bus") {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <line
         className="bus-glyph"
@@ -1707,6 +1861,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (glyphVariant === "heat-pipeline") {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
         <line x1={-w / 2 + 8} y1="-5" x2={w / 2 - 8} y2="-5" />
@@ -1717,6 +1874,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (glyphVariant === "heat-pump") {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="0" cy="0" r={miniature ? 15 : 20} fill={fill} />
@@ -1728,6 +1888,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (glyphVariant === "heat-valve") {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
         <path d="M -28 0 H -12 M 12 0 H 28" />
@@ -1738,6 +1901,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (node.kind.includes("wind-source")) {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <g fill={fill} stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="0" cy="0" r={miniature ? 4 : 6} />
@@ -1748,6 +1914,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (node.kind.includes("pv-source")) {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <g fill={fill} stroke={stroke} strokeWidth="2.2" strokeLinejoin="round">
         <path d="M -22 -12 H 22 V 14 H -22 Z" />
@@ -1758,6 +1927,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (node.kind.includes("thermal-source")) {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <g fill={fill} stroke={stroke} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
         <path d="M -20 18 H 20 V -4 L 8 4 V -4 L -4 4 V -4 L -20 8 Z" />
@@ -1767,6 +1939,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (node.kind.includes("hydro-source")) {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="M -20 -12 C -8 -24 8 -24 20 -12 C 12 10 4 20 0 22 C -4 20 -12 10 -20 -12 Z" fill={fill} />
@@ -1776,6 +1951,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (node.kind.includes("nuclear-source")) {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <g fill={fill} stroke={stroke} strokeWidth="2.2">
         <circle cx="0" cy="0" r={miniature ? 16 : 22} />
@@ -1788,6 +1966,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (node.kind.includes("bus")) {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <line
         className="bus-glyph"
@@ -1803,6 +1984,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (glyphVariant === "ac-line") {
+    if (mode === "text") {
+      return null;
+    }
     const left = -w / 2 + 8;
     const right = w / 2 - 8;
     const symbolWidth = Math.min(Math.max(w - 24, 34), miniature ? 36 : 54);
@@ -1835,6 +2019,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (glyphVariant === "dc-line") {
+    if (mode === "text") {
+      return null;
+    }
     const left = -w / 2 + 8;
     const right = w / 2 - 8;
     const resistorWidth = Math.min(Math.max(w * 0.32, 20), miniature ? 22 : 34);
@@ -1850,6 +2037,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (glyphVariant === "line") {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <g stroke={stroke} strokeWidth="4" strokeLinecap="round">
         <line x1={-w / 2 + 8} y1="0" x2={w / 2 - 8} y2="0" />
@@ -1858,7 +2048,29 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
     );
   }
 
+  if (node.kind === "ac-three-winding-transformer") {
+    if (mode === "text") {
+      return null;
+    }
+    const windingRadius = miniature ? 9 : 15;
+    const topY = miniature ? -5 : -8;
+    const bottomY = miniature ? 10 : 14;
+    const sideX = miniature ? 10 : 16;
+    return (
+      <g className="three-winding-transformer-glyph" fill={fill} stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <circle className="transformer-winding" cx={-sideX} cy={topY} r={windingRadius} />
+        <circle className="transformer-winding" cx={sideX} cy={topY} r={windingRadius} />
+        <circle className="transformer-winding" cx="0" cy={bottomY} r={windingRadius} />
+        <path d={`M ${-sideX - windingRadius - 8} ${topY} H ${-sideX - windingRadius} M ${sideX + windingRadius} ${topY} H ${sideX + windingRadius + 8} M 0 ${bottomY + windingRadius} V ${bottomY + windingRadius + 10}`} />
+        <path d={`M ${-sideX + windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${-windingRadius * 0.28} ${bottomY - windingRadius * 0.72} M ${sideX - windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${windingRadius * 0.28} ${bottomY - windingRadius * 0.72}`} strokeWidth="1.6" />
+      </g>
+    );
+  }
+
   if (node.kind.includes("transformer")) {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <g fill={fill} stroke={stroke} strokeWidth="2.5">
         <circle cx="-14" cy="0" r={miniature ? 11 : 18} />
@@ -1868,6 +2080,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (glyphVariant === "switch" || glyphVariant === "disconnector") {
+    if (mode === "text") {
+      return null;
+    }
     const closed = getSwitchVisualState(node) === "closed";
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1882,6 +2097,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (glyphVariant === "breaker") {
+    if (mode === "text") {
+      return null;
+    }
     const closed = getSwitchVisualState(node) === "closed";
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1895,6 +2113,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (node.kind.includes("load")) {
+    if (mode === "text") {
+      return null;
+    }
     return (
       <g fill={fill} stroke={stroke} strokeWidth="2.5" strokeLinejoin="round">
         <path d={`M ${-w / 3} ${-h / 3} L ${w / 3} ${-h / 3} L 0 ${h / 3} Z`} />
@@ -1903,6 +2124,9 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   }
 
   if (glyphVariant === "dcdc-converter" || glyphVariant === "acdc-converter" || glyphVariant === "acac-converter") {
+    if (mode === "text") {
+      return null;
+    }
     const leftX = -w / 2 + 10;
     const rightX = w / 2 - 24;
     const symbolY = 0;
@@ -1928,16 +2152,23 @@ function DeviceGlyph({ node, miniature = false }: { node: ModelNode; miniature?:
   if (glyphVariant === "custom-device" || node.params[CUSTOM_DEVICE_TEMPLATE_KEY] === "1") {
     const label = node.name || node.kind;
     const abbreviation = label.slice(0, 4).toUpperCase();
+    if (mode === "text") {
+      return uprightText(node, 0, -2, { fill: stroke, fontSize: miniature ? 10 : 15, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, abbreviation);
+    }
+    if (!renderGeometry) {
+      return null;
+    }
     return (
       <g fill="none" stroke="none">
         <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="6" fill={node.params.fillColor || "#f8fafc"} />
-        <text x="0" y="-2" fill={stroke} fontSize={miniature ? 10 : 15} fontWeight="800" textAnchor="middle" dominantBaseline="middle">
-          {abbreviation}
-        </text>
+        {renderText && uprightText(node, 0, -2, { fill: stroke, fontSize: miniature ? 10 : 15, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, abbreviation)}
       </g>
     );
   }
 
+  if (mode === "text") {
+    return null;
+  }
   return (
     <g>
       <circle cx="0" cy="0" r={miniature ? 16 : 24} fill={fill} stroke={stroke} strokeWidth="2.5" />
@@ -1964,9 +2195,12 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
       const imageHref = resolveNodeImage(node, imageAssets);
       const foregroundHref = resolveNodeForegroundImage(node, imageAssets);
       const allowNodeImage = !isBusNode(node);
-      const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node }));
+      const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry" }));
+      const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text" }));
       const escapedImageHref = escapeXml(imageHref);
       const escapedForegroundHref = escapeXml(foregroundHref);
+      const geometryTransform = nodeGeometryTransform(node);
+      const uprightTransform = nodeUprightScaleTransform(node);
       const imageMarkup = imageHref
         ? `<image href="${escapedImageHref}" x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" preserveAspectRatio="xMidYMid slice"/>`
         : "";
@@ -1978,14 +2212,21 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
           ? `<rect x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" rx="8" fill="#ffffff" stroke="none"/>`
           : "";
       const terminalMarkup = buildSvgTerminalMarkup(node);
-      return `<g transform="translate(${node.position.x} ${node.position.y}) rotate(${node.rotation}) scale(${getNodeScaleX(node)} ${getNodeScaleY(node)})">
+      return `<g class="export-node" transform="translate(${node.position.x} ${node.position.y})">
   <title>${escapeXml(node.name)}</title>
-  ${isStaticNode(node) ? imageMarkup : ""}
+  <g class="export-node-geometry" transform="${geometryTransform}">
   ${glyphMarkup}
+  ${glyphTextMarkup}
+  </g>
+  <g class="export-node-upright-content" transform="${uprightTransform}">
+  ${isStaticNode(node) ? imageMarkup : ""}
   ${imageCoverMarkup}
   ${allowNodeImage && !isStaticNode(node) ? imageMarkup : ""}
   ${allowNodeImage ? foregroundMarkup : ""}
+  </g>
+  <g class="export-node-terminals" transform="${geometryTransform}">
   ${terminalMarkup}
+  </g>
 </g>`;
     })
     .join("\n");
@@ -6632,6 +6873,12 @@ export function App() {
             <button onClick={() => distributeSelected("vertical")} disabled={selectedNodeCount < 3} title="纵向平均" aria-label="纵向平均">
               <AlignVerticalDistributeCenter size={16} />
             </button>
+            <button onClick={() => mirrorSelectedNodes("horizontal")} disabled={selectedNodeCount < 1} title="水平翻转端点" aria-label="水平翻转端点">
+              <FlipHorizontal size={16} />
+            </button>
+            <button onClick={() => mirrorSelectedNodes("vertical")} disabled={selectedNodeCount < 1} title="垂直翻转端点" aria-label="垂直翻转端点">
+              <FlipVertical size={16} />
+            </button>
             <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={chooseImage} />
             <input ref={customDeviceImageInputRef} type="file" accept="image/*" hidden onChange={chooseCustomDeviceBackground} />
             <button
@@ -6847,21 +7094,25 @@ export function App() {
                 return null;
               }
               const ghostNode = { ...node, position: originalPosition };
+              const ghostNodeIsBus = isBusNode(ghostNode);
               return (
                 <g
                   key={`drag-ghost-${node.id}`}
-                  className={`node-drag-ghost ${isBusNode(node) ? "bus-node" : ""}`}
-                  transform={`translate(${ghostNode.position.x} ${ghostNode.position.y}) rotate(${ghostNode.rotation}) scale(${getNodeScaleX(ghostNode)} ${getNodeScaleY(ghostNode)})`}
+                  className={`node-drag-ghost ${ghostNodeIsBus ? "bus-node" : ""}`}
+                  transform={`translate(${ghostNode.position.x} ${ghostNode.position.y})`}
                 >
-                  <rect
-                    x={-ghostNode.size.width / 2}
-                    y={-ghostNode.size.height / 2}
-                    width={ghostNode.size.width}
-                    height={ghostNode.size.height}
-                    rx="8"
-                    className="node-drag-ghost-box"
-                  />
-                  <DeviceGlyph node={ghostNode} />
+                  <g transform={nodeGeometryTransform(ghostNode)}>
+                    <rect
+                      x={-ghostNode.size.width / 2}
+                      y={-ghostNode.size.height / 2}
+                      width={ghostNode.size.width}
+                      height={ghostNode.size.height}
+                      rx="8"
+                      className="node-drag-ghost-box"
+                    />
+                    <DeviceGlyph node={ghostNode} mode="geometry" />
+                    <DeviceGlyph node={ghostNode} mode="text" />
+                  </g>
                 </g>
               );
             })}
@@ -7037,19 +7288,25 @@ export function App() {
               const foregroundImageHref = nodeForegroundImage(node);
               const nodeScaleX = getNodeScaleX(node);
               const nodeScaleY = getNodeScaleY(node);
+              const nodeIsBus = isBusNode(node);
               const inverseScaleX = nodeScaleX === 0 ? 1 : 1 / nodeScaleX;
               const inverseScaleY = nodeScaleY === 0 ? 1 : 1 / nodeScaleY;
-              const controlTransform = (x: number, y: number) => `translate(${x} ${y}) scale(${inverseScaleX} ${inverseScaleY})`;
-              const handleGapX = 14 * Math.abs(inverseScaleX);
-              const handleGapY = 14 * Math.abs(inverseScaleY);
-              const rotateStemStart = 12 * Math.abs(inverseScaleY);
-              const rotateStemEnd = 36 * Math.abs(inverseScaleY);
-              const rotateHandleGap = 42 * Math.abs(inverseScaleY);
+              const terminalControlTransform = (x: number, y: number) => `translate(${x} ${y}) scale(${inverseScaleX} ${inverseScaleY})`;
+              const handleTransform = (x: number, y: number) => `translate(${x} ${y})`;
+              const includeUprightContentInHandles = Boolean(imageHref || foregroundImageHref || node.kind === "static-text" || node.kind === "static-image");
+              const transformedHalfExtents = nodeTransformedHalfExtents(node, includeUprightContentInHandles);
+              const handleGapX = 14;
+              const handleGapY = 14;
+              const visibleHalfWidth = transformedHalfExtents.halfWidth;
+              const visibleHalfHeight = transformedHalfExtents.halfHeight;
+              const rotateStemStart = 12;
+              const rotateStemEnd = 36;
+              const rotateHandleGap = 42;
               return (
                 <g
                   key={node.id}
-                  className={`diagram-node ${isBusNode(node) ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${selected ? "selected" : ""} ${isConnectSource ? "connect-source" : ""}`}
-                  transform={`translate(${renderPosition.x} ${renderPosition.y}) rotate(${node.rotation}) scale(${getNodeScaleX(node)} ${getNodeScaleY(node)})`}
+                  className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${selected ? "selected" : ""} ${isConnectSource ? "connect-source" : ""}`}
+                  transform={`translate(${renderPosition.x} ${renderPosition.y})`}
                   onPointerDown={(event) => handleNodePointerDown(event, node)}
                   onContextMenu={(event) => {
                     event.preventDefault();
@@ -7086,15 +7343,7 @@ export function App() {
                   }}
                 >
                   <title>{node.name}</title>
-                  <rect
-                    x={-node.size.width / 2}
-                    y={-node.size.height / 2}
-                    width={node.size.width}
-                    height={node.size.height}
-                    rx="8"
-                    className={`node-hitbox ${isBusNode(node) ? "bus-hitbox" : ""} ${isStaticNode(node) ? "static-hitbox" : ""}`}
-                  />
-                  {imageHref && !isBusNode(node) && (
+                  {imageHref && !nodeIsBus && (
                     <clipPath id={`clip-${node.id}`}>
                       <rect
                         x={-node.size.width / 2}
@@ -7105,94 +7354,111 @@ export function App() {
                       />
                     </clipPath>
                   )}
-                  {imageHref && isStaticNode(node) && (
-                    <image
-                      href={imageHref}
-                      x={-node.size.width / 2}
-                      y={-node.size.height / 2}
-                      width={node.size.width}
-                      height={node.size.height}
-                      preserveAspectRatio="xMidYMid slice"
-                      clipPath={`url(#clip-${node.id})`}
-                      className="node-background-image"
-                    />
-                  )}
-                  <DeviceGlyph node={node} />
-                  {imageHref && !isBusNode(node) && !isStaticNode(node) && (
+                  <g className="node-geometry" transform={nodeGeometryTransform(node)}>
                     <rect
                       x={-node.size.width / 2}
                       y={-node.size.height / 2}
                       width={node.size.width}
                       height={node.size.height}
                       rx="8"
-                      className="node-image-cover"
+                      className={`node-hitbox ${nodeIsBus ? "bus-hitbox" : ""} ${isStaticNode(node) ? "static-hitbox" : ""}`}
                     />
-                  )}
-                  {imageHref && !isBusNode(node) && !isStaticNode(node) && (
-                    <image
-                      href={imageHref}
-                      x={-node.size.width / 2}
-                      y={-node.size.height / 2}
-                      width={node.size.width}
-                      height={node.size.height}
-                      preserveAspectRatio="xMidYMid slice"
-                      clipPath={`url(#clip-${node.id})`}
-                      className="node-background-image"
-                    />
-                  )}
-                  {foregroundImageHref && !isBusNode(node) && (
-                    <image
-                      href={foregroundImageHref}
-                      x={-node.size.width / 2}
-                      y={-node.size.height / 2}
-                      width={node.size.width}
-                      height={node.size.height}
-                      preserveAspectRatio="xMidYMid slice"
-                      clipPath={`url(#clip-${node.id})`}
-                      className="node-foreground-image"
-                    />
-                  )}
-                  {node.terminals.map((terminal) => {
-                    const sourceNode = connectSource ? nodeById.get(connectSource.nodeId) : undefined;
-                    const hideFixedTerminal = isBusNode(node) || isStaticNode(node);
-                    const disabled =
-                      !hideFixedTerminal &&
-                      mode === "connect" &&
-                      Boolean(sourceNode) &&
-                      !canConnectTerminals(sourceNode!, connectSource!.terminalId, node, terminal.id);
-                    const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY);
-                    return hideFixedTerminal ? null : (
-                      <g
-                        key={terminal.id}
-                        transform={controlTransform(terminal.anchor.x * node.size.width, terminal.anchor.y * node.size.height)}
-                      >
-                        <line
-                          className={`terminal-stub ${terminal.type} ${disabled ? "disabled" : ""}`}
-                          style={{
-                            stroke: disabled ? "#cbd5e1" : getDeviceStrokeColor(node),
-                            strokeWidth: getDeviceStrokeWidth(node)
-                          }}
-                          x1={stub.from.x}
-                          y1={stub.from.y}
-                          x2={stub.to.x}
-                          y2={stub.to.y}
+                    <DeviceGlyph node={node} mode="geometry" />
+                    <DeviceGlyph node={node} mode="text" />
+                  </g>
+                  {!nodeIsBus && (imageHref || foregroundImageHref) && (
+                    <g className="node-upright-content" transform={nodeUprightScaleTransform(node)}>
+                      {imageHref && isStaticNode(node) && (
+                        <image
+                          href={imageHref}
+                          x={-node.size.width / 2}
+                          y={-node.size.height / 2}
+                          width={node.size.width}
+                          height={node.size.height}
+                          preserveAspectRatio="xMidYMid slice"
+                          clipPath={`url(#clip-${node.id})`}
+                          className="node-background-image"
                         />
-                        <circle
-                          className={`terminal-dot ${terminal.type} ${disabled ? "disabled" : ""}`}
-                          cx="0"
-                          cy="0"
-                          r={6}
-                          onPointerDown={(event) => handleTerminalPointerDown(event, node, terminal.id)}
+                      )}
+                      {imageHref && !isStaticNode(node) && (
+                        <rect
+                          x={-node.size.width / 2}
+                          y={-node.size.height / 2}
+                          width={node.size.width}
+                          height={node.size.height}
+                          rx="8"
+                          className="node-image-cover"
+                        />
+                      )}
+                      {imageHref && !isStaticNode(node) && (
+                        <image
+                          href={imageHref}
+                          x={-node.size.width / 2}
+                          y={-node.size.height / 2}
+                          width={node.size.width}
+                          height={node.size.height}
+                          preserveAspectRatio="xMidYMid slice"
+                          clipPath={`url(#clip-${node.id})`}
+                          className="node-background-image"
+                        />
+                      )}
+                      {foregroundImageHref && (
+                        <image
+                          href={foregroundImageHref}
+                          x={-node.size.width / 2}
+                          y={-node.size.height / 2}
+                          width={node.size.width}
+                          height={node.size.height}
+                          preserveAspectRatio="xMidYMid slice"
+                          clipPath={`url(#clip-${node.id})`}
+                          className="node-foreground-image"
+                        />
+                      )}
+                    </g>
+                  )}
+                  <g className="node-terminal-layer" transform={nodeGeometryTransform(node)}>
+                    {node.terminals.map((terminal) => {
+                      const sourceNode = connectSource ? nodeById.get(connectSource.nodeId) : undefined;
+                      const hideFixedTerminal = nodeIsBus || isStaticNode(node);
+                      const disabled =
+                        !hideFixedTerminal &&
+                        mode === "connect" &&
+                        Boolean(sourceNode) &&
+                        !canConnectTerminals(sourceNode!, connectSource!.terminalId, node, terminal.id);
+                      const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY);
+                      return hideFixedTerminal ? null : (
+                        <g
+                          key={terminal.id}
+                          transform={terminalControlTransform(terminal.anchor.x * node.size.width, terminal.anchor.y * node.size.height)}
                         >
-                          <title>{`${terminal.label} / ${terminal.type.toUpperCase()}`}</title>
-                        </circle>
-                      </g>
-                    );
-                  })}
+                          <line
+                            className={`terminal-stub ${terminal.type} ${disabled ? "disabled" : ""}`}
+                            style={{
+                              stroke: disabled ? "#cbd5e1" : getDeviceStrokeColor(node),
+                              strokeWidth: getDeviceStrokeWidth(node)
+                            }}
+                            x1={stub.from.x}
+                            y1={stub.from.y}
+                            x2={stub.to.x}
+                            y2={stub.to.y}
+                          />
+                          <circle
+                            className={`terminal-dot ${terminal.type} ${disabled ? "disabled" : ""}`}
+                            cx="0"
+                            cy="0"
+                            r={6}
+                            onPointerDown={(event) => handleTerminalPointerDown(event, node, terminal.id)}
+                          >
+                            <title>{`${terminal.label} / ${terminal.type.toUpperCase()}`}</title>
+                          </circle>
+                        </g>
+                      );
+                    })}
+                  </g>
                   {selected && selectedNodeCount === 1 && (
                     <g className="transform-handles">
-                      <line x1="0" y1={-node.size.height / 2 - rotateStemStart} x2="0" y2={-node.size.height / 2 - rotateStemEnd} />
-                      <g transform={controlTransform(0, -node.size.height / 2 - rotateHandleGap)}>
+                      <line x1="0" y1={-visibleHalfHeight - rotateStemStart} x2="0" y2={-visibleHalfHeight - rotateStemEnd} />
+                      <g transform={handleTransform(0, -visibleHalfHeight - rotateHandleGap)}>
                         <circle
                           className="rotate-handle"
                           cx="0"
@@ -7208,13 +7474,13 @@ export function App() {
                         const x =
                           handle.xDirection === 0
                             ? 0
-                            : handle.xDirection * (node.size.width / 2 + handleGapX);
+                            : handle.xDirection * (visibleHalfWidth + handleGapX);
                         const y =
                           handle.yDirection === 0
                             ? 0
-                            : handle.yDirection * (node.size.height / 2 + handleGapY);
+                            : handle.yDirection * (visibleHalfHeight + handleGapY);
                         return (
-                          <g key={handle.id} transform={controlTransform(x, y)}>
+                          <g key={handle.id} transform={handleTransform(x, y)}>
                             <rect
                               className={`scale-handle ${handle.className}`}
                               x="-8"
@@ -7960,14 +8226,6 @@ export function App() {
           <button onClick={() => runContextMenuAction(pasteSelection)} disabled={canvasClipboard.nodes.length === 0 && canvasClipboard.edges.length === 0}>
             <FileInput size={14} />
             粘贴
-          </button>
-          <button onClick={() => runContextMenuAction(() => mirrorSelectedNodes("horizontal"))} disabled={selectedNodeIds.length === 0}>
-            <FlipHorizontal size={14} />
-            水平镜像
-          </button>
-          <button onClick={() => runContextMenuAction(() => mirrorSelectedNodes("vertical"))} disabled={selectedNodeIds.length === 0}>
-            <FlipVertical size={14} />
-            垂直镜像
           </button>
           <button onClick={() => runContextMenuAction(() => moveSelectedLayer("forward"))} disabled={selectedNodeIds.length === 0}>
             图层向上

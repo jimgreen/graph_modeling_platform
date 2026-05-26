@@ -3467,8 +3467,9 @@ export function clampEdgeGeometryToBounds(edge: Edge, bounds: CanvasBounds): Edg
 }
 
 export function clampNodePositionToBounds(node: ModelNode, bounds: CanvasBounds, position = node.position): Point {
-  const halfWidth = Math.min(bounds.width / 2, (node.size.width * Math.abs(getNodeScaleX(node))) / 2);
-  const halfHeight = Math.min(bounds.height / 2, (node.size.height * Math.abs(getNodeScaleY(node))) / 2);
+  const extents = visualHalfExtentsForNode(node);
+  const halfWidth = Math.min(bounds.width / 2, extents.halfWidth);
+  const halfHeight = Math.min(bounds.height / 2, extents.halfHeight);
   return {
     x: Math.round(Math.max(halfWidth, Math.min(bounds.width - halfWidth, position.x))),
     y: Math.round(Math.max(halfHeight, Math.min(bounds.height - halfHeight, position.y)))
@@ -3958,8 +3959,7 @@ export function canConnectTerminals(
 }
 
 function nodeLayoutBounds(node: ModelNode) {
-  const halfWidth = (node.size.width * Math.abs(getNodeScaleX(node))) / 2;
-  const halfHeight = (node.size.height * Math.abs(getNodeScaleY(node))) / 2;
+  const { halfWidth, halfHeight } = visualHalfExtentsForNode(node);
   return {
     left: node.position.x - halfWidth,
     right: node.position.x + halfWidth,
@@ -4967,19 +4967,44 @@ export function moveProjectToScheme(
   });
 }
 
-function boxFor(node: ModelNode, padding = 0) {
+function hasUprightVisualContent(node: ModelNode) {
+  return Boolean(
+    node.kind === "static-text" ||
+      node.kind === "static-image" ||
+      node.params.backgroundImage ||
+      node.params.backgroundImageAssetId ||
+      node.params.foregroundImage ||
+      node.params.foregroundImageAssetId
+  );
+}
+
+function visualHalfExtentsForNode(node: ModelNode) {
   const halfWidth = (node.size.width * Math.abs(getNodeScaleX(node))) / 2;
   const halfHeight = (node.size.height * Math.abs(getNodeScaleY(node))) / 2;
   const radians = (node.rotation * Math.PI) / 180;
   const cos = Math.abs(Math.cos(radians));
   const sin = Math.abs(Math.sin(radians));
-  const visualHalfWidth = halfWidth * cos + halfHeight * sin;
-  const visualHalfHeight = halfWidth * sin + halfHeight * cos;
+  const rotatedHalfWidth = halfWidth * cos + halfHeight * sin;
+  const rotatedHalfHeight = halfWidth * sin + halfHeight * cos;
+  if (!isBusNode(node) && hasUprightVisualContent(node)) {
+    return {
+      halfWidth: Math.max(halfWidth, rotatedHalfWidth),
+      halfHeight: Math.max(halfHeight, rotatedHalfHeight)
+    };
+  }
   return {
-    left: node.position.x - visualHalfWidth - padding,
-    right: node.position.x + visualHalfWidth + padding,
-    top: node.position.y - visualHalfHeight - padding,
-    bottom: node.position.y + visualHalfHeight + padding
+    halfWidth: rotatedHalfWidth,
+    halfHeight: rotatedHalfHeight
+  };
+}
+
+function boxFor(node: ModelNode, padding = 0) {
+  const { halfWidth, halfHeight } = visualHalfExtentsForNode(node);
+  return {
+    left: node.position.x - halfWidth - padding,
+    right: node.position.x + halfWidth + padding,
+    top: node.position.y - halfHeight - padding,
+    bottom: node.position.y + halfHeight + padding
   };
 }
 

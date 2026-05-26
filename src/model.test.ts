@@ -1539,7 +1539,7 @@ describe("power system model", () => {
     }
   });
 
-  test("routes around rotated device bodies using their visual bounds", () => {
+  test("routes around rotated device structure when rotation changes terminals and glyphs", () => {
     const source = createDefaultNode("ac-line", { x: 100, y: 150 });
     const target = createDefaultNode("ac-line", { x: 420, y: 150 });
     const blocker = { ...createDefaultNode("ac-line", { x: 260, y: 100 }), rotation: 90 };
@@ -1552,11 +1552,16 @@ describe("power system model", () => {
     };
 
     const route = routeEdgesForRendering([source, target, blocker], [edge], { width: 640, height: 260 })[0];
+    const blockerHalfWidth = (blocker.size.width * Math.abs(getNodeScaleX(blocker))) / 2;
+    const blockerHalfHeight = (blocker.size.height * Math.abs(getNodeScaleY(blocker))) / 2;
+    const blockerRadians = (blocker.rotation * Math.PI) / 180;
+    const blockerVisualHalfWidth = blockerHalfWidth * Math.abs(Math.cos(blockerRadians)) + blockerHalfHeight * Math.abs(Math.sin(blockerRadians));
+    const blockerVisualHalfHeight = blockerHalfWidth * Math.abs(Math.sin(blockerRadians)) + blockerHalfHeight * Math.abs(Math.cos(blockerRadians));
     const blockerBox = {
-      left: blocker.position.x - blocker.size.height / 2 - 8,
-      right: blocker.position.x + blocker.size.height / 2 + 8,
-      top: blocker.position.y - blocker.size.width / 2 - 8,
-      bottom: blocker.position.y + blocker.size.width / 2 + 8
+      left: blocker.position.x - blockerVisualHalfWidth - 8,
+      right: blocker.position.x + blockerVisualHalfWidth + 8,
+      top: blocker.position.y - blockerVisualHalfHeight - 8,
+      bottom: blocker.position.y + blockerVisualHalfHeight + 8
     };
 
     for (let index = 1; index < route.points.length; index += 1) {
@@ -1574,6 +1579,23 @@ describe("power system model", () => {
         expect(prev.y > blockerBox.top && prev.y < blockerBox.bottom && xMax > blockerBox.left && xMin < blockerBox.right).toBe(false);
       }
     }
+  });
+
+  test("uses rotated device body bounds while rotation also moves terminals", () => {
+    const node = { ...createDefaultNode("ac-line", { x: 260, y: 120 }), rotation: 90 };
+    const bounds = calculateModelGeometryBounds([node], [], 0);
+    const terminal = getTerminalPoint(node, "t2");
+    const halfWidth = (node.size.width * Math.abs(getNodeScaleX(node))) / 2;
+    const halfHeight = (node.size.height * Math.abs(getNodeScaleY(node))) / 2;
+
+    expect(bounds).toEqual({
+      left: node.position.x - halfHeight,
+      right: node.position.x + halfHeight,
+      top: node.position.y - halfWidth,
+      bottom: node.position.y + halfWidth
+    });
+    expect(terminal.x).toBe(node.position.x);
+    expect(terminal.y).toBeGreaterThan(node.position.y);
   });
 
   test("uses mirrored terminal normals after horizontal flips", () => {
