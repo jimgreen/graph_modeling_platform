@@ -3086,7 +3086,7 @@ export function App() {
       return "";
     }
     const sourcePoint = connectSource.point ?? getModelEdgeEndpointPoint(sourceNode, undefined, connectSource.terminalId);
-    const route = routeEdgesForRendering(
+    const route = routeEdgesForStoredRendering(
       nodes,
       [{
         id: "connect-preview",
@@ -3128,35 +3128,20 @@ export function App() {
   const deferredRoutingNodes = useDeferredValue(nodes);
   const deferredRoutingEdges = useDeferredValue(edges);
   const deferredRoutingIsCurrent = deferredRoutingNodes === nodes && deferredRoutingEdges === edges;
-  const requiresLiveRouting = Boolean(manualPathDrag || !deferredRoutingIsCurrent);
+  const requiresLiveRouting = Boolean(!deferredRoutingIsCurrent);
   const routingNodes = requiresLiveRouting ? nodes : deferredRoutingNodes;
   const routingEdges = requiresLiveRouting ? edges : deferredRoutingEdges;
   const affectedRoutingEdgeIds = useMemo(() => {
     const ids = new Set<string>();
-    if (manualPathDrag) {
-      ids.add(manualPathDrag.edgeId);
-    }
-    if (rewiring) {
-      ids.add(rewiring.edgeId);
-    }
-    if (terminalPress?.moved) {
-      edges.forEach((edge) => {
-        const sourceAffected = edge.sourceId === terminalPress.nodeId && edge.sourceTerminalId === terminalPress.terminalId;
-        const targetAffected = edge.targetId === terminalPress.nodeId && edge.targetTerminalId === terminalPress.terminalId;
-        if (sourceAffected || targetAffected) {
-          ids.add(edge.id);
-        }
-      });
-    }
     return ids;
-  }, [edges, manualPathDrag, rewiring, terminalPress]);
+  }, []);
   const routeRenderingEnabled = routeRenderingReady;
   const routedEdges = useMemo(() => {
     if (!routeRenderingEnabled) {
       return routeEdgesForStoredRendering(routingNodes, routingEdges, canvasBounds);
     }
     const committedStoredEdgeIds = pendingStoredRouteEdgeIdsRef.current;
-    if (committedStoredEdgeIds.size > 0 && !manualPathDrag && !rewiring && !terminalPress?.moved) {
+    if (committedStoredEdgeIds.size > 0) {
       return routeEdgesForCachedStoredRendering(
         routingNodes,
         routingEdges,
@@ -3176,7 +3161,7 @@ export function App() {
       canvasBounds,
       cachedRoutedEdgesRef.current
     );
-  }, [affectedRoutingEdgeIds, canvasBounds, manualPathDrag, rewiring, routeRenderingEnabled, routingEdges, routingNodes, terminalPress?.moved]);
+  }, [affectedRoutingEdgeIds, canvasBounds, routeRenderingEnabled, routingEdges, routingNodes]);
   useEffect(() => {
     cachedRoutedEdgesRef.current = routedEdges;
     pendingRouteEdgeIdsRef.current = new Set();
@@ -3305,7 +3290,7 @@ export function App() {
             : rewiring.previewPoint
           : previewEdge.targetPoint
     };
-    const route = routeEdgesForRendering(nodes, [previewRouteEdge], canvasBounds)[0];
+    const route = routeEdgesForStoredRendering(nodes, [previewRouteEdge], canvasBounds)[0];
     return {
       edgeId: edge.id,
       path: route?.path ?? ""
@@ -3347,7 +3332,7 @@ export function App() {
         originalMovingPoint: terminalPress.startPoint
       });
       const previewEdge = slidePatch ? { ...edge, ...slidePatch } : edge;
-      const route = routeEdgesForRendering(nodes, [previewEdge], canvasBounds)[0];
+      const route = routeEdgesForStoredRendering(nodes, [previewEdge], canvasBounds)[0];
       return route ? [{
         edgeId: edge.id,
         path: route.path
@@ -4633,7 +4618,7 @@ export function App() {
     );
     let nextEdges = reconciled.edges;
     for (const edgeId of reconciled.addedEdgeIds) {
-      const prepared = prepareConnectionEdgeForCommit(nextNodes, nextEdges, edgeId, canvasBounds);
+      const prepared = prepareConnectionEdgeForCommit(nextNodes, nextEdges, edgeId, canvasBounds, routedEdges);
       if (prepared.ok && prepared.edge) {
         nextEdges = nextEdges.map((edge) => edge.id === edgeId ? prepared.edge! : edge);
       }
@@ -4646,20 +4631,26 @@ export function App() {
     candidateEdges: Edge[],
     movedNodeIds: string[],
     originalRoutePoints: DraggingState["originalRoutePoints"],
-    selectedEdgeIds = new Set<string>()
+    selectedEdgeIds = new Set<string>(),
+    precomputedBlockedRoutePoints: DraggingState["originalRoutePoints"] = {}
   ) => {
-    const routePointsForReroute = routePointsForMovedNodeBlockers(
-      nextNodes,
-      candidateEdges,
-      movedNodeIds,
-      originalRoutePoints
-    );
-    const rebuiltAdjustedEdges = rebuildSingleAffectedConnectionRoute(
-      nextNodes,
-      candidateEdges,
-      movedNodeIds,
-      selectedEdgeIds
-    );
+    const hasPrecomputedBlockers = Object.keys(precomputedBlockedRoutePoints).length > 0;
+    const routePointsForReroute = hasPrecomputedBlockers
+      ? precomputedBlockedRoutePoints
+      : routePointsForMovedNodeBlockers(
+          nextNodes,
+          candidateEdges,
+          movedNodeIds,
+          originalRoutePoints
+        );
+    const rebuiltAdjustedEdges = hasPrecomputedBlockers
+      ? candidateEdges
+      : rebuildSingleAffectedConnectionRoute(
+          nextNodes,
+          candidateEdges,
+          movedNodeIds,
+          selectedEdgeIds
+        );
     return {
       routePoints: routePointsForReroute,
       edges: rerouteEdgesAroundMovedNodes(
@@ -4675,8 +4666,12 @@ export function App() {
   const shouldRunDeferredMoveOptimization = (
     candidateEdges: Edge[],
     movedNodeIds: string[],
-    selectedEdgeIds: Set<string>
+    selectedEdgeIds: Set<string>,
+    blockedEdgeIds = new Set<string>()
   ) => {
+    if (blockedEdgeIds.size > 0) {
+      return true;
+    }
     const movedIds = new Set(movedNodeIds);
     let affectedConnectionCount = 0;
     for (const edge of candidateEdges) {
@@ -4698,7 +4693,9 @@ export function App() {
     selectedEdgeIds = new Set<string>()
   ) => {
     deferredMoveOptimizationCancelRef.current?.();
-    if (!shouldRunDeferredMoveOptimization(fastEdges, movedNodeIds, selectedEdgeIds)) {
+    const blockedRoutePoints = routePointsForMovedNodeBlockers(nextNodes, fastEdges, movedNodeIds, {});
+    const blockedEdgeIds = new Set(Object.keys(blockedRoutePoints));
+    if (!shouldRunDeferredMoveOptimization(fastEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)) {
       deferredMoveOptimizationCancelRef.current = null;
       return;
     }
@@ -4714,17 +4711,17 @@ export function App() {
         expectedEdges,
         movedNodeIds,
         originalRoutePoints,
-        selectedEdgeIds
+        selectedEdgeIds,
+        blockedRoutePoints
       );
       if (optimized.edges === expectedEdges) {
         return;
       }
-      markRouteEdgesDirty(dirtyEdgeIdsAfterMove(
-        expectedEdges,
-        optimized.edges,
-        movedNodeIds,
-        Object.keys(optimized.routePoints)
-      ));
+      const dirtyOptimizedEdgeIds = edgeReferenceDiffIds(expectedEdges, optimized.edges);
+      for (const edgeId of Object.keys(optimized.routePoints)) {
+        dirtyOptimizedEdgeIds.add(edgeId);
+      }
+      markRouteEdgesDirty(dirtyOptimizedEdgeIds);
       setEdges(optimized.edges);
     }, 180, 1500);
   };
@@ -5743,7 +5740,7 @@ export function App() {
   };
 
   const commitNewConnectionEdge = (newEdge: Edge, sourceName: string, targetName: string) => {
-    const prepared = prepareConnectionEdgeForCommit(nodes, [...edges, newEdge], newEdge.id, canvasBounds);
+    const prepared = prepareConnectionEdgeForCommit(nodes, [...edges, newEdge], newEdge.id, canvasBounds, routedEdges);
     if (!prepared.ok || !prepared.edge) {
       const message = connectionCommitFailureMessage(prepared.issues);
       window.alert(`联络线绘制失败：${message}`);
@@ -5830,7 +5827,8 @@ export function App() {
             nodes,
             edges.map((item) => item.id === rewiring.edgeId ? candidateEdge : item),
             rewiring.edgeId,
-            canvasBounds
+            canvasBounds,
+            routedEdges
           )
         : null;
       if (prepared?.ok && prepared.edge) {
@@ -7348,7 +7346,8 @@ export function App() {
           nodes,
           edges.map((item) => item.id === edge.id ? candidateEdge : item),
           edge.id,
-          canvasBounds
+          canvasBounds,
+          routedEdges
         );
         if (prepared.ok && prepared.edge) {
           const preparedEdge = prepared.edge;

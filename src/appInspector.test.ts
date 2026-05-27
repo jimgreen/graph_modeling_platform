@@ -104,33 +104,36 @@ describe("graph inspector panel", () => {
     expect(finishBlock.indexOf("finalizeMovedNodeEdgesFast")).toBeGreaterThan(finishBlock.indexOf("adjustEdgesAfterNodeMove"));
   });
 
-  test("routes connection previews through the obstacle-aware router", async () => {
+  test("keeps connection previews on the lightweight stored-route path", async () => {
     const source = await readAppSource();
     const previewStart = source.indexOf("const connectPreviewPath = useMemo");
     const previewEnd = source.indexOf("const connectPreviewColor", previewStart);
     const previewBlock = source.slice(previewStart, previewEnd);
 
-    expect(previewBlock).toContain("routeEdgesForRendering");
+    expect(previewBlock).toContain("routeEdgesForStoredRendering");
+    expect(previewBlock).not.toContain("routeEdgesForRendering");
     expect(previewBlock).not.toContain("simpleOrthogonalPolyline");
   });
 
-  test("routes endpoint rewire previews through the obstacle-aware router", async () => {
+  test("keeps endpoint rewire previews on the lightweight stored-route path", async () => {
     const source = await readAppSource();
     const previewStart = source.indexOf("const rewiringPreviewRoute = useMemo");
     const previewEnd = source.indexOf("const manualPathPreviewRoute", previewStart);
     const previewBlock = source.slice(previewStart, previewEnd);
 
-    expect(previewBlock).toContain("routeEdgesForRendering");
+    expect(previewBlock).toContain("routeEdgesForStoredRendering");
+    expect(previewBlock).not.toContain("routeEdgesForRendering");
     expect(previewBlock).not.toContain("simpleOrthogonalPolyline");
   });
 
-  test("routes terminal move previews through the obstacle-aware router", async () => {
+  test("keeps terminal move previews on the lightweight stored-route path", async () => {
     const source = await readAppSource();
     const previewStart = source.indexOf("const terminalPressPreviewEdgeRoutes = useMemo");
     const previewEnd = source.indexOf("const terminalPressPreviewEdgeIdSet", previewStart);
     const previewBlock = source.slice(previewStart, previewEnd);
 
-    expect(previewBlock).toContain("routeEdgesForRendering");
+    expect(previewBlock).toContain("routeEdgesForStoredRendering");
+    expect(previewBlock).not.toContain("routeEdgesForRendering");
     expect(previewBlock).not.toContain("simpleOrthogonalPolyline");
   });
 
@@ -167,6 +170,7 @@ describe("graph inspector panel", () => {
     const terminalBlock = source.slice(terminalStart, terminalEnd);
 
     expect(commitBlock).toContain("prepareConnectionEdgeForCommit");
+    expect(commitBlock).toContain("canvasBounds, routedEdges");
     expect(commitBlock).toContain("联络线绘制失败");
     expect(commitBlock).toContain("prepared.edge");
     expect(commitBlock.indexOf("prepareConnectionEdgeForCommit")).toBeLessThan(commitBlock.indexOf("setEdges"));
@@ -181,6 +185,8 @@ describe("graph inspector panel", () => {
     const rewiringBlock = source.slice(rewiringStart, rewiringEnd);
 
     expect(rewiringBlock).toContain("prepareConnectionEdgeForCommit");
+    expect(rewiringBlock).toContain("canvasBounds,");
+    expect(rewiringBlock).toContain("routedEdges");
     expect(rewiringBlock).toContain("prepared.edge");
     expect(rewiringBlock.indexOf("prepareConnectionEdgeForCommit")).toBeLessThan(rewiringBlock.indexOf("setEdges"));
   });
@@ -236,8 +242,9 @@ describe("graph inspector panel", () => {
     expect(optimizeBlock).toContain("rerouteEdgesAroundMovedNodes");
     expect(source).toContain("const shouldRunDeferredMoveOptimization");
     expect(source).not.toContain("movedIds.size <= 1 || selectedEdgeIds.size === 1");
+    expect(source).toContain("if (blockedEdgeIds.size > 0)");
     expect(source).toContain("return affectedConnectionCount === 1");
-    expect(scheduleBlock).toContain("!shouldRunDeferredMoveOptimization(fastEdges, movedNodeIds, selectedEdgeIds)");
+    expect(scheduleBlock).toContain("!shouldRunDeferredMoveOptimization(fastEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)");
     expect(scheduleBlock).toContain("deferredMoveOptimizationCancelRef.current = null");
     expect(scheduleBlock).toContain("scheduleIdleWork");
     expect(scheduleBlock).toContain("latestNodesRef.current !== expectedNodes");
@@ -307,9 +314,9 @@ describe("graph inspector panel", () => {
     expect(source).toContain("pendingStoredRouteEdgeIdsRef");
     expect(source).toContain("markStoredRouteEdgesDirty(dirtyEdgeIdsAfterMove");
     expect(source).toContain("markRouteEdgesDirty(dirtyEdgeIdsAfterMove");
-    expect(routingBlock).toContain("manualPathDrag.edgeId");
-    expect(routingBlock).toContain("rewiring.edgeId");
-    expect(routingBlock).toContain("terminalPress?.moved");
+    expect(routingBlock).not.toContain("manualPathDrag.edgeId");
+    expect(routingBlock).not.toContain("rewiring.edgeId");
+    expect(routingBlock).not.toContain("terminalPress?.moved");
     expect(routingBlock).not.toContain("dragging.edgeIds");
     expect(routingBlock).not.toContain("draggingNodeIdSet.has(edge.sourceId)");
     expect(routingBlock).not.toContain("draggingNodeIdSet.has(edge.targetId)");
@@ -357,9 +364,24 @@ describe("graph inspector panel", () => {
     expect(adjustBlock).toContain("if (!sourceMoved && !targetMoved && !preserveRouteEdgeIds.has(edge.id))");
     expect(adjustBlock).toContain("return edge;");
     expect(source).toContain("const optimizeMovedNodeEdgeRoutes");
-    expect(source).toContain("const routePointsForReroute = routePointsForMovedNodeBlockers");
+    expect(source).toContain("const routePointsForReroute = hasPrecomputedBlockers");
+    expect(source).toContain("? precomputedBlockedRoutePoints");
+    expect(source).toContain(": routePointsForMovedNodeBlockers");
     expect(finishBlock).toContain("commitFastMovedGraph");
     expect(finishBlock).not.toContain("const routePointsForReroute = routePointsForMovedNodeBlockers");
+  });
+
+  test("schedules local rerouting when moved graphics interfere with unrelated connection lines", async () => {
+    const source = await readAppSource();
+    const scheduleStart = source.indexOf("const scheduleMovedEdgeOptimization");
+    const scheduleEnd = source.indexOf("const commitFastMovedGraph", scheduleStart);
+    const scheduleBlock = source.slice(scheduleStart, scheduleEnd);
+
+    expect(scheduleBlock).toContain("const blockedRoutePoints = routePointsForMovedNodeBlockers(nextNodes, fastEdges, movedNodeIds, {});");
+    expect(scheduleBlock).toContain("const blockedEdgeIds = new Set(Object.keys(blockedRoutePoints));");
+    expect(scheduleBlock).toContain("!shouldRunDeferredMoveOptimization(fastEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)");
+    expect(scheduleBlock).toContain("blockedRoutePoints");
+    expect(scheduleBlock).not.toContain("dirtyEdgeIdsAfterMove(\n        expectedEdges,\n        optimized.edges,\n        movedNodeIds");
   });
 
   test("defers full terminal overlap detection off the drag release frame", async () => {

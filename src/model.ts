@@ -7428,7 +7428,8 @@ export function validateConnectionEdgeRoute(
   nodes: ModelNode[],
   edges: Edge[],
   edgeId: string,
-  bounds?: CanvasBounds
+  bounds?: CanvasBounds,
+  previousRoutes: RoutedEdge[] = []
 ): ConnectionRouteValidationResult {
   const issues: ConnectionRouteValidationIssue[] = [];
   const edge = edges.find((item) => item.id === edgeId);
@@ -7444,7 +7445,9 @@ export function validateConnectionEdgeRoute(
     return { ok: false, issues };
   }
 
-  const routes = routeEdgesForRendering(nodes, edges, bounds);
+  const routes = previousRoutes.length > 0
+    ? routeEdgesForIncrementalRendering(nodes, edges, new Set([edgeId]), bounds, previousRoutes)
+    : routeEdgesForRendering(nodes, edges, bounds);
   const route = routes.find((item) => item.edgeId === edgeId);
   if (!route || route.points.length < 2) {
     issues.push({
@@ -7721,7 +7724,13 @@ function selectCommitSafeRoute(
   return bestRoute;
 }
 
-function designCommitSafeRoute(nodes: ModelNode[], edges: Edge[], edgeId: string, bounds?: CanvasBounds): RoutedEdge | null {
+function designCommitSafeRoute(
+  nodes: ModelNode[],
+  edges: Edge[],
+  edgeId: string,
+  bounds?: CanvasBounds,
+  previousRoutes: RoutedEdge[] = []
+): RoutedEdge | null {
   const edge = edges.find((item) => item.id === edgeId);
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const source = edge ? nodeById.get(edge.sourceId) : undefined;
@@ -7732,7 +7741,16 @@ function designCommitSafeRoute(nodes: ModelNode[], edges: Edge[], edgeId: string
 
   const edgeForDesign = edgeWithoutManualPoints(edge);
   const otherEdges = edges.filter((item) => item.id !== edgeId);
-  const avoidedSegments = routeEdgesForRendering(nodes, otherEdges, bounds)
+  const otherRoutes = previousRoutes.length > 0
+    ? routeEdgesForIncrementalRendering(
+        nodes,
+        otherEdges,
+        new Set(),
+        bounds,
+        previousRoutes.filter((route) => route.edgeId !== edgeId)
+      )
+    : routeEdgesForRendering(nodes, otherEdges, bounds);
+  const avoidedSegments = otherRoutes
     .flatMap((route, routeIndex) => getSegments(route.edgeId, routeIndex, route.points));
   const context = buildEdgeRoutingContext(source, target, nodes, edgeForDesign);
   const middleCandidates = buildRouteCandidates(context.startOut, context.endOut, context.blockers, avoidedSegments, bounds);
@@ -7752,35 +7770,47 @@ export function prepareConnectionEdgeForCommit(
   nodes: ModelNode[],
   edges: Edge[],
   edgeId: string,
-  bounds?: CanvasBounds
+  bounds?: CanvasBounds,
+  previousRoutes: RoutedEdge[] = []
 ): PreparedConnectionEdgeCommit {
   const edge = edges.find((item) => item.id === edgeId);
   if (!edge) {
-    const validation = validateConnectionEdgeRoute(nodes, edges, edgeId, bounds);
+    const validation = validateConnectionEdgeRoute(nodes, edges, edgeId, bounds, previousRoutes);
     return { ...validation };
   }
 
   const edgeForDesign = edgeWithoutManualPoints(edge);
   const otherEdges = edges.filter((item) => item.id !== edgeId);
-  const designedRoute = routeEdgesForRendering(nodes, [...otherEdges, edgeForDesign], bounds)
+  const candidateEdges = [...otherEdges, edgeForDesign];
+  const designedRoute = (
+    previousRoutes.length > 0
+      ? routeEdgesForIncrementalRendering(
+          nodes,
+          candidateEdges,
+          new Set([edgeId]),
+          bounds,
+          previousRoutes.filter((route) => route.edgeId !== edgeId)
+        )
+      : routeEdgesForRendering(nodes, candidateEdges, bounds)
+  )
     .find((route) => route.edgeId === edgeId);
   if (!designedRoute) {
-    const validation = validateConnectionEdgeRoute(nodes, edges, edgeId, bounds);
+    const validation = validateConnectionEdgeRoute(nodes, edges, edgeId, bounds, previousRoutes);
     return { ...validation };
   }
 
   const preparedEdge = edgeWithCommitManualPoints(edgeForDesign, designedRoute);
   const preparedEdges = edges.map((item) => item.id === edgeId ? preparedEdge : item);
-  const validation = validateConnectionEdgeRoute(nodes, preparedEdges, edgeId, bounds);
+  const validation = validateConnectionEdgeRoute(nodes, preparedEdges, edgeId, bounds, previousRoutes);
   if (validation.ok) {
     return { ...validation, edge: preparedEdge };
   }
 
-  const safeRoute = designCommitSafeRoute(nodes, edges, edgeId, bounds);
+  const safeRoute = designCommitSafeRoute(nodes, edges, edgeId, bounds, previousRoutes);
   if (safeRoute) {
     const safeEdge = edgeWithCommitManualPoints(edgeForDesign, safeRoute);
     const safeEdges = edges.map((item) => item.id === edgeId ? safeEdge : item);
-    const safeValidation = validateConnectionEdgeRoute(nodes, safeEdges, edgeId, bounds);
+    const safeValidation = validateConnectionEdgeRoute(nodes, safeEdges, edgeId, bounds, previousRoutes);
     if (safeValidation.ok) {
       return { ...safeValidation, edge: safeEdge };
     }
@@ -7918,7 +7948,7 @@ export function rerouteEdgesAroundMovedNodes(
   let nextEdges = edges;
   let changed = false;
   for (const edgeId of blockedEdgeIds) {
-    const prepared = prepareConnectionEdgeForCommit(nodes, nextEdges, edgeId, bounds);
+    const prepared = prepareConnectionEdgeForCommit(nodes, nextEdges, edgeId, bounds, previousRoutes);
     if (!prepared.ok || !prepared.edge) {
       continue;
     }
