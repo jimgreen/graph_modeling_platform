@@ -118,7 +118,7 @@ describe("graph inspector panel", () => {
 
   test("keeps connection previews on the lightweight stored-route path", async () => {
     const source = await readAppSource();
-    const previewStart = source.indexOf("const connectPreviewPath = useMemo");
+    const previewStart = source.indexOf("const buildConnectPreviewPath = (");
     const previewEnd = source.indexOf("const connectPreviewColor", previewStart);
     const previewBlock = source.slice(previewStart, previewEnd);
 
@@ -129,16 +129,16 @@ describe("graph inspector panel", () => {
 
   test("routes connection previews through the snapped target terminal normal", async () => {
     const source = await readAppSource();
-    const previewStart = source.indexOf("const connectPreviewPath = useMemo");
+    const previewStart = source.indexOf("const buildConnectPreviewPath = (");
     const previewEnd = source.indexOf("const connectPreviewColor", previewStart);
     const previewBlock = source.slice(previewStart, previewEnd);
     const pointerStart = source.indexOf("if (connectSource) {");
     const pointerEnd = source.indexOf("if (terminalPress", pointerStart);
     const pointerBlock = source.slice(pointerStart, pointerEnd);
 
-    expect(source).toContain("connectDropTarget");
-    expect(source).toContain("setConnectDropTarget");
-    expect(previewBlock).toContain("const previewTarget = connectDropTarget;");
+    expect(source).toContain("connectDropTargetRef");
+    expect(source).not.toContain("setConnectDropTarget");
+    expect(previewBlock).toContain("const previewTarget = target;");
     expect(previewBlock).toContain("targetId: previewTarget?.node.id ?? \"floating-connect-preview-target\"");
     expect(previewBlock).toContain("targetTerminalId: previewTarget?.terminalId ?? \"t1\"");
     expect(previewBlock).toContain("targetPoint: previewTarget");
@@ -172,7 +172,7 @@ describe("graph inspector panel", () => {
     const styles = await readStyles();
     const ghostRule = cssRuleBlock(styles, ".connection-line.drag-ghost");
     const previewRule = cssRuleBlock(styles, ".connection-line.drag-preview");
-    const nodeRenderIndex = source.indexOf("{visibleNodes.map((node) =>");
+    const nodeRenderIndex = source.indexOf("{viewportNodes.map((node) =>");
     const ghostRenderIndex = source.indexOf("{dragGhostEdgeRoutes.map");
     const previewRenderIndex = source.indexOf("{dragPreviewEdgeRoutes.map");
 
@@ -322,7 +322,7 @@ describe("graph inspector panel", () => {
     expect(source).not.toContain("movedIds.size <= 1 || selectedEdgeIds.size === 1");
     expect(source).toContain("if (blockedEdgeIds.size > 0)");
     expect(source).toContain("return affectedConnectionCount === 1");
-    expect(scheduleBlock).toContain("!shouldRunDeferredMoveOptimization(fastEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)");
+    expect(scheduleBlock).toContain("!shouldRunDeferredMoveOptimization(optimizationEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)");
     expect(scheduleBlock).toContain("deferredMoveOptimizationCancelRef.current = null");
     expect(scheduleBlock).toContain("scheduleIdleWork");
     expect(scheduleBlock).toContain("latestNodesRef.current !== expectedNodes");
@@ -365,6 +365,52 @@ describe("graph inspector panel", () => {
     expect(routingBlock).not.toContain("routeEdgesForRendering(routingNodes, routingEdges");
   });
 
+  test("keeps svg export and canvas size checks on stored connection geometry", async () => {
+    const source = await readAppSource();
+    const exportStart = source.indexOf("export function buildSvgDocument");
+    const exportEnd = source.indexOf("const nodeMarkup", exportStart);
+    const exportBlock = source.slice(exportStart, exportEnd);
+    const sizeStart = source.indexOf("const commitCanvasSizeDraft");
+    const sizeEnd = source.indexOf("const resetCanvasSizeDraft", sizeStart);
+    const sizeBlock = source.slice(sizeStart, sizeEnd);
+
+    expect(source).not.toContain("routeEdgesForRendering,");
+    expect(exportBlock).toContain("routeEdgesForStoredRendering(nodes, edges, canvasSize)");
+    expect(exportBlock).not.toContain("routeEdgesForRendering");
+    expect(sizeBlock).toContain("routeEdgesForStoredRendering(nodes, edges");
+    expect(sizeBlock).not.toContain("routeEdgesForRendering");
+  });
+
+  test("clips the main svg render list to the current viewport while preserving selected graphics", async () => {
+    const source = await readAppSource();
+    const routeCullStart = source.indexOf("const viewportRoutedEdges = useMemo");
+    const routeCullEnd = source.indexOf("const activeLayerRoutedEdges", routeCullStart);
+    const routeCullBlock = source.slice(routeCullStart, routeCullEnd);
+    const edgeRenderIndex = source.indexOf("{viewportRoutedEdges.map((route) =>");
+    const nodeRenderIndex = source.indexOf("{viewportNodes.map((node) =>");
+
+    expect(source).toContain("expandViewBoxForRendering(viewBox)");
+    expect(source).toContain("nodeIntersectsRenderViewport");
+    expect(source).toContain("routeIntersectsRenderViewport");
+    expect(routeCullBlock).toContain("activeSelectedEdgeSet.has(route.edgeId)");
+    expect(routeCullBlock).toContain("routeIntersectsRenderViewport(route, renderViewportBounds)");
+    expect(routeCullBlock).toContain("selectedNodeIdSet.has(node.id)");
+    expect(routeCullBlock).toContain("draggingNodeIdSet.has(node.id)");
+    expect(edgeRenderIndex).toBeGreaterThan(-1);
+    expect(nodeRenderIndex).toBeGreaterThan(-1);
+  });
+
+  test("defers selected device parameter view construction until the device tab is active", async () => {
+    const source = await readAppSource();
+    const paramStart = source.indexOf("const deviceParamPanelActive");
+    const paramEnd = source.indexOf("useEffect(() => {\n    if (!layers.some", paramStart);
+    const paramBlock = source.slice(paramStart, paramEnd);
+
+    expect(paramBlock).toContain("const deviceParamPanelActive = inspectorTab === \"device\"");
+    expect(paramBlock).toContain("deviceParamPanelActive && selectedNode ? libraryTemplateByKind.get(selectedNode.kind) : undefined");
+    expect(paramBlock).toContain("deviceParamPanelActive && selectedNode ? buildContainerDeviceParameterViews");
+  });
+
   test("keeps post-drag edge ordering linear and avoids sorting every route", async () => {
     const source = await readAppSource();
     const renderStart = source.indexOf("const renderedRoutedEdges = useMemo");
@@ -390,7 +436,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("routeEdgesForIncrementalRendering");
     expect(source).toContain("pendingRouteEdgeIdsRef");
     expect(source).toContain("pendingStoredRouteEdgeIdsRef");
-    expect(source).toContain("markStoredRouteEdgesDirty(dirtyEdgeIdsAfterMove");
+    expect(source).toContain("markStoredRouteEdgesDirty(dirtyEdgeIdsForMovedLocalRoutes");
     expect(source).toContain("markRouteEdgesDirty(dirtyEdgeIdsAfterMove");
     expect(routingBlock).not.toContain("manualPathDrag.edgeId");
     expect(routingBlock).not.toContain("rewiring.edgeId");
@@ -455,9 +501,11 @@ describe("graph inspector panel", () => {
     const scheduleEnd = source.indexOf("const commitFastMovedGraph", scheduleStart);
     const scheduleBlock = source.slice(scheduleStart, scheduleEnd);
 
-    expect(scheduleBlock).toContain("const blockedRoutePoints = routePointsForMovedNodeBlockers(nextNodes, fastEdges, movedNodeIds, {});");
+    expect(scheduleBlock).toContain("movedNodeIds.length > MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES");
+    expect(scheduleBlock).toContain("const optimizationEdges = localRouteOptimizationEdges");
+    expect(scheduleBlock).toContain("const blockedRoutePoints = routePointsForMovedNodeBlockers(nextNodes, optimizationEdges, movedNodeIds, {});");
     expect(scheduleBlock).toContain("const blockedEdgeIds = new Set(Object.keys(blockedRoutePoints));");
-    expect(scheduleBlock).toContain("!shouldRunDeferredMoveOptimization(fastEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)");
+    expect(scheduleBlock).toContain("!shouldRunDeferredMoveOptimization(optimizationEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)");
     expect(scheduleBlock).toContain("blockedRoutePoints");
     expect(scheduleBlock).not.toContain("dirtyEdgeIdsAfterMove(\n        expectedEdges,\n        optimized.edges,\n        movedNodeIds");
   });
@@ -482,6 +530,8 @@ describe("graph inspector panel", () => {
     const rerouteBlock = modelSource.slice(rerouteStart, rerouteEnd);
 
     expect(source).toContain("const MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES = 5");
+    expect(source).toContain("const MOVE_ROUTE_LOCAL_SEARCH_PADDING = 96");
+    expect(source).toContain("const localRouteOptimizationEdges");
     expect(helperStart).toBeGreaterThan(-1);
     expect(helperBlock).toContain("movedIds.size > MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES");
     expect(helperBlock).toContain("originalPositions[node.id]");
@@ -489,8 +539,10 @@ describe("graph inspector panel", () => {
     expect(helperBlock).toContain("routeTouchesExpandedBoxes");
     expect(helperBlock).toContain("movedIds.has(edge.sourceId) || movedIds.has(edge.targetId)");
     expect(scheduleBlock).toContain("routePointsNearOriginalMovedNodes");
+    expect(scheduleBlock).toContain("optimizationEdges");
     expect(scheduleBlock).toContain("const releasedEdgeIds");
     expect(scheduleBlock).toContain("forcedRerouteEdgeIds");
+    expect(scheduleBlock).toContain("optimizationEdges");
     expect(commitBlock).toContain("originalPositions");
     expect(commitBlock).toContain("scheduleMovedEdgeOptimization(");
     expect(finishBlock).toContain("activeDragging.originalPositions");
@@ -564,6 +616,14 @@ describe("graph inspector panel", () => {
     expect(dragMoveBlock).toContain("pendingNodeDragMoveRef.current");
     expect(dragMoveBlock).toContain("pushUndoSnapshot(true, false)");
     expect(dragMoveBlock).toContain("renderPreview = true");
+    expect(source).toContain("mousePositionTextRef");
+    expect(source).not.toContain("setMousePosition");
+    expect(source).not.toContain("const [mousePosition");
+    expect(source).toContain("mousePositionTextRef.current.textContent");
+    expect(source).toContain("connectPreviewDomRef");
+    expect(source).toContain("connectPreviewPathElementRef");
+    expect(source).toContain("connectDropHintElementRef");
+    expect(source).not.toContain("setConnectPreviewPoint");
     expect(finishBlock).toContain("flushPendingNodeDragMove(false)");
     expect(pointerBlock).toContain("scheduleNodeDragMove(point, event.ctrlKey, event.shiftKey)");
     expect(pointerBlock).not.toContain("setDragging((current) =>");
@@ -603,6 +663,33 @@ describe("graph inspector panel", () => {
     expect(source.slice(Math.max(0, topologyStaleStart - 400), topologyStaleStart + 300)).toContain("scheduleIdleWork");
   });
 
+  test("keeps drag boundary checks and route dirty marking local to affected connection lines", async () => {
+    const source = await readAppSource();
+    const boundaryStart = source.indexOf("const nodeMoveGeometryInsideCanvas");
+    const boundaryEnd = source.indexOf("const nearestBoundarySafeDelta", boundaryStart);
+    const boundaryBlock = source.slice(boundaryStart, boundaryEnd);
+    const dirtyStart = source.indexOf("const dirtyEdgeIdsForMovedLocalRoutes");
+    const dirtyEnd = source.indexOf("const selectedRoutedEdge", dirtyStart);
+    const dirtyBlock = source.slice(dirtyStart, dirtyEnd);
+    const commitStart = source.indexOf("const commitFastMovedGraph");
+    const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
+    const scheduleStart = source.indexOf("const scheduleMovedEdgeOptimization");
+    const scheduleEnd = source.indexOf("const commitFastMovedGraph", scheduleStart);
+    const scheduleBlock = source.slice(scheduleStart, scheduleEnd);
+
+    expect(boundaryBlock).toContain("const relevantNodeIds = new Set(nodeIds)");
+    expect(boundaryBlock).toContain("for (const edge of affectedEdgesForMove)");
+    expect(boundaryBlock).toContain("const nextNodes = nodes.flatMap");
+    expect(boundaryBlock).not.toContain("const nextNodes = nodes.map");
+    expect(dirtyBlock).toContain("Object.keys(originalRoutePoints)");
+    expect(dirtyBlock).not.toContain("for (const edge of edges)");
+    expect(commitBlock).toContain("markStoredRouteEdgesDirty(dirtyEdgeIdsForMovedLocalRoutes");
+    expect(commitBlock).not.toContain("markStoredRouteEdgesDirty(dirtyEdgeIdsAfterMove");
+    expect(scheduleBlock).toContain("for (const edge of optimizationEdges)");
+    expect(scheduleBlock).not.toContain("edgeReferenceDiffIds(expectedEdges, optimized.edges)");
+  });
+
   test("reuses the element tree while drag-only geometry changes do not alter tree content", async () => {
     const source = await readAppSource();
     const elementTreeStart = source.indexOf("const elementTreeSignature = useMemo");
@@ -614,6 +701,28 @@ describe("graph inspector panel", () => {
     expect(elementTreeBlock).toContain("elementTreeCacheRef.current.signature === elementTreeSignature");
     expect(elementTreeBlock).toContain("return elementTreeCacheRef.current.tree");
     expect(elementTreeBlock).toContain("buildElementTree(deferredElementTreeNodes, deferredElementTreeEdges, libraryTemplates)");
+  });
+
+  test("bounds right-panel tree and topology warning rendering for large models", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const treeStart = source.indexOf("const renderElementTreePanel = () =>");
+    const treeEnd = source.indexOf("const topologyWarningDisplayMessage", treeStart);
+    const treeBlock = source.slice(treeStart, treeEnd);
+    const validationStart = source.indexOf("{topologyErrors.length > 0 && (");
+    const validationEnd = source.indexOf("</section>", validationStart);
+    const validationBlock = source.slice(validationStart, validationEnd);
+
+    expect(source).toContain("ELEMENT_TREE_INITIAL_ITEM_LIMIT");
+    expect(source).toContain("ELEMENT_TREE_ITEM_LIMIT_STEP");
+    expect(treeBlock).toContain("const visibleItems = group.items.slice(0, visibleLimit)");
+    expect(treeBlock).toContain("className=\"element-tree-more\"");
+    expect(source).toContain("TOPOLOGY_WARNING_PAGE_SIZE");
+    expect(source).toContain("topologyWarningPageCount");
+    expect(source).toContain("normalizedTopologyWarningPage * TOPOLOGY_WARNING_PAGE_SIZE");
+    expect(validationBlock).toContain("validation-pagination");
+    expect(styles).toContain("content-visibility: auto");
+    expect(styles).toContain(".validation-pagination");
   });
 
   test("adds a topbar color palette entry and passes the mode into canvas coloring", async () => {

@@ -152,7 +152,6 @@ import {
   type ContainerTerminalRole,
   type TerminalType,
   type TopologyValidationError,
-  routeEdgesForRendering,
   routeEdgesForCachedStoredRendering,
   routeEdgesForIncrementalRendering,
   routeEdgesForStoredRendering,
@@ -446,6 +445,10 @@ const DEFAULT_CANVAS_BACKGROUND = "#f1f5f9";
 const MOVE_BOUNDARY_GUARD = 8;
 const MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES = 5;
 const ORIGINAL_POSITION_REROUTE_PADDING = 64;
+const MOVE_ROUTE_LOCAL_SEARCH_PADDING = 96;
+const ELEMENT_TREE_INITIAL_ITEM_LIMIT = 120;
+const ELEMENT_TREE_ITEM_LIMIT_STEP = 120;
+const TOPOLOGY_WARNING_PAGE_SIZE = 50;
 const DEFAULT_POWER_UNIT = "MW";
 const DEFAULT_VOLTAGE_UNIT = "kV";
 const DEFAULT_CURRENT_UNIT = "A";
@@ -757,6 +760,56 @@ const connectionEndpointSignature = (edges: Edge[]) =>
   edges
     .map((edge) => `${edge.id}:${edge.sourceId}:${edge.targetId}:${edge.sourceTerminalId ?? ""}:${edge.targetTerminalId ?? ""}`)
     .join("|");
+type RenderViewportBounds = {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+};
+const VIEWPORT_RENDER_PADDING_RATIO = 0.35;
+const VIEWPORT_RENDER_MIN_PADDING = 260;
+const expandViewBoxForRendering = (viewBox: { x: number; y: number; width: number; height: number }): RenderViewportBounds => {
+  const padding = Math.max(VIEWPORT_RENDER_MIN_PADDING, Math.max(viewBox.width, viewBox.height) * VIEWPORT_RENDER_PADDING_RATIO);
+  return {
+    left: viewBox.x - padding,
+    right: viewBox.x + viewBox.width + padding,
+    top: viewBox.y - padding,
+    bottom: viewBox.y + viewBox.height + padding
+  };
+};
+const boxesIntersect = (
+  first: RenderViewportBounds,
+  second: RenderViewportBounds
+) => first.left <= second.right && first.right >= second.left && first.top <= second.bottom && first.bottom >= second.top;
+const nodeIntersectsRenderViewport = (node: ModelNode, viewport: RenderViewportBounds) => {
+  const halfDiagonal = Math.hypot(node.size.width * getNodeScaleX(node), node.size.height * getNodeScaleY(node)) / 2 + 24;
+  return boxesIntersect(
+    {
+      left: node.position.x - halfDiagonal,
+      right: node.position.x + halfDiagonal,
+      top: node.position.y - halfDiagonal,
+      bottom: node.position.y + halfDiagonal
+    },
+    viewport
+  );
+};
+const routeIntersectsRenderViewport = (route: Pick<RoutedEdge, "points">, viewport: RenderViewportBounds) => {
+  if (route.points.length === 0) {
+    return false;
+  }
+  let left = route.points[0].x;
+  let right = left;
+  let top = route.points[0].y;
+  let bottom = top;
+  for (let index = 1; index < route.points.length; index += 1) {
+    const point = route.points[index];
+    left = Math.min(left, point.x);
+    right = Math.max(right, point.x);
+    top = Math.min(top, point.y);
+    bottom = Math.max(bottom, point.y);
+  }
+  return boxesIntersect({ left, right, top, bottom }, viewport);
+};
 const PARAM_LABELS: Record<string, string> = {
   name: "名称",
   schemeName: "所属方案",
@@ -2705,7 +2758,7 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
   const colorPalette = normalizeColorPalette(canvasSize.colorPalette ?? DEFAULT_COLOR_PALETTE);
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const edgeById = new Map(edges.map((edge) => [edge.id, edge]));
-  const edgeMarkup = routeEdgesForRendering(nodes, edges, canvasSize)
+  const edgeMarkup = routeEdgesForStoredRendering(nodes, edges, canvasSize)
     .map((route) => {
       const edge = edgeById.get(route.edgeId);
       const stroke = edge ? getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette) : "#334155";
@@ -2792,6 +2845,9 @@ export function App() {
   const lastMouseStatusRef = useRef<Point | null>(null);
   const pendingMouseStatusRef = useRef<Point | null>(null);
   const mouseStatusFrameRef = useRef<number | null>(null);
+  const connectPreviewPathElementRef = useRef<SVGPathElement | null>(null);
+  const connectDropHintElementRef = useRef<SVGGElement | null>(null);
+  const connectPreviewDomRef = useRef<{ path: string; targetPoint: Point | null }>({ path: "", targetPoint: null });
   const connectPreviewPointRef = useRef<Point | null>(null);
   const connectDropTargetPointRef = useRef<Point | null>(null);
   const connectDropTargetRef = useRef<ConnectTarget | null>(null);
@@ -2843,9 +2899,6 @@ export function App() {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string>("");
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
   const [connectSource, setConnectSource] = useState<{ nodeId: string; terminalId: string; point?: Point } | null>(null);
-  const [connectPreviewPoint, setConnectPreviewPoint] = useState<Point | null>(null);
-  const [connectDropTargetPoint, setConnectDropTargetPoint] = useState<Point | null>(null);
-  const [connectDropTarget, setConnectDropTarget] = useState<ConnectTarget | null>(null);
   const [connectDropReady, setConnectDropReady] = useState(false);
   const [dragging, setDragging] = useState<DraggingState | null>(null);
   const [rewiring, setRewiring] = useState<RewiringState>(null);
@@ -2883,6 +2936,7 @@ export function App() {
   const [containerParamViewId, setContainerParamViewId] = useState("container");
   const [expandedLibraryGroups, setExpandedLibraryGroups] = useState<LibraryGroup[]>([...DEFAULT_LIBRARY_GROUPS]);
   const [collapsedElementTreeGroups, setCollapsedElementTreeGroups] = useState<string[]>([]);
+  const [elementTreeItemLimits, setElementTreeItemLimits] = useState<Record<string, number>>({});
   const [customDeviceTemplates, setCustomDeviceTemplates] = useState<DeviceTemplate[]>(() => readCustomDeviceTemplates());
   const [customDeviceDialogOpen, setCustomDeviceDialogOpen] = useState(false);
   const [customDeviceDraft, setCustomDeviceDraft] = useState<CustomDeviceDraft>(() => createEmptyCustomDeviceDraft());
@@ -2897,6 +2951,7 @@ export function App() {
   const [layerAssignmentDialogOpen, setLayerAssignmentDialogOpen] = useState(false);
   const [layerAssignmentTargetId, setLayerAssignmentTargetId] = useState("");
   const [topologyErrors, setTopologyErrors] = useState<TopologyValidationError[]>([]);
+  const [topologyWarningPage, setTopologyWarningPage] = useState(0);
   const [topology, setTopology] = useState<Topology>(EMPTY_TOPOLOGY);
   const [topologyStatus, setTopologyStatus] = useState<TopologyRunStatus>(INITIAL_TOPOLOGY_STATUS);
   const [routeRenderingReady, setRouteRenderingReady] = useState(false);
@@ -2907,7 +2962,7 @@ export function App() {
   const [colorPaletteTab, setColorPaletteTab] = useState<ColorDisplayMode>(() => readColorDisplayMode());
   const [voltageColorVisibility, setVoltageColorVisibility] = useState<VoltageColorVisibility>("all");
   const [pendingUnsavedAction, setPendingUnsavedAction] = useState<UnsavedChangeAction | null>(null);
-  const [mousePosition, setMousePosition] = useState<Point | null>(null);
+  const mousePositionTextRef = useRef<HTMLSpanElement | null>(null);
   const [operationLog, setOperationLog] = useState("就绪");
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedSchemeId, setSelectedSchemeId] = useState<string>("");
@@ -3138,10 +3193,11 @@ export function App() {
   const selectedDefinitionTerminalAssociations = selectedDefinitionTemplate
     ? describeContainerTerminalAssociations(selectedDefinitionTemplate)
     : [];
-  const selectedNodeTemplate = selectedNode ? libraryTemplateByKind.get(selectedNode.kind) : undefined;
+  const deviceParamPanelActive = inspectorTab === "device";
+  const selectedNodeTemplate = deviceParamPanelActive && selectedNode ? libraryTemplateByKind.get(selectedNode.kind) : undefined;
   const selectedContainerParameterViews = useMemo(
-    () => (selectedNode ? buildContainerDeviceParameterViews(selectedNode, selectedNodeTemplate) : []),
-    [selectedNode, selectedNodeTemplate]
+    () => (deviceParamPanelActive && selectedNode ? buildContainerDeviceParameterViews(selectedNode, selectedNodeTemplate) : []),
+    [deviceParamPanelActive, selectedNode, selectedNodeTemplate]
   );
 
   useEffect(() => {
@@ -3201,7 +3257,12 @@ export function App() {
   const selectedSchemeRecord = schemes.find((scheme) => scheme.id === selectedSchemeId);
   const selectedNodeCount = activeSelectedNodeIds.length;
   const selectedCount = selectedNodeCount + activeSelectedEdgeIds.length;
-  const visibleTopologyErrors = topologyErrors.slice(0, 100);
+  const topologyWarningPageCount = Math.max(1, Math.ceil(topologyErrors.length / TOPOLOGY_WARNING_PAGE_SIZE));
+  const normalizedTopologyWarningPage = Math.min(topologyWarningPage, topologyWarningPageCount - 1);
+  const visibleTopologyErrors = topologyErrors.slice(
+    normalizedTopologyWarningPage * TOPOLOGY_WARNING_PAGE_SIZE,
+    normalizedTopologyWarningPage * TOPOLOGY_WARNING_PAGE_SIZE + TOPOLOGY_WARNING_PAGE_SIZE
+  );
   const hiddenTopologyErrorCount = Math.max(0, topologyErrors.length - visibleTopologyErrors.length);
   const draggingNodeIdSet = useMemo(() => new Set(dragging?.nodeIds ?? []), [dragging?.nodeIds]);
   const deferredElementTreeNodes = useDeferredValue(visibleNodes);
@@ -3277,21 +3338,27 @@ export function App() {
     }
     const existingKeys = new Set(elementTree.map((group) => group.typeKey));
     setCollapsedElementTreeGroups((current) => current.filter((key) => existingKeys.has(key)));
+    setElementTreeItemLimits((current) => {
+      const next: Record<string, number> = {};
+      for (const group of elementTree) {
+        if (current[group.typeKey]) {
+          next[group.typeKey] = current[group.typeKey];
+        }
+      }
+      const changed = Object.keys(current).length !== Object.keys(next).length;
+      return changed ? next : current;
+    });
   }, [elementTree, graphTreePanelActive]);
+
+  useEffect(() => {
+    setTopologyWarningPage((current) => Math.min(current, Math.max(0, Math.ceil(topologyErrors.length / TOPOLOGY_WARNING_PAGE_SIZE) - 1)));
+  }, [topologyErrors.length]);
 
   const canvasBounds = useMemo<CanvasBounds>(() => ({ width: canvasWidth, height: canvasHeight }), [canvasHeight, canvasWidth]);
   const leftPanelVisible = isSidePanelVisible(leftPanelMode, leftPanelAutoVisible);
   const rightPanelVisible = isSidePanelVisible(rightPanelMode, rightPanelAutoVisible);
-  const nodeImageById = useMemo(
-    () => new Map(visibleNodes.map((node) => [node.id, resolveNodeImage(node, imageAssets)])),
-    [imageAssets, visibleNodes]
-  );
-  const nodeForegroundImageById = useMemo(
-    () => new Map(visibleNodes.map((node) => [node.id, resolveNodeForegroundImage(node, imageAssets)])),
-    [imageAssets, visibleNodes]
-  );
-  const nodeImage = (node: ModelNode) => nodeImageById.get(node.id) ?? "";
-  const nodeForegroundImage = (node: ModelNode) => nodeForegroundImageById.get(node.id) ?? "";
+  const nodeImage = (node: ModelNode) => resolveNodeImage(node, imageAssets);
+  const nodeForegroundImage = (node: ModelNode) => resolveNodeForegroundImage(node, imageAssets);
   const canvasBackgroundImageUrl = resolveProjectImage(
     { canvasBackgroundImage, canvasBackgroundImageAssetId },
     imageAssets
@@ -3301,17 +3368,22 @@ export function App() {
     setCanvasSizeDraft({ width: String(canvasWidth), height: String(canvasHeight) });
   }, [canvasHeight, canvasWidth]);
 
-  const connectPreviewPath = useMemo(() => {
-    const endPoint = connectDropTargetPoint ?? connectPreviewPoint;
-    if (!connectSource || !endPoint) {
+  const buildConnectPreviewPath = (
+    source: typeof connectSource,
+    point: Point | null,
+    targetPoint: Point | null = null,
+    target: ConnectTarget | null = null
+  ) => {
+    const endPoint = targetPoint ?? point;
+    if (!source || !endPoint) {
       return "";
     }
-    const sourceNode = visibleNodeById.get(connectSource.nodeId);
+    const sourceNode = visibleNodeById.get(source.nodeId);
     if (!sourceNode) {
       return "";
     }
-    const sourcePoint = connectSource.point ?? getModelEdgeEndpointPoint(sourceNode, undefined, connectSource.terminalId);
-    const previewTarget = connectDropTarget;
+    const sourcePoint = source.point ?? getModelEdgeEndpointPoint(sourceNode, undefined, source.terminalId);
+    const previewTarget = target;
     const previewNodes = previewTarget?.node && !visibleNodeById.has(previewTarget.node.id)
       ? [...visibleNodes, previewTarget.node]
       : visibleNodes;
@@ -3321,7 +3393,7 @@ export function App() {
         id: "connect-preview",
         sourceId: sourceNode.id,
         targetId: previewTarget?.node.id ?? "floating-connect-preview-target",
-        sourceTerminalId: connectSource.terminalId,
+        sourceTerminalId: source.terminalId,
         targetTerminalId: previewTarget?.terminalId ?? "t1",
         sourcePoint,
         targetPoint: previewTarget
@@ -3333,7 +3405,7 @@ export function App() {
       canvasBounds
     )[0];
     return route?.path ?? "";
-  }, [canvasBounds, connectDropTarget, connectDropTargetPoint, connectPreviewPoint, connectSource, nodeById, visibleNodeById, visibleNodes]);
+  };
   const connectPreviewColor = useMemo(() => {
     if (!connectSource) {
       return "";
@@ -3415,6 +3487,39 @@ export function App() {
     }
     return selectedRoutes.length > 0 ? [...regularRoutes, ...selectedRoutes] : routedEdges;
   }, [activeSelectedEdgeSet, routedEdges]);
+  const renderViewportBounds = useMemo(() => expandViewBoxForRendering(viewBox), [viewBox]);
+  const viewportRoutedEdges = useMemo(
+    () =>
+      renderedRoutedEdges.filter((route) =>
+        activeSelectedEdgeSet.has(route.edgeId) || routeIntersectsRenderViewport(route, renderViewportBounds)
+      ),
+    [activeSelectedEdgeSet, renderedRoutedEdges, renderViewportBounds]
+  );
+  const viewportNodeIdSet = useMemo(() => {
+    const ids = new Set<string>();
+    for (const node of visibleNodes) {
+      if (
+        selectedNodeIdSet.has(node.id) ||
+        draggingNodeIdSet.has(node.id) ||
+        connectSource?.nodeId === node.id ||
+        nodeIntersectsRenderViewport(node, renderViewportBounds)
+      ) {
+        ids.add(node.id);
+      }
+    }
+    for (const route of viewportRoutedEdges) {
+      const edge = edgeById.get(route.edgeId);
+      if (edge) {
+        ids.add(edge.sourceId);
+        ids.add(edge.targetId);
+      }
+    }
+    return ids;
+  }, [connectSource?.nodeId, draggingNodeIdSet, edgeById, renderViewportBounds, selectedNodeIdSet, viewportRoutedEdges, visibleNodes]);
+  const viewportNodes = useMemo(
+    () => visibleNodes.filter((node) => viewportNodeIdSet.has(node.id)),
+    [viewportNodeIdSet, visibleNodes]
+  );
   const activeLayerRoutedEdges = useMemo(
     () => routedEdges.filter((route) => activeLayerEdgeIdSet.has(route.edgeId)),
     [activeLayerEdgeIdSet, routedEdges]
@@ -3468,6 +3573,16 @@ export function App() {
       }
     }
     for (const edgeId of extraEdgeIds) {
+      dirty.add(edgeId);
+    }
+    return dirty;
+  };
+  const dirtyEdgeIdsForMovedLocalRoutes = (
+    selectedEdgeIds: Iterable<string> = [],
+    originalRoutePoints: DraggingState["originalRoutePoints"] = {}
+  ) => {
+    const dirty = new Set<string>(Object.keys(originalRoutePoints));
+    for (const edgeId of selectedEdgeIds) {
       dirty.add(edgeId);
     }
     return dirty;
@@ -3647,13 +3762,11 @@ export function App() {
       : targetNode?.terminals.find((terminal) => terminal.id === nodeTerminalSnapTarget.targetTerminalId)?.type;
     return terminalType ? ({ "--connection-color": terminalColor(terminalType, colorPalette) } as CSSProperties) : undefined;
   }, [colorPalette, dragPreviewNodeById, nodeTerminalSnapTarget]);
-  const activeDropHintPoint = connectDropTargetPoint ?? rewiring?.dropTargetPoint ?? nodeTerminalSnapTarget?.point ?? null;
+  const activeDropHintPoint = rewiring?.dropTargetPoint ?? nodeTerminalSnapTarget?.point ?? null;
   const activeDropReady = connectDropReady || Boolean(rewiring?.dropTargetPoint) || Boolean(nodeTerminalSnapTarget);
-  const activeDropHintStyle = connectDropTargetPoint
-    ? (connectPreviewColor ? ({ "--connection-color": connectPreviewColor } as CSSProperties) : undefined)
-    : rewiring?.dropTargetPoint
-      ? connectionLineStyle(rewiring.edgeId)
-      : nodeTerminalSnapHintStyle;
+  const activeDropHintStyle = rewiring?.dropTargetPoint
+    ? connectionLineStyle(rewiring.edgeId)
+    : nodeTerminalSnapHintStyle;
   const dragPreviewEdgeRoutes = useMemo(() => {
     if (!dragging || !draggingDelta) {
       return [];
@@ -4016,9 +4129,19 @@ export function App() {
   }, [saveRequired]);
 
   useEffect(() => {
-    connectPreviewPointRef.current = connectPreviewPoint;
     connectDropReadyRef.current = connectDropReady;
-  }, [connectDropReady, connectPreviewPoint]);
+  }, [connectDropReady]);
+
+  useEffect(() => {
+    if (!connectSource || !connectPreviewPointRef.current) {
+      setConnectPreviewDom("", null);
+      return;
+    }
+    setConnectPreviewDom(
+      buildConnectPreviewPath(connectSource, connectPreviewPointRef.current, connectDropTargetPointRef.current, connectDropTargetRef.current),
+      connectDropTargetPointRef.current
+    );
+  });
 
   useEffect(() => {
     draggingRef.current = dragging;
@@ -4761,6 +4884,71 @@ export function App() {
     return false;
   };
 
+  const boundsForNodeSet = (
+    sourceNodes: ModelNode[],
+    movedIds: Set<string>,
+    positions?: Record<string, Point>,
+    padding = 0
+  ) => {
+    let bounds: { left: number; right: number; top: number; bottom: number } | null = null;
+    for (const node of sourceNodes) {
+      if (!movedIds.has(node.id)) {
+        continue;
+      }
+      const position = positions?.[node.id] ?? node.position;
+      const halfWidth = Math.abs(node.size.width * getNodeScaleX(node)) / 2;
+      const halfHeight = Math.abs(node.size.height * getNodeScaleY(node)) / 2;
+      const nodeBounds = expandRouteBox(
+        {
+          left: position.x - halfWidth,
+          right: position.x + halfWidth,
+          top: position.y - halfHeight,
+          bottom: position.y + halfHeight
+        },
+        padding
+      );
+      bounds = bounds
+        ? {
+            left: Math.min(bounds.left, nodeBounds.left),
+            right: Math.max(bounds.right, nodeBounds.right),
+            top: Math.min(bounds.top, nodeBounds.top),
+            bottom: Math.max(bounds.bottom, nodeBounds.bottom)
+          }
+        : nodeBounds;
+    }
+    return bounds;
+  };
+
+  const localRouteOptimizationEdges = (
+    previousNodes: ModelNode[],
+    nextNodes: ModelNode[],
+    candidateEdges: Edge[],
+    movedNodeIds: string[],
+    selectedEdgeIds: Set<string>,
+    originalPositions?: Record<string, Point>
+  ) => {
+    const movedIds = new Set(movedNodeIds);
+    if (movedIds.size === 0) {
+      return [];
+    }
+    const currentBounds = boundsForNodeSet(nextNodes, movedIds, undefined, MOVE_ROUTE_LOCAL_SEARCH_PADDING);
+    const originalBounds = boundsForNodeSet(previousNodes, movedIds, originalPositions, MOVE_ROUTE_LOCAL_SEARCH_PADDING);
+    return candidateEdges.filter((edge) => {
+      if (movedIds.has(edge.sourceId) || movedIds.has(edge.targetId) || selectedEdgeIds.has(edge.id)) {
+        return true;
+      }
+      const route = routedEdgeById.get(edge.id);
+      if (!route) {
+        return false;
+      }
+      const routeBounds = routePointBounds(route.points, 8);
+      return Boolean(
+        (currentBounds && boxesOverlap(routeBounds, currentBounds)) ||
+        (originalBounds && boxesOverlap(routeBounds, originalBounds))
+      );
+    });
+  };
+
   const routePointsForMovedNodeBlockers = (
     nextNodes: ModelNode[],
     candidateEdges: Edge[],
@@ -5032,18 +5220,19 @@ export function App() {
     originalRoutePoints: DraggingState["originalRoutePoints"],
     selectedEdgeIds = new Set<string>(),
     precomputedBlockedRoutePoints: DraggingState["originalRoutePoints"] = {},
-    forcedRerouteEdgeIds = new Set<string>()
+    forcedRerouteEdgeIds = new Set<string>(),
+    routeSearchEdges: Edge[] = candidateEdges
   ) => {
     const hasPrecomputedBlockers = Object.keys(precomputedBlockedRoutePoints).length > 0;
     const routePointsForReroute = hasPrecomputedBlockers
       ? precomputedBlockedRoutePoints
       : routePointsForMovedNodeBlockers(
           nextNodes,
-          candidateEdges,
+          routeSearchEdges,
           movedNodeIds,
           originalRoutePoints
         );
-    const rebuiltAdjustedEdges = hasPrecomputedBlockers
+    const rebuiltAdjustedEdges = hasPrecomputedBlockers && forcedRerouteEdgeIds.size === 0
       ? candidateEdges
       : rebuildSingleAffectedConnectionRoute(
           nextNodes,
@@ -5051,6 +5240,12 @@ export function App() {
           movedNodeIds,
           selectedEdgeIds
         );
+    if (Object.keys(routePointsForReroute).length === 0 && forcedRerouteEdgeIds.size === 0) {
+      return {
+        routePoints: routePointsForReroute,
+        edges: rebuiltAdjustedEdges
+      };
+    }
     return {
       routePoints: routePointsForReroute,
       edges: rerouteEdgesAroundMovedNodes(
@@ -5096,11 +5291,27 @@ export function App() {
     originalPositions?: Record<string, Point>
   ) => {
     deferredMoveOptimizationCancelRef.current?.();
-    const blockedRoutePoints = routePointsForMovedNodeBlockers(nextNodes, fastEdges, movedNodeIds, {});
+    if (movedNodeIds.length > MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES) {
+      deferredMoveOptimizationCancelRef.current = null;
+      return;
+    }
+    const optimizationEdges = localRouteOptimizationEdges(
+      previousNodes,
+      nextNodes,
+      fastEdges,
+      movedNodeIds,
+      selectedEdgeIds,
+      originalPositions
+    );
+    if (optimizationEdges.length === 0) {
+      deferredMoveOptimizationCancelRef.current = null;
+      return;
+    }
+    const blockedRoutePoints = routePointsForMovedNodeBlockers(nextNodes, optimizationEdges, movedNodeIds, {});
     const blockedEdgeIds = new Set(Object.keys(blockedRoutePoints));
     const routePointsForOptimization = routePointsNearOriginalMovedNodes(
       previousNodes,
-      fastEdges,
+      optimizationEdges,
       movedNodeIds,
       originalPositions,
       blockedRoutePoints
@@ -5110,7 +5321,7 @@ export function App() {
     for (const edgeId of releasedEdgeIds) {
       blockedEdgeIds.add(edgeId);
     }
-    if (!shouldRunDeferredMoveOptimization(fastEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)) {
+    if (!shouldRunDeferredMoveOptimization(optimizationEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)) {
       deferredMoveOptimizationCancelRef.current = null;
       return;
     }
@@ -5128,12 +5339,19 @@ export function App() {
         originalRoutePoints,
         selectedEdgeIds,
         routePointsForOptimization,
-        forcedRerouteEdgeIds
+        forcedRerouteEdgeIds,
+        optimizationEdges
       );
       if (optimized.edges === expectedEdges) {
         return;
       }
-      const dirtyOptimizedEdgeIds = edgeReferenceDiffIds(expectedEdges, optimized.edges);
+      const optimizedEdgeById = new Map(optimized.edges.map((edge) => [edge.id, edge]));
+      const dirtyOptimizedEdgeIds = new Set<string>();
+      for (const edge of optimizationEdges) {
+        if (optimizedEdgeById.get(edge.id) !== edge) {
+          dirtyOptimizedEdgeIds.add(edge.id);
+        }
+      }
       for (const edgeId of Object.keys(optimized.routePoints)) {
         dirtyOptimizedEdgeIds.add(edgeId);
       }
@@ -5151,7 +5369,7 @@ export function App() {
     originalPositions?: Record<string, Point>,
     previousNodes: ModelNode[] = nodes
   ) => {
-    markStoredRouteEdgesDirty(dirtyEdgeIdsAfterMove(edges, nextEdges, movedNodeIds, selectedEdgeIds));
+    markStoredRouteEdgesDirty(dirtyEdgeIdsForMovedLocalRoutes(selectedEdgeIds, originalRoutePoints));
     setNodes(nextNodes);
     if (nextEdges !== edges) {
       setEdges(nextEdges);
@@ -5192,27 +5410,63 @@ export function App() {
         return;
       }
       lastMouseStatusRef.current = next;
-      setMousePosition(next);
+      if (mousePositionTextRef.current) {
+        mousePositionTextRef.current.textContent = `X:${next.x} Y:${next.y}`;
+      }
     });
   };
-  const applyConnectPreviewState = (point: Point | null, ready: boolean, targetPoint: Point | null = null, target: ConnectTarget | null = null) => {
+  const flushConnectPreviewDom = () => {
+    const { path, targetPoint } = connectPreviewDomRef.current;
+    const previewPath = connectPreviewPathElementRef.current;
+    if (previewPath) {
+      if (path) {
+        previewPath.setAttribute("d", path);
+        previewPath.style.display = "";
+      } else {
+        previewPath.removeAttribute("d");
+        previewPath.style.display = "none";
+      }
+    }
+    const dropHint = connectDropHintElementRef.current;
+    if (dropHint) {
+      if (targetPoint) {
+        dropHint.setAttribute("transform", `translate(${Math.round(targetPoint.x)} ${Math.round(targetPoint.y)})`);
+        dropHint.style.display = "";
+      } else {
+        dropHint.style.display = "none";
+      }
+    }
+  };
+  const setConnectPreviewDom = (path: string, targetPoint: Point | null) => {
+    const previous = connectPreviewDomRef.current;
+    if (previous.path === path && sameOptionalPoint(previous.targetPoint ?? undefined, targetPoint ?? undefined)) {
+      return;
+    }
+    connectPreviewDomRef.current = { path, targetPoint };
+    flushConnectPreviewDom();
+  };
+  const applyConnectPreviewState = (
+    point: Point | null,
+    ready: boolean,
+    targetPoint: Point | null = null,
+    target: ConnectTarget | null = null,
+    sourceOverride: typeof connectSource = connectSource
+  ) => {
     const previousPoint = connectPreviewPointRef.current;
     if (!sameOptionalPoint(previousPoint ?? undefined, point ?? undefined)) {
       connectPreviewPointRef.current = point;
-      setConnectPreviewPoint(point);
     }
     const previousTargetPoint = connectDropTargetPointRef.current;
     const nextTargetPoint = ready ? targetPoint : null;
     if (!sameOptionalPoint(previousTargetPoint ?? undefined, nextTargetPoint ?? undefined)) {
       connectDropTargetPointRef.current = nextTargetPoint;
-      setConnectDropTargetPoint(nextTargetPoint);
     }
     const previousTarget = connectDropTargetRef.current;
     const nextTarget = ready ? target : null;
     if (!sameConnectTarget(previousTarget ?? undefined, nextTarget)) {
       connectDropTargetRef.current = nextTarget;
-      setConnectDropTarget(nextTarget);
     }
+    setConnectPreviewDom(buildConnectPreviewPath(sourceOverride, point, nextTargetPoint, nextTarget), nextTargetPoint);
     if (connectDropReadyRef.current !== ready) {
       connectDropReadyRef.current = ready;
       setConnectDropReady(ready);
@@ -5283,11 +5537,21 @@ export function App() {
     const movedNodeIds = new Set(nodeIds);
     const preserveRouteEdgeIds = new Set(edgeIds);
     const selectedEdgeIds = new Set(edgeIds);
-    const nextNodes = nodes.map((node) => {
+    const relevantNodeIds = new Set(nodeIds);
+    for (const edge of affectedEdgesForMove) {
+      relevantNodeIds.add(edge.sourceId);
+      relevantNodeIds.add(edge.targetId);
+    }
+    const nextNodes = nodes.flatMap((node) => {
+      if (!relevantNodeIds.has(node.id)) {
+        return [];
+      }
       const originalPosition = originalPositions[node.id];
-      return movedNodeIds.has(node.id) && originalPosition
-        ? { ...node, position: clampNodeToCanvas(node, { x: originalPosition.x + delta.x, y: originalPosition.y + delta.y }) }
-        : node;
+      return [
+        movedNodeIds.has(node.id) && originalPosition
+          ? { ...node, position: clampNodeToCanvas(node, { x: originalPosition.x + delta.x, y: originalPosition.y + delta.y }) }
+          : node
+      ];
     });
     const movedNodes = nextNodes.filter((node) => movedNodeIds.has(node.id));
     const deltasByNode = Object.fromEntries(nodeIds.map((id) => [id, delta]));
@@ -5746,7 +6010,7 @@ export function App() {
     const nextHeight = draft.height.trim() === "" ? canvasHeight : Number(draft.height);
     const requestedWidth = clampCanvasDimension(nextWidth, MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH, canvasWidth);
     const requestedHeight = clampCanvasDimension(nextHeight, MIN_CANVAS_HEIGHT, MAX_CANVAS_HEIGHT, canvasHeight);
-    const requestedRoutes = routeEdgesForRendering(nodes, edges, { width: requestedWidth, height: requestedHeight });
+    const requestedRoutes = routeEdgesForStoredRendering(nodes, edges, { width: requestedWidth, height: requestedHeight });
     const currentContentSize = calculateModelContentSize(nodes, edges, routedEdges);
     const requestedContentSize = calculateModelContentSize(nodes, edges, requestedRoutes);
     const contentSize = {
@@ -6208,7 +6472,7 @@ export function App() {
     return true;
   };
 
-  const finishConnectToTarget = (target: NonNullable<ReturnType<typeof findConnectTargetAtPoint>>, endpointPoint = connectPreviewPoint) => {
+  const finishConnectToTarget = (target: NonNullable<ReturnType<typeof findConnectTargetAtPoint>>, endpointPoint = connectPreviewPointRef.current) => {
     if (!connectSource) {
       return false;
     }
@@ -7837,8 +8101,9 @@ export function App() {
       return;
     }
     const sourcePoint = point ?? getModelEdgeEndpointPoint(node, undefined, terminalId);
-    setConnectSource({ nodeId: node.id, terminalId, point });
-    applyConnectPreviewState(sourcePoint, false);
+    const nextConnectSource: NonNullable<typeof connectSource> = point ? { nodeId: node.id, terminalId, point } : { nodeId: node.id, terminalId };
+    setConnectSource(nextConnectSource);
+    applyConnectPreviewState(sourcePoint, false, null, null, nextConnectSource);
     setMode("connect");
     setSelectedNodeIds([]);
     setSelectedEdgeId("");
@@ -8001,7 +8266,7 @@ export function App() {
       sourceTerminalId: connectSource.terminalId,
       sourcePoint: connectSource.point,
       targetTerminalId: terminalId,
-      targetPoint: isBusNode(node) ? busAnchorFromPoint(node, connectPreviewPoint ?? busPoint ?? getTerminalPoint(node, terminalId)) : busPoint
+      targetPoint: isBusNode(node) ? busAnchorFromPoint(node, connectPreviewPointRef.current ?? busPoint ?? getTerminalPoint(node, terminalId)) : busPoint
     };
     commitNewConnectionEdge(newEdge, sourceNode.name, node.name);
   };
@@ -8689,6 +8954,9 @@ export function App() {
       ) : (
         elementTree.map((group) => {
           const expanded = !collapsedElementTreeGroups.includes(group.typeKey);
+          const visibleLimit = elementTreeItemLimits[group.typeKey] ?? ELEMENT_TREE_INITIAL_ITEM_LIMIT;
+          const visibleItems = group.items.slice(0, visibleLimit);
+          const hiddenItemCount = Math.max(0, group.items.length - visibleItems.length);
           return (
             <section className="element-tree-group" key={group.typeKey}>
               <button
@@ -8706,7 +8974,7 @@ export function App() {
               </button>
               {expanded && (
                 <div className="element-tree-items" role="group">
-                  {group.items.map((item) => {
+                  {visibleItems.map((item) => {
                     const editable = item.kind === "node" ? activeLayerNodeIdSet.has(item.id) : activeLayerEdgeIdSet.has(item.id);
                     const selected = editable && (item.kind === "node" ? selectedNodeIdSet.has(item.id) : activeSelectedEdgeSet.has(item.id));
                     const selectTreeItem = () => {
@@ -8810,6 +9078,20 @@ export function App() {
                       </div>
                     );
                   })}
+                  {hiddenItemCount > 0 && (
+                    <button
+                      type="button"
+                      className="element-tree-more"
+                      onClick={() =>
+                        setElementTreeItemLimits((current) => ({
+                          ...current,
+                          [group.typeKey]: visibleLimit + ELEMENT_TREE_ITEM_LIMIT_STEP
+                        }))
+                      }
+                    >
+                      显示更多（还有 {hiddenItemCount} 个）
+                    </button>
+                  )}
                 </div>
               )}
             </section>
@@ -8829,6 +9111,7 @@ export function App() {
     ? topologyErrors.slice(0, 5).map((error, index) => `${index + 1}. ${topologyWarningDisplayMessage(error.message)}`).join("\n")
     : "当前没有拓扑告警。";
   const currentZoomPercent = viewBoxZoomPercent(viewBox, canvasBounds);
+  const connectPreviewDom = connectPreviewDomRef.current;
   const layerAssignmentUnchanged = activeSelectedNodeIds.length > 0 && activeSelectedNodeIds.every(
     (nodeId) => (nodeById.get(nodeId)?.layerId ?? DEFAULT_MODEL_LAYER_ID) === layerAssignmentTargetId
   );
@@ -9194,7 +9477,7 @@ export function App() {
                 </g>
               );
             })}
-            {renderedRoutedEdges.map((route) => {
+            {viewportRoutedEdges.map((route) => {
               const edge = edgeById.get(route.edgeId);
               if (!edge) return null;
               if (
@@ -9346,7 +9629,7 @@ export function App() {
                 style={connectionLineStyle(rewiringPreviewRoute.edgeId)}
               />
             )}
-            {visibleNodes.map((node) => {
+            {viewportNodes.map((node) => {
               const selected = selectedNodeIdSet.has(node.id);
               const editable = activeLayerNodeIdSet.has(node.id);
               const isStorageBus = node.kind === "hydrogen-tank" || node.kind === "thermal-storage-tank";
@@ -9590,12 +9873,41 @@ export function App() {
             {terminalPressPreviewEdgeRoutes.map((route) => (
               <path key={`terminal-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
             ))}
-            {connectPreviewPath && (
+            {connectSource && (
               <path
-                d={connectPreviewPath}
+                ref={(element) => {
+                  connectPreviewPathElementRef.current = element;
+                  if (element) {
+                    flushConnectPreviewDom();
+                  }
+                }}
+                d={connectPreviewDom.path}
                 className="connection-preview-line"
                 style={connectPreviewColor ? ({ "--connection-color": connectPreviewColor } as CSSProperties) : undefined}
               />
+            )}
+            {connectSource && (
+              <g
+                ref={(element) => {
+                  connectDropHintElementRef.current = element;
+                  if (element) {
+                    flushConnectPreviewDom();
+                  }
+                }}
+                className="connect-drop-hint"
+                transform={
+                  connectPreviewDom.targetPoint
+                    ? `translate(${Math.round(connectPreviewDom.targetPoint.x)} ${Math.round(connectPreviewDom.targetPoint.y)})`
+                    : undefined
+                }
+                style={{
+                  ...(connectPreviewColor ? ({ "--connection-color": connectPreviewColor } as CSSProperties) : {}),
+                  display: connectPreviewDom.targetPoint ? undefined : "none"
+                }}
+              >
+                <circle className="connect-drop-hint-ring" cx="0" cy="0" r="16" />
+                <circle className="connect-drop-hint-core" cx="0" cy="0" r="5" />
+              </g>
             )}
             {activeDropHintPoint && (
               <g
@@ -9735,7 +10047,7 @@ export function App() {
             onPointerDown={startStatusbarResize}
           />
           <span className="status-pill">
-            坐标 {mousePosition ? `X:${mousePosition.x} Y:${mousePosition.y}` : "X:- Y:-"}
+            坐标 <span ref={mousePositionTextRef}>X:- Y:-</span>
           </span>
           <span className="status-pill" title={`当前视图缩放比 ${currentZoomPercent}%`}>
             缩放 {currentZoomPercent}%
@@ -10310,10 +10622,31 @@ export function App() {
                   <span>{topologyWarningDisplayMessage(error.message)}</span>
                 </button>
               ))}
-              {hiddenTopologyErrorCount > 0 && (
-                <p className="validation-more">还有 {hiddenTopologyErrorCount} 条告警未显示，请先处理已显示告警或重新拓扑。</p>
-              )}
             </div>
+            {topologyErrors.length > TOPOLOGY_WARNING_PAGE_SIZE && (
+              <div className="validation-pagination">
+                <button
+                  type="button"
+                  onClick={() => setTopologyWarningPage((current) => Math.max(0, current - 1))}
+                  disabled={normalizedTopologyWarningPage === 0}
+                >
+                  上一页
+                </button>
+                <span>
+                  {normalizedTopologyWarningPage + 1} / {topologyWarningPageCount}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTopologyWarningPage((current) => Math.min(topologyWarningPageCount - 1, current + 1))}
+                  disabled={normalizedTopologyWarningPage >= topologyWarningPageCount - 1}
+                >
+                  下一页
+                </button>
+              </div>
+            )}
+            {hiddenTopologyErrorCount > 0 && (
+              <p className="validation-more">每页显示 {TOPOLOGY_WARNING_PAGE_SIZE} 条告警，请分页处理或重新拓扑。</p>
+            )}
           </section>
         )}
       </aside>

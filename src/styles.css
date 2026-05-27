@@ -2561,6 +2561,8 @@ button:disabled {
   color: #334155;
   background: transparent;
   text-align: left;
+  content-visibility: auto;
+  contain-intrinsic-size: 36px;
 }
 
 .element-tree-item span {
@@ -2704,6 +2706,24 @@ button:disabled {
   border-color: rgba(255, 255, 255, 0.42);
 }
 
+.element-tree-more {
+  min-height: 30px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 8px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.element-tree-more:hover,
+.element-tree-more:focus-visible {
+  background: #dbeafe;
+  outline: none;
+}
+
 .param-table {
   width: 100%;
   border-collapse: collapse;
@@ -2833,6 +2853,7 @@ button:disabled {
   position: relative;
   flex: 0 0 auto;
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   gap: 8px;
   height: var(--validation-panel-height);
   min-height: 0;
@@ -2913,6 +2934,38 @@ button:disabled {
 .validation-list span {
   font-size: 12px;
   line-height: 1.4;
+}
+
+.validation-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 30px;
+}
+
+.validation-pagination button {
+  min-height: 28px;
+  border: 1px solid #fecaca;
+  border-radius: 7px;
+  padding: 0 9px;
+  color: #991b1b;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.validation-pagination button:disabled {
+  color: #fca5a5;
+  cursor: not-allowed;
+}
+
+.validation-pagination span {
+  min-width: 48px;
+  color: #991b1b;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
 }
 
 .validation-more {
