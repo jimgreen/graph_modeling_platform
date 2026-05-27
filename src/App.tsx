@@ -94,7 +94,8 @@ import {
   getTemplateParameterDefinitions,
   getOverlappingTerminalGroups,
   getRouteEndpointNormal,
-  getRouteBlockingCandidateNodes,
+  getRouteBlockingCandidates,
+  getRouteBlockingCandidateNodesFromBoxes,
   getTerminalBusContactGroups,
   getTerminalPoint,
   normalizeDeviceIndexCounters,
@@ -714,6 +715,10 @@ const elementTreeCacheSignature = (
     .join("|");
   return `${templateSignature}#${nodeSignature}#${edgeSignature}`;
 };
+const connectionEndpointSignature = (edges: Edge[]) =>
+  edges
+    .map((edge) => `${edge.id}:${edge.sourceId}:${edge.targetId}:${edge.sourceTerminalId ?? ""}:${edge.targetTerminalId ?? ""}`)
+    .join("|");
 const PARAM_LABELS: Record<string, string> = {
   name: "名称",
   schemeName: "所属方案",
@@ -2700,6 +2705,7 @@ export function App() {
   const latestNodesRef = useRef<ModelNode[]>([]);
   const latestEdgesRef = useRef<Edge[]>([]);
   const deferredMoveOptimizationCancelRef = useRef<(() => void) | null>(null);
+  const lastBusTerminalSyncSignatureRef = useRef("");
   const skipNextTopologyStaleRef = useRef(false);
   const skipCanvasSizeBlurCommitRef = useRef(false);
   const edgePointerBendInsertRef = useRef<{ edgeId: string; clientX: number; clientY: number; at: number } | null>(null);
@@ -3014,20 +3020,27 @@ export function App() {
     ) {
       return;
     }
+    const endpointSignature = connectionEndpointSignature(edges);
+    if (lastBusTerminalSyncSignatureRef.current === endpointSignature) {
+      return;
+    }
+    lastBusTerminalSyncSignatureRef.current = endpointSignature;
     return scheduleIdleWork(() => {
-      const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
-      if (synchronized.nodes !== nodes || synchronized.edges !== edges) {
+      const syncNodes = latestNodesRef.current;
+      const syncEdges = latestEdgesRef.current;
+      const synchronized = synchronizeBusTerminalsWithEdges(syncNodes, syncEdges);
+      if (synchronized.nodes !== syncNodes || synchronized.edges !== syncEdges) {
         const synchronizedNodeById = new Map(synchronized.nodes.map((node) => [node.id, node]));
-        const changedNodeIds = nodes
+        const changedNodeIds = syncNodes
           .filter((node) => synchronizedNodeById.get(node.id) !== node)
           .map((node) => node.id);
-        markRouteEdgesDirty(dirtyEdgeIdsAfterMove(edges, synchronized.edges, changedNodeIds));
+        markRouteEdgesDirty(dirtyEdgeIdsAfterMove(syncEdges, synchronized.edges, changedNodeIds));
         suppressNextGraphDirtyRef.current = true;
       }
-      if (synchronized.nodes !== nodes) {
+      if (synchronized.nodes !== syncNodes) {
         setNodes(synchronized.nodes);
       }
-      if (synchronized.edges !== edges) {
+      if (synchronized.edges !== syncEdges) {
         setEdges(synchronized.edges);
       }
     }, 300, 1000);
@@ -3169,10 +3182,21 @@ export function App() {
     pendingRouteEdgeIdsRef.current = new Set();
     pendingStoredRouteEdgeIdsRef.current = new Set();
   }, [routedEdges]);
-  const renderedRoutedEdges = useMemo(
-    () => [...routedEdges].sort((first, second) => Number(activeSelectedEdgeSet.has(first.edgeId)) - Number(activeSelectedEdgeSet.has(second.edgeId))),
-    [activeSelectedEdgeSet, routedEdges]
-  );
+  const renderedRoutedEdges = useMemo(() => {
+    if (activeSelectedEdgeSet.size === 0) {
+      return routedEdges;
+    }
+    const regularRoutes: RoutedEdge[] = [];
+    const selectedRoutes: RoutedEdge[] = [];
+    for (const route of routedEdges) {
+      if (activeSelectedEdgeSet.has(route.edgeId)) {
+        selectedRoutes.push(route);
+      } else {
+        regularRoutes.push(route);
+      }
+    }
+    return selectedRoutes.length > 0 ? [...regularRoutes, ...selectedRoutes] : routedEdges;
+  }, [activeSelectedEdgeSet, routedEdges]);
   const routedEdgeById = useMemo(() => new Map(routedEdges.map((route) => [route.edgeId, route])), [routedEdges]);
   const markRouteEdgesDirty = (edgeIds: Iterable<string | undefined>) => {
     const next = new Set(pendingRouteEdgeIdsRef.current);
@@ -3364,18 +3388,20 @@ export function App() {
     () => (dragging && draggingDelta ? Array.from(dragPreviewNodeById.values()) : nodes),
     [dragPreviewNodeById, dragging, draggingDelta, nodes]
   );
+  const terminalOverlapNodes = dragging && draggingDelta ? dragPreviewNodes : deferredRoutingNodes;
+  const terminalOverlapAffectedNodeIds = dragging && draggingDelta ? draggingNodeIdSet : undefined;
   const overlappedTerminalKeys = useMemo(
     () => new Set(
       [
-        ...getOverlappingTerminalGroups(dragPreviewNodes, dragging ? draggingNodeIdSet : undefined).flatMap((group) =>
+        ...getOverlappingTerminalGroups(terminalOverlapNodes, terminalOverlapAffectedNodeIds).flatMap((group) =>
           group.terminals.map((terminal) => `${terminal.nodeId}:${terminal.terminalId}`)
         ),
-        ...getTerminalBusContactGroups(dragPreviewNodes, 0, dragging ? draggingNodeIdSet : undefined).flatMap((group) =>
+        ...getTerminalBusContactGroups(terminalOverlapNodes, 0, terminalOverlapAffectedNodeIds).flatMap((group) =>
           group.contacts.map((contact) => `${contact.nodeId}:${contact.terminalId}`)
         )
       ]
     ),
-    [dragPreviewNodes, dragging, draggingNodeIdSet]
+    [terminalOverlapAffectedNodeIds, terminalOverlapNodes]
   );
   const nodeTerminalSnapTarget = useMemo(
     () => (
@@ -3638,35 +3664,6 @@ export function App() {
       // 忽略浏览器缓存写入失败，避免影响画布编辑。
     }
   }, [activeProjectId, activeSchemeId]);
-
-  useEffect(() => {
-    return scheduleIdleWork(() => {
-      try {
-        window.localStorage.setItem(
-          DRAFT_PROJECT_STORAGE_KEY,
-          JSON.stringify({
-            projectName,
-            activeProjectId,
-            activeSchemeId,
-            canvasWidth,
-            canvasHeight,
-            canvasBackgroundColor,
-            canvasBackgroundImage,
-            canvasBackgroundImageAssetId,
-            powerUnit,
-            voltageUnit,
-            currentUnit,
-            powerBaseValue,
-            deviceIndexCounters,
-            nodes,
-            edges
-          })
-        );
-      } catch {
-        // 草稿缓存过大或不可写时不打断当前操作。
-      }
-    }, 1200, 2000);
-  }, [activeProjectId, activeSchemeId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, nodes, powerBaseValue, powerUnit, projectName, voltageUnit]);
 
   useEffect(() => {
     setExpandedSchemeIds((current) => {
@@ -4410,6 +4407,31 @@ export function App() {
       path: ""
     }));
 
+  const routePointBounds = (points: Point[], padding = 0) => {
+    let left = points[0]?.x ?? 0;
+    let right = left;
+    let top = points[0]?.y ?? 0;
+    let bottom = top;
+    for (let index = 1; index < points.length; index += 1) {
+      const point = points[index];
+      left = Math.min(left, point.x);
+      right = Math.max(right, point.x);
+      top = Math.min(top, point.y);
+      bottom = Math.max(bottom, point.y);
+    }
+    return {
+      left: left - padding,
+      right: right + padding,
+      top: top - padding,
+      bottom: bottom + padding
+    };
+  };
+
+  const boxesOverlap = (
+    first: { left: number; right: number; top: number; bottom: number },
+    second: { left: number; right: number; top: number; bottom: number }
+  ) => first.left <= second.right && first.right >= second.left && first.top <= second.bottom && first.bottom >= second.top;
+
   const routePointsForMovedNodeBlockers = (
     nextNodes: ModelNode[],
     candidateEdges: Edge[],
@@ -4424,13 +4446,34 @@ export function App() {
     if (movedNodes.length === 0) {
       return baseRoutePoints;
     }
+    const movedCandidates = getRouteBlockingCandidates(movedNodes);
+    const movedCandidateBounds = movedCandidates.reduce<{ left: number; right: number; top: number; bottom: number } | null>(
+      (bounds, candidate) => {
+        if (!bounds) {
+          return { ...candidate.box };
+        }
+        return {
+          left: Math.min(bounds.left, candidate.box.left),
+          right: Math.max(bounds.right, candidate.box.right),
+          top: Math.min(bounds.top, candidate.box.top),
+          bottom: Math.max(bounds.bottom, candidate.box.bottom)
+        };
+      },
+      null
+    );
+    if (!movedCandidateBounds) {
+      return baseRoutePoints;
+    }
     let nextRoutePoints = baseRoutePoints;
     for (const edge of candidateEdges) {
       if (baseRoutePoints[edge.id] || movedIds.has(edge.sourceId) || movedIds.has(edge.targetId)) {
         continue;
       }
       const route = routedEdgeById.get(edge.id);
-      if (!route || getRouteBlockingCandidateNodes(route.points, edge, movedNodes).length === 0) {
+      if (!route || !boxesOverlap(routePointBounds(route.points, 8), movedCandidateBounds)) {
+        continue;
+      }
+      if (getRouteBlockingCandidateNodesFromBoxes(route.points, edge, movedCandidates).length === 0) {
         continue;
       }
       if (nextRoutePoints === baseRoutePoints) {
@@ -4622,6 +4665,27 @@ export function App() {
     };
   };
 
+  const shouldRunDeferredMoveOptimization = (
+    candidateEdges: Edge[],
+    movedNodeIds: string[],
+    selectedEdgeIds: Set<string>
+  ) => {
+    const movedIds = new Set(movedNodeIds);
+    if (movedIds.size <= 1 || selectedEdgeIds.size === 1) {
+      return true;
+    }
+    let affectedConnectionCount = 0;
+    for (const edge of candidateEdges) {
+      if (movedIds.has(edge.sourceId) || movedIds.has(edge.targetId) || selectedEdgeIds.has(edge.id)) {
+        affectedConnectionCount += 1;
+        if (affectedConnectionCount > 1) {
+          return false;
+        }
+      }
+    }
+    return affectedConnectionCount <= 1;
+  };
+
   const scheduleMovedEdgeOptimization = (
     nextNodes: ModelNode[],
     fastEdges: Edge[],
@@ -4630,6 +4694,10 @@ export function App() {
     selectedEdgeIds = new Set<string>()
   ) => {
     deferredMoveOptimizationCancelRef.current?.();
+    if (!shouldRunDeferredMoveOptimization(fastEdges, movedNodeIds, selectedEdgeIds)) {
+      deferredMoveOptimizationCancelRef.current = null;
+      return;
+    }
     const expectedNodes = nextNodes;
     const expectedEdges = fastEdges;
     deferredMoveOptimizationCancelRef.current = scheduleIdleWork(() => {
@@ -6268,6 +6336,7 @@ export function App() {
     cachedRoutedEdgesRef.current = [];
     pendingRouteEdgeIdsRef.current = new Set();
     pendingStoredRouteEdgeIdsRef.current = new Set();
+    lastBusTerminalSyncSignatureRef.current = "";
     deferredMoveOptimizationCancelRef.current?.();
     deferredMoveOptimizationCancelRef.current = null;
     suppressNextGraphDirtyRef.current = true;
@@ -6513,6 +6582,33 @@ export function App() {
     }
   };
 
+  const saveDraftProject = (draftProjectId: string, draftSchemeId: string) => {
+    try {
+      window.localStorage.setItem(
+        DRAFT_PROJECT_STORAGE_KEY,
+        JSON.stringify({
+          projectName,
+          activeProjectId: draftProjectId,
+          activeSchemeId: draftSchemeId,
+          canvasWidth,
+          canvasHeight,
+          canvasBackgroundColor,
+          canvasBackgroundImage,
+          canvasBackgroundImageAssetId,
+          powerUnit,
+          voltageUnit,
+          currentUnit,
+          powerBaseValue,
+          deviceIndexCounters,
+          nodes,
+          edges
+        })
+      );
+    } catch {
+      // 草稿缓存过大或不可写时不打断手动保存。
+    }
+  };
+
   const saveCurrentProject = (targetId = activeProjectId) => {
     deferredMoveOptimizationCancelRef.current?.();
     deferredMoveOptimizationCancelRef.current = null;
@@ -6528,6 +6624,7 @@ export function App() {
         setActiveProjectId(targetId);
         graphDirtyBaselineRef.current = currentGraphDirtyBaseline();
         setHasUnsavedChanges(false);
+        saveDraftProject(targetId, activeSchemeId || findSchemeForProject(targetId)?.id || selectedSchemeId);
         writeOperationLog(`保存模型：${projectName}`);
         return;
       }
@@ -6547,6 +6644,7 @@ export function App() {
     setActiveSchemeId(targetSchemeId);
     graphDirtyBaselineRef.current = currentGraphDirtyBaseline();
     setHasUnsavedChanges(false);
+    saveDraftProject(record.id, targetSchemeId);
     writeOperationLog(`保存模型：${projectName}`);
   };
 

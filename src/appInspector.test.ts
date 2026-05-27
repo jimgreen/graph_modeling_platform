@@ -234,6 +234,9 @@ describe("graph inspector panel", () => {
     expect(optimizeBlock).toContain("routePointsForMovedNodeBlockers");
     expect(optimizeBlock).toContain("rebuildSingleAffectedConnectionRoute");
     expect(optimizeBlock).toContain("rerouteEdgesAroundMovedNodes");
+    expect(source).toContain("const shouldRunDeferredMoveOptimization");
+    expect(scheduleBlock).toContain("!shouldRunDeferredMoveOptimization(fastEdges, movedNodeIds, selectedEdgeIds)");
+    expect(scheduleBlock).toContain("deferredMoveOptimizationCancelRef.current = null");
     expect(scheduleBlock).toContain("scheduleIdleWork");
     expect(scheduleBlock).toContain("latestNodesRef.current !== expectedNodes");
     expect(finishBlock).toContain("finalizeMovedNodeEdgesFast");
@@ -273,6 +276,19 @@ describe("graph inspector panel", () => {
     expect(routingBlock).toContain("cachedRoutedEdgesRef.current");
     expect(routingBlock).toContain("return routeEdgesForStoredRendering");
     expect(routingBlock).not.toContain("routeEdgesForRendering(routingNodes, routingEdges");
+  });
+
+  test("keeps post-drag edge ordering linear and avoids sorting every route", async () => {
+    const source = await readAppSource();
+    const renderStart = source.indexOf("const renderedRoutedEdges = useMemo");
+    const renderEnd = source.indexOf("const routedEdgeById", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+
+    expect(renderBlock).toContain("activeSelectedEdgeSet.size === 0");
+    expect(renderBlock).toContain("return routedEdges");
+    expect(renderBlock).toContain("regularRoutes.push(route)");
+    expect(renderBlock).toContain("selectedRoutes.push(route)");
+    expect(renderBlock).not.toContain(".sort(");
   });
 
   test("limits full routing to direct path edits and keeps node dragging on the lightweight preview path", async () => {
@@ -330,7 +346,10 @@ describe("graph inspector panel", () => {
     const finishBlock = source.slice(finishStart, finishEnd);
 
     expect(helperStart).toBeGreaterThan(-1);
-    expect(helperBlock).toContain("getRouteBlockingCandidateNodes");
+    expect(helperBlock).toContain("getRouteBlockingCandidates(movedNodes)");
+    expect(helperBlock).toContain("movedCandidateBounds");
+    expect(helperBlock).toContain("boxesOverlap(routePointBounds(route.points, 8), movedCandidateBounds)");
+    expect(helperBlock).toContain("getRouteBlockingCandidateNodesFromBoxes");
     expect(helperBlock).toContain("routedEdgeById.get(edge.id)");
     expect(helperBlock).toContain("baseRoutePoints[edge.id]");
     expect(adjustBlock).toContain("if (!sourceMoved && !targetMoved && !preserveRouteEdgeIds.has(edge.id))");
@@ -339,6 +358,19 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const routePointsForReroute = routePointsForMovedNodeBlockers");
     expect(finishBlock).toContain("commitFastMovedGraph");
     expect(finishBlock).not.toContain("const routePointsForReroute = routePointsForMovedNodeBlockers");
+  });
+
+  test("defers full terminal overlap detection off the drag release frame", async () => {
+    const source = await readAppSource();
+    const overlapStart = source.indexOf("const terminalOverlapNodes");
+    const overlapEnd = source.indexOf("const nodeTerminalSnapTarget", overlapStart);
+    const overlapBlock = source.slice(overlapStart, overlapEnd);
+
+    expect(overlapBlock).toContain("dragging && draggingDelta ? dragPreviewNodes : deferredRoutingNodes");
+    expect(overlapBlock).toContain("terminalOverlapAffectedNodeIds");
+    expect(overlapBlock).toContain("getOverlappingTerminalGroups(terminalOverlapNodes, terminalOverlapAffectedNodeIds)");
+    expect(overlapBlock).toContain("getTerminalBusContactGroups(terminalOverlapNodes, 0, terminalOverlapAffectedNodeIds)");
+    expect(overlapBlock).not.toContain("getOverlappingTerminalGroups(dragPreviewNodes, dragging ? draggingNodeIdSet : undefined)");
   });
 
   test("uses animation-frame coalescing and lightweight undo snapshots for node drag moves", async () => {
@@ -369,16 +401,31 @@ describe("graph inspector panel", () => {
     expect(undoBlock).toContain("nodes: deepModelSnapshot ? cloneNodesForUndo(nodes) : nodes");
   });
 
-  test("defers post-edit persistence and bus terminal synchronization off the drag release frame", async () => {
+  test("defers bus terminal synchronization and only writes local draft from manual save", async () => {
     const source = await readAppSource();
-    const busSyncStart = source.indexOf("const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);");
-    const draftStart = source.indexOf("window.localStorage.setItem(\n          DRAFT_PROJECT_STORAGE_KEY");
+    const busSyncStart = source.indexOf("const synchronized = synchronizeBusTerminalsWithEdges(syncNodes, syncEdges);");
+    const busSyncEffectStart = source.indexOf("const endpointSignature = connectionEndpointSignature(edges);");
+    const busSyncEffectEnd = source.indexOf("const canvasBounds", busSyncEffectStart);
+    const busSyncEffectBlock = source.slice(busSyncEffectStart, busSyncEffectEnd);
+    const saveDraftStart = source.indexOf("const saveDraftProject =");
+    const saveDraftEnd = source.indexOf("const saveCurrentProject", saveDraftStart);
+    const saveDraftBlock = source.slice(saveDraftStart, saveDraftEnd);
+    const saveStart = source.indexOf("const saveCurrentProject");
+    const saveEnd = source.indexOf("const renameProjectRecord", saveStart);
+    const saveBlock = source.slice(saveStart, saveEnd);
     const topologyStaleStart = source.indexOf("拓扑结果已过期");
 
     expect(source).toContain("const scheduleIdleWork");
     expect(source).toContain("requestIdleCallback");
+    expect(source).toContain("const connectionEndpointSignature");
+    expect(busSyncEffectBlock).toContain("lastBusTerminalSyncSignatureRef.current === endpointSignature");
+    expect(busSyncEffectBlock).toContain("lastBusTerminalSyncSignatureRef.current = endpointSignature");
     expect(source.slice(Math.max(0, busSyncStart - 300), busSyncStart + 300)).toContain("scheduleIdleWork");
-    expect(source.slice(Math.max(0, draftStart - 500), draftStart + 900)).toContain("scheduleIdleWork");
+    expect(saveDraftBlock).toContain("DRAFT_PROJECT_STORAGE_KEY");
+    expect(saveDraftBlock).toContain("window.localStorage.setItem");
+    expect(saveBlock).toContain("saveDraftProject(targetId");
+    expect(saveBlock).toContain("saveDraftProject(record.id");
+    expect(source).not.toContain("[activeProjectId, activeSchemeId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, nodes, powerBaseValue, powerUnit, projectName, voltageUnit]");
     expect(source.slice(Math.max(0, topologyStaleStart - 400), topologyStaleStart + 300)).toContain("scheduleIdleWork");
   });
 
@@ -517,8 +564,8 @@ describe("graph inspector panel", () => {
     const saveStart = source.indexOf("const saveCurrentProject =");
     const saveEnd = source.indexOf("const renameProjectRecord", saveStart);
     const saveBlock = source.slice(saveStart, saveEnd);
-    const busSyncStart = source.indexOf("const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);");
-    const busSyncEnd = source.indexOf("if (synchronized.nodes !== nodes)", busSyncStart);
+    const busSyncStart = source.indexOf("const synchronized = synchronizeBusTerminalsWithEdges(syncNodes, syncEdges);");
+    const busSyncEnd = source.indexOf("if (synchronized.nodes !== syncNodes)", busSyncStart);
     const busSyncBlock = source.slice(busSyncStart, busSyncEnd);
 
     expect(source).toContain("type GraphDirtyBaseline");

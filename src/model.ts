@@ -7811,12 +7811,16 @@ function routeBoundsForPoints(points: Point[], padding = 0) {
   };
 }
 
-type RouteBlockingCandidate = {
+export type RouteBlockingCandidate = {
   node: ModelNode;
   box: ReturnType<typeof boxFor>;
 };
 
-function getRouteBlockingCandidateNodesFromBoxes(points: Point[], edge: Edge, candidates: RouteBlockingCandidate[]) {
+export function getRouteBlockingCandidates(blockers: ModelNode[]): RouteBlockingCandidate[] {
+  return blockers.map((node) => ({ node, box: boxFor(node, ROUTE_BLOCKER_PADDING) }));
+}
+
+export function getRouteBlockingCandidateNodesFromBoxes(points: Point[], edge: Edge, candidates: RouteBlockingCandidate[]) {
   if (points.length < 2 || candidates.length === 0) {
     return [];
   }
@@ -7834,7 +7838,7 @@ export function getRouteBlockingCandidateNodes(points: Point[], edge: Edge, bloc
   return getRouteBlockingCandidateNodesFromBoxes(
     points,
     edge,
-    blockers.map((node) => ({ node, box: boxFor(node, ROUTE_BLOCKER_PADDING) }))
+    getRouteBlockingCandidates(blockers)
   );
 }
 
