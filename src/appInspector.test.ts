@@ -187,6 +187,53 @@ describe("graph inspector panel", () => {
     expect(source).toContain("!(draggingDelta && dragPreviewEdgeIdSet.has(selectedEdge.id))");
   });
 
+  test("only previews dragged connection lines when both endpoint graphics are visible", async () => {
+    const source = await readAppSource();
+    const previewStart = source.indexOf("const dragPreviewEdgeRoutes = useMemo");
+    const previewEnd = source.indexOf("const dragPreviewEdgeIdSet", previewStart);
+    const previewBlock = source.slice(previewStart, previewEnd);
+    const ghostStart = source.indexOf("const dragGhostEdgeRoutes = useMemo");
+    const ghostEnd = source.indexOf("useEffect(() =>", ghostStart);
+    const ghostBlock = source.slice(ghostStart, ghostEnd);
+
+    expect(previewBlock).toContain("visibleEdgeIdSet.has(edge.id)");
+    expect(ghostBlock).toContain("visibleEdgeIdSet.has(edge.id)");
+  });
+
+  test("limits selection and modification operations to the active model layer", async () => {
+    const source = await readAppSource();
+    const activeLayerStart = source.indexOf("const activeLayerNodes = useMemo");
+    const activeLayerEnd = source.indexOf("const activeSelectedNodeIds = useMemo", activeLayerStart);
+    const activeLayerBlock = source.slice(activeLayerStart, activeLayerEnd);
+    const selectionStateStart = source.indexOf("const activeSelectedNodeIds = useMemo");
+    const selectionStateEnd = source.indexOf("const activeSelectedEdgeIds = useMemo", selectionStateStart);
+    const selectionStateBlock = source.slice(selectionStateStart, selectionStateEnd);
+    const copyStart = source.indexOf("const copySelection =");
+    const pasteStart = source.indexOf("const pasteSelection =", copyStart);
+    const copyCutDeleteBlock = source.slice(copyStart, pasteStart);
+    const dragStart = source.indexOf("const handleNodePointerDown");
+    const dragEnd = source.indexOf("const startMarquee", dragStart);
+    const dragBlock = source.slice(dragStart, dragEnd);
+    const layoutStart = source.indexOf("const applySelectedNodeLayout");
+    const layoutEnd = source.indexOf("const alignSelected", layoutStart);
+    const layoutBlock = source.slice(layoutStart, layoutEnd);
+
+    expect(activeLayerBlock).toContain("(node.layerId ?? DEFAULT_MODEL_LAYER_ID) === activeLayerId");
+    expect(activeLayerBlock).toContain("activeLayerNodeIdSet.has(edge.sourceId) && activeLayerNodeIdSet.has(edge.targetId)");
+    expect(selectionStateBlock).toContain("selectedNodeIds.filter((nodeId) => activeLayerNodeIdSet.has(nodeId))");
+    expect(selectionStateBlock).toContain("const selectedNodeId = activeSelectedNodeIds[0] ?? \"\"");
+    expect(selectionStateBlock).toContain("new Set(activeSelectedNodeIds)");
+    expect(source).toContain("setSelectedNodeIds(activeLayerNodes.map((node) => node.id))");
+    expect(source).toContain("selectGraphicsInRect(activeLayerNodes, activeLayerRoutedEdges");
+    expect(copyCutDeleteBlock).toContain("buildCanvasClipboard(visibleNodes, visibleEdges, routedEdges, activeSelectedNodeIds, activeSelectedEdgeIds)");
+    expect(copyCutDeleteBlock).toContain("deleteNodesWithConnectedEdges(nodes, edges, activeSelectedNodeIds)");
+    expect(dragBlock).toContain("let dragNodeIds = nodeWasSelected ? activeSelectedNodeIds : [node.id]");
+    expect(dragBlock).toContain("dragNodeIds = nodeWasSelected ? activeSelectedNodeIds : [...activeSelectedNodeIds, node.id]");
+    expect(dragBlock).toContain("if (!activeLayerNodeIdSet.has(node.id))");
+    expect(layoutBlock).toContain("layoutNodes(nodes, activeSelectedNodeIds)");
+    expect(source).toContain("if (!activeLayerEdgeIdSet.has(edgeId))");
+  });
+
   test("checks a newly drawn connection route before committing it to the model", async () => {
     const source = await readAppSource();
     const commitStart = source.indexOf("const commitNewConnectionEdge");
@@ -651,12 +698,40 @@ describe("graph inspector panel", () => {
     expect(source).toContain("id=\"layer-dialog-title\"");
     expect(source).toContain("renderLayerManager()");
     expect(source).toContain("新增图层");
+    expect(source).toContain("nextDefaultModelLayerName");
+    expect(source).toContain("`图层${index}`");
+    expect(source).not.toContain("请输入新图层名称");
+    expect(source).not.toContain("重命名图层");
     expect(source).not.toContain("renderChineseParamHeader(\"layers\", \"图层\")");
     expect(source).toContain("renderChineseParamHeader(\"layerId\", \"所属图层\")");
     expect(styles).toContain(".layer-dialog");
   });
 
-  test("adds a context menu action for assigning selected graphics to a model layer", async () => {
+  test("deletes model layer graphics after confirming non-empty layer deletion", async () => {
+    const source = await readAppSource();
+    const deleteStart = source.indexOf("const deleteModelLayer");
+    const deleteEnd = source.indexOf("const renderLayerManager", deleteStart);
+    const deleteBlock = source.slice(deleteStart, deleteEnd);
+    const managerStart = source.indexOf("const renderLayerManager");
+    const managerEnd = source.indexOf("const saveCurrentProject", managerStart);
+    const managerBlock = source.slice(managerStart, managerEnd);
+
+    expect(deleteBlock).toContain("nodeIdsInLayer");
+    expect(deleteBlock).toContain("该图层内共有");
+    expect(deleteBlock).toContain("继续删除将同时删除这些图元及相关联络线");
+    expect(deleteBlock).toContain("deleteNodesWithConnectedEdges(nodes, edges, nodeIdsInLayer)");
+    expect(deleteBlock).toContain("setSelectedNodeIds([])");
+    expect(deleteBlock).toContain("setSelectedEdgeId(\"\")");
+    expect(deleteBlock).toContain("setSelectedEdgeIds([])");
+    expect(deleteBlock).toContain("setConnectSource(null)");
+    expect(deleteBlock).toContain("setRewiring(null)");
+    expect(deleteBlock).not.toContain("不能删除当前激活图层");
+    expect(deleteBlock).not.toContain("该图层内图元将移动到当前激活图层");
+    expect(managerBlock).toContain("disabled={layers.length <= 1}");
+    expect(managerBlock).not.toContain("disabled={layers.length <= 1 || layer.id === activeLayerId}");
+  });
+
+  test("opens a dialog from one context menu action for assigning selected graphics to a model layer", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
     const contextStart = source.indexOf("{contextMenu && (");
@@ -664,17 +739,22 @@ describe("graph inspector panel", () => {
     const contextBlock = source.slice(contextStart, contextEnd);
 
     expect(source).toContain("assignSelectedNodesToModelLayer");
-    expect(contextBlock).toContain("aria-label=\"修改所属图层\"");
-    expect(contextBlock).toContain("所属图层");
-    expect(contextBlock).toContain("layers.map((layer)");
-    expect(contextBlock).toContain("assignSelectedNodesToModelLayer(layer.id)");
-    expect(contextBlock).toContain("allSelectedInLayer");
-    expect(contextBlock).toContain("<EyeOff size={14} />");
-    expect(styles).toContain(".context-menu-section");
-    expect(styles).toContain(".context-menu-section-title");
+    expect(source).toContain("layerAssignmentDialogOpen");
+    expect(source).toContain("layerAssignmentTargetId");
+    expect(source).toContain("openLayerAssignmentDialog");
+    expect(source).toContain("applyLayerAssignmentDialog");
+    expect(contextBlock).toContain("openLayerAssignmentDialog");
+    expect(contextBlock).toContain("图层修改");
+    expect(contextBlock).not.toContain("修改所属图层");
+    expect(contextBlock).not.toContain("layers.map((layer)");
+    expect(contextBlock).not.toContain("assignSelectedNodesToModelLayer(layer.id)");
+    expect(source).toContain("id=\"layer-assignment-title\"");
+    expect(source).toContain("目标图层");
+    expect(styles).toContain(".layer-assignment-dialog");
+    expect(styles).toContain(".layer-assignment-field");
   });
 
-  test("moves layer-order actions from the context menu to icon-only topbar buttons", async () => {
+  test("removes layer-order actions from the topbar, context menu, and graph inspector", async () => {
     const source = await readAppSource();
     const topbarStart = source.indexOf("<header className=\"topbar\">");
     const topbarEnd = source.indexOf("</header>", topbarStart);
@@ -683,18 +763,14 @@ describe("graph inspector panel", () => {
     const contextEnd = source.indexOf("{projectMenu && (", contextStart);
     const contextBlock = source.slice(contextStart, contextEnd);
 
-    expect(source).toContain("BringToFront");
-    expect(source).toContain("SendToBack");
-    expect(source).toContain("Layers2");
-    expect(source).toContain("Layers");
-    expect(topbarBlock).toContain("aria-label=\"图层向上\"");
-    expect(topbarBlock).toContain("<Layers2 size={16} />");
-    expect(topbarBlock).toContain("aria-label=\"图层向下\"");
-    expect(topbarBlock).toContain("<Layers size={16} />");
-    expect(topbarBlock).toContain("aria-label=\"图层置顶\"");
-    expect(topbarBlock).toContain("<BringToFront size={16} />");
-    expect(topbarBlock).toContain("aria-label=\"图层置底\"");
-    expect(topbarBlock).toContain("<SendToBack size={16} />");
+    expect(source).not.toContain("const moveSelectedLayer");
+    expect(source).not.toContain("renderChineseParamHeader(\"layerOrder\")");
+    expect(source).not.toContain("BringToFront");
+    expect(source).not.toContain("SendToBack");
+    expect(topbarBlock).not.toContain("aria-label=\"图层向上\"");
+    expect(topbarBlock).not.toContain("aria-label=\"图层向下\"");
+    expect(topbarBlock).not.toContain("aria-label=\"图层置顶\"");
+    expect(topbarBlock).not.toContain("aria-label=\"图层置底\"");
     expect(contextBlock).not.toContain("图层向上");
     expect(contextBlock).not.toContain("图层向下");
     expect(contextBlock).not.toContain("图层置顶");

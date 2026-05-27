@@ -1482,25 +1482,6 @@ button:disabled {
   background: transparent;
 }
 
-.context-menu-section {
-  display: grid;
-  gap: 2px;
-  padding: 4px 0;
-  border-top: 1px solid #e2e8f0;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.context-menu-section-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 24px;
-  padding: 0 9px;
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 800;
-}
-
 .image-picker-backdrop {
   position: fixed;
   inset: 0;
@@ -2278,27 +2259,6 @@ button:disabled {
   font-size: 12px;
 }
 
-.layer-actions {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 5px;
-}
-
-.layer-actions button {
-  min-height: 28px;
-  border: 1px solid #cbd5e1;
-  border-radius: 7px;
-  padding: 0 5px;
-  color: #334155;
-  background: #ffffff;
-  font-size: 12px;
-}
-
-.layer-actions button:hover {
-  border-color: #93c5fd;
-  background: #eff6ff;
-}
-
 .layer-manager {
   display: grid;
   gap: 10px;
@@ -2345,6 +2305,47 @@ button:disabled {
   min-height: 0;
 }
 
+.layer-assignment-dialog {
+  display: grid;
+  gap: 14px;
+  width: min(460px, calc(100vw - 48px));
+  padding: 18px;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.layer-assignment-field {
+  display: grid;
+  gap: 7px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.layer-assignment-field select {
+  min-height: 34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #0f172a;
+  background: #ffffff;
+  font-size: 13px;
+}
+
+.layer-assignment-note {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.layer-assignment-actions button:first-child {
+  color: #334155;
+  border-color: #cbd5e1;
+  background: #ffffff;
+}
+
 .layer-manager-toolbar {
   display: flex;
   justify-content: flex-start;
@@ -2380,7 +2381,7 @@ button:disabled {
 
 .layer-row {
   display: grid;
-  grid-template-columns: auto auto minmax(120px, 1fr) auto auto auto auto;
+  grid-template-columns: auto auto minmax(120px, 1fr) auto auto auto;
   gap: 6px;
   align-items: center;
   padding: 8px;

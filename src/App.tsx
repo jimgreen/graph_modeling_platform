@@ -8,7 +8,6 @@ import {
   AlignStartHorizontal,
   AlignStartVertical,
   AlignVerticalDistributeCenter,
-  BringToFront,
   Cable,
   Download,
   FileInput,
@@ -33,7 +32,6 @@ import {
   Pin,
   Route,
   Save,
-  SendToBack,
   Trash2,
   Undo2
 } from "lucide-react";
@@ -783,7 +781,6 @@ const PARAM_LABELS: Record<string, string> = {
   rotation: "旋转角度",
   scaleX: "横向倍率",
   scaleY: "纵向倍率",
-  layerOrder: "图层顺序",
   terminalCount: "端子数量",
   terminalVbase: "端子电压基值",
   is_container: "是否容器",
@@ -2897,6 +2894,8 @@ export function App() {
   const [definitionDraftSection, setDefinitionDraftSection] = useState("");
   const [definitionDraftError, setDefinitionDraftError] = useState("");
   const [layerDialogOpen, setLayerDialogOpen] = useState(false);
+  const [layerAssignmentDialogOpen, setLayerAssignmentDialogOpen] = useState(false);
+  const [layerAssignmentTargetId, setLayerAssignmentTargetId] = useState("");
   const [topologyErrors, setTopologyErrors] = useState<TopologyValidationError[]>([]);
   const [topology, setTopology] = useState<Topology>(EMPTY_TOPOLOGY);
   const [topologyStatus, setTopologyStatus] = useState<TopologyRunStatus>(INITIAL_TOPOLOGY_STATUS);
@@ -2932,7 +2931,6 @@ export function App() {
   const [imageAssetList, setImageAssetList] = useState<ImageAsset[]>([]);
   const [imageAssets, setImageAssets] = useState<Record<string, string>>(() => imageAssetsToMap(imageAssetList));
 
-  const selectedNodeId = selectedNodeIds[0] ?? "";
   const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
   const edgeById = useMemo(() => new Map(edges.map((edge) => [edge.id, edge])), [edges]);
   const activeLayer = useMemo(
@@ -2952,15 +2950,30 @@ export function App() {
   const visibleNodeById = useMemo(() => new Map(visibleNodes.map((node) => [node.id, node])), [visibleNodes]);
   const visibleNodeIdSet = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes]);
   const visibleEdgeIdSet = useMemo(() => new Set(visibleEdges.map((edge) => edge.id)), [visibleEdges]);
-  const selectedNodeIdSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
+  const activeLayerNodes = useMemo(
+    () => visibleNodes.filter((node) => (node.layerId ?? DEFAULT_MODEL_LAYER_ID) === activeLayerId),
+    [activeLayerId, visibleNodes]
+  );
+  const activeLayerNodeIdSet = useMemo(() => new Set(activeLayerNodes.map((node) => node.id)), [activeLayerNodes]);
+  const activeLayerEdges = useMemo(
+    () => visibleEdges.filter((edge) => activeLayerNodeIdSet.has(edge.sourceId) && activeLayerNodeIdSet.has(edge.targetId)),
+    [activeLayerNodeIdSet, visibleEdges]
+  );
+  const activeLayerEdgeIdSet = useMemo(() => new Set(activeLayerEdges.map((edge) => edge.id)), [activeLayerEdges]);
+  const activeSelectedNodeIds = useMemo(
+    () => selectedNodeIds.filter((nodeId) => activeLayerNodeIdSet.has(nodeId)),
+    [activeLayerNodeIdSet, selectedNodeIds]
+  );
+  const selectedNodeId = activeSelectedNodeIds[0] ?? "";
+  const selectedNodeIdSet = useMemo(() => new Set(activeSelectedNodeIds), [activeSelectedNodeIds]);
   const selectedNode = visibleNodeById.get(selectedNodeId);
   const activeSelectedEdgeIds = useMemo(
     () => (selectedEdgeIds.length > 0 ? selectedEdgeIds : selectedEdgeId ? [selectedEdgeId] : [])
-      .filter((edgeId) => visibleEdgeIdSet.has(edgeId)),
-    [selectedEdgeId, selectedEdgeIds, visibleEdgeIdSet]
+      .filter((edgeId) => activeLayerEdgeIdSet.has(edgeId)),
+    [activeLayerEdgeIdSet, selectedEdgeId, selectedEdgeIds]
   );
   const activeSelectedEdgeSet = useMemo(() => new Set(activeSelectedEdgeIds), [activeSelectedEdgeIds]);
-  const selectedEdge = visibleEdgeIdSet.has(selectedEdgeId) ? edgeById.get(selectedEdgeId) : undefined;
+  const selectedEdge = activeLayerEdgeIdSet.has(selectedEdgeId) ? edgeById.get(selectedEdgeId) : undefined;
   const connectionLineStyle = (edgeId: string) => {
     const edge = edgeById.get(edgeId);
     return edge ? ({ "--connection-color": getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette) } as CSSProperties) : undefined;
@@ -3143,11 +3156,13 @@ export function App() {
   }, [activeLayerId, layers]);
 
   useEffect(() => {
-    setSelectedNodeIds((current) => current.filter((nodeId) => visibleNodeIdSet.has(nodeId)));
-    setSelectedEdgeIds((current) => current.filter((edgeId) => visibleEdgeIdSet.has(edgeId)));
-    setSelectedEdgeId((current) => current && visibleEdgeIdSet.has(current) ? current : "");
-    setConnectSource((current) => current && visibleNodeIdSet.has(current.nodeId) ? current : null);
-  }, [visibleEdgeIdSet, visibleNodeIdSet]);
+    setSelectedNodeIds((current) => current.filter((nodeId) => activeLayerNodeIdSet.has(nodeId)));
+    setSelectedEdgeIds((current) => current.filter((edgeId) => activeLayerEdgeIdSet.has(edgeId)));
+    setSelectedEdgeId((current) => current && activeLayerEdgeIdSet.has(current) ? current : "");
+    setConnectSource((current) => current && activeLayerNodeIdSet.has(current.nodeId) ? current : null);
+    setRewiring((current) => current && activeLayerEdgeIdSet.has(current.edgeId) ? current : null);
+    setTerminalPress((current) => current && activeLayerNodeIdSet.has(current.nodeId) ? current : null);
+  }, [activeLayerEdgeIdSet, activeLayerNodeIdSet]);
 
   const selectedContainerParameterView =
     selectedContainerParameterViews.find((view) => view.id === containerParamViewId) ?? selectedContainerParameterViews[0];
@@ -3184,7 +3199,7 @@ export function App() {
     }
   };
   const selectedSchemeRecord = schemes.find((scheme) => scheme.id === selectedSchemeId);
-  const selectedNodeCount = selectedNodeIds.length;
+  const selectedNodeCount = activeSelectedNodeIds.length;
   const selectedCount = selectedNodeCount + activeSelectedEdgeIds.length;
   const visibleTopologyErrors = topologyErrors.slice(0, 100);
   const hiddenTopologyErrorCount = Math.max(0, topologyErrors.length - visibleTopologyErrors.length);
@@ -3400,6 +3415,10 @@ export function App() {
     }
     return selectedRoutes.length > 0 ? [...regularRoutes, ...selectedRoutes] : routedEdges;
   }, [activeSelectedEdgeSet, routedEdges]);
+  const activeLayerRoutedEdges = useMemo(
+    () => routedEdges.filter((route) => activeLayerEdgeIdSet.has(route.edgeId)),
+    [activeLayerEdgeIdSet, routedEdges]
+  );
   const routedEdgeById = useMemo(() => new Map(routedEdges.map((route) => [route.edgeId, route])), [routedEdges]);
   const markRouteEdgesDirty = (edgeIds: Iterable<string | undefined>) => {
     const next = new Set(pendingRouteEdgeIdsRef.current);
@@ -3453,7 +3472,7 @@ export function App() {
     }
     return dirty;
   };
-  const selectedRoutedEdge = routedEdgeById.get(selectedEdgeId);
+  const selectedRoutedEdge = selectedEdge ? routedEdgeById.get(selectedEdge.id) : undefined;
   const rewiringPreviewRoute = useMemo(() => {
     if (!rewiring) {
       return null;
@@ -3650,6 +3669,9 @@ export function App() {
       return [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end];
     };
     return dragging.affectedEdges.flatMap((edge) => {
+      if (!visibleEdgeIdSet.has(edge.id)) {
+        return [];
+      }
       const affected = draggingNodeIdSet.has(edge.sourceId) || draggingNodeIdSet.has(edge.targetId) || draggedEdgeIds.has(edge.id);
       if (!affected) {
         return [];
@@ -3712,7 +3734,7 @@ export function App() {
           : orthogonalPoints(adjustedStart, end);
       return [{ edgeId: edge.id, path: straightPath(points) }];
     });
-  }, [dragPreviewNodeById, dragPreviewNodes, draggedBusIds, dragging, draggingDelta, draggingNodeIdSet, nodeById, visibleNodes]);
+  }, [dragPreviewNodeById, dragPreviewNodes, draggedBusIds, dragging, draggingDelta, draggingNodeIdSet, nodeById, visibleEdgeIdSet, visibleNodes]);
   const dragPreviewEdgeIdSet = useMemo(
     () => new Set(dragPreviewEdgeRoutes.map((route) => route.edgeId)),
     [dragPreviewEdgeRoutes]
@@ -3723,13 +3745,16 @@ export function App() {
     }
     const draggedEdgeIds = new Set(dragging.edgeIds);
     return dragging.affectedEdges.flatMap((edge) => {
+      if (!visibleEdgeIdSet.has(edge.id)) {
+        return [];
+      }
       if (!draggingNodeIdSet.has(edge.sourceId) && !draggingNodeIdSet.has(edge.targetId) && !draggedEdgeIds.has(edge.id)) {
         return [];
       }
       const points = dragging.originalRoutePoints[edge.id];
       return points?.length ? [{ edgeId: edge.id, path: pointsToPreviewPath(points) }] : [];
     });
-  }, [dragging, draggingDelta, draggingNodeIdSet]);
+  }, [dragging, draggingDelta, draggingNodeIdSet, visibleEdgeIdSet]);
 
   useEffect(() => {
     if (selectedContainerParameterViews.length === 0) {
@@ -4275,7 +4300,7 @@ export function App() {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
         if (isCanvasShortcutTarget) {
           event.preventDefault();
-          setSelectedNodeIds(visibleNodes.map((node) => node.id));
+          setSelectedNodeIds(activeLayerNodes.map((node) => node.id));
           setSelectedEdgeId("");
           setSelectedEdgeIds([]);
           setConnectSource(null);
@@ -4336,7 +4361,7 @@ export function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [canvasBounds, canvasClipboard, deviceIndexCounters, edges, hasUnsavedChanges, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors, viewBox, visibleNodes]);
+  }, [activeLayerNodes, canvasBounds, canvasClipboard, deviceIndexCounters, edges, hasUnsavedChanges, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors, viewBox]);
 
   useEffect(() => {
     if (leftPanelTab !== "projects") {
@@ -4500,25 +4525,25 @@ export function App() {
   };
 
   const copySelection = () => {
-    setCanvasClipboard(buildCanvasClipboard(visibleNodes, visibleEdges, routedEdges, selectedNodeIds, activeSelectedEdgeIds));
-    writeOperationLog(`复制 ${selectedNodeIds.length} 个图元、${activeSelectedEdgeIds.length} 条联络线`);
+    setCanvasClipboard(buildCanvasClipboard(visibleNodes, visibleEdges, routedEdges, activeSelectedNodeIds, activeSelectedEdgeIds));
+    writeOperationLog(`复制 ${activeSelectedNodeIds.length} 个图元、${activeSelectedEdgeIds.length} 条联络线`);
   };
 
   const cutSelection = () => {
     const action = resolveCanvasDeleteAction({
-      selectedNodeCount: selectedNodeIds.length,
+      selectedNodeCount: activeSelectedNodeIds.length,
       hasSelectedEdge: activeSelectedEdgeIds.length > 0
     });
     if (action.kind === "warn") {
       window.alert(action.message);
       return;
     }
-    const clipboard = buildCanvasClipboard(visibleNodes, visibleEdges, routedEdges, selectedNodeIds, activeSelectedEdgeIds);
+    const clipboard = buildCanvasClipboard(visibleNodes, visibleEdges, routedEdges, activeSelectedNodeIds, activeSelectedEdgeIds);
     setCanvasClipboard(clipboard);
     pushUndoSnapshot();
     const selectedEdges = new Set(activeSelectedEdgeIds);
-    const result = selectedNodeIds.length > 0
-      ? deleteNodesWithConnectedEdges(nodes, edges, selectedNodeIds)
+    const result = activeSelectedNodeIds.length > 0
+      ? deleteNodesWithConnectedEdges(nodes, edges, activeSelectedNodeIds)
       : { nodes, edges };
     setNodes(result.nodes);
     setEdges(result.edges.filter((edge) => !selectedEdges.has(edge.id)));
@@ -4602,7 +4627,7 @@ export function App() {
       setMarquee(null);
       return;
     }
-    const selection = selectGraphicsInRect(visibleNodes, routedEdges, { left, right, top, bottom });
+    const selection = selectGraphicsInRect(activeLayerNodes, activeLayerRoutedEdges, { left, right, top, bottom });
     setSelectedNodeIds(selection.nodeIds);
     setSelectedEdgeIds(selection.edgeIds);
     setSelectedEdgeId(selection.edgeIds[0] ?? "");
@@ -4614,11 +4639,11 @@ export function App() {
   };
 
   const deleteSelection = () => {
-    if (selectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0) {
+    if (activeSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0) {
       return;
     }
     const selectedEdges = new Set(activeSelectedEdgeIds);
-    if (selectedNodeIds.length === 0) {
+    if (activeSelectedNodeIds.length === 0) {
       pushUndoSnapshot();
       setEdges((current) => current.filter((edge) => !selectedEdges.has(edge.id)));
       setSelectedEdgeId("");
@@ -4627,18 +4652,18 @@ export function App() {
       return;
     }
     pushUndoSnapshot();
-    const result = deleteNodesWithConnectedEdges(nodes, edges, selectedNodeIds);
+    const result = deleteNodesWithConnectedEdges(nodes, edges, activeSelectedNodeIds);
     setNodes(result.nodes);
     setEdges(result.edges.filter((edge) => !selectedEdges.has(edge.id)));
     setSelectedNodeIds([]);
     setSelectedEdgeId("");
     setSelectedEdgeIds([]);
-    writeOperationLog(`删除 ${selectedNodeIds.length} 个图元`);
+    writeOperationLog(`删除 ${activeSelectedNodeIds.length} 个图元`);
   };
 
   const deleteSelectedGraphicsFromCanvas = () => {
     const action = resolveCanvasDeleteAction({
-      selectedNodeCount: selectedNodeIds.length,
+      selectedNodeCount: activeSelectedNodeIds.length,
       hasSelectedEdge: activeSelectedEdgeIds.length > 0
     });
     if (action.kind === "warn") {
@@ -5531,10 +5556,10 @@ export function App() {
   };
 
   const moveSelection = (dx: number, dy: number) => {
-    if (selectedNodeIds.length === 0) {
+    if (activeSelectedNodeIds.length === 0) {
       return;
     }
-    const selected = new Set(selectedNodeIds);
+    const selected = new Set(activeSelectedNodeIds);
     const originalPositions = Object.fromEntries(nodes.filter((node) => selected.has(node.id)).map((node) => [node.id, node.position]));
     const affectedEdgesForMove = edges.filter(
       (edge) => selected.has(edge.sourceId) || selected.has(edge.targetId) || activeSelectedEdgeIds.includes(edge.id)
@@ -5547,7 +5572,7 @@ export function App() {
       ])
     );
     const boundedDelta = boundedDeltaForMoveGeometry(
-      selectedNodeIds,
+      activeSelectedNodeIds,
       activeSelectedEdgeIds,
       affectedEdgesForMove,
       originalPositions,
@@ -5561,7 +5586,7 @@ export function App() {
       return;
     }
     pushUndoSnapshot();
-    const deltasByNode = Object.fromEntries(selectedNodeIds.map((id) => [id, boundedDelta]));
+    const deltasByNode = Object.fromEntries(activeSelectedNodeIds.map((id) => [id, boundedDelta]));
     const nextNodes = nodes.map((node) =>
       selected.has(node.id)
         ? { ...node, position: clampNodeToCanvas(node, { x: node.position.x + boundedDelta.x, y: node.position.y + boundedDelta.y }) }
@@ -5582,18 +5607,18 @@ export function App() {
       nodes,
       nextNodes,
       adjustedEdges,
-      selectedNodeIds
+      activeSelectedNodeIds
     );
     commitFastMovedGraph(
       nextNodes,
       nextEdges,
-      selectedNodeIds,
+      activeSelectedNodeIds,
       originalRoutePoints,
       new Set(activeSelectedEdgeIds),
       originalPositions,
       nodes
     );
-    writeOperationLog(`移动 ${selectedNodeIds.length} 个图元 (${Math.round(boundedDelta.x)}, ${Math.round(boundedDelta.y)})`);
+    writeOperationLog(`移动 ${activeSelectedNodeIds.length} 个图元 (${Math.round(boundedDelta.x)}, ${Math.round(boundedDelta.y)})`);
   };
 
   const updateSelectedNode = (patch: Partial<ModelNode>) => {
@@ -5647,14 +5672,14 @@ export function App() {
   };
 
   const assignSelectedNodesToModelLayer = (layerId: string) => {
-    if (selectedNodeIds.length === 0) {
+    if (activeSelectedNodeIds.length === 0) {
       return;
     }
     const layer = layers.find((item) => item.id === layerId);
     if (!layer) {
       return;
     }
-    const selected = new Set(selectedNodeIds);
+    const selected = new Set(activeSelectedNodeIds);
     const changedCount = nodes.filter((node) => selected.has(node.id) && (node.layerId ?? DEFAULT_MODEL_LAYER_ID) !== layerId).length;
     if (changedCount === 0) {
       return;
@@ -5670,46 +5695,34 @@ export function App() {
     writeOperationLog(`修改 ${changedCount} 个图元所属图层为：${layer.name}`);
   };
 
-  const moveSelectedLayer = (direction: "front" | "back" | "forward" | "backward") => {
-    if (selectedNodeIds.length === 0) {
+  const openLayerAssignmentDialog = () => {
+    if (activeSelectedNodeIds.length === 0) {
       return;
     }
-    pushUndoSnapshot();
-    const selected = new Set(selectedNodeIds);
-    setNodes((current) => {
-      const selectedNodes = current.filter((node) => selected.has(node.id));
-      const others = current.filter((node) => !selected.has(node.id));
-      if (direction === "front") {
-        return [...others, ...selectedNodes];
-      }
-      if (direction === "back") {
-        return [...selectedNodes, ...others];
-      }
-      const next = [...current];
-      const step = direction === "forward" ? 1 : -1;
-      const indexes = current.map((node, index) => (selected.has(node.id) ? index : -1)).filter((index) => index >= 0);
-      const ordered = direction === "forward" ? indexes.reverse() : indexes;
-      for (const index of ordered) {
-        const target = index + step;
-        if (target < 0 || target >= next.length || selected.has(next[target].id)) {
-          continue;
-        }
-        [next[index], next[target]] = [next[target], next[index]];
-      }
-      return next;
-    });
-    const labels = { front: "置顶", back: "置底", forward: "上移", backward: "下移" };
-    writeOperationLog(`图层${labels[direction]} ${selectedNodeIds.length} 个图元`);
+    const selectedLayerIds = activeSelectedNodeIds
+      .map((nodeId) => nodeById.get(nodeId)?.layerId ?? DEFAULT_MODEL_LAYER_ID)
+      .filter((layerId) => layers.some((layer) => layer.id === layerId));
+    const commonLayerId =
+      selectedLayerIds.length > 0 && selectedLayerIds.every((layerId) => layerId === selectedLayerIds[0])
+        ? selectedLayerIds[0]
+        : "";
+    setLayerAssignmentTargetId(commonLayerId || activeLayerId || layers[0]?.id || DEFAULT_MODEL_LAYER_ID);
+    setLayerAssignmentDialogOpen(true);
+  };
+
+  const applyLayerAssignmentDialog = () => {
+    assignSelectedNodesToModelLayer(layerAssignmentTargetId);
+    setLayerAssignmentDialogOpen(false);
   };
 
   const mirrorSelectedNodes = (axis: "horizontal" | "vertical") => {
-    if (selectedNodeIds.length === 0) {
+    if (activeSelectedNodeIds.length === 0) {
       return;
     }
     pushUndoSnapshot();
     setSelectedEdgeId("");
-    setNodes((current) => mirrorNodes(current, selectedNodeIds, axis));
-    writeOperationLog(`${axis === "horizontal" ? "水平" : "垂直"}镜像 ${selectedNodeIds.length} 个图元`);
+    setNodes((current) => mirrorNodes(current, activeSelectedNodeIds, axis));
+    writeOperationLog(`${axis === "horizontal" ? "水平" : "垂直"}镜像 ${activeSelectedNodeIds.length} 个图元`);
   };
 
   const updateCanvasSize = (nextWidth: number, nextHeight: number) => {
@@ -5792,6 +5805,9 @@ export function App() {
   };
 
   const updateElementTreeNodeIdentity = (nodeId: string, field: "idx" | "name", value: string) => {
+    if (!activeLayerNodeIdSet.has(nodeId)) {
+      return;
+    }
     pushUndoSnapshot();
     setNodes((current) =>
       current.map((node) => {
@@ -5808,6 +5824,9 @@ export function App() {
 
   const updateElementTreeContainerChildParam = (nodeId: string, key: string, value: string) => {
     if (!key) {
+      return;
+    }
+    if (!activeLayerNodeIdSet.has(nodeId)) {
       return;
     }
     pushUndoSnapshot();
@@ -6104,12 +6123,15 @@ export function App() {
     if (!edge) {
       return null;
     }
+    if (!activeLayerEdgeIdSet.has(edge.id)) {
+      return null;
+    }
     const otherNode = visibleNodeById.get(state.endpoint === "source" ? edge.targetId : edge.sourceId);
     const otherTerminalId = state.endpoint === "source" ? edge.targetTerminalId : edge.sourceTerminalId;
     if (!otherNode || !otherTerminalId) {
       return null;
     }
-    for (const node of visibleNodes) {
+    for (const node of activeLayerNodes) {
       if (node.id === otherNode.id) {
         continue;
       }
@@ -6135,11 +6157,11 @@ export function App() {
     if (!connectSource) {
       return null;
     }
-    const sourceNode = visibleNodeById.get(connectSource.nodeId);
+    const sourceNode = activeLayerNodeIdSet.has(connectSource.nodeId) ? visibleNodeById.get(connectSource.nodeId) : undefined;
     if (!sourceNode) {
       return null;
     }
-    for (const node of visibleNodes) {
+    for (const node of activeLayerNodes) {
       if (isBusNode(node) && isPointNearBus(node, point, CONNECT_BUS_SNAP_TOLERANCE)) {
         const terminalId = node.terminals[0]?.id ?? "t1";
         if (
@@ -6306,6 +6328,9 @@ export function App() {
     if (event.button !== 0) {
       return;
     }
+    if (!activeLayerNodeIdSet.has(node.id)) {
+      return;
+    }
     activateInspectorFromCanvas();
     if (connectSource && svgRef.current) {
       const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
@@ -6325,9 +6350,9 @@ export function App() {
       setSelectedEdgeId("");
       setSelectedEdgeIds([]);
     }
-    let dragNodeIds = nodeWasSelected ? selectedNodeIds : [node.id];
+    let dragNodeIds = nodeWasSelected ? activeSelectedNodeIds : [node.id];
     if (event.ctrlKey || event.shiftKey || event.metaKey) {
-      dragNodeIds = nodeWasSelected ? selectedNodeIds : [...selectedNodeIds, node.id];
+      dragNodeIds = nodeWasSelected ? activeSelectedNodeIds : [...activeSelectedNodeIds, node.id];
       if (!nodeWasSelected) {
         setSelectedNodeIds(dragNodeIds);
       }
@@ -6612,13 +6637,13 @@ export function App() {
     minimumSelectionCount: number,
     layoutNodes: (currentNodes: ModelNode[], currentSelectedNodeIds: string[]) => ModelNode[]
   ) => {
-    if (selectedNodeIds.length < minimumSelectionCount) {
+    if (activeSelectedNodeIds.length < minimumSelectionCount) {
       return;
     }
     pushUndoSnapshot();
-    const arranged = layoutNodes(nodes, selectedNodeIds);
+    const arranged = layoutNodes(nodes, activeSelectedNodeIds);
     const previousById = new Map(nodes.map((node) => [node.id, node]));
-    const selected = new Set(selectedNodeIds);
+    const selected = new Set(activeSelectedNodeIds);
     const originalPositions = Object.fromEntries(
       nodes
         .filter((node) => selected.has(node.id))
@@ -6662,14 +6687,14 @@ export function App() {
       nodes,
       arranged,
       adjustedEdges,
-      selectedNodeIds
+      activeSelectedNodeIds
     );
-    commitFastMovedGraph(arranged, nextEdges, selectedNodeIds, originalRoutePoints, new Set<string>(), originalPositions, nodes);
+    commitFastMovedGraph(arranged, nextEdges, activeSelectedNodeIds, originalRoutePoints, new Set<string>(), originalPositions, nodes);
   };
 
   const alignSelected = (direction: AlignMode) => {
     applySelectedNodeLayout(2, (currentNodes, currentSelectedNodeIds) => alignNodes(currentNodes, currentSelectedNodeIds, direction));
-    if (selectedNodeIds.length >= 2) {
+    if (activeSelectedNodeIds.length >= 2) {
       const labelByDirection: Record<AlignMode, string> = {
         horizontal: "横向",
         vertical: "纵向",
@@ -6678,14 +6703,14 @@ export function App() {
         top: "上",
         bottom: "下"
       };
-      writeOperationLog(`${labelByDirection[direction]}对齐 ${selectedNodeIds.length} 个图元`);
+      writeOperationLog(`${labelByDirection[direction]}对齐 ${activeSelectedNodeIds.length} 个图元`);
     }
   };
 
   const distributeSelected = (direction: "horizontal" | "vertical") => {
     applySelectedNodeLayout(3, (currentNodes, currentSelectedNodeIds) => distributeNodes(currentNodes, currentSelectedNodeIds, direction));
-    if (selectedNodeIds.length >= 3) {
-      writeOperationLog(`${direction === "horizontal" ? "横向" : "纵向"}平均 ${selectedNodeIds.length} 个图元`);
+    if (activeSelectedNodeIds.length >= 3) {
+      writeOperationLog(`${direction === "horizontal" ? "横向" : "纵向"}平均 ${activeSelectedNodeIds.length} 个图元`);
     }
   };
 
@@ -7054,48 +7079,21 @@ export function App() {
     writeOperationLog(`激活图层：${layers.find((layer) => layer.id === layerId)?.name ?? layerId}`);
   };
 
+  const nextDefaultModelLayerName = () => {
+    const usedNames = new Set(layers.map((layer) => layer.name.trim()));
+    let index = 1;
+    while (usedNames.has(`图层${index}`)) {
+      index += 1;
+    }
+    return `图层${index}`;
+  };
+
   const addModelLayer = () => {
-    const name = window.prompt("请输入新图层名称", "新建图层");
-    if (name === null) {
-      return;
-    }
-    const trimmed = name.trim();
-    if (!trimmed) {
-      window.alert("图层名称不能为空。");
-      return;
-    }
-    if (layers.some((layer) => layer.name.trim() === trimmed)) {
-      window.alert("图层名称重复，无法新增。");
-      return;
-    }
     pushUndoSnapshot();
-    const layer = createModelLayer(trimmed, layers);
+    const layer = createModelLayer(nextDefaultModelLayerName(), layers);
     setLayers((current) => [...current, layer]);
     setActiveLayerId(layer.id);
     writeOperationLog(`新增图层：${layer.name}`);
-  };
-
-  const renameModelLayer = (layerId: string) => {
-    const layer = layers.find((item) => item.id === layerId);
-    if (!layer) {
-      return;
-    }
-    const name = window.prompt("请输入新的图层名称", layer.name);
-    if (name === null) {
-      return;
-    }
-    const trimmed = name.trim();
-    if (!trimmed) {
-      window.alert("图层名称不能为空。");
-      return;
-    }
-    if (layers.some((item) => item.id !== layerId && item.name.trim() === trimmed)) {
-      window.alert("图层名称重复，无法修改。");
-      return;
-    }
-    pushUndoSnapshot();
-    setLayers((current) => current.map((item) => item.id === layerId ? { ...item, name: trimmed } : item));
-    writeOperationLog(`重命名图层：${trimmed}`);
   };
 
   const toggleModelLayerVisibility = (layerId: string) => {
@@ -7131,22 +7129,35 @@ export function App() {
       window.alert("至少需要保留一个图层。");
       return;
     }
-    if (layerId === activeLayerId) {
-      window.alert("不能删除当前激活图层。");
-      return;
-    }
     const layer = layers.find((item) => item.id === layerId);
     if (!layer) {
       return;
     }
-    const fallbackLayerId = activeLayerId || layers.find((item) => item.id !== layerId)?.id || DEFAULT_MODEL_LAYER_ID;
-    if (!window.confirm(`删除图层“${layer.name}”？该图层内图元将移动到当前激活图层。`)) {
+    const nodeIdsInLayer = nodes
+      .filter((node) => (node.layerId ?? DEFAULT_MODEL_LAYER_ID) === layerId)
+      .map((node) => node.id);
+    if (nodeIdsInLayer.length > 0 && !window.confirm(`删除图层“${layer.name}”？该图层内共有 ${nodeIdsInLayer.length} 个图元，继续删除将同时删除这些图元及相关联络线。是否继续？`)) {
       return;
     }
     pushUndoSnapshot();
-    setNodes((current) => current.map((node) => (node.layerId ?? DEFAULT_MODEL_LAYER_ID) === layerId ? { ...node, layerId: fallbackLayerId } : node));
-    setLayers((current) => current.filter((item) => item.id !== layerId));
-    writeOperationLog(`删除图层：${layer.name}`);
+    const result = deleteNodesWithConnectedEdges(nodes, edges, nodeIdsInLayer);
+    const remainingLayers = layers.filter((item) => item.id !== layerId);
+    const nextActiveLayerId = activeLayerId === layerId
+      ? remainingLayers.find((item) => item.visible)?.id ?? remainingLayers[0]?.id ?? DEFAULT_MODEL_LAYER_ID
+      : activeLayerId;
+    const nextLayers = remainingLayers.map((item) => item.id === nextActiveLayerId ? { ...item, visible: true } : item);
+    setNodes(result.nodes);
+    setEdges(result.edges);
+    setLayers(nextLayers);
+    setActiveLayerId(nextActiveLayerId);
+    setSelectedNodeIds([]);
+    setSelectedEdgeId("");
+    setSelectedEdgeIds([]);
+    setConnectSource(null);
+    resetConnectPreviewState();
+    setRewiring(null);
+    setContextMenu(null);
+    writeOperationLog(`删除图层：${layer.name}，删除 ${nodeIdsInLayer.length} 个图元`);
   };
 
   const renderLayerManager = () => (
@@ -7180,10 +7191,9 @@ export function App() {
               value={layer.name}
               readOnly
             />
-            <button type="button" onClick={() => renameModelLayer(layer.id)} title="重命名图层">重命名</button>
             <button type="button" onClick={() => moveModelLayer(layer.id, -1)} disabled={index === 0} title="图层上移">上移</button>
             <button type="button" onClick={() => moveModelLayer(layer.id, 1)} disabled={index === layers.length - 1} title="图层下移">下移</button>
-            <button type="button" onClick={() => deleteModelLayer(layer.id)} disabled={layers.length <= 1 || layer.id === activeLayerId} title="删除图层">删除</button>
+            <button type="button" onClick={() => deleteModelLayer(layer.id)} disabled={layers.length <= 1} title="删除图层">删除</button>
           </div>
         ))}
       </div>
@@ -7386,9 +7396,11 @@ export function App() {
     activateInspectorFromCanvas();
     const firstNodeId = error.relatedNodeIds[0] ?? error.nodeId;
     const node = firstNodeId ? nodeById.get(firstNodeId) : undefined;
-    setSelectedNodeIds(firstNodeId ? [firstNodeId] : []);
-    setSelectedEdgeId(error.edgeId ?? "");
-    setSelectedEdgeIds(error.edgeId ? [error.edgeId] : []);
+    const editableNode = Boolean(firstNodeId && activeLayerNodeIdSet.has(firstNodeId));
+    const editableEdge = Boolean(error.edgeId && activeLayerEdgeIdSet.has(error.edgeId));
+    setSelectedNodeIds(editableNode && firstNodeId ? [firstNodeId] : []);
+    setSelectedEdgeId(editableEdge && error.edgeId ? error.edgeId : "");
+    setSelectedEdgeIds(editableEdge && error.edgeId ? [error.edgeId] : []);
     if (node) {
       setViewBox(clampViewBoxToCanvas({
         x: node.position.x - viewBox.width / 2,
@@ -7456,20 +7468,21 @@ export function App() {
 
   const focusElementTreeItem = (item: ElementTreeItem, openDeviceTab = false) => {
     if (item.kind === "node") {
-      setSelectedNodeIds([item.id]);
+      setSelectedNodeIds(activeLayerNodeIdSet.has(item.id) ? [item.id] : []);
       setSelectedEdgeId("");
       setSelectedEdgeIds([]);
     } else {
       setSelectedNodeIds([]);
-      setSelectedEdgeId(item.id);
-      setSelectedEdgeIds([item.id]);
+      const editableEdge = activeLayerEdgeIdSet.has(item.id);
+      setSelectedEdgeId(editableEdge ? item.id : "");
+      setSelectedEdgeIds(editableEdge ? [item.id] : []);
     }
     setConnectSource(null);
     resetConnectPreviewState();
     setRewiring(null);
     setContextMenu(null);
     clearRecordSelection();
-    if (openDeviceTab) {
+    if (openDeviceTab && (item.kind === "node" ? activeLayerNodeIdSet.has(item.id) : activeLayerEdgeIdSet.has(item.id))) {
       setInspectorTab("device");
     }
     const point = getElementFocusPoint(item, nodes, edges);
@@ -7532,6 +7545,9 @@ export function App() {
   const openEdgeContextMenu = (event: MouseEvent<SVGPathElement>, edgeId: string, routePoints?: Point[]) => {
     event.preventDefault();
     event.stopPropagation();
+    if (!activeLayerEdgeIdSet.has(edgeId)) {
+      return;
+    }
     activateInspectorFromCanvas();
     canvasInteractionRef.current = true;
     projectListPointerInsideRef.current = false;
@@ -7569,7 +7585,7 @@ export function App() {
     routePoints: Point[]
   ) => {
     event.stopPropagation();
-    if (event.button !== 0 || !svgRef.current) {
+    if (event.button !== 0 || !svgRef.current || !activeLayerEdgeIdSet.has(edgeId)) {
       return;
     }
     const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
@@ -7600,7 +7616,7 @@ export function App() {
 
   const startManualPointDrag = (event: PointerEvent<SVGCircleElement>, edgeId: string, pointIndex: number, routePoints: Point[]) => {
     event.stopPropagation();
-    if (event.button !== 0 || !svgRef.current) {
+    if (event.button !== 0 || !svgRef.current || !activeLayerEdgeIdSet.has(edgeId)) {
       return;
     }
     const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
@@ -7693,6 +7709,7 @@ export function App() {
   const findConnectionRouteHitAtPoint = (point: Point) => {
     const tolerance = connectionHitTolerance();
     return renderedRoutedEdges
+      .filter((route) => activeLayerEdgeIdSet.has(route.edgeId))
       .flatMap((route, routeOrder) =>
         route.points.slice(0, -1).map((from, segmentIndex) => ({
           edgeId: route.edgeId,
@@ -7711,6 +7728,9 @@ export function App() {
   };
 
   const insertManualBendAtPoint = (edgeId: string, segmentIndex: number, routePoints: Point[], clickPoint: Point) => {
+    if (!activeLayerEdgeIdSet.has(edgeId)) {
+      return;
+    }
     const from = routePoints[segmentIndex];
     const to = routePoints[segmentIndex + 1];
     if (!from || !to || (from.x !== to.x && from.y !== to.y)) {
@@ -7743,6 +7763,9 @@ export function App() {
   const insertManualBendFromEdgePath = (event: MouseEvent<SVGElement>, edgeId: string, routePoints: Point[]) => {
     event.preventDefault();
     event.stopPropagation();
+    if (!activeLayerEdgeIdSet.has(edgeId)) {
+      return;
+    }
     const pointerInsertedBend = edgePointerBendInsertRef.current;
     if (
       pointerInsertedBend &&
@@ -7766,7 +7789,7 @@ export function App() {
 
   const handleEdgePathPointerDown = (event: PointerEvent<SVGPathElement>, edgeId: string, routePoints: Point[]) => {
     event.stopPropagation();
-    if (event.button !== 0 || !svgRef.current) {
+    if (event.button !== 0 || !svgRef.current || !activeLayerEdgeIdSet.has(edgeId)) {
       return;
     }
     activateInspectorFromCanvas();
@@ -7798,6 +7821,9 @@ export function App() {
   };
 
   const deleteManualBendPoint = (edgeId: string, routePointIndex: number, routePoints: Point[]) => {
+    if (!activeLayerEdgeIdSet.has(edgeId)) {
+      return;
+    }
     if (routePointIndex <= 0 || routePointIndex >= routePoints.length - 1) {
       return;
     }
@@ -7807,6 +7833,9 @@ export function App() {
   };
 
   const startConnectFromTerminal = (node: ModelNode, terminalId: string, point?: Point) => {
+    if (!activeLayerNodeIdSet.has(node.id)) {
+      return;
+    }
     const sourcePoint = point ?? getModelEdgeEndpointPoint(node, undefined, terminalId);
     setConnectSource({ nodeId: node.id, terminalId, point });
     applyConnectPreviewState(sourcePoint, false);
@@ -7889,6 +7918,9 @@ export function App() {
     terminalId: string
   ) => {
     event.stopPropagation();
+    if (!activeLayerNodeIdSet.has(node.id)) {
+      return;
+    }
     setSelectedNodeIds([node.id]);
     setSelectedEdgeId("");
     setSelectedEdgeIds([]);
@@ -8675,8 +8707,12 @@ export function App() {
               {expanded && (
                 <div className="element-tree-items" role="group">
                   {group.items.map((item) => {
-                    const selected = item.kind === "node" ? selectedNodeIdSet.has(item.id) : activeSelectedEdgeSet.has(item.id);
+                    const editable = item.kind === "node" ? activeLayerNodeIdSet.has(item.id) : activeLayerEdgeIdSet.has(item.id);
+                    const selected = editable && (item.kind === "node" ? selectedNodeIdSet.has(item.id) : activeSelectedEdgeSet.has(item.id));
                     const selectTreeItem = () => {
+                      if (!editable) {
+                        return;
+                      }
                       if (item.kind === "node") {
                         setSelectedNodeIds([item.id]);
                         setSelectedEdgeId("");
@@ -8717,6 +8753,7 @@ export function App() {
                                   onClick={(event) => event.stopPropagation()}
                                   onDoubleClick={(event) => event.stopPropagation()}
                                   onKeyDown={(event) => event.stopPropagation()}
+                                  disabled={!editable}
                                   onChange={(event) => updateElementTreeNodeIdentity(item.id, "idx", event.target.value)}
                                 />
                               </label>
@@ -8727,6 +8764,7 @@ export function App() {
                                   onClick={(event) => event.stopPropagation()}
                                   onDoubleClick={(event) => event.stopPropagation()}
                                   onKeyDown={(event) => event.stopPropagation()}
+                                  disabled={!editable}
                                   onChange={(event) => updateElementTreeNodeIdentity(item.id, "name", event.target.value)}
                                 />
                               </label>
@@ -8750,6 +8788,7 @@ export function App() {
                                     onClick={(event) => event.stopPropagation()}
                                     onDoubleClick={(event) => event.stopPropagation()}
                                     onKeyDown={(event) => event.stopPropagation()}
+                                    disabled={!editable}
                                     onChange={(event) => updateElementTreeContainerChildParam(item.id, child.relationKeys[0] ?? "", event.target.value)}
                                   />
                                 </label>
@@ -8760,6 +8799,7 @@ export function App() {
                                     onClick={(event) => event.stopPropagation()}
                                     onDoubleClick={(event) => event.stopPropagation()}
                                     onKeyDown={(event) => event.stopPropagation()}
+                                    disabled={!editable}
                                     onChange={(event) => updateElementTreeContainerChildParam(item.id, child.nameKey, event.target.value)}
                                   />
                                 </label>
@@ -8789,6 +8829,9 @@ export function App() {
     ? topologyErrors.slice(0, 5).map((error, index) => `${index + 1}. ${topologyWarningDisplayMessage(error.message)}`).join("\n")
     : "当前没有拓扑告警。";
   const currentZoomPercent = viewBoxZoomPercent(viewBox, canvasBounds);
+  const layerAssignmentUnchanged = activeSelectedNodeIds.length > 0 && activeSelectedNodeIds.every(
+    (nodeId) => (nodeById.get(nodeId)?.layerId ?? DEFAULT_MODEL_LAYER_ID) === layerAssignmentTargetId
+  );
   const appShellStyle = {
     "--left-panel-width": `${leftPanelWidth}px`,
     "--right-panel-width": `${rightPanelWidth}px`,
@@ -8913,18 +8956,6 @@ export function App() {
             </button>
             <button onClick={() => mirrorSelectedNodes("vertical")} disabled={selectedNodeCount < 1} title="垂直翻转端点" aria-label="垂直翻转端点">
               <FlipVertical size={16} />
-            </button>
-            <button onClick={() => moveSelectedLayer("forward")} disabled={selectedNodeCount < 1} title="图层向上" aria-label="图层向上">
-              <Layers2 size={16} />
-            </button>
-            <button onClick={() => moveSelectedLayer("backward")} disabled={selectedNodeCount < 1} title="图层向下" aria-label="图层向下">
-              <Layers size={16} />
-            </button>
-            <button onClick={() => moveSelectedLayer("front")} disabled={selectedNodeCount < 1} title="图层置顶" aria-label="图层置顶">
-              <BringToFront size={16} />
-            </button>
-            <button onClick={() => moveSelectedLayer("back")} disabled={selectedNodeCount < 1} title="图层置底" aria-label="图层置底">
-              <SendToBack size={16} />
             </button>
             <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={chooseImage} />
             <input ref={customDeviceImageInputRef} type="file" accept="image/*" hidden onChange={chooseCustomDeviceBackground} />
@@ -9178,6 +9209,7 @@ export function App() {
               const targetPoint = getEdgeEndpointPoint(edge, "target");
               const sourceNode = nodeById.get(edge.sourceId);
               const targetNode = nodeById.get(edge.targetId);
+              const editable = activeLayerEdgeIdSet.has(edge.id);
               const rewiringSource = rewiring?.edgeId === edge.id && rewiring.endpoint === "source";
               const rewiringTarget = rewiring?.edgeId === edge.id && rewiring.endpoint === "target";
               const rewireTarget = rewiring?.edgeId === edge.id ? findRewireTargetAtPoint(rewiring.previewPoint, rewiring) : null;
@@ -9200,16 +9232,16 @@ export function App() {
                   <path
                     d={route.path}
                     className="connection-hitline"
-                    onContextMenu={(event) => openEdgeContextMenu(event, edge.id, route.points)}
-                    onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, route.points)}
-                    onPointerDown={(event) => handleEdgePathPointerDown(event, edge.id, route.points)}
+                    onContextMenu={editable ? (event) => openEdgeContextMenu(event, edge.id, route.points) : undefined}
+                    onDoubleClick={editable ? (event) => insertManualBendFromEdgePath(event, edge.id, route.points) : undefined}
+                    onPointerDown={editable ? (event) => handleEdgePathPointerDown(event, edge.id, route.points) : undefined}
                   />
                   <path
                     d={route.path}
                     className="connection-line"
-                    onContextMenu={(event) => openEdgeContextMenu(event, edge.id, route.points)}
-                    onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, route.points)}
-                    onPointerDown={(event) => handleEdgePathPointerDown(event, edge.id, route.points)}
+                    onContextMenu={editable ? (event) => openEdgeContextMenu(event, edge.id, route.points) : undefined}
+                    onDoubleClick={editable ? (event) => insertManualBendFromEdgePath(event, edge.id, route.points) : undefined}
+                    onPointerDown={editable ? (event) => handleEdgePathPointerDown(event, edge.id, route.points) : undefined}
                   />
                   {sourceBusDotPoint && (
                     <circle
@@ -9218,7 +9250,7 @@ export function App() {
                       cy={sourceBusDotPoint.y}
                       r={7}
                       fill={busEndpointColor((rewiringSource ? rewireTarget?.node : sourceNode) ?? sourceNode!, colorPalette)}
-                      onPointerDown={(event) => {
+                      onPointerDown={editable ? (event) => {
                         event.stopPropagation();
                         if (event.button !== 0 || !svgRef.current) {
                           return;
@@ -9233,7 +9265,7 @@ export function App() {
                           pointerId: event.pointerId
                         });
                         event.currentTarget.setPointerCapture(event.pointerId);
-                      }}
+                      } : undefined}
                     />
                   )}
                   {targetBusDotPoint && (
@@ -9243,7 +9275,7 @@ export function App() {
                       cy={targetBusDotPoint.y}
                       r={7}
                       fill={busEndpointColor((rewiringTarget ? rewireTarget?.node : targetNode) ?? targetNode!, colorPalette)}
-                      onPointerDown={(event) => {
+                      onPointerDown={editable ? (event) => {
                         event.stopPropagation();
                         if (event.button !== 0 || !svgRef.current) {
                           return;
@@ -9258,7 +9290,7 @@ export function App() {
                           pointerId: event.pointerId
                         });
                         event.currentTarget.setPointerCapture(event.pointerId);
-                      }}
+                      } : undefined}
                     />
                   )}
                   {selected && sourcePoint && (
@@ -9316,6 +9348,7 @@ export function App() {
             )}
             {visibleNodes.map((node) => {
               const selected = selectedNodeIdSet.has(node.id);
+              const editable = activeLayerNodeIdSet.has(node.id);
               const isStorageBus = node.kind === "hydrogen-tank" || node.kind === "thermal-storage-tank";
               const isConnectSource = node.id === connectSource?.nodeId;
               const originalDragPosition = dragging?.originalPositions[node.id];
@@ -9352,6 +9385,9 @@ export function App() {
                   onContextMenu={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
+                    if (!editable) {
+                      return;
+                    }
                     canvasInteractionRef.current = true;
                     projectListPointerInsideRef.current = false;
                     if (svgRef.current) {
@@ -9374,6 +9410,9 @@ export function App() {
                   }}
                   onDoubleClick={(event) => {
                     event.stopPropagation();
+                    if (!editable) {
+                      return;
+                    }
                     if (isBusNode(node)) {
                       return;
                     }
@@ -9980,17 +10019,6 @@ export function App() {
                         </select>
                       </td>
                     </tr>
-                    <tr>
-                      {renderChineseParamHeader("layerOrder")}
-                      <td>
-                        <div className="layer-actions">
-                          <button type="button" onClick={() => moveSelectedLayer("back")}>置底</button>
-                          <button type="button" onClick={() => moveSelectedLayer("backward")}>下移</button>
-                          <button type="button" onClick={() => moveSelectedLayer("forward")}>上移</button>
-                          <button type="button" onClick={() => moveSelectedLayer("front")}>置顶</button>
-                        </div>
-                      </td>
-                    </tr>
                     {!isStaticNode(selectedNode) && (
                       <>
                         <tr>
@@ -10295,11 +10323,11 @@ export function App() {
             <Undo2 size={14} />
             撤销
           </button>
-          <button onClick={() => runContextMenuAction(copySelection)} disabled={selectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0}>
+          <button onClick={() => runContextMenuAction(copySelection)} disabled={activeSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0}>
             <Copy size={14} />
             复制
           </button>
-          <button onClick={() => runContextMenuAction(cutSelection)} disabled={selectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0}>
+          <button onClick={() => runContextMenuAction(cutSelection)} disabled={activeSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0}>
             <Scissors size={14} />
             剪切
           </button>
@@ -10311,7 +10339,7 @@ export function App() {
             <FileInput size={14} />
             粘贴
           </button>
-          <button onClick={() => runContextMenuAction(tidySelectedEdgeRoute)} disabled={!selectedEdgeId}>
+          <button onClick={() => runContextMenuAction(tidySelectedEdgeRoute)} disabled={!selectedEdge}>
             <Route size={14} />
             整理连接线
           </button>
@@ -10319,29 +10347,11 @@ export function App() {
             <Pencil size={14} />
             添加拐点
           </button>
-          {selectedNodeIds.length > 0 && (
-            <div className="context-menu-section" role="group" aria-label="修改所属图层">
-              <div className="context-menu-section-title">
-                <Layers size={13} />
-                <span>所属图层</span>
-              </div>
-              {layers.map((layer) => {
-                const allSelectedInLayer = selectedNodeIds.every((nodeId) => (nodeById.get(nodeId)?.layerId ?? DEFAULT_MODEL_LAYER_ID) === layer.id);
-                return (
-                  <button
-                    key={layer.id}
-                    onClick={() => runContextMenuAction(() => assignSelectedNodesToModelLayer(layer.id))}
-                    disabled={allSelectedInLayer}
-                    title={layer.visible ? layer.name : `${layer.name}（隐藏）`}
-                  >
-                    {layer.visible ? <Layers size={14} /> : <EyeOff size={14} />}
-                    {layer.name}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          <button onClick={() => runContextMenuAction(deleteSelection)} disabled={selectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0}>
+          <button onClick={() => runContextMenuAction(openLayerAssignmentDialog)} disabled={activeSelectedNodeIds.length === 0}>
+            <Layers size={14} />
+            图层修改
+          </button>
+          <button onClick={() => runContextMenuAction(deleteSelection)} disabled={activeSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0}>
             <Trash2 size={14} />
             删除
           </button>
@@ -10466,6 +10476,43 @@ export function App() {
               <strong>{activeLayer?.name ?? "默认图层"}</strong>
             </div>
             {renderLayerManager()}
+          </section>
+        </div>
+      )}
+      {layerAssignmentDialogOpen && (
+        <div className="image-picker-backdrop" onPointerDown={() => setLayerAssignmentDialogOpen(false)}>
+          <section className="layer-assignment-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="layer-assignment-title">
+            <div className="image-picker-title">
+              <div>
+                <h2 id="layer-assignment-title">图层修改</h2>
+                <p>当前选中 {activeSelectedNodeIds.length} 个图元。选择目标图层后，确认应用到这些图元。</p>
+              </div>
+              <button type="button" onClick={() => setLayerAssignmentDialogOpen(false)}>关闭</button>
+            </div>
+            <label className="layer-assignment-field">
+              <span>目标图层</span>
+              <select
+                value={layerAssignmentTargetId}
+                onChange={(event) => setLayerAssignmentTargetId(event.target.value)}
+              >
+                {layers.map((layer) => (
+                  <option key={layer.id} value={layer.id}>
+                    {layer.visible ? layer.name : `${layer.name}（隐藏）`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="layer-assignment-note">如果目标图层处于隐藏状态，应用后这些图元会按图层显示规则从画布上隐藏。</p>
+            <div className="image-picker-actions layer-assignment-actions">
+              <button type="button" onClick={() => setLayerAssignmentDialogOpen(false)}>取消</button>
+              <button
+                type="button"
+                onClick={applyLayerAssignmentDialog}
+                disabled={activeSelectedNodeIds.length === 0 || !layers.some((layer) => layer.id === layerAssignmentTargetId) || layerAssignmentUnchanged}
+              >
+                应用
+              </button>
+            </div>
           </section>
         </div>
       )}
