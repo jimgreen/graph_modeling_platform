@@ -1482,6 +1482,25 @@ button:disabled {
   background: transparent;
 }
 
+.context-menu-section {
+  display: grid;
+  gap: 2px;
+  padding: 4px 0;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.context-menu-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 9px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .image-picker-backdrop {
   position: fixed;
   inset: 0;
@@ -2285,6 +2304,47 @@ button:disabled {
   gap: 10px;
 }
 
+.layer-dialog {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 14px;
+  width: min(860px, calc(100vw - 48px));
+  max-height: min(720px, calc(100vh - 48px));
+  overflow: hidden;
+  padding: 18px;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.layer-dialog-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  color: #475569;
+  background: #f8fafc;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.layer-dialog-status strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #0f172a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-dialog .layer-manager {
+  min-height: 0;
+}
+
 .layer-manager-toolbar {
   display: flex;
   justify-content: flex-start;
@@ -2311,6 +2371,11 @@ button:disabled {
   max-height: 260px;
   overflow-y: auto;
   padding-right: 2px;
+}
+
+.layer-dialog .layer-list {
+  max-height: none;
+  min-height: 0;
 }
 
 .layer-row {

@@ -2896,6 +2896,7 @@ export function App() {
   const [definitionDraftRows, setDefinitionDraftRows] = useState<DeviceDefinitionDraftRow[]>([]);
   const [definitionDraftSection, setDefinitionDraftSection] = useState("");
   const [definitionDraftError, setDefinitionDraftError] = useState("");
+  const [layerDialogOpen, setLayerDialogOpen] = useState(false);
   const [topologyErrors, setTopologyErrors] = useState<TopologyValidationError[]>([]);
   const [topology, setTopology] = useState<Topology>(EMPTY_TOPOLOGY);
   const [topologyStatus, setTopologyStatus] = useState<TopologyRunStatus>(INITIAL_TOPOLOGY_STATUS);
@@ -5645,6 +5646,30 @@ export function App() {
     setNodes(nextNodes);
   };
 
+  const assignSelectedNodesToModelLayer = (layerId: string) => {
+    if (selectedNodeIds.length === 0) {
+      return;
+    }
+    const layer = layers.find((item) => item.id === layerId);
+    if (!layer) {
+      return;
+    }
+    const selected = new Set(selectedNodeIds);
+    const changedCount = nodes.filter((node) => selected.has(node.id) && (node.layerId ?? DEFAULT_MODEL_LAYER_ID) !== layerId).length;
+    if (changedCount === 0) {
+      return;
+    }
+    pushUndoSnapshot();
+    setNodes((current) =>
+      current.map((node) =>
+        selected.has(node.id)
+          ? { ...node, layerId }
+          : node
+      )
+    );
+    writeOperationLog(`修改 ${changedCount} 个图元所属图层为：${layer.name}`);
+  };
+
   const moveSelectedLayer = (direction: "front" | "back" | "forward" | "backward") => {
     if (selectedNodeIds.length === 0) {
       return;
@@ -7123,6 +7148,47 @@ export function App() {
     setLayers((current) => current.filter((item) => item.id !== layerId));
     writeOperationLog(`删除图层：${layer.name}`);
   };
+
+  const renderLayerManager = () => (
+    <div className="layer-manager">
+      <div className="layer-manager-toolbar">
+        <button type="button" onClick={addModelLayer}>新增图层</button>
+      </div>
+      <div className="layer-list">
+        {layers.map((layer, index) => (
+          <div key={layer.id} className={`layer-row ${layer.id === activeLayerId ? "active" : ""}`}>
+            <label title={layer.id === activeLayerId ? "激活图层必须显示" : "显示/隐藏图层"}>
+              <input
+                type="checkbox"
+                checked={layer.visible}
+                disabled={layer.id === activeLayerId}
+                onChange={() => toggleModelLayerVisibility(layer.id)}
+              />
+              显示
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="active-layer"
+                checked={layer.id === activeLayerId}
+                onChange={() => setActiveLayer(layer.id)}
+              />
+              激活
+            </label>
+            <input
+              className="layer-name-input"
+              value={layer.name}
+              readOnly
+            />
+            <button type="button" onClick={() => renameModelLayer(layer.id)} title="重命名图层">重命名</button>
+            <button type="button" onClick={() => moveModelLayer(layer.id, -1)} disabled={index === 0} title="图层上移">上移</button>
+            <button type="button" onClick={() => moveModelLayer(layer.id, 1)} disabled={index === layers.length - 1} title="图层下移">下移</button>
+            <button type="button" onClick={() => deleteModelLayer(layer.id)} disabled={layers.length <= 1 || layer.id === activeLayerId} title="删除图层">删除</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
   const saveCurrentProject = (targetId = activeProjectId) => {
     deferredMoveOptimizationCancelRef.current?.();
@@ -8781,6 +8847,14 @@ export function App() {
             <Layers size={15} />
             <span>{activeLayer?.name ?? "默认图层"}</span>
           </div>
+          <button
+            className="topbar-primary-button"
+            onClick={() => setLayerDialogOpen(true)}
+            title="图层管理"
+            aria-label="图层管理"
+          >
+            <Layers2 size={16} />
+          </button>
           <button className="topbar-primary-button" onClick={runTopologyCalculation} title="图上拓扑" aria-label="图上拓扑">
             <Grid2X2 size={16} />
           </button>
@@ -9842,49 +9916,6 @@ export function App() {
                       </div>
                     </td>
                   </tr>
-                  <tr>
-                    {renderChineseParamHeader("layers", "图层")}
-                    <td>
-                      <div className="layer-manager">
-                        <div className="layer-manager-toolbar">
-                          <button type="button" onClick={addModelLayer}>新增图层</button>
-                        </div>
-                        <div className="layer-list">
-                          {layers.map((layer, index) => (
-                            <div key={layer.id} className={`layer-row ${layer.id === activeLayerId ? "active" : ""}`}>
-                              <label title={layer.id === activeLayerId ? "激活图层必须显示" : "显示/隐藏图层"}>
-                                <input
-                                  type="checkbox"
-                                  checked={layer.visible}
-                                  disabled={layer.id === activeLayerId}
-                                  onChange={() => toggleModelLayerVisibility(layer.id)}
-                                />
-                                显示
-                              </label>
-                              <label>
-                                <input
-                                  type="radio"
-                                  name="active-layer"
-                                  checked={layer.id === activeLayerId}
-                                  onChange={() => setActiveLayer(layer.id)}
-                                />
-                                激活
-                              </label>
-                              <input
-                                className="layer-name-input"
-                                value={layer.name}
-                                readOnly
-                              />
-                              <button type="button" onClick={() => renameModelLayer(layer.id)} title="重命名图层">重命名</button>
-                              <button type="button" onClick={() => moveModelLayer(layer.id, -1)} disabled={index === 0} title="图层上移">上移</button>
-                              <button type="button" onClick={() => moveModelLayer(layer.id, 1)} disabled={index === layers.length - 1} title="图层下移">下移</button>
-                              <button type="button" onClick={() => deleteModelLayer(layer.id)} disabled={layers.length <= 1 || layer.id === activeLayerId} title="删除图层">删除</button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
                 </tbody>
               </table>
             ) : inspectorTab === "graph" ? (
@@ -10288,6 +10319,28 @@ export function App() {
             <Pencil size={14} />
             添加拐点
           </button>
+          {selectedNodeIds.length > 0 && (
+            <div className="context-menu-section" role="group" aria-label="修改所属图层">
+              <div className="context-menu-section-title">
+                <Layers size={13} />
+                <span>所属图层</span>
+              </div>
+              {layers.map((layer) => {
+                const allSelectedInLayer = selectedNodeIds.every((nodeId) => (nodeById.get(nodeId)?.layerId ?? DEFAULT_MODEL_LAYER_ID) === layer.id);
+                return (
+                  <button
+                    key={layer.id}
+                    onClick={() => runContextMenuAction(() => assignSelectedNodesToModelLayer(layer.id))}
+                    disabled={allSelectedInLayer}
+                    title={layer.visible ? layer.name : `${layer.name}（隐藏）`}
+                  >
+                    {layer.visible ? <Layers size={14} /> : <EyeOff size={14} />}
+                    {layer.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <button onClick={() => runContextMenuAction(deleteSelection)} disabled={selectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0}>
             <Trash2 size={14} />
             删除
@@ -10395,6 +10448,24 @@ export function App() {
               <button type="button" onClick={() => resolveUnsavedChangeAction("cancel")}>退出操作</button>
             </div>
             <p className="unsaved-change-note">关闭网页时，浏览器也会在离开前提示当前模型未保存。</p>
+          </section>
+        </div>
+      )}
+      {layerDialogOpen && (
+        <div className="image-picker-backdrop" onPointerDown={() => setLayerDialogOpen(false)}>
+          <section className="layer-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="layer-dialog-title">
+            <div className="image-picker-title">
+              <div>
+                <h2 id="layer-dialog-title">图层管理</h2>
+                <p>管理模型图层的显示、顺序和激活状态。新建或拖入的图元默认进入当前激活图层。</p>
+              </div>
+              <button type="button" onClick={() => setLayerDialogOpen(false)}>关闭</button>
+            </div>
+            <div className="layer-dialog-status">
+              <span>激活图层</span>
+              <strong>{activeLayer?.name ?? "默认图层"}</strong>
+            </div>
+            {renderLayerManager()}
           </section>
         </div>
       )}

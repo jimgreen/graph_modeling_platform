@@ -1609,14 +1609,20 @@ describe("power system model", () => {
     expect(position.y).toBeLessThanOrEqual(1024 - (node.size.height * Math.abs(node.scaleY ?? node.scale)) / 2);
   });
 
-  test("centers the drawing area when the SVG view box is larger than the canvas", () => {
-    expect(normalizeViewBoxToCanvas({ x: 0, y: 0, width: 3000, height: 1800 }, { width: 1980, height: 1024 })).toMatchObject({
-      x: -510,
-      y: -388
+  test("allows canvas edges to be panned to the center of the SVG view box", () => {
+    const bounds = { width: 1980, height: 1024 };
+
+    expect(normalizeViewBoxToCanvas({ x: -900, y: -700, width: 1200, height: 800 }, bounds)).toMatchObject({
+      x: -600,
+      y: -400
     });
-    expect(normalizeViewBoxToCanvas({ x: 900, y: 600, width: 1200, height: 800 }, { width: 1980, height: 1024 })).toMatchObject({
-      x: 780,
-      y: 224
+    expect(normalizeViewBoxToCanvas({ x: 1600, y: 900, width: 1200, height: 800 }, bounds)).toMatchObject({
+      x: 1380,
+      y: 624
+    });
+    expect(normalizeViewBoxToCanvas({ x: -2000, y: 1000, width: 3000, height: 1800 }, bounds)).toMatchObject({
+      x: -1500,
+      y: 124
     });
   });
 

@@ -3813,12 +3813,14 @@ export function modelGeometryInsideCanvasBounds(
 }
 
 export function normalizeViewBoxToCanvas(box: ViewBox, bounds: CanvasBounds): ViewBox {
-  const maxX = bounds.width - box.width;
-  const maxY = bounds.height - box.height;
+  const minX = -box.width / 2;
+  const maxX = bounds.width - box.width / 2;
+  const minY = -box.height / 2;
+  const maxY = bounds.height - box.height / 2;
   return {
     ...box,
-    x: box.width >= bounds.width ? maxX / 2 : Math.max(0, Math.min(maxX, box.x)),
-    y: box.height >= bounds.height ? maxY / 2 : Math.max(0, Math.min(maxY, box.y))
+    x: Math.max(minX, Math.min(maxX, box.x)),
+    y: Math.max(minY, Math.min(maxY, box.y))
   };
 }
 

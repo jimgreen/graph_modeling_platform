@@ -638,6 +638,42 @@ describe("graph inspector panel", () => {
     expect(serverSource).toContain("\"/api/color-config\"");
   });
 
+  test("moves model layer definition controls from the inspector table to a topbar dialog", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const topbarStart = source.indexOf("<header className=\"topbar\">");
+    const topbarEnd = source.indexOf("</header>", topbarStart);
+    const topbarBlock = source.slice(topbarStart, topbarEnd);
+
+    expect(source).toContain("layerDialogOpen");
+    expect(source).toContain("setLayerDialogOpen(true)");
+    expect(topbarBlock).toContain("aria-label=\"图层管理\"");
+    expect(source).toContain("id=\"layer-dialog-title\"");
+    expect(source).toContain("renderLayerManager()");
+    expect(source).toContain("新增图层");
+    expect(source).not.toContain("renderChineseParamHeader(\"layers\", \"图层\")");
+    expect(source).toContain("renderChineseParamHeader(\"layerId\", \"所属图层\")");
+    expect(styles).toContain(".layer-dialog");
+  });
+
+  test("adds a context menu action for assigning selected graphics to a model layer", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const contextStart = source.indexOf("{contextMenu && (");
+    const contextEnd = source.indexOf("{projectMenu && (", contextStart);
+    const contextBlock = source.slice(contextStart, contextEnd);
+
+    expect(source).toContain("assignSelectedNodesToModelLayer");
+    expect(contextBlock).toContain("aria-label=\"修改所属图层\"");
+    expect(contextBlock).toContain("所属图层");
+    expect(contextBlock).toContain("layers.map((layer)");
+    expect(contextBlock).toContain("assignSelectedNodesToModelLayer(layer.id)");
+    expect(contextBlock).toContain("allSelectedInLayer");
+    expect(contextBlock).toContain("<EyeOff size={14} />");
+    expect(styles).toContain(".context-menu-section");
+    expect(styles).toContain(".context-menu-section-title");
+  });
+
   test("moves layer-order actions from the context menu to icon-only topbar buttons", async () => {
     const source = await readAppSource();
     const topbarStart = source.indexOf("<header className=\"topbar\">");
