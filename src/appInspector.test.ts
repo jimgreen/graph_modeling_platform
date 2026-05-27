@@ -219,7 +219,7 @@ describe("graph inspector panel", () => {
     const layoutBlock = source.slice(layoutStart, layoutEnd);
 
     expect(activeLayerBlock).toContain("(node.layerId ?? DEFAULT_MODEL_LAYER_ID) === activeLayerId");
-    expect(activeLayerBlock).toContain("activeLayerNodeIdSet.has(edge.sourceId) && activeLayerNodeIdSet.has(edge.targetId)");
+    expect(activeLayerBlock).toContain("activeLayerNodeIdSet.has(edge.sourceId) || activeLayerNodeIdSet.has(edge.targetId)");
     expect(selectionStateBlock).toContain("selectedNodeIds.filter((nodeId) => activeLayerNodeIdSet.has(nodeId))");
     expect(selectionStateBlock).toContain("const selectedNodeId = activeSelectedNodeIds[0] ?? \"\"");
     expect(selectionStateBlock).toContain("new Set(activeSelectedNodeIds)");
@@ -232,6 +232,7 @@ describe("graph inspector panel", () => {
     expect(dragBlock).toContain("if (!activeLayerNodeIdSet.has(node.id))");
     expect(layoutBlock).toContain("layoutNodes(nodes, activeSelectedNodeIds)");
     expect(source).toContain("if (!activeLayerEdgeIdSet.has(edgeId))");
+    expect(source).toContain("for (const node of visibleNodes)");
   });
 
   test("checks a newly drawn connection route before committing it to the model", async () => {

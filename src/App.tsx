@@ -2956,7 +2956,7 @@ export function App() {
   );
   const activeLayerNodeIdSet = useMemo(() => new Set(activeLayerNodes.map((node) => node.id)), [activeLayerNodes]);
   const activeLayerEdges = useMemo(
-    () => visibleEdges.filter((edge) => activeLayerNodeIdSet.has(edge.sourceId) && activeLayerNodeIdSet.has(edge.targetId)),
+    () => visibleEdges.filter((edge) => activeLayerNodeIdSet.has(edge.sourceId) || activeLayerNodeIdSet.has(edge.targetId)),
     [activeLayerNodeIdSet, visibleEdges]
   );
   const activeLayerEdgeIdSet = useMemo(() => new Set(activeLayerEdges.map((edge) => edge.id)), [activeLayerEdges]);
@@ -6131,7 +6131,7 @@ export function App() {
     if (!otherNode || !otherTerminalId) {
       return null;
     }
-    for (const node of activeLayerNodes) {
+    for (const node of visibleNodes) {
       if (node.id === otherNode.id) {
         continue;
       }
@@ -6161,7 +6161,7 @@ export function App() {
     if (!sourceNode) {
       return null;
     }
-    for (const node of activeLayerNodes) {
+    for (const node of visibleNodes) {
       if (isBusNode(node) && isPointNearBus(node, point, CONNECT_BUS_SNAP_TOLERANCE)) {
         const terminalId = node.terminals[0]?.id ?? "t1";
         if (
