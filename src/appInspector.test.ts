@@ -127,6 +127,24 @@ describe("graph inspector panel", () => {
     expect(previewBlock).not.toContain("simpleOrthogonalPolyline");
   });
 
+  test("routes connection previews through the snapped target terminal normal", async () => {
+    const source = await readAppSource();
+    const previewStart = source.indexOf("const connectPreviewPath = useMemo");
+    const previewEnd = source.indexOf("const connectPreviewColor", previewStart);
+    const previewBlock = source.slice(previewStart, previewEnd);
+    const pointerStart = source.indexOf("if (connectSource) {");
+    const pointerEnd = source.indexOf("if (terminalPress", pointerStart);
+    const pointerBlock = source.slice(pointerStart, pointerEnd);
+
+    expect(source).toContain("connectDropTarget");
+    expect(source).toContain("setConnectDropTarget");
+    expect(previewBlock).toContain("const previewTarget = connectDropTarget;");
+    expect(previewBlock).toContain("targetId: previewTarget?.node.id ?? \"floating-connect-preview-target\"");
+    expect(previewBlock).toContain("targetTerminalId: previewTarget?.terminalId ?? \"t1\"");
+    expect(previewBlock).toContain("targetPoint: previewTarget");
+    expect(pointerBlock).toContain("target ?? null");
+  });
+
   test("keeps endpoint rewire previews on the lightweight stored-route path", async () => {
     const source = await readAppSource();
     const previewStart = source.indexOf("const rewiringPreviewRoute = useMemo");

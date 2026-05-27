@@ -1633,6 +1633,7 @@ export type ConnectionRouteValidationIssueType =
   | "endpoint-not-perpendicular"
   | "blocked-by-node"
   | "overlaps-connection"
+  | "route-reversal"
   | "out-of-bounds";
 
 export type ConnectionRouteValidationIssue = {
@@ -6609,6 +6610,9 @@ function compactRoutePreservingEndpointStubs(points: Point[]) {
 
 function routeCandidateIsSafe(points: Point[], options: InternalRouteSimplifyOptions) {
   const route = orthogonalizeRouteKeepingCollinear(points);
+  if (routeHasImmediateReversal(route)) {
+    return false;
+  }
   if (options.blockers?.length && routeIntersectsBlockers(route, options.blockers, ROUTE_BLOCKER_PADDING, 1)) {
     return false;
   }
@@ -7179,8 +7183,11 @@ function selectRouteCandidate(candidates: Point[][], blockers: ModelNode[], avoi
   for (const candidate of candidates) {
     const candidateBlockers = filterBlockersForRoutePoints(candidate, blockers);
     const candidateAvoidedSegments = filterSegmentsForRoutePoints(candidate, avoidedSegments);
+    const hasImmediateReversal = routeHasImmediateReversal(candidate);
     const intersectsBlocker = routeIntersectsBlockers(candidate, candidateBlockers);
-    const tier = !intersectsBlocker
+    const tier = hasImmediateReversal
+      ? 3
+      : !intersectsBlocker
       ? routeOverlapsSegments(candidate, candidateAvoidedSegments) ? 1 : 0
       : 2;
     if (tier > bestTier) {
@@ -7256,6 +7263,18 @@ function pathWithCrossingArcs(route: RoutedEdge, previousSegments: Segment[], ro
   return commands.join(" ");
 }
 
+function refreshCrossingArcPaths(routes: RoutedEdge[]): RoutedEdge[] {
+  const crossingSegments: Segment[] = [];
+  return routes.map((route, index) => {
+    const routedEdge = {
+      ...route,
+      path: pathWithCrossingArcs(route, crossingSegments, index)
+    };
+    crossingSegments.push(...getSegments(route.edgeId, index, route.points));
+    return routedEdge;
+  });
+}
+
 export function routeEdgesForRendering(nodes: ModelNode[], edges: Edge[], bounds?: CanvasBounds): RoutedEdge[] {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const routed: RoutedEdge[] = [];
@@ -7276,20 +7295,12 @@ export function routeEdgesForRendering(nodes: ModelNode[], edges: Edge[], bounds
     avoidedSegments.push(...getSegments(edge.id, routeIndex, points));
   });
   const renderRoutes = routed.map((route) => ({ ...route, points: simplifyRoutePreservingEndpointStubs(route.points) }));
-  const crossingSegments: Segment[] = [];
-  return renderRoutes.map((route, index) => {
-    const routedEdge = {
-      ...route,
-      path: pathWithCrossingArcs(route, crossingSegments, index)
-    };
-    crossingSegments.push(...getSegments(route.edgeId, index, route.points));
-    return routedEdge;
-  });
+  return refreshCrossingArcPaths(renderRoutes);
 }
 
 export function routeEdgesForStoredRendering(nodes: ModelNode[], edges: Edge[], bounds?: CanvasBounds): RoutedEdge[] {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  return edges.flatMap((edge) => {
+  const routes = edges.flatMap((edge) => {
     const source = nodeById.get(edge.sourceId) ?? (edge.sourcePoint ? createFloatingEndpointNode(edge.sourcePoint, edge.targetId ? nodeById.get(edge.targetId) : undefined) : undefined);
     const target = nodeById.get(edge.targetId) ?? (edge.targetPoint ? createFloatingEndpointNode(edge.targetPoint, edge.sourceId ? nodeById.get(edge.sourceId) : undefined) : undefined);
     if (!source || !target) {
@@ -7323,6 +7334,7 @@ export function routeEdgesForStoredRendering(nodes: ModelNode[], edges: Edge[], 
       path: pointsToOrthogonalPath(points)
     }];
   });
+  return refreshCrossingArcPaths(routes);
 }
 
 export function routeEdgesForCachedStoredRendering(
@@ -7340,12 +7352,13 @@ export function routeEdgesForCachedStoredRendering(
   const refreshedRouteById = new Map(
     routeEdgesForStoredRendering(nodes, edgesToRefresh, bounds).map((route) => [route.edgeId, route])
   );
-  return edges.flatMap((edge) => {
+  const routes = edges.flatMap((edge) => {
     const route = affectedEdgeIds.has(edge.id) || !previousRouteById.has(edge.id)
       ? refreshedRouteById.get(edge.id)
       : previousRouteById.get(edge.id);
     return route ? [route] : [];
   });
+  return refreshCrossingArcPaths(routes);
 }
 
 export function routeEdgesForIncrementalRendering(
@@ -7368,10 +7381,11 @@ export function routeEdgesForIncrementalRendering(
       const missingRouteById = missingEdges.length > 0
         ? new Map(routeEdgesForStoredRendering(nodes, missingEdges, bounds).map((route) => [route.edgeId, route]))
         : new Map<string, RoutedEdge>();
-      return edges.flatMap((edge) => {
+      const routes = edges.flatMap((edge) => {
         const route = previousRouteById.get(edge.id) ?? missingRouteById.get(edge.id);
         return route ? [route] : [];
       });
+      return refreshCrossingArcPaths(routes);
     }
     return routeEdgesForStoredRendering(nodes, edges, bounds);
   }
@@ -7417,31 +7431,7 @@ export function routeEdgesForIncrementalRendering(
     const route = routedRouteById.get(edge.id) ?? storedRouteById.get(edge.id);
     return route ? [{ ...route }] : [];
   });
-  if (previousRoutes.length > 0) {
-    const crossingSegments: Segment[] = [];
-    return combinedRoutes.map((route, index) => {
-      const canReusePreviousPath = !affectedEdgeIds.has(route.edgeId) && previousRouteById.has(route.edgeId);
-      if (canReusePreviousPath) {
-        crossingSegments.push(...getSegments(route.edgeId, index, route.points));
-        return route;
-      }
-      const routedEdge = {
-        ...route,
-        path: pathWithCrossingArcs(route, crossingSegments, index)
-      };
-      crossingSegments.push(...getSegments(route.edgeId, index, route.points));
-      return routedEdge;
-    });
-  }
-  const crossingSegments: Segment[] = [];
-  return combinedRoutes.map((route, index) => {
-    const routedEdge = {
-      ...route,
-      path: pathWithCrossingArcs(route, crossingSegments, index)
-    };
-    crossingSegments.push(...getSegments(route.edgeId, index, route.points));
-    return routedEdge;
-  });
+  return refreshCrossingArcPaths(combinedRoutes);
 }
 
 function routeEndpointNormal(node: ModelNode, endpointPoint: Point, otherPoint: Point, terminalId?: string): Point {
@@ -7449,9 +7439,45 @@ function routeEndpointNormal(node: ModelNode, endpointPoint: Point, otherPoint: 
 }
 
 function routeSegmentMatchesNormal(endpoint: Point, adjacent: Point, normal: Point) {
-  const vertical = Math.round(endpoint.x) === Math.round(adjacent.x);
-  const horizontal = Math.round(endpoint.y) === Math.round(adjacent.y);
-  return (vertical && normal.y !== 0) || (horizontal && normal.x !== 0);
+  const dx = Math.round(adjacent.x - endpoint.x);
+  const dy = Math.round(adjacent.y - endpoint.y);
+  if (normal.x !== 0) {
+    return dy === 0 && dx * Math.sign(normal.x) > 0;
+  }
+  if (normal.y !== 0) {
+    return dx === 0 && dy * Math.sign(normal.y) > 0;
+  }
+  return false;
+}
+
+function routeHasImmediateReversal(points: Point[]) {
+  const normalized: Point[] = [];
+  for (const point of points) {
+    const previous = normalized[normalized.length - 1];
+    if (!previous || !samePoint(previous, point)) {
+      normalized.push(point);
+    }
+  }
+  for (let index = 1; index < normalized.length - 1; index += 1) {
+    const previous = normalized[index - 1];
+    const current = normalized[index];
+    const next = normalized[index + 1];
+    const first = {
+      x: Math.round(current.x - previous.x),
+      y: Math.round(current.y - previous.y)
+    };
+    const second = {
+      x: Math.round(next.x - current.x),
+      y: Math.round(next.y - current.y)
+    };
+    if (first.y === 0 && second.y === 0 && first.x * second.x < 0) {
+      return true;
+    }
+    if (first.x === 0 && second.x === 0 && first.y * second.y < 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function segmentIntersectsRouteBlocker(
@@ -7539,6 +7565,13 @@ export function validateConnectionEdgeRoute(
       message: `联络线末端没有与 ${target.name} 的端子法平面保持垂直。`
     });
   }
+  if (routeHasImmediateReversal(route.points)) {
+    issues.push({
+      type: "route-reversal",
+      edgeId,
+      message: "联络线路径存在原地 180 度反向折返，属于无意义走线。"
+    });
+  }
 
   const lastSegmentIndex = route.points.length - 2;
   const routeBlockers = filterBlockersForRoutePoints(route.points, nodes);
@@ -7570,32 +7603,6 @@ export function validateConnectionEdgeRoute(
         });
       }
     }
-  }
-
-  const edgeById = new Map(edges.map((item) => [item.id, item]));
-  const routeSegmentBox = routeBoundsForPoints(route.points, ROUTE_LANE_SEGMENT_MARGIN);
-  const otherSegments = routes
-    .flatMap((item, index) =>
-      item.edgeId === edgeId || !boxesOverlap(routeBoundsForPoints(item.points, ROUTE_LANE_SEGMENT_MARGIN), routeSegmentBox)
-        ? []
-        : getSegments(item.edgeId, index, item.points)
-    );
-  const overlapConflict = findRouteOverlapConflict(route.points, otherSegments, {
-    currentEdge: edge,
-    edgeById,
-    nodeById,
-    allowSharedEndpointStubs: true
-  });
-  if (overlapConflict) {
-    const conflict = overlapConflict.conflictingSegment;
-    issues.push({
-      type: "overlaps-connection",
-      edgeId,
-      conflictingEdgeId: conflict.edgeId,
-      message: conflict.edgeId
-        ? `联络线路径与已有联络线 ${conflict.edgeId} 存在线段重叠。`
-        : "联络线路径与已有联络线存在线段重叠。"
-    });
   }
 
   return { ok: issues.length === 0, route, issues };
@@ -7709,20 +7716,12 @@ function routeIsSafeForCommit(
   source: ModelNode,
   target: ModelNode,
   edge: Edge,
-  avoidedSegments: Segment[],
-  nodeById: Map<string, ModelNode>,
-  edgeById: Map<string, Edge>,
   bounds?: CanvasBounds
 ) {
   return (
     routeEndpointSegmentsAreValid(points, source, target, edge) &&
-    !routeHasCommitBlockingIssue(points, nodes, source, target, bounds) &&
-    !routeOverlapsSegments(points, avoidedSegments, {
-      currentEdge: edge,
-      edgeById,
-      nodeById,
-      allowSharedEndpointStubs: true
-    })
+    !routeHasImmediateReversal(points) &&
+    !routeHasCommitBlockingIssue(points, nodes, source, target, bounds)
   );
 }
 
@@ -7737,8 +7736,6 @@ function selectCommitSafeRoute(
   target: ModelNode,
   edge: Edge,
   avoidedSegments: Segment[],
-  nodeById: Map<string, ModelNode>,
-  edgeById: Map<string, Edge>,
   bounds?: CanvasBounds
 ): Point[] | null {
   let bestRoute: Point[] | null = null;
@@ -7761,7 +7758,7 @@ function selectCommitSafeRoute(
     seen.add(signature);
     const simplifiedBlockers = filterBlockersForRoutePoints(simplified, nodes);
     const simplifiedAvoidedSegments = filterSegmentsForRoutePoints(simplified, avoidedSegments);
-    if (!routeIsSafeForCommit(simplified, simplifiedBlockers, source, target, edge, simplifiedAvoidedSegments, nodeById, edgeById, bounds)) {
+    if (!routeIsSafeForCommit(simplified, simplifiedBlockers, source, target, edge, bounds)) {
       continue;
     }
     const candidateBends = routeBendCount(simplified);
@@ -7788,8 +7785,7 @@ function designCommitSafeRoute(
   nodes: ModelNode[],
   edges: Edge[],
   edgeId: string,
-  bounds?: CanvasBounds,
-  previousRoutes: RoutedEdge[] = []
+  bounds?: CanvasBounds
 ): RoutedEdge | null {
   const edge = edges.find((item) => item.id === edgeId);
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
@@ -7800,18 +7796,7 @@ function designCommitSafeRoute(
   }
 
   const edgeForDesign = edgeWithoutManualPoints(edge);
-  const otherEdges = edges.filter((item) => item.id !== edgeId);
-  const otherRoutes = previousRoutes.length > 0
-    ? routeEdgesForIncrementalRendering(
-        nodes,
-        otherEdges,
-        new Set(),
-        bounds,
-        previousRoutes.filter((route) => route.edgeId !== edgeId)
-      )
-    : routeEdgesForRendering(nodes, otherEdges, bounds);
-  const avoidedSegments = otherRoutes
-    .flatMap((route, routeIndex) => getSegments(route.edgeId, routeIndex, route.points));
+  const avoidedSegments: Segment[] = [];
   const context = buildEdgeRoutingContext(source, target, nodes, edgeForDesign);
   const middleCandidates = buildRouteCandidates(context.startOut, context.endOut, context.blockers, avoidedSegments, bounds);
   const fullCandidates: Point[][] = [];
@@ -7821,8 +7806,7 @@ function designCommitSafeRoute(
     fullCandidates.push(repairRouteAroundBlockers(route, context.blockers, bounds, 1));
   }
 
-  const edgeById = new Map(edges.map((item) => [item.id, item]));
-  const selected = selectCommitSafeRoute(fullCandidates, nodes, source, target, edgeForDesign, avoidedSegments, nodeById, edgeById, bounds);
+  const selected = selectCommitSafeRoute(fullCandidates, nodes, source, target, edgeForDesign, avoidedSegments, bounds);
   return selected ? { edgeId, points: selected, path: "" } : null;
 }
 
@@ -7840,6 +7824,16 @@ export function prepareConnectionEdgeForCommit(
   }
 
   const edgeForDesign = edgeWithoutManualPoints(edge);
+  const safeRoute = designCommitSafeRoute(nodes, edges, edgeId, bounds);
+  if (safeRoute) {
+    const safeEdge = edgeWithCommitManualPoints(edgeForDesign, safeRoute);
+    const safeEdges = edges.map((item) => item.id === edgeId ? safeEdge : item);
+    const safeValidation = validateConnectionEdgeRoute(nodes, safeEdges, edgeId, bounds, previousRoutes);
+    if (safeValidation.ok) {
+      return { ...safeValidation, edge: safeEdge };
+    }
+  }
+
   const otherEdges = edges.filter((item) => item.id !== edgeId);
   const candidateEdges = [...otherEdges, edgeForDesign];
   const designedRoute = (
@@ -7864,16 +7858,6 @@ export function prepareConnectionEdgeForCommit(
   const validation = validateConnectionEdgeRoute(nodes, preparedEdges, edgeId, bounds, previousRoutes);
   if (validation.ok) {
     return { ...validation, edge: preparedEdge };
-  }
-
-  const safeRoute = designCommitSafeRoute(nodes, edges, edgeId, bounds, previousRoutes);
-  if (safeRoute) {
-    const safeEdge = edgeWithCommitManualPoints(edgeForDesign, safeRoute);
-    const safeEdges = edges.map((item) => item.id === edgeId ? safeEdge : item);
-    const safeValidation = validateConnectionEdgeRoute(nodes, safeEdges, edgeId, bounds, previousRoutes);
-    if (safeValidation.ok) {
-      return { ...safeValidation, edge: safeEdge };
-    }
   }
 
   return { ...validation };
@@ -8077,12 +8061,20 @@ export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes:
   if (edge?.manualPoints?.length) {
     const manualRoute = orthogonalizeRouteKeepingCollinear([start, startOut, ...edge.manualPoints, endOut, end]);
     const boundedManualRoute = bounds ? orthogonalizeRouteKeepingCollinear(manualRoute.map((point) => clampPointToBounds(point, bounds))) : manualRoute;
-    if (!routeIntersectsBlockers(boundedManualRoute, blockers, ROUTE_BLOCKER_PADDING, 1)) {
-      return simplifyRoutePreservingEndpointStubs(boundedManualRoute);
+    const simplifiedManualRoute = simplifyRoutePreservingEndpointStubs(boundedManualRoute);
+    if (
+      !routeHasImmediateReversal(simplifiedManualRoute) &&
+      !routeIntersectsBlockers(simplifiedManualRoute, blockers, ROUTE_BLOCKER_PADDING, 1)
+    ) {
+      return simplifiedManualRoute;
     }
     const repairedManualRoute = repairRouteAroundBlockers(boundedManualRoute, blockers, bounds, 1);
-    if (!routeIntersectsBlockers(repairedManualRoute, blockers, ROUTE_BLOCKER_PADDING, 1)) {
-      return simplifyRoutePreservingEndpointStubs(repairedManualRoute);
+    const simplifiedRepairedManualRoute = simplifyRoutePreservingEndpointStubs(repairedManualRoute);
+    if (
+      !routeHasImmediateReversal(simplifiedRepairedManualRoute) &&
+      !routeIntersectsBlockers(simplifiedRepairedManualRoute, blockers, ROUTE_BLOCKER_PADDING, 1)
+    ) {
+      return simplifiedRepairedManualRoute;
     }
     const candidates = buildRouteCandidates(startOut, endOut, blockers, avoidedSegments, bounds);
     const repairedMiddle = selectRouteCandidate(candidates, blockers, avoidedSegments);

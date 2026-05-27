@@ -2756,8 +2756,9 @@ export function App() {
   const mouseStatusFrameRef = useRef<number | null>(null);
   const connectPreviewPointRef = useRef<Point | null>(null);
   const connectDropTargetPointRef = useRef<Point | null>(null);
+  const connectDropTargetRef = useRef<ConnectTarget | null>(null);
   const connectDropReadyRef = useRef(false);
-  const pendingConnectPreviewRef = useRef<{ point: Point | null; ready: boolean; targetPoint: Point | null } | null>(null);
+  const pendingConnectPreviewRef = useRef<{ point: Point | null; ready: boolean; targetPoint: Point | null; target: ConnectTarget | null } | null>(null);
   const connectPreviewFrameRef = useRef<number | null>(null);
   const draggingRef = useRef<DraggingState | null>(null);
   const pendingNodeDragMoveRef = useRef<{ point: Point; ctrlKey: boolean; shiftKey: boolean } | null>(null);
@@ -2804,6 +2805,7 @@ export function App() {
   const [connectSource, setConnectSource] = useState<{ nodeId: string; terminalId: string; point?: Point } | null>(null);
   const [connectPreviewPoint, setConnectPreviewPoint] = useState<Point | null>(null);
   const [connectDropTargetPoint, setConnectDropTargetPoint] = useState<Point | null>(null);
+  const [connectDropTarget, setConnectDropTarget] = useState<ConnectTarget | null>(null);
   const [connectDropReady, setConnectDropReady] = useState(false);
   const [dragging, setDragging] = useState<DraggingState | null>(null);
   const [rewiring, setRewiring] = useState<RewiringState>(null);
@@ -3211,21 +3213,26 @@ export function App() {
       return "";
     }
     const sourcePoint = connectSource.point ?? getModelEdgeEndpointPoint(sourceNode, undefined, connectSource.terminalId);
+    const previewTarget = connectDropTarget;
     const route = routeEdgesForStoredRendering(
       nodes,
       [{
         id: "connect-preview",
         sourceId: sourceNode.id,
-        targetId: "floating-connect-preview-target",
+        targetId: previewTarget?.node.id ?? "floating-connect-preview-target",
         sourceTerminalId: connectSource.terminalId,
-        targetTerminalId: "t1",
+        targetTerminalId: previewTarget?.terminalId ?? "t1",
         sourcePoint,
-        targetPoint: endPoint
+        targetPoint: previewTarget
+          ? isBusNode(previewTarget.node)
+            ? previewTarget.point ?? endPoint
+            : previewTarget.point
+          : endPoint
       }],
       canvasBounds
     )[0];
     return route?.path ?? "";
-  }, [canvasBounds, connectDropTargetPoint, connectPreviewPoint, connectSource, nodeById, nodes]);
+  }, [canvasBounds, connectDropTarget, connectDropTargetPoint, connectPreviewPoint, connectSource, nodeById, nodes]);
   const connectPreviewColor = useMemo(() => {
     if (!connectSource) {
       return "";
@@ -4387,11 +4394,10 @@ export function App() {
   const connectionCommitFailureMessage = (issues: { type?: string; message?: string }[] = []) => {
     const needsReroute = issues.some((issue) =>
       issue.type === "blocked-by-node" ||
-      issue.type === "overlaps-connection" ||
       issue.type === "out-of-bounds"
     );
     if (needsReroute) {
-      return "已自动尝试避让图元和已有联络线，但当前空间不足以形成安全正交路径，请稍微移动相关图元或扩大显示区域后重试。";
+      return "已自动尝试避让设备和静态图元，但当前空间不足以形成安全正交路径，请稍微移动相关图元或扩大显示区域后重试。";
     }
     return issues[0]?.message ?? "联络线不满足正交、避让、端子垂直或最优路径约束。";
   };
@@ -5067,7 +5073,7 @@ export function App() {
       setMousePosition(next);
     });
   };
-  const applyConnectPreviewState = (point: Point | null, ready: boolean, targetPoint: Point | null = null) => {
+  const applyConnectPreviewState = (point: Point | null, ready: boolean, targetPoint: Point | null = null, target: ConnectTarget | null = null) => {
     const previousPoint = connectPreviewPointRef.current;
     if (!sameOptionalPoint(previousPoint ?? undefined, point ?? undefined)) {
       connectPreviewPointRef.current = point;
@@ -5079,13 +5085,19 @@ export function App() {
       connectDropTargetPointRef.current = nextTargetPoint;
       setConnectDropTargetPoint(nextTargetPoint);
     }
+    const previousTarget = connectDropTargetRef.current;
+    const nextTarget = ready ? target : null;
+    if (!sameConnectTarget(previousTarget ?? undefined, nextTarget)) {
+      connectDropTargetRef.current = nextTarget;
+      setConnectDropTarget(nextTarget);
+    }
     if (connectDropReadyRef.current !== ready) {
       connectDropReadyRef.current = ready;
       setConnectDropReady(ready);
     }
   };
-  const scheduleConnectPreviewState = (point: Point | null, ready: boolean, targetPoint: Point | null = null) => {
-    pendingConnectPreviewRef.current = { point, ready, targetPoint };
+  const scheduleConnectPreviewState = (point: Point | null, ready: boolean, targetPoint: Point | null = null, target: ConnectTarget | null = null) => {
+    pendingConnectPreviewRef.current = { point, ready, targetPoint, target };
     if (connectPreviewFrameRef.current !== null) {
       return;
     }
@@ -5096,7 +5108,7 @@ export function App() {
       if (!next) {
         return;
       }
-      applyConnectPreviewState(next.point, next.ready, next.targetPoint);
+      applyConnectPreviewState(next.point, next.ready, next.targetPoint, next.target);
     });
   };
   const resetConnectPreviewState = () => {
@@ -6271,7 +6283,7 @@ export function App() {
       if (connectSource) {
         const previewPoint = resolveConnectPreviewPoint(pointer, event);
         const target = findConnectTargetAtPoint(previewPoint);
-        scheduleConnectPreviewState(previewPoint, Boolean(target), target ? connectTargetSnapPoint(target) : null);
+        scheduleConnectPreviewState(previewPoint, Boolean(target), target ? connectTargetSnapPoint(target) : null, target ?? null);
       }
     }
     if (terminalPress && svgRef.current) {

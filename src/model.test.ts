@@ -130,6 +130,29 @@ function parseESections(text: string): Record<string, ParsedESection> {
   return sections;
 }
 
+function hasImmediateRouteReversal(points: Point[]) {
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const previous = points[index - 1];
+    const current = points[index];
+    const next = points[index + 1];
+    const first = { x: current.x - previous.x, y: current.y - previous.y };
+    const second = { x: next.x - current.x, y: next.y - current.y };
+    if (first.x === 0 && first.y === 0) {
+      continue;
+    }
+    if (second.x === 0 && second.y === 0) {
+      continue;
+    }
+    if (first.y === 0 && second.y === 0 && first.x * second.x < 0) {
+      return true;
+    }
+    if (first.x === 0 && second.x === 0 && first.y * second.y < 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 describe("power system model", () => {
   test("builds adjacency topology from connection lines", () => {
     const nodes: ModelNode[] = [
@@ -215,7 +238,7 @@ describe("power system model", () => {
     );
   });
 
-  test("incremental rendering reuses cached paths for unaffected connections", () => {
+  test("incremental rendering reuses cached points and refreshes paths for unaffected connections", () => {
     const sourceA = createDefaultNode("ac-source", { x: 100, y: 120 });
     const targetA = createDefaultNode("ac-load", { x: 360, y: 120 });
     const sourceB = createDefaultNode("ac-line", { x: 100, y: 240 });
@@ -253,7 +276,11 @@ describe("power system model", () => {
       previousRoutes
     );
 
-    expect(incremental.find((route) => route.edgeId === "cached")?.path).toBe("cached-path");
+    const previousCached = previousRoutes.find((route) => route.edgeId === "cached");
+    const nextCached = incremental.find((route) => route.edgeId === "cached");
+    expect(nextCached?.points).toEqual(previousCached?.points);
+    expect(nextCached?.path).not.toBe("cached-path");
+    expect(nextCached?.path).toContain("M");
     expect(incremental.find((route) => route.edgeId === "dirty")?.path).not.toBe(
       previousRoutes.find((route) => route.edgeId === "dirty")?.path
     );
@@ -295,7 +322,7 @@ describe("power system model", () => {
     expect(incremental.map((route) => route.path)).toEqual(["cached-cached-a", "cached-cached-b"]);
   });
 
-  test("cached stored rendering refreshes only affected connection paths after a move commit", () => {
+  test("cached stored rendering reuses unaffected points and refreshes crossing arc paths after a move commit", () => {
     const sourceA = createDefaultNode("ac-source", { x: 100, y: 120 });
     const targetA = createDefaultNode("ac-load", { x: 360, y: 120 });
     const sourceB = createDefaultNode("ac-line", { x: 100, y: 240 });
@@ -328,7 +355,11 @@ describe("power system model", () => {
       previousRoutes
     );
 
-    expect(nextRoutes.find((route) => route.edgeId === "cached")?.path).toBe("cached-path");
+    const previousCached = previousRoutes.find((route) => route.edgeId === "cached");
+    const nextCached = nextRoutes.find((route) => route.edgeId === "cached");
+    expect(nextCached?.points).toEqual(previousCached?.points);
+    expect(nextCached?.path).not.toBe("cached-path");
+    expect(nextCached?.path).toContain("M");
     expect(nextRoutes.find((route) => route.edgeId === "moved")?.points[0]).toEqual(getTerminalPoint(movedSourceB, sourceB.terminals[0].id));
   });
 
@@ -1357,7 +1388,148 @@ describe("power system model", () => {
     expect(secondPrepared.edge).toBeDefined();
     expect(validation.ok).toBe(true);
     expect(validation.issues).toEqual([]);
-    expect(secondRoute?.points.some((point) => point.y !== 140 && point.y !== 220)).toBe(true);
+    expect(secondRoute?.points[0]).toEqual(getTerminalPoint(source, "t1"));
+    expect(secondRoute?.points[secondRoute.points.length - 1]).toEqual(getTerminalPoint(loadB, "t1"));
+  });
+
+  test("allows a committed connection to share an existing connection lane when no graphic is blocked", () => {
+    const source = { ...createDefaultNode("ac-line", { x: 120, y: 140 }), id: "source" };
+    const target = { ...createDefaultNode("ac-line", { x: 520, y: 140 }), id: "target" };
+    const existingEdge: Edge = {
+      id: "existing-lane",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: 280, y: 140 },
+        { x: 360, y: 140 }
+      ]
+    };
+    const newEdge: Edge = {
+      id: "new-lane",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: 280, y: 140 },
+        { x: 360, y: 140 }
+      ]
+    };
+
+    const validation = validateConnectionEdgeRoute([source, target], [existingEdge, newEdge], newEdge.id, { width: 700, height: 320 });
+
+    expect(validation.ok).toBe(true);
+    expect(validation.issues.some((issue) => issue.type === "overlaps-connection")).toBe(false);
+  });
+
+  test("redesigns a new connection from scratch without adding detours only to avoid existing connections", () => {
+    const source = { ...createDefaultNode("ac-line", { x: 120, y: 140 }), id: "source" };
+    const target = { ...createDefaultNode("ac-line", { x: 520, y: 140 }), id: "target" };
+    const existingEdge: Edge = {
+      id: "existing-direct",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1"
+    };
+    const newEdge: Edge = {
+      id: "new-direct",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1"
+    };
+
+    const previousRoutes = routeEdgesForRendering([source, target], [existingEdge], { width: 700, height: 320 });
+    const prepared = prepareConnectionEdgeForCommit(
+      [source, target],
+      [existingEdge, newEdge],
+      newEdge.id,
+      { width: 700, height: 320 },
+      previousRoutes
+    );
+    const route = prepared.edge
+      ? routeEdgesForRendering([source, target], [prepared.edge], { width: 700, height: 320 })[0]
+      : undefined;
+
+    expect(prepared.ok).toBe(true);
+    expect(prepared.edge).toBeDefined();
+    expect(new Set(route?.points.map((point) => point.y))).toEqual(new Set([140]));
+  });
+
+  test("routes same-facing terminals without an immediate 180 degree reversal at endpoint stubs", () => {
+    const source = { ...createDefaultNode("ac-line", { x: 520, y: 140 }), id: "source" };
+    const target = { ...createDefaultNode("ac-line", { x: 120, y: 140 }), id: "target" };
+    const edge: Edge = {
+      id: "same-facing-terminals",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t2"
+    };
+
+    const prepared = prepareConnectionEdgeForCommit([source, target], [edge], edge.id, { width: 700, height: 320 });
+    const route = prepared.edge
+      ? routeEdgesForRendering([source, target], [prepared.edge], { width: 700, height: 320 })[0]
+      : undefined;
+    const validation = prepared.edge
+      ? validateConnectionEdgeRoute([source, target], [prepared.edge], edge.id, { width: 700, height: 320 })
+      : prepared;
+
+    expect(prepared.ok).toBe(true);
+    expect(validation.ok).toBe(true);
+    expect(route).toBeDefined();
+    expect(hasImmediateRouteReversal(route?.points ?? [])).toBe(false);
+  });
+
+  test("repairs connection routes that immediately reverse 180 degrees after leaving a terminal", () => {
+    const source = { ...createDefaultNode("ac-line", { x: 120, y: 140 }), id: "source" };
+    const target = { ...createDefaultNode("ac-line", { x: 520, y: 140 }), id: "target" };
+    const edge: Edge = {
+      id: "endpoint-backtrack",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: 190, y: 140 },
+        { x: 190, y: 180 },
+        { x: 438, y: 180 }
+      ]
+    };
+
+    const validation = validateConnectionEdgeRoute([source, target], [edge], edge.id, { width: 700, height: 320 });
+
+    expect(validation.ok).toBe(true);
+    expect(validation.issues).toEqual([]);
+    expect(hasImmediateRouteReversal(validation.route?.points ?? [])).toBe(false);
+  });
+
+  test("repairs stored target endpoint paths before they turn back into the terminal", () => {
+    const source = { ...createDefaultNode("ac-line", { x: 120, y: 140 }), id: "source" };
+    const target = { ...createDefaultNode("ac-line", { x: 520, y: 140 }), id: "target" };
+    const targetTerminal = getTerminalPoint(target, "t1");
+    const edge: Edge = {
+      id: "stored-target-backtrack",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: 260, y: 140 },
+        { ...targetTerminal }
+      ]
+    };
+
+    const route = routeEdgesForStoredRendering([source, target], [edge], { width: 700, height: 320 })[0];
+    const beforeTarget = route.points[route.points.length - 2];
+
+    expect(route.points[route.points.length - 1]).toEqual(targetTerminal);
+    expect(beforeTarget.y).toBe(targetTerminal.y);
+    expect(beforeTarget.x).toBeLessThan(targetTerminal.x);
+    expect(hasImmediateRouteReversal(route.points)).toBe(false);
   });
 
   test("clamps a moved device inside the display area", () => {
@@ -3804,6 +3976,31 @@ describe("power system model", () => {
 
     expect(routes[0].path).not.toContain("Q");
     expect(routes[1].path).toContain("Q");
+  });
+
+  test("updates crossing arc paths when a different connection line moves", () => {
+    const left = createDefaultNode("ac-bus", { x: 100, y: 240 });
+    const right = createDefaultNode("ac-bus", { x: 500, y: 240 });
+    const top = createDefaultNode("ac-bus", { x: 300, y: 80 });
+    const bottom = createDefaultNode("ac-bus", { x: 300, y: 400 });
+    const edges: Edge[] = [
+      { id: "horizontal", sourceId: left.id, targetId: right.id, sourceTerminalId: "t2", targetTerminalId: "t1" },
+      { id: "vertical", sourceId: top.id, targetId: bottom.id, sourceTerminalId: "t4", targetTerminalId: "t3" }
+    ];
+    const previousRoutes = routeEdgesForRendering([left, right, top, bottom], edges);
+    expect(previousRoutes.find((route) => route.edgeId === "vertical")?.path).toContain("Q");
+
+    const movedLeft = { ...left, position: { ...left.position, y: 470 } };
+    const movedRight = { ...right, position: { ...right.position, y: 470 } };
+    const nextRoutes = routeEdgesForIncrementalRendering(
+      [movedLeft, movedRight, top, bottom],
+      edges,
+      new Set(["horizontal"]),
+      { width: 700, height: 520 },
+      previousRoutes
+    );
+
+    expect(nextRoutes.find((route) => route.edgeId === "vertical")?.path).not.toContain("Q");
   });
 
   test("manages saved drawing model records", () => {
