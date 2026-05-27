@@ -65,6 +65,20 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".connect-drop-hint-ring");
   });
 
+  test("pushes the workspace beside visible side panels instead of letting panels cover it", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const shellRule = cssRuleBlock(styles, ".app-shell");
+    const leftPushRule = cssRuleBlock(styles, ".app-shell.left-panel-open .workspace");
+    const rightPushRule = cssRuleBlock(styles, ".app-shell.right-panel-open .workspace");
+
+    expect(source).toContain('leftPanelVisible ? "left-panel-open" : ""');
+    expect(source).toContain('rightPanelVisible ? "right-panel-open" : ""');
+    expect(shellRule).toContain("overflow: clip");
+    expect(leftPushRule).toContain("left: calc(var(--left-panel-width) + 24px)");
+    expect(rightPushRule).toContain("right: calc(var(--right-panel-width) + 24px)");
+  });
+
   test("uses the same fuzzy snap hint while dragging existing connection endpoints", async () => {
     const source = await readAppSource();
 
@@ -172,7 +186,7 @@ describe("graph inspector panel", () => {
     const styles = await readStyles();
     const ghostRule = cssRuleBlock(styles, ".connection-line.drag-ghost");
     const previewRule = cssRuleBlock(styles, ".connection-line.drag-preview");
-    const nodeRenderIndex = source.indexOf("{nodes.map((node) =>");
+    const nodeRenderIndex = source.indexOf("{visibleNodes.map((node) =>");
     const ghostRenderIndex = source.indexOf("{dragGhostEdgeRoutes.map");
     const previewRenderIndex = source.indexOf("{dragPreviewEdgeRoutes.map");
 
@@ -285,21 +299,21 @@ describe("graph inspector panel", () => {
 
   test("uses live routing data while deferred routes are stale after a drag commit", async () => {
     const source = await readAppSource();
-    const routingStart = source.indexOf("const deferredRoutingNodes = useDeferredValue(nodes);");
+    const routingStart = source.indexOf("const deferredRoutingNodes = useDeferredValue(visibleNodes);");
     const routingEnd = source.indexOf("const routedEdges = useMemo", routingStart);
     const routingBlock = source.slice(routingStart, routingEnd);
 
     expect(routingBlock).toContain("const deferredRoutingIsCurrent");
-    expect(routingBlock).toContain("deferredRoutingNodes === nodes");
-    expect(routingBlock).toContain("deferredRoutingEdges === edges");
+    expect(routingBlock).toContain("deferredRoutingNodes === visibleNodes");
+    expect(routingBlock).toContain("deferredRoutingEdges === visibleEdges");
     expect(routingBlock).toContain("!deferredRoutingIsCurrent");
-    expect(routingBlock).toContain("routingNodes = requiresLiveRouting ? nodes : deferredRoutingNodes");
-    expect(routingBlock).toContain("routingEdges = requiresLiveRouting ? edges : deferredRoutingEdges");
+    expect(routingBlock).toContain("routingNodes = requiresLiveRouting ? visibleNodes : deferredRoutingNodes");
+    expect(routingBlock).toContain("routingEdges = requiresLiveRouting ? visibleEdges : deferredRoutingEdges");
   });
 
   test("uses stored connection geometry on open and only enables full routing after edits", async () => {
     const source = await readAppSource();
-    const routingStart = source.indexOf("const deferredRoutingNodes = useDeferredValue(nodes);");
+    const routingStart = source.indexOf("const deferredRoutingNodes = useDeferredValue(visibleNodes);");
     const routingEnd = source.indexOf("const routedEdgeById", routingStart);
     const routingBlock = source.slice(routingStart, routingEnd);
 

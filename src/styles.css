@@ -31,6 +31,7 @@ button:disabled {
   height: 100vh;
   min-height: 720px;
   overflow: hidden;
+  overflow: clip;
   --left-panel-width: 288px;
   --right-panel-width: 320px;
   --statusbar-height: 36px;
@@ -664,6 +665,21 @@ button:disabled {
   grid-template-rows: 58px minmax(0, 1fr) var(--statusbar-height);
   min-width: 0;
   min-height: 0;
+  transition:
+    left 180ms ease,
+    right 180ms ease;
+}
+
+.app-shell.left-panel-open .workspace {
+  left: calc(var(--left-panel-width) + 24px);
+}
+
+.app-shell.right-panel-open .workspace {
+  right: calc(var(--right-panel-width) + 24px);
+}
+
+.app-shell.side-panel-resizing .workspace {
+  transition: none;
 }
 
 .topbar {
@@ -740,6 +756,28 @@ button:disabled {
   color: #0f172a;
   font-size: 14px;
   font-weight: 800;
+  text-overflow: ellipsis;
+}
+
+.active-layer-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 180px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  color: #334155;
+  background: #ffffff;
+  white-space: nowrap;
+}
+
+.active-layer-indicator span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 700;
   text-overflow: ellipsis;
 }
 
@@ -2256,6 +2294,77 @@ button:disabled {
 .layer-actions button:hover {
   border-color: #93c5fd;
   background: #eff6ff;
+}
+
+.layer-manager {
+  display: grid;
+  gap: 10px;
+}
+
+.layer-manager-toolbar {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.layer-manager-toolbar button,
+.layer-row button {
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: #334155;
+  background: #e2e8f0;
+  font-size: 12px;
+}
+
+.layer-manager-toolbar button:hover,
+.layer-row button:hover {
+  background: #cbd5e1;
+}
+
+.layer-list {
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.layer-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(120px, 1fr) auto auto auto auto;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.layer-row.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.layer-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  color: #475569;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.layer-row input[type="checkbox"],
+.layer-row input[type="radio"] {
+  width: 14px;
+  min-height: auto;
+}
+
+.layer-row .layer-name-input {
+  min-width: 0;
+  min-height: 28px;
+  background: #ffffff;
 }
 
 .image-asset-list {

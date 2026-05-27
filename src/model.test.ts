@@ -85,6 +85,11 @@ import {
   getSwitchVisualState,
   lockProjectEdgeTerminals,
   mirrorNodes,
+  createModelLayer,
+  DEFAULT_MODEL_LAYER_ID,
+  filterProjectByVisibleLayers,
+  normalizeProjectLayers,
+  resolveActiveModelLayerId,
   normalizeScaleValue,
   normalizeNodeTerminalsByTemplate,
   normalizeVoltageBaseInput,
@@ -394,6 +399,70 @@ describe("power system model", () => {
     expect(loaded.powerBaseValue).toBe(100);
     expect(loaded.nodes[0].name).toBe("1号主变");
     expect(loaded.nodes[0].params.voltageRatio).toBe("110/10 kV");
+  });
+
+  test("normalizes legacy projects onto a default visible layer", () => {
+    const node = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const normalized = normalizeProjectLayers({
+      version: 1,
+      name: "legacy",
+      nodes: [{ ...node, layerId: undefined }],
+      edges: []
+    });
+
+    expect(normalized.layers).toEqual([{ id: DEFAULT_MODEL_LAYER_ID, name: "默认图层", visible: true }]);
+    expect(normalized.nodes[0].layerId).toBe(DEFAULT_MODEL_LAYER_ID);
+  });
+
+  test("filters visible graph content by active layer stack", () => {
+    const primary = { ...createDefaultNode("ac-source", { x: 100, y: 100 }), id: "primary", layerId: DEFAULT_MODEL_LAYER_ID };
+    const hidden = { ...createDefaultNode("ac-load", { x: 300, y: 100 }), id: "hidden", layerId: "layer-hidden" };
+    const visibleExtra = { ...createDefaultNode("ac-load", { x: 500, y: 100 }), id: "visible-extra", layerId: "layer-extra" };
+    const layers = [
+      { id: DEFAULT_MODEL_LAYER_ID, name: "默认图层", visible: true },
+      { id: "layer-hidden", name: "隐藏图层", visible: false },
+      { id: "layer-extra", name: "叠加图层", visible: true }
+    ];
+    const filtered = filterProjectByVisibleLayers(
+      [primary, hidden, visibleExtra],
+      [
+        { id: "edge-hidden", sourceId: primary.id, targetId: hidden.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+        { id: "edge-visible", sourceId: primary.id, targetId: visibleExtra.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
+      ],
+      layers
+    );
+
+    expect(filtered.nodes.map((item) => item.id)).toEqual(["primary", "visible-extra"]);
+    expect(filtered.edges.map((item) => item.id)).toEqual(["edge-visible"]);
+  });
+
+  test("creates uniquely named model layers", () => {
+    const existing = [
+      { id: DEFAULT_MODEL_LAYER_ID, name: "默认图层", visible: true },
+      createModelLayer("二次系统", [])
+    ];
+    const layer = createModelLayer("二次系统", existing);
+
+    expect(layer.name).toBe("二次系统 (2)");
+    expect(layer.visible).toBe(true);
+    expect(existing.some((item) => item.id === layer.id)).toBe(false);
+  });
+
+  test("keeps the active layer visible when normalizing projects", () => {
+    const normalized = normalizeProjectLayers({
+      version: 1,
+      name: "layered",
+      activeLayerId: "layer-secondary",
+      layers: [
+        { id: DEFAULT_MODEL_LAYER_ID, name: "默认图层", visible: true },
+        { id: "layer-secondary", name: "二次系统", visible: false }
+      ],
+      nodes: [],
+      edges: []
+    });
+
+    expect(resolveActiveModelLayerId(normalized.layers ?? [], normalized.activeLayerId)).toBe("layer-secondary");
+    expect(normalized.layers?.find((layer) => layer.id === "layer-secondary")?.visible).toBe(true);
   });
 
   test("locks connection endpoints to explicit terminals for non-bus devices", () => {

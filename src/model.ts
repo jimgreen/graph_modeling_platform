@@ -259,6 +259,7 @@ export type ModelNode = {
   id: string;
   kind: DeviceKind;
   name: string;
+  layerId?: string;
   nodeNumber: string;
   acTopologyNode: number;
   dcTopologyNode: number;
@@ -284,6 +285,12 @@ export type Edge = {
   sourcePoint?: Point;
   targetPoint?: Point;
   manualPoints?: Point[];
+};
+
+export type ModelLayer = {
+  id: string;
+  name: string;
+  visible: boolean;
 };
 
 export type OverlappingTerminalRef = {
@@ -351,6 +358,8 @@ export type ElementTreeGroup = {
 export type ProjectFile = {
   version: 1;
   name: string;
+  layers?: ModelLayer[];
+  activeLayerId?: string;
   canvasWidth?: number;
   canvasHeight?: number;
   canvasBackgroundColor?: string;
@@ -364,6 +373,9 @@ export type ProjectFile = {
   nodes: ModelNode[];
   edges: Edge[];
 };
+
+export const DEFAULT_MODEL_LAYER_ID = "layer-default";
+export const DEFAULT_MODEL_LAYER_NAME = "默认图层";
 
 export const DEFAULT_POWER_UNIT = "MW";
 export const DEFAULT_VOLTAGE_UNIT = "kV";
@@ -3663,6 +3675,7 @@ export function createNodeFromTemplate(template: DeviceTemplate, position: Point
     id: makeId(template.kind),
     kind: template.kind,
     name: template.label,
+    layerId: DEFAULT_MODEL_LAYER_ID,
     nodeNumber: makeNodeNumber(),
     acTopologyNode: 0,
     dcTopologyNode: 0,
@@ -5776,8 +5789,87 @@ export function buildTopology(nodes: ModelNode[], edges: Edge[]): Topology {
   return topology;
 }
 
+function defaultModelLayer(): ModelLayer {
+  return { id: DEFAULT_MODEL_LAYER_ID, name: DEFAULT_MODEL_LAYER_NAME, visible: true };
+}
+
+export function createModelLayer(name: string, existingLayers: ModelLayer[] = []): ModelLayer {
+  return {
+    id: makeId("layer"),
+    name: uniqueRecordName(name, existingLayers.map((layer) => layer.name), "新建图层"),
+    visible: true
+  };
+}
+
+export function normalizeModelLayers(layers?: ModelLayer[], nodes: Pick<ModelNode, "layerId">[] = [], activeLayerId?: string): ModelLayer[] {
+  const normalized: ModelLayer[] = [];
+  const seenIds = new Set<string>();
+  const appendLayer = (layer: Partial<ModelLayer> | undefined, fallbackId: string, fallbackName: string) => {
+    const id = (layer?.id || fallbackId).trim();
+    if (!id || seenIds.has(id)) {
+      return;
+    }
+    seenIds.add(id);
+    normalized.push({
+      id,
+      name: (layer?.name || fallbackName).trim() || fallbackName,
+      visible: id === activeLayerId || layer?.visible !== false
+    });
+  };
+
+  appendLayer(layers?.find((layer) => layer.id === DEFAULT_MODEL_LAYER_ID) ?? defaultModelLayer(), DEFAULT_MODEL_LAYER_ID, DEFAULT_MODEL_LAYER_NAME);
+  (layers ?? [])
+    .filter((layer) => layer.id !== DEFAULT_MODEL_LAYER_ID)
+    .forEach((layer, index) => appendLayer(layer, `layer-${index + 1}`, `图层${index + 1}`));
+  nodes.forEach((node) => {
+    if (node.layerId && !seenIds.has(node.layerId)) {
+      appendLayer({ id: node.layerId, name: node.layerId, visible: true }, node.layerId, node.layerId);
+    }
+  });
+  return normalized.length > 0 ? normalized : [defaultModelLayer()];
+}
+
+export function resolveActiveModelLayerId(layers: ModelLayer[], activeLayerId?: string): string {
+  return layers.some((layer) => layer.id === activeLayerId)
+    ? activeLayerId!
+    : layers[0]?.id ?? DEFAULT_MODEL_LAYER_ID;
+}
+
+export function normalizeProjectLayers(project: ProjectFile): ProjectFile {
+  const baseLayers = normalizeModelLayers(project.layers, project.nodes);
+  const activeLayerId = resolveActiveModelLayerId(baseLayers, project.activeLayerId);
+  const layers = normalizeModelLayers(baseLayers, project.nodes, activeLayerId);
+  const layerIds = new Set(layers.map((layer) => layer.id));
+  return {
+    ...project,
+    layers,
+    activeLayerId,
+    nodes: project.nodes.map((node) => ({
+      ...node,
+      layerId: node.layerId && layerIds.has(node.layerId) ? node.layerId : DEFAULT_MODEL_LAYER_ID
+    }))
+  };
+}
+
+export function filterProjectByVisibleLayers(nodes: ModelNode[], edges: Edge[], layers?: ModelLayer[]) {
+  const normalizedLayers = normalizeModelLayers(layers, nodes);
+  const layerOrder = new Map(normalizedLayers.map((layer, index) => [layer.id, index]));
+  const visibleLayerIds = new Set(normalizedLayers.filter((layer) => layer.visible).map((layer) => layer.id));
+  const visibleNodes = nodes
+    .filter((node) => visibleLayerIds.has(node.layerId ?? DEFAULT_MODEL_LAYER_ID))
+    .sort((left, right) =>
+      (layerOrder.get(left.layerId ?? DEFAULT_MODEL_LAYER_ID) ?? 0) -
+      (layerOrder.get(right.layerId ?? DEFAULT_MODEL_LAYER_ID) ?? 0)
+    );
+  const visibleNodeIds = new Set(visibleNodes.map((node) => node.id));
+  return {
+    nodes: visibleNodes,
+    edges: edges.filter((edge) => visibleNodeIds.has(edge.sourceId) && visibleNodeIds.has(edge.targetId))
+  };
+}
+
 export function serializeProject(project: ProjectFile): string {
-  return JSON.stringify(lockProjectEdgeTerminals(project), null, 2);
+  return JSON.stringify(normalizeProjectLayers(lockProjectEdgeTerminals(project)), null, 2);
 }
 
 export function deserializeProject(json: string): ProjectFile {
@@ -5785,7 +5877,7 @@ export function deserializeProject(json: string): ProjectFile {
   if (parsed.version !== 1 || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
     throw new Error("Unsupported or invalid model file");
   }
-  return lockProjectEdgeTerminals(parsed);
+  return normalizeProjectLayers(lockProjectEdgeTerminals(parsed));
 }
 
 export function lockProjectEdgeTerminals(project: ProjectFile): ProjectFile {
@@ -5802,6 +5894,7 @@ export function lockProjectEdgeTerminals(project: ProjectFile): ProjectFile {
   };
   return {
     ...project,
+    layers: normalizeModelLayers(project.layers, nodes),
     nodes,
     edges: synchronized.edges.flatMap((edge) => {
       const source = nodeById.get(edge.sourceId);
@@ -5824,7 +5917,7 @@ export function lockProjectEdgeTerminals(project: ProjectFile): ProjectFile {
 
 export function createSavedProject(name: string, project: ProjectFile): SavedProjectRecord {
   const savedName = name.trim() || "未命名模型";
-  const lockedProject = lockProjectEdgeTerminals(project);
+  const lockedProject = normalizeProjectLayers(lockProjectEdgeTerminals(project));
   return {
     id: makeId("project"),
     name: savedName,

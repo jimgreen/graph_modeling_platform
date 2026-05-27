@@ -98,8 +98,12 @@ import {
   getRouteBlockingCandidateNodesFromBoxes,
   getTerminalBusContactGroups,
   getTerminalPoint,
+  createModelLayer,
+  DEFAULT_MODEL_LAYER_ID,
+  filterProjectByVisibleLayers,
   normalizeDeviceIndexCounters,
   normalizeNodeTerminalsByTemplate,
+  normalizeProjectLayers,
   normalizeColorPalette,
   normalizeVoltageBaseInput,
   normalizeScaleValue,
@@ -137,6 +141,7 @@ import {
   type AlignMode,
   type Edge,
   type ModelNode,
+  type ModelLayer,
   type Point,
   type ProjectFile,
   type RoutedEdge,
@@ -283,6 +288,8 @@ type DraggingState = {
 };
 type GraphDirtyBaseline = {
   projectName: string;
+  layers: ModelLayer[];
+  activeLayerId: string;
   canvasWidth: number;
   canvasHeight: number;
   canvasBackgroundColor: string;
@@ -305,6 +312,8 @@ type TopologyRunStatus = {
 };
 type UndoSnapshot = {
   projectName: string;
+  layers: ModelLayer[];
+  activeLayerId: string;
   canvasWidth: number;
   canvasHeight: number;
   canvasBackgroundColor: string;
@@ -325,6 +334,8 @@ type DraftProjectState = {
   projectName: string;
   activeProjectId: string;
   activeSchemeId: string;
+  layers?: ModelLayer[];
+  activeLayerId?: string;
   canvasWidth?: number;
   canvasHeight?: number;
   canvasBackgroundColor?: string;
@@ -669,6 +680,7 @@ const SAMPLE_NODES: ModelNode[] = [
 ].map((node, index) => ({
   ...node,
   id: `seed-${index + 1}`,
+  layerId: DEFAULT_MODEL_LAYER_ID,
   name: ["交流电源A", "进线开关", "10kV母线", "双绕组主变", "750V直流母线", "直流负荷"][index]
 }));
 
@@ -947,13 +959,15 @@ function normalizeLegacyPowerSystemLabel(value: string) {
 
 function normalizeSavedProjectIndexes(project: SavedProjectRecord): SavedProjectRecord {
   const normalizedName = normalizeLegacyPowerSystemLabel(project.name);
+  const normalizedProject = normalizeProjectLayers({
+    ...project.project,
+    name: normalizeLegacyPowerSystemLabel(project.project.name ?? normalizedName),
+    nodes: project.project.nodes.map(normalizeNodeTerminalsByTemplate)
+  });
   return {
     ...project,
     name: normalizedName,
-    project: {
-      ...project.project,
-      name: normalizeLegacyPowerSystemLabel(project.project.name ?? normalizedName)
-    }
+    project: normalizedProject
   };
 }
 
@@ -994,7 +1008,26 @@ function readDraftProject(): DraftProjectState | null {
     return {
       ...parsed,
       projectName: normalizeLegacyPowerSystemLabel(parsed.projectName),
-      nodes: parsed.nodes.map(normalizeNodeTerminalsByTemplate)
+      ...normalizeProjectLayers({
+        version: 1,
+        name: parsed.projectName,
+        layers: parsed.layers,
+        activeLayerId: parsed.activeLayerId,
+        nodes: parsed.nodes.map(normalizeNodeTerminalsByTemplate),
+        edges: parsed.edges
+      }),
+      activeProjectId: parsed.activeProjectId,
+      activeSchemeId: parsed.activeSchemeId,
+      canvasWidth: parsed.canvasWidth,
+      canvasHeight: parsed.canvasHeight,
+      canvasBackgroundColor: parsed.canvasBackgroundColor,
+      canvasBackgroundImage: parsed.canvasBackgroundImage,
+      canvasBackgroundImageAssetId: parsed.canvasBackgroundImageAssetId,
+      powerUnit: parsed.powerUnit,
+      voltageUnit: parsed.voltageUnit,
+      currentUnit: parsed.currentUnit,
+      powerBaseValue: parsed.powerBaseValue,
+      deviceIndexCounters: parsed.deviceIndexCounters
     };
   } catch {
     return null;
@@ -2732,9 +2765,17 @@ ${nodeMarkup}
 
 export function App() {
   const initialDraft = useMemo(() => readDraftProject(), []);
+  const initialLayeredProject = useMemo(() => normalizeProjectLayers({
+    version: 1,
+    name: initialDraft?.projectName ?? "电力能源系统图上模型",
+    layers: initialDraft?.layers,
+    activeLayerId: initialDraft?.activeLayerId,
+    nodes: initialDraft?.nodes ?? SAMPLE_NODES,
+    edges: initialDraft?.edges ?? SAMPLE_EDGES
+  }), [initialDraft]);
   const initialIndexedNodes = useMemo(
-    () => assignMissingDeviceIndexes(initialDraft?.nodes ?? SAMPLE_NODES, initialDraft?.deviceIndexCounters),
-    [initialDraft]
+    () => assignMissingDeviceIndexes(initialLayeredProject.nodes, initialDraft?.deviceIndexCounters),
+    [initialDraft?.deviceIndexCounters, initialLayeredProject.nodes]
   );
   const initialSavedSchemes = useMemo(() => readSavedSchemes(), []);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -2779,7 +2820,9 @@ export function App() {
   const edgePointerBendInsertRef = useRef<{ edgeId: string; clientX: number; clientY: number; at: number } | null>(null);
   const lastEdgePointerClickRef = useRef<{ edgeId: string; clientX: number; clientY: number; at: number } | null>(null);
   const [nodes, setNodes] = useState<ModelNode[]>(() => initialIndexedNodes.nodes);
-  const [edges, setEdges] = useState<Edge[]>(() => initialDraft?.edges ?? SAMPLE_EDGES);
+  const [edges, setEdges] = useState<Edge[]>(() => initialLayeredProject.edges);
+  const [layers, setLayers] = useState<ModelLayer[]>(() => initialLayeredProject.layers ?? []);
+  const [activeLayerId, setActiveLayerId] = useState(() => initialLayeredProject.activeLayerId ?? DEFAULT_MODEL_LAYER_ID);
   const [deviceIndexCounters, setDeviceIndexCounters] = useState<DeviceIndexCounters>(() => initialIndexedNodes.counters);
   const [projectName, setProjectName] = useState(() => initialDraft?.projectName ?? "电力能源系统图上模型");
   const [canvasWidth, setCanvasWidth] = useState(() => initialDraft?.canvasWidth ?? DEFAULT_CANVAS_WIDTH);
@@ -2891,14 +2934,32 @@ export function App() {
   const selectedNodeId = selectedNodeIds[0] ?? "";
   const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
   const edgeById = useMemo(() => new Map(edges.map((edge) => [edge.id, edge])), [edges]);
+  const activeLayer = useMemo(
+    () => layers.find((layer) => layer.id === activeLayerId) ?? layers[0],
+    [activeLayerId, layers]
+  );
+  const visibleLayerIds = useMemo(
+    () => new Set(layers.filter((layer) => layer.visible).map((layer) => layer.id)),
+    [layers]
+  );
+  const visibleProject = useMemo(
+    () => filterProjectByVisibleLayers(nodes, edges, layers),
+    [edges, layers, nodes]
+  );
+  const visibleNodes = visibleProject.nodes;
+  const visibleEdges = visibleProject.edges;
+  const visibleNodeById = useMemo(() => new Map(visibleNodes.map((node) => [node.id, node])), [visibleNodes]);
+  const visibleNodeIdSet = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes]);
+  const visibleEdgeIdSet = useMemo(() => new Set(visibleEdges.map((edge) => edge.id)), [visibleEdges]);
   const selectedNodeIdSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
-  const selectedNode = nodeById.get(selectedNodeId);
+  const selectedNode = visibleNodeById.get(selectedNodeId);
   const activeSelectedEdgeIds = useMemo(
-    () => selectedEdgeIds.length > 0 ? selectedEdgeIds : selectedEdgeId ? [selectedEdgeId] : [],
-    [selectedEdgeId, selectedEdgeIds]
+    () => (selectedEdgeIds.length > 0 ? selectedEdgeIds : selectedEdgeId ? [selectedEdgeId] : [])
+      .filter((edgeId) => visibleEdgeIdSet.has(edgeId)),
+    [selectedEdgeId, selectedEdgeIds, visibleEdgeIdSet]
   );
   const activeSelectedEdgeSet = useMemo(() => new Set(activeSelectedEdgeIds), [activeSelectedEdgeIds]);
-  const selectedEdge = edgeById.get(selectedEdgeId);
+  const selectedEdge = visibleEdgeIdSet.has(selectedEdgeId) ? edgeById.get(selectedEdgeId) : undefined;
   const connectionLineStyle = (edgeId: string) => {
     const edge = edgeById.get(edgeId);
     return edge ? ({ "--connection-color": getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette) } as CSSProperties) : undefined;
@@ -3068,6 +3129,25 @@ export function App() {
     () => (selectedNode ? buildContainerDeviceParameterViews(selectedNode, selectedNodeTemplate) : []),
     [selectedNode, selectedNodeTemplate]
   );
+
+  useEffect(() => {
+    if (!layers.some((layer) => layer.id === activeLayerId)) {
+      const fallbackId = layers[0]?.id ?? DEFAULT_MODEL_LAYER_ID;
+      setActiveLayerId(fallbackId);
+      return;
+    }
+    if (layers.some((layer) => layer.id === activeLayerId && !layer.visible)) {
+      setLayers((current) => current.map((layer) => layer.id === activeLayerId ? { ...layer, visible: true } : layer));
+    }
+  }, [activeLayerId, layers]);
+
+  useEffect(() => {
+    setSelectedNodeIds((current) => current.filter((nodeId) => visibleNodeIdSet.has(nodeId)));
+    setSelectedEdgeIds((current) => current.filter((edgeId) => visibleEdgeIdSet.has(edgeId)));
+    setSelectedEdgeId((current) => current && visibleEdgeIdSet.has(current) ? current : "");
+    setConnectSource((current) => current && visibleNodeIdSet.has(current.nodeId) ? current : null);
+  }, [visibleEdgeIdSet, visibleNodeIdSet]);
+
   const selectedContainerParameterView =
     selectedContainerParameterViews.find((view) => view.id === containerParamViewId) ?? selectedContainerParameterViews[0];
   const selectedProjectRecord = projectById.get(selectedProjectId);
@@ -3096,6 +3176,8 @@ export function App() {
       currentUnit,
       powerBaseValue,
       deviceIndexCounters,
+      layers,
+      activeLayerId,
       nodes,
       edges
     }
@@ -3106,8 +3188,8 @@ export function App() {
   const visibleTopologyErrors = topologyErrors.slice(0, 100);
   const hiddenTopologyErrorCount = Math.max(0, topologyErrors.length - visibleTopologyErrors.length);
   const draggingNodeIdSet = useMemo(() => new Set(dragging?.nodeIds ?? []), [dragging?.nodeIds]);
-  const deferredElementTreeNodes = useDeferredValue(nodes);
-  const deferredElementTreeEdges = useDeferredValue(edges);
+  const deferredElementTreeNodes = useDeferredValue(visibleNodes);
+  const deferredElementTreeEdges = useDeferredValue(visibleEdges);
   const graphTreePanelActive = inspectorTab === "graph" && graphInfoView === "tree";
   const elementTreeSignature = useMemo(
     () => graphTreePanelActive
@@ -3185,12 +3267,12 @@ export function App() {
   const leftPanelVisible = isSidePanelVisible(leftPanelMode, leftPanelAutoVisible);
   const rightPanelVisible = isSidePanelVisible(rightPanelMode, rightPanelAutoVisible);
   const nodeImageById = useMemo(
-    () => new Map(nodes.map((node) => [node.id, resolveNodeImage(node, imageAssets)])),
-    [imageAssets, nodes]
+    () => new Map(visibleNodes.map((node) => [node.id, resolveNodeImage(node, imageAssets)])),
+    [imageAssets, visibleNodes]
   );
   const nodeForegroundImageById = useMemo(
-    () => new Map(nodes.map((node) => [node.id, resolveNodeForegroundImage(node, imageAssets)])),
-    [imageAssets, nodes]
+    () => new Map(visibleNodes.map((node) => [node.id, resolveNodeForegroundImage(node, imageAssets)])),
+    [imageAssets, visibleNodes]
   );
   const nodeImage = (node: ModelNode) => nodeImageById.get(node.id) ?? "";
   const nodeForegroundImage = (node: ModelNode) => nodeForegroundImageById.get(node.id) ?? "";
@@ -3208,14 +3290,17 @@ export function App() {
     if (!connectSource || !endPoint) {
       return "";
     }
-    const sourceNode = nodeById.get(connectSource.nodeId);
+    const sourceNode = visibleNodeById.get(connectSource.nodeId);
     if (!sourceNode) {
       return "";
     }
     const sourcePoint = connectSource.point ?? getModelEdgeEndpointPoint(sourceNode, undefined, connectSource.terminalId);
     const previewTarget = connectDropTarget;
+    const previewNodes = previewTarget?.node && !visibleNodeById.has(previewTarget.node.id)
+      ? [...visibleNodes, previewTarget.node]
+      : visibleNodes;
     const route = routeEdgesForStoredRendering(
-      nodes,
+      previewNodes,
       [{
         id: "connect-preview",
         sourceId: sourceNode.id,
@@ -3232,12 +3317,12 @@ export function App() {
       canvasBounds
     )[0];
     return route?.path ?? "";
-  }, [canvasBounds, connectDropTarget, connectDropTargetPoint, connectPreviewPoint, connectSource, nodeById, nodes]);
+  }, [canvasBounds, connectDropTarget, connectDropTargetPoint, connectPreviewPoint, connectSource, nodeById, visibleNodeById, visibleNodes]);
   const connectPreviewColor = useMemo(() => {
     if (!connectSource) {
       return "";
     }
-    const sourceNode = nodeById.get(connectSource.nodeId);
+    const sourceNode = visibleNodeById.get(connectSource.nodeId);
     const terminal =
       sourceNode?.terminals.find((item) => item.id === connectSource.terminalId) ??
       sourceNode?.terminals[0];
@@ -3247,7 +3332,7 @@ export function App() {
       : terminalType
         ? terminalColor(terminalType, colorPalette)
         : "";
-  }, [colorDisplayMode, colorPalette, connectSource, nodeById]);
+  }, [colorDisplayMode, colorPalette, connectSource, visibleNodeById]);
   useEffect(() => {
     if (routeRenderingReady) {
       return;
@@ -3257,12 +3342,12 @@ export function App() {
     }
   }, [connectSource, dragging, hasUnsavedChanges, manualPathDrag, rewiring, routeRenderingReady, terminalPress?.moved]);
 
-  const deferredRoutingNodes = useDeferredValue(nodes);
-  const deferredRoutingEdges = useDeferredValue(edges);
-  const deferredRoutingIsCurrent = deferredRoutingNodes === nodes && deferredRoutingEdges === edges;
+  const deferredRoutingNodes = useDeferredValue(visibleNodes);
+  const deferredRoutingEdges = useDeferredValue(visibleEdges);
+  const deferredRoutingIsCurrent = deferredRoutingNodes === visibleNodes && deferredRoutingEdges === visibleEdges;
   const requiresLiveRouting = Boolean(!deferredRoutingIsCurrent);
-  const routingNodes = requiresLiveRouting ? nodes : deferredRoutingNodes;
-  const routingEdges = requiresLiveRouting ? edges : deferredRoutingEdges;
+  const routingNodes = requiresLiveRouting ? visibleNodes : deferredRoutingNodes;
+  const routingEdges = requiresLiveRouting ? visibleEdges : deferredRoutingEdges;
   const affectedRoutingEdgeIds = useMemo(() => {
     const ids = new Set<string>();
     return ids;
@@ -3422,12 +3507,15 @@ export function App() {
             : rewiring.previewPoint
           : previewEdge.targetPoint
     };
-    const route = routeEdgesForStoredRendering(nodes, [previewRouteEdge], canvasBounds)[0];
+    const previewNodes = movingTarget?.node && !visibleNodeById.has(movingTarget.node.id)
+      ? [...visibleNodes, movingTarget.node]
+      : visibleNodes;
+    const route = routeEdgesForStoredRendering(previewNodes, [previewRouteEdge], canvasBounds)[0];
     return {
       edgeId: edge.id,
       path: route?.path ?? ""
     };
-  }, [canvasBounds, edgeById, nodeById, nodes, rewiring]);
+  }, [canvasBounds, edgeById, nodeById, rewiring, visibleNodeById, visibleNodes]);
   const manualPathPreviewRoute = useMemo(() => {
     if (!manualPathDrag?.previewRoutePoints?.length) {
       return null;
@@ -3442,7 +3530,7 @@ export function App() {
     if (!terminalPress?.moved) {
       return [];
     }
-    return edges.flatMap((edge) => {
+    return visibleEdges.flatMap((edge) => {
       const sourceAffected = edge.sourceId === terminalPress.nodeId && edge.sourceTerminalId === terminalPress.terminalId;
       const targetAffected = edge.targetId === terminalPress.nodeId && edge.targetTerminalId === terminalPress.terminalId;
       if (!sourceAffected && !targetAffected) {
@@ -3460,25 +3548,25 @@ export function App() {
         nextSourceNode: sourceNode,
         nextTargetNode: targetNode,
         movingEndpoint: sourceAffected ? "source" : "target",
-        nodes,
+        nodes: visibleNodes,
         originalMovingPoint: terminalPress.startPoint
       });
       const previewEdge = slidePatch ? { ...edge, ...slidePatch } : edge;
-      const route = routeEdgesForStoredRendering(nodes, [previewEdge], canvasBounds)[0];
+      const route = routeEdgesForStoredRendering(visibleNodes, [previewEdge], canvasBounds)[0];
       return route ? [{
         edgeId: edge.id,
         path: route.path
       }] : [];
     });
-  }, [canvasBounds, edges, nodeById, nodes, terminalPress]);
+  }, [canvasBounds, nodeById, terminalPress, visibleEdges, visibleNodes]);
   const terminalPressPreviewEdgeIdSet = useMemo(
     () => new Set(terminalPressPreviewEdgeRoutes.map((route) => route.edgeId)),
     [terminalPressPreviewEdgeRoutes]
   );
   const draggingDelta = dragging?.currentDelta;
   const draggedBusIds = useMemo(
-    () => new Set(nodes.filter((node) => draggingNodeIdSet.has(node.id) && isBusNode(node)).map((node) => node.id)),
-    [draggingNodeIdSet, nodes]
+    () => new Set(visibleNodes.filter((node) => draggingNodeIdSet.has(node.id) && isBusNode(node)).map((node) => node.id)),
+    [draggingNodeIdSet, visibleNodes]
   );
   const dragPreviewNodeById = useMemo(() => {
     if (!dragging || !draggingDelta) {
@@ -3502,8 +3590,8 @@ export function App() {
     return preview;
   }, [canvasBounds, dragging, draggingDelta, nodeById]);
   const dragPreviewNodes = useMemo(
-    () => (dragging && draggingDelta ? Array.from(dragPreviewNodeById.values()) : nodes),
-    [dragPreviewNodeById, dragging, draggingDelta, nodes]
+    () => (dragging && draggingDelta ? Array.from(dragPreviewNodeById.values()).filter((node) => visibleLayerIds.has(node.layerId ?? DEFAULT_MODEL_LAYER_ID)) : visibleNodes),
+    [dragPreviewNodeById, dragging, draggingDelta, visibleLayerIds, visibleNodes]
   );
   const terminalOverlapNodes = dragging && draggingDelta ? dragPreviewNodes : deferredRoutingNodes;
   const terminalOverlapAffectedNodeIds = dragging && draggingDelta ? draggingNodeIdSet : undefined;
@@ -3623,7 +3711,7 @@ export function App() {
           : orthogonalPoints(adjustedStart, end);
       return [{ edgeId: edge.id, path: straightPath(points) }];
     });
-  }, [dragPreviewNodeById, dragPreviewNodes, draggedBusIds, dragging, draggingDelta, draggingNodeIdSet, nodeById, nodes]);
+  }, [dragPreviewNodeById, dragPreviewNodes, draggedBusIds, dragging, draggingDelta, draggingNodeIdSet, nodeById, visibleNodes]);
   const dragPreviewEdgeIdSet = useMemo(
     () => new Set(dragPreviewEdgeRoutes.map((route) => route.edgeId)),
     [dragPreviewEdgeRoutes]
@@ -3964,6 +4052,8 @@ export function App() {
 
   const cloneProjectState = (deepModelSnapshot = true): UndoSnapshot => ({
     projectName,
+    layers: layers.map((layer) => ({ ...layer })),
+    activeLayerId,
     canvasWidth,
     canvasHeight,
     canvasBackgroundColor,
@@ -4009,6 +4099,8 @@ export function App() {
         ...snapshot.edges.map((edge) => edge.id)
       ]));
       setProjectName(snapshot.projectName);
+      setLayers(snapshot.layers.map((layer) => ({ ...layer })));
+      setActiveLayerId(snapshot.activeLayerId);
       setCanvasWidth(snapshot.canvasWidth);
       setCanvasHeight(snapshot.canvasHeight);
       setCanvasBackgroundColor(snapshot.canvasBackgroundColor);
@@ -4182,7 +4274,7 @@ export function App() {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
         if (isCanvasShortcutTarget) {
           event.preventDefault();
-          setSelectedNodeIds(nodes.map((node) => node.id));
+          setSelectedNodeIds(visibleNodes.map((node) => node.id));
           setSelectedEdgeId("");
           setSelectedEdgeIds([]);
           setConnectSource(null);
@@ -4243,7 +4335,7 @@ export function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [canvasBounds, canvasClipboard, deviceIndexCounters, edges, hasUnsavedChanges, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors, viewBox]);
+  }, [canvasBounds, canvasClipboard, deviceIndexCounters, edges, hasUnsavedChanges, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors, viewBox, visibleNodes]);
 
   useEffect(() => {
     if (leftPanelTab !== "projects") {
@@ -4311,10 +4403,11 @@ export function App() {
     }
   }, [validationPanelHeight]);
 
-  const currentProject = (): ProjectFile => ({
-    ...lockProjectEdgeTerminals({
+  const currentProject = (): ProjectFile => normalizeProjectLayers(lockProjectEdgeTerminals({
       version: 1,
       name: projectName,
+      layers,
+      activeLayerId,
       canvasWidth,
       canvasHeight,
       canvasBackgroundColor,
@@ -4327,11 +4420,12 @@ export function App() {
       deviceIndexCounters,
       nodes,
       edges
-    })
-  });
+    }));
 
   const currentGraphDirtyBaseline = (): GraphDirtyBaseline => ({
     projectName,
+    layers,
+    activeLayerId,
     canvasWidth,
     canvasHeight,
     canvasBackgroundColor,
@@ -4348,6 +4442,8 @@ export function App() {
 
   const graphDirtyBaselineChanged = (previous: GraphDirtyBaseline, next: GraphDirtyBaseline) =>
     previous.projectName !== next.projectName ||
+    previous.layers !== next.layers ||
+    previous.activeLayerId !== next.activeLayerId ||
     previous.canvasWidth !== next.canvasWidth ||
     previous.canvasHeight !== next.canvasHeight ||
     previous.canvasBackgroundColor !== next.canvasBackgroundColor ||
@@ -4375,7 +4471,7 @@ export function App() {
     if (graphDirtyBaselineChanged(previousBaseline, nextBaseline)) {
       setHasUnsavedChanges(true);
     }
-  }, [canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, nodes, powerBaseValue, powerUnit, projectName, voltageUnit]);
+  }, [activeLayerId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, layers, nodes, powerBaseValue, powerUnit, projectName, voltageUnit]);
 
   const clearTransientSelectionState = () => {
     setSelectedEdgeId("");
@@ -4403,7 +4499,7 @@ export function App() {
   };
 
   const copySelection = () => {
-    setCanvasClipboard(buildCanvasClipboard(nodes, edges, routedEdges, selectedNodeIds, activeSelectedEdgeIds));
+    setCanvasClipboard(buildCanvasClipboard(visibleNodes, visibleEdges, routedEdges, selectedNodeIds, activeSelectedEdgeIds));
     writeOperationLog(`复制 ${selectedNodeIds.length} 个图元、${activeSelectedEdgeIds.length} 条联络线`);
   };
 
@@ -4416,7 +4512,7 @@ export function App() {
       window.alert(action.message);
       return;
     }
-    const clipboard = buildCanvasClipboard(nodes, edges, routedEdges, selectedNodeIds, activeSelectedEdgeIds);
+    const clipboard = buildCanvasClipboard(visibleNodes, visibleEdges, routedEdges, selectedNodeIds, activeSelectedEdgeIds);
     setCanvasClipboard(clipboard);
     pushUndoSnapshot();
     const selectedEdges = new Set(activeSelectedEdgeIds);
@@ -4469,7 +4565,7 @@ export function App() {
     pushUndoSnapshot();
     let nextDeviceIndexCounters = normalizeDeviceIndexCounters(deviceIndexCounters, nodes);
     const pasted = cloned.nodes.map((node) => {
-      const draftNode = { ...node, position: clampNodeToCanvas(node, node.position) };
+      const draftNode = { ...node, layerId: activeLayerId, position: clampNodeToCanvas(node, node.position) };
       const result = assignPermanentDeviceIndex(draftNode, nextDeviceIndexCounters);
       nextDeviceIndexCounters = result.counters;
       return result.node;
@@ -4505,7 +4601,7 @@ export function App() {
       setMarquee(null);
       return;
     }
-    const selection = selectGraphicsInRect(nodes, routedEdges, { left, right, top, bottom });
+    const selection = selectGraphicsInRect(visibleNodes, routedEdges, { left, right, top, bottom });
     setSelectedNodeIds(selection.nodeIds);
     setSelectedEdgeIds(selection.edgeIds);
     setSelectedEdgeId(selection.edgeIds[0] ?? "");
@@ -5123,7 +5219,7 @@ export function App() {
     if (!connectSource || (!event.shiftKey && !event.ctrlKey)) {
       return point;
     }
-    const sourceNode = nodeById.get(connectSource.nodeId);
+    const sourceNode = visibleNodeById.get(connectSource.nodeId);
     if (!sourceNode) {
       return point;
     }
@@ -5983,12 +6079,12 @@ export function App() {
     if (!edge) {
       return null;
     }
-    const otherNode = nodeById.get(state.endpoint === "source" ? edge.targetId : edge.sourceId);
+    const otherNode = visibleNodeById.get(state.endpoint === "source" ? edge.targetId : edge.sourceId);
     const otherTerminalId = state.endpoint === "source" ? edge.targetTerminalId : edge.sourceTerminalId;
     if (!otherNode || !otherTerminalId) {
       return null;
     }
-    for (const node of nodes) {
+    for (const node of visibleNodes) {
       if (node.id === otherNode.id) {
         continue;
       }
@@ -6014,11 +6110,11 @@ export function App() {
     if (!connectSource) {
       return null;
     }
-    const sourceNode = nodeById.get(connectSource.nodeId);
+    const sourceNode = visibleNodeById.get(connectSource.nodeId);
     if (!sourceNode) {
       return null;
     }
-    for (const node of nodes) {
+    for (const node of visibleNodes) {
       if (isBusNode(node) && isPointNearBus(node, point, CONNECT_BUS_SNAP_TOLERANCE)) {
         const terminalId = node.terminals[0]?.id ?? "t1";
         if (
@@ -6044,7 +6140,7 @@ export function App() {
   };
 
   const commitNewConnectionEdge = (newEdge: Edge, sourceName: string, targetName: string) => {
-    const prepared = prepareConnectionEdgeForCommit(nodes, [...edges, newEdge], newEdge.id, canvasBounds, routedEdges);
+    const prepared = prepareConnectionEdgeForCommit(visibleNodes, [...visibleEdges, newEdge], newEdge.id, canvasBounds, routedEdges);
     if (!prepared.ok || !prepared.edge) {
       const message = connectionCommitFailureMessage(prepared.issues);
       window.alert(`联络线绘制失败：${message}`);
@@ -6069,7 +6165,7 @@ export function App() {
     if (!connectSource) {
       return false;
     }
-    const sourceNode = nodeById.get(connectSource.nodeId);
+    const sourceNode = visibleNodeById.get(connectSource.nodeId);
     if (!sourceNode || !canConnectTerminals(sourceNode, connectSource.terminalId, target.node, target.terminalId)) {
       return false;
     }
@@ -6167,7 +6263,7 @@ export function App() {
     if (!template) {
       return;
     }
-    const node = createNodeFromTemplate(template, position);
+    const node = { ...createNodeFromTemplate(template, position), layerId: activeLayerId };
     node.position = clampNodeToCanvas(node, position);
     const indexed = assignPermanentDeviceIndex(node, deviceIndexCounters);
     pushUndoSnapshot();
@@ -6637,6 +6733,7 @@ export function App() {
       ...project.project,
       nodes: indexed.nodes
     });
+    const layeredProject = normalizeProjectLayers(lockedProject);
     const nextCanvasBounds = {
       width: project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
       height: project.project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT
@@ -6663,9 +6760,11 @@ export function App() {
     setCurrentUnit(project.project.currentUnit ?? DEFAULT_CURRENT_UNIT);
     setPowerBaseValue(project.project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE);
     setViewBox(normalizeViewBoxToCanvas({ x: 0, y: 0, ...nextCanvasBounds }, nextCanvasBounds));
+    setLayers(layeredProject.layers ?? []);
+    setActiveLayerId(layeredProject.activeLayerId ?? DEFAULT_MODEL_LAYER_ID);
     setDeviceIndexCounters(indexed.counters);
-    setNodes(indexed.nodes);
-    setEdges(lockedProject.edges);
+    setNodes(layeredProject.nodes);
+    setEdges(layeredProject.edges);
     setTopology(EMPTY_TOPOLOGY);
     setTopologyErrors([]);
     setTopologyStatus(INITIAL_TOPOLOGY_STATUS);
@@ -6673,7 +6772,8 @@ export function App() {
     setActiveProjectId(project.id);
     setActiveSchemeId(schemeId);
     selectSingleProject(schemeId, project.id);
-    setSelectedNodeIds(indexed.nodes[0] ? [indexed.nodes[0].id] : []);
+    const firstVisibleNode = filterProjectByVisibleLayers(layeredProject.nodes, layeredProject.edges, layeredProject.layers).nodes[0];
+    setSelectedNodeIds(firstVisibleNode ? [firstVisibleNode.id] : []);
     setSelectedEdgeId("");
     setSelectedEdgeIds([]);
     setConnectSource(null);
@@ -6911,6 +7011,8 @@ export function App() {
           currentUnit,
           powerBaseValue,
           deviceIndexCounters,
+          layers,
+          activeLayerId,
           nodes,
           edges
         })
@@ -6918,6 +7020,108 @@ export function App() {
     } catch {
       // 草稿缓存过大或不可写时不打断手动保存。
     }
+  };
+
+  const setActiveLayer = (layerId: string) => {
+    pushUndoSnapshot();
+    setActiveLayerId(layerId);
+    setLayers((current) => current.map((layer) => layer.id === layerId ? { ...layer, visible: true } : layer));
+    writeOperationLog(`激活图层：${layers.find((layer) => layer.id === layerId)?.name ?? layerId}`);
+  };
+
+  const addModelLayer = () => {
+    const name = window.prompt("请输入新图层名称", "新建图层");
+    if (name === null) {
+      return;
+    }
+    const trimmed = name.trim();
+    if (!trimmed) {
+      window.alert("图层名称不能为空。");
+      return;
+    }
+    if (layers.some((layer) => layer.name.trim() === trimmed)) {
+      window.alert("图层名称重复，无法新增。");
+      return;
+    }
+    pushUndoSnapshot();
+    const layer = createModelLayer(trimmed, layers);
+    setLayers((current) => [...current, layer]);
+    setActiveLayerId(layer.id);
+    writeOperationLog(`新增图层：${layer.name}`);
+  };
+
+  const renameModelLayer = (layerId: string) => {
+    const layer = layers.find((item) => item.id === layerId);
+    if (!layer) {
+      return;
+    }
+    const name = window.prompt("请输入新的图层名称", layer.name);
+    if (name === null) {
+      return;
+    }
+    const trimmed = name.trim();
+    if (!trimmed) {
+      window.alert("图层名称不能为空。");
+      return;
+    }
+    if (layers.some((item) => item.id !== layerId && item.name.trim() === trimmed)) {
+      window.alert("图层名称重复，无法修改。");
+      return;
+    }
+    pushUndoSnapshot();
+    setLayers((current) => current.map((item) => item.id === layerId ? { ...item, name: trimmed } : item));
+    writeOperationLog(`重命名图层：${trimmed}`);
+  };
+
+  const toggleModelLayerVisibility = (layerId: string) => {
+    const layer = layers.find((item) => item.id === layerId);
+    if (!layer) {
+      return;
+    }
+    if (layer.id === activeLayerId && layer.visible) {
+      window.alert("激活图层必须显示，不能隐藏。");
+      return;
+    }
+    pushUndoSnapshot();
+    setLayers((current) => current.map((item) => item.id === layerId ? { ...item, visible: !item.visible } : item));
+  };
+
+  const moveModelLayer = (layerId: string, direction: -1 | 1) => {
+    const index = layers.findIndex((layer) => layer.id === layerId);
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= layers.length) {
+      return;
+    }
+    pushUndoSnapshot();
+    setLayers((current) => {
+      const next = [...current];
+      const [layer] = next.splice(index, 1);
+      next.splice(targetIndex, 0, layer);
+      return next;
+    });
+  };
+
+  const deleteModelLayer = (layerId: string) => {
+    if (layers.length <= 1) {
+      window.alert("至少需要保留一个图层。");
+      return;
+    }
+    if (layerId === activeLayerId) {
+      window.alert("不能删除当前激活图层。");
+      return;
+    }
+    const layer = layers.find((item) => item.id === layerId);
+    if (!layer) {
+      return;
+    }
+    const fallbackLayerId = activeLayerId || layers.find((item) => item.id !== layerId)?.id || DEFAULT_MODEL_LAYER_ID;
+    if (!window.confirm(`删除图层“${layer.name}”？该图层内图元将移动到当前激活图层。`)) {
+      return;
+    }
+    pushUndoSnapshot();
+    setNodes((current) => current.map((node) => (node.layerId ?? DEFAULT_MODEL_LAYER_ID) === layerId ? { ...node, layerId: fallbackLayerId } : node));
+    setLayers((current) => current.filter((item) => item.id !== layerId));
+    writeOperationLog(`删除图层：${layer.name}`);
   };
 
   const saveCurrentProject = (targetId = activeProjectId) => {
@@ -7685,7 +7889,7 @@ export function App() {
       event.currentTarget.setPointerCapture(event.pointerId);
       return;
     }
-    const sourceNode = nodeById.get(connectSource.nodeId);
+    const sourceNode = visibleNodeById.get(connectSource.nodeId);
     if (sourceNode?.id === node.id && connectSource.terminalId === terminalId) {
       return;
     }
@@ -8528,7 +8732,7 @@ export function App() {
 
   return (
     <div
-      className={`app-shell left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${validationPanelResize ? "validation-panel-resizing" : ""}`}
+      className={`app-shell left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${leftPanelVisible ? "left-panel-open" : ""} ${rightPanelVisible ? "right-panel-open" : ""} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${validationPanelResize ? "validation-panel-resizing" : ""}`}
       style={appShellStyle}
     >
       {renderSidePanelEdgeTrigger("left")}
@@ -8572,6 +8776,10 @@ export function App() {
           <div className="topbar-model" title={`当前模型：${activeModelPathName}`}>
             <span>当前模型</span>
             <strong>{activeModelPathName}</strong>
+          </div>
+          <div className="active-layer-indicator" title={`激活图层：${activeLayer?.name ?? "默认图层"}`}>
+            <Layers size={15} />
+            <span>{activeLayer?.name ?? "默认图层"}</span>
           </div>
           <button className="topbar-primary-button" onClick={runTopologyCalculation} title="图上拓扑" aria-label="图上拓扑">
             <Grid2X2 size={16} />
@@ -9032,7 +9240,7 @@ export function App() {
                 style={connectionLineStyle(rewiringPreviewRoute.edgeId)}
               />
             )}
-            {nodes.map((node) => {
+            {visibleNodes.map((node) => {
               const selected = selectedNodeIdSet.has(node.id);
               const isStorageBus = node.kind === "hydrogen-tank" || node.kind === "thermal-storage-tank";
               const isConnectSource = node.id === connectSource?.nodeId;
@@ -9177,7 +9385,7 @@ export function App() {
                   )}
                   <g className="node-terminal-layer" transform={nodeGeometryTransform(node)}>
                     {node.terminals.map((terminal) => {
-                      const sourceNode = connectSource ? nodeById.get(connectSource.nodeId) : undefined;
+                      const sourceNode = connectSource ? visibleNodeById.get(connectSource.nodeId) : undefined;
                       const hideFixedTerminal = nodeIsBus || isStaticNode(node);
                       const disabled =
                         !hideFixedTerminal &&
@@ -9634,6 +9842,49 @@ export function App() {
                       </div>
                     </td>
                   </tr>
+                  <tr>
+                    {renderChineseParamHeader("layers", "图层")}
+                    <td>
+                      <div className="layer-manager">
+                        <div className="layer-manager-toolbar">
+                          <button type="button" onClick={addModelLayer}>新增图层</button>
+                        </div>
+                        <div className="layer-list">
+                          {layers.map((layer, index) => (
+                            <div key={layer.id} className={`layer-row ${layer.id === activeLayerId ? "active" : ""}`}>
+                              <label title={layer.id === activeLayerId ? "激活图层必须显示" : "显示/隐藏图层"}>
+                                <input
+                                  type="checkbox"
+                                  checked={layer.visible}
+                                  disabled={layer.id === activeLayerId}
+                                  onChange={() => toggleModelLayerVisibility(layer.id)}
+                                />
+                                显示
+                              </label>
+                              <label>
+                                <input
+                                  type="radio"
+                                  name="active-layer"
+                                  checked={layer.id === activeLayerId}
+                                  onChange={() => setActiveLayer(layer.id)}
+                                />
+                                激活
+                              </label>
+                              <input
+                                className="layer-name-input"
+                                value={layer.name}
+                                readOnly
+                              />
+                              <button type="button" onClick={() => renameModelLayer(layer.id)} title="重命名图层">重命名</button>
+                              <button type="button" onClick={() => moveModelLayer(layer.id, -1)} disabled={index === 0} title="图层上移">上移</button>
+                              <button type="button" onClick={() => moveModelLayer(layer.id, 1)} disabled={index === layers.length - 1} title="图层下移">下移</button>
+                              <button type="button" onClick={() => deleteModelLayer(layer.id)} disabled={layers.length <= 1 || layer.id === activeLayerId} title="删除图层">删除</button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             ) : inspectorTab === "graph" ? (
@@ -9684,6 +9935,19 @@ export function App() {
                     <tr>
                       {renderChineseParamHeader("scaleY")}
                       <td><input type="number" step="0.1" value={getNodeScaleY(selectedNode)} onChange={(event) => { const scaleY = normalizeScale(Number(event.target.value), getNodeScaleY(selectedNode)); updateSelectedNode({ scale: Math.abs(scaleY), scaleY }); }} /></td>
+                    </tr>
+                    <tr>
+                      {renderChineseParamHeader("layerId", "所属图层")}
+                      <td>
+                        <select
+                          value={selectedNode.layerId ?? DEFAULT_MODEL_LAYER_ID}
+                          onChange={(event) => updateSelectedNode({ layerId: event.target.value })}
+                        >
+                          {layers.map((layer) => (
+                            <option key={layer.id} value={layer.id}>{layer.name}</option>
+                          ))}
+                        </select>
+                      </td>
                     </tr>
                     <tr>
                       {renderChineseParamHeader("layerOrder")}
