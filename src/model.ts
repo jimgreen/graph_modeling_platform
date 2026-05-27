@@ -88,23 +88,37 @@ export type DeviceGlyphVariant =
   | "nuclear-source"
   | "battery-storage"
   | "hydrogen-electrolyzer"
+  | "ac-hydrogen-electrolyzer"
+  | "dc-hydrogen-electrolyzer"
   | "hydrogen-source"
   | "hydrogen-storage"
   | "hydrogen-load"
   | "hydrogen-fuel-cell"
+  | "ac-hydrogen-fuel-cell"
+  | "dc-hydrogen-fuel-cell"
   | "hydrogen-bus"
   | "hydrogen-compressor"
   | "hydrogen-regulator"
   | "hydrogen-valve"
   | "hydrogen-pipeline"
   | "heat-boiler"
+  | "single-heat-boiler"
+  | "two-port-heat-boiler"
   | "heat-source"
+  | "single-heat-source"
+  | "two-port-heat-source"
   | "heat-electric-heater"
+  | "ac-heat-electric-heater"
+  | "ac-two-port-heat-electric-heater"
+  | "dc-heat-electric-heater"
+  | "dc-two-port-heat-electric-heater"
   | "heat-exchanger-two"
   | "heat-exchanger-three"
   | "heat-exchanger-four"
   | "heat-storage"
   | "heat-load"
+  | "single-heat-load"
+  | "two-port-heat-load"
   | "heat-bus"
   | "heat-pipeline"
   | "heat-pump"
@@ -1985,8 +1999,8 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalAssociations: ["heat2-source", ""],
     isContainer: true,
     terminalAnchors: [
-      { x: 0.5, y: -0.25 },
-      { x: 0.5, y: 0.25 }
+      { x: -0.5, y: 0 },
+      { x: 0.5, y: 0 }
     ]
   },
   {
@@ -2123,15 +2137,6 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     params: { capacity: "100 MWh", temperature: "90 degC" },
     terminalType: "heat",
     terminalCount: 0
-  },
-  {
-    kind: "heat-load",
-    label: "热负荷",
-    group: "热能设备",
-    size: { width: 86, height: 58 },
-    params: { heatDemand: "5 MW" },
-    terminalType: "heat",
-    terminalCount: 1
   },
   {
     kind: "single-port-heat-load",
@@ -2943,24 +2948,33 @@ export function getDeviceGlyphVariant(kind: DeviceKind): DeviceGlyphVariant {
   if (kind === "dc-source") return "dc-generator";
   if (kind === "ac-storage") return "battery-storage";
   if (kind === "dc-storage") return "battery-storage";
-  if (kind === "ac-electrolyzer" || kind === "dc-electrolyzer") return "hydrogen-electrolyzer";
+  if (kind === "ac-electrolyzer") return "ac-hydrogen-electrolyzer";
+  if (kind === "dc-electrolyzer") return "dc-hydrogen-electrolyzer";
   if (kind === "hydrogen-source") return "hydrogen-source";
   if (kind === "hydrogen-tank") return "hydrogen-storage";
   if (kind === "hydrogen-load") return "hydrogen-load";
-  if (kind === "ac-fuel-cell" || kind === "dc-fuel-cell") return "hydrogen-fuel-cell";
+  if (kind === "ac-fuel-cell") return "ac-hydrogen-fuel-cell";
+  if (kind === "dc-fuel-cell") return "dc-hydrogen-fuel-cell";
   if (kind === "hydrogen-bus") return "hydrogen-bus";
   if (kind === "hydrogen-compressor") return "hydrogen-compressor";
   if (kind === "hydrogen-pressure-reducer") return "hydrogen-regulator";
   if (kind === "hydrogen-shutoff-valve") return "hydrogen-valve";
   if (kind === "hydrogen-pipeline") return "hydrogen-pipeline";
-  if (kind === "heat-boiler" || kind === "two-port-heat-boiler") return "heat-boiler";
-  if (kind === "heat-source" || kind === "two-port-heat-source") return "heat-source";
+  if (kind === "heat-boiler") return "single-heat-boiler";
+  if (kind === "two-port-heat-boiler") return "two-port-heat-boiler";
+  if (kind === "heat-source") return "single-heat-source";
+  if (kind === "two-port-heat-source") return "two-port-heat-source";
   if (kind === "heat-exchanger") return "heat-exchanger-two";
   if (kind === "three-port-heat-exchanger") return "heat-exchanger-three";
   if (kind === "four-port-heat-exchanger") return "heat-exchanger-four";
-  if (kind === "ac-heater" || kind === "dc-heater" || kind === "ac-two-port-heater" || kind === "dc-two-port-heater") return "heat-electric-heater";
+  if (kind === "ac-heater") return "ac-heat-electric-heater";
+  if (kind === "ac-two-port-heater") return "ac-two-port-heat-electric-heater";
+  if (kind === "dc-heater") return "dc-heat-electric-heater";
+  if (kind === "dc-two-port-heater") return "dc-two-port-heat-electric-heater";
   if (kind === "thermal-storage-tank") return "heat-storage";
-  if (kind === "heat-load" || kind === "single-port-heat-load" || kind === "two-port-heat-load") return "heat-load";
+  if (kind === "single-port-heat-load") return "single-heat-load";
+  if (kind === "two-port-heat-load") return "two-port-heat-load";
+  if (kind === "heat-load") return "heat-load";
   if (kind === "heat-bus") return "heat-bus";
   if (kind === "heat-pipeline") return "heat-pipeline";
   if (kind === "heat-pump") return "heat-pump";
@@ -3188,20 +3202,34 @@ const DEVICE_STROKE_WIDTH_BY_VARIANT: Partial<Record<DeviceGlyphVariant, number>
   "nuclear-source": 2.2,
   "battery-storage": 2.4,
   "hydrogen-electrolyzer": 2.3,
+  "ac-hydrogen-electrolyzer": 2.3,
+  "dc-hydrogen-electrolyzer": 2.3,
   "hydrogen-fuel-cell": 2.3,
+  "ac-hydrogen-fuel-cell": 2.3,
+  "dc-hydrogen-fuel-cell": 2.3,
   "hydrogen-storage": 2.4,
   "hydrogen-compressor": 2.4,
   "hydrogen-regulator": 2.4,
   "hydrogen-valve": 2.4,
   "hydrogen-pipeline": 2.8,
   "heat-boiler": 2.4,
+  "single-heat-boiler": 2.4,
+  "two-port-heat-boiler": 2.4,
   "heat-source": 2.4,
+  "single-heat-source": 2.4,
+  "two-port-heat-source": 2.4,
   "heat-electric-heater": 2.3,
+  "ac-heat-electric-heater": 2.3,
+  "ac-two-port-heat-electric-heater": 2.3,
+  "dc-heat-electric-heater": 2.3,
+  "dc-two-port-heat-electric-heater": 2.3,
   "heat-exchanger-two": 2.4,
   "heat-exchanger-three": 2.4,
   "heat-exchanger-four": 2.4,
   "heat-storage": 2.4,
   "heat-load": 2.4,
+  "single-heat-load": 2.4,
+  "two-port-heat-load": 2.4,
   "heat-pipeline": 2.8,
   "heat-pump": 2.4,
   "heat-valve": 2.4,
@@ -3998,7 +4026,46 @@ function terminalPairKey(first: Pick<OverlappingTerminalRef, "nodeId" | "termina
   return `${refs[0]}|${refs[1]}`;
 }
 
-export function getOverlappingTerminalGroups(nodes: ModelNode[]): OverlappingTerminalGroup[] {
+export function getOverlappingTerminalGroups(nodes: ModelNode[], affectedNodeIds?: ReadonlySet<string>): OverlappingTerminalGroup[] {
+  if (affectedNodeIds && affectedNodeIds.size === 0) {
+    return [];
+  }
+  if (affectedNodeIds) {
+    const affectedKeys = new Set<string>();
+    const groups = new Map<string, OverlappingTerminalGroup>();
+    for (const node of nodes) {
+      if (!affectedNodeIds.has(node.id) || isBusNode(node) || isStaticNode(node)) {
+        continue;
+      }
+      for (const terminal of node.terminals) {
+        const point = getTerminalPoint(node, terminal.id);
+        const key = `${terminal.type}:${point.x}:${point.y}`;
+        affectedKeys.add(key);
+        const group = groups.get(key) ?? { key, type: terminal.type, point, terminals: [] };
+        group.terminals.push({ nodeId: node.id, terminalId: terminal.id, type: terminal.type, point });
+        groups.set(key, group);
+      }
+    }
+    if (affectedKeys.size === 0) {
+      return [];
+    }
+    for (const node of nodes) {
+      if (affectedNodeIds.has(node.id) || isBusNode(node) || isStaticNode(node)) {
+        continue;
+      }
+      for (const terminal of node.terminals) {
+        const point = getTerminalPoint(node, terminal.id);
+        const key = `${terminal.type}:${point.x}:${point.y}`;
+        if (!affectedKeys.has(key)) {
+          continue;
+        }
+        const group = groups.get(key) ?? { key, type: terminal.type, point, terminals: [] };
+        group.terminals.push({ nodeId: node.id, terminalId: terminal.id, type: terminal.type, point });
+        groups.set(key, group);
+      }
+    }
+    return Array.from(groups.values()).filter((group) => group.terminals.length > 1);
+  }
   const groups = new Map<string, OverlappingTerminalGroup>();
   for (const node of nodes) {
     if (isBusNode(node) || isStaticNode(node)) {
@@ -4032,10 +4099,30 @@ function terminalPointOnBus(bus: ModelNode, point: Point, tolerance = 0): Point 
   return projectPointToBusCenterline(bus, point);
 }
 
-export function getTerminalBusContactGroups(nodes: ModelNode[], tolerance = 0): TerminalBusContactGroup[] {
+export function getTerminalBusContactGroups(
+  nodes: ModelNode[],
+  tolerance = 0,
+  affectedNodeIds?: ReadonlySet<string>
+): TerminalBusContactGroup[] {
   const buses = nodes.filter(isBusNode);
   if (buses.length === 0) {
     return [];
+  }
+  const busEntries = buses.map((bus) => ({
+    bus,
+    type: getBusTerminalType(bus),
+    box: boxFor(bus, tolerance)
+  }));
+  const busEntriesByType = new Map<TerminalType, typeof busEntries>();
+  const affectedBusEntriesByType = new Map<TerminalType, typeof busEntries>();
+  for (const entry of busEntries) {
+    if (!entry.type) {
+      continue;
+    }
+    busEntriesByType.set(entry.type, [...(busEntriesByType.get(entry.type) ?? []), entry]);
+    if (affectedNodeIds?.has(entry.bus.id)) {
+      affectedBusEntriesByType.set(entry.type, [...(affectedBusEntriesByType.get(entry.type) ?? []), entry]);
+    }
   }
   const groups = new Map<string, TerminalBusContactGroup>();
   for (const node of nodes) {
@@ -4044,22 +4131,34 @@ export function getTerminalBusContactGroups(nodes: ModelNode[], tolerance = 0): 
     }
     for (const terminal of node.terminals) {
       const point = getTerminalPoint(node, terminal.id);
-      for (const bus of buses) {
-        const busType = getBusTerminalType(bus);
-        if (busType !== terminal.type) {
+      const candidateBuses = !affectedNodeIds
+        ? busEntriesByType.get(terminal.type) ?? []
+        : affectedNodeIds.has(node.id)
+          ? busEntriesByType.get(terminal.type) ?? []
+          : affectedBusEntriesByType.get(terminal.type) ?? [];
+      if (candidateBuses.length === 0) {
+        continue;
+      }
+      for (const entry of candidateBuses) {
+        if (
+          point.x < entry.box.left ||
+          point.x > entry.box.right ||
+          point.y < entry.box.top ||
+          point.y > entry.box.bottom
+        ) {
           continue;
         }
-        const contactPoint = terminalPointOnBus(bus, point, tolerance);
+        const contactPoint = terminalPointOnBus(entry.bus, point, tolerance);
         if (!contactPoint) {
           continue;
         }
         const key = `${terminal.type}:${contactPoint.x}:${contactPoint.y}`;
-        const terminalId = bus.terminals[0]?.id ?? "t1";
+        const terminalId = entry.bus.terminals[0]?.id ?? "t1";
         const group = groups.get(key) ?? { key, type: terminal.type, point: contactPoint, contacts: [] };
         group.contacts.push({
           nodeId: node.id,
           terminalId: terminal.id,
-          busId: bus.id,
+          busId: entry.bus.id,
           busTerminalId: terminalId,
           type: terminal.type,
           point: contactPoint
@@ -4071,14 +4170,17 @@ export function getTerminalBusContactGroups(nodes: ModelNode[], tolerance = 0): 
   return Array.from(groups.values());
 }
 
-function collectOverlappingTerminalPairs(nodes: ModelNode[]) {
+function collectOverlappingTerminalPairs(nodes: ModelNode[], affectedNodeIds?: ReadonlySet<string>) {
   const pairs = new Map<string, { first: OverlappingTerminalRef; second: OverlappingTerminalRef }>();
-  for (const group of getOverlappingTerminalGroups(nodes)) {
+  for (const group of getOverlappingTerminalGroups(nodes, affectedNodeIds)) {
     for (let firstIndex = 0; firstIndex < group.terminals.length; firstIndex += 1) {
       for (let secondIndex = firstIndex + 1; secondIndex < group.terminals.length; secondIndex += 1) {
         const first = group.terminals[firstIndex];
         const second = group.terminals[secondIndex];
         if (first.nodeId === second.nodeId) {
+          continue;
+        }
+        if (affectedNodeIds && !affectedNodeIds.has(first.nodeId) && !affectedNodeIds.has(second.nodeId)) {
           continue;
         }
         pairs.set(terminalPairKey(first, second), { first, second });
@@ -4092,9 +4194,9 @@ function terminalBusPairKey(contact: Pick<TerminalBusContact, "nodeId" | "termin
   return `${terminalRefKey(contact.nodeId, contact.terminalId)}|bus:${contact.busId}`;
 }
 
-function collectTerminalBusContacts(nodes: ModelNode[]) {
+function collectTerminalBusContacts(nodes: ModelNode[], affectedNodeIds?: ReadonlySet<string>) {
   const contacts = new Map<string, TerminalBusContact>();
-  for (const group of getTerminalBusContactGroups(nodes)) {
+  for (const group of getTerminalBusContactGroups(nodes, 0, affectedNodeIds)) {
     for (const contact of group.contacts) {
       contacts.set(terminalBusPairKey(contact), contact);
     }
@@ -4152,18 +4254,22 @@ export function reconcileOverlappingTerminalConnections(
   previousNodes: ModelNode[],
   nextNodes: ModelNode[],
   edges: Edge[],
-  createEdgeId: (first: OverlappingTerminalRef, second: OverlappingTerminalRef, index: number) => string = (_first, _second, index) => `overlap-edge-${index + 1}`
+  createEdgeId: (first: OverlappingTerminalRef, second: OverlappingTerminalRef, index: number) => string = (_first, _second, index) => `overlap-edge-${index + 1}`,
+  affectedNodeIds?: ReadonlySet<string>
 ): OverlappingTerminalConnectionReconcileResult {
   const nextNodeById = new Map(nextNodes.map((node) => [node.id, node]));
-  const previousPairs = collectOverlappingTerminalPairs(previousNodes);
-  const nextPairs = collectOverlappingTerminalPairs(nextNodes);
-  const previousBusContacts = collectTerminalBusContacts(previousNodes);
-  const nextBusContacts = collectTerminalBusContacts(nextNodes);
-  const existingPairKeys = new Set(edges.flatMap((edge) => {
+  const previousPairs = collectOverlappingTerminalPairs(previousNodes, affectedNodeIds);
+  const nextPairs = collectOverlappingTerminalPairs(nextNodes, affectedNodeIds);
+  const previousBusContacts = collectTerminalBusContacts(previousNodes, affectedNodeIds);
+  const nextBusContacts = collectTerminalBusContacts(nextNodes, affectedNodeIds);
+  const edgeTouchesAffectedNode = (edge: Edge) =>
+    !affectedNodeIds || affectedNodeIds.has(edge.sourceId) || affectedNodeIds.has(edge.targetId);
+  const relevantEdges = affectedNodeIds ? edges.filter(edgeTouchesAffectedNode) : edges;
+  const existingPairKeys = new Set(relevantEdges.flatMap((edge) => {
     const key = explicitEdgeTerminalPairKey(edge);
     return key ? [key] : [];
   }));
-  const existingBusContactKeys = new Set(edges.flatMap((edge) => {
+  const existingBusContactKeys = new Set(relevantEdges.flatMap((edge) => {
     const source = nextNodeById.get(edge.sourceId);
     const target = nextNodeById.get(edge.targetId);
     if (!source || !target) {
@@ -4176,6 +4282,9 @@ export function reconcileOverlappingTerminalConnections(
   }));
   const removedEdgeIds: string[] = [];
   const retainedEdges = edges.filter((edge) => {
+    if (!edgeTouchesAffectedNode(edge)) {
+      return true;
+    }
     if (!sameTypeEndpointTerminalsOverlap(nextNodeById, edge) && !sameTypeEndpointTouchesBus(nextNodeById, edge)) {
       return true;
     }
@@ -7165,21 +7274,59 @@ export function routeEdgesForStoredRendering(nodes: ModelNode[], edges: Edge[], 
   });
 }
 
+export function routeEdgesForCachedStoredRendering(
+  nodes: ModelNode[],
+  edges: Edge[],
+  affectedEdgeIds: ReadonlySet<string>,
+  bounds?: CanvasBounds,
+  previousRoutes: RoutedEdge[] = []
+): RoutedEdge[] {
+  if (affectedEdgeIds.size === 0 || previousRoutes.length === 0) {
+    return routeEdgesForStoredRendering(nodes, edges, bounds);
+  }
+  const previousRouteById = new Map(previousRoutes.map((route) => [route.edgeId, route]));
+  const edgesToRefresh = edges.filter((edge) => affectedEdgeIds.has(edge.id) || !previousRouteById.has(edge.id));
+  const refreshedRouteById = new Map(
+    routeEdgesForStoredRendering(nodes, edgesToRefresh, bounds).map((route) => [route.edgeId, route])
+  );
+  return edges.flatMap((edge) => {
+    const route = affectedEdgeIds.has(edge.id) || !previousRouteById.has(edge.id)
+      ? refreshedRouteById.get(edge.id)
+      : previousRouteById.get(edge.id);
+    return route ? [route] : [];
+  });
+}
+
 export function routeEdgesForIncrementalRendering(
   nodes: ModelNode[],
   edges: Edge[],
   affectedEdgeIds: ReadonlySet<string>,
-  bounds?: CanvasBounds
+  bounds?: CanvasBounds,
+  previousRoutes: RoutedEdge[] = []
 ): RoutedEdge[] {
   if (affectedEdgeIds.size === 0) {
     return routeEdgesForStoredRendering(nodes, edges, bounds);
   }
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const storedRoutes = routeEdgesForStoredRendering(nodes, edges, bounds);
+  const previousRouteById = new Map(previousRoutes.map((route) => [route.edgeId, route]));
+  const missingStoredEdges = previousRoutes.length > 0
+    ? edges.filter((edge) => !affectedEdgeIds.has(edge.id) && !previousRouteById.has(edge.id))
+    : edges;
+  const storedRoutes = [
+    ...previousRoutes.filter((route) => !affectedEdgeIds.has(route.edgeId)),
+    ...routeEdgesForStoredRendering(nodes, missingStoredEdges, bounds)
+  ];
   const storedRouteById = new Map(storedRoutes.map((route) => [route.edgeId, route]));
-  const avoidedSegments = storedRoutes.flatMap((route, routeIndex) =>
-    affectedEdgeIds.has(route.edgeId) ? [] : getSegments(route.edgeId, routeIndex, route.points)
-  );
+  const avoidedSegments: Segment[] = [];
+  edges.forEach((edge, routeIndex) => {
+    if (affectedEdgeIds.has(edge.id)) {
+      return;
+    }
+    const route = storedRouteById.get(edge.id);
+    if (route) {
+      avoidedSegments.push(...getSegments(edge.id, routeIndex, route.points));
+    }
+  });
   const routedRouteById = new Map<string, RoutedEdge>();
   edges.forEach((edge, routeIndex) => {
     if (!affectedEdgeIds.has(edge.id)) {
@@ -7190,7 +7337,7 @@ export function routeEdgesForIncrementalRendering(
     if (!source || !target) {
       return;
     }
-    const points = routeOrthogonalEdge(source, target, nodes, edge, avoidedSegments, bounds);
+    const points = simplifyRoutePreservingEndpointStubs(routeOrthogonalEdge(source, target, nodes, edge, avoidedSegments, bounds));
     routedRouteById.set(edge.id, {
       edgeId: edge.id,
       points,
@@ -7202,6 +7349,22 @@ export function routeEdgesForIncrementalRendering(
     const route = routedRouteById.get(edge.id) ?? storedRouteById.get(edge.id);
     return route ? [{ ...route }] : [];
   });
+  if (previousRoutes.length > 0) {
+    const crossingSegments: Segment[] = [];
+    return combinedRoutes.map((route, index) => {
+      const canReusePreviousPath = !affectedEdgeIds.has(route.edgeId) && previousRouteById.has(route.edgeId);
+      if (canReusePreviousPath) {
+        crossingSegments.push(...getSegments(route.edgeId, index, route.points));
+        return route;
+      }
+      const routedEdge = {
+        ...route,
+        path: pathWithCrossingArcs(route, crossingSegments, index)
+      };
+      crossingSegments.push(...getSegments(route.edgeId, index, route.points));
+      return routedEdge;
+    });
+  }
   const crossingSegments: Segment[] = [];
   return combinedRoutes.map((route, index) => {
     const routedEdge = {
@@ -7628,6 +7791,53 @@ export function rebuildSingleConnectionRoute(
   return edges.map((item) => item.id === edgeId ? prepared.edge! : item);
 }
 
+function routeBoundsForPoints(points: Point[], padding = 0) {
+  let left = points[0].x;
+  let right = points[0].x;
+  let top = points[0].y;
+  let bottom = points[0].y;
+  for (let index = 1; index < points.length; index += 1) {
+    const point = points[index];
+    left = Math.min(left, point.x);
+    right = Math.max(right, point.x);
+    top = Math.min(top, point.y);
+    bottom = Math.max(bottom, point.y);
+  }
+  return {
+    left: left - padding,
+    right: right + padding,
+    top: top - padding,
+    bottom: bottom + padding
+  };
+}
+
+type RouteBlockingCandidate = {
+  node: ModelNode;
+  box: ReturnType<typeof boxFor>;
+};
+
+function getRouteBlockingCandidateNodesFromBoxes(points: Point[], edge: Edge, candidates: RouteBlockingCandidate[]) {
+  if (points.length < 2 || candidates.length === 0) {
+    return [];
+  }
+  const routeBox = routeBoundsForPoints(points, ROUTE_BLOCKER_PADDING);
+  return candidates
+    .filter((candidate) =>
+      candidate.node.id !== edge.sourceId &&
+      candidate.node.id !== edge.targetId &&
+      boxesOverlap(routeBox, candidate.box)
+    )
+    .map((candidate) => candidate.node);
+}
+
+export function getRouteBlockingCandidateNodes(points: Point[], edge: Edge, blockers: ModelNode[]) {
+  return getRouteBlockingCandidateNodesFromBoxes(
+    points,
+    edge,
+    blockers.map((node) => ({ node, box: boxFor(node, ROUTE_BLOCKER_PADDING) }))
+  );
+}
+
 function routeIntersectsSpecificNodes(points: Point[], edge: Edge, blockers: ModelNode[]) {
   if (points.length < 2 || blockers.length === 0) {
     return false;
@@ -7662,16 +7872,20 @@ export function rerouteEdgesAroundMovedNodes(
     return edges;
   }
 
+  const movedCandidates = movedNodes.map((node) => ({ node, box: boxFor(node, ROUTE_BLOCKER_PADDING) }));
   const previousRouteById = new Map(previousRoutes.map((route) => [route.edgeId, route]));
   const fallbackRoutes = previousRoutes.length > 0 ? [] : routeEdgesForRendering(nodes, edges, bounds);
   const fallbackRouteById = new Map(fallbackRoutes.map((route) => [route.edgeId, route]));
-  const blockedEdgeIds = edges
+  const candidateEdges = previousRoutes.length > 0
+    ? edges.filter((edge) => previousRouteById.has(edge.id))
+    : edges;
+  const blockedEdgeIds = candidateEdges
     .filter((edge) => {
       const route = previousRouteById.get(edge.id) ?? fallbackRouteById.get(edge.id);
       if (!route) {
         return false;
       }
-      const blockers = movedNodes.filter((node) => node.id !== edge.sourceId && node.id !== edge.targetId);
+      const blockers = getRouteBlockingCandidateNodesFromBoxes(route.points, edge, movedCandidates);
       return routeIntersectsSpecificNodes(route.points, edge, blockers);
     })
     .map((edge) => edge.id);

@@ -32,6 +32,7 @@ import {
   duplicateSavedProject,
   routeOrthogonalEdge,
   routeEdgesForRendering,
+  routeEdgesForCachedStoredRendering,
   routeEdgesForIncrementalRendering,
   routeEdgesForStoredRendering,
   ACAC_CONVERTER_CONTROL_TYPES,
@@ -65,6 +66,7 @@ import {
   getConnectionStrokeColor,
   getTerminalDisplayColor,
   getElementFocusPoint,
+  getRouteBlockingCandidateNodes,
   isBlockingTopologyValidationError,
   isRepeatedEdgePointerClick,
   getContainerAssociationRelationKey,
@@ -211,6 +213,87 @@ describe("power system model", () => {
     expect(incremental.find((route) => route.edgeId === "affected")?.points).not.toEqual(
       stored.find((route) => route.edgeId === "affected")?.points
     );
+  });
+
+  test("incremental rendering reuses cached paths for unaffected connections", () => {
+    const sourceA = createDefaultNode("ac-source", { x: 100, y: 120 });
+    const targetA = createDefaultNode("ac-load", { x: 360, y: 120 });
+    const sourceB = createDefaultNode("ac-line", { x: 100, y: 240 });
+    const targetB = createDefaultNode("ac-line", { x: 360, y: 240 });
+    const edges: Edge[] = [
+      {
+        id: "cached",
+        sourceId: sourceA.id,
+        targetId: targetA.id,
+        sourceTerminalId: sourceA.terminals[0].id,
+        targetTerminalId: targetA.terminals[0].id
+      },
+      {
+        id: "dirty",
+        sourceId: sourceB.id,
+        targetId: targetB.id,
+        sourceTerminalId: sourceB.terminals[0].id,
+        targetTerminalId: targetB.terminals[0].id
+      }
+    ];
+    const previousRoutes = routeEdgesForStoredRendering([sourceA, targetA, sourceB, targetB], edges, { width: 520, height: 360 })
+      .map((route) =>
+        route.edgeId === "cached"
+          ? { ...route, path: "cached-path" }
+          : route.edgeId === "dirty"
+            ? { ...route, path: "dirty-old-path" }
+            : route
+      );
+
+    const incremental = routeEdgesForIncrementalRendering(
+      [sourceA, targetA, sourceB, targetB],
+      edges,
+      new Set(["dirty"]),
+      { width: 520, height: 360 },
+      previousRoutes
+    );
+
+    expect(incremental.find((route) => route.edgeId === "cached")?.path).toBe("cached-path");
+    expect(incremental.find((route) => route.edgeId === "dirty")?.path).not.toBe(
+      previousRoutes.find((route) => route.edgeId === "dirty")?.path
+    );
+  });
+
+  test("cached stored rendering refreshes only affected connection paths after a move commit", () => {
+    const sourceA = createDefaultNode("ac-source", { x: 100, y: 120 });
+    const targetA = createDefaultNode("ac-load", { x: 360, y: 120 });
+    const sourceB = createDefaultNode("ac-line", { x: 100, y: 240 });
+    const targetB = createDefaultNode("ac-line", { x: 360, y: 240 });
+    const edges: Edge[] = [
+      {
+        id: "cached",
+        sourceId: sourceA.id,
+        targetId: targetA.id,
+        sourceTerminalId: sourceA.terminals[0].id,
+        targetTerminalId: targetA.terminals[0].id
+      },
+      {
+        id: "moved",
+        sourceId: sourceB.id,
+        targetId: targetB.id,
+        sourceTerminalId: sourceB.terminals[0].id,
+        targetTerminalId: targetB.terminals[0].id
+      }
+    ];
+    const previousRoutes = routeEdgesForStoredRendering([sourceA, targetA, sourceB, targetB], edges, { width: 520, height: 360 })
+      .map((route) => route.edgeId === "cached" ? { ...route, path: "cached-path" } : route);
+    const movedSourceB = { ...sourceB, position: { x: sourceB.position.x + 80, y: sourceB.position.y } };
+
+    const nextRoutes = routeEdgesForCachedStoredRendering(
+      [sourceA, targetA, movedSourceB, targetB],
+      edges,
+      new Set(["moved"]),
+      { width: 520, height: 360 },
+      previousRoutes
+    );
+
+    expect(nextRoutes.find((route) => route.edgeId === "cached")?.path).toBe("cached-path");
+    expect(nextRoutes.find((route) => route.edgeId === "moved")?.points[0]).toEqual(getTerminalPoint(movedSourceB, sourceB.terminals[0].id));
   });
 
   test("round-trips project files without losing device parameters", () => {
@@ -1836,6 +1919,29 @@ describe("power system model", () => {
     expect(validation.route?.points).not.toEqual(beforeRoutes[0].points);
   });
 
+  test("filters moved node blockers by route bounds before reroute collision checks", () => {
+    const source = { ...createDefaultNode("ac-source", { x: 120, y: 140 }), id: "source" };
+    const target = { ...createDefaultNode("ac-load", { x: 520, y: 140 }), id: "target" };
+    const nearBlocker = { ...createDefaultNode("ac-pv-source", { x: 300, y: 140 }), id: "near-blocker" };
+    const farBlocker = { ...createDefaultNode("ac-pv-source", { x: 300, y: 440 }), id: "far-blocker" };
+    const endpointNode = { ...source, position: { x: 120, y: 141 } };
+    const edge: Edge = {
+      id: "candidate-filter-line",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+
+    const candidates = getRouteBlockingCandidateNodes(
+      [{ x: 120, y: 140 }, { x: 520, y: 140 }],
+      edge,
+      [nearBlocker, farBlocker, endpointNode]
+    );
+
+    expect(candidates.map((node) => node.id)).toEqual([nearBlocker.id]);
+  });
+
   test("rebuilds a single affected connection from scratch instead of preserving old manual doglegs", () => {
     const source = { ...createDefaultNode("ac-line", { x: 120, y: 140 }), id: "source" };
     const target = { ...createDefaultNode("ac-line", { x: 520, y: 140 }), id: "target" };
@@ -2389,13 +2495,13 @@ describe("power system model", () => {
 
   test("includes hydrogen equipment library with mixed electric-hydrogen ports", () => {
     const expected = [
-      ["ac-electrolyzer", "交流电制氢", ["ac", "h2"], "hydrogen-electrolyzer"],
-      ["dc-electrolyzer", "直流电制氢", ["dc", "h2"], "hydrogen-electrolyzer"],
+      ["ac-electrolyzer", "交流电制氢", ["ac", "h2"], "ac-hydrogen-electrolyzer"],
+      ["dc-electrolyzer", "直流电制氢", ["dc", "h2"], "dc-hydrogen-electrolyzer"],
       ["hydrogen-source", "氢源", ["h2"], "hydrogen-source"],
       ["hydrogen-tank", "储氢罐", [], "hydrogen-storage"],
       ["hydrogen-load", "氢荷", ["h2"], "hydrogen-load"],
-      ["ac-fuel-cell", "交流燃料电池", ["ac", "h2"], "hydrogen-fuel-cell"],
-      ["dc-fuel-cell", "直流燃料电池", ["dc", "h2"], "hydrogen-fuel-cell"],
+      ["ac-fuel-cell", "交流燃料电池", ["ac", "h2"], "ac-hydrogen-fuel-cell"],
+      ["dc-fuel-cell", "直流燃料电池", ["dc", "h2"], "dc-hydrogen-fuel-cell"],
       ["hydrogen-bus", "氢能母线", [], "hydrogen-bus"],
       ["hydrogen-compressor", "氢压机", ["h2", "h2"], "hydrogen-compressor"],
       ["hydrogen-pressure-reducer", "减压阀", ["h2", "h2"], "hydrogen-regulator"],
@@ -2433,21 +2539,20 @@ describe("power system model", () => {
 
   test("includes thermal equipment library with heat network and mixed electric-thermal ports", () => {
     const expected = [
-      ["heat-boiler", "供热锅炉", ["heat"], "heat-boiler"],
-      ["two-port-heat-boiler", "供热锅炉2", ["heat", "heat"], "heat-boiler"],
-      ["heat-source", "单端热源", ["heat"], "heat-source"],
-      ["two-port-heat-source", "双端热源", ["heat", "heat"], "heat-source"],
+      ["heat-boiler", "供热锅炉", ["heat"], "single-heat-boiler"],
+      ["two-port-heat-boiler", "供热锅炉2", ["heat", "heat"], "two-port-heat-boiler"],
+      ["heat-source", "单端热源", ["heat"], "single-heat-source"],
+      ["two-port-heat-source", "双端热源", ["heat", "heat"], "two-port-heat-source"],
       ["heat-exchanger", "双端热交换器", ["heat", "heat"], "heat-exchanger-two"],
       ["three-port-heat-exchanger", "三端热交换器", ["heat", "heat", "heat"], "heat-exchanger-three"],
       ["four-port-heat-exchanger", "四端热交换器", ["heat", "heat", "heat", "heat"], "heat-exchanger-four"],
-      ["ac-heater", "交流电制热", ["ac", "heat"], "heat-electric-heater"],
-      ["ac-two-port-heater", "交流电制热2", ["ac", "heat", "heat"], "heat-electric-heater"],
-      ["dc-heater", "直流电制热", ["dc", "heat"], "heat-electric-heater"],
-      ["dc-two-port-heater", "直流电制热2", ["dc", "heat", "heat"], "heat-electric-heater"],
+      ["ac-heater", "交流电制热", ["ac", "heat"], "ac-heat-electric-heater"],
+      ["ac-two-port-heater", "交流电制热2", ["ac", "heat", "heat"], "ac-two-port-heat-electric-heater"],
+      ["dc-heater", "直流电制热", ["dc", "heat"], "dc-heat-electric-heater"],
+      ["dc-two-port-heater", "直流电制热2", ["dc", "heat", "heat"], "dc-two-port-heat-electric-heater"],
       ["thermal-storage-tank", "储热罐", [], "heat-storage"],
-      ["heat-load", "热负荷", ["heat"], "heat-load"],
-      ["single-port-heat-load", "单端热荷", ["heat"], "heat-load"],
-      ["two-port-heat-load", "双端热荷", ["heat", "heat"], "heat-load"],
+      ["single-port-heat-load", "单端热荷", ["heat"], "single-heat-load"],
+      ["two-port-heat-load", "双端热荷", ["heat", "heat"], "two-port-heat-load"],
       ["heat-bus", "热力母线", [], "heat-bus"],
       ["heat-pipeline", "输热管道", ["heat", "heat"], "heat-pipeline"],
       ["heat-pump", "循环水泵", ["heat", "heat"], "heat-pump"],
@@ -2461,6 +2566,7 @@ describe("power system model", () => {
       expect(node.terminals.map((terminal) => terminal.type)).toEqual([...terminalTypes]);
       expect(getDeviceGlyphVariant(kind)).toBe(glyphVariant);
     }
+    expect(DEVICE_LIBRARY.some((item) => item.kind === "heat-load")).toBe(false);
 
     const threePort = createDefaultNode("three-port-heat-exchanger", { x: 100, y: 100 });
     expect(threePort.terminals.map((terminal) => terminal.label)).toEqual(["单端侧", "双端侧供水", "双端侧回水"]);
@@ -2482,8 +2588,8 @@ describe("power system model", () => {
     const twoPortBoiler = createDefaultNode("two-port-heat-boiler", { x: 100, y: 100 });
     expect(twoPortBoiler.terminals.map((terminal) => terminal.label)).toEqual(["供水端", "回水端"]);
     expect(twoPortBoiler.terminals.map((terminal) => terminal.anchor)).toEqual([
-      { x: 0.5, y: -0.25 },
-      { x: 0.5, y: 0.25 }
+      { x: -0.5, y: 0 },
+      { x: 0.5, y: 0 }
     ]);
 
     const acTwoPortHeater = createDefaultNode("ac-two-port-heater", { x: 100, y: 100 });
@@ -3272,7 +3378,7 @@ describe("power system model", () => {
     const hydrogenSource = createDefaultNode("hydrogen-source", { x: 100, y: 260 });
     const hydrogenLoad = createDefaultNode("hydrogen-load", { x: 240, y: 260 });
     const heatSource = createDefaultNode("heat-source", { x: 100, y: 340 });
-    const heatLoad = createDefaultNode("heat-load", { x: 240, y: 340 });
+    const heatLoad = createDefaultNode("single-port-heat-load", { x: 240, y: 340 });
     const nodeById = new Map([acSource, acLoad, dcSource, dcLoad, hydrogenSource, hydrogenLoad, heatSource, heatLoad].map((node) => [node.id, node]));
 
     expect(getConnectionStrokeColor({ id: "ac", sourceId: acSource.id, targetId: acLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }, nodeById)).toBe("#2563eb");
@@ -3290,7 +3396,7 @@ describe("power system model", () => {
     const hydrogenSource = createDefaultNode("hydrogen-source", { x: 100, y: 260 });
     const hydrogenLoad = createDefaultNode("hydrogen-load", { x: 240, y: 260 });
     const heatSource = createDefaultNode("heat-source", { x: 100, y: 340 });
-    const heatLoad = createDefaultNode("heat-load", { x: 240, y: 340 });
+    const heatLoad = createDefaultNode("single-port-heat-load", { x: 240, y: 340 });
     acSource.terminals[0].vbase = "10";
     acLoad.terminals[0].vbase = "10";
     dcSource.terminals[0].vbase = "750";
@@ -3817,6 +3923,27 @@ describe("power system model", () => {
     expect(groups[0].terminals.map((terminal) => terminal.nodeId).sort()).toEqual([load.id, source.id].sort());
   });
 
+  test("filters overlapping terminal groups to affected moved nodes when requested", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 260, y: 100 });
+    const otherSource = createDefaultNode("ac-source", { x: 500, y: 100 });
+    const otherLoad = createDefaultNode("ac-load", { x: 660, y: 100 });
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const loadPoint = getTerminalPoint(load, "t1");
+    const otherSourcePoint = getTerminalPoint(otherSource, "t1");
+    const otherLoadPoint = getTerminalPoint(otherLoad, "t1");
+    load.position = { x: load.position.x + sourcePoint.x - loadPoint.x, y: load.position.y + sourcePoint.y - loadPoint.y };
+    otherLoad.position = {
+      x: otherLoad.position.x + otherSourcePoint.x - otherLoadPoint.x,
+      y: otherLoad.position.y + otherSourcePoint.y - otherLoadPoint.y
+    };
+
+    const groups = getOverlappingTerminalGroups([source, load, otherSource, otherLoad], new Set([source.id]));
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].terminals.map((terminal) => terminal.nodeId).sort()).toEqual([load.id, source.id].sort());
+  });
+
   test("adds an explicit same-type connection when previously overlapping terminals are moved apart", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
     const load = createDefaultNode("ac-load", { x: 260, y: 100 });
@@ -3843,6 +3970,34 @@ describe("power system model", () => {
         targetTerminalId: "t1"
       })
     ]);
+  });
+
+  test("limits overlap reconciliation to affected moved nodes when provided", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 260, y: 100 });
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const loadPoint = getTerminalPoint(load, "t1");
+    load.position = { x: load.position.x + sourcePoint.x - loadPoint.x, y: load.position.y + sourcePoint.y - loadPoint.y };
+    const nextLoad = { ...load, position: { x: load.position.x + 120, y: load.position.y } };
+
+    const skipped = reconcileOverlappingTerminalConnections(
+      [source, load],
+      [source, nextLoad],
+      [],
+      () => "auto-edge",
+      new Set(["unrelated-node"])
+    );
+    const reconciled = reconcileOverlappingTerminalConnections(
+      [source, load],
+      [source, nextLoad],
+      [],
+      () => "auto-edge",
+      new Set([nextLoad.id])
+    );
+
+    expect(skipped.addedEdgeIds).toEqual([]);
+    expect(skipped.edges).toEqual([]);
+    expect(reconciled.addedEdgeIds).toEqual(["auto-edge"]);
   });
 
   test("removes an explicit connection when its same-type endpoints are moved onto the same coordinate", () => {

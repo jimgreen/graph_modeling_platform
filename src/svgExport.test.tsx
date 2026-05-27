@@ -81,4 +81,99 @@ describe("SVG export", () => {
     expect(threeWindingSvg).toContain('class="export-terminal ac" transform="translate(52 -8) scale(1 1)"');
     expect(threeWindingSvg).toContain('class="export-terminal ac" transform="translate(0 38) scale(1 1)"');
   });
+
+  test("exports distinct AC and DC electrolyzer glyphs", () => {
+    const acElectrolyzer = createDefaultNode("ac-electrolyzer", { x: 140, y: 120 });
+    const dcElectrolyzer = createDefaultNode("dc-electrolyzer", { x: 300, y: 120 });
+
+    const svg = buildSvgDocument([acElectrolyzer, dcElectrolyzer], [], { width: 460, height: 260 });
+
+    expect(svg).toContain("ac-electrolyzer-glyph");
+    expect(svg).toContain("dc-electrolyzer-glyph");
+    expect(svg).toContain("ac-wave-marker");
+    expect(svg).toContain("dc-battery-marker");
+  });
+
+  test("exports distinct AC and DC fuel cell glyphs", () => {
+    const acFuelCell = createDefaultNode("ac-fuel-cell", { x: 140, y: 120 });
+    const dcFuelCell = createDefaultNode("dc-fuel-cell", { x: 300, y: 120 });
+
+    const svg = buildSvgDocument([acFuelCell, dcFuelCell], [], { width: 460, height: 260 });
+
+    expect(svg).toContain("ac-fuel-cell-glyph");
+    expect(svg).toContain("dc-fuel-cell-glyph");
+    expect(svg).toContain("fuel-cell-ac-wave-marker");
+    expect(svg).toContain("fuel-cell-dc-battery-marker");
+  });
+
+  test("exports distinct single and two-port heat source glyphs", () => {
+    const singleBoiler = createDefaultNode("heat-boiler", { x: 120, y: 120 });
+    const twoPortBoiler = createDefaultNode("two-port-heat-boiler", { x: 260, y: 120 });
+    const singleSource = createDefaultNode("heat-source", { x: 120, y: 220 });
+    const twoPortSource = createDefaultNode("two-port-heat-source", { x: 260, y: 220 });
+
+    const svg = buildSvgDocument([singleBoiler, twoPortBoiler, singleSource, twoPortSource], [], { width: 420, height: 340 });
+
+    expect(svg).toContain("single-heat-boiler-glyph");
+    expect(svg).toContain("two-port-heat-boiler-glyph");
+    expect(svg).toContain("single-heat-source-glyph");
+    expect(svg).toContain("two-port-heat-source-glyph");
+    expect(svg).toContain("two-port-heat-flow-marker");
+    expect(svg).toContain("two-port-heat-return-marker");
+    expect(svg).toContain('class="two-port-heat-flow-marker" d="M -30 -12 H -18 M -25 -16 L -31 -12 L -25 -8"');
+    expect(svg).toContain('class="two-port-heat-return-marker" d="M 18 12 H 30 M 25 8 L 19 12 L 25 16"');
+  });
+
+  test("exports distinct two three and four-port heat exchanger glyphs", () => {
+    const twoPort = createDefaultNode("heat-exchanger", { x: 120, y: 120 });
+    const threePort = createDefaultNode("three-port-heat-exchanger", { x: 260, y: 120 });
+    const fourPort = createDefaultNode("four-port-heat-exchanger", { x: 400, y: 120 });
+
+    const svg = buildSvgDocument([twoPort, threePort, fourPort], [], { width: 540, height: 260 });
+
+    expect(svg).toContain("heat-exchanger-two-glyph");
+    expect(svg).toContain("heat-exchanger-three-glyph");
+    expect(svg).toContain("heat-exchanger-four-glyph");
+    expect(svg).toContain("three-port-heat-exchanger-branch");
+    expect(svg).toContain("four-port-heat-exchanger-left-branch");
+    expect(svg).toContain("four-port-heat-exchanger-right-branch");
+    expect(svg).toContain('class="three-port-heat-exchanger-supply-arrow" d="M 31 -15 H 38 M 32 -19 L 38 -15 L 32 -11"');
+    expect(svg).toContain('class="three-port-heat-exchanger-return-arrow" d="M 31 15 H 38 M 34 11 L 28 15 L 34 19"');
+    expect(svg).toContain('class="four-port-heat-exchanger-left-supply-arrow" d="M -38 -15 H -31 M -37 -19 L -31 -15 L -37 -11"');
+    expect(svg).toContain('class="four-port-heat-exchanger-left-return-arrow" d="M -31 15 H -38 M -32 11 L -38 15 L -32 19"');
+    expect(svg).toContain('class="four-port-heat-exchanger-right-supply-arrow" d="M 31 -15 H 38 M 32 -19 L 38 -15 L 32 -11"');
+    expect(svg).toContain('class="four-port-heat-exchanger-right-return-arrow" d="M 31 15 H 38 M 34 11 L 28 15 L 34 19"');
+  });
+
+  test("exports distinct electric heater glyphs by electric type and heat port count", () => {
+    const acHeater = createDefaultNode("ac-heater", { x: 120, y: 120 });
+    const acTwoPortHeater = createDefaultNode("ac-two-port-heater", { x: 280, y: 120 });
+    const dcHeater = createDefaultNode("dc-heater", { x: 120, y: 240 });
+    const dcTwoPortHeater = createDefaultNode("dc-two-port-heater", { x: 280, y: 240 });
+
+    const svg = buildSvgDocument([acHeater, acTwoPortHeater, dcHeater, dcTwoPortHeater], [], { width: 440, height: 360 });
+
+    expect(svg).toContain("ac-heat-electric-heater-glyph");
+    expect(svg).toContain("ac-two-port-heat-electric-heater-glyph");
+    expect(svg).toContain("dc-heat-electric-heater-glyph");
+    expect(svg).toContain("dc-two-port-heat-electric-heater-glyph");
+    expect(svg).toContain("heater-ac-wave-marker");
+    expect(svg).toContain("heater-dc-battery-marker");
+    expect(svg).toContain("heater-two-port-heat-marker");
+    expect(svg).toContain('class="heater-two-port-supply-marker" d="M 23 -13 H 34 M 29 -17 L 35 -13 L 29 -9"');
+    expect(svg).toContain('class="heater-two-port-return-marker" d="M 23 13 H 34 M 29 9 L 23 13 L 29 17"');
+  });
+
+  test("exports distinct single and two-port heat load glyphs", () => {
+    const singleLoad = createDefaultNode("single-port-heat-load", { x: 140, y: 120 });
+    const twoPortLoad = createDefaultNode("two-port-heat-load", { x: 300, y: 120 });
+
+    const svg = buildSvgDocument([singleLoad, twoPortLoad], [], { width: 460, height: 260 });
+
+    expect(svg).toContain("single-heat-load-glyph");
+    expect(svg).toContain("two-port-heat-load-glyph");
+    expect(svg).toContain("heat-load-single-marker");
+    expect(svg).toContain("heat-load-two-port-marker");
+    expect(svg).toContain('class="heat-load-two-port-marker" d="M -30 -13 H -17 M -23 -17 L -17 -13 L -23 -9 M 17 13 H 30 M 24 9 L 31 13 L 24 17"');
+  });
 });
