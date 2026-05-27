@@ -3828,11 +3828,18 @@ export function App() {
   };
 
   const undoLastOperation = () => {
+    deferredMoveOptimizationCancelRef.current?.();
+    deferredMoveOptimizationCancelRef.current = null;
+    pendingStoredRouteEdgeIdsRef.current = new Set();
     setUndoStack((current) => {
       const snapshot = current.at(-1);
       if (!snapshot) {
         return current;
       }
+      markRouteEdgesDirty(new Set([
+        ...edges.map((edge) => edge.id),
+        ...snapshot.edges.map((edge) => edge.id)
+      ]));
       setProjectName(snapshot.projectName);
       setCanvasWidth(snapshot.canvasWidth);
       setCanvasHeight(snapshot.canvasHeight);
@@ -4671,9 +4678,6 @@ export function App() {
     selectedEdgeIds: Set<string>
   ) => {
     const movedIds = new Set(movedNodeIds);
-    if (movedIds.size <= 1 || selectedEdgeIds.size === 1) {
-      return true;
-    }
     let affectedConnectionCount = 0;
     for (const edge of candidateEdges) {
       if (movedIds.has(edge.sourceId) || movedIds.has(edge.targetId) || selectedEdgeIds.has(edge.id)) {
@@ -4683,7 +4687,7 @@ export function App() {
         }
       }
     }
-    return affectedConnectionCount <= 1;
+    return affectedConnectionCount === 1;
   };
 
   const scheduleMovedEdgeOptimization = (

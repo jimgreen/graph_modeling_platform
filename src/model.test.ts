@@ -259,6 +259,42 @@ describe("power system model", () => {
     );
   });
 
+  test("incremental rendering reuses cached routes when deferred rendering catches up with no dirty connections", () => {
+    const sourceA = createDefaultNode("ac-source", { x: 100, y: 120 });
+    const targetA = createDefaultNode("ac-load", { x: 360, y: 120 });
+    const sourceB = createDefaultNode("ac-line", { x: 100, y: 240 });
+    const targetB = createDefaultNode("ac-line", { x: 360, y: 240 });
+    const edges: Edge[] = [
+      {
+        id: "cached-a",
+        sourceId: sourceA.id,
+        targetId: targetA.id,
+        sourceTerminalId: sourceA.terminals[0].id,
+        targetTerminalId: targetA.terminals[0].id
+      },
+      {
+        id: "cached-b",
+        sourceId: sourceB.id,
+        targetId: targetB.id,
+        sourceTerminalId: sourceB.terminals[0].id,
+        targetTerminalId: targetB.terminals[0].id
+      }
+    ];
+    const previousRoutes = routeEdgesForStoredRendering([sourceA, targetA, sourceB, targetB], edges, { width: 520, height: 360 })
+      .map((route) => ({ ...route, path: `cached-${route.edgeId}` }));
+
+    const incremental = routeEdgesForIncrementalRendering(
+      [sourceA, targetA, sourceB, targetB],
+      edges,
+      new Set(),
+      { width: 520, height: 360 },
+      previousRoutes
+    );
+
+    expect(incremental).toBe(previousRoutes);
+    expect(incremental.map((route) => route.path)).toEqual(["cached-cached-a", "cached-cached-b"]);
+  });
+
   test("cached stored rendering refreshes only affected connection paths after a move commit", () => {
     const sourceA = createDefaultNode("ac-source", { x: 100, y: 120 });
     const targetA = createDefaultNode("ac-load", { x: 360, y: 120 });

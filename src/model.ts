@@ -7305,6 +7305,23 @@ export function routeEdgesForIncrementalRendering(
   previousRoutes: RoutedEdge[] = []
 ): RoutedEdge[] {
   if (affectedEdgeIds.size === 0) {
+    if (previousRoutes.length > 0) {
+      if (
+        previousRoutes.length === edges.length &&
+        edges.every((edge, index) => previousRoutes[index]?.edgeId === edge.id)
+      ) {
+        return previousRoutes;
+      }
+      const previousRouteById = new Map(previousRoutes.map((route) => [route.edgeId, route]));
+      const missingEdges = edges.filter((edge) => !previousRouteById.has(edge.id));
+      const missingRouteById = missingEdges.length > 0
+        ? new Map(routeEdgesForStoredRendering(nodes, missingEdges, bounds).map((route) => [route.edgeId, route]))
+        : new Map<string, RoutedEdge>();
+      return edges.flatMap((edge) => {
+        const route = previousRouteById.get(edge.id) ?? missingRouteById.get(edge.id);
+        return route ? [route] : [];
+      });
+    }
     return routeEdgesForStoredRendering(nodes, edges, bounds);
   }
   const nodeById = new Map(nodes.map((node) => [node.id, node]));

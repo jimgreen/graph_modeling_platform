@@ -235,6 +235,8 @@ describe("graph inspector panel", () => {
     expect(optimizeBlock).toContain("rebuildSingleAffectedConnectionRoute");
     expect(optimizeBlock).toContain("rerouteEdgesAroundMovedNodes");
     expect(source).toContain("const shouldRunDeferredMoveOptimization");
+    expect(source).not.toContain("movedIds.size <= 1 || selectedEdgeIds.size === 1");
+    expect(source).toContain("return affectedConnectionCount === 1");
     expect(scheduleBlock).toContain("!shouldRunDeferredMoveOptimization(fastEdges, movedNodeIds, selectedEdgeIds)");
     expect(scheduleBlock).toContain("deferredMoveOptimizationCancelRef.current = null");
     expect(scheduleBlock).toContain("scheduleIdleWork");
@@ -388,6 +390,9 @@ describe("graph inspector panel", () => {
     const undoStart = source.indexOf("const cloneProjectState");
     const undoEnd = source.indexOf("const requestCanvasFrameCenter", undoStart);
     const undoBlock = source.slice(undoStart, undoEnd);
+    const undoActionStart = source.indexOf("const undoLastOperation = () =>");
+    const undoActionEnd = source.indexOf("useEffect(() =>", undoActionStart);
+    const undoActionBlock = source.slice(undoActionStart, undoActionEnd);
 
     expect(refsStart).toBeGreaterThan(-1);
     expect(dragMoveBlock).toContain("window.requestAnimationFrame");
@@ -399,6 +404,10 @@ describe("graph inspector panel", () => {
     expect(pointerBlock).not.toContain("setDragging((current) =>");
     expect(undoBlock).toContain("deepModelSnapshot");
     expect(undoBlock).toContain("nodes: deepModelSnapshot ? cloneNodesForUndo(nodes) : nodes");
+    expect(undoActionBlock).toContain("deferredMoveOptimizationCancelRef.current?.()");
+    expect(undoActionBlock).toContain("pendingStoredRouteEdgeIdsRef.current = new Set()");
+    expect(undoActionBlock).toContain("markRouteEdgesDirty(new Set([");
+    expect(undoActionBlock).toContain("...snapshot.edges.map((edge) => edge.id)");
   });
 
   test("defers bus terminal synchronization and only writes local draft from manual save", async () => {
