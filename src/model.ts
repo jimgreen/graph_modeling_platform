@@ -7116,21 +7116,39 @@ function filterSegmentsForRoutePoints(points: Point[], segments: Segment[], padd
   return segments.filter((segment) => boxesOverlap(segmentBox(segment, padding), routeBox));
 }
 
+const CROSSING_TERMINAL_MARGIN = ROUTE_ENDPOINT_STUB_LENGTH + 2;
+
 function between(value: number, a: number, b: number, margin = 0) {
   return value > Math.min(a, b) + margin && value < Math.max(a, b) - margin;
 }
 
-function intersection(a: Segment, b: Segment): Point | null {
+function intersection(a: Segment, b: Segment, margin = 0): Point | null {
   if (a.orientation === b.orientation) {
     return null;
   }
   const horizontal = a.orientation === "horizontal" ? a : b;
   const vertical = a.orientation === "vertical" ? a : b;
   const point = { x: vertical.a.x, y: horizontal.a.y };
-  if (between(point.x, horizontal.a.x, horizontal.b.x, 10) && between(point.y, vertical.a.y, vertical.b.y, 10)) {
+  if (between(point.x, horizontal.a.x, horizontal.b.x, margin) && between(point.y, vertical.a.y, vertical.b.y, margin)) {
     return point;
   }
   return null;
+}
+
+function distanceAlongSegment(point: Point, segmentEndpoint: Point, orientation: Segment["orientation"]) {
+  return orientation === "horizontal"
+    ? Math.abs(point.x - segmentEndpoint.x)
+    : Math.abs(point.y - segmentEndpoint.y);
+}
+
+function pointNearRouteTerminal(point: Point, segment: Segment) {
+  if (segment.segmentIndex === 0 && distanceAlongSegment(point, segment.a, segment.orientation) <= CROSSING_TERMINAL_MARGIN) {
+    return true;
+  }
+  if (segment.segmentIndex === segment.lastSegmentIndex && distanceAlongSegment(point, segment.b, segment.orientation) <= CROSSING_TERMINAL_MARGIN) {
+    return true;
+  }
+  return false;
 }
 
 function overlapAmount(a: Segment, b: Segment) {
@@ -7310,15 +7328,18 @@ function selectRouteCandidate(candidates: Point[][], blockers: ModelNode[], avoi
   return bestCandidate;
 }
 
-function pathWithCrossingArcs(route: RoutedEdge, previousSegments: Segment[], routeIndex: number) {
+function pathWithCrossingArcs(route: RoutedEdge, allSegments: Segment[], routeIndex: number) {
   const crossingsBySegment = new Map<number, Point[]>();
-  const currentSegments = getSegments(route.edgeId, routeIndex, route.points);
-  const nearbyPreviousSegments = filterSegmentsForRoutePoints(route.points, previousSegments, 2);
+  const currentSegments = getSegments(route.edgeId, routeIndex, route.points).filter((segment) => segment.orientation === "vertical");
+  const nearbySegments = filterSegmentsForRoutePoints(route.points, allSegments, 2);
 
   for (const segment of currentSegments) {
-    for (const previous of nearbyPreviousSegments) {
-      const point = intersection(segment, previous);
-      if (point) {
+    for (const other of nearbySegments) {
+      if (other.edgeId === segment.edgeId || other.orientation !== "horizontal") {
+        continue;
+      }
+      const point = intersection(segment, other);
+      if (point && !pointNearRouteTerminal(point, segment) && !pointNearRouteTerminal(point, other)) {
         crossingsBySegment.set(segment.segmentIndex, [...(crossingsBySegment.get(segment.segmentIndex) ?? []), point]);
       }
     }
@@ -7359,15 +7380,11 @@ function pathWithCrossingArcs(route: RoutedEdge, previousSegments: Segment[], ro
 }
 
 function refreshCrossingArcPaths(routes: RoutedEdge[]): RoutedEdge[] {
-  const crossingSegments: Segment[] = [];
-  return routes.map((route, index) => {
-    const routedEdge = {
-      ...route,
-      path: pathWithCrossingArcs(route, crossingSegments, index)
-    };
-    crossingSegments.push(...getSegments(route.edgeId, index, route.points));
-    return routedEdge;
-  });
+  const crossingSegments = routes.flatMap((route, index) => getSegments(route.edgeId, index, route.points));
+  return routes.map((route, index) => ({
+    ...route,
+    path: pathWithCrossingArcs(route, crossingSegments, index)
+  }));
 }
 
 export function routeEdgesForRendering(nodes: ModelNode[], edges: Edge[], bounds?: CanvasBounds): RoutedEdge[] {

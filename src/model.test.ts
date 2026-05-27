@@ -4053,6 +4053,82 @@ describe("power system model", () => {
     expect(routes[1].path).toContain("Q");
   });
 
+  test("always renders crossing arcs on vertical connection segments regardless of edge order", () => {
+    const edges: Edge[] = [
+      {
+        id: "vertical",
+        sourceId: "vertical-source",
+        targetId: "vertical-target",
+        sourcePoint: { x: 300, y: 80 },
+        targetPoint: { x: 300, y: 400 }
+      },
+      {
+        id: "horizontal",
+        sourceId: "horizontal-source",
+        targetId: "horizontal-target",
+        sourcePoint: { x: 100, y: 240 },
+        targetPoint: { x: 500, y: 240 }
+      }
+    ];
+
+    const routes = routeEdgesForStoredRendering([], edges, { width: 700, height: 520 });
+
+    expect(routes.find((route) => route.edgeId === "vertical")?.path).toContain("Q");
+    expect(routes.find((route) => route.edgeId === "horizontal")?.path).not.toContain("Q");
+  });
+
+  test("renders vertical crossing arcs near ordinary bend points", () => {
+    const edges: Edge[] = [
+      {
+        id: "vertical-bent",
+        sourceId: "vertical-source",
+        targetId: "vertical-target",
+        sourcePoint: { x: 300, y: 100 },
+        targetPoint: { x: 340, y: 400 },
+        manualPoints: [
+          { x: 300, y: 241 },
+          { x: 340, y: 241 }
+        ]
+      },
+      {
+        id: "horizontal",
+        sourceId: "horizontal-source",
+        targetId: "horizontal-target",
+        sourcePoint: { x: 100, y: 240 },
+        targetPoint: { x: 500, y: 240 }
+      }
+    ];
+
+    const routes = routeEdgesForStoredRendering([], edges, { width: 700, height: 520 });
+
+    expect(routes.find((route) => route.edgeId === "vertical-bent")?.path).toContain("Q");
+    expect(routes.find((route) => route.edgeId === "horizontal")?.path).not.toContain("Q");
+  });
+
+  test("does not render crossing arcs near connection terminals", () => {
+    const edges: Edge[] = [
+      {
+        id: "vertical",
+        sourceId: "vertical-source",
+        targetId: "vertical-target",
+        sourcePoint: { x: 300, y: 80 },
+        targetPoint: { x: 300, y: 400 }
+      },
+      {
+        id: "terminal-near-horizontal",
+        sourceId: "horizontal-source",
+        targetId: "horizontal-target",
+        sourcePoint: { x: 100, y: 62 },
+        targetPoint: { x: 500, y: 62 }
+      }
+    ];
+
+    const routes = routeEdgesForStoredRendering([], edges, { width: 700, height: 520 });
+
+    expect(routes.find((route) => route.edgeId === "vertical")?.path).not.toContain("Q");
+    expect(routes.find((route) => route.edgeId === "terminal-near-horizontal")?.path).not.toContain("Q");
+  });
+
   test("updates crossing arc paths when a different connection line moves", () => {
     const left = createDefaultNode("ac-bus", { x: 100, y: 240 });
     const right = createDefaultNode("ac-bus", { x: 500, y: 240 });
