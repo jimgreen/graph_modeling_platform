@@ -12,6 +12,18 @@ async function readStyles() {
   return readFile(new URL("./styles.css", import.meta.url), "utf8") as Promise<string>;
 }
 
+async function readModelSource() {
+  // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
+  const { readFile } = await import("node:fs/promises");
+  return readFile(new URL("./model.ts", import.meta.url), "utf8") as Promise<string>;
+}
+
+async function readServerSource() {
+  // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
+  const { readFile } = await import("node:fs/promises");
+  return readFile(new URL("../server/image-server.mjs", import.meta.url), "utf8") as Promise<string>;
+}
+
 function selectedTerminalCountRow(source: string) {
   const headerIndex = source.indexOf('renderChineseParamHeader("terminalCount")');
   if (headerIndex < 0) {
@@ -384,6 +396,71 @@ describe("graph inspector panel", () => {
     expect(scheduleBlock).not.toContain("dirtyEdgeIdsAfterMove(\n        expectedEdges,\n        optimized.edges,\n        movedNodeIds");
   });
 
+  test("reroutes connection lines near original positions after moving a small number of graphics", async () => {
+    const source = await readAppSource();
+    const modelSource = await readModelSource();
+    const helperStart = source.indexOf("const routePointsNearOriginalMovedNodes");
+    const helperEnd = source.indexOf("const sameOptionalPoint", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+    const scheduleStart = source.indexOf("const scheduleMovedEdgeOptimization");
+    const scheduleEnd = source.indexOf("const commitFastMovedGraph", scheduleStart);
+    const scheduleBlock = source.slice(scheduleStart, scheduleEnd);
+    const commitStart = source.indexOf("const commitFastMovedGraph");
+    const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
+    const finishStart = source.indexOf("const finishNodeDrag = () =>");
+    const finishEnd = source.indexOf("const moveSelection", finishStart);
+    const finishBlock = source.slice(finishStart, finishEnd);
+    const rerouteStart = modelSource.indexOf("export function rerouteEdgesAroundMovedNodes");
+    const rerouteEnd = modelSource.indexOf("function samePoint", rerouteStart);
+    const rerouteBlock = modelSource.slice(rerouteStart, rerouteEnd);
+
+    expect(source).toContain("const MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES = 5");
+    expect(helperStart).toBeGreaterThan(-1);
+    expect(helperBlock).toContain("movedIds.size > MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES");
+    expect(helperBlock).toContain("originalPositions[node.id]");
+    expect(helperBlock).toContain("routePointBounds(route.points, 8)");
+    expect(helperBlock).toContain("routeTouchesExpandedBoxes");
+    expect(helperBlock).toContain("movedIds.has(edge.sourceId) || movedIds.has(edge.targetId)");
+    expect(scheduleBlock).toContain("routePointsNearOriginalMovedNodes");
+    expect(scheduleBlock).toContain("const releasedEdgeIds");
+    expect(scheduleBlock).toContain("forcedRerouteEdgeIds");
+    expect(commitBlock).toContain("originalPositions");
+    expect(commitBlock).toContain("scheduleMovedEdgeOptimization(");
+    expect(finishBlock).toContain("activeDragging.originalPositions");
+    expect(rerouteBlock).toContain("forceEdgeIds: Iterable<string>");
+    expect(rerouteBlock).toContain("forcedEdgeIds.has(edge.id)");
+  });
+
+  test("spatially filters route blockers and connection segments before scoring commit candidates", async () => {
+    const source = await readModelSource();
+    const selectStart = source.indexOf("function selectRouteCandidate");
+    const selectEnd = source.indexOf("function pathWithCrossingArcs", selectStart);
+    const selectBlock = source.slice(selectStart, selectEnd);
+    const commitStart = source.indexOf("function selectCommitSafeRoute");
+    const commitEnd = source.indexOf("function designCommitSafeRoute", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
+
+    expect(source).toContain("function filterBlockersForRoutePoints");
+    expect(source).toContain("function filterSegmentsForRoutePoints");
+    expect(selectBlock).toContain("filterBlockersForRoutePoints(candidate, blockers");
+    expect(selectBlock).toContain("filterSegmentsForRoutePoints(candidate, avoidedSegments");
+    expect(commitBlock).toContain("filterBlockersForRoutePoints(simplified, nodes");
+    expect(commitBlock).toContain("filterSegmentsForRoutePoints(simplified, avoidedSegments");
+  });
+
+  test("caps orthogonal routing lane candidates to avoid quadratic searches in dense connection areas", async () => {
+    const source = await readModelSource();
+    const laneStart = source.indexOf("function candidateLanes");
+    const laneEnd = source.indexOf("function buildRouteCandidates", laneStart);
+    const laneBlock = source.slice(laneStart, laneEnd);
+
+    expect(source).toContain("const ROUTE_MAX_LANES_PER_AXIS");
+    expect(source).toContain("function prioritizeLaneValues");
+    expect(laneBlock).toContain("prioritizeLaneValues");
+    expect(laneBlock).not.toContain("return { xs: uniqueSorted(xValues), ys: uniqueSorted(yValues) };");
+  });
+
   test("defers full terminal overlap detection off the drag release frame", async () => {
     const source = await readAppSource();
     const overlapStart = source.indexOf("const terminalOverlapNodes");
@@ -498,6 +575,7 @@ describe("graph inspector panel", () => {
 
   test("opens a configurable color palette dialog from the topbar", async () => {
     const source = await readAppSource();
+    const serverSource = await readServerSource();
     const topbarStart = source.indexOf("<header className=\"topbar\">");
     const topbarEnd = source.indexOf("</header>", topbarStart);
     const topbarBlock = source.slice(topbarStart, topbarEnd);
@@ -508,9 +586,22 @@ describe("graph inspector panel", () => {
     expect(source).toContain("resetEnergyColors");
     expect(source).toContain("resetVoltageColors");
     expect(source).toContain("addVoltageColorRow");
+    expect(source).toContain("voltageColorVisibility");
+    expect(source).toContain("currentModelVoltageColorKeys");
+    expect(source).toContain("visibleVoltageColorRows");
+    expect(source).toContain("nearestVoltageColor");
+    expect(source).toContain("fillMissingVoltageColorRows");
+    expect(source).toContain("window.alert(`当前模型存在");
+    expect(source).toContain("fetchBackendColorConfig");
+    expect(source).toContain("saveBackendColorConfigPayload");
+    expect(source).toContain("serializeColorConfigForStorage");
+    expect(source).toContain("backendColorConfigLoadedRef");
+    expect(source).toContain("lastPersistedColorConfigPayloadRef");
     expect(topbarBlock).toContain("aria-label=\"配色设置\"");
     expect(source).toContain("按能流类型");
     expect(source).toContain("按电压等级");
+    expect(source).toContain("全部电压等级");
+    expect(source).toContain("当前模型电压等级");
     expect(source).toContain("交流电");
     expect(source).toContain("直流电");
     expect(source).toContain("氢能");
@@ -522,6 +613,11 @@ describe("graph inspector panel", () => {
     expect(source).toContain("getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette)");
     expect(source).toContain("getDeviceStrokeColor(node, colorDisplayMode, colorPalette)");
     expect(source).toContain("getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette)");
+    expect(serverSource).toContain("const colorConfigPath");
+    expect(serverSource).toContain("readColorConfig");
+    expect(serverSource).toContain("writeColorConfig");
+    expect(serverSource).toContain("handleSaveColorConfig");
+    expect(serverSource).toContain("\"/api/color-config\"");
   });
 
   test("moves layer-order actions from the context menu to icon-only topbar buttons", async () => {

@@ -366,6 +366,12 @@ type CanvasRenderOptions = CanvasBounds & {
 type BackendSchemesResponse = {
   schemes: SavedSchemeRecord[];
 };
+type BackendColorConfigResponse = {
+  colorDisplayMode?: ColorDisplayMode;
+  colorPalette?: Partial<ColorPalette>;
+  exists?: boolean;
+  savedAt?: string;
+};
 type CustomParamDraft = DeviceParameterDefinition & {
   id: string;
 };
@@ -386,6 +392,7 @@ type CustomDeviceDraft = {
 type DeviceDefinitionDraftRow = DeviceParameterDefinition & {
   id: string;
 };
+type VoltageColorVisibility = "all" | "current";
 
 const terminalColor = terminalTypeColor;
 const busEndpointColor = (node: ModelNode, colorPalette?: ColorPalette) => terminalColor(node.terminals[0]?.type, colorPalette);
@@ -401,6 +408,25 @@ const ELECTRIC_COLOR_TYPE_LABELS: Record<"ac" | "dc", string> = {
   dc: "DC"
 };
 
+const isElectricPaletteType = (type?: TerminalType): type is "ac" | "dc" => type === "ac" || type === "dc";
+
+const terminalVbaseFallbackValue = (node: ModelNode, terminalIndex: number) => {
+  if (node.kind === "ac-three-winding-transformer") {
+    return [node.params.highVbase, node.params.mediumVbase, node.params.lowVbase][terminalIndex] ?? node.params.vbase ?? "";
+  }
+  const sourceSide = node.params.i_vbase ?? node.params.sourceVbase ?? node.params.highVbase;
+  const targetSide = node.params.j_vbase ?? node.params.targetVbase ?? node.params.lowVbase;
+  return (terminalIndex === 0 ? sourceSide : targetSide) ?? node.params.vbase ?? node.params.voltageLevel ?? node.params.ratedVoltage ?? "";
+};
+
+const voltageColorKeyForTerminal = (node: ModelNode, terminal: ModelNode["terminals"][number], terminalIndex: number) => {
+  if (!isElectricPaletteType(terminal.type)) {
+    return "";
+  }
+  const voltage = terminalVoltageBaseNumber(terminal.vbase ?? terminalVbaseFallbackValue(node, terminalIndex));
+  return voltage ? `${terminal.type}:${voltage}` : "";
+};
+
 const DEFAULT_CANVAS_WIDTH = 1980;
 const DEFAULT_CANVAS_HEIGHT = 1024;
 const MIN_CANVAS_WIDTH = 640;
@@ -409,6 +435,8 @@ const MAX_CANVAS_WIDTH = 5000;
 const MAX_CANVAS_HEIGHT = 3000;
 const DEFAULT_CANVAS_BACKGROUND = "#f1f5f9";
 const MOVE_BOUNDARY_GUARD = 8;
+const MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES = 5;
+const ORIGINAL_POSITION_REROUTE_PADDING = 64;
 const DEFAULT_POWER_UNIT = "MW";
 const DEFAULT_VOLTAGE_UNIT = "kV";
 const DEFAULT_CURRENT_UNIT = "A";
@@ -1201,6 +1229,42 @@ async function saveBackendSchemesPayload(normalizedSchemesPayload: string): Prom
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     throw new Error(typeof payload.error === "string" ? payload.error : "保存方案/模型到后台失败。");
+  }
+}
+
+function normalizeColorDisplayMode(value?: string): ColorDisplayMode {
+  return value === "voltage" ? "voltage" : "energy";
+}
+
+function serializeColorConfigForStorage(mode: ColorDisplayMode, palette: ColorPalette) {
+  return JSON.stringify({
+    colorDisplayMode: mode,
+    colorPalette: normalizeColorPalette(palette)
+  });
+}
+
+async function fetchBackendColorConfig(): Promise<{ colorDisplayMode: ColorDisplayMode; colorPalette: ColorPalette; exists: boolean }> {
+  const response = await fetch("/api/color-config");
+  if (!response.ok) {
+    throw new Error("读取后台配色配置失败。");
+  }
+  const payload = (await response.json()) as BackendColorConfigResponse;
+  return {
+    colorDisplayMode: normalizeColorDisplayMode(payload.colorDisplayMode),
+    colorPalette: normalizeColorPalette(payload.colorPalette),
+    exists: Boolean(payload.exists)
+  };
+}
+
+async function saveBackendColorConfigPayload(normalizedColorConfigPayload: string): Promise<void> {
+  const response = await fetch("/api/color-config", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: normalizedColorConfigPayload
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(typeof payload.error === "string" ? payload.error : "保存配色配置到后台失败。");
   }
 }
 
@@ -2683,6 +2747,9 @@ export function App() {
   const backendSchemesLoadedRef = useRef(false);
   const suppressNextBackendSchemeSyncRef = useRef(false);
   const lastPersistedSchemesPayloadRef = useRef<string | null>(null);
+  const backendColorConfigLoadedRef = useRef(false);
+  const suppressNextBackendColorSyncRef = useRef(false);
+  const lastPersistedColorConfigPayloadRef = useRef<string | null>(null);
   const imageLibraryInitializedRef = useRef(false);
   const lastMouseStatusRef = useRef<Point | null>(null);
   const pendingMouseStatusRef = useRef<Point | null>(null);
@@ -2793,6 +2860,7 @@ export function App() {
   const [colorPaletteDraft, setColorPaletteDraft] = useState<ColorPalette>(() => readColorPalette());
   const [colorPaletteDialogOpen, setColorPaletteDialogOpen] = useState(false);
   const [colorPaletteTab, setColorPaletteTab] = useState<ColorDisplayMode>(() => readColorDisplayMode());
+  const [voltageColorVisibility, setVoltageColorVisibility] = useState<VoltageColorVisibility>("all");
   const [pendingUnsavedAction, setPendingUnsavedAction] = useState<UnsavedChangeAction | null>(null);
   const [mousePosition, setMousePosition] = useState<Point | null>(null);
   const [operationLog, setOperationLog] = useState("就绪");
@@ -2833,13 +2901,64 @@ export function App() {
     const edge = edgeById.get(edgeId);
     return edge ? ({ "--connection-color": getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette) } as CSSProperties) : undefined;
   };
+  const currentModelVoltageColorKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const node of nodes) {
+      node.terminals.forEach((terminal, terminalIndex) => {
+        const key = voltageColorKeyForTerminal(node, terminal, terminalIndex);
+        if (key) {
+          keys.add(key);
+        }
+      });
+    }
+    return keys;
+  }, [nodes]);
+  const nearestVoltageColor = (missingKey: string, voltageColors: Record<string, string>) => {
+    const [targetType, ...targetVoltageParts] = missingKey.split(":");
+    const targetVoltage = Number(targetVoltageParts.join(":"));
+    const candidates = Object.entries(voltageColors)
+      .filter(([key, color]) => key.startsWith(`${targetType}:`) && color)
+      .map(([key, color]) => ({
+        key,
+        color,
+        voltage: Number(key.slice(targetType.length + 1))
+      }))
+      .filter((entry) => Number.isFinite(entry.voltage));
+    if (Number.isFinite(targetVoltage) && candidates.length > 0) {
+      return candidates
+        .sort((left, right) => Math.abs(left.voltage - targetVoltage) - Math.abs(right.voltage - targetVoltage) || left.key.localeCompare(right.key))[0]
+        .color;
+    }
+    return DEFAULT_COLOR_PALETTE.voltage[missingKey] ?? DEFAULT_COLOR_PALETTE.voltage[`${targetType}:0`] ?? "#64748b";
+  };
+  const fillMissingVoltageColorRows = (palette: ColorPalette) => {
+    const missingKeys = Array.from(currentModelVoltageColorKeys).filter((key) => !palette.voltage[key]);
+    if (missingKeys.length === 0) {
+      return { palette, missingKeys };
+    }
+    const voltage = { ...palette.voltage };
+    for (const key of missingKeys) {
+      voltage[key] = nearestVoltageColor(key, voltage);
+    }
+    return {
+      palette: { ...palette, voltage },
+      missingKeys
+    };
+  };
   const toggleColorDisplayMode = (nextMode?: ColorDisplayMode) => {
     setColorDisplayMode((current) => nextMode ?? (current === "energy" ? "voltage" : "energy"));
   };
   const openColorPaletteDialog = () => {
-    setColorPaletteDraft(normalizeColorPalette(colorPalette));
+    const filled = fillMissingVoltageColorRows(normalizeColorPalette(colorPalette));
+    setColorPaletteDraft(filled.palette);
     setColorPaletteTab(colorDisplayMode);
     setColorPaletteDialogOpen(true);
+    if (filled.missingKeys.length > 0) {
+      setColorPalette(filled.palette);
+      window.setTimeout(() => {
+        window.alert(`当前模型存在 ${filled.missingKeys.length} 个未配置颜色的电压等级，已按相近电压等级自动赋默认颜色：${filled.missingKeys.join("，")}`);
+      }, 0);
+    }
   };
   const saveColorPalette = () => {
     const normalized = normalizeColorPalette(colorPaletteDraft);
@@ -2882,6 +3001,12 @@ export function App() {
       })
       .sort((left, right) => left.type.localeCompare(right.type) || Number(left.voltage) - Number(right.voltage) || left.voltage.localeCompare(right.voltage)),
     [colorPaletteDraft.voltage]
+  );
+  const visibleVoltageColorRows = useMemo(
+    () => voltageColorVisibility === "current"
+      ? voltageColorRows.filter((row) => currentModelVoltageColorKeys.has(row.key))
+      : voltageColorRows,
+    [currentModelVoltageColorKeys, voltageColorRows, voltageColorVisibility]
   );
   const setVoltageColorRows = (rows: Array<{ type: "ac" | "dc"; voltage: string; color: string }>) => {
     const fallbackNumericEntries = Object.fromEntries(
@@ -3562,6 +3687,34 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    fetchBackendColorConfig()
+      .then((backendColorConfig) => {
+        backendColorConfigLoadedRef.current = true;
+        if (backendColorConfig.exists) {
+          const backendPayload = serializeColorConfigForStorage(backendColorConfig.colorDisplayMode, backendColorConfig.colorPalette);
+          lastPersistedColorConfigPayloadRef.current = backendPayload;
+          suppressNextBackendColorSyncRef.current = true;
+          setColorDisplayMode(backendColorConfig.colorDisplayMode);
+          setColorPalette(backendColorConfig.colorPalette);
+          setColorPaletteDraft(backendColorConfig.colorPalette);
+          setColorPaletteTab(backendColorConfig.colorDisplayMode);
+          return;
+        }
+        const localPayload = serializeColorConfigForStorage(colorDisplayMode, colorPalette);
+        lastPersistedColorConfigPayloadRef.current = localPayload;
+        void saveBackendColorConfigPayload(localPayload).catch(() => {
+          // 后台暂不可写时仍保留浏览器本地配色缓存。
+        });
+      })
+      .catch(() => {
+        backendColorConfigLoadedRef.current = false;
+        // 后台不可用时继续使用浏览器本地配色缓存。
+      });
+    // 仅在启动时从后台拉取一次，避免后台配置刷新打断当前操作。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       const normalizedSchemesPayload = serializeSchemesForStorage(schemes);
       if (normalizedSchemesPayload === lastPersistedSchemesPayloadRef.current) {
@@ -3599,12 +3752,35 @@ export function App() {
   }, [deviceDefinitionOverrides]);
 
   useEffect(() => {
-    window.localStorage.setItem(COLOR_DISPLAY_MODE_STORAGE_KEY, colorDisplayMode);
-  }, [colorDisplayMode]);
-
-  useEffect(() => {
-    window.localStorage.setItem(COLOR_PALETTE_STORAGE_KEY, JSON.stringify(colorPalette));
-  }, [colorPalette]);
+    const timeoutId = window.setTimeout(() => {
+      const normalizedPalette = normalizeColorPalette(colorPalette);
+      const normalizedColorConfigPayload = serializeColorConfigForStorage(colorDisplayMode, normalizedPalette);
+      try {
+        window.localStorage.setItem(COLOR_DISPLAY_MODE_STORAGE_KEY, colorDisplayMode);
+        window.localStorage.setItem(COLOR_PALETTE_STORAGE_KEY, JSON.stringify(normalizedPalette));
+      } catch {
+        // 浏览器缓存不可写时不阻断当前编辑，后台同步仍会继续尝试。
+      }
+      if (normalizedColorConfigPayload === lastPersistedColorConfigPayloadRef.current) {
+        if (suppressNextBackendColorSyncRef.current) {
+          suppressNextBackendColorSyncRef.current = false;
+        }
+        return;
+      }
+      lastPersistedColorConfigPayloadRef.current = normalizedColorConfigPayload;
+      if (!backendColorConfigLoadedRef.current) {
+        return;
+      }
+      if (suppressNextBackendColorSyncRef.current) {
+        suppressNextBackendColorSyncRef.current = false;
+        return;
+      }
+      void saveBackendColorConfigPayload(normalizedColorConfigPayload).catch(() => {
+        // 后台保存失败时不阻塞本地编辑；下一次配色变更会继续尝试同步。
+      });
+    }, 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [colorDisplayMode, colorPalette]);
 
   const refreshImageFolders = () =>
     fetchBackendImageFolders()
@@ -4424,6 +4600,39 @@ export function App() {
     second: { left: number; right: number; top: number; bottom: number }
   ) => first.left <= second.right && first.right >= second.left && first.top <= second.bottom && first.bottom >= second.top;
 
+  const expandRouteBox = (
+    box: { left: number; right: number; top: number; bottom: number },
+    padding: number
+  ) => ({
+    left: box.left - padding,
+    right: box.right + padding,
+    top: box.top - padding,
+    bottom: box.bottom + padding
+  });
+
+  const routeTouchesExpandedBoxes = (
+    points: Point[],
+    boxes: Array<{ left: number; right: number; top: number; bottom: number }>
+  ) => {
+    if (points.length < 2 || boxes.length === 0) {
+      return false;
+    }
+    for (let index = 1; index < points.length; index += 1) {
+      const previous = points[index - 1];
+      const current = points[index];
+      const segmentBox = {
+        left: Math.min(previous.x, current.x),
+        right: Math.max(previous.x, current.x),
+        top: Math.min(previous.y, current.y),
+        bottom: Math.max(previous.y, current.y)
+      };
+      if (boxes.some((box) => boxesOverlap(segmentBox, box))) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   const routePointsForMovedNodeBlockers = (
     nextNodes: ModelNode[],
     candidateEdges: Edge[],
@@ -4466,6 +4675,68 @@ export function App() {
         continue;
       }
       if (getRouteBlockingCandidateNodesFromBoxes(route.points, edge, movedCandidates).length === 0) {
+        continue;
+      }
+      if (nextRoutePoints === baseRoutePoints) {
+        nextRoutePoints = { ...baseRoutePoints };
+      }
+      nextRoutePoints[edge.id] = route.points;
+    }
+    return nextRoutePoints;
+  };
+
+  const routePointsNearOriginalMovedNodes = (
+    previousNodes: ModelNode[],
+    candidateEdges: Edge[],
+    movedNodeIds: Iterable<string>,
+    originalPositions: Record<string, Point> | undefined,
+    baseRoutePoints: DraggingState["originalRoutePoints"]
+  ): DraggingState["originalRoutePoints"] => {
+    const movedIds = new Set(movedNodeIds);
+    if (
+      movedIds.size === 0 ||
+      movedIds.size > MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES ||
+      !originalPositions ||
+      candidateEdges.length === 0
+    ) {
+      return baseRoutePoints;
+    }
+    const originalMovedNodes = previousNodes
+      .filter((node) => movedIds.has(node.id) && originalPositions[node.id])
+      .map((node) => ({ ...node, position: originalPositions[node.id] }));
+    if (originalMovedNodes.length === 0) {
+      return baseRoutePoints;
+    }
+    const originalBoxes = getRouteBlockingCandidates(originalMovedNodes).map((candidate) =>
+      expandRouteBox(candidate.box, ORIGINAL_POSITION_REROUTE_PADDING)
+    );
+    const originalBounds = originalBoxes.reduce<{ left: number; right: number; top: number; bottom: number } | null>(
+      (bounds, box) => {
+        if (!bounds) {
+          return { ...box };
+        }
+        return {
+          left: Math.min(bounds.left, box.left),
+          right: Math.max(bounds.right, box.right),
+          top: Math.min(bounds.top, box.top),
+          bottom: Math.max(bounds.bottom, box.bottom)
+        };
+      },
+      null
+    );
+    if (!originalBounds) {
+      return baseRoutePoints;
+    }
+    let nextRoutePoints = baseRoutePoints;
+    for (const edge of candidateEdges) {
+      if (baseRoutePoints[edge.id] || movedIds.has(edge.sourceId) || movedIds.has(edge.targetId)) {
+        continue;
+      }
+      const route = routedEdgeById.get(edge.id);
+      if (!route || !boxesOverlap(routePointBounds(route.points, 8), originalBounds)) {
+        continue;
+      }
+      if (!routeTouchesExpandedBoxes(route.points, originalBoxes)) {
         continue;
       }
       if (nextRoutePoints === baseRoutePoints) {
@@ -4632,7 +4903,8 @@ export function App() {
     movedNodeIds: string[],
     originalRoutePoints: DraggingState["originalRoutePoints"],
     selectedEdgeIds = new Set<string>(),
-    precomputedBlockedRoutePoints: DraggingState["originalRoutePoints"] = {}
+    precomputedBlockedRoutePoints: DraggingState["originalRoutePoints"] = {},
+    forcedRerouteEdgeIds = new Set<string>()
   ) => {
     const hasPrecomputedBlockers = Object.keys(precomputedBlockedRoutePoints).length > 0;
     const routePointsForReroute = hasPrecomputedBlockers
@@ -4658,7 +4930,8 @@ export function App() {
         rebuiltAdjustedEdges,
         movedNodeIds,
         routePointSnapshotToRoutes(routePointsForReroute),
-        canvasBounds
+        canvasBounds,
+        forcedRerouteEdgeIds
       )
     };
   };
@@ -4686,15 +4959,29 @@ export function App() {
   };
 
   const scheduleMovedEdgeOptimization = (
+    previousNodes: ModelNode[],
     nextNodes: ModelNode[],
     fastEdges: Edge[],
     movedNodeIds: string[],
     originalRoutePoints: DraggingState["originalRoutePoints"],
-    selectedEdgeIds = new Set<string>()
+    selectedEdgeIds = new Set<string>(),
+    originalPositions?: Record<string, Point>
   ) => {
     deferredMoveOptimizationCancelRef.current?.();
     const blockedRoutePoints = routePointsForMovedNodeBlockers(nextNodes, fastEdges, movedNodeIds, {});
     const blockedEdgeIds = new Set(Object.keys(blockedRoutePoints));
+    const routePointsForOptimization = routePointsNearOriginalMovedNodes(
+      previousNodes,
+      fastEdges,
+      movedNodeIds,
+      originalPositions,
+      blockedRoutePoints
+    );
+    const releasedEdgeIds = Object.keys(routePointsForOptimization).filter((edgeId) => !blockedRoutePoints[edgeId]);
+    const forcedRerouteEdgeIds = new Set(releasedEdgeIds);
+    for (const edgeId of releasedEdgeIds) {
+      blockedEdgeIds.add(edgeId);
+    }
     if (!shouldRunDeferredMoveOptimization(fastEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)) {
       deferredMoveOptimizationCancelRef.current = null;
       return;
@@ -4712,7 +4999,8 @@ export function App() {
         movedNodeIds,
         originalRoutePoints,
         selectedEdgeIds,
-        blockedRoutePoints
+        routePointsForOptimization,
+        forcedRerouteEdgeIds
       );
       if (optimized.edges === expectedEdges) {
         return;
@@ -4731,7 +5019,9 @@ export function App() {
     nextEdges: Edge[],
     movedNodeIds: string[],
     originalRoutePoints: DraggingState["originalRoutePoints"],
-    selectedEdgeIds = new Set<string>()
+    selectedEdgeIds = new Set<string>(),
+    originalPositions?: Record<string, Point>,
+    previousNodes: ModelNode[] = nodes
   ) => {
     markStoredRouteEdgesDirty(dirtyEdgeIdsAfterMove(edges, nextEdges, movedNodeIds, selectedEdgeIds));
     setNodes(nextNodes);
@@ -4739,11 +5029,13 @@ export function App() {
       setEdges(nextEdges);
     }
     scheduleMovedEdgeOptimization(
+      previousNodes,
       nextNodes,
       nextEdges,
       movedNodeIds,
       originalRoutePoints,
-      selectedEdgeIds
+      selectedEdgeIds,
+      originalPositions
     );
   };
 
@@ -5112,7 +5404,9 @@ export function App() {
       nextEdges,
       activeDragging.nodeIds,
       activeDragging.originalRoutePoints,
-      new Set(activeDragging.edgeIds)
+      new Set(activeDragging.edgeIds),
+      activeDragging.originalPositions,
+      nodes
     );
     clearNodeDragMoveSchedule();
     draggingRef.current = null;
@@ -5186,7 +5480,9 @@ export function App() {
       nextEdges,
       selectedNodeIds,
       originalRoutePoints,
-      new Set(activeSelectedEdgeIds)
+      new Set(activeSelectedEdgeIds),
+      originalPositions,
+      nodes
     );
     writeOperationLog(`移动 ${selectedNodeIds.length} 个图元 (${Math.round(boundedDelta.x)}, ${Math.round(boundedDelta.y)})`);
   };
@@ -5207,6 +5503,7 @@ export function App() {
         y: nextPatch.position!.y - selectedNode.position.y
       };
       const affectedEdgesForMove = edges.filter((edge) => edge.sourceId === selectedNodeId || edge.targetId === selectedNodeId);
+      const originalPositions = { [selectedNodeId]: selectedNode.position };
       const originalEdgePoints = snapshotEdgePoints(affectedEdgesForMove);
       const originalRoutePoints = Object.fromEntries(
         affectedEdgesForMove.map((edge) => [
@@ -5234,7 +5531,7 @@ export function App() {
         adjustedEdges,
         [selectedNodeId]
       );
-      commitFastMovedGraph(nextNodes, nextEdges, [selectedNodeId], originalRoutePoints);
+      commitFastMovedGraph(nextNodes, nextEdges, [selectedNodeId], originalRoutePoints, new Set<string>(), originalPositions, nodes);
       return;
     }
     setNodes(nextNodes);
@@ -5391,12 +5688,7 @@ export function App() {
   };
 
   const terminalVbaseFallback = (node: ModelNode, terminalIndex: number) => {
-    if (node.kind === "ac-three-winding-transformer") {
-      return [node.params.highVbase, node.params.mediumVbase, node.params.lowVbase][terminalIndex] ?? node.params.vbase ?? "";
-    }
-    const sourceSide = node.params.i_vbase ?? node.params.sourceVbase ?? node.params.highVbase;
-    const targetSide = node.params.j_vbase ?? node.params.targetVbase ?? node.params.lowVbase;
-    return (terminalIndex === 0 ? sourceSide : targetSide) ?? node.params.vbase ?? node.params.voltageLevel ?? node.params.ratedVoltage ?? "";
+    return terminalVbaseFallbackValue(node, terminalIndex);
   };
 
   const updateTerminalVbase = (terminalId: string, value: string) => {
@@ -6194,6 +6486,11 @@ export function App() {
     const arranged = layoutNodes(nodes, selectedNodeIds);
     const previousById = new Map(nodes.map((node) => [node.id, node]));
     const selected = new Set(selectedNodeIds);
+    const originalPositions = Object.fromEntries(
+      nodes
+        .filter((node) => selected.has(node.id))
+        .map((node) => [node.id, node.position])
+    );
     const deltas = Object.fromEntries(
       arranged
         .filter((node) => selected.has(node.id))
@@ -6234,7 +6531,7 @@ export function App() {
       adjustedEdges,
       selectedNodeIds
     );
-    commitFastMovedGraph(arranged, nextEdges, selectedNodeIds, originalRoutePoints);
+    commitFastMovedGraph(arranged, nextEdges, selectedNodeIds, originalRoutePoints, new Set<string>(), originalPositions, nodes);
   };
 
   const alignSelected = (direction: AlignMode) => {
@@ -9881,6 +10178,23 @@ export function App() {
               </div>
             ) : (
               <div className="voltage-color-panel">
+                <div className="voltage-color-toolbar" role="group" aria-label="电压等级显示范围">
+                  <button
+                    type="button"
+                    className={voltageColorVisibility === "all" ? "active" : ""}
+                    onClick={() => setVoltageColorVisibility("all")}
+                  >
+                    全部电压等级
+                  </button>
+                  <button
+                    type="button"
+                    className={voltageColorVisibility === "current" ? "active" : ""}
+                    onClick={() => setVoltageColorVisibility("current")}
+                  >
+                    当前模型电压等级
+                  </button>
+                  <span>{`当前模型 ${currentModelVoltageColorKeys.size} 项`}</span>
+                </div>
                 <div className="voltage-color-header">
                   <span>AC/DC</span>
                   <span>电压基值</span>
@@ -9888,40 +10202,46 @@ export function App() {
                   <span>操作</span>
                 </div>
                 <div className="voltage-color-list">
-                  {voltageColorRows.map((row) => (
-                    <div className="voltage-color-row" key={row.key}>
-                      <select
-                        value={row.type}
-                        onChange={(event) => updateVoltageColorRow(row.key, { type: event.target.value as "ac" | "dc" })}
-                        aria-label="AC/DC"
-                      >
-                        {ELECTRIC_COLOR_TYPES.map((type) => (
-                          <option key={type} value={type}>{ELECTRIC_COLOR_TYPE_LABELS[type]}</option>
-                        ))}
-                      </select>
-                      <input
-                        value={row.voltage}
-                        onChange={(event) => updateVoltageColorRow(row.key, { voltage: event.target.value })}
-                        aria-label="电压基值"
-                      />
-                      <div className="color-field">
+                  {visibleVoltageColorRows.length > 0 ? (
+                    visibleVoltageColorRows.map((row) => (
+                      <div className="voltage-color-row" key={row.key}>
+                        <select
+                          value={row.type}
+                          onChange={(event) => updateVoltageColorRow(row.key, { type: event.target.value as "ac" | "dc" })}
+                          aria-label="AC/DC"
+                        >
+                          {ELECTRIC_COLOR_TYPES.map((type) => (
+                            <option key={type} value={type}>{ELECTRIC_COLOR_TYPE_LABELS[type]}</option>
+                          ))}
+                        </select>
                         <input
-                          type="color"
-                          value={row.color.startsWith("#") ? row.color : "#64748b"}
-                          onChange={(event) => updateVoltageColorRow(row.key, { color: event.target.value })}
-                          aria-label={`${row.type.toUpperCase()} ${row.voltage}颜色`}
+                          value={row.voltage}
+                          onChange={(event) => updateVoltageColorRow(row.key, { voltage: event.target.value })}
+                          aria-label="电压基值"
                         />
-                        <input
-                          value={row.color}
-                          onChange={(event) => updateVoltageColorRow(row.key, { color: event.target.value })}
-                          aria-label={`${row.type.toUpperCase()} ${row.voltage}颜色值`}
-                        />
+                        <div className="color-field">
+                          <input
+                            type="color"
+                            value={row.color.startsWith("#") ? row.color : "#64748b"}
+                            onChange={(event) => updateVoltageColorRow(row.key, { color: event.target.value })}
+                            aria-label={`${row.type.toUpperCase()} ${row.voltage}颜色`}
+                          />
+                          <input
+                            value={row.color}
+                            onChange={(event) => updateVoltageColorRow(row.key, { color: event.target.value })}
+                            aria-label={`${row.type.toUpperCase()} ${row.voltage}颜色值`}
+                          />
+                        </div>
+                        <button type="button" onClick={() => deleteVoltageColorRow(row.key)}>删除</button>
                       </div>
-                      <button type="button" onClick={() => deleteVoltageColorRow(row.key)}>删除</button>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <div className="voltage-color-empty">当前模型暂无交流/直流电压等级。</div>
+                  )}
                 </div>
-                <button type="button" className="secondary-action" onClick={addVoltageColorRow}>新增电压等级</button>
+                {voltageColorVisibility === "all" && (
+                  <button type="button" className="secondary-action" onClick={addVoltageColorRow}>新增电压等级</button>
+                )}
               </div>
             )}
             <div className="image-picker-actions color-palette-actions">

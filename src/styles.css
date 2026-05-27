@@ -1616,6 +1616,7 @@ button:disabled {
 }
 
 .color-palette-tabs button,
+.voltage-color-toolbar button,
 .voltage-color-row button,
 .voltage-color-panel .secondary-action {
   min-height: 32px;
@@ -1629,6 +1630,8 @@ button:disabled {
 
 .color-palette-tabs button:hover,
 .color-palette-tabs button:focus-visible,
+.voltage-color-toolbar button:hover,
+.voltage-color-toolbar button:focus-visible,
 .voltage-color-row button:hover,
 .voltage-color-row button:focus-visible,
 .voltage-color-panel .secondary-action:hover,
@@ -1639,6 +1642,12 @@ button:disabled {
 }
 
 .color-palette-tabs button.active {
+  color: #1d4ed8;
+  border-color: #93c5fd;
+  background: #dbeafe;
+}
+
+.voltage-color-toolbar button.active {
   color: #1d4ed8;
   border-color: #93c5fd;
   background: #dbeafe;
@@ -1696,7 +1705,23 @@ button:disabled {
 
 .voltage-color-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.voltage-color-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(112px, max-content)) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 0;
+}
+
+.voltage-color-toolbar span {
+  min-width: 0;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
 }
 
 .voltage-color-header,
@@ -1731,6 +1756,15 @@ button:disabled {
   padding: 8px;
   border-radius: 8px;
   background: #ffffff;
+}
+
+.voltage-color-empty {
+  padding: 20px 12px;
+  border-radius: 8px;
+  color: #64748b;
+  background: #ffffff;
+  font-size: 13px;
+  text-align: center;
 }
 
 .color-field {

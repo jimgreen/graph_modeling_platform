@@ -11,8 +11,11 @@ const manifestPath = join(imageDataDir, "manifest.json");
 const imageFoldersPath = join(imageDataDir, "folders.json");
 const schemeDataDir = resolve(repoRoot, "data", "schemes");
 const schemeManifestPath = join(schemeDataDir, "schemes.json");
+const settingsDataDir = resolve(repoRoot, "data", "settings");
+const colorConfigPath = join(settingsDataDir, "color-config.json");
 const maxImageBodyBytes = 16 * 1024 * 1024;
 const maxSchemeBodyBytes = 64 * 1024 * 1024;
+const maxColorConfigBodyBytes = 1024 * 1024;
 const defaultPowerUnit = "MW";
 const defaultVoltageUnit = "kV";
 const defaultCurrentUnit = "A";
@@ -180,6 +183,63 @@ async function writeSchemes(schemes) {
   await ensureSchemeStore();
   await writeTextIfChanged(schemeManifestPath, JSON.stringify(schemes, null, 2));
   await writeSchemeFiles(schemes);
+}
+
+async function ensureSettingsStore() {
+  await mkdir(settingsDataDir, { recursive: true });
+}
+
+function normalizeColorRecord(source) {
+  if (!source || typeof source !== "object") {
+    return {};
+  }
+  return Object.entries(source).reduce((result, [key, value]) => {
+    if (typeof key === "string" && key.trim() && typeof value === "string" && value.trim()) {
+      result[key.trim()] = value.trim();
+    }
+    return result;
+  }, {});
+}
+
+function normalizeColorConfig(payload) {
+  const colorPalette = payload?.colorPalette && typeof payload.colorPalette === "object" ? payload.colorPalette : {};
+  return {
+    colorDisplayMode: payload?.colorDisplayMode === "voltage" ? "voltage" : "energy",
+    colorPalette: {
+      energy: normalizeColorRecord(colorPalette.energy),
+      voltage: normalizeColorRecord(colorPalette.voltage)
+    }
+  };
+}
+
+async function readColorConfig() {
+  await ensureSettingsStore();
+  try {
+    const raw = await readFile(colorConfigPath, "utf-8");
+    return {
+      exists: true,
+      ...normalizeColorConfig(JSON.parse(raw))
+    };
+  } catch {
+    return {
+      exists: false,
+      colorDisplayMode: "energy",
+      colorPalette: {
+        energy: {},
+        voltage: {}
+      }
+    };
+  }
+}
+
+async function writeColorConfig(config) {
+  await ensureSettingsStore();
+  const normalized = {
+    ...normalizeColorConfig(config),
+    savedAt: new Date().toISOString()
+  };
+  await writeTextIfChanged(colorConfigPath, JSON.stringify(normalized, null, 2));
+  return normalized;
 }
 
 function sendJson(response, status, data) {
@@ -917,6 +977,13 @@ async function handleSaveSchemes(request, response) {
   sendJson(response, 200, { ok: true, schemes: normalized, savedAt: new Date().toISOString() });
 }
 
+async function handleSaveColorConfig(request, response) {
+  const body = await readBody(request, maxColorConfigBodyBytes, "配色配置数据过大，最大支持 1MB。");
+  const payload = JSON.parse(body || "{}");
+  const normalized = await writeColorConfig(payload);
+  sendJson(response, 200, { ok: true, ...normalized });
+}
+
 export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
   const server = createServer(async (request, response) => {
     try {
@@ -974,6 +1041,15 @@ export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
       }
       if (request.method === "PUT" && url.pathname === "/api/schemes") {
         await handleSaveSchemes(request, response);
+        return;
+      }
+      if (request.method === "GET" && url.pathname === "/api/color-config") {
+        const colorConfig = await readColorConfig();
+        sendJson(response, 200, colorConfig);
+        return;
+      }
+      if (request.method === "PUT" && url.pathname === "/api/color-config") {
+        await handleSaveColorConfig(request, response);
         return;
       }
       const imageMatch = /^\/api\/images\/([^/]+)$/u.exec(url.pathname);

@@ -6237,12 +6237,14 @@ const ROUTE_LANE_SEARCH_MARGIN = 180;
 const ROUTE_LANE_SEGMENT_MARGIN = 36;
 const ROUTE_LANE_OFFSETS = [24, 56, 96, 144];
 const ROUTE_AVOIDED_SEGMENT_OFFSETS = [18, 36, 54];
+const ROUTE_MAX_LANES_PER_AXIS = 24;
 const ROUTE_TINY_DOGLEG_LIMIT = 18;
 const ROUTE_MIN_MOVABLE_SEGMENT_LENGTH = 18;
 const ROUTE_SHARED_ENDPOINT_STUB_LIMIT = 36;
 const ROUTE_ENDPOINT_STUB_LENGTH = 28;
 
 function routeIntersectsBlockers(points: Point[], blockers: ModelNode[], padding = ROUTE_BLOCKER_PADDING, protectedEndpointSegments = 0) {
+  const routeBlockers = filterBlockersForRoutePoints(points, blockers, padding);
   for (let index = 1; index < points.length; index += 1) {
     const routeSegmentIndex = index - 1;
     if (
@@ -6253,7 +6255,7 @@ function routeIntersectsBlockers(points: Point[], blockers: ModelNode[], padding
     }
     const a = points[index - 1];
     const b = points[index];
-    if (blockers.some((blocker) => segmentIntersectsBox(a, b, boxFor(blocker, padding)))) {
+    if (routeBlockers.some((blocker) => segmentIntersectsBox(a, b, boxFor(blocker, padding)))) {
       return true;
     }
   }
@@ -6345,8 +6347,9 @@ function isAllowedSharedEndpointOverlap(
 
 function findRouteOverlapConflict(points: Point[], avoidedSegments: Segment[], policy: RouteOverlapPolicy = {}): RouteOverlapConflict | null {
   const currentSegments = getSegments(policy.currentEdge?.id ?? "__current_route__", 0, points);
+  const routeAvoidedSegments = filterSegmentsForRoutePoints(points, avoidedSegments, 2);
   for (const segment of currentSegments) {
-    for (const conflictingSegment of avoidedSegments) {
+    for (const conflictingSegment of routeAvoidedSegments) {
       const overlap = segmentOverlapAmount(segment.a, segment.b, conflictingSegment);
       if (overlap <= 2) {
         continue;
@@ -6365,6 +6368,7 @@ function routeOverlapsSegments(points: Point[], avoidedSegments: Segment[], poli
 }
 
 function firstRouteBlockerIntersection(points: Point[], blockers: ModelNode[], padding = ROUTE_BLOCKER_PADDING, protectedEndpointSegments = 0) {
+  const routeBlockers = filterBlockersForRoutePoints(points, blockers, padding);
   for (let segmentIndex = 1; segmentIndex < points.length; segmentIndex += 1) {
     const routeSegmentIndex = segmentIndex - 1;
     if (
@@ -6375,7 +6379,7 @@ function firstRouteBlockerIntersection(points: Point[], blockers: ModelNode[], p
     }
     const a = points[segmentIndex - 1];
     const b = points[segmentIndex];
-    for (const blocker of blockers) {
+    for (const blocker of routeBlockers) {
       const box = boxFor(blocker, padding);
       if (segmentIntersectsBox(a, b, box)) {
         return { segmentIndex: segmentIndex - 1, box };
@@ -6461,6 +6465,8 @@ function buildFullRoute(start: Point, startOut: Point, middle: Point[], endOut: 
 function scoreRoute(points: Point[], blockers: ModelNode[], avoidedSegments: Segment[] = []) {
   let score = points.length * 8;
   const bounds = routeBounds(points, blockers);
+  const routeBlockers = filterBlockersForRoutePoints(points, blockers);
+  const routeAvoidedSegments = filterSegmentsForRoutePoints(points, avoidedSegments);
   for (let index = 1; index < points.length; index += 1) {
     const a = points[index - 1];
     const b = points[index];
@@ -6468,12 +6474,12 @@ function scoreRoute(points: Point[], blockers: ModelNode[], avoidedSegments: Seg
       score += 1000000;
     }
     score += Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-    for (const blocker of blockers) {
+    for (const blocker of routeBlockers) {
       if (segmentIntersectsBox(a, b, boxFor(blocker, ROUTE_BLOCKER_PADDING))) {
         score += 10000000;
       }
     }
-    for (const segment of avoidedSegments) {
+    for (const segment of routeAvoidedSegments) {
       const overlap = segmentOverlapAmount(a, b, segment);
       if (overlap > 2) {
         score += 10000000 + overlap * 1000;
@@ -6995,6 +7001,22 @@ function segmentBox(segment: Segment, padding = 0) {
   };
 }
 
+function filterBlockersForRoutePoints(points: Point[], blockers: ModelNode[], padding = ROUTE_BLOCKER_PADDING) {
+  if (points.length < 2 || blockers.length === 0) {
+    return [];
+  }
+  const routeBox = routeBoundsForPoints(points, padding);
+  return blockers.filter((blocker) => boxesOverlap(boxFor(blocker, padding), routeBox));
+}
+
+function filterSegmentsForRoutePoints(points: Point[], segments: Segment[], padding = ROUTE_LANE_SEGMENT_MARGIN) {
+  if (points.length < 2 || segments.length === 0) {
+    return [];
+  }
+  const routeBox = routeBoundsForPoints(points, padding);
+  return segments.filter((segment) => boxesOverlap(segmentBox(segment, padding), routeBox));
+}
+
 function between(value: number, a: number, b: number, margin = 0) {
   return value > Math.min(a, b) + margin && value < Math.max(a, b) - margin;
 }
@@ -7057,6 +7079,23 @@ function uniqueSorted(values: number[]) {
   return [...new Set(values.map((value) => Math.round(value)))].sort((a, b) => a - b);
 }
 
+function prioritizeLaneValues(values: number[], anchors: number[], maxCount = ROUTE_MAX_LANES_PER_AXIS) {
+  const sorted = uniqueSorted(values);
+  if (sorted.length <= maxCount) {
+    return sorted;
+  }
+  const roundedAnchors = anchors.map((value) => Math.round(value));
+  const anchorSet = new Set(roundedAnchors);
+  const required = sorted.filter((value) => anchorSet.has(value));
+  const requiredSet = new Set(required);
+  const distanceToAnchor = (value: number) =>
+    Math.min(...roundedAnchors.map((anchor) => Math.abs(value - anchor)));
+  const optional = sorted
+    .filter((value) => !requiredSet.has(value))
+    .sort((first, second) => distanceToAnchor(first) - distanceToAnchor(second) || first - second);
+  return uniqueSorted([...required, ...optional.slice(0, Math.max(0, maxCount - required.length))]);
+}
+
 function candidateLanes(startOut: Point, endOut: Point, blockers: ModelNode[], avoidedSegments: Segment[], bounds?: CanvasBounds) {
   const laneCorridor = routeCorridor(startOut, endOut, ROUTE_LANE_SEARCH_MARGIN);
   const blockerBoxes = blockers
@@ -7079,23 +7118,32 @@ function candidateLanes(startOut: Point, endOut: Point, blockers: ModelNode[], a
   const horizontalSegmentLanes = laneAvoidedSegments
     .filter((segment) => segment.orientation === "horizontal")
     .flatMap((segment) => ROUTE_AVOIDED_SEGMENT_OFFSETS.flatMap((offset) => [segment.a.y - offset, segment.a.y + offset]));
-  const xValues = [
+  const xAnchors = [
     startOut.x,
     endOut.x,
     Math.round((startOut.x + endOut.x) / 2),
-    ...(bounds ? [ROUTE_CLEARANCE, bounds.width - ROUTE_CLEARANCE] : []),
+    ...(bounds ? [ROUTE_CLEARANCE, bounds.width - ROUTE_CLEARANCE] : [])
+  ].map(clampX);
+  const yAnchors = [
+    startOut.y,
+    endOut.y,
+    Math.round((startOut.y + endOut.y) / 2),
+    ...(bounds ? [ROUTE_CLEARANCE, bounds.height - ROUTE_CLEARANCE] : [])
+  ].map(clampY);
+  const xValues = [
+    ...xAnchors,
     ...xLaneOffsets,
     ...verticalSegmentLanes
   ].map(clampX);
   const yValues = [
-    startOut.y,
-    endOut.y,
-    Math.round((startOut.y + endOut.y) / 2),
-    ...(bounds ? [ROUTE_CLEARANCE, bounds.height - ROUTE_CLEARANCE] : []),
+    ...yAnchors,
     ...yLaneOffsets,
     ...horizontalSegmentLanes
   ].map(clampY);
-  return { xs: uniqueSorted(xValues), ys: uniqueSorted(yValues) };
+  return {
+    xs: prioritizeLaneValues(xValues, xAnchors),
+    ys: prioritizeLaneValues(yValues, yAnchors)
+  };
 }
 
 function buildRouteCandidates(startOut: Point, endOut: Point, blockers: ModelNode[], avoidedSegments: Segment[], bounds?: CanvasBounds) {
@@ -7129,16 +7177,18 @@ function selectRouteCandidate(candidates: Point[][], blockers: ModelNode[], avoi
   let bestScore = Number.POSITIVE_INFINITY;
 
   for (const candidate of candidates) {
-    const intersectsBlocker = routeIntersectsBlockers(candidate, blockers);
+    const candidateBlockers = filterBlockersForRoutePoints(candidate, blockers);
+    const candidateAvoidedSegments = filterSegmentsForRoutePoints(candidate, avoidedSegments);
+    const intersectsBlocker = routeIntersectsBlockers(candidate, candidateBlockers);
     const tier = !intersectsBlocker
-      ? routeOverlapsSegments(candidate, avoidedSegments) ? 1 : 0
+      ? routeOverlapsSegments(candidate, candidateAvoidedSegments) ? 1 : 0
       : 2;
     if (tier > bestTier) {
       continue;
     }
     const candidateBends = routeBendCount(candidate);
     const candidateLength = routeManhattanLength(candidate);
-    const candidateScore = scoreRoute(candidate, blockers, avoidedSegments);
+    const candidateScore = scoreRoute(candidate, candidateBlockers, candidateAvoidedSegments);
     if (
       tier < bestTier ||
       (tier === bestTier &&
@@ -7161,9 +7211,10 @@ function selectRouteCandidate(candidates: Point[][], blockers: ModelNode[], avoi
 function pathWithCrossingArcs(route: RoutedEdge, previousSegments: Segment[], routeIndex: number) {
   const crossingsBySegment = new Map<number, Point[]>();
   const currentSegments = getSegments(route.edgeId, routeIndex, route.points);
+  const nearbyPreviousSegments = filterSegmentsForRoutePoints(route.points, previousSegments, 2);
 
   for (const segment of currentSegments) {
-    for (const previous of previousSegments) {
+    for (const previous of nearbyPreviousSegments) {
       const point = intersection(segment, previous);
       if (point) {
         crossingsBySegment.set(segment.segmentIndex, [...(crossingsBySegment.get(segment.segmentIndex) ?? []), point]);
@@ -7490,6 +7541,7 @@ export function validateConnectionEdgeRoute(
   }
 
   const lastSegmentIndex = route.points.length - 2;
+  const routeBlockers = filterBlockersForRoutePoints(route.points, nodes);
   for (let index = 1; index < route.points.length; index += 1) {
     const a = route.points[index - 1];
     const b = route.points[index];
@@ -7508,7 +7560,7 @@ export function validateConnectionEdgeRoute(
         message: "联络线路径超出模型显示区域。"
       });
     }
-    for (const node of nodes) {
+    for (const node of routeBlockers) {
       if (segmentIntersectsRouteBlocker(a, b, index - 1, lastSegmentIndex, node, source.id, target.id)) {
         issues.push({
           type: "blocked-by-node",
@@ -7521,8 +7573,13 @@ export function validateConnectionEdgeRoute(
   }
 
   const edgeById = new Map(edges.map((item) => [item.id, item]));
+  const routeSegmentBox = routeBoundsForPoints(route.points, ROUTE_LANE_SEGMENT_MARGIN);
   const otherSegments = routes
-    .flatMap((item, index) => item.edgeId === edgeId ? [] : getSegments(item.edgeId, index, item.points));
+    .flatMap((item, index) =>
+      item.edgeId === edgeId || !boxesOverlap(routeBoundsForPoints(item.points, ROUTE_LANE_SEGMENT_MARGIN), routeSegmentBox)
+        ? []
+        : getSegments(item.edgeId, index, item.points)
+    );
   const overlapConflict = findRouteOverlapConflict(route.points, otherSegments, {
     currentEdge: edge,
     edgeById,
@@ -7604,6 +7661,7 @@ function routeHasCommitBlockingIssue(points: Point[], nodes: ModelNode[], source
     return true;
   }
   const lastSegmentIndex = points.length - 2;
+  const routeBlockers = filterBlockersForRoutePoints(points, nodes);
   for (let index = 1; index < points.length; index += 1) {
     const a = points[index - 1];
     const b = points[index];
@@ -7617,7 +7675,7 @@ function routeHasCommitBlockingIssue(points: Point[], nodes: ModelNode[], source
     ) {
       return true;
     }
-    for (const node of nodes) {
+    for (const node of routeBlockers) {
       if (segmentIntersectsRouteBlocker(a, b, index - 1, lastSegmentIndex, node, source.id, target.id)) {
         return true;
       }
@@ -7692,8 +7750,8 @@ function selectCommitSafeRoute(
 
   for (const candidate of candidates) {
     const simplified = simplifyRoutePreservingEndpointStubs(candidate, {
-      blockers: nodes,
-      avoidedSegments,
+      blockers: filterBlockersForRoutePoints(candidate, nodes),
+      avoidedSegments: filterSegmentsForRoutePoints(candidate, avoidedSegments),
       reduceTinyDoglegs: true
     });
     const signature = routeSignature(simplified);
@@ -7701,12 +7759,14 @@ function selectCommitSafeRoute(
       continue;
     }
     seen.add(signature);
-    if (!routeIsSafeForCommit(simplified, nodes, source, target, edge, avoidedSegments, nodeById, edgeById, bounds)) {
+    const simplifiedBlockers = filterBlockersForRoutePoints(simplified, nodes);
+    const simplifiedAvoidedSegments = filterSegmentsForRoutePoints(simplified, avoidedSegments);
+    if (!routeIsSafeForCommit(simplified, simplifiedBlockers, source, target, edge, simplifiedAvoidedSegments, nodeById, edgeById, bounds)) {
       continue;
     }
     const candidateBends = routeBendCount(simplified);
     const candidateLength = routeManhattanLength(simplified);
-    const candidateScore = scoreRoute(simplified, scoreBlockers, avoidedSegments);
+    const candidateScore = scoreRoute(simplified, filterBlockersForRoutePoints(simplified, scoreBlockers), simplifiedAvoidedSegments);
     if (
       !bestRoute ||
       candidateBends < bestBends ||
@@ -7912,7 +7972,8 @@ export function rerouteEdgesAroundMovedNodes(
   edges: Edge[],
   movedNodeIds: string[],
   previousRoutes: RoutedEdge[] = [],
-  bounds?: CanvasBounds
+  bounds?: CanvasBounds,
+  forceEdgeIds: Iterable<string> = []
 ): Edge[] {
   const movedIds = new Set(movedNodeIds);
   if (movedIds.size === 0 || edges.length === 0) {
@@ -7925,6 +7986,7 @@ export function rerouteEdgesAroundMovedNodes(
 
   const movedCandidates = movedNodes.map((node) => ({ node, box: boxFor(node, ROUTE_BLOCKER_PADDING) }));
   const previousRouteById = new Map(previousRoutes.map((route) => [route.edgeId, route]));
+  const forcedEdgeIds = new Set(forceEdgeIds);
   const fallbackRoutes = previousRoutes.length > 0 ? [] : routeEdgesForRendering(nodes, edges, bounds);
   const fallbackRouteById = new Map(fallbackRoutes.map((route) => [route.edgeId, route]));
   const candidateEdges = previousRoutes.length > 0
@@ -7932,6 +7994,9 @@ export function rerouteEdgesAroundMovedNodes(
     : edges;
   const blockedEdgeIds = candidateEdges
     .filter((edge) => {
+      if (forcedEdgeIds.has(edge.id)) {
+        return true;
+      }
       const route = previousRouteById.get(edge.id) ?? fallbackRouteById.get(edge.id);
       if (!route) {
         return false;
