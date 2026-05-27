@@ -65,20 +65,6 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".connect-drop-hint-ring");
   });
 
-  test("pushes the workspace beside visible side panels instead of letting panels cover it", async () => {
-    const source = await readAppSource();
-    const styles = await readStyles();
-    const shellRule = cssRuleBlock(styles, ".app-shell");
-    const leftPushRule = cssRuleBlock(styles, ".app-shell.left-panel-open .workspace");
-    const rightPushRule = cssRuleBlock(styles, ".app-shell.right-panel-open .workspace");
-
-    expect(source).toContain('leftPanelVisible ? "left-panel-open" : ""');
-    expect(source).toContain('rightPanelVisible ? "right-panel-open" : ""');
-    expect(shellRule).toContain("overflow: clip");
-    expect(leftPushRule).toContain("left: calc(var(--left-panel-width) + 24px)");
-    expect(rightPushRule).toContain("right: calc(var(--right-panel-width) + 24px)");
-  });
-
   test("uses the same fuzzy snap hint while dragging existing connection endpoints", async () => {
     const source = await readAppSource();
 

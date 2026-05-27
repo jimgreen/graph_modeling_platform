@@ -8732,7 +8732,7 @@ export function App() {
 
   return (
     <div
-      className={`app-shell left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${leftPanelVisible ? "left-panel-open" : ""} ${rightPanelVisible ? "right-panel-open" : ""} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${validationPanelResize ? "validation-panel-resizing" : ""}`}
+      className={`app-shell left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${validationPanelResize ? "validation-panel-resizing" : ""}`}
       style={appShellStyle}
     >
       {renderSidePanelEdgeTrigger("left")}
