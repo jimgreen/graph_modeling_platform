@@ -162,6 +162,7 @@ import {
   renameSavedProject,
   moveOrthogonalRouteSegment,
   terminalStubSegment,
+  TERMINAL_TYPE_LIBRARY_LABELS,
   terminalVoltageBaseNumber,
   terminalTypeColor,
   tidyOrthogonalRoute,
@@ -192,7 +193,19 @@ import {
 } from "./sidePanelVisibility";
 
 type ToolMode = "select" | "connect";
-type LibraryGroup = string;
+type AttributeLibrary = string;
+type CustomComponentTypeDefinition = {
+  name: string;
+  attributeLibraryName: AttributeLibrary;
+};
+type AttributeLibraryComponentTypeGroup = {
+  section: string;
+  templates: DeviceTemplate[];
+};
+type CustomComponentTreeSelection =
+  | { kind: "attributeLibrary"; attributeLibraryName: AttributeLibrary }
+  | { kind: "componentType"; attributeLibraryName: AttributeLibrary; section: string }
+  | { kind: "component"; attributeLibraryName: AttributeLibrary; section: string; templateKind: string };
 type EdgeEndpoint = "source" | "target";
 type TransformDrag =
   | { kind: "rotate"; nodeId: string; historyCaptured?: boolean }
@@ -384,10 +397,9 @@ type CustomParamDraft = DeviceParameterDefinition & {
   id: string;
 };
 type CustomDeviceDraft = {
-  groupName: string;
-  newGroupName: string;
-  deviceType: string;
-  exportSection: string;
+  attributeLibraryName: string;
+  componentType: string;
+  componentName: string;
   backgroundImage: string;
   terminalCount: number;
   terminalTypes: TerminalType[];
@@ -469,13 +481,15 @@ const SCALE_HANDLE_CONFIGS: ScaleHandleConfig[] = [
 const POWER_UNIT_OPTIONS = ["W", "kW", "MW"];
 const VOLTAGE_UNIT_OPTIONS = ["V", "kV"];
 const CURRENT_UNIT_OPTIONS = ["A", "kA"];
-const DEFAULT_LIBRARY_GROUPS: LibraryGroup[] = ["静态图元", "交流设备", "直流设备", "氢能设备", "热能设备"];
-const CUSTOM_LIBRARY_BASE_GROUPS: LibraryGroup[] = ["交流设备", "直流设备", "氢能设备", "热能设备"];
+const DEFAULT_ATTRIBUTE_LIBRARIES: AttributeLibrary[] = ["静态图元", "交流设备", "直流设备", "氢能设备", "热能设备"];
+const CUSTOM_ATTRIBUTE_LIBRARY_BASES: AttributeLibrary[] = ["交流设备", "直流设备", "氢能设备", "热能设备"];
+const PROTECTED_ATTRIBUTE_LIBRARIES = new Set(CUSTOM_ATTRIBUTE_LIBRARY_BASES);
+const DEVICE_TYPE_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/;
 const TERMINAL_TYPE_OPTIONS: Array<{ value: TerminalType; label: string }> = [
-  { value: "ac", label: "交流电" },
-  { value: "dc", label: "直流电" },
-  { value: "h2", label: "氢能" },
-  { value: "heat", label: "热能" }
+  { value: "ac", label: TERMINAL_TYPE_LIBRARY_LABELS.ac },
+  { value: "dc", label: TERMINAL_TYPE_LIBRARY_LABELS.dc },
+  { value: "h2", label: TERMINAL_TYPE_LIBRARY_LABELS.h2 },
+  { value: "heat", label: TERMINAL_TYPE_LIBRARY_LABELS.heat }
 ];
 const CONTAINER_TERMINAL_ASSOCIATION_OPTIONS: Record<TerminalType, Array<{ value: ContainerTerminalAssociationType; label: string }>> = {
   ac: [
@@ -699,6 +713,8 @@ const ACTIVE_PROJECT_STORAGE_KEY = "power-system-active-project";
 const DRAFT_PROJECT_STORAGE_KEY = "power-system-current-draft";
 const IMAGE_STORAGE_KEY = "power-system-image-assets";
 const CUSTOM_DEVICE_LIBRARY_STORAGE_KEY = "power-system-custom-device-library";
+const CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY = "power-system-custom-attribute-libraries";
+const CUSTOM_COMPONENT_TYPES_STORAGE_KEY = "power-system-custom-component-types";
 const DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY = "power-system-device-definition-overrides";
 const COLOR_DISPLAY_MODE_STORAGE_KEY = "power-system-color-display-mode";
 const COLOR_PALETTE_STORAGE_KEY = "power-system-color-palette";
@@ -916,7 +932,7 @@ const PARAM_LABELS: Record<string, string> = {
   section: "母线分段",
   pole: "极性",
   source_file: "参数来源文件",
-  source_section: "参数来源分组",
+  component_type: "元件类型",
   idx: "外部序号",
   node: "节点号",
   i_node: "首端节点号",
@@ -1351,25 +1367,140 @@ async function saveBackendColorConfigPayload(normalizedColorConfigPayload: strin
   }
 }
 
-function groupDeviceTemplates(templates: DeviceTemplate[]): Record<string, DeviceTemplate[]> {
+function groupDeviceTemplatesByAttributeLibrary(templates: DeviceTemplate[]): Record<string, DeviceTemplate[]> {
   return templates.reduce<Record<string, DeviceTemplate[]>>((groups, item) => {
-    const group = normalizeLibraryGroupName(item.group);
-    groups[group] = groups[group] ? [...groups[group], { ...item, group }] : [{ ...item, group }];
+    const group = normalizeAttributeLibraryName(item.attributeLibrary);
+    groups[group] = groups[group] ? [...groups[group], { ...item, attributeLibrary: group }] : [{ ...item, attributeLibrary: group }];
     return groups;
   }, {});
 }
 
-function normalizeLibraryGroupName(groupName: string): string {
-  if (groupName === "交流系统") {
+function groupDeviceTemplatesByAttributeLibraryAndComponentType(templates: DeviceTemplate[]): Record<string, AttributeLibraryComponentTypeGroup[]> {
+  const grouped = new Map<string, Map<string, DeviceTemplate[]>>();
+  for (const template of templates) {
+    const group = normalizeAttributeLibraryName(template.attributeLibrary);
+    const section = resolveTemplateComponentType(template);
+    if (!grouped.has(group)) {
+      grouped.set(group, new Map());
+    }
+    const typeMap = grouped.get(group);
+    if (!typeMap) {
+      continue;
+    }
+    typeMap.set(section, [...(typeMap.get(section) ?? []), { ...template, attributeLibrary: group }]);
+  }
+  return Object.fromEntries(
+    Array.from(grouped.entries()).map(([group, typeMap]) => [
+      group,
+      Array.from(typeMap.entries()).map(([section, typedTemplates]) => ({ section, templates: typedTemplates }))
+    ])
+  );
+}
+
+function normalizeAttributeLibraryName(attributeLibraryName: string): string {
+  if (attributeLibraryName === "交流系统") {
     return "交流设备";
   }
-  if (groupName === "直流系统") {
+  if (attributeLibraryName === "直流系统") {
     return "直流设备";
   }
-  if (groupName === "变流设备") {
+  if (attributeLibraryName === "变流设备") {
     return "直流设备";
   }
-  return groupName;
+  return attributeLibraryName;
+}
+
+function normalizeCustomAttributeLibraries(value: unknown, reservedGroups: readonly AttributeLibrary[] = DEFAULT_ATTRIBUTE_LIBRARIES): AttributeLibrary[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const reserved = new Set(reservedGroups.map((group) => normalizeAttributeLibraryName(group).toLowerCase()));
+  const seen = new Set<string>();
+  return value
+    .map((item) => normalizeAttributeLibraryName(String(item ?? "").trim()))
+    .filter((group) => {
+      if (!group) {
+        return false;
+      }
+      const key = group.toLowerCase();
+      if (reserved.has(key) || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+}
+
+function normalizeComponentTypeName(name: string): string {
+  return name.trim();
+}
+
+function defaultAttributeLibraryForComponentType(sectionName: string): AttributeLibrary {
+  const section = normalizeComponentTypeName(sectionName);
+  if (section.startsWith("Hydro")) {
+    return "氢能设备";
+  }
+  if (section.startsWith("Heat")) {
+    return "热能设备";
+  }
+  if (section === "ACDCConverter" || section.startsWith("DC") || section.startsWith("DCDC") || section.startsWith("DCAC")) {
+    return "直流设备";
+  }
+  if (section.startsWith("AC") || section === "ThreePowerTransformer") {
+    return "交流设备";
+  }
+  return "交流设备";
+}
+
+function isBuiltInAttributeLibrary(attributeLibraryName: string): boolean {
+  return PROTECTED_ATTRIBUTE_LIBRARIES.has(normalizeAttributeLibraryName(attributeLibraryName));
+}
+
+function isBuiltInComponentType(sectionName: string): boolean {
+  const normalized = normalizeComponentTypeName(sectionName).toLowerCase();
+  return E_SECTION_OPTIONS.some((section) => section.toLowerCase() === normalized);
+}
+
+function attributeLibraryOptionClass(attributeLibraryName: string): string {
+  return isBuiltInAttributeLibrary(attributeLibraryName) ? "builtin-option" : "custom-option";
+}
+
+function componentTypeOptionClass(sectionName: string): string {
+  return isBuiltInComponentType(sectionName) ? "builtin-option" : "custom-option";
+}
+
+function sourceSelectClassName(isBuiltIn: boolean): string {
+  return `source-select ${isBuiltIn ? "builtin-source" : "custom-source"}`;
+}
+
+function isValidComponentTypeName(name: string): boolean {
+  return DEVICE_TYPE_NAME_PATTERN.test(name);
+}
+
+function normalizeCustomComponentTypes(value: unknown, reservedTypes: readonly string[] = E_SECTION_OPTIONS): CustomComponentTypeDefinition[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const reserved = new Set(reservedTypes.map((type) => type.toLowerCase()));
+  const seen = new Set<string>();
+  return value
+    .map((item) => {
+      const raw = item && typeof item === "object" ? item as Partial<CustomComponentTypeDefinition> : undefined;
+      const name = normalizeComponentTypeName(String(raw?.name ?? item ?? ""));
+      const attributeLibraryName = normalizeAttributeLibraryName(String(raw?.attributeLibraryName ?? defaultAttributeLibraryForComponentType(name)));
+      return { name, attributeLibraryName };
+    })
+    .filter((componentType) => {
+      if (!isValidComponentTypeName(componentType.name)) {
+        return false;
+      }
+      const key = componentType.name.toLowerCase();
+      if (reserved.has(key) || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
 }
 
 function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[] {
@@ -1382,7 +1513,7 @@ function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[] {
       ...item,
       kind: String((item as DeviceTemplate).kind ?? ""),
       label: String((item as DeviceTemplate).label ?? (item as DeviceTemplate).kind ?? ""),
-      group: normalizeLibraryGroupName(String((item as DeviceTemplate).group ?? "自定义元件库")),
+      attributeLibrary: normalizeAttributeLibraryName(String((item as DeviceTemplate).attributeLibrary ?? "自定义属性库")),
       size: (item as DeviceTemplate).size ?? { width: 96, height: 62 },
       params: (item as DeviceTemplate).params ?? {},
       terminalType: ((item as DeviceTemplate).terminalType ?? "ac") as TerminalType,
@@ -1456,6 +1587,22 @@ function readCustomDeviceTemplates(): DeviceTemplate[] {
   }
 }
 
+function readCustomAttributeLibraries(): AttributeLibrary[] {
+  try {
+    return normalizeCustomAttributeLibraries(JSON.parse(window.localStorage.getItem(CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY) ?? "[]"));
+  } catch {
+    return [];
+  }
+}
+
+function readCustomComponentTypes(): CustomComponentTypeDefinition[] {
+  try {
+    return normalizeCustomComponentTypes(JSON.parse(window.localStorage.getItem(CUSTOM_COMPONENT_TYPES_STORAGE_KEY) ?? "[]"));
+  } catch {
+    return [];
+  }
+}
+
 function readDeviceDefinitionOverrides(): Record<string, DeviceTemplateDefinitionOverride> {
   try {
     return normalizeDeviceDefinitionOverrides(JSON.parse(window.localStorage.getItem(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY) ?? "{}"));
@@ -1509,8 +1656,8 @@ function deviceDefinitionRowId() {
   return `def-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function defaultExportSectionForGroup(groupName: string) {
-  const normalized = normalizeLibraryGroupName(groupName);
+function fallbackComponentTypeForAttributeLibrary(attributeLibraryName: string) {
+  const normalized = normalizeAttributeLibraryName(attributeLibraryName);
   if (normalized.includes("直流")) return "DCLoad";
   if (normalized.includes("变流")) return "DCDCConverter";
   if (normalized.includes("氢")) return "HydroLoad";
@@ -1518,17 +1665,17 @@ function defaultExportSectionForGroup(groupName: string) {
   return "ACLoad";
 }
 
-function resolveTemplateExportSection(template: DeviceTemplate) {
+function resolveTemplateComponentType(template: DeviceTemplate) {
   const inferred = inferESection(template.kind, template.params);
-  if (inferred && E_SECTION_OPTIONS.includes(inferred)) {
+  if (inferred) {
     return inferred;
   }
-  return defaultExportSectionForGroup(template.group);
+  return fallbackComponentTypeForAttributeLibrary(template.attributeLibrary);
 }
 
 function createDefinitionDraftRows(template: DeviceTemplate): DeviceDefinitionDraftRow[] {
   return getTemplateParameterDefinitions(template)
-    .filter((definition) => definition.enName !== "source_section")
+    .filter((definition) => definition.enName !== "component_type")
     .map((definition) => ({
       ...definition,
       cnName: definition.cnName === definition.enName ? PARAM_LABELS[definition.enName] ?? definition.cnName : definition.cnName,
@@ -1536,12 +1683,11 @@ function createDefinitionDraftRows(template: DeviceTemplate): DeviceDefinitionDr
     }));
 }
 
-function createEmptyCustomDeviceDraft(groupName = "交流设备"): CustomDeviceDraft {
+function createEmptyCustomDeviceDraft(attributeLibraryName = "交流设备"): CustomDeviceDraft {
   return {
-    groupName,
-    newGroupName: "",
-    deviceType: "",
-    exportSection: defaultExportSectionForGroup(groupName),
+    attributeLibraryName,
+    componentType: fallbackComponentTypeForAttributeLibrary(attributeLibraryName),
+    componentName: "",
     backgroundImage: "",
     terminalCount: 2,
     terminalTypes: ["ac", "ac", "ac", "ac"],
@@ -2934,16 +3080,20 @@ export function App() {
   const [leftPanelAutoVisible, setLeftPanelAutoVisible] = useState(false);
   const [rightPanelAutoVisible, setRightPanelAutoVisible] = useState(false);
   const [containerParamViewId, setContainerParamViewId] = useState("container");
-  const [expandedLibraryGroups, setExpandedLibraryGroups] = useState<LibraryGroup[]>([...DEFAULT_LIBRARY_GROUPS]);
+  const [expandedAttributeLibraries, setExpandedAttributeLibraries] = useState<AttributeLibrary[]>([...DEFAULT_ATTRIBUTE_LIBRARIES]);
   const [collapsedElementTreeGroups, setCollapsedElementTreeGroups] = useState<string[]>([]);
   const [elementTreeItemLimits, setElementTreeItemLimits] = useState<Record<string, number>>({});
+  const [customAttributeLibraries, setCustomAttributeLibraries] = useState<AttributeLibrary[]>(() => readCustomAttributeLibraries());
+  const [customComponentTypes, setCustomComponentTypes] = useState<CustomComponentTypeDefinition[]>(() => readCustomComponentTypes());
   const [customDeviceTemplates, setCustomDeviceTemplates] = useState<DeviceTemplate[]>(() => readCustomDeviceTemplates());
   const [customDeviceDialogOpen, setCustomDeviceDialogOpen] = useState(false);
+  const [customComponentTreeSelection, setCustomComponentTreeSelection] = useState<CustomComponentTreeSelection>({ kind: "attributeLibrary", attributeLibraryName: "交流设备" });
+  const [editingCustomDeviceKind, setEditingCustomDeviceKind] = useState("");
   const [customDeviceDraft, setCustomDeviceDraft] = useState<CustomDeviceDraft>(() => createEmptyCustomDeviceDraft());
   const [deviceDefinitionOverrides, setDeviceDefinitionOverrides] = useState<Record<string, DeviceTemplateDefinitionOverride>>(() => readDeviceDefinitionOverrides());
   const [deviceDefinitionDialogOpen, setDeviceDefinitionDialogOpen] = useState(false);
   const [selectedDefinitionKind, setSelectedDefinitionKind] = useState<DeviceKind | "">("");
-  const [expandedDefinitionGroups, setExpandedDefinitionGroups] = useState<LibraryGroup[]>([...DEFAULT_LIBRARY_GROUPS]);
+  const [expandedDefinitionGroups, setExpandedDefinitionGroups] = useState<AttributeLibrary[]>([...DEFAULT_ATTRIBUTE_LIBRARIES]);
   const [definitionDraftRows, setDefinitionDraftRows] = useState<DeviceDefinitionDraftRow[]>([]);
   const [definitionDraftSection, setDefinitionDraftSection] = useState("");
   const [definitionDraftError, setDefinitionDraftError] = useState("");
@@ -3179,16 +3329,68 @@ export function App() {
   );
   const libraryTemplateByKind = useMemo(() => new Map(libraryTemplates.map((template) => [template.kind, template])), [libraryTemplates]);
   const baseLibraryTemplateByKind = useMemo(() => new Map(baseLibraryTemplates.map((template) => [template.kind, template])), [baseLibraryTemplates]);
-  const groupedLibrary = useMemo(() => groupDeviceTemplates(libraryTemplates), [libraryTemplates]);
+  const groupedAttributeLibrary = useMemo(() => groupDeviceTemplatesByAttributeLibrary(libraryTemplates), [libraryTemplates]);
+  const groupedAttributeLibraryByComponentType = useMemo(() => groupDeviceTemplatesByAttributeLibraryAndComponentType(libraryTemplates), [libraryTemplates]);
   const libraryPreviewByKind = useMemo(
     () => new Map(libraryTemplates.map((template) => [template.kind, createNodeFromTemplate(template, { x: 0, y: 0 })])),
     [libraryTemplates]
   );
-  const libraryGroups = useMemo<LibraryGroup[]>(
-    () => Array.from(new Set([...DEFAULT_LIBRARY_GROUPS, ...libraryTemplates.map((item) => normalizeLibraryGroupName(item.group))])),
-    [libraryTemplates]
+  const attributeLibraries = useMemo<AttributeLibrary[]>(
+    () => Array.from(new Set([...DEFAULT_ATTRIBUTE_LIBRARIES, ...customAttributeLibraries, ...libraryTemplates.map((item) => normalizeAttributeLibraryName(item.attributeLibrary))])),
+    [customAttributeLibraries, libraryTemplates]
   );
+  const selectableAttributeLibraries = useMemo<AttributeLibrary[]>(
+    () => Array.from(new Set([...CUSTOM_ATTRIBUTE_LIBRARY_BASES, ...customAttributeLibraries, ...attributeLibraries.filter((group) => group !== "静态图元")])),
+    [customAttributeLibraries, attributeLibraries]
+  );
+  const componentTypeOptionsByAttributeLibrary = useMemo<Record<string, string[]>>(() => {
+    const groupedOptions = new Map<string, string[]>();
+    const addOption = (attributeLibraryName: string, sectionName: string) => {
+      const group = normalizeAttributeLibraryName(attributeLibraryName);
+      const section = normalizeComponentTypeName(sectionName);
+      if (!group || !section) {
+        return;
+      }
+      const current = groupedOptions.get(group) ?? [];
+      if (!current.some((item) => item.toLowerCase() === section.toLowerCase())) {
+        groupedOptions.set(group, [...current, section]);
+      }
+    };
+    for (const section of E_SECTION_OPTIONS) {
+      addOption(defaultAttributeLibraryForComponentType(section), section);
+    }
+    for (const componentType of customComponentTypes) {
+      addOption(componentType.attributeLibraryName, componentType.name);
+    }
+    for (const template of libraryTemplates) {
+      addOption(template.attributeLibrary, resolveTemplateComponentType(template));
+    }
+    return Object.fromEntries(attributeLibraries.map((group) => [group, groupedOptions.get(group) ?? []]));
+  }, [customComponentTypes, attributeLibraries, libraryTemplates]);
+  const componentTypeOptions = useMemo(
+    () => Array.from(new Set([
+      ...E_SECTION_OPTIONS,
+      ...customComponentTypes.map((item) => item.name),
+      ...libraryTemplates.filter((template) => template.custom).map(resolveTemplateComponentType).filter(Boolean)
+    ])),
+    [customComponentTypes, libraryTemplates]
+  );
+  const currentAttributeLibraryComponentTypeOptions = useMemo(() => {
+    const group = normalizeAttributeLibraryName(customDeviceDraft.attributeLibraryName);
+    const options = componentTypeOptionsByAttributeLibrary[group] ?? [];
+    const currentSection = normalizeComponentTypeName(customDeviceDraft.componentType);
+    return currentSection && !options.some((item) => item.toLowerCase() === currentSection.toLowerCase()) ? [currentSection, ...options] : options;
+  }, [customDeviceDraft.componentType, customDeviceDraft.attributeLibraryName, componentTypeOptionsByAttributeLibrary]);
   const selectedDefinitionTemplate = selectedDefinitionKind ? libraryTemplateByKind.get(selectedDefinitionKind) ?? libraryTemplates[0] : libraryTemplates[0];
+  const definitionAttributeLibraryComponentTypeOptions = useMemo(() => {
+    const group = normalizeAttributeLibraryName(selectedDefinitionTemplate?.attributeLibrary ?? customDeviceDraft.attributeLibraryName);
+    const options = componentTypeOptionsByAttributeLibrary[group] ?? [];
+    const currentSection = normalizeComponentTypeName(definitionDraftSection);
+    return currentSection && !options.some((item) => item.toLowerCase() === currentSection.toLowerCase()) ? [currentSection, ...options] : options;
+  }, [customDeviceDraft.attributeLibraryName, definitionDraftSection, componentTypeOptionsByAttributeLibrary, selectedDefinitionTemplate?.attributeLibrary]);
+  const defaultComponentTypeForAttributeLibrary = (attributeLibraryName: string) => (
+    componentTypeOptionsByAttributeLibrary[normalizeAttributeLibraryName(attributeLibraryName)]?.[0] ?? fallbackComponentTypeForAttributeLibrary(attributeLibraryName)
+  );
   const selectedDefinitionBaseTemplate = selectedDefinitionTemplate ? baseLibraryTemplateByKind.get(selectedDefinitionTemplate.kind) : undefined;
   const selectedDefinitionTerminalAssociations = selectedDefinitionTemplate
     ? describeContainerTerminalAssociations(selectedDefinitionTemplate)
@@ -3980,6 +4182,14 @@ export function App() {
   useEffect(() => {
     window.localStorage.setItem(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, JSON.stringify(customDeviceTemplates));
   }, [customDeviceTemplates]);
+
+  useEffect(() => {
+    window.localStorage.setItem(CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY, JSON.stringify(customAttributeLibraries));
+  }, [customAttributeLibraries]);
+
+  useEffect(() => {
+    window.localStorage.setItem(CUSTOM_COMPONENT_TYPES_STORAGE_KEY, JSON.stringify(customComponentTypes));
+  }, [customComponentTypes]);
 
   useEffect(() => {
     window.localStorage.setItem(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, JSON.stringify(deviceDefinitionOverrides));
@@ -8643,16 +8853,17 @@ export function App() {
     isContainer: customDeviceDraft.isContainer,
     terminalAssociations: customDraftTerminalAssociations
   });
+  const customDevicePreviewLabel = customDeviceDraft.componentName.trim() || customDeviceDraft.componentType || "Unit";
   const customDevicePreviewImage =
     customDeviceDraft.backgroundImage ||
-    generateCustomDeviceImage(customDeviceDraft.deviceType || "Unit", customDraftTerminalTypes.length > 0 ? customDraftTerminalTypes : ["ac"]);
+    generateCustomDeviceImage(customDevicePreviewLabel, customDraftTerminalTypes.length > 0 ? customDraftTerminalTypes : ["ac"]);
 
   const loadDefinitionTemplateDraft = (template: DeviceTemplate) => {
     setSelectedDefinitionKind(template.kind);
-    const group = normalizeLibraryGroupName(template.group);
+    const group = normalizeAttributeLibraryName(template.attributeLibrary);
     setExpandedDefinitionGroups((current) => (current.includes(group) ? current : [...current, group]));
     setDefinitionDraftRows(createDefinitionDraftRows(template));
-    setDefinitionDraftSection(resolveTemplateExportSection(template));
+    setDefinitionDraftSection(resolveTemplateComponentType(template));
     setDefinitionDraftError("");
   };
 
@@ -8664,9 +8875,9 @@ export function App() {
     setDeviceDefinitionDialogOpen(true);
   };
 
-  const toggleDefinitionGroup = (group: LibraryGroup) => {
+  const toggleDefinitionGroup = (attributeLibrary: AttributeLibrary) => {
     setExpandedDefinitionGroups((current) =>
-      current.includes(group) ? current.filter((item) => item !== group) : [...current, group]
+      current.includes(attributeLibrary) ? current.filter((item) => item !== attributeLibrary) : [...current, attributeLibrary]
     );
   };
 
@@ -8733,7 +8944,7 @@ export function App() {
       }
       return acc;
     }, {
-      source_section: definitionDraftSection || resolveTemplateExportSection(selectedDefinitionTemplate)
+      component_type: definitionDraftSection || resolveTemplateComponentType(selectedDefinitionTemplate)
     });
     setDeviceDefinitionOverrides((current) => ({
       ...current,
@@ -8763,11 +8974,11 @@ export function App() {
   const updateCustomDraftTerminalCount = (value: number) => {
     const count = Math.max(0, Math.min(4, Math.round(value || 0)));
     setCustomDeviceDraft((current) => {
-      const fallback = current.groupName.includes("直流")
+      const fallback = current.attributeLibraryName.includes("直流")
         ? "dc"
-        : current.groupName.includes("氢")
+        : current.attributeLibraryName.includes("氢")
           ? "h2"
-          : current.groupName.includes("热")
+          : current.attributeLibraryName.includes("热")
             ? "heat"
             : "ac";
       const terminalTypes = [...current.terminalTypes];
@@ -8796,23 +9007,419 @@ export function App() {
     reader.readAsDataURL(file);
   };
 
+  const selectCustomAttributeLibrary = (attributeLibraryName: string) => {
+    const group = normalizeAttributeLibraryName(attributeLibraryName);
+    setCustomComponentTreeSelection({ kind: "attributeLibrary", attributeLibraryName: group });
+    setEditingCustomDeviceKind("");
+    setCustomDeviceDraft((current) => ({
+      ...current,
+      attributeLibraryName: group,
+      componentType: defaultComponentTypeForAttributeLibrary(group),
+      componentName: "",
+      error: ""
+    }));
+  };
+
+  const selectCustomComponentType = (attributeLibraryName: string, sectionName: string) => {
+    const group = normalizeAttributeLibraryName(attributeLibraryName);
+    const section = normalizeComponentTypeName(sectionName);
+    setCustomComponentTreeSelection({ kind: "componentType", attributeLibraryName: group, section });
+    setEditingCustomDeviceKind("");
+    setCustomDeviceDraft((current) => ({
+      ...current,
+      attributeLibraryName: group,
+      componentType: section,
+      componentName: "",
+      error: ""
+    }));
+  };
+
+  const selectCustomComponentTemplate = (template: DeviceTemplate, sectionName = resolveTemplateComponentType(template)) => {
+    const attributeLibraryName = normalizeAttributeLibraryName(template.attributeLibrary);
+    const section = normalizeComponentTypeName(sectionName);
+    const terminalTypes = (template.terminalTypes ?? Array.from({ length: template.terminalCount }, () => template.terminalType)).slice(0, 4) as TerminalType[];
+    const terminalAssociations = normalizeContainerTerminalAssociations(
+      terminalTypes,
+      template.terminalAssociations ?? [],
+      Math.max(0, Math.min(4, template.terminalCount))
+    );
+    const defaultDefinitions = new Set(customDefaultDefinitions(terminalTypes, {
+      isContainer: template.isContainer,
+      terminalAssociations
+    }).map((definition) => definition.enName.toLowerCase()));
+    const customParams = (template.parameterDefinitions ?? parseCustomDefinitions(template.params))
+      .filter((definition) => !defaultDefinitions.has(definition.enName.toLowerCase()) && definition.enName !== "component_type")
+      .map((definition) => ({ ...definition, id: customParamId() }));
+    setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section, templateKind: template.kind });
+    setEditingCustomDeviceKind(template.custom ? template.kind : "");
+    setCustomDeviceDraft({
+      attributeLibraryName,
+      componentType: section,
+      componentName: template.label,
+      backgroundImage: template.params.backgroundImage ?? "",
+      terminalCount: Math.max(0, Math.min(4, template.terminalCount)),
+      terminalTypes: [...terminalTypes, "ac", "ac", "ac", "ac"].slice(0, 4) as TerminalType[],
+      terminalRoles: [...(template.terminalRoles ?? []), "single-load", "single-load", "single-load", "single-load"].slice(0, 4) as ContainerTerminalRole[],
+      terminalAssociations: [...terminalAssociations, "ac-load", "ac-load", "ac-load", "ac-load"].slice(0, 4) as ContainerTerminalAssociationValue[],
+      isContainer: Boolean(template.isContainer),
+      params: customParams,
+      error: template.custom ? "" : "当前选中的是系统内置元件，可查看并复制为新自定义元件，不能直接覆盖内置定义。"
+    });
+  };
+
+  const startCustomComponentCreate = () => {
+    const attributeLibraryName = normalizeAttributeLibraryName(customComponentTreeSelection.attributeLibraryName);
+    const section =
+      customComponentTreeSelection.kind === "componentType" || customComponentTreeSelection.kind === "component"
+        ? customComponentTreeSelection.section
+        : defaultComponentTypeForAttributeLibrary(attributeLibraryName);
+    setEditingCustomDeviceKind("");
+    setCustomComponentTreeSelection({ kind: "componentType", attributeLibraryName, section });
+    setCustomDeviceDraft({
+      ...createEmptyCustomDeviceDraft(attributeLibraryName),
+      componentType: section,
+      componentName: "",
+      error: ""
+    });
+  };
+
+  const nextCustomAttributeLibraryName = () => {
+    const existingGroups = new Set(attributeLibraries.map((group) => group.toLowerCase()));
+    for (let index = 1; index <= 999; index += 1) {
+      const candidate = `属性库${index}`;
+      if (!existingGroups.has(candidate.toLowerCase())) {
+        return candidate;
+      }
+    }
+    return `属性库${Date.now()}`;
+  };
+
+  const createCustomAttributeLibrary = () => {
+    const defaultName = nextCustomAttributeLibraryName();
+    const rawName = window.prompt("请输入新属性库名称", defaultName);
+    if (rawName === null) {
+      return;
+    }
+    const attributeLibraryName = normalizeAttributeLibraryName(rawName.trim());
+    if (!attributeLibraryName) {
+      window.alert("属性库名称不能为空。");
+      return;
+    }
+    const existingGroups = new Set(attributeLibraries.map((group) => group.toLowerCase()));
+    if (existingGroups.has(attributeLibraryName.toLowerCase())) {
+      window.alert("属性库名称已存在，无法新增同名属性库。");
+      return;
+    }
+    setCustomAttributeLibraries((current) => normalizeCustomAttributeLibraries([...current, attributeLibraryName]));
+    setExpandedAttributeLibraries((current) => Array.from(new Set([...current, attributeLibraryName])));
+    setCustomComponentTreeSelection({ kind: "attributeLibrary", attributeLibraryName });
+    setCustomDeviceDraft((current) => ({
+      ...current,
+      attributeLibraryName,
+      componentType: defaultComponentTypeForAttributeLibrary(attributeLibraryName),
+      error: ""
+    }));
+  };
+
+  const deleteCustomAttributeLibrary = (targetAttributeLibraryName = customDeviceDraft.attributeLibraryName) => {
+    const attributeLibraryName = normalizeAttributeLibraryName(targetAttributeLibraryName);
+    if (!attributeLibraryName || attributeLibraryName === "静态图元" || PROTECTED_ATTRIBUTE_LIBRARIES.has(attributeLibraryName)) {
+      window.alert("默认属性库无法删除。");
+      return;
+    }
+    const templatesInGroup = customDeviceTemplates.filter((template) => normalizeAttributeLibraryName(template.attributeLibrary) === attributeLibraryName);
+    if (templatesInGroup.length > 0) {
+      const confirmed = window.confirm(`属性库“${attributeLibraryName}”中共有 ${templatesInGroup.length} 个元件，删除属性库会同时删除这些元件及其自定义元件类型，是否继续？`);
+      if (!confirmed) {
+        return;
+      }
+    }
+    const deletedKinds = new Set(templatesInGroup.map((template) => template.kind));
+    const deletedComponentTypeKeys = new Set(
+      [
+        ...templatesInGroup.map(resolveTemplateComponentType),
+        ...customComponentTypes
+          .filter((componentType) => normalizeAttributeLibraryName(componentType.attributeLibraryName) === attributeLibraryName)
+          .map((componentType) => componentType.name)
+      ]
+        .filter((section) => section && !isBuiltInComponentType(section))
+        .map((section) => section.toLowerCase())
+    );
+    setCustomDeviceTemplates((current) => current.filter((template) => normalizeAttributeLibraryName(template.attributeLibrary) !== attributeLibraryName));
+    if (deletedComponentTypeKeys.size > 0) {
+      setCustomComponentTypes((current) => current.filter((componentType) => !deletedComponentTypeKeys.has(componentType.name.toLowerCase())));
+      setDefinitionDraftSection((current) =>
+        deletedComponentTypeKeys.has(current.toLowerCase()) ? defaultComponentTypeForAttributeLibrary("交流设备") : current
+      );
+    }
+    setCustomAttributeLibraries((current) => current.filter((group) => normalizeAttributeLibraryName(group) !== attributeLibraryName));
+    setExpandedAttributeLibraries((current) => current.filter((group) => normalizeAttributeLibraryName(group) !== attributeLibraryName));
+    setExpandedDefinitionGroups((current) => current.filter((group) => normalizeAttributeLibraryName(group) !== attributeLibraryName));
+    setSelectedDefinitionKind((current) => (deletedKinds.has(current) ? "" : current));
+    setCustomComponentTreeSelection({ kind: "attributeLibrary", attributeLibraryName: "交流设备" });
+    setEditingCustomDeviceKind("");
+    if (deletedKinds.size > 0) {
+      setDeviceDefinitionOverrides((current) => {
+        const next = { ...current };
+        for (const kind of deletedKinds) {
+          delete next[kind];
+        }
+        return next;
+      });
+    }
+    setCustomDeviceDraft((current) => ({
+      ...current,
+      attributeLibraryName: "交流设备",
+      componentType: defaultComponentTypeForAttributeLibrary("交流设备"),
+      error: ""
+    }));
+  };
+
+  const nextCustomComponentTypeName = () => {
+    const existingTypes = new Set(componentTypeOptions.map((componentType) => componentType.toLowerCase()));
+    for (let index = 1; index <= 999; index += 1) {
+      const candidate = `CustomDevice${index}`;
+      if (!existingTypes.has(candidate.toLowerCase())) {
+        return candidate;
+      }
+    }
+    return `CustomDevice${Date.now()}`;
+  };
+
+  const createCustomComponentType = () => {
+    const rawName = window.prompt("请输入新元件类型英文名称", nextCustomComponentTypeName());
+    if (rawName === null) {
+      return;
+    }
+    const attributeLibraryName = normalizeAttributeLibraryName(customDeviceDraft.attributeLibraryName);
+    const componentType = normalizeComponentTypeName(rawName);
+    if (!componentType) {
+      window.alert("元件类型名称不能为空。");
+      return;
+    }
+    if (!isValidComponentTypeName(componentType)) {
+      window.alert("元件类型必须是英文名称，只能包含英文字母、数字和下划线，并且必须以英文字母开头。");
+      return;
+    }
+    const existingTypes = new Set(componentTypeOptions.map((item) => item.toLowerCase()));
+    if (existingTypes.has(componentType.toLowerCase())) {
+      window.alert("元件类型已存在，无法新增同名元件类型。");
+      return;
+    }
+    setCustomComponentTypes((current) => normalizeCustomComponentTypes([...current, { name: componentType, attributeLibraryName }]));
+    setCustomComponentTreeSelection({ kind: "componentType", attributeLibraryName, section: componentType });
+    setCustomDeviceDraft((current) => ({
+      ...current,
+      componentType: componentType,
+      error: ""
+    }));
+  };
+
+  const deleteCustomComponentType = (targetSection = customDeviceDraft.componentType) => {
+    const componentType = normalizeComponentTypeName(targetSection);
+    if (!componentType || E_SECTION_OPTIONS.some((section) => section.toLowerCase() === componentType.toLowerCase())) {
+      window.alert("内置元件类型无法删除。");
+      return;
+    }
+    const templatesWithType = libraryTemplates.filter((template) => template.custom && resolveTemplateComponentType(template).toLowerCase() === componentType.toLowerCase());
+    if (templatesWithType.length > 0) {
+      const confirmed = window.confirm(`元件类型“${componentType}”下共有 ${templatesWithType.length} 个自定义元件，删除元件类型会同时删除这些元件，是否继续？`);
+      if (!confirmed) {
+        return;
+      }
+    }
+    const deletedKinds = new Set(templatesWithType.map((template) => template.kind));
+    setCustomComponentTypes((current) => current.filter((item) => item.name.toLowerCase() !== componentType.toLowerCase()));
+    setCustomDeviceTemplates((current) => current.filter((template) => !deletedKinds.has(template.kind)));
+    setSelectedDefinitionKind((current) => (deletedKinds.has(current) ? "" : current));
+    setEditingCustomDeviceKind((current) => (deletedKinds.has(current) ? "" : current));
+    if (deletedKinds.size > 0) {
+      setDeviceDefinitionOverrides((current) => {
+        const next = { ...current };
+        for (const kind of deletedKinds) {
+          delete next[kind];
+        }
+        return next;
+      });
+    }
+    const fallbackAttributeLibraryName = customComponentTreeSelection.kind === "componentType" ? customComponentTreeSelection.attributeLibraryName : customDeviceDraft.attributeLibraryName;
+    const fallbackSection = defaultComponentTypeForAttributeLibrary(fallbackAttributeLibraryName);
+    setCustomComponentTreeSelection({ kind: "componentType", attributeLibraryName: normalizeAttributeLibraryName(fallbackAttributeLibraryName), section: fallbackSection });
+    setCustomDeviceDraft((current) => ({
+      ...current,
+      componentType: fallbackSection,
+      error: ""
+    }));
+    setDefinitionDraftSection((current) => (current.toLowerCase() === componentType.toLowerCase() ? fallbackSection : current));
+  };
+
+  const renameSelectedCustomDeviceTreeItem = () => {
+    if (customComponentTreeSelection.kind === "attributeLibrary") {
+      const oldAttributeLibraryName = normalizeAttributeLibraryName(customComponentTreeSelection.attributeLibraryName);
+      if (PROTECTED_ATTRIBUTE_LIBRARIES.has(oldAttributeLibraryName) || oldAttributeLibraryName === "静态图元") {
+        window.alert("系统内置属性库不能重命名。");
+        return;
+      }
+      const rawName = window.prompt("请输入新的属性库名称", oldAttributeLibraryName);
+      if (rawName === null) {
+        return;
+      }
+      const newAttributeLibraryName = normalizeAttributeLibraryName(rawName.trim());
+      if (!newAttributeLibraryName) {
+        window.alert("属性库名称不能为空。");
+        return;
+      }
+      if (attributeLibraries.some((group) => normalizeAttributeLibraryName(group).toLowerCase() === newAttributeLibraryName.toLowerCase() && normalizeAttributeLibraryName(group) !== oldAttributeLibraryName)) {
+        window.alert("属性库名称已存在，无法重命名。");
+        return;
+      }
+      setCustomAttributeLibraries((current) => current.map((group) => normalizeAttributeLibraryName(group) === oldAttributeLibraryName ? newAttributeLibraryName : group));
+      setCustomComponentTypes((current) => current.map((componentType) => normalizeAttributeLibraryName(componentType.attributeLibraryName) === oldAttributeLibraryName ? { ...componentType, attributeLibraryName: newAttributeLibraryName } : componentType));
+      setCustomDeviceTemplates((current) => current.map((template) => normalizeAttributeLibraryName(template.attributeLibrary) === oldAttributeLibraryName ? { ...template, attributeLibrary: newAttributeLibraryName } : template));
+      setExpandedAttributeLibraries((current) => current.map((group) => normalizeAttributeLibraryName(group) === oldAttributeLibraryName ? newAttributeLibraryName : group));
+      setExpandedDefinitionGroups((current) => current.map((group) => normalizeAttributeLibraryName(group) === oldAttributeLibraryName ? newAttributeLibraryName : group));
+      setCustomComponentTreeSelection({ kind: "attributeLibrary", attributeLibraryName: newAttributeLibraryName });
+      setCustomDeviceDraft((current) => ({
+        ...current,
+        attributeLibraryName: normalizeAttributeLibraryName(current.attributeLibraryName) === oldAttributeLibraryName ? newAttributeLibraryName : current.attributeLibraryName,
+        error: ""
+      }));
+      return;
+    }
+    if (customComponentTreeSelection.kind === "componentType") {
+      const oldSection = normalizeComponentTypeName(customComponentTreeSelection.section);
+      if (isBuiltInComponentType(oldSection)) {
+        window.alert("系统内置元件类型不能重命名。");
+        return;
+      }
+      const rawName = window.prompt("请输入新的元件类型英文名称", oldSection);
+      if (rawName === null) {
+        return;
+      }
+      const newSection = normalizeComponentTypeName(rawName);
+      if (!isValidComponentTypeName(newSection)) {
+        window.alert("元件类型必须是英文名称，只能包含英文字母、数字和下划线，并且必须以英文字母开头。");
+        return;
+      }
+      if (componentTypeOptions.some((section) => section.toLowerCase() === newSection.toLowerCase() && section.toLowerCase() !== oldSection.toLowerCase())) {
+        window.alert("元件类型已存在，无法重命名。");
+        return;
+      }
+      const attributeLibraryName = normalizeAttributeLibraryName(customComponentTreeSelection.attributeLibraryName);
+      const affectedKinds = new Set(
+        libraryTemplates
+          .filter((template) => template.custom && normalizeAttributeLibraryName(template.attributeLibrary) === attributeLibraryName && resolveTemplateComponentType(template).toLowerCase() === oldSection.toLowerCase())
+          .map((template) => template.kind)
+      );
+      setCustomComponentTypes((current) => current.map((componentType) =>
+        componentType.name.toLowerCase() === oldSection.toLowerCase() ? { ...componentType, name: newSection, attributeLibraryName } : componentType
+      ));
+      setCustomDeviceTemplates((current) => current.map((template) =>
+        affectedKinds.has(template.kind)
+          ? { ...template, params: { ...template.params, component_type: newSection } }
+          : template
+      ));
+      setDeviceDefinitionOverrides((current) => {
+        const next = { ...current };
+        for (const kind of affectedKinds) {
+          const override = next[kind];
+          if (override) {
+            next[kind] = { ...override, params: { ...(override.params ?? {}), component_type: newSection } };
+          }
+        }
+        return next;
+      });
+      setCustomComponentTreeSelection({ kind: "componentType", attributeLibraryName, section: newSection });
+      setCustomDeviceDraft((current) => ({
+        ...current,
+        attributeLibraryName,
+        componentType: current.componentType.toLowerCase() === oldSection.toLowerCase() ? newSection : current.componentType,
+        error: ""
+      }));
+      setDefinitionDraftSection((current) => current.toLowerCase() === oldSection.toLowerCase() ? newSection : current);
+      return;
+    }
+    const template = libraryTemplateByKind.get(customComponentTreeSelection.templateKind);
+    if (!template?.custom) {
+      window.alert("系统内置元件不能在这里重命名。");
+      return;
+    }
+    const rawName = window.prompt("请输入新的元件名称", template.label);
+    if (rawName === null) {
+      return;
+    }
+    const newLabel = rawName.trim();
+    if (!newLabel) {
+      window.alert("元件名称不能为空。");
+      return;
+    }
+    setCustomDeviceTemplates((current) => current.map((item) => item.kind === template.kind ? { ...item, label: newLabel } : item));
+    setCustomDeviceDraft((current) => ({
+      ...current,
+      componentName: current.componentName === template.label ? newLabel : current.componentName,
+      error: ""
+    }));
+  };
+
+  const deleteSelectedCustomDeviceTreeItem = () => {
+    if (customComponentTreeSelection.kind === "attributeLibrary") {
+      deleteCustomAttributeLibrary(customComponentTreeSelection.attributeLibraryName);
+      return;
+    }
+    if (customComponentTreeSelection.kind === "componentType") {
+      deleteCustomComponentType(customComponentTreeSelection.section);
+      return;
+    }
+    const template = libraryTemplateByKind.get(customComponentTreeSelection.templateKind);
+    if (!template?.custom) {
+      window.alert("系统内置元件不能在这里删除。");
+      return;
+    }
+    const confirmed = window.confirm(`确认删除元件“${template.label}”？`);
+    if (!confirmed) {
+      return;
+    }
+    setCustomDeviceTemplates((current) => current.filter((item) => item.kind !== template.kind));
+    setDeviceDefinitionOverrides((current) => {
+      const next = { ...current };
+      delete next[template.kind];
+      return next;
+    });
+    setEditingCustomDeviceKind((current) => current === template.kind ? "" : current);
+    setCustomComponentTreeSelection({ kind: "componentType", attributeLibraryName: customComponentTreeSelection.attributeLibraryName, section: customComponentTreeSelection.section });
+    setCustomDeviceDraft((current) => ({
+      ...current,
+      componentName: "",
+      error: ""
+    }));
+  };
+
+  const nextCustomTemplateKind = (componentType: string) => {
+    const safeType = componentType.replace(/[^A-Za-z0-9_]+/g, "_") || "CustomDevice";
+    const existingKinds = new Set(libraryTemplates.map((template) => template.kind.toLowerCase()));
+    const base = `custom-${safeType}`;
+    if (!existingKinds.has(base.toLowerCase())) {
+      return base;
+    }
+    for (let index = 2; index <= 999; index += 1) {
+      const candidate = `${base}-${index}`;
+      if (!existingKinds.has(candidate.toLowerCase())) {
+        return candidate;
+      }
+    }
+    return `${base}-${Date.now()}`;
+  };
+
   const saveCustomDeviceTemplate = () => {
-    const newGroupName = customDeviceDraft.newGroupName.trim();
-    const normalizedNewGroupName = newGroupName ? normalizeLibraryGroupName(newGroupName) : "";
-    const groupName = normalizedNewGroupName || normalizeLibraryGroupName(customDeviceDraft.groupName);
-    const existingGroups = new Set(libraryGroups.map((group) => group.toLowerCase()));
-    if (normalizedNewGroupName && existingGroups.has(normalizedNewGroupName.toLowerCase())) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "元件库名称已存在，无法新增同名元件库。" }));
+    const attributeLibraryName = normalizeAttributeLibraryName(customDeviceDraft.attributeLibraryName);
+    const componentType = normalizeComponentTypeName(customDeviceDraft.componentType);
+    const componentLabel = customDeviceDraft.componentName.trim() || componentType;
+    if (!componentType) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "请选择元件类型。" }));
       return;
     }
-    const deviceType = customDeviceDraft.deviceType.trim();
-    if (!deviceType) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "请输入设备类型名称。" }));
-      return;
-    }
-    const existingDeviceTypes = new Set(libraryTemplates.map((template) => template.kind.toLowerCase()));
-    if (existingDeviceTypes.has(deviceType.toLowerCase())) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "设备类型已存在，无法新增同名设备。" }));
+    if (!isValidComponentTypeName(componentType)) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "元件类型必须是英文名称，只能包含英文字母、数字和下划线，并且必须以英文字母开头。" }));
       return;
     }
     const terminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
@@ -8853,14 +9460,15 @@ export function App() {
       return;
     }
     const backgroundImage =
-      customDeviceDraft.backgroundImage || generateCustomDeviceImage(deviceType, terminalTypes.length > 0 ? terminalTypes : ["ac"]);
+      customDeviceDraft.backgroundImage || generateCustomDeviceImage(componentLabel, terminalTypes.length > 0 ? terminalTypes : ["ac"]);
+    const customKind = editingCustomDeviceKind || nextCustomTemplateKind(componentType);
     const template: DeviceTemplate = {
-      kind: deviceType,
-      label: deviceType,
-      group: groupName,
+      kind: customKind,
+      label: componentLabel,
+      attributeLibrary: attributeLibraryName,
       size: { width: 104, height: 64 },
       params: {
-        source_section: customDeviceDraft.exportSection || defaultExportSectionForGroup(groupName),
+        component_type: customDeviceDraft.componentType || defaultComponentTypeForAttributeLibrary(attributeLibraryName),
         fillColor: "transparent",
         strokeColor: "transparent",
         lineWidth: "0",
@@ -8870,15 +9478,101 @@ export function App() {
       terminalCount: terminalTypes.length,
       terminalTypes,
       terminalAssociations: customDeviceDraft.isContainer ? terminalAssociations : undefined,
-      terminalLabels: terminalTypes.map((type, index) => `${TERMINAL_TYPE_OPTIONS.find((item) => item.value === type)?.label ?? type}端${index + 1}`),
+      terminalLabels: terminalTypes.map((type, index) => `${TERMINAL_TYPE_LIBRARY_LABELS[type] ?? type}端${index + 1}`),
       isContainer: customDeviceDraft.isContainer,
       custom: true,
       parameterDefinitions: definitions
     };
-    setCustomDeviceTemplates((current) => [...current, template]);
-    setExpandedLibraryGroups((current) => Array.from(new Set([...current, groupName])));
-    setCustomDeviceDialogOpen(false);
+    setCustomDeviceTemplates((current) => {
+      if (editingCustomDeviceKind && current.some((item) => item.kind === editingCustomDeviceKind)) {
+        return current.map((item) => item.kind === editingCustomDeviceKind ? template : item);
+      }
+      return [...current, template];
+    });
+    setExpandedAttributeLibraries((current) => Array.from(new Set([...current, attributeLibraryName])));
+    setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section: componentType, templateKind: customKind });
+    setEditingCustomDeviceKind(customKind);
+    setCustomDeviceDraft((current) => ({ ...current, error: "" }));
   };
+
+  const renderCustomComponentManagerTree = () => (
+    <aside className="custom-component-manager-panel" aria-label="属性库元件类型元件管理">
+      <div className="custom-component-manager-title">
+        <strong>元件结构</strong>
+        <span>属性库 / 元件类型 / 元件</span>
+      </div>
+      <div className="custom-component-manager-actions">
+        <button type="button" onClick={createCustomAttributeLibrary}>新建属性库</button>
+        <button type="button" onClick={createCustomComponentType}>新建元件类型</button>
+        <button type="button" onClick={startCustomComponentCreate}>新建元件</button>
+        <button type="button" onClick={renameSelectedCustomDeviceTreeItem}>重命名</button>
+        <button type="button" onClick={deleteSelectedCustomDeviceTreeItem}>删除</button>
+      </div>
+      <div className="custom-component-manager-tree" role="tree">
+        {attributeLibraries.map((group) => {
+          const typeGroups = groupedAttributeLibraryByComponentType[group] ?? [];
+          const librarySelected = customComponentTreeSelection.kind === "attributeLibrary" && customComponentTreeSelection.attributeLibraryName === group;
+          return (
+            <section className="custom-component-tree-library" key={group}>
+              <button
+                type="button"
+                className={`custom-component-tree-row library ${librarySelected ? "active" : ""}`}
+                role="treeitem"
+                aria-selected={librarySelected}
+                onClick={() => selectCustomAttributeLibrary(group)}
+              >
+                <span>{group}</span>
+                <strong>{typeGroups.reduce((sum, typeGroup) => sum + typeGroup.templates.length, 0)}</strong>
+              </button>
+              <div className="custom-component-tree-type-list" role="group">
+                {typeGroups.map((typeGroup) => {
+                  const typeSelected =
+                    customComponentTreeSelection.kind === "componentType" &&
+                    customComponentTreeSelection.attributeLibraryName === group &&
+                    customComponentTreeSelection.section === typeGroup.section;
+                  return (
+                    <section className="custom-component-tree-type" key={`${group}-${typeGroup.section}`}>
+                      <button
+                        type="button"
+                        className={`custom-component-tree-row type ${typeSelected ? "active" : ""}`}
+                        role="treeitem"
+                        aria-selected={typeSelected}
+                        onClick={() => selectCustomComponentType(group, typeGroup.section)}
+                      >
+                        <span>{typeGroup.section}</span>
+                        <strong>{typeGroup.templates.length}</strong>
+                      </button>
+                      <div className="custom-component-tree-components" role="group" aria-label={`${group}/${typeGroup.section}元件列表`}>
+                        {typeGroup.templates.map((template) => {
+                          const componentSelected =
+                            customComponentTreeSelection.kind === "component" &&
+                            customComponentTreeSelection.templateKind === template.kind;
+                          return (
+                            <button
+                              type="button"
+                              key={template.kind}
+                              className={`custom-component-tree-row component ${componentSelected ? "active" : ""}`}
+                              role="treeitem"
+                              aria-selected={componentSelected}
+                              title={`${template.label} / ${typeGroup.section} / ${template.custom ? "自定义" : "系统内置"}`}
+                              onClick={() => selectCustomComponentTemplate(template, typeGroup.section)}
+                            >
+                              <span>{template.label}</span>
+                              <small>{template.custom ? "自定义" : "内置"}</small>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </aside>
+  );
 
   const renderLibraryDefinitionActions = () => (
     <div className="library-definition-actions">
@@ -8901,14 +9595,14 @@ export function App() {
   const renderLibraryPanel = () => (
     <div className="library-panel-stack">
       <div className="library-scroll">
-        {libraryGroups.map((group) => {
-          const expanded = expandedLibraryGroups.includes(group);
+        {attributeLibraries.map((group) => {
+          const expanded = expandedAttributeLibraries.includes(group);
           return (
             <section className="library-group-section" key={group}>
               <button
                 className={`library-group-toggle ${expanded ? "active" : ""}`}
                 onClick={() =>
-                  setExpandedLibraryGroups((current) =>
+                  setExpandedAttributeLibraries((current) =>
                     current.includes(group) ? current.filter((item) => item !== group) : [...current, group]
                   )
                 }
@@ -8917,23 +9611,33 @@ export function App() {
                 {group}
               </button>
               {expanded && (
-                <div className="library-group">
-                  {(groupedLibrary[group] ?? []).map((item) => {
-                    const preview = libraryPreviewByKind.get(item.kind) ?? createNodeFromTemplate(item, { x: 0, y: 0 });
-                    return (
-                      <button
-                        key={item.kind}
-                        className="library-item"
-                        draggable
-                        title={item.label}
-                        onDragStart={(event) => event.dataTransfer.setData("application/device-kind", item.kind)}
-                      >
-                        <svg viewBox="-40 -28 80 56" aria-hidden="true">
-                          <DeviceGlyph node={preview} miniature colorPalette={colorPalette} />
-                        </svg>
-                      </button>
-                    );
-                  })}
+                <div className="attribute-library-component-type-list">
+                  {(groupedAttributeLibraryByComponentType[group] ?? []).map((typeGroup) => (
+                    <section className="attribute-library-component-type-section" key={`${group}-${typeGroup.section}`}>
+                      <div className="attribute-library-component-type-header">
+                        <span>{typeGroup.section}</span>
+                        <strong>{typeGroup.templates.length}</strong>
+                      </div>
+                      <div className="library-group">
+                        {typeGroup.templates.map((item) => {
+                          const preview = libraryPreviewByKind.get(item.kind) ?? createNodeFromTemplate(item, { x: 0, y: 0 });
+                          return (
+                            <button
+                              key={item.kind}
+                              className="library-item"
+                              draggable
+                              title={`${item.label} / ${typeGroup.section}`}
+                              onDragStart={(event) => event.dataTransfer.setData("application/device-kind", item.kind)}
+                            >
+                              <svg viewBox="-40 -28 80 56" aria-hidden="true">
+                                <DeviceGlyph node={preview} miniature colorPalette={colorPalette} />
+                              </svg>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ))}
                 </div>
               )}
             </section>
@@ -9045,8 +9749,8 @@ export function App() {
                           <div className="element-tree-child-list" role="group" aria-label={`${item.name}关联子设备`}>
                             {item.children.map((child) => (
                               <div className="element-tree-child-item" key={child.id}>
-                                <span className="element-tree-child-type" title={child.deviceType}>
-                                  {child.deviceType}
+                                <span className="element-tree-child-type" title={child.componentType}>
+                                  {child.componentType}
                                 </span>
                                 <label>
                                   <span>idx</span>
@@ -10498,7 +11202,7 @@ export function App() {
                   <table className="param-table">
                     <tbody>
                       {selectedContainerParameterView.rows.map((row) => {
-                        const options = paramOptionsForSection(row.key, selectedContainerParameterView.deviceType);
+                        const options = paramOptionsForSection(row.key, selectedContainerParameterView.componentType);
                         return (
                           <tr key={row.key}>
                             {renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
@@ -10992,8 +11696,8 @@ export function App() {
             </div>
             <div className="device-definition-layout">
               <aside className="device-definition-list" aria-label="元件定义列表">
-                {libraryGroups.map((group) => {
-                  const templates = groupedLibrary[group] ?? [];
+                {attributeLibraries.map((group) => {
+                  const templates = groupedAttributeLibrary[group] ?? [];
                   if (templates.length === 0) {
                     return null;
                   }
@@ -11011,17 +11715,27 @@ export function App() {
                         <strong>{templates.length}</strong>
                       </button>
                       {expanded && (
-                        <div className="device-definition-items" role="group" aria-label={`${group}元件列表`}>
-                          {templates.map((template) => (
-                            <button
-                              type="button"
-                              key={template.kind}
-                              className={`device-definition-item ${selectedDefinitionTemplate?.kind === template.kind ? "active" : ""}`}
-                              onClick={() => loadDefinitionTemplateDraft(template)}
-                            >
-                              <span>{template.label}</span>
-                              <small>{template.kind}</small>
-                            </button>
+                        <div className="component-definition-type-list" role="group" aria-label={`${group}元件类型列表`}>
+                          {(groupedAttributeLibraryByComponentType[group] ?? []).map((typeGroup) => (
+                            <section className="component-definition-type-group" key={`${group}-${typeGroup.section}`}>
+                              <div className="component-definition-type-header">
+                                <span>{typeGroup.section}</span>
+                                <strong>{typeGroup.templates.length}</strong>
+                              </div>
+                              <div className="device-definition-items" role="group" aria-label={`${group}/${typeGroup.section}元件列表`}>
+                                {typeGroup.templates.map((template) => (
+                                  <button
+                                    type="button"
+                                    key={template.kind}
+                                    className={`device-definition-item ${selectedDefinitionTemplate?.kind === template.kind ? "active" : ""}`}
+                                    onClick={() => loadDefinitionTemplateDraft(template)}
+                                  >
+                                    <span>{template.label}</span>
+                                    <small>{template.kind}</small>
+                                  </button>
+                                ))}
+                              </div>
+                            </section>
                           ))}
                         </div>
                       )}
@@ -11038,12 +11752,12 @@ export function App() {
                         <strong>{selectedDefinitionTemplate.label}</strong>
                       </div>
                       <div>
-                        <span>设备类型</span>
+                        <span>图元类型</span>
                         <strong>{selectedDefinitionTemplate.kind}</strong>
                       </div>
                       <div>
-                        <span>元件库</span>
-                        <strong>{normalizeLibraryGroupName(selectedDefinitionTemplate.group)}</strong>
+                        <span>属性库</span>
+                        <strong>{normalizeAttributeLibraryName(selectedDefinitionTemplate.attributeLibrary)}</strong>
                       </div>
                       <div>
                         <span>来源</span>
@@ -11074,16 +11788,22 @@ export function App() {
                         <strong>{deviceDefinitionOverrides[selectedDefinitionTemplate.kind]?.updatedAt ? "已自定义" : "默认"}</strong>
                       </div>
                       <div>
-                        <span>导出Section</span>
+                        <span>元件类型</span>
                         <select
+                          className={sourceSelectClassName(isBuiltInComponentType(definitionDraftSection))}
                           value={definitionDraftSection}
                           onChange={(event) => {
                             setDefinitionDraftSection(event.target.value);
                             setDefinitionDraftError("");
                           }}
                         >
-                          {E_SECTION_OPTIONS.map((section) => (
-                            <option key={section} value={section}>
+                          {definitionAttributeLibraryComponentTypeOptions.map((section) => (
+                            <option
+                              key={section}
+                              value={section}
+                              className={componentTypeOptionClass(section)}
+                              title={isBuiltInComponentType(section) ? "系统内置元件类型，无法删除" : "用户自定义元件类型，可以删除"}
+                            >
                               {section}
                             </option>
                           ))}
@@ -11198,7 +11918,7 @@ export function App() {
                 ) : (
                   <div className="empty-state compact">
                     <Grid2X2 size={24} />
-                    <p>当前元件库暂无元件。</p>
+                    <p>当前属性库暂无元件。</p>
                   </div>
                 )}
               </section>
@@ -11217,53 +11937,59 @@ export function App() {
               <button onClick={() => setCustomDeviceDialogOpen(false)}>关闭</button>
             </div>
             {customDeviceDraft.error && <p className="custom-device-error">{customDeviceDraft.error}</p>}
+            <div className="custom-device-dialog-layout">
+              {renderCustomComponentManagerTree()}
+              <div className="custom-device-editor-panel">
             <div className="custom-device-form-grid">
-              <label>
-                元件库类型
-                <select
-                  value={customDeviceDraft.groupName}
-                  onChange={(event) => setCustomDeviceDraft((current) => ({
-                    ...current,
-                    groupName: event.target.value,
-                    exportSection: defaultExportSectionForGroup(event.target.value),
-                    error: ""
-                  }))}
-                >
-                  {Array.from(new Set([...CUSTOM_LIBRARY_BASE_GROUPS, ...libraryGroups.filter((group) => group !== "静态图元")])).map((group) => (
-                    <option key={group} value={group}>
-                      {group}
-                    </option>
-                  ))}
-                </select>
+              <label className="custom-attribute-library-field">
+                <span>属性库类型</span>
+                <div className="custom-attribute-library-select-row single-control">
+                  <select
+                    className={sourceSelectClassName(isBuiltInAttributeLibrary(customDeviceDraft.attributeLibraryName))}
+                    value={customDeviceDraft.attributeLibraryName}
+                    onChange={(event) => selectCustomAttributeLibrary(event.target.value)}
+                  >
+                    {selectableAttributeLibraries.map((group) => (
+                      <option
+                        key={group}
+                        value={group}
+                        className={attributeLibraryOptionClass(group)}
+                        title={isBuiltInAttributeLibrary(group) ? "系统内置属性库，无法删除" : "用户自定义属性库，可以删除"}
+                      >
+                        {group}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </label>
+              <label className="custom-component-type-field">
+                <span>元件类型</span>
+                <div className="custom-attribute-library-select-row single-control">
+                  <select
+                    className={sourceSelectClassName(isBuiltInComponentType(customDeviceDraft.componentType))}
+                    value={customDeviceDraft.componentType}
+                    onChange={(event) => selectCustomComponentType(customDeviceDraft.attributeLibraryName, event.target.value)}
+                  >
+                    {currentAttributeLibraryComponentTypeOptions.map((section) => (
+                      <option
+                        key={section}
+                        value={section}
+                        className={componentTypeOptionClass(section)}
+                        title={isBuiltInComponentType(section) ? "系统内置元件类型，无法删除" : "用户自定义元件类型，可以删除"}
+                      >
+                        {section}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </label>
               <label>
-                新增自定义元件库
+                元件名称
                 <input
-                  value={customDeviceDraft.newGroupName}
-                  placeholder="不填则使用左侧类型"
-                  onChange={(event) => setCustomDeviceDraft((current) => ({ ...current, newGroupName: event.target.value, error: "" }))}
+                  value={customDeviceDraft.componentName}
+                  placeholder="例如 水电、核电、风电、光伏"
+                  onChange={(event) => setCustomDeviceDraft((current) => ({ ...current, componentName: event.target.value, error: "" }))}
                 />
-              </label>
-              <label>
-                设备类型
-                <input
-                  value={customDeviceDraft.deviceType}
-                  placeholder="例如 ACUnit"
-                  onChange={(event) => setCustomDeviceDraft((current) => ({ ...current, deviceType: event.target.value, error: "" }))}
-                />
-              </label>
-              <label>
-                导出Section
-                <select
-                  value={customDeviceDraft.exportSection}
-                  onChange={(event) => setCustomDeviceDraft((current) => ({ ...current, exportSection: event.target.value, error: "" }))}
-                >
-                  {E_SECTION_OPTIONS.map((section) => (
-                    <option key={section} value={section}>
-                      {section}
-                    </option>
-                  ))}
-                </select>
               </label>
               <label>
                 是否容器
@@ -11300,7 +12026,10 @@ export function App() {
                 onClick={() =>
                   setCustomDeviceDraft((current) => ({
                     ...current,
-                    backgroundImage: generateCustomDeviceImage(current.deviceType || "Unit", current.terminalTypes.slice(0, current.terminalCount)),
+                    backgroundImage: generateCustomDeviceImage(
+                      current.componentName.trim() || current.componentType || "Unit",
+                      current.terminalTypes.slice(0, current.terminalCount)
+                    ),
                     error: ""
                   }))
                 }
@@ -11552,6 +12281,8 @@ export function App() {
                 新增属性
               </button>
               <button type="button" onClick={saveCustomDeviceTemplate}>保存自定义设备</button>
+            </div>
+              </div>
             </div>
           </section>
         </div>

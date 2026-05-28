@@ -44,6 +44,137 @@ function cssRuleBlock(styles: string, selector: string) {
 }
 
 describe("graph inspector panel", () => {
+  test("uses library group names for terminal energy dropdowns in device definition dialogs", async () => {
+    const source = await readAppSource();
+    const optionsStart = source.indexOf("const TERMINAL_TYPE_OPTIONS");
+    const optionsEnd = source.indexOf("const CONTAINER_TERMINAL_ASSOCIATION_OPTIONS", optionsStart);
+    const optionsBlock = source.slice(optionsStart, optionsEnd);
+    const terminalLabelStart = source.indexOf("terminalLabels: terminalTypes.map");
+    const terminalLabelEnd = source.indexOf("isContainer: customDeviceDraft.isContainer", terminalLabelStart);
+    const terminalLabelBlock = source.slice(terminalLabelStart, terminalLabelEnd);
+
+    expect(source).toContain("TERMINAL_TYPE_LIBRARY_LABELS");
+    expect(optionsBlock).toContain("TERMINAL_TYPE_LIBRARY_LABELS.ac");
+    expect(optionsBlock).toContain("TERMINAL_TYPE_LIBRARY_LABELS.dc");
+    expect(optionsBlock).toContain("TERMINAL_TYPE_LIBRARY_LABELS.h2");
+    expect(optionsBlock).toContain("TERMINAL_TYPE_LIBRARY_LABELS.heat");
+    expect(optionsBlock).not.toContain("label: \"交流电\"");
+    expect(optionsBlock).not.toContain("label: \"直流电\"");
+    expect(terminalLabelBlock).toContain("TERMINAL_TYPE_LIBRARY_LABELS");
+  });
+
+  test("manages custom component libraries from the new-device manager tree", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+
+    expect(source).toContain("CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY");
+    expect(source).toContain("normalizeCustomAttributeLibraries");
+    expect(source).toContain("readCustomAttributeLibraries");
+    expect(source).toContain("customAttributeLibraries");
+    expect(source).toContain("selectableAttributeLibraries");
+    expect(source).toContain("createCustomAttributeLibrary");
+    expect(source).toContain("deleteCustomAttributeLibrary");
+    expect(source).toContain("window.prompt(\"请输入新属性库名称\"");
+    expect(source).toContain("属性库名称已存在，无法新增同名属性库。");
+    expect(source).toContain("默认属性库无法删除。");
+    expect(source).toContain("window.confirm(`属性库“${attributeLibraryName}”中共有");
+    expect(source).toContain("删除属性库会同时删除这些元件及其自定义元件类型");
+    expect(source).toContain("deletedComponentTypeKeys");
+    expect(source).toContain("setCustomComponentTypes((current) => current.filter((componentType) => !deletedComponentTypeKeys.has(componentType.name.toLowerCase())))");
+    expect(source).toContain("PROTECTED_ATTRIBUTE_LIBRARIES.has(attributeLibraryName)");
+    expect(source).toContain("PROTECTED_ATTRIBUTE_LIBRARIES.has(oldAttributeLibraryName)");
+    expect(source).toContain("renderCustomComponentManagerTree");
+    expect(source).toContain("custom-component-manager-actions");
+    expect(source).toContain("selectableAttributeLibraries.map((group)");
+    expect(source).not.toContain("新增自定义属性库");
+    expect(styles).toContain(".custom-attribute-library-select-row");
+  });
+
+  test("manages English device types from the former export-section dropdown", async () => {
+    const source = await readAppSource();
+
+    expect(source).toContain("CUSTOM_COMPONENT_TYPES_STORAGE_KEY");
+    expect(source).toContain("DEVICE_TYPE_NAME_PATTERN");
+    expect(source).toContain("normalizeCustomComponentTypes");
+    expect(source).toContain("readCustomComponentTypes");
+    expect(source).toContain("componentTypeOptions");
+    expect(source).toContain("createCustomComponentType");
+    expect(source).toContain("deleteCustomComponentType");
+    expect(source).toContain("请输入新元件类型英文名称");
+    expect(source).toContain("元件类型必须是英文名称");
+    expect(source).toContain("元件类型已存在，无法新增同名元件类型。");
+    expect(source).toContain("内置元件类型无法删除。");
+    expect(source).toContain("libraryTemplates.filter((template) => template.custom && resolveTemplateComponentType(template).toLowerCase() === componentType.toLowerCase())");
+    expect(source).toContain("setCustomDeviceTemplates((current) => current.filter((template) => !deletedKinds.has(template.kind)))");
+    expect(source).toContain("nextCustomTemplateKind");
+    expect(source).toContain("kind: customKind");
+    expect(source).toContain("componentName: \"\"");
+    expect(source).toContain("const componentLabel = customDeviceDraft.componentName.trim() || componentType;");
+    expect(source).toContain("label: componentLabel");
+    expect(source).toContain("placeholder=\"例如 水电、核电、风电、光伏\"");
+    expect(source).toContain("component_type: customDeviceDraft.componentType");
+    expect(source).not.toContain("placeholder=\"例如 ACUnit\"");
+    expect(source).not.toContain("<span>导出Section</span>");
+  });
+
+  test("visually distinguishes built-in and custom library and device type options", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+
+    expect(source).toContain("isBuiltInAttributeLibrary");
+    expect(source).toContain("isBuiltInComponentType");
+    expect(source).toContain("attributeLibraryOptionClass");
+    expect(source).toContain("componentTypeOptionClass");
+    expect(source).toContain("sourceSelectClassName");
+    expect(source).toContain("className={sourceSelectClassName(isBuiltInAttributeLibrary(customDeviceDraft.attributeLibraryName))}");
+    expect(source).toContain("className={sourceSelectClassName(isBuiltInComponentType(customDeviceDraft.componentType))}");
+    expect(source).toContain("className={sourceSelectClassName(isBuiltInComponentType(definitionDraftSection))}");
+    expect(source).toContain("className={attributeLibraryOptionClass(group)}");
+    expect(source).toContain("className={componentTypeOptionClass(section)}");
+    expect(source).toContain("系统内置属性库，无法删除");
+    expect(source).toContain("用户自定义元件类型，可以删除");
+    expect(styles).toContain(".source-select.builtin-source");
+    expect(styles).toContain(".source-select.custom-source");
+    expect(styles).toContain(".builtin-option");
+    expect(styles).toContain(".custom-option");
+  });
+
+  test("renders component libraries as library device-type component trees", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+
+    expect(source).toContain("type CustomComponentTypeDefinition");
+    expect(source).toContain("groupDeviceTemplatesByAttributeLibraryAndComponentType");
+    expect(source).toContain("groupedAttributeLibraryByComponentType");
+    expect(source).toContain("componentTypeOptionsByAttributeLibrary");
+    expect(source).toContain("currentAttributeLibraryComponentTypeOptions");
+    expect(source).toContain("definitionAttributeLibraryComponentTypeOptions");
+    expect(source).toContain("setCustomComponentTypes((current) => normalizeCustomComponentTypes([...current, { name: componentType, attributeLibraryName }]))");
+    expect(source).toContain("(groupedAttributeLibraryByComponentType[group] ?? []).map((typeGroup)");
+    expect(source).toContain("attribute-library-component-type-section");
+    expect(source).toContain("attribute-library-component-type-header");
+    expect(source).toContain("component-definition-type-group");
+    expect(source).toContain("aria-label={`${group}/${typeGroup.section}元件列表`}");
+    expect(source).toContain("renderCustomComponentManagerTree");
+    expect(source).toContain("custom-component-manager-panel");
+    expect(source).toContain("custom-device-dialog-layout");
+    expect(source).toContain("customComponentTreeSelection");
+    expect(source).toContain("selectCustomComponentTemplate(template, typeGroup.section)");
+    expect(source).toContain("renameSelectedCustomDeviceTreeItem");
+    expect(source).toContain("deleteSelectedCustomDeviceTreeItem");
+    expect(source).toContain("startCustomComponentCreate");
+    expect(source).toContain("editingCustomDeviceKind");
+    expect(source).toContain("currentAttributeLibraryComponentTypeOptions.map((section)");
+    expect(source).toContain("onChange={(event) => selectCustomAttributeLibrary(event.target.value)}");
+    expect(source).toContain("onChange={(event) => selectCustomComponentType(customDeviceDraft.attributeLibraryName, event.target.value)}");
+    expect(styles).toContain(".attribute-library-component-type-section");
+    expect(styles).toContain(".attribute-library-component-type-header");
+    expect(styles).toContain(".component-definition-type-group");
+    expect(styles).toContain(".custom-component-manager-panel");
+    expect(styles).toContain(".custom-component-tree-row");
+    expect(styles).toContain(".custom-attribute-library-select-row.single-control");
+  });
+
   test("shows selected element terminal count as readonly text instead of an editable field", async () => {
     const source = await readAppSource();
     const row = selectedTerminalCountRow(source);

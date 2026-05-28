@@ -199,7 +199,7 @@ export type Terminal = {
 export type DeviceTemplate = {
   kind: DeviceKind;
   label: string;
-  group: string;
+  attributeLibrary: string;
   size: {
     width: number;
     height: number;
@@ -248,7 +248,7 @@ export type ContainerDeviceParameterView = {
   id: string;
   label: string;
   kind: "container" | "associated";
-  deviceType?: string;
+  componentType?: string;
   relationKeys?: string[];
   terminalIndexes?: number[];
   terminalLabels?: string;
@@ -341,7 +341,7 @@ export type ElementTreeItem = {
 export type ElementTreeChildItem = {
   id: string;
   label: string;
-  deviceType: string;
+  componentType: string;
   idx: string;
   name: string;
   nameKey: string;
@@ -476,8 +476,9 @@ function isContainerParams(params: Record<string, string> = {}) {
 export function inferESection(kind: string, params: Record<string, string> = {}) {
   if (kind === "ac-bus") return "ACRealBs";
   if (kind === "dc-bus") return "DCRealBs";
-  if (params.source_section && E_SECTION_COLUMNS[params.source_section]) {
-    return params.source_section;
+  const componentType = params.component_type?.trim();
+  if (componentType) {
+    return componentType;
   }
   const mappedSection = E_KIND_SECTION_MAP[kind];
   if (mappedSection) {
@@ -1157,9 +1158,30 @@ export function getEParamValue(
   return mappedLegacyEValue(key, node.params);
 }
 
+function customEParameterKeys(params: Record<string, string>) {
+  try {
+    const parsed = JSON.parse(params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]");
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return Array.from(new Set(parsed
+      .map((definition) => String((definition as DeviceParameterDefinition)?.enName ?? "").trim())
+      .filter((key) => key && !key.startsWith("_") && key !== "component_type")));
+  } catch {
+    return [];
+  }
+}
+
 export function getEParameterKeys(kind: string, params: Record<string, string>) {
   const section = inferESection(kind, params);
-  return section ? E_SECTION_COLUMNS[section] ?? [] : [];
+  if (!section) {
+    return [];
+  }
+  const builtInColumns = E_SECTION_COLUMNS[section];
+  if (builtInColumns) {
+    return builtInColumns;
+  }
+  return customEParameterKeys(params);
 }
 
 export function buildEDeviceValues(
@@ -1398,6 +1420,9 @@ function buildEDeviceRecords(project: ProjectFile): EDeviceExport[] {
       if (!section || section === "ACNode" || section === "DCNode") {
         return null;
       }
+      if (getEParameterKeys(node.kind, node.params).length === 0) {
+        return null;
+      }
       return {
         id: node.id,
         kind: node.kind,
@@ -1439,10 +1464,10 @@ export function getEExportWarnings(project: ProjectFile): EExportWarning[] {
         nodeId: node.id,
         nodeName: node.name,
         kind: node.kind,
-        reason: isContainerParams(node.params) ? "容器设备没有对应的 E 文件段定义。" : "设备类型没有对应的 E 文件段定义。"
+        reason: isContainerParams(node.params) ? "容器设备没有对应的 E 文件段定义。" : "元件类型没有对应的 E 文件段定义。"
       }];
     }
-    if (!E_SECTION_COLUMNS[section]) {
+    if (!E_SECTION_COLUMNS[section] && getEParameterKeys(node.kind, node.params).length === 0) {
       return [{
         nodeId: node.id,
         nodeName: node.name,
@@ -1543,8 +1568,27 @@ function sortESectionRecordsByIdx(rows: EDeviceExport[]): EDeviceExport[] {
     .map(({ record }) => record);
 }
 
+function eSectionColumns(section: string, rows: EDeviceExport[]) {
+  const builtInColumns = E_SECTION_COLUMNS[section];
+  if (builtInColumns) {
+    return builtInColumns;
+  }
+  const columns: string[] = [];
+  const seen = new Set<string>();
+  for (const record of rows) {
+    for (const key of Object.keys(record.params)) {
+      if (!key || key.startsWith("_") || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      columns.push(key);
+    }
+  }
+  return columns;
+}
+
 function formatESection(section: string, rows: EDeviceExport[]) {
-  const columns = E_SECTION_COLUMNS[section] ?? [];
+  const columns = eSectionColumns(section, rows);
   const bodyRows = sortESectionRecordsByIdx(rows)
     .map((record, rowIndex) => `# ${columns.map((column) => formatEColumnValue(section, column, record.params[column], rowIndex)).join(" ")}`)
     .join("\n");
@@ -1570,16 +1614,19 @@ export function buildEDeviceParameterFile(project: ProjectFile) {
   const records = buildEDeviceRecords(project);
   const recordsBySection = new Map<string, EDeviceExport[]>();
   for (const record of records) {
-    const columns = E_SECTION_COLUMNS[record.section];
-    if (!columns) {
+    const columns = eSectionColumns(record.section, [record]);
+    if (columns.length === 0) {
       continue;
     }
     const sectionRecords = recordsBySection.get(record.section) ?? [];
     sectionRecords.push(record);
     recordsBySection.set(record.section, sectionRecords);
   }
-  const sectionBlocks = E_SECTION_OUTPUT_ORDER
-    .filter((section) => recordsBySection.has(section))
+  const orderedSections = [
+    ...E_SECTION_OUTPUT_ORDER.filter((section) => recordsBySection.has(section)),
+    ...Array.from(recordsBySection.keys()).filter((section) => !E_SECTION_OUTPUT_ORDER.includes(section))
+  ];
+  const sectionBlocks = orderedSections
     .map((section) => formatESection(section, recordsBySection.get(section) ?? []));
   return [buildPowerBaseSection(project), ...sectionBlocks].join("\n\n") + "\n";
 }
@@ -1722,7 +1769,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-text",
     label: "文字",
-    group: "静态图元",
+    attributeLibrary: "静态图元",
     size: { width: 120, height: 40 },
     params: {
       text: "文字",
@@ -1743,7 +1790,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-line",
     label: "直线",
-    group: "静态图元",
+    attributeLibrary: "静态图元",
     size: { width: 140, height: 24 },
     params: { fillColor: "transparent", strokeColor: "#334155", textColor: "#111827", lineWidth: "3", strokeStyle: "solid", fontSize: "16" },
     terminalType: "ac",
@@ -1752,7 +1799,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-polyline",
     label: "折线",
-    group: "静态图元",
+    attributeLibrary: "静态图元",
     size: { width: 140, height: 70 },
     params: { fillColor: "transparent", strokeColor: "#334155", textColor: "#111827", lineWidth: "3", strokeStyle: "solid", fontSize: "16" },
     terminalType: "ac",
@@ -1761,7 +1808,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-circle",
     label: "正圆",
-    group: "静态图元",
+    attributeLibrary: "静态图元",
     size: { width: 72, height: 72 },
     params: { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
     terminalType: "ac",
@@ -1770,7 +1817,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-ellipse",
     label: "椭圆",
-    group: "静态图元",
+    attributeLibrary: "静态图元",
     size: { width: 112, height: 70 },
     params: { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
     terminalType: "ac",
@@ -1779,7 +1826,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-rect",
     label: "方框",
-    group: "静态图元",
+    attributeLibrary: "静态图元",
     size: { width: 112, height: 70 },
     params: { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
     terminalType: "ac",
@@ -1788,7 +1835,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-image",
     label: "图片",
-    group: "静态图元",
+    attributeLibrary: "静态图元",
     size: { width: 140, height: 90 },
     params: { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#64748b", lineWidth: "0", strokeStyle: "solid", fontSize: "16", backgroundImage: "", backgroundImageAssetId: "" },
     terminalType: "ac",
@@ -1797,7 +1844,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-source",
     label: "交流电源",
-    group: "交流设备",
+    attributeLibrary: "交流设备",
     size: { width: 84, height: 56 },
     params: { ratedVoltage: "10 kV", frequency: "50 Hz", shortCircuitCapacity: "500 MVA" },
     terminalType: "ac",
@@ -1806,7 +1853,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-wind-source",
     label: "交流风电",
-    group: "交流设备",
+    attributeLibrary: "交流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "35 kV", ratedPower: "50 MW", sourceType: "风电" },
     terminalType: "ac",
@@ -1815,7 +1862,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-pv-source",
     label: "交流光伏",
-    group: "交流设备",
+    attributeLibrary: "交流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "10 kV", ratedPower: "20 MW", sourceType: "光伏" },
     terminalType: "ac",
@@ -1824,7 +1871,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-thermal-source",
     label: "交流火电",
-    group: "交流设备",
+    attributeLibrary: "交流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "220 kV", ratedPower: "600 MW", sourceType: "火电" },
     terminalType: "ac",
@@ -1833,7 +1880,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-hydro-source",
     label: "交流水电",
-    group: "交流设备",
+    attributeLibrary: "交流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "220 kV", ratedPower: "300 MW", sourceType: "水电" },
     terminalType: "ac",
@@ -1842,7 +1889,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-nuclear-source",
     label: "交流核电",
-    group: "交流设备",
+    attributeLibrary: "交流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "500 kV", ratedPower: "1000 MW", sourceType: "核电" },
     terminalType: "ac",
@@ -1851,7 +1898,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-storage",
     label: "电化学储能",
-    group: "交流设备",
+    attributeLibrary: "交流设备",
     size: { width: 90, height: 56 },
     params: { ratedVoltage: "10 kV", ratedPower: "5 MW", energyCapacity: "20 MWh", stateOfCharge: "50%" },
     terminalType: "ac",
@@ -1860,13 +1907,13 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-electrolyzer",
     label: "交流电制氢",
-    group: "氢能设备",
+    attributeLibrary: "氢能设备",
     size: { width: 108, height: 62 },
     params: { ratedVoltage: "10 kV", ratedPower: "5 MW", hydrogenFlow: "1000 Nm3/h" },
     terminalType: "ac",
     terminalCount: 2,
     terminalTypes: ["ac", "h2"],
-    terminalLabels: ["交流端", "氢能端"],
+    terminalLabels: ["交流设备端", "氢能设备端"],
     terminalRoles: ["single-load", "single-source"],
     terminalAssociations: ["ac-load", "h2-source"],
     isContainer: true
@@ -1874,13 +1921,13 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-electrolyzer",
     label: "直流电制氢",
-    group: "氢能设备",
+    attributeLibrary: "氢能设备",
     size: { width: 108, height: 62 },
     params: { ratedVoltage: "750 V", ratedPower: "5 MW", hydrogenFlow: "1000 Nm3/h" },
     terminalType: "dc",
     terminalCount: 2,
     terminalTypes: ["dc", "h2"],
-    terminalLabels: ["直流端", "氢能端"],
+    terminalLabels: ["直流设备端", "氢能设备端"],
     terminalRoles: ["single-load", "single-source"],
     terminalAssociations: ["dc-load", "h2-source"],
     isContainer: true
@@ -1888,7 +1935,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-source",
     label: "氢源",
-    group: "氢能设备",
+    attributeLibrary: "氢能设备",
     size: { width: 84, height: 56 },
     params: { pressure: "20 MPa", hydrogenFlow: "1000 Nm3/h" },
     terminalType: "h2",
@@ -1897,7 +1944,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-tank",
     label: "储氢罐",
-    group: "氢能设备",
+    attributeLibrary: "氢能设备",
     size: { width: 126, height: 58 },
     params: { pressure: "35 MPa", capacity: "1000 kg" },
     terminalType: "h2",
@@ -1906,7 +1953,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-load",
     label: "氢荷",
-    group: "氢能设备",
+    attributeLibrary: "氢能设备",
     size: { width: 86, height: 58 },
     params: { pressure: "2 MPa", hydrogenDemand: "500 Nm3/h" },
     terminalType: "h2",
@@ -1915,13 +1962,13 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-fuel-cell",
     label: "交流燃料电池",
-    group: "氢能设备",
+    attributeLibrary: "氢能设备",
     size: { width: 108, height: 62 },
     params: { ratedVoltage: "10 kV", ratedPower: "3 MW", hydrogenFlow: "600 Nm3/h" },
     terminalType: "ac",
     terminalCount: 2,
     terminalTypes: ["ac", "h2"],
-    terminalLabels: ["交流端", "氢能端"],
+    terminalLabels: ["交流设备端", "氢能设备端"],
     terminalRoles: ["single-source", "single-load"],
     terminalAssociations: ["ac-generator", "h2-load"],
     isContainer: true
@@ -1929,13 +1976,13 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-fuel-cell",
     label: "直流燃料电池",
-    group: "氢能设备",
+    attributeLibrary: "氢能设备",
     size: { width: 108, height: 62 },
     params: { ratedVoltage: "750 V", ratedPower: "3 MW", hydrogenFlow: "600 Nm3/h" },
     terminalType: "dc",
     terminalCount: 2,
     terminalTypes: ["dc", "h2"],
-    terminalLabels: ["直流端", "氢能端"],
+    terminalLabels: ["直流设备端", "氢能设备端"],
     terminalRoles: ["single-source", "single-load"],
     terminalAssociations: ["dc-generator", "h2-load"],
     isContainer: true
@@ -1943,7 +1990,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-bus",
     label: "氢能母线",
-    group: "氢能设备",
+    attributeLibrary: "氢能设备",
     size: { width: 120, height: 28 },
     params: { pressure: "20 MPa" },
     terminalType: "h2",
@@ -1952,7 +1999,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-compressor",
     label: "氢压机",
-    group: "氢能设备",
+    attributeLibrary: "氢能设备",
     size: { width: 86, height: 58 },
     params: { inletPressure: "2 MPa", outletPressure: "20 MPa" },
     terminalType: "h2",
@@ -1961,7 +2008,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-pressure-reducer",
     label: "减压阀",
-    group: "氢能设备",
+    attributeLibrary: "氢能设备",
     size: { width: 82, height: 54 },
     params: { inletPressure: "20 MPa", outletPressure: "2 MPa" },
     terminalType: "h2",
@@ -1970,7 +2017,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-shutoff-valve",
     label: "截止阀",
-    group: "氢能设备",
+    attributeLibrary: "氢能设备",
     size: { width: 82, height: 54 },
     params: { status: "1" },
     terminalType: "h2",
@@ -1979,7 +2026,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-pipeline",
     label: "输氢管道",
-    group: "氢能设备",
+    attributeLibrary: "氢能设备",
     size: { width: 108, height: 36 },
     params: { length: "1 km", diameter: "DN200" },
     terminalType: "h2",
@@ -1988,13 +2035,13 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "heat-boiler",
     label: "供热锅炉",
-    group: "热能设备",
+    attributeLibrary: "热能设备",
     size: { width: 94, height: 60 },
     params: { heatPower: "10 MW", supplyTemperature: "95 degC" },
     terminalType: "heat",
     terminalCount: 1,
     terminalTypes: ["heat"],
-    terminalLabels: ["热力端"],
+    terminalLabels: ["热能设备端"],
     terminalRoles: ["single-source"],
     terminalAssociations: ["heat-source"],
     isContainer: true
@@ -2002,12 +2049,12 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "two-port-heat-boiler",
     label: "供热锅炉2",
-    group: "热能设备",
+    attributeLibrary: "热能设备",
     size: { width: 100, height: 64 },
     params: { heatPower: "10 MW", supplyTemperature: "95 degC", returnTemperature: "70 degC" },
     terminalType: "heat",
     terminalCount: 2,
-    terminalLabels: ["供水端", "回水端"],
+    terminalLabels: ["热能设备供水端", "热能设备回水端"],
     terminalRoles: ["double-source", "double-source"],
     terminalAssociations: ["heat2-source", ""],
     isContainer: true,
@@ -2019,7 +2066,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "heat-source",
     label: "单端热源",
-    group: "热能设备",
+    attributeLibrary: "热能设备",
     size: { width: 88, height: 56 },
     params: { heatPower: "10 MW", supplyTemperature: "95 degC" },
     terminalType: "heat",
@@ -2028,32 +2075,32 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "two-port-heat-source",
     label: "双端热源",
-    group: "热能设备",
+    attributeLibrary: "热能设备",
     size: { width: 96, height: 60 },
     params: { heatPower: "10 MW", supplyTemperature: "95 degC", returnTemperature: "70 degC" },
     terminalType: "heat",
     terminalCount: 2,
-    terminalLabels: ["供水端", "回水端"]
+    terminalLabels: ["热能设备供水端", "热能设备回水端"]
   },
   {
     kind: "heat-exchanger",
     label: "双端热交换器",
-    group: "热能设备",
+    attributeLibrary: "热能设备",
     size: { width: 96, height: 66 },
     params: { heatPower: "8 MW", efficiency: "0.98" },
     terminalType: "heat",
     terminalCount: 2,
-    terminalLabels: ["一次侧", "二次侧"]
+    terminalLabels: ["热能设备一次侧", "热能设备二次侧"]
   },
   {
     kind: "three-port-heat-exchanger",
     label: "三端热交换器",
-    group: "热能设备",
+    attributeLibrary: "热能设备",
     size: { width: 104, height: 72 },
     params: { heatPower: "8 MW", efficiency: "0.98" },
     terminalType: "heat",
     terminalCount: 3,
-    terminalLabels: ["单端侧", "双端侧供水", "双端侧回水"],
+    terminalLabels: ["热能设备单端侧", "热能设备双端侧供水", "热能设备双端侧回水"],
     terminalAnchors: [
       { x: -0.5, y: 0 },
       { x: 0.5, y: -0.25 },
@@ -2063,12 +2110,12 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "four-port-heat-exchanger",
     label: "四端热交换器",
-    group: "热能设备",
+    attributeLibrary: "热能设备",
     size: { width: 110, height: 76 },
     params: { heatPower: "8 MW", efficiency: "0.98" },
     terminalType: "heat",
     terminalCount: 4,
-    terminalLabels: ["一侧供水", "一侧回水", "二侧供水", "二侧回水"],
+    terminalLabels: ["热能设备一侧供水", "热能设备一侧回水", "热能设备二侧供水", "热能设备二侧回水"],
     terminalAnchors: [
       { x: -0.5, y: -0.25 },
       { x: -0.5, y: 0.25 },
@@ -2079,13 +2126,13 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-heater",
     label: "交流电制热",
-    group: "热能设备",
+    attributeLibrary: "热能设备",
     size: { width: 108, height: 62 },
     params: { ratedVoltage: "10 kV", ratedPower: "5 MW", heatPower: "4.8 MW" },
     terminalType: "ac",
     terminalCount: 2,
     terminalTypes: ["ac", "heat"],
-    terminalLabels: ["交流端", "热力端"],
+    terminalLabels: ["交流设备端", "热能设备端"],
     terminalRoles: ["single-load", "single-source"],
     terminalAssociations: ["ac-load", "heat-source"],
     isContainer: true
@@ -2093,13 +2140,13 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-two-port-heater",
     label: "交流电制热2",
-    group: "热能设备",
+    attributeLibrary: "热能设备",
     size: { width: 116, height: 68 },
     params: { ratedVoltage: "10 kV", ratedPower: "5 MW", heatPower: "4.8 MW", supplyTemperature: "95 degC", returnTemperature: "70 degC" },
     terminalType: "ac",
     terminalCount: 3,
     terminalTypes: ["ac", "heat", "heat"],
-    terminalLabels: ["交流端", "供水端", "回水端"],
+    terminalLabels: ["交流设备端", "热能设备供水端", "热能设备回水端"],
     terminalRoles: ["single-load", "double-source", "double-source"],
     terminalAssociations: ["ac-load", "heat2-source", ""],
     isContainer: true,
@@ -2112,13 +2159,13 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-heater",
     label: "直流电制热",
-    group: "热能设备",
+    attributeLibrary: "热能设备",
     size: { width: 108, height: 62 },
     params: { ratedVoltage: "750 V", ratedPower: "5 MW", heatPower: "4.8 MW" },
     terminalType: "dc",
     terminalCount: 2,
     terminalTypes: ["dc", "heat"],
-    terminalLabels: ["直流端", "热力端"],
+    terminalLabels: ["直流设备端", "热能设备端"],
     terminalRoles: ["single-load", "single-source"],
     terminalAssociations: ["dc-load", "heat-source"],
     isContainer: true
@@ -2126,13 +2173,13 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-two-port-heater",
     label: "直流电制热2",
-    group: "热能设备",
+    attributeLibrary: "热能设备",
     size: { width: 116, height: 68 },
     params: { ratedVoltage: "750 V", ratedPower: "5 MW", heatPower: "4.8 MW", supplyTemperature: "95 degC", returnTemperature: "70 degC" },
     terminalType: "dc",
     terminalCount: 3,
     terminalTypes: ["dc", "heat", "heat"],
-    terminalLabels: ["直流端", "供水端", "回水端"],
+    terminalLabels: ["直流设备端", "热能设备供水端", "热能设备回水端"],
     terminalRoles: ["single-load", "double-source", "double-source"],
     terminalAssociations: ["dc-load", "heat2-source", ""],
     isContainer: true,
@@ -2145,7 +2192,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "thermal-storage-tank",
     label: "储热罐",
-    group: "热能设备",
+    attributeLibrary: "热能设备",
     size: { width: 126, height: 58 },
     params: { capacity: "100 MWh", temperature: "90 degC" },
     terminalType: "heat",
@@ -2154,7 +2201,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "single-port-heat-load",
     label: "单端热荷",
-    group: "热能设备",
+    attributeLibrary: "热能设备",
     size: { width: 86, height: 58 },
     params: { heatDemand: "5 MW" },
     terminalType: "heat",
@@ -2163,17 +2210,17 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "two-port-heat-load",
     label: "双端热荷",
-    group: "热能设备",
+    attributeLibrary: "热能设备",
     size: { width: 94, height: 60 },
     params: { heatDemand: "5 MW", supplyTemperature: "95 degC", returnTemperature: "70 degC" },
     terminalType: "heat",
     terminalCount: 2,
-    terminalLabels: ["供水端", "回水端"]
+    terminalLabels: ["热能设备供水端", "热能设备回水端"]
   },
   {
     kind: "heat-bus",
     label: "热力母线",
-    group: "热能设备",
+    attributeLibrary: "热能设备",
     size: { width: 120, height: 28 },
     params: { temperature: "90 degC" },
     terminalType: "heat",
@@ -2182,7 +2229,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "heat-pipeline",
     label: "输热管道",
-    group: "热能设备",
+    attributeLibrary: "热能设备",
     size: { width: 108, height: 36 },
     params: { length: "1 km", diameter: "DN200" },
     terminalType: "heat",
@@ -2191,7 +2238,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "heat-pump",
     label: "循环水泵",
-    group: "热能设备",
+    attributeLibrary: "热能设备",
     size: { width: 86, height: 58 },
     params: { flowRate: "200 t/h", head: "30 m" },
     terminalType: "heat",
@@ -2200,7 +2247,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "heat-shutoff-valve",
     label: "截止阀",
-    group: "热能设备",
+    attributeLibrary: "热能设备",
     size: { width: 82, height: 54 },
     params: { status: "1" },
     terminalType: "heat",
@@ -2209,7 +2256,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-line",
     label: "交流线路",
-    group: "交流设备",
+    attributeLibrary: "交流设备",
     size: { width: 108, height: 36 },
     params: { r: "0.1", x: "1.0", b: "0.0" },
     terminalType: "ac",
@@ -2218,7 +2265,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-zero-branch",
     label: "交流零阻抗支路",
-    group: "交流设备",
+    attributeLibrary: "交流设备",
     size: { width: 108, height: 36 },
     params: {},
     terminalType: "ac",
@@ -2227,7 +2274,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-bus",
     label: "交流母线",
-    group: "交流设备",
+    attributeLibrary: "交流设备",
     size: { width: 120, height: 28 },
     params: { voltageLevel: "10 kV", section: "I段" },
     terminalType: "ac",
@@ -2236,7 +2283,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-switch",
     label: "交流开关",
-    group: "交流设备",
+    attributeLibrary: "交流设备",
     size: { width: 72, height: 48 },
     params: { status: "合闸", ratedCurrent: "1250 A" },
     terminalType: "ac",
@@ -2245,7 +2292,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-breaker",
     label: "交流断路器",
-    group: "交流设备",
+    attributeLibrary: "交流设备",
     size: { width: 78, height: 50 },
     params: {},
     terminalType: "ac",
@@ -2254,7 +2301,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-load",
     label: "交流负荷",
-    group: "交流设备",
+    attributeLibrary: "交流设备",
     size: { width: 86, height: 58 },
     params: { activePower: "5 MW", reactivePower: "1.2 Mvar", powerFactor: "0.95" },
     terminalType: "ac",
@@ -2263,7 +2310,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-transformer",
     label: "双绕组主变",
-    group: "交流设备",
+    attributeLibrary: "交流设备",
     size: { width: 92, height: 70 },
     params: { ratedCapacity: "50 MVA", voltageRatio: "110/10 kV", impedance: "10.5%" },
     terminalType: "ac",
@@ -2272,7 +2319,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-three-winding-transformer",
     label: "三绕组主变",
-    group: "交流设备",
+    attributeLibrary: "交流设备",
     size: { width: 104, height: 76 },
     params: { ratedCapacity: "90 MVA", voltageRatio: "220/110/10 kV", windingType: "三绕组", impedance: "12.0%" },
     terminalType: "ac",
@@ -2284,7 +2331,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-source",
     label: "直流电源",
-    group: "直流设备",
+    attributeLibrary: "直流设备",
     size: { width: 84, height: 56 },
     params: { ratedVoltage: "750 V", maxCurrent: "2000 A" },
     terminalType: "dc",
@@ -2293,7 +2340,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-wind-source",
     label: "直流风电",
-    group: "直流设备",
+    attributeLibrary: "直流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "1500 V", ratedPower: "10 MW", sourceType: "风电" },
     terminalType: "dc",
@@ -2302,7 +2349,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-pv-source",
     label: "直流光伏",
-    group: "直流设备",
+    attributeLibrary: "直流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "1500 V", ratedPower: "5 MW", sourceType: "光伏" },
     terminalType: "dc",
@@ -2311,7 +2358,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-storage",
     label: "电化学储能",
-    group: "直流设备",
+    attributeLibrary: "直流设备",
     size: { width: 90, height: 56 },
     params: { ratedVoltage: "750 V", ratedPower: "5 MW", energyCapacity: "20 MWh", stateOfCharge: "50%" },
     terminalType: "dc",
@@ -2320,7 +2367,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-line",
     label: "直流线路",
-    group: "直流设备",
+    attributeLibrary: "直流设备",
     size: { width: 108, height: 36 },
     params: { r: "1.0" },
     terminalType: "dc",
@@ -2329,7 +2376,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-zero-branch",
     label: "直流零阻抗支路",
-    group: "直流设备",
+    attributeLibrary: "直流设备",
     size: { width: 108, height: 36 },
     params: {},
     terminalType: "dc",
@@ -2338,7 +2385,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-bus",
     label: "直流母线",
-    group: "直流设备",
+    attributeLibrary: "直流设备",
     size: { width: 120, height: 28 },
     params: { voltageLevel: "750 V", pole: "正负极" },
     terminalType: "dc",
@@ -2347,7 +2394,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-switch",
     label: "直流开关",
-    group: "直流设备",
+    attributeLibrary: "直流设备",
     size: { width: 72, height: 48 },
     params: { status: "合闸", ratedCurrent: "1600 A" },
     terminalType: "dc",
@@ -2356,7 +2403,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-breaker",
     label: "直流断路器",
-    group: "直流设备",
+    attributeLibrary: "直流设备",
     size: { width: 78, height: 50 },
     params: {},
     terminalType: "dc",
@@ -2365,7 +2412,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-load",
     label: "直流负荷",
-    group: "直流设备",
+    attributeLibrary: "直流设备",
     size: { width: 86, height: 58 },
     params: { power: "1.5 MW", voltage: "750 V" },
     terminalType: "dc",
@@ -2374,7 +2421,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dcdc-converter",
     label: "DCDC变流器",
-    group: "直流设备",
+    attributeLibrary: "直流设备",
     size: { width: 112, height: 66 },
     params: { ratedPower: "5 MW", inputVoltage: "1500 V", outputVoltage: "750 V" },
     terminalType: "dc",
@@ -2383,7 +2430,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "acdc-converter",
     label: "ACDC变流器",
-    group: "直流设备",
+    attributeLibrary: "直流设备",
     size: { width: 112, height: 66 },
     params: { ratedPower: "10 MW", acVoltage: "10 kV", dcVoltage: "750 V" },
     terminalType: "ac",
@@ -2393,7 +2440,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "acac-converter",
     label: "ACAC变流器",
-    group: "交流设备",
+    attributeLibrary: "交流设备",
     size: { width: 112, height: 66 },
     params: {},
     terminalType: "ac",
@@ -2449,19 +2496,20 @@ export function terminalVoltageBaseNumber(value?: string): string {
   return normalizeVoltageBaseInput(value);
 }
 
-const terminalTypeLabel = (type: TerminalType) => {
-  if (type === "ac") return "交流";
-  if (type === "dc") return "直流";
-  if (type === "h2") return "氢能";
-  return "热能";
+export const TERMINAL_TYPE_LIBRARY_LABELS: Record<TerminalType, string> = {
+  ac: "交流设备",
+  dc: "直流设备",
+  h2: "氢能设备",
+  heat: "热能设备"
 };
 
+const terminalTypeLabel = (type: TerminalType) => TERMINAL_TYPE_LIBRARY_LABELS[type] ?? type;
+
 const terminalPortLabel = (type: TerminalType) => {
-  if (type === "ac") return "交流电";
-  if (type === "dc") return "直流电";
-  if (type === "h2") return "氢能";
-  return "热能";
+  return terminalTypeLabel(type);
 };
+
+const terminalLabelForType = (type: TerminalType, index: number) => `${terminalTypeLabel(type)}端${index + 1}`;
 
 const containerTerminalRoleLabel = (role: ContainerTerminalRole) => {
   if (role === "double-source") return "双端源";
@@ -2711,7 +2759,7 @@ export function describeContainerTerminalAssociations(template: DeviceTemplate):
       : terminalAssociations.length
         ? containerTerminalAssociationDefinitions[association].deviceModel
         : containerRelationCounterKey(relationKey || getContainerAssociationRelationKey(association, associationSourceIndex));
-    const terminalLabel = template.terminalLabels?.[index] ?? `${terminalTypeLabel(type)}端${index + 1}`;
+    const terminalLabel = template.terminalLabels?.[index] ?? terminalLabelForType(type, index);
     return {
       terminalIndex: index,
       terminalLabel,
@@ -2719,7 +2767,9 @@ export function describeContainerTerminalAssociations(template: DeviceTemplate):
       relationKey,
       relationName: dependent
         ? `随端子${associationSourceIndex + 1}关联${roleLabel}`
-        : relationDefinition?.cnName ?? `${terminalLabel}${roleLabel}关联idx`,
+        : transformerAssociation
+          ? relationDefinition?.cnName ?? `${terminalLabel}${roleLabel}关联idx`
+          : `${terminalLabel}${roleLabel}关联idx`,
       roleLabel,
       deviceModel,
       sourceTerminalIndex: associationSourceIndex,
@@ -2807,7 +2857,7 @@ export function buildContainerDeviceParameterViews(
   const fallbackTemplate: DeviceTemplate = template ?? {
     kind: node.kind,
     label: node.name,
-    group: "",
+    attributeLibrary: "",
     size: { width: 0, height: 0 },
     params: node.params,
     terminalType: node.terminals[0]?.type ?? "ac",
@@ -2839,15 +2889,15 @@ export function buildContainerDeviceParameterViews(
     const sourceTerminal = node.terminals[sourceTerminalIndex];
     const terminalIndexes = group.map((association) => association.terminalIndex);
     const terminals = terminalIndexes.map((index) => node.terminals[index]).filter((terminal): terminal is Terminal => Boolean(terminal));
-    const deviceType = containerRelationCounterKey(first.relationKey) || first.roleLabel;
+    const componentType = containerRelationCounterKey(first.relationKey) || first.roleLabel;
     const label = `${sourceTerminal?.label ?? first.terminalLabel}${first.roleLabel}`;
-    const sectionColumns = E_SECTION_COLUMNS[deviceType] ?? [];
+    const sectionColumns = E_SECTION_COLUMNS[componentType] ?? [];
     const rows = sectionColumns.length > 0
-      ? associatedDeviceRows(node, first.relationKey, deviceType, terminals)
+      ? associatedDeviceRows(node, first.relationKey, componentType, terminals)
       : [
           viewRow("idx", "idx", relationIdx),
           viewRow("name", "name", first.relationKey ? containerAssociatedDeviceName(node, first.relationKey) : `${node.name}_${label}`),
-          viewRow("device_model", "device_model", deviceType),
+          viewRow("device_model", "device_model", componentType),
           viewRow("relation_fields", "relation_fields", relationKeys.join(", ")),
           viewRow("terminals", "terminals", terminals.map((terminal) => terminal.label).join(", ")),
           viewRow("energy", "energy", uniqueNonEmpty(terminals.map((terminal) => terminal.type.toUpperCase())).join(" / "))
@@ -2871,7 +2921,7 @@ export function buildContainerDeviceParameterViews(
       id: `associated-${sourceTerminalIndex + 1}`,
       label,
       kind: "associated",
-      deviceType,
+      componentType,
       relationKeys,
       terminalIndexes,
       terminalLabels: terminals.map((terminal) => terminal.label).join(", "),
@@ -2921,7 +2971,7 @@ export function buildDefaultDeviceParameterDefinitions(
       const relationType = terminalTypes[sourceIndex] ?? type;
       const associationLabel = hasExplicitAssociations ? containerTerminalAssociationLabel(association) : containerTerminalRoleLabel(role);
       relationDefinitions.push({
-        cnName: `${terminalTypeLabel(relationType)}端${index + 1}${associationLabel}关联idx`,
+        cnName: `${terminalLabelForType(relationType, index)}${associationLabel}关联idx`,
         enName: hasExplicitAssociations ? getContainerAssociationRelationKey(association, index) : getContainerRelationKey(relationType, role, index),
         valueType: "integer",
         typicalValue: "",
@@ -2937,7 +2987,7 @@ export function buildDefaultDeviceParameterDefinitions(
   const nodeDefinitions = terminalTypes.map<DeviceParameterDefinition>((type, index) => {
     const enName = terminalTypes.length === 1 ? "node" : `t${index + 1}_node`;
     return {
-      cnName: `${terminalTypeLabel(type)}端${index + 1}节点号`,
+      cnName: `${terminalLabelForType(type, index)}节点号`,
       enName,
       valueType: "integer",
       typicalValue: "",
@@ -3866,12 +3916,12 @@ export function createTerminals(type: TerminalType, count: number): Terminal[] {
   }
   const safeCount = Math.max(1, Math.min(8, Math.round(count)));
   if (safeCount === 1) {
-    return [{ id: "t1", label: "端子1", type, anchor: { x: 0.5, y: 0 }, nodeNumber: makeNodeNumber(), vbase: defaultTerminalVbase(type) }];
+    return [{ id: "t1", label: terminalLabelForType(type, 0), type, anchor: { x: 0.5, y: 0 }, nodeNumber: makeNodeNumber(), vbase: defaultTerminalVbase(type) }];
   }
   if (safeCount === 2) {
     return [
-      { id: "t1", label: "端子1", type, anchor: { x: -0.5, y: 0 }, nodeNumber: makeNodeNumber(), vbase: defaultTerminalVbase(type) },
-      { id: "t2", label: "端子2", type, anchor: { x: 0.5, y: 0 }, nodeNumber: makeNodeNumber(), vbase: defaultTerminalVbase(type) }
+      { id: "t1", label: terminalLabelForType(type, 0), type, anchor: { x: -0.5, y: 0 }, nodeNumber: makeNodeNumber(), vbase: defaultTerminalVbase(type) },
+      { id: "t2", label: terminalLabelForType(type, 1), type, anchor: { x: 0.5, y: 0 }, nodeNumber: makeNodeNumber(), vbase: defaultTerminalVbase(type) }
     ];
   }
   const anchors = [
@@ -3886,7 +3936,7 @@ export function createTerminals(type: TerminalType, count: number): Terminal[] {
   ];
   return anchors.slice(0, safeCount).map((anchor, index) => ({
     id: `t${index + 1}`,
-    label: `端子${index + 1}`,
+    label: terminalLabelForType(type, index),
     type,
     anchor,
     nodeNumber: makeNodeNumber(),
@@ -3905,7 +3955,7 @@ function createTemplateTerminals(template: DeviceTemplate): Terminal[] {
   const anchors = createTerminals(template.terminalType, template.terminalTypes.length);
   return template.terminalTypes.map((type, index) => ({
     ...anchors[index],
-    label: template.terminalLabels?.[index] ?? `端子${index + 1}`,
+    label: template.terminalLabels?.[index] ?? terminalLabelForType(type, index),
     anchor: template.terminalAnchors?.[index] ?? anchors[index].anchor,
     type,
     vbase: defaultTerminalVbase(type)
@@ -3948,7 +3998,7 @@ function virtualBusTerminal(node: Pick<ModelNode, "kind" | "terminals">, termina
   const index = Math.max(1, Number.parseInt(terminalId?.replace(/^t/, "") ?? "1", 10) || 1);
   return {
     id: terminalId || `t${index}`,
-    label: `端子${index}`,
+    label: terminalLabelForType(type, index - 1),
     type,
     anchor: busTerminalAnchor(index - 1),
     nodeNumber: "0",
@@ -3965,6 +4015,7 @@ export function normalizeNodeTerminalsByTemplate(node: ModelNode): ModelNode {
   const expectedTypes = templateTerminalTypes(template);
   const terminals = node.terminals.map((terminal, index) => {
     const expectedType = expectedTypes[index];
+    const expectedLabel = template.terminalLabels?.[index] ?? (expectedType ? terminalLabelForType(expectedType, index) : undefined);
     const expectedAnchor = template.terminalAnchors?.[index];
     let nextTerminal = terminal;
     if (expectedType && terminal.type !== expectedType) {
@@ -3976,6 +4027,13 @@ export function normalizeNodeTerminalsByTemplate(node: ModelNode): ModelNode {
         vbase: shouldResetVbase
           ? defaultTerminalVbase(expectedType)
           : terminal.vbase
+      };
+    }
+    if (expectedLabel && nextTerminal.label !== expectedLabel) {
+      changed = true;
+      nextTerminal = {
+        ...nextTerminal,
+        label: expectedLabel
       };
     }
     if (expectedAnchor && !samePoint(nextTerminal.anchor, expectedAnchor)) {
@@ -4394,7 +4452,7 @@ function createDynamicBusTerminal(node: ModelNode, index: number): Terminal {
   const sameTypeFallback = node.terminals.find((terminal) => terminal.type === type);
   return {
     id,
-    label: existing?.label ?? `端子${index + 1}`,
+    label: terminalLabelForType(type, index),
     type,
     anchor: existing?.anchor ?? busTerminalAnchor(index),
     nodeNumber: existing?.nodeNumber ?? makeNodeNumber(),
@@ -4602,7 +4660,7 @@ export function buildElementTree(
       .map<ElementTreeChildItem>((view) => ({
         id: `${node.id}:${view.id}`,
         label: view.label,
-        deviceType: view.deviceType ?? "",
+        componentType: view.componentType ?? "",
         idx: view.rows.find((row) => row.key === "idx")?.value ?? "",
         name: view.rows.find((row) => row.key === "name")?.value ?? "",
         nameKey: view.relationKeys?.[0] ? containerRelationNameKey(view.relationKeys[0]) : "",

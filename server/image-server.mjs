@@ -341,7 +341,7 @@ function normalizeSchemesForStorage(schemes) {
 function inferESection(kind, params = {}) {
   if (kind === "ac-bus") return "ACRealBs";
   if (kind === "dc-bus") return "DCRealBs";
-  if (params.source_section && eSectionColumns[params.source_section]) return params.source_section;
+  if (params.component_type && eSectionColumns[params.component_type]) return params.component_type;
   if (kind === "ac-line") return "ACBranch";
   if (kind === "dc-line") return "DCBranch";
   if (kind === "ac-load") return "ACLoad";
