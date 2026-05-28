@@ -1061,6 +1061,13 @@ button:disabled {
   stroke-width: 4;
 }
 
+.boundary-bus-internal-connector {
+  stroke: var(--connection-color, #334155);
+  fill: none;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
 .bus-connection-dot {
   stroke: #ffffff;
   stroke-width: 2.5;
@@ -1205,7 +1212,6 @@ button:disabled {
   stroke: #64748b;
   stroke-width: 2;
   stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
 

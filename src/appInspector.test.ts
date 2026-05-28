@@ -63,6 +63,13 @@ describe("graph inspector panel", () => {
     expect(terminalLabelBlock).toContain("TERMINAL_TYPE_LIBRARY_LABELS");
   });
 
+  test("lets terminal stubs scale with the view like device glyph strokes", async () => {
+    const styles = await readStyles();
+    const terminalStubBlock = cssRuleBlock(styles, ".terminal-stub");
+
+    expect(terminalStubBlock).not.toContain("vector-effect");
+  });
+
   test("manages custom component libraries from the new-device manager tree", async () => {
     const source = await readAppSource();
     const styles = await readStyles();

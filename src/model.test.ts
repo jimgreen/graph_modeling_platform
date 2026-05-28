@@ -102,9 +102,12 @@ import {
   projectPointToBusCenterline,
   reconcileOverlappingTerminalConnections,
   terminalStubSegment,
+  terminalStubStrokeWidth,
   terminalVoltageBaseNumber,
   topologyCalculationMessage,
   voltageLevelColor,
+  boundaryBusInternalConnectorSegment,
+  boundaryBusInternalConnectorStrokeWidth,
   DEFAULT_COLOR_PALETTE,
   serializeProject,
   deserializeProject,
@@ -891,7 +894,7 @@ describe("power system model", () => {
     expect(normalizeVoltageBaseInput("kV")).toBe("");
   });
 
-  test("draws fixed-length terminal stubs from the device body toward visible terminals", () => {
+  test("scales terminal stubs from the device body toward visible terminals", () => {
     expect(terminalStubSegment({ anchor: { x: 0.5, y: 0 } })).toEqual({
       from: { x: -24, y: 0 },
       to: { x: 0, y: 0 }
@@ -912,9 +915,17 @@ describe("power system model", () => {
       from: { x: 24, y: 0 },
       to: { x: 0, y: 0 }
     });
+    expect(terminalStubSegment({ anchor: { x: 0.5, y: 0 } }, 2, 0.5)).toEqual({
+      from: { x: -48, y: 0 },
+      to: { x: 0, y: 0 }
+    });
+    expect(terminalStubSegment({ anchor: { x: 0, y: 0.5 } }, 2, 0.5)).toEqual({
+      from: { x: 0, y: -12 },
+      to: { x: 0, y: 0 }
+    });
   });
 
-  test("uses the device glyph line color and width for terminal stubs", () => {
+  test("resolves device glyph line color and width from variant and params", () => {
     const acLine = createDefaultNode("ac-line", { x: 100, y: 100 });
     expect(getDeviceStrokeColor(acLine)).toBe("#2563eb");
     expect(getDeviceStrokeWidth(acLine)).toBe(4);
@@ -930,6 +941,51 @@ describe("power system model", () => {
     const electrolyzer = createDefaultNode("ac-electrolyzer", { x: 340, y: 100 });
     expect(getDeviceStrokeColor(electrolyzer)).toBe("#7c3aed");
     expect(getDeviceStrokeWidth(electrolyzer)).toBe(2.3);
+  });
+
+  test("scales terminal stub stroke width across the stub direction", () => {
+    const scaledLine = { ...createDefaultNode("ac-line", { x: 100, y: 100 }), scaleX: 2, scaleY: 0.5 };
+
+    expect(terminalStubStrokeWidth(scaledLine, { anchor: { x: 0.5, y: 0 } })).toBe(2);
+    expect(terminalStubStrokeWidth(scaledLine, { anchor: { x: 0, y: 0.5 } })).toBe(8);
+  });
+
+  test("builds shortest internal connectors from storage tank boundary endpoints to the tank body", () => {
+    const thermalTank = createDefaultNode("thermal-storage-tank", { x: 200, y: 120 });
+    const hydrogenTank = createDefaultNode("hydrogen-tank", { x: 360, y: 120 });
+    const heatBus = createDefaultNode("heat-bus", { x: 520, y: 120 });
+
+    const thermalEndpoint = projectPointToBusCenterline(thermalTank, { x: 100, y: 120 });
+    const thermalSegment = boundaryBusInternalConnectorSegment(thermalTank, thermalEndpoint);
+    expect(thermalSegment).toEqual({
+      from: { x: 137, y: 120 },
+      to: { x: 147, y: 120 }
+    });
+
+    const movedThermalEndpoint = projectPointToBusCenterline(thermalTank, { x: 300, y: 128 });
+    const movedThermalSegment = boundaryBusInternalConnectorSegment(thermalTank, movedThermalEndpoint);
+    expect(movedThermalSegment).toEqual({
+      from: { x: 263, y: 128 },
+      to: { x: 253, y: 128 }
+    });
+
+    const hydrogenEndpoint = projectPointToBusCenterline(hydrogenTank, { x: 300, y: 120 });
+    const hydrogenSegment = boundaryBusInternalConnectorSegment(hydrogenTank, hydrogenEndpoint);
+    expect(hydrogenSegment).toEqual({
+      from: { x: 297, y: 120 },
+      to: { x: 307, y: 120 }
+    });
+
+    expect(boundaryBusInternalConnectorSegment(heatBus, projectPointToBusCenterline(heatBus, { x: 470, y: 120 }))).toBeNull();
+  });
+
+  test("scales storage tank internal connector stroke width with the connector cross axis", () => {
+    const tank = { ...createDefaultNode("thermal-storage-tank", { x: 200, y: 120 }), scaleX: 2, scaleY: 0.5 };
+    const endpoint = projectPointToBusCenterline(tank, { x: 80, y: 120 });
+    const segment = boundaryBusInternalConnectorSegment(tank, endpoint);
+
+    expect(segment).not.toBeNull();
+    expect(boundaryBusInternalConnectorStrokeWidth(tank, segment!)).toBe(1.2);
   });
 
   test("allocates permanent device idx by E section without reusing deleted gaps", () => {
@@ -1572,6 +1628,36 @@ describe("power system model", () => {
     expect(validation.issues).toEqual([]);
     expect(validation.route?.points[0]).toEqual(getTerminalPoint(source, "t1"));
     expect(validation.route?.points[validation.route.points.length - 1]).toEqual(getTerminalPoint(target, "t1"));
+  });
+
+  test("commits a connection endpoint snapped to a tall bus without treating the bus body as blocked space", () => {
+    const source = { ...createDefaultNode("ac-source", { x: 100, y: 180 }), id: "source" };
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 360, y: 180 }),
+      id: "tall-bus",
+      size: { width: 260, height: 160 }
+    };
+    const edge: Edge = {
+      id: "tall-bus-snap",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: projectPointToBusCenterline(bus, { x: 300, y: 240 })
+    };
+
+    const prepared = prepareConnectionEdgeForCommit([source, bus], [edge], edge.id, { width: 640, height: 360 });
+    const validation = prepared.edge
+      ? validateConnectionEdgeRoute([source, bus], [prepared.edge], edge.id, { width: 640, height: 360 })
+      : prepared;
+    const route = prepared.edge
+      ? routeEdgesForRendering([source, bus], [prepared.edge], { width: 640, height: 360 })[0]
+      : undefined;
+
+    expect(prepared.ok).toBe(true);
+    expect(validation.ok).toBe(true);
+    expect(validation.issues).toEqual([]);
+    expect(route?.points[route.points.length - 2].y).toBeGreaterThan(bus.position.y + bus.size.height / 2);
   });
 
   test("branches a second connection from the same terminal without treating the shared endpoint stub as impossible", () => {

@@ -79,8 +79,9 @@ import {
   getDeviceGlyphVariant,
   getConnectionStrokeColor,
   getDeviceStrokeColor,
-  getDeviceStrokeWidth,
   getTerminalDisplayColor,
+  boundaryBusInternalConnectorSegment,
+  boundaryBusInternalConnectorStrokeWidth,
   getElementFocusPoint,
   getMovableRouteSegmentIndexes,
   getBusTerminalType,
@@ -164,6 +165,7 @@ import {
   renameSavedProject,
   moveOrthogonalRouteSegment,
   terminalStubSegment,
+  terminalStubStrokeWidth,
   TERMINAL_TYPE_LIBRARY_LABELS,
   terminalVoltageBaseNumber,
   terminalTypeColor,
@@ -2060,15 +2062,16 @@ function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorDisplayM
   const nodeScaleY = getNodeScaleY(node);
   const inverseScaleX = nodeScaleX === 0 ? 1 : 1 / nodeScaleX;
   const inverseScaleY = nodeScaleY === 0 ? 1 : 1 / nodeScaleY;
-  const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
-  const strokeWidth = getDeviceStrokeWidth(node);
+  const dashArray = svgStrokeDashArray(node.params.strokeStyle);
+  const dashAttribute = dashArray ? ` stroke-dasharray="${escapeXml(dashArray)}"` : "";
   return node.terminals
     .map((terminal) => {
       const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY);
+      const strokeWidth = terminalStubStrokeWidth(node, terminal);
       const terminalColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
       const label = `${terminal.label} / ${terminal.type.toUpperCase()}`;
       return `<g class="export-terminal ${terminal.type}" transform="translate(${terminal.anchor.x * node.size.width} ${terminal.anchor.y * node.size.height}) scale(${inverseScaleX} ${inverseScaleY})">
-  <line class="export-terminal-stub ${terminal.type}" x1="${stub.from.x}" y1="${stub.from.y}" x2="${stub.to.x}" y2="${stub.to.y}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+  <line class="export-terminal-stub ${terminal.type}" x1="${stub.from.x}" y1="${stub.from.y}" x2="${stub.to.x}" y2="${stub.to.y}" stroke="${terminalColor}" stroke-width="${formatSvgNumber(strokeWidth)}" stroke-linecap="round"${dashAttribute}/>
   <circle class="export-terminal-dot ${terminal.type}" cx="0" cy="0" r="6" fill="${terminalColor}" stroke="#ffffff" stroke-width="2" vector-effect="non-scaling-stroke"><title>${escapeXml(label)}</title></circle>
 </g>`;
     })
@@ -3026,11 +3029,34 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
   const colorPalette = normalizeColorPalette(canvasSize.colorPalette ?? DEFAULT_COLOR_PALETTE);
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const edgeById = new Map(edges.map((edge) => [edge.id, edge]));
+  const buildBoundaryBusInternalConnectorMarkup = (edge: Edge, endpoint: "source" | "target", stroke: string) => {
+    const node = nodeById.get(endpoint === "source" ? edge.sourceId : edge.targetId);
+    if (!node) {
+      return "";
+    }
+    const point = getModelEdgeEndpointPoint(
+      node,
+      endpoint === "source" ? edge.sourcePoint : edge.targetPoint,
+      endpoint === "source" ? edge.sourceTerminalId : edge.targetTerminalId
+    );
+    const segment = boundaryBusInternalConnectorSegment(node, point);
+    if (!segment) {
+      return "";
+    }
+    const dashArray = svgStrokeDashArray(node.params.strokeStyle);
+    const dashAttribute = dashArray ? ` stroke-dasharray="${escapeXml(dashArray)}"` : "";
+    return `<line class="export-boundary-bus-internal-connector" x1="${formatSvgNumber(segment.from.x)}" y1="${formatSvgNumber(segment.from.y)}" x2="${formatSvgNumber(segment.to.x)}" y2="${formatSvgNumber(segment.to.y)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(boundaryBusInternalConnectorStrokeWidth(node, segment))}" stroke-linecap="round"${dashAttribute}/>`;
+  };
   const edgeMarkup = routeEdgesForStoredRendering(nodes, edges, canvasSize)
     .map((route) => {
       const edge = edgeById.get(route.edgeId);
       const stroke = edge ? getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette) : "#334155";
-      return `<path d="${route.path}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+      const internalConnectors = edge
+        ? [buildBoundaryBusInternalConnectorMarkup(edge, "source", stroke), buildBoundaryBusInternalConnectorMarkup(edge, "target", stroke)]
+            .filter(Boolean)
+            .join("\n")
+        : "";
+      return `<path d="${route.path}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${internalConnectors ? `\n${internalConnectors}` : ""}`;
     })
     .join("\n");
   const nodeMarkup = nodes
@@ -3311,6 +3337,27 @@ export function App() {
   const connectionLineStyle = (edgeId: string) => {
     const edge = edgeById.get(edgeId);
     return edge ? ({ "--connection-color": getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette) } as CSSProperties) : undefined;
+  };
+  const renderBoundaryBusInternalConnector = (node: ModelNode | undefined, point: Point | undefined, key: string) => {
+    if (!node || !point) {
+      return null;
+    }
+    const segment = boundaryBusInternalConnectorSegment(node, point);
+    if (!segment) {
+      return null;
+    }
+    return (
+      <line
+        key={key}
+        className="boundary-bus-internal-connector"
+        x1={segment.from.x}
+        y1={segment.from.y}
+        x2={segment.to.x}
+        y2={segment.to.y}
+        strokeWidth={boundaryBusInternalConnectorStrokeWidth(node, segment)}
+        strokeDasharray={svgStrokeDashArray(node.params.strokeStyle)}
+      />
+    );
   };
   const currentModelVoltageColorKeys = useMemo(() => {
     const keys = new Set<string>();
@@ -10539,6 +10586,8 @@ export function App() {
                     onDoubleClick={editable ? (event) => insertManualBendFromEdgePath(event, edge.id, route.points) : undefined}
                     onPointerDown={editable ? (event) => handleEdgePathPointerDown(event, edge.id, route.points) : undefined}
                   />
+                  {renderBoundaryBusInternalConnector(sourceNode, sourceBusDotPoint, `${edge.id}-source-internal-connector`)}
+                  {renderBoundaryBusInternalConnector(targetNode, targetBusDotPoint, `${edge.id}-target-internal-connector`)}
                   {sourceBusDotPoint && (
                     <circle
                       className="bus-connection-dot"
@@ -10661,6 +10710,7 @@ export function App() {
               const nodeIsBus = isBusNode(node);
               const inverseScaleX = nodeScaleX === 0 ? 1 : 1 / nodeScaleX;
               const inverseScaleY = nodeScaleY === 0 ? 1 : 1 / nodeScaleY;
+              const terminalStubDashArray = svgStrokeDashArray(node.params.strokeStyle);
               const terminalControlTransform = (x: number, y: number) => `translate(${x} ${y}) scale(${inverseScaleX} ${inverseScaleY})`;
               const handleTransform = (x: number, y: number) => `translate(${x} ${y})`;
               const includeUprightContentInHandles = Boolean(imageHref || foregroundImageHref || node.kind === "static-text" || node.kind === "static-image");
@@ -10811,9 +10861,10 @@ export function App() {
                         >
                           <line
                             className={`terminal-stub ${terminal.type} ${disabled ? "disabled" : ""}`}
+                            strokeDasharray={terminalStubDashArray}
                             style={{
                               stroke: disabled ? "#cbd5e1" : terminalDisplayColor,
-                              strokeWidth: getDeviceStrokeWidth(node)
+                              strokeWidth: terminalStubStrokeWidth(node, terminal)
                             }}
                             x1={stub.from.x}
                             y1={stub.from.y}
@@ -10951,6 +11002,10 @@ export function App() {
                   : route.path;
               const sourcePoint = getEdgeEndpointPoint(edge, "source");
               const targetPoint = getEdgeEndpointPoint(edge, "target");
+              const sourceNode = nodeById.get(edge.sourceId);
+              const targetNode = nodeById.get(edge.targetId);
+              const sourceBusDotPoint = sourcePoint && sourceNode && isBusNode(sourceNode) ? sourcePoint : undefined;
+              const targetBusDotPoint = targetPoint && targetNode && isBusNode(targetNode) ? targetPoint : undefined;
               const movableSegmentIndexes = new Set(getMovableRouteSegmentIndexes(routePoints));
               return (
                 <g className="connection-group selected topmost" style={connectionLineStyle(edge.id)}>
@@ -11005,6 +11060,8 @@ export function App() {
                       />
                     );
                   })}
+                  {renderBoundaryBusInternalConnector(sourceNode, sourceBusDotPoint, `${edge.id}-topmost-source-internal-connector`)}
+                  {renderBoundaryBusInternalConnector(targetNode, targetBusDotPoint, `${edge.id}-topmost-target-internal-connector`)}
                   {sourcePoint && (
                     <circle
                       className="edge-endpoint-handle"

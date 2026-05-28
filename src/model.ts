@@ -4136,15 +4136,28 @@ export function terminalStubSegment(
     y: terminal.anchor.y * (Math.sign(scaleY) || 1)
   };
   if (Math.abs(displayedAnchor.x) >= Math.abs(displayedAnchor.y)) {
+    const scaledLength = length * Math.abs(scaleX || 1);
     return {
-      from: { x: displayedAnchor.x >= 0 ? -length : length, y: 0 },
+      from: { x: displayedAnchor.x >= 0 ? -scaledLength : scaledLength, y: 0 },
       to: { x: 0, y: 0 }
     };
   }
+  const scaledLength = length * Math.abs(scaleY || 1);
   return {
-    from: { x: 0, y: displayedAnchor.y >= 0 ? -length : length },
+    from: { x: 0, y: displayedAnchor.y >= 0 ? -scaledLength : scaledLength },
     to: { x: 0, y: 0 }
   };
+}
+
+export function terminalStubStrokeWidth(node: ModelNode, terminal: Pick<Terminal, "anchor">): number {
+  const scaleX = Math.abs(getNodeScaleX(node) || 1);
+  const scaleY = Math.abs(getNodeScaleY(node) || 1);
+  const displayedAnchor = {
+    x: terminal.anchor.x * (Math.sign(getNodeScaleX(node)) || 1),
+    y: terminal.anchor.y * (Math.sign(getNodeScaleY(node)) || 1)
+  };
+  const crossAxisScale = Math.abs(displayedAnchor.x) >= Math.abs(displayedAnchor.y) ? scaleY : scaleX;
+  return getDeviceStrokeWidth(node) * crossAxisScale;
 }
 
 export function getTerminal(node: ModelNode, terminalId?: string): Terminal {
@@ -4658,6 +4671,95 @@ function projectPointToNodeBoundary(node: ModelNode, point: Point): Point {
           y: local.y >= 0 ? halfHeight : -halfHeight
         };
   return nodeLocalToPoint(node, projected);
+}
+
+function closestPointOnSegment(point: Point, start: Point, end: Point): Point {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared === 0) {
+    return start;
+  }
+  const ratio = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared));
+  return {
+    x: start.x + dx * ratio,
+    y: start.y + dy * ratio
+  };
+}
+
+function cubicBezierPoint(start: Point, controlA: Point, controlB: Point, end: Point, ratio: number): Point {
+  const inverse = 1 - ratio;
+  const inverseSquared = inverse * inverse;
+  const ratioSquared = ratio * ratio;
+  return {
+    x: inverseSquared * inverse * start.x + 3 * inverseSquared * ratio * controlA.x + 3 * inverse * ratioSquared * controlB.x + ratioSquared * ratio * end.x,
+    y: inverseSquared * inverse * start.y + 3 * inverseSquared * ratio * controlA.y + 3 * inverse * ratioSquared * controlB.y + ratioSquared * ratio * end.y
+  };
+}
+
+function closestPointOnTankBody(localPoint: Point, node: ModelNode): Point {
+  const scaleX = Math.abs(getNodeScaleX(node) || 1);
+  const scaleY = Math.abs(getNodeScaleY(node) || 1);
+  const halfWidth = Math.max(1, (node.size.width * scaleX) / 2);
+  const halfHeight = Math.max(1, (node.size.height * scaleY) / 2);
+  const sideInset = Math.min(10 * scaleX, halfWidth * 0.45);
+  const bodyHalfWidth = Math.max(1, halfWidth - sideInset);
+  const sideTop = -halfHeight / 2;
+  const sideBottom = halfHeight / 2;
+  const topLeft = { x: -bodyHalfWidth, y: sideTop };
+  const topRight = { x: bodyHalfWidth, y: sideTop };
+  const bottomRight = { x: bodyHalfWidth, y: sideBottom };
+  const bottomLeft = { x: -bodyHalfWidth, y: sideBottom };
+  const topControlA = { x: -(node.size.width * scaleX) / 3, y: -halfHeight };
+  const topControlB = { x: (node.size.width * scaleX) / 3, y: -halfHeight };
+  const bottomControlA = { x: (node.size.width * scaleX) / 3, y: halfHeight };
+  const bottomControlB = { x: -(node.size.width * scaleX) / 3, y: halfHeight };
+  const candidates: Point[] = [
+    closestPointOnSegment(localPoint, topLeft, bottomLeft),
+    closestPointOnSegment(localPoint, topRight, bottomRight)
+  ];
+  const sampleBezier = (start: Point, controlA: Point, controlB: Point, end: Point) => {
+    let previous = start;
+    for (let index = 1; index <= 32; index += 1) {
+      const next = cubicBezierPoint(start, controlA, controlB, end, index / 32);
+      candidates.push(closestPointOnSegment(localPoint, previous, next));
+      previous = next;
+    }
+  };
+  sampleBezier(topLeft, topControlA, topControlB, topRight);
+  sampleBezier(bottomRight, bottomControlA, bottomControlB, bottomLeft);
+  return candidates.reduce((best, candidate) => {
+    const bestDistance = Math.hypot(localPoint.x - best.x, localPoint.y - best.y);
+    const candidateDistance = Math.hypot(localPoint.x - candidate.x, localPoint.y - candidate.y);
+    return candidateDistance < bestDistance ? candidate : best;
+  }, candidates[0]);
+}
+
+export function boundaryBusInternalConnectorSegment(node: ModelNode, endpointPoint: Point): { from: Point; to: Point } | null {
+  if (!isBoundaryBusNode(node)) {
+    return null;
+  }
+  const from = projectPointToNodeBoundary(node, endpointPoint);
+  const localFrom = pointToNodeLocal(node, from);
+  const localTo = closestPointOnTankBody(localFrom, node);
+  if (Math.hypot(localTo.x - localFrom.x, localTo.y - localFrom.y) < 0.5) {
+    return null;
+  }
+  return {
+    from,
+    to: nodeLocalToPoint(node, localTo)
+  };
+}
+
+export function boundaryBusInternalConnectorStrokeWidth(node: ModelNode, segment: { from: Point; to: Point }): number {
+  const localFrom = pointToNodeLocal(node, segment.from);
+  const localTo = pointToNodeLocal(node, segment.to);
+  const dx = Math.abs(localTo.x - localFrom.x);
+  const dy = Math.abs(localTo.y - localFrom.y);
+  const scaleX = Math.abs(getNodeScaleX(node) || 1);
+  const scaleY = Math.abs(getNodeScaleY(node) || 1);
+  const crossAxisScale = dx > dy * 1.5 ? scaleY : dy > dx * 1.5 ? scaleX : (scaleX + scaleY) / 2;
+  return Math.round(getDeviceStrokeWidth(node) * crossAxisScale * 1000) / 1000;
 }
 
 export function projectPointToBusCenterline(node: ModelNode, point: Point): Point {
@@ -6765,6 +6867,28 @@ function safeStubPoint(point: Point, normal: Point, blockers: ModelNode[], maxLe
   };
 }
 
+function endpointStubLengthOutsideOwnBody(point: Point, normal: Point, node: ModelNode, fallbackLength = ROUTE_ENDPOINT_STUB_LENGTH) {
+  const box = routeBlockerBox(node, ROUTE_BLOCKER_PADDING);
+  if (normal.x > 0 && point.y >= box.top && point.y <= box.bottom && point.x < box.right) {
+    return Math.max(fallbackLength, box.right - point.x + ROUTE_CLEARANCE);
+  }
+  if (normal.x < 0 && point.y >= box.top && point.y <= box.bottom && point.x > box.left) {
+    return Math.max(fallbackLength, point.x - box.left + ROUTE_CLEARANCE);
+  }
+  if (normal.y > 0 && point.x >= box.left && point.x <= box.right && point.y < box.bottom) {
+    return Math.max(fallbackLength, box.bottom - point.y + ROUTE_CLEARANCE);
+  }
+  if (normal.y < 0 && point.x >= box.left && point.x <= box.right && point.y > box.top) {
+    return Math.max(fallbackLength, point.y - box.top + ROUTE_CLEARANCE);
+  }
+  return fallbackLength;
+}
+
+function endpointStubPoint(point: Point, normal: Point, node: ModelNode, blockers: ModelNode[], fallbackLength = ROUTE_ENDPOINT_STUB_LENGTH) {
+  const length = endpointStubLengthOutsideOwnBody(point, normal, node, fallbackLength);
+  return safeStubPoint(point, normal, blockers, length);
+}
+
 function buildFullRoute(start: Point, startOut: Point, middle: Point[], endOut: Point, end: Point, bounds?: CanvasBounds) {
   const route = [
     start,
@@ -8054,8 +8178,8 @@ function buildEdgeRoutingContext(source: ModelNode, target: ModelNode, nodes: Mo
   return {
     start,
     end,
-    startOut: safeStubPoint(start, sourceNormal, blockers, stubLength),
-    endOut: safeStubPoint(end, targetNormal, blockers, stubLength),
+    startOut: endpointStubPoint(start, sourceNormal, source, blockers, stubLength),
+    endOut: endpointStubPoint(end, targetNormal, target, blockers, stubLength),
     blockers
   };
 }
@@ -8626,8 +8750,8 @@ export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes:
     target,
     ...relevantBlockersForRoute(source, target, nodes, initialStartOut, initialEndOut, false)
   ];
-  const startOut = safeStubPoint(start, sourceNormal, blockers, stubLength);
-  const endOut = safeStubPoint(end, targetNormal, blockers, stubLength);
+  const startOut = endpointStubPoint(start, sourceNormal, source, blockers, stubLength);
+  const endOut = endpointStubPoint(end, targetNormal, target, blockers, stubLength);
   if (edge?.manualPoints?.length) {
     const manualRoute = orthogonalizeRouteKeepingCollinear([start, startOut, ...edge.manualPoints, endOut, end]);
     const boundedManualRoute = bounds ? orthogonalizeRouteKeepingCollinear(manualRoute.map((point) => clampPointToBounds(point, bounds))) : manualRoute;

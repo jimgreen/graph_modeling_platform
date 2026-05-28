@@ -35,6 +35,27 @@ describe("SVG export", () => {
     expect(svg).toContain("M -10 -1 C -4 4 -4 9 -10 14");
   });
 
+  test("exports automatic storage tank internal connector lines for bus endpoints", () => {
+    const source = createDefaultNode("heat-source", { x: 100, y: 120 });
+    const tank = createDefaultNode("thermal-storage-tank", { x: 260, y: 120 });
+    const edges: Edge[] = [
+      {
+        id: "heat-edge",
+        sourceId: source.id,
+        targetId: tank.id,
+        sourceTerminalId: "t1",
+        targetTerminalId: "t1",
+        targetPoint: { x: 197, y: 120 }
+      }
+    ];
+
+    const svg = buildSvgDocument([source, tank], edges, { width: 420, height: 260 });
+
+    expect(svg).toContain('class="export-boundary-bus-internal-connector"');
+    expect(svg).toContain('x1="197" y1="120" x2="207" y2="120"');
+    expect(svg).toContain('stroke="#dc2626"');
+  });
+
   test("exports energy buses as square ended rectangles", () => {
     const buses = [
       createDefaultNode("ac-bus", { x: 120, y: 120 }),
@@ -66,6 +87,26 @@ describe("SVG export", () => {
 
     expect(svg).toContain('stroke="#2563eb"');
     expect(svg).toContain('stroke="#0f766e"');
+  });
+
+  test("exports terminal stubs with terminal color and scaled device line style", () => {
+    const acLine = createDefaultNode("ac-line", { x: 160, y: 120 });
+    acLine.scaleX = 2;
+    acLine.scaleY = 0.5;
+    acLine.params = {
+      ...acLine.params,
+      foregroundColor: "#123456",
+      lineWidth: "4",
+      strokeStyle: "dashed"
+    };
+
+    const svg = buildSvgDocument([acLine], [], { width: 360, height: 240 });
+    const terminalStubLine = svg.split("\n").find((line) => line.includes("export-terminal-stub ac")) ?? "";
+
+    expect(svg).toContain('class="export-terminal-stub ac"');
+    expect(svg).toContain('stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-dasharray="10 6"');
+    expect(terminalStubLine).not.toContain("vector-effect");
+    expect(svg).not.toContain('class="export-terminal-stub ac" x1="-48" y1="0" x2="0" y2="0" stroke="#123456"');
   });
 
   test("exports rotated and mirrored device geometry while text and image layers stay upright", () => {
