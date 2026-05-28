@@ -1446,7 +1446,7 @@ function defaultAttributeLibraryForComponentType(sectionName: string): Attribute
   if (section === "ACDCConverter" || section.startsWith("DC") || section.startsWith("DCDC") || section.startsWith("DCAC")) {
     return "直流设备";
   }
-  if (section.startsWith("AC") || section === "ThreePowerTransformer") {
+  if (section.startsWith("AC")) {
     return "交流设备";
   }
   return "交流设备";
@@ -3088,6 +3088,8 @@ export function App() {
   const [customDeviceTemplates, setCustomDeviceTemplates] = useState<DeviceTemplate[]>(() => readCustomDeviceTemplates());
   const [customDeviceDialogOpen, setCustomDeviceDialogOpen] = useState(false);
   const [customComponentTreeSelection, setCustomComponentTreeSelection] = useState<CustomComponentTreeSelection>({ kind: "attributeLibrary", attributeLibraryName: "交流设备" });
+  const [collapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeLibraries] = useState<AttributeLibrary[]>([]);
+  const [collapsedCustomComponentTreeTypes, setCollapsedCustomComponentTreeTypes] = useState<string[]>([]);
   const [editingCustomDeviceKind, setEditingCustomDeviceKind] = useState("");
   const [customDeviceDraft, setCustomDeviceDraft] = useState<CustomDeviceDraft>(() => createEmptyCustomDeviceDraft());
   const [deviceDefinitionOverrides, setDeviceDefinitionOverrides] = useState<Record<string, DeviceTemplateDefinitionOverride>>(() => readDeviceDefinitionOverrides());
@@ -9007,8 +9009,39 @@ export function App() {
     reader.readAsDataURL(file);
   };
 
-  const selectCustomAttributeLibrary = (attributeLibraryName: string) => {
+  const customComponentTreeTypeKey = (attributeLibraryName: string, componentType: string) =>
+    `${normalizeAttributeLibraryName(attributeLibraryName)}::${normalizeComponentTypeName(componentType)}`;
+
+  const ensureCustomComponentTreeExpanded = (attributeLibraryName: string, componentType?: string) => {
+    const normalizedLibrary = normalizeAttributeLibraryName(attributeLibraryName);
+    setCollapsedCustomComponentTreeLibraries((current) => current.filter((item) => normalizeAttributeLibraryName(item) !== normalizedLibrary));
+    if (componentType) {
+      const typeKey = customComponentTreeTypeKey(normalizedLibrary, componentType);
+      setCollapsedCustomComponentTreeTypes((current) => current.filter((item) => item !== typeKey));
+    }
+  };
+
+  const toggleCustomComponentTreeLibrary = (attributeLibraryName: string) => {
+    const normalizedLibrary = normalizeAttributeLibraryName(attributeLibraryName);
+    setCollapsedCustomComponentTreeLibraries((current) =>
+      current.some((item) => normalizeAttributeLibraryName(item) === normalizedLibrary)
+        ? current.filter((item) => normalizeAttributeLibraryName(item) !== normalizedLibrary)
+        : [...current, normalizedLibrary]
+    );
+  };
+
+  const toggleCustomComponentTreeType = (attributeLibraryName: string, componentType: string) => {
+    const typeKey = customComponentTreeTypeKey(attributeLibraryName, componentType);
+    setCollapsedCustomComponentTreeTypes((current) =>
+      current.includes(typeKey) ? current.filter((item) => item !== typeKey) : [...current, typeKey]
+    );
+  };
+
+  const selectCustomAttributeLibrary = (attributeLibraryName: string, options: { expand?: boolean } = {}) => {
     const group = normalizeAttributeLibraryName(attributeLibraryName);
+    if (options.expand !== false) {
+      ensureCustomComponentTreeExpanded(group);
+    }
     setCustomComponentTreeSelection({ kind: "attributeLibrary", attributeLibraryName: group });
     setEditingCustomDeviceKind("");
     setCustomDeviceDraft((current) => ({
@@ -9020,9 +9053,12 @@ export function App() {
     }));
   };
 
-  const selectCustomComponentType = (attributeLibraryName: string, sectionName: string) => {
+  const selectCustomComponentType = (attributeLibraryName: string, sectionName: string, options: { expand?: boolean } = {}) => {
     const group = normalizeAttributeLibraryName(attributeLibraryName);
     const section = normalizeComponentTypeName(sectionName);
+    if (options.expand !== false) {
+      ensureCustomComponentTreeExpanded(group, section);
+    }
     setCustomComponentTreeSelection({ kind: "componentType", attributeLibraryName: group, section });
     setEditingCustomDeviceKind("");
     setCustomDeviceDraft((current) => ({
@@ -9050,6 +9086,7 @@ export function App() {
     const customParams = (template.parameterDefinitions ?? parseCustomDefinitions(template.params))
       .filter((definition) => !defaultDefinitions.has(definition.enName.toLowerCase()) && definition.enName !== "component_type")
       .map((definition) => ({ ...definition, id: customParamId() }));
+    ensureCustomComponentTreeExpanded(attributeLibraryName, section);
     setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section, templateKind: template.kind });
     setEditingCustomDeviceKind(template.custom ? template.kind : "");
     setCustomDeviceDraft({
@@ -9155,6 +9192,8 @@ export function App() {
     setCustomAttributeLibraries((current) => current.filter((group) => normalizeAttributeLibraryName(group) !== attributeLibraryName));
     setExpandedAttributeLibraries((current) => current.filter((group) => normalizeAttributeLibraryName(group) !== attributeLibraryName));
     setExpandedDefinitionGroups((current) => current.filter((group) => normalizeAttributeLibraryName(group) !== attributeLibraryName));
+    setCollapsedCustomComponentTreeLibraries((current) => current.filter((group) => normalizeAttributeLibraryName(group) !== attributeLibraryName));
+    setCollapsedCustomComponentTreeTypes((current) => current.filter((key) => !key.startsWith(`${attributeLibraryName}::`)));
     setSelectedDefinitionKind((current) => (deletedKinds.has(current) ? "" : current));
     setCustomComponentTreeSelection({ kind: "attributeLibrary", attributeLibraryName: "交流设备" });
     setEditingCustomDeviceKind("");
@@ -9233,6 +9272,7 @@ export function App() {
     setCustomDeviceTemplates((current) => current.filter((template) => !deletedKinds.has(template.kind)));
     setSelectedDefinitionKind((current) => (deletedKinds.has(current) ? "" : current));
     setEditingCustomDeviceKind((current) => (deletedKinds.has(current) ? "" : current));
+    setCollapsedCustomComponentTreeTypes((current) => current.filter((key) => !key.endsWith(`::${componentType}`)));
     if (deletedKinds.size > 0) {
       setDeviceDefinitionOverrides((current) => {
         const next = { ...current };
@@ -9278,6 +9318,8 @@ export function App() {
       setCustomDeviceTemplates((current) => current.map((template) => normalizeAttributeLibraryName(template.attributeLibrary) === oldAttributeLibraryName ? { ...template, attributeLibrary: newAttributeLibraryName } : template));
       setExpandedAttributeLibraries((current) => current.map((group) => normalizeAttributeLibraryName(group) === oldAttributeLibraryName ? newAttributeLibraryName : group));
       setExpandedDefinitionGroups((current) => current.map((group) => normalizeAttributeLibraryName(group) === oldAttributeLibraryName ? newAttributeLibraryName : group));
+      setCollapsedCustomComponentTreeLibraries((current) => current.map((group) => normalizeAttributeLibraryName(group) === oldAttributeLibraryName ? newAttributeLibraryName : group));
+      setCollapsedCustomComponentTreeTypes((current) => current.map((key) => key.startsWith(`${oldAttributeLibraryName}::`) ? key.replace(`${oldAttributeLibraryName}::`, `${newAttributeLibraryName}::`) : key));
       setCustomComponentTreeSelection({ kind: "attributeLibrary", attributeLibraryName: newAttributeLibraryName });
       setCustomDeviceDraft((current) => ({
         ...current,
@@ -9313,6 +9355,9 @@ export function App() {
       );
       setCustomComponentTypes((current) => current.map((componentType) =>
         componentType.name.toLowerCase() === oldSection.toLowerCase() ? { ...componentType, name: newSection, attributeLibraryName } : componentType
+      ));
+      setCollapsedCustomComponentTreeTypes((current) => current.map((key) =>
+        key === customComponentTreeTypeKey(attributeLibraryName, oldSection) ? customComponentTreeTypeKey(attributeLibraryName, newSection) : key
       ));
       setCustomDeviceTemplates((current) => current.map((template) =>
         affectedKinds.has(template.kind)
@@ -9490,6 +9535,7 @@ export function App() {
       return [...current, template];
     });
     setExpandedAttributeLibraries((current) => Array.from(new Set([...current, attributeLibraryName])));
+    ensureCustomComponentTreeExpanded(attributeLibraryName, componentType);
     setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section: componentType, templateKind: customKind });
     setEditingCustomDeviceKind(customKind);
     setCustomDeviceDraft((current) => ({ ...current, error: "" }));
@@ -9512,6 +9558,7 @@ export function App() {
         {attributeLibraries.map((group) => {
           const typeGroups = groupedAttributeLibraryByComponentType[group] ?? [];
           const librarySelected = customComponentTreeSelection.kind === "attributeLibrary" && customComponentTreeSelection.attributeLibraryName === group;
+          const libraryCollapsed = collapsedCustomComponentTreeLibraries.some((item) => normalizeAttributeLibraryName(item) === group);
           return (
             <section className="custom-component-tree-library" key={group}>
               <button
@@ -9519,13 +9566,20 @@ export function App() {
                 className={`custom-component-tree-row library ${librarySelected ? "active" : ""}`}
                 role="treeitem"
                 aria-selected={librarySelected}
-                onClick={() => selectCustomAttributeLibrary(group)}
+                aria-expanded={!libraryCollapsed}
+                onClick={() => {
+                  selectCustomAttributeLibrary(group, { expand: false });
+                  toggleCustomComponentTreeLibrary(group);
+                }}
               >
+                {libraryCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                 <span>{group}</span>
                 <strong>{typeGroups.reduce((sum, typeGroup) => sum + typeGroup.templates.length, 0)}</strong>
               </button>
-              <div className="custom-component-tree-type-list" role="group">
+              {!libraryCollapsed && <div className="custom-component-tree-type-list" role="group">
                 {typeGroups.map((typeGroup) => {
+                  const typeKey = customComponentTreeTypeKey(group, typeGroup.section);
+                  const typeCollapsed = collapsedCustomComponentTreeTypes.includes(typeKey);
                   const typeSelected =
                     customComponentTreeSelection.kind === "componentType" &&
                     customComponentTreeSelection.attributeLibraryName === group &&
@@ -9537,12 +9591,17 @@ export function App() {
                         className={`custom-component-tree-row type ${typeSelected ? "active" : ""}`}
                         role="treeitem"
                         aria-selected={typeSelected}
-                        onClick={() => selectCustomComponentType(group, typeGroup.section)}
+                        aria-expanded={!typeCollapsed}
+                        onClick={() => {
+                          selectCustomComponentType(group, typeGroup.section, { expand: false });
+                          toggleCustomComponentTreeType(group, typeGroup.section);
+                        }}
                       >
+                        {typeCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                         <span>{typeGroup.section}</span>
                         <strong>{typeGroup.templates.length}</strong>
                       </button>
-                      <div className="custom-component-tree-components" role="group" aria-label={`${group}/${typeGroup.section}元件列表`}>
+                      {!typeCollapsed && <div className="custom-component-tree-components" role="group" aria-label={`${group}/${typeGroup.section}元件列表`}>
                         {typeGroup.templates.map((template) => {
                           const componentSelected =
                             customComponentTreeSelection.kind === "component" &&
@@ -9562,11 +9621,11 @@ export function App() {
                             </button>
                           );
                         })}
-                      </div>
+                      </div>}
                     </section>
                   );
                 })}
-              </div>
+              </div>}
             </section>
           );
         })}

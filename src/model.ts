@@ -401,7 +401,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   ACBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   DCBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   ACTransformer: ["idx", "name", "i_node", "j_node", "r", "x", "gt", "bt", "tap", "shift", "run_stat"],
-  ThreePowerTransformer: ["idx", "name", "run_stat", "idx_xf_t1", "idx_xf_t2", "idx_xf_t3"],
+  ACTransfomer3: ["idx", "name", "run_stat", "idx_xf_t1", "idx_xf_t2", "idx_xf_t3"],
   DCDCConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_set", "v_set", "run_stat"],
   DCACConverter: ["idx", "name", "ac_node", "dc_node", "r1", "r2", "control_type", "p_ac_set", "q_ac_set", "v_ac_set", "v_dc_set", "run_stat"],
   ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"],
@@ -502,6 +502,7 @@ export function inferESection(kind: string, params: Record<string, string> = {})
   if (kind === "ac-breaker") return "ACBreak";
   if (kind === "dc-breaker") return "DCBreak";
   if (kind === "ac-transformer" || kind === "ac-two-winding-transformer") return "ACTransformer";
+  if (kind === "ac-three-winding-transformer") return "ACTransfomer3";
   if (kind === "dcdc-converter") return "DCDCConverter";
   if (kind === "acdc-converter") return "DCACConverter";
   if (kind === "acac-converter") return "ACACConverter";
@@ -511,10 +512,13 @@ export function inferESection(kind: string, params: Record<string, string> = {})
 export type DeviceIndexCounters = Record<string, number>;
 
 function deviceIndexCounterKey(node: Pick<ModelNode, "kind" | "params">): string {
+  const section = inferESection(node.kind, node.params);
+  if (section === "ACTransfomer3") {
+    return section;
+  }
   if (isContainerParams(node.params)) {
     return String(node.kind);
   }
-  const section = inferESection(node.kind, node.params);
   if (section) {
     return section;
   }
@@ -984,7 +988,7 @@ const E_SECTION_OUTPUT_ORDER = [
   "ACSwitch",
   "ACBreak",
   "ACTransformer",
-  "ThreePowerTransformer",
+  "ACTransfomer3",
   "DCNode",
   "DCRealBs",
   "DCBranch",
@@ -1343,13 +1347,13 @@ function buildThreeWindingTransformerBranchDevices(nodes: ModelNode[]): EDeviceE
   return records;
 }
 
-function buildThreePowerTransformerDevices(nodes: ModelNode[]): EDeviceExport[] {
+function buildACTransfomer3Devices(nodes: ModelNode[]): EDeviceExport[] {
   return nodes
     .filter((node) => isThreeWindingTransformer(node))
     .map((node) => ({
       id: node.id,
       kind: node.kind,
-      section: "ThreePowerTransformer",
+      section: "ACTransfomer3",
       params: {
         idx: node.params.idx ?? "",
         name: node.name,
@@ -1411,11 +1415,14 @@ function buildContainerAssociatedDevices(nodes: ModelNode[]): EDeviceExport[] {
 function buildEDeviceRecords(project: ProjectFile): EDeviceExport[] {
   const topologyNodes = calculateElectricalTopology(project.nodes, project.edges);
   const topologyNodeDevices = buildTopologyNodeDevices(topologyNodes);
-  const threePowerTransformerDevices = buildThreePowerTransformerDevices(topologyNodes);
+  const acTransfomer3Devices = buildACTransfomer3Devices(topologyNodes);
   const threeWindingTransformerBranchDevices = buildThreeWindingTransformerBranchDevices(topologyNodes);
   const containerAssociatedDevices = buildContainerAssociatedDevices(topologyNodes);
   const deviceRecords = topologyNodes
     .map<EDeviceExport | null>((node) => {
+      if (isThreeWindingTransformer(node)) {
+        return null;
+      }
       const section = inferESection(node.kind, node.params);
       if (!section || section === "ACNode" || section === "DCNode") {
         return null;
@@ -1435,7 +1442,7 @@ function buildEDeviceRecords(project: ProjectFile): EDeviceExport[] {
   return [
     ...topologyNodeDevices,
     ...deviceRecords,
-    ...threePowerTransformerDevices,
+    ...acTransfomer3Devices,
     ...threeWindingTransformerBranchDevices,
     ...containerAssociatedDevices
   ];

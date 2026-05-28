@@ -1053,11 +1053,11 @@ describe("power system model", () => {
     const acNodes = payload.ACNode.rows;
     const neutralNode = acNodes.find((row) => row.idx === "4");
     const transformerBranches = payload.ACTransformer.rows.filter((row) => row.name.startsWith("T3_"));
-    const threePowerTransformer = payload.ThreePowerTransformer.rows.find((row) => row.name === "T3");
+    const acTransfomer3 = payload.ACTransfomer3.rows.find((row) => row.name === "T3");
 
     expect(acNodes.map((row) => row.idx)).toEqual(["1", "2", "3", "4"]);
     expect(neutralNode).toMatchObject({ name: "T3_neutral", vbase: "1.0", voltage: "1.0" });
-    expect(threePowerTransformer).toEqual({
+    expect(acTransfomer3).toEqual({
       idx: "1",
       name: "T3",
       run_stat: "1",

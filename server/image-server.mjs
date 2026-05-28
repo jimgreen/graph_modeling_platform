@@ -39,7 +39,7 @@ const eSectionColumns = {
   ACBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   DCBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   ACTransformer: ["idx", "name", "i_node", "j_node", "r", "x", "gt", "bt", "tap", "shift", "run_stat"],
-  ThreePowerTransformer: ["idx", "name", "run_stat", "idx_xf_t1", "idx_xf_t2", "idx_xf_t3"],
+  ACTransfomer3: ["idx", "name", "run_stat", "idx_xf_t1", "idx_xf_t2", "idx_xf_t3"],
   DCDCConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_set", "v_set", "run_stat"],
   DCACConverter: ["idx", "name", "ac_node", "dc_node", "r1", "r2", "control_type", "p_ac_set", "q_ac_set", "v_ac_set", "v_dc_set", "run_stat"],
   ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"],
@@ -381,7 +381,7 @@ function inferESection(kind, params = {}) {
   if (kind === "ac-breaker") return "ACBreak";
   if (kind === "dc-breaker") return "DCBreak";
   if (kind === "ac-transformer" || kind === "ac-two-winding-transformer") return "ACTransformer";
-  if (kind === "ac-three-winding-transformer") return "ThreePowerTransformer";
+  if (kind === "ac-three-winding-transformer") return "ACTransfomer3";
   if (kind === "dcdc-converter") return "DCDCConverter";
   if (kind === "acdc-converter") return "DCACConverter";
   if (kind === "acac-converter") return "ACACConverter";

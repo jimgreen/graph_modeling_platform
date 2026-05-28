@@ -159,6 +159,12 @@ describe("graph inspector panel", () => {
     expect(source).toContain("custom-component-manager-panel");
     expect(source).toContain("custom-device-dialog-layout");
     expect(source).toContain("customComponentTreeSelection");
+    expect(source).toContain("collapsedCustomComponentTreeLibraries");
+    expect(source).toContain("collapsedCustomComponentTreeTypes");
+    expect(source).toContain("toggleCustomComponentTreeLibrary");
+    expect(source).toContain("toggleCustomComponentTreeType");
+    expect(source).toContain("aria-expanded={!libraryCollapsed}");
+    expect(source).toContain("aria-expanded={!typeCollapsed}");
     expect(source).toContain("selectCustomComponentTemplate(template, typeGroup.section)");
     expect(source).toContain("renameSelectedCustomDeviceTreeItem");
     expect(source).toContain("deleteSelectedCustomDeviceTreeItem");
@@ -172,6 +178,7 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".component-definition-type-group");
     expect(styles).toContain(".custom-component-manager-panel");
     expect(styles).toContain(".custom-component-tree-row");
+    expect(styles).toContain(".custom-component-tree-row svg");
     expect(styles).toContain(".custom-attribute-library-select-row.single-control");
   });
 

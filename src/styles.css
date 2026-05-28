@@ -2023,12 +2023,19 @@ button:disabled {
   text-align: center;
 }
 
+.custom-component-tree-row svg {
+  color: currentColor;
+  flex: 0 0 auto;
+}
+
 .custom-component-tree-row.library {
+  grid-template-columns: auto minmax(0, 1fr) auto;
   color: #0f172a;
   background: #ffffff;
 }
 
 .custom-component-tree-row.type {
+  grid-template-columns: auto minmax(0, 1fr) auto;
   color: #1d4ed8;
 }
 
