@@ -50,6 +50,7 @@ import {
   modelGeometryInsideCanvasBounds,
   insertOrthogonalRouteBend,
   preserveDraggedRouteShape,
+  rebuildConnectionRoutesForNodes,
   rebuildSingleConnectionRoute,
   upsertSavedProject,
   rerouteEdgesAroundMovedNodes,
@@ -67,6 +68,7 @@ import {
   getTerminalDisplayColor,
   getElementFocusPoint,
   getRouteBlockingCandidateNodes,
+  segmentIntersectsNodeBody,
   isBlockingTopologyValidationError,
   isRepeatedEdgePointerClick,
   getContainerAssociationRelationKey,
@@ -2388,6 +2390,53 @@ describe("power system model", () => {
     expect(new Set(route.points.map((point) => point.y))).toEqual(new Set([140]));
   });
 
+  test("rebuilds connected routes after a node geometry transform", () => {
+    const source = { ...createDefaultNode("ac-line", { x: 120, y: 140 }), id: "source" };
+    const target = { ...createDefaultNode("ac-line", { x: 520, y: 140 }), id: "target" };
+    const unrelated = { ...createDefaultNode("ac-line", { x: 120, y: 280 }), id: "unrelated" };
+    const transformedTarget = { ...target, rotation: 90, scaleX: -1.6, scaleY: 1.2 };
+    const edge: Edge = {
+      id: "transform-connected-edge",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: 190, y: 80 },
+        { x: 340, y: 80 },
+        { x: 340, y: 220 },
+        { x: 470, y: 220 }
+      ]
+    };
+    const unrelatedEdge: Edge = {
+      id: "unrelated-edge",
+      sourceId: unrelated.id,
+      targetId: source.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints: [{ x: 200, y: 320 }]
+    };
+
+    const rebuilt = rebuildConnectionRoutesForNodes(
+      [source, transformedTarget, unrelated],
+      [edge, unrelatedEdge],
+      [target.id],
+      { width: 800, height: 420 }
+    );
+
+    expect(rebuilt[0]).not.toBe(edge);
+    expect(rebuilt[0].manualPoints?.length ?? 0).toBeLessThan(edge.manualPoints!.length);
+    expect(rebuilt[1]).toBe(unrelatedEdge);
+    const validation = validateConnectionEdgeRoute(
+      [source, transformedTarget, unrelated],
+      rebuilt,
+      edge.id,
+      { width: 800, height: 420 }
+    );
+    expect(validation.ok).toBe(true);
+    expect(validation.issues).toEqual([]);
+  });
+
   test("anchors route endpoints on terminals and leaves terminals perpendicularly", () => {
     const source = createDefaultNode("ac-line", { x: 120, y: 120 });
     const target = createDefaultNode("ac-line", { x: 420, y: 120 });
@@ -2807,6 +2856,31 @@ describe("power system model", () => {
     expect(beforeTarget.y).toBe(targetPoint.y);
     expect(beforeTarget.x).toBeLessThan(targetPoint.x);
     expect(getMovableRouteSegmentIndexes(points)).toContain(1);
+  });
+
+  test("uses storage tank visual borders as route blocker boundaries without outward padding", () => {
+    const tank = createDefaultNode("hydrogen-tank", { x: 300, y: 120 });
+    const load = createDefaultNode("hydrogen-load", { x: 300, y: 260 });
+    const outsideTankBorder = {
+      x: tank.position.x - tank.size.width / 2 - 4,
+      y: tank.position.y
+    };
+    const insideTankBorder = {
+      x: tank.position.x - tank.size.width / 2 + 1,
+      y: tank.position.y
+    };
+    const outsideRegularNodePaddedBorder = {
+      x: load.position.x - load.size.width / 2 - 4,
+      y: load.position.y
+    };
+
+    expect(segmentIntersectsNodeBody(outsideTankBorder, { ...outsideTankBorder, y: outsideTankBorder.y + 18 }, tank)).toBe(false);
+    expect(segmentIntersectsNodeBody(insideTankBorder, { ...insideTankBorder, y: insideTankBorder.y + 18 }, tank)).toBe(true);
+    expect(segmentIntersectsNodeBody(
+      outsideRegularNodePaddedBorder,
+      { ...outsideRegularNodePaddedBorder, y: outsideRegularNodePaddedBorder.y + 18 },
+      load
+    )).toBe(true);
   });
 
   test("allows only terminals with the same electrical type to connect", () => {

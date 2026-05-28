@@ -442,6 +442,38 @@ describe("graph inspector panel", () => {
     expect(commitBlock.indexOf("commitFastMovedGraph")).toBeLessThan(commitBlock.indexOf("setDragging(null)"));
   });
 
+  test("reroutes only connected lines after node geometry transforms", async () => {
+    const source = await readAppSource();
+    const helperStart = source.indexOf("const rebuildEdgesAfterNodeGeometryChange");
+    const helperEnd = source.indexOf("const selectedRoutedEdge", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+    const updateStart = source.indexOf("const updateSelectedNode");
+    const updateEnd = source.indexOf("const assignSelectedNodesToModelLayer", updateStart);
+    const updateBlock = source.slice(updateStart, updateEnd);
+    const mirrorStart = source.indexOf("const mirrorSelectedNodes");
+    const mirrorEnd = source.indexOf("const updateCanvasSize", mirrorStart);
+    const mirrorBlock = source.slice(mirrorStart, mirrorEnd);
+    const finishTransformStart = source.indexOf("const finishTransformDrag");
+    const finishTransformEnd = source.indexOf("const moveSelection", finishTransformStart);
+    const finishTransformBlock = source.slice(finishTransformStart, finishTransformEnd);
+    const pointerStart = source.indexOf("if (transformDrag && svgRef.current)");
+    const pointerEnd = source.indexOf("if (!dragging || !svgRef.current)", pointerStart);
+    const pointerBlock = source.slice(pointerStart, pointerEnd);
+
+    expect(source).toContain("rebuildConnectionRoutesForNodes");
+    expect(helperBlock).toContain("rebuildConnectionRoutesForNodes(nextNodes, currentEdges, changedIds, canvasBounds)");
+    expect(helperBlock).toContain("dirtyEdgeIdsAfterMove");
+    expect(helperBlock).toContain("markRouteEdgesDirty");
+    expect(helperBlock).toContain("markStoredRouteEdgesDirty");
+    expect(updateBlock).toContain("const geometryPatch");
+    expect(updateBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nextNodes, [selectedNodeId])");
+    expect(mirrorBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nextNodes, activeSelectedNodeIds)");
+    expect(finishTransformBlock).toContain("transformDragChangedRef.current");
+    expect(finishTransformBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nodes, [activeTransform.nodeId])");
+    expect(pointerBlock).toContain("transformDragChangedRef.current = true");
+    expect(source).toContain("finishTransformDrag();");
+  });
+
   test("defers expensive post-move connection route optimization after a single graphic move", async () => {
     const source = await readAppSource();
     const helperStart = source.indexOf("const rebuildSingleAffectedConnectionRoute");

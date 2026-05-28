@@ -6235,6 +6235,14 @@ function boxFor(node: ModelNode, padding = 0) {
   };
 }
 
+function routeBlockerPadding(node: ModelNode, padding: number) {
+  return isBoundaryBusNode(node) ? 0 : padding;
+}
+
+function routeBlockerBox(node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
+  return boxFor(node, routeBlockerPadding(node, padding));
+}
+
 export function calculateModelContentSize(
   nodes: ModelNode[],
   edges: Edge[],
@@ -6297,7 +6305,7 @@ function segmentIntersectsBox(a: Point, b: Point, box: ReturnType<typeof boxFor>
 }
 
 export function segmentIntersectsNodeBody(a: Point, b: Point, node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
-  return segmentIntersectsBox(a, b, boxFor(node, padding));
+  return segmentIntersectsBox(a, b, routeBlockerBox(node, padding));
 }
 
 type EdgeSide = "source" | "target";
@@ -6449,7 +6457,7 @@ function pointOutsideRoutingBounds(point: Point, bounds: ReturnType<typeof route
 }
 
 function routeBounds(points: Point[], blockers: ModelNode[]) {
-  const boxes = blockers.map((node) => boxFor(node, 36));
+  const boxes = blockers.map((node) => routeBlockerBox(node, 36));
   return {
     left: Math.min(0, ...points.map((point) => point.x), ...boxes.map((box) => box.left)) - 96,
     right: Math.max(1980, ...points.map((point) => point.x), ...boxes.map((box) => box.right)) + 96,
@@ -6482,7 +6490,7 @@ function routeIntersectsBlockers(points: Point[], blockers: ModelNode[], padding
     }
     const a = points[index - 1];
     const b = points[index];
-    if (routeBlockers.some((blocker) => segmentIntersectsBox(a, b, boxFor(blocker, padding)))) {
+    if (routeBlockers.some((blocker) => segmentIntersectsBox(a, b, routeBlockerBox(blocker, padding)))) {
       return true;
     }
   }
@@ -6607,7 +6615,7 @@ function firstRouteBlockerIntersection(points: Point[], blockers: ModelNode[], p
     const a = points[segmentIndex - 1];
     const b = points[segmentIndex];
     for (const blocker of routeBlockers) {
-      const box = boxFor(blocker, padding);
+      const box = routeBlockerBox(blocker, padding);
       if (segmentIntersectsBox(a, b, box)) {
         return { segmentIndex: segmentIndex - 1, box };
       }
@@ -6660,7 +6668,7 @@ function safeStubPoint(point: Point, normal: Point, blockers: ModelNode[], maxLe
   let length = maxLength;
   const safeLengthBefore = (distance: number) => (distance > 0 ? Math.max(1, distance) : ROUTE_CLEARANCE);
   for (const blocker of blockers) {
-    const box = boxFor(blocker, ROUTE_BLOCKER_PADDING);
+    const box = routeBlockerBox(blocker, ROUTE_BLOCKER_PADDING);
     if (normal.x > 0 && point.y > box.top && point.y < box.bottom && box.left >= point.x) {
       length = Math.min(length, safeLengthBefore(box.left - point.x - 1));
     } else if (normal.x < 0 && point.y > box.top && point.y < box.bottom && box.right <= point.x) {
@@ -6702,7 +6710,7 @@ function scoreRoute(points: Point[], blockers: ModelNode[], avoidedSegments: Seg
     }
     score += Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
     for (const blocker of routeBlockers) {
-      if (segmentIntersectsBox(a, b, boxFor(blocker, ROUTE_BLOCKER_PADDING))) {
+      if (segmentIntersectsBox(a, b, routeBlockerBox(blocker, ROUTE_BLOCKER_PADDING))) {
         score += 10000000;
       }
     }
@@ -7302,7 +7310,7 @@ function filterBlockersForRoutePoints(points: Point[], blockers: ModelNode[], pa
     return [];
   }
   const routeBox = routeBoundsForPoints(points, padding);
-  return blockers.filter((blocker) => boxesOverlap(boxFor(blocker, padding), routeBox));
+  return blockers.filter((blocker) => boxesOverlap(routeBlockerBox(blocker, padding), routeBox));
 }
 
 function filterSegmentsForRoutePoints(points: Point[], segments: Segment[], padding = ROUTE_LANE_SEGMENT_MARGIN) {
@@ -8288,6 +8296,44 @@ export function rebuildSingleConnectionRoute(
   return edges.map((item) => item.id === edgeId ? prepared.edge! : item);
 }
 
+export function rebuildConnectionRoutesForNodes(
+  nodes: ModelNode[],
+  edges: Edge[],
+  nodeIds: Iterable<string>,
+  bounds?: CanvasBounds
+): Edge[] {
+  const changedNodeIds = new Set(nodeIds);
+  if (changedNodeIds.size === 0 || edges.length === 0) {
+    return edges;
+  }
+
+  const affectedEdgeIds = edges
+    .filter((edge) => changedNodeIds.has(edge.sourceId) || changedNodeIds.has(edge.targetId))
+    .map((edge) => edge.id);
+  if (affectedEdgeIds.length === 0) {
+    return edges;
+  }
+
+  let nextEdges = edges;
+  let changed = false;
+  for (const edgeId of affectedEdgeIds) {
+    const candidateEdges = nextEdges.map((edge) => edge.id === edgeId ? edgeWithoutManualPoints(edge) : edge);
+    const prepared = prepareConnectionEdgeForCommit(nodes, candidateEdges, edgeId, bounds);
+    if (!prepared.ok || !prepared.edge) {
+      continue;
+    }
+    nextEdges = nextEdges.map((edge) => {
+      if (edge.id !== edgeId) {
+        return edge;
+      }
+      changed = true;
+      return prepared.edge!;
+    });
+  }
+
+  return changed ? nextEdges : edges;
+}
+
 function routeBoundsForPoints(points: Point[], padding = 0) {
   let left = points[0].x;
   let right = points[0].x;
@@ -8314,7 +8360,7 @@ export type RouteBlockingCandidate = {
 };
 
 export function getRouteBlockingCandidates(blockers: ModelNode[]): RouteBlockingCandidate[] {
-  return blockers.map((node) => ({ node, box: boxFor(node, ROUTE_BLOCKER_PADDING) }));
+  return blockers.map((node) => ({ node, box: routeBlockerBox(node, ROUTE_BLOCKER_PADDING) }));
 }
 
 export function getRouteBlockingCandidateNodesFromBoxes(points: Point[], edge: Edge, candidates: RouteBlockingCandidate[]) {
@@ -8374,7 +8420,7 @@ export function rerouteEdgesAroundMovedNodes(
     return edges;
   }
 
-  const movedCandidates = movedNodes.map((node) => ({ node, box: boxFor(node, ROUTE_BLOCKER_PADDING) }));
+  const movedCandidates = movedNodes.map((node) => ({ node, box: routeBlockerBox(node, ROUTE_BLOCKER_PADDING) }));
   const previousRouteById = new Map(previousRoutes.map((route) => [route.edgeId, route]));
   const forcedEdgeIds = new Set(forceEdgeIds);
   const fallbackRoutes = previousRoutes.length > 0 ? [] : routeEdgesForRendering(nodes, edges, bounds);

@@ -119,6 +119,7 @@ import {
   preserveDraggedRouteShape,
   prepareConnectionEdgeForCommit,
   projectPointToBusCenterline,
+  rebuildConnectionRoutesForNodes,
   rebuildSingleConnectionRoute,
   reconcileOverlappingTerminalConnections,
   rerouteEdgesAroundMovedNodes,
@@ -3142,6 +3143,7 @@ export function App() {
   const lastMouseStatusRef = useRef<Point | null>(null);
   const pendingMouseStatusRef = useRef<Point | null>(null);
   const mouseStatusFrameRef = useRef<number | null>(null);
+  const transformDragChangedRef = useRef(false);
   const connectPreviewPathElementRef = useRef<SVGPathElement | null>(null);
   const connectDropHintElementRef = useRef<SVGGElement | null>(null);
   const connectPreviewDomRef = useRef<{ path: string; targetPoint: Point | null }>({ path: "", targetPoint: null });
@@ -3941,6 +3943,21 @@ export function App() {
       dirty.add(edgeId);
     }
     return dirty;
+  };
+  const rebuildEdgesAfterNodeGeometryChange = (
+    nextNodes: ModelNode[],
+    changedNodeIds: Iterable<string>,
+    currentEdges: Edge[] = edges
+  ) => {
+    const changedIds = Array.from(new Set(changedNodeIds));
+    if (changedIds.length === 0) {
+      return currentEdges;
+    }
+    const nextEdges = rebuildConnectionRoutesForNodes(nextNodes, currentEdges, changedIds, canvasBounds);
+    const dirtyEdgeIds = dirtyEdgeIdsAfterMove(currentEdges, nextEdges, changedIds);
+    markRouteEdgesDirty(dirtyEdgeIds);
+    markStoredRouteEdgesDirty(dirtyEdgeIds);
+    return nextEdges;
   };
   const selectedRoutedEdge = selectedEdge ? routedEdgeById.get(selectedEdge.id) : undefined;
   const rewiringPreviewRoute = useMemo(() => {
@@ -6237,6 +6254,24 @@ export function App() {
     writeOperationLog(`拖拽 ${activeDragging.nodeIds.length} 个图元 (${Math.round(finalDelta.x)}, ${Math.round(finalDelta.y)})${snapText}`);
   };
 
+  const finishTransformDrag = () => {
+    const activeTransform = transformDrag;
+    if (!activeTransform) {
+      return;
+    }
+    const shouldReroute = transformDragChangedRef.current || Boolean(activeTransform.historyCaptured);
+    transformDragChangedRef.current = false;
+    if (shouldReroute) {
+      const nextEdges = rebuildEdgesAfterNodeGeometryChange(nodes, [activeTransform.nodeId]);
+      if (nextEdges !== edges) {
+        setEdges(nextEdges);
+      }
+      const transformedNode = nodeById.get(activeTransform.nodeId);
+      writeOperationLog(`调整图元几何：${transformedNode?.name ?? activeTransform.nodeId}`);
+    }
+    setTransformDrag(null);
+  };
+
   const moveSelection = (dx: number, dy: number) => {
     if (activeSelectedNodeIds.length === 0) {
       return;
@@ -6313,6 +6348,12 @@ export function App() {
       nextPatch.position = clampNodeToCanvas({ ...selectedNode, ...nextPatch }, nextPatch.position ?? selectedNode.position);
     }
     const nextNodes = nodes.map((node) => (node.id === selectedNodeId ? { ...node, ...nextPatch } : node));
+    const geometryPatch =
+      patch.rotation !== undefined ||
+      patch.scale !== undefined ||
+      patch.scaleX !== undefined ||
+      patch.scaleY !== undefined ||
+      patch.size !== undefined;
     if (patch.position && selectedNode) {
       const delta = {
         x: nextPatch.position!.x - selectedNode.position.x,
@@ -6348,6 +6389,14 @@ export function App() {
         [selectedNodeId]
       );
       commitFastMovedGraph(nextNodes, nextEdges, [selectedNodeId], originalRoutePoints, new Set<string>(), originalPositions, nodes);
+      return;
+    }
+    if (geometryPatch) {
+      const nextEdges = rebuildEdgesAfterNodeGeometryChange(nextNodes, [selectedNodeId]);
+      setNodes(nextNodes);
+      if (nextEdges !== edges) {
+        setEdges(nextEdges);
+      }
       return;
     }
     setNodes(nextNodes);
@@ -6403,7 +6452,12 @@ export function App() {
     }
     pushUndoSnapshot();
     setSelectedEdgeId("");
-    setNodes((current) => mirrorNodes(current, activeSelectedNodeIds, axis));
+    const nextNodes = mirrorNodes(nodes, activeSelectedNodeIds, axis);
+    const nextEdges = rebuildEdgesAfterNodeGeometryChange(nextNodes, activeSelectedNodeIds);
+    setNodes(nextNodes);
+    if (nextEdges !== edges) {
+      setEdges(nextEdges);
+    }
     writeOperationLog(`${axis === "horizontal" ? "水平" : "垂直"}镜像 ${activeSelectedNodeIds.length} 个图元`);
   };
 
@@ -7235,6 +7289,7 @@ export function App() {
     }
     if (transformDrag && svgRef.current) {
       const point = lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      transformDragChangedRef.current = true;
       if (!transformDrag.historyCaptured) {
         pushUndoSnapshot();
         setTransformDrag({ ...transformDrag, historyCaptured: true });
@@ -10250,7 +10305,7 @@ export function App() {
               finishMarqueeSelection();
               finishNodeDrag();
               finishManualPathDrag();
-              setTransformDrag(null);
+              finishTransformDrag();
               setPanning(null);
             }}
             onPointerLeave={() => {
@@ -10261,7 +10316,7 @@ export function App() {
               finishNodeDrag();
               setTerminalPress(null);
               finishManualPathDrag();
-              setTransformDrag(null);
+              finishTransformDrag();
               setPanning(null);
               setMarquee(null);
               setRewiring(null);
@@ -10270,7 +10325,7 @@ export function App() {
               finishNodeDrag();
               setTerminalPress(null);
               finishManualPathDrag();
-              setTransformDrag(null);
+              finishTransformDrag();
               setPanning(null);
               setMarquee(null);
               setRewiring(null);
@@ -10279,7 +10334,7 @@ export function App() {
               finishNodeDrag();
               setTerminalPress(null);
               finishManualPathDrag();
-              setTransformDrag(null);
+              finishTransformDrag();
             }}
             onPointerDown={(event) => {
               if (event.button !== 0) {
@@ -10801,6 +10856,7 @@ export function App() {
                           r="8"
                           onPointerDown={(event) => {
                             event.stopPropagation();
+                            transformDragChangedRef.current = false;
                             setTransformDrag({ kind: "rotate", nodeId: node.id });
                           }}
                         />
@@ -10825,6 +10881,7 @@ export function App() {
                               rx="3"
                               onPointerDown={(event) => {
                                 event.stopPropagation();
+                                transformDragChangedRef.current = false;
                                 setTransformDrag({ kind: handle.kind, nodeId: node.id });
                               }}
                             />
