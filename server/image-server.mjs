@@ -833,7 +833,8 @@ function buildSvgFile(project) {
       const image = node.params?.backgroundImageAssetId ? `/api/images/${node.params.backgroundImageAssetId}` : node.params?.backgroundImage ?? "";
       const transform = `translate(${node.position?.x ?? 0} ${node.position?.y ?? 0}) rotate(${node.rotation ?? 0}) scale(${node.scaleX ?? node.scale ?? 1} ${node.scaleY ?? node.scale ?? 1})`;
       if (isBus) {
-        return `<g transform="${transform}"><title>${node.name ?? ""}</title><line x1="${-width / 2}" y1="0" x2="${width / 2}" y2="0" stroke="${stroke}" stroke-width="${Math.max(8, height / 3)}" stroke-linecap="round"/></g>`;
+        const thickness = Math.max(8, height / 3);
+        return `<g transform="${transform}"><title>${node.name ?? ""}</title><rect class="bus-glyph" x="${-width / 2}" y="${-thickness / 2}" width="${width}" height="${thickness}" fill="${stroke}" stroke="none"/></g>`;
       }
       return `<g transform="${transform}"><title>${node.name ?? ""}</title><rect x="${-width / 2}" y="${-height / 2}" width="${width}" height="${height}" rx="8" fill="#ffffff" stroke="#94a3b8"/>${image ? `<image href="${image}" x="${-width / 2}" y="${-height / 2}" width="${width}" height="${height}" preserveAspectRatio="xMidYMid slice"/>` : ""}</g>`;
     })

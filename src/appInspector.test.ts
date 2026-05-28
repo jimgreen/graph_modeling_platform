@@ -211,6 +211,19 @@ describe("graph inspector panel", () => {
     expect(serverSource).not.toContain('if (kind === "ac-two-port-heater" || kind === "dc-two-port-heater") return "Elec2Heat2";');
   });
 
+  test("keeps backend SVG bus export square ended", async () => {
+    const serverSource = await readServerSource();
+    const busExportStart = serverSource.indexOf("if (isBus)");
+    const busExportEnd = serverSource.indexOf("\n      }\n      return", busExportStart);
+    const busExportBlock = serverSource.slice(busExportStart, busExportEnd);
+
+    expect(busExportBlock).toContain("<rect");
+    expect(busExportBlock).toContain("class=\"bus-glyph\"");
+    expect(busExportBlock).not.toContain("<line");
+    expect(busExportBlock).not.toContain("stroke-linecap=\"round\"");
+    expect(busExportBlock).not.toContain("rx=");
+  });
+
   test("shows selected element terminal count as readonly text instead of an editable field", async () => {
     const source = await readAppSource();
     const row = selectedTerminalCountRow(source);

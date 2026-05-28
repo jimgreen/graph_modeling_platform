@@ -35,6 +35,23 @@ describe("SVG export", () => {
     expect(svg).toContain("M -10 -1 C -4 4 -4 9 -10 14");
   });
 
+  test("exports energy buses as square ended rectangles", () => {
+    const buses = [
+      createDefaultNode("ac-bus", { x: 120, y: 120 }),
+      createDefaultNode("dc-bus", { x: 240, y: 120 }),
+      createDefaultNode("hydrogen-bus", { x: 360, y: 120 }),
+      createDefaultNode("heat-bus", { x: 480, y: 120 })
+    ];
+
+    const svg = buildSvgDocument(buses, [], { width: 640, height: 260 });
+
+    expect(svg.match(/<rect class="bus-glyph"/g)?.length).toBe(4);
+    expect(svg).not.toContain('<line class="bus-glyph"');
+    expect(svg).not.toContain('class="bus-glyph" x1=');
+    expect(svg).not.toContain('stroke-linecap="round"');
+    expect(svg).not.toContain('rx="');
+  });
+
   test("exports connection line colors by terminal energy type", () => {
     const acSource = createDefaultNode("ac-source", { x: 120, y: 120 });
     const acLoad = createDefaultNode("ac-load", { x: 240, y: 120 });

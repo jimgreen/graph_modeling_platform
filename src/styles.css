@@ -1193,6 +1193,7 @@ button:disabled {
 .diagram-node.bus-node.selected .bus-glyph,
 .diagram-node.bus-node.connect-source .bus-glyph {
   stroke: #1d4ed8;
+  fill: #1d4ed8;
 }
 
 .diagram-node.connect-source .node-hitbox {

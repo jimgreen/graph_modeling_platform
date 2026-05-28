@@ -2073,6 +2073,11 @@ function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorDisplayM
     .join("\n");
 }
 
+function renderBusGlyphRect(width: number, height: number, color: string) {
+  const thickness = Math.max(8, height / 3);
+  return <rect className="bus-glyph" x={-width / 2} y={-thickness / 2} width={width} height={thickness} fill={color} stroke={color} strokeWidth="0" />;
+}
+
 function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode = "energy", colorPalette = DEFAULT_COLOR_PALETTE }: { node: ModelNode; miniature?: boolean; mode?: DeviceGlyphMode; colorDisplayMode?: ColorDisplayMode; colorPalette?: ColorPalette }) {
   const w = miniature ? 58 : node.size.width;
   const h = miniature ? 38 : node.size.height;
@@ -2400,18 +2405,7 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
     if (mode === "text") {
       return null;
     }
-    return (
-      <line
-        className="bus-glyph"
-        x1={-w / 2}
-        y1="0"
-        x2={w / 2}
-        y2="0"
-        stroke={stroke}
-        strokeWidth={Math.max(8, h / 3)}
-        strokeLinecap="round"
-      />
-    );
+    return renderBusGlyphRect(w, h, stroke);
   }
 
   if (glyphVariant === "hydrogen-pipeline") {
@@ -2632,18 +2626,7 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
     if (mode === "text") {
       return null;
     }
-    return (
-      <line
-        className="bus-glyph"
-        x1={-w / 2}
-        y1="0"
-        x2={w / 2}
-        y2="0"
-        stroke={stroke}
-        strokeWidth={Math.max(8, h / 3)}
-        strokeLinecap="round"
-      />
-    );
+    return renderBusGlyphRect(w, h, stroke);
   }
 
   if (glyphVariant === "heat-pipeline") {
@@ -2755,18 +2738,7 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
     if (mode === "text") {
       return null;
     }
-    return (
-      <line
-        className="bus-glyph"
-        x1={-w / 2}
-        y1="0"
-        x2={w / 2}
-        y2="0"
-        stroke={stroke}
-        strokeWidth={Math.max(8, h / 3)}
-        strokeLinecap="round"
-      />
-    );
+    return renderBusGlyphRect(w, h, stroke);
   }
 
   if (glyphVariant === "ac-line") {
