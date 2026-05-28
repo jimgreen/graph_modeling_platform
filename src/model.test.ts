@@ -842,6 +842,30 @@ describe("power system model", () => {
     ]);
   });
 
+  test("exports electric heat containers to AC and DC specific E sections", () => {
+    const acHeater = assignPermanentDeviceIndex(createDefaultNode("ac-heater", { x: 100, y: 100 }), {}).node;
+    const dcHeater = assignPermanentDeviceIndex(createDefaultNode("dc-heater", { x: 240, y: 100 }), {}).node;
+    const acTwoPortHeater = assignPermanentDeviceIndex(createDefaultNode("ac-two-port-heater", { x: 380, y: 100 }), {}).node;
+    const dcTwoPortHeater = assignPermanentDeviceIndex(createDefaultNode("dc-two-port-heater", { x: 520, y: 100 }), {}).node;
+    const exported = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "电制热导出",
+      nodes: [acHeater, dcHeater, acTwoPortHeater, dcTwoPortHeater],
+      edges: []
+    }));
+
+    expect(exported.AcElec2Heat.columns).toEqual(["idx", "name", "run_stat", "idx_ac_load_t1", "idx_heat_unit_t2"]);
+    expect(exported.DcElec2Heat.columns).toEqual(["idx", "name", "run_stat", "idx_dc_load_t1", "idx_heat_unit_t2"]);
+    expect(exported.AcElec2Heat2.columns).toEqual(["idx", "name", "run_stat", "idx_ac_load_t1", "idx_heat2_unit_t2"]);
+    expect(exported.DcElec2Heat2.columns).toEqual(["idx", "name", "run_stat", "idx_dc_load_t1", "idx_heat2_unit_t2"]);
+    expect(exported.Elec2Heat).toBeUndefined();
+    expect(exported.Elec2Heat2).toBeUndefined();
+    expect(inferESection("ac-heater", acHeater.params)).toBe("AcElec2Heat");
+    expect(inferESection("dc-heater", dcHeater.params)).toBe("DcElec2Heat");
+    expect(inferESection("ac-two-port-heater", acTwoPortHeater.params)).toBe("AcElec2Heat2");
+    expect(inferESection("dc-two-port-heater", dcTwoPortHeater.params)).toBe("DcElec2Heat2");
+  });
+
   test("uses impedance glyphs for AC lines and resistance-only glyphs for DC lines", () => {
     expect(getDeviceGlyphVariant("ac-line")).toBe("ac-line");
     expect(getDeviceGlyphVariant("dc-line")).toBe("dc-line");

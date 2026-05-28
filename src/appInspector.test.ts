@@ -196,6 +196,21 @@ describe("graph inspector panel", () => {
     expect(serverSource).toContain('if (isStaticKind(kind)) return "StaticSymbol";');
   });
 
+  test("keeps backend electric heat sections split by AC and DC device types", async () => {
+    const serverSource = await readServerSource();
+
+    expect(serverSource).toContain("AcElec2Heat: [\"idx\", \"name\", \"run_stat\", \"idx_ac_load_t1\", \"idx_heat_unit_t2\"]");
+    expect(serverSource).toContain("DcElec2Heat: [\"idx\", \"name\", \"run_stat\", \"idx_dc_load_t1\", \"idx_heat_unit_t2\"]");
+    expect(serverSource).toContain("AcElec2Heat2: [\"idx\", \"name\", \"run_stat\", \"idx_ac_load_t1\", \"idx_heat2_unit_t2\"]");
+    expect(serverSource).toContain("DcElec2Heat2: [\"idx\", \"name\", \"run_stat\", \"idx_dc_load_t1\", \"idx_heat2_unit_t2\"]");
+    expect(serverSource).toContain('if (kind === "ac-heater") return "AcElec2Heat";');
+    expect(serverSource).toContain('if (kind === "dc-heater") return "DcElec2Heat";');
+    expect(serverSource).toContain('if (kind === "ac-two-port-heater") return "AcElec2Heat2";');
+    expect(serverSource).toContain('if (kind === "dc-two-port-heater") return "DcElec2Heat2";');
+    expect(serverSource).not.toContain('if (kind === "ac-heater" || kind === "dc-heater") return "Elec2Heat";');
+    expect(serverSource).not.toContain('if (kind === "ac-two-port-heater" || kind === "dc-two-port-heater") return "Elec2Heat2";');
+  });
+
   test("shows selected element terminal count as readonly text instead of an editable field", async () => {
     const source = await readAppSource();
     const row = selectedTerminalCountRow(source);

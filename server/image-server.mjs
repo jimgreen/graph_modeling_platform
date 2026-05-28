@@ -70,8 +70,10 @@ const eSectionColumns = {
   HeatTank: ["idx", "name", "node", "run_stat"],
   HeatBoiler: ["idx", "name", "run_stat", "idx_heat_unit_t1"],
   HeatBoiler2: ["idx", "name", "run_stat", "idx_heat2_unit_t1"],
-  Elec2Heat: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_dc_load_t1", "idx_heat_unit_t2"],
-  Elec2Heat2: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_dc_load_t1", "idx_heat2_unit_t2"],
+  AcElec2Heat: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_heat_unit_t2"],
+  DcElec2Heat: ["idx", "name", "run_stat", "idx_dc_load_t1", "idx_heat_unit_t2"],
+  AcElec2Heat2: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_heat2_unit_t2"],
+  DcElec2Heat2: ["idx", "name", "run_stat", "idx_dc_load_t1", "idx_heat2_unit_t2"],
   HeatExchanger: ["idx", "name", "i_node", "j_node", "run_stat"],
   HeatExchanger3: ["idx", "name", "node1", "node2", "node3", "run_stat"],
   HeatExchanger4: ["idx", "name", "node1", "node2", "node3", "node4", "run_stat"],
@@ -421,8 +423,10 @@ function inferESection(kind, params = {}) {
   if (kind === "thermal-storage-tank") return "HeatTank";
   if (kind === "heat-boiler") return "HeatBoiler";
   if (kind === "two-port-heat-boiler") return "HeatBoiler2";
-  if (kind === "ac-heater" || kind === "dc-heater") return "Elec2Heat";
-  if (kind === "ac-two-port-heater" || kind === "dc-two-port-heater") return "Elec2Heat2";
+  if (kind === "ac-heater") return "AcElec2Heat";
+  if (kind === "dc-heater") return "DcElec2Heat";
+  if (kind === "ac-two-port-heater") return "AcElec2Heat2";
+  if (kind === "dc-two-port-heater") return "DcElec2Heat2";
   if (kind === "heat-exchanger") return "HeatExchanger";
   if (kind === "three-port-heat-exchanger") return "HeatExchanger3";
   if (kind === "four-port-heat-exchanger") return "HeatExchanger4";
