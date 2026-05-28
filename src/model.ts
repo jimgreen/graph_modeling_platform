@@ -57,8 +57,12 @@ export type DeviceKind =
   | "ac-bus"
   | "ac-switch"
   | "ac-disconnector"
+  | "ac-ground-disconnector"
+  | "ac-ground-disconnector-vertical"
   | "ac-breaker"
+  | "ac-box-breaker"
   | "ac-load"
+  | "ac-terminal-transformer-load"
   | "ac-transformer"
   | "ac-two-winding-transformer"
   | "ac-three-winding-transformer"
@@ -131,8 +135,12 @@ export type DeviceGlyphVariant =
   | "transformer"
   | "switch"
   | "disconnector"
+  | "ground-disconnector"
+  | "ground-disconnector-vertical"
   | "breaker"
+  | "box-breaker"
   | "load"
+  | "terminal-transformer-load"
   | "dcdc-converter"
   | "acdc-converter"
   | "acac-converter"
@@ -400,6 +408,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   DCSwitch: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   ACBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   DCBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
+  GroundDisconnector: ["idx", "name", "node", "status", "run_stat"],
   ACTransformer: ["idx", "name", "i_node", "j_node", "r", "x", "gt", "bt", "tap", "shift", "run_stat"],
   ACTransfomer3: ["idx", "name", "run_stat", "idx_xf_t1", "idx_xf_t2", "idx_xf_t3"],
   DCDCConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_set", "v_set", "run_stat"],
@@ -491,15 +500,16 @@ export function inferESection(kind: string, params: Record<string, string> = {})
   if (kind === "dc-line") return "DCBranch";
   if (kind === "ac-zero-branch") return "ACZeroBranch";
   if (kind === "dc-zero-branch") return "DCZeroBranch";
-  if (kind === "ac-load") return "ACLoad";
+  if (kind === "ac-load" || kind === "ac-terminal-transformer-load") return "ACLoad";
   if (kind === "dc-load") return "DCLoad";
   if (kind === "ac-storage") return "ACGenerator";
   if (kind === "dc-storage") return "DCGenerator";
   if (kind.startsWith("ac-") && kind.includes("source")) return "ACGenerator";
   if (kind.startsWith("dc-") && kind.includes("source")) return "DCGenerator";
   if (kind === "ac-switch" || kind === "ac-disconnector") return "ACSwitch";
+  if (kind === "ac-ground-disconnector" || kind === "ac-ground-disconnector-vertical") return "GroundDisconnector";
   if (kind === "dc-switch" || kind === "dc-disconnector") return "DCSwitch";
-  if (kind === "ac-breaker") return "ACBreak";
+  if (kind === "ac-breaker" || kind === "ac-box-breaker") return "ACBreak";
   if (kind === "dc-breaker") return "DCBreak";
   if (kind === "ac-transformer" || kind === "ac-two-winding-transformer") return "ACTransformer";
   if (kind === "ac-three-winding-transformer") return "ACTransfomer3";
@@ -987,6 +997,7 @@ const E_SECTION_OUTPUT_ORDER = [
   "ACZeroBranch",
   "ACSwitch",
   "ACBreak",
+  "GroundDisconnector",
   "ACTransformer",
   "ACTransfomer3",
   "DCNode",
@@ -2297,11 +2308,42 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalCount: 2
   },
   {
+    kind: "ac-ground-disconnector",
+    label: "接地刀闸",
+    attributeLibrary: "交流设备",
+    size: { width: 78, height: 58 },
+    params: { status: "分闸", ratedCurrent: "1250 A" },
+    terminalType: "ac",
+    terminalCount: 1,
+    terminalLabels: ["交流系统端"],
+    terminalAnchors: [{ x: -0.5, y: 0 }]
+  },
+  {
+    kind: "ac-ground-disconnector-vertical",
+    label: "竖向接地刀闸",
+    attributeLibrary: "交流设备",
+    size: { width: 58, height: 78 },
+    params: { status: "分闸", ratedCurrent: "1250 A" },
+    terminalType: "ac",
+    terminalCount: 1,
+    terminalLabels: ["交流系统端"],
+    terminalAnchors: [{ x: 0, y: -0.5 }]
+  },
+  {
     kind: "ac-breaker",
     label: "交流断路器",
     attributeLibrary: "交流设备",
     size: { width: 78, height: 50 },
     params: {},
+    terminalType: "ac",
+    terminalCount: 2
+  },
+  {
+    kind: "ac-box-breaker",
+    label: "盒型开关",
+    attributeLibrary: "交流设备",
+    size: { width: 86, height: 44 },
+    params: { status: "合闸", ratedCurrent: "1250 A" },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -2313,6 +2355,17 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     params: { activePower: "5 MW", reactivePower: "1.2 Mvar", powerFactor: "0.95" },
     terminalType: "ac",
     terminalCount: 1
+  },
+  {
+    kind: "ac-terminal-transformer-load",
+    label: "终端变负荷",
+    attributeLibrary: "交流设备",
+    size: { width: 92, height: 70 },
+    params: { activePower: "5 MW", reactivePower: "1.2 Mvar", powerFactor: "0.95" },
+    terminalType: "ac",
+    terminalCount: 1,
+    terminalLabels: ["交流设备端1"],
+    terminalAnchors: [{ x: -0.5, y: 0 }]
   },
   {
     kind: "ac-transformer",
@@ -3058,9 +3111,13 @@ export function getDeviceGlyphVariant(kind: DeviceKind): DeviceGlyphVariant {
   if (kind === "ac-line") return "ac-line";
   if (kind === "dc-line") return "dc-line";
   if (kind.includes("line") || kind.includes("zero-branch")) return "line";
+  if (kind === "ac-terminal-transformer-load") return "terminal-transformer-load";
   if (kind.includes("transformer")) return "transformer";
+  if (kind === "ac-ground-disconnector-vertical") return "ground-disconnector-vertical";
+  if (kind === "ac-ground-disconnector") return "ground-disconnector";
   if (kind.includes("switch")) return "switch";
   if (kind.includes("disconnector")) return "disconnector";
+  if (kind === "ac-box-breaker") return "box-breaker";
   if (kind.includes("breaker")) return "breaker";
   if (kind.includes("load")) return "load";
   if (kind === "dcdc-converter") return "dcdc-converter";
@@ -3552,7 +3609,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
     }
     return withTemplateDefinitions(withRunStat(withDefaultVbase({ ...template.params, ...base })));
   }
-  if (template.kind === "ac-load") {
+  if (template.kind === "ac-load" || template.kind === "ac-terminal-transformer-load") {
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ratedActivePower: "5 MW",
       pv0: "1.0",
@@ -3702,13 +3759,17 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
     template.kind === "dc-switch" ||
     template.kind === "ac-disconnector" ||
     template.kind === "dc-disconnector" ||
+    template.kind === "ac-ground-disconnector" ||
+    template.kind === "ac-ground-disconnector-vertical" ||
     template.kind === "ac-breaker" ||
+    template.kind === "ac-box-breaker" ||
     template.kind === "dc-breaker"
   ) {
+    const isGroundDisconnector = template.kind === "ac-ground-disconnector" || template.kind === "ac-ground-disconnector-vertical";
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ratedCapacity: template.terminalType === "ac" ? "1250 A" : "1600 A",
-      status: "1",
-      closedStatus: "闭合"
+      status: isGroundDisconnector ? "0" : "1",
+      closedStatus: isGroundDisconnector ? "分闸" : "闭合"
     })));
   }
   return withTemplateDefinitions(withRunStat(withDefaultVbase({ ...template.params })));

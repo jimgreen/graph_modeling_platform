@@ -1446,7 +1446,7 @@ function defaultAttributeLibraryForComponentType(sectionName: string): Attribute
   if (section === "ACDCConverter" || section.startsWith("DC") || section.startsWith("DCDC") || section.startsWith("DCAC")) {
     return "直流设备";
   }
-  if (section.startsWith("AC")) {
+  if (section.startsWith("AC") || section === "GroundDisconnector") {
     return "交流设备";
   }
   return "交流设备";
@@ -2033,9 +2033,15 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
               ? "#fff1f2"
               : glyphVariant === "switch" || glyphVariant === "disconnector"
                 ? "#fff7ed"
-                : glyphVariant === "breaker"
-                  ? "#eef2ff"
-                  : "#ffffff";
+                : glyphVariant === "ground-disconnector" || glyphVariant === "ground-disconnector-vertical"
+                  ? "#fff7ed"
+                  : glyphVariant === "terminal-transformer-load"
+                    ? "#f8fafc"
+                    : glyphVariant === "box-breaker"
+                      ? "#f8fafc"
+                      : glyphVariant === "breaker"
+                      ? "#eef2ff"
+                      : "#ffffff";
   if (isStaticNode(node)) {
     const staticStroke = node.params.strokeColor || stroke;
     const staticFill = node.params.fillColor || "transparent";
@@ -2786,6 +2792,28 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
     );
   }
 
+  if (glyphVariant === "terminal-transformer-load") {
+    if (mode === "text") {
+      return null;
+    }
+    const windingRadius = miniature ? 11 : 18;
+    const leftCoilX = miniature ? -11 : -14;
+    const rightCoilX = miniature ? 11 : 14;
+    const loadTop = miniature ? 1 : 5;
+    const loadWidth = miniature ? 11 : 15;
+    const loadHeight = miniature ? 10 : 13;
+    return (
+      <g className="terminal-transformer-load-glyph" fill={fill} stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx={leftCoilX} cy="0" r={windingRadius} />
+        <circle cx={rightCoilX} cy="0" r={windingRadius} />
+        <path
+          d={`M ${-loadWidth / 2} ${loadTop} H ${loadWidth / 2} L 0 ${loadTop + loadHeight} Z`}
+          fill="#ffffff"
+        />
+      </g>
+    );
+  }
+
   if (node.kind.includes("transformer")) {
     if (mode === "text") {
       return null;
@@ -2815,6 +2843,40 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
     );
   }
 
+  if (glyphVariant === "ground-disconnector") {
+    if (mode === "text") {
+      return null;
+    }
+    const closed = getSwitchVisualState(node) === "closed";
+    return (
+      <g className="ground-disconnector-glyph" fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <line x1={-w / 2 + 8} y1="0" x2="-18" y2="0" />
+        <circle cx="-18" cy="0" r="3.2" fill="#ffffff" />
+        <circle cx="8" cy="0" r="3.2" fill="#ffffff" />
+        <line x1="-18" y1="0" x2={closed ? "8" : "2"} y2={closed ? "0" : "-15"} />
+        {!closed && <line x1="0" y1="-15" x2="12" y2="-15" />}
+        <path d="M 8 0 H 18 V 15 M 18 15 V 20 M 8 20 H 28 M 11 24 H 25 M 14 28 H 22" />
+      </g>
+    );
+  }
+
+  if (glyphVariant === "ground-disconnector-vertical") {
+    if (mode === "text") {
+      return null;
+    }
+    const closed = getSwitchVisualState(node) === "closed";
+    return (
+      <g className="ground-disconnector-vertical-glyph" fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="0" y1={-h / 2 + 8} x2="0" y2="-18" />
+        <circle cx="0" cy="-18" r="3.2" fill="#ffffff" />
+        <circle cx="0" cy="8" r="3.2" fill="#ffffff" />
+        <line x1="0" y1="-18" x2={closed ? "0" : "14"} y2={closed ? "8" : "-6"} />
+        {!closed && <line x1="14" y1="-8" x2="14" y2="0" />}
+        <path d="M 0 8 V 18 M 0 18 V 24 M -10 24 H 10 M -7 28 H 7 M -4 32 H 4" />
+      </g>
+    );
+  }
+
   if (glyphVariant === "breaker") {
     if (mode === "text") {
       return null;
@@ -2827,6 +2889,31 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
         <rect x="-20" y="-15" width="40" height="30" rx="5" fill={fill} />
         <path d="M -10 -8 V 8 M 10 -8 V 8" />
         {closed ? <path d="M -10 0 H 10" /> : <path d="M -8 8 L 8 -8" />}
+      </g>
+    );
+  }
+
+  if (glyphVariant === "box-breaker") {
+    if (mode === "text") {
+      return null;
+    }
+    const closed = getSwitchVisualState(node) === "closed";
+    const boxWidth = Math.min(Math.max(w * 0.42, 34), miniature ? 36 : 48);
+    const boxHeight = miniature ? 16 : 20;
+    const leftWireEnd = -boxWidth / 2;
+    const rightWireStart = boxWidth / 2;
+    return (
+      <g className="box-breaker-glyph" fill="none" stroke={stroke} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+        <line x1={-w / 2 + 8} y1="0" x2={leftWireEnd} y2="0" />
+        <line x1={rightWireStart} y1="0" x2={w / 2 - 8} y2="0" />
+        <rect
+          x={-boxWidth / 2}
+          y={-boxHeight / 2}
+          width={boxWidth}
+          height={boxHeight}
+          rx="2"
+          fill={closed ? stroke : "#ffffff"}
+        />
       </g>
     );
   }

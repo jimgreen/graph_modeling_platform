@@ -613,6 +613,45 @@ describe("power system model", () => {
     expect(new Set(acLoad.terminals.map((terminal) => terminal.nodeNumber)).size).toBe(1);
   });
 
+  test("adds terminal transformer load as a single-terminal ACLoad device", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-terminal-transformer-load");
+    expect(template).toMatchObject({
+      label: "终端变负荷",
+      attributeLibrary: "交流设备",
+      terminalType: "ac",
+      terminalCount: 1,
+      terminalAnchors: [{ x: -0.5, y: 0 }]
+    });
+
+    const node = createDefaultNode("ac-terminal-transformer-load", { x: 100, y: 100 });
+    node.name = "终端变负荷1";
+
+    expect(node.terminals).toHaveLength(1);
+    expect(node.terminals[0]).toMatchObject({ type: "ac", label: "交流设备端1", anchor: { x: -0.5, y: 0 } });
+    expect(getDeviceGlyphVariant("ac-terminal-transformer-load")).toBe("terminal-transformer-load");
+    expect(getEParameterKeys("ac-terminal-transformer-load", node.params)).toEqual(E_SECTION_COLUMNS.ACLoad);
+
+    const exported = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "终端变负荷测试",
+      nodes: [node],
+      edges: []
+    }));
+
+    expect(exported.ACLoad.rows).toEqual([
+      expect.objectContaining({
+        idx: "1",
+        name: "终端变负荷1",
+        node: "1",
+        pbase: "5",
+        pv0: "1.0",
+        qbase: "1.2",
+        qv0: "1.0",
+        run_stat: "1"
+      })
+    ]);
+  });
+
   test("creates DC branch devices with two DC terminals and two DC node numbers", () => {
     const dcKinds = ["dc-switch", "dc-breaker", "dc-line"] as const;
 
@@ -628,7 +667,7 @@ describe("power system model", () => {
   });
 
   test("creates AC branch devices with two AC terminals and two AC node numbers", () => {
-    const acKinds = ["ac-switch", "ac-breaker", "ac-line"] as const;
+    const acKinds = ["ac-switch", "ac-breaker", "ac-box-breaker", "ac-line"] as const;
 
     for (const kind of acKinds) {
       const node = createDefaultNode(kind, { x: 100, y: 100 });
@@ -639,6 +678,37 @@ describe("power system model", () => {
       expect(node.terminals[1].nodeNumber).toMatch(/^N\d+$/);
       expect(new Set(node.terminals.map((terminal) => terminal.nodeNumber)).size).toBe(2);
     }
+  });
+
+  test("adds box breaker as an ACBreak device with two AC terminals", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-box-breaker");
+    expect(template).toMatchObject({
+      label: "盒型开关",
+      attributeLibrary: "交流设备",
+      terminalType: "ac",
+      terminalCount: 2,
+      params: expect.objectContaining({ status: "合闸" })
+    });
+
+    const node = createDefaultNode("ac-box-breaker", { x: 100, y: 100 });
+    node.name = "盒型开关1";
+
+    expect(node.terminals).toHaveLength(2);
+    expect(node.terminals.map((terminal) => terminal.type)).toEqual(["ac", "ac"]);
+    expect(node.terminals.map((terminal) => terminal.anchor)).toEqual([{ x: -0.5, y: 0 }, { x: 0.5, y: 0 }]);
+    expect(getDeviceGlyphVariant("ac-box-breaker")).toBe("box-breaker");
+    expect(getEParameterKeys("ac-box-breaker", node.params)).toEqual(E_SECTION_COLUMNS.ACBreak);
+
+    const exported = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "盒型开关测试",
+      nodes: [node],
+      edges: []
+    }));
+
+    expect(exported.ACBreak.rows).toEqual([
+      expect.objectContaining({ idx: "1", name: "盒型开关1", i_node: "1", j_node: "2", status: "1", run_stat: "1" })
+    ]);
   });
 
   test("includes AC and DC zero-impedance branch elements in the library and E export", () => {
@@ -668,6 +738,51 @@ describe("power system model", () => {
     expect(DEVICE_LIBRARY.find((item) => item.kind === "acac-converter")).toMatchObject({ attributeLibrary: "交流设备" });
     expect(DEVICE_LIBRARY.find((item) => item.kind === "acdc-converter")).toMatchObject({ attributeLibrary: "直流设备" });
     expect(DEVICE_LIBRARY.find((item) => item.kind === "dcdc-converter")).toMatchObject({ attributeLibrary: "直流设备" });
+  });
+
+  test("adds an AC grounding disconnector as a single-terminal grounding device", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-ground-disconnector");
+    const verticalTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-ground-disconnector-vertical");
+    expect(template).toMatchObject({
+      label: "接地刀闸",
+      attributeLibrary: "交流设备",
+      terminalType: "ac",
+      terminalCount: 1,
+      params: expect.objectContaining({ status: "分闸" })
+    });
+    expect(verticalTemplate).toMatchObject({
+      label: "竖向接地刀闸",
+      attributeLibrary: "交流设备",
+      terminalType: "ac",
+      terminalCount: 1,
+      params: expect.objectContaining({ status: "分闸" })
+    });
+
+    const node = createDefaultNode("ac-ground-disconnector", { x: 100, y: 100 });
+    const verticalNode = createDefaultNode("ac-ground-disconnector-vertical", { x: 200, y: 100 });
+    node.name = "接地刀闸1";
+    verticalNode.name = "竖向接地刀闸1";
+
+    expect(node.terminals).toHaveLength(1);
+    expect(node.terminals[0]).toMatchObject({ type: "ac", label: "交流系统端", anchor: { x: -0.5, y: 0 } });
+    expect(getDeviceGlyphVariant("ac-ground-disconnector")).toBe("ground-disconnector");
+    expect(getEParameterKeys("ac-ground-disconnector", node.params)).toEqual(E_SECTION_COLUMNS.GroundDisconnector);
+    expect(verticalNode.terminals).toHaveLength(1);
+    expect(verticalNode.terminals[0]).toMatchObject({ type: "ac", label: "交流系统端", anchor: { x: 0, y: -0.5 } });
+    expect(getDeviceGlyphVariant("ac-ground-disconnector-vertical")).toBe("ground-disconnector-vertical");
+    expect(getEParameterKeys("ac-ground-disconnector-vertical", verticalNode.params)).toEqual(E_SECTION_COLUMNS.GroundDisconnector);
+
+    const exported = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "接地刀闸测试",
+      nodes: [node, verticalNode],
+      edges: []
+    }));
+
+    expect(exported.GroundDisconnector.rows).toEqual([
+      expect.objectContaining({ idx: "1", name: "接地刀闸1", node: "1", status: "0", run_stat: "1" }),
+      expect.objectContaining({ idx: "2", name: "竖向接地刀闸1", node: "2", status: "0", run_stat: "1" })
+    ]);
   });
 
   test("builds a downloadable E file export for the current model", () => {

@@ -38,6 +38,7 @@ const eSectionColumns = {
   DCSwitch: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   ACBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   DCBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
+  GroundDisconnector: ["idx", "name", "node", "status", "run_stat"],
   ACTransformer: ["idx", "name", "i_node", "j_node", "r", "x", "gt", "bt", "tap", "shift", "run_stat"],
   ACTransfomer3: ["idx", "name", "run_stat", "idx_xf_t1", "idx_xf_t2", "idx_xf_t3"],
   DCDCConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_set", "v_set", "run_stat"],
@@ -344,7 +345,7 @@ function inferESection(kind, params = {}) {
   if (params.component_type && eSectionColumns[params.component_type]) return params.component_type;
   if (kind === "ac-line") return "ACBranch";
   if (kind === "dc-line") return "DCBranch";
-  if (kind === "ac-load") return "ACLoad";
+  if (kind === "ac-load" || kind === "ac-terminal-transformer-load") return "ACLoad";
   if (kind === "dc-load") return "DCLoad";
   if (kind === "hydrogen-source") return "HydroSource";
   if (kind === "hydrogen-load") return "HydroLoad";
@@ -377,8 +378,9 @@ function inferESection(kind, params = {}) {
   if (kind?.startsWith("ac-") && kind.includes("source")) return "ACGenerator";
   if (kind?.startsWith("dc-") && kind.includes("source")) return "DCGenerator";
   if (kind === "ac-switch" || kind === "ac-disconnector") return "ACSwitch";
+  if (kind === "ac-ground-disconnector" || kind === "ac-ground-disconnector-vertical") return "GroundDisconnector";
   if (kind === "dc-switch" || kind === "dc-disconnector") return "DCSwitch";
-  if (kind === "ac-breaker") return "ACBreak";
+  if (kind === "ac-breaker" || kind === "ac-box-breaker") return "ACBreak";
   if (kind === "dc-breaker") return "DCBreak";
   if (kind === "ac-transformer" || kind === "ac-two-winding-transformer") return "ACTransformer";
   if (kind === "ac-three-winding-transformer") return "ACTransfomer3";
