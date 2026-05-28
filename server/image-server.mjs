@@ -24,6 +24,7 @@ const defaultVoltageUnit = "kV";
 const defaultCurrentUnit = "A";
 const defaultPowerBaseValue = 100;
 const eSectionColumns = {
+  StaticSymbol: [],
   ACRealBs: ["idx", "name", "node", "run_stat"],
   DCRealBs: ["idx", "name", "node", "run_stat"],
   ACNode: ["idx", "name", "vbase", "voltage", "angle", "isl", "run_stat"],
@@ -392,6 +393,7 @@ function normalizeSchemesForStorage(schemes) {
 function inferESection(kind, params = {}) {
   if (kind === "ac-bus") return "ACRealBs";
   if (kind === "dc-bus") return "DCRealBs";
+  if (isStaticKind(kind)) return "StaticSymbol";
   if (params.component_type && eSectionColumns[params.component_type]) return params.component_type;
   if (kind === "ac-line") return "ACBranch";
   if (kind === "dc-line") return "DCBranch";

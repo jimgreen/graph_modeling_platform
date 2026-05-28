@@ -73,6 +73,7 @@ import {
   getContainerRelationKey,
   getEExportWarnings,
   getEParameterKeys,
+  inferESection,
   getTemplateParameterDefinitions,
   getOverlappingTerminalGroups,
   getTerminalBusContactGroups,
@@ -2621,6 +2622,38 @@ describe("power system model", () => {
     expect(beforeFinal.y).not.toBe(busPoint.y);
   });
 
+  test("optimizes a committed bus endpoint to reduce bends and total length", () => {
+    const source = createDefaultNode("ac-line", { x: 160, y: 120 });
+    const bus = createDefaultNode("ac-bus", { x: 420, y: 220 });
+    const initialBusPoint = { x: 480, y: 220 };
+    const edge: Edge = {
+      id: "optimize-bus-endpoint",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      targetPoint: initialBusPoint
+    };
+    const nodes = [source, bus];
+    const beforeRoute = routeEdgesForRendering(nodes, [edge], { width: 700, height: 320 })[0].points;
+    const lengthOf = (points: Point[]) =>
+      points.slice(1).reduce((total, point, index) => total + Math.abs(point.x - points[index].x) + Math.abs(point.y - points[index].y), 0);
+    const bendsOf = (points: Point[]) =>
+      points.slice(2).filter((point, index) => {
+        const previous = points[index + 1];
+        const beforePrevious = points[index];
+        return (beforePrevious.x === previous.x) !== (previous.x === point.x);
+      }).length;
+
+    const prepared = prepareConnectionEdgeForCommit(nodes, [edge], edge.id, { width: 700, height: 320 });
+
+    expect(prepared.ok).toBe(true);
+    expect(prepared.edge?.targetPoint).toEqual({ x: 360, y: 220 });
+    const afterRoute = routeEdgesForRendering(nodes, [prepared.edge!], { width: 700, height: 320 })[0].points;
+    expect(bendsOf(afterRoute)).toBeLessThanOrEqual(bendsOf(beforeRoute));
+    expect(lengthOf(afterRoute)).toBeLessThan(lengthOf(beforeRoute));
+  });
+
   test("slides the bus endpoint when the opposite device moves so a straight line remains straight", () => {
     const load = createDefaultNode("ac-load", { x: 200, y: 100 });
     const movedLoad = { ...load, position: { x: 260, y: 100 } };
@@ -4014,6 +4047,10 @@ describe("power system model", () => {
       const node = createDefaultNode(kind, { x: 100, y: 100 });
       expect(isStaticNode(node)).toBe(true);
       expect(node.terminals).toEqual([]);
+      expect(node.params.component_type).toBe("StaticSymbol");
+      expect(inferESection(kind, node.params)).toBe("StaticSymbol");
+      expect(inferESection(kind, {})).toBe("StaticSymbol");
+      expect(getEParameterKeys(kind, node.params)).toEqual([]);
       expect(node.params.fillColor).toBeDefined();
       expect(node.params.strokeColor).toBeDefined();
     }

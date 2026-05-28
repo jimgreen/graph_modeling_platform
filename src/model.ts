@@ -391,6 +391,7 @@ export const DEFAULT_CURRENT_UNIT = "A";
 export const DEFAULT_POWER_BASE_VALUE = 100;
 
 export const E_SECTION_COLUMNS: Record<string, string[]> = {
+  StaticSymbol: [],
   ACRealBs: ["idx", "name", "node", "run_stat"],
   DCRealBs: ["idx", "name", "node", "run_stat"],
   ACNode: ["idx", "name", "vbase", "voltage", "angle", "isl", "run_stat"],
@@ -485,6 +486,7 @@ function isContainerParams(params: Record<string, string> = {}) {
 export function inferESection(kind: string, params: Record<string, string> = {}) {
   if (kind === "ac-bus") return "ACRealBs";
   if (kind === "dc-bus") return "DCRealBs";
+  if (isStaticKind(kind)) return "StaticSymbol";
   const componentType = params.component_type?.trim();
   if (componentType) {
     return componentType;
@@ -522,6 +524,9 @@ export function inferESection(kind: string, params: Record<string, string> = {})
 export type DeviceIndexCounters = Record<string, number>;
 
 function deviceIndexCounterKey(node: Pick<ModelNode, "kind" | "params">): string {
+  if (isStaticKind(node.kind)) {
+    return "";
+  }
   const section = inferESection(node.kind, node.params);
   if (section === "ACTransfomer3") {
     return section;
@@ -1790,6 +1795,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     attributeLibrary: "静态图元",
     size: { width: 120, height: 40 },
     params: {
+      component_type: "StaticSymbol",
       text: "文字",
       fillColor: "transparent",
       strokeColor: "transparent",
@@ -1810,7 +1816,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直线",
     attributeLibrary: "静态图元",
     size: { width: 140, height: 24 },
-    params: { fillColor: "transparent", strokeColor: "#334155", textColor: "#111827", lineWidth: "3", strokeStyle: "solid", fontSize: "16" },
+    params: { component_type: "StaticSymbol", fillColor: "transparent", strokeColor: "#334155", textColor: "#111827", lineWidth: "3", strokeStyle: "solid", fontSize: "16" },
     terminalType: "ac",
     terminalCount: 0
   },
@@ -1819,7 +1825,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "折线",
     attributeLibrary: "静态图元",
     size: { width: 140, height: 70 },
-    params: { fillColor: "transparent", strokeColor: "#334155", textColor: "#111827", lineWidth: "3", strokeStyle: "solid", fontSize: "16" },
+    params: { component_type: "StaticSymbol", fillColor: "transparent", strokeColor: "#334155", textColor: "#111827", lineWidth: "3", strokeStyle: "solid", fontSize: "16" },
     terminalType: "ac",
     terminalCount: 0
   },
@@ -1828,7 +1834,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "正圆",
     attributeLibrary: "静态图元",
     size: { width: 72, height: 72 },
-    params: { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
+    params: { component_type: "StaticSymbol", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
     terminalType: "ac",
     terminalCount: 0
   },
@@ -1837,7 +1843,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "椭圆",
     attributeLibrary: "静态图元",
     size: { width: 112, height: 70 },
-    params: { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
+    params: { component_type: "StaticSymbol", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
     terminalType: "ac",
     terminalCount: 0
   },
@@ -1846,7 +1852,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "方框",
     attributeLibrary: "静态图元",
     size: { width: 112, height: 70 },
-    params: { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
+    params: { component_type: "StaticSymbol", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
     terminalType: "ac",
     terminalCount: 0
   },
@@ -1855,7 +1861,7 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "图片",
     attributeLibrary: "静态图元",
     size: { width: 140, height: 90 },
-    params: { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#64748b", lineWidth: "0", strokeStyle: "solid", fontSize: "16", backgroundImage: "", backgroundImageAssetId: "" },
+    params: { component_type: "StaticSymbol", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#64748b", lineWidth: "0", strokeStyle: "solid", fontSize: "16", backgroundImage: "", backgroundImageAssetId: "" },
     terminalType: "ac",
     terminalCount: 0
   },
@@ -8084,12 +8090,82 @@ function selectCommitSafeRoute(
   return bestRoute;
 }
 
+function uniquePoints(points: Point[]): Point[] {
+  const seen = new Set<string>();
+  const result: Point[] = [];
+  for (const point of points) {
+    const key = `${Math.round(point.x)}:${Math.round(point.y)}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(point);
+  }
+  return result;
+}
+
+function busEndpointCandidatePoints(bus: ModelNode, preferredPoints: Point[]): Point[] {
+  if (!isBusNode(bus)) {
+    return [];
+  }
+  if (isBoundaryBusNode(bus)) {
+    return uniquePoints(preferredPoints.map((point) => projectPointToNodeBoundary(bus, point)));
+  }
+  const halfWidth = (bus.size.width * Math.abs(getNodeScaleX(bus))) / 2;
+  const localXValues = preferredPoints.map((point) => pointToNodeLocal(bus, point).x);
+  return uniquePoints(localXValues.map((localX) =>
+    nodeLocalToPoint(bus, {
+      x: Math.max(-halfWidth, Math.min(halfWidth, localX)),
+      y: 0
+    })
+  ));
+}
+
+function edgeWithEndpointPoint(edge: Edge, side: EdgeSide, point: Point): Edge {
+  return side === "source"
+    ? { ...edge, sourcePoint: point }
+    : { ...edge, targetPoint: point };
+}
+
+function busOptimizedEdgeCandidates(edge: Edge, source: ModelNode, target: ModelNode, context: EdgeRoutingContext): Edge[] {
+  let candidates = [edge];
+  const expandSide = (side: EdgeSide, bus: ModelNode, preferredPoints: Point[]) => {
+    if (!isBusNode(bus)) {
+      return;
+    }
+    const points = busEndpointCandidatePoints(bus, preferredPoints);
+    candidates = candidates.flatMap((candidate) =>
+      points.map((point) => edgeWithEndpointPoint(candidate, side, point))
+    );
+  };
+
+  expandSide("source", source, [context.start, context.endOut, context.end]);
+  expandSide("target", target, [context.end, context.startOut, context.start]);
+
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const sourceKey = candidate.sourcePoint ? `${candidate.sourcePoint.x},${candidate.sourcePoint.y}` : "";
+    const targetKey = candidate.targetPoint ? `${candidate.targetPoint.x},${candidate.targetPoint.y}` : "";
+    const key = `${sourceKey}|${targetKey}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+type DesignedCommitRoute = {
+  edge: Edge;
+  route: RoutedEdge;
+};
+
 function designCommitSafeRoute(
   nodes: ModelNode[],
   edges: Edge[],
   edgeId: string,
   bounds?: CanvasBounds
-): RoutedEdge | null {
+): DesignedCommitRoute | null {
   const edge = edges.find((item) => item.id === edgeId);
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const source = edge ? nodeById.get(edge.sourceId) : undefined;
@@ -8100,17 +8176,44 @@ function designCommitSafeRoute(
 
   const edgeForDesign = edgeWithoutManualPoints(edge);
   const avoidedSegments: Segment[] = [];
-  const context = buildEdgeRoutingContext(source, target, nodes, edgeForDesign);
-  const middleCandidates = buildRouteCandidates(context.startOut, context.endOut, context.blockers, avoidedSegments, bounds);
-  const fullCandidates: Point[][] = [];
-  for (const middle of middleCandidates) {
-    const route = buildFullRoute(context.start, context.startOut, middle.slice(1, -1), context.endOut, context.end, bounds);
-    fullCandidates.push(route);
-    fullCandidates.push(repairRouteAroundBlockers(route, context.blockers, bounds, 1));
+  const initialContext = buildEdgeRoutingContext(source, target, nodes, edgeForDesign);
+  const candidateEdges = busOptimizedEdgeCandidates(edgeForDesign, source, target, initialContext);
+  let best: (DesignedCommitRoute & { bends: number; length: number; score: number }) | null = null;
+  const scoreBlockers = nodes.filter((node) => node.id !== source.id && node.id !== target.id);
+
+  for (const candidateEdge of candidateEdges) {
+    const context = buildEdgeRoutingContext(source, target, nodes, candidateEdge);
+    const middleCandidates = buildRouteCandidates(context.startOut, context.endOut, context.blockers, avoidedSegments, bounds);
+    const fullCandidates: Point[][] = [];
+    for (const middle of middleCandidates) {
+      const route = buildFullRoute(context.start, context.startOut, middle.slice(1, -1), context.endOut, context.end, bounds);
+      fullCandidates.push(route);
+      fullCandidates.push(repairRouteAroundBlockers(route, context.blockers, bounds, 1));
+    }
+
+    const selected = selectCommitSafeRoute(fullCandidates, nodes, source, target, candidateEdge, avoidedSegments, bounds);
+    if (!selected) {
+      continue;
+    }
+    const bends = routeBendCount(selected);
+    const length = routeManhattanLength(selected);
+    const score = scoreRoute(selected, filterBlockersForRoutePoints(selected, scoreBlockers), avoidedSegments);
+    if (
+      !best ||
+      bends < best.bends ||
+      (bends === best.bends && (length < best.length || (length === best.length && score < best.score)))
+    ) {
+      best = {
+        edge: candidateEdge,
+        route: { edgeId, points: selected, path: "" },
+        bends,
+        length,
+        score
+      };
+    }
   }
 
-  const selected = selectCommitSafeRoute(fullCandidates, nodes, source, target, edgeForDesign, avoidedSegments, bounds);
-  return selected ? { edgeId, points: selected, path: "" } : null;
+  return best ? { edge: best.edge, route: best.route } : null;
 }
 
 export function prepareConnectionEdgeForCommit(
@@ -8127,9 +8230,9 @@ export function prepareConnectionEdgeForCommit(
   }
 
   const edgeForDesign = edgeWithoutManualPoints(edge);
-  const safeRoute = designCommitSafeRoute(nodes, edges, edgeId, bounds);
-  if (safeRoute) {
-    const safeEdge = edgeWithCommitManualPoints(edgeForDesign, safeRoute);
+  const safeDesign = designCommitSafeRoute(nodes, edges, edgeId, bounds);
+  if (safeDesign) {
+    const safeEdge = edgeWithCommitManualPoints(safeDesign.edge, safeDesign.route);
     const safeEdges = edges.map((item) => item.id === edgeId ? safeEdge : item);
     const safeValidation = validateConnectionEdgeRoute(nodes, safeEdges, edgeId, bounds, previousRoutes);
     if (safeValidation.ok) {

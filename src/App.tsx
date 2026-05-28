@@ -1474,6 +1474,9 @@ function normalizeComponentTypeName(name: string): string {
 
 function defaultAttributeLibraryForComponentType(sectionName: string): AttributeLibrary {
   const section = normalizeComponentTypeName(sectionName);
+  if (section === "StaticSymbol") {
+    return "静态图元";
+  }
   if (section.startsWith("Hydro")) {
     return "氢能设备";
   }
@@ -1714,6 +1717,7 @@ function deviceDefinitionRowId() {
 
 function fallbackComponentTypeForAttributeLibrary(attributeLibraryName: string) {
   const normalized = normalizeAttributeLibraryName(attributeLibraryName);
+  if (normalized.includes("静态")) return "StaticSymbol";
   if (normalized.includes("直流")) return "DCLoad";
   if (normalized.includes("变流")) return "DCDCConverter";
   if (normalized.includes("氢")) return "HydroLoad";

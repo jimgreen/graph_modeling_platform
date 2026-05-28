@@ -182,6 +182,20 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".custom-attribute-library-select-row.single-control");
   });
 
+  test("keeps static drawing primitives under the StaticSymbol device type", async () => {
+    const source = await readAppSource();
+    const modelSource = await readModelSource();
+    const serverSource = await readServerSource();
+
+    expect(modelSource).toContain("StaticSymbol: []");
+    expect(modelSource).toContain('if (isStaticKind(kind)) return "StaticSymbol";');
+    expect(source).toContain('if (section === "StaticSymbol") {');
+    expect(source).toContain('return "静态图元";');
+    expect(source).toContain('if (normalized.includes("静态")) return "StaticSymbol";');
+    expect(serverSource).toContain("StaticSymbol: []");
+    expect(serverSource).toContain('if (isStaticKind(kind)) return "StaticSymbol";');
+  });
+
   test("shows selected element terminal count as readonly text instead of an editable field", async () => {
     const source = await readAppSource();
     const row = selectedTerminalCountRow(source);
