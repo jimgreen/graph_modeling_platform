@@ -120,6 +120,7 @@ import {
   prepareConnectionEdgeForCommit,
   projectPointToBusCenterline,
   rebuildConnectionRoutesForNodes,
+  rebuildExternalConnectionRoutesForMovedNodes,
   rebuildSingleConnectionRoute,
   reconcileOverlappingTerminalConnections,
   rerouteEdgesAroundMovedNodes,
@@ -467,6 +468,7 @@ const MAX_CANVAS_HEIGHT = 3000;
 const DEFAULT_CANVAS_BACKGROUND = "#f1f5f9";
 const MOVE_BOUNDARY_GUARD = 8;
 const MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES = 5;
+const SMALL_MOVE_FULL_REBUILD_NODE_LIMIT = 5;
 const ORIGINAL_POSITION_REROUTE_PADDING = 64;
 const MOVE_ROUTE_LOCAL_SEARCH_PADDING = 96;
 const ELEMENT_TREE_INITIAL_ITEM_LIMIT = 120;
@@ -5777,14 +5779,29 @@ export function App() {
     previousNodes: ModelNode[] = nodes
   ) => {
     markStoredRouteEdgesDirty(dirtyEdgeIdsForMovedLocalRoutes(selectedEdgeIds, originalRoutePoints));
+    let committedEdges = nextEdges;
+    if (movedNodeIds.length > 0 && movedNodeIds.length < SMALL_MOVE_FULL_REBUILD_NODE_LIMIT) {
+      const rebuiltEdges = rebuildExternalConnectionRoutesForMovedNodes(
+        nextNodes,
+        nextEdges,
+        movedNodeIds,
+        canvasBounds
+      );
+      if (rebuiltEdges !== nextEdges) {
+        const rebuiltDirtyEdgeIds = edgeReferenceDiffIds(nextEdges, rebuiltEdges);
+        markRouteEdgesDirty(rebuiltDirtyEdgeIds);
+        markStoredRouteEdgesDirty(rebuiltDirtyEdgeIds);
+        committedEdges = rebuiltEdges;
+      }
+    }
     setNodes(nextNodes);
-    if (nextEdges !== edges) {
-      setEdges(nextEdges);
+    if (committedEdges !== edges) {
+      setEdges(committedEdges);
     }
     scheduleMovedEdgeOptimization(
       previousNodes,
       nextNodes,
-      nextEdges,
+      committedEdges,
       movedNodeIds,
       originalRoutePoints,
       selectedEdgeIds,

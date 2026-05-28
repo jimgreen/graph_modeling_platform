@@ -51,6 +51,7 @@ import {
   insertOrthogonalRouteBend,
   preserveDraggedRouteShape,
   rebuildConnectionRoutesForNodes,
+  rebuildExternalConnectionRoutesForMovedNodes,
   rebuildSingleConnectionRoute,
   upsertSavedProject,
   rerouteEdgesAroundMovedNodes,
@@ -2414,6 +2415,63 @@ describe("power system model", () => {
     expect(new Set(route.points.map((point) => point.y))).toEqual(new Set([140]));
   });
 
+  test("rebuilds every external connection for a small moved device set", () => {
+    const left = { ...createDefaultNode("ac-line", { x: 80, y: 140 }), id: "left" };
+    const movedA = { ...createDefaultNode("ac-line", { x: 240, y: 140 }), id: "moved-a" };
+    const movedB = { ...createDefaultNode("ac-line", { x: 380, y: 140 }), id: "moved-b" };
+    const right = { ...createDefaultNode("ac-line", { x: 540, y: 140 }), id: "right" };
+    const leftEdge: Edge = {
+      id: "left-external",
+      sourceId: left.id,
+      targetId: movedA.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: 150, y: 80 },
+        { x: 200, y: 80 },
+        { x: 200, y: 220 }
+      ]
+    };
+    const internalEdge: Edge = {
+      id: "internal",
+      sourceId: movedA.id,
+      targetId: movedB.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: 270, y: 80 },
+        { x: 340, y: 80 }
+      ]
+    };
+    const rightEdge: Edge = {
+      id: "right-external",
+      sourceId: movedB.id,
+      targetId: right.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: 420, y: 220 },
+        { x: 480, y: 220 },
+        { x: 480, y: 80 }
+      ]
+    };
+
+    const rebuilt = rebuildExternalConnectionRoutesForMovedNodes(
+      [left, movedA, movedB, right],
+      [leftEdge, internalEdge, rightEdge],
+      [movedA.id, movedB.id],
+      { width: 700, height: 320 }
+    );
+
+    expect(rebuilt[0]).not.toBe(leftEdge);
+    expect(rebuilt[1]).toBe(internalEdge);
+    expect(rebuilt[2]).not.toBe(rightEdge);
+    expect(rebuilt[0].manualPoints).not.toEqual(leftEdge.manualPoints);
+    expect(rebuilt[2].manualPoints).not.toEqual(rightEdge.manualPoints);
+    expect(validateConnectionEdgeRoute([left, movedA, movedB, right], rebuilt, leftEdge.id, { width: 700, height: 320 }).ok).toBe(true);
+    expect(validateConnectionEdgeRoute([left, movedA, movedB, right], rebuilt, rightEdge.id, { width: 700, height: 320 }).ok).toBe(true);
+  });
+
   test("rebuilds connected routes after a node geometry transform", () => {
     const source = { ...createDefaultNode("ac-line", { x: 120, y: 140 }), id: "source" };
     const target = { ...createDefaultNode("ac-line", { x: 520, y: 140 }), id: "target" };
@@ -2754,9 +2812,9 @@ describe("power system model", () => {
     expect(patch).toEqual({ targetPoint: { x: 303, y: 100 } });
   });
 
-  test("slides bus endpoints for manual and non-straight connections instead of limiting the behavior to straight lines", () => {
+  test("slides bus endpoints for manual routes when the terminal segment stays outward", () => {
     const load = createDefaultNode("ac-load", { x: 200, y: 100 });
-    const movedLoad = { ...load, position: { x: 260, y: 140 } };
+    const movedLoad = { ...load, position: { x: 260, y: 100 } };
     const bus = createDefaultNode("ac-bus", { x: 300, y: 100 });
     const edge: Edge = {
       id: "slide-manual-bus",
@@ -2785,7 +2843,34 @@ describe("power system model", () => {
     expect(patch).toEqual({ targetPoint: { x: 303, y: 100 } });
   });
 
-  test("keeps the moved bus endpoint connected by clamping it to the bus range", () => {
+  test("does not slide a bus endpoint when the device terminal would connect sideways", () => {
+    const load = createDefaultNode("ac-load", { x: 200, y: 100 });
+    const movedLoad = { ...load, position: { x: 260, y: 140 } };
+    const bus = createDefaultNode("ac-bus", { x: 300, y: 100 });
+    const edge: Edge = {
+      id: "sideways-bus-slide",
+      sourceId: load.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: { x: 243, y: 100 }
+    };
+
+    const patch = resolveStraightBusSlideEndpoint({
+      edge,
+      sourceNode: load,
+      targetNode: bus,
+      nextSourceNode: movedLoad,
+      nextTargetNode: bus,
+      movingEndpoint: "source",
+      nodes: [load, bus],
+      nextNodes: [movedLoad, bus]
+    });
+
+    expect(patch).toBeNull();
+  });
+
+  test("does not clamp a bus endpoint behind the moved device terminal", () => {
     const load = createDefaultNode("ac-load", { x: 200, y: 100 });
     const movedLoad = { ...load, position: { x: 520, y: 100 } };
     const bus = createDefaultNode("ac-bus", { x: 300, y: 100 });
@@ -2809,7 +2894,67 @@ describe("power system model", () => {
       nextNodes: [movedLoad, bus]
     });
 
-    expect(patch).toEqual({ targetPoint: { x: 360, y: 100 } });
+    expect(patch).toBeNull();
+  });
+
+  test("slides both bus endpoints for a moved two-terminal device connected through outward stubs", () => {
+    const upperBus = {
+      ...createDefaultNode("ac-bus", { x: 300, y: 100 }),
+      id: "upper-bus",
+      size: { width: 420, height: 28 }
+    };
+    const lowerBus = {
+      ...createDefaultNode("ac-bus", { x: 300, y: 300 }),
+      id: "lower-bus",
+      size: { width: 420, height: 28 }
+    };
+    const branch = {
+      ...createDefaultNode("ac-line", { x: 300, y: 200 }),
+      id: "branch"
+    };
+    const movedBranch = { ...branch, position: { x: 340, y: 200 } };
+    const upperEdge: Edge = {
+      id: "upper-bus-edge",
+      sourceId: upperBus.id,
+      targetId: branch.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      sourcePoint: { x: 246, y: 100 }
+    };
+    const lowerEdge: Edge = {
+      id: "lower-bus-edge",
+      sourceId: branch.id,
+      targetId: lowerBus.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      targetPoint: { x: 354, y: 300 }
+    };
+    const nodes = [upperBus, lowerBus, branch];
+    const nextNodes = [upperBus, lowerBus, movedBranch];
+
+    const upperPatch = resolveStraightBusSlideEndpoint({
+      edge: upperEdge,
+      sourceNode: upperBus,
+      targetNode: branch,
+      nextSourceNode: upperBus,
+      nextTargetNode: movedBranch,
+      movingEndpoint: "target",
+      nodes,
+      nextNodes
+    });
+    const lowerPatch = resolveStraightBusSlideEndpoint({
+      edge: lowerEdge,
+      sourceNode: branch,
+      targetNode: lowerBus,
+      nextSourceNode: movedBranch,
+      nextTargetNode: lowerBus,
+      movingEndpoint: "source",
+      nodes,
+      nextNodes
+    });
+
+    expect(upperPatch).toEqual({ sourcePoint: { x: 258, y: 100 } });
+    expect(lowerPatch).toEqual({ targetPoint: { x: 422, y: 300 } });
   });
 
   test("slides the opposite bus endpoint while a connection endpoint is being rewired or dragged", () => {

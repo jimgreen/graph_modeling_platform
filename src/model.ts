@@ -6331,10 +6331,11 @@ function isOrthogonalDirectSegment(a: Point, b: Point) {
 }
 
 function directSegmentMatchesTerminalNormal(a: Point, b: Point, node: ModelNode, terminalId?: string) {
+  if (samePoint(a, b)) {
+    return true;
+  }
   const normal = getTerminalNormal(node, terminalId);
-  const vertical = Math.round(a.x) === Math.round(b.x);
-  const horizontal = Math.round(a.y) === Math.round(b.y);
-  return (vertical && normal.y !== 0) || (horizontal && normal.x !== 0);
+  return isOrthogonalDirectSegment(a, b) && routeSegmentMatchesNormal(a, b, normal);
 }
 
 function directSegmentClearOfNodeBodies(a: Point, b: Point, nodes: ModelNode[], excludedNodeIds: Set<string>) {
@@ -6343,6 +6344,56 @@ function directSegmentClearOfNodeBodies(a: Point, b: Point, nodes: ModelNode[], 
     node.id.startsWith("floating-") ||
     !segmentIntersectsNodeBody(a, b, node)
   );
+}
+
+function normalAxisDistance(from: Point, to: Point, normal: Point) {
+  if (normal.x !== 0) {
+    return (to.x - from.x) * Math.sign(normal.x);
+  }
+  if (normal.y !== 0) {
+    return (to.y - from.y) * Math.sign(normal.y);
+  }
+  return 0;
+}
+
+// Two-terminal devices may leave the terminal on its outward stub before turning toward a bus.
+function routedBusSlideEndpointPoint(options: {
+  busNode: ModelNode;
+  originalBusNode: ModelNode;
+  movingNode: ModelNode;
+  movingTerminalId?: string;
+  movingPoint: Point;
+  nodes: ModelNode[];
+  nextNodes?: ModelNode[];
+}): Point | null {
+  if (options.movingNode.terminals.length < 2) {
+    return null;
+  }
+  const normal = getTerminalNormal(options.movingNode, options.movingTerminalId);
+  const referencePoint = {
+    x: Math.round(options.movingPoint.x + normal.x * ROUTE_ENDPOINT_STUB_LENGTH),
+    y: Math.round(options.movingPoint.y + normal.y * ROUTE_ENDPOINT_STUB_LENGTH)
+  };
+  if (normalAxisDistance(options.movingPoint, referencePoint, normal) <= 0) {
+    return null;
+  }
+  const candidateBusPoint = projectPointToBusCenterline(options.busNode, referencePoint);
+  if (
+    !candidateBusPoint ||
+    normalAxisDistance(options.movingPoint, candidateBusPoint, normal) <= 0 ||
+    !isOrthogonalDirectSegment(referencePoint, candidateBusPoint)
+  ) {
+    return null;
+  }
+  const excludedNodeIds = new Set([options.busNode.id, options.originalBusNode.id, options.movingNode.id]);
+  const nextNodes = options.nextNodes ?? options.nodes;
+  if (
+    !directSegmentClearOfNodeBodies(options.movingPoint, referencePoint, nextNodes, excludedNodeIds) ||
+    !directSegmentClearOfNodeBodies(referencePoint, candidateBusPoint, nextNodes, excludedNodeIds)
+  ) {
+    return null;
+  }
+  return candidateBusPoint;
 }
 
 export function resolveStraightBusSlideEndpointToPoint(options: {
@@ -6374,9 +6425,34 @@ export function resolveStraightBusSlideEndpointToPoint(options: {
   if (!candidateBusPoint) {
     return null;
   }
+  let resolvedBusPoint = candidateBusPoint;
+  if (movingNode && !isBusNode(movingNode)) {
+    const movingTerminalId = options.movingTerminalId ?? edgeTerminalId(edge, movingEndpoint);
+    const excludedNodeIds = new Set([busNode.id, originalBusNode.id, movingNode.id]);
+    if (
+      directSegmentMatchesTerminalNormal(options.movingPoint, candidateBusPoint, movingNode, movingTerminalId) &&
+      directSegmentClearOfNodeBodies(options.movingPoint, candidateBusPoint, options.nextNodes ?? options.nodes, excludedNodeIds)
+    ) {
+      resolvedBusPoint = candidateBusPoint;
+    } else {
+      const routedBusPoint = routedBusSlideEndpointPoint({
+        busNode,
+        originalBusNode,
+        movingNode,
+        movingTerminalId,
+        movingPoint: options.movingPoint,
+        nodes: options.nodes,
+        nextNodes: options.nextNodes
+      });
+      if (!routedBusPoint) {
+        return null;
+      }
+      resolvedBusPoint = routedBusPoint;
+    }
+  }
   return busEndpoint === "source"
-    ? { sourcePoint: candidateBusPoint }
-    : { targetPoint: candidateBusPoint };
+    ? { sourcePoint: resolvedBusPoint }
+    : { targetPoint: resolvedBusPoint };
 }
 
 export function resolveStraightBusSlideEndpoint(options: {
@@ -8313,6 +8389,44 @@ export function rebuildConnectionRoutesForNodes(
 
   const affectedEdgeIds = edges
     .filter((edge) => changedNodeIds.has(edge.sourceId) || changedNodeIds.has(edge.targetId))
+    .map((edge) => edge.id);
+  if (affectedEdgeIds.length === 0) {
+    return edges;
+  }
+
+  let nextEdges = edges;
+  let changed = false;
+  for (const edgeId of affectedEdgeIds) {
+    const candidateEdges = nextEdges.map((edge) => edge.id === edgeId ? edgeWithoutManualPoints(edge) : edge);
+    const prepared = prepareConnectionEdgeForCommit(nodes, candidateEdges, edgeId, bounds);
+    if (!prepared.ok || !prepared.edge) {
+      continue;
+    }
+    nextEdges = nextEdges.map((edge) => {
+      if (edge.id !== edgeId) {
+        return edge;
+      }
+      changed = true;
+      return prepared.edge!;
+    });
+  }
+
+  return changed ? nextEdges : edges;
+}
+
+export function rebuildExternalConnectionRoutesForMovedNodes(
+  nodes: ModelNode[],
+  edges: Edge[],
+  movedNodeIds: Iterable<string>,
+  bounds?: CanvasBounds
+): Edge[] {
+  const movedIds = new Set(movedNodeIds);
+  if (movedIds.size === 0 || edges.length === 0) {
+    return edges;
+  }
+
+  const affectedEdgeIds = edges
+    .filter((edge) => movedIds.has(edge.sourceId) !== movedIds.has(edge.targetId))
     .map((edge) => edge.id);
   if (affectedEdgeIds.length === 0) {
     return edges;
