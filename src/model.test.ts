@@ -2175,13 +2175,13 @@ describe("power system model", () => {
     }
   });
 
-  test("preserves the dragged connection route shape when only one endpoint moves", () => {
+  test("keeps the stationary side of a dragged connection from forming a protruding dogleg", () => {
     const routePoints: Point[] = [
       { x: 100, y: 100 },
-      { x: 130, y: 100 },
-      { x: 130, y: 180 },
-      { x: 240, y: 180 },
-      { x: 300, y: 180 },
+      { x: 128, y: 100 },
+      { x: 128, y: 168 },
+      { x: 240, y: 168 },
+      { x: 300, y: 168 },
       { x: 300, y: 140 }
     ];
 
@@ -2190,15 +2190,17 @@ describe("power system model", () => {
       nextStart: { x: 140, y: 140 },
       nextEnd: { x: 300, y: 140 },
       sourceDelta: { x: 40, y: 40 },
-      targetDelta: { x: 0, y: 0 }
+      targetDelta: { x: 0, y: 0 },
+      sourceNormal: { x: 1, y: 0 },
+      targetNormal: { x: 0, y: 1 }
     });
 
     expect(preserved).toEqual([
       { x: 140, y: 140 },
-      { x: 170, y: 140 },
-      { x: 170, y: 220 },
-      { x: 280, y: 220 },
-      { x: 300, y: 220 },
+      { x: 168, y: 140 },
+      { x: 168, y: 168 },
+      { x: 240, y: 168 },
+      { x: 300, y: 168 },
       { x: 300, y: 140 }
     ]);
     for (let index = 1; index < preserved.length; index += 1) {

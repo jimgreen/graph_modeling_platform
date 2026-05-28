@@ -7154,12 +7154,78 @@ function alignEndpointStubToNormal(points: Point[], endpoint: "source" | "target
   };
 }
 
+function setEndpointStubFromMove(points: Point[], original: Point[], endpoint: "source" | "target", normal?: Point) {
+  if (points.length < 2 || original.length < 2) {
+    return;
+  }
+  const endpointIndex = endpoint === "source" ? 0 : points.length - 1;
+  const stubIndex = endpoint === "source" ? 1 : points.length - 2;
+  const originalEndpointIndex = endpoint === "source" ? 0 : original.length - 1;
+  const originalStubIndex = endpoint === "source" ? 1 : original.length - 2;
+  const endpointPoint = points[endpointIndex];
+  const originalEndpoint = original[originalEndpointIndex];
+  const originalStub = original[originalStubIndex];
+  if (!endpointPoint || !originalEndpoint || !originalStub) {
+    return;
+  }
+  if (normal && (normal.x !== 0 || normal.y !== 0)) {
+    alignEndpointStubToNormal(points, endpoint, normal);
+    return;
+  }
+  points[stubIndex] = roundPoint({
+    x: endpointPoint.x + originalStub.x - originalEndpoint.x,
+    y: endpointPoint.y + originalStub.y - originalEndpoint.y
+  });
+}
+
+function alignSegmentAdjacentToMovedEndpoint(points: Point[], original: Point[], endpoint: "source" | "target") {
+  if (points.length < 3 || original.length < 3) {
+    return;
+  }
+  const stubIndex = endpoint === "source" ? 1 : points.length - 2;
+  const adjacentIndex = endpoint === "source" ? 2 : points.length - 3;
+  const originalStubIndex = endpoint === "source" ? 1 : original.length - 2;
+  const originalAdjacentIndex = endpoint === "source" ? 2 : original.length - 3;
+  const stub = points[stubIndex];
+  const adjacent = points[adjacentIndex];
+  const originalStub = original[originalStubIndex];
+  const originalAdjacent = original[originalAdjacentIndex];
+  if (!stub || !adjacent || !originalStub || !originalAdjacent) {
+    return;
+  }
+  if (Math.round(originalStub.x) === Math.round(originalAdjacent.x)) {
+    points[adjacentIndex] = { ...adjacent, x: stub.x };
+  } else if (Math.round(originalStub.y) === Math.round(originalAdjacent.y)) {
+    points[adjacentIndex] = { ...adjacent, y: stub.y };
+  }
+}
+
+function preserveEndpointLocalRouteShape(options: PreserveDraggedRouteShapeOptions, sourceMoved: boolean, targetMoved: boolean): Point[] {
+  const points = options.routePoints.map(roundPoint);
+  points[0] = roundPoint(options.nextStart);
+  points[points.length - 1] = roundPoint(options.nextEnd);
+  if (sourceMoved || options.sourceNormal) {
+    setEndpointStubFromMove(points, options.routePoints, "source", options.sourceNormal);
+    alignSegmentAdjacentToMovedEndpoint(points, options.routePoints, "source");
+  }
+  if (targetMoved || options.targetNormal) {
+    setEndpointStubFromMove(points, options.routePoints, "target", options.targetNormal);
+    alignSegmentAdjacentToMovedEndpoint(points, options.routePoints, "target");
+  }
+  return orthogonalizeRouteKeepingCollinear(points);
+}
+
 export function preserveDraggedRouteShape(options: PreserveDraggedRouteShapeOptions): Point[] {
   if (options.routePoints.length === 0) {
     return [];
   }
   if (options.routePoints.length === 1) {
     return [roundPoint(options.nextStart)];
+  }
+  const sourceMoved = nonZeroDelta(options.sourceDelta);
+  const targetMoved = nonZeroDelta(options.targetDelta);
+  if (!options.routeDelta && (sourceMoved || targetMoved) && !sameDelta(options.sourceDelta, options.targetDelta)) {
+    return preserveEndpointLocalRouteShape(options, sourceMoved, targetMoved);
   }
   const delta = draggedRouteShapeDelta(options);
   const translated = options.routePoints.map((point) =>
