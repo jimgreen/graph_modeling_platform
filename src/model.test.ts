@@ -3131,7 +3131,6 @@ describe("power system model", () => {
       "idx",
       "name",
       "run_stat",
-      "is_container",
       "idx_ac_load_t1",
       "idx_dc_unit_t2",
       "idx_heat2_unit_t3"
@@ -3179,7 +3178,6 @@ describe("power system model", () => {
       "idx",
       "name",
       "run_stat",
-      "is_container",
       "idx_ac_unit_t1",
       "idx_dc_load_t2",
       "idx_h2_unit_t3",
@@ -3445,12 +3443,12 @@ describe("power system model", () => {
 
   test("filters container body parameters to the current container variant", () => {
     const expected = [
-      ["ac-electrolyzer", ["idx", "name", "run_stat", "is_container", "idx_ac_load_t1", "idx_h2_unit_t2"], ["idx_dc_load_t1"]],
-      ["dc-electrolyzer", ["idx", "name", "run_stat", "is_container", "idx_dc_load_t1", "idx_h2_unit_t2"], ["idx_ac_load_t1"]],
-      ["ac-fuel-cell", ["idx", "name", "run_stat", "is_container", "idx_ac_unit_t1", "idx_h2_load_t2"], ["idx_dc_unit_t1"]],
-      ["dc-fuel-cell", ["idx", "name", "run_stat", "is_container", "idx_dc_unit_t1", "idx_h2_load_t2"], ["idx_ac_unit_t1"]],
-      ["ac-heater", ["idx", "name", "run_stat", "is_container", "idx_ac_load_t1", "idx_heat_unit_t2"], ["idx_dc_load_t1"]],
-      ["dc-heater", ["idx", "name", "run_stat", "is_container", "idx_dc_load_t1", "idx_heat_unit_t2"], ["idx_ac_load_t1"]]
+      ["ac-electrolyzer", ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_h2_unit_t2"], ["idx_dc_load_t1", "is_container"]],
+      ["dc-electrolyzer", ["idx", "name", "run_stat", "idx_dc_load_t1", "idx_h2_unit_t2"], ["idx_ac_load_t1", "is_container"]],
+      ["ac-fuel-cell", ["idx", "name", "run_stat", "idx_ac_unit_t1", "idx_h2_load_t2"], ["idx_dc_unit_t1", "is_container"]],
+      ["dc-fuel-cell", ["idx", "name", "run_stat", "idx_dc_unit_t1", "idx_h2_load_t2"], ["idx_ac_unit_t1", "is_container"]],
+      ["ac-heater", ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_heat_unit_t2"], ["idx_dc_load_t1", "is_container"]],
+      ["dc-heater", ["idx", "name", "run_stat", "idx_dc_load_t1", "idx_heat_unit_t2"], ["idx_ac_load_t1", "is_container"]]
     ] as const;
 
     for (const [kind, includedKeys, excludedKeys] of expected) {
@@ -3604,7 +3602,6 @@ describe("power system model", () => {
       "idx",
       "name",
       "run_stat",
-      "is_container",
       "idx_heat2_unit_t1",
       "idx_heat2_unit_t3"
     ]);
@@ -3659,7 +3656,8 @@ describe("power system model", () => {
       const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
       expect(template?.isContainer).toBe(true);
       const definitions = getTemplateParameterDefinitions(template!);
-      expect(definitions.map((definition) => definition.enName)).toEqual(expect.arrayContaining(["is_container", ...relationKeys]));
+      expect(definitions.map((definition) => definition.enName)).toEqual(expect.arrayContaining([...relationKeys]));
+      expect(definitions.map((definition) => definition.enName)).not.toContain("is_container");
       expect(definitions.some((definition) => definition.enName === "node" || definition.enName.endsWith("_node"))).toBe(false);
       const node = createDefaultNode(kind, { x: 100, y: 100 });
       expect(node.params.is_container).toBe("1");

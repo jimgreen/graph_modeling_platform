@@ -393,6 +393,16 @@ type BackendColorConfigResponse = {
   exists?: boolean;
   savedAt?: string;
 };
+type DeviceLibraryPersistencePayload = {
+  customDeviceTemplates: DeviceTemplate[];
+  customAttributeLibraries: AttributeLibrary[];
+  customComponentTypes: CustomComponentTypeDefinition[];
+  deviceDefinitionOverrides: Record<string, DeviceTemplateDefinitionOverride>;
+};
+type BackendDeviceLibraryResponse = Partial<DeviceLibraryPersistencePayload> & {
+  exists?: boolean;
+  savedAt?: string;
+};
 type CustomParamDraft = DeviceParameterDefinition & {
   id: string;
 };
@@ -852,7 +862,6 @@ const PARAM_LABELS: Record<string, string> = {
   scaleY: "纵向倍率",
   terminalCount: "端子数量",
   terminalVbase: "端子电压基值",
-  is_container: "是否容器",
   ratedCapacity: "额定容量",
   ratedVoltage: "额定电压",
   frequency: "频率",
@@ -1367,6 +1376,34 @@ async function saveBackendColorConfigPayload(normalizedColorConfigPayload: strin
   }
 }
 
+function serializeDeviceLibraryForStorage(payload: DeviceLibraryPersistencePayload) {
+  return JSON.stringify(normalizeDeviceLibraryPersistencePayload(payload));
+}
+
+async function fetchBackendDeviceLibrary(): Promise<DeviceLibraryPersistencePayload & { exists: boolean }> {
+  const response = await fetch("/api/device-library");
+  if (!response.ok) {
+    throw new Error("读取后台图元库失败。");
+  }
+  const payload = (await response.json()) as BackendDeviceLibraryResponse;
+  return {
+    ...normalizeDeviceLibraryPersistencePayload(payload),
+    exists: Boolean(payload.exists)
+  };
+}
+
+async function saveBackendDeviceLibraryPayload(normalizedDeviceLibraryPayload: string): Promise<void> {
+  const response = await fetch("/api/device-library", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: normalizedDeviceLibraryPayload
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(typeof payload.error === "string" ? payload.error : "保存图元库到后台失败。");
+  }
+}
+
 function groupDeviceTemplatesByAttributeLibrary(templates: DeviceTemplate[]): Record<string, DeviceTemplate[]> {
   return templates.reduce<Record<string, DeviceTemplate[]>>((groups, item) => {
     const group = normalizeAttributeLibraryName(item.attributeLibrary);
@@ -1524,7 +1561,7 @@ function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[] {
       terminalAssociations: ((item as DeviceTemplate).terminalAssociations ?? []).slice(0, 4) as ContainerTerminalAssociationValue[],
       isContainer: Boolean((item as DeviceTemplate).isContainer),
       custom: true,
-      parameterDefinitions: ((item as DeviceTemplate).parameterDefinitions ?? []).map((definition) => ({ ...definition }))
+      parameterDefinitions: normalizeDefinitionRows((item as DeviceTemplate).parameterDefinitions ?? [])
     }))
     .filter((item) => item.kind.trim() && item.label.trim());
 }
@@ -1549,7 +1586,7 @@ function normalizeDefinitionRows(value: unknown): DeviceParameterDefinition[] {
         readonly: Boolean((item as DeviceParameterDefinition).readonly)
       };
     })
-    .filter((item) => item.enName);
+    .filter((item) => item.enName && item.enName !== "is_container");
 }
 
 function normalizeDeviceDefinitionOverrides(value: unknown): Record<string, DeviceTemplateDefinitionOverride> {
@@ -1577,6 +1614,16 @@ function normalizeDeviceDefinitionOverrides(value: unknown): Record<string, Devi
     },
     {}
   );
+}
+
+function normalizeDeviceLibraryPersistencePayload(value: unknown): DeviceLibraryPersistencePayload {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value as Partial<DeviceLibraryPersistencePayload> : {};
+  return {
+    customDeviceTemplates: normalizeCustomDeviceTemplates(source.customDeviceTemplates),
+    customAttributeLibraries: normalizeCustomAttributeLibraries(source.customAttributeLibraries),
+    customComponentTypes: normalizeCustomComponentTypes(source.customComponentTypes),
+    deviceDefinitionOverrides: normalizeDeviceDefinitionOverrides(source.deviceDefinitionOverrides)
+  };
 }
 
 function readCustomDeviceTemplates(): DeviceTemplate[] {
@@ -1609,6 +1656,15 @@ function readDeviceDefinitionOverrides(): Record<string, DeviceTemplateDefinitio
   } catch {
     return {};
   }
+}
+
+function readLocalDeviceLibraryPersistencePayload(): DeviceLibraryPersistencePayload {
+  return {
+    customDeviceTemplates: readCustomDeviceTemplates(),
+    customAttributeLibraries: readCustomAttributeLibraries(),
+    customComponentTypes: readCustomComponentTypes(),
+    deviceDefinitionOverrides: readDeviceDefinitionOverrides()
+  };
 }
 
 function readColorDisplayMode(): ColorDisplayMode {
@@ -1675,7 +1731,7 @@ function resolveTemplateComponentType(template: DeviceTemplate) {
 
 function createDefinitionDraftRows(template: DeviceTemplate): DeviceDefinitionDraftRow[] {
   return getTemplateParameterDefinitions(template)
-    .filter((definition) => definition.enName !== "component_type")
+    .filter((definition) => definition.enName !== "component_type" && definition.enName !== "is_container")
     .map((definition) => ({
       ...definition,
       cnName: definition.cnName === definition.enName ? PARAM_LABELS[definition.enName] ?? definition.cnName : definition.cnName,
@@ -1751,7 +1807,7 @@ function generateCustomDeviceImage(label: string, terminalTypes: TerminalType[])
 function parseCustomDefinitions(params: Record<string, string>): DeviceParameterDefinition[] {
   try {
     const parsed = JSON.parse(params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]");
-    return Array.isArray(parsed) ? parsed : [];
+    return normalizeDefinitionRows(parsed);
   } catch {
     return [];
   }
@@ -3061,6 +3117,7 @@ export function App() {
     [initialDraft?.deviceIndexCounters, initialLayeredProject.nodes]
   );
   const initialSavedSchemes = useMemo(() => readSavedSchemes(), []);
+  const initialDeviceLibrary = useMemo(() => readLocalDeviceLibraryPersistencePayload(), []);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const customDeviceImageInputRef = useRef<HTMLInputElement | null>(null);
@@ -3074,6 +3131,9 @@ export function App() {
   const backendColorConfigLoadedRef = useRef(false);
   const suppressNextBackendColorSyncRef = useRef(false);
   const lastPersistedColorConfigPayloadRef = useRef<string | null>(null);
+  const backendDeviceLibraryLoadedRef = useRef(false);
+  const suppressNextBackendDeviceLibrarySyncRef = useRef(false);
+  const lastPersistedDeviceLibraryPayloadRef = useRef<string | null>(null);
   const imageLibraryInitializedRef = useRef(false);
   const lastMouseStatusRef = useRef<Point | null>(null);
   const pendingMouseStatusRef = useRef<Point | null>(null);
@@ -3170,16 +3230,16 @@ export function App() {
   const [expandedAttributeLibraries, setExpandedAttributeLibraries] = useState<AttributeLibrary[]>([...DEFAULT_ATTRIBUTE_LIBRARIES]);
   const [collapsedElementTreeGroups, setCollapsedElementTreeGroups] = useState<string[]>([]);
   const [elementTreeItemLimits, setElementTreeItemLimits] = useState<Record<string, number>>({});
-  const [customAttributeLibraries, setCustomAttributeLibraries] = useState<AttributeLibrary[]>(() => readCustomAttributeLibraries());
-  const [customComponentTypes, setCustomComponentTypes] = useState<CustomComponentTypeDefinition[]>(() => readCustomComponentTypes());
-  const [customDeviceTemplates, setCustomDeviceTemplates] = useState<DeviceTemplate[]>(() => readCustomDeviceTemplates());
+  const [customAttributeLibraries, setCustomAttributeLibraries] = useState<AttributeLibrary[]>(() => initialDeviceLibrary.customAttributeLibraries);
+  const [customComponentTypes, setCustomComponentTypes] = useState<CustomComponentTypeDefinition[]>(() => initialDeviceLibrary.customComponentTypes);
+  const [customDeviceTemplates, setCustomDeviceTemplates] = useState<DeviceTemplate[]>(() => initialDeviceLibrary.customDeviceTemplates);
   const [customDeviceDialogOpen, setCustomDeviceDialogOpen] = useState(false);
   const [customComponentTreeSelection, setCustomComponentTreeSelection] = useState<CustomComponentTreeSelection>({ kind: "attributeLibrary", attributeLibraryName: "交流设备" });
   const [collapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeLibraries] = useState<AttributeLibrary[]>([]);
   const [collapsedCustomComponentTreeTypes, setCollapsedCustomComponentTreeTypes] = useState<string[]>([]);
   const [editingCustomDeviceKind, setEditingCustomDeviceKind] = useState("");
   const [customDeviceDraft, setCustomDeviceDraft] = useState<CustomDeviceDraft>(() => createEmptyCustomDeviceDraft());
-  const [deviceDefinitionOverrides, setDeviceDefinitionOverrides] = useState<Record<string, DeviceTemplateDefinitionOverride>>(() => readDeviceDefinitionOverrides());
+  const [deviceDefinitionOverrides, setDeviceDefinitionOverrides] = useState<Record<string, DeviceTemplateDefinitionOverride>>(() => initialDeviceLibrary.deviceDefinitionOverrides);
   const [deviceDefinitionDialogOpen, setDeviceDefinitionDialogOpen] = useState(false);
   const [selectedDefinitionKind, setSelectedDefinitionKind] = useState<DeviceKind | "">("");
   const [expandedDefinitionGroups, setExpandedDefinitionGroups] = useState<AttributeLibrary[]>([...DEFAULT_ATTRIBUTE_LIBRARIES]);
@@ -4240,6 +4300,39 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    fetchBackendDeviceLibrary()
+      .then((backendDeviceLibrary) => {
+        backendDeviceLibraryLoadedRef.current = true;
+        if (backendDeviceLibrary.exists) {
+          const backendPayload = serializeDeviceLibraryForStorage(backendDeviceLibrary);
+          lastPersistedDeviceLibraryPayloadRef.current = backendPayload;
+          suppressNextBackendDeviceLibrarySyncRef.current = true;
+          setCustomDeviceTemplates(backendDeviceLibrary.customDeviceTemplates);
+          setCustomAttributeLibraries(backendDeviceLibrary.customAttributeLibraries);
+          setCustomComponentTypes(backendDeviceLibrary.customComponentTypes);
+          setDeviceDefinitionOverrides(backendDeviceLibrary.deviceDefinitionOverrides);
+          return;
+        }
+        const localPayload = serializeDeviceLibraryForStorage({
+          customDeviceTemplates,
+          customAttributeLibraries,
+          customComponentTypes,
+          deviceDefinitionOverrides
+        });
+        lastPersistedDeviceLibraryPayloadRef.current = localPayload;
+        void saveBackendDeviceLibraryPayload(localPayload).catch(() => {
+          // 后台暂不可写时仍保留浏览器本地图元库缓存。
+        });
+      })
+      .catch(() => {
+        backendDeviceLibraryLoadedRef.current = false;
+        // 后台不可用时继续使用浏览器本地图元库缓存。
+      });
+    // 仅在启动时从后台拉取一次，避免后台定义刷新打断当前编辑。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       const normalizedSchemesPayload = serializeSchemesForStorage(schemes);
       if (normalizedSchemesPayload === lastPersistedSchemesPayloadRef.current) {
@@ -4269,20 +4362,42 @@ export function App() {
   }, [schemes]);
 
   useEffect(() => {
-    window.localStorage.setItem(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, JSON.stringify(customDeviceTemplates));
-  }, [customDeviceTemplates]);
-
-  useEffect(() => {
-    window.localStorage.setItem(CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY, JSON.stringify(customAttributeLibraries));
-  }, [customAttributeLibraries]);
-
-  useEffect(() => {
-    window.localStorage.setItem(CUSTOM_COMPONENT_TYPES_STORAGE_KEY, JSON.stringify(customComponentTypes));
-  }, [customComponentTypes]);
-
-  useEffect(() => {
-    window.localStorage.setItem(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, JSON.stringify(deviceDefinitionOverrides));
-  }, [deviceDefinitionOverrides]);
+    const timeoutId = window.setTimeout(() => {
+      const normalizedDeviceLibrary = normalizeDeviceLibraryPersistencePayload({
+        customDeviceTemplates,
+        customAttributeLibraries,
+        customComponentTypes,
+        deviceDefinitionOverrides
+      });
+      const normalizedDeviceLibraryPayload = JSON.stringify(normalizedDeviceLibrary);
+      try {
+        window.localStorage.setItem(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customDeviceTemplates));
+        window.localStorage.setItem(CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customAttributeLibraries));
+        window.localStorage.setItem(CUSTOM_COMPONENT_TYPES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customComponentTypes));
+        window.localStorage.setItem(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.deviceDefinitionOverrides));
+      } catch {
+        // 浏览器缓存不可写时不阻断当前编辑，后台同步仍会继续尝试。
+      }
+      if (normalizedDeviceLibraryPayload === lastPersistedDeviceLibraryPayloadRef.current) {
+        if (suppressNextBackendDeviceLibrarySyncRef.current) {
+          suppressNextBackendDeviceLibrarySyncRef.current = false;
+        }
+        return;
+      }
+      lastPersistedDeviceLibraryPayloadRef.current = normalizedDeviceLibraryPayload;
+      if (!backendDeviceLibraryLoadedRef.current) {
+        return;
+      }
+      if (suppressNextBackendDeviceLibrarySyncRef.current) {
+        suppressNextBackendDeviceLibrarySyncRef.current = false;
+        return;
+      }
+      void saveBackendDeviceLibraryPayload(normalizedDeviceLibraryPayload).catch(() => {
+        // 后台保存失败时不阻塞本地编辑；下一次图元库变更会继续尝试同步。
+      });
+    }, 800);
+    return () => window.clearTimeout(timeoutId);
+  }, [customDeviceTemplates, customAttributeLibraries, customComponentTypes, deviceDefinitionOverrides]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -9171,7 +9286,7 @@ export function App() {
       terminalAssociations
     }).map((definition) => definition.enName.toLowerCase()));
     const customParams = (template.parameterDefinitions ?? parseCustomDefinitions(template.params))
-      .filter((definition) => !defaultDefinitions.has(definition.enName.toLowerCase()) && definition.enName !== "component_type")
+      .filter((definition) => !defaultDefinitions.has(definition.enName.toLowerCase()) && definition.enName !== "component_type" && definition.enName !== "is_container")
       .map((definition) => ({ ...definition, id: customParamId() }));
     ensureCustomComponentTreeExpanded(attributeLibraryName, section);
     setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section, templateKind: template.kind });
@@ -11387,7 +11502,7 @@ export function App() {
                             ? [...eKeys, ...customExtraKeys]
                             : customKeys.length > 0
                               ? customKeys
-                              : Object.keys(selectedNode.params).filter((key) => !key.startsWith("_"));
+                              : Object.keys(selectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container");
                         const readonlyKeys = new Set(customDefinitions.filter((definition) => definition.readonly).map((definition) => definition.enName));
                         return keys.map((key) => {
                           const value = eKeys.length > 0 ? getEParamValue(key, selectedNode) : key === "name" ? selectedNode.name : selectedNode.params[key] ?? "";

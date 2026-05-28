@@ -13,9 +13,12 @@ const schemeDataDir = resolve(repoRoot, "data", "schemes");
 const schemeManifestPath = join(schemeDataDir, "schemes.json");
 const settingsDataDir = resolve(repoRoot, "data", "settings");
 const colorConfigPath = join(settingsDataDir, "color-config.json");
+const deviceLibraryDataDir = resolve(repoRoot, "data", "device-library");
+const deviceLibraryPath = join(deviceLibraryDataDir, "library.json");
 const maxImageBodyBytes = 16 * 1024 * 1024;
 const maxSchemeBodyBytes = 64 * 1024 * 1024;
 const maxColorConfigBodyBytes = 1024 * 1024;
+const maxDeviceLibraryBodyBytes = 16 * 1024 * 1024;
 const defaultPowerUnit = "MW";
 const defaultVoltageUnit = "kV";
 const defaultCurrentUnit = "A";
@@ -240,6 +243,53 @@ async function writeColorConfig(config) {
     savedAt: new Date().toISOString()
   };
   await writeTextIfChanged(colorConfigPath, JSON.stringify(normalized, null, 2));
+  return normalized;
+}
+
+async function ensureDeviceLibraryStore() {
+  await mkdir(deviceLibraryDataDir, { recursive: true });
+}
+
+function normalizeDeviceLibraryConfig(payload) {
+  const source = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+  const customDeviceTemplates = Array.isArray(source.customDeviceTemplates) ? source.customDeviceTemplates : [];
+  const customAttributeLibraries = Array.isArray(source.customAttributeLibraries) ? source.customAttributeLibraries : [];
+  const customComponentTypes = Array.isArray(source.customComponentTypes) ? source.customComponentTypes : [];
+  const deviceDefinitionOverrides =
+    source.deviceDefinitionOverrides && typeof source.deviceDefinitionOverrides === "object" && !Array.isArray(source.deviceDefinitionOverrides)
+      ? source.deviceDefinitionOverrides
+      : {};
+  return {
+    customDeviceTemplates,
+    customAttributeLibraries,
+    customComponentTypes,
+    deviceDefinitionOverrides
+  };
+}
+
+async function readDeviceLibraryConfig() {
+  await ensureDeviceLibraryStore();
+  try {
+    const raw = await readFile(deviceLibraryPath, "utf-8");
+    return {
+      exists: true,
+      ...normalizeDeviceLibraryConfig(JSON.parse(raw))
+    };
+  } catch {
+    return {
+      exists: false,
+      ...normalizeDeviceLibraryConfig({})
+    };
+  }
+}
+
+async function writeDeviceLibraryConfig(config) {
+  await ensureDeviceLibraryStore();
+  const normalized = {
+    ...normalizeDeviceLibraryConfig(config),
+    savedAt: new Date().toISOString()
+  };
+  await writeTextIfChanged(deviceLibraryPath, JSON.stringify(normalized, null, 2));
   return normalized;
 }
 
@@ -986,6 +1036,13 @@ async function handleSaveColorConfig(request, response) {
   sendJson(response, 200, { ok: true, ...normalized });
 }
 
+async function handleSaveDeviceLibrary(request, response) {
+  const body = await readBody(request, maxDeviceLibraryBodyBytes, "图元库数据过大，最大支持 16MB。");
+  const payload = JSON.parse(body || "{}");
+  const normalized = await writeDeviceLibraryConfig(payload);
+  sendJson(response, 200, { ok: true, ...normalized });
+}
+
 export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
   const server = createServer(async (request, response) => {
     try {
@@ -1052,6 +1109,15 @@ export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
       }
       if (request.method === "PUT" && url.pathname === "/api/color-config") {
         await handleSaveColorConfig(request, response);
+        return;
+      }
+      if (request.method === "GET" && url.pathname === "/api/device-library") {
+        const deviceLibraryConfig = await readDeviceLibraryConfig();
+        sendJson(response, 200, deviceLibraryConfig);
+        return;
+      }
+      if (request.method === "PUT" && url.pathname === "/api/device-library") {
+        await handleSaveDeviceLibrary(request, response);
         return;
       }
       const imageMatch = /^\/api\/images\/([^/]+)$/u.exec(url.pathname);

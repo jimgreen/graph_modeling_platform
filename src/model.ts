@@ -3040,7 +3040,6 @@ export function buildDefaultDeviceParameterDefinitions(
     }
     return [
       ...baseDefinitions,
-      { cnName: "是否容器", enName: "is_container", valueType: "integer", typicalValue: "1", readonly: true },
       ...relationDefinitions
     ];
   }
@@ -3445,7 +3444,7 @@ function inferDefinitionValueType(key: string, value: string): DeviceParameterVa
 
 function normalizeTemplateDefinition(definition: DeviceParameterDefinition): DeviceParameterDefinition | null {
   const enName = String(definition.enName ?? "").trim();
-  if (!enName) {
+  if (!enName || enName === "is_container") {
     return null;
   }
   const valueType = TEMPLATE_DEFINITION_VALUE_TYPES[enName] ?? (["integer", "float", "string", "enum"].includes(definition.valueType) ? definition.valueType : "string");
@@ -3479,7 +3478,7 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
       terminalAssociations: template.terminalAssociations
     });
     const defaultKeys = new Set(defaultDefinitions.map((definition) => definition.enName));
-    const extraKeys = Object.keys(template.params).filter((key) => key && !key.startsWith("_") && !defaultKeys.has(key));
+    const extraKeys = Object.keys(template.params).filter((key) => key && key !== "is_container" && !key.startsWith("_") && !defaultKeys.has(key));
     return [
       ...defaultDefinitions,
       ...extraKeys.map((key) => ({
@@ -3538,7 +3537,7 @@ function applyTemplateDefinitionDefaults(params: Record<string, string>, templat
   };
   for (const definition of parameterDefinitions) {
     const enName = definition.enName.trim();
-    if (!enName || enName === "name") {
+    if (!enName || enName === "name" || enName === "is_container") {
       continue;
     }
     next[enName] = definition.typicalValue;
@@ -3559,7 +3558,7 @@ function applyContainerRelationDefaults(params: Record<string, string>, template
     terminalRoles: template.terminalRoles,
     terminalAssociations: template.terminalAssociations
   })) {
-    if (definition.enName === "name") {
+    if (definition.enName === "name" || definition.enName === "is_container") {
       continue;
     }
     next[definition.enName] = next[definition.enName] ?? definition.typicalValue;

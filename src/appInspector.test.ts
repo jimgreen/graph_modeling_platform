@@ -1097,4 +1097,25 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const normalizedSchemesPayload = serializeSchemesForStorage(schemes);");
     expect(savedProjectNormalizerBlock).not.toContain("assignMissingDeviceIndexes");
   });
+
+  test("persists custom device library definitions through the backend", async () => {
+    const source = await readAppSource();
+    const serverSource = await readServerSource();
+
+    expect(source).toContain("fetchBackendDeviceLibrary");
+    expect(source).toContain("saveBackendDeviceLibraryPayload");
+    expect(source).toContain('fetch("/api/device-library")');
+    expect(source).toContain("backendDeviceLibraryLoadedRef");
+    expect(source).toContain("lastPersistedDeviceLibraryPayloadRef");
+    expect(source).toContain("CUSTOM_DEVICE_LIBRARY_STORAGE_KEY");
+    expect(source).toContain("CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY");
+    expect(source).toContain("CUSTOM_COMPONENT_TYPES_STORAGE_KEY");
+    expect(source).toContain("DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY");
+
+    expect(serverSource).toContain('const deviceLibraryDataDir = resolve(repoRoot, "data", "device-library");');
+    expect(serverSource).toContain('const deviceLibraryPath = join(deviceLibraryDataDir, "library.json");');
+    expect(serverSource).toContain("readDeviceLibraryConfig");
+    expect(serverSource).toContain("writeDeviceLibraryConfig");
+    expect(serverSource).toContain('url.pathname === "/api/device-library"');
+  });
 });
