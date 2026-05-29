@@ -300,6 +300,7 @@ export type ModelGroup = {
   name: string;
   nodeIds: string[];
   edgeIds: string[];
+  childGroupIds?: string[];
 };
 
 export type ModelLayer = {
@@ -6150,7 +6151,6 @@ export function normalizeModelGroups(
   const validNodeIds = new Set(nodes.map((node) => node.id));
   const validEdgeIds = new Set(edges.map((edge) => edge.id));
   const seenGroupIds = new Set<string>();
-  const normalized: ModelGroup[] = [];
   const uniqueValidIds = (ids: readonly string[] | undefined, validIds: ReadonlySet<string>) => {
     const seen = new Set<string>();
     return (ids ?? []).filter((id) => {
@@ -6161,8 +6161,18 @@ export function normalizeModelGroups(
       return true;
     });
   };
+  const uniqueIds = (ids: readonly string[] | undefined) => {
+    const seen = new Set<string>();
+    return (ids ?? []).filter((id) => {
+      if (!id || seen.has(id)) {
+        return false;
+      }
+      seen.add(id);
+      return true;
+    });
+  };
 
-  (groups ?? []).forEach((group, index) => {
+  let normalized: ModelGroup[] = (groups ?? []).map((group, index) => {
     let id = (group.id ?? "").trim() || `group-${index + 1}`;
     if (seenGroupIds.has(id)) {
       id = `${id}-${index + 1}`;
@@ -6170,18 +6180,68 @@ export function normalizeModelGroups(
     seenGroupIds.add(id);
     const nodeIds = uniqueValidIds(group.nodeIds, validNodeIds);
     const edgeIds = uniqueValidIds(group.edgeIds, validEdgeIds);
-    if (nodeIds.length + edgeIds.length < 2) {
-      return;
-    }
-    normalized.push({
+    return {
       id,
-      name: (group.name ?? "").trim() || `组合${normalized.length + 1}`,
+      name: (group.name ?? "").trim(),
       nodeIds,
-      edgeIds
-    });
+      edgeIds,
+      childGroupIds: uniqueIds(group.childGroupIds)
+    };
   });
 
-  return normalized;
+  const hasDescendant = (
+    groupsById: ReadonlyMap<string, ModelGroup>,
+    groupId: string,
+    targetGroupId: string,
+    visiting = new Set<string>()
+  ): boolean => {
+    if (groupId === targetGroupId) {
+      return true;
+    }
+    if (visiting.has(groupId)) {
+      return false;
+    }
+    visiting.add(groupId);
+    const group = groupsById.get(groupId);
+    if (!group) {
+      return false;
+    }
+    return (group.childGroupIds ?? []).some((childGroupId) => hasDescendant(groupsById, childGroupId, targetGroupId, visiting));
+  };
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const groupIds = new Set(normalized.map((group) => group.id));
+    const groupsById = new Map(normalized.map((group) => [group.id, group] as const));
+    const next = normalized.flatMap((group) => {
+      const childGroupIds = (group.childGroupIds ?? []).filter((childGroupId) =>
+        childGroupId !== group.id &&
+        groupIds.has(childGroupId) &&
+        !hasDescendant(groupsById, childGroupId, group.id)
+      );
+      if (childGroupIds.length !== (group.childGroupIds ?? []).length) {
+        changed = true;
+      }
+      if (group.nodeIds.length + group.edgeIds.length + childGroupIds.length < 2) {
+        changed = true;
+        return [];
+      }
+      const baseGroup = {
+        id: group.id,
+        name: group.name,
+        nodeIds: group.nodeIds,
+        edgeIds: group.edgeIds
+      };
+      return childGroupIds.length > 0 ? [{ ...baseGroup, childGroupIds }] : [baseGroup];
+    });
+    normalized = next;
+  }
+
+  return normalized.map((group, index) => ({
+    ...group,
+    name: group.name || `组合${index + 1}`
+  }));
 }
 
 export function normalizeProjectLayers(project: ProjectFile): ProjectFile {

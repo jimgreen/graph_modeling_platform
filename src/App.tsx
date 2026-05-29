@@ -38,7 +38,6 @@ import {
   Ungroup
 } from "lucide-react";
 import {
-  alignNodes,
   buildContainerDeviceParameterViews,
   buildDefaultDeviceParameterDefinitions,
   buildElementTree,
@@ -73,7 +72,6 @@ import {
   AC_GENERATOR_CONTROL_TYPES,
   DCAC_CONVERTER_CONTROL_TYPES,
   DC_GENERATOR_CONTROL_TYPES,
-  distributeNodes,
   E_SECTION_COLUMNS,
   getEdgeEndpointPoint as getModelEdgeEndpointPoint,
   getNodeScaleX,
@@ -187,10 +185,16 @@ import {
 import { isGlobalSaveShortcut, resolveKeyboardShortcutScope } from "./keyboardShortcuts";
 import {
   EMPTY_CANVAS_CLIPBOARD,
+  alignNodeLayoutUnits,
+  buildCanvasLayoutUnits,
   buildCanvasClipboard,
+  canDissolveSingleCanvasGroupSelection,
+  canGroupCanvasSelection,
   canvasClipboardBounds,
+  canvasGroupMemberNodeIds,
   cloneCanvasClipboard,
   createCanvasGroupFromSelection,
+  distributeNodeLayoutUnits,
   dissolveSelectedCanvasGroups,
   expandSelectionByGroups,
   removeGraphicsFromGroups,
@@ -1316,7 +1320,8 @@ function cloneGroupsForUndo(sourceGroups: ModelGroup[]): ModelGroup[] {
   return sourceGroups.map((group) => ({
     ...group,
     nodeIds: [...group.nodeIds],
-    edgeIds: [...group.edgeIds]
+    edgeIds: [...group.edgeIds],
+    childGroupIds: group.childGroupIds ? [...group.childGroupIds] : undefined
   }));
 }
 
@@ -3686,7 +3691,29 @@ export function App() {
     () => selectedCanvasGroupIds(activeLayerGroups, groupExpandedCanvasSelection.nodeIds, groupExpandedCanvasSelection.edgeIds),
     [activeLayerGroups, groupExpandedCanvasSelection]
   );
-  const contextHasSelectedGroup = activeSelectedGroupIds.length > 0;
+  const selectedGroupMemberNodeIds = useMemo(
+    () => canvasGroupMemberNodeIds(activeLayerGroups, activeSelectedGroupIds),
+    [activeLayerGroups, activeSelectedGroupIds]
+  );
+  const selectedGroupMemberNodeIdSet = useMemo(() => new Set(selectedGroupMemberNodeIds), [selectedGroupMemberNodeIds]);
+  const focusedGroupedNodeMovesGroup =
+    canvasSelectionScope === "direct" &&
+    activeSelectedNodeIds.length === 1 &&
+    activeSelectedEdgeIds.length === 0 &&
+    selectedGroupMemberNodeIdSet.has(activeSelectedNodeIds[0]);
+  const selectedLayoutUnits = useMemo(
+    () => buildCanvasLayoutUnits(activeLayerGroups, activeLayerNodes, activeSelectedNodeIds, activeSelectedEdgeIds),
+    [activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds]
+  );
+  const selectedLayoutUnitCount = selectedLayoutUnits.length;
+  const canUngroupSelectedGraphics = useMemo(
+    () => canDissolveSingleCanvasGroupSelection(activeLayerGroups, activeSelectedNodeIds, activeSelectedEdgeIds),
+    [activeLayerGroups, activeSelectedEdgeIds, activeSelectedNodeIds]
+  );
+  const canGroupSelectedGraphics = useMemo(
+    () => canGroupCanvasSelection(activeLayerGroups, activeSelectedNodeIds, activeSelectedEdgeIds),
+    [activeLayerGroups, activeSelectedEdgeIds, activeSelectedNodeIds]
+  );
   const topologyWarningPageCount = Math.max(1, Math.ceil(topologyErrors.length / TOPOLOGY_WARNING_PAGE_SIZE));
   const normalizedTopologyWarningPage = Math.min(topologyWarningPage, topologyWarningPageCount - 1);
   const visibleTopologyErrors = topologyErrors.slice(
@@ -4996,7 +5023,7 @@ export function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeLayerNodes, canvasBounds, canvasClipboard, deviceIndexCounters, edges, hasUnsavedChanges, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors, viewBox]);
+  }, [activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, canvasBounds, canvasClipboard, canvasSelectionScope, deviceIndexCounters, displaySelectedEdgeIds, displaySelectedNodeIds, edges, hasUnsavedChanges, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors, viewBox]);
 
   useEffect(() => {
     if (leftPanelTab !== "projects") {
@@ -5359,7 +5386,7 @@ export function App() {
   };
 
   const groupSelectedGraphics = () => {
-    if (activeSelectedNodeIds.length + activeSelectedEdgeIds.length < 2) {
+    if (!canGroupSelectedGraphics) {
       return;
     }
     const result = createCanvasGroupFromSelection(
@@ -5374,12 +5401,16 @@ export function App() {
     pushUndoSnapshot();
     const nextGroups = normalizeModelGroups(result.groups, nodes, edges);
     setGroups(nextGroups);
-    selectCanvasGraphics(result.group.nodeIds, result.group.edgeIds);
-    writeOperationLog(`组合 ${result.group.nodeIds.length} 个图元、${result.group.edgeIds.length} 条联络线`);
+    const selection = expandSelectionByGroups(nextGroups, activeSelectedNodeIds, activeSelectedEdgeIds);
+    setCanvasSelectionScope("group");
+    setSelectedNodeIds(selection.nodeIds);
+    setSelectedEdgeIds(selection.edgeIds);
+    setSelectedEdgeId(selection.edgeIds[0] ?? "");
+    writeOperationLog(`组合 ${selection.nodeIds.length} 个图元、${selection.edgeIds.length} 条联络线`);
   };
 
   const ungroupSelectedGraphics = () => {
-    if (activeSelectedGroupIds.length === 0) {
+    if (!canUngroupSelectedGraphics) {
       return;
     }
     const result = dissolveSelectedCanvasGroups(groups, activeSelectedNodeIds, activeSelectedEdgeIds);
@@ -6531,6 +6562,14 @@ export function App() {
     if (!selectedNodeId) {
       return;
     }
+    if (patch.position && focusedGroupedNodeMovesGroup && selectedNode) {
+      const nextPosition = clampNodeToCanvas({ ...selectedNode, ...patch }, patch.position);
+      if (nextPosition.x === selectedNode.position.x && nextPosition.y === selectedNode.position.y) {
+        return;
+      }
+      moveSelection(nextPosition.x - selectedNode.position.x, nextPosition.y - selectedNode.position.y);
+      return;
+    }
     pushUndoSnapshot();
     const nextPatch = { ...patch };
     if (selectedNode) {
@@ -7275,10 +7314,7 @@ export function App() {
       !event.shiftKey &&
       !event.metaKey &&
       nodeWasSelected &&
-      activeSelectedGroupIds.some((groupId) => {
-        const group = activeLayerGroups.find((item) => item.id === groupId);
-        return Boolean(group?.nodeIds.includes(node.id));
-      });
+      selectedGroupMemberNodeIdSet.has(node.id);
     const keepEdgeSelection = nodeWasSelected && activeSelectedEdgeIds.length > 0;
     if (!keepEdgeSelection) {
       setSelectedEdgeId("");
@@ -7288,10 +7324,8 @@ export function App() {
       nodeIds: groupExpandedCanvasSelection.nodeIds,
       edgeIds: groupExpandedCanvasSelection.edgeIds
     };
-    let dragSelection = clickedSelectedGroupMember
+    let dragSelection = nodeWasSelected
       ? groupDragSelection
-      : nodeWasSelected
-      ? { nodeIds: activeSelectedNodeIds, edgeIds: keepEdgeSelection ? activeSelectedEdgeIds : [] }
       : expandActiveGroupSelection([node.id], []);
     if (clickedSelectedGroupMember) {
       setCanvasSelectionScope("direct");
@@ -7301,7 +7335,7 @@ export function App() {
     } else if (event.ctrlKey || event.shiftKey || event.metaKey) {
       setCanvasSelectionScope("group");
       dragSelection = nodeWasSelected
-        ? { nodeIds: activeSelectedNodeIds, edgeIds: activeSelectedEdgeIds }
+        ? groupDragSelection
         : expandActiveGroupSelection([...activeSelectedNodeIds, node.id], activeSelectedEdgeIds);
       if (!nodeWasSelected) {
         setSelectedNodeIds(dragSelection.nodeIds);
@@ -7591,16 +7625,20 @@ export function App() {
   };
 
   const applySelectedNodeLayout = (
-    minimumSelectionCount: number,
-    layoutNodes: (currentNodes: ModelNode[], currentSelectedNodeIds: string[]) => ModelNode[]
+    minimumUnitCount: number,
+    layoutNodes: (currentNodes: ModelNode[], currentLayoutUnits: typeof selectedLayoutUnits) => ModelNode[]
   ) => {
-    if (activeSelectedNodeIds.length < minimumSelectionCount) {
+    if (selectedLayoutUnits.length < minimumUnitCount) {
+      return;
+    }
+    const layoutNodeIds = Array.from(new Set(selectedLayoutUnits.flatMap((unit) => unit.nodeIds)));
+    if (layoutNodeIds.length === 0) {
       return;
     }
     pushUndoSnapshot();
-    const arranged = layoutNodes(nodes, activeSelectedNodeIds);
+    const arranged = layoutNodes(nodes, selectedLayoutUnits);
     const previousById = new Map(nodes.map((node) => [node.id, node]));
-    const selected = new Set(activeSelectedNodeIds);
+    const selected = new Set(layoutNodeIds);
     const originalPositions = Object.fromEntries(
       nodes
         .filter((node) => selected.has(node.id))
@@ -7644,14 +7682,14 @@ export function App() {
       nodes,
       arranged,
       adjustedEdges,
-      activeSelectedNodeIds
+      layoutNodeIds
     );
-    commitFastMovedGraph(arranged, nextEdges, activeSelectedNodeIds, originalRoutePoints, new Set<string>(), originalPositions, nodes);
+    commitFastMovedGraph(arranged, nextEdges, layoutNodeIds, originalRoutePoints, new Set<string>(), originalPositions, nodes);
   };
 
   const alignSelected = (direction: AlignMode) => {
-    applySelectedNodeLayout(2, (currentNodes, currentSelectedNodeIds) => alignNodes(currentNodes, currentSelectedNodeIds, direction));
-    if (activeSelectedNodeIds.length >= 2) {
+    applySelectedNodeLayout(2, (currentNodes, currentLayoutUnits) => alignNodeLayoutUnits(currentNodes, currentLayoutUnits, direction));
+    if (selectedLayoutUnitCount >= 2) {
       const labelByDirection: Record<AlignMode, string> = {
         horizontal: "横向",
         vertical: "纵向",
@@ -7660,14 +7698,14 @@ export function App() {
         top: "上",
         bottom: "下"
       };
-      writeOperationLog(`${labelByDirection[direction]}对齐 ${activeSelectedNodeIds.length} 个图元`);
+      writeOperationLog(`${labelByDirection[direction]}对齐 ${selectedLayoutUnitCount} 个单元`);
     }
   };
 
   const distributeSelected = (direction: "horizontal" | "vertical") => {
-    applySelectedNodeLayout(3, (currentNodes, currentSelectedNodeIds) => distributeNodes(currentNodes, currentSelectedNodeIds, direction));
-    if (activeSelectedNodeIds.length >= 3) {
-      writeOperationLog(`${direction === "horizontal" ? "横向" : "纵向"}平均 ${activeSelectedNodeIds.length} 个图元`);
+    applySelectedNodeLayout(3, (currentNodes, currentLayoutUnits) => distributeNodeLayoutUnits(currentNodes, currentLayoutUnits, direction));
+    if (selectedLayoutUnitCount >= 3) {
+      writeOperationLog(`${direction === "horizontal" ? "横向" : "纵向"}平均 ${selectedLayoutUnitCount} 个单元`);
     }
   };
 
@@ -10445,34 +10483,34 @@ export function App() {
             <Palette size={16} />
           </button>
           <div className="action-cluster">
-            <button onClick={groupSelectedGraphics} disabled={selectedCount < 2} title="组合" aria-label="组合">
+            <button onClick={groupSelectedGraphics} disabled={!canGroupSelectedGraphics} title="组合" aria-label="组合">
               <Group size={16} />
             </button>
-            <button onClick={ungroupSelectedGraphics} disabled={activeSelectedGroupIds.length === 0} title="解散" aria-label="解散">
+            <button onClick={ungroupSelectedGraphics} disabled={!canUngroupSelectedGraphics} title="解散" aria-label="解散">
               <Ungroup size={16} />
             </button>
-            <button onClick={() => alignSelected("horizontal")} disabled={selectedNodeCount < 2} title="横向对齐" aria-label="横向对齐">
+            <button onClick={() => alignSelected("horizontal")} disabled={selectedLayoutUnitCount < 2} title="横向对齐" aria-label="横向对齐">
               <AlignCenterHorizontal size={16} />
             </button>
-            <button onClick={() => alignSelected("vertical")} disabled={selectedNodeCount < 2} title="纵向对齐" aria-label="纵向对齐">
+            <button onClick={() => alignSelected("vertical")} disabled={selectedLayoutUnitCount < 2} title="纵向对齐" aria-label="纵向对齐">
               <AlignCenterVertical size={16} />
             </button>
-            <button onClick={() => alignSelected("left")} disabled={selectedNodeCount < 2} title="左对齐" aria-label="左对齐">
+            <button onClick={() => alignSelected("left")} disabled={selectedLayoutUnitCount < 2} title="左对齐" aria-label="左对齐">
               <AlignStartVertical size={16} />
             </button>
-            <button onClick={() => alignSelected("right")} disabled={selectedNodeCount < 2} title="右对齐" aria-label="右对齐">
+            <button onClick={() => alignSelected("right")} disabled={selectedLayoutUnitCount < 2} title="右对齐" aria-label="右对齐">
               <AlignEndVertical size={16} />
             </button>
-            <button onClick={() => alignSelected("top")} disabled={selectedNodeCount < 2} title="上对齐" aria-label="上对齐">
+            <button onClick={() => alignSelected("top")} disabled={selectedLayoutUnitCount < 2} title="上对齐" aria-label="上对齐">
               <AlignStartHorizontal size={16} />
             </button>
-            <button onClick={() => alignSelected("bottom")} disabled={selectedNodeCount < 2} title="下对齐" aria-label="下对齐">
+            <button onClick={() => alignSelected("bottom")} disabled={selectedLayoutUnitCount < 2} title="下对齐" aria-label="下对齐">
               <AlignEndHorizontal size={16} />
             </button>
-            <button onClick={() => distributeSelected("horizontal")} disabled={selectedNodeCount < 3} title="横向平均" aria-label="横向平均">
+            <button onClick={() => distributeSelected("horizontal")} disabled={selectedLayoutUnitCount < 3} title="横向平均" aria-label="横向平均">
               <AlignHorizontalDistributeCenter size={16} />
             </button>
-            <button onClick={() => distributeSelected("vertical")} disabled={selectedNodeCount < 3} title="纵向平均" aria-label="纵向平均">
+            <button onClick={() => distributeSelected("vertical")} disabled={selectedLayoutUnitCount < 3} title="纵向平均" aria-label="纵向平均">
               <AlignVerticalDistributeCenter size={16} />
             </button>
             <button onClick={() => mirrorSelectedNodes("horizontal")} disabled={selectedNodeCount < 1} title="水平翻转端点" aria-label="水平翻转端点">
@@ -11938,13 +11976,13 @@ export function App() {
               添加拐点
             </button>
           )}
-          {!contextHasSelectedGroup && contextSelectionCount >= 2 && (
+          {canGroupSelectedGraphics && (
             <button onClick={() => runContextMenuAction(groupSelectedGraphics)}>
               <Group size={14} />
               组合
             </button>
           )}
-          {contextHasSelectedGroup && (
+          {canUngroupSelectedGraphics && (
             <button onClick={() => runContextMenuAction(ungroupSelectedGraphics)}>
               <Ungroup size={14} />
               解散

@@ -430,16 +430,20 @@ describe("graph inspector panel", () => {
     expect(source).toContain("selectGraphicsInRect(activeLayerNodes, activeLayerRoutedEdges");
     expect(copyCutDeleteBlock).toContain("{ expandGroups: canvasSelectionScope === \"group\" }");
     expect(copyCutDeleteBlock).toContain("deleteNodesWithConnectedEdges(nodes, edges, activeSelectedNodeIds)");
-    expect(dragBlock).toContain("let dragSelection = clickedSelectedGroupMember");
+    expect(dragBlock).toContain("let dragSelection = nodeWasSelected");
+    expect(dragBlock).toContain("? groupDragSelection");
     expect(dragBlock).toContain("expandActiveGroupSelection([...activeSelectedNodeIds, node.id], activeSelectedEdgeIds)");
     expect(dragBlock).toContain("const dragNodeIds = dragSelection.nodeIds");
     expect(dragBlock).toContain("if (!activeLayerNodeIdSet.has(node.id))");
-    expect(layoutBlock).toContain("layoutNodes(nodes, activeSelectedNodeIds)");
+    expect(source).toContain("const selectedLayoutUnits = useMemo");
+    expect(source).toContain("buildCanvasLayoutUnits(activeLayerGroups, activeLayerNodes, activeSelectedNodeIds, activeSelectedEdgeIds)");
+    expect(layoutBlock).toContain("layoutNodes(nodes, selectedLayoutUnits)");
+    expect(layoutBlock).toContain("const selected = new Set(layoutNodeIds)");
     expect(source).toContain("if (!activeLayerEdgeIdSet.has(edgeId))");
     expect(source).toContain("for (const node of visibleNodes)");
   });
 
-  test("keeps a selected group highlighted while a member is focused and moved with the group", async () => {
+  test("focuses a selected nested group member and moves the whole group", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
     const selectionStateStart = source.indexOf("const activeSelectedGroupIds = useMemo");
@@ -454,6 +458,9 @@ describe("graph inspector panel", () => {
     const dragStart = source.indexOf("const handleNodePointerDown");
     const dragEnd = source.indexOf("const handlePointerMove", dragStart);
     const dragBlock = source.slice(dragStart, dragEnd);
+    const updateStart = source.indexOf("const updateSelectedNode");
+    const updateEnd = source.indexOf("const assignSelectedNodesToModelLayer", updateStart);
+    const updateBlock = source.slice(updateStart, updateEnd);
 
     expect(source).toContain("type CanvasSelectionScope");
     expect(source).toContain("const [canvasSelectionScope, setCanvasSelectionScope]");
@@ -465,15 +472,21 @@ describe("graph inspector panel", () => {
     expect(source).toContain("{selected && focused && selectedNodeCount === 1 && (");
     expect(styles).toContain(".diagram-node.selected.focused .node-hitbox");
     expect(selectionStateBlock).toContain("selectedCanvasGroupIds(activeLayerGroups, groupExpandedCanvasSelection.nodeIds, groupExpandedCanvasSelection.edgeIds)");
+    expect(selectionStateBlock).toContain("canvasGroupMemberNodeIds(activeLayerGroups, activeSelectedGroupIds)");
     expect(copyCutBlock).toContain("{ expandGroups: canvasSelectionScope === \"group\" }");
     expect(moveBlock).toContain("const moveNodeIds = canvasSelectionScope === \"direct\" ? displaySelectedNodeIds : activeSelectedNodeIds");
     expect(moveBlock).toContain("const moveEdgeIds = canvasSelectionScope === \"direct\" ? displaySelectedEdgeIds : activeSelectedEdgeIds");
     expect(moveBlock).toContain("commitFastMovedGraph(");
     expect(moveBlock).toContain("moveNodeIds");
+    expect(updateBlock).toContain("if (patch.position && focusedGroupedNodeMovesGroup && selectedNode)");
+    expect(updateBlock).toContain("moveSelection(nextPosition.x - selectedNode.position.x, nextPosition.y - selectedNode.position.y)");
     expect(dragBlock).toContain("const clickedSelectedGroupMember");
     expect(dragBlock).toContain("nodeWasSelected");
     expect(dragBlock).toContain("const groupDragSelection");
     expect(dragBlock).toContain("nodeIds: groupExpandedCanvasSelection.nodeIds");
+    expect(dragBlock).toContain("let dragSelection = nodeWasSelected");
+    expect(dragBlock).toContain("? groupDragSelection");
+    expect(dragBlock).toContain("selectedGroupMemberNodeIdSet.has(node.id)");
     expect(dragBlock).toContain("setSelectedNodeIds([node.id])");
     expect(dragBlock).toContain("setCanvasSelectionScope(\"direct\")");
     expect(dragBlock).toContain("const dragNodeIds = dragSelection.nodeIds");
@@ -1175,6 +1188,7 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("const [groups, setGroups]");
     expect(source).toContain("expandSelectionByGroups(activeLayerGroups");
+    expect(source).toContain("expandSelectionByGroups(nextGroups, activeSelectedNodeIds, activeSelectedEdgeIds)");
     expect(source).toContain("groups: normalizeModelGroups(groups, nodes, edges)");
     expect(source).toContain("setGroups(snapshot.groups)");
     expect(topbarBlock).toContain("aria-label=\"组合\"");
@@ -1187,14 +1201,19 @@ describe("graph inspector panel", () => {
 
   test("hides unavailable canvas context-menu actions instead of rendering disabled buttons", async () => {
     const source = await readAppSource();
+    const topbarStart = source.indexOf("<header className=\"topbar\">");
+    const topbarEnd = source.indexOf("</header>", topbarStart);
+    const topbarBlock = source.slice(topbarStart, topbarEnd);
     const contextStart = source.indexOf("{contextMenu && (");
     const contextEnd = source.indexOf("{projectMenu && (", contextStart);
     const contextBlock = source.slice(contextStart, contextEnd);
 
     expect(source).toContain("const contextSelectionCount = activeSelectedNodeIds.length + activeSelectedEdgeIds.length");
-    expect(source).toContain("const contextHasSelectedGroup = activeSelectedGroupIds.length > 0");
-    expect(contextBlock).toContain("{contextHasSelectedGroup && (");
-    expect(contextBlock).toContain("{!contextHasSelectedGroup && contextSelectionCount >= 2 && (");
+    expect(source).toContain("const canUngroupSelectedGraphics = useMemo");
+    expect(source).toContain("const canGroupSelectedGraphics = useMemo");
+    expect(topbarBlock).toContain("disabled={!canGroupSelectedGraphics}");
+    expect(contextBlock).toContain("{canGroupSelectedGraphics && (");
+    expect(contextBlock).toContain("{canUngroupSelectedGraphics && (");
     expect(contextBlock).toContain("groupSelectedGraphics");
     expect(contextBlock).toContain("ungroupSelectedGraphics");
     expect(contextBlock).not.toContain("disabled=");

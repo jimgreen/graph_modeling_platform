@@ -9,7 +9,12 @@ import {
 } from "./model";
 import {
   CANVAS_EMPTY_SELECTION_MESSAGE,
+  alignNodeLayoutUnits,
+  buildCanvasLayoutUnits,
   buildCanvasClipboard,
+  canDissolveSingleCanvasGroupSelection,
+  canGroupCanvasSelection,
+  canvasGroupMemberNodeIds,
   canvasClipboardBounds,
   cloneCanvasClipboard,
   createCanvasGroupFromSelection,
@@ -17,6 +22,7 @@ import {
   expandSelectionByGroups,
   resolveCanvasSelection,
   resolveCanvasDeleteAction,
+  selectedCanvasGroupIds,
   selectGraphicsInRect
 } from "./selectionActions";
 
@@ -191,6 +197,32 @@ describe("canvas selection actions", () => {
     });
   });
 
+  test("expands a member selection through nested graphic groups", () => {
+    const first = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const second = createDefaultNode("ac-load", { x: 220, y: 100 });
+    const third = createDefaultNode("dc-load", { x: 360, y: 100 });
+    const groups: ModelGroup[] = [
+      {
+        id: "group-child",
+        name: "组合1",
+        nodeIds: [first.id, second.id],
+        edgeIds: []
+      } as ModelGroup,
+      {
+        id: "group-parent",
+        name: "组合2",
+        nodeIds: [third.id],
+        edgeIds: [],
+        childGroupIds: ["group-child"]
+      } as ModelGroup
+    ];
+
+    expect(expandSelectionByGroups(groups, [first.id], [])).toEqual({
+      nodeIds: [first.id, second.id, third.id],
+      edgeIds: []
+    });
+  });
+
   test("copies only the direct group member when group expansion is disabled", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
     const target = createDefaultNode("ac-load", { x: 300, y: 100 });
@@ -235,6 +267,162 @@ describe("canvas selection actions", () => {
     expect(dissolved.groups).toEqual([]);
   });
 
+  test("creates a parent group from an existing group and standalone graphics", () => {
+    const first = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const second = createDefaultNode("ac-load", { x: 220, y: 100 });
+    const third = createDefaultNode("dc-load", { x: 360, y: 100 });
+    const child: ModelGroup = {
+      id: "group-child",
+      name: "组合1",
+      nodeIds: [first.id, second.id],
+      edgeIds: []
+    };
+
+    const created = createCanvasGroupFromSelection([child], [first.id, third.id], [], () => "group-parent");
+
+    expect(created.groups).toContainEqual(child);
+    expect(created.group).toEqual({
+      id: "group-parent",
+      name: "组合2",
+      nodeIds: [third.id],
+      edgeIds: [],
+      childGroupIds: ["group-child"]
+    });
+  });
+
+  test("dissolves only the selected parent group and keeps nested child groups", () => {
+    const first = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const second = createDefaultNode("ac-load", { x: 220, y: 100 });
+    const third = createDefaultNode("dc-load", { x: 360, y: 100 });
+    const child: ModelGroup = {
+      id: "group-child",
+      name: "组合1",
+      nodeIds: [first.id, second.id],
+      edgeIds: []
+    };
+    const parent: ModelGroup = {
+      id: "group-parent",
+      name: "组合2",
+      nodeIds: [third.id],
+      edgeIds: [],
+      childGroupIds: [child.id]
+    } as ModelGroup;
+
+    const dissolved = dissolveSelectedCanvasGroups([child, parent], [first.id], []);
+
+    expect(dissolved.removedGroupIds).toEqual(["group-parent"]);
+    expect(dissolved.groups).toEqual([child]);
+  });
+
+  test("allows dissolving only when the selection resolves to one graphic group", () => {
+    const first = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const second = createDefaultNode("ac-load", { x: 220, y: 100 });
+    const third = createDefaultNode("dc-load", { x: 360, y: 100 });
+    const fourth = createDefaultNode("dc-source", { x: 500, y: 100 });
+    const firstGroup: ModelGroup = {
+      id: "group-first",
+      name: "组合1",
+      nodeIds: [first.id, second.id],
+      edgeIds: []
+    };
+    const secondGroup: ModelGroup = {
+      id: "group-second",
+      name: "组合2",
+      nodeIds: [third.id, fourth.id],
+      edgeIds: []
+    };
+
+    expect(canDissolveSingleCanvasGroupSelection([firstGroup, secondGroup], [first.id], [])).toBe(true);
+    expect(canDissolveSingleCanvasGroupSelection([firstGroup, secondGroup], [first.id, third.id], [])).toBe(false);
+    expect(canDissolveSingleCanvasGroupSelection([firstGroup, secondGroup], [first.id, fourth.id], [])).toBe(false);
+    expect(canDissolveSingleCanvasGroupSelection([firstGroup], [first.id, third.id], [])).toBe(false);
+
+    const blocked = dissolveSelectedCanvasGroups([firstGroup], [first.id, third.id], []);
+
+    expect(blocked.removedGroupIds).toEqual([]);
+    expect(blocked.groups).toEqual([firstGroup]);
+  });
+
+  test("allows grouping multiple groups but not a single selected group", () => {
+    const first = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const second = createDefaultNode("ac-load", { x: 220, y: 100 });
+    const third = createDefaultNode("dc-load", { x: 360, y: 100 });
+    const fourth = createDefaultNode("dc-source", { x: 500, y: 100 });
+    const firstGroup: ModelGroup = {
+      id: "group-first",
+      name: "组合1",
+      nodeIds: [first.id, second.id],
+      edgeIds: []
+    };
+    const secondGroup: ModelGroup = {
+      id: "group-second",
+      name: "组合2",
+      nodeIds: [third.id, fourth.id],
+      edgeIds: []
+    };
+
+    expect(canGroupCanvasSelection([firstGroup, secondGroup], [first.id], [])).toBe(false);
+    expect(canGroupCanvasSelection([firstGroup, secondGroup], [first.id, third.id], [])).toBe(true);
+    expect(canGroupCanvasSelection([firstGroup], [first.id, third.id], [])).toBe(true);
+  });
+
+  test("collects node members of nested selected groups without standalone selected nodes", () => {
+    const first = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const second = createDefaultNode("ac-load", { x: 220, y: 100 });
+    const third = createDefaultNode("dc-load", { x: 360, y: 100 });
+    const standalone = createDefaultNode("dc-source", { x: 500, y: 100 });
+    const child: ModelGroup = {
+      id: "group-child",
+      name: "组合1",
+      nodeIds: [first.id, second.id],
+      edgeIds: []
+    };
+    const parent: ModelGroup = {
+      id: "group-parent",
+      name: "组合2",
+      nodeIds: [third.id],
+      edgeIds: [],
+      childGroupIds: [child.id]
+    } as ModelGroup;
+
+    expect(canvasGroupMemberNodeIds([child, parent], [parent.id])).toEqual([first.id, second.id, third.id]);
+    expect(canvasGroupMemberNodeIds([child, parent], [])).not.toContain(standalone.id);
+  });
+
+  test("resolves a direct focused member in a deeply nested group back to the whole group", () => {
+    const first = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const second = createDefaultNode("ac-load", { x: 220, y: 100 });
+    const third = createDefaultNode("dc-load", { x: 360, y: 100 });
+    const fourth = createDefaultNode("dc-source", { x: 500, y: 100 });
+    const leaf: ModelGroup = {
+      id: "group-leaf",
+      name: "组合1",
+      nodeIds: [first.id, second.id],
+      edgeIds: []
+    };
+    const middle: ModelGroup = {
+      id: "group-middle",
+      name: "组合2",
+      nodeIds: [third.id],
+      edgeIds: [],
+      childGroupIds: [leaf.id]
+    };
+    const root: ModelGroup = {
+      id: "group-root",
+      name: "组合3",
+      nodeIds: [fourth.id],
+      edgeIds: [],
+      childGroupIds: [middle.id]
+    };
+    const groups = [leaf, middle, root];
+    const expanded = resolveCanvasSelection(groups, [first.id], [], "group");
+    const selectedGroupIds = selectedCanvasGroupIds(groups, expanded.nodeIds, expanded.edgeIds);
+
+    expect(expanded.nodeIds).toEqual([first.id, second.id, third.id, fourth.id]);
+    expect(selectedGroupIds).toEqual([root.id]);
+    expect(canvasGroupMemberNodeIds(groups, selectedGroupIds)).toEqual([first.id, second.id, third.id, fourth.id]);
+  });
+
   test("copies and pastes selected graphics while preserving their group relationship", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
     const target = createDefaultNode("ac-load", { x: 300, y: 100 });
@@ -273,5 +461,83 @@ describe("canvas selection actions", () => {
       nodeIds: ["node-copy-1", "node-copy-2"],
       edgeIds: ["edge-copy"]
     }]);
+  });
+
+  test("copies and pastes nested graphic groups while preserving their hierarchy", () => {
+    const first = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const second = createDefaultNode("ac-load", { x: 220, y: 100 });
+    const third = createDefaultNode("dc-load", { x: 360, y: 100 });
+    const groups: ModelGroup[] = [
+      {
+        id: "group-child",
+        name: "组合1",
+        nodeIds: [first.id, second.id],
+        edgeIds: []
+      },
+      {
+        id: "group-parent",
+        name: "组合2",
+        nodeIds: [third.id],
+        edgeIds: [],
+        childGroupIds: ["group-child"]
+      } as ModelGroup
+    ];
+
+    const clipboard = buildCanvasClipboard([first, second, third], [], [], [first.id], [], groups);
+    let nextNode = 0;
+    let nextGroup = 0;
+    const pasted = cloneCanvasClipboard(
+      clipboard,
+      { x: 500, y: 300 },
+      () => `node-copy-${++nextNode}`,
+      () => "unused-edge",
+      () => `group-copy-${++nextGroup}`
+    );
+
+    expect(pasted.nodes.map((node) => node.id)).toEqual(["node-copy-1", "node-copy-2", "node-copy-3"]);
+    expect(pasted.groups).toEqual([
+      {
+        id: "group-copy-1",
+        name: "组合1 副本",
+        nodeIds: ["node-copy-1", "node-copy-2"],
+        edgeIds: []
+      },
+      {
+        id: "group-copy-2",
+        name: "组合2 副本",
+        nodeIds: ["node-copy-3"],
+        edgeIds: [],
+        childGroupIds: ["group-copy-1"]
+      }
+    ]);
+  });
+
+  test("aligns selected grouped graphics as a single layout unit", () => {
+    const standalone = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const firstGrouped = createDefaultNode("ac-load", { x: 420, y: 100 });
+    const secondGrouped = createDefaultNode("dc-load", { x: 540, y: 100 });
+    const groups: ModelGroup[] = [{
+      id: "group-layout",
+      name: "组合1",
+      nodeIds: [firstGrouped.id, secondGrouped.id],
+      edgeIds: []
+    }];
+
+    const units = buildCanvasLayoutUnits(groups, [standalone, firstGrouped, secondGrouped], [standalone.id, firstGrouped.id], []);
+    const aligned = alignNodeLayoutUnits([standalone, firstGrouped, secondGrouped], units, "left");
+    const movedStandalone = aligned.find((node) => node.id === standalone.id)!;
+    const movedFirst = aligned.find((node) => node.id === firstGrouped.id)!;
+    const movedSecond = aligned.find((node) => node.id === secondGrouped.id)!;
+    const firstDelta = movedFirst.position.x - firstGrouped.position.x;
+    const secondDelta = movedSecond.position.x - secondGrouped.position.x;
+
+    expect(units.map((unit) => ({ kind: unit.kind, nodeIds: unit.nodeIds }))).toEqual([
+      { kind: "group", nodeIds: [firstGrouped.id, secondGrouped.id] },
+      { kind: "node", nodeIds: [standalone.id] }
+    ]);
+    expect(movedStandalone.position).toEqual(standalone.position);
+    expect(firstDelta).toBeLessThan(0);
+    expect(firstDelta).toBe(secondDelta);
+    expect(movedSecond.position.x - movedFirst.position.x).toBe(secondGrouped.position.x - firstGrouped.position.x);
   });
 });
