@@ -1208,7 +1208,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const dragInteractionNodes = useMemo");
     expect(source).toContain("const dragPreviewMovedNodeById = useMemo");
     expect(source).not.toContain("Array.from(dragPreviewNodeById.values()).filter");
-    expect(overlapBlock).toContain("dragging && draggingDelta ? dragInteractionNodes : deferredRoutingNodes");
+    expect(overlapBlock).toContain("dragging && draggingDelta ? dragInteractionNodes : viewportNodes");
     expect(overlapBlock).toContain("terminalOverlapAffectedNodeIds");
     expect(overlapBlock).toContain("getOverlappingTerminalGroups(terminalOverlapNodes, terminalOverlapAffectedNodeIds)");
     expect(overlapBlock).toContain("getTerminalBusContactGroups(terminalOverlapNodes, 0, terminalOverlapAffectedNodeIds)");
@@ -1327,7 +1327,7 @@ describe("graph inspector panel", () => {
     expect(undoActionBlock).toContain("...snapshot.edges.map((edge) => edge.id)");
   });
 
-  test("defers bus terminal synchronization and autosaves graph edits only to local draft", async () => {
+  test("defers bus terminal synchronization and keeps graph edits out of automatic draft saves", async () => {
     const source = await readAppSource();
     const busSyncStart = source.indexOf("const synchronized = scheduledBusSyncNodeIds.size > 0");
     const busSyncEffectStart = source.indexOf("const pendingBusSyncNodeIds = pendingBusTerminalSyncNodeIdsRef.current;");
@@ -1339,9 +1339,6 @@ describe("graph inspector panel", () => {
     const saveStart = source.indexOf("const saveCurrentProject");
     const saveEnd = source.indexOf("const renameProjectRecord", saveStart);
     const saveBlock = source.slice(saveStart, saveEnd);
-    const autoDraftStart = source.indexOf("const draftAutosaveProjectId = activeProjectId || selectedProjectId");
-    const autoDraftEnd = source.indexOf("const setActiveLayer", autoDraftStart);
-    const autoDraftBlock = source.slice(autoDraftStart, autoDraftEnd);
     const topologyStaleStart = source.indexOf("拓扑结果已过期");
 
     expect(source).toContain("const scheduleIdleWork");
@@ -1354,11 +1351,8 @@ describe("graph inspector panel", () => {
     expect(saveDraftBlock).toContain("window.localStorage.setItem");
     expect(saveBlock).toContain("saveDraftProject(targetId");
     expect(saveBlock).toContain("saveDraftProject(record.id");
-    expect(autoDraftBlock).toContain("if (!hasUnsavedChanges)");
-    expect(autoDraftBlock).toContain("window.setTimeout");
-    expect(autoDraftBlock).toContain("saveDraftProject(draftAutosaveProjectId");
-    expect(autoDraftBlock).not.toContain("saveCurrentProject");
-    expect(autoDraftBlock).not.toContain("saveBackendSchemesPayload");
+    expect(source).not.toContain("draftAutosaveProjectId");
+    expect(source).not.toContain("saveDraftProject(draftAutosaveProjectId");
     expect(source).not.toContain("[activeProjectId, activeSchemeId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, nodes, powerBaseValue, powerUnit, projectName, voltageUnit]");
     expect(source.slice(Math.max(0, topologyStaleStart - 400), topologyStaleStart + 300)).toContain("scheduleIdleWork");
   });
@@ -1405,7 +1399,11 @@ describe("graph inspector panel", () => {
     expect(busSyncEffectBlock).toContain("scheduledBusSyncNodeIds.size > 0");
     expect(busSyncEffectBlock).toContain("synchronizeBusTerminalsWithEdges(syncNodes, syncEdges, scheduledBusSyncNodeIds)");
     expect(busSyncEffectBlock).not.toContain("synchronizeBusTerminalsWithEdges(syncNodes, syncEdges);");
-    expect(commitBlock).toContain("markBusTerminalSyncDirty(movedNodeIds)");
+    expect(source).toContain("const busTerminalSyncNodeIdsForGraphPatch =");
+    expect(source).toContain("const busNodeIdSet = graphStore.busNodeIdSet");
+    expect(busSyncEffectBlock).toContain("busNodeIdSet.size === 0");
+    expect(commitBlock).toContain("busTerminalSyncNodeIdsForGraphPatch(");
+    expect(commitBlock).not.toContain("markBusTerminalSyncDirty(movedNodeIds)");
   });
 
   test("reuses the element tree while drag-only geometry changes do not alter tree content", async () => {
@@ -1485,6 +1483,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("addVoltageColorRow");
     expect(source).toContain("voltageColorVisibility");
     expect(source).toContain("currentModelVoltageColorKeys");
+    expect(source).toContain("collectCurrentModelVoltageColorKeys");
     expect(source).toContain("visibleVoltageColorRows");
     expect(source).toContain("nearestVoltageColor");
     expect(source).toContain("fillMissingVoltageColorRows");
@@ -1787,9 +1786,6 @@ describe("graph inspector panel", () => {
     const saveStart = source.indexOf("const saveCurrentProject =");
     const saveEnd = source.indexOf("const renameProjectRecord", saveStart);
     const saveBlock = source.slice(saveStart, saveEnd);
-    const autoDraftStart = source.indexOf("const draftAutosaveProjectId = activeProjectId || selectedProjectId");
-    const autoDraftEnd = source.indexOf("const setActiveLayer", autoDraftStart);
-    const autoDraftBlock = source.slice(autoDraftStart, autoDraftEnd);
     const busSyncStart = source.indexOf("const synchronized = scheduledBusSyncNodeIds.size > 0");
     const busSyncEnd = source.indexOf("if (synchronized.nodes !== syncNodes)", busSyncStart);
     const busSyncBlock = source.slice(busSyncStart, busSyncEnd);
@@ -1803,8 +1799,8 @@ describe("graph inspector panel", () => {
     expect(pasteBlock).not.toContain("pushUndoSnapshot(false)");
     expect(loadBlock).toContain("suppressNextGraphDirtyRef.current = true");
     expect(saveBlock).toContain("graphDirtyBaselineRef.current = currentGraphDirtyBaseline()");
-    expect(autoDraftBlock).toContain("saveDraftProject(draftAutosaveProjectId");
-    expect(autoDraftBlock).not.toContain("saveCurrentProject");
+    expect(source).not.toContain("draftAutosaveProjectId");
+    expect(source).not.toContain("saveDraftProject(draftAutosaveProjectId");
     expect(busSyncBlock).toContain("suppressNextGraphDirtyRef.current = true");
   });
 

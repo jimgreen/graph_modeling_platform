@@ -812,6 +812,7 @@ const PROJECT_STORAGE_KEY = "power-system-model-projects";
 const SCHEME_STORAGE_KEY = "power-system-model-schemes";
 const ACTIVE_PROJECT_STORAGE_KEY = "power-system-active-project";
 const DRAFT_PROJECT_STORAGE_KEY = "power-system-current-draft";
+const EMPTY_VOLTAGE_COLOR_KEY_SET = new Set<string>();
 const IMAGE_STORAGE_KEY = "power-system-image-assets";
 const CUSTOM_DEVICE_LIBRARY_STORAGE_KEY = "power-system-custom-device-library";
 const CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY = "power-system-custom-attribute-libraries";
@@ -3567,6 +3568,7 @@ export function App() {
   const nodeById = graphStore.nodeMap;
   const edgeById = graphStore.edgeMap;
   const edgesByNodeId = graphStore.edgesByNodeId;
+  const busNodeIdSet = graphStore.busNodeIdSet;
   const edgeListForNodeIds = (nodeIds: Iterable<string>, extraEdgeIds: Iterable<string> = []) => {
     const collected = new Map<string, Edge>();
     for (const nodeId of nodeIds) {
@@ -3800,9 +3802,9 @@ export function App() {
       />
     );
   };
-  const currentModelVoltageColorKeys = useMemo(() => {
+  const collectCurrentModelVoltageColorKeys = (sourceNodes: ModelNode[] = nodes) => {
     const keys = new Set<string>();
-    for (const node of nodes) {
+    for (const node of sourceNodes) {
       node.terminals.forEach((terminal, terminalIndex) => {
         const key = voltageColorKeyForTerminal(node, terminal, terminalIndex);
         if (key) {
@@ -3811,7 +3813,15 @@ export function App() {
       });
     }
     return keys;
-  }, [nodes]);
+  };
+  const currentModelVoltageColorKeys = useMemo(
+    () => (
+      colorPaletteDialogOpen
+        ? collectCurrentModelVoltageColorKeys()
+        : EMPTY_VOLTAGE_COLOR_KEY_SET
+    ),
+    [colorPaletteDialogOpen, nodes]
+  );
   const nearestVoltageColor = (missingKey: string, voltageColors: Record<string, string>) => {
     const [targetType, ...targetVoltageParts] = missingKey.split(":");
     const targetVoltage = Number(targetVoltageParts.join(":"));
@@ -3830,8 +3840,8 @@ export function App() {
     }
     return DEFAULT_COLOR_PALETTE.voltage[missingKey] ?? DEFAULT_COLOR_PALETTE.voltage[`${targetType}:0`] ?? "#64748b";
   };
-  const fillMissingVoltageColorRows = (palette: ColorPalette) => {
-    const missingKeys = Array.from(currentModelVoltageColorKeys).filter((key) => !palette.voltage[key]);
+  const fillMissingVoltageColorRows = (palette: ColorPalette, sourceKeys = collectCurrentModelVoltageColorKeys()) => {
+    const missingKeys = Array.from(sourceKeys).filter((key) => !palette.voltage[key]);
     if (missingKeys.length === 0) {
       return { palette, missingKeys };
     }
@@ -3848,7 +3858,7 @@ export function App() {
     setColorDisplayMode((current) => nextMode ?? (current === "energy" ? "voltage" : "energy"));
   };
   const openColorPaletteDialog = () => {
-    const filled = fillMissingVoltageColorRows(normalizeColorPalette(colorPalette));
+    const filled = fillMissingVoltageColorRows(normalizeColorPalette(colorPalette), collectCurrentModelVoltageColorKeys());
     setColorPaletteDraft(filled.palette);
     setColorPaletteTab(colorDisplayMode);
     setColorPaletteDialogOpen(true);
@@ -4173,6 +4183,53 @@ export function App() {
     }
     pendingBusTerminalSyncNodeIdsRef.current = next;
   };
+  const busNodeIdsFromEdges = (edgeItems: Iterable<Edge | undefined>) => {
+    const ids = new Set<string>();
+    for (const edge of edgeItems) {
+      if (!edge) {
+        continue;
+      }
+      if (busNodeIdSet.has(edge.sourceId)) {
+        ids.add(edge.sourceId);
+      }
+      if (busNodeIdSet.has(edge.targetId)) {
+        ids.add(edge.targetId);
+      }
+    }
+    return ids;
+  };
+  const markBusTerminalSyncDirtyForEdges = (...edgeCollections: Array<Iterable<Edge | undefined>>) => {
+    const ids = new Set<string>();
+    for (const edgeCollection of edgeCollections) {
+      for (const busId of busNodeIdsFromEdges(edgeCollection)) {
+        ids.add(busId);
+      }
+    }
+    markBusTerminalSyncDirty(ids);
+  };
+  const busTerminalSyncNodeIdsForGraphPatch = (
+    movedNodeIds: Iterable<string>,
+    previousCandidateEdges: Edge[],
+    edgeUpserts: Edge[],
+    edgeDeleteIds: string[]
+  ) => {
+    const ids = new Set<string>();
+    for (const nodeId of movedNodeIds) {
+      if (busNodeIdSet.has(nodeId)) {
+        ids.add(nodeId);
+      }
+    }
+    for (const busId of busNodeIdsFromEdges(edgeUpserts)) {
+      ids.add(busId);
+    }
+    if (edgeDeleteIds.length > 0) {
+      const deleted = new Set(edgeDeleteIds);
+      for (const busId of busNodeIdsFromEdges(previousCandidateEdges.filter((edge) => deleted.has(edge.id)))) {
+        ids.add(busId);
+      }
+    }
+    return ids;
+  };
 
   useEffect(() => {
     const pendingBusSyncNodeIds = pendingBusTerminalSyncNodeIdsRef.current;
@@ -4182,7 +4239,7 @@ export function App() {
       rewiring ||
       terminalPress?.moved ||
       connectSource ||
-      (pendingBusSyncNodeIds.size === 0 && !nodes.some(isBusNode))
+      (pendingBusSyncNodeIds.size === 0 && busNodeIdSet.size === 0)
     ) {
       return;
     }
@@ -4228,7 +4285,7 @@ export function App() {
       }
       pendingBusTerminalSyncNodeIdsRef.current = next;
     };
-  }, [connectSource, dragging, edges, manualPathDrag, nodes, rewiring, terminalPress?.moved]);
+  }, [busNodeIdSet, connectSource, dragging, edges, manualPathDrag, nodes, rewiring, terminalPress?.moved]);
 
   useEffect(() => {
     if (!graphTreePanelActive) {
@@ -4891,7 +4948,7 @@ export function App() {
     }
     return Array.from(candidatesById.values());
   }, [dragInteractionBounds, dragPreviewMovedNodeById, dragging, draggingDelta, nodeById, visibleNodeIdSet, visibleNodeSpatialIndex, visibleNodes]);
-  const terminalOverlapNodes = dragging && draggingDelta ? dragInteractionNodes : deferredRoutingNodes;
+  const terminalOverlapNodes = dragging && draggingDelta ? dragInteractionNodes : viewportNodes;
   const terminalOverlapAffectedNodeIds = dragging && draggingDelta ? draggingNodeIdSet : undefined;
   const overlappedTerminalKeys = useMemo(
     () => new Set(
@@ -6778,8 +6835,23 @@ export function App() {
       for (const edgeId of Object.keys(optimized.routePoints)) {
         dirtyOptimizedEdgeIds.add(edgeId);
       }
+      const optimizedEdgeUpdates: Edge[] = [];
+      for (const edgeId of dirtyOptimizedEdgeIds) {
+        const edgeIndex = latestStore.edgeIndexById.get(edgeId);
+        if (edgeIndex === undefined) {
+          continue;
+        }
+        const optimizedEdge = optimized.edges[edgeIndex];
+        if (optimizedEdge && expectedEdges[edgeIndex] !== optimizedEdge) {
+          optimizedEdgeUpdates.push(optimizedEdge);
+        }
+      }
+      if (optimizedEdgeUpdates.length === 0) {
+        return;
+      }
       markRouteEdgesDirty(dirtyOptimizedEdgeIds);
-      setGraphStore((current) => graphStorePatchEdgesFromArray(current, optimized.edges, dirtyOptimizedEdgeIds));
+      markBusTerminalSyncDirtyForEdges(optimizedEdgeUpdates);
+      setGraphStore((current) => graphStorePatchEdges(current, optimizedEdgeUpdates));
     }, 180, 1500);
   };
 
@@ -6832,7 +6904,14 @@ export function App() {
       ...edgePatch.edgeDeleteIds
     ];
     markRouteEdgesDirty(edgePatchDirtyIds);
-    markBusTerminalSyncDirty(movedNodeIds);
+    markBusTerminalSyncDirty(
+      busTerminalSyncNodeIdsForGraphPatch(
+        movedNodeIds,
+        previousCandidateEdges,
+        edgePatch.edgeUpserts,
+        edgePatch.edgeDeleteIds
+      )
+    );
     setGraphStore((current) =>
       graphStoreApplyPatch(current, {
         nodeUpdates: movedNodeUpdates,
@@ -7993,6 +8072,7 @@ export function App() {
     const preparedEdge = prepared.edge;
     pushUndoSnapshot();
     markRouteEdgesDirty([preparedEdge.id]);
+    markBusTerminalSyncDirtyForEdges([preparedEdge]);
     setEdges((current) => [...current, preparedEdge]);
     setCanvasSelectionScope("group");
     setSelectedNodeIds([]);
@@ -8079,6 +8159,7 @@ export function App() {
         const preparedEdge = prepared.edge;
         pushUndoSnapshot();
         markRouteEdgesDirty([rewiring.edgeId]);
+        markBusTerminalSyncDirtyForEdges([edge, preparedEdge]);
         patchGraphEdges([preparedEdge]);
         writeOperationLog(`调整联络线端子：${rewiring.edgeId}`);
       } else {
@@ -9154,46 +9235,6 @@ export function App() {
     }
   };
 
-  useEffect(() => {
-    const draftAutosaveProjectId = activeProjectId || selectedProjectId || "draft-current-project";
-    const draftAutosaveSchemeId =
-      activeSchemeId ||
-      selectedSchemeId ||
-      findSchemeForProject(draftAutosaveProjectId)?.id ||
-      schemes[0]?.id ||
-      "";
-    if (!hasUnsavedChanges) {
-      return;
-    }
-    const timeoutId = window.setTimeout(() => {
-      saveDraftProject(draftAutosaveProjectId, draftAutosaveSchemeId);
-    }, 800);
-    return () => window.clearTimeout(timeoutId);
-  }, [
-    activeLayerId,
-    activeProjectId,
-    activeSchemeId,
-    canvasBackgroundColor,
-    canvasBackgroundImage,
-    canvasBackgroundImageAssetId,
-    canvasHeight,
-    canvasWidth,
-    currentUnit,
-    deviceIndexCounters,
-    edges,
-    groups,
-    hasUnsavedChanges,
-    layers,
-    nodes,
-    powerBaseValue,
-    powerUnit,
-    projectName,
-    schemes,
-    selectedProjectId,
-    selectedSchemeId,
-    voltageUnit
-  ]);
-
   const setActiveLayer = (layerId: string) => {
     pushUndoSnapshot();
     setActiveLayerId(layerId);
@@ -10068,6 +10109,7 @@ export function App() {
           const preparedEdge = prepared.edge;
           pushUndoSnapshot();
           markRouteEdgesDirty([edge.id]);
+          markBusTerminalSyncDirtyForEdges([edge, preparedEdge]);
           patchGraphEdges([preparedEdge]);
         } else {
           const message = connectionCommitFailureMessage(prepared.issues);

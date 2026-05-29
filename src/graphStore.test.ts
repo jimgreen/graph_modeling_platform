@@ -35,6 +35,23 @@ describe("normalized graph store", () => {
     expect(graphStoreEdges(store)).toEqual([edge]);
   });
 
+  test("keeps bus node ids indexed without scanning all nodes during patches", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const bus = createDefaultNode("ac-bus", { x: 260, y: 100 });
+    const store = createGraphStore([source, bus], []);
+    const movedBus = { ...bus, position: { x: 320, y: 120 } };
+    const movedSource = { ...source, position: { x: 140, y: 120 } };
+
+    const movedBusStore = graphStorePatchNodes(store, [movedBus]);
+    const movedSourceStore = graphStorePatchNodes(movedBusStore, [movedSource]);
+    const withoutBusStore = graphStoreSetNodes(movedSourceStore, [movedSource]);
+
+    expect(store.busNodeIdSet.has(bus.id)).toBe(true);
+    expect(movedBusStore.busNodeIdSet).toBe(store.busNodeIdSet);
+    expect(movedSourceStore.busNodeIdSet).toBe(store.busNodeIdSet);
+    expect(withoutBusStore.busNodeIdSet.has(bus.id)).toBe(false);
+  });
+
   test("updates one node without rebuilding unchanged node and edge references", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
     const load = createDefaultNode("ac-load", { x: 260, y: 100 });
