@@ -8180,12 +8180,64 @@ function pathWithCrossingArcs(route: RoutedEdge, allSegments: Segment[], routeIn
   return commands.join(" ");
 }
 
-function refreshCrossingArcPaths(routes: RoutedEdge[]): RoutedEdge[] {
-  const crossingSegments = routes.flatMap((route, index) => getSegments(route.edgeId, index, route.points));
-  return routes.map((route, index) => ({
-    ...route,
-    path: pathWithCrossingArcs(route, crossingSegments, index)
-  }));
+function refreshCrossingArcPaths(
+  routes: RoutedEdge[],
+  changedEdgeIds?: ReadonlySet<string>,
+  previousRoutes: RoutedEdge[] = []
+): RoutedEdge[] {
+  if (!changedEdgeIds || changedEdgeIds.size === 0) {
+    const crossingSegments = routes.flatMap((route, index) => getSegments(route.edgeId, index, route.points));
+    return routes.map((route, index) => ({
+      ...route,
+      path: pathWithCrossingArcs(route, crossingSegments, index)
+    }));
+  }
+
+  const routeBoxes = routes.map((route) => routeBoundsForPoints(route.points, CROSSING_TERMINAL_MARGIN));
+  const previousRouteById = new Map(previousRoutes.map((route) => [route.edgeId, route]));
+  const changedBoxes = routes.flatMap((route, index) => {
+    if (!changedEdgeIds.has(route.edgeId)) {
+      return [];
+    }
+    const previousRoute = previousRouteById.get(route.edgeId);
+    return previousRoute
+      ? [routeBoxes[index], routeBoundsForPoints(previousRoute.points, CROSSING_TERMINAL_MARGIN)]
+      : [routeBoxes[index]];
+  });
+  if (changedBoxes.length === 0) {
+    return routes;
+  }
+
+  const refreshIndexes = new Set<number>();
+  routes.forEach((route, index) => {
+    if (changedEdgeIds.has(route.edgeId) || changedBoxes.some((box) => boxesOverlap(routeBoxes[index], box))) {
+      refreshIndexes.add(index);
+    }
+  });
+  if (refreshIndexes.size === 0) {
+    return routes;
+  }
+
+  const segmentIndexes = new Set<number>();
+  for (const refreshIndex of refreshIndexes) {
+    const refreshBox = routeBoxes[refreshIndex];
+    routeBoxes.forEach((box, index) => {
+      if (boxesOverlap(box, refreshBox)) {
+        segmentIndexes.add(index);
+      }
+    });
+  }
+  const crossingSegments = [...segmentIndexes].flatMap((index) =>
+    getSegments(routes[index].edgeId, index, routes[index].points)
+  );
+
+  return routes.map((route, index) => {
+    if (!refreshIndexes.has(index)) {
+      return route;
+    }
+    const path = pathWithCrossingArcs(route, crossingSegments, index);
+    return path === route.path ? route : { ...route, path };
+  });
 }
 
 export function routeEdgesForRendering(nodes: ModelNode[], edges: Edge[], bounds?: CanvasBounds): RoutedEdge[] {
@@ -8271,7 +8323,7 @@ export function routeEdgesForCachedStoredRendering(
       : previousRouteById.get(edge.id);
     return route ? [route] : [];
   });
-  return refreshCrossingArcPaths(routes);
+  return refreshCrossingArcPaths(routes, affectedEdgeIds, previousRoutes);
 }
 
 export function routeEdgesForIncrementalRendering(
@@ -8342,9 +8394,9 @@ export function routeEdgesForIncrementalRendering(
   });
   const combinedRoutes = edges.flatMap((edge) => {
     const route = routedRouteById.get(edge.id) ?? storedRouteById.get(edge.id);
-    return route ? [{ ...route }] : [];
+    return route ? [route] : [];
   });
-  return refreshCrossingArcPaths(combinedRoutes);
+  return refreshCrossingArcPaths(combinedRoutes, affectedEdgeIds, previousRoutes);
 }
 
 function routeEndpointNormal(node: ModelNode, endpointPoint: Point, otherPoint: Point, terminalId?: string): Point {
@@ -8414,6 +8466,10 @@ function segmentIntersectsRouteBlocker(
   return segmentIntersectsNodeBody(a, b, node);
 }
 
+function routeSingleConnectionForValidation(nodes: ModelNode[], edge: Edge, bounds?: CanvasBounds): RoutedEdge | null {
+  return routeEdgesForRendering(nodes, [edge], bounds)[0] ?? null;
+}
+
 export function validateConnectionEdgeRoute(
   nodes: ModelNode[],
   edges: Edge[],
@@ -8435,10 +8491,7 @@ export function validateConnectionEdgeRoute(
     return { ok: false, issues };
   }
 
-  const routes = previousRoutes.length > 0
-    ? routeEdgesForIncrementalRendering(nodes, edges, new Set([edgeId]), bounds, previousRoutes)
-    : routeEdgesForRendering(nodes, edges, bounds);
-  const route = routes.find((item) => item.edgeId === edgeId);
+  const route = routeSingleConnectionForValidation(nodes, edge, bounds);
   if (!route || route.points.length < 2) {
     issues.push({
       type: "missing-endpoint",
@@ -8870,38 +8923,23 @@ export function prepareConnectionEdgeForCommit(
   }
 
   const edgeForDesign = edgeWithoutManualPoints(edge);
-  const safeDesign = designCommitSafeRoute(nodes, edges, edgeId, bounds);
+  const safeDesign = designCommitSafeRoute(nodes, [edgeForDesign], edgeId, bounds);
   if (safeDesign) {
     const safeEdge = edgeWithCommitManualPoints(safeDesign.edge, safeDesign.route);
-    const safeEdges = edges.map((item) => item.id === edgeId ? safeEdge : item);
-    const safeValidation = validateConnectionEdgeRoute(nodes, safeEdges, edgeId, bounds, previousRoutes);
+    const safeValidation = validateConnectionEdgeRoute(nodes, [safeEdge], edgeId, bounds, previousRoutes);
     if (safeValidation.ok) {
       return { ...safeValidation, edge: safeEdge };
     }
   }
 
-  const otherEdges = edges.filter((item) => item.id !== edgeId);
-  const candidateEdges = [...otherEdges, edgeForDesign];
-  const designedRoute = (
-    previousRoutes.length > 0
-      ? routeEdgesForIncrementalRendering(
-          nodes,
-          candidateEdges,
-          new Set([edgeId]),
-          bounds,
-          previousRoutes.filter((route) => route.edgeId !== edgeId)
-        )
-      : routeEdgesForRendering(nodes, candidateEdges, bounds)
-  )
-    .find((route) => route.edgeId === edgeId);
+  const designedRoute = routeSingleConnectionForValidation(nodes, edgeForDesign, bounds);
   if (!designedRoute) {
-    const validation = validateConnectionEdgeRoute(nodes, edges, edgeId, bounds, previousRoutes);
+    const validation = validateConnectionEdgeRoute(nodes, [edgeForDesign], edgeId, bounds, previousRoutes);
     return { ...validation };
   }
 
   const preparedEdge = edgeWithCommitManualPoints(edgeForDesign, designedRoute);
-  const preparedEdges = edges.map((item) => item.id === edgeId ? preparedEdge : item);
-  const validation = validateConnectionEdgeRoute(nodes, preparedEdges, edgeId, bounds, previousRoutes);
+  const validation = validateConnectionEdgeRoute(nodes, [preparedEdge], edgeId, bounds, previousRoutes);
   if (validation.ok) {
     return { ...validation, edge: preparedEdge };
   }
@@ -8919,51 +8957,58 @@ export function rebuildSingleConnectionRoute(
   if (!edge) {
     return edges;
   }
-  const edgeForDesign = edgeWithoutManualPoints(edge);
-  const candidateEdges = edges.map((item) => item.id === edgeId ? edgeForDesign : item);
-  const prepared = prepareConnectionEdgeForCommit(nodes, candidateEdges, edgeId, bounds);
+  const prepared = prepareConnectionEdgeForCommit(nodes, [edgeWithoutManualPoints(edge)], edgeId, bounds);
   if (!prepared.ok || !prepared.edge) {
     return edges;
   }
   return edges.map((item) => item.id === edgeId ? prepared.edge! : item);
 }
 
+function applyEdgeUpdateMap(edges: Edge[], updates: ReadonlyMap<string, Edge>): Edge[] {
+  if (updates.size === 0) {
+    return edges;
+  }
+  let changed = false;
+  const nextEdges = edges.map((edge) => {
+    const nextEdge = updates.get(edge.id);
+    if (!nextEdge || nextEdge === edge) {
+      return edge;
+    }
+    changed = true;
+    return nextEdge;
+  });
+  return changed ? nextEdges : edges;
+}
+
 export function rebuildConnectionRoutesForNodes(
   nodes: ModelNode[],
   edges: Edge[],
   nodeIds: Iterable<string>,
-  bounds?: CanvasBounds
+  bounds?: CanvasBounds,
+  candidateEdges: Edge[] = edges
 ): Edge[] {
   const changedNodeIds = new Set(nodeIds);
-  if (changedNodeIds.size === 0 || edges.length === 0) {
+  if (changedNodeIds.size === 0 || edges.length === 0 || candidateEdges.length === 0) {
     return edges;
   }
 
-  const affectedEdgeIds = edges
-    .filter((edge) => changedNodeIds.has(edge.sourceId) || changedNodeIds.has(edge.targetId))
-    .map((edge) => edge.id);
+  const affectedEdges = candidateEdges.filter((edge) => changedNodeIds.has(edge.sourceId) || changedNodeIds.has(edge.targetId));
+  const affectedEdgeIds = affectedEdges.map((edge) => edge.id);
   if (affectedEdgeIds.length === 0) {
     return edges;
   }
 
-  let nextEdges = edges;
-  let changed = false;
-  for (const edgeId of affectedEdgeIds) {
-    const candidateEdges = nextEdges.map((edge) => edge.id === edgeId ? edgeWithoutManualPoints(edge) : edge);
-    const prepared = prepareConnectionEdgeForCommit(nodes, candidateEdges, edgeId, bounds);
+  const updates = new Map<string, Edge>();
+  for (const edge of affectedEdges) {
+    const edgeForDesign = edgeWithoutManualPoints(updates.get(edge.id) ?? edge);
+    const prepared = prepareConnectionEdgeForCommit(nodes, [edgeForDesign], edge.id, bounds);
     if (!prepared.ok || !prepared.edge) {
       continue;
     }
-    nextEdges = nextEdges.map((edge) => {
-      if (edge.id !== edgeId) {
-        return edge;
-      }
-      changed = true;
-      return prepared.edge!;
-    });
+    updates.set(edge.id, prepared.edge);
   }
 
-  return changed ? nextEdges : edges;
+  return applyEdgeUpdateMap(edges, updates);
 }
 
 export function rebuildExternalConnectionRoutesForMovedNodes(
@@ -8985,24 +9030,21 @@ export function rebuildExternalConnectionRoutesForMovedNodes(
     return edges;
   }
 
-  let nextEdges = edges;
-  let changed = false;
+  const edgeById = new Map(edges.map((edge) => [edge.id, edge]));
+  const updates = new Map<string, Edge>();
   for (const edgeId of affectedEdgeIds) {
-    const candidateEdges = nextEdges.map((edge) => edge.id === edgeId ? edgeWithoutManualPoints(edge) : edge);
-    const prepared = prepareConnectionEdgeForCommit(nodes, candidateEdges, edgeId, bounds);
+    const edge = updates.get(edgeId) ?? edgeById.get(edgeId);
+    if (!edge) {
+      continue;
+    }
+    const prepared = prepareConnectionEdgeForCommit(nodes, [edgeWithoutManualPoints(edge)], edgeId, bounds);
     if (!prepared.ok || !prepared.edge) {
       continue;
     }
-    nextEdges = nextEdges.map((edge) => {
-      if (edge.id !== edgeId) {
-        return edge;
-      }
-      changed = true;
-      return prepared.edge!;
-    });
+    updates.set(edgeId, prepared.edge);
   }
 
-  return changed ? nextEdges : edges;
+  return applyEdgeUpdateMap(edges, updates);
 }
 
 export function rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes(
@@ -9043,24 +9085,21 @@ export function rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes(
     return edges;
   }
 
-  let nextEdges = edges;
-  let changed = false;
+  const edgeById = new Map(edges.map((edge) => [edge.id, edge]));
+  const updates = new Map<string, Edge>();
   for (const edgeId of blockedEdgeIds) {
-    const candidateEdges = nextEdges.map((edge) => edge.id === edgeId ? edgeWithoutManualPoints(edge) : edge);
-    const prepared = prepareConnectionEdgeForCommit(nodes, candidateEdges, edgeId, bounds);
+    const edge = updates.get(edgeId) ?? edgeById.get(edgeId);
+    if (!edge) {
+      continue;
+    }
+    const prepared = prepareConnectionEdgeForCommit(nodes, [edgeWithoutManualPoints(edge)], edgeId, bounds);
     if (!prepared.ok || !prepared.edge) {
       continue;
     }
-    nextEdges = nextEdges.map((edge) => {
-      if (edge.id !== edgeId) {
-        return edge;
-      }
-      changed = true;
-      return prepared.edge!;
-    });
+    updates.set(edgeId, prepared.edge);
   }
 
-  return changed ? nextEdges : edges;
+  return applyEdgeUpdateMap(edges, updates);
 }
 
 function routeBoundsForPoints(points: Point[], padding = 0) {
@@ -9153,7 +9192,7 @@ export function rerouteEdgesAroundMovedNodes(
   const movedCandidates = movedNodes.map((node) => ({ node, box: routeBlockerBox(node, ROUTE_BLOCKER_PADDING) }));
   const previousRouteById = new Map(previousRoutes.map((route) => [route.edgeId, route]));
   const forcedEdgeIds = new Set(forceEdgeIds);
-  const fallbackRoutes = previousRoutes.length > 0 ? [] : routeEdgesForRendering(nodes, edges, bounds);
+  const fallbackRoutes = previousRoutes.length > 0 ? [] : routeEdgesForRendering(nodes, searchEdges, bounds);
   const fallbackRouteById = new Map(fallbackRoutes.map((route) => [route.edgeId, route]));
   const candidateEdges = previousRoutes.length > 0
     ? searchEdges.filter((edge) => previousRouteById.has(edge.id))
@@ -9176,23 +9215,21 @@ export function rerouteEdgesAroundMovedNodes(
     return edges;
   }
 
-  let nextEdges = edges;
-  let changed = false;
+  const edgeById = new Map(edges.map((edge) => [edge.id, edge]));
+  const updates = new Map<string, Edge>();
   for (const edgeId of blockedEdgeIds) {
-    const prepared = prepareConnectionEdgeForCommit(nodes, nextEdges, edgeId, bounds, previousRoutes);
+    const edge = updates.get(edgeId) ?? edgeById.get(edgeId);
+    if (!edge) {
+      continue;
+    }
+    const prepared = prepareConnectionEdgeForCommit(nodes, [edgeWithoutManualPoints(edge)], edgeId, bounds, previousRoutes);
     if (!prepared.ok || !prepared.edge) {
       continue;
     }
-    nextEdges = nextEdges.map((edge) => {
-      if (edge.id !== edgeId) {
-        return edge;
-      }
-      changed = true;
-      return prepared.edge!;
-    });
+    updates.set(edgeId, prepared.edge);
   }
 
-  return changed ? nextEdges : edges;
+  return applyEdgeUpdateMap(edges, updates);
 }
 
 function samePoint(a: Point, b: Point) {

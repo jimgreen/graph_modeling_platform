@@ -530,7 +530,9 @@ describe("graph inspector panel", () => {
     const terminalBlock = source.slice(terminalStart, terminalEnd);
 
     expect(commitBlock).toContain("prepareConnectionEdgeForCommit");
-    expect(commitBlock).toContain("canvasBounds, routedEdges");
+    expect(commitBlock).toContain("routingNodesForConnectionEdge(newEdge)");
+    expect(commitBlock).toContain("canvasBounds");
+    expect(commitBlock).toContain("routedEdges");
     expect(commitBlock).toContain("联络线绘制失败");
     expect(commitBlock).toContain("prepared.edge");
     expect(commitBlock.indexOf("prepareConnectionEdgeForCommit")).toBeLessThan(commitBlock.indexOf("setEdges"));
@@ -592,7 +594,10 @@ describe("graph inspector panel", () => {
     const pointerBlock = source.slice(pointerStart, pointerEnd);
 
     expect(source).toContain("rebuildConnectionRoutesForNodes");
-    expect(helperBlock).toContain("rebuildConnectionRoutesForNodes(nextNodes, currentEdges, changedIds, canvasBounds)");
+    expect(helperBlock).toContain("const localEdges = currentEdges === edges");
+    expect(helperBlock).toContain("edgeListForNodeIds(changedIds)");
+    expect(helperBlock).toContain("routingNodesForConnectionEdges(localEdges, nextNodes, changedIds)");
+    expect(helperBlock).toContain("rebuildConnectionRoutesForNodes(routingNodes, localEdges, changedIds, canvasBounds, localEdges)");
     expect(helperBlock).toContain("dirtyEdgeIdsAfterMove");
     expect(helperBlock).toContain("markRouteEdgesDirty");
     expect(helperBlock).toContain("markStoredRouteEdgesDirty");
@@ -625,7 +630,8 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("rebuildSingleConnectionRoute");
     expect(helperStart).toBeGreaterThan(-1);
-    expect(helperBlock).toContain("affectedEdgeIds.length === 1");
+    expect(helperBlock).toContain("affectedEdgeIds.length !== 1");
+    expect(helperBlock).toContain("routingNodesForConnectionEdge(affectedEdge, nextNodes)");
     expect(helperBlock).toContain("rebuildSingleConnectionRoute");
     expect(fastStart).toBeGreaterThan(-1);
     expect(fastBlock).not.toContain("rebuildSingleAffectedConnectionRoute");
@@ -985,9 +991,9 @@ describe("graph inspector panel", () => {
     expect(moveBlock).not.toContain("nodes.map((node)");
     expect(moveBlock).not.toContain("edges.map((edge)");
     expect(moveBlock).not.toContain("new Map(adjustedAffectedEdges.map");
-    expect(commitBlock).toContain("moveCandidateEdges");
+    expect(commitBlock).toContain("committedCandidateEdges");
     expect(commitBlock).toContain("rebuildExternalConnectionRoutesForMovedNodes(");
-    expect(commitBlock).toContain("moveCandidateEdges");
+    expect(commitBlock).toContain("committedCandidateEdges");
     expect(commitBlock).toContain("rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes(");
   });
 
@@ -1149,6 +1155,48 @@ describe("graph inspector panel", () => {
     expect(busBlock).toContain("prioritizeBusOptimizedEdgeCandidates(candidates");
     expect(busBlock).toContain("ROUTE_MAX_BUS_ENDPOINT_CANDIDATES");
     expect(busBlock).not.toContain("return candidates.filter((candidate) =>");
+  });
+
+  test("validates and prepares edited connection lines without rebuilding every route", async () => {
+    const source = await readModelSource();
+    const validationStart = source.indexOf("export function validateConnectionEdgeRoute");
+    const validationEnd = source.indexOf("function commitManualPointsFromRoute", validationStart);
+    const validationBlock = source.slice(validationStart, validationEnd);
+    const prepareStart = source.indexOf("export function prepareConnectionEdgeForCommit");
+    const prepareEnd = source.indexOf("export function rebuildSingleConnectionRoute", prepareStart);
+    const prepareBlock = source.slice(prepareStart, prepareEnd);
+
+    expect(source).toContain("function routeSingleConnectionForValidation");
+    expect(validationBlock).toContain("routeSingleConnectionForValidation(nodes, edge, bounds)");
+    expect(validationBlock).not.toContain("routeEdgesForIncrementalRendering");
+    expect(validationBlock).not.toContain("routeEdgesForRendering(nodes, edges");
+    expect(prepareBlock).toContain("designCommitSafeRoute(nodes, [edgeForDesign]");
+    expect(prepareBlock).not.toContain("designCommitSafeRoute(nodes, edges");
+    expect(prepareBlock).toContain("routeSingleConnectionForValidation(nodes, edgeForDesign, bounds)");
+    expect(prepareBlock).not.toContain("routeEdgesForRendering(nodes, candidateEdges");
+  });
+
+  test("passes only the edited connection candidate into commit preparation", async () => {
+    const source = await readAppSource();
+    const newConnectionStart = source.indexOf("const commitNewConnectionEdge =");
+    const newConnectionEnd = source.indexOf("const finishConnectToTarget", newConnectionStart);
+    const newConnectionBlock = source.slice(newConnectionStart, newConnectionEnd);
+    const rewireStart = source.indexOf("const finishRewiring =");
+    const rewireEnd = source.indexOf("const handleDrop", rewireStart);
+    const rewireBlock = source.slice(rewireStart, rewireEnd);
+    const terminalRewireStart = source.indexOf("const otherNode = edge ? nodeById.get(rewiring.endpoint === \"source\" ? edge.targetId : edge.sourceId)");
+    const terminalRewireEnd = source.indexOf("if (!connectSource)", terminalRewireStart);
+    const terminalRewireBlock = source.slice(terminalRewireStart, terminalRewireEnd);
+
+    expect(newConnectionBlock).toContain("routingNodesForConnectionEdge(newEdge)");
+    expect(newConnectionBlock).toContain("[newEdge]");
+    expect(newConnectionBlock).not.toContain("[...visibleEdges, newEdge]");
+    expect(rewireBlock).toContain("routingNodesForConnectionEdge(candidateEdge, nodes)");
+    expect(rewireBlock).toContain("[candidateEdge]");
+    expect(rewireBlock).not.toContain("edges.map((item) => item.id === rewiring.edgeId ? candidateEdge : item)");
+    expect(terminalRewireBlock).toContain("routingNodesForConnectionEdge(candidateEdge, nodes)");
+    expect(terminalRewireBlock).toContain("[candidateEdge]");
+    expect(terminalRewireBlock).not.toContain("edges.map((item) => item.id === edge.id ? candidateEdge : item)");
   });
 
   test("defers full terminal overlap detection off the drag release frame", async () => {
@@ -1332,7 +1380,8 @@ describe("graph inspector panel", () => {
 
     expect(boundaryBlock).toContain("const relevantNodeIds = new Set(nodeIds)");
     expect(boundaryBlock).toContain("for (const edge of affectedEdgesForMove)");
-    expect(boundaryBlock).toContain("const nextNodes = nodes.flatMap");
+    expect(boundaryBlock).toContain("const nextNodes = orderedNodesForIds(nodes, relevantNodeIds).map");
+    expect(boundaryBlock).not.toContain("const nextNodes = nodes.flatMap");
     expect(boundaryBlock).not.toContain("const nextNodes = nodes.map");
     expect(dirtyBlock).toContain("Object.keys(originalRoutePoints)");
     expect(dirtyBlock).not.toContain("for (const edge of edges)");

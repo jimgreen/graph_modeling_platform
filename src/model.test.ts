@@ -253,28 +253,28 @@ describe("power system model", () => {
     );
   });
 
-  test("incremental rendering reuses cached points and refreshes paths for unaffected connections", () => {
-    const sourceA = createDefaultNode("ac-source", { x: 100, y: 120 });
-    const targetA = createDefaultNode("ac-load", { x: 360, y: 120 });
-    const sourceB = createDefaultNode("ac-line", { x: 100, y: 240 });
-    const targetB = createDefaultNode("ac-line", { x: 360, y: 240 });
+  test("incremental rendering refreshes cached paths only for crossing neighbors", () => {
+    const top = createDefaultNode("ac-bus", { x: 300, y: 80 });
+    const bottom = createDefaultNode("ac-bus", { x: 300, y: 400 });
+    const left = createDefaultNode("ac-bus", { x: 100, y: 240 });
+    const right = createDefaultNode("ac-bus", { x: 500, y: 240 });
     const edges: Edge[] = [
       {
         id: "cached",
-        sourceId: sourceA.id,
-        targetId: targetA.id,
-        sourceTerminalId: sourceA.terminals[0].id,
-        targetTerminalId: targetA.terminals[0].id
+        sourceId: top.id,
+        targetId: bottom.id,
+        sourceTerminalId: "t4",
+        targetTerminalId: "t3"
       },
       {
         id: "dirty",
-        sourceId: sourceB.id,
-        targetId: targetB.id,
-        sourceTerminalId: sourceB.terminals[0].id,
-        targetTerminalId: targetB.terminals[0].id
+        sourceId: left.id,
+        targetId: right.id,
+        sourceTerminalId: "t2",
+        targetTerminalId: "t1"
       }
     ];
-    const previousRoutes = routeEdgesForStoredRendering([sourceA, targetA, sourceB, targetB], edges, { width: 520, height: 360 })
+    const previousRoutes = routeEdgesForRendering([top, bottom, left, right], edges, { width: 700, height: 520 })
       .map((route) =>
         route.edgeId === "cached"
           ? { ...route, path: "cached-path" }
@@ -284,10 +284,10 @@ describe("power system model", () => {
       );
 
     const incremental = routeEdgesForIncrementalRendering(
-      [sourceA, targetA, sourceB, targetB],
+      [top, bottom, left, right],
       edges,
       new Set(["dirty"]),
-      { width: 520, height: 360 },
+      { width: 700, height: 520 },
       previousRoutes
     );
 
@@ -298,6 +298,49 @@ describe("power system model", () => {
     expect(nextCached?.path).toContain("M");
     expect(incremental.find((route) => route.edgeId === "dirty")?.path).not.toBe(
       previousRoutes.find((route) => route.edgeId === "dirty")?.path
+    );
+  });
+
+  test("incremental rendering keeps distant cached routes untouched after a local edit", () => {
+    const distantSource = createDefaultNode("ac-source", { x: 100, y: 120 });
+    const distantTarget = createDefaultNode("ac-load", { x: 360, y: 120 });
+    const dirtySource = createDefaultNode("ac-line", { x: 900, y: 720 });
+    const dirtyTarget = createDefaultNode("ac-line", { x: 1160, y: 720 });
+    const edges: Edge[] = [
+      {
+        id: "distant",
+        sourceId: distantSource.id,
+        targetId: distantTarget.id,
+        sourceTerminalId: distantSource.terminals[0].id,
+        targetTerminalId: distantTarget.terminals[0].id
+      },
+      {
+        id: "dirty",
+        sourceId: dirtySource.id,
+        targetId: dirtyTarget.id,
+        sourceTerminalId: dirtySource.terminals[1].id,
+        targetTerminalId: dirtyTarget.terminals[0].id
+      }
+    ];
+    const previousRoutes = routeEdgesForStoredRendering(
+      [distantSource, distantTarget, dirtySource, dirtyTarget],
+      edges,
+      { width: 1400, height: 920 }
+    );
+
+    const incremental = routeEdgesForIncrementalRendering(
+      [distantSource, distantTarget, dirtySource, dirtyTarget],
+      edges,
+      new Set(["dirty"]),
+      { width: 1400, height: 920 },
+      previousRoutes
+    );
+
+    expect(incremental.find((route) => route.edgeId === "distant")).toBe(
+      previousRoutes.find((route) => route.edgeId === "distant")
+    );
+    expect(incremental.find((route) => route.edgeId === "dirty")).not.toBe(
+      previousRoutes.find((route) => route.edgeId === "dirty")
     );
   });
 
@@ -337,36 +380,37 @@ describe("power system model", () => {
     expect(incremental.map((route) => route.path)).toEqual(["cached-cached-a", "cached-cached-b"]);
   });
 
-  test("cached stored rendering reuses unaffected points and refreshes crossing arc paths after a move commit", () => {
-    const sourceA = createDefaultNode("ac-source", { x: 100, y: 120 });
-    const targetA = createDefaultNode("ac-load", { x: 360, y: 120 });
-    const sourceB = createDefaultNode("ac-line", { x: 100, y: 240 });
-    const targetB = createDefaultNode("ac-line", { x: 360, y: 240 });
+  test("cached stored rendering refreshes crossing-neighbor paths after a move commit", () => {
+    const top = createDefaultNode("ac-bus", { x: 300, y: 80 });
+    const bottom = createDefaultNode("ac-bus", { x: 300, y: 400 });
+    const left = createDefaultNode("ac-bus", { x: 100, y: 240 });
+    const right = createDefaultNode("ac-bus", { x: 500, y: 240 });
     const edges: Edge[] = [
       {
         id: "cached",
-        sourceId: sourceA.id,
-        targetId: targetA.id,
-        sourceTerminalId: sourceA.terminals[0].id,
-        targetTerminalId: targetA.terminals[0].id
+        sourceId: top.id,
+        targetId: bottom.id,
+        sourceTerminalId: "t4",
+        targetTerminalId: "t3"
       },
       {
         id: "moved",
-        sourceId: sourceB.id,
-        targetId: targetB.id,
-        sourceTerminalId: sourceB.terminals[0].id,
-        targetTerminalId: targetB.terminals[0].id
+        sourceId: left.id,
+        targetId: right.id,
+        sourceTerminalId: "t2",
+        targetTerminalId: "t1"
       }
     ];
-    const previousRoutes = routeEdgesForStoredRendering([sourceA, targetA, sourceB, targetB], edges, { width: 520, height: 360 })
+    const previousRoutes = routeEdgesForRendering([top, bottom, left, right], edges, { width: 700, height: 520 })
       .map((route) => route.edgeId === "cached" ? { ...route, path: "cached-path" } : route);
-    const movedSourceB = { ...sourceB, position: { x: sourceB.position.x + 80, y: sourceB.position.y } };
+    const movedLeft = { ...left, position: { ...left.position, y: 470 } };
+    const movedRight = { ...right, position: { ...right.position, y: 470 } };
 
     const nextRoutes = routeEdgesForCachedStoredRendering(
-      [sourceA, targetA, movedSourceB, targetB],
+      [top, bottom, movedLeft, movedRight],
       edges,
       new Set(["moved"]),
-      { width: 520, height: 360 },
+      { width: 700, height: 520 },
       previousRoutes
     );
 
@@ -375,7 +419,7 @@ describe("power system model", () => {
     expect(nextCached?.points).toEqual(previousCached?.points);
     expect(nextCached?.path).not.toBe("cached-path");
     expect(nextCached?.path).toContain("M");
-    expect(nextRoutes.find((route) => route.edgeId === "moved")?.points[0]).toEqual(getTerminalPoint(movedSourceB, sourceB.terminals[0].id));
+    expect(nextRoutes.find((route) => route.edgeId === "moved")?.points[0]).toEqual(getTerminalPoint(movedLeft, "t2"));
   });
 
   test("round-trips project files without losing device parameters", () => {

@@ -3582,6 +3582,25 @@ export function App() {
     }
     return Array.from(collected.values());
   };
+  const orderedNodeFromList = (sourceNodes: ModelNode[], nodeId: string) => {
+    const index = graphStore.nodeIndexById.get(nodeId);
+    const indexedNode = index === undefined ? undefined : sourceNodes[index];
+    if (indexedNode?.id === nodeId) {
+      return indexedNode;
+    }
+    const currentNode = sourceNodes === nodes ? nodeById.get(nodeId) : undefined;
+    return currentNode?.id === nodeId ? currentNode : undefined;
+  };
+  const orderedNodesForIds = (sourceNodes: ModelNode[], nodeIds: Iterable<string>) => {
+    const selectedNodes: ModelNode[] = [];
+    for (const nodeId of nodeIds) {
+      const node = orderedNodeFromList(sourceNodes, nodeId);
+      if (node) {
+        selectedNodes.push(node);
+      }
+    }
+    return selectedNodes;
+  };
   const activeLayer = useMemo(
     () => layers.find((layer) => layer.id === activeLayerId) ?? layers[0],
     [activeLayerId, layers]
@@ -3614,6 +3633,62 @@ export function App() {
     () => (visibleEdges === edges ? graphStore.edgeIdSet : new Set(visibleEdges.map((edge) => edge.id))),
     [edges, graphStore.edgeIdSet, visibleEdges]
   );
+  const nodeForRoutingList = (sourceNodes: ModelNode[], nodeId: string) =>
+    sourceNodes === visibleNodes
+      ? visibleNodeById.get(nodeId) ?? nodeById.get(nodeId)
+      : orderedNodeFromList(sourceNodes, nodeId) ?? nodeById.get(nodeId);
+  const addRoutingNodesForConnectionEdge = (
+    edge: Edge,
+    sourceNodes: ModelNode[],
+    scopedNodes: Map<string, ModelNode>
+  ) => {
+    const source = nodeForRoutingList(sourceNodes, edge.sourceId);
+    const target = nodeForRoutingList(sourceNodes, edge.targetId);
+    if (!source || !target) {
+      return;
+    }
+    const sourcePoint = getModelEdgeEndpointPoint(source, edge.sourcePoint, edge.sourceTerminalId);
+    const targetPoint = getModelEdgeEndpointPoint(target, edge.targetPoint, edge.targetTerminalId);
+    const padding = 512;
+    const searchBounds = {
+      left: Math.min(sourcePoint.x, targetPoint.x) - padding,
+      right: Math.max(sourcePoint.x, targetPoint.x) + padding,
+      top: Math.min(sourcePoint.y, targetPoint.y) - padding,
+      bottom: Math.max(sourcePoint.y, targetPoint.y) + padding
+    };
+    scopedNodes.set(source.id, source);
+    scopedNodes.set(target.id, target);
+    for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, searchBounds)) {
+      if (!scopedNodes.has(node.id)) {
+        scopedNodes.set(node.id, node);
+      }
+    }
+  };
+  const routingNodesForConnectionEdge = (edge: Edge, sourceNodes: ModelNode[] = visibleNodes) => {
+    const scopedNodes = new Map<string, ModelNode>();
+    addRoutingNodesForConnectionEdge(edge, sourceNodes, scopedNodes);
+    return scopedNodes.size > 0 ? Array.from(scopedNodes.values()) : sourceNodes;
+  };
+  const routingNodesForConnectionEdges = (
+    candidateEdges: Edge[],
+    sourceNodes: ModelNode[],
+    extraNodeIds: Iterable<string> = []
+  ) => {
+    if (candidateEdges.length === 0) {
+      return [];
+    }
+    const scopedNodes = new Map<string, ModelNode>();
+    for (const nodeId of extraNodeIds) {
+      const node = orderedNodeFromList(sourceNodes, nodeId) ?? nodeById.get(nodeId);
+      if (node) {
+        scopedNodes.set(node.id, node);
+      }
+    }
+    for (const edge of candidateEdges) {
+      addRoutingNodesForConnectionEdge(edge, sourceNodes, scopedNodes);
+    }
+    return scopedNodes.size > 0 ? Array.from(scopedNodes.values()) : sourceNodes;
+  };
   const visibleEdgesByTerminalRef = useMemo(() => {
     if (visibleEdges === edges) {
       return graphStore.edgesByTerminalRef;
@@ -4541,11 +4616,31 @@ export function App() {
     if (changedIds.length === 0) {
       return currentEdges;
     }
-    const nextEdges = rebuildConnectionRoutesForNodes(nextNodes, currentEdges, changedIds, canvasBounds);
-    const dirtyEdgeIds = dirtyEdgeIdsAfterMove(currentEdges, nextEdges, changedIds);
+    const localEdges = currentEdges === edges
+      ? edgeListForNodeIds(changedIds)
+      : currentEdges.filter((edge) => changedIds.includes(edge.sourceId) || changedIds.includes(edge.targetId));
+    if (localEdges.length === 0) {
+      return currentEdges;
+    }
+    const routingNodes = routingNodesForConnectionEdges(localEdges, nextNodes, changedIds);
+    const nextLocalEdges = rebuildConnectionRoutesForNodes(routingNodes, localEdges, changedIds, canvasBounds, localEdges);
+    const dirtyEdgeIds = dirtyEdgeIdsAfterMove(localEdges, nextLocalEdges, changedIds);
     markRouteEdgesDirty(dirtyEdgeIds);
     markStoredRouteEdgesDirty(dirtyEdgeIds);
-    return nextEdges;
+    if (dirtyEdgeIds.size === 0) {
+      return currentEdges;
+    }
+    const nextLocalEdgeById = new Map(nextLocalEdges.map((edge) => [edge.id, edge]));
+    let changed = false;
+    const nextEdges = currentEdges.map((edge) => {
+      const nextEdge = nextLocalEdgeById.get(edge.id);
+      if (!nextEdge || nextEdge === edge) {
+        return edge;
+      }
+      changed = true;
+      return nextEdge;
+    });
+    return changed ? nextEdges : currentEdges;
   };
   const selectedRoutedEdge = selectedEdge ? routedEdgeById.get(selectedEdge.id) : undefined;
   const rewiringPreviewRoute = useMemo(() => {
@@ -6120,10 +6215,7 @@ export function App() {
     padding = 0
   ) => {
     let bounds: { left: number; right: number; top: number; bottom: number } | null = null;
-    for (const node of sourceNodes) {
-      if (!movedIds.has(node.id)) {
-        continue;
-      }
+    for (const node of orderedNodesForIds(sourceNodes, movedIds)) {
       const position = positions?.[node.id] ?? node.position;
       const halfWidth = Math.abs(node.size.width * getNodeScaleX(node)) / 2;
       const halfHeight = Math.abs(node.size.height * getNodeScaleY(node)) / 2;
@@ -6226,7 +6318,7 @@ export function App() {
     if (movedIds.size === 0 || candidateEdges.length === 0) {
       return baseRoutePoints;
     }
-    const movedNodes = nextNodes.filter((node) => movedIds.has(node.id));
+    const movedNodes = orderedNodesForIds(nextNodes, movedIds);
     if (movedNodes.length === 0) {
       return baseRoutePoints;
     }
@@ -6284,8 +6376,8 @@ export function App() {
     ) {
       return baseRoutePoints;
     }
-    const originalMovedNodes = previousNodes
-      .filter((node) => movedIds.has(node.id) && originalPositions[node.id])
+    const originalMovedNodes = orderedNodesForIds(previousNodes, movedIds)
+      .filter((node) => originalPositions[node.id])
       .map((node) => ({ ...node, position: originalPositions[node.id] }));
     if (originalMovedNodes.length === 0) {
       return baseRoutePoints;
@@ -6466,9 +6558,34 @@ export function App() {
     const affectedEdgeIds = searchEdges
       .filter((edge) => movedIds.has(edge.sourceId) || movedIds.has(edge.targetId) || selectedEdgeIds.has(edge.id))
       .map((edge) => edge.id);
-    return affectedEdgeIds.length === 1
-      ? rebuildSingleConnectionRoute(nextNodes, candidateEdges, affectedEdgeIds[0], canvasBounds)
-      : candidateEdges;
+    if (affectedEdgeIds.length !== 1) {
+      return candidateEdges;
+    }
+    const affectedEdge = searchEdges.find((edge) => edge.id === affectedEdgeIds[0]);
+    const routingNodes = affectedEdge ? routingNodesForConnectionEdge(affectedEdge, nextNodes) : nextNodes;
+    return rebuildSingleConnectionRoute(routingNodes, candidateEdges, affectedEdgeIds[0], canvasBounds);
+  };
+
+  const terminalReconcileNodeScope = (
+    previousNodes: ModelNode[],
+    nextNodes: ModelNode[],
+    movedNodeIds: Set<string>
+  ) => {
+    const scopedNodeIds = new Set<string>(movedNodeIds);
+    const addNodesNear = (bounds: ReturnType<typeof boundsForNodeSet>) => {
+      if (!bounds) {
+        return;
+      }
+      for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, bounds)) {
+        scopedNodeIds.add(node.id);
+      }
+    };
+    addNodesNear(boundsForNodeSet(previousNodes, movedNodeIds, undefined, MOVE_ROUTE_LOCAL_SEARCH_PADDING));
+    addNodesNear(boundsForNodeSet(nextNodes, movedNodeIds, undefined, MOVE_ROUTE_LOCAL_SEARCH_PADDING));
+    return {
+      previous: orderedNodesForIds(previousNodes, scopedNodeIds),
+      next: orderedNodesForIds(nextNodes, scopedNodeIds)
+    };
   };
 
   const finalizeMovedNodeEdgesFast = (
@@ -6479,9 +6596,10 @@ export function App() {
     localCandidateEdges: Edge[] = candidateEdges
   ) => {
     const movedNodeIdSet = new Set(movedNodeIds);
+    const reconcileNodes = terminalReconcileNodeScope(previousNodes, nextNodes, movedNodeIdSet);
     const reconciled = reconcileOverlappingTerminalConnections(
-      previousNodes,
-      nextNodes,
+      reconcileNodes.previous,
+      reconcileNodes.next,
       candidateEdges,
       (_first, _second, index) => `edge-overlap-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
       movedNodeIdSet,
@@ -6489,7 +6607,11 @@ export function App() {
     );
     let nextEdges = reconciled.edges;
     for (const edgeId of reconciled.addedEdgeIds) {
-      const prepared = prepareConnectionEdgeForCommit(nextNodes, nextEdges, edgeId, canvasBounds, routedEdges);
+      const edge = nextEdges.find((item) => item.id === edgeId);
+      if (!edge) {
+        continue;
+      }
+      const prepared = prepareConnectionEdgeForCommit(routingNodesForConnectionEdge(edge, nextNodes), [edge], edgeId, canvasBounds, routedEdges);
       if (prepared.ok && prepared.edge) {
         nextEdges = nextEdges.map((edge) => edge.id === edgeId ? prepared.edge! : edge);
       }
@@ -6534,7 +6656,7 @@ export function App() {
     return {
       routePoints: routePointsForReroute,
       edges: rerouteEdgesAroundMovedNodes(
-        nextNodes,
+        routingNodesForConnectionEdges(routeSearchEdges, nextNodes, movedNodeIds),
         rebuiltAdjustedEdges,
         movedNodeIds,
         routePointSnapshotToRoutes(routePointsForReroute),
@@ -6661,71 +6783,6 @@ export function App() {
     }, 180, 1500);
   };
 
-  const commitFastMovedGraph = (
-    nextNodes: ModelNode[],
-    nextEdges: Edge[],
-    movedNodeIds: string[],
-    originalRoutePoints: DraggingState["originalRoutePoints"],
-    selectedEdgeIds = new Set<string>(),
-    originalPositions?: Record<string, Point>,
-    previousNodes: ModelNode[] = nodes,
-    moveCandidateEdges: Edge[] = []
-  ) => {
-    markStoredRouteEdgesDirty(dirtyEdgeIdsForMovedLocalRoutes(selectedEdgeIds, originalRoutePoints));
-    let committedEdges = nextEdges;
-    const committedCandidateEdgeIds = new Set(moveCandidateEdges.map((edge) => edge.id));
-    if (movedNodeIds.length > 0) {
-      const rebuiltEdges = rebuildExternalConnectionRoutesForMovedNodes(
-        nextNodes,
-        committedEdges,
-        movedNodeIds,
-        canvasBounds,
-        moveCandidateEdges
-      );
-      if (rebuiltEdges !== committedEdges) {
-        const rebuiltDirtyEdgeIds = moveCandidateEdges.length > 0
-          ? new Set(moveCandidateEdges.map((edge) => edge.id))
-          : edgeReferenceDiffIds(committedEdges, rebuiltEdges);
-        markRouteEdgesDirty(rebuiltDirtyEdgeIds);
-        markStoredRouteEdgesDirty(rebuiltDirtyEdgeIds);
-        for (const edgeId of rebuiltDirtyEdgeIds) {
-          committedCandidateEdgeIds.add(edgeId);
-        }
-        committedEdges = rebuiltEdges;
-      }
-      const rebuiltInternalEdges = rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes(
-        nextNodes,
-        committedEdges,
-        movedNodeIds,
-        canvasBounds,
-        moveCandidateEdges
-      );
-      if (rebuiltInternalEdges !== committedEdges) {
-        const rebuiltDirtyEdgeIds = moveCandidateEdges.length > 0
-          ? new Set(moveCandidateEdges.map((edge) => edge.id))
-          : edgeReferenceDiffIds(committedEdges, rebuiltInternalEdges);
-        markRouteEdgesDirty(rebuiltDirtyEdgeIds);
-        markStoredRouteEdgesDirty(rebuiltDirtyEdgeIds);
-        for (const edgeId of rebuiltDirtyEdgeIds) {
-          committedCandidateEdgeIds.add(edgeId);
-        }
-        committedEdges = rebuiltInternalEdges;
-      }
-    }
-    markBusTerminalSyncDirty(movedNodeIds);
-    setGraphStore((current) => graphStorePatchGraphFromArrays(current, nextNodes, committedEdges, movedNodeIds, committedCandidateEdgeIds));
-    scheduleMovedEdgeOptimization(
-      previousNodes,
-      nextNodes,
-      committedEdges,
-      movedNodeIds,
-      originalRoutePoints,
-      selectedEdgeIds,
-      originalPositions,
-      moveCandidateEdges
-    );
-  };
-
   const commitFastMovedGraphPatches = (
     movedNodeUpdates: ModelNode[],
     nextNodes: ModelNode[],
@@ -6740,8 +6797,9 @@ export function App() {
     markStoredRouteEdgesDirty(dirtyEdgeIdsForMovedLocalRoutes(selectedEdgeIds, originalRoutePoints));
     let committedCandidateEdges = candidateEdges;
     if (movedNodeIds.length > 0) {
+      let routingNodes = routingNodesForConnectionEdges(committedCandidateEdges, nextNodes, movedNodeIds);
       const rebuiltEdges = rebuildExternalConnectionRoutesForMovedNodes(
-        nextNodes,
+        routingNodes,
         committedCandidateEdges,
         movedNodeIds,
         canvasBounds,
@@ -6753,8 +6811,9 @@ export function App() {
         markStoredRouteEdgesDirty(rebuiltDirtyEdgeIds);
         committedCandidateEdges = rebuiltEdges;
       }
+      routingNodes = routingNodesForConnectionEdges(committedCandidateEdges, nextNodes, movedNodeIds);
       const rebuiltInternalEdges = rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes(
-        nextNodes,
+        routingNodes,
         committedCandidateEdges,
         movedNodeIds,
         canvasBounds,
@@ -6954,7 +7013,7 @@ export function App() {
     let boundedDx = dx;
     let boundedDy = dy;
     const selected = new Set(nodeIds);
-    for (const node of nodes) {
+    for (const node of orderedNodesForIds(nodes, selected)) {
       const original = originalPositions[node.id];
       if (!selected.has(node.id) || !original) {
         continue;
@@ -6983,16 +7042,11 @@ export function App() {
       relevantNodeIds.add(edge.sourceId);
       relevantNodeIds.add(edge.targetId);
     }
-    const nextNodes = nodes.flatMap((node) => {
-      if (!relevantNodeIds.has(node.id)) {
-        return [];
-      }
+    const nextNodes = orderedNodesForIds(nodes, relevantNodeIds).map((node) => {
       const originalPosition = originalPositions[node.id];
-      return [
-        movedNodeIds.has(node.id) && originalPosition
-          ? { ...node, position: clampNodeToCanvas(node, { x: originalPosition.x + delta.x, y: originalPosition.y + delta.y }) }
-          : node
-      ];
+      return movedNodeIds.has(node.id) && originalPosition
+        ? { ...node, position: clampNodeToCanvas(node, { x: originalPosition.x + delta.x, y: originalPosition.y + delta.y }) }
+        : node;
     });
     const movedNodes = nextNodes.filter((node) => movedNodeIds.has(node.id));
     const deltasByNode = Object.fromEntries(nodeIds.map((id) => [id, delta]));
@@ -7361,8 +7415,9 @@ export function App() {
     if (selectedNode) {
       nextPatch.position = clampNodeToCanvas({ ...selectedNode, ...nextPatch }, nextPatch.position ?? selectedNode.position);
     }
-    const nextNodes = nodes.map((node) => (node.id === selectedNodeId ? { ...node, ...nextPatch } : node));
-    const nextSelectedNode = nextNodes[graphStore.nodeIndexById.get(selectedNodeId) ?? -1];
+    const currentSelectedNode = nodeById.get(selectedNodeId);
+    const nextSelectedNode = currentSelectedNode ? { ...currentSelectedNode, ...nextPatch } : undefined;
+    const nextNodes = nextSelectedNode ? overlayGraphStoreNodes(graphStore, [nextSelectedNode]) : nodes;
     const geometryPatch =
       patch.rotation !== undefined ||
       patch.scale !== undefined ||
@@ -7393,26 +7448,23 @@ export function App() {
         },
         originalRoutePoints
       );
-      const adjustedEdgeById = new Map(adjustedAffectedEdges.map((edge) => [edge.id, edge]));
-      const adjustedEdges = affectedEdgesForMove.length > 0
-        ? edges.map((edge) => adjustedEdgeById.get(edge.id) ?? edge)
-        : edges;
-      const nextEdges = finalizeMovedNodeEdgesFast(
+      const finalizedCandidateEdges = finalizeMovedNodeEdgesFast(
         nodes,
         nextNodes,
-        adjustedEdges,
+        adjustedAffectedEdges,
         [selectedNodeId],
         adjustedAffectedEdges
       );
-      commitFastMovedGraph(
+      commitFastMovedGraphPatches(
+        nextSelectedNode ? [nextSelectedNode] : [],
         nextNodes,
-        nextEdges,
+        finalizedCandidateEdges,
+        affectedEdgesForMove,
         [selectedNodeId],
         originalRoutePoints,
         new Set<string>(),
         originalPositions,
-        nodes,
-        adjustedAffectedEdges
+        nodes
       );
       return;
     }
@@ -7925,7 +7977,13 @@ export function App() {
   };
 
   const commitNewConnectionEdge = (newEdge: Edge, sourceName: string, targetName: string) => {
-    const prepared = prepareConnectionEdgeForCommit(visibleNodes, [...visibleEdges, newEdge], newEdge.id, canvasBounds, routedEdges);
+    const prepared = prepareConnectionEdgeForCommit(
+      routingNodesForConnectionEdge(newEdge),
+      [newEdge],
+      newEdge.id,
+      canvasBounds,
+      routedEdges
+    );
     if (!prepared.ok || !prepared.edge) {
       const message = connectionCommitFailureMessage(prepared.issues);
       window.alert(`联络线绘制失败：${message}`);
@@ -8010,8 +8068,8 @@ export function App() {
       const candidateEdge = rewiredEdge ? (slidePatch ? { ...rewiredEdge, ...slidePatch } : rewiredEdge) : null;
       const prepared = candidateEdge
         ? prepareConnectionEdgeForCommit(
-            nodes,
-            edges.map((item) => item.id === rewiring.edgeId ? candidateEdge : item),
+            routingNodesForConnectionEdge(candidateEdge, nodes),
+            [candidateEdge],
             rewiring.edgeId,
             canvasBounds,
             routedEdges
@@ -8437,18 +8495,28 @@ export function App() {
       deltas,
       originalRoutePoints
     );
-    const adjustedEdgeById = new Map(adjustedAffectedEdges.map((edge) => [edge.id, edge]));
-    const adjustedEdges = affectedEdgesForLayout.length > 0
-      ? edges.map((edge) => adjustedEdgeById.get(edge.id) ?? edge)
-      : edges;
-    const nextEdges = finalizeMovedNodeEdgesFast(
+    const finalizedCandidateEdges = finalizeMovedNodeEdgesFast(
       nodes,
       arranged,
-      adjustedEdges,
+      adjustedAffectedEdges,
       layoutNodeIds,
       adjustedAffectedEdges
     );
-    commitFastMovedGraph(arranged, nextEdges, layoutNodeIds, originalRoutePoints, new Set<string>(), originalPositions, nodes, adjustedAffectedEdges);
+    const movedNodeUpdates = layoutNodeIds.flatMap((nodeId) => {
+      const nextNode = orderedNodeFromList(arranged, nodeId);
+      return nextNode && nodeById.get(nodeId) !== nextNode ? [nextNode] : [];
+    });
+    commitFastMovedGraphPatches(
+      movedNodeUpdates,
+      arranged,
+      finalizedCandidateEdges,
+      affectedEdgesForLayout,
+      layoutNodeIds,
+      originalRoutePoints,
+      new Set<string>(),
+      originalPositions,
+      nodes
+    );
   };
 
   const alignSelected = (direction: AlignMode) => {
@@ -9990,8 +10058,8 @@ export function App() {
           : null;
         const candidateEdge = slidePatch ? { ...rewiredEdge, ...slidePatch } : rewiredEdge;
         const prepared = prepareConnectionEdgeForCommit(
-          nodes,
-          edges.map((item) => item.id === edge.id ? candidateEdge : item),
+          routingNodesForConnectionEdge(candidateEdge, nodes),
+          [candidateEdge],
           edge.id,
           canvasBounds,
           routedEdges
