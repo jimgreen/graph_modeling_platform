@@ -266,10 +266,19 @@ describe("graph inspector panel", () => {
 
   test("uses the same fuzzy snap hint while dragging existing connection endpoints", async () => {
     const source = await readAppSource();
+    const pointerStart = source.indexOf("if (rewiring && svgRef.current)");
+    const pointerEnd = source.indexOf("if (marquee", pointerStart);
+    const pointerBlock = source.slice(pointerStart, pointerEnd);
+    const schedulerStart = source.indexOf("const scheduleRewirePreviewPoint");
+    const schedulerEnd = source.indexOf("const resetConnectPreviewState", schedulerStart);
+    const schedulerBlock = source.slice(schedulerStart, schedulerEnd);
 
     expect(source).toContain("dropTargetPoint?: Point");
     expect(source).toContain("dropTarget?: ConnectTarget");
-    expect(source).toContain("findRewireTargetAtPoint(previewPoint, rewiring)");
+    expect(pointerBlock).toContain("scheduleRewirePreviewPoint(previewPoint, rewiring)");
+    expect(pointerBlock).not.toContain("findRewireTargetAtPoint(previewPoint, rewiring)");
+    expect(schedulerBlock).toContain("window.requestAnimationFrame");
+    expect(schedulerBlock).toContain("const target = findRewireTargetAtPoint(next.point, next.rewiring)");
     expect(source).toContain("const dropTargetPoint = target ? connectTargetSnapPoint(target) : undefined;");
     expect(source).toContain("dropTarget: target ?? undefined");
     expect(source).toContain("rewiring?.dropTargetPoint");
@@ -324,6 +333,8 @@ describe("graph inspector panel", () => {
     expect(previewBlock).toContain("routeEdgesForStoredRendering");
     expect(previewBlock).not.toContain("routeEdgesForRendering");
     expect(previewBlock).not.toContain("simpleOrthogonalPolyline");
+    expect(previewBlock).toContain("const previewNodes = previewTarget?.node");
+    expect(previewBlock).not.toContain("[...visibleNodes, previewTarget.node]");
   });
 
   test("routes connection previews through the snapped target terminal normal", async () => {
@@ -331,9 +342,9 @@ describe("graph inspector panel", () => {
     const previewStart = source.indexOf("const buildConnectPreviewPath = (");
     const previewEnd = source.indexOf("const connectPreviewColor", previewStart);
     const previewBlock = source.slice(previewStart, previewEnd);
-    const pointerStart = source.indexOf("if (connectSource) {");
-    const pointerEnd = source.indexOf("if (terminalPress", pointerStart);
-    const pointerBlock = source.slice(pointerStart, pointerEnd);
+    const schedulerStart = source.indexOf("const scheduleConnectPreviewPoint");
+    const schedulerEnd = source.indexOf("const resetConnectPreviewState", schedulerStart);
+    const schedulerBlock = source.slice(schedulerStart, schedulerEnd);
 
     expect(source).toContain("connectDropTargetRef");
     expect(source).not.toContain("setConnectDropTarget");
@@ -341,7 +352,7 @@ describe("graph inspector panel", () => {
     expect(previewBlock).toContain("targetId: previewTarget?.node.id ?? \"floating-connect-preview-target\"");
     expect(previewBlock).toContain("targetTerminalId: previewTarget?.terminalId ?? \"t1\"");
     expect(previewBlock).toContain("targetPoint: previewTarget");
-    expect(pointerBlock).toContain("target ?? null");
+    expect(schedulerBlock).toContain("target ?? null");
   });
 
   test("keeps endpoint rewire previews on the lightweight stored-route path", async () => {
@@ -351,6 +362,9 @@ describe("graph inspector panel", () => {
     const previewBlock = source.slice(previewStart, previewEnd);
 
     expect(previewBlock).toContain("routeEdgesForStoredRendering");
+    expect(previewBlock).toContain("compactPreviewNodes");
+    expect(previewBlock).not.toContain("routeEdgesForStoredRendering(visibleNodes");
+    expect(previewBlock).not.toContain("[...visibleNodes, movingTarget.node]");
     expect(previewBlock).not.toContain("routeEdgesForRendering");
     expect(previewBlock).not.toContain("simpleOrthogonalPolyline");
   });
@@ -362,6 +376,8 @@ describe("graph inspector panel", () => {
     const previewBlock = source.slice(previewStart, previewEnd);
 
     expect(previewBlock).toContain("routeEdgesForStoredRendering");
+    expect(previewBlock).toContain("const previewNodes = compactPreviewNodes(sourceNode, targetNode)");
+    expect(previewBlock).not.toContain("routeEdgesForStoredRendering(visibleNodes");
     expect(previewBlock).not.toContain("routeEdgesForRendering");
     expect(previewBlock).not.toContain("simpleOrthogonalPolyline");
   });
@@ -440,7 +456,7 @@ describe("graph inspector panel", () => {
     expect(layoutBlock).toContain("layoutNodes(nodes, selectedLayoutUnits)");
     expect(layoutBlock).toContain("const selected = new Set(layoutNodeIds)");
     expect(source).toContain("if (!activeLayerEdgeIdSet.has(edgeId))");
-    expect(source).toContain("for (const node of visibleNodes)");
+    expect(source).toContain("const visibleNodeSpatialIndex = useMemo");
   });
 
   test("focuses a selected nested group member and moves the whole group", async () => {
@@ -671,6 +687,106 @@ describe("graph inspector panel", () => {
     expect(sizeBlock).not.toContain("routeEdgesForRendering");
   });
 
+  test("exports and imports platform model files with duplicate-name choices", async () => {
+    const source = await readAppSource();
+    const exportStart = source.indexOf("const exportCurrentModelFile =");
+    const exportEnd = source.indexOf("const importModelFile", exportStart);
+    const exportBlock = source.slice(exportStart, exportEnd);
+    const importStart = source.indexOf("const importModelFile =");
+    const importEnd = source.indexOf("const chooseImage", importStart);
+    const importBlock = source.slice(importStart, importEnd);
+    const topbarStart = source.indexOf("<header className=\"topbar\">");
+    const topbarEnd = source.indexOf("</header>", topbarStart);
+    const topbarBlock = source.slice(topbarStart, topbarEnd);
+    const contextStart = source.indexOf("{contextMenu && (");
+    const contextEnd = source.indexOf("{projectMenu && (", contextStart);
+    const contextBlock = source.slice(contextStart, contextEnd);
+    const projectContextStart = source.indexOf("{projectMenu && (");
+    const projectContextEnd = source.indexOf("{pendingModelImportConflict && (", projectContextStart);
+    const projectContextBlock = source.slice(projectContextStart, projectContextEnd);
+
+    expect(source).toContain("serializeProject");
+    expect(source).toContain("deserializeProject");
+    expect(source).toContain("const modelImportInputRef = useRef<HTMLInputElement | null>(null)");
+    expect(source).toContain("const modelImportTargetSchemeIdRef = useRef<string>(\"\")");
+    expect(source).toContain("pendingModelImportConflict");
+    expect(source).toContain("resolveDuplicateModelImport");
+    expect(source).toContain("const openModelImportFilePicker = (targetSchemeId = \"\")");
+    expect(exportBlock).toContain("serializeProject(currentProject())");
+    expect(exportBlock).toContain("description: \"平台模型文件\"");
+    expect(exportBlock).toContain("extensions: [\".json\"]");
+    expect(importBlock).toContain("deserializeProject(text)");
+    expect(importBlock).toContain("modelImportTargetSchemeIdRef.current");
+    expect(importBlock).toContain("setPendingModelImportConflict");
+    expect(importBlock).not.toContain("模型名称重复。请输入 1 覆盖已有模型，2 重命名为新模型，3 不导入。");
+    expect(importBlock).not.toContain("duplicateChoice");
+    expect(importBlock).toContain("promptUniqueRecordName");
+    expect(source).toContain("upsertSavedProject(scheme.projects, importedRecord)");
+    expect(source).toContain("loadSavedProject(importedRecord, targetScheme.id)");
+    expect(source).toContain("模型名称重复</h2>");
+    expect(source).toContain("请选择导入处理方式");
+    expect(source).toContain(">覆盖</button>");
+    expect(source).toContain(">重命名</button>");
+    expect(source).toContain(">不导入</button>");
+    expect(topbarBlock).toContain("openModelImportFilePicker()");
+    expect(topbarBlock).toContain("onChange={importModelFile}");
+    expect(topbarBlock).toContain("aria-label=\"导入模型文件\"");
+    expect(topbarBlock).toContain("aria-label=\"导出当前模型文件\"");
+    expect(contextBlock).not.toContain("导入模型");
+    expect(contextBlock).not.toContain("导出模型");
+    expect(projectContextBlock).toContain("exportProjectRecordFile");
+    expect(projectContextBlock).toContain("openModelImportFilePicker(projectMenu.schemeId)");
+    expect(projectContextBlock).toContain("模型导入");
+    expect(projectContextBlock).toContain("模型导出");
+  });
+
+  test("exports schemes through a directory picker and keeps imports exports in context menus", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const exportStart = source.indexOf("const exportSchemeRecord = async");
+    const exportEnd = source.indexOf("const chooseImage", exportStart);
+    const exportBlock = source.slice(exportStart, exportEnd);
+    const importStart = source.indexOf("const importSchemeFile = async");
+    const importEnd = source.indexOf("const commitImportedModelRecord", importStart);
+    const importBlock = source.slice(importStart, importEnd);
+    const projectContextStart = source.indexOf("{projectMenu && (");
+    const projectContextEnd = source.indexOf("{pendingModelImportConflict && (", projectContextStart);
+    const projectContextBlock = source.slice(projectContextStart, projectContextEnd);
+
+    expect(source).toContain("type DirectoryPickerWindow");
+    expect(source).toContain("showDirectoryPicker");
+    expect(source).toContain("const writeTextFileToDirectory = async");
+    expect(source).toContain("const schemeImportInputRef = useRef<HTMLInputElement | null>(null)");
+    expect(source).toContain("pendingSchemeImportConflict");
+    expect(source).toContain("resolveDuplicateSchemeImport");
+    expect(source).toContain("const openSchemeImportFilePicker = () =>");
+    expect(source).toContain("const importSchemeFile = async");
+    expect(exportBlock).toContain("showDirectoryPicker");
+    expect(exportBlock).toContain("writeTextFileToDirectory(directoryHandle");
+    expect(exportBlock).toContain("serializeProject(project.project)");
+    expect(exportBlock).toContain("buildSvgDocument(project.project.nodes");
+    expect(exportBlock).toContain("buildEDeviceParameterFile(project.project)");
+    expect(importBlock).toContain("duplicateScheme");
+    expect(importBlock).toContain("setPendingSchemeImportConflict");
+    expect(importBlock).not.toContain("promptUniqueRecordName");
+    expect(importBlock).not.toContain("uniqueRecordName(importedName");
+    expect(source).toContain("mergeImportedSchemeIntoExisting");
+    expect(source).toContain("方案名称重复</h2>");
+    expect(source).toContain("请选择导入处理方式");
+    expect(source).toContain(">合并覆盖</button>");
+    expect(source).toContain(">重新命名</button>");
+    expect(source).toContain(">不导入</button>");
+    expect(source).toContain("请输入导入后的方案名称");
+    expect(source).not.toContain("project-panel-actions");
+    expect(source).not.toContain("exportSelectedSchemeFromPanel");
+    expect(source).not.toContain("openSelectedSchemeModelImport");
+    expect(projectContextBlock).toContain("方案导入");
+    expect(projectContextBlock).toContain("模型导入");
+    expect(projectContextBlock).toContain("void exportSchemeRecord(scheme)");
+    expect(projectContextBlock).toContain("方案导出");
+    expect(styles).not.toContain(".project-panel-actions");
+  });
+
   test("clips the main svg render list to the current viewport while preserving selected graphics", async () => {
     const source = await readAppSource();
     const routeCullStart = source.indexOf("const viewportRoutedEdges = useMemo");
@@ -684,8 +800,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("routeIntersectsRenderViewport");
     expect(routeCullBlock).toContain("activeSelectedEdgeSet.has(route.edgeId)");
     expect(routeCullBlock).toContain("routeIntersectsRenderViewport(route, renderViewportBounds)");
-    expect(routeCullBlock).toContain("selectedNodeIdSet.has(node.id)");
-    expect(routeCullBlock).toContain("draggingNodeIdSet.has(node.id)");
+    expect(routeCullBlock).toContain("selectedNodeIdSet.forEach(addVisibleNodeId)");
+    expect(routeCullBlock).toContain("draggingNodeIdSet.forEach(addVisibleNodeId)");
     expect(edgeRenderIndex).toBeGreaterThan(-1);
     expect(nodeRenderIndex).toBeGreaterThan(-1);
   });
@@ -875,11 +991,63 @@ describe("graph inspector panel", () => {
     const overlapEnd = source.indexOf("const nodeTerminalSnapTarget", overlapStart);
     const overlapBlock = source.slice(overlapStart, overlapEnd);
 
-    expect(overlapBlock).toContain("dragging && draggingDelta ? dragPreviewNodes : deferredRoutingNodes");
+    expect(source).toContain("const dragInteractionNodes = useMemo");
+    expect(source).toContain("const dragPreviewMovedNodeById = useMemo");
+    expect(source).not.toContain("Array.from(dragPreviewNodeById.values()).filter");
+    expect(overlapBlock).toContain("dragging && draggingDelta ? dragInteractionNodes : deferredRoutingNodes");
     expect(overlapBlock).toContain("terminalOverlapAffectedNodeIds");
     expect(overlapBlock).toContain("getOverlappingTerminalGroups(terminalOverlapNodes, terminalOverlapAffectedNodeIds)");
     expect(overlapBlock).toContain("getTerminalBusContactGroups(terminalOverlapNodes, 0, terminalOverlapAffectedNodeIds)");
     expect(overlapBlock).not.toContain("getOverlappingTerminalGroups(dragPreviewNodes, dragging ? draggingNodeIdSet : undefined)");
+  });
+
+  test("coalesces connection target lookup and limits drag-preview nodes for large diagrams", async () => {
+    const source = await readAppSource();
+    const pointerStart = source.indexOf("const handlePointerMove = (event: PointerEvent<SVGSVGElement>)");
+    const pointerEnd = source.indexOf("const handleWheel", pointerStart);
+    const pointerBlock = source.slice(pointerStart, pointerEnd);
+    const connectSchedulerStart = source.indexOf("const scheduleConnectPreviewPoint");
+    const connectSchedulerEnd = source.indexOf("const resetConnectPreviewState", connectSchedulerStart);
+    const connectSchedulerBlock = source.slice(connectSchedulerStart, connectSchedulerEnd);
+    const dragPreviewStart = source.indexOf("const dragInteractionNodes = useMemo");
+    const dragPreviewEnd = source.indexOf("const dragPreviewEdgeIdSet", dragPreviewStart);
+    const dragPreviewBlock = source.slice(dragPreviewStart, dragPreviewEnd);
+
+    expect(pointerBlock).toContain("scheduleConnectPreviewPoint(previewPoint)");
+    expect(pointerBlock).not.toContain("findConnectTargetAtPoint(previewPoint)");
+    expect(connectSchedulerBlock).toContain("window.requestAnimationFrame");
+    expect(connectSchedulerBlock).toContain("const target = next.point ? findConnectTargetAtPoint(next.point) : null");
+    expect(source).toContain("const connectTargetSearchBounds = (point: Point)");
+    expect(source).toContain("const searchBounds = connectTargetSearchBounds(point)");
+    expect(source).toContain("queryNodeSpatialIndex(visibleNodeSpatialIndex, searchBounds)");
+    expect(dragPreviewBlock).toContain("dragInteractionBounds");
+    expect(dragPreviewBlock).toContain("candidateNodeIntersectsInteractionBounds");
+    expect(dragPreviewBlock).toContain("const source = dragPreviewNodeFor(previewEdge.sourceId)");
+    expect(dragPreviewBlock).toContain("nextNodes: dragInteractionNodes");
+    expect(dragPreviewBlock).not.toContain("Array.from(dragPreviewNodeById.values())");
+  });
+
+  test("uses node spatial indexes for connection hit tests and drag interaction candidates", async () => {
+    const source = await readAppSource();
+    const findConnectStart = source.indexOf("const findConnectTargetAtPoint = (point: Point)");
+    const findConnectEnd = source.indexOf("const commitNewConnectionEdge", findConnectStart);
+    const findConnectBlock = source.slice(findConnectStart, findConnectEnd);
+    const findRewireStart = source.indexOf("const findRewireTargetAtPoint = (point: Point");
+    const findRewireEnd = source.indexOf("const findConnectTargetAtPoint", findRewireStart);
+    const findRewireBlock = source.slice(findRewireStart, findRewireEnd);
+    const dragPreviewStart = source.indexOf("const dragInteractionNodes = useMemo");
+    const dragPreviewEnd = source.indexOf("const terminalOverlapNodes", dragPreviewStart);
+    const dragPreviewBlock = source.slice(dragPreviewStart, dragPreviewEnd);
+
+    expect(source).toContain("function buildNodeSpatialIndex");
+    expect(source).toContain("function queryNodeSpatialIndex");
+    expect(source).toContain("const visibleNodeSpatialIndex = useMemo");
+    expect(findConnectBlock).toContain("queryNodeSpatialIndex(visibleNodeSpatialIndex, searchBounds)");
+    expect(findConnectBlock).not.toContain("for (const node of visibleNodes)");
+    expect(findRewireBlock).toContain("queryNodeSpatialIndex(visibleNodeSpatialIndex, searchBounds)");
+    expect(findRewireBlock).not.toContain("for (const node of visibleNodes)");
+    expect(dragPreviewBlock).toContain("queryNodeSpatialIndex(visibleNodeSpatialIndex, dragInteractionBounds)");
+    expect(dragPreviewBlock).not.toContain("for (const node of visibleNodes)");
   });
 
   test("uses animation-frame coalescing and lightweight undo snapshots for node drag moves", async () => {
@@ -925,7 +1093,7 @@ describe("graph inspector panel", () => {
     expect(undoActionBlock).toContain("...snapshot.edges.map((edge) => edge.id)");
   });
 
-  test("defers bus terminal synchronization and only writes local draft from manual save", async () => {
+  test("defers bus terminal synchronization and autosaves graph edits only to local draft", async () => {
     const source = await readAppSource();
     const busSyncStart = source.indexOf("const synchronized = synchronizeBusTerminalsWithEdges(syncNodes, syncEdges);");
     const busSyncEffectStart = source.indexOf("const endpointSignature = connectionEndpointSignature(edges);");
@@ -937,6 +1105,9 @@ describe("graph inspector panel", () => {
     const saveStart = source.indexOf("const saveCurrentProject");
     const saveEnd = source.indexOf("const renameProjectRecord", saveStart);
     const saveBlock = source.slice(saveStart, saveEnd);
+    const autoDraftStart = source.indexOf("const draftAutosaveProjectId = activeProjectId || selectedProjectId");
+    const autoDraftEnd = source.indexOf("const setActiveLayer", autoDraftStart);
+    const autoDraftBlock = source.slice(autoDraftStart, autoDraftEnd);
     const topologyStaleStart = source.indexOf("拓扑结果已过期");
 
     expect(source).toContain("const scheduleIdleWork");
@@ -949,6 +1120,11 @@ describe("graph inspector panel", () => {
     expect(saveDraftBlock).toContain("window.localStorage.setItem");
     expect(saveBlock).toContain("saveDraftProject(targetId");
     expect(saveBlock).toContain("saveDraftProject(record.id");
+    expect(autoDraftBlock).toContain("if (!hasUnsavedChanges)");
+    expect(autoDraftBlock).toContain("window.setTimeout");
+    expect(autoDraftBlock).toContain("saveDraftProject(draftAutosaveProjectId");
+    expect(autoDraftBlock).not.toContain("saveCurrentProject");
+    expect(autoDraftBlock).not.toContain("saveBackendSchemesPayload");
     expect(source).not.toContain("[activeProjectId, activeSchemeId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, nodes, powerBaseValue, powerUnit, projectName, voltageUnit]");
     expect(source.slice(Math.max(0, topologyStaleStart - 400), topologyStaleStart + 300)).toContain("scheduleIdleWork");
   });
@@ -1219,15 +1395,44 @@ describe("graph inspector panel", () => {
     expect(contextBlock).not.toContain("disabled=");
   });
 
-  test("hides unavailable project-list context-menu actions instead of rendering disabled buttons", async () => {
+  test("uses explicit model scheme and blank project-list context-menu actions", async () => {
     const source = await readAppSource();
+    const projectPanelStart = source.indexOf("const renderProjectPanel = () => (");
+    const projectPanelEnd = source.indexOf("const customDraftTerminalTypes", projectPanelStart);
+    const projectPanelBlock = source.slice(projectPanelStart, projectPanelEnd);
     const projectContextStart = source.indexOf("{projectMenu && (");
-    const projectContextEnd = source.indexOf("{pendingUnsavedAction && (", projectContextStart);
+    const projectContextEnd = source.indexOf("{pendingModelImportConflict && (", projectContextStart);
     const projectContextBlock = source.slice(projectContextStart, projectContextEnd);
+    const modelLabels = ["模型删除", "模型导出", "模型导入", "模型重命名", "模型复制", "模型粘贴"];
+    const schemeLabels = ["方案删除", "方案导出", "方案导入", "方案重命名", "方案复制", "模型粘贴", "方案粘贴"];
+    const blankLabels = ["方案新增", "方案粘贴", "方案导入"];
+    const expectOrderedLabels = (labels: string[]) => {
+      let cursor = -1;
+      for (const label of labels) {
+        const index = projectContextBlock.indexOf(label, cursor + 1);
+        expect(index).toBeGreaterThan(cursor);
+        cursor = index;
+      }
+    };
 
-    expect(projectContextBlock).toContain("{projectMenu.schemeId && (");
-    expect(projectContextBlock).toContain("{(projectMenu.projectId || projectMenu.schemeId) && (");
-    expect(projectContextBlock).toContain("{recordClipboard && projectMenu.schemeId && (");
+    expect(projectPanelBlock).toContain("target?.closest(\".scheme-option, .project-option\")");
+    expect(projectPanelBlock).toContain("setProjectMenu({ x: event.clientX, y: event.clientY })");
+    expect(projectContextBlock).toContain("{projectMenu.projectId && (");
+    expect(projectContextBlock).toContain("{!projectMenu.projectId && projectMenu.schemeId && (");
+    expect(projectContextBlock).toContain("{!projectMenu.projectId && !projectMenu.schemeId && (");
+    expect(projectContextBlock).toContain("{recordClipboard?.kind === \"project\" && projectMenu.projectId && (");
+    expect(projectContextBlock).toContain("{recordClipboard?.kind === \"project\" && projectMenu.schemeId && (");
+    expect(projectContextBlock).toContain("{recordClipboard?.kind === \"scheme\" && (");
+    expect(projectContextBlock).toContain("createSchemeRecord");
+    expectOrderedLabels(modelLabels);
+    expectOrderedLabels(schemeLabels);
+    expectOrderedLabels(blankLabels);
+    expect(projectContextBlock).not.toContain("新增方案");
+    expect(projectContextBlock).not.toContain("新增模型");
+    expect(projectContextBlock).not.toContain(">复制<");
+    expect(projectContextBlock).not.toContain(">粘贴<");
+    expect(projectContextBlock).not.toContain(">重命名<");
+    expect(projectContextBlock).not.toContain(">删除<");
     expect(projectContextBlock).not.toContain("disabled=");
   });
 
@@ -1275,6 +1480,9 @@ describe("graph inspector panel", () => {
     const saveStart = source.indexOf("const saveCurrentProject =");
     const saveEnd = source.indexOf("const renameProjectRecord", saveStart);
     const saveBlock = source.slice(saveStart, saveEnd);
+    const autoDraftStart = source.indexOf("const draftAutosaveProjectId = activeProjectId || selectedProjectId");
+    const autoDraftEnd = source.indexOf("const setActiveLayer", autoDraftStart);
+    const autoDraftBlock = source.slice(autoDraftStart, autoDraftEnd);
     const busSyncStart = source.indexOf("const synchronized = synchronizeBusTerminalsWithEdges(syncNodes, syncEdges);");
     const busSyncEnd = source.indexOf("if (synchronized.nodes !== syncNodes)", busSyncStart);
     const busSyncBlock = source.slice(busSyncStart, busSyncEnd);
@@ -1288,6 +1496,8 @@ describe("graph inspector panel", () => {
     expect(pasteBlock).not.toContain("pushUndoSnapshot(false)");
     expect(loadBlock).toContain("suppressNextGraphDirtyRef.current = true");
     expect(saveBlock).toContain("graphDirtyBaselineRef.current = currentGraphDirtyBaseline()");
+    expect(autoDraftBlock).toContain("saveDraftProject(draftAutosaveProjectId");
+    expect(autoDraftBlock).not.toContain("saveCurrentProject");
     expect(busSyncBlock).toContain("suppressNextGraphDirtyRef.current = true");
   });
 

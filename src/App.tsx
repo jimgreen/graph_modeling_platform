@@ -107,6 +107,8 @@ import {
   normalizeColorPalette,
   normalizeVoltageBaseInput,
   normalizeScaleValue,
+  serializeProject,
+  deserializeProject,
   isBusNode,
   isContainerTerminalAssociationDependent,
   isDoubleContainerTerminalAssociation,
@@ -254,6 +256,19 @@ type UnsavedChangeAction = {
   schemeId: string;
   label: string;
 };
+type PendingModelImportConflict = {
+  targetSchemeId: string;
+  importedProject: ProjectFile;
+  importedName: string;
+  duplicateProjectId: string;
+  duplicateProjectName: string;
+} | null;
+type PendingSchemeImportConflict = {
+  importedScheme: SavedSchemeRecord;
+  importedName: string;
+  duplicateSchemeId: string;
+  duplicateSchemeName: string;
+} | null;
 type SidePanelResizeState = { side: SidePanelSide; startX: number; startWidth: number } | null;
 type StatusbarResizeState = { startY: number; startHeight: number } | null;
 type ValidationPanelResizeState = { startY: number; startHeight: number } | null;
@@ -566,6 +581,15 @@ const VALIDATION_PANEL_MIN_HEIGHT = 96;
 const VALIDATION_PANEL_MAX_HEIGHT = 420;
 const CONNECT_TERMINAL_SNAP_TOLERANCE = 28;
 const CONNECT_BUS_SNAP_TOLERANCE = 18;
+const connectTargetSearchBounds = (point: Point): RenderViewportBounds => {
+  const padding = Math.max(CONNECT_TERMINAL_SNAP_TOLERANCE, CONNECT_BUS_SNAP_TOLERANCE) + 64;
+  return {
+    left: point.x - padding,
+    right: point.x + padding,
+    top: point.y - padding,
+    bottom: point.y + padding
+  };
+};
 const findNodeTerminalSnapTarget = (
   candidateNodes: ModelNode[],
   movedNodeIds: ReadonlySet<string>,
@@ -816,8 +840,13 @@ type RenderViewportBounds = {
   top: number;
   bottom: number;
 };
+type NodeSpatialIndex = {
+  bucketSize: number;
+  buckets: Map<string, ModelNode[]>;
+};
 const VIEWPORT_RENDER_PADDING_RATIO = 0.35;
 const VIEWPORT_RENDER_MIN_PADDING = 260;
+const NODE_SPATIAL_BUCKET_SIZE = 256;
 const expandViewBoxForRendering = (viewBox: { x: number; y: number; width: number; height: number }): RenderViewportBounds => {
   const padding = Math.max(VIEWPORT_RENDER_MIN_PADDING, Math.max(viewBox.width, viewBox.height) * VIEWPORT_RENDER_PADDING_RATIO);
   return {
@@ -831,17 +860,71 @@ const boxesIntersect = (
   first: RenderViewportBounds,
   second: RenderViewportBounds
 ) => first.left <= second.right && first.right >= second.left && first.top <= second.bottom && first.bottom >= second.top;
-const nodeIntersectsRenderViewport = (node: ModelNode, viewport: RenderViewportBounds) => {
+const nodeRenderBounds = (node: ModelNode): RenderViewportBounds => {
   const halfDiagonal = Math.hypot(node.size.width * getNodeScaleX(node), node.size.height * getNodeScaleY(node)) / 2 + 24;
-  return boxesIntersect(
-    {
-      left: node.position.x - halfDiagonal,
-      right: node.position.x + halfDiagonal,
-      top: node.position.y - halfDiagonal,
-      bottom: node.position.y + halfDiagonal
-    },
-    viewport
-  );
+  return {
+    left: node.position.x - halfDiagonal,
+    right: node.position.x + halfDiagonal,
+    top: node.position.y - halfDiagonal,
+    bottom: node.position.y + halfDiagonal
+  };
+};
+const nodeIntersectsRenderViewport = (node: ModelNode, viewport: RenderViewportBounds) =>
+  boxesIntersect(nodeRenderBounds(node), viewport);
+const spatialBucketKey = (x: number, y: number) => `${x}:${y}`;
+const spatialBucketRange = (bounds: RenderViewportBounds, bucketSize: number) => ({
+  left: Math.floor(bounds.left / bucketSize),
+  right: Math.floor(bounds.right / bucketSize),
+  top: Math.floor(bounds.top / bucketSize),
+  bottom: Math.floor(bounds.bottom / bucketSize)
+});
+function buildNodeSpatialIndex(nodes: ModelNode[], bucketSize = NODE_SPATIAL_BUCKET_SIZE): NodeSpatialIndex {
+  const buckets = new Map<string, ModelNode[]>();
+  for (const node of nodes) {
+    const range = spatialBucketRange(nodeRenderBounds(node), bucketSize);
+    for (let x = range.left; x <= range.right; x += 1) {
+      for (let y = range.top; y <= range.bottom; y += 1) {
+        const key = spatialBucketKey(x, y);
+        const bucket = buckets.get(key);
+        if (bucket) {
+          bucket.push(node);
+        } else {
+          buckets.set(key, [node]);
+        }
+      }
+    }
+  }
+  return { bucketSize, buckets };
+}
+function queryNodeSpatialIndex(index: NodeSpatialIndex, bounds: RenderViewportBounds): ModelNode[] {
+  const range = spatialBucketRange(bounds, index.bucketSize);
+  const matches: ModelNode[] = [];
+  const seen = new Set<string>();
+  for (let x = range.left; x <= range.right; x += 1) {
+    for (let y = range.top; y <= range.bottom; y += 1) {
+      const bucket = index.buckets.get(spatialBucketKey(x, y));
+      if (!bucket) {
+        continue;
+      }
+      for (const node of bucket) {
+        if (seen.has(node.id) || !nodeIntersectsRenderViewport(node, bounds)) {
+          continue;
+        }
+        seen.add(node.id);
+        matches.push(node);
+      }
+    }
+  }
+  return matches;
+}
+const compactPreviewNodes = (...nodes: Array<ModelNode | null | undefined>): ModelNode[] => {
+  const compacted = new Map<string, ModelNode>();
+  for (const node of nodes) {
+    if (node && !compacted.has(node.id)) {
+      compacted.set(node.id, node);
+    }
+  }
+  return Array.from(compacted.values());
 };
 const routeIntersectsRenderViewport = (route: Pick<RoutedEdge, "points">, viewport: RenderViewportBounds) => {
   if (route.points.length === 0) {
@@ -1900,6 +1983,24 @@ type SaveFilePickerWindow = Window & {
   }>;
 };
 
+type DirectoryFileHandle = {
+  createWritable: () => Promise<{
+    write: (data: Blob) => Promise<void> | void;
+    close: () => Promise<void> | void;
+  }>;
+};
+
+type WritableDirectoryHandle = {
+  getFileHandle: (name: string, options?: { create?: boolean }) => Promise<DirectoryFileHandle>;
+};
+
+type DirectoryPickerWindow = Window & {
+  showDirectoryPicker?: (options?: {
+    id?: string;
+    mode?: "read" | "readwrite";
+  }) => Promise<WritableDirectoryHandle>;
+};
+
 type TextSaveOptions = {
   filename: string;
   text: string;
@@ -1909,6 +2010,7 @@ type TextSaveOptions = {
 };
 
 const EXPORT_SAVE_PICKER_ID = "model-export";
+const SCHEME_EXPORT_DIRECTORY_PICKER_ID = "scheme-export";
 
 function isPickerAbort(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
@@ -1946,6 +2048,18 @@ async function saveTextFile(options: TextSaveOptions) {
     downloadText(options.filename, options.text, options.mime);
   }
 }
+
+const writeTextFileToDirectory = async (
+  directoryHandle: WritableDirectoryHandle,
+  filename: string,
+  text: string,
+  mime: string
+) => {
+  const fileHandle = await directoryHandle.getFileHandle(filename, { create: true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(new Blob([text], { type: mime }));
+  await writable.close();
+};
 
 function svgStrokeDashArray(style?: string) {
   if (style === "dashed") {
@@ -3158,6 +3272,9 @@ export function App() {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const customDeviceImageInputRef = useRef<HTMLInputElement | null>(null);
+  const modelImportInputRef = useRef<HTMLInputElement | null>(null);
+  const modelImportTargetSchemeIdRef = useRef<string>("");
+  const schemeImportInputRef = useRef<HTMLInputElement | null>(null);
   const canvasFrameRef = useRef<HTMLDivElement | null>(null);
   const canvasInteractionRef = useRef(false);
   const lastCanvasPointerRef = useRef<Point | null>(null);
@@ -3185,6 +3302,8 @@ export function App() {
   const connectDropReadyRef = useRef(false);
   const pendingConnectPreviewRef = useRef<{ point: Point | null; ready: boolean; targetPoint: Point | null; target: ConnectTarget | null } | null>(null);
   const connectPreviewFrameRef = useRef<number | null>(null);
+  const pendingRewirePreviewRef = useRef<{ point: Point; rewiring: Exclude<RewiringState, null> } | null>(null);
+  const rewirePreviewFrameRef = useRef<number | null>(null);
   const draggingRef = useRef<DraggingState | null>(null);
   const pendingNodeDragMoveRef = useRef<{ point: Point; ctrlKey: boolean; shiftKey: boolean } | null>(null);
   const nodeDragMoveFrameRef = useRef<number | null>(null);
@@ -3301,6 +3420,8 @@ export function App() {
   const [colorPaletteTab, setColorPaletteTab] = useState<ColorDisplayMode>(() => readColorDisplayMode());
   const [voltageColorVisibility, setVoltageColorVisibility] = useState<VoltageColorVisibility>("all");
   const [pendingUnsavedAction, setPendingUnsavedAction] = useState<UnsavedChangeAction | null>(null);
+  const [pendingModelImportConflict, setPendingModelImportConflict] = useState<PendingModelImportConflict>(null);
+  const [pendingSchemeImportConflict, setPendingSchemeImportConflict] = useState<PendingSchemeImportConflict>(null);
   const mousePositionTextRef = useRef<HTMLSpanElement | null>(null);
   const [operationLog, setOperationLog] = useState("就绪");
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
@@ -3331,10 +3452,6 @@ export function App() {
     () => layers.find((layer) => layer.id === activeLayerId) ?? layers[0],
     [activeLayerId, layers]
   );
-  const visibleLayerIds = useMemo(
-    () => new Set(layers.filter((layer) => layer.visible).map((layer) => layer.id)),
-    [layers]
-  );
   const visibleProject = useMemo(
     () => filterProjectByVisibleLayers(nodes, edges, layers),
     [edges, layers, nodes]
@@ -3343,7 +3460,28 @@ export function App() {
   const visibleEdges = visibleProject.edges;
   const visibleNodeById = useMemo(() => new Map(visibleNodes.map((node) => [node.id, node])), [visibleNodes]);
   const visibleNodeIdSet = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes]);
+  const visibleNodeSpatialIndex = useMemo(() => buildNodeSpatialIndex(visibleNodes), [visibleNodes]);
   const visibleEdgeIdSet = useMemo(() => new Set(visibleEdges.map((edge) => edge.id)), [visibleEdges]);
+  const visibleEdgesByTerminalRef = useMemo(() => {
+    const map = new Map<string, Edge[]>();
+    const add = (nodeId: string, terminalId: string | undefined, edge: Edge) => {
+      if (!terminalId) {
+        return;
+      }
+      const key = `${nodeId}:${terminalId}`;
+      const bucket = map.get(key);
+      if (bucket) {
+        bucket.push(edge);
+      } else {
+        map.set(key, [edge]);
+      }
+    };
+    for (const edge of visibleEdges) {
+      add(edge.sourceId, edge.sourceTerminalId, edge);
+      add(edge.targetId, edge.targetTerminalId, edge);
+    }
+    return map;
+  }, [visibleEdges]);
   const activeLayerNodes = useMemo(
     () => visibleNodes.filter((node) => (node.layerId ?? DEFAULT_MODEL_LAYER_ID) === activeLayerId),
     [activeLayerId, visibleNodes]
@@ -3841,9 +3979,9 @@ export function App() {
     }
     const sourcePoint = source.point ?? getModelEdgeEndpointPoint(sourceNode, undefined, source.terminalId);
     const previewTarget = target;
-    const previewNodes = previewTarget?.node && !visibleNodeById.has(previewTarget.node.id)
-      ? [...visibleNodes, previewTarget.node]
-      : visibleNodes;
+    const previewNodes = previewTarget?.node && previewTarget.node.id !== sourceNode.id
+      ? [sourceNode, previewTarget.node]
+      : [sourceNode];
     const route = routeEdgesForStoredRendering(
       previewNodes,
       [{
@@ -3954,16 +4092,17 @@ export function App() {
   );
   const viewportNodeIdSet = useMemo(() => {
     const ids = new Set<string>();
-    for (const node of visibleNodes) {
-      if (
-        selectedNodeIdSet.has(node.id) ||
-        draggingNodeIdSet.has(node.id) ||
-        connectSource?.nodeId === node.id ||
-        nodeIntersectsRenderViewport(node, renderViewportBounds)
-      ) {
-        ids.add(node.id);
+    const addVisibleNodeId = (nodeId: string | undefined) => {
+      if (nodeId && visibleNodeIdSet.has(nodeId)) {
+        ids.add(nodeId);
       }
+    };
+    for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, renderViewportBounds)) {
+      ids.add(node.id);
     }
+    selectedNodeIdSet.forEach(addVisibleNodeId);
+    draggingNodeIdSet.forEach(addVisibleNodeId);
+    addVisibleNodeId(connectSource?.nodeId);
     for (const route of viewportRoutedEdges) {
       const edge = edgeById.get(route.edgeId);
       if (edge) {
@@ -3972,7 +4111,7 @@ export function App() {
       }
     }
     return ids;
-  }, [connectSource?.nodeId, draggingNodeIdSet, edgeById, renderViewportBounds, selectedNodeIdSet, viewportRoutedEdges, visibleNodes]);
+  }, [connectSource?.nodeId, draggingNodeIdSet, edgeById, renderViewportBounds, selectedNodeIdSet, viewportRoutedEdges, visibleNodeIdSet, visibleNodeSpatialIndex]);
   const viewportNodes = useMemo(
     () => visibleNodes.filter((node) => viewportNodeIdSet.has(node.id)),
     [viewportNodeIdSet, visibleNodes]
@@ -4114,15 +4253,16 @@ export function App() {
             : rewiring.previewPoint
           : previewEdge.targetPoint
     };
-    const previewNodes = movingTarget?.node && !visibleNodeById.has(movingTarget.node.id)
-      ? [...visibleNodes, movingTarget.node]
-      : visibleNodes;
+    const previewNodes = compactPreviewNodes(
+      rewiring.endpoint === "source" ? movingTarget?.node : sourceNode,
+      rewiring.endpoint === "target" ? movingTarget?.node : targetNode
+    );
     const route = routeEdgesForStoredRendering(previewNodes, [previewRouteEdge], canvasBounds)[0];
     return {
       edgeId: edge.id,
       path: route?.path ?? ""
     };
-  }, [canvasBounds, edgeById, nodeById, rewiring, visibleNodeById, visibleNodes]);
+  }, [canvasBounds, edgeById, nodeById, rewiring]);
   const manualPathPreviewRoute = useMemo(() => {
     if (!manualPathDrag?.previewRoutePoints?.length) {
       return null;
@@ -4137,7 +4277,8 @@ export function App() {
     if (!terminalPress?.moved) {
       return [];
     }
-    return visibleEdges.flatMap((edge) => {
+    const connectedEdges = visibleEdgesByTerminalRef.get(`${terminalPress.nodeId}:${terminalPress.terminalId}`) ?? [];
+    return connectedEdges.flatMap((edge) => {
       const sourceAffected = edge.sourceId === terminalPress.nodeId && edge.sourceTerminalId === terminalPress.terminalId;
       const targetAffected = edge.targetId === terminalPress.nodeId && edge.targetTerminalId === terminalPress.terminalId;
       if (!sourceAffected && !targetAffected) {
@@ -4159,27 +4300,31 @@ export function App() {
         originalMovingPoint: terminalPress.startPoint
       });
       const previewEdge = slidePatch ? { ...edge, ...slidePatch } : edge;
-      const route = routeEdgesForStoredRendering(visibleNodes, [previewEdge], canvasBounds)[0];
+      const previewNodes = compactPreviewNodes(sourceNode, targetNode);
+      const route = routeEdgesForStoredRendering(previewNodes, [previewEdge], canvasBounds)[0];
       return route ? [{
         edgeId: edge.id,
         path: route.path
       }] : [];
     });
-  }, [canvasBounds, nodeById, terminalPress, visibleEdges, visibleNodes]);
+  }, [canvasBounds, nodeById, terminalPress, visibleEdgesByTerminalRef, visibleNodes]);
   const terminalPressPreviewEdgeIdSet = useMemo(
     () => new Set(terminalPressPreviewEdgeRoutes.map((route) => route.edgeId)),
     [terminalPressPreviewEdgeRoutes]
   );
   const draggingDelta = dragging?.currentDelta;
   const draggedBusIds = useMemo(
-    () => new Set(visibleNodes.filter((node) => draggingNodeIdSet.has(node.id) && isBusNode(node)).map((node) => node.id)),
-    [draggingNodeIdSet, visibleNodes]
+    () => new Set((dragging?.nodeIds ?? []).filter((nodeId) => {
+      const node = nodeById.get(nodeId);
+      return node && visibleNodeIdSet.has(node.id) && isBusNode(node);
+    })),
+    [dragging?.nodeIds, nodeById, visibleNodeIdSet]
   );
-  const dragPreviewNodeById = useMemo(() => {
+  const dragPreviewMovedNodeById = useMemo(() => {
+    const preview = new Map<string, ModelNode>();
     if (!dragging || !draggingDelta) {
-      return nodeById;
+      return preview;
     }
-    const preview = new Map(nodeById);
     for (const nodeId of dragging.nodeIds) {
       const node = nodeById.get(nodeId);
       const originalPosition = dragging.originalPositions[nodeId];
@@ -4196,11 +4341,113 @@ export function App() {
     }
     return preview;
   }, [canvasBounds, dragging, draggingDelta, nodeById]);
-  const dragPreviewNodes = useMemo(
-    () => (dragging && draggingDelta ? Array.from(dragPreviewNodeById.values()).filter((node) => visibleLayerIds.has(node.layerId ?? DEFAULT_MODEL_LAYER_ID)) : visibleNodes),
-    [dragPreviewNodeById, dragging, draggingDelta, visibleLayerIds, visibleNodes]
-  );
-  const terminalOverlapNodes = dragging && draggingDelta ? dragPreviewNodes : deferredRoutingNodes;
+  const dragPreviewNodeFor = (nodeId: string) => dragPreviewMovedNodeById.get(nodeId) ?? nodeById.get(nodeId);
+  const dragInteractionBounds = useMemo<RenderViewportBounds | null>(() => {
+    if (!dragging || !draggingDelta) {
+      return null;
+    }
+    const padding = Math.max(160, CONNECT_TERMINAL_SNAP_TOLERANCE * 4);
+    const draggedEdgeIds = new Set(dragging.edgeIds);
+    let bounds: RenderViewportBounds | null = null;
+    const includeBox = (box: RenderViewportBounds) => {
+      bounds = bounds
+        ? {
+            left: Math.min(bounds.left, box.left),
+            right: Math.max(bounds.right, box.right),
+            top: Math.min(bounds.top, box.top),
+            bottom: Math.max(bounds.bottom, box.bottom)
+          }
+        : { ...box };
+    };
+    const includePoint = (point: Point) => {
+      includeBox({ left: point.x, right: point.x, top: point.y, bottom: point.y });
+    };
+    const includeNode = (node: ModelNode | undefined) => {
+      if (!node) {
+        return;
+      }
+      const halfDiagonal = Math.hypot(node.size.width * getNodeScaleX(node), node.size.height * getNodeScaleY(node)) / 2 + 24;
+      includeBox({
+        left: node.position.x - halfDiagonal,
+        right: node.position.x + halfDiagonal,
+        top: node.position.y - halfDiagonal,
+        bottom: node.position.y + halfDiagonal
+      });
+    };
+    for (const nodeId of dragging.nodeIds) {
+      includeNode(nodeById.get(nodeId));
+      includeNode(dragPreviewMovedNodeById.get(nodeId));
+    }
+    for (const edge of dragging.affectedEdges) {
+      includeNode(dragPreviewMovedNodeById.get(edge.sourceId) ?? nodeById.get(edge.sourceId));
+      includeNode(dragPreviewMovedNodeById.get(edge.targetId) ?? nodeById.get(edge.targetId));
+      const originalRoute = dragging.originalRoutePoints[edge.id];
+      if (originalRoute?.length) {
+        const shiftWholeRoute = draggedEdgeIds.has(edge.id);
+        for (const point of originalRoute) {
+          includePoint(point);
+          if (shiftWholeRoute) {
+            includePoint({ x: point.x + draggingDelta.x, y: point.y + draggingDelta.y });
+          }
+        }
+      }
+      const originalEdgePoints = dragging.originalEdgePoints[edge.id];
+      if (originalEdgePoints?.sourcePoint) {
+        includePoint(originalEdgePoints.sourcePoint);
+        if (draggingNodeIdSet.has(edge.sourceId)) {
+          includePoint({ x: originalEdgePoints.sourcePoint.x + draggingDelta.x, y: originalEdgePoints.sourcePoint.y + draggingDelta.y });
+        }
+      }
+      if (originalEdgePoints?.targetPoint) {
+        includePoint(originalEdgePoints.targetPoint);
+        if (draggingNodeIdSet.has(edge.targetId)) {
+          includePoint({ x: originalEdgePoints.targetPoint.x + draggingDelta.x, y: originalEdgePoints.targetPoint.y + draggingDelta.y });
+        }
+      }
+    }
+    if (!bounds) {
+      return null;
+    }
+    const finalBounds = bounds as RenderViewportBounds;
+    return {
+      left: finalBounds.left - padding,
+      right: finalBounds.right + padding,
+      top: finalBounds.top - padding,
+      bottom: finalBounds.bottom + padding
+    };
+  }, [dragPreviewMovedNodeById, dragging, draggingDelta, draggingNodeIdSet, nodeById]);
+  const candidateNodeIntersectsInteractionBounds = (node: ModelNode) =>
+    !dragInteractionBounds || nodeIntersectsRenderViewport(node, dragInteractionBounds);
+  const dragInteractionNodes = useMemo(() => {
+    if (!dragging || !draggingDelta || !dragInteractionBounds) {
+      return visibleNodes;
+    }
+    const requiredNodeIds = new Set<string>(dragging.nodeIds);
+    for (const edge of dragging.affectedEdges) {
+      requiredNodeIds.add(edge.sourceId);
+      requiredNodeIds.add(edge.targetId);
+    }
+    const candidatesById = new Map<string, ModelNode>();
+    for (const nodeId of requiredNodeIds) {
+      if (!visibleNodeIdSet.has(nodeId)) {
+        continue;
+      }
+      const movedNode = dragPreviewMovedNodeById.get(nodeId);
+      const node = movedNode ?? nodeById.get(nodeId);
+      if (node) {
+        candidatesById.set(node.id, node);
+      }
+    }
+    for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, dragInteractionBounds)) {
+      const movedNode = dragPreviewMovedNodeById.get(node.id);
+      const candidateNode = movedNode ?? node;
+      if (candidateNodeIntersectsInteractionBounds(candidateNode)) {
+        candidatesById.set(candidateNode.id, candidateNode);
+      }
+    }
+    return Array.from(candidatesById.values());
+  }, [dragInteractionBounds, dragPreviewMovedNodeById, dragging, draggingDelta, nodeById, visibleNodeIdSet, visibleNodeSpatialIndex, visibleNodes]);
+  const terminalOverlapNodes = dragging && draggingDelta ? dragInteractionNodes : deferredRoutingNodes;
   const terminalOverlapAffectedNodeIds = dragging && draggingDelta ? draggingNodeIdSet : undefined;
   const overlappedTerminalKeys = useMemo(
     () => new Set(
@@ -4218,22 +4465,22 @@ export function App() {
   const nodeTerminalSnapTarget = useMemo(
     () => (
       dragging && draggingDelta
-        ? findNodeTerminalSnapTarget(dragPreviewNodes, draggingNodeIdSet) ??
-          findNodeBusSnapTarget(dragPreviewNodes, draggingNodeIdSet)
+        ? findNodeTerminalSnapTarget(dragInteractionNodes, draggingNodeIdSet) ??
+          findNodeBusSnapTarget(dragInteractionNodes, draggingNodeIdSet)
         : null
     ),
-    [dragPreviewNodes, dragging, draggingDelta, draggingNodeIdSet]
+    [dragInteractionNodes, dragging, draggingDelta, draggingNodeIdSet]
   );
   const nodeTerminalSnapHintStyle = useMemo(() => {
     if (!nodeTerminalSnapTarget) {
       return undefined;
     }
-    const targetNode = dragPreviewNodeById.get(nodeTerminalSnapTarget.targetNodeId);
+    const targetNode = dragPreviewNodeFor(nodeTerminalSnapTarget.targetNodeId);
     const terminalType = targetNode && isBusNode(targetNode)
       ? getBusTerminalType(targetNode)
       : targetNode?.terminals.find((terminal) => terminal.id === nodeTerminalSnapTarget.targetTerminalId)?.type;
     return terminalType ? ({ "--connection-color": terminalColor(terminalType, colorPalette) } as CSSProperties) : undefined;
-  }, [colorPalette, dragPreviewNodeById, nodeTerminalSnapTarget]);
+  }, [colorPalette, dragPreviewMovedNodeById, nodeById, nodeTerminalSnapTarget]);
   const activeDropHintPoint = rewiring?.dropTargetPoint ?? nodeTerminalSnapTarget?.point ?? null;
   const activeDropReady = connectDropReady || Boolean(rewiring?.dropTargetPoint) || Boolean(nodeTerminalSnapTarget);
   const activeDropHintStyle = rewiring?.dropTargetPoint
@@ -4276,8 +4523,8 @@ export function App() {
       };
       const sourceMoved = draggingNodeIdSet.has(edge.sourceId);
       const targetMoved = draggingNodeIdSet.has(edge.targetId);
-      const source = dragPreviewNodeById.get(previewEdge.sourceId);
-      const target = dragPreviewNodeById.get(previewEdge.targetId);
+      const source = dragPreviewNodeFor(previewEdge.sourceId);
+      const target = dragPreviewNodeFor(previewEdge.targetId);
       const originalSource = nodeById.get(edge.sourceId);
       const originalTarget = nodeById.get(edge.targetId);
       if (!source || !target || !originalSource || !originalTarget) {
@@ -4292,7 +4539,7 @@ export function App() {
             nextTargetNode: target,
             movingEndpoint: sourceMoved ? "source" : "target",
             nodes,
-            nextNodes: dragPreviewNodes
+            nextNodes: dragInteractionNodes
           })
         : null;
       const slidablePreviewEdge = slidePatch ? { ...previewEdge, ...slidePatch } : previewEdge;
@@ -4319,7 +4566,7 @@ export function App() {
           : orthogonalPoints(adjustedStart, end);
       return [{ edgeId: edge.id, path: straightPath(points) }];
     });
-  }, [dragPreviewNodeById, dragPreviewNodes, draggedBusIds, dragging, draggingDelta, draggingNodeIdSet, nodeById, visibleEdgeIdSet, visibleNodes]);
+  }, [dragInteractionNodes, dragPreviewMovedNodeById, draggedBusIds, dragging, draggingDelta, draggingNodeIdSet, nodeById, visibleEdgeIdSet]);
   const dragPreviewEdgeIdSet = useMemo(
     () => new Set(dragPreviewEdgeRoutes.map((route) => route.edgeId)),
     [dragPreviewEdgeRoutes]
@@ -6125,8 +6372,8 @@ export function App() {
       setConnectDropReady(ready);
     }
   };
-  const scheduleConnectPreviewState = (point: Point | null, ready: boolean, targetPoint: Point | null = null, target: ConnectTarget | null = null) => {
-    pendingConnectPreviewRef.current = { point, ready, targetPoint, target };
+  const scheduleConnectPreviewPoint = (point: Point | null) => {
+    pendingConnectPreviewRef.current = { point, ready: false, targetPoint: null, target: null };
     if (connectPreviewFrameRef.current !== null) {
       return;
     }
@@ -6137,7 +6384,39 @@ export function App() {
       if (!next) {
         return;
       }
-      applyConnectPreviewState(next.point, next.ready, next.targetPoint, next.target);
+      const target = next.point ? findConnectTargetAtPoint(next.point) : null;
+      applyConnectPreviewState(
+        next.point,
+        Boolean(target),
+        target ? connectTargetSnapPoint(target) : null,
+        target ?? null
+      );
+    });
+  };
+  const scheduleRewirePreviewPoint = (point: Point, rewiring: Exclude<RewiringState, null>) => {
+    pendingRewirePreviewRef.current = { point, rewiring };
+    if (rewirePreviewFrameRef.current !== null) {
+      return;
+    }
+    rewirePreviewFrameRef.current = window.requestAnimationFrame(() => {
+      rewirePreviewFrameRef.current = null;
+      const next = pendingRewirePreviewRef.current;
+      pendingRewirePreviewRef.current = null;
+      if (!next) {
+        return;
+      }
+      const target = findRewireTargetAtPoint(next.point, next.rewiring);
+      const snappedPreviewPoint = target ? connectTargetSnapPoint(target) : next.point;
+      const dropTargetPoint = target ? connectTargetSnapPoint(target) : undefined;
+      setRewiring((current) =>
+        current && current.edgeId === next.rewiring.edgeId && current.endpoint === next.rewiring.endpoint
+          ? sameOptionalPoint(current.previewPoint, snappedPreviewPoint) &&
+            sameOptionalPoint(current.dropTargetPoint, dropTargetPoint) &&
+            sameConnectTarget(current.dropTarget, target)
+            ? current
+            : { ...current, previewPoint: snappedPreviewPoint, dropTargetPoint, dropTarget: target ?? undefined }
+          : current
+      );
     });
   };
   const resetConnectPreviewState = () => {
@@ -7095,7 +7374,8 @@ export function App() {
     if (!otherNode || !otherTerminalId) {
       return null;
     }
-    for (const node of visibleNodes) {
+    const searchBounds = connectTargetSearchBounds(point);
+    for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, searchBounds)) {
       if (node.id === otherNode.id) {
         continue;
       }
@@ -7125,7 +7405,8 @@ export function App() {
     if (!sourceNode) {
       return null;
     }
-    for (const node of visibleNodes) {
+    const searchBounds = connectTargetSearchBounds(point);
+    for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, searchBounds)) {
       if (isBusNode(node) && isPointNearBus(node, point, CONNECT_BUS_SNAP_TOLERANCE)) {
         const terminalId = node.terminals[0]?.id ?? "t1";
         if (
@@ -7418,8 +7699,7 @@ export function App() {
       updateMouseStatus(pointer);
       if (connectSource) {
         const previewPoint = resolveConnectPreviewPoint(pointer, event);
-        const target = findConnectTargetAtPoint(previewPoint);
-        scheduleConnectPreviewState(previewPoint, Boolean(target), target ? connectTargetSnapPoint(target) : null, target ?? null);
+        scheduleConnectPreviewPoint(previewPoint);
       }
     }
     if (terminalPress && svgRef.current) {
@@ -7503,18 +7783,7 @@ export function App() {
     }
     if (rewiring && svgRef.current) {
       const previewPoint = lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-      const target = findRewireTargetAtPoint(previewPoint, rewiring);
-      const snappedPreviewPoint = target ? connectTargetSnapPoint(target) : previewPoint;
-      const dropTargetPoint = target ? connectTargetSnapPoint(target) : undefined;
-      setRewiring((current) =>
-        current && current.edgeId === rewiring.edgeId && current.endpoint === rewiring.endpoint
-          ? sameOptionalPoint(current.previewPoint, snappedPreviewPoint) &&
-            sameOptionalPoint(current.dropTargetPoint, dropTargetPoint) &&
-            sameConnectTarget(current.dropTarget, target)
-            ? current
-            : { ...current, previewPoint: snappedPreviewPoint, dropTargetPoint, dropTarget: target ?? undefined }
-          : current
-      );
+      scheduleRewirePreviewPoint(previewPoint, rewiring);
       return;
     }
     if (marquee && svgRef.current) {
@@ -7947,8 +8216,7 @@ export function App() {
     if (projectId) {
       const project = projectById.get(projectId);
       if (project) {
-        setRecordClipboard({ kind: "project", project });
-        writeOperationLog(`复制模型记录：${project.name}`);
+        copyProjectRecord(project);
       }
       return;
     }
@@ -7956,8 +8224,7 @@ export function App() {
     if (schemeId) {
       const scheme = schemes.find((item) => item.id === schemeId);
       if (scheme) {
-        setRecordClipboard({ kind: "scheme", scheme });
-        writeOperationLog(`复制方案记录：${scheme.name}`);
+        copySchemeRecord(scheme);
       }
     }
   };
@@ -8000,16 +8267,30 @@ export function App() {
     }
   };
 
-  const pasteSelectedRecord = () => {
-    if (!recordClipboard) {
+  const copyProjectRecord = (project: SavedProjectRecord) => {
+    setRecordClipboard({ kind: "project", project });
+    writeOperationLog(`复制模型记录：${project.name}`);
+  };
+
+  const copySchemeRecord = (scheme: SavedSchemeRecord) => {
+    setRecordClipboard({ kind: "scheme", scheme });
+    writeOperationLog(`复制方案记录：${scheme.name}`);
+  };
+
+  const pasteSchemeClipboardRecord = () => {
+    if (recordClipboard?.kind !== "scheme") {
       return;
     }
-    if (recordClipboard.kind === "scheme") {
-      setSchemes((current) => [...current, copySavedSchemeWithUniqueName(recordClipboard.scheme, current.map((item) => item.name))]);
-      writeOperationLog(`粘贴方案记录：${recordClipboard.scheme.name}`);
+    const sourceScheme = recordClipboard.scheme;
+    setSchemes((current) => [...current, copySavedSchemeWithUniqueName(sourceScheme, current.map((item) => item.name))]);
+    writeOperationLog(`粘贴方案记录：${sourceScheme.name}`);
+  };
+
+  const pasteProjectClipboardRecord = (targetSchemeId = selectedSchemeId || activeSchemeId || schemes[0]?.id) => {
+    if (recordClipboard?.kind !== "project") {
       return;
     }
-    const targetSchemeId = selectedSchemeId || activeSchemeId || schemes[0]?.id;
+    const sourceProject = recordClipboard.project;
     setSchemes((current) =>
       current.map((scheme, index) =>
         scheme.id === targetSchemeId || (!targetSchemeId && index === 0)
@@ -8018,13 +8299,24 @@ export function App() {
               updatedAt: new Date().toISOString(),
               projects: upsertSavedProject(
                 scheme.projects,
-                copySavedProjectWithUniqueName(recordClipboard.project, scheme.projects.map((project) => project.name))
+                copySavedProjectWithUniqueName(sourceProject, scheme.projects.map((project) => project.name))
               )
             }
           : scheme
       )
     );
-    writeOperationLog(`粘贴模型记录：${recordClipboard.project.name}`);
+    writeOperationLog(`粘贴模型记录：${sourceProject.name}`);
+  };
+
+  const pasteSelectedRecord = () => {
+    if (!recordClipboard) {
+      return;
+    }
+    if (recordClipboard.kind === "scheme") {
+      pasteSchemeClipboardRecord();
+      return;
+    }
+    pasteProjectClipboardRecord();
   };
 
   const moveProjectRecordToScheme = (projectId: string, schemeId: string) => {
@@ -8069,6 +8361,46 @@ export function App() {
       // 草稿缓存过大或不可写时不打断手动保存。
     }
   };
+
+  useEffect(() => {
+    const draftAutosaveProjectId = activeProjectId || selectedProjectId || "draft-current-project";
+    const draftAutosaveSchemeId =
+      activeSchemeId ||
+      selectedSchemeId ||
+      findSchemeForProject(draftAutosaveProjectId)?.id ||
+      schemes[0]?.id ||
+      "";
+    if (!hasUnsavedChanges) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      saveDraftProject(draftAutosaveProjectId, draftAutosaveSchemeId);
+    }, 800);
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    activeLayerId,
+    activeProjectId,
+    activeSchemeId,
+    canvasBackgroundColor,
+    canvasBackgroundImage,
+    canvasBackgroundImageAssetId,
+    canvasHeight,
+    canvasWidth,
+    currentUnit,
+    deviceIndexCounters,
+    edges,
+    groups,
+    hasUnsavedChanges,
+    layers,
+    nodes,
+    powerBaseValue,
+    powerUnit,
+    projectName,
+    schemes,
+    selectedProjectId,
+    selectedSchemeId,
+    voltageUnit
+  ]);
 
   const setActiveLayer = (layerId: string) => {
     pushUndoSnapshot();
@@ -9053,22 +9385,319 @@ export function App() {
 
   const safeFilePart = (name: string) => name.trim().replace(/[\\/:*?"<>|]+/g, "_") || "未命名";
 
-  const exportSchemeRecord = (scheme: SavedSchemeRecord) => {
-    for (const project of scheme.projects) {
-      const prefix = `${safeFilePart(scheme.name)}_${safeFilePart(project.name)}`;
-      downloadText(
-        `${prefix}.svg`,
-        buildSvgDocument(project.project.nodes, project.project.edges, {
-          width: project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
-          height: project.project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT,
-          backgroundColor: project.project.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND,
-          backgroundImage: resolveProjectImage(project.project),
-          colorDisplayMode,
-          colorPalette
-        }),
-        "image/svg+xml"
+  const serializeSchemeRecordForFile = (scheme: SavedSchemeRecord) =>
+    JSON.stringify(
+      {
+        version: 1,
+        name: scheme.name,
+        projects: scheme.projects.map((project) => ({
+          name: project.name,
+          project: normalizeProjectLayers(lockProjectEdgeTerminals(project.project))
+        }))
+      },
+      null,
+      2
+    );
+
+  const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+
+  const isProjectFilePayload = (value: unknown): value is ProjectFile => {
+    if (!isObjectRecord(value)) {
+      return false;
+    }
+    return value.version === 1 && Array.isArray(value.nodes) && Array.isArray(value.edges);
+  };
+
+  const createImportedSchemeRecord = (text: string, fileName: string) => {
+    const payload = JSON.parse(text) as unknown;
+    const payloadRecord = isObjectRecord(payload) ? payload : null;
+    const rawScheme =
+      payloadRecord && isObjectRecord(payloadRecord.scheme)
+        ? payloadRecord.scheme
+        : payloadRecord && Array.isArray(payloadRecord.schemes) && isObjectRecord(payloadRecord.schemes[0])
+          ? payloadRecord.schemes[0]
+          : payloadRecord;
+    if (!rawScheme || !Array.isArray(rawScheme.projects)) {
+      throw new Error("方案文件格式不正确。");
+    }
+    const fileBaseName = fileName.replace(/\.scheme\.json$/i, "").replace(/\.json$/i, "");
+    const importedName = typeof rawScheme.name === "string" && rawScheme.name.trim() ? rawScheme.name.trim() : fileBaseName || "导入方案";
+    const importedProjects = rawScheme.projects.map((projectPayload, index) => {
+      const projectRecord = isObjectRecord(projectPayload) ? projectPayload : null;
+      const projectFile = projectRecord && isProjectFilePayload(projectRecord.project)
+        ? projectRecord.project
+        : isProjectFilePayload(projectPayload)
+          ? projectPayload
+          : null;
+      if (!projectFile) {
+        throw new Error(`方案文件中的第 ${index + 1} 个模型格式不正确。`);
+      }
+      const importedProjectName =
+        projectRecord && typeof projectRecord.name === "string" && projectRecord.name.trim()
+          ? projectRecord.name.trim()
+          : projectFile.name || `导入模型${index + 1}`;
+      return createSavedProject(importedProjectName, projectFile);
+    });
+    return createSavedScheme(
+      importedName,
+      importedProjects
+    );
+  };
+
+  const exportProjectRecordFile = async (project: SavedProjectRecord) => {
+    const projectFile = project.id === activeProjectId ? currentProject() : project.project;
+    const exportName = project.id === activeProjectId ? projectName : project.name;
+    await saveTextFile({
+      filename: `${safeFilePart(exportName)}.json`,
+      text: serializeProject(projectFile),
+      mime: "application/json",
+      description: "平台模型文件",
+      extensions: [".json"]
+    });
+    writeOperationLog(`导出模型文件：${exportName}.json`);
+  };
+
+  const exportCurrentModelFile = async () => {
+    await saveTextFile({
+      filename: `${safeFilePart(projectName)}.json`,
+      text: serializeProject(currentProject()),
+      mime: "application/json",
+      description: "平台模型文件",
+      extensions: [".json"]
+    });
+    writeOperationLog(`导出当前模型文件：${projectName}.json`);
+  };
+
+  const openModelImportFilePicker = (targetSchemeId = "") => {
+    modelImportTargetSchemeIdRef.current = targetSchemeId;
+    modelImportInputRef.current?.click();
+  };
+
+  const openSchemeImportFilePicker = () => {
+    schemeImportInputRef.current?.click();
+  };
+
+  const mergeImportedSchemeIntoExisting = (existingScheme: SavedSchemeRecord, importedScheme: SavedSchemeRecord): SavedSchemeRecord => {
+    const now = new Date().toISOString();
+    const nextProjects = importedScheme.projects.reduce<SavedProjectRecord[]>((current, importedProject) => {
+      const duplicateProject = current.find((project) => hasSameName(project.name, [importedProject.name]));
+      if (!duplicateProject) {
+        return upsertSavedProject(current, importedProject);
+      }
+      return upsertSavedProject(current, {
+        ...importedProject,
+        id: duplicateProject.id,
+        name: duplicateProject.name,
+        project: { ...importedProject.project, name: duplicateProject.name }
+      });
+    }, existingScheme.projects);
+    return { ...existingScheme, updatedAt: now, projects: nextProjects };
+  };
+
+  const commitImportedSchemeRecord = (importedScheme: SavedSchemeRecord) => {
+    setSchemes((current) => [...current, importedScheme]);
+    setExpandedSchemeIds((current) => (current.includes(importedScheme.id) ? current : [...current, importedScheme.id]));
+    selectSingleScheme(importedScheme.id);
+    writeOperationLog(`导入方案：${importedScheme.name}`);
+  };
+
+  const importSchemeFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      const text = await file.text();
+      const importedScheme = createImportedSchemeRecord(text, file.name);
+      const duplicateScheme = schemes.find((scheme) => hasSameName(importedScheme.name, [scheme.name]));
+      if (duplicateScheme) {
+        setPendingSchemeImportConflict({
+          importedScheme,
+          importedName: importedScheme.name,
+          duplicateSchemeId: duplicateScheme.id,
+          duplicateSchemeName: duplicateScheme.name
+        });
+        return;
+      }
+      commitImportedSchemeRecord(importedScheme);
+    } catch (error) {
+      window.alert(error instanceof Error ? `导入方案失败：${error.message}` : "导入方案失败。");
+    } finally {
+      input.value = "";
+    }
+  };
+
+  const commitImportedModelRecord = (targetScheme: SavedSchemeRecord, importedRecord: SavedProjectRecord) => {
+    setSchemes((current) => {
+      const fallback = current.length > 0 ? current : [targetScheme];
+      const nextSchemes = fallback.some((scheme) => scheme.id === targetScheme.id) ? fallback : [...fallback, targetScheme];
+      return nextSchemes.map((scheme) =>
+        scheme.id === targetScheme.id
+          ? { ...scheme, updatedAt: new Date().toISOString(), projects: upsertSavedProject(scheme.projects, importedRecord) }
+          : scheme
       );
-      downloadText(`${prefix}.e`, buildEDeviceParameterFile(project.project), "text/plain");
+    });
+    setExpandedSchemeIds((current) => (current.includes(targetScheme.id) ? current : [...current, targetScheme.id]));
+    loadSavedProject(importedRecord, targetScheme.id);
+    writeOperationLog(`导入模型文件：${importedRecord.name}`);
+  };
+
+  const importModelFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      const text = await file.text();
+      const importedProject = deserializeProject(text);
+      const importTargetSchemeId = modelImportTargetSchemeIdRef.current;
+      const targetScheme =
+        schemes.find((scheme) => scheme.id === importTargetSchemeId) ??
+        activeSchemeRecord ??
+        selectedSchemeRecord ??
+        schemes[0] ??
+        createSavedScheme("默认方案");
+      const fileBaseName = file.name.replace(/\.json$/i, "");
+      const importedName = (importedProject.name || fileBaseName || "导入模型").trim() || "导入模型";
+      const duplicateProject = targetScheme.projects.find((project) => project.name.trim() === importedName.trim());
+      if (duplicateProject) {
+        setPendingModelImportConflict({
+          targetSchemeId: targetScheme.id,
+          importedProject,
+          importedName,
+          duplicateProjectId: duplicateProject.id,
+          duplicateProjectName: duplicateProject.name
+        });
+        return;
+      }
+      commitImportedModelRecord(targetScheme, createSavedProject(importedName, importedProject));
+    } catch (error) {
+      window.alert(error instanceof Error ? `导入模型文件失败：${error.message}` : "导入模型文件失败。");
+    } finally {
+      modelImportTargetSchemeIdRef.current = "";
+      input.value = "";
+    }
+  };
+
+  const resolveDuplicateSchemeImport = (action: "merge" | "rename" | "cancel") => {
+    const conflict = pendingSchemeImportConflict;
+    if (!conflict || action === "cancel") {
+      setPendingSchemeImportConflict(null);
+      return;
+    }
+    const duplicateScheme = schemes.find((scheme) => scheme.id === conflict.duplicateSchemeId);
+    if (action === "rename") {
+      const renamed = promptUniqueRecordName(
+        "请输入导入后的方案名称",
+        uniqueRecordName(conflict.importedName, schemes.map((scheme) => scheme.name), "导入方案"),
+        schemes.map((scheme) => scheme.name),
+        "方案名称不能为空。",
+        "方案名称重复，无法导入。"
+      );
+      if (!renamed) {
+        return;
+      }
+      setPendingSchemeImportConflict(null);
+      commitImportedSchemeRecord({ ...conflict.importedScheme, name: renamed, updatedAt: new Date().toISOString() });
+      return;
+    }
+    if (!duplicateScheme) {
+      setPendingSchemeImportConflict(null);
+      commitImportedSchemeRecord(conflict.importedScheme);
+      return;
+    }
+    setPendingSchemeImportConflict(null);
+    const mergedScheme = mergeImportedSchemeIntoExisting(duplicateScheme, conflict.importedScheme);
+    setSchemes((current) => current.map((scheme) => (scheme.id === duplicateScheme.id ? mergedScheme : scheme)));
+    setExpandedSchemeIds((current) => (current.includes(duplicateScheme.id) ? current : [...current, duplicateScheme.id]));
+    selectSingleScheme(duplicateScheme.id);
+    writeOperationLog(`合并覆盖导入方案：${duplicateScheme.name}`);
+  };
+
+  const resolveDuplicateModelImport = (action: "overwrite" | "rename" | "cancel") => {
+    const conflict = pendingModelImportConflict;
+    if (!conflict || action === "cancel") {
+      setPendingModelImportConflict(null);
+      return;
+    }
+    const targetScheme =
+      schemes.find((scheme) => scheme.id === conflict.targetSchemeId) ??
+      activeSchemeRecord ??
+      selectedSchemeRecord ??
+      schemes[0] ??
+      createSavedScheme("默认方案");
+    const existingNames = targetScheme.projects.map((project) => project.name);
+    if (action === "rename") {
+      const renamed = promptUniqueRecordName(
+        "请输入导入后的模型名称",
+        uniqueRecordName(conflict.importedName, existingNames, "导入模型"),
+        existingNames,
+        "模型名称不能为空。",
+        "模型名称重复，无法导入。"
+      );
+      if (!renamed) {
+        return;
+      }
+      setPendingModelImportConflict(null);
+      commitImportedModelRecord(targetScheme, createSavedProject(renamed, conflict.importedProject));
+      return;
+    }
+    const duplicateProject = targetScheme.projects.find((project) => project.id === conflict.duplicateProjectId);
+    const targetName = duplicateProject?.name ?? conflict.duplicateProjectName;
+    const overwrittenRecord = createSavedProject(targetName, conflict.importedProject);
+    setPendingModelImportConflict(null);
+    commitImportedModelRecord(targetScheme, {
+      ...overwrittenRecord,
+      id: conflict.duplicateProjectId,
+      name: targetName,
+      project: { ...overwrittenRecord.project, name: targetName }
+    });
+  };
+
+  const exportSchemeRecord = async (scheme: SavedSchemeRecord) => {
+    const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
+    const writeSchemeFiles = async (writer: (filename: string, text: string, mime: string) => Promise<void> | void) => {
+      await writer(`${safeFilePart(scheme.name)}.scheme.json`, serializeSchemeRecordForFile(scheme), "application/json");
+      for (const project of scheme.projects) {
+        const prefix = `${safeFilePart(scheme.name)}_${safeFilePart(project.name)}`;
+        await writer(`${prefix}.json`, serializeProject(project.project), "application/json");
+        await writer(
+          `${prefix}.svg`,
+          buildSvgDocument(project.project.nodes, project.project.edges, {
+            width: project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
+            height: project.project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT,
+            backgroundColor: project.project.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND,
+            backgroundImage: resolveProjectImage(project.project),
+            colorDisplayMode,
+            colorPalette
+          }),
+          "image/svg+xml"
+        );
+        await writer(`${prefix}.e`, buildEDeviceParameterFile(project.project), "text/plain");
+      }
+    };
+    if (typeof picker !== "function") {
+      window.alert("当前浏览器不支持目录选择，已改为逐个下载。");
+      await writeSchemeFiles((filename, text, mime) => downloadText(filename, text, mime));
+      writeOperationLog(`导出方案：${scheme.name}`);
+      return;
+    }
+    try {
+      const directoryHandle = await picker.call(window, {
+        id: SCHEME_EXPORT_DIRECTORY_PICKER_ID,
+        mode: "readwrite"
+      });
+      await writeSchemeFiles((filename, text, mime) => writeTextFileToDirectory(directoryHandle, filename, text, mime));
+      writeOperationLog(`导出方案：${scheme.name}`);
+      window.alert(`已导出方案“${scheme.name}”，共 ${scheme.projects.length} 个模型。`);
+    } catch (error) {
+      if (isPickerAbort(error)) {
+        return;
+      }
+      window.alert(error instanceof Error ? `导出方案失败：${error.message}` : "导出方案失败。");
     }
   };
 
@@ -9245,6 +9874,14 @@ export function App() {
         onPointerLeave={() => {
           projectListPointerInsideRef.current = false;
         }}
+        onContextMenu={(event) => {
+          const target = event.target as HTMLElement | null;
+          if (target?.closest(".scheme-option, .project-option")) {
+            return;
+          }
+          event.preventDefault();
+          setProjectMenu({ x: event.clientX, y: event.clientY });
+        }}
       >
         {schemes.length === 0 ? (
           <p className="project-empty">暂无方案</p>
@@ -9288,6 +9925,7 @@ export function App() {
                 }}
                 onContextMenu={(event) => {
                   event.preventDefault();
+                  event.stopPropagation();
                   if (!selectedSchemeIds.includes(scheme.id)) {
                     selectSingleScheme(scheme.id);
                   }
@@ -9338,6 +9976,7 @@ export function App() {
                       }}
                       onContextMenu={(event) => {
                         event.preventDefault();
+                        event.stopPropagation();
                         if (!selectedProjectIds.includes(project.id)) {
                           selectSingleProject(scheme.id, project.id);
                         }
@@ -10521,6 +11160,22 @@ export function App() {
             </button>
             <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={chooseImage} />
             <input ref={customDeviceImageInputRef} type="file" accept="image/*" hidden onChange={chooseCustomDeviceBackground} />
+            <input ref={modelImportInputRef} type="file" accept=".json,application/json" hidden onChange={importModelFile} />
+            <input ref={schemeImportInputRef} type="file" accept=".json,application/json" hidden onChange={importSchemeFile} />
+            <button
+              onClick={() => openModelImportFilePicker()}
+              title="导入模型文件"
+              aria-label="导入模型文件"
+            >
+              <FileInput size={16} />
+            </button>
+            <button
+              onClick={exportCurrentModelFile}
+              title="导出当前模型文件"
+              aria-label="导出当前模型文件"
+            >
+              <FileJson size={16} />
+            </button>
             <button
               onClick={exportSvg}
               disabled={!canExportCurrentModel}
@@ -12004,94 +12659,170 @@ export function App() {
       )}
       {projectMenu && (
         <div className="context-menu" style={contextMenuStyle(projectMenu)}>
-          <button
-            onClick={() => runContextMenuAction(() => {
-              createSchemeRecord();
-            })}
-          >
-            <FolderOpen size={14} />
-            新增方案
-          </button>
-          {projectMenu.schemeId && (
-            <button
-              onClick={() => runContextMenuAction(() => {
-                createBlankProject();
-              })}
-            >
-              <FileJson size={14} />
-              新增模型
-            </button>
+          {projectMenu.projectId && (
+            <>
+              <button
+                onClick={() => runContextMenuAction(() => {
+                  const project = projectById.get(projectMenu.projectId ?? "");
+                  if (project) deleteProjectRecord(project);
+                })}
+              >
+                <Trash2 size={14} />
+                模型删除
+              </button>
+              <button
+                onClick={() => runContextMenuAction(() => {
+                  const project = projectById.get(projectMenu.projectId ?? "");
+                  if (project) void exportProjectRecordFile(project);
+                })}
+              >
+                <Download size={14} />
+                模型导出
+              </button>
+              <button
+                onClick={() => runContextMenuAction(() => openModelImportFilePicker(projectMenu.schemeId))}
+              >
+                <FileInput size={14} />
+                模型导入
+              </button>
+              <button
+                onClick={() => runContextMenuAction(() => {
+                  const project = projectById.get(projectMenu.projectId ?? "");
+                  if (project) renameProjectRecord(project);
+                })}
+              >
+                <Pencil size={14} />
+                模型重命名
+              </button>
+              <button
+                onClick={() => runContextMenuAction(() => {
+                  const project = projectById.get(projectMenu.projectId ?? "");
+                  if (project) copyProjectRecord(project);
+                })}
+              >
+                <Copy size={14} />
+                模型复制
+              </button>
+              {recordClipboard?.kind === "project" && projectMenu.projectId && (
+                <button onClick={() => runContextMenuAction(() => pasteProjectClipboardRecord(projectMenu.schemeId))}>
+                  <FileInput size={14} />
+                  模型粘贴
+                </button>
+              )}
+            </>
           )}
-          {(projectMenu.projectId || projectMenu.schemeId) && (
-            <button
-              onClick={() => runContextMenuAction(() => {
-                const project = projectById.get(projectMenu.projectId ?? "");
-                const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
-                if (project) {
-                  if (selectedProjectIds.length > 1 && selectedProjectIds.includes(project.id)) {
-                    duplicateSelectedProjectRecords();
-                  } else {
-                    duplicateProjectRecord(project);
-                  }
-                } else if (scheme) {
-                  if (selectedSchemeIds.length > 1 && selectedSchemeIds.includes(scheme.id)) {
-                    duplicateSelectedSchemeRecords();
-                  } else {
-                    duplicateSchemeRecord(scheme);
-                  }
-                }
-              })}
-            >
-              <Copy size={14} />
-              复制
-            </button>
+          {!projectMenu.projectId && projectMenu.schemeId && (
+            <>
+              <button
+                onClick={() => runContextMenuAction(() => {
+                  const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
+                  if (scheme) deleteSchemeRecord(scheme);
+                })}
+              >
+                <Trash2 size={14} />
+                方案删除
+              </button>
+              <button
+                onClick={() => runContextMenuAction(() => {
+                  const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
+                  if (scheme) void exportSchemeRecord(scheme);
+                })}
+              >
+                <Download size={14} />
+                方案导出
+              </button>
+              <button onClick={() => runContextMenuAction(openSchemeImportFilePicker)}>
+                <FileInput size={14} />
+                方案导入
+              </button>
+              <button
+                onClick={() => runContextMenuAction(() => {
+                  const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
+                  if (scheme) renameSchemeRecord(scheme);
+                })}
+              >
+                <Pencil size={14} />
+                方案重命名
+              </button>
+              <button
+                onClick={() => runContextMenuAction(() => {
+                  const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
+                  if (scheme) copySchemeRecord(scheme);
+                })}
+              >
+                <Copy size={14} />
+                方案复制
+              </button>
+              {recordClipboard?.kind === "project" && projectMenu.schemeId && (
+                <button onClick={() => runContextMenuAction(() => pasteProjectClipboardRecord(projectMenu.schemeId))}>
+                  <FileInput size={14} />
+                  模型粘贴
+                </button>
+              )}
+              {recordClipboard?.kind === "scheme" && (
+                <button onClick={() => runContextMenuAction(pasteSchemeClipboardRecord)}>
+                  <FileInput size={14} />
+                  方案粘贴
+                </button>
+              )}
+            </>
           )}
-          {recordClipboard && projectMenu.schemeId && (
-            <button
-              onClick={() => runContextMenuAction(() => {
-                pasteSelectedRecord();
-              })}
-            >
-              粘贴
-            </button>
+          {!projectMenu.projectId && !projectMenu.schemeId && (
+            <>
+              <button onClick={() => runContextMenuAction(createSchemeRecord)}>
+                <FolderOpen size={14} />
+                方案新增
+              </button>
+              {recordClipboard?.kind === "scheme" && (
+                <button onClick={() => runContextMenuAction(pasteSchemeClipboardRecord)}>
+                  <FileInput size={14} />
+                  方案粘贴
+                </button>
+              )}
+              <button onClick={() => runContextMenuAction(openSchemeImportFilePicker)}>
+                <FileInput size={14} />
+                方案导入
+              </button>
+            </>
           )}
-          {(projectMenu.projectId || projectMenu.schemeId) && (
-            <button
-              onClick={() => runContextMenuAction(() => {
-                const project = projectById.get(projectMenu.projectId ?? "");
-                const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
-                if (project) renameProjectRecord(project);
-                else if (scheme) renameSchemeRecord(scheme);
-              })}
-            >
-              <Pencil size={14} />
-              重命名
-            </button>
-          )}
-          {projectMenu.schemeId && (
-            <button
-              onClick={() => runContextMenuAction(() => {
-                const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
-                if (scheme) exportSchemeRecord(scheme);
-              })}
-            >
-              <Download size={14} />
-              导出方案
-            </button>
-          )}
-          {(projectMenu.projectId || projectMenu.schemeId) && (
-            <button
-              onClick={() => runContextMenuAction(() => {
-                const project = projectById.get(projectMenu.projectId ?? "");
-                const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
-                if (project) deleteProjectRecord(project);
-                else if (scheme) deleteSchemeRecord(scheme);
-              })}
-            >
-              <Trash2 size={14} />
-              删除
-            </button>
-          )}
+        </div>
+      )}
+      {pendingModelImportConflict && (
+        <div className="image-picker-backdrop" onPointerDown={() => resolveDuplicateModelImport("cancel")}>
+          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="model-import-conflict-title">
+            <div className="image-picker-title">
+              <div>
+                <h2 id="model-import-conflict-title">模型名称重复</h2>
+                <p>
+                  当前方案中已存在模型“{pendingModelImportConflict.duplicateProjectName}”。请选择导入处理方式。
+                </p>
+              </div>
+            </div>
+            <div className="unsaved-change-actions">
+              <button type="button" onClick={() => resolveDuplicateModelImport("overwrite")}>覆盖</button>
+              <button type="button" onClick={() => resolveDuplicateModelImport("rename")}>重命名</button>
+              <button type="button" onClick={() => resolveDuplicateModelImport("cancel")}>不导入</button>
+            </div>
+          </section>
+        </div>
+      )}
+      {pendingSchemeImportConflict && (
+        <div className="image-picker-backdrop" onPointerDown={() => resolveDuplicateSchemeImport("cancel")}>
+          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="scheme-import-conflict-title">
+            <div className="image-picker-title">
+              <div>
+                <h2 id="scheme-import-conflict-title">方案名称重复</h2>
+                <p>
+                  当前模型库中已存在方案“{pendingSchemeImportConflict.duplicateSchemeName}”。请选择导入处理方式。
+                </p>
+              </div>
+            </div>
+            <div className="unsaved-change-actions">
+              <button type="button" onClick={() => resolveDuplicateSchemeImport("merge")}>合并覆盖</button>
+              <button type="button" onClick={() => resolveDuplicateSchemeImport("rename")}>重新命名</button>
+              <button type="button" onClick={() => resolveDuplicateSchemeImport("cancel")}>不导入</button>
+            </div>
+          </section>
         </div>
       )}
       {pendingUnsavedAction && (
