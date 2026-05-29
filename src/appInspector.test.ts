@@ -44,6 +44,13 @@ function cssRuleBlock(styles: string, selector: string) {
 }
 
 describe("graph inspector panel", () => {
+  test("allows canvas width and height up to 10000", async () => {
+    const source = await readAppSource();
+
+    expect(source).toContain("const MAX_CANVAS_WIDTH = 10000;");
+    expect(source).toContain("const MAX_CANVAS_HEIGHT = 10000;");
+  });
+
   test("uses library group names for terminal energy dropdowns in device definition dialogs", async () => {
     const source = await readAppSource();
     const optionsStart = source.indexOf("const TERMINAL_TYPE_OPTIONS");
@@ -433,8 +440,9 @@ describe("graph inspector panel", () => {
     const layoutEnd = source.indexOf("const alignSelected", layoutStart);
     const layoutBlock = source.slice(layoutStart, layoutEnd);
 
-    expect(activeLayerBlock).toContain("(node.layerId ?? DEFAULT_MODEL_LAYER_ID) === activeLayerId");
-    expect(activeLayerBlock).toContain("activeLayerNodeIdSet.has(edge.sourceId) || activeLayerNodeIdSet.has(edge.targetId)");
+    expect(activeLayerBlock).toContain("graphStore.nodesByLayerId.get(activeLayerId)");
+    expect(activeLayerBlock).toContain("edgesByNodeId.get(node.id)");
+    expect(activeLayerBlock).toContain("visibleEdgeIdSet.has(edge.id)");
     expect(source).toContain("const rawActiveSelectedNodeIds = useMemo");
     expect(source).toContain("selectedNodeIds.filter((nodeId) => activeLayerNodeIdSet.has(nodeId))");
     expect(selectionStateBlock).toContain("activeCanvasSelection.nodeIds");
@@ -804,9 +812,10 @@ describe("graph inspector panel", () => {
     expect(source).toContain("setCanvasVisibleViewBox(initialVisibleCanvasViewBox(nextCanvasBounds, canvasFrameRef.current))");
     expect(source).not.toContain("expandViewBoxForRendering(viewBox)");
     expect(source).toContain("nodeIntersectsRenderViewport");
-    expect(source).toContain("routeIntersectsRenderViewport");
     expect(routeCullBlock).toContain("activeSelectedEdgeSet.has(route.edgeId)");
-    expect(routeCullBlock).toContain("routeIntersectsRenderViewport(route, renderViewportBounds)");
+    expect(routeCullBlock).toContain("queryRouteSpatialIndex(routedEdgeSpatialIndex, renderViewportBounds)");
+    expect(routeCullBlock).not.toContain("renderedRoutedEdges.filter");
+    expect(routeCullBlock).not.toContain("visibleNodes.filter");
     expect(routeCullBlock).toContain("selectedNodeIdSet.forEach(addVisibleNodeId)");
     expect(routeCullBlock).toContain("draggingNodeIdSet.forEach(addVisibleNodeId)");
     expect(edgeRenderIndex).toBeGreaterThan(-1);
@@ -824,17 +833,63 @@ describe("graph inspector panel", () => {
     expect(paramBlock).toContain("deviceParamPanelActive && selectedNode ? buildContainerDeviceParameterViews");
   });
 
-  test("keeps post-drag edge ordering linear and avoids sorting every route", async () => {
+  test("keeps selected edge overlay viewport-scoped without building a full rendered route array", async () => {
     const source = await readAppSource();
-    const renderStart = source.indexOf("const renderedRoutedEdges = useMemo");
-    const renderEnd = source.indexOf("const routedEdgeById", renderStart);
-    const renderBlock = source.slice(renderStart, renderEnd);
+    const routeCullStart = source.indexOf("const viewportRoutedEdges = useMemo");
+    const routeCullEnd = source.indexOf("const viewportNodes = useMemo", routeCullStart);
+    const routeCullBlock = source.slice(routeCullStart, routeCullEnd);
 
-    expect(renderBlock).toContain("activeSelectedEdgeSet.size === 0");
-    expect(renderBlock).toContain("return routedEdges");
-    expect(renderBlock).toContain("regularRoutes.push(route)");
-    expect(renderBlock).toContain("selectedRoutes.push(route)");
-    expect(renderBlock).not.toContain(".sort(");
+    expect(source).not.toContain("const renderedRoutedEdges = useMemo");
+    expect(routeCullBlock).toContain("queryRouteSpatialIndex(routedEdgeSpatialIndex, renderViewportBounds)");
+    expect(routeCullBlock).toContain("selectedRoutes.push(route)");
+    expect(routeCullBlock).toContain("routedEdgeById.get(edgeId)");
+    expect(routeCullBlock).not.toContain("routedEdges.filter");
+  });
+
+  test("patches the route store from the previous render instead of rebuilding the route spatial index each time", async () => {
+    const source = await readAppSource();
+    const routeStoreStart = source.indexOf("const routedEdgeStore = useMemo");
+    const routeStoreEnd = source.indexOf("const routedEdgeSpatialIndex", routeStoreStart);
+    const routeStoreBlock = source.slice(routeStoreStart, routeStoreEnd);
+
+    expect(source).toContain("const cachedRouteStoreRef = useRef<RouteStore | null>(null)");
+    expect(routeStoreBlock).toContain("routeStoreSetRoutes(cachedRouteStoreRef.current, routedEdges)");
+    expect(routeStoreBlock).not.toContain("createRouteStore(routedEdges)");
+    expect(source).toContain("cachedRouteStoreRef.current = routedEdgeStore");
+  });
+
+  test("uses the route spatial index for connection route hit tests", async () => {
+    const source = await readAppSource();
+    const hitStart = source.indexOf("const findConnectionRouteHitAtPoint = (point: Point) =>");
+    const hitEnd = source.indexOf("const insertManualBendAtPoint", hitStart);
+    const hitBlock = source.slice(hitStart, hitEnd);
+
+    expect(hitBlock).toContain("const hitBounds");
+    expect(hitBlock).toContain("queryRouteSpatialIndex(routedEdgeSpatialIndex, hitBounds)");
+    expect(hitBlock).not.toContain("renderedRoutedEdges");
+  });
+
+  test("uses graph store layer and adjacency indexes for active layer graphics", async () => {
+    const source = await readAppSource();
+    const activeLayerStart = source.indexOf("const activeLayerNodes = useMemo");
+    const activeLayerEnd = source.indexOf("const activeLayerGroups = useMemo", activeLayerStart);
+    const activeLayerBlock = source.slice(activeLayerStart, activeLayerEnd);
+
+    expect(activeLayerBlock).toContain("graphStore.nodesByLayerId.get(activeLayerId)");
+    expect(activeLayerBlock).toContain("edgesByNodeId.get(node.id)");
+    expect(activeLayerBlock).not.toContain("visibleNodes.filter");
+    expect(activeLayerBlock).not.toContain("visibleEdges.filter");
+  });
+
+  test("reuses the graph store node spatial index when visible nodes keep graph order", async () => {
+    const source = await readAppSource();
+    const visibleProjectStart = source.indexOf("const visibleProject = useMemo");
+    const visibleProjectEnd = source.indexOf("const visibleNodes = visibleProject.nodes", visibleProjectStart);
+    const visibleProjectBlock = source.slice(visibleProjectStart, visibleProjectEnd);
+
+    expect(visibleProjectBlock).toContain("visibleProjectNodesMatchGraphStoreOrder");
+    expect(visibleProjectBlock).toContain("graphStore.nodeSpatialIndex");
+    expect(visibleProjectBlock).toContain("buildNodeSpatialIndex(filtered.nodes)");
   });
 
   test("limits full routing to direct path edits and keeps node dragging on the lightweight preview path", async () => {
@@ -967,9 +1022,9 @@ describe("graph inspector panel", () => {
     const scheduleBlock = source.slice(scheduleStart, scheduleEnd);
 
     expect(scheduleBlock).toContain("movedNodeIds.length > MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES");
-    expect(source).toContain("buildRouteSpatialIndex");
+    expect(source).toContain("routeStoreSetRoutes");
     expect(source).toContain("queryRouteSpatialIndex");
-    expect(source).toContain("const routedEdgeSpatialIndex = useMemo");
+    expect(source).toContain("const routedEdgeSpatialIndex = routedEdgeStore.routeSpatialIndex");
     expect(scheduleBlock).toContain("const routeCandidateEdges = localRouteOptimizationCandidateEdges");
     expect(scheduleBlock).toContain("const optimizationEdges = localRouteOptimizationEdges");
     expect(scheduleBlock).toContain("routeCandidateEdges");

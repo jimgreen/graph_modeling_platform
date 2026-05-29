@@ -201,6 +201,11 @@ import {
   type GraphStore
 } from "./graphStore";
 import {
+  queryRouteSpatialIndex,
+  routeStoreSetRoutes,
+  type RouteStore
+} from "./routeStore";
+import {
   EMPTY_CANVAS_CLIPBOARD,
   alignNodeLayoutUnits,
   buildCanvasLayoutUnits,
@@ -538,8 +543,8 @@ const DEFAULT_CANVAS_WIDTH = 1980;
 const DEFAULT_CANVAS_HEIGHT = 1024;
 const MIN_CANVAS_WIDTH = 640;
 const MIN_CANVAS_HEIGHT = 360;
-const MAX_CANVAS_WIDTH = 5000;
-const MAX_CANVAS_HEIGHT = 3000;
+const MAX_CANVAS_WIDTH = 10000;
+const MAX_CANVAS_HEIGHT = 10000;
 const DEFAULT_CANVAS_BACKGROUND = "#f1f5f9";
 const MOVE_BOUNDARY_GUARD = 8;
 const MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES = 5;
@@ -889,14 +894,9 @@ type NodeSpatialIndex = {
   bucketSize: number;
   buckets: Map<string, ModelNode[]>;
 };
-type RouteSpatialIndex = {
-  bucketSize: number;
-  buckets: Map<string, RoutedEdge[]>;
-};
 const VIEWPORT_RENDER_PADDING_RATIO = 0.15;
 const VIEWPORT_RENDER_MIN_PADDING = 260;
 const NODE_SPATIAL_BUCKET_SIZE = 256;
-const ROUTE_SPATIAL_BUCKET_SIZE = 320;
 const expandViewBoxForRendering = (viewBox: { x: number; y: number; width: number; height: number }): RenderViewportBounds => {
   const padding = Math.max(VIEWPORT_RENDER_MIN_PADDING, Math.max(viewBox.width, viewBox.height) * VIEWPORT_RENDER_PADDING_RATIO);
   return {
@@ -1018,83 +1018,6 @@ const compactPreviewNodes = (...nodes: Array<ModelNode | null | undefined>): Mod
   }
   return Array.from(compacted.values());
 };
-const routeIntersectsRenderViewport = (route: Pick<RoutedEdge, "points">, viewport: RenderViewportBounds) => {
-  if (route.points.length === 0) {
-    return false;
-  }
-  let left = route.points[0].x;
-  let right = left;
-  let top = route.points[0].y;
-  let bottom = top;
-  for (let index = 1; index < route.points.length; index += 1) {
-    const point = route.points[index];
-    left = Math.min(left, point.x);
-    right = Math.max(right, point.x);
-    top = Math.min(top, point.y);
-    bottom = Math.max(bottom, point.y);
-  }
-  return boxesIntersect({ left, right, top, bottom }, viewport);
-};
-const routeRenderBounds = (route: Pick<RoutedEdge, "points">, padding = 0): RenderViewportBounds | null => {
-  if (route.points.length === 0) {
-    return null;
-  }
-  let left = route.points[0].x;
-  let right = left;
-  let top = route.points[0].y;
-  let bottom = top;
-  for (let index = 1; index < route.points.length; index += 1) {
-    const point = route.points[index];
-    left = Math.min(left, point.x);
-    right = Math.max(right, point.x);
-    top = Math.min(top, point.y);
-    bottom = Math.max(bottom, point.y);
-  }
-  return { left: left - padding, right: right + padding, top: top - padding, bottom: bottom + padding };
-};
-function buildRouteSpatialIndex(routes: RoutedEdge[], bucketSize = ROUTE_SPATIAL_BUCKET_SIZE): RouteSpatialIndex {
-  const buckets = new Map<string, RoutedEdge[]>();
-  for (const route of routes) {
-    const bounds = routeRenderBounds(route, 8);
-    if (!bounds) {
-      continue;
-    }
-    const range = spatialBucketRange(bounds, bucketSize);
-    for (let x = range.left; x <= range.right; x += 1) {
-      for (let y = range.top; y <= range.bottom; y += 1) {
-        const key = spatialBucketKey(x, y);
-        const bucket = buckets.get(key);
-        if (bucket) {
-          bucket.push(route);
-        } else {
-          buckets.set(key, [route]);
-        }
-      }
-    }
-  }
-  return { bucketSize, buckets };
-}
-function queryRouteSpatialIndex(index: RouteSpatialIndex, bounds: RenderViewportBounds): RoutedEdge[] {
-  const range = spatialBucketRange(bounds, index.bucketSize);
-  const matches: RoutedEdge[] = [];
-  const seen = new Set<string>();
-  for (let x = range.left; x <= range.right; x += 1) {
-    for (let y = range.top; y <= range.bottom; y += 1) {
-      const bucket = index.buckets.get(spatialBucketKey(x, y));
-      if (!bucket) {
-        continue;
-      }
-      for (const route of bucket) {
-        if (seen.has(route.edgeId) || !routeIntersectsRenderViewport(route, bounds)) {
-          continue;
-        }
-        seen.add(route.edgeId);
-        matches.push(route);
-      }
-    }
-  }
-  return matches;
-}
 const PARAM_LABELS: Record<string, string> = {
   name: "名称",
   schemeName: "所属方案",
@@ -3461,6 +3384,7 @@ export function App() {
   const nodeDragMoveFrameRef = useRef<number | null>(null);
   const dragUndoCapturedRef = useRef(false);
   const cachedRoutedEdgesRef = useRef<RoutedEdge[]>([]);
+  const cachedRouteStoreRef = useRef<RouteStore | null>(null);
   const pendingRouteEdgeIdsRef = useRef<Set<string>>(new Set());
   const pendingStoredRouteEdgeIdsRef = useRef<Set<string>>(new Set());
   const canvasVisibleViewBoxFrameRef = useRef<number | null>(null);
@@ -3664,8 +3588,16 @@ export function App() {
   );
   const visibleProject = useMemo(() => {
     const filtered = filterProjectByVisibleLayers(nodes, edges, layers);
-    return { ...filtered, nodeSpatialIndex: buildNodeSpatialIndex(filtered.nodes) };
-  }, [edges, layers, nodes]);
+    const visibleProjectNodesMatchGraphStoreOrder =
+      filtered.nodes.length === nodes.length &&
+      filtered.nodes.every((node, index) => node === nodes[index]);
+    return {
+      ...filtered,
+      nodeSpatialIndex: visibleProjectNodesMatchGraphStoreOrder
+        ? graphStore.nodeSpatialIndex
+        : buildNodeSpatialIndex(filtered.nodes)
+    };
+  }, [edges, graphStore.nodeSpatialIndex, layers, nodes]);
   const visibleNodes = visibleProject.nodes;
   const visibleEdges = visibleProject.edges;
   const visibleNodeById = useMemo(() => new Map(visibleNodes.map((node) => [node.id, node])), [visibleNodes]);
@@ -3693,14 +3625,28 @@ export function App() {
     return map;
   }, [visibleEdges]);
   const activeLayerNodes = useMemo(
-    () => visibleNodes.filter((node) => (node.layerId ?? DEFAULT_MODEL_LAYER_ID) === activeLayerId),
-    [activeLayerId, visibleNodes]
+    () =>
+      activeLayer?.visible
+        ? (graphStore.nodesByLayerId.get(activeLayerId) ?? []).filter((node) => visibleNodeIdSet.has(node.id))
+        : [],
+    [activeLayer?.visible, activeLayerId, graphStore.nodesByLayerId, visibleNodeIdSet]
   );
   const activeLayerNodeIdSet = useMemo(() => new Set(activeLayerNodes.map((node) => node.id)), [activeLayerNodes]);
-  const activeLayerEdges = useMemo(
-    () => visibleEdges.filter((edge) => activeLayerNodeIdSet.has(edge.sourceId) || activeLayerNodeIdSet.has(edge.targetId)),
-    [activeLayerNodeIdSet, visibleEdges]
-  );
+  const activeLayerEdges = useMemo(() => {
+    const collected = new Map<string, Edge>();
+    for (const node of activeLayerNodes) {
+      for (const edge of edgesByNodeId.get(node.id) ?? []) {
+        if (visibleEdgeIdSet.has(edge.id)) {
+          collected.set(edge.id, edge);
+        }
+      }
+    }
+    return Array.from(collected.values()).sort(
+      (first, second) =>
+        (graphStore.edgeIndexById.get(first.id) ?? Number.MAX_SAFE_INTEGER) -
+        (graphStore.edgeIndexById.get(second.id) ?? Number.MAX_SAFE_INTEGER)
+    );
+  }, [activeLayerNodes, edgesByNodeId, graphStore.edgeIndexById, visibleEdgeIdSet]);
   const activeLayerEdgeIdSet = useMemo(() => new Set(activeLayerEdges.map((edge) => edge.id)), [activeLayerEdges]);
   const activeLayerGroups = useMemo(
     () => normalizeModelGroups(groups, activeLayerNodes, activeLayerEdges),
@@ -4363,44 +4309,57 @@ export function App() {
       cachedRoutedEdgesRef.current
     );
   }, [affectedRoutingEdgeIds, canvasBounds, routeRenderingEnabled, routingEdges, routingNodes]);
-  const routedEdgeSpatialIndex = useMemo(() => buildRouteSpatialIndex(routedEdges), [routedEdges]);
+  const routedEdgeStore = useMemo(() => routeStoreSetRoutes(cachedRouteStoreRef.current, routedEdges), [routedEdges]);
+  const routedEdgeSpatialIndex = routedEdgeStore.routeSpatialIndex;
+  const routedEdgeById = routedEdgeStore.routeMap;
+  const routedEdgeIndexById = routedEdgeStore.routeIndexById;
   useEffect(() => {
     cachedRoutedEdgesRef.current = routedEdges;
+    cachedRouteStoreRef.current = routedEdgeStore;
     pendingRouteEdgeIdsRef.current = new Set();
     pendingStoredRouteEdgeIdsRef.current = new Set();
-  }, [routedEdges]);
-  const renderedRoutedEdges = useMemo(() => {
-    if (activeSelectedEdgeSet.size === 0) {
-      return routedEdges;
-    }
+  }, [routedEdgeStore, routedEdges]);
+  const renderViewportBounds = useMemo(() => expandViewBoxForRendering(canvasVisibleViewBox), [canvasVisibleViewBox]);
+  const routeRenderOrder = (first: RoutedEdge, second: RoutedEdge) =>
+    (routedEdgeIndexById.get(first.edgeId) ?? Number.MAX_SAFE_INTEGER) -
+    (routedEdgeIndexById.get(second.edgeId) ?? Number.MAX_SAFE_INTEGER);
+  const viewportRoutedEdges = useMemo(() => {
     const regularRoutes: RoutedEdge[] = [];
     const selectedRoutes: RoutedEdge[] = [];
-    for (const route of routedEdges) {
+    const selectedRouteIds = new Set<string>();
+    for (const route of queryRouteSpatialIndex(routedEdgeSpatialIndex, renderViewportBounds)) {
       if (activeSelectedEdgeSet.has(route.edgeId)) {
         selectedRoutes.push(route);
+        selectedRouteIds.add(route.edgeId);
       } else {
         regularRoutes.push(route);
       }
     }
-    return selectedRoutes.length > 0 ? [...regularRoutes, ...selectedRoutes] : routedEdges;
-  }, [activeSelectedEdgeSet, routedEdges]);
-  const renderViewportBounds = useMemo(() => expandViewBoxForRendering(canvasVisibleViewBox), [canvasVisibleViewBox]);
-  const viewportRoutedEdges = useMemo(
-    () =>
-      renderedRoutedEdges.filter((route) =>
-        activeSelectedEdgeSet.has(route.edgeId) || routeIntersectsRenderViewport(route, renderViewportBounds)
-      ),
-    [activeSelectedEdgeSet, renderedRoutedEdges, renderViewportBounds]
-  );
-  const viewportNodeIdSet = useMemo(() => {
-    const ids = new Set<string>();
-    const addVisibleNodeId = (nodeId: string | undefined) => {
-      if (nodeId && visibleNodeIdSet.has(nodeId)) {
-        ids.add(nodeId);
+    for (const edgeId of activeSelectedEdgeSet) {
+      if (selectedRouteIds.has(edgeId)) {
+        continue;
+      }
+      const route = routedEdgeById.get(edgeId);
+      if (route) {
+        selectedRoutes.push(route);
+      }
+    }
+    regularRoutes.sort(routeRenderOrder);
+    selectedRoutes.sort(routeRenderOrder);
+    return selectedRoutes.length > 0 ? [...regularRoutes, ...selectedRoutes] : regularRoutes;
+  }, [activeSelectedEdgeSet, renderViewportBounds, routedEdgeById, routedEdgeIndexById, routedEdgeSpatialIndex]);
+  const viewportNodes = useMemo(() => {
+    const viewportNodeById = new Map<string, ModelNode>();
+    const addVisibleNode = (node: ModelNode | undefined) => {
+      if (node && visibleNodeIdSet.has(node.id)) {
+        viewportNodeById.set(node.id, node);
       }
     };
+    const addVisibleNodeId = (nodeId: string | undefined) => {
+      addVisibleNode(nodeId ? visibleNodeById.get(nodeId) : undefined);
+    };
     for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, renderViewportBounds)) {
-      ids.add(node.id);
+      addVisibleNode(node);
     }
     selectedNodeIdSet.forEach(addVisibleNodeId);
     draggingNodeIdSet.forEach(addVisibleNodeId);
@@ -4408,21 +4367,26 @@ export function App() {
     for (const route of viewportRoutedEdges) {
       const edge = edgeById.get(route.edgeId);
       if (edge) {
-        ids.add(edge.sourceId);
-        ids.add(edge.targetId);
+        addVisibleNodeId(edge.sourceId);
+        addVisibleNodeId(edge.targetId);
       }
     }
-    return ids;
-  }, [connectSource?.nodeId, draggingNodeIdSet, edgeById, renderViewportBounds, selectedNodeIdSet, viewportRoutedEdges, visibleNodeIdSet, visibleNodeSpatialIndex]);
-  const viewportNodes = useMemo(
-    () => visibleNodes.filter((node) => viewportNodeIdSet.has(node.id)),
-    [viewportNodeIdSet, visibleNodes]
-  );
-  const activeLayerRoutedEdges = useMemo(
-    () => routedEdges.filter((route) => activeLayerEdgeIdSet.has(route.edgeId)),
-    [activeLayerEdgeIdSet, routedEdges]
-  );
-  const routedEdgeById = useMemo(() => new Map(routedEdges.map((route) => [route.edgeId, route])), [routedEdges]);
+    return Array.from(viewportNodeById.values()).sort(
+      (first, second) =>
+        (graphStore.nodeIndexById.get(first.id) ?? Number.MAX_SAFE_INTEGER) -
+        (graphStore.nodeIndexById.get(second.id) ?? Number.MAX_SAFE_INTEGER)
+    );
+  }, [connectSource?.nodeId, draggingNodeIdSet, edgeById, graphStore.nodeIndexById, renderViewportBounds, selectedNodeIdSet, viewportRoutedEdges, visibleNodeById, visibleNodeIdSet, visibleNodeSpatialIndex]);
+  const activeLayerRoutedEdges = useMemo(() => {
+    const routes: RoutedEdge[] = [];
+    activeLayerEdgeIdSet.forEach((edgeId) => {
+      const route = routedEdgeById.get(edgeId);
+      if (route) {
+        routes.push(route);
+      }
+    });
+    return routes.sort(routeRenderOrder);
+  }, [activeLayerEdgeIdSet, routedEdgeById, routedEdgeIndexById]);
   const markRouteEdgesDirty = (edgeIds: Iterable<string | undefined>) => {
     const next = new Set(pendingRouteEdgeIdsRef.current);
     for (const edgeId of edgeIds) {
@@ -9754,14 +9718,20 @@ export function App() {
 
   const findConnectionRouteHitAtPoint = (point: Point) => {
     const tolerance = connectionHitTolerance();
-    return renderedRoutedEdges
+    const hitBounds = {
+      left: point.x - tolerance,
+      right: point.x + tolerance,
+      top: point.y - tolerance,
+      bottom: point.y + tolerance
+    };
+    return queryRouteSpatialIndex(routedEdgeSpatialIndex, hitBounds)
       .filter((route) => activeLayerEdgeIdSet.has(route.edgeId))
-      .flatMap((route, routeOrder) =>
+      .flatMap((route) =>
         route.points.slice(0, -1).map((from, segmentIndex) => ({
           edgeId: route.edgeId,
           routePoints: route.points,
           distance: routeSegmentPointerDistance(point, from, route.points[segmentIndex + 1]),
-          routeOrder,
+          routeOrder: routedEdgeIndexById.get(route.edgeId) ?? -1,
           segmentIndex
         }))
       )

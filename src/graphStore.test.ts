@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { createDefaultNode, type Edge } from "./model";
+import { createDefaultNode, DEFAULT_MODEL_LAYER_ID, type Edge } from "./model";
 import {
   createGraphStore,
   graphStoreEdges,
@@ -59,6 +59,20 @@ describe("normalized graph store", () => {
     expect(next.edgesByNodeId.get(left.id)).toEqual([nextEdge]);
     expect(next.edgesByNodeId.get(right.id)).toEqual([nextEdge]);
     expect(queryGraphStoreNodeSpatialIndex(next, { left: 0, right: 240, top: 0, bottom: 220 }).map((node) => node.id)).toEqual([left.id]);
+  });
+
+  test("keeps nodes indexed by model layer while patching moved nodes", () => {
+    const first = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const second = { ...createDefaultNode("ac-load", { x: 320, y: 100 }), layerId: "layer-2" };
+    const store = createGraphStore([first, second], []);
+    const movedSecond = { ...second, position: { x: 360, y: 120 } };
+
+    const patched = graphStorePatchNodes(store, [movedSecond]);
+
+    expect(store.nodesByLayerId.get(DEFAULT_MODEL_LAYER_ID)?.map((node) => node.id)).toEqual([first.id]);
+    expect(patched.nodesByLayerId.get("layer-2")).toEqual([movedSecond]);
+    expect(patched.nodesByLayerId.get(DEFAULT_MODEL_LAYER_ID)).toEqual([first]);
+    expect(patched.nodesByLayerId).not.toBe(store.nodesByLayerId);
   });
 
   test("patches moved nodes and candidate edges by id while preserving unchanged arrays", () => {

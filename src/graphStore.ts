@@ -1,4 +1,4 @@
-import { getNodeScaleX, getNodeScaleY, type Edge, type ModelNode } from "./model";
+import { DEFAULT_MODEL_LAYER_ID, getNodeScaleX, getNodeScaleY, type Edge, type ModelNode } from "./model";
 
 export type GraphRenderBounds = {
   left: number;
@@ -21,6 +21,7 @@ export type GraphStore = {
   nodeIndexById: Map<string, number>;
   edgeIndexById: Map<string, number>;
   edgesByNodeId: Map<string, Edge[]>;
+  nodesByLayerId: Map<string, ModelNode[]>;
   nodeSpatialIndex: GraphNodeSpatialIndex;
   nodes: ModelNode[];
   edges: Edge[];
@@ -156,6 +157,44 @@ function buildEdgesByNodeId(edges: readonly Edge[]) {
   return map;
 }
 
+const graphNodeLayerId = (node: ModelNode) => node.layerId ?? DEFAULT_MODEL_LAYER_ID;
+
+function buildNodesByLayerId(nodes: readonly ModelNode[]) {
+  const map = new Map<string, ModelNode[]>();
+  for (const node of nodes) {
+    const layerId = graphNodeLayerId(node);
+    const bucket = map.get(layerId);
+    if (bucket) {
+      bucket.push(node);
+    } else {
+      map.set(layerId, [node]);
+    }
+  }
+  return map;
+}
+
+function patchNodeLayerIndex(index: Map<string, ModelNode[]>, previousNode: ModelNode, nextNode: ModelNode) {
+  const nextIndex = new Map(index);
+  const previousLayerId = graphNodeLayerId(previousNode);
+  const nextLayerId = graphNodeLayerId(nextNode);
+  const previousBucket = nextIndex.get(previousLayerId) ?? [];
+  const nextPreviousBucket = previousBucket.flatMap((node) => {
+    if (node.id !== previousNode.id) {
+      return [node];
+    }
+    return previousLayerId === nextLayerId ? [nextNode] : [];
+  });
+  if (nextPreviousBucket.length > 0) {
+    nextIndex.set(previousLayerId, nextPreviousBucket);
+  } else {
+    nextIndex.delete(previousLayerId);
+  }
+  if (previousLayerId !== nextLayerId) {
+    nextIndex.set(nextLayerId, [...(nextIndex.get(nextLayerId) ?? []), nextNode]);
+  }
+  return nextIndex;
+}
+
 function sameOrderedReferences<T extends { id: string }>(items: readonly T[], order: readonly string[], map: ReadonlyMap<string, T>) {
   if (items.length !== order.length) {
     return false;
@@ -184,6 +223,7 @@ export function createGraphStore(nodes: readonly ModelNode[], edges: readonly Ed
     nodeIndexById: orderedIndexMap(nodeOrder),
     edgeIndexById: orderedIndexMap(edgeOrder),
     edgesByNodeId: buildEdgesByNodeId(edgeList),
+    nodesByLayerId: buildNodesByLayerId(nodeList),
     nodeSpatialIndex: buildGraphNodeSpatialIndex(nodeList),
     nodes: nodeList,
     edges: edgeList
@@ -209,6 +249,7 @@ export function graphStoreSetNodes(store: GraphStore, nodes: readonly ModelNode[
     nodeMap,
     nodeOrder: nodeList.map((node) => node.id),
     nodeIndexById: orderedIndexMap(nodeList.map((node) => node.id)),
+    nodesByLayerId: buildNodesByLayerId(nodeList),
     nodeSpatialIndex: buildGraphNodeSpatialIndex(nodeList),
     nodes: nodeList
   };
@@ -278,6 +319,7 @@ export function graphStorePatchNodesFromArray(
   let changed = false;
   let nodeMap = store.nodeMap;
   let nodeList = store.nodes;
+  let nodesByLayerId = store.nodesByLayerId;
   let nodeSpatialIndex = store.nodeSpatialIndex;
   for (const nodeId of nodeIds) {
     const index = store.nodeIndexById.get(nodeId);
@@ -296,15 +338,17 @@ export function graphStorePatchNodesFromArray(
     }
     nodeMap.set(nodeId, nextNode);
     nodeList[index] = nextNode;
+    nodesByLayerId = patchNodeLayerIndex(nodesByLayerId, previousNode, nextNode);
     nodeSpatialIndex = patchNodeSpatialIndex(nodeSpatialIndex, previousNode, nextNode);
   }
-  return changed ? { ...store, nodeMap, nodeSpatialIndex, nodes: nodeList } : store;
+  return changed ? { ...store, nodeMap, nodesByLayerId, nodeSpatialIndex, nodes: nodeList } : store;
 }
 
 export function graphStorePatchNodes(store: GraphStore, nodeUpdates: Iterable<ModelNode>): GraphStore {
   let changed = false;
   let nodeMap = store.nodeMap;
   let nodeList = store.nodes;
+  let nodesByLayerId = store.nodesByLayerId;
   let nodeSpatialIndex = store.nodeSpatialIndex;
   for (const nextNode of nodeUpdates) {
     const index = store.nodeIndexById.get(nextNode.id);
@@ -322,9 +366,10 @@ export function graphStorePatchNodes(store: GraphStore, nodeUpdates: Iterable<Mo
     }
     nodeMap.set(nextNode.id, nextNode);
     nodeList[index] = nextNode;
+    nodesByLayerId = patchNodeLayerIndex(nodesByLayerId, previousNode, nextNode);
     nodeSpatialIndex = patchNodeSpatialIndex(nodeSpatialIndex, previousNode, nextNode);
   }
-  return changed ? { ...store, nodeMap, nodeSpatialIndex, nodes: nodeList } : store;
+  return changed ? { ...store, nodeMap, nodesByLayerId, nodeSpatialIndex, nodes: nodeList } : store;
 }
 
 export function graphStorePatchEdgesFromArray(
