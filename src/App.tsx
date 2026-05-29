@@ -552,6 +552,8 @@ const MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES = 5;
 const ORIGINAL_POSITION_REROUTE_PADDING = 64;
 const MOVE_ROUTE_LOCAL_SEARCH_PADDING = 96;
 const KEYBOARD_MOVE_COMMIT_DELAY_MS = 160;
+const KEYBOARD_MOVE_REPEAT_RATE_PER_SECOND = 30;
+const KEYBOARD_MOVE_FRAME_INTERVAL_MS = 1000 / KEYBOARD_MOVE_REPEAT_RATE_PER_SECOND;
 const ELEMENT_TREE_INITIAL_ITEM_LIMIT = 120;
 const ELEMENT_TREE_ITEM_LIMIT_STEP = 120;
 const TOPOLOGY_WARNING_PAGE_SIZE = 50;
@@ -3370,7 +3372,12 @@ export function App() {
   const nodeTerminalSnapTargetRef = useRef<NodeTerminalSnapTarget | null>(null);
   const pendingNodeDragMoveRef = useRef<{ point: Point; ctrlKey: boolean; shiftKey: boolean } | null>(null);
   const nodeDragMoveFrameRef = useRef<number | null>(null);
-  const keyboardMoveCommitTimerRef = useRef<number | null>(null);
+  const pendingKeyboardMoveDeltaRef = useRef<Point | null>(null);
+  const keyboardMoveActiveKeyDeltasRef = useRef<Map<string, Point>>(new Map());
+  const keyboardMoveLastFrameTimeRef = useRef<number | null>(null);
+  const keyboardMoveFrameElapsedMsRef = useRef(0);
+  const keyboardMoveFrameRef = useRef<number | null>(null);
+  const keyboardMoveCommitCancelRef = useRef<(() => void) | null>(null);
   const dragUndoCapturedRef = useRef(false);
   const cachedRoutedEdgesRef = useRef<RoutedEdge[]>([]);
   const cachedRouteStoreRef = useRef<RouteStore | null>(null);
@@ -5400,10 +5407,16 @@ export function App() {
         window.cancelAnimationFrame(canvasVisibleViewBoxFrameRef.current);
         canvasVisibleViewBoxFrameRef.current = null;
       }
-      if (keyboardMoveCommitTimerRef.current !== null) {
-        window.clearTimeout(keyboardMoveCommitTimerRef.current);
-        keyboardMoveCommitTimerRef.current = null;
+      keyboardMoveCommitCancelRef.current?.();
+      keyboardMoveCommitCancelRef.current = null;
+      if (keyboardMoveFrameRef.current !== null) {
+        window.cancelAnimationFrame(keyboardMoveFrameRef.current);
+        keyboardMoveFrameRef.current = null;
       }
+      keyboardMoveActiveKeyDeltasRef.current.clear();
+      keyboardMoveLastFrameTimeRef.current = null;
+      keyboardMoveFrameElapsedMsRef.current = 0;
+      pendingKeyboardMoveDeltaRef.current = null;
     };
   }, []);
 
@@ -5767,21 +5780,21 @@ export function App() {
         }
       } else if (isCanvasShortcutTarget && event.key === "ArrowLeft") {
         event.preventDefault();
-        nudgeSelectionByKeyboard(-keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6), 0);
+        nudgeSelectionByKeyboard(event.key, -keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6), 0, event.repeat);
       } else if (isCanvasShortcutTarget && event.key === "ArrowRight") {
         event.preventDefault();
-        nudgeSelectionByKeyboard(keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6), 0);
+        nudgeSelectionByKeyboard(event.key, keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6), 0, event.repeat);
       } else if (isCanvasShortcutTarget && event.key === "ArrowUp") {
         event.preventDefault();
-        nudgeSelectionByKeyboard(0, -keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6));
+        nudgeSelectionByKeyboard(event.key, 0, -keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6), event.repeat);
       } else if (isCanvasShortcutTarget && event.key === "ArrowDown") {
         event.preventDefault();
-        nudgeSelectionByKeyboard(0, keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6));
+        nudgeSelectionByKeyboard(event.key, 0, keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6), event.repeat);
       }
     };
     const handleKeyUp = (event: KeyboardEvent) => {
       if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "ArrowUp" || event.key === "ArrowDown") {
-        finishKeyboardMove();
+        releaseKeyboardMoveKey(event.key);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -7313,14 +7326,24 @@ export function App() {
   };
 
   const clearKeyboardMoveCommitSchedule = () => {
-    if (keyboardMoveCommitTimerRef.current !== null) {
-      window.clearTimeout(keyboardMoveCommitTimerRef.current);
-      keyboardMoveCommitTimerRef.current = null;
+    keyboardMoveCommitCancelRef.current?.();
+    keyboardMoveCommitCancelRef.current = null;
+  };
+
+  const clearKeyboardNudgeSchedule = () => {
+    pendingKeyboardMoveDeltaRef.current = null;
+    keyboardMoveActiveKeyDeltasRef.current.clear();
+    keyboardMoveLastFrameTimeRef.current = null;
+    keyboardMoveFrameElapsedMsRef.current = 0;
+    if (keyboardMoveFrameRef.current !== null) {
+      window.cancelAnimationFrame(keyboardMoveFrameRef.current);
+      keyboardMoveFrameRef.current = null;
     }
   };
 
   const clearDraggingMoveState = () => {
     clearNodeDragMoveSchedule();
+    clearKeyboardNudgeSchedule();
     clearKeyboardMoveCommitSchedule();
     draggingRef.current = null;
     setDragging(null);
@@ -7513,6 +7536,14 @@ export function App() {
 
   const finishKeyboardMove = () => {
     clearKeyboardMoveCommitSchedule();
+    keyboardMoveActiveKeyDeltasRef.current.clear();
+    keyboardMoveLastFrameTimeRef.current = null;
+    keyboardMoveFrameElapsedMsRef.current = 0;
+    flushPendingKeyboardMove(false);
+    if (keyboardMoveFrameRef.current !== null) {
+      window.cancelAnimationFrame(keyboardMoveFrameRef.current);
+      keyboardMoveFrameRef.current = null;
+    }
     const activeDragging = draggingRef.current ?? dragging;
     if (activeDragging?.source !== "keyboard") {
       return;
@@ -7522,13 +7553,132 @@ export function App() {
 
   const scheduleKeyboardMoveCommit = () => {
     clearKeyboardMoveCommitSchedule();
-    keyboardMoveCommitTimerRef.current = window.setTimeout(() => {
-      keyboardMoveCommitTimerRef.current = null;
+    keyboardMoveCommitCancelRef.current = scheduleIdleWork(() => {
+      keyboardMoveCommitCancelRef.current = null;
       finishKeyboardMove();
-    }, KEYBOARD_MOVE_COMMIT_DELAY_MS);
+    }, KEYBOARD_MOVE_COMMIT_DELAY_MS, 1200);
   };
 
-  const startKeyboardMoveSession = () => {
+  const applyKeyboardMoveDelta = (requestedDelta: Point, renderPreview = true, logBoundary = true) => {
+    const activeDragging = draggingRef.current;
+    if (activeDragging?.source !== "keyboard") {
+      return false;
+    }
+    const previousDelta = activeDragging.currentDelta ?? { x: 0, y: 0 };
+    const boundedDelta = boundedDeltaForMoveGeometry(
+      activeDragging.nodeIds,
+      activeDragging.edgeIds,
+      activeDragging.affectedEdges,
+      activeDragging.originalPositions,
+      activeDragging.originalEdgePoints,
+      activeDragging.originalRoutePoints,
+      requestedDelta.x,
+      requestedDelta.y,
+      previousDelta
+    );
+    if (boundedDelta.x === previousDelta.x && boundedDelta.y === previousDelta.y) {
+      if (logBoundary) {
+        writeOperationLog("移动已到显示边界，联络线或图元接近边界，已停止移动");
+      }
+      return false;
+    }
+    if (!activeDragging.historyCaptured && !dragUndoCapturedRef.current) {
+      pushUndoSnapshot(true, false);
+      dragUndoCapturedRef.current = true;
+    }
+    const nextDragging = {
+      ...activeDragging,
+      currentDelta: boundedDelta,
+      historyCaptured: true
+    };
+    draggingRef.current = nextDragging;
+    if (renderPreview) {
+      setDragging((current) => (current?.source === "keyboard" || current === null ? nextDragging : current));
+      if (keyboardMoveActiveKeyDeltasRef.current.size === 0) {
+        scheduleKeyboardMoveCommit();
+      }
+    }
+    return true;
+  };
+
+  const flushPendingKeyboardMove = (renderPreview = true) => {
+    const pendingDelta = pendingKeyboardMoveDeltaRef.current;
+    if (!pendingDelta) {
+      return false;
+    }
+    pendingKeyboardMoveDeltaRef.current = null;
+    if (keyboardMoveFrameRef.current !== null) {
+      window.cancelAnimationFrame(keyboardMoveFrameRef.current);
+      keyboardMoveFrameRef.current = null;
+    }
+    return applyKeyboardMoveDelta(pendingDelta, renderPreview, keyboardMoveActiveKeyDeltasRef.current.size === 0);
+  };
+
+  const keyboardMoveActiveFrameDelta = (elapsedMs: number) => {
+    if (elapsedMs <= 0 || keyboardMoveActiveKeyDeltasRef.current.size === 0) {
+      return null;
+    }
+    let dx = 0;
+    let dy = 0;
+    for (const delta of keyboardMoveActiveKeyDeltasRef.current.values()) {
+      dx += delta.x;
+      dy += delta.y;
+    }
+    if (dx === 0 && dy === 0) {
+      return null;
+    }
+    const multiplier = (elapsedMs / 1000) * KEYBOARD_MOVE_REPEAT_RATE_PER_SECOND;
+    return { x: dx * multiplier, y: dy * multiplier };
+  };
+
+  const appendPendingKeyboardMoveDelta = (delta: Point) => {
+    if (delta.x === 0 && delta.y === 0) {
+      return;
+    }
+    const baseDelta = pendingKeyboardMoveDeltaRef.current ?? draggingRef.current?.currentDelta ?? { x: 0, y: 0 };
+    pendingKeyboardMoveDeltaRef.current = { x: baseDelta.x + delta.x, y: baseDelta.y + delta.y };
+  };
+
+  const scheduleKeyboardNudgeFrame = () => {
+    if (keyboardMoveFrameRef.current !== null) {
+      return;
+    }
+    keyboardMoveFrameRef.current = window.requestAnimationFrame((timestamp) => {
+      keyboardMoveFrameRef.current = null;
+      const previousTimestamp = keyboardMoveLastFrameTimeRef.current;
+      keyboardMoveLastFrameTimeRef.current = timestamp;
+      const elapsedMs = previousTimestamp === null ? 0 : Math.min(50, timestamp - previousTimestamp);
+      if (elapsedMs > 0) {
+        keyboardMoveFrameElapsedMsRef.current += elapsedMs;
+      }
+      if (keyboardMoveFrameElapsedMsRef.current >= KEYBOARD_MOVE_FRAME_INTERVAL_MS) {
+        const elapsedToApply = keyboardMoveFrameElapsedMsRef.current;
+        keyboardMoveFrameElapsedMsRef.current = 0;
+        const frameDelta = keyboardMoveActiveFrameDelta(elapsedToApply);
+        if (frameDelta) {
+          appendPendingKeyboardMoveDelta(frameDelta);
+        }
+      }
+      flushPendingKeyboardMove(true);
+      if (keyboardMoveActiveKeyDeltasRef.current.size > 0) {
+        scheduleKeyboardNudgeFrame();
+      }
+    });
+  };
+
+  const releaseKeyboardMoveKey = (key: string) => {
+    keyboardMoveActiveKeyDeltasRef.current.delete(key);
+    if (keyboardMoveActiveKeyDeltasRef.current.size === 0) {
+      keyboardMoveLastFrameTimeRef.current = null;
+      keyboardMoveFrameElapsedMsRef.current = 0;
+      flushPendingKeyboardMove(true);
+      if (draggingRef.current?.source === "keyboard") {
+        scheduleKeyboardMoveCommit();
+      }
+    }
+  };
+
+  const startKeyboardMoveSession = (renderInitial = true) => {
     const moveNodeIds = canvasSelectionScope === "direct" ? displaySelectedNodeIds : activeSelectedNodeIds;
     const moveEdgeIds = canvasSelectionScope === "direct" ? displaySelectedEdgeIds : activeSelectedEdgeIds;
     if (moveNodeIds.length === 0) {
@@ -7577,44 +7727,28 @@ export function App() {
     clearNodeDragMoveSchedule();
     dragUndoCapturedRef.current = false;
     draggingRef.current = nextDragging;
-    setDragging(nextDragging);
+    if (renderInitial) {
+      setDragging(nextDragging);
+    }
     return nextDragging;
   };
 
-  const nudgeSelectionByKeyboard = (dx: number, dy: number) => {
-    const activeDragging = startKeyboardMoveSession();
+  const nudgeSelectionByKeyboard = (key: string, dx: number, dy: number, repeated = false) => {
+    clearKeyboardMoveCommitSchedule();
+    const activeDragging = startKeyboardMoveSession(false);
     if (!activeDragging) {
       return;
     }
-    const previousDelta = activeDragging.currentDelta ?? { x: 0, y: 0 };
-    const requestedDelta = { x: previousDelta.x + dx, y: previousDelta.y + dy };
-    const boundedDelta = boundedDeltaForMoveGeometry(
-      activeDragging.nodeIds,
-      activeDragging.edgeIds,
-      activeDragging.affectedEdges,
-      activeDragging.originalPositions,
-      activeDragging.originalEdgePoints,
-      activeDragging.originalRoutePoints,
-      requestedDelta.x,
-      requestedDelta.y,
-      previousDelta
-    );
-    if (boundedDelta.x === previousDelta.x && boundedDelta.y === previousDelta.y) {
-      writeOperationLog("移动已到显示边界，联络线或图元接近边界，已停止移动");
-      return;
+    const wasActive = keyboardMoveActiveKeyDeltasRef.current.has(key);
+    keyboardMoveActiveKeyDeltasRef.current.set(key, { x: dx, y: dy });
+    if (!wasActive && !repeated) {
+      appendPendingKeyboardMoveDelta({ x: dx, y: dy });
+      flushPendingKeyboardMove(true);
     }
-    if (!activeDragging.historyCaptured && !dragUndoCapturedRef.current) {
-      pushUndoSnapshot(true, false);
-      dragUndoCapturedRef.current = true;
+    if (keyboardMoveLastFrameTimeRef.current === null) {
+      keyboardMoveLastFrameTimeRef.current = performance.now();
     }
-    const nextDragging = {
-      ...activeDragging,
-      currentDelta: boundedDelta,
-      historyCaptured: true
-    };
-    draggingRef.current = nextDragging;
-    setDragging((current) => (current?.source === "keyboard" ? nextDragging : current));
-    scheduleKeyboardMoveCommit();
+    scheduleKeyboardNudgeFrame();
   };
 
   const moveSelection = (dx: number, dy: number) => {

@@ -117,14 +117,46 @@ describe("graph inspector panel", () => {
     const keyboardMoveStart = source.indexOf("const finishKeyboardMove");
     const keyboardMoveEnd = source.indexOf("const moveSelection", keyboardMoveStart);
     const keyboardMoveBlock = source.slice(keyboardMoveStart, keyboardMoveEnd);
+    const keyboardNudgeStart = source.indexOf("const nudgeSelectionByKeyboard");
+    const keyboardNudgeEnd = source.indexOf("const moveSelection", keyboardNudgeStart);
+    const keyboardNudgeBlock = source.slice(keyboardNudgeStart, keyboardNudgeEnd);
+    const keyboardReleaseStart = source.indexOf("const releaseKeyboardMoveKey");
+    const keyboardReleaseEnd = source.indexOf("const startKeyboardMoveSession", keyboardReleaseStart);
+    const keyboardReleaseBlock = source.slice(keyboardReleaseStart, keyboardReleaseEnd);
 
     expect(keyHandlerBlock).toContain("nudgeSelectionByKeyboard(");
     expect(keyHandlerBlock).not.toContain("moveSelection(");
+    expect(source).toContain("const pendingKeyboardMoveDeltaRef");
+    expect(source).toContain("const keyboardMoveActiveKeyDeltasRef");
+    expect(source).toContain("const keyboardMoveLastFrameTimeRef");
+    expect(source).toContain("const keyboardMoveFrameElapsedMsRef");
+    expect(source).toContain("const keyboardMoveFrameRef");
+    expect(source).toContain("const keyboardMoveCommitCancelRef");
+    expect(keyHandlerBlock).toContain("event.repeat");
+    expect(keyHandlerBlock).toContain("releaseKeyboardMoveKey(event.key)");
     expect(keyboardMoveBlock).toContain("startKeyboardMoveSession");
+    expect(keyboardMoveBlock).toContain("startKeyboardMoveSession(false)");
+    expect(keyboardMoveBlock).toContain("scheduleKeyboardNudgeFrame");
+    expect(keyboardMoveBlock).toContain("window.requestAnimationFrame");
+    expect(keyboardMoveBlock).toContain("flushPendingKeyboardMove(false)");
+    expect(keyboardMoveBlock).toContain("keyboardMoveActiveFrameDelta");
+    expect(keyboardMoveBlock).toContain("KEYBOARD_MOVE_REPEAT_RATE_PER_SECOND");
+    expect(keyboardMoveBlock).toContain("KEYBOARD_MOVE_FRAME_INTERVAL_MS");
+    expect(keyboardMoveBlock).toContain("keyboardMoveFrameElapsedMsRef.current");
+    expect(keyboardMoveBlock).toContain("keyboardMoveActiveKeyDeltasRef.current.size > 0");
+    expect(keyboardMoveBlock).toContain("keyboardMoveActiveKeyDeltasRef.current.size === 0");
     expect(keyboardMoveBlock).toContain("pushUndoSnapshot(true, false)");
     expect(keyboardMoveBlock).toContain("setDragging");
     expect(keyboardMoveBlock).toContain("scheduleKeyboardMoveCommit");
+    expect(keyboardMoveBlock).toContain("scheduleIdleWork");
     expect(keyboardMoveBlock).toContain("finishKeyboardMove");
+    expect(keyboardMoveBlock).toContain("flushPendingKeyboardMove(true)");
+    expect(keyboardMoveBlock).toContain("clearKeyboardMoveCommitSchedule();");
+    expect(keyboardMoveBlock).toContain("current?.source === \"keyboard\" || current === null");
+    expect(keyboardReleaseBlock).toContain("scheduleKeyboardMoveCommit();");
+    expect(keyboardReleaseBlock).not.toContain("finishKeyboardMove();");
+    expect(keyboardNudgeBlock).not.toContain("boundedDeltaForMoveGeometry");
+    expect(keyboardNudgeBlock).not.toContain("setDragging");
   });
 
   test("manages custom component libraries from the new-device manager tree", async () => {
