@@ -1603,4 +1603,33 @@ describe("graph inspector panel", () => {
     expect(serverSource).toContain("writeDeviceLibraryConfig");
     expect(serverSource).toContain('url.pathname === "/api/device-library"');
   });
+
+  test("keeps backend scheme persistence helpers self contained", async () => {
+    const serverSource = await readServerSource();
+    const inferStart = serverSource.indexOf("function inferESection");
+    const inferEnd = serverSource.indexOf("function legacyValue", inferStart);
+    const inferBlock = serverSource.slice(inferStart, inferEnd);
+    const topologyStart = serverSource.indexOf("function buildTopologyNodeDevices");
+    const topologyEnd = serverSource.indexOf("function buildDeviceParameterFile", topologyStart);
+    const topologyBlock = serverSource.slice(topologyStart, topologyEnd);
+    const electricalTopologyStart = serverSource.indexOf("function calculateElectricalTopology");
+    const electricalTopologyEnd = serverSource.indexOf("function terminalNodeNumber", electricalTopologyStart);
+    const electricalTopologyBlock = serverSource.slice(electricalTopologyStart, electricalTopologyEnd);
+    const writeSchemesStart = serverSource.indexOf("async function writeSchemes");
+    const writeSchemesEnd = serverSource.indexOf("async function ensureSettingsStore", writeSchemesStart);
+    const writeSchemesBlock = serverSource.slice(writeSchemesStart, writeSchemesEnd);
+
+    expect(serverSource).toContain("function isStaticKind(kind)");
+    expect(inferBlock).toContain("isStaticKind(kind)");
+    expect(inferBlock).not.toContain("isStaticNode(kind)");
+    expect(electricalTopologyBlock).toContain("if (!numberByTypeAndRoot[type])");
+    expect(electricalTopologyBlock).toContain("numberByTypeAndRoot[type] = new Map();");
+    expect(electricalTopologyBlock).toContain("nextTopologyNumberByType[type] = 1;");
+    expect(topologyBlock).toContain("const group = groups[terminal.type];");
+    expect(topologyBlock).toContain("if (!group) continue;");
+    expect(topologyBlock).not.toContain("groups[terminal.type].get");
+    expect(writeSchemesBlock.indexOf("await writeSchemeFiles(schemes);")).toBeLessThan(
+      writeSchemesBlock.indexOf("await writeTextIfChanged(schemeManifestPath")
+    );
+  });
 });

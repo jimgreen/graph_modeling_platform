@@ -188,8 +188,8 @@ async function writeTextIfChanged(filePath, content) {
 
 async function writeSchemes(schemes) {
   await ensureSchemeStore();
-  await writeTextIfChanged(schemeManifestPath, JSON.stringify(schemes, null, 2));
   await writeSchemeFiles(schemes);
+  await writeTextIfChanged(schemeManifestPath, JSON.stringify(schemes, null, 2));
 }
 
 async function ensureSettingsStore() {
@@ -593,8 +593,12 @@ function isBusNode(node) {
   return node?.kind === "ac-bus" || node?.kind === "dc-bus";
 }
 
+function isStaticKind(kind) {
+  return String(kind ?? "").startsWith("static-");
+}
+
 function isStaticNode(node) {
-  return String(node?.kind ?? "").startsWith("static-");
+  return isStaticKind(node?.kind);
 }
 
 function getTerminal(node, terminalId) {
@@ -650,6 +654,10 @@ function calculateElectricalTopology(nodes = [], edges = []) {
   const nextTopologyNumberByType = { ac: 1, dc: 1 };
   const numberByTypeAndRoot = { ac: new Map(), dc: new Map() };
   const getTopologyNumber = (key, type) => {
+    if (!numberByTypeAndRoot[type]) {
+      numberByTypeAndRoot[type] = new Map();
+      nextTopologyNumberByType[type] = 1;
+    }
     const root = find(key);
     const numberByRoot = numberByTypeAndRoot[type];
     const existing = numberByRoot.get(root);
@@ -725,9 +733,11 @@ function buildTopologyNodeDevices(nodes) {
     if (isStaticNode(node)) continue;
     for (const terminal of node.terminals ?? []) {
       if (!terminal.nodeNumber) continue;
-      const candidates = groups[terminal.type].get(terminal.nodeNumber) ?? [];
+      const group = groups[terminal.type];
+      if (!group) continue;
+      const candidates = group.get(terminal.nodeNumber) ?? [];
       candidates.push({ node, terminal });
-      groups[terminal.type].set(terminal.nodeNumber, candidates);
+      group.set(terminal.nodeNumber, candidates);
     }
   }
 
