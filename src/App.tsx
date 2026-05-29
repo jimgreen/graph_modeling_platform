@@ -3589,8 +3589,9 @@ export function App() {
   const visibleProject = useMemo(() => {
     const filtered = filterProjectByVisibleLayers(nodes, edges, layers);
     const visibleProjectNodesMatchGraphStoreOrder =
-      filtered.nodes.length === nodes.length &&
-      filtered.nodes.every((node, index) => node === nodes[index]);
+      filtered.nodes === nodes ||
+      (filtered.nodes.length === nodes.length &&
+        filtered.nodes.every((node, index) => node === nodes[index]));
     return {
       ...filtered,
       nodeSpatialIndex: visibleProjectNodesMatchGraphStoreOrder
@@ -3600,11 +3601,23 @@ export function App() {
   }, [edges, graphStore.nodeSpatialIndex, layers, nodes]);
   const visibleNodes = visibleProject.nodes;
   const visibleEdges = visibleProject.edges;
-  const visibleNodeById = useMemo(() => new Map(visibleNodes.map((node) => [node.id, node])), [visibleNodes]);
-  const visibleNodeIdSet = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes]);
+  const visibleNodeById = useMemo(
+    () => (visibleNodes === nodes ? graphStore.nodeMap : new Map(visibleNodes.map((node) => [node.id, node]))),
+    [graphStore.nodeMap, nodes, visibleNodes]
+  );
+  const visibleNodeIdSet = useMemo(
+    () => (visibleNodes === nodes ? graphStore.nodeIdSet : new Set(visibleNodes.map((node) => node.id))),
+    [graphStore.nodeIdSet, nodes, visibleNodes]
+  );
   const visibleNodeSpatialIndex = visibleProject.nodeSpatialIndex;
-  const visibleEdgeIdSet = useMemo(() => new Set(visibleEdges.map((edge) => edge.id)), [visibleEdges]);
+  const visibleEdgeIdSet = useMemo(
+    () => (visibleEdges === edges ? graphStore.edgeIdSet : new Set(visibleEdges.map((edge) => edge.id))),
+    [edges, graphStore.edgeIdSet, visibleEdges]
+  );
   const visibleEdgesByTerminalRef = useMemo(() => {
+    if (visibleEdges === edges) {
+      return graphStore.edgesByTerminalRef;
+    }
     const map = new Map<string, Edge[]>();
     const add = (nodeId: string, terminalId: string | undefined, edge: Edge) => {
       if (!terminalId) {
@@ -3623,31 +3636,40 @@ export function App() {
       add(edge.targetId, edge.targetTerminalId, edge);
     }
     return map;
-  }, [visibleEdges]);
-  const activeLayerNodes = useMemo(
-    () =>
-      activeLayer?.visible
-        ? (graphStore.nodesByLayerId.get(activeLayerId) ?? []).filter((node) => visibleNodeIdSet.has(node.id))
-        : [],
-    [activeLayer?.visible, activeLayerId, graphStore.nodesByLayerId, visibleNodeIdSet]
+  }, [edges, graphStore.edgesByTerminalRef, visibleEdges]);
+  const activeLayerNodes = useMemo(() => {
+    if (!activeLayer?.visible) {
+      return [];
+    }
+    const layerNodes = graphStore.nodesByLayerId.get(activeLayerId) ?? [];
+    return visibleNodes === nodes && layerNodes.length === nodes.length ? visibleNodes : visibleNodes === nodes ? layerNodes : layerNodes.filter((node) => visibleNodeIdSet.has(node.id));
+  }, [activeLayer?.visible, activeLayerId, graphStore.nodesByLayerId, nodes, visibleNodeIdSet, visibleNodes]);
+  const activeLayerNodeIdSet = useMemo(
+    () => (activeLayerNodes === visibleNodes ? visibleNodeIdSet : new Set(activeLayerNodes.map((node) => node.id))),
+    [activeLayerNodes, visibleNodeIdSet, visibleNodes]
   );
-  const activeLayerNodeIdSet = useMemo(() => new Set(activeLayerNodes.map((node) => node.id)), [activeLayerNodes]);
-  const activeLayerEdges = useMemo(() => {
-    const collected = new Map<string, Edge>();
-    for (const node of activeLayerNodes) {
-      for (const edge of edgesByNodeId.get(node.id) ?? []) {
-        if (visibleEdgeIdSet.has(edge.id)) {
-          collected.set(edge.id, edge);
+  const activeLayerEdges = useMemo(
+    () => activeLayerNodes === visibleNodes ? visibleEdges : (() => {
+      const collected = new Map<string, Edge>();
+      for (const node of activeLayerNodes) {
+        for (const edge of edgesByNodeId.get(node.id) ?? []) {
+          if (visibleEdgeIdSet.has(edge.id)) {
+            collected.set(edge.id, edge);
+          }
         }
       }
-    }
-    return Array.from(collected.values()).sort(
-      (first, second) =>
-        (graphStore.edgeIndexById.get(first.id) ?? Number.MAX_SAFE_INTEGER) -
-        (graphStore.edgeIndexById.get(second.id) ?? Number.MAX_SAFE_INTEGER)
-    );
-  }, [activeLayerNodes, edgesByNodeId, graphStore.edgeIndexById, visibleEdgeIdSet]);
-  const activeLayerEdgeIdSet = useMemo(() => new Set(activeLayerEdges.map((edge) => edge.id)), [activeLayerEdges]);
+      return Array.from(collected.values()).sort(
+        (first, second) =>
+          (graphStore.edgeIndexById.get(first.id) ?? Number.MAX_SAFE_INTEGER) -
+          (graphStore.edgeIndexById.get(second.id) ?? Number.MAX_SAFE_INTEGER)
+      );
+    })(),
+    [activeLayerNodes, edgesByNodeId, graphStore.edgeIndexById, visibleEdgeIdSet, visibleEdges, visibleNodes]
+  );
+  const activeLayerEdgeIdSet = useMemo(
+    () => (activeLayerEdges === visibleEdges ? visibleEdgeIdSet : new Set(activeLayerEdges.map((edge) => edge.id))),
+    [activeLayerEdges, visibleEdgeIdSet, visibleEdges]
+  );
   const activeLayerGroups = useMemo(
     () => normalizeModelGroups(groups, activeLayerNodes, activeLayerEdges),
     [activeLayerEdges, activeLayerNodes, groups]
@@ -4324,6 +4346,9 @@ export function App() {
     (routedEdgeIndexById.get(first.edgeId) ?? Number.MAX_SAFE_INTEGER) -
     (routedEdgeIndexById.get(second.edgeId) ?? Number.MAX_SAFE_INTEGER);
   const viewportRoutedEdges = useMemo(() => {
+    if (activeSelectedEdgeSet.size === 0) {
+      return queryRouteSpatialIndex(routedEdgeSpatialIndex, renderViewportBounds).sort(routeRenderOrder);
+    }
     const regularRoutes: RoutedEdge[] = [];
     const selectedRoutes: RoutedEdge[] = [];
     const selectedRouteIds = new Set<string>();
@@ -4377,16 +4402,19 @@ export function App() {
         (graphStore.nodeIndexById.get(second.id) ?? Number.MAX_SAFE_INTEGER)
     );
   }, [connectSource?.nodeId, draggingNodeIdSet, edgeById, graphStore.nodeIndexById, renderViewportBounds, selectedNodeIdSet, viewportRoutedEdges, visibleNodeById, visibleNodeIdSet, visibleNodeSpatialIndex]);
-  const activeLayerRoutedEdges = useMemo(() => {
-    const routes: RoutedEdge[] = [];
-    activeLayerEdgeIdSet.forEach((edgeId) => {
-      const route = routedEdgeById.get(edgeId);
-      if (route) {
-        routes.push(route);
-      }
-    });
-    return routes.sort(routeRenderOrder);
-  }, [activeLayerEdgeIdSet, routedEdgeById, routedEdgeIndexById]);
+  const activeLayerRoutedEdges = useMemo(
+    () => activeLayerEdges === visibleEdges ? routedEdges : (() => {
+      const routes: RoutedEdge[] = [];
+      activeLayerEdgeIdSet.forEach((edgeId) => {
+        const route = routedEdgeById.get(edgeId);
+        if (route) {
+          routes.push(route);
+        }
+      });
+      return routes.sort(routeRenderOrder);
+    })(),
+    [activeLayerEdgeIdSet, activeLayerEdges, routedEdgeById, routedEdgeIndexById, routedEdges, visibleEdges]
+  );
   const markRouteEdgesDirty = (edgeIds: Iterable<string | undefined>) => {
     const next = new Set(pendingRouteEdgeIdsRef.current);
     for (const edgeId of edgeIds) {

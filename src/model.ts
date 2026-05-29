@@ -6395,7 +6395,24 @@ export function normalizeProjectLayers(project: ProjectFile): ProjectFile {
 export function filterProjectByVisibleLayers(nodes: ModelNode[], edges: Edge[], layers?: ModelLayer[]) {
   const normalizedLayers = normalizeModelLayers(layers, nodes);
   const layerOrder = new Map(normalizedLayers.map((layer, index) => [layer.id, index]));
-  const visibleLayerIds = new Set(normalizedLayers.filter((layer) => layer.visible).map((layer) => layer.id));
+  const visibleLayers = normalizedLayers.filter((layer) => layer.visible);
+  const allLayersVisible = visibleLayers.length === normalizedLayers.length;
+  if (allLayersVisible) {
+    let alreadyInLayerOrder = true;
+    let previousLayerOrder = -1;
+    for (const node of nodes) {
+      const currentLayerOrder = layerOrder.get(node.layerId ?? DEFAULT_MODEL_LAYER_ID) ?? 0;
+      if (currentLayerOrder < previousLayerOrder) {
+        alreadyInLayerOrder = false;
+        break;
+      }
+      previousLayerOrder = currentLayerOrder;
+    }
+    if (alreadyInLayerOrder) {
+      return { nodes, edges };
+    }
+  }
+  const visibleLayerIds = new Set(visibleLayers.map((layer) => layer.id));
   const visibleNodes = nodes
     .filter((node) => visibleLayerIds.has(node.layerId ?? DEFAULT_MODEL_LAYER_ID))
     .sort((left, right) =>
@@ -6967,6 +6984,7 @@ const ROUTE_LANE_SEGMENT_MARGIN = 36;
 const ROUTE_LANE_OFFSETS = [24, 56, 96, 144];
 const ROUTE_AVOIDED_SEGMENT_OFFSETS = [18, 36, 54];
 const ROUTE_MAX_LANES_PER_AXIS = 24;
+const ROUTE_MAX_LANE_PAIRS = 128;
 const ROUTE_TINY_DOGLEG_LIMIT = 18;
 const ROUTE_MIN_MOVABLE_SEGMENT_LENGTH = 18;
 const ROUTE_SHARED_ENDPOINT_STUB_LIMIT = 36;
@@ -7934,6 +7952,41 @@ function prioritizeLaneValues(values: number[], anchors: number[], maxCount = RO
   return uniqueSorted([...required, ...optional.slice(0, Math.max(0, maxCount - required.length))]);
 }
 
+function prioritizeLanePairs(
+  xs: number[],
+  ys: number[],
+  startOut: Point,
+  endOut: Point,
+  maxCount = ROUTE_MAX_LANE_PAIRS
+) {
+  const midX = Math.round((startOut.x + endOut.x) / 2);
+  const midY = Math.round((startOut.y + endOut.y) / 2);
+  const pairScore = (x: number, y: number) => {
+    const horizontalFirst = compactRoute([startOut, { x, y: startOut.y }, { x, y }, { x: endOut.x, y }, endOut]);
+    const verticalFirst = compactRoute([startOut, { x: startOut.x, y }, { x, y }, { x, y: endOut.y }, endOut]);
+    const horizontalScore = routeManhattanLength(horizontalFirst) * 4 + routeBendCount(horizontalFirst) * 64;
+    const verticalScore = routeManhattanLength(verticalFirst) * 4 + routeBendCount(verticalFirst) * 64;
+    return Math.min(horizontalScore, verticalScore) + Math.abs(x - midX) + Math.abs(y - midY);
+  };
+  const pairs: { x: number; y: number; score: number }[] = [];
+  for (const x of xs) {
+    for (const y of ys) {
+      pairs.push({ x, y, score: pairScore(x, y) });
+    }
+  }
+  if (pairs.length <= maxCount) {
+    return pairs;
+  }
+  return pairs
+    .sort((first, second) =>
+      first.score - second.score ||
+      Math.abs(first.x - midX) + Math.abs(first.y - midY) - (Math.abs(second.x - midX) + Math.abs(second.y - midY)) ||
+      first.x - second.x ||
+      first.y - second.y
+    )
+    .slice(0, maxCount);
+}
+
 function candidateLanes(
   startOut: Point,
   endOut: Point,
@@ -8012,6 +8065,7 @@ function buildRouteCandidates(
   endpointNodeIds?: ReadonlySet<string>
 ) {
   const { xs, ys } = candidateLanes(startOut, endOut, blockers, avoidedSegments, bounds, endpointNodeIds);
+  const lanePairs = prioritizeLanePairs(xs, ys, startOut, endOut);
   const candidates: Point[][] = [
     [startOut, { x: endOut.x, y: startOut.y }, endOut],
     [startOut, { x: startOut.x, y: endOut.y }, endOut]
@@ -8023,11 +8077,9 @@ function buildRouteCandidates(
   for (const y of ys) {
     candidates.push([startOut, { x: startOut.x, y }, { x: endOut.x, y }, endOut]);
   }
-  for (const x of xs) {
-    for (const y of ys) {
-      candidates.push([startOut, { x, y: startOut.y }, { x, y }, { x: endOut.x, y }, endOut]);
-      candidates.push([startOut, { x: startOut.x, y }, { x, y }, { x, y: endOut.y }, endOut]);
-    }
+  for (const { x, y } of lanePairs) {
+    candidates.push([startOut, { x, y: startOut.y }, { x, y }, { x: endOut.x, y }, endOut]);
+    candidates.push([startOut, { x: startOut.x, y }, { x, y }, { x, y: endOut.y }, endOut]);
   }
 
   return candidates.map(compactRoute);

@@ -446,6 +446,24 @@ describe("power system model", () => {
     expect(filtered.edges.map((item) => item.id)).toEqual(["edge-visible"]);
   });
 
+  test("reuses graph arrays when every layer is visible and already ordered", () => {
+    const primary = { ...createDefaultNode("ac-source", { x: 100, y: 100 }), id: "primary", layerId: DEFAULT_MODEL_LAYER_ID };
+    const visibleExtra = { ...createDefaultNode("ac-load", { x: 500, y: 100 }), id: "visible-extra", layerId: "layer-extra" };
+    const nodes = [primary, visibleExtra];
+    const edges = [
+      { id: "edge-visible", sourceId: primary.id, targetId: visibleExtra.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
+    ];
+    const layers = [
+      { id: DEFAULT_MODEL_LAYER_ID, name: "默认图层", visible: true },
+      { id: "layer-extra", name: "叠加图层", visible: true }
+    ];
+
+    const filtered = filterProjectByVisibleLayers(nodes, edges, layers);
+
+    expect(filtered.nodes).toBe(nodes);
+    expect(filtered.edges).toBe(edges);
+  });
+
   test("creates uniquely named model layers", () => {
     const existing = [
       { id: DEFAULT_MODEL_LAYER_ID, name: "默认图层", visible: true },

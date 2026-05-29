@@ -11,6 +11,7 @@ export type GraphNodeSpatialIndex = {
   bucketSize: number;
   buckets: Map<string, ModelNode[]>;
   nodeBucketKeysById: Map<string, string[]>;
+  nodeBoundsById: Map<string, GraphRenderBounds>;
 };
 
 export type GraphStore = {
@@ -20,7 +21,10 @@ export type GraphStore = {
   edgeOrder: string[];
   nodeIndexById: Map<string, number>;
   edgeIndexById: Map<string, number>;
+  nodeIdSet: Set<string>;
+  edgeIdSet: Set<string>;
   edgesByNodeId: Map<string, Edge[]>;
+  edgesByTerminalRef: Map<string, Edge[]>;
   nodesByLayerId: Map<string, ModelNode[]>;
   nodeSpatialIndex: GraphNodeSpatialIndex;
   nodes: ModelNode[];
@@ -66,8 +70,11 @@ export function buildGraphNodeSpatialIndex(
 ): GraphNodeSpatialIndex {
   const buckets = new Map<string, ModelNode[]>();
   const nodeBucketKeysById = new Map<string, string[]>();
+  const nodeBoundsById = new Map<string, GraphRenderBounds>();
   for (const node of nodes) {
-    const range = spatialBucketRange(graphNodeRenderBounds(node), bucketSize);
+    const bounds = graphNodeRenderBounds(node);
+    nodeBoundsById.set(node.id, bounds);
+    const range = spatialBucketRange(bounds, bucketSize);
     const nodeBucketKeys: string[] = [];
     for (let x = range.left; x <= range.right; x += 1) {
       for (let y = range.top; y <= range.bottom; y += 1) {
@@ -83,7 +90,7 @@ export function buildGraphNodeSpatialIndex(
     }
     nodeBucketKeysById.set(node.id, nodeBucketKeys);
   }
-  return { bucketSize, buckets, nodeBucketKeysById };
+  return { bucketSize, buckets, nodeBucketKeysById, nodeBoundsById };
 }
 
 function patchNodeSpatialIndex(index: GraphNodeSpatialIndex, previousNode: ModelNode, nextNode: ModelNode): GraphNodeSpatialIndex {
@@ -101,7 +108,9 @@ function patchNodeSpatialIndex(index: GraphNodeSpatialIndex, previousNode: Model
     }
   }
   const nextBucketKeysById = new Map(index.nodeBucketKeysById);
-  const range = spatialBucketRange(graphNodeRenderBounds(nextNode), index.bucketSize);
+  const nextBoundsById = new Map(index.nodeBoundsById);
+  const nextBounds = graphNodeRenderBounds(nextNode);
+  const range = spatialBucketRange(nextBounds, index.bucketSize);
   const nextBucketKeys: string[] = [];
   for (let x = range.left; x <= range.right; x += 1) {
     for (let y = range.top; y <= range.bottom; y += 1) {
@@ -111,7 +120,8 @@ function patchNodeSpatialIndex(index: GraphNodeSpatialIndex, previousNode: Model
     }
   }
   nextBucketKeysById.set(nextNode.id, nextBucketKeys);
-  return { ...index, buckets, nodeBucketKeysById: nextBucketKeysById };
+  nextBoundsById.set(nextNode.id, nextBounds);
+  return { ...index, buckets, nodeBucketKeysById: nextBucketKeysById, nodeBoundsById: nextBoundsById };
 }
 
 export function queryGraphStoreNodeSpatialIndex(storeOrIndex: GraphStore | GraphNodeSpatialIndex, bounds: GraphRenderBounds): ModelNode[] {
@@ -126,7 +136,7 @@ export function queryGraphStoreNodeSpatialIndex(storeOrIndex: GraphStore | Graph
         continue;
       }
       for (const node of bucket) {
-        if (seen.has(node.id) || !boxesIntersect(graphNodeRenderBounds(node), bounds)) {
+        if (seen.has(node.id) || !boxesIntersect(index.nodeBoundsById.get(node.id) ?? graphNodeRenderBounds(node), bounds)) {
           continue;
         }
         seen.add(node.id);
@@ -155,6 +165,43 @@ function buildEdgesByNodeId(edges: readonly Edge[]) {
     add(edge.targetId, edge);
   }
   return map;
+}
+
+const terminalRefKey = (nodeId: string, terminalId: string | undefined) => terminalId ? `${nodeId}:${terminalId}` : "";
+
+function buildEdgesByTerminalRef(edges: readonly Edge[]) {
+  const map = new Map<string, Edge[]>();
+  for (const edge of edges) {
+    addEdgeToTerminalRef(map, edge);
+  }
+  return map;
+}
+
+function removeEdgeFromTerminalRef(map: Map<string, Edge[]>, edge: Edge) {
+  for (const key of [terminalRefKey(edge.sourceId, edge.sourceTerminalId), terminalRefKey(edge.targetId, edge.targetTerminalId)]) {
+    if (!key) {
+      continue;
+    }
+    const bucket = map.get(key);
+    if (!bucket) {
+      continue;
+    }
+    const nextBucket = bucket.filter((item) => item.id !== edge.id);
+    if (nextBucket.length > 0) {
+      map.set(key, nextBucket);
+    } else {
+      map.delete(key);
+    }
+  }
+}
+
+function addEdgeToTerminalRef(map: Map<string, Edge[]>, edge: Edge) {
+  for (const key of [terminalRefKey(edge.sourceId, edge.sourceTerminalId), terminalRefKey(edge.targetId, edge.targetTerminalId)]) {
+    if (!key) {
+      continue;
+    }
+    map.set(key, [...(map.get(key) ?? []), edge]);
+  }
 }
 
 const graphNodeLayerId = (node: ModelNode) => node.layerId ?? DEFAULT_MODEL_LAYER_ID;
@@ -222,7 +269,10 @@ export function createGraphStore(nodes: readonly ModelNode[], edges: readonly Ed
     edgeOrder,
     nodeIndexById: orderedIndexMap(nodeOrder),
     edgeIndexById: orderedIndexMap(edgeOrder),
+    nodeIdSet: new Set(nodeOrder),
+    edgeIdSet: new Set(edgeOrder),
     edgesByNodeId: buildEdgesByNodeId(edgeList),
+    edgesByTerminalRef: buildEdgesByTerminalRef(edgeList),
     nodesByLayerId: buildNodesByLayerId(nodeList),
     nodeSpatialIndex: buildGraphNodeSpatialIndex(nodeList),
     nodes: nodeList,
@@ -244,11 +294,13 @@ export function graphStoreSetNodes(store: GraphStore, nodes: readonly ModelNode[
   }
   const nodeList = Array.from(nodes);
   const nodeMap = new Map(nodeList.map((node) => [node.id, node]));
+  const nodeOrder = nodeList.map((node) => node.id);
   return {
     ...store,
     nodeMap,
-    nodeOrder: nodeList.map((node) => node.id),
-    nodeIndexById: orderedIndexMap(nodeList.map((node) => node.id)),
+    nodeOrder,
+    nodeIndexById: orderedIndexMap(nodeOrder),
+    nodeIdSet: new Set(nodeOrder),
     nodesByLayerId: buildNodesByLayerId(nodeList),
     nodeSpatialIndex: buildGraphNodeSpatialIndex(nodeList),
     nodes: nodeList
@@ -261,12 +313,15 @@ export function graphStoreSetEdges(store: GraphStore, edges: readonly Edge[]): G
   }
   const edgeList = Array.from(edges);
   const edgeMap = new Map(edgeList.map((edge) => [edge.id, edge]));
+  const edgeOrder = edgeList.map((edge) => edge.id);
   return {
     ...store,
     edgeMap,
-    edgeOrder: edgeList.map((edge) => edge.id),
-    edgeIndexById: orderedIndexMap(edgeList.map((edge) => edge.id)),
+    edgeOrder,
+    edgeIndexById: orderedIndexMap(edgeOrder),
+    edgeIdSet: new Set(edgeOrder),
     edgesByNodeId: buildEdgesByNodeId(edgeList),
+    edgesByTerminalRef: buildEdgesByTerminalRef(edgeList),
     edges: edgeList
   };
 }
@@ -384,6 +439,7 @@ export function graphStorePatchEdgesFromArray(
   let edgeMap = store.edgeMap;
   let edgeList = store.edges;
   let edgesByNodeId = store.edgesByNodeId;
+  let edgesByTerminalRef = store.edgesByTerminalRef;
   for (const edgeId of edgeIds) {
     const index = store.edgeIndexById.get(edgeId);
     if (index === undefined) {
@@ -398,6 +454,7 @@ export function graphStorePatchEdgesFromArray(
       edgeMap = new Map(store.edgeMap);
       edgeList = store.edges.slice();
       edgesByNodeId = new Map(store.edgesByNodeId);
+      edgesByTerminalRef = new Map(store.edgesByTerminalRef);
       changed = true;
     }
     edgeMap.set(edgeId, nextEdge);
@@ -406,8 +463,10 @@ export function graphStorePatchEdgesFromArray(
     removeEdgeFromAdjacency(edgesByNodeId, previousEdge.targetId, edgeId);
     addEdgeToAdjacency(edgesByNodeId, nextEdge.sourceId, nextEdge);
     addEdgeToAdjacency(edgesByNodeId, nextEdge.targetId, nextEdge);
+    removeEdgeFromTerminalRef(edgesByTerminalRef, previousEdge);
+    addEdgeToTerminalRef(edgesByTerminalRef, nextEdge);
   }
-  return changed ? { ...store, edgeMap, edgesByNodeId, edges: edgeList } : store;
+  return changed ? { ...store, edgeMap, edgesByNodeId, edgesByTerminalRef, edges: edgeList } : store;
 }
 
 export function graphStorePatchEdges(store: GraphStore, edgeUpdates: Iterable<Edge>): GraphStore {
@@ -415,6 +474,7 @@ export function graphStorePatchEdges(store: GraphStore, edgeUpdates: Iterable<Ed
   let edgeMap = store.edgeMap;
   let edgeList = store.edges;
   let edgesByNodeId = store.edgesByNodeId;
+  let edgesByTerminalRef = store.edgesByTerminalRef;
   for (const nextEdge of edgeUpdates) {
     const index = store.edgeIndexById.get(nextEdge.id);
     if (index === undefined) {
@@ -428,6 +488,7 @@ export function graphStorePatchEdges(store: GraphStore, edgeUpdates: Iterable<Ed
       edgeMap = new Map(store.edgeMap);
       edgeList = store.edges.slice();
       edgesByNodeId = new Map(store.edgesByNodeId);
+      edgesByTerminalRef = new Map(store.edgesByTerminalRef);
       changed = true;
     }
     edgeMap.set(nextEdge.id, nextEdge);
@@ -436,8 +497,10 @@ export function graphStorePatchEdges(store: GraphStore, edgeUpdates: Iterable<Ed
     removeEdgeFromAdjacency(edgesByNodeId, previousEdge.targetId, nextEdge.id);
     addEdgeToAdjacency(edgesByNodeId, nextEdge.sourceId, nextEdge);
     addEdgeToAdjacency(edgesByNodeId, nextEdge.targetId, nextEdge);
+    removeEdgeFromTerminalRef(edgesByTerminalRef, previousEdge);
+    addEdgeToTerminalRef(edgesByTerminalRef, nextEdge);
   }
-  return changed ? { ...store, edgeMap, edgesByNodeId, edges: edgeList } : store;
+  return changed ? { ...store, edgeMap, edgesByNodeId, edgesByTerminalRef, edges: edgeList } : store;
 }
 
 export function graphStoreApplyPatch(store: GraphStore, patch: GraphStorePatch): GraphStore {
@@ -484,7 +547,9 @@ export function graphStoreApplyPatch(store: GraphStore, patch: GraphStorePatch):
     edgeMap,
     edgeOrder,
     edgeIndexById: orderedIndexMap(edgeOrder),
+    edgeIdSet: new Set(edgeOrder),
     edgesByNodeId: buildEdgesByNodeId(edgeList),
+    edgesByTerminalRef: buildEdgesByTerminalRef(edgeList),
     edges: edgeList
   };
 }

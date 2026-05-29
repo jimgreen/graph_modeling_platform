@@ -812,6 +812,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("setCanvasVisibleViewBox(initialVisibleCanvasViewBox(nextCanvasBounds, canvasFrameRef.current))");
     expect(source).not.toContain("expandViewBoxForRendering(viewBox)");
     expect(source).toContain("nodeIntersectsRenderViewport");
+    expect(routeCullBlock).toContain("if (activeSelectedEdgeSet.size === 0)");
     expect(routeCullBlock).toContain("activeSelectedEdgeSet.has(route.edgeId)");
     expect(routeCullBlock).toContain("queryRouteSpatialIndex(routedEdgeSpatialIndex, renderViewportBounds)");
     expect(routeCullBlock).not.toContain("renderedRoutedEdges.filter");
@@ -876,6 +877,10 @@ describe("graph inspector panel", () => {
     const activeLayerBlock = source.slice(activeLayerStart, activeLayerEnd);
 
     expect(activeLayerBlock).toContain("graphStore.nodesByLayerId.get(activeLayerId)");
+    expect(activeLayerBlock).toContain("visibleNodes === nodes && layerNodes.length === nodes.length ? visibleNodes");
+    expect(activeLayerBlock).toContain("activeLayerNodes === visibleNodes ? visibleNodeIdSet");
+    expect(activeLayerBlock).toContain("activeLayerNodes === visibleNodes ? visibleEdges");
+    expect(activeLayerBlock).toContain("activeLayerEdges === visibleEdges ? visibleEdgeIdSet");
     expect(activeLayerBlock).toContain("edgesByNodeId.get(node.id)");
     expect(activeLayerBlock).not.toContain("visibleNodes.filter");
     expect(activeLayerBlock).not.toContain("visibleEdges.filter");
@@ -886,10 +891,29 @@ describe("graph inspector panel", () => {
     const visibleProjectStart = source.indexOf("const visibleProject = useMemo");
     const visibleProjectEnd = source.indexOf("const visibleNodes = visibleProject.nodes", visibleProjectStart);
     const visibleProjectBlock = source.slice(visibleProjectStart, visibleProjectEnd);
+    const visibleIndexStart = source.indexOf("const visibleNodeById = useMemo");
+    const visibleIndexEnd = source.indexOf("const activeLayerNodes = useMemo", visibleIndexStart);
+    const visibleIndexBlock = source.slice(visibleIndexStart, visibleIndexEnd);
 
     expect(visibleProjectBlock).toContain("visibleProjectNodesMatchGraphStoreOrder");
     expect(visibleProjectBlock).toContain("graphStore.nodeSpatialIndex");
     expect(visibleProjectBlock).toContain("buildNodeSpatialIndex(filtered.nodes)");
+    expect(visibleIndexBlock).toContain("visibleNodes === nodes ? graphStore.nodeMap");
+    expect(visibleIndexBlock).toContain("visibleNodes === nodes ? graphStore.nodeIdSet");
+    expect(visibleIndexBlock).toContain("visibleEdges === edges ? graphStore.edgeIdSet");
+    expect(visibleIndexBlock).toContain("if (visibleEdges === edges)");
+    expect(visibleIndexBlock).toContain("return graphStore.edgesByTerminalRef");
+  });
+
+  test("reuses routed edge lists when the active layer covers the visible graph", async () => {
+    const source = await readAppSource();
+    const activeRoutesStart = source.indexOf("const activeLayerRoutedEdges = useMemo");
+    const activeRoutesEnd = source.indexOf("const markRouteEdgesDirty", activeRoutesStart);
+    const activeRoutesBlock = source.slice(activeRoutesStart, activeRoutesEnd);
+
+    expect(activeRoutesBlock).toContain("activeLayerEdges === visibleEdges ? routedEdges");
+    expect(activeRoutesBlock).toContain("activeLayerEdgeIdSet.forEach");
+    expect(activeRoutesBlock).toContain("return routes.sort(routeRenderOrder)");
   });
 
   test("limits full routing to direct path edits and keeps node dragging on the lightweight preview path", async () => {
@@ -1099,11 +1123,19 @@ describe("graph inspector panel", () => {
     const laneStart = source.indexOf("function candidateLanes");
     const laneEnd = source.indexOf("function buildRouteCandidates", laneStart);
     const laneBlock = source.slice(laneStart, laneEnd);
+    const candidateStart = source.indexOf("function buildRouteCandidates");
+    const candidateEnd = source.indexOf("function selectRouteCandidate", candidateStart);
+    const candidateBlock = source.slice(candidateStart, candidateEnd);
 
     expect(source).toContain("const ROUTE_MAX_LANES_PER_AXIS");
+    expect(source).toContain("const ROUTE_MAX_LANE_PAIRS");
     expect(source).toContain("function prioritizeLaneValues");
+    expect(source).toContain("function prioritizeLanePairs");
     expect(laneBlock).toContain("prioritizeLaneValues");
+    expect(candidateBlock).toContain("prioritizeLanePairs(xs, ys");
+    expect(candidateBlock).toContain("for (const { x, y } of lanePairs)");
     expect(laneBlock).not.toContain("return { xs: uniqueSorted(xValues), ys: uniqueSorted(yValues) };");
+    expect(candidateBlock).not.toContain("for (const x of xs) {\n    for (const y of ys)");
   });
 
   test("defers full terminal overlap detection off the drag release frame", async () => {
