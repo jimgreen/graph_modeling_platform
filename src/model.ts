@@ -624,7 +624,7 @@ function isContainerTransformerRelationKey(fieldName: string): boolean {
   return /^idx_xf_t\d+$/.test(fieldName) || /_transformer_t\d+$/.test(fieldName);
 }
 
-function containerRelationNameKey(fieldName: string): string {
+export function containerRelationNameKey(fieldName: string): string {
   return fieldName.replace(/^idx_/, "name_");
 }
 
@@ -4357,9 +4357,13 @@ export function getTerminalBusContactGroups(
       affectedBusEntriesByType.set(entry.type, [...(affectedBusEntriesByType.get(entry.type) ?? []), entry]);
     }
   }
+  const hasAffectedBusEntries = affectedBusEntriesByType.size > 0;
   const groups = new Map<string, TerminalBusContactGroup>();
   for (const node of nodes) {
     if (isBusNode(node) || isStaticNode(node)) {
+      continue;
+    }
+    if (affectedNodeIds && !affectedNodeIds.has(node.id) && !hasAffectedBusEntries) {
       continue;
     }
     for (const terminal of node.terminals) {
@@ -4488,7 +4492,8 @@ export function reconcileOverlappingTerminalConnections(
   nextNodes: ModelNode[],
   edges: Edge[],
   createEdgeId: (first: OverlappingTerminalRef, second: OverlappingTerminalRef, index: number) => string = (_first, _second, index) => `overlap-edge-${index + 1}`,
-  affectedNodeIds?: ReadonlySet<string>
+  affectedNodeIds?: ReadonlySet<string>,
+  candidateEdges: Edge[] = edges
 ): OverlappingTerminalConnectionReconcileResult {
   const nextNodeById = new Map(nextNodes.map((node) => [node.id, node]));
   const previousPairs = collectOverlappingTerminalPairs(previousNodes, affectedNodeIds);
@@ -4497,7 +4502,7 @@ export function reconcileOverlappingTerminalConnections(
   const nextBusContacts = collectTerminalBusContacts(nextNodes, affectedNodeIds);
   const edgeTouchesAffectedNode = (edge: Edge) =>
     !affectedNodeIds || affectedNodeIds.has(edge.sourceId) || affectedNodeIds.has(edge.targetId);
-  const relevantEdges = affectedNodeIds ? edges.filter(edgeTouchesAffectedNode) : edges;
+  const relevantEdges = affectedNodeIds ? candidateEdges.filter(edgeTouchesAffectedNode) : candidateEdges;
   const existingPairKeys = new Set(relevantEdges.flatMap((edge) => {
     const key = explicitEdgeTerminalPairKey(edge);
     return key ? [key] : [];
@@ -4514,17 +4519,26 @@ export function reconcileOverlappingTerminalConnections(
     return bus && device && terminalId ? [`${terminalRefKey(device.id, terminalId)}|bus:${bus.id}`] : [];
   }));
   const removedEdgeIds: string[] = [];
-  const retainedEdges = edges.filter((edge) => {
-    if (!edgeTouchesAffectedNode(edge)) {
-      return true;
-    }
+  for (const edge of relevantEdges) {
     if (!sameTypeEndpointTerminalsOverlap(nextNodeById, edge) && !sameTypeEndpointTouchesBus(nextNodeById, edge)) {
-      return true;
+      continue;
     }
     removedEdgeIds.push(edge.id);
-    return false;
-  });
-  const usedEdgeIds = new Set(retainedEdges.map((edge) => edge.id));
+  }
+  let usedEdgeIds: Set<string> | null = null;
+  const allocateEdgeId = (baseId: string) => {
+    if (!usedEdgeIds) {
+      usedEdgeIds = new Set(edges.map((edge) => edge.id));
+    }
+    let edgeId = baseId;
+    let suffix = 2;
+    while (usedEdgeIds.has(edgeId)) {
+      edgeId = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+    usedEdgeIds.add(edgeId);
+    return edgeId;
+  };
   const addedEdges: Edge[] = [];
   let addedIndex = 0;
   for (const [pairKey, pair] of previousPairs.entries()) {
@@ -4537,13 +4551,7 @@ export function reconcileOverlappingTerminalConnections(
       continue;
     }
     const baseId = createEdgeId(pair.first, pair.second, addedIndex);
-    let edgeId = baseId;
-    let suffix = 2;
-    while (usedEdgeIds.has(edgeId)) {
-      edgeId = `${baseId}-${suffix}`;
-      suffix += 1;
-    }
-    usedEdgeIds.add(edgeId);
+    const edgeId = allocateEdgeId(baseId);
     addedIndex += 1;
     addedEdges.push({
       id: edgeId,
@@ -4569,13 +4577,7 @@ export function reconcileOverlappingTerminalConnections(
       { nodeId: contact.busId, terminalId: contact.busTerminalId, type: contact.type, point: busPoint },
       addedIndex
     );
-    let edgeId = baseId;
-    let suffix = 2;
-    while (usedEdgeIds.has(edgeId)) {
-      edgeId = `${baseId}-${suffix}`;
-      suffix += 1;
-    }
-    usedEdgeIds.add(edgeId);
+    const edgeId = allocateEdgeId(baseId);
     addedIndex += 1;
     addedEdges.push({
       id: edgeId,
@@ -4589,6 +4591,8 @@ export function reconcileOverlappingTerminalConnections(
   if (removedEdgeIds.length === 0 && addedEdges.length === 0) {
     return { edges, addedEdgeIds: [], removedEdgeIds: [] };
   }
+  const removedEdgeIdSet = new Set(removedEdgeIds);
+  const retainedEdges = removedEdgeIdSet.size > 0 ? edges.filter((edge) => !removedEdgeIdSet.has(edge.id)) : edges;
   return {
     edges: [...retainedEdges, ...addedEdges],
     addedEdgeIds: addedEdges.map((edge) => edge.id),
@@ -4646,7 +4650,130 @@ function syncBusNodeTerminals(node: ModelNode, connectionEndpointCount: number):
   return { ...node, terminals };
 }
 
-export function synchronizeBusTerminalsWithEdges(nodes: ModelNode[], edges: Edge[]): { nodes: ModelNode[]; edges: Edge[] } {
+function synchronizeAffectedBusTerminalsWithEdges(
+  nodes: ModelNode[],
+  edges: Edge[],
+  affectedNodeIds: ReadonlySet<string>
+): { nodes: ModelNode[]; edges: Edge[] } {
+  if (affectedNodeIds.size === 0) {
+    return { nodes, edges };
+  }
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const busIdsToSync = new Set<string>();
+  for (const nodeId of affectedNodeIds) {
+    const node = nodeById.get(nodeId);
+    if (node && isBusNode(node)) {
+      busIdsToSync.add(node.id);
+    }
+  }
+  for (const edge of edges) {
+    if (!affectedNodeIds.has(edge.sourceId) && !affectedNodeIds.has(edge.targetId)) {
+      continue;
+    }
+    const source = nodeById.get(edge.sourceId);
+    const target = nodeById.get(edge.targetId);
+    if (source && isBusNode(source)) {
+      busIdsToSync.add(source.id);
+    }
+    if (target && isBusNode(target)) {
+      busIdsToSync.add(target.id);
+    }
+  }
+  for (const contact of collectTerminalBusContacts(nodes, affectedNodeIds).values()) {
+    busIdsToSync.add(contact.busId);
+  }
+  if (busIdsToSync.size === 0) {
+    return { nodes, edges };
+  }
+
+  const endpointCountByBusId = new Map<string, number>();
+  const nextEndpointIndexByBusId = new Map<string, number>();
+  const implicitContactCountByBusId = new Map<string, number>();
+  for (const contact of collectTerminalBusContacts(nodes, busIdsToSync).values()) {
+    if (busIdsToSync.has(contact.busId)) {
+      implicitContactCountByBusId.set(contact.busId, (implicitContactCountByBusId.get(contact.busId) ?? 0) + 1);
+    }
+  }
+
+  let edgesChanged = false;
+  let nextEdges = edges;
+  for (let index = 0; index < edges.length; index += 1) {
+    const edge = edges[index];
+    const source = nodeById.get(edge.sourceId);
+    const target = nodeById.get(edge.targetId);
+    if (!source || !target) {
+      continue;
+    }
+    let nextEdge = edge;
+    const assignBusEndpoint = (endpoint: "source" | "target", busNode: ModelNode) => {
+      if (!busIdsToSync.has(busNode.id)) {
+        return;
+      }
+      const nextIndex = nextEndpointIndexByBusId.get(busNode.id) ?? 0;
+      nextEndpointIndexByBusId.set(busNode.id, nextIndex + 1);
+      endpointCountByBusId.set(busNode.id, (endpointCountByBusId.get(busNode.id) ?? 0) + 1);
+      const terminalId = `t${nextIndex + 1}`;
+      if (endpoint === "source") {
+        if (nextEdge.sourceTerminalId !== terminalId) {
+          nextEdge = { ...nextEdge, sourceTerminalId: terminalId };
+        }
+      } else if (nextEdge.targetTerminalId !== terminalId) {
+        nextEdge = { ...nextEdge, targetTerminalId: terminalId };
+      }
+    };
+    if (isBusNode(source)) {
+      assignBusEndpoint("source", source);
+    }
+    if (isBusNode(target)) {
+      assignBusEndpoint("target", target);
+    }
+    if (nextEdge !== edge) {
+      if (nextEdges === edges) {
+        nextEdges = edges.slice();
+      }
+      nextEdges[index] = nextEdge;
+      edgesChanged = true;
+    }
+  }
+
+  let nodesChanged = false;
+  let nextNodes = nodes;
+  for (const busId of busIdsToSync) {
+    const node = nodeById.get(busId);
+    if (!node || !isBusNode(node)) {
+      continue;
+    }
+    const nextNode = syncBusNodeTerminals(
+      node,
+      (endpointCountByBusId.get(node.id) ?? 0) + (implicitContactCountByBusId.get(node.id) ?? 0)
+    );
+    if (nextNode === node) {
+      continue;
+    }
+    if (nextNodes === nodes) {
+      nextNodes = nodes.slice();
+    }
+    const nodeIndex = nodes.indexOf(node);
+    if (nodeIndex >= 0) {
+      nextNodes[nodeIndex] = nextNode;
+      nodesChanged = true;
+    }
+  }
+
+  return {
+    nodes: nodesChanged ? nextNodes : nodes,
+    edges: edgesChanged ? nextEdges : edges
+  };
+}
+
+export function synchronizeBusTerminalsWithEdges(
+  nodes: ModelNode[],
+  edges: Edge[],
+  affectedNodeIds?: Iterable<string>
+): { nodes: ModelNode[]; edges: Edge[] } {
+  if (affectedNodeIds) {
+    return synchronizeAffectedBusTerminalsWithEdges(nodes, edges, new Set(affectedNodeIds));
+  }
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const endpointCountByBusId = new Map<string, number>();
   const nextEndpointIndexByBusId = new Map<string, number>();
@@ -4886,11 +5013,13 @@ function edgeDisplayName(edge: Edge, nodeById: Map<string, ModelNode>): string {
 export function buildElementTree(
   nodes: ModelNode[],
   edges: Edge[],
-  templates: readonly DeviceTemplate[] = DEVICE_LIBRARY
+  templates: readonly DeviceTemplate[] = DEVICE_LIBRARY,
+  options: { includeContainerChildren?: boolean } = {}
 ): ElementTreeGroup[] {
   const groups: ElementTreeGroup[] = [];
   const groupByKey = new Map<string, ElementTreeGroup>();
   const templateByKind = new Map(templates.map((template) => [template.kind, template]));
+  const includeContainerChildren = options.includeContainerChildren !== false;
   const appendItem = (typeKey: string, typeLabel: string, item: ElementTreeItem) => {
     let group = groupByKey.get(typeKey);
     if (!group) {
@@ -4903,18 +5032,20 @@ export function buildElementTree(
 
   for (const node of nodes) {
     const typeLabel = getElementTreeTypeLabel(node, templates);
-    const containerChildren = buildContainerDeviceParameterViews(node, templateByKind.get(node.kind))
-      .filter((view) => view.kind === "associated")
-      .map<ElementTreeChildItem>((view) => ({
-        id: `${node.id}:${view.id}`,
-        label: view.label,
-        componentType: view.componentType ?? "",
-        idx: view.rows.find((row) => row.key === "idx")?.value ?? "",
-        name: view.rows.find((row) => row.key === "name")?.value ?? "",
-        nameKey: view.relationKeys?.[0] ? containerRelationNameKey(view.relationKeys[0]) : "",
-        relationKeys: view.relationKeys ?? [],
-        terminalLabels: view.terminalLabels ?? view.rows.find((row) => row.key === "terminals")?.value ?? ""
-      }));
+    const containerChildren = includeContainerChildren
+      ? buildContainerDeviceParameterViews(node, templateByKind.get(node.kind))
+          .filter((view) => view.kind === "associated")
+          .map<ElementTreeChildItem>((view) => ({
+            id: `${node.id}:${view.id}`,
+            label: view.label,
+            componentType: view.componentType ?? "",
+            idx: view.rows.find((row) => row.key === "idx")?.value ?? "",
+            name: view.rows.find((row) => row.key === "name")?.value ?? "",
+            nameKey: view.relationKeys?.[0] ? containerRelationNameKey(view.relationKeys[0]) : "",
+            relationKeys: view.relationKeys ?? [],
+            terminalLabels: view.terminalLabels ?? view.rows.find((row) => row.key === "terminals")?.value ?? ""
+          }))
+      : [];
     const item: ElementTreeItem = {
       kind: "node",
       id: node.id,
@@ -8756,14 +8887,15 @@ export function rebuildExternalConnectionRoutesForMovedNodes(
   nodes: ModelNode[],
   edges: Edge[],
   movedNodeIds: Iterable<string>,
-  bounds?: CanvasBounds
+  bounds?: CanvasBounds,
+  candidateEdges: Edge[] = edges
 ): Edge[] {
   const movedIds = new Set(movedNodeIds);
-  if (movedIds.size === 0 || edges.length === 0) {
+  if (movedIds.size === 0 || edges.length === 0 || candidateEdges.length === 0) {
     return edges;
   }
 
-  const affectedEdgeIds = edges
+  const affectedEdgeIds = candidateEdges
     .filter((edge) => movedIds.has(edge.sourceId) !== movedIds.has(edge.targetId))
     .map((edge) => edge.id);
   if (affectedEdgeIds.length === 0) {
@@ -8794,14 +8926,15 @@ export function rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes(
   nodes: ModelNode[],
   edges: Edge[],
   movedNodeIds: Iterable<string>,
-  bounds?: CanvasBounds
+  bounds?: CanvasBounds,
+  candidateEdges: Edge[] = edges
 ): Edge[] {
   const movedIds = new Set(movedNodeIds);
-  if (movedIds.size === 0 || edges.length === 0) {
+  if (movedIds.size === 0 || edges.length === 0 || candidateEdges.length === 0) {
     return edges;
   }
 
-  const internalEdges = edges.filter((edge) => movedIds.has(edge.sourceId) && movedIds.has(edge.targetId));
+  const internalEdges = candidateEdges.filter((edge) => movedIds.has(edge.sourceId) && movedIds.has(edge.targetId));
   if (internalEdges.length === 0) {
     return edges;
   }
@@ -8922,7 +9055,8 @@ export function rerouteEdgesAroundMovedNodes(
   movedNodeIds: string[],
   previousRoutes: RoutedEdge[] = [],
   bounds?: CanvasBounds,
-  forceEdgeIds: Iterable<string> = []
+  forceEdgeIds: Iterable<string> = [],
+  searchEdges: Edge[] = edges
 ): Edge[] {
   const movedIds = new Set(movedNodeIds);
   if (movedIds.size === 0 || edges.length === 0) {
@@ -8939,8 +9073,8 @@ export function rerouteEdgesAroundMovedNodes(
   const fallbackRoutes = previousRoutes.length > 0 ? [] : routeEdgesForRendering(nodes, edges, bounds);
   const fallbackRouteById = new Map(fallbackRoutes.map((route) => [route.edgeId, route]));
   const candidateEdges = previousRoutes.length > 0
-    ? edges.filter((edge) => previousRouteById.has(edge.id))
-    : edges;
+    ? searchEdges.filter((edge) => previousRouteById.has(edge.id))
+    : searchEdges;
   const blockedEdgeIds = candidateEdges
     .filter((edge) => {
       if (forcedEdgeIds.has(edge.id)) {

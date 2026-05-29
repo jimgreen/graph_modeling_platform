@@ -112,6 +112,7 @@ import {
   boundaryBusInternalConnectorStrokeWidth,
   DEFAULT_COLOR_PALETTE,
   serializeProject,
+  synchronizeBusTerminalsWithEdges,
   deserializeProject,
   type Edge,
   type DeviceTemplate,
@@ -557,6 +558,27 @@ describe("power system model", () => {
       edges: locked.edges.filter((edge) => edge.id !== "b")
     });
     expect(afterDelete.nodes.find((node) => node.id === bus.id)?.terminals.map((terminal) => terminal.id)).toEqual(["t1", "t2"]);
+  });
+
+  test("synchronizes bus terminals only around affected moved nodes", () => {
+    const busA = createDefaultNode("ac-bus", { x: 200, y: 100 });
+    const busB = createDefaultNode("ac-bus", { x: 500, y: 100 });
+    const loadA = createDefaultNode("ac-load", { x: 80, y: 100 });
+    const loadB = createDefaultNode("ac-load", { x: 380, y: 100 });
+    const nodes = [busA, busB, loadA, loadB];
+    const edges: Edge[] = [
+      { id: "edge-a", sourceId: loadA.id, targetId: busA.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+      { id: "edge-b", sourceId: loadB.id, targetId: busB.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
+    ];
+
+    const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges, new Set([loadA.id]));
+    const nextBusA = synchronized.nodes.find((node) => node.id === busA.id)!;
+    const nextBusB = synchronized.nodes.find((node) => node.id === busB.id)!;
+
+    expect(nextBusA.terminals.map((terminal) => terminal.id)).toEqual(["t1"]);
+    expect(nextBusB).toBe(busB);
+    expect(nextBusB.terminals).toHaveLength(0);
+    expect(synchronized.edges).toBe(edges);
   });
 
   test("creates generator parameters with readonly node numbers and control types", () => {
@@ -2638,6 +2660,38 @@ describe("power system model", () => {
     expect(rebuilt[2].manualPoints).not.toEqual(rightEdge.manualPoints);
     expect(validateConnectionEdgeRoute([left, movedA, movedB, right], rebuilt, leftEdge.id, { width: 700, height: 320 }).ok).toBe(true);
     expect(validateConnectionEdgeRoute([left, movedA, movedB, right], rebuilt, rightEdge.id, { width: 700, height: 320 }).ok).toBe(true);
+  });
+
+  test("limits moved-to-stationary route rebuild discovery to supplied candidate edges", () => {
+    const left = { ...createDefaultNode("ac-line", { x: 80, y: 140 }), id: "left" };
+    const moved = { ...createDefaultNode("ac-line", { x: 280, y: 140 }), id: "moved" };
+    const right = { ...createDefaultNode("ac-line", { x: 480, y: 140 }), id: "right" };
+    const connectedEdge: Edge = {
+      id: "connected",
+      sourceId: left.id,
+      targetId: moved.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints: [{ x: 180, y: 80 }]
+    };
+    const unrelatedCandidate: Edge = {
+      id: "unrelated",
+      sourceId: left.id,
+      targetId: right.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+
+    const rebuilt = rebuildExternalConnectionRoutesForMovedNodes(
+      [left, moved, right],
+      [connectedEdge, unrelatedCandidate],
+      [moved.id],
+      { width: 700, height: 320 },
+      [unrelatedCandidate]
+    );
+
+    expect(rebuilt[0]).toBe(connectedEdge);
+    expect(rebuilt[1]).toBe(unrelatedCandidate);
   });
 
   test("rebuilds moved-to-moved connection routes when they interfere with stationary devices", () => {
@@ -5049,6 +5103,47 @@ describe("power system model", () => {
     expect(result.addedEdgeIds).toEqual([]);
     expect(result.removedEdgeIds).toEqual(["connected-overlap"]);
     expect(result.edges).toEqual([]);
+  });
+
+  test("limits overlap edge removal checks to supplied candidate edges", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 260, y: 100 });
+    const edge: Edge = {
+      id: "connected-overlap",
+      sourceId: source.id,
+      targetId: load.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const loadPoint = getTerminalPoint(load, "t1");
+    const nextLoad = {
+      ...load,
+      position: { x: load.position.x + sourcePoint.x - loadPoint.x, y: load.position.y + sourcePoint.y - loadPoint.y }
+    };
+
+    const skipped = reconcileOverlappingTerminalConnections(
+      [source, load],
+      [source, nextLoad],
+      [edge],
+      () => "unused",
+      new Set([load.id]),
+      []
+    );
+    const reconciled = reconcileOverlappingTerminalConnections(
+      [source, load],
+      [source, nextLoad],
+      [edge],
+      () => "unused",
+      new Set([load.id]),
+      [edge]
+    );
+
+    expect(skipped.removedEdgeIds).toEqual([]);
+    expect(skipped.edges).toBeDefined();
+    expect(skipped.edges[0]).toBe(edge);
+    expect(reconciled.removedEdgeIds).toEqual(["connected-overlap"]);
+    expect(reconciled.edges).toEqual([]);
   });
 
   test("contracts device terminals touching a same-type bus into one topology node", () => {
