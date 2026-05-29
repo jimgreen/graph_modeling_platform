@@ -365,6 +365,7 @@ type ManualPathDrag =
     }
   | null;
 type DraggingState = {
+  source?: "pointer" | "keyboard";
   nodeIds: string[];
   edgeIds: string[];
   affectedEdges: Edge[];
@@ -550,6 +551,7 @@ const MOVE_BOUNDARY_GUARD = 8;
 const MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES = 5;
 const ORIGINAL_POSITION_REROUTE_PADDING = 64;
 const MOVE_ROUTE_LOCAL_SEARCH_PADDING = 96;
+const KEYBOARD_MOVE_COMMIT_DELAY_MS = 160;
 const ELEMENT_TREE_INITIAL_ITEM_LIMIT = 120;
 const ELEMENT_TREE_ITEM_LIMIT_STEP = 120;
 const TOPOLOGY_WARNING_PAGE_SIZE = 50;
@@ -3365,8 +3367,10 @@ export function App() {
   const pendingRewirePreviewRef = useRef<{ point: Point; rewiring: Exclude<RewiringState, null> } | null>(null);
   const rewirePreviewFrameRef = useRef<number | null>(null);
   const draggingRef = useRef<DraggingState | null>(null);
+  const nodeTerminalSnapTargetRef = useRef<NodeTerminalSnapTarget | null>(null);
   const pendingNodeDragMoveRef = useRef<{ point: Point; ctrlKey: boolean; shiftKey: boolean } | null>(null);
   const nodeDragMoveFrameRef = useRef<number | null>(null);
+  const keyboardMoveCommitTimerRef = useRef<number | null>(null);
   const dragUndoCapturedRef = useRef(false);
   const cachedRoutedEdgesRef = useRef<RoutedEdge[]>([]);
   const cachedRouteStoreRef = useRef<RouteStore | null>(null);
@@ -4963,6 +4967,7 @@ export function App() {
     ),
     [dragInteractionNodes, dragging, draggingDelta, draggingNodeIdSet]
   );
+  nodeTerminalSnapTargetRef.current = nodeTerminalSnapTarget;
   const nodeTerminalSnapHintStyle = useMemo(() => {
     if (!nodeTerminalSnapTarget) {
       return undefined;
@@ -5395,6 +5400,10 @@ export function App() {
         window.cancelAnimationFrame(canvasVisibleViewBoxFrameRef.current);
         canvasVisibleViewBoxFrameRef.current = null;
       }
+      if (keyboardMoveCommitTimerRef.current !== null) {
+        window.clearTimeout(keyboardMoveCommitTimerRef.current);
+        keyboardMoveCommitTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -5758,20 +5767,29 @@ export function App() {
         }
       } else if (isCanvasShortcutTarget && event.key === "ArrowLeft") {
         event.preventDefault();
-        moveSelection(-keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6), 0);
+        nudgeSelectionByKeyboard(-keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6), 0);
       } else if (isCanvasShortcutTarget && event.key === "ArrowRight") {
         event.preventDefault();
-        moveSelection(keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6), 0);
+        nudgeSelectionByKeyboard(keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6), 0);
       } else if (isCanvasShortcutTarget && event.key === "ArrowUp") {
         event.preventDefault();
-        moveSelection(0, -keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6));
+        nudgeSelectionByKeyboard(0, -keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6));
       } else if (isCanvasShortcutTarget && event.key === "ArrowDown") {
         event.preventDefault();
-        moveSelection(0, keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6));
+        nudgeSelectionByKeyboard(0, keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6));
+      }
+    };
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "ArrowUp" || event.key === "ArrowDown") {
+        finishKeyboardMove();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
   }, [activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, canvasBounds, canvasClipboard, canvasSelectionScope, deviceIndexCounters, displaySelectedEdgeIds, displaySelectedNodeIds, edges, hasUnsavedChanges, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors, viewBox]);
 
   useEffect(() => {
@@ -7294,6 +7312,101 @@ export function App() {
     }
   };
 
+  const clearKeyboardMoveCommitSchedule = () => {
+    if (keyboardMoveCommitTimerRef.current !== null) {
+      window.clearTimeout(keyboardMoveCommitTimerRef.current);
+      keyboardMoveCommitTimerRef.current = null;
+    }
+  };
+
+  const clearDraggingMoveState = () => {
+    clearNodeDragMoveSchedule();
+    clearKeyboardMoveCommitSchedule();
+    draggingRef.current = null;
+    setDragging(null);
+    dragUndoCapturedRef.current = false;
+  };
+
+  const finishDraggingMove = (
+    activeDragging: DraggingState | null,
+    snapTarget: NodeTerminalSnapTarget | null,
+    actionLabel: "拖拽" | "移动"
+  ) => {
+    if (!activeDragging) {
+      return false;
+    }
+    const delta = activeDragging.currentDelta;
+    if (!delta || (delta.x === 0 && delta.y === 0)) {
+      clearDraggingMoveState();
+      return false;
+    }
+    if (!activeDragging.historyCaptured && !dragUndoCapturedRef.current) {
+      pushUndoSnapshot(true, false);
+      dragUndoCapturedRef.current = true;
+    }
+    const dragNodeIds = new Set(activeDragging.nodeIds);
+    const snappedDelta = applyNodeTerminalSnap(delta, snapTarget);
+    const finalDelta =
+      snappedDelta.x !== delta.x || snappedDelta.y !== delta.y
+        ? boundedDeltaForMoveGeometry(
+            activeDragging.nodeIds,
+            activeDragging.edgeIds,
+            activeDragging.affectedEdges,
+            activeDragging.originalPositions,
+            activeDragging.originalEdgePoints,
+            activeDragging.originalRoutePoints,
+            snappedDelta.x,
+            snappedDelta.y,
+            delta
+          )
+        : delta;
+    if (finalDelta.x === 0 && finalDelta.y === 0) {
+      clearDraggingMoveState();
+      return false;
+    }
+    const movedNodeUpdates = buildMovedNodeUpdates(activeDragging.nodeIds, activeDragging.originalPositions, finalDelta);
+    const nextNodes = overlayGraphStoreNodes(graphStore, movedNodeUpdates);
+    const hasAffectedEdges = activeDragging.affectedEdges.some((edge) => dragNodeIds.has(edge.sourceId) || dragNodeIds.has(edge.targetId));
+    const adjustedAffectedEdges = hasAffectedEdges
+      ? adjustEdgesAfterNodeMove(
+          activeDragging.affectedEdges,
+          nextNodes,
+          dragNodeIds,
+          activeDragging.originalEdgePoints,
+          Object.fromEntries(activeDragging.nodeIds.map((id) => [id, finalDelta])),
+          activeDragging.originalRoutePoints,
+          new Set(activeDragging.edgeIds)
+        )
+      : activeDragging.affectedEdges;
+    const finalizedCandidateEdges = finalizeMovedNodeEdgesFast(
+      nodes,
+      nextNodes,
+      adjustedAffectedEdges,
+      activeDragging.nodeIds,
+      adjustedAffectedEdges
+    );
+    commitFastMovedGraphPatches(
+      movedNodeUpdates,
+      nextNodes,
+      finalizedCandidateEdges,
+      activeDragging.affectedEdges,
+      activeDragging.nodeIds,
+      activeDragging.originalRoutePoints,
+      new Set(activeDragging.edgeIds),
+      activeDragging.originalPositions,
+      nodes
+    );
+    clearDraggingMoveState();
+    const snapText =
+      snapTarget &&
+      finalDelta.x === snappedDelta.x &&
+      finalDelta.y === snappedDelta.y
+        ? "，端子已吸附"
+        : "";
+    writeOperationLog(`${actionLabel} ${activeDragging.nodeIds.length} 个图元 (${Math.round(finalDelta.x)}, ${Math.round(finalDelta.y)})${snapText}`);
+    return true;
+  };
+
   const finishNodeDrag = () => {
     flushPendingNodeDragMove(false);
     const activeDragging = draggingRef.current ?? dragging;
@@ -7396,6 +7509,112 @@ export function App() {
       writeOperationLog(`调整图元几何：${transformedNode?.name ?? activeTransform.nodeId}`);
     }
     setTransformDrag(null);
+  };
+
+  const finishKeyboardMove = () => {
+    clearKeyboardMoveCommitSchedule();
+    const activeDragging = draggingRef.current ?? dragging;
+    if (activeDragging?.source !== "keyboard") {
+      return;
+    }
+    finishDraggingMove(activeDragging, nodeTerminalSnapTargetRef.current, "移动");
+  };
+
+  const scheduleKeyboardMoveCommit = () => {
+    clearKeyboardMoveCommitSchedule();
+    keyboardMoveCommitTimerRef.current = window.setTimeout(() => {
+      keyboardMoveCommitTimerRef.current = null;
+      finishKeyboardMove();
+    }, KEYBOARD_MOVE_COMMIT_DELAY_MS);
+  };
+
+  const startKeyboardMoveSession = () => {
+    const moveNodeIds = canvasSelectionScope === "direct" ? displaySelectedNodeIds : activeSelectedNodeIds;
+    const moveEdgeIds = canvasSelectionScope === "direct" ? displaySelectedEdgeIds : activeSelectedEdgeIds;
+    if (moveNodeIds.length === 0) {
+      return null;
+    }
+    const activeDragging = draggingRef.current ?? dragging;
+    if (activeDragging?.source === "keyboard") {
+      return activeDragging;
+    }
+    if (activeDragging) {
+      return null;
+    }
+    const affectedEdgesForMove = edgeListForNodeIds(moveNodeIds, moveEdgeIds);
+    const affectedEdgeIdsForMove = new Set(affectedEdgesForMove.map((edge) => edge.id));
+    const routePointsForMoveEdge = (edgeId: string) =>
+      affectedEdgeIdsForMove.has(edgeId) ? routedEdgeById.get(edgeId)?.points ?? [] : [];
+    const nextDragging: DraggingState = {
+      source: "keyboard",
+      nodeIds: moveNodeIds,
+      edgeIds: moveEdgeIds,
+      affectedEdges: affectedEdgesForMove,
+      startPoint: { x: 0, y: 0 },
+      originalPositions: Object.fromEntries(
+        moveNodeIds.flatMap((id) => {
+          const item = nodeById.get(id);
+          return item ? [[item.id, { ...item.position }]] : [];
+        })
+      ),
+      originalEdgePoints: Object.fromEntries(
+        affectedEdgesForMove.map((edge) => [
+          edge.id,
+          {
+            sourcePoint: edge.sourcePoint ? { ...edge.sourcePoint } : undefined,
+            targetPoint: edge.targetPoint ? { ...edge.targetPoint } : undefined,
+            manualPoints: edge.manualPoints?.map((point) => ({ ...point }))
+          }
+        ])
+      ),
+      originalRoutePoints: Object.fromEntries(
+        affectedEdgesForMove.map((edge) => [
+          edge.id,
+          routePointsForMoveEdge(edge.id)
+        ])
+      )
+    };
+    clearNodeDragMoveSchedule();
+    dragUndoCapturedRef.current = false;
+    draggingRef.current = nextDragging;
+    setDragging(nextDragging);
+    return nextDragging;
+  };
+
+  const nudgeSelectionByKeyboard = (dx: number, dy: number) => {
+    const activeDragging = startKeyboardMoveSession();
+    if (!activeDragging) {
+      return;
+    }
+    const previousDelta = activeDragging.currentDelta ?? { x: 0, y: 0 };
+    const requestedDelta = { x: previousDelta.x + dx, y: previousDelta.y + dy };
+    const boundedDelta = boundedDeltaForMoveGeometry(
+      activeDragging.nodeIds,
+      activeDragging.edgeIds,
+      activeDragging.affectedEdges,
+      activeDragging.originalPositions,
+      activeDragging.originalEdgePoints,
+      activeDragging.originalRoutePoints,
+      requestedDelta.x,
+      requestedDelta.y,
+      previousDelta
+    );
+    if (boundedDelta.x === previousDelta.x && boundedDelta.y === previousDelta.y) {
+      writeOperationLog("移动已到显示边界，联络线或图元接近边界，已停止移动");
+      return;
+    }
+    if (!activeDragging.historyCaptured && !dragUndoCapturedRef.current) {
+      pushUndoSnapshot(true, false);
+      dragUndoCapturedRef.current = true;
+    }
+    const nextDragging = {
+      ...activeDragging,
+      currentDelta: boundedDelta,
+      historyCaptured: true
+    };
+    draggingRef.current = nextDragging;
+    setDragging((current) => (current?.source === "keyboard" ? nextDragging : current));
+    scheduleKeyboardMoveCommit();
   };
 
   const moveSelection = (dx: number, dy: number) => {
@@ -8278,6 +8497,7 @@ export function App() {
     clearNodeDragMoveSchedule();
     dragUndoCapturedRef.current = false;
     const nextDragging: DraggingState = {
+      source: "pointer",
       nodeIds: dragNodeIds,
       edgeIds: edgeIdsForDrag,
       affectedEdges: affectedEdgesForDrag,
@@ -11962,20 +12182,6 @@ export function App() {
             <input ref={customDeviceImageInputRef} type="file" accept="image/*" hidden onChange={chooseCustomDeviceBackground} />
             <input ref={modelImportInputRef} type="file" accept=".json,application/json" hidden onChange={importModelFile} />
             <input ref={schemeImportInputRef} type="file" accept=".json,application/json" hidden onChange={importSchemeFile} />
-            <button
-              onClick={() => openModelImportFilePicker()}
-              title="导入模型文件"
-              aria-label="导入模型文件"
-            >
-              <FileInput size={16} />
-            </button>
-            <button
-              onClick={exportCurrentModelFile}
-              title="导出当前模型文件"
-              aria-label="导出当前模型文件"
-            >
-              <FileJson size={16} />
-            </button>
             <button
               onClick={exportSvg}
               disabled={!canExportCurrentModel}

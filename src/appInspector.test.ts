@@ -109,6 +109,24 @@ describe("graph inspector panel", () => {
     expect(source).not.toContain("const SMALL_MOVE_FULL_REBUILD_NODE_LIMIT");
   });
 
+  test("uses a deferred drag-style session for keyboard nudges instead of committing every arrow key", async () => {
+    const source = await readAppSource();
+    const keyHandlerStart = source.indexOf("const handleKeyDown = (event: KeyboardEvent)");
+    const keyHandlerEnd = source.indexOf("window.addEventListener(\"keydown\", handleKeyDown)", keyHandlerStart);
+    const keyHandlerBlock = source.slice(keyHandlerStart, keyHandlerEnd);
+    const keyboardMoveStart = source.indexOf("const finishKeyboardMove");
+    const keyboardMoveEnd = source.indexOf("const moveSelection", keyboardMoveStart);
+    const keyboardMoveBlock = source.slice(keyboardMoveStart, keyboardMoveEnd);
+
+    expect(keyHandlerBlock).toContain("nudgeSelectionByKeyboard(");
+    expect(keyHandlerBlock).not.toContain("moveSelection(");
+    expect(keyboardMoveBlock).toContain("startKeyboardMoveSession");
+    expect(keyboardMoveBlock).toContain("pushUndoSnapshot(true, false)");
+    expect(keyboardMoveBlock).toContain("setDragging");
+    expect(keyboardMoveBlock).toContain("scheduleKeyboardMoveCommit");
+    expect(keyboardMoveBlock).toContain("finishKeyboardMove");
+  });
+
   test("manages custom component libraries from the new-device manager tree", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
@@ -763,10 +781,11 @@ describe("graph inspector panel", () => {
     expect(source).toContain(">覆盖</button>");
     expect(source).toContain(">重命名</button>");
     expect(source).toContain(">不导入</button>");
-    expect(topbarBlock).toContain("openModelImportFilePicker()");
     expect(topbarBlock).toContain("onChange={importModelFile}");
-    expect(topbarBlock).toContain("aria-label=\"导入模型文件\"");
-    expect(topbarBlock).toContain("aria-label=\"导出当前模型文件\"");
+    expect(topbarBlock).not.toContain("openModelImportFilePicker()");
+    expect(topbarBlock).not.toContain("exportCurrentModelFile");
+    expect(topbarBlock).not.toContain("aria-label=\"导入模型文件\"");
+    expect(topbarBlock).not.toContain("aria-label=\"导出当前模型文件\"");
     expect(contextBlock).not.toContain("导入模型");
     expect(contextBlock).not.toContain("导出模型");
     expect(projectContextBlock).toContain("exportProjectRecordFile");
