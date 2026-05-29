@@ -4,13 +4,17 @@ import {
   createDefaultNode,
   normalizeDeviceIndexCounters,
   routeEdgesForRendering,
-  type Edge
+  type Edge,
+  type ModelGroup
 } from "./model";
 import {
   CANVAS_EMPTY_SELECTION_MESSAGE,
   buildCanvasClipboard,
   canvasClipboardBounds,
   cloneCanvasClipboard,
+  createCanvasGroupFromSelection,
+  dissolveSelectedCanvasGroups,
+  expandSelectionByGroups,
   resolveCanvasDeleteAction,
   selectGraphicsInRect
 } from "./selectionActions";
@@ -153,5 +157,91 @@ describe("canvas selection actions", () => {
       idx_ac_load_t1: "3",
       idx_h2_unit_t2: "3"
     });
+  });
+
+  test("expands a member selection to the whole graphic group", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const target = createDefaultNode("ac-load", { x: 300, y: 100 });
+    const edge: Edge = {
+      id: "edge-grouped",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const groups: ModelGroup[] = [{
+      id: "group-1",
+      name: "组合1",
+      nodeIds: [source.id, target.id],
+      edgeIds: [edge.id]
+    }];
+
+    expect(expandSelectionByGroups(groups, [source.id], [])).toEqual({
+      nodeIds: [source.id, target.id],
+      edgeIds: [edge.id]
+    });
+    expect(expandSelectionByGroups(groups, [], [edge.id])).toEqual({
+      nodeIds: [source.id, target.id],
+      edgeIds: [edge.id]
+    });
+  });
+
+  test("creates and dissolves canvas groups without deleting graphics", () => {
+    const first = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const second = createDefaultNode("ac-load", { x: 300, y: 100 });
+
+    const created = createCanvasGroupFromSelection([], [first.id, second.id], [], () => "group-created");
+
+    expect(created.group).toEqual({
+      id: "group-created",
+      name: "组合1",
+      nodeIds: [first.id, second.id],
+      edgeIds: []
+    });
+
+    const dissolved = dissolveSelectedCanvasGroups(created.groups, [first.id], []);
+
+    expect(dissolved.removedGroupIds).toEqual(["group-created"]);
+    expect(dissolved.groups).toEqual([]);
+  });
+
+  test("copies and pastes selected graphics while preserving their group relationship", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const target = createDefaultNode("ac-load", { x: 300, y: 100 });
+    const edge: Edge = {
+      id: "edge-group-copy",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const groups: ModelGroup[] = [{
+      id: "group-copy-source",
+      name: "组合1",
+      nodeIds: [source.id, target.id],
+      edgeIds: [edge.id]
+    }];
+    const routes = routeEdgesForRendering([source, target], [edge], { width: 800, height: 500 });
+    const clipboard = buildCanvasClipboard([source, target], [edge], routes, [source.id], [], groups);
+
+    const pasted = cloneCanvasClipboard(
+      clipboard,
+      { x: 400, y: 300 },
+      (() => {
+        let index = 0;
+        return () => `node-copy-${++index}`;
+      })(),
+      () => "edge-copy",
+      () => "group-copy"
+    );
+
+    expect(pasted.nodes.map((node) => node.id)).toEqual(["node-copy-1", "node-copy-2"]);
+    expect(pasted.edges.map((item) => item.id)).toEqual(["edge-copy"]);
+    expect(pasted.groups).toEqual([{
+      id: "group-copy",
+      name: "组合1 副本",
+      nodeIds: ["node-copy-1", "node-copy-2"],
+      edgeIds: ["edge-copy"]
+    }]);
   });
 });

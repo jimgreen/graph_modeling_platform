@@ -70,6 +70,18 @@ describe("graph inspector panel", () => {
     expect(terminalStubBlock).not.toContain("vector-effect");
   });
 
+  test("rebuilds moved-to-stationary connection routes without a moved-node count gate", async () => {
+    const source = await readAppSource();
+    const commitStart = source.indexOf("const commitFastMovedGraph");
+    const commitEnd = source.indexOf("setNodes(nextNodes);", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
+
+    expect(commitBlock).toContain("rebuildExternalConnectionRoutesForMovedNodes");
+    expect(commitBlock).toContain("movedNodeIds.length > 0");
+    expect(commitBlock).not.toContain("SMALL_MOVE_FULL_REBUILD_NODE_LIMIT");
+    expect(source).not.toContain("const SMALL_MOVE_FULL_REBUILD_NODE_LIMIT");
+  });
+
   test("manages custom component libraries from the new-device manager tree", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
@@ -412,10 +424,11 @@ describe("graph inspector panel", () => {
     expect(selectionStateBlock).toContain("new Set(activeSelectedNodeIds)");
     expect(source).toContain("setSelectedNodeIds(activeLayerNodes.map((node) => node.id))");
     expect(source).toContain("selectGraphicsInRect(activeLayerNodes, activeLayerRoutedEdges");
-    expect(copyCutDeleteBlock).toContain("buildCanvasClipboard(visibleNodes, visibleEdges, routedEdges, activeSelectedNodeIds, activeSelectedEdgeIds)");
+    expect(copyCutDeleteBlock).toContain("buildCanvasClipboard(visibleNodes, visibleEdges, routedEdges, activeSelectedNodeIds, activeSelectedEdgeIds, activeLayerGroups)");
     expect(copyCutDeleteBlock).toContain("deleteNodesWithConnectedEdges(nodes, edges, activeSelectedNodeIds)");
-    expect(dragBlock).toContain("let dragNodeIds = nodeWasSelected ? activeSelectedNodeIds : [node.id]");
-    expect(dragBlock).toContain("dragNodeIds = nodeWasSelected ? activeSelectedNodeIds : [...activeSelectedNodeIds, node.id]");
+    expect(dragBlock).toContain("let dragSelection = nodeWasSelected");
+    expect(dragBlock).toContain("expandActiveGroupSelection([...activeSelectedNodeIds, node.id], activeSelectedEdgeIds)");
+    expect(dragBlock).toContain("const dragNodeIds = dragSelection.nodeIds");
     expect(dragBlock).toContain("if (!activeLayerNodeIdSet.has(node.id))");
     expect(layoutBlock).toContain("layoutNodes(nodes, activeSelectedNodeIds)");
     expect(source).toContain("if (!activeLayerEdgeIdSet.has(edgeId))");
@@ -1104,6 +1117,27 @@ describe("graph inspector panel", () => {
     expect(contextBlock).not.toContain("图层向下");
     expect(contextBlock).not.toContain("图层置顶");
     expect(contextBlock).not.toContain("图层置底");
+  });
+
+  test("adds persistent group and ungroup actions to the topbar and context menu", async () => {
+    const source = await readAppSource();
+    const topbarStart = source.indexOf("<header className=\"topbar\">");
+    const topbarEnd = source.indexOf("</header>", topbarStart);
+    const topbarBlock = source.slice(topbarStart, topbarEnd);
+    const contextStart = source.indexOf("{contextMenu && (");
+    const contextEnd = source.indexOf("{projectMenu && (", contextStart);
+    const contextBlock = source.slice(contextStart, contextEnd);
+
+    expect(source).toContain("const [groups, setGroups]");
+    expect(source).toContain("expandSelectionByGroups(activeLayerGroups");
+    expect(source).toContain("groups: normalizeModelGroups(groups, nodes, edges)");
+    expect(source).toContain("setGroups(snapshot.groups)");
+    expect(topbarBlock).toContain("aria-label=\"组合\"");
+    expect(topbarBlock).toContain("aria-label=\"解散\"");
+    expect(contextBlock).toContain("groupSelectedGraphics");
+    expect(contextBlock).toContain("ungroupSelectedGraphics");
+    expect(contextBlock).toContain("组合");
+    expect(contextBlock).toContain("解散");
   });
 
   test("guards page unload and model switching when the current model has unsaved changes", async () => {

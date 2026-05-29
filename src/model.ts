@@ -295,6 +295,13 @@ export type Edge = {
   manualPoints?: Point[];
 };
 
+export type ModelGroup = {
+  id: string;
+  name: string;
+  nodeIds: string[];
+  edgeIds: string[];
+};
+
 export type ModelLayer = {
   id: string;
   name: string;
@@ -378,6 +385,7 @@ export type ProjectFile = {
   currentUnit?: string;
   powerBaseValue?: number;
   deviceIndexCounters?: DeviceIndexCounters;
+  groups?: ModelGroup[];
   nodes: ModelNode[];
   edges: Edge[];
 };
@@ -4129,23 +4137,81 @@ export function terminalStubSegment(
   terminal: Pick<Terminal, "anchor">,
   scaleX = 1,
   scaleY = 1,
-  length = 24
+  length = 24,
+  nodeKind?: DeviceKind
 ): { from: Point; to: Point } {
   const displayedAnchor = {
     x: terminal.anchor.x * (Math.sign(scaleX) || 1),
     y: terminal.anchor.y * (Math.sign(scaleY) || 1)
   };
   if (Math.abs(displayedAnchor.x) >= Math.abs(displayedAnchor.y)) {
-    const scaledLength = length * Math.abs(scaleX || 1);
+    const scaledLength = length * Math.abs(scaleX || 1) + terminalOutwardOffsetLength(terminal, nodeKind);
     return {
       from: { x: displayedAnchor.x >= 0 ? -scaledLength : scaledLength, y: 0 },
       to: { x: 0, y: 0 }
     };
   }
-  const scaledLength = length * Math.abs(scaleY || 1);
+  const scaledLength = length * Math.abs(scaleY || 1) + terminalOutwardOffsetLength(terminal, nodeKind);
   return {
     from: { x: 0, y: displayedAnchor.y >= 0 ? -scaledLength : scaledLength },
     to: { x: 0, y: 0 }
+  };
+}
+
+const TERMINAL_OUTWARD_OFFSET = 4;
+const CLOSE_BORDER_TERMINAL_OUTWARD_OFFSET = 12;
+const CONVERTER_TERMINAL_OUTWARD_OFFSET = 12;
+const CONVERTER_TERMINAL_KINDS = new Set<DeviceKind>(["dcdc-converter", "acdc-converter", "acac-converter"]);
+const CLOSE_BORDER_TERMINAL_KINDS = new Set<DeviceKind>([
+  "ac-electrolyzer",
+  "dc-electrolyzer",
+  "ac-fuel-cell",
+  "dc-fuel-cell",
+  "ac-heater",
+  "dc-heater",
+  "ac-two-port-heater",
+  "dc-two-port-heater"
+]);
+
+function terminalOutwardAxis(terminal: Pick<Terminal, "anchor">): "x" | "y" | null {
+  const absX = Math.abs(terminal.anchor.x);
+  const absY = Math.abs(terminal.anchor.y);
+  if (absX >= 0.499 && absX >= absY) {
+    return "x";
+  }
+  if (absY >= 0.499) {
+    return "y";
+  }
+  return null;
+}
+
+function terminalOutwardOffsetLength(terminal: Pick<Terminal, "anchor">, nodeKind?: DeviceKind): number {
+  if (!terminalOutwardAxis(terminal)) {
+    return 0;
+  }
+  if (nodeKind && CONVERTER_TERMINAL_KINDS.has(nodeKind)) {
+    return CONVERTER_TERMINAL_OUTWARD_OFFSET;
+  }
+  if (nodeKind && CLOSE_BORDER_TERMINAL_KINDS.has(nodeKind)) {
+    return CLOSE_BORDER_TERMINAL_OUTWARD_OFFSET;
+  }
+  return TERMINAL_OUTWARD_OFFSET;
+}
+
+export function terminalRenderLocalPoint(
+  terminal: Pick<Terminal, "anchor">,
+  size: Pick<ModelNode["size"], "width" | "height">,
+  scaleX = 1,
+  scaleY = 1,
+  nodeKind?: DeviceKind
+): Point {
+  const axis = terminalOutwardAxis(terminal);
+  const outwardOffset = terminalOutwardOffsetLength(terminal, nodeKind);
+  const safeScaleX = Math.abs(scaleX || 1);
+  const safeScaleY = Math.abs(scaleY || 1);
+  return {
+    x: terminal.anchor.x * size.width + (axis === "x" ? Math.sign(terminal.anchor.x || 1) * (outwardOffset / safeScaleX) : 0),
+    y: terminal.anchor.y * size.height + (axis === "y" ? Math.sign(terminal.anchor.y || 1) * (outwardOffset / safeScaleY) : 0)
   };
 }
 
@@ -4175,9 +4241,11 @@ export function getTerminalPoint(node: ModelNode, terminalId?: string): Point {
   const radians = (node.rotation * Math.PI) / 180;
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
+  const outwardOffset = !isBusNode(node) ? terminalOutwardOffsetLength(terminal, node.kind) : 0;
+  const normal = outwardOffset > 0 ? getTerminalNormal(node, terminal.id) : { x: 0, y: 0 };
   return {
-    x: Math.round(node.position.x + local.x * cos - local.y * sin),
-    y: Math.round(node.position.y + local.x * sin + local.y * cos)
+    x: Math.round(node.position.x + local.x * cos - local.y * sin + normal.x * outwardOffset),
+    y: Math.round(node.position.y + local.x * sin + local.y * cos + normal.y * outwardOffset)
   };
 }
 
@@ -6074,6 +6142,48 @@ export function resolveActiveModelLayerId(layers: ModelLayer[], activeLayerId?: 
     : layers[0]?.id ?? DEFAULT_MODEL_LAYER_ID;
 }
 
+export function normalizeModelGroups(
+  groups: readonly Partial<ModelGroup>[] | undefined,
+  nodes: readonly Pick<ModelNode, "id">[] = [],
+  edges: readonly Pick<Edge, "id">[] = []
+): ModelGroup[] {
+  const validNodeIds = new Set(nodes.map((node) => node.id));
+  const validEdgeIds = new Set(edges.map((edge) => edge.id));
+  const seenGroupIds = new Set<string>();
+  const normalized: ModelGroup[] = [];
+  const uniqueValidIds = (ids: readonly string[] | undefined, validIds: ReadonlySet<string>) => {
+    const seen = new Set<string>();
+    return (ids ?? []).filter((id) => {
+      if (!id || seen.has(id) || !validIds.has(id)) {
+        return false;
+      }
+      seen.add(id);
+      return true;
+    });
+  };
+
+  (groups ?? []).forEach((group, index) => {
+    let id = (group.id ?? "").trim() || `group-${index + 1}`;
+    if (seenGroupIds.has(id)) {
+      id = `${id}-${index + 1}`;
+    }
+    seenGroupIds.add(id);
+    const nodeIds = uniqueValidIds(group.nodeIds, validNodeIds);
+    const edgeIds = uniqueValidIds(group.edgeIds, validEdgeIds);
+    if (nodeIds.length + edgeIds.length < 2) {
+      return;
+    }
+    normalized.push({
+      id,
+      name: (group.name ?? "").trim() || `组合${normalized.length + 1}`,
+      nodeIds,
+      edgeIds
+    });
+  });
+
+  return normalized;
+}
+
 export function normalizeProjectLayers(project: ProjectFile): ProjectFile {
   const baseLayers = normalizeModelLayers(project.layers, project.nodes);
   const activeLayerId = resolveActiveModelLayerId(baseLayers, project.activeLayerId);
@@ -6086,7 +6196,8 @@ export function normalizeProjectLayers(project: ProjectFile): ProjectFile {
     nodes: project.nodes.map((node) => ({
       ...node,
       layerId: node.layerId && layerIds.has(node.layerId) ? node.layerId : DEFAULT_MODEL_LAYER_ID
-    }))
+    })),
+    groups: normalizeModelGroups(project.groups, project.nodes, project.edges)
   };
 }
 
@@ -6131,7 +6242,7 @@ export function lockProjectEdgeTerminals(project: ProjectFile): ProjectFile {
       ? terminalId
       : node.terminals[0]?.id;
   };
-  return {
+  const locked = {
     ...project,
     layers: normalizeModelLayers(project.layers, nodes),
     nodes,
@@ -6152,6 +6263,10 @@ export function lockProjectEdgeTerminals(project: ProjectFile): ProjectFile {
       }];
     })
   };
+  return {
+    ...locked,
+    groups: normalizeModelGroups(project.groups, nodes, locked.edges)
+  };
 }
 
 export function createSavedProject(name: string, project: ProjectFile): SavedProjectRecord {
@@ -6170,7 +6285,13 @@ export function createSavedProject(name: string, project: ProjectFile): SavedPro
         sourcePoint: edge.sourcePoint ? { ...edge.sourcePoint } : undefined,
         targetPoint: edge.targetPoint ? { ...edge.targetPoint } : undefined,
         manualPoints: edge.manualPoints?.map((point) => ({ ...point }))
-      }))
+      })),
+      groups: normalizeModelGroups(lockedProject.groups, lockedProject.nodes, lockedProject.edges)
+        .map((group) => ({
+          ...group,
+          nodeIds: [...group.nodeIds],
+          edgeIds: [...group.edgeIds]
+        }))
     }
   };
 }
@@ -7622,11 +7743,32 @@ function prioritizeLaneValues(values: number[], anchors: number[], maxCount = RO
   return uniqueSorted([...required, ...optional.slice(0, Math.max(0, maxCount - required.length))]);
 }
 
-function candidateLanes(startOut: Point, endOut: Point, blockers: ModelNode[], avoidedSegments: Segment[], bounds?: CanvasBounds) {
+function candidateLanes(
+  startOut: Point,
+  endOut: Point,
+  blockers: ModelNode[],
+  avoidedSegments: Segment[],
+  bounds?: CanvasBounds,
+  endpointNodeIds: ReadonlySet<string> = new Set()
+) {
   const laneCorridor = routeCorridor(startOut, endOut, ROUTE_LANE_SEARCH_MARGIN);
+  const pointTouchesBox = (point: Point, box: ReturnType<typeof boxFor>, margin = 1) =>
+    point.x >= box.left - margin &&
+    point.x <= box.right + margin &&
+    point.y >= box.top - margin &&
+    point.y <= box.bottom + margin;
   const blockerBoxes = blockers
-    .map((node) => boxFor(node, 32))
-    .filter((box) => boxesOverlap(box, laneCorridor));
+    .map((node) => ({ node, box: boxFor(node, 32) }))
+    .filter(({ node, box }) => {
+      if (!boxesOverlap(box, laneCorridor)) {
+        return false;
+      }
+      return !(
+        endpointNodeIds.has(node.id) &&
+        (pointTouchesBox(startOut, box) || pointTouchesBox(endOut, box))
+      );
+    })
+    .map(({ box }) => box);
   const laneAvoidedSegments = avoidedSegments.filter((segment) =>
     boxesOverlap(segmentBox(segment, ROUTE_LANE_SEGMENT_MARGIN), laneCorridor)
   );
@@ -7647,14 +7789,12 @@ function candidateLanes(startOut: Point, endOut: Point, blockers: ModelNode[], a
   const xAnchors = [
     startOut.x,
     endOut.x,
-    Math.round((startOut.x + endOut.x) / 2),
-    ...(bounds ? [ROUTE_CLEARANCE, bounds.width - ROUTE_CLEARANCE] : [])
+    Math.round((startOut.x + endOut.x) / 2)
   ].map(clampX);
   const yAnchors = [
     startOut.y,
     endOut.y,
-    Math.round((startOut.y + endOut.y) / 2),
-    ...(bounds ? [ROUTE_CLEARANCE, bounds.height - ROUTE_CLEARANCE] : [])
+    Math.round((startOut.y + endOut.y) / 2)
   ].map(clampY);
   const xValues = [
     ...xAnchors,
@@ -7672,8 +7812,15 @@ function candidateLanes(startOut: Point, endOut: Point, blockers: ModelNode[], a
   };
 }
 
-function buildRouteCandidates(startOut: Point, endOut: Point, blockers: ModelNode[], avoidedSegments: Segment[], bounds?: CanvasBounds) {
-  const { xs, ys } = candidateLanes(startOut, endOut, blockers, avoidedSegments, bounds);
+function buildRouteCandidates(
+  startOut: Point,
+  endOut: Point,
+  blockers: ModelNode[],
+  avoidedSegments: Segment[],
+  bounds?: CanvasBounds,
+  endpointNodeIds?: ReadonlySet<string>
+) {
+  const { xs, ys } = candidateLanes(startOut, endOut, blockers, avoidedSegments, bounds, endpointNodeIds);
   const candidates: Point[][] = [
     [startOut, { x: endOut.x, y: startOut.y }, endOut],
     [startOut, { x: startOut.x, y: endOut.y }, endOut]
@@ -7721,10 +7868,10 @@ function selectRouteCandidate(candidates: Point[][], blockers: ModelNode[], avoi
     if (
       tier < bestTier ||
       (tier === bestTier &&
-        (candidateBends < bestBends ||
-          (candidateBends === bestBends &&
-            (candidateLength < bestLength ||
-              (candidateLength === bestLength && candidateScore < bestScore)))))
+        (candidateLength < bestLength ||
+          (candidateLength === bestLength &&
+            (candidateBends < bestBends ||
+              (candidateBends === bestBends && candidateScore < bestScore)))))
     ) {
       bestTier = tier;
       bestBends = candidateBends;
@@ -8287,10 +8434,10 @@ function selectCommitSafeRoute(
     const candidateScore = scoreRoute(simplified, filterBlockersForRoutePoints(simplified, scoreBlockers), simplifiedAvoidedSegments);
     if (
       !bestRoute ||
-      candidateBends < bestBends ||
-      (candidateBends === bestBends &&
-        (candidateLength < bestLength ||
-          (candidateLength === bestLength && candidateScore < bestScore)))
+      candidateLength < bestLength ||
+      (candidateLength === bestLength &&
+        (candidateBends < bestBends ||
+          (candidateBends === bestBends && candidateScore < bestScore)))
     ) {
       bestRoute = simplified;
       bestBends = candidateBends;
@@ -8395,7 +8542,14 @@ function designCommitSafeRoute(
 
   for (const candidateEdge of candidateEdges) {
     const context = buildEdgeRoutingContext(source, target, nodes, candidateEdge);
-    const middleCandidates = buildRouteCandidates(context.startOut, context.endOut, context.blockers, avoidedSegments, bounds);
+    const middleCandidates = buildRouteCandidates(
+      context.startOut,
+      context.endOut,
+      context.blockers,
+      avoidedSegments,
+      bounds,
+      new Set([source.id, target.id])
+    );
     const fullCandidates: Point[][] = [];
     for (const middle of middleCandidates) {
       const route = buildFullRoute(context.start, context.startOut, middle.slice(1, -1), context.endOut, context.end, bounds);
@@ -8412,8 +8566,8 @@ function designCommitSafeRoute(
     const score = scoreRoute(selected, filterBlockersForRoutePoints(selected, scoreBlockers), avoidedSegments);
     if (
       !best ||
-      bends < best.bends ||
-      (bends === best.bends && (length < best.length || (length === best.length && score < best.score)))
+      length < best.length ||
+      (length === best.length && (bends < best.bends || (bends === best.bends && score < best.score)))
     ) {
       best = {
         edge: candidateEdge,
@@ -8559,6 +8713,63 @@ export function rebuildExternalConnectionRoutesForMovedNodes(
   let nextEdges = edges;
   let changed = false;
   for (const edgeId of affectedEdgeIds) {
+    const candidateEdges = nextEdges.map((edge) => edge.id === edgeId ? edgeWithoutManualPoints(edge) : edge);
+    const prepared = prepareConnectionEdgeForCommit(nodes, candidateEdges, edgeId, bounds);
+    if (!prepared.ok || !prepared.edge) {
+      continue;
+    }
+    nextEdges = nextEdges.map((edge) => {
+      if (edge.id !== edgeId) {
+        return edge;
+      }
+      changed = true;
+      return prepared.edge!;
+    });
+  }
+
+  return changed ? nextEdges : edges;
+}
+
+export function rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes(
+  nodes: ModelNode[],
+  edges: Edge[],
+  movedNodeIds: Iterable<string>,
+  bounds?: CanvasBounds
+): Edge[] {
+  const movedIds = new Set(movedNodeIds);
+  if (movedIds.size === 0 || edges.length === 0) {
+    return edges;
+  }
+
+  const internalEdges = edges.filter((edge) => movedIds.has(edge.sourceId) && movedIds.has(edge.targetId));
+  if (internalEdges.length === 0) {
+    return edges;
+  }
+
+  const stationaryNodes = nodes.filter((node) => !movedIds.has(node.id));
+  if (stationaryNodes.length === 0) {
+    return edges;
+  }
+
+  const stationaryCandidates = getRouteBlockingCandidates(stationaryNodes);
+  const routeByEdgeId = new Map(routeEdgesForStoredRendering(nodes, internalEdges, bounds).map((route) => [route.edgeId, route]));
+  const blockedEdgeIds = internalEdges
+    .filter((edge) => {
+      const route = routeByEdgeId.get(edge.id);
+      if (!route) {
+        return false;
+      }
+      const blockers = getRouteBlockingCandidateNodesFromBoxes(route.points, edge, stationaryCandidates);
+      return routeIntersectsSpecificNodes(route.points, edge, blockers);
+    })
+    .map((edge) => edge.id);
+  if (blockedEdgeIds.length === 0) {
+    return edges;
+  }
+
+  let nextEdges = edges;
+  let changed = false;
+  for (const edgeId of blockedEdgeIds) {
     const candidateEdges = nextEdges.map((edge) => edge.id === edgeId ? edgeWithoutManualPoints(edge) : edge);
     const prepared = prepareConnectionEdgeForCommit(nodes, candidateEdges, edgeId, bounds);
     if (!prepared.ok || !prepared.edge) {
@@ -8770,7 +8981,7 @@ export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes:
     ) {
       return simplifiedRepairedManualRoute;
     }
-    const candidates = buildRouteCandidates(startOut, endOut, blockers, avoidedSegments, bounds);
+    const candidates = buildRouteCandidates(startOut, endOut, blockers, avoidedSegments, bounds, new Set([source.id, target.id]));
     const repairedMiddle = selectRouteCandidate(candidates, blockers, avoidedSegments);
     return simplifyRoutePreservingEndpointStubs(repairRouteAroundBlockers(
       buildFullRoute(start, startOut, repairedMiddle.slice(1, -1), endOut, end, bounds),
@@ -8779,7 +8990,7 @@ export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes:
       1
     ), { blockers, avoidedSegments, reduceTinyDoglegs: true });
   }
-  const candidates = buildRouteCandidates(startOut, endOut, blockers, avoidedSegments, bounds);
+  const candidates = buildRouteCandidates(startOut, endOut, blockers, avoidedSegments, bounds, new Set([source.id, target.id]));
   const routedMiddle = selectRouteCandidate(candidates, blockers, avoidedSegments);
   return simplifyRoutePreservingEndpointStubs(repairRouteAroundBlockers(
     buildFullRoute(start, startOut, routedMiddle.slice(1, -1), endOut, end, bounds),

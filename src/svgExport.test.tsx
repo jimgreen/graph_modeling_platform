@@ -104,9 +104,21 @@ describe("SVG export", () => {
     const terminalStubLine = svg.split("\n").find((line) => line.includes("export-terminal-stub ac")) ?? "";
 
     expect(svg).toContain('class="export-terminal-stub ac"');
-    expect(svg).toContain('stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-dasharray="10 6"');
+    expect(svg).toContain('transform="translate(56 0) scale(0.5 2)"');
+    expect(svg).toContain('x1="-52" y1="0" x2="0" y2="0" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-dasharray="10 6"');
     expect(terminalStubLine).not.toContain("vector-effect");
     expect(svg).not.toContain('class="export-terminal-stub ac" x1="-48" y1="0" x2="0" y2="0" stroke="#123456"');
+  });
+
+  test("exports converter terminals farther away from the device border", () => {
+    const converter = createDefaultNode("dcdc-converter", { x: 160, y: 120 });
+
+    const svg = buildSvgDocument([converter], [], { width: 360, height: 240 });
+
+    expect(svg).toContain('class="export-terminal dc" transform="translate(-68 0) scale(1 1)"');
+    expect(svg).toContain('class="export-terminal dc" transform="translate(68 0) scale(1 1)"');
+    expect(svg).toContain('x1="36" y1="0" x2="0" y2="0" stroke="#0f766e"');
+    expect(svg).toContain('x1="-36" y1="0" x2="0" y2="0" stroke="#0f766e"');
   });
 
   test("exports rotated and mirrored device geometry while text and image layers stay upright", () => {
@@ -120,7 +132,7 @@ describe("SVG export", () => {
     expect(svg).toContain('class="export-node" transform="translate(160 140)"');
     expect(svg).toContain('class="export-node-geometry" transform="rotate(90) scale(-1.5 2)"');
     expect(svg).toContain('class="export-node-upright-content" transform="scale(1.5 2)"');
-    expect(svg).toContain('class="export-terminal ac" transform="translate(42 0) scale(-0.6666666666666666 0.5)"');
+    expect(svg).toContain('class="export-terminal ac" transform="translate(44.66667 0) scale(-0.6666666666666666 0.5)"');
     expect(svg).toContain('matrix(0 -0.75 -1.33333 0 0 0)');
     expect(svg).toContain(">AC</text>");
   });
@@ -135,9 +147,9 @@ describe("SVG export", () => {
     expect(twoWindingSvg).not.toContain("three-winding-transformer-glyph");
     expect(threeWindingSvg).toContain("three-winding-transformer-glyph");
     expect(threeWindingSvg.match(/class="transformer-winding"/g)?.length).toBe(3);
-    expect(threeWindingSvg).toContain('class="export-terminal ac" transform="translate(-52 -8) scale(1 1)"');
-    expect(threeWindingSvg).toContain('class="export-terminal ac" transform="translate(52 -8) scale(1 1)"');
-    expect(threeWindingSvg).toContain('class="export-terminal ac" transform="translate(0 38) scale(1 1)"');
+    expect(threeWindingSvg).toContain('class="export-terminal ac" transform="translate(-56 -8) scale(1 1)"');
+    expect(threeWindingSvg).toContain('class="export-terminal ac" transform="translate(56 -8) scale(1 1)"');
+    expect(threeWindingSvg).toContain('class="export-terminal ac" transform="translate(0 42) scale(1 1)"');
   });
 
   test("exports distinct AC and DC electrolyzer glyphs", () => {

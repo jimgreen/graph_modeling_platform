@@ -52,6 +52,7 @@ import {
   preserveDraggedRouteShape,
   rebuildConnectionRoutesForNodes,
   rebuildExternalConnectionRoutesForMovedNodes,
+  rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes,
   rebuildSingleConnectionRoute,
   upsertSavedProject,
   rerouteEdgesAroundMovedNodes,
@@ -101,6 +102,7 @@ import {
   prepareConnectionEdgeForCommit,
   projectPointToBusCenterline,
   reconcileOverlappingTerminalConnections,
+  terminalRenderLocalPoint,
   terminalStubSegment,
   terminalStubStrokeWidth,
   terminalVoltageBaseNumber,
@@ -896,33 +898,94 @@ describe("power system model", () => {
 
   test("scales terminal stubs from the device body toward visible terminals", () => {
     expect(terminalStubSegment({ anchor: { x: 0.5, y: 0 } })).toEqual({
-      from: { x: -24, y: 0 },
+      from: { x: -28, y: 0 },
       to: { x: 0, y: 0 }
     });
     expect(terminalStubSegment({ anchor: { x: -0.5, y: 0 } })).toEqual({
-      from: { x: 24, y: 0 },
+      from: { x: 28, y: 0 },
       to: { x: 0, y: 0 }
     });
     expect(terminalStubSegment({ anchor: { x: 0, y: -0.5 } })).toEqual({
-      from: { x: 0, y: 24 },
+      from: { x: 0, y: 28 },
       to: { x: 0, y: 0 }
     });
     expect(terminalStubSegment({ anchor: { x: 0, y: 0.5 } })).toEqual({
-      from: { x: 0, y: -24 },
+      from: { x: 0, y: -28 },
       to: { x: 0, y: 0 }
     });
     expect(terminalStubSegment({ anchor: { x: 0.5, y: 0 } }, -1, 1)).toEqual({
-      from: { x: 24, y: 0 },
+      from: { x: 28, y: 0 },
       to: { x: 0, y: 0 }
     });
     expect(terminalStubSegment({ anchor: { x: 0.5, y: 0 } }, 2, 0.5)).toEqual({
-      from: { x: -48, y: 0 },
+      from: { x: -52, y: 0 },
       to: { x: 0, y: 0 }
     });
     expect(terminalStubSegment({ anchor: { x: 0, y: 0.5 } }, 2, 0.5)).toEqual({
-      from: { x: 0, y: -12 },
+      from: { x: 0, y: -16 },
       to: { x: 0, y: 0 }
     });
+    expect(terminalStubSegment({ anchor: { x: 0.25, y: 0 } })).toEqual({
+      from: { x: -24, y: 0 },
+      to: { x: 0, y: 0 }
+    });
+  });
+
+  test("moves terminals on device borders outward by four pixels", () => {
+    const line = createDefaultNode("ac-line", { x: 200, y: 120 });
+    const insideTerminal = {
+      ...line,
+      terminals: [{ ...line.terminals[0], anchor: { x: 0.25, y: 0 } }]
+    };
+    const scaledLine = { ...createDefaultNode("ac-line", { x: 160, y: 120 }), scaleX: 2, scaleY: 0.5 };
+
+    expect(getTerminalPoint(line, "t1")).toEqual({ x: 142, y: 120 });
+    expect(getTerminalPoint(line, "t2")).toEqual({ x: 258, y: 120 });
+    expect(getTerminalPoint(insideTerminal, "t1")).toEqual({ x: 227, y: 120 });
+    expect(terminalRenderLocalPoint(line.terminals[0], line.size, 1, 1)).toEqual({ x: -58, y: 0 });
+    expect(terminalRenderLocalPoint(line.terminals[1], line.size, 1, 1)).toEqual({ x: 58, y: 0 });
+    expect(terminalRenderLocalPoint(scaledLine.terminals[1], scaledLine.size, 2, 0.5)).toEqual({ x: 56, y: 0 });
+  });
+
+  test("moves converter terminals twelve pixels away from the device border", () => {
+    const dcdc = createDefaultNode("dcdc-converter", { x: 100, y: 100 });
+    const dcac = createDefaultNode("acdc-converter", { x: 260, y: 100 });
+    const acac = createDefaultNode("acac-converter", { x: 420, y: 100 });
+    const scaled = { ...createDefaultNode("dcdc-converter", { x: 100, y: 200 }), scaleX: 2, scaleY: 0.5 };
+
+    expect(getTerminalPoint(dcdc, "t1")).toEqual({ x: 32, y: 100 });
+    expect(getTerminalPoint(dcdc, "t2")).toEqual({ x: 168, y: 100 });
+    expect(getTerminalPoint(dcac, "t1")).toEqual({ x: 192, y: 100 });
+    expect(getTerminalPoint(dcac, "t2")).toEqual({ x: 328, y: 100 });
+    expect(getTerminalPoint(acac, "t1")).toEqual({ x: 352, y: 100 });
+    expect(getTerminalPoint(acac, "t2")).toEqual({ x: 488, y: 100 });
+    expect(terminalRenderLocalPoint(dcdc.terminals[0], dcdc.size, 1, 1, dcdc.kind)).toEqual({ x: -68, y: 0 });
+    expect(terminalRenderLocalPoint(dcdc.terminals[1], dcdc.size, 1, 1, dcdc.kind)).toEqual({ x: 68, y: 0 });
+    expect(terminalRenderLocalPoint(scaled.terminals[1], scaled.size, 2, 0.5, scaled.kind)).toEqual({ x: 62, y: 0 });
+    expect(terminalStubSegment(dcdc.terminals[0], 1, 1, 24, dcdc.kind)).toEqual({
+      from: { x: 36, y: 0 },
+      to: { x: 0, y: 0 }
+    });
+  });
+
+  test("moves close-border cross-energy terminals twelve pixels away from the device border", () => {
+    const kinds = [
+      "ac-electrolyzer",
+      "dc-electrolyzer",
+      "ac-fuel-cell",
+      "dc-fuel-cell",
+      "ac-heater",
+      "dc-heater",
+      "ac-two-port-heater",
+      "dc-two-port-heater"
+    ] as const;
+
+    for (const kind of kinds) {
+      const node = createDefaultNode(kind, { x: 200, y: 120 });
+      expect(getTerminalPoint(node, "t1").x).toBe(200 - node.size.width / 2 - 12);
+      expect(terminalRenderLocalPoint(node.terminals[0], node.size, 1, 1, node.kind).x).toBe(-node.size.width / 2 - 12);
+      expect(terminalStubSegment(node.terminals[0], 1, 1, 24, node.kind).from.x).toBe(36);
+    }
   });
 
   test("resolves device glyph line color and width from variant and params", () => {
@@ -1379,9 +1442,9 @@ describe("power system model", () => {
       { x: 0, y: 38 }
     ]);
     expect(node.terminals.map((terminal) => terminalStubSegment(terminal))).toEqual([
-      { from: { x: 24, y: 0 }, to: { x: 0, y: 0 } },
-      { from: { x: -24, y: 0 }, to: { x: 0, y: 0 } },
-      { from: { x: 0, y: -24 }, to: { x: 0, y: 0 } }
+      { from: { x: 28, y: 0 }, to: { x: 0, y: 0 } },
+      { from: { x: -28, y: 0 }, to: { x: 0, y: 0 } },
+      { from: { x: 0, y: -28 }, to: { x: 0, y: 0 } }
     ]);
   });
 
@@ -1527,6 +1590,25 @@ describe("power system model", () => {
     const yValues = route.points.map((point) => point.y);
     expect(Math.max(...yValues)).toBeLessThanOrEqual(blocker.position.y + blocker.size.height / 2 + 40);
     expect(Math.min(...yValues)).toBeGreaterThanOrEqual(blocker.position.y - blocker.size.height / 2 - 40);
+  });
+
+  test("avoids canvas-edge lanes when a safe local reroute is available", () => {
+    const bounds = { width: 1000, height: 600 };
+    const source = { ...createDefaultNode("ac-line", { x: 500, y: 80 }), id: "source" };
+    const target = { ...createDefaultNode("ac-line", { x: 500, y: 540 }), id: "target" };
+    const blockers = [
+      { ...createDefaultNode("ac-switch", { x: 438, y: 437 }), id: "blocker-a" },
+      { ...createDefaultNode("ac-switch", { x: 417, y: 547 }), id: "blocker-b" },
+      { ...createDefaultNode("ac-switch", { x: 599, y: 528 }), id: "blocker-c" }
+    ];
+    const route = routeEdgesForRendering(
+      [source, target, ...blockers],
+      [{ id: "edge-overextended", sourceId: source.id, targetId: target.id, sourceTerminalId: "t2", targetTerminalId: "t1" }],
+      bounds
+    )[0];
+    const innerPoints = route.points.slice(1, -1);
+
+    expect(innerPoints.some((point) => point.x <= 6 || point.x >= bounds.width - 6 || point.y <= 6 || point.y >= bounds.height - 6)).toBe(false);
   });
 
   test("accepts a newly drawn connection only when the final route satisfies connection constraints", () => {
@@ -2501,7 +2583,7 @@ describe("power system model", () => {
     expect(new Set(route.points.map((point) => point.y))).toEqual(new Set([140]));
   });
 
-  test("rebuilds every external connection for a small moved device set", () => {
+  test("rebuilds every moved-to-stationary connection without rebuilding moved-to-moved connections", () => {
     const left = { ...createDefaultNode("ac-line", { x: 80, y: 140 }), id: "left" };
     const movedA = { ...createDefaultNode("ac-line", { x: 240, y: 140 }), id: "moved-a" };
     const movedB = { ...createDefaultNode("ac-line", { x: 380, y: 140 }), id: "moved-b" };
@@ -2556,6 +2638,34 @@ describe("power system model", () => {
     expect(rebuilt[2].manualPoints).not.toEqual(rightEdge.manualPoints);
     expect(validateConnectionEdgeRoute([left, movedA, movedB, right], rebuilt, leftEdge.id, { width: 700, height: 320 }).ok).toBe(true);
     expect(validateConnectionEdgeRoute([left, movedA, movedB, right], rebuilt, rightEdge.id, { width: 700, height: 320 }).ok).toBe(true);
+  });
+
+  test("rebuilds moved-to-moved connection routes when they interfere with stationary devices", () => {
+    const movedA = { ...createDefaultNode("ac-line", { x: 180, y: 140 }), id: "moved-a" };
+    const movedB = { ...createDefaultNode("ac-line", { x: 500, y: 140 }), id: "moved-b" };
+    const blocker = { ...createDefaultNode("ac-line", { x: 340, y: 140 }), id: "stationary-blocker" };
+    const edge: Edge = {
+      id: "blocked-internal",
+      sourceId: movedA.id,
+      targetId: movedB.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1"
+    };
+
+    const rebuilt = rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes(
+      [movedA, movedB, blocker],
+      [edge],
+      [movedA.id, movedB.id],
+      { width: 700, height: 320 }
+    );
+    const route = routeEdgesForRendering([movedA, movedB, blocker], rebuilt, { width: 700, height: 320 })[0];
+    const validation = validateConnectionEdgeRoute([movedA, movedB, blocker], rebuilt, edge.id, { width: 700, height: 320 });
+
+    expect(rebuilt[0]).not.toBe(edge);
+    expect(rebuilt[0].manualPoints?.length ?? 0).toBeGreaterThan(0);
+    expect(validation.ok).toBe(true);
+    expect(validation.issues).toEqual([]);
+    expect(new Set(route.points.map((point) => point.y))).not.toEqual(new Set([140]));
   });
 
   test("rebuilds connected routes after a node geometry transform", () => {
@@ -2895,7 +3005,7 @@ describe("power system model", () => {
       nextNodes: [movedLoad, bus]
     });
 
-    expect(patch).toEqual({ targetPoint: { x: 303, y: 100 } });
+    expect(patch).toEqual({ targetPoint: { x: 307, y: 100 } });
   });
 
   test("slides bus endpoints for manual routes when the terminal segment stays outward", () => {
@@ -2926,7 +3036,7 @@ describe("power system model", () => {
       nextNodes: [movedLoad, bus]
     });
 
-    expect(patch).toEqual({ targetPoint: { x: 303, y: 100 } });
+    expect(patch).toEqual({ targetPoint: { x: 307, y: 100 } });
   });
 
   test("does not slide a bus endpoint when the device terminal would connect sideways", () => {
@@ -3039,8 +3149,8 @@ describe("power system model", () => {
       nextNodes
     });
 
-    expect(upperPatch).toEqual({ sourcePoint: { x: 258, y: 100 } });
-    expect(lowerPatch).toEqual({ targetPoint: { x: 422, y: 300 } });
+    expect(upperPatch).toEqual({ sourcePoint: { x: 254, y: 100 } });
+    expect(lowerPatch).toEqual({ targetPoint: { x: 426, y: 300 } });
   });
 
   test("slides the opposite bus endpoint while a connection endpoint is being rewired or dragged", () => {
@@ -4179,7 +4289,7 @@ describe("power system model", () => {
       name: "电源A -> 负荷A"
     });
     expect(getElementFocusPoint({ kind: "node", id: text.id }, [source, load, text], [edge])).toEqual(text.position);
-    expect(getElementFocusPoint({ kind: "edge", id: "edge-a" }, [source, load, text], [edge])).toEqual({ x: 223, y: 120 });
+    expect(getElementFocusPoint({ kind: "edge", id: "edge-a" }, [source, load, text], [edge])).toEqual({ x: 227, y: 120 });
   });
 
   test("colors connection lines by their connected terminal energy type", () => {
