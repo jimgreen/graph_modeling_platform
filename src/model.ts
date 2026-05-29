@@ -6985,6 +6985,8 @@ const ROUTE_LANE_OFFSETS = [24, 56, 96, 144];
 const ROUTE_AVOIDED_SEGMENT_OFFSETS = [18, 36, 54];
 const ROUTE_MAX_LANES_PER_AXIS = 24;
 const ROUTE_MAX_LANE_PAIRS = 128;
+const ROUTE_MAX_BUS_ENDPOINT_POINTS_PER_SIDE = 2;
+const ROUTE_MAX_BUS_ENDPOINT_CANDIDATES = 4;
 const ROUTE_TINY_DOGLEG_LIMIT = 18;
 const ROUTE_MIN_MOVABLE_SEGMENT_LENGTH = 18;
 const ROUTE_SHARED_ENDPOINT_STUB_LIMIT = 36;
@@ -8711,7 +8713,8 @@ function busEndpointCandidatePoints(bus: ModelNode, preferredPoints: Point[]): P
     return [];
   }
   if (isBoundaryBusNode(bus)) {
-    return uniquePoints(preferredPoints.map((point) => projectPointToNodeBoundary(bus, point)));
+    return uniquePoints(preferredPoints.map((point) => projectPointToNodeBoundary(bus, point)))
+      .slice(0, ROUTE_MAX_BUS_ENDPOINT_POINTS_PER_SIDE);
   }
   const halfWidth = (bus.size.width * Math.abs(getNodeScaleX(bus))) / 2;
   const localXValues = preferredPoints.map((point) => pointToNodeLocal(bus, point).x);
@@ -8720,13 +8723,40 @@ function busEndpointCandidatePoints(bus: ModelNode, preferredPoints: Point[]): P
       x: Math.max(-halfWidth, Math.min(halfWidth, localX)),
       y: 0
     })
-  ));
+  )).slice(0, ROUTE_MAX_BUS_ENDPOINT_POINTS_PER_SIDE);
 }
 
 function edgeWithEndpointPoint(edge: Edge, side: EdgeSide, point: Point): Edge {
   return side === "source"
     ? { ...edge, sourcePoint: point }
     : { ...edge, targetPoint: point };
+}
+
+function prioritizeBusOptimizedEdgeCandidates(
+  candidates: Edge[],
+  context: EdgeRoutingContext,
+  maxCount = ROUTE_MAX_BUS_ENDPOINT_CANDIDATES
+): Edge[] {
+  if (candidates.length <= maxCount) {
+    return candidates;
+  }
+  const distance = (first: Point, second: Point) =>
+    Math.abs(first.x - second.x) + Math.abs(first.y - second.y);
+  return candidates
+    .map((candidate, index) => {
+      const sourcePoint = candidate.sourcePoint ?? context.start;
+      const targetPoint = candidate.targetPoint ?? context.end;
+      const score =
+        distance(sourcePoint, targetPoint) * 4 +
+        distance(sourcePoint, context.startOut) +
+        distance(targetPoint, context.endOut) +
+        distance(sourcePoint, context.start) +
+        distance(targetPoint, context.end);
+      return { candidate, index, score };
+    })
+    .sort((first, second) => first.score - second.score || first.index - second.index)
+    .slice(0, maxCount)
+    .map((item) => item.candidate);
 }
 
 function busOptimizedEdgeCandidates(edge: Edge, source: ModelNode, target: ModelNode, context: EdgeRoutingContext): Edge[] {
@@ -8745,7 +8775,7 @@ function busOptimizedEdgeCandidates(edge: Edge, source: ModelNode, target: Model
   expandSide("target", target, [context.end, context.startOut, context.start]);
 
   const seen = new Set<string>();
-  return candidates.filter((candidate) => {
+  candidates = candidates.filter((candidate) => {
     const sourceKey = candidate.sourcePoint ? `${candidate.sourcePoint.x},${candidate.sourcePoint.y}` : "";
     const targetKey = candidate.targetPoint ? `${candidate.targetPoint.x},${candidate.targetPoint.y}` : "";
     const key = `${sourceKey}|${targetKey}`;
@@ -8755,6 +8785,7 @@ function busOptimizedEdgeCandidates(edge: Edge, source: ModelNode, target: Model
     seen.add(key);
     return true;
   });
+  return prioritizeBusOptimizedEdgeCandidates(candidates, context, ROUTE_MAX_BUS_ENDPOINT_CANDIDATES);
 }
 
 type DesignedCommitRoute = {

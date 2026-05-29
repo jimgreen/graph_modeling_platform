@@ -1138,6 +1138,19 @@ describe("graph inspector panel", () => {
     expect(candidateBlock).not.toContain("for (const x of xs) {\n    for (const y of ys)");
   });
 
+  test("caps bus endpoint landing combinations before full route design", async () => {
+    const source = await readModelSource();
+    const busStart = source.indexOf("function busOptimizedEdgeCandidates");
+    const busEnd = source.indexOf("type DesignedCommitRoute", busStart);
+    const busBlock = source.slice(busStart, busEnd);
+
+    expect(source).toContain("const ROUTE_MAX_BUS_ENDPOINT_CANDIDATES");
+    expect(source).toContain("function prioritizeBusOptimizedEdgeCandidates");
+    expect(busBlock).toContain("prioritizeBusOptimizedEdgeCandidates(candidates");
+    expect(busBlock).toContain("ROUTE_MAX_BUS_ENDPOINT_CANDIDATES");
+    expect(busBlock).not.toContain("return candidates.filter((candidate) =>");
+  });
+
   test("defers full terminal overlap detection off the drag release frame", async () => {
     const source = await readAppSource();
     const overlapStart = source.indexOf("const terminalOverlapNodes");
