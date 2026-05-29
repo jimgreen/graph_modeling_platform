@@ -2016,6 +2016,105 @@ describe("power system model", () => {
     expect(hasImmediateRouteReversal(route?.points ?? [])).toBe(false);
   });
 
+  test("routes left-to-right same-facing terminals by approaching the target from its outward side", () => {
+    const source = { ...createDefaultNode("ac-load", { x: 120, y: 140 }), id: "source" };
+    const target = { ...createDefaultNode("ac-load", { x: 460, y: 140 }), id: "target" };
+    const edge: Edge = {
+      id: "left-to-right-same-facing-terminals",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+
+    const prepared = prepareConnectionEdgeForCommit([source, target], [edge], edge.id, { width: 700, height: 320 });
+    const route = prepared.edge
+      ? routeEdgesForRendering([source, target], [prepared.edge], { width: 700, height: 320 })[0]
+      : undefined;
+    const validation = prepared.edge
+      ? validateConnectionEdgeRoute([source, target], [prepared.edge], edge.id, { width: 700, height: 320 })
+      : prepared;
+
+    expect(prepared.ok).toBe(true);
+    expect(prepared.edge).toBeDefined();
+    expect(validation.ok).toBe(true);
+    expect(validation.issues).toEqual([]);
+    expect(route).toBeDefined();
+    expect(route?.points[0]).toEqual(getTerminalPoint(source, "t1"));
+    expect(route?.points[route.points.length - 1]).toEqual(getTerminalPoint(target, "t1"));
+    expect(hasImmediateRouteReversal(route?.points ?? [])).toBe(false);
+  });
+
+  test("connects heater and heat exchanger right-side heat terminals without false space exhaustion", () => {
+    const source = { ...createDefaultNode("ac-two-port-heater", { x: 545, y: 333 }), id: "heater" };
+    const target = { ...createDefaultNode("four-port-heat-exchanger", { x: 1013, y: 366 }), id: "heat-exchanger" };
+    const edge: Edge = {
+      id: "heater-to-exchanger-right-side-terminals",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t3",
+      targetTerminalId: "t3"
+    };
+
+    const prepared = prepareConnectionEdgeForCommit([source, target], [edge], edge.id, { width: 1400, height: 800 });
+    const validation = prepared.edge
+      ? validateConnectionEdgeRoute([source, target], [prepared.edge], edge.id, { width: 1400, height: 800 })
+      : prepared;
+    const route = prepared.edge
+      ? routeEdgesForRendering([source, target], [prepared.edge], { width: 1400, height: 800 })[0]
+      : undefined;
+
+    expect(prepared.ok).toBe(true);
+    expect(prepared.edge).toBeDefined();
+    expect(validation.ok).toBe(true);
+    expect(validation.issues).toEqual([]);
+    expect(route?.points[0]).toEqual(getTerminalPoint(source, "t3"));
+    expect(route?.points[route.points.length - 1]).toEqual(getTerminalPoint(target, "t3"));
+    expect(hasImmediateRouteReversal(route?.points ?? [])).toBe(false);
+  });
+
+  test("expands route search when initial local lanes are blocked outside the narrow endpoint corridor", () => {
+    const source = { ...createDefaultNode("ac-load", { x: 120, y: 300 }), id: "source" };
+    const target = { ...createDefaultNode("ac-load", { x: 720, y: 300 }), id: "target" };
+    const blockers = [
+      { id: "blocker-a", position: { x: 230.74561725370586, y: 177.01327556278557 }, size: { width: 84.7533918172121, height: 46.15832384908572 } },
+      { id: "blocker-b", position: { x: 564.3622669298202, y: 367.36799396108836 }, size: { width: 43.22975908406079, height: 147.82731029437855 } },
+      { id: "blocker-c", position: { x: 479.41824986599386, y: 235.935955545865 }, size: { width: 193.3681787736714, height: 124.03364772209898 } },
+      { id: "blocker-d", position: { x: 350.07750363089144, y: 514.5349732367322 }, size: { width: 130.51322533749044, height: 96.35568381519988 } },
+      { id: "blocker-e", position: { x: 454.0355362277478, y: 409.6202348312363 }, size: { width: 62.164204977452755, height: 40.66616170341149 } },
+      { id: "blocker-f", position: { x: 309.0147874224931, y: 100.86706667672843 }, size: { width: 162.97332459129393, height: 146.39430492417887 } },
+      { id: "blocker-g", position: { x: 554.2795213218778, y: 145.98416609223932 }, size: { width: 111.19893884286284, height: 32.18438675859943 } }
+    ].map((blocker) => ({
+      ...createDefaultNode("static-rect", blocker.position),
+      id: blocker.id,
+      size: blocker.size
+    }));
+    const edge: Edge = {
+      id: "expanded-search-route",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const nodes = [source, target, ...blockers];
+
+    const prepared = prepareConnectionEdgeForCommit(nodes, [edge], edge.id, { width: 900, height: 680 });
+    const validation = prepared.edge
+      ? validateConnectionEdgeRoute(nodes, [prepared.edge], edge.id, { width: 900, height: 680 })
+      : prepared;
+    const route = prepared.edge
+      ? routeEdgesForRendering(nodes, [prepared.edge], { width: 900, height: 680 })[0]
+      : undefined;
+
+    expect(prepared.ok).toBe(true);
+    expect(prepared.edge).toBeDefined();
+    expect(validation.ok).toBe(true);
+    expect(validation.issues).toEqual([]);
+    expect(route?.points[0]).toEqual(getTerminalPoint(source, "t1"));
+    expect(route?.points[route.points.length - 1]).toEqual(getTerminalPoint(target, "t1"));
+    expect(hasImmediateRouteReversal(route?.points ?? [])).toBe(false);
+  });
+
   test("repairs connection routes that immediately reverse 180 degrees after leaving a terminal", () => {
     const source = { ...createDefaultNode("ac-line", { x: 120, y: 140 }), id: "source" };
     const target = { ...createDefaultNode("ac-line", { x: 520, y: 140 }), id: "target" };

@@ -1199,18 +1199,26 @@ button:disabled {
 .diagram-node.storage-node.selected .node-hitbox,
 .diagram-node.storage-node.connect-source .node-hitbox {
   stroke: #1d4ed8;
-  stroke-width: 3;
+  stroke-width: 2;
 }
 
 .diagram-node.bus-node.selected .bus-glyph,
 .diagram-node.bus-node.connect-source .bus-glyph {
   stroke: #1d4ed8;
+  stroke-width: 1.75;
   fill: #1d4ed8;
+  vector-effect: non-scaling-stroke;
 }
 
 .diagram-node.bus-node.selected.focused .bus-glyph {
   stroke: #f97316;
+  stroke-width: 2.25;
   fill: #f97316;
+}
+
+.diagram-node.storage-node.selected.focused .node-hitbox {
+  stroke: #f97316;
+  stroke-width: 2.25;
 }
 
 .diagram-node.connect-source .node-hitbox {

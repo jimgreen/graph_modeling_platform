@@ -83,6 +83,20 @@ describe("graph inspector panel", () => {
     expect(terminalStubBlock).not.toContain("vector-effect");
   });
 
+  test("keeps bus selection outlines compact relative to bus glyphs", async () => {
+    const styles = await readStyles();
+    const busSelectedBlock = cssRuleBlock(styles, ".diagram-node.bus-node.selected .bus-glyph");
+    const busFocusedBlock = cssRuleBlock(styles, ".diagram-node.bus-node.selected.focused .bus-glyph");
+    const storageSelectedBlock = cssRuleBlock(styles, ".diagram-node.storage-node.selected .node-hitbox");
+    const storageFocusedBlock = cssRuleBlock(styles, ".diagram-node.storage-node.selected.focused .node-hitbox");
+
+    expect(busSelectedBlock).toContain("stroke-width: 1.75");
+    expect(busSelectedBlock).toContain("vector-effect: non-scaling-stroke");
+    expect(busFocusedBlock).toContain("stroke-width: 2.25");
+    expect(storageSelectedBlock).toContain("stroke-width: 2");
+    expect(storageFocusedBlock).toContain("stroke-width: 2.25");
+  });
+
   test("rebuilds moved-to-stationary connection routes without a moved-node count gate", async () => {
     const source = await readAppSource();
     const commitStart = source.indexOf("const commitFastMovedGraph");
@@ -1153,9 +1167,12 @@ describe("graph inspector panel", () => {
     const laneStart = source.indexOf("function candidateLanes");
     const laneEnd = source.indexOf("function buildRouteCandidates", laneStart);
     const laneBlock = source.slice(laneStart, laneEnd);
-    const candidateStart = source.indexOf("function buildRouteCandidates");
-    const candidateEnd = source.indexOf("function selectRouteCandidate", candidateStart);
+    const candidateStart = source.indexOf("function routeCandidatesFromLanes");
+    const candidateEnd = source.indexOf("function candidateLanes", candidateStart);
     const candidateBlock = source.slice(candidateStart, candidateEnd);
+    const expandedStart = source.indexOf("function buildExpandedRouteCandidates");
+    const expandedEnd = source.indexOf("function selectRouteCandidate", expandedStart);
+    const expandedBlock = source.slice(expandedStart, expandedEnd);
 
     expect(source).toContain("const ROUTE_MAX_LANES_PER_AXIS");
     expect(source).toContain("const ROUTE_MAX_LANE_PAIRS");
@@ -1164,6 +1181,7 @@ describe("graph inspector panel", () => {
     expect(laneBlock).toContain("prioritizeLaneValues");
     expect(candidateBlock).toContain("prioritizeLanePairs(xs, ys");
     expect(candidateBlock).toContain("for (const { x, y } of lanePairs)");
+    expect(expandedBlock).toContain("ROUTE_MAX_LANE_PAIRS * 2");
     expect(laneBlock).not.toContain("return { xs: uniqueSorted(xValues), ys: uniqueSorted(yValues) };");
     expect(candidateBlock).not.toContain("for (const x of xs) {\n    for (const y of ys)");
   });

@@ -7993,6 +7993,33 @@ function prioritizeLanePairs(
     .slice(0, maxCount);
 }
 
+function routeCandidatesFromLanes(
+  startOut: Point,
+  endOut: Point,
+  xs: number[],
+  ys: number[],
+  maxLanePairs = ROUTE_MAX_LANE_PAIRS
+) {
+  const lanePairs = prioritizeLanePairs(xs, ys, startOut, endOut, maxLanePairs);
+  const candidates: Point[][] = [
+    [startOut, { x: endOut.x, y: startOut.y }, endOut],
+    [startOut, { x: startOut.x, y: endOut.y }, endOut]
+  ];
+
+  for (const x of xs) {
+    candidates.push([startOut, { x, y: startOut.y }, { x, y: endOut.y }, endOut]);
+  }
+  for (const y of ys) {
+    candidates.push([startOut, { x: startOut.x, y }, { x: endOut.x, y }, endOut]);
+  }
+  for (const { x, y } of lanePairs) {
+    candidates.push([startOut, { x, y: startOut.y }, { x, y }, { x: endOut.x, y }, endOut]);
+    candidates.push([startOut, { x: startOut.x, y }, { x, y }, { x, y: endOut.y }, endOut]);
+  }
+
+  return candidates.map(compactRoute);
+}
+
 function candidateLanes(
   startOut: Point,
   endOut: Point,
@@ -8071,24 +8098,71 @@ function buildRouteCandidates(
   endpointNodeIds?: ReadonlySet<string>
 ) {
   const { xs, ys } = candidateLanes(startOut, endOut, blockers, avoidedSegments, bounds, endpointNodeIds);
-  const lanePairs = prioritizeLanePairs(xs, ys, startOut, endOut);
-  const candidates: Point[][] = [
-    [startOut, { x: endOut.x, y: startOut.y }, endOut],
-    [startOut, { x: startOut.x, y: endOut.y }, endOut]
-  ];
+  return routeCandidatesFromLanes(startOut, endOut, xs, ys);
+}
 
-  for (const x of xs) {
-    candidates.push([startOut, { x, y: startOut.y }, { x, y: endOut.y }, endOut]);
-  }
-  for (const y of ys) {
-    candidates.push([startOut, { x: startOut.x, y }, { x: endOut.x, y }, endOut]);
-  }
-  for (const { x, y } of lanePairs) {
-    candidates.push([startOut, { x, y: startOut.y }, { x, y }, { x: endOut.x, y }, endOut]);
-    candidates.push([startOut, { x: startOut.x, y }, { x, y }, { x, y: endOut.y }, endOut]);
-  }
+function expandedCandidateLanes(
+  startOut: Point,
+  endOut: Point,
+  blockers: ModelNode[],
+  bounds?: CanvasBounds,
+  endpointNodeIds: ReadonlySet<string> = new Set()
+) {
+  const pointTouchesBox = (point: Point, box: ReturnType<typeof boxFor>, margin = 1) =>
+    point.x >= box.left - margin &&
+    point.x <= box.right + margin &&
+    point.y >= box.top - margin &&
+    point.y <= box.bottom + margin;
+  const blockerBoxes = blockers
+    .map((node) => ({ node, box: boxFor(node, 32) }))
+    .filter(({ node, box }) =>
+      !(
+        endpointNodeIds.has(node.id) &&
+        (pointTouchesBox(startOut, box) || pointTouchesBox(endOut, box))
+      )
+    )
+    .map(({ box }) => box);
+  const clampX = (value: number) => bounds ? Math.max(0, Math.min(bounds.width, value)) : value;
+  const clampY = (value: number) => bounds ? Math.max(0, Math.min(bounds.height, value)) : value;
+  const xBoundaryLanes = bounds
+    ? [32, 64, 96, bounds.width - 96, bounds.width - 64, bounds.width - 32].map(clampX)
+    : [];
+  const yBoundaryLanes = bounds
+    ? [32, 64, 96, bounds.height - 96, bounds.height - 64, bounds.height - 32].map(clampY)
+    : [];
+  const xLaneOffsets = blockerBoxes.flatMap((box) =>
+    ROUTE_LANE_OFFSETS.flatMap((offset) => [box.left - offset, box.right + offset])
+  );
+  const yLaneOffsets = blockerBoxes.flatMap((box) =>
+    ROUTE_LANE_OFFSETS.flatMap((offset) => [box.top - offset, box.bottom + offset])
+  );
+  const xAnchors = [
+    startOut.x,
+    endOut.x,
+    Math.round((startOut.x + endOut.x) / 2),
+    ...xBoundaryLanes
+  ].map(clampX);
+  const yAnchors = [
+    startOut.y,
+    endOut.y,
+    Math.round((startOut.y + endOut.y) / 2),
+    ...yBoundaryLanes
+  ].map(clampY);
+  return {
+    xs: prioritizeLaneValues([...xAnchors, ...xLaneOffsets].map(clampX), xAnchors),
+    ys: prioritizeLaneValues([...yAnchors, ...yLaneOffsets].map(clampY), yAnchors)
+  };
+}
 
-  return candidates.map(compactRoute);
+function buildExpandedRouteCandidates(
+  startOut: Point,
+  endOut: Point,
+  blockers: ModelNode[],
+  bounds?: CanvasBounds,
+  endpointNodeIds?: ReadonlySet<string>
+) {
+  const { xs, ys } = expandedCandidateLanes(startOut, endOut, blockers, bounds, endpointNodeIds);
+  return routeCandidatesFromLanes(startOut, endOut, xs, ys, ROUTE_MAX_LANE_PAIRS * 2);
 }
 
 function selectRouteCandidate(candidates: Point[][], blockers: ModelNode[], avoidedSegments: Segment[]) {
@@ -8932,22 +9006,33 @@ function designCommitSafeRoute(
 
   for (const candidateEdge of candidateEdges) {
     const context = buildEdgeRoutingContext(source, target, nodes, candidateEdge);
-    const middleCandidates = buildRouteCandidates(
+    const endpointNodeIds = new Set([source.id, target.id]);
+    const selectFromMiddleCandidates = (middleCandidates: Point[][]) => {
+      const fullCandidates: Point[][] = [];
+      for (const middle of middleCandidates) {
+        const route = buildFullRoute(context.start, context.startOut, middle.slice(1, -1), context.endOut, context.end, bounds);
+        fullCandidates.push(route);
+        fullCandidates.push(repairRouteAroundBlockers(route, context.blockers, bounds, 1));
+      }
+      return selectCommitSafeRoute(fullCandidates, nodes, source, target, candidateEdge, avoidedSegments, bounds);
+    };
+    let selected = selectFromMiddleCandidates(buildRouteCandidates(
       context.startOut,
       context.endOut,
       context.blockers,
       avoidedSegments,
       bounds,
-      new Set([source.id, target.id])
-    );
-    const fullCandidates: Point[][] = [];
-    for (const middle of middleCandidates) {
-      const route = buildFullRoute(context.start, context.startOut, middle.slice(1, -1), context.endOut, context.end, bounds);
-      fullCandidates.push(route);
-      fullCandidates.push(repairRouteAroundBlockers(route, context.blockers, bounds, 1));
+      endpointNodeIds
+    ));
+    if (!selected) {
+      selected = selectFromMiddleCandidates(buildExpandedRouteCandidates(
+        context.startOut,
+        context.endOut,
+        context.blockers,
+        bounds,
+        endpointNodeIds
+      ));
     }
-
-    const selected = selectCommitSafeRoute(fullCandidates, nodes, source, target, candidateEdge, avoidedSegments, bounds);
     if (!selected) {
       continue;
     }
