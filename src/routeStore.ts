@@ -34,31 +34,6 @@ const routeSpatialBucketRange = (bounds: RouteRenderBounds, bucketSize: number) 
 
 const routeIndexMap = (order: readonly string[]) => new Map(order.map((id, index) => [id, index]));
 
-function sameRouteReferences(routes: readonly RoutedEdge[], order: readonly string[], map: ReadonlyMap<string, RoutedEdge>) {
-  if (routes.length !== order.length) {
-    return false;
-  }
-  for (let index = 0; index < routes.length; index += 1) {
-    const route = routes[index];
-    if (order[index] !== route.edgeId || map.get(route.edgeId) !== route) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function sameRouteOrder(routes: readonly RoutedEdge[], order: readonly string[]) {
-  if (routes.length !== order.length) {
-    return false;
-  }
-  for (let index = 0; index < routes.length; index += 1) {
-    if (routes[index].edgeId !== order[index]) {
-      return false;
-    }
-  }
-  return true;
-}
-
 export function routeRenderBounds(route: Pick<RoutedEdge, "points">, padding = 0): RouteRenderBounds | null {
   if (route.points.length === 0) {
     return null;
@@ -198,19 +173,23 @@ export function routeStoreSetRoutes(store: RouteStore | null | undefined, routes
   if (!store) {
     return createRouteStore(routes);
   }
-  if (sameRouteReferences(routes, store.routeOrder, store.routeMap)) {
+  if (store.routes === routes) {
     return store;
   }
-  if (sameRouteOrder(routes, store.routeOrder)) {
-    const changedRoutes: RoutedEdge[] = [];
-    for (const route of routes) {
-      if (store.routeMap.get(route.edgeId) !== route) {
-        changedRoutes.push(route);
-      }
-    }
-    return routeStorePatchRoutes(store, changedRoutes);
+  if (routes.length !== store.routeOrder.length) {
+    return createRouteStore(routes);
   }
-  return createRouteStore(routes);
+  const changedRoutes: RoutedEdge[] = [];
+  for (let index = 0; index < routes.length; index += 1) {
+    const route = routes[index];
+    if (store.routeOrder[index] !== route.edgeId) {
+      return createRouteStore(routes);
+    }
+    if (store.routeMap.get(route.edgeId) !== route) {
+      changedRoutes.push(route);
+    }
+  }
+  return changedRoutes.length === 0 ? store : routeStorePatchRoutes(store, changedRoutes);
 }
 
 export function routeStorePatchRoutes(

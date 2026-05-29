@@ -301,6 +301,43 @@ describe("power system model", () => {
     );
   });
 
+  test("incremental rendering refreshes crossing arcs near removed routes", () => {
+    const top = createDefaultNode("ac-bus", { x: 300, y: 80 });
+    const bottom = createDefaultNode("ac-bus", { x: 300, y: 400 });
+    const left = createDefaultNode("ac-bus", { x: 100, y: 240 });
+    const right = createDefaultNode("ac-bus", { x: 500, y: 240 });
+    const cached: Edge = {
+      id: "cached",
+      sourceId: top.id,
+      targetId: bottom.id,
+      sourceTerminalId: "t4",
+      targetTerminalId: "t3"
+    };
+    const removed: Edge = {
+      id: "removed",
+      sourceId: left.id,
+      targetId: right.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1"
+    };
+    const previousRoutes = routeEdgesForRendering([top, bottom, left, right], [cached, removed], { width: 700, height: 520 })
+      .map((route) => route.edgeId === "cached" ? { ...route, path: "cached-path" } : route);
+
+    const incremental = routeEdgesForIncrementalRendering(
+      [top, bottom, left, right],
+      [cached],
+      new Set(["removed"]),
+      { width: 700, height: 520 },
+      previousRoutes
+    );
+
+    const previousCached = previousRoutes.find((route) => route.edgeId === "cached");
+    const nextCached = incremental.find((route) => route.edgeId === "cached");
+    expect(nextCached?.points).toEqual(previousCached?.points);
+    expect(nextCached?.path).not.toBe("cached-path");
+    expect(nextCached?.path).not.toContain("Q");
+  });
+
   test("incremental rendering keeps distant cached routes untouched after a local edit", () => {
     const distantSource = createDefaultNode("ac-source", { x: 100, y: 120 });
     const distantTarget = createDefaultNode("ac-load", { x: 360, y: 120 });
@@ -506,6 +543,25 @@ describe("power system model", () => {
 
     expect(filtered.nodes).toBe(nodes);
     expect(filtered.edges).toBe(edges);
+  });
+
+  test("reuses graph arrays when every layer is visible without sorting large models", () => {
+    const primary = { ...createDefaultNode("ac-source", { x: 100, y: 100 }), id: "primary", layerId: DEFAULT_MODEL_LAYER_ID };
+    const visibleExtra = { ...createDefaultNode("ac-load", { x: 500, y: 100 }), id: "visible-extra", layerId: "layer-extra" };
+    const nodes = [visibleExtra, primary];
+    const edges = [
+      { id: "edge-visible", sourceId: primary.id, targetId: visibleExtra.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
+    ];
+    const layers = [
+      { id: DEFAULT_MODEL_LAYER_ID, name: "默认图层", visible: true },
+      { id: "layer-extra", name: "叠加图层", visible: true }
+    ];
+
+    const filtered = filterProjectByVisibleLayers(nodes, edges, layers);
+
+    expect(filtered.nodes).toBe(nodes);
+    expect(filtered.edges).toBe(edges);
+    expect(filtered.nodes.map((item) => item.id)).toEqual(["visible-extra", "primary"]);
   });
 
   test("creates uniquely named model layers", () => {

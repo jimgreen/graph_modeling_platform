@@ -24,6 +24,12 @@ async function readServerSource() {
   return readFile(new URL("../server/image-server.mjs", import.meta.url), "utf8") as Promise<string>;
 }
 
+async function readViteConfigSource() {
+  // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
+  const { readFile } = await import("node:fs/promises");
+  return readFile(new URL("../vite.config.ts", import.meta.url), "utf8") as Promise<string>;
+}
+
 function selectedTerminalCountRow(source: string) {
   const headerIndex = source.indexOf('renderChineseParamHeader("terminalCount")');
   if (headerIndex < 0) {
@@ -865,6 +871,22 @@ describe("graph inspector panel", () => {
     expect(source).toContain("cachedRouteStoreRef.current = routedEdgeStore");
   });
 
+  test("uses a route spatial index when refreshing crossing arc paths", async () => {
+    const source = await readModelSource();
+    const refreshStart = source.indexOf("function refreshCrossingArcPaths");
+    const refreshEnd = source.indexOf("export function routeEdgesForRendering", refreshStart);
+    const refreshBlock = source.slice(refreshStart, refreshEnd);
+
+    expect(source).toContain("const CROSSING_ARC_SPATIAL_BUCKET_SIZE");
+    expect(source).toContain("function buildCrossingRouteSpatialIndex");
+    expect(source).toContain("function queryCrossingRouteSpatialIndex");
+    expect(refreshBlock).toContain("const routeSpatialIndex = buildCrossingRouteSpatialIndex(routeBoxes)");
+    expect(refreshBlock).toContain("queryCrossingRouteSpatialIndex(routeSpatialIndex, changedBox)");
+    expect(refreshBlock).toContain("for (const previousRoute of previousRoutes)");
+    expect(refreshBlock).toContain("changedEdgeIds.has(previousRoute.edgeId)");
+    expect(refreshBlock).not.toContain("changedBoxes.some");
+  });
+
   test("uses the route spatial index for connection route hit tests", async () => {
     const source = await readAppSource();
     const hitStart = source.indexOf("const findConnectionRouteHitAtPoint = (point: Point) =>");
@@ -901,6 +923,8 @@ describe("graph inspector panel", () => {
     const visibleIndexEnd = source.indexOf("const activeLayerNodes = useMemo", visibleIndexStart);
     const visibleIndexBlock = source.slice(visibleIndexStart, visibleIndexEnd);
 
+    expect(visibleProjectBlock).toContain("allModelLayersVisible");
+    expect(visibleProjectBlock).toContain("return { nodes, edges, nodeSpatialIndex: graphStore.nodeSpatialIndex }");
     expect(visibleProjectBlock).toContain("visibleProjectNodesMatchGraphStoreOrder");
     expect(visibleProjectBlock).toContain("graphStore.nodeSpatialIndex");
     expect(visibleProjectBlock).toContain("buildNodeSpatialIndex(filtered.nodes)");
@@ -1058,7 +1082,7 @@ describe("graph inspector panel", () => {
     expect(scheduleBlock).toContain("const routeCandidateEdges = localRouteOptimizationCandidateEdges");
     expect(scheduleBlock).toContain("const optimizationEdges = localRouteOptimizationEdges");
     expect(scheduleBlock).toContain("routeCandidateEdges");
-    expect(scheduleBlock).toContain("const blockedRoutePoints = routePointsForMovedNodeBlockers(nextNodes, optimizationEdges, movedNodeIds, {});");
+    expect(scheduleBlock).toContain("const blockedRoutePoints = routePointsForMovedNodeBlockers(expectedNodes, optimizationEdges, movedNodeIds, {});");
     expect(scheduleBlock).toContain("const blockedEdgeIds = new Set(Object.keys(blockedRoutePoints));");
     expect(scheduleBlock).toContain("!shouldRunDeferredMoveOptimization(optimizationEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)");
     expect(scheduleBlock).toContain("blockedRoutePoints");
@@ -1343,9 +1367,10 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("const scheduleIdleWork");
     expect(source).toContain("requestIdleCallback");
-    expect(source).toContain("const connectionEndpointSignature");
-    expect(busSyncEffectBlock).toContain("lastBusTerminalSyncSignatureRef.current === endpointSignature");
-    expect(busSyncEffectBlock).toContain("lastBusTerminalSyncSignatureRef.current = endpointSignature");
+    expect(source).toContain("edgeEndpointRevision");
+    expect(source).not.toContain("const connectionEndpointSignature");
+    expect(busSyncEffectBlock).toContain("lastBusTerminalSyncEndpointRevisionRef.current === graphStore.edgeEndpointRevision");
+    expect(busSyncEffectBlock).toContain("lastBusTerminalSyncEndpointRevisionRef.current = graphStore.edgeEndpointRevision");
     expect(source.slice(Math.max(0, busSyncStart - 300), busSyncStart + 300)).toContain("scheduleIdleWork");
     expect(saveDraftBlock).toContain("DRAFT_PROJECT_STORAGE_KEY");
     expect(saveDraftBlock).toContain("window.localStorage.setItem");
@@ -1414,6 +1439,10 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("elementTreeCacheSignature");
     expect(source).toContain("elementTreeCacheRef");
+    expect(source).toContain("elementTreeRevision");
+    expect(source).toContain("elementTreeLayerSignature");
+    expect(elementTreeBlock).toContain("elementTreeCacheSignature(graphStore.elementTreeRevision, elementTreeLayerSignature, libraryTemplates)");
+    expect(elementTreeBlock).not.toContain("elementTreeCacheSignature(deferredElementTreeNodes");
     expect(elementTreeBlock).toContain("elementTreeCacheRef.current.signature === elementTreeSignature");
     expect(elementTreeBlock).toContain("return elementTreeCacheRef.current.tree");
     expect(elementTreeBlock).toContain("buildElementTree(deferredElementTreeNodes, deferredElementTreeEdges, libraryTemplates, { includeContainerChildren: false })");
@@ -1466,6 +1495,17 @@ describe("graph inspector panel", () => {
     expect(source).toContain("getDeviceStrokeColor(node, colorDisplayMode, colorPalette)");
     expect(terminalBlock).toContain("getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette)");
     expect(terminalBlock).toContain("\"--terminal-color\"");
+  });
+
+  test("splits frontend build chunks for large model editor bundles", async () => {
+    const source = await readViteConfigSource();
+
+    expect(source).toContain("manualChunks: frontendManualChunks");
+    expect(source).toContain("vendor-react");
+    expect(source).toContain("vendor-icons");
+    expect(source).toContain("model-core");
+    expect(source).toContain("graph-core");
+    expect(source).toContain("isSourceModule(moduleId, \"/src/model.ts\")");
   });
 
   test("opens a configurable color palette dialog from the topbar", async () => {

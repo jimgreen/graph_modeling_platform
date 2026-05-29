@@ -27,6 +27,8 @@ export type GraphStore = {
   edgesByTerminalRef: Map<string, Edge[]>;
   nodesByLayerId: Map<string, ModelNode[]>;
   busNodeIdSet: Set<string>;
+  elementTreeRevision: number;
+  edgeEndpointRevision: number;
   nodeSpatialIndex: GraphNodeSpatialIndex;
   nodes: ModelNode[];
   edges: Edge[];
@@ -246,6 +248,115 @@ function patchBusNodeIdSet(index: Set<string>, previousNode: ModelNode, nextNode
   return nextIndex;
 }
 
+const elementTreeParamRelevant = (key: string) =>
+  key === "idx" || key.startsWith("idx_") || key.startsWith("name_") || key === "is_container";
+
+function nodeElementTreeParamsChanged(previousNode: ModelNode, nextNode: ModelNode) {
+  if (previousNode.params === nextNode.params) {
+    return false;
+  }
+  const keys = new Set([
+    ...Object.keys(previousNode.params).filter(elementTreeParamRelevant),
+    ...Object.keys(nextNode.params).filter(elementTreeParamRelevant)
+  ]);
+  for (const key of keys) {
+    if (previousNode.params[key] !== nextNode.params[key]) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function nodeElementTreeTerminalsChanged(previousNode: ModelNode, nextNode: ModelNode) {
+  if (previousNode.terminals === nextNode.terminals) {
+    return false;
+  }
+  if (previousNode.terminals.length !== nextNode.terminals.length) {
+    return true;
+  }
+  return previousNode.terminals.some((terminal, index) => {
+    const nextTerminal = nextNode.terminals[index];
+    return terminal.id !== nextTerminal?.id || terminal.label !== nextTerminal.label || terminal.type !== nextTerminal.type;
+  });
+}
+
+function nodeAffectsElementTree(previousNode: ModelNode, nextNode: ModelNode) {
+  return (
+    previousNode.id !== nextNode.id ||
+    previousNode.kind !== nextNode.kind ||
+    previousNode.name !== nextNode.name ||
+    graphNodeLayerId(previousNode) !== graphNodeLayerId(nextNode) ||
+    nodeElementTreeParamsChanged(previousNode, nextNode) ||
+    nodeElementTreeTerminalsChanged(previousNode, nextNode)
+  );
+}
+
+function edgeEndpointChanged(previousEdge: Edge, nextEdge: Edge) {
+  return (
+    previousEdge.id !== nextEdge.id ||
+    previousEdge.sourceId !== nextEdge.sourceId ||
+    previousEdge.targetId !== nextEdge.targetId ||
+    previousEdge.sourceTerminalId !== nextEdge.sourceTerminalId ||
+    previousEdge.targetTerminalId !== nextEdge.targetTerminalId
+  );
+}
+
+const edgeAffectsElementTree = edgeEndpointChanged;
+
+function nextElementTreeRevisionForNodes(store: GraphStore, nodeList: readonly ModelNode[]) {
+  if (nodeList.length !== store.nodeOrder.length) {
+    return store.elementTreeRevision + 1;
+  }
+  for (let index = 0; index < nodeList.length; index += 1) {
+    const nextNode = nodeList[index];
+    const nodeId = store.nodeOrder[index];
+    if (nextNode.id !== nodeId) {
+      return store.elementTreeRevision + 1;
+    }
+    const previousNode = store.nodeMap.get(nodeId);
+    if (!previousNode || nodeAffectsElementTree(previousNode, nextNode)) {
+      return store.elementTreeRevision + 1;
+    }
+  }
+  return store.elementTreeRevision;
+}
+
+function nextElementTreeRevisionForEdges(store: GraphStore, edgeList: readonly Edge[]) {
+  if (edgeList.length !== store.edgeOrder.length) {
+    return store.elementTreeRevision + 1;
+  }
+  for (let index = 0; index < edgeList.length; index += 1) {
+    const nextEdge = edgeList[index];
+    const edgeId = store.edgeOrder[index];
+    if (nextEdge.id !== edgeId) {
+      return store.elementTreeRevision + 1;
+    }
+    const previousEdge = store.edgeMap.get(edgeId);
+    if (!previousEdge || edgeAffectsElementTree(previousEdge, nextEdge)) {
+      return store.elementTreeRevision + 1;
+    }
+  }
+  return store.elementTreeRevision;
+}
+
+function nextEdgeEndpointRevisionForEdges(store: GraphStore, edgeList: readonly Edge[]) {
+  if (edgeList.length !== store.edgeOrder.length) {
+    return store.edgeEndpointRevision + 1;
+  }
+  for (let index = 0; index < edgeList.length; index += 1) {
+    const nextEdge = edgeList[index];
+    const edgeId = store.edgeOrder[index];
+    if (nextEdge.id !== edgeId) {
+      return store.edgeEndpointRevision + 1;
+    }
+    const previousEdge = store.edgeMap.get(edgeId);
+    if (!previousEdge || edgeEndpointChanged(previousEdge, nextEdge)) {
+      return store.edgeEndpointRevision + 1;
+    }
+  }
+  return store.edgeEndpointRevision;
+}
+
 function patchNodeLayerIndex(index: Map<string, ModelNode[]>, previousNode: ModelNode, nextNode: ModelNode) {
   const nextIndex = new Map(index);
   const previousLayerId = graphNodeLayerId(previousNode);
@@ -301,6 +412,8 @@ export function createGraphStore(nodes: readonly ModelNode[], edges: readonly Ed
     edgesByTerminalRef: buildEdgesByTerminalRef(edgeList),
     nodesByLayerId: buildNodesByLayerId(nodeList),
     busNodeIdSet: buildBusNodeIdSet(nodeList),
+    elementTreeRevision: 0,
+    edgeEndpointRevision: 0,
     nodeSpatialIndex: buildGraphNodeSpatialIndex(nodeList),
     nodes: nodeList,
     edges: edgeList
@@ -322,6 +435,7 @@ export function graphStoreSetNodes(store: GraphStore, nodes: readonly ModelNode[
   const nodeList = Array.from(nodes);
   const nodeMap = new Map(nodeList.map((node) => [node.id, node]));
   const nodeOrder = nodeList.map((node) => node.id);
+  const elementTreeRevision = nextElementTreeRevisionForNodes(store, nodeList);
   return {
     ...store,
     nodeMap,
@@ -330,6 +444,7 @@ export function graphStoreSetNodes(store: GraphStore, nodes: readonly ModelNode[
     nodeIdSet: new Set(nodeOrder),
     nodesByLayerId: buildNodesByLayerId(nodeList),
     busNodeIdSet: buildBusNodeIdSet(nodeList),
+    elementTreeRevision,
     nodeSpatialIndex: buildGraphNodeSpatialIndex(nodeList),
     nodes: nodeList
   };
@@ -342,6 +457,8 @@ export function graphStoreSetEdges(store: GraphStore, edges: readonly Edge[]): G
   const edgeList = Array.from(edges);
   const edgeMap = new Map(edgeList.map((edge) => [edge.id, edge]));
   const edgeOrder = edgeList.map((edge) => edge.id);
+  const elementTreeRevision = nextElementTreeRevisionForEdges(store, edgeList);
+  const edgeEndpointRevision = nextEdgeEndpointRevisionForEdges(store, edgeList);
   return {
     ...store,
     edgeMap,
@@ -350,6 +467,8 @@ export function graphStoreSetEdges(store: GraphStore, edges: readonly Edge[]): G
     edgeIdSet: new Set(edgeOrder),
     edgesByNodeId: buildEdgesByNodeId(edgeList),
     edgesByTerminalRef: buildEdgesByTerminalRef(edgeList),
+    elementTreeRevision,
+    edgeEndpointRevision,
     edges: edgeList
   };
 }
@@ -404,6 +523,7 @@ export function graphStorePatchNodesFromArray(
   let nodeList = store.nodes;
   let nodesByLayerId = store.nodesByLayerId;
   let busNodeIdSet = store.busNodeIdSet;
+  let elementTreeChanged = false;
   let nodeSpatialIndex = store.nodeSpatialIndex;
   for (const nodeId of nodeIds) {
     const index = store.nodeIndexById.get(nodeId);
@@ -424,9 +544,20 @@ export function graphStorePatchNodesFromArray(
     nodeList[index] = nextNode;
     nodesByLayerId = patchNodeLayerIndex(nodesByLayerId, previousNode, nextNode);
     busNodeIdSet = patchBusNodeIdSet(busNodeIdSet, previousNode, nextNode);
+    elementTreeChanged ||= nodeAffectsElementTree(previousNode, nextNode);
     nodeSpatialIndex = patchNodeSpatialIndex(nodeSpatialIndex, previousNode, nextNode);
   }
-  return changed ? { ...store, nodeMap, nodesByLayerId, busNodeIdSet, nodeSpatialIndex, nodes: nodeList } : store;
+  return changed
+    ? {
+        ...store,
+        nodeMap,
+        nodesByLayerId,
+        busNodeIdSet,
+        elementTreeRevision: elementTreeChanged ? store.elementTreeRevision + 1 : store.elementTreeRevision,
+        nodeSpatialIndex,
+        nodes: nodeList
+      }
+    : store;
 }
 
 export function graphStorePatchNodes(store: GraphStore, nodeUpdates: Iterable<ModelNode>): GraphStore {
@@ -435,6 +566,7 @@ export function graphStorePatchNodes(store: GraphStore, nodeUpdates: Iterable<Mo
   let nodeList = store.nodes;
   let nodesByLayerId = store.nodesByLayerId;
   let busNodeIdSet = store.busNodeIdSet;
+  let elementTreeChanged = false;
   let nodeSpatialIndex = store.nodeSpatialIndex;
   for (const nextNode of nodeUpdates) {
     const index = store.nodeIndexById.get(nextNode.id);
@@ -454,9 +586,20 @@ export function graphStorePatchNodes(store: GraphStore, nodeUpdates: Iterable<Mo
     nodeList[index] = nextNode;
     nodesByLayerId = patchNodeLayerIndex(nodesByLayerId, previousNode, nextNode);
     busNodeIdSet = patchBusNodeIdSet(busNodeIdSet, previousNode, nextNode);
+    elementTreeChanged ||= nodeAffectsElementTree(previousNode, nextNode);
     nodeSpatialIndex = patchNodeSpatialIndex(nodeSpatialIndex, previousNode, nextNode);
   }
-  return changed ? { ...store, nodeMap, nodesByLayerId, busNodeIdSet, nodeSpatialIndex, nodes: nodeList } : store;
+  return changed
+    ? {
+        ...store,
+        nodeMap,
+        nodesByLayerId,
+        busNodeIdSet,
+        elementTreeRevision: elementTreeChanged ? store.elementTreeRevision + 1 : store.elementTreeRevision,
+        nodeSpatialIndex,
+        nodes: nodeList
+      }
+    : store;
 }
 
 export function graphStorePatchEdgesFromArray(
@@ -472,6 +615,8 @@ export function graphStorePatchEdgesFromArray(
   let edgeList = store.edges;
   let edgesByNodeId = store.edgesByNodeId;
   let edgesByTerminalRef = store.edgesByTerminalRef;
+  let elementTreeChanged = false;
+  let edgeEndpointChangedInPatch = false;
   for (const edgeId of edgeIds) {
     const index = store.edgeIndexById.get(edgeId);
     if (index === undefined) {
@@ -497,8 +642,20 @@ export function graphStorePatchEdgesFromArray(
     addEdgeToAdjacency(edgesByNodeId, nextEdge.targetId, nextEdge);
     removeEdgeFromTerminalRef(edgesByTerminalRef, previousEdge);
     addEdgeToTerminalRef(edgesByTerminalRef, nextEdge);
+    elementTreeChanged ||= edgeAffectsElementTree(previousEdge, nextEdge);
+    edgeEndpointChangedInPatch ||= edgeEndpointChanged(previousEdge, nextEdge);
   }
-  return changed ? { ...store, edgeMap, edgesByNodeId, edgesByTerminalRef, edges: edgeList } : store;
+  return changed
+    ? {
+        ...store,
+        edgeMap,
+        edgesByNodeId,
+        edgesByTerminalRef,
+        elementTreeRevision: elementTreeChanged ? store.elementTreeRevision + 1 : store.elementTreeRevision,
+        edgeEndpointRevision: edgeEndpointChangedInPatch ? store.edgeEndpointRevision + 1 : store.edgeEndpointRevision,
+        edges: edgeList
+      }
+    : store;
 }
 
 export function graphStorePatchEdges(store: GraphStore, edgeUpdates: Iterable<Edge>): GraphStore {
@@ -507,6 +664,8 @@ export function graphStorePatchEdges(store: GraphStore, edgeUpdates: Iterable<Ed
   let edgeList = store.edges;
   let edgesByNodeId = store.edgesByNodeId;
   let edgesByTerminalRef = store.edgesByTerminalRef;
+  let elementTreeChanged = false;
+  let edgeEndpointChangedInPatch = false;
   for (const nextEdge of edgeUpdates) {
     const index = store.edgeIndexById.get(nextEdge.id);
     if (index === undefined) {
@@ -531,8 +690,20 @@ export function graphStorePatchEdges(store: GraphStore, edgeUpdates: Iterable<Ed
     addEdgeToAdjacency(edgesByNodeId, nextEdge.targetId, nextEdge);
     removeEdgeFromTerminalRef(edgesByTerminalRef, previousEdge);
     addEdgeToTerminalRef(edgesByTerminalRef, nextEdge);
+    elementTreeChanged ||= edgeAffectsElementTree(previousEdge, nextEdge);
+    edgeEndpointChangedInPatch ||= edgeEndpointChanged(previousEdge, nextEdge);
   }
-  return changed ? { ...store, edgeMap, edgesByNodeId, edgesByTerminalRef, edges: edgeList } : store;
+  return changed
+    ? {
+        ...store,
+        edgeMap,
+        edgesByNodeId,
+        edgesByTerminalRef,
+        elementTreeRevision: elementTreeChanged ? store.elementTreeRevision + 1 : store.elementTreeRevision,
+        edgeEndpointRevision: edgeEndpointChangedInPatch ? store.edgeEndpointRevision + 1 : store.edgeEndpointRevision,
+        edges: edgeList
+      }
+    : store;
 }
 
 export function graphStoreApplyPatch(store: GraphStore, patch: GraphStorePatch): GraphStore {
@@ -548,6 +719,8 @@ export function graphStoreApplyPatch(store: GraphStore, patch: GraphStorePatch):
 
   const upsertById = new Map(edgeUpserts.map((edge) => [edge.id, edge]));
   let changed = false;
+  let elementTreeChanged = edgeDeleteIds.size > 0;
+  let edgeEndpointChangedInPatch = edgeDeleteIds.size > 0;
   const edgeList: Edge[] = [];
   for (const edgeId of nextWithNodes.edgeOrder) {
     if (edgeDeleteIds.has(edgeId)) {
@@ -561,12 +734,16 @@ export function graphStoreApplyPatch(store: GraphStore, patch: GraphStorePatch):
     const nextEdge = upsertById.get(edgeId) ?? currentEdge;
     if (nextEdge !== currentEdge) {
       changed = true;
+      elementTreeChanged ||= edgeAffectsElementTree(currentEdge, nextEdge);
+      edgeEndpointChangedInPatch ||= edgeEndpointChanged(currentEdge, nextEdge);
     }
     edgeList.push(nextEdge);
     upsertById.delete(edgeId);
   }
   for (const edge of upsertById.values()) {
     changed = true;
+    elementTreeChanged = true;
+    edgeEndpointChangedInPatch = true;
     edgeList.push(edge);
   }
   if (!changed) {
@@ -582,6 +759,8 @@ export function graphStoreApplyPatch(store: GraphStore, patch: GraphStorePatch):
     edgeIdSet: new Set(edgeOrder),
     edgesByNodeId: buildEdgesByNodeId(edgeList),
     edgesByTerminalRef: buildEdgesByTerminalRef(edgeList),
+    elementTreeRevision: elementTreeChanged ? nextWithNodes.elementTreeRevision + 1 : nextWithNodes.elementTreeRevision,
+    edgeEndpointRevision: edgeEndpointChangedInPatch ? nextWithNodes.edgeEndpointRevision + 1 : nextWithNodes.edgeEndpointRevision,
     edges: edgeList
   };
 }

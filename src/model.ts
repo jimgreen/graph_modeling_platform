@@ -6393,6 +6393,9 @@ export function normalizeProjectLayers(project: ProjectFile): ProjectFile {
 }
 
 export function filterProjectByVisibleLayers(nodes: ModelNode[], edges: Edge[], layers?: ModelLayer[]) {
+  if (!layers || layers.length === 0 || layers.every((layer) => layer.visible !== false)) {
+    return { nodes, edges };
+  }
   const normalizedLayers = normalizeModelLayers(layers, nodes);
   const layerOrder = new Map(normalizedLayers.map((layer, index) => [layer.id, index]));
   const visibleLayers = normalizedLayers.filter((layer) => layer.visible);
@@ -7858,6 +7861,7 @@ function filterSegmentsForRoutePoints(points: Point[], segments: Segment[], padd
 }
 
 const CROSSING_TERMINAL_MARGIN = ROUTE_ENDPOINT_STUB_LENGTH + 2;
+const CROSSING_ARC_SPATIAL_BUCKET_SIZE = 320;
 
 function between(value: number, a: number, b: number, margin = 0) {
   return value > Math.min(a, b) + margin && value < Math.max(a, b) - margin;
@@ -8180,6 +8184,65 @@ function pathWithCrossingArcs(route: RoutedEdge, allSegments: Segment[], routeIn
   return commands.join(" ");
 }
 
+type CrossingRouteBox = ReturnType<typeof routeBoundsForPoints>;
+
+type CrossingRouteSpatialIndex = {
+  bucketSize: number;
+  buckets: Map<string, number[]>;
+  routeBoxes: CrossingRouteBox[];
+};
+
+const crossingRouteSpatialBucketKey = (x: number, y: number) => `${x}:${y}`;
+
+const crossingRouteSpatialBucketRange = (box: CrossingRouteBox, bucketSize: number) => ({
+  left: Math.floor(box.left / bucketSize),
+  right: Math.floor(box.right / bucketSize),
+  top: Math.floor(box.top / bucketSize),
+  bottom: Math.floor(box.bottom / bucketSize)
+});
+
+function buildCrossingRouteSpatialIndex(routeBoxes: CrossingRouteBox[]): CrossingRouteSpatialIndex {
+  const buckets = new Map<string, number[]>();
+  for (let routeIndex = 0; routeIndex < routeBoxes.length; routeIndex += 1) {
+    const box = routeBoxes[routeIndex];
+    const range = crossingRouteSpatialBucketRange(box, CROSSING_ARC_SPATIAL_BUCKET_SIZE);
+    for (let x = range.left; x <= range.right; x += 1) {
+      for (let y = range.top; y <= range.bottom; y += 1) {
+        const key = crossingRouteSpatialBucketKey(x, y);
+        const bucket = buckets.get(key);
+        if (bucket) {
+          bucket.push(routeIndex);
+        } else {
+          buckets.set(key, [routeIndex]);
+        }
+      }
+    }
+  }
+  return { bucketSize: CROSSING_ARC_SPATIAL_BUCKET_SIZE, buckets, routeBoxes };
+}
+
+function queryCrossingRouteSpatialIndex(index: CrossingRouteSpatialIndex, box: CrossingRouteBox): number[] {
+  const range = crossingRouteSpatialBucketRange(box, index.bucketSize);
+  const matches: number[] = [];
+  const seen = new Set<number>();
+  for (let x = range.left; x <= range.right; x += 1) {
+    for (let y = range.top; y <= range.bottom; y += 1) {
+      const bucket = index.buckets.get(crossingRouteSpatialBucketKey(x, y));
+      if (!bucket) {
+        continue;
+      }
+      for (const routeIndex of bucket) {
+        if (seen.has(routeIndex) || !boxesOverlap(index.routeBoxes[routeIndex], box)) {
+          continue;
+        }
+        seen.add(routeIndex);
+        matches.push(routeIndex);
+      }
+    }
+  }
+  return matches;
+}
+
 function refreshCrossingArcPaths(
   routes: RoutedEdge[],
   changedEdgeIds?: ReadonlySet<string>,
@@ -8194,26 +8257,28 @@ function refreshCrossingArcPaths(
   }
 
   const routeBoxes = routes.map((route) => routeBoundsForPoints(route.points, CROSSING_TERMINAL_MARGIN));
-  const previousRouteById = new Map(previousRoutes.map((route) => [route.edgeId, route]));
-  const changedBoxes = routes.flatMap((route, index) => {
-    if (!changedEdgeIds.has(route.edgeId)) {
-      return [];
+  const routeSpatialIndex = buildCrossingRouteSpatialIndex(routeBoxes);
+  const changedBoxes: CrossingRouteBox[] = [];
+  routes.forEach((route, index) => {
+    if (changedEdgeIds.has(route.edgeId)) {
+      changedBoxes.push(routeBoxes[index]);
     }
-    const previousRoute = previousRouteById.get(route.edgeId);
-    return previousRoute
-      ? [routeBoxes[index], routeBoundsForPoints(previousRoute.points, CROSSING_TERMINAL_MARGIN)]
-      : [routeBoxes[index]];
   });
+  for (const previousRoute of previousRoutes) {
+    if (changedEdgeIds.has(previousRoute.edgeId)) {
+      changedBoxes.push(routeBoundsForPoints(previousRoute.points, CROSSING_TERMINAL_MARGIN));
+    }
+  }
   if (changedBoxes.length === 0) {
     return routes;
   }
 
   const refreshIndexes = new Set<number>();
-  routes.forEach((route, index) => {
-    if (changedEdgeIds.has(route.edgeId) || changedBoxes.some((box) => boxesOverlap(routeBoxes[index], box))) {
-      refreshIndexes.add(index);
+  for (const changedBox of changedBoxes) {
+    for (const routeIndex of queryCrossingRouteSpatialIndex(routeSpatialIndex, changedBox)) {
+      refreshIndexes.add(routeIndex);
     }
-  });
+  }
   if (refreshIndexes.size === 0) {
     return routes;
   }
@@ -8221,11 +8286,9 @@ function refreshCrossingArcPaths(
   const segmentIndexes = new Set<number>();
   for (const refreshIndex of refreshIndexes) {
     const refreshBox = routeBoxes[refreshIndex];
-    routeBoxes.forEach((box, index) => {
-      if (boxesOverlap(box, refreshBox)) {
-        segmentIndexes.add(index);
-      }
-    });
+    for (const routeIndex of queryCrossingRouteSpatialIndex(routeSpatialIndex, refreshBox)) {
+      segmentIndexes.add(routeIndex);
+    }
   }
   const crossingSegments = [...segmentIndexes].flatMap((index) =>
     getSegments(routes[index].edgeId, index, routes[index].points)

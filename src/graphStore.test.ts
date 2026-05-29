@@ -49,7 +49,31 @@ describe("normalized graph store", () => {
     expect(store.busNodeIdSet.has(bus.id)).toBe(true);
     expect(movedBusStore.busNodeIdSet).toBe(store.busNodeIdSet);
     expect(movedSourceStore.busNodeIdSet).toBe(store.busNodeIdSet);
+    expect(movedBusStore.elementTreeRevision).toBe(store.elementTreeRevision);
+    expect(movedSourceStore.elementTreeRevision).toBe(store.elementTreeRevision);
     expect(withoutBusStore.busNodeIdSet.has(bus.id)).toBe(false);
+    expect(withoutBusStore.elementTreeRevision).toBe(store.elementTreeRevision + 1);
+  });
+
+  test("bumps the element tree revision only for tree-visible graph changes", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 260, y: 100 });
+    const edge: Edge = { id: "edge-1", sourceId: source.id, targetId: load.id, sourceTerminalId: "t1", targetTerminalId: "t1" };
+    const store = createGraphStore([source, load], [edge]);
+
+    const moved = graphStorePatchNodes(store, [{ ...load, position: { x: 320, y: 140 } }]);
+    const renamed = graphStorePatchNodes(moved, [{ ...load, name: "新负荷" }]);
+    const manualRoute = graphStorePatchEdges(renamed, [{ ...edge, manualPoints: [{ x: 180, y: 140 }] }]);
+    const rewired = graphStorePatchEdges(manualRoute, [{ ...edge, targetTerminalId: "t2" }]);
+
+    expect(moved.elementTreeRevision).toBe(store.elementTreeRevision);
+    expect(moved.edgeEndpointRevision).toBe(store.edgeEndpointRevision);
+    expect(renamed.elementTreeRevision).toBe(store.elementTreeRevision + 1);
+    expect(renamed.edgeEndpointRevision).toBe(store.edgeEndpointRevision);
+    expect(manualRoute.elementTreeRevision).toBe(renamed.elementTreeRevision);
+    expect(manualRoute.edgeEndpointRevision).toBe(renamed.edgeEndpointRevision);
+    expect(rewired.elementTreeRevision).toBe(manualRoute.elementTreeRevision + 1);
+    expect(rewired.edgeEndpointRevision).toBe(manualRoute.edgeEndpointRevision + 1);
   });
 
   test("updates one node without rebuilding unchanged node and edge references", () => {

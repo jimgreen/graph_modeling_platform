@@ -855,29 +855,13 @@ const scheduleIdleWork = (callback: () => void, delayMs = 0, timeoutMs = 1000) =
   };
 };
 const elementTreeCacheSignature = (
-  nodes: ModelNode[],
-  edges: Edge[],
+  graphRevision: number,
+  layerSignature: string,
   templates: readonly DeviceTemplate[]
 ) => {
   const templateSignature = templates.map((template) => `${template.kind}:${template.label}`).join("|");
-  const treeParamSignature = (node: ModelNode) =>
-    Object.keys(node.params)
-      .filter((key) => key === "idx" || key.startsWith("idx_") || key.startsWith("name_") || key === "is_container")
-      .sort()
-      .map((key) => `${key}=${node.params[key]}`)
-      .join(",");
-  const nodeSignature = nodes
-    .map((node) => `${node.id}:${node.kind}:${node.name}:${treeParamSignature(node)}:${node.terminals.map((terminal) => `${terminal.id}/${terminal.label}/${terminal.type}`).join(",")}`)
-    .join("|");
-  const edgeSignature = edges
-    .map((edge) => `${edge.id}:${edge.sourceId}:${edge.targetId}:${edge.sourceTerminalId ?? ""}:${edge.targetTerminalId ?? ""}`)
-    .join("|");
-  return `${templateSignature}#${nodeSignature}#${edgeSignature}`;
+  return `${graphRevision}#${layerSignature}#${templateSignature}`;
 };
-const connectionEndpointSignature = (edges: Edge[]) =>
-  edges
-    .map((edge) => `${edge.id}:${edge.sourceId}:${edge.targetId}:${edge.sourceTerminalId ?? ""}:${edge.targetTerminalId ?? ""}`)
-    .join("|");
 type RenderViewportBounds = {
   left: number;
   right: number;
@@ -3396,7 +3380,7 @@ export function App() {
   const latestEdgesRef = useRef<Edge[]>([]);
   const latestGraphStoreRef = useRef<GraphStore | null>(null);
   const deferredMoveOptimizationCancelRef = useRef<(() => void) | null>(null);
-  const lastBusTerminalSyncSignatureRef = useRef("");
+  const lastBusTerminalSyncEndpointRevisionRef = useRef(-1);
   const pendingBusTerminalSyncNodeIdsRef = useRef<Set<string>>(new Set());
   const skipNextTopologyStaleRef = useRef(false);
   const skipCanvasSizeBlurCommitRef = useRef(false);
@@ -3607,7 +3591,11 @@ export function App() {
     () => layers.find((layer) => layer.id === activeLayerId) ?? layers[0],
     [activeLayerId, layers]
   );
+  const allModelLayersVisible = layers.length === 0 || layers.every((layer) => layer.visible !== false);
   const visibleProject = useMemo(() => {
+    if (allModelLayersVisible) {
+      return { nodes, edges, nodeSpatialIndex: graphStore.nodeSpatialIndex };
+    }
     const filtered = filterProjectByVisibleLayers(nodes, edges, layers);
     const visibleProjectNodesMatchGraphStoreOrder =
       filtered.nodes === nodes ||
@@ -3619,7 +3607,7 @@ export function App() {
         ? graphStore.nodeSpatialIndex
         : buildNodeSpatialIndex(filtered.nodes)
     };
-  }, [edges, graphStore.nodeSpatialIndex, layers, nodes]);
+  }, [allModelLayersVisible, edges, graphStore.nodeSpatialIndex, layers, nodes]);
   const visibleNodes = visibleProject.nodes;
   const visibleEdges = visibleProject.edges;
   const visibleNodeById = useMemo(
@@ -4126,11 +4114,15 @@ export function App() {
   const deferredElementTreeNodes = useDeferredValue(visibleNodes);
   const deferredElementTreeEdges = useDeferredValue(visibleEdges);
   const graphTreePanelActive = inspectorTab === "graph" && graphInfoView === "tree";
+  const elementTreeLayerSignature = useMemo(
+    () => layers.map((layer) => `${layer.id}:${layer.visible !== false ? "1" : "0"}`).join("|"),
+    [layers]
+  );
   const elementTreeSignature = useMemo(
     () => graphTreePanelActive
-      ? elementTreeCacheSignature(deferredElementTreeNodes, deferredElementTreeEdges, libraryTemplates)
+      ? elementTreeCacheSignature(graphStore.elementTreeRevision, elementTreeLayerSignature, libraryTemplates)
       : "",
-    [deferredElementTreeEdges, deferredElementTreeNodes, graphTreePanelActive, libraryTemplates]
+    [elementTreeLayerSignature, graphStore.elementTreeRevision, graphTreePanelActive, libraryTemplates]
   );
   const elementTree = useMemo(() => {
     if (!graphTreePanelActive) {
@@ -4245,11 +4237,10 @@ export function App() {
     }
     const scheduledBusSyncNodeIds = new Set(pendingBusSyncNodeIds);
     if (scheduledBusSyncNodeIds.size === 0) {
-      const endpointSignature = connectionEndpointSignature(edges);
-      if (lastBusTerminalSyncSignatureRef.current === endpointSignature) {
+      if (lastBusTerminalSyncEndpointRevisionRef.current === graphStore.edgeEndpointRevision) {
         return;
       }
-      lastBusTerminalSyncSignatureRef.current = endpointSignature;
+      lastBusTerminalSyncEndpointRevisionRef.current = graphStore.edgeEndpointRevision;
     } else {
       pendingBusTerminalSyncNodeIdsRef.current = new Set();
     }
@@ -4261,7 +4252,7 @@ export function App() {
       const synchronized = scheduledBusSyncNodeIds.size > 0
         ? synchronizeBusTerminalsWithEdges(syncNodes, syncEdges, scheduledBusSyncNodeIds)
         : synchronizeBusTerminalsWithEdges(syncNodes, syncEdges, undefined);
-      lastBusTerminalSyncSignatureRef.current = connectionEndpointSignature(synchronized.edges);
+      lastBusTerminalSyncEndpointRevisionRef.current = latestGraphStoreRef.current?.edgeEndpointRevision ?? graphStore.edgeEndpointRevision;
       if (synchronized.nodes !== syncNodes || synchronized.edges !== syncEdges) {
         const synchronizedNodeById = new Map(synchronized.nodes.map((node) => [node.id, node]));
         const changedNodeIds = syncNodes
@@ -4285,7 +4276,7 @@ export function App() {
       }
       pendingBusTerminalSyncNodeIdsRef.current = next;
     };
-  }, [busNodeIdSet, connectSource, dragging, edges, manualPathDrag, nodes, rewiring, terminalPress?.moved]);
+  }, [busNodeIdSet, connectSource, dragging, edges, graphStore.edgeEndpointRevision, manualPathDrag, nodes, rewiring, terminalPress?.moved]);
 
   useEffect(() => {
     if (!graphTreePanelActive) {
@@ -6782,24 +6773,6 @@ export function App() {
       deferredMoveOptimizationCancelRef.current = null;
       return;
     }
-    const blockedRoutePoints = routePointsForMovedNodeBlockers(nextNodes, optimizationEdges, movedNodeIds, {});
-    const blockedEdgeIds = new Set(Object.keys(blockedRoutePoints));
-    const routePointsForOptimization = routePointsNearOriginalMovedNodes(
-      previousNodes,
-      optimizationEdges,
-      movedNodeIds,
-      originalPositions,
-      blockedRoutePoints
-    );
-    const releasedEdgeIds = Object.keys(routePointsForOptimization).filter((edgeId) => !blockedRoutePoints[edgeId]);
-    const forcedRerouteEdgeIds = new Set(releasedEdgeIds);
-    for (const edgeId of releasedEdgeIds) {
-      blockedEdgeIds.add(edgeId);
-    }
-    if (!shouldRunDeferredMoveOptimization(optimizationEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)) {
-      deferredMoveOptimizationCancelRef.current = null;
-      return;
-    }
     deferredMoveOptimizationCancelRef.current = scheduleIdleWork(() => {
       deferredMoveOptimizationCancelRef.current = null;
       const latestStore = latestGraphStoreRef.current;
@@ -6815,6 +6788,23 @@ export function App() {
       }
       const expectedNodes = latestStore.nodes;
       const expectedEdges = latestStore.edges;
+      const blockedRoutePoints = routePointsForMovedNodeBlockers(expectedNodes, optimizationEdges, movedNodeIds, {});
+      const blockedEdgeIds = new Set(Object.keys(blockedRoutePoints));
+      const routePointsForOptimization = routePointsNearOriginalMovedNodes(
+        previousNodes,
+        optimizationEdges,
+        movedNodeIds,
+        originalPositions,
+        blockedRoutePoints
+      );
+      const releasedEdgeIds = Object.keys(routePointsForOptimization).filter((edgeId) => !blockedRoutePoints[edgeId]);
+      const forcedRerouteEdgeIds = new Set(releasedEdgeIds);
+      for (const edgeId of releasedEdgeIds) {
+        blockedEdgeIds.add(edgeId);
+      }
+      if (!shouldRunDeferredMoveOptimization(optimizationEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)) {
+        return;
+      }
       const optimized = optimizeMovedNodeEdgeRoutes(
         expectedNodes,
         expectedEdges,
@@ -8718,7 +8708,7 @@ export function App() {
     cachedRoutedEdgesRef.current = [];
     pendingRouteEdgeIdsRef.current = new Set();
     pendingStoredRouteEdgeIdsRef.current = new Set();
-    lastBusTerminalSyncSignatureRef.current = "";
+    lastBusTerminalSyncEndpointRevisionRef.current = -1;
     pendingBusTerminalSyncNodeIdsRef.current = new Set();
     deferredMoveOptimizationCancelRef.current?.();
     deferredMoveOptimizationCancelRef.current = null;

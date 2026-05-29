@@ -52,6 +52,7 @@ describe("normalized route store", () => {
     const second = route("edge-2", 640, 640);
     const store = createRouteStore([first, second]);
 
+    expect(routeStoreSetRoutes(store, store.routes)).toBe(store);
     expect(routeStoreSetRoutes(store, [first, second])).toBe(store);
     expect(routeStorePatchRoutes(store, [first])).toBe(store);
   });
