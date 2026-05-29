@@ -1436,6 +1436,57 @@ describe("graph inspector panel", () => {
     expect(projectContextBlock).not.toContain("disabled=");
   });
 
+  test("prompts for overwrite rename or cancel when pasted scheme or model names already exist", async () => {
+    const source = await readAppSource();
+    const pasteStart = source.indexOf("const pasteSchemeClipboardRecord =");
+    const pasteEnd = source.indexOf("const pasteSelectedRecord", pasteStart);
+    const pasteBlock = source.slice(pasteStart, pasteEnd);
+    const resolveStart = source.indexOf("const resolveRecordPasteConflict =");
+    const resolveEnd = source.indexOf("const moveProjectRecordToScheme", resolveStart);
+    const resolveBlock = source.slice(resolveStart, resolveEnd);
+    const dialogStart = source.indexOf("{pendingRecordPasteConflict && (");
+    const dialogEnd = source.indexOf("{pendingModelImportConflict && (", dialogStart);
+    const dialogBlock = source.slice(dialogStart, dialogEnd);
+
+    expect(source).toContain("type PendingRecordPasteConflict");
+    expect(source).toContain("pendingRecordPasteConflict");
+    expect(pasteBlock).toContain("setPendingRecordPasteConflict");
+    expect(pasteBlock).toContain("duplicateScheme");
+    expect(pasteBlock).toContain("duplicateProject");
+    expect(pasteBlock).not.toContain("copySavedSchemeWithUniqueName(sourceScheme");
+    expect(pasteBlock).not.toContain("copySavedProjectWithUniqueName(sourceProject");
+    expect(resolveBlock).toContain("action: \"overwrite\" | \"rename\" | \"cancel\"");
+    expect(resolveBlock).toContain("promptUniqueRecordName");
+    expect(resolveBlock).toContain("请输入粘贴后的方案名称");
+    expect(resolveBlock).toContain("请输入粘贴后的模型名称");
+    expect(resolveBlock).toContain("setSchemes");
+    expect(dialogBlock).toContain("名称重复</h2>");
+    expect(dialogBlock).toContain("覆盖</button>");
+    expect(dialogBlock).toContain("新命名</button>");
+    expect(dialogBlock).toContain("取消粘贴");
+  });
+
+  test("prompts for overwrite rename or cancel when dragged model names already exist", async () => {
+    const source = await readAppSource();
+    const moveStart = source.indexOf("const moveProjectRecordToScheme =");
+    const moveEnd = source.indexOf("const saveDraftProject", moveStart);
+    const moveBlock = source.slice(moveStart, moveEnd);
+    const resolveStart = source.indexOf("const resolveRecordPasteConflict =");
+    const resolveEnd = source.indexOf("const moveProjectRecordToScheme", resolveStart);
+    const resolveBlock = source.slice(resolveStart, resolveEnd);
+    const dialogStart = source.indexOf("{pendingRecordPasteConflict && (");
+    const dialogEnd = source.indexOf("{pendingModelImportConflict && (", dialogStart);
+    const dialogBlock = source.slice(dialogStart, dialogEnd);
+
+    expect(source).toContain("kind: \"project-drag\"");
+    expect(moveBlock).toContain("duplicateProject");
+    expect(moveBlock).toContain("setPendingRecordPasteConflict");
+    expect(moveBlock).toContain("commitProjectRecordMove");
+    expect(resolveBlock).toContain("请输入拖拽后的模型名称");
+    expect(resolveBlock).toContain("commitProjectRecordMove");
+    expect(dialogBlock).toContain("取消拖拽");
+  });
+
   test("guards page unload and model switching when the current model has unsaved changes", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
@@ -1512,6 +1563,24 @@ describe("graph inspector panel", () => {
     expect(source).not.toContain("const normalizedSchemesPayload = useMemo");
     expect(source).toContain("const normalizedSchemesPayload = serializeSchemesForStorage(schemes);");
     expect(savedProjectNormalizerBlock).not.toContain("assignMissingDeviceIndexes");
+  });
+
+  test("persists scheme and model list changes to the backend without swallowing the first edit", async () => {
+    const source = await readAppSource();
+    const schemePersistStart = source.indexOf("const normalizedSchemesPayload = serializeSchemesForStorage(schemes);");
+    const schemePersistEnd = source.indexOf("}, [schemes]);", schemePersistStart);
+    const schemePersistBlock = source.slice(schemePersistStart, schemePersistEnd);
+    const saveCallIndex = schemePersistBlock.indexOf("saveBackendSchemesPayload(normalizedSchemesPayload)");
+    const persistedAssignmentIndex = schemePersistBlock.indexOf("lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload");
+
+    expect(schemePersistBlock).toContain("suppressNextBackendSchemeSyncRef.current && normalizedSchemesPayload === lastPersistedSchemesPayloadRef.current");
+    expect(schemePersistBlock).toContain("suppressNextBackendSchemeSyncRef.current = false;");
+    expect(saveCallIndex).toBeGreaterThan(-1);
+    expect(persistedAssignmentIndex).toBeGreaterThan(saveCallIndex);
+    expect(schemePersistBlock).toContain(".then(() => {");
+    expect(schemePersistBlock).toContain("lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload;");
+    expect(schemePersistBlock).toContain("writeOperationLog(\"方案/模型目录已自动保存到后台\")");
+    expect(schemePersistBlock).not.toContain("if (suppressNextBackendSchemeSyncRef.current) {\n        suppressNextBackendSchemeSyncRef.current = false;\n        return;\n      }\n      void saveBackendSchemesPayload");
   });
 
   test("persists custom device library definitions through the backend", async () => {

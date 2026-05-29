@@ -163,7 +163,6 @@ import {
   routeEdgesForCachedStoredRendering,
   routeEdgesForIncrementalRendering,
   routeEdgesForStoredRendering,
-  moveProjectToScheme,
   modelGeometryInsideCanvasBounds,
   mirrorNodes,
   renameSavedScheme,
@@ -269,6 +268,29 @@ type PendingSchemeImportConflict = {
   duplicateSchemeId: string;
   duplicateSchemeName: string;
 } | null;
+type PendingRecordPasteConflict =
+  | {
+      kind: "scheme";
+      sourceScheme: SavedSchemeRecord;
+      duplicateSchemeId: string;
+      duplicateName: string;
+    }
+  | {
+      kind: "project";
+      sourceProject: SavedProjectRecord;
+      targetSchemeId: string;
+      duplicateProjectId: string;
+      duplicateName: string;
+    }
+  | {
+      kind: "project-drag";
+      projectId: string;
+      sourceSchemeId: string;
+      targetSchemeId: string;
+      duplicateProjectId: string;
+      duplicateName: string;
+    }
+  | null;
 type SidePanelResizeState = { side: SidePanelSide; startX: number; startWidth: number } | null;
 type StatusbarResizeState = { startY: number; startHeight: number } | null;
 type ValidationPanelResizeState = { startY: number; startHeight: number } | null;
@@ -3422,6 +3444,7 @@ export function App() {
   const [pendingUnsavedAction, setPendingUnsavedAction] = useState<UnsavedChangeAction | null>(null);
   const [pendingModelImportConflict, setPendingModelImportConflict] = useState<PendingModelImportConflict>(null);
   const [pendingSchemeImportConflict, setPendingSchemeImportConflict] = useState<PendingSchemeImportConflict>(null);
+  const [pendingRecordPasteConflict, setPendingRecordPasteConflict] = useState<PendingRecordPasteConflict>(null);
   const mousePositionTextRef = useRef<HTMLSpanElement | null>(null);
   const [operationLog, setOperationLog] = useState("就绪");
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
@@ -4703,13 +4726,13 @@ export function App() {
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       const normalizedSchemesPayload = serializeSchemesForStorage(schemes);
-      if (normalizedSchemesPayload === lastPersistedSchemesPayloadRef.current) {
-        if (suppressNextBackendSchemeSyncRef.current) {
-          suppressNextBackendSchemeSyncRef.current = false;
-        }
+      if (suppressNextBackendSchemeSyncRef.current && normalizedSchemesPayload === lastPersistedSchemesPayloadRef.current) {
+        suppressNextBackendSchemeSyncRef.current = false;
         return;
       }
-      lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload;
+      if (normalizedSchemesPayload === lastPersistedSchemesPayloadRef.current) {
+        return;
+      }
       try {
         window.localStorage.setItem(SCHEME_STORAGE_KEY, normalizedSchemesPayload);
       } catch {
@@ -4720,11 +4743,16 @@ export function App() {
       }
       if (suppressNextBackendSchemeSyncRef.current) {
         suppressNextBackendSchemeSyncRef.current = false;
-        return;
       }
-      void saveBackendSchemesPayload(normalizedSchemesPayload).catch(() => {
-        // 后台保存失败时不阻塞本地编辑；下一次方案/模型变更会继续尝试同步。
-      });
+      void saveBackendSchemesPayload(normalizedSchemesPayload)
+        .then(() => {
+          lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload;
+          writeOperationLog("方案/模型目录已自动保存到后台");
+        })
+        .catch(() => {
+          // 后台保存失败时不阻塞本地编辑；下一次方案/模型变更会继续尝试同步。
+          writeOperationLog("方案/模型目录自动保存到后台失败");
+        });
     }, 800);
     return () => window.clearTimeout(timeoutId);
   }, [schemes]);
@@ -8028,6 +8056,13 @@ export function App() {
 
   const hasSameName = (name: string, names: string[]) => names.some((item) => item.trim() === name.trim());
 
+  const cloneProjectRecordForPaste = (project: SavedProjectRecord, name = project.name, existingProjectId?: string) => {
+    const record = cloneProjectRecordWithName(project, name);
+    return existingProjectId
+      ? { ...record, id: existingProjectId, name: record.name, project: { ...record.project, name: record.name } }
+      : record;
+  };
+
   const cloneSchemeRecord = (scheme: SavedSchemeRecord, existingSchemes = schemes, suffix = "副本"): SavedSchemeRecord => {
     return copySavedSchemeWithUniqueName(scheme, existingSchemes.map((item) => item.name), suffix);
   };
@@ -8038,6 +8073,15 @@ export function App() {
       []
     );
     return createSavedScheme(name, projects);
+  };
+
+  const cloneSchemeRecordForPaste = (scheme: SavedSchemeRecord, name = scheme.name, existingScheme?: SavedSchemeRecord): SavedSchemeRecord => {
+    const projects = scheme.projects.reduce<SavedProjectRecord[]>((current, project) => {
+      const duplicateProject = existingScheme?.projects.find((item) => hasSameName(item.name, [project.name]));
+      return upsertSavedProject(current, cloneProjectRecordForPaste(project, project.name, duplicateProject?.id));
+    }, []);
+    const record = createSavedScheme(name, projects);
+    return existingScheme ? { ...record, id: existingScheme.id, name: record.name } : record;
   };
 
   const loadSavedProject = (project: SavedProjectRecord, schemeId = findSchemeForProject(project.id)?.id ?? "") => {
@@ -8282,7 +8326,17 @@ export function App() {
       return;
     }
     const sourceScheme = recordClipboard.scheme;
-    setSchemes((current) => [...current, copySavedSchemeWithUniqueName(sourceScheme, current.map((item) => item.name))]);
+    const duplicateScheme = schemes.find((scheme) => hasSameName(scheme.name, [sourceScheme.name]));
+    if (duplicateScheme) {
+      setPendingRecordPasteConflict({
+        kind: "scheme",
+        sourceScheme,
+        duplicateSchemeId: duplicateScheme.id,
+        duplicateName: duplicateScheme.name
+      });
+      return;
+    }
+    setSchemes((current) => [...current, cloneSchemeRecordForPaste(sourceScheme, sourceScheme.name)]);
     writeOperationLog(`粘贴方案记录：${sourceScheme.name}`);
   };
 
@@ -8291,16 +8345,28 @@ export function App() {
       return;
     }
     const sourceProject = recordClipboard.project;
+    const targetScheme = schemes.find((scheme) => scheme.id === targetSchemeId) ?? schemes[0];
+    if (!targetScheme) {
+      return;
+    }
+    const duplicateProject = targetScheme.projects.find((project) => hasSameName(project.name, [sourceProject.name]));
+    if (duplicateProject) {
+      setPendingRecordPasteConflict({
+        kind: "project",
+        sourceProject,
+        targetSchemeId: targetScheme.id,
+        duplicateProjectId: duplicateProject.id,
+        duplicateName: duplicateProject.name
+      });
+      return;
+    }
     setSchemes((current) =>
-      current.map((scheme, index) =>
-        scheme.id === targetSchemeId || (!targetSchemeId && index === 0)
+      current.map((scheme) =>
+        scheme.id === targetScheme.id
           ? {
               ...scheme,
               updatedAt: new Date().toISOString(),
-              projects: upsertSavedProject(
-                scheme.projects,
-                copySavedProjectWithUniqueName(sourceProject, scheme.projects.map((project) => project.name))
-              )
+              projects: upsertSavedProject(scheme.projects, cloneProjectRecordForPaste(sourceProject, sourceProject.name))
             }
           : scheme
       )
@@ -8319,17 +8385,207 @@ export function App() {
     pasteProjectClipboardRecord();
   };
 
-  const moveProjectRecordToScheme = (projectId: string, schemeId: string) => {
-    setSchemes((current) => moveProjectToScheme(current, projectId, schemeId));
-    setExpandedSchemeIds((current) => (current.includes(schemeId) ? current : [...current, schemeId]));
-    if (selectedProjectId === projectId) {
-      setSelectedSchemeId(schemeId);
-      setSelectedProjectIds((current) => (current.includes(projectId) ? current : [projectId]));
+  const commitProjectRecordMove = (
+    projectId: string,
+    targetSchemeId: string,
+    options: { targetName?: string; overwriteProjectId?: string } = {}
+  ) => {
+    const targetName = options.targetName?.trim();
+    const nextProjectId = options.overwriteProjectId ?? projectId;
+    setSchemes((current) => {
+      const sourceScheme = current.find((scheme) => scheme.projects.some((project) => project.id === projectId));
+      const targetScheme = current.find((scheme) => scheme.id === targetSchemeId);
+      const project = sourceScheme?.projects.find((item) => item.id === projectId);
+      if (!sourceScheme || !targetScheme || !project || sourceScheme.id === targetSchemeId) {
+        return current;
+      }
+      const now = new Date().toISOString();
+      const movedName = targetName || project.name;
+      const movedProject: SavedProjectRecord = {
+        ...project,
+        id: nextProjectId,
+        name: movedName,
+        updatedAt: now,
+        project: { ...project.project, name: movedName }
+      };
+      return current.map((scheme) => {
+        if (scheme.id === sourceScheme.id) {
+          return { ...scheme, updatedAt: now, projects: scheme.projects.filter((item) => item.id !== projectId) };
+        }
+        if (scheme.id === targetScheme.id) {
+          return { ...scheme, updatedAt: now, projects: upsertSavedProject(scheme.projects, movedProject) };
+        }
+        return scheme;
+      });
+    });
+    setExpandedSchemeIds((current) => (current.includes(targetSchemeId) ? current : [...current, targetSchemeId]));
+    if (
+      selectedProjectId === projectId ||
+      selectedProjectIds.includes(projectId) ||
+      (options.overwriteProjectId && (selectedProjectId === options.overwriteProjectId || selectedProjectIds.includes(options.overwriteProjectId)))
+    ) {
+      setSelectedSchemeId(targetSchemeId);
+      setSelectedProjectIds([nextProjectId]);
+      setSelectedProjectId(nextProjectId);
       setSelectedSchemeIds([]);
     }
-    if (activeProjectId === projectId) {
-      setActiveSchemeId(schemeId);
+    if (activeProjectId === projectId || activeProjectId === options.overwriteProjectId) {
+      setActiveProjectId(nextProjectId);
+      setActiveSchemeId(targetSchemeId);
+      if (targetName) {
+        setProjectName(targetName);
+      }
     }
+  };
+
+  const resolveRecordPasteConflict = (action: "overwrite" | "rename" | "cancel") => {
+    const conflict = pendingRecordPasteConflict;
+    if (!conflict || action === "cancel") {
+      setPendingRecordPasteConflict(null);
+      return;
+    }
+    if (conflict.kind === "scheme") {
+      if (action === "rename") {
+        const renamed = promptUniqueRecordName(
+          "请输入粘贴后的方案名称",
+          uniqueRecordName(conflict.sourceScheme.name, schemes.map((scheme) => scheme.name), "未命名方案"),
+          schemes.map((scheme) => scheme.name),
+          "方案名称不能为空。",
+          "方案名称重复，无法粘贴。"
+        );
+        if (!renamed) {
+          return;
+        }
+        setPendingRecordPasteConflict(null);
+        setSchemes((current) => [...current, cloneSchemeRecordForPaste(conflict.sourceScheme, renamed)]);
+        writeOperationLog(`新命名粘贴方案记录：${renamed}`);
+        return;
+      }
+      setPendingRecordPasteConflict(null);
+      setSchemes((current) => {
+        const duplicateScheme = current.find((scheme) => scheme.id === conflict.duplicateSchemeId);
+        if (!duplicateScheme) {
+          return [...current, cloneSchemeRecordForPaste(conflict.sourceScheme, conflict.duplicateName)];
+        }
+        return current.map((scheme) =>
+          scheme.id === conflict.duplicateSchemeId
+            ? cloneSchemeRecordForPaste(conflict.sourceScheme, scheme.name, scheme)
+            : scheme
+        );
+      });
+      writeOperationLog(`覆盖粘贴方案记录：${conflict.duplicateName}`);
+      return;
+    }
+    if (conflict.kind === "project-drag") {
+      const sourceScheme = schemes.find((scheme) => scheme.id === conflict.sourceSchemeId);
+      const sourceProject = sourceScheme?.projects.find((project) => project.id === conflict.projectId);
+      const targetScheme = schemes.find((scheme) => scheme.id === conflict.targetSchemeId);
+      if (!sourceProject || !targetScheme) {
+        setPendingRecordPasteConflict(null);
+        return;
+      }
+      if (action === "rename") {
+        const renamed = promptUniqueRecordName(
+          "请输入拖拽后的模型名称",
+          uniqueRecordName(sourceProject.name, targetScheme.projects.map((project) => project.name), "未命名模型"),
+          targetScheme.projects.map((project) => project.name),
+          "模型名称不能为空。",
+          "模型名称重复，无法拖拽。"
+        );
+        if (!renamed) {
+          return;
+        }
+        setPendingRecordPasteConflict(null);
+        commitProjectRecordMove(conflict.projectId, conflict.targetSchemeId, { targetName: renamed });
+        writeOperationLog(`新命名拖拽模型记录：${renamed}`);
+        return;
+      }
+      setPendingRecordPasteConflict(null);
+      commitProjectRecordMove(conflict.projectId, conflict.targetSchemeId, {
+        targetName: conflict.duplicateName,
+        overwriteProjectId: conflict.duplicateProjectId
+      });
+      writeOperationLog(`覆盖拖拽模型记录：${conflict.duplicateName}`);
+      return;
+    }
+    const targetScheme =
+      schemes.find((scheme) => scheme.id === conflict.targetSchemeId) ??
+      activeSchemeRecord ??
+      selectedSchemeRecord ??
+      schemes[0];
+    if (!targetScheme) {
+      setPendingRecordPasteConflict(null);
+      return;
+    }
+    if (action === "rename") {
+      const renamed = promptUniqueRecordName(
+        "请输入粘贴后的模型名称",
+        uniqueRecordName(conflict.sourceProject.name, targetScheme.projects.map((project) => project.name), "未命名模型"),
+        targetScheme.projects.map((project) => project.name),
+        "模型名称不能为空。",
+        "模型名称重复，无法粘贴。"
+      );
+      if (!renamed) {
+        return;
+      }
+      setPendingRecordPasteConflict(null);
+      setSchemes((current) =>
+        current.map((scheme) =>
+          scheme.id === targetScheme.id
+            ? {
+                ...scheme,
+                updatedAt: new Date().toISOString(),
+                projects: upsertSavedProject(scheme.projects, cloneProjectRecordForPaste(conflict.sourceProject, renamed))
+              }
+            : scheme
+        )
+      );
+      writeOperationLog(`新命名粘贴模型记录：${renamed}`);
+      return;
+    }
+    setPendingRecordPasteConflict(null);
+    setSchemes((current) =>
+      current.map((scheme) => {
+        if (scheme.id !== targetScheme.id) {
+          return scheme;
+        }
+        const duplicateProject = scheme.projects.find((project) => project.id === conflict.duplicateProjectId);
+        const targetName = duplicateProject?.name ?? conflict.duplicateName;
+        return {
+          ...scheme,
+          updatedAt: new Date().toISOString(),
+          projects: upsertSavedProject(
+            scheme.projects,
+            cloneProjectRecordForPaste(conflict.sourceProject, targetName, conflict.duplicateProjectId)
+          )
+        };
+      })
+    );
+    writeOperationLog(`覆盖粘贴模型记录：${conflict.duplicateName}`);
+  };
+
+  const moveProjectRecordToScheme = (projectId: string, schemeId: string) => {
+    const sourceScheme = findSchemeForProject(projectId);
+    const sourceProject = sourceScheme?.projects.find((project) => project.id === projectId);
+    const targetScheme = schemes.find((scheme) => scheme.id === schemeId);
+    if (!sourceScheme || !sourceProject || !targetScheme || sourceScheme.id === targetScheme.id) {
+      return;
+    }
+    const duplicateProject = targetScheme.projects.find(
+      (project) => project.id !== sourceProject.id && hasSameName(project.name, [sourceProject.name])
+    );
+    if (duplicateProject) {
+      setPendingRecordPasteConflict({
+        kind: "project-drag",
+        projectId,
+        sourceSchemeId: sourceScheme.id,
+        targetSchemeId: targetScheme.id,
+        duplicateProjectId: duplicateProject.id,
+        duplicateName: duplicateProject.name
+      });
+      return;
+    }
+    commitProjectRecordMove(projectId, schemeId);
   };
 
   const saveDraftProject = (draftProjectId: string, draftSchemeId: string) => {
@@ -12785,6 +13041,25 @@ export function App() {
               </button>
             </>
           )}
+        </div>
+      )}
+      {pendingRecordPasteConflict && (
+        <div className="image-picker-backdrop" onPointerDown={() => resolveRecordPasteConflict("cancel")}>
+          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="record-paste-conflict-title">
+            <div className="image-picker-title">
+              <div>
+                <h2 id="record-paste-conflict-title">名称重复</h2>
+                <p>
+                  当前{pendingRecordPasteConflict.kind === "scheme" ? "模型库" : "方案"}中已存在“{pendingRecordPasteConflict.duplicateName}”。请选择{pendingRecordPasteConflict.kind === "project-drag" ? "拖拽" : "粘贴"}处理方式。
+                </p>
+              </div>
+            </div>
+            <div className="unsaved-change-actions">
+              <button type="button" onClick={() => resolveRecordPasteConflict("overwrite")}>覆盖</button>
+              <button type="button" onClick={() => resolveRecordPasteConflict("rename")}>新命名</button>
+              <button type="button" onClick={() => resolveRecordPasteConflict("cancel")}>{pendingRecordPasteConflict.kind === "project-drag" ? "取消拖拽" : "取消粘贴"}</button>
+            </div>
+          </section>
         </div>
       )}
       {pendingModelImportConflict && (
