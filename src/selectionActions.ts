@@ -51,6 +51,8 @@ export const EMPTY_CANVAS_CLIPBOARD: CanvasClipboard = {
   groups: []
 };
 
+export type CanvasSelectionScope = "group" | "direct";
+
 function normalizedRect(rect: SelectionRect): SelectionRect {
   return {
     left: Math.min(rect.left, rect.right),
@@ -152,6 +154,21 @@ export function expandSelectionByGroups(
   return { nodeIds, edgeIds };
 }
 
+export function resolveCanvasSelection(
+  groups: readonly ModelGroup[] = [],
+  selectedNodeIds: readonly string[] = [],
+  selectedEdgeIds: readonly string[] = [],
+  scope: CanvasSelectionScope = "group"
+) {
+  if (scope === "direct") {
+    return {
+      nodeIds: uniqueIds(selectedNodeIds),
+      edgeIds: uniqueIds(selectedEdgeIds)
+    };
+  }
+  return expandSelectionByGroups(groups, selectedNodeIds, selectedEdgeIds);
+}
+
 function nextGroupName(groups: readonly ModelGroup[]) {
   const used = new Set(groups.map((group) => group.name));
   let index = 1;
@@ -234,9 +251,15 @@ export function buildCanvasClipboard(
   routedEdges: RoutedEdge[],
   selectedNodeIds: string[],
   selectedEdgeIds: string[],
-  groups: ModelGroup[] = []
+  groups: ModelGroup[] = [],
+  options: { expandGroups?: boolean } = {}
 ): CanvasClipboard {
-  const expandedSelection = expandSelectionByGroups(groups, selectedNodeIds, selectedEdgeIds);
+  const expandedSelection = resolveCanvasSelection(
+    groups,
+    selectedNodeIds,
+    selectedEdgeIds,
+    options.expandGroups === false ? "direct" : "group"
+  );
   const nodeSelection = new Set(expandedSelection.nodeIds);
   const edgeSelection = new Set(expandedSelection.edgeIds);
   const routeByEdgeId = new Map(routedEdges.map((route) => [route.edgeId, route]));

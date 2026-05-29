@@ -15,6 +15,7 @@ import {
   createCanvasGroupFromSelection,
   dissolveSelectedCanvasGroups,
   expandSelectionByGroups,
+  resolveCanvasSelection,
   resolveCanvasDeleteAction,
   selectGraphicsInRect
 } from "./selectionActions";
@@ -184,6 +185,35 @@ describe("canvas selection actions", () => {
       nodeIds: [source.id, target.id],
       edgeIds: [edge.id]
     });
+    expect(resolveCanvasSelection(groups, [source.id], [], "direct")).toEqual({
+      nodeIds: [source.id],
+      edgeIds: []
+    });
+  });
+
+  test("copies only the direct group member when group expansion is disabled", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const target = createDefaultNode("ac-load", { x: 300, y: 100 });
+    const edge: Edge = {
+      id: "edge-direct-member-copy",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const groups: ModelGroup[] = [{
+      id: "group-direct-member",
+      name: "组合1",
+      nodeIds: [source.id, target.id],
+      edgeIds: [edge.id]
+    }];
+    const routes = routeEdgesForRendering([source, target], [edge], { width: 800, height: 500 });
+
+    const clipboard = buildCanvasClipboard([source, target], [edge], routes, [source.id], [], groups, { expandGroups: false });
+
+    expect(clipboard.nodes.map((node) => node.id)).toEqual([source.id]);
+    expect(clipboard.edges).toEqual([]);
+    expect(clipboard.groups).toEqual([]);
   });
 
   test("creates and dissolves canvas groups without deleting graphics", () => {

@@ -402,10 +402,10 @@ describe("graph inspector panel", () => {
   test("limits selection and modification operations to the active model layer", async () => {
     const source = await readAppSource();
     const activeLayerStart = source.indexOf("const activeLayerNodes = useMemo");
-    const activeLayerEnd = source.indexOf("const activeSelectedNodeIds = useMemo", activeLayerStart);
+    const activeLayerEnd = source.indexOf("const activeCanvasSelection = useMemo", activeLayerStart);
     const activeLayerBlock = source.slice(activeLayerStart, activeLayerEnd);
-    const selectionStateStart = source.indexOf("const activeSelectedNodeIds = useMemo");
-    const selectionStateEnd = source.indexOf("const activeSelectedEdgeIds = useMemo", selectionStateStart);
+    const selectionStateStart = source.indexOf("const activeCanvasSelection = useMemo");
+    const selectionStateEnd = source.indexOf("const selectedEdge =", selectionStateStart);
     const selectionStateBlock = source.slice(selectionStateStart, selectionStateEnd);
     const copyStart = source.indexOf("const copySelection =");
     const pasteStart = source.indexOf("const pasteSelection =", copyStart);
@@ -419,20 +419,65 @@ describe("graph inspector panel", () => {
 
     expect(activeLayerBlock).toContain("(node.layerId ?? DEFAULT_MODEL_LAYER_ID) === activeLayerId");
     expect(activeLayerBlock).toContain("activeLayerNodeIdSet.has(edge.sourceId) || activeLayerNodeIdSet.has(edge.targetId)");
-    expect(selectionStateBlock).toContain("selectedNodeIds.filter((nodeId) => activeLayerNodeIdSet.has(nodeId))");
+    expect(source).toContain("const rawActiveSelectedNodeIds = useMemo");
+    expect(source).toContain("selectedNodeIds.filter((nodeId) => activeLayerNodeIdSet.has(nodeId))");
+    expect(selectionStateBlock).toContain("activeCanvasSelection.nodeIds");
+    expect(selectionStateBlock).toContain("groupExpandedCanvasSelection");
+    expect(selectionStateBlock).toContain("displaySelectedNodeIds");
     expect(selectionStateBlock).toContain("const selectedNodeId = activeSelectedNodeIds[0] ?? \"\"");
-    expect(selectionStateBlock).toContain("new Set(activeSelectedNodeIds)");
+    expect(selectionStateBlock).toContain("new Set(displaySelectedNodeIds)");
     expect(source).toContain("setSelectedNodeIds(activeLayerNodes.map((node) => node.id))");
     expect(source).toContain("selectGraphicsInRect(activeLayerNodes, activeLayerRoutedEdges");
-    expect(copyCutDeleteBlock).toContain("buildCanvasClipboard(visibleNodes, visibleEdges, routedEdges, activeSelectedNodeIds, activeSelectedEdgeIds, activeLayerGroups)");
+    expect(copyCutDeleteBlock).toContain("{ expandGroups: canvasSelectionScope === \"group\" }");
     expect(copyCutDeleteBlock).toContain("deleteNodesWithConnectedEdges(nodes, edges, activeSelectedNodeIds)");
-    expect(dragBlock).toContain("let dragSelection = nodeWasSelected");
+    expect(dragBlock).toContain("let dragSelection = clickedSelectedGroupMember");
     expect(dragBlock).toContain("expandActiveGroupSelection([...activeSelectedNodeIds, node.id], activeSelectedEdgeIds)");
     expect(dragBlock).toContain("const dragNodeIds = dragSelection.nodeIds");
     expect(dragBlock).toContain("if (!activeLayerNodeIdSet.has(node.id))");
     expect(layoutBlock).toContain("layoutNodes(nodes, activeSelectedNodeIds)");
     expect(source).toContain("if (!activeLayerEdgeIdSet.has(edgeId))");
     expect(source).toContain("for (const node of visibleNodes)");
+  });
+
+  test("keeps a selected group highlighted while a member is focused and moved with the group", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const selectionStateStart = source.indexOf("const activeSelectedGroupIds = useMemo");
+    const selectionStateEnd = source.indexOf("const topologyWarningPageCount", selectionStateStart);
+    const selectionStateBlock = source.slice(selectionStateStart, selectionStateEnd);
+    const copyStart = source.indexOf("const copySelection =");
+    const pasteStart = source.indexOf("const pasteSelection =", copyStart);
+    const copyCutBlock = source.slice(copyStart, pasteStart);
+    const moveStart = source.indexOf("const moveSelection =");
+    const moveEnd = source.indexOf("const updateSelectedNode", moveStart);
+    const moveBlock = source.slice(moveStart, moveEnd);
+    const dragStart = source.indexOf("const handleNodePointerDown");
+    const dragEnd = source.indexOf("const handlePointerMove", dragStart);
+    const dragBlock = source.slice(dragStart, dragEnd);
+
+    expect(source).toContain("type CanvasSelectionScope");
+    expect(source).toContain("const [canvasSelectionScope, setCanvasSelectionScope]");
+    expect(source).toContain("const displaySelectedNodeIds = canvasSelectionScope === \"direct\" ? groupExpandedCanvasSelection.nodeIds : activeSelectedNodeIds");
+    expect(source).toContain("const displaySelectedEdgeIds = canvasSelectionScope === \"direct\" ? groupExpandedCanvasSelection.edgeIds : activeCanvasSelection.edgeIds");
+    expect(source).toContain("new Set(displaySelectedNodeIds)");
+    expect(source).toContain("const focused = node.id === selectedNodeId");
+    expect(source).toContain("selected ? \"selected\" : \"\"} ${focused ? \"focused\" : \"\"}");
+    expect(source).toContain("{selected && focused && selectedNodeCount === 1 && (");
+    expect(styles).toContain(".diagram-node.selected.focused .node-hitbox");
+    expect(selectionStateBlock).toContain("selectedCanvasGroupIds(activeLayerGroups, groupExpandedCanvasSelection.nodeIds, groupExpandedCanvasSelection.edgeIds)");
+    expect(copyCutBlock).toContain("{ expandGroups: canvasSelectionScope === \"group\" }");
+    expect(moveBlock).toContain("const moveNodeIds = canvasSelectionScope === \"direct\" ? displaySelectedNodeIds : activeSelectedNodeIds");
+    expect(moveBlock).toContain("const moveEdgeIds = canvasSelectionScope === \"direct\" ? displaySelectedEdgeIds : activeSelectedEdgeIds");
+    expect(moveBlock).toContain("commitFastMovedGraph(");
+    expect(moveBlock).toContain("moveNodeIds");
+    expect(dragBlock).toContain("const clickedSelectedGroupMember");
+    expect(dragBlock).toContain("nodeWasSelected");
+    expect(dragBlock).toContain("const groupDragSelection");
+    expect(dragBlock).toContain("nodeIds: groupExpandedCanvasSelection.nodeIds");
+    expect(dragBlock).toContain("setSelectedNodeIds([node.id])");
+    expect(dragBlock).toContain("setCanvasSelectionScope(\"direct\")");
+    expect(dragBlock).toContain("const dragNodeIds = dragSelection.nodeIds");
+    expect(dragBlock).toContain("originalPositions: Object.fromEntries");
   });
 
   test("checks a newly drawn connection route before committing it to the model", async () => {
@@ -1138,6 +1183,33 @@ describe("graph inspector panel", () => {
     expect(contextBlock).toContain("ungroupSelectedGraphics");
     expect(contextBlock).toContain("组合");
     expect(contextBlock).toContain("解散");
+  });
+
+  test("hides unavailable canvas context-menu actions instead of rendering disabled buttons", async () => {
+    const source = await readAppSource();
+    const contextStart = source.indexOf("{contextMenu && (");
+    const contextEnd = source.indexOf("{projectMenu && (", contextStart);
+    const contextBlock = source.slice(contextStart, contextEnd);
+
+    expect(source).toContain("const contextSelectionCount = activeSelectedNodeIds.length + activeSelectedEdgeIds.length");
+    expect(source).toContain("const contextHasSelectedGroup = activeSelectedGroupIds.length > 0");
+    expect(contextBlock).toContain("{contextHasSelectedGroup && (");
+    expect(contextBlock).toContain("{!contextHasSelectedGroup && contextSelectionCount >= 2 && (");
+    expect(contextBlock).toContain("groupSelectedGraphics");
+    expect(contextBlock).toContain("ungroupSelectedGraphics");
+    expect(contextBlock).not.toContain("disabled=");
+  });
+
+  test("hides unavailable project-list context-menu actions instead of rendering disabled buttons", async () => {
+    const source = await readAppSource();
+    const projectContextStart = source.indexOf("{projectMenu && (");
+    const projectContextEnd = source.indexOf("{pendingUnsavedAction && (", projectContextStart);
+    const projectContextBlock = source.slice(projectContextStart, projectContextEnd);
+
+    expect(projectContextBlock).toContain("{projectMenu.schemeId && (");
+    expect(projectContextBlock).toContain("{(projectMenu.projectId || projectMenu.schemeId) && (");
+    expect(projectContextBlock).toContain("{recordClipboard && projectMenu.schemeId && (");
+    expect(projectContextBlock).not.toContain("disabled=");
   });
 
   test("guards page unload and model switching when the current model has unsaved changes", async () => {

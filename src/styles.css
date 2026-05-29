@@ -1186,6 +1186,11 @@ button:disabled {
   stroke-width: 3;
 }
 
+.diagram-node.selected.focused .node-hitbox {
+  stroke: #f97316;
+  stroke-width: 3.5;
+}
+
 .diagram-node.bus-node.selected .node-hitbox,
 .diagram-node.bus-node.connect-source .node-hitbox {
   stroke: transparent;
@@ -1201,6 +1206,11 @@ button:disabled {
 .diagram-node.bus-node.connect-source .bus-glyph {
   stroke: #1d4ed8;
   fill: #1d4ed8;
+}
+
+.diagram-node.bus-node.selected.focused .bus-glyph {
+  stroke: #f97316;
+  fill: #f97316;
 }
 
 .diagram-node.connect-source .node-hitbox {

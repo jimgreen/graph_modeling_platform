@@ -195,9 +195,11 @@ import {
   expandSelectionByGroups,
   removeGraphicsFromGroups,
   resolveCanvasDeleteAction,
+  resolveCanvasSelection,
   selectedCanvasGroupIds,
   selectGraphicsInRect,
-  type CanvasClipboard
+  type CanvasClipboard,
+  type CanvasSelectionScope
 } from "./selectionActions";
 import {
   isSidePanelVisible,
@@ -3223,6 +3225,7 @@ export function App() {
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>(nodes[0] ? [nodes[0].id] : []);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string>("");
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
+  const [canvasSelectionScope, setCanvasSelectionScope] = useState<CanvasSelectionScope>("group");
   const [connectSource, setConnectSource] = useState<{ nodeId: string; terminalId: string; point?: Point } | null>(null);
   const [connectDropReady, setConnectDropReady] = useState(false);
   const [dragging, setDragging] = useState<DraggingState | null>(null);
@@ -3355,23 +3358,26 @@ export function App() {
       .filter((edgeId) => activeLayerEdgeIdSet.has(edgeId)),
     [activeLayerEdgeIdSet, selectedEdgeId, selectedEdgeIds]
   );
-  const activeSelectedNodeIds = useMemo(
-    () =>
-      expandSelectionByGroups(
-        activeLayerGroups,
-        selectedNodeIds.filter((nodeId) => activeLayerNodeIdSet.has(nodeId)),
-        rawActiveSelectedEdgeIds
-      ).nodeIds,
-    [activeLayerGroups, activeLayerNodeIdSet, rawActiveSelectedEdgeIds, selectedNodeIds]
+  const rawActiveSelectedNodeIds = useMemo(
+    () => selectedNodeIds.filter((nodeId) => activeLayerNodeIdSet.has(nodeId)),
+    [activeLayerNodeIdSet, selectedNodeIds]
   );
+  const activeCanvasSelection = useMemo(
+    () => resolveCanvasSelection(activeLayerGroups, rawActiveSelectedNodeIds, rawActiveSelectedEdgeIds, canvasSelectionScope),
+    [activeLayerGroups, canvasSelectionScope, rawActiveSelectedEdgeIds, rawActiveSelectedNodeIds]
+  );
+  const groupExpandedCanvasSelection = useMemo(
+    () => resolveCanvasSelection(activeLayerGroups, rawActiveSelectedNodeIds, rawActiveSelectedEdgeIds, "group"),
+    [activeLayerGroups, rawActiveSelectedEdgeIds, rawActiveSelectedNodeIds]
+  );
+  const activeSelectedNodeIds = activeCanvasSelection.nodeIds;
   const selectedNodeId = activeSelectedNodeIds[0] ?? "";
-  const selectedNodeIdSet = useMemo(() => new Set(activeSelectedNodeIds), [activeSelectedNodeIds]);
+  const displaySelectedNodeIds = canvasSelectionScope === "direct" ? groupExpandedCanvasSelection.nodeIds : activeSelectedNodeIds;
+  const displaySelectedEdgeIds = canvasSelectionScope === "direct" ? groupExpandedCanvasSelection.edgeIds : activeCanvasSelection.edgeIds;
+  const selectedNodeIdSet = useMemo(() => new Set(displaySelectedNodeIds), [displaySelectedNodeIds]);
   const selectedNode = visibleNodeById.get(selectedNodeId);
-  const activeSelectedEdgeIds = useMemo(
-    () => expandSelectionByGroups(activeLayerGroups, activeSelectedNodeIds, rawActiveSelectedEdgeIds).edgeIds,
-    [activeLayerGroups, activeSelectedNodeIds, rawActiveSelectedEdgeIds]
-  );
-  const activeSelectedEdgeSet = useMemo(() => new Set(activeSelectedEdgeIds), [activeSelectedEdgeIds]);
+  const activeSelectedEdgeIds = activeCanvasSelection.edgeIds;
+  const activeSelectedEdgeSet = useMemo(() => new Set(displaySelectedEdgeIds), [displaySelectedEdgeIds]);
   const selectedEdge = activeLayerEdgeIdSet.has(selectedEdgeId) ? edgeById.get(selectedEdgeId) : undefined;
   const connectionLineStyle = (edgeId: string) => {
     const edge = edgeById.get(edgeId);
@@ -3675,10 +3681,12 @@ export function App() {
   const selectedSchemeRecord = schemes.find((scheme) => scheme.id === selectedSchemeId);
   const selectedNodeCount = activeSelectedNodeIds.length;
   const selectedCount = selectedNodeCount + activeSelectedEdgeIds.length;
+  const contextSelectionCount = activeSelectedNodeIds.length + activeSelectedEdgeIds.length;
   const activeSelectedGroupIds = useMemo(
-    () => selectedCanvasGroupIds(activeLayerGroups, activeSelectedNodeIds, activeSelectedEdgeIds),
-    [activeLayerGroups, activeSelectedEdgeIds, activeSelectedNodeIds]
+    () => selectedCanvasGroupIds(activeLayerGroups, groupExpandedCanvasSelection.nodeIds, groupExpandedCanvasSelection.edgeIds),
+    [activeLayerGroups, groupExpandedCanvasSelection]
   );
+  const contextHasSelectedGroup = activeSelectedGroupIds.length > 0;
   const topologyWarningPageCount = Math.max(1, Math.ceil(topologyErrors.length / TOPOLOGY_WARNING_PAGE_SIZE));
   const normalizedTopologyWarningPage = Math.min(topologyWarningPage, topologyWarningPageCount - 1);
   const visibleTopologyErrors = topologyErrors.slice(
@@ -4768,6 +4776,7 @@ export function App() {
       setTopologyErrors(snapshot.topologyErrors);
       setTopology(snapshot.topology);
       setTopologyStatus(snapshot.topologyStatus);
+      setCanvasSelectionScope("group");
       setSelectedNodeIds(snapshot.nodes[0] ? [snapshot.nodes[0].id] : []);
       setSelectedEdgeId("");
       setSelectedEdgeIds([]);
@@ -4925,6 +4934,7 @@ export function App() {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
         if (isCanvasShortcutTarget) {
           event.preventDefault();
+          setCanvasSelectionScope("group");
           setSelectedNodeIds(activeLayerNodes.map((node) => node.id));
           setSelectedEdgeId("");
           setSelectedEdgeIds([]);
@@ -5155,8 +5165,16 @@ export function App() {
   const expandActiveGroupSelection = (nodeIds: readonly string[] = [], edgeIds: readonly string[] = []) =>
     expandSelectionByGroups(activeLayerGroups, nodeIds, edgeIds);
 
-  const selectCanvasGraphics = (nodeIds: readonly string[] = [], edgeIds: readonly string[] = []) => {
-    const selection = expandActiveGroupSelection(nodeIds, edgeIds);
+  const selectCanvasGraphics = (
+    nodeIds: readonly string[] = [],
+    edgeIds: readonly string[] = [],
+    options: { scope?: CanvasSelectionScope } = {}
+  ) => {
+    const scope = options.scope ?? "group";
+    const selection = scope === "direct"
+      ? resolveCanvasSelection([], nodeIds, edgeIds, "direct")
+      : expandActiveGroupSelection(nodeIds, edgeIds);
+    setCanvasSelectionScope(scope);
     setSelectedNodeIds(selection.nodeIds);
     setSelectedEdgeIds(selection.edgeIds);
     setSelectedEdgeId(selection.edgeIds[0] ?? "");
@@ -5164,7 +5182,15 @@ export function App() {
   };
 
   const copySelection = () => {
-    setCanvasClipboard(buildCanvasClipboard(visibleNodes, visibleEdges, routedEdges, activeSelectedNodeIds, activeSelectedEdgeIds, activeLayerGroups));
+    setCanvasClipboard(buildCanvasClipboard(
+      visibleNodes,
+      visibleEdges,
+      routedEdges,
+      activeSelectedNodeIds,
+      activeSelectedEdgeIds,
+      activeLayerGroups,
+      { expandGroups: canvasSelectionScope === "group" }
+    ));
     writeOperationLog(`复制 ${activeSelectedNodeIds.length} 个图元、${activeSelectedEdgeIds.length} 条联络线`);
   };
 
@@ -5177,7 +5203,15 @@ export function App() {
       window.alert(action.message);
       return;
     }
-    const clipboard = buildCanvasClipboard(visibleNodes, visibleEdges, routedEdges, activeSelectedNodeIds, activeSelectedEdgeIds, activeLayerGroups);
+    const clipboard = buildCanvasClipboard(
+      visibleNodes,
+      visibleEdges,
+      routedEdges,
+      activeSelectedNodeIds,
+      activeSelectedEdgeIds,
+      activeLayerGroups,
+      { expandGroups: canvasSelectionScope === "group" }
+    );
     setCanvasClipboard(clipboard);
     pushUndoSnapshot();
     const selectedEdges = new Set(activeSelectedEdgeIds);
@@ -5188,6 +5222,7 @@ export function App() {
     setNodes(result.nodes);
     setEdges(nextEdges);
     setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, activeSelectedNodeIds, selectedEdges), result.nodes, nextEdges));
+    setCanvasSelectionScope("group");
     setSelectedNodeIds([]);
     setSelectedEdgeId("");
     setSelectedEdgeIds([]);
@@ -5250,6 +5285,7 @@ export function App() {
     setNodes(nextNodes);
     setEdges(nextEdges);
     setGroups((current) => normalizeModelGroups([...current, ...cloned.groups], nextNodes, nextEdges));
+    setCanvasSelectionScope("group");
     setSelectedNodeIds(pasted.map((node) => node.id));
     setSelectedEdgeIds(pastedEdges.map((edge) => edge.id));
     setSelectedEdgeId(pastedEdges[0]?.id ?? "");
@@ -5291,6 +5327,7 @@ export function App() {
       const nextEdges = edges.filter((edge) => !selectedEdges.has(edge.id));
       setEdges(nextEdges);
       setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, [], selectedEdges), nodes, nextEdges));
+      setCanvasSelectionScope("group");
       setSelectedEdgeId("");
       setSelectedEdgeIds([]);
       writeOperationLog(`删除 ${selectedEdges.size} 条联络线`);
@@ -5302,6 +5339,7 @@ export function App() {
     setNodes(result.nodes);
     setEdges(nextEdges);
     setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, activeSelectedNodeIds, selectedEdges), result.nodes, nextEdges));
+    setCanvasSelectionScope("group");
     setSelectedNodeIds([]);
     setSelectedEdgeId("");
     setSelectedEdgeIds([]);
@@ -6422,13 +6460,15 @@ export function App() {
   };
 
   const moveSelection = (dx: number, dy: number) => {
-    if (activeSelectedNodeIds.length === 0) {
+    const moveNodeIds = canvasSelectionScope === "direct" ? displaySelectedNodeIds : activeSelectedNodeIds;
+    const moveEdgeIds = canvasSelectionScope === "direct" ? displaySelectedEdgeIds : activeSelectedEdgeIds;
+    if (moveNodeIds.length === 0) {
       return;
     }
-    const selected = new Set(activeSelectedNodeIds);
+    const selected = new Set(moveNodeIds);
     const originalPositions = Object.fromEntries(nodes.filter((node) => selected.has(node.id)).map((node) => [node.id, node.position]));
     const affectedEdgesForMove = edges.filter(
-      (edge) => selected.has(edge.sourceId) || selected.has(edge.targetId) || activeSelectedEdgeIds.includes(edge.id)
+      (edge) => selected.has(edge.sourceId) || selected.has(edge.targetId) || moveEdgeIds.includes(edge.id)
     );
     const originalEdgePoints = snapshotEdgePoints(affectedEdgesForMove);
     const originalRoutePoints = Object.fromEntries(
@@ -6438,8 +6478,8 @@ export function App() {
       ])
     );
     const boundedDelta = boundedDeltaForMoveGeometry(
-      activeSelectedNodeIds,
-      activeSelectedEdgeIds,
+      moveNodeIds,
+      moveEdgeIds,
       affectedEdgesForMove,
       originalPositions,
       originalEdgePoints,
@@ -6452,7 +6492,7 @@ export function App() {
       return;
     }
     pushUndoSnapshot();
-    const deltasByNode = Object.fromEntries(activeSelectedNodeIds.map((id) => [id, boundedDelta]));
+    const deltasByNode = Object.fromEntries(moveNodeIds.map((id) => [id, boundedDelta]));
     const nextNodes = nodes.map((node) =>
       selected.has(node.id)
         ? { ...node, position: clampNodeToCanvas(node, { x: node.position.x + boundedDelta.x, y: node.position.y + boundedDelta.y }) }
@@ -6465,7 +6505,7 @@ export function App() {
       originalEdgePoints,
       deltasByNode,
       originalRoutePoints,
-      new Set(activeSelectedEdgeIds)
+      new Set(moveEdgeIds)
     );
     const adjustedEdgeById = new Map(adjustedAffectedEdges.map((edge) => [edge.id, edge]));
     const adjustedEdges = edges.map((edge) => adjustedEdgeById.get(edge.id) ?? edge);
@@ -6473,18 +6513,18 @@ export function App() {
       nodes,
       nextNodes,
       adjustedEdges,
-      activeSelectedNodeIds
+      moveNodeIds
     );
     commitFastMovedGraph(
       nextNodes,
       nextEdges,
-      activeSelectedNodeIds,
+      moveNodeIds,
       originalRoutePoints,
-      new Set(activeSelectedEdgeIds),
+      new Set(moveEdgeIds),
       originalPositions,
       nodes
     );
-    writeOperationLog(`移动 ${activeSelectedNodeIds.length} 个图元 (${Math.round(boundedDelta.x)}, ${Math.round(boundedDelta.y)})`);
+    writeOperationLog(`移动 ${moveNodeIds.length} 个图元 (${Math.round(boundedDelta.x)}, ${Math.round(boundedDelta.y)})`);
   };
 
   const updateSelectedNode = (patch: Partial<ModelNode>) => {
@@ -7083,6 +7123,7 @@ export function App() {
     pushUndoSnapshot();
     markRouteEdgesDirty([preparedEdge.id]);
     setEdges((current) => [...current, preparedEdge]);
+    setCanvasSelectionScope("group");
     setSelectedNodeIds([]);
     setSelectedEdgeId(preparedEdge.id);
     setSelectedEdgeIds([preparedEdge.id]);
@@ -7199,6 +7240,7 @@ export function App() {
     pushUndoSnapshot();
     setDeviceIndexCounters(indexed.counters);
     setNodes((current) => [...current, indexed.node]);
+    setCanvasSelectionScope("group");
     setSelectedNodeIds([indexed.node.id]);
     setSelectedEdgeId("");
     setSelectedEdgeIds([]);
@@ -7228,15 +7270,36 @@ export function App() {
       return;
     }
     const nodeWasSelected = selectedNodeIdSet.has(node.id);
+    const clickedSelectedGroupMember =
+      !event.ctrlKey &&
+      !event.shiftKey &&
+      !event.metaKey &&
+      nodeWasSelected &&
+      activeSelectedGroupIds.some((groupId) => {
+        const group = activeLayerGroups.find((item) => item.id === groupId);
+        return Boolean(group?.nodeIds.includes(node.id));
+      });
     const keepEdgeSelection = nodeWasSelected && activeSelectedEdgeIds.length > 0;
     if (!keepEdgeSelection) {
       setSelectedEdgeId("");
       setSelectedEdgeIds([]);
     }
-    let dragSelection = nodeWasSelected
+    const groupDragSelection = {
+      nodeIds: groupExpandedCanvasSelection.nodeIds,
+      edgeIds: groupExpandedCanvasSelection.edgeIds
+    };
+    let dragSelection = clickedSelectedGroupMember
+      ? groupDragSelection
+      : nodeWasSelected
       ? { nodeIds: activeSelectedNodeIds, edgeIds: keepEdgeSelection ? activeSelectedEdgeIds : [] }
       : expandActiveGroupSelection([node.id], []);
-    if (event.ctrlKey || event.shiftKey || event.metaKey) {
+    if (clickedSelectedGroupMember) {
+      setCanvasSelectionScope("direct");
+      setSelectedNodeIds([node.id]);
+      setSelectedEdgeIds([]);
+      setSelectedEdgeId("");
+    } else if (event.ctrlKey || event.shiftKey || event.metaKey) {
+      setCanvasSelectionScope("group");
       dragSelection = nodeWasSelected
         ? { nodeIds: activeSelectedNodeIds, edgeIds: activeSelectedEdgeIds }
         : expandActiveGroupSelection([...activeSelectedNodeIds, node.id], activeSelectedEdgeIds);
@@ -7247,6 +7310,7 @@ export function App() {
       }
     } else if (!nodeWasSelected) {
       dragSelection = expandActiveGroupSelection([node.id], []);
+      setCanvasSelectionScope("group");
       setSelectedNodeIds(dragSelection.nodeIds);
       setSelectedEdgeIds(dragSelection.edgeIds);
       setSelectedEdgeId(dragSelection.edgeIds[0] ?? "");
@@ -7487,7 +7551,7 @@ export function App() {
       );
       return;
     }
-    if (!dragging || !svgRef.current) {
+    if (!draggingRef.current || !svgRef.current) {
       return;
     }
     const point = lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
@@ -7717,6 +7781,7 @@ export function App() {
     setActiveSchemeId(schemeId);
     selectSingleProject(schemeId, project.id);
     const firstVisibleNode = filterProjectByVisibleLayers(layeredProject.nodes, layeredProject.edges, layeredProject.layers).nodes[0];
+    setCanvasSelectionScope("group");
     setSelectedNodeIds(firstVisibleNode ? [firstVisibleNode.id] : []);
     setSelectedEdgeId("");
     setSelectedEdgeIds([]);
@@ -8296,6 +8361,7 @@ export function App() {
     const node = firstNodeId ? nodeById.get(firstNodeId) : undefined;
     const editableNode = Boolean(firstNodeId && activeLayerNodeIdSet.has(firstNodeId));
     const editableEdge = Boolean(error.edgeId && activeLayerEdgeIdSet.has(error.edgeId));
+    setCanvasSelectionScope("group");
     setSelectedNodeIds(editableNode && firstNodeId ? [firstNodeId] : []);
     setSelectedEdgeId(editableEdge && error.edgeId ? error.edgeId : "");
     setSelectedEdgeIds(editableEdge && error.edgeId ? [error.edgeId] : []);
@@ -8725,6 +8791,7 @@ export function App() {
     setConnectSource(nextConnectSource);
     applyConnectPreviewState(sourcePoint, false, null, null, nextConnectSource);
     setMode("connect");
+    setCanvasSelectionScope("group");
     setSelectedNodeIds([]);
     setSelectedEdgeId("");
     setSelectedEdgeIds([]);
@@ -8806,6 +8873,7 @@ export function App() {
     if (!activeLayerNodeIdSet.has(node.id)) {
       return;
     }
+    setCanvasSelectionScope("direct");
     setSelectedNodeIds([node.id]);
     setSelectedEdgeId("");
     setSelectedEdgeIds([]);
@@ -10536,6 +10604,7 @@ export function App() {
                 return;
               }
               lastEdgePointerClickRef.current = null;
+              setCanvasSelectionScope("group");
               setSelectedNodeIds([]);
               setSelectedEdgeId("");
               setSelectedEdgeIds([]);
@@ -10798,6 +10867,7 @@ export function App() {
             )}
             {viewportNodes.map((node) => {
               const selected = selectedNodeIdSet.has(node.id);
+              const focused = node.id === selectedNodeId;
               const editable = activeLayerNodeIdSet.has(node.id);
               const isStorageBus = node.kind === "hydrogen-tank" || node.kind === "thermal-storage-tank";
               const isConnectSource = node.id === connectSource?.nodeId;
@@ -10830,7 +10900,7 @@ export function App() {
               return (
                 <g
                   key={node.id}
-                  className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${selected ? "selected" : ""} ${isConnectSource ? "connect-source" : ""}`}
+                  className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${isConnectSource ? "connect-source" : ""}`}
                   transform={`translate(${renderPosition.x} ${renderPosition.y})`}
                   onPointerDown={(event) => handleNodePointerDown(event, node)}
                   onContextMenu={(event) => {
@@ -10987,7 +11057,7 @@ export function App() {
                       );
                     })}
                   </g>
-                  {selected && selectedNodeCount === 1 && (
+                  {selected && focused && selectedNodeCount === 1 && (
                     <g className="transform-handles">
                       <line x1="0" y1={-visibleHalfHeight - rotateStemStart} x2="0" y2={-visibleHalfHeight - rotateStemEnd} />
                       <g transform={handleTransform(0, -visibleHalfHeight - rotateHandleGap)}>
@@ -11826,50 +11896,72 @@ export function App() {
       </aside>
       {contextMenu && (
         <div className="context-menu" style={contextMenuStyle(contextMenu)}>
-          <button onClick={() => runContextMenuAction(undoLastOperation)} disabled={undoStack.length === 0}>
-            <Undo2 size={14} />
-            撤销
-          </button>
-          <button onClick={() => runContextMenuAction(copySelection)} disabled={activeSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0}>
-            <Copy size={14} />
-            复制
-          </button>
-          <button onClick={() => runContextMenuAction(cutSelection)} disabled={activeSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0}>
-            <Scissors size={14} />
-            剪切
-          </button>
-          <button onClick={() => runContextMenuAction(() => saveCurrentProject())} disabled={!saveRequired}>
-            <Save size={14} />
-            保存
-          </button>
-          <button onClick={() => runContextMenuAction(pasteSelection)} disabled={canvasClipboard.nodes.length === 0 && canvasClipboard.edges.length === 0}>
-            <FileInput size={14} />
-            粘贴
-          </button>
-          <button onClick={() => runContextMenuAction(tidySelectedEdgeRoute)} disabled={!selectedEdge}>
-            <Route size={14} />
-            整理连接线
-          </button>
-          <button onClick={() => runContextMenuAction(addManualBendFromContextMenu)} disabled={!contextMenu.edgeId}>
-            <Pencil size={14} />
-            添加拐点
-          </button>
-          <button onClick={() => runContextMenuAction(groupSelectedGraphics)} disabled={activeSelectedNodeIds.length + activeSelectedEdgeIds.length < 2}>
-            <Group size={14} />
-            组合
-          </button>
-          <button onClick={() => runContextMenuAction(ungroupSelectedGraphics)} disabled={activeSelectedGroupIds.length === 0}>
-            <Ungroup size={14} />
-            解散
-          </button>
-          <button onClick={() => runContextMenuAction(openLayerAssignmentDialog)} disabled={activeSelectedNodeIds.length === 0}>
-            <Layers size={14} />
-            图层修改
-          </button>
-          <button onClick={() => runContextMenuAction(deleteSelection)} disabled={activeSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0}>
-            <Trash2 size={14} />
-            删除
-          </button>
+          {undoStack.length > 0 && (
+            <button onClick={() => runContextMenuAction(undoLastOperation)}>
+              <Undo2 size={14} />
+              撤销
+            </button>
+          )}
+          {contextSelectionCount > 0 && (
+            <button onClick={() => runContextMenuAction(copySelection)}>
+              <Copy size={14} />
+              复制
+            </button>
+          )}
+          {contextSelectionCount > 0 && (
+            <button onClick={() => runContextMenuAction(cutSelection)}>
+              <Scissors size={14} />
+              剪切
+            </button>
+          )}
+          {saveRequired && (
+            <button onClick={() => runContextMenuAction(() => saveCurrentProject())}>
+              <Save size={14} />
+              保存
+            </button>
+          )}
+          {(canvasClipboard.nodes.length > 0 || canvasClipboard.edges.length > 0) && (
+            <button onClick={() => runContextMenuAction(pasteSelection)}>
+              <FileInput size={14} />
+              粘贴
+            </button>
+          )}
+          {selectedEdge && (
+            <button onClick={() => runContextMenuAction(tidySelectedEdgeRoute)}>
+              <Route size={14} />
+              整理连接线
+            </button>
+          )}
+          {contextMenu.edgeId && (
+            <button onClick={() => runContextMenuAction(addManualBendFromContextMenu)}>
+              <Pencil size={14} />
+              添加拐点
+            </button>
+          )}
+          {!contextHasSelectedGroup && contextSelectionCount >= 2 && (
+            <button onClick={() => runContextMenuAction(groupSelectedGraphics)}>
+              <Group size={14} />
+              组合
+            </button>
+          )}
+          {contextHasSelectedGroup && (
+            <button onClick={() => runContextMenuAction(ungroupSelectedGraphics)}>
+              <Ungroup size={14} />
+              解散
+            </button>
+          )}
+          {activeSelectedNodeIds.length > 0 && (
+            <button onClick={() => runContextMenuAction(openLayerAssignmentDialog)}>
+              <Layers size={14} />
+              图层修改
+            </button>
+          )}
+          {contextSelectionCount > 0 && (
+            <button onClick={() => runContextMenuAction(deleteSelection)}>
+              <Trash2 size={14} />
+              删除
+            </button>
+          )}
         </div>
       )}
       {projectMenu && (
@@ -11882,80 +11974,86 @@ export function App() {
             <FolderOpen size={14} />
             新增方案
           </button>
-          <button
-            onClick={() => runContextMenuAction(() => {
-              createBlankProject();
-            })}
-            disabled={!projectMenu.schemeId}
-          >
-            <FileJson size={14} />
-            新增模型
-          </button>
-          <button
-            onClick={() => runContextMenuAction(() => {
-              const project = projectById.get(projectMenu.projectId ?? "");
-              const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
-              if (project) {
-                if (selectedProjectIds.length > 1 && selectedProjectIds.includes(project.id)) {
-                  duplicateSelectedProjectRecords();
-                } else {
-                  duplicateProjectRecord(project);
+          {projectMenu.schemeId && (
+            <button
+              onClick={() => runContextMenuAction(() => {
+                createBlankProject();
+              })}
+            >
+              <FileJson size={14} />
+              新增模型
+            </button>
+          )}
+          {(projectMenu.projectId || projectMenu.schemeId) && (
+            <button
+              onClick={() => runContextMenuAction(() => {
+                const project = projectById.get(projectMenu.projectId ?? "");
+                const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
+                if (project) {
+                  if (selectedProjectIds.length > 1 && selectedProjectIds.includes(project.id)) {
+                    duplicateSelectedProjectRecords();
+                  } else {
+                    duplicateProjectRecord(project);
+                  }
+                } else if (scheme) {
+                  if (selectedSchemeIds.length > 1 && selectedSchemeIds.includes(scheme.id)) {
+                    duplicateSelectedSchemeRecords();
+                  } else {
+                    duplicateSchemeRecord(scheme);
+                  }
                 }
-              } else if (scheme) {
-                if (selectedSchemeIds.length > 1 && selectedSchemeIds.includes(scheme.id)) {
-                  duplicateSelectedSchemeRecords();
-                } else {
-                  duplicateSchemeRecord(scheme);
-                }
-              }
-            })}
-            disabled={!projectMenu.projectId && !projectMenu.schemeId}
-          >
-            <Copy size={14} />
-            复制
-          </button>
-          <button
-            onClick={() => runContextMenuAction(() => {
-              pasteSelectedRecord();
-            })}
-            disabled={!recordClipboard || !projectMenu.schemeId}
-          >
-            粘贴
-          </button>
-          <button
-            onClick={() => runContextMenuAction(() => {
-              const project = projectById.get(projectMenu.projectId ?? "");
-              const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
-              if (project) renameProjectRecord(project);
-              else if (scheme) renameSchemeRecord(scheme);
-            })}
-            disabled={!projectMenu.projectId && !projectMenu.schemeId}
-          >
-            <Pencil size={14} />
-            重命名
-          </button>
-          <button
-            onClick={() => runContextMenuAction(() => {
-              const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
-              if (scheme) exportSchemeRecord(scheme);
-            })}
-            disabled={!projectMenu.schemeId}
-          >
-            <Download size={14} />
-            导出方案
-          </button>
-          <button
-            onClick={() => runContextMenuAction(() => {
-              const project = projectById.get(projectMenu.projectId ?? "");
-              const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
-              if (project) deleteProjectRecord(project);
-              else if (scheme) deleteSchemeRecord(scheme);
-            })}
-            disabled={!projectMenu.projectId && !projectMenu.schemeId}
-          >
-            <Trash2 size={14} />
-            删除
-          </button>
+              })}
+            >
+              <Copy size={14} />
+              复制
+            </button>
+          )}
+          {recordClipboard && projectMenu.schemeId && (
+            <button
+              onClick={() => runContextMenuAction(() => {
+                pasteSelectedRecord();
+              })}
+            >
+              粘贴
+            </button>
+          )}
+          {(projectMenu.projectId || projectMenu.schemeId) && (
+            <button
+              onClick={() => runContextMenuAction(() => {
+                const project = projectById.get(projectMenu.projectId ?? "");
+                const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
+                if (project) renameProjectRecord(project);
+                else if (scheme) renameSchemeRecord(scheme);
+              })}
+            >
+              <Pencil size={14} />
+              重命名
+            </button>
+          )}
+          {projectMenu.schemeId && (
+            <button
+              onClick={() => runContextMenuAction(() => {
+                const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
+                if (scheme) exportSchemeRecord(scheme);
+              })}
+            >
+              <Download size={14} />
+              导出方案
+            </button>
+          )}
+          {(projectMenu.projectId || projectMenu.schemeId) && (
+            <button
+              onClick={() => runContextMenuAction(() => {
+                const project = projectById.get(projectMenu.projectId ?? "");
+                const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
+                if (project) deleteProjectRecord(project);
+                else if (scheme) deleteSchemeRecord(scheme);
+              })}
+            >
+              <Trash2 size={14} />
+              删除
+            </button>
+          )}
         </div>
       )}
       {pendingUnsavedAction && (
