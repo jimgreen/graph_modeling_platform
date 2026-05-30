@@ -60,6 +60,7 @@ import {
   validateTopology,
   validateVoltageSetpointDeviations,
   getTerminalPoint,
+  getBusTerminalType,
   getMovableRouteSegmentIndexes,
   getNodeScaleX,
   getNodeScaleY,
@@ -910,6 +911,45 @@ describe("power system model", () => {
     }));
     expect(exported.ACZeroBranch.rows).toHaveLength(1);
     expect(exported.DCZeroBranch.rows).toHaveLength(1);
+  });
+
+  test("adds vertical library variants for buses and every built-in two-terminal device", () => {
+    const baseTemplates = DEVICE_LIBRARY.filter((template) => !template.kind.endsWith("-vertical"));
+    const baseByKind = new Map(baseTemplates.map((template) => [template.kind, template]));
+    const busKinds = ["ac-bus", "dc-bus", "hydrogen-bus", "heat-bus"];
+    const twoTerminalKinds = baseTemplates
+      .filter((template) => template.terminalCount === 2)
+      .map((template) => template.kind);
+
+    for (const kind of [...busKinds, ...twoTerminalKinds]) {
+      const baseTemplate = baseByKind.get(kind)!;
+      const verticalKind = `${kind}-vertical`;
+      const verticalTemplate = DEVICE_LIBRARY.find((template) => template.kind === verticalKind);
+      expect(verticalTemplate).toMatchObject({
+        label: `${baseTemplate.label}（竖向）`,
+        attributeLibrary: baseTemplate.attributeLibrary,
+        terminalType: baseTemplate.terminalType,
+        terminalCount: baseTemplate.terminalCount,
+        rotation: 90
+      });
+      expect(inferESection(verticalKind, verticalTemplate?.params ?? {})).toBe(inferESection(kind, baseTemplate.params));
+
+      const node = createDefaultNode(verticalKind, { x: 200, y: 200 });
+      expect(node.rotation).toBe(90);
+      if (busKinds.includes(kind)) {
+        expect(getBusTerminalType(node)).toBe(getBusTerminalType(createDefaultNode(kind, { x: 200, y: 200 })));
+        expect(projectPointToBusCenterline(node, { x: 210, y: 120 })).toEqual({ x: 200, y: 140 });
+      } else {
+        expect(node.terminals).toHaveLength(2);
+        expect(node.terminals.map((terminal) => terminal.anchor)).toEqual(createDefaultNode(kind, { x: 200, y: 200 }).terminals.map((terminal) => terminal.anchor));
+        const firstPoint = getTerminalPoint(node, "t1");
+        const secondPoint = getTerminalPoint(node, "t2");
+        expect(firstPoint.x).toBe(200);
+        expect(secondPoint.x).toBe(200);
+        expect(firstPoint.y).toBeLessThan(200);
+        expect(secondPoint.y).toBeGreaterThan(200);
+      }
+    }
   });
 
   test("places converter elements under AC/DC device library groups", () => {

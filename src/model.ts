@@ -223,6 +223,7 @@ export type DeviceTemplate = {
   isContainer?: boolean;
   custom?: boolean;
   parameterDefinitions?: DeviceParameterDefinition[];
+  rotation?: number;
 };
 
 export type DeviceTemplateDefinitionOverride = {
@@ -494,41 +495,52 @@ function isContainerParams(params: Record<string, string> = {}) {
   return params.is_container === "1" || params.is_container === "true" || params.isContainer === "true";
 }
 
+const GENERATED_VERTICAL_KIND_SUFFIX = "-vertical";
+const EXPLICIT_VERTICAL_DEVICE_KINDS = new Set<string>(["ac-ground-disconnector-vertical"]);
+
+function baseDeviceKind(kind: string): string {
+  if (!kind.endsWith(GENERATED_VERTICAL_KIND_SUFFIX) || EXPLICIT_VERTICAL_DEVICE_KINDS.has(kind)) {
+    return kind;
+  }
+  return kind.slice(0, -GENERATED_VERTICAL_KIND_SUFFIX.length);
+}
+
 export function inferESection(kind: string, params: Record<string, string> = {}) {
-  if (kind === "ac-bus") return "ACRealBs";
-  if (kind === "dc-bus") return "DCRealBs";
+  const sectionKind = baseDeviceKind(kind);
+  if (sectionKind === "ac-bus") return "ACRealBs";
+  if (sectionKind === "dc-bus") return "DCRealBs";
   if (isStaticKind(kind)) return "StaticSymbol";
   const componentType = params.component_type?.trim();
   if (componentType) {
     return componentType;
   }
-  const mappedSection = E_KIND_SECTION_MAP[kind];
+  const mappedSection = E_KIND_SECTION_MAP[sectionKind];
   if (mappedSection) {
     return mappedSection;
   }
   if (isContainerParams(params)) {
     return "";
   }
-  if (kind === "ac-line") return "ACBranch";
-  if (kind === "dc-line") return "DCBranch";
-  if (kind === "ac-zero-branch") return "ACZeroBranch";
-  if (kind === "dc-zero-branch") return "DCZeroBranch";
-  if (kind === "ac-load" || kind === "ac-terminal-transformer-load") return "ACLoad";
-  if (kind === "dc-load") return "DCLoad";
-  if (kind === "ac-storage") return "ACGenerator";
-  if (kind === "dc-storage") return "DCGenerator";
-  if (kind.startsWith("ac-") && kind.includes("source")) return "ACGenerator";
-  if (kind.startsWith("dc-") && kind.includes("source")) return "DCGenerator";
-  if (kind === "ac-switch" || kind === "ac-disconnector") return "ACSwitch";
-  if (kind === "ac-ground-disconnector" || kind === "ac-ground-disconnector-vertical") return "GroundDisconnector";
-  if (kind === "dc-switch" || kind === "dc-disconnector") return "DCSwitch";
-  if (kind === "ac-breaker" || kind === "ac-box-breaker") return "ACBreak";
-  if (kind === "dc-breaker") return "DCBreak";
-  if (kind === "ac-transformer" || kind === "ac-two-winding-transformer") return "ACTransformer";
-  if (kind === "ac-three-winding-transformer") return "ACTransfomer3";
-  if (kind === "dcdc-converter") return "DCDCConverter";
-  if (kind === "acdc-converter") return "DCACConverter";
-  if (kind === "acac-converter") return "ACACConverter";
+  if (sectionKind === "ac-line") return "ACBranch";
+  if (sectionKind === "dc-line") return "DCBranch";
+  if (sectionKind === "ac-zero-branch") return "ACZeroBranch";
+  if (sectionKind === "dc-zero-branch") return "DCZeroBranch";
+  if (sectionKind === "ac-load" || sectionKind === "ac-terminal-transformer-load") return "ACLoad";
+  if (sectionKind === "dc-load") return "DCLoad";
+  if (sectionKind === "ac-storage") return "ACGenerator";
+  if (sectionKind === "dc-storage") return "DCGenerator";
+  if (sectionKind.startsWith("ac-") && sectionKind.includes("source")) return "ACGenerator";
+  if (sectionKind.startsWith("dc-") && sectionKind.includes("source")) return "DCGenerator";
+  if (sectionKind === "ac-switch" || sectionKind === "ac-disconnector") return "ACSwitch";
+  if (sectionKind === "ac-ground-disconnector" || sectionKind === "ac-ground-disconnector-vertical") return "GroundDisconnector";
+  if (sectionKind === "dc-switch" || sectionKind === "dc-disconnector") return "DCSwitch";
+  if (sectionKind === "ac-breaker" || sectionKind === "ac-box-breaker") return "ACBreak";
+  if (sectionKind === "dc-breaker") return "DCBreak";
+  if (sectionKind === "ac-transformer" || sectionKind === "ac-two-winding-transformer") return "ACTransformer";
+  if (sectionKind === "ac-three-winding-transformer") return "ACTransfomer3";
+  if (sectionKind === "dcdc-converter") return "DCDCConverter";
+  if (sectionKind === "acdc-converter") return "DCACConverter";
+  if (sectionKind === "acac-converter") return "ACACConverter";
   return "";
 }
 
@@ -1854,7 +1866,7 @@ const threeWindingTransformerParameterDefinitions: DeviceParameterDefinition[] =
   readonlyIntegerDefinition("低压绕组双绕组主变idx", "idx_xf_t3")
 ];
 
-export const DEVICE_LIBRARY: DeviceTemplate[] = [
+const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-text",
     label: "文字",
@@ -2580,6 +2592,41 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   }
 ];
 
+const VERTICAL_BUS_TEMPLATE_KINDS = new Set<string>(["ac-bus", "dc-bus", "hydrogen-bus", "heat-bus"]);
+
+function shouldCreateVerticalDeviceTemplate(template: DeviceTemplate): boolean {
+  if (template.kind.endsWith(GENERATED_VERTICAL_KIND_SUFFIX)) {
+    return false;
+  }
+  return VERTICAL_BUS_TEMPLATE_KINDS.has(template.kind) || template.terminalCount === 2;
+}
+
+function clonePoint(point: Point): Point {
+  return { x: point.x, y: point.y };
+}
+
+function createVerticalDeviceTemplate(template: DeviceTemplate): DeviceTemplate {
+  return {
+    ...template,
+    kind: `${template.kind}${GENERATED_VERTICAL_KIND_SUFFIX}`,
+    label: `${template.label}（竖向）`,
+    size: { ...template.size },
+    params: { ...template.params },
+    terminalTypes: template.terminalTypes ? [...template.terminalTypes] : undefined,
+    terminalLabels: template.terminalLabels ? [...template.terminalLabels] : undefined,
+    terminalAnchors: template.terminalAnchors?.map(clonePoint),
+    terminalRoles: template.terminalRoles ? [...template.terminalRoles] : undefined,
+    terminalAssociations: template.terminalAssociations ? [...template.terminalAssociations] : undefined,
+    parameterDefinitions: template.parameterDefinitions?.map((definition) => ({ ...definition })),
+    rotation: 90
+  };
+}
+
+export const DEVICE_LIBRARY: DeviceTemplate[] = [
+  ...BASE_DEVICE_LIBRARY,
+  ...BASE_DEVICE_LIBRARY.filter(shouldCreateVerticalDeviceTemplate).map(createVerticalDeviceTemplate)
+];
+
 let nodeNumberSeed = 1;
 const makeId = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 const makeNodeNumber = () => `N${nodeNumberSeed++}`;
@@ -3129,7 +3176,7 @@ export function buildDefaultDeviceParameterDefinitions(
 }
 
 export function isGeneratorKind(kind: DeviceKind): boolean {
-  return kind.includes("source");
+  return baseDeviceKind(kind).includes("source");
 }
 
 export function isGeneratorNode(node: ModelNode): boolean {
@@ -3137,64 +3184,65 @@ export function isGeneratorNode(node: ModelNode): boolean {
 }
 
 export function getDeviceGlyphVariant(kind: DeviceKind): DeviceGlyphVariant {
-  if (kind.startsWith("static-")) return "static";
-  if (kind === "ac-source") return "ac-generator";
-  if (kind === "dc-source") return "dc-generator";
-  if (kind === "ac-storage") return "battery-storage";
-  if (kind === "dc-storage") return "battery-storage";
-  if (kind === "ac-electrolyzer") return "ac-hydrogen-electrolyzer";
-  if (kind === "dc-electrolyzer") return "dc-hydrogen-electrolyzer";
-  if (kind === "hydrogen-source") return "hydrogen-source";
-  if (kind === "hydrogen-tank") return "hydrogen-storage";
-  if (kind === "hydrogen-load") return "hydrogen-load";
-  if (kind === "ac-fuel-cell") return "ac-hydrogen-fuel-cell";
-  if (kind === "dc-fuel-cell") return "dc-hydrogen-fuel-cell";
-  if (kind === "hydrogen-bus") return "hydrogen-bus";
-  if (kind === "hydrogen-compressor") return "hydrogen-compressor";
-  if (kind === "hydrogen-pressure-reducer") return "hydrogen-regulator";
-  if (kind === "hydrogen-shutoff-valve") return "hydrogen-valve";
-  if (kind === "hydrogen-pipeline") return "hydrogen-pipeline";
-  if (kind === "heat-boiler") return "single-heat-boiler";
-  if (kind === "two-port-heat-boiler") return "two-port-heat-boiler";
-  if (kind === "heat-source") return "single-heat-source";
-  if (kind === "two-port-heat-source") return "two-port-heat-source";
-  if (kind === "heat-exchanger") return "heat-exchanger-two";
-  if (kind === "three-port-heat-exchanger") return "heat-exchanger-three";
-  if (kind === "four-port-heat-exchanger") return "heat-exchanger-four";
-  if (kind === "ac-heater") return "ac-heat-electric-heater";
-  if (kind === "ac-two-port-heater") return "ac-two-port-heat-electric-heater";
-  if (kind === "dc-heater") return "dc-heat-electric-heater";
-  if (kind === "dc-two-port-heater") return "dc-two-port-heat-electric-heater";
-  if (kind === "thermal-storage-tank") return "heat-storage";
-  if (kind === "single-port-heat-load") return "single-heat-load";
-  if (kind === "two-port-heat-load") return "two-port-heat-load";
-  if (kind === "heat-load") return "heat-load";
-  if (kind === "heat-bus") return "heat-bus";
-  if (kind === "heat-pipeline") return "heat-pipeline";
-  if (kind === "heat-pump") return "heat-pump";
-  if (kind === "heat-shutoff-valve") return "heat-valve";
-  if (kind.includes("wind-source")) return "wind-source";
-  if (kind.includes("pv-source")) return "pv-source";
-  if (kind.includes("thermal-source")) return "thermal-source";
-  if (kind.includes("hydro-source")) return "hydro-source";
-  if (kind.includes("nuclear-source")) return "nuclear-source";
-  if (kind.includes("bus")) return "bus";
-  if (kind === "ac-line") return "ac-line";
-  if (kind === "dc-line") return "dc-line";
-  if (kind.includes("line") || kind.includes("zero-branch")) return "line";
-  if (kind === "ac-terminal-transformer-load") return "terminal-transformer-load";
-  if (kind.includes("transformer")) return "transformer";
-  if (kind === "ac-ground-disconnector-vertical") return "ground-disconnector-vertical";
-  if (kind === "ac-ground-disconnector") return "ground-disconnector";
-  if (kind.includes("switch")) return "switch";
-  if (kind.includes("disconnector")) return "disconnector";
-  if (kind === "ac-box-breaker") return "box-breaker";
-  if (kind.includes("breaker")) return "breaker";
-  if (kind.includes("load")) return "load";
-  if (kind === "dcdc-converter") return "dcdc-converter";
-  if (kind === "acdc-converter") return "acdc-converter";
-  if (kind === "acac-converter") return "acac-converter";
-  if (kind.startsWith("custom-") || kind.startsWith("custom:")) return "custom-device";
+  const glyphKind = baseDeviceKind(kind) as DeviceKind;
+  if (glyphKind.startsWith("static-")) return "static";
+  if (glyphKind === "ac-source") return "ac-generator";
+  if (glyphKind === "dc-source") return "dc-generator";
+  if (glyphKind === "ac-storage") return "battery-storage";
+  if (glyphKind === "dc-storage") return "battery-storage";
+  if (glyphKind === "ac-electrolyzer") return "ac-hydrogen-electrolyzer";
+  if (glyphKind === "dc-electrolyzer") return "dc-hydrogen-electrolyzer";
+  if (glyphKind === "hydrogen-source") return "hydrogen-source";
+  if (glyphKind === "hydrogen-tank") return "hydrogen-storage";
+  if (glyphKind === "hydrogen-load") return "hydrogen-load";
+  if (glyphKind === "ac-fuel-cell") return "ac-hydrogen-fuel-cell";
+  if (glyphKind === "dc-fuel-cell") return "dc-hydrogen-fuel-cell";
+  if (glyphKind === "hydrogen-bus") return "hydrogen-bus";
+  if (glyphKind === "hydrogen-compressor") return "hydrogen-compressor";
+  if (glyphKind === "hydrogen-pressure-reducer") return "hydrogen-regulator";
+  if (glyphKind === "hydrogen-shutoff-valve") return "hydrogen-valve";
+  if (glyphKind === "hydrogen-pipeline") return "hydrogen-pipeline";
+  if (glyphKind === "heat-boiler") return "single-heat-boiler";
+  if (glyphKind === "two-port-heat-boiler") return "two-port-heat-boiler";
+  if (glyphKind === "heat-source") return "single-heat-source";
+  if (glyphKind === "two-port-heat-source") return "two-port-heat-source";
+  if (glyphKind === "heat-exchanger") return "heat-exchanger-two";
+  if (glyphKind === "three-port-heat-exchanger") return "heat-exchanger-three";
+  if (glyphKind === "four-port-heat-exchanger") return "heat-exchanger-four";
+  if (glyphKind === "ac-heater") return "ac-heat-electric-heater";
+  if (glyphKind === "ac-two-port-heater") return "ac-two-port-heat-electric-heater";
+  if (glyphKind === "dc-heater") return "dc-heat-electric-heater";
+  if (glyphKind === "dc-two-port-heater") return "dc-two-port-heat-electric-heater";
+  if (glyphKind === "thermal-storage-tank") return "heat-storage";
+  if (glyphKind === "single-port-heat-load") return "single-heat-load";
+  if (glyphKind === "two-port-heat-load") return "two-port-heat-load";
+  if (glyphKind === "heat-load") return "heat-load";
+  if (glyphKind === "heat-bus") return "heat-bus";
+  if (glyphKind === "heat-pipeline") return "heat-pipeline";
+  if (glyphKind === "heat-pump") return "heat-pump";
+  if (glyphKind === "heat-shutoff-valve") return "heat-valve";
+  if (glyphKind.includes("wind-source")) return "wind-source";
+  if (glyphKind.includes("pv-source")) return "pv-source";
+  if (glyphKind.includes("thermal-source")) return "thermal-source";
+  if (glyphKind.includes("hydro-source")) return "hydro-source";
+  if (glyphKind.includes("nuclear-source")) return "nuclear-source";
+  if (glyphKind.includes("bus")) return "bus";
+  if (glyphKind === "ac-line") return "ac-line";
+  if (glyphKind === "dc-line") return "dc-line";
+  if (glyphKind.includes("line") || glyphKind.includes("zero-branch")) return "line";
+  if (glyphKind === "ac-terminal-transformer-load") return "terminal-transformer-load";
+  if (glyphKind.includes("transformer")) return "transformer";
+  if (glyphKind === "ac-ground-disconnector-vertical") return "ground-disconnector-vertical";
+  if (glyphKind === "ac-ground-disconnector") return "ground-disconnector";
+  if (glyphKind.includes("switch")) return "switch";
+  if (glyphKind.includes("disconnector")) return "disconnector";
+  if (glyphKind === "ac-box-breaker") return "box-breaker";
+  if (glyphKind.includes("breaker")) return "breaker";
+  if (glyphKind.includes("load")) return "load";
+  if (glyphKind === "dcdc-converter") return "dcdc-converter";
+  if (glyphKind === "acdc-converter") return "acdc-converter";
+  if (glyphKind === "acac-converter") return "acac-converter";
+  if (glyphKind.startsWith("custom-") || glyphKind.startsWith("custom:")) return "custom-device";
   return "default";
 }
 
@@ -3357,23 +3405,25 @@ export function getConnectionStrokeColor(
 }
 
 function isHydrogenVisualKind(kind: string): boolean {
-  return kind.startsWith("hydrogen-") || kind.includes("electrolyzer") || kind.includes("fuel-cell");
+  const visualKind = baseDeviceKind(kind);
+  return visualKind.startsWith("hydrogen-") || visualKind.includes("electrolyzer") || visualKind.includes("fuel-cell");
 }
 
 function isThermalVisualKind(kind: string): boolean {
+  const visualKind = baseDeviceKind(kind);
   return (
-    kind.startsWith("heat-") ||
-    kind === "ac-heater" ||
-    kind === "dc-heater" ||
-    kind === "ac-two-port-heater" ||
-    kind === "dc-two-port-heater" ||
-    kind === "thermal-storage-tank" ||
-    kind.includes("port-heat-")
+    visualKind.startsWith("heat-") ||
+    visualKind === "ac-heater" ||
+    visualKind === "dc-heater" ||
+    visualKind === "ac-two-port-heater" ||
+    visualKind === "dc-two-port-heater" ||
+    visualKind === "thermal-storage-tank" ||
+    visualKind.includes("port-heat-")
   );
 }
 
 function isPureHydrogenNetworkKind(kind: string): boolean {
-  return kind.startsWith("hydrogen-");
+  return baseDeviceKind(kind).startsWith("hydrogen-");
 }
 
 function isPureThermalNetworkKind(kind: string): boolean {
@@ -3639,8 +3689,9 @@ function applyContainerRelationDefaults(params: Record<string, string>, template
 }
 
 function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
+  const templateKind = baseDeviceKind(template.kind) as DeviceKind;
   const withDeviceLabelDefaults = (params: Record<string, string>) =>
-    isStaticKind(template.kind)
+    isStaticKind(templateKind)
       ? params
       : {
           _labelVisible: "1",
@@ -3659,7 +3710,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
         };
   const withTemplateDefinitions = (params: Record<string, string>) =>
     withDeviceLabelDefaults(applyTemplateDefinitionDefaults(applyContainerRelationDefaults(params, template), template));
-  if (isStaticKind(template.kind)) {
+  if (isStaticKind(templateKind)) {
     return withTemplateDefinitions({ ...template.params });
   }
   const withRunStat = (params: Record<string, string>) => ({ run_stat: "运行", ...params });
@@ -3683,22 +3734,22 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
     }
     return withTemplateDefinitions(params);
   }
-  if (isPureHydrogenNetworkKind(template.kind) || isPureThermalNetworkKind(template.kind)) {
+  if (isPureHydrogenNetworkKind(templateKind) || isPureThermalNetworkKind(templateKind)) {
     return withTemplateDefinitions(withRunStat({ ...template.params }));
   }
-  if (isGeneratorKind(template.kind)) {
+  if (isGeneratorKind(templateKind)) {
     const base: Record<string, string> = {
       ratedCapacity: template.params.ratedPower ?? template.params.ratedCapacity ?? "10 MW",
       controlType: type === "ac" ? "PV" : "P"
     };
-    if (template.kind.includes("wind-source")) {
+    if (templateKind.includes("wind-source")) {
       base.cutInWindSpeed = "3 m/s";
       base.ratedWindSpeed = "12 m/s";
       base.cutOutWindSpeed = "25 m/s";
     }
     return withTemplateDefinitions(withRunStat(withDefaultVbase({ ...template.params, ...base })));
   }
-  if (template.kind === "ac-load" || template.kind === "ac-terminal-transformer-load") {
+  if (templateKind === "ac-load" || templateKind === "ac-terminal-transformer-load") {
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ratedActivePower: "5 MW",
       pv0: "1.0",
@@ -3710,7 +3761,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       qv2: "0.0"
     })));
   }
-  if (template.kind === "dc-load") {
+  if (templateKind === "dc-load") {
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ratedActivePower: "1.5 MW",
       pv0: "1.0",
@@ -3718,7 +3769,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       pv2: "0.0"
     })));
   }
-  if (template.kind === "ac-storage") {
+  if (templateKind === "ac-storage") {
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ...template.params,
       ratedCapacity: template.params.ratedPower ?? "5 MW",
@@ -3729,7 +3780,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       alpha: "1.0"
     })));
   }
-  if (template.kind === "dc-storage") {
+  if (templateKind === "dc-storage") {
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ...template.params,
       ratedCapacity: template.params.ratedPower ?? "5 MW",
@@ -3740,10 +3791,10 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
     })));
   }
   if (
-    template.kind === "ac-electrolyzer" ||
-    template.kind === "dc-electrolyzer" ||
-    template.kind === "ac-fuel-cell" ||
-    template.kind === "dc-fuel-cell"
+    templateKind === "ac-electrolyzer" ||
+    templateKind === "dc-electrolyzer" ||
+    templateKind === "ac-fuel-cell" ||
+    templateKind === "dc-fuel-cell"
   ) {
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ...template.params,
@@ -3751,15 +3802,15 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       controlType: template.terminalType === "ac" ? "PQ" : "P"
     })));
   }
-  if (template.kind === "ac-heater" || template.kind === "dc-heater" || template.kind === "ac-two-port-heater" || template.kind === "dc-two-port-heater") {
+  if (templateKind === "ac-heater" || templateKind === "dc-heater" || templateKind === "ac-two-port-heater" || templateKind === "dc-two-port-heater") {
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ...template.params,
       ratedCapacity: template.params.ratedPower ?? "5 MW",
       controlType: template.terminalType === "ac" ? "PQ" : "P"
     })));
   }
-  if (template.kind === "ac-line" || template.kind === "dc-line") {
-    if (template.kind === "dc-line") {
+  if (templateKind === "ac-line" || templateKind === "dc-line") {
+    if (templateKind === "dc-line") {
       return withTemplateDefinitions(withRunStat(withDefaultVbase({
         r: "1.0"
       })));
@@ -3770,7 +3821,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       b: "0.0"
     })));
   }
-  if (template.kind === "ac-two-winding-transformer" || template.kind === "ac-transformer") {
+  if (templateKind === "ac-two-winding-transformer" || templateKind === "ac-transformer") {
     return withTemplateDefinitions(withRunStat({
       highVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       lowVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
@@ -3782,7 +3833,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       tapRatio: "1.0"
     }));
   }
-  if (template.kind === "ac-three-winding-transformer") {
+  if (templateKind === "ac-three-winding-transformer") {
     return withTemplateDefinitions(withRunStat({
       neutral_node: "",
       neutral_vbase: "1.0",
@@ -3809,7 +3860,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       lowTapRatio: "1.0"
     }));
   }
-  if (template.kind === "dcdc-converter") {
+  if (templateKind === "dcdc-converter") {
     return withTemplateDefinitions(withRunStat({
       sourceVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       targetVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
@@ -3819,7 +3870,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       j_control_type: "SLACK"
     }));
   }
-  if (template.kind === "acdc-converter") {
+  if (templateKind === "acdc-converter") {
     return withTemplateDefinitions(withRunStat({
       sourceVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       targetVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
@@ -3832,7 +3883,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       dcControlType: "不定"
     }));
   }
-  if (template.kind === "acac-converter") {
+  if (templateKind === "acac-converter") {
     return withTemplateDefinitions(withRunStat({
       sourceVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       targetVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
@@ -3844,17 +3895,17 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
     }));
   }
   if (
-    template.kind === "ac-switch" ||
-    template.kind === "dc-switch" ||
-    template.kind === "ac-disconnector" ||
-    template.kind === "dc-disconnector" ||
-    template.kind === "ac-ground-disconnector" ||
-    template.kind === "ac-ground-disconnector-vertical" ||
-    template.kind === "ac-breaker" ||
-    template.kind === "ac-box-breaker" ||
-    template.kind === "dc-breaker"
+    templateKind === "ac-switch" ||
+    templateKind === "dc-switch" ||
+    templateKind === "ac-disconnector" ||
+    templateKind === "dc-disconnector" ||
+    templateKind === "ac-ground-disconnector" ||
+    templateKind === "ac-ground-disconnector-vertical" ||
+    templateKind === "ac-breaker" ||
+    templateKind === "ac-box-breaker" ||
+    templateKind === "dc-breaker"
   ) {
-    const isGroundDisconnector = template.kind === "ac-ground-disconnector" || template.kind === "ac-ground-disconnector-vertical";
+    const isGroundDisconnector = templateKind === "ac-ground-disconnector" || templateKind === "ac-ground-disconnector-vertical";
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ratedCapacity: template.terminalType === "ac" ? "1250 A" : "1600 A",
       status: isGroundDisconnector ? "0" : "1",
@@ -3888,7 +3939,7 @@ export function createNodeFromTemplate(template: DeviceTemplate, position: Point
     dcTopologyNode: 0,
     position,
     size: { ...template.size },
-    rotation: 0,
+    rotation: template.rotation ?? 0,
     scale: 1,
     scaleX: 1,
     scaleY: 1,
@@ -4147,8 +4198,12 @@ function busTerminalAnchor(index: number): Point {
   return BUS_LEGACY_TERMINAL_ANCHORS[index] ?? { x: 0, y: 0 };
 }
 
+function busTerminalTypeByKind(kind: string): TerminalType | undefined {
+  return BUS_TERMINAL_TYPE_BY_KIND[kind] ?? BUS_TERMINAL_TYPE_BY_KIND[baseDeviceKind(kind)];
+}
+
 export function getBusTerminalType(node: Pick<ModelNode, "kind" | "terminals">): TerminalType | undefined {
-  return node.terminals[0]?.type ?? BUS_TERMINAL_TYPE_BY_KIND[node.kind];
+  return node.terminals[0]?.type ?? busTerminalTypeByKind(node.kind);
 }
 
 function virtualBusTerminal(node: Pick<ModelNode, "kind" | "terminals">, terminalId?: string): Terminal | undefined {
@@ -4265,10 +4320,11 @@ function terminalOutwardOffsetLength(terminal: Pick<Terminal, "anchor">, nodeKin
   if (!terminalOutwardAxis(terminal)) {
     return 0;
   }
-  if (nodeKind && CONVERTER_TERMINAL_KINDS.has(nodeKind)) {
+  const terminalNodeKind = nodeKind ? (baseDeviceKind(nodeKind) as DeviceKind) : undefined;
+  if (terminalNodeKind && CONVERTER_TERMINAL_KINDS.has(terminalNodeKind)) {
     return CONVERTER_TERMINAL_OUTWARD_OFFSET;
   }
-  if (nodeKind && CLOSE_BORDER_TERMINAL_KINDS.has(nodeKind)) {
+  if (terminalNodeKind && CLOSE_BORDER_TERMINAL_KINDS.has(terminalNodeKind)) {
     return CLOSE_BORDER_TERMINAL_OUTWARD_OFFSET;
   }
   return TERMINAL_OUTWARD_OFFSET;
@@ -4676,7 +4732,7 @@ export function reconcileOverlappingTerminalConnections(
 }
 
 export function isBusNode(node: ModelNode): boolean {
-  return Boolean(BUS_TERMINAL_TYPE_BY_KIND[node.kind]);
+  return Boolean(busTerminalTypeByKind(node.kind));
 }
 
 function isBoundaryBusNode(node: Pick<ModelNode, "kind">): boolean {

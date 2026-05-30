@@ -2632,6 +2632,52 @@ describe("graph inspector panel", () => {
     expect(contextBlock).toContain("解散");
   });
 
+  test("adds a persistent draggable template library from selected groups", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const server = await readServerSource();
+    const leftPanelStart = source.indexOf("<div className=\"left-panel-tabs\"");
+    const leftPanelEnd = source.indexOf("</aside>", leftPanelStart);
+    const leftPanelBlock = source.slice(leftPanelStart, leftPanelEnd);
+    const contextStart = source.indexOf("{contextMenu && (");
+    const contextEnd = source.indexOf("{projectMenu && (", contextStart);
+    const contextBlock = source.slice(contextStart, contextEnd);
+    const dropStart = source.indexOf("const handleDrop =");
+    const dropEnd = source.indexOf("const handleNodePointerDown", dropStart);
+    const dropBlock = source.slice(dropStart, dropEnd);
+
+    expect(source).toContain("type GraphTemplate =");
+    expect(source).toContain("sourceSize: { width: number; height: number }");
+    expect(source).toContain("customGraphTemplateTypes");
+    expect(source).toContain("customGraphTemplates");
+    expect(source).toContain("CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY");
+    expect(source).toContain("CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY");
+    expect(server).toContain("customGraphTemplateTypes");
+    expect(server).toContain("customGraphTemplates");
+    expect(leftPanelBlock).toContain("模板库");
+    expect(leftPanelBlock).toContain("leftPanelTab === \"templates\"");
+    expect(leftPanelBlock).toContain("renderTemplateLibraryPanel()");
+    expect(source).toContain("groupGraphTemplatesByType");
+    expect(source).toContain("renderGraphTemplatePreview");
+    expect(source).toContain("renderTemplateLibraryPanel");
+    expect(source).toContain("canAddTemplateFromSelection");
+    expect(source).toContain("openAddTemplateDialog");
+    expect(contextBlock).toContain("添加模板");
+    expect(contextBlock).toContain("canAddTemplateFromSelection");
+    expect(source).toContain("className=\"template-dialog\"");
+    expect(source).toContain("模板类型");
+    expect(source).toContain("新增模板类型");
+    expect(source).toContain("templateDraftName");
+    expect(source).toContain("confirmAddGraphTemplate");
+    expect(source).toContain("cancelTemplateDialog");
+    expect(source).toContain("createGraphTemplateType");
+    expect(source).toContain("模板类型名称重复");
+    expect(dropBlock).toContain("application/graph-template-id");
+    expect(dropBlock).toContain("dropGraphTemplate");
+    expect(styles).toContain(".template-library-item");
+    expect(styles).toContain(".template-dialog");
+  });
+
   test("hides unavailable canvas context-menu actions instead of rendering disabled buttons", async () => {
     const source = await readAppSource();
     const topbarStart = source.indexOf("<header className=\"topbar\">");

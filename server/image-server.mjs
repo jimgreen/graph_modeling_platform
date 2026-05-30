@@ -258,6 +258,8 @@ function normalizeDeviceLibraryConfig(payload) {
   const customDeviceTemplates = Array.isArray(source.customDeviceTemplates) ? source.customDeviceTemplates : [];
   const customAttributeLibraries = Array.isArray(source.customAttributeLibraries) ? source.customAttributeLibraries : [];
   const customComponentTypes = Array.isArray(source.customComponentTypes) ? source.customComponentTypes : [];
+  const customGraphTemplateTypes = Array.isArray(source.customGraphTemplateTypes) ? source.customGraphTemplateTypes : [];
+  const customGraphTemplates = Array.isArray(source.customGraphTemplates) ? source.customGraphTemplates : [];
   const deviceDefinitionOverrides =
     source.deviceDefinitionOverrides && typeof source.deviceDefinitionOverrides === "object" && !Array.isArray(source.deviceDefinitionOverrides)
       ? source.deviceDefinitionOverrides
@@ -266,6 +268,8 @@ function normalizeDeviceLibraryConfig(payload) {
     customDeviceTemplates,
     customAttributeLibraries,
     customComponentTypes,
+    customGraphTemplateTypes,
+    customGraphTemplates,
     deviceDefinitionOverrides
   };
 }

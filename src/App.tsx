@@ -635,10 +635,21 @@ type DeviceLibraryPersistencePayload = {
   customAttributeLibraries: AttributeLibrary[];
   customComponentTypes: CustomComponentTypeDefinition[];
   deviceDefinitionOverrides: Record<string, DeviceTemplateDefinitionOverride>;
+  customGraphTemplateTypes: string[];
+  customGraphTemplates: GraphTemplate[];
 };
 type BackendDeviceLibraryResponse = Partial<DeviceLibraryPersistencePayload> & {
   exists?: boolean;
   savedAt?: string;
+};
+type GraphTemplate = {
+  id: string;
+  typeName: string;
+  name: string;
+  sourceSize: { width: number; height: number };
+  clipboard: CanvasClipboard;
+  createdAt: string;
+  updatedAt: string;
 };
 type CustomParamDraft = DeviceParameterDefinition & {
   id: string;
@@ -656,6 +667,11 @@ type CustomDeviceDraft = {
   params: CustomParamDraft[];
   error: string;
 };
+type TemplateDialogState = {
+  sourceGroupId: string;
+  clipboard: CanvasClipboard;
+  sourceSize: { width: number; height: number };
+} | null;
 type DeviceDefinitionDraftRow = DeviceParameterDefinition & {
   id: string;
 };
@@ -978,6 +994,8 @@ const CUSTOM_DEVICE_LIBRARY_STORAGE_KEY = "power-system-custom-device-library";
 const CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY = "power-system-custom-attribute-libraries";
 const CUSTOM_COMPONENT_TYPES_STORAGE_KEY = "power-system-custom-component-types";
 const DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY = "power-system-device-definition-overrides";
+const CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY = "power-system-custom-graph-template-types";
+const CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY = "power-system-custom-graph-templates";
 const COLOR_DISPLAY_MODE_STORAGE_KEY = "power-system-color-display-mode";
 const COLOR_PALETTE_STORAGE_KEY = "power-system-color-palette";
 const LEFT_PANEL_MODE_STORAGE_KEY = "power-system-left-panel-mode";
@@ -986,6 +1004,7 @@ const LEFT_PANEL_WIDTH_STORAGE_KEY = "power-system-left-panel-width";
 const RIGHT_PANEL_WIDTH_STORAGE_KEY = "power-system-right-panel-width";
 const STATUSBAR_HEIGHT_STORAGE_KEY = "power-system-statusbar-height";
 const VALIDATION_PANEL_HEIGHT_STORAGE_KEY = "power-system-validation-panel-height";
+const DEFAULT_GRAPH_TEMPLATE_TYPES = ["常用模板"];
 type IdleCapableWindow = Window & {
   requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
   cancelIdleCallback?: (handle: number) => void;
@@ -1920,6 +1939,162 @@ function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[] {
     .filter((item) => item.kind.trim() && item.label.trim());
 }
 
+function normalizeGraphTemplateTypeName(name: string): string {
+  return name.trim();
+}
+
+function normalizeGraphTemplateTypes(value: unknown, reservedTypes: readonly string[] = DEFAULT_GRAPH_TEMPLATE_TYPES): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const reserved = new Set(reservedTypes.map((type) => normalizeGraphTemplateTypeName(type).toLowerCase()));
+  const seen = new Set<string>();
+  return value
+    .map((item) => normalizeGraphTemplateTypeName(String(item ?? "")))
+    .filter((typeName) => {
+      if (!typeName) {
+        return false;
+      }
+      const key = typeName.toLowerCase();
+      if (reserved.has(key) || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+}
+
+function cloneTemplatePoint(point: Point | undefined): Point | undefined {
+  return point ? { x: Number(point.x) || 0, y: Number(point.y) || 0 } : undefined;
+}
+
+function cloneGraphTemplateClipboard(clipboard: CanvasClipboard): CanvasClipboard {
+  return {
+    nodes: clipboard.nodes.map((node) => ({
+      ...node,
+      size: { ...node.size },
+      position: { ...node.position },
+      params: { ...node.params },
+      terminals: node.terminals.map((terminal) => ({ ...terminal, anchor: { ...terminal.anchor } }))
+    })),
+    edges: clipboard.edges.map((item) => ({
+      edge: {
+        ...item.edge,
+        sourcePoint: cloneTemplatePoint(item.edge.sourcePoint),
+        targetPoint: cloneTemplatePoint(item.edge.targetPoint),
+        manualPoints: item.edge.manualPoints?.map((point) => ({ ...point }))
+      },
+      routePoints: item.routePoints.map((point) => ({ ...point }))
+    })),
+    groups: clipboard.groups.map((group) => ({
+      ...group,
+      nodeIds: [...group.nodeIds],
+      edgeIds: [...group.edgeIds],
+      childGroupIds: group.childGroupIds ? [...group.childGroupIds] : undefined
+    }))
+  };
+}
+
+function normalizeGraphTemplateClipboard(value: unknown): CanvasClipboard {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value as Partial<CanvasClipboard> : {};
+  const nodes = Array.isArray(source.nodes)
+    ? source.nodes.filter((node): node is ModelNode => Boolean(node && typeof node === "object"))
+    : [];
+  const edges = Array.isArray(source.edges)
+    ? source.edges
+      .filter((item): item is CanvasClipboard["edges"][number] => Boolean(item && typeof item === "object" && (item as CanvasClipboard["edges"][number]).edge))
+      .map((item) => {
+        const routePoints = Array.isArray(item.routePoints) && item.routePoints.length > 0
+          ? item.routePoints
+          : [item.edge.sourcePoint, ...(item.edge.manualPoints ?? []), item.edge.targetPoint].filter((point): point is Point => Boolean(point));
+        return { edge: item.edge, routePoints };
+      })
+    : [];
+  const groups = Array.isArray(source.groups)
+    ? source.groups.filter((group): group is ModelGroup => Boolean(group && typeof group === "object"))
+    : [];
+  return cloneGraphTemplateClipboard({ nodes, edges, groups });
+}
+
+function normalizeGraphTemplates(value: unknown): GraphTemplate[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const seen = new Set<string>();
+  return value
+    .filter((item): item is Partial<GraphTemplate> => Boolean(item && typeof item === "object"))
+    .map((item, index) => {
+      const clipboard = normalizeGraphTemplateClipboard(item.clipboard);
+      const bounds = canvasClipboardBounds(clipboard);
+      const fallbackWidth = bounds ? Math.max(1, Math.round(bounds.right - bounds.left)) : 1;
+      const fallbackHeight = bounds ? Math.max(1, Math.round(bounds.bottom - bounds.top)) : 1;
+      const rawSize = item.sourceSize && typeof item.sourceSize === "object" ? item.sourceSize : undefined;
+      const sourceSize = {
+        width: Math.max(1, Math.round(Number(rawSize?.width) || fallbackWidth)),
+        height: Math.max(1, Math.round(Number(rawSize?.height) || fallbackHeight))
+      };
+      const id = String(item.id ?? `graph-template-${index + 1}`).trim() || `graph-template-${index + 1}`;
+      const typeName = normalizeGraphTemplateTypeName(String(item.typeName ?? DEFAULT_GRAPH_TEMPLATE_TYPES[0]));
+      const name = String(item.name ?? "").trim();
+      return {
+        id,
+        typeName: typeName || DEFAULT_GRAPH_TEMPLATE_TYPES[0],
+        name: name || `模板${index + 1}`,
+        sourceSize,
+        clipboard,
+        createdAt: typeof item.createdAt === "string" ? item.createdAt : new Date(0).toISOString(),
+        updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : new Date(0).toISOString()
+      };
+    })
+    .filter((template) => {
+      if (!template.id || (template.clipboard.nodes.length === 0 && template.clipboard.edges.length === 0)) {
+        return false;
+      }
+      const key = template.id.toLowerCase();
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+}
+
+function graphTemplateTypeList(customTypes: readonly string[], templates: readonly GraphTemplate[]) {
+  return Array.from(new Set([
+    ...DEFAULT_GRAPH_TEMPLATE_TYPES,
+    ...customTypes.map(normalizeGraphTemplateTypeName).filter(Boolean),
+    ...templates.map((template) => normalizeGraphTemplateTypeName(template.typeName)).filter(Boolean)
+  ]));
+}
+
+function groupGraphTemplatesByType(templates: readonly GraphTemplate[], typeNames: readonly string[]) {
+  const grouped = Object.fromEntries(typeNames.map((typeName) => [typeName, [] as GraphTemplate[]]));
+  for (const template of templates) {
+    const typeName = normalizeGraphTemplateTypeName(template.typeName) || DEFAULT_GRAPH_TEMPLATE_TYPES[0];
+    grouped[typeName] = grouped[typeName] ? [...grouped[typeName], template] : [template];
+  }
+  return grouped;
+}
+
+function uniqueGraphTemplateName(baseName: string, typeName: string, templates: readonly GraphTemplate[]) {
+  const normalizedBase = baseName.trim() || "自定义模板";
+  const existing = new Set(
+    templates
+      .filter((template) => template.typeName.toLowerCase() === typeName.toLowerCase())
+      .map((template) => template.name.toLowerCase())
+  );
+  if (!existing.has(normalizedBase.toLowerCase())) {
+    return normalizedBase;
+  }
+  for (let index = 2; index < 10000; index += 1) {
+    const candidate = `${normalizedBase}-${index}`;
+    if (!existing.has(candidate.toLowerCase())) {
+      return candidate;
+    }
+  }
+  return `${normalizedBase}-${Date.now()}`;
+}
+
 function normalizeDefinitionRows(value: unknown): DeviceParameterDefinition[] {
   if (!Array.isArray(value)) {
     return [];
@@ -1976,7 +2151,9 @@ function normalizeDeviceLibraryPersistencePayload(value: unknown): DeviceLibrary
     customDeviceTemplates: normalizeCustomDeviceTemplates(source.customDeviceTemplates),
     customAttributeLibraries: normalizeCustomAttributeLibraries(source.customAttributeLibraries),
     customComponentTypes: normalizeCustomComponentTypes(source.customComponentTypes),
-    deviceDefinitionOverrides: normalizeDeviceDefinitionOverrides(source.deviceDefinitionOverrides)
+    deviceDefinitionOverrides: normalizeDeviceDefinitionOverrides(source.deviceDefinitionOverrides),
+    customGraphTemplateTypes: normalizeGraphTemplateTypes(source.customGraphTemplateTypes),
+    customGraphTemplates: normalizeGraphTemplates(source.customGraphTemplates)
   };
 }
 
@@ -2012,12 +2189,30 @@ function readDeviceDefinitionOverrides(): Record<string, DeviceTemplateDefinitio
   }
 }
 
+function readCustomGraphTemplateTypes(): string[] {
+  try {
+    return normalizeGraphTemplateTypes(JSON.parse(window.localStorage.getItem(CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY) ?? "[]"));
+  } catch {
+    return [];
+  }
+}
+
+function readCustomGraphTemplates(): GraphTemplate[] {
+  try {
+    return normalizeGraphTemplates(JSON.parse(window.localStorage.getItem(CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY) ?? "[]"));
+  } catch {
+    return [];
+  }
+}
+
 function readLocalDeviceLibraryPersistencePayload(): DeviceLibraryPersistencePayload {
   return {
     customDeviceTemplates: readCustomDeviceTemplates(),
     customAttributeLibraries: readCustomAttributeLibraries(),
     customComponentTypes: readCustomComponentTypes(),
-    deviceDefinitionOverrides: readDeviceDefinitionOverrides()
+    deviceDefinitionOverrides: readDeviceDefinitionOverrides(),
+    customGraphTemplateTypes: readCustomGraphTemplateTypes(),
+    customGraphTemplates: readCustomGraphTemplates()
   };
 }
 
@@ -3809,7 +4004,7 @@ export function App() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [inspectorTab, setInspectorTab] = useState<"model" | "graph" | "device">("graph");
   const [graphInfoView, setGraphInfoView] = useState<"tree" | "selected">("tree");
-  const [leftPanelTab, setLeftPanelTab] = useState<"projects" | "library">("projects");
+  const [leftPanelTab, setLeftPanelTab] = useState<"projects" | "library" | "templates">("projects");
   const [leftPanelMode, setLeftPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(LEFT_PANEL_MODE_STORAGE_KEY));
   const [rightPanelMode, setRightPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(RIGHT_PANEL_MODE_STORAGE_KEY));
   const [leftPanelWidth, setLeftPanelWidth] = useState(() =>
@@ -3837,6 +4032,12 @@ export function App() {
   const [customAttributeLibraries, setCustomAttributeLibraries] = useState<AttributeLibrary[]>(() => initialDeviceLibrary.customAttributeLibraries);
   const [customComponentTypes, setCustomComponentTypes] = useState<CustomComponentTypeDefinition[]>(() => initialDeviceLibrary.customComponentTypes);
   const [customDeviceTemplates, setCustomDeviceTemplates] = useState<DeviceTemplate[]>(() => initialDeviceLibrary.customDeviceTemplates);
+  const [customGraphTemplateTypes, setCustomGraphTemplateTypes] = useState<string[]>(() => initialDeviceLibrary.customGraphTemplateTypes);
+  const [customGraphTemplates, setCustomGraphTemplates] = useState<GraphTemplate[]>(() => initialDeviceLibrary.customGraphTemplates);
+  const [expandedGraphTemplateTypes, setExpandedGraphTemplateTypes] = useState<string[]>([...DEFAULT_GRAPH_TEMPLATE_TYPES]);
+  const [templateDialog, setTemplateDialog] = useState<TemplateDialogState>(null);
+  const [templateDraftType, setTemplateDraftType] = useState(DEFAULT_GRAPH_TEMPLATE_TYPES[0]);
+  const [templateDraftName, setTemplateDraftName] = useState("");
   const [customDeviceDialogOpen, setCustomDeviceDialogOpen] = useState(false);
   const [customComponentTreeSelection, setCustomComponentTreeSelection] = useState<CustomComponentTreeSelection>({ kind: "attributeLibrary", attributeLibraryName: "交流设备" });
   const [collapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeLibraries] = useState<AttributeLibrary[]>([]);
@@ -4682,6 +4883,14 @@ export function App() {
     () => new Map(libraryTemplates.map((template) => [template.kind, createNodeFromTemplate(template, { x: 0, y: 0 })])),
     [libraryTemplates]
   );
+  const graphTemplateTypes = useMemo(
+    () => graphTemplateTypeList(customGraphTemplateTypes, customGraphTemplates),
+    [customGraphTemplateTypes, customGraphTemplates]
+  );
+  const groupedGraphTemplates = useMemo(
+    () => groupGraphTemplatesByType(customGraphTemplates, graphTemplateTypes),
+    [customGraphTemplates, graphTemplateTypes]
+  );
   const attributeLibraries = useMemo<AttributeLibrary[]>(
     () => Array.from(new Set([...DEFAULT_ATTRIBUTE_LIBRARIES, ...customAttributeLibraries, ...libraryTemplates.map((item) => normalizeAttributeLibraryName(item.attributeLibrary))])),
     [customAttributeLibraries, libraryTemplates]
@@ -4812,6 +5021,8 @@ export function App() {
     () => selectedCanvasGroupIds(activeLayerGroups, groupExpandedCanvasSelection.nodeIds, groupExpandedCanvasSelection.edgeIds),
     [activeLayerGroups, groupExpandedCanvasSelection]
   );
+  const activeGroupById = useMemo(() => new Map(activeLayerGroups.map((group) => [group.id, group])), [activeLayerGroups]);
+  const canAddTemplateFromSelection = activeSelectedGroupIds.length === 1;
   const selectedGroupMemberNodeIds = useMemo(
     () => canvasGroupMemberNodeIds(activeLayerGroups, activeSelectedGroupIds),
     [activeLayerGroups, activeSelectedGroupIds]
@@ -6170,13 +6381,17 @@ export function App() {
           setCustomAttributeLibraries(backendDeviceLibrary.customAttributeLibraries);
           setCustomComponentTypes(backendDeviceLibrary.customComponentTypes);
           setDeviceDefinitionOverrides(backendDeviceLibrary.deviceDefinitionOverrides);
+          setCustomGraphTemplateTypes(backendDeviceLibrary.customGraphTemplateTypes);
+          setCustomGraphTemplates(backendDeviceLibrary.customGraphTemplates);
           return;
         }
         const localPayload = serializeDeviceLibraryForStorage({
           customDeviceTemplates,
           customAttributeLibraries,
           customComponentTypes,
-          deviceDefinitionOverrides
+          deviceDefinitionOverrides,
+          customGraphTemplateTypes,
+          customGraphTemplates
         });
         lastPersistedDeviceLibraryPayloadRef.current = localPayload;
         void saveBackendDeviceLibraryPayload(localPayload).catch(() => {
@@ -6231,7 +6446,9 @@ export function App() {
         customDeviceTemplates,
         customAttributeLibraries,
         customComponentTypes,
-        deviceDefinitionOverrides
+        deviceDefinitionOverrides,
+        customGraphTemplateTypes,
+        customGraphTemplates
       });
       const normalizedDeviceLibraryPayload = JSON.stringify(normalizedDeviceLibrary);
       try {
@@ -6239,6 +6456,8 @@ export function App() {
         window.localStorage.setItem(CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customAttributeLibraries));
         window.localStorage.setItem(CUSTOM_COMPONENT_TYPES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customComponentTypes));
         window.localStorage.setItem(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.deviceDefinitionOverrides));
+        window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customGraphTemplateTypes));
+        window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customGraphTemplates));
       } catch {
         // 浏览器缓存不可写时不阻断当前编辑，后台同步仍会继续尝试。
       }
@@ -6261,7 +6480,7 @@ export function App() {
       });
     }, 800);
     return () => window.clearTimeout(timeoutId);
-  }, [customDeviceTemplates, customAttributeLibraries, customComponentTypes, deviceDefinitionOverrides]);
+  }, [customDeviceTemplates, customAttributeLibraries, customComponentTypes, deviceDefinitionOverrides, customGraphTemplateTypes, customGraphTemplates]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -7247,6 +7466,177 @@ export function App() {
     setRewiring(null);
     setContextMenu(null);
     writeOperationLog(`粘贴 ${pasted.length} 个图元、${pastedEdges.length} 条联络线${pastedCanvasBounds.width > canvasWidth || pastedCanvasBounds.height > canvasHeight ? "，画布已扩展" : ""}`);
+  };
+
+  const createGraphTemplateType = () => {
+    const rawName = window.prompt("请输入模板类型名称");
+    const typeName = normalizeGraphTemplateTypeName(rawName ?? "");
+    if (!typeName) {
+      return;
+    }
+    const duplicate = graphTemplateTypes.some((item) => item.toLowerCase() === typeName.toLowerCase());
+    if (duplicate) {
+      window.alert("模板类型名称重复，请换一个名称。");
+      return;
+    }
+    setCustomGraphTemplateTypes((current) => [...current, typeName]);
+    setExpandedGraphTemplateTypes((current) => current.includes(typeName) ? current : [...current, typeName]);
+    setTemplateDraftType(typeName);
+    writeOperationLog(`新增模板类型：${typeName}`);
+  };
+
+  const openAddTemplateDialog = () => {
+    if (!canAddTemplateFromSelection) {
+      window.alert("请先选中一个图元组合，再添加模板。");
+      return;
+    }
+    const clipboard = buildCanvasClipboard(
+      visibleNodes,
+      visibleEdges,
+      routedEdges,
+      groupExpandedCanvasSelection.nodeIds,
+      groupExpandedCanvasSelection.edgeIds,
+      activeLayerGroups,
+      { expandGroups: true }
+    );
+    const bounds = canvasClipboardBounds(clipboard);
+    if (!bounds || (clipboard.nodes.length === 0 && clipboard.edges.length === 0)) {
+      window.alert("当前组合没有可保存为模板的图元。");
+      return;
+    }
+    const typeName = graphTemplateTypes.includes(templateDraftType) ? templateDraftType : graphTemplateTypes[0] ?? DEFAULT_GRAPH_TEMPLATE_TYPES[0];
+    const selectedGroup = activeGroupById.get(activeSelectedGroupIds[0]);
+    setTemplateDialog({
+      sourceGroupId: activeSelectedGroupIds[0],
+      clipboard: cloneGraphTemplateClipboard(clipboard),
+      sourceSize: {
+        width: Math.max(1, Math.round(bounds.right - bounds.left)),
+        height: Math.max(1, Math.round(bounds.bottom - bounds.top))
+      }
+    });
+    setTemplateDraftType(typeName);
+    setTemplateDraftName(uniqueGraphTemplateName(selectedGroup?.name ?? "自定义模板", typeName, customGraphTemplates));
+  };
+
+  const cancelTemplateDialog = () => {
+    setTemplateDialog(null);
+    setTemplateDraftName("");
+  };
+
+  const confirmAddGraphTemplate = () => {
+    if (!templateDialog) {
+      return;
+    }
+    const typeName = normalizeGraphTemplateTypeName(templateDraftType) || DEFAULT_GRAPH_TEMPLATE_TYPES[0];
+    const name = templateDraftName.trim();
+    if (!name) {
+      window.alert("请输入模板名字。");
+      return;
+    }
+    if (customGraphTemplates.some((template) => template.typeName.toLowerCase() === typeName.toLowerCase() && template.name.toLowerCase() === name.toLowerCase())) {
+      window.alert("模板名称重复，请换一个名称。");
+      return;
+    }
+    const now = new Date().toISOString();
+    const template: GraphTemplate = {
+      id: `graph-template-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      typeName,
+      name,
+      sourceSize: { ...templateDialog.sourceSize },
+      clipboard: cloneGraphTemplateClipboard(templateDialog.clipboard),
+      createdAt: now,
+      updatedAt: now
+    };
+    if (!DEFAULT_GRAPH_TEMPLATE_TYPES.some((item) => item.toLowerCase() === typeName.toLowerCase())) {
+      setCustomGraphTemplateTypes((current) =>
+        current.some((item) => item.toLowerCase() === typeName.toLowerCase()) ? current : [...current, typeName]
+      );
+    }
+    setCustomGraphTemplates((current) => [...current, template]);
+    setExpandedGraphTemplateTypes((current) => current.includes(typeName) ? current : [...current, typeName]);
+    setLeftPanelTab("templates");
+    setTemplateDialog(null);
+    setTemplateDraftName("");
+    writeOperationLog(`添加模板：${typeName} / ${name}（${template.sourceSize.width}×${template.sourceSize.height}）`);
+  };
+
+  const dropGraphTemplate = (template: GraphTemplate, pointerPosition: Point) => {
+    const targetTopLeft = {
+      x: Math.round(pointerPosition.x - template.sourceSize.width / 2),
+      y: Math.round(pointerPosition.y - template.sourceSize.height / 2)
+    };
+    const cloned = cloneCanvasClipboard(
+      template.clipboard,
+      targetTopLeft,
+      () => `node-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      () => `edge-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      () => `group-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    );
+    if (cloned.nodes.length === 0 && cloned.edges.length === 0) {
+      window.alert("模板内容为空或包含悬空联络线，无法生成。");
+      return;
+    }
+    const dropOriginShift = leftTopCanvasOriginShiftForContent(
+      [...nodes, ...cloned.nodes],
+      [...edges, ...cloned.edges]
+    );
+    const dropSourceNodes = hasCanvasOriginShift(dropOriginShift)
+      ? nodes.map((node) => translateNodeBy(node, dropOriginShift))
+      : nodes;
+    const dropSourceEdges = hasCanvasOriginShift(dropOriginShift)
+      ? edges.map((edge) => translateEdgeBy(edge, dropOriginShift))
+      : edges;
+    const shiftedClonedNodes = hasCanvasOriginShift(dropOriginShift)
+      ? cloned.nodes.map((node) => translateNodeBy(node, dropOriginShift))
+      : cloned.nodes;
+    const shiftedClonedEdges = hasCanvasOriginShift(dropOriginShift)
+      ? cloned.edges.map((edge) => translateEdgeBy(edge, dropOriginShift))
+      : cloned.edges;
+    const shiftedPointerPosition = translatePointBy(pointerPosition, dropOriginShift);
+    const dropCanvasBounds = canvasBoundsForGraphContent(
+      canvasBoundsWithOriginShift(canvasBounds, dropOriginShift),
+      [...dropSourceNodes, ...shiftedClonedNodes],
+      [...dropSourceEdges, ...shiftedClonedEdges],
+      [],
+      CANVAS_AUTO_EXPAND_PADDING
+    );
+    applyCanvasBounds(dropCanvasBounds, dropOriginShift);
+    shiftCachedRoutesForCanvasOrigin(dropOriginShift);
+    if (hasCanvasOriginShift(dropOriginShift)) {
+      markBusTerminalSyncDirtyForEdges(dropSourceEdges, shiftedClonedEdges);
+    } else {
+      markBusTerminalSyncDirtyForEdges(shiftedClonedEdges);
+    }
+    let nextDeviceIndexCounters = normalizeDeviceIndexCounters(deviceIndexCounters, dropSourceNodes);
+    const pasted = shiftedClonedNodes.map((node) => {
+      const draftNode = { ...node, layerId: activeLayerId, position: clampNodePositionToBounds(node, dropCanvasBounds, node.position) };
+      const result = assignPermanentDeviceIndex(draftNode, nextDeviceIndexCounters);
+      nextDeviceIndexCounters = result.counters;
+      return result.node;
+    });
+    const pastedEdges = shiftedClonedEdges.map((edge) => ({
+      ...edge,
+      sourcePoint: edge.sourcePoint ? clampPointToBounds(edge.sourcePoint, dropCanvasBounds) : undefined,
+      targetPoint: edge.targetPoint ? clampPointToBounds(edge.targetPoint, dropCanvasBounds) : undefined,
+      manualPoints: edge.manualPoints?.map((point) => clampPointToBounds(point, dropCanvasBounds))
+    }));
+    const nextNodes = [...dropSourceNodes, ...pasted];
+    const nextEdges = [...dropSourceEdges, ...pastedEdges];
+    pushUndoSnapshot();
+    setDeviceIndexCounters(nextDeviceIndexCounters);
+    setGraphArrays(nextNodes, nextEdges);
+    setGroups((current) => normalizeModelGroups([...current, ...cloned.groups], nextNodes, nextEdges));
+    lastRawCanvasPointerRef.current = shiftedPointerPosition;
+    lastCanvasPointerRef.current = clampPointToBounds(shiftedPointerPosition, dropCanvasBounds);
+    setCanvasSelectionScope("group");
+    setSelectedNodeIds(pasted.map((node) => node.id));
+    setSelectedEdgeIds(pastedEdges.map((edge) => edge.id));
+    setSelectedEdgeId(pastedEdges[0]?.id ?? "");
+    setConnectSource(null);
+    resetConnectPreviewState();
+    setRewiring(null);
+    activateInspectorFromCanvas();
+    writeOperationLog(`从模板新增：${template.typeName} / ${template.name}`);
   };
 
   const finishMarqueeSelection = () => {
@@ -10584,6 +10974,16 @@ export function App() {
 
   const handleDrop = (event: DragEvent<SVGSVGElement>) => {
     event.preventDefault();
+    const graphTemplateId = event.dataTransfer.getData("application/graph-template-id");
+    if (graphTemplateId && svgRef.current) {
+      const template = customGraphTemplates.find((item) => item.id === graphTemplateId);
+      if (!template) {
+        return;
+      }
+      const pointerPosition = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
+      dropGraphTemplate(template, pointerPosition);
+      return;
+    }
     const kind = event.dataTransfer.getData("application/device-kind") as DeviceKind;
     if (!kind || !svgRef.current) {
       return;
@@ -14158,6 +14558,100 @@ export function App() {
     </div>
   );
 
+  const renderGraphTemplatePreview = (template: GraphTemplate) => {
+    const bounds = canvasClipboardBounds(template.clipboard);
+    if (!bounds) {
+      return (
+        <svg viewBox="0 0 80 56" aria-hidden="true" className="template-preview-svg">
+          <rect x="8" y="10" width="64" height="36" rx="6" fill="#f8fafc" stroke="#cbd5e1" />
+        </svg>
+      );
+    }
+    const padding = 8;
+    const width = Math.max(1, bounds.right - bounds.left + padding * 2);
+    const height = Math.max(1, bounds.bottom - bounds.top + padding * 2);
+    return (
+      <svg
+        viewBox={`${bounds.left - padding} ${bounds.top - padding} ${width} ${height}`}
+        aria-hidden="true"
+        className="template-preview-svg"
+      >
+        {template.clipboard.edges.map((item) => (
+          <path
+            key={item.edge.id}
+            d={pointsToPreviewPath(item.routePoints)}
+            fill="none"
+            stroke="#64748b"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ))}
+        {template.clipboard.nodes.map((node) => (
+          <g key={node.id} transform={`translate(${node.position.x} ${node.position.y})`}>
+            <g transform={nodeGeometryTransform(node)}>
+              <DeviceGlyph node={node} miniature colorPalette={colorPalette} />
+            </g>
+          </g>
+        ))}
+      </svg>
+    );
+  };
+
+  const renderTemplateLibraryPanel = () => (
+    <div className="template-library-panel library-panel-stack">
+      <div className="library-scroll">
+        {graphTemplateTypes.map((typeName) => {
+          const expanded = expandedGraphTemplateTypes.includes(typeName);
+          const templates = groupedGraphTemplates[typeName] ?? [];
+          return (
+            <section className="library-group-section" key={typeName}>
+              <button
+                className={`library-group-toggle ${expanded ? "active" : ""}`}
+                onClick={() =>
+                  setExpandedGraphTemplateTypes((current) =>
+                    current.includes(typeName) ? current.filter((item) => item !== typeName) : [...current, typeName]
+                  )
+                }
+              >
+                {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                {typeName}
+                <strong>{templates.length}</strong>
+              </button>
+              {expanded && (
+                templates.length > 0 ? (
+                  <div className="template-library-grid">
+                    {templates.map((template) => (
+                      <button
+                        key={template.id}
+                        type="button"
+                        className="template-library-item"
+                        draggable
+                        title={`${template.typeName} / ${template.name} / ${template.sourceSize.width}×${template.sourceSize.height}`}
+                        onDragStart={(event) => {
+                          event.dataTransfer.setData("application/graph-template-id", template.id);
+                          event.dataTransfer.effectAllowed = "copy";
+                        }}
+                      >
+                        <span className="template-library-icon">
+                          {renderGraphTemplatePreview(template)}
+                        </span>
+                        <span className="template-library-name">{template.name}</span>
+                        <small>{template.sourceSize.width}×{template.sourceSize.height}</small>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="template-library-empty">暂无模板</div>
+                )
+              )}
+            </section>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   const renderLibraryPanel = () => (
     <div className="library-panel-stack">
       <div className="library-scroll">
@@ -14187,6 +14681,8 @@ export function App() {
                       <div className="library-group">
                         {typeGroup.templates.map((item) => {
                           const preview = libraryPreviewByKind.get(item.kind) ?? createNodeFromTemplate(item, { x: 0, y: 0 });
+                          const previewRotation = ((Math.round(preview.rotation) % 360) + 360) % 360;
+                          const previewViewBox = previewRotation === 90 || previewRotation === 270 ? "-48 -48 96 96" : "-40 -28 80 56";
                           return (
                             <button
                               key={item.kind}
@@ -14195,8 +14691,10 @@ export function App() {
                               title={`${item.label} / ${typeGroup.section}`}
                               onDragStart={(event) => event.dataTransfer.setData("application/device-kind", item.kind)}
                             >
-                              <svg viewBox="-40 -28 80 56" aria-hidden="true">
-                                <DeviceGlyph node={preview} miniature colorPalette={colorPalette} />
+                              <svg viewBox={previewViewBox} aria-hidden="true">
+                                <g transform={nodeGeometryTransform(preview)}>
+                                  <DeviceGlyph node={preview} miniature colorPalette={colorPalette} />
+                                </g>
                               </svg>
                             </button>
                           );
@@ -14417,9 +14915,12 @@ export function App() {
           <button className={leftPanelTab === "library" ? "active" : ""} onClick={() => setLeftPanelTab("library")} role="tab" aria-selected={leftPanelTab === "library"}>
             图元库
           </button>
+          <button className={leftPanelTab === "templates" ? "active" : ""} onClick={() => setLeftPanelTab("templates")} role="tab" aria-selected={leftPanelTab === "templates"}>
+            模板库
+          </button>
         </div>
         <div className="left-panel-content">
-          {leftPanelTab === "projects" ? renderProjectPanel() : renderLibraryPanel()}
+          {leftPanelTab === "projects" ? renderProjectPanel() : leftPanelTab === "templates" ? renderTemplateLibraryPanel() : renderLibraryPanel()}
         </div>
       </aside>
 
@@ -16318,6 +16819,12 @@ export function App() {
               解散
             </button>
           )}
+          {canAddTemplateFromSelection && (
+            <button onClick={() => runContextMenuAction(openAddTemplateDialog)}>
+              <Grid2X2 size={14} />
+              添加模板
+            </button>
+          )}
           {activeSelectedNodeIds.length > 0 && (
             <button onClick={() => runContextMenuAction(openLayerAssignmentDialog)}>
               <Layers size={14} />
@@ -16557,6 +17064,59 @@ export function App() {
               <button type="button" onClick={() => resolveUnsavedChangeAction("cancel")}>退出操作</button>
             </div>
             <p className="unsaved-change-note">关闭网页时，浏览器也会在离开前提示当前模型未保存。</p>
+          </section>
+        </div>
+      )}
+      {templateDialog && (
+        <div className="image-picker-backdrop" onPointerDown={cancelTemplateDialog}>
+          <section className="template-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="template-dialog-title">
+            <div className="image-picker-title">
+              <div>
+                <h2 id="template-dialog-title">添加模板</h2>
+                <p>将当前选中的图元组合保存到模板库，后续可按原始尺寸拖拽生成。</p>
+              </div>
+              <button type="button" onClick={cancelTemplateDialog}>关闭</button>
+            </div>
+            <div className="template-dialog-grid">
+              <div className="template-dialog-preview">
+                {renderGraphTemplatePreview({
+                  id: "template-dialog-preview",
+                  typeName: templateDraftType,
+                  name: templateDraftName || "新模板",
+                  sourceSize: templateDialog.sourceSize,
+                  clipboard: templateDialog.clipboard,
+                  createdAt: "",
+                  updatedAt: ""
+                })}
+                <small>真实尺寸：{templateDialog.sourceSize.width}×{templateDialog.sourceSize.height}</small>
+              </div>
+              <div className="template-dialog-fields">
+                <label>
+                  <span>模板类型</span>
+                  <div className="template-type-row">
+                    <select value={templateDraftType} onChange={(event) => setTemplateDraftType(event.target.value)}>
+                      {graphTemplateTypes.map((typeName) => (
+                        <option key={typeName} value={typeName}>{typeName}</option>
+                      ))}
+                    </select>
+                    <button type="button" onClick={createGraphTemplateType}>新增模板类型</button>
+                  </div>
+                </label>
+                <label>
+                  <span>模板名字</span>
+                  <input
+                    value={templateDraftName}
+                    onChange={(event) => setTemplateDraftName(event.target.value)}
+                    placeholder="请输入模板名字"
+                    autoFocus
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="template-dialog-actions">
+              <button type="button" onClick={cancelTemplateDialog}>取消</button>
+              <button type="button" onClick={confirmAddGraphTemplate}>确认</button>
+            </div>
           </section>
         </div>
       )}
