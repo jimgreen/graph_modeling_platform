@@ -2000,6 +2000,67 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".diagram-canvas.multi-node-dragging .canvas-content");
   });
 
+  test("keeps multi-node drag preview bounds scoped to moved graphics instead of all affected external lines", async () => {
+    const source = await readAppSource();
+    const previewStart = source.indexOf("const buildMultiNodeDragOverlayPreview");
+    const previewEnd = source.indexOf("const renderMultiNodeDragOverlay", previewStart);
+    const previewBlock = source.slice(previewStart, previewEnd);
+    const startKeyboardStart = source.indexOf("const startKeyboardMoveSession");
+    const startKeyboardEnd = source.indexOf("const nudgeSelectionByKeyboard", startKeyboardStart);
+    const startKeyboardBlock = source.slice(startKeyboardStart, startKeyboardEnd);
+    const nodeDragStart = source.indexOf("const handleNodePointerDown");
+    const nodeDragEnd = source.indexOf("const handlePointerMove", nodeDragStart);
+    const nodeDragBlock = source.slice(nodeDragStart, nodeDragEnd);
+    const renderStart = source.indexOf("{viewportRoutedEdges.map((route) =>");
+    const renderEnd = source.indexOf("{rewiringPreviewRoute", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+
+    expect(previewBlock).toContain("movingEdgeIds: Iterable<string> = []");
+    expect(previewBlock).toContain("const movingNodeIdSet = new Set(dragNodeIds)");
+    expect(previewBlock).toContain("const movingEdgeIdSet = new Set(movingEdgeIds)");
+    expect(previewBlock).toContain("const edgeMovesWithDraggedGraphics");
+    expect(previewBlock).toContain("movingEdgeIdSet.has(edge.id)");
+    expect(previewBlock).toContain("movingNodeIdSet.has(edge.sourceId) && movingNodeIdSet.has(edge.targetId)");
+    expect(previewBlock).toContain("if (!edgeMovesWithDraggedGraphics)");
+    expect(startKeyboardBlock).toContain("buildMultiNodeDragOverlayPreview(moveNodeIds, affectedEdgesForMove, originalPositionsForMove, originalRoutePointsForMove, moveEdgeIds)");
+    expect(nodeDragBlock).toContain("buildMultiNodeDragOverlayPreview(dragNodeIds, affectedEdgesForDrag, originalPositionsForDrag, originalRoutePointsForDrag, edgeIdsForDrag)");
+    expect(source).toContain("const dragOverlayEdgeIdSet = useMemo");
+    expect(renderBlock).toContain("(multiNodeDragging && dragOverlayEdgeIdSet.has(edge.id))");
+    expect(renderBlock).not.toContain("(multiNodeDragging && dragAffectedEdgeIdSet.has(edge.id))");
+  });
+
+  test("snapshots drag and transform routes from current rotated node geometry instead of stale routed cache", async () => {
+    const source = await readAppSource();
+    const helperStart = source.indexOf("const currentStoredRoutePointsForEdge");
+    const helperEnd = source.indexOf("const buildGroupTransformEdgeUpdates", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+    const keyboardStart = source.indexOf("const startKeyboardMoveSession");
+    const keyboardEnd = source.indexOf("const nudgeSelectionByKeyboard", keyboardStart);
+    const keyboardBlock = source.slice(keyboardStart, keyboardEnd);
+    const moveStart = source.indexOf("const moveSelection =");
+    const moveEnd = source.indexOf("const updateSelectedNode", moveStart);
+    const moveBlock = source.slice(moveStart, moveEnd);
+    const transformStart = source.indexOf("const snapshotGroupTransformEdgeRoutes");
+    const transformEnd = source.indexOf("const buildGroupTransformEdgeUpdates", transformStart);
+    const transformBlock = source.slice(transformStart, transformEnd);
+    const dragStart = source.indexOf("const handleNodePointerDown");
+    const dragEnd = source.indexOf("const handlePointerMove", dragStart);
+    const dragBlock = source.slice(dragStart, dragEnd);
+    const layoutStart = source.indexOf("const applySelectedNodeLayout");
+    const layoutEnd = source.indexOf("const handleWheel", layoutStart);
+    const layoutBlock = source.slice(layoutStart, layoutEnd);
+
+    expect(helperStart).toBeGreaterThan(-1);
+    expect(helperBlock).toContain("routeEdgesForStoredRendering(compactPreviewNodes(source, target), [edge], bounds)");
+    expect(helperBlock).toContain("routedEdgeById.get(edge.id)?.points");
+    expect(keyboardBlock).toContain("currentStoredRoutePointsForEdge(edge)");
+    expect(moveBlock).toContain("currentStoredRoutePointsForEdge(edge)");
+    expect(transformBlock).toContain("currentStoredRoutePointsForEdge(edgeById.get(edgeId))");
+    expect(transformBlock).toContain("currentStoredRoutePointsForEdge(edge)");
+    expect(dragBlock).toContain("currentStoredRoutePointsForEdge(edge)");
+    expect(layoutBlock).toContain("currentStoredRoutePointsForEdge(edge)");
+  });
+
   test("defers bus terminal synchronization and keeps graph edits out of automatic draft saves", async () => {
     const source = await readAppSource();
     const busSyncStart = source.indexOf("const synchronized = scheduledBusSyncNodeIds.size > 0");

@@ -3927,8 +3927,11 @@ export function App() {
     dragNodeIds: string[],
     affectedEdgesForDrag: Edge[],
     originalPositionsForDrag: Record<string, Point>,
-    originalRoutePointsForDrag: Record<string, Point[]>
+    originalRoutePointsForDrag: Record<string, Point[]>,
+    movingEdgeIds: Iterable<string> = []
   ): MultiNodeDragOverlayPreview => {
+    const movingNodeIdSet = new Set(dragNodeIds);
+    const movingEdgeIdSet = new Set(movingEdgeIds);
     let bounds: RenderViewportBounds | null = null;
     const includePoint = (point: Point) => {
       bounds = bounds
@@ -3961,6 +3964,11 @@ export function App() {
     const edgeRoutes: MultiNodeDragOverlayPreview["edgeRoutes"] = [];
     for (const edge of affectedEdgesForDrag) {
       if (!visibleEdgeIdSet.has(edge.id)) {
+        continue;
+      }
+      const edgeMovesWithDraggedGraphics =
+        movingEdgeIdSet.has(edge.id) || (movingNodeIdSet.has(edge.sourceId) && movingNodeIdSet.has(edge.targetId));
+      if (!edgeMovesWithDraggedGraphics) {
         continue;
       }
       const points = originalRoutePointsForDrag[edge.id];
@@ -5543,6 +5551,10 @@ export function App() {
   const dragAffectedEdgeIdSet = useMemo(
     () => new Set((dragging?.affectedEdges ?? []).map((edge) => edge.id)),
     [dragging?.affectedEdges]
+  );
+  const dragOverlayEdgeIdSet = useMemo(
+    () => new Set((dragging?.overlayPreview?.edgeRoutes ?? []).map((route) => route.edgeId)),
+    [dragging?.overlayPreview]
   );
   const draggedBusIds = useMemo(
     () => new Set((dragging?.nodeIds ?? []).filter((nodeId) => {
@@ -8981,9 +8993,6 @@ export function App() {
       return null;
     }
     const affectedEdgesForMove = edgeListForNodeIds(moveNodeIds, moveEdgeIds);
-    const affectedEdgeIdsForMove = new Set(affectedEdgesForMove.map((edge) => edge.id));
-    const routePointsForMoveEdge = (edgeId: string) =>
-      affectedEdgeIdsForMove.has(edgeId) ? routedEdgeById.get(edgeId)?.points ?? [] : [];
     const originalPositionsForMove = Object.fromEntries(
       moveNodeIds.flatMap((id) => {
         const item = nodeById.get(id);
@@ -8993,7 +9002,7 @@ export function App() {
     const originalRoutePointsForMove = Object.fromEntries(
       affectedEdgesForMove.map((edge) => [
         edge.id,
-        routePointsForMoveEdge(edge.id)
+        currentStoredRoutePointsForEdge(edge)
       ])
     );
     const nextDragging: DraggingState = {
@@ -9015,7 +9024,7 @@ export function App() {
       ),
       originalRoutePoints: originalRoutePointsForMove,
       overlayPreview: isMultiNodeMoveState({ nodeIds: moveNodeIds })
-        ? buildMultiNodeDragOverlayPreview(moveNodeIds, affectedEdgesForMove, originalPositionsForMove, originalRoutePointsForMove)
+        ? buildMultiNodeDragOverlayPreview(moveNodeIds, affectedEdgesForMove, originalPositionsForMove, originalRoutePointsForMove, moveEdgeIds)
         : undefined
     };
     clearNodeDragMoveSchedule();
@@ -9067,7 +9076,7 @@ export function App() {
     const originalRoutePoints = Object.fromEntries(
       affectedEdgesForMove.map((edge) => [
         edge.id,
-        (routedEdgeById.get(edge.id)?.points ?? []).map((point) => ({ ...point }))
+        currentStoredRoutePointsForEdge(edge)
       ])
     );
     const expandedBounds = canvasBoundsForMoveDelta(moveNodeIds, originalPositions, dx, dy);
@@ -9194,7 +9203,7 @@ export function App() {
       const originalRoutePoints = Object.fromEntries(
         affectedEdgesForMove.map((edge) => [
           edge.id,
-          (routedEdgeById.get(edge.id)?.points ?? []).map((point) => ({ ...point }))
+          currentStoredRoutePointsForEdge(edge)
         ])
       );
       const adjustedAffectedEdges = adjustEdgesAfterNodeMove(
@@ -9693,9 +9702,24 @@ export function App() {
         ].filter((point): point is Point => Boolean(point))
       : [];
 
+  const currentStoredRoutePointsForEdge = (edge: Edge | undefined, bounds: CanvasBounds = canvasBounds) => {
+    if (!edge) {
+      return [];
+    }
+    const source = nodeById.get(edge.sourceId);
+    const target = nodeById.get(edge.targetId);
+    if (source && target) {
+      const route = routeEdgesForStoredRendering(compactPreviewNodes(source, target), [edge], bounds)[0];
+      if (route?.points.length) {
+        return route.points.map((point) => ({ ...point }));
+      }
+    }
+    return (routedEdgeById.get(edge.id)?.points ?? edgeSnapshotFallbackPoints(edge)).map((point) => ({ ...point }));
+  };
+
   const snapshotGroupTransformEdgeRoutes = (unit: CanvasLayoutUnit): GroupTransformEdgeRouteSnapshot[] =>
     unit.edgeIds.flatMap((edgeId) => {
-      const routePoints = routedEdgeById.get(edgeId)?.points ?? edgeSnapshotFallbackPoints(edgeById.get(edgeId));
+      const routePoints = currentStoredRoutePointsForEdge(edgeById.get(edgeId));
       return routePoints.length >= 2
         ? [{
             edgeId,
@@ -9722,7 +9746,7 @@ export function App() {
         if (!edge || !unitNodeIds.has(edge.sourceId) || !unitNodeIds.has(edge.targetId)) {
           continue;
         }
-        const routePoints = routedEdgeById.get(edgeId)?.points ?? edgeSnapshotFallbackPoints(edge);
+        const routePoints = currentStoredRoutePointsForEdge(edge);
         if (routePoints.length < 2) {
           continue;
         }
@@ -9843,8 +9867,6 @@ export function App() {
     const edgeIdsForDrag = dragSelection.edgeIds;
     const affectedEdgesForDrag = edgeListForNodeIds(dragNodeIds, edgeIdsForDrag);
     const affectedEdgeIdsForDrag = new Set(affectedEdgesForDrag.map((edge) => edge.id));
-    const routePointsForDragEdge = (edgeId: string) =>
-      affectedEdgeIdsForDrag.has(edgeId) ? routedEdgeById.get(edgeId)?.points ?? [] : [];
     clearNodeDragMoveSchedule();
     dragUndoCapturedRef.current = false;
     const originalPositionsForDrag = Object.fromEntries(
@@ -9856,7 +9878,7 @@ export function App() {
     const originalRoutePointsForDrag = Object.fromEntries(
       affectedEdgesForDrag.map((edge) => [
         edge.id,
-        routePointsForDragEdge(edge.id)
+        affectedEdgeIdsForDrag.has(edge.id) ? currentStoredRoutePointsForEdge(edge) : []
       ])
     );
     const nextDragging: DraggingState = {
@@ -9878,7 +9900,7 @@ export function App() {
       ),
       originalRoutePoints: originalRoutePointsForDrag,
       overlayPreview: isMultiNodeMoveState({ nodeIds: dragNodeIds })
-        ? buildMultiNodeDragOverlayPreview(dragNodeIds, affectedEdgesForDrag, originalPositionsForDrag, originalRoutePointsForDrag)
+        ? buildMultiNodeDragOverlayPreview(dragNodeIds, affectedEdgesForDrag, originalPositionsForDrag, originalRoutePointsForDrag, edgeIdsForDrag)
         : undefined
     };
     draggingRef.current = nextDragging;
@@ -10334,8 +10356,6 @@ export function App() {
     const edgeIdsForDrag = dragSelection.edgeIds;
     const affectedEdgesForDrag = edgeListForNodeIds(dragNodeIds, edgeIdsForDrag);
     const affectedEdgeIdsForDrag = new Set(affectedEdgesForDrag.map((edge) => edge.id));
-    const routePointsForDragEdge = (edgeId: string) =>
-      affectedEdgeIdsForDrag.has(edgeId) ? routedEdgeById.get(edgeId)?.points ?? [] : [];
     clearNodeDragMoveSchedule();
     dragUndoCapturedRef.current = false;
     const originalPositionsForDrag = Object.fromEntries(
@@ -10347,7 +10367,7 @@ export function App() {
     const originalRoutePointsForDrag = Object.fromEntries(
       affectedEdgesForDrag.map((edge) => [
         edge.id,
-        routePointsForDragEdge(edge.id)
+        affectedEdgeIdsForDrag.has(edge.id) ? currentStoredRoutePointsForEdge(edge) : []
       ])
     );
     const nextDragging: DraggingState = {
@@ -10369,7 +10389,7 @@ export function App() {
       ),
       originalRoutePoints: originalRoutePointsForDrag,
       overlayPreview: isMultiNodeMoveState({ nodeIds: dragNodeIds })
-        ? buildMultiNodeDragOverlayPreview(dragNodeIds, affectedEdgesForDrag, originalPositionsForDrag, originalRoutePointsForDrag)
+        ? buildMultiNodeDragOverlayPreview(dragNodeIds, affectedEdgesForDrag, originalPositionsForDrag, originalRoutePointsForDrag, edgeIdsForDrag)
         : undefined
     };
     draggingRef.current = nextDragging;
@@ -10677,7 +10697,7 @@ export function App() {
     const originalRoutePoints = Object.fromEntries(
       affectedEdgesForLayout.map((edge) => [
         edge.id,
-        (routedEdgeById.get(edge.id)?.points ?? []).map((point) => ({ ...point }))
+        currentStoredRoutePointsForEdge(edge)
       ])
     );
     const adjustedAffectedEdges = adjustEdgesAfterNodeMove(
@@ -14331,7 +14351,7 @@ export function App() {
               if (!edge) return null;
               if (
                 (draggingDelta && dragPreviewEdgeIdSet.has(edge.id)) ||
-                (multiNodeDragging && dragAffectedEdgeIdSet.has(edge.id)) ||
+                (multiNodeDragging && dragOverlayEdgeIdSet.has(edge.id)) ||
                 groupTransformPreviewEdgeIdSet.has(edge.id) ||
                 terminalPressPreviewEdgeIdSet.has(edge.id) ||
                 rewiring?.edgeId === edge.id
@@ -14844,7 +14864,7 @@ export function App() {
             {selectedRoutedEdge &&
               selectedEdge &&
               !(draggingDelta && dragPreviewEdgeIdSet.has(selectedEdge.id)) &&
-              !(multiNodeDragging && dragAffectedEdgeIdSet.has(selectedEdge.id)) &&
+              !(multiNodeDragging && dragOverlayEdgeIdSet.has(selectedEdge.id)) &&
               !groupTransformPreviewEdgeIdSet.has(selectedEdge.id) &&
               !terminalPressPreviewEdgeIdSet.has(selectedEdge.id) &&
               (() => {
