@@ -4946,6 +4946,33 @@ export function App() {
       y: position.y < clamped.y ? Math.round(position.y) : clamped.y
     };
   };
+  const clampPointToExpandableBounds = (point: Point, bounds: CanvasBounds): Point => {
+    const clamped = clampPointToBounds(point, bounds);
+    return {
+      x: point.x < clamped.x ? Math.round(point.x) : clamped.x,
+      y: point.y < clamped.y ? Math.round(point.y) : clamped.y
+    };
+  };
+  const clampEdgeGeometryToExpandableBounds = (edge: Edge, bounds: CanvasBounds): Edge => {
+    let changed = false;
+    const clampOptionalPoint = (point?: Point) => {
+      if (!point) {
+        return undefined;
+      }
+      const clamped = clampPointToExpandableBounds(point, bounds);
+      if (clamped.x !== point.x || clamped.y !== point.y) {
+        changed = true;
+      }
+      return clamped;
+    };
+    const sourcePoint = clampOptionalPoint(edge.sourcePoint);
+    const targetPoint = clampOptionalPoint(edge.targetPoint);
+    const manualPoints = edge.manualPoints?.map(clampOptionalPoint).filter((point): point is Point => Boolean(point));
+    if (manualPoints && (!edge.manualPoints || manualPoints.some((point, index) => point.x !== edge.manualPoints?.[index]?.x || point.y !== edge.manualPoints?.[index]?.y))) {
+      changed = true;
+    }
+    return changed ? { ...edge, sourcePoint, targetPoint, manualPoints } : edge;
+  };
   const scheduleCanvasVisibleViewBoxUpdate = () => {
     if (canvasVisibleViewBoxFrameRef.current !== null) {
       return;
@@ -7415,7 +7442,7 @@ export function App() {
       if (node && delta) {
         movedNextNodeById.set(
           movedNodeId,
-          { ...node, position: clampNodePositionToBounds(node, bounds, { x: node.position.x + delta.x, y: node.position.y + delta.y }) }
+          { ...node, position: clampNodePositionToExpandableBounds(node, bounds, { x: node.position.x + delta.x, y: node.position.y + delta.y }) }
         );
       }
     }
@@ -7484,7 +7511,7 @@ export function App() {
             return { ...nextEdgeWithSlide, manualPoints: preservedRoute.slice(1, -1).map((point) => ({ ...point })) };
           })()
         : nextEdgeWithSlide;
-      const boundedNextEdge = clampEdgeGeometryToBounds(nextEdge, canvasBounds);
+      const boundedNextEdge = clampEdgeGeometryToExpandableBounds(nextEdge, bounds);
       if (
         sameOptionalPoint(boundedNextEdge.sourcePoint, edge.sourcePoint) &&
         sameOptionalPoint(boundedNextEdge.targetPoint, edge.targetPoint) &&

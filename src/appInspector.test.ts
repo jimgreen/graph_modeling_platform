@@ -1865,6 +1865,22 @@ describe("graph inspector panel", () => {
     expect(updateBlock).toContain("nodes,\n        selectedNodeCanvasBounds");
   });
 
+  test("preserves moved connection geometry before left or top canvas expansion shifts origin", async () => {
+    const source = await readAppSource();
+    const helperStart = source.indexOf("const clampNodePositionToExpandableBounds");
+    const helperEnd = source.indexOf("const scheduleCanvasVisibleViewBoxUpdate", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+    const adjustStart = source.indexOf("const adjustEdgesAfterNodeMove =");
+    const adjustEnd = source.indexOf("const routePointsForMovedNodeBlockers", adjustStart);
+    const adjustBlock = source.slice(adjustStart, adjustEnd);
+
+    expect(helperBlock).toContain("const clampPointToExpandableBounds");
+    expect(helperBlock).toContain("const clampEdgeGeometryToExpandableBounds");
+    expect(adjustBlock).toContain("position: clampNodePositionToExpandableBounds(");
+    expect(adjustBlock).toContain("const boundedNextEdge = clampEdgeGeometryToExpandableBounds(nextEdge, bounds);");
+    expect(adjustBlock).not.toContain("clampEdgeGeometryToBounds(nextEdge, canvasBounds)");
+  });
+
   test("moves multi-node drag previews through one SVG overlay transform without React state churn", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
