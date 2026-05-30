@@ -960,11 +960,42 @@ button:disabled {
   cursor: grabbing;
 }
 
+.canvas-resizing,
+.canvas-resizing * {
+  user-select: none;
+}
+
 .canvas-boundary {
   fill: none;
   stroke: #475569;
   stroke-width: 5;
   pointer-events: none;
+}
+
+.canvas-resize-handle {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 0;
+  pointer-events: all;
+}
+
+.canvas-resize-handle-right {
+  cursor: ew-resize;
+}
+
+.canvas-resize-handle-bottom {
+  cursor: ns-resize;
+}
+
+.canvas-resize-handle-corner {
+  cursor: nwse-resize;
+}
+
+.canvas-resize-handle:hover,
+.canvas-resizing .canvas-resize-handle {
+  fill: rgba(37, 99, 235, 0.13);
+  stroke: rgba(37, 99, 235, 0.45);
+  stroke-width: 1;
 }
 
 .connection-hitline {
@@ -1219,6 +1250,39 @@ button:disabled {
 .diagram-node.storage-node.selected.focused .node-hitbox {
   stroke: #f97316;
   stroke-width: 2.25;
+}
+
+.group-selection-overlay {
+  pointer-events: none;
+}
+
+.group-selection-hitbox {
+  fill: transparent;
+  stroke: transparent;
+  pointer-events: all;
+  cursor: grab;
+}
+
+.group-selection-hitbox:active {
+  cursor: grabbing;
+}
+
+.group-selection-outline {
+  fill: none;
+  stroke: #1d4ed8;
+  stroke-width: 2;
+  stroke-dasharray: 8 5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.group-selection-overlay.focused .group-selection-outline {
+  stroke: #f97316;
+  stroke-width: 2.5;
+}
+
+.group-transform-handles {
+  pointer-events: all;
 }
 
 .diagram-node.connect-source .node-hitbox {

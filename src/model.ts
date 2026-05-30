@@ -559,6 +559,45 @@ function parseDeviceIndex(value?: string): number {
   return Number.parseInt(text, 10);
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function stripGeneratedDeviceName(name?: string): string {
+  return String(name ?? "")
+    .trim()
+    .replace(/\s*副本(?:\s*\d+)?$/u, "")
+    .replace(/-\d+$/u, "")
+    .trim();
+}
+
+function deviceDefaultNameBase(node: Pick<ModelNode, "kind" | "name" | "params">): string {
+  const template = DEVICE_LIBRARY.find((item) => item.kind === node.kind);
+  return template?.label || stripGeneratedDeviceName(node.name) || inferESection(node.kind, node.params) || node.kind;
+}
+
+function isGeneratedDeviceName(name: string, baseName: string): boolean {
+  if (!name) {
+    return true;
+  }
+  const copyBaseName = name.replace(/\s*副本(?:\s*\d+)?$/u, "").trim();
+  if (name === baseName || copyBaseName === baseName) {
+    return true;
+  }
+  const indexedNamePattern = new RegExp(`^${escapeRegExp(baseName)}-\\d+$`);
+  return indexedNamePattern.test(name) || indexedNamePattern.test(copyBaseName);
+}
+
+function withAllocatedDeviceName<T extends Pick<ModelNode, "kind" | "name" | "params">>(node: T, idx: number): T {
+  const baseName = deviceDefaultNameBase(node);
+  const currentName = node.name.trim();
+  if (!isGeneratedDeviceName(currentName, baseName)) {
+    return node;
+  }
+  const nextName = `${baseName}-${idx}`;
+  return currentName === nextName ? node : { ...node, name: nextName };
+}
+
 function parseContainerRelationField(fieldName: string) {
   const transformerMatch = /^idx_xf_t(\d+)$/.exec(fieldName);
   if (transformerMatch) {
@@ -816,7 +855,7 @@ export function normalizeDeviceIndexCounters(
   return normalized;
 }
 
-export function assignPermanentDeviceIndex<T extends Pick<ModelNode, "kind" | "params">>(
+export function assignPermanentDeviceIndex<T extends Pick<ModelNode, "kind" | "name" | "params">>(
   node: T,
   counters: DeviceIndexCounters = {}
 ): { node: T; counters: DeviceIndexCounters } {
@@ -832,7 +871,7 @@ export function assignPermanentDeviceIndex<T extends Pick<ModelNode, "kind" | "p
     return { node: relationResult.node, counters: relationResult.counters };
   }
   const idx = (counters[key] ?? 0) + 1;
-  const indexedNode = { ...node, params: { ...node.params, idx: String(idx) } };
+  const indexedNode = withAllocatedDeviceName({ ...node, params: { ...node.params, idx: String(idx) } }, idx);
   const relationResult = assignContainerRelationIndexes(indexedNode, { ...counters, [key]: idx });
   return { node: relationResult.node, counters: relationResult.counters };
 }
@@ -855,7 +894,7 @@ export function resetDeviceIndexesForPaste<T extends Pick<ModelNode, "params">>(
   return changed ? { ...node, params: nextParams } : node;
 }
 
-export function assignMissingDeviceIndexes<T extends Pick<ModelNode, "kind" | "params">>(
+export function assignMissingDeviceIndexes<T extends Pick<ModelNode, "kind" | "name" | "params">>(
   nodes: T[],
   counters?: DeviceIndexCounters
 ): { nodes: T[]; counters: DeviceIndexCounters } {

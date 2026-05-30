@@ -1204,7 +1204,28 @@ describe("power system model", () => {
     );
 
     expect(nextLoad.params.idx).toBe("5");
+    expect(nextLoad.name).toBe("交流负荷-5");
     expect(nextCounters.ACLoad).toBe(5);
+  });
+
+  test("renames pasted generated device copies with the newly allocated idx", () => {
+    const copiedLoad = createDefaultNode("ac-load", { x: 100, y: 100 });
+    copiedLoad.name = "交流负荷 副本";
+
+    const { node: pastedLoad } = assignPermanentDeviceIndex(copiedLoad, { ACLoad: 4 });
+
+    expect(pastedLoad.params.idx).toBe("5");
+    expect(pastedLoad.name).toBe("交流负荷-5");
+  });
+
+  test("preserves user edited device names when allocating a missing idx", () => {
+    const userNamedLoad = createDefaultNode("ac-load", { x: 100, y: 100 });
+    userNamedLoad.name = "用户命名负荷";
+
+    const { node: indexedLoad } = assignPermanentDeviceIndex(userNamedLoad, {});
+
+    expect(indexedLoad.params.idx).toBe("1");
+    expect(indexedLoad.name).toBe("用户命名负荷");
   });
 
   test("keeps idx counters independent for each E device section and skips static graphics", () => {
