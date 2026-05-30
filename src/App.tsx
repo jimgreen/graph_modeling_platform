@@ -1294,6 +1294,9 @@ const PARAM_LABELS: Record<string, string> = {
   padding: "内边距",
   textAlign: "水平对齐",
   verticalAlign: "垂直对齐",
+  markerStart: "首端标记",
+  markerEnd: "末端标记",
+  arrowSize: "箭头尺寸",
   vbase: "电压等级",
   highVbase: "高压侧电压等级",
   mediumVbase: "中压侧电压等级",
@@ -1365,7 +1368,9 @@ const PARAM_OPTIONS: Record<string, string[]> = {
   strokeStyle: ["solid", "dashed", "dotted"],
   shadowEnabled: ["1", "0"],
   textAlign: ["left", "center", "right"],
-  verticalAlign: ["top", "middle", "bottom"]
+  verticalAlign: ["top", "middle", "bottom"],
+  markerStart: ["none", "arrow", "dot"],
+  markerEnd: ["none", "arrow", "dot"]
 };
 
 function paramOptionsForSection(key: string, section?: string) {
@@ -2829,6 +2834,58 @@ function staticShapeText(node: ModelNode, width: number, height: number, miniatu
   );
 }
 
+function staticConnectorMarker(
+  marker: string,
+  x: number,
+  y: number,
+  directionX: number,
+  directionY: number,
+  size: number,
+  color: string,
+  lineWidth: number
+): ReactNode {
+  if (marker === "dot") {
+    return <circle cx={x} cy={y} r={Math.max(size * 0.36, lineWidth * 1.4)} fill={color} stroke={color} />;
+  }
+  if (marker !== "arrow") {
+    return null;
+  }
+  const length = Math.hypot(directionX, directionY) || 1;
+  const ux = directionX / length;
+  const uy = directionY / length;
+  const px = -uy;
+  const py = ux;
+  const baseX = x - ux * size;
+  const baseY = y - uy * size;
+  const halfWidth = size * 0.42;
+  const points = `${x},${y} ${baseX + px * halfWidth},${baseY + py * halfWidth} ${baseX - px * halfWidth},${baseY - py * halfWidth}`;
+  return <polygon points={points} fill={color} stroke={color} strokeLinejoin="round" />;
+}
+
+function staticConnectorPath(
+  node: ModelNode,
+  points: Point[],
+  stroke: string,
+  lineWidth: number,
+  dashArray: string | undefined
+) {
+  const markerStart = node.params.markerStart || "none";
+  const markerEnd = node.params.markerEnd || "none";
+  const arrowSize = staticNumericParam(node, "arrowSize", 10, 4);
+  const pathData = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+  const first = points[0];
+  const second = points[1] ?? first;
+  const previous = points[points.length - 2] ?? first;
+  const last = points[points.length - 1] ?? first;
+  return (
+    <g>
+      <path d={pathData} fill="none" stroke={stroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" strokeLinejoin="round" />
+      {staticConnectorMarker(markerStart, first.x, first.y, first.x - second.x, first.y - second.y, arrowSize, stroke, lineWidth)}
+      {staticConnectorMarker(markerEnd, last.x, last.y, last.x - previous.x, last.y - previous.y, arrowSize, stroke, lineWidth)}
+    </g>
+  );
+}
+
 function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorDisplayMode = "energy", colorPalette: ColorPalette = DEFAULT_COLOR_PALETTE) {
   if (isBusNode(node) || isStaticNode(node)) {
     return "";
@@ -2896,6 +2953,7 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
     const dashArray = svgStrokeDashArray(node.params.strokeStyle);
     const cornerRadius = staticNumericParam(node, "cornerRadius", 8, 0);
     const accentColor = node.params.accentColor || staticStroke;
+    const hasStaticText = Boolean(node.params.text?.trim());
     if (node.kind === "static-text") {
       if (!renderText) {
         return null;
@@ -3087,6 +3145,179 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
           <rect x={-w / 2} y={-h / 2} width={w} height={headerHeight} rx={cornerRadius} fill={accentColor} stroke="none" />
           <path d={`M ${-w / 2} ${-h / 2 + headerHeight} H ${w / 2}`} stroke={staticStroke} strokeWidth={lineWidth} />
           {renderText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-point") {
+      if (mode === "text") {
+        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const radius = Math.max(4, Math.min(w, h) / 2 - lineWidth / 2);
+      return (
+        <g>
+          <circle cx="0" cy="0" r={radius} fill={staticFill || accentColor} stroke={staticStroke} strokeWidth={lineWidth} />
+          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-ring") {
+      if (mode === "text") {
+        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const radius = Math.max(5, Math.min(w, h) / 2 - lineWidth / 2);
+      return (
+        <g>
+          <circle cx="0" cy="0" r={radius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
+          <circle cx="0" cy="0" r={Math.max(1.8, radius * 0.28)} fill={accentColor} stroke="none" />
+          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-circle-node") {
+      if (mode === "text") {
+        return staticShapeText(node, Math.min(w, h), Math.min(w, h), miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const radius = Math.max(8, Math.min(w, h) / 2 - lineWidth / 2);
+      return (
+        <g style={staticSymbolShadowStyle(node)}>
+          <circle cx="0" cy="0" r={radius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
+          {renderText && staticShapeText(node, radius * 1.45, radius * 1.45, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-straight-connector") {
+      if (mode === "text") {
+        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      return (
+        <g>
+          {staticConnectorPath(node, [{ x: -w / 2, y: 0 }, { x: w / 2, y: 0 }], staticStroke, lineWidth, dashArray)}
+          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-arrow-connector") {
+      if (mode === "text") {
+        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      return (
+        <g>
+          {staticConnectorPath(node, [{ x: -w / 2, y: 0 }, { x: w / 2, y: 0 }], staticStroke, lineWidth, dashArray)}
+          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-double-arrow-connector") {
+      if (mode === "text") {
+        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      return (
+        <g>
+          {staticConnectorPath(node, [{ x: -w / 2, y: 0 }, { x: w / 2, y: 0 }], staticStroke, lineWidth, dashArray)}
+          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-elbow-connector") {
+      if (mode === "text") {
+        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const points = [
+        { x: -w / 2, y: h / 3 },
+        { x: -w / 6, y: h / 3 },
+        { x: -w / 6, y: -h / 3 },
+        { x: w / 2, y: -h / 3 }
+      ];
+      return (
+        <g>
+          {staticConnectorPath(node, points, staticStroke, lineWidth, dashArray)}
+          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-hexagon") {
+      if (mode === "text") {
+        return staticShapeText(node, w * 0.78, h, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const inset = w * 0.18;
+      const points = `${-w / 2 + inset},${-h / 2} ${w / 2 - inset},${-h / 2} ${w / 2},0 ${w / 2 - inset},${h / 2} ${-w / 2 + inset},${h / 2} ${-w / 2},0`;
+      return (
+        <g style={staticSymbolShadowStyle(node)}>
+          <polygon points={points} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinejoin="round" />
+          {renderText && staticShapeText(node, w * 0.78, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-parallelogram") {
+      if (mode === "text") {
+        return staticShapeText(node, w * 0.76, h, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const skew = w * 0.18;
+      const points = `${-w / 2 + skew},${-h / 2} ${w / 2},${-h / 2} ${w / 2 - skew},${h / 2} ${-w / 2},${h / 2}`;
+      return (
+        <g style={staticSymbolShadowStyle(node)}>
+          <polygon points={points} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinejoin="round" />
+          {renderText && staticShapeText(node, w * 0.72, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-triangle") {
+      if (mode === "text") {
+        return staticShapeText(node, w * 0.66, h * 0.66, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const points = `0,${-h / 2} ${w / 2},${h / 2} ${-w / 2},${h / 2}`;
+      return (
+        <g style={staticSymbolShadowStyle(node)}>
+          <polygon points={points} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinejoin="round" />
+          {renderText && staticShapeText(node, w * 0.66, h * 0.58, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-callout") {
+      if (mode === "text") {
+        return staticShapeText(node, w, h * 0.82, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const tail = Math.min(24, h * 0.26);
+      const bodyBottom = h / 2 - tail;
+      const path = `M ${-w / 2 + cornerRadius} ${-h / 2} H ${w / 2 - cornerRadius} Q ${w / 2} ${-h / 2} ${w / 2} ${-h / 2 + cornerRadius} V ${bodyBottom - cornerRadius} Q ${w / 2} ${bodyBottom} ${w / 2 - cornerRadius} ${bodyBottom} H ${w * 0.1} L ${-w * 0.08} ${h / 2} L ${-w * 0.08} ${bodyBottom} H ${-w / 2 + cornerRadius} Q ${-w / 2} ${bodyBottom} ${-w / 2} ${bodyBottom - cornerRadius} V ${-h / 2 + cornerRadius} Q ${-w / 2} ${-h / 2} ${-w / 2 + cornerRadius} ${-h / 2} Z`;
+      return (
+        <g style={staticSymbolShadowStyle(node)}>
+          <path d={path} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinejoin="round" />
+          <path d={`M ${-w / 2 + 14} ${-h / 2 + 24} H ${w / 2 - 14}`} stroke={accentColor} strokeWidth={Math.max(1, lineWidth)} strokeLinecap="round" />
+          {renderText && staticShapeText(node, w, h * 0.82, miniature)}
         </g>
       );
     }
@@ -16798,6 +17029,18 @@ export function App() {
                         <tr>
                           {renderChineseParamHeader("verticalAlign")}
                           <td>{renderParamEditor("verticalAlign", inspectorSelectedNode.params.verticalAlign || "middle", false)}</td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("markerStart")}
+                          <td>{renderParamEditor("markerStart", inspectorSelectedNode.params.markerStart || "none", false)}</td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("markerEnd")}
+                          <td>{renderParamEditor("markerEnd", inspectorSelectedNode.params.markerEnd || "none", false)}</td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("arrowSize")}
+                          <td><input type="number" min="4" max="80" value={inspectorSelectedNode.params.arrowSize || "10"} onChange={(event) => updateParam("arrowSize", event.target.value)} /></td>
                         </tr>
                         <tr>
                           {renderChineseParamHeader("fontSize")}

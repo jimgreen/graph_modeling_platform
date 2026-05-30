@@ -332,7 +332,18 @@ describe("graph inspector panel", () => {
       "static-document",
       "static-note",
       "static-group-box",
-      "static-swimlane"
+      "static-swimlane",
+      "static-point",
+      "static-ring",
+      "static-circle-node",
+      "static-straight-connector",
+      "static-arrow-connector",
+      "static-double-arrow-connector",
+      "static-elbow-connector",
+      "static-hexagon",
+      "static-parallelogram",
+      "static-triangle",
+      "static-callout"
     ]) {
       expect(modelSource).toContain(`kind: "${kind}"`);
       expect(glyphBlock).toContain(`node.kind === "${kind}"`);
@@ -346,6 +357,9 @@ describe("graph inspector panel", () => {
     expect(inspectorBlock).toContain("padding");
     expect(inspectorBlock).toContain("textAlign");
     expect(inspectorBlock).toContain("verticalAlign");
+    expect(inspectorBlock).toContain("markerStart");
+    expect(inspectorBlock).toContain("markerEnd");
+    expect(inspectorBlock).toContain("arrowSize");
   });
 
   test("keeps backend electric heat sections split by AC and DC device types", async () => {

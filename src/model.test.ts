@@ -4921,7 +4921,18 @@ describe("power system model", () => {
       "static-document",
       "static-note",
       "static-group-box",
-      "static-swimlane"
+      "static-swimlane",
+      "static-point",
+      "static-ring",
+      "static-circle-node",
+      "static-straight-connector",
+      "static-arrow-connector",
+      "static-double-arrow-connector",
+      "static-elbow-connector",
+      "static-hexagon",
+      "static-parallelogram",
+      "static-triangle",
+      "static-callout"
     ] as const;
     const removedControlKinds = [
       "static-web",
@@ -4960,7 +4971,18 @@ describe("power system model", () => {
       ["static-document", "文档"],
       ["static-note", "便签"],
       ["static-group-box", "分组框"],
-      ["static-swimlane", "泳道"]
+      ["static-swimlane", "泳道"],
+      ["static-point", "连接点"],
+      ["static-ring", "圆环点"],
+      ["static-circle-node", "圆形节点"],
+      ["static-straight-connector", "直线连接"],
+      ["static-arrow-connector", "箭头连接"],
+      ["static-double-arrow-connector", "双向箭头"],
+      ["static-elbow-connector", "折线连接"],
+      ["static-hexagon", "六边形"],
+      ["static-parallelogram", "平行四边形"],
+      ["static-triangle", "三角形"],
+      ["static-callout", "标注气泡"]
     ] as const;
 
     for (const [kind, label] of expected) {
@@ -4983,7 +5005,10 @@ describe("power system model", () => {
           shadowEnabled: expect.any(String),
           padding: expect.any(String),
           textAlign: expect.any(String),
-          verticalAlign: expect.any(String)
+          verticalAlign: expect.any(String),
+          markerStart: expect.any(String),
+          markerEnd: expect.any(String),
+          arrowSize: expect.any(String)
         })
       });
 

@@ -14,6 +14,17 @@ export type DeviceKind =
   | "static-note"
   | "static-group-box"
   | "static-swimlane"
+  | "static-point"
+  | "static-ring"
+  | "static-circle-node"
+  | "static-straight-connector"
+  | "static-arrow-connector"
+  | "static-double-arrow-connector"
+  | "static-elbow-connector"
+  | "static-hexagon"
+  | "static-parallelogram"
+  | "static-triangle"
+  | "static-callout"
   | "static-web"
   | "static-date"
   | "static-time"
@@ -1896,6 +1907,9 @@ const staticSymbolParams = (
   padding: "12",
   textAlign: "center",
   verticalAlign: "middle",
+  markerStart: "none",
+  markerEnd: "none",
+  arrowSize: "10",
   ...overrides
 });
 
@@ -2045,6 +2059,105 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     attributeLibrary: "静态图元",
     size: { width: 220, height: 122 },
     params: staticSymbolParams("泳道", { fillColor: "#f8fafc", strokeColor: "#475569", accentColor: "#dbeafe", textAlign: "left", verticalAlign: "top", padding: "14" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-point",
+    label: "连接点",
+    attributeLibrary: "静态图元",
+    size: { width: 22, height: 22 },
+    params: staticSymbolParams("", { fillColor: "#2563eb", strokeColor: "#ffffff", accentColor: "#2563eb", lineWidth: "2", padding: "4" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-ring",
+    label: "圆环点",
+    attributeLibrary: "静态图元",
+    size: { width: 28, height: 28 },
+    params: staticSymbolParams("", { fillColor: "transparent", strokeColor: "#2563eb", accentColor: "#60a5fa", lineWidth: "3", padding: "4" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-circle-node",
+    label: "圆形节点",
+    attributeLibrary: "静态图元",
+    size: { width: 86, height: 86 },
+    params: staticSymbolParams("圆形节点", { fillColor: "#eff6ff", strokeColor: "#2563eb", accentColor: "#60a5fa", cornerRadius: "999", shadowEnabled: "1" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-straight-connector",
+    label: "直线连接",
+    attributeLibrary: "静态图元",
+    size: { width: 150, height: 28 },
+    params: staticSymbolParams("", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "none", arrowSize: "10" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-arrow-connector",
+    label: "箭头连接",
+    attributeLibrary: "静态图元",
+    size: { width: 150, height: 32 },
+    params: staticSymbolParams("", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "12" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-double-arrow-connector",
+    label: "双向箭头",
+    attributeLibrary: "静态图元",
+    size: { width: 150, height: 32 },
+    params: staticSymbolParams("", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "arrow", markerEnd: "arrow", arrowSize: "12" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-elbow-connector",
+    label: "折线连接",
+    attributeLibrary: "静态图元",
+    size: { width: 150, height: 82 },
+    params: staticSymbolParams("", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "12" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-hexagon",
+    label: "六边形",
+    attributeLibrary: "静态图元",
+    size: { width: 126, height: 78 },
+    params: staticSymbolParams("六边形", { fillColor: "#f8fafc", strokeColor: "#475569", accentColor: "#94a3b8", padding: "16" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-parallelogram",
+    label: "平行四边形",
+    attributeLibrary: "静态图元",
+    size: { width: 132, height: 76 },
+    params: staticSymbolParams("输入/输出", { fillColor: "#f0f9ff", strokeColor: "#0284c7", accentColor: "#38bdf8", padding: "18" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-triangle",
+    label: "三角形",
+    attributeLibrary: "静态图元",
+    size: { width: 96, height: 86 },
+    params: staticSymbolParams("三角", { fillColor: "#fff7ed", strokeColor: "#ea580c", accentColor: "#fb923c", padding: "18", verticalAlign: "bottom" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-callout",
+    label: "标注气泡",
+    attributeLibrary: "静态图元",
+    size: { width: 154, height: 86 },
+    params: staticSymbolParams("标注", { fillColor: "#ffffff", strokeColor: "#475569", accentColor: "#2563eb", cornerRadius: "10", textAlign: "left", verticalAlign: "top", padding: "14", shadowEnabled: "1" }),
     terminalType: "ac",
     terminalCount: 0
   },
