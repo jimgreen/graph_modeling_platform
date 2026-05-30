@@ -1288,6 +1288,12 @@ const PARAM_LABELS: Record<string, string> = {
   textDecoration: "文字修饰",
   strokeStyle: "边框样式",
   text: "文字内容",
+  cornerRadius: "圆角半径",
+  accentColor: "强调色",
+  shadowEnabled: "阴影",
+  padding: "内边距",
+  textAlign: "水平对齐",
+  verticalAlign: "垂直对齐",
   vbase: "电压等级",
   highVbase: "高压侧电压等级",
   mediumVbase: "中压侧电压等级",
@@ -1356,7 +1362,10 @@ const PARAM_OPTIONS: Record<string, string[]> = {
   fontWeight: ["400", "700", "900"],
   fontStyle: ["normal", "italic"],
   textDecoration: ["none", "underline"],
-  strokeStyle: ["solid", "dashed", "dotted"]
+  strokeStyle: ["solid", "dashed", "dotted"],
+  shadowEnabled: ["1", "0"],
+  textAlign: ["left", "center", "right"],
+  verticalAlign: ["top", "middle", "bottom"]
 };
 
 function paramOptionsForSection(key: string, section?: string) {
@@ -2766,6 +2775,60 @@ function uprightText(
   );
 }
 
+function staticNumericParam(node: ModelNode, key: string, fallback: number, min = 0): number {
+  const parsed = Number(node.params[key]);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(min, parsed);
+}
+
+function staticSymbolShadowStyle(node: ModelNode): CSSProperties | undefined {
+  return node.params.shadowEnabled === "1"
+    ? { filter: "drop-shadow(0 4px 8px rgba(15, 23, 42, 0.18))" }
+    : undefined;
+}
+
+function staticShapeText(node: ModelNode, width: number, height: number, miniature = false) {
+  const fontSize = miniature ? 12 : staticNumericParam(node, "fontSize", 16, 8);
+  const padding = Math.min(staticNumericParam(node, "padding", 12, 0), Math.max(0, Math.min(width, height) / 2 - 2));
+  const align = node.params.textAlign || "center";
+  const verticalAlign = node.params.verticalAlign || "middle";
+  const textAnchor = align === "left" ? "start" : align === "right" ? "end" : "middle";
+  const x = align === "left" ? -width / 2 + padding : align === "right" ? width / 2 - padding : 0;
+  const y =
+    verticalAlign === "top"
+      ? -height / 2 + padding + fontSize / 2
+      : verticalAlign === "bottom"
+        ? height / 2 - padding - fontSize / 2
+        : 0;
+  const text = miniature ? node.params.text?.slice(0, 2) || "图元" : node.params.text || node.name;
+  const lines = text.split(/\r?\n/);
+  return uprightText(
+    node,
+    x,
+    y - ((lines.length - 1) * fontSize * 0.6),
+    {
+      fill: node.params.textColor || "#111827",
+      fontSize,
+      fontFamily: node.params.fontFamily || "Arial",
+      fontWeight: node.params.fontWeight || "500",
+      fontStyle: node.params.fontStyle || "normal",
+      textDecoration: node.params.textDecoration || "none",
+      textAnchor,
+      dominantBaseline: "middle",
+      style: { userSelect: "none", pointerEvents: "none" }
+    },
+    <>
+      {lines.map((line, index) => (
+        <tspan key={index} x="0" dy={index === 0 ? 0 : fontSize * 1.2}>
+          {line || " "}
+        </tspan>
+      ))}
+    </>
+  );
+}
+
 function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorDisplayMode = "energy", colorPalette: ColorPalette = DEFAULT_COLOR_PALETTE) {
   if (isBusNode(node) || isStaticNode(node)) {
     return "";
@@ -2831,6 +2894,8 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
     const staticFill = node.params.fillColor || "transparent";
     const lineWidth = Number(node.params.lineWidth || 2);
     const dashArray = svgStrokeDashArray(node.params.strokeStyle);
+    const cornerRadius = staticNumericParam(node, "cornerRadius", 8, 0);
+    const accentColor = node.params.accentColor || staticStroke;
     if (node.kind === "static-text") {
       if (!renderText) {
         return null;
@@ -2897,6 +2962,131 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
         <g>
           <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="4" fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
           {renderText && !node.params.backgroundImage && uprightText(node, 0, 0, { fill: node.params.textColor || "#64748b", fontSize: miniature ? 14 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, "图片")}
+        </g>
+      );
+    }
+    if (node.kind === "static-rounded-rect") {
+      if (mode === "text") {
+        return staticShapeText(node, w, h, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      return (
+        <g style={staticSymbolShadowStyle(node)}>
+          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
+          {renderText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-diamond") {
+      if (mode === "text") {
+        return staticShapeText(node, w, h, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const points = `0,${-h / 2} ${w / 2},0 0,${h / 2} ${-w / 2},0`;
+      return (
+        <g style={staticSymbolShadowStyle(node)}>
+          <polygon points={points} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinejoin="round" />
+          {renderText && staticShapeText(node, w * 0.7, h * 0.7, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-pill") {
+      if (mode === "text") {
+        return staticShapeText(node, w, h, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      return (
+        <g style={staticSymbolShadowStyle(node)}>
+          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={h / 2} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
+          {renderText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-database") {
+      if (mode === "text") {
+        return staticShapeText(node, w, h * 0.72, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const capHeight = Math.max(14, h * 0.22);
+      return (
+        <g style={staticSymbolShadowStyle(node)} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinejoin="round">
+          <path d={`M ${-w / 2} ${-h / 2 + capHeight / 2} V ${h / 2 - capHeight / 2} C ${-w / 2} ${h / 2 + capHeight * 0.22}, ${w / 2} ${h / 2 + capHeight * 0.22}, ${w / 2} ${h / 2 - capHeight / 2} V ${-h / 2 + capHeight / 2}`} />
+          <ellipse cx="0" cy={-h / 2 + capHeight / 2} rx={w / 2} ry={capHeight / 2} />
+          <path d={`M ${-w / 2} ${-h / 2 + capHeight / 2} C ${-w / 2} ${-h / 2 + capHeight * 1.22}, ${w / 2} ${-h / 2 + capHeight * 1.22}, ${w / 2} ${-h / 2 + capHeight / 2}`} fill="none" stroke={accentColor} />
+          {renderText && staticShapeText(node, w, h * 0.68, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-document") {
+      if (mode === "text") {
+        return staticShapeText(node, w, h, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const fold = Math.min(24, Math.min(w, h) * 0.22);
+      return (
+        <g style={staticSymbolShadowStyle(node)} strokeLinejoin="round">
+          <path d={`M ${-w / 2} ${-h / 2} H ${w / 2 - fold} L ${w / 2} ${-h / 2 + fold} V ${h / 2} H ${-w / 2} Z`} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
+          <path d={`M ${w / 2 - fold} ${-h / 2} V ${-h / 2 + fold} H ${w / 2}`} fill="none" stroke={accentColor} strokeWidth={lineWidth} />
+          <path d={`M ${-w / 2 + 16} ${-h / 2 + 34} H ${w / 2 - 16} M ${-w / 2 + 16} ${-h / 2 + 50} H ${w / 2 - 16} M ${-w / 2 + 16} ${-h / 2 + 66} H ${w / 2 - 28}`} stroke={accentColor} strokeWidth={Math.max(1, lineWidth * 0.8)} strokeLinecap="round" />
+          {renderText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-note") {
+      if (mode === "text") {
+        return staticShapeText(node, w, h, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const fold = Math.min(22, Math.min(w, h) * 0.24);
+      return (
+        <g style={staticSymbolShadowStyle(node)} strokeLinejoin="round">
+          <path d={`M ${-w / 2} ${-h / 2} H ${w / 2} V ${h / 2 - fold} L ${w / 2 - fold} ${h / 2} H ${-w / 2} Z`} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
+          <path d={`M ${w / 2} ${h / 2 - fold} H ${w / 2 - fold} V ${h / 2}`} fill="none" stroke={accentColor} strokeWidth={lineWidth} />
+          {renderText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-group-box") {
+      if (mode === "text") {
+        return staticShapeText(node, w, h, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      return (
+        <g>
+          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray || "6 4"} />
+          <path d={`M ${-w / 2 + 12} ${-h / 2 + 24} H ${w / 2 - 12}`} stroke={accentColor} strokeWidth={Math.max(1, lineWidth)} strokeLinecap="round" />
+          {renderText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-swimlane") {
+      if (mode === "text") {
+        return staticShapeText(node, w, h, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const headerHeight = Math.max(28, Math.min(h * 0.32, 42));
+      return (
+        <g style={staticSymbolShadowStyle(node)}>
+          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
+          <rect x={-w / 2} y={-h / 2} width={w} height={headerHeight} rx={cornerRadius} fill={accentColor} stroke="none" />
+          <path d={`M ${-w / 2} ${-h / 2 + headerHeight} H ${w / 2}`} stroke={staticStroke} strokeWidth={lineWidth} />
+          {renderText && staticShapeText(node, w, h, miniature)}
         </g>
       );
     }
@@ -16538,49 +16728,33 @@ export function App() {
                     )}
                     {isStaticNode(inspectorSelectedNode) && (
                       <>
-                        {["static-text", "static-web", "static-date", "static-time", "static-datetime", "static-input", "static-button"].includes(inspectorSelectedNode.kind) && (
-                          <>
-                            <tr>
-                              <th>{inspectorSelectedNode.kind === "static-web" ? "网页地址" : "文字内容"}</th>
-                              <td>
-                                {inspectorSelectedNode.kind === "static-text" ? (
-                                  <textarea rows={4} value={inspectorSelectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
-                                ) : inspectorSelectedNode.kind === "static-date" ? (
-                                  <input type="date" value={inspectorSelectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
-                                ) : inspectorSelectedNode.kind === "static-time" ? (
-                                  <input type="time" value={inspectorSelectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
-                                ) : inspectorSelectedNode.kind === "static-datetime" ? (
-                                  <input type="datetime-local" value={(inspectorSelectedNode.params.text || "").replace(" ", "T")} onChange={(event) => updateParam("text", event.target.value.replace("T", " "))} />
-                                ) : (
-                                  <input value={inspectorSelectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
-                                )}
-                              </td>
-                            </tr>
-                            <tr>
-                              <th>字体</th>
-                              <td>{renderParamEditor("fontFamily", inspectorSelectedNode.params.fontFamily || "Arial", false)}</td>
-                            </tr>
-                            <tr>
-                              <th>文字样式</th>
-                              <td>
-                                <div className="text-style-actions">
-                                  <label>
-                                    <input type="checkbox" checked={(inspectorSelectedNode.params.fontWeight || "400") !== "400"} onChange={(event) => updateParam("fontWeight", event.target.checked ? "700" : "400")} />
-                                    加粗
-                                  </label>
-                                  <label>
-                                    <input type="checkbox" checked={(inspectorSelectedNode.params.fontStyle || "normal") === "italic"} onChange={(event) => updateParam("fontStyle", event.target.checked ? "italic" : "normal")} />
-                                    斜体
-                                  </label>
-                                  <label>
-                                    <input type="checkbox" checked={(inspectorSelectedNode.params.textDecoration || "none") === "underline"} onChange={(event) => updateParam("textDecoration", event.target.checked ? "underline" : "none")} />
-                                    下划线
-                                  </label>
-                                </div>
-                              </td>
-                            </tr>
-                          </>
-                        )}
+                        <tr>
+                          {renderChineseParamHeader("text")}
+                          <td><textarea rows={4} value={inspectorSelectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} /></td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("fontFamily")}
+                          <td>{renderParamEditor("fontFamily", inspectorSelectedNode.params.fontFamily || "Arial", false)}</td>
+                        </tr>
+                        <tr>
+                          <th>文字样式</th>
+                          <td>
+                            <div className="text-style-actions">
+                              <label>
+                                <input type="checkbox" checked={(inspectorSelectedNode.params.fontWeight || "400") !== "400"} onChange={(event) => updateParam("fontWeight", event.target.checked ? "700" : "400")} />
+                                加粗
+                              </label>
+                              <label>
+                                <input type="checkbox" checked={(inspectorSelectedNode.params.fontStyle || "normal") === "italic"} onChange={(event) => updateParam("fontStyle", event.target.checked ? "italic" : "normal")} />
+                                斜体
+                              </label>
+                              <label>
+                                <input type="checkbox" checked={(inspectorSelectedNode.params.textDecoration || "none") === "underline"} onChange={(event) => updateParam("textDecoration", event.target.checked ? "underline" : "none")} />
+                                下划线
+                              </label>
+                            </div>
+                          </td>
+                        </tr>
                         <tr>
                           {renderChineseParamHeader("fillColor")}
                           <td>{renderColorEditor("fillColor", inspectorSelectedNode.params.fillColor || "transparent", "#ffffff")}</td>
@@ -16600,6 +16774,30 @@ export function App() {
                         <tr>
                           {renderChineseParamHeader("strokeStyle")}
                           <td>{renderParamEditor("strokeStyle", inspectorSelectedNode.params.strokeStyle || "solid", false)}</td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("cornerRadius")}
+                          <td><input type="number" min="0" max="999" value={inspectorSelectedNode.params.cornerRadius || "8"} onChange={(event) => updateParam("cornerRadius", event.target.value)} /></td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("accentColor")}
+                          <td>{renderColorEditor("accentColor", inspectorSelectedNode.params.accentColor || "#2563eb", "#2563eb")}</td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("shadowEnabled")}
+                          <td>{renderParamEditor("shadowEnabled", inspectorSelectedNode.params.shadowEnabled || "0", false)}</td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("padding")}
+                          <td><input type="number" min="0" max="120" value={inspectorSelectedNode.params.padding || "12"} onChange={(event) => updateParam("padding", event.target.value)} /></td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("textAlign")}
+                          <td>{renderParamEditor("textAlign", inspectorSelectedNode.params.textAlign || "center", false)}</td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("verticalAlign")}
+                          <td>{renderParamEditor("verticalAlign", inspectorSelectedNode.params.verticalAlign || "middle", false)}</td>
                         </tr>
                         <tr>
                           {renderChineseParamHeader("fontSize")}

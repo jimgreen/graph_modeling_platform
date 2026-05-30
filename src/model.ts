@@ -6,6 +6,14 @@ export type DeviceKind =
   | "static-ellipse"
   | "static-rect"
   | "static-image"
+  | "static-rounded-rect"
+  | "static-diamond"
+  | "static-pill"
+  | "static-database"
+  | "static-document"
+  | "static-note"
+  | "static-group-box"
+  | "static-swimlane"
   | "static-web"
   | "static-date"
   | "static-time"
@@ -1866,6 +1874,31 @@ const threeWindingTransformerParameterDefinitions: DeviceParameterDefinition[] =
   readonlyIntegerDefinition("低压绕组双绕组主变idx", "idx_xf_t3")
 ];
 
+const staticSymbolParams = (
+  text: string,
+  overrides: Partial<Record<string, string>> = {}
+): Record<string, string> => ({
+  component_type: "StaticSymbol",
+  text,
+  fillColor: "#ffffff",
+  strokeColor: "#64748b",
+  textColor: "#111827",
+  lineWidth: "2",
+  strokeStyle: "solid",
+  fontSize: "16",
+  fontFamily: "Arial",
+  fontWeight: "500",
+  fontStyle: "normal",
+  textDecoration: "none",
+  cornerRadius: "8",
+  accentColor: "#2563eb",
+  shadowEnabled: "0",
+  padding: "12",
+  textAlign: "center",
+  verticalAlign: "middle",
+  ...overrides
+});
+
 const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-text",
@@ -1940,6 +1973,78 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     attributeLibrary: "静态图元",
     size: { width: 140, height: 90 },
     params: { component_type: "StaticSymbol", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#64748b", lineWidth: "0", strokeStyle: "solid", fontSize: "16", backgroundImage: "", backgroundImageAssetId: "" },
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-rounded-rect",
+    label: "圆角节点",
+    attributeLibrary: "静态图元",
+    size: { width: 132, height: 72 },
+    params: staticSymbolParams("圆角节点", { cornerRadius: "12", shadowEnabled: "1" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-diamond",
+    label: "判断节点",
+    attributeLibrary: "静态图元",
+    size: { width: 116, height: 86 },
+    params: staticSymbolParams("判断", { fillColor: "#fefce8", strokeColor: "#ca8a04", accentColor: "#eab308", padding: "18" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-pill",
+    label: "起止节点",
+    attributeLibrary: "静态图元",
+    size: { width: 132, height: 58 },
+    params: staticSymbolParams("开始/结束", { fillColor: "#ecfdf5", strokeColor: "#059669", accentColor: "#10b981", cornerRadius: "999" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-database",
+    label: "数据库",
+    attributeLibrary: "静态图元",
+    size: { width: 112, height: 88 },
+    params: staticSymbolParams("数据库", { fillColor: "#eff6ff", strokeColor: "#2563eb", accentColor: "#60a5fa", verticalAlign: "middle" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-document",
+    label: "文档",
+    attributeLibrary: "静态图元",
+    size: { width: 106, height: 128 },
+    params: staticSymbolParams("文档", { fillColor: "#ffffff", strokeColor: "#475569", accentColor: "#94a3b8", verticalAlign: "top", padding: "16" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-note",
+    label: "便签",
+    attributeLibrary: "静态图元",
+    size: { width: 126, height: 92 },
+    params: staticSymbolParams("便签", { fillColor: "#fef9c3", strokeColor: "#ca8a04", accentColor: "#facc15", cornerRadius: "6", verticalAlign: "top" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-group-box",
+    label: "分组框",
+    attributeLibrary: "静态图元",
+    size: { width: 180, height: 112 },
+    params: staticSymbolParams("分组", { fillColor: "transparent", strokeColor: "#64748b", accentColor: "#64748b", cornerRadius: "8", strokeStyle: "dashed", textAlign: "left", verticalAlign: "top" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-swimlane",
+    label: "泳道",
+    attributeLibrary: "静态图元",
+    size: { width: 220, height: 122 },
+    params: staticSymbolParams("泳道", { fillColor: "#f8fafc", strokeColor: "#475569", accentColor: "#dbeafe", textAlign: "left", verticalAlign: "top", padding: "14" }),
     terminalType: "ac",
     terminalCount: 0
   },

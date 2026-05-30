@@ -4913,7 +4913,15 @@ describe("power system model", () => {
       "static-circle",
       "static-ellipse",
       "static-rect",
-      "static-image"
+      "static-image",
+      "static-rounded-rect",
+      "static-diamond",
+      "static-pill",
+      "static-database",
+      "static-document",
+      "static-note",
+      "static-group-box",
+      "static-swimlane"
     ] as const;
     const removedControlKinds = [
       "static-web",
@@ -4941,6 +4949,50 @@ describe("power system model", () => {
 
     const errors = validateTopology([createDefaultNode("static-text", { x: 100, y: 100 })], []);
     expect(errors).toEqual([]);
+  });
+
+  test("creates React-Flow-style static symbols with editable visual style defaults", () => {
+    const expected = [
+      ["static-rounded-rect", "圆角节点"],
+      ["static-diamond", "判断节点"],
+      ["static-pill", "起止节点"],
+      ["static-database", "数据库"],
+      ["static-document", "文档"],
+      ["static-note", "便签"],
+      ["static-group-box", "分组框"],
+      ["static-swimlane", "泳道"]
+    ] as const;
+
+    for (const [kind, label] of expected) {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
+      expect(template).toMatchObject({
+        label,
+        attributeLibrary: "静态图元",
+        terminalCount: 0,
+        terminalType: "ac",
+        params: expect.objectContaining({
+          component_type: "StaticSymbol",
+          text: expect.any(String),
+          fillColor: expect.any(String),
+          strokeColor: expect.any(String),
+          textColor: expect.any(String),
+          lineWidth: expect.any(String),
+          strokeStyle: expect.any(String),
+          cornerRadius: expect.any(String),
+          accentColor: expect.any(String),
+          shadowEnabled: expect.any(String),
+          padding: expect.any(String),
+          textAlign: expect.any(String),
+          verticalAlign: expect.any(String)
+        })
+      });
+
+      const node = createDefaultNode(kind, { x: 100, y: 100 });
+      expect(isStaticNode(node)).toBe(true);
+      expect(node.terminals).toEqual([]);
+      expect(inferESection(kind, node.params)).toBe("StaticSymbol");
+      expect(getEParameterKeys(kind, node.params)).toEqual([]);
+    }
   });
 
   test("adds run_stat operating status to every device type", () => {

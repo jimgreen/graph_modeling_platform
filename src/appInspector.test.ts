@@ -314,6 +314,40 @@ describe("graph inspector panel", () => {
     expect(serverSource).toContain('if (isStaticKind(kind)) return "StaticSymbol";');
   });
 
+  test("adds React-Flow-style static symbols and exposes unified style editors", async () => {
+    const source = await readAppSource();
+    const modelSource = await readModelSource();
+    const glyphStart = source.indexOf("if (isStaticNode(node)) {");
+    const glyphEnd = source.indexOf("if (glyphVariant === \"ac-generator\"", glyphStart);
+    const glyphBlock = source.slice(glyphStart, glyphEnd);
+    const inspectorStart = source.indexOf("{isStaticNode(inspectorSelectedNode) && (");
+    const inspectorEnd = source.indexOf("{!isStaticNode(inspectorSelectedNode) && (", inspectorStart);
+    const inspectorBlock = source.slice(inspectorStart, inspectorEnd);
+
+    for (const kind of [
+      "static-rounded-rect",
+      "static-diamond",
+      "static-pill",
+      "static-database",
+      "static-document",
+      "static-note",
+      "static-group-box",
+      "static-swimlane"
+    ]) {
+      expect(modelSource).toContain(`kind: "${kind}"`);
+      expect(glyphBlock).toContain(`node.kind === "${kind}"`);
+    }
+
+    expect(glyphBlock).toContain("staticSymbolShadowStyle");
+    expect(glyphBlock).toContain("staticShapeText");
+    expect(inspectorBlock).toContain("cornerRadius");
+    expect(inspectorBlock).toContain("accentColor");
+    expect(inspectorBlock).toContain("shadowEnabled");
+    expect(inspectorBlock).toContain("padding");
+    expect(inspectorBlock).toContain("textAlign");
+    expect(inspectorBlock).toContain("verticalAlign");
+  });
+
   test("keeps backend electric heat sections split by AC and DC device types", async () => {
     const serverSource = await readServerSource();
 
