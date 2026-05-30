@@ -1,4 +1,4 @@
-import { ChangeEvent, DragEvent, Fragment, isValidElement, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, type SetStateAction, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, type SetStateAction, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlignEndHorizontal,
   AlignEndVertical,
@@ -9,6 +9,7 @@ import {
   AlignStartVertical,
   AlignVerticalDistributeCenter,
   Cable,
+  CircleDot,
   Download,
   FileInput,
   FileJson,
@@ -21,9 +22,13 @@ import {
   Group,
   Scissors,
   EyeOff,
+  LocateFixed,
+  Map as MapIcon,
+  Maximize2,
   FolderOpen,
   Layers,
   Layers2,
+  Minus,
   MousePointer2,
   PanelLeftOpen,
   PanelRightOpen,
@@ -31,6 +36,7 @@ import {
   Paintbrush,
   Pencil,
   Pin,
+  Plus,
   Route,
   RotateCcw,
   RotateCw,
@@ -164,6 +170,7 @@ import {
   type CanvasBounds,
   type ColorPalette,
   type ColorDisplayMode,
+  type GeometryBounds,
   type Topology,
   type ContainerTerminalAssociationType,
   type ContainerTerminalAssociationValue,
@@ -246,6 +253,9 @@ import {
   type SidePanelSide
 } from "./sidePanelVisibility";
 
+const ENABLE_REACT_FLOW_PREVIEW = import.meta.env.DEV;
+const ReactFlowPreview = ENABLE_REACT_FLOW_PREVIEW ? lazy(() => import("./ReactFlowPreview")) : null;
+
 type ToolMode = "select" | "connect" | "static-draw";
 type StaticDrawingState = {
   kind: DeviceKind;
@@ -285,6 +295,7 @@ type GroupTransformDrag = {
   originalNodes: Record<string, GroupTransformNodeSnapshot>;
   originalEdgeRoutes: GroupTransformEdgeRouteSnapshot[];
   previewPoint?: Point;
+  proportionalScale?: boolean;
   historyCaptured?: boolean;
 };
 type SingleTransformDrag = {
@@ -316,6 +327,53 @@ function selectionRectCenter(rect: SelectionRect): Point {
     x: (rect.left + rect.right) / 2,
     y: (rect.top + rect.bottom) / 2
   };
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function combineSelectionRects(rects: Array<SelectionRect | null | undefined>): SelectionRect | null {
+  const validRects = rects.filter((rect): rect is SelectionRect => Boolean(rect));
+  if (validRects.length === 0) {
+    return null;
+  }
+  return {
+    left: Math.min(...validRects.map((rect) => rect.left)),
+    right: Math.max(...validRects.map((rect) => rect.right)),
+    top: Math.min(...validRects.map((rect) => rect.top)),
+    bottom: Math.max(...validRects.map((rect) => rect.bottom))
+  };
+}
+
+function routeMidpoint(points: Point[]): Point | null {
+  if (points.length === 0) {
+    return null;
+  }
+  if (points.length === 1) {
+    return points[0];
+  }
+  const segmentLengths = points.slice(1).map((point, index) => Math.hypot(point.x - points[index].x, point.y - points[index].y));
+  const totalLength = segmentLengths.reduce((sum, length) => sum + length, 0);
+  if (totalLength <= 0) {
+    return points[Math.floor(points.length / 2)];
+  }
+  let walked = 0;
+  const target = totalLength / 2;
+  for (let index = 0; index < segmentLengths.length; index += 1) {
+    const length = segmentLengths[index];
+    if (walked + length >= target) {
+      const from = points[index];
+      const to = points[index + 1];
+      const ratio = length <= 0 ? 0 : (target - walked) / length;
+      return {
+        x: Math.round(from.x + (to.x - from.x) * ratio),
+        y: Math.round(from.y + (to.y - from.y) * ratio)
+      };
+    }
+    walked += length;
+  }
+  return points[points.length - 1];
 }
 
 function normalizeRotationDegrees(value: number) {
@@ -361,11 +419,18 @@ function groupTransformGeometry(drag: GroupTransformDrag, point: Point): GroupTr
   const halfHeight = Math.max(1, (drag.bounds.bottom - drag.bounds.top) / 2);
   const rawScaleX = normalizeScaleValue(Math.abs(point.x - drag.center.x) / halfWidth);
   const rawScaleY = normalizeScaleValue(Math.abs(point.y - drag.center.y) / halfHeight);
-  const unitScale = drag.kind === "scale-both" ? Math.max(rawScaleX, rawScaleY) : 1;
+  const proportionalScale = drag.proportionalScale || drag.kind === "scale-both";
+  const unitScale = proportionalScale
+    ? drag.kind === "scale-x"
+      ? rawScaleX
+      : drag.kind === "scale-y"
+        ? rawScaleY
+        : Math.max(rawScaleX, rawScaleY)
+    : 1;
   return {
     kind: "scale",
-    scaleX: drag.kind === "scale-y" ? 1 : drag.kind === "scale-both" ? unitScale : rawScaleX,
-    scaleY: drag.kind === "scale-x" ? 1 : drag.kind === "scale-both" ? unitScale : rawScaleY
+    scaleX: proportionalScale ? unitScale : drag.kind === "scale-y" ? 1 : rawScaleX,
+    scaleY: proportionalScale ? unitScale : drag.kind === "scale-x" ? 1 : rawScaleY
   };
 }
 
@@ -739,6 +804,16 @@ const KEYBOARD_MOVE_FRAME_INTERVAL_MS = 1000 / KEYBOARD_MOVE_REPEAT_RATE_PER_SEC
 const ELEMENT_TREE_INITIAL_ITEM_LIMIT = 120;
 const ELEMENT_TREE_ITEM_LIMIT_STEP = 120;
 const TOPOLOGY_WARNING_PAGE_SIZE = 50;
+const CANVAS_MINIMAP_WIDTH = 220;
+const CANVAS_MINIMAP_HEIGHT = 142;
+const CANVAS_MINIMAP_PADDING = 9;
+const CANVAS_MINIMAP_MAX_NODE_MARKS = 1800;
+const CANVAS_MINIMAP_MAX_ROUTE_MARKS = 420;
+const CANVAS_FLOATING_TOOLBAR_GAP = 7;
+const NODE_FLOATING_TOOLBAR_WIDTH = 224;
+const NODE_FLOATING_TOOLBAR_HEIGHT = 38;
+const EDGE_FLOATING_TOOLBAR_WIDTH = 128;
+const EDGE_FLOATING_TOOLBAR_HEIGHT = 38;
 const DEFAULT_POWER_UNIT = "MW";
 const DEFAULT_VOLTAGE_UNIT = "kV";
 const DEFAULT_CURRENT_UNIT = "A";
@@ -1870,7 +1945,7 @@ function normalizeComponentTypeName(name: string): string {
 
 function defaultAttributeLibraryForComponentType(sectionName: string): AttributeLibrary {
   const section = normalizeComponentTypeName(sectionName);
-  if (section === "StaticSymbol") {
+  if (section.startsWith("Static")) {
     return "静态图元";
   }
   if (section.startsWith("Hydro")) {
@@ -2302,7 +2377,7 @@ function deviceDefinitionRowId() {
 
 function fallbackComponentTypeForAttributeLibrary(attributeLibraryName: string) {
   const normalized = normalizeAttributeLibraryName(attributeLibraryName);
-  if (normalized.includes("静态")) return "StaticSymbol";
+  if (normalized.includes("静态")) return "StaticBasicShape";
   if (normalized.includes("直流")) return "DCLoad";
   if (normalized.includes("变流")) return "DCDCConverter";
   if (normalized.includes("氢")) return "HydroLoad";
@@ -4691,6 +4766,7 @@ export function App() {
   const [manualPathDrag, setManualPathDrag] = useState<ManualPathDrag>(null);
   const [transformDrag, setTransformDrag] = useState<TransformDrag | null>(null);
   const [deviceLabelsVisible, setDeviceLabelsVisible] = useState(true);
+  const [minimapVisible, setMinimapVisible] = useState(true);
   const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT });
   const [canvasVisibleViewBox, setCanvasVisibleViewBox] = useState<CanvasViewBox>(() =>
     initialVisibleCanvasViewBox({ width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT }, null)
@@ -4754,6 +4830,7 @@ export function App() {
   const [layerDialogOpen, setLayerDialogOpen] = useState(false);
   const [layerAssignmentDialogOpen, setLayerAssignmentDialogOpen] = useState(false);
   const [layerAssignmentTargetId, setLayerAssignmentTargetId] = useState("");
+  const [reactFlowPreviewOpen, setReactFlowPreviewOpen] = useState(false);
   const [topologyErrors, setTopologyErrors] = useState<TopologyValidationError[]>([]);
   const [topologyWarningPage, setTopologyWarningPage] = useState(0);
   const [topology, setTopology] = useState<Topology>(EMPTY_TOPOLOGY);
@@ -8076,6 +8153,17 @@ export function App() {
     pushUndoSnapshot();
     patchGraphNodes(updates);
     writeOperationLog(`设置 ${updates.length} 个图元标识显示方式：${label}`);
+  };
+
+  const toggleSelectedNodeLabelDisplay = () => {
+    if (activeSelectedNodeIds.length === 0) {
+      return;
+    }
+    const hasVisibleLabel = activeSelectedNodeIds.some((nodeId) => {
+      const node = nodeById.get(nodeId);
+      return node && !isStaticNode(node) && nodeLabelDisplayMode(node) !== "hidden";
+    });
+    setSelectedNodeLabelDisplayMode(hasVisibleLabel ? "hidden" : "follow");
   };
 
   const copySelection = () => {
@@ -12222,15 +12310,18 @@ export function App() {
       }
       const currentStore = latestGraphStoreRef.current ?? graphStore;
       if (isGroupTransformDrag(transformDrag)) {
-        const nextNodeUpdates = buildGroupTransformNodeUpdates(transformDrag, point, currentStore);
+        const transformForMove = transformDrag.kind === "rotate"
+          ? transformDrag
+          : { ...transformDrag, proportionalScale: event.shiftKey };
+        const nextNodeUpdates = buildGroupTransformNodeUpdates(transformForMove, point, currentStore);
         if (nextNodeUpdates.length === 0) {
           return;
         }
         setTransformDrag((current) =>
           current && isGroupTransformDrag(current) && current.groupId === transformDrag.groupId
-            ? current.historyCaptured && sameOptionalPoint(current.previewPoint, point)
+            ? current.historyCaptured && current.proportionalScale === transformForMove.proportionalScale && sameOptionalPoint(current.previewPoint, point)
               ? current
-              : { ...current, historyCaptured: true, previewPoint: point }
+              : { ...current, historyCaptured: true, proportionalScale: transformForMove.proportionalScale, previewPoint: point }
             : current
         );
         const transformBounds = canvasBoundsForGraphContent(
@@ -12259,7 +12350,9 @@ export function App() {
         const nextScaleY = normalizeScale((Math.abs(local.y) * 2) / baseNode.size.height);
         const currentSignedScaleX = getNodeScaleX(baseNode);
         const currentSignedScaleY = getNodeScaleY(baseNode);
-        const localScaleKind = localScaleKindForScreenHandle(transformDrag.kind, baseNode.rotation);
+        const localScaleKind = event.shiftKey || transformDrag.kind === "scale-both"
+          ? "scale-both"
+          : localScaleKindForScreenHandle(transformDrag.kind, baseNode.rotation);
         if (localScaleKind === "scale-x") {
           const nextSignedScaleX = signedScaleFromScreenHandleDelta(transformDrag, point, baseNode, "scale-x");
           nextNode = {
@@ -13457,6 +13550,70 @@ export function App() {
     }));
   };
 
+  const centerViewBoxOnPoint = (point: Point) => {
+    setViewBox((current) =>
+      clampViewBoxToCanvas({
+        x: point.x - current.width / 2,
+        y: point.y - current.height / 2,
+        width: current.width,
+        height: current.height
+      })
+    );
+  };
+
+  const zoomViewportAtCenter = (zoomFactor: number) => {
+    setViewBox((current) => {
+      const center = {
+        x: current.x + current.width / 2,
+        y: current.y + current.height / 2
+      };
+      const size = clampViewBoxDimensionsForZoom(
+        { width: current.width * zoomFactor, height: current.height * zoomFactor },
+        canvasBounds
+      );
+      return clampViewBoxToCanvas({
+        x: center.x - size.width / 2,
+        y: center.y - size.height / 2,
+        width: size.width,
+        height: size.height
+      });
+    });
+  };
+
+  const resetViewport = () => {
+    setViewBox(normalizeViewBoxToCanvas({ x: 0, y: 0, width: canvasBounds.width, height: canvasBounds.height }, canvasBounds));
+  };
+
+  const fitViewToBounds = (bounds: GeometryBounds | SelectionRect | null, padding = 96) => {
+    if (!bounds) {
+      resetViewport();
+      return;
+    }
+    const targetWidth = Math.max(80, bounds.right - bounds.left + padding * 2);
+    const targetHeight = Math.max(80, bounds.bottom - bounds.top + padding * 2);
+    const currentAspect = viewBox.width > 0 && viewBox.height > 0
+      ? viewBox.width / viewBox.height
+      : canvasBounds.width / Math.max(1, canvasBounds.height);
+    const fitSize = targetWidth / targetHeight > currentAspect
+      ? { width: targetWidth, height: targetWidth / currentAspect }
+      : { width: targetHeight * currentAspect, height: targetHeight };
+    const size = clampViewBoxDimensionsForZoom(fitSize, canvasBounds);
+    const center = {
+      x: (bounds.left + bounds.right) / 2,
+      y: (bounds.top + bounds.bottom) / 2
+    };
+    setViewBox(clampViewBoxToCanvas({
+      x: center.x - size.width / 2,
+      y: center.y - size.height / 2,
+      width: size.width,
+      height: size.height
+    }));
+  };
+
+  const fitViewToContent = () => {
+    fitViewToBounds(calculateModelGeometryBounds(visibleNodes, routedEdges, 0), 120);
+  };
+
   const focusElementTreeItem = (item: ElementTreeItem, openDeviceTab = false) => {
     if (item.kind === "node") {
       selectCanvasGraphics(activeLayerNodeIdSet.has(item.id) ? [item.id] : [], []);
@@ -13518,6 +13675,17 @@ export function App() {
     }
     pushUndoSnapshot();
     setEdgeManualPoints(selectedEdge.id, nextManualPoints);
+  };
+
+  const addManualBendToSelectedEdgeCenter = () => {
+    if (!selectedEdge || !selectedRoutedEdge) {
+      return;
+    }
+    const midpoint = routeMidpoint(selectedRoutedEdge.points);
+    if (!midpoint) {
+      return;
+    }
+    insertManualBendFromPointer(selectedEdge.id, selectedRoutedEdge.points, midpoint);
   };
 
   const openEdgeContextMenu = (event: MouseEvent<SVGPathElement>, edgeId: string, routePoints?: Point[]) => {
@@ -15778,6 +15946,146 @@ export function App() {
   const layerAssignmentUnchanged = activeSelectedNodeIds.length > 0 && activeSelectedNodeIds.every(
     (nodeId) => (nodeById.get(nodeId)?.layerId ?? DEFAULT_MODEL_LAYER_ID) === layerAssignmentTargetId
   );
+  const selectedCanvasBounds = combineSelectionRects(selectedLayoutUnits.map((unit) => unit.bounds)) ??
+    calculateModelGeometryBounds(
+      [],
+      activeSelectedEdgeIds.flatMap((edgeId) => {
+        const route = routedEdgeById.get(edgeId);
+        return route ? [{ points: route.points }] : [];
+      }),
+      24
+    );
+  const selectedToolbarHidden = Boolean(
+    dragging ||
+    transformDrag ||
+    panning ||
+    marquee ||
+    connectSource ||
+    staticDrawing ||
+    rewiring ||
+    terminalPress ||
+    manualPathDrag ||
+    nodeLabelDrag ||
+    nodeLabelRotateDrag
+  );
+  const svgUiUnitX = viewBox.width / Math.max(1, canvasWidth);
+  const svgUiUnitY = viewBox.height / Math.max(1, canvasHeight);
+  const toolbarPaddingX = 8 * svgUiUnitX;
+  const toolbarPaddingY = 8 * svgUiUnitY;
+  const nodeFloatingToolbar =
+    !selectedToolbarHidden && activeSelectedNodeIds.length > 0 && selectedCanvasBounds
+      ? (() => {
+          const width = NODE_FLOATING_TOOLBAR_WIDTH * svgUiUnitX;
+          const height = NODE_FLOATING_TOOLBAR_HEIGHT * svgUiUnitY;
+          const centerX = (selectedCanvasBounds.left + selectedCanvasBounds.right) / 2;
+          const preferredY = selectedCanvasBounds.top - height - CANVAS_FLOATING_TOOLBAR_GAP * svgUiUnitY;
+          return {
+            x: clampNumber(centerX - width / 2, viewBox.x + toolbarPaddingX, viewBox.x + viewBox.width - width - toolbarPaddingX),
+            y: clampNumber(
+              preferredY,
+              viewBox.y + toolbarPaddingY,
+              viewBox.y + viewBox.height - height - toolbarPaddingY
+            ),
+            width,
+            height
+          };
+        })()
+      : null;
+  const selectedEdgeMidpoint = selectedRoutedEdge ? routeMidpoint(selectedRoutedEdge.points) : null;
+  const edgeFloatingToolbar =
+    !selectedToolbarHidden && selectedEdge && selectedRoutedEdge && selectedEdgeMidpoint
+      ? (() => {
+          const width = EDGE_FLOATING_TOOLBAR_WIDTH * svgUiUnitX;
+          const height = EDGE_FLOATING_TOOLBAR_HEIGHT * svgUiUnitY;
+          return {
+            x: clampNumber(selectedEdgeMidpoint.x - width / 2, viewBox.x + toolbarPaddingX, viewBox.x + viewBox.width - width - toolbarPaddingX),
+            y: clampNumber(
+              selectedEdgeMidpoint.y - height - 14 * svgUiUnitY,
+              viewBox.y + toolbarPaddingY,
+              viewBox.y + viewBox.height - height - toolbarPaddingY
+            ),
+            width,
+            height
+          };
+        })()
+      : null;
+  const resizeSizeHint =
+    transformDrag && transformDrag.kind !== "rotate"
+      ? (() => {
+          if (isGroupTransformDrag(transformDrag)) {
+            const point = transformDrag.previewPoint;
+            if (!point) {
+              return null;
+            }
+            const geometry = groupTransformGeometry(transformDrag, point);
+            if (geometry.kind !== "scale") {
+              return null;
+            }
+            const width = Math.round((transformDrag.bounds.right - transformDrag.bounds.left) * geometry.scaleX);
+            const height = Math.round((transformDrag.bounds.bottom - transformDrag.bounds.top) * geometry.scaleY);
+            return {
+              x: transformDrag.center.x,
+              y: transformDrag.bounds.bottom + 26 * svgUiUnitY,
+              text: `${width} x ${height}${transformDrag.proportionalScale ? " 等比" : ""}`
+            };
+          }
+          const node = nodeById.get(transformDrag.nodeId);
+          if (!node) {
+            return null;
+          }
+          return {
+            x: node.position.x,
+            y: node.position.y + (node.size.height * Math.abs(getNodeScaleY(node))) / 2 + 30 * svgUiUnitY,
+            text: `${Math.round(node.size.width * Math.abs(getNodeScaleX(node)))} x ${Math.round(node.size.height * Math.abs(getNodeScaleY(node)))}`
+          };
+        })()
+      : null;
+  const minimapScale = Math.min(
+    (CANVAS_MINIMAP_WIDTH - CANVAS_MINIMAP_PADDING * 2) / Math.max(1, canvasWidth),
+    (CANVAS_MINIMAP_HEIGHT - CANVAS_MINIMAP_PADDING * 2) / Math.max(1, canvasHeight)
+  );
+  const minimapContentWidth = canvasWidth * minimapScale;
+  const minimapContentHeight = canvasHeight * minimapScale;
+  const minimapOffsetX = (CANVAS_MINIMAP_WIDTH - minimapContentWidth) / 2;
+  const minimapOffsetY = (CANVAS_MINIMAP_HEIGHT - minimapContentHeight) / 2;
+  const minimapNodeStep = Math.max(1, Math.ceil(visibleNodes.length / CANVAS_MINIMAP_MAX_NODE_MARKS));
+  const minimapRouteStep = Math.max(1, Math.ceil(routedEdges.length / CANVAS_MINIMAP_MAX_ROUTE_MARKS));
+  const minimapNodes = useMemo(
+    () => visibleNodes.filter((_, index) => index % minimapNodeStep === 0),
+    [minimapNodeStep, visibleNodes]
+  );
+  const minimapRoutes = useMemo(
+    () => routedEdges.filter((_, index) => index % minimapRouteStep === 0),
+    [minimapRouteStep, routedEdges]
+  );
+  const mapPointToMinimap = (point: Point) => ({
+    x: minimapOffsetX + point.x * minimapScale,
+    y: minimapOffsetY + point.y * minimapScale
+  });
+  const minimapViewportLeft = clampNumber(minimapOffsetX + viewBox.x * minimapScale, minimapOffsetX, minimapOffsetX + minimapContentWidth);
+  const minimapViewportTop = clampNumber(minimapOffsetY + viewBox.y * minimapScale, minimapOffsetY, minimapOffsetY + minimapContentHeight);
+  const minimapViewportRight = clampNumber(minimapOffsetX + (viewBox.x + viewBox.width) * minimapScale, minimapOffsetX, minimapOffsetX + minimapContentWidth);
+  const minimapViewportBottom = clampNumber(minimapOffsetY + (viewBox.y + viewBox.height) * minimapScale, minimapOffsetY, minimapOffsetY + minimapContentHeight);
+  const handleMinimapNavigate = (event: PointerEvent<SVGSVGElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const canvasPoint = {
+      x: clampNumber((event.clientX - rect.left - minimapOffsetX) / minimapScale, 0, canvasWidth),
+      y: clampNumber((event.clientY - rect.top - minimapOffsetY) / minimapScale, 0, canvasHeight)
+    };
+    centerViewBoxOnPoint(canvasPoint);
+  };
+  const centerSelectedInView = () => {
+    if (!selectedCanvasBounds) {
+      return;
+    }
+    centerViewBoxOnPoint(selectionRectCenter(selectedCanvasBounds));
+  };
+  const viewportOverlayStyle = {
+    "--viewport-overlay-right": `${rightPanelVisible ? rightPanelWidth + 28 : 16}px`,
+    "--viewport-overlay-bottom": `${statusbarHeight + 14}px`
+  } as CSSProperties;
   const appShellStyle = {
     "--left-panel-width": `${leftPanelWidth}px`,
     "--right-panel-width": `${rightPanelWidth}px`,
@@ -15883,6 +16191,16 @@ export function App() {
           >
             <Type size={16} />
           </button>
+          {ENABLE_REACT_FLOW_PREVIEW && (
+            <button
+              className="topbar-primary-button react-flow-preview-button"
+              onClick={() => setReactFlowPreviewOpen(true)}
+              title="React Flow 预览"
+              aria-label="React Flow 预览"
+            >
+              <Route size={16} />
+            </button>
+          )}
           <div className="action-cluster">
             <button onClick={groupSelectedGraphics} disabled={!canGroupSelectedGraphics} title="组合" aria-label="组合">
               <Group size={16} />
@@ -16394,7 +16712,7 @@ export function App() {
                     height={height}
                   />
                   {focused && (
-                    <g className="transform-handles group-transform-handles">
+                    <g className={`transform-handles group-transform-handles ${transformDrag && isGroupTransformDrag(transformDrag) && transformDrag.groupId === unit.id.replace(/^group:/, "") && transformDrag.kind !== "rotate" ? "resizing" : ""}`}>
                       <line x1={center.x} y1={bounds.top - rotateStemStart} x2={center.x} y2={bounds.top - rotateStemEnd} />
                       <g transform={`translate(${center.x} ${bounds.top - rotateHandleGap})`}>
                         <circle
@@ -16681,7 +16999,7 @@ export function App() {
                     })}
                   </g>
                   {selected && focused && selectedNodeCount === 1 && (
-                    <g className="transform-handles">
+                    <g className={`transform-handles ${transformDrag && !isGroupTransformDrag(transformDrag) && transformDrag.nodeId === node.id && transformDrag.kind !== "rotate" ? "resizing" : ""}`}>
                       <line x1="0" y1={-visibleHalfHeight - rotateStemStart} x2="0" y2={-visibleHalfHeight - rotateStemEnd} />
                       <g transform={handleTransform(0, -visibleHalfHeight - rotateHandleGap)}>
                         <circle
@@ -16899,6 +17217,71 @@ export function App() {
                 </g>
               );
             })()}
+            {nodeFloatingToolbar && (
+              <foreignObject
+                className="canvas-floating-toolbar-object"
+                x={nodeFloatingToolbar.x}
+                y={nodeFloatingToolbar.y}
+                width={nodeFloatingToolbar.width}
+                height={nodeFloatingToolbar.height}
+              >
+                <div
+                  className="canvas-floating-toolbar node-toolbar"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <button type="button" title="复制" aria-label="复制" onClick={copySelection}>
+                    <Copy size={15} />
+                  </button>
+                  <button type="button" title="删除" aria-label="删除" onClick={deleteSelection}>
+                    <Trash2 size={15} />
+                  </button>
+                  <button type="button" title="图层修改" aria-label="图层修改" onClick={openLayerAssignmentDialog}>
+                    <Layers size={15} />
+                  </button>
+                  <button type="button" title="置于当前图层" aria-label="置于当前图层" onClick={() => assignSelectedNodesToModelLayer(activeLayerId)}>
+                    <Layers2 size={15} />
+                  </button>
+                  <button type="button" title="组合" aria-label="组合" disabled={!canGroupSelectedGraphics} onClick={groupSelectedGraphics}>
+                    <Group size={15} />
+                  </button>
+                  <button type="button" title="标识显示" aria-label="标识显示" onClick={toggleSelectedNodeLabelDisplay}>
+                    <Type size={15} />
+                  </button>
+                </div>
+              </foreignObject>
+            )}
+            {edgeFloatingToolbar && (
+              <foreignObject
+                className="canvas-floating-toolbar-object"
+                x={edgeFloatingToolbar.x}
+                y={edgeFloatingToolbar.y}
+                width={edgeFloatingToolbar.width}
+                height={edgeFloatingToolbar.height}
+              >
+                <div
+                  className="canvas-floating-toolbar edge-toolbar"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <button type="button" title="添加拐点" aria-label="添加拐点" onClick={addManualBendToSelectedEdgeCenter}>
+                    <CircleDot size={15} />
+                  </button>
+                  <button type="button" title="整理连接线" aria-label="整理连接线" onClick={tidySelectedEdgeRoute}>
+                    <Route size={15} />
+                  </button>
+                  <button type="button" title="删除连接线" aria-label="删除连接线" onClick={deleteSelection}>
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </foreignObject>
+            )}
+            {resizeSizeHint && (
+              <g className="resize-size-badge" transform={`translate(${resizeSizeHint.x} ${resizeSizeHint.y})`}>
+                <rect x="-48" y="-13" width="96" height="26" rx="6" />
+                <text x="0" y="0" textAnchor="middle" dominantBaseline="middle">{resizeSizeHint.text}</text>
+              </g>
+            )}
             <g className="canvas-resize-handles" aria-hidden="true">
               <rect
                 className="canvas-resize-handle canvas-resize-handle-right"
@@ -16927,6 +17310,93 @@ export function App() {
             </g>
           </svg>
         </section>
+        <div
+          className="viewport-overlay"
+          style={viewportOverlayStyle}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="viewport-controls" role="group" aria-label="视口控制">
+            <button type="button" title="适配视图" aria-label="适配视图" onClick={fitViewToContent}>
+              <Maximize2 size={16} />
+            </button>
+            <button type="button" title="居中选中" aria-label="居中选中" disabled={!selectedCanvasBounds} onClick={centerSelectedInView}>
+              <LocateFixed size={16} />
+            </button>
+            <button type="button" title="放大" aria-label="放大" onClick={() => zoomViewportAtCenter(0.82)}>
+              <Plus size={16} />
+            </button>
+            <button type="button" title="缩小" aria-label="缩小" onClick={() => zoomViewportAtCenter(1.18)}>
+              <Minus size={16} />
+            </button>
+            <button type="button" title="重置缩放" aria-label="重置缩放" onClick={resetViewport}>
+              <RotateCcw size={16} />
+            </button>
+            <button
+              type="button"
+              className={minimapVisible ? "active" : ""}
+              title={minimapVisible ? "隐藏小地图" : "显示小地图"}
+              aria-label={minimapVisible ? "隐藏小地图" : "显示小地图"}
+              onClick={() => setMinimapVisible((current) => !current)}
+            >
+              <MapIcon size={16} />
+            </button>
+          </div>
+          {minimapVisible && (
+            <div className="canvas-minimap" aria-label="鸟瞰导航">
+              <svg
+                viewBox={`0 0 ${CANVAS_MINIMAP_WIDTH} ${CANVAS_MINIMAP_HEIGHT}`}
+                onPointerDown={(event) => {
+                  handleMinimapNavigate(event);
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                }}
+                onPointerMove={(event) => {
+                  if (event.buttons & 1) {
+                    handleMinimapNavigate(event);
+                  }
+                }}
+              >
+                <rect
+                  className="minimap-canvas"
+                  x={minimapOffsetX}
+                  y={minimapOffsetY}
+                  width={minimapContentWidth}
+                  height={minimapContentHeight}
+                />
+                {minimapRoutes.map((route) => (
+                  <polyline
+                    key={`minimap-route-${route.edgeId}`}
+                    className="minimap-route"
+                    points={route.points.map(mapPointToMinimap).map((point) => `${formatSvgNumber(point.x)},${formatSvgNumber(point.y)}`).join(" ")}
+                  />
+                ))}
+                {minimapNodes.map((node) => {
+                  const center = mapPointToMinimap(node.position);
+                  const width = Math.max(1.8, Math.abs(getNodeScaleX(node)) * node.size.width * minimapScale);
+                  const height = Math.max(1.8, Math.abs(getNodeScaleY(node)) * node.size.height * minimapScale);
+                  return (
+                    <rect
+                      key={`minimap-node-${node.id}`}
+                      className={`minimap-node ${selectedNodeIdSet.has(node.id) ? "selected" : ""}`}
+                      x={center.x - width / 2}
+                      y={center.y - height / 2}
+                      width={width}
+                      height={height}
+                      rx="1"
+                    />
+                  );
+                })}
+                <rect
+                  className="minimap-viewport"
+                  x={minimapViewportLeft}
+                  y={minimapViewportTop}
+                  width={Math.max(4, minimapViewportRight - minimapViewportLeft)}
+                  height={Math.max(4, minimapViewportBottom - minimapViewportTop)}
+                />
+              </svg>
+            </div>
+          )}
+        </div>
         <footer className="bottom-statusbar" aria-label="运行状态">
           <div
             className="statusbar-resize-handle"
@@ -18107,6 +18577,24 @@ export function App() {
               >
                 应用
               </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {ENABLE_REACT_FLOW_PREVIEW && ReactFlowPreview && reactFlowPreviewOpen && (
+        <div className="image-picker-backdrop react-flow-preview-backdrop" onPointerDown={() => setReactFlowPreviewOpen(false)}>
+          <section className="react-flow-preview-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="react-flow-preview-title">
+            <div className="image-picker-title">
+              <div>
+                <h2 id="react-flow-preview-title">React Flow 预览</h2>
+                <p>开发态验证入口：仅展示当前可见模型，主画布、拓扑、布线和导出逻辑保持不变。</p>
+              </div>
+              <button type="button" onClick={() => setReactFlowPreviewOpen(false)}>关闭</button>
+            </div>
+            <div className="react-flow-preview-stage">
+              <Suspense fallback={<div className="react-flow-preview-loading">正在加载 React Flow 预览...</div>}>
+                <ReactFlowPreview nodes={visibleNodes} edges={visibleEdges} />
+              </Suspense>
             </div>
           </section>
         </div>

@@ -442,8 +442,66 @@ export const DEFAULT_VOLTAGE_UNIT = "kV";
 export const DEFAULT_CURRENT_UNIT = "A";
 export const DEFAULT_POWER_BASE_VALUE = 100;
 
+const DEFAULT_STATIC_COMPONENT_TYPE = "StaticBasicShape";
+const STATIC_COMPONENT_TYPE_BY_KIND: Record<string, string> = {
+  "static-text": "StaticTextSymbol",
+  "static-date": "StaticTextSymbol",
+  "static-time": "StaticTextSymbol",
+  "static-datetime": "StaticTextSymbol",
+  "static-image": "StaticMediaSymbol",
+  "static-web": "StaticMediaSymbol",
+  "static-circle": "StaticBasicShape",
+  "static-ellipse": "StaticBasicShape",
+  "static-rect": "StaticBasicShape",
+  "static-point": "StaticBasicShape",
+  "static-ring": "StaticBasicShape",
+  "static-hexagon": "StaticBasicShape",
+  "static-parallelogram": "StaticBasicShape",
+  "static-triangle": "StaticBasicShape",
+  "static-rounded-rect": "StaticFlowNode",
+  "static-diamond": "StaticFlowNode",
+  "static-pill": "StaticFlowNode",
+  "static-database": "StaticFlowNode",
+  "static-document": "StaticFlowNode",
+  "static-note": "StaticFlowNode",
+  "static-circle-node": "StaticFlowNode",
+  "static-default-node": "StaticFlowNode",
+  "static-input-node": "StaticFlowNode",
+  "static-output-node": "StaticFlowNode",
+  "static-port-node": "StaticFlowNode",
+  "static-card-node": "StaticFlowNode",
+  "static-toolbar-node": "StaticFlowNode",
+  "static-input": "StaticFlowNode",
+  "static-button": "StaticFlowNode",
+  "static-group-box": "StaticContainerSymbol",
+  "static-swimlane": "StaticContainerSymbol",
+  "static-resizer-frame": "StaticContainerSymbol",
+  "static-subflow-box": "StaticContainerSymbol",
+  "static-line": "StaticConnectorSymbol",
+  "static-polyline": "StaticConnectorSymbol",
+  "static-straight-connector": "StaticConnectorSymbol",
+  "static-arrow-connector": "StaticConnectorSymbol",
+  "static-double-arrow-connector": "StaticConnectorSymbol",
+  "static-elbow-connector": "StaticConnectorSymbol",
+  "static-bezier-connector": "StaticConnectorSymbol",
+  "static-smoothstep-connector": "StaticConnectorSymbol",
+  "static-self-loop": "StaticConnectorSymbol",
+  "static-callout": "StaticAnnotationSymbol",
+  "static-edge-label": "StaticAnnotationSymbol"
+};
+
+function staticComponentTypeForKind(kind: string): string {
+  return STATIC_COMPONENT_TYPE_BY_KIND[baseDeviceKind(kind)] ?? DEFAULT_STATIC_COMPONENT_TYPE;
+}
+
 export const E_SECTION_COLUMNS: Record<string, string[]> = {
-  StaticSymbol: [],
+  StaticTextSymbol: [],
+  StaticMediaSymbol: [],
+  StaticBasicShape: [],
+  StaticFlowNode: [],
+  StaticContainerSymbol: [],
+  StaticConnectorSymbol: [],
+  StaticAnnotationSymbol: [],
   ACRealBs: ["idx", "name", "node", "run_stat"],
   DCRealBs: ["idx", "name", "node", "run_stat"],
   ACNode: ["idx", "name", "vbase", "voltage", "angle", "isl", "run_stat"],
@@ -551,8 +609,10 @@ export function inferESection(kind: string, params: Record<string, string> = {})
   const sectionKind = baseDeviceKind(kind);
   if (sectionKind === "ac-bus") return "ACRealBs";
   if (sectionKind === "dc-bus") return "DCRealBs";
-  if (isStaticKind(kind)) return "StaticSymbol";
   const componentType = params.component_type?.trim();
+  if (isStaticKind(sectionKind)) {
+    return componentType && componentType !== "StaticSymbol" ? componentType : staticComponentTypeForKind(sectionKind);
+  }
   if (componentType) {
     return componentType;
   }
@@ -1909,10 +1969,11 @@ const threeWindingTransformerParameterDefinitions: DeviceParameterDefinition[] =
 ];
 
 const staticSymbolParams = (
+  kind: DeviceKind,
   text: string,
   overrides: Partial<Record<string, string>> = {}
 ): Record<string, string> => ({
-  component_type: "StaticSymbol",
+  component_type: staticComponentTypeForKind(kind),
   text,
   fillColor: "#ffffff",
   strokeColor: "#64748b",
@@ -1938,14 +1999,21 @@ const staticSymbolParams = (
   ...overrides
 });
 
+const staticVisualParams = (
+  kind: DeviceKind,
+  params: Record<string, string>
+): Record<string, string> => ({
+  component_type: staticComponentTypeForKind(kind),
+  ...params
+});
+
 const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-text",
     label: "文字",
     attributeLibrary: "静态图元",
     size: { width: 120, height: 40 },
-    params: {
-      component_type: "StaticSymbol",
+    params: staticVisualParams("static-text", {
       text: "文字",
       fillColor: "transparent",
       strokeColor: "transparent",
@@ -1957,7 +2025,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       fontWeight: "400",
       fontStyle: "normal",
       textDecoration: "none"
-    },
+    }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -1966,7 +2034,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直线",
     attributeLibrary: "静态图元",
     size: { width: 140, height: 24 },
-    params: { component_type: "StaticSymbol", fillColor: "transparent", strokeColor: "#334155", textColor: "#111827", lineWidth: "3", strokeStyle: "solid", fontSize: "16" },
+    params: staticVisualParams("static-line", { fillColor: "transparent", strokeColor: "#334155", textColor: "#111827", lineWidth: "3", strokeStyle: "solid", fontSize: "16" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -1975,7 +2043,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "折线",
     attributeLibrary: "静态图元",
     size: { width: 140, height: 70 },
-    params: { component_type: "StaticSymbol", fillColor: "transparent", strokeColor: "#334155", textColor: "#111827", lineWidth: "3", strokeStyle: "solid", fontSize: "16" },
+    params: staticVisualParams("static-polyline", { fillColor: "transparent", strokeColor: "#334155", textColor: "#111827", lineWidth: "3", strokeStyle: "solid", fontSize: "16" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -1984,7 +2052,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "正圆",
     attributeLibrary: "静态图元",
     size: { width: 72, height: 72 },
-    params: { component_type: "StaticSymbol", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
+    params: staticVisualParams("static-circle", { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -1993,7 +2061,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "椭圆",
     attributeLibrary: "静态图元",
     size: { width: 112, height: 70 },
-    params: { component_type: "StaticSymbol", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
+    params: staticVisualParams("static-ellipse", { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2002,7 +2070,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "方框",
     attributeLibrary: "静态图元",
     size: { width: 112, height: 70 },
-    params: { component_type: "StaticSymbol", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" },
+    params: staticVisualParams("static-rect", { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2011,7 +2079,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "图片",
     attributeLibrary: "静态图元",
     size: { width: 140, height: 90 },
-    params: { component_type: "StaticSymbol", fillColor: "#ffffff", strokeColor: "transparent", textColor: "#64748b", lineWidth: "0", strokeStyle: "solid", fontSize: "16", backgroundImage: "", backgroundImageAssetId: "" },
+    params: staticVisualParams("static-image", { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#64748b", lineWidth: "0", strokeStyle: "solid", fontSize: "16", backgroundImage: "", backgroundImageAssetId: "" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2020,7 +2088,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "圆角节点",
     attributeLibrary: "静态图元",
     size: { width: 132, height: 72 },
-    params: staticSymbolParams("圆角节点", { cornerRadius: "12", shadowEnabled: "1" }),
+    params: staticSymbolParams("static-rounded-rect", "圆角节点", { cornerRadius: "12", shadowEnabled: "1" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2029,7 +2097,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "判断节点",
     attributeLibrary: "静态图元",
     size: { width: 116, height: 86 },
-    params: staticSymbolParams("判断", { fillColor: "#fefce8", strokeColor: "#ca8a04", accentColor: "#eab308", padding: "18" }),
+    params: staticSymbolParams("static-diamond", "判断", { fillColor: "#fefce8", strokeColor: "#ca8a04", accentColor: "#eab308", padding: "18" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2038,7 +2106,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "起止节点",
     attributeLibrary: "静态图元",
     size: { width: 132, height: 58 },
-    params: staticSymbolParams("开始/结束", { fillColor: "#ecfdf5", strokeColor: "#059669", accentColor: "#10b981", cornerRadius: "999" }),
+    params: staticSymbolParams("static-pill", "开始/结束", { fillColor: "#ecfdf5", strokeColor: "#059669", accentColor: "#10b981", cornerRadius: "999" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2047,7 +2115,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "数据库",
     attributeLibrary: "静态图元",
     size: { width: 112, height: 88 },
-    params: staticSymbolParams("数据库", { fillColor: "#eff6ff", strokeColor: "#2563eb", accentColor: "#60a5fa", verticalAlign: "middle" }),
+    params: staticSymbolParams("static-database", "数据库", { fillColor: "#eff6ff", strokeColor: "#2563eb", accentColor: "#60a5fa", verticalAlign: "middle" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2056,7 +2124,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "文档",
     attributeLibrary: "静态图元",
     size: { width: 106, height: 128 },
-    params: staticSymbolParams("文档", { fillColor: "#ffffff", strokeColor: "#475569", accentColor: "#94a3b8", verticalAlign: "top", padding: "16" }),
+    params: staticSymbolParams("static-document", "文档", { fillColor: "#ffffff", strokeColor: "#475569", accentColor: "#94a3b8", verticalAlign: "top", padding: "16" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2065,7 +2133,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "便签",
     attributeLibrary: "静态图元",
     size: { width: 126, height: 92 },
-    params: staticSymbolParams("便签", { fillColor: "#fef9c3", strokeColor: "#ca8a04", accentColor: "#facc15", cornerRadius: "6", verticalAlign: "top" }),
+    params: staticSymbolParams("static-note", "便签", { fillColor: "#fef9c3", strokeColor: "#ca8a04", accentColor: "#facc15", cornerRadius: "6", verticalAlign: "top" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2074,7 +2142,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "分组框",
     attributeLibrary: "静态图元",
     size: { width: 180, height: 112 },
-    params: staticSymbolParams("分组", { fillColor: "transparent", strokeColor: "#64748b", accentColor: "#64748b", cornerRadius: "8", strokeStyle: "dashed", textAlign: "left", verticalAlign: "top" }),
+    params: staticSymbolParams("static-group-box", "分组", { fillColor: "transparent", strokeColor: "#64748b", accentColor: "#64748b", cornerRadius: "8", strokeStyle: "dashed", textAlign: "left", verticalAlign: "top" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2083,7 +2151,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "泳道",
     attributeLibrary: "静态图元",
     size: { width: 220, height: 122 },
-    params: staticSymbolParams("泳道", { fillColor: "#f8fafc", strokeColor: "#475569", accentColor: "#dbeafe", textAlign: "left", verticalAlign: "top", padding: "14" }),
+    params: staticSymbolParams("static-swimlane", "泳道", { fillColor: "#f8fafc", strokeColor: "#475569", accentColor: "#dbeafe", textAlign: "left", verticalAlign: "top", padding: "14" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2092,7 +2160,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "连接点",
     attributeLibrary: "静态图元",
     size: { width: 22, height: 22 },
-    params: staticSymbolParams("", { fillColor: "#2563eb", strokeColor: "#ffffff", accentColor: "#2563eb", lineWidth: "2", padding: "4" }),
+    params: staticSymbolParams("static-point", "", { fillColor: "#2563eb", strokeColor: "#ffffff", accentColor: "#2563eb", lineWidth: "2", padding: "4" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2101,7 +2169,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "圆环点",
     attributeLibrary: "静态图元",
     size: { width: 28, height: 28 },
-    params: staticSymbolParams("", { fillColor: "transparent", strokeColor: "#2563eb", accentColor: "#60a5fa", lineWidth: "3", padding: "4" }),
+    params: staticSymbolParams("static-ring", "", { fillColor: "transparent", strokeColor: "#2563eb", accentColor: "#60a5fa", lineWidth: "3", padding: "4" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2110,7 +2178,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "圆形节点",
     attributeLibrary: "静态图元",
     size: { width: 86, height: 86 },
-    params: staticSymbolParams("圆形节点", { fillColor: "#eff6ff", strokeColor: "#2563eb", accentColor: "#60a5fa", cornerRadius: "999", shadowEnabled: "1" }),
+    params: staticSymbolParams("static-circle-node", "圆形节点", { fillColor: "#eff6ff", strokeColor: "#2563eb", accentColor: "#60a5fa", cornerRadius: "999", shadowEnabled: "1" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2119,7 +2187,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直线连接",
     attributeLibrary: "静态图元",
     size: { width: 150, height: 28 },
-    params: staticSymbolParams("", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "none", arrowSize: "10" }),
+    params: staticSymbolParams("static-straight-connector", "", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "none", arrowSize: "10" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2128,7 +2196,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "箭头连接",
     attributeLibrary: "静态图元",
     size: { width: 150, height: 32 },
-    params: staticSymbolParams("", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "12" }),
+    params: staticSymbolParams("static-arrow-connector", "", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "12" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2137,7 +2205,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "双向箭头",
     attributeLibrary: "静态图元",
     size: { width: 150, height: 32 },
-    params: staticSymbolParams("", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "arrow", markerEnd: "arrow", arrowSize: "12" }),
+    params: staticSymbolParams("static-double-arrow-connector", "", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "arrow", markerEnd: "arrow", arrowSize: "12" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2146,7 +2214,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "折线连接",
     attributeLibrary: "静态图元",
     size: { width: 150, height: 82 },
-    params: staticSymbolParams("", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "12" }),
+    params: staticSymbolParams("static-elbow-connector", "", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "12" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2155,7 +2223,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "六边形",
     attributeLibrary: "静态图元",
     size: { width: 126, height: 78 },
-    params: staticSymbolParams("六边形", { fillColor: "#f8fafc", strokeColor: "#475569", accentColor: "#94a3b8", padding: "16" }),
+    params: staticSymbolParams("static-hexagon", "六边形", { fillColor: "#f8fafc", strokeColor: "#475569", accentColor: "#94a3b8", padding: "16" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2164,7 +2232,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "平行四边形",
     attributeLibrary: "静态图元",
     size: { width: 132, height: 76 },
-    params: staticSymbolParams("输入/输出", { fillColor: "#f0f9ff", strokeColor: "#0284c7", accentColor: "#38bdf8", padding: "18" }),
+    params: staticSymbolParams("static-parallelogram", "输入/输出", { fillColor: "#f0f9ff", strokeColor: "#0284c7", accentColor: "#38bdf8", padding: "18" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2173,7 +2241,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "三角形",
     attributeLibrary: "静态图元",
     size: { width: 96, height: 86 },
-    params: staticSymbolParams("三角", { fillColor: "#fff7ed", strokeColor: "#ea580c", accentColor: "#fb923c", padding: "18", verticalAlign: "bottom" }),
+    params: staticSymbolParams("static-triangle", "三角", { fillColor: "#fff7ed", strokeColor: "#ea580c", accentColor: "#fb923c", padding: "18", verticalAlign: "bottom" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2182,7 +2250,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "标注气泡",
     attributeLibrary: "静态图元",
     size: { width: 154, height: 86 },
-    params: staticSymbolParams("标注", { fillColor: "#ffffff", strokeColor: "#475569", accentColor: "#2563eb", cornerRadius: "10", textAlign: "left", verticalAlign: "top", padding: "14", shadowEnabled: "1" }),
+    params: staticSymbolParams("static-callout", "标注", { fillColor: "#ffffff", strokeColor: "#475569", accentColor: "#2563eb", cornerRadius: "10", textAlign: "left", verticalAlign: "top", padding: "14", shadowEnabled: "1" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2191,7 +2259,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "默认节点",
     attributeLibrary: "静态图元",
     size: { width: 142, height: 64 },
-    params: staticSymbolParams("默认节点", { fillColor: "#ffffff", strokeColor: "#1f2937", accentColor: "#3b82f6", cornerRadius: "8", shadowEnabled: "1" }),
+    params: staticSymbolParams("static-default-node", "默认节点", { fillColor: "#ffffff", strokeColor: "#1f2937", accentColor: "#3b82f6", cornerRadius: "8", shadowEnabled: "1" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2200,7 +2268,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "输入节点",
     attributeLibrary: "静态图元",
     size: { width: 142, height: 64 },
-    params: staticSymbolParams("输入", { fillColor: "#eff6ff", strokeColor: "#2563eb", accentColor: "#60a5fa", cornerRadius: "8", handleColor: "#2563eb" }),
+    params: staticSymbolParams("static-input-node", "输入", { fillColor: "#eff6ff", strokeColor: "#2563eb", accentColor: "#60a5fa", cornerRadius: "8", handleColor: "#2563eb" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2209,7 +2277,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "输出节点",
     attributeLibrary: "静态图元",
     size: { width: 142, height: 64 },
-    params: staticSymbolParams("输出", { fillColor: "#ecfdf5", strokeColor: "#059669", accentColor: "#34d399", cornerRadius: "8", handleColor: "#059669" }),
+    params: staticSymbolParams("static-output-node", "输出", { fillColor: "#ecfdf5", strokeColor: "#059669", accentColor: "#34d399", cornerRadius: "8", handleColor: "#059669" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2218,7 +2286,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "端口节点",
     attributeLibrary: "静态图元",
     size: { width: 148, height: 82 },
-    params: staticSymbolParams("端口节点", { fillColor: "#f8fafc", strokeColor: "#334155", accentColor: "#94a3b8", cornerRadius: "10", handleColor: "#2563eb", handleSize: "9" }),
+    params: staticSymbolParams("static-port-node", "端口节点", { fillColor: "#f8fafc", strokeColor: "#334155", accentColor: "#94a3b8", cornerRadius: "10", handleColor: "#2563eb", handleSize: "9" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2227,7 +2295,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "卡片节点",
     attributeLibrary: "静态图元",
     size: { width: 168, height: 98 },
-    params: staticSymbolParams("卡片节点", { fillColor: "#ffffff", strokeColor: "#cbd5e1", accentColor: "#2563eb", cornerRadius: "10", textAlign: "left", verticalAlign: "top", padding: "16", shadowEnabled: "1" }),
+    params: staticSymbolParams("static-card-node", "卡片节点", { fillColor: "#ffffff", strokeColor: "#cbd5e1", accentColor: "#2563eb", cornerRadius: "10", textAlign: "left", verticalAlign: "top", padding: "16", shadowEnabled: "1" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2236,7 +2304,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "工具条节点",
     attributeLibrary: "静态图元",
     size: { width: 170, height: 96 },
-    params: staticSymbolParams("工具条节点", { fillColor: "#ffffff", strokeColor: "#64748b", accentColor: "#e2e8f0", cornerRadius: "10", verticalAlign: "bottom", shadowEnabled: "1" }),
+    params: staticSymbolParams("static-toolbar-node", "工具条节点", { fillColor: "#ffffff", strokeColor: "#64748b", accentColor: "#e2e8f0", cornerRadius: "10", verticalAlign: "bottom", shadowEnabled: "1" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2245,7 +2313,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "缩放框",
     attributeLibrary: "静态图元",
     size: { width: 166, height: 104 },
-    params: staticSymbolParams("", { fillColor: "transparent", strokeColor: "#2563eb", accentColor: "#2563eb", lineWidth: "2", strokeStyle: "dashed", handleColor: "#ffffff", handleSize: "10" }),
+    params: staticSymbolParams("static-resizer-frame", "", { fillColor: "transparent", strokeColor: "#2563eb", accentColor: "#2563eb", lineWidth: "2", strokeStyle: "dashed", handleColor: "#ffffff", handleSize: "10" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2254,7 +2322,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "子流程框",
     attributeLibrary: "静态图元",
     size: { width: 210, height: 136 },
-    params: staticSymbolParams("子流程", { fillColor: "#f8fafc", strokeColor: "#475569", accentColor: "#dbeafe", cornerRadius: "10", textAlign: "left", verticalAlign: "top", padding: "14" }),
+    params: staticSymbolParams("static-subflow-box", "子流程", { fillColor: "#f8fafc", strokeColor: "#475569", accentColor: "#dbeafe", cornerRadius: "10", textAlign: "left", verticalAlign: "top", padding: "14" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2263,7 +2331,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "贝塞尔连接",
     attributeLibrary: "静态图元",
     size: { width: 156, height: 72 },
-    params: staticSymbolParams("", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "12" }),
+    params: staticSymbolParams("static-bezier-connector", "", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "12" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2272,7 +2340,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "平滑折线",
     attributeLibrary: "静态图元",
     size: { width: 156, height: 76 },
-    params: staticSymbolParams("", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "12" }),
+    params: staticSymbolParams("static-smoothstep-connector", "", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "12" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2281,7 +2349,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "自环连接",
     attributeLibrary: "静态图元",
     size: { width: 104, height: 86 },
-    params: staticSymbolParams("", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "10" }),
+    params: staticSymbolParams("static-self-loop", "", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "10" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -2290,7 +2358,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "边标签",
     attributeLibrary: "静态图元",
     size: { width: 104, height: 42 },
-    params: staticSymbolParams("边标签", { fillColor: "#ffffff", strokeColor: "#cbd5e1", accentColor: "#2563eb", cornerRadius: "999", padding: "10", shadowEnabled: "1" }),
+    params: staticSymbolParams("static-edge-label", "边标签", { fillColor: "#ffffff", strokeColor: "#cbd5e1", accentColor: "#2563eb", cornerRadius: "999", padding: "10", shadowEnabled: "1" }),
     terminalType: "ac",
     terminalCount: 0
   },

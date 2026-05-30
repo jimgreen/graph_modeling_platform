@@ -23,8 +23,64 @@ const defaultPowerUnit = "MW";
 const defaultVoltageUnit = "kV";
 const defaultCurrentUnit = "A";
 const defaultPowerBaseValue = 100;
+const defaultStaticComponentType = "StaticBasicShape";
+const staticComponentTypeByKind = {
+  "static-text": "StaticTextSymbol",
+  "static-date": "StaticTextSymbol",
+  "static-time": "StaticTextSymbol",
+  "static-datetime": "StaticTextSymbol",
+  "static-image": "StaticMediaSymbol",
+  "static-web": "StaticMediaSymbol",
+  "static-circle": "StaticBasicShape",
+  "static-ellipse": "StaticBasicShape",
+  "static-rect": "StaticBasicShape",
+  "static-point": "StaticBasicShape",
+  "static-ring": "StaticBasicShape",
+  "static-hexagon": "StaticBasicShape",
+  "static-parallelogram": "StaticBasicShape",
+  "static-triangle": "StaticBasicShape",
+  "static-rounded-rect": "StaticFlowNode",
+  "static-diamond": "StaticFlowNode",
+  "static-pill": "StaticFlowNode",
+  "static-database": "StaticFlowNode",
+  "static-document": "StaticFlowNode",
+  "static-note": "StaticFlowNode",
+  "static-circle-node": "StaticFlowNode",
+  "static-default-node": "StaticFlowNode",
+  "static-input-node": "StaticFlowNode",
+  "static-output-node": "StaticFlowNode",
+  "static-port-node": "StaticFlowNode",
+  "static-card-node": "StaticFlowNode",
+  "static-toolbar-node": "StaticFlowNode",
+  "static-input": "StaticFlowNode",
+  "static-button": "StaticFlowNode",
+  "static-group-box": "StaticContainerSymbol",
+  "static-swimlane": "StaticContainerSymbol",
+  "static-resizer-frame": "StaticContainerSymbol",
+  "static-subflow-box": "StaticContainerSymbol",
+  "static-line": "StaticConnectorSymbol",
+  "static-polyline": "StaticConnectorSymbol",
+  "static-straight-connector": "StaticConnectorSymbol",
+  "static-arrow-connector": "StaticConnectorSymbol",
+  "static-double-arrow-connector": "StaticConnectorSymbol",
+  "static-elbow-connector": "StaticConnectorSymbol",
+  "static-bezier-connector": "StaticConnectorSymbol",
+  "static-smoothstep-connector": "StaticConnectorSymbol",
+  "static-self-loop": "StaticConnectorSymbol",
+  "static-callout": "StaticAnnotationSymbol",
+  "static-edge-label": "StaticAnnotationSymbol"
+};
+function staticComponentTypeForKind(kind) {
+  return staticComponentTypeByKind[String(kind ?? "")] ?? defaultStaticComponentType;
+}
 const eSectionColumns = {
-  StaticSymbol: [],
+  StaticTextSymbol: [],
+  StaticMediaSymbol: [],
+  StaticBasicShape: [],
+  StaticFlowNode: [],
+  StaticContainerSymbol: [],
+  StaticConnectorSymbol: [],
+  StaticAnnotationSymbol: [],
   ACRealBs: ["idx", "name", "node", "run_stat"],
   DCRealBs: ["idx", "name", "node", "run_stat"],
   ACNode: ["idx", "name", "vbase", "voltage", "angle", "isl", "run_stat"],
@@ -399,7 +455,10 @@ function normalizeSchemesForStorage(schemes) {
 function inferESection(kind, params = {}) {
   if (kind === "ac-bus") return "ACRealBs";
   if (kind === "dc-bus") return "DCRealBs";
-  if (isStaticKind(kind)) return "StaticSymbol";
+  if (isStaticKind(kind)) {
+    const componentType = String(params.component_type ?? "").trim();
+    return componentType && componentType !== "StaticSymbol" ? componentType : staticComponentTypeForKind(kind);
+  }
   if (params.component_type && eSectionColumns[params.component_type]) return params.component_type;
   if (kind === "ac-line") return "ACBranch";
   if (kind === "dc-line") return "DCBranch";

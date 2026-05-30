@@ -1046,6 +1046,116 @@ button:disabled {
   background: #e5e7eb;
 }
 
+.viewport-overlay {
+  position: absolute;
+  right: var(--viewport-overlay-right, 16px);
+  bottom: var(--viewport-overlay-bottom, 50px);
+  z-index: 34;
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.viewport-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid rgba(148, 163, 184, 0.72);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(8px);
+  pointer-events: all;
+}
+
+.viewport-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #334155;
+  background: transparent;
+}
+
+.viewport-controls button:hover:not(:disabled),
+.viewport-controls button:focus-visible {
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+  background: #eff6ff;
+  outline: none;
+}
+
+.viewport-controls button.active {
+  border-color: #1d4ed8;
+  color: #ffffff;
+  background: #1d4ed8;
+}
+
+.canvas-minimap {
+  width: 220px;
+  height: 142px;
+  padding: 0;
+  border: 1px solid rgba(100, 116, 139, 0.7);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.94);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+  pointer-events: all;
+}
+
+.canvas-minimap svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+.minimap-canvas {
+  fill: #f8fafc;
+  stroke: #94a3b8;
+  stroke-width: 1;
+}
+
+.minimap-route {
+  fill: none;
+  stroke: rgba(71, 85, 105, 0.38);
+  stroke-width: 0.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.minimap-node {
+  fill: rgba(37, 99, 235, 0.42);
+  stroke: rgba(30, 64, 175, 0.38);
+  stroke-width: 0.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.minimap-node.selected {
+  fill: #f97316;
+  stroke: #ffffff;
+  stroke-width: 1.2;
+}
+
+.minimap-viewport {
+  fill: rgba(249, 115, 22, 0.13);
+  stroke: #f97316;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
 .diagram-canvas {
   display: block;
   width: 1980px;
@@ -1335,6 +1445,54 @@ button:disabled {
   filter: drop-shadow(0 0 4px rgba(220, 38, 38, 0.45));
 }
 
+.canvas-floating-toolbar-object {
+  overflow: visible;
+  pointer-events: all;
+}
+
+.canvas-floating-toolbar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  padding: 4px;
+  border: 1px solid rgba(148, 163, 184, 0.72);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+}
+
+.canvas-floating-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #334155;
+  background: transparent;
+}
+
+.canvas-floating-toolbar button:hover:not(:disabled),
+.canvas-floating-toolbar button:focus-visible {
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+  background: #eff6ff;
+  outline: none;
+}
+
+.edge-toolbar button:hover:not(:disabled),
+.edge-toolbar button:focus-visible {
+  border-color: #fecaca;
+  color: #dc2626;
+  background: #fef2f2;
+}
+
 .diagram-node {
   cursor: grab;
 }
@@ -1611,6 +1769,10 @@ button:disabled {
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
   cursor: crosshair;
+  transition:
+    r 120ms ease,
+    stroke-width 120ms ease,
+    filter 120ms ease;
 }
 
 .terminal-dot.ac {
@@ -1640,6 +1802,12 @@ button:disabled {
   filter: none;
 }
 
+.terminal-dot:not(.disabled):hover,
+.diagram-node.connect-source .terminal-dot:not(.disabled) {
+  stroke-width: 3;
+  filter: drop-shadow(0 0 7px var(--terminal-color, #2563eb));
+}
+
 .transform-handles {
   pointer-events: all;
 }
@@ -1664,6 +1832,38 @@ button:disabled {
   stroke: #0f766e;
   stroke-width: 2.5;
   vector-effect: non-scaling-stroke;
+  transition:
+    fill 120ms ease,
+    stroke-width 120ms ease,
+    filter 120ms ease,
+    transform 120ms ease;
+}
+
+.scale-handle:hover,
+.transform-handles.resizing .scale-handle {
+  fill: #ecfdf5;
+  stroke-width: 3.5;
+  filter: drop-shadow(0 0 5px rgba(15, 118, 110, 0.42));
+}
+
+.resize-size-badge {
+  pointer-events: none;
+}
+
+.resize-size-badge rect {
+  fill: rgba(15, 23, 42, 0.84);
+  stroke: rgba(255, 255, 255, 0.72);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.resize-size-badge text {
+  fill: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  paint-order: normal;
+  stroke: none;
+  letter-spacing: 0;
 }
 
 .scale-handle.horizontal {
@@ -3880,6 +4080,85 @@ button:disabled {
   margin: 0;
   font-size: 13px;
   line-height: 1.6;
+}
+
+.react-flow-preview-dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(1180px, calc(100vw - 40px));
+  height: min(780px, calc(100vh - 40px));
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
+  overflow: hidden;
+}
+
+.react-flow-preview-stage {
+  min-height: 0;
+  border-top: 1px solid #e2e8f0;
+}
+
+.react-flow-preview-loading {
+  display: grid;
+  height: 100%;
+  place-items: center;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.react-flow-device-node {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-width: 64px;
+  min-height: 42px;
+  align-content: center;
+  gap: 3px;
+  border: 1px solid #64748b;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #0f172a;
+  padding: 6px 8px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+  font-size: 11px;
+  line-height: 1.25;
+  overflow: hidden;
+}
+
+.react-flow-device-node.selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.22), 0 6px 18px rgba(15, 23, 42, 0.12);
+}
+
+.react-flow-device-node-kind,
+.react-flow-device-node-meta {
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.react-flow-device-node-name {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.react-flow-preview-handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.react-flow-saved-path-edge {
+  stroke: #334155;
+  stroke-width: 2.4;
+  fill: none;
+}
+
+.react-flow-saved-path-edge.selected {
+  stroke: #2563eb;
+  stroke-width: 3;
 }
 
 @media (max-width: 1180px) {

@@ -300,18 +300,34 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".custom-attribute-library-select-row.single-control");
   });
 
-  test("keeps static drawing primitives under the StaticSymbol device type", async () => {
+  test("splits static drawing primitives into functional component types", async () => {
     const source = await readAppSource();
     const modelSource = await readModelSource();
     const serverSource = await readServerSource();
 
-    expect(modelSource).toContain("StaticSymbol: []");
-    expect(modelSource).toContain('if (isStaticKind(kind)) return "StaticSymbol";');
-    expect(source).toContain('if (section === "StaticSymbol") {');
+    for (const section of [
+      "StaticTextSymbol",
+      "StaticMediaSymbol",
+      "StaticBasicShape",
+      "StaticFlowNode",
+      "StaticContainerSymbol",
+      "StaticConnectorSymbol",
+      "StaticAnnotationSymbol"
+    ]) {
+      expect(modelSource).toContain(`${section}: []`);
+      expect(serverSource).toContain(`${section}: []`);
+    }
+    expect(modelSource).toContain("STATIC_COMPONENT_TYPE_BY_KIND");
+    expect(modelSource).toContain('"static-line": "StaticConnectorSymbol"');
+    expect(modelSource).toContain('"static-callout": "StaticAnnotationSymbol"');
+    expect(modelSource).not.toContain('if (isStaticKind(kind)) return "StaticSymbol";');
+    expect(source).toContain('if (section.startsWith("Static")) {');
     expect(source).toContain('return "静态图元";');
-    expect(source).toContain('if (normalized.includes("静态")) return "StaticSymbol";');
-    expect(serverSource).toContain("StaticSymbol: []");
-    expect(serverSource).toContain('if (isStaticKind(kind)) return "StaticSymbol";');
+    expect(source).toContain('if (normalized.includes("静态")) return "StaticBasicShape";');
+    expect(serverSource).toContain("staticComponentTypeByKind");
+    expect(serverSource).toContain('"static-line": "StaticConnectorSymbol"');
+    expect(serverSource).toContain('"static-callout": "StaticAnnotationSymbol"');
+    expect(serverSource).not.toContain('if (isStaticKind(kind)) return "StaticSymbol";');
   });
 
   test("adds React-Flow-style static symbols and exposes unified style editors", async () => {
@@ -423,6 +439,42 @@ describe("graph inspector panel", () => {
     expect(source).toContain("connect-drop-hint");
     expect(styles).toContain("@keyframes connectDropPulse");
     expect(styles).toContain(".connect-drop-hint-ring");
+  });
+
+  test("adds lightweight viewport controls and minimap navigation without replacing the SVG canvas", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+
+    expect(source).toContain("const [minimapVisible, setMinimapVisible] = useState(true)");
+    expect(source).toContain("const handleMinimapNavigate");
+    expect(source).toContain("fitViewToContent");
+    expect(source).toContain("centerSelectedInView");
+    expect(source).toContain("zoomViewportAtCenter");
+    expect(source).toContain("resetViewport");
+    expect(source).toContain("className=\"viewport-controls\"");
+    expect(source).toContain("className=\"canvas-minimap\"");
+    expect(source).toContain("className=\"minimap-viewport\"");
+    expect(styles).toContain(".viewport-overlay");
+    expect(styles).toContain(".canvas-minimap");
+    expect(styles).toContain(".minimap-viewport");
+  });
+
+  test("adds selected graphic quick toolbars, edge controls, and resize feedback on top of existing actions", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+
+    expect(source).toContain("className=\"canvas-floating-toolbar node-toolbar\"");
+    expect(source).toContain("className=\"canvas-floating-toolbar edge-toolbar\"");
+    expect(source).toContain("addManualBendToSelectedEdgeCenter");
+    expect(source).toContain("tidySelectedEdgeRoute");
+    expect(source).toContain("toggleSelectedNodeLabelDisplay");
+    expect(source).toContain("proportionalScale");
+    expect(source).toContain("event.shiftKey || transformDrag.kind === \"scale-both\"");
+    expect(source).toContain("className=\"resize-size-badge\"");
+    expect(styles).toContain(".canvas-floating-toolbar");
+    expect(styles).toContain(".resize-size-badge");
+    expect(styles).toContain(".scale-handle:hover");
+    expect(styles).toContain(".terminal-dot:not(.disabled):hover");
   });
 
   test("uses rotation-aware bus hit testing for connection drops", async () => {
@@ -748,7 +800,9 @@ describe("graph inspector panel", () => {
     expect(source).toContain("snapshotGroupTransformEdgeRoutes(unit)");
     expect(source).toContain("const buildGroupTransformNodeUpdates");
     expect(pointerBlock).toContain("isGroupTransformDrag(transformDrag)");
-    expect(pointerBlock).toContain("buildGroupTransformNodeUpdates(transformDrag, point, currentStore)");
+    expect(pointerBlock).toContain("const transformForMove = transformDrag.kind === \"rotate\"");
+    expect(pointerBlock).toContain("proportionalScale: event.shiftKey");
+    expect(pointerBlock).toContain("buildGroupTransformNodeUpdates(transformForMove, point, currentStore)");
     expect(groupPointerBlock).not.toContain("patchGraphNodes");
     expect(pointerBlock).toContain("previewPoint: point");
     expect(finishTransformBlock).toContain("activeTransform.nodeIds");
@@ -988,7 +1042,8 @@ describe("graph inspector panel", () => {
     expect(pointerBlock).toContain("const baseNode = singleTransformBaseNode(transformDrag, node);");
     expect(pointerBlock).toContain("toLocalNodePoint(baseNode, point)");
     expect(pointerBlock).not.toContain("toLocalNodePoint(node, point)");
-    expect(pointerBlock).toContain("const localScaleKind = localScaleKindForScreenHandle(transformDrag.kind, baseNode.rotation);");
+    expect(pointerBlock).toContain("const localScaleKind = event.shiftKey || transformDrag.kind === \"scale-both\"");
+    expect(pointerBlock).toContain("localScaleKindForScreenHandle(transformDrag.kind, baseNode.rotation)");
     expect(pointerBlock).toContain("if (localScaleKind === \"scale-x\")");
     expect(pointerBlock).toContain("} else if (localScaleKind === \"scale-y\")");
     expect(pointerBlock).toContain("const currentSignedScaleX = getNodeScaleX(baseNode);");

@@ -4910,46 +4910,47 @@ describe("power system model", () => {
   });
 
   test("creates static drawing primitives without electrical terminals", () => {
-    const expected = [
-      "static-text",
-      "static-line",
-      "static-polyline",
-      "static-circle",
-      "static-ellipse",
-      "static-rect",
-      "static-image",
-      "static-rounded-rect",
-      "static-diamond",
-      "static-pill",
-      "static-database",
-      "static-document",
-      "static-note",
-      "static-group-box",
-      "static-swimlane",
-      "static-point",
-      "static-ring",
-      "static-circle-node",
-      "static-straight-connector",
-      "static-arrow-connector",
-      "static-double-arrow-connector",
-      "static-elbow-connector",
-      "static-hexagon",
-      "static-parallelogram",
-      "static-triangle",
-      "static-callout",
-      "static-default-node",
-      "static-input-node",
-      "static-output-node",
-      "static-port-node",
-      "static-card-node",
-      "static-toolbar-node",
-      "static-resizer-frame",
-      "static-subflow-box",
-      "static-bezier-connector",
-      "static-smoothstep-connector",
-      "static-self-loop",
-      "static-edge-label"
-    ] as const;
+    const expectedComponentTypes = {
+      "static-text": "StaticTextSymbol",
+      "static-line": "StaticConnectorSymbol",
+      "static-polyline": "StaticConnectorSymbol",
+      "static-circle": "StaticBasicShape",
+      "static-ellipse": "StaticBasicShape",
+      "static-rect": "StaticBasicShape",
+      "static-image": "StaticMediaSymbol",
+      "static-rounded-rect": "StaticFlowNode",
+      "static-diamond": "StaticFlowNode",
+      "static-pill": "StaticFlowNode",
+      "static-database": "StaticFlowNode",
+      "static-document": "StaticFlowNode",
+      "static-note": "StaticFlowNode",
+      "static-group-box": "StaticContainerSymbol",
+      "static-swimlane": "StaticContainerSymbol",
+      "static-point": "StaticBasicShape",
+      "static-ring": "StaticBasicShape",
+      "static-circle-node": "StaticFlowNode",
+      "static-straight-connector": "StaticConnectorSymbol",
+      "static-arrow-connector": "StaticConnectorSymbol",
+      "static-double-arrow-connector": "StaticConnectorSymbol",
+      "static-elbow-connector": "StaticConnectorSymbol",
+      "static-hexagon": "StaticBasicShape",
+      "static-parallelogram": "StaticBasicShape",
+      "static-triangle": "StaticBasicShape",
+      "static-callout": "StaticAnnotationSymbol",
+      "static-default-node": "StaticFlowNode",
+      "static-input-node": "StaticFlowNode",
+      "static-output-node": "StaticFlowNode",
+      "static-port-node": "StaticFlowNode",
+      "static-card-node": "StaticFlowNode",
+      "static-toolbar-node": "StaticFlowNode",
+      "static-resizer-frame": "StaticContainerSymbol",
+      "static-subflow-box": "StaticContainerSymbol",
+      "static-bezier-connector": "StaticConnectorSymbol",
+      "static-smoothstep-connector": "StaticConnectorSymbol",
+      "static-self-loop": "StaticConnectorSymbol",
+      "static-edge-label": "StaticAnnotationSymbol"
+    } as const;
+    const expected = Object.keys(expectedComponentTypes);
     const removedControlKinds = [
       "static-web",
       "static-date",
@@ -4959,13 +4960,24 @@ describe("power system model", () => {
       "static-button"
     ];
 
+    expect(new Set(Object.values(expectedComponentTypes))).toEqual(new Set([
+      "StaticTextSymbol",
+      "StaticMediaSymbol",
+      "StaticBasicShape",
+      "StaticFlowNode",
+      "StaticContainerSymbol",
+      "StaticConnectorSymbol",
+      "StaticAnnotationSymbol"
+    ]));
+
     for (const kind of expected) {
       const node = createDefaultNode(kind, { x: 100, y: 100 });
+      const componentType = expectedComponentTypes[kind as keyof typeof expectedComponentTypes];
       expect(isStaticNode(node)).toBe(true);
       expect(node.terminals).toEqual([]);
-      expect(node.params.component_type).toBe("StaticSymbol");
-      expect(inferESection(kind, node.params)).toBe("StaticSymbol");
-      expect(inferESection(kind, {})).toBe("StaticSymbol");
+      expect(node.params.component_type).toBe(componentType);
+      expect(inferESection(kind, node.params)).toBe(componentType);
+      expect(inferESection(kind, {})).toBe(componentType);
       expect(getEParameterKeys(kind, node.params)).toEqual([]);
       expect(node.params.fillColor).toBeDefined();
       expect(node.params.strokeColor).toBeDefined();
@@ -4980,40 +4992,40 @@ describe("power system model", () => {
 
   test("creates React-Flow-style static symbols with editable visual style defaults", () => {
     const expected = [
-      ["static-rounded-rect", "圆角节点"],
-      ["static-diamond", "判断节点"],
-      ["static-pill", "起止节点"],
-      ["static-database", "数据库"],
-      ["static-document", "文档"],
-      ["static-note", "便签"],
-      ["static-group-box", "分组框"],
-      ["static-swimlane", "泳道"],
-      ["static-point", "连接点"],
-      ["static-ring", "圆环点"],
-      ["static-circle-node", "圆形节点"],
-      ["static-straight-connector", "直线连接"],
-      ["static-arrow-connector", "箭头连接"],
-      ["static-double-arrow-connector", "双向箭头"],
-      ["static-elbow-connector", "折线连接"],
-      ["static-hexagon", "六边形"],
-      ["static-parallelogram", "平行四边形"],
-      ["static-triangle", "三角形"],
-      ["static-callout", "标注气泡"],
-      ["static-default-node", "默认节点"],
-      ["static-input-node", "输入节点"],
-      ["static-output-node", "输出节点"],
-      ["static-port-node", "端口节点"],
-      ["static-card-node", "卡片节点"],
-      ["static-toolbar-node", "工具条节点"],
-      ["static-resizer-frame", "缩放框"],
-      ["static-subflow-box", "子流程框"],
-      ["static-bezier-connector", "贝塞尔连接"],
-      ["static-smoothstep-connector", "平滑折线"],
-      ["static-self-loop", "自环连接"],
-      ["static-edge-label", "边标签"]
+      ["static-rounded-rect", "圆角节点", "StaticFlowNode"],
+      ["static-diamond", "判断节点", "StaticFlowNode"],
+      ["static-pill", "起止节点", "StaticFlowNode"],
+      ["static-database", "数据库", "StaticFlowNode"],
+      ["static-document", "文档", "StaticFlowNode"],
+      ["static-note", "便签", "StaticFlowNode"],
+      ["static-group-box", "分组框", "StaticContainerSymbol"],
+      ["static-swimlane", "泳道", "StaticContainerSymbol"],
+      ["static-point", "连接点", "StaticBasicShape"],
+      ["static-ring", "圆环点", "StaticBasicShape"],
+      ["static-circle-node", "圆形节点", "StaticFlowNode"],
+      ["static-straight-connector", "直线连接", "StaticConnectorSymbol"],
+      ["static-arrow-connector", "箭头连接", "StaticConnectorSymbol"],
+      ["static-double-arrow-connector", "双向箭头", "StaticConnectorSymbol"],
+      ["static-elbow-connector", "折线连接", "StaticConnectorSymbol"],
+      ["static-hexagon", "六边形", "StaticBasicShape"],
+      ["static-parallelogram", "平行四边形", "StaticBasicShape"],
+      ["static-triangle", "三角形", "StaticBasicShape"],
+      ["static-callout", "标注气泡", "StaticAnnotationSymbol"],
+      ["static-default-node", "默认节点", "StaticFlowNode"],
+      ["static-input-node", "输入节点", "StaticFlowNode"],
+      ["static-output-node", "输出节点", "StaticFlowNode"],
+      ["static-port-node", "端口节点", "StaticFlowNode"],
+      ["static-card-node", "卡片节点", "StaticFlowNode"],
+      ["static-toolbar-node", "工具条节点", "StaticFlowNode"],
+      ["static-resizer-frame", "缩放框", "StaticContainerSymbol"],
+      ["static-subflow-box", "子流程框", "StaticContainerSymbol"],
+      ["static-bezier-connector", "贝塞尔连接", "StaticConnectorSymbol"],
+      ["static-smoothstep-connector", "平滑折线", "StaticConnectorSymbol"],
+      ["static-self-loop", "自环连接", "StaticConnectorSymbol"],
+      ["static-edge-label", "边标签", "StaticAnnotationSymbol"]
     ] as const;
 
-    for (const [kind, label] of expected) {
+    for (const [kind, label, componentType] of expected) {
       const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
       expect(template).toMatchObject({
         label,
@@ -5021,7 +5033,7 @@ describe("power system model", () => {
         terminalCount: 0,
         terminalType: "ac",
         params: expect.objectContaining({
-          component_type: "StaticSymbol",
+          component_type: componentType,
           text: expect.any(String),
           fillColor: expect.any(String),
           strokeColor: expect.any(String),
@@ -5045,7 +5057,7 @@ describe("power system model", () => {
       const node = createDefaultNode(kind, { x: 100, y: 100 });
       expect(isStaticNode(node)).toBe(true);
       expect(node.terminals).toEqual([]);
-      expect(inferESection(kind, node.params)).toBe("StaticSymbol");
+      expect(inferESection(kind, node.params)).toBe(componentType);
       expect(getEParameterKeys(kind, node.params)).toEqual([]);
     }
   });
