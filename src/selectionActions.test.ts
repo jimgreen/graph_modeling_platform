@@ -540,4 +540,36 @@ describe("canvas selection actions", () => {
     expect(firstDelta).toBe(secondDelta);
     expect(movedSecond.position.x - movedFirst.position.x).toBe(secondGrouped.position.x - firstGrouped.position.x);
   });
+
+  test("includes grouped connection line geometry in the layout unit bounds", () => {
+    const firstGrouped = createDefaultNode("ac-load", { x: 420, y: 220 });
+    const secondGrouped = createDefaultNode("ac-source", { x: 540, y: 220 });
+    const edge: Edge = {
+      id: "edge-group-wide",
+      sourceId: firstGrouped.id,
+      targetId: secondGrouped.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      sourcePoint: { x: 420, y: 220 },
+      manualPoints: [
+        { x: 420, y: 40 },
+        { x: 720, y: 40 },
+        { x: 720, y: 220 }
+      ],
+      targetPoint: { x: 540, y: 220 }
+    };
+    const groups: ModelGroup[] = [{
+      id: "group-with-edge",
+      name: "组合1",
+      nodeIds: [firstGrouped.id, secondGrouped.id],
+      edgeIds: [edge.id]
+    }];
+
+    const units = buildCanvasLayoutUnits(groups, [firstGrouped, secondGrouped], [firstGrouped.id], [], [edge]);
+
+    expect(units).toHaveLength(1);
+    expect(units[0].kind).toBe("group");
+    expect(units[0].bounds.top).toBeLessThanOrEqual(40);
+    expect(units[0].bounds.right).toBeGreaterThanOrEqual(720);
+  });
 });

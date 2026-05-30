@@ -602,6 +602,8 @@ const CANVAS_RESIZE_HANDLE_SIZE = 18;
 const MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES = 5;
 const ORIGINAL_POSITION_REROUTE_PADDING = 64;
 const MOVE_ROUTE_LOCAL_SEARCH_PADDING = 96;
+const MULTI_NODE_DRAG_DEGRADED_NODE_THRESHOLD = 40;
+const MULTI_NODE_DRAG_DEGRADED_EDGE_THRESHOLD = 120;
 const KEYBOARD_MOVE_COMMIT_DELAY_MS = 160;
 const KEYBOARD_MOVE_REPEAT_RATE_PER_SECOND = 30;
 const KEYBOARD_MOVE_FRAME_INTERVAL_MS = 1000 / KEYBOARD_MOVE_REPEAT_RATE_PER_SECOND;
@@ -3420,6 +3422,8 @@ export function App() {
   const pendingRewirePreviewRef = useRef<{ point: Point; rewiring: Exclude<RewiringState, null> } | null>(null);
   const rewirePreviewFrameRef = useRef<number | null>(null);
   const draggingRef = useRef<DraggingState | null>(null);
+  const multiNodeDragOverlayRef = useRef<SVGGElement | null>(null);
+  const multiNodeDragOverlayDeltaRef = useRef<Point>({ x: 0, y: 0 });
   const nodeTerminalSnapTargetRef = useRef<NodeTerminalSnapTarget | null>(null);
   const pendingNodeDragMoveRef = useRef<{ point: Point; ctrlKey: boolean; shiftKey: boolean } | null>(null);
   const nodeDragMoveFrameRef = useRef<number | null>(null);
@@ -3829,9 +3833,146 @@ export function App() {
   const activeSelectedEdgeIds = activeCanvasSelection.edgeIds;
   const activeSelectedEdgeSet = useMemo(() => new Set(displaySelectedEdgeIds), [displaySelectedEdgeIds]);
   const selectedEdge = activeLayerEdgeIdSet.has(selectedEdgeId) ? edgeById.get(selectedEdgeId) : undefined;
+  const deferredSelectedNode = useDeferredValue(selectedNode);
+  const inspectorSelectedNode = selectedNode && deferredSelectedNode?.id === selectedNode.id ? deferredSelectedNode : selectedNode;
+  const deferredSelectedEdge = useDeferredValue(selectedEdge);
+  const inspectorSelectedEdge = selectedEdge && deferredSelectedEdge?.id === selectedEdge.id ? deferredSelectedEdge : selectedEdge;
+  const inspectorTopologyErrors = useDeferredValue(topologyErrors);
   const connectionLineStyle = (edgeId: string) => {
     const edge = edgeById.get(edgeId);
     return edge ? ({ "--connection-color": getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette) } as CSSProperties) : undefined;
+  };
+  const renderMultiNodeDragOverlay = () => {
+    if (!dragging || !isMultiNodeMoveState(dragging)) {
+      return null;
+    }
+    const multiNodeDragDegradedPreview =
+      dragging.nodeIds.length > MULTI_NODE_DRAG_DEGRADED_NODE_THRESHOLD ||
+      dragging.affectedEdges.length > MULTI_NODE_DRAG_DEGRADED_EDGE_THRESHOLD;
+    const overlayNodes = dragging.nodeIds.flatMap((nodeId) => {
+      const node = nodeById.get(nodeId);
+      return node ? [node] : [];
+    });
+    const overlayEdgeRoutes = dragging.affectedEdges.flatMap((edge) => {
+      if (!visibleEdgeIdSet.has(edge.id)) {
+        return [];
+      }
+      const points = dragging.originalRoutePoints[edge.id];
+      return points?.length ? [{ edgeId: edge.id, path: pointsToPreviewPath(points) }] : [];
+    });
+    const overlayBounds = (() => {
+      const boxes: RenderViewportBounds[] = [];
+      for (const node of overlayNodes) {
+        const originalPosition = dragging.originalPositions[node.id] ?? node.position;
+        const halfDiagonal = Math.hypot(node.size.width * getNodeScaleX(node), node.size.height * getNodeScaleY(node)) / 2;
+        boxes.push({
+          left: originalPosition.x - halfDiagonal,
+          right: originalPosition.x + halfDiagonal,
+          top: originalPosition.y - halfDiagonal,
+          bottom: originalPosition.y + halfDiagonal
+        });
+      }
+      for (const route of overlayEdgeRoutes) {
+        const points = dragging.originalRoutePoints[route.edgeId] ?? [];
+        if (points.length === 0) {
+          continue;
+        }
+        boxes.push({
+          left: Math.min(...points.map((point) => point.x)),
+          right: Math.max(...points.map((point) => point.x)),
+          top: Math.min(...points.map((point) => point.y)),
+          bottom: Math.max(...points.map((point) => point.y))
+        });
+      }
+      if (boxes.length === 0) {
+        return null;
+      }
+      return {
+        left: Math.min(...boxes.map((box) => box.left)),
+        right: Math.max(...boxes.map((box) => box.right)),
+        top: Math.min(...boxes.map((box) => box.top)),
+        bottom: Math.max(...boxes.map((box) => box.bottom))
+      };
+    })();
+    return (
+      <g
+        ref={(element) => {
+          multiNodeDragOverlayRef.current = element;
+          if (element) {
+            updateMultiNodeDragOverlayTransform(draggingRef.current?.currentDelta ?? multiNodeDragOverlayDeltaRef.current);
+          }
+        }}
+        className="multi-node-drag-overlay"
+        transform={`translate(${Math.round(multiNodeDragOverlayDeltaRef.current.x)} ${Math.round(multiNodeDragOverlayDeltaRef.current.y)})`}
+      >
+        {overlayEdgeRoutes.map((route) => (
+          <path key={`multi-drag-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
+        ))}
+        {multiNodeDragDegradedPreview && overlayBounds && (
+          <rect
+            className="multi-node-drag-bounds-preview"
+            x={overlayBounds.left}
+            y={overlayBounds.top}
+            width={Math.max(1, overlayBounds.right - overlayBounds.left)}
+            height={Math.max(1, overlayBounds.bottom - overlayBounds.top)}
+          />
+        )}
+        {!multiNodeDragDegradedPreview && overlayNodes.map((node) => {
+          const originalPosition = dragging.originalPositions[node.id] ?? node.position;
+          const nodeIsBus = isBusNode(node);
+          const nodeScaleX = getNodeScaleX(node);
+          const nodeScaleY = getNodeScaleY(node);
+          const inverseScaleX = nodeScaleX === 0 ? 1 : 1 / nodeScaleX;
+          const inverseScaleY = nodeScaleY === 0 ? 1 : 1 / nodeScaleY;
+          const terminalControlTransform = (x: number, y: number) => `translate(${x} ${y}) scale(${inverseScaleX} ${inverseScaleY})`;
+          const terminalStubDashArray = svgStrokeDashArray(node.params.strokeStyle);
+          return (
+            <g
+              key={`multi-drag-preview-node-${node.id}`}
+              className={`multi-node-drag-preview-node ${nodeIsBus ? "bus-node" : ""}`}
+              transform={`translate(${originalPosition.x} ${originalPosition.y})`}
+            >
+              <g className="node-geometry" transform={nodeGeometryTransform(node)}>
+                <DeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                <DeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+              </g>
+              {!nodeIsBus && !isStaticNode(node) && (
+                <g className="node-terminal-layer" transform={nodeGeometryTransform(node)}>
+                  {node.terminals.map((terminal) => {
+                    const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
+                    const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind);
+                    const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
+                    return (
+                      <g key={terminal.id} transform={terminalControlTransform(renderPoint.x, renderPoint.y)}>
+                        <line
+                          className={`terminal-stub ${terminal.type}`}
+                          strokeDasharray={terminalStubDashArray}
+                          style={{
+                            stroke: terminalDisplayColor,
+                            strokeWidth: terminalStubStrokeWidth(node, terminal)
+                          }}
+                          x1={stub.from.x}
+                          y1={stub.from.y}
+                          x2={stub.to.x}
+                          y2={stub.to.y}
+                        />
+                        <circle
+                          className={`terminal-dot ${terminal.type}`}
+                          style={{ "--terminal-color": terminalDisplayColor } as CSSProperties}
+                          cx="0"
+                          cy="0"
+                          r={6}
+                        />
+                      </g>
+                    );
+                  })}
+                </g>
+              )}
+            </g>
+          );
+        })}
+      </g>
+    );
   };
   const renderBoundaryBusInternalConnector = (node: ModelNode | undefined, point: Point | undefined, key: string) => {
     if (!node || !point) {
@@ -4075,10 +4216,10 @@ export function App() {
     ? describeContainerTerminalAssociations(selectedDefinitionTemplate)
     : [];
   const deviceParamPanelActive = inspectorTab === "device";
-  const selectedNodeTemplate = deviceParamPanelActive && selectedNode ? libraryTemplateByKind.get(selectedNode.kind) : undefined;
+  const selectedNodeTemplate = deviceParamPanelActive && inspectorSelectedNode ? libraryTemplateByKind.get(inspectorSelectedNode.kind) : undefined;
   const selectedContainerParameterViews = useMemo(
-    () => (deviceParamPanelActive && selectedNode ? buildContainerDeviceParameterViews(selectedNode, selectedNodeTemplate) : []),
-    [deviceParamPanelActive, selectedNode, selectedNodeTemplate]
+    () => (deviceParamPanelActive && inspectorSelectedNode ? buildContainerDeviceParameterViews(inspectorSelectedNode, selectedNodeTemplate) : []),
+    [deviceParamPanelActive, inspectorSelectedNode, selectedNodeTemplate]
   );
 
   useEffect(() => {
@@ -4155,8 +4296,8 @@ export function App() {
     activeSelectedEdgeIds.length === 0 &&
     selectedGroupMemberNodeIdSet.has(activeSelectedNodeIds[0]);
   const selectedLayoutUnits = useMemo(
-    () => buildCanvasLayoutUnits(activeLayerGroups, activeLayerNodes, activeSelectedNodeIds, activeSelectedEdgeIds),
-    [activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds]
+    () => buildCanvasLayoutUnits(activeLayerGroups, activeLayerNodes, activeSelectedNodeIds, activeSelectedEdgeIds, activeLayerEdges),
+    [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds]
   );
   const selectedGroupLayoutUnits = useMemo(
     () => selectedLayoutUnits.filter((unit) => unit.kind === "group"),
@@ -4175,16 +4316,17 @@ export function App() {
     () => canGroupCanvasSelection(activeLayerGroups, activeSelectedNodeIds, activeSelectedEdgeIds),
     [activeLayerGroups, activeSelectedEdgeIds, activeSelectedNodeIds]
   );
-  const topologyWarningPageCount = Math.max(1, Math.ceil(topologyErrors.length / TOPOLOGY_WARNING_PAGE_SIZE));
+  const topologyWarningPageCount = Math.max(1, Math.ceil(inspectorTopologyErrors.length / TOPOLOGY_WARNING_PAGE_SIZE));
   const normalizedTopologyWarningPage = Math.min(topologyWarningPage, topologyWarningPageCount - 1);
-  const visibleTopologyErrors = topologyErrors.slice(
+  const visibleTopologyErrors = inspectorTopologyErrors.slice(
     normalizedTopologyWarningPage * TOPOLOGY_WARNING_PAGE_SIZE,
     normalizedTopologyWarningPage * TOPOLOGY_WARNING_PAGE_SIZE + TOPOLOGY_WARNING_PAGE_SIZE
   );
-  const hiddenTopologyErrorCount = Math.max(0, topologyErrors.length - visibleTopologyErrors.length);
+  const hiddenTopologyErrorCount = Math.max(0, inspectorTopologyErrors.length - visibleTopologyErrors.length);
   const draggingNodeIdSet = useMemo(() => new Set(dragging?.nodeIds ?? []), [dragging?.nodeIds]);
   const deferredElementTreeNodes = useDeferredValue(visibleNodes);
   const deferredElementTreeEdges = useDeferredValue(visibleEdges);
+  const deferredElementTreeRevision = useDeferredValue(graphStore.elementTreeRevision);
   const graphTreePanelActive = inspectorTab === "graph" && graphInfoView === "tree";
   const elementTreeLayerSignature = useMemo(
     () => layers.map((layer) => `${layer.id}:${layer.visible !== false ? "1" : "0"}`).join("|"),
@@ -4192,9 +4334,9 @@ export function App() {
   );
   const elementTreeSignature = useMemo(
     () => graphTreePanelActive
-      ? elementTreeCacheSignature(graphStore.elementTreeRevision, elementTreeLayerSignature, libraryTemplates)
+      ? elementTreeCacheSignature(deferredElementTreeRevision, elementTreeLayerSignature, libraryTemplates)
       : "",
-    [elementTreeLayerSignature, graphStore.elementTreeRevision, graphTreePanelActive, libraryTemplates]
+    [deferredElementTreeRevision, elementTreeLayerSignature, graphTreePanelActive, libraryTemplates]
   );
   const elementTree = useMemo(() => {
     if (!graphTreePanelActive) {
@@ -4369,8 +4511,8 @@ export function App() {
   }, [elementTree, graphTreePanelActive]);
 
   useEffect(() => {
-    setTopologyWarningPage((current) => Math.min(current, Math.max(0, Math.ceil(topologyErrors.length / TOPOLOGY_WARNING_PAGE_SIZE) - 1)));
-  }, [topologyErrors.length]);
+    setTopologyWarningPage((current) => Math.min(current, Math.max(0, Math.ceil(inspectorTopologyErrors.length / TOPOLOGY_WARNING_PAGE_SIZE) - 1)));
+  }, [inspectorTopologyErrors.length]);
 
   const canvasBounds = useMemo<CanvasBounds>(() => ({ width: canvasWidth, height: canvasHeight }), [canvasHeight, canvasWidth]);
   const clampCanvasBounds = (bounds: CanvasBounds): CanvasBounds => ({
@@ -4945,6 +5087,60 @@ export function App() {
     [terminalPressPreviewEdgeRoutes]
   );
   const draggingDelta = dragging?.currentDelta;
+  const multiNodeDragging = Boolean(dragging && isMultiNodeMoveState(dragging));
+  const multiNodeDragDegradedPreview = Boolean(
+    dragging &&
+      isMultiNodeMoveState(dragging) &&
+      (dragging.nodeIds.length > MULTI_NODE_DRAG_DEGRADED_NODE_THRESHOLD ||
+        dragging.affectedEdges.length > MULTI_NODE_DRAG_DEGRADED_EDGE_THRESHOLD)
+  );
+  const dragAffectedEdgeIdSet = useMemo(
+    () => new Set((dragging?.affectedEdges ?? []).map((edge) => edge.id)),
+    [dragging?.affectedEdges]
+  );
+  const multiNodeDragOriginalBounds = useMemo<RenderViewportBounds | null>(() => {
+    if (!dragging || !isMultiNodeMoveState(dragging) || !multiNodeDragDegradedPreview) {
+      return null;
+    }
+    let bounds: RenderViewportBounds | null = null;
+    const includePoint = (point: Point) => {
+      bounds = bounds
+        ? {
+            left: Math.min(bounds.left, point.x),
+            right: Math.max(bounds.right, point.x),
+            top: Math.min(bounds.top, point.y),
+            bottom: Math.max(bounds.bottom, point.y)
+          }
+        : { left: point.x, right: point.x, top: point.y, bottom: point.y };
+    };
+    const includeBox = (box: RenderViewportBounds) => {
+      includePoint({ x: box.left, y: box.top });
+      includePoint({ x: box.right, y: box.bottom });
+    };
+    for (const nodeId of dragging.nodeIds) {
+      const node = nodeById.get(nodeId);
+      const originalPosition = dragging.originalPositions[nodeId] ?? node?.position;
+      if (!node || !originalPosition) {
+        continue;
+      }
+      const halfExtents = nodeTransformedHalfExtents(node, true);
+      includeBox({
+        left: originalPosition.x - halfExtents.halfWidth,
+        right: originalPosition.x + halfExtents.halfWidth,
+        top: originalPosition.y - halfExtents.halfHeight,
+        bottom: originalPosition.y + halfExtents.halfHeight
+      });
+    }
+    for (const edge of dragging.affectedEdges) {
+      if (!visibleEdgeIdSet.has(edge.id)) {
+        continue;
+      }
+      for (const point of dragging.originalRoutePoints[edge.id] ?? []) {
+        includePoint(point);
+      }
+    }
+    return bounds;
+  }, [dragging, multiNodeDragDegradedPreview, nodeById, visibleEdgeIdSet]);
   const draggedBusIds = useMemo(
     () => new Set((dragging?.nodeIds ?? []).filter((nodeId) => {
       const node = nodeById.get(nodeId);
@@ -5154,7 +5350,7 @@ export function App() {
       return [];
     }
     if (isMultiNodeMoveState(dragging)) {
-      return translatedMultiNodeDragEdgeRoutes(dragging, draggingDelta);
+      return [];
     }
     const draggedEdgeIds = new Set(dragging.edgeIds);
     const straightPath = (points: Point[]) =>
@@ -5238,7 +5434,7 @@ export function App() {
     [dragPreviewEdgeRoutes]
   );
   const dragGhostEdgeRoutes = useMemo(() => {
-    if (!dragging || !draggingDelta) {
+    if (!dragging || (!draggingDelta && !isMultiNodeMoveState(dragging))) {
       return [];
     }
     if (isMultiNodeMoveState(dragging)) {
@@ -5616,7 +5812,10 @@ export function App() {
   useEffect(() => {
     draggingRef.current = dragging;
     if (!dragging) {
+      resetMultiNodeDragOverlayTransform();
       dragUndoCapturedRef.current = false;
+    } else if (isMultiNodeMoveState(dragging)) {
+      updateMultiNodeDragOverlayTransform(dragging.currentDelta ?? multiNodeDragOverlayDeltaRef.current);
     }
   }, [dragging]);
 
@@ -7104,6 +7303,74 @@ export function App() {
     }, 180, 1500);
   };
 
+  const scheduleDeferredMovedConnectionRepair = (
+    movedNodeIds: string[],
+    candidateEdges: Edge[],
+    expectedPatch: { nodeUpdates: ModelNode[]; edgeUpserts: Edge[]; edgeDeleteIds: string[] }
+  ) => {
+    deferredMoveOptimizationCancelRef.current?.();
+    if (movedNodeIds.length <= 1 || candidateEdges.length === 0) {
+      deferredMoveOptimizationCancelRef.current = null;
+      return;
+    }
+    const candidateEdgeIds = candidateEdges.map((edge) => edge.id);
+    deferredMoveOptimizationCancelRef.current = scheduleIdleWork(() => {
+      deferredMoveOptimizationCancelRef.current = null;
+      const latestStore = latestGraphStoreRef.current;
+      if (!latestStore || !graphStorePatchStillCurrent(latestStore, expectedPatch.nodeUpdates, expectedPatch.edgeUpserts, expectedPatch.edgeDeleteIds)) {
+        return;
+      }
+      const latestNodes = latestStore.nodes;
+      const latestCandidateEdges = candidateEdgeIds.flatMap((edgeId) => {
+        const edge = latestStore.edgeMap.get(edgeId);
+        return edge ? [edge] : [];
+      });
+      if (latestCandidateEdges.length === 0) {
+        return;
+      }
+      const repairCanvasBounds = canvasBoundsForGraphContent(
+        canvasBounds,
+        latestNodes,
+        latestStore.edges,
+        [],
+        CANVAS_AUTO_EXPAND_PADDING
+      );
+      let repairedEdges = latestCandidateEdges;
+      let routingNodes = routingNodesForConnectionEdges(repairedEdges, latestNodes, movedNodeIds);
+      repairedEdges = rebuildExternalConnectionRoutesForMovedNodes(
+        routingNodes,
+        repairedEdges,
+        movedNodeIds,
+        repairCanvasBounds,
+        repairedEdges
+      );
+      routingNodes = routingNodesForConnectionEdges(repairedEdges, latestNodes, movedNodeIds);
+      repairedEdges = rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes(
+        routingNodes,
+        repairedEdges,
+        movedNodeIds,
+        repairCanvasBounds,
+        repairedEdges
+      );
+      const repairDirtyEdgeIds = edgeReferenceDiffIds(latestCandidateEdges, repairedEdges);
+      if (repairDirtyEdgeIds.size === 0) {
+        return;
+      }
+      const repairedById = new Map(repairedEdges.map((edge) => [edge.id, edge]));
+      const edgeUpdates = Array.from(repairDirtyEdgeIds).flatMap((edgeId) => {
+        const edge = repairedById.get(edgeId);
+        return edge ? [edge] : [];
+      });
+      if (edgeUpdates.length === 0) {
+        return;
+      }
+      markRouteEdgesDirty(repairDirtyEdgeIds);
+      markStoredRouteEdgesDirty(repairDirtyEdgeIds);
+      markBusTerminalSyncDirtyForEdges(edgeUpdates);
+      setGraphStore((current) => graphStorePatchEdges(current, edgeUpdates));
+    }, 60, 1500);
+  };
+
   const commitFastMovedGraphPatches = (
     movedNodeUpdates: ModelNode[],
     nextNodes: ModelNode[],
@@ -7117,8 +7384,9 @@ export function App() {
   ) => {
     markStoredRouteEdgesDirty(dirtyEdgeIdsForMovedLocalRoutes(selectedEdgeIds, originalRoutePoints));
     let committedCandidateEdges = candidateEdges;
+    const deferMovedRouteRepair = movedNodeIds.length > 1;
     const commitCanvasBounds = canvasBoundsForGraphContent(canvasBounds, nextNodes, edges, [], CANVAS_AUTO_EXPAND_PADDING);
-    if (movedNodeIds.length > 0) {
+    if (movedNodeIds.length > 0 && !deferMovedRouteRepair) {
       let routingNodes = routingNodesForConnectionEdges(committedCandidateEdges, nextNodes, movedNodeIds);
       const rebuiltEdges = rebuildExternalConnectionRoutesForMovedNodes(
         routingNodes,
@@ -7155,6 +7423,7 @@ export function App() {
       ...edgePatch.edgeUpserts.map((edge) => edge.id),
       ...edgePatch.edgeDeleteIds
     ];
+    const expectedPatch = { nodeUpdates: movedNodeUpdates, edgeUpserts: edgePatch.edgeUpserts, edgeDeleteIds: edgePatch.edgeDeleteIds };
     markRouteEdgesDirty(edgePatchDirtyIds);
     markBusTerminalSyncDirty(
       busTerminalSyncNodeIdsForGraphPatch(
@@ -7166,22 +7435,26 @@ export function App() {
     );
     setGraphStore((current) =>
       graphStoreApplyPatch(current, {
-        nodeUpdates: movedNodeUpdates,
-        edgeUpserts: edgePatch.edgeUpserts,
-        edgeDeleteIds: edgePatch.edgeDeleteIds
+        nodeUpdates: expectedPatch.nodeUpdates,
+        edgeUpserts: expectedPatch.edgeUpserts,
+        edgeDeleteIds: expectedPatch.edgeDeleteIds
       })
     );
-    scheduleMovedEdgeOptimization(
-      previousNodes,
-      nextNodes,
-      committedCandidateEdges,
-      movedNodeIds,
-      originalRoutePoints,
-      selectedEdgeIds,
-      originalPositions,
-      committedCandidateEdges,
-      { nodeUpdates: movedNodeUpdates, edgeUpserts: edgePatch.edgeUpserts, edgeDeleteIds: edgePatch.edgeDeleteIds }
-    );
+    if (deferMovedRouteRepair) {
+      scheduleDeferredMovedConnectionRepair(movedNodeIds, committedCandidateEdges, expectedPatch);
+    } else {
+      scheduleMovedEdgeOptimization(
+        previousNodes,
+        nextNodes,
+        committedCandidateEdges,
+        movedNodeIds,
+        originalRoutePoints,
+        selectedEdgeIds,
+        originalPositions,
+        committedCandidateEdges,
+        expectedPatch
+      );
+    }
   };
 
   const clampPointToCanvas = (point: Point) => clampPointToBounds(point, canvasBounds);
@@ -7213,6 +7486,17 @@ export function App() {
         mousePositionTextRef.current.textContent = `X:${next.x} Y:${next.y}`;
       }
     });
+  };
+  const updateMultiNodeDragOverlayTransform = (delta: Point | null) => {
+    const nextDelta = delta ?? { x: 0, y: 0 };
+    multiNodeDragOverlayDeltaRef.current = nextDelta;
+    if (!multiNodeDragOverlayRef.current) {
+      return;
+    }
+    multiNodeDragOverlayRef.current.setAttribute("transform", `translate(${Math.round(nextDelta.x)} ${Math.round(nextDelta.y)})`);
+  };
+  const resetMultiNodeDragOverlayTransform = () => {
+    updateMultiNodeDragOverlayTransform({ x: 0, y: 0 });
   };
   const flushConnectPreviewDom = () => {
     const { path, targetPoint } = connectPreviewDomRef.current;
@@ -7567,6 +7851,17 @@ export function App() {
       draggingRef.current = currentDrag;
       return;
     }
+    if (isMultiNodeMoveState(currentDrag)) {
+      draggingRef.current = {
+        ...currentDrag,
+        currentDelta: boundedDelta,
+        historyCaptured: true
+      };
+      if (renderPreview) {
+        updateMultiNodeDragOverlayTransform(boundedDelta);
+      }
+      return;
+    }
     const nextDragState = {
       ...currentDrag,
       currentDelta: boundedDelta,
@@ -7658,6 +7953,7 @@ export function App() {
     clearNodeDragMoveSchedule();
     clearKeyboardNudgeSchedule();
     clearKeyboardMoveCommitSchedule();
+    resetMultiNodeDragOverlayTransform();
     draggingRef.current = null;
     setDragging(null);
     dragUndoCapturedRef.current = false;
@@ -7754,6 +8050,7 @@ export function App() {
     const delta = activeDragging.currentDelta;
     if (!delta || (delta.x === 0 && delta.y === 0)) {
       clearNodeDragMoveSchedule();
+      resetMultiNodeDragOverlayTransform();
       draggingRef.current = null;
       setDragging(null);
       return;
@@ -7779,6 +8076,7 @@ export function App() {
         : delta;
     if (finalDelta.x === 0 && finalDelta.y === 0) {
       clearNodeDragMoveSchedule();
+      resetMultiNodeDragOverlayTransform();
       draggingRef.current = null;
       setDragging(null);
       return;
@@ -7819,6 +8117,7 @@ export function App() {
       nodes
     );
     clearNodeDragMoveSchedule();
+    resetMultiNodeDragOverlayTransform();
     draggingRef.current = null;
     setDragging(null);
     dragUndoCapturedRef.current = false;
@@ -7924,6 +8223,13 @@ export function App() {
       currentDelta: boundedDelta,
       historyCaptured: true
     };
+    if (isMultiNodeMoveState(activeDragging)) {
+      draggingRef.current = nextDragging;
+      if (renderPreview) {
+        updateMultiNodeDragOverlayTransform(boundedDelta);
+      }
+      return true;
+    }
     if (!isMultiNodeMoveState(activeDragging)) {
       applyCanvasBounds(canvasBoundsForMoveDelta(activeDragging.nodeIds, activeDragging.originalPositions, boundedDelta.x, boundedDelta.y));
     }
@@ -8063,7 +8369,8 @@ export function App() {
     clearNodeDragMoveSchedule();
     dragUndoCapturedRef.current = false;
     draggingRef.current = nextDragging;
-    if (renderInitial) {
+    resetMultiNodeDragOverlayTransform();
+    if (renderInitial || isMultiNodeMoveState(nextDragging)) {
       setDragging(nextDragging);
     }
     return nextDragging;
@@ -8458,7 +8765,8 @@ export function App() {
 
   const renderParamEditor = (key: string, value: string, wrapLabel = true) => {
     const label = PARAM_LABELS[key] ?? key;
-    const options = paramOptionsForSection(key, selectedNode ? inferESection(selectedNode.kind, selectedNode.params) : undefined);
+    const editorNode = inspectorSelectedNode ?? selectedNode;
+    const options = paramOptionsForSection(key, editorNode ? inferESection(editorNode.kind, editorNode.params) : undefined);
     const control = options ? (
       <select value={value} onChange={(event) => updateParam(key, event.target.value)}>
         {options.map((option) => (
@@ -8752,6 +9060,7 @@ export function App() {
       )
     };
     draggingRef.current = nextDragging;
+    resetMultiNodeDragOverlayTransform();
     setDragging(nextDragging);
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -9236,6 +9545,7 @@ export function App() {
       )
     };
     draggingRef.current = nextDragging;
+    resetMultiNodeDragOverlayTransform();
     setDragging(nextDragging);
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -13117,7 +13427,16 @@ export function App() {
             {dragGhostEdgeRoutes.map((route) => (
               <path key={`drag-ghost-edge-${route.edgeId}`} d={route.path} className="connection-line drag-ghost" style={connectionLineStyle(route.edgeId)} />
             ))}
-            {dragging?.historyCaptured && dragging.nodeIds.map((nodeId) => {
+            {multiNodeDragging && multiNodeDragDegradedPreview && multiNodeDragOriginalBounds && dragging?.historyCaptured && (
+              <rect
+                className="multi-node-drag-origin-bounds"
+                x={multiNodeDragOriginalBounds.left}
+                y={multiNodeDragOriginalBounds.top}
+                width={Math.max(1, multiNodeDragOriginalBounds.right - multiNodeDragOriginalBounds.left)}
+                height={Math.max(1, multiNodeDragOriginalBounds.bottom - multiNodeDragOriginalBounds.top)}
+              />
+            )}
+            {dragging?.historyCaptured && !(multiNodeDragging && multiNodeDragDegradedPreview) && dragging.nodeIds.map((nodeId) => {
               const node = nodeById.get(nodeId);
               const originalPosition = dragging.originalPositions[nodeId];
               if (!node || !originalPosition) {
@@ -13151,6 +13470,7 @@ export function App() {
               if (!edge) return null;
               if (
                 (draggingDelta && dragPreviewEdgeIdSet.has(edge.id)) ||
+                (multiNodeDragging && dragAffectedEdgeIdSet.has(edge.id)) ||
                 terminalPressPreviewEdgeIdSet.has(edge.id) ||
                 rewiring?.edgeId === edge.id
               ) {
@@ -13403,7 +13723,7 @@ export function App() {
               return (
                 <g
                   key={node.id}
-                  className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${isConnectSource ? "connect-source" : ""}`}
+                  className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${multiNodeDragging && draggingNodeIdSet.has(node.id) ? "multi-drag-origin" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${isConnectSource ? "connect-source" : ""}`}
                   transform={`translate(${renderPosition.x} ${renderPosition.y})`}
                   onPointerDown={(event) => handleNodePointerDown(event, node)}
                   onContextMenu={(event) => {
@@ -13608,6 +13928,7 @@ export function App() {
                 </g>
               );
             })}
+            {renderMultiNodeDragOverlay()}
             {dragPreviewEdgeRoutes.map((route) => (
               <path key={`drag-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
             ))}
@@ -13663,6 +13984,7 @@ export function App() {
             {selectedRoutedEdge &&
               selectedEdge &&
               !(draggingDelta && dragPreviewEdgeIdSet.has(selectedEdge.id)) &&
+              !(multiNodeDragging && dragAffectedEdgeIdSet.has(selectedEdge.id)) &&
               !terminalPressPreviewEdgeIdSet.has(selectedEdge.id) &&
               (() => {
               const edge = selectedEdge;
@@ -13863,7 +14185,7 @@ export function App() {
             {renderSidePanelModeControls("right")}
           </div>
         </div>
-        {selectedNode || currentModelRecord ? (
+        {inspectorSelectedNode || currentModelRecord ? (
           <div className={`form-stack ${inspectorTab === "graph" ? "graph-form-stack" : ""}`}>
             <div className="inspector-tabs">
               <button className={inspectorTab === "model" ? "active" : ""} onClick={() => setInspectorTab("model")} disabled={!currentModelRecord}>
@@ -14051,7 +14373,7 @@ export function App() {
                     onClick={() => setGraphInfoView("selected")}
                     role="tab"
                     aria-selected={graphInfoView === "selected"}
-                    disabled={!selectedNode}
+                    disabled={!inspectorSelectedNode}
                   >
                     选中图元
                   </button>
@@ -14067,35 +14389,35 @@ export function App() {
                 </div>
                 {graphInfoView === "tree" ? (
                   renderElementTreePanel()
-                ) : selectedNode ? (
+                ) : inspectorSelectedNode ? (
                   <div className="graph-param-table-wrap">
                   <table className="param-table">
                   <tbody>
                     <tr>
                       {renderChineseParamHeader("graph_x", "X坐标")}
-                      <td><input type="number" value={Math.round(selectedNode.position.x)} onChange={(event) => updateSelectedNode({ position: { ...selectedNode.position, x: Number(event.target.value) } })} /></td>
+                      <td><input type="number" value={Math.round(inspectorSelectedNode.position.x)} onChange={(event) => updateSelectedNode({ position: { ...inspectorSelectedNode.position, x: Number(event.target.value) } })} /></td>
                     </tr>
                     <tr>
                       {renderChineseParamHeader("graph_y", "Y坐标")}
-                      <td><input type="number" value={Math.round(selectedNode.position.y)} onChange={(event) => updateSelectedNode({ position: { ...selectedNode.position, y: Number(event.target.value) } })} /></td>
+                      <td><input type="number" value={Math.round(inspectorSelectedNode.position.y)} onChange={(event) => updateSelectedNode({ position: { ...inspectorSelectedNode.position, y: Number(event.target.value) } })} /></td>
                     </tr>
                     <tr>
                       {renderChineseParamHeader("rotation")}
-                      <td><input type="number" value={selectedNode.rotation} onChange={(event) => updateSelectedNode({ rotation: Number(event.target.value) })} /></td>
+                      <td><input type="number" value={inspectorSelectedNode.rotation} onChange={(event) => updateSelectedNode({ rotation: Number(event.target.value) })} /></td>
                     </tr>
                     <tr>
                       {renderChineseParamHeader("scaleX")}
-                      <td><input type="number" step="0.1" value={getNodeScaleX(selectedNode)} onChange={(event) => { const scaleX = normalizeScale(Number(event.target.value), getNodeScaleX(selectedNode)); updateSelectedNode({ scale: Math.abs(scaleX), scaleX }); }} /></td>
+                      <td><input type="number" step="0.1" value={getNodeScaleX(inspectorSelectedNode)} onChange={(event) => { const scaleX = normalizeScale(Number(event.target.value), getNodeScaleX(inspectorSelectedNode)); updateSelectedNode({ scale: Math.abs(scaleX), scaleX }); }} /></td>
                     </tr>
                     <tr>
                       {renderChineseParamHeader("scaleY")}
-                      <td><input type="number" step="0.1" value={getNodeScaleY(selectedNode)} onChange={(event) => { const scaleY = normalizeScale(Number(event.target.value), getNodeScaleY(selectedNode)); updateSelectedNode({ scale: Math.abs(scaleY), scaleY }); }} /></td>
+                      <td><input type="number" step="0.1" value={getNodeScaleY(inspectorSelectedNode)} onChange={(event) => { const scaleY = normalizeScale(Number(event.target.value), getNodeScaleY(inspectorSelectedNode)); updateSelectedNode({ scale: Math.abs(scaleY), scaleY }); }} /></td>
                     </tr>
                     <tr>
                       {renderChineseParamHeader("layerId", "所属图层")}
                       <td>
                         <select
-                          value={selectedNode.layerId ?? DEFAULT_MODEL_LAYER_ID}
+                          value={inspectorSelectedNode.layerId ?? DEFAULT_MODEL_LAYER_ID}
                           onChange={(event) => updateSelectedNode({ layerId: event.target.value })}
                         >
                           {layers.map((layer) => (
@@ -14104,20 +14426,20 @@ export function App() {
                         </select>
                       </td>
                     </tr>
-                    {!isStaticNode(selectedNode) && (
+                    {!isStaticNode(inspectorSelectedNode) && (
                       <>
                         <tr>
                           {renderChineseParamHeader("terminalCount")}
                           <td>
                             <span
                               className="graph-readonly-value"
-                              title={isBusNode(selectedNode) ? "母线端子数量由已连接联络线端点数自动生成" : "端子数量由元件定义决定"}
+                              title={isBusNode(inspectorSelectedNode) ? "母线端子数量由已连接联络线端点数自动生成" : "端子数量由元件定义决定"}
                             >
-                              {selectedNode.terminals.length}
+                              {inspectorSelectedNode.terminals.length}
                             </span>
                           </td>
                         </tr>
-                        {selectedNode.terminals.map((terminal, terminalIndex) => (
+                        {inspectorSelectedNode.terminals.map((terminal, terminalIndex) => (
                           <Fragment key={terminal.id}>
                             <tr>
                               <th title={terminal.id}>{terminal.label}</th>
@@ -14130,7 +14452,7 @@ export function App() {
                                   <div className="unit-value-field">
                                     <input
                                       inputMode="decimal"
-                                      value={terminalVoltageBaseNumber(terminal.vbase ?? terminalVbaseFallback(selectedNode, terminalIndex))}
+                                      value={terminalVoltageBaseNumber(terminal.vbase ?? terminalVbaseFallback(inspectorSelectedNode, terminalIndex))}
                                       onChange={(event) => updateTerminalVbase(terminal.id, event.target.value)}
                                     />
                                     <span>{voltageUnit}</span>
@@ -14142,44 +14464,44 @@ export function App() {
                         ))}
                       </>
                     )}
-                    {isStaticNode(selectedNode) && (
+                    {isStaticNode(inspectorSelectedNode) && (
                       <>
-                        {["static-text", "static-web", "static-date", "static-time", "static-datetime", "static-input", "static-button"].includes(selectedNode.kind) && (
+                        {["static-text", "static-web", "static-date", "static-time", "static-datetime", "static-input", "static-button"].includes(inspectorSelectedNode.kind) && (
                           <>
                             <tr>
-                              <th>{selectedNode.kind === "static-web" ? "网页地址" : "文字内容"}</th>
+                              <th>{inspectorSelectedNode.kind === "static-web" ? "网页地址" : "文字内容"}</th>
                               <td>
-                                {selectedNode.kind === "static-text" ? (
-                                  <textarea rows={4} value={selectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
-                                ) : selectedNode.kind === "static-date" ? (
-                                  <input type="date" value={selectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
-                                ) : selectedNode.kind === "static-time" ? (
-                                  <input type="time" value={selectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
-                                ) : selectedNode.kind === "static-datetime" ? (
-                                  <input type="datetime-local" value={(selectedNode.params.text || "").replace(" ", "T")} onChange={(event) => updateParam("text", event.target.value.replace("T", " "))} />
+                                {inspectorSelectedNode.kind === "static-text" ? (
+                                  <textarea rows={4} value={inspectorSelectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
+                                ) : inspectorSelectedNode.kind === "static-date" ? (
+                                  <input type="date" value={inspectorSelectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
+                                ) : inspectorSelectedNode.kind === "static-time" ? (
+                                  <input type="time" value={inspectorSelectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
+                                ) : inspectorSelectedNode.kind === "static-datetime" ? (
+                                  <input type="datetime-local" value={(inspectorSelectedNode.params.text || "").replace(" ", "T")} onChange={(event) => updateParam("text", event.target.value.replace("T", " "))} />
                                 ) : (
-                                  <input value={selectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
+                                  <input value={inspectorSelectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} />
                                 )}
                               </td>
                             </tr>
                             <tr>
                               <th>字体</th>
-                              <td>{renderParamEditor("fontFamily", selectedNode.params.fontFamily || "Arial", false)}</td>
+                              <td>{renderParamEditor("fontFamily", inspectorSelectedNode.params.fontFamily || "Arial", false)}</td>
                             </tr>
                             <tr>
                               <th>文字样式</th>
                               <td>
                                 <div className="text-style-actions">
                                   <label>
-                                    <input type="checkbox" checked={(selectedNode.params.fontWeight || "400") !== "400"} onChange={(event) => updateParam("fontWeight", event.target.checked ? "700" : "400")} />
+                                    <input type="checkbox" checked={(inspectorSelectedNode.params.fontWeight || "400") !== "400"} onChange={(event) => updateParam("fontWeight", event.target.checked ? "700" : "400")} />
                                     加粗
                                   </label>
                                   <label>
-                                    <input type="checkbox" checked={(selectedNode.params.fontStyle || "normal") === "italic"} onChange={(event) => updateParam("fontStyle", event.target.checked ? "italic" : "normal")} />
+                                    <input type="checkbox" checked={(inspectorSelectedNode.params.fontStyle || "normal") === "italic"} onChange={(event) => updateParam("fontStyle", event.target.checked ? "italic" : "normal")} />
                                     斜体
                                   </label>
                                   <label>
-                                    <input type="checkbox" checked={(selectedNode.params.textDecoration || "none") === "underline"} onChange={(event) => updateParam("textDecoration", event.target.checked ? "underline" : "none")} />
+                                    <input type="checkbox" checked={(inspectorSelectedNode.params.textDecoration || "none") === "underline"} onChange={(event) => updateParam("textDecoration", event.target.checked ? "underline" : "none")} />
                                     下划线
                                   </label>
                                 </div>
@@ -14189,53 +14511,53 @@ export function App() {
                         )}
                         <tr>
                           {renderChineseParamHeader("fillColor")}
-                          <td>{renderColorEditor("fillColor", selectedNode.params.fillColor || "transparent", "#ffffff")}</td>
+                          <td>{renderColorEditor("fillColor", inspectorSelectedNode.params.fillColor || "transparent", "#ffffff")}</td>
                         </tr>
                         <tr>
                           {renderChineseParamHeader("strokeColor")}
-                          <td>{renderColorEditor("strokeColor", selectedNode.params.strokeColor || "transparent", "#334155")}</td>
+                          <td>{renderColorEditor("strokeColor", inspectorSelectedNode.params.strokeColor || "transparent", "#334155")}</td>
                         </tr>
                         <tr>
                           {renderChineseParamHeader("textColor")}
-                          <td>{renderColorEditor("textColor", selectedNode.params.textColor || "#111827", "#111827")}</td>
+                          <td>{renderColorEditor("textColor", inspectorSelectedNode.params.textColor || "#111827", "#111827")}</td>
                         </tr>
                         <tr>
                           {renderChineseParamHeader("lineWidth")}
-                          <td><input type="number" min="0" max="20" value={selectedNode.params.lineWidth || "2"} onChange={(event) => updateParam("lineWidth", event.target.value)} /></td>
+                          <td><input type="number" min="0" max="20" value={inspectorSelectedNode.params.lineWidth || "2"} onChange={(event) => updateParam("lineWidth", event.target.value)} /></td>
                         </tr>
                         <tr>
                           {renderChineseParamHeader("strokeStyle")}
-                          <td>{renderParamEditor("strokeStyle", selectedNode.params.strokeStyle || "solid", false)}</td>
+                          <td>{renderParamEditor("strokeStyle", inspectorSelectedNode.params.strokeStyle || "solid", false)}</td>
                         </tr>
                         <tr>
                           {renderChineseParamHeader("fontSize")}
-                          <td><input type="number" min="8" max="160" value={selectedNode.params.fontSize || "24"} onChange={(event) => updateParam("fontSize", event.target.value)} /></td>
+                          <td><input type="number" min="8" max="160" value={inspectorSelectedNode.params.fontSize || "24"} onChange={(event) => updateParam("fontSize", event.target.value)} /></td>
                         </tr>
                         <tr>
                           {renderChineseParamHeader("backgroundImage")}
                           <td>
                             <div className="image-field-actions">
-                              <input value={selectedNode.params.backgroundImage ? "已设置" : "未设置"} readOnly />
-                              <button type="button" onClick={() => setImageTarget({ kind: "node", nodeId: selectedNode.id })}>选择</button>
-                              <button type="button" onClick={() => clearSelectedImageForNode(selectedNode.id, "background")} disabled={!selectedNode.params.backgroundImage}>清除</button>
+                              <input value={inspectorSelectedNode.params.backgroundImage ? "已设置" : "未设置"} readOnly />
+                              <button type="button" onClick={() => setImageTarget({ kind: "node", nodeId: inspectorSelectedNode.id })}>选择</button>
+                              <button type="button" onClick={() => clearSelectedImageForNode(inspectorSelectedNode.id, "background")} disabled={!inspectorSelectedNode.params.backgroundImage}>清除</button>
                             </div>
                           </td>
                         </tr>
                       </>
                     )}
-                    {!isStaticNode(selectedNode) && (
+                    {!isStaticNode(inspectorSelectedNode) && (
                       <>
                         <tr>
                           {renderChineseParamHeader("foregroundColor")}
-                          <td>{renderColorEditor("foregroundColor", selectedNode.params.foregroundColor || "", terminalColor(selectedNode.terminals[0]?.type, colorPalette))}</td>
+                          <td>{renderColorEditor("foregroundColor", inspectorSelectedNode.params.foregroundColor || "", terminalColor(inspectorSelectedNode.terminals[0]?.type, colorPalette))}</td>
                         </tr>
                         <tr>
                           {renderChineseParamHeader("foregroundImage")}
                           <td>
                             <div className="image-field-actions">
-                              <input value={selectedNode.params.foregroundImage ? "已设置" : "未设置"} readOnly />
-                              <button type="button" onClick={() => setImageTarget({ kind: "nodeForeground", nodeId: selectedNode.id })}>选择</button>
-                              <button type="button" onClick={() => clearSelectedImageForNode(selectedNode.id, "foreground")} disabled={!selectedNode.params.foregroundImage}>清除</button>
+                              <input value={inspectorSelectedNode.params.foregroundImage ? "已设置" : "未设置"} readOnly />
+                              <button type="button" onClick={() => setImageTarget({ kind: "nodeForeground", nodeId: inspectorSelectedNode.id })}>选择</button>
+                              <button type="button" onClick={() => clearSelectedImageForNode(inspectorSelectedNode.id, "foreground")} disabled={!inspectorSelectedNode.params.foregroundImage}>清除</button>
                             </div>
                           </td>
                         </tr>
@@ -14251,7 +14573,7 @@ export function App() {
                   </div>
                 )}
               </div>
-            ) : selectedNode ? (
+            ) : inspectorSelectedNode ? (
               <div className="device-param-stack">
                 {selectedContainerParameterViews.length > 0 && (
                   <div className="container-param-tabs" role="tablist" aria-label="容器设备参数切换">
@@ -14277,7 +14599,7 @@ export function App() {
                             {renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
                             <td>
                               {row.key === "name" && selectedContainerParameterView.kind === "container" ? (
-                                <input value={selectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
+                                <input value={inspectorSelectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
                               ) : row.readonly || !row.paramKey ? (
                                 <input value={row.value} readOnly />
                               ) : options ? (
@@ -14301,8 +14623,8 @@ export function App() {
                   <table className="param-table">
                     <tbody>
                       {(() => {
-                        const eKeys = getEParameterKeys(selectedNode.kind, selectedNode.params);
-                        const customDefinitions = parseCustomDefinitions(selectedNode.params);
+                        const eKeys = getEParameterKeys(inspectorSelectedNode.kind, inspectorSelectedNode.params);
+                        const customDefinitions = parseCustomDefinitions(inspectorSelectedNode.params);
                         const customKeys = customDefinitions.map((definition) => definition.enName);
                         const customExtraKeys = customKeys.filter((key) => !eKeys.includes(key));
                         const keys =
@@ -14310,17 +14632,17 @@ export function App() {
                             ? [...eKeys, ...customExtraKeys]
                             : customKeys.length > 0
                               ? customKeys
-                              : Object.keys(selectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container");
+                              : Object.keys(inspectorSelectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container");
                         const readonlyKeys = new Set(customDefinitions.filter((definition) => definition.readonly).map((definition) => definition.enName));
                         return keys.map((key) => {
-                          const value = eKeys.length > 0 ? getEParamValue(key, selectedNode) : key === "name" ? selectedNode.name : selectedNode.params[key] ?? "";
+                          const value = eKeys.length > 0 ? getEParamValue(key, inspectorSelectedNode) : key === "name" ? inspectorSelectedNode.name : inspectorSelectedNode.params[key] ?? "";
                           const definition = customDefinitions.find((item) => item.enName === key);
                           return (
                             <tr key={key}>
                               {renderParamHeader(key, key, definition?.cnName ?? PARAM_LABELS[key] ?? key)}
                               <td>
                                 {key === "name" ? (
-                                  <input value={selectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
+                                  <input value={inspectorSelectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
                                 ) : READONLY_E_PARAM_KEYS.has(key) || readonlyKeys.has(key) ? (
                                   <input value={value} readOnly />
                                 ) : (
@@ -14341,12 +14663,12 @@ export function App() {
                 <p>选择画布设备后，可切换查看图元和设备。</p>
               </div>
             )}
-            {selectedNode && inspectorTab === "graph" && graphInfoView === "selected" && (
+            {inspectorSelectedNode && inspectorTab === "graph" && graphInfoView === "selected" && (
               <div className="topology-card">
                 <span>连接度</span>
-                <strong>{topology.nodes[selectedNode.id]?.degree ?? 0}</strong>
+                <strong>{topology.nodes[inspectorSelectedNode.id]?.degree ?? 0}</strong>
                 <small>
-                  {(topology.nodes[selectedNode.id]?.neighbors ?? [])
+                  {(topology.nodes[inspectorSelectedNode.id]?.neighbors ?? [])
                     .map((id) => nodeById.get(id)?.name)
                     .filter(Boolean)
                     .join("、") || "暂无相邻元件"}
@@ -14354,15 +14676,15 @@ export function App() {
               </div>
             )}
           </div>
-        ) : selectedEdge ? (
+        ) : inspectorSelectedEdge ? (
           <div className="form-stack">
             <div className="topology-card">
               <span>联络线</span>
-              <strong>{selectedEdge.id}</strong>
+              <strong>{inspectorSelectedEdge.id}</strong>
               <small>
-                {(nodeById.get(selectedEdge.sourceId)?.name ?? "未知设备") +
+                {(nodeById.get(inspectorSelectedEdge.sourceId)?.name ?? "未知设备") +
                   " -> " +
-                  (nodeById.get(selectedEdge.targetId)?.name ?? "未知设备")}
+                  (nodeById.get(inspectorSelectedEdge.targetId)?.name ?? "未知设备")}
               </small>
             </div>
             <div className="empty-state">
@@ -14376,7 +14698,7 @@ export function App() {
             <p>从左侧拖入元件，或使用联络线模式点击两个元件建立拓扑关系。</p>
           </div>
         )}
-        {topologyErrors.length > 0 && (
+        {inspectorTopologyErrors.length > 0 && (
           <section className="validation-panel">
             <div
               className="validation-panel-resize-handle"
@@ -14387,7 +14709,7 @@ export function App() {
             />
             <div className="validation-panel-title">
               <h2>拓扑告警</h2>
-              <span>{topologyErrors.length} 条</span>
+              <span>{inspectorTopologyErrors.length} 条</span>
             </div>
             <div className="validation-list">
               {visibleTopologyErrors.map((error) => (
@@ -14396,7 +14718,7 @@ export function App() {
                 </button>
               ))}
             </div>
-            {topologyErrors.length > TOPOLOGY_WARNING_PAGE_SIZE && (
+            {inspectorTopologyErrors.length > TOPOLOGY_WARNING_PAGE_SIZE && (
               <div className="validation-pagination">
                 <button
                   type="button"

@@ -590,8 +590,25 @@ export function cloneCanvasClipboard(
   return { nodes, edges, groups };
 }
 
-function boundsForNodes(nodes: ModelNode[]) {
+function edgeStoredPoints(edge: Edge): Point[] {
+  return [
+    edge.sourcePoint,
+    ...(edge.manualPoints ?? []),
+    edge.targetPoint
+  ].filter((point): point is Point => Boolean(point));
+}
+
+function boundsForNodesAndEdges(nodes: ModelNode[], edges: Edge[]) {
   const boxes = nodes.map(nodeSelectionBounds);
+  const edgePoints = edges.flatMap(edgeStoredPoints);
+  if (edgePoints.length > 0) {
+    boxes.push({
+      left: Math.min(...edgePoints.map((point) => point.x)),
+      right: Math.max(...edgePoints.map((point) => point.x)),
+      top: Math.min(...edgePoints.map((point) => point.y)),
+      bottom: Math.max(...edgePoints.map((point) => point.y))
+    });
+  }
   if (boxes.length === 0) {
     return null;
   }
@@ -607,9 +624,11 @@ export function buildCanvasLayoutUnits(
   groups: readonly ModelGroup[],
   nodes: readonly ModelNode[],
   selectedNodeIds: readonly string[],
-  selectedEdgeIds: readonly string[]
+  selectedEdgeIds: readonly string[],
+  edges: readonly Edge[] = []
 ): CanvasLayoutUnit[] {
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const edgesById = new Map(edges.map((edge) => [edge.id, edge]));
   const groupsById = groupById(groups);
   const coveredNodeIds = new Set<string>();
   const units: CanvasLayoutUnit[] = [];
@@ -618,8 +637,13 @@ export function buildCanvasLayoutUnits(
     if (!group) {
       continue;
     }
-    const groupNodeIds = collectGroupTreeMembers(group, groupsById).nodeIds.filter((nodeId) => nodesById.has(nodeId));
-    const bounds = boundsForNodes(groupNodeIds.flatMap((nodeId) => nodesById.get(nodeId) ?? []));
+    const groupMembers = collectGroupTreeMembers(group, groupsById);
+    const groupNodeIds = groupMembers.nodeIds.filter((nodeId) => nodesById.has(nodeId));
+    const groupEdges = groupMembers.edgeIds.flatMap((edgeId) => edgesById.get(edgeId) ?? []);
+    const bounds = boundsForNodesAndEdges(
+      groupNodeIds.flatMap((nodeId) => nodesById.get(nodeId) ?? []),
+      groupEdges
+    );
     if (!bounds) {
       continue;
     }

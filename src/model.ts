@@ -876,10 +876,13 @@ export function assignPermanentDeviceIndex<T extends Pick<ModelNode, "kind" | "n
   return { node: relationResult.node, counters: relationResult.counters };
 }
 
-export function resetDeviceIndexesForPaste<T extends Pick<ModelNode, "params">>(node: T): T {
+export function resetDeviceIndexesForPaste<T extends Pick<ModelNode, "params"> & Partial<Pick<ModelNode, "kind" | "name">>>(
+  node: T
+): T {
   let changed = false;
   const nextParams = { ...node.params };
-  if (Object.prototype.hasOwnProperty.call(nextParams, "idx")) {
+  const hadDeviceIndex = Object.prototype.hasOwnProperty.call(nextParams, "idx");
+  if (hadDeviceIndex) {
     delete nextParams.idx;
     changed = true;
   }
@@ -891,7 +894,18 @@ export function resetDeviceIndexesForPaste<T extends Pick<ModelNode, "params">>(
       }
     }
   }
-  return changed ? { ...node, params: nextParams } : node;
+  const indexedDeviceNode = node.kind && typeof node.name === "string"
+    ? (node as Pick<ModelNode, "kind" | "name" | "params">)
+    : null;
+  let nextNode = node;
+  if (indexedDeviceNode && deviceIndexCounterKey(indexedDeviceNode)) {
+    const baseName = deviceDefaultNameBase(indexedDeviceNode);
+    if (node.name !== baseName) {
+      nextNode = { ...nextNode, name: baseName };
+      changed = true;
+    }
+  }
+  return changed ? { ...nextNode, params: nextParams } : node;
 }
 
 export function assignMissingDeviceIndexes<T extends Pick<ModelNode, "kind" | "name" | "params">>(

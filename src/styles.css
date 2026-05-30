@@ -1179,6 +1179,38 @@ button:disabled {
   vector-effect: non-scaling-stroke;
 }
 
+.multi-node-drag-overlay {
+  pointer-events: none;
+  will-change: transform;
+}
+
+.multi-node-drag-preview-node {
+  opacity: 0.96;
+  filter: drop-shadow(0 5px 10px rgba(37, 99, 235, 0.18));
+}
+
+.multi-node-drag-bounds-preview {
+  fill: rgba(37, 99, 235, 0.08);
+  stroke: #2563eb;
+  stroke-width: 2.5;
+  stroke-dasharray: 10 7;
+  vector-effect: non-scaling-stroke;
+}
+
+.multi-node-drag-origin-bounds {
+  fill: rgba(100, 116, 139, 0.06);
+  stroke: #64748b;
+  stroke-width: 2;
+  stroke-dasharray: 8 8;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.diagram-node.multi-drag-origin {
+  opacity: 0.28;
+  pointer-events: none;
+}
+
 .node-hitbox {
   fill: transparent;
   stroke: transparent;

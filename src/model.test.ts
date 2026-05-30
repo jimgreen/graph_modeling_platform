@@ -102,6 +102,7 @@ import {
   prepareConnectionEdgeForCommit,
   projectPointToBusCenterline,
   reconcileOverlappingTerminalConnections,
+  resetDeviceIndexesForPaste,
   terminalRenderLocalPoint,
   terminalStubSegment,
   terminalStubStrokeWidth,
@@ -1213,6 +1214,30 @@ describe("power system model", () => {
     copiedLoad.name = "交流负荷 副本";
 
     const { node: pastedLoad } = assignPermanentDeviceIndex(copiedLoad, { ACLoad: 4 });
+
+    expect(pastedLoad.params.idx).toBe("5");
+    expect(pastedLoad.name).toBe("交流负荷-5");
+  });
+
+  test("renames pasted user-named device copies with the component label and newly allocated idx", () => {
+    const copiedLoad = createDefaultNode("ac-load", { x: 100, y: 100 });
+    copiedLoad.name = "用户命名负荷 副本";
+    copiedLoad.params = { ...copiedLoad.params, idx: "2" };
+
+    const resetLoad = resetDeviceIndexesForPaste(copiedLoad);
+    const { node: pastedLoad } = assignPermanentDeviceIndex(resetLoad, { ACLoad: 4 });
+
+    expect(pastedLoad.params.idx).toBe("5");
+    expect(pastedLoad.name).toBe("交流负荷-5");
+  });
+
+  test("renames pasted legacy device copies without an old idx using the component label and new idx", () => {
+    const copiedLoad = createDefaultNode("ac-load", { x: 100, y: 100 });
+    copiedLoad.name = "老模型负荷 副本";
+    delete copiedLoad.params.idx;
+
+    const resetLoad = resetDeviceIndexesForPaste(copiedLoad);
+    const { node: pastedLoad } = assignPermanentDeviceIndex(resetLoad, { ACLoad: 4 });
 
     expect(pastedLoad.params.idx).toBe("5");
     expect(pastedLoad.name).toBe("交流负荷-5");

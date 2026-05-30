@@ -538,7 +538,7 @@ describe("graph inspector panel", () => {
     expect(dragBlock).toContain("const dragNodeIds = dragSelection.nodeIds");
     expect(dragBlock).toContain("if (!activeLayerNodeIdSet.has(node.id))");
     expect(source).toContain("const selectedLayoutUnits = useMemo");
-    expect(source).toContain("buildCanvasLayoutUnits(activeLayerGroups, activeLayerNodes, activeSelectedNodeIds, activeSelectedEdgeIds)");
+    expect(source).toContain("buildCanvasLayoutUnits(activeLayerGroups, activeLayerNodes, activeSelectedNodeIds, activeSelectedEdgeIds, activeLayerEdges)");
     expect(layoutBlock).toContain("layoutNodes(nodes, selectedLayoutUnits)");
     expect(layoutBlock).toContain("const selected = new Set(layoutNodeIds)");
     expect(source).toContain("if (!activeLayerEdgeIdSet.has(edgeId))");
@@ -993,8 +993,8 @@ describe("graph inspector panel", () => {
     const paramBlock = source.slice(paramStart, paramEnd);
 
     expect(paramBlock).toContain("const deviceParamPanelActive = inspectorTab === \"device\"");
-    expect(paramBlock).toContain("deviceParamPanelActive && selectedNode ? libraryTemplateByKind.get(selectedNode.kind) : undefined");
-    expect(paramBlock).toContain("deviceParamPanelActive && selectedNode ? buildContainerDeviceParameterViews");
+    expect(paramBlock).toContain("deviceParamPanelActive && inspectorSelectedNode ? libraryTemplateByKind.get(inspectorSelectedNode.kind) : undefined");
+    expect(paramBlock).toContain("deviceParamPanelActive && inspectorSelectedNode ? buildContainerDeviceParameterViews");
   });
 
   test("keeps selected edge overlay viewport-scoped without building a full rendered route array", async () => {
@@ -1565,12 +1565,50 @@ describe("graph inspector panel", () => {
     expect(interactionBlock).toContain("if (suppressDragTerminalInteraction)");
     expect(interactionBlock).toContain("!isMultiNodeMoveState(dragging)");
     expect(previewBlock).toContain("isMultiNodeMoveState(dragging)");
-    expect(multiPreviewBlock).toContain("translatedMultiNodeDragEdgeRoutes");
+    expect(multiPreviewBlock).toContain("return []");
+    expect(source).toContain("const renderMultiNodeDragOverlay");
     expect(multiPreviewBlock).not.toContain("resolveStraightBusSlideEndpoint");
     expect(multiPreviewBlock).not.toContain("preserveDraggedRouteShape");
     expect(multiPreviewBlock).not.toContain("getRouteEndpointNormal");
     expect(ghostBlock).toContain("isMultiNodeMoveState(dragging)");
     expect(ghostBlock).toContain("return originalMultiNodeDragEdgeRoutes");
+  });
+
+  test("moves multi-node drag previews through one SVG overlay transform without React state churn", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const dragMoveStart = source.indexOf("const applyNodeDragMove");
+    const dragMoveEnd = source.indexOf("const scheduleNodeDragMove", dragMoveStart);
+    const dragMoveBlock = source.slice(dragMoveStart, dragMoveEnd);
+    const multiMoveStart = dragMoveBlock.indexOf("if (isMultiNodeMoveState(currentDrag))");
+    const multiMoveEnd = dragMoveBlock.indexOf("const nextDragState", multiMoveStart);
+    const multiMoveBlock = dragMoveBlock.slice(multiMoveStart, multiMoveEnd);
+    const overlayStart = source.indexOf("const renderMultiNodeDragOverlay");
+    const overlayEnd = source.indexOf("const renderBoundaryBusInternalConnector", overlayStart);
+    const overlayBlock = source.slice(overlayStart, overlayEnd);
+    const commitStart = source.indexOf("const commitFastMovedGraphPatches");
+    const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
+
+    expect(source).toContain("const multiNodeDragOverlayRef");
+    expect(source).toContain("const updateMultiNodeDragOverlayTransform");
+    expect(source).toContain("const scheduleDeferredMovedConnectionRepair");
+    expect(source).toContain("const deferredSelectedNode = useDeferredValue(selectedNode)");
+    expect(source).toContain("const inspectorSelectedNode = selectedNode && deferredSelectedNode?.id === selectedNode.id");
+    expect(source).toContain("const inspectorTopologyErrors = useDeferredValue(topologyErrors)");
+    expect(source).toContain("const deferredElementTreeRevision = useDeferredValue(graphStore.elementTreeRevision)");
+    expect(source).toContain("multiNodeDragOverlayRef.current.setAttribute(\"transform\"");
+    expect(multiMoveBlock).toContain("updateMultiNodeDragOverlayTransform(boundedDelta)");
+    expect(multiMoveBlock).not.toContain("setDragging");
+    expect(commitBlock).toContain("const deferMovedRouteRepair = movedNodeIds.length > 1");
+    expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(");
+    expect(overlayBlock).toContain("className=\"multi-node-drag-overlay\"");
+    expect(overlayBlock).toContain("multiNodeDragDegradedPreview");
+    expect(source).toContain("className=\"multi-node-drag-origin-bounds\"");
+    expect(source).toContain("!(multiNodeDragging && multiNodeDragDegradedPreview) && dragging.nodeIds.map");
+    expect(styles).toContain(".multi-node-drag-overlay");
+    expect(styles).toContain(".multi-node-drag-origin-bounds");
+    expect(styles).toContain(".diagram-node.multi-drag-origin");
   });
 
   test("defers bus terminal synchronization and keeps graph edits out of automatic draft saves", async () => {
@@ -1663,7 +1701,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("elementTreeCacheRef");
     expect(source).toContain("elementTreeRevision");
     expect(source).toContain("elementTreeLayerSignature");
-    expect(elementTreeBlock).toContain("elementTreeCacheSignature(graphStore.elementTreeRevision, elementTreeLayerSignature, libraryTemplates)");
+    expect(source).toContain("const deferredElementTreeRevision = useDeferredValue(graphStore.elementTreeRevision)");
+    expect(elementTreeBlock).toContain("elementTreeCacheSignature(deferredElementTreeRevision, elementTreeLayerSignature, libraryTemplates)");
     expect(elementTreeBlock).not.toContain("elementTreeCacheSignature(deferredElementTreeNodes");
     expect(elementTreeBlock).toContain("elementTreeCacheRef.current.signature === elementTreeSignature");
     expect(elementTreeBlock).toContain("return elementTreeCacheRef.current.tree");
@@ -1676,7 +1715,7 @@ describe("graph inspector panel", () => {
     const treeStart = source.indexOf("const renderElementTreePanel = () =>");
     const treeEnd = source.indexOf("const topologyWarningDisplayMessage", treeStart);
     const treeBlock = source.slice(treeStart, treeEnd);
-    const validationStart = source.indexOf("{topologyErrors.length > 0 && (");
+    const validationStart = source.indexOf("{inspectorTopologyErrors.length > 0 && (");
     const validationEnd = source.indexOf("</section>", validationStart);
     const validationBlock = source.slice(validationStart, validationEnd);
 
