@@ -343,7 +343,19 @@ describe("graph inspector panel", () => {
       "static-hexagon",
       "static-parallelogram",
       "static-triangle",
-      "static-callout"
+      "static-callout",
+      "static-default-node",
+      "static-input-node",
+      "static-output-node",
+      "static-port-node",
+      "static-card-node",
+      "static-toolbar-node",
+      "static-resizer-frame",
+      "static-subflow-box",
+      "static-bezier-connector",
+      "static-smoothstep-connector",
+      "static-self-loop",
+      "static-edge-label"
     ]) {
       expect(modelSource).toContain(`kind: "${kind}"`);
       expect(glyphBlock).toContain(`node.kind === "${kind}"`);
@@ -360,6 +372,8 @@ describe("graph inspector panel", () => {
     expect(inspectorBlock).toContain("markerStart");
     expect(inspectorBlock).toContain("markerEnd");
     expect(inspectorBlock).toContain("arrowSize");
+    expect(inspectorBlock).toContain("handleColor");
+    expect(inspectorBlock).toContain("handleSize");
   });
 
   test("keeps backend electric heat sections split by AC and DC device types", async () => {
@@ -2105,7 +2119,7 @@ describe("graph inspector panel", () => {
     expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(");
     expect(overlayBlock).toContain("className=\"multi-node-drag-overlay\"");
     expect(overlayBlock).not.toContain("multiNodeDragDegradedPreview");
-    expect(source).toContain("className={`diagram-canvas ${connectSource ? \"connect-mode\" : \"\"} ${activeDropReady ? \"connect-drop-ready\" : \"\"} ${panning ? \"panning\" : \"\"} ${multiNodeDragging ? \"multi-node-dragging\" : \"\"}`}");
+    expect(source).toContain("className={`diagram-canvas ${connectSource ? \"connect-mode\" : \"\"} ${staticDrawing ? \"static-draw-mode\" : \"\"} ${activeDropReady ? \"connect-drop-ready\" : \"\"} ${panning ? \"panning\" : \"\"} ${multiNodeDragging ? \"multi-node-dragging\" : \"\"}`}");
     expect(source).toContain("<g className=\"canvas-content\">");
     expect(source).not.toContain("if (multiNodeDragging && draggingNodeIdSet.has(node.id)) {\n                return null;");
     expect(source).toContain("{selectedGroupLayoutUnits.map");
@@ -2741,6 +2755,59 @@ describe("graph inspector panel", () => {
     expect(confirmBlock).toContain("persistTemplateLibraryChange({ customGraphTemplateTypes: nextTypes, customGraphTemplates: nextTemplates");
     expect(createTypeBlock).not.toContain("setHasUnsavedChanges(true)");
     expect(confirmBlock).not.toContain("setHasUnsavedChanges(true)");
+  });
+
+  test("routes line-like static symbols through an interactive canvas drawing interface", async () => {
+    const source = await readAppSource();
+    const model = await readModelSource();
+    const styles = await readStyles();
+    const dropStart = source.indexOf("const handleDrop =");
+    const dropEnd = source.indexOf("const handleNodePointerDown", dropStart);
+    const dropBlock = source.slice(dropStart, dropEnd);
+    const pointerMoveStart = source.indexOf("const handlePointerMove = (event: PointerEvent<SVGSVGElement>)");
+    const pointerMoveEnd = source.indexOf("if (nodeLabelRotateDrag", pointerMoveStart);
+    const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
+    const pointerDownStart = source.indexOf("onPointerDown={(event) => {");
+    const pointerDownEnd = source.indexOf("if (connectSource)", pointerDownStart);
+    const pointerDownBlock = source.slice(pointerDownStart, pointerDownEnd);
+    const keyHandlerStart = source.indexOf("const handleKeyDown = (event: KeyboardEvent)");
+    const keyHandlerEnd = source.indexOf("window.addEventListener(\"keydown\", handleKeyDown)", keyHandlerStart);
+    const keyHandlerBlock = source.slice(keyHandlerStart, keyHandlerEnd);
+
+    expect(model).toContain("export const STATIC_DRAW_POINTS_PARAM = \"drawPoints\";");
+    expect(model).toContain("export const INTERACTIVE_STATIC_DRAWING_KINDS");
+    for (const kind of [
+      "static-line",
+      "static-polyline",
+      "static-straight-connector",
+      "static-arrow-connector",
+      "static-double-arrow-connector",
+      "static-elbow-connector",
+      "static-bezier-connector",
+      "static-smoothstep-connector"
+    ]) {
+      expect(model).toContain(`"${kind}"`);
+    }
+    expect(model).toContain("export function createInteractiveStaticDrawingNode");
+    expect(model).toContain("export function parseStaticDrawPoints");
+    expect(source).toContain("type ToolMode = \"select\" | \"connect\" | \"static-draw\";");
+    expect(source).toContain("type StaticDrawingState =");
+    expect(source).toContain("const [staticDrawing, setStaticDrawing]");
+    expect(source).toContain("const startInteractiveStaticDrawing");
+    expect(source).toContain("const appendStaticDrawingPoint");
+    expect(source).toContain("const finishInteractiveStaticDrawing");
+    expect(source).toContain("const cancelInteractiveStaticDrawing");
+    expect(source).toContain("const updateInteractiveStaticDrawingPreview");
+    expect(source).toContain("const renderInteractiveStaticDrawingPreview");
+    expect(source).toContain("function staticDrawPointsForNode");
+    expect(dropBlock).toContain("isInteractiveStaticDrawingKind(kind)");
+    expect(dropBlock).toContain("startInteractiveStaticDrawing(template, pointerPosition)");
+    expect(pointerMoveBlock).toContain("updateInteractiveStaticDrawingPreview(pointer)");
+    expect(pointerDownBlock).toContain("appendStaticDrawingPoint(pointer");
+    expect(keyHandlerBlock).toContain("finishInteractiveStaticDrawing()");
+    expect(keyHandlerBlock).toContain("cancelInteractiveStaticDrawing()");
+    expect(source).toContain("{renderInteractiveStaticDrawingPreview()}");
+    expect(styles).toContain(".static-drawing-preview-line");
   });
 
   test("hides unavailable canvas context-menu actions instead of rendering disabled buttons", async () => {

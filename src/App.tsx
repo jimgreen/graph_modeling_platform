@@ -63,6 +63,7 @@ import {
   createSavedScheme,
   createSavedProject,
   createDefaultNode,
+  createInteractiveStaticDrawingNode,
   createNodeFromTemplate,
   containerRelationNameKey,
   CUSTOM_DEVICE_TEMPLATE_KEY,
@@ -92,6 +93,7 @@ import {
   getBusTerminalType,
   getContainerTerminalAssociationSourceIndex,
   getSwitchVisualState,
+  isInteractiveStaticDrawingKind,
   getEParameterKeys,
   getEParamValue,
   getEExportWarnings,
@@ -113,6 +115,7 @@ import {
   normalizeColorPalette,
   normalizeVoltageBaseInput,
   normalizeScaleValue,
+  parseStaticDrawPoints,
   serializeProject,
   deserializeProject,
   isBusNode,
@@ -178,6 +181,7 @@ import {
   terminalRenderLocalPoint,
   terminalStubSegment,
   terminalStubStrokeWidth,
+  STATIC_DRAW_POINTS_PARAM,
   TERMINAL_TYPE_LIBRARY_LABELS,
   terminalVoltageBaseNumber,
   terminalTypeColor,
@@ -242,7 +246,13 @@ import {
   type SidePanelSide
 } from "./sidePanelVisibility";
 
-type ToolMode = "select" | "connect";
+type ToolMode = "select" | "connect" | "static-draw";
+type StaticDrawingState = {
+  kind: DeviceKind;
+  template: DeviceTemplate;
+  points: Point[];
+  previewPoint: Point;
+};
 type AttributeLibrary = string;
 type CustomComponentTypeDefinition = {
   name: string;
@@ -1297,6 +1307,8 @@ const PARAM_LABELS: Record<string, string> = {
   markerStart: "首端标记",
   markerEnd: "末端标记",
   arrowSize: "箭头尺寸",
+  handleColor: "端口颜色",
+  handleSize: "端口大小",
   vbase: "电压等级",
   highVbase: "高压侧电压等级",
   mediumVbase: "中压侧电压等级",
@@ -2886,6 +2898,36 @@ function staticConnectorPath(
   );
 }
 
+function staticDrawPointsForNode(node: ModelNode, fallback: Point[]) {
+  const customPoints = parseStaticDrawPoints(node.params[STATIC_DRAW_POINTS_PARAM]);
+  return customPoints.length >= 2 ? customPoints : fallback;
+}
+
+function staticHandleDot(node: ModelNode, x: number, y: number, stroke = "#ffffff") {
+  const size = staticNumericParam(node, "handleSize", 8, 3);
+  const color = node.params.handleColor || node.params.accentColor || "#2563eb";
+  return <circle cx={x} cy={y} r={size / 2} fill={color} stroke={stroke} strokeWidth="2" />;
+}
+
+function staticFrameHandles(node: ModelNode, width: number, height: number) {
+  return (
+    <>
+      {[
+        [-width / 2, -height / 2],
+        [0, -height / 2],
+        [width / 2, -height / 2],
+        [width / 2, 0],
+        [width / 2, height / 2],
+        [0, height / 2],
+        [-width / 2, height / 2],
+        [-width / 2, 0]
+      ].map(([x, y], index) => (
+        <g key={index}>{staticHandleDot(node, x, y, node.params.accentColor || "#2563eb")}</g>
+      ))}
+    </>
+  );
+}
+
 function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorDisplayMode = "energy", colorPalette: ColorPalette = DEFAULT_COLOR_PALETTE) {
   if (isBusNode(node) || isStaticNode(node)) {
     return "";
@@ -2985,10 +3027,16 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
       );
     }
     if (node.kind === "static-line") {
-      return renderGeometry ? <line x1={-w / 2} y1="0" x2={w / 2} y2="0" stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" /> : null;
+      const points = staticDrawPointsForNode(node, [{ x: -w / 2, y: 0 }, { x: w / 2, y: 0 }]);
+      return renderGeometry ? staticConnectorPath(node, points, staticStroke, lineWidth, dashArray) : null;
     }
     if (node.kind === "static-polyline") {
-      return renderGeometry ? <polyline points={`${-w / 2},${h / 3} 0,${-h / 3} ${w / 2},${h / 3}`} fill="none" stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" strokeLinejoin="round" /> : null;
+      const points = staticDrawPointsForNode(node, [
+        { x: -w / 2, y: h / 3 },
+        { x: 0, y: -h / 3 },
+        { x: w / 2, y: h / 3 }
+      ]);
+      return renderGeometry ? staticConnectorPath(node, points, staticStroke, lineWidth, dashArray) : null;
     }
     if (node.kind === "static-circle") {
       return renderGeometry ? <circle cx="0" cy="0" r={Math.min(w, h) / 2} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} /> : null;
@@ -3201,9 +3249,10 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
       if (!renderGeometry) {
         return null;
       }
+      const points = staticDrawPointsForNode(node, [{ x: -w / 2, y: 0 }, { x: w / 2, y: 0 }]);
       return (
         <g>
-          {staticConnectorPath(node, [{ x: -w / 2, y: 0 }, { x: w / 2, y: 0 }], staticStroke, lineWidth, dashArray)}
+          {staticConnectorPath(node, points, staticStroke, lineWidth, dashArray)}
           {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
         </g>
       );
@@ -3215,9 +3264,10 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
       if (!renderGeometry) {
         return null;
       }
+      const points = staticDrawPointsForNode(node, [{ x: -w / 2, y: 0 }, { x: w / 2, y: 0 }]);
       return (
         <g>
-          {staticConnectorPath(node, [{ x: -w / 2, y: 0 }, { x: w / 2, y: 0 }], staticStroke, lineWidth, dashArray)}
+          {staticConnectorPath(node, points, staticStroke, lineWidth, dashArray)}
           {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
         </g>
       );
@@ -3229,9 +3279,10 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
       if (!renderGeometry) {
         return null;
       }
+      const points = staticDrawPointsForNode(node, [{ x: -w / 2, y: 0 }, { x: w / 2, y: 0 }]);
       return (
         <g>
-          {staticConnectorPath(node, [{ x: -w / 2, y: 0 }, { x: w / 2, y: 0 }], staticStroke, lineWidth, dashArray)}
+          {staticConnectorPath(node, points, staticStroke, lineWidth, dashArray)}
           {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
         </g>
       );
@@ -3243,12 +3294,12 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
       if (!renderGeometry) {
         return null;
       }
-      const points = [
+      const points = staticDrawPointsForNode(node, [
         { x: -w / 2, y: h / 3 },
         { x: -w / 6, y: h / 3 },
         { x: -w / 6, y: -h / 3 },
         { x: w / 2, y: -h / 3 }
-      ];
+      ]);
       return (
         <g>
           {staticConnectorPath(node, points, staticStroke, lineWidth, dashArray)}
@@ -3318,6 +3369,220 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
           <path d={path} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinejoin="round" />
           <path d={`M ${-w / 2 + 14} ${-h / 2 + 24} H ${w / 2 - 14}`} stroke={accentColor} strokeWidth={Math.max(1, lineWidth)} strokeLinecap="round" />
           {renderText && staticShapeText(node, w, h * 0.82, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-default-node") {
+      if (mode === "text") {
+        return staticShapeText(node, w, h, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      return (
+        <g style={staticSymbolShadowStyle(node)}>
+          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
+          {staticHandleDot(node, -w / 2, 0)}
+          {staticHandleDot(node, w / 2, 0)}
+          {renderText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-input-node") {
+      if (mode === "text") {
+        return staticShapeText(node, w, h, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      return (
+        <g style={staticSymbolShadowStyle(node)}>
+          <path d={`M ${-w / 2 + 14} ${-h / 2} H ${w / 2} V ${h / 2} H ${-w / 2 + 14} L ${-w / 2} 0 Z`} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinejoin="round" />
+          {staticHandleDot(node, w / 2, 0)}
+          {renderText && staticShapeText(node, w * 0.78, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-output-node") {
+      if (mode === "text") {
+        return staticShapeText(node, w, h, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      return (
+        <g style={staticSymbolShadowStyle(node)}>
+          <path d={`M ${-w / 2} ${-h / 2} H ${w / 2 - 14} L ${w / 2} 0 L ${w / 2 - 14} ${h / 2} H ${-w / 2} Z`} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinejoin="round" />
+          {staticHandleDot(node, -w / 2, 0)}
+          {renderText && staticShapeText(node, w * 0.78, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-port-node") {
+      if (mode === "text") {
+        return staticShapeText(node, w, h, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      return (
+        <g style={staticSymbolShadowStyle(node)}>
+          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
+          {staticHandleDot(node, -w / 2, 0)}
+          {staticHandleDot(node, w / 2, 0)}
+          {staticHandleDot(node, 0, -h / 2)}
+          {staticHandleDot(node, 0, h / 2)}
+          {renderText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-card-node") {
+      if (mode === "text") {
+        return staticShapeText(node, w, h, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const headerHeight = Math.max(24, Math.min(36, h * 0.32));
+      return (
+        <g style={staticSymbolShadowStyle(node)}>
+          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
+          <rect x={-w / 2} y={-h / 2} width={w} height={headerHeight} rx={cornerRadius} fill={accentColor} opacity="0.14" stroke="none" />
+          <path d={`M ${-w / 2 + 12} ${-h / 2 + headerHeight + 14} H ${w / 2 - 12} M ${-w / 2 + 12} ${-h / 2 + headerHeight + 30} H ${w / 2 - 32}`} stroke={accentColor} strokeWidth={Math.max(1, lineWidth * 0.75)} strokeLinecap="round" />
+          {renderText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-toolbar-node") {
+      if (mode === "text") {
+        return staticShapeText(node, w, h * 0.7, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const toolbarY = -h / 2 - 18;
+      return (
+        <g style={staticSymbolShadowStyle(node)}>
+          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
+          <rect x={-52} y={toolbarY} width="104" height="24" rx="6" fill={accentColor} stroke={staticStroke} strokeWidth="1" opacity="0.92" />
+          <circle cx="-28" cy={toolbarY + 12} r="4" fill="#ffffff" />
+          <rect x="-4" y={toolbarY + 8} width="8" height="8" rx="2" fill="#ffffff" />
+          <path d={`M 24 ${toolbarY + 16} L 32 ${toolbarY + 8} M 24 ${toolbarY + 8} L 32 ${toolbarY + 16}`} stroke="#ffffff" strokeWidth="2" strokeLinecap="round" />
+          {renderText && staticShapeText(node, w, h * 0.7, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-resizer-frame") {
+      if (mode === "text") {
+        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      return (
+        <g>
+          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray || "6 4"} />
+          {staticFrameHandles(node, w, h)}
+          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-subflow-box") {
+      if (mode === "text") {
+        return staticShapeText(node, w, h, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const headerHeight = Math.max(26, Math.min(38, h * 0.28));
+      return (
+        <g>
+          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
+          <rect x={-w / 2} y={-h / 2} width={w} height={headerHeight} rx={cornerRadius} fill={accentColor} stroke="none" />
+          <path d={`M ${-w / 2} ${-h / 2 + headerHeight} H ${w / 2}`} stroke={staticStroke} strokeWidth={lineWidth} />
+          <rect x={-w / 2 + 16} y={-h / 2 + headerHeight + 22} width={w * 0.34} height={h * 0.28} rx="6" fill="#ffffff" stroke={accentColor} strokeWidth="1.5" />
+          <rect x={w / 2 - w * 0.34 - 16} y={h / 2 - h * 0.28 - 16} width={w * 0.34} height={h * 0.28} rx="6" fill="#ffffff" stroke={accentColor} strokeWidth="1.5" />
+          <path d={`M ${-w * 0.08} ${-h * 0.02} H ${w * 0.08}`} stroke={accentColor} strokeWidth="2" strokeLinecap="round" />
+          {renderText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-bezier-connector") {
+      if (mode === "text") {
+        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const points = staticDrawPointsForNode(node, [{ x: -w / 2, y: h / 4 }, { x: w / 2, y: -h / 4 }]);
+      const start = points[0];
+      const end = points[points.length - 1];
+      const controlDx = Math.max(24, Math.abs(end.x - start.x) * 0.5);
+      const direction = end.x >= start.x ? 1 : -1;
+      return (
+        <g>
+          <path d={`M ${start.x} ${start.y} C ${start.x + controlDx * direction} ${start.y}, ${end.x - controlDx * direction} ${end.y}, ${end.x} ${end.y}`} fill="none" stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" />
+          {staticConnectorMarker(node.params.markerStart || "none", start.x, start.y, -1, 0.4, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
+          {staticConnectorMarker(node.params.markerEnd || "none", end.x, end.y, 1, -0.4, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
+          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-smoothstep-connector") {
+      if (mode === "text") {
+        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const points = staticDrawPointsForNode(node, [{ x: -w / 2, y: h / 4 }, { x: w / 2, y: -h / 2 }]);
+      const start = points[0];
+      const end = points[points.length - 1];
+      const midX = (start.x + end.x) / 2;
+      const path = points.length > 2
+        ? points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ")
+        : `M ${start.x} ${start.y} H ${midX} V ${end.y} H ${end.x}`;
+      return (
+        <g>
+          <path d={path} fill="none" stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" strokeLinejoin="round" />
+          {staticConnectorMarker(node.params.markerStart || "none", start.x, start.y, -1, 0, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
+          {staticConnectorMarker(node.params.markerEnd || "none", end.x, end.y, 1, 0, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
+          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-self-loop") {
+      if (mode === "text") {
+        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const rx = w * 0.32;
+      const ry = h * 0.32;
+      const endX = w * 0.18;
+      const endY = h * 0.2;
+      return (
+        <g>
+          <path d={`M ${-endX} ${endY} C ${-w / 2} ${h / 2}, ${-w / 2} ${-h / 2}, 0 ${-h / 2} C ${w / 2} ${-h / 2}, ${w / 2} ${h / 2}, ${endX} ${endY}`} fill="none" stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" />
+          <ellipse cx="0" cy="-3" rx={rx} ry={ry} fill="none" stroke={accentColor} strokeWidth="1" opacity="0.16" />
+          {staticConnectorMarker(node.params.markerEnd || "arrow", endX, endY, 0.7, 0.7, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
+          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
+    }
+    if (node.kind === "static-edge-label") {
+      if (mode === "text") {
+        return staticShapeText(node, w, h, miniature);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      return (
+        <g style={staticSymbolShadowStyle(node)}>
+          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={h / 2} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
+          <path d={`M ${-w / 2 - 22} 0 H ${-w / 2} M ${w / 2} 0 H ${w / 2 + 22}`} stroke={accentColor} strokeWidth={Math.max(1, lineWidth)} strokeLinecap="round" />
+          {renderText && staticShapeText(node, w, h, miniature)}
         </g>
       );
     }
@@ -4416,6 +4681,7 @@ export function App() {
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
   const [canvasSelectionScope, setCanvasSelectionScope] = useState<CanvasSelectionScope>("group");
   const [connectSource, setConnectSource] = useState<{ nodeId: string; terminalId: string; point?: Point } | null>(null);
+  const [staticDrawing, setStaticDrawing] = useState<StaticDrawingState | null>(null);
   const [connectDropReady, setConnectDropReady] = useState(false);
   const [dragging, setDragging] = useState<DraggingState | null>(null);
   const [rewiring, setRewiring] = useState<RewiringState>(null);
@@ -7417,6 +7683,26 @@ export function App() {
       if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
         return;
       }
+      if (staticDrawing && isCanvasShortcutTarget) {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          finishInteractiveStaticDrawing();
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          cancelInteractiveStaticDrawing();
+          return;
+        }
+        if (event.key === "Backspace" && staticDrawing.points.length > 1) {
+          event.preventDefault();
+          setStaticDrawing({
+            ...staticDrawing,
+            points: staticDrawing.points.slice(0, -1)
+          });
+          return;
+        }
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
         if (isCanvasShortcutTarget) {
           event.preventDefault();
@@ -7492,7 +7778,7 @@ export function App() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, canvasBounds, canvasClipboard, canvasSelectionScope, deviceIndexCounters, displaySelectedEdgeIds, displaySelectedNodeIds, edges, hasUnsavedChanges, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors, viewBox]);
+  }, [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, canvasBounds, canvasClipboard, canvasSelectionScope, deviceIndexCounters, displaySelectedEdgeIds, displaySelectedNodeIds, edges, hasUnsavedChanges, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, staticDrawing, topologyErrors, viewBox]);
 
   useEffect(() => {
     if (leftPanelTab !== "projects") {
@@ -10683,6 +10969,115 @@ export function App() {
     }
   };
 
+  const interactiveStaticDrawingNeedsExplicitFinish = (kind: DeviceKind) =>
+    kind === "static-polyline" || kind === "static-elbow-connector";
+
+  const appendDistinctStaticDrawingPoint = (points: Point[], point: Point) => {
+    const previous = points.at(-1);
+    return previous && sameOptionalPoint(previous, point) ? points : [...points, point];
+  };
+
+  const staticDrawingPreviewPoints = (drawing: StaticDrawingState) =>
+    appendDistinctStaticDrawingPoint(drawing.points, drawing.previewPoint);
+
+  const staticDrawingPathData = (points: Point[]) =>
+    points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+
+  const startInteractiveStaticDrawing = (template: DeviceTemplate, startPoint: Point) => {
+    const pointer = clampPointToCanvas(startPoint);
+    setMode("static-draw");
+    setStaticDrawing({
+      kind: template.kind,
+      template,
+      points: [pointer],
+      previewPoint: pointer
+    });
+    setCanvasSelectionScope("group");
+    setSelectedNodeIds([]);
+    setSelectedEdgeId("");
+    setSelectedEdgeIds([]);
+    setConnectSource(null);
+    resetConnectPreviewState();
+    setRewiring(null);
+    setContextMenu(null);
+    activateInspectorFromCanvas();
+    writeOperationLog(`开始绘制图元：${template.label}`);
+  };
+
+  const cancelInteractiveStaticDrawing = () => {
+    if (!staticDrawing) {
+      return;
+    }
+    setStaticDrawing(null);
+    setMode("select");
+    writeOperationLog("取消绘制图元");
+  };
+
+  const finishInteractiveStaticDrawing = (finalPoint?: Point) => {
+    if (!staticDrawing) {
+      return;
+    }
+    const points = finalPoint
+      ? appendDistinctStaticDrawingPoint(staticDrawing.points, clampPointToCanvas(finalPoint))
+      : staticDrawingPreviewPoints(staticDrawing);
+    if (points.length < 2) {
+      writeOperationLog("绘制图元至少需要两个落点");
+      return;
+    }
+    const node = createInteractiveStaticDrawingNode(staticDrawing.template, points, activeLayerId);
+    pushUndoSnapshot();
+    setGraphArrays([...nodes, node], edges);
+    setCanvasSelectionScope("group");
+    setSelectedNodeIds([node.id]);
+    setSelectedEdgeId("");
+    setSelectedEdgeIds([]);
+    setStaticDrawing(null);
+    setMode("select");
+    activateInspectorFromCanvas();
+    writeOperationLog(`新增图元：${node.name}`);
+  };
+
+  const appendStaticDrawingPoint = (point: Point, forceFinish = false) => {
+    if (!staticDrawing) {
+      return;
+    }
+    const nextPoint = clampPointToCanvas(point);
+    const nextPoints = appendDistinctStaticDrawingPoint(staticDrawing.points, nextPoint);
+    if (forceFinish || (!interactiveStaticDrawingNeedsExplicitFinish(staticDrawing.kind) && nextPoints.length >= 2)) {
+      finishInteractiveStaticDrawing(nextPoint);
+      return;
+    }
+    setStaticDrawing({
+      ...staticDrawing,
+      points: nextPoints,
+      previewPoint: nextPoint
+    });
+  };
+
+  const updateInteractiveStaticDrawingPreview = (point: Point) => {
+    setStaticDrawing((current) => {
+      if (!current || sameOptionalPoint(current.previewPoint, point)) {
+        return current;
+      }
+      return { ...current, previewPoint: point };
+    });
+  };
+
+  const renderInteractiveStaticDrawingPreview = () => {
+    if (!staticDrawing) {
+      return null;
+    }
+    const points = staticDrawingPreviewPoints(staticDrawing);
+    return (
+      <g className="static-drawing-preview">
+        {points.length >= 2 && <path d={staticDrawingPathData(points)} className="static-drawing-preview-line" />}
+        {staticDrawing.points.map((point, index) => (
+          <circle key={index} className="static-drawing-preview-point" cx={point.x} cy={point.y} r="4.5" />
+        ))}
+      </g>
+    );
+  };
+
   const startSidePanelResize = (event: PointerEvent<HTMLDivElement>, side: SidePanelSide) => {
     event.preventDefault();
     event.stopPropagation();
@@ -11469,6 +11864,10 @@ export function App() {
     if (!template) {
       return;
     }
+    if (isInteractiveStaticDrawingKind(kind)) {
+      startInteractiveStaticDrawing(template, pointerPosition);
+      return;
+    }
     const rawNode = { ...createNodeFromTemplate(template, position), layerId: activeLayerId };
     const dropOriginShift = leftTopCanvasOriginShiftForContent([...nodes, rawNode], edges);
     const dropSourceNodes = hasCanvasOriginShift(dropOriginShift)
@@ -11509,6 +11908,11 @@ export function App() {
   const handleNodePointerDown = (event: PointerEvent<SVGGElement>, node: ModelNode) => {
     event.stopPropagation();
     if (event.button !== 0) {
+      return;
+    }
+    if (staticDrawing && svgRef.current) {
+      const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      appendStaticDrawingPoint(pointer, event.detail >= 2);
       return;
     }
     if (!activeLayerNodeIdSet.has(node.id)) {
@@ -11641,6 +12045,9 @@ export function App() {
       if (connectSource) {
         const previewPoint = resolveConnectPreviewPoint(pointer, event);
         scheduleConnectPreviewPoint(previewPoint);
+      }
+      if (staticDrawing && !connectSource) {
+        updateInteractiveStaticDrawingPreview(pointer);
       }
     }
     if (nodeLabelRotateDrag && svgRef.current) {
@@ -13336,6 +13743,9 @@ export function App() {
   const insertManualBendFromEdgePath = (event: MouseEvent<SVGElement>, edgeId: string, routePoints: Point[]) => {
     event.preventDefault();
     event.stopPropagation();
+    if (staticDrawing) {
+      return;
+    }
     if (!activeLayerEdgeIdSet.has(edgeId)) {
       return;
     }
@@ -13360,7 +13770,15 @@ export function App() {
 
   const handleEdgePathPointerDown = (event: PointerEvent<SVGPathElement>, edgeId: string, routePoints: Point[]) => {
     event.stopPropagation();
-    if (event.button !== 0 || !svgRef.current || !activeLayerEdgeIdSet.has(edgeId)) {
+    if (event.button !== 0 || !svgRef.current) {
+      return;
+    }
+    if (staticDrawing) {
+      const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      appendStaticDrawingPoint(pointer, event.detail >= 2);
+      return;
+    }
+    if (!activeLayerEdgeIdSet.has(edgeId)) {
       return;
     }
     activateInspectorFromCanvas();
@@ -13482,6 +13900,11 @@ export function App() {
     terminalId: string
   ) => {
     event.stopPropagation();
+    if (staticDrawing && event.button === 0 && svgRef.current) {
+      const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      appendStaticDrawingPoint(pointer, event.detail >= 2);
+      return;
+    }
     if (!activeLayerNodeIdSet.has(node.id)) {
       return;
     }
@@ -15557,7 +15980,7 @@ export function App() {
         <section className="canvas-frame" ref={canvasFrameRef}>
           <svg
             ref={svgRef}
-            className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""} ${multiNodeDragging ? "multi-node-dragging" : ""}`}
+            className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${staticDrawing ? "static-draw-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""} ${multiNodeDragging ? "multi-node-dragging" : ""}`}
             style={{ width: canvasWidth, height: canvasHeight }}
             viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
             onDrop={handleDrop}
@@ -15625,6 +16048,10 @@ export function App() {
               lastRawCanvasPointerRef.current = rawPointer;
               lastCanvasPointerRef.current = pointer;
               updateMouseStatus(pointer);
+              if (staticDrawing) {
+                appendStaticDrawingPoint(pointer, event.detail >= 2);
+                return;
+              }
               if (connectSource) {
                 const previewPoint = resolveConnectPreviewPoint(pointer, event);
                 const target = findConnectTargetAtPoint(previewPoint);
@@ -15690,6 +16117,10 @@ export function App() {
               lastRawCanvasPointerRef.current = rawPointer;
               lastCanvasPointerRef.current = pointer;
               updateMouseStatus(pointer);
+              if (staticDrawing) {
+                finishInteractiveStaticDrawing(pointer);
+                return;
+              }
               if (connectSource) {
                 setConnectSource(null);
                 resetConnectPreviewState();
@@ -15748,6 +16179,7 @@ export function App() {
                 height={Math.abs(marquee.current.y - marquee.start.y)}
               />
             )}
+            {renderInteractiveStaticDrawingPreview()}
             {dragGhostEdgeRoutes.map((route) => (
               <path key={`drag-ghost-edge-${route.edgeId}`} d={route.path} className="connection-line drag-ghost" style={connectionLineStyle(route.edgeId)} />
             ))}
@@ -16527,6 +16959,7 @@ export function App() {
           <span className="status-pill">选中 {selectedCount}</span>
           {saveRequired && <strong>未保存</strong>}
           {mode === "connect" && <strong>{connectSource ? "选择同类型目标端子" : "选择起点端子"}</strong>}
+          {mode === "static-draw" && <strong>点击落点，双击或 Enter 完成，Esc 取消</strong>}
         </footer>
       </main>
 
@@ -17041,6 +17474,14 @@ export function App() {
                         <tr>
                           {renderChineseParamHeader("arrowSize")}
                           <td><input type="number" min="4" max="80" value={inspectorSelectedNode.params.arrowSize || "10"} onChange={(event) => updateParam("arrowSize", event.target.value)} /></td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("handleColor")}
+                          <td>{renderColorEditor("handleColor", inspectorSelectedNode.params.handleColor || "#2563eb", "#2563eb")}</td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("handleSize")}
+                          <td><input type="number" min="3" max="40" value={inspectorSelectedNode.params.handleSize || "8"} onChange={(event) => updateParam("handleSize", event.target.value)} /></td>
                         </tr>
                         <tr>
                           {renderChineseParamHeader("fontSize")}

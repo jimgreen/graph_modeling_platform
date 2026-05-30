@@ -69,11 +69,14 @@ import {
   getDeviceStrokeWidth,
   getConnectionStrokeColor,
   getTerminalDisplayColor,
+  createInteractiveStaticDrawingNode,
   getElementFocusPoint,
   getRouteBlockingCandidateNodes,
   segmentIntersectsNodeBody,
+  isInteractiveStaticDrawingKind,
   isBlockingTopologyValidationError,
   isRepeatedEdgePointerClick,
+  parseStaticDrawPoints,
   getContainerAssociationRelationKey,
   getContainerRelationKey,
   getEExportWarnings,
@@ -113,6 +116,7 @@ import {
   boundaryBusInternalConnectorSegment,
   boundaryBusInternalConnectorStrokeWidth,
   DEFAULT_COLOR_PALETTE,
+  STATIC_DRAW_POINTS_PARAM,
   serializeProject,
   synchronizeBusTerminalsWithEdges,
   deserializeProject,
@@ -4932,7 +4936,19 @@ describe("power system model", () => {
       "static-hexagon",
       "static-parallelogram",
       "static-triangle",
-      "static-callout"
+      "static-callout",
+      "static-default-node",
+      "static-input-node",
+      "static-output-node",
+      "static-port-node",
+      "static-card-node",
+      "static-toolbar-node",
+      "static-resizer-frame",
+      "static-subflow-box",
+      "static-bezier-connector",
+      "static-smoothstep-connector",
+      "static-self-loop",
+      "static-edge-label"
     ] as const;
     const removedControlKinds = [
       "static-web",
@@ -4982,7 +4998,19 @@ describe("power system model", () => {
       ["static-hexagon", "六边形"],
       ["static-parallelogram", "平行四边形"],
       ["static-triangle", "三角形"],
-      ["static-callout", "标注气泡"]
+      ["static-callout", "标注气泡"],
+      ["static-default-node", "默认节点"],
+      ["static-input-node", "输入节点"],
+      ["static-output-node", "输出节点"],
+      ["static-port-node", "端口节点"],
+      ["static-card-node", "卡片节点"],
+      ["static-toolbar-node", "工具条节点"],
+      ["static-resizer-frame", "缩放框"],
+      ["static-subflow-box", "子流程框"],
+      ["static-bezier-connector", "贝塞尔连接"],
+      ["static-smoothstep-connector", "平滑折线"],
+      ["static-self-loop", "自环连接"],
+      ["static-edge-label", "边标签"]
     ] as const;
 
     for (const [kind, label] of expected) {
@@ -5008,7 +5036,9 @@ describe("power system model", () => {
           verticalAlign: expect.any(String),
           markerStart: expect.any(String),
           markerEnd: expect.any(String),
-          arrowSize: expect.any(String)
+          arrowSize: expect.any(String),
+          handleColor: expect.any(String),
+          handleSize: expect.any(String)
         })
       });
 
@@ -5018,6 +5048,34 @@ describe("power system model", () => {
       expect(inferESection(kind, node.params)).toBe("StaticSymbol");
       expect(getEParameterKeys(kind, node.params)).toEqual([]);
     }
+  });
+
+  test("creates saved static drawing geometry from canvas click points", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "static-polyline");
+    expect(template).toBeDefined();
+
+    const node = createInteractiveStaticDrawingNode(
+      template!,
+      [
+        { x: 100, y: 80 },
+        { x: 150, y: 80 },
+        { x: 150, y: 130 }
+      ],
+      "layer-user"
+    );
+
+    expect(isInteractiveStaticDrawingKind("static-polyline")).toBe(true);
+    expect(isInteractiveStaticDrawingKind("static-rect")).toBe(false);
+    expect(node.kind).toBe("static-polyline");
+    expect(node.layerId).toBe("layer-user");
+    expect(node.position).toEqual({ x: 125, y: 105 });
+    expect(node.size).toEqual({ width: 66, height: 66 });
+    expect(node.params[STATIC_DRAW_POINTS_PARAM]).toBeDefined();
+    expect(parseStaticDrawPoints(node.params[STATIC_DRAW_POINTS_PARAM])).toEqual([
+      { x: -25, y: -25 },
+      { x: 25, y: -25 },
+      { x: 25, y: 25 }
+    ]);
   });
 
   test("adds run_stat operating status to every device type", () => {

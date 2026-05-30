@@ -25,6 +25,18 @@ export type DeviceKind =
   | "static-parallelogram"
   | "static-triangle"
   | "static-callout"
+  | "static-default-node"
+  | "static-input-node"
+  | "static-output-node"
+  | "static-port-node"
+  | "static-card-node"
+  | "static-toolbar-node"
+  | "static-resizer-frame"
+  | "static-subflow-box"
+  | "static-bezier-connector"
+  | "static-smoothstep-connector"
+  | "static-self-loop"
+  | "static-edge-label"
   | "static-web"
   | "static-date"
   | "static-time"
@@ -413,6 +425,17 @@ export type ProjectFile = {
 
 export const DEFAULT_MODEL_LAYER_ID = "layer-default";
 export const DEFAULT_MODEL_LAYER_NAME = "默认图层";
+export const STATIC_DRAW_POINTS_PARAM = "drawPoints";
+export const INTERACTIVE_STATIC_DRAWING_KINDS = [
+  "static-line",
+  "static-polyline",
+  "static-straight-connector",
+  "static-arrow-connector",
+  "static-double-arrow-connector",
+  "static-elbow-connector",
+  "static-bezier-connector",
+  "static-smoothstep-connector"
+] as const satisfies readonly DeviceKind[];
 
 export const DEFAULT_POWER_UNIT = "MW";
 export const DEFAULT_VOLTAGE_UNIT = "kV";
@@ -1910,6 +1933,8 @@ const staticSymbolParams = (
   markerStart: "none",
   markerEnd: "none",
   arrowSize: "10",
+  handleColor: "#2563eb",
+  handleSize: "8",
   ...overrides
 });
 
@@ -2158,6 +2183,114 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     attributeLibrary: "静态图元",
     size: { width: 154, height: 86 },
     params: staticSymbolParams("标注", { fillColor: "#ffffff", strokeColor: "#475569", accentColor: "#2563eb", cornerRadius: "10", textAlign: "left", verticalAlign: "top", padding: "14", shadowEnabled: "1" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-default-node",
+    label: "默认节点",
+    attributeLibrary: "静态图元",
+    size: { width: 142, height: 64 },
+    params: staticSymbolParams("默认节点", { fillColor: "#ffffff", strokeColor: "#1f2937", accentColor: "#3b82f6", cornerRadius: "8", shadowEnabled: "1" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-input-node",
+    label: "输入节点",
+    attributeLibrary: "静态图元",
+    size: { width: 142, height: 64 },
+    params: staticSymbolParams("输入", { fillColor: "#eff6ff", strokeColor: "#2563eb", accentColor: "#60a5fa", cornerRadius: "8", handleColor: "#2563eb" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-output-node",
+    label: "输出节点",
+    attributeLibrary: "静态图元",
+    size: { width: 142, height: 64 },
+    params: staticSymbolParams("输出", { fillColor: "#ecfdf5", strokeColor: "#059669", accentColor: "#34d399", cornerRadius: "8", handleColor: "#059669" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-port-node",
+    label: "端口节点",
+    attributeLibrary: "静态图元",
+    size: { width: 148, height: 82 },
+    params: staticSymbolParams("端口节点", { fillColor: "#f8fafc", strokeColor: "#334155", accentColor: "#94a3b8", cornerRadius: "10", handleColor: "#2563eb", handleSize: "9" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-card-node",
+    label: "卡片节点",
+    attributeLibrary: "静态图元",
+    size: { width: 168, height: 98 },
+    params: staticSymbolParams("卡片节点", { fillColor: "#ffffff", strokeColor: "#cbd5e1", accentColor: "#2563eb", cornerRadius: "10", textAlign: "left", verticalAlign: "top", padding: "16", shadowEnabled: "1" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-toolbar-node",
+    label: "工具条节点",
+    attributeLibrary: "静态图元",
+    size: { width: 170, height: 96 },
+    params: staticSymbolParams("工具条节点", { fillColor: "#ffffff", strokeColor: "#64748b", accentColor: "#e2e8f0", cornerRadius: "10", verticalAlign: "bottom", shadowEnabled: "1" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-resizer-frame",
+    label: "缩放框",
+    attributeLibrary: "静态图元",
+    size: { width: 166, height: 104 },
+    params: staticSymbolParams("", { fillColor: "transparent", strokeColor: "#2563eb", accentColor: "#2563eb", lineWidth: "2", strokeStyle: "dashed", handleColor: "#ffffff", handleSize: "10" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-subflow-box",
+    label: "子流程框",
+    attributeLibrary: "静态图元",
+    size: { width: 210, height: 136 },
+    params: staticSymbolParams("子流程", { fillColor: "#f8fafc", strokeColor: "#475569", accentColor: "#dbeafe", cornerRadius: "10", textAlign: "left", verticalAlign: "top", padding: "14" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-bezier-connector",
+    label: "贝塞尔连接",
+    attributeLibrary: "静态图元",
+    size: { width: 156, height: 72 },
+    params: staticSymbolParams("", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "12" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-smoothstep-connector",
+    label: "平滑折线",
+    attributeLibrary: "静态图元",
+    size: { width: 156, height: 76 },
+    params: staticSymbolParams("", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "12" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-self-loop",
+    label: "自环连接",
+    attributeLibrary: "静态图元",
+    size: { width: 104, height: 86 },
+    params: staticSymbolParams("", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "10" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-edge-label",
+    label: "边标签",
+    attributeLibrary: "静态图元",
+    size: { width: 104, height: 42 },
+    params: staticSymbolParams("边标签", { fillColor: "#ffffff", strokeColor: "#cbd5e1", accentColor: "#2563eb", cornerRadius: "999", padding: "10", shadowEnabled: "1" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -4163,6 +4296,98 @@ export function createNodeFromTemplate(template: DeviceTemplate, position: Point
     scaleY: 1,
     terminals: createTemplateTerminals(template),
     params: buildDefaultParams(template)
+  };
+}
+
+const INTERACTIVE_STATIC_DRAWING_KIND_SET = new Set<DeviceKind>(INTERACTIVE_STATIC_DRAWING_KINDS);
+const STATIC_DRAWING_PADDING = 8;
+const STATIC_DRAWING_MIN_SIZE = 24;
+
+function roundStaticDrawingCoordinate(value: number) {
+  return Math.round(value * 10) / 10;
+}
+
+function normalizeStaticDrawingPoints(points: readonly Point[]): Point[] {
+  const normalized: Point[] = [];
+  for (const point of points) {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+      continue;
+    }
+    const next = {
+      x: roundStaticDrawingCoordinate(point.x),
+      y: roundStaticDrawingCoordinate(point.y)
+    };
+    const previous = normalized.at(-1);
+    if (!previous || previous.x !== next.x || previous.y !== next.y) {
+      normalized.push(next);
+    }
+  }
+  return normalized;
+}
+
+export function isInteractiveStaticDrawingKind(kind: DeviceKind): boolean {
+  return INTERACTIVE_STATIC_DRAWING_KIND_SET.has(kind);
+}
+
+export function serializeStaticDrawPoints(points: readonly Point[]): string {
+  return JSON.stringify(normalizeStaticDrawingPoints(points));
+}
+
+export function parseStaticDrawPoints(value?: string): Point[] {
+  if (!value) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return normalizeStaticDrawingPoints(
+      parsed.map((item) => ({
+        x: Number((item as Point).x),
+        y: Number((item as Point).y)
+      }))
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function createInteractiveStaticDrawingNode(
+  template: DeviceTemplate,
+  canvasPoints: readonly Point[],
+  layerId = DEFAULT_MODEL_LAYER_ID
+): ModelNode {
+  const points = normalizeStaticDrawingPoints(canvasPoints);
+  if (points.length < 2) {
+    throw new Error("Interactive static drawing requires at least two points.");
+  }
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const left = Math.min(...xs);
+  const right = Math.max(...xs);
+  const top = Math.min(...ys);
+  const bottom = Math.max(...ys);
+  const center = {
+    x: roundStaticDrawingCoordinate((left + right) / 2),
+    y: roundStaticDrawingCoordinate((top + bottom) / 2)
+  };
+  const drawPoints = points.map((point) => ({
+    x: roundStaticDrawingCoordinate(point.x - center.x),
+    y: roundStaticDrawingCoordinate(point.y - center.y)
+  }));
+  const node = createNodeFromTemplate(template, center);
+  return {
+    ...node,
+    layerId,
+    size: {
+      width: Math.max(STATIC_DRAWING_MIN_SIZE, roundStaticDrawingCoordinate(right - left + STATIC_DRAWING_PADDING * 2)),
+      height: Math.max(STATIC_DRAWING_MIN_SIZE, roundStaticDrawingCoordinate(bottom - top + STATIC_DRAWING_PADDING * 2))
+    },
+    params: {
+      ...node.params,
+      [STATIC_DRAW_POINTS_PARAM]: serializeStaticDrawPoints(drawPoints)
+    }
   };
 }
 

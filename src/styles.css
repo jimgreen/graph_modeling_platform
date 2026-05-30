@@ -1069,6 +1069,10 @@ button:disabled {
   cursor: crosshair;
 }
 
+.diagram-canvas.static-draw-mode {
+  cursor: crosshair;
+}
+
 .diagram-canvas.connect-drop-ready {
   cursor: none;
 }
@@ -1194,6 +1198,28 @@ button:disabled {
   stroke-dasharray: 10 8;
   opacity: 0.72;
   pointer-events: none;
+}
+
+.static-drawing-preview {
+  pointer-events: none;
+}
+
+.static-drawing-preview-line {
+  fill: none;
+  stroke: #2563eb;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 8 6;
+  opacity: 0.82;
+  vector-effect: non-scaling-stroke;
+}
+
+.static-drawing-preview-point {
+  fill: #2563eb;
+  stroke: #ffffff;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
 }
 
 .connect-drop-hint {
