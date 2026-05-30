@@ -610,20 +610,32 @@ describe("graph inspector panel", () => {
     const finishTransformStart = source.indexOf("const finishTransformDrag");
     const finishTransformEnd = source.indexOf("const finishKeyboardMove", finishTransformStart);
     const finishTransformBlock = source.slice(finishTransformStart, finishTransformEnd);
+    const groupPreviewStart = source.indexOf("const groupTransformPreviewEdgeRoutes");
+    const groupPreviewEnd = source.indexOf("const dragPreviewEdgeRoutes", groupPreviewStart);
+    const groupPreviewBlock = source.slice(groupPreviewStart, groupPreviewEnd);
     const renderStart = source.indexOf("{selectedGroupLayoutUnits.map");
     const renderEnd = source.indexOf("{viewportNodes.map", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
+    const edgeRenderStart = source.indexOf("{viewportRoutedEdges.map((route) =>");
+    const edgeRenderEnd = source.indexOf("{selectedGroupLayoutUnits.map", edgeRenderStart);
+    const edgeRenderBlock = source.slice(edgeRenderStart, edgeRenderEnd);
 
     expect(source).toContain("type GroupTransformNodeSnapshot");
+    expect(source).toContain("type GroupTransformEdgeRouteSnapshot");
     expect(selectionStateBlock).toContain("selectedGroupLayoutUnits");
     expect(selectionStateBlock).toContain("selectedTransformGroupUnit");
+    expect(groupPreviewBlock).toContain("transformGroupRoutePoints(transformDrag, transformDrag.previewPoint, route.points)");
+    expect(groupPreviewBlock).toContain("groupTransformPreviewEdgeIdSet");
     expect(source).toContain("const startGroupTransformDrag");
     expect(source).toContain("const startGroupMoveDrag");
+    expect(source).toContain("snapshotGroupTransformEdgeRoutes(unit)");
     expect(source).toContain("const buildGroupTransformNodeUpdates");
     expect(pointerBlock).toContain("isGroupTransformDrag(transformDrag)");
     expect(pointerBlock).toContain("buildGroupTransformNodeUpdates(transformDrag, point, currentStore)");
+    expect(pointerBlock).toContain("previewPoint: point");
     expect(finishTransformBlock).toContain("activeTransform.nodeIds");
     expect(finishTransformBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nodes, transformedNodeIds)");
+    expect(edgeRenderBlock).toContain("groupTransformPreviewEdgeIdSet.has(edge.id)");
     expect(mirrorBlock).toContain("selectedLayoutUnits");
     expect(source).toContain("unit.kind === \"group\"");
     expect(mirrorBlock).toContain("mirrorLayoutUnitNodes");
@@ -633,10 +645,12 @@ describe("graph inspector panel", () => {
     expect(renderBlock).toContain("selectedTransformGroupUnit?.id === unit.id");
     expect(renderBlock).toContain("startGroupTransformDrag(event, unit, \"rotate\")");
     expect(renderBlock).toContain("startGroupTransformDrag(event, unit, handle.kind)");
+    expect(source).toContain("key={`group-transform-preview-edge-${route.edgeId}`}");
     expect(styles).toContain(".group-selection-overlay");
     expect(styles).toContain(".group-selection-hitbox");
     expect(styles).toContain("cursor: grab");
     expect(styles).toContain(".group-selection-outline");
+    expect(styles).toContain(".connection-line.group-transform-preview");
   });
 
   test("checks a newly drawn connection route before committing it to the model", async () => {

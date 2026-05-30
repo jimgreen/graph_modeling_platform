@@ -1025,6 +1025,11 @@ button:disabled {
   pointer-events: none;
 }
 
+.connection-line.group-transform-preview {
+  opacity: 1;
+  pointer-events: none;
+}
+
 .connection-line.drag-ghost {
   stroke: var(--connection-color, #64748b);
   stroke-width: 3;

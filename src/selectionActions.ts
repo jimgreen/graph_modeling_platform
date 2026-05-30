@@ -12,6 +12,7 @@ import {
 } from "./model";
 
 export const CANVAS_EMPTY_SELECTION_MESSAGE = "当前没有被选中图元。";
+const GROUP_LAYOUT_BOUNDS_PADDING = 4;
 
 type CanvasDeleteActionInput = {
   selectedNodeCount: number;
@@ -59,6 +60,7 @@ export type CanvasLayoutUnit = {
   id: string;
   kind: "group" | "node";
   nodeIds: string[];
+  edgeIds: string[];
   bounds: SelectionRect;
 };
 
@@ -620,6 +622,15 @@ function boundsForNodesAndEdges(nodes: ModelNode[], edges: Edge[]) {
   };
 }
 
+function padSelectionRect(rect: SelectionRect, padding: number): SelectionRect {
+  return {
+    left: rect.left - padding,
+    right: rect.right + padding,
+    top: rect.top - padding,
+    bottom: rect.bottom + padding
+  };
+}
+
 export function buildCanvasLayoutUnits(
   groups: readonly ModelGroup[],
   nodes: readonly ModelNode[],
@@ -639,7 +650,8 @@ export function buildCanvasLayoutUnits(
     }
     const groupMembers = collectGroupTreeMembers(group, groupsById);
     const groupNodeIds = groupMembers.nodeIds.filter((nodeId) => nodesById.has(nodeId));
-    const groupEdges = groupMembers.edgeIds.flatMap((edgeId) => edgesById.get(edgeId) ?? []);
+    const groupEdgeIds = groupMembers.edgeIds.filter((edgeId) => edgesById.has(edgeId));
+    const groupEdges = groupEdgeIds.flatMap((edgeId) => edgesById.get(edgeId) ?? []);
     const bounds = boundsForNodesAndEdges(
       groupNodeIds.flatMap((nodeId) => nodesById.get(nodeId) ?? []),
       groupEdges
@@ -652,7 +664,8 @@ export function buildCanvasLayoutUnits(
       id: `group:${group.id}`,
       kind: "group",
       nodeIds: groupNodeIds,
-      bounds
+      edgeIds: groupEdgeIds,
+      bounds: padSelectionRect(bounds, GROUP_LAYOUT_BOUNDS_PADDING)
     });
   }
   for (const nodeId of uniqueIds(selectedNodeIds)) {
@@ -667,6 +680,7 @@ export function buildCanvasLayoutUnits(
       id: `node:${node.id}`,
       kind: "node",
       nodeIds: [node.id],
+      edgeIds: [],
       bounds: nodeSelectionBounds(node)
     });
   }

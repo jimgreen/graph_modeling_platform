@@ -254,6 +254,13 @@ type CustomComponentTreeSelection =
 type EdgeEndpoint = "source" | "target";
 type ScaleHandleKind = "scale-x" | "scale-y" | "scale-both";
 type GroupTransformNodeSnapshot = Pick<ModelNode, "position" | "rotation" | "scale" | "scaleX" | "scaleY">;
+type GroupTransformEdgeRouteSnapshot = {
+  edgeId: string;
+  points: Point[];
+};
+type GroupTransformGeometry =
+  | { kind: "rotate"; degrees: number }
+  | { kind: "scale"; scaleX: number; scaleY: number };
 type GroupTransformDrag = {
   kind: "rotate" | ScaleHandleKind;
   groupId: string;
@@ -261,6 +268,8 @@ type GroupTransformDrag = {
   bounds: SelectionRect;
   center: Point;
   originalNodes: Record<string, GroupTransformNodeSnapshot>;
+  originalEdgeRoutes: GroupTransformEdgeRouteSnapshot[];
+  previewPoint?: Point;
   historyCaptured?: boolean;
 };
 type TransformDrag =
@@ -299,6 +308,42 @@ function rotatePointAround(point: Point, center: Point, degrees: number): Point 
     y: Math.round(center.y + dx * Math.sin(radians) + dy * Math.cos(radians))
   };
 }
+
+function groupTransformGeometry(drag: GroupTransformDrag, point: Point): GroupTransformGeometry {
+  if (drag.kind === "rotate") {
+    const angle = (Math.atan2(point.y - drag.center.y, point.x - drag.center.x) * 180) / Math.PI + 90;
+    return { kind: "rotate", degrees: normalizeRotationDegrees(Math.round(angle / 90) * 90) };
+  }
+
+  const halfWidth = Math.max(1, (drag.bounds.right - drag.bounds.left) / 2);
+  const halfHeight = Math.max(1, (drag.bounds.bottom - drag.bounds.top) / 2);
+  const rawScaleX = normalizeScaleValue(Math.abs(point.x - drag.center.x) / halfWidth);
+  const rawScaleY = normalizeScaleValue(Math.abs(point.y - drag.center.y) / halfHeight);
+  const unitScale = drag.kind === "scale-both" ? Math.max(rawScaleX, rawScaleY) : 1;
+  return {
+    kind: "scale",
+    scaleX: drag.kind === "scale-y" ? 1 : drag.kind === "scale-both" ? unitScale : rawScaleX,
+    scaleY: drag.kind === "scale-x" ? 1 : drag.kind === "scale-both" ? unitScale : rawScaleY
+  };
+}
+
+function transformGroupPoint(drag: GroupTransformDrag, geometry: GroupTransformGeometry, point: Point): Point {
+  return geometry.kind === "rotate"
+    ? rotatePointAround(point, drag.center, geometry.degrees)
+    : {
+        x: Math.round(drag.center.x + (point.x - drag.center.x) * geometry.scaleX),
+        y: Math.round(drag.center.y + (point.y - drag.center.y) * geometry.scaleY)
+      };
+}
+
+function transformGroupRoutePoints(drag: GroupTransformDrag, point: Point | undefined, routePoints: Point[]) {
+  if (!point) {
+    return routePoints;
+  }
+  const geometry = groupTransformGeometry(drag, point);
+  return routePoints.map((routePoint) => transformGroupPoint(drag, geometry, routePoint));
+}
+
 type Marquee = { start: Point; current: Point } | null;
 type ContextMenuState = {
   x: number;
@@ -5345,6 +5390,24 @@ export function App() {
           }]
         : [];
     });
+  const groupTransformPreviewEdgeRoutes = useMemo(() => {
+    if (!transformDrag || !isGroupTransformDrag(transformDrag) || !transformDrag.previewPoint) {
+      return [];
+    }
+    return transformDrag.originalEdgeRoutes.flatMap((route) => {
+      if (!visibleEdgeIdSet.has(route.edgeId)) {
+        return [];
+      }
+      return [{
+        edgeId: route.edgeId,
+        path: pointsToPreviewPath(transformGroupRoutePoints(transformDrag, transformDrag.previewPoint, route.points))
+      }];
+    });
+  }, [transformDrag, visibleEdgeIdSet]);
+  const groupTransformPreviewEdgeIdSet = useMemo(
+    () => new Set(groupTransformPreviewEdgeRoutes.map((route) => route.edgeId)),
+    [groupTransformPreviewEdgeRoutes]
+  );
   const dragPreviewEdgeRoutes = useMemo(() => {
     if (!dragging || !draggingDelta) {
       return [];
@@ -8982,6 +9045,26 @@ export function App() {
       })
     ) as Record<string, GroupTransformNodeSnapshot>;
 
+  const edgeSnapshotFallbackPoints = (edge: Edge | undefined) =>
+    edge
+      ? [
+          edge.sourcePoint ? { ...edge.sourcePoint } : null,
+          ...(edge.manualPoints?.map((point) => ({ ...point })) ?? []),
+          edge.targetPoint ? { ...edge.targetPoint } : null
+        ].filter((point): point is Point => Boolean(point))
+      : [];
+
+  const snapshotGroupTransformEdgeRoutes = (unit: CanvasLayoutUnit): GroupTransformEdgeRouteSnapshot[] =>
+    unit.edgeIds.flatMap((edgeId) => {
+      const routePoints = routedEdgeById.get(edgeId)?.points ?? edgeSnapshotFallbackPoints(edgeById.get(edgeId));
+      return routePoints.length >= 2
+        ? [{
+            edgeId,
+            points: routePoints.map((point) => ({ ...point }))
+          }]
+        : [];
+    });
+
   const startGroupTransformDrag = (event: PointerEvent<SVGElement>, unit: CanvasLayoutUnit, kind: "rotate" | ScaleHandleKind) => {
     event.stopPropagation();
     transformDragChangedRef.current = false;
@@ -8991,7 +9074,8 @@ export function App() {
       nodeIds: unit.nodeIds,
       bounds: unit.bounds,
       center: selectionRectCenter(unit.bounds),
-      originalNodes: snapshotGroupTransformNodes(unit)
+      originalNodes: snapshotGroupTransformNodes(unit),
+      originalEdgeRoutes: snapshotGroupTransformEdgeRoutes(unit)
     });
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -9067,9 +9151,8 @@ export function App() {
 
   const buildGroupTransformNodeUpdates = (drag: GroupTransformDrag, point: Point, store: GraphStore) => {
     const updates: ModelNode[] = [];
-    if (drag.kind === "rotate") {
-      const angle = (Math.atan2(point.y - drag.center.y, point.x - drag.center.x) * 180) / Math.PI + 90;
-      const snapped = normalizeRotationDegrees(Math.round(angle / 90) * 90);
+    const geometry = groupTransformGeometry(drag, point);
+    if (geometry.kind === "rotate") {
       for (const nodeId of drag.nodeIds) {
         const snapshot = drag.originalNodes[nodeId];
         const node = store.nodeMap.get(nodeId);
@@ -9078,34 +9161,24 @@ export function App() {
         }
         updates.push({
           ...node,
-          position: rotatePointAround(snapshot.position, drag.center, snapped),
-          rotation: normalizeRotationDegrees(snapshot.rotation + snapped)
+          position: transformGroupPoint(drag, geometry, snapshot.position),
+          rotation: normalizeRotationDegrees(snapshot.rotation + geometry.degrees)
         });
       }
       return updates;
     }
 
-    const halfWidth = Math.max(1, (drag.bounds.right - drag.bounds.left) / 2);
-    const halfHeight = Math.max(1, (drag.bounds.bottom - drag.bounds.top) / 2);
-    const rawScaleX = normalizeScale(Math.abs(point.x - drag.center.x) / halfWidth);
-    const rawScaleY = normalizeScale(Math.abs(point.y - drag.center.y) / halfHeight);
-    const unitScale = drag.kind === "scale-both" ? Math.max(rawScaleX, rawScaleY) : 1;
-    const groupScaleX = drag.kind === "scale-y" ? 1 : drag.kind === "scale-both" ? unitScale : rawScaleX;
-    const groupScaleY = drag.kind === "scale-x" ? 1 : drag.kind === "scale-both" ? unitScale : rawScaleY;
     for (const nodeId of drag.nodeIds) {
       const snapshot = drag.originalNodes[nodeId];
       const node = store.nodeMap.get(nodeId);
       if (!node || !snapshot) {
         continue;
       }
-      const nextScaleX = (snapshot.scaleX ?? snapshot.scale ?? 1) * groupScaleX;
-      const nextScaleY = (snapshot.scaleY ?? snapshot.scale ?? 1) * groupScaleY;
+      const nextScaleX = (snapshot.scaleX ?? snapshot.scale ?? 1) * geometry.scaleX;
+      const nextScaleY = (snapshot.scaleY ?? snapshot.scale ?? 1) * geometry.scaleY;
       updates.push({
         ...node,
-        position: {
-          x: Math.round(drag.center.x + (snapshot.position.x - drag.center.x) * groupScaleX),
-          y: Math.round(drag.center.y + (snapshot.position.y - drag.center.y) * groupScaleY)
-        },
+        position: transformGroupPoint(drag, geometry, snapshot.position),
         scale: Math.max(Math.abs(nextScaleX), Math.abs(nextScaleY)),
         scaleX: nextScaleX,
         scaleY: nextScaleY
@@ -9676,7 +9749,9 @@ export function App() {
       transformDragChangedRef.current = true;
       if (!transformDrag.historyCaptured) {
         pushUndoSnapshot();
-        setTransformDrag({ ...transformDrag, historyCaptured: true });
+        if (!isGroupTransformDrag(transformDrag)) {
+          setTransformDrag({ ...transformDrag, historyCaptured: true });
+        }
       }
       const currentStore = latestGraphStoreRef.current ?? graphStore;
       if (isGroupTransformDrag(transformDrag)) {
@@ -9684,6 +9759,13 @@ export function App() {
         if (nextNodeUpdates.length === 0) {
           return;
         }
+        setTransformDrag((current) =>
+          current && isGroupTransformDrag(current) && current.groupId === transformDrag.groupId
+            ? current.historyCaptured && sameOptionalPoint(current.previewPoint, point)
+              ? current
+              : { ...current, historyCaptured: true, previewPoint: point }
+            : current
+        );
         const transformBounds = canvasBoundsForGraphContent(
           canvasBounds,
           overlayGraphStoreNodes(currentStore, nextNodeUpdates),
@@ -13471,6 +13553,7 @@ export function App() {
               if (
                 (draggingDelta && dragPreviewEdgeIdSet.has(edge.id)) ||
                 (multiNodeDragging && dragAffectedEdgeIdSet.has(edge.id)) ||
+                groupTransformPreviewEdgeIdSet.has(edge.id) ||
                 terminalPressPreviewEdgeIdSet.has(edge.id) ||
                 rewiring?.edgeId === edge.id
               ) {
@@ -13929,6 +14012,9 @@ export function App() {
               );
             })}
             {renderMultiNodeDragOverlay()}
+            {groupTransformPreviewEdgeRoutes.map((route) => (
+              <path key={`group-transform-preview-edge-${route.edgeId}`} d={route.path} className="connection-line group-transform-preview" style={connectionLineStyle(route.edgeId)} />
+            ))}
             {dragPreviewEdgeRoutes.map((route) => (
               <path key={`drag-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
             ))}

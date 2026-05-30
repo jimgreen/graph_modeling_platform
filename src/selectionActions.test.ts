@@ -535,6 +535,7 @@ describe("canvas selection actions", () => {
       { kind: "group", nodeIds: [firstGrouped.id, secondGrouped.id] },
       { kind: "node", nodeIds: [standalone.id] }
     ]);
+    expect(units[0].bounds.left).toBeLessThan(firstGrouped.position.x - firstGrouped.size.width / 2);
     expect(movedStandalone.position).toEqual(standalone.position);
     expect(firstDelta).toBeLessThan(0);
     expect(firstDelta).toBe(secondDelta);
@@ -569,7 +570,8 @@ describe("canvas selection actions", () => {
 
     expect(units).toHaveLength(1);
     expect(units[0].kind).toBe("group");
-    expect(units[0].bounds.top).toBeLessThanOrEqual(40);
-    expect(units[0].bounds.right).toBeGreaterThanOrEqual(720);
+    expect(units[0].edgeIds).toEqual([edge.id]);
+    expect(units[0].bounds.top).toBe(36);
+    expect(units[0].bounds.right).toBe(724);
   });
 });
