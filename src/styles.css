@@ -1194,6 +1194,11 @@ button:disabled {
   cursor: none;
 }
 
+.diagram-canvas.connect-drop-ready .connection-preview-line {
+  stroke-width: 3.5;
+  opacity: 0.9;
+}
+
 .diagram-canvas.panning {
   cursor: grabbing;
 }
@@ -1336,10 +1341,21 @@ button:disabled {
   pointer-events: none;
 }
 
+.connect-drop-hint-halo {
+  fill: none;
+  stroke: var(--connection-color, #22c55e);
+  stroke-width: 2;
+  stroke-dasharray: 5 5;
+  opacity: 0.52;
+  filter: drop-shadow(0 0 10px rgba(34, 197, 94, 0.45));
+  animation: connectDropPulse 900ms ease-in-out infinite;
+}
+
 .connect-drop-hint-ring {
   fill: rgba(34, 197, 94, 0.18);
   stroke: var(--connection-color, #22c55e);
   stroke-width: 2.5;
+  stroke-dasharray: 5 4;
   opacity: 0.9;
   animation: connectDropPulse 900ms ease-in-out infinite;
 }
@@ -1404,6 +1420,14 @@ button:disabled {
   stroke-width: 3;
   cursor: grab;
   pointer-events: all;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 0 rgba(220, 38, 38, 0));
+  transform-box: fill-box;
+  transform-origin: center;
+  transition:
+    stroke-width 120ms ease,
+    filter 120ms ease,
+    transform 120ms ease;
 }
 
 .edge-endpoint-handle:active {
@@ -1443,6 +1467,17 @@ button:disabled {
 .edge-endpoint-handle:hover,
 .bus-connection-dot:hover {
   filter: drop-shadow(0 0 4px rgba(220, 38, 38, 0.45));
+}
+
+.connection-group.selected .edge-endpoint-handle {
+  stroke-width: 3.5;
+}
+
+.edge-endpoint-handle:hover,
+.connection-group.selected .edge-endpoint-handle:hover {
+  stroke-width: 4.5;
+  filter: drop-shadow(0 0 7px rgba(220, 38, 38, 0.65));
+  transform: scale(1.12);
 }
 
 .canvas-floating-toolbar-object {
@@ -1664,6 +1699,17 @@ button:disabled {
   stroke-width: 3.5;
 }
 
+.diagram-node:not(.bus-node):not(.storage-node):hover .node-hitbox {
+  stroke: rgba(37, 99, 235, 0.52);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 6px rgba(37, 99, 235, 0.28));
+}
+
+.diagram-node.selected:hover .node-hitbox,
+.diagram-node.focused .node-hitbox {
+  filter: drop-shadow(0 0 7px rgba(249, 115, 22, 0.32));
+}
+
 .diagram-node.bus-node.selected .node-hitbox,
 .diagram-node.bus-node.connect-source .node-hitbox {
   stroke: transparent;
@@ -1683,10 +1729,19 @@ button:disabled {
   vector-effect: non-scaling-stroke;
 }
 
+.diagram-node.bus-node:hover .bus-glyph {
+  filter: drop-shadow(0 0 5px rgba(37, 99, 235, 0.38));
+}
+
 .diagram-node.bus-node.selected.focused .bus-glyph {
   stroke: #f97316;
   stroke-width: 2.25;
   fill: #f97316;
+}
+
+.diagram-node.storage-node:hover .node-hitbox {
+  stroke: rgba(37, 99, 235, 0.48);
+  stroke-width: 1.75;
 }
 
 .diagram-node.storage-node.selected.focused .node-hitbox {

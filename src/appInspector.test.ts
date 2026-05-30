@@ -449,8 +449,11 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const handleMinimapNavigate");
     expect(source).toContain("fitViewToContent");
     expect(source).toContain("centerSelectedInView");
+    expect(source).toContain("fitViewToSelection");
     expect(source).toContain("zoomViewportAtCenter");
     expect(source).toContain("resetViewport");
+    expect(source).toContain("ScanSearch");
+    expect(source).toContain("aria-label=\"缩放到选中区域\"");
     expect(source).toContain("className=\"viewport-controls\"");
     expect(source).toContain("className=\"canvas-minimap\"");
     expect(source).toContain("className=\"minimap-viewport\"");
@@ -475,6 +478,10 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".resize-size-badge");
     expect(styles).toContain(".scale-handle:hover");
     expect(styles).toContain(".terminal-dot:not(.disabled):hover");
+    expect(styles).toContain(".diagram-node:not(.bus-node):not(.storage-node):hover .node-hitbox");
+    expect(styles).toContain(".edge-endpoint-handle:hover");
+    expect(styles).toContain(".connect-drop-hint-halo");
+    expect(styles).toContain(".diagram-canvas.connect-drop-ready .connection-preview-line");
   });
 
   test("uses rotation-aware bus hit testing for connection drops", async () => {
@@ -2877,9 +2884,17 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const contextSelectionCount = activeSelectedNodeIds.length + activeSelectedEdgeIds.length");
     expect(source).toContain("const canUngroupSelectedGraphics = useMemo");
     expect(source).toContain("const canGroupSelectedGraphics = useMemo");
+    expect(source).toContain("target?: \"blank\" | \"node\" | \"edge\"");
+    expect(source).toContain("const contextMenuForSelection = contextMenuTarget !== \"blank\"");
+    expect(source).toContain("const contextMenuForNode = contextMenuTarget === \"node\"");
+    expect(source).toContain("const contextMenuForEdge = contextMenuTarget === \"edge\"");
     expect(topbarBlock).toContain("disabled={!canGroupSelectedGraphics}");
-    expect(contextBlock).toContain("{canGroupSelectedGraphics && (");
-    expect(contextBlock).toContain("{canUngroupSelectedGraphics && (");
+    expect(contextBlock).toContain("{contextMenuForSelection && contextSelectionCount > 0 && (");
+    expect(contextBlock).toContain("{contextMenuForEdge && selectedEdge && (");
+    expect(contextBlock).toContain("{contextMenuForEdge && contextMenu.edgeId && (");
+    expect(contextBlock).toContain("{contextMenuForNode && canGroupSelectedGraphics && (");
+    expect(contextBlock).toContain("{contextMenuForNode && canUngroupSelectedGraphics && (");
+    expect(contextBlock).toContain("{contextMenuForNode && activeSelectedNodeIds.length > 0 && (");
     expect(contextBlock).toContain("groupSelectedGraphics");
     expect(contextBlock).toContain("ungroupSelectedGraphics");
     expect(contextBlock).not.toContain("disabled=");

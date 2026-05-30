@@ -41,6 +41,7 @@ import {
   RotateCcw,
   RotateCw,
   Save,
+  ScanSearch,
   Trash2,
   Type,
   Undo2,
@@ -457,7 +458,9 @@ type Marquee = { start: Point; current: Point } | null;
 type ContextMenuState = {
   x: number;
   y: number;
+  target?: "blank" | "node" | "edge";
   canvasPoint?: Point;
+  nodeId?: string;
   edgeId?: string;
   routePoints?: Point[];
 } | null;
@@ -13709,6 +13712,7 @@ export function App() {
     setContextMenu({
       x: event.clientX,
       y: event.clientY,
+      target: "edge",
       canvasPoint: pointer,
       edgeId,
       routePoints: routePoints?.map((point) => ({ ...point }))
@@ -15968,6 +15972,10 @@ export function App() {
     nodeLabelDrag ||
     nodeLabelRotateDrag
   );
+  const contextMenuTarget = contextMenu?.target ?? (contextMenu?.edgeId ? "edge" : "blank");
+  const contextMenuForSelection = contextMenuTarget !== "blank";
+  const contextMenuForNode = contextMenuTarget === "node";
+  const contextMenuForEdge = contextMenuTarget === "edge";
   const svgUiUnitX = viewBox.width / Math.max(1, canvasWidth);
   const svgUiUnitY = viewBox.height / Math.max(1, canvasHeight);
   const toolbarPaddingX = 8 * svgUiUnitX;
@@ -16081,6 +16089,9 @@ export function App() {
       return;
     }
     centerViewBoxOnPoint(selectionRectCenter(selectedCanvasBounds));
+  };
+  const fitViewToSelection = () => {
+    fitViewToBounds(selectedCanvasBounds, 80);
   };
   const viewportOverlayStyle = {
     "--viewport-overlay-right": `${rightPanelVisible ? rightPanelWidth + 28 : 16}px`,
@@ -16455,13 +16466,14 @@ export function App() {
                 setContextMenu({
                   x: event.clientX,
                   y: event.clientY,
+                  target: "edge",
                   canvasPoint: pointer,
                   edgeId: routeHit.edgeId,
                   routePoints: routeHit.routePoints.map((point) => ({ ...point }))
                 });
                 return;
               }
-              setContextMenu({ x: event.clientX, y: event.clientY, canvasPoint: pointer });
+              setContextMenu({ x: event.clientX, y: event.clientY, target: "blank", canvasPoint: pointer });
             }}
           >
             <defs>
@@ -16818,7 +16830,7 @@ export function App() {
                     if (!selectedNodeIdSet.has(node.id)) {
                       selectCanvasGraphics([node.id], []);
                     }
-                    setContextMenu({ x: event.clientX, y: event.clientY });
+                    setContextMenu({ x: event.clientX, y: event.clientY, target: "node", nodeId: node.id });
                   }}
                   onDoubleClick={(event) => {
                     event.stopPropagation();
@@ -17079,6 +17091,7 @@ export function App() {
                   display: connectPreviewDom.targetPoint ? undefined : "none"
                 }}
               >
+                <circle className="connect-drop-hint-halo" cx="0" cy="0" r="24" />
                 <circle className="connect-drop-hint-ring" cx="0" cy="0" r="16" />
                 <circle className="connect-drop-hint-core" cx="0" cy="0" r="5" />
               </g>
@@ -17089,6 +17102,7 @@ export function App() {
                 transform={`translate(${activeDropHintPoint.x} ${activeDropHintPoint.y})`}
                 style={activeDropHintStyle}
               >
+                <circle className="connect-drop-hint-halo" cx="0" cy="0" r="24" />
                 <circle className="connect-drop-hint-ring" cx="0" cy="0" r="16" />
                 <circle className="connect-drop-hint-core" cx="0" cy="0" r="5" />
               </g>
@@ -17322,6 +17336,9 @@ export function App() {
             </button>
             <button type="button" title="居中选中" aria-label="居中选中" disabled={!selectedCanvasBounds} onClick={centerSelectedInView}>
               <LocateFixed size={16} />
+            </button>
+            <button type="button" title="缩放到选中区域" aria-label="缩放到选中区域" disabled={!selectedCanvasBounds} onClick={fitViewToSelection}>
+              <ScanSearch size={16} />
             </button>
             <button type="button" title="放大" aria-label="放大" onClick={() => zoomViewportAtCenter(0.82)}>
               <Plus size={16} />
@@ -18177,13 +18194,13 @@ export function App() {
               撤销
             </button>
           )}
-          {contextSelectionCount > 0 && (
+          {contextMenuForSelection && contextSelectionCount > 0 && (
             <button onClick={() => runContextMenuAction(copySelection)}>
               <Copy size={14} />
               复制
             </button>
           )}
-          {contextSelectionCount > 0 && (
+          {contextMenuForSelection && contextSelectionCount > 0 && (
             <button onClick={() => runContextMenuAction(cutSelection)}>
               <Scissors size={14} />
               剪切
@@ -18201,43 +18218,43 @@ export function App() {
               粘贴
             </button>
           )}
-          {selectedEdge && (
+          {contextMenuForEdge && selectedEdge && (
             <button onClick={() => runContextMenuAction(tidySelectedEdgeRoute)}>
               <Route size={14} />
               整理连接线
             </button>
           )}
-          {contextMenu.edgeId && (
+          {contextMenuForEdge && contextMenu.edgeId && (
             <button onClick={() => runContextMenuAction(addManualBendFromContextMenu)}>
               <Pencil size={14} />
               添加拐点
             </button>
           )}
-          {canGroupSelectedGraphics && (
+          {contextMenuForNode && canGroupSelectedGraphics && (
             <button onClick={() => runContextMenuAction(groupSelectedGraphics)}>
               <Group size={14} />
               组合
             </button>
           )}
-          {canUngroupSelectedGraphics && (
+          {contextMenuForNode && canUngroupSelectedGraphics && (
             <button onClick={() => runContextMenuAction(ungroupSelectedGraphics)}>
               <Ungroup size={14} />
               解散
             </button>
           )}
-          {canAddTemplateFromSelection && (
+          {contextMenuForNode && canAddTemplateFromSelection && (
             <button onClick={() => runContextMenuAction(openAddTemplateDialog)}>
               <Grid2X2 size={14} />
               添加模板
             </button>
           )}
-          {activeSelectedNodeIds.length > 0 && (
+          {contextMenuForNode && activeSelectedNodeIds.length > 0 && (
             <button onClick={() => runContextMenuAction(openLayerAssignmentDialog)}>
               <Layers size={14} />
               图层修改
             </button>
           )}
-          {activeSelectedNodeIds.length > 0 && (
+          {contextMenuForNode && activeSelectedNodeIds.length > 0 && (
             <div className="context-menu-submenu">
               <button type="button" className="context-menu-submenu-trigger">
                 <Type size={14} />
@@ -18260,7 +18277,7 @@ export function App() {
               </div>
             </div>
           )}
-          {contextSelectionCount > 0 && (
+          {contextMenuForSelection && contextSelectionCount > 0 && (
             <button onClick={() => runContextMenuAction(deleteSelection)}>
               <Trash2 size={14} />
               删除
