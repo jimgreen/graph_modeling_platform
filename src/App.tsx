@@ -32,8 +32,11 @@ import {
   Pencil,
   Pin,
   Route,
+  RotateCcw,
+  RotateCw,
   Save,
   Trash2,
+  Type,
   Undo2,
   Ungroup
 } from "lucide-react";
@@ -383,6 +386,12 @@ type ContextMenuState = {
   edgeId?: string;
   routePoints?: Point[];
 } | null;
+type NodeLabelDisplayMode = "always" | "hidden" | "follow";
+const NODE_LABEL_DISPLAY_MODES: Array<{ value: NodeLabelDisplayMode; label: string }> = [
+  { value: "always", label: "始终显示" },
+  { value: "hidden", label: "始终隐藏" },
+  { value: "follow", label: "跟随显示" }
+];
 type ProjectMenuState = { x: number; y: number; schemeId?: string; projectId?: string } | null;
 type UnsavedChangeAction = {
   kind: "load-project";
@@ -463,6 +472,21 @@ type TerminalPressState = {
   startPoint: Point;
   currentPoint: Point;
   moved: boolean;
+  historyCaptured?: boolean;
+} | null;
+type NodeLabelDragState = {
+  nodeId: string;
+  pointerId: number;
+  startPoint: Point;
+  startOffset: Point;
+  scaleX: number;
+  scaleY: number;
+  historyCaptured?: boolean;
+} | null;
+type NodeLabelRotateDragState = {
+  nodeId: string;
+  pointerId: number;
+  center: Point;
   historyCaptured?: boolean;
 } | null;
 type ManualPathDrag =
@@ -1163,6 +1187,19 @@ const PARAM_LABELS: Record<string, string> = {
   rotation: "旋转角度",
   scaleX: "横向倍率",
   scaleY: "纵向倍率",
+  _labelVisible: "显示标识",
+  _labelDisplayMode: "标识显示方式",
+  _labelText: "标识内容",
+  _labelX: "标识X偏移",
+  _labelY: "标识Y偏移",
+  _labelColor: "标识颜色",
+  _labelFontFamily: "标识字体",
+  _labelFontSize: "标识字号",
+  _labelFontWeight: "标识字重",
+  _labelFontStyle: "标识字体样式",
+  _labelTextDecoration: "标识文字修饰",
+  _labelTextAnchor: "标识对齐",
+  _labelRotation: "标识方向",
   terminalCount: "端子数量",
   terminalVbase: "端子电压基值",
   ratedCapacity: "额定容量",
@@ -2348,6 +2385,133 @@ function nodeUprightScaleTransform(node: ModelNode) {
   return `scale(${formatSvgNumber(Math.abs(getNodeScaleX(node)) || 1)} ${formatSvgNumber(Math.abs(getNodeScaleY(node)) || 1)})`;
 }
 
+function numericNodeParam(node: ModelNode, key: string, fallback: number) {
+  const parsed = Number(node.params[key]);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function nodeLabelOffset(node: ModelNode): Point {
+  return {
+    x: numericNodeParam(node, "_labelX", 0),
+    y: numericNodeParam(node, "_labelY", Math.round(node.size.height / 2 + 22))
+  };
+}
+
+const nodeLabelText = (node: ModelNode) => node.params._labelText ?? node.name;
+
+const nodeLabelVisible = (node: ModelNode) => !isStaticNode(node) && node.params._labelVisible !== "0";
+
+function normalizeNodeLabelDisplayMode(value: string | undefined): NodeLabelDisplayMode {
+  return value === "always" || value === "hidden" || value === "follow" ? value : "follow";
+}
+
+const nodeLabelDisplayMode = (node: ModelNode): NodeLabelDisplayMode => {
+  const mode = node.params._labelDisplayMode;
+  if (mode === "always" || mode === "hidden" || mode === "follow") {
+    return mode;
+  }
+  return node.params._labelVisible === "0" ? "hidden" : "follow";
+};
+
+const nodeLabelShouldRender = (node: ModelNode, globalVisible: boolean) => {
+  if (!nodeLabelVisible(node)) {
+    return false;
+  }
+  const mode = nodeLabelDisplayMode(node);
+  return mode === "always" || (mode === "follow" && globalVisible);
+};
+
+function normalizeNodeLabelRotation(value: string | number | undefined) {
+  const parsed = typeof value === "number" ? value : Number(value ?? 0);
+  const snapped = Math.round((Number.isFinite(parsed) ? parsed : 0) / 90) * 90;
+  return ((snapped % 360) + 360) % 360;
+}
+
+const nodeLabelVertical = (node: ModelNode) => {
+  const rotation = normalizeNodeLabelRotation(node.params._labelRotation);
+  return rotation === 90 || rotation === 270;
+};
+
+const nodeLabelNumericTokenPattern = String.raw`\d+(?:[./:：-]\d+)*`;
+const nodeLabelNumericTokenRegex = new RegExp(`^${nodeLabelNumericTokenPattern}`);
+
+function nodeLabelVerticalSegments(text: string) {
+  const segments: Array<{ text: string; numeric: boolean }> = [];
+  let remaining = text;
+  while (remaining) {
+    const numericMatch = remaining.match(nodeLabelNumericTokenRegex);
+    if (numericMatch?.[0]) {
+      segments.push({ text: numericMatch[0], numeric: true });
+      remaining = remaining.slice(numericMatch[0].length);
+      continue;
+    }
+    const [char] = Array.from(remaining);
+    if (!char) {
+      break;
+    }
+    segments.push({ text: char, numeric: false });
+    remaining = remaining.slice(char.length);
+  }
+  return segments;
+}
+
+function nodeLabelVerticalTokenY(index: number, count: number, node: ModelNode) {
+  const step = nodeLabelFontSize(node) * 1.2;
+  return (index - (count - 1) / 2) * step;
+}
+
+const nodeLabelTransform = (node: ModelNode) => {
+  const offset = nodeLabelOffset(node);
+  const scaleX = Math.abs(getNodeScaleX(node)) || 1;
+  const scaleY = Math.abs(getNodeScaleY(node)) || 1;
+  return `translate(${formatSvgNumber(offset.x * scaleX)} ${formatSvgNumber(offset.y * scaleY)})`;
+};
+
+function nodeLabelCanvasCenter(node: ModelNode): Point {
+  const offset = nodeLabelOffset(node);
+  return {
+    x: node.position.x + offset.x * (Math.abs(getNodeScaleX(node)) || 1),
+    y: node.position.y + offset.y * (Math.abs(getNodeScaleY(node)) || 1)
+  };
+}
+
+const nodeLabelRotationFromPoint = (center: Point, point: Point) =>
+  normalizeNodeLabelRotation((Math.atan2(point.y - center.y, point.x - center.x) * 180) / Math.PI + 90);
+
+function nodeLabelTextAnchor(node: ModelNode) {
+  const anchor = node.params._labelTextAnchor;
+  return anchor === "start" || anchor === "end" || anchor === "middle" ? anchor : "middle";
+}
+
+function nodeLabelFontSize(node: ModelNode) {
+  const baseSize = numericNodeParam(node, "_labelFontSize", 14);
+  const scaleX = Math.abs(getNodeScaleX(node)) || 1;
+  const scaleY = Math.abs(getNodeScaleY(node)) || 1;
+  return baseSize * Math.sqrt(scaleX * scaleY);
+}
+
+function nodeLabelTextStyle(node: ModelNode): CSSProperties {
+  return {
+    fill: node.params._labelColor || "#334155",
+    fontFamily: node.params._labelFontFamily || "Arial",
+    fontSize: nodeLabelFontSize(node),
+    fontWeight: node.params._labelFontWeight || "500",
+    fontStyle: node.params._labelFontStyle || "normal",
+    textDecoration: node.params._labelTextDecoration || "none",
+    writingMode: nodeLabelVertical(node) ? "vertical-rl" : "horizontal-tb",
+    textOrientation: nodeLabelVertical(node) ? "upright" : undefined,
+    userSelect: "none"
+  };
+}
+
+function nodeLabelVerticalTokenStyle(node: ModelNode): CSSProperties {
+  return {
+    ...nodeLabelTextStyle(node),
+    writingMode: "horizontal-tb",
+    textOrientation: "mixed"
+  };
+}
+
 function nodeTransformedHalfExtents(node: ModelNode, includeUprightContent = false) {
   const halfWidth = (node.size.width * Math.abs(getNodeScaleX(node))) / 2;
   const halfHeight = (node.size.height * Math.abs(getNodeScaleY(node))) / 2;
@@ -3362,6 +3526,31 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
   );
 }
 
+function buildSvgNodeLabelTextMarkup(node: ModelNode) {
+  const text = nodeLabelText(node);
+  if (!text) {
+    return "";
+  }
+  const baseAttributes = `dominant-baseline="middle" fill="${escapeXml(node.params._labelColor || "#334155")}" font-family="${escapeXml(node.params._labelFontFamily || "Arial")}" font-size="${formatSvgNumber(nodeLabelFontSize(node))}" font-weight="${escapeXml(node.params._labelFontWeight || "500")}" font-style="${escapeXml(node.params._labelFontStyle || "normal")}" text-decoration="${escapeXml(node.params._labelTextDecoration || "none")}" paint-order="stroke" stroke="rgba(255,255,255,0.85)" stroke-width="3" stroke-linejoin="round"`;
+  if (nodeLabelVertical(node)) {
+    return nodeLabelVerticalSegments(text)
+      .map(
+        (segment, index) =>
+          `<text class="node-label-vertical-token ${segment.numeric ? "numeric" : ""}" x="0" y="${formatSvgNumber(nodeLabelVerticalTokenY(index, nodeLabelVerticalSegments(text).length, node))}" text-anchor="middle" ${baseAttributes} style="writing-mode: horizontal-tb; text-orientation: mixed; letter-spacing: 0;">${escapeXml(segment.text)}</text>`
+      )
+      .join("");
+  }
+  return `<text x="0" y="0" text-anchor="${escapeXml(nodeLabelTextAnchor(node))}" ${baseAttributes} style="writing-mode: horizontal-tb;">${escapeXml(text)}</text>`;
+}
+
+function buildSvgNodeLabelMarkup(node: ModelNode) {
+  const text = nodeLabelText(node);
+  if (!nodeLabelShouldRender(node, true) || !text) {
+    return "";
+  }
+  return `<g class="export-node-label ${nodeLabelVertical(node) ? "vertical" : "horizontal"}" transform="${nodeLabelTransform(node)}">${buildSvgNodeLabelTextMarkup(node)}</g>`;
+}
+
 export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: CanvasRenderOptions = { width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT }) {
   const imageAssets = readImageAssets();
   const backgroundColor = canvasSize.backgroundColor ?? DEFAULT_CANVAS_BACKGROUND;
@@ -3422,6 +3611,7 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
           ? `<rect x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" rx="8" fill="#ffffff" stroke="none"/>`
           : "";
       const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
+      const labelMarkup = buildSvgNodeLabelMarkup(node);
       return `<g class="export-node" transform="translate(${node.position.x} ${node.position.y})">
   <title>${escapeXml(node.name)}</title>
   <g class="export-node-geometry" transform="${geometryTransform}">
@@ -3437,6 +3627,7 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
   <g class="export-node-terminals" transform="${geometryTransform}">
   ${terminalMarkup}
   </g>
+  ${labelMarkup}
 </g>`;
     })
     .join("\n");
@@ -3600,8 +3791,11 @@ export function App() {
   const [dragging, setDragging] = useState<DraggingState | null>(null);
   const [rewiring, setRewiring] = useState<RewiringState>(null);
   const [terminalPress, setTerminalPress] = useState<TerminalPressState>(null);
+  const [nodeLabelDrag, setNodeLabelDrag] = useState<NodeLabelDragState>(null);
+  const [nodeLabelRotateDrag, setNodeLabelRotateDrag] = useState<NodeLabelRotateDragState>(null);
   const [manualPathDrag, setManualPathDrag] = useState<ManualPathDrag>(null);
   const [transformDrag, setTransformDrag] = useState<TransformDrag | null>(null);
+  const [deviceLabelsVisible, setDeviceLabelsVisible] = useState(true);
   const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT });
   const [canvasVisibleViewBox, setCanvasVisibleViewBox] = useState<CanvasViewBox>(() =>
     initialVisibleCanvasViewBox({ width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT }, null)
@@ -6839,6 +7033,77 @@ export function App() {
     return selection;
   };
 
+  const startNodeLabelDrag = (event: PointerEvent<SVGGElement>, node: ModelNode) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.button !== 0 || !svgRef.current || !activeLayerNodeIdSet.has(node.id)) {
+      return;
+    }
+    const point = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+    selectCanvasGraphics([node.id], [], { scope: "direct" });
+    setInspectorTab("graph");
+    setGraphInfoView("selected");
+    activateInspectorFromCanvas();
+    setNodeLabelDrag({
+      nodeId: node.id,
+      pointerId: event.pointerId,
+      startPoint: point,
+      startOffset: nodeLabelOffset(node),
+      scaleX: Math.abs(getNodeScaleX(node)) || 1,
+      scaleY: Math.abs(getNodeScaleY(node)) || 1
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const startNodeLabelRotateDrag = (event: PointerEvent<SVGCircleElement>, node: ModelNode) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.button !== 0 || !svgRef.current || !activeLayerNodeIdSet.has(node.id)) {
+      return;
+    }
+    selectCanvasGraphics([node.id], [], { scope: "direct" });
+    setInspectorTab("graph");
+    setGraphInfoView("selected");
+    activateInspectorFromCanvas();
+    setNodeLabelRotateDrag({
+      nodeId: node.id,
+      pointerId: event.pointerId,
+      center: nodeLabelCanvasCenter(node)
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const finishNodeLabelDrag = () => {
+    setNodeLabelDrag(null);
+  };
+
+  const finishNodeLabelRotateDrag = () => {
+    setNodeLabelRotateDrag(null);
+  };
+
+  const setSelectedNodeLabelDisplayMode = (mode: NodeLabelDisplayMode) => {
+    if (activeSelectedNodeIds.length === 0) {
+      return;
+    }
+    const updates = activeSelectedNodeIds.flatMap((nodeId) => {
+      const node = nodeById.get(nodeId);
+      if (!node || isStaticNode(node)) {
+        return [];
+      }
+      if (nodeLabelDisplayMode(node) === mode && node.params._labelDisplayMode === mode) {
+        return [];
+      }
+      return [{ ...node, params: { ...node.params, _labelDisplayMode: mode, _labelVisible: mode === "hidden" ? "0" : "1" } }];
+    });
+    if (updates.length === 0) {
+      return;
+    }
+    const label = NODE_LABEL_DISPLAY_MODES.find((item) => item.value === mode)?.label ?? mode;
+    pushUndoSnapshot();
+    patchGraphNodes(updates);
+    writeOperationLog(`设置 ${updates.length} 个图元标识显示方式：${label}`);
+  };
+
   const copySelection = () => {
     const clipboard = buildCanvasClipboard(
       visibleNodes,
@@ -9301,6 +9566,26 @@ export function App() {
     setLayerAssignmentDialogOpen(false);
   };
 
+  const rotateSelectedLayoutUnits = (direction: "left" | "right") => {
+    if (selectedLayoutUnits.length === 0) {
+      return;
+    }
+    const degrees = direction === "left" ? -90 : 90;
+    pushUndoSnapshot();
+    setSelectedEdgeId("");
+    const nextNodes = rotateLayoutUnitNodes(nodes, selectedLayoutUnits, degrees);
+    const transformedNodeIds = Array.from(new Set(selectedLayoutUnits.flatMap((unit) => unit.nodeIds)));
+    const rotatedEdgeUpdates = buildRotateLayoutUnitEdgeUpdates(selectedLayoutUnits, edges, degrees);
+    const preservedRotateEdgeIds = new Set(rotatedEdgeUpdates.map((edge) => edge.id));
+    const rotatedEdges = overlayEdgeUpdatesForTransform(edges, rotatedEdgeUpdates);
+    markRouteEdgesDirty(preservedRotateEdgeIds);
+    markStoredRouteEdgesDirty(preservedRotateEdgeIds);
+    const nextEdges = rebuildEdgesAfterNodeGeometryChange(nextNodes, transformedNodeIds, rotatedEdges, preservedRotateEdgeIds);
+    expandCanvasToFitGraph(nextNodes, nextEdges);
+    setGraphArrays(nextNodes, nextEdges);
+    writeOperationLog(`${direction === "left" ? "向左" : "向右"}旋转90度 ${selectedLayoutUnits.length} 个选中单元`);
+  };
+
   const mirrorSelectedNodes = (axis: "horizontal" | "vertical") => {
     if (selectedLayoutUnits.length === 0) {
       return;
@@ -9394,7 +9679,13 @@ export function App() {
       return;
     }
     pushUndoSnapshot();
-    updateGraphNodeById(selectedNodeId, (node) => ({ ...node, params: { ...node.params, [key]: value } }));
+    updateGraphNodeById(selectedNodeId, (node) => {
+      if (key === "_labelDisplayMode") {
+        const mode = normalizeNodeLabelDisplayMode(value);
+        return { ...node, params: { ...node.params, _labelDisplayMode: mode, _labelVisible: mode === "hidden" ? "0" : "1" } };
+      }
+      return { ...node, params: { ...node.params, [key]: value } };
+    });
   };
 
   const updateElementTreeNodeIdentity = (nodeId: string, field: "idx" | "name", value: string) => {
@@ -9768,6 +10059,40 @@ export function App() {
     return Array.from(updates.values());
   };
 
+  const buildRotateLayoutUnitEdgeUpdates = (
+    units: CanvasLayoutUnit[],
+    currentEdges: Edge[],
+    degrees: number
+  ) => {
+    const currentEdgeById = currentEdges === edges ? edgeById : new Map(currentEdges.map((edge) => [edge.id, edge]));
+    const updates = new Map<string, Edge>();
+    for (const unit of units) {
+      const center = selectionRectCenter(unit.bounds);
+      const unitNodeIds = new Set(unit.nodeIds);
+      for (const edgeId of unit.edgeIds) {
+        if (updates.has(edgeId)) {
+          continue;
+        }
+        const edge = currentEdgeById.get(edgeId);
+        if (!edge || !unitNodeIds.has(edge.sourceId) || !unitNodeIds.has(edge.targetId)) {
+          continue;
+        }
+        const routePoints = currentStoredRoutePointsForEdge(edge);
+        if (routePoints.length < 2) {
+          continue;
+        }
+        const points = routePoints.map((point) => rotatePointAround(point, center, degrees));
+        updates.set(edge.id, {
+          ...edge,
+          sourcePoint: { ...points[0] },
+          targetPoint: { ...points[points.length - 1] },
+          manualPoints: points.slice(1, -1).map((point) => ({ ...point }))
+        });
+      }
+    }
+    return Array.from(updates.values());
+  };
+
   const buildGroupTransformEdgeUpdates = (drag: GroupTransformDrag, point: Point, store: GraphStore) => {
     const geometry = groupTransformGeometry(drag, point);
     const transformedNodeIdSet = new Set(drag.nodeIds);
@@ -9951,6 +10276,33 @@ export function App() {
       });
     }
     return updates;
+  };
+
+  const rotateLayoutUnitNodes = (
+    currentNodes: ModelNode[],
+    units: CanvasLayoutUnit[],
+    degrees: number
+  ) => {
+    const currentNodeById = new Map(currentNodes.map((node) => [node.id, node]));
+    const updates = new Map<string, ModelNode>();
+    for (const unit of units) {
+      const center = selectionRectCenter(unit.bounds);
+      for (const nodeId of unit.nodeIds) {
+        if (updates.has(nodeId)) {
+          continue;
+        }
+        const node = currentNodeById.get(nodeId);
+        if (!node) {
+          continue;
+        }
+        updates.set(nodeId, {
+          ...node,
+          position: unit.kind === "group" ? rotatePointAround(node.position, center, degrees) : node.position,
+          rotation: normalizeRotationDegrees(node.rotation + degrees)
+        });
+      }
+    }
+    return currentNodes.map((node) => updates.get(node.id) ?? node);
   };
 
   const mirrorLayoutUnitNodes = (
@@ -10415,6 +10767,56 @@ export function App() {
         const previewPoint = resolveConnectPreviewPoint(pointer, event);
         scheduleConnectPreviewPoint(previewPoint);
       }
+    }
+    if (nodeLabelRotateDrag && svgRef.current) {
+      const point = lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      const nextRotation = String(nodeLabelRotationFromPoint(nodeLabelRotateDrag.center, point));
+      const currentNode = nodeById.get(nodeLabelRotateDrag.nodeId);
+      if (!currentNode || normalizeNodeLabelRotation(currentNode.params._labelRotation) === Number(nextRotation)) {
+        return;
+      }
+      if (!nodeLabelRotateDrag.historyCaptured) {
+        pushUndoSnapshot();
+      }
+      updateGraphNodeById(nodeLabelRotateDrag.nodeId, (node) => ({
+        ...node,
+        params: { ...node.params, _labelRotation: nextRotation }
+      }));
+      setNodeLabelRotateDrag((current) =>
+        current && current.nodeId === nodeLabelRotateDrag.nodeId
+          ? { ...current, historyCaptured: true }
+          : current
+      );
+      return;
+    }
+    if (nodeLabelDrag && svgRef.current) {
+      const point = lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      const nextOffset = {
+        x: Math.round((nodeLabelDrag.startOffset.x + (point.x - nodeLabelDrag.startPoint.x) / nodeLabelDrag.scaleX) * 10) / 10,
+        y: Math.round((nodeLabelDrag.startOffset.y + (point.y - nodeLabelDrag.startPoint.y) / nodeLabelDrag.scaleY) * 10) / 10
+      };
+      if (sameOptionalPoint(nextOffset, nodeLabelDrag.startOffset) && !nodeLabelDrag.historyCaptured) {
+        return;
+      }
+      if (!nodeLabelDrag.historyCaptured) {
+        pushUndoSnapshot();
+      }
+      updateGraphNodeById(nodeLabelDrag.nodeId, (node) => {
+        const currentX = node.params._labelX ?? "";
+        const currentY = node.params._labelY ?? "";
+        const nextX = String(nextOffset.x);
+        const nextY = String(nextOffset.y);
+        if (currentX === nextX && currentY === nextY) {
+          return node;
+        }
+        return { ...node, params: { ...node.params, _labelX: nextX, _labelY: nextY } };
+      });
+      setNodeLabelDrag((current) =>
+        current && current.nodeId === nodeLabelDrag.nodeId
+          ? { ...current, historyCaptured: current.historyCaptured || nodeLabelDrag.historyCaptured || !sameOptionalPoint(nextOffset, nodeLabelDrag.startOffset) }
+          : current
+      );
+      return;
     }
     if (terminalPress && svgRef.current) {
       const point = lastCanvasPointerRef.current;
@@ -14074,6 +14476,14 @@ export function App() {
           >
             <Palette size={16} />
           </button>
+          <button
+            className={`topbar-primary-button ${deviceLabelsVisible ? "active" : ""}`}
+            onClick={() => setDeviceLabelsVisible((current) => !current)}
+            title={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"}
+            aria-label={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"}
+          >
+            <Type size={16} />
+          </button>
           <div className="action-cluster">
             <button onClick={groupSelectedGraphics} disabled={!canGroupSelectedGraphics} title="组合" aria-label="组合">
               <Group size={16} />
@@ -14081,36 +14491,70 @@ export function App() {
             <button onClick={ungroupSelectedGraphics} disabled={!canUngroupSelectedGraphics} title="解散" aria-label="解散">
               <Ungroup size={16} />
             </button>
-            <button onClick={() => alignSelected("horizontal")} disabled={selectedLayoutUnitCount < 2} title="横向对齐" aria-label="横向对齐">
-              <AlignCenterHorizontal size={16} />
-            </button>
-            <button onClick={() => alignSelected("vertical")} disabled={selectedLayoutUnitCount < 2} title="纵向对齐" aria-label="纵向对齐">
-              <AlignCenterVertical size={16} />
-            </button>
-            <button onClick={() => alignSelected("left")} disabled={selectedLayoutUnitCount < 2} title="左对齐" aria-label="左对齐">
-              <AlignStartVertical size={16} />
-            </button>
-            <button onClick={() => alignSelected("right")} disabled={selectedLayoutUnitCount < 2} title="右对齐" aria-label="右对齐">
-              <AlignEndVertical size={16} />
-            </button>
-            <button onClick={() => alignSelected("top")} disabled={selectedLayoutUnitCount < 2} title="上对齐" aria-label="上对齐">
-              <AlignStartHorizontal size={16} />
-            </button>
-            <button onClick={() => alignSelected("bottom")} disabled={selectedLayoutUnitCount < 2} title="下对齐" aria-label="下对齐">
-              <AlignEndHorizontal size={16} />
-            </button>
-            <button onClick={() => distributeSelected("horizontal")} disabled={selectedLayoutUnitCount < 3} title="横向平均" aria-label="横向平均">
-              <AlignHorizontalDistributeCenter size={16} />
-            </button>
-            <button onClick={() => distributeSelected("vertical")} disabled={selectedLayoutUnitCount < 3} title="纵向平均" aria-label="纵向平均">
-              <AlignVerticalDistributeCenter size={16} />
-            </button>
-            <button onClick={() => mirrorSelectedNodes("horizontal")} disabled={selectedLayoutUnitCount < 1} title="水平镜像" aria-label="水平镜像">
-              <FlipHorizontal size={16} />
-            </button>
-            <button onClick={() => mirrorSelectedNodes("vertical")} disabled={selectedLayoutUnitCount < 1} title="垂直镜像" aria-label="垂直镜像">
-              <FlipVertical size={16} />
-            </button>
+            <div className="topbar-dropdown align-dropdown">
+              <button type="button" className="topbar-dropdown-trigger" title="对齐操作" aria-label="对齐操作">
+                <AlignCenterHorizontal size={16} />
+                <ChevronDown size={13} />
+              </button>
+              <div className="topbar-dropdown-menu" role="menu" aria-label="对齐操作">
+                <button onClick={() => alignSelected("left")} disabled={selectedLayoutUnitCount < 2} title="左对齐" aria-label="左对齐">
+                  <AlignStartVertical size={16} />
+                  <span>左对齐</span>
+                </button>
+                <button onClick={() => alignSelected("right")} disabled={selectedLayoutUnitCount < 2} title="右对齐" aria-label="右对齐">
+                  <AlignEndVertical size={16} />
+                  <span>右对齐</span>
+                </button>
+                <button onClick={() => alignSelected("horizontal")} disabled={selectedLayoutUnitCount < 2} title="横向居中" aria-label="横向居中">
+                  <AlignCenterHorizontal size={16} />
+                  <span>横向居中</span>
+                </button>
+                <button onClick={() => alignSelected("vertical")} disabled={selectedLayoutUnitCount < 2} title="纵向居中" aria-label="纵向居中">
+                  <AlignCenterVertical size={16} />
+                  <span>纵向居中</span>
+                </button>
+                <button onClick={() => alignSelected("top")} disabled={selectedLayoutUnitCount < 2} title="上对齐" aria-label="上对齐">
+                  <AlignStartHorizontal size={16} />
+                  <span>上对齐</span>
+                </button>
+                <button onClick={() => alignSelected("bottom")} disabled={selectedLayoutUnitCount < 2} title="下对齐" aria-label="下对齐">
+                  <AlignEndHorizontal size={16} />
+                  <span>下对齐</span>
+                </button>
+                <button onClick={() => distributeSelected("horizontal")} disabled={selectedLayoutUnitCount < 3} title="横向分布" aria-label="横向分布">
+                  <AlignHorizontalDistributeCenter size={16} />
+                  <span>横向分布</span>
+                </button>
+                <button onClick={() => distributeSelected("vertical")} disabled={selectedLayoutUnitCount < 3} title="纵向分布" aria-label="纵向分布">
+                  <AlignVerticalDistributeCenter size={16} />
+                  <span>纵向分布</span>
+                </button>
+              </div>
+            </div>
+            <div className="topbar-dropdown rotate-dropdown">
+              <button type="button" className="topbar-dropdown-trigger" title="旋转操作" aria-label="旋转操作">
+                <RotateCw size={16} />
+                <ChevronDown size={13} />
+              </button>
+              <div className="topbar-dropdown-menu" role="menu" aria-label="旋转操作">
+                <button onClick={() => rotateSelectedLayoutUnits("left")} disabled={selectedLayoutUnitCount < 1} title="向左旋转90度" aria-label="向左旋转90度">
+                  <RotateCcw size={16} />
+                  <span>左转90度</span>
+                </button>
+                <button onClick={() => rotateSelectedLayoutUnits("right")} disabled={selectedLayoutUnitCount < 1} title="向右旋转90度" aria-label="向右旋转90度">
+                  <RotateCw size={16} />
+                  <span>右转90度</span>
+                </button>
+                <button onClick={() => mirrorSelectedNodes("horizontal")} disabled={selectedLayoutUnitCount < 1} title="水平镜像" aria-label="水平镜像">
+                  <FlipHorizontal size={16} />
+                  <span>水平镜像</span>
+                </button>
+                <button onClick={() => mirrorSelectedNodes("vertical")} disabled={selectedLayoutUnitCount < 1} title="垂直镜像" aria-label="垂直镜像">
+                  <FlipVertical size={16} />
+                  <span>垂直镜像</span>
+                </button>
+              </div>
+            </div>
             <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={chooseImage} />
             <input ref={customDeviceImageInputRef} type="file" accept="image/*" hidden onChange={chooseCustomDeviceBackground} />
             <input ref={modelImportInputRef} type="file" accept=".json,application/json" hidden onChange={importModelFile} />
@@ -14151,6 +14595,8 @@ export function App() {
             onPointerUp={(event) => {
               finishRewiring(event);
               finishTerminalPress();
+              finishNodeLabelDrag();
+              finishNodeLabelRotateDrag();
               finishMarqueeSelection();
               finishNodeDrag();
               finishManualPathDrag();
@@ -14162,6 +14608,8 @@ export function App() {
               if (manualPathDrag) {
                 return;
               }
+              finishNodeLabelDrag();
+              finishNodeLabelRotateDrag();
               finishNodeDrag();
               setTerminalPress(null);
               finishManualPathDrag();
@@ -14171,6 +14619,8 @@ export function App() {
               setRewiring(null);
             }}
             onPointerCancel={() => {
+              finishNodeLabelDrag();
+              finishNodeLabelRotateDrag();
               finishNodeDrag();
               setTerminalPress(null);
               finishManualPathDrag();
@@ -14180,6 +14630,8 @@ export function App() {
               setRewiring(null);
             }}
             onLostPointerCapture={() => {
+              finishNodeLabelDrag();
+              finishNodeLabelRotateDrag();
               finishNodeDrag();
               setTerminalPress(null);
               finishManualPathDrag();
@@ -14725,6 +15177,54 @@ export function App() {
                           clipPath={`url(#clip-${node.id})`}
                           className="node-foreground-image"
                         />
+                      )}
+                    </g>
+                  )}
+                  {nodeLabelShouldRender(node, deviceLabelsVisible) && (
+                    <g
+                      className={`node-device-label ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${nodeLabelVertical(node) ? "vertical" : "horizontal"}`}
+                      data-node-id={node.id}
+                      data-label-owner="device"
+                      transform={nodeLabelTransform(node)}
+                      onPointerDown={(event) => startNodeLabelDrag(event, node)}
+                    >
+                      {nodeLabelVertical(node) ? (
+                        nodeLabelVerticalSegments(nodeLabelText(node)).map((segment, index) => (
+                          <text
+                            key={`${segment.text}-${index}`}
+                            className={`node-label-vertical-token ${segment.numeric ? "numeric" : ""}`}
+                            x="0"
+                            y={nodeLabelVerticalTokenY(index, nodeLabelVerticalSegments(nodeLabelText(node)).length, node)}
+                            dominantBaseline="middle"
+                            textAnchor="middle"
+                            style={nodeLabelVerticalTokenStyle(node)}
+                          >
+                            {segment.text}
+                          </text>
+                        ))
+                      ) : (
+                        <text
+                          x="0"
+                          y="0"
+                          dominantBaseline="middle"
+                          textAnchor={nodeLabelTextAnchor(node)}
+                          style={nodeLabelTextStyle(node)}
+                        >
+                          {nodeLabelText(node)}
+                        </text>
+                      )}
+                      {selected && focused && selectedNodeCount === 1 && (
+                        <g className="node-label-rotate-control" transform={`translate(0 ${formatSvgNumber(-nodeLabelFontSize(node) - 18)})`}>
+                          <line x1="0" y1="8" x2="0" y2="0" />
+                          <circle
+                            cx="0"
+                            cy="0"
+                            r="6"
+                            onPointerDown={(event) => startNodeLabelRotateDrag(event, node)}
+                          >
+                            <title>旋转标识</title>
+                          </circle>
+                        </g>
                       )}
                     </g>
                   )}
@@ -15324,6 +15824,128 @@ export function App() {
                     {!isStaticNode(inspectorSelectedNode) && (
                       <>
                         <tr>
+                          {renderChineseParamHeader("_labelDisplayMode")}
+                          <td>
+                            <select
+                              value={nodeLabelDisplayMode(inspectorSelectedNode)}
+                              onChange={(event) => updateParam("_labelDisplayMode", event.target.value)}
+                            >
+                              <option value="always">始终显示</option>
+                              <option value="hidden">始终隐藏</option>
+                              <option value="follow">跟随显示</option>
+                            </select>
+                          </td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("_labelText")}
+                          <td>
+                            <input
+                              value={inspectorSelectedNode.params._labelText ?? inspectorSelectedNode.name}
+                              onChange={(event) => updateParam("_labelText", event.target.value)}
+                            />
+                          </td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("_labelColor")}
+                          <td>{renderColorEditor("_labelColor", inspectorSelectedNode.params._labelColor || "#334155", "#334155")}</td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("_labelFontFamily")}
+                          <td>{renderParamEditor("_labelFontFamily", inspectorSelectedNode.params._labelFontFamily || "Arial", false)}</td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("_labelFontSize")}
+                          <td>
+                            <input
+                              type="number"
+                              min="6"
+                              max="96"
+                              value={inspectorSelectedNode.params._labelFontSize || "14"}
+                              onChange={(event) => updateParam("_labelFontSize", event.target.value)}
+                            />
+                          </td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("_labelRotation")}
+                          <td>
+                            <select
+                              value={String(normalizeNodeLabelRotation(inspectorSelectedNode.params._labelRotation))}
+                              onChange={(event) => updateParam("_labelRotation", String(normalizeNodeLabelRotation(event.target.value)))}
+                            >
+                              <option value="0">0° 横排</option>
+                              <option value="90">90° 纵排</option>
+                              <option value="180">180° 横排</option>
+                              <option value="270">270° 纵排</option>
+                            </select>
+                          </td>
+                        </tr>
+                        <tr>
+                          <th>标识样式</th>
+                          <td>
+                            <div className="device-label-style-actions">
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  checked={(inspectorSelectedNode.params._labelFontWeight || "500") !== "400"}
+                                  onChange={(event) => updateParam("_labelFontWeight", event.target.checked ? "700" : "400")}
+                                />
+                                加粗
+                              </label>
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  checked={(inspectorSelectedNode.params._labelFontStyle || "normal") === "italic"}
+                                  onChange={(event) => updateParam("_labelFontStyle", event.target.checked ? "italic" : "normal")}
+                                />
+                                斜体
+                              </label>
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  checked={(inspectorSelectedNode.params._labelTextDecoration || "none") === "underline"}
+                                  onChange={(event) => updateParam("_labelTextDecoration", event.target.checked ? "underline" : "none")}
+                                />
+                                下划线
+                              </label>
+                            </div>
+                          </td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("_labelTextAnchor")}
+                          <td>
+                            <select
+                              value={nodeLabelTextAnchor(inspectorSelectedNode)}
+                              onChange={(event) => updateParam("_labelTextAnchor", event.target.value)}
+                            >
+                              <option value="start">左对齐</option>
+                              <option value="middle">居中</option>
+                              <option value="end">右对齐</option>
+                            </select>
+                          </td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("_labelX")}
+                          <td>
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={nodeLabelOffset(inspectorSelectedNode).x}
+                              onChange={(event) => updateParam("_labelX", event.target.value)}
+                            />
+                          </td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("_labelY")}
+                          <td>
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={nodeLabelOffset(inspectorSelectedNode).y}
+                              onChange={(event) => updateParam("_labelY", event.target.value)}
+                            />
+                          </td>
+                        </tr>
+                        <tr>
                           {renderChineseParamHeader("terminalCount")}
                           <td>
                             <span
@@ -15701,6 +16323,29 @@ export function App() {
               <Layers size={14} />
               图层修改
             </button>
+          )}
+          {activeSelectedNodeIds.length > 0 && (
+            <div className="context-menu-submenu">
+              <button type="button" className="context-menu-submenu-trigger">
+                <Type size={14} />
+                标识显示
+                <ChevronRight size={14} />
+              </button>
+              <div className="context-menu-submenu-panel">
+                <button onClick={() => runContextMenuAction(() => setSelectedNodeLabelDisplayMode("always"))}>
+                  <Type size={14} />
+                  标识始终显示
+                </button>
+                <button onClick={() => runContextMenuAction(() => setSelectedNodeLabelDisplayMode("hidden"))}>
+                  <Type size={14} />
+                  标识始终隐藏
+                </button>
+                <button onClick={() => runContextMenuAction(() => setSelectedNodeLabelDisplayMode("follow"))}>
+                  <Type size={14} />
+                  标识跟随显示
+                </button>
+              </div>
+            </div>
           )}
           {contextSelectionCount > 0 && (
             <button onClick={() => runContextMenuAction(deleteSelection)}>

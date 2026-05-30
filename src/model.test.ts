@@ -169,6 +169,34 @@ function hasImmediateRouteReversal(points: Point[]) {
   return false;
 }
 
+function withHiddenDeviceLabel(node: ModelNode): ModelNode {
+  return { ...node, params: { ...node.params, _labelVisible: "0", _labelDisplayMode: "hidden" } };
+}
+
+type TestBox = { left: number; right: number; top: number; bottom: number };
+
+function routeIntersectsTestBox(points: Point[], box: TestBox) {
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1];
+    const point = points[index];
+    if (previous.x === point.x) {
+      const yMin = Math.min(previous.y, point.y);
+      const yMax = Math.max(previous.y, point.y);
+      if (previous.x > box.left && previous.x < box.right && yMax > box.top && yMin < box.bottom) {
+        return true;
+      }
+    }
+    if (previous.y === point.y) {
+      const xMin = Math.min(previous.x, point.x);
+      const xMax = Math.max(previous.x, point.x);
+      if (previous.y > box.top && previous.y < box.bottom && xMax > box.left && xMin < box.right) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 describe("power system model", () => {
   test("builds adjacency topology from connection lines", () => {
     const nodes: ModelNode[] = [
@@ -1764,9 +1792,9 @@ describe("power system model", () => {
   });
 
   test("keeps automatic obstacle detours local instead of routing to canvas edges", () => {
-    const source = createDefaultNode("ac-bus", { x: 100, y: 100 });
-    const target = createDefaultNode("ac-load", { x: 420, y: 100 });
-    const blocker = createDefaultNode("ac-switch", { x: 260, y: 100 });
+    const source = withHiddenDeviceLabel(createDefaultNode("ac-bus", { x: 100, y: 100 }));
+    const target = withHiddenDeviceLabel(createDefaultNode("ac-load", { x: 420, y: 100 }));
+    const blocker = withHiddenDeviceLabel(createDefaultNode("ac-switch", { x: 260, y: 100 }));
     const route = routeEdgesForRendering(
       [source, target, blocker],
       [{ id: "local-detour", sourceId: source.id, targetId: target.id, sourceTerminalId: "t1", targetTerminalId: "t1" }],
@@ -1776,6 +1804,54 @@ describe("power system model", () => {
     const yValues = route.points.map((point) => point.y);
     expect(Math.max(...yValues)).toBeLessThanOrEqual(blocker.position.y + blocker.size.height / 2 + 40);
     expect(Math.min(...yValues)).toBeGreaterThanOrEqual(blocker.position.y - blocker.size.height / 2 - 40);
+  });
+
+  test("routes connection lines around visible device labels and the device-label gap", () => {
+    const source = createDefaultNode("ac-line", { x: 80, y: 108 });
+    const target = createDefaultNode("ac-line", { x: 440, y: 108 });
+    const blockerBase = createDefaultNode("ac-switch", { x: 260, y: 70 });
+    const blocker = {
+      ...blockerBase,
+      params: {
+        ...blockerBase.params,
+        _labelText: "交流开关",
+        _labelX: "0",
+        _labelY: "46",
+        _labelFontSize: "14",
+        _labelTextAnchor: "middle",
+        _labelRotation: "0"
+      }
+    };
+    const route = routeEdgesForRendering(
+      [source, target, blocker],
+      [{ id: "label-detour", sourceId: source.id, targetId: target.id, sourceTerminalId: "t2", targetTerminalId: "t1" }],
+      { width: 640, height: 260 }
+    )[0];
+    const bodyBox = {
+      left: blocker.position.x - blocker.size.width / 2,
+      right: blocker.position.x + blocker.size.width / 2,
+      top: blocker.position.y - blocker.size.height / 2,
+      bottom: blocker.position.y + blocker.size.height / 2
+    };
+    const labelWidth = 14 * 4;
+    const labelHeight = 14 * 1.35;
+    const labelCenter = { x: blocker.position.x, y: blocker.position.y + 46 };
+    const labelBox = {
+      left: labelCenter.x - labelWidth / 2,
+      right: labelCenter.x + labelWidth / 2,
+      top: labelCenter.y - labelHeight / 2,
+      bottom: labelCenter.y + labelHeight / 2
+    };
+    const bridgeBox = {
+      left: Math.min(bodyBox.left, labelBox.left),
+      right: Math.max(bodyBox.right, labelBox.right),
+      top: bodyBox.bottom,
+      bottom: labelBox.top
+    };
+
+    expect(routeIntersectsTestBox(route.points, bodyBox)).toBe(false);
+    expect(routeIntersectsTestBox(route.points, labelBox)).toBe(false);
+    expect(routeIntersectsTestBox(route.points, bridgeBox)).toBe(false);
   });
 
   test("avoids canvas-edge lanes when a safe local reroute is available", () => {

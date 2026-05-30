@@ -3639,8 +3639,26 @@ function applyContainerRelationDefaults(params: Record<string, string>, template
 }
 
 function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
+  const withDeviceLabelDefaults = (params: Record<string, string>) =>
+    isStaticKind(template.kind)
+      ? params
+      : {
+          _labelVisible: "1",
+          _labelDisplayMode: "follow",
+          _labelX: "0",
+          _labelY: String(Math.round(template.size.height / 2 + 22)),
+          _labelColor: "#334155",
+          _labelFontSize: "14",
+          _labelFontFamily: "Arial",
+          _labelFontWeight: "500",
+          _labelFontStyle: "normal",
+          _labelTextDecoration: "none",
+          _labelTextAnchor: "middle",
+          _labelRotation: "0",
+          ...params
+        };
   const withTemplateDefinitions = (params: Record<string, string>) =>
-    applyTemplateDefinitionDefaults(applyContainerRelationDefaults(params, template), template);
+    withDeviceLabelDefaults(applyTemplateDefinitionDefaults(applyContainerRelationDefaults(params, template), template));
   if (isStaticKind(template.kind)) {
     return withTemplateDefinitions({ ...template.params });
   }
@@ -6730,12 +6748,228 @@ function boxFor(node: ModelNode, padding = 0) {
   };
 }
 
+type RouteBlockerBox = ReturnType<typeof boxFor>;
+
+function numericNodeParamForRoute(node: ModelNode, key: string, fallback: number) {
+  const parsed = Number(node.params[key]);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function routeNodeLabelText(node: ModelNode) {
+  return node.params._labelText ?? node.name;
+}
+
+function routeNodeLabelDisplayMode(node: ModelNode) {
+  const mode = node.params._labelDisplayMode;
+  if (mode === "always" || mode === "hidden" || mode === "follow") {
+    return mode;
+  }
+  return node.params._labelVisible === "0" ? "hidden" : "follow";
+}
+
+function routeNodeHasLabelMetadata(node: ModelNode) {
+  return (
+    "_labelVisible" in node.params ||
+    "_labelDisplayMode" in node.params ||
+    "_labelText" in node.params ||
+    "_labelX" in node.params ||
+    "_labelY" in node.params
+  );
+}
+
+function routeNodeLabelBlocksRouting(node: ModelNode) {
+  return (
+    !isStaticNode(node) &&
+    routeNodeHasLabelMetadata(node) &&
+    node.params._labelVisible !== "0" &&
+    routeNodeLabelDisplayMode(node) !== "hidden" &&
+    routeNodeLabelText(node).trim().length > 0
+  );
+}
+
+function routeNodeLabelOffset(node: ModelNode): Point {
+  return {
+    x: numericNodeParamForRoute(node, "_labelX", 0),
+    y: numericNodeParamForRoute(node, "_labelY", Math.round(node.size.height / 2 + 22))
+  };
+}
+
+function normalizeRouteNodeLabelRotation(value: string | number | undefined) {
+  const parsed = typeof value === "number" ? value : Number(value ?? 0);
+  const snapped = Math.round((Number.isFinite(parsed) ? parsed : 0) / 90) * 90;
+  return ((snapped % 360) + 360) % 360;
+}
+
+function routeNodeLabelVertical(node: ModelNode) {
+  const rotation = normalizeRouteNodeLabelRotation(node.params._labelRotation);
+  return rotation === 90 || rotation === 270;
+}
+
+const routeNodeLabelNumericTokenPattern = String.raw`\d+(?:[./:：-]\d+)*`;
+const routeNodeLabelNumericTokenRegex = new RegExp(`^${routeNodeLabelNumericTokenPattern}`);
+
+function routeNodeLabelVerticalSegments(text: string) {
+  const segments: Array<{ text: string; numeric: boolean }> = [];
+  let remaining = text;
+  while (remaining) {
+    const numericMatch = remaining.match(routeNodeLabelNumericTokenRegex);
+    if (numericMatch?.[0]) {
+      segments.push({ text: numericMatch[0], numeric: true });
+      remaining = remaining.slice(numericMatch[0].length);
+      continue;
+    }
+    const [char] = Array.from(remaining);
+    if (!char) {
+      break;
+    }
+    segments.push({ text: char, numeric: false });
+    remaining = remaining.slice(char.length);
+  }
+  return segments;
+}
+
+function routeNodeLabelFontSize(node: ModelNode) {
+  const baseSize = numericNodeParamForRoute(node, "_labelFontSize", 14);
+  const scaleX = Math.abs(getNodeScaleX(node)) || 1;
+  const scaleY = Math.abs(getNodeScaleY(node)) || 1;
+  return baseSize * Math.sqrt(scaleX * scaleY);
+}
+
+function routeNodeLabelCanvasCenter(node: ModelNode): Point {
+  const offset = routeNodeLabelOffset(node);
+  const scaleX = Math.abs(getNodeScaleX(node)) || 1;
+  const scaleY = Math.abs(getNodeScaleY(node)) || 1;
+  return {
+    x: node.position.x + offset.x * scaleX,
+    y: node.position.y + offset.y * scaleY
+  };
+}
+
+function routeNodeLabelTextAnchor(node: ModelNode) {
+  const anchor = node.params._labelTextAnchor;
+  return anchor === "start" || anchor === "end" || anchor === "middle" ? anchor : "middle";
+}
+
+function routeTextVisualWidth(text: string, fontSize: number) {
+  return Array.from(text).reduce((width, char) => width + fontSize * (char.charCodeAt(0) > 255 ? 1 : 0.62), 0);
+}
+
+function nodeLabelRouteBlockerBox(node: ModelNode, padding = 0): RouteBlockerBox | null {
+  if (!routeNodeLabelBlocksRouting(node)) {
+    return null;
+  }
+  const text = routeNodeLabelText(node).trim();
+  const center = routeNodeLabelCanvasCenter(node);
+  const fontSize = routeNodeLabelFontSize(node);
+  const effectivePadding = Math.max(padding, 4);
+  if (routeNodeLabelVertical(node)) {
+    const segments = routeNodeLabelVerticalSegments(text);
+    const width = Math.max(fontSize, ...segments.map((segment) => routeTextVisualWidth(segment.text, fontSize)));
+    const height = Math.max(fontSize * 1.35, segments.length * fontSize * 1.2);
+    return {
+      left: center.x - width / 2 - effectivePadding,
+      right: center.x + width / 2 + effectivePadding,
+      top: center.y - height / 2 - effectivePadding,
+      bottom: center.y + height / 2 + effectivePadding
+    };
+  }
+  const width = Math.max(fontSize, routeTextVisualWidth(text, fontSize));
+  const height = fontSize * 1.35;
+  const anchor = routeNodeLabelTextAnchor(node);
+  const left = anchor === "start" ? center.x : anchor === "end" ? center.x - width : center.x - width / 2;
+  const right = anchor === "start" ? center.x + width : anchor === "end" ? center.x : center.x + width / 2;
+  return {
+    left: left - effectivePadding,
+    right: right + effectivePadding,
+    top: center.y - height / 2 - effectivePadding,
+    bottom: center.y + height / 2 + effectivePadding
+  };
+}
+
+function nodeLabelBridgeBlockerBox(
+  node: ModelNode,
+  bodyBox: RouteBlockerBox,
+  labelBox: RouteBlockerBox,
+  padding = 0
+): RouteBlockerBox | null {
+  const center = routeNodeLabelCanvasCenter(node);
+  const bodyCenter = node.position;
+  if (center.x >= bodyBox.left && center.x <= bodyBox.right && center.y >= bodyBox.top && center.y <= bodyBox.bottom) {
+    return null;
+  }
+  if (labelBox.top >= bodyBox.bottom) {
+    return {
+      left: Math.min(bodyBox.left, labelBox.left, bodyCenter.x, center.x),
+      right: Math.max(bodyBox.right, labelBox.right, bodyCenter.x, center.x),
+      top: bodyBox.bottom,
+      bottom: labelBox.top
+    };
+  }
+  if (labelBox.bottom <= bodyBox.top) {
+    return {
+      left: Math.min(bodyBox.left, labelBox.left, bodyCenter.x, center.x),
+      right: Math.max(bodyBox.right, labelBox.right, bodyCenter.x, center.x),
+      top: labelBox.bottom,
+      bottom: bodyBox.top
+    };
+  }
+  if (labelBox.left >= bodyBox.right) {
+    return {
+      left: bodyBox.right,
+      right: labelBox.left,
+      top: Math.min(bodyBox.top, labelBox.top, bodyCenter.y, center.y),
+      bottom: Math.max(bodyBox.bottom, labelBox.bottom, bodyCenter.y, center.y)
+    };
+  }
+  if (labelBox.right <= bodyBox.left) {
+    return {
+      left: labelBox.right,
+      right: bodyBox.left,
+      top: Math.min(bodyBox.top, labelBox.top, bodyCenter.y, center.y),
+      bottom: Math.max(bodyBox.bottom, labelBox.bottom, bodyCenter.y, center.y)
+    };
+  }
+  return {
+    left: Math.min(bodyBox.left, labelBox.left, bodyCenter.x, center.x),
+    right: Math.max(bodyBox.right, labelBox.right, bodyCenter.x, center.x),
+    top: Math.min(bodyBox.top, labelBox.top, bodyCenter.y, center.y),
+    bottom: Math.max(bodyBox.bottom, labelBox.bottom, bodyCenter.y, center.y)
+  };
+}
+
+function mergeRouteBlockerBoxes(boxes: RouteBlockerBox[]): RouteBlockerBox {
+  return boxes.reduce((merged, box) => ({
+    left: Math.min(merged.left, box.left),
+    right: Math.max(merged.right, box.right),
+    top: Math.min(merged.top, box.top),
+    bottom: Math.max(merged.bottom, box.bottom)
+  }));
+}
+
+function routeEndpointBodyOnlyBlocker(node: ModelNode): ModelNode {
+  if (!routeNodeHasLabelMetadata(node)) {
+    return node;
+  }
+  return { ...node, params: { ...node.params, _labelVisible: "0", _labelDisplayMode: "hidden" } };
+}
+
 function routeBlockerPadding(node: ModelNode, padding: number) {
   return isBoundaryBusNode(node) ? 0 : padding;
 }
 
-function routeBlockerBox(node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
+function routeBodyBlockerBox(node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
   return boxFor(node, routeBlockerPadding(node, padding));
+}
+
+function routeBlockerBox(node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
+  const effectivePadding = routeBlockerPadding(node, padding);
+  const bodyBox = routeBodyBlockerBox(node, padding);
+  const labelBox = nodeLabelRouteBlockerBox(node, effectivePadding);
+  if (!labelBox) {
+    return bodyBox;
+  }
+  const bridgeBox = nodeLabelBridgeBlockerBox(node, bodyBox, labelBox, effectivePadding);
+  return mergeRouteBlockerBoxes(bridgeBox ? [bodyBox, labelBox, bridgeBox] : [bodyBox, labelBox]);
 }
 
 export function calculateModelContentSize(
@@ -7005,7 +7239,7 @@ function relevantBlockersForRoute(source: ModelNode, target: ModelNode, nodes: M
     if (node.id === source.id || node.id === target.id || node.id.startsWith("floating-")) {
       return false;
     }
-    return !useCorridor || boxesOverlap(boxFor(node, 24), corridor);
+    return !useCorridor || boxesOverlap(routeBlockerBox(node, 24), corridor);
   });
 }
 
@@ -7260,7 +7494,7 @@ function safeStubPoint(point: Point, normal: Point, blockers: ModelNode[], maxLe
 }
 
 function endpointStubLengthOutsideOwnBody(point: Point, normal: Point, node: ModelNode, fallbackLength = ROUTE_ENDPOINT_STUB_LENGTH) {
-  const box = routeBlockerBox(node, ROUTE_BLOCKER_PADDING);
+  const box = routeBodyBlockerBox(node, ROUTE_BLOCKER_PADDING);
   if (normal.x > 0 && point.y >= box.top && point.y <= box.bottom && point.x < box.right) {
     return Math.max(fallbackLength, box.right - point.x + ROUTE_CLEARANCE);
   }
@@ -7278,7 +7512,7 @@ function endpointStubLengthOutsideOwnBody(point: Point, normal: Point, node: Mod
 
 function endpointStubPoint(point: Point, normal: Point, node: ModelNode, blockers: ModelNode[], fallbackLength = ROUTE_ENDPOINT_STUB_LENGTH) {
   const length = endpointStubLengthOutsideOwnBody(point, normal, node, fallbackLength);
-  return safeStubPoint(point, normal, blockers, length);
+  return safeStubPoint(point, normal, blockers.filter((blocker) => blocker.id !== node.id), length);
 }
 
 function buildFullRoute(start: Point, startOut: Point, middle: Point[], endOut: Point, end: Point, bounds?: CanvasBounds) {
@@ -8092,7 +8326,7 @@ function candidateLanes(
     point.y >= box.top - margin &&
     point.y <= box.bottom + margin;
   const blockerBoxes = blockers
-    .map((node) => ({ node, box: boxFor(node, 32) }))
+    .map((node) => ({ node, box: routeBlockerBox(node, 32) }))
     .filter(({ node, box }) => {
       if (!boxesOverlap(box, laneCorridor)) {
         return false;
@@ -8171,7 +8405,7 @@ function expandedCandidateLanes(
     point.y >= box.top - margin &&
     point.y <= box.bottom + margin;
   const blockerBoxes = blockers
-    .map((node) => ({ node, box: boxFor(node, 32) }))
+    .map((node) => ({ node, box: routeBlockerBox(node, 32) }))
     .filter(({ node, box }) =>
       !(
         endpointNodeIds.has(node.id) &&
@@ -8657,7 +8891,8 @@ function segmentIntersectsRouteBlocker(
   if (node.id === targetId && segmentIndex === lastSegmentIndex) {
     return false;
   }
-  return segmentIntersectsNodeBody(a, b, node);
+  const blockerNode = node.id === sourceId || node.id === targetId ? routeEndpointBodyOnlyBlocker(node) : node;
+  return segmentIntersectsNodeBody(a, b, blockerNode);
 }
 
 function routeSingleConnectionForValidation(nodes: ModelNode[], edge: Edge, bounds?: CanvasBounds): RoutedEdge | null {
@@ -8809,9 +9044,11 @@ function buildEdgeRoutingContext(source: ModelNode, target: ModelNode, nodes: Mo
     x: end.x + targetNormal.x * stubLength,
     y: end.y + targetNormal.y * stubLength
   };
+  const sourceBodyBlocker = routeEndpointBodyOnlyBlocker(source);
+  const targetBodyBlocker = routeEndpointBodyOnlyBlocker(target);
   const blockers = [
-    source,
-    target,
+    sourceBodyBlocker,
+    targetBodyBlocker,
     ...relevantBlockersForRoute(source, target, nodes, initialStartOut, initialEndOut, false)
   ];
   return {
@@ -9475,9 +9712,11 @@ export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes:
     x: end.x + targetNormal.x * stubLength,
     y: end.y + targetNormal.y * stubLength
   };
+  const sourceBodyBlocker = routeEndpointBodyOnlyBlocker(source);
+  const targetBodyBlocker = routeEndpointBodyOnlyBlocker(target);
   const blockers = [
-    source,
-    target,
+    sourceBodyBlocker,
+    targetBodyBlocker,
     ...relevantBlockersForRoute(source, target, nodes, initialStartOut, initialEndOut, false)
   ];
   const startOut = endpointStubPoint(start, sourceNormal, source, blockers, stubLength);

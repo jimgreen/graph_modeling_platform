@@ -762,6 +762,53 @@ describe("graph inspector panel", () => {
     expect(mirrorBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nextNodes, transformedNodeIds, mirroredEdges, preservedMirrorEdgeIds)");
   });
 
+  test("groups alignment and rotation actions into hover topbar dropdowns", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const rotateStart = source.indexOf("const rotateSelectedLayoutUnits");
+    const rotateEnd = source.indexOf("const mirrorSelectedNodes", rotateStart);
+    const rotateBlock = source.slice(rotateStart, rotateEnd);
+    const topbarStart = source.indexOf("<header className=\"topbar\"");
+    const topbarEnd = source.indexOf("</header>", topbarStart);
+    const topbarBlock = source.slice(topbarStart, topbarEnd);
+
+    expect(source).toContain("RotateCcw");
+    expect(source).toContain("RotateCw");
+    expect(source).toContain("const rotateLayoutUnitNodes");
+    expect(source).toContain("const buildRotateLayoutUnitEdgeUpdates");
+    expect(rotateBlock).toContain("const degrees = direction === \"left\" ? -90 : 90");
+    expect(rotateBlock).toContain("rotateLayoutUnitNodes(nodes, selectedLayoutUnits, degrees)");
+    expect(rotateBlock).toContain("const rotatedEdgeUpdates = buildRotateLayoutUnitEdgeUpdates");
+    expect(rotateBlock).toContain("const preservedRotateEdgeIds = new Set(rotatedEdgeUpdates.map((edge) => edge.id))");
+    expect(rotateBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nextNodes, transformedNodeIds, rotatedEdges, preservedRotateEdgeIds)");
+    expect(topbarBlock).toContain("className=\"topbar-dropdown align-dropdown\"");
+    expect(topbarBlock).toContain("className=\"topbar-dropdown rotate-dropdown\"");
+    expect(topbarBlock).toContain("className=\"topbar-dropdown-trigger\"");
+    expect(topbarBlock).toContain("className=\"topbar-dropdown-menu\"");
+    expect(topbarBlock).toContain("title=\"对齐操作\"");
+    expect(topbarBlock).toContain("aria-label=\"对齐操作\"");
+    expect(topbarBlock).toContain("title=\"旋转操作\"");
+    expect(topbarBlock).toContain("aria-label=\"旋转操作\"");
+    expect(topbarBlock).toContain("onClick={() => alignSelected(\"left\")}");
+    expect(topbarBlock).toContain("onClick={() => alignSelected(\"right\")}");
+    expect(topbarBlock).toContain("onClick={() => alignSelected(\"horizontal\")}");
+    expect(topbarBlock).toContain("onClick={() => distributeSelected(\"horizontal\")}");
+    expect(topbarBlock).toContain("onClick={() => distributeSelected(\"vertical\")}");
+    expect(topbarBlock).toContain("onClick={() => rotateSelectedLayoutUnits(\"left\")}");
+    expect(topbarBlock).toContain("title=\"向左旋转90度\"");
+    expect(topbarBlock).toContain("aria-label=\"向左旋转90度\"");
+    expect(topbarBlock).toContain("<RotateCcw size={16} />");
+    expect(topbarBlock).toContain("onClick={() => rotateSelectedLayoutUnits(\"right\")}");
+    expect(topbarBlock).toContain("title=\"向右旋转90度\"");
+    expect(topbarBlock).toContain("aria-label=\"向右旋转90度\"");
+    expect(topbarBlock).toContain("<RotateCw size={16} />");
+    expect(topbarBlock).toContain("onClick={() => mirrorSelectedNodes(\"horizontal\")}");
+    expect(topbarBlock).toContain("onClick={() => mirrorSelectedNodes(\"vertical\")}");
+    expect(topbarBlock.indexOf("title=\"旋转操作\"")).toBeLessThan(topbarBlock.indexOf("aria-label=\"导出图形文件\""));
+    expect(styles).toContain(".topbar-dropdown:hover .topbar-dropdown-menu");
+    expect(styles).toContain(".topbar-dropdown:focus-within .topbar-dropdown-menu");
+  });
+
   test("checks a newly drawn connection route before committing it to the model", async () => {
     const source = await readAppSource();
     const commitStart = source.indexOf("const commitNewConnectionEdge");
@@ -1599,6 +1646,26 @@ describe("graph inspector panel", () => {
     expect(commitBlock).toContain("filterSegmentsForRoutePoints(simplified, avoidedSegments");
   });
 
+  test("routes connection lines around device labels and the device-label gap", async () => {
+    const source = await readModelSource();
+    const blockerStart = source.indexOf("function routeBlockerBox");
+    const blockerEnd = source.indexOf("export function calculateModelContentSize", blockerStart);
+    const blockerBlock = source.slice(blockerStart, blockerEnd);
+
+    expect(source).toContain("function nodeLabelRouteBlockerBox");
+    expect(source).toContain("function nodeLabelBridgeBlockerBox");
+    expect(source).toContain("function mergeRouteBlockerBoxes");
+    expect(blockerBlock).toContain("nodeLabelRouteBlockerBox(node, effectivePadding)");
+    expect(blockerBlock).toContain("nodeLabelBridgeBlockerBox(node, bodyBox, labelBox, effectivePadding)");
+    expect(blockerBlock).toContain("mergeRouteBlockerBoxes");
+    expect(source).toContain("_labelText");
+    expect(source).toContain("_labelX");
+    expect(source).toContain("_labelY");
+    expect(source).toContain("_labelDisplayMode");
+    expect(source).toContain("_labelRotation");
+    expect(source).toContain("_labelFontSize");
+  });
+
   test("caps orthogonal routing lane candidates to avoid quadratic searches in dense connection areas", async () => {
     const source = await readModelSource();
     const laneStart = source.indexOf("function candidateLanes");
@@ -2075,6 +2142,173 @@ describe("graph inspector panel", () => {
     expect(transformBlock).toContain("currentStoredRoutePointsForEdge(edge)");
     expect(dragBlock).toContain("currentStoredRoutePointsForEdge(edge)");
     expect(layoutBlock).toContain("currentStoredRoutePointsForEdge(edge)");
+  });
+
+  test("renders device labels as scalable upright node-owned graphics with a global visibility toggle", async () => {
+    const source = await readAppSource();
+    const renderStart = source.indexOf("{viewportNodes.map((node) =>");
+    const renderEnd = source.indexOf("{terminalPressPreviewEdgeRoutes.map", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+    const topbarStart = source.indexOf("<header className=\"topbar\"");
+    const topbarEnd = source.indexOf("</header>", topbarStart);
+    const topbarBlock = source.slice(topbarStart, topbarEnd);
+    const pointerMoveStart = source.indexOf("const handlePointerMove");
+    const pointerMoveEnd = source.indexOf("const handleWheel", pointerMoveStart);
+    const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
+
+    expect(source).toContain("const [deviceLabelsVisible, setDeviceLabelsVisible] = useState(true)");
+    expect(source).toContain("type NodeLabelDragState");
+    expect(source).toContain("const nodeLabelTransform");
+    expect(source).toContain("const nodeLabelText");
+    expect(source).toContain("const nodeLabelVertical");
+    expect(source).toContain("const nodeLabelDisplayMode");
+    expect(source).toContain("const nodeLabelShouldRender");
+    expect(source).toContain("const startNodeLabelDrag");
+    expect(source).toContain("const finishNodeLabelDrag");
+    expect(renderBlock).toContain("nodeLabelShouldRender(node, deviceLabelsVisible)");
+    expect(renderBlock).toContain("className={`node-device-label");
+    expect(renderBlock).toContain("transform={nodeLabelTransform(node)}");
+    expect(renderBlock).toContain("onPointerDown={(event) => startNodeLabelDrag(event, node)}");
+    expect(topbarBlock).toContain("setDeviceLabelsVisible((current) => !current)");
+    expect(topbarBlock).toContain("aria-label={deviceLabelsVisible ? \"隐藏设备标识\" : \"显示设备标识\"}");
+    expect(pointerMoveBlock).toContain("if (nodeLabelDrag && svgRef.current)");
+    expect(pointerMoveBlock).toContain("_labelX");
+    expect(pointerMoveBlock).toContain("_labelY");
+  });
+
+  test("selects device labels as node-owned graphics without turning them into standalone objects", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const renderStart = source.indexOf("{viewportNodes.map((node) =>");
+    const renderEnd = source.indexOf("{terminalPressPreviewEdgeRoutes.map", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+    const labelStart = renderBlock.indexOf("className={`node-device-label");
+    const labelEnd = renderBlock.indexOf("<g className=\"node-terminal-layer\"", labelStart);
+    const labelBlock = renderBlock.slice(labelStart, labelEnd);
+    const dragStart = source.indexOf("const startNodeLabelDrag");
+    const dragEnd = source.indexOf("const finishNodeLabelDrag", dragStart);
+    const dragBlock = source.slice(dragStart, dragEnd);
+    const pointerMoveStart = source.indexOf("if (nodeLabelDrag && svgRef.current)");
+    const pointerMoveEnd = source.indexOf("if (terminalPress && svgRef.current)", pointerMoveStart);
+    const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
+
+    expect(renderBlock).toContain("${selected ? \"selected\" : \"\"}");
+    expect(renderBlock).toContain("${focused ? \"focused\" : \"\"}");
+    expect(labelBlock).toContain("data-node-id={node.id}");
+    expect(labelBlock).toContain("data-label-owner=\"device\"");
+    expect(dragBlock).toContain("selectCanvasGraphics([node.id], [], { scope: \"direct\" })");
+    expect(dragBlock).toContain("setInspectorTab(\"graph\")");
+    expect(dragBlock).toContain("setGraphInfoView(\"selected\")");
+    expect(pointerMoveBlock).toContain("params: { ...node.params, _labelX: nextX, _labelY: nextY }");
+    expect(styles.slice(styles.indexOf(".node-device-label text"), styles.indexOf(".node-device-label.selected text"))).toContain("pointer-events: all");
+    expect(source).not.toContain("selectedLabelId");
+  });
+
+  test("keeps rotated device labels upright by switching between horizontal and vertical text layout", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const transformStart = source.indexOf("const nodeLabelTransform");
+    const transformEnd = source.indexOf("function nodeLabelTextAnchor", transformStart);
+    const transformBlock = source.slice(transformStart, transformEnd);
+    const renderStart = source.indexOf("{viewportNodes.map((node) =>");
+    const renderEnd = source.indexOf("{terminalPressPreviewEdgeRoutes.map", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+    const graphPanelStart = source.indexOf("graphInfoView === \"tree\"");
+    const graphPanelEnd = source.indexOf("{isStaticNode(inspectorSelectedNode)", graphPanelStart);
+    const graphPanelBlock = source.slice(graphPanelStart, graphPanelEnd);
+    const pointerMoveStart = source.indexOf("const handlePointerMove");
+    const pointerMoveEnd = source.indexOf("const handleWheel", pointerMoveStart);
+    const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
+
+    expect(source).toContain("_labelRotation");
+    expect(source).toContain("type NodeLabelRotateDragState");
+    expect(source).toContain("function normalizeNodeLabelRotation");
+    expect(source).toContain("const nodeLabelVertical");
+    expect(source).toContain("const nodeLabelRotationFromPoint");
+    expect(source).toContain("const startNodeLabelRotateDrag");
+    expect(source).toContain("const finishNodeLabelRotateDrag");
+    expect(transformBlock).not.toContain("rotate(");
+    expect(transformBlock).not.toContain("scale(");
+    expect(renderBlock).toContain("${nodeLabelVertical(node) ? \"vertical\" : \"horizontal\"}");
+    expect(renderBlock).toContain("className=\"node-label-rotate-control\"");
+    expect(renderBlock).toContain("onPointerDown={(event) => startNodeLabelRotateDrag(event, node)}");
+    expect(graphPanelBlock).toContain("_labelRotation");
+    expect(graphPanelBlock).toContain("<option value=\"90\">90° 纵排</option>");
+    expect(pointerMoveBlock).toContain("if (nodeLabelRotateDrag && svgRef.current)");
+    expect(pointerMoveBlock).toContain("_labelRotation");
+    expect(styles).toContain(".node-device-label.vertical text");
+    expect(styles).toContain("writing-mode: vertical-rl");
+    expect(styles).toContain("text-orientation: upright");
+  });
+
+  test("groups continuous numeric tokens while rendering vertical device labels", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const renderStart = source.indexOf("{viewportNodes.map((node) =>");
+    const renderEnd = source.indexOf("{terminalPressPreviewEdgeRoutes.map", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+
+    expect(source).toContain("function nodeLabelVerticalSegments");
+    expect(source).toContain("nodeLabelNumericTokenPattern");
+    expect(source).toContain("\\d+(?:[./:：-]\\d+)*");
+    expect(renderBlock).toContain("nodeLabelVerticalSegments(nodeLabelText(node)).map");
+    expect(renderBlock).toContain("className={`node-label-vertical-token ${segment.numeric ? \"numeric\" : \"\"}`}");
+    expect(renderBlock).toContain("nodeLabelVerticalTokenY(index, nodeLabelVerticalSegments(nodeLabelText(node)).length, node)");
+    expect(source).toContain("buildSvgNodeLabelTextMarkup(node)");
+    expect(styles).toContain(".node-label-vertical-token.numeric");
+    expect(styles).toContain("letter-spacing: 0");
+  });
+
+  test("offers device label content style and alignment editors in the graph panel", async () => {
+    const source = await readAppSource();
+    const graphPanelStart = source.indexOf("graphInfoView === \"tree\"");
+    const graphPanelEnd = source.indexOf("{isStaticNode(inspectorSelectedNode)", graphPanelStart);
+    const graphPanelBlock = source.slice(graphPanelStart, graphPanelEnd);
+
+    expect(source).toContain("device-label-style-actions");
+    expect(graphPanelBlock).toContain("_labelDisplayMode");
+    expect(graphPanelBlock).toContain("_labelText");
+    expect(graphPanelBlock).toContain("_labelColor");
+    expect(graphPanelBlock).toContain("_labelFontFamily");
+    expect(graphPanelBlock).toContain("_labelFontSize");
+    expect(graphPanelBlock).toContain("_labelFontWeight");
+    expect(graphPanelBlock).toContain("_labelFontStyle");
+    expect(graphPanelBlock).toContain("_labelTextDecoration");
+    expect(graphPanelBlock).toContain("_labelTextAnchor");
+    expect(graphPanelBlock).toContain("<option value=\"middle\">居中</option>");
+  });
+
+  test("sets selected device label display mode from context menu and graph inspector", async () => {
+    const source = await readAppSource();
+    const contextStart = source.indexOf("{contextMenu && (");
+    const contextEnd = source.indexOf("{projectMenu && (", contextStart);
+    const contextBlock = source.slice(contextStart, contextEnd);
+    const graphPanelStart = source.indexOf("graphInfoView === \"tree\"");
+    const graphPanelEnd = source.indexOf("{isStaticNode(inspectorSelectedNode)", graphPanelStart);
+    const graphPanelBlock = source.slice(graphPanelStart, graphPanelEnd);
+    const renderStart = source.indexOf("{viewportNodes.map((node) =>");
+    const renderEnd = source.indexOf("{terminalPressPreviewEdgeRoutes.map", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+
+    expect(source).toContain("type NodeLabelDisplayMode");
+    expect(source).toContain("const NODE_LABEL_DISPLAY_MODES");
+    expect(source).toContain("const setSelectedNodeLabelDisplayMode");
+    expect(source).toContain("_labelDisplayMode");
+    expect(renderBlock).toContain("nodeLabelShouldRender(node, deviceLabelsVisible)");
+    expect(contextBlock).toContain("className=\"context-menu-submenu\"");
+    expect(contextBlock).toContain("className=\"context-menu-submenu-trigger\"");
+    expect(contextBlock).toContain("className=\"context-menu-submenu-panel\"");
+    expect(contextBlock).toContain("标识显示");
+    expect(contextBlock).toContain("标识始终显示");
+    expect(contextBlock).toContain("标识始终隐藏");
+    expect(contextBlock).toContain("标识跟随显示");
+    expect(contextBlock).toContain("setSelectedNodeLabelDisplayMode(\"always\")");
+    expect(contextBlock).toContain("setSelectedNodeLabelDisplayMode(\"hidden\")");
+    expect(contextBlock).toContain("setSelectedNodeLabelDisplayMode(\"follow\")");
+    expect(graphPanelBlock).toContain("_labelDisplayMode");
+    expect(graphPanelBlock).toContain("<option value=\"always\">始终显示</option>");
+    expect(graphPanelBlock).toContain("<option value=\"hidden\">始终隐藏</option>");
+    expect(graphPanelBlock).toContain("<option value=\"follow\">跟随显示</option>");
   });
 
   test("defers bus terminal synchronization and keeps graph edits out of automatic draft saves", async () => {
