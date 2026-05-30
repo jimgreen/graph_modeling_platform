@@ -363,6 +363,18 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".connect-drop-hint-ring");
   });
 
+  test("uses rotation-aware bus hit testing for connection drops", async () => {
+    const source = await readAppSource();
+    const busHitStart = source.indexOf("const isPointNearBus = (node: ModelNode, point: Point, tolerance = 0)");
+    const busHitEnd = source.indexOf("const connectTargetSnapPoint", busHitStart);
+    const busHitBlock = source.slice(busHitStart, busHitEnd);
+
+    expect(busHitStart).toBeGreaterThan(-1);
+    expect(busHitBlock).toContain("pointOnBusForSnap(node, point, tolerance)");
+    expect(busHitBlock).not.toContain("node.position.x - halfWidth");
+    expect(busHitBlock).not.toContain("node.position.y - halfHeight");
+  });
+
   test("uses the same fuzzy snap hint while dragging existing connection endpoints", async () => {
     const source = await readAppSource();
     const pointerStart = source.indexOf("if (rewiring && svgRef.current)");
@@ -820,6 +832,41 @@ describe("graph inspector panel", () => {
     expect(finishTransformBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nodes, transformedNodeIds)");
     expect(pointerBlock).toContain("transformDragChangedRef.current = true");
     expect(source).toContain("finishTransformDrag();");
+  });
+
+  test("maps single-node scale handles through rotation before changing local scale axes", async () => {
+    const source = await readAppSource();
+    const helperStart = source.indexOf("function localScaleKindForScreenHandle");
+    const helperEnd = source.indexOf("type Marquee", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+    const pointerStart = source.indexOf("if (transformDrag && svgRef.current)");
+    const pointerEnd = source.indexOf("if (!draggingRef.current || !svgRef.current)", pointerStart);
+    const pointerBlock = source.slice(pointerStart, pointerEnd);
+    const renderStart = source.indexOf("{viewportNodes.map((node) =>");
+    const renderEnd = source.indexOf("{renderGroupTransformPhotoPreview()}", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+
+    expect(source).toContain("type SingleTransformDrag");
+    expect(source).toContain("const startSingleTransformDrag");
+    expect(source).toContain("const singleTransformBaseNode");
+    expect(source).toContain("const signedScaleFromScreenHandleDelta");
+    expect(source).toContain("startPoint: Point");
+    expect(helperStart).toBeGreaterThan(-1);
+    expect(helperBlock).toContain("rotation");
+    expect(helperBlock).toContain("screenAxis");
+    expect(helperBlock).toContain("localVector");
+    expect(pointerBlock).toContain("const baseNode = singleTransformBaseNode(transformDrag, node);");
+    expect(pointerBlock).toContain("toLocalNodePoint(baseNode, point)");
+    expect(pointerBlock).not.toContain("toLocalNodePoint(node, point)");
+    expect(pointerBlock).toContain("const localScaleKind = localScaleKindForScreenHandle(transformDrag.kind, baseNode.rotation);");
+    expect(pointerBlock).toContain("if (localScaleKind === \"scale-x\")");
+    expect(pointerBlock).toContain("} else if (localScaleKind === \"scale-y\")");
+    expect(pointerBlock).toContain("const currentSignedScaleX = getNodeScaleX(baseNode);");
+    expect(pointerBlock).toContain("const currentSignedScaleY = getNodeScaleY(baseNode);");
+    expect(pointerBlock).toContain("scaleY: currentSignedScaleY");
+    expect(pointerBlock).toContain("scaleX: currentSignedScaleX");
+    expect(renderBlock).toContain("startSingleTransformDrag(event, node, \"rotate\")");
+    expect(renderBlock).toContain("startSingleTransformDrag(event, node, handle.kind, handle)");
   });
 
   test("defers expensive post-move connection route optimization after a single graphic move", async () => {
@@ -1387,6 +1434,17 @@ describe("graph inspector panel", () => {
     expect(moveBlock).toContain("routePreserveEdgeIdsForMovedNodes(affectedEdgesForMove, moveNodeIds, moveEdgeIds)");
     expect(finishBlock).not.toContain("new Set(activeDragging.edgeIds),\n          finalBounds");
     expect(moveBlock).not.toContain("new Set(moveEdgeIds),\n          finalBounds");
+  });
+
+  test("preserves directly affected connection preview geometry when a move expands the canvas origin", async () => {
+    const source = await readAppSource();
+    const adjustStart = source.indexOf("const adjustEdgesAfterNodeMove =");
+    const adjustEnd = source.indexOf("const rebuildSingleAffectedConnectionRoute", adjustStart);
+    const adjustBlock = source.slice(adjustStart, adjustEnd);
+
+    expect(adjustBlock).toContain("const preserveAffectedRoutesForCanvasOriginShift = hasCanvasOriginShift(leftTopCanvasOriginShiftForContent(nextNodes));");
+    expect(adjustBlock).toContain("(preserveAffectedRoutesForCanvasOriginShift && (sourceMoved || targetMoved))");
+    expect(adjustBlock).toContain("preserveDraggedRouteShape({");
   });
 
   test("limits drag-end rerouting to moved-node blocker candidates", async () => {

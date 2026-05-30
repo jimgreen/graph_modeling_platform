@@ -274,9 +274,17 @@ type GroupTransformDrag = {
   previewPoint?: Point;
   historyCaptured?: boolean;
 };
+type SingleTransformDrag = {
+  kind: "rotate" | ScaleHandleKind;
+  nodeId: string;
+  originalNode: GroupTransformNodeSnapshot;
+  startPoint: Point;
+  handleXDirection?: -1 | 0 | 1;
+  handleYDirection?: -1 | 0 | 1;
+  historyCaptured?: boolean;
+};
 type TransformDrag =
-  | { kind: "rotate"; nodeId: string; historyCaptured?: boolean }
-  | { kind: "scale-x" | "scale-y" | "scale-both"; nodeId: string; historyCaptured?: boolean }
+  | SingleTransformDrag
   | GroupTransformDrag;
 type ScaleHandleConfig = {
   id: string;
@@ -309,6 +317,19 @@ function rotatePointAround(point: Point, center: Point, degrees: number): Point 
     x: Math.round(center.x + dx * Math.cos(radians) - dy * Math.sin(radians)),
     y: Math.round(center.y + dx * Math.sin(radians) + dy * Math.cos(radians))
   };
+}
+
+function localScaleKindForScreenHandle(kind: ScaleHandleKind, rotation: number): ScaleHandleKind {
+  if (kind === "scale-both") {
+    return kind;
+  }
+  const screenAxis = kind === "scale-x" ? { x: 1, y: 0 } : { x: 0, y: 1 };
+  const radians = (-normalizeRotationDegrees(rotation) * Math.PI) / 180;
+  const localVector = {
+    x: screenAxis.x * Math.cos(radians) - screenAxis.y * Math.sin(radians),
+    y: screenAxis.x * Math.sin(radians) + screenAxis.y * Math.cos(radians)
+  };
+  return Math.abs(localVector.x) >= Math.abs(localVector.y) ? "scale-x" : "scale-y";
 }
 
 function groupTransformGeometry(drag: GroupTransformDrag, point: Point): GroupTransformGeometry {
@@ -7447,6 +7468,7 @@ export function App() {
       }
     }
     const nextNodeForEndpoint = (nodeId: string) => movedNextNodeById.get(nodeId) ?? nodeById.get(nodeId);
+    const preserveAffectedRoutesForCanvasOriginShift = hasCanvasOriginShift(leftTopCanvasOriginShiftForContent(nextNodes));
     let changed = false;
     const nextEdges = currentEdges.map((edge) => {
       const sourceMoved = movedNodeIds.has(edge.sourceId);
@@ -7489,7 +7511,11 @@ export function App() {
           : null;
       const nextEdgeWithSlide = slidePatch ? { ...baseEdge, ...slidePatch } : baseEdge;
       const originalRoute = originalRoutePoints[edge.id];
-      const shouldPreserveRoute = originalRoute?.length && (preserveRouteEdgeIds.has(edge.id) || Boolean(edge.manualPoints?.length));
+      const shouldPreserveRoute = originalRoute?.length && (
+        preserveRouteEdgeIds.has(edge.id) ||
+        Boolean(edge.manualPoints?.length) ||
+        (preserveAffectedRoutesForCanvasOriginShift && (sourceMoved || targetMoved))
+      );
       const nextEdge = shouldPreserveRoute && nextSource && nextTarget
         ? (() => {
             const nextStart = getModelEdgeEndpointPoint(nextSource, nextEdgeWithSlide.sourcePoint, nextEdgeWithSlide.sourceTerminalId);
@@ -9595,6 +9621,39 @@ export function App() {
     };
   };
 
+  const snapshotSingleTransformNode = (node: ModelNode): GroupTransformNodeSnapshot => ({
+    position: { ...node.position },
+    rotation: node.rotation,
+    scale: node.scale,
+    scaleX: node.scaleX,
+    scaleY: node.scaleY
+  });
+
+  const singleTransformBaseNode = (drag: SingleTransformDrag, node: ModelNode): ModelNode => ({
+    ...node,
+    position: { ...drag.originalNode.position },
+    rotation: drag.originalNode.rotation,
+    scale: drag.originalNode.scale,
+    scaleX: drag.originalNode.scaleX,
+    scaleY: drag.originalNode.scaleY
+  });
+
+  const signedScaleFromScreenHandleDelta = (
+    drag: SingleTransformDrag,
+    point: Point,
+    baseNode: ModelNode,
+    localScaleKind: "scale-x" | "scale-y"
+  ) => {
+    const currentSignedScale = localScaleKind === "scale-x" ? getNodeScaleX(baseNode) : getNodeScaleY(baseNode);
+    const dimension = Math.max(1, localScaleKind === "scale-x" ? baseNode.size.width : baseNode.size.height);
+    const screenDelta =
+      drag.kind === "scale-x"
+        ? (point.x - drag.startPoint.x) * (drag.handleXDirection || 1)
+        : (point.y - drag.startPoint.y) * (drag.handleYDirection || 1);
+    const nextMagnitude = Math.max(0, Math.abs(currentSignedScale) + (screenDelta * 2) / dimension);
+    return signedScale(nextMagnitude, currentSignedScale);
+  };
+
   const snapshotGroupTransformNodes = (unit: CanvasLayoutUnit) =>
     Object.fromEntries(
       unit.nodeIds.flatMap((nodeId) => {
@@ -9683,6 +9742,28 @@ export function App() {
       center: selectionRectCenter(unit.bounds),
       originalNodes: snapshotGroupTransformNodes(unit),
       originalEdgeRoutes: snapshotGroupTransformEdgeRoutes(unit)
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const startSingleTransformDrag = (
+    event: PointerEvent<SVGElement>,
+    node: ModelNode,
+    kind: "rotate" | ScaleHandleKind,
+    handle?: ScaleHandleConfig
+  ) => {
+    event.stopPropagation();
+    transformDragChangedRef.current = false;
+    const startPoint = svgRef.current
+      ? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY))
+      : { ...node.position };
+    setTransformDrag({
+      kind,
+      nodeId: node.id,
+      originalNode: snapshotSingleTransformNode(node),
+      startPoint,
+      handleXDirection: handle?.xDirection,
+      handleYDirection: handle?.yDirection
     });
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -9882,14 +9963,7 @@ export function App() {
   };
 
   const isPointNearBus = (node: ModelNode, point: Point, tolerance = 0) => {
-    const halfWidth = (node.size.width * Math.abs(getNodeScaleX(node))) / 2;
-    const halfHeight = (node.size.height * Math.abs(getNodeScaleY(node))) / 2;
-    return (
-      point.x >= node.position.x - halfWidth - tolerance &&
-      point.x <= node.position.x + halfWidth + tolerance &&
-      point.y >= node.position.y - halfHeight - tolerance &&
-      point.y <= node.position.y + halfHeight + tolerance
-    );
+    return Boolean(pointOnBusForSnap(node, point, tolerance));
   };
 
   const connectTargetSnapPoint = (target: ConnectTarget): Point =>
@@ -10420,28 +10494,46 @@ export function App() {
       if (!node) {
         return;
       }
+      const baseNode = singleTransformBaseNode(transformDrag, node);
       let nextNode: ModelNode;
       if (transformDrag.kind === "rotate") {
-        const angle = (Math.atan2(point.y - node.position.y, point.x - node.position.x) * 180) / Math.PI + 90;
+        const angle = (Math.atan2(point.y - baseNode.position.y, point.x - baseNode.position.x) * 180) / Math.PI + 90;
         const snapped = ((Math.round(angle / 90) * 90) % 360 + 360) % 360;
-        nextNode = { ...node, rotation: snapped };
+        nextNode = { ...node, position: baseNode.position, rotation: snapped };
       } else {
-        const local = toLocalNodePoint(node, point);
-        const nextScaleX = normalizeScale((Math.abs(local.x) * 2) / node.size.width);
-        const nextScaleY = normalizeScale((Math.abs(local.y) * 2) / node.size.height);
-        const nextSignedScaleX = signedScale(nextScaleX, getNodeScaleX(node));
-        const nextSignedScaleY = signedScale(nextScaleY, getNodeScaleY(node));
-        if (transformDrag.kind === "scale-x") {
-          nextNode = { ...node, scale: nextScaleX, scaleX: nextSignedScaleX };
-        } else if (transformDrag.kind === "scale-y") {
-          nextNode = { ...node, scale: nextScaleY, scaleY: nextSignedScaleY };
+        const local = toLocalNodePoint(baseNode, point);
+        const nextScaleX = normalizeScale((Math.abs(local.x) * 2) / baseNode.size.width);
+        const nextScaleY = normalizeScale((Math.abs(local.y) * 2) / baseNode.size.height);
+        const currentSignedScaleX = getNodeScaleX(baseNode);
+        const currentSignedScaleY = getNodeScaleY(baseNode);
+        const localScaleKind = localScaleKindForScreenHandle(transformDrag.kind, baseNode.rotation);
+        if (localScaleKind === "scale-x") {
+          const nextSignedScaleX = signedScaleFromScreenHandleDelta(transformDrag, point, baseNode, "scale-x");
+          nextNode = {
+            ...node,
+            position: baseNode.position,
+            rotation: baseNode.rotation,
+            scale: Math.max(Math.abs(nextSignedScaleX), Math.abs(currentSignedScaleY)),
+            scaleX: nextSignedScaleX,
+            scaleY: currentSignedScaleY
+          };
+        } else if (localScaleKind === "scale-y") {
+          const nextSignedScaleY = signedScaleFromScreenHandleDelta(transformDrag, point, baseNode, "scale-y");
+          nextNode = {
+            ...node,
+            position: baseNode.position,
+            rotation: baseNode.rotation,
+            scale: Math.max(Math.abs(currentSignedScaleX), Math.abs(nextSignedScaleY)),
+            scaleX: currentSignedScaleX,
+            scaleY: nextSignedScaleY
+          };
         } else {
           const nextScale = normalizeScale(Math.max(nextScaleX, nextScaleY));
           const nextSignedScale = {
-            x: signedScale(nextScale, getNodeScaleX(node)),
-            y: signedScale(nextScale, getNodeScaleY(node))
+            x: signedScale(nextScale, currentSignedScaleX),
+            y: signedScale(nextScale, currentSignedScaleY)
           };
-          nextNode = { ...node, scale: nextScale, scaleX: nextSignedScale.x, scaleY: nextSignedScale.y };
+          nextNode = { ...node, position: baseNode.position, rotation: baseNode.rotation, scale: nextScale, scaleX: nextSignedScale.x, scaleY: nextSignedScale.y };
         }
       }
       const transformBounds = canvasBoundsForGraphContent(
@@ -14620,11 +14712,7 @@ export function App() {
                           cx="0"
                           cy="0"
                           r="8"
-                          onPointerDown={(event) => {
-                            event.stopPropagation();
-                            transformDragChangedRef.current = false;
-                            setTransformDrag({ kind: "rotate", nodeId: node.id });
-                          }}
+                          onPointerDown={(event) => startSingleTransformDrag(event, node, "rotate")}
                         />
                       </g>
                       {SCALE_HANDLE_CONFIGS.map((handle) => {
@@ -14645,11 +14733,7 @@ export function App() {
                               width="16"
                               height="16"
                               rx="3"
-                              onPointerDown={(event) => {
-                                event.stopPropagation();
-                                transformDragChangedRef.current = false;
-                                setTransformDrag({ kind: handle.kind, nodeId: node.id });
-                              }}
+                              onPointerDown={(event) => startSingleTransformDrag(event, node, handle.kind, handle)}
                             />
                           </g>
                         );
@@ -15141,11 +15225,19 @@ export function App() {
                     </tr>
                     <tr>
                       {renderChineseParamHeader("scaleX")}
-                      <td><input type="number" step="0.1" value={getNodeScaleX(inspectorSelectedNode)} onChange={(event) => { const scaleX = normalizeScale(Number(event.target.value), getNodeScaleX(inspectorSelectedNode)); updateSelectedNode({ scale: Math.abs(scaleX), scaleX }); }} /></td>
+                      <td><input type="number" step="0.1" value={getNodeScaleX(inspectorSelectedNode)} onChange={(event) => {
+                        const scaleX = normalizeScale(Number(event.target.value), getNodeScaleX(inspectorSelectedNode));
+                        const scaleY = getNodeScaleY(inspectorSelectedNode);
+                        updateSelectedNode({ scale: Math.max(Math.abs(scaleX), Math.abs(scaleY)), scaleX, scaleY });
+                      }} /></td>
                     </tr>
                     <tr>
                       {renderChineseParamHeader("scaleY")}
-                      <td><input type="number" step="0.1" value={getNodeScaleY(inspectorSelectedNode)} onChange={(event) => { const scaleY = normalizeScale(Number(event.target.value), getNodeScaleY(inspectorSelectedNode)); updateSelectedNode({ scale: Math.abs(scaleY), scaleY }); }} /></td>
+                      <td><input type="number" step="0.1" value={getNodeScaleY(inspectorSelectedNode)} onChange={(event) => {
+                        const scaleY = normalizeScale(Number(event.target.value), getNodeScaleY(inspectorSelectedNode));
+                        const scaleX = getNodeScaleX(inspectorSelectedNode);
+                        updateSelectedNode({ scale: Math.max(Math.abs(scaleX), Math.abs(scaleY)), scaleX, scaleY });
+                      }} /></td>
                     </tr>
                     <tr>
                       {renderChineseParamHeader("layerId", "所属图层")}
