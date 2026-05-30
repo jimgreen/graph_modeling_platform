@@ -2678,6 +2678,23 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".template-dialog");
   });
 
+  test("persists template library edits to the backend immediately without graph save", async () => {
+    const source = await readAppSource();
+    const createTypeStart = source.indexOf("const createGraphTemplateType = () => {");
+    const createTypeEnd = source.indexOf("const openAddTemplateDialog", createTypeStart);
+    const createTypeBlock = source.slice(createTypeStart, createTypeEnd);
+    const confirmStart = source.indexOf("const confirmAddGraphTemplate = () => {");
+    const confirmEnd = source.indexOf("const dropGraphTemplate", confirmStart);
+    const confirmBlock = source.slice(confirmStart, confirmEnd);
+
+    expect(source).toContain("persistTemplateLibraryChange");
+    expect(source).toContain("模板库已自动保存到后台");
+    expect(createTypeBlock).toContain("persistTemplateLibraryChange({ customGraphTemplateTypes: nextTypes");
+    expect(confirmBlock).toContain("persistTemplateLibraryChange({ customGraphTemplateTypes: nextTypes, customGraphTemplates: nextTemplates");
+    expect(createTypeBlock).not.toContain("setHasUnsavedChanges(true)");
+    expect(confirmBlock).not.toContain("setHasUnsavedChanges(true)");
+  });
+
   test("hides unavailable canvas context-menu actions instead of rendering disabled buttons", async () => {
     const source = await readAppSource();
     const topbarStart = source.indexOf("<header className=\"topbar\">");

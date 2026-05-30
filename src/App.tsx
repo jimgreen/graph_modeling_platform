@@ -2216,6 +2216,19 @@ function readLocalDeviceLibraryPersistencePayload(): DeviceLibraryPersistencePay
   };
 }
 
+function writeLocalDeviceLibraryPersistencePayload(normalizedDeviceLibrary: DeviceLibraryPersistencePayload): void {
+  try {
+    window.localStorage.setItem(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customDeviceTemplates));
+    window.localStorage.setItem(CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customAttributeLibraries));
+    window.localStorage.setItem(CUSTOM_COMPONENT_TYPES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customComponentTypes));
+    window.localStorage.setItem(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.deviceDefinitionOverrides));
+    window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customGraphTemplateTypes));
+    window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customGraphTemplates));
+  } catch {
+    // 浏览器缓存不可写时不阻断当前编辑，后台同步仍会继续尝试。
+  }
+}
+
 function readColorDisplayMode(): ColorDisplayMode {
   try {
     return window.localStorage.getItem(COLOR_DISPLAY_MODE_STORAGE_KEY) === "voltage" ? "voltage" : "energy";
@@ -6451,16 +6464,7 @@ export function App() {
         customGraphTemplates
       });
       const normalizedDeviceLibraryPayload = JSON.stringify(normalizedDeviceLibrary);
-      try {
-        window.localStorage.setItem(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customDeviceTemplates));
-        window.localStorage.setItem(CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customAttributeLibraries));
-        window.localStorage.setItem(CUSTOM_COMPONENT_TYPES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customComponentTypes));
-        window.localStorage.setItem(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.deviceDefinitionOverrides));
-        window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customGraphTemplateTypes));
-        window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customGraphTemplates));
-      } catch {
-        // 浏览器缓存不可写时不阻断当前编辑，后台同步仍会继续尝试。
-      }
+      writeLocalDeviceLibraryPersistencePayload(normalizedDeviceLibrary);
       if (normalizedDeviceLibraryPayload === lastPersistedDeviceLibraryPayloadRef.current) {
         if (suppressNextBackendDeviceLibrarySyncRef.current) {
           suppressNextBackendDeviceLibrarySyncRef.current = false;
@@ -7222,6 +7226,50 @@ export function App() {
     setOperationLog(`${time} ${message}`);
   };
 
+  const persistDeviceLibraryChange = (
+    overrides: Partial<DeviceLibraryPersistencePayload>,
+    messages: { success?: string; failure?: string } = {}
+  ) => {
+    const normalizedDeviceLibrary = normalizeDeviceLibraryPersistencePayload({
+      customDeviceTemplates,
+      customAttributeLibraries,
+      customComponentTypes,
+      deviceDefinitionOverrides,
+      customGraphTemplateTypes,
+      customGraphTemplates,
+      ...overrides
+    });
+    const normalizedDeviceLibraryPayload = JSON.stringify(normalizedDeviceLibrary);
+    writeLocalDeviceLibraryPersistencePayload(normalizedDeviceLibrary);
+    if (normalizedDeviceLibraryPayload === lastPersistedDeviceLibraryPayloadRef.current) {
+      return;
+    }
+    lastPersistedDeviceLibraryPayloadRef.current = normalizedDeviceLibraryPayload;
+    suppressNextBackendDeviceLibrarySyncRef.current = false;
+    if (!backendDeviceLibraryLoadedRef.current) {
+      return;
+    }
+    void saveBackendDeviceLibraryPayload(normalizedDeviceLibraryPayload)
+      .then(() => {
+        if (messages.success) {
+          writeOperationLog(messages.success);
+        }
+      })
+      .catch(() => {
+        lastPersistedDeviceLibraryPayloadRef.current = null;
+        if (messages.failure) {
+          writeOperationLog(messages.failure);
+        }
+      });
+  };
+
+  const persistTemplateLibraryChange = (overrides: Pick<Partial<DeviceLibraryPersistencePayload>, "customGraphTemplateTypes" | "customGraphTemplates">) => {
+    persistDeviceLibraryChange(overrides, {
+      success: "模板库已自动保存到后台",
+      failure: "模板库自动保存到后台失败"
+    });
+  };
+
   const connectionCommitFailureMessage = (issues: { type?: string; message?: string }[] = []) => {
     const needsReroute = issues.some((issue) =>
       issue.type === "blocked-by-node" ||
@@ -7479,9 +7527,11 @@ export function App() {
       window.alert("模板类型名称重复，请换一个名称。");
       return;
     }
-    setCustomGraphTemplateTypes((current) => [...current, typeName]);
+    const nextTypes = [...customGraphTemplateTypes, typeName];
+    setCustomGraphTemplateTypes(nextTypes);
     setExpandedGraphTemplateTypes((current) => current.includes(typeName) ? current : [...current, typeName]);
     setTemplateDraftType(typeName);
+    persistTemplateLibraryChange({ customGraphTemplateTypes: nextTypes });
     writeOperationLog(`新增模板类型：${typeName}`);
   };
 
@@ -7547,16 +7597,20 @@ export function App() {
       createdAt: now,
       updatedAt: now
     };
-    if (!DEFAULT_GRAPH_TEMPLATE_TYPES.some((item) => item.toLowerCase() === typeName.toLowerCase())) {
-      setCustomGraphTemplateTypes((current) =>
-        current.some((item) => item.toLowerCase() === typeName.toLowerCase()) ? current : [...current, typeName]
-      );
+    const nextTypes = DEFAULT_GRAPH_TEMPLATE_TYPES.some((item) => item.toLowerCase() === typeName.toLowerCase()) ||
+      customGraphTemplateTypes.some((item) => item.toLowerCase() === typeName.toLowerCase())
+      ? customGraphTemplateTypes
+      : [...customGraphTemplateTypes, typeName];
+    const nextTemplates = [...customGraphTemplates, template];
+    if (nextTypes !== customGraphTemplateTypes) {
+      setCustomGraphTemplateTypes(nextTypes);
     }
-    setCustomGraphTemplates((current) => [...current, template]);
+    setCustomGraphTemplates(nextTemplates);
     setExpandedGraphTemplateTypes((current) => current.includes(typeName) ? current : [...current, typeName]);
     setLeftPanelTab("templates");
     setTemplateDialog(null);
     setTemplateDraftName("");
+    persistTemplateLibraryChange({ customGraphTemplateTypes: nextTypes, customGraphTemplates: nextTemplates });
     writeOperationLog(`添加模板：${typeName} / ${name}（${template.sourceSize.width}×${template.sourceSize.height}）`);
   };
 
