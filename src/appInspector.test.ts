@@ -741,6 +741,27 @@ describe("graph inspector panel", () => {
     expect(finishTransformBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nextNodes, transformedNodeIds, transformedEdges, transformedRouteEdgeIds)");
   });
 
+  test("mirrors node rotation and selected group routes through the same layout axis", async () => {
+    const source = await readAppSource();
+    const mirrorStart = source.indexOf("const mirrorSelectedNodes");
+    const mirrorEnd = source.indexOf("const updateCanvasSize", mirrorStart);
+    const mirrorBlock = source.slice(mirrorStart, mirrorEnd);
+    const layoutMirrorStart = source.indexOf("const mirrorLayoutUnitNodes");
+    const layoutMirrorEnd = source.indexOf("const busAnchorFromEvent", layoutMirrorStart);
+    const layoutMirrorBlock = source.slice(layoutMirrorStart, layoutMirrorEnd);
+
+    expect(source).toContain("function mirrorPointAcrossAxis");
+    expect(source).toContain("const buildMirrorLayoutUnitEdgeUpdates");
+    expect(layoutMirrorBlock).toContain("rotation: normalizeRotationDegrees(-node.rotation)");
+    expect(layoutMirrorBlock).toContain("mirrorPointAcrossAxis(node.position, center, axis)");
+    expect(layoutMirrorBlock).toContain("scaleX: -getNodeScaleX(node)");
+    expect(layoutMirrorBlock).toContain("scaleY: -getNodeScaleY(node)");
+    expect(mirrorBlock).toContain("const mirroredEdgeUpdates = buildMirrorLayoutUnitEdgeUpdates");
+    expect(mirrorBlock).toContain("const preservedMirrorEdgeIds = new Set(mirroredEdgeUpdates.map((edge) => edge.id))");
+    expect(mirrorBlock).toContain("const mirroredEdges = overlayEdgeUpdatesForTransform(edges, mirroredEdgeUpdates)");
+    expect(mirrorBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nextNodes, transformedNodeIds, mirroredEdges, preservedMirrorEdgeIds)");
+  });
+
   test("checks a newly drawn connection route before committing it to the model", async () => {
     const source = await readAppSource();
     const commitStart = source.indexOf("const commitNewConnectionEdge");
@@ -827,7 +848,7 @@ describe("graph inspector panel", () => {
     expect(helperBlock).toContain("markStoredRouteEdgesDirty");
     expect(updateBlock).toContain("const geometryPatch");
     expect(updateBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nextNodes, [selectedNodeId])");
-    expect(mirrorBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nextNodes, transformedNodeIds)");
+    expect(mirrorBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nextNodes, transformedNodeIds, mirroredEdges, preservedMirrorEdgeIds)");
     expect(finishTransformBlock).toContain("transformDragChangedRef.current");
     expect(finishTransformBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nodes, transformedNodeIds)");
     expect(pointerBlock).toContain("transformDragChangedRef.current = true");

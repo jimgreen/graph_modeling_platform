@@ -3891,6 +3891,10 @@ export function normalizeScaleValue(value: number, fallback = 1) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+function normalizeMirrorRotationDegrees(value: number) {
+  return ((Math.round(value) % 360) + 360) % 360;
+}
+
 export function mirrorNodes(nodes: ModelNode[], nodeIds: string[], axis: "horizontal" | "vertical"): ModelNode[] {
   const selected = new Set(nodeIds);
   return nodes.map((node) => {
@@ -3898,9 +3902,9 @@ export function mirrorNodes(nodes: ModelNode[], nodeIds: string[], axis: "horizo
       return node;
     }
     if (axis === "horizontal") {
-      return { ...node, scaleX: -getNodeScaleX(node) };
+      return { ...node, rotation: normalizeMirrorRotationDegrees(-node.rotation), scaleX: -getNodeScaleX(node) };
     }
-    return { ...node, scaleY: -getNodeScaleY(node) };
+    return { ...node, rotation: normalizeMirrorRotationDegrees(-node.rotation), scaleY: -getNodeScaleY(node) };
   });
 }
 

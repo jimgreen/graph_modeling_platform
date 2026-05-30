@@ -319,6 +319,12 @@ function rotatePointAround(point: Point, center: Point, degrees: number): Point 
   };
 }
 
+function mirrorPointAcrossAxis(point: Point, center: Point, axis: "horizontal" | "vertical"): Point {
+  return axis === "horizontal"
+    ? { x: Math.round(center.x * 2 - point.x), y: point.y }
+    : { x: point.x, y: Math.round(center.y * 2 - point.y) };
+}
+
 function localScaleKindForScreenHandle(kind: ScaleHandleKind, rotation: number): ScaleHandleKind {
   if (kind === "scale-both") {
     return kind;
@@ -9288,7 +9294,12 @@ export function App() {
     setSelectedEdgeId("");
     const nextNodes = mirrorLayoutUnitNodes(nodes, selectedLayoutUnits, axis);
     const transformedNodeIds = Array.from(new Set(selectedLayoutUnits.flatMap((unit) => unit.nodeIds)));
-    const nextEdges = rebuildEdgesAfterNodeGeometryChange(nextNodes, transformedNodeIds);
+    const mirroredEdgeUpdates = buildMirrorLayoutUnitEdgeUpdates(selectedLayoutUnits, edges, axis);
+    const preservedMirrorEdgeIds = new Set(mirroredEdgeUpdates.map((edge) => edge.id));
+    const mirroredEdges = overlayEdgeUpdatesForTransform(edges, mirroredEdgeUpdates);
+    markRouteEdgesDirty(preservedMirrorEdgeIds);
+    markStoredRouteEdgesDirty(preservedMirrorEdgeIds);
+    const nextEdges = rebuildEdgesAfterNodeGeometryChange(nextNodes, transformedNodeIds, mirroredEdges, preservedMirrorEdgeIds);
     expandCanvasToFitGraph(nextNodes, nextEdges);
     setGraphArrays(nextNodes, nextEdges);
     writeOperationLog(`${axis === "horizontal" ? "水平" : "垂直"}镜像 ${selectedLayoutUnits.length} 个选中单元`);
@@ -9693,6 +9704,40 @@ export function App() {
         : [];
     });
 
+  const buildMirrorLayoutUnitEdgeUpdates = (
+    units: CanvasLayoutUnit[],
+    currentEdges: Edge[],
+    axis: "horizontal" | "vertical"
+  ) => {
+    const currentEdgeById = currentEdges === edges ? edgeById : new Map(currentEdges.map((edge) => [edge.id, edge]));
+    const updates = new Map<string, Edge>();
+    for (const unit of units) {
+      const center = selectionRectCenter(unit.bounds);
+      const unitNodeIds = new Set(unit.nodeIds);
+      for (const edgeId of unit.edgeIds) {
+        if (updates.has(edgeId)) {
+          continue;
+        }
+        const edge = currentEdgeById.get(edgeId);
+        if (!edge || !unitNodeIds.has(edge.sourceId) || !unitNodeIds.has(edge.targetId)) {
+          continue;
+        }
+        const routePoints = routedEdgeById.get(edgeId)?.points ?? edgeSnapshotFallbackPoints(edge);
+        if (routePoints.length < 2) {
+          continue;
+        }
+        const points = routePoints.map((point) => mirrorPointAcrossAxis(point, center, axis));
+        updates.set(edge.id, {
+          ...edge,
+          sourcePoint: { ...points[0] },
+          targetPoint: { ...points[points.length - 1] },
+          manualPoints: points.slice(1, -1).map((point) => ({ ...point }))
+        });
+      }
+    }
+    return Array.from(updates.values());
+  };
+
   const buildGroupTransformEdgeUpdates = (drag: GroupTransformDrag, point: Point, store: GraphStore) => {
     const geometry = groupTransformGeometry(drag, point);
     const transformedNodeIdSet = new Set(drag.nodeIds);
@@ -9899,16 +9944,14 @@ export function App() {
         }
         const mirroredPosition =
           unit.kind === "group"
-            ? {
-                x: axis === "horizontal" ? Math.round(center.x * 2 - node.position.x) : node.position.x,
-                y: axis === "vertical" ? Math.round(center.y * 2 - node.position.y) : node.position.y
-              }
+            ? mirrorPointAcrossAxis(node.position, center, axis)
             : node.position;
+        const mirroredNode = { ...node, position: mirroredPosition, rotation: normalizeRotationDegrees(-node.rotation) };
         updates.set(
           nodeId,
           axis === "horizontal"
-            ? { ...node, position: mirroredPosition, scaleX: -getNodeScaleX(node) }
-            : { ...node, position: mirroredPosition, scaleY: -getNodeScaleY(node) }
+            ? { ...mirroredNode, scaleX: -getNodeScaleX(node) }
+            : { ...mirroredNode, scaleY: -getNodeScaleY(node) }
         );
       }
     }

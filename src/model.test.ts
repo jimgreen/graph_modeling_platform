@@ -3183,23 +3183,32 @@ describe("power system model", () => {
     expect(points[1].x).toBeLessThan(sourceTerminal.x);
   });
 
-  test("mirrors selected graphical nodes by flipping only the requested scale axis", () => {
-    const selected = { ...createDefaultNode("ac-source", { x: 200, y: 120 }), scale: 1.5, scaleX: 1.5, scaleY: 1.5 };
+  test("mirrors selected graphical nodes by flipping the requested scale axis and mirrored rotation", () => {
+    const selected = {
+      ...createDefaultNode("ac-source", { x: 200, y: 120 }),
+      rotation: 90,
+      scale: 1.5,
+      scaleX: 1.5,
+      scaleY: 1.5
+    };
     const other = createDefaultNode("static-rect", { x: 320, y: 120 });
 
     const horizontallyMirrored = mirrorNodes([selected, other], [selected.id], "horizontal");
     expect(getNodeScaleX(horizontallyMirrored[0])).toBe(-1.5);
     expect(getNodeScaleY(horizontallyMirrored[0])).toBe(1.5);
+    expect(horizontallyMirrored[0].rotation).toBe(270);
     expect(horizontallyMirrored[0].position).toEqual(selected.position);
     expect(getNodeScaleX(horizontallyMirrored[1])).toBe(getNodeScaleX(other));
 
     const verticallyMirrored = mirrorNodes(horizontallyMirrored, [selected.id], "vertical");
     expect(getNodeScaleX(verticallyMirrored[0])).toBe(-1.5);
     expect(getNodeScaleY(verticallyMirrored[0])).toBe(-1.5);
+    expect(verticallyMirrored[0].rotation).toBe(90);
 
     const restoredHorizontal = mirrorNodes(verticallyMirrored, [selected.id], "horizontal");
     expect(getNodeScaleX(restoredHorizontal[0])).toBe(1.5);
     expect(getNodeScaleY(restoredHorizontal[0])).toBe(-1.5);
+    expect(restoredHorizontal[0].rotation).toBe(270);
   });
 
   test("uses vertical terminal normals for top and bottom terminals", () => {
