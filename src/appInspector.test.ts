@@ -938,14 +938,72 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".canvas-resize-handle-right");
     expect(styles).toContain(".canvas-resize-handle-corner");
     expect(pasteBlock).toContain("pastedCanvasBounds");
-    expect(pasteBlock).toContain("applyCanvasBounds(pastedCanvasBounds)");
+    expect(pasteBlock).toContain("applyCanvasBounds(pastedCanvasBounds, pasteOriginShift)");
     expect(pasteBlock).not.toContain("粘贴位置超过显示边界");
     expect(moveBlock).toContain("canvasBoundsForMoveDelta");
     expect(moveBlock).toContain("commitFastMovedGraphPatches(");
     expect(updateBlock).toContain("selectedNodeCanvasBounds");
     expect(updateBlock).toContain("applyCanvasBounds(selectedNodeCanvasBounds)");
     expect(dropBlock).toContain("dropCanvasBounds");
-    expect(dropBlock).toContain("applyCanvasBounds(dropCanvasBounds)");
+    expect(dropBlock).toContain("applyCanvasBounds(dropCanvasBounds, dropOriginShift)");
+  });
+
+  test("uses raw canvas landing points and expands before paste or new-device placement", async () => {
+    const source = await readAppSource();
+    const refsStart = source.indexOf("const lastCanvasPointerRef");
+    const refsEnd = source.indexOf("const projectListPointerInsideRef", refsStart);
+    const refsBlock = source.slice(refsStart, refsEnd);
+    const pasteStart = source.indexOf("const pasteSelection = () =>");
+    const pasteEnd = source.indexOf("const finishMarqueeSelection", pasteStart);
+    const pasteBlock = source.slice(pasteStart, pasteEnd);
+    const dropStart = source.indexOf("const handleDrop =");
+    const dropEnd = source.indexOf("const handleNodePointerDown", dropStart);
+    const dropBlock = source.slice(dropStart, dropEnd);
+    const pointerMoveStart = source.indexOf("const handlePointerMove = (event: PointerEvent<SVGSVGElement>)");
+    const pointerMoveEnd = source.indexOf("const handleWheel", pointerMoveStart);
+    const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
+    const pointerDownStart = source.indexOf("onPointerDown={(event) => {");
+    const pointerDownEnd = source.indexOf("onContextMenu={(event) => {", pointerDownStart);
+    const pointerDownBlock = source.slice(pointerDownStart, pointerDownEnd);
+    const contextMenuStart = source.indexOf("onContextMenu={(event) => {", pointerDownEnd);
+    const contextMenuEnd = source.indexOf("<defs>", contextMenuStart);
+    const contextMenuBlock = source.slice(contextMenuStart, contextMenuEnd);
+
+    expect(refsBlock).toContain("const lastRawCanvasPointerRef = useRef<Point | null>(null);");
+    expect(pointerMoveBlock).toContain("lastRawCanvasPointerRef.current = rawPointer;");
+    expect(pointerDownBlock).toContain("const rawPointer = screenToSvgPoint(event.currentTarget, event.clientX, event.clientY);");
+    expect(pointerDownBlock).toContain("lastRawCanvasPointerRef.current = rawPointer;");
+    expect(contextMenuBlock).toContain("const rawPointer = screenToSvgPoint(event.currentTarget, event.clientX, event.clientY);");
+    expect(contextMenuBlock).toContain("lastRawCanvasPointerRef.current = rawPointer;");
+    expect(pasteBlock).toContain("const targetPoint = lastRawCanvasPointerRef.current ?? lastCanvasPointerRef.current;");
+    expect(pasteBlock).toContain("const pasteOriginShift = leftTopCanvasOriginShiftForContent(");
+    expect(pasteBlock).toContain("translateNodeBy(node, pasteOriginShift)");
+    expect(pasteBlock).toContain("translateEdgeBy(edge, pasteOriginShift)");
+    expect(pasteBlock).toContain("shiftCachedRoutesForCanvasOrigin(pasteOriginShift);");
+    expect(pasteBlock).toContain("markBusTerminalSyncDirtyForEdges(pasteSourceEdges, shiftedClonedEdges);");
+    expect(pasteBlock.indexOf("applyCanvasBounds(pastedCanvasBounds, pasteOriginShift);")).toBeLessThan(
+      pasteBlock.indexOf("shiftCachedRoutesForCanvasOrigin(pasteOriginShift);")
+    );
+    expect(pasteBlock.indexOf("shiftCachedRoutesForCanvasOrigin(pasteOriginShift);")).toBeLessThan(
+      pasteBlock.indexOf("clampNodePositionToBounds(node, pastedCanvasBounds")
+    );
+    expect(pasteBlock.indexOf("applyCanvasBounds(pastedCanvasBounds, pasteOriginShift);")).toBeLessThan(
+      pasteBlock.indexOf("setGraphArrays(nextNodes, nextEdges);")
+    );
+    expect(dropBlock).toContain("const dropOriginShift = leftTopCanvasOriginShiftForContent([...nodes, rawNode], edges);");
+    expect(dropBlock).toContain("translateNodeBy(rawNode, dropOriginShift)");
+    expect(dropBlock).toContain("translateEdgeBy(edge, dropOriginShift)");
+    expect(dropBlock).toContain("shiftCachedRoutesForCanvasOrigin(dropOriginShift);");
+    expect(dropBlock).toContain("markBusTerminalSyncDirtyForEdges(dropSourceEdges);");
+    expect(dropBlock.indexOf("applyCanvasBounds(dropCanvasBounds, dropOriginShift);")).toBeLessThan(
+      dropBlock.indexOf("shiftCachedRoutesForCanvasOrigin(dropOriginShift);")
+    );
+    expect(dropBlock.indexOf("shiftCachedRoutesForCanvasOrigin(dropOriginShift);")).toBeLessThan(
+      dropBlock.indexOf("clampNodePositionToBounds(node, dropCanvasBounds")
+    );
+    expect(dropBlock.indexOf("applyCanvasBounds(dropCanvasBounds, dropOriginShift);")).toBeLessThan(
+      dropBlock.indexOf("setGraphArrays([...dropSourceNodes, indexed.node], dropSourceEdges);")
+    );
   });
 
   test("exports and imports platform model files with duplicate-name choices", async () => {
@@ -1307,7 +1365,7 @@ describe("graph inspector panel", () => {
     expect(deferBlock).toContain("const edgePatch = edgePatchFromCandidateEdges(previousCandidateEdges, committedCandidateEdges);");
     expect(deferBlock).toContain("graphStoreApplyPatch(current, {");
     expect(deferBlock).toContain("edgeUpserts: expectedPatch.edgeUpserts");
-    expect(deferBlock).toContain("scheduleDeferredMovedConnectionRepair(movedNodeIds, committedCandidateEdges, expectedPatch);");
+    expect(deferBlock).toContain("scheduleDeferredMovedConnectionRepair(movedNodeIds, committedCandidateEdges, expectedPatch, commitCanvasBounds);");
     expect(deferBlock).not.toContain("graphStorePatchNodes(current, expectedPatch.nodeUpdates)");
   });
 
@@ -1760,6 +1818,51 @@ describe("graph inspector panel", () => {
     expect(commitBlock).toContain("edgeUpserts: expectedPatch.edgeUpserts");
     expect(commitBlock).toContain("window.requestAnimationFrame(() =>");
     expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(");
+  });
+
+  test("expands canvas bounds before committing drag and move landing routes", async () => {
+    const source = await readAppSource();
+    const commitStart = source.indexOf("const commitFastMovedGraphPatches");
+    const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
+    const pointerMoveStart = source.indexOf("const handlePointerMove = (event: PointerEvent<SVGSVGElement>)");
+    const pointerMoveEnd = source.indexOf("const handleWheel", pointerMoveStart);
+    const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
+    const dragMoveStart = source.indexOf("const applyNodeDragMove");
+    const dragMoveEnd = source.indexOf("const scheduleNodeDragMove", dragMoveStart);
+    const dragMoveBlock = source.slice(dragMoveStart, dragMoveEnd);
+    const keyboardMoveStart = source.indexOf("const applyKeyboardMoveDelta");
+    const keyboardMoveEnd = source.indexOf("const flushPendingKeyboardMove", keyboardMoveStart);
+    const keyboardMoveBlock = source.slice(keyboardMoveStart, keyboardMoveEnd);
+    const finishMoveStart = source.indexOf("const finishDraggingMove");
+    const finishMoveEnd = source.indexOf("const finishNodeDrag", finishMoveStart);
+    const finishMoveBlock = source.slice(finishMoveStart, finishMoveEnd);
+    const finishDragStart = source.indexOf("const finishNodeDrag = () =>");
+    const finishDragEnd = source.indexOf("const finishTransformDrag", finishDragStart);
+    const finishDragBlock = source.slice(finishDragStart, finishDragEnd);
+    const moveSelectionStart = source.indexOf("const moveSelection =");
+    const moveSelectionEnd = source.indexOf("const updateSelectedNode", moveSelectionStart);
+    const moveSelectionBlock = source.slice(moveSelectionStart, moveSelectionEnd);
+    const updateStart = source.indexOf("const updateSelectedNode");
+    const updateEnd = source.indexOf("const assignSelectedNodesToModelLayer", updateStart);
+    const updateBlock = source.slice(updateStart, updateEnd);
+
+    expect(pointerMoveBlock).toContain("const rawPointer = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);");
+    expect(pointerMoveBlock).toContain("const pointer = draggingRef.current ? rawPointer : clampPointToCanvas(rawPointer);");
+    expect(dragMoveBlock).toContain("applyCanvasBounds(canvasBoundsForMovedNodeDelta(currentDrag.nodeIds, currentDrag.originalPositions, boundedDelta.x, boundedDelta.y));");
+    expect(keyboardMoveBlock).toContain("applyCanvasBounds(canvasBoundsForMovedNodeDelta(activeDragging.nodeIds, activeDragging.originalPositions, boundedDelta.x, boundedDelta.y));");
+    expect(commitBlock).toContain("effectiveCanvasBounds: CanvasBounds = canvasBounds");
+    expect(commitBlock).toContain("shiftCachedRoutesForCanvasOrigin(originShift);");
+    expect(commitBlock).toContain("const candidateEdgeIds = committedCandidateEdges.map((edge) => edge.id);");
+    expect(commitBlock).toContain("markStoredRouteEdgesDirty(candidateEdgeIds);");
+    expect(commitBlock).not.toContain("markStoredRouteEdgesDirty(shiftedNextEdges.map((edge) => edge.id));");
+    expect(commitBlock).toContain("canvasBoundsForGraphContent(effectiveCanvasBounds, nextNodes, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING)");
+    expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(movedNodeIds, committedCandidateEdges, expectedPatch, commitCanvasBounds);");
+    expect(commitBlock).toContain("expandCanvasToFitGraph(nextNodes, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);");
+    expect(finishMoveBlock).toContain("nodes,\n      finalBounds");
+    expect(finishDragBlock).toContain("nodes,\n      finalBounds");
+    expect(moveSelectionBlock).toContain("nodes,\n      finalBounds");
+    expect(updateBlock).toContain("nodes,\n        selectedNodeCanvasBounds");
   });
 
   test("moves multi-node drag previews through one SVG overlay transform without React state churn", async () => {

@@ -49,6 +49,7 @@ import {
   buildTopology,
   calculateElectricalTopology,
   calculateModelContentSize,
+  calculateModelGeometryBounds,
   clampEdgeGeometryToBounds,
   canConnectTerminals,
   clampNodePositionToBounds,
@@ -3446,6 +3447,7 @@ export function App() {
   const canvasFrameRef = useRef<HTMLDivElement | null>(null);
   const canvasInteractionRef = useRef(false);
   const lastCanvasPointerRef = useRef<Point | null>(null);
+  const lastRawCanvasPointerRef = useRef<Point | null>(null);
   const projectListPointerInsideRef = useRef(false);
   const backendSchemesLoadedRef = useRef(false);
   const suppressNextBackendSchemeSyncRef = useRef(false);
@@ -4827,16 +4829,22 @@ export function App() {
       contentRoutes,
       padding
     );
-  const applyCanvasBounds = (bounds: CanvasBounds) => {
+  const applyCanvasBounds = (bounds: CanvasBounds, originShift: Point = { x: 0, y: 0 }) => {
     const nextBounds = clampCanvasBounds(bounds);
-    if (nextBounds.width === canvasWidth && nextBounds.height === canvasHeight) {
+    const hasOriginShift = originShift.x !== 0 || originShift.y !== 0;
+    if (nextBounds.width === canvasWidth && nextBounds.height === canvasHeight && !hasOriginShift) {
       return false;
     }
     setCanvasWidth(nextBounds.width);
     setCanvasHeight(nextBounds.height);
     setCanvasSizeDraft({ width: String(nextBounds.width), height: String(nextBounds.height) });
     setViewBox((current) =>
-      normalizeViewBoxToCanvas({ ...current, ...clampViewBoxDimensionsForZoom(current, nextBounds) }, nextBounds)
+      normalizeViewBoxToCanvas({
+        ...current,
+        x: current.x + originShift.x,
+        y: current.y + originShift.y,
+        ...clampViewBoxDimensionsForZoom(current, nextBounds)
+      }, nextBounds)
     );
     return true;
   };
@@ -4847,6 +4855,97 @@ export function App() {
     padding = CANVAS_AUTO_EXPAND_PADDING,
     baseBounds = canvasBounds
   ) => applyCanvasBounds(canvasBoundsForGraphContent(baseBounds, contentNodes, contentEdges, contentRoutes, padding));
+  const hasCanvasOriginShift = (shift: Point) => shift.x !== 0 || shift.y !== 0;
+  const translatePointBy = (point: Point, shift: Point): Point => ({
+    x: Math.round(point.x + shift.x),
+    y: Math.round(point.y + shift.y)
+  });
+  const translateOptionalPointBy = (point: Point | undefined, shift: Point) =>
+    point ? translatePointBy(point, shift) : undefined;
+  const translateRoutePathBy = (path: string, shift: Point): string =>
+    hasCanvasOriginShift(shift)
+      ? path.replace(/([MLQ])\s*([^MLQ]+)/g, (_match, command: string, coordinates: string) => {
+          const shiftedCoordinates = coordinates
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean)
+            .map((value, index) => {
+              const parsed = Number(value);
+              if (!Number.isFinite(parsed)) {
+                return value;
+              }
+              return String(Math.round(parsed + (index % 2 === 0 ? shift.x : shift.y)));
+            });
+          return `${command} ${shiftedCoordinates.join(" ")}`;
+        })
+      : path;
+  const translateNodeBy = (node: ModelNode, shift: Point): ModelNode =>
+    hasCanvasOriginShift(shift)
+      ? { ...node, position: translatePointBy(node.position, shift) }
+      : node;
+  const translateEdgeBy = (edge: Edge, shift: Point): Edge =>
+    hasCanvasOriginShift(shift)
+      ? {
+          ...edge,
+          sourcePoint: translateOptionalPointBy(edge.sourcePoint, shift),
+          targetPoint: translateOptionalPointBy(edge.targetPoint, shift),
+          manualPoints: edge.manualPoints?.map((point) => translatePointBy(point, shift))
+        }
+      : edge;
+  const translateRouteBy = (route: RoutedEdge, shift: Point): RoutedEdge =>
+    hasCanvasOriginShift(shift)
+      ? (() => {
+          const shiftedPoints = route.points.map((point) => translatePointBy(point, shift));
+          return {
+            ...route,
+            points: shiftedPoints,
+            path: route.path ? translateRoutePathBy(route.path, shift) : pointsToPreviewPath(shiftedPoints)
+          };
+        })()
+      : route;
+  const shiftCachedRoutesForCanvasOrigin = (originShift: Point) => {
+    if (!hasCanvasOriginShift(originShift) || cachedRoutedEdgesRef.current.length === 0) {
+      return;
+    }
+    const shiftedRoutes = cachedRoutedEdgesRef.current.map((route) => translateRouteBy(route, originShift));
+    cachedRoutedEdgesRef.current = shiftedRoutes;
+    cachedRouteStoreRef.current = routeStoreSetRoutes(cachedRouteStoreRef.current, shiftedRoutes);
+  };
+  const edgeRoutesForGeometryBounds = (edgeList: Edge[]): Pick<RoutedEdge, "points">[] =>
+    edgeList.flatMap((edge) => {
+      const points = [
+        edge.sourcePoint,
+        ...(edge.manualPoints ?? []),
+        edge.targetPoint
+      ].filter((point): point is Point => Boolean(point));
+      return points.length > 0 ? [{ points }] : [];
+    });
+  const leftTopCanvasOriginShiftForContent = (
+    contentNodes: ModelNode[],
+    contentEdges: Edge[] = [],
+    contentRoutes: Pick<RoutedEdge, "points">[] = []
+  ): Point => {
+    const geometryBounds = calculateModelGeometryBounds(
+      contentNodes,
+      [...contentRoutes, ...edgeRoutesForGeometryBounds(contentEdges)],
+      0
+    );
+    return {
+      x: geometryBounds && geometryBounds.left < 0 ? Math.ceil(-geometryBounds.left) : 0,
+      y: geometryBounds && geometryBounds.top < 0 ? Math.ceil(-geometryBounds.top) : 0
+    };
+  };
+  const canvasBoundsWithOriginShift = (baseBounds: CanvasBounds, originShift: Point): CanvasBounds => ({
+    width: baseBounds.width + originShift.x,
+    height: baseBounds.height + originShift.y
+  });
+  const clampNodePositionToExpandableBounds = (node: ModelNode, bounds: CanvasBounds, position = node.position): Point => {
+    const clamped = clampNodePositionToBounds(node, bounds, position);
+    return {
+      x: position.x < clamped.x ? Math.round(position.x) : clamped.x,
+      y: position.y < clamped.y ? Math.round(position.y) : clamped.y
+    };
+  };
   const scheduleCanvasVisibleViewBoxUpdate = () => {
     if (canvasVisibleViewBoxFrameRef.current !== null) {
       return;
@@ -5174,7 +5273,7 @@ export function App() {
       }
       updates.push({
         ...node,
-        position: clampNodePositionToBounds(
+        position: clampNodePositionToExpandableBounds(
           node,
           bounds,
           { x: originalPosition.x + delta.x, y: originalPosition.y + delta.y }
@@ -5411,7 +5510,7 @@ export function App() {
       }
       preview.set(nodeId, {
         ...node,
-        position: clampNodePositionToBounds(node, canvasBounds, {
+        position: clampNodePositionToExpandableBounds(node, canvasBounds, {
           x: originalPosition.x + draggingDelta.x,
           y: originalPosition.y + draggingDelta.y
         })
@@ -6724,7 +6823,7 @@ export function App() {
     if (canvasClipboard.nodes.length === 0 && canvasClipboard.edges.length === 0) {
       return;
     }
-    const targetPoint = lastCanvasPointerRef.current;
+    const targetPoint = lastRawCanvasPointerRef.current ?? lastCanvasPointerRef.current;
     if (!targetPoint) {
       window.alert("请先将鼠标移动到画布内，再执行粘贴操作。");
       return;
@@ -6736,8 +6835,8 @@ export function App() {
     const width = bounds.right - bounds.left;
     const height = bounds.bottom - bounds.top;
     const pasteTargetPoint = {
-      x: Math.max(0, targetPoint.x),
-      y: Math.max(0, targetPoint.y)
+      x: targetPoint.x,
+      y: targetPoint.y
     };
     const cloned = cloneCanvasClipboard(
       canvasClipboard,
@@ -6753,31 +6852,54 @@ export function App() {
       return;
     }
     pushUndoSnapshot();
-    const pastedCanvasBounds = canvasBoundsForGraphContent(
-      canvasBounds,
+    const pasteOriginShift = leftTopCanvasOriginShiftForContent(
       [...nodes, ...cloned.nodes],
-      [...edges, ...cloned.edges],
+      [...edges, ...cloned.edges]
+    );
+    const pasteSourceNodes = hasCanvasOriginShift(pasteOriginShift)
+      ? nodes.map((node) => translateNodeBy(node, pasteOriginShift))
+      : nodes;
+    const pasteSourceEdges = hasCanvasOriginShift(pasteOriginShift)
+      ? edges.map((edge) => translateEdgeBy(edge, pasteOriginShift))
+      : edges;
+    const shiftedClonedNodes = hasCanvasOriginShift(pasteOriginShift)
+      ? cloned.nodes.map((node) => translateNodeBy(node, pasteOriginShift))
+      : cloned.nodes;
+    const shiftedClonedEdges = hasCanvasOriginShift(pasteOriginShift)
+      ? cloned.edges.map((edge) => translateEdgeBy(edge, pasteOriginShift))
+      : cloned.edges;
+    const pastedCanvasBounds = canvasBoundsForGraphContent(
+      canvasBoundsWithOriginShift(canvasBounds, pasteOriginShift),
+      [...pasteSourceNodes, ...shiftedClonedNodes],
+      [...pasteSourceEdges, ...shiftedClonedEdges],
       [],
       CANVAS_AUTO_EXPAND_PADDING
     );
-    applyCanvasBounds(pastedCanvasBounds);
-    let nextDeviceIndexCounters = normalizeDeviceIndexCounters(deviceIndexCounters, nodes);
-    const pasted = cloned.nodes.map((node) => {
+    applyCanvasBounds(pastedCanvasBounds, pasteOriginShift);
+    shiftCachedRoutesForCanvasOrigin(pasteOriginShift);
+    if (hasCanvasOriginShift(pasteOriginShift)) {
+      markBusTerminalSyncDirtyForEdges(pasteSourceEdges, shiftedClonedEdges);
+    }
+    let nextDeviceIndexCounters = normalizeDeviceIndexCounters(deviceIndexCounters, pasteSourceNodes);
+    const pasted = shiftedClonedNodes.map((node) => {
       const draftNode = { ...node, layerId: activeLayerId, position: clampNodePositionToBounds(node, pastedCanvasBounds, node.position) };
       const result = assignPermanentDeviceIndex(draftNode, nextDeviceIndexCounters);
       nextDeviceIndexCounters = result.counters;
       return result.node;
     });
-    const pastedEdges = cloned.edges.map((edge) => ({
+    const pastedEdges = shiftedClonedEdges.map((edge) => ({
       ...edge,
       sourcePoint: edge.sourcePoint ? clampPointToBounds(edge.sourcePoint, pastedCanvasBounds) : undefined,
       targetPoint: edge.targetPoint ? clampPointToBounds(edge.targetPoint, pastedCanvasBounds) : undefined,
       manualPoints: edge.manualPoints?.map((point) => clampPointToBounds(point, pastedCanvasBounds))
     }));
-    const nextNodes = [...nodes, ...pasted];
-    const nextEdges = [...edges, ...pastedEdges];
+    const nextNodes = [...pasteSourceNodes, ...pasted];
+    const nextEdges = [...pasteSourceEdges, ...pastedEdges];
     setDeviceIndexCounters(nextDeviceIndexCounters);
     setGraphArrays(nextNodes, nextEdges);
+    const shiftedPasteTargetPoint = translatePointBy(targetPoint, pasteOriginShift);
+    lastRawCanvasPointerRef.current = shiftedPasteTargetPoint;
+    lastCanvasPointerRef.current = clampPointToBounds(shiftedPasteTargetPoint, pastedCanvasBounds);
     setGroups((current) => normalizeModelGroups([...current, ...cloned.groups], nextNodes, nextEdges));
     setCanvasSelectionScope("group");
     setSelectedNodeIds(pasted.map((node) => node.id));
@@ -7629,7 +7751,8 @@ export function App() {
   const scheduleDeferredMovedConnectionRepair = (
     movedNodeIds: string[],
     candidateEdges: Edge[],
-    expectedPatch: { nodeUpdates: ModelNode[]; edgeUpserts: Edge[]; edgeDeleteIds: string[] }
+    expectedPatch: { nodeUpdates: ModelNode[]; edgeUpserts: Edge[]; edgeDeleteIds: string[] },
+    effectiveCanvasBounds: CanvasBounds = canvasBounds
   ) => {
     deferredMoveOptimizationCancelRef.current?.();
     if (movedNodeIds.length <= 1 || candidateEdges.length === 0) {
@@ -7652,7 +7775,7 @@ export function App() {
         return;
       }
       const repairCanvasBounds = canvasBoundsForGraphContent(
-        canvasBounds,
+        effectiveCanvasBounds,
         latestNodes,
         latestStore.edges,
         [],
@@ -7712,11 +7835,35 @@ export function App() {
     originalRoutePoints: DraggingState["originalRoutePoints"],
     selectedEdgeIds = new Set<string>(),
     originalPositions?: Record<string, Point>,
-    previousNodes: ModelNode[] = nodes
+    previousNodes: ModelNode[] = nodes,
+    effectiveCanvasBounds: CanvasBounds = canvasBounds
   ) => {
     markStoredRouteEdgesDirty(dirtyEdgeIdsForMovedLocalRoutes(selectedEdgeIds, originalRoutePoints));
     let committedCandidateEdges = candidateEdges;
     const deferMovedRouteRepair = movedNodeIds.length > 1;
+    const originShift = leftTopCanvasOriginShiftForContent(nextNodes, committedCandidateEdges);
+    if (hasCanvasOriginShift(originShift)) {
+      const candidateEdgeById = new Map(committedCandidateEdges.map((edge) => [edge.id, edge]));
+      const rawNextEdges = edges.map((edge) => candidateEdgeById.get(edge.id) ?? edge);
+      const shiftedNextNodes = nextNodes.map((node) => translateNodeBy(node, originShift));
+      const shiftedNextEdges = rawNextEdges.map((edge) => translateEdgeBy(edge, originShift));
+      const shiftedCanvasBounds = canvasBoundsForGraphContent(
+        canvasBoundsWithOriginShift(effectiveCanvasBounds, originShift),
+        shiftedNextNodes,
+        shiftedNextEdges,
+        [],
+        CANVAS_AUTO_EXPAND_PADDING
+      );
+      applyCanvasBounds(shiftedCanvasBounds, originShift);
+      shiftCachedRoutesForCanvasOrigin(originShift);
+      const candidateEdgeIds = committedCandidateEdges.map((edge) => edge.id);
+      markRouteEdgesDirty(candidateEdgeIds);
+      markStoredRouteEdgesDirty(candidateEdgeIds);
+      markBusTerminalSyncDirtyForEdges(shiftedNextEdges);
+      setGraphStore((current) => graphStoreSetGraph(current, shiftedNextNodes, shiftedNextEdges));
+      return;
+    }
+    const commitCanvasBounds = canvasBoundsForGraphContent(effectiveCanvasBounds, nextNodes, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING);
     if (deferMovedRouteRepair) {
       const edgePatch = edgePatchFromCandidateEdges(previousCandidateEdges, committedCandidateEdges);
       const expectedPatch = { nodeUpdates: movedNodeUpdates, edgeUpserts: edgePatch.edgeUpserts, edgeDeleteIds: edgePatch.edgeDeleteIds };
@@ -7750,12 +7897,11 @@ export function App() {
       if (candidateEdges.length > 0) {
         deferredMoveRepairFrameRef.current = window.requestAnimationFrame(() => {
           deferredMoveRepairFrameRef.current = null;
-          scheduleDeferredMovedConnectionRepair(movedNodeIds, committedCandidateEdges, expectedPatch);
+          scheduleDeferredMovedConnectionRepair(movedNodeIds, committedCandidateEdges, expectedPatch, commitCanvasBounds);
         });
       }
       return;
     }
-    const commitCanvasBounds = canvasBoundsForGraphContent(canvasBounds, nextNodes, edges, [], CANVAS_AUTO_EXPAND_PADDING);
     if (movedNodeIds.length > 0) {
       const blockedConnectedRoutePoints = routePointsForMovedEdgesBlockedByStationaryNodes(
         nextNodes,
@@ -7800,7 +7946,7 @@ export function App() {
     }
     const edgePatch = edgePatchFromCandidateEdges(previousCandidateEdges, committedCandidateEdges);
     const nextEdgesForBounds = overlayEdgesForPatch(edgePatch.edgeUpserts, edgePatch.edgeDeleteIds);
-    expandCanvasToFitGraph(nextNodes, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING);
+    expandCanvasToFitGraph(nextNodes, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);
     const edgePatchDirtyIds = [
       ...edgePatch.edgeUpserts.map((edge) => edge.id),
       ...edgePatch.edgeDeleteIds
@@ -8017,7 +8163,7 @@ export function App() {
       if (!selected.has(node.id) || !original) {
         continue;
       }
-      const clamped = clampNodePositionToBounds(node, bounds, { x: original.x + boundedDx, y: original.y + boundedDy });
+      const clamped = clampNodePositionToExpandableBounds(node, bounds, { x: original.x + boundedDx, y: original.y + boundedDy });
       boundedDx = clamped.x - original.x;
       boundedDy = clamped.y - original.y;
     }
@@ -8044,7 +8190,7 @@ export function App() {
     const nextNodes = orderedNodesForIds(nodes, relevantNodeIds).map((node) => {
       const originalPosition = originalPositions[node.id];
       return movedNodeIds.has(node.id) && originalPosition
-        ? { ...node, position: clampNodePositionToBounds(node, bounds, { x: originalPosition.x + delta.x, y: originalPosition.y + delta.y }) }
+        ? { ...node, position: clampNodePositionToExpandableBounds(node, bounds, { x: originalPosition.x + delta.x, y: originalPosition.y + delta.y }) }
         : node;
     });
     const movedNodes = nextNodes.filter((node) => movedNodeIds.has(node.id));
@@ -8068,7 +8214,15 @@ export function App() {
         : [];
     const affectedRoutes =
       nextAffectedEdges.length > 0 ? routeEdgesForStoredRendering(nextNodes, nextAffectedEdges, bounds) : [];
-    return modelGeometryInsideCanvasBounds(movedNodes, affectedRoutes, bounds, MOVE_BOUNDARY_GUARD);
+    const originShift = leftTopCanvasOriginShiftForContent(movedNodes, [], affectedRoutes);
+    const shiftedBounds = canvasBoundsWithOriginShift(bounds, originShift);
+    const shiftedMovedNodes = hasCanvasOriginShift(originShift)
+      ? movedNodes.map((node) => translateNodeBy(node, originShift))
+      : movedNodes;
+    const shiftedAffectedRoutes = hasCanvasOriginShift(originShift)
+      ? affectedRoutes.map((route) => translateRouteBy(route, originShift))
+      : affectedRoutes;
+    return modelGeometryInsideCanvasBounds(shiftedMovedNodes, shiftedAffectedRoutes, shiftedBounds, MOVE_BOUNDARY_GUARD);
   };
 
   const nearestBoundarySafeDelta = (
@@ -8135,8 +8289,8 @@ export function App() {
         ? {
             ...node,
             position: {
-              x: Math.round(Math.max(0, originalPosition.x + dx)),
-              y: Math.round(Math.max(0, originalPosition.y + dy))
+              x: Math.round(originalPosition.x + dx),
+              y: Math.round(originalPosition.y + dy)
             }
           }
         : node;
@@ -8168,8 +8322,8 @@ export function App() {
       movedNodes.push({
         ...node,
         position: {
-          x: Math.round(Math.max(0, originalPosition.x + dx)),
-          y: Math.round(Math.max(0, originalPosition.y + dy))
+          x: Math.round(originalPosition.x + dx),
+          y: Math.round(originalPosition.y + dy)
         }
       });
     }
@@ -8230,6 +8384,7 @@ export function App() {
       return;
     }
     if (isMultiNodeMoveState(currentDrag)) {
+      applyCanvasBounds(canvasBoundsForMovedNodeDelta(currentDrag.nodeIds, currentDrag.originalPositions, boundedDelta.x, boundedDelta.y));
       draggingRef.current = {
         ...currentDrag,
         currentDelta: boundedDelta,
@@ -8410,7 +8565,8 @@ export function App() {
       activeDragging.originalRoutePoints,
       new Set(activeDragging.edgeIds),
       activeDragging.originalPositions,
-      nodes
+      nodes,
+      finalBounds
     );
     clearDraggingMoveState();
     const snapText =
@@ -8500,7 +8656,8 @@ export function App() {
       activeDragging.originalRoutePoints,
       new Set(activeDragging.edgeIds),
       activeDragging.originalPositions,
-      nodes
+      nodes,
+      finalBounds
     );
     clearNodeDragMoveSchedule();
     resetMultiNodeDragOverlayTransform();
@@ -8654,6 +8811,7 @@ export function App() {
       historyCaptured: true
     };
     if (isMultiNodeMoveState(activeDragging)) {
+      applyCanvasBounds(canvasBoundsForMovedNodeDelta(activeDragging.nodeIds, activeDragging.originalPositions, boundedDelta.x, boundedDelta.y));
       draggingRef.current = nextDragging;
       if (renderPreview) {
         updateMultiNodeDragOverlayTransform(boundedDelta);
@@ -8917,7 +9075,8 @@ export function App() {
       originalRoutePoints,
       new Set(moveEdgeIds),
       originalPositions,
-      nodes
+      nodes,
+      finalBounds
     );
     writeOperationLog(`移动 ${moveNodeIds.length} 个图元 (${Math.round(boundedDelta.x)}, ${Math.round(boundedDelta.y)})`);
   };
@@ -8927,7 +9086,7 @@ export function App() {
       return;
     }
     if (patch.position && focusedGroupedNodeMovesGroup && selectedNode) {
-      const nextPosition = { x: Math.max(0, patch.position.x), y: Math.max(0, patch.position.y) };
+      const nextPosition = { x: patch.position.x, y: patch.position.y };
       if (nextPosition.x === selectedNode.position.x && nextPosition.y === selectedNode.position.y) {
         return;
       }
@@ -8947,7 +9106,7 @@ export function App() {
       const changesCanvasFootprint = Boolean(patch.position) || geometryPatch;
       if (changesCanvasFootprint) {
         const requestedPosition = nextPatch.position
-          ? { x: Math.max(0, nextPatch.position.x), y: Math.max(0, nextPatch.position.y) }
+          ? { x: nextPatch.position.x, y: nextPatch.position.y }
           : selectedNode.position;
         const candidateNode = { ...selectedNode, ...nextPatch, position: requestedPosition };
         const previewNodes = nodes.map((node) => (node.id === selectedNode.id ? candidateNode : node));
@@ -8959,7 +9118,7 @@ export function App() {
           CANVAS_AUTO_EXPAND_PADDING
         );
         applyCanvasBounds(selectedNodeCanvasBounds);
-        nextPatch.position = clampNodePositionToBounds(candidateNode, selectedNodeCanvasBounds, requestedPosition);
+        nextPatch.position = clampNodePositionToExpandableBounds(candidateNode, selectedNodeCanvasBounds, requestedPosition);
       }
     }
     const currentSelectedNode = nodeById.get(selectedNodeId);
@@ -9007,7 +9166,8 @@ export function App() {
         originalRoutePoints,
         new Set<string>(),
         originalPositions,
-        nodes
+        nodes,
+        selectedNodeCanvasBounds
       );
       return;
     }
@@ -9905,19 +10065,40 @@ export function App() {
       return;
     }
     const pointerPosition = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
-    const position = { x: Math.max(0, pointerPosition.x), y: Math.max(0, pointerPosition.y) };
+    const position = { x: pointerPosition.x, y: pointerPosition.y };
     const template = libraryTemplates.find((item) => item.kind === kind);
     if (!template) {
       return;
     }
-    const node = { ...createNodeFromTemplate(template, position), layerId: activeLayerId };
-    const dropCanvasBounds = canvasBoundsForGraphContent(canvasBounds, [...nodes, node], edges, [], CANVAS_AUTO_EXPAND_PADDING);
-    applyCanvasBounds(dropCanvasBounds);
-    node.position = clampNodePositionToBounds(node, dropCanvasBounds, position);
+    const rawNode = { ...createNodeFromTemplate(template, position), layerId: activeLayerId };
+    const dropOriginShift = leftTopCanvasOriginShiftForContent([...nodes, rawNode], edges);
+    const dropSourceNodes = hasCanvasOriginShift(dropOriginShift)
+      ? nodes.map((node) => translateNodeBy(node, dropOriginShift))
+      : nodes;
+    const dropSourceEdges = hasCanvasOriginShift(dropOriginShift)
+      ? edges.map((edge) => translateEdgeBy(edge, dropOriginShift))
+      : edges;
+    const node = translateNodeBy(rawNode, dropOriginShift);
+    const shiftedPointerPosition = translatePointBy(pointerPosition, dropOriginShift);
+    const dropCanvasBounds = canvasBoundsForGraphContent(
+      canvasBoundsWithOriginShift(canvasBounds, dropOriginShift),
+      [...dropSourceNodes, node],
+      dropSourceEdges,
+      [],
+      CANVAS_AUTO_EXPAND_PADDING
+    );
+    applyCanvasBounds(dropCanvasBounds, dropOriginShift);
+    shiftCachedRoutesForCanvasOrigin(dropOriginShift);
+    if (hasCanvasOriginShift(dropOriginShift)) {
+      markBusTerminalSyncDirtyForEdges(dropSourceEdges);
+    }
+    node.position = clampNodePositionToBounds(node, dropCanvasBounds, shiftedPointerPosition);
+    lastRawCanvasPointerRef.current = shiftedPointerPosition;
+    lastCanvasPointerRef.current = clampPointToBounds(shiftedPointerPosition, dropCanvasBounds);
     const indexed = assignPermanentDeviceIndex(node, deviceIndexCounters);
     pushUndoSnapshot();
     setDeviceIndexCounters(indexed.counters);
-    setNodes((current) => [...current, indexed.node]);
+    setGraphArrays([...dropSourceNodes, indexed.node], dropSourceEdges);
     setCanvasSelectionScope("group");
     setSelectedNodeIds([indexed.node.id]);
     setSelectedEdgeId("");
@@ -10055,7 +10236,9 @@ export function App() {
 
   const handlePointerMove = (event: PointerEvent<SVGSVGElement>) => {
     if (svgRef.current) {
-      const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      const rawPointer = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
+      const pointer = draggingRef.current ? rawPointer : clampPointToCanvas(rawPointer);
+      lastRawCanvasPointerRef.current = rawPointer;
       lastCanvasPointerRef.current = pointer;
       updateMouseStatus(pointer);
       if (connectSource) {
@@ -10298,6 +10481,14 @@ export function App() {
     }
     pushUndoSnapshot();
     const arranged = layoutNodes(nodes, selectedLayoutUnits);
+    const layoutCanvasBounds = canvasBoundsForGraphContent(
+      canvasBounds,
+      arranged,
+      edges,
+      [],
+      CANVAS_AUTO_EXPAND_PADDING
+    );
+    applyCanvasBounds(layoutCanvasBounds);
     const selected = new Set(layoutNodeIds);
     const originalPositions = Object.fromEntries(
       layoutNodeIds.flatMap((id) => {
@@ -10333,7 +10524,9 @@ export function App() {
       selected,
       originalEdgePoints,
       deltas,
-      originalRoutePoints
+      originalRoutePoints,
+      new Set<string>(),
+      layoutCanvasBounds
     );
     const finalizedCandidateEdges = finalizeMovedNodeEdgesFast(
       nodes,
@@ -10355,7 +10548,8 @@ export function App() {
       originalRoutePoints,
       new Set<string>(),
       originalPositions,
-      nodes
+      nodes,
+      layoutCanvasBounds
     );
   };
 
@@ -11465,7 +11659,9 @@ export function App() {
     projectListPointerInsideRef.current = false;
     let pointer: Point | undefined;
     if (svgRef.current) {
-      pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      const rawPointer = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
+      pointer = clampPointToCanvas(rawPointer);
+      lastRawCanvasPointerRef.current = rawPointer;
       lastCanvasPointerRef.current = pointer;
       updateMouseStatus(pointer);
     }
@@ -13808,7 +14004,9 @@ export function App() {
               activateInspectorFromCanvas();
               canvasInteractionRef.current = true;
               projectListPointerInsideRef.current = false;
-              const pointer = clampPointToCanvas(screenToSvgPoint(event.currentTarget, event.clientX, event.clientY));
+              const rawPointer = screenToSvgPoint(event.currentTarget, event.clientX, event.clientY);
+              const pointer = clampPointToCanvas(rawPointer);
+              lastRawCanvasPointerRef.current = rawPointer;
               lastCanvasPointerRef.current = pointer;
               updateMouseStatus(pointer);
               if (connectSource) {
@@ -13871,7 +14069,9 @@ export function App() {
             }}
             onContextMenu={(event) => {
               event.preventDefault();
-              const pointer = clampPointToCanvas(screenToSvgPoint(event.currentTarget, event.clientX, event.clientY));
+              const rawPointer = screenToSvgPoint(event.currentTarget, event.clientX, event.clientY);
+              const pointer = clampPointToCanvas(rawPointer);
+              lastRawCanvasPointerRef.current = rawPointer;
               lastCanvasPointerRef.current = pointer;
               updateMouseStatus(pointer);
               if (connectSource) {
