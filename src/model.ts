@@ -9354,7 +9354,7 @@ export function getRouteBlockingCandidateNodes(points: Point[], edge: Edge, bloc
   );
 }
 
-function routeIntersectsSpecificNodes(points: Point[], edge: Edge, blockers: ModelNode[]) {
+export function routeIntersectsSpecificNodes(points: Point[], edge: Edge, blockers: ModelNode[]) {
   if (points.length < 2 || blockers.length === 0) {
     return false;
   }

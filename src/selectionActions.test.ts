@@ -463,6 +463,47 @@ describe("canvas selection actions", () => {
     }]);
   });
 
+  test("copies and pastes internal connection lines for a selected group even when group edge ids are missing", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const target = createDefaultNode("ac-load", { x: 300, y: 100 });
+    const edge: Edge = {
+      id: "edge-implicit-group-copy",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const groups: ModelGroup[] = [{
+      id: "group-with-implicit-edge",
+      name: "组合1",
+      nodeIds: [source.id, target.id],
+      edgeIds: []
+    }];
+    const routes = routeEdgesForRendering([source, target], [edge], { width: 800, height: 500 });
+    const clipboard = buildCanvasClipboard([source, target], [edge], routes, [source.id], [], groups);
+
+    const pasted = cloneCanvasClipboard(
+      clipboard,
+      { x: 400, y: 300 },
+      (() => {
+        let index = 0;
+        return () => `node-copy-${++index}`;
+      })(),
+      () => "edge-copy",
+      () => "group-copy"
+    );
+
+    expect(clipboard.edges.map((item) => item.edge.id)).toEqual([edge.id]);
+    expect(pasted.nodes.map((node) => node.id)).toEqual(["node-copy-1", "node-copy-2"]);
+    expect(pasted.edges.map((item) => item.id)).toEqual(["edge-copy"]);
+    expect(pasted.groups).toEqual([{
+      id: "group-copy",
+      name: "组合1 副本",
+      nodeIds: ["node-copy-1", "node-copy-2"],
+      edgeIds: ["edge-copy"]
+    }]);
+  });
+
   test("copies and pastes nested graphic groups while preserving their hierarchy", () => {
     const first = createDefaultNode("ac-source", { x: 100, y: 100 });
     const second = createDefaultNode("ac-load", { x: 220, y: 100 });
@@ -573,5 +614,43 @@ describe("canvas selection actions", () => {
     expect(units[0].edgeIds).toEqual([edge.id]);
     expect(units[0].bounds.top).toBe(36);
     expect(units[0].bounds.right).toBe(724);
+  });
+
+  test("uses rendered internal connection routes and padding for grouped layout bounds", () => {
+    const firstGrouped = createDefaultNode("ac-load", { x: 420, y: 220 });
+    const secondGrouped = createDefaultNode("ac-source", { x: 540, y: 220 });
+    const edge: Edge = {
+      id: "edge-group-routed",
+      sourceId: firstGrouped.id,
+      targetId: secondGrouped.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const groups: ModelGroup[] = [{
+      id: "group-with-routed-edge",
+      name: "组合1",
+      nodeIds: [firstGrouped.id, secondGrouped.id],
+      edgeIds: []
+    }];
+    const routedEdges = [{
+      edgeId: edge.id,
+      points: [
+        { x: 420, y: 220 },
+        { x: 420, y: 40 },
+        { x: 720, y: 40 },
+        { x: 720, y: 220 },
+        { x: 540, y: 220 }
+      ],
+      path: ""
+    }];
+
+    const units = buildCanvasLayoutUnits(groups, [firstGrouped, secondGrouped], [firstGrouped.id], [], [edge], routedEdges);
+
+    expect(units).toHaveLength(1);
+    expect(units[0].edgeIds).toEqual([edge.id]);
+    expect(units[0].bounds.left).toBe(373);
+    expect(units[0].bounds.top).toBe(36);
+    expect(units[0].bounds.right).toBe(724);
+    expect(units[0].bounds.bottom).toBe(253);
   });
 });

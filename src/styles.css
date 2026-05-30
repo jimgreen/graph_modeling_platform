@@ -960,6 +960,10 @@ button:disabled {
   cursor: grabbing;
 }
 
+.diagram-canvas.multi-node-dragging .canvas-content {
+  pointer-events: none;
+}
+
 .canvas-resizing,
 .canvas-resizing * {
   user-select: none;
@@ -1028,6 +1032,25 @@ button:disabled {
 .connection-line.group-transform-preview {
   opacity: 1;
   pointer-events: none;
+}
+
+.group-transform-photo-preview {
+  opacity: 0.96;
+  pointer-events: none;
+}
+
+.group-transform-photo-preview .terminal-dot,
+.group-transform-photo-preview .terminal-stub,
+.group-transform-photo-preview .connection-line {
+  pointer-events: none;
+}
+
+.group-transform-photo-outline {
+  fill: rgba(37, 99, 235, 0.04);
+  stroke: #1d4ed8;
+  stroke-width: 2;
+  stroke-dasharray: 8 5;
+  vector-effect: non-scaling-stroke;
 }
 
 .connection-line.drag-ghost {
@@ -1316,6 +1339,10 @@ button:disabled {
 .group-selection-overlay.focused .group-selection-outline {
   stroke: #f97316;
   stroke-width: 2.5;
+}
+
+.group-selection-overlay.transforming {
+  opacity: 0;
 }
 
 .group-transform-handles {

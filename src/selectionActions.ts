@@ -438,14 +438,22 @@ export function buildCanvasClipboard(
   groups: ModelGroup[] = [],
   options: { expandGroups?: boolean } = {}
 ): CanvasClipboard {
+  const shouldExpandGroups = options.expandGroups !== false;
   const expandedSelection = resolveCanvasSelection(
     groups,
     selectedNodeIds,
     selectedEdgeIds,
-    options.expandGroups === false ? "direct" : "group"
+    shouldExpandGroups ? "group" : "direct"
   );
   const nodeSelection = new Set(expandedSelection.nodeIds);
   const edgeSelection = new Set(expandedSelection.edgeIds);
+  if (shouldExpandGroups) {
+    for (const edge of edges) {
+      if (nodeSelection.has(edge.sourceId) && nodeSelection.has(edge.targetId)) {
+        edgeSelection.add(edge.id);
+      }
+    }
+  }
   const routeByEdgeId = new Map(routedEdges.map((route) => [route.edgeId, route]));
   const groupsById = groupById(groups);
   const copiedGroups: ModelGroup[] = [];
@@ -453,6 +461,23 @@ export function buildCanvasClipboard(
   for (const group of groupsInChildFirstOrder(groups)) {
     const childGroupIds = groupChildIds(group).filter((groupId) => copiedGroupIds.has(groupId));
     const validChildGroupIds = groupChildIds(group).filter((groupId) => groupsById.has(groupId));
+    const groupMembers = collectGroupTreeMembers(group, groupsById);
+    const groupNodeSet = new Set(groupMembers.nodeIds);
+    const childNodeSets = validChildGroupIds.flatMap((groupId) => {
+      const childGroup = groupsById.get(groupId);
+      return childGroup ? [new Set(collectGroupTreeMembers(childGroup, groupsById).nodeIds)] : [];
+    });
+    const implicitGroupEdgeIds = shouldExpandGroups
+      ? edges
+          .filter((edge) =>
+            edgeSelection.has(edge.id) &&
+            groupNodeSet.has(edge.sourceId) &&
+            groupNodeSet.has(edge.targetId) &&
+            !childNodeSets.some((childNodeSet) => childNodeSet.has(edge.sourceId) && childNodeSet.has(edge.targetId))
+          )
+          .map((edge) => edge.id)
+      : [];
+    const groupEdgeIds = uniqueIds([...group.edgeIds, ...implicitGroupEdgeIds]).filter((edgeId) => edgeSelection.has(edgeId));
     const directMembersSelected =
       group.nodeIds.every((nodeId) => nodeSelection.has(nodeId)) &&
       group.edgeIds.every((edgeId) => edgeSelection.has(edgeId));
@@ -465,7 +490,7 @@ export function buildCanvasClipboard(
       id: group.id,
       name: group.name,
       nodeIds: [...group.nodeIds],
-      edgeIds: [...group.edgeIds]
+      edgeIds: groupEdgeIds
     }, childGroupIds));
   }
   return {
@@ -600,9 +625,13 @@ function edgeStoredPoints(edge: Edge): Point[] {
   ].filter((point): point is Point => Boolean(point));
 }
 
-function boundsForNodesAndEdges(nodes: ModelNode[], edges: Edge[]) {
+function boundsForNodesAndEdges(
+  nodes: ModelNode[],
+  edges: Edge[],
+  routeByEdgeId: ReadonlyMap<string, RoutedEdge> = new Map()
+) {
   const boxes = nodes.map(nodeSelectionBounds);
-  const edgePoints = edges.flatMap(edgeStoredPoints);
+  const edgePoints = edges.flatMap((edge) => routeByEdgeId.get(edge.id)?.points ?? edgeStoredPoints(edge));
   if (edgePoints.length > 0) {
     boxes.push({
       left: Math.min(...edgePoints.map((point) => point.x)),
@@ -636,10 +665,12 @@ export function buildCanvasLayoutUnits(
   nodes: readonly ModelNode[],
   selectedNodeIds: readonly string[],
   selectedEdgeIds: readonly string[],
-  edges: readonly Edge[] = []
+  edges: readonly Edge[] = [],
+  routedEdges: readonly RoutedEdge[] = []
 ): CanvasLayoutUnit[] {
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const edgesById = new Map(edges.map((edge) => [edge.id, edge]));
+  const routeByEdgeId = new Map(routedEdges.map((route) => [route.edgeId, route]));
   const groupsById = groupById(groups);
   const coveredNodeIds = new Set<string>();
   const units: CanvasLayoutUnit[] = [];
@@ -650,11 +681,16 @@ export function buildCanvasLayoutUnits(
     }
     const groupMembers = collectGroupTreeMembers(group, groupsById);
     const groupNodeIds = groupMembers.nodeIds.filter((nodeId) => nodesById.has(nodeId));
-    const groupEdgeIds = groupMembers.edgeIds.filter((edgeId) => edgesById.has(edgeId));
+    const groupNodeIdSet = new Set(groupNodeIds);
+    const internalEdgeIds = edges
+      .filter((edge) => groupNodeIdSet.has(edge.sourceId) && groupNodeIdSet.has(edge.targetId))
+      .map((edge) => edge.id);
+    const groupEdgeIds = uniqueIds([...groupMembers.edgeIds, ...internalEdgeIds]).filter((edgeId) => edgesById.has(edgeId));
     const groupEdges = groupEdgeIds.flatMap((edgeId) => edgesById.get(edgeId) ?? []);
     const bounds = boundsForNodesAndEdges(
       groupNodeIds.flatMap((nodeId) => nodesById.get(nodeId) ?? []),
-      groupEdges
+      groupEdges,
+      routeByEdgeId
     );
     if (!bounds) {
       continue;

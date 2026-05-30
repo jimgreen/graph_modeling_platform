@@ -167,6 +167,20 @@ describe("graph inspector panel", () => {
     expect(keyboardNudgeBlock).not.toContain("setDragging");
   });
 
+  test("commits a single keyboard nudge directly without rendering a drag ghost", async () => {
+    const source = await readAppSource();
+    const keyboardNudgeStart = source.indexOf("const nudgeSelectionByKeyboard");
+    const keyboardNudgeEnd = source.indexOf("const moveSelection", keyboardNudgeStart);
+    const keyboardNudgeBlock = source.slice(keyboardNudgeStart, keyboardNudgeEnd);
+
+    expect(keyboardNudgeBlock).toContain("if (!repeated && !wasActive && !draggingRef.current)");
+    expect(keyboardNudgeBlock).toContain("moveSelection(dx, dy);");
+    expect(keyboardNudgeBlock).toContain("return;");
+    expect(keyboardNudgeBlock.indexOf("moveSelection(dx, dy);")).toBeLessThan(
+      keyboardNudgeBlock.indexOf("startKeyboardMoveSession(false)")
+    );
+  });
+
   test("manages custom component libraries from the new-device manager tree", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
@@ -538,11 +552,32 @@ describe("graph inspector panel", () => {
     expect(dragBlock).toContain("const dragNodeIds = dragSelection.nodeIds");
     expect(dragBlock).toContain("if (!activeLayerNodeIdSet.has(node.id))");
     expect(source).toContain("const selectedLayoutUnits = useMemo");
-    expect(source).toContain("buildCanvasLayoutUnits(activeLayerGroups, activeLayerNodes, activeSelectedNodeIds, activeSelectedEdgeIds, activeLayerEdges)");
+    expect(source).toContain("buildCanvasLayoutUnits(activeLayerGroups, activeLayerNodes, activeSelectedNodeIds, activeSelectedEdgeIds, activeLayerEdges, routedEdges)");
     expect(layoutBlock).toContain("layoutNodes(nodes, selectedLayoutUnits)");
     expect(layoutBlock).toContain("const selected = new Set(layoutNodeIds)");
     expect(source).toContain("if (!activeLayerEdgeIdSet.has(edgeId))");
     expect(source).toContain("const visibleNodeSpatialIndex = visibleProject.nodeSpatialIndex");
+  });
+
+  test("selects visible operable nodes and connection lines for Ctrl+A copy paste", async () => {
+    const source = await readAppSource();
+    const keyStart = source.indexOf("const handleKeyDown =");
+    const keyEnd = source.indexOf("window.addEventListener(\"keydown\"", keyStart);
+    const keyBlock = source.slice(keyStart, keyEnd);
+    const ctrlAStart = keyBlock.indexOf("event.key.toLowerCase() === \"a\"");
+    const ctrlAEnd = keyBlock.indexOf("} else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === \"c\")", ctrlAStart);
+    const ctrlABlock = keyBlock.slice(ctrlAStart, ctrlAEnd);
+    const copyStart = source.indexOf("const copySelection =");
+    const pasteStart = source.indexOf("const pasteSelection =", copyStart);
+    const copyBlock = source.slice(copyStart, pasteStart);
+
+    expect(ctrlABlock).toContain("setSelectedNodeIds(activeLayerNodes.map((node) => node.id))");
+    expect(ctrlABlock).toContain("const selectableEdgeIds = activeLayerEdges.map((edge) => edge.id)");
+    expect(ctrlABlock).toContain("setSelectedEdgeIds(selectableEdgeIds)");
+    expect(ctrlABlock).toContain("setSelectedEdgeId(selectableEdgeIds[0] ?? \"\")");
+    expect(ctrlABlock).not.toContain("setSelectedEdgeIds([])");
+    expect(copyBlock).toContain("visibleEdges");
+    expect(copyBlock).toContain("activeSelectedEdgeIds");
   });
 
   test("focuses a selected nested group member and moves the whole group", async () => {
@@ -592,7 +627,7 @@ describe("graph inspector panel", () => {
     expect(dragBlock).toContain("setSelectedNodeIds([node.id])");
     expect(dragBlock).toContain("setCanvasSelectionScope(\"direct\")");
     expect(dragBlock).toContain("const dragNodeIds = dragSelection.nodeIds");
-    expect(dragBlock).toContain("originalPositions: Object.fromEntries");
+    expect(dragBlock).toContain("const originalPositionsForDrag = Object.fromEntries");
   });
 
   test("shows selected canvas groups and transforms them as layout units", async () => {
@@ -607,10 +642,13 @@ describe("graph inspector panel", () => {
     const pointerStart = source.indexOf("if (transformDrag && svgRef.current)");
     const pointerEnd = source.indexOf("if (!draggingRef.current || !svgRef.current)", pointerStart);
     const pointerBlock = source.slice(pointerStart, pointerEnd);
+    const groupPointerStart = pointerBlock.indexOf("if (isGroupTransformDrag(transformDrag))");
+    const groupPointerEnd = pointerBlock.indexOf("const node = currentStore.nodeMap.get", groupPointerStart);
+    const groupPointerBlock = pointerBlock.slice(groupPointerStart, groupPointerEnd);
     const finishTransformStart = source.indexOf("const finishTransformDrag");
     const finishTransformEnd = source.indexOf("const finishKeyboardMove", finishTransformStart);
     const finishTransformBlock = source.slice(finishTransformStart, finishTransformEnd);
-    const groupPreviewStart = source.indexOf("const groupTransformPreviewEdgeRoutes");
+    const groupPreviewStart = source.indexOf("const groupTransformPreviewTransform");
     const groupPreviewEnd = source.indexOf("const dragPreviewEdgeRoutes", groupPreviewStart);
     const groupPreviewBlock = source.slice(groupPreviewStart, groupPreviewEnd);
     const renderStart = source.indexOf("{selectedGroupLayoutUnits.map");
@@ -619,12 +657,17 @@ describe("graph inspector panel", () => {
     const edgeRenderStart = source.indexOf("{viewportRoutedEdges.map((route) =>");
     const edgeRenderEnd = source.indexOf("{selectedGroupLayoutUnits.map", edgeRenderStart);
     const edgeRenderBlock = source.slice(edgeRenderStart, edgeRenderEnd);
+    const nodeRenderStart = source.indexOf("{viewportNodes.map((node) =>");
+    const nodeRenderEnd = source.indexOf("{renderMultiNodeDragOverlay()}", nodeRenderStart);
+    const nodeRenderBlock = source.slice(nodeRenderStart, nodeRenderEnd);
 
     expect(source).toContain("type GroupTransformNodeSnapshot");
     expect(source).toContain("type GroupTransformEdgeRouteSnapshot");
-    expect(selectionStateBlock).toContain("selectedGroupLayoutUnits");
-    expect(selectionStateBlock).toContain("selectedTransformGroupUnit");
-    expect(groupPreviewBlock).toContain("transformGroupRoutePoints(transformDrag, transformDrag.previewPoint, route.points)");
+    expect(source).toContain("function groupTransformSvgTransform");
+    expect(source).toContain("const selectedGroupLayoutUnits = useMemo");
+    expect(source).toContain("const selectedTransformGroupUnit =");
+    expect(groupPreviewBlock).toContain("groupTransformPreviewTransform");
+    expect(groupPreviewBlock).toContain("path: pointsToPreviewPath(points)");
     expect(groupPreviewBlock).toContain("groupTransformPreviewEdgeIdSet");
     expect(source).toContain("const startGroupTransformDrag");
     expect(source).toContain("const startGroupMoveDrag");
@@ -632,25 +675,58 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const buildGroupTransformNodeUpdates");
     expect(pointerBlock).toContain("isGroupTransformDrag(transformDrag)");
     expect(pointerBlock).toContain("buildGroupTransformNodeUpdates(transformDrag, point, currentStore)");
+    expect(groupPointerBlock).not.toContain("patchGraphNodes");
     expect(pointerBlock).toContain("previewPoint: point");
     expect(finishTransformBlock).toContain("activeTransform.nodeIds");
+    expect(finishTransformBlock).toContain("buildGroupTransformNodeUpdates(activeTransform, finalPreviewPoint, current)");
+    expect(finishTransformBlock).toContain("graphStorePatchGraphFromArrays");
     expect(finishTransformBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nodes, transformedNodeIds)");
     expect(edgeRenderBlock).toContain("groupTransformPreviewEdgeIdSet.has(edge.id)");
+    expect(nodeRenderBlock).toContain("groupTransformPreviewNodeIdSet.has(node.id)");
     expect(mirrorBlock).toContain("selectedLayoutUnits");
     expect(source).toContain("unit.kind === \"group\"");
     expect(mirrorBlock).toContain("mirrorLayoutUnitNodes");
+    expect(source).toContain("const renderGroupTransformPhotoPreview");
+    expect(source).toContain("transform={groupTransformPreviewTransform}");
+    expect(renderBlock).toContain("const transforming = groupTransformPreviewGroupId === unit.id");
+    expect(renderBlock).toContain("transforming ? \"transforming\" : \"\"");
     expect(renderBlock).toContain("group-selection-overlay");
     expect(renderBlock).toContain("group-selection-hitbox");
     expect(renderBlock).toContain("startGroupMoveDrag(event, unit)");
     expect(renderBlock).toContain("selectedTransformGroupUnit?.id === unit.id");
     expect(renderBlock).toContain("startGroupTransformDrag(event, unit, \"rotate\")");
     expect(renderBlock).toContain("startGroupTransformDrag(event, unit, handle.kind)");
-    expect(source).toContain("key={`group-transform-preview-edge-${route.edgeId}`}");
+    expect(source).toContain("className=\"group-transform-photo-preview\"");
     expect(styles).toContain(".group-selection-overlay");
     expect(styles).toContain(".group-selection-hitbox");
     expect(styles).toContain("cursor: grab");
     expect(styles).toContain(".group-selection-outline");
-    expect(styles).toContain(".connection-line.group-transform-preview");
+    expect(styles).toContain(".group-selection-overlay.transforming");
+    expect(styles).toContain(".group-transform-photo-preview");
+  });
+
+  test("uses routed group connection geometry for group bounds and scales grouped routes during transform", async () => {
+    const source = await readAppSource();
+    const layoutStart = source.indexOf("const selectedLayoutUnits = useMemo");
+    const layoutEnd = source.indexOf("const canUngroupSelectedGraphics", layoutStart);
+    const layoutBlock = source.slice(layoutStart, layoutEnd);
+    const previewStart = source.indexOf("const groupTransformPreviewEdgeRoutes");
+    const previewEnd = source.indexOf("const groupTransformPreviewEdgeIdSet", previewStart);
+    const previewBlock = source.slice(previewStart, previewEnd);
+    const finishTransformStart = source.indexOf("const finishTransformDrag");
+    const finishTransformEnd = source.indexOf("const transformedNode =", finishTransformStart);
+    const finishTransformBlock = source.slice(finishTransformStart, finishTransformEnd);
+
+    expect(layoutBlock).toContain("buildCanvasLayoutUnits(activeLayerGroups, activeLayerNodes, activeSelectedNodeIds, activeSelectedEdgeIds, activeLayerEdges, routedEdges)");
+    expect(source).toContain("const buildGroupTransformEdgeUpdates");
+    expect(previewBlock).toContain("transformDrag.originalEdgeRoutes.flatMap");
+    expect(previewBlock).toContain("const geometry = groupTransformGeometry(transformDrag, transformDrag.previewPoint)");
+    expect(previewBlock).toContain("transformGroupPoint(transformDrag, geometry, routePoint)");
+    expect(source).toContain("className=\"group-transform-photo-content\"");
+    expect(source).toContain("transform={groupTransformPreviewTransform}");
+    expect(finishTransformBlock).toContain("const transformedEdgeUpdates = buildGroupTransformEdgeUpdates(activeTransform, finalPreviewPoint, current)");
+    expect(finishTransformBlock).toContain("const transformedRouteEdgeIds = new Set(transformedEdgeUpdates.map((edge) => edge.id))");
+    expect(finishTransformBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nextNodes, transformedNodeIds, transformedEdges, transformedRouteEdgeIds)");
   });
 
   test("checks a newly drawn connection route before committing it to the model", async () => {
@@ -732,9 +808,9 @@ describe("graph inspector panel", () => {
     expect(source).toContain("rebuildConnectionRoutesForNodes");
     expect(helperBlock).toContain("const localEdges = currentEdges === edges");
     expect(helperBlock).toContain("edgeListForNodeIds(changedIds)");
-    expect(helperBlock).toContain("routingNodesForConnectionEdges(localEdges, nextNodes, changedIds)");
-    expect(helperBlock).toContain("rebuildConnectionRoutesForNodes(routingNodes, localEdges, changedIds, canvasBounds, localEdges)");
-    expect(helperBlock).toContain("dirtyEdgeIdsAfterMove");
+    expect(helperBlock).toContain("routingNodesForConnectionEdges(rerouteEdges, nextNodes, changedIds)");
+    expect(helperBlock).toContain("rebuildConnectionRoutesForNodes(routingNodes, rerouteEdges, changedIds, canvasBounds, rerouteEdges)");
+    expect(helperBlock).toContain("dirtyEdgeIdsAfterMove(rerouteEdges, nextLocalEdges, changedIds)");
     expect(helperBlock).toContain("markRouteEdgesDirty");
     expect(helperBlock).toContain("markStoredRouteEdgesDirty");
     expect(updateBlock).toContain("const geometryPatch");
@@ -1150,7 +1226,7 @@ describe("graph inspector panel", () => {
     expect(dragStartBlock).not.toContain("for (const edge of edges)");
     expect(dragStartBlock).not.toContain("const affectedEdgesForDrag = edges.filter");
     expect(dragStartBlock).toContain("affectedEdges: affectedEdgesForDrag");
-    expect(dragStartBlock).toContain("originalRoutePoints: Object.fromEntries(\n        affectedEdgesForDrag.map");
+    expect(dragStartBlock).toContain("const originalRoutePointsForDrag = Object.fromEntries(\n      affectedEdgesForDrag.map");
     expect(dragStartBlock).not.toContain("(routeByEdgeId.get(edge.id) ?? []).map((routePoint) => ({ ...routePoint }))");
     expect(dragStartBlock).not.toContain("originalEdgePoints: Object.fromEntries(\n        edges.map");
     expect(dragStartBlock).not.toContain("originalRoutePoints: Object.fromEntries(\n        edges.map");
@@ -1201,8 +1277,58 @@ describe("graph inspector panel", () => {
     expect(finalizeBlock).toContain("localCandidateEdges");
     expect(finalizeBlock).toContain("reconcileOverlappingTerminalConnections(");
     expect(finalizeBlock).toContain("movedNodeIdSet,\n      localCandidateEdges");
-    expect(finishBlock).toContain("activeDragging.nodeIds,\n      adjustedAffectedEdges");
-    expect(moveBlock).toContain("moveNodeIds,\n      adjustedAffectedEdges");
+    expect(finishBlock).not.toContain("? activeDragging.affectedEdges");
+    expect(finishBlock).toContain("hasAffectedEdges\n      ? adjustEdgesAfterNodeMove");
+    expect(finishBlock).toContain("adjustedAffectedEdges,\n          activeDragging.nodeIds");
+    expect(moveBlock).not.toContain("? affectedEdgesForMove");
+    expect(moveBlock).toContain("affectedEdgesForMove.length > 0\n      ? adjustEdgesAfterNodeMove");
+    expect(moveBlock).toContain("adjustedAffectedEdges,\n          moveNodeIds");
+  });
+
+  test("preserves moved connection geometry before deferred multi-node route repair", async () => {
+    const source = await readAppSource();
+    const finishStart = source.indexOf("const finishNodeDrag = () =>");
+    const finishEnd = source.indexOf("const finishTransformDrag", finishStart);
+    const finishBlock = source.slice(finishStart, finishEnd);
+    const moveStart = source.indexOf("const moveSelection =");
+    const moveEnd = source.indexOf("const updateSelectedNode", moveStart);
+    const moveBlock = source.slice(moveStart, moveEnd);
+    const commitStart = source.indexOf("const commitFastMovedGraphPatches");
+    const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
+    const deferStart = commitBlock.indexOf("if (deferMovedRouteRepair)");
+    const deferEnd = commitBlock.indexOf("return;", deferStart);
+    const deferBlock = commitBlock.slice(deferStart, deferEnd);
+
+    expect(finishBlock).toContain("adjustEdgesAfterNodeMove(");
+    expect(finishBlock).toContain("Object.fromEntries(activeDragging.nodeIds.map((id) => [id, finalDelta]))");
+    expect(moveBlock).toContain("adjustEdgesAfterNodeMove(");
+    expect(moveBlock).toContain("deltasByNode");
+    expect(deferBlock).toContain("const edgePatch = edgePatchFromCandidateEdges(previousCandidateEdges, committedCandidateEdges);");
+    expect(deferBlock).toContain("graphStoreApplyPatch(current, {");
+    expect(deferBlock).toContain("edgeUpserts: expectedPatch.edgeUpserts");
+    expect(deferBlock).toContain("scheduleDeferredMovedConnectionRepair(movedNodeIds, committedCandidateEdges, expectedPatch);");
+    expect(deferBlock).not.toContain("graphStorePatchNodes(current, expectedPatch.nodeUpdates)");
+  });
+
+  test("only preserves whole route shape for connection lines whose endpoints both move", async () => {
+    const source = await readAppSource();
+    const boundaryStart = source.indexOf("const nodeMoveGeometryInsideCanvas =");
+    const boundaryEnd = source.indexOf("const nearestBoundarySafeDelta", boundaryStart);
+    const boundaryBlock = source.slice(boundaryStart, boundaryEnd);
+    const finishStart = source.indexOf("const finishNodeDrag = () =>");
+    const finishEnd = source.indexOf("const finishTransformDrag", finishStart);
+    const finishBlock = source.slice(finishStart, finishEnd);
+    const moveStart = source.indexOf("const moveSelection =");
+    const moveEnd = source.indexOf("const updateSelectedNode", moveStart);
+    const moveBlock = source.slice(moveStart, moveEnd);
+
+    expect(source).toContain("const routePreserveEdgeIdsForMovedNodes =");
+    expect(boundaryBlock).toContain("routePreserveEdgeIdsForMovedNodes(affectedEdges, nodeIds, edgeIds)");
+    expect(finishBlock).toContain("routePreserveEdgeIdsForMovedNodes(activeDragging.affectedEdges, activeDragging.nodeIds, activeDragging.edgeIds)");
+    expect(moveBlock).toContain("routePreserveEdgeIdsForMovedNodes(affectedEdgesForMove, moveNodeIds, moveEdgeIds)");
+    expect(finishBlock).not.toContain("new Set(activeDragging.edgeIds),\n          finalBounds");
+    expect(moveBlock).not.toContain("new Set(moveEdgeIds),\n          finalBounds");
   });
 
   test("limits drag-end rerouting to moved-node blocker candidates", async () => {
@@ -1250,8 +1376,31 @@ describe("graph inspector panel", () => {
     expect(scheduleBlock).toContain("const blockedRoutePoints = routePointsForMovedNodeBlockers(expectedNodes, optimizationEdges, movedNodeIds, {});");
     expect(scheduleBlock).toContain("const blockedEdgeIds = new Set(Object.keys(blockedRoutePoints));");
     expect(scheduleBlock).toContain("!shouldRunDeferredMoveOptimization(optimizationEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)");
+    expect(scheduleBlock).toContain("const dirtyOptimizedEdgeIds = new Set<string>([...blockedEdgeIds, ...forcedRerouteEdgeIds]);");
+    expect(scheduleBlock).not.toContain("new Set<string>(optimizationEdges.map");
     expect(scheduleBlock).toContain("blockedRoutePoints");
     expect(scheduleBlock).not.toContain("dirtyEdgeIdsAfterMove(\n        expectedEdges,\n        optimized.edges,\n        movedNodeIds");
+  });
+
+  test("limits deferred drag route repair to actually interfered connection lines", async () => {
+    const source = await readAppSource();
+    const helperStart = source.indexOf("const routePointsForMovedEdgesBlockedByStationaryNodes");
+    const helperEnd = source.indexOf("const sameOptionalPoint", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+    const scheduleStart = source.indexOf("const scheduleDeferredMovedConnectionRepair");
+    const scheduleEnd = source.indexOf("const commitFastMovedGraph", scheduleStart);
+    const scheduleBlock = source.slice(scheduleStart, scheduleEnd);
+
+    expect(helperStart).toBeGreaterThan(-1);
+    expect(helperBlock).toContain("routeIntersectsSpecificNodes(route.points, edge, blockers)");
+    expect(scheduleBlock).toContain("const movedBlockerRoutePoints = routePointsForMovedNodeBlockers");
+    expect(scheduleBlock).toContain("const stationaryBlockerRoutePoints = routePointsForMovedEdgesBlockedByStationaryNodes");
+    expect(scheduleBlock).toContain("const repairRoutePoints = { ...movedBlockerRoutePoints, ...stationaryBlockerRoutePoints };");
+    expect(scheduleBlock).toContain("const repairEdgeIds = new Set(Object.keys(repairRoutePoints));");
+    expect(scheduleBlock).toContain("if (repairEdgeIds.size === 0)");
+    expect(scheduleBlock).toContain("const repairCandidateEdges = latestCandidateEdges.filter((edge) => repairEdgeIds.has(edge.id));");
+    expect(scheduleBlock).toContain("repairCandidateEdges");
+    expect(scheduleBlock).not.toContain("repairedEdges,\n        movedNodeIds,\n        repairCanvasBounds,\n        repairedEdges");
   });
 
   test("reroutes connection lines near original positions after moving a small number of graphics", async () => {
@@ -1521,7 +1670,7 @@ describe("graph inspector panel", () => {
     expect(undoActionBlock).toContain("...snapshot.edges.map((edge) => edge.id)");
   });
 
-  test("keeps multi-node drag movement lightweight while translating connection preview and ghost paths", async () => {
+  test("keeps multi-node drag movement lightweight with a precomputed overlay and deferred route repair", async () => {
     const source = await readAppSource();
     const dragDeltaStart = source.indexOf("const computeNodeDragDelta");
     const dragDeltaEnd = source.indexOf("const applyNodeDragMove", dragDeltaStart);
@@ -1550,11 +1699,21 @@ describe("graph inspector panel", () => {
     const ghostStart = source.indexOf("const dragGhostEdgeRoutes");
     const ghostEnd = source.indexOf("useEffect(() =>", ghostStart);
     const ghostBlock = source.slice(ghostStart, ghostEnd);
+    const overlayStart = source.indexOf("const renderMultiNodeDragOverlay");
+    const overlayEnd = source.indexOf("const groupTransformPreviewNodeFromSnapshot", overlayStart);
+    const overlayBlock = source.slice(overlayStart, overlayEnd);
+    const commitStart = source.indexOf("const commitFastMovedGraphPatches");
+    const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
     const moveSelectionStart = source.indexOf("const moveSelection =");
     const moveSelectionEnd = source.indexOf("const updateSelectedNode", moveSelectionStart);
     const moveSelectionBlock = source.slice(moveSelectionStart, moveSelectionEnd);
 
     expect(source).toContain("function isMultiNodeMoveState");
+    expect(source).toContain("type MultiNodeDragOverlayPreview");
+    expect(source).toContain("overlayPreview?: MultiNodeDragOverlayPreview");
+    expect(source).toContain("const buildMultiNodeDragOverlayPreview");
+    expect(source).toContain("overlayPreview: isMultiNodeMoveState({ nodeIds: dragNodeIds })");
     expect(source).toContain("const ensureDraggingUndoSnapshot");
     expect(source).toContain("const canvasBoundsForMovedNodeDelta");
     expect(dragDeltaBlock).toContain("if (isMultiNodeMoveState(dragState))");
@@ -1585,7 +1744,22 @@ describe("graph inspector panel", () => {
     expect(multiPreviewBlock).not.toContain("preserveDraggedRouteShape");
     expect(multiPreviewBlock).not.toContain("getRouteEndpointNormal");
     expect(ghostBlock).toContain("isMultiNodeMoveState(dragging)");
-    expect(ghostBlock).toContain("return originalMultiNodeDragEdgeRoutes");
+    expect(ghostBlock).toContain("return dragging.overlayPreview?.edgeRoutes ?? []");
+    expect(overlayBlock).toContain("const overlay = dragging.overlayPreview");
+    expect(overlayBlock).toContain("overlay.edgeRoutes.map");
+    expect(overlayBlock).toContain("overlay.bounds");
+    expect(overlayBlock).not.toContain("dragging.affectedEdges.flatMap");
+    expect(overlayBlock).toContain("dragging.nodeIds.map");
+    expect(overlayBlock).toContain("DeviceGlyph");
+    expect(overlayBlock).toContain("node-terminal-layer");
+    expect(overlayBlock).toContain("terminal-dot");
+    expect(overlayBlock).toContain("node-upright-content");
+    expect(overlayBlock).toContain("node-background-image");
+    expect(commitBlock).toContain("if (deferMovedRouteRepair)");
+    expect(commitBlock).toContain("graphStoreApplyPatch(current, {");
+    expect(commitBlock).toContain("edgeUpserts: expectedPatch.edgeUpserts");
+    expect(commitBlock).toContain("window.requestAnimationFrame(() =>");
+    expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(");
   });
 
   test("moves multi-node drag previews through one SVG overlay transform without React state churn", async () => {
@@ -1598,7 +1772,7 @@ describe("graph inspector panel", () => {
     const multiMoveEnd = dragMoveBlock.indexOf("const nextDragState", multiMoveStart);
     const multiMoveBlock = dragMoveBlock.slice(multiMoveStart, multiMoveEnd);
     const overlayStart = source.indexOf("const renderMultiNodeDragOverlay");
-    const overlayEnd = source.indexOf("const renderBoundaryBusInternalConnector", overlayStart);
+    const overlayEnd = source.indexOf("const groupTransformPreviewNodeFromSnapshot", overlayStart);
     const overlayBlock = source.slice(overlayStart, overlayEnd);
     const commitStart = source.indexOf("const commitFastMovedGraphPatches");
     const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
@@ -1617,12 +1791,15 @@ describe("graph inspector panel", () => {
     expect(commitBlock).toContain("const deferMovedRouteRepair = movedNodeIds.length > 1");
     expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(");
     expect(overlayBlock).toContain("className=\"multi-node-drag-overlay\"");
-    expect(overlayBlock).toContain("multiNodeDragDegradedPreview");
-    expect(source).toContain("className=\"multi-node-drag-origin-bounds\"");
-    expect(source).toContain("!(multiNodeDragging && multiNodeDragDegradedPreview) && dragging.nodeIds.map");
+    expect(overlayBlock).not.toContain("multiNodeDragDegradedPreview");
+    expect(source).toContain("className={`diagram-canvas ${connectSource ? \"connect-mode\" : \"\"} ${activeDropReady ? \"connect-drop-ready\" : \"\"} ${panning ? \"panning\" : \"\"} ${multiNodeDragging ? \"multi-node-dragging\" : \"\"}`}");
+    expect(source).toContain("<g className=\"canvas-content\">");
+    expect(source).not.toContain("if (multiNodeDragging && draggingNodeIdSet.has(node.id)) {\n                return null;");
+    expect(source).toContain("{selectedGroupLayoutUnits.map");
+    expect(source).not.toContain("{!multiNodeDragging && selectedGroupLayoutUnits.map");
+    expect(source).toContain("dragging?.historyCaptured && !multiNodeDragging && dragging.nodeIds.map");
     expect(styles).toContain(".multi-node-drag-overlay");
-    expect(styles).toContain(".multi-node-drag-origin-bounds");
-    expect(styles).toContain(".diagram-node.multi-drag-origin");
+    expect(styles).toContain(".diagram-canvas.multi-node-dragging .canvas-content");
   });
 
   test("defers bus terminal synchronization and keeps graph edits out of automatic draft saves", async () => {
@@ -1680,7 +1857,8 @@ describe("graph inspector panel", () => {
     expect(dirtyBlock).not.toContain("for (const edge of edges)");
     expect(commitBlock).toContain("markStoredRouteEdgesDirty(dirtyEdgeIdsForMovedLocalRoutes");
     expect(commitBlock).not.toContain("markStoredRouteEdgesDirty(dirtyEdgeIdsAfterMove");
-    expect(scheduleBlock).toContain("for (const edge of optimizationEdges)");
+    expect(scheduleBlock).toContain("for (const edgeId of dirtyOptimizedEdgeIds)");
+    expect(scheduleBlock).not.toContain("for (const edge of optimizationEdges)");
     expect(scheduleBlock).not.toContain("edgeReferenceDiffIds(expectedEdges, optimized.edges)");
   });
 

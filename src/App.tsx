@@ -96,6 +96,7 @@ import {
   getRouteEndpointNormal,
   getRouteBlockingCandidates,
   getRouteBlockingCandidateNodesFromBoxes,
+  routeIntersectsSpecificNodes,
   getTerminalBusContactGroups,
   getTerminalPoint,
   createModelLayer,
@@ -336,12 +337,14 @@ function transformGroupPoint(drag: GroupTransformDrag, geometry: GroupTransformG
       };
 }
 
-function transformGroupRoutePoints(drag: GroupTransformDrag, point: Point | undefined, routePoints: Point[]) {
+function groupTransformSvgTransform(drag: GroupTransformDrag, point: Point | undefined) {
   if (!point) {
-    return routePoints;
+    return "";
   }
   const geometry = groupTransformGeometry(drag, point);
-  return routePoints.map((routePoint) => transformGroupPoint(drag, geometry, routePoint));
+  return geometry.kind === "rotate"
+    ? `translate(${formatSvgNumber(drag.center.x)} ${formatSvgNumber(drag.center.y)}) rotate(${formatSvgNumber(geometry.degrees)}) translate(${formatSvgNumber(-drag.center.x)} ${formatSvgNumber(-drag.center.y)})`
+    : `translate(${formatSvgNumber(drag.center.x)} ${formatSvgNumber(drag.center.y)}) scale(${formatSvgNumber(geometry.scaleX)} ${formatSvgNumber(geometry.scaleY)}) translate(${formatSvgNumber(-drag.center.x)} ${formatSvgNumber(-drag.center.y)})`;
 }
 
 type Marquee = { start: Point; current: Point } | null;
@@ -466,6 +469,11 @@ type DraggingState = {
   originalRoutePoints: Record<string, Point[]>;
   currentDelta?: Point;
   historyCaptured?: boolean;
+  overlayPreview?: MultiNodeDragOverlayPreview;
+};
+type MultiNodeDragOverlayPreview = {
+  bounds: RenderViewportBounds | null;
+  edgeRoutes: { edgeId: string; path: string }[];
 };
 function isMultiNodeMoveState(dragState: Pick<DraggingState, "nodeIds"> | null | undefined) {
   return (dragState?.nodeIds.length ?? 0) > 1;
@@ -647,8 +655,6 @@ const CANVAS_RESIZE_HANDLE_SIZE = 18;
 const MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES = 5;
 const ORIGINAL_POSITION_REROUTE_PADDING = 64;
 const MOVE_ROUTE_LOCAL_SEARCH_PADDING = 96;
-const MULTI_NODE_DRAG_DEGRADED_NODE_THRESHOLD = 40;
-const MULTI_NODE_DRAG_DEGRADED_EDGE_THRESHOLD = 120;
 const KEYBOARD_MOVE_COMMIT_DELAY_MS = 160;
 const KEYBOARD_MOVE_REPEAT_RATE_PER_SECOND = 30;
 const KEYBOARD_MOVE_FRAME_INTERVAL_MS = 1000 / KEYBOARD_MOVE_REPEAT_RATE_PER_SECOND;
@@ -3492,6 +3498,7 @@ export function App() {
   const latestEdgesRef = useRef<Edge[]>([]);
   const latestGraphStoreRef = useRef<GraphStore | null>(null);
   const deferredMoveOptimizationCancelRef = useRef<(() => void) | null>(null);
+  const deferredMoveRepairFrameRef = useRef<number | null>(null);
   const lastBusTerminalSyncEndpointRevisionRef = useRef(-1);
   const pendingBusTerminalSyncNodeIdsRef = useRef<Set<string>>(new Set());
   const skipNextTopologyStaleRef = useRef(false);
@@ -3887,58 +3894,73 @@ export function App() {
     const edge = edgeById.get(edgeId);
     return edge ? ({ "--connection-color": getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette) } as CSSProperties) : undefined;
   };
+  const buildMultiNodeDragOverlayPreview = (
+    dragNodeIds: string[],
+    affectedEdgesForDrag: Edge[],
+    originalPositionsForDrag: Record<string, Point>,
+    originalRoutePointsForDrag: Record<string, Point[]>
+  ): MultiNodeDragOverlayPreview => {
+    let bounds: RenderViewportBounds | null = null;
+    const includePoint = (point: Point) => {
+      bounds = bounds
+        ? {
+            left: Math.min(bounds.left, point.x),
+            right: Math.max(bounds.right, point.x),
+            top: Math.min(bounds.top, point.y),
+            bottom: Math.max(bounds.bottom, point.y)
+          }
+        : { left: point.x, right: point.x, top: point.y, bottom: point.y };
+    };
+    const includeBox = (box: RenderViewportBounds) => {
+      includePoint({ x: box.left, y: box.top });
+      includePoint({ x: box.right, y: box.bottom });
+    };
+    for (const nodeId of dragNodeIds) {
+      const node = nodeById.get(nodeId);
+      const originalPosition = originalPositionsForDrag[nodeId] ?? node?.position;
+      if (!node || !originalPosition || !visibleNodeIdSet.has(node.id)) {
+        continue;
+      }
+      const halfExtents = nodeTransformedHalfExtents(node, true);
+      includeBox({
+        left: originalPosition.x - halfExtents.halfWidth,
+        right: originalPosition.x + halfExtents.halfWidth,
+        top: originalPosition.y - halfExtents.halfHeight,
+        bottom: originalPosition.y + halfExtents.halfHeight
+      });
+    }
+    const edgeRoutes: MultiNodeDragOverlayPreview["edgeRoutes"] = [];
+    for (const edge of affectedEdgesForDrag) {
+      if (!visibleEdgeIdSet.has(edge.id)) {
+        continue;
+      }
+      const points = originalRoutePointsForDrag[edge.id];
+      if (!points?.length) {
+        continue;
+      }
+      for (const point of points) {
+        includePoint(point);
+      }
+      edgeRoutes.push({ edgeId: edge.id, path: pointsToPreviewPath(points) });
+    }
+    const previewBounds = bounds as RenderViewportBounds | null;
+    return {
+      bounds: previewBounds
+        ? {
+            left: previewBounds.left - 4,
+            right: previewBounds.right + 4,
+            top: previewBounds.top - 4,
+            bottom: previewBounds.bottom + 4
+          }
+        : null,
+      edgeRoutes
+    };
+  };
   const renderMultiNodeDragOverlay = () => {
     if (!dragging || !isMultiNodeMoveState(dragging)) {
       return null;
     }
-    const multiNodeDragDegradedPreview =
-      dragging.nodeIds.length > MULTI_NODE_DRAG_DEGRADED_NODE_THRESHOLD ||
-      dragging.affectedEdges.length > MULTI_NODE_DRAG_DEGRADED_EDGE_THRESHOLD;
-    const overlayNodes = dragging.nodeIds.flatMap((nodeId) => {
-      const node = nodeById.get(nodeId);
-      return node ? [node] : [];
-    });
-    const overlayEdgeRoutes = dragging.affectedEdges.flatMap((edge) => {
-      if (!visibleEdgeIdSet.has(edge.id)) {
-        return [];
-      }
-      const points = dragging.originalRoutePoints[edge.id];
-      return points?.length ? [{ edgeId: edge.id, path: pointsToPreviewPath(points) }] : [];
-    });
-    const overlayBounds = (() => {
-      const boxes: RenderViewportBounds[] = [];
-      for (const node of overlayNodes) {
-        const originalPosition = dragging.originalPositions[node.id] ?? node.position;
-        const halfDiagonal = Math.hypot(node.size.width * getNodeScaleX(node), node.size.height * getNodeScaleY(node)) / 2;
-        boxes.push({
-          left: originalPosition.x - halfDiagonal,
-          right: originalPosition.x + halfDiagonal,
-          top: originalPosition.y - halfDiagonal,
-          bottom: originalPosition.y + halfDiagonal
-        });
-      }
-      for (const route of overlayEdgeRoutes) {
-        const points = dragging.originalRoutePoints[route.edgeId] ?? [];
-        if (points.length === 0) {
-          continue;
-        }
-        boxes.push({
-          left: Math.min(...points.map((point) => point.x)),
-          right: Math.max(...points.map((point) => point.x)),
-          top: Math.min(...points.map((point) => point.y)),
-          bottom: Math.max(...points.map((point) => point.y))
-        });
-      }
-      if (boxes.length === 0) {
-        return null;
-      }
-      return {
-        left: Math.min(...boxes.map((box) => box.left)),
-        right: Math.max(...boxes.map((box) => box.right)),
-        top: Math.min(...boxes.map((box) => box.top)),
-        bottom: Math.max(...boxes.map((box) => box.bottom))
-      };
-    })();
+    const overlay = dragging.overlayPreview ?? { bounds: null, edgeRoutes: [] };
     return (
       <g
         ref={(element) => {
@@ -3950,25 +3972,22 @@ export function App() {
         className="multi-node-drag-overlay"
         transform={`translate(${Math.round(multiNodeDragOverlayDeltaRef.current.x)} ${Math.round(multiNodeDragOverlayDeltaRef.current.y)})`}
       >
-        {overlayEdgeRoutes.map((route) => (
+        {overlay.edgeRoutes.map((route) => (
           <path key={`multi-drag-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
         ))}
-        {multiNodeDragDegradedPreview && overlayBounds && (
-          <rect
-            className="multi-node-drag-bounds-preview"
-            x={overlayBounds.left}
-            y={overlayBounds.top}
-            width={Math.max(1, overlayBounds.right - overlayBounds.left)}
-            height={Math.max(1, overlayBounds.bottom - overlayBounds.top)}
-          />
-        )}
-        {!multiNodeDragDegradedPreview && overlayNodes.map((node) => {
-          const originalPosition = dragging.originalPositions[node.id] ?? node.position;
-          const nodeIsBus = isBusNode(node);
+        {dragging.nodeIds.map((nodeId) => {
+          const node = nodeById.get(nodeId);
+          const originalPosition = dragging.originalPositions[nodeId] ?? node?.position;
+          if (!node || !originalPosition || !visibleNodeIdSet.has(node.id)) {
+            return null;
+          }
+          const imageHref = nodeImage(node);
+          const foregroundImageHref = nodeForegroundImage(node);
           const nodeScaleX = getNodeScaleX(node);
           const nodeScaleY = getNodeScaleY(node);
           const inverseScaleX = nodeScaleX === 0 ? 1 : 1 / nodeScaleX;
           const inverseScaleY = nodeScaleY === 0 ? 1 : 1 / nodeScaleY;
+          const nodeIsBus = isBusNode(node);
           const terminalControlTransform = (x: number, y: number) => `translate(${x} ${y}) scale(${inverseScaleX} ${inverseScaleY})`;
           const terminalStubDashArray = svgStrokeDashArray(node.params.strokeStyle);
           return (
@@ -3977,10 +3996,72 @@ export function App() {
               className={`multi-node-drag-preview-node ${nodeIsBus ? "bus-node" : ""}`}
               transform={`translate(${originalPosition.x} ${originalPosition.y})`}
             >
+              <title>{node.name}</title>
+              {imageHref && !nodeIsBus && (
+                <clipPath id={`multi-drag-preview-clip-${node.id}`}>
+                  <rect
+                    x={-node.size.width / 2}
+                    y={-node.size.height / 2}
+                    width={node.size.width}
+                    height={node.size.height}
+                    rx="8"
+                  />
+                </clipPath>
+              )}
               <g className="node-geometry" transform={nodeGeometryTransform(node)}>
                 <DeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
                 <DeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
               </g>
+              {!nodeIsBus && (imageHref || foregroundImageHref) && (
+                <g className="node-upright-content" transform={nodeUprightScaleTransform(node)}>
+                  {imageHref && isStaticNode(node) && (
+                    <image
+                      href={imageHref}
+                      x={-node.size.width / 2}
+                      y={-node.size.height / 2}
+                      width={node.size.width}
+                      height={node.size.height}
+                      preserveAspectRatio="xMidYMid slice"
+                      clipPath={`url(#multi-drag-preview-clip-${node.id})`}
+                      className="node-background-image"
+                    />
+                  )}
+                  {imageHref && !isStaticNode(node) && (
+                    <rect
+                      x={-node.size.width / 2}
+                      y={-node.size.height / 2}
+                      width={node.size.width}
+                      height={node.size.height}
+                      rx="8"
+                      className="node-image-cover"
+                    />
+                  )}
+                  {imageHref && !isStaticNode(node) && (
+                    <image
+                      href={imageHref}
+                      x={-node.size.width / 2}
+                      y={-node.size.height / 2}
+                      width={node.size.width}
+                      height={node.size.height}
+                      preserveAspectRatio="xMidYMid slice"
+                      clipPath={`url(#multi-drag-preview-clip-${node.id})`}
+                      className="node-background-image"
+                    />
+                  )}
+                  {foregroundImageHref && (
+                    <image
+                      href={foregroundImageHref}
+                      x={-node.size.width / 2}
+                      y={-node.size.height / 2}
+                      width={node.size.width}
+                      height={node.size.height}
+                      preserveAspectRatio="xMidYMid slice"
+                      clipPath={`url(#multi-drag-preview-clip-${node.id})`}
+                      className="node-foreground-image"
+                    />
+                  )}
+                </g>
+              )}
               {!nodeIsBus && !isStaticNode(node) && (
                 <g className="node-terminal-layer" transform={nodeGeometryTransform(node)}>
                   {node.terminals.map((terminal) => {
@@ -4016,6 +4097,175 @@ export function App() {
             </g>
           );
         })}
+        {overlay.bounds && (
+          <rect
+            className="multi-node-drag-bounds-preview"
+            x={overlay.bounds.left}
+            y={overlay.bounds.top}
+            width={Math.max(1, overlay.bounds.right - overlay.bounds.left)}
+            height={Math.max(1, overlay.bounds.bottom - overlay.bounds.top)}
+          />
+        )}
+      </g>
+    );
+  };
+  const groupTransformPreviewNodeFromSnapshot = (node: ModelNode) => {
+    if (!transformDrag || !isGroupTransformDrag(transformDrag)) {
+      return node;
+    }
+    const snapshot = transformDrag.originalNodes[node.id];
+    return snapshot
+      ? {
+          ...node,
+          position: { ...snapshot.position },
+          rotation: snapshot.rotation,
+          scale: snapshot.scale,
+          scaleX: snapshot.scaleX,
+          scaleY: snapshot.scaleY
+        }
+      : node;
+  };
+  const renderGroupTransformPhotoPreview = () => {
+    if (!transformDrag || !isGroupTransformDrag(transformDrag) || !groupTransformPreviewTransform) {
+      return null;
+    }
+    const bounds = transformDrag.bounds;
+    return (
+      <g className="group-transform-photo-preview">
+        {groupTransformPreviewEdgeRoutes.map((route) => (
+          <path key={`group-transform-photo-edge-${route.edgeId}`} d={route.path} className="connection-line group-transform-preview" style={connectionLineStyle(route.edgeId)} />
+        ))}
+        <g className="group-transform-photo-content" transform={groupTransformPreviewTransform}>
+          {transformDrag.nodeIds.map((nodeId) => {
+            const originalNode = nodeById.get(nodeId);
+            if (!originalNode || !visibleNodeIdSet.has(originalNode.id)) {
+              return null;
+            }
+            const node = groupTransformPreviewNodeFromSnapshot(originalNode);
+            const imageHref = nodeImage(node);
+            const foregroundImageHref = nodeForegroundImage(node);
+            const nodeScaleX = getNodeScaleX(node);
+            const nodeScaleY = getNodeScaleY(node);
+            const inverseScaleX = nodeScaleX === 0 ? 1 : 1 / nodeScaleX;
+            const inverseScaleY = nodeScaleY === 0 ? 1 : 1 / nodeScaleY;
+            const nodeIsBus = isBusNode(node);
+            const terminalControlTransform = (x: number, y: number) => `translate(${x} ${y}) scale(${inverseScaleX} ${inverseScaleY})`;
+            const terminalStubDashArray = svgStrokeDashArray(node.params.strokeStyle);
+            return (
+              <g
+                key={`group-transform-photo-node-${node.id}`}
+                className={`group-transform-photo-node ${nodeIsBus ? "bus-node" : ""}`}
+                transform={`translate(${node.position.x} ${node.position.y})`}
+              >
+                <title>{node.name}</title>
+                {imageHref && !nodeIsBus && (
+                  <clipPath id={`group-transform-preview-clip-${node.id}`}>
+                    <rect
+                      x={-node.size.width / 2}
+                      y={-node.size.height / 2}
+                      width={node.size.width}
+                      height={node.size.height}
+                      rx="8"
+                    />
+                  </clipPath>
+                )}
+                <g className="node-geometry" transform={nodeGeometryTransform(node)}>
+                  <DeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                  <DeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                </g>
+                {!nodeIsBus && (imageHref || foregroundImageHref) && (
+                  <g className="node-upright-content" transform={nodeUprightScaleTransform(node)}>
+                    {imageHref && isStaticNode(node) && (
+                      <image
+                        href={imageHref}
+                        x={-node.size.width / 2}
+                        y={-node.size.height / 2}
+                        width={node.size.width}
+                        height={node.size.height}
+                        preserveAspectRatio="xMidYMid slice"
+                        clipPath={`url(#group-transform-preview-clip-${node.id})`}
+                        className="node-background-image"
+                      />
+                    )}
+                    {imageHref && !isStaticNode(node) && (
+                      <rect
+                        x={-node.size.width / 2}
+                        y={-node.size.height / 2}
+                        width={node.size.width}
+                        height={node.size.height}
+                        rx="8"
+                        className="node-image-cover"
+                      />
+                    )}
+                    {imageHref && !isStaticNode(node) && (
+                      <image
+                        href={imageHref}
+                        x={-node.size.width / 2}
+                        y={-node.size.height / 2}
+                        width={node.size.width}
+                        height={node.size.height}
+                        preserveAspectRatio="xMidYMid slice"
+                        clipPath={`url(#group-transform-preview-clip-${node.id})`}
+                        className="node-background-image"
+                      />
+                    )}
+                    {foregroundImageHref && (
+                      <image
+                        href={foregroundImageHref}
+                        x={-node.size.width / 2}
+                        y={-node.size.height / 2}
+                        width={node.size.width}
+                        height={node.size.height}
+                        preserveAspectRatio="xMidYMid slice"
+                        clipPath={`url(#group-transform-preview-clip-${node.id})`}
+                        className="node-foreground-image"
+                      />
+                    )}
+                  </g>
+                )}
+                {!nodeIsBus && !isStaticNode(node) && (
+                  <g className="node-terminal-layer" transform={nodeGeometryTransform(node)}>
+                    {node.terminals.map((terminal) => {
+                      const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
+                      const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind);
+                      const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
+                      return (
+                        <g key={terminal.id} transform={terminalControlTransform(renderPoint.x, renderPoint.y)}>
+                          <line
+                            className={`terminal-stub ${terminal.type}`}
+                            strokeDasharray={terminalStubDashArray}
+                            style={{
+                              stroke: terminalDisplayColor,
+                              strokeWidth: terminalStubStrokeWidth(node, terminal)
+                            }}
+                            x1={stub.from.x}
+                            y1={stub.from.y}
+                            x2={stub.to.x}
+                            y2={stub.to.y}
+                          />
+                          <circle
+                            className={`terminal-dot ${terminal.type}`}
+                            style={{ "--terminal-color": terminalDisplayColor } as CSSProperties}
+                            cx="0"
+                            cy="0"
+                            r={6}
+                          />
+                        </g>
+                      );
+                    })}
+                  </g>
+                )}
+              </g>
+            );
+          })}
+          <rect
+            className="group-transform-photo-outline"
+            x={bounds.left}
+            y={bounds.top}
+            width={Math.max(1, bounds.right - bounds.left)}
+            height={Math.max(1, bounds.bottom - bounds.top)}
+          />
+        </g>
       </g>
     );
   };
@@ -4340,19 +4590,6 @@ export function App() {
     activeSelectedNodeIds.length === 1 &&
     activeSelectedEdgeIds.length === 0 &&
     selectedGroupMemberNodeIdSet.has(activeSelectedNodeIds[0]);
-  const selectedLayoutUnits = useMemo(
-    () => buildCanvasLayoutUnits(activeLayerGroups, activeLayerNodes, activeSelectedNodeIds, activeSelectedEdgeIds, activeLayerEdges),
-    [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds]
-  );
-  const selectedGroupLayoutUnits = useMemo(
-    () => selectedLayoutUnits.filter((unit) => unit.kind === "group"),
-    [selectedLayoutUnits]
-  );
-  const selectedTransformGroupUnit =
-    canvasSelectionScope === "group" && selectedLayoutUnits.length === 1 && selectedGroupLayoutUnits.length === 1
-      ? selectedGroupLayoutUnits[0]
-      : null;
-  const selectedLayoutUnitCount = selectedLayoutUnits.length;
   const canUngroupSelectedGraphics = useMemo(
     () => canDissolveSingleCanvasGroupSelection(activeLayerGroups, activeSelectedNodeIds, activeSelectedEdgeIds),
     [activeLayerGroups, activeSelectedEdgeIds, activeSelectedNodeIds]
@@ -4847,6 +5084,19 @@ export function App() {
     })(),
     [activeLayerEdgeIdSet, activeLayerEdges, routedEdgeById, routedEdgeIndexById, routedEdges, visibleEdges]
   );
+  const selectedLayoutUnits = useMemo(
+    () => buildCanvasLayoutUnits(activeLayerGroups, activeLayerNodes, activeSelectedNodeIds, activeSelectedEdgeIds, activeLayerEdges, routedEdges),
+    [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, routedEdges]
+  );
+  const selectedGroupLayoutUnits = useMemo(
+    () => selectedLayoutUnits.filter((unit) => unit.kind === "group"),
+    [selectedLayoutUnits]
+  );
+  const selectedTransformGroupUnit =
+    canvasSelectionScope === "group" && selectedLayoutUnits.length === 1 && selectedGroupLayoutUnits.length === 1
+      ? selectedGroupLayoutUnits[0]
+      : null;
+  const selectedLayoutUnitCount = selectedLayoutUnits.length;
   const markRouteEdgesDirty = (edgeIds: Iterable<string | undefined>) => {
     const next = new Set(pendingRouteEdgeIdsRef.current);
     for (const edgeId of edgeIds) {
@@ -4985,7 +5235,8 @@ export function App() {
   const rebuildEdgesAfterNodeGeometryChange = (
     nextNodes: ModelNode[],
     changedNodeIds: Iterable<string>,
-    currentEdges: Edge[] = edges
+    currentEdges: Edge[] = edges,
+    preservedEdgeIds = new Set<string>()
   ) => {
     const changedIds = Array.from(new Set(changedNodeIds));
     if (changedIds.length === 0) {
@@ -4994,12 +5245,15 @@ export function App() {
     const localEdges = currentEdges === edges
       ? edgeListForNodeIds(changedIds)
       : currentEdges.filter((edge) => changedIds.includes(edge.sourceId) || changedIds.includes(edge.targetId));
-    if (localEdges.length === 0) {
+    const rerouteEdges = preservedEdgeIds.size > 0
+      ? localEdges.filter((edge) => !preservedEdgeIds.has(edge.id))
+      : localEdges;
+    if (rerouteEdges.length === 0) {
       return currentEdges;
     }
-    const routingNodes = routingNodesForConnectionEdges(localEdges, nextNodes, changedIds);
-    const nextLocalEdges = rebuildConnectionRoutesForNodes(routingNodes, localEdges, changedIds, canvasBounds, localEdges);
-    const dirtyEdgeIds = dirtyEdgeIdsAfterMove(localEdges, nextLocalEdges, changedIds);
+    const routingNodes = routingNodesForConnectionEdges(rerouteEdges, nextNodes, changedIds);
+    const nextLocalEdges = rebuildConnectionRoutesForNodes(routingNodes, rerouteEdges, changedIds, canvasBounds, rerouteEdges);
+    const dirtyEdgeIds = dirtyEdgeIdsAfterMove(rerouteEdges, nextLocalEdges, changedIds);
     markRouteEdgesDirty(dirtyEdgeIds);
     markStoredRouteEdgesDirty(dirtyEdgeIds);
     if (dirtyEdgeIds.size === 0) {
@@ -5133,59 +5387,10 @@ export function App() {
   );
   const draggingDelta = dragging?.currentDelta;
   const multiNodeDragging = Boolean(dragging && isMultiNodeMoveState(dragging));
-  const multiNodeDragDegradedPreview = Boolean(
-    dragging &&
-      isMultiNodeMoveState(dragging) &&
-      (dragging.nodeIds.length > MULTI_NODE_DRAG_DEGRADED_NODE_THRESHOLD ||
-        dragging.affectedEdges.length > MULTI_NODE_DRAG_DEGRADED_EDGE_THRESHOLD)
-  );
   const dragAffectedEdgeIdSet = useMemo(
     () => new Set((dragging?.affectedEdges ?? []).map((edge) => edge.id)),
     [dragging?.affectedEdges]
   );
-  const multiNodeDragOriginalBounds = useMemo<RenderViewportBounds | null>(() => {
-    if (!dragging || !isMultiNodeMoveState(dragging) || !multiNodeDragDegradedPreview) {
-      return null;
-    }
-    let bounds: RenderViewportBounds | null = null;
-    const includePoint = (point: Point) => {
-      bounds = bounds
-        ? {
-            left: Math.min(bounds.left, point.x),
-            right: Math.max(bounds.right, point.x),
-            top: Math.min(bounds.top, point.y),
-            bottom: Math.max(bounds.bottom, point.y)
-          }
-        : { left: point.x, right: point.x, top: point.y, bottom: point.y };
-    };
-    const includeBox = (box: RenderViewportBounds) => {
-      includePoint({ x: box.left, y: box.top });
-      includePoint({ x: box.right, y: box.bottom });
-    };
-    for (const nodeId of dragging.nodeIds) {
-      const node = nodeById.get(nodeId);
-      const originalPosition = dragging.originalPositions[nodeId] ?? node?.position;
-      if (!node || !originalPosition) {
-        continue;
-      }
-      const halfExtents = nodeTransformedHalfExtents(node, true);
-      includeBox({
-        left: originalPosition.x - halfExtents.halfWidth,
-        right: originalPosition.x + halfExtents.halfWidth,
-        top: originalPosition.y - halfExtents.halfHeight,
-        bottom: originalPosition.y + halfExtents.halfHeight
-      });
-    }
-    for (const edge of dragging.affectedEdges) {
-      if (!visibleEdgeIdSet.has(edge.id)) {
-        continue;
-      }
-      for (const point of dragging.originalRoutePoints[edge.id] ?? []) {
-        includePoint(point);
-      }
-    }
-    return bounds;
-  }, [dragging, multiNodeDragDegradedPreview, nodeById, visibleEdgeIdSet]);
   const draggedBusIds = useMemo(
     () => new Set((dragging?.nodeIds ?? []).filter((nodeId) => {
       const node = nodeById.get(nodeId);
@@ -5369,38 +5574,31 @@ export function App() {
   const activeDropHintStyle = rewiring?.dropTargetPoint
     ? connectionLineStyle(rewiring.edgeId)
     : nodeTerminalSnapHintStyle;
-  const originalMultiNodeDragEdgeRoutes = (dragState: DraggingState) =>
-    dragState.affectedEdges.flatMap((edge) => {
-      if (!visibleEdgeIdSet.has(edge.id)) {
-        return [];
-      }
-      const points = dragState.originalRoutePoints[edge.id];
-      return points?.length ? [{ edgeId: edge.id, path: pointsToPreviewPath(points) }] : [];
-    });
-  const translatedMultiNodeDragEdgeRoutes = (dragState: DraggingState, delta: Point) =>
-    dragState.affectedEdges.flatMap((edge) => {
-      if (!visibleEdgeIdSet.has(edge.id)) {
-        return [];
-      }
-      const points = dragState.originalRoutePoints[edge.id];
-      return points?.length
-        ? [{
-            edgeId: edge.id,
-            path: pointsToPreviewPath(points.map((point) => ({ x: point.x + delta.x, y: point.y + delta.y })))
-          }]
-        : [];
-    });
+  const groupTransformPreviewTransform = useMemo(
+    () => transformDrag && isGroupTransformDrag(transformDrag) ? groupTransformSvgTransform(transformDrag, transformDrag.previewPoint) : "",
+    [transformDrag]
+  );
+  const groupTransformPreviewGroupId =
+    transformDrag && isGroupTransformDrag(transformDrag) && groupTransformPreviewTransform
+      ? `group:${transformDrag.groupId}`
+      : "";
+  const groupTransformPreviewNodeIdSet = useMemo(
+    () => new Set(transformDrag && isGroupTransformDrag(transformDrag) && groupTransformPreviewTransform ? transformDrag.nodeIds : []),
+    [groupTransformPreviewTransform, transformDrag]
+  );
   const groupTransformPreviewEdgeRoutes = useMemo(() => {
     if (!transformDrag || !isGroupTransformDrag(transformDrag) || !transformDrag.previewPoint) {
       return [];
     }
+    const geometry = groupTransformGeometry(transformDrag, transformDrag.previewPoint);
     return transformDrag.originalEdgeRoutes.flatMap((route) => {
       if (!visibleEdgeIdSet.has(route.edgeId)) {
         return [];
       }
+      const points = route.points.map((routePoint) => transformGroupPoint(transformDrag, geometry, routePoint));
       return [{
         edgeId: route.edgeId,
-        path: pointsToPreviewPath(transformGroupRoutePoints(transformDrag, transformDrag.previewPoint, route.points))
+        path: pointsToPreviewPath(points)
       }];
     });
   }, [transformDrag, visibleEdgeIdSet]);
@@ -5501,7 +5699,7 @@ export function App() {
       return [];
     }
     if (isMultiNodeMoveState(dragging)) {
-      return originalMultiNodeDragEdgeRoutes(dragging);
+      return dragging.overlayPreview?.edgeRoutes ?? [];
     }
     const draggedEdgeIds = new Set(dragging.edgeIds);
     return dragging.affectedEdges.flatMap((edge) => {
@@ -6213,10 +6411,11 @@ export function App() {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
         if (isCanvasShortcutTarget) {
           event.preventDefault();
+          const selectableEdgeIds = activeLayerEdges.map((edge) => edge.id);
           setCanvasSelectionScope("group");
           setSelectedNodeIds(activeLayerNodes.map((node) => node.id));
-          setSelectedEdgeId("");
-          setSelectedEdgeIds([]);
+          setSelectedEdgeIds(selectableEdgeIds);
+          setSelectedEdgeId(selectableEdgeIds[0] ?? "");
           setConnectSource(null);
           resetConnectPreviewState();
           setRewiring(null);
@@ -6284,7 +6483,7 @@ export function App() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, canvasBounds, canvasClipboard, canvasSelectionScope, deviceIndexCounters, displaySelectedEdgeIds, displaySelectedNodeIds, edges, hasUnsavedChanges, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors, viewBox]);
+  }, [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, canvasBounds, canvasClipboard, canvasSelectionScope, deviceIndexCounters, displaySelectedEdgeIds, displaySelectedNodeIds, edges, hasUnsavedChanges, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, topologyErrors, viewBox]);
 
   useEffect(() => {
     if (leftPanelTab !== "projects") {
@@ -6470,7 +6669,7 @@ export function App() {
   };
 
   const copySelection = () => {
-    setCanvasClipboard(buildCanvasClipboard(
+    const clipboard = buildCanvasClipboard(
       visibleNodes,
       visibleEdges,
       routedEdges,
@@ -6478,8 +6677,9 @@ export function App() {
       activeSelectedEdgeIds,
       activeLayerGroups,
       { expandGroups: canvasSelectionScope === "group" }
-    ));
-    writeOperationLog(`复制 ${activeSelectedNodeIds.length} 个图元、${activeSelectedEdgeIds.length} 条联络线`);
+    );
+    setCanvasClipboard(clipboard);
+    writeOperationLog(`复制 ${clipboard.nodes.length} 个图元、${clipboard.edges.length} 条联络线`);
   };
 
   const cutSelection = () => {
@@ -6697,6 +6897,26 @@ export function App() {
       x: endpointDeltas.reduce((sum, delta) => sum + delta.x, 0) / endpointDeltas.length,
       y: endpointDeltas.reduce((sum, delta) => sum + delta.y, 0) / endpointDeltas.length
     };
+  };
+
+  const routePreserveEdgeIdsForMovedNodes = (
+    candidateEdges: Edge[],
+    movedNodeIds: Iterable<string>,
+    requestedEdgeIds: Iterable<string> = []
+  ) => {
+    const movedIds = new Set(movedNodeIds);
+    const candidateEdgeById = new Map(candidateEdges.map((edge) => [edge.id, edge]));
+    const preserveIds = new Set<string>();
+    const addIfBothEndpointsMove = (edge: Edge | undefined) => {
+      if (edge && movedIds.has(edge.sourceId) && movedIds.has(edge.targetId)) {
+        preserveIds.add(edge.id);
+      }
+    };
+    candidateEdges.forEach(addIfBothEndpointsMove);
+    for (const edgeId of requestedEdgeIds) {
+      addIfBothEndpointsMove(candidateEdgeById.get(edgeId) ?? edgeById.get(edgeId));
+    }
+    return preserveIds;
   };
 
   const snapshotEdgePoints = (sourceEdges = edges) =>
@@ -6918,6 +7138,49 @@ export function App() {
         continue;
       }
       if (getRouteBlockingCandidateNodesFromBoxes(route.points, edge, movedCandidates).length === 0) {
+        continue;
+      }
+      if (nextRoutePoints === baseRoutePoints) {
+        nextRoutePoints = { ...baseRoutePoints };
+      }
+      nextRoutePoints[edge.id] = route.points;
+    }
+    return nextRoutePoints;
+  };
+
+  const routePointsForMovedEdgesBlockedByStationaryNodes = (
+    nextNodes: ModelNode[],
+    candidateEdges: Edge[],
+    movedNodeIds: Iterable<string>,
+    baseRoutePoints: DraggingState["originalRoutePoints"],
+    bounds: CanvasBounds = canvasBounds
+  ): DraggingState["originalRoutePoints"] => {
+    const movedIds = new Set(movedNodeIds);
+    if (movedIds.size === 0 || candidateEdges.length === 0) {
+      return baseRoutePoints;
+    }
+    const movedCandidateEdges = candidateEdges.filter((edge) => movedIds.has(edge.sourceId) || movedIds.has(edge.targetId));
+    if (movedCandidateEdges.length === 0) {
+      return baseRoutePoints;
+    }
+    const routingNodes = routingNodesForConnectionEdges(movedCandidateEdges, nextNodes, movedIds);
+    const stationaryNodes = routingNodes.filter((node) => !movedIds.has(node.id));
+    if (stationaryNodes.length === 0) {
+      return baseRoutePoints;
+    }
+    const stationaryCandidates = getRouteBlockingCandidates(stationaryNodes);
+    const routeByEdgeId = new Map(routeEdgesForStoredRendering(routingNodes, movedCandidateEdges, bounds).map((route) => [route.edgeId, route]));
+    let nextRoutePoints = baseRoutePoints;
+    for (const edge of movedCandidateEdges) {
+      if (baseRoutePoints[edge.id]) {
+        continue;
+      }
+      const route = routeByEdgeId.get(edge.id);
+      if (!route) {
+        continue;
+      }
+      const blockers = getRouteBlockingCandidateNodesFromBoxes(route.points, edge, stationaryCandidates);
+      if (blockers.length === 0 || !routeIntersectsSpecificNodes(route.points, edge, blockers)) {
         continue;
       }
       if (nextRoutePoints === baseRoutePoints) {
@@ -7339,10 +7602,7 @@ export function App() {
       if (optimized.edges === expectedEdges) {
         return;
       }
-      const dirtyOptimizedEdgeIds = new Set<string>(optimizationEdges.map((edge) => edge.id));
-      for (const edge of optimizationEdges) {
-        dirtyOptimizedEdgeIds.add(edge.id);
-      }
+      const dirtyOptimizedEdgeIds = new Set<string>([...blockedEdgeIds, ...forcedRerouteEdgeIds]);
       for (const edgeId of Object.keys(optimized.routePoints)) {
         dirtyOptimizedEdgeIds.add(edgeId);
       }
@@ -7398,37 +7658,46 @@ export function App() {
         [],
         CANVAS_AUTO_EXPAND_PADDING
       );
-      let repairedEdges = latestCandidateEdges;
-      let routingNodes = routingNodesForConnectionEdges(repairedEdges, latestNodes, movedNodeIds);
-      repairedEdges = rebuildExternalConnectionRoutesForMovedNodes(
-        routingNodes,
-        repairedEdges,
+      const movedBlockerRoutePoints = routePointsForMovedNodeBlockers(latestNodes, latestCandidateEdges, movedNodeIds, {});
+      const stationaryBlockerRoutePoints = routePointsForMovedEdgesBlockedByStationaryNodes(
+        latestNodes,
+        latestCandidateEdges,
         movedNodeIds,
-        repairCanvasBounds,
-        repairedEdges
+        movedBlockerRoutePoints,
+        repairCanvasBounds
       );
-      routingNodes = routingNodesForConnectionEdges(repairedEdges, latestNodes, movedNodeIds);
-      repairedEdges = rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes(
-        routingNodes,
-        repairedEdges,
-        movedNodeIds,
-        repairCanvasBounds,
-        repairedEdges
-      );
-      const repairDirtyEdgeIds = edgeReferenceDiffIds(latestCandidateEdges, repairedEdges);
-      if (repairDirtyEdgeIds.size === 0) {
+      const repairRoutePoints = { ...movedBlockerRoutePoints, ...stationaryBlockerRoutePoints };
+      const repairEdgeIds = new Set(Object.keys(repairRoutePoints));
+      if (repairEdgeIds.size === 0) {
         return;
       }
-      const repairedById = new Map(repairedEdges.map((edge) => [edge.id, edge]));
-      const edgeUpdates = Array.from(repairDirtyEdgeIds).flatMap((edgeId) => {
-        const edge = repairedById.get(edgeId);
+      const repairCandidateEdges = latestCandidateEdges.filter((edge) => repairEdgeIds.has(edge.id));
+      const optimized = optimizeMovedNodeEdgeRoutes(
+        latestNodes,
+        latestStore.edges,
+        movedNodeIds,
+        {},
+        new Set<string>(),
+        repairRoutePoints,
+        repairEdgeIds,
+        repairCandidateEdges
+      );
+      if (optimized.edges === latestStore.edges) {
+        return;
+      }
+      const edgeUpdates = Array.from(repairEdgeIds).flatMap((edgeId) => {
+        const edgeIndex = latestStore.edgeIndexById.get(edgeId);
+        const edge = edgeIndex === undefined ? undefined : optimized.edges[edgeIndex];
+        if (edgeIndex !== undefined && latestStore.edges[edgeIndex] === edge) {
+          return [];
+        }
         return edge ? [edge] : [];
       });
       if (edgeUpdates.length === 0) {
         return;
       }
-      markRouteEdgesDirty(repairDirtyEdgeIds);
-      markStoredRouteEdgesDirty(repairDirtyEdgeIds);
+      markRouteEdgesDirty(repairEdgeIds);
+      markStoredRouteEdgesDirty(repairEdgeIds);
       markBusTerminalSyncDirtyForEdges(edgeUpdates);
       setGraphStore((current) => graphStorePatchEdges(current, edgeUpdates));
     }, 60, 1500);
@@ -7448,35 +7717,85 @@ export function App() {
     markStoredRouteEdgesDirty(dirtyEdgeIdsForMovedLocalRoutes(selectedEdgeIds, originalRoutePoints));
     let committedCandidateEdges = candidateEdges;
     const deferMovedRouteRepair = movedNodeIds.length > 1;
-    const commitCanvasBounds = canvasBoundsForGraphContent(canvasBounds, nextNodes, edges, [], CANVAS_AUTO_EXPAND_PADDING);
-    if (movedNodeIds.length > 0 && !deferMovedRouteRepair) {
-      let routingNodes = routingNodesForConnectionEdges(committedCandidateEdges, nextNodes, movedNodeIds);
-      const rebuiltEdges = rebuildExternalConnectionRoutesForMovedNodes(
-        routingNodes,
-        committedCandidateEdges,
-        movedNodeIds,
-        commitCanvasBounds,
-        committedCandidateEdges
+    if (deferMovedRouteRepair) {
+      const edgePatch = edgePatchFromCandidateEdges(previousCandidateEdges, committedCandidateEdges);
+      const expectedPatch = { nodeUpdates: movedNodeUpdates, edgeUpserts: edgePatch.edgeUpserts, edgeDeleteIds: edgePatch.edgeDeleteIds };
+      const edgePatchDirtyIds = [
+        ...edgePatch.edgeUpserts.map((edge) => edge.id),
+        ...edgePatch.edgeDeleteIds
+      ];
+      markRouteEdgesDirty(edgePatchDirtyIds);
+      markStoredRouteEdgesDirty(edgePatchDirtyIds);
+      markBusTerminalSyncDirty(
+        busTerminalSyncNodeIdsForGraphPatch(
+          movedNodeIds,
+          previousCandidateEdges,
+          edgePatch.edgeUpserts,
+          edgePatch.edgeDeleteIds
+        )
       );
-      if (rebuiltEdges !== committedCandidateEdges) {
-        const rebuiltDirtyEdgeIds = edgeReferenceDiffIds(committedCandidateEdges, rebuiltEdges);
-        markRouteEdgesDirty(rebuiltDirtyEdgeIds);
-        markStoredRouteEdgesDirty(rebuiltDirtyEdgeIds);
-        committedCandidateEdges = rebuiltEdges;
+      setGraphStore((current) =>
+        graphStoreApplyPatch(current, {
+          nodeUpdates: expectedPatch.nodeUpdates,
+          edgeUpserts: expectedPatch.edgeUpserts,
+          edgeDeleteIds: expectedPatch.edgeDeleteIds
+        })
+      );
+      if (deferredMoveRepairFrameRef.current !== null) {
+        window.cancelAnimationFrame(deferredMoveRepairFrameRef.current);
+        deferredMoveRepairFrameRef.current = null;
       }
-      routingNodes = routingNodesForConnectionEdges(committedCandidateEdges, nextNodes, movedNodeIds);
-      const rebuiltInternalEdges = rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes(
-        routingNodes,
+      deferredMoveOptimizationCancelRef.current?.();
+      deferredMoveOptimizationCancelRef.current = null;
+      if (candidateEdges.length > 0) {
+        deferredMoveRepairFrameRef.current = window.requestAnimationFrame(() => {
+          deferredMoveRepairFrameRef.current = null;
+          scheduleDeferredMovedConnectionRepair(movedNodeIds, committedCandidateEdges, expectedPatch);
+        });
+      }
+      return;
+    }
+    const commitCanvasBounds = canvasBoundsForGraphContent(canvasBounds, nextNodes, edges, [], CANVAS_AUTO_EXPAND_PADDING);
+    if (movedNodeIds.length > 0) {
+      const blockedConnectedRoutePoints = routePointsForMovedEdgesBlockedByStationaryNodes(
+        nextNodes,
         committedCandidateEdges,
         movedNodeIds,
-        commitCanvasBounds,
-        committedCandidateEdges
+        {},
+        commitCanvasBounds
       );
-      if (rebuiltInternalEdges !== committedCandidateEdges) {
-        const rebuiltDirtyEdgeIds = edgeReferenceDiffIds(committedCandidateEdges, rebuiltInternalEdges);
-        markRouteEdgesDirty(rebuiltDirtyEdgeIds);
-        markStoredRouteEdgesDirty(rebuiltDirtyEdgeIds);
-        committedCandidateEdges = rebuiltInternalEdges;
+      const blockedConnectedEdgeIds = new Set(Object.keys(blockedConnectedRoutePoints));
+      if (blockedConnectedEdgeIds.size > 0) {
+        let blockedCandidateEdges = committedCandidateEdges.filter((edge) => blockedConnectedEdgeIds.has(edge.id));
+        let routingNodes = routingNodesForConnectionEdges(blockedCandidateEdges, nextNodes, movedNodeIds);
+        const rebuiltEdges = rebuildExternalConnectionRoutesForMovedNodes(
+          routingNodes,
+          committedCandidateEdges,
+          movedNodeIds,
+          commitCanvasBounds,
+          blockedCandidateEdges
+        );
+        if (rebuiltEdges !== committedCandidateEdges) {
+          const rebuiltDirtyEdgeIds = edgeReferenceDiffIds(committedCandidateEdges, rebuiltEdges);
+          markRouteEdgesDirty(rebuiltDirtyEdgeIds);
+          markStoredRouteEdgesDirty(rebuiltDirtyEdgeIds);
+          committedCandidateEdges = rebuiltEdges;
+        }
+        blockedCandidateEdges = committedCandidateEdges.filter((edge) => blockedConnectedEdgeIds.has(edge.id));
+        routingNodes = routingNodesForConnectionEdges(blockedCandidateEdges, nextNodes, movedNodeIds);
+        const rebuiltInternalEdges = rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes(
+          routingNodes,
+          committedCandidateEdges,
+          movedNodeIds,
+          commitCanvasBounds,
+          blockedCandidateEdges
+        );
+        if (rebuiltInternalEdges !== committedCandidateEdges) {
+          const rebuiltDirtyEdgeIds = edgeReferenceDiffIds(committedCandidateEdges, rebuiltInternalEdges);
+          markRouteEdgesDirty(rebuiltDirtyEdgeIds);
+          markStoredRouteEdgesDirty(rebuiltDirtyEdgeIds);
+          committedCandidateEdges = rebuiltInternalEdges;
+        }
       }
     }
     const edgePatch = edgePatchFromCandidateEdges(previousCandidateEdges, committedCandidateEdges);
@@ -7503,21 +7822,17 @@ export function App() {
         edgeDeleteIds: expectedPatch.edgeDeleteIds
       })
     );
-    if (deferMovedRouteRepair) {
-      scheduleDeferredMovedConnectionRepair(movedNodeIds, committedCandidateEdges, expectedPatch);
-    } else {
-      scheduleMovedEdgeOptimization(
-        previousNodes,
-        nextNodes,
-        committedCandidateEdges,
-        movedNodeIds,
-        originalRoutePoints,
-        selectedEdgeIds,
-        originalPositions,
-        committedCandidateEdges,
-        expectedPatch
-      );
-    }
+    scheduleMovedEdgeOptimization(
+      previousNodes,
+      nextNodes,
+      committedCandidateEdges,
+      movedNodeIds,
+      originalRoutePoints,
+      selectedEdgeIds,
+      originalPositions,
+      committedCandidateEdges,
+      expectedPatch
+    );
   };
 
   const clampPointToCanvas = (point: Point) => clampPointToBounds(point, canvasBounds);
@@ -7720,7 +8035,6 @@ export function App() {
     bounds: CanvasBounds = canvasBounds
   ) => {
     const movedNodeIds = new Set(nodeIds);
-    const preserveRouteEdgeIds = new Set(edgeIds);
     const selectedEdgeIds = new Set(edgeIds);
     const relevantNodeIds = new Set(nodeIds);
     for (const edge of affectedEdgesForMove) {
@@ -7738,6 +8052,7 @@ export function App() {
     const affectedEdges = affectedEdgesForMove.filter(
       (edge) => movedNodeIds.has(edge.sourceId) || movedNodeIds.has(edge.targetId) || selectedEdgeIds.has(edge.id)
     );
+    const preserveRouteEdgeIds = routePreserveEdgeIdsForMovedNodes(affectedEdges, nodeIds, edgeIds);
     const nextAffectedEdges =
       affectedEdges.length > 0
         ? adjustEdgesAfterNodeMove(
@@ -8038,6 +8353,7 @@ export function App() {
     ensureDraggingUndoSnapshot();
     const dragNodeIds = new Set(activeDragging.nodeIds);
     const effectiveSnapTarget = isMultiNodeMoveState(activeDragging) ? null : snapTarget;
+    const multiNodeMove = isMultiNodeMoveState(activeDragging);
     const snappedDelta = applyNodeTerminalSnap(delta, effectiveSnapTarget);
     const finalDelta =
       snappedDelta.x !== delta.x || snappedDelta.y !== delta.y
@@ -8063,6 +8379,7 @@ export function App() {
     const movedNodeUpdates = buildMovedNodeUpdates(activeDragging.nodeIds, activeDragging.originalPositions, finalDelta, finalBounds);
     const nextNodes = overlayGraphStoreNodes(graphStore, movedNodeUpdates);
     const hasAffectedEdges = activeDragging.affectedEdges.some((edge) => dragNodeIds.has(edge.sourceId) || dragNodeIds.has(edge.targetId));
+    const preserveRouteEdgeIds = routePreserveEdgeIdsForMovedNodes(activeDragging.affectedEdges, activeDragging.nodeIds, activeDragging.edgeIds);
     const adjustedAffectedEdges = hasAffectedEdges
       ? adjustEdgesAfterNodeMove(
           activeDragging.affectedEdges,
@@ -8071,17 +8388,19 @@ export function App() {
           activeDragging.originalEdgePoints,
           Object.fromEntries(activeDragging.nodeIds.map((id) => [id, finalDelta])),
           activeDragging.originalRoutePoints,
-          new Set(activeDragging.edgeIds),
+          preserveRouteEdgeIds,
           finalBounds
         )
       : activeDragging.affectedEdges;
-    const finalizedCandidateEdges = finalizeMovedNodeEdgesFast(
-      nodes,
-      nextNodes,
-      adjustedAffectedEdges,
-      activeDragging.nodeIds,
-      adjustedAffectedEdges
-    );
+    const finalizedCandidateEdges = multiNodeMove
+      ? adjustedAffectedEdges
+      : finalizeMovedNodeEdgesFast(
+          nodes,
+          nextNodes,
+          adjustedAffectedEdges,
+          activeDragging.nodeIds,
+          adjustedAffectedEdges
+        );
     commitFastMovedGraphPatches(
       movedNodeUpdates,
       nextNodes,
@@ -8121,6 +8440,7 @@ export function App() {
     ensureDraggingUndoSnapshot();
     const dragNodeIds = new Set(activeDragging.nodeIds);
     const effectiveSnapTarget = isMultiNodeMoveState(activeDragging) ? null : nodeTerminalSnapTarget;
+    const multiNodeMove = isMultiNodeMoveState(activeDragging);
     const snappedDelta = applyNodeTerminalSnap(delta, effectiveSnapTarget);
     const finalDelta =
       snappedDelta.x !== delta.x || snappedDelta.y !== delta.y
@@ -8149,6 +8469,7 @@ export function App() {
     const movedNodeUpdates = buildMovedNodeUpdates(activeDragging.nodeIds, activeDragging.originalPositions, finalDelta, finalBounds);
     const nextNodes = overlayGraphStoreNodes(graphStore, movedNodeUpdates);
     const hasAffectedEdges = activeDragging.affectedEdges.some((edge) => dragNodeIds.has(edge.sourceId) || dragNodeIds.has(edge.targetId));
+    const preserveRouteEdgeIds = routePreserveEdgeIdsForMovedNodes(activeDragging.affectedEdges, activeDragging.nodeIds, activeDragging.edgeIds);
     const adjustedAffectedEdges = hasAffectedEdges
       ? adjustEdgesAfterNodeMove(
           activeDragging.affectedEdges,
@@ -8157,17 +8478,19 @@ export function App() {
           activeDragging.originalEdgePoints,
           Object.fromEntries(activeDragging.nodeIds.map((id) => [id, finalDelta])),
           activeDragging.originalRoutePoints,
-          new Set(activeDragging.edgeIds),
+          preserveRouteEdgeIds,
           finalBounds
         )
       : activeDragging.affectedEdges;
-    const finalizedCandidateEdges = finalizeMovedNodeEdgesFast(
-      nodes,
-      nextNodes,
-      adjustedAffectedEdges,
-      activeDragging.nodeIds,
-      adjustedAffectedEdges
-    );
+    const finalizedCandidateEdges = multiNodeMove
+      ? adjustedAffectedEdges
+      : finalizeMovedNodeEdgesFast(
+          nodes,
+          nextNodes,
+          adjustedAffectedEdges,
+          activeDragging.nodeIds,
+          adjustedAffectedEdges
+        );
     commitFastMovedGraphPatches(
       movedNodeUpdates,
       nextNodes,
@@ -8202,11 +8525,55 @@ export function App() {
     transformDragChangedRef.current = false;
     if (shouldReroute) {
       const transformedNodeIds = isGroupTransformDrag(activeTransform) ? activeTransform.nodeIds : [activeTransform.nodeId];
-      const nextEdges = rebuildEdgesAfterNodeGeometryChange(nodes, transformedNodeIds);
-      if (nextEdges !== edges) {
-        setGraphStore((current) =>
-          graphStorePatchEdgesFromArray(current, nextEdges, edgeListForNodeIds(transformedNodeIds).map((edge) => edge.id))
-        );
+      if (isGroupTransformDrag(activeTransform)) {
+        const finalPreviewPoint = activeTransform.previewPoint;
+        if (finalPreviewPoint) {
+          const currentStore = latestGraphStoreRef.current ?? graphStore;
+          let transformedNodeUpdates = buildGroupTransformNodeUpdates(activeTransform, finalPreviewPoint, currentStore);
+          const transformedEdgeUpdates = buildGroupTransformEdgeUpdates(activeTransform, finalPreviewPoint, currentStore);
+          const transformedEdges = overlayEdgeUpdatesForTransform(currentStore.edges, transformedEdgeUpdates);
+          const transformBounds = canvasBoundsForGraphContent(
+            canvasBounds,
+            overlayGraphStoreNodes(currentStore, transformedNodeUpdates),
+            transformedEdges,
+            [],
+            CANVAS_AUTO_EXPAND_PADDING
+          );
+          applyCanvasBounds(transformBounds);
+          transformedNodeUpdates = transformedNodeUpdates.map((node) => ({
+            ...node,
+            position: clampNodePositionToBounds(node, transformBounds, node.position)
+          }));
+          setGraphStore((current) => {
+            let currentTransformedNodeUpdates = buildGroupTransformNodeUpdates(activeTransform, finalPreviewPoint, current);
+            const transformedEdgeUpdates = buildGroupTransformEdgeUpdates(activeTransform, finalPreviewPoint, current);
+            const transformedRouteEdgeIds = new Set(transformedEdgeUpdates.map((edge) => edge.id));
+            const transformedEdges = overlayEdgeUpdatesForTransform(current.edges, transformedEdgeUpdates);
+            currentTransformedNodeUpdates = currentTransformedNodeUpdates.map((node) => ({
+              ...node,
+              position: clampNodePositionToBounds(node, transformBounds, node.position)
+            }));
+            const nextNodes = overlayGraphStoreNodes(current, currentTransformedNodeUpdates);
+            markRouteEdgesDirty(transformedRouteEdgeIds);
+            markStoredRouteEdgesDirty(transformedRouteEdgeIds);
+            const nextEdges = rebuildEdgesAfterNodeGeometryChange(nextNodes, transformedNodeIds, transformedEdges, transformedRouteEdgeIds);
+            const transformedNodeIdSet = new Set(transformedNodeIds);
+            const transformedEdgeIds = Array.from(new Set([
+              ...current.edges
+              .filter((edge) => transformedNodeIdSet.has(edge.sourceId) || transformedNodeIdSet.has(edge.targetId))
+                .map((edge) => edge.id),
+              ...transformedRouteEdgeIds
+            ]));
+            return graphStorePatchGraphFromArrays(current, nextNodes, nextEdges, transformedNodeIds, transformedEdgeIds);
+          });
+        }
+      } else {
+        const nextEdges = rebuildEdgesAfterNodeGeometryChange(nodes, transformedNodeIds);
+        if (nextEdges !== edges) {
+          setGraphStore((current) =>
+            graphStorePatchEdgesFromArray(current, nextEdges, edgeListForNodeIds(transformedNodeIds).map((edge) => edge.id))
+          );
+        }
       }
       const transformedNode = isGroupTransformDrag(activeTransform) ? null : nodeById.get(activeTransform.nodeId);
       writeOperationLog(
@@ -8400,18 +8767,25 @@ export function App() {
     const affectedEdgeIdsForMove = new Set(affectedEdgesForMove.map((edge) => edge.id));
     const routePointsForMoveEdge = (edgeId: string) =>
       affectedEdgeIdsForMove.has(edgeId) ? routedEdgeById.get(edgeId)?.points ?? [] : [];
+    const originalPositionsForMove = Object.fromEntries(
+      moveNodeIds.flatMap((id) => {
+        const item = nodeById.get(id);
+        return item ? [[item.id, { ...item.position }]] : [];
+      })
+    );
+    const originalRoutePointsForMove = Object.fromEntries(
+      affectedEdgesForMove.map((edge) => [
+        edge.id,
+        routePointsForMoveEdge(edge.id)
+      ])
+    );
     const nextDragging: DraggingState = {
       source: "keyboard",
       nodeIds: moveNodeIds,
       edgeIds: moveEdgeIds,
       affectedEdges: affectedEdgesForMove,
       startPoint: { x: 0, y: 0 },
-      originalPositions: Object.fromEntries(
-        moveNodeIds.flatMap((id) => {
-          const item = nodeById.get(id);
-          return item ? [[item.id, { ...item.position }]] : [];
-        })
-      ),
+      originalPositions: originalPositionsForMove,
       originalEdgePoints: Object.fromEntries(
         affectedEdgesForMove.map((edge) => [
           edge.id,
@@ -8422,12 +8796,10 @@ export function App() {
           }
         ])
       ),
-      originalRoutePoints: Object.fromEntries(
-        affectedEdgesForMove.map((edge) => [
-          edge.id,
-          routePointsForMoveEdge(edge.id)
-        ])
-      )
+      originalRoutePoints: originalRoutePointsForMove,
+      overlayPreview: isMultiNodeMoveState({ nodeIds: moveNodeIds })
+        ? buildMultiNodeDragOverlayPreview(moveNodeIds, affectedEdgesForMove, originalPositionsForMove, originalRoutePointsForMove)
+        : undefined
     };
     clearNodeDragMoveSchedule();
     dragUndoCapturedRef.current = false;
@@ -8441,11 +8813,15 @@ export function App() {
 
   const nudgeSelectionByKeyboard = (key: string, dx: number, dy: number, repeated = false) => {
     clearKeyboardMoveCommitSchedule();
+    const wasActive = keyboardMoveActiveKeyDeltasRef.current.has(key);
+    if (!repeated && !wasActive && !draggingRef.current) {
+      moveSelection(dx, dy);
+      return;
+    }
     const activeDragging = startKeyboardMoveSession(false);
     if (!activeDragging) {
       return;
     }
-    const wasActive = keyboardMoveActiveKeyDeltasRef.current.has(key);
     keyboardMoveActiveKeyDeltasRef.current.set(key, { x: dx, y: dy });
     if (!wasActive && !repeated) {
       appendPendingKeyboardMoveDelta({ x: dx, y: dy });
@@ -8509,23 +8885,29 @@ export function App() {
     const selected = new Set(moveNodeIds);
     const movedNodeUpdates = buildMovedNodeUpdates(moveNodeIds, originalPositions, boundedDelta, finalBounds);
     const nextNodes = overlayGraphStoreNodes(graphStore, movedNodeUpdates);
-    const adjustedAffectedEdges = adjustEdgesAfterNodeMove(
-      affectedEdgesForMove,
-      nextNodes,
-      selected,
-      originalEdgePoints,
-      deltasByNode,
-      originalRoutePoints,
-      new Set(moveEdgeIds),
-      finalBounds
-    );
-    const finalizedCandidateEdges = finalizeMovedNodeEdgesFast(
-      nodes,
-      nextNodes,
-      adjustedAffectedEdges,
-      moveNodeIds,
-      adjustedAffectedEdges
-    );
+    const multiNodeMove = moveNodeIds.length > 1;
+    const preserveRouteEdgeIds = routePreserveEdgeIdsForMovedNodes(affectedEdgesForMove, moveNodeIds, moveEdgeIds);
+    const adjustedAffectedEdges = affectedEdgesForMove.length > 0
+      ? adjustEdgesAfterNodeMove(
+          affectedEdgesForMove,
+          nextNodes,
+          selected,
+          originalEdgePoints,
+          deltasByNode,
+          originalRoutePoints,
+          preserveRouteEdgeIds,
+          finalBounds
+        )
+      : affectedEdgesForMove;
+    const finalizedCandidateEdges = multiNodeMove
+      ? adjustedAffectedEdges
+      : finalizeMovedNodeEdgesFast(
+          nodes,
+          nextNodes,
+          adjustedAffectedEdges,
+          moveNodeIds,
+          adjustedAffectedEdges
+        );
     commitFastMovedGraphPatches(
       movedNodeUpdates,
       nextNodes,
@@ -9065,6 +9447,44 @@ export function App() {
         : [];
     });
 
+  const buildGroupTransformEdgeUpdates = (drag: GroupTransformDrag, point: Point, store: GraphStore) => {
+    const geometry = groupTransformGeometry(drag, point);
+    const transformedNodeIdSet = new Set(drag.nodeIds);
+    return drag.originalEdgeRoutes.flatMap((route) => {
+      const edge = store.edgeMap.get(route.edgeId);
+      if (!edge || !transformedNodeIdSet.has(edge.sourceId) || !transformedNodeIdSet.has(edge.targetId)) {
+        return [];
+      }
+      const points = route.points.map((routePoint) => transformGroupPoint(drag, geometry, routePoint));
+      if (points.length < 2) {
+        return [];
+      }
+      return [{
+        ...edge,
+        sourcePoint: { ...points[0] },
+        targetPoint: { ...points[points.length - 1] },
+        manualPoints: points.slice(1, -1).map((routePoint) => ({ ...routePoint }))
+      }];
+    });
+  };
+
+  const overlayEdgeUpdatesForTransform = (sourceEdges: Edge[], edgeUpdates: Edge[]) => {
+    if (edgeUpdates.length === 0) {
+      return sourceEdges;
+    }
+    const edgeUpdateById = new Map(edgeUpdates.map((edge) => [edge.id, edge]));
+    let changed = false;
+    const nextEdges = sourceEdges.map((edge) => {
+      const update = edgeUpdateById.get(edge.id);
+      if (!update) {
+        return edge;
+      }
+      changed = true;
+      return update;
+    });
+    return changed ? nextEdges : sourceEdges;
+  };
+
   const startGroupTransformDrag = (event: PointerEvent<SVGElement>, unit: CanvasLayoutUnit, kind: "rotate" | ScaleHandleKind) => {
     event.stopPropagation();
     transformDragChangedRef.current = false;
@@ -9114,18 +9534,25 @@ export function App() {
       affectedEdgeIdsForDrag.has(edgeId) ? routedEdgeById.get(edgeId)?.points ?? [] : [];
     clearNodeDragMoveSchedule();
     dragUndoCapturedRef.current = false;
+    const originalPositionsForDrag = Object.fromEntries(
+      dragNodeIds.flatMap((id) => {
+        const item = nodeById.get(id);
+        return item ? [[item.id, { ...item.position }]] : [];
+      })
+    );
+    const originalRoutePointsForDrag = Object.fromEntries(
+      affectedEdgesForDrag.map((edge) => [
+        edge.id,
+        routePointsForDragEdge(edge.id)
+      ])
+    );
     const nextDragging: DraggingState = {
       source: "pointer",
       nodeIds: dragNodeIds,
       edgeIds: edgeIdsForDrag,
       affectedEdges: affectedEdgesForDrag,
       startPoint: point,
-      originalPositions: Object.fromEntries(
-        dragNodeIds.flatMap((id) => {
-          const item = nodeById.get(id);
-          return item ? [[item.id, { ...item.position }]] : [];
-        })
-      ),
+      originalPositions: originalPositionsForDrag,
       originalEdgePoints: Object.fromEntries(
         affectedEdgesForDrag.map((edge) => [
           edge.id,
@@ -9136,12 +9563,10 @@ export function App() {
           }
         ])
       ),
-      originalRoutePoints: Object.fromEntries(
-        affectedEdgesForDrag.map((edge) => [
-          edge.id,
-          routePointsForDragEdge(edge.id)
-        ])
-      )
+      originalRoutePoints: originalRoutePointsForDrag,
+      overlayPreview: isMultiNodeMoveState({ nodeIds: dragNodeIds })
+        ? buildMultiNodeDragOverlayPreview(dragNodeIds, affectedEdgesForDrag, originalPositionsForDrag, originalRoutePointsForDrag)
+        : undefined
     };
     draggingRef.current = nextDragging;
     resetMultiNodeDragOverlayTransform();
@@ -9588,18 +10013,25 @@ export function App() {
       affectedEdgeIdsForDrag.has(edgeId) ? routedEdgeById.get(edgeId)?.points ?? [] : [];
     clearNodeDragMoveSchedule();
     dragUndoCapturedRef.current = false;
+    const originalPositionsForDrag = Object.fromEntries(
+      dragNodeIds.flatMap((id) => {
+        const item = nodeById.get(id);
+        return item ? [[item.id, { ...item.position }]] : [];
+      })
+    );
+    const originalRoutePointsForDrag = Object.fromEntries(
+      affectedEdgesForDrag.map((edge) => [
+        edge.id,
+        routePointsForDragEdge(edge.id)
+      ])
+    );
     const nextDragging: DraggingState = {
       source: "pointer",
       nodeIds: dragNodeIds,
       edgeIds: edgeIdsForDrag,
       affectedEdges: affectedEdgesForDrag,
       startPoint: point,
-      originalPositions: Object.fromEntries(
-        dragNodeIds.flatMap((id) => {
-          const item = nodeById.get(id);
-          return item ? [[item.id, { ...item.position }]] : [];
-        })
-      ),
+      originalPositions: originalPositionsForDrag,
       originalEdgePoints: Object.fromEntries(
         affectedEdgesForDrag.map((edge) => [
           edge.id,
@@ -9610,12 +10042,10 @@ export function App() {
           }
         ])
       ),
-      originalRoutePoints: Object.fromEntries(
-        affectedEdgesForDrag.map((edge) => [
-          edge.id,
-          routePointsForDragEdge(edge.id)
-        ])
-      )
+      originalRoutePoints: originalRoutePointsForDrag,
+      overlayPreview: isMultiNodeMoveState({ nodeIds: dragNodeIds })
+        ? buildMultiNodeDragOverlayPreview(dragNodeIds, affectedEdgesForDrag, originalPositionsForDrag, originalRoutePointsForDrag)
+        : undefined
     };
     draggingRef.current = nextDragging;
     resetMultiNodeDragOverlayTransform();
@@ -9755,7 +10185,7 @@ export function App() {
       }
       const currentStore = latestGraphStoreRef.current ?? graphStore;
       if (isGroupTransformDrag(transformDrag)) {
-        let nextNodeUpdates = buildGroupTransformNodeUpdates(transformDrag, point, currentStore);
+        const nextNodeUpdates = buildGroupTransformNodeUpdates(transformDrag, point, currentStore);
         if (nextNodeUpdates.length === 0) {
           return;
         }
@@ -9774,11 +10204,6 @@ export function App() {
           CANVAS_AUTO_EXPAND_PADDING
         );
         applyCanvasBounds(transformBounds);
-        nextNodeUpdates = nextNodeUpdates.map((node) => ({
-          ...node,
-          position: clampNodePositionToBounds(node, transformBounds, node.position)
-        }));
-        patchGraphNodes(nextNodeUpdates);
         return;
       }
       const node = currentStore.nodeMap.get(transformDrag.nodeId);
@@ -13328,7 +13753,7 @@ export function App() {
         <section className="canvas-frame" ref={canvasFrameRef}>
           <svg
             ref={svgRef}
-            className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""}`}
+            className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""} ${multiNodeDragging ? "multi-node-dragging" : ""}`}
             style={{ width: canvasWidth, height: canvasHeight }}
             viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
             onDrop={handleDrop}
@@ -13497,6 +13922,7 @@ export function App() {
             )}
             <rect width={canvasWidth} height={canvasHeight} fill="url(#large-grid)" />
             <rect className="canvas-boundary" x="0" y="0" width={canvasWidth} height={canvasHeight} />
+            <g className="canvas-content">
             {marquee && (
               <rect
                 className="marquee-box"
@@ -13509,16 +13935,7 @@ export function App() {
             {dragGhostEdgeRoutes.map((route) => (
               <path key={`drag-ghost-edge-${route.edgeId}`} d={route.path} className="connection-line drag-ghost" style={connectionLineStyle(route.edgeId)} />
             ))}
-            {multiNodeDragging && multiNodeDragDegradedPreview && multiNodeDragOriginalBounds && dragging?.historyCaptured && (
-              <rect
-                className="multi-node-drag-origin-bounds"
-                x={multiNodeDragOriginalBounds.left}
-                y={multiNodeDragOriginalBounds.top}
-                width={Math.max(1, multiNodeDragOriginalBounds.right - multiNodeDragOriginalBounds.left)}
-                height={Math.max(1, multiNodeDragOriginalBounds.bottom - multiNodeDragOriginalBounds.top)}
-              />
-            )}
-            {dragging?.historyCaptured && !(multiNodeDragging && multiNodeDragDegradedPreview) && dragging.nodeIds.map((nodeId) => {
+            {dragging?.historyCaptured && !multiNodeDragging && dragging.nodeIds.map((nodeId) => {
               const node = nodeById.get(nodeId);
               const originalPosition = dragging.originalPositions[nodeId];
               if (!node || !originalPosition) {
@@ -13700,6 +14117,7 @@ export function App() {
               />
             )}
             {selectedGroupLayoutUnits.map((unit) => {
+              const transforming = groupTransformPreviewGroupId === unit.id;
               const focused = selectedTransformGroupUnit?.id === unit.id;
               const bounds = unit.bounds;
               const width = Math.max(1, bounds.right - bounds.left);
@@ -13711,7 +14129,7 @@ export function App() {
               const rotateStemEnd = 36;
               const rotateHandleGap = 42;
               return (
-                <g key={`group-selection-${unit.id}`} className={`group-selection-overlay ${focused ? "focused" : ""}`}>
+                <g key={`group-selection-${unit.id}`} className={`group-selection-overlay ${focused ? "focused" : ""} ${transforming ? "transforming" : ""}`}>
                   <rect
                     className="group-selection-hitbox"
                     x={bounds.left}
@@ -13772,6 +14190,9 @@ export function App() {
               );
             })}
             {viewportNodes.map((node) => {
+              if (groupTransformPreviewNodeIdSet.has(node.id)) {
+                return null;
+              }
               const selected = selectedNodeIdSet.has(node.id);
               const focused = node.id === selectedNodeId;
               const editable = activeLayerNodeIdSet.has(node.id);
@@ -14011,10 +14432,9 @@ export function App() {
                 </g>
               );
             })}
+            {renderGroupTransformPhotoPreview()}
+            </g>
             {renderMultiNodeDragOverlay()}
-            {groupTransformPreviewEdgeRoutes.map((route) => (
-              <path key={`group-transform-preview-edge-${route.edgeId}`} d={route.path} className="connection-line group-transform-preview" style={connectionLineStyle(route.edgeId)} />
-            ))}
             {dragPreviewEdgeRoutes.map((route) => (
               <path key={`drag-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
             ))}
@@ -14071,6 +14491,7 @@ export function App() {
               selectedEdge &&
               !(draggingDelta && dragPreviewEdgeIdSet.has(selectedEdge.id)) &&
               !(multiNodeDragging && dragAffectedEdgeIdSet.has(selectedEdge.id)) &&
+              !groupTransformPreviewEdgeIdSet.has(selectedEdge.id) &&
               !terminalPressPreviewEdgeIdSet.has(selectedEdge.id) &&
               (() => {
               const edge = selectedEdge;
