@@ -3953,7 +3953,8 @@ export function App() {
       if (!node || !originalPosition || !visibleNodeIdSet.has(node.id)) {
         continue;
       }
-      const halfExtents = nodeTransformedHalfExtents(node, true);
+      const includeUprightContentInBounds = nodeHasUprightBoundsContent(node);
+      const halfExtents = nodeTransformedHalfExtents(node, includeUprightContentInBounds);
       includeBox({
         left: originalPosition.x - halfExtents.halfWidth,
         right: originalPosition.x + halfExtents.halfWidth,
@@ -5027,6 +5028,11 @@ export function App() {
   const rightPanelVisible = isSidePanelVisible(rightPanelMode, rightPanelAutoVisible);
   const nodeImage = (node: ModelNode) => resolveNodeImage(node, imageAssets);
   const nodeForegroundImage = (node: ModelNode) => resolveNodeForegroundImage(node, imageAssets);
+  const nodeHasUprightBoundsContent = (
+    node: ModelNode,
+    imageHref = nodeImage(node),
+    foregroundImageHref = nodeForegroundImage(node)
+  ) => !isBusNode(node) && Boolean(imageHref || foregroundImageHref || node.kind === "static-text" || node.kind === "static-image");
   const canvasBackgroundImageUrl = resolveProjectImage(
     { canvasBackgroundImage, canvasBackgroundImageAssetId },
     imageAssets
@@ -14597,7 +14603,7 @@ export function App() {
               const terminalStubDashArray = svgStrokeDashArray(node.params.strokeStyle);
               const terminalControlTransform = (x: number, y: number) => `translate(${x} ${y}) scale(${inverseScaleX} ${inverseScaleY})`;
               const handleTransform = (x: number, y: number) => `translate(${x} ${y})`;
-              const includeUprightContentInHandles = Boolean(imageHref || foregroundImageHref || node.kind === "static-text" || node.kind === "static-image");
+              const includeUprightContentInHandles = nodeHasUprightBoundsContent(node, imageHref, foregroundImageHref);
               const transformedHalfExtents = nodeTransformedHalfExtents(node, includeUprightContentInHandles);
               const handleGapX = 14;
               const handleGapY = 14;

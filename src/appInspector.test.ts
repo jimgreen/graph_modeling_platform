@@ -2029,6 +2029,22 @@ describe("graph inspector panel", () => {
     expect(renderBlock).not.toContain("(multiNodeDragging && dragAffectedEdgeIdSet.has(edge.id))");
   });
 
+  test("keeps rotated bus graphics from inflating multi-node drag preview bounds", async () => {
+    const source = await readAppSource();
+    const previewStart = source.indexOf("const buildMultiNodeDragOverlayPreview");
+    const previewEnd = source.indexOf("const renderMultiNodeDragOverlay", previewStart);
+    const previewBlock = source.slice(previewStart, previewEnd);
+    const renderStart = source.indexOf("{viewportNodes.map((node) =>");
+    const renderEnd = source.indexOf("{selected && focused", renderStart);
+    const nodeRenderBlock = source.slice(renderStart, renderEnd);
+
+    expect(source).toContain("const nodeHasUprightBoundsContent");
+    expect(previewBlock).toContain("const includeUprightContentInBounds = nodeHasUprightBoundsContent(");
+    expect(previewBlock).toContain("const halfExtents = nodeTransformedHalfExtents(node, includeUprightContentInBounds)");
+    expect(previewBlock).not.toContain("nodeTransformedHalfExtents(node, true)");
+    expect(nodeRenderBlock).toContain("const includeUprightContentInHandles = nodeHasUprightBoundsContent(");
+  });
+
   test("snapshots drag and transform routes from current rotated node geometry instead of stale routed cache", async () => {
     const source = await readAppSource();
     const helperStart = source.indexOf("const currentStoredRoutePointsForEdge");
