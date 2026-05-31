@@ -1663,6 +1663,24 @@ describe("graph inspector panel", () => {
     expect(source).toContain("onDoubleClick={fitWholeCanvasFromBlankDoubleClick}");
   });
 
+  test("fits the whole canvas once when the page is first opened", async () => {
+    const source = await readAppSource();
+    const initialFitStart = source.indexOf("const initialCanvasFitAppliedRef");
+    const initialFitEnd = source.indexOf("useEffect(() => {\n    const frame = canvasFrameRef.current;", initialFitStart);
+    const initialFitBlock = source.slice(initialFitStart, initialFitEnd);
+
+    expect(source).toContain("const initialCanvasFitAppliedRef = useRef(false);");
+    expect(initialFitBlock).toContain("if (initialCanvasFitAppliedRef.current)");
+    expect(initialFitBlock).toContain("canvasFrameViewportSize.width <= 0 || canvasFrameViewportSize.height <= 0");
+    expect(initialFitBlock).toContain("initialCanvasFitAppliedRef.current = true;");
+    expect(initialFitBlock).toContain("setViewBox(fitWholeCanvasViewBox(canvasBounds, canvasFrameRef.current));");
+    expect(initialFitBlock).toContain("setCanvasVisibleViewBox(canvasFullViewBox);");
+    expect(initialFitBlock).toContain("scheduleCanvasVisibleViewBoxUpdate();");
+    expect(initialFitBlock).toContain("canvasBounds");
+    expect(initialFitBlock).toContain("canvasFrameViewportSize.height");
+    expect(initialFitBlock).toContain("canvasFrameViewportSize.width");
+  });
+
   test("scopes horizontal and vertical scrollbars to the canvas surface", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
@@ -2128,6 +2146,28 @@ describe("graph inspector panel", () => {
     expect(previewBlock).toContain("nodeVisualInteractionBounds(node, originalPosition, 0, includeUprightContentInBounds)");
     expect(localBoundsBlock).toContain("nodeVisualInteractionBounds(node, position, padding)");
     expect(localBoundsBlock).not.toContain("const halfWidth = Math.abs(node.size.width * getNodeScaleX(node)) / 2");
+  });
+
+  test("commits device label footprint edits with canvas expansion and local route repair", async () => {
+    const source = await readAppSource();
+    const footprintStart = source.indexOf("const commitNodeFootprintUpdates");
+    const footprintEnd = source.indexOf("const assignSelectedNodesToModelLayer", footprintStart);
+    const footprintBlock = source.slice(footprintStart, footprintEnd);
+    const updateParamStart = source.indexOf("const updateParam");
+    const updateParamEnd = source.indexOf("const renderColorEditor", updateParamStart);
+    const updateParamBlock = source.slice(updateParamStart, updateParamEnd);
+    const finishDragStart = source.indexOf("const finishNodeLabelDrag");
+    const finishDragEnd = source.indexOf("const finishNodeLabelRotateDrag", finishDragStart);
+    const finishDragBlock = source.slice(finishDragStart, finishDragEnd);
+
+    expect(source).toContain("const NODE_LABEL_FOOTPRINT_PARAM_KEYS");
+    expect(footprintBlock).toContain("canvasBoundsForGraphContent");
+    expect(footprintBlock).toContain("localRouteOptimizationCandidateEdges");
+    expect(footprintBlock).toContain("routePointsForMovedNodeBlockers");
+    expect(footprintBlock).toContain("optimizeMovedNodeEdgeRoutes");
+    expect(updateParamBlock).toContain("NODE_LABEL_FOOTPRINT_PARAM_KEYS.has(key)");
+    expect(updateParamBlock).toContain("commitNodeFootprintUpdates([nextNode]");
+    expect(finishDragBlock).toContain("commitNodeFootprintUpdates([currentNode]");
   });
 
   test("caps orthogonal routing lane candidates to avoid quadratic searches in dense connection areas", async () => {

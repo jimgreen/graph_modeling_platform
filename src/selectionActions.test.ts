@@ -114,6 +114,40 @@ describe("canvas selection actions", () => {
     expect(units[0].bounds.right).toBeGreaterThan(bodyRight + 80);
   });
 
+  test("includes default-rendered device labels in grouped layout bounds even when label params are absent", () => {
+    const base = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const paramsWithoutLabel = Object.fromEntries(
+      Object.entries(base.params).filter(([key]) => !key.startsWith("_label"))
+    );
+    const labeled = {
+      ...base,
+      name: "组合边界需要包含设备标识",
+      params: paramsWithoutLabel
+    };
+    const otherBase = createDefaultNode("ac-load", { x: 20, y: 100 });
+    const other = {
+      ...otherBase,
+      params: {
+        ...otherBase.params,
+        _labelVisible: "0",
+        _labelDisplayMode: "hidden"
+      }
+    };
+    const groups: ModelGroup[] = [{
+      id: "group-default-label",
+      name: "组合1",
+      nodeIds: [labeled.id, other.id],
+      edgeIds: []
+    }];
+    const bodyBottom = labeled.position.y + (labeled.size.height * Math.abs(Number(labeled.scaleY ?? labeled.scale ?? 1))) / 2;
+
+    const units = buildCanvasLayoutUnits(groups, [labeled, other], [labeled.id], []);
+
+    expect(units).toHaveLength(1);
+    expect(units[0].kind).toBe("group");
+    expect(units[0].bounds.bottom).toBeGreaterThan(bodyBottom + 20);
+  });
+
   test("copies and pastes selected nodes with their selected connection lines", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
     const target = createDefaultNode("ac-load", { x: 300, y: 100 });

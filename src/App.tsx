@@ -574,8 +574,25 @@ type NodeLabelRotateDragState = {
   nodeId: string;
   pointerId: number;
   center: Point;
+  startRotation: number;
   historyCaptured?: boolean;
 } | null;
+
+const NODE_LABEL_FOOTPRINT_PARAM_KEYS = new Set([
+  "_labelText",
+  "_labelDisplayMode",
+  "_labelVisible",
+  "_labelX",
+  "_labelY",
+  "_labelFontSize",
+  "_labelTextAnchor",
+  "_labelRotation",
+  "_labelFontFamily",
+  "_labelFontWeight",
+  "_labelFontStyle",
+  "_labelTextDecoration"
+]);
+
 type ManualPathDrag =
   | {
       edgeId: string;
@@ -4881,6 +4898,7 @@ export function App() {
   const deferredMoveRepairFrameRef = useRef<number | null>(null);
   const lastBusTerminalSyncEndpointRevisionRef = useRef(-1);
   const pendingBusTerminalSyncNodeIdsRef = useRef<Set<string>>(new Set());
+  const initialCanvasFitAppliedRef = useRef(false);
   const skipNextTopologyStaleRef = useRef(false);
   const skipCanvasSizeBlurCommitRef = useRef(false);
   const edgePointerBendInsertRef = useRef<{ edgeId: string; clientX: number; clientY: number; at: number } | null>(null);
@@ -6563,6 +6581,19 @@ export function App() {
   useEffect(() => {
     updateCanvasFrameViewportAndVisibleBox();
   }, [canvasDisplayHeight, canvasDisplayWidth, canvasScrollSurfaceHeight, canvasScrollSurfaceWidth]);
+
+  useLayoutEffect(() => {
+    if (initialCanvasFitAppliedRef.current) {
+      return;
+    }
+    if (canvasFrameViewportSize.width <= 0 || canvasFrameViewportSize.height <= 0) {
+      return;
+    }
+    initialCanvasFitAppliedRef.current = true;
+    setViewBox(fitWholeCanvasViewBox(canvasBounds, canvasFrameRef.current));
+    setCanvasVisibleViewBox(canvasFullViewBox);
+    scheduleCanvasVisibleViewBoxUpdate();
+  }, [canvasBounds, canvasFrameViewportSize.height, canvasFrameViewportSize.width, canvasFullViewBox]);
 
   useLayoutEffect(() => {
     const pendingWheelZoomAnchor = pendingWheelZoomAnchorRef.current;
@@ -8548,16 +8579,48 @@ export function App() {
     setNodeLabelRotateDrag({
       nodeId: node.id,
       pointerId: event.pointerId,
-      center: nodeLabelCanvasCenter(node)
+      center: nodeLabelCanvasCenter(node),
+      startRotation: normalizeNodeLabelRotation(node.params._labelRotation)
     });
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const finishNodeLabelDrag = () => {
+    if (nodeLabelDrag?.historyCaptured) {
+      const currentNode = nodeById.get(nodeLabelDrag.nodeId);
+      if (currentNode) {
+        const previousNode = {
+          ...currentNode,
+          params: {
+            ...currentNode.params,
+            _labelX: String(nodeLabelDrag.startOffset.x),
+            _labelY: String(nodeLabelDrag.startOffset.y)
+          }
+        };
+        commitNodeFootprintUpdates([currentNode], {
+          previousNodes: overlayGraphStoreNodes(graphStore, [previousNode])
+        });
+      }
+    }
     setNodeLabelDrag(null);
   };
 
   const finishNodeLabelRotateDrag = () => {
+    if (nodeLabelRotateDrag?.historyCaptured) {
+      const currentNode = nodeById.get(nodeLabelRotateDrag.nodeId);
+      if (currentNode) {
+        const previousNode = {
+          ...currentNode,
+          params: {
+            ...currentNode.params,
+            _labelRotation: String(nodeLabelRotateDrag.startRotation)
+          }
+        };
+        commitNodeFootprintUpdates([currentNode], {
+          previousNodes: overlayGraphStoreNodes(graphStore, [previousNode])
+        });
+      }
+    }
     setNodeLabelRotateDrag(null);
   };
 
@@ -8580,7 +8643,7 @@ export function App() {
     }
     const label = NODE_LABEL_DISPLAY_MODES.find((item) => item.value === mode)?.label ?? mode;
     pushUndoSnapshot();
-    patchGraphNodes(updates);
+    commitNodeFootprintUpdates(updates);
     writeOperationLog(`设置 ${updates.length} 个图元标识显示方式：${label}`);
   };
 
@@ -11181,6 +11244,93 @@ export function App() {
     }
   };
 
+  const commitNodeFootprintUpdates = (
+    nodeUpdates: ModelNode[],
+    options: { previousNodes?: ModelNode[] } = {}
+  ) => {
+    const existingUpdates = nodeUpdates.filter((node) => nodeById.has(node.id));
+    if (existingUpdates.length === 0) {
+      return;
+    }
+    const changedNodeIds = Array.from(new Set(existingUpdates.map((node) => node.id)));
+    const previousNodes = options.previousNodes ?? nodes;
+    const nextNodes = overlayGraphStoreNodes(graphStore, existingUpdates);
+    const originShift = leftTopCanvasOriginShiftForContent(nextNodes);
+    if (hasCanvasOriginShift(originShift)) {
+      const shiftedNodes = nextNodes.map((node) => translateNodeBy(node, originShift));
+      const shiftedEdges = edges.map((edge) => translateEdgeBy(edge, originShift));
+      const shiftedBounds = canvasBoundsForGraphContent(
+        canvasBoundsWithOriginShift(canvasBounds, originShift),
+        shiftedNodes,
+        shiftedEdges,
+        [],
+        CANVAS_AUTO_EXPAND_PADDING
+      );
+      applyCanvasBounds(shiftedBounds, originShift);
+      shiftCachedRoutesForCanvasOrigin(originShift);
+      const shiftedEdgeIds = shiftedEdges.map((edge) => edge.id);
+      markRouteEdgesDirty(shiftedEdgeIds);
+      markStoredRouteEdgesDirty(shiftedEdgeIds);
+      markBusTerminalSyncDirtyForEdges(shiftedEdges);
+      setGraphStore((current) => graphStoreSetGraph(current, shiftedNodes, shiftedEdges));
+      return;
+    }
+    const footprintCanvasBounds = canvasBoundsForGraphContent(
+      canvasBounds,
+      nextNodes,
+      edges,
+      [],
+      CANVAS_AUTO_EXPAND_PADDING
+    );
+    const directCandidateEdges = edgeListForNodeIds(changedNodeIds);
+    const candidateEdges = localRouteOptimizationCandidateEdges(
+      previousNodes,
+      nextNodes,
+      changedNodeIds,
+      new Set<string>(),
+      undefined,
+      directCandidateEdges
+    );
+    const optimizationEdges = localRouteOptimizationEdges(
+      previousNodes,
+      nextNodes,
+      candidateEdges,
+      changedNodeIds,
+      new Set<string>(),
+      undefined
+    );
+    const blockedRoutePoints = routePointsForMovedNodeBlockers(nextNodes, optimizationEdges, changedNodeIds, {});
+    const blockedEdgeIds = new Set(Object.keys(blockedRoutePoints));
+    const nextEdges = blockedEdgeIds.size > 0
+      ? optimizeMovedNodeEdgeRoutes(
+          nextNodes,
+          edges,
+          changedNodeIds,
+          {},
+          new Set<string>(),
+          blockedRoutePoints,
+          blockedEdgeIds,
+          optimizationEdges
+        ).edges
+      : edges;
+    const edgeUpdates = nextEdges === edges
+      ? []
+      : nextEdges.filter((edge, index) => edge !== edges[index]);
+    if (edgeUpdates.length > 0) {
+      const dirtyEdgeIds = edgeUpdates.map((edge) => edge.id);
+      markRouteEdgesDirty(dirtyEdgeIds);
+      markStoredRouteEdgesDirty(dirtyEdgeIds);
+      markBusTerminalSyncDirtyForEdges(edgeUpdates);
+    }
+    expandCanvasToFitGraph(nextNodes, nextEdges, [], CANVAS_AUTO_EXPAND_PADDING, footprintCanvasBounds);
+    setGraphStore((current) =>
+      graphStoreApplyPatch(current, {
+        nodeUpdates: existingUpdates,
+        edgeUpserts: edgeUpdates
+      })
+    );
+  };
+
   const assignSelectedNodesToModelLayer = (layerId: string) => {
     if (activeSelectedNodeIds.length === 0) {
       return;
@@ -11336,14 +11486,33 @@ export function App() {
     if (!selectedNodeId) {
       return;
     }
+    const currentNode = nodeById.get(selectedNodeId);
+    if (!currentNode) {
+      return;
+    }
+    if (key !== "_labelDisplayMode" && currentNode.params[key] === value) {
+      return;
+    }
+    const nextNode =
+      key === "_labelDisplayMode"
+        ? (() => {
+            const mode = normalizeNodeLabelDisplayMode(value);
+            const visible = mode === "hidden" ? "0" : "1";
+            if (currentNode.params._labelDisplayMode === mode && currentNode.params._labelVisible === visible) {
+              return currentNode;
+            }
+            return { ...currentNode, params: { ...currentNode.params, _labelDisplayMode: mode, _labelVisible: visible } };
+          })()
+        : { ...currentNode, params: { ...currentNode.params, [key]: value } };
+    if (nextNode === currentNode) {
+      return;
+    }
     pushUndoSnapshot();
-    updateGraphNodeById(selectedNodeId, (node) => {
-      if (key === "_labelDisplayMode") {
-        const mode = normalizeNodeLabelDisplayMode(value);
-        return { ...node, params: { ...node.params, _labelDisplayMode: mode, _labelVisible: mode === "hidden" ? "0" : "1" } };
-      }
-      return { ...node, params: { ...node.params, [key]: value } };
-    });
+    if (NODE_LABEL_FOOTPRINT_PARAM_KEYS.has(key)) {
+      commitNodeFootprintUpdates([nextNode]);
+      return;
+    }
+    patchGraphNodes([nextNode]);
   };
 
   const updateElementTreeNodeIdentity = (nodeId: string, field: "idx" | "name", value: string) => {

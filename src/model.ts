@@ -7480,20 +7480,9 @@ function routeNodeLabelDisplayMode(node: ModelNode) {
   return node.params._labelVisible === "0" ? "hidden" : "follow";
 }
 
-function routeNodeHasLabelMetadata(node: ModelNode) {
-  return (
-    "_labelVisible" in node.params ||
-    "_labelDisplayMode" in node.params ||
-    "_labelText" in node.params ||
-    "_labelX" in node.params ||
-    "_labelY" in node.params
-  );
-}
-
 function routeNodeLabelBlocksRouting(node: ModelNode) {
   return (
     !isStaticNode(node) &&
-    routeNodeHasLabelMetadata(node) &&
     node.params._labelVisible !== "0" &&
     routeNodeLabelDisplayMode(node) !== "hidden" &&
     routeNodeLabelText(node).trim().length > 0
@@ -7574,15 +7563,16 @@ function nodeLabelVisualBox(node: ModelNode, padding = 0, position = node.positi
   const text = routeNodeLabelText(node).trim();
   const center = routeNodeLabelCanvasCenter(node, position);
   const fontSize = routeNodeLabelFontSize(node);
+  const effectivePadding = padding + Math.max(6, fontSize * 0.2);
   if (routeNodeLabelVertical(node)) {
     const segments = routeNodeLabelVerticalSegments(text);
     const width = Math.max(fontSize, ...segments.map((segment) => routeTextVisualWidth(segment.text, fontSize)));
     const height = Math.max(fontSize * 1.35, segments.length * fontSize * 1.2);
     return {
-      left: center.x - width / 2 - padding,
-      right: center.x + width / 2 + padding,
-      top: center.y - height / 2 - padding,
-      bottom: center.y + height / 2 + padding
+      left: center.x - width / 2 - effectivePadding,
+      right: center.x + width / 2 + effectivePadding,
+      top: center.y - height / 2 - effectivePadding,
+      bottom: center.y + height / 2 + effectivePadding
     };
   }
   const width = Math.max(fontSize, routeTextVisualWidth(text, fontSize));
@@ -7591,10 +7581,10 @@ function nodeLabelVisualBox(node: ModelNode, padding = 0, position = node.positi
   const left = anchor === "start" ? center.x : anchor === "end" ? center.x - width : center.x - width / 2;
   const right = anchor === "start" ? center.x + width : anchor === "end" ? center.x : center.x + width / 2;
   return {
-    left: left - padding,
-    right: right + padding,
-    top: center.y - height / 2 - padding,
-    bottom: center.y + height / 2 + padding
+    left: left - effectivePadding,
+    right: right + effectivePadding,
+    top: center.y - height / 2 - effectivePadding,
+    bottom: center.y + height / 2 + effectivePadding
   };
 }
 
@@ -7663,7 +7653,7 @@ function mergeRouteBlockerBoxes(boxes: RouteBlockerBox[]): RouteBlockerBox {
 }
 
 function routeEndpointBodyOnlyBlocker(node: ModelNode): ModelNode {
-  if (!routeNodeHasLabelMetadata(node)) {
+  if (!routeNodeLabelBlocksRouting(node)) {
     return node;
   }
   return { ...node, params: { ...node.params, _labelVisible: "0", _labelDisplayMode: "hidden" } };

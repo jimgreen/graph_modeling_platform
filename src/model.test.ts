@@ -2575,6 +2575,27 @@ describe("power system model", () => {
     expect(contentSize.width).toBe(Math.ceil(bounds?.right ?? 0));
   });
 
+  test("keeps a visual safety margin around device labels for text strokes and focus styles", () => {
+    const base = createDefaultNode("ac-switch", { x: 120, y: 90 });
+    const labeled = {
+      ...base,
+      params: {
+        ...base.params,
+        _labelText: "AB",
+        _labelX: "220",
+        _labelY: "0",
+        _labelFontSize: "20",
+        _labelTextAnchor: "start",
+        _labelRotation: "0"
+      }
+    };
+    const labelCenterX = labeled.position.x + 220;
+    const estimatedTextRight = labelCenterX + 20 * 0.62 * 2;
+    const bounds = calculateModelGeometryBounds([labeled], [], 0);
+
+    expect(bounds?.right).toBeGreaterThan(estimatedTextRight + 4);
+  });
+
   test("clamps device movement by visible label bounds as part of the device boundary", () => {
     const base = createDefaultNode("ac-switch", { x: 120, y: 90 });
     const labeled = {

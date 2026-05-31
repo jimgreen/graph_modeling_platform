@@ -126,6 +126,38 @@ describe("normalized graph store", () => {
     expect(queryGraphStoreNodeSpatialIndex(patched, { left: 120, right: 260, top: 100, bottom: 220 }).map((node) => node.id)).toContain(left.id);
   });
 
+  test("indexes visible device labels so local routing and viewport queries include far labels", () => {
+    const base = createDefaultNode("ac-switch", { x: 100, y: 100 });
+    const labeled = {
+      ...base,
+      params: {
+        ...base.params,
+        _labelText: "远端设备标识",
+        _labelX: "360",
+        _labelY: "0",
+        _labelFontSize: "18",
+        _labelTextAnchor: "middle",
+        _labelRotation: "0",
+        _labelDisplayMode: "always",
+        _labelVisible: "1"
+      }
+    };
+    const labelQuery = { left: 420, right: 500, top: 70, bottom: 130 };
+    const store = createGraphStore([labeled], []);
+    const hiddenLabel = {
+      ...labeled,
+      params: {
+        ...labeled.params,
+        _labelDisplayMode: "hidden",
+        _labelVisible: "0"
+      }
+    };
+    const hiddenStore = graphStorePatchNodes(store, [hiddenLabel]);
+
+    expect(queryGraphStoreNodeSpatialIndex(store, labelQuery).map((node) => node.id)).toEqual([labeled.id]);
+    expect(queryGraphStoreNodeSpatialIndex(hiddenStore, labelQuery)).toEqual([]);
+  });
+
   test("keeps nodes indexed by model layer while patching moved nodes", () => {
     const first = createDefaultNode("ac-source", { x: 100, y: 100 });
     const second = { ...createDefaultNode("ac-load", { x: 320, y: 100 }), layerId: "layer-2" };

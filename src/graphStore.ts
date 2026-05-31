@@ -1,4 +1,4 @@
-import { DEFAULT_MODEL_LAYER_ID, getNodeScaleX, getNodeScaleY, isBusNode, type Edge, type ModelNode } from "./model";
+import { DEFAULT_MODEL_LAYER_ID, calculateNodeVisualBounds, getNodeScaleX, getNodeScaleY, isBusNode, type Edge, type ModelNode } from "./model";
 
 export type GraphRenderBounds = {
   left: number;
@@ -54,12 +54,19 @@ const spatialBucketRange = (bounds: GraphRenderBounds, bucketSize: number) => ({
 const orderedIndexMap = (order: readonly string[]) => new Map(order.map((id, index) => [id, index]));
 
 function graphNodeRenderBounds(node: ModelNode): GraphRenderBounds {
+  const labelAwareBounds = calculateNodeVisualBounds(node, 24);
   const halfDiagonal = Math.hypot(node.size.width * getNodeScaleX(node), node.size.height * getNodeScaleY(node)) / 2 + 24;
-  return {
+  const bodyBounds = {
     left: node.position.x - halfDiagonal,
     right: node.position.x + halfDiagonal,
     top: node.position.y - halfDiagonal,
     bottom: node.position.y + halfDiagonal
+  };
+  return {
+    left: Math.min(labelAwareBounds.left, bodyBounds.left),
+    right: Math.max(labelAwareBounds.right, bodyBounds.right),
+    top: Math.min(labelAwareBounds.top, bodyBounds.top),
+    bottom: Math.max(labelAwareBounds.bottom, bodyBounds.bottom)
   };
 }
 
