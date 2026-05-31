@@ -98,6 +98,7 @@ import {
   createModelLayer,
   DEFAULT_MODEL_LAYER_ID,
   filterProjectByVisibleLayers,
+  normalizeModelGroups,
   normalizeProjectLayers,
   resolveActiveModelLayerId,
   normalizeScaleValue,
@@ -204,6 +205,20 @@ function routeIntersectsTestBox(points: Point[], box: TestBox) {
 }
 
 describe("power system model", () => {
+  test("does not scan node or edge arrays when there are no model groups", () => {
+    const nodes = [] as ModelNode[];
+    const edges = [] as Edge[];
+    nodes.map = () => {
+      throw new Error("node scan should be skipped for empty groups");
+    };
+    edges.map = () => {
+      throw new Error("edge scan should be skipped for empty groups");
+    };
+
+    expect(normalizeModelGroups([], nodes, edges)).toEqual([]);
+    expect(normalizeModelGroups(undefined, nodes, edges)).toEqual([]);
+  });
+
   test("builds adjacency topology from connection lines", () => {
     const nodes: ModelNode[] = [
       createDefaultNode("ac-bus", { x: 100, y: 100 }),

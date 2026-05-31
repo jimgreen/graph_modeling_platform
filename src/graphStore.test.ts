@@ -76,6 +76,69 @@ describe("normalized graph store", () => {
     expect(rewired.edgeEndpointRevision).toBe(manualRoute.edgeEndpointRevision + 1);
   });
 
+  test("tracks route and topology revisions only for graph-affecting node changes", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 260, y: 100 });
+    const edge: Edge = { id: "edge-1", sourceId: source.id, targetId: load.id, sourceTerminalId: "t1", targetTerminalId: "t1" };
+    const store = createGraphStore([source, load], [edge]);
+
+    const parameterOnlySource = {
+      ...source,
+      params: { ...source.params, p_set: "42" }
+    };
+    const parameterOnly = graphStorePatchNodes(store, [parameterOnlySource]);
+    const labelChangedSource = {
+      ...parameterOnlySource,
+      params: { ...parameterOnlySource.params, _labelText: "新电源标识" }
+    };
+    const labelChanged = graphStorePatchNodes(parameterOnly, [labelChangedSource]);
+    const terminalVoltageChanged = graphStorePatchNodes(labelChanged, [{
+      ...labelChangedSource,
+      terminals: labelChangedSource.terminals.map((terminal, index) =>
+        index === 0 ? { ...terminal, vbase: "110" } : terminal
+      )
+    }]);
+    const moved = graphStorePatchNodes(terminalVoltageChanged, [{
+      ...terminalVoltageChanged.nodeMap.get(source.id)!,
+      position: { x: 140, y: 120 }
+    }]);
+
+    expect(parameterOnly.routeGeometryRevision).toBe(store.routeGeometryRevision);
+    expect(parameterOnly.topologyRevision).toBe(store.topologyRevision);
+    expect(parameterOnly.nodeSpatialIndex).toBe(store.nodeSpatialIndex);
+    expect(labelChanged.routeGeometryRevision).toBe(parameterOnly.routeGeometryRevision + 1);
+    expect(labelChanged.topologyRevision).toBe(parameterOnly.topologyRevision);
+    expect(terminalVoltageChanged.routeGeometryRevision).toBe(labelChanged.routeGeometryRevision);
+    expect(terminalVoltageChanged.topologyRevision).toBe(labelChanged.topologyRevision + 1);
+    expect(moved.routeGeometryRevision).toBe(terminalVoltageChanged.routeGeometryRevision + 1);
+    expect(moved.topologyRevision).toBe(terminalVoltageChanged.topologyRevision + 1);
+  });
+
+  test("tracks route and topology revisions only for graph-affecting edge changes", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 260, y: 100 });
+    const spare = createDefaultNode("ac-load", { x: 420, y: 100 });
+    const edge: Edge = { id: "edge-1", sourceId: source.id, targetId: load.id, sourceTerminalId: "t1", targetTerminalId: "t1" };
+    const store = createGraphStore([source, load, spare], [edge]);
+
+    const manualRoute = graphStorePatchEdges(store, [{ ...edge, manualPoints: [{ x: 180, y: 140 }] }]);
+    const rewired = graphStorePatchEdges(manualRoute, [{ ...edge, targetId: spare.id, targetTerminalId: "t1" }]);
+    const added: Edge = { id: "edge-2", sourceId: source.id, targetId: load.id, sourceTerminalId: "t1", targetTerminalId: "t1" };
+    const withAddedAndDeleted = graphStoreApplyPatch(rewired, {
+      edgeUpserts: [added],
+      edgeDeleteIds: [edge.id]
+    });
+
+    expect(manualRoute.routeGeometryRevision).toBe(store.routeGeometryRevision + 1);
+    expect(manualRoute.topologyRevision).toBe(store.topologyRevision);
+    expect(manualRoute.edgeEndpointRevision).toBe(store.edgeEndpointRevision);
+    expect(rewired.routeGeometryRevision).toBe(manualRoute.routeGeometryRevision + 1);
+    expect(rewired.topologyRevision).toBe(manualRoute.topologyRevision + 1);
+    expect(rewired.edgeEndpointRevision).toBe(manualRoute.edgeEndpointRevision + 1);
+    expect(withAddedAndDeleted.routeGeometryRevision).toBe(rewired.routeGeometryRevision + 1);
+    expect(withAddedAndDeleted.topologyRevision).toBe(rewired.topologyRevision + 1);
+  });
+
   test("updates one node without rebuilding unchanged node and edge references", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
     const load = createDefaultNode("ac-load", { x: 260, y: 100 });

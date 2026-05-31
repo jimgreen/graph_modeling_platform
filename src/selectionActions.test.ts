@@ -148,6 +148,23 @@ describe("canvas selection actions", () => {
     expect(units[0].bounds.bottom).toBeGreaterThan(bodyBottom + 20);
   });
 
+  test("does not build full layout indexes when nothing is selected", () => {
+    const nodes = [] as ReturnType<typeof createDefaultNode>[];
+    const edges = [] as Edge[];
+    const routes = [] as ReturnType<typeof routeEdgesForRendering>;
+    nodes.map = () => {
+      throw new Error("node scan should be skipped for empty selection");
+    };
+    edges.map = () => {
+      throw new Error("edge scan should be skipped for empty selection");
+    };
+    routes.map = () => {
+      throw new Error("route scan should be skipped for empty selection");
+    };
+
+    expect(buildCanvasLayoutUnits([], nodes, [], [], edges, routes)).toEqual([]);
+  });
+
   test("copies and pastes selected nodes with their selected connection lines", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
     const target = createDefaultNode("ac-load", { x: 300, y: 100 });

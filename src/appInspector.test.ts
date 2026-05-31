@@ -970,12 +970,13 @@ describe("graph inspector panel", () => {
     expect(finishTransformBlock).toContain("activeTransform.nodeIds");
     expect(finishTransformBlock).toContain("buildGroupTransformNodeUpdates(activeTransform, finalPreviewPoint, current)");
     expect(finishTransformBlock).toContain("graphStorePatchGraphFromArrays");
-    expect(finishTransformBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nodes, transformedNodeIds)");
+    expect(finishTransformBlock).toContain("rebuildEdgeUpdatesAfterNodeGeometryChange(nodes, transformedNodeIds)");
+    expect(finishTransformBlock).toContain("graphStorePatchEdges(current, edgeUpdates)");
     expect(edgeRenderBlock).toContain("groupTransformPreviewEdgeIdSet.has(edge.id)");
     expect(nodeRenderBlock).toContain("groupTransformPreviewNodeIdSet.has(node.id)");
     expect(mirrorBlock).toContain("selectedLayoutUnits");
     expect(source).toContain("unit.kind === \"group\"");
-    expect(mirrorBlock).toContain("mirrorLayoutUnitNodes");
+    expect(mirrorBlock).toContain("mirrorLayoutUnitNodeUpdates");
     expect(source).toContain("const renderGroupTransformPhotoPreview");
     expect(source).toContain("transform={groupTransformPreviewTransform}");
     expect(renderBlock).toContain("const transforming = groupTransformPreviewGroupId === unit.id");
@@ -1024,7 +1025,7 @@ describe("graph inspector panel", () => {
     const mirrorStart = source.indexOf("const mirrorSelectedNodes");
     const mirrorEnd = source.indexOf("const updateCanvasSize", mirrorStart);
     const mirrorBlock = source.slice(mirrorStart, mirrorEnd);
-    const layoutMirrorStart = source.indexOf("const mirrorLayoutUnitNodes");
+    const layoutMirrorStart = source.indexOf("const mirrorLayoutUnitNodeUpdates");
     const layoutMirrorEnd = source.indexOf("const busAnchorFromEvent", layoutMirrorStart);
     const layoutMirrorBlock = source.slice(layoutMirrorStart, layoutMirrorEnd);
 
@@ -1036,8 +1037,9 @@ describe("graph inspector panel", () => {
     expect(layoutMirrorBlock).toContain("scaleY: -getNodeScaleY(node)");
     expect(mirrorBlock).toContain("const mirroredEdgeUpdates = buildMirrorLayoutUnitEdgeUpdates");
     expect(mirrorBlock).toContain("const preservedMirrorEdgeIds = new Set(mirroredEdgeUpdates.map((edge) => edge.id))");
-    expect(mirrorBlock).toContain("const mirroredEdges = overlayEdgeUpdatesForTransform(edges, mirroredEdgeUpdates)");
-    expect(mirrorBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nextNodes, transformedNodeIds, mirroredEdges, preservedMirrorEdgeIds)");
+    expect(mirrorBlock).not.toContain("const mirroredEdges = overlayEdgeUpdatesForTransform(edges, mirroredEdgeUpdates)");
+    expect(mirrorBlock).toContain("rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, transformedNodeIds, edges, preservedMirrorEdgeIds)");
+    expect(mirrorBlock).toContain("graphStoreApplyPatch(current, {");
   });
 
   test("groups alignment and rotation actions into hover topbar dropdowns", async () => {
@@ -1052,13 +1054,14 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("RotateCcw");
     expect(source).toContain("RotateCw");
-    expect(source).toContain("const rotateLayoutUnitNodes");
+    expect(source).toContain("const rotateLayoutUnitNodeUpdates");
     expect(source).toContain("const buildRotateLayoutUnitEdgeUpdates");
     expect(rotateBlock).toContain("const degrees = direction === \"left\" ? -90 : 90");
-    expect(rotateBlock).toContain("rotateLayoutUnitNodes(nodes, selectedLayoutUnits, degrees)");
+    expect(rotateBlock).toContain("rotateLayoutUnitNodeUpdates(selectedLayoutUnits, degrees)");
     expect(rotateBlock).toContain("const rotatedEdgeUpdates = buildRotateLayoutUnitEdgeUpdates");
     expect(rotateBlock).toContain("const preservedRotateEdgeIds = new Set(rotatedEdgeUpdates.map((edge) => edge.id))");
-    expect(rotateBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nextNodes, transformedNodeIds, rotatedEdges, preservedRotateEdgeIds)");
+    expect(rotateBlock).toContain("rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, transformedNodeIds, edges, preservedRotateEdgeIds)");
+    expect(rotateBlock).toContain("graphStoreApplyPatch(current, {");
     expect(topbarBlock).toContain("className=\"topbar-dropdown align-dropdown\"");
     expect(topbarBlock).toContain("className=\"topbar-dropdown rotate-dropdown\"");
     expect(topbarBlock).toContain("className=\"topbar-dropdown-trigger\"");
@@ -1105,7 +1108,8 @@ describe("graph inspector panel", () => {
     expect(commitBlock).toContain("routedEdges");
     expect(commitBlock).toContain("联络线绘制失败");
     expect(commitBlock).toContain("prepared.edge");
-    expect(commitBlock.indexOf("prepareConnectionEdgeForCommit")).toBeLessThan(commitBlock.indexOf("setEdges"));
+    expect(commitBlock).toContain("graphStoreApplyPatch(current, { edgeUpserts: [preparedEdge] })");
+    expect(commitBlock.indexOf("prepareConnectionEdgeForCommit")).toBeLessThan(commitBlock.indexOf("graphStoreApplyPatch"));
     expect(finishBlock).toContain("return commitNewConnectionEdge(newEdge");
     expect(terminalBlock).toContain("commitNewConnectionEdge(newEdge");
   });
@@ -1147,8 +1151,8 @@ describe("graph inspector panel", () => {
 
   test("reroutes only connected lines after node geometry transforms", async () => {
     const source = await readAppSource();
-    const helperStart = source.indexOf("const rebuildEdgesAfterNodeGeometryChange");
-    const helperEnd = source.indexOf("const selectedRoutedEdge", helperStart);
+    const helperStart = source.indexOf("const rebuildEdgeUpdatesAfterNodeGeometryChange");
+    const helperEnd = source.indexOf("const rebuildEdgesAfterNodeGeometryChange", helperStart);
     const helperBlock = source.slice(helperStart, helperEnd);
     const updateStart = source.indexOf("const updateSelectedNode");
     const updateEnd = source.indexOf("const assignSelectedNodesToModelLayer", updateStart);
@@ -1172,10 +1176,13 @@ describe("graph inspector panel", () => {
     expect(helperBlock).toContain("markRouteEdgesDirty");
     expect(helperBlock).toContain("markStoredRouteEdgesDirty");
     expect(updateBlock).toContain("const geometryPatch");
-    expect(updateBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nextNodes, [selectedNodeId])");
-    expect(mirrorBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nextNodes, transformedNodeIds, mirroredEdges, preservedMirrorEdgeIds)");
+    expect(updateBlock).toContain("rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, [selectedNodeId])");
+    expect(mirrorBlock).toContain("rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, transformedNodeIds, edges, preservedMirrorEdgeIds)");
+    expect(mirrorBlock).toContain("graphStoreApplyPatch(current, {");
+    expect(mirrorBlock).not.toContain("setGraphArrays(nextNodes, nextEdges)");
     expect(finishTransformBlock).toContain("transformDragChangedRef.current");
-    expect(finishTransformBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nodes, transformedNodeIds)");
+    expect(finishTransformBlock).toContain("rebuildEdgeUpdatesAfterNodeGeometryChange(nodes, transformedNodeIds)");
+    expect(finishTransformBlock).toContain("graphStorePatchEdges(current, edgeUpdates)");
     expect(pointerBlock).toContain("transformDragChangedRef.current = true");
     expect(source).toContain("finishTransformDrag();");
   });
@@ -1249,7 +1256,7 @@ describe("graph inspector panel", () => {
     expect(source).not.toContain("movedIds.size <= 1 || selectedEdgeIds.size === 1");
     expect(source).toContain("if (blockedEdgeIds.size > 0)");
     expect(source).toContain("return affectedConnectionCount === 1");
-    expect(scheduleBlock).toContain("!shouldRunDeferredMoveOptimization(optimizationEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)");
+    expect(scheduleBlock).toContain("!shouldRunDeferredMoveOptimization(latestOptimizationEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)");
     expect(scheduleBlock).toContain("deferredMoveOptimizationCancelRef.current = null");
     expect(scheduleBlock).toContain("scheduleIdleWork");
     expect(scheduleBlock).toContain("graphStorePatchStillCurrent");
@@ -1258,23 +1265,29 @@ describe("graph inspector panel", () => {
     expect(finishBlock).not.toContain("routePointsForMovedNodeBlockers");
   });
 
-  test("uses live routing data while deferred routes are stale after a drag commit", async () => {
+  test("keeps routing inputs stable for parameter-only updates while deferred routes are stale after a graph edit", async () => {
     const source = await readAppSource();
-    const routingStart = source.indexOf("const deferredRoutingNodes = useDeferredValue(visibleNodes);");
+    const routingStart = source.indexOf("const routeInputLayerSignature = useMemo");
     const routingEnd = source.indexOf("const routedEdges = useMemo", routingStart);
     const routingBlock = source.slice(routingStart, routingEnd);
 
+    expect(source).toContain("routeGeometryRevision");
+    expect(routingBlock).toContain("cachedRouteInputRef.current");
+    expect(routingBlock).toContain("cachedRouteInput.routeGeometryRevision === graphStore.routeGeometryRevision");
+    expect(routingBlock).toContain("cachedRouteInput.layerSignature === routeInputLayerSignature");
+    expect(routingBlock).toContain("const deferredRoutingNodes = useDeferredValue(routeInput.nodes);");
+    expect(routingBlock).toContain("const deferredRoutingEdges = useDeferredValue(routeInput.edges);");
     expect(routingBlock).toContain("const deferredRoutingIsCurrent");
-    expect(routingBlock).toContain("deferredRoutingNodes === visibleNodes");
-    expect(routingBlock).toContain("deferredRoutingEdges === visibleEdges");
+    expect(routingBlock).toContain("deferredRoutingNodes === routeInput.nodes");
+    expect(routingBlock).toContain("deferredRoutingEdges === routeInput.edges");
     expect(routingBlock).toContain("!deferredRoutingIsCurrent");
-    expect(routingBlock).toContain("routingNodes = requiresLiveRouting ? visibleNodes : deferredRoutingNodes");
-    expect(routingBlock).toContain("routingEdges = requiresLiveRouting ? visibleEdges : deferredRoutingEdges");
+    expect(routingBlock).toContain("routingNodes = requiresLiveRouting ? routeInput.nodes : deferredRoutingNodes");
+    expect(routingBlock).toContain("routingEdges = requiresLiveRouting ? routeInput.edges : deferredRoutingEdges");
   });
 
   test("uses stored connection geometry on open and only enables full routing after edits", async () => {
     const source = await readAppSource();
-    const routingStart = source.indexOf("const deferredRoutingNodes = useDeferredValue(visibleNodes);");
+    const routingStart = source.indexOf("const routeInputLayerSignature = useMemo");
     const routingEnd = source.indexOf("const routedEdgeById", routingStart);
     const routingBlock = source.slice(routingStart, routingEnd);
 
@@ -1288,7 +1301,7 @@ describe("graph inspector panel", () => {
     expect(routingBlock).toContain("routeEdgesForCachedStoredRendering");
     expect(routingBlock).toContain("routeEdgesForIncrementalRendering");
     expect(routingBlock).toContain("cachedRoutedEdgesRef.current");
-    expect(routingBlock).toContain("return routeEdgesForStoredRendering");
+    expect(routingBlock).toContain("routes: routeEdgesForStoredRendering(routingNodes, routingEdges, canvasBounds)");
     expect(routingBlock).not.toContain("routeEdgesForRendering(routingNodes, routingEdges");
   });
 
@@ -1825,7 +1838,7 @@ describe("graph inspector panel", () => {
   test("limits full routing to direct path edits and keeps node dragging on the lightweight preview path", async () => {
     const source = await readAppSource();
     const routingStart = source.indexOf("const affectedRoutingEdgeIds = useMemo");
-    const routingEnd = source.indexOf("const routedEdges = useMemo", routingStart);
+    const routingEnd = source.indexOf("const routedEdges = routedRouteState.routes;", routingStart);
     const routingBlock = source.slice(routingStart, routingEnd);
     const dragPreviewStart = source.indexOf("const dragPreviewEdgeRoutes = useMemo");
     const dragPreviewEnd = source.indexOf("const dragPreviewEdgeIdSet", dragPreviewStart);
@@ -1972,7 +1985,7 @@ describe("graph inspector panel", () => {
     const adjustEnd = source.indexOf("const rebuildSingleAffectedConnectionRoute", adjustStart);
     const adjustBlock = source.slice(adjustStart, adjustEnd);
 
-    expect(adjustBlock).toContain("const preserveAffectedRoutesForCanvasOriginShift = hasCanvasOriginShift(leftTopCanvasOriginShiftForContent(nextNodes));");
+    expect(adjustBlock).toContain("const preserveAffectedRoutesForCanvasOriginShift = hasCanvasOriginShift(leftTopCanvasOriginShiftForContent(Array.from(movedNextNodeById.values())));");
     expect(adjustBlock).toContain("(preserveAffectedRoutesForCanvasOriginShift && (sourceMoved || targetMoved))");
     expect(adjustBlock).toContain("preserveDraggedRouteShape({");
   });
@@ -2019,13 +2032,15 @@ describe("graph inspector panel", () => {
     expect(scheduleBlock).toContain("const routeCandidateEdges = localRouteOptimizationCandidateEdges");
     expect(scheduleBlock).toContain("const optimizationEdges = localRouteOptimizationEdges");
     expect(scheduleBlock).toContain("routeCandidateEdges");
-    expect(scheduleBlock).toContain("const blockedRoutePoints = routePointsForMovedNodeBlockers(expectedNodes, optimizationEdges, movedNodeIds, {});");
+    expect(scheduleBlock).toContain("const blockedRoutePoints = routePointsForMovedNodeBlockers(expectedNodes, latestOptimizationEdges, movedNodeIds, {});");
     expect(scheduleBlock).toContain("const blockedEdgeIds = new Set(Object.keys(blockedRoutePoints));");
-    expect(scheduleBlock).toContain("!shouldRunDeferredMoveOptimization(optimizationEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)");
+    expect(scheduleBlock).toContain("!shouldRunDeferredMoveOptimization(latestOptimizationEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)");
     expect(scheduleBlock).toContain("const dirtyOptimizedEdgeIds = new Set<string>([...blockedEdgeIds, ...forcedRerouteEdgeIds]);");
     expect(scheduleBlock).not.toContain("new Set<string>(optimizationEdges.map");
     expect(scheduleBlock).toContain("blockedRoutePoints");
     expect(scheduleBlock).not.toContain("dirtyEdgeIdsAfterMove(\n        expectedEdges,\n        optimized.edges,\n        movedNodeIds");
+    expect(scheduleBlock).not.toContain("const expectedEdges = latestStore.edges");
+    expect(scheduleBlock).not.toContain("expectedEdges,");
   });
 
   test("limits deferred drag route repair to actually interfered connection lines", async () => {
@@ -2047,6 +2062,8 @@ describe("graph inspector panel", () => {
     expect(scheduleBlock).toContain("const repairCandidateEdges = latestCandidateEdges.filter((edge) => repairEdgeIds.has(edge.id));");
     expect(scheduleBlock).toContain("repairCandidateEdges");
     expect(scheduleBlock).not.toContain("repairedEdges,\n        movedNodeIds,\n        repairCanvasBounds,\n        repairedEdges");
+    expect(scheduleBlock).not.toContain("latestStore.edges");
+    expect(scheduleBlock).not.toContain("latestNodes,\n        latestStore.edges");
   });
 
   test("reroutes connection lines near original positions after moving a small number of graphics", async () => {
@@ -2168,6 +2185,36 @@ describe("graph inspector panel", () => {
     expect(updateParamBlock).toContain("NODE_LABEL_FOOTPRINT_PARAM_KEYS.has(key)");
     expect(updateParamBlock).toContain("commitNodeFootprintUpdates([nextNode]");
     expect(finishDragBlock).toContain("commitNodeFootprintUpdates([currentNode]");
+  });
+
+  test("keeps plain device parameter edits node-only with scoped undo snapshots", async () => {
+    const source = await readAppSource();
+    const updateStart = source.indexOf("const updateSelectedNode");
+    const updateEnd = source.indexOf("const commitNodeFootprintUpdates", updateStart);
+    const updateBlock = source.slice(updateStart, updateEnd);
+    const updateParamStart = source.indexOf("const updateParam");
+    const updateParamEnd = source.indexOf("const renderColorEditor", updateParamStart);
+    const updateParamBlock = source.slice(updateParamStart, updateParamEnd);
+    const treeIdentityStart = source.indexOf("const updateElementTreeNodeIdentity");
+    const treeIdentityEnd = source.indexOf("const updateElementTreeContainerChildParam", treeIdentityStart);
+    const treeIdentityBlock = source.slice(treeIdentityStart, treeIdentityEnd);
+    const childParamStart = source.indexOf("const updateElementTreeContainerChildParam");
+    const childParamEnd = source.indexOf("const terminalVbaseFallback", childParamStart);
+    const childParamBlock = source.slice(childParamStart, childParamEnd);
+    const terminalStart = source.indexOf("const updateTerminalVbase");
+    const terminalEnd = source.indexOf("const renderColorEditor", terminalStart);
+    const terminalBlock = source.slice(terminalStart, terminalEnd);
+
+    expect(source).toContain("const pushNodeOnlyUndoSnapshot = (nodeId: string)");
+    expect(updateBlock).toContain("pushNodeOnlyUndoSnapshot(selectedNodeId)");
+    expect(updateParamBlock).toContain("pushNodeOnlyUndoSnapshot(selectedNodeId)");
+    expect(updateParamBlock).toContain("if (NODE_LABEL_FOOTPRINT_PARAM_KEYS.has(key))");
+    expect(updateParamBlock).toContain("commitNodeFootprintUpdates([nextNode]");
+    expect(updateParamBlock).toContain("patchGraphNodes([nextNode]);");
+    expect(updateParamBlock).not.toContain("pushUndoSnapshot();");
+    expect(treeIdentityBlock).toContain("pushNodeOnlyUndoSnapshot(nodeId)");
+    expect(childParamBlock).toContain("pushNodeOnlyUndoSnapshot(nodeId)");
+    expect(terminalBlock).toContain("pushNodeOnlyUndoSnapshot(selectedNodeId)");
   });
 
   test("caps orthogonal routing lane candidates to avoid quadratic searches in dense connection areas", async () => {
@@ -2374,8 +2421,63 @@ describe("graph inspector panel", () => {
     expect(undoBlock).toContain("nodes: deepModelSnapshot ? cloneNodesForUndo(nodes) : nodes");
     expect(undoActionBlock).toContain("deferredMoveOptimizationCancelRef.current?.()");
     expect(undoActionBlock).toContain("pendingStoredRouteEdgeIdsRef.current = new Set()");
-    expect(undoActionBlock).toContain("markRouteEdgesDirty(new Set([");
-    expect(undoActionBlock).toContain("...snapshot.edges.map((edge) => edge.id)");
+    expect(undoActionBlock).toContain("applyUndoGraphSnapshot(snapshot);");
+    expect(undoActionBlock).not.toContain("markRouteEdgesDirty(new Set([");
+    expect(undoActionBlock).not.toContain("...snapshot.edges.map((edge) => edge.id)");
+  });
+
+  test("patches lightweight undo snapshots instead of rebuilding the whole graph", async () => {
+    const source = await readAppSource();
+    const snapshotStart = source.indexOf("const cloneProjectState");
+    const snapshotEnd = source.indexOf("const pushUndoSnapshot", snapshotStart);
+    const snapshotBlock = source.slice(snapshotStart, snapshotEnd);
+    const undoPatchStart = source.indexOf("const undoGraphSnapshotPatchPlan");
+    const undoPatchEnd = source.indexOf("const pushUndoSnapshot", undoPatchStart);
+    const undoPatchBlock = source.slice(undoPatchStart, undoPatchEnd);
+    const undoActionStart = source.indexOf("const undoLastOperation = () =>");
+    const undoActionEnd = source.indexOf("useEffect(() =>", undoActionStart);
+    const undoActionBlock = source.slice(undoActionStart, undoActionEnd);
+
+    expect(source).toContain("graphSnapshotMode: \"deep\" | \"reference\"");
+    expect(snapshotBlock).toContain("graphSnapshotMode: deepModelSnapshot ? \"deep\" : \"reference\"");
+    expect(undoPatchStart).toBeGreaterThan(-1);
+    expect(undoPatchBlock).toContain("snapshot.graphSnapshotMode !== \"reference\"");
+    expect(undoPatchBlock).toContain("return { mode: \"full\"");
+    expect(undoPatchBlock).toContain("graphStorePatchGraphFromArrays(current, snapshot.nodes, snapshot.edges");
+    expect(undoPatchBlock).toContain("graphStoreSetGraph(current, snapshot.nodes, snapshot.edges)");
+    expect(undoPatchBlock).toContain("store.edgesByNodeId.get(nodeId)");
+    expect(undoPatchBlock).not.toContain("snapshotEdgesByChangedNode");
+    expect(undoPatchBlock).not.toContain("...snapshot.edges.map((edge) => edge.id)");
+    expect(undoActionBlock).toContain("applyUndoGraphSnapshot(snapshot);");
+    expect(undoActionBlock).not.toContain("setGraphArrays(snapshot.nodes, snapshot.edges);");
+  });
+
+  test("scopes lightweight undo snapshots to known changed graph ids", async () => {
+    const source = await readAppSource();
+    const snapshotStart = source.indexOf("const cloneProjectState");
+    const snapshotEnd = source.indexOf("const pushUndoSnapshot", snapshotStart);
+    const snapshotBlock = source.slice(snapshotStart, snapshotEnd);
+    const undoPatchStart = source.indexOf("const undoGraphSnapshotPatchPlan");
+    const undoPatchEnd = source.indexOf("const applyUndoGraphSnapshot", undoPatchStart);
+    const undoPatchBlock = source.slice(undoPatchStart, undoPatchEnd);
+    const dragScopeStart = source.indexOf("const undoScopeForDraggingState");
+    const dragScopeEnd = source.indexOf("const requestCanvasFrameCenter", dragScopeStart);
+    const dragScopeBlock = source.slice(dragScopeStart, dragScopeEnd);
+    const moveStart = source.indexOf("const moveSelection =");
+    const moveEnd = source.indexOf("const updateSelectedNode", moveStart);
+    const moveBlock = source.slice(moveStart, moveEnd);
+
+    expect(source).toContain("type UndoGraphPatchScope");
+    expect(source).toContain("graphPatchScope?: UndoGraphPatchScope");
+    expect(snapshotBlock).toContain("deepModelSnapshot = false");
+    expect(snapshotBlock).toContain("graphPatchScope");
+    expect(undoPatchBlock).toContain("const scopedNodeIds = snapshot.graphPatchScope?.nodeIds");
+    expect(undoPatchBlock).toContain("for (const nodeId of scopedNodeIds)");
+    expect(undoPatchBlock).toContain("for (const edgeId of scopedEdgeIds)");
+    expect(dragScopeBlock).toContain("undoScopeForDraggingState");
+    expect(dragScopeBlock).toContain("dragState.affectedEdges.map((edge) => edge.id)");
+    expect(dragScopeBlock).toContain("pushUndoSnapshot(true, false, undoScopeForDraggingState(draggingRef.current))");
+    expect(moveBlock).toContain("pushUndoSnapshot(true, false, undoScopeForGraphPatch(moveNodeIds, affectedEdgesForMove.map((edge) => edge.id)))");
   });
 
   test("keeps multi-node drag movement lightweight with a precomputed overlay and deferred route repair", async () => {
@@ -2506,9 +2608,9 @@ describe("graph inspector panel", () => {
     expect(commitBlock).toContain("const candidateEdgeIds = committedCandidateEdges.map((edge) => edge.id);");
     expect(commitBlock).toContain("markStoredRouteEdgesDirty(candidateEdgeIds);");
     expect(commitBlock).not.toContain("markStoredRouteEdgesDirty(shiftedNextEdges.map((edge) => edge.id));");
-    expect(commitBlock).toContain("canvasBoundsForGraphContent(effectiveCanvasBounds, nextNodes, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING)");
+    expect(commitBlock).toContain("canvasBoundsForGraphContent(effectiveCanvasBounds, movedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING)");
     expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(movedNodeIds, committedCandidateEdges, expectedPatch, commitCanvasBounds);");
-    expect(commitBlock).toContain("expandCanvasToFitGraph(nextNodes, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);");
+    expect(commitBlock).toContain("expandCanvasToFitGraph(movedNodeUpdates, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);");
     expect(finishMoveBlock).toContain("nodes,\n      finalBounds");
     expect(finishDragBlock).toContain("nodes,\n      finalBounds");
     expect(moveSelectionBlock).toContain("nodes,\n      finalBounds");
@@ -2817,7 +2919,6 @@ describe("graph inspector panel", () => {
 
   test("defers bus terminal synchronization and keeps graph edits out of automatic draft saves", async () => {
     const source = await readAppSource();
-    const busSyncStart = source.indexOf("const synchronized = scheduledBusSyncNodeIds.size > 0");
     const busSyncEffectStart = source.indexOf("const pendingBusSyncNodeIds = pendingBusTerminalSyncNodeIdsRef.current;");
     const busSyncEffectEnd = source.indexOf("const canvasBounds", busSyncEffectStart);
     const busSyncEffectBlock = source.slice(busSyncEffectStart, busSyncEffectEnd);
@@ -2835,7 +2936,7 @@ describe("graph inspector panel", () => {
     expect(source).not.toContain("const connectionEndpointSignature");
     expect(busSyncEffectBlock).toContain("lastBusTerminalSyncEndpointRevisionRef.current === graphStore.edgeEndpointRevision");
     expect(busSyncEffectBlock).toContain("lastBusTerminalSyncEndpointRevisionRef.current = graphStore.edgeEndpointRevision");
-    expect(source.slice(Math.max(0, busSyncStart - 300), busSyncStart + 300)).toContain("scheduleIdleWork");
+    expect(busSyncEffectBlock).toContain("scheduleIdleWork");
     expect(saveDraftBlock).toContain("DRAFT_PROJECT_STORAGE_KEY");
     expect(saveDraftBlock).toContain("window.localStorage.setItem");
     expect(saveBlock).toContain("saveDraftProject(targetId");
@@ -2843,7 +2944,52 @@ describe("graph inspector panel", () => {
     expect(source).not.toContain("draftAutosaveProjectId");
     expect(source).not.toContain("saveDraftProject(draftAutosaveProjectId");
     expect(source).not.toContain("[activeProjectId, activeSchemeId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, nodes, powerBaseValue, powerUnit, projectName, voltageUnit]");
-    expect(source.slice(Math.max(0, topologyStaleStart - 400), topologyStaleStart + 300)).toContain("scheduleIdleWork");
+    const topologyStaleBlock = source.slice(Math.max(0, topologyStaleStart - 400), topologyStaleStart + 300);
+    expect(topologyStaleBlock).toContain("scheduleIdleWork");
+    expect(topologyStaleBlock).toContain("graphStore.topologyRevision");
+    expect(topologyStaleBlock).not.toContain("}, [edges, nodes]");
+  });
+
+  test("keeps graph operations out of autosave paths and avoids deep undo snapshots for move commits", async () => {
+    const source = await readAppSource();
+    const saveStart = source.indexOf("const saveCurrentProject");
+    const saveEnd = source.indexOf("const renameProjectRecord", saveStart);
+    const manualSaveBlock = source.slice(saveStart, saveEnd);
+    const schemePersistStart = source.indexOf("const normalizedSchemesPayload = serializeSchemesForStorage(schemes);");
+    const schemePersistEnd = source.indexOf("}, [schemes]);", schemePersistStart);
+    const schemePersistBlock = source.slice(schemePersistStart, schemePersistEnd);
+    const operationBlocks = [
+      ["finishNodeDrag", source.indexOf("const finishNodeDrag = () =>"), source.indexOf("const finishTransformDrag")],
+      ["moveSelection", source.indexOf("const moveSelection ="), source.indexOf("const updateSelectedNode")],
+      ["pasteSelection", source.indexOf("const pasteSelection = () =>"), source.indexOf("const finishMarqueeSelection")],
+      ["deleteSelectedGraphicsFromCanvas", source.indexOf("const deleteSelectedGraphicsFromCanvas = () =>"), source.indexOf("const groupSelectedGraphics", source.indexOf("const deleteSelectedGraphicsFromCanvas = () =>"))],
+      ["finishConnectToTarget", source.indexOf("const finishConnectToTarget"), source.indexOf("const finishRewiring", source.indexOf("const finishConnectToTarget"))]
+    ] as const;
+
+    expect(manualSaveBlock).toContain("saveDraftProject(targetId");
+    expect(manualSaveBlock).toContain("saveDraftProject(record.id");
+    expect(schemePersistBlock).toContain("persistBackendSchemesPayload(normalizedSchemesPayload)");
+    expect(source).not.toContain("draftAutosaveProjectId");
+    expect(source).not.toContain("saveDraftProject(draftAutosaveProjectId");
+    expect(schemePersistBlock).not.toContain("nodes");
+    expect(schemePersistBlock).not.toContain("edges");
+    expect(schemePersistBlock).not.toContain("groups");
+    for (const [name, start, end] of operationBlocks) {
+      expect(start, `${name} block should exist`).toBeGreaterThan(-1);
+      expect(end, `${name} block end should exist`).toBeGreaterThan(start);
+      const block = source.slice(start, end);
+      expect(block, `${name} must not call draft save`).not.toContain("saveDraftProject(");
+      expect(block, `${name} must not call manual save`).not.toContain("saveCurrentProject(");
+      expect(block, `${name} must not persist scheme payload`).not.toContain("persistBackendSchemesPayload(");
+      expect(block, `${name} must not serialize schemes`).not.toContain("serializeSchemesForStorage(");
+      expect(block, `${name} must not mutate scheme records`).not.toContain("setSchemes(");
+      expect(block, `${name} must not mutate saved project records`).not.toContain("updateProjectInSchemes(");
+    }
+    const moveStart = source.indexOf("const moveSelection =");
+    const moveEnd = source.indexOf("const updateSelectedNode", moveStart);
+    const moveBlock = source.slice(moveStart, moveEnd);
+    expect(moveBlock).toContain("pushUndoSnapshot(true, false, undoScopeForGraphPatch");
+    expect(moveBlock).not.toContain("pushUndoSnapshot();");
   });
 
   test("keeps drag boundary checks and route dirty marking local to affected connection lines", async () => {
@@ -2875,25 +3021,138 @@ describe("graph inspector panel", () => {
     expect(scheduleBlock).not.toContain("edgeReferenceDiffIds(expectedEdges, optimized.edges)");
   });
 
+  test("keeps single-node drag and move landing bounds scoped to moved content", async () => {
+    const source = await readAppSource();
+    const moveBoundsStart = source.indexOf("const canvasBoundsForMoveDelta");
+    const moveBoundsEnd = source.indexOf("const computeNodeDragDelta", moveBoundsStart);
+    const moveBoundsBlock = source.slice(moveBoundsStart, moveBoundsEnd);
+    const adjustStart = source.indexOf("const adjustEdgesAfterNodeMove =");
+    const adjustEnd = source.indexOf("const rebuildSingleAffectedConnectionRoute", adjustStart);
+    const adjustBlock = source.slice(adjustStart, adjustEnd);
+    const commitStart = source.indexOf("const commitFastMovedGraphPatches");
+    const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
+
+    expect(moveBoundsBlock).toContain("const movedNodes: ModelNode[] = []");
+    expect(moveBoundsBlock).not.toContain("nodes.map");
+    expect(moveBoundsBlock).not.toContain("previewNodes");
+    expect(moveBoundsBlock).not.toContain("edges,");
+    expect(adjustBlock).toContain("leftTopCanvasOriginShiftForContent(Array.from(movedNextNodeById.values()))");
+    expect(adjustBlock).not.toContain("leftTopCanvasOriginShiftForContent(nextNodes)");
+    expect(commitBlock).toContain("leftTopCanvasOriginShiftForContent(movedNodeUpdates, committedCandidateEdges)");
+    expect(commitBlock).toContain("canvasBoundsForGraphContent(effectiveCanvasBounds, movedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING)");
+    expect(commitBlock).toContain("expandCanvasToFitGraph(movedNodeUpdates, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);");
+    expect(commitBlock).not.toContain("canvasBoundsForGraphContent(effectiveCanvasBounds, nextNodes, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING)");
+    expect(commitBlock).not.toContain("expandCanvasToFitGraph(nextNodes, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);");
+  });
+
+  test("keeps single-node move route rendering on stored-route local patches", async () => {
+    const source = await readAppSource();
+    const routingStart = source.indexOf("const patchStoredRouteStoreForEdgeIds");
+    const routingEnd = source.indexOf("const routedEdges = routedRouteState.routes;", routingStart);
+    const routingBlock = source.slice(routingStart, routingEnd);
+    const commitStart = source.indexOf("const commitFastMovedGraphPatches");
+    const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
+    const normalCommitStart = commitBlock.lastIndexOf("const edgePatch = edgePatchFromCandidateEdges(previousCandidateEdges, committedCandidateEdges);");
+    const normalCommitBlock = commitBlock.slice(normalCommitStart);
+
+    expect(routingStart).toBeGreaterThan(-1);
+    expect(source).toContain("refreshCrossingArcPaths");
+    expect(source).toContain("routeStorePatchRoutes");
+    expect(routingBlock).toContain("queryRouteSpatialIndex(store.routeSpatialIndex");
+    expect(routingBlock).toContain("routeEdgesForStoredRendering(routeNodesForEdge, [edge], bounds)");
+    expect(routingBlock).toContain("refreshCrossingArcPaths(localRoutes, changedRouteIds, Array.from(previousLocalRouteById.values()))");
+    expect(routingBlock).toContain("routeStorePatchRoutes(store, refreshedRoutes, routeDeleteIds)");
+    expect(routingBlock).toContain("patchStoredRouteStoreForEdgeIds(cachedRouteStoreRef.current, committedStoredEdgeIds, canvasBounds, routingNodes)");
+    expect(routingBlock).toContain("routeEdgesForCachedStoredRendering(");
+    expect(normalCommitBlock).toContain("const movedRouteDirtyIds = dirtyEdgeIdsAfterMove(previousCandidateEdges, committedCandidateEdges, movedNodeIds, edgePatchDirtyIds);");
+    expect(normalCommitBlock).toContain("markRouteEdgesDirty(movedRouteDirtyIds);");
+    expect(normalCommitBlock).toContain("markStoredRouteEdgesDirty(movedRouteDirtyIds);");
+    expect(normalCommitBlock).not.toContain("markStoredRouteEdgesDirty(edgePatchDirtyIds);");
+    expect(normalCommitBlock).not.toContain("markRouteEdgesDirty(edgePatchDirtyIds);");
+    expect(normalCommitBlock).toContain("const nextEdgesForBounds = edgePatch.edgeUpserts;");
+    expect(normalCommitBlock).not.toContain("const nextEdgesForBounds = overlayEdgesForPatch(edgePatch.edgeUpserts, edgePatch.edgeDeleteIds);");
+  });
+
+  test("keeps single-node geometry and label footprint commits scoped to changed content", async () => {
+    const source = await readAppSource();
+    const helperStart = source.indexOf("const rebuildEdgeUpdatesAfterNodeGeometryChange");
+    const helperEnd = source.indexOf("const rebuildEdgesAfterNodeGeometryChange", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+    const updateStart = source.indexOf("const updateSelectedNode");
+    const updateEnd = source.indexOf("const assignSelectedNodesToModelLayer", updateStart);
+    const updateBlock = source.slice(updateStart, updateEnd);
+    const footprintStart = source.indexOf("const commitNodeFootprintUpdates");
+    const footprintEnd = source.indexOf("const assignSelectedNodesToModelLayer", footprintStart);
+    const footprintBlock = source.slice(footprintStart, footprintEnd);
+
+    expect(helperStart).toBeGreaterThan(-1);
+    expect(helperBlock).toContain("return nextLocalEdges.filter");
+    expect(helperBlock).not.toContain("currentEdges.map((edge)");
+    expect(updateBlock).not.toContain("const previewNodes = nodes.map");
+    expect(updateBlock).not.toContain("canvasBoundsForGraphContent(\n          canvasBounds,\n          previewNodes,\n          edges");
+    expect(updateBlock).toContain("canvasBoundsForGraphContent(canvasBounds, [candidateNode], [], [], CANVAS_AUTO_EXPAND_PADDING)");
+    expect(updateBlock).toContain("const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, [selectedNodeId]);");
+    expect(updateBlock).toContain("expandCanvasToFitGraph([nextSelectedNode], edgeUpdates, [], CANVAS_AUTO_EXPAND_PADDING, selectedNodeCanvasBounds);");
+    expect(updateBlock).toContain("graphStoreApplyPatch(current, {");
+    expect(footprintBlock).toContain("const directCandidateEdges = edgeListForNodeIds(changedNodeIds);");
+    expect(footprintBlock).toContain("leftTopCanvasOriginShiftForContent(existingUpdates, directCandidateEdges)");
+    expect(footprintBlock).toContain("canvasBoundsForGraphContent(\n      canvasBounds,\n      existingUpdates,\n      directCandidateEdges");
+    expect(footprintBlock).toContain("optimizeMovedNodeEdgeRoutes(\n          nextNodes,\n          optimizationEdges");
+    expect(footprintBlock).toContain("expandCanvasToFitGraph(existingUpdates, edgeUpdates, [], CANVAS_AUTO_EXPAND_PADDING, footprintCanvasBounds);");
+    expect(footprintBlock).not.toContain("const nextEdges = blockedEdgeIds.size > 0");
+    expect(footprintBlock).not.toContain("expandCanvasToFitGraph(nextNodes, nextEdges");
+    expect(footprintBlock).not.toContain("leftTopCanvasOriginShiftForContent(nextNodes)");
+    expect(footprintBlock).not.toContain("canvasBoundsForGraphContent(\n      canvasBounds,\n      nextNodes,\n      edges");
+  });
+
   test("scopes delayed bus terminal synchronization after graph moves to pending affected nodes", async () => {
     const source = await readAppSource();
     const refStart = source.indexOf("const pendingBusTerminalSyncNodeIdsRef");
     const busSyncEffectStart = source.indexOf("const pendingBusSyncNodeIds = pendingBusTerminalSyncNodeIdsRef.current;");
     const busSyncEffectEnd = source.indexOf("const canvasBounds", busSyncEffectStart);
     const busSyncEffectBlock = source.slice(busSyncEffectStart, busSyncEffectEnd);
+    const scopedSyncStart = source.indexOf("const synchronizePendingBusTerminalsWithGraphStore");
+    const scopedSyncEnd = source.indexOf("useEffect(() => {\n    const pendingBusSyncNodeIds", scopedSyncStart);
+    const scopedSyncBlock = source.slice(scopedSyncStart, scopedSyncEnd);
     const commitStart = source.indexOf("const commitFastMovedGraph");
     const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
     const commitBlock = source.slice(commitStart, commitEnd);
 
     expect(refStart).toBeGreaterThan(-1);
+    expect(scopedSyncStart).toBeGreaterThan(-1);
+    expect(scopedSyncBlock).toContain("queryGraphStoreNodeSpatialIndex(store");
+    expect(scopedSyncBlock).toContain("store.edgesByNodeId.get(busId)");
+    expect(scopedSyncBlock).toContain("synchronizeBusTerminalsWithEdges(scopedNodes, scopedEdges, affectedBusIds)");
     expect(busSyncEffectBlock).toContain("scheduledBusSyncNodeIds.size > 0");
-    expect(busSyncEffectBlock).toContain("synchronizeBusTerminalsWithEdges(syncNodes, syncEdges, scheduledBusSyncNodeIds)");
+    expect(busSyncEffectBlock).toContain("synchronizePendingBusTerminalsWithGraphStore(latestStore, scheduledBusSyncNodeIds)");
+    expect(busSyncEffectBlock).toContain("graphStoreApplyPatch(current, {");
+    expect(busSyncEffectBlock).not.toContain("synchronizeBusTerminalsWithEdges(syncNodes, syncEdges, scheduledBusSyncNodeIds)");
     expect(busSyncEffectBlock).not.toContain("synchronizeBusTerminalsWithEdges(syncNodes, syncEdges);");
+    expect(busSyncEffectBlock).not.toContain("synchronizeBusTerminalsWithEdges(syncNodes, syncEdges, undefined)");
+    expect(busSyncEffectBlock).not.toContain("setGraphArrays(synchronized.nodes, synchronized.edges)");
     expect(source).toContain("const busTerminalSyncNodeIdsForGraphPatch =");
     expect(source).toContain("const busNodeIdSet = graphStore.busNodeIdSet");
     expect(busSyncEffectBlock).toContain("busNodeIdSet.size === 0");
     expect(commitBlock).toContain("busTerminalSyncNodeIdsForGraphPatch(");
     expect(commitBlock).not.toContain("markBusTerminalSyncDirty(movedNodeIds)");
+  });
+
+  test("keeps graph operation end derivations from scanning full node and edge lists unnecessarily", async () => {
+    const source = await readAppSource();
+    const activeGroupsStart = source.indexOf("const activeLayerGroups = useMemo");
+    const activeGroupsEnd = source.indexOf("const rawActiveSelectedEdgeIds", activeGroupsStart);
+    const activeGroupsBlock = source.slice(activeGroupsStart, activeGroupsEnd);
+    const selectedLayoutStart = source.indexOf("const selectedLayoutUnits = useMemo");
+    const selectedLayoutEnd = source.indexOf("const selectedGroupLayoutUnits", selectedLayoutStart);
+    const selectedLayoutBlock = source.slice(selectedLayoutStart, selectedLayoutEnd);
+
+    expect(activeGroupsStart).toBeGreaterThan(-1);
+    expect(activeGroupsBlock).toContain("graphStore.elementTreeRevision");
+    expect(activeGroupsBlock).not.toContain("[activeLayerEdges, activeLayerNodes, groups]");
+    expect(selectedLayoutBlock).toContain("activeSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0");
+    expect(selectedLayoutBlock).toContain("return [];");
   });
 
   test("reuses the element tree while drag-only geometry changes do not alter tree content", async () => {
@@ -3470,8 +3729,8 @@ describe("graph inspector panel", () => {
     const saveStart = source.indexOf("const saveCurrentProject =");
     const saveEnd = source.indexOf("const renameProjectRecord", saveStart);
     const saveBlock = source.slice(saveStart, saveEnd);
-    const busSyncStart = source.indexOf("const synchronized = scheduledBusSyncNodeIds.size > 0");
-    const busSyncEnd = source.indexOf("if (synchronized.nodes !== syncNodes)", busSyncStart);
+    const busSyncStart = source.indexOf("const pendingBusSyncNodeIds = pendingBusTerminalSyncNodeIdsRef.current;");
+    const busSyncEnd = source.indexOf("const canvasBounds", busSyncStart);
     const busSyncBlock = source.slice(busSyncStart, busSyncEnd);
 
     expect(source).toContain("type GraphDirtyBaseline");

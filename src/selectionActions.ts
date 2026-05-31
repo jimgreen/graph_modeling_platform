@@ -655,6 +655,9 @@ export function buildCanvasLayoutUnits(
   edges: readonly Edge[] = [],
   routedEdges: readonly RoutedEdge[] = []
 ): CanvasLayoutUnit[] {
+  if (selectedNodeIds.length === 0 && selectedEdgeIds.length === 0) {
+    return [];
+  }
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const edgesById = new Map(edges.map((edge) => [edge.id, edge]));
   const routeByEdgeId = new Map(routedEdges.map((route) => [route.edgeId, route]));

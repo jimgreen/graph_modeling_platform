@@ -7057,6 +7057,9 @@ export function normalizeModelGroups(
   nodes: readonly Pick<ModelNode, "id">[] = [],
   edges: readonly Pick<Edge, "id">[] = []
 ): ModelGroup[] {
+  if (!groups || groups.length === 0) {
+    return [];
+  }
   const validNodeIds = new Set(nodes.map((node) => node.id));
   const validEdgeIds = new Set(edges.map((edge) => edge.id));
   const seenGroupIds = new Set<string>();
@@ -9314,7 +9317,7 @@ function queryCrossingRouteSpatialIndex(index: CrossingRouteSpatialIndex, box: C
   return matches;
 }
 
-function refreshCrossingArcPaths(
+export function refreshCrossingArcPaths(
   routes: RoutedEdge[],
   changedEdgeIds?: ReadonlySet<string>,
   previousRoutes: RoutedEdge[] = []

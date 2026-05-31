@@ -148,6 +148,7 @@ import {
   rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes,
   rebuildSingleConnectionRoute,
   reconcileOverlappingTerminalConnections,
+  refreshCrossingArcPaths,
   rerouteEdgesAroundMovedNodes,
   resolveStraightBusSlideEndpoint,
   resolveStraightBusSlideEndpointToPoint,
@@ -211,7 +212,6 @@ import {
   createGraphStore,
   graphStoreApplyPatch,
   graphStorePatchEdges,
-  graphStorePatchEdgesFromArray,
   graphStorePatchGraph,
   graphStorePatchGraphFromArrays,
   graphStorePatchNodes,
@@ -219,10 +219,13 @@ import {
   graphStoreSetGraph,
   graphStoreSetNodes,
   overlayGraphStoreNodes,
+  queryGraphStoreNodeSpatialIndex,
   type GraphStore
 } from "./graphStore";
 import {
   queryRouteSpatialIndex,
+  routeRenderBounds,
+  routeStorePatchRoutes,
   routeStoreSetRoutes,
   type RouteStore
 } from "./routeStore";
@@ -660,6 +663,8 @@ type TopologyRunStatus = {
   message: string;
 };
 type UndoSnapshot = {
+  graphSnapshotMode: "deep" | "reference";
+  graphPatchScope?: UndoGraphPatchScope;
   projectName: string;
   layers: ModelLayer[];
   activeLayerId: string;
@@ -680,6 +685,13 @@ type UndoSnapshot = {
   deviceIndexCounters: DeviceIndexCounters;
   groups: ModelGroup[];
 };
+type UndoGraphPatchScope = {
+  nodeIds?: readonly string[];
+  edgeIds?: readonly string[];
+};
+type UndoGraphSnapshotPatchPlan =
+  | { mode: "full"; dirtyEdgeIds: Set<string> }
+  | { mode: "patch"; nodeIds: string[]; edgeIds: string[]; dirtyEdgeIds: Set<string> };
 type DraftProjectState = {
   projectName: string;
   activeProjectId: string;
@@ -4885,6 +4897,12 @@ export function App() {
   const canvasResizeDraftRef = useRef<CanvasBounds | null>(null);
   const cachedRoutedEdgesRef = useRef<RoutedEdge[]>([]);
   const cachedRouteStoreRef = useRef<RouteStore | null>(null);
+  const cachedRouteInputRef = useRef<{
+    routeGeometryRevision: number;
+    layerSignature: string;
+    nodes: ModelNode[];
+    edges: Edge[];
+  } | null>(null);
   const pendingRouteEdgeIdsRef = useRef<Set<string>>(new Set());
   const pendingStoredRouteEdgeIdsRef = useRef<Set<string>>(new Set());
   const canvasVisibleViewBoxFrameRef = useRef<number | null>(null);
@@ -5280,7 +5298,7 @@ export function App() {
   );
   const activeLayerGroups = useMemo(
     () => normalizeModelGroups(groups, activeLayerNodes, activeLayerEdges),
-    [activeLayerEdges, activeLayerNodes, groups]
+    [activeLayer?.visible, activeLayerId, graphStore.elementTreeRevision, groups, layers]
   );
   const rawActiveSelectedEdgeIds = useMemo(
     () => (selectedEdgeIds.length > 0 ? selectedEdgeIds : selectedEdgeId ? [selectedEdgeId] : [])
@@ -6201,6 +6219,65 @@ export function App() {
     }
     return ids;
   };
+  const synchronizePendingBusTerminalsWithGraphStore = (
+    store: GraphStore,
+    affectedBusIds: ReadonlySet<string>
+  ) => {
+    if (affectedBusIds.size === 0) {
+      return null;
+    }
+    const scopedNodeIds = new Set<string>();
+    const scopedEdgeIds = new Set<string>();
+    const scopePadding = 16;
+    for (const busId of affectedBusIds) {
+      const bus = store.nodeMap.get(busId);
+      if (!bus || !isBusNode(bus)) {
+        continue;
+      }
+      scopedNodeIds.add(bus.id);
+      const busBounds = store.nodeSpatialIndex.nodeBoundsById.get(bus.id);
+      if (busBounds) {
+        for (const node of queryGraphStoreNodeSpatialIndex(store, {
+          left: busBounds.left - scopePadding,
+          right: busBounds.right + scopePadding,
+          top: busBounds.top - scopePadding,
+          bottom: busBounds.bottom + scopePadding
+        })) {
+          scopedNodeIds.add(node.id);
+        }
+      }
+      for (const edge of store.edgesByNodeId.get(busId) ?? []) {
+        scopedEdgeIds.add(edge.id);
+        scopedNodeIds.add(edge.sourceId);
+        scopedNodeIds.add(edge.targetId);
+      }
+    }
+    if (scopedNodeIds.size === 0) {
+      return null;
+    }
+    const nodeOrderIndex = (node: ModelNode) => store.nodeIndexById.get(node.id) ?? Number.MAX_SAFE_INTEGER;
+    const edgeOrderIndex = (edge: Edge) => store.edgeIndexById.get(edge.id) ?? Number.MAX_SAFE_INTEGER;
+    const scopedNodes = Array.from(scopedNodeIds)
+      .flatMap((nodeId) => {
+        const node = store.nodeMap.get(nodeId);
+        return node ? [node] : [];
+      })
+      .sort((first, second) => nodeOrderIndex(first) - nodeOrderIndex(second));
+    const scopedEdges = Array.from(scopedEdgeIds)
+      .flatMap((edgeId) => {
+        const edge = store.edgeMap.get(edgeId);
+        return edge ? [edge] : [];
+      })
+      .sort((first, second) => edgeOrderIndex(first) - edgeOrderIndex(second));
+    const synchronized = synchronizeBusTerminalsWithEdges(scopedNodes, scopedEdges, affectedBusIds);
+    return {
+      scopedNodes,
+      scopedEdges,
+      synchronized,
+      nodeUpdates: synchronized.nodes.filter((node, index) => node !== scopedNodes[index]),
+      edgeUpserts: synchronized.edges.filter((edge, index) => edge !== scopedEdges[index])
+    };
+  };
 
   useEffect(() => {
     const pendingBusSyncNodeIds = pendingBusTerminalSyncNodeIdsRef.current;
@@ -6220,29 +6297,38 @@ export function App() {
         return;
       }
       lastBusTerminalSyncEndpointRevisionRef.current = graphStore.edgeEndpointRevision;
+      return;
     } else {
       pendingBusTerminalSyncNodeIdsRef.current = new Set();
     }
     let busSyncCompleted = false;
     const cancelBusSync = scheduleIdleWork(() => {
       busSyncCompleted = true;
-      const syncNodes = latestNodesRef.current;
-      const syncEdges = latestEdgesRef.current;
-      const synchronized = scheduledBusSyncNodeIds.size > 0
-        ? synchronizeBusTerminalsWithEdges(syncNodes, syncEdges, scheduledBusSyncNodeIds)
-        : synchronizeBusTerminalsWithEdges(syncNodes, syncEdges, undefined);
-      lastBusTerminalSyncEndpointRevisionRef.current = latestGraphStoreRef.current?.edgeEndpointRevision ?? graphStore.edgeEndpointRevision;
-      if (synchronized.nodes !== syncNodes || synchronized.edges !== syncEdges) {
-        const synchronizedNodeById = new Map(synchronized.nodes.map((node) => [node.id, node]));
-        const changedNodeIds = syncNodes
-          .filter((node) => synchronizedNodeById.get(node.id) !== node)
-          .map((node) => node.id);
-        markRouteEdgesDirty(dirtyEdgeIdsAfterMove(syncEdges, synchronized.edges, changedNodeIds));
+      const latestStore = latestGraphStoreRef.current;
+      if (scheduledBusSyncNodeIds.size > 0 && latestStore) {
+        const synchronized = synchronizePendingBusTerminalsWithGraphStore(latestStore, scheduledBusSyncNodeIds);
+        if (!synchronized || (synchronized.nodeUpdates.length === 0 && synchronized.edgeUpserts.length === 0)) {
+          lastBusTerminalSyncEndpointRevisionRef.current = latestStore.edgeEndpointRevision;
+          return;
+        }
+        markRouteEdgesDirty(dirtyEdgeIdsAfterMove(
+          synchronized.scopedEdges,
+          synchronized.synchronized.edges,
+          synchronized.nodeUpdates.map((node) => node.id)
+        ));
+        markStoredRouteEdgesDirty(synchronized.edgeUpserts.map((edge) => edge.id));
         suppressNextGraphDirtyRef.current = true;
+        setGraphStore((current) => {
+          const next = graphStoreApplyPatch(current, {
+            nodeUpdates: synchronized.nodeUpdates,
+            edgeUpserts: synchronized.edgeUpserts
+          });
+          lastBusTerminalSyncEndpointRevisionRef.current = next.edgeEndpointRevision;
+          return next;
+        });
+        return;
       }
-      if (synchronized.nodes !== syncNodes || synchronized.edges !== syncEdges) {
-        setGraphArrays(synchronized.nodes, synchronized.edges);
-      }
+      lastBusTerminalSyncEndpointRevisionRef.current = graphStore.edgeEndpointRevision;
     }, 300, 1000);
     return () => {
       cancelBusSync();
@@ -6255,7 +6341,7 @@ export function App() {
       }
       pendingBusTerminalSyncNodeIdsRef.current = next;
     };
-  }, [busNodeIdSet, connectSource, dragging, edges, graphStore.edgeEndpointRevision, manualPathDrag, nodes, rewiring, terminalPress?.moved]);
+  }, [busNodeIdSet, connectSource, dragging, graphStore.edgeEndpointRevision, manualPathDrag, rewiring, terminalPress?.moved]);
 
   useEffect(() => {
     if (!graphTreePanelActive) {
@@ -6712,44 +6798,151 @@ export function App() {
     }
   }, [connectSource, dragging, hasUnsavedChanges, manualPathDrag, rewiring, routeRenderingReady, terminalPress?.moved]);
 
-  const deferredRoutingNodes = useDeferredValue(visibleNodes);
-  const deferredRoutingEdges = useDeferredValue(visibleEdges);
-  const deferredRoutingIsCurrent = deferredRoutingNodes === visibleNodes && deferredRoutingEdges === visibleEdges;
+  const routeInputLayerSignature = useMemo(
+    () => layers.map((layer) => `${layer.id}:${layer.visible !== false ? "1" : "0"}`).join("|"),
+    [layers]
+  );
+  const routeInput = useMemo(() => {
+    const cachedRouteInput = cachedRouteInputRef.current;
+    if (
+      cachedRouteInput &&
+      cachedRouteInput.routeGeometryRevision === graphStore.routeGeometryRevision &&
+      cachedRouteInput.layerSignature === routeInputLayerSignature
+    ) {
+      return cachedRouteInput;
+    }
+    const nextRouteInput = {
+      routeGeometryRevision: graphStore.routeGeometryRevision,
+      layerSignature: routeInputLayerSignature,
+      nodes: visibleNodes,
+      edges: visibleEdges
+    };
+    cachedRouteInputRef.current = nextRouteInput;
+    return nextRouteInput;
+  }, [graphStore.routeGeometryRevision, routeInputLayerSignature, visibleEdges, visibleNodes]);
+  const deferredRoutingNodes = useDeferredValue(routeInput.nodes);
+  const deferredRoutingEdges = useDeferredValue(routeInput.edges);
+  const deferredRoutingIsCurrent = deferredRoutingNodes === routeInput.nodes && deferredRoutingEdges === routeInput.edges;
   const requiresLiveRouting = Boolean(!deferredRoutingIsCurrent);
-  const routingNodes = requiresLiveRouting ? visibleNodes : deferredRoutingNodes;
-  const routingEdges = requiresLiveRouting ? visibleEdges : deferredRoutingEdges;
+  const routingNodes = requiresLiveRouting ? routeInput.nodes : deferredRoutingNodes;
+  const routingEdges = requiresLiveRouting ? routeInput.edges : deferredRoutingEdges;
   const affectedRoutingEdgeIds = useMemo(() => {
     const ids = new Set<string>();
     return ids;
   }, []);
   const routeRenderingEnabled = routeRenderingReady;
-  const routedEdges = useMemo(() => {
+  const patchStoredRouteStoreForEdgeIds = (
+    store: RouteStore | null | undefined,
+    edgeIds: ReadonlySet<string>,
+    bounds: CanvasBounds,
+    routeNodes: ModelNode[]
+  ): RouteStore | null => {
+    if (!store || edgeIds.size === 0 || store.routes.length === 0) {
+      return null;
+    }
+    const changedRouteIds = new Set<string>();
+    const routeDeleteIds: string[] = [];
+    const localRouteById = new Map<string, RoutedEdge>();
+    const previousLocalRouteById = new Map<string, RoutedEdge>();
+    const addLocalRoute = (route: RoutedEdge | undefined) => {
+      if (route) {
+        localRouteById.set(route.edgeId, route);
+      }
+    };
+    const addStoredRoutesNearBounds = (boundsToQuery: ReturnType<typeof routeRenderBounds>) => {
+      if (!boundsToQuery) {
+        return;
+      }
+      for (const route of queryRouteSpatialIndex(store.routeSpatialIndex, boundsToQuery)) {
+        addLocalRoute(route);
+      }
+    };
+
+    for (const edgeId of edgeIds) {
+      const previousRoute = store.routeMap.get(edgeId);
+      if (previousRoute) {
+        previousLocalRouteById.set(edgeId, previousRoute);
+        addStoredRoutesNearBounds(routeRenderBounds(previousRoute, 8));
+      }
+      const edge = edgeById.get(edgeId);
+      if (!edge || !visibleEdgeIdSet.has(edge.id)) {
+        changedRouteIds.add(edgeId);
+        routeDeleteIds.push(edgeId);
+        continue;
+      }
+      const routeNodesForEdge = routingNodesForConnectionEdge(edge, routeNodes);
+      const nextRoute = routeEdgesForStoredRendering(routeNodesForEdge, [edge], bounds)[0];
+      if (!nextRoute) {
+        changedRouteIds.add(edgeId);
+        routeDeleteIds.push(edgeId);
+        continue;
+      }
+      changedRouteIds.add(edgeId);
+      addStoredRoutesNearBounds(routeRenderBounds(nextRoute, 8));
+      localRouteById.set(nextRoute.edgeId, nextRoute);
+    }
+
+    if (changedRouteIds.size === 0 && routeDeleteIds.length === 0) {
+      return null;
+    }
+    const refreshSeedRoutes = Array.from(localRouteById.values());
+    for (const route of refreshSeedRoutes) {
+      addStoredRoutesNearBounds(routeRenderBounds(route, 8));
+    }
+    const localRoutes = Array.from(localRouteById.values()).sort(
+      (first, second) =>
+        (store.routeIndexById.get(first.edgeId) ?? Number.MAX_SAFE_INTEGER) -
+        (store.routeIndexById.get(second.edgeId) ?? Number.MAX_SAFE_INTEGER)
+    );
+    const refreshedRoutes = localRoutes.length > 0
+      ? refreshCrossingArcPaths(localRoutes, changedRouteIds, Array.from(previousLocalRouteById.values()))
+      : [];
+    return routeStorePatchRoutes(store, refreshedRoutes, routeDeleteIds);
+  };
+  const routedRouteState = useMemo((): { routes: RoutedEdge[]; store: RouteStore | null } => {
     if (!routeRenderingEnabled) {
-      return routeEdgesForStoredRendering(routingNodes, routingEdges, canvasBounds);
+      return {
+        routes: routeEdgesForStoredRendering(routingNodes, routingEdges, canvasBounds),
+        store: null
+      };
     }
     const committedStoredEdgeIds = pendingStoredRouteEdgeIdsRef.current;
     if (committedStoredEdgeIds.size > 0) {
-      return routeEdgesForCachedStoredRendering(
+      const patchedStoredRouteStore = patchStoredRouteStoreForEdgeIds(cachedRouteStoreRef.current, committedStoredEdgeIds, canvasBounds, routingNodes);
+      if (patchedStoredRouteStore) {
+        return { routes: patchedStoredRouteStore.routes, store: patchedStoredRouteStore };
+      }
+      return {
+        routes: routeEdgesForCachedStoredRendering(
         routingNodes,
         routingEdges,
         committedStoredEdgeIds,
         canvasBounds,
         cachedRoutedEdgesRef.current
-      );
+        ),
+        store: null
+      };
     }
     const committedAffectedEdgeIds = pendingRouteEdgeIdsRef.current;
     const affectedEdgeIds = committedAffectedEdgeIds.size > 0
       ? new Set([...affectedRoutingEdgeIds, ...committedAffectedEdgeIds])
       : affectedRoutingEdgeIds;
-    return routeEdgesForIncrementalRendering(
-      routingNodes,
-      routingEdges,
-      affectedEdgeIds,
-      canvasBounds,
-      cachedRoutedEdgesRef.current
-    );
+    return {
+      routes: routeEdgesForIncrementalRendering(
+        routingNodes,
+        routingEdges,
+        affectedEdgeIds,
+        canvasBounds,
+        cachedRoutedEdgesRef.current
+      ),
+      store: null
+    };
   }, [affectedRoutingEdgeIds, canvasBounds, routeRenderingEnabled, routingEdges, routingNodes]);
-  const routedEdgeStore = useMemo(() => routeStoreSetRoutes(cachedRouteStoreRef.current, routedEdges), [routedEdges]);
+  const routedEdges = routedRouteState.routes;
+  const routedEdgeStore = useMemo(
+    () => routedRouteState.store ?? routeStoreSetRoutes(cachedRouteStoreRef.current, routedEdges),
+    [routedEdges, routedRouteState]
+  );
   const routedEdgeSpatialIndex = routedEdgeStore.routeSpatialIndex;
   const routedEdgeById = routedEdgeStore.routeMap;
   const routedEdgeIndexById = routedEdgeStore.routeIndexById;
@@ -6834,7 +7027,12 @@ export function App() {
     [activeLayerEdgeIdSet, activeLayerEdges, routedEdgeById, routedEdgeIndexById, routedEdges, visibleEdges]
   );
   const selectedLayoutUnits = useMemo(
-    () => buildCanvasLayoutUnits(activeLayerGroups, activeLayerNodes, activeSelectedNodeIds, activeSelectedEdgeIds, activeLayerEdges, routedEdges),
+    () => {
+      if (activeSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0) {
+        return [];
+      }
+      return buildCanvasLayoutUnits(activeLayerGroups, activeLayerNodes, activeSelectedNodeIds, activeSelectedEdgeIds, activeLayerEdges, routedEdges);
+    },
     [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, routedEdges]
   );
   const selectedGroupLayoutUnits = useMemo(
@@ -6941,23 +7139,6 @@ export function App() {
       .map((edge) => edge.id);
     return { edgeUpserts, edgeDeleteIds };
   };
-  const overlayEdgesForPatch = (edgeUpserts: Edge[], edgeDeleteIds: string[], sourceEdges: Edge[] = edges) => {
-    if (edgeUpserts.length === 0 && edgeDeleteIds.length === 0) {
-      return sourceEdges;
-    }
-    const deleteIds = new Set(edgeDeleteIds);
-    const upsertById = new Map(edgeUpserts.map((edge) => [edge.id, edge]));
-    const nextEdges = sourceEdges
-      .filter((edge) => !deleteIds.has(edge.id))
-      .map((edge) => upsertById.get(edge.id) ?? edge);
-    const existingIds = new Set(nextEdges.map((edge) => edge.id));
-    for (const edge of edgeUpserts) {
-      if (!existingIds.has(edge.id)) {
-        nextEdges.push(edge);
-      }
-    }
-    return nextEdges;
-  };
   const graphStorePatchStillCurrent = (
     store: GraphStore,
     nodeUpdates: readonly ModelNode[],
@@ -6981,7 +7162,7 @@ export function App() {
     }
     return true;
   };
-  const rebuildEdgesAfterNodeGeometryChange = (
+  const rebuildEdgeUpdatesAfterNodeGeometryChange = (
     nextNodes: ModelNode[],
     changedNodeIds: Iterable<string>,
     currentEdges: Edge[] = edges,
@@ -6989,7 +7170,7 @@ export function App() {
   ) => {
     const changedIds = Array.from(new Set(changedNodeIds));
     if (changedIds.length === 0) {
-      return currentEdges;
+      return [];
     }
     const localEdges = currentEdges === edges
       ? edgeListForNodeIds(changedIds)
@@ -6998,7 +7179,7 @@ export function App() {
       ? localEdges.filter((edge) => !preservedEdgeIds.has(edge.id))
       : localEdges;
     if (rerouteEdges.length === 0) {
-      return currentEdges;
+      return [];
     }
     const routingNodes = routingNodesForConnectionEdges(rerouteEdges, nextNodes, changedIds);
     const nextLocalEdges = rebuildConnectionRoutesForNodes(routingNodes, rerouteEdges, changedIds, canvasBounds, rerouteEdges);
@@ -7006,17 +7187,30 @@ export function App() {
     markRouteEdgesDirty(dirtyEdgeIds);
     markStoredRouteEdgesDirty(dirtyEdgeIds);
     if (dirtyEdgeIds.size === 0) {
+      return [];
+    }
+    const previousLocalEdgeById = new Map(rerouteEdges.map((edge) => [edge.id, edge]));
+    return nextLocalEdges.filter((edge) => previousLocalEdgeById.get(edge.id) !== edge);
+  };
+  const rebuildEdgesAfterNodeGeometryChange = (
+    nextNodes: ModelNode[],
+    changedNodeIds: Iterable<string>,
+    currentEdges: Edge[] = edges,
+    preservedEdgeIds = new Set<string>()
+  ) => {
+    const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, changedNodeIds, currentEdges, preservedEdgeIds);
+    if (edgeUpdates.length === 0) {
       return currentEdges;
     }
-    const nextLocalEdgeById = new Map(nextLocalEdges.map((edge) => [edge.id, edge]));
+    const edgeUpdateById = new Map(edgeUpdates.map((edge) => [edge.id, edge]));
     let changed = false;
     const nextEdges = currentEdges.map((edge) => {
-      const nextEdge = nextLocalEdgeById.get(edge.id);
-      if (!nextEdge || nextEdge === edge) {
+      const update = edgeUpdateById.get(edge.id);
+      if (!update) {
         return edge;
       }
       changed = true;
-      return nextEdge;
+      return update;
     });
     return changed ? nextEdges : currentEdges;
   };
@@ -7921,7 +8115,9 @@ export function App() {
     });
   };
 
-  const cloneProjectState = (deepModelSnapshot = true): UndoSnapshot => ({
+  const cloneProjectState = (deepModelSnapshot = false, graphPatchScope?: UndoGraphPatchScope): UndoSnapshot => ({
+    graphSnapshotMode: deepModelSnapshot ? "deep" : "reference",
+    graphPatchScope: deepModelSnapshot ? undefined : graphPatchScope,
     projectName,
     layers: layers.map((layer) => ({ ...layer })),
     activeLayerId,
@@ -7943,21 +8139,153 @@ export function App() {
     topologyStatus: { ...topologyStatus }
   });
 
-  const pushUndoSnapshot = (markDirty = true, deepModelSnapshot = true) => {
+  const fullUndoGraphDirtyEdgeIds = (store: GraphStore, snapshot: UndoSnapshot) =>
+    new Set([
+      ...store.edges.map((edge) => edge.id),
+      ...snapshot.edges.map((edge) => edge.id)
+    ]);
+
+  const undoGraphSnapshotPatchPlan = (store: GraphStore, snapshot: UndoSnapshot): UndoGraphSnapshotPatchPlan => {
+    if (
+      snapshot.graphSnapshotMode !== "reference" ||
+      snapshot.canvasWidth !== canvasWidth ||
+      snapshot.canvasHeight !== canvasHeight ||
+      snapshot.nodes.length !== store.nodes.length ||
+      snapshot.edges.length !== store.edges.length
+    ) {
+      return { mode: "full", dirtyEdgeIds: fullUndoGraphDirtyEdgeIds(store, snapshot) };
+    }
+    const nodeIds: string[] = [];
+    const edgeIds: string[] = [];
+    const scopedNodeIds = snapshot.graphPatchScope?.nodeIds;
+    const scopedEdgeIds = snapshot.graphPatchScope?.edgeIds;
+    if (scopedNodeIds || scopedEdgeIds) {
+      if (scopedNodeIds) {
+        for (const nodeId of scopedNodeIds) {
+          const index = store.nodeIndexById.get(nodeId);
+          if (index === undefined || snapshot.nodes[index]?.id !== nodeId) {
+            return { mode: "full", dirtyEdgeIds: fullUndoGraphDirtyEdgeIds(store, snapshot) };
+          }
+          if (store.nodes[index] !== snapshot.nodes[index]) {
+            nodeIds.push(nodeId);
+          }
+        }
+      }
+      if (scopedEdgeIds) {
+        for (const edgeId of scopedEdgeIds) {
+          const index = store.edgeIndexById.get(edgeId);
+          if (index === undefined || snapshot.edges[index]?.id !== edgeId) {
+            return { mode: "full", dirtyEdgeIds: fullUndoGraphDirtyEdgeIds(store, snapshot) };
+          }
+          if (store.edges[index] !== snapshot.edges[index]) {
+            edgeIds.push(edgeId);
+          }
+        }
+      }
+      const dirtyEdgeIds = new Set(edgeIds);
+      const changedNodeIds = new Set(nodeIds);
+      for (const nodeId of changedNodeIds) {
+        for (const edge of store.edgesByNodeId.get(nodeId) ?? []) {
+          dirtyEdgeIds.add(edge.id);
+        }
+      }
+      return { mode: "patch", nodeIds, edgeIds, dirtyEdgeIds };
+    }
+    for (let index = 0; index < snapshot.nodes.length; index += 1) {
+      const snapshotNode = snapshot.nodes[index];
+      const currentNode = store.nodes[index];
+      if (!currentNode || currentNode.id !== snapshotNode.id) {
+        return { mode: "full", dirtyEdgeIds: fullUndoGraphDirtyEdgeIds(store, snapshot) };
+      }
+      if (currentNode !== snapshotNode) {
+        nodeIds.push(snapshotNode.id);
+      }
+    }
+    for (let index = 0; index < snapshot.edges.length; index += 1) {
+      const snapshotEdge = snapshot.edges[index];
+      const currentEdge = store.edges[index];
+      if (!currentEdge || currentEdge.id !== snapshotEdge.id) {
+        return { mode: "full", dirtyEdgeIds: fullUndoGraphDirtyEdgeIds(store, snapshot) };
+      }
+      if (currentEdge !== snapshotEdge) {
+        edgeIds.push(snapshotEdge.id);
+      }
+    }
+    const dirtyEdgeIds = new Set(edgeIds);
+    const changedNodeIds = new Set(nodeIds);
+    for (const nodeId of changedNodeIds) {
+      for (const edge of store.edgesByNodeId.get(nodeId) ?? []) {
+        dirtyEdgeIds.add(edge.id);
+      }
+    }
+    return { mode: "patch", nodeIds, edgeIds, dirtyEdgeIds };
+  };
+
+  const applyUndoGraphSnapshot = (snapshot: UndoSnapshot) => {
+    const currentStore = latestGraphStoreRef.current ?? graphStore;
+    const plan = undoGraphSnapshotPatchPlan(currentStore, snapshot);
+    markRouteEdgesDirty(plan.dirtyEdgeIds);
+    markStoredRouteEdgesDirty(plan.dirtyEdgeIds);
+    if (plan.mode === "full") {
+      setGraphStore((current) => graphStoreSetGraph(current, snapshot.nodes, snapshot.edges));
+      return;
+    }
+    setGraphStore((current) => {
+      const currentPlan = undoGraphSnapshotPatchPlan(current, snapshot);
+      return currentPlan.mode === "patch"
+        ? graphStorePatchGraphFromArrays(current, snapshot.nodes, snapshot.edges, currentPlan.nodeIds, currentPlan.edgeIds)
+        : graphStoreSetGraph(current, snapshot.nodes, snapshot.edges);
+    });
+  };
+
+  const pushUndoSnapshot = (markDirty = true, deepModelSnapshot = false, graphPatchScope?: UndoGraphPatchScope) => {
     deferredMoveOptimizationCancelRef.current?.();
     deferredMoveOptimizationCancelRef.current = null;
-    const snapshot = cloneProjectState(deepModelSnapshot);
+    const snapshot = cloneProjectState(deepModelSnapshot, graphPatchScope);
     setUndoStack((current) => [...current.slice(-49), snapshot]);
     if (markDirty) {
       setHasUnsavedChanges(true);
     }
   };
 
+  const uniqueUndoScopeIds = (ids: Iterable<string | undefined>) => {
+    const uniqueIds = new Set<string>();
+    for (const id of ids) {
+      if (id) {
+        uniqueIds.add(id);
+      }
+    }
+    return Array.from(uniqueIds);
+  };
+
+  const undoScopeForGraphPatch = (
+    nodeIds: Iterable<string | undefined> = [],
+    edgeIds: Iterable<string | undefined> = []
+  ): UndoGraphPatchScope => ({
+    nodeIds: uniqueUndoScopeIds(nodeIds),
+    edgeIds: uniqueUndoScopeIds(edgeIds)
+  });
+
+  const undoScopeForDraggingState = (dragState: DraggingState | null | undefined): UndoGraphPatchScope | undefined =>
+    dragState
+      ? undoScopeForGraphPatch(
+          dragState.nodeIds,
+          [
+            ...dragState.edgeIds,
+            ...dragState.affectedEdges.map((edge) => edge.id)
+          ]
+        )
+      : undefined;
+
+  const pushNodeOnlyUndoSnapshot = (nodeId: string) => {
+    pushUndoSnapshot(true, false, undoScopeForGraphPatch([nodeId], []));
+  };
+
   const ensureDraggingUndoSnapshot = () => {
     if (dragUndoCapturedRef.current) {
       return;
     }
-    pushUndoSnapshot(true, false);
+    pushUndoSnapshot(true, false, undoScopeForDraggingState(draggingRef.current));
     dragUndoCapturedRef.current = true;
   };
 
@@ -7975,10 +8303,6 @@ export function App() {
       if (!snapshot) {
         return current;
       }
-      markRouteEdgesDirty(new Set([
-        ...edges.map((edge) => edge.id),
-        ...snapshot.edges.map((edge) => edge.id)
-      ]));
       setProjectName(snapshot.projectName);
       setLayers(snapshot.layers.map((layer) => ({ ...layer })));
       setActiveLayerId(snapshot.activeLayerId);
@@ -7993,7 +8317,7 @@ export function App() {
       setPowerBaseValue(snapshot.powerBaseValue);
       setDeviceIndexCounters(snapshot.deviceIndexCounters);
       skipNextTopologyStaleRef.current = true;
-      setGraphArrays(snapshot.nodes, snapshot.edges);
+      applyUndoGraphSnapshot(snapshot);
       setGroups(snapshot.groups);
       setTopologyErrors(snapshot.topologyErrors);
       setTopology(snapshot.topology);
@@ -8331,7 +8655,7 @@ export function App() {
         current.state === "idle" ? current : { state: "idle", message: "拓扑结果已过期" }
       );
     }, 200, 500);
-  }, [edges, nodes]);
+  }, [graphStore.topologyRevision]);
 
   useEffect(() => {
     try {
@@ -8786,6 +9110,7 @@ export function App() {
     }));
     const nextNodes = [...pasteSourceNodes, ...pasted];
     const nextEdges = [...pasteSourceEdges, ...pastedEdges];
+    markStoredRouteEdgesDirty(pastedEdges.map((edge) => edge.id));
     setDeviceIndexCounters(nextDeviceIndexCounters);
     setGraphArrays(nextNodes, nextEdges);
     const shiftedPasteTargetPoint = translatePointBy(targetPoint, pasteOriginShift);
@@ -8964,6 +9289,7 @@ export function App() {
     const nextNodes = [...dropSourceNodes, ...pasted];
     const nextEdges = [...dropSourceEdges, ...pastedEdges];
     pushUndoSnapshot();
+    markStoredRouteEdgesDirty(pastedEdges.map((edge) => edge.id));
     setDeviceIndexCounters(nextDeviceIndexCounters);
     setGraphArrays(nextNodes, nextEdges);
     setGroups((current) => normalizeModelGroups([...current, ...cloned.groups], nextNodes, nextEdges));
@@ -9008,6 +9334,13 @@ export function App() {
     const selectedEdges = new Set(activeSelectedEdgeIds);
     if (activeSelectedNodeIds.length === 0) {
       pushUndoSnapshot();
+      const deletedEdges = activeSelectedEdgeIds.flatMap((edgeId) => {
+        const edge = edgeById.get(edgeId);
+        return edge ? [edge] : [];
+      });
+      markRouteEdgesDirty(selectedEdges);
+      markStoredRouteEdgesDirty(selectedEdges);
+      markBusTerminalSyncDirtyForEdges(deletedEdges);
       const nextEdges = edges.filter((edge) => !selectedEdges.has(edge.id));
       setEdges(nextEdges);
       setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, [], selectedEdges), nodes, nextEdges));
@@ -9018,6 +9351,10 @@ export function App() {
       return;
     }
     pushUndoSnapshot();
+    const deletedEdges = edgeListForNodeIds(activeSelectedNodeIds, selectedEdges);
+    markRouteEdgesDirty(deletedEdges.map((edge) => edge.id));
+    markStoredRouteEdgesDirty(deletedEdges.map((edge) => edge.id));
+    markBusTerminalSyncDirtyForEdges(deletedEdges);
     const result = deleteNodesWithConnectedEdges(nodes, edges, activeSelectedNodeIds);
     const nextEdges = result.edges.filter((edge) => !selectedEdges.has(edge.id));
     setGraphArrays(result.nodes, nextEdges);
@@ -9478,7 +9815,7 @@ export function App() {
       }
     }
     const nextNodeForEndpoint = (nodeId: string) => movedNextNodeById.get(nodeId) ?? nodeById.get(nodeId);
-    const preserveAffectedRoutesForCanvasOriginShift = hasCanvasOriginShift(leftTopCanvasOriginShiftForContent(nextNodes));
+    const preserveAffectedRoutesForCanvasOriginShift = hasCanvasOriginShift(leftTopCanvasOriginShiftForContent(Array.from(movedNextNodeById.values())));
     let changed = false;
     const nextEdges = currentEdges.map((edge) => {
       const sourceMoved = movedNodeIds.has(edge.sourceId);
@@ -9742,6 +10079,7 @@ export function App() {
       deferredMoveOptimizationCancelRef.current = null;
       return;
     }
+    const optimizationEdgeIds = optimizationEdges.map((edge) => edge.id);
     deferredMoveOptimizationCancelRef.current = scheduleIdleWork(() => {
       deferredMoveOptimizationCancelRef.current = null;
       const latestStore = latestGraphStoreRef.current;
@@ -9756,12 +10094,18 @@ export function App() {
         return;
       }
       const expectedNodes = latestStore.nodes;
-      const expectedEdges = latestStore.edges;
-      const blockedRoutePoints = routePointsForMovedNodeBlockers(expectedNodes, optimizationEdges, movedNodeIds, {});
+      const latestOptimizationEdges = optimizationEdgeIds.flatMap((edgeId) => {
+        const edge = latestStore.edgeMap.get(edgeId);
+        return edge ? [edge] : [];
+      });
+      if (latestOptimizationEdges.length === 0) {
+        return;
+      }
+      const blockedRoutePoints = routePointsForMovedNodeBlockers(expectedNodes, latestOptimizationEdges, movedNodeIds, {});
       const blockedEdgeIds = new Set(Object.keys(blockedRoutePoints));
       const routePointsForOptimization = routePointsNearOriginalMovedNodes(
         previousNodes,
-        optimizationEdges,
+        latestOptimizationEdges,
         movedNodeIds,
         originalPositions,
         blockedRoutePoints
@@ -9771,34 +10115,32 @@ export function App() {
       for (const edgeId of releasedEdgeIds) {
         blockedEdgeIds.add(edgeId);
       }
-      if (!shouldRunDeferredMoveOptimization(optimizationEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)) {
+      if (!shouldRunDeferredMoveOptimization(latestOptimizationEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)) {
         return;
       }
       const optimized = optimizeMovedNodeEdgeRoutes(
         expectedNodes,
-        expectedEdges,
+        latestOptimizationEdges,
         movedNodeIds,
         originalRoutePoints,
         selectedEdgeIds,
         routePointsForOptimization,
         forcedRerouteEdgeIds,
-        optimizationEdges
+        latestOptimizationEdges
       );
-      if (optimized.edges === expectedEdges) {
+      if (optimized.edges === latestOptimizationEdges) {
         return;
       }
       const dirtyOptimizedEdgeIds = new Set<string>([...blockedEdgeIds, ...forcedRerouteEdgeIds]);
       for (const edgeId of Object.keys(optimized.routePoints)) {
         dirtyOptimizedEdgeIds.add(edgeId);
       }
+      const previousOptimizedEdgeById = new Map(latestOptimizationEdges.map((edge) => [edge.id, edge]));
+      const optimizedEdgeById = new Map(optimized.edges.map((edge) => [edge.id, edge]));
       const optimizedEdgeUpdates: Edge[] = [];
       for (const edgeId of dirtyOptimizedEdgeIds) {
-        const edgeIndex = latestStore.edgeIndexById.get(edgeId);
-        if (edgeIndex === undefined) {
-          continue;
-        }
-        const optimizedEdge = optimized.edges[edgeIndex];
-        if (optimizedEdge && expectedEdges[edgeIndex] !== optimizedEdge) {
+        const optimizedEdge = optimizedEdgeById.get(edgeId);
+        if (optimizedEdge && previousOptimizedEdgeById.get(edgeId) !== optimizedEdge) {
           optimizedEdgeUpdates.push(optimizedEdge);
         }
       }
@@ -9806,6 +10148,7 @@ export function App() {
         return;
       }
       markRouteEdgesDirty(dirtyOptimizedEdgeIds);
+      markStoredRouteEdgesDirty(dirtyOptimizedEdgeIds);
       markBusTerminalSyncDirtyForEdges(optimizedEdgeUpdates);
       setGraphStore((current) => graphStorePatchEdges(current, optimizedEdgeUpdates));
     }, 180, 1500);
@@ -9839,8 +10182,8 @@ export function App() {
       }
       const repairCanvasBounds = canvasBoundsForGraphContent(
         effectiveCanvasBounds,
-        latestNodes,
-        latestStore.edges,
+        [],
+        latestCandidateEdges,
         [],
         CANVAS_AUTO_EXPAND_PADDING
       );
@@ -9860,7 +10203,7 @@ export function App() {
       const repairCandidateEdges = latestCandidateEdges.filter((edge) => repairEdgeIds.has(edge.id));
       const optimized = optimizeMovedNodeEdgeRoutes(
         latestNodes,
-        latestStore.edges,
+        latestCandidateEdges,
         movedNodeIds,
         {},
         new Set<string>(),
@@ -9868,13 +10211,14 @@ export function App() {
         repairEdgeIds,
         repairCandidateEdges
       );
-      if (optimized.edges === latestStore.edges) {
+      if (optimized.edges === latestCandidateEdges) {
         return;
       }
+      const previousRepairEdgeById = new Map(latestCandidateEdges.map((edge) => [edge.id, edge]));
+      const optimizedRepairEdgeById = new Map(optimized.edges.map((edge) => [edge.id, edge]));
       const edgeUpdates = Array.from(repairEdgeIds).flatMap((edgeId) => {
-        const edgeIndex = latestStore.edgeIndexById.get(edgeId);
-        const edge = edgeIndex === undefined ? undefined : optimized.edges[edgeIndex];
-        if (edgeIndex !== undefined && latestStore.edges[edgeIndex] === edge) {
+        const edge = optimizedRepairEdgeById.get(edgeId);
+        if (edge && previousRepairEdgeById.get(edgeId) === edge) {
           return [];
         }
         return edge ? [edge] : [];
@@ -9904,7 +10248,7 @@ export function App() {
     markStoredRouteEdgesDirty(dirtyEdgeIdsForMovedLocalRoutes(selectedEdgeIds, originalRoutePoints));
     let committedCandidateEdges = candidateEdges;
     const deferMovedRouteRepair = movedNodeIds.length > 1;
-    const originShift = leftTopCanvasOriginShiftForContent(nextNodes, committedCandidateEdges);
+    const originShift = leftTopCanvasOriginShiftForContent(movedNodeUpdates, committedCandidateEdges);
     if (hasCanvasOriginShift(originShift)) {
       const candidateEdgeById = new Map(committedCandidateEdges.map((edge) => [edge.id, edge]));
       const rawNextEdges = edges.map((edge) => candidateEdgeById.get(edge.id) ?? edge);
@@ -9926,7 +10270,7 @@ export function App() {
       setGraphStore((current) => graphStoreSetGraph(current, shiftedNextNodes, shiftedNextEdges));
       return;
     }
-    const commitCanvasBounds = canvasBoundsForGraphContent(effectiveCanvasBounds, nextNodes, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING);
+    const commitCanvasBounds = canvasBoundsForGraphContent(effectiveCanvasBounds, movedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING);
     if (deferMovedRouteRepair) {
       const edgePatch = edgePatchFromCandidateEdges(previousCandidateEdges, committedCandidateEdges);
       const expectedPatch = { nodeUpdates: movedNodeUpdates, edgeUpserts: edgePatch.edgeUpserts, edgeDeleteIds: edgePatch.edgeDeleteIds };
@@ -9934,8 +10278,9 @@ export function App() {
         ...edgePatch.edgeUpserts.map((edge) => edge.id),
         ...edgePatch.edgeDeleteIds
       ];
-      markRouteEdgesDirty(edgePatchDirtyIds);
-      markStoredRouteEdgesDirty(edgePatchDirtyIds);
+      const movedRouteDirtyIds = dirtyEdgeIdsAfterMove(previousCandidateEdges, committedCandidateEdges, movedNodeIds, edgePatchDirtyIds);
+      markRouteEdgesDirty(movedRouteDirtyIds);
+      markStoredRouteEdgesDirty(movedRouteDirtyIds);
       markBusTerminalSyncDirty(
         busTerminalSyncNodeIdsForGraphPatch(
           movedNodeIds,
@@ -10008,14 +10353,16 @@ export function App() {
       }
     }
     const edgePatch = edgePatchFromCandidateEdges(previousCandidateEdges, committedCandidateEdges);
-    const nextEdgesForBounds = overlayEdgesForPatch(edgePatch.edgeUpserts, edgePatch.edgeDeleteIds);
-    expandCanvasToFitGraph(nextNodes, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);
+    const nextEdgesForBounds = edgePatch.edgeUpserts;
+    expandCanvasToFitGraph(movedNodeUpdates, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);
     const edgePatchDirtyIds = [
       ...edgePatch.edgeUpserts.map((edge) => edge.id),
       ...edgePatch.edgeDeleteIds
     ];
     const expectedPatch = { nodeUpdates: movedNodeUpdates, edgeUpserts: edgePatch.edgeUpserts, edgeDeleteIds: edgePatch.edgeDeleteIds };
-    markRouteEdgesDirty(edgePatchDirtyIds);
+    const movedRouteDirtyIds = dirtyEdgeIdsAfterMove(previousCandidateEdges, committedCandidateEdges, movedNodeIds, edgePatchDirtyIds);
+    markRouteEdgesDirty(movedRouteDirtyIds);
+    markStoredRouteEdgesDirty(movedRouteDirtyIds);
     markBusTerminalSyncDirty(
       busTerminalSyncNodeIdsForGraphPatch(
         movedNodeIds,
@@ -10341,25 +10688,7 @@ export function App() {
     originalPositions: Record<string, Point>,
     dx: number,
     dy: number
-  ) => {
-    if (nodeIds.length === 0) {
-      return canvasBounds;
-    }
-    const movedNodeIds = new Set(nodeIds);
-    const previewNodes = nodes.map((node) => {
-      const originalPosition = originalPositions[node.id];
-      return movedNodeIds.has(node.id) && originalPosition
-        ? {
-            ...node,
-            position: {
-              x: Math.round(originalPosition.x + dx),
-              y: Math.round(originalPosition.y + dy)
-            }
-          }
-        : node;
-    });
-    return canvasBoundsForGraphContent(canvasBounds, previewNodes, edges, [], CANVAS_AUTO_EXPAND_PADDING);
-  };
+  ) => canvasBoundsForMovedNodeDelta(nodeIds, originalPositions, dx, dy);
 
   const canvasBoundsForMovedNodeDelta = (
     nodeIds: string[],
@@ -10788,10 +11117,10 @@ export function App() {
           });
         }
       } else {
-        const nextEdges = rebuildEdgesAfterNodeGeometryChange(nodes, transformedNodeIds);
-        if (nextEdges !== edges) {
+        const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nodes, transformedNodeIds);
+        if (edgeUpdates.length > 0) {
           setGraphStore((current) =>
-            graphStorePatchEdgesFromArray(current, nextEdges, edgeListForNodeIds(transformedNodeIds).map((edge) => edge.id))
+            graphStorePatchEdges(current, edgeUpdates)
           );
         }
       }
@@ -11096,7 +11425,7 @@ export function App() {
       writeOperationLog("移动已到显示边界，联络线或图元接近边界，已停止移动");
       return;
     }
-    pushUndoSnapshot();
+    pushUndoSnapshot(true, false, undoScopeForGraphPatch(moveNodeIds, affectedEdgesForMove.map((edge) => edge.id)));
     const finalBounds = canvasBoundsForMoveDelta(moveNodeIds, originalPositions, boundedDelta.x, boundedDelta.y);
     applyCanvasBounds(finalBounds);
     const deltasByNode = Object.fromEntries(moveNodeIds.map((id) => [id, boundedDelta]));
@@ -11141,6 +11470,23 @@ export function App() {
     writeOperationLog(`移动 ${moveNodeIds.length} 个图元 (${Math.round(boundedDelta.x)}, ${Math.round(boundedDelta.y)})`);
   };
 
+  const undoScopeForNodeFootprintPatch = (nodeId: string, nextNode: ModelNode | undefined): UndoGraphPatchScope => {
+    const directCandidateEdges = edgeListForNodeIds([nodeId]);
+    if (!nextNode) {
+      return undoScopeForGraphPatch([nodeId], directCandidateEdges.map((edge) => edge.id));
+    }
+    const nextNodesForScope = overlayGraphStoreNodes(graphStore, [nextNode]);
+    const candidateEdges = localRouteOptimizationCandidateEdges(
+      nodes,
+      nextNodesForScope,
+      [nodeId],
+      new Set<string>(),
+      undefined,
+      directCandidateEdges
+    );
+    return undoScopeForGraphPatch([nodeId], candidateEdges.map((edge) => edge.id));
+  };
+
   const updateSelectedNode = (patch: Partial<ModelNode>) => {
     if (!selectedNodeId) {
       return;
@@ -11153,7 +11499,6 @@ export function App() {
       moveSelection(nextPosition.x - selectedNode.position.x, nextPosition.y - selectedNode.position.y);
       return;
     }
-    pushUndoSnapshot();
     const nextPatch = { ...patch };
     const geometryPatch =
       patch.rotation !== undefined ||
@@ -11161,29 +11506,31 @@ export function App() {
       patch.scaleX !== undefined ||
       patch.scaleY !== undefined ||
       patch.size !== undefined;
+    const currentSelectedNode = nodeById.get(selectedNodeId);
+    if (!currentSelectedNode) {
+      return;
+    }
+    const changesCanvasFootprint = Boolean(patch.position) || geometryPatch;
+    if (changesCanvasFootprint) {
+      const footprintEdges = edgeListForNodeIds([selectedNodeId]);
+      pushUndoSnapshot(true, false, undoScopeForGraphPatch([selectedNodeId], footprintEdges.map((edge) => edge.id)));
+    } else {
+      pushNodeOnlyUndoSnapshot(selectedNodeId);
+    }
     let selectedNodeCanvasBounds = canvasBounds;
     if (selectedNode) {
-      const changesCanvasFootprint = Boolean(patch.position) || geometryPatch;
       if (changesCanvasFootprint) {
         const requestedPosition = nextPatch.position
           ? { x: nextPatch.position.x, y: nextPatch.position.y }
           : selectedNode.position;
         const candidateNode = { ...selectedNode, ...nextPatch, position: requestedPosition };
-        const previewNodes = nodes.map((node) => (node.id === selectedNode.id ? candidateNode : node));
-        selectedNodeCanvasBounds = canvasBoundsForGraphContent(
-          canvasBounds,
-          previewNodes,
-          edges,
-          [],
-          CANVAS_AUTO_EXPAND_PADDING
-        );
+        selectedNodeCanvasBounds = canvasBoundsForGraphContent(canvasBounds, [candidateNode], [], [], CANVAS_AUTO_EXPAND_PADDING);
         applyCanvasBounds(selectedNodeCanvasBounds);
         nextPatch.position = clampNodePositionToExpandableBounds(candidateNode, selectedNodeCanvasBounds, requestedPosition);
       }
     }
-    const currentSelectedNode = nodeById.get(selectedNodeId);
-    const nextSelectedNode = currentSelectedNode ? { ...currentSelectedNode, ...nextPatch } : undefined;
-    const nextNodes = nextSelectedNode ? overlayGraphStoreNodes(graphStore, [nextSelectedNode]) : nodes;
+    const nextSelectedNode = { ...currentSelectedNode, ...nextPatch };
+    const nextNodes = overlayGraphStoreNodes(graphStore, [nextSelectedNode]);
     if (patch.position && selectedNode) {
       const delta = {
         x: nextPatch.position!.x - selectedNode.position.x,
@@ -11232,16 +11579,17 @@ export function App() {
       return;
     }
     if (geometryPatch) {
-      const nextEdges = rebuildEdgesAfterNodeGeometryChange(nextNodes, [selectedNodeId]);
-      expandCanvasToFitGraph(nextNodes, nextEdges, [], CANVAS_AUTO_EXPAND_PADDING, selectedNodeCanvasBounds);
+      const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, [selectedNodeId]);
+      expandCanvasToFitGraph([nextSelectedNode], edgeUpdates, [], CANVAS_AUTO_EXPAND_PADDING, selectedNodeCanvasBounds);
       setGraphStore((current) =>
-        graphStorePatchGraphFromArrays(current, nextNodes, nextEdges, [selectedNodeId], edgeListForNodeIds([selectedNodeId]).map((edge) => edge.id))
+        graphStoreApplyPatch(current, {
+          nodeUpdates: [nextSelectedNode],
+          edgeUpserts: edgeUpdates
+        })
       );
       return;
     }
-    if (nextSelectedNode) {
-      patchGraphNodes([nextSelectedNode]);
-    }
+    patchGraphNodes([nextSelectedNode]);
   };
 
   const commitNodeFootprintUpdates = (
@@ -11255,7 +11603,8 @@ export function App() {
     const changedNodeIds = Array.from(new Set(existingUpdates.map((node) => node.id)));
     const previousNodes = options.previousNodes ?? nodes;
     const nextNodes = overlayGraphStoreNodes(graphStore, existingUpdates);
-    const originShift = leftTopCanvasOriginShiftForContent(nextNodes);
+    const directCandidateEdges = edgeListForNodeIds(changedNodeIds);
+    const originShift = leftTopCanvasOriginShiftForContent(existingUpdates, directCandidateEdges);
     if (hasCanvasOriginShift(originShift)) {
       const shiftedNodes = nextNodes.map((node) => translateNodeBy(node, originShift));
       const shiftedEdges = edges.map((edge) => translateEdgeBy(edge, originShift));
@@ -11277,12 +11626,11 @@ export function App() {
     }
     const footprintCanvasBounds = canvasBoundsForGraphContent(
       canvasBounds,
-      nextNodes,
-      edges,
+      existingUpdates,
+      directCandidateEdges,
       [],
       CANVAS_AUTO_EXPAND_PADDING
     );
-    const directCandidateEdges = edgeListForNodeIds(changedNodeIds);
     const candidateEdges = localRouteOptimizationCandidateEdges(
       previousNodes,
       nextNodes,
@@ -11301,10 +11649,10 @@ export function App() {
     );
     const blockedRoutePoints = routePointsForMovedNodeBlockers(nextNodes, optimizationEdges, changedNodeIds, {});
     const blockedEdgeIds = new Set(Object.keys(blockedRoutePoints));
-    const nextEdges = blockedEdgeIds.size > 0
+    const optimizedEdges = blockedEdgeIds.size > 0
       ? optimizeMovedNodeEdgeRoutes(
           nextNodes,
-          edges,
+          optimizationEdges,
           changedNodeIds,
           {},
           new Set<string>(),
@@ -11312,17 +11660,17 @@ export function App() {
           blockedEdgeIds,
           optimizationEdges
         ).edges
-      : edges;
-    const edgeUpdates = nextEdges === edges
+      : optimizationEdges;
+    const edgeUpdates = optimizedEdges === optimizationEdges
       ? []
-      : nextEdges.filter((edge, index) => edge !== edges[index]);
+      : edgePatchFromCandidateEdges(optimizationEdges, optimizedEdges).edgeUpserts;
     if (edgeUpdates.length > 0) {
       const dirtyEdgeIds = edgeUpdates.map((edge) => edge.id);
       markRouteEdgesDirty(dirtyEdgeIds);
       markStoredRouteEdgesDirty(dirtyEdgeIds);
       markBusTerminalSyncDirtyForEdges(edgeUpdates);
     }
-    expandCanvasToFitGraph(nextNodes, nextEdges, [], CANVAS_AUTO_EXPAND_PADDING, footprintCanvasBounds);
+    expandCanvasToFitGraph(existingUpdates, edgeUpdates, [], CANVAS_AUTO_EXPAND_PADDING, footprintCanvasBounds);
     setGraphStore((current) =>
       graphStoreApplyPatch(current, {
         nodeUpdates: existingUpdates,
@@ -11381,16 +11729,22 @@ export function App() {
     const degrees = direction === "left" ? -90 : 90;
     pushUndoSnapshot();
     setSelectedEdgeId("");
-    const nextNodes = rotateLayoutUnitNodes(nodes, selectedLayoutUnits, degrees);
-    const transformedNodeIds = Array.from(new Set(selectedLayoutUnits.flatMap((unit) => unit.nodeIds)));
+    const nodeUpdates = rotateLayoutUnitNodeUpdates(selectedLayoutUnits, degrees);
+    const transformedNodeIds = nodeUpdates.map((node) => node.id);
+    const nextNodes = overlayGraphStoreNodes(graphStore, nodeUpdates);
     const rotatedEdgeUpdates = buildRotateLayoutUnitEdgeUpdates(selectedLayoutUnits, edges, degrees);
     const preservedRotateEdgeIds = new Set(rotatedEdgeUpdates.map((edge) => edge.id));
-    const rotatedEdges = overlayEdgeUpdatesForTransform(edges, rotatedEdgeUpdates);
     markRouteEdgesDirty(preservedRotateEdgeIds);
     markStoredRouteEdgesDirty(preservedRotateEdgeIds);
-    const nextEdges = rebuildEdgesAfterNodeGeometryChange(nextNodes, transformedNodeIds, rotatedEdges, preservedRotateEdgeIds);
-    expandCanvasToFitGraph(nextNodes, nextEdges);
-    setGraphArrays(nextNodes, nextEdges);
+    const reroutedEdgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, transformedNodeIds, edges, preservedRotateEdgeIds);
+    const edgeUpdates = [...rotatedEdgeUpdates, ...reroutedEdgeUpdates];
+    expandCanvasToFitGraph(nodeUpdates, edgeUpdates);
+    setGraphStore((current) =>
+      graphStoreApplyPatch(current, {
+        nodeUpdates,
+        edgeUpserts: edgeUpdates
+      })
+    );
     writeOperationLog(`${direction === "left" ? "向左" : "向右"}旋转90度 ${selectedLayoutUnits.length} 个选中单元`);
   };
 
@@ -11400,16 +11754,22 @@ export function App() {
     }
     pushUndoSnapshot();
     setSelectedEdgeId("");
-    const nextNodes = mirrorLayoutUnitNodes(nodes, selectedLayoutUnits, axis);
-    const transformedNodeIds = Array.from(new Set(selectedLayoutUnits.flatMap((unit) => unit.nodeIds)));
+    const nodeUpdates = mirrorLayoutUnitNodeUpdates(selectedLayoutUnits, axis);
+    const transformedNodeIds = nodeUpdates.map((node) => node.id);
+    const nextNodes = overlayGraphStoreNodes(graphStore, nodeUpdates);
     const mirroredEdgeUpdates = buildMirrorLayoutUnitEdgeUpdates(selectedLayoutUnits, edges, axis);
     const preservedMirrorEdgeIds = new Set(mirroredEdgeUpdates.map((edge) => edge.id));
-    const mirroredEdges = overlayEdgeUpdatesForTransform(edges, mirroredEdgeUpdates);
     markRouteEdgesDirty(preservedMirrorEdgeIds);
     markStoredRouteEdgesDirty(preservedMirrorEdgeIds);
-    const nextEdges = rebuildEdgesAfterNodeGeometryChange(nextNodes, transformedNodeIds, mirroredEdges, preservedMirrorEdgeIds);
-    expandCanvasToFitGraph(nextNodes, nextEdges);
-    setGraphArrays(nextNodes, nextEdges);
+    const reroutedEdgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, transformedNodeIds, edges, preservedMirrorEdgeIds);
+    const edgeUpdates = [...mirroredEdgeUpdates, ...reroutedEdgeUpdates];
+    expandCanvasToFitGraph(nodeUpdates, edgeUpdates);
+    setGraphStore((current) =>
+      graphStoreApplyPatch(current, {
+        nodeUpdates,
+        edgeUpserts: edgeUpdates
+      })
+    );
     writeOperationLog(`${axis === "horizontal" ? "水平" : "垂直"}镜像 ${selectedLayoutUnits.length} 个选中单元`);
   };
 
@@ -11507,11 +11867,12 @@ export function App() {
     if (nextNode === currentNode) {
       return;
     }
-    pushUndoSnapshot();
     if (NODE_LABEL_FOOTPRINT_PARAM_KEYS.has(key)) {
+      pushUndoSnapshot(true, false, undoScopeForNodeFootprintPatch(selectedNodeId, nextNode));
       commitNodeFootprintUpdates([nextNode]);
       return;
     }
+    pushNodeOnlyUndoSnapshot(selectedNodeId);
     patchGraphNodes([nextNode]);
   };
 
@@ -11519,7 +11880,7 @@ export function App() {
     if (!activeLayerNodeIdSet.has(nodeId)) {
       return;
     }
-    pushUndoSnapshot();
+    pushNodeOnlyUndoSnapshot(nodeId);
     updateGraphNodeById(nodeId, (node) =>
       field === "name" ? { ...node, name: value } : { ...node, params: { ...node.params, idx: value } }
     );
@@ -11532,7 +11893,7 @@ export function App() {
     if (!activeLayerNodeIdSet.has(nodeId)) {
       return;
     }
-    pushUndoSnapshot();
+    pushNodeOnlyUndoSnapshot(nodeId);
     updateGraphNodeById(nodeId, (node) => ({ ...node, params: { ...node.params, [key]: value } }));
   };
 
@@ -11545,7 +11906,7 @@ export function App() {
       return;
     }
     const numericValue = normalizeVoltageBaseInput(value);
-    pushUndoSnapshot();
+    pushNodeOnlyUndoSnapshot(selectedNodeId);
     updateGraphNodeById(selectedNodeId, (node) => ({
       ...node,
       terminals: node.terminals.map((terminal) =>
@@ -12232,12 +12593,11 @@ export function App() {
     return updates;
   };
 
-  const rotateLayoutUnitNodes = (
-    currentNodes: ModelNode[],
+  const rotateLayoutUnitNodeUpdates = (
     units: CanvasLayoutUnit[],
-    degrees: number
+    degrees: number,
+    store: GraphStore = graphStore
   ) => {
-    const currentNodeById = new Map(currentNodes.map((node) => [node.id, node]));
     const updates = new Map<string, ModelNode>();
     for (const unit of units) {
       const center = selectionRectCenter(unit.bounds);
@@ -12245,7 +12605,7 @@ export function App() {
         if (updates.has(nodeId)) {
           continue;
         }
-        const node = currentNodeById.get(nodeId);
+        const node = store.nodeMap.get(nodeId);
         if (!node) {
           continue;
         }
@@ -12256,15 +12616,14 @@ export function App() {
         });
       }
     }
-    return currentNodes.map((node) => updates.get(node.id) ?? node);
+    return Array.from(updates.values());
   };
 
-  const mirrorLayoutUnitNodes = (
-    currentNodes: ModelNode[],
+  const mirrorLayoutUnitNodeUpdates = (
     units: CanvasLayoutUnit[],
-    axis: "horizontal" | "vertical"
+    axis: "horizontal" | "vertical",
+    store: GraphStore = graphStore
   ) => {
-    const currentNodeById = new Map(currentNodes.map((node) => [node.id, node]));
     const updates = new Map<string, ModelNode>();
     for (const unit of units) {
       const center = selectionRectCenter(unit.bounds);
@@ -12272,7 +12631,7 @@ export function App() {
         if (updates.has(nodeId)) {
           continue;
         }
-        const node = currentNodeById.get(nodeId);
+        const node = store.nodeMap.get(nodeId);
         if (!node) {
           continue;
         }
@@ -12289,7 +12648,7 @@ export function App() {
         );
       }
     }
-    return currentNodes.map((node) => updates.get(node.id) ?? node);
+    return Array.from(updates.values());
   };
 
   const busAnchorFromEvent = (node: ModelNode, event: PointerEvent<SVGGElement | SVGCircleElement>): Point | undefined => {
@@ -12433,8 +12792,9 @@ export function App() {
     const preparedEdge = prepared.edge;
     pushUndoSnapshot();
     markRouteEdgesDirty([preparedEdge.id]);
+    markStoredRouteEdgesDirty([preparedEdge.id]);
     markBusTerminalSyncDirtyForEdges([preparedEdge]);
-    setEdges((current) => [...current, preparedEdge]);
+    setGraphStore((current) => graphStoreApplyPatch(current, { edgeUpserts: [preparedEdge] }));
     setCanvasSelectionScope("group");
     setSelectedNodeIds([]);
     setSelectedEdgeId(preparedEdge.id);
@@ -12520,6 +12880,7 @@ export function App() {
         const preparedEdge = prepared.edge;
         pushUndoSnapshot();
         markRouteEdgesDirty([rewiring.edgeId]);
+        markStoredRouteEdgesDirty([rewiring.edgeId]);
         markBusTerminalSyncDirtyForEdges([edge, preparedEdge]);
         patchGraphEdges([preparedEdge]);
         writeOperationLog(`调整联络线端子：${rewiring.edgeId}`);
@@ -12998,8 +13359,8 @@ export function App() {
       }
       const transformBounds = canvasBoundsForGraphContent(
         canvasBounds,
-        overlayGraphStoreNodes(currentStore, [nextNode]),
-        currentStore.edges,
+        [nextNode],
+        [],
         [],
         CANVAS_AUTO_EXPAND_PADDING
       );
@@ -14313,6 +14674,7 @@ export function App() {
       return;
     }
     markRouteEdgesDirty([edgeId]);
+    markStoredRouteEdgesDirty([edgeId]);
     patchGraphEdges([{ ...edge, manualPoints: normalizedManualPoints }]);
   };
 
@@ -14708,6 +15070,7 @@ export function App() {
       );
       const dirtyEdgeIds = dirtyEdges.map((edge) => edge.id);
       markRouteEdgesDirty(dirtyEdgeIds);
+      markStoredRouteEdgesDirty(dirtyEdgeIds);
       const nextEdges = dirtyEdges.map((edge) => {
         const sourceAffected = edge.sourceId === terminalPress.nodeId && edge.sourceTerminalId === terminalPress.terminalId;
         const sourceNode = nodeById.get(edge.sourceId);
@@ -14792,6 +15155,7 @@ export function App() {
           const preparedEdge = prepared.edge;
           pushUndoSnapshot();
           markRouteEdgesDirty([edge.id]);
+          markStoredRouteEdgesDirty([edge.id]);
           markBusTerminalSyncDirtyForEdges([edge, preparedEdge]);
           patchGraphEdges([preparedEdge]);
         } else {
