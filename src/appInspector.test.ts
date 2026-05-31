@@ -82,6 +82,29 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".library-empty");
   });
 
+  test("adds a searchable model library with clear empty results", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const projectPanelStart = source.indexOf("const renderProjectPanel = () => (");
+    const projectPanelEnd = source.indexOf("const customDraftTerminalTypes", projectPanelStart);
+    const projectPanelBlock = source.slice(projectPanelStart, projectPanelEnd);
+
+    expect(source).toContain("const [projectSearchQuery, setProjectSearchQuery] = useState(\"\");");
+    expect(source).toContain("const projectSearchNeedle = normalizeLibrarySearchText(projectSearchQuery);");
+    expect(source).toContain("const filteredProjectSchemes = useMemo<SavedSchemeRecord[]>");
+    expect(source).toContain("normalizeLibrarySearchText(scheme.name).includes(projectSearchNeedle)");
+    expect(source).toContain("normalizeLibrarySearchText(project.name).includes(projectSearchNeedle)");
+    expect(source).toContain("const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id);");
+    expect(projectPanelBlock).toContain("className=\"library-search project-search\"");
+    expect(projectPanelBlock).toContain("placeholder=\"搜索方案/模型\"");
+    expect(projectPanelBlock).toContain("aria-label=\"搜索模型库\"");
+    expect(projectPanelBlock).toContain("aria-label=\"清空模型库搜索\"");
+    expect(projectPanelBlock).toContain("未找到匹配方案或模型");
+    expect(projectPanelBlock).toContain("filteredProjectSchemes.map((scheme)");
+    expect(styles).toContain(".project-search");
+    expect(styles).toContain(".project-search-empty");
+  });
+
   test("collapses component type groups in the library by default and toggles them on click", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
@@ -132,6 +155,19 @@ describe("graph inspector panel", () => {
     const terminalStubBlock = cssRuleBlock(styles, ".terminal-stub");
 
     expect(terminalStubBlock).not.toContain("vector-effect");
+  });
+
+  test("keeps only the real canvas boundary as the visible canvas border", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const canvasBlock = cssRuleBlock(styles, ".diagram-canvas");
+    const boundaryBlock = cssRuleBlock(styles, ".canvas-boundary");
+
+    expect(source).toContain("<rect className=\"canvas-boundary\" x=\"0\" y=\"0\" width={canvasWidth} height={canvasHeight} />");
+    expect(canvasBlock).not.toContain("border:");
+    expect(canvasBlock).not.toContain("box-shadow:");
+    expect(boundaryBlock).toContain("stroke: #475569");
+    expect(boundaryBlock).toContain("pointer-events: none");
   });
 
   test("bridges the topbar dropdown hover gap between trigger and floating menu", async () => {
@@ -550,6 +586,24 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".manual-segment-handle:hover");
     expect(styles).toContain(".diagram-node.selected .terminal-dot:not(.disabled)");
     expect(styles).toContain(".node-toolbar");
+  });
+
+  test("keeps floating toolbars uniformly scaled while canvas dimensions change", async () => {
+    const source = await readAppSource();
+    const toolbarStart = source.indexOf("const nodeFloatingToolbarActionCount =");
+    const toolbarEnd = source.indexOf("const resizeSizeHint =", toolbarStart);
+    const toolbarBlock = source.slice(toolbarStart, toolbarEnd);
+
+    expect(toolbarBlock).toContain("const svgToolbarUiUnit = Math.max(svgUiUnitX, svgUiUnitY);");
+    expect(toolbarBlock).toContain("const toolbarPaddingX = 8 * svgToolbarUiUnit;");
+    expect(toolbarBlock).toContain("const toolbarPaddingY = 8 * svgToolbarUiUnit;");
+    expect(toolbarBlock).toContain("const width = nodeFloatingToolbarWidth * svgToolbarUiUnit;");
+    expect(toolbarBlock).toContain("const height = NODE_FLOATING_TOOLBAR_HEIGHT * svgToolbarUiUnit;");
+    expect(toolbarBlock).toContain("CANVAS_FLOATING_TOOLBAR_GAP * svgToolbarUiUnit");
+    expect(toolbarBlock).toContain("scaleX: svgToolbarUiUnit");
+    expect(toolbarBlock).toContain("scaleY: svgToolbarUiUnit");
+    expect(toolbarBlock).not.toContain("scaleX: svgUiUnitX");
+    expect(toolbarBlock).not.toContain("scaleY: svgUiUnitY");
   });
 
   test("loads additional React Flow interaction and animation controls in the preview runtime only", async () => {
@@ -1281,6 +1335,32 @@ describe("graph inspector panel", () => {
     expect(dropBlock).toContain("applyCanvasBounds(dropCanvasBounds, dropOriginShift)");
   });
 
+  test("keeps canvas edge resizing anchored instead of recentering or changing zoom scale", async () => {
+    const source = await readAppSource();
+    const resizeStart = source.indexOf("useEffect(() => {\n    if (!canvasResizeDrag)");
+    const resizeEnd = source.indexOf("useEffect(() => {\n    if (!statusbarResize)", resizeStart);
+    const resizeBlock = source.slice(resizeStart, resizeEnd);
+    const centerStart = source.indexOf("const requestCanvasFrameCenter = () =>");
+    const centerEnd = source.indexOf("useEffect(() => {\n    if (!projectPanelResize)", centerStart);
+    const centerBlock = source.slice(centerStart, centerEnd);
+    const applyStart = source.indexOf("const applyCanvasBounds =");
+    const applyEnd = source.indexOf("const expandCanvasToFitGraph", applyStart);
+    const applyBlock = source.slice(applyStart, applyEnd);
+    const startResizeStart = source.indexOf("const startCanvasResize =");
+    const startResizeEnd = source.indexOf("const startStatusbarResize", startResizeStart);
+    const startResizeBlock = source.slice(startResizeStart, startResizeEnd);
+
+    expect(centerBlock).toContain("}, [canvasCenterRequest]);");
+    expect(centerBlock).not.toContain("}, [canvasCenterRequest, canvasHeight, canvasWidth]);");
+    expect(startResizeBlock).toContain("unitsPerCssX: svgRect.width > 0 ? canvasBounds.width / svgRect.width : 1");
+    expect(startResizeBlock).toContain("unitsPerCssY: svgRect.height > 0 ? canvasBounds.height / svgRect.height : 1");
+    expect(applyBlock).toContain("const nextViewBoxSize = scaledViewBoxSizeForBounds(current, canvasBounds, nextBounds);");
+    expect(applyBlock).toContain("...clampViewBoxDimensionsForZoom(nextViewBoxSize, nextBounds)");
+    expect(resizeBlock).toContain("setCanvasResizeDraft");
+    expect(resizeBlock).toContain("requestAnimationFrame");
+    expect(resizeBlock).not.toContain("applyCanvasBounds(clampedBounds);");
+  });
+
   test("uses raw canvas landing points and expands before paste or new-device placement", async () => {
     const source = await readAppSource();
     const refsStart = source.indexOf("const lastCanvasPointerRef");
@@ -1451,7 +1531,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("visibleCanvasViewBoxFromRects");
     expect(source).toContain("initialVisibleCanvasViewBox");
     expect(source).toContain("const [canvasVisibleViewBox, setCanvasVisibleViewBox]");
-    expect(source).toContain("frame.addEventListener(\"scroll\", scheduleCanvasVisibleViewBoxUpdate");
+    expect(source).toContain("frame.addEventListener(\"scroll\", handleCanvasFrameScroll");
     expect(source).toContain("expandViewBoxForRendering(canvasVisibleViewBox)");
     expect(source).toContain("setCanvasVisibleViewBox(initialVisibleCanvasViewBox(nextCanvasBounds, canvasFrameRef.current))");
     expect(source).not.toContain("expandViewBoxForRendering(viewBox)");
@@ -1465,6 +1545,51 @@ describe("graph inspector panel", () => {
     expect(routeCullBlock).toContain("draggingNodeIdSet.forEach(addVisibleNodeId)");
     expect(edgeRenderIndex).toBeGreaterThan(-1);
     expect(nodeRenderIndex).toBeGreaterThan(-1);
+  });
+
+  test("scales the canvas scroll surface with viewport zoom instead of clipping zoomed content", async () => {
+    const source = await readAppSource();
+    const canvasRenderStart = source.indexOf("<section className=\"canvas-frame\"");
+    const canvasRenderEnd = source.indexOf("onDrop={handleDrop}", canvasRenderStart);
+    const canvasRenderBlock = source.slice(canvasRenderStart, canvasRenderEnd);
+
+    expect(source).toContain("function canvasScrollScaleFromViewBox");
+    expect(source).toContain("function canvasFullViewBoxFromBounds");
+    expect(source).toContain("const canvasDisplayWidth = Math.max(1, Math.round(canvasBounds.width * canvasScrollScale.x))");
+    expect(source).toContain("const canvasDisplayHeight = Math.max(1, Math.round(canvasBounds.height * canvasScrollScale.y))");
+    expect(source).toContain("syncCanvasFrameScrollToViewBox");
+    expect(source).toContain("visibleCanvasViewBoxFromRects(frame.getBoundingClientRect(), svg.getBoundingClientRect(), canvasFullViewBoxRef.current)");
+    expect(canvasRenderBlock).toContain("style={{ width: canvasDisplayWidth, height: canvasDisplayHeight }}");
+    expect(canvasRenderBlock).toContain("viewBox={`0 0 ${canvasBounds.width} ${canvasBounds.height}`}");
+    expect(canvasRenderBlock).not.toContain("viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}");
+  });
+
+  test("keeps manual canvas scrollbar movement as the scroll source of truth", async () => {
+    const source = await readAppSource();
+    const syncEffectStart = source.indexOf("useEffect(() => {\n    scheduleCanvasVisibleViewBoxUpdate();");
+    const syncEffectEnd = source.indexOf("useLayoutEffect(() => {", syncEffectStart);
+    const syncEffectBlock = source.slice(syncEffectStart, syncEffectEnd);
+    const listenerStart = source.indexOf("useEffect(() => {\n    const frame = canvasFrameRef.current;");
+    const listenerEnd = source.indexOf("useEffect(() => {\n    setCanvasSizeDraft", listenerStart);
+    const listenerBlock = source.slice(listenerStart, listenerEnd);
+    const wheelGuardStart = source.indexOf("const preventPageWheelZoom = (event: WheelEvent) => {");
+    const wheelGuardEnd = source.indexOf("window.addEventListener(\"wheel\", preventPageWheelZoom", wheelGuardStart);
+    const wheelGuardBlock = source.slice(wheelGuardStart, wheelGuardEnd);
+    const wheelStart = source.indexOf("const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {");
+    const wheelEnd = source.indexOf("const deleteSelected = () => {", wheelStart);
+    const wheelBlock = source.slice(wheelStart, wheelEnd);
+
+    expect(source).toContain("const handleCanvasFrameScroll = () => {");
+    expect(source).toContain("canvasFrameUserScrollRef.current = true;");
+    expect(listenerBlock).toContain("frame.addEventListener(\"scroll\", handleCanvasFrameScroll, { passive: true });");
+    expect(listenerBlock).toContain("frame.removeEventListener(\"scroll\", handleCanvasFrameScroll);");
+    expect(listenerBlock).not.toContain("frame.addEventListener(\"scroll\", scheduleCanvasVisibleViewBoxUpdate");
+    expect(syncEffectBlock).toContain("}, [canvasDisplayHeight, canvasDisplayWidth]);");
+    expect(syncEffectBlock).not.toContain("viewBox");
+    expect(wheelGuardBlock).toContain("event.ctrlKey || event.metaKey");
+    expect(wheelGuardBlock).not.toContain("if ((event.target as Element | null)?.closest(\".diagram-canvas\"))");
+    expect(wheelBlock).toContain("if (!event.ctrlKey && !event.metaKey)");
+    expect(wheelBlock.indexOf("if (!event.ctrlKey && !event.metaKey)")).toBeLessThan(wheelBlock.indexOf("event.preventDefault();"));
   });
 
   test("defers selected device parameter view construction until the device tab is active", async () => {
@@ -3015,7 +3140,7 @@ describe("graph inspector panel", () => {
     const projectContextEnd = source.indexOf("{pendingModelImportConflict && (", projectContextStart);
     const projectContextBlock = source.slice(projectContextStart, projectContextEnd);
     const modelLabels = ["模型删除", "模型导出", "模型导入", "模型重命名", "模型复制", "模型粘贴"];
-    const schemeLabels = ["方案删除", "方案导出", "方案导入", "方案重命名", "方案复制", "模型粘贴", "方案粘贴"];
+    const schemeLabels = ["方案删除", "方案导出", "方案导入", "模型新建", "模型导入", "方案重命名", "方案复制", "模型粘贴", "方案粘贴"];
     const blankLabels = ["方案新增", "方案粘贴", "方案导入"];
     const expectOrderedLabels = (labels: string[]) => {
       let cursor = -1;
@@ -3035,6 +3160,8 @@ describe("graph inspector panel", () => {
     expect(projectContextBlock).toContain("{recordClipboard?.kind === \"project\" && projectMenu.schemeId && (");
     expect(projectContextBlock).toContain("{recordClipboard?.kind === \"scheme\" && (");
     expect(projectContextBlock).toContain("createSchemeRecord");
+    expect(projectContextBlock).toContain("createBlankProject(projectMenu.schemeId)");
+    expect(projectContextBlock).toContain("openModelImportFilePicker(projectMenu.schemeId)");
     expectOrderedLabels(modelLabels);
     expectOrderedLabels(schemeLabels);
     expectOrderedLabels(blankLabels);

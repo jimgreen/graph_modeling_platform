@@ -404,6 +404,11 @@ button:disabled {
   outline: none;
 }
 
+.project-search {
+  flex: 0 0 auto;
+  margin: 0 0 8px;
+}
+
 .left-panel-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -607,6 +612,13 @@ button:disabled {
   margin: 4px 0 0;
   color: #64748b;
   font-size: 12px;
+}
+
+.project-search-empty {
+  padding: 10px 8px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
 }
 
 .project-row {
@@ -1254,10 +1266,7 @@ button:disabled {
   display: block;
   width: 1980px;
   height: 1024px;
-  border: 3px solid #64748b;
-  border-radius: 8px;
   background: #f8fafc;
-  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.13);
   touch-action: none;
 }
 

@@ -1,4 +1,4 @@
-import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, type SetStateAction, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, type SetStateAction, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AlignEndHorizontal,
   AlignEndVertical,
@@ -1189,6 +1189,31 @@ function visibleCanvasViewBoxFromRects(frameRect: RectLike, svgRect: RectLike, v
     y: viewBox.y + topCss * scaleY,
     width: (rightCss - leftCss) * scaleX,
     height: (bottomCss - topCss) * scaleY
+  };
+}
+function canvasScrollScaleFromViewBox(viewBox: Pick<CanvasViewBox, "width" | "height">, bounds: CanvasBounds) {
+  return {
+    x: bounds.width > 0 && viewBox.width > 0 ? bounds.width / viewBox.width : 1,
+    y: bounds.height > 0 && viewBox.height > 0 ? bounds.height / viewBox.height : 1
+  };
+}
+function canvasFullViewBoxFromBounds(bounds: CanvasBounds): CanvasViewBox {
+  return { x: 0, y: 0, width: bounds.width, height: bounds.height };
+}
+function scaledViewBoxSizeForBounds(viewBox: Pick<CanvasViewBox, "width" | "height">, currentBounds: CanvasBounds, nextBounds: CanvasBounds) {
+  if (viewBox.width <= 0 || viewBox.height <= 0 || currentBounds.width <= 0 || currentBounds.height <= 0) {
+    return viewBox;
+  }
+  return {
+    width: (viewBox.width / currentBounds.width) * nextBounds.width,
+    height: (viewBox.height / currentBounds.height) * nextBounds.height
+  };
+}
+function canvasFramePaddingOffset(frame: HTMLElement) {
+  const style = window.getComputedStyle(frame);
+  return {
+    left: Number.parseFloat(style.paddingLeft || "0") || 0,
+    top: Number.parseFloat(style.paddingTop || "0") || 0
   };
 }
 function initialVisibleCanvasViewBox(canvasBounds: CanvasBounds, frame: Pick<HTMLElement, "clientWidth" | "clientHeight"> | null): CanvasViewBox {
@@ -3907,6 +3932,47 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
     );
   }
 
+  if (glyphVariant === "hydrogen-storage-horizontal") {
+    if (mode === "text") {
+      return uprightText(node, 0, 4, { fill: stroke, stroke: "none", fontSize: miniature ? 9 : 13, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2");
+    }
+    if (!renderGeometry) {
+      return null;
+    }
+    const radius = Math.min(h / 2, w / 4);
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={radius} fill={fill} />
+        <path d={`M ${-w / 2 + radius} ${-h / 2} C ${-w / 2 + radius * 0.35} ${-h / 2} ${-w / 2} ${-h / 4} ${-w / 2} 0 C ${-w / 2} ${h / 4} ${-w / 2 + radius * 0.35} ${h / 2} ${-w / 2 + radius} ${h / 2}`} />
+        <path d={`M ${w / 2 - radius} ${-h / 2} C ${w / 2 - radius * 0.35} ${-h / 2} ${w / 2} ${-h / 4} ${w / 2} 0 C ${w / 2} ${h / 4} ${w / 2 - radius * 0.35} ${h / 2} ${w / 2 - radius} ${h / 2}`} />
+        <path d={`M ${-w / 2 + radius + 8} ${-h / 4} H ${w / 2 - radius - 8} M ${-w / 2 + radius + 8} ${h / 4} H ${w / 2 - radius - 8}`} opacity="0.7" />
+        {renderText && uprightText(node, 0, 4, { fill: stroke, stroke: "none", fontSize: miniature ? 9 : 13, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2")}
+      </g>
+    );
+  }
+
+  if (glyphVariant === "hydrogen-storage-container") {
+    if (mode === "text") {
+      return uprightText(node, 0, 4, { fill: stroke, stroke: "none", fontSize: miniature ? 8 : 12, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2");
+    }
+    if (!renderGeometry) {
+      return null;
+    }
+    const innerLeft = -w / 2 + 9;
+    const innerRight = w / 2 - 9;
+    const tankTop = -h / 2 + 14;
+    const tankGap = miniature ? 8 : 10;
+    return (
+      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="2" fill={fill} />
+        <path d={`M ${-w / 2 + 8} ${-h / 2} V ${h / 2} M ${w / 2 - 8} ${-h / 2} V ${h / 2}`} />
+        <path d={`M ${innerLeft} ${tankTop} H ${innerRight} M ${innerLeft} ${tankTop + tankGap} H ${innerRight} M ${innerLeft} ${tankTop + tankGap * 2} H ${innerRight}`} />
+        <path d={`M ${-w / 2 + 18} ${-h / 2 + 8} V ${h / 2 - 8} M ${w / 2 - 18} ${-h / 2 + 8} V ${h / 2 - 8}`} opacity="0.65" />
+        {renderText && uprightText(node, 0, h / 2 - (miniature ? 9 : 12), { fill: stroke, stroke: "none", fontSize: miniature ? 7 : 10, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2")}
+      </g>
+    );
+  }
+
   if (glyphVariant === "hydrogen-bus") {
     if (mode === "text") {
       return null;
@@ -4715,6 +4781,8 @@ export function App() {
   const keyboardMoveCommitCancelRef = useRef<(() => void) | null>(null);
   const dragUndoCapturedRef = useRef(false);
   const canvasResizeUndoCapturedRef = useRef(false);
+  const canvasResizeFrameRef = useRef<number | null>(null);
+  const canvasResizeDraftRef = useRef<CanvasBounds | null>(null);
   const cachedRoutedEdgesRef = useRef<RoutedEdge[]>([]);
   const cachedRouteStoreRef = useRef<RouteStore | null>(null);
   const pendingRouteEdgeIdsRef = useRef<Set<string>>(new Set());
@@ -4812,6 +4880,7 @@ export function App() {
   const [nodeLabelRotateDrag, setNodeLabelRotateDrag] = useState<NodeLabelRotateDragState>(null);
   const [manualPathDrag, setManualPathDrag] = useState<ManualPathDrag>(null);
   const [transformDrag, setTransformDrag] = useState<TransformDrag | null>(null);
+  const [canvasResizeDraft, setCanvasResizeDraft] = useState<CanvasBounds | null>(null);
   const [deviceLabelsVisible, setDeviceLabelsVisible] = useState(true);
   const [minimapVisible, setMinimapVisible] = useState(true);
   const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT });
@@ -4828,6 +4897,7 @@ export function App() {
   const [inspectorTab, setInspectorTab] = useState<"model" | "graph" | "device">("graph");
   const [graphInfoView, setGraphInfoView] = useState<"tree" | "selected">("tree");
   const [leftPanelTab, setLeftPanelTab] = useState<"projects" | "library" | "templates">("projects");
+  const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const [librarySearchQuery, setLibrarySearchQuery] = useState("");
   const [leftPanelMode, setLeftPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(LEFT_PANEL_MODE_STORAGE_KEY));
   const [rightPanelMode, setRightPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(RIGHT_PANEL_MODE_STORAGE_KEY));
@@ -5696,6 +5766,19 @@ export function App() {
   };
   const projects = useMemo(() => schemes.flatMap((scheme) => scheme.projects), [schemes]);
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
+  const projectSearchNeedle = normalizeLibrarySearchText(projectSearchQuery);
+  const filteredProjectSchemes = useMemo<SavedSchemeRecord[]>(() => {
+    if (!projectSearchNeedle) {
+      return schemes;
+    }
+    return schemes.flatMap((scheme) => {
+      const schemeMatches = normalizeLibrarySearchText(scheme.name).includes(projectSearchNeedle);
+      const filteredProjects = schemeMatches
+        ? scheme.projects
+        : scheme.projects.filter((project) => normalizeLibrarySearchText(project.name).includes(projectSearchNeedle));
+      return schemeMatches || filteredProjects.length > 0 ? [{ ...scheme, projects: filteredProjects }] : [];
+    });
+  }, [projectSearchNeedle, schemes]);
   const baseLibraryTemplates = useMemo<DeviceTemplate[]>(() => [...DEVICE_LIBRARY, ...customDeviceTemplates], [customDeviceTemplates]);
   const libraryTemplates = useMemo<DeviceTemplate[]>(
     () => baseLibraryTemplates.map((template) => applyDeviceTemplateDefinitionOverride(template, deviceDefinitionOverrides[template.kind])),
@@ -6100,6 +6183,20 @@ export function App() {
   }, [inspectorTopologyErrors.length]);
 
   const canvasBounds = useMemo<CanvasBounds>(() => ({ width: canvasWidth, height: canvasHeight }), [canvasHeight, canvasWidth]);
+  const canvasFullViewBox = useMemo<CanvasViewBox>(() => canvasFullViewBoxFromBounds(canvasBounds), [canvasBounds]);
+  const canvasScrollScale = canvasScrollScaleFromViewBox(viewBox, canvasBounds);
+  const canvasDisplayWidth = Math.max(1, Math.round(canvasBounds.width * canvasScrollScale.x));
+  const canvasDisplayHeight = Math.max(1, Math.round(canvasBounds.height * canvasScrollScale.y));
+  const canvasBoundsRef = useRef<CanvasBounds>(canvasBounds);
+  const canvasFullViewBoxRef = useRef<CanvasViewBox>(canvasFullViewBox);
+  const canvasScrollScaleRef = useRef(canvasScrollScale);
+  const canvasVisibleViewBoxRef = useRef<CanvasViewBox>(canvasVisibleViewBox);
+  const skipNextCanvasScrollSyncRef = useRef(false);
+  const canvasFrameUserScrollRef = useRef(false);
+  canvasBoundsRef.current = canvasBounds;
+  canvasFullViewBoxRef.current = canvasFullViewBox;
+  canvasScrollScaleRef.current = canvasScrollScale;
+  canvasVisibleViewBoxRef.current = canvasVisibleViewBox;
   const clampCanvasBounds = (bounds: CanvasBounds): CanvasBounds => ({
     width: clampCanvasDimension(bounds.width, MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH, canvasWidth),
     height: clampCanvasDimension(bounds.height, MIN_CANVAS_HEIGHT, MAX_CANVAS_HEIGHT, canvasHeight)
@@ -6139,14 +6236,15 @@ export function App() {
     setCanvasWidth(nextBounds.width);
     setCanvasHeight(nextBounds.height);
     setCanvasSizeDraft({ width: String(nextBounds.width), height: String(nextBounds.height) });
-    setViewBox((current) =>
-      normalizeViewBoxToCanvas({
+    setViewBox((current) => {
+      const nextViewBoxSize = scaledViewBoxSizeForBounds(current, canvasBounds, nextBounds);
+      return normalizeViewBoxToCanvas({
         ...current,
         x: current.x + originShift.x,
         y: current.y + originShift.y,
-        ...clampViewBoxDimensionsForZoom(current, nextBounds)
-      }, nextBounds)
-    );
+        ...clampViewBoxDimensionsForZoom(nextViewBoxSize, nextBounds)
+      }, nextBounds);
+    });
     return true;
   };
   const expandCanvasToFitGraph = (
@@ -6274,6 +6372,24 @@ export function App() {
     }
     return changed ? { ...edge, sourcePoint, targetPoint, manualPoints } : edge;
   };
+  const syncCanvasFrameScrollToViewBox = (targetViewBox = viewBoxRef.current) => {
+    const frame = canvasFrameRef.current;
+    if (!frame) {
+      return;
+    }
+    const scale = canvasScrollScaleRef.current;
+    const padding = canvasFramePaddingOffset(frame);
+    const maxLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
+    const maxTop = Math.max(0, frame.scrollHeight - frame.clientHeight);
+    const nextLeft = clampNumber(targetViewBox.x * scale.x + padding.left, 0, maxLeft);
+    const nextTop = clampNumber(targetViewBox.y * scale.y + padding.top, 0, maxTop);
+    if (Math.abs(frame.scrollLeft - nextLeft) > 1) {
+      frame.scrollLeft = nextLeft;
+    }
+    if (Math.abs(frame.scrollTop - nextTop) > 1) {
+      frame.scrollTop = nextTop;
+    }
+  };
   const scheduleCanvasVisibleViewBoxUpdate = () => {
     if (canvasVisibleViewBoxFrameRef.current !== null) {
       return;
@@ -6285,9 +6401,28 @@ export function App() {
       if (!frame || !svg) {
         return;
       }
-      const next = visibleCanvasViewBoxFromRects(frame.getBoundingClientRect(), svg.getBoundingClientRect(), viewBoxRef.current);
+      const frameScrollWasUserDriven = canvasFrameUserScrollRef.current;
+      canvasFrameUserScrollRef.current = false;
+      const next = visibleCanvasViewBoxFromRects(frame.getBoundingClientRect(), svg.getBoundingClientRect(), canvasFullViewBoxRef.current);
       setCanvasVisibleViewBox((current) => (sameCanvasViewBox(current, next) ? current : next));
+      setViewBox((current) => {
+        const nextViewBox = normalizeViewBoxToCanvas({ ...current, x: next.x, y: next.y }, canvasBoundsRef.current);
+        if (
+          Math.round(nextViewBox.x) === Math.round(current.x) &&
+          Math.round(nextViewBox.y) === Math.round(current.y)
+        ) {
+          return current;
+        }
+        if (frameScrollWasUserDriven) {
+          skipNextCanvasScrollSyncRef.current = true;
+        }
+        return nextViewBox;
+      });
     });
+  };
+  const handleCanvasFrameScroll = () => {
+    canvasFrameUserScrollRef.current = true;
+    scheduleCanvasVisibleViewBoxUpdate();
   };
   const leftPanelVisible = isSidePanelVisible(leftPanelMode, leftPanelAutoVisible);
   const rightPanelVisible = isSidePanelVisible(rightPanelMode, rightPanelAutoVisible);
@@ -6305,14 +6440,23 @@ export function App() {
 
   useEffect(() => {
     scheduleCanvasVisibleViewBoxUpdate();
-  }, [canvasHeight, canvasWidth, viewBox]);
+  }, [canvasDisplayHeight, canvasDisplayWidth]);
+
+  useLayoutEffect(() => {
+    if (skipNextCanvasScrollSyncRef.current) {
+      skipNextCanvasScrollSyncRef.current = false;
+      return;
+    }
+    syncCanvasFrameScrollToViewBox(viewBox);
+    scheduleCanvasVisibleViewBoxUpdate();
+  }, [canvasDisplayHeight, canvasDisplayWidth, viewBox.x, viewBox.y, viewBox.width, viewBox.height]);
 
   useEffect(() => {
     const frame = canvasFrameRef.current;
     if (!frame) {
       return;
     }
-    frame.addEventListener("scroll", scheduleCanvasVisibleViewBoxUpdate, { passive: true });
+    frame.addEventListener("scroll", handleCanvasFrameScroll, { passive: true });
     window.addEventListener("resize", scheduleCanvasVisibleViewBoxUpdate);
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleCanvasVisibleViewBoxUpdate);
     observer?.observe(frame);
@@ -6321,7 +6465,7 @@ export function App() {
     }
     scheduleCanvasVisibleViewBoxUpdate();
     return () => {
-      frame.removeEventListener("scroll", scheduleCanvasVisibleViewBoxUpdate);
+      frame.removeEventListener("scroll", handleCanvasFrameScroll);
       window.removeEventListener("resize", scheduleCanvasVisibleViewBoxUpdate);
       observer?.disconnect();
     };
@@ -7462,7 +7606,7 @@ export function App() {
 
   useEffect(() => {
     const preventPageWheelZoom = (event: WheelEvent) => {
-      if ((event.target as Element | null)?.closest(".diagram-canvas")) {
+      if ((event.ctrlKey || event.metaKey) && (event.target as Element | null)?.closest(".diagram-canvas")) {
         event.preventDefault();
       }
     };
@@ -7499,6 +7643,10 @@ export function App() {
       if (canvasVisibleViewBoxFrameRef.current !== null) {
         window.cancelAnimationFrame(canvasVisibleViewBoxFrameRef.current);
         canvasVisibleViewBoxFrameRef.current = null;
+      }
+      if (canvasResizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(canvasResizeFrameRef.current);
+        canvasResizeFrameRef.current = null;
       }
       keyboardMoveCommitCancelRef.current?.();
       keyboardMoveCommitCancelRef.current = null;
@@ -7707,7 +7855,7 @@ export function App() {
       scheduleCanvasVisibleViewBoxUpdate();
     });
     return () => window.cancelAnimationFrame(frameId);
-  }, [canvasCenterRequest, canvasHeight, canvasWidth]);
+  }, [canvasCenterRequest]);
 
   useEffect(() => {
     if (!projectPanelResize) {
@@ -7767,22 +7915,50 @@ export function App() {
     if (!canvasResizeDrag) {
       return;
     }
-    const handlePointerMove = (event: globalThis.PointerEvent) => {
-      event.preventDefault();
-      const nextBounds = canvasResizeBoundsFromPointerDrag(canvasResizeDrag, event, canvasResizeDrag.minBounds);
-      const clampedBounds = clampCanvasBounds(nextBounds);
-      const changed = clampedBounds.width !== canvasWidth || clampedBounds.height !== canvasHeight;
+    const commitCanvasResizeBounds = (draftBounds: CanvasBounds) => {
+      const changed = draftBounds.width !== canvasWidth || draftBounds.height !== canvasHeight;
       if (changed && !canvasResizeUndoCapturedRef.current) {
         pushUndoSnapshot();
         canvasResizeUndoCapturedRef.current = true;
       }
-      applyCanvasBounds(clampedBounds);
+      applyCanvasBounds(draftBounds);
+      canvasResizeDraftRef.current = null;
+      setCanvasResizeDraft(null);
+    };
+    const flushCanvasResizeDraft = () => {
+      canvasResizeFrameRef.current = null;
+      const draftBounds = canvasResizeDraftRef.current;
+      if (!draftBounds) {
+        return;
+      }
+      commitCanvasResizeBounds(draftBounds);
+    };
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      event.preventDefault();
+      const nextBounds = canvasResizeBoundsFromPointerDrag(canvasResizeDrag, event, canvasResizeDrag.minBounds);
+      const clampedBounds = clampCanvasBounds(nextBounds);
+      canvasResizeDraftRef.current = clampedBounds;
+      setCanvasResizeDraft(clampedBounds);
+      if (canvasResizeFrameRef.current === null) {
+        canvasResizeFrameRef.current = window.requestAnimationFrame(flushCanvasResizeDraft);
+      }
     };
     const handlePointerUp = () => {
+      if (canvasResizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(canvasResizeFrameRef.current);
+        canvasResizeFrameRef.current = null;
+      }
+      const draftBounds = canvasResizeDraftRef.current;
+      if (draftBounds) {
+        commitCanvasResizeBounds(draftBounds);
+      }
       if (canvasResizeUndoCapturedRef.current) {
-        writeOperationLog(`调整画布尺寸为 ${canvasWidth} x ${canvasHeight}`);
+        const currentBounds = canvasBoundsRef.current;
+        writeOperationLog(`调整画布尺寸为 ${currentBounds.width} x ${currentBounds.height}`);
       }
       canvasResizeUndoCapturedRef.current = false;
+      canvasResizeDraftRef.current = null;
+      setCanvasResizeDraft(null);
       setCanvasResizeDrag(null);
     };
     window.addEventListener("pointermove", handlePointerMove);
@@ -7792,6 +7968,10 @@ export function App() {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
+      if (canvasResizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(canvasResizeFrameRef.current);
+        canvasResizeFrameRef.current = null;
+      }
     };
   }, [canvasResizeDrag, canvasHeight, canvasWidth, edges, nodes, routedEdges]);
 
@@ -11296,8 +11476,8 @@ export function App() {
       startClientY: event.clientY,
       startWidth: canvasWidth,
       startHeight: canvasHeight,
-      unitsPerCssX: svgRect.width > 0 ? viewBox.width / svgRect.width : 1,
-      unitsPerCssY: svgRect.height > 0 ? viewBox.height / svgRect.height : 1,
+      unitsPerCssX: svgRect.width > 0 ? canvasBounds.width / svgRect.width : 1,
+      unitsPerCssY: svgRect.height > 0 ? canvasBounds.height / svgRect.height : 1,
       minBounds: minimumCanvasBoundsForContent()
     });
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -12396,8 +12576,8 @@ export function App() {
     }
     if (panning && svgRef.current) {
       const rect = svgRef.current.getBoundingClientRect();
-      const dx = ((event.clientX - panning.clientX) / rect.width) * panning.viewBox.width;
-      const dy = ((event.clientY - panning.clientY) / rect.height) * panning.viewBox.height;
+      const dx = rect.width > 0 ? ((event.clientX - panning.clientX) / rect.width) * canvasBounds.width : 0;
+      const dy = rect.height > 0 ? ((event.clientY - panning.clientY) / rect.height) * canvasBounds.height : 0;
       const nextViewBox = clampViewBoxToCanvas({ ...panning.viewBox, x: panning.viewBox.x - dx, y: panning.viewBox.y - dy });
       setViewBox((current) =>
         current.x === nextViewBox.x &&
@@ -12520,6 +12700,9 @@ export function App() {
   };
 
   const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
+    if (!event.ctrlKey && !event.metaKey) {
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     if (!svgRef.current) {
@@ -13551,9 +13734,9 @@ export function App() {
     }
   };
 
-  const createBlankProject = () => {
-    const targetSchemeId = selectedSchemeId || activeSchemeId || schemes[0]?.id;
-    const targetScheme = schemes.find((scheme) => scheme.id === targetSchemeId) ?? schemes[0];
+  const createBlankProject = (preferredSchemeId = selectedSchemeId || activeSchemeId || schemes[0]?.id || "") => {
+    const targetScheme = schemes.find((scheme) => scheme.id === preferredSchemeId) ?? schemes[0];
+    const targetSchemeId = targetScheme?.id ?? preferredSchemeId;
     const inputName = window.prompt("请输入模型名称", "新建模型");
     if (inputName === null) {
       return;
@@ -13660,9 +13843,10 @@ export function App() {
   };
 
   const centerViewOnPoint = (point: Point) => {
+    const visible = canvasVisibleViewBoxRef.current;
     setViewBox(clampViewBoxToCanvas({
-      x: point.x - viewBox.width / 2,
-      y: point.y - viewBox.height / 2,
+      x: point.x - (visible.width > 0 ? visible.width : viewBox.width) / 2,
+      y: point.y - (visible.height > 0 ? visible.height : viewBox.height) / 2,
       width: viewBox.width,
       height: viewBox.height
     }));
@@ -13670,21 +13854,30 @@ export function App() {
 
   const centerViewBoxOnPoint = (point: Point) => {
     setViewBox((current) =>
-      clampViewBoxToCanvas({
-        x: point.x - current.width / 2,
-        y: point.y - current.height / 2,
-        width: current.width,
-        height: current.height
-      })
+      {
+        const visible = canvasVisibleViewBoxRef.current;
+        return clampViewBoxToCanvas({
+          x: point.x - (visible.width > 0 ? visible.width : current.width) / 2,
+          y: point.y - (visible.height > 0 ? visible.height : current.height) / 2,
+          width: current.width,
+          height: current.height
+        });
+      }
     );
   };
 
   const zoomViewportAtCenter = (zoomFactor: number) => {
     setViewBox((current) => {
-      const center = {
-        x: current.x + current.width / 2,
-        y: current.y + current.height / 2
-      };
+      const visible = canvasVisibleViewBoxRef.current;
+      const center = visible.width > 0 && visible.height > 0
+        ? {
+            x: visible.x + visible.width / 2,
+            y: visible.y + visible.height / 2
+          }
+        : {
+            x: current.x + current.width / 2,
+            y: current.y + current.height / 2
+          };
       const size = clampViewBoxDimensionsForZoom(
         { width: current.width * zoomFactor, height: current.height * zoomFactor },
         canvasBounds
@@ -14803,6 +14996,20 @@ export function App() {
 
   const renderProjectPanel = () => (
     <section className="project-panel">
+      <div className="library-search project-search">
+        <Search size={15} aria-hidden="true" />
+        <input
+          value={projectSearchQuery}
+          onChange={(event) => setProjectSearchQuery(event.target.value)}
+          placeholder="搜索方案/模型"
+          aria-label="搜索模型库"
+        />
+        {projectSearchQuery && (
+          <button type="button" aria-label="清空模型库搜索" title="清空" onClick={() => setProjectSearchQuery("")}>
+            <X size={14} />
+          </button>
+        )}
+      </div>
       <div
         className="project-list listbox"
         role="listbox"
@@ -14824,9 +15031,11 @@ export function App() {
       >
         {schemes.length === 0 ? (
           <p className="project-empty">暂无方案</p>
+        ) : filteredProjectSchemes.length === 0 ? (
+          <p className="project-empty project-search-empty">未找到匹配方案或模型</p>
         ) : (
-          schemes.map((scheme) => {
-            const isExpanded = expandedSchemeIds.includes(scheme.id);
+          filteredProjectSchemes.map((scheme) => {
+            const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id);
             return (
             <div className="scheme-group" key={scheme.id}>
               <div
@@ -16130,15 +16339,16 @@ export function App() {
   const nodeFloatingToolbarWidth = Math.max(NODE_FLOATING_TOOLBAR_WIDTH, nodeFloatingToolbarActionCount * 34 + 16);
   const svgUiUnitX = viewBox.width / Math.max(1, canvasWidth);
   const svgUiUnitY = viewBox.height / Math.max(1, canvasHeight);
-  const toolbarPaddingX = 8 * svgUiUnitX;
-  const toolbarPaddingY = 8 * svgUiUnitY;
+  const svgToolbarUiUnit = Math.max(svgUiUnitX, svgUiUnitY);
+  const toolbarPaddingX = 8 * svgToolbarUiUnit;
+  const toolbarPaddingY = 8 * svgToolbarUiUnit;
   const nodeFloatingToolbar =
     !selectedToolbarHidden && activeSelectedNodeIds.length > 0 && selectedCanvasBounds
       ? (() => {
-          const width = nodeFloatingToolbarWidth * svgUiUnitX;
-          const height = NODE_FLOATING_TOOLBAR_HEIGHT * svgUiUnitY;
+          const width = nodeFloatingToolbarWidth * svgToolbarUiUnit;
+          const height = NODE_FLOATING_TOOLBAR_HEIGHT * svgToolbarUiUnit;
           const centerX = (selectedCanvasBounds.left + selectedCanvasBounds.right) / 2;
-          const preferredY = selectedCanvasBounds.top - height - CANVAS_FLOATING_TOOLBAR_GAP * svgUiUnitY;
+          const preferredY = selectedCanvasBounds.top - height - CANVAS_FLOATING_TOOLBAR_GAP * svgToolbarUiUnit;
           return {
             x: clampNumber(centerX - width / 2, viewBox.x + toolbarPaddingX, viewBox.x + viewBox.width - width - toolbarPaddingX),
             y: clampNumber(
@@ -16148,8 +16358,8 @@ export function App() {
             ),
             width: nodeFloatingToolbarWidth,
             height: NODE_FLOATING_TOOLBAR_HEIGHT,
-            scaleX: svgUiUnitX,
-            scaleY: svgUiUnitY
+            scaleX: svgToolbarUiUnit,
+            scaleY: svgToolbarUiUnit
           };
         })()
       : null;
@@ -16157,19 +16367,19 @@ export function App() {
   const edgeFloatingToolbar =
     !selectedToolbarHidden && selectedEdge && selectedRoutedEdge && selectedEdgeMidpoint
       ? (() => {
-          const width = EDGE_FLOATING_TOOLBAR_WIDTH * svgUiUnitX;
-          const height = EDGE_FLOATING_TOOLBAR_HEIGHT * svgUiUnitY;
+          const width = EDGE_FLOATING_TOOLBAR_WIDTH * svgToolbarUiUnit;
+          const height = EDGE_FLOATING_TOOLBAR_HEIGHT * svgToolbarUiUnit;
           return {
             x: clampNumber(selectedEdgeMidpoint.x - width / 2, viewBox.x + toolbarPaddingX, viewBox.x + viewBox.width - width - toolbarPaddingX),
             y: clampNumber(
-              selectedEdgeMidpoint.y - height - 14 * svgUiUnitY,
+              selectedEdgeMidpoint.y - height - 14 * svgToolbarUiUnit,
               viewBox.y + toolbarPaddingY,
               viewBox.y + viewBox.height - height - toolbarPaddingY
             ),
             width: EDGE_FLOATING_TOOLBAR_WIDTH,
             height: EDGE_FLOATING_TOOLBAR_HEIGHT,
-            scaleX: svgUiUnitX,
-            scaleY: svgUiUnitY
+            scaleX: svgToolbarUiUnit,
+            scaleY: svgToolbarUiUnit
           };
         })()
       : null;
@@ -16226,10 +16436,10 @@ export function App() {
     x: minimapOffsetX + point.x * minimapScale,
     y: minimapOffsetY + point.y * minimapScale
   });
-  const minimapViewportLeft = clampNumber(minimapOffsetX + viewBox.x * minimapScale, minimapOffsetX, minimapOffsetX + minimapContentWidth);
-  const minimapViewportTop = clampNumber(minimapOffsetY + viewBox.y * minimapScale, minimapOffsetY, minimapOffsetY + minimapContentHeight);
-  const minimapViewportRight = clampNumber(minimapOffsetX + (viewBox.x + viewBox.width) * minimapScale, minimapOffsetX, minimapOffsetX + minimapContentWidth);
-  const minimapViewportBottom = clampNumber(minimapOffsetY + (viewBox.y + viewBox.height) * minimapScale, minimapOffsetY, minimapOffsetY + minimapContentHeight);
+  const minimapViewportLeft = clampNumber(minimapOffsetX + canvasVisibleViewBox.x * minimapScale, minimapOffsetX, minimapOffsetX + minimapContentWidth);
+  const minimapViewportTop = clampNumber(minimapOffsetY + canvasVisibleViewBox.y * minimapScale, minimapOffsetY, minimapOffsetY + minimapContentHeight);
+  const minimapViewportRight = clampNumber(minimapOffsetX + (canvasVisibleViewBox.x + canvasVisibleViewBox.width) * minimapScale, minimapOffsetX, minimapOffsetX + minimapContentWidth);
+  const minimapViewportBottom = clampNumber(minimapOffsetY + (canvasVisibleViewBox.y + canvasVisibleViewBox.height) * minimapScale, minimapOffsetY, minimapOffsetY + minimapContentHeight);
   const handleMinimapNavigate = (event: PointerEvent<SVGSVGElement>) => {
     event.preventDefault();
     event.stopPropagation();
@@ -16466,8 +16676,8 @@ export function App() {
           <svg
             ref={svgRef}
             className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${staticDrawing ? "static-draw-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""} ${multiNodeDragging ? "multi-node-dragging" : ""}`}
-            style={{ width: canvasWidth, height: canvasHeight }}
-            viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
+            style={{ width: canvasDisplayWidth, height: canvasDisplayHeight }}
+            viewBox={`0 0 ${canvasBounds.width} ${canvasBounds.height}`}
             onDrop={handleDrop}
             onDragOver={(event) => event.preventDefault()}
             onWheel={handleWheel}
@@ -16930,7 +17140,11 @@ export function App() {
               const selected = selectedNodeIdSet.has(node.id);
               const focused = node.id === selectedNodeId;
               const editable = activeLayerNodeIdSet.has(node.id);
-              const isStorageBus = node.kind === "hydrogen-tank" || node.kind === "thermal-storage-tank";
+              const isStorageBus =
+                node.kind === "hydrogen-tank" ||
+                node.kind === "hydrogen-tank-horizontal" ||
+                node.kind === "hydrogen-tank-container" ||
+                node.kind === "thermal-storage-tank";
               const isConnectSource = node.id === connectSource?.nodeId;
               const originalDragPosition = dragging?.originalPositions[node.id];
               const renderPosition = draggingDelta && originalDragPosition
@@ -18546,6 +18760,14 @@ export function App() {
               <button onClick={() => runContextMenuAction(openSchemeImportFilePicker)}>
                 <FileInput size={14} />
                 方案导入
+              </button>
+              <button onClick={() => runContextMenuAction(() => createBlankProject(projectMenu.schemeId))}>
+                <Plus size={14} />
+                模型新建
+              </button>
+              <button onClick={() => runContextMenuAction(() => openModelImportFilePicker(projectMenu.schemeId))}>
+                <FileInput size={14} />
+                模型导入
               </button>
               <button
                 onClick={() => runContextMenuAction(() => {

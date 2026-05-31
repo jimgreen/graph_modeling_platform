@@ -1030,9 +1030,12 @@ describe("power system model", () => {
   test("exports hydrogen, heat, and cross-energy devices to E sections and reports unsupported devices", () => {
     const electrolyzer = assignPermanentDeviceIndex(createDefaultNode("ac-electrolyzer", { x: 100, y: 100 }), {}).node;
     const hydrogenPipe = assignPermanentDeviceIndex(createDefaultNode("hydrogen-pipeline", { x: 240, y: 100 }), {}).node;
-    const heatTank = assignPermanentDeviceIndex(createDefaultNode("thermal-storage-tank", { x: 380, y: 100 }), {}).node;
+    const hydrogenTank = assignPermanentDeviceIndex(createDefaultNode("hydrogen-tank", { x: 380, y: 100 }), {}).node;
+    const horizontalHydrogenTank = assignPermanentDeviceIndex(createDefaultNode("hydrogen-tank-horizontal", { x: 520, y: 100 }), {}).node;
+    const containerHydrogenTank = assignPermanentDeviceIndex(createDefaultNode("hydrogen-tank-container", { x: 660, y: 100 }), {}).node;
+    const heatTank = assignPermanentDeviceIndex(createDefaultNode("thermal-storage-tank", { x: 800, y: 100 }), {}).node;
     const custom: ModelNode = {
-      ...createDefaultNode("ac-load", { x: 520, y: 100 }),
+      ...createDefaultNode("ac-load", { x: 940, y: 100 }),
       kind: "unknown-device-kind",
       name: "未支持设备",
       params: {}
@@ -1040,19 +1043,30 @@ describe("power system model", () => {
     const exported = parseESections(buildEDeviceParameterFile({
       version: 1,
       name: "综合能源导出",
-      nodes: [electrolyzer, hydrogenPipe, heatTank, custom],
+      nodes: [electrolyzer, hydrogenPipe, hydrogenTank, horizontalHydrogenTank, containerHydrogenTank, heatTank, custom],
       edges: []
     }));
 
+    expect(Object.keys(E_SECTION_COLUMNS)).not.toContain("Hydro" + "Tank");
+    expect(Object.keys(E_SECTION_COLUMNS)).not.toContain("Heat" + "Tank");
+    expect(E_SECTION_COLUMNS.HydroStorage).toEqual(["idx", "name", "node", "run_stat"]);
+    expect(E_SECTION_COLUMNS.HeatStorage).toEqual(["idx", "name", "node", "run_stat"]);
     expect(exported.AcE2Hydro.rows).toHaveLength(1);
     expect(exported.ACLoad.rows).toHaveLength(1);
     expect(exported.HydroSource.rows).toHaveLength(1);
     expect(exported.HydroPipe.rows).toHaveLength(1);
-    expect(exported.HeatTank.rows).toHaveLength(1);
+    expect(exported.HydroStorage.rows).toHaveLength(3);
+    expect(exported.HeatStorage.rows).toHaveLength(1);
+    expect(Object.keys(exported)).not.toContain("Hydro" + "Tank");
+    expect(Object.keys(exported)).not.toContain("Heat" + "Tank");
+    expect(inferESection("hydrogen-tank")).toBe("HydroStorage");
+    expect(inferESection("hydrogen-tank-horizontal")).toBe("HydroStorage");
+    expect(inferESection("hydrogen-tank-container")).toBe("HydroStorage");
+    expect(inferESection("thermal-storage-tank")).toBe("HeatStorage");
     expect(getEExportWarnings({
       version: 1,
       name: "综合能源导出",
-      nodes: [electrolyzer, hydrogenPipe, heatTank, custom],
+      nodes: [electrolyzer, hydrogenPipe, hydrogenTank, horizontalHydrogenTank, containerHydrogenTank, heatTank, custom],
       edges: []
     })).toEqual([
       expect.objectContaining({
@@ -3937,6 +3951,8 @@ describe("power system model", () => {
       ["dc-electrolyzer", "直流电制氢", ["dc", "h2"], "dc-hydrogen-electrolyzer"],
       ["hydrogen-source", "氢源", ["h2"], "hydrogen-source"],
       ["hydrogen-tank", "储氢罐", [], "hydrogen-storage"],
+      ["hydrogen-tank-horizontal", "横卧式储氢罐", [], "hydrogen-storage-horizontal"],
+      ["hydrogen-tank-container", "集装格式储氢罐", [], "hydrogen-storage-container"],
       ["hydrogen-load", "氢荷", ["h2"], "hydrogen-load"],
       ["ac-fuel-cell", "交流燃料电池", ["ac", "h2"], "ac-hydrogen-fuel-cell"],
       ["dc-fuel-cell", "直流燃料电池", ["dc", "h2"], "dc-hydrogen-fuel-cell"],
@@ -3953,6 +3969,9 @@ describe("power system model", () => {
       const node = createDefaultNode(kind, { x: 100, y: 100 });
       expect(node.terminals.map((terminal) => terminal.type)).toEqual([...terminalTypes]);
       expect(getDeviceGlyphVariant(kind)).toBe(glyphVariant);
+      if (kind.includes("tank")) {
+        expect(getBusTerminalType(node)).toBe("h2");
+      }
     }
 
     const acElectrolyzer = createDefaultNode("ac-electrolyzer", { x: 100, y: 100 });

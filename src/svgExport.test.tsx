@@ -26,12 +26,16 @@ describe("SVG export", () => {
 
   test("exports bus-connected tank devices as tank glyphs instead of plain bus lines", () => {
     const hydrogenTank = createDefaultNode("hydrogen-tank", { x: 180, y: 120 });
-    const thermalTank = createDefaultNode("thermal-storage-tank", { x: 320, y: 120 });
+    const horizontalHydrogenTank = createDefaultNode("hydrogen-tank-horizontal", { x: 320, y: 120 });
+    const containerHydrogenTank = createDefaultNode("hydrogen-tank-container", { x: 460, y: 120 });
+    const thermalTank = createDefaultNode("thermal-storage-tank", { x: 620, y: 120 });
 
-    const svg = buildSvgDocument([hydrogenTank, thermalTank], [], { width: 500, height: 300 });
+    const svg = buildSvgDocument([hydrogenTank, horizontalHydrogenTank, containerHydrogenTank, thermalTank], [], { width: 760, height: 300 });
 
     expect(svg).toContain(">H2<");
     expect(svg).toContain("C -42 -29");
+    expect(svg).toContain('rx="27"');
+    expect(svg).toContain("M -63 -33 V 33 M 63 -33 V 33");
     expect(svg).toContain("M -10 -1 C -4 4 -4 9 -10 14");
   });
 

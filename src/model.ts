@@ -56,6 +56,8 @@ export type DeviceKind =
   | "dc-electrolyzer"
   | "hydrogen-source"
   | "hydrogen-tank"
+  | "hydrogen-tank-horizontal"
+  | "hydrogen-tank-container"
   | "hydrogen-load"
   | "ac-fuel-cell"
   | "dc-fuel-cell"
@@ -128,6 +130,8 @@ export type DeviceGlyphVariant =
   | "dc-hydrogen-electrolyzer"
   | "hydrogen-source"
   | "hydrogen-storage"
+  | "hydrogen-storage-horizontal"
+  | "hydrogen-storage-container"
   | "hydrogen-load"
   | "hydrogen-fuel-cell"
   | "ac-hydrogen-fuel-cell"
@@ -550,7 +554,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   HydroPressRegulator: ["idx", "name", "i_node", "j_node", "run_stat"],
   HydroStopValve: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   HydroBus: ["idx", "name", "node", "run_stat"],
-  HydroTank: ["idx", "name", "node", "run_stat"],
+  HydroStorage: ["idx", "name", "node", "run_stat"],
   AcE2Hydro: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_h2_unit_t2"],
   DcE2Hydro: ["idx", "name", "run_stat", "idx_dc_load_t1", "idx_h2_unit_t2"],
   Hydro2AcE: ["idx", "name", "run_stat", "idx_ac_unit_t1", "idx_h2_load_t2"],
@@ -562,7 +566,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   HeatPipe: ["idx", "name", "i_node", "j_node", "run_stat"],
   HeatStopValve: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   HeatBus: ["idx", "name", "node", "run_stat"],
-  HeatTank: ["idx", "name", "node", "run_stat"],
+  HeatStorage: ["idx", "name", "node", "run_stat"],
   HeatBoiler: ["idx", "name", "run_stat", "idx_heat_unit_t1"],
   HeatBoiler2: ["idx", "name", "run_stat", "idx_heat2_unit_t1"],
   AcElec2Heat: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_heat_unit_t2"],
@@ -583,7 +587,9 @@ const E_KIND_SECTION_MAP: Record<string, string> = {
   "hydrogen-pressure-reducer": "HydroPressRegulator",
   "hydrogen-shutoff-valve": "HydroStopValve",
   "hydrogen-bus": "HydroBus",
-  "hydrogen-tank": "HydroTank",
+  "hydrogen-tank": "HydroStorage",
+  "hydrogen-tank-horizontal": "HydroStorage",
+  "hydrogen-tank-container": "HydroStorage",
   "ac-electrolyzer": "AcE2Hydro",
   "dc-electrolyzer": "DcE2Hydro",
   "ac-fuel-cell": "Hydro2AcE",
@@ -596,7 +602,7 @@ const E_KIND_SECTION_MAP: Record<string, string> = {
   "heat-pipeline": "HeatPipe",
   "heat-shutoff-valve": "HeatStopValve",
   "heat-bus": "HeatBus",
-  "thermal-storage-tank": "HeatTank",
+  "thermal-storage-tank": "HeatStorage",
   "heat-boiler": "HeatBoiler",
   "two-port-heat-boiler": "HeatBoiler2",
   "ac-heater": "AcElec2Heat",
@@ -1219,7 +1225,7 @@ const E_SECTION_OUTPUT_ORDER = [
   "HydroPressRegulator",
   "HydroStopValve",
   "HydroBus",
-  "HydroTank",
+  "HydroStorage",
   "AcE2Hydro",
   "DcE2Hydro",
   "Hydro2AcE",
@@ -1231,7 +1237,7 @@ const E_SECTION_OUTPUT_ORDER = [
   "HeatPipe",
   "HeatStopValve",
   "HeatBus",
-  "HeatTank",
+  "HeatStorage",
   "HeatBoiler",
   "HeatBoiler2",
   "AcElec2Heat",
@@ -2494,6 +2500,24 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalCount: 0
   },
   {
+    kind: "hydrogen-tank-horizontal",
+    label: "横卧式储氢罐",
+    attributeLibrary: "氢能设备",
+    size: { width: 150, height: 54 },
+    params: { pressure: "35 MPa", capacity: "1000 kg", storageType: "horizontal" },
+    terminalType: "h2",
+    terminalCount: 0
+  },
+  {
+    kind: "hydrogen-tank-container",
+    label: "集装格式储氢罐",
+    attributeLibrary: "氢能设备",
+    size: { width: 142, height: 66 },
+    params: { pressure: "35 MPa", capacity: "1000 kg", storageType: "container" },
+    terminalType: "h2",
+    terminalCount: 0
+  },
+  {
     kind: "hydrogen-load",
     label: "氢荷",
     attributeLibrary: "氢能设备",
@@ -3668,6 +3692,8 @@ export function getDeviceGlyphVariant(kind: DeviceKind): DeviceGlyphVariant {
   if (glyphKind === "dc-electrolyzer") return "dc-hydrogen-electrolyzer";
   if (glyphKind === "hydrogen-source") return "hydrogen-source";
   if (glyphKind === "hydrogen-tank") return "hydrogen-storage";
+  if (glyphKind === "hydrogen-tank-horizontal") return "hydrogen-storage-horizontal";
+  if (glyphKind === "hydrogen-tank-container") return "hydrogen-storage-container";
   if (glyphKind === "hydrogen-load") return "hydrogen-load";
   if (glyphKind === "ac-fuel-cell") return "ac-hydrogen-fuel-cell";
   if (glyphKind === "dc-fuel-cell") return "dc-hydrogen-fuel-cell";
@@ -3930,6 +3956,8 @@ const DEVICE_STROKE_WIDTH_BY_VARIANT: Partial<Record<DeviceGlyphVariant, number>
   "ac-hydrogen-fuel-cell": 2.3,
   "dc-hydrogen-fuel-cell": 2.3,
   "hydrogen-storage": 2.4,
+  "hydrogen-storage-horizontal": 2.4,
+  "hydrogen-storage-container": 2.4,
   "hydrogen-compressor": 2.4,
   "hydrogen-regulator": 2.4,
   "hydrogen-valve": 2.4,
@@ -4769,6 +4797,8 @@ const BUS_TERMINAL_TYPE_BY_KIND: Partial<Record<string, TerminalType>> = {
   "dc-bus": "dc",
   "hydrogen-bus": "h2",
   "hydrogen-tank": "h2",
+  "hydrogen-tank-horizontal": "h2",
+  "hydrogen-tank-container": "h2",
   "heat-bus": "heat",
   "thermal-storage-tank": "heat"
 };
@@ -5326,7 +5356,12 @@ export function isBusNode(node: ModelNode): boolean {
 }
 
 function isBoundaryBusNode(node: Pick<ModelNode, "kind">): boolean {
-  return node.kind === "hydrogen-tank" || node.kind === "thermal-storage-tank";
+  return (
+    node.kind === "hydrogen-tank" ||
+    node.kind === "hydrogen-tank-horizontal" ||
+    node.kind === "hydrogen-tank-container" ||
+    node.kind === "thermal-storage-tank"
+  );
 }
 
 function createDynamicBusTerminal(node: ModelNode, index: number): Terminal {

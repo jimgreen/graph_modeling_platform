@@ -111,7 +111,7 @@ const eSectionColumns = {
   HydroPressRegulator: ["idx", "name", "i_node", "j_node", "run_stat"],
   HydroStopValve: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   HydroBus: ["idx", "name", "node", "run_stat"],
-  HydroTank: ["idx", "name", "node", "run_stat"],
+  HydroStorage: ["idx", "name", "node", "run_stat"],
   AcE2Hydro: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_h2_unit_t2"],
   DcE2Hydro: ["idx", "name", "run_stat", "idx_dc_load_t1", "idx_h2_unit_t2"],
   Hydro2AcE: ["idx", "name", "run_stat", "idx_ac_unit_t1", "idx_h2_load_t2"],
@@ -123,7 +123,7 @@ const eSectionColumns = {
   HeatPipe: ["idx", "name", "i_node", "j_node", "run_stat"],
   HeatStopValve: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   HeatBus: ["idx", "name", "node", "run_stat"],
-  HeatTank: ["idx", "name", "node", "run_stat"],
+  HeatStorage: ["idx", "name", "node", "run_stat"],
   HeatBoiler: ["idx", "name", "run_stat", "idx_heat_unit_t1"],
   HeatBoiler2: ["idx", "name", "run_stat", "idx_heat2_unit_t1"],
   AcElec2Heat: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_heat_unit_t2"],
@@ -471,7 +471,7 @@ function inferESection(kind, params = {}) {
   if (kind === "hydrogen-pressure-reducer") return "HydroPressRegulator";
   if (kind === "hydrogen-shutoff-valve") return "HydroStopValve";
   if (kind === "hydrogen-bus") return "HydroBus";
-  if (kind === "hydrogen-tank") return "HydroTank";
+  if (kind === "hydrogen-tank" || kind === "hydrogen-tank-horizontal" || kind === "hydrogen-tank-container") return "HydroStorage";
   if (kind === "ac-electrolyzer") return "AcE2Hydro";
   if (kind === "dc-electrolyzer") return "DcE2Hydro";
   if (kind === "ac-fuel-cell") return "Hydro2AcE";
@@ -483,7 +483,7 @@ function inferESection(kind, params = {}) {
   if (kind === "heat-pipeline") return "HeatPipe";
   if (kind === "heat-shutoff-valve") return "HeatStopValve";
   if (kind === "heat-bus") return "HeatBus";
-  if (kind === "thermal-storage-tank") return "HeatTank";
+  if (kind === "thermal-storage-tank") return "HeatStorage";
   if (kind === "heat-boiler") return "HeatBoiler";
   if (kind === "two-port-heat-boiler") return "HeatBoiler2";
   if (kind === "ac-heater") return "AcElec2Heat";
