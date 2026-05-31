@@ -3062,10 +3062,20 @@ describe("graph inspector panel", () => {
     expect(source).toContain("routeStorePatchRoutes");
     expect(routingBlock).toContain("queryRouteSpatialIndex(store.routeSpatialIndex");
     expect(routingBlock).toContain("routeEdgesForStoredRendering(routeNodesForEdge, [edge], bounds)");
+    expect(routingBlock).toContain("const routeDeleteIdSet = new Set<string>();");
+    expect(routingBlock).toContain("changedRouteIds.has(route.edgeId) && localRouteById.has(route.edgeId) && !options.replaceChanged");
+    expect(routingBlock).toContain("routeDeleteIdSet.add(edgeId);");
+    expect(routingBlock).toContain("localRouteById.delete(edgeId);");
+    expect(routingBlock).toContain("addLocalRoute(nextRoute, { replaceChanged: true });");
+    expect(routingBlock).not.toContain("localRouteById.set(nextRoute.edgeId, nextRoute);");
     expect(routingBlock).toContain("refreshCrossingArcPaths(localRoutes, changedRouteIds, Array.from(previousLocalRouteById.values()))");
     expect(routingBlock).toContain("routeStorePatchRoutes(store, refreshedRoutes, routeDeleteIds)");
-    expect(routingBlock).toContain("patchStoredRouteStoreForEdgeIds(cachedRouteStoreRef.current, committedStoredEdgeIds, canvasBounds, routingNodes)");
+    expect(routingBlock).toContain("const patchedStoredRouteStore = patchStoredRouteStoreForEdgeIds(");
+    expect(routingBlock).toContain("routeInput.nodes\n      );");
+    expect(routingBlock).not.toContain("patchStoredRouteStoreForEdgeIds(cachedRouteStoreRef.current, committedStoredEdgeIds, canvasBounds, routingNodes)");
     expect(routingBlock).toContain("routeEdgesForCachedStoredRendering(");
+    expect(routingBlock).toContain("routeInput.nodes,");
+    expect(routingBlock).toContain("routeInput.edges,");
     expect(normalCommitBlock).toContain("const movedRouteDirtyIds = dirtyEdgeIdsAfterMove(previousCandidateEdges, committedCandidateEdges, movedNodeIds, edgePatchDirtyIds);");
     expect(normalCommitBlock).toContain("markRouteEdgesDirty(movedRouteDirtyIds);");
     expect(normalCommitBlock).toContain("markStoredRouteEdgesDirty(movedRouteDirtyIds);");
@@ -3073,6 +3083,31 @@ describe("graph inspector panel", () => {
     expect(normalCommitBlock).not.toContain("markRouteEdgesDirty(edgePatchDirtyIds);");
     expect(normalCommitBlock).toContain("const nextEdgesForBounds = edgePatch.edgeUpserts;");
     expect(normalCommitBlock).not.toContain("const nextEdgesForBounds = overlayEdgesForPatch(edgePatch.edgeUpserts, edgePatch.edgeDeleteIds);");
+  });
+
+  test("does not let an older route-cache effect clear freshly marked moved-edge dirtiness", async () => {
+    const source = await readAppSource();
+    const refStart = source.indexOf("const cachedRoutedEdgesRef");
+    const refEnd = source.indexOf("const canvasVisibleViewBoxFrameRef", refStart);
+    const refBlock = source.slice(refStart, refEnd);
+    const markStart = source.indexOf("const markRouteEdgesDirty");
+    const markEnd = source.indexOf("const edgeReferenceDiffIds", markStart);
+    const markBlock = source.slice(markStart, markEnd);
+    const cacheEffectStart = source.indexOf("const committedRouteDirtyGeneration = routeDirtyGenerationRef.current;");
+    const cacheEffectEnd = source.indexOf("const renderViewportBounds", cacheEffectStart);
+    const cacheEffectBlock = source.slice(cacheEffectStart, cacheEffectEnd);
+
+    expect(refBlock).toContain("const routeDirtyGenerationRef = useRef(0);");
+    expect(markBlock).toContain("let changed = false;");
+    expect(markBlock).toContain("routeDirtyGenerationRef.current += 1;");
+    expect(cacheEffectBlock).toContain("const committedRouteDirtyGeneration = routeDirtyGenerationRef.current;");
+    expect(cacheEffectBlock).toContain("if (routeDirtyGenerationRef.current !== committedRouteDirtyGeneration)");
+    expect(cacheEffectBlock).toContain("return;");
+    expect(cacheEffectBlock.indexOf("routeDirtyGenerationRef.current !== committedRouteDirtyGeneration")).toBeLessThan(
+      cacheEffectBlock.indexOf("cachedRoutedEdgesRef.current = routedEdges;")
+    );
+    expect(cacheEffectBlock).toContain("pendingRouteEdgeIdsRef.current = new Set();");
+    expect(cacheEffectBlock).toContain("pendingStoredRouteEdgeIdsRef.current = new Set();");
   });
 
   test("keeps single-node geometry and label footprint commits scoped to changed content", async () => {

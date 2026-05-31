@@ -4905,6 +4905,7 @@ export function App() {
   } | null>(null);
   const pendingRouteEdgeIdsRef = useRef<Set<string>>(new Set());
   const pendingStoredRouteEdgeIdsRef = useRef<Set<string>>(new Set());
+  const routeDirtyGenerationRef = useRef(0);
   const canvasVisibleViewBoxFrameRef = useRef<number | null>(null);
   const elementTreeCacheRef = useRef<{ signature: string; tree: ElementTreeGroup[] }>({ signature: "", tree: [] });
   const graphDirtyBaselineRef = useRef<GraphDirtyBaseline | null>(null);
@@ -6842,12 +6843,17 @@ export function App() {
     }
     const changedRouteIds = new Set<string>();
     const routeDeleteIds: string[] = [];
+    const routeDeleteIdSet = new Set<string>();
     const localRouteById = new Map<string, RoutedEdge>();
     const previousLocalRouteById = new Map<string, RoutedEdge>();
-    const addLocalRoute = (route: RoutedEdge | undefined) => {
-      if (route) {
-        localRouteById.set(route.edgeId, route);
+    const addLocalRoute = (route: RoutedEdge | undefined, options: { replaceChanged?: boolean } = {}) => {
+      if (!route || routeDeleteIdSet.has(route.edgeId)) {
+        return;
       }
+      if (changedRouteIds.has(route.edgeId) && localRouteById.has(route.edgeId) && !options.replaceChanged) {
+        return;
+      }
+      localRouteById.set(route.edgeId, route);
     };
     const addStoredRoutesNearBounds = (boundsToQuery: ReturnType<typeof routeRenderBounds>) => {
       if (!boundsToQuery) {
@@ -6868,6 +6874,8 @@ export function App() {
       if (!edge || !visibleEdgeIdSet.has(edge.id)) {
         changedRouteIds.add(edgeId);
         routeDeleteIds.push(edgeId);
+        routeDeleteIdSet.add(edgeId);
+        localRouteById.delete(edgeId);
         continue;
       }
       const routeNodesForEdge = routingNodesForConnectionEdge(edge, routeNodes);
@@ -6875,11 +6883,13 @@ export function App() {
       if (!nextRoute) {
         changedRouteIds.add(edgeId);
         routeDeleteIds.push(edgeId);
+        routeDeleteIdSet.add(edgeId);
+        localRouteById.delete(edgeId);
         continue;
       }
       changedRouteIds.add(edgeId);
       addStoredRoutesNearBounds(routeRenderBounds(nextRoute, 8));
-      localRouteById.set(nextRoute.edgeId, nextRoute);
+      addLocalRoute(nextRoute, { replaceChanged: true });
     }
 
     if (changedRouteIds.size === 0 && routeDeleteIds.length === 0) {
@@ -6908,17 +6918,22 @@ export function App() {
     }
     const committedStoredEdgeIds = pendingStoredRouteEdgeIdsRef.current;
     if (committedStoredEdgeIds.size > 0) {
-      const patchedStoredRouteStore = patchStoredRouteStoreForEdgeIds(cachedRouteStoreRef.current, committedStoredEdgeIds, canvasBounds, routingNodes);
+      const patchedStoredRouteStore = patchStoredRouteStoreForEdgeIds(
+        cachedRouteStoreRef.current,
+        committedStoredEdgeIds,
+        canvasBounds,
+        routeInput.nodes
+      );
       if (patchedStoredRouteStore) {
         return { routes: patchedStoredRouteStore.routes, store: patchedStoredRouteStore };
       }
       return {
         routes: routeEdgesForCachedStoredRendering(
-        routingNodes,
-        routingEdges,
-        committedStoredEdgeIds,
-        canvasBounds,
-        cachedRoutedEdgesRef.current
+          routeInput.nodes,
+          routeInput.edges,
+          committedStoredEdgeIds,
+          canvasBounds,
+          cachedRoutedEdgesRef.current
         ),
         store: null
       };
@@ -6937,7 +6952,7 @@ export function App() {
       ),
       store: null
     };
-  }, [affectedRoutingEdgeIds, canvasBounds, routeRenderingEnabled, routingEdges, routingNodes]);
+  }, [affectedRoutingEdgeIds, canvasBounds, routeInput.edges, routeInput.nodes, routeRenderingEnabled, routingEdges, routingNodes]);
   const routedEdges = routedRouteState.routes;
   const routedEdgeStore = useMemo(
     () => routedRouteState.store ?? routeStoreSetRoutes(cachedRouteStoreRef.current, routedEdges),
@@ -6946,12 +6961,17 @@ export function App() {
   const routedEdgeSpatialIndex = routedEdgeStore.routeSpatialIndex;
   const routedEdgeById = routedEdgeStore.routeMap;
   const routedEdgeIndexById = routedEdgeStore.routeIndexById;
+  // A delayed passive effect from an older drag frame must not clear dirtiness from a newer drag commit.
+  const committedRouteDirtyGeneration = routeDirtyGenerationRef.current;
   useEffect(() => {
+    if (routeDirtyGenerationRef.current !== committedRouteDirtyGeneration) {
+      return;
+    }
     cachedRoutedEdgesRef.current = routedEdges;
     cachedRouteStoreRef.current = routedEdgeStore;
     pendingRouteEdgeIdsRef.current = new Set();
     pendingStoredRouteEdgeIdsRef.current = new Set();
-  }, [routedEdgeStore, routedEdges]);
+  }, [committedRouteDirtyGeneration, routedEdgeStore, routedEdges]);
   const renderViewportBounds = useMemo(() => expandViewBoxForRendering(canvasVisibleViewBox), [canvasVisibleViewBox]);
   const routeRenderOrder = (first: RoutedEdge, second: RoutedEdge) =>
     (routedEdgeIndexById.get(first.edgeId) ?? Number.MAX_SAFE_INTEGER) -
@@ -7046,21 +7066,31 @@ export function App() {
   const selectedLayoutUnitCount = selectedLayoutUnits.length;
   const markRouteEdgesDirty = (edgeIds: Iterable<string | undefined>) => {
     const next = new Set(pendingRouteEdgeIdsRef.current);
+    let changed = false;
     for (const edgeId of edgeIds) {
       if (edgeId) {
         next.add(edgeId);
+        changed = true;
       }
     }
     pendingRouteEdgeIdsRef.current = next;
+    if (changed) {
+      routeDirtyGenerationRef.current += 1;
+    }
   };
   const markStoredRouteEdgesDirty = (edgeIds: Iterable<string | undefined>) => {
     const next = new Set(pendingStoredRouteEdgeIdsRef.current);
+    let changed = false;
     for (const edgeId of edgeIds) {
       if (edgeId) {
         next.add(edgeId);
+        changed = true;
       }
     }
     pendingStoredRouteEdgeIdsRef.current = next;
+    if (changed) {
+      routeDirtyGenerationRef.current += 1;
+    }
   };
   const edgeReferenceDiffIds = (previousEdges: Edge[], nextEdges: Edge[]) => {
     const previousById = new Map(previousEdges.map((edge) => [edge.id, edge]));
