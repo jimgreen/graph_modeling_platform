@@ -84,6 +84,36 @@ describe("canvas selection actions", () => {
     expect(selection.edgeIds).toEqual([]);
   });
 
+  test("includes visible device labels in selection, clipboard, and layout bounds", () => {
+    const base = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const labeled = {
+      ...base,
+      params: {
+        ...base.params,
+        _labelText: "交流电源标识",
+        _labelX: "150",
+        _labelY: "0",
+        _labelFontSize: "18",
+        _labelTextAnchor: "middle",
+        _labelRotation: "0"
+      }
+    };
+    const bodyRight = labeled.position.x + (labeled.size.width * Math.abs(Number(labeled.scaleX ?? labeled.scale ?? 1))) / 2;
+
+    const selection = selectGraphicsInRect([labeled], [], {
+      left: 0,
+      right: bodyRight + 4,
+      top: 0,
+      bottom: 200
+    });
+    const clipboardBounds = canvasClipboardBounds({ nodes: [labeled], edges: [], groups: [] })!;
+    const units = buildCanvasLayoutUnits([], [labeled], [labeled.id], []);
+
+    expect(selection.nodeIds).toEqual([]);
+    expect(clipboardBounds.right).toBeGreaterThan(bodyRight + 80);
+    expect(units[0].bounds.right).toBeGreaterThan(bodyRight + 80);
+  });
+
   test("copies and pastes selected nodes with their selected connection lines", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
     const target = createDefaultNode("ac-load", { x: 300, y: 100 });
@@ -617,8 +647,10 @@ describe("canvas selection actions", () => {
   });
 
   test("uses rendered internal connection routes and padding for grouped layout bounds", () => {
-    const firstGrouped = createDefaultNode("ac-load", { x: 420, y: 220 });
-    const secondGrouped = createDefaultNode("ac-source", { x: 540, y: 220 });
+    const firstBase = createDefaultNode("ac-load", { x: 420, y: 220 });
+    const secondBase = createDefaultNode("ac-source", { x: 540, y: 220 });
+    const firstGrouped = { ...firstBase, params: { ...firstBase.params, _labelVisible: "0" } };
+    const secondGrouped = { ...secondBase, params: { ...secondBase.params, _labelVisible: "0" } };
     const edge: Edge = {
       id: "edge-group-routed",
       sourceId: firstGrouped.id,

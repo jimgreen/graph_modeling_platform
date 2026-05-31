@@ -1,8 +1,7 @@
 import {
   type AlignDirection,
   type AlignMode,
-  getNodeScaleX,
-  getNodeScaleY,
+  calculateNodeVisualBounds,
   resetDeviceIndexesForPaste,
   type Edge,
   type ModelGroup,
@@ -82,19 +81,7 @@ function rectContainsRect(outer: SelectionRect, inner: SelectionRect) {
 }
 
 function nodeSelectionBounds(node: ModelNode): SelectionRect {
-  const halfWidth = (node.size.width * Math.abs(getNodeScaleX(node))) / 2;
-  const halfHeight = (node.size.height * Math.abs(getNodeScaleY(node))) / 2;
-  const radians = (node.rotation * Math.PI) / 180;
-  const cos = Math.abs(Math.cos(radians));
-  const sin = Math.abs(Math.sin(radians));
-  const visualHalfWidth = halfWidth * cos + halfHeight * sin;
-  const visualHalfHeight = halfWidth * sin + halfHeight * cos;
-  return {
-    left: node.position.x - visualHalfWidth,
-    right: node.position.x + visualHalfWidth,
-    top: node.position.y - visualHalfHeight,
-    bottom: node.position.y + visualHalfHeight
-  };
+  return calculateNodeVisualBounds(node);
 }
 
 function routeContainedInRect(points: Point[], rect: SelectionRect) {

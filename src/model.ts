@@ -4601,12 +4601,20 @@ export function clampEdgeGeometryToBounds(edge: Edge, bounds: CanvasBounds): Edg
 }
 
 export function clampNodePositionToBounds(node: ModelNode, bounds: CanvasBounds, position = node.position): Point {
-  const extents = visualHalfExtentsForNode(node);
-  const halfWidth = Math.min(bounds.width / 2, extents.halfWidth);
-  const halfHeight = Math.min(bounds.height / 2, extents.halfHeight);
+  const visualBounds = calculateNodeVisualBounds(node, 0, position);
+  const leftOffset = visualBounds.left - position.x;
+  const rightOffset = visualBounds.right - position.x;
+  const topOffset = visualBounds.top - position.y;
+  const bottomOffset = visualBounds.bottom - position.y;
+  const minX = -leftOffset;
+  const maxX = bounds.width - rightOffset;
+  const minY = -topOffset;
+  const maxY = bounds.height - bottomOffset;
+  const clampAxis = (value: number, min: number, max: number) =>
+    min <= max ? Math.max(min, Math.min(max, value)) : (min + max) / 2;
   return {
-    x: Math.round(Math.max(halfWidth, Math.min(bounds.width - halfWidth, position.x))),
-    y: Math.round(Math.max(halfHeight, Math.min(bounds.height - halfHeight, position.y)))
+    x: Math.round(clampAxis(position.x, minX, maxX)),
+    y: Math.round(clampAxis(position.y, minY, maxY))
   };
 }
 
@@ -4624,7 +4632,7 @@ export function calculateModelGeometryBounds(
 ): GeometryBounds | null {
   const boxes: GeometryBounds[] = [];
   for (const node of nodes) {
-    boxes.push(boxFor(node, padding));
+    boxes.push(calculateNodeVisualBounds(node, padding));
   }
   for (const route of routedEdges) {
     if (route.points.length === 0) {
@@ -7433,14 +7441,24 @@ function visualHalfExtentsForNode(node: ModelNode) {
   };
 }
 
-function boxFor(node: ModelNode, padding = 0) {
+function bodyVisualBoxForNode(node: ModelNode, padding = 0, position = node.position) {
   const { halfWidth, halfHeight } = visualHalfExtentsForNode(node);
   return {
-    left: node.position.x - halfWidth - padding,
-    right: node.position.x + halfWidth + padding,
-    top: node.position.y - halfHeight - padding,
-    bottom: node.position.y + halfHeight + padding
+    left: position.x - halfWidth - padding,
+    right: position.x + halfWidth + padding,
+    top: position.y - halfHeight - padding,
+    bottom: position.y + halfHeight + padding
   };
+}
+
+function boxFor(node: ModelNode, padding = 0) {
+  return bodyVisualBoxForNode(node, padding);
+}
+
+export function calculateNodeVisualBounds(node: ModelNode, padding = 0, position = node.position): GeometryBounds {
+  const bodyBox = bodyVisualBoxForNode(node, padding, position);
+  const labelBox = nodeLabelVisualBox(node, padding, position);
+  return labelBox ? mergeRouteBlockerBoxes([bodyBox, labelBox]) : bodyBox;
 }
 
 type RouteBlockerBox = ReturnType<typeof boxFor>;
@@ -7530,13 +7548,13 @@ function routeNodeLabelFontSize(node: ModelNode) {
   return baseSize * Math.sqrt(scaleX * scaleY);
 }
 
-function routeNodeLabelCanvasCenter(node: ModelNode): Point {
+function routeNodeLabelCanvasCenter(node: ModelNode, position = node.position): Point {
   const offset = routeNodeLabelOffset(node);
   const scaleX = Math.abs(getNodeScaleX(node)) || 1;
   const scaleY = Math.abs(getNodeScaleY(node)) || 1;
   return {
-    x: node.position.x + offset.x * scaleX,
-    y: node.position.y + offset.y * scaleY
+    x: position.x + offset.x * scaleX,
+    y: position.y + offset.y * scaleY
   };
 }
 
@@ -7549,23 +7567,22 @@ function routeTextVisualWidth(text: string, fontSize: number) {
   return Array.from(text).reduce((width, char) => width + fontSize * (char.charCodeAt(0) > 255 ? 1 : 0.62), 0);
 }
 
-function nodeLabelRouteBlockerBox(node: ModelNode, padding = 0): RouteBlockerBox | null {
+function nodeLabelVisualBox(node: ModelNode, padding = 0, position = node.position): RouteBlockerBox | null {
   if (!routeNodeLabelBlocksRouting(node)) {
     return null;
   }
   const text = routeNodeLabelText(node).trim();
-  const center = routeNodeLabelCanvasCenter(node);
+  const center = routeNodeLabelCanvasCenter(node, position);
   const fontSize = routeNodeLabelFontSize(node);
-  const effectivePadding = Math.max(padding, 4);
   if (routeNodeLabelVertical(node)) {
     const segments = routeNodeLabelVerticalSegments(text);
     const width = Math.max(fontSize, ...segments.map((segment) => routeTextVisualWidth(segment.text, fontSize)));
     const height = Math.max(fontSize * 1.35, segments.length * fontSize * 1.2);
     return {
-      left: center.x - width / 2 - effectivePadding,
-      right: center.x + width / 2 + effectivePadding,
-      top: center.y - height / 2 - effectivePadding,
-      bottom: center.y + height / 2 + effectivePadding
+      left: center.x - width / 2 - padding,
+      right: center.x + width / 2 + padding,
+      top: center.y - height / 2 - padding,
+      bottom: center.y + height / 2 + padding
     };
   }
   const width = Math.max(fontSize, routeTextVisualWidth(text, fontSize));
@@ -7574,11 +7591,15 @@ function nodeLabelRouteBlockerBox(node: ModelNode, padding = 0): RouteBlockerBox
   const left = anchor === "start" ? center.x : anchor === "end" ? center.x - width : center.x - width / 2;
   const right = anchor === "start" ? center.x + width : anchor === "end" ? center.x : center.x + width / 2;
   return {
-    left: left - effectivePadding,
-    right: right + effectivePadding,
-    top: center.y - height / 2 - effectivePadding,
-    bottom: center.y + height / 2 + effectivePadding
+    left: left - padding,
+    right: right + padding,
+    top: center.y - height / 2 - padding,
+    bottom: center.y + height / 2 + padding
   };
+}
+
+function nodeLabelRouteBlockerBox(node: ModelNode, padding = 0): RouteBlockerBox | null {
+  return nodeLabelVisualBox(node, Math.max(padding, 4));
 }
 
 function nodeLabelBridgeBlockerBox(
@@ -7684,7 +7705,7 @@ export function calculateModelContentSize(
   };
 
   for (const node of nodes) {
-    const box = boxFor(node, padding);
+    const box = calculateNodeVisualBounds(node, padding);
     right = Math.max(right, box.right);
     bottom = Math.max(bottom, box.bottom);
   }

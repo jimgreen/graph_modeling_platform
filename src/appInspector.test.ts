@@ -166,6 +166,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("<rect className=\"canvas-boundary\" x=\"0\" y=\"0\" width={canvasWidth} height={canvasHeight} />");
     expect(canvasBlock).not.toContain("border:");
     expect(canvasBlock).not.toContain("box-shadow:");
+    expect(canvasBlock).toContain("background: transparent;");
+    expect(canvasBlock).not.toContain("background: #f8fafc;");
     expect(boundaryBlock).toContain("stroke: #475569");
     expect(boundaryBlock).toContain("pointer-events: none");
   });
@@ -557,11 +559,12 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("className=\"canvas-floating-toolbar node-toolbar\"");
     expect(source).toContain("className=\"canvas-floating-toolbar edge-toolbar\"");
+    expect(source).toContain("className=\"canvas-floating-toolbar-layer\"");
     expect(source).toContain("className=\"canvas-floating-toolbar-wrapper\"");
-    expect(source).toContain("transform={`matrix(${nodeFloatingToolbar.scaleX} 0 0 ${nodeFloatingToolbar.scaleY} ${nodeFloatingToolbar.x} ${nodeFloatingToolbar.y})`}");
-    expect(source).toContain("transform={`matrix(${edgeFloatingToolbar.scaleX} 0 0 ${edgeFloatingToolbar.scaleY} ${edgeFloatingToolbar.x} ${edgeFloatingToolbar.y})`}");
-    expect(source).toContain("width: nodeFloatingToolbarWidth");
-    expect(source).toContain("width: EDGE_FLOATING_TOOLBAR_WIDTH");
+    expect(source).toContain("style={floatingToolbarWrapperStyle(nodeFloatingToolbar)}");
+    expect(source).toContain("style={floatingToolbarWrapperStyle(edgeFloatingToolbar)}");
+    expect(source).toContain("nodeFloatingToolbarWidth * floatingToolbarScreenScale");
+    expect(source).toContain("EDGE_FLOATING_TOOLBAR_WIDTH * floatingToolbarScreenScale");
     expect(source).toContain("addManualBendToSelectedEdgeCenter");
     expect(source).toContain("tidySelectedEdgeRoute");
     expect(source).toContain("toggleSelectedNodeLabelDisplay");
@@ -574,6 +577,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("event.shiftKey || transformDrag.kind === \"scale-both\"");
     expect(source).toContain("className=\"resize-size-badge\"");
     expect(styles).toContain(".canvas-floating-toolbar");
+    expect(styles).toContain(".canvas-floating-toolbar-layer");
     expect(styles).toContain(".canvas-floating-toolbar-wrapper");
     expect(styles).toContain(".resize-size-badge");
     expect(styles).toContain(".scale-handle:hover");
@@ -588,20 +592,23 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".node-toolbar");
   });
 
-  test("keeps floating toolbars uniformly scaled while canvas dimensions change", async () => {
+  test("keeps floating toolbars screen-sized and avoids toolbar overlap under zoom", async () => {
     const source = await readAppSource();
     const toolbarStart = source.indexOf("const nodeFloatingToolbarActionCount =");
     const toolbarEnd = source.indexOf("const resizeSizeHint =", toolbarStart);
     const toolbarBlock = source.slice(toolbarStart, toolbarEnd);
 
-    expect(toolbarBlock).toContain("const svgToolbarUiUnit = Math.max(svgUiUnitX, svgUiUnitY);");
-    expect(toolbarBlock).toContain("const toolbarPaddingX = 8 * svgToolbarUiUnit;");
-    expect(toolbarBlock).toContain("const toolbarPaddingY = 8 * svgToolbarUiUnit;");
-    expect(toolbarBlock).toContain("const width = nodeFloatingToolbarWidth * svgToolbarUiUnit;");
-    expect(toolbarBlock).toContain("const height = NODE_FLOATING_TOOLBAR_HEIGHT * svgToolbarUiUnit;");
-    expect(toolbarBlock).toContain("CANVAS_FLOATING_TOOLBAR_GAP * svgToolbarUiUnit");
-    expect(toolbarBlock).toContain("scaleX: svgToolbarUiUnit");
-    expect(toolbarBlock).toContain("scaleY: svgToolbarUiUnit");
+    expect(toolbarBlock).toContain("const floatingToolbarScreenScale = clampNumber(Math.sqrt(currentZoomPercent / 100), 0.78, 1);");
+    expect(toolbarBlock).toContain("const canvasPointToSurfaceCss = (point: Point): Point =>");
+    expect(toolbarBlock).toContain("const floatingToolbarViewport =");
+    expect(toolbarBlock).toContain("const placeFloatingToolbar =");
+    expect(toolbarBlock).toContain("const nodeFloatingToolbarRect = nodeFloatingToolbar ? floatingToolbarBounds(nodeFloatingToolbar) : null;");
+    expect(toolbarBlock).toContain("const avoidRects = nodeFloatingToolbarRect ? [nodeFloatingToolbarRect] : [];");
+    expect(toolbarBlock).toContain("toolbarOverlapArea(rect, avoidRect)");
+    expect(toolbarBlock).toContain("width = Math.round(nodeFloatingToolbarWidth * floatingToolbarScreenScale)");
+    expect(toolbarBlock).toContain("height = Math.round(EDGE_FLOATING_TOOLBAR_HEIGHT * floatingToolbarScreenScale)");
+    expect(toolbarBlock).toContain("const floatingToolbarWrapperStyle = (toolbar: FloatingToolbarPlacement)");
+    expect(toolbarBlock).not.toContain("svgToolbarUiUnit");
     expect(toolbarBlock).not.toContain("scaleX: svgUiUnitX");
     expect(toolbarBlock).not.toContain("scaleY: svgUiUnitY");
   });
@@ -1533,7 +1540,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const [canvasVisibleViewBox, setCanvasVisibleViewBox]");
     expect(source).toContain("frame.addEventListener(\"scroll\", handleCanvasFrameScroll");
     expect(source).toContain("expandViewBoxForRendering(canvasVisibleViewBox)");
-    expect(source).toContain("setCanvasVisibleViewBox(initialVisibleCanvasViewBox(nextCanvasBounds, canvasFrameRef.current))");
+    expect(source).toContain("setCanvasVisibleViewBox(canvasFullViewBoxFromBounds(nextCanvasBounds))");
     expect(source).not.toContain("expandViewBoxForRendering(viewBox)");
     expect(source).toContain("nodeIntersectsRenderViewport");
     expect(routeCullBlock).toContain("if (activeSelectedEdgeSet.size === 0)");
@@ -1555,18 +1562,25 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("function canvasScrollScaleFromViewBox");
     expect(source).toContain("function canvasFullViewBoxFromBounds");
+    expect(source).toContain("const CANVAS_FRAME_INSET = 16;");
     expect(source).toContain("const canvasDisplayWidth = Math.max(1, Math.round(canvasBounds.width * canvasScrollScale.x))");
     expect(source).toContain("const canvasDisplayHeight = Math.max(1, Math.round(canvasBounds.height * canvasScrollScale.y))");
+    expect(source).toContain("const canvasScrollSurfaceWidth = Math.max(canvasDisplayWidth + CANVAS_FRAME_INSET * 2, canvasFrameViewportSize.width)");
+    expect(source).toContain("const canvasScrollSurfaceHeight = Math.max(canvasDisplayHeight + CANVAS_FRAME_INSET * 2, canvasFrameViewportSize.height)");
+    expect(source).toContain("const canvasDisplayOffsetX = Math.max(CANVAS_FRAME_INSET, Math.round((canvasScrollSurfaceWidth - canvasDisplayWidth) / 2))");
+    expect(source).toContain("const canvasDisplayOffsetY = Math.max(CANVAS_FRAME_INSET, Math.round((canvasScrollSurfaceHeight - canvasDisplayHeight) / 2))");
     expect(source).toContain("syncCanvasFrameScrollToViewBox");
     expect(source).toContain("visibleCanvasViewBoxFromRects(frame.getBoundingClientRect(), svg.getBoundingClientRect(), canvasFullViewBoxRef.current)");
-    expect(canvasRenderBlock).toContain("style={{ width: canvasDisplayWidth, height: canvasDisplayHeight }}");
+    expect(canvasRenderBlock).toContain("className=\"canvas-scroll-surface\"");
+    expect(canvasRenderBlock).toContain("style={{ width: canvasScrollSurfaceWidth, height: canvasScrollSurfaceHeight }}");
+    expect(canvasRenderBlock).toContain("style={{ width: canvasDisplayWidth, height: canvasDisplayHeight, left: canvasDisplayOffsetX, top: canvasDisplayOffsetY }}");
     expect(canvasRenderBlock).toContain("viewBox={`0 0 ${canvasBounds.width} ${canvasBounds.height}`}");
     expect(canvasRenderBlock).not.toContain("viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}");
   });
 
   test("keeps manual canvas scrollbar movement as the scroll source of truth", async () => {
     const source = await readAppSource();
-    const syncEffectStart = source.indexOf("useEffect(() => {\n    scheduleCanvasVisibleViewBoxUpdate();");
+    const syncEffectStart = source.indexOf("useEffect(() => {\n    updateCanvasFrameViewportAndVisibleBox();");
     const syncEffectEnd = source.indexOf("useLayoutEffect(() => {", syncEffectStart);
     const syncEffectBlock = source.slice(syncEffectStart, syncEffectEnd);
     const listenerStart = source.indexOf("useEffect(() => {\n    const frame = canvasFrameRef.current;");
@@ -1581,15 +1595,102 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("const handleCanvasFrameScroll = () => {");
     expect(source).toContain("canvasFrameUserScrollRef.current = true;");
+    expect(source).toContain("type WheelZoomAnchor = {");
+    expect(source).toContain("function anchoredCanvasScrollPosition(");
+    expect(source).toContain("const pendingWheelZoomAnchorRef = useRef<WheelZoomAnchor | null>(null);");
+    expect(source).toContain("const syncCanvasFrameScrollToWheelAnchor = (anchor: WheelZoomAnchor) => {");
+    expect(source).toContain("const pendingWheelZoomAnchor = pendingWheelZoomAnchorRef.current;");
+    expect(source).toContain("syncCanvasFrameScrollToWheelAnchor(pendingWheelZoomAnchor);");
     expect(listenerBlock).toContain("frame.addEventListener(\"scroll\", handleCanvasFrameScroll, { passive: true });");
     expect(listenerBlock).toContain("frame.removeEventListener(\"scroll\", handleCanvasFrameScroll);");
     expect(listenerBlock).not.toContain("frame.addEventListener(\"scroll\", scheduleCanvasVisibleViewBoxUpdate");
-    expect(syncEffectBlock).toContain("}, [canvasDisplayHeight, canvasDisplayWidth]);");
+    expect(syncEffectBlock).toContain("updateCanvasFrameViewportAndVisibleBox();");
+    expect(syncEffectBlock).toContain("canvasScrollSurfaceHeight");
+    expect(syncEffectBlock).toContain("canvasScrollSurfaceWidth");
     expect(syncEffectBlock).not.toContain("viewBox");
     expect(wheelGuardBlock).toContain("event.ctrlKey || event.metaKey");
     expect(wheelGuardBlock).not.toContain("if ((event.target as Element | null)?.closest(\".diagram-canvas\"))");
     expect(wheelBlock).toContain("if (!event.ctrlKey && !event.metaKey)");
-    expect(wheelBlock.indexOf("if (!event.ctrlKey && !event.metaKey)")).toBeLessThan(wheelBlock.indexOf("event.preventDefault();"));
+    expect(wheelBlock.indexOf("if (!event.ctrlKey && !event.metaKey)")).toBeLessThan(wheelBlock.indexOf("if (!event.nativeEvent.defaultPrevented)"));
+    expect(wheelBlock).toContain("if (!event.nativeEvent.defaultPrevented)");
+    expect(wheelBlock).toContain("const frame = canvasFrameRef.current;");
+    expect(wheelBlock).toContain("const frameRect = frame.getBoundingClientRect();");
+    expect(wheelBlock).toContain("const cursorOffsetX = clampNumber(event.clientX - frameRect.left, 0, frameRect.width);");
+    expect(wheelBlock).toContain("const cursorOffsetY = clampNumber(event.clientY - frameRect.top, 0, frameRect.height);");
+    expect(wheelBlock).toContain("pendingWheelZoomAnchorRef.current = { point: pointer, cursorOffsetX, cursorOffsetY };");
+    expect(wheelBlock).toContain("setViewBox((current) => {");
+    expect(wheelBlock).toContain("{ width: current.width * zoomFactor, height: current.height * zoomFactor }");
+    expect(wheelBlock).toContain("const nextScaleX = canvasBounds.width / Math.max(1, nextWidth);");
+    expect(wheelBlock).toContain("x: pointer.x - cursorOffsetX / nextScaleX");
+    expect(wheelBlock).not.toContain("const ratioX = (pointer.x - viewBox.x) / viewBox.width;");
+  });
+
+  test("fits the whole canvas to the viewport when blank canvas is double-clicked", async () => {
+    const source = await readAppSource();
+    const fitFunctionStart = source.indexOf("function fitWholeCanvasViewBox");
+    const fitFunctionEnd = source.indexOf("const boxesIntersect", fitFunctionStart);
+    const fitFunctionBlock = source.slice(fitFunctionStart, fitFunctionEnd);
+    const fitHandlerStart = source.indexOf("const fitWholeCanvasToFrame =");
+    const fitHandlerEnd = source.indexOf("const fitViewToBounds", fitHandlerStart);
+    const fitHandlerBlock = source.slice(fitHandlerStart, fitHandlerEnd);
+    const blankPointerStart = source.indexOf("lastEdgePointerClickRef.current = null;");
+    const blankPointerEnd = source.indexOf("const point = lastCanvasPointerRef.current;", blankPointerStart);
+    const blankPointerBlock = source.slice(blankPointerStart, blankPointerEnd);
+    const scrollSurfaceStart = source.indexOf("className=\"canvas-scroll-surface\"");
+    const scrollSurfaceEnd = source.indexOf("<svg", scrollSurfaceStart);
+    const scrollSurfaceBlock = source.slice(scrollSurfaceStart, scrollSurfaceEnd);
+
+    expect(source).toContain("const CANVAS_FIT_SCROLLBAR_GUARD = 4;");
+    expect(fitFunctionBlock).toContain("availableWidth");
+    expect(fitFunctionBlock).toContain("availableHeight");
+    expect(fitFunctionBlock).toContain("availableWidth / Math.max(1, canvasBounds.width)");
+    expect(fitFunctionBlock).toContain("availableHeight / Math.max(1, canvasBounds.height)");
+    expect(fitFunctionBlock).toContain("normalizeViewBoxToCanvas");
+    expect(fitHandlerBlock).toContain("fitWholeCanvasViewBox(canvasBounds, canvasFrameRef.current)");
+    expect(fitHandlerBlock).toContain("setCanvasVisibleViewBox(canvasFullViewBox)");
+    expect(fitHandlerBlock).toContain("frame.scrollLeft = 0;");
+    expect(fitHandlerBlock).toContain("frame.scrollTop = 0;");
+    expect(fitHandlerBlock).toContain("const fitWholeCanvasFromBlankDoubleClick =");
+    expect(fitHandlerBlock).toContain("staticDrawing || connectSource");
+    expect(fitHandlerBlock).toContain("target?.closest(\".diagram-node, .connection-group");
+    expect(fitHandlerBlock).toContain("findConnectionRouteHitAtPoint(pointer)");
+    expect(blankPointerBlock).toContain("if (event.detail >= 2)");
+    expect(blankPointerBlock).toContain("fitWholeCanvasToFrame();");
+    expect(blankPointerBlock).toContain("return;");
+    expect(scrollSurfaceBlock).toContain("onDoubleClick={(event) =>");
+    expect(scrollSurfaceBlock).toContain("event.target !== event.currentTarget");
+    expect(scrollSurfaceBlock).toContain("fitWholeCanvasToFrame();");
+    expect(source).toContain("onDoubleClick={fitWholeCanvasFromBlankDoubleClick}");
+  });
+
+  test("scopes horizontal and vertical scrollbars to the canvas surface", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const rootBlock = cssRuleBlock(styles, "html,\nbody,\n#root");
+    const workspaceBlock = cssRuleBlock(styles, ".workspace");
+    const canvasFrameBlock = cssRuleBlock(styles, ".canvas-frame");
+    const edgeTriggerBlock = cssRuleBlock(styles, ".side-panel-edge-trigger");
+    const rightTriggerBlock = cssRuleBlock(styles, ".side-panel-edge-trigger.right");
+    const sideTriggerStart = source.indexOf("const renderSidePanelEdgeTrigger =");
+    const sideTriggerEnd = source.indexOf("const normalizeScale", sideTriggerStart);
+    const sideTriggerBlock = source.slice(sideTriggerStart, sideTriggerEnd);
+
+    expect(rootBlock).toContain("height: 100%;");
+    expect(rootBlock).toContain("overflow: hidden;");
+    expect(workspaceBlock).toContain("grid-template-rows: 58px minmax(0, 1fr) var(--statusbar-height);");
+    expect(workspaceBlock).toContain("min-height: 0;");
+    expect(workspaceBlock).toContain("overflow: hidden;");
+    expect(canvasFrameBlock).toContain("position: relative;");
+    expect(canvasFrameBlock).toContain("min-width: 0;");
+    expect(canvasFrameBlock).toContain("min-height: 0;");
+    expect(canvasFrameBlock).toContain("overflow: auto;");
+    expect(canvasFrameBlock).toContain("overscroll-behavior: contain;");
+    expect(canvasFrameBlock).toContain("padding: 0;");
+    expect(styles).toMatch(/(?:^|\n)\.canvas-scroll-surface\s*\{[^}]*position:\s*relative/s);
+    expect(styles).toMatch(/(?:^|\n)\.diagram-canvas\s*\{[^}]*position:\s*absolute/s);
+    expect(edgeTriggerBlock).toContain("pointer-events: auto;");
+    expect(rightTriggerBlock).toContain("right: 16px;");
+    expect(sideTriggerBlock).toContain("onPointerEnter={() => updateAutoPanelVisibility(side, \"edge-enter\")}");
   });
 
   test("defers selected device parameter view construction until the device tab is active", async () => {
@@ -2007,6 +2108,26 @@ describe("graph inspector panel", () => {
     expect(source).toContain("_labelDisplayMode");
     expect(source).toContain("_labelRotation");
     expect(source).toContain("_labelFontSize");
+  });
+
+  test("uses visible device label bounds for canvas culling, drag preview, and local route search", async () => {
+    const source = await readAppSource();
+    const renderStart = source.indexOf("const nodeRenderBounds");
+    const renderEnd = source.indexOf("const nodeIntersectsRenderViewport", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+    const previewStart = source.indexOf("const buildMultiNodeDragOverlayPreview");
+    const previewEnd = source.indexOf("const renderMultiNodeDragOverlay", previewStart);
+    const previewBlock = source.slice(previewStart, previewEnd);
+    const localBoundsStart = source.indexOf("const boundsForNodeSet");
+    const localBoundsEnd = source.indexOf("const localRouteOptimizationEdges", localBoundsStart);
+    const localBoundsBlock = source.slice(localBoundsStart, localBoundsEnd);
+
+    expect(source).toContain("calculateNodeVisualBounds");
+    expect(source).toContain("function nodeVisualInteractionBounds");
+    expect(renderBlock).toContain("calculateNodeVisualBounds(node, 24)");
+    expect(previewBlock).toContain("nodeVisualInteractionBounds(node, originalPosition, 0, includeUprightContentInBounds)");
+    expect(localBoundsBlock).toContain("nodeVisualInteractionBounds(node, position, padding)");
+    expect(localBoundsBlock).not.toContain("const halfWidth = Math.abs(node.size.width * getNodeScaleX(node)) / 2");
   });
 
   test("caps orthogonal routing lane candidates to avoid quadratic searches in dense connection areas", async () => {
@@ -2450,7 +2571,7 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("const nodeHasUprightBoundsContent");
     expect(previewBlock).toContain("const includeUprightContentInBounds = nodeHasUprightBoundsContent(");
-    expect(previewBlock).toContain("const halfExtents = nodeTransformedHalfExtents(node, includeUprightContentInBounds)");
+    expect(previewBlock).toContain("nodeVisualInteractionBounds(node, originalPosition, 0, includeUprightContentInBounds)");
     expect(previewBlock).not.toContain("nodeTransformedHalfExtents(node, true)");
     expect(nodeRenderBlock).toContain("const includeUprightContentInHandles = nodeHasUprightBoundsContent(");
   });
@@ -3140,7 +3261,7 @@ describe("graph inspector panel", () => {
     const projectContextEnd = source.indexOf("{pendingModelImportConflict && (", projectContextStart);
     const projectContextBlock = source.slice(projectContextStart, projectContextEnd);
     const modelLabels = ["模型删除", "模型导出", "模型导入", "模型重命名", "模型复制", "模型粘贴"];
-    const schemeLabels = ["方案删除", "方案导出", "方案导入", "模型新建", "模型导入", "方案重命名", "方案复制", "模型粘贴", "方案粘贴"];
+    const schemeLabels = ["方案删除", "方案导出", "方案导入", "方案重命名", "方案复制", "方案粘贴", "模型新建", "模型导入", "模型粘贴"];
     const blankLabels = ["方案新增", "方案粘贴", "方案导入"];
     const expectOrderedLabels = (labels: string[]) => {
       let cursor = -1;
@@ -3159,6 +3280,9 @@ describe("graph inspector panel", () => {
     expect(projectContextBlock).toContain("{recordClipboard?.kind === \"project\" && projectMenu.projectId && (");
     expect(projectContextBlock).toContain("{recordClipboard?.kind === \"project\" && projectMenu.schemeId && (");
     expect(projectContextBlock).toContain("{recordClipboard?.kind === \"scheme\" && (");
+    expect(projectContextBlock).toContain("className=\"context-menu-separator\"");
+    expect(projectContextBlock).toContain("role=\"separator\"");
+    expect(projectContextBlock).toContain("aria-label=\"方案操作和模型操作分隔\"");
     expect(projectContextBlock).toContain("createSchemeRecord");
     expect(projectContextBlock).toContain("createBlankProject(projectMenu.schemeId)");
     expect(projectContextBlock).toContain("openModelImportFilePicker(projectMenu.schemeId)");
@@ -3172,6 +3296,23 @@ describe("graph inspector panel", () => {
     expect(projectContextBlock).not.toContain(">重命名<");
     expect(projectContextBlock).not.toContain(">删除<");
     expect(projectContextBlock).not.toContain("disabled=");
+  });
+
+  test("keeps the left auto panel visible while project context menus are open", async () => {
+    const source = await readAppSource();
+    const visibilityStart = source.indexOf("const updateAutoPanelVisibility =");
+    const visibilityEnd = source.indexOf("const activateInspectorFromCanvas", visibilityStart);
+    const visibilityBlock = source.slice(visibilityStart, visibilityEnd);
+    const hideStart = source.indexOf("const hideAutoPanelsFromWorkspace =");
+    const hideEnd = source.indexOf("const interactiveStaticDrawingNeedsExplicitFinish", hideStart);
+    const hideBlock = source.slice(hideStart, hideEnd);
+    const projectContextStart = source.indexOf("{projectMenu && (");
+    const projectContextEnd = source.indexOf("{pendingRecordPasteConflict && (", projectContextStart);
+    const projectContextBlock = source.slice(projectContextStart, projectContextEnd);
+
+    expect(projectContextBlock).toContain("<div className=\"context-menu\" style={contextMenuStyle(projectMenu)}>");
+    expect(visibilityBlock).toContain("side === \"left\" && event === \"panel-leave\" && projectMenu");
+    expect(hideBlock).toContain("if (projectMenu)");
   });
 
   test("prompts for overwrite rename or cancel when pasted scheme or model names already exist", async () => {
@@ -3209,6 +3350,15 @@ describe("graph inspector panel", () => {
     const moveStart = source.indexOf("const moveProjectRecordToScheme =");
     const moveEnd = source.indexOf("const saveDraftProject", moveStart);
     const moveBlock = source.slice(moveStart, moveEnd);
+    const visibilityStart = source.indexOf("const updateAutoPanelVisibility =");
+    const visibilityEnd = source.indexOf("const activateInspectorFromCanvas", visibilityStart);
+    const visibilityBlock = source.slice(visibilityStart, visibilityEnd);
+    const hideStart = source.indexOf("const hideAutoPanelsFromWorkspace =");
+    const hideEnd = source.indexOf("const interactiveStaticDrawingNeedsExplicitFinish", hideStart);
+    const hideBlock = source.slice(hideStart, hideEnd);
+    const projectPanelStart = source.indexOf("const renderProjectPanel = () => (");
+    const projectPanelEnd = source.indexOf("const customDraftTerminalTypes", projectPanelStart);
+    const projectPanelBlock = source.slice(projectPanelStart, projectPanelEnd);
     const resolveStart = source.indexOf("const resolveRecordPasteConflict =");
     const resolveEnd = source.indexOf("const moveProjectRecordToScheme", resolveStart);
     const resolveBlock = source.slice(resolveStart, resolveEnd);
@@ -3217,6 +3367,14 @@ describe("graph inspector panel", () => {
     const dialogBlock = source.slice(dialogStart, dialogEnd);
 
     expect(source).toContain("kind: \"project-drag\"");
+    expect(source).toContain("const projectRecordDragActiveRef = useRef(false);");
+    expect(source).toContain("const startProjectRecordDrag =");
+    expect(source).toContain("const finishProjectRecordDrag =");
+    expect(visibilityBlock).toContain("side === \"left\" && event === \"panel-leave\" && projectRecordDragActiveRef.current");
+    expect(hideBlock).toContain("if (projectRecordDragActiveRef.current)");
+    expect(projectPanelBlock).toContain("startProjectRecordDrag(event, project.id)");
+    expect(projectPanelBlock).toContain("onDragEnd={finishProjectRecordDrag}");
+    expect(projectPanelBlock).toContain("finishProjectRecordDrag();");
     expect(moveBlock).toContain("duplicateProject");
     expect(moveBlock).toContain("setPendingRecordPasteConflict");
     expect(moveBlock).toContain("commitProjectRecordMove");
@@ -3249,6 +3407,9 @@ describe("graph inspector panel", () => {
     expect(loadBlock).toContain("setUndoStack([])");
     expect(loadBlock).toContain("clearNodeDragMoveSchedule()");
     expect(loadBlock).toContain("draggingRef.current = null");
+    expect(loadBlock).toContain("setViewBox(fitWholeCanvasViewBox(nextCanvasBounds, canvasFrameRef.current));");
+    expect(loadBlock).toContain("setCanvasVisibleViewBox(canvasFullViewBoxFromBounds(nextCanvasBounds));");
+    expect(loadBlock).not.toContain("setViewBox(normalizeViewBoxToCanvas({ x: 0, y: 0, ...nextCanvasBounds }, nextCanvasBounds));");
     expect(loadBlock).toContain("setDragging(null)");
     expect(loadBlock).toContain("setSelectedEdgeIds([])");
     expect(loadBlock).not.toContain("pushUndoSnapshot(false)");

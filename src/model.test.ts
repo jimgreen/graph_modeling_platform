@@ -2553,6 +2553,51 @@ describe("power system model", () => {
     expect(modelGeometryInsideCanvasBounds([node], routeClear, { width: 360, height: 240 }, 8)).toBe(true);
   });
 
+  test("includes visible device labels in display geometry and content size", () => {
+    const base = createDefaultNode("ac-switch", { x: 120, y: 90 });
+    const labeled = {
+      ...base,
+      params: {
+        ...base.params,
+        _labelText: "交流开关220/35",
+        _labelX: "150",
+        _labelY: "0",
+        _labelFontSize: "18",
+        _labelTextAnchor: "middle",
+        _labelRotation: "0"
+      }
+    };
+    const bodyRight = labeled.position.x + (labeled.size.width * Math.abs(getNodeScaleX(labeled))) / 2;
+    const bounds = calculateModelGeometryBounds([labeled], [], 0);
+    const contentSize = calculateModelContentSize([labeled], [], [], 0);
+
+    expect(bounds?.right).toBeGreaterThan(bodyRight + 80);
+    expect(contentSize.width).toBe(Math.ceil(bounds?.right ?? 0));
+  });
+
+  test("clamps device movement by visible label bounds as part of the device boundary", () => {
+    const base = createDefaultNode("ac-switch", { x: 120, y: 90 });
+    const labeled = {
+      ...base,
+      params: {
+        ...base.params,
+        _labelText: "开关标识",
+        _labelX: "96",
+        _labelY: "0",
+        _labelFontSize: "16",
+        _labelTextAnchor: "middle",
+        _labelRotation: "0"
+      }
+    };
+    const nextPosition = clampNodePositionToBounds(labeled, { width: 260, height: 220 }, { x: 240, y: 90 });
+    const bodyOnlyMaxX = 260 - (labeled.size.width * Math.abs(getNodeScaleX(labeled))) / 2;
+    const moved = { ...labeled, position: nextPosition };
+    const bounds = calculateModelGeometryBounds([moved], [], 0);
+
+    expect(nextPosition.x).toBeLessThan(bodyOnlyMaxX - 20);
+    expect(bounds?.right).toBeLessThanOrEqual(260);
+  });
+
   test("normalizes scale values without enforcing user-facing min or max ratios", () => {
     expect(normalizeScaleValue(0)).toBe(0);
     expect(normalizeScaleValue(0.05)).toBe(0.05);
@@ -3390,7 +3435,8 @@ describe("power system model", () => {
   });
 
   test("uses rotated device body bounds while rotation also moves terminals", () => {
-    const node = { ...createDefaultNode("ac-line", { x: 260, y: 120 }), rotation: 90 };
+    const base = createDefaultNode("ac-line", { x: 260, y: 120 });
+    const node = { ...base, rotation: 90, params: { ...base.params, _labelVisible: "0" } };
     const bounds = calculateModelGeometryBounds([node], [], 0);
     const terminal = getTerminalPoint(node, "t2");
     const halfWidth = (node.size.width * Math.abs(getNodeScaleX(node))) / 2;
