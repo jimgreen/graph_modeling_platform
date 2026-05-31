@@ -42,10 +42,12 @@ import {
   RotateCw,
   Save,
   ScanSearch,
+  Search,
   Trash2,
   Type,
   Undo2,
-  Ungroup
+  Ungroup,
+  X
 } from "lucide-react";
 import {
   buildContainerDeviceParameterViews,
@@ -60,6 +62,7 @@ import {
   calculateElectricalTopology,
   calculateModelContentSize,
   calculateModelGeometryBounds,
+  canvasResizeBoundsFromPointerDrag,
   clampEdgeGeometryToBounds,
   canConnectTerminals,
   clampNodePositionToBounds,
@@ -306,6 +309,7 @@ type SingleTransformDrag = {
   startPoint: Point;
   handleXDirection?: -1 | 0 | 1;
   handleYDirection?: -1 | 0 | 1;
+  proportionalScale?: boolean;
   historyCaptured?: boolean;
 };
 type TransformDrag =
@@ -519,9 +523,13 @@ type ValidationPanelResizeState = { startY: number; startHeight: number } | null
 type CanvasResizeEdge = "right" | "bottom" | "corner";
 type CanvasResizeState = {
   edge: CanvasResizeEdge;
-  startPoint: Point;
+  startClientX: number;
+  startClientY: number;
   startWidth: number;
   startHeight: number;
+  unitsPerCssX: number;
+  unitsPerCssY: number;
+  minBounds: CanvasBounds;
   historyCaptured?: boolean;
 } | null;
 type RewiringState = {
@@ -772,8 +780,8 @@ const ELECTRIC_COLOR_TYPE_LABELS: Record<"ac" | "dc", string> = {
 const isElectricPaletteType = (type?: TerminalType): type is "ac" | "dc" => type === "ac" || type === "dc";
 
 const terminalVbaseFallbackValue = (node: ModelNode, terminalIndex: number) => {
-  if (node.kind === "ac-three-winding-transformer") {
-    return [node.params.highVbase, node.params.mediumVbase, node.params.lowVbase][terminalIndex] ?? node.params.vbase ?? "";
+  if (node.kind === "ac-three-winding-transformer" || node.kind === "ac-three-winding-transformer-neutral") {
+    return [node.params.highVbase, node.params.mediumVbase, node.params.lowVbase, node.params.neutral_vbase][terminalIndex] ?? node.params.vbase ?? "";
   }
   const sourceSide = node.params.i_vbase ?? node.params.sourceVbase ?? node.params.highVbase;
   const targetSide = node.params.j_vbase ?? node.params.targetVbase ?? node.params.lowVbase;
@@ -792,8 +800,8 @@ const DEFAULT_CANVAS_WIDTH = 1980;
 const DEFAULT_CANVAS_HEIGHT = 1024;
 const MIN_CANVAS_WIDTH = 640;
 const MIN_CANVAS_HEIGHT = 360;
-const MAX_CANVAS_WIDTH = 10000;
-const MAX_CANVAS_HEIGHT = 10000;
+const MAX_CANVAS_WIDTH = 50000;
+const MAX_CANVAS_HEIGHT = 50000;
 const DEFAULT_CANVAS_BACKGROUND = "#f1f5f9";
 const MOVE_BOUNDARY_GUARD = 8;
 const CANVAS_AUTO_EXPAND_PADDING = 96;
@@ -815,7 +823,7 @@ const CANVAS_MINIMAP_MAX_ROUTE_MARKS = 420;
 const CANVAS_FLOATING_TOOLBAR_GAP = 7;
 const NODE_FLOATING_TOOLBAR_WIDTH = 224;
 const NODE_FLOATING_TOOLBAR_HEIGHT = 38;
-const EDGE_FLOATING_TOOLBAR_WIDTH = 128;
+const EDGE_FLOATING_TOOLBAR_WIDTH = 160;
 const EDGE_FLOATING_TOOLBAR_HEIGHT = 38;
 const DEFAULT_POWER_UNIT = "MW";
 const DEFAULT_VOLTAGE_UNIT = "kV";
@@ -1906,6 +1914,22 @@ function groupDeviceTemplatesByAttributeLibraryAndComponentType(templates: Devic
       Array.from(typeMap.entries()).map(([section, typedTemplates]) => ({ section, templates: typedTemplates }))
     ])
   );
+}
+
+function normalizeLibrarySearchText(value: string) {
+  return value.trim().toLowerCase();
+}
+
+const attributeLibraryComponentTypeKey = (attributeLibraryName: string, sectionName: string) =>
+  `${normalizeAttributeLibraryName(attributeLibraryName)}::${sectionName}`;
+
+function libraryTemplateMatchesSearch(template: DeviceTemplate, group: string, section: string, needle: string) {
+  if (!needle) {
+    return true;
+  }
+  return [group, section, template.label, template.kind, template.params?.component_type]
+    .filter((value): value is string => typeof value === "string")
+    .some((value) => normalizeLibrarySearchText(value).includes(needle));
 }
 
 function normalizeAttributeLibraryName(attributeLibraryName: string): string {
@@ -4288,21 +4312,29 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
     );
   }
 
-  if (node.kind === "ac-three-winding-transformer") {
+  if (node.kind === "ac-three-winding-transformer" || node.kind === "ac-three-winding-transformer-neutral") {
     if (mode === "text") {
       return null;
     }
-    const windingRadius = miniature ? 9 : 15;
+    const hasNeutralTerminal = node.kind === "ac-three-winding-transformer-neutral";
+    const windingRadius = miniature ? 9 : hasNeutralTerminal ? 14 : 15;
     const topY = miniature ? -5 : -8;
-    const bottomY = miniature ? 10 : 14;
-    const sideX = miniature ? 10 : 16;
+    const bottomY = miniature ? 10 : hasNeutralTerminal ? 16 : 14;
+    const sideX = miniature ? 10 : hasNeutralTerminal ? 17 : 16;
+    const neutralLeadTop = topY - windingRadius - (miniature ? 6 : 20);
     return (
-      <g className="three-winding-transformer-glyph" fill={fill} stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <g className={`three-winding-transformer-glyph${hasNeutralTerminal ? " three-winding-transformer-neutral-glyph" : ""}`} fill={fill} stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
         <circle className="transformer-winding" cx={-sideX} cy={topY} r={windingRadius} />
         <circle className="transformer-winding" cx={sideX} cy={topY} r={windingRadius} />
         <circle className="transformer-winding" cx="0" cy={bottomY} r={windingRadius} />
         <path d={`M ${-sideX - windingRadius - 8} ${topY} H ${-sideX - windingRadius} M ${sideX + windingRadius} ${topY} H ${sideX + windingRadius + 8} M 0 ${bottomY + windingRadius} V ${bottomY + windingRadius + 10}`} />
         <path d={`M ${-sideX + windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${-windingRadius * 0.28} ${bottomY - windingRadius * 0.72} M ${sideX - windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${windingRadius * 0.28} ${bottomY - windingRadius * 0.72}`} strokeWidth="1.6" />
+        {hasNeutralTerminal && (
+          <>
+            <path d={`M 0 ${neutralLeadTop} V ${topY - windingRadius}`} />
+            <circle cx="0" cy={topY - windingRadius} r={miniature ? 2.2 : 3.2} fill={stroke} stroke="none" />
+          </>
+        )}
       </g>
     );
   }
@@ -4642,6 +4674,11 @@ export function App() {
   const backendSchemesLoadedRef = useRef(false);
   const suppressNextBackendSchemeSyncRef = useRef(false);
   const lastPersistedSchemesPayloadRef = useRef<string | null>(null);
+  const pendingBackendSchemesPayloadRef = useRef<string | null>(null);
+  const schemeBackendSyncSequenceRef = useRef(0);
+  const backendSchemesLoadTokenRef = useRef(0);
+  const schemesChangedBeforeBackendLoadRef = useRef(false);
+  const latestSchemesRef = useRef<SavedSchemeRecord[]>(initialSavedSchemes);
   const backendColorConfigLoadedRef = useRef(false);
   const suppressNextBackendColorSyncRef = useRef(false);
   const lastPersistedColorConfigPayloadRef = useRef<string | null>(null);
@@ -4750,7 +4787,14 @@ export function App() {
   const [voltageUnit, setVoltageUnit] = useState(() => initialDraft?.voltageUnit ?? DEFAULT_VOLTAGE_UNIT);
   const [currentUnit, setCurrentUnit] = useState(() => initialDraft?.currentUnit ?? DEFAULT_CURRENT_UNIT);
   const [powerBaseValue, setPowerBaseValue] = useState(() => initialDraft?.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE);
-  const [schemes, setSchemes] = useState<SavedSchemeRecord[]>(initialSavedSchemes);
+  const [schemes, setSchemesState] = useState<SavedSchemeRecord[]>(initialSavedSchemes);
+  latestSchemesRef.current = schemes;
+  const setSchemes = (value: SetStateAction<SavedSchemeRecord[]>) => {
+    if (!backendSchemesLoadedRef.current) {
+      schemesChangedBeforeBackendLoadRef.current = true;
+    }
+    setSchemesState(value);
+  };
   const [activeProjectId, setActiveProjectId] = useState<string>(() => initialDraft?.activeProjectId ?? "");
   const [activeSchemeId, setActiveSchemeId] = useState<string>(() => initialDraft?.activeSchemeId ?? "");
   const [mode, setMode] = useState<ToolMode>("select");
@@ -4784,6 +4828,7 @@ export function App() {
   const [inspectorTab, setInspectorTab] = useState<"model" | "graph" | "device">("graph");
   const [graphInfoView, setGraphInfoView] = useState<"tree" | "selected">("tree");
   const [leftPanelTab, setLeftPanelTab] = useState<"projects" | "library" | "templates">("projects");
+  const [librarySearchQuery, setLibrarySearchQuery] = useState("");
   const [leftPanelMode, setLeftPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(LEFT_PANEL_MODE_STORAGE_KEY));
   const [rightPanelMode, setRightPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(RIGHT_PANEL_MODE_STORAGE_KEY));
   const [leftPanelWidth, setLeftPanelWidth] = useState(() =>
@@ -4806,6 +4851,7 @@ export function App() {
   const [rightPanelAutoVisible, setRightPanelAutoVisible] = useState(false);
   const [containerParamViewId, setContainerParamViewId] = useState("container");
   const [expandedAttributeLibraries, setExpandedAttributeLibraries] = useState<AttributeLibrary[]>([...DEFAULT_ATTRIBUTE_LIBRARIES]);
+  const [expandedAttributeLibraryComponentTypes, setExpandedAttributeLibraryComponentTypes] = useState<string[]>([]);
   const [collapsedElementTreeGroups, setCollapsedElementTreeGroups] = useState<string[]>([]);
   const [elementTreeItemLimits, setElementTreeItemLimits] = useState<Record<string, number>>({});
   const [customAttributeLibraries, setCustomAttributeLibraries] = useState<AttributeLibrary[]>(() => initialDeviceLibrary.customAttributeLibraries);
@@ -5659,6 +5705,28 @@ export function App() {
   const baseLibraryTemplateByKind = useMemo(() => new Map(baseLibraryTemplates.map((template) => [template.kind, template])), [baseLibraryTemplates]);
   const groupedAttributeLibrary = useMemo(() => groupDeviceTemplatesByAttributeLibrary(libraryTemplates), [libraryTemplates]);
   const groupedAttributeLibraryByComponentType = useMemo(() => groupDeviceTemplatesByAttributeLibraryAndComponentType(libraryTemplates), [libraryTemplates]);
+  const librarySearchNeedle = normalizeLibrarySearchText(librarySearchQuery);
+  const filteredAttributeLibraryByComponentType = useMemo(() => {
+    if (!librarySearchNeedle) {
+      return groupedAttributeLibraryByComponentType;
+    }
+    const filteredEntries = Object.entries(groupedAttributeLibraryByComponentType)
+      .map(([group, typeGroups]) => {
+        const groupMatches = normalizeLibrarySearchText(group).includes(librarySearchNeedle);
+        const filteredTypeGroups = typeGroups
+          .map((typeGroup) => {
+            const sectionMatches = normalizeLibrarySearchText(typeGroup.section).includes(librarySearchNeedle);
+            const templates = groupMatches || sectionMatches
+              ? typeGroup.templates
+              : typeGroup.templates.filter((item) => libraryTemplateMatchesSearch(item, group, typeGroup.section, librarySearchNeedle));
+            return templates.length ? { ...typeGroup, templates } : null;
+          })
+          .filter((typeGroup): typeGroup is AttributeLibraryComponentTypeGroup => Boolean(typeGroup));
+        return filteredTypeGroups.length ? [group, filteredTypeGroups] as const : null;
+      })
+      .filter((entry): entry is readonly [string, AttributeLibraryComponentTypeGroup[]] => Boolean(entry));
+    return Object.fromEntries(filteredEntries);
+  }, [groupedAttributeLibraryByComponentType, librarySearchNeedle]);
   const libraryPreviewByKind = useMemo(
     () => new Map(libraryTemplates.map((template) => [template.kind, createNodeFromTemplate(template, { x: 0, y: 0 })])),
     [libraryTemplates]
@@ -5675,6 +5743,18 @@ export function App() {
     () => Array.from(new Set([...DEFAULT_ATTRIBUTE_LIBRARIES, ...customAttributeLibraries, ...libraryTemplates.map((item) => normalizeAttributeLibraryName(item.attributeLibrary))])),
     [customAttributeLibraries, libraryTemplates]
   );
+  const displayedAttributeLibraries = useMemo(
+    () => librarySearchNeedle
+      ? attributeLibraries.filter((group) => (filteredAttributeLibraryByComponentType[group] ?? []).length > 0)
+      : attributeLibraries,
+    [attributeLibraries, filteredAttributeLibraryByComponentType, librarySearchNeedle]
+  );
+  const toggleAttributeLibraryComponentType = (attributeLibraryName: string, sectionName: string) => {
+    const key = attributeLibraryComponentTypeKey(attributeLibraryName, sectionName);
+    setExpandedAttributeLibraryComponentTypes((current) =>
+      current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
+    );
+  };
   const selectableAttributeLibraries = useMemo<AttributeLibrary[]>(
     () => Array.from(new Set([...CUSTOM_ATTRIBUTE_LIBRARY_BASES, ...customAttributeLibraries, ...attributeLibraries.filter((group) => group !== "静态图元")])),
     [customAttributeLibraries, attributeLibraries]
@@ -7082,15 +7162,56 @@ export function App() {
     }
   }, [containerParamViewId, selectedContainerParameterViews]);
 
+  const persistBackendSchemesPayload = (normalizedSchemesPayload: string) => {
+    pendingBackendSchemesPayloadRef.current = normalizedSchemesPayload;
+    const syncSequence = ++schemeBackendSyncSequenceRef.current;
+    void saveBackendSchemesPayload(normalizedSchemesPayload)
+      .then(() => {
+        if (syncSequence !== schemeBackendSyncSequenceRef.current) {
+          return;
+        }
+        lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload;
+        if (pendingBackendSchemesPayloadRef.current === normalizedSchemesPayload) {
+          pendingBackendSchemesPayloadRef.current = null;
+        }
+        writeOperationLog("方案/模型目录已自动保存到后台");
+      })
+      .catch(() => {
+        if (syncSequence !== schemeBackendSyncSequenceRef.current) {
+          return;
+        }
+        pendingBackendSchemesPayloadRef.current = normalizedSchemesPayload;
+        writeOperationLog("方案/模型目录自动保存到后台失败");
+      });
+  };
+
   useEffect(() => {
+    const loadToken = ++backendSchemesLoadTokenRef.current;
     fetchBackendSchemes()
       .then((backendSchemes) => {
+        if (loadToken !== backendSchemesLoadTokenRef.current) {
+          return;
+        }
         backendSchemesLoadedRef.current = true;
+        const localChangedBeforeBackendLoad = schemesChangedBeforeBackendLoadRef.current;
+        const currentSchemesPayload = serializeSchemesForStorage(latestSchemesRef.current);
         if (backendSchemes.length > 0) {
           const backendPayload = serializeSchemesForStorage(backendSchemes);
           lastPersistedSchemesPayloadRef.current = backendPayload;
+          if (localChangedBeforeBackendLoad) {
+            suppressNextBackendSchemeSyncRef.current = false;
+            schemesChangedBeforeBackendLoadRef.current = false;
+            const pendingPayload = pendingBackendSchemesPayloadRef.current ?? currentSchemesPayload;
+            if (pendingPayload !== backendPayload) {
+              persistBackendSchemesPayload(pendingPayload);
+            } else {
+              pendingBackendSchemesPayloadRef.current = null;
+            }
+            return;
+          }
+          pendingBackendSchemesPayloadRef.current = null;
           suppressNextBackendSchemeSyncRef.current = true;
-          setSchemes(backendSchemes);
+          setSchemesState(backendSchemes);
           setExpandedSchemeIds((current) => {
             const backendSchemeIds = new Set(backendSchemes.map((scheme) => scheme.id));
             const retained = current.filter((schemeId) => backendSchemeIds.has(schemeId));
@@ -7105,15 +7226,17 @@ export function App() {
           });
           return;
         }
-        if (initialSavedSchemes.length > 0) {
-          const initialPayload = serializeSchemesForStorage(initialSavedSchemes);
-          lastPersistedSchemesPayloadRef.current = initialPayload;
-          void saveBackendSchemesPayload(initialPayload).catch(() => {
-            // 后台暂不可写时仍保留本地缓存，避免打断画布编辑。
-          });
+        const payloadToPersist = pendingBackendSchemesPayloadRef.current ?? currentSchemesPayload;
+        if (payloadToPersist) {
+          suppressNextBackendSchemeSyncRef.current = false;
+          schemesChangedBeforeBackendLoadRef.current = false;
+          persistBackendSchemesPayload(payloadToPersist);
         }
       })
       .catch(() => {
+        if (loadToken !== backendSchemesLoadTokenRef.current) {
+          return;
+        }
         backendSchemesLoadedRef.current = false;
         // 后台不可用时继续使用浏览器本地保存。
       });
@@ -7202,21 +7325,14 @@ export function App() {
         // 浏览器缓存不可写时不阻断当前编辑，后台同步仍会继续尝试。
       }
       if (!backendSchemesLoadedRef.current) {
+        pendingBackendSchemesPayloadRef.current = normalizedSchemesPayload;
         return;
       }
       if (suppressNextBackendSchemeSyncRef.current) {
         suppressNextBackendSchemeSyncRef.current = false;
       }
-      void saveBackendSchemesPayload(normalizedSchemesPayload)
-        .then(() => {
-          lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload;
-          writeOperationLog("方案/模型目录已自动保存到后台");
-        })
-        .catch(() => {
-          // 后台保存失败时不阻塞本地编辑；下一次方案/模型变更会继续尝试同步。
-          writeOperationLog("方案/模型目录自动保存到后台失败");
-        });
-    }, 800);
+      persistBackendSchemesPayload(normalizedSchemesPayload);
+    }, 150);
     return () => window.clearTimeout(timeoutId);
   }, [schemes]);
 
@@ -7653,21 +7769,7 @@ export function App() {
     }
     const handlePointerMove = (event: globalThis.PointerEvent) => {
       event.preventDefault();
-      if (!svgRef.current) {
-        return;
-      }
-      const point = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
-      const minBounds = minimumCanvasBoundsForContent();
-      const nextBounds = {
-        width:
-          canvasResizeDrag.edge === "right" || canvasResizeDrag.edge === "corner"
-            ? Math.max(minBounds.width, canvasResizeDrag.startWidth + point.x - canvasResizeDrag.startPoint.x)
-            : canvasResizeDrag.startWidth,
-        height:
-          canvasResizeDrag.edge === "bottom" || canvasResizeDrag.edge === "corner"
-            ? Math.max(minBounds.height, canvasResizeDrag.startHeight + point.y - canvasResizeDrag.startPoint.y)
-            : canvasResizeDrag.startHeight
-      };
+      const nextBounds = canvasResizeBoundsFromPointerDrag(canvasResizeDrag, event, canvasResizeDrag.minBounds);
       const clampedBounds = clampCanvasBounds(nextBounds);
       const changed = clampedBounds.width !== canvasWidth || clampedBounds.height !== canvasHeight;
       if (changed && !canvasResizeUndoCapturedRef.current) {
@@ -11186,12 +11288,17 @@ export function App() {
     if (!svgRef.current) {
       return;
     }
+    const svgRect = svgRef.current.getBoundingClientRect();
     canvasResizeUndoCapturedRef.current = false;
     setCanvasResizeDrag({
       edge,
-      startPoint: screenToSvgPoint(svgRef.current, event.clientX, event.clientY),
+      startClientX: event.clientX,
+      startClientY: event.clientY,
       startWidth: canvasWidth,
-      startHeight: canvasHeight
+      startHeight: canvasHeight,
+      unitsPerCssX: svgRect.width > 0 ? viewBox.width / svgRect.width : 1,
+      unitsPerCssY: svgRect.height > 0 ? viewBox.height / svgRect.height : 1,
+      minBounds: minimumCanvasBoundsForContent()
     });
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -12356,6 +12463,14 @@ export function App() {
         const localScaleKind = event.shiftKey || transformDrag.kind === "scale-both"
           ? "scale-both"
           : localScaleKindForScreenHandle(transformDrag.kind, baseNode.rotation);
+        const proportionalScale = localScaleKind === "scale-both";
+        setTransformDrag((current) =>
+          current && !isGroupTransformDrag(current) && current.nodeId === transformDrag.nodeId
+            ? current.historyCaptured && current.proportionalScale === proportionalScale
+              ? current
+              : { ...current, historyCaptured: true, proportionalScale }
+            : current
+        );
         if (localScaleKind === "scale-x") {
           const nextSignedScaleX = signedScaleFromScreenHandleDelta(transformDrag, point, baseNode, "scale-x");
           nextNode = {
@@ -15724,9 +15839,24 @@ export function App() {
 
   const renderLibraryPanel = () => (
     <div className="library-panel-stack">
+      <div className="library-search">
+        <Search size={15} aria-hidden="true" />
+        <input
+          value={librarySearchQuery}
+          onChange={(event) => setLibrarySearchQuery(event.target.value)}
+          placeholder="搜索图元/类型"
+          aria-label="搜索图元库"
+        />
+        {librarySearchQuery && (
+          <button type="button" aria-label="清空图元库搜索" title="清空" onClick={() => setLibrarySearchQuery("")}>
+            <X size={14} />
+          </button>
+        )}
+      </div>
       <div className="library-scroll">
-        {attributeLibraries.map((group) => {
-          const expanded = expandedAttributeLibraries.includes(group);
+        {displayedAttributeLibraries.length > 0 ? displayedAttributeLibraries.map((group) => {
+          const expanded = librarySearchNeedle ? true : expandedAttributeLibraries.includes(group);
+          const typeGroups = filteredAttributeLibraryByComponentType[group] ?? [];
           return (
             <section className="library-group-section" key={group}>
               <button
@@ -15742,41 +15872,57 @@ export function App() {
               </button>
               {expanded && (
                 <div className="attribute-library-component-type-list">
-                  {(groupedAttributeLibraryByComponentType[group] ?? []).map((typeGroup) => (
-                    <section className="attribute-library-component-type-section" key={`${group}-${typeGroup.section}`}>
-                      <div className="attribute-library-component-type-header">
-                        <span>{typeGroup.section}</span>
-                        <strong>{typeGroup.templates.length}</strong>
-                      </div>
-                      <div className="library-group">
-                        {typeGroup.templates.map((item) => {
-                          const preview = libraryPreviewByKind.get(item.kind) ?? createNodeFromTemplate(item, { x: 0, y: 0 });
-                          const previewRotation = ((Math.round(preview.rotation) % 360) + 360) % 360;
-                          const previewViewBox = previewRotation === 90 || previewRotation === 270 ? "-48 -48 96 96" : "-40 -28 80 56";
-                          return (
-                            <button
-                              key={item.kind}
-                              className="library-item"
-                              draggable
-                              title={`${item.label} / ${typeGroup.section}`}
-                              onDragStart={(event) => event.dataTransfer.setData("application/device-kind", item.kind)}
-                            >
-                              <svg viewBox={previewViewBox} aria-hidden="true">
-                                <g transform={nodeGeometryTransform(preview)}>
-                                  <DeviceGlyph node={preview} miniature colorPalette={colorPalette} />
-                                </g>
-                              </svg>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </section>
-                  ))}
+                  {typeGroups.map((typeGroup) => {
+                    const componentTypeKey = attributeLibraryComponentTypeKey(group, typeGroup.section);
+                    const componentTypeExpanded = librarySearchNeedle ? true : expandedAttributeLibraryComponentTypes.includes(componentTypeKey);
+                    return (
+                      <section className="attribute-library-component-type-section" key={`${group}-${typeGroup.section}`}>
+                        <button
+                          type="button"
+                          className={`attribute-library-component-type-header ${componentTypeExpanded ? "active" : ""}`}
+                          aria-expanded={componentTypeExpanded}
+                          onClick={() => toggleAttributeLibraryComponentType(group, typeGroup.section)}
+                        >
+                          <span>
+                            {componentTypeExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                            <span>{typeGroup.section}</span>
+                          </span>
+                          <strong>{typeGroup.templates.length}</strong>
+                        </button>
+                        {componentTypeExpanded && (
+                          <div className="library-group">
+                            {typeGroup.templates.map((item) => {
+                              const preview = libraryPreviewByKind.get(item.kind) ?? createNodeFromTemplate(item, { x: 0, y: 0 });
+                              const previewRotation = ((Math.round(preview.rotation) % 360) + 360) % 360;
+                              const previewViewBox = previewRotation === 90 || previewRotation === 270 ? "-48 -48 96 96" : "-40 -28 80 56";
+                              return (
+                                <button
+                                  key={item.kind}
+                                  className="library-item"
+                                  draggable
+                                  title={`${item.label} / ${typeGroup.section}`}
+                                  onDragStart={(event) => event.dataTransfer.setData("application/device-kind", item.kind)}
+                                >
+                                  <svg viewBox={previewViewBox} aria-hidden="true">
+                                    <g transform={nodeGeometryTransform(preview)}>
+                                      <DeviceGlyph node={preview} miniature colorPalette={colorPalette} />
+                                    </g>
+                                  </svg>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </section>
+                    );
+                  })}
                 </div>
               )}
             </section>
           );
-        })}
+        }) : (
+          <div className="library-empty">未找到匹配图元</div>
+        )}
       </div>
       {renderLibraryDefinitionActions()}
     </div>
@@ -15976,6 +16122,12 @@ export function App() {
   const contextMenuForSelection = contextMenuTarget !== "blank";
   const contextMenuForNode = contextMenuTarget === "node";
   const contextMenuForEdge = contextMenuTarget === "edge";
+  const nodeFloatingToolbarActionCount =
+    6 +
+    (canGroupSelectedGraphics ? 1 : 0) +
+    (canUngroupSelectedGraphics ? 1 : 0) +
+    (canAddTemplateFromSelection ? 1 : 0);
+  const nodeFloatingToolbarWidth = Math.max(NODE_FLOATING_TOOLBAR_WIDTH, nodeFloatingToolbarActionCount * 34 + 16);
   const svgUiUnitX = viewBox.width / Math.max(1, canvasWidth);
   const svgUiUnitY = viewBox.height / Math.max(1, canvasHeight);
   const toolbarPaddingX = 8 * svgUiUnitX;
@@ -15983,7 +16135,7 @@ export function App() {
   const nodeFloatingToolbar =
     !selectedToolbarHidden && activeSelectedNodeIds.length > 0 && selectedCanvasBounds
       ? (() => {
-          const width = NODE_FLOATING_TOOLBAR_WIDTH * svgUiUnitX;
+          const width = nodeFloatingToolbarWidth * svgUiUnitX;
           const height = NODE_FLOATING_TOOLBAR_HEIGHT * svgUiUnitY;
           const centerX = (selectedCanvasBounds.left + selectedCanvasBounds.right) / 2;
           const preferredY = selectedCanvasBounds.top - height - CANVAS_FLOATING_TOOLBAR_GAP * svgUiUnitY;
@@ -15994,8 +16146,10 @@ export function App() {
               viewBox.y + toolbarPaddingY,
               viewBox.y + viewBox.height - height - toolbarPaddingY
             ),
-            width,
-            height
+            width: nodeFloatingToolbarWidth,
+            height: NODE_FLOATING_TOOLBAR_HEIGHT,
+            scaleX: svgUiUnitX,
+            scaleY: svgUiUnitY
           };
         })()
       : null;
@@ -16012,8 +16166,10 @@ export function App() {
               viewBox.y + toolbarPaddingY,
               viewBox.y + viewBox.height - height - toolbarPaddingY
             ),
-            width,
-            height
+            width: EDGE_FLOATING_TOOLBAR_WIDTH,
+            height: EDGE_FLOATING_TOOLBAR_HEIGHT,
+            scaleX: svgUiUnitX,
+            scaleY: svgUiUnitY
           };
         })()
       : null;
@@ -16044,7 +16200,7 @@ export function App() {
           return {
             x: node.position.x,
             y: node.position.y + (node.size.height * Math.abs(getNodeScaleY(node))) / 2 + 30 * svgUiUnitY,
-            text: `${Math.round(node.size.width * Math.abs(getNodeScaleX(node)))} x ${Math.round(node.size.height * Math.abs(getNodeScaleY(node)))}`
+            text: `${Math.round(node.size.width * Math.abs(getNodeScaleX(node)))} x ${Math.round(node.size.height * Math.abs(getNodeScaleY(node)))}${transformDrag.proportionalScale || transformDrag.kind === "scale-both" ? " 等比" : ""}`
           };
         })()
       : null;
@@ -17232,63 +17388,91 @@ export function App() {
               );
             })()}
             {nodeFloatingToolbar && (
-              <foreignObject
-                className="canvas-floating-toolbar-object"
-                x={nodeFloatingToolbar.x}
-                y={nodeFloatingToolbar.y}
-                width={nodeFloatingToolbar.width}
-                height={nodeFloatingToolbar.height}
+              <g
+                className="canvas-floating-toolbar-wrapper"
+                transform={`matrix(${nodeFloatingToolbar.scaleX} 0 0 ${nodeFloatingToolbar.scaleY} ${nodeFloatingToolbar.x} ${nodeFloatingToolbar.y})`}
               >
-                <div
-                  className="canvas-floating-toolbar node-toolbar"
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => event.stopPropagation()}
+                <foreignObject
+                  className="canvas-floating-toolbar-object"
+                  x={0}
+                  y={0}
+                  width={nodeFloatingToolbar.width}
+                  height={nodeFloatingToolbar.height}
                 >
-                  <button type="button" title="复制" aria-label="复制" onClick={copySelection}>
-                    <Copy size={15} />
-                  </button>
-                  <button type="button" title="删除" aria-label="删除" onClick={deleteSelection}>
-                    <Trash2 size={15} />
-                  </button>
-                  <button type="button" title="图层修改" aria-label="图层修改" onClick={openLayerAssignmentDialog}>
-                    <Layers size={15} />
-                  </button>
-                  <button type="button" title="置于当前图层" aria-label="置于当前图层" onClick={() => assignSelectedNodesToModelLayer(activeLayerId)}>
-                    <Layers2 size={15} />
-                  </button>
-                  <button type="button" title="组合" aria-label="组合" disabled={!canGroupSelectedGraphics} onClick={groupSelectedGraphics}>
-                    <Group size={15} />
-                  </button>
-                  <button type="button" title="标识显示" aria-label="标识显示" onClick={toggleSelectedNodeLabelDisplay}>
-                    <Type size={15} />
-                  </button>
-                </div>
-              </foreignObject>
+                  <div
+                    className="canvas-floating-toolbar node-toolbar"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <button type="button" title="复制" aria-label="复制" onClick={copySelection}>
+                      <Copy size={15} />
+                    </button>
+                    <button type="button" title="剪切" aria-label="剪切" onClick={cutSelection}>
+                      <Scissors size={15} />
+                    </button>
+                    <button type="button" title="删除" aria-label="删除" onClick={deleteSelection}>
+                      <Trash2 size={15} />
+                    </button>
+                    <button type="button" title="图层修改" aria-label="图层修改" onClick={openLayerAssignmentDialog}>
+                      <Layers size={15} />
+                    </button>
+                    <button type="button" title="置于当前图层" aria-label="置于当前图层" onClick={() => assignSelectedNodesToModelLayer(activeLayerId)}>
+                      <Layers2 size={15} />
+                    </button>
+                    {canGroupSelectedGraphics && (
+                      <button type="button" title="组合" aria-label="组合" onClick={groupSelectedGraphics}>
+                        <Group size={15} />
+                      </button>
+                    )}
+                    {canUngroupSelectedGraphics && (
+                      <button type="button" title="解散" aria-label="解散" onClick={ungroupSelectedGraphics}>
+                        <Ungroup size={15} />
+                      </button>
+                    )}
+                    {canAddTemplateFromSelection && (
+                      <button type="button" title="添加模板" aria-label="添加模板" onClick={openAddTemplateDialog}>
+                        <Grid2X2 size={15} />
+                      </button>
+                    )}
+                    <button type="button" title="标识显示" aria-label="标识显示" onClick={toggleSelectedNodeLabelDisplay}>
+                      <Type size={15} />
+                    </button>
+                  </div>
+                </foreignObject>
+              </g>
             )}
             {edgeFloatingToolbar && (
-              <foreignObject
-                className="canvas-floating-toolbar-object"
-                x={edgeFloatingToolbar.x}
-                y={edgeFloatingToolbar.y}
-                width={edgeFloatingToolbar.width}
-                height={edgeFloatingToolbar.height}
+              <g
+                className="canvas-floating-toolbar-wrapper"
+                transform={`matrix(${edgeFloatingToolbar.scaleX} 0 0 ${edgeFloatingToolbar.scaleY} ${edgeFloatingToolbar.x} ${edgeFloatingToolbar.y})`}
               >
-                <div
-                  className="canvas-floating-toolbar edge-toolbar"
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => event.stopPropagation()}
+                <foreignObject
+                  className="canvas-floating-toolbar-object"
+                  x={0}
+                  y={0}
+                  width={edgeFloatingToolbar.width}
+                  height={edgeFloatingToolbar.height}
                 >
-                  <button type="button" title="添加拐点" aria-label="添加拐点" onClick={addManualBendToSelectedEdgeCenter}>
-                    <CircleDot size={15} />
-                  </button>
-                  <button type="button" title="整理连接线" aria-label="整理连接线" onClick={tidySelectedEdgeRoute}>
-                    <Route size={15} />
-                  </button>
-                  <button type="button" title="删除连接线" aria-label="删除连接线" onClick={deleteSelection}>
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-              </foreignObject>
+                  <div
+                    className="canvas-floating-toolbar edge-toolbar"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <button type="button" title="复制连接线" aria-label="复制连接线" onClick={copySelection}>
+                      <Copy size={15} />
+                    </button>
+                    <button type="button" title="添加拐点" aria-label="添加拐点" onClick={addManualBendToSelectedEdgeCenter}>
+                      <CircleDot size={15} />
+                    </button>
+                    <button type="button" title="整理连接线" aria-label="整理连接线" onClick={tidySelectedEdgeRoute}>
+                      <Route size={15} />
+                    </button>
+                    <button type="button" title="删除连接线" aria-label="删除连接线" onClick={deleteSelection}>
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </foreignObject>
+              </g>
             )}
             {resizeSizeHint && (
               <g className="resize-size-badge" transform={`translate(${resizeSizeHint.x} ${resizeSizeHint.y})`}>

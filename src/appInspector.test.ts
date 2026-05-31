@@ -12,6 +12,12 @@ async function readStyles() {
   return readFile(new URL("./styles.css", import.meta.url), "utf8") as Promise<string>;
 }
 
+async function readReactFlowPreviewSource() {
+  // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
+  const { readFile } = await import("node:fs/promises");
+  return readFile(new URL("./ReactFlowPreview.tsx", import.meta.url), "utf8") as Promise<string>;
+}
+
 async function readModelSource() {
   // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
   const { readFile } = await import("node:fs/promises");
@@ -50,11 +56,48 @@ function cssRuleBlock(styles: string, selector: string) {
 }
 
 describe("graph inspector panel", () => {
-  test("allows canvas width and height up to 10000", async () => {
+  test("allows canvas width and height up to 50000", async () => {
     const source = await readAppSource();
 
-    expect(source).toContain("const MAX_CANVAS_WIDTH = 10000;");
-    expect(source).toContain("const MAX_CANVAS_HEIGHT = 10000;");
+    expect(source).toContain("const MAX_CANVAS_WIDTH = 50000;");
+    expect(source).toContain("const MAX_CANVAS_HEIGHT = 50000;");
+  });
+
+  test("adds a searchable component library for large symbol sets", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const libraryPanelStart = source.indexOf("const renderLibraryPanel");
+    const libraryPanelEnd = source.indexOf("const renderLeftPanelContent", libraryPanelStart);
+    const libraryPanelBlock = source.slice(libraryPanelStart, libraryPanelEnd);
+
+    expect(source).toContain("const [librarySearchQuery, setLibrarySearchQuery] = useState(\"\");");
+    expect(source).toContain("const librarySearchNeedle = normalizeLibrarySearchText(librarySearchQuery);");
+    expect(source).toContain("libraryTemplateMatchesSearch(item, group, typeGroup.section, librarySearchNeedle)");
+    expect(libraryPanelBlock).toContain("className=\"library-search\"");
+    expect(libraryPanelBlock).toContain("placeholder=\"搜索图元/类型\"");
+    expect(libraryPanelBlock).toContain("aria-label=\"搜索图元库\"");
+    expect(libraryPanelBlock).toContain("未找到匹配图元");
+    expect(styles).toContain(".library-search");
+    expect(styles).toContain(".library-search input");
+    expect(styles).toContain(".library-empty");
+  });
+
+  test("collapses component type groups in the library by default and toggles them on click", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const libraryPanelStart = source.indexOf("const renderLibraryPanel");
+    const libraryPanelEnd = source.indexOf("const renderLeftPanelContent", libraryPanelStart);
+    const libraryPanelBlock = source.slice(libraryPanelStart, libraryPanelEnd);
+
+    expect(source).toContain("const [expandedAttributeLibraryComponentTypes, setExpandedAttributeLibraryComponentTypes] = useState<string[]>([]);");
+    expect(source).toContain("const attributeLibraryComponentTypeKey = (attributeLibraryName: string, sectionName: string) =>");
+    expect(source).toContain("const toggleAttributeLibraryComponentType = (attributeLibraryName: string, sectionName: string) =>");
+    expect(libraryPanelBlock).toContain("const componentTypeExpanded = librarySearchNeedle ? true : expandedAttributeLibraryComponentTypes.includes(componentTypeKey);");
+    expect(libraryPanelBlock).toContain("aria-expanded={componentTypeExpanded}");
+    expect(libraryPanelBlock).toContain("onClick={() => toggleAttributeLibraryComponentType(group, typeGroup.section)}");
+    expect(libraryPanelBlock).toContain("{componentTypeExpanded && (");
+    expect(styles).toContain(".attribute-library-component-type-header");
+    expect(styles).toContain("cursor: pointer");
   });
 
   test("uses library group names for terminal energy dropdowns in device definition dialogs", async () => {
@@ -89,6 +132,16 @@ describe("graph inspector panel", () => {
     const terminalStubBlock = cssRuleBlock(styles, ".terminal-stub");
 
     expect(terminalStubBlock).not.toContain("vector-effect");
+  });
+
+  test("bridges the topbar dropdown hover gap between trigger and floating menu", async () => {
+    const styles = await readStyles();
+    const dropdownBridgeBlock = cssRuleBlock(styles, ".topbar-dropdown::after");
+
+    expect(dropdownBridgeBlock).toContain("content: \"\"");
+    expect(dropdownBridgeBlock).toContain("top: 100%");
+    expect(dropdownBridgeBlock).toContain("height: 8px");
+    expect(styles).toContain(".topbar-dropdown:hover .topbar-dropdown-menu");
   });
 
   test("keeps bus selection outlines compact relative to bus glyphs", async () => {
@@ -468,13 +521,24 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("className=\"canvas-floating-toolbar node-toolbar\"");
     expect(source).toContain("className=\"canvas-floating-toolbar edge-toolbar\"");
+    expect(source).toContain("className=\"canvas-floating-toolbar-wrapper\"");
+    expect(source).toContain("transform={`matrix(${nodeFloatingToolbar.scaleX} 0 0 ${nodeFloatingToolbar.scaleY} ${nodeFloatingToolbar.x} ${nodeFloatingToolbar.y})`}");
+    expect(source).toContain("transform={`matrix(${edgeFloatingToolbar.scaleX} 0 0 ${edgeFloatingToolbar.scaleY} ${edgeFloatingToolbar.x} ${edgeFloatingToolbar.y})`}");
+    expect(source).toContain("width: nodeFloatingToolbarWidth");
+    expect(source).toContain("width: EDGE_FLOATING_TOOLBAR_WIDTH");
     expect(source).toContain("addManualBendToSelectedEdgeCenter");
     expect(source).toContain("tidySelectedEdgeRoute");
     expect(source).toContain("toggleSelectedNodeLabelDisplay");
+    expect(source).toContain("nodeFloatingToolbarActionCount");
+    expect(source).toContain("title=\"剪切\" aria-label=\"剪切\"");
+    expect(source).toContain("title=\"解散\" aria-label=\"解散\"");
+    expect(source).toContain("title=\"添加模板\" aria-label=\"添加模板\"");
+    expect(source).toContain("title=\"复制连接线\" aria-label=\"复制连接线\"");
     expect(source).toContain("proportionalScale");
     expect(source).toContain("event.shiftKey || transformDrag.kind === \"scale-both\"");
     expect(source).toContain("className=\"resize-size-badge\"");
     expect(styles).toContain(".canvas-floating-toolbar");
+    expect(styles).toContain(".canvas-floating-toolbar-wrapper");
     expect(styles).toContain(".resize-size-badge");
     expect(styles).toContain(".scale-handle:hover");
     expect(styles).toContain(".terminal-dot:not(.disabled):hover");
@@ -482,6 +546,36 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".edge-endpoint-handle:hover");
     expect(styles).toContain(".connect-drop-hint-halo");
     expect(styles).toContain(".diagram-canvas.connect-drop-ready .connection-preview-line");
+    expect(styles).toContain(".connection-group:hover .connection-line");
+    expect(styles).toContain(".manual-segment-handle:hover");
+    expect(styles).toContain(".diagram-node.selected .terminal-dot:not(.disabled)");
+    expect(styles).toContain(".node-toolbar");
+  });
+
+  test("loads additional React Flow interaction and animation controls in the preview runtime only", async () => {
+    const preview = await readReactFlowPreviewSource();
+    const styles = await readStyles();
+
+    for (const token of [
+      "NodeToolbar",
+      "NodeResizer",
+      "EdgeToolbar",
+      "EdgeLabelRenderer",
+      "ControlButton",
+      "Panel",
+      "BackgroundVariant.Dots",
+      "animatedEdges"
+    ]) {
+      expect(preview).toContain(token);
+    }
+    expect(preview).toContain("className=\"react-flow-node-toolbar\"");
+    expect(preview).toContain("className=\"react-flow-edge-toolbar\"");
+    expect(preview).toContain("className={`react-flow-saved-path-edge ${selected ? \"selected\" : \"\"} ${animated ? \"animated\" : \"\"}`}");
+    expect(preview).toContain("setFlowEdges(elements.edges.map((edge) => ({ ...edge, animated: animatedEdges })))");
+    expect(styles).toContain(".react-flow-node-toolbar");
+    expect(styles).toContain(".react-flow-node-resizer-handle");
+    expect(styles).toContain(".react-flow-edge-label");
+    expect(styles).toContain("@keyframes reactFlowSavedPathDash");
   });
 
   test("uses rotation-aware bus hit testing for connection drops", async () => {
@@ -2560,6 +2654,18 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".validation-pagination");
   });
 
+  test("keeps right-panel element tree content-height when only a few graphics exist", async () => {
+    const styles = await readStyles();
+    const panelTreeBlock = cssRuleBlock(styles, ".graph-info-panel > .element-tree");
+
+    expect(panelTreeBlock).toContain("align-self: start");
+    expect(panelTreeBlock).toContain("max-height: 100%");
+    expect(panelTreeBlock).not.toMatch(/(^|\n)\s*height:\s*100%/);
+    expect(styles).toMatch(/(?:^|\n)\.element-tree\s*\{[^}]*align-content: start/s);
+    expect(styles).toMatch(/(?:^|\n)\.element-tree-group\s*\{[^}]*align-content: start/s);
+    expect(styles).toMatch(/(?:^|\n)\.element-tree-items\s*\{[^}]*align-content: start/s);
+  });
+
   test("adds a topbar color palette entry and passes the mode into canvas coloring", async () => {
     const source = await readAppSource();
     const topbarStart = source.indexOf("<header className=\"topbar\">");
@@ -3069,19 +3175,44 @@ describe("graph inspector panel", () => {
 
   test("persists scheme and model list changes to the backend without swallowing the first edit", async () => {
     const source = await readAppSource();
+    const setterStart = source.indexOf("const [schemes, setSchemesState] = useState<SavedSchemeRecord[]>(initialSavedSchemes);");
+    const setterEnd = source.indexOf("const [activeProjectId", setterStart);
+    const setterBlock = source.slice(setterStart, setterEnd);
+    const backendLoadStart = source.indexOf("const loadToken = ++backendSchemesLoadTokenRef.current;");
+    const backendLoadEnd = source.indexOf("fetchBackendColorConfig()", backendLoadStart);
+    const backendLoadBlock = source.slice(backendLoadStart, backendLoadEnd);
+    const persistHelperStart = source.indexOf("const persistBackendSchemesPayload = (normalizedSchemesPayload: string) => {");
+    const persistHelperEnd = source.indexOf("useEffect(() => {\n    fetchBackendSchemes()", persistHelperStart);
+    const persistHelperBlock = source.slice(persistHelperStart, persistHelperEnd);
     const schemePersistStart = source.indexOf("const normalizedSchemesPayload = serializeSchemesForStorage(schemes);");
     const schemePersistEnd = source.indexOf("}, [schemes]);", schemePersistStart);
     const schemePersistBlock = source.slice(schemePersistStart, schemePersistEnd);
-    const saveCallIndex = schemePersistBlock.indexOf("saveBackendSchemesPayload(normalizedSchemesPayload)");
-    const persistedAssignmentIndex = schemePersistBlock.indexOf("lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload");
+    const saveCallIndex = persistHelperBlock.indexOf("saveBackendSchemesPayload(normalizedSchemesPayload)");
+    const persistedAssignmentIndex = persistHelperBlock.indexOf("lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload");
 
+    expect(source).toContain("const pendingBackendSchemesPayloadRef = useRef<string | null>(null)");
+    expect(source).toContain("const backendSchemesLoadTokenRef = useRef(0)");
+    expect(source).toContain("const schemesChangedBeforeBackendLoadRef = useRef(false)");
+    expect(source).toContain("const latestSchemesRef = useRef<SavedSchemeRecord[]>(initialSavedSchemes)");
+    expect(setterBlock).toContain("schemesChangedBeforeBackendLoadRef.current = true");
+    expect(setterBlock).toContain("setSchemesState(value)");
+    expect(backendLoadBlock).toContain("const localChangedBeforeBackendLoad = schemesChangedBeforeBackendLoadRef.current");
+    expect(backendLoadBlock).toContain("const loadToken = ++backendSchemesLoadTokenRef.current");
+    expect(backendLoadBlock).toContain("if (loadToken !== backendSchemesLoadTokenRef.current)");
+    expect(backendLoadBlock).toContain("const currentSchemesPayload = serializeSchemesForStorage(latestSchemesRef.current)");
+    expect(backendLoadBlock).toContain("if (localChangedBeforeBackendLoad)");
+    expect(backendLoadBlock).toContain("persistBackendSchemesPayload(pendingPayload)");
+    expect(backendLoadBlock).toContain("setSchemesState(backendSchemes)");
     expect(schemePersistBlock).toContain("suppressNextBackendSchemeSyncRef.current && normalizedSchemesPayload === lastPersistedSchemesPayloadRef.current");
     expect(schemePersistBlock).toContain("suppressNextBackendSchemeSyncRef.current = false;");
+    expect(schemePersistBlock).toContain("pendingBackendSchemesPayloadRef.current = normalizedSchemesPayload");
+    expect(schemePersistBlock).toContain("persistBackendSchemesPayload(normalizedSchemesPayload)");
     expect(saveCallIndex).toBeGreaterThan(-1);
     expect(persistedAssignmentIndex).toBeGreaterThan(saveCallIndex);
-    expect(schemePersistBlock).toContain(".then(() => {");
-    expect(schemePersistBlock).toContain("lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload;");
-    expect(schemePersistBlock).toContain("writeOperationLog(\"方案/模型目录已自动保存到后台\")");
+    expect(persistHelperBlock).toContain(".then(() => {");
+    expect(persistHelperBlock).toContain("lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload;");
+    expect(persistHelperBlock).toContain("pendingBackendSchemesPayloadRef.current = null");
+    expect(persistHelperBlock).toContain("writeOperationLog(\"方案/模型目录已自动保存到后台\")");
     expect(schemePersistBlock).not.toContain("if (suppressNextBackendSchemeSyncRef.current) {\n        suppressNextBackendSchemeSyncRef.current = false;\n        return;\n      }\n      void saveBackendSchemesPayload");
   });
 

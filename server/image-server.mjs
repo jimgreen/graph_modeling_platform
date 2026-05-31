@@ -502,7 +502,7 @@ function inferESection(kind, params = {}) {
   if (kind === "ac-breaker" || kind === "ac-box-breaker") return "ACBreak";
   if (kind === "dc-breaker") return "DCBreak";
   if (kind === "ac-transformer" || kind === "ac-two-winding-transformer") return "ACTransformer";
-  if (kind === "ac-three-winding-transformer") return "ACTransfomer3";
+  if (kind === "ac-three-winding-transformer" || kind === "ac-three-winding-transformer-neutral") return "ACTransfomer3";
   if (kind === "dcdc-converter") return "DCDCConverter";
   if (kind === "acdc-converter") return "DCACConverter";
   if (kind === "acac-converter") return "ACACConverter";

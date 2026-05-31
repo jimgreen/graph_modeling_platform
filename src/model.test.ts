@@ -13,6 +13,7 @@ import {
   describeContainerTerminalAssociations,
   calculateModelGeometryBounds,
   clampNodePositionToBounds,
+  canvasResizeBoundsFromPointerDrag,
   clampViewBoxDimensionsForZoom,
   geometryBoundsInsideCanvas,
   assignPermanentDeviceIndex,
@@ -1592,6 +1593,53 @@ describe("power system model", () => {
     ]);
   });
 
+  test("uses the fourth terminal of a neutral-point three-winding transformer as the neutral node", () => {
+    const highBus = createDefaultNode("ac-bus", { x: 80, y: 100 });
+    const mediumBus = createDefaultNode("ac-bus", { x: 80, y: 220 });
+    const lowBus = createDefaultNode("ac-bus", { x: 80, y: 340 });
+    const groundSwitch = assignPermanentDeviceIndex(createDefaultNode("ac-ground-disconnector", { x: 260, y: 40 }), {}).node;
+    const transformer = assignPermanentDeviceIndex(createDefaultNode("ac-three-winding-transformer-neutral", { x: 260, y: 220 }), {}).node;
+    transformer.name = "T3N";
+    transformer.terminals[0].vbase = "220 kV";
+    transformer.terminals[1].vbase = "110 kV";
+    transformer.terminals[2].vbase = "10 kV";
+    transformer.terminals[3].vbase = "0.4 kV";
+    highBus.terminals.forEach((terminal) => { terminal.vbase = "220 kV"; });
+    mediumBus.terminals.forEach((terminal) => { terminal.vbase = "110 kV"; });
+    lowBus.terminals.forEach((terminal) => { terminal.vbase = "10 kV"; });
+
+    const edges: Edge[] = [
+      { id: "high", sourceId: highBus.id, targetId: transformer.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+      { id: "medium", sourceId: mediumBus.id, targetId: transformer.id, sourceTerminalId: "t1", targetTerminalId: "t2" },
+      { id: "low", sourceId: lowBus.id, targetId: transformer.id, sourceTerminalId: "t1", targetTerminalId: "t3" },
+      { id: "neutral", sourceId: transformer.id, targetId: groundSwitch.id, sourceTerminalId: "t4", targetTerminalId: "t1" }
+    ];
+
+    const calculated = calculateElectricalTopology([highBus, mediumBus, lowBus, groundSwitch, transformer], edges);
+    const calculatedTransformer = calculated.find((node) => node.id === transformer.id)!;
+    const neutralNode = calculatedTransformer.terminals[3].nodeNumber;
+    const payload = parseESections(
+      buildEDeviceParameterFile({
+        version: 1,
+        name: "带中性点三绕组主变导出",
+        nodes: [highBus, mediumBus, lowBus, groundSwitch, transformer],
+        edges
+      })
+    );
+    const transformerBranches = payload.ACTransformer.rows.filter((row) => row.name.startsWith("T3N_"));
+
+    expect(calculatedTransformer.terminals).toHaveLength(4);
+    expect(calculatedTransformer.params.neutral_node).toBe(neutralNode);
+    expect(calculatedTransformer.params.neutral_vbase).toBe("0.4");
+    expect(payload.ACTransfomer3.rows.find((row) => row.name === "T3N")).toMatchObject({
+      idx: transformer.params.idx,
+      idx_xf_t1: transformer.params.idx_xf_t1,
+      idx_xf_t2: transformer.params.idx_xf_t2,
+      idx_xf_t3: transformer.params.idx_xf_t3
+    });
+    expect(transformerBranches.map((row) => row.j_node)).toEqual([neutralNode, neutralNode, neutralNode]);
+  });
+
   test("creates load, line, and transformer electrical parameter defaults", () => {
     const acLoad = createDefaultNode("ac-load", { x: 100, y: 100 });
     const dcLoad = createDefaultNode("dc-load", { x: 200, y: 100 });
@@ -1724,6 +1772,37 @@ describe("power system model", () => {
       { x: 52, y: -8 },
       { x: 0, y: 38 }
     ]);
+  });
+
+  test("adds a four-terminal three-winding transformer with a visible neutral point", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer-neutral");
+    const node = createDefaultNode("ac-three-winding-transformer-neutral", { x: 500, y: 100 });
+    const terminalPoints = node.terminals.map((terminal) => ({
+      x: terminal.anchor.x * node.size.width,
+      y: terminal.anchor.y * node.size.height
+    }));
+
+    expect(template).toMatchObject({
+      label: "三绕组主变(中性点)",
+      attributeLibrary: "交流设备",
+      terminalCount: 4,
+      isContainer: true
+    });
+    expect(node.terminals.map((terminal) => terminal.label)).toEqual(["高压绕组端", "中压绕组端", "低压绕组端", "中性点"]);
+    expect(node.terminals.map((terminal) => terminal.type)).toEqual(["ac", "ac", "ac", "ac"]);
+    expect(terminalPoints).toEqual([
+      { x: -56, y: -8 },
+      { x: 56, y: -8 },
+      { x: 0, y: 46 },
+      { x: 0, y: -46 }
+    ]);
+    expect(node.terminals.map((terminal) => terminalStubSegment(terminal))).toEqual([
+      { from: { x: 28, y: 0 }, to: { x: 0, y: 0 } },
+      { from: { x: -28, y: 0 }, to: { x: 0, y: 0 } },
+      { from: { x: 0, y: -28 }, to: { x: 0, y: 0 } },
+      { from: { x: 0, y: 28 }, to: { x: 0, y: 0 } }
+    ]);
+    expect(describeContainerTerminalAssociations(template!)).toHaveLength(3);
   });
 
   test("routes orthogonal connection around interfering devices", () => {
@@ -2351,6 +2430,35 @@ describe("power system model", () => {
     expect(normalizeViewBoxToCanvas({ x: -2000, y: 1000, width: 3000, height: 1800 }, bounds)).toMatchObject({
       x: -1500,
       y: 124
+    });
+  });
+
+  test("calculates canvas resize from the drag-start screen scale instead of the changing SVG size", () => {
+    const drag = {
+      edge: "right" as const,
+      startClientX: 1000,
+      startClientY: 500,
+      startWidth: 1000,
+      startHeight: 800,
+      unitsPerCssX: 1,
+      unitsPerCssY: 1
+    };
+
+    expect(canvasResizeBoundsFromPointerDrag(drag, { clientX: 1100, clientY: 500 }, { width: 640, height: 360 })).toEqual({
+      width: 1100,
+      height: 800
+    });
+    expect(canvasResizeBoundsFromPointerDrag({ ...drag, unitsPerCssX: 2 }, { clientX: 1100, clientY: 500 }, { width: 640, height: 360 })).toEqual({
+      width: 1200,
+      height: 800
+    });
+    expect(canvasResizeBoundsFromPointerDrag({ ...drag, edge: "corner" }, { clientX: 1060, clientY: 540 }, { width: 640, height: 360 })).toEqual({
+      width: 1060,
+      height: 840
+    });
+    expect(canvasResizeBoundsFromPointerDrag(drag, { clientX: 100, clientY: 500 }, { width: 960, height: 360 })).toEqual({
+      width: 960,
+      height: 800
     });
   });
 

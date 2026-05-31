@@ -97,6 +97,7 @@ export type DeviceKind =
   | "ac-transformer"
   | "ac-two-winding-transformer"
   | "ac-three-winding-transformer"
+  | "ac-three-winding-transformer-neutral"
   | "dc-source"
   | "dc-storage"
   | "dc-line"
@@ -188,6 +189,13 @@ const THREE_WINDING_TRANSFORMER_TERMINAL_ANCHORS: Point[] = [
   { x: 0, y: 0.5 }
 ];
 
+const THREE_WINDING_TRANSFORMER_NEUTRAL_TERMINAL_ANCHORS: Point[] = [
+  { x: -0.5, y: -8 / 92 },
+  { x: 0.5, y: -8 / 92 },
+  { x: 0, y: 0.5 },
+  { x: 0, y: -0.5 }
+];
+
 export type CanvasBounds = {
   width: number;
   height: number;
@@ -196,6 +204,16 @@ export type CanvasBounds = {
 export type ViewBox = CanvasBounds & {
   x: number;
   y: number;
+};
+
+export type CanvasResizeDragMetrics = {
+  edge: "right" | "bottom" | "corner";
+  startClientX: number;
+  startClientY: number;
+  startWidth: number;
+  startHeight: number;
+  unitsPerCssX: number;
+  unitsPerCssY: number;
 };
 
 export type TerminalType = "ac" | "dc" | "h2" | "heat";
@@ -639,7 +657,7 @@ export function inferESection(kind: string, params: Record<string, string> = {})
   if (sectionKind === "ac-breaker" || sectionKind === "ac-box-breaker") return "ACBreak";
   if (sectionKind === "dc-breaker") return "DCBreak";
   if (sectionKind === "ac-transformer" || sectionKind === "ac-two-winding-transformer") return "ACTransformer";
-  if (sectionKind === "ac-three-winding-transformer") return "ACTransfomer3";
+  if (sectionKind === "ac-three-winding-transformer" || sectionKind === "ac-three-winding-transformer-neutral") return "ACTransfomer3";
   if (sectionKind === "dcdc-converter") return "DCDCConverter";
   if (sectionKind === "acdc-converter") return "DCACConverter";
   if (sectionKind === "acac-converter") return "ACACConverter";
@@ -1434,7 +1452,11 @@ function topologyRepresentativeScore(node: ModelNode): number {
 }
 
 function isThreeWindingTransformer(node: Pick<ModelNode, "kind">): boolean {
-  return node.kind === "ac-three-winding-transformer";
+  return node.kind === "ac-three-winding-transformer" || node.kind === "ac-three-winding-transformer-neutral";
+}
+
+function hasVisibleThreeWindingNeutralTerminal(node: Pick<ModelNode, "kind" | "terminals">): boolean {
+  return node.kind === "ac-three-winding-transformer-neutral" && node.terminals.length >= 4;
 }
 
 function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
@@ -1460,7 +1482,7 @@ function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
       candidates.push({ node, terminal });
       groups[terminalType].set(terminal.nodeNumber, candidates);
     }
-    if (isThreeWindingTransformer(node) && node.params.neutral_node) {
+    if (isThreeWindingTransformer(node) && !hasVisibleThreeWindingNeutralTerminal(node) && node.params.neutral_node) {
       const neutralTerminal: Terminal = {
         id: "neutral",
         label: "中性点",
@@ -2892,6 +2914,19 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     parameterDefinitions: threeWindingTransformerParameterDefinitions
   },
   {
+    kind: "ac-three-winding-transformer-neutral",
+    label: "三绕组主变(中性点)",
+    attributeLibrary: "交流设备",
+    size: { width: 112, height: 92 },
+    params: { ratedCapacity: "90 MVA", voltageRatio: "220/110/10/0.4 kV", windingType: "三绕组带中性点", impedance: "12.0%" },
+    terminalType: "ac",
+    terminalCount: 4,
+    terminalLabels: ["高压绕组端", "中压绕组端", "低压绕组端", "中性点"],
+    terminalAnchors: THREE_WINDING_TRANSFORMER_NEUTRAL_TERMINAL_ANCHORS,
+    isContainer: true,
+    parameterDefinitions: threeWindingTransformerParameterDefinitions
+  },
+  {
     kind: "dc-source",
     label: "直流电源",
     attributeLibrary: "直流设备",
@@ -3324,6 +3359,26 @@ export function describeContainerTerminalAssociations(template: DeviceTemplate):
   const terminalRoles = template.terminalRoles ?? [];
   const terminalAssociations = template.terminalAssociations ?? [];
   const definitions = getTemplateParameterDefinitions(template);
+
+  if (isThreeWindingTransformer({ kind: template.kind })) {
+    return THREE_WINDING_TRANSFORMER_SIDES.map((side) => {
+      const type = terminalTypes[side.terminalIndex] ?? "ac";
+      const terminalLabel = template.terminalLabels?.[side.terminalIndex] ?? terminalLabelForType(type, side.terminalIndex);
+      const relationDefinition = definitions.find((definition) => definition.enName === side.idxKey);
+      const roleLabel = "双绕组主变首端";
+      return {
+        terminalIndex: side.terminalIndex,
+        terminalLabel,
+        terminalType: type,
+        relationKey: side.idxKey,
+        relationName: relationDefinition?.cnName ?? `${terminalLabel}${roleLabel}关联idx`,
+        roleLabel,
+        deviceModel: "ACTransformer",
+        sourceTerminalIndex: side.terminalIndex,
+        dependent: false
+      };
+    });
+  }
 
   return terminalTypes.map((type, index) => {
     const dependent = terminalAssociations.length
@@ -4252,10 +4307,11 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       tapRatio: "1.0"
     }));
   }
-  if (templateKind === "ac-three-winding-transformer") {
+  if (templateKind === "ac-three-winding-transformer" || templateKind === "ac-three-winding-transformer-neutral") {
+    const visibleNeutral = templateKind === "ac-three-winding-transformer-neutral";
     return withTemplateDefinitions(withRunStat({
       neutral_node: "",
-      neutral_vbase: "1.0",
+      neutral_vbase: visibleNeutral ? DEFAULT_INITIAL_TERMINAL_VBASE : "1.0",
       highVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       mediumVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       lowVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
@@ -4594,6 +4650,29 @@ export function normalizeViewBoxToCanvas(box: ViewBox, bounds: CanvasBounds): Vi
     ...box,
     x: Math.max(minX, Math.min(maxX, box.x)),
     y: Math.max(minY, Math.min(maxY, box.y))
+  };
+}
+
+export function canvasResizeBoundsFromPointerDrag(
+  drag: CanvasResizeDragMetrics,
+  pointer: Pick<globalThis.PointerEvent, "clientX" | "clientY">,
+  minBounds: CanvasBounds
+): CanvasBounds {
+  const safeUnitsPerCssX = Number.isFinite(drag.unitsPerCssX) && drag.unitsPerCssX > 0 ? drag.unitsPerCssX : 1;
+  const safeUnitsPerCssY = Number.isFinite(drag.unitsPerCssY) && drag.unitsPerCssY > 0 ? drag.unitsPerCssY : 1;
+  const deltaX = (pointer.clientX - drag.startClientX) * safeUnitsPerCssX;
+  const deltaY = (pointer.clientY - drag.startClientY) * safeUnitsPerCssY;
+  return {
+    width: Math.round(
+      drag.edge === "right" || drag.edge === "corner"
+        ? Math.max(minBounds.width, drag.startWidth + deltaX)
+        : drag.startWidth
+    ),
+    height: Math.round(
+      drag.edge === "bottom" || drag.edge === "corner"
+        ? Math.max(minBounds.height, drag.startHeight + deltaY)
+        : drag.startHeight
+    )
   };
 }
 
@@ -6156,6 +6235,9 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
       assignTerminalParam("highVbase", terminals[0]);
       assignTerminalParam("mediumVbase", terminals[1]);
       assignTerminalParam("lowVbase", terminals[2]);
+      if (hasVisibleThreeWindingNeutralTerminal(node)) {
+        assignTerminalParam("neutral_vbase", terminals[3]);
+      }
     } else if (isTwoWindingTransformerNode(node)) {
       assignTerminalParam("highVbase", terminals[0]);
       assignTerminalParam("lowVbase", terminals[1]);
@@ -6257,6 +6339,17 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
   return numberedNodes.map((node) => {
     if (!isThreeWindingTransformer(node)) {
       return node;
+    }
+    if (hasVisibleThreeWindingNeutralTerminal(node)) {
+      const neutralTerminal = node.terminals[3];
+      return {
+        ...node,
+        params: {
+          ...node.params,
+          neutral_node: neutralTerminal?.nodeNumber ?? "",
+          neutral_vbase: terminalVoltageBaseNumber(neutralTerminal?.vbase) || node.params.neutral_vbase || DEFAULT_INITIAL_TERMINAL_VBASE
+        }
+      };
     }
     return {
       ...node,

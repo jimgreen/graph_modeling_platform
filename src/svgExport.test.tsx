@@ -152,6 +152,19 @@ describe("SVG export", () => {
     expect(threeWindingSvg).toContain('class="export-terminal ac" transform="translate(0 42) scale(1 1)"');
   });
 
+  test("exports neutral-point three-winding transformer with four visible terminals", () => {
+    const transformer = createDefaultNode("ac-three-winding-transformer-neutral", { x: 160, y: 140 });
+
+    const svg = buildSvgDocument([transformer], [], { width: 360, height: 280 });
+
+    expect(svg).toContain("three-winding-transformer-neutral-glyph");
+    expect(svg.match(/class="transformer-winding"/g)?.length).toBe(3);
+    expect(svg).toContain('class="export-terminal ac" transform="translate(-60 -8) scale(1 1)"');
+    expect(svg).toContain('class="export-terminal ac" transform="translate(60 -8) scale(1 1)"');
+    expect(svg).toContain('class="export-terminal ac" transform="translate(0 50) scale(1 1)"');
+    expect(svg).toContain('class="export-terminal ac" transform="translate(0 -50) scale(1 1)"');
+  });
+
   test("exports distinct AC and DC electrolyzer glyphs", () => {
     const acElectrolyzer = createDefaultNode("ac-electrolyzer", { x: 140, y: 120 });
     const dcElectrolyzer = createDefaultNode("dc-electrolyzer", { x: 300, y: 120 });
