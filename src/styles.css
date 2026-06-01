@@ -1523,6 +1523,11 @@ button:disabled {
   stroke-width: 4;
 }
 
+.connection-line.lod-selected-edge {
+  stroke: #dc2626;
+  stroke-width: 4;
+}
+
 .boundary-bus-internal-connector {
   stroke: var(--connection-color, #334155);
   fill: none;
@@ -1732,6 +1737,12 @@ button:disabled {
   filter: drop-shadow(0 5px 10px rgba(37, 99, 235, 0.18));
 }
 
+.multi-node-drag-preview-node-lite {
+  opacity: 0.9;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 5px 10px rgba(37, 99, 235, 0.16));
+}
+
 .multi-node-drag-bounds-preview {
   fill: rgba(37, 99, 235, 0.08);
   stroke: #2563eb;
@@ -1864,6 +1875,20 @@ button:disabled {
 .diagram-node.selected .node-hitbox {
   stroke: #1d4ed8;
   stroke-width: 3;
+}
+
+.lod-node.selected {
+  stroke: #1d4ed8;
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.lod-node-selection {
+  fill: transparent;
+  stroke: #1d4ed8;
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
 }
 
 .diagram-node.selected.focused .node-hitbox {

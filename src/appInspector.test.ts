@@ -774,7 +774,7 @@ describe("graph inspector panel", () => {
     const styles = await readStyles();
     const ghostRule = cssRuleBlock(styles, ".connection-line.drag-ghost");
     const previewRule = cssRuleBlock(styles, ".connection-line.drag-preview");
-    const nodeRenderIndex = source.indexOf("{viewportNodes.map((node) =>");
+    const nodeRenderIndex = source.indexOf("{detailedViewportNodes.map((node) =>");
     const ghostRenderIndex = source.indexOf("{dragGhostEdgeRoutes.map");
     const previewRenderIndex = source.indexOf("{dragPreviewEdgeRoutes.map");
 
@@ -940,12 +940,12 @@ describe("graph inspector panel", () => {
     const groupPreviewEnd = source.indexOf("const dragPreviewEdgeRoutes", groupPreviewStart);
     const groupPreviewBlock = source.slice(groupPreviewStart, groupPreviewEnd);
     const renderStart = source.indexOf("{selectedGroupLayoutUnits.map");
-    const renderEnd = source.indexOf("{viewportNodes.map", renderStart);
+    const renderEnd = source.indexOf("{detailedViewportNodes.map", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
     const edgeRenderStart = source.indexOf("{viewportRoutedEdges.map((route) =>");
     const edgeRenderEnd = source.indexOf("{selectedGroupLayoutUnits.map", edgeRenderStart);
     const edgeRenderBlock = source.slice(edgeRenderStart, edgeRenderEnd);
-    const nodeRenderStart = source.indexOf("{viewportNodes.map((node) =>");
+    const nodeRenderStart = source.indexOf("{detailedViewportNodes.map((node) =>");
     const nodeRenderEnd = source.indexOf("{renderMultiNodeDragOverlay()}", nodeRenderStart);
     const nodeRenderBlock = source.slice(nodeRenderStart, nodeRenderEnd);
 
@@ -1195,7 +1195,7 @@ describe("graph inspector panel", () => {
     const pointerStart = source.indexOf("if (transformDrag && svgRef.current)");
     const pointerEnd = source.indexOf("if (!draggingRef.current || !svgRef.current)", pointerStart);
     const pointerBlock = source.slice(pointerStart, pointerEnd);
-    const renderStart = source.indexOf("{viewportNodes.map((node) =>");
+    const renderStart = source.indexOf("{detailedViewportNodes.map((node) =>");
     const renderEnd = source.indexOf("{renderGroupTransformPhotoPreview()}", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
 
@@ -1275,14 +1275,10 @@ describe("graph inspector panel", () => {
     expect(routingBlock).toContain("cachedRouteInputRef.current");
     expect(routingBlock).toContain("cachedRouteInput.routeGeometryRevision === graphStore.routeGeometryRevision");
     expect(routingBlock).toContain("cachedRouteInput.layerSignature === routeInputLayerSignature");
-    expect(routingBlock).toContain("const deferredRoutingNodes = useDeferredValue(routeInput.nodes);");
-    expect(routingBlock).toContain("const deferredRoutingEdges = useDeferredValue(routeInput.edges);");
-    expect(routingBlock).toContain("const deferredRoutingIsCurrent");
-    expect(routingBlock).toContain("deferredRoutingNodes === routeInput.nodes");
-    expect(routingBlock).toContain("deferredRoutingEdges === routeInput.edges");
-    expect(routingBlock).toContain("!deferredRoutingIsCurrent");
-    expect(routingBlock).toContain("routingNodes = requiresLiveRouting ? routeInput.nodes : deferredRoutingNodes");
-    expect(routingBlock).toContain("routingEdges = requiresLiveRouting ? routeInput.edges : deferredRoutingEdges");
+    expect(routingBlock).toContain("const routingNodes = routeInput.nodes;");
+    expect(routingBlock).toContain("const routingEdges = routeInput.edges;");
+    expect(routingBlock).not.toContain("const deferredRoutingNodes = useDeferredValue(routeInput.nodes);");
+    expect(routingBlock).not.toContain("const deferredRoutingEdges = useDeferredValue(routeInput.edges);");
   });
 
   test("uses stored connection geometry on open and only enables full routing after edits", async () => {
@@ -1546,7 +1542,7 @@ describe("graph inspector panel", () => {
     const routeCullEnd = source.indexOf("const activeLayerRoutedEdges", routeCullStart);
     const routeCullBlock = source.slice(routeCullStart, routeCullEnd);
     const edgeRenderIndex = source.indexOf("{viewportRoutedEdges.map((route) =>");
-    const nodeRenderIndex = source.indexOf("{viewportNodes.map((node) =>");
+    const nodeRenderIndex = source.indexOf("{detailedViewportNodes.map((node) =>");
 
     expect(source).toContain("visibleCanvasViewBoxFromRects");
     expect(source).toContain("initialVisibleCanvasViewBox");
@@ -2032,6 +2028,7 @@ describe("graph inspector panel", () => {
     expect(scheduleBlock).toContain("const routeCandidateEdges = localRouteOptimizationCandidateEdges");
     expect(scheduleBlock).toContain("const optimizationEdges = localRouteOptimizationEdges");
     expect(scheduleBlock).toContain("routeCandidateEdges");
+    expect(scheduleBlock).toContain("!shouldRunDeferredMoveOptimization(optimizationEdges, movedNodeIds, selectedEdgeIds)");
     expect(scheduleBlock).toContain("const blockedRoutePoints = routePointsForMovedNodeBlockers(expectedNodes, latestOptimizationEdges, movedNodeIds, {});");
     expect(scheduleBlock).toContain("const blockedEdgeIds = new Set(Object.keys(blockedRoutePoints));");
     expect(scheduleBlock).toContain("!shouldRunDeferredMoveOptimization(latestOptimizationEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)");
@@ -2053,7 +2050,11 @@ describe("graph inspector panel", () => {
     const scheduleBlock = source.slice(scheduleStart, scheduleEnd);
 
     expect(helperStart).toBeGreaterThan(-1);
+    expect(source).toContain("const MAX_DEFERRED_MOVE_REPAIR_MOVED_NODES = 16;");
+    expect(source).toContain("const MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES = 96;");
     expect(helperBlock).toContain("routeIntersectsSpecificNodes(route.points, edge, blockers)");
+    expect(scheduleBlock).toContain("movedNodeIds.length > MAX_DEFERRED_MOVE_REPAIR_MOVED_NODES");
+    expect(scheduleBlock).toContain("candidateEdges.length > MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES");
     expect(scheduleBlock).toContain("const movedBlockerRoutePoints = routePointsForMovedNodeBlockers");
     expect(scheduleBlock).toContain("const stationaryBlockerRoutePoints = routePointsForMovedEdgesBlockedByStationaryNodes");
     expect(scheduleBlock).toContain("const repairRoutePoints = { ...movedBlockerRoutePoints, ...stationaryBlockerRoutePoints };");
@@ -2127,8 +2128,8 @@ describe("graph inspector panel", () => {
 
   test("routes connection lines around device labels and the device-label gap", async () => {
     const source = await readModelSource();
-    const blockerStart = source.indexOf("function routeBlockerBox");
-    const blockerEnd = source.indexOf("export function calculateModelContentSize", blockerStart);
+    const blockerStart = source.indexOf("function computeRouteBlockerBox");
+    const blockerEnd = source.indexOf("function routeBlockerBox", blockerStart);
     const blockerBlock = source.slice(blockerStart, blockerEnd);
 
     expect(source).toContain("function nodeLabelRouteBlockerBox");
@@ -2648,20 +2649,37 @@ describe("graph inspector panel", () => {
     const commitStart = source.indexOf("const commitFastMovedGraphPatches");
     const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
     const commitBlock = source.slice(commitStart, commitEnd);
+    const finishStart = source.indexOf("const finishNodeDrag = () =>");
+    const finishEnd = source.indexOf("const finishTransformDrag", finishStart);
+    const finishBlock = source.slice(finishStart, finishEnd);
 
     expect(source).toContain("const multiNodeDragOverlayRef");
+    expect(source).toContain("const imperativeMultiNodeDragOverlayRef");
+    expect(source).toContain("const imperativeMultiNodeDragActiveRef");
     expect(source).toContain("const updateMultiNodeDragOverlayTransform");
+    expect(source).toContain("const showImperativeMultiNodeDragOverlay");
+    expect(source).toContain("const hideImperativeMultiNodeDragOverlay");
+    expect(source).toContain("const startDraggingState = (nextDragging: DraggingState)");
+    expect(source).toContain("const CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT = 24;");
     expect(source).toContain("const scheduleDeferredMovedConnectionRepair");
-    expect(source).toContain("const deferredSelectedNode = useDeferredValue(selectedNode)");
-    expect(source).toContain("const inspectorSelectedNode = selectedNode && deferredSelectedNode?.id === selectedNode.id");
+    expect(source).toContain("const inspectorSelectedNode = selectedNode;");
+    expect(source).toContain("const inspectorSelectedEdge = selectedEdge;");
     expect(source).toContain("const inspectorTopologyErrors = useDeferredValue(topologyErrors)");
-    expect(source).toContain("const deferredElementTreeRevision = useDeferredValue(graphStore.elementTreeRevision)");
-    expect(source).toContain("multiNodeDragOverlayRef.current.setAttribute(\"transform\"");
+    expect(source).toContain("const deferredElementTreeSource = useDeferredValue(elementTreeSource)");
+    expect(source).toContain("multiNodeDragOverlayRef.current?.setAttribute(\"transform\"");
+    expect(source).toContain("imperativeMultiNodeDragOverlayRef.current?.setAttribute(\"transform\"");
     expect(multiMoveBlock).toContain("updateMultiNodeDragOverlayTransform(boundedDelta)");
     expect(multiMoveBlock).not.toContain("setDragging");
     expect(commitBlock).toContain("const deferMovedRouteRepair = movedNodeIds.length > 1");
     expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(");
+    expect(commitBlock).toContain("markGraphDirtyForInteractiveCommit()");
+    expect(finishBlock).toContain("const activeDragging = draggingRef.current;");
+    expect(finishBlock).not.toContain("const activeDragging = draggingRef.current ?? dragging;");
     expect(overlayBlock).toContain("className=\"multi-node-drag-overlay\"");
+    expect(overlayBlock).toContain("dangerouslySetInnerHTML={{ __html: overlay.simplifiedMarkup }}");
+    expect(source).toContain("className=\"multi-node-drag-overlay imperative-multi-node-drag-overlay\"");
+    expect(source).toContain("simplifiedMarkup && showImperativeMultiNodeDragOverlay(simplifiedMarkup)");
+    expect(source).toContain("if (imperativeMultiNodeDragActiveRef.current && !dragging)");
     expect(overlayBlock).not.toContain("multiNodeDragDegradedPreview");
     expect(source).toContain("className={`diagram-canvas ${connectSource ? \"connect-mode\" : \"\"} ${staticDrawing ? \"static-draw-mode\" : \"\"} ${activeDropReady ? \"connect-drop-ready\" : \"\"} ${panning ? \"panning\" : \"\"} ${multiNodeDragging ? \"multi-node-dragging\" : \"\"}`}");
     expect(source).toContain("<g className=\"canvas-content\">");
@@ -2670,6 +2688,7 @@ describe("graph inspector panel", () => {
     expect(source).not.toContain("{!multiNodeDragging && selectedGroupLayoutUnits.map");
     expect(source).toContain("dragging?.historyCaptured && !multiNodeDragging && dragging.nodeIds.map");
     expect(styles).toContain(".multi-node-drag-overlay");
+    expect(styles).toContain(".multi-node-drag-preview-node-lite");
     expect(styles).toContain(".diagram-canvas.multi-node-dragging .canvas-content");
   });
 
@@ -2707,7 +2726,7 @@ describe("graph inspector panel", () => {
     const previewStart = source.indexOf("const buildMultiNodeDragOverlayPreview");
     const previewEnd = source.indexOf("const renderMultiNodeDragOverlay", previewStart);
     const previewBlock = source.slice(previewStart, previewEnd);
-    const renderStart = source.indexOf("{viewportNodes.map((node) =>");
+    const renderStart = source.indexOf("{detailedViewportNodes.map((node) =>");
     const renderEnd = source.indexOf("{selected && focused", renderStart);
     const nodeRenderBlock = source.slice(renderStart, renderEnd);
 
@@ -2752,7 +2771,7 @@ describe("graph inspector panel", () => {
 
   test("renders device labels as scalable upright node-owned graphics with a global visibility toggle", async () => {
     const source = await readAppSource();
-    const renderStart = source.indexOf("{viewportNodes.map((node) =>");
+    const renderStart = source.indexOf("{detailedViewportNodes.map((node) =>");
     const renderEnd = source.indexOf("{terminalPressPreviewEdgeRoutes.map", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
     const topbarStart = source.indexOf("<header className=\"topbar\"");
@@ -2785,7 +2804,7 @@ describe("graph inspector panel", () => {
   test("selects device labels as node-owned graphics without turning them into standalone objects", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
-    const renderStart = source.indexOf("{viewportNodes.map((node) =>");
+    const renderStart = source.indexOf("{detailedViewportNodes.map((node) =>");
     const renderEnd = source.indexOf("{terminalPressPreviewEdgeRoutes.map", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
     const labelStart = renderBlock.indexOf("className={`node-device-label");
@@ -2816,7 +2835,7 @@ describe("graph inspector panel", () => {
     const transformStart = source.indexOf("const nodeLabelTransform");
     const transformEnd = source.indexOf("function nodeLabelTextAnchor", transformStart);
     const transformBlock = source.slice(transformStart, transformEnd);
-    const renderStart = source.indexOf("{viewportNodes.map((node) =>");
+    const renderStart = source.indexOf("{detailedViewportNodes.map((node) =>");
     const renderEnd = source.indexOf("{terminalPressPreviewEdgeRoutes.map", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
     const graphPanelStart = source.indexOf("graphInfoView === \"tree\"");
@@ -2850,7 +2869,7 @@ describe("graph inspector panel", () => {
   test("groups continuous numeric tokens while rendering vertical device labels", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
-    const renderStart = source.indexOf("{viewportNodes.map((node) =>");
+    const renderStart = source.indexOf("{detailedViewportNodes.map((node) =>");
     const renderEnd = source.indexOf("{terminalPressPreviewEdgeRoutes.map", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
 
@@ -2892,7 +2911,7 @@ describe("graph inspector panel", () => {
     const graphPanelStart = source.indexOf("graphInfoView === \"tree\"");
     const graphPanelEnd = source.indexOf("{isStaticNode(inspectorSelectedNode)", graphPanelStart);
     const graphPanelBlock = source.slice(graphPanelStart, graphPanelEnd);
-    const renderStart = source.indexOf("{viewportNodes.map((node) =>");
+    const renderStart = source.indexOf("{detailedViewportNodes.map((node) =>");
     const renderEnd = source.indexOf("{terminalPressPreviewEdgeRoutes.map", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
 
@@ -3148,6 +3167,9 @@ describe("graph inspector panel", () => {
     const busSyncEffectStart = source.indexOf("const pendingBusSyncNodeIds = pendingBusTerminalSyncNodeIdsRef.current;");
     const busSyncEffectEnd = source.indexOf("const canvasBounds", busSyncEffectStart);
     const busSyncEffectBlock = source.slice(busSyncEffectStart, busSyncEffectEnd);
+    const patchHelperStart = source.indexOf("const busTerminalSyncNodeIdsForGraphPatch =");
+    const patchHelperEnd = source.indexOf("const synchronizePendingBusTerminalsWithGraphStore", patchHelperStart);
+    const patchHelperBlock = source.slice(patchHelperStart, patchHelperEnd);
     const scopedSyncStart = source.indexOf("const synchronizePendingBusTerminalsWithGraphStore");
     const scopedSyncEnd = source.indexOf("useEffect(() => {\n    const pendingBusSyncNodeIds", scopedSyncStart);
     const scopedSyncBlock = source.slice(scopedSyncStart, scopedSyncEnd);
@@ -3168,10 +3190,34 @@ describe("graph inspector panel", () => {
     expect(busSyncEffectBlock).not.toContain("synchronizeBusTerminalsWithEdges(syncNodes, syncEdges, undefined)");
     expect(busSyncEffectBlock).not.toContain("setGraphArrays(synchronized.nodes, synchronized.edges)");
     expect(source).toContain("const busTerminalSyncNodeIdsForGraphPatch =");
+    expect(patchHelperBlock).toContain("void movedNodeIds;");
+    expect(patchHelperBlock).toContain("const previousEdgeById = new Map(previousCandidateEdges.map");
+    expect(patchHelperBlock).toContain("const edgeAttachmentChanged");
+    expect(patchHelperBlock).toContain("if (!edgeAttachmentChanged(previousEdge, nextEdge))");
+    expect(patchHelperBlock).not.toContain("if (busNodeIdSet.has(nodeId))");
     expect(source).toContain("const busNodeIdSet = graphStore.busNodeIdSet");
     expect(busSyncEffectBlock).toContain("busNodeIdSet.size === 0");
     expect(commitBlock).toContain("busTerminalSyncNodeIdsForGraphPatch(");
     expect(commitBlock).not.toContain("markBusTerminalSyncDirty(movedNodeIds)");
+  });
+
+  test("does not resync every bus terminal for drag route-only edge updates", async () => {
+    const source = await readAppSource();
+    const scheduleStart = source.indexOf("const scheduleMovedEdgeOptimization");
+    const scheduleEnd = source.indexOf("const commitFastMovedGraph", scheduleStart);
+    const scheduleBlock = source.slice(scheduleStart, scheduleEnd);
+    const repairStart = source.indexOf("const scheduleDeferredMovedConnectionRepair");
+    const repairEnd = source.indexOf("const commitFastMovedGraph", repairStart);
+    const repairBlock = source.slice(repairStart, repairEnd);
+    const commitStart = source.indexOf("const commitFastMovedGraph");
+    const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
+
+    expect(scheduleBlock).toContain("setGraphStore((current) => graphStorePatchEdges(current, optimizedEdgeUpdates))");
+    expect(scheduleBlock).not.toContain("markBusTerminalSyncDirtyForEdges(optimizedEdgeUpdates)");
+    expect(repairBlock).toContain("setGraphStore((current) => graphStorePatchEdges(current, edgeUpdates))");
+    expect(repairBlock).not.toContain("markBusTerminalSyncDirtyForEdges(edgeUpdates)");
+    expect(commitBlock).not.toContain("markBusTerminalSyncDirtyForEdges(shiftedNextEdges)");
   });
 
   test("keeps graph operation end derivations from scanning full node and edge lists unnecessarily", async () => {
@@ -3200,12 +3246,14 @@ describe("graph inspector panel", () => {
     expect(source).toContain("elementTreeCacheRef");
     expect(source).toContain("elementTreeRevision");
     expect(source).toContain("elementTreeLayerSignature");
-    expect(source).toContain("const deferredElementTreeRevision = useDeferredValue(graphStore.elementTreeRevision)");
-    expect(elementTreeBlock).toContain("elementTreeCacheSignature(deferredElementTreeRevision, elementTreeLayerSignature, libraryTemplates)");
+    expect(source).toContain("const elementTreeSource = useMemo");
+    expect(source).toContain("current.revision !== graphStore.elementTreeRevision");
+    expect(source).toContain("const deferredElementTreeSource = useDeferredValue(elementTreeSource)");
+    expect(elementTreeBlock).toContain("elementTreeCacheSignature(deferredElementTreeSource.revision, deferredElementTreeSource.layerSignature, libraryTemplates)");
     expect(elementTreeBlock).not.toContain("elementTreeCacheSignature(deferredElementTreeNodes");
     expect(elementTreeBlock).toContain("elementTreeCacheRef.current.signature === elementTreeSignature");
     expect(elementTreeBlock).toContain("return elementTreeCacheRef.current.tree");
-    expect(elementTreeBlock).toContain("buildElementTree(deferredElementTreeNodes, deferredElementTreeEdges, libraryTemplates, { includeContainerChildren: false })");
+    expect(elementTreeBlock).toContain("buildElementTree(deferredElementTreeSource.nodes, deferredElementTreeSource.edges, libraryTemplates, { includeContainerChildren: false })");
   });
 
   test("bounds right-panel tree and topology warning rendering for large models", async () => {
@@ -3232,6 +3280,180 @@ describe("graph inspector panel", () => {
     expect(validationBlock).toContain("validation-pagination");
     expect(styles).toContain("content-visibility: auto");
     expect(styles).toContain(".validation-pagination");
+  });
+
+  test("keeps minimap rendering sampled for large models", async () => {
+    const source = await readAppSource();
+    const minimapStart = source.indexOf("const CANVAS_MINIMAP_MAX_NODE_MARKS");
+    const minimapEnd = source.indexOf("const CANVAS_SCROLLBAR_THICKNESS", minimapStart);
+    const minimapConstantsBlock = source.slice(minimapStart, minimapEnd);
+    const renderStart = source.indexOf("const minimapNodeStep =");
+    const renderEnd = source.indexOf("const handleMinimapPointerDown", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+
+    expect(minimapConstantsBlock).toContain("const CANVAS_MINIMAP_MAX_NODE_MARKS = 360;");
+    expect(minimapConstantsBlock).toContain("const CANVAS_MINIMAP_MAX_ROUTE_MARKS = 160;");
+    expect(renderBlock).toContain("Math.ceil(visibleNodes.length / CANVAS_MINIMAP_MAX_NODE_MARKS)");
+    expect(renderBlock).toContain("Math.ceil(routedEdges.length / CANVAS_MINIMAP_MAX_ROUTE_MARKS)");
+    expect(renderBlock).toContain("visibleNodes.filter((_, index) => index % minimapNodeStep === 0)");
+    expect(renderBlock).toContain("routedEdges.filter((_, index) => index % minimapRouteStep === 0)");
+  });
+
+  test("memoizes device glyph rendering during drag-end canvas updates", async () => {
+    const source = await readAppSource();
+    const importLine = source.slice(0, source.indexOf("} from \"react\";") + 15);
+    const memoStart = source.indexOf("const MemoDeviceGlyph = memo(");
+    const memoEnd = source.indexOf("function buildSvgNodeLabelTextMarkup", memoStart);
+    const memoBlock = source.slice(memoStart, memoEnd);
+    const renderStart = source.indexOf("{detailedViewportNodes.map((node) => {");
+    const renderEnd = source.indexOf("{renderGroupTransformPhotoPreview()", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+
+    expect(importLine).toContain("memo");
+    expect(memoBlock).toContain("previous.node === next.node");
+    expect(memoBlock).toContain("previous.colorPalette === next.colorPalette");
+    expect(renderBlock).toContain("<MemoDeviceGlyph node={node} mode=\"geometry\"");
+    expect(renderBlock).toContain("<MemoDeviceGlyph node={node} mode=\"text\"");
+    expect(renderBlock).not.toContain("<DeviceGlyph node={node} mode=\"geometry\"");
+  });
+
+  test("uses level-of-detail node rendering for large zoomed-out canvases", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const constantsStart = source.indexOf("const CANVAS_LOD_NODE_DETAIL_LIMIT");
+    const constantsEnd = source.indexOf("const CANVAS_FLOATING_TOOLBAR_GAP", constantsStart);
+    const constantsBlock = source.slice(constantsStart, constantsEnd);
+    const lodStart = source.indexOf("const useSimplifiedCanvasNodes =");
+    const lodEnd = source.indexOf("const connectPreviewDom", lodStart);
+    const lodBlock = source.slice(lodStart, lodEnd);
+    const routeStart = source.indexOf("const selected = activeSelectedEdgeSet.has(edge.id);");
+    const routeEnd = source.indexOf("const sourcePoint = getEdgeEndpointPoint(edge, \"source\");", routeStart);
+    const routeBlock = source.slice(routeStart, routeEnd);
+    const routeMarkupStart = source.indexOf("const lodCanvasRouteChunks = useMemo");
+    const routeMarkupEnd = source.indexOf("const lodCanvasNodeChunks = useMemo", routeMarkupStart);
+    const routeMarkupBlock = source.slice(routeMarkupStart, routeMarkupEnd);
+    const nodeMarkupStart = source.indexOf("const lodCanvasNodeChunks = useMemo");
+    const selectedMarkupStart = source.indexOf("const lodSelectedNodeMarkup = useMemo");
+    const nodeMarkupEnd = selectedMarkupStart;
+    const nodeMarkupBlock = source.slice(nodeMarkupStart, nodeMarkupEnd);
+    const selectedMarkupEnd = source.indexOf("const connectPreviewDom", selectedMarkupStart);
+    const selectedMarkupBlock = source.slice(selectedMarkupStart, selectedMarkupEnd);
+    const renderStart = source.indexOf("const renderSimplifiedNode =");
+    const renderEnd = source.indexOf("const imageHref = nodeImage(node);", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+
+    expect(constantsBlock).toContain("const CANVAS_LOD_NODE_DETAIL_LIMIT = 650;");
+    expect(constantsBlock).toContain("const CANVAS_LOD_MAX_ZOOM_PERCENT = 120;");
+    expect(constantsBlock).toContain("const CANVAS_LOD_SELECTED_DETAIL_LIMIT = 12;");
+    expect(lodBlock).toContain("viewportNodes.length > CANVAS_LOD_NODE_DETAIL_LIMIT");
+    expect(lodBlock).toContain("currentZoomPercent <= CANVAS_LOD_MAX_ZOOM_PERCENT");
+    expect(lodBlock).toContain("const useSimplifiedSelectedCanvasNodes =");
+    expect(lodBlock).toContain("selectedNodeIdSet.size > CANVAS_LOD_SELECTED_DETAIL_LIMIT");
+    expect(lodBlock).toContain("const detailedViewportNodes = useMemo");
+    expect(lodBlock).toContain("return viewportNodes.filter((node) => {");
+    expect(lodBlock).toContain("return !useSimplifiedSelectedCanvasNodes || node.id === selectedNodeId;");
+    expect(lodBlock).toContain("const useSimplifiedCanvasRoutes =");
+    expect(lodBlock).toContain("const useSimplifiedSelectedCanvasEdges =");
+    expect(lodBlock).toContain("activeSelectedEdgeSet.size > CANVAS_LOD_SELECTED_DETAIL_LIMIT");
+    expect(lodBlock).toContain("const detailedSelectedEdgeIdSet = useMemo");
+    expect(lodBlock).not.toContain("activeSelectedEdgeSet.size === 0");
+    expect(routeBlock).toContain("useSimplifiedCanvasRoutes && !selected");
+    expect(routeBlock).toContain("useSimplifiedCanvasRoutes && selected && !detailedSelectedEdgeIdSet.has(edge.id)");
+    expect(routeBlock).toContain("return null");
+    expect(routeMarkupBlock).toContain("connection-line lod-edge");
+    expect(routeMarkupBlock).toContain("lod-selected-edge");
+    expect(source).toContain("lodCanvasRouteChunks.map((chunk)");
+    expect(source).toContain("className=\"lod-route-layer\"");
+    expect(source).toContain("className=\"lod-route-layer-chunk\"");
+    expect(nodeMarkupBlock).toContain("const lodCanvasNodeChunks = useMemo");
+    expect(nodeMarkupBlock).toContain("diagram-node lod-node");
+    expect(nodeMarkupBlock).not.toContain("selectedNodeIdSet.has(node.id)");
+    expect(nodeMarkupBlock).toContain("data-node-id");
+    expect(source).toContain("handleLodNodePointerDown");
+    expect(selectedMarkupBlock).toContain("const lodSelectedNodeMarkup = useMemo");
+    expect(selectedMarkupBlock).toContain("displaySelectedNodeIds.flatMap");
+    expect(selectedMarkupBlock).toContain("lod-node-selection");
+    expect(source).toContain("className=\"lod-node-layer\"");
+    expect(source).toContain("lodCanvasNodeChunks.map((chunk)");
+    expect(source).toContain("className=\"lod-node-layer-chunk\"");
+    expect(source).toContain("className=\"lod-node-selection-layer\" dangerouslySetInnerHTML={{ __html: lodSelectedNodeMarkup }}");
+    expect(source).toContain("{detailedViewportNodes.map((node) => {");
+    expect(renderBlock).toContain("(!selected || (useSimplifiedSelectedCanvasNodes && !focused))");
+    expect(renderBlock).toContain("return null");
+    expect(renderBlock).not.toContain("<rect");
+    expect(renderBlock).not.toContain("<MemoDeviceGlyph");
+    expect(renderBlock).not.toContain("node.terminals.map");
+    expect(renderBlock).not.toContain("nodeLabelShouldRender");
+    expect(styles).toContain(".lod-node-selection");
+    expect(styles).toContain("vector-effect: non-scaling-stroke");
+  });
+
+  test("keeps left library panels memoized across graph-only drag commits", async () => {
+    const source = await readAppSource();
+    const memoStart = source.indexOf("const libraryPanelContent = useMemo");
+    const memoEnd = source.indexOf("return (\n    <div", memoStart);
+    const memoBlock = source.slice(memoStart, memoEnd);
+    const leftContentStart = source.indexOf("<div className=\"left-panel-content\">");
+    const leftContentEnd = source.indexOf("</div>\n      </aside>", leftContentStart);
+    const leftContentBlock = source.slice(leftContentStart, leftContentEnd);
+
+    expect(memoStart).toBeGreaterThan(-1);
+    expect(memoBlock).toContain("() => renderLibraryPanel()");
+    expect(memoBlock).toContain("const templateLibraryPanelContent = useMemo");
+    expect(memoBlock).toContain("() => renderTemplateLibraryPanel()");
+    expect(memoBlock).toContain("const leftPanelContent = leftPanelTab === \"projects\"");
+    expect(memoBlock).toContain("librarySearchQuery");
+    expect(memoBlock).toContain("expandedAttributeLibraryComponentTypes");
+    expect(memoBlock).toContain("expandedGraphTemplateTypes");
+    expect(memoBlock).not.toContain("nodes,");
+    expect(memoBlock).not.toContain("edges,");
+    expect(leftContentBlock).toContain("{leftPanelContent}");
+    expect(leftContentBlock).not.toContain("renderLibraryPanel()");
+    expect(leftContentBlock).not.toContain("renderTemplateLibraryPanel()");
+  });
+
+  test("does not preselect a large group when opening a model", async () => {
+    const source = await readAppSource();
+    const selectionStateStart = source.indexOf("const [selectedNodeIds, setSelectedNodeIds]");
+    const selectionStateEnd = source.indexOf("const [selectedEdgeId", selectionStateStart);
+    const selectionStateBlock = source.slice(selectionStateStart, selectionStateEnd);
+    const openProjectStart = source.indexOf("setRouteRenderingReady(false);");
+    const openProjectEnd = source.indexOf("setConnectSource(null);", openProjectStart);
+    const openProjectBlock = source.slice(openProjectStart, openProjectEnd);
+
+    expect(selectionStateBlock).toContain("useState<string[]>([])");
+    expect(selectionStateBlock).not.toContain("nodes[0]");
+    expect(openProjectBlock).toContain("setCanvasSelectionScope(\"direct\")");
+    expect(openProjectBlock).toContain("setSelectedNodeIds([])");
+    expect(openProjectBlock).not.toContain("firstVisibleNode");
+    expect(openProjectBlock).not.toContain("setCanvasSelectionScope(\"group\")");
+  });
+
+  test("indexes terminal-bus contact detection instead of scanning every same-type bus", async () => {
+    const source = await readModelSource();
+    const contactStart = source.indexOf("export function getTerminalBusContactGroups");
+    const contactEnd = source.indexOf("function collectOverlappingTerminalPairs", contactStart);
+    const contactBlock = source.slice(contactStart, contactEnd);
+
+    expect(source).toContain("const TERMINAL_BUS_CONTACT_BUCKET_SIZE = 256;");
+    expect(contactBlock).toContain("const busEntryBucketsByType = new Map");
+    expect(contactBlock).toContain("const affectedBusEntryBucketsByType = new Map");
+    expect(contactBlock).toContain("const queryBusEntries =");
+    expect(contactBlock).toContain("queryBusEntries(busEntryBucketsByType, terminal.type, point)");
+    expect(contactBlock).not.toContain("busEntriesByType.get(terminal.type) ?? []");
+  });
+
+  test("caches route blocker boxes during drag-end route checks", async () => {
+    const source = await readModelSource();
+    const blockerStart = source.indexOf("const routeEndpointBodyOnlyBlockerCache");
+    const blockerEnd = source.indexOf("export function calculateModelContentSize", blockerStart);
+    const blockerBlock = source.slice(blockerStart, blockerEnd);
+
+    expect(blockerBlock).toContain("const routeEndpointBodyOnlyBlockerCache = new WeakMap<ModelNode, ModelNode>();");
+    expect(blockerBlock).toContain("const routeBlockerBoxCache = new WeakMap<ModelNode, Map<number, RouteBlockerBox>>();");
+    expect(blockerBlock).toContain("function computeRouteBlockerBox");
+    expect(blockerBlock).toContain("const cached = boxesByPadding.get(padding)");
+    expect(blockerBlock).toContain("boxesByPadding.set(padding, box)");
   });
 
   test("keeps right-panel element tree content-height when only a few graphics exist", async () => {
@@ -3466,7 +3688,8 @@ describe("graph inspector panel", () => {
     expect(server).toContain("customGraphTemplates");
     expect(leftPanelBlock).toContain("模板库");
     expect(leftPanelBlock).toContain("leftPanelTab === \"templates\"");
-    expect(leftPanelBlock).toContain("renderTemplateLibraryPanel()");
+    expect(leftPanelBlock).toContain("{leftPanelContent}");
+    expect(source).toContain("() => renderTemplateLibraryPanel()");
     expect(source).toContain("groupGraphTemplatesByType");
     expect(source).toContain("renderGraphTemplatePreview");
     expect(source).toContain("renderTemplateLibraryPanel");

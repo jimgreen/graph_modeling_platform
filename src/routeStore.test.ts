@@ -73,4 +73,19 @@ describe("normalized route store", () => {
     expect(queryRouteSpatialIndex(patched.routeSpatialIndex, { left: 620, right: 780, top: 620, bottom: 660 })).toEqual([]);
     expect(queryRouteSpatialIndex(patched.routeSpatialIndex, { left: 680, right: 840, top: 680, bottom: 760 })).toEqual([movedSecond]);
   });
+
+  test("batch patches route spatial buckets without mutating the previous store", () => {
+    const first = route("edge-1", 40, 40);
+    const second = route("edge-2", 80, 80);
+    const store = createRouteStore([first, second]);
+    const movedFirst = route("edge-1", 120, 80);
+    const movedSecond = route("edge-2", 160, 80);
+
+    const patched = routeStorePatchRoutes(store, [movedFirst, movedSecond]);
+
+    expect(queryRouteSpatialIndex(store.routeSpatialIndex, { left: 0, right: 260, top: 0, bottom: 160 })).toEqual([first, second]);
+    expect(queryRouteSpatialIndex(patched.routeSpatialIndex, { left: 0, right: 260, top: 0, bottom: 160 })).toEqual([movedFirst, movedSecond]);
+    expect(patched.routeOrder).toBe(store.routeOrder);
+    expect(patched.routeIndexById).toBe(store.routeIndexById);
+  });
 });

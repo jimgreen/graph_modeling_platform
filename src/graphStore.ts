@@ -106,33 +106,49 @@ export function buildGraphNodeSpatialIndex(
 }
 
 function patchNodeSpatialIndex(index: GraphNodeSpatialIndex, previousNode: ModelNode, nextNode: ModelNode): GraphNodeSpatialIndex {
-  const buckets = new Map(index.buckets);
-  for (const key of index.nodeBucketKeysById.get(previousNode.id) ?? []) {
-    const bucket = buckets.get(key);
-    if (!bucket) {
-      continue;
-    }
-    const nextBucket = bucket.filter((node) => node.id !== previousNode.id);
-    if (nextBucket.length > 0) {
-      buckets.set(key, nextBucket);
-    } else {
-      buckets.delete(key);
-    }
+  return patchNodeSpatialIndexMany(index, [{ previousNode, nextNode }]);
+}
+
+function patchNodeSpatialIndexMany(
+  index: GraphNodeSpatialIndex,
+  updates: readonly { previousNode: ModelNode; nextNode: ModelNode }[]
+): GraphNodeSpatialIndex {
+  if (updates.length === 0) {
+    return index;
   }
+  const buckets = new Map(index.buckets);
   const nextBucketKeysById = new Map(index.nodeBucketKeysById);
   const nextBoundsById = new Map(index.nodeBoundsById);
-  const nextBounds = graphNodeRenderBounds(nextNode);
-  const range = spatialBucketRange(nextBounds, index.bucketSize);
-  const nextBucketKeys: string[] = [];
-  for (let x = range.left; x <= range.right; x += 1) {
-    for (let y = range.top; y <= range.bottom; y += 1) {
-      const key = spatialBucketKey(x, y);
-      nextBucketKeys.push(key);
-      buckets.set(key, [...(buckets.get(key) ?? []), nextNode]);
+  for (const { previousNode } of updates) {
+    for (const key of index.nodeBucketKeysById.get(previousNode.id) ?? []) {
+      const bucket = buckets.get(key);
+      if (!bucket) {
+        continue;
+      }
+      const nextBucket = bucket.filter((node) => node.id !== previousNode.id);
+      if (nextBucket.length > 0) {
+        buckets.set(key, nextBucket);
+      } else {
+        buckets.delete(key);
+      }
     }
+    nextBucketKeysById.delete(previousNode.id);
+    nextBoundsById.delete(previousNode.id);
   }
-  nextBucketKeysById.set(nextNode.id, nextBucketKeys);
-  nextBoundsById.set(nextNode.id, nextBounds);
+  for (const { nextNode } of updates) {
+    const nextBounds = graphNodeRenderBounds(nextNode);
+    const range = spatialBucketRange(nextBounds, index.bucketSize);
+    const nextBucketKeys: string[] = [];
+    for (let x = range.left; x <= range.right; x += 1) {
+      for (let y = range.top; y <= range.bottom; y += 1) {
+        const key = spatialBucketKey(x, y);
+        nextBucketKeys.push(key);
+        buckets.set(key, [...(buckets.get(key) ?? []), nextNode]);
+      }
+    }
+    nextBucketKeysById.set(nextNode.id, nextBucketKeys);
+    nextBoundsById.set(nextNode.id, nextBounds);
+  }
   return { ...index, buckets, nodeBucketKeysById: nextBucketKeysById, nodeBoundsById: nextBoundsById };
 }
 
@@ -594,7 +610,7 @@ function nextNodeSpatialIndexForNodes(store: GraphStore, nodeList: readonly Mode
   if (nodeList.length !== store.nodeOrder.length) {
     return buildGraphNodeSpatialIndex(nodeList);
   }
-  let nextIndex = store.nodeSpatialIndex;
+  const spatialUpdates: Array<{ previousNode: ModelNode; nextNode: ModelNode }> = [];
   for (let index = 0; index < nodeList.length; index += 1) {
     const nextNode = nodeList[index];
     const nodeId = store.nodeOrder[index];
@@ -606,10 +622,10 @@ function nextNodeSpatialIndexForNodes(store: GraphStore, nodeList: readonly Mode
       return buildGraphNodeSpatialIndex(nodeList);
     }
     if (previousNode !== nextNode && nodeAffectsRouteSpatialBounds(previousNode, nextNode)) {
-      nextIndex = patchNodeSpatialIndex(nextIndex, previousNode, nextNode);
+      spatialUpdates.push({ previousNode, nextNode });
     }
   }
-  return nextIndex;
+  return patchNodeSpatialIndexMany(store.nodeSpatialIndex, spatialUpdates);
 }
 
 function patchNodeLayerIndex(index: Map<string, ModelNode[]>, previousNode: ModelNode, nextNode: ModelNode) {
@@ -792,6 +808,7 @@ export function graphStorePatchNodesFromArray(
   let routeGeometryChanged = false;
   let topologyChanged = false;
   let nodeSpatialIndex = store.nodeSpatialIndex;
+  const spatialUpdates: Array<{ previousNode: ModelNode; nextNode: ModelNode }> = [];
   for (const nodeId of nodeIds) {
     const index = store.nodeIndexById.get(nodeId);
     if (index === undefined) {
@@ -815,8 +832,11 @@ export function graphStorePatchNodesFromArray(
     routeGeometryChanged ||= nodeAffectsRouteGeometry(previousNode, nextNode);
     topologyChanged ||= nodeAffectsTopology(previousNode, nextNode);
     if (nodeAffectsRouteSpatialBounds(previousNode, nextNode)) {
-      nodeSpatialIndex = patchNodeSpatialIndex(nodeSpatialIndex, previousNode, nextNode);
+      spatialUpdates.push({ previousNode, nextNode });
     }
+  }
+  if (spatialUpdates.length > 0) {
+    nodeSpatialIndex = patchNodeSpatialIndexMany(store.nodeSpatialIndex, spatialUpdates);
   }
   return changed
     ? {
@@ -843,6 +863,7 @@ export function graphStorePatchNodes(store: GraphStore, nodeUpdates: Iterable<Mo
   let routeGeometryChanged = false;
   let topologyChanged = false;
   let nodeSpatialIndex = store.nodeSpatialIndex;
+  const spatialUpdates: Array<{ previousNode: ModelNode; nextNode: ModelNode }> = [];
   for (const nextNode of nodeUpdates) {
     const index = store.nodeIndexById.get(nextNode.id);
     if (index === undefined) {
@@ -865,8 +886,11 @@ export function graphStorePatchNodes(store: GraphStore, nodeUpdates: Iterable<Mo
     routeGeometryChanged ||= nodeAffectsRouteGeometry(previousNode, nextNode);
     topologyChanged ||= nodeAffectsTopology(previousNode, nextNode);
     if (nodeAffectsRouteSpatialBounds(previousNode, nextNode)) {
-      nodeSpatialIndex = patchNodeSpatialIndex(nodeSpatialIndex, previousNode, nextNode);
+      spatialUpdates.push({ previousNode, nextNode });
     }
+  }
+  if (spatialUpdates.length > 0) {
+    nodeSpatialIndex = patchNodeSpatialIndexMany(store.nodeSpatialIndex, spatialUpdates);
   }
   return changed
     ? {

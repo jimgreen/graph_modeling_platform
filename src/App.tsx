@@ -1,4 +1,4 @@
-import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, type SetStateAction, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, memo, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, type SetStateAction, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AlignEndHorizontal,
   AlignEndVertical,
@@ -96,6 +96,7 @@ import {
   getDeviceGlyphVariant,
   getConnectionStrokeColor,
   getDeviceStrokeColor,
+  getDeviceStrokeWidth,
   getTerminalDisplayColor,
   boundaryBusInternalConnectorSegment,
   boundaryBusInternalConnectorStrokeWidth,
@@ -633,6 +634,7 @@ type DraggingState = {
 type MultiNodeDragOverlayPreview = {
   bounds: RenderViewportBounds | null;
   edgeRoutes: { edgeId: string; path: string }[];
+  simplifiedMarkup?: string;
 };
 function isMultiNodeMoveState(dragState: Pick<DraggingState, "nodeIds"> | null | undefined) {
   return (dragState?.nodeIds.length ?? 0) > 1;
@@ -841,6 +843,8 @@ const CANVAS_RESIZE_HANDLE_SIZE = 18;
 const MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES = 5;
 const ORIGINAL_POSITION_REROUTE_PADDING = 64;
 const MOVE_ROUTE_LOCAL_SEARCH_PADDING = 96;
+const MAX_DEFERRED_MOVE_REPAIR_MOVED_NODES = 16;
+const MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES = 96;
 const KEYBOARD_MOVE_COMMIT_DELAY_MS = 160;
 const KEYBOARD_MOVE_REPEAT_RATE_PER_SECOND = 30;
 const KEYBOARD_MOVE_FRAME_INTERVAL_MS = 1000 / KEYBOARD_MOVE_REPEAT_RATE_PER_SECOND;
@@ -850,8 +854,13 @@ const TOPOLOGY_WARNING_PAGE_SIZE = 50;
 const CANVAS_MINIMAP_WIDTH = 220;
 const CANVAS_MINIMAP_HEIGHT = 142;
 const CANVAS_MINIMAP_PADDING = 9;
-const CANVAS_MINIMAP_MAX_NODE_MARKS = 1800;
-const CANVAS_MINIMAP_MAX_ROUTE_MARKS = 420;
+const CANVAS_MINIMAP_MAX_NODE_MARKS = 360;
+const CANVAS_MINIMAP_MAX_ROUTE_MARKS = 160;
+const CANVAS_LOD_NODE_DETAIL_LIMIT = 650;
+const CANVAS_LOD_MAX_ZOOM_PERCENT = 120;
+const CANVAS_LOD_SELECTED_DETAIL_LIMIT = 12;
+const CANVAS_LOD_MARKUP_CHUNK_SIZE = 64;
+const CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT = 24;
 const CANVAS_FLOATING_TOOLBAR_GAP = 7;
 const NODE_FLOATING_TOOLBAR_WIDTH = 224;
 const NODE_FLOATING_TOOLBAR_HEIGHT = 38;
@@ -2825,6 +2834,13 @@ function renderSvgElementMarkup(value: unknown): string {
 }
 
 type DeviceGlyphMode = "full" | "geometry" | "text";
+type DeviceGlyphProps = {
+  node: ModelNode;
+  miniature?: boolean;
+  mode?: DeviceGlyphMode;
+  colorDisplayMode?: ColorDisplayMode;
+  colorPalette?: ColorPalette;
+};
 
 function formatSvgNumber(value: number) {
   const rounded = Math.round(value * 100000) / 100000;
@@ -3197,7 +3213,7 @@ function renderBusGlyphRect(width: number, height: number, color: string) {
   return <rect className="bus-glyph" x={-width / 2} y={-thickness / 2} width={width} height={thickness} fill={color} stroke={color} strokeWidth="0" />;
 }
 
-function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode = "energy", colorPalette = DEFAULT_COLOR_PALETTE }: { node: ModelNode; miniature?: boolean; mode?: DeviceGlyphMode; colorDisplayMode?: ColorDisplayMode; colorPalette?: ColorPalette }) {
+function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode = "energy", colorPalette = DEFAULT_COLOR_PALETTE }: DeviceGlyphProps) {
   const w = miniature ? 58 : node.size.width;
   const h = miniature ? 38 : node.size.height;
   const glyphVariant = getDeviceGlyphVariant(node.kind);
@@ -4708,6 +4724,105 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
   );
 }
 
+const MemoDeviceGlyph = memo(
+  DeviceGlyph,
+  (previous, next) =>
+    previous.node === next.node &&
+    previous.miniature === next.miniature &&
+    previous.mode === next.mode &&
+    previous.colorDisplayMode === next.colorDisplayMode &&
+    previous.colorPalette === next.colorPalette
+);
+
+type SvgMarkupChunkProps = {
+  className: string;
+  markup: string;
+};
+
+const SvgMarkupChunk = memo(function SvgMarkupChunk({ className, markup }: SvgMarkupChunkProps) {
+  return <g className={className} dangerouslySetInnerHTML={{ __html: markup }} />;
+});
+
+type StableSvgMarkupChunk = {
+  key: string;
+  markup: string;
+};
+
+type CachedStableSvgMarkupChunk = StableSvgMarkupChunk & {
+  itemKeys: string[];
+  tokens: unknown[];
+};
+
+type StableSvgMarkupChunkCache = {
+  chunks: CachedStableSvgMarkupChunk[];
+};
+
+type ElementTreeSource = {
+  revision: number;
+  layerSignature: string;
+  nodes: ModelNode[];
+  edges: Edge[];
+};
+
+function tokenArraysEqual(first: readonly unknown[], second: readonly unknown[]) {
+  if (first.length !== second.length) {
+    return false;
+  }
+  for (let index = 0; index < first.length; index += 1) {
+    if (first[index] !== second[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function stableSvgMarkupChunks<T>(
+  items: readonly T[],
+  cache: StableSvgMarkupChunkCache,
+  options: {
+    chunkSize: number;
+    keyPrefix: string;
+    itemKey: (item: T, index: number) => string;
+    itemTokens: (item: T, index: number) => readonly unknown[];
+    itemMarkup: (item: T, index: number) => string;
+  }
+): StableSvgMarkupChunk[] {
+  if (items.length === 0) {
+    cache.chunks = [];
+    return [];
+  }
+  const nextChunks: CachedStableSvgMarkupChunk[] = [];
+  for (let start = 0; start < items.length; start += options.chunkSize) {
+    const end = Math.min(items.length, start + options.chunkSize);
+    const chunkIndex = nextChunks.length;
+    const itemKeys: string[] = [];
+    const tokens: unknown[] = [];
+    for (let index = start; index < end; index += 1) {
+      const item = items[index];
+      itemKeys.push(options.itemKey(item, index));
+      tokens.push(...options.itemTokens(item, index));
+    }
+    const key = `${options.keyPrefix}-${chunkIndex}-${itemKeys[0] ?? "empty"}-${itemKeys[itemKeys.length - 1] ?? "empty"}`;
+    const previous = cache.chunks[chunkIndex];
+    if (
+      previous &&
+      previous.key === key &&
+      tokenArraysEqual(previous.itemKeys, itemKeys) &&
+      tokenArraysEqual(previous.tokens, tokens)
+    ) {
+      nextChunks.push(previous);
+      continue;
+    }
+    let markup = "";
+    for (let index = start; index < end; index += 1) {
+      markup += options.itemMarkup(items[index], index);
+    }
+    nextChunks.push({ key, itemKeys, tokens, markup });
+  }
+  cache.chunks = nextChunks;
+  return nextChunks.map(({ key, markup }) => ({ key, markup }));
+}
+
 function buildSvgNodeLabelTextMarkup(node: ModelNode) {
   const text = nodeLabelText(node);
   if (!text) {
@@ -4881,6 +4996,8 @@ export function App() {
   const rewirePreviewFrameRef = useRef<number | null>(null);
   const draggingRef = useRef<DraggingState | null>(null);
   const multiNodeDragOverlayRef = useRef<SVGGElement | null>(null);
+  const imperativeMultiNodeDragOverlayRef = useRef<SVGGElement | null>(null);
+  const imperativeMultiNodeDragActiveRef = useRef(false);
   const multiNodeDragOverlayDeltaRef = useRef<Point>({ x: 0, y: 0 });
   const nodeTerminalSnapTargetRef = useRef<NodeTerminalSnapTarget | null>(null);
   const pendingNodeDragMoveRef = useRef<{ point: Point; ctrlKey: boolean; shiftKey: boolean } | null>(null);
@@ -4897,6 +5014,8 @@ export function App() {
   const canvasResizeDraftRef = useRef<CanvasBounds | null>(null);
   const cachedRoutedEdgesRef = useRef<RoutedEdge[]>([]);
   const cachedRouteStoreRef = useRef<RouteStore | null>(null);
+  const lodCanvasNodeChunkCacheRef = useRef<StableSvgMarkupChunkCache>({ chunks: [] });
+  const lodCanvasRouteChunkCacheRef = useRef<StableSvgMarkupChunkCache>({ chunks: [] });
   const cachedRouteInputRef = useRef<{
     routeGeometryRevision: number;
     layerSignature: string;
@@ -4908,6 +5027,7 @@ export function App() {
   const routeDirtyGenerationRef = useRef(0);
   const canvasVisibleViewBoxFrameRef = useRef<number | null>(null);
   const elementTreeCacheRef = useRef<{ signature: string; tree: ElementTreeGroup[] }>({ signature: "", tree: [] });
+  const elementTreeSourceRef = useRef<ElementTreeSource | null>(null);
   const graphDirtyBaselineRef = useRef<GraphDirtyBaseline | null>(null);
   const suppressNextGraphDirtyRef = useRef(false);
   const latestNodesRef = useRef<ModelNode[]>([]);
@@ -4986,7 +5106,7 @@ export function App() {
   const [activeProjectId, setActiveProjectId] = useState<string>(() => initialDraft?.activeProjectId ?? "");
   const [activeSchemeId, setActiveSchemeId] = useState<string>(() => initialDraft?.activeSchemeId ?? "");
   const [mode, setMode] = useState<ToolMode>("select");
-  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>(nodes[0] ? [nodes[0].id] : []);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string>("");
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
   const [canvasSelectionScope, setCanvasSelectionScope] = useState<CanvasSelectionScope>("group");
@@ -5088,7 +5208,17 @@ export function App() {
   const [pendingSchemeImportConflict, setPendingSchemeImportConflict] = useState<PendingSchemeImportConflict>(null);
   const [pendingRecordPasteConflict, setPendingRecordPasteConflict] = useState<PendingRecordPasteConflict>(null);
   const mousePositionTextRef = useRef<HTMLSpanElement | null>(null);
-  const [operationLog, setOperationLog] = useState("就绪");
+  const operationLogRef = useRef("就绪");
+  const operationLogStatusRef = useRef<HTMLSpanElement | null>(null);
+  const setOperationLogText = (nextLog: string) => {
+    operationLogRef.current = nextLog;
+    const element = operationLogStatusRef.current;
+    if (!element) {
+      return;
+    }
+    element.title = nextLog;
+    element.textContent = `日志 ${nextLog}`;
+  };
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedSchemeId, setSelectedSchemeId] = useState<string>("");
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
@@ -5327,10 +5457,8 @@ export function App() {
   const activeSelectedEdgeIds = activeCanvasSelection.edgeIds;
   const activeSelectedEdgeSet = useMemo(() => new Set(displaySelectedEdgeIds), [displaySelectedEdgeIds]);
   const selectedEdge = activeLayerEdgeIdSet.has(selectedEdgeId) ? edgeById.get(selectedEdgeId) : undefined;
-  const deferredSelectedNode = useDeferredValue(selectedNode);
-  const inspectorSelectedNode = selectedNode && deferredSelectedNode?.id === selectedNode.id ? deferredSelectedNode : selectedNode;
-  const deferredSelectedEdge = useDeferredValue(selectedEdge);
-  const inspectorSelectedEdge = selectedEdge && deferredSelectedEdge?.id === selectedEdge.id ? deferredSelectedEdge : selectedEdge;
+  const inspectorSelectedNode = selectedNode;
+  const inspectorSelectedEdge = selectedEdge;
   const inspectorTopologyErrors = useDeferredValue(topologyErrors);
   const connectionLineStyle = (edgeId: string) => {
     const edge = edgeById.get(edgeId);
@@ -5345,6 +5473,9 @@ export function App() {
   ): MultiNodeDragOverlayPreview => {
     const movingNodeIdSet = new Set(dragNodeIds);
     const movingEdgeIdSet = new Set(movingEdgeIds);
+    const useSimplifiedOverlay = dragNodeIds.length > CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT;
+    const simplifiedNodeMarkup: string[] = [];
+    const simplifiedEdgeMarkup: string[] = [];
     let bounds: RenderViewportBounds | null = null;
     const includePoint = (point: Point) => {
       bounds = bounds
@@ -5368,6 +5499,16 @@ export function App() {
       }
       const includeUprightContentInBounds = nodeHasUprightBoundsContent(node);
       includeBox(nodeVisualInteractionBounds(node, originalPosition, 0, includeUprightContentInBounds));
+      if (useSimplifiedOverlay) {
+        const nodeIsBus = isBusNode(node);
+        const transform = `translate(${formatSvgNumber(originalPosition.x)} ${formatSvgNumber(originalPosition.y)}) ${nodeGeometryTransform(node)}`;
+        const fill = node.params.backgroundColor || "#ffffff";
+        const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
+        const strokeWidth = Math.max(2, getDeviceStrokeWidth(node));
+        simplifiedNodeMarkup.push(
+          `<rect class="multi-node-drag-preview-node-lite${nodeIsBus ? " bus-node" : ""}" transform="${escapeXml(transform)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${nodeIsBus ? 0 : 6}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"><title>${escapeXml(node.name)}</title></rect>`
+        );
+      }
     }
     const edgeRoutes: MultiNodeDragOverlayPreview["edgeRoutes"] = [];
     for (const edge of affectedEdgesForDrag) {
@@ -5386,19 +5527,36 @@ export function App() {
       for (const point of points) {
         includePoint(point);
       }
-      edgeRoutes.push({ edgeId: edge.id, path: pointsToPreviewPath(points) });
+      const path = pointsToPreviewPath(points);
+      if (useSimplifiedOverlay) {
+        const color = getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette);
+        simplifiedEdgeMarkup.push(
+          `<path class="connection-line drag-preview" d="${escapeXml(path)}" style="--connection-color:${escapeXml(color)}"/>`
+        );
+      } else {
+        edgeRoutes.push({ edgeId: edge.id, path });
+      }
     }
     const previewBounds = bounds as RenderViewportBounds | null;
+    const paddedBounds = previewBounds
+      ? {
+          left: previewBounds.left - 4,
+          right: previewBounds.right + 4,
+          top: previewBounds.top - 4,
+          bottom: previewBounds.bottom + 4
+        }
+      : null;
+    if (useSimplifiedOverlay && paddedBounds) {
+      simplifiedNodeMarkup.push(
+        `<rect class="multi-node-drag-bounds-preview" x="${formatSvgNumber(paddedBounds.left)}" y="${formatSvgNumber(paddedBounds.top)}" width="${formatSvgNumber(Math.max(1, paddedBounds.right - paddedBounds.left))}" height="${formatSvgNumber(Math.max(1, paddedBounds.bottom - paddedBounds.top))}"/>`
+      );
+    }
     return {
-      bounds: previewBounds
-        ? {
-            left: previewBounds.left - 4,
-            right: previewBounds.right + 4,
-            top: previewBounds.top - 4,
-            bottom: previewBounds.bottom + 4
-          }
-        : null,
-      edgeRoutes
+      bounds: paddedBounds,
+      edgeRoutes,
+      simplifiedMarkup: useSimplifiedOverlay
+        ? `${simplifiedEdgeMarkup.join("")}${simplifiedNodeMarkup.join("")}`
+        : undefined
     };
   };
   const renderMultiNodeDragOverlay = () => {
@@ -5406,6 +5564,21 @@ export function App() {
       return null;
     }
     const overlay = dragging.overlayPreview ?? { bounds: null, edgeRoutes: [] };
+    if (overlay.simplifiedMarkup) {
+      return (
+        <g
+          ref={(element) => {
+            multiNodeDragOverlayRef.current = element;
+            if (element) {
+              updateMultiNodeDragOverlayTransform(draggingRef.current?.currentDelta ?? multiNodeDragOverlayDeltaRef.current);
+            }
+          }}
+          className="multi-node-drag-overlay"
+          transform={`translate(${Math.round(multiNodeDragOverlayDeltaRef.current.x)} ${Math.round(multiNodeDragOverlayDeltaRef.current.y)})`}
+          dangerouslySetInnerHTML={{ __html: overlay.simplifiedMarkup }}
+        />
+      );
+    }
     return (
       <g
         ref={(element) => {
@@ -5454,8 +5627,8 @@ export function App() {
                 </clipPath>
               )}
               <g className="node-geometry" transform={nodeGeometryTransform(node)}>
-                <DeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-                <DeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
               </g>
               {!nodeIsBus && (imageHref || foregroundImageHref) && (
                 <g className="node-upright-content" transform={nodeUprightScaleTransform(node)}>
@@ -5615,8 +5788,8 @@ export function App() {
                   </clipPath>
                 )}
                 <g className="node-geometry" transform={nodeGeometryTransform(node)}>
-                  <DeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-                  <DeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                  <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                  <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
                 </g>
                 {!nodeIsBus && (imageHref || foregroundImageHref) && (
                   <g className="node-upright-content" transform={nodeUprightScaleTransform(node)}>
@@ -6108,19 +6281,35 @@ export function App() {
   );
   const hiddenTopologyErrorCount = Math.max(0, inspectorTopologyErrors.length - visibleTopologyErrors.length);
   const draggingNodeIdSet = useMemo(() => new Set(dragging?.nodeIds ?? []), [dragging?.nodeIds]);
-  const deferredElementTreeNodes = useDeferredValue(visibleNodes);
-  const deferredElementTreeEdges = useDeferredValue(visibleEdges);
-  const deferredElementTreeRevision = useDeferredValue(graphStore.elementTreeRevision);
   const graphTreePanelActive = inspectorTab === "graph" && graphInfoView === "tree";
   const elementTreeLayerSignature = useMemo(
     () => layers.map((layer) => `${layer.id}:${layer.visible !== false ? "1" : "0"}`).join("|"),
     [layers]
   );
+  const elementTreeSource = useMemo(() => {
+    const current = elementTreeSourceRef.current;
+    if (
+      !current ||
+      (graphTreePanelActive &&
+        (current.revision !== graphStore.elementTreeRevision || current.layerSignature !== elementTreeLayerSignature))
+    ) {
+      const next = {
+        revision: graphStore.elementTreeRevision,
+        layerSignature: elementTreeLayerSignature,
+        nodes: visibleNodes,
+        edges: visibleEdges
+      };
+      elementTreeSourceRef.current = next;
+      return next;
+    }
+    return current;
+  }, [elementTreeLayerSignature, graphStore.elementTreeRevision, graphTreePanelActive, visibleEdges, visibleNodes]);
+  const deferredElementTreeSource = useDeferredValue(elementTreeSource);
   const elementTreeSignature = useMemo(
     () => graphTreePanelActive
-      ? elementTreeCacheSignature(deferredElementTreeRevision, elementTreeLayerSignature, libraryTemplates)
+      ? elementTreeCacheSignature(deferredElementTreeSource.revision, deferredElementTreeSource.layerSignature, libraryTemplates)
       : "",
-    [deferredElementTreeRevision, elementTreeLayerSignature, graphTreePanelActive, libraryTemplates]
+    [deferredElementTreeSource, graphTreePanelActive, libraryTemplates]
   );
   const elementTree = useMemo(() => {
     if (!graphTreePanelActive) {
@@ -6129,10 +6318,10 @@ export function App() {
     if (elementTreeCacheRef.current.signature === elementTreeSignature) {
       return elementTreeCacheRef.current.tree;
     }
-    const tree = buildElementTree(deferredElementTreeNodes, deferredElementTreeEdges, libraryTemplates, { includeContainerChildren: false });
+    const tree = buildElementTree(deferredElementTreeSource.nodes, deferredElementTreeSource.edges, libraryTemplates, { includeContainerChildren: false });
     elementTreeCacheRef.current = { signature: elementTreeSignature, tree };
     return tree;
-  }, [deferredElementTreeEdges, deferredElementTreeNodes, elementTreeSignature, graphTreePanelActive, libraryTemplates]);
+  }, [deferredElementTreeSource, elementTreeSignature, graphTreePanelActive, libraryTemplates]);
   const elementTreeItemChildren = (item: ElementTreeItem): ElementTreeChildItem[] => {
     if (item.kind !== "node") {
       return [];
@@ -6204,13 +6393,24 @@ export function App() {
     edgeDeleteIds: string[]
   ) => {
     const ids = new Set<string>();
-    for (const nodeId of movedNodeIds) {
-      if (busNodeIdSet.has(nodeId)) {
-        ids.add(nodeId);
+    // Moving a bus or a device only changes endpoint coordinates. Bus terminal
+    // counts/ids need resync only when an edge is added, deleted, or reattached.
+    void movedNodeIds;
+    const previousEdgeById = new Map(previousCandidateEdges.map((edge) => [edge.id, edge]));
+    const edgeAttachmentChanged = (previousEdge: Edge | undefined, nextEdge: Edge) =>
+      !previousEdge ||
+      previousEdge.sourceId !== nextEdge.sourceId ||
+      previousEdge.targetId !== nextEdge.targetId ||
+      previousEdge.sourceTerminalId !== nextEdge.sourceTerminalId ||
+      previousEdge.targetTerminalId !== nextEdge.targetTerminalId;
+    for (const nextEdge of edgeUpserts) {
+      const previousEdge = previousEdgeById.get(nextEdge.id);
+      if (!edgeAttachmentChanged(previousEdge, nextEdge)) {
+        continue;
       }
-    }
-    for (const busId of busNodeIdsFromEdges(edgeUpserts)) {
-      ids.add(busId);
+      for (const busId of busNodeIdsFromEdges([previousEdge, nextEdge])) {
+        ids.add(busId);
+      }
     }
     if (edgeDeleteIds.length > 0) {
       const deleted = new Set(edgeDeleteIds);
@@ -6821,12 +7021,8 @@ export function App() {
     cachedRouteInputRef.current = nextRouteInput;
     return nextRouteInput;
   }, [graphStore.routeGeometryRevision, routeInputLayerSignature, visibleEdges, visibleNodes]);
-  const deferredRoutingNodes = useDeferredValue(routeInput.nodes);
-  const deferredRoutingEdges = useDeferredValue(routeInput.edges);
-  const deferredRoutingIsCurrent = deferredRoutingNodes === routeInput.nodes && deferredRoutingEdges === routeInput.edges;
-  const requiresLiveRouting = Boolean(!deferredRoutingIsCurrent);
-  const routingNodes = requiresLiveRouting ? routeInput.nodes : deferredRoutingNodes;
-  const routingEdges = requiresLiveRouting ? routeInput.edges : deferredRoutingEdges;
+  const routingNodes = routeInput.nodes;
+  const routingEdges = routeInput.edges;
   const affectedRoutingEdgeIds = useMemo(() => {
     const ids = new Set<string>();
     return ids;
@@ -7191,6 +7387,11 @@ export function App() {
       }
     }
     return true;
+  };
+  const markGraphDirtyForInteractiveCommit = () => {
+    suppressNextGraphDirtyRef.current = true;
+    setHasUnsavedChanges(true);
+    setRouteRenderingReady(true);
   };
   const rebuildEdgeUpdatesAfterNodeGeometryChange = (
     nextNodes: ModelNode[],
@@ -8087,6 +8288,9 @@ export function App() {
   });
 
   useEffect(() => {
+    if (imperativeMultiNodeDragActiveRef.current && !dragging) {
+      return;
+    }
     draggingRef.current = dragging;
     if (!dragging) {
       resetMultiNodeDragOverlayTransform();
@@ -8353,7 +8557,7 @@ export function App() {
       setTopology(snapshot.topology);
       setTopologyStatus(snapshot.topologyStatus);
       setCanvasSelectionScope("group");
-      setSelectedNodeIds(snapshot.nodes[0] ? [snapshot.nodes[0].id] : []);
+      setSelectedNodeIds([]);
       setSelectedEdgeId("");
       setSelectedEdgeIds([]);
       setConnectSource(null);
@@ -8362,7 +8566,7 @@ export function App() {
       setContextMenu(null);
       setProjectMenu(null);
       setHasUnsavedChanges(true);
-      setOperationLog("撤销上一步操作");
+      setOperationLogText("撤销上一步操作");
       return current.slice(0, -1);
     });
   };
@@ -8680,12 +8884,15 @@ export function App() {
       skipNextTopologyStaleRef.current = false;
       return;
     }
+    if (topologyStatus.state === "idle") {
+      return;
+    }
     return scheduleIdleWork(() => {
       setTopologyStatus((current) =>
         current.state === "idle" ? current : { state: "idle", message: "拓扑结果已过期" }
       );
     }, 200, 500);
-  }, [graphStore.topologyRevision]);
+  }, [graphStore.topologyRevision, topologyStatus.state]);
 
   useEffect(() => {
     try {
@@ -8819,7 +9026,7 @@ export function App() {
 
   const writeOperationLog = (message: string) => {
     const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-    setOperationLog(`${time} ${message}`);
+    setOperationLogText(`${time} ${message}`);
   };
 
   const persistDeviceLibraryChange = (
@@ -10105,7 +10312,10 @@ export function App() {
       selectedEdgeIds,
       originalPositions
     );
-    if (optimizationEdges.length === 0) {
+    if (
+      optimizationEdges.length === 0 ||
+      !shouldRunDeferredMoveOptimization(optimizationEdges, movedNodeIds, selectedEdgeIds)
+    ) {
       deferredMoveOptimizationCancelRef.current = null;
       return;
     }
@@ -10179,7 +10389,6 @@ export function App() {
       }
       markRouteEdgesDirty(dirtyOptimizedEdgeIds);
       markStoredRouteEdgesDirty(dirtyOptimizedEdgeIds);
-      markBusTerminalSyncDirtyForEdges(optimizedEdgeUpdates);
       setGraphStore((current) => graphStorePatchEdges(current, optimizedEdgeUpdates));
     }, 180, 1500);
   };
@@ -10192,6 +10401,13 @@ export function App() {
   ) => {
     deferredMoveOptimizationCancelRef.current?.();
     if (movedNodeIds.length <= 1 || candidateEdges.length === 0) {
+      deferredMoveOptimizationCancelRef.current = null;
+      return;
+    }
+    if (
+      movedNodeIds.length > MAX_DEFERRED_MOVE_REPAIR_MOVED_NODES ||
+      candidateEdges.length > MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES
+    ) {
       deferredMoveOptimizationCancelRef.current = null;
       return;
     }
@@ -10258,7 +10474,6 @@ export function App() {
       }
       markRouteEdgesDirty(repairEdgeIds);
       markStoredRouteEdgesDirty(repairEdgeIds);
-      markBusTerminalSyncDirtyForEdges(edgeUpdates);
       setGraphStore((current) => graphStorePatchEdges(current, edgeUpdates));
     }, 60, 1500);
   };
@@ -10296,7 +10511,7 @@ export function App() {
       const candidateEdgeIds = committedCandidateEdges.map((edge) => edge.id);
       markRouteEdgesDirty(candidateEdgeIds);
       markStoredRouteEdgesDirty(candidateEdgeIds);
-      markBusTerminalSyncDirtyForEdges(shiftedNextEdges);
+      markGraphDirtyForInteractiveCommit();
       setGraphStore((current) => graphStoreSetGraph(current, shiftedNextNodes, shiftedNextEdges));
       return;
     }
@@ -10319,6 +10534,7 @@ export function App() {
           edgePatch.edgeDeleteIds
         )
       );
+      markGraphDirtyForInteractiveCommit();
       setGraphStore((current) =>
         graphStoreApplyPatch(current, {
           nodeUpdates: expectedPatch.nodeUpdates,
@@ -10401,6 +10617,7 @@ export function App() {
         edgePatch.edgeDeleteIds
       )
     );
+    markGraphDirtyForInteractiveCommit();
     setGraphStore((current) =>
       graphStoreApplyPatch(current, {
         nodeUpdates: expectedPatch.nodeUpdates,
@@ -10454,13 +10671,41 @@ export function App() {
   const updateMultiNodeDragOverlayTransform = (delta: Point | null) => {
     const nextDelta = delta ?? { x: 0, y: 0 };
     multiNodeDragOverlayDeltaRef.current = nextDelta;
-    if (!multiNodeDragOverlayRef.current) {
-      return;
+    const transform = `translate(${Math.round(nextDelta.x)} ${Math.round(nextDelta.y)})`;
+    multiNodeDragOverlayRef.current?.setAttribute("transform", transform);
+    imperativeMultiNodeDragOverlayRef.current?.setAttribute("transform", transform);
+  };
+  const showImperativeMultiNodeDragOverlay = (markup: string) => {
+    const overlay = imperativeMultiNodeDragOverlayRef.current;
+    if (!overlay) {
+      return false;
     }
-    multiNodeDragOverlayRef.current.setAttribute("transform", `translate(${Math.round(nextDelta.x)} ${Math.round(nextDelta.y)})`);
+    imperativeMultiNodeDragActiveRef.current = true;
+    overlay.innerHTML = markup;
+    overlay.style.display = "";
+    updateMultiNodeDragOverlayTransform(multiNodeDragOverlayDeltaRef.current);
+    return true;
+  };
+  const hideImperativeMultiNodeDragOverlay = () => {
+    imperativeMultiNodeDragActiveRef.current = false;
+    const overlay = imperativeMultiNodeDragOverlayRef.current;
+    if (overlay) {
+      overlay.innerHTML = "";
+      overlay.style.display = "none";
+    }
   };
   const resetMultiNodeDragOverlayTransform = () => {
     updateMultiNodeDragOverlayTransform({ x: 0, y: 0 });
+  };
+  const startDraggingState = (nextDragging: DraggingState) => {
+    draggingRef.current = nextDragging;
+    resetMultiNodeDragOverlayTransform();
+    const simplifiedMarkup = isMultiNodeMoveState(nextDragging) ? nextDragging.overlayPreview?.simplifiedMarkup : "";
+    if (simplifiedMarkup && showImperativeMultiNodeDragOverlay(simplifiedMarkup)) {
+      return;
+    }
+    hideImperativeMultiNodeDragOverlay();
+    setDragging(nextDragging);
   };
   const flushConnectPreviewDom = () => {
     const { path, targetPoint } = connectPreviewDomRef.current;
@@ -10909,6 +11154,7 @@ export function App() {
     clearKeyboardNudgeSchedule();
     clearKeyboardMoveCommitSchedule();
     resetMultiNodeDragOverlayTransform();
+    hideImperativeMultiNodeDragOverlay();
     draggingRef.current = null;
     setDragging(null);
     dragUndoCapturedRef.current = false;
@@ -11003,7 +11249,7 @@ export function App() {
 
   const finishNodeDrag = () => {
     flushPendingNodeDragMove(false);
-    const activeDragging = draggingRef.current ?? dragging;
+    const activeDragging = draggingRef.current;
     if (!activeDragging) {
       return;
     }
@@ -11011,6 +11257,7 @@ export function App() {
     if (!delta || (delta.x === 0 && delta.y === 0)) {
       clearNodeDragMoveSchedule();
       resetMultiNodeDragOverlayTransform();
+      hideImperativeMultiNodeDragOverlay();
       draggingRef.current = null;
       setDragging(null);
       return;
@@ -11038,6 +11285,7 @@ export function App() {
     if (finalDelta.x === 0 && finalDelta.y === 0) {
       clearNodeDragMoveSchedule();
       resetMultiNodeDragOverlayTransform();
+      hideImperativeMultiNodeDragOverlay();
       draggingRef.current = null;
       setDragging(null);
       return;
@@ -11083,6 +11331,7 @@ export function App() {
     );
     clearNodeDragMoveSchedule();
     resetMultiNodeDragOverlayTransform();
+    hideImperativeMultiNodeDragOverlay();
     draggingRef.current = null;
     setDragging(null);
     dragUndoCapturedRef.current = false;
@@ -11380,10 +11629,10 @@ export function App() {
     };
     clearNodeDragMoveSchedule();
     dragUndoCapturedRef.current = false;
-    draggingRef.current = nextDragging;
-    resetMultiNodeDragOverlayTransform();
     if (renderInitial || isMultiNodeMoveState(nextDragging)) {
-      setDragging(nextDragging);
+      startDraggingState(nextDragging);
+    } else {
+      draggingRef.current = nextDragging;
     }
     return nextDragging;
   };
@@ -12579,9 +12828,7 @@ export function App() {
         ? buildMultiNodeDragOverlayPreview(dragNodeIds, affectedEdgesForDrag, originalPositionsForDrag, originalRoutePointsForDrag, edgeIdsForDrag)
         : undefined
     };
-    draggingRef.current = nextDragging;
-    resetMultiNodeDragOverlayTransform();
-    setDragging(nextDragging);
+    startDraggingState(nextDragging);
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -13114,9 +13361,7 @@ export function App() {
         ? buildMultiNodeDragOverlayPreview(dragNodeIds, affectedEdgesForDrag, originalPositionsForDrag, originalRoutePointsForDrag, edgeIdsForDrag)
         : undefined
     };
-    draggingRef.current = nextDragging;
-    resetMultiNodeDragOverlayTransform();
-    setDragging(nextDragging);
+    startDraggingState(nextDragging);
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -13649,6 +13894,7 @@ export function App() {
     };
     clearNodeDragMoveSchedule();
     draggingRef.current = null;
+    hideImperativeMultiNodeDragOverlay();
     dragUndoCapturedRef.current = false;
     cachedRoutedEdgesRef.current = [];
     pendingRouteEdgeIdsRef.current = new Set();
@@ -13683,9 +13929,8 @@ export function App() {
     setActiveProjectId(project.id);
     setActiveSchemeId(schemeId);
     selectSingleProject(schemeId, project.id);
-    const firstVisibleNode = filterProjectByVisibleLayers(layeredProject.nodes, layeredProject.edges, layeredProject.layers).nodes[0];
-    setCanvasSelectionScope("group");
-    setSelectedNodeIds(firstVisibleNode ? [firstVisibleNode.id] : []);
+    setCanvasSelectionScope("direct");
+    setSelectedNodeIds([]);
     setSelectedEdgeId("");
     setSelectedEdgeIds([]);
     setConnectSource(null);
@@ -13695,6 +13940,7 @@ export function App() {
     setManualPathDrag(null);
     setTransformDrag(null);
     setDragging(null);
+    hideImperativeMultiNodeDragOverlay();
     setMarquee(null);
     setPanning(null);
     setHasUnsavedChanges(false);
@@ -16750,7 +16996,7 @@ export function App() {
         {template.clipboard.nodes.map((node) => (
           <g key={node.id} transform={`translate(${node.position.x} ${node.position.y})`}>
             <g transform={nodeGeometryTransform(node)}>
-              <DeviceGlyph node={node} miniature colorPalette={colorPalette} />
+              <MemoDeviceGlyph node={node} miniature colorPalette={colorPalette} />
             </g>
           </g>
         ))}
@@ -16880,7 +17126,7 @@ export function App() {
                                 >
                                   <svg viewBox={previewViewBox} aria-hidden="true">
                                     <g transform={nodeGeometryTransform(preview)}>
-                                      <DeviceGlyph node={preview} miniature colorPalette={colorPalette} />
+                                      <MemoDeviceGlyph node={preview} miniature colorPalette={colorPalette} />
                                     </g>
                                   </svg>
                                 </button>
@@ -17067,6 +17313,215 @@ export function App() {
     ? topologyErrors.slice(0, 5).map((error, index) => `${index + 1}. ${topologyWarningDisplayMessage(error.message)}`).join("\n")
     : "当前没有拓扑告警。";
   const currentZoomPercent = viewBoxZoomPercent(viewBox, canvasBounds);
+  const useSimplifiedCanvasNodes =
+    viewportNodes.length > CANVAS_LOD_NODE_DETAIL_LIMIT &&
+    currentZoomPercent <= CANVAS_LOD_MAX_ZOOM_PERCENT &&
+    !connectSource &&
+    !staticDrawing;
+  const useSimplifiedSelectedCanvasNodes =
+    useSimplifiedCanvasNodes &&
+    selectedNodeIdSet.size > CANVAS_LOD_SELECTED_DETAIL_LIMIT &&
+    !transformDrag &&
+    !nodeLabelDrag &&
+    !nodeLabelRotateDrag;
+  const detailedViewportNodes = useMemo(() => {
+    if (!useSimplifiedCanvasNodes || transformDrag || nodeLabelDrag || nodeLabelRotateDrag) {
+      return viewportNodes;
+    }
+    return viewportNodes.filter((node) => {
+      if (groupTransformPreviewNodeIdSet.has(node.id)) {
+        return false;
+      }
+      if (!selectedNodeIdSet.has(node.id)) {
+        return false;
+      }
+      return !useSimplifiedSelectedCanvasNodes || node.id === selectedNodeId;
+    });
+  }, [
+    groupTransformPreviewNodeIdSet,
+    nodeLabelDrag,
+    nodeLabelRotateDrag,
+    selectedNodeId,
+    selectedNodeIdSet,
+    transformDrag,
+    useSimplifiedCanvasNodes,
+    useSimplifiedSelectedCanvasNodes,
+    viewportNodes
+  ]);
+  const useSimplifiedCanvasRoutes =
+    useSimplifiedCanvasNodes &&
+    !rewiring &&
+    !manualPathDrag &&
+    !terminalPress;
+  const useSimplifiedSelectedCanvasEdges =
+    useSimplifiedCanvasRoutes &&
+    activeSelectedEdgeSet.size > CANVAS_LOD_SELECTED_DETAIL_LIMIT &&
+    !rewiring &&
+    !manualPathDrag &&
+    !terminalPress;
+  const detailedSelectedEdgeIdSet = useMemo(() => {
+    if (!useSimplifiedSelectedCanvasEdges) {
+      return activeSelectedEdgeSet;
+    }
+    return selectedEdgeId && activeSelectedEdgeSet.has(selectedEdgeId)
+      ? new Set([selectedEdgeId])
+      : new Set<string>();
+  }, [activeSelectedEdgeSet, selectedEdgeId, useSimplifiedSelectedCanvasEdges]);
+  const lodCanvasRouteChunks = useMemo(() => {
+    if (!useSimplifiedCanvasRoutes) {
+      lodCanvasRouteChunkCacheRef.current.chunks = [];
+      return [];
+    }
+    const items = viewportRoutedEdges.flatMap((route) => {
+      const edge = edgeById.get(route.edgeId);
+      if (!edge) {
+        return [];
+      }
+      const selected = activeSelectedEdgeSet.has(edge.id);
+      const detailedSelected = selected && detailedSelectedEdgeIdSet.has(edge.id);
+      const hidden =
+        detailedSelected ||
+        (draggingDelta && dragPreviewEdgeIdSet.has(edge.id)) ||
+        (multiNodeDragging && dragOverlayEdgeIdSet.has(edge.id)) ||
+        groupTransformPreviewEdgeIdSet.has(edge.id) ||
+        terminalPressPreviewEdgeIdSet.has(edge.id);
+      const color = getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette);
+      return [{ route, edge, hidden, selected, color }];
+    });
+    return stableSvgMarkupChunks(items, lodCanvasRouteChunkCacheRef.current, {
+      chunkSize: CANVAS_LOD_MARKUP_CHUNK_SIZE,
+      keyPrefix: "lod-route",
+      itemKey: (item) => item.edge.id,
+      itemTokens: (item) => item.hidden ? [false] : [true, item.route, item.edge, item.selected, item.color],
+      itemMarkup: (item) =>
+        item.hidden
+          ? ""
+          : `<path class="connection-line lod-edge${item.selected ? " lod-selected-edge" : ""}" d="${escapeXml(item.route.path)}" style="--connection-color:${escapeXml(item.color)}"/>`
+    });
+  }, [
+    activeSelectedEdgeSet,
+    colorDisplayMode,
+    colorPalette,
+    detailedSelectedEdgeIdSet,
+    dragOverlayEdgeIdSet,
+    dragPreviewEdgeIdSet,
+    draggingDelta,
+    edgeById,
+    groupTransformPreviewEdgeIdSet,
+    multiNodeDragging,
+    nodeById,
+    terminalPressPreviewEdgeIdSet,
+    useSimplifiedCanvasRoutes,
+    viewportRoutedEdges
+  ]);
+  const lodCanvasNodeChunks = useMemo(() => {
+    if (!useSimplifiedCanvasNodes || transformDrag || nodeLabelDrag || nodeLabelRotateDrag) {
+      lodCanvasNodeChunkCacheRef.current.chunks = [];
+      return [];
+    }
+    const items = viewportNodes.filter((node) => !groupTransformPreviewNodeIdSet.has(node.id));
+    return stableSvgMarkupChunks(items, lodCanvasNodeChunkCacheRef.current, {
+      chunkSize: CANVAS_LOD_MARKUP_CHUNK_SIZE,
+      keyPrefix: "lod-node",
+      itemKey: (node) => node.id,
+      itemTokens: (node) => [node, colorDisplayMode, colorPalette],
+      itemMarkup: (node) => {
+      const nodeIsBus = isBusNode(node);
+      const className = `diagram-node lod-node${nodeIsBus ? " bus-node" : ""}`;
+      const transform = `translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)}) ${nodeGeometryTransform(node)}`;
+      const fill = node.params.backgroundColor || "#ffffff";
+      const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
+      const strokeWidth = Math.max(2, getDeviceStrokeWidth(node));
+      return `<rect class="${className}" data-node-id="${escapeXml(node.id)}" transform="${escapeXml(transform)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${nodeIsBus ? 0 : 6}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"><title>${escapeXml(node.name)}</title></rect>`;
+      }
+    });
+  }, [
+    colorDisplayMode,
+    colorPalette,
+    groupTransformPreviewNodeIdSet,
+    nodeLabelDrag,
+    nodeLabelRotateDrag,
+    transformDrag,
+    useSimplifiedCanvasNodes,
+    viewportNodes
+  ]);
+  const lodSelectedNodeMarkup = useMemo(() => {
+    if (!useSimplifiedSelectedCanvasNodes) {
+      return "";
+    }
+    return displaySelectedNodeIds.flatMap((nodeId) => {
+      if (nodeId === selectedNodeId || groupTransformPreviewNodeIdSet.has(nodeId)) {
+        return [];
+      }
+      const node = visibleNodeById.get(nodeId);
+      if (!node) {
+        return [];
+      }
+      const transform = `translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)}) ${nodeGeometryTransform(node)}`;
+      return [
+        `<rect class="lod-node-selection${isBusNode(node) ? " bus-node" : ""}" transform="${escapeXml(transform)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${isBusNode(node) ? 0 : 6}"/>`
+      ];
+    }).join("");
+  }, [
+    displaySelectedNodeIds,
+    groupTransformPreviewNodeIdSet,
+    selectedNodeId,
+    useSimplifiedSelectedCanvasNodes,
+    visibleNodeById
+  ]);
+  const lodNodeFromEvent = (event: PointerEvent<SVGGElement> | MouseEvent<SVGGElement>) => {
+    const target = event.target instanceof Element
+      ? event.target.closest(".lod-node[data-node-id]")
+      : null;
+    const nodeId = target?.getAttribute("data-node-id") ?? "";
+    return nodeId ? nodeById.get(nodeId) : undefined;
+  };
+  const handleLodNodePointerDown = (event: PointerEvent<SVGGElement>) => {
+    const node = lodNodeFromEvent(event);
+    if (node) {
+      handleNodePointerDown(event, node);
+    }
+  };
+  const handleLodNodeContextMenu = (event: MouseEvent<SVGGElement>) => {
+    const node = lodNodeFromEvent(event);
+    if (!node) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (!activeLayerNodeIdSet.has(node.id)) {
+      return;
+    }
+    canvasInteractionRef.current = true;
+    projectListPointerInsideRef.current = false;
+    if (svgRef.current) {
+      const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      lastCanvasPointerRef.current = pointer;
+      updateMouseStatus(pointer);
+    }
+    if (connectSource) {
+      setConnectSource(null);
+      resetConnectPreviewState();
+      setMode("select");
+      return;
+    }
+    if (!selectedNodeIdSet.has(node.id)) {
+      selectCanvasGraphics([node.id], []);
+    }
+    setContextMenu({ x: event.clientX, y: event.clientY, target: "node", nodeId: node.id });
+  };
+  const handleLodNodeDoubleClick = (event: MouseEvent<SVGGElement>) => {
+    const node = lodNodeFromEvent(event);
+    if (!node) {
+      return;
+    }
+    event.stopPropagation();
+    if (!activeLayerNodeIdSet.has(node.id) || isBusNode(node)) {
+      return;
+    }
+    selectCanvasGraphics([node.id], []);
+    setImageTarget({ kind: "node", nodeId: node.id });
+  };
   const connectPreviewDom = connectPreviewDomRef.current;
   const layerAssignmentUnchanged = activeSelectedNodeIds.length > 0 && activeSelectedNodeIds.every(
     (nodeId) => (nodeById.get(nodeId)?.layerId ?? DEFAULT_MODEL_LAYER_ID) === layerAssignmentTargetId
@@ -17299,6 +17754,28 @@ export function App() {
     "--statusbar-height": `${statusbarHeight}px`,
     "--validation-panel-height": `${validationPanelHeight}px`
   } as CSSProperties;
+  const libraryPanelContent = useMemo(
+    () => renderLibraryPanel(),
+    [
+      colorPalette,
+      displayedAttributeLibraries,
+      expandedAttributeLibraries,
+      expandedAttributeLibraryComponentTypes,
+      filteredAttributeLibraryByComponentType,
+      libraryPreviewByKind,
+      librarySearchNeedle,
+      librarySearchQuery
+    ]
+  );
+  const templateLibraryPanelContent = useMemo(
+    () => renderTemplateLibraryPanel(),
+    [colorPalette, expandedGraphTemplateTypes, graphTemplateTypes, groupedGraphTemplates]
+  );
+  const leftPanelContent = leftPanelTab === "projects"
+    ? renderProjectPanel()
+    : leftPanelTab === "templates"
+      ? templateLibraryPanelContent
+      : libraryPanelContent;
 
   return (
     <div
@@ -17333,7 +17810,7 @@ export function App() {
           </button>
         </div>
         <div className="left-panel-content">
-          {leftPanelTab === "projects" ? renderProjectPanel() : leftPanelTab === "templates" ? renderTemplateLibraryPanel() : renderLibraryPanel()}
+          {leftPanelContent}
         </div>
       </aside>
 
@@ -17728,6 +18205,13 @@ export function App() {
             {dragGhostEdgeRoutes.map((route) => (
               <path key={`drag-ghost-edge-${route.edgeId}`} d={route.path} className="connection-line drag-ghost" style={connectionLineStyle(route.edgeId)} />
             ))}
+            {lodCanvasRouteChunks.length > 0 && (
+              <g className="lod-route-layer">
+                {lodCanvasRouteChunks.map((chunk) => (
+                  <SvgMarkupChunk key={chunk.key} className="lod-route-layer-chunk" markup={chunk.markup} />
+                ))}
+              </g>
+            )}
             {dragging?.historyCaptured && !multiNodeDragging && dragging.nodeIds.map((nodeId) => {
               const node = nodeById.get(nodeId);
               const originalPosition = dragging.originalPositions[nodeId];
@@ -17751,8 +18235,8 @@ export function App() {
                       rx="8"
                       className="node-drag-ghost-box"
                     />
-                    <DeviceGlyph node={ghostNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-                    <DeviceGlyph node={ghostNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                    <MemoDeviceGlyph node={ghostNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                    <MemoDeviceGlyph node={ghostNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
                   </g>
                 </g>
               );
@@ -17760,6 +18244,7 @@ export function App() {
             {viewportRoutedEdges.map((route) => {
               const edge = edgeById.get(route.edgeId);
               if (!edge) return null;
+              const selected = activeSelectedEdgeSet.has(edge.id);
               if (
                 (draggingDelta && dragPreviewEdgeIdSet.has(edge.id)) ||
                 (multiNodeDragging && dragOverlayEdgeIdSet.has(edge.id)) ||
@@ -17769,7 +18254,12 @@ export function App() {
               ) {
                 return null;
               }
-              const selected = activeSelectedEdgeSet.has(edge.id);
+              if (useSimplifiedCanvasRoutes && !selected) {
+                return null;
+              }
+              if (useSimplifiedCanvasRoutes && selected && !detailedSelectedEdgeIdSet.has(edge.id)) {
+                return null;
+              }
               const sourcePoint = getEdgeEndpointPoint(edge, "source");
               const targetPoint = getEdgeEndpointPoint(edge, "target");
               const sourceNode = nodeById.get(edge.sourceId);
@@ -17982,13 +18472,29 @@ export function App() {
                 </g>
               );
             })}
-            {viewportNodes.map((node) => {
+            {lodCanvasNodeChunks.length > 0 && (
+              <g
+                className="lod-node-layer"
+                onPointerDown={handleLodNodePointerDown}
+                onContextMenu={handleLodNodeContextMenu}
+                onDoubleClick={handleLodNodeDoubleClick}
+              >
+                {lodCanvasNodeChunks.map((chunk) => (
+                  <SvgMarkupChunk key={chunk.key} className="lod-node-layer-chunk" markup={chunk.markup} />
+                ))}
+              </g>
+            )}
+            {lodSelectedNodeMarkup && (
+              <g className="lod-node-selection-layer" dangerouslySetInnerHTML={{ __html: lodSelectedNodeMarkup }} />
+            )}
+            {detailedViewportNodes.map((node) => {
               if (groupTransformPreviewNodeIdSet.has(node.id)) {
                 return null;
               }
               const selected = selectedNodeIdSet.has(node.id);
               const focused = node.id === selectedNodeId;
               const editable = activeLayerNodeIdSet.has(node.id);
+              const nodeIsBus = isBusNode(node);
               const isStorageBus =
                 node.kind === "hydrogen-tank" ||
                 node.kind === "hydrogen-tank-horizontal" ||
@@ -18002,11 +18508,20 @@ export function App() {
                     y: originalDragPosition.y + draggingDelta.y
                   })
                 : node.position;
+              const renderSimplifiedNode =
+                useSimplifiedCanvasNodes &&
+                (!selected || (useSimplifiedSelectedCanvasNodes && !focused)) &&
+                !isConnectSource &&
+                !transformDrag &&
+                !nodeLabelDrag &&
+                !nodeLabelRotateDrag;
+              if (renderSimplifiedNode) {
+                return null;
+              }
               const imageHref = nodeImage(node);
               const foregroundImageHref = nodeForegroundImage(node);
               const nodeScaleX = getNodeScaleX(node);
               const nodeScaleY = getNodeScaleY(node);
-              const nodeIsBus = isBusNode(node);
               const inverseScaleX = nodeScaleX === 0 ? 1 : 1 / nodeScaleX;
               const inverseScaleY = nodeScaleY === 0 ? 1 : 1 / nodeScaleY;
               const terminalStubDashArray = svgStrokeDashArray(node.params.strokeStyle);
@@ -18084,8 +18599,8 @@ export function App() {
                       rx="8"
                       className={`node-hitbox ${nodeIsBus ? "bus-hitbox" : ""} ${isStaticNode(node) ? "static-hitbox" : ""}`}
                     />
-                    <DeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-                    <DeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                    <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                    <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
                   </g>
                   {!nodeIsBus && (imageHref || foregroundImageHref) && (
                     <g className="node-upright-content" transform={nodeUprightScaleTransform(node)}>
@@ -18271,6 +18786,12 @@ export function App() {
             })}
             {renderGroupTransformPhotoPreview()}
             </g>
+            <g
+              ref={imperativeMultiNodeDragOverlayRef}
+              className="multi-node-drag-overlay imperative-multi-node-drag-overlay"
+              style={{ display: "none" }}
+              aria-hidden="true"
+            />
             {renderMultiNodeDragOverlay()}
             {dragPreviewEdgeRoutes.map((route) => (
               <path key={`drag-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
@@ -18669,8 +19190,8 @@ export function App() {
           <span className={`status-pill warning-${topologyErrors.length > 0 ? "active" : "idle"}`} title={warningStatusTitle}>
             {warningStatusText}
           </span>
-          <span className="status-pill status-log" title={operationLog}>
-            日志 {operationLog}
+          <span ref={operationLogStatusRef} className="status-pill status-log" title={operationLogRef.current}>
+            日志 {operationLogRef.current}
           </span>
           <span className="status-pill">
             <Grid2X2 size={15} />

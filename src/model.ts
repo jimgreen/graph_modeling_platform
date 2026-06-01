@@ -5091,6 +5091,8 @@ function terminalPointOnBus(bus: ModelNode, point: Point, tolerance = 0): Point 
   return projectPointToBusCenterline(bus, point);
 }
 
+const TERMINAL_BUS_CONTACT_BUCKET_SIZE = 256;
+
 export function getTerminalBusContactGroups(
   nodes: ModelNode[],
   tolerance = 0,
@@ -5100,23 +5102,68 @@ export function getTerminalBusContactGroups(
   if (buses.length === 0) {
     return [];
   }
+  type BusContactEntry = {
+    bus: ModelNode;
+    type: TerminalType;
+    box: ReturnType<typeof boxFor>;
+  };
   const busEntries = buses.map((bus) => ({
     bus,
     type: getBusTerminalType(bus),
     box: boxFor(bus, tolerance)
-  }));
-  const busEntriesByType = new Map<TerminalType, typeof busEntries>();
-  const affectedBusEntriesByType = new Map<TerminalType, typeof busEntries>();
-  for (const entry of busEntries) {
-    if (!entry.type) {
-      continue;
+  })).filter((entry): entry is BusContactEntry => Boolean(entry.type));
+  const busEntriesByType = new Map<TerminalType, BusContactEntry[]>();
+  const affectedBusEntriesByType = new Map<TerminalType, BusContactEntry[]>();
+  const busEntryBucketsByType = new Map<TerminalType, Map<string, BusContactEntry[]>>();
+  const affectedBusEntryBucketsByType = new Map<TerminalType, Map<string, BusContactEntry[]>>();
+  const bucketKey = (x: number, y: number) => `${x}:${y}`;
+  const bucketRange = (box: BusContactEntry["box"]) => ({
+    left: Math.floor(box.left / TERMINAL_BUS_CONTACT_BUCKET_SIZE),
+    right: Math.floor(box.right / TERMINAL_BUS_CONTACT_BUCKET_SIZE),
+    top: Math.floor(box.top / TERMINAL_BUS_CONTACT_BUCKET_SIZE),
+    bottom: Math.floor(box.bottom / TERMINAL_BUS_CONTACT_BUCKET_SIZE)
+  });
+  const pushEntry = (map: Map<TerminalType, BusContactEntry[]>, entry: BusContactEntry) => {
+    const bucket = map.get(entry.type);
+    if (bucket) {
+      bucket.push(entry);
+    } else {
+      map.set(entry.type, [entry]);
     }
-    busEntriesByType.set(entry.type, [...(busEntriesByType.get(entry.type) ?? []), entry]);
+  };
+  const addEntryToBuckets = (map: Map<TerminalType, Map<string, BusContactEntry[]>>, entry: BusContactEntry) => {
+    let buckets = map.get(entry.type);
+    if (!buckets) {
+      buckets = new Map<string, BusContactEntry[]>();
+      map.set(entry.type, buckets);
+    }
+    const range = bucketRange(entry.box);
+    for (let x = range.left; x <= range.right; x += 1) {
+      for (let y = range.top; y <= range.bottom; y += 1) {
+        const key = bucketKey(x, y);
+        const bucket = buckets.get(key);
+        if (bucket) {
+          bucket.push(entry);
+        } else {
+          buckets.set(key, [entry]);
+        }
+      }
+    }
+  };
+  for (const entry of busEntries) {
+    pushEntry(busEntriesByType, entry);
+    addEntryToBuckets(busEntryBucketsByType, entry);
     if (affectedNodeIds?.has(entry.bus.id)) {
-      affectedBusEntriesByType.set(entry.type, [...(affectedBusEntriesByType.get(entry.type) ?? []), entry]);
+      pushEntry(affectedBusEntriesByType, entry);
+      addEntryToBuckets(affectedBusEntryBucketsByType, entry);
     }
   }
   const hasAffectedBusEntries = affectedBusEntriesByType.size > 0;
+  const queryBusEntries = (map: Map<TerminalType, Map<string, BusContactEntry[]>>, type: TerminalType, point: Point) =>
+    map.get(type)?.get(bucketKey(
+      Math.floor(point.x / TERMINAL_BUS_CONTACT_BUCKET_SIZE),
+      Math.floor(point.y / TERMINAL_BUS_CONTACT_BUCKET_SIZE)
+    )) ?? [];
   const groups = new Map<string, TerminalBusContactGroup>();
   for (const node of nodes) {
     if (isBusNode(node) || isStaticNode(node)) {
@@ -5128,10 +5175,10 @@ export function getTerminalBusContactGroups(
     for (const terminal of node.terminals) {
       const point = getTerminalPoint(node, terminal.id);
       const candidateBuses = !affectedNodeIds
-        ? busEntriesByType.get(terminal.type) ?? []
+        ? queryBusEntries(busEntryBucketsByType, terminal.type, point)
         : affectedNodeIds.has(node.id)
-          ? busEntriesByType.get(terminal.type) ?? []
-          : affectedBusEntriesByType.get(terminal.type) ?? [];
+          ? queryBusEntries(busEntryBucketsByType, terminal.type, point)
+          : queryBusEntries(affectedBusEntryBucketsByType, terminal.type, point);
       if (candidateBuses.length === 0) {
         continue;
       }
@@ -7655,11 +7702,19 @@ function mergeRouteBlockerBoxes(boxes: RouteBlockerBox[]): RouteBlockerBox {
   }));
 }
 
+const routeEndpointBodyOnlyBlockerCache = new WeakMap<ModelNode, ModelNode>();
+
 function routeEndpointBodyOnlyBlocker(node: ModelNode): ModelNode {
   if (!routeNodeLabelBlocksRouting(node)) {
     return node;
   }
-  return { ...node, params: { ...node.params, _labelVisible: "0", _labelDisplayMode: "hidden" } };
+  const cached = routeEndpointBodyOnlyBlockerCache.get(node);
+  if (cached) {
+    return cached;
+  }
+  const blocker = { ...node, params: { ...node.params, _labelVisible: "0", _labelDisplayMode: "hidden" } };
+  routeEndpointBodyOnlyBlockerCache.set(node, blocker);
+  return blocker;
 }
 
 function routeBlockerPadding(node: ModelNode, padding: number) {
@@ -7670,7 +7725,9 @@ function routeBodyBlockerBox(node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
   return boxFor(node, routeBlockerPadding(node, padding));
 }
 
-function routeBlockerBox(node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
+const routeBlockerBoxCache = new WeakMap<ModelNode, Map<number, RouteBlockerBox>>();
+
+function computeRouteBlockerBox(node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
   const effectivePadding = routeBlockerPadding(node, padding);
   const bodyBox = routeBodyBlockerBox(node, padding);
   const labelBox = nodeLabelRouteBlockerBox(node, effectivePadding);
@@ -7679,6 +7736,21 @@ function routeBlockerBox(node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
   }
   const bridgeBox = nodeLabelBridgeBlockerBox(node, bodyBox, labelBox, effectivePadding);
   return mergeRouteBlockerBoxes(bridgeBox ? [bodyBox, labelBox, bridgeBox] : [bodyBox, labelBox]);
+}
+
+function routeBlockerBox(node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
+  let boxesByPadding = routeBlockerBoxCache.get(node);
+  if (!boxesByPadding) {
+    boxesByPadding = new Map<number, RouteBlockerBox>();
+    routeBlockerBoxCache.set(node, boxesByPadding);
+  }
+  const cached = boxesByPadding.get(padding);
+  if (cached) {
+    return cached;
+  }
+  const box = computeRouteBlockerBox(node, padding);
+  boxesByPadding.set(padding, box);
+  return box;
 }
 
 export function calculateModelContentSize(

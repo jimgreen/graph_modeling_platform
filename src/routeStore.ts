@@ -94,44 +94,68 @@ export function buildRouteSpatialIndex(
   return { bucketSize, buckets, routeBucketKeysById };
 }
 
-function removeRouteFromSpatialIndex(index: RouteSpatialIndex, edgeId: string) {
-  const buckets = new Map(index.buckets);
-  for (const key of index.routeBucketKeysById.get(edgeId) ?? []) {
-    const bucket = buckets.get(key);
-    if (!bucket) {
-      continue;
-    }
-    const nextBucket = bucket.filter((route) => route.edgeId !== edgeId);
-    if (nextBucket.length > 0) {
-      buckets.set(key, nextBucket);
-    } else {
-      buckets.delete(key);
-    }
+function patchRouteSpatialIndex(
+  index: RouteSpatialIndex,
+  routeUpdates: readonly RoutedEdge[],
+  routeDeleteIds: ReadonlySet<string>
+) {
+  const updateIds = new Set(routeUpdates.map((route) => route.edgeId));
+  const removedIds = new Set([...routeDeleteIds, ...updateIds]);
+  if (removedIds.size === 0 && routeUpdates.length === 0) {
+    return index;
   }
-  const routeBucketKeysById = new Map(index.routeBucketKeysById);
-  routeBucketKeysById.delete(edgeId);
-  return { ...index, buckets, routeBucketKeysById };
-}
 
-function upsertRouteIntoSpatialIndex(index: RouteSpatialIndex, route: RoutedEdge) {
-  let nextIndex = removeRouteFromSpatialIndex(index, route.edgeId);
-  const bounds = routeRenderBounds(route, 8);
-  const routeBucketKeys: string[] = [];
-  if (bounds) {
-    const range = routeSpatialBucketRange(bounds, nextIndex.bucketSize);
-    const buckets = new Map(nextIndex.buckets);
-    for (let x = range.left; x <= range.right; x += 1) {
-      for (let y = range.top; y <= range.bottom; y += 1) {
-        const key = routeSpatialBucketKey(x, y);
-        routeBucketKeys.push(key);
-        buckets.set(key, [...(buckets.get(key) ?? []), route]);
+  const buckets = new Map(index.buckets);
+  const routeBucketKeysById = new Map(index.routeBucketKeysById);
+  const copiedBucketKeys = new Set<string>();
+  for (const edgeId of removedIds) {
+    for (const key of routeBucketKeysById.get(edgeId) ?? []) {
+      const bucket = buckets.get(key);
+      if (!bucket) {
+        continue;
+      }
+      const nextBucket = bucket.filter((route) => route.edgeId !== edgeId);
+      if (nextBucket.length > 0) {
+        buckets.set(key, nextBucket);
+        copiedBucketKeys.add(key);
+      } else {
+        buckets.delete(key);
+        copiedBucketKeys.delete(key);
       }
     }
-    nextIndex = { ...nextIndex, buckets };
+    routeBucketKeysById.delete(edgeId);
   }
-  const routeBucketKeysById = new Map(nextIndex.routeBucketKeysById);
-  routeBucketKeysById.set(route.edgeId, routeBucketKeys);
-  return { ...nextIndex, routeBucketKeysById };
+
+  for (const route of routeUpdates) {
+    const bounds = routeRenderBounds(route, 8);
+    const routeBucketKeys: string[] = [];
+    if (bounds) {
+      const range = routeSpatialBucketRange(bounds, index.bucketSize);
+      for (let x = range.left; x <= range.right; x += 1) {
+        for (let y = range.top; y <= range.bottom; y += 1) {
+          const key = routeSpatialBucketKey(x, y);
+          routeBucketKeys.push(key);
+          const bucket = buckets.get(key);
+          if (bucket) {
+            if (!copiedBucketKeys.has(key)) {
+              const copiedBucket = bucket.slice();
+              buckets.set(key, copiedBucket);
+              copiedBucketKeys.add(key);
+              copiedBucket.push(route);
+              continue;
+            }
+            bucket.push(route);
+          } else {
+            buckets.set(key, [route]);
+            copiedBucketKeys.add(key);
+          }
+        }
+      }
+    }
+    routeBucketKeysById.set(route.edgeId, routeBucketKeys);
+  }
+
+  return { ...index, buckets, routeBucketKeysById };
 }
 
 export function queryRouteSpatialIndex(index: RouteSpatialIndex, bounds: RouteRenderBounds): RoutedEdge[] {
@@ -198,7 +222,7 @@ export function routeStorePatchRoutes(
   routeDeleteIds: Iterable<string> = []
 ): RouteStore {
   const updates = Array.from(routeUpdates);
-  const deleteIds = new Set(routeDeleteIds);
+  const deleteIds = new Set([...routeDeleteIds].filter((edgeId) => store.routeMap.has(edgeId)));
   if (updates.length === 0 && deleteIds.size === 0) {
     return store;
   }
@@ -209,6 +233,7 @@ export function routeStorePatchRoutes(
   let routeOrder = store.routeOrder;
   let routeIndexById = store.routeIndexById;
   let routeSpatialIndex = store.routeSpatialIndex;
+  const spatialUpserts: RoutedEdge[] = [];
 
   const ensureCopied = () => {
     if (changed) {
@@ -224,7 +249,6 @@ export function routeStorePatchRoutes(
     routeList = routeList.filter((route) => !deleteIds.has(route.edgeId));
     for (const edgeId of deleteIds) {
       routeMap.delete(edgeId);
-      routeSpatialIndex = removeRouteFromSpatialIndex(routeSpatialIndex, edgeId);
     }
     routeOrder = routeList.map((route) => route.edgeId);
     routeIndexById = routeIndexMap(routeOrder);
@@ -246,7 +270,11 @@ export function routeStorePatchRoutes(
       routeList[index] = nextRoute;
       routeMap.set(nextRoute.edgeId, nextRoute);
     }
-    routeSpatialIndex = upsertRouteIntoSpatialIndex(routeSpatialIndex, nextRoute);
+    spatialUpserts.push(nextRoute);
+  }
+
+  if (changed && (spatialUpserts.length > 0 || deleteIds.size > 0)) {
+    routeSpatialIndex = patchRouteSpatialIndex(store.routeSpatialIndex, spatialUpserts, deleteIds);
   }
 
   return changed
