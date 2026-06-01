@@ -618,6 +618,12 @@ type ManualPathDrag =
       historyCaptured?: boolean;
     }
   | null;
+type CanvasSelectionSnapshot = {
+  scope: CanvasSelectionScope;
+  nodeIds: string[];
+  edgeIds: string[];
+  edgeId: string;
+};
 type DraggingState = {
   source?: "pointer" | "keyboard";
   nodeIds: string[];
@@ -630,6 +636,7 @@ type DraggingState = {
   currentDelta?: Point;
   historyCaptured?: boolean;
   overlayPreview?: MultiNodeDragOverlayPreview;
+  selection?: CanvasSelectionSnapshot;
 };
 type MultiNodeDragOverlayPreview = {
   bounds: RenderViewportBounds | null;
@@ -839,6 +846,7 @@ const MOVE_BOUNDARY_GUARD = 8;
 const CANVAS_AUTO_EXPAND_PADDING = 96;
 const CANVAS_FRAME_INSET = 16;
 const CANVAS_FIT_SCROLLBAR_GUARD = 4;
+const CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE = 2;
 const CANVAS_RESIZE_HANDLE_SIZE = 18;
 const MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES = 5;
 const ORIGINAL_POSITION_REROUTE_PADDING = 64;
@@ -1224,6 +1232,12 @@ const sameCanvasViewBox = (first: CanvasViewBox, second: CanvasViewBox) =>
   Math.round(first.y) === Math.round(second.y) &&
   Math.round(first.width) === Math.round(second.width) &&
   Math.round(first.height) === Math.round(second.height);
+function canvasFrameHasScrollableRange(frame: HTMLElement) {
+  return frame.scrollWidth - frame.clientWidth > 1 || frame.scrollHeight - frame.clientHeight > 1;
+}
+function renderedCanvasFullyFitsFrame(frameRect: RectLike, svgRect: RectLike) {
+  return svgRect.width <= frameRect.width + 1 && svgRect.height <= frameRect.height + 1;
+}
 function visibleCanvasViewBoxFromRects(frameRect: RectLike, svgRect: RectLike, viewBox: CanvasViewBox): CanvasViewBox {
   if (svgRect.width <= 0 || svgRect.height <= 0 || viewBox.width <= 0 || viewBox.height <= 0) {
     return viewBox;
@@ -5131,7 +5145,14 @@ export function App() {
   const viewBoxRef = useRef<CanvasViewBox>(viewBox);
   viewBoxRef.current = viewBox;
   const [canvasCenterRequest, setCanvasCenterRequest] = useState(0);
-  const [panning, setPanning] = useState<{ clientX: number; clientY: number; viewBox: typeof viewBox } | null>(null);
+  const [panning, setPanning] = useState<{
+    clientX: number;
+    clientY: number;
+    viewBox: typeof viewBox;
+    scrollLeft: number;
+    scrollTop: number;
+    scrollMode: boolean;
+  } | null>(null);
   const [marquee, setMarquee] = useState<Marquee>(null);
   const [canvasClipboard, setCanvasClipboard] = useState<CanvasClipboard>(EMPTY_CANVAS_CLIPBOARD);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
@@ -6571,6 +6592,13 @@ export function App() {
   const canvasScrollScale = canvasScrollScaleFromViewBox(viewBox, canvasBounds);
   const canvasDisplayWidth = Math.max(1, Math.round(canvasBounds.width * canvasScrollScale.x));
   const canvasDisplayHeight = Math.max(1, Math.round(canvasBounds.height * canvasScrollScale.y));
+  const canvasScrollbarsActive =
+    canvasFrameViewportSize.width > 0 &&
+    canvasFrameViewportSize.height > 0 &&
+    (
+      canvasDisplayWidth + CANVAS_FRAME_INSET * 2 > canvasFrameViewportSize.width + CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE ||
+      canvasDisplayHeight + CANVAS_FRAME_INSET * 2 > canvasFrameViewportSize.height + CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE
+    );
   const canvasScrollSurfaceWidth = Math.max(canvasDisplayWidth + CANVAS_FRAME_INSET * 2, canvasFrameViewportSize.width);
   const canvasScrollSurfaceHeight = Math.max(canvasDisplayHeight + CANVAS_FRAME_INSET * 2, canvasFrameViewportSize.height);
   const canvasDisplayOffsetX = Math.max(CANVAS_FRAME_INSET, Math.round((canvasScrollSurfaceWidth - canvasDisplayWidth) / 2));
@@ -6578,6 +6606,7 @@ export function App() {
   const canvasBoundsRef = useRef<CanvasBounds>(canvasBounds);
   const canvasFullViewBoxRef = useRef<CanvasViewBox>(canvasFullViewBox);
   const canvasScrollScaleRef = useRef(canvasScrollScale);
+  const canvasScrollbarsActiveRef = useRef(canvasScrollbarsActive);
   const canvasVisibleViewBoxRef = useRef<CanvasViewBox>(canvasVisibleViewBox);
   const skipNextCanvasScrollSyncRef = useRef(false);
   const canvasFrameUserScrollRef = useRef(false);
@@ -6585,6 +6614,7 @@ export function App() {
   canvasBoundsRef.current = canvasBounds;
   canvasFullViewBoxRef.current = canvasFullViewBox;
   canvasScrollScaleRef.current = canvasScrollScale;
+  canvasScrollbarsActiveRef.current = canvasScrollbarsActive;
   canvasVisibleViewBoxRef.current = canvasVisibleViewBox;
   const clampCanvasBounds = (bounds: CanvasBounds): CanvasBounds => ({
     width: clampCanvasDimension(bounds.width, MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH, canvasWidth),
@@ -6766,16 +6796,25 @@ export function App() {
     if (!frame) {
       return;
     }
+    if (!canvasScrollbarsActiveRef.current) {
+      if (Math.abs(frame.scrollLeft) > 1) {
+        frame.scrollLeft = 0;
+      }
+      if (Math.abs(frame.scrollTop) > 1) {
+        frame.scrollTop = 0;
+      }
+      return;
+    }
     const scale = canvasScrollScaleRef.current;
     const padding = canvasFramePaddingOffset(frame, svgRef.current);
     const maxLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
     const maxTop = Math.max(0, frame.scrollHeight - frame.clientHeight);
     const nextLeft = clampNumber(targetViewBox.x * scale.x + padding.left, 0, maxLeft);
     const nextTop = clampNumber(targetViewBox.y * scale.y + padding.top, 0, maxTop);
-    if (Math.abs(frame.scrollLeft - nextLeft) > 1) {
+    if (maxLeft > 1 && Math.abs(frame.scrollLeft - nextLeft) > 1) {
       frame.scrollLeft = nextLeft;
     }
-    if (Math.abs(frame.scrollTop - nextTop) > 1) {
+    if (maxTop > 1 && Math.abs(frame.scrollTop - nextTop) > 1) {
       frame.scrollTop = nextTop;
     }
   };
@@ -6784,6 +6823,11 @@ export function App() {
     const svg = svgRef.current;
     const bounds = canvasBoundsRef.current;
     if (!frame || !svg || bounds.width <= 0 || bounds.height <= 0) {
+      return;
+    }
+    if (!canvasScrollbarsActiveRef.current) {
+      frame.scrollLeft = 0;
+      frame.scrollTop = 0;
       return;
     }
     const svgRect = svg.getBoundingClientRect();
@@ -6803,6 +6847,22 @@ export function App() {
     frame.scrollLeft = next.left;
     frame.scrollTop = next.top;
   };
+  const currentViewBoxFromCanvasFrameScroll = () => {
+    const frame = canvasFrameRef.current;
+    if (!frame) {
+      return viewBoxRef.current;
+    }
+    if (!canvasScrollbarsActiveRef.current) {
+      return viewBoxRef.current;
+    }
+    const scale = canvasScrollScaleRef.current;
+    const padding = canvasFramePaddingOffset(frame, svgRef.current);
+    const maxLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
+    const maxTop = Math.max(0, frame.scrollHeight - frame.clientHeight);
+    const nextX = maxLeft > 1 ? (frame.scrollLeft - padding.left) / Math.max(0.0001, scale.x) : viewBoxRef.current.x;
+    const nextY = maxTop > 1 ? (frame.scrollTop - padding.top) / Math.max(0.0001, scale.y) : viewBoxRef.current.y;
+    return normalizeViewBoxToCanvas({ ...viewBoxRef.current, x: nextX, y: nextY }, canvasBoundsRef.current);
+  };
   const scheduleCanvasVisibleViewBoxUpdate = () => {
     if (canvasVisibleViewBoxFrameRef.current !== null) {
       return;
@@ -6816,8 +6876,15 @@ export function App() {
       }
       const frameScrollWasUserDriven = canvasFrameUserScrollRef.current;
       canvasFrameUserScrollRef.current = false;
-      const next = visibleCanvasViewBoxFromRects(frame.getBoundingClientRect(), svg.getBoundingClientRect(), canvasFullViewBoxRef.current);
+      const frameRect = frame.getBoundingClientRect();
+      const svgRect = svg.getBoundingClientRect();
+      const fullViewBox = canvasFullViewBoxRef.current;
+      const canvasFullyVisible = !canvasScrollbarsActiveRef.current && renderedCanvasFullyFitsFrame(frameRect, svgRect);
+      const next = canvasFullyVisible ? fullViewBox : visibleCanvasViewBoxFromRects(frameRect, svgRect, fullViewBox);
       setCanvasVisibleViewBox((current) => (sameCanvasViewBox(current, next) ? current : next));
+      if (canvasFullyVisible) {
+        return;
+      }
       setViewBox((current) => {
         const nextViewBox = normalizeViewBoxToCanvas({ ...current, x: next.x, y: next.y }, canvasBoundsRef.current);
         if (
@@ -6920,9 +6987,6 @@ export function App() {
     window.addEventListener("resize", updateCanvasFrameViewportAndVisibleBox);
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateCanvasFrameViewportAndVisibleBox);
     observer?.observe(frame);
-    if (svgRef.current) {
-      observer?.observe(svgRef.current);
-    }
     updateCanvasFrameViewportAndVisibleBox();
     return () => {
       frame.removeEventListener("scroll", handleCanvasFrameScroll);
@@ -7255,6 +7319,7 @@ export function App() {
     () => selectedLayoutUnits.filter((unit) => unit.kind === "group"),
     [selectedLayoutUnits]
   );
+  const visibleSelectedGroupLayoutUnits = focusedGroupedNodeMovesGroup ? [] : selectedGroupLayoutUnits;
   const selectedTransformGroupUnit =
     canvasSelectionScope === "group" && selectedLayoutUnits.length === 1 && selectedGroupLayoutUnits.length === 1
       ? selectedGroupLayoutUnits[0]
@@ -9101,6 +9166,31 @@ export function App() {
     setSelectedEdgeIds(selection.edgeIds);
     setSelectedEdgeId(selection.edgeIds[0] ?? "");
     return selection;
+  };
+
+  const createCanvasSelectionSnapshot = (
+    scope: CanvasSelectionScope,
+    nodeIds: readonly string[],
+    edgeIds: readonly string[],
+    edgeId = edgeIds[0] ?? ""
+  ): CanvasSelectionSnapshot => ({
+    scope,
+    nodeIds: [...nodeIds],
+    edgeIds: [...edgeIds],
+    edgeId
+  });
+
+  const currentCanvasSelectionSnapshot = (): CanvasSelectionSnapshot =>
+    createCanvasSelectionSnapshot(canvasSelectionScope, selectedNodeIds, selectedEdgeIds, selectedEdgeId);
+
+  const restoreCanvasSelectionSnapshot = (snapshot: CanvasSelectionSnapshot | undefined) => {
+    if (!snapshot) {
+      return;
+    }
+    setCanvasSelectionScope(snapshot.scope);
+    setSelectedNodeIds(snapshot.nodeIds);
+    setSelectedEdgeIds(snapshot.edgeIds);
+    setSelectedEdgeId(snapshot.edgeIds.includes(snapshot.edgeId) ? snapshot.edgeId : snapshot.edgeIds[0] ?? "");
   };
 
   const startNodeLabelDrag = (event: PointerEvent<SVGGElement>, node: ModelNode) => {
@@ -11076,7 +11166,9 @@ export function App() {
     }
     setDragging((current) => {
       if (!current) {
-        draggingRef.current = null;
+        if (draggingRef.current === nextDragState) {
+          return nextDragState;
+        }
         return current;
       }
       if (
@@ -11170,6 +11262,7 @@ export function App() {
     }
     const delta = activeDragging.currentDelta;
     if (!delta || (delta.x === 0 && delta.y === 0)) {
+      restoreCanvasSelectionSnapshot(activeDragging.selection);
       clearDraggingMoveState();
       return false;
     }
@@ -11194,6 +11287,7 @@ export function App() {
           )
         : delta;
     if (finalDelta.x === 0 && finalDelta.y === 0) {
+      restoreCanvasSelectionSnapshot(activeDragging.selection);
       clearDraggingMoveState();
       return false;
     }
@@ -11236,6 +11330,7 @@ export function App() {
       nodes,
       finalBounds
     );
+    restoreCanvasSelectionSnapshot(activeDragging.selection);
     clearDraggingMoveState();
     const snapText =
       effectiveSnapTarget &&
@@ -11260,6 +11355,7 @@ export function App() {
       hideImperativeMultiNodeDragOverlay();
       draggingRef.current = null;
       setDragging(null);
+      restoreCanvasSelectionSnapshot(activeDragging.selection);
       return;
     }
     ensureDraggingUndoSnapshot();
@@ -11288,6 +11384,7 @@ export function App() {
       hideImperativeMultiNodeDragOverlay();
       draggingRef.current = null;
       setDragging(null);
+      restoreCanvasSelectionSnapshot(activeDragging.selection);
       return;
     }
     const finalBounds = canvasBoundsForMoveDelta(activeDragging.nodeIds, activeDragging.originalPositions, finalDelta.x, finalDelta.y);
@@ -11334,6 +11431,7 @@ export function App() {
     hideImperativeMultiNodeDragOverlay();
     draggingRef.current = null;
     setDragging(null);
+    restoreCanvasSelectionSnapshot(activeDragging.selection);
     dragUndoCapturedRef.current = false;
     const snapText =
       effectiveSnapTarget &&
@@ -11625,7 +11723,8 @@ export function App() {
       originalRoutePoints: originalRoutePointsForMove,
       overlayPreview: isMultiNodeMoveState({ nodeIds: moveNodeIds })
         ? buildMultiNodeDragOverlayPreview(moveNodeIds, affectedEdgesForMove, originalPositionsForMove, originalRoutePointsForMove, moveEdgeIds)
-        : undefined
+        : undefined,
+      selection: currentCanvasSelectionSnapshot()
     };
     clearNodeDragMoveSchedule();
     dragUndoCapturedRef.current = false;
@@ -12826,7 +12925,8 @@ export function App() {
       originalRoutePoints: originalRoutePointsForDrag,
       overlayPreview: isMultiNodeMoveState({ nodeIds: dragNodeIds })
         ? buildMultiNodeDragOverlayPreview(dragNodeIds, affectedEdgesForDrag, originalPositionsForDrag, originalRoutePointsForDrag, edgeIdsForDrag)
-        : undefined
+        : undefined,
+      selection: createCanvasSelectionSnapshot("group", dragSelection.nodeIds, dragSelection.edgeIds, dragSelection.edgeIds[0] ?? "")
     };
     startDraggingState(nextDragging);
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -13271,6 +13371,12 @@ export function App() {
       nodeWasSelected &&
       selectedGroupMemberNodeIdSet.has(node.id);
     const keepEdgeSelection = nodeWasSelected && activeSelectedEdgeIds.length > 0;
+    let dragSelectionSnapshot = createCanvasSelectionSnapshot(
+      canvasSelectionScope,
+      selectedNodeIds,
+      keepEdgeSelection ? selectedEdgeIds : [],
+      keepEdgeSelection ? selectedEdgeId : ""
+    );
     if (!keepEdgeSelection) {
       setSelectedEdgeId("");
       setSelectedEdgeIds([]);
@@ -13287,6 +13393,7 @@ export function App() {
       setSelectedNodeIds([node.id]);
       setSelectedEdgeIds([]);
       setSelectedEdgeId("");
+      dragSelectionSnapshot = createCanvasSelectionSnapshot("direct", [node.id], [], "");
     } else if (event.ctrlKey || event.shiftKey || event.metaKey) {
       setCanvasSelectionScope("group");
       dragSelection = nodeWasSelected
@@ -13297,12 +13404,14 @@ export function App() {
         setSelectedEdgeIds(dragSelection.edgeIds);
         setSelectedEdgeId(dragSelection.edgeIds[0] ?? "");
       }
+      dragSelectionSnapshot = createCanvasSelectionSnapshot("group", dragSelection.nodeIds, dragSelection.edgeIds, dragSelection.edgeIds[0] ?? "");
     } else if (!nodeWasSelected) {
       dragSelection = expandActiveGroupSelection([node.id], []);
       setCanvasSelectionScope("group");
       setSelectedNodeIds(dragSelection.nodeIds);
       setSelectedEdgeIds(dragSelection.edgeIds);
       setSelectedEdgeId(dragSelection.edgeIds[0] ?? "");
+      dragSelectionSnapshot = createCanvasSelectionSnapshot("group", dragSelection.nodeIds, dragSelection.edgeIds, dragSelection.edgeIds[0] ?? "");
     }
     const dragNodeIds = dragSelection.nodeIds;
     if (mode === "connect") {
@@ -13359,7 +13468,8 @@ export function App() {
       originalRoutePoints: originalRoutePointsForDrag,
       overlayPreview: isMultiNodeMoveState({ nodeIds: dragNodeIds })
         ? buildMultiNodeDragOverlayPreview(dragNodeIds, affectedEdgesForDrag, originalPositionsForDrag, originalRoutePointsForDrag, edgeIdsForDrag)
-        : undefined
+        : undefined,
+      selection: dragSelectionSnapshot
     };
     startDraggingState(nextDragging);
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -13527,6 +13637,22 @@ export function App() {
       return;
     }
     if (panning && svgRef.current) {
+      const frame = canvasFrameRef.current;
+      if (frame && panning.scrollMode) {
+        const maxLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
+        const maxTop = Math.max(0, frame.scrollHeight - frame.clientHeight);
+        const nextLeft = clampNumber(panning.scrollLeft - (event.clientX - panning.clientX), 0, maxLeft);
+        const nextTop = clampNumber(panning.scrollTop - (event.clientY - panning.clientY), 0, maxTop);
+        if (Math.abs(frame.scrollLeft - nextLeft) > 0.5) {
+          frame.scrollLeft = nextLeft;
+        }
+        if (Math.abs(frame.scrollTop - nextTop) > 0.5) {
+          frame.scrollTop = nextTop;
+        }
+        canvasFrameUserScrollRef.current = true;
+        scheduleCanvasVisibleViewBoxUpdate();
+        return;
+      }
       const rect = svgRef.current.getBoundingClientRect();
       const dx = rect.width > 0 ? ((event.clientX - panning.clientX) / rect.width) * canvasBounds.width : 0;
       const dy = rect.height > 0 ? ((event.clientY - panning.clientY) / rect.height) * canvasBounds.height : 0;
@@ -13649,6 +13775,44 @@ export function App() {
     }
     const point = lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
     scheduleNodeDragMove(point, event.ctrlKey, event.shiftKey);
+  };
+
+  const startCanvasPanning = (event: PointerEvent<SVGSVGElement>) => {
+    if (event.button !== 0) {
+      return false;
+    }
+    activateInspectorFromCanvas();
+    canvasInteractionRef.current = true;
+    projectListPointerInsideRef.current = false;
+    const rawPointer = screenToSvgPoint(event.currentTarget, event.clientX, event.clientY);
+    const pointer = clampPointToCanvas(rawPointer);
+    lastRawCanvasPointerRef.current = rawPointer;
+    lastCanvasPointerRef.current = pointer;
+    updateMouseStatus(pointer);
+    setConnectSource(null);
+    resetConnectPreviewState();
+    setRewiring(null);
+    const frame = canvasFrameRef.current;
+    const panningViewBox = currentViewBoxFromCanvasFrameScroll();
+    setPanning({
+      clientX: event.clientX,
+      clientY: event.clientY,
+                  viewBox: panningViewBox,
+                  scrollLeft: frame?.scrollLeft ?? 0,
+                  scrollTop: frame?.scrollTop ?? 0,
+                  scrollMode: frame ? canvasScrollbarsActiveRef.current && canvasFrameHasScrollableRange(frame) : false
+                });
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    return true;
+  };
+
+  const handleCanvasPointerDownCapture = (event: PointerEvent<SVGSVGElement>) => {
+    if ((!event.ctrlKey && !event.shiftKey) || staticDrawing || connectSource) {
+      return;
+    }
+    startCanvasPanning(event);
   };
 
   const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
@@ -17535,6 +17699,8 @@ export function App() {
       }),
       24
     );
+  const selectedFloatingToolbarBounds =
+    focusedGroupedNodeMovesGroup && selectedNode ? calculateNodeVisualBounds(selectedNode) : selectedCanvasBounds;
   const selectedToolbarHidden = Boolean(
     dragging ||
     transformDrag ||
@@ -17627,13 +17793,13 @@ export function App() {
     };
   };
   const nodeFloatingToolbar =
-    !selectedToolbarHidden && activeSelectedNodeIds.length > 0 && selectedCanvasBounds
+    !selectedToolbarHidden && activeSelectedNodeIds.length > 0 && selectedFloatingToolbarBounds
       ? (() => {
           const width = Math.round(nodeFloatingToolbarWidth * floatingToolbarScreenScale);
           const height = Math.round(NODE_FLOATING_TOOLBAR_HEIGHT * floatingToolbarScreenScale);
-          const centerX = (selectedCanvasBounds.left + selectedCanvasBounds.right) / 2;
-          const topCenter = canvasPointToSurfaceCss({ x: centerX, y: selectedCanvasBounds.top });
-          const bottomCenter = canvasPointToSurfaceCss({ x: centerX, y: selectedCanvasBounds.bottom });
+          const centerX = (selectedFloatingToolbarBounds.left + selectedFloatingToolbarBounds.right) / 2;
+          const topCenter = canvasPointToSurfaceCss({ x: centerX, y: selectedFloatingToolbarBounds.top });
+          const bottomCenter = canvasPointToSurfaceCss({ x: centerX, y: selectedFloatingToolbarBounds.bottom });
           return placeFloatingToolbar([
             { x: topCenter.x - width / 2, y: topCenter.y - height - floatingToolbarGap },
             { x: bottomCenter.x - width / 2, y: bottomCenter.y + floatingToolbarGap },
@@ -17979,7 +18145,7 @@ export function App() {
           </div>
         </header>
 
-        <section className="canvas-frame" ref={canvasFrameRef}>
+        <section className="canvas-frame" ref={canvasFrameRef} style={{ overflow: canvasScrollbarsActive ? "auto" : "hidden" }}>
           <div
             className="canvas-scroll-surface"
             style={{ width: canvasScrollSurfaceWidth, height: canvasScrollSurfaceHeight }}
@@ -18001,6 +18167,7 @@ export function App() {
             onDragOver={(event) => event.preventDefault()}
             onWheel={handleWheel}
             onDoubleClick={fitWholeCanvasFromBlankDoubleClick}
+            onPointerDownCapture={handleCanvasPointerDownCapture}
             onPointerMove={handlePointerMove}
             onPointerEnter={() => {
               canvasInteractionRef.current = true;
@@ -18025,10 +18192,12 @@ export function App() {
               finishNodeLabelDrag();
               finishNodeLabelRotateDrag();
               finishNodeDrag();
+              if (panning) {
+                return;
+              }
               setTerminalPress(null);
               finishManualPathDrag();
               finishTransformDrag();
-              setPanning(null);
               setMarquee(null);
               setRewiring(null);
             }}
@@ -18079,11 +18248,7 @@ export function App() {
                 return;
               }
               if (event.ctrlKey || event.shiftKey) {
-                setConnectSource(null);
-                resetConnectPreviewState();
-                setRewiring(null);
-                setPanning({ clientX: event.clientX, clientY: event.clientY, viewBox });
-                event.currentTarget.setPointerCapture(event.pointerId);
+                startCanvasPanning(event);
                 return;
               }
               const routeHit = findConnectionRouteHitAtPoint(pointer);
@@ -18399,7 +18564,7 @@ export function App() {
                 style={connectionLineStyle(rewiringPreviewRoute.edgeId)}
               />
             )}
-            {selectedGroupLayoutUnits.map((unit) => {
+            {visibleSelectedGroupLayoutUnits.map((unit) => {
               const transforming = groupTransformPreviewGroupId === unit.id;
               const focused = selectedTransformGroupUnit?.id === unit.id;
               const bounds = unit.bounds;

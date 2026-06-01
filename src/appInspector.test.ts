@@ -564,6 +564,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("style={floatingToolbarWrapperStyle(nodeFloatingToolbar)}");
     expect(source).toContain("style={floatingToolbarWrapperStyle(edgeFloatingToolbar)}");
     expect(source).toContain("nodeFloatingToolbarWidth * floatingToolbarScreenScale");
+    expect(source).toContain("selectedFloatingToolbarBounds");
     expect(source).toContain("EDGE_FLOATING_TOOLBAR_WIDTH * floatingToolbarScreenScale");
     expect(source).toContain("addManualBendToSelectedEdgeCenter");
     expect(source).toContain("tidySelectedEdgeRoute");
@@ -880,6 +881,9 @@ describe("graph inspector panel", () => {
     const moveStart = source.indexOf("const moveSelection =");
     const moveEnd = source.indexOf("const updateSelectedNode", moveStart);
     const moveBlock = source.slice(moveStart, moveEnd);
+    const dragMoveStart = source.indexOf("const applyNodeDragMove =");
+    const dragMoveEnd = source.indexOf("const scheduleNodeDragMove =", dragMoveStart);
+    const dragMoveBlock = source.slice(dragMoveStart, dragMoveEnd);
     const dragStart = source.indexOf("const handleNodePointerDown");
     const dragEnd = source.indexOf("const handlePointerMove", dragStart);
     const dragBlock = source.slice(dragStart, dragEnd);
@@ -888,6 +892,10 @@ describe("graph inspector panel", () => {
     const updateBlock = source.slice(updateStart, updateEnd);
 
     expect(source).toContain("type CanvasSelectionScope");
+    expect(source).toContain("type CanvasSelectionSnapshot =");
+    expect(source).toContain("selection?: CanvasSelectionSnapshot;");
+    expect(source).toContain("const restoreCanvasSelectionSnapshot =");
+    expect(source).toContain("restoreCanvasSelectionSnapshot(activeDragging.selection);");
     expect(source).toContain("const [canvasSelectionScope, setCanvasSelectionScope]");
     expect(source).toContain("const displaySelectedNodeIds = canvasSelectionScope === \"direct\" ? groupExpandedCanvasSelection.nodeIds : activeSelectedNodeIds");
     expect(source).toContain("const displaySelectedEdgeIds = canvasSelectionScope === \"direct\" ? groupExpandedCanvasSelection.edgeIds : activeCanvasSelection.edgeIds");
@@ -898,22 +906,32 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".diagram-node.selected.focused .node-hitbox");
     expect(selectionStateBlock).toContain("selectedCanvasGroupIds(activeLayerGroups, groupExpandedCanvasSelection.nodeIds, groupExpandedCanvasSelection.edgeIds)");
     expect(selectionStateBlock).toContain("canvasGroupMemberNodeIds(activeLayerGroups, activeSelectedGroupIds)");
+    expect(source).toContain("const selectedFloatingToolbarBounds =");
+    expect(source).toContain("focusedGroupedNodeMovesGroup && selectedNode ? calculateNodeVisualBounds(selectedNode) : selectedCanvasBounds");
+    expect(source).toContain("const visibleSelectedGroupLayoutUnits = focusedGroupedNodeMovesGroup ? [] : selectedGroupLayoutUnits;");
+    expect(source).toContain("{visibleSelectedGroupLayoutUnits.map((unit) =>");
     expect(copyCutBlock).toContain("{ expandGroups: canvasSelectionScope === \"group\" }");
     expect(moveBlock).toContain("const moveNodeIds = canvasSelectionScope === \"direct\" ? displaySelectedNodeIds : activeSelectedNodeIds");
     expect(moveBlock).toContain("const moveEdgeIds = canvasSelectionScope === \"direct\" ? displaySelectedEdgeIds : activeSelectedEdgeIds");
     expect(moveBlock).toContain("commitFastMovedGraphPatches(");
     expect(moveBlock).toContain("moveNodeIds");
+    expect(dragMoveBlock).toContain("if (draggingRef.current === nextDragState)");
+    expect(dragMoveBlock).toContain("return nextDragState;");
+    expect(dragMoveBlock).not.toContain("draggingRef.current = null;\n        return current;");
     expect(updateBlock).toContain("if (patch.position && focusedGroupedNodeMovesGroup && selectedNode)");
     expect(updateBlock).toContain("moveSelection(nextPosition.x - selectedNode.position.x, nextPosition.y - selectedNode.position.y)");
     expect(dragBlock).toContain("const clickedSelectedGroupMember");
     expect(dragBlock).toContain("nodeWasSelected");
     expect(dragBlock).toContain("const groupDragSelection");
+    expect(dragBlock).toContain("let dragSelectionSnapshot = createCanvasSelectionSnapshot");
     expect(dragBlock).toContain("nodeIds: groupExpandedCanvasSelection.nodeIds");
     expect(dragBlock).toContain("let dragSelection = nodeWasSelected");
     expect(dragBlock).toContain("? groupDragSelection");
     expect(dragBlock).toContain("selectedGroupMemberNodeIdSet.has(node.id)");
     expect(dragBlock).toContain("setSelectedNodeIds([node.id])");
     expect(dragBlock).toContain("setCanvasSelectionScope(\"direct\")");
+    expect(dragBlock).toContain("dragSelectionSnapshot = createCanvasSelectionSnapshot(\"direct\", [node.id], [], \"\")");
+    expect(dragBlock).toContain("selection: dragSelectionSnapshot");
     expect(dragBlock).toContain("const dragNodeIds = dragSelection.nodeIds");
     expect(dragBlock).toContain("const originalPositionsForDrag = Object.fromEntries");
   });
@@ -939,11 +957,11 @@ describe("graph inspector panel", () => {
     const groupPreviewStart = source.indexOf("const groupTransformPreviewTransform");
     const groupPreviewEnd = source.indexOf("const dragPreviewEdgeRoutes", groupPreviewStart);
     const groupPreviewBlock = source.slice(groupPreviewStart, groupPreviewEnd);
-    const renderStart = source.indexOf("{selectedGroupLayoutUnits.map");
+    const renderStart = source.indexOf("{visibleSelectedGroupLayoutUnits.map");
     const renderEnd = source.indexOf("{detailedViewportNodes.map", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
     const edgeRenderStart = source.indexOf("{viewportRoutedEdges.map((route) =>");
-    const edgeRenderEnd = source.indexOf("{selectedGroupLayoutUnits.map", edgeRenderStart);
+    const edgeRenderEnd = source.indexOf("{visibleSelectedGroupLayoutUnits.map", edgeRenderStart);
     const edgeRenderBlock = source.slice(edgeRenderStart, edgeRenderEnd);
     const nodeRenderStart = source.indexOf("{detailedViewportNodes.map((node) =>");
     const nodeRenderEnd = source.indexOf("{renderMultiNodeDragOverlay()}", nodeRenderStart);
@@ -953,6 +971,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("type GroupTransformEdgeRouteSnapshot");
     expect(source).toContain("function groupTransformSvgTransform");
     expect(source).toContain("const selectedGroupLayoutUnits = useMemo");
+    expect(source).toContain("const visibleSelectedGroupLayoutUnits = focusedGroupedNodeMovesGroup ? [] : selectedGroupLayoutUnits;");
     expect(source).toContain("const selectedTransformGroupUnit =");
     expect(groupPreviewBlock).toContain("groupTransformPreviewTransform");
     expect(groupPreviewBlock).toContain("path: pointsToPreviewPath(points)");
@@ -1571,20 +1590,56 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("function canvasScrollScaleFromViewBox");
     expect(source).toContain("function canvasFullViewBoxFromBounds");
+    expect(source).toContain("function canvasFrameHasScrollableRange");
+    expect(source).toContain("function renderedCanvasFullyFitsFrame");
     expect(source).toContain("const CANVAS_FRAME_INSET = 16;");
+    expect(source).toContain("const CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE = 2;");
     expect(source).toContain("const canvasDisplayWidth = Math.max(1, Math.round(canvasBounds.width * canvasScrollScale.x))");
     expect(source).toContain("const canvasDisplayHeight = Math.max(1, Math.round(canvasBounds.height * canvasScrollScale.y))");
+    expect(source).toContain("const canvasScrollbarsActive =");
+    expect(source).toContain("canvasDisplayWidth + CANVAS_FRAME_INSET * 2 > canvasFrameViewportSize.width + CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE");
+    expect(source).toContain("canvasScrollbarsActiveRef.current = canvasScrollbarsActive;");
     expect(source).toContain("const canvasScrollSurfaceWidth = Math.max(canvasDisplayWidth + CANVAS_FRAME_INSET * 2, canvasFrameViewportSize.width)");
     expect(source).toContain("const canvasScrollSurfaceHeight = Math.max(canvasDisplayHeight + CANVAS_FRAME_INSET * 2, canvasFrameViewportSize.height)");
     expect(source).toContain("const canvasDisplayOffsetX = Math.max(CANVAS_FRAME_INSET, Math.round((canvasScrollSurfaceWidth - canvasDisplayWidth) / 2))");
     expect(source).toContain("const canvasDisplayOffsetY = Math.max(CANVAS_FRAME_INSET, Math.round((canvasScrollSurfaceHeight - canvasDisplayHeight) / 2))");
     expect(source).toContain("syncCanvasFrameScrollToViewBox");
-    expect(source).toContain("visibleCanvasViewBoxFromRects(frame.getBoundingClientRect(), svg.getBoundingClientRect(), canvasFullViewBoxRef.current)");
+    expect(source).toContain("if (!canvasScrollbarsActiveRef.current) {");
+    expect(source).toContain("const canvasFullyVisible = !canvasScrollbarsActiveRef.current && renderedCanvasFullyFitsFrame(frameRect, svgRect)");
+    expect(source).toContain("const next = canvasFullyVisible ? fullViewBox : visibleCanvasViewBoxFromRects(frameRect, svgRect, fullViewBox)");
+    expect(source).toContain("if (canvasFullyVisible) {\n        return;\n      }");
     expect(canvasRenderBlock).toContain("className=\"canvas-scroll-surface\"");
+    expect(source).toContain("style={{ overflow: canvasScrollbarsActive ? \"auto\" : \"hidden\" }}");
     expect(canvasRenderBlock).toContain("style={{ width: canvasScrollSurfaceWidth, height: canvasScrollSurfaceHeight }}");
     expect(canvasRenderBlock).toContain("style={{ width: canvasDisplayWidth, height: canvasDisplayHeight, left: canvasDisplayOffsetX, top: canvasDisplayOffsetY }}");
     expect(canvasRenderBlock).toContain("viewBox={`0 0 ${canvasBounds.width} ${canvasBounds.height}`}");
     expect(canvasRenderBlock).not.toContain("viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}");
+  });
+
+  test("keeps fitted no-scroll canvas geometry from feeding back into viewport state", async () => {
+    const source = await readAppSource();
+    const syncBlockStart = source.indexOf("const syncCanvasFrameScrollToViewBox =");
+    const syncBlockEnd = source.indexOf("const syncCanvasFrameScrollToWheelAnchor", syncBlockStart);
+    const syncBlock = source.slice(syncBlockStart, syncBlockEnd);
+    const visibleUpdateStart = source.indexOf("const scheduleCanvasVisibleViewBoxUpdate =");
+    const visibleUpdateEnd = source.indexOf("const handleCanvasFrameScroll", visibleUpdateStart);
+    const visibleUpdateBlock = source.slice(visibleUpdateStart, visibleUpdateEnd);
+    const listenerStart = source.indexOf("useEffect(() => {\n    const frame = canvasFrameRef.current;");
+    const listenerEnd = source.indexOf("useEffect(() => {\n    setCanvasSizeDraft", listenerStart);
+    const listenerBlock = source.slice(listenerStart, listenerEnd);
+
+    expect(syncBlock).toContain("if (maxLeft > 1 && Math.abs(frame.scrollLeft - nextLeft) > 1)");
+    expect(syncBlock).toContain("if (maxTop > 1 && Math.abs(frame.scrollTop - nextTop) > 1)");
+    expect(visibleUpdateBlock).toContain("const frameRect = frame.getBoundingClientRect();");
+    expect(visibleUpdateBlock).toContain("const svgRect = svg.getBoundingClientRect();");
+    expect(syncBlock).toContain("if (!canvasScrollbarsActiveRef.current)");
+    expect(syncBlock).toContain("frame.scrollLeft = 0;");
+    expect(syncBlock).toContain("frame.scrollTop = 0;");
+    expect(visibleUpdateBlock).toContain("const canvasFullyVisible = !canvasScrollbarsActiveRef.current && renderedCanvasFullyFitsFrame(frameRect, svgRect)");
+    expect(visibleUpdateBlock).toContain("const next = canvasFullyVisible ? fullViewBox : visibleCanvasViewBoxFromRects(frameRect, svgRect, fullViewBox)");
+    expect(visibleUpdateBlock.indexOf("if (canvasFullyVisible)")).toBeLessThan(visibleUpdateBlock.indexOf("setViewBox((current) =>"));
+    expect(listenerBlock).toContain("observer?.observe(frame);");
+    expect(listenerBlock).not.toContain("observer?.observe(svgRef.current)");
   });
 
   test("keeps manual canvas scrollbar movement as the scroll source of truth", async () => {
@@ -1632,6 +1687,53 @@ describe("graph inspector panel", () => {
     expect(wheelBlock).toContain("const nextScaleX = canvasBounds.width / Math.max(1, nextWidth);");
     expect(wheelBlock).toContain("x: pointer.x - cursorOffsetX / nextScaleX");
     expect(wheelBlock).not.toContain("const ratioX = (pointer.x - viewBox.x) / viewBox.width;");
+  });
+
+  test("pans zoomed scrollable canvas by moving the frame scrollbars directly", async () => {
+    const source = await readAppSource();
+    const panningStateStart = source.indexOf("const [panning, setPanning] = useState<{");
+    const panningStateEnd = source.indexOf("const [marquee, setMarquee]", panningStateStart);
+    const panningStateBlock = source.slice(panningStateStart, panningStateEnd);
+    const currentScrollStart = source.indexOf("const currentViewBoxFromCanvasFrameScroll =");
+    const currentScrollEnd = source.indexOf("const scheduleCanvasVisibleViewBoxUpdate", currentScrollStart);
+    const currentScrollBlock = source.slice(currentScrollStart, currentScrollEnd);
+    const pointerMoveStart = source.indexOf("if (panning && svgRef.current) {");
+    const pointerMoveEnd = source.indexOf("if (transformDrag && svgRef.current)", pointerMoveStart);
+    const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
+    const startPanStart = source.indexOf("const startCanvasPanning =");
+    const startPanEnd = source.indexOf("const handleCanvasPointerDownCapture", startPanStart);
+    const startPanBlock = source.slice(startPanStart, startPanEnd);
+    const captureStart = source.indexOf("const handleCanvasPointerDownCapture =");
+    const captureEnd = source.indexOf("const handleWheel =", captureStart);
+    const captureBlock = source.slice(captureStart, captureEnd);
+    const pointerDownStart = source.indexOf("if (event.ctrlKey || event.shiftKey) {");
+    const pointerDownEnd = source.indexOf("const routeHit = findConnectionRouteHitAtPoint", pointerDownStart);
+    const pointerDownBlock = source.slice(pointerDownStart, pointerDownEnd);
+    const pointerLeaveStart = source.indexOf("onPointerLeave={() => {");
+    const pointerLeaveEnd = source.indexOf("onPointerCancel={() => {", pointerLeaveStart);
+    const pointerLeaveBlock = source.slice(pointerLeaveStart, pointerLeaveEnd);
+
+    expect(panningStateBlock).toContain("scrollLeft: number;");
+    expect(panningStateBlock).toContain("scrollTop: number;");
+    expect(panningStateBlock).toContain("scrollMode: boolean;");
+    expect(currentScrollBlock).toContain("const nextX = maxLeft > 1 ? (frame.scrollLeft - padding.left) / Math.max(0.0001, scale.x) : viewBoxRef.current.x;");
+    expect(currentScrollBlock).toContain("const nextY = maxTop > 1 ? (frame.scrollTop - padding.top) / Math.max(0.0001, scale.y) : viewBoxRef.current.y;");
+    expect(pointerMoveBlock).toContain("if (frame && panning.scrollMode)");
+    expect(pointerMoveBlock).toContain("const nextLeft = clampNumber(panning.scrollLeft - (event.clientX - panning.clientX), 0, maxLeft);");
+    expect(pointerMoveBlock).toContain("const nextTop = clampNumber(panning.scrollTop - (event.clientY - panning.clientY), 0, maxTop);");
+    expect(pointerMoveBlock).toContain("frame.scrollLeft = nextLeft;");
+    expect(pointerMoveBlock).toContain("frame.scrollTop = nextTop;");
+    expect(pointerMoveBlock).toContain("canvasFrameUserScrollRef.current = true;");
+    expect(startPanBlock).toContain("const panningViewBox = currentViewBoxFromCanvasFrameScroll();");
+    expect(startPanBlock).toContain("scrollMode: frame ? canvasScrollbarsActiveRef.current && canvasFrameHasScrollableRange(frame) : false");
+    expect(startPanBlock).toContain("event.preventDefault();");
+    expect(startPanBlock).toContain("event.stopPropagation();");
+    expect(captureBlock).toContain("if ((!event.ctrlKey && !event.shiftKey) || staticDrawing || connectSource)");
+    expect(captureBlock).toContain("startCanvasPanning(event);");
+    expect(pointerDownBlock).toContain("startCanvasPanning(event);");
+    expect(pointerDownBlock).not.toContain("setSelectedNodeIds");
+    expect(source).toContain("onPointerDownCapture={handleCanvasPointerDownCapture}");
+    expect(pointerLeaveBlock).toContain("if (panning) {\n                return;\n              }");
   });
 
   test("fits the whole canvas to the viewport when blank canvas is double-clicked", async () => {
@@ -2684,8 +2786,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("className={`diagram-canvas ${connectSource ? \"connect-mode\" : \"\"} ${staticDrawing ? \"static-draw-mode\" : \"\"} ${activeDropReady ? \"connect-drop-ready\" : \"\"} ${panning ? \"panning\" : \"\"} ${multiNodeDragging ? \"multi-node-dragging\" : \"\"}`}");
     expect(source).toContain("<g className=\"canvas-content\">");
     expect(source).not.toContain("if (multiNodeDragging && draggingNodeIdSet.has(node.id)) {\n                return null;");
-    expect(source).toContain("{selectedGroupLayoutUnits.map");
-    expect(source).not.toContain("{!multiNodeDragging && selectedGroupLayoutUnits.map");
+    expect(source).toContain("{visibleSelectedGroupLayoutUnits.map");
+    expect(source).not.toContain("{!multiNodeDragging && visibleSelectedGroupLayoutUnits.map");
     expect(source).toContain("dragging?.historyCaptured && !multiNodeDragging && dragging.nodeIds.map");
     expect(styles).toContain(".multi-node-drag-overlay");
     expect(styles).toContain(".multi-node-drag-preview-node-lite");
