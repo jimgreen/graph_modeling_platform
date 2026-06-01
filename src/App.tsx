@@ -76,6 +76,7 @@ import {
   createDefaultNode,
   createInteractiveStaticDrawingNode,
   createNodeFromTemplate,
+  createStaticBoxNodeFromDrawing,
   containerRelationNameKey,
   CUSTOM_DEVICE_TEMPLATE_KEY,
   CUSTOM_PARAM_DEFINITIONS_KEY,
@@ -136,6 +137,9 @@ import {
   isBlockingTopologyValidationError,
   isGeneratorNode,
   isRepeatedEdgePointerClick,
+  isStaticButtonCapableKind,
+  isStaticBoxLikeKind,
+  isStaticBoxLikeNode,
   isStaticNode,
   inferESection,
   insertOrthogonalRouteBend,
@@ -155,6 +159,7 @@ import {
   resolveStraightBusSlideEndpointToPoint,
   synchronizeBusTerminalsWithEdges,
   validateTopology,
+  validateConnectionEndpointRules,
   validateVoltageSetpointDeviations,
   normalizeViewBoxToCanvas,
   type DeviceKind,
@@ -266,6 +271,26 @@ const ENABLE_REACT_FLOW_PREVIEW = import.meta.env.DEV;
 const ReactFlowPreview = ENABLE_REACT_FLOW_PREVIEW ? lazy(() => import("./ReactFlowPreview")) : null;
 
 type ToolMode = "select" | "connect" | "static-draw";
+type StaticButtonVisualState = "hover" | "pressed" | "clicked";
+type StaticButtonPointerSnapshot = {
+  nodeId: string;
+  clientX: number;
+  clientY: number;
+  moved: boolean;
+};
+type CanvasWheelZoomEvent = {
+  ctrlKey: boolean;
+  metaKey: boolean;
+  deltaY: number;
+  clientX: number;
+  clientY: number;
+  defaultPrevented: boolean;
+  preventDefault: () => void;
+  stopPropagation: () => void;
+};
+function hasCanvasSelectionModifier(event: { ctrlKey: boolean; shiftKey: boolean; metaKey?: boolean }) {
+  return event.ctrlKey || event.shiftKey || Boolean(event.metaKey);
+}
 type StaticDrawingState = {
   kind: DeviceKind;
   template: DeviceTemplate;
@@ -301,6 +326,8 @@ type GroupTransformDrag = {
   nodeIds: string[];
   bounds: SelectionRect;
   center: Point;
+  startPoint: Point;
+  rotationStartPoint?: Point;
   originalNodes: Record<string, GroupTransformNodeSnapshot>;
   originalEdgeRoutes: GroupTransformEdgeRouteSnapshot[];
   previewPoint?: Point;
@@ -312,6 +339,8 @@ type SingleTransformDrag = {
   nodeId: string;
   originalNode: GroupTransformNodeSnapshot;
   startPoint: Point;
+  rotationStartPoint?: Point;
+  previewPoint?: Point;
   handleXDirection?: -1 | 0 | 1;
   handleYDirection?: -1 | 0 | 1;
   proportionalScale?: boolean;
@@ -390,6 +419,15 @@ function normalizeRotationDegrees(value: number) {
   return ((Math.round(value) % 360) + 360) % 360;
 }
 
+const formatStatusNumber = (value: number) => {
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+};
+
+const formatStatusScalePercent = (value: number) => `${formatStatusNumber(value * 100)}%`;
+
+const formatStatusRotationDegrees = (value: number) => `${formatStatusNumber(normalizeRotationDegrees(value))}°`;
+
 function rotatePointAround(point: Point, center: Point, degrees: number): Point {
   const radians = (degrees * Math.PI) / 180;
   const dx = point.x - center.x;
@@ -398,6 +436,41 @@ function rotatePointAround(point: Point, center: Point, degrees: number): Point 
     x: Math.round(center.x + dx * Math.cos(radians) - dy * Math.sin(radians)),
     y: Math.round(center.y + dx * Math.sin(radians) + dy * Math.cos(radians))
   };
+}
+
+function snapRotationDeltaToRightAngle(delta: number) {
+  return clampNumber(Math.round(delta / 90) * 90, -180, 180);
+}
+
+function normalizedRotationDelta(delta: number) {
+  return ((delta + 180) % 360 + 360) % 360 - 180;
+}
+
+function transformPointAngle(center: Point, point: Point) {
+  return (Math.atan2(point.y - center.y, point.x - center.x) * 180) / Math.PI + 90;
+}
+
+function rotationDeltaFromTransformPoint(center: Point, point: Point, snapRotation = false) {
+  const rawDelta = transformPointAngle(center, point);
+  const normalizedDelta = normalizedRotationDelta(rawDelta);
+  return snapRotation ? snapRotationDeltaToRightAngle(normalizedDelta) : normalizedDelta;
+}
+
+function rotationDeltaBetweenTransformPoints(center: Point, startPoint: Point, point: Point, snapRotation = false) {
+  const rawDelta = transformPointAngle(center, point) - transformPointAngle(center, startPoint);
+  const normalizedDelta = normalizedRotationDelta(rawDelta);
+  return snapRotation ? snapRotationDeltaToRightAngle(normalizedDelta) : normalizedDelta;
+}
+
+function rotationTrajectoryArcPath(center: Point, startPoint: Point, degrees: number) {
+  if (Math.abs(degrees) < 0.5) {
+    return "";
+  }
+  const safeRadius = Math.max(1, Math.hypot(startPoint.x - center.x, startPoint.y - center.y));
+  const end = rotatePointAround(startPoint, center, degrees);
+  const largeArcFlag = Math.abs(degrees) > 180 ? 1 : 0;
+  const sweepFlag = degrees >= 0 ? 1 : 0;
+  return `M ${formatSvgNumber(startPoint.x)} ${formatSvgNumber(startPoint.y)} A ${formatSvgNumber(safeRadius)} ${formatSvgNumber(safeRadius)} 0 ${largeArcFlag} ${sweepFlag} ${formatSvgNumber(end.x)} ${formatSvgNumber(end.y)}`;
 }
 
 function mirrorPointAcrossAxis(point: Point, center: Point, axis: "horizontal" | "vertical"): Point {
@@ -419,10 +492,9 @@ function localScaleKindForScreenHandle(kind: ScaleHandleKind, rotation: number):
   return Math.abs(localVector.x) >= Math.abs(localVector.y) ? "scale-x" : "scale-y";
 }
 
-function groupTransformGeometry(drag: GroupTransformDrag, point: Point): GroupTransformGeometry {
+function groupTransformGeometry(drag: GroupTransformDrag, point: Point, options?: { snapRotation?: boolean }): GroupTransformGeometry {
   if (drag.kind === "rotate") {
-    const angle = (Math.atan2(point.y - drag.center.y, point.x - drag.center.x) * 180) / Math.PI + 90;
-    return { kind: "rotate", degrees: normalizeRotationDegrees(Math.round(angle / 90) * 90) };
+    return { kind: "rotate", degrees: rotationDeltaBetweenTransformPoints(drag.center, drag.startPoint, point, Boolean(options?.snapRotation)) };
   }
 
   const halfWidth = Math.max(1, (drag.bounds.right - drag.bounds.left) / 2);
@@ -467,7 +539,7 @@ type Marquee = { start: Point; current: Point } | null;
 type ContextMenuState = {
   x: number;
   y: number;
-  target?: "blank" | "node" | "edge";
+  target?: "blank" | "node" | "edge" | "group";
   canvasPoint?: Point;
   nodeId?: string;
   edgeId?: string;
@@ -655,6 +727,8 @@ type GraphDirtyBaseline = {
   canvasBackgroundColor: string;
   canvasBackgroundImage: string;
   canvasBackgroundImageAssetId: string;
+  backgroundProjectId: string;
+  backgroundLayerIds: string[];
   powerUnit: string;
   voltageUnit: string;
   currentUnit: string;
@@ -682,6 +756,8 @@ type UndoSnapshot = {
   canvasBackgroundColor: string;
   canvasBackgroundImage: string;
   canvasBackgroundImageAssetId: string;
+  backgroundProjectId: string;
+  backgroundLayerIds: string[];
   powerUnit: string;
   voltageUnit: string;
   currentUnit: string;
@@ -712,6 +788,8 @@ type DraftProjectState = {
   canvasBackgroundColor?: string;
   canvasBackgroundImage?: string;
   canvasBackgroundImageAssetId?: string;
+  backgroundProjectId?: string;
+  backgroundLayerIds?: string[];
   powerUnit?: string;
   voltageUnit?: string;
   currentUnit?: string;
@@ -845,6 +923,7 @@ const DEFAULT_CANVAS_BACKGROUND = "#f1f5f9";
 const MOVE_BOUNDARY_GUARD = 8;
 const CANVAS_AUTO_EXPAND_PADDING = 96;
 const CANVAS_FRAME_INSET = 16;
+const CANVAS_SCROLL_EDGE_VIEWPORT_RATIO = 1 / 3;
 const CANVAS_FIT_SCROLLBAR_GUARD = 4;
 const CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE = 2;
 const CANVAS_RESIZE_HANDLE_SIZE = 18;
@@ -874,6 +953,9 @@ const NODE_FLOATING_TOOLBAR_WIDTH = 224;
 const NODE_FLOATING_TOOLBAR_HEIGHT = 38;
 const EDGE_FLOATING_TOOLBAR_WIDTH = 160;
 const EDGE_FLOATING_TOOLBAR_HEIGHT = 38;
+const TRANSFORM_ROTATE_STEM_START = 12;
+const TRANSFORM_ROTATE_STEM_END = 36;
+const TRANSFORM_ROTATE_HANDLE_GAP = 42;
 const DEFAULT_POWER_UNIT = "MW";
 const DEFAULT_VOLTAGE_UNIT = "kV";
 const DEFAULT_CURRENT_UNIT = "A";
@@ -1236,7 +1318,12 @@ function canvasFrameHasScrollableRange(frame: HTMLElement) {
   return frame.scrollWidth - frame.clientWidth > 1 || frame.scrollHeight - frame.clientHeight > 1;
 }
 function renderedCanvasFullyFitsFrame(frameRect: RectLike, svgRect: RectLike) {
-  return svgRect.width <= frameRect.width + 1 && svgRect.height <= frameRect.height + 1;
+  return svgRect.width <= frameRect.width + 1 &&
+    svgRect.height <= frameRect.height + 1 &&
+    svgRect.left >= frameRect.left - 1 &&
+    svgRect.right <= frameRect.right + 1 &&
+    svgRect.top >= frameRect.top - 1 &&
+    svgRect.bottom <= frameRect.bottom + 1;
 }
 function visibleCanvasViewBoxFromRects(frameRect: RectLike, svgRect: RectLike, viewBox: CanvasViewBox): CanvasViewBox {
   if (svgRect.width <= 0 || svgRect.height <= 0 || viewBox.width <= 0 || viewBox.height <= 0) {
@@ -1263,6 +1350,44 @@ function canvasScrollScaleFromViewBox(viewBox: Pick<CanvasViewBox, "width" | "he
     x: bounds.width > 0 && viewBox.width > 0 ? bounds.width / viewBox.width : 1,
     y: bounds.height > 0 && viewBox.height > 0 ? bounds.height / viewBox.height : 1
   };
+}
+function canvasScrollEdgeInset(viewportSize: number) {
+  return Math.max(CANVAS_FRAME_INSET, Math.round(viewportSize * CANVAS_SCROLL_EDGE_VIEWPORT_RATIO));
+}
+function canvasScrollSurfaceSize(displaySize: number, viewportSize: number, scrollActive: boolean) {
+  const edgeInset = scrollActive ? canvasScrollEdgeInset(viewportSize) : CANVAS_FRAME_INSET;
+  return Math.max(displaySize + edgeInset * 2, viewportSize);
+}
+function canvasDisplayOffset(displaySize: number, surfaceSize: number, viewportSize: number, scrollActive: boolean) {
+  return scrollActive
+    ? canvasScrollEdgeInset(viewportSize)
+    : Math.max(CANVAS_FRAME_INSET, Math.round((surfaceSize - displaySize) / 2));
+}
+function clampCanvasNoScrollOffset(
+  offset: number,
+  displaySize: number,
+  viewportSize: number,
+  baseOffset: number,
+  scrollActive: boolean
+) {
+  if (scrollActive || viewportSize <= 0 || displaySize <= 0) {
+    return 0;
+  }
+  const firstEdgePosition = viewportSize * CANVAS_SCROLL_EDGE_VIEWPORT_RATIO;
+  const secondEdgePosition = viewportSize * (1 - CANVAS_SCROLL_EDGE_VIEWPORT_RATIO) - displaySize;
+  const minLeft = Math.min(firstEdgePosition, secondEdgePosition);
+  const maxLeft = Math.max(firstEdgePosition, secondEdgePosition);
+  return clampNumber(baseOffset + offset, minLeft, maxLeft) - baseOffset;
+}
+function viewBoxStartToScrollPosition(viewStart: number, viewSize: number, boundSize: number, maxScroll: number) {
+  const maxViewStart = Math.max(0, boundSize - viewSize);
+  return maxScroll > 1 && maxViewStart > 0 ? clampNumber((viewStart / maxViewStart) * maxScroll, 0, maxScroll) : 0;
+}
+function scrollPositionToViewBoxStart(scrollPosition: number, viewSize: number, boundSize: number, maxScroll: number, fallbackStart: number) {
+  const maxViewStart = Math.max(0, boundSize - viewSize);
+  return maxScroll > 1 && maxViewStart > 0
+    ? clampNumber((scrollPosition / maxScroll) * maxViewStart, 0, maxViewStart)
+    : fallbackStart;
 }
 function canvasFullViewBoxFromBounds(bounds: CanvasBounds): CanvasViewBox {
   return { x: 0, y: 0, width: bounds.width, height: bounds.height };
@@ -1300,6 +1425,16 @@ function anchoredCanvasScrollPosition(
   return {
     left: clampNumber(canvasOffset.left + anchor.point.x * scale.x - anchor.cursorOffsetX, 0, maxScroll.left),
     top: clampNumber(canvasOffset.top + anchor.point.y * scale.y - anchor.cursorOffsetY, 0, maxScroll.top)
+  };
+}
+function anchoredCanvasNoScrollOffset(
+  anchor: WheelZoomAnchor,
+  scale: { x: number; y: number },
+  baseDisplayOffset: { left: number; top: number }
+) {
+  return {
+    x: anchor.cursorOffsetX - anchor.point.x * scale.x - baseDisplayOffset.left,
+    y: anchor.cursorOffsetY - anchor.point.y * scale.y - baseDisplayOffset.top
   };
 }
 function initialVisibleCanvasViewBox(canvasBounds: CanvasBounds, frame: Pick<HTMLElement, "clientWidth" | "clientHeight"> | null): CanvasViewBox {
@@ -1427,6 +1562,8 @@ const PARAM_LABELS: Record<string, string> = {
   canvasHeight: "显示高度",
   canvasBackgroundColor: "背景色",
   canvasBackgroundImage: "背景图片",
+  backgroundProjectId: "背景页面",
+  backgroundLayerIds: "背景图层",
   powerUnit: "功率单位",
   voltageUnit: "电压单位",
   currentUnit: "电流单位",
@@ -1440,6 +1577,8 @@ const PARAM_LABELS: Record<string, string> = {
   dcTopologyNode: "直流拓扑节点序号",
   graph_x: "X坐标",
   graph_y: "Y坐标",
+  staticWidth: "宽度",
+  staticHeight: "高度",
   rotation: "旋转角度",
   scaleX: "横向倍率",
   scaleY: "纵向倍率",
@@ -1536,6 +1675,14 @@ const PARAM_LABELS: Record<string, string> = {
   arrowSize: "箭头尺寸",
   handleColor: "端口颜色",
   handleSize: "端口大小",
+  buttonEnabled: "按钮功能",
+  buttonActionType: "按钮动作",
+  buttonTargetSchemeId: "目标方案",
+  buttonTargetProjectId: "目标模型",
+  buttonTargetProjectName: "目标模型名称",
+  buttonTargetLayerId: "目标图层",
+  buttonTargetLayerName: "目标图层名称",
+  buttonCommand: "执行命令",
   vbase: "电压等级",
   highVbase: "高压侧电压等级",
   mediumVbase: "中压侧电压等级",
@@ -1609,7 +1756,29 @@ const PARAM_OPTIONS: Record<string, string[]> = {
   textAlign: ["left", "center", "right"],
   verticalAlign: ["top", "middle", "bottom"],
   markerStart: ["none", "arrow", "dot"],
-  markerEnd: ["none", "arrow", "dot"]
+  markerEnd: ["none", "arrow", "dot"],
+  buttonEnabled: ["1", "0"],
+  buttonActionType: ["none", "project", "layer", "command"],
+  buttonCommand: ["none", "save", "fitCanvas", "centerSelected", "fitSelection", "runTopology", "zoomIn", "zoomOut", "resetZoom"]
+};
+
+const STATIC_BUTTON_ACTION_LABELS: Record<string, string> = {
+  none: "无动作",
+  project: "模型切换",
+  layer: "图层切换",
+  command: "命令执行"
+};
+
+const STATIC_BUTTON_COMMAND_LABELS: Record<string, string> = {
+  none: "无命令",
+  save: "保存模型",
+  fitCanvas: "适配全画布",
+  centerSelected: "居中选中",
+  fitSelection: "缩放到选中区域",
+  runTopology: "图上拓扑",
+  zoomIn: "放大",
+  zoomOut: "缩小",
+  resetZoom: "重置缩放"
 };
 
 function paramOptionsForSection(key: string, section?: string) {
@@ -1711,6 +1880,8 @@ function readDraftProject(): DraftProjectState | null {
       canvasBackgroundColor: parsed.canvasBackgroundColor,
       canvasBackgroundImage: parsed.canvasBackgroundImage,
       canvasBackgroundImageAssetId: parsed.canvasBackgroundImageAssetId,
+      backgroundProjectId: parsed.backgroundProjectId,
+      backgroundLayerIds: parsed.backgroundLayerIds,
       powerUnit: parsed.powerUnit,
       voltageUnit: parsed.voltageUnit,
       currentUnit: parsed.currentUnit,
@@ -2869,6 +3040,24 @@ function nodeUprightScaleTransform(node: ModelNode) {
   return `scale(${formatSvgNumber(Math.abs(getNodeScaleX(node)) || 1)} ${formatSvgNumber(Math.abs(getNodeScaleY(node)) || 1)})`;
 }
 
+function defaultBackgroundLayerIdsForProject(project: ProjectFile) {
+  return (normalizeProjectLayers(project).layers ?? [])
+    .filter((layer) => layer.visible !== false)
+    .map((layer) => layer.id);
+}
+
+function backgroundPageCanvasTransform(sourceBounds: CanvasBounds, targetBounds: CanvasBounds) {
+  const sourceWidth = Math.max(1, sourceBounds.width);
+  const sourceHeight = Math.max(1, sourceBounds.height);
+  const targetWidth = Math.max(1, targetBounds.width);
+  const targetHeight = Math.max(1, targetBounds.height);
+  const scale = Math.min(targetWidth / sourceWidth, targetHeight / sourceHeight);
+  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  const x = (targetWidth - sourceWidth * safeScale) / 2;
+  const y = (targetHeight - sourceHeight * safeScale) / 2;
+  return `translate(${formatSvgNumber(x)} ${formatSvgNumber(y)}) scale(${formatSvgNumber(safeScale)})`;
+}
+
 function numericNodeParam(node: ModelNode, key: string, fallback: number) {
   const parsed = Number(node.params[key]);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -3007,6 +3196,28 @@ function nodeTransformedHalfExtents(node: ModelNode, includeUprightContent = fal
   return {
     halfWidth: includeUprightContent ? Math.max(halfWidth, rotatedHalfWidth) : rotatedHalfWidth,
     halfHeight: includeUprightContent ? Math.max(halfHeight, rotatedHalfHeight) : rotatedHalfHeight
+  };
+}
+
+function nodeScaledLocalHalfExtents(node: ModelNode) {
+  return {
+    halfWidth: (node.size.width * Math.abs(getNodeScaleX(node))) / 2,
+    halfHeight: (node.size.height * Math.abs(getNodeScaleY(node))) / 2
+  };
+}
+
+function nodeRotateHandleControlPoints(
+  node: ModelNode,
+  rotateStemStart: number,
+  rotateStemEnd: number,
+  rotateHandleGap: number
+) {
+  const { halfHeight } = nodeScaledLocalHalfExtents(node);
+  const origin = { x: 0, y: 0 };
+  return {
+    stemStart: rotatePointAround({ x: 0, y: -halfHeight - rotateStemStart }, origin, node.rotation),
+    stemEnd: rotatePointAround({ x: 0, y: -halfHeight - rotateStemEnd }, origin, node.rotation),
+    handle: rotatePointAround({ x: 0, y: -halfHeight - rotateHandleGap }, origin, node.rotation)
   };
 }
 
@@ -5009,6 +5220,8 @@ export function App() {
   const pendingRewirePreviewRef = useRef<{ point: Point; rewiring: Exclude<RewiringState, null> } | null>(null);
   const rewirePreviewFrameRef = useRef<number | null>(null);
   const draggingRef = useRef<DraggingState | null>(null);
+  const staticButtonPointerRef = useRef<StaticButtonPointerSnapshot | null>(null);
+  const staticButtonFeedbackTimeoutRef = useRef<number | null>(null);
   const multiNodeDragOverlayRef = useRef<SVGGElement | null>(null);
   const imperativeMultiNodeDragOverlayRef = useRef<SVGGElement | null>(null);
   const imperativeMultiNodeDragActiveRef = useRef(false);
@@ -5105,6 +5318,8 @@ export function App() {
   const [canvasBackgroundColor, setCanvasBackgroundColor] = useState(() => initialDraft?.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND);
   const [canvasBackgroundImage, setCanvasBackgroundImage] = useState(() => initialDraft?.canvasBackgroundImage ?? "");
   const [canvasBackgroundImageAssetId, setCanvasBackgroundImageAssetId] = useState(() => initialDraft?.canvasBackgroundImageAssetId ?? "");
+  const [backgroundProjectId, setBackgroundProjectId] = useState(() => initialDraft?.backgroundProjectId ?? "");
+  const [backgroundLayerIds, setBackgroundLayerIds] = useState<string[]>(() => initialDraft?.backgroundLayerIds ?? []);
   const [powerUnit, setPowerUnit] = useState(() => initialDraft?.powerUnit ?? DEFAULT_POWER_UNIT);
   const [voltageUnit, setVoltageUnit] = useState(() => initialDraft?.voltageUnit ?? DEFAULT_VOLTAGE_UNIT);
   const [currentUnit, setCurrentUnit] = useState(() => initialDraft?.currentUnit ?? DEFAULT_CURRENT_UNIT);
@@ -5126,6 +5341,7 @@ export function App() {
   const [canvasSelectionScope, setCanvasSelectionScope] = useState<CanvasSelectionScope>("group");
   const [connectSource, setConnectSource] = useState<{ nodeId: string; terminalId: string; point?: Point } | null>(null);
   const [staticDrawing, setStaticDrawing] = useState<StaticDrawingState | null>(null);
+  const [staticButtonVisual, setStaticButtonVisual] = useState<{ nodeId: string; state: StaticButtonVisualState } | null>(null);
   const [connectDropReady, setConnectDropReady] = useState(false);
   const [dragging, setDragging] = useState<DraggingState | null>(null);
   const [rewiring, setRewiring] = useState<RewiringState>(null);
@@ -5142,6 +5358,7 @@ export function App() {
     initialVisibleCanvasViewBox({ width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT }, null)
   );
   const [canvasFrameViewportSize, setCanvasFrameViewportSize] = useState<CanvasBounds>({ width: 0, height: 0 });
+  const [canvasNoScrollOffset, setCanvasNoScrollOffset] = useState<Point>({ x: 0, y: 0 });
   const viewBoxRef = useRef<CanvasViewBox>(viewBox);
   viewBoxRef.current = viewBox;
   const [canvasCenterRequest, setCanvasCenterRequest] = useState(0);
@@ -5149,6 +5366,7 @@ export function App() {
     clientX: number;
     clientY: number;
     viewBox: typeof viewBox;
+    canvasOffset: Point;
     scrollLeft: number;
     scrollTop: number;
     scrollMode: boolean;
@@ -5185,6 +5403,8 @@ export function App() {
   const [containerParamViewId, setContainerParamViewId] = useState("container");
   const [expandedAttributeLibraries, setExpandedAttributeLibraries] = useState<AttributeLibrary[]>([...DEFAULT_ATTRIBUTE_LIBRARIES]);
   const [expandedAttributeLibraryComponentTypes, setExpandedAttributeLibraryComponentTypes] = useState<string[]>([]);
+  const [hoveredAttributeLibrary, setHoveredAttributeLibrary] = useState<AttributeLibrary | "">("");
+  const [hoveredAttributeLibraryComponentType, setHoveredAttributeLibraryComponentType] = useState("");
   const [collapsedElementTreeGroups, setCollapsedElementTreeGroups] = useState<string[]>([]);
   const [elementTreeItemLimits, setElementTreeItemLimits] = useState<Record<string, number>>({});
   const [customAttributeLibraries, setCustomAttributeLibraries] = useState<AttributeLibrary[]>(() => initialDeviceLibrary.customAttributeLibraries);
@@ -5193,6 +5413,7 @@ export function App() {
   const [customGraphTemplateTypes, setCustomGraphTemplateTypes] = useState<string[]>(() => initialDeviceLibrary.customGraphTemplateTypes);
   const [customGraphTemplates, setCustomGraphTemplates] = useState<GraphTemplate[]>(() => initialDeviceLibrary.customGraphTemplates);
   const [expandedGraphTemplateTypes, setExpandedGraphTemplateTypes] = useState<string[]>([...DEFAULT_GRAPH_TEMPLATE_TYPES]);
+  const [hoveredGraphTemplateType, setHoveredGraphTemplateType] = useState("");
   const [templateDialog, setTemplateDialog] = useState<TemplateDialogState>(null);
   const [templateDraftType, setTemplateDraftType] = useState(DEFAULT_GRAPH_TEMPLATE_TYPES[0]);
   const [templateDraftName, setTemplateDraftName] = useState("");
@@ -5249,6 +5470,7 @@ export function App() {
     const preferredSchemeId = initialDraft?.activeSchemeId || schemes[0]?.id;
     return preferredSchemeId ? [preferredSchemeId] : [];
   });
+  const [hoveredSchemeId, setHoveredSchemeId] = useState("");
   const [projectMenu, setProjectMenu] = useState<ProjectMenuState>(null);
   const [projectPanelHeight, setProjectPanelHeight] = useState(PROJECT_PANEL_DEFAULT_HEIGHT);
   const [projectPanelResize, setProjectPanelResize] = useState<{ startY: number; startHeight: number } | null>(null);
@@ -5771,6 +5993,23 @@ export function App() {
     const bounds = transformDrag.bounds;
     return (
       <g className="group-transform-photo-preview">
+        <g className="group-transform-origin-ghost">
+          {transformDrag.originalEdgeRoutes.map((route) => (
+            <path
+              key={`group-transform-origin-edge-${route.edgeId}`}
+              d={pointsToPreviewPath(route.points)}
+              className="connection-line group-transform-origin-edge"
+              style={connectionLineStyle(route.edgeId)}
+            />
+          ))}
+          <rect
+            className="group-transform-origin-outline"
+            x={bounds.left}
+            y={bounds.top}
+            width={Math.max(1, bounds.right - bounds.left)}
+            height={Math.max(1, bounds.bottom - bounds.top)}
+          />
+        </g>
         {groupTransformPreviewEdgeRoutes.map((route) => (
           <path key={`group-transform-photo-edge-${route.edgeId}`} d={route.path} className="connection-line group-transform-preview" style={connectionLineStyle(route.edgeId)} />
         ))}
@@ -5905,6 +6144,63 @@ export function App() {
             height={Math.max(1, bounds.bottom - bounds.top)}
           />
         </g>
+      </g>
+    );
+  };
+  const renderSingleTransformRotateOriginGhost = () => {
+    if (!transformDrag || isGroupTransformDrag(transformDrag) || transformDrag.kind !== "rotate" || !transformDrag.previewPoint) {
+      return null;
+    }
+    const node = nodeById.get(transformDrag.nodeId);
+    if (!node || !visibleNodeIdSet.has(node.id)) {
+      return null;
+    }
+    const ghostNode = {
+      ...node,
+      position: { ...transformDrag.originalNode.position },
+      rotation: transformDrag.originalNode.rotation,
+      scale: transformDrag.originalNode.scale,
+      scaleX: transformDrag.originalNode.scaleX,
+      scaleY: transformDrag.originalNode.scaleY
+    };
+    return (
+      <g
+        className={`node-rotate-origin-ghost ${isBusNode(ghostNode) ? "bus-node" : ""}`}
+        transform={`translate(${ghostNode.position.x} ${ghostNode.position.y})`}
+      >
+        <g className="node-geometry" transform={nodeGeometryTransform(ghostNode)}>
+          <rect
+            x={-ghostNode.size.width / 2}
+            y={-ghostNode.size.height / 2}
+            width={ghostNode.size.width}
+            height={ghostNode.size.height}
+            rx="8"
+            className={`node-hitbox ${isBusNode(ghostNode) ? "bus-hitbox" : ""} ${isStaticNode(ghostNode) ? "static-hitbox" : ""}`}
+          />
+          <MemoDeviceGlyph node={ghostNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+          <MemoDeviceGlyph node={ghostNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+        </g>
+      </g>
+    );
+  };
+  const renderTransformRotationTrajectory = () => {
+    if (!transformDrag || transformDrag.kind !== "rotate" || !transformDrag.previewPoint) {
+      return null;
+    }
+    const center = isGroupTransformDrag(transformDrag)
+      ? transformDrag.center
+      : transformDrag.originalNode.position;
+    const delta = rotationDeltaBetweenTransformPoints(center, transformDrag.startPoint, transformDrag.previewPoint, false);
+    const startPoint = transformDrag.rotationStartPoint ?? transformDrag.startPoint;
+    const arcPath = rotationTrajectoryArcPath(center, startPoint, delta);
+    const endPoint = rotatePointAround(startPoint, center, delta);
+    return (
+      <g className="rotation-trajectory">
+        <line className="rotation-start-ray" x1={center.x} y1={center.y} x2={startPoint.x} y2={startPoint.y} />
+        <line className="rotation-current-ray" x1={center.x} y1={center.y} x2={endPoint.x} y2={endPoint.y} />
+        {arcPath && <path className="rotation-trajectory-arc" d={arcPath} />}
+        <circle className="rotation-center-dot" cx={center.x} cy={center.y} r="4" />
+        <circle className="rotation-current-dot" cx={endPoint.x} cy={endPoint.y} r="5" />
       </g>
     );
   };
@@ -6254,6 +6550,8 @@ export function App() {
       canvasBackgroundColor,
       canvasBackgroundImage,
       canvasBackgroundImageAssetId,
+      backgroundProjectId,
+      backgroundLayerIds,
       powerUnit,
       voltageUnit,
       currentUnit,
@@ -6267,8 +6565,70 @@ export function App() {
     }
   };
   const selectedSchemeRecord = schemes.find((scheme) => scheme.id === selectedSchemeId);
+  const backgroundProjectOptions = useMemo(
+    () => schemes.flatMap((scheme) =>
+      scheme.projects
+        .filter((project) => project.id !== activeProjectId)
+        .map((project) => ({ scheme, project }))
+    ),
+    [activeProjectId, schemes]
+  );
+  const backgroundProjectRecord = backgroundProjectId && backgroundProjectId !== activeProjectId
+    ? projectById.get(backgroundProjectId)
+    : undefined;
+  const backgroundLayerOptions = useMemo(
+    () => backgroundProjectRecord ? normalizeProjectLayers(backgroundProjectRecord.project).layers ?? [] : [],
+    [backgroundProjectRecord]
+  );
+  const resolveConfiguredBackgroundLayerIds = (projectId?: string, configuredLayerIds?: string[]) => {
+    if (!projectId) {
+      return [];
+    }
+    const backgroundProject = projectById.get(projectId);
+    if (!backgroundProject) {
+      return configuredLayerIds ?? [];
+    }
+    const validLayerIds = new Set((normalizeProjectLayers(backgroundProject.project).layers ?? []).map((layer) => layer.id));
+    if (!configuredLayerIds) {
+      return defaultBackgroundLayerIdsForProject(backgroundProject.project);
+    }
+    return configuredLayerIds.filter((layerId) => validLayerIds.has(layerId));
+  };
+  const toggleBackgroundLayer = (layerId: string) => {
+    pushUndoSnapshot();
+    setBackgroundLayerIds((current) => current.includes(layerId)
+      ? current.filter((item) => item !== layerId)
+      : [...current, layerId]
+    );
+  };
   const selectedNodeCount = activeSelectedNodeIds.length;
   const selectedCount = selectedNodeCount + activeSelectedEdgeIds.length;
+  const selectedNodeTransformStatus = useMemo(() => {
+    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => visibleNodeById.get(nodeId) ?? []);
+    if (selectedNodes.length === 0) {
+      return null;
+    }
+    const firstNode = selectedNodes[0];
+    const firstScaleX = getNodeScaleX(firstNode);
+    const firstScaleY = getNodeScaleY(firstNode);
+    const firstRotation = normalizeRotationDegrees(firstNode.rotation);
+    const sameScale = selectedNodes.every((node) =>
+      Math.abs(getNodeScaleX(node) - firstScaleX) < 0.0005 &&
+      Math.abs(getNodeScaleY(node) - firstScaleY) < 0.0005
+    );
+    const sameRotation = selectedNodes.every((node) => normalizeRotationDegrees(node.rotation) === firstRotation);
+    const scaleText = sameScale
+      ? `X ${formatStatusScalePercent(firstScaleX)} / Y ${formatStatusScalePercent(firstScaleY)}`
+      : "多值";
+    const rotationText = sameRotation ? formatStatusRotationDegrees(firstRotation) : "多值";
+    return {
+      scaleText,
+      rotationText,
+      title: selectedNodes.length === 1
+        ? `${firstNode.name}：缩放 ${scaleText}，旋转 ${rotationText}`
+        : `已选 ${selectedNodes.length} 个图元：缩放 ${scaleText}，旋转 ${rotationText}`
+    };
+  }, [activeSelectedNodeIds, visibleNodeById]);
   const contextSelectionCount = activeSelectedNodeIds.length + activeSelectedEdgeIds.length;
   const activeSelectedGroupIds = useMemo(
     () => selectedCanvasGroupIds(activeLayerGroups, groupExpandedCanvasSelection.nodeIds, groupExpandedCanvasSelection.edgeIds),
@@ -6592,29 +6952,75 @@ export function App() {
   const canvasScrollScale = canvasScrollScaleFromViewBox(viewBox, canvasBounds);
   const canvasDisplayWidth = Math.max(1, Math.round(canvasBounds.width * canvasScrollScale.x));
   const canvasDisplayHeight = Math.max(1, Math.round(canvasBounds.height * canvasScrollScale.y));
+  const canvasHorizontalScrollbarsActive =
+    canvasFrameViewportSize.width > 0 &&
+    canvasDisplayWidth + CANVAS_FRAME_INSET * 2 > canvasFrameViewportSize.width + CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE;
+  const canvasVerticalScrollbarsActive =
+    canvasFrameViewportSize.height > 0 &&
+    canvasDisplayHeight + CANVAS_FRAME_INSET * 2 > canvasFrameViewportSize.height + CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE;
   const canvasScrollbarsActive =
     canvasFrameViewportSize.width > 0 &&
     canvasFrameViewportSize.height > 0 &&
-    (
-      canvasDisplayWidth + CANVAS_FRAME_INSET * 2 > canvasFrameViewportSize.width + CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE ||
-      canvasDisplayHeight + CANVAS_FRAME_INSET * 2 > canvasFrameViewportSize.height + CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE
-    );
-  const canvasScrollSurfaceWidth = Math.max(canvasDisplayWidth + CANVAS_FRAME_INSET * 2, canvasFrameViewportSize.width);
-  const canvasScrollSurfaceHeight = Math.max(canvasDisplayHeight + CANVAS_FRAME_INSET * 2, canvasFrameViewportSize.height);
-  const canvasDisplayOffsetX = Math.max(CANVAS_FRAME_INSET, Math.round((canvasScrollSurfaceWidth - canvasDisplayWidth) / 2));
-  const canvasDisplayOffsetY = Math.max(CANVAS_FRAME_INSET, Math.round((canvasScrollSurfaceHeight - canvasDisplayHeight) / 2));
+    (canvasHorizontalScrollbarsActive || canvasVerticalScrollbarsActive);
+  const canvasScrollSurfaceWidth = canvasScrollSurfaceSize(
+    canvasDisplayWidth,
+    canvasFrameViewportSize.width,
+    canvasHorizontalScrollbarsActive
+  );
+  const canvasScrollSurfaceHeight = canvasScrollSurfaceSize(
+    canvasDisplayHeight,
+    canvasFrameViewportSize.height,
+    canvasVerticalScrollbarsActive
+  );
+  const canvasBaseDisplayOffsetX = canvasDisplayOffset(
+    canvasDisplayWidth,
+    canvasScrollSurfaceWidth,
+    canvasFrameViewportSize.width,
+    canvasHorizontalScrollbarsActive
+  );
+  const canvasBaseDisplayOffsetY = canvasDisplayOffset(
+    canvasDisplayHeight,
+    canvasScrollSurfaceHeight,
+    canvasFrameViewportSize.height,
+    canvasVerticalScrollbarsActive
+  );
+  const clampedCanvasNoScrollOffset = {
+    x: clampCanvasNoScrollOffset(
+      canvasNoScrollOffset.x,
+      canvasDisplayWidth,
+      canvasFrameViewportSize.width,
+      canvasBaseDisplayOffsetX,
+      canvasHorizontalScrollbarsActive
+    ),
+    y: clampCanvasNoScrollOffset(
+      canvasNoScrollOffset.y,
+      canvasDisplayHeight,
+      canvasFrameViewportSize.height,
+      canvasBaseDisplayOffsetY,
+      canvasVerticalScrollbarsActive
+    )
+  };
+  const canvasDisplayOffsetX = Math.round(canvasBaseDisplayOffsetX + clampedCanvasNoScrollOffset.x);
+  const canvasDisplayOffsetY = Math.round(canvasBaseDisplayOffsetY + clampedCanvasNoScrollOffset.y);
   const canvasBoundsRef = useRef<CanvasBounds>(canvasBounds);
   const canvasFullViewBoxRef = useRef<CanvasViewBox>(canvasFullViewBox);
   const canvasScrollScaleRef = useRef(canvasScrollScale);
+  const canvasNoScrollOffsetRef = useRef(clampedCanvasNoScrollOffset);
   const canvasScrollbarsActiveRef = useRef(canvasScrollbarsActive);
+  const canvasHorizontalScrollbarsActiveRef = useRef(canvasHorizontalScrollbarsActive);
+  const canvasVerticalScrollbarsActiveRef = useRef(canvasVerticalScrollbarsActive);
   const canvasVisibleViewBoxRef = useRef<CanvasViewBox>(canvasVisibleViewBox);
   const skipNextCanvasScrollSyncRef = useRef(false);
   const canvasFrameUserScrollRef = useRef(false);
+  const canvasFrameProgrammaticScrollRef = useRef(false);
   const pendingWheelZoomAnchorRef = useRef<WheelZoomAnchor | null>(null);
   canvasBoundsRef.current = canvasBounds;
   canvasFullViewBoxRef.current = canvasFullViewBox;
   canvasScrollScaleRef.current = canvasScrollScale;
+  canvasNoScrollOffsetRef.current = clampedCanvasNoScrollOffset;
   canvasScrollbarsActiveRef.current = canvasScrollbarsActive;
+  canvasHorizontalScrollbarsActiveRef.current = canvasHorizontalScrollbarsActive;
+  canvasVerticalScrollbarsActiveRef.current = canvasVerticalScrollbarsActive;
   canvasVisibleViewBoxRef.current = canvasVisibleViewBox;
   const clampCanvasBounds = (bounds: CanvasBounds): CanvasBounds => ({
     width: clampCanvasDimension(bounds.width, MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH, canvasWidth),
@@ -6791,31 +7197,58 @@ export function App() {
     }
     return changed ? { ...edge, sourcePoint, targetPoint, manualPoints } : edge;
   };
+  const clampCanvasNoScrollOffsetPoint = (offset: Point): Point => ({
+    x: clampCanvasNoScrollOffset(
+      offset.x,
+      canvasDisplayWidth,
+      canvasFrameViewportSize.width,
+      canvasBaseDisplayOffsetX,
+      canvasHorizontalScrollbarsActive
+    ),
+    y: clampCanvasNoScrollOffset(
+      offset.y,
+      canvasDisplayHeight,
+      canvasFrameViewportSize.height,
+      canvasBaseDisplayOffsetY,
+      canvasVerticalScrollbarsActive
+    )
+  });
+  const setCanvasFrameScrollPosition = (frame: HTMLElement, left: number, top: number) => {
+    canvasFrameProgrammaticScrollRef.current = true;
+    frame.scrollLeft = left;
+    frame.scrollTop = top;
+    window.requestAnimationFrame(() => {
+      canvasFrameProgrammaticScrollRef.current = false;
+    });
+  };
+  const centerCanvasFrameScrollPosition = (frame: HTMLElement) => {
+    setCanvasFrameScrollPosition(
+      frame,
+      Math.max(0, (frame.scrollWidth - frame.clientWidth) / 2),
+      Math.max(0, (frame.scrollHeight - frame.clientHeight) / 2)
+    );
+  };
   const syncCanvasFrameScrollToViewBox = (targetViewBox = viewBoxRef.current) => {
     const frame = canvasFrameRef.current;
     if (!frame) {
       return;
     }
     if (!canvasScrollbarsActiveRef.current) {
-      if (Math.abs(frame.scrollLeft) > 1) {
-        frame.scrollLeft = 0;
-      }
-      if (Math.abs(frame.scrollTop) > 1) {
-        frame.scrollTop = 0;
+      if (Math.abs(frame.scrollLeft) > 1 || Math.abs(frame.scrollTop) > 1) {
+        setCanvasFrameScrollPosition(frame, 0, 0);
       }
       return;
     }
-    const scale = canvasScrollScaleRef.current;
-    const padding = canvasFramePaddingOffset(frame, svgRef.current);
     const maxLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
     const maxTop = Math.max(0, frame.scrollHeight - frame.clientHeight);
-    const nextLeft = clampNumber(targetViewBox.x * scale.x + padding.left, 0, maxLeft);
-    const nextTop = clampNumber(targetViewBox.y * scale.y + padding.top, 0, maxTop);
-    if (maxLeft > 1 && Math.abs(frame.scrollLeft - nextLeft) > 1) {
-      frame.scrollLeft = nextLeft;
-    }
-    if (maxTop > 1 && Math.abs(frame.scrollTop - nextTop) > 1) {
-      frame.scrollTop = nextTop;
+    const nextLeft = canvasHorizontalScrollbarsActiveRef.current
+      ? viewBoxStartToScrollPosition(targetViewBox.x, targetViewBox.width, canvasBoundsRef.current.width, maxLeft)
+      : 0;
+    const nextTop = canvasVerticalScrollbarsActiveRef.current
+      ? viewBoxStartToScrollPosition(targetViewBox.y, targetViewBox.height, canvasBoundsRef.current.height, maxTop)
+      : 0;
+    if (Math.abs(frame.scrollLeft - nextLeft) > 1 || Math.abs(frame.scrollTop - nextTop) > 1) {
+      setCanvasFrameScrollPosition(frame, nextLeft, nextTop);
     }
   };
   const syncCanvasFrameScrollToWheelAnchor = (anchor: WheelZoomAnchor) => {
@@ -6825,17 +7258,12 @@ export function App() {
     if (!frame || !svg || bounds.width <= 0 || bounds.height <= 0) {
       return;
     }
-    if (!canvasScrollbarsActiveRef.current) {
-      frame.scrollLeft = 0;
-      frame.scrollTop = 0;
-      return;
-    }
     const svgRect = svg.getBoundingClientRect();
     const scale = {
       x: svgRect.width > 0 ? svgRect.width / bounds.width : canvasScrollScaleRef.current.x,
       y: svgRect.height > 0 ? svgRect.height / bounds.height : canvasScrollScaleRef.current.y
     };
-    const next = anchoredCanvasScrollPosition(
+    const scrollPosition = anchoredCanvasScrollPosition(
       anchor,
       scale,
       canvasFramePaddingOffset(frame, svg),
@@ -6844,8 +7272,35 @@ export function App() {
         top: Math.max(0, frame.scrollHeight - frame.clientHeight)
       }
     );
-    frame.scrollLeft = next.left;
-    frame.scrollTop = next.top;
+    const noScrollOffset = anchoredCanvasNoScrollOffset(
+      anchor,
+      scale,
+      {
+        left: canvasBaseDisplayOffsetX,
+        top: canvasBaseDisplayOffsetY
+      }
+    );
+    const nextCanvasNoScrollOffset = clampCanvasNoScrollOffsetPoint({
+      x: canvasHorizontalScrollbarsActiveRef.current ? 0 : noScrollOffset.x,
+      y: canvasVerticalScrollbarsActiveRef.current ? 0 : noScrollOffset.y
+    });
+    setCanvasFrameScrollPosition(
+      frame,
+      canvasHorizontalScrollbarsActiveRef.current ? scrollPosition.left : 0,
+      canvasVerticalScrollbarsActiveRef.current ? scrollPosition.top : 0
+    );
+    if (!canvasHorizontalScrollbarsActiveRef.current || !canvasVerticalScrollbarsActiveRef.current) {
+      skipNextCanvasScrollSyncRef.current = true;
+      setCanvasNoScrollOffset((current) => {
+        if (
+          Math.round(current.x) === Math.round(nextCanvasNoScrollOffset.x) &&
+          Math.round(current.y) === Math.round(nextCanvasNoScrollOffset.y)
+        ) {
+          return current;
+        }
+        return nextCanvasNoScrollOffset;
+      });
+    }
   };
   const currentViewBoxFromCanvasFrameScroll = () => {
     const frame = canvasFrameRef.current;
@@ -6855,12 +7310,16 @@ export function App() {
     if (!canvasScrollbarsActiveRef.current) {
       return viewBoxRef.current;
     }
-    const scale = canvasScrollScaleRef.current;
-    const padding = canvasFramePaddingOffset(frame, svgRef.current);
     const maxLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
     const maxTop = Math.max(0, frame.scrollHeight - frame.clientHeight);
-    const nextX = maxLeft > 1 ? (frame.scrollLeft - padding.left) / Math.max(0.0001, scale.x) : viewBoxRef.current.x;
-    const nextY = maxTop > 1 ? (frame.scrollTop - padding.top) / Math.max(0.0001, scale.y) : viewBoxRef.current.y;
+    const bounds = canvasBoundsRef.current;
+    const current = viewBoxRef.current;
+    const nextX = canvasHorizontalScrollbarsActiveRef.current
+      ? scrollPositionToViewBoxStart(frame.scrollLeft, current.width, bounds.width, maxLeft, current.x)
+      : current.x;
+    const nextY = canvasVerticalScrollbarsActiveRef.current
+      ? scrollPositionToViewBoxStart(frame.scrollTop, current.height, bounds.height, maxTop, current.y)
+      : current.y;
     return normalizeViewBoxToCanvas({ ...viewBoxRef.current, x: nextX, y: nextY }, canvasBoundsRef.current);
   };
   const scheduleCanvasVisibleViewBoxUpdate = () => {
@@ -6882,26 +7341,27 @@ export function App() {
       const canvasFullyVisible = !canvasScrollbarsActiveRef.current && renderedCanvasFullyFitsFrame(frameRect, svgRect);
       const next = canvasFullyVisible ? fullViewBox : visibleCanvasViewBoxFromRects(frameRect, svgRect, fullViewBox);
       setCanvasVisibleViewBox((current) => (sameCanvasViewBox(current, next) ? current : next));
-      if (canvasFullyVisible) {
+      if (canvasFullyVisible || !frameScrollWasUserDriven) {
         return;
       }
+      const scrolledViewBox = currentViewBoxFromCanvasFrameScroll();
       setViewBox((current) => {
-        const nextViewBox = normalizeViewBoxToCanvas({ ...current, x: next.x, y: next.y }, canvasBoundsRef.current);
+        const nextViewBox = normalizeViewBoxToCanvas({ ...current, x: scrolledViewBox.x, y: scrolledViewBox.y }, canvasBoundsRef.current);
         if (
           Math.round(nextViewBox.x) === Math.round(current.x) &&
           Math.round(nextViewBox.y) === Math.round(current.y)
         ) {
           return current;
         }
-        if (frameScrollWasUserDriven) {
-          skipNextCanvasScrollSyncRef.current = true;
-        }
+        skipNextCanvasScrollSyncRef.current = true;
         return nextViewBox;
       });
     });
   };
   const handleCanvasFrameScroll = () => {
-    canvasFrameUserScrollRef.current = true;
+    if (!canvasFrameProgrammaticScrollRef.current) {
+      canvasFrameUserScrollRef.current = true;
+    }
     scheduleCanvasVisibleViewBoxUpdate();
   };
   const updateCanvasFrameViewportSize = () => {
@@ -6918,6 +7378,21 @@ export function App() {
     updateCanvasFrameViewportSize();
     scheduleCanvasVisibleViewBoxUpdate();
   };
+  useEffect(() => {
+    setCanvasNoScrollOffset((current) => {
+      const next = clampCanvasNoScrollOffsetPoint(current);
+      return next.x === current.x && next.y === current.y ? current : next;
+    });
+  }, [
+    canvasBaseDisplayOffsetX,
+    canvasBaseDisplayOffsetY,
+    canvasDisplayHeight,
+    canvasDisplayWidth,
+    canvasFrameViewportSize.height,
+    canvasFrameViewportSize.width,
+    canvasHorizontalScrollbarsActive,
+    canvasVerticalScrollbarsActive
+  ]);
   const leftPanelVisible = isSidePanelVisible(leftPanelMode, leftPanelAutoVisible);
   const rightPanelVisible = isSidePanelVisible(rightPanelMode, rightPanelAutoVisible);
   const nodeImage = (node: ModelNode) => resolveNodeImage(node, imageAssets);
@@ -8269,8 +8744,8 @@ export function App() {
 
   useEffect(() => {
     const preventPageWheelZoom = (event: WheelEvent) => {
-      if ((event.ctrlKey || event.metaKey) && (event.target as Element | null)?.closest(".diagram-canvas")) {
-        event.preventDefault();
+      if (event.ctrlKey || event.metaKey) {
+        zoomCanvasFromWheelEvent(event);
       }
     };
     window.addEventListener("wheel", preventPageWheelZoom, { passive: false, capture: true });
@@ -8316,6 +8791,10 @@ export function App() {
       if (keyboardMoveFrameRef.current !== null) {
         window.cancelAnimationFrame(keyboardMoveFrameRef.current);
         keyboardMoveFrameRef.current = null;
+      }
+      if (staticButtonFeedbackTimeoutRef.current !== null) {
+        window.clearTimeout(staticButtonFeedbackTimeoutRef.current);
+        staticButtonFeedbackTimeoutRef.current = null;
       }
       keyboardMoveActiveKeyDeltasRef.current.clear();
       keyboardMoveLastFrameTimeRef.current = null;
@@ -8425,6 +8904,8 @@ export function App() {
     canvasBackgroundColor,
     canvasBackgroundImage,
     canvasBackgroundImageAssetId,
+    backgroundProjectId,
+    backgroundLayerIds: [...backgroundLayerIds],
     powerUnit,
     voltageUnit,
     currentUnit,
@@ -8610,6 +9091,8 @@ export function App() {
       setCanvasBackgroundColor(snapshot.canvasBackgroundColor);
       setCanvasBackgroundImage(snapshot.canvasBackgroundImage);
       setCanvasBackgroundImageAssetId(snapshot.canvasBackgroundImageAssetId);
+      setBackgroundProjectId(snapshot.backgroundProjectId);
+      setBackgroundLayerIds(snapshot.backgroundLayerIds);
       setPowerUnit(snapshot.powerUnit);
       setVoltageUnit(snapshot.voltageUnit);
       setCurrentUnit(snapshot.currentUnit);
@@ -8646,8 +9129,11 @@ export function App() {
       return;
     }
     const frameId = window.requestAnimationFrame(() => {
-      frame.scrollLeft = Math.max(0, (frame.scrollWidth - frame.clientWidth) / 2);
-      frame.scrollTop = Math.max(0, (frame.scrollHeight - frame.clientHeight) / 2);
+      setCanvasFrameScrollPosition(
+        frame,
+        Math.max(0, (frame.scrollWidth - frame.clientWidth) / 2),
+        Math.max(0, (frame.scrollHeight - frame.clientHeight) / 2)
+      );
       scheduleCanvasVisibleViewBoxUpdate();
     });
     return () => window.cancelAnimationFrame(frameId);
@@ -9017,6 +9503,8 @@ export function App() {
       canvasBackgroundColor,
       canvasBackgroundImage,
       canvasBackgroundImageAssetId,
+      backgroundProjectId,
+      backgroundLayerIds,
       powerUnit,
       voltageUnit,
       currentUnit,
@@ -9036,6 +9524,8 @@ export function App() {
     canvasBackgroundColor,
     canvasBackgroundImage,
     canvasBackgroundImageAssetId,
+    backgroundProjectId,
+    backgroundLayerIds,
     powerUnit,
     voltageUnit,
     currentUnit,
@@ -9055,6 +9545,8 @@ export function App() {
     previous.canvasBackgroundColor !== next.canvasBackgroundColor ||
     previous.canvasBackgroundImage !== next.canvasBackgroundImage ||
     previous.canvasBackgroundImageAssetId !== next.canvasBackgroundImageAssetId ||
+    previous.backgroundProjectId !== next.backgroundProjectId ||
+    previous.backgroundLayerIds !== next.backgroundLayerIds ||
     previous.powerUnit !== next.powerUnit ||
     previous.voltageUnit !== next.voltageUnit ||
     previous.currentUnit !== next.currentUnit ||
@@ -9078,7 +9570,7 @@ export function App() {
     if (graphDirtyBaselineChanged(previousBaseline, nextBaseline)) {
       setHasUnsavedChanges(true);
     }
-  }, [activeLayerId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, groups, layers, nodes, powerBaseValue, powerUnit, projectName, voltageUnit]);
+  }, [activeLayerId, backgroundLayerIds, backgroundProjectId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, groups, layers, nodes, powerBaseValue, powerUnit, projectName, voltageUnit]);
 
   const clearTransientSelectionState = () => {
     setSelectedEdgeId("");
@@ -9149,6 +9641,9 @@ export function App() {
     return issues[0]?.message ?? "联络线不满足正交、避让、端子垂直或最优路径约束。";
   };
 
+  const connectionEndpointRuleFailureMessage = (edge: Edge) =>
+    validateConnectionEndpointRules(nodes, edges, edge)[0]?.message ?? "";
+
   const expandActiveGroupSelection = (nodeIds: readonly string[] = [], edgeIds: readonly string[] = []) =>
     expandSelectionByGroups(activeLayerGroups, nodeIds, edgeIds);
 
@@ -9166,6 +9661,22 @@ export function App() {
     setSelectedEdgeIds(selection.edgeIds);
     setSelectedEdgeId(selection.edgeIds[0] ?? "");
     return selection;
+  };
+
+  const toggleNodeSelectionFromModifierClick = (node: ModelNode) => {
+    const nodeAlreadySelected = activeSelectedNodeIds.includes(node.id);
+    const nextNodeIds = nodeAlreadySelected
+      ? activeSelectedNodeIds.filter((nodeId) => nodeId !== node.id)
+      : [...activeSelectedNodeIds, node.id];
+    const nextEdgeIds = [...activeSelectedEdgeIds];
+    setCanvasSelectionScope("direct");
+    setSelectedNodeIds(nextNodeIds);
+    setSelectedEdgeIds(nextEdgeIds);
+    setSelectedEdgeId(nextEdgeIds.includes(selectedEdgeId) ? selectedEdgeId : nextEdgeIds[0] ?? "");
+    setConnectSource(null);
+    resetConnectPreviewState();
+    setRewiring(null);
+    setContextMenu(null);
   };
 
   const createCanvasSelectionSnapshot = (
@@ -11455,8 +11966,8 @@ export function App() {
         const finalPreviewPoint = activeTransform.previewPoint;
         if (finalPreviewPoint) {
           const currentStore = latestGraphStoreRef.current ?? graphStore;
-          let transformedNodeUpdates = buildGroupTransformNodeUpdates(activeTransform, finalPreviewPoint, currentStore);
-          const transformedEdgeUpdates = buildGroupTransformEdgeUpdates(activeTransform, finalPreviewPoint, currentStore);
+          let transformedNodeUpdates = buildGroupTransformNodeUpdates(activeTransform, finalPreviewPoint, currentStore, { snapRotation: activeTransform.kind === "rotate" });
+          const transformedEdgeUpdates = buildGroupTransformEdgeUpdates(activeTransform, finalPreviewPoint, currentStore, { snapRotation: activeTransform.kind === "rotate" });
           const transformedEdges = overlayEdgeUpdatesForTransform(currentStore.edges, transformedEdgeUpdates);
           const transformBounds = canvasBoundsForGraphContent(
             canvasBounds,
@@ -11471,8 +11982,8 @@ export function App() {
             position: clampNodePositionToBounds(node, transformBounds, node.position)
           }));
           setGraphStore((current) => {
-            let currentTransformedNodeUpdates = buildGroupTransformNodeUpdates(activeTransform, finalPreviewPoint, current);
-            const transformedEdgeUpdates = buildGroupTransformEdgeUpdates(activeTransform, finalPreviewPoint, current);
+            let currentTransformedNodeUpdates = buildGroupTransformNodeUpdates(activeTransform, finalPreviewPoint, current, { snapRotation: activeTransform.kind === "rotate" });
+            const transformedEdgeUpdates = buildGroupTransformEdgeUpdates(activeTransform, finalPreviewPoint, current, { snapRotation: activeTransform.kind === "rotate" });
             const transformedRouteEdgeIds = new Set(transformedEdgeUpdates.map((edge) => edge.id));
             const transformedEdges = overlayEdgeUpdatesForTransform(current.edges, transformedEdgeUpdates);
             currentTransformedNodeUpdates = currentTransformedNodeUpdates.map((node) => ({
@@ -11491,6 +12002,42 @@ export function App() {
               ...transformedRouteEdgeIds
             ]));
             return graphStorePatchGraphFromArrays(current, nextNodes, nextEdges, transformedNodeIds, transformedEdgeIds);
+          });
+        }
+      } else if (activeTransform.kind === "rotate" && activeTransform.previewPoint) {
+        const currentStore = latestGraphStoreRef.current ?? graphStore;
+        let singleNodeUpdate = singleTransformNodeUpdate(activeTransform, activeTransform.previewPoint, currentStore, true);
+        if (singleNodeUpdate) {
+          const transformBounds = canvasBoundsForGraphContent(
+            canvasBounds,
+            [singleNodeUpdate],
+            [],
+            [],
+            CANVAS_AUTO_EXPAND_PADDING
+          );
+          applyCanvasBounds(transformBounds);
+          singleNodeUpdate = {
+            ...singleNodeUpdate,
+            position: clampNodePositionToBounds(singleNodeUpdate, transformBounds, singleNodeUpdate.position)
+          };
+          setGraphStore((current) => {
+            if (!activeTransform.previewPoint) {
+              return current;
+            }
+            let currentSingleNodeUpdate = singleTransformNodeUpdate(activeTransform, activeTransform.previewPoint, current, true);
+            if (!currentSingleNodeUpdate) {
+              return current;
+            }
+            currentSingleNodeUpdate = {
+              ...currentSingleNodeUpdate,
+              position: clampNodePositionToBounds(currentSingleNodeUpdate, transformBounds, currentSingleNodeUpdate.position)
+            };
+            const nextNodes = overlayGraphStoreNodes(current, [currentSingleNodeUpdate]);
+            const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, transformedNodeIds, current.edges);
+            return graphStoreApplyPatch(current, {
+              nodeUpdates: [currentSingleNodeUpdate],
+              edgeUpserts: edgeUpdates
+            });
           });
         }
       } else {
@@ -12329,6 +12876,117 @@ export function App() {
     );
   };
 
+  const renderStaticButtonActionEditor = (node: ModelNode) => {
+    if (!isStaticButtonCapableKind(node.kind)) {
+      return null;
+    }
+    const buttonEnabled = node.params.buttonEnabled === "1";
+    const actionType = node.params.buttonActionType || "none";
+    const projectOptions = schemes.flatMap((scheme) =>
+      scheme.projects.map((project) => ({
+        schemeId: scheme.id,
+        schemeName: scheme.name,
+        project
+      }))
+    );
+    return (
+      <>
+        <tr>
+          {renderChineseParamHeader("buttonEnabled")}
+          <td>
+            <label className="inline-checkbox-field">
+              <input
+                type="checkbox"
+                checked={buttonEnabled}
+                onChange={(event) => updateParam("buttonEnabled", event.target.checked ? "1" : "0")}
+              />
+              启用
+            </label>
+          </td>
+        </tr>
+        {buttonEnabled && (
+          <>
+            <tr>
+              {renderChineseParamHeader("buttonActionType")}
+              <td>
+                <select value={actionType} onChange={(event) => updateParam("buttonActionType", event.target.value)}>
+                  {Object.entries(STATIC_BUTTON_ACTION_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </td>
+            </tr>
+            {actionType === "project" && (
+              <tr>
+                {renderChineseParamHeader("buttonTargetProjectId")}
+                <td>
+                  <select
+                    value={node.params.buttonTargetProjectId || ""}
+                    onChange={(event) => {
+                      const selected = projectOptions.find((item) => item.project.id === event.target.value);
+                      updateSelectedNode({
+                        params: {
+                          ...node.params,
+                          buttonTargetProjectId: selected?.project.id ?? "",
+                          buttonTargetProjectName: selected?.project.name ?? "",
+                          buttonTargetSchemeId: selected?.schemeId ?? ""
+                        }
+                      });
+                    }}
+                  >
+                    <option value="">请选择目标模型</option>
+                    {projectOptions.map(({ schemeId, schemeName, project }) => (
+                      <option key={`${schemeId}:${project.id}`} value={project.id}>
+                        {schemeName} / {project.name}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+              </tr>
+            )}
+            {actionType === "layer" && (
+              <tr>
+                {renderChineseParamHeader("buttonTargetLayerId")}
+                <td>
+                  <select
+                    value={node.params.buttonTargetLayerId || ""}
+                    onChange={(event) => {
+                      const layer = layers.find((item) => item.id === event.target.value);
+                      updateSelectedNode({
+                        params: {
+                          ...node.params,
+                          buttonTargetLayerId: layer?.id ?? "",
+                          buttonTargetLayerName: layer?.name ?? ""
+                        }
+                      });
+                    }}
+                  >
+                    <option value="">请选择目标图层</option>
+                    {layers.map((layer) => (
+                      <option key={layer.id} value={layer.id}>{layer.name}</option>
+                    ))}
+                  </select>
+                </td>
+              </tr>
+            )}
+            {actionType === "command" && (
+              <tr>
+                {renderChineseParamHeader("buttonCommand")}
+                <td>
+                  <select value={node.params.buttonCommand || "none"} onChange={(event) => updateParam("buttonCommand", event.target.value)}>
+                    {Object.entries(STATIC_BUTTON_COMMAND_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                </td>
+              </tr>
+            )}
+          </>
+        )}
+      </>
+    );
+  };
+
   const renderParamHeader = (key: string, displayName = key, title = PARAM_LABELS[key] ?? displayName) => (
     <th title={title}>{displayName}</th>
   );
@@ -12410,6 +13068,43 @@ export function App() {
   const staticDrawingPathData = (points: Point[]) =>
     points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
 
+  const renderStaticBoxDrawingPreview = () => {
+    if (!staticDrawing) {
+      return null;
+    }
+    const points = staticDrawingPreviewPoints(staticDrawing);
+    if (points.length < 2) {
+      return (
+        <g className="static-drawing-preview">
+          {staticDrawing.points.map((point, index) => (
+            <circle key={index} className="static-drawing-preview-point" cx={point.x} cy={point.y} r="4.5" />
+          ))}
+        </g>
+      );
+    }
+    const previewNode = createStaticBoxNodeFromDrawing(staticDrawing.template, points, activeLayerId);
+    return (
+      <g className="static-drawing-preview static-drawing-preview-box">
+        <rect
+          className="static-drawing-preview-rect"
+          x={previewNode.position.x - previewNode.size.width / 2}
+          y={previewNode.position.y - previewNode.size.height / 2}
+          width={previewNode.size.width}
+          height={previewNode.size.height}
+        />
+        <g transform={`translate(${formatSvgNumber(previewNode.position.x)} ${formatSvgNumber(previewNode.position.y)})`}>
+          <g className="node-geometry" transform={nodeGeometryTransform(previewNode)}>
+            <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+            <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+          </g>
+        </g>
+        {staticDrawing.points.map((point, index) => (
+          <circle key={index} className="static-drawing-preview-point" cx={point.x} cy={point.y} r="4.5" />
+        ))}
+      </g>
+    );
+  };
+
   const startInteractiveStaticDrawing = (template: DeviceTemplate, startPoint: Point) => {
     const pointer = clampPointToCanvas(startPoint);
     setMode("static-draw");
@@ -12451,7 +13146,9 @@ export function App() {
       writeOperationLog("绘制图元至少需要两个落点");
       return;
     }
-    const node = createInteractiveStaticDrawingNode(staticDrawing.template, points, activeLayerId);
+    const node = isStaticBoxLikeKind(staticDrawing.kind)
+      ? createStaticBoxNodeFromDrawing(staticDrawing.template, points, activeLayerId)
+      : createInteractiveStaticDrawingNode(staticDrawing.template, points, activeLayerId);
     pushUndoSnapshot();
     setGraphArrays([...nodes, node], edges);
     setCanvasSelectionScope("group");
@@ -12493,6 +13190,9 @@ export function App() {
   const renderInteractiveStaticDrawingPreview = () => {
     if (!staticDrawing) {
       return null;
+    }
+    if (isStaticBoxLikeKind(staticDrawing.kind)) {
+      return renderStaticBoxDrawingPreview();
     }
     const points = staticDrawingPreviewPoints(staticDrawing);
     return (
@@ -12620,6 +13320,10 @@ export function App() {
 
   const normalizeScale = (value: number, fallback = 1) => normalizeScaleValue(value, fallback);
   const signedScale = (value: number, signSource: number) => Math.abs(normalizeScale(value)) * (Math.sign(signSource) || 1);
+  const normalizeStaticBoxDimension = (value: number, fallback: number, max: number) => {
+    const nextValue = Number.isFinite(value) ? value : fallback;
+    return Math.round(clampNumber(nextValue, 4, max) * 10) / 10;
+  };
 
   const toLocalNodePoint = (node: ModelNode, point: Point): Point => {
     const radians = (-node.rotation * Math.PI) / 180;
@@ -12647,6 +13351,23 @@ export function App() {
     scaleX: drag.originalNode.scaleX,
     scaleY: drag.originalNode.scaleY
   });
+
+  const singleTransformNodeUpdate = (drag: SingleTransformDrag, point: Point, store: GraphStore, snapRotation: boolean): ModelNode | null => {
+    const node = store.nodeMap.get(drag.nodeId);
+    if (!node || drag.kind !== "rotate") {
+      return null;
+    }
+    const baseNode = singleTransformBaseNode(drag, node);
+    const rotationDelta = rotationDeltaBetweenTransformPoints(baseNode.position, drag.startPoint, point, snapRotation);
+    return {
+      ...node,
+      position: baseNode.position,
+      rotation: normalizeRotationDegrees(baseNode.rotation + rotationDelta),
+      scale: baseNode.scale,
+      scaleX: baseNode.scaleX,
+      scaleY: baseNode.scaleY
+    };
+  };
 
   const signedScaleFromScreenHandleDelta = (
     drag: SingleTransformDrag,
@@ -12786,8 +13507,8 @@ export function App() {
     return Array.from(updates.values());
   };
 
-  const buildGroupTransformEdgeUpdates = (drag: GroupTransformDrag, point: Point, store: GraphStore) => {
-    const geometry = groupTransformGeometry(drag, point);
+  const buildGroupTransformEdgeUpdates = (drag: GroupTransformDrag, point: Point, store: GraphStore, options?: { snapRotation?: boolean }) => {
+    const geometry = groupTransformGeometry(drag, point, options);
     const transformedNodeIdSet = new Set(drag.nodeIds);
     return drag.originalEdgeRoutes.flatMap((route) => {
       const edge = store.edgeMap.get(route.edgeId);
@@ -12826,13 +13547,19 @@ export function App() {
 
   const startGroupTransformDrag = (event: PointerEvent<SVGElement>, unit: CanvasLayoutUnit, kind: "rotate" | ScaleHandleKind) => {
     event.stopPropagation();
+    const center = selectionRectCenter(unit.bounds);
+    const startPoint = svgRef.current
+      ? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY))
+      : { ...center };
     transformDragChangedRef.current = false;
     setTransformDrag({
       kind,
       groupId: unit.id.replace(/^group:/, ""),
       nodeIds: unit.nodeIds,
       bounds: unit.bounds,
-      center: selectionRectCenter(unit.bounds),
+      center,
+      startPoint,
+      rotationStartPoint: kind === "rotate" ? { x: center.x, y: unit.bounds.top - TRANSFORM_ROTATE_HANDLE_GAP } : undefined,
       originalNodes: snapshotGroupTransformNodes(unit),
       originalEdgeRoutes: snapshotGroupTransformEdgeRoutes(unit)
     });
@@ -12850,11 +13577,20 @@ export function App() {
     const startPoint = svgRef.current
       ? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY))
       : { ...node.position };
+    const rotateHandleStart = nodeRotateHandleControlPoints(
+      node,
+      TRANSFORM_ROTATE_STEM_START,
+      TRANSFORM_ROTATE_STEM_END,
+      TRANSFORM_ROTATE_HANDLE_GAP
+    ).handle;
     setTransformDrag({
       kind,
       nodeId: node.id,
       originalNode: snapshotSingleTransformNode(node),
       startPoint,
+      rotationStartPoint: kind === "rotate"
+        ? { x: node.position.x + rotateHandleStart.x, y: node.position.y + rotateHandleStart.y }
+        : undefined,
       handleXDirection: handle?.xDirection,
       handleYDirection: handle?.yDirection
     });
@@ -12932,9 +13668,9 @@ export function App() {
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
-  const buildGroupTransformNodeUpdates = (drag: GroupTransformDrag, point: Point, store: GraphStore) => {
+  const buildGroupTransformNodeUpdates = (drag: GroupTransformDrag, point: Point, store: GraphStore, options?: { snapRotation?: boolean }) => {
     const updates: ModelNode[] = [];
-    const geometry = groupTransformGeometry(drag, point);
+    const geometry = groupTransformGeometry(drag, point, options);
     if (geometry.kind === "rotate") {
       for (const nodeId of drag.nodeIds) {
         const snapshot = drag.originalNodes[nodeId];
@@ -13153,6 +13889,12 @@ export function App() {
   };
 
   const commitNewConnectionEdge = (newEdge: Edge, sourceName: string, targetName: string) => {
+    const endpointRuleMessage = connectionEndpointRuleFailureMessage(newEdge);
+    if (endpointRuleMessage) {
+      window.alert(`联络线绘制失败：${endpointRuleMessage}`);
+      writeOperationLog(`联络线绘制失败：${endpointRuleMessage}`);
+      return false;
+    }
     const prepared = prepareConnectionEdgeForCommit(
       routingNodesForConnectionEdge(newEdge),
       [newEdge],
@@ -13244,7 +13986,8 @@ export function App() {
           })
         : null;
       const candidateEdge = rewiredEdge ? (slidePatch ? { ...rewiredEdge, ...slidePatch } : rewiredEdge) : null;
-      const prepared = candidateEdge
+      const endpointRuleMessage = candidateEdge ? connectionEndpointRuleFailureMessage(candidateEdge) : "";
+      const prepared = candidateEdge && !endpointRuleMessage
         ? prepareConnectionEdgeForCommit(
             routingNodesForConnectionEdge(candidateEdge, nodes),
             [candidateEdge],
@@ -13262,7 +14005,7 @@ export function App() {
         patchGraphEdges([preparedEdge]);
         writeOperationLog(`调整联络线端子：${rewiring.edgeId}`);
       } else {
-        const message = connectionCommitFailureMessage(prepared?.issues);
+        const message = endpointRuleMessage || connectionCommitFailureMessage(prepared?.issues);
         window.alert(`联络线端子调整失败：${message}`);
         writeOperationLog(`联络线端子调整失败：${message}`);
       }
@@ -13296,7 +14039,7 @@ export function App() {
     if (!template) {
       return;
     }
-    if (isInteractiveStaticDrawingKind(kind)) {
+    if (isInteractiveStaticDrawingKind(kind) || isStaticBoxLikeKind(kind)) {
       startInteractiveStaticDrawing(template, pointerPosition);
       return;
     }
@@ -13363,6 +14106,12 @@ export function App() {
       }
       return;
     }
+    if (hasCanvasSelectionModifier(event)) {
+      event.preventDefault();
+      toggleNodeSelectionFromModifierClick(node);
+      return;
+    }
+    beginStaticButtonPointerFeedback(event, node);
     const nodeWasSelected = selectedNodeIdSet.has(node.id);
     const clickedSelectedGroupMember =
       !event.ctrlKey &&
@@ -13476,6 +14225,14 @@ export function App() {
   };
 
   const handlePointerMove = (event: PointerEvent<SVGSVGElement>) => {
+    const staticButtonPointer = staticButtonPointerRef.current;
+    if (
+      staticButtonPointer &&
+      !staticButtonPointer.moved &&
+      Math.hypot(event.clientX - staticButtonPointer.clientX, event.clientY - staticButtonPointer.clientY) > 4
+    ) {
+      staticButtonPointerRef.current = { ...staticButtonPointer, moved: true };
+    }
     if (svgRef.current) {
       const rawPointer = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
       const pointer = draggingRef.current ? rawPointer : clampPointToCanvas(rawPointer);
@@ -13653,6 +14410,17 @@ export function App() {
         scheduleCanvasVisibleViewBoxUpdate();
         return;
       }
+      if (frame) {
+        const nextOffset = clampCanvasNoScrollOffsetPoint({
+          x: panning.canvasOffset.x + event.clientX - panning.clientX,
+          y: panning.canvasOffset.y + event.clientY - panning.clientY
+        });
+        setCanvasNoScrollOffset((current) =>
+          current.x === nextOffset.x && current.y === nextOffset.y ? current : nextOffset
+        );
+        scheduleCanvasVisibleViewBoxUpdate();
+        return;
+      }
       const rect = svgRef.current.getBoundingClientRect();
       const dx = rect.width > 0 ? ((event.clientX - panning.clientX) / rect.width) * canvasBounds.width : 0;
       const dy = rect.height > 0 ? ((event.clientY - panning.clientY) / rect.height) * canvasBounds.height : 0;
@@ -13709,9 +14477,22 @@ export function App() {
       const baseNode = singleTransformBaseNode(transformDrag, node);
       let nextNode: ModelNode;
       if (transformDrag.kind === "rotate") {
-        const angle = (Math.atan2(point.y - baseNode.position.y, point.x - baseNode.position.x) * 180) / Math.PI + 90;
-        const snapped = ((Math.round(angle / 90) * 90) % 360 + 360) % 360;
-        nextNode = { ...node, position: baseNode.position, rotation: snapped };
+        const rotationDelta = rotationDeltaBetweenTransformPoints(baseNode.position, transformDrag.startPoint, point, false);
+        nextNode = {
+          ...node,
+          position: baseNode.position,
+          rotation: normalizeRotationDegrees(baseNode.rotation + rotationDelta),
+          scale: baseNode.scale,
+          scaleX: baseNode.scaleX,
+          scaleY: baseNode.scaleY
+        };
+        setTransformDrag((current) =>
+          current && !isGroupTransformDrag(current) && current.nodeId === transformDrag.nodeId
+            ? current.historyCaptured && sameOptionalPoint(current.previewPoint, point)
+              ? current
+              : { ...current, historyCaptured: true, previewPoint: point }
+            : current
+        );
       } else {
         const local = toLocalNodePoint(baseNode, point);
         const nextScaleX = normalizeScale((Math.abs(local.x) * 2) / baseNode.size.width);
@@ -13777,14 +14558,15 @@ export function App() {
     scheduleNodeDragMove(point, event.ctrlKey, event.shiftKey);
   };
 
-  const startCanvasPanning = (event: PointerEvent<SVGSVGElement>) => {
-    if (event.button !== 0) {
+  const startCanvasPanning = (event: PointerEvent<Element>) => {
+    const svg = svgRef.current;
+    if (event.button !== 0 || !svg) {
       return false;
     }
     activateInspectorFromCanvas();
     canvasInteractionRef.current = true;
     projectListPointerInsideRef.current = false;
-    const rawPointer = screenToSvgPoint(event.currentTarget, event.clientX, event.clientY);
+    const rawPointer = screenToSvgPoint(svg, event.clientX, event.clientY);
     const pointer = clampPointToCanvas(rawPointer);
     lastRawCanvasPointerRef.current = rawPointer;
     lastCanvasPointerRef.current = pointer;
@@ -13797,11 +14579,12 @@ export function App() {
     setPanning({
       clientX: event.clientX,
       clientY: event.clientY,
-                  viewBox: panningViewBox,
-                  scrollLeft: frame?.scrollLeft ?? 0,
-                  scrollTop: frame?.scrollTop ?? 0,
-                  scrollMode: frame ? canvasScrollbarsActiveRef.current && canvasFrameHasScrollableRange(frame) : false
-                });
+      viewBox: panningViewBox,
+      canvasOffset: canvasNoScrollOffsetRef.current,
+      scrollLeft: frame?.scrollLeft ?? 0,
+      scrollTop: frame?.scrollTop ?? 0,
+      scrollMode: frame ? canvasScrollbarsActiveRef.current && canvasFrameHasScrollableRange(frame) : false
+    });
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -13809,44 +14592,89 @@ export function App() {
   };
 
   const handleCanvasPointerDownCapture = (event: PointerEvent<SVGSVGElement>) => {
-    if ((!event.ctrlKey && !event.shiftKey) || staticDrawing || connectSource) {
+    if (!hasCanvasSelectionModifier(event) || staticDrawing || connectSource) {
       return;
     }
-    startCanvasPanning(event);
+  };
+
+  const wheelZoomAnchorFromClient = (clientX: number, clientY: number): WheelZoomAnchor | null => {
+    const frame = canvasFrameRef.current;
+    const svg = svgRef.current;
+    if (!frame || !svg) {
+      return null;
+    }
+    const frameRect = frame.getBoundingClientRect();
+    const cursorInsideFrame =
+      clientX >= frameRect.left &&
+      clientX <= frameRect.right &&
+      clientY >= frameRect.top &&
+      clientY <= frameRect.bottom;
+    if (cursorInsideFrame) {
+      return {
+        point: clampPointToBounds(screenToSvgPoint(svg, clientX, clientY), canvasBoundsRef.current),
+        cursorOffsetX: clampNumber(clientX - frameRect.left, 0, frameRect.width),
+        cursorOffsetY: clampNumber(clientY - frameRect.top, 0, frameRect.height)
+      };
+    }
+    const visible = canvasVisibleViewBoxRef.current;
+    const current = viewBoxRef.current;
+    const fallbackPoint = visible.width > 0 && visible.height > 0
+      ? {
+          x: visible.x + visible.width / 2,
+          y: visible.y + visible.height / 2
+        }
+      : {
+          x: current.x + current.width / 2,
+          y: current.y + current.height / 2
+        };
+    return {
+      point: clampPointToBounds(fallbackPoint, canvasBoundsRef.current),
+      cursorOffsetX: frameRect.width / 2,
+      cursorOffsetY: frameRect.height / 2
+    };
+  };
+
+  const zoomCanvasFromWheelEvent = (event: CanvasWheelZoomEvent) => {
+    if (!event.ctrlKey && !event.metaKey) {
+      return false;
+    }
+    if (!event.defaultPrevented) {
+      event.preventDefault();
+    }
+    event.stopPropagation();
+    const anchor = wheelZoomAnchorFromClient(event.clientX, event.clientY);
+    if (!anchor) {
+      return true;
+    }
+    const zoomFactor = event.deltaY > 0 ? 1.12 : 0.88;
+    pendingWheelZoomAnchorRef.current = anchor;
+    setViewBox((current) => {
+      const bounds = canvasBoundsRef.current;
+      const { width: nextWidth, height: nextHeight } = clampViewBoxDimensionsForZoom(
+        { width: current.width * zoomFactor, height: current.height * zoomFactor },
+        bounds
+      );
+      const nextScaleX = bounds.width / Math.max(1, nextWidth);
+      const nextScaleY = bounds.height / Math.max(1, nextHeight);
+      return normalizeViewBoxToCanvas({
+        x: anchor.point.x - anchor.cursorOffsetX / nextScaleX,
+        y: anchor.point.y - anchor.cursorOffsetY / nextScaleY,
+        width: nextWidth,
+        height: nextHeight
+      }, bounds);
+    });
+    return true;
   };
 
   const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
     if (!event.ctrlKey && !event.metaKey) {
       return;
     }
-    if (!event.nativeEvent.defaultPrevented) {
-      event.preventDefault();
-    }
-    event.stopPropagation();
-    const frame = canvasFrameRef.current;
-    if (!svgRef.current || !frame) {
+    if (event.nativeEvent.defaultPrevented) {
+      event.stopPropagation();
       return;
     }
-    const pointer = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
-    const zoomFactor = event.deltaY > 0 ? 1.12 : 0.88;
-    const frameRect = frame.getBoundingClientRect();
-    const cursorOffsetX = clampNumber(event.clientX - frameRect.left, 0, frameRect.width);
-    const cursorOffsetY = clampNumber(event.clientY - frameRect.top, 0, frameRect.height);
-    pendingWheelZoomAnchorRef.current = { point: pointer, cursorOffsetX, cursorOffsetY };
-    setViewBox((current) => {
-      const { width: nextWidth, height: nextHeight } = clampViewBoxDimensionsForZoom(
-        { width: current.width * zoomFactor, height: current.height * zoomFactor },
-        canvasBounds
-      );
-      const nextScaleX = canvasBounds.width / Math.max(1, nextWidth);
-      const nextScaleY = canvasBounds.height / Math.max(1, nextHeight);
-      return clampViewBoxToCanvas({
-        x: pointer.x - cursorOffsetX / nextScaleX,
-        y: pointer.y - cursorOffsetY / nextScaleY,
-        width: nextWidth,
-        height: nextHeight
-      });
-    });
+    zoomCanvasFromWheelEvent(event);
   };
 
   const deleteSelected = () => {
@@ -14075,6 +14903,8 @@ export function App() {
     setCanvasBackgroundColor(project.project.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND);
     setCanvasBackgroundImage(project.project.canvasBackgroundImage ?? "");
     setCanvasBackgroundImageAssetId(project.project.canvasBackgroundImageAssetId ?? "");
+    setBackgroundProjectId(project.project.backgroundProjectId ?? "");
+    setBackgroundLayerIds(resolveConfiguredBackgroundLayerIds(project.project.backgroundProjectId, project.project.backgroundLayerIds));
     setPowerUnit(project.project.powerUnit ?? DEFAULT_POWER_UNIT);
     setVoltageUnit(project.project.voltageUnit ?? DEFAULT_VOLTAGE_UNIT);
     setCurrentUnit(project.project.currentUnit ?? DEFAULT_CURRENT_UNIT);
@@ -14563,6 +15393,8 @@ export function App() {
           canvasBackgroundColor,
           canvasBackgroundImage,
           canvasBackgroundImageAssetId,
+          backgroundProjectId,
+          backgroundLayerIds,
           powerUnit,
           voltageUnit,
           currentUnit,
@@ -15023,15 +15855,16 @@ export function App() {
 
   const fitWholeCanvasToFrame = () => {
     const nextViewBox = fitWholeCanvasViewBox(canvasBounds, canvasFrameRef.current);
+    skipNextCanvasScrollSyncRef.current = true;
     setViewBox(nextViewBox);
+    setCanvasNoScrollOffset({ x: 0, y: 0 });
     setCanvasVisibleViewBox(canvasFullViewBox);
     window.requestAnimationFrame(() => {
       const frame = canvasFrameRef.current;
       if (!frame) {
         return;
       }
-      frame.scrollLeft = 0;
-      frame.scrollTop = 0;
+      centerCanvasFrameScrollPosition(frame);
       scheduleCanvasVisibleViewBoxUpdate();
     });
   };
@@ -15584,14 +16417,17 @@ export function App() {
             })
           : null;
         const candidateEdge = slidePatch ? { ...rewiredEdge, ...slidePatch } : rewiredEdge;
-        const prepared = prepareConnectionEdgeForCommit(
+        const endpointRuleMessage = connectionEndpointRuleFailureMessage(candidateEdge);
+        const prepared = endpointRuleMessage
+          ? null
+          : prepareConnectionEdgeForCommit(
           routingNodesForConnectionEdge(candidateEdge, nodes),
           [candidateEdge],
           edge.id,
           canvasBounds,
           routedEdges
         );
-        if (prepared.ok && prepared.edge) {
+        if (prepared?.ok && prepared.edge) {
           const preparedEdge = prepared.edge;
           pushUndoSnapshot();
           markRouteEdgesDirty([edge.id]);
@@ -15599,7 +16435,7 @@ export function App() {
           markBusTerminalSyncDirtyForEdges([edge, preparedEdge]);
           patchGraphEdges([preparedEdge]);
         } else {
-          const message = connectionCommitFailureMessage(prepared.issues);
+          const message = endpointRuleMessage || connectionCommitFailureMessage(prepared?.issues);
           window.alert(`联络线端子调整失败：${message}`);
           writeOperationLog(`联络线端子调整失败：${message}`);
         }
@@ -16209,9 +17045,14 @@ export function App() {
           <p className="project-empty project-search-empty">未找到匹配方案或模型</p>
         ) : (
           filteredProjectSchemes.map((scheme) => {
-            const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id);
+            const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id) || hoveredSchemeId === scheme.id;
             return (
-            <div className="scheme-group" key={scheme.id}>
+            <div
+              className="scheme-group"
+              key={scheme.id}
+              onMouseEnter={() => setHoveredSchemeId(scheme.id)}
+              onMouseLeave={() => setHoveredSchemeId((current) => current === scheme.id ? "" : current)}
+            >
               <div
                 role="option"
                 aria-selected={false}
@@ -17172,10 +18013,15 @@ export function App() {
     <div className="template-library-panel library-panel-stack">
       <div className="library-scroll">
         {graphTemplateTypes.map((typeName) => {
-          const expanded = expandedGraphTemplateTypes.includes(typeName);
+          const expanded = expandedGraphTemplateTypes.includes(typeName) || hoveredGraphTemplateType === typeName;
           const templates = groupedGraphTemplates[typeName] ?? [];
           return (
-            <section className="library-group-section" key={typeName}>
+            <section
+              className="library-group-section"
+              key={typeName}
+              onMouseEnter={() => setHoveredGraphTemplateType(typeName)}
+              onMouseLeave={() => setHoveredGraphTemplateType((current) => current === typeName ? "" : current)}
+            >
               <button
                 className={`library-group-toggle ${expanded ? "active" : ""}`}
                 onClick={() =>
@@ -17240,10 +18086,18 @@ export function App() {
       </div>
       <div className="library-scroll">
         {displayedAttributeLibraries.length > 0 ? displayedAttributeLibraries.map((group) => {
-          const expanded = librarySearchNeedle ? true : expandedAttributeLibraries.includes(group);
+          const expanded = librarySearchNeedle ? true : expandedAttributeLibraries.includes(group) || hoveredAttributeLibrary === group;
           const typeGroups = filteredAttributeLibraryByComponentType[group] ?? [];
           return (
-            <section className="library-group-section" key={group}>
+            <section
+              className="library-group-section"
+              key={group}
+              onMouseEnter={() => setHoveredAttributeLibrary(group)}
+              onMouseLeave={() => {
+                setHoveredAttributeLibrary((current) => current === group ? "" : current);
+                setHoveredAttributeLibraryComponentType("");
+              }}
+            >
               <button
                 className={`library-group-toggle ${expanded ? "active" : ""}`}
                 onClick={() =>
@@ -17259,9 +18113,16 @@ export function App() {
                 <div className="attribute-library-component-type-list">
                   {typeGroups.map((typeGroup) => {
                     const componentTypeKey = attributeLibraryComponentTypeKey(group, typeGroup.section);
-                    const componentTypeExpanded = librarySearchNeedle ? true : expandedAttributeLibraryComponentTypes.includes(componentTypeKey);
+                    const componentTypeExpanded = librarySearchNeedle
+                      ? true
+                      : expandedAttributeLibraryComponentTypes.includes(componentTypeKey) || hoveredAttributeLibraryComponentType === componentTypeKey;
                     return (
-                      <section className="attribute-library-component-type-section" key={`${group}-${typeGroup.section}`}>
+                      <section
+                        className="attribute-library-component-type-section"
+                        key={`${group}-${typeGroup.section}`}
+                        onMouseEnter={() => setHoveredAttributeLibraryComponentType(componentTypeKey)}
+                        onMouseLeave={() => setHoveredAttributeLibraryComponentType((current) => current === componentTypeKey ? "" : current)}
+                      >
                         <button
                           type="button"
                           className={`attribute-library-component-type-header ${componentTypeExpanded ? "active" : ""}`}
@@ -17716,7 +18577,7 @@ export function App() {
   );
   const contextMenuTarget = contextMenu?.target ?? (contextMenu?.edgeId ? "edge" : "blank");
   const contextMenuForSelection = contextMenuTarget !== "blank";
-  const contextMenuForNode = contextMenuTarget === "node";
+  const contextMenuForNode = contextMenuTarget === "node" || contextMenuTarget === "group";
   const contextMenuForEdge = contextMenuTarget === "edge";
   const nodeFloatingToolbarActionCount =
     6 +
@@ -17766,6 +18627,55 @@ export function App() {
     return Math.max(0, Math.min(first.right, second.right) - Math.max(first.left, second.left)) *
       Math.max(0, Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top));
   };
+  const canvasRectToSurfaceCssRect = (rect: RenderViewportBounds, padding = 0): RenderViewportBounds => {
+    const topLeft = canvasPointToSurfaceCss({ x: rect.left, y: rect.top });
+    const bottomRight = canvasPointToSurfaceCss({ x: rect.right, y: rect.bottom });
+    return {
+      left: Math.min(topLeft.x, bottomRight.x) - padding,
+      right: Math.max(topLeft.x, bottomRight.x) + padding,
+      top: Math.min(topLeft.y, bottomRight.y) - padding,
+      bottom: Math.max(topLeft.y, bottomRight.y) + padding
+    };
+  };
+  const rotateControlAvoidRectFromCanvasPoints = (points: Point[]): RenderViewportBounds => {
+    const xs = points.map((point) => point.x);
+    const ys = points.map((point) => point.y);
+    return canvasRectToSurfaceCssRect({
+      left: Math.min(...xs) - 12,
+      right: Math.max(...xs) + 12,
+      top: Math.min(...ys) - 12,
+      bottom: Math.max(...ys) + 12
+    }, Math.max(4, Math.round(6 * floatingToolbarScreenScale)));
+  };
+  const rotateControlAvoidRectFromCanvas = (centerX: number, topY: number): RenderViewportBounds =>
+    rotateControlAvoidRectFromCanvasPoints([
+      { x: centerX, y: topY - 52 },
+      { x: centerX, y: topY - 6 }
+    ]);
+  const selectedRotateControlAvoidRects: RenderViewportBounds[] = [];
+  if (selectedTransformGroupUnit) {
+    selectedRotateControlAvoidRects.push(
+      rotateControlAvoidRectFromCanvas(selectionRectCenter(selectedTransformGroupUnit.bounds).x, selectedTransformGroupUnit.bounds.top)
+    );
+  } else if (selectedNode && selectedNodeCount === 1 && activeSelectedEdgeIds.length === 0) {
+    const selectedNodeRotateHandle = nodeRotateHandleControlPoints(
+      selectedNode,
+      TRANSFORM_ROTATE_STEM_START,
+      TRANSFORM_ROTATE_STEM_END,
+      TRANSFORM_ROTATE_HANDLE_GAP
+    );
+    const selectedNodeRotateHandlePoints = [
+      selectedNodeRotateHandle.stemStart,
+      selectedNodeRotateHandle.stemEnd,
+      selectedNodeRotateHandle.handle
+    ].map((point) => ({
+      x: selectedNode.position.x + point.x,
+      y: selectedNode.position.y + point.y
+    }));
+    selectedRotateControlAvoidRects.push(
+      rotateControlAvoidRectFromCanvasPoints(selectedNodeRotateHandlePoints)
+    );
+  }
   const placeFloatingToolbar = (
     candidates: Point[],
     width: number,
@@ -17798,13 +18708,24 @@ export function App() {
           const width = Math.round(nodeFloatingToolbarWidth * floatingToolbarScreenScale);
           const height = Math.round(NODE_FLOATING_TOOLBAR_HEIGHT * floatingToolbarScreenScale);
           const centerX = (selectedFloatingToolbarBounds.left + selectedFloatingToolbarBounds.right) / 2;
+          const centerY = (selectedFloatingToolbarBounds.top + selectedFloatingToolbarBounds.bottom) / 2;
           const topCenter = canvasPointToSurfaceCss({ x: centerX, y: selectedFloatingToolbarBounds.top });
           const bottomCenter = canvasPointToSurfaceCss({ x: centerX, y: selectedFloatingToolbarBounds.bottom });
-          return placeFloatingToolbar([
+          const leftCenter = canvasPointToSurfaceCss({ x: selectedFloatingToolbarBounds.left, y: centerY });
+          const rightCenter = canvasPointToSurfaceCss({ x: selectedFloatingToolbarBounds.right, y: centerY });
+          const nodeFloatingToolbarAvoidRects = selectedRotateControlAvoidRects;
+          const rotateAvoidTop = nodeFloatingToolbarAvoidRects.length > 0
+            ? Math.min(...nodeFloatingToolbarAvoidRects.map((rect) => rect.top))
+            : null;
+          const nodeToolbarCandidates = [
+            ...(rotateAvoidTop === null ? [] : [{ x: topCenter.x - width / 2, y: rotateAvoidTop - height - floatingToolbarGap }]),
             { x: topCenter.x - width / 2, y: topCenter.y - height - floatingToolbarGap },
             { x: bottomCenter.x - width / 2, y: bottomCenter.y + floatingToolbarGap },
+            { x: rightCenter.x + floatingToolbarGap, y: rightCenter.y - height / 2 },
+            { x: leftCenter.x - width - floatingToolbarGap, y: leftCenter.y - height / 2 },
             { x: topCenter.x - width / 2, y: floatingToolbarViewport.top + floatingToolbarPadding }
-          ], width, height);
+          ];
+          return placeFloatingToolbar(nodeToolbarCandidates, width, height, nodeFloatingToolbarAvoidRects);
         })()
       : null;
   const nodeFloatingToolbarRect = nodeFloatingToolbar ? floatingToolbarBounds(nodeFloatingToolbar) : null;
@@ -17910,6 +18831,461 @@ export function App() {
   const fitViewToSelection = () => {
     fitViewToBounds(selectedCanvasBounds, 80);
   };
+
+  const isStaticButtonEnabledForNode = (node: ModelNode) =>
+    isStaticButtonCapableKind(node.kind) && node.params.buttonEnabled === "1";
+
+  const clearStaticButtonFeedbackTimer = () => {
+    if (staticButtonFeedbackTimeoutRef.current !== null) {
+      window.clearTimeout(staticButtonFeedbackTimeoutRef.current);
+      staticButtonFeedbackTimeoutRef.current = null;
+    }
+  };
+
+  const setStaticButtonFeedback = (nodeId: string, state: StaticButtonVisualState) => {
+    clearStaticButtonFeedbackTimer();
+    setStaticButtonVisual({ nodeId, state });
+  };
+
+  const clearStaticButtonFeedback = (nodeId?: string) => {
+    clearStaticButtonFeedbackTimer();
+    setStaticButtonVisual((current) => (!current || (nodeId && current.nodeId !== nodeId) ? current : null));
+  };
+
+  const beginStaticButtonPointerFeedback = (event: PointerEvent<SVGGElement>, node: ModelNode) => {
+    if (!isStaticButtonEnabledForNode(node) || staticDrawing || connectSource || mode === "connect") {
+      return;
+    }
+    staticButtonPointerRef.current = {
+      nodeId: node.id,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      moved: false
+    };
+    setStaticButtonFeedback(node.id, "pressed");
+  };
+
+  const resolveStaticButtonTargetProject = (node: ModelNode) => {
+    const targetProjectId = node.params.buttonTargetProjectId?.trim();
+    if (targetProjectId) {
+      for (const scheme of schemes) {
+        const project = scheme.projects.find((item) => item.id === targetProjectId);
+        if (project) {
+          return { scheme, project };
+        }
+      }
+    }
+    const targetName = node.params.buttonTargetProjectName?.trim();
+    if (targetName) {
+      for (const scheme of schemes) {
+        const project = scheme.projects.find((item) => item.name.trim() === targetName);
+        if (project) {
+          return { scheme, project };
+        }
+      }
+    }
+    return null;
+  };
+
+  const resolveStaticButtonTargetLayer = (node: ModelNode) => {
+    const targetLayerId = node.params.buttonTargetLayerId?.trim();
+    if (targetLayerId) {
+      const layer = layers.find((item) => item.id === targetLayerId);
+      if (layer) {
+        return layer;
+      }
+    }
+    const targetLayerName = node.params.buttonTargetLayerName?.trim();
+    return targetLayerName ? layers.find((item) => item.name.trim() === targetLayerName) ?? null : null;
+  };
+
+  const executeStaticButtonCommand = (command: string) => {
+    if (command === "save") {
+      saveCurrentProject();
+      return true;
+    }
+    if (command === "fitCanvas") {
+      fitWholeCanvasToFrame();
+      return true;
+    }
+    if (command === "centerSelected") {
+      if (!selectedCanvasBounds) {
+        window.alert("当前没有选中图元，无法居中选中。");
+        return false;
+      }
+      centerSelectedInView();
+      return true;
+    }
+    if (command === "fitSelection") {
+      if (!selectedCanvasBounds) {
+        window.alert("当前没有选中图元，无法缩放到选中区域。");
+        return false;
+      }
+      fitViewToSelection();
+      return true;
+    }
+    if (command === "runTopology") {
+      runTopologyCalculation();
+      return true;
+    }
+    if (command === "zoomIn") {
+      zoomViewportAtCenter(0.82);
+      return true;
+    }
+    if (command === "zoomOut") {
+      zoomViewportAtCenter(1.18);
+      return true;
+    }
+    if (command === "resetZoom") {
+      resetViewport();
+      return true;
+    }
+    return false;
+  };
+
+  const executeStaticButtonAction = (node: ModelNode) => {
+    if (!isStaticButtonEnabledForNode(node)) {
+      return;
+    }
+    const actionType = node.params.buttonActionType || "none";
+    if (actionType === "project") {
+      const target = resolveStaticButtonTargetProject(node);
+      if (!target) {
+        window.alert("按钮动作未找到目标模型，请在右侧图元参数中重新选择。");
+        return;
+      }
+      writeOperationLog(`按钮切换模型：${target.project.name}`);
+      requestLoadSavedProject(target.project, target.scheme.id);
+      return;
+    }
+    if (actionType === "layer") {
+      const layer = resolveStaticButtonTargetLayer(node);
+      if (!layer) {
+        window.alert("按钮动作未找到目标图层，请在右侧图元参数中重新选择。");
+        return;
+      }
+      setActiveLayerId(layer.id);
+      setLayers((current) => current.map((item) => item.id === layer.id ? { ...item, visible: true } : item));
+      writeOperationLog(`按钮切换图层：${layer.name}`);
+      return;
+    }
+    if (actionType === "command") {
+      const command = node.params.buttonCommand || "none";
+      if (!executeStaticButtonCommand(command)) {
+        window.alert("按钮动作未配置有效命令，请在右侧图元参数中重新选择。");
+      } else {
+        writeOperationLog(`按钮执行命令：${STATIC_BUTTON_COMMAND_LABELS[command] ?? command}`);
+      }
+    }
+  };
+
+  const handleStaticButtonClick = (event: MouseEvent<SVGGElement>, node: ModelNode) => {
+    if (!isStaticButtonEnabledForNode(node)) {
+      return;
+    }
+    const pointerSnapshot = staticButtonPointerRef.current;
+    staticButtonPointerRef.current = null;
+    if (
+      !pointerSnapshot ||
+      pointerSnapshot.nodeId !== node.id ||
+      pointerSnapshot.moved ||
+      Math.hypot(event.clientX - pointerSnapshot.clientX, event.clientY - pointerSnapshot.clientY) > 4
+    ) {
+      clearStaticButtonFeedback(node.id);
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    setStaticButtonFeedback(node.id, "clicked");
+    staticButtonFeedbackTimeoutRef.current = window.setTimeout(() => {
+      staticButtonFeedbackTimeoutRef.current = null;
+      setStaticButtonVisual((current) => (current?.nodeId === node.id && current.state === "clicked" ? null : current));
+    }, 160);
+    executeStaticButtonAction(node);
+  };
+
+  const backgroundPageRender = useMemo(() => {
+    if (!backgroundProjectId || backgroundProjectId === activeProjectId || !backgroundProjectRecord) {
+      return null;
+    }
+    const backgroundProject = normalizeProjectLayers(backgroundProjectRecord.project);
+    const visibleBackgroundLayerIds = new Set(backgroundLayerIds);
+    const backgroundLayers = (backgroundProject.layers ?? []).map((layer) => ({
+      ...layer,
+      visible: visibleBackgroundLayerIds.has(layer.id)
+    }));
+    const { nodes: backgroundNodes, edges: backgroundEdges } =
+      filterProjectByVisibleLayers(backgroundProject.nodes, backgroundProject.edges, backgroundLayers);
+    const backgroundBounds = {
+      width: backgroundProject.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
+      height: backgroundProject.canvasHeight ?? DEFAULT_CANVAS_HEIGHT
+    };
+    const routes = routeEdgesForStoredRendering(backgroundNodes, backgroundEdges, backgroundBounds);
+    return {
+      backgroundBounds,
+      backgroundColor: backgroundProject.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND,
+      backgroundImageUrl: resolveProjectImage(backgroundProject, imageAssets),
+      transform: backgroundPageCanvasTransform(backgroundBounds, { width: canvasWidth, height: canvasHeight }),
+      nodes: backgroundNodes,
+      edges: backgroundEdges,
+      routes,
+      nodeById: new Map(backgroundNodes.map((node) => [node.id, node])),
+      edgeById: new Map(backgroundEdges.map((edge) => [edge.id, edge]))
+    };
+  }, [activeProjectId, backgroundLayerIds, backgroundProjectId, backgroundProjectRecord, canvasHeight, canvasWidth, imageAssets]);
+
+  const beginReadonlyBackgroundStaticButtonPointerFeedback = (event: PointerEvent<SVGGElement>, node: ModelNode) => {
+    event.preventDefault();
+    event.stopPropagation();
+    beginStaticButtonPointerFeedback(event, node);
+  };
+
+  const renderReadonlyBackgroundPage = () => {
+    if (!backgroundPageRender) {
+      return null;
+    }
+    const backgroundConnectionLineStyle = (edge: Edge) => ({
+      "--connection-color": getConnectionStrokeColor(edge, backgroundPageRender.nodeById, colorDisplayMode, colorPalette)
+    } as CSSProperties);
+    return (
+      <g className="background-page-layer" transform={backgroundPageRender.transform} aria-label="背景页面">
+        <rect
+          className="background-page-fill"
+          x="0"
+          y="0"
+          width={backgroundPageRender.backgroundBounds.width}
+          height={backgroundPageRender.backgroundBounds.height}
+          fill={backgroundPageRender.backgroundColor || DEFAULT_CANVAS_BACKGROUND}
+        />
+        {backgroundPageRender.backgroundImageUrl && (
+          <image
+            className="background-page-image"
+            href={backgroundPageRender.backgroundImageUrl}
+            x="0"
+            y="0"
+            width={backgroundPageRender.backgroundBounds.width}
+            height={backgroundPageRender.backgroundBounds.height}
+            preserveAspectRatio="xMidYMid slice"
+          />
+        )}
+        <rect
+          className="background-page-frame"
+          x="0"
+          y="0"
+          width={backgroundPageRender.backgroundBounds.width}
+          height={backgroundPageRender.backgroundBounds.height}
+        />
+        <g className="background-page-edges">
+          {backgroundPageRender.routes.map((route) => {
+            const edge = backgroundPageRender.edgeById.get(route.edgeId);
+            return edge ? (
+              <g key={`background-edge-${edge.id}`} className="connection-group background-page-edge" style={backgroundConnectionLineStyle(edge)}>
+                <path d={route.path} className="connection-line" />
+              </g>
+            ) : null;
+          })}
+        </g>
+        <g className="background-page-nodes">
+          {backgroundPageRender.nodes.map((node) => {
+            const nodeIsBus = isBusNode(node);
+            const isStorageBus =
+              node.kind === "hydrogen-tank" ||
+              node.kind === "hydrogen-tank-horizontal" ||
+              node.kind === "hydrogen-tank-container" ||
+              node.kind === "thermal-storage-tank";
+            const imageHref = nodeImage(node);
+            const foregroundImageHref = nodeForegroundImage(node);
+            const nodeScaleX = getNodeScaleX(node);
+            const nodeScaleY = getNodeScaleY(node);
+            const inverseScaleX = nodeScaleX === 0 ? 1 : 1 / nodeScaleX;
+            const inverseScaleY = nodeScaleY === 0 ? 1 : 1 / nodeScaleY;
+            const terminalStubDashArray = svgStrokeDashArray(node.params.strokeStyle);
+            const terminalControlTransform = (x: number, y: number) => `translate(${x} ${y}) scale(${inverseScaleX} ${inverseScaleY})`;
+            const staticButtonEnabled = isStaticButtonEnabledForNode(node);
+            const staticButtonState = staticButtonVisual?.nodeId === node.id ? staticButtonVisual.state : "";
+            const staticButtonCornerRadius = Math.max(0, Number(node.params.cornerRadius || 8));
+            return (
+              <g
+                key={`background-node-${node.id}`}
+                className={`diagram-node background-page-node ${nodeIsBus ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${staticButtonEnabled ? "background-page-button static-button-enabled" : ""} ${staticButtonState ? `static-button-${staticButtonState}` : ""}`}
+                transform={`translate(${node.position.x} ${node.position.y})`}
+                onPointerDown={staticButtonEnabled ? (event) => beginReadonlyBackgroundStaticButtonPointerFeedback(event, node) : undefined}
+                onPointerEnter={staticButtonEnabled ? () => setStaticButtonFeedback(node.id, "hover") : undefined}
+                onPointerLeave={staticButtonEnabled ? () => {
+                  staticButtonPointerRef.current = null;
+                  clearStaticButtonFeedback(node.id);
+                } : undefined}
+                onPointerUp={staticButtonEnabled ? () => {
+                  if (staticButtonVisual?.nodeId === node.id && staticButtonVisual.state === "pressed") {
+                    setStaticButtonFeedback(node.id, "hover");
+                  }
+                } : undefined}
+                onClick={staticButtonEnabled ? (event) => {
+                  event.stopPropagation();
+                  handleStaticButtonClick(event, node);
+                } : undefined}
+                onContextMenu={staticButtonEnabled ? (event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                } : undefined}
+              >
+                <title>{`背景：${node.name}`}</title>
+                {imageHref && !nodeIsBus && (
+                  <clipPath id={`background-clip-${node.id}`}>
+                    <rect
+                      x={-node.size.width / 2}
+                      y={-node.size.height / 2}
+                      width={node.size.width}
+                      height={node.size.height}
+                      rx="8"
+                    />
+                  </clipPath>
+                )}
+                <g className="node-geometry" transform={nodeGeometryTransform(node)}>
+                  <rect
+                    x={-node.size.width / 2}
+                    y={-node.size.height / 2}
+                    width={node.size.width}
+                    height={node.size.height}
+                    rx="8"
+                    className={`node-hitbox ${nodeIsBus ? "bus-hitbox" : ""} ${isStaticNode(node) ? "static-hitbox" : ""}`}
+                  />
+                  <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                  <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                  {staticButtonEnabled && (
+                    <rect
+                      x={-node.size.width / 2}
+                      y={-node.size.height / 2}
+                      width={node.size.width}
+                      height={node.size.height}
+                      rx={staticButtonCornerRadius}
+                      className="static-button-feedback-surface"
+                    />
+                  )}
+                </g>
+                {!nodeIsBus && (imageHref || foregroundImageHref) && (
+                  <g className="node-upright-content" transform={nodeUprightScaleTransform(node)}>
+                    {imageHref && isStaticNode(node) && (
+                      <image
+                        href={imageHref}
+                        x={-node.size.width / 2}
+                        y={-node.size.height / 2}
+                        width={node.size.width}
+                        height={node.size.height}
+                        preserveAspectRatio="xMidYMid slice"
+                        clipPath={`url(#background-clip-${node.id})`}
+                        className="node-background-image"
+                      />
+                    )}
+                    {imageHref && !isStaticNode(node) && (
+                      <rect
+                        x={-node.size.width / 2}
+                        y={-node.size.height / 2}
+                        width={node.size.width}
+                        height={node.size.height}
+                        rx="8"
+                        className="node-image-cover"
+                      />
+                    )}
+                    {imageHref && !isStaticNode(node) && (
+                      <image
+                        href={imageHref}
+                        x={-node.size.width / 2}
+                        y={-node.size.height / 2}
+                        width={node.size.width}
+                        height={node.size.height}
+                        preserveAspectRatio="xMidYMid slice"
+                        clipPath={`url(#background-clip-${node.id})`}
+                        className="node-background-image"
+                      />
+                    )}
+                    {foregroundImageHref && (
+                      <image
+                        href={foregroundImageHref}
+                        x={-node.size.width / 2}
+                        y={-node.size.height / 2}
+                        width={node.size.width}
+                        height={node.size.height}
+                        preserveAspectRatio="xMidYMid slice"
+                        clipPath={`url(#background-clip-${node.id})`}
+                        className="node-foreground-image"
+                      />
+                    )}
+                  </g>
+                )}
+                {nodeLabelShouldRender(node, deviceLabelsVisible) && (
+                  <g
+                    className={`node-device-label ${nodeLabelVertical(node) ? "vertical" : "horizontal"}`}
+                    data-node-id={node.id}
+                    data-label-owner="background-device"
+                    transform={nodeLabelTransform(node)}
+                  >
+                    {nodeLabelVertical(node) ? (
+                      nodeLabelVerticalSegments(nodeLabelText(node)).map((segment, index) => (
+                        <text
+                          key={`${segment.text}-${index}`}
+                          className={`node-label-vertical-token ${segment.numeric ? "numeric" : ""}`}
+                          x="0"
+                          y={nodeLabelVerticalTokenY(index, nodeLabelVerticalSegments(nodeLabelText(node)).length, node)}
+                          dominantBaseline="middle"
+                          textAnchor="middle"
+                          style={nodeLabelVerticalTokenStyle(node)}
+                        >
+                          {segment.text}
+                        </text>
+                      ))
+                    ) : (
+                      <text
+                        x="0"
+                        y="0"
+                        dominantBaseline="middle"
+                        textAnchor={nodeLabelTextAnchor(node)}
+                        style={nodeLabelTextStyle(node)}
+                      >
+                        {nodeLabelText(node)}
+                      </text>
+                    )}
+                  </g>
+                )}
+                <g className="node-terminal-layer" transform={nodeGeometryTransform(node)}>
+                  {node.terminals.map((terminal) => {
+                    const hideFixedTerminal = nodeIsBus || isStaticNode(node);
+                    const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
+                    const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind);
+                    const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
+                    return hideFixedTerminal ? null : (
+                      <g key={terminal.id} transform={terminalControlTransform(renderPoint.x, renderPoint.y)}>
+                        <line
+                          className={`terminal-stub ${terminal.type}`}
+                          strokeDasharray={terminalStubDashArray}
+                          style={{
+                            stroke: terminalDisplayColor,
+                            strokeWidth: terminalStubStrokeWidth(node, terminal)
+                          }}
+                          x1={stub.from.x}
+                          y1={stub.from.y}
+                          x2={stub.to.x}
+                          y2={stub.to.y}
+                        />
+                        <circle
+                          className={`terminal-dot ${terminal.type}`}
+                          style={{ "--terminal-color": terminalDisplayColor } as CSSProperties}
+                          cx="0"
+                          cy="0"
+                          r={6}
+                        />
+                      </g>
+                    );
+                  })}
+                </g>
+              </g>
+            );
+          })}
+        </g>
+      </g>
+    );
+  };
+
   const viewportOverlayStyle = {
     "--viewport-overlay-right": `${rightPanelVisible ? rightPanelWidth + 28 : 16}px`,
     "--viewport-overlay-bottom": `${statusbarHeight + 14}px`
@@ -17928,6 +19304,8 @@ export function App() {
       expandedAttributeLibraries,
       expandedAttributeLibraryComponentTypes,
       filteredAttributeLibraryByComponentType,
+      hoveredAttributeLibrary,
+      hoveredAttributeLibraryComponentType,
       libraryPreviewByKind,
       librarySearchNeedle,
       librarySearchQuery
@@ -17935,7 +19313,7 @@ export function App() {
   );
   const templateLibraryPanelContent = useMemo(
     () => renderTemplateLibraryPanel(),
-    [colorPalette, expandedGraphTemplateTypes, graphTemplateTypes, groupedGraphTemplates]
+    [colorPalette, expandedGraphTemplateTypes, graphTemplateTypes, groupedGraphTemplates, hoveredGraphTemplateType]
   );
   const leftPanelContent = leftPanelTab === "projects"
     ? renderProjectPanel()
@@ -18149,6 +19527,20 @@ export function App() {
           <div
             className="canvas-scroll-surface"
             style={{ width: canvasScrollSurfaceWidth, height: canvasScrollSurfaceHeight }}
+            onPointerDown={(event) => {
+              if (event.button !== 0 || event.target !== event.currentTarget || staticDrawing || connectSource || hasCanvasSelectionModifier(event)) {
+                return;
+              }
+              startCanvasPanning(event);
+            }}
+            onPointerMove={(event) => {
+              if (panning) {
+                handlePointerMove(event as unknown as PointerEvent<SVGSVGElement>);
+              }
+            }}
+            onPointerUp={() => setPanning(null)}
+            onPointerCancel={() => setPanning(null)}
+            onLostPointerCapture={() => setPanning(null)}
             onDoubleClick={(event) => {
               if (event.button !== 0 || event.target !== event.currentTarget) {
                 return;
@@ -18272,6 +19664,15 @@ export function App() {
                 }
                 return;
               }
+              if (hasCanvasSelectionModifier(event)) {
+                event.preventDefault();
+                setConnectSource(null);
+                resetConnectPreviewState();
+                setRewiring(null);
+                setContextMenu(null);
+                setMarquee({ start: pointer, current: pointer });
+                return;
+              }
               lastEdgePointerClickRef.current = null;
               setCanvasSelectionScope("group");
               setSelectedNodeIds([]);
@@ -18291,6 +19692,10 @@ export function App() {
                 event.preventDefault();
                 setMarquee(null);
                 fitWholeCanvasToFrame();
+                return;
+              }
+              if (!canvasScrollbarsActiveRef.current) {
+                startCanvasPanning(event);
                 return;
               }
               const point = lastCanvasPointerRef.current;
@@ -18356,6 +19761,7 @@ export function App() {
             )}
             <rect width={canvasWidth} height={canvasHeight} fill="url(#large-grid)" />
             <rect className="canvas-boundary" x="0" y="0" width={canvasWidth} height={canvasHeight} />
+            {renderReadonlyBackgroundPage()}
             <g className="canvas-content">
             {marquee && (
               <rect
@@ -18573,9 +19979,9 @@ export function App() {
               const center = selectionRectCenter(bounds);
               const handleGapX = 14;
               const handleGapY = 14;
-              const rotateStemStart = 12;
-              const rotateStemEnd = 36;
-              const rotateHandleGap = 42;
+              const rotateStemStart = TRANSFORM_ROTATE_STEM_START;
+              const rotateStemEnd = TRANSFORM_ROTATE_STEM_END;
+              const rotateHandleGap = TRANSFORM_ROTATE_HANDLE_GAP;
               return (
                 <g key={`group-selection-${unit.id}`} className={`group-selection-overlay ${focused ? "focused" : ""} ${transforming ? "transforming" : ""}`}>
                   <rect
@@ -18585,6 +19991,28 @@ export function App() {
                     width={width}
                     height={height}
                     onPointerDown={(event) => startGroupMoveDrag(event, unit)}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      if (!activeLayer?.visible) {
+                        return;
+                      }
+                      canvasInteractionRef.current = true;
+                      projectListPointerInsideRef.current = false;
+                      let pointer: Point | undefined;
+                      if (svgRef.current) {
+                        pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+                        lastCanvasPointerRef.current = pointer;
+                        updateMouseStatus(pointer);
+                      }
+                      if (connectSource) {
+                        setConnectSource(null);
+                        resetConnectPreviewState();
+                        setMode("select");
+                        return;
+                      }
+                      setContextMenu({ x: event.clientX, y: event.clientY, target: "group", canvasPoint: pointer });
+                    }}
                   />
                   <rect
                     className="group-selection-outline"
@@ -18698,15 +20126,36 @@ export function App() {
               const handleGapY = 14;
               const visibleHalfWidth = transformedHalfExtents.halfWidth;
               const visibleHalfHeight = transformedHalfExtents.halfHeight;
-              const rotateStemStart = 12;
-              const rotateStemEnd = 36;
-              const rotateHandleGap = 42;
+              const rotateStemStart = TRANSFORM_ROTATE_STEM_START;
+              const rotateStemEnd = TRANSFORM_ROTATE_STEM_END;
+              const rotateHandleGap = TRANSFORM_ROTATE_HANDLE_GAP;
+              const rotateHandlePoints = nodeRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap);
+              const staticButtonEnabled = isStaticButtonEnabledForNode(node);
+              const staticButtonState = staticButtonVisual?.nodeId === node.id ? staticButtonVisual.state : "";
+              const staticButtonCornerRadius = Math.max(0, Number(node.params.cornerRadius || 8));
               return (
                 <g
                   key={node.id}
-                  className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${multiNodeDragging && draggingNodeIdSet.has(node.id) ? "multi-drag-origin" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${isConnectSource ? "connect-source" : ""}`}
+                  className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${staticButtonEnabled ? "static-button-enabled" : ""} ${staticButtonState ? `static-button-${staticButtonState}` : ""} ${multiNodeDragging && draggingNodeIdSet.has(node.id) ? "multi-drag-origin" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${isConnectSource ? "connect-source" : ""}`}
                   transform={`translate(${renderPosition.x} ${renderPosition.y})`}
                   onPointerDown={(event) => handleNodePointerDown(event, node)}
+                  onPointerEnter={() => {
+                    if (staticButtonEnabled) {
+                      setStaticButtonFeedback(node.id, "hover");
+                    }
+                  }}
+                  onPointerLeave={() => {
+                    if (staticButtonEnabled) {
+                      staticButtonPointerRef.current = null;
+                      clearStaticButtonFeedback(node.id);
+                    }
+                  }}
+                  onPointerUp={() => {
+                    if (staticButtonEnabled && staticButtonVisual?.nodeId === node.id && staticButtonVisual.state === "pressed") {
+                      setStaticButtonFeedback(node.id, "hover");
+                    }
+                  }}
+                  onClick={(event) => handleStaticButtonClick(event, node)}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -18766,6 +20215,16 @@ export function App() {
                     />
                     <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
                     <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                    {staticButtonEnabled && (
+                      <rect
+                        x={-node.size.width / 2}
+                        y={-node.size.height / 2}
+                        width={node.size.width}
+                        height={node.size.height}
+                        rx={staticButtonCornerRadius}
+                        className="static-button-feedback-surface"
+                      />
+                    )}
                   </g>
                   {!nodeIsBus && (imageHref || foregroundImageHref) && (
                     <g className="node-upright-content" transform={nodeUprightScaleTransform(node)}>
@@ -18911,8 +20370,8 @@ export function App() {
                   </g>
                   {selected && focused && selectedNodeCount === 1 && (
                     <g className={`transform-handles ${transformDrag && !isGroupTransformDrag(transformDrag) && transformDrag.nodeId === node.id && transformDrag.kind !== "rotate" ? "resizing" : ""}`}>
-                      <line x1="0" y1={-visibleHalfHeight - rotateStemStart} x2="0" y2={-visibleHalfHeight - rotateStemEnd} />
-                      <g transform={handleTransform(0, -visibleHalfHeight - rotateHandleGap)}>
+                      <line x1={rotateHandlePoints.stemStart.x} y1={rotateHandlePoints.stemStart.y} x2={rotateHandlePoints.stemEnd.x} y2={rotateHandlePoints.stemEnd.y} />
+                      <g transform={handleTransform(rotateHandlePoints.handle.x, rotateHandlePoints.handle.y)}>
                         <circle
                           className="rotate-handle"
                           cx="0"
@@ -18949,7 +20408,9 @@ export function App() {
                 </g>
               );
             })}
+            {renderSingleTransformRotateOriginGhost()}
             {renderGroupTransformPhotoPreview()}
+            {renderTransformRotationTrajectory()}
             </g>
             <g
               ref={imperativeMultiNodeDragOverlayRef}
@@ -19206,7 +20667,7 @@ export function App() {
                         </button>
                       )}
                       {canAddTemplateFromSelection && (
-                        <button type="button" title="添加模板" aria-label="添加模板" onClick={openAddTemplateDialog}>
+                        <button type="button" title="添加到模板库" aria-label="添加到模板库" onClick={openAddTemplateDialog}>
                           <Grid2X2 size={floatingToolbarIconSize} />
                         </button>
                       )}
@@ -19364,6 +20825,11 @@ export function App() {
           </span>
           <span className="status-pill">联络线 {edges.length}</span>
           <span className="status-pill">选中 {selectedCount}</span>
+          {selectedNodeTransformStatus && (
+            <span className="status-pill status-transform" title={selectedNodeTransformStatus.title}>
+              图元 缩放 {selectedNodeTransformStatus.scaleText} 旋转 {selectedNodeTransformStatus.rotationText}
+            </span>
+          )}
           {saveRequired && <strong>未保存</strong>}
           {mode === "connect" && <strong>{connectSource ? "选择同类型目标端子" : "选择起点端子"}</strong>}
           {mode === "static-draw" && <strong>点击落点，双击或 Enter 完成，Esc 取消</strong>}
@@ -19499,6 +20965,67 @@ export function App() {
                     </td>
                   </tr>
                   <tr>
+                    {renderChineseParamHeader("backgroundProjectId")}
+                    <td>
+                      <div className="background-page-field">
+                        <select
+                          value={backgroundProjectId}
+                          onChange={(event) => {
+                            pushUndoSnapshot();
+                            const nextProjectId = event.target.value;
+                            setBackgroundProjectId(nextProjectId);
+                            const backgroundProject = projectById.get(nextProjectId);
+                            if (backgroundProject) {
+                              setBackgroundLayerIds(defaultBackgroundLayerIdsForProject(backgroundProject.project));
+                            } else {
+                              setBackgroundLayerIds([]);
+                            }
+                          }}
+                        >
+                          <option value="">不使用背景页面</option>
+                          {backgroundProjectOptions.map(({ scheme, project }) => (
+                            <option key={project.id} value={project.id}>
+                              {scheme.name} / {project.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            pushUndoSnapshot();
+                            setBackgroundProjectId("");
+                            setBackgroundLayerIds([]);
+                          }}
+                          disabled={!backgroundProjectId}
+                        >
+                          清空背景页面
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    {renderChineseParamHeader("backgroundLayerIds")}
+                    <td>
+                      {backgroundProjectRecord ? (
+                        <div className="background-layer-checklist">
+                          {backgroundLayerOptions.map((layer) => (
+                            <label key={layer.id} className="background-layer-option">
+                              <input
+                                type="checkbox"
+                                checked={backgroundLayerIds.includes(layer.id)}
+                                onChange={() => toggleBackgroundLayer(layer.id)}
+                              />
+                              <span>{layer.name}</span>
+                            </label>
+                          ))}
+                          {backgroundLayerOptions.length === 0 && <span className="muted-inline-text">背景页面没有可配置图层</span>}
+                        </div>
+                      ) : (
+                        <span className="muted-inline-text">未设置背景页面</span>
+                      )}
+                    </td>
+                  </tr>
+                  <tr>
                     {renderChineseParamHeader("powerUnit")}
                     <td>
                       <select
@@ -19604,6 +21131,42 @@ export function App() {
                       {renderChineseParamHeader("graph_y", "Y坐标")}
                       <td><input type="number" value={Math.round(inspectorSelectedNode.position.y)} onChange={(event) => updateSelectedNode({ position: { ...inspectorSelectedNode.position, y: Number(event.target.value) } })} /></td>
                     </tr>
+                    {isStaticBoxLikeNode(inspectorSelectedNode) && (
+                      <>
+                        <tr>
+                          {renderChineseParamHeader("staticWidth", "宽度")}
+                          <td>
+                            <input
+                              type="number"
+                              min="4"
+                              max={MAX_CANVAS_WIDTH}
+                              step="1"
+                              value={Math.round(inspectorSelectedNode.size.width * 10) / 10}
+                              onChange={(event) => {
+                                const width = normalizeStaticBoxDimension(Number(event.target.value), inspectorSelectedNode.size.width, MAX_CANVAS_WIDTH);
+                                updateSelectedNode({ size: { ...inspectorSelectedNode.size, width: width } });
+                              }}
+                            />
+                          </td>
+                        </tr>
+                        <tr>
+                          {renderChineseParamHeader("staticHeight", "高度")}
+                          <td>
+                            <input
+                              type="number"
+                              min="4"
+                              max={MAX_CANVAS_HEIGHT}
+                              step="1"
+                              value={Math.round(inspectorSelectedNode.size.height * 10) / 10}
+                              onChange={(event) => {
+                                const height = normalizeStaticBoxDimension(Number(event.target.value), inspectorSelectedNode.size.height, MAX_CANVAS_HEIGHT);
+                                updateSelectedNode({ size: { ...inspectorSelectedNode.size, height: height } });
+                              }}
+                            />
+                          </td>
+                        </tr>
+                      </>
+                    )}
                     <tr>
                       {renderChineseParamHeader("rotation")}
                       <td><input type="number" value={inspectorSelectedNode.rotation} onChange={(event) => updateSelectedNode({ rotation: Number(event.target.value) })} /></td>
@@ -19890,6 +21453,7 @@ export function App() {
                           {renderChineseParamHeader("handleSize")}
                           <td><input type="number" min="3" max="40" value={inspectorSelectedNode.params.handleSize || "8"} onChange={(event) => updateParam("handleSize", event.target.value)} /></td>
                         </tr>
+                        {renderStaticButtonActionEditor(inspectorSelectedNode)}
                         <tr>
                           {renderChineseParamHeader("fontSize")}
                           <td><input type="number" min="8" max="160" value={inspectorSelectedNode.params.fontSize || "24"} onChange={(event) => updateParam("fontSize", event.target.value)} /></td>
@@ -20165,7 +21729,7 @@ export function App() {
           {contextMenuForNode && canAddTemplateFromSelection && (
             <button onClick={() => runContextMenuAction(openAddTemplateDialog)}>
               <Grid2X2 size={14} />
-              添加模板
+              添加到模板库
             </button>
           )}
           {contextMenuForNode && activeSelectedNodeIds.length > 0 && (

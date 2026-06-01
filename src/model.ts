@@ -435,6 +435,8 @@ export type ProjectFile = {
   canvasBackgroundColor?: string;
   canvasBackgroundImage?: string;
   canvasBackgroundImageAssetId?: string;
+  backgroundProjectId?: string;
+  backgroundLayerIds?: string[];
   powerUnit?: string;
   voltageUnit?: string;
   currentUnit?: string;
@@ -458,6 +460,13 @@ export const INTERACTIVE_STATIC_DRAWING_KINDS = [
   "static-bezier-connector",
   "static-smoothstep-connector"
 ] as const satisfies readonly DeviceKind[];
+
+export const STATIC_LINE_LIKE_KINDS = [
+  ...INTERACTIVE_STATIC_DRAWING_KINDS,
+  "static-self-loop"
+] as const satisfies readonly DeviceKind[];
+
+const STATIC_LINE_LIKE_KIND_SET = new Set<DeviceKind>(STATIC_LINE_LIKE_KINDS);
 
 export const DEFAULT_POWER_UNIT = "MW";
 export const DEFAULT_VOLTAGE_UNIT = "kV";
@@ -494,7 +503,7 @@ const STATIC_COMPONENT_TYPE_BY_KIND: Record<string, string> = {
   "static-card-node": "StaticFlowNode",
   "static-toolbar-node": "StaticFlowNode",
   "static-input": "StaticFlowNode",
-  "static-button": "StaticFlowNode",
+  "static-button": "StaticButton",
   "static-group-box": "StaticContainerSymbol",
   "static-swimlane": "StaticContainerSymbol",
   "static-resizer-frame": "StaticContainerSymbol",
@@ -521,6 +530,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   StaticMediaSymbol: [],
   StaticBasicShape: [],
   StaticFlowNode: [],
+  StaticButton: [],
   StaticContainerSymbol: [],
   StaticConnectorSymbol: [],
   StaticAnnotationSymbol: [],
@@ -1944,6 +1954,19 @@ export type PreparedConnectionEdgeCommit = ConnectionRouteValidationResult & {
   edge?: Edge;
 };
 
+export type ConnectionEndpointRuleIssueType =
+  | "duplicate-terminal-pair"
+  | "duplicate-terminal-bus"
+  | "same-device-terminals"
+  | "shared-opposite-terminal";
+
+export type ConnectionEndpointRuleIssue = {
+  type: ConnectionEndpointRuleIssueType;
+  edgeId: string;
+  message: string;
+  conflictingEdgeId?: string;
+};
+
 export type TopologyValidationErrorType =
   | "floating-terminal"
   | "terminal-type-mismatch"
@@ -1996,43 +2019,70 @@ const threeWindingTransformerParameterDefinitions: DeviceParameterDefinition[] =
   readonlyIntegerDefinition("低压绕组双绕组主变idx", "idx_xf_t3")
 ];
 
+function defaultStaticButtonParams(kind: DeviceKind): Record<string, string> {
+  if (!isStaticButtonCapableKind(kind)) {
+    return {};
+  }
+  return {
+    buttonEnabled: kind === "static-button" ? "1" : "0",
+    buttonActionType: "none",
+    buttonTargetSchemeId: "",
+    buttonTargetProjectId: "",
+    buttonTargetProjectName: "",
+    buttonTargetLayerId: "",
+    buttonTargetLayerName: "",
+    buttonCommand: "none"
+  };
+}
+
+function withStaticButtonCapability(kind: DeviceKind, params: Record<string, string>): Record<string, string> {
+  return {
+    ...defaultStaticButtonParams(kind),
+    ...params
+  };
+}
+
 const staticSymbolParams = (
   kind: DeviceKind,
   text: string,
   overrides: Partial<Record<string, string>> = {}
 ): Record<string, string> => ({
-  component_type: staticComponentTypeForKind(kind),
-  text,
-  fillColor: "#ffffff",
-  strokeColor: "#64748b",
-  textColor: "#111827",
-  lineWidth: "2",
-  strokeStyle: "solid",
-  fontSize: "16",
-  fontFamily: "Arial",
-  fontWeight: "500",
-  fontStyle: "normal",
-  textDecoration: "none",
-  cornerRadius: "8",
-  accentColor: "#2563eb",
-  shadowEnabled: "0",
-  padding: "12",
-  textAlign: "center",
-  verticalAlign: "middle",
-  markerStart: "none",
-  markerEnd: "none",
-  arrowSize: "10",
-  handleColor: "#2563eb",
-  handleSize: "8",
-  ...overrides
+  ...withStaticButtonCapability(kind, {
+    component_type: staticComponentTypeForKind(kind),
+    text,
+    fillColor: "#ffffff",
+    strokeColor: "#64748b",
+    textColor: "#111827",
+    lineWidth: "2",
+    strokeStyle: "solid",
+    fontSize: "16",
+    fontFamily: "Arial",
+    fontWeight: "500",
+    fontStyle: "normal",
+    textDecoration: "none",
+    cornerRadius: "8",
+    accentColor: "#2563eb",
+    shadowEnabled: "0",
+    padding: "12",
+    textAlign: "center",
+    verticalAlign: "middle",
+    markerStart: "none",
+    markerEnd: "none",
+    arrowSize: "10",
+    handleColor: "#2563eb",
+    handleSize: "8",
+    ...overrides
+  })
 });
 
 const staticVisualParams = (
   kind: DeviceKind,
   params: Record<string, string>
 ): Record<string, string> => ({
-  component_type: staticComponentTypeForKind(kind),
-  ...params
+  ...withStaticButtonCapability(kind, {
+    component_type: staticComponentTypeForKind(kind),
+    ...params
+  })
 });
 
 const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
@@ -2333,6 +2383,15 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     attributeLibrary: "静态图元",
     size: { width: 170, height: 96 },
     params: staticSymbolParams("static-toolbar-node", "工具条节点", { fillColor: "#ffffff", strokeColor: "#64748b", accentColor: "#e2e8f0", cornerRadius: "10", verticalAlign: "bottom", shadowEnabled: "1" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "static-button",
+    label: "按钮",
+    attributeLibrary: "静态图元",
+    size: { width: 132, height: 52 },
+    params: staticSymbolParams("static-button", "按钮", { fillColor: "#eff6ff", strokeColor: "#2563eb", accentColor: "#60a5fa", cornerRadius: "8", shadowEnabled: "1" }),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -4012,6 +4071,29 @@ export function isStaticNode(node: ModelNode): boolean {
   return isStaticKind(node.kind);
 }
 
+export function isStaticLineLikeKind(kind: DeviceKind): boolean {
+  return STATIC_LINE_LIKE_KIND_SET.has(baseDeviceKind(kind) as DeviceKind);
+}
+
+export function isStaticBoxLikeKind(kind: DeviceKind): boolean {
+  const baseKind = baseDeviceKind(kind) as DeviceKind;
+  if (!isStaticKind(baseKind) || isStaticLineLikeKind(baseKind)) {
+    return false;
+  }
+  if (baseKind === "static-point" || baseKind === "static-ring") {
+    return false;
+  }
+  return staticComponentTypeForKind(baseKind) !== "StaticConnectorSymbol";
+}
+
+export function isStaticBoxLikeNode(node: ModelNode): boolean {
+  return isStaticBoxLikeKind(node.kind);
+}
+
+export function isStaticButtonCapableKind(kind: DeviceKind): boolean {
+  return isStaticKind(kind) && !isStaticLineLikeKind(kind);
+}
+
 const TEMPLATE_DEFINITION_READONLY_KEYS = new Set(["idx", "name", "node", "i_node", "j_node", "ac_node", "dc_node"]);
 const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> = {
   idx: "integer",
@@ -4503,6 +4585,35 @@ export function parseStaticDrawPoints(value?: string): Point[] {
   } catch {
     return [];
   }
+}
+
+export function createStaticBoxNodeFromDrawing(
+  template: DeviceTemplate,
+  canvasPoints: readonly Point[],
+  layerId = DEFAULT_MODEL_LAYER_ID
+): ModelNode {
+  const points = normalizeStaticDrawingPoints(canvasPoints);
+  if (points.length < 2) {
+    throw new Error("Static box drawing requires at least two points.");
+  }
+  const start = points[0];
+  const end = points[points.length - 1];
+  const left = Math.min(start.x, end.x);
+  const right = Math.max(start.x, end.x);
+  const top = Math.min(start.y, end.y);
+  const bottom = Math.max(start.y, end.y);
+  const width = Math.max(STATIC_DRAWING_MIN_SIZE, roundStaticDrawingCoordinate(right - left));
+  const height = Math.max(STATIC_DRAWING_MIN_SIZE, roundStaticDrawingCoordinate(bottom - top));
+  const center = {
+    x: roundStaticDrawingCoordinate(left + width / 2),
+    y: roundStaticDrawingCoordinate(top + height / 2)
+  };
+  const node = createNodeFromTemplate(template, center);
+  return {
+    ...node,
+    layerId,
+    size: { width, height }
+  };
 }
 
 export function createInteractiveStaticDrawingNode(
@@ -5980,6 +6091,141 @@ export function canConnectTerminals(
     return false;
   }
   return getTerminal(source, sourceTerminalId).type === getTerminal(target, targetTerminalId).type;
+}
+
+type ConnectionEndpointRef = {
+  node: ModelNode;
+  nodeId: string;
+  terminalId: string;
+  isBus: boolean;
+};
+
+function edgeEndpointRefs(nodeById: ReadonlyMap<string, ModelNode>, edge: Edge): [ConnectionEndpointRef, ConnectionEndpointRef] | null {
+  const source = nodeById.get(edge.sourceId);
+  const target = nodeById.get(edge.targetId);
+  if (!source || !target) {
+    return null;
+  }
+  const sourceTerminal = getTerminal(source, edge.sourceTerminalId);
+  const targetTerminal = getTerminal(target, edge.targetTerminalId);
+  if (!sourceTerminal || !targetTerminal) {
+    return null;
+  }
+  return [
+    { node: source, nodeId: source.id, terminalId: sourceTerminal.id, isBus: isBusNode(source) },
+    { node: target, nodeId: target.id, terminalId: targetTerminal.id, isBus: isBusNode(target) }
+  ];
+}
+
+function sameEndpointRef(first: ConnectionEndpointRef, second: ConnectionEndpointRef): boolean {
+  return first.nodeId === second.nodeId && first.terminalId === second.terminalId;
+}
+
+function unorderedEndpointPairKey(first: ConnectionEndpointRef, second: ConnectionEndpointRef): string {
+  const refs = [terminalRefKey(first.nodeId, first.terminalId), terminalRefKey(second.nodeId, second.terminalId)].sort();
+  return `${refs[0]}|${refs[1]}`;
+}
+
+function terminalBusEndpointPairKey(first: ConnectionEndpointRef, second: ConnectionEndpointRef): string {
+  if (first.isBus && second.isBus) {
+    return ["bus", first.nodeId, second.nodeId].sort().join(":");
+  }
+  if (first.isBus) {
+    return `bus:${first.nodeId}|terminal:${terminalRefKey(second.nodeId, second.terminalId)}`;
+  }
+  if (second.isBus) {
+    return `bus:${second.nodeId}|terminal:${terminalRefKey(first.nodeId, first.terminalId)}`;
+  }
+  return "";
+}
+
+function endpointBelongsToMultiTerminalDevice(endpoint: ConnectionEndpointRef): boolean {
+  return !endpoint.isBus && endpoint.node.terminals.length > 1;
+}
+
+function hasSharedOppositeTerminalConflict(
+  candidateLocal: ConnectionEndpointRef,
+  candidateRemote: ConnectionEndpointRef,
+  existingFirst: ConnectionEndpointRef,
+  existingSecond: ConnectionEndpointRef
+): boolean {
+  return (
+    endpointBelongsToMultiTerminalDevice(candidateLocal) &&
+    !candidateRemote.isBus &&
+    existingFirst.nodeId === candidateLocal.nodeId &&
+    existingFirst.terminalId !== candidateLocal.terminalId &&
+    sameEndpointRef(existingSecond, candidateRemote)
+  );
+}
+
+export function validateConnectionEndpointRules(
+  nodes: ModelNode[],
+  existingEdges: Edge[],
+  candidateEdge: Edge
+): ConnectionEndpointRuleIssue[] {
+  const issues: ConnectionEndpointRuleIssue[] = [];
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const candidateRefs = edgeEndpointRefs(nodeById, candidateEdge);
+  if (!candidateRefs) {
+    return issues;
+  }
+  const [candidateSource, candidateTarget] = candidateRefs;
+  if (candidateSource.nodeId === candidateTarget.nodeId) {
+    issues.push({
+      type: "same-device-terminals",
+      edgeId: candidateEdge.id,
+      message: "同一设备的任意两个端子之间不能相互连接。"
+    });
+    return issues;
+  }
+
+  const candidateTerminalPairKey = unorderedEndpointPairKey(candidateSource, candidateTarget);
+  const candidateTerminalBusKey = terminalBusEndpointPairKey(candidateSource, candidateTarget);
+
+  for (const existingEdge of existingEdges) {
+    if (existingEdge.id === candidateEdge.id) {
+      continue;
+    }
+    const existingRefs = edgeEndpointRefs(nodeById, existingEdge);
+    if (!existingRefs) {
+      continue;
+    }
+    const [existingSource, existingTarget] = existingRefs;
+    if (!candidateTerminalBusKey && unorderedEndpointPairKey(existingSource, existingTarget) === candidateTerminalPairKey) {
+      issues.push({
+        type: "duplicate-terminal-pair",
+        edgeId: candidateEdge.id,
+        conflictingEdgeId: existingEdge.id,
+        message: "两个端子之间已存在联络线，不能重复连接。"
+      });
+      return issues;
+    }
+    if (candidateTerminalBusKey && terminalBusEndpointPairKey(existingSource, existingTarget) === candidateTerminalBusKey) {
+      issues.push({
+        type: "duplicate-terminal-bus",
+        edgeId: candidateEdge.id,
+        conflictingEdgeId: existingEdge.id,
+        message: "该端子与该母线类设备之间已存在联络线，不能重复连接。"
+      });
+      return issues;
+    }
+    if (
+      hasSharedOppositeTerminalConflict(candidateSource, candidateTarget, existingSource, existingTarget) ||
+      hasSharedOppositeTerminalConflict(candidateSource, candidateTarget, existingTarget, existingSource) ||
+      hasSharedOppositeTerminalConflict(candidateTarget, candidateSource, existingSource, existingTarget) ||
+      hasSharedOppositeTerminalConflict(candidateTarget, candidateSource, existingTarget, existingSource)
+    ) {
+      issues.push({
+        type: "shared-opposite-terminal",
+        edgeId: candidateEdge.id,
+        conflictingEdgeId: existingEdge.id,
+        message: "同一多端设备的不同端子不能连接到同一个外部端子。"
+      });
+      return issues;
+    }
+  }
+
+  return issues;
 }
 
 function nodeLayoutBounds(node: ModelNode) {

@@ -94,7 +94,10 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const filteredProjectSchemes = useMemo<SavedSchemeRecord[]>");
     expect(source).toContain("normalizeLibrarySearchText(scheme.name).includes(projectSearchNeedle)");
     expect(source).toContain("normalizeLibrarySearchText(project.name).includes(projectSearchNeedle)");
-    expect(source).toContain("const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id);");
+    expect(source).toContain("const [hoveredSchemeId, setHoveredSchemeId] = useState(\"\");");
+    expect(source).toContain("const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id) || hoveredSchemeId === scheme.id;");
+    expect(projectPanelBlock).toContain("onMouseEnter={() => setHoveredSchemeId(scheme.id)}");
+    expect(projectPanelBlock).toContain("onMouseLeave={() => setHoveredSchemeId((current) => current === scheme.id ? \"\" : current)}");
     expect(projectPanelBlock).toContain("className=\"library-search project-search\"");
     expect(projectPanelBlock).toContain("placeholder=\"搜索方案/模型\"");
     expect(projectPanelBlock).toContain("aria-label=\"搜索模型库\"");
@@ -103,6 +106,60 @@ describe("graph inspector panel", () => {
     expect(projectPanelBlock).toContain("filteredProjectSchemes.map((scheme)");
     expect(styles).toContain(".project-search");
     expect(styles).toContain(".project-search-empty");
+  });
+
+  test("configures and renders a readonly background model page from the basic inspector", async () => {
+    const source = await readAppSource();
+    const model = await readModelSource();
+    const styles = await readStyles();
+    const modelPanelStart = source.indexOf("{inspectorTab === \"model\" && currentModelRecord");
+    const modelPanelEnd = source.indexOf(") : inspectorTab === \"graph\"", modelPanelStart);
+    const modelPanelBlock = source.slice(modelPanelStart, modelPanelEnd);
+    const canvasStart = source.indexOf("<rect width={canvasWidth} height={canvasHeight} fill={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND} />");
+    const canvasEnd = source.indexOf("{marquee && (", canvasStart);
+    const canvasBlock = source.slice(canvasStart, canvasEnd);
+    const backgroundRenderStart = source.indexOf("const renderReadonlyBackgroundPage = () =>");
+    const backgroundRenderEnd = source.indexOf("const viewportOverlayStyle", backgroundRenderStart);
+    const backgroundRenderBlock = source.slice(backgroundRenderStart, backgroundRenderEnd);
+    const backgroundLayerStyleStart = styles.indexOf(".background-page-layer");
+    const backgroundLayerStyleEnd = styles.indexOf(".background-page-fill", backgroundLayerStyleStart);
+    const backgroundLayerStyleBlock = styles.slice(backgroundLayerStyleStart, backgroundLayerStyleEnd);
+
+    expect(model).toContain("backgroundProjectId?: string;");
+    expect(model).toContain("backgroundLayerIds?: string[];");
+    expect(source).toContain("backgroundProjectId: string;");
+    expect(source).toContain("backgroundLayerIds: string[];");
+    expect(source).toContain("const [backgroundProjectId, setBackgroundProjectId]");
+    expect(source).toContain("const [backgroundLayerIds, setBackgroundLayerIds]");
+    expect(source).toContain("backgroundProjectId,");
+    expect(source).toContain("backgroundLayerIds,");
+    expect(source).toContain("setBackgroundProjectId(project.project.backgroundProjectId ?? \"\")");
+    expect(source).toContain("setBackgroundLayerIds(resolveConfiguredBackgroundLayerIds(project.project.backgroundProjectId, project.project.backgroundLayerIds))");
+    expect(source).toContain("function backgroundPageCanvasTransform");
+    expect(source).toContain("const backgroundPageRender = useMemo");
+    expect(source).toContain("filterProjectByVisibleLayers(backgroundProject.nodes, backgroundProject.edges, backgroundLayers)");
+    expect(source).toContain("routeEdgesForStoredRendering(backgroundNodes, backgroundEdges, backgroundBounds)");
+    expect(source).toContain("backgroundColor: backgroundProject.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND");
+    expect(source).toContain("backgroundImageUrl: resolveProjectImage(backgroundProject, imageAssets)");
+    expect(source).toContain("const renderReadonlyBackgroundPage = () =>");
+    expect(source).toContain("beginReadonlyBackgroundStaticButtonPointerFeedback");
+    expect(modelPanelBlock).toContain("renderChineseParamHeader(\"backgroundProjectId\"");
+    expect(modelPanelBlock).toContain("<option value=\"\">不使用背景页面</option>");
+    expect(modelPanelBlock).toContain("setBackgroundProjectId(nextProjectId)");
+    expect(modelPanelBlock).toContain("setBackgroundLayerIds(defaultBackgroundLayerIdsForProject(backgroundProject.project))");
+    expect(modelPanelBlock).toContain("renderChineseParamHeader(\"backgroundLayerIds\"");
+    expect(modelPanelBlock).toContain("toggleBackgroundLayer");
+    expect(canvasBlock).toContain("{renderReadonlyBackgroundPage()}");
+    expect(canvasBlock.indexOf("{renderReadonlyBackgroundPage()}")).toBeLessThan(canvasBlock.indexOf("<g className=\"canvas-content\">"));
+    expect(backgroundRenderBlock.indexOf("className=\"background-page-fill\"")).toBeLessThan(backgroundRenderBlock.indexOf("className=\"background-page-image\""));
+    expect(backgroundRenderBlock.indexOf("className=\"background-page-image\"")).toBeLessThan(backgroundRenderBlock.indexOf("className=\"background-page-edges\""));
+    expect(backgroundRenderBlock.indexOf("className=\"background-page-edges\"")).toBeLessThan(backgroundRenderBlock.indexOf("className=\"background-page-nodes\""));
+    expect(styles).toContain(".background-page-layer");
+    expect(backgroundLayerStyleBlock).not.toContain("opacity:");
+    expect(source).toContain("className=\"background-page-fill\"");
+    expect(source).toContain("className=\"background-page-image\"");
+    expect(styles).toContain(".background-page-button");
+    expect(styles).toContain("pointer-events: all");
   });
 
   test("collapses component type groups in the library by default and toggles them on click", async () => {
@@ -115,9 +172,11 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const [expandedAttributeLibraryComponentTypes, setExpandedAttributeLibraryComponentTypes] = useState<string[]>([]);");
     expect(source).toContain("const attributeLibraryComponentTypeKey = (attributeLibraryName: string, sectionName: string) =>");
     expect(source).toContain("const toggleAttributeLibraryComponentType = (attributeLibraryName: string, sectionName: string) =>");
-    expect(libraryPanelBlock).toContain("const componentTypeExpanded = librarySearchNeedle ? true : expandedAttributeLibraryComponentTypes.includes(componentTypeKey);");
+    expect(libraryPanelBlock).toContain("const componentTypeExpanded = librarySearchNeedle");
+    expect(libraryPanelBlock).toContain("expandedAttributeLibraryComponentTypes.includes(componentTypeKey) || hoveredAttributeLibraryComponentType === componentTypeKey");
     expect(libraryPanelBlock).toContain("aria-expanded={componentTypeExpanded}");
     expect(libraryPanelBlock).toContain("onClick={() => toggleAttributeLibraryComponentType(group, typeGroup.section)}");
+    expect(libraryPanelBlock).toContain("onMouseEnter={() => setHoveredAttributeLibraryComponentType(componentTypeKey)}");
     expect(libraryPanelBlock).toContain("{componentTypeExpanded && (");
     expect(styles).toContain(".attribute-library-component-type-header");
     expect(styles).toContain("cursor: pointer");
@@ -358,10 +417,18 @@ describe("graph inspector panel", () => {
     expect(source).toContain("componentTypeOptionsByAttributeLibrary");
     expect(source).toContain("currentAttributeLibraryComponentTypeOptions");
     expect(source).toContain("definitionAttributeLibraryComponentTypeOptions");
+    expect(source).toContain("const [hoveredAttributeLibrary, setHoveredAttributeLibrary]");
+    expect(source).toContain("const [hoveredAttributeLibraryComponentType, setHoveredAttributeLibraryComponentType]");
     expect(source).toContain("setCustomComponentTypes((current) => normalizeCustomComponentTypes([...current, { name: componentType, attributeLibraryName }]))");
     expect(source).toContain("(groupedAttributeLibraryByComponentType[group] ?? []).map((typeGroup)");
     expect(source).toContain("attribute-library-component-type-section");
     expect(source).toContain("attribute-library-component-type-header");
+    expect(source).toContain("onMouseEnter={() => setHoveredAttributeLibrary(group)}");
+    expect(source).toContain("setHoveredAttributeLibrary((current) => current === group ? \"\" : current)");
+    expect(source).toContain("expandedAttributeLibraries.includes(group) || hoveredAttributeLibrary === group");
+    expect(source).toContain("onMouseEnter={() => setHoveredAttributeLibraryComponentType(componentTypeKey)}");
+    expect(source).toContain("setHoveredAttributeLibraryComponentType((current) => current === componentTypeKey ? \"\" : current)");
+    expect(source).toContain("expandedAttributeLibraryComponentTypes.includes(componentTypeKey) || hoveredAttributeLibraryComponentType === componentTypeKey");
     expect(source).toContain("component-definition-type-group");
     expect(source).toContain("aria-label={`${group}/${typeGroup.section}元件列表`}");
     expect(source).toContain("renderCustomComponentManagerTree");
@@ -401,6 +468,7 @@ describe("graph inspector panel", () => {
       "StaticMediaSymbol",
       "StaticBasicShape",
       "StaticFlowNode",
+      "StaticButton",
       "StaticContainerSymbol",
       "StaticConnectorSymbol",
       "StaticAnnotationSymbol"
@@ -410,6 +478,7 @@ describe("graph inspector panel", () => {
     }
     expect(modelSource).toContain("STATIC_COMPONENT_TYPE_BY_KIND");
     expect(modelSource).toContain('"static-line": "StaticConnectorSymbol"');
+    expect(modelSource).toContain('"static-button": "StaticButton"');
     expect(modelSource).toContain('"static-callout": "StaticAnnotationSymbol"');
     expect(modelSource).not.toContain('if (isStaticKind(kind)) return "StaticSymbol";');
     expect(source).toContain('if (section.startsWith("Static")) {');
@@ -417,6 +486,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain('if (normalized.includes("静态")) return "StaticBasicShape";');
     expect(serverSource).toContain("staticComponentTypeByKind");
     expect(serverSource).toContain('"static-line": "StaticConnectorSymbol"');
+    expect(serverSource).toContain('"static-button": "StaticButton"');
     expect(serverSource).toContain('"static-callout": "StaticAnnotationSymbol"');
     expect(serverSource).not.toContain('if (isStaticKind(kind)) return "StaticSymbol";');
   });
@@ -457,6 +527,7 @@ describe("graph inspector panel", () => {
       "static-port-node",
       "static-card-node",
       "static-toolbar-node",
+      "static-button",
       "static-resizer-frame",
       "static-subflow-box",
       "static-bezier-connector",
@@ -481,6 +552,10 @@ describe("graph inspector panel", () => {
     expect(inspectorBlock).toContain("arrowSize");
     expect(inspectorBlock).toContain("handleColor");
     expect(inspectorBlock).toContain("handleSize");
+    expect(inspectorBlock).toContain("renderStaticButtonActionEditor");
+    expect(source).toContain("executeStaticButtonAction");
+    expect(source).toContain("handleStaticButtonClick");
+    expect(source).toContain("static-button-feedback-surface");
   });
 
   test("keeps backend electric heat sections split by AC and DC device types", async () => {
@@ -572,7 +647,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("nodeFloatingToolbarActionCount");
     expect(source).toContain("title=\"剪切\" aria-label=\"剪切\"");
     expect(source).toContain("title=\"解散\" aria-label=\"解散\"");
-    expect(source).toContain("title=\"添加模板\" aria-label=\"添加模板\"");
+    expect(source).toContain("title=\"添加到模板库\" aria-label=\"添加到模板库\"");
     expect(source).toContain("title=\"复制连接线\" aria-label=\"复制连接线\"");
     expect(source).toContain("proportionalScale");
     expect(source).toContain("event.shiftKey || transformDrag.kind === \"scale-both\"");
@@ -603,6 +678,14 @@ describe("graph inspector panel", () => {
     expect(toolbarBlock).toContain("const canvasPointToSurfaceCss = (point: Point): Point =>");
     expect(toolbarBlock).toContain("const floatingToolbarViewport =");
     expect(toolbarBlock).toContain("const placeFloatingToolbar =");
+    expect(toolbarBlock).toContain("const canvasRectToSurfaceCssRect = (rect: RenderViewportBounds, padding = 0): RenderViewportBounds =>");
+    expect(toolbarBlock).toContain("const rotateControlAvoidRectFromCanvas = (centerX: number, topY: number): RenderViewportBounds =>");
+    expect(toolbarBlock).toContain("const selectedRotateControlAvoidRects: RenderViewportBounds[] = [];");
+    expect(toolbarBlock).toContain("selectedRotateControlAvoidRects.push(");
+    expect(toolbarBlock).toContain("const nodeFloatingToolbarAvoidRects = selectedRotateControlAvoidRects;");
+    expect(toolbarBlock).toContain("const rotateAvoidTop = nodeFloatingToolbarAvoidRects.length > 0");
+    expect(toolbarBlock).toContain("const nodeToolbarCandidates = [");
+    expect(toolbarBlock).toContain("return placeFloatingToolbar(nodeToolbarCandidates, width, height, nodeFloatingToolbarAvoidRects);");
     expect(toolbarBlock).toContain("const nodeFloatingToolbarRect = nodeFloatingToolbar ? floatingToolbarBounds(nodeFloatingToolbar) : null;");
     expect(toolbarBlock).toContain("const avoidRects = nodeFloatingToolbarRect ? [nodeFloatingToolbarRect] : [];");
     expect(toolbarBlock).toContain("toolbarOverlapArea(rect, avoidRect)");
@@ -612,6 +695,32 @@ describe("graph inspector panel", () => {
     expect(toolbarBlock).not.toContain("svgToolbarUiUnit");
     expect(toolbarBlock).not.toContain("scaleX: svgUiUnitX");
     expect(toolbarBlock).not.toContain("scaleY: svgUiUnitY");
+  });
+
+  test("shows selected node scale and rotation in the bottom status bar", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const selectionStart = source.indexOf("const selectedNodeCount = activeSelectedNodeIds.length;");
+    const selectionEnd = source.indexOf("const contextSelectionCount =", selectionStart);
+    const selectionBlock = source.slice(selectionStart, selectionEnd);
+    const statusbarStart = source.indexOf("<footer className=\"bottom-statusbar\"");
+    const statusbarEnd = source.indexOf("</footer>", statusbarStart);
+    const statusbarBlock = source.slice(statusbarStart, statusbarEnd);
+
+    expect(source).toContain("const formatStatusScalePercent = (value: number) => `${formatStatusNumber(value * 100)}%`;");
+    expect(source).toContain("const formatStatusRotationDegrees = (value: number) => `${formatStatusNumber(normalizeRotationDegrees(value))}°`;");
+    expect(selectionBlock).toContain("const selectedNodeTransformStatus = useMemo(() =>");
+    expect(selectionBlock).toContain("activeSelectedNodeIds.flatMap((nodeId) => visibleNodeById.get(nodeId) ?? [])");
+    expect(selectionBlock).toContain("getNodeScaleX(firstNode)");
+    expect(selectionBlock).toContain("getNodeScaleY(firstNode)");
+    expect(selectionBlock).toContain("normalizeRotationDegrees(firstNode.rotation)");
+    expect(selectionBlock).toContain("scaleText");
+    expect(selectionBlock).toContain("rotationText");
+    expect(selectionBlock).toContain("多值");
+    expect(statusbarBlock).toContain("selectedNodeTransformStatus && (");
+    expect(statusbarBlock).toContain("className=\"status-pill status-transform\"");
+    expect(statusbarBlock).toContain("图元 缩放 {selectedNodeTransformStatus.scaleText} 旋转 {selectedNodeTransformStatus.rotationText}");
+    expect(styles).toContain(".bottom-statusbar .status-transform");
   });
 
   test("loads additional React Flow interaction and animation controls in the preview runtime only", async () => {
@@ -987,7 +1096,7 @@ describe("graph inspector panel", () => {
     expect(groupPointerBlock).not.toContain("patchGraphNodes");
     expect(pointerBlock).toContain("previewPoint: point");
     expect(finishTransformBlock).toContain("activeTransform.nodeIds");
-    expect(finishTransformBlock).toContain("buildGroupTransformNodeUpdates(activeTransform, finalPreviewPoint, current)");
+    expect(finishTransformBlock).toContain("buildGroupTransformNodeUpdates(activeTransform, finalPreviewPoint, current, { snapRotation: activeTransform.kind === \"rotate\" })");
     expect(finishTransformBlock).toContain("graphStorePatchGraphFromArrays");
     expect(finishTransformBlock).toContain("rebuildEdgeUpdatesAfterNodeGeometryChange(nodes, transformedNodeIds)");
     expect(finishTransformBlock).toContain("graphStorePatchEdges(current, edgeUpdates)");
@@ -1034,7 +1143,7 @@ describe("graph inspector panel", () => {
     expect(previewBlock).toContain("transformGroupPoint(transformDrag, geometry, routePoint)");
     expect(source).toContain("className=\"group-transform-photo-content\"");
     expect(source).toContain("transform={groupTransformPreviewTransform}");
-    expect(finishTransformBlock).toContain("const transformedEdgeUpdates = buildGroupTransformEdgeUpdates(activeTransform, finalPreviewPoint, current)");
+    expect(finishTransformBlock).toContain("const transformedEdgeUpdates = buildGroupTransformEdgeUpdates(activeTransform, finalPreviewPoint, current, { snapRotation: activeTransform.kind === \"rotate\" })");
     expect(finishTransformBlock).toContain("const transformedRouteEdgeIds = new Set(transformedEdgeUpdates.map((edge) => edge.id))");
     expect(finishTransformBlock).toContain("rebuildEdgesAfterNodeGeometryChange(nextNodes, transformedNodeIds, transformedEdges, transformedRouteEdgeIds)");
   });
@@ -1122,12 +1231,14 @@ describe("graph inspector panel", () => {
     const terminalBlock = source.slice(terminalStart, terminalEnd);
 
     expect(commitBlock).toContain("prepareConnectionEdgeForCommit");
+    expect(commitBlock).toContain("connectionEndpointRuleFailureMessage(newEdge)");
     expect(commitBlock).toContain("routingNodesForConnectionEdge(newEdge)");
     expect(commitBlock).toContain("canvasBounds");
     expect(commitBlock).toContain("routedEdges");
     expect(commitBlock).toContain("联络线绘制失败");
     expect(commitBlock).toContain("prepared.edge");
     expect(commitBlock).toContain("graphStoreApplyPatch(current, { edgeUpserts: [preparedEdge] })");
+    expect(commitBlock.indexOf("connectionEndpointRuleFailureMessage(newEdge)")).toBeLessThan(commitBlock.indexOf("prepareConnectionEdgeForCommit"));
     expect(commitBlock.indexOf("prepareConnectionEdgeForCommit")).toBeLessThan(commitBlock.indexOf("graphStoreApplyPatch"));
     expect(finishBlock).toContain("return commitNewConnectionEdge(newEdge");
     expect(terminalBlock).toContain("commitNewConnectionEdge(newEdge");
@@ -1140,9 +1251,11 @@ describe("graph inspector panel", () => {
     const rewiringBlock = source.slice(rewiringStart, rewiringEnd);
 
     expect(rewiringBlock).toContain("prepareConnectionEdgeForCommit");
+    expect(rewiringBlock).toContain("connectionEndpointRuleFailureMessage(candidateEdge)");
     expect(rewiringBlock).toContain("canvasBounds,");
     expect(rewiringBlock).toContain("routedEdges");
     expect(rewiringBlock).toContain("prepared.edge");
+    expect(rewiringBlock.indexOf("connectionEndpointRuleFailureMessage(candidateEdge)")).toBeLessThan(rewiringBlock.indexOf("prepareConnectionEdgeForCommit"));
     expect(rewiringBlock.indexOf("prepareConnectionEdgeForCommit")).toBeLessThan(rewiringBlock.indexOf("patchGraphEdges"));
   });
 
@@ -1240,6 +1353,76 @@ describe("graph inspector panel", () => {
     expect(pointerBlock).toContain("scaleX: currentSignedScaleX");
     expect(renderBlock).toContain("startSingleTransformDrag(event, node, \"rotate\")");
     expect(renderBlock).toContain("startSingleTransformDrag(event, node, handle.kind, handle)");
+  });
+
+  test("previews mouse rotation continuously and snaps to right angles only on release", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const helperStart = source.indexOf("function rotationDeltaFromTransformPoint");
+    const helperEnd = source.indexOf("function localScaleKindForScreenHandle", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+    const snapStart = source.indexOf("function snapRotationDeltaToRightAngle");
+    const snapEnd = source.indexOf("function rotationDeltaFromTransformPoint", snapStart);
+    const snapBlock = source.slice(snapStart, snapEnd);
+    const pointerStart = source.indexOf("if (transformDrag && svgRef.current)");
+    const pointerEnd = source.indexOf("if (!draggingRef.current || !svgRef.current)", pointerStart);
+    const pointerBlock = source.slice(pointerStart, pointerEnd);
+    const finishStart = source.indexOf("const finishTransformDrag");
+    const finishEnd = source.indexOf("const finishKeyboardMove", finishStart);
+    const finishBlock = source.slice(finishStart, finishEnd);
+    const renderStart = source.indexOf("{detailedViewportNodes.map((node) =>");
+    const renderEnd = source.indexOf("{renderMultiNodeDragOverlay()}", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+    const trajectoryStart = source.indexOf("const renderTransformRotationTrajectory = () =>");
+    const trajectoryEnd = source.indexOf("const renderBoundaryBusInternalConnector", trajectoryStart);
+    const trajectoryBlock = source.slice(trajectoryStart, trajectoryEnd);
+
+    expect(source).toContain("function rotationDeltaFromTransformPoint");
+    expect(source).toContain("function rotationDeltaBetweenTransformPoints");
+    expect(source).toContain("function transformPointAngle");
+    expect(source).toContain("function snapRotationDeltaToRightAngle");
+    expect(source).toContain("Math.atan2(point.y - center.y, point.x - center.x)");
+    expect(source).toContain("function normalizedRotationDelta");
+    expect(source).toContain("return ((delta + 180) % 360 + 360) % 360 - 180;");
+    expect(snapBlock).toContain("Math.round(delta / 90) * 90");
+    expect(source).toContain("function rotationTrajectoryArcPath");
+    expect(source).toContain("function rotationTrajectoryArcPath(center: Point, startPoint: Point, degrees: number)");
+    expect(source).not.toContain("const start = { x: center.x, y: center.y - safeRadius };");
+    expect(source).toContain("rotationStartPoint?: Point;");
+    expect(source).toContain("rotationStartPoint: kind === \"rotate\" ? { x: center.x, y: unit.bounds.top - TRANSFORM_ROTATE_HANDLE_GAP } : undefined");
+    expect(source).toContain("rotationStartPoint: kind === \"rotate\"");
+    expect(source).toContain("? { x: node.position.x + rotateHandleStart.x, y: node.position.y + rotateHandleStart.y }");
+    expect(source).toContain("const singleTransformNodeUpdate");
+    expect(source).toContain("rotationDeltaBetweenTransformPoints(baseNode.position, drag.startPoint, point, snapRotation)");
+    expect(source).toContain("rotationDeltaBetweenTransformPoints(drag.center, drag.startPoint, point, Boolean(options?.snapRotation))");
+    expect(pointerBlock).toContain("rotationDeltaBetweenTransformPoints(baseNode.position, transformDrag.startPoint, point, false)");
+    expect(pointerBlock).toContain("previewPoint: point");
+    expect(pointerBlock).not.toContain("Math.round(angle / 90)");
+    expect(pointerBlock).not.toContain("const snapped =");
+    expect(finishBlock).toContain("activeTransform.kind === \"rotate\" && activeTransform.previewPoint");
+    expect(finishBlock).toContain("singleTransformNodeUpdate(activeTransform, activeTransform.previewPoint, current, true)");
+    expect(finishBlock).toContain("nodeUpdates: [currentSingleNodeUpdate]");
+    expect(renderBlock).toContain("{renderSingleTransformRotateOriginGhost()}");
+    expect(renderBlock).toContain("{renderTransformRotationTrajectory()}");
+    expect(trajectoryBlock).toContain("const delta = rotationDeltaBetweenTransformPoints(center, transformDrag.startPoint, transformDrag.previewPoint, false);");
+    expect(trajectoryBlock).toContain("const startPoint = transformDrag.rotationStartPoint ?? transformDrag.startPoint;");
+    expect(trajectoryBlock).toContain("const arcPath = rotationTrajectoryArcPath(center, startPoint, delta);");
+    expect(trajectoryBlock).not.toContain("const startPoint = { x: center.x, y: center.y - radius };");
+    expect(source).toContain("function nodeRotateHandleControlPoints");
+    expect(source).toContain("const { halfHeight } = nodeScaledLocalHalfExtents(node);");
+    expect(source).toContain("stemStart: rotatePointAround({ x: 0, y: -halfHeight - rotateStemStart }, origin, node.rotation)");
+    expect(source).toContain("handle: rotatePointAround({ x: 0, y: -halfHeight - rotateHandleGap }, origin, node.rotation)");
+    expect(source).toContain("rotateControlAvoidRectFromCanvasPoints(selectedNodeRotateHandlePoints)");
+    expect(renderBlock).toContain("const rotateHandlePoints = nodeRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap);");
+    expect(renderBlock).toContain("x1={rotateHandlePoints.stemStart.x}");
+    expect(renderBlock).toContain("transform={handleTransform(rotateHandlePoints.handle.x, rotateHandlePoints.handle.y)}");
+    expect(source).not.toContain("rotationDeltaFromTransformPoint(drag.center, point, Boolean(options?.snapRotation))");
+    expect(styles).toContain(".node-rotate-origin-ghost");
+    expect(styles).toContain(".rotation-trajectory");
+    expect(source).not.toContain("rotation-angle-badge");
+    expect(source).not.toContain("动态 ${formatStatusNumber");
+    expect(source).not.toContain("落点 ${formatStatusNumber");
+    expect(styles).not.toContain(".rotation-angle-badge");
   });
 
   test("defers expensive post-move connection route optimization after a single graphic move", async () => {
@@ -1593,21 +1776,42 @@ describe("graph inspector panel", () => {
     expect(source).toContain("function canvasFrameHasScrollableRange");
     expect(source).toContain("function renderedCanvasFullyFitsFrame");
     expect(source).toContain("const CANVAS_FRAME_INSET = 16;");
+    expect(source).toContain("const CANVAS_SCROLL_EDGE_VIEWPORT_RATIO = 1 / 3;");
     expect(source).toContain("const CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE = 2;");
+    expect(source).toContain("function canvasScrollEdgeInset(viewportSize: number)");
+    expect(source).toContain("function canvasScrollSurfaceSize(displaySize: number, viewportSize: number, scrollActive: boolean)");
+    expect(source).toContain("function canvasDisplayOffset(displaySize: number, surfaceSize: number, viewportSize: number, scrollActive: boolean)");
+    expect(source).toContain("function clampCanvasNoScrollOffset(");
+    expect(source).toContain("function viewBoxStartToScrollPosition(");
+    expect(source).toContain("function scrollPositionToViewBoxStart(");
     expect(source).toContain("const canvasDisplayWidth = Math.max(1, Math.round(canvasBounds.width * canvasScrollScale.x))");
     expect(source).toContain("const canvasDisplayHeight = Math.max(1, Math.round(canvasBounds.height * canvasScrollScale.y))");
+    expect(source).toContain("const canvasHorizontalScrollbarsActive =");
+    expect(source).toContain("const canvasVerticalScrollbarsActive =");
     expect(source).toContain("const canvasScrollbarsActive =");
     expect(source).toContain("canvasDisplayWidth + CANVAS_FRAME_INSET * 2 > canvasFrameViewportSize.width + CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE");
+    expect(source).toContain("canvasDisplayHeight + CANVAS_FRAME_INSET * 2 > canvasFrameViewportSize.height + CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE");
     expect(source).toContain("canvasScrollbarsActiveRef.current = canvasScrollbarsActive;");
-    expect(source).toContain("const canvasScrollSurfaceWidth = Math.max(canvasDisplayWidth + CANVAS_FRAME_INSET * 2, canvasFrameViewportSize.width)");
-    expect(source).toContain("const canvasScrollSurfaceHeight = Math.max(canvasDisplayHeight + CANVAS_FRAME_INSET * 2, canvasFrameViewportSize.height)");
-    expect(source).toContain("const canvasDisplayOffsetX = Math.max(CANVAS_FRAME_INSET, Math.round((canvasScrollSurfaceWidth - canvasDisplayWidth) / 2))");
-    expect(source).toContain("const canvasDisplayOffsetY = Math.max(CANVAS_FRAME_INSET, Math.round((canvasScrollSurfaceHeight - canvasDisplayHeight) / 2))");
+    expect(source).toContain("canvasHorizontalScrollbarsActiveRef.current = canvasHorizontalScrollbarsActive;");
+    expect(source).toContain("canvasVerticalScrollbarsActiveRef.current = canvasVerticalScrollbarsActive;");
+    expect(source).toContain("const canvasScrollSurfaceWidth = canvasScrollSurfaceSize(");
+    expect(source).toContain("canvasHorizontalScrollbarsActive");
+    expect(source).toContain("const canvasScrollSurfaceHeight = canvasScrollSurfaceSize(");
+    expect(source).toContain("canvasVerticalScrollbarsActive");
+    expect(source).toContain("const canvasBaseDisplayOffsetX = canvasDisplayOffset(");
+    expect(source).toContain("const canvasBaseDisplayOffsetY = canvasDisplayOffset(");
+    expect(source).toContain("const [canvasNoScrollOffset, setCanvasNoScrollOffset] = useState<Point>({ x: 0, y: 0 });");
+    expect(source).toContain("const clampedCanvasNoScrollOffset = {");
+    expect(source).toContain("const canvasDisplayOffsetX = Math.round(canvasBaseDisplayOffsetX + clampedCanvasNoScrollOffset.x);");
+    expect(source).toContain("const canvasDisplayOffsetY = Math.round(canvasBaseDisplayOffsetY + clampedCanvasNoScrollOffset.y);");
+    expect(source).toContain("const canvasNoScrollOffsetRef = useRef(clampedCanvasNoScrollOffset);");
+    expect(source).toContain("canvasNoScrollOffsetRef.current = clampedCanvasNoScrollOffset;");
+    expect(source).toContain("const clampCanvasNoScrollOffsetPoint = (offset: Point): Point =>");
     expect(source).toContain("syncCanvasFrameScrollToViewBox");
     expect(source).toContain("if (!canvasScrollbarsActiveRef.current) {");
     expect(source).toContain("const canvasFullyVisible = !canvasScrollbarsActiveRef.current && renderedCanvasFullyFitsFrame(frameRect, svgRect)");
     expect(source).toContain("const next = canvasFullyVisible ? fullViewBox : visibleCanvasViewBoxFromRects(frameRect, svgRect, fullViewBox)");
-    expect(source).toContain("if (canvasFullyVisible) {\n        return;\n      }");
+    expect(source).toContain("if (canvasFullyVisible || !frameScrollWasUserDriven) {\n        return;\n      }");
     expect(canvasRenderBlock).toContain("className=\"canvas-scroll-surface\"");
     expect(source).toContain("style={{ overflow: canvasScrollbarsActive ? \"auto\" : \"hidden\" }}");
     expect(canvasRenderBlock).toContain("style={{ width: canvasScrollSurfaceWidth, height: canvasScrollSurfaceHeight }}");
@@ -1628,13 +1832,15 @@ describe("graph inspector panel", () => {
     const listenerEnd = source.indexOf("useEffect(() => {\n    setCanvasSizeDraft", listenerStart);
     const listenerBlock = source.slice(listenerStart, listenerEnd);
 
-    expect(syncBlock).toContain("if (maxLeft > 1 && Math.abs(frame.scrollLeft - nextLeft) > 1)");
-    expect(syncBlock).toContain("if (maxTop > 1 && Math.abs(frame.scrollTop - nextTop) > 1)");
+    expect(syncBlock).toContain("const nextLeft = canvasHorizontalScrollbarsActiveRef.current");
+    expect(syncBlock).toContain("viewBoxStartToScrollPosition(targetViewBox.x, targetViewBox.width, canvasBoundsRef.current.width, maxLeft)");
+    expect(syncBlock).toContain("const nextTop = canvasVerticalScrollbarsActiveRef.current");
+    expect(syncBlock).toContain("viewBoxStartToScrollPosition(targetViewBox.y, targetViewBox.height, canvasBoundsRef.current.height, maxTop)");
+    expect(syncBlock).toContain("setCanvasFrameScrollPosition(frame, nextLeft, nextTop);");
     expect(visibleUpdateBlock).toContain("const frameRect = frame.getBoundingClientRect();");
     expect(visibleUpdateBlock).toContain("const svgRect = svg.getBoundingClientRect();");
     expect(syncBlock).toContain("if (!canvasScrollbarsActiveRef.current)");
-    expect(syncBlock).toContain("frame.scrollLeft = 0;");
-    expect(syncBlock).toContain("frame.scrollTop = 0;");
+    expect(syncBlock).toContain("setCanvasFrameScrollPosition(frame, 0, 0);");
     expect(visibleUpdateBlock).toContain("const canvasFullyVisible = !canvasScrollbarsActiveRef.current && renderedCanvasFullyFitsFrame(frameRect, svgRect)");
     expect(visibleUpdateBlock).toContain("const next = canvasFullyVisible ? fullViewBox : visibleCanvasViewBoxFromRects(frameRect, svgRect, fullViewBox)");
     expect(visibleUpdateBlock.indexOf("if (canvasFullyVisible)")).toBeLessThan(visibleUpdateBlock.indexOf("setViewBox((current) =>"));
@@ -1658,7 +1864,9 @@ describe("graph inspector panel", () => {
     const wheelBlock = source.slice(wheelStart, wheelEnd);
 
     expect(source).toContain("const handleCanvasFrameScroll = () => {");
-    expect(source).toContain("canvasFrameUserScrollRef.current = true;");
+    expect(source).toContain("const canvasFrameProgrammaticScrollRef = useRef(false);");
+    expect(source).toContain("const setCanvasFrameScrollPosition = (frame: HTMLElement, left: number, top: number) => {");
+    expect(source).toContain("if (!canvasFrameProgrammaticScrollRef.current) {\n      canvasFrameUserScrollRef.current = true;\n    }");
     expect(source).toContain("type WheelZoomAnchor = {");
     expect(source).toContain("function anchoredCanvasScrollPosition(");
     expect(source).toContain("const pendingWheelZoomAnchorRef = useRef<WheelZoomAnchor | null>(null);");
@@ -1673,20 +1881,41 @@ describe("graph inspector panel", () => {
     expect(syncEffectBlock).toContain("canvasScrollSurfaceWidth");
     expect(syncEffectBlock).not.toContain("viewBox");
     expect(wheelGuardBlock).toContain("event.ctrlKey || event.metaKey");
+    expect(wheelGuardBlock).toContain("zoomCanvasFromWheelEvent(event);");
     expect(wheelGuardBlock).not.toContain("if ((event.target as Element | null)?.closest(\".diagram-canvas\"))");
+    expect(wheelGuardBlock).not.toContain(".closest(\".diagram-canvas\")");
+    expect(source).toContain("const wheelZoomAnchorFromClient = (clientX: number, clientY: number): WheelZoomAnchor | null => {");
+    expect(source).toContain("const cursorInsideFrame =");
+    expect(source).toContain("const zoomCanvasFromWheelEvent = (event: CanvasWheelZoomEvent) => {");
+    expect(source).toContain("event.stopPropagation();");
+    expect(source).toContain("const anchor = wheelZoomAnchorFromClient(event.clientX, event.clientY);");
+    expect(source).toContain("const bounds = canvasBoundsRef.current;");
+    expect(source).toContain("return normalizeViewBoxToCanvas({");
     expect(wheelBlock).toContain("if (!event.ctrlKey && !event.metaKey)");
-    expect(wheelBlock.indexOf("if (!event.ctrlKey && !event.metaKey)")).toBeLessThan(wheelBlock.indexOf("if (!event.nativeEvent.defaultPrevented)"));
-    expect(wheelBlock).toContain("if (!event.nativeEvent.defaultPrevented)");
-    expect(wheelBlock).toContain("const frame = canvasFrameRef.current;");
-    expect(wheelBlock).toContain("const frameRect = frame.getBoundingClientRect();");
-    expect(wheelBlock).toContain("const cursorOffsetX = clampNumber(event.clientX - frameRect.left, 0, frameRect.width);");
-    expect(wheelBlock).toContain("const cursorOffsetY = clampNumber(event.clientY - frameRect.top, 0, frameRect.height);");
-    expect(wheelBlock).toContain("pendingWheelZoomAnchorRef.current = { point: pointer, cursorOffsetX, cursorOffsetY };");
-    expect(wheelBlock).toContain("setViewBox((current) => {");
-    expect(wheelBlock).toContain("{ width: current.width * zoomFactor, height: current.height * zoomFactor }");
-    expect(wheelBlock).toContain("const nextScaleX = canvasBounds.width / Math.max(1, nextWidth);");
-    expect(wheelBlock).toContain("x: pointer.x - cursorOffsetX / nextScaleX");
+    expect(wheelBlock).toContain("if (event.nativeEvent.defaultPrevented)");
+    expect(wheelBlock).toContain("zoomCanvasFromWheelEvent(event);");
+    expect(wheelBlock).not.toContain("const frame = canvasFrameRef.current;");
+    expect(wheelBlock).not.toContain("const frameRect = frame.getBoundingClientRect();");
     expect(wheelBlock).not.toContain("const ratioX = (pointer.x - viewBox.x) / viewBox.width;");
+  });
+
+  test("keeps wheel zoom anchored when canvas scrollbars appear or disappear", async () => {
+    const source = await readAppSource();
+    const syncStart = source.indexOf("const syncCanvasFrameScrollToWheelAnchor =");
+    const syncEnd = source.indexOf("const currentViewBoxFromCanvasFrameScroll", syncStart);
+    const syncBlock = source.slice(syncStart, syncEnd);
+
+    expect(source).toContain("function anchoredCanvasNoScrollOffset(");
+    expect(syncBlock).not.toContain("if (!canvasScrollbarsActiveRef.current) {\n      setCanvasFrameScrollPosition(frame, 0, 0);\n      return;\n    }");
+    expect(syncBlock).toContain("const noScrollOffset = anchoredCanvasNoScrollOffset(");
+    expect(syncBlock).toContain("const nextCanvasNoScrollOffset = clampCanvasNoScrollOffsetPoint({");
+    expect(syncBlock).toContain("x: canvasHorizontalScrollbarsActiveRef.current ? 0 : noScrollOffset.x");
+    expect(syncBlock).toContain("y: canvasVerticalScrollbarsActiveRef.current ? 0 : noScrollOffset.y");
+    expect(syncBlock).toContain("setCanvasFrameScrollPosition(");
+    expect(syncBlock).toContain("canvasHorizontalScrollbarsActiveRef.current ? scrollPosition.left : 0");
+    expect(syncBlock).toContain("canvasVerticalScrollbarsActiveRef.current ? scrollPosition.top : 0");
+    expect(syncBlock).toContain("setCanvasNoScrollOffset((current) => {");
+    expect(syncBlock).toContain("skipNextCanvasScrollSyncRef.current = true;");
   });
 
   test("pans zoomed scrollable canvas by moving the frame scrollbars directly", async () => {
@@ -1703,37 +1932,60 @@ describe("graph inspector panel", () => {
     const startPanStart = source.indexOf("const startCanvasPanning =");
     const startPanEnd = source.indexOf("const handleCanvasPointerDownCapture", startPanStart);
     const startPanBlock = source.slice(startPanStart, startPanEnd);
-    const captureStart = source.indexOf("const handleCanvasPointerDownCapture =");
-    const captureEnd = source.indexOf("const handleWheel =", captureStart);
-    const captureBlock = source.slice(captureStart, captureEnd);
-    const pointerDownStart = source.indexOf("if (event.ctrlKey || event.shiftKey) {");
-    const pointerDownEnd = source.indexOf("const routeHit = findConnectionRouteHitAtPoint", pointerDownStart);
-    const pointerDownBlock = source.slice(pointerDownStart, pointerDownEnd);
     const pointerLeaveStart = source.indexOf("onPointerLeave={() => {");
     const pointerLeaveEnd = source.indexOf("onPointerCancel={() => {", pointerLeaveStart);
     const pointerLeaveBlock = source.slice(pointerLeaveStart, pointerLeaveEnd);
 
     expect(panningStateBlock).toContain("scrollLeft: number;");
     expect(panningStateBlock).toContain("scrollTop: number;");
+    expect(panningStateBlock).toContain("canvasOffset: Point;");
     expect(panningStateBlock).toContain("scrollMode: boolean;");
-    expect(currentScrollBlock).toContain("const nextX = maxLeft > 1 ? (frame.scrollLeft - padding.left) / Math.max(0.0001, scale.x) : viewBoxRef.current.x;");
-    expect(currentScrollBlock).toContain("const nextY = maxTop > 1 ? (frame.scrollTop - padding.top) / Math.max(0.0001, scale.y) : viewBoxRef.current.y;");
+    expect(currentScrollBlock).toContain("scrollPositionToViewBoxStart(frame.scrollLeft, current.width, bounds.width, maxLeft, current.x)");
+    expect(currentScrollBlock).toContain("scrollPositionToViewBoxStart(frame.scrollTop, current.height, bounds.height, maxTop, current.y)");
     expect(pointerMoveBlock).toContain("if (frame && panning.scrollMode)");
     expect(pointerMoveBlock).toContain("const nextLeft = clampNumber(panning.scrollLeft - (event.clientX - panning.clientX), 0, maxLeft);");
     expect(pointerMoveBlock).toContain("const nextTop = clampNumber(panning.scrollTop - (event.clientY - panning.clientY), 0, maxTop);");
     expect(pointerMoveBlock).toContain("frame.scrollLeft = nextLeft;");
     expect(pointerMoveBlock).toContain("frame.scrollTop = nextTop;");
     expect(pointerMoveBlock).toContain("canvasFrameUserScrollRef.current = true;");
+    expect(pointerMoveBlock).toContain("const nextOffset = clampCanvasNoScrollOffsetPoint({");
+    expect(pointerMoveBlock).toContain("x: panning.canvasOffset.x + event.clientX - panning.clientX");
+    expect(pointerMoveBlock).toContain("setCanvasNoScrollOffset((current) =>");
     expect(startPanBlock).toContain("const panningViewBox = currentViewBoxFromCanvasFrameScroll();");
+    expect(startPanBlock).toContain("canvasOffset: canvasNoScrollOffsetRef.current");
     expect(startPanBlock).toContain("scrollMode: frame ? canvasScrollbarsActiveRef.current && canvasFrameHasScrollableRange(frame) : false");
     expect(startPanBlock).toContain("event.preventDefault();");
     expect(startPanBlock).toContain("event.stopPropagation();");
-    expect(captureBlock).toContain("if ((!event.ctrlKey && !event.shiftKey) || staticDrawing || connectSource)");
-    expect(captureBlock).toContain("startCanvasPanning(event);");
-    expect(pointerDownBlock).toContain("startCanvasPanning(event);");
-    expect(pointerDownBlock).not.toContain("setSelectedNodeIds");
     expect(source).toContain("onPointerDownCapture={handleCanvasPointerDownCapture}");
+    expect(source).toContain("onPointerMove={(event) => {\n              if (panning) {\n                handlePointerMove(event as unknown as PointerEvent<SVGSVGElement>);");
     expect(pointerLeaveBlock).toContain("if (panning) {\n                return;\n              }");
+  });
+
+  test("uses Ctrl or Shift on the canvas for marquee selection and node selection toggles", async () => {
+    const source = await readAppSource();
+    const captureStart = source.indexOf("const handleCanvasPointerDownCapture =");
+    const captureEnd = source.indexOf("const wheelZoomAnchorFromClient =", captureStart);
+    const captureBlock = source.slice(captureStart, captureEnd);
+    const nodePointerStart = source.indexOf("const handleNodePointerDown =");
+    const nodePointerEnd = source.indexOf("const handlePointerMove =", nodePointerStart);
+    const nodePointerBlock = source.slice(nodePointerStart, nodePointerEnd);
+    const blankPointerStart = source.indexOf("if (hasCanvasSelectionModifier(event))", source.indexOf("const routeHit = findConnectionRouteHitAtPoint(pointer);"));
+    const blankPointerEnd = source.indexOf("lastEdgePointerClickRef.current = null;", blankPointerStart);
+    const blankPointerBlock = source.slice(blankPointerStart, blankPointerEnd);
+    const scrollSurfaceStart = source.indexOf("className=\"canvas-scroll-surface\"");
+    const scrollSurfaceEnd = source.indexOf("<svg", scrollSurfaceStart);
+    const scrollSurfaceBlock = source.slice(scrollSurfaceStart, scrollSurfaceEnd);
+
+    expect(source).toContain("function hasCanvasSelectionModifier");
+    expect(source).toContain("const toggleNodeSelectionFromModifierClick = (node: ModelNode) =>");
+    expect(captureBlock).not.toContain("startCanvasPanning(event);");
+    expect(nodePointerBlock).toContain("if (hasCanvasSelectionModifier(event))");
+    expect(nodePointerBlock).toContain("toggleNodeSelectionFromModifierClick(node);");
+    expect(nodePointerBlock).toContain("return;");
+    expect(blankPointerBlock).toContain("if (hasCanvasSelectionModifier(event))");
+    expect(blankPointerBlock).toContain("setMarquee({ start: pointer, current: pointer });");
+    expect(blankPointerBlock).toContain("return;");
+    expect(scrollSurfaceBlock).toContain("hasCanvasSelectionModifier(event)");
   });
 
   test("fits the whole canvas to the viewport when blank canvas is double-clicked", async () => {
@@ -1757,10 +2009,11 @@ describe("graph inspector panel", () => {
     expect(fitFunctionBlock).toContain("availableWidth / Math.max(1, canvasBounds.width)");
     expect(fitFunctionBlock).toContain("availableHeight / Math.max(1, canvasBounds.height)");
     expect(fitFunctionBlock).toContain("normalizeViewBoxToCanvas");
+    expect(source).toContain("const centerCanvasFrameScrollPosition = (frame: HTMLElement) =>");
     expect(fitHandlerBlock).toContain("fitWholeCanvasViewBox(canvasBounds, canvasFrameRef.current)");
+    expect(fitHandlerBlock).toContain("setCanvasNoScrollOffset({ x: 0, y: 0 });");
     expect(fitHandlerBlock).toContain("setCanvasVisibleViewBox(canvasFullViewBox)");
-    expect(fitHandlerBlock).toContain("frame.scrollLeft = 0;");
-    expect(fitHandlerBlock).toContain("frame.scrollTop = 0;");
+    expect(fitHandlerBlock).toContain("centerCanvasFrameScrollPosition(frame);");
     expect(fitHandlerBlock).toContain("const fitWholeCanvasFromBlankDoubleClick =");
     expect(fitHandlerBlock).toContain("staticDrawing || connectSource");
     expect(fitHandlerBlock).toContain("target?.closest(\".diagram-node, .connection-group");
@@ -1768,6 +2021,8 @@ describe("graph inspector panel", () => {
     expect(blankPointerBlock).toContain("if (event.detail >= 2)");
     expect(blankPointerBlock).toContain("fitWholeCanvasToFrame();");
     expect(blankPointerBlock).toContain("return;");
+    expect(blankPointerBlock).toContain("if (!canvasScrollbarsActiveRef.current) {");
+    expect(blankPointerBlock).toContain("startCanvasPanning(event);");
     expect(scrollSurfaceBlock).toContain("onDoubleClick={(event) =>");
     expect(scrollSurfaceBlock).toContain("event.target !== event.currentTarget");
     expect(scrollSurfaceBlock).toContain("fitWholeCanvasToFrame();");
@@ -3506,7 +3761,10 @@ describe("graph inspector panel", () => {
     expect(memoBlock).toContain("const leftPanelContent = leftPanelTab === \"projects\"");
     expect(memoBlock).toContain("librarySearchQuery");
     expect(memoBlock).toContain("expandedAttributeLibraryComponentTypes");
+    expect(memoBlock).toContain("hoveredAttributeLibrary");
+    expect(memoBlock).toContain("hoveredAttributeLibraryComponentType");
     expect(memoBlock).toContain("expandedGraphTemplateTypes");
+    expect(memoBlock).toContain("hoveredGraphTemplateType");
     expect(memoBlock).not.toContain("nodes,");
     expect(memoBlock).not.toContain("edges,");
     expect(leftContentBlock).toContain("{leftPanelContent}");
@@ -3752,6 +4010,9 @@ describe("graph inspector panel", () => {
     const contextStart = source.indexOf("{contextMenu && (");
     const contextEnd = source.indexOf("{projectMenu && (", contextStart);
     const contextBlock = source.slice(contextStart, contextEnd);
+    const groupSelectionStart = source.indexOf("{visibleSelectedGroupLayoutUnits.map");
+    const groupSelectionEnd = source.indexOf("{lodCanvasNodeChunks.length > 0", groupSelectionStart);
+    const groupSelectionBlock = source.slice(groupSelectionStart, groupSelectionEnd);
 
     expect(source).toContain("const [groups, setGroups]");
     expect(source).toContain("expandSelectionByGroups(activeLayerGroups");
@@ -3764,6 +4025,10 @@ describe("graph inspector panel", () => {
     expect(contextBlock).toContain("ungroupSelectedGraphics");
     expect(contextBlock).toContain("组合");
     expect(contextBlock).toContain("解散");
+    expect(source).toContain("target?: \"blank\" | \"node\" | \"edge\" | \"group\"");
+    expect(source).toContain("const contextMenuForNode = contextMenuTarget === \"node\" || contextMenuTarget === \"group\"");
+    expect(groupSelectionBlock).toContain("onContextMenu={(event) => {");
+    expect(groupSelectionBlock).toContain("target: \"group\"");
   });
 
   test("adds a persistent draggable template library from selected groups", async () => {
@@ -3779,11 +4044,15 @@ describe("graph inspector panel", () => {
     const dropStart = source.indexOf("const handleDrop =");
     const dropEnd = source.indexOf("const handleNodePointerDown", dropStart);
     const dropBlock = source.slice(dropStart, dropEnd);
+    const templatePanelStart = source.indexOf("const renderTemplateLibraryPanel = () => (");
+    const templatePanelEnd = source.indexOf("const renderLibraryPanel = () => (", templatePanelStart);
+    const templatePanelBlock = source.slice(templatePanelStart, templatePanelEnd);
 
     expect(source).toContain("type GraphTemplate =");
     expect(source).toContain("sourceSize: { width: number; height: number }");
     expect(source).toContain("customGraphTemplateTypes");
     expect(source).toContain("customGraphTemplates");
+    expect(source).toContain("const [hoveredGraphTemplateType, setHoveredGraphTemplateType] = useState(\"\");");
     expect(source).toContain("CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY");
     expect(source).toContain("CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY");
     expect(server).toContain("customGraphTemplateTypes");
@@ -3795,9 +4064,12 @@ describe("graph inspector panel", () => {
     expect(source).toContain("groupGraphTemplatesByType");
     expect(source).toContain("renderGraphTemplatePreview");
     expect(source).toContain("renderTemplateLibraryPanel");
+    expect(templatePanelBlock).toContain("expandedGraphTemplateTypes.includes(typeName) || hoveredGraphTemplateType === typeName");
+    expect(templatePanelBlock).toContain("onMouseEnter={() => setHoveredGraphTemplateType(typeName)}");
+    expect(templatePanelBlock).toContain("onMouseLeave={() => setHoveredGraphTemplateType((current) => current === typeName ? \"\" : current)}");
     expect(source).toContain("canAddTemplateFromSelection");
     expect(source).toContain("openAddTemplateDialog");
-    expect(contextBlock).toContain("添加模板");
+    expect(contextBlock).toContain("添加到模板库");
     expect(contextBlock).toContain("canAddTemplateFromSelection");
     expect(source).toContain("className=\"template-dialog\"");
     expect(source).toContain("模板类型");
@@ -3881,6 +4153,33 @@ describe("graph inspector panel", () => {
     expect(keyHandlerBlock).toContain("cancelInteractiveStaticDrawing()");
     expect(source).toContain("{renderInteractiveStaticDrawingPreview()}");
     expect(styles).toContain(".static-drawing-preview-line");
+  });
+
+  test("draws box-like static symbols by rectangle and edits their real width and height", async () => {
+    const model = await readModelSource();
+    const source = await readAppSource();
+    const dropStart = source.indexOf("const handleDrop =");
+    const dropEnd = source.indexOf("const handleNodePointerDown", dropStart);
+    const dropBlock = source.slice(dropStart, dropEnd);
+    const staticDrawingStart = source.indexOf("const startInteractiveStaticDrawing");
+    const staticDrawingEnd = source.indexOf("const startSidePanelResize", staticDrawingStart);
+    const staticDrawingBlock = source.slice(staticDrawingStart, staticDrawingEnd);
+    const selectedPanelStart = source.indexOf("{graphInfoView === \"tree\" ? (");
+    const selectedPanelEnd = source.indexOf("{inspectorTab === \"device\"", selectedPanelStart);
+    const selectedPanelBlock = source.slice(selectedPanelStart, selectedPanelEnd);
+
+    expect(model).toContain("export function isStaticBoxLikeKind");
+    expect(model).toContain("export function createStaticBoxNodeFromDrawing");
+    expect(source).toContain("isStaticBoxLikeKind");
+    expect(dropBlock).toContain("isStaticBoxLikeKind(kind)");
+    expect(dropBlock).toContain("startInteractiveStaticDrawing(template, pointerPosition)");
+    expect(staticDrawingBlock).toContain("createStaticBoxNodeFromDrawing(staticDrawing.template");
+    expect(staticDrawingBlock).toContain("renderStaticBoxDrawingPreview");
+    expect(selectedPanelBlock).toContain("isStaticBoxLikeNode(inspectorSelectedNode)");
+    expect(selectedPanelBlock).toContain("renderChineseParamHeader(\"staticWidth\"");
+    expect(selectedPanelBlock).toContain("renderChineseParamHeader(\"staticHeight\"");
+    expect(selectedPanelBlock).toContain("updateSelectedNode({ size: { ...inspectorSelectedNode.size, width:");
+    expect(selectedPanelBlock).toContain("updateSelectedNode({ size: { ...inspectorSelectedNode.size, height:");
   });
 
   test("hides unavailable canvas context-menu actions instead of rendering disabled buttons", async () => {

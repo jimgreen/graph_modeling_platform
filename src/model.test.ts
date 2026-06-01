@@ -58,6 +58,7 @@ import {
   upsertSavedProject,
   rerouteEdgesAroundMovedNodes,
   validateConnectionEdgeRoute,
+  validateConnectionEndpointRules,
   validateTopology,
   validateVoltageSetpointDeviations,
   getTerminalPoint,
@@ -70,11 +71,15 @@ import {
   getDeviceStrokeWidth,
   getConnectionStrokeColor,
   getTerminalDisplayColor,
+  createStaticBoxNodeFromDrawing,
   createInteractiveStaticDrawingNode,
   getElementFocusPoint,
   getRouteBlockingCandidateNodes,
   segmentIntersectsNodeBody,
   isInteractiveStaticDrawingKind,
+  isStaticBoxLikeKind,
+  isStaticButtonCapableKind,
+  isStaticLineLikeKind,
   isBlockingTopologyValidationError,
   isRepeatedEdgePointerClick,
   parseStaticDrawPoints,
@@ -698,6 +703,71 @@ describe("power system model", () => {
     expect(canConnectTerminals(acBus, "t1", acLoad, "t1")).toBe(true);
     expect(canConnectTerminals(acBus, "t1", dcLoad, "t1")).toBe(false);
     expect(canConnectTerminals(dcBus, "t1", dcLoad, "t1")).toBe(true);
+  });
+
+  test("rejects duplicate direct terminal and terminal-to-bus connections", () => {
+    const source = createDefaultNode("ac-load", { x: 80, y: 100 });
+    const target = createDefaultNode("ac-load", { x: 260, y: 100 });
+    const bus = createDefaultNode("ac-bus", { x: 440, y: 100 });
+    const directEdge: Edge = {
+      id: "direct",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const busEdge: Edge = {
+      id: "bus",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+
+    expect(validateConnectionEndpointRules([source, target, bus], [directEdge], {
+      id: "direct-duplicate",
+      sourceId: target.id,
+      targetId: source.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    }).map((issue) => issue.type)).toEqual(["duplicate-terminal-pair"]);
+
+    expect(validateConnectionEndpointRules([source, target, bus], [busEdge], {
+      id: "bus-duplicate",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t2",
+      targetPoint: { x: 440, y: 120 }
+    }).map((issue) => issue.type)).toEqual(["duplicate-terminal-bus"]);
+  });
+
+  test("rejects same-device terminal links and multi-terminal devices sharing one external terminal", () => {
+    const transformer = createDefaultNode("ac-transformer", { x: 160, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 360, y: 100 });
+    const existing: Edge = {
+      id: "existing",
+      sourceId: transformer.id,
+      targetId: load.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+
+    expect(validateConnectionEndpointRules([transformer, load], [], {
+      id: "self-link",
+      sourceId: transformer.id,
+      targetId: transformer.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t2"
+    }).map((issue) => issue.type)).toEqual(["same-device-terminals"]);
+
+    expect(validateConnectionEndpointRules([transformer, load], [existing], {
+      id: "shared-external-terminal",
+      sourceId: transformer.id,
+      targetId: load.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1"
+    }).map((issue) => issue.type)).toEqual(["shared-opposite-terminal"]);
   });
 
   test("sizes each bus terminal list from the number of connected line endpoints", () => {
@@ -5152,6 +5222,7 @@ describe("power system model", () => {
       "static-port-node": "StaticFlowNode",
       "static-card-node": "StaticFlowNode",
       "static-toolbar-node": "StaticFlowNode",
+      "static-button": "StaticButton",
       "static-resizer-frame": "StaticContainerSymbol",
       "static-subflow-box": "StaticContainerSymbol",
       "static-bezier-connector": "StaticConnectorSymbol",
@@ -5165,8 +5236,7 @@ describe("power system model", () => {
       "static-date",
       "static-time",
       "static-datetime",
-      "static-input",
-      "static-button"
+      "static-input"
     ];
 
     expect(new Set(Object.values(expectedComponentTypes))).toEqual(new Set([
@@ -5174,6 +5244,7 @@ describe("power system model", () => {
       "StaticMediaSymbol",
       "StaticBasicShape",
       "StaticFlowNode",
+      "StaticButton",
       "StaticContainerSymbol",
       "StaticConnectorSymbol",
       "StaticAnnotationSymbol"
@@ -5190,6 +5261,12 @@ describe("power system model", () => {
       expect(getEParameterKeys(kind, node.params)).toEqual([]);
       expect(node.params.fillColor).toBeDefined();
       expect(node.params.strokeColor).toBeDefined();
+      if (isStaticButtonCapableKind(kind)) {
+        expect(node.params.buttonEnabled).toBe(kind === "static-button" ? "1" : "0");
+        expect(node.params.buttonActionType).toBe("none");
+      } else {
+        expect(node.params.buttonEnabled).toBeUndefined();
+      }
     }
 
     expect(DEVICE_LIBRARY.filter((template) => removedControlKinds.includes(template.kind)).map((template) => template.kind)).toEqual([]);
@@ -5226,6 +5303,7 @@ describe("power system model", () => {
       ["static-port-node", "端口节点", "StaticFlowNode"],
       ["static-card-node", "卡片节点", "StaticFlowNode"],
       ["static-toolbar-node", "工具条节点", "StaticFlowNode"],
+      ["static-button", "按钮", "StaticButton"],
       ["static-resizer-frame", "缩放框", "StaticContainerSymbol"],
       ["static-subflow-box", "子流程框", "StaticContainerSymbol"],
       ["static-bezier-connector", "贝塞尔连接", "StaticConnectorSymbol"],
@@ -5268,6 +5346,7 @@ describe("power system model", () => {
       expect(node.terminals).toEqual([]);
       expect(inferESection(kind, node.params)).toBe(componentType);
       expect(getEParameterKeys(kind, node.params)).toEqual([]);
+      expect(isStaticButtonCapableKind(kind)).toBe(!isStaticLineLikeKind(kind));
     }
   });
 
@@ -5297,6 +5376,30 @@ describe("power system model", () => {
       { x: 25, y: -25 },
       { x: 25, y: 25 }
     ]);
+  });
+
+  test("creates box-like static symbols from two rectangle corners", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "static-text");
+    expect(template).toBeDefined();
+
+    const node = createStaticBoxNodeFromDrawing(
+      template!,
+      [
+        { x: 300, y: 200 },
+        { x: 100, y: 120 }
+      ],
+      "layer-user"
+    );
+
+    expect(isStaticBoxLikeKind("static-text")).toBe(true);
+    expect(isStaticBoxLikeKind("static-rect")).toBe(true);
+    expect(isStaticBoxLikeKind("static-polyline")).toBe(false);
+    expect(isStaticBoxLikeKind("static-point")).toBe(false);
+    expect(node.kind).toBe("static-text");
+    expect(node.layerId).toBe("layer-user");
+    expect(node.position).toEqual({ x: 200, y: 160 });
+    expect(node.size).toEqual({ width: 200, height: 80 });
+    expect(node.params[STATIC_DRAW_POINTS_PARAM]).toBeUndefined();
   });
 
   test("adds run_stat operating status to every device type", () => {

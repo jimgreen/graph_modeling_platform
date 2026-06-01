@@ -1118,6 +1118,10 @@ button:disabled {
   max-width: 220px;
 }
 
+.bottom-statusbar .status-transform {
+  max-width: 340px;
+}
+
 .bottom-statusbar .status-log {
   flex: 0 1 260px;
   max-width: 260px;
@@ -1342,6 +1346,36 @@ button:disabled {
   pointer-events: none;
 }
 
+.background-page-layer {
+  pointer-events: none;
+}
+
+.background-page-fill,
+.background-page-image {
+  pointer-events: none;
+}
+
+.background-page-frame {
+  fill: transparent;
+  stroke: #94a3b8;
+  stroke-width: 1.5;
+  stroke-dasharray: 10 8;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.background-page-edge,
+.background-page-edge .connection-line,
+.background-page-node,
+.background-page-node .terminal-dot {
+  pointer-events: none;
+}
+
+.background-page-button {
+  pointer-events: all;
+  cursor: pointer;
+}
+
 .canvas-resize-handle {
   fill: transparent;
   stroke: transparent;
@@ -1404,6 +1438,12 @@ button:disabled {
   pointer-events: none;
 }
 
+.connection-line.group-transform-origin-edge {
+  opacity: 0.28;
+  stroke-dasharray: 8 6;
+  pointer-events: none;
+}
+
 .group-transform-photo-preview {
   opacity: 0.96;
   pointer-events: none;
@@ -1420,6 +1460,19 @@ button:disabled {
   stroke: #1d4ed8;
   stroke-width: 2;
   stroke-dasharray: 8 5;
+  vector-effect: non-scaling-stroke;
+}
+
+.group-transform-origin-ghost {
+  opacity: 0.42;
+  pointer-events: none;
+}
+
+.group-transform-origin-outline {
+  fill: rgba(100, 116, 139, 0.06);
+  stroke: #64748b;
+  stroke-width: 2;
+  stroke-dasharray: 9 6;
   vector-effect: non-scaling-stroke;
 }
 
@@ -1454,6 +1507,14 @@ button:disabled {
   stroke-linejoin: round;
   stroke-dasharray: 8 6;
   opacity: 0.82;
+  vector-effect: non-scaling-stroke;
+}
+
+.static-drawing-preview-rect {
+  fill: rgba(37, 99, 235, 0.08);
+  stroke: #2563eb;
+  stroke-width: 2;
+  stroke-dasharray: 8 6;
   vector-effect: non-scaling-stroke;
 }
 
@@ -1719,6 +1780,20 @@ button:disabled {
   mix-blend-mode: multiply;
 }
 
+.node-rotate-origin-ghost {
+  pointer-events: none;
+  opacity: 0.34;
+  mix-blend-mode: multiply;
+}
+
+.node-rotate-origin-ghost .node-hitbox {
+  fill: rgba(100, 116, 139, 0.08);
+  stroke: #64748b;
+  stroke-width: 2;
+  stroke-dasharray: 8 6;
+  vector-effect: non-scaling-stroke;
+}
+
 .node-drag-ghost-box {
   fill: #dbeafe;
   stroke: #2563eb;
@@ -1781,6 +1856,37 @@ button:disabled {
 
 .node-hitbox.static-hitbox {
   fill: transparent;
+}
+
+.diagram-node.static-button-enabled {
+  cursor: pointer;
+}
+
+.static-button-feedback-surface {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+  transition: fill 120ms ease, stroke 120ms ease, filter 120ms ease;
+}
+
+.diagram-node.static-button-hover .static-button-feedback-surface {
+  fill: rgba(37, 99, 235, 0.08);
+  stroke: rgba(37, 99, 235, 0.62);
+  filter: drop-shadow(0 0 7px rgba(37, 99, 235, 0.28));
+}
+
+.diagram-node.static-button-pressed .static-button-feedback-surface {
+  fill: rgba(14, 165, 233, 0.16);
+  stroke: rgba(14, 116, 144, 0.78);
+  filter: drop-shadow(0 0 4px rgba(14, 116, 144, 0.34));
+}
+
+.diagram-node.static-button-clicked .static-button-feedback-surface {
+  fill: rgba(34, 197, 94, 0.15);
+  stroke: rgba(22, 163, 74, 0.82);
+  filter: drop-shadow(0 0 8px rgba(22, 163, 74, 0.34));
 }
 
 .node-background-image {
@@ -2122,6 +2228,47 @@ button:disabled {
   paint-order: normal;
   stroke: none;
   letter-spacing: 0;
+}
+
+.rotation-trajectory {
+  pointer-events: none;
+}
+
+.rotation-start-ray {
+  stroke: rgba(100, 116, 139, 0.58);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+  vector-effect: non-scaling-stroke;
+}
+
+.rotation-current-ray {
+  stroke: #f97316;
+  stroke-width: 2;
+  stroke-dasharray: 6 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.rotation-trajectory-arc {
+  fill: none;
+  stroke: #f97316;
+  stroke-width: 3;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 5px rgba(249, 115, 22, 0.36));
+}
+
+.rotation-center-dot {
+  fill: #0f172a;
+  stroke: #ffffff;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.rotation-current-dot {
+  fill: #f97316;
+  stroke: #ffffff;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
 }
 
 .scale-handle.horizontal {
@@ -3549,6 +3696,67 @@ button:disabled {
   padding: 0 8px;
   color: #334155;
   background: #ffffff;
+  font-size: 12px;
+}
+
+.background-page-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.background-page-field button {
+  min-height: 30px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  padding: 0 8px;
+  color: #334155;
+  background: #ffffff;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.background-page-field button:hover:not(:disabled),
+.background-page-field button:focus-visible {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  outline: none;
+}
+
+.background-layer-checklist {
+  display: grid;
+  gap: 6px;
+  max-height: 150px;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.background-layer-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  color: #334155;
+  font-size: 12px;
+}
+
+.background-layer-option input {
+  width: auto;
+  min-height: 0;
+}
+
+.background-layer-option span,
+.muted-inline-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.muted-inline-text {
+  display: inline-block;
+  color: #64748b;
   font-size: 12px;
 }
 
