@@ -288,6 +288,7 @@ type CanvasWheelZoomEvent = {
   preventDefault: () => void;
   stopPropagation: () => void;
 };
+const CANVAS_SELECTION_DRAG_THRESHOLD = 4;
 function hasCanvasSelectionModifier(event: { ctrlKey: boolean; shiftKey: boolean; metaKey?: boolean }) {
   return event.ctrlKey || event.shiftKey || Boolean(event.metaKey);
 }
@@ -536,6 +537,20 @@ function groupTransformSvgTransform(drag: GroupTransformDrag, point: Point | und
 }
 
 type Marquee = { start: Point; current: Point } | null;
+type ModifierSelectionPressTarget =
+  | { kind: "blank" }
+  | { kind: "node"; nodeId: string }
+  | { kind: "edge"; edgeId: string }
+  | { kind: "selection"; nodeIds: string[]; edgeIds: string[] };
+type ModifierSelectionPressState = {
+  pointerId: number;
+  startPoint: Point;
+  currentPoint: Point;
+  startClientX: number;
+  startClientY: number;
+  moved: boolean;
+  target: ModifierSelectionPressTarget;
+} | null;
 type ContextMenuState = {
   x: number;
   y: number;
@@ -5220,6 +5235,7 @@ export function App() {
   const pendingRewirePreviewRef = useRef<{ point: Point; rewiring: Exclude<RewiringState, null> } | null>(null);
   const rewirePreviewFrameRef = useRef<number | null>(null);
   const draggingRef = useRef<DraggingState | null>(null);
+  const modifierSelectionPressRef = useRef<ModifierSelectionPressState>(null);
   const staticButtonPointerRef = useRef<StaticButtonPointerSnapshot | null>(null);
   const staticButtonFeedbackTimeoutRef = useRef<number | null>(null);
   const multiNodeDragOverlayRef = useRef<SVGGElement | null>(null);
@@ -5372,6 +5388,7 @@ export function App() {
     scrollMode: boolean;
   } | null>(null);
   const [marquee, setMarquee] = useState<Marquee>(null);
+  const [modifierSelectionPress, setModifierSelectionPressState] = useState<ModifierSelectionPressState>(null);
   const [canvasClipboard, setCanvasClipboard] = useState<CanvasClipboard>(EMPTY_CANVAS_CLIPBOARD);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [inspectorTab, setInspectorTab] = useState<"model" | "graph" | "device">("graph");
@@ -9663,12 +9680,60 @@ export function App() {
     return selection;
   };
 
+  const setModifierSelectionPress = (next: ModifierSelectionPressState) => {
+    modifierSelectionPressRef.current = next;
+    setModifierSelectionPressState(next);
+  };
+
   const toggleNodeSelectionFromModifierClick = (node: ModelNode) => {
     const nodeAlreadySelected = activeSelectedNodeIds.includes(node.id);
     const nextNodeIds = nodeAlreadySelected
       ? activeSelectedNodeIds.filter((nodeId) => nodeId !== node.id)
       : [...activeSelectedNodeIds, node.id];
     const nextEdgeIds = [...activeSelectedEdgeIds];
+    setCanvasSelectionScope("direct");
+    setSelectedNodeIds(nextNodeIds);
+    setSelectedEdgeIds(nextEdgeIds);
+    setSelectedEdgeId(nextEdgeIds.includes(selectedEdgeId) ? selectedEdgeId : nextEdgeIds[0] ?? "");
+    setConnectSource(null);
+    resetConnectPreviewState();
+    setRewiring(null);
+    setContextMenu(null);
+  };
+
+  const toggleEdgeSelectionFromModifierClick = (edge: Edge) => {
+    const edgeAlreadySelected = activeSelectedEdgeIds.includes(edge.id);
+    const nextEdgeIds = edgeAlreadySelected
+      ? activeSelectedEdgeIds.filter((edgeId) => edgeId !== edge.id)
+      : [...activeSelectedEdgeIds, edge.id];
+    const nextNodeIds = [...activeSelectedNodeIds];
+    setCanvasSelectionScope("direct");
+    setSelectedNodeIds(nextNodeIds);
+    setSelectedEdgeIds(nextEdgeIds);
+    setSelectedEdgeId(nextEdgeIds.includes(selectedEdgeId) ? selectedEdgeId : nextEdgeIds[0] ?? "");
+    setConnectSource(null);
+    resetConnectPreviewState();
+    setRewiring(null);
+    setContextMenu(null);
+  };
+
+  const toggleSelectionFromModifierClick = (nodeIds: readonly string[], edgeIds: readonly string[] = []) => {
+    const targetNodeIds = nodeIds.filter((nodeId) => activeLayerNodeIdSet.has(nodeId));
+    const targetEdgeIds = edgeIds.filter((edgeId) => activeLayerEdgeIdSet.has(edgeId));
+    if (targetNodeIds.length === 0 && targetEdgeIds.length === 0) {
+      return;
+    }
+    const allTargetsSelected =
+      targetNodeIds.every((nodeId) => activeSelectedNodeIds.includes(nodeId)) &&
+      targetEdgeIds.every((edgeId) => activeSelectedEdgeIds.includes(edgeId));
+    const targetNodeIdSet = new Set(targetNodeIds);
+    const targetEdgeIdSet = new Set(targetEdgeIds);
+    const nextNodeIds = allTargetsSelected
+      ? activeSelectedNodeIds.filter((nodeId) => !targetNodeIdSet.has(nodeId))
+      : [...activeSelectedNodeIds, ...targetNodeIds.filter((nodeId) => !activeSelectedNodeIds.includes(nodeId))];
+    const nextEdgeIds = allTargetsSelected
+      ? activeSelectedEdgeIds.filter((edgeId) => !targetEdgeIdSet.has(edgeId))
+      : [...activeSelectedEdgeIds, ...targetEdgeIds.filter((edgeId) => !activeSelectedEdgeIds.includes(edgeId))];
     setCanvasSelectionScope("direct");
     setSelectedNodeIds(nextNodeIds);
     setSelectedEdgeIds(nextEdgeIds);
@@ -9704,12 +9769,90 @@ export function App() {
     setSelectedEdgeId(snapshot.edgeIds.includes(snapshot.edgeId) ? snapshot.edgeId : snapshot.edgeIds[0] ?? "");
   };
 
+  const startModifierSelectionPress = (
+    event: PointerEvent<Element>,
+    target: ModifierSelectionPressTarget = { kind: "blank" }
+  ) => {
+    if (event.button !== 0 || !svgRef.current) {
+      return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const rawPointer = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
+    const pointer = clampPointToCanvas(rawPointer);
+    lastRawCanvasPointerRef.current = rawPointer;
+    lastCanvasPointerRef.current = pointer;
+    updateMouseStatus(pointer);
+    setConnectSource(null);
+    resetConnectPreviewState();
+    setRewiring(null);
+    setContextMenu(null);
+    setMarquee(null);
+    lastEdgePointerClickRef.current = null;
+    staticButtonPointerRef.current = null;
+    setModifierSelectionPress({
+      pointerId: event.pointerId,
+      startPoint: pointer,
+      currentPoint: pointer,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      moved: false,
+      target
+    });
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture can fail if the browser has already canceled the pointer.
+    }
+    return true;
+  };
+
+  const cancelModifierSelectionPress = () => {
+    if (!modifierSelectionPressRef.current) {
+      return false;
+    }
+    setModifierSelectionPress(null);
+    setMarquee(null);
+    return true;
+  };
+
+  const finishModifierSelectionPress = (pointerId?: number) => {
+    const press = modifierSelectionPressRef.current;
+    if (!press || (pointerId !== undefined && press.pointerId !== pointerId)) {
+      return false;
+    }
+    setModifierSelectionPress(null);
+    if (press.moved) {
+      finishMarqueeSelectionFromPoints(press.startPoint, press.currentPoint);
+      return true;
+    }
+    setMarquee(null);
+    if (press.target.kind === "node") {
+      const node = nodeById.get(press.target.nodeId);
+      if (node && activeLayerNodeIdSet.has(node.id)) {
+        toggleNodeSelectionFromModifierClick(node);
+      }
+    } else if (press.target.kind === "edge") {
+      const edge = edgeById.get(press.target.edgeId);
+      if (edge && activeLayerEdgeIdSet.has(edge.id)) {
+        toggleEdgeSelectionFromModifierClick(edge);
+      }
+    } else if (press.target.kind === "selection") {
+      toggleSelectionFromModifierClick(press.target.nodeIds, press.target.edgeIds);
+    }
+    return true;
+  };
+
   const startNodeLabelDrag = (event: PointerEvent<SVGGElement>, node: ModelNode) => {
     if (!event.nativeEvent.defaultPrevented) {
       event.preventDefault();
     }
     event.stopPropagation();
     if (event.button !== 0 || !svgRef.current || !activeLayerNodeIdSet.has(node.id)) {
+      return;
+    }
+    if (hasCanvasSelectionModifier(event)) {
+      startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
       return;
     }
     const point = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
@@ -9732,6 +9875,10 @@ export function App() {
     event.preventDefault();
     event.stopPropagation();
     if (event.button !== 0 || !svgRef.current || !activeLayerNodeIdSet.has(node.id)) {
+      return;
+    }
+    if (hasCanvasSelectionModifier(event)) {
+      startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
       return;
     }
     selectCanvasGraphics([node.id], [], { scope: "direct" });
@@ -10144,17 +10291,14 @@ export function App() {
     writeOperationLog(`从模板新增：${template.typeName} / ${template.name}`);
   };
 
-  const finishMarqueeSelection = () => {
-    if (!marquee) {
-      return;
-    }
-    const left = Math.min(marquee.start.x, marquee.current.x);
-    const right = Math.max(marquee.start.x, marquee.current.x);
-    const top = Math.min(marquee.start.y, marquee.current.y);
-    const bottom = Math.max(marquee.start.y, marquee.current.y);
+  function finishMarqueeSelectionFromPoints(start: Point, current: Point) {
+    const left = Math.min(start.x, current.x);
+    const right = Math.max(start.x, current.x);
+    const top = Math.min(start.y, current.y);
+    const bottom = Math.max(start.y, current.y);
     if (right - left < 8 || bottom - top < 8) {
       setMarquee(null);
-      return;
+      return false;
     }
     const selection = selectGraphicsInRect(activeLayerNodes, activeLayerRoutedEdges, { left, right, top, bottom });
     selectCanvasGraphics(selection.nodeIds, selection.edgeIds);
@@ -10163,6 +10307,14 @@ export function App() {
     setRewiring(null);
     setContextMenu(null);
     setMarquee(null);
+    return true;
+  }
+
+  const finishMarqueeSelection = () => {
+    if (!marquee) {
+      return;
+    }
+    finishMarqueeSelectionFromPoints(marquee.start, marquee.current);
   };
 
   const deleteSelection = () => {
@@ -13547,6 +13699,10 @@ export function App() {
 
   const startGroupTransformDrag = (event: PointerEvent<SVGElement>, unit: CanvasLayoutUnit, kind: "rotate" | ScaleHandleKind) => {
     event.stopPropagation();
+    if (hasCanvasSelectionModifier(event)) {
+      startModifierSelectionPress(event, { kind: "selection", nodeIds: unit.nodeIds, edgeIds: unit.edgeIds });
+      return;
+    }
     const center = selectionRectCenter(unit.bounds);
     const startPoint = svgRef.current
       ? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY))
@@ -13573,6 +13729,10 @@ export function App() {
     handle?: ScaleHandleConfig
   ) => {
     event.stopPropagation();
+    if (hasCanvasSelectionModifier(event)) {
+      startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
+      return;
+    }
     transformDragChangedRef.current = false;
     const startPoint = svgRef.current
       ? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY))
@@ -13601,6 +13761,10 @@ export function App() {
     event.preventDefault();
     event.stopPropagation();
     if (event.button !== 0 || !svgRef.current || mode === "connect" || connectSource) {
+      return;
+    }
+    if (hasCanvasSelectionModifier(event)) {
+      startModifierSelectionPress(event, { kind: "selection", nodeIds: unit.nodeIds, edgeIds: unit.edgeIds });
       return;
     }
     if (unit.nodeIds.length === 0 || unit.nodeIds.some((nodeId) => !activeLayerNodeIdSet.has(nodeId))) {
@@ -14107,8 +14271,7 @@ export function App() {
       return;
     }
     if (hasCanvasSelectionModifier(event)) {
-      event.preventDefault();
-      toggleNodeSelectionFromModifierClick(node);
+      startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
       return;
     }
     beginStaticButtonPointerFeedback(event, node);
@@ -14246,6 +14409,27 @@ export function App() {
       if (staticDrawing && !connectSource) {
         updateInteractiveStaticDrawingPreview(pointer);
       }
+    }
+    const modifierPress = modifierSelectionPressRef.current;
+    if (modifierPress && svgRef.current && modifierPress.pointerId === event.pointerId) {
+      const currentPoint = lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      const moved =
+        modifierPress.moved ||
+        Math.hypot(event.clientX - modifierPress.startClientX, event.clientY - modifierPress.startClientY) > CANVAS_SELECTION_DRAG_THRESHOLD;
+      const nextPress = sameOptionalPoint(modifierPress.currentPoint, currentPoint) && modifierPress.moved === moved
+        ? modifierPress
+        : { ...modifierPress, currentPoint, moved };
+      if (nextPress !== modifierPress) {
+        setModifierSelectionPress(nextPress);
+      }
+      if (moved) {
+        setMarquee({ start: modifierPress.startPoint, current: currentPoint });
+      } else {
+        setMarquee(null);
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      return;
     }
     if (nodeLabelRotateDrag && svgRef.current) {
       const point = lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
@@ -14936,6 +15120,7 @@ export function App() {
     setDragging(null);
     hideImperativeMultiNodeDragOverlay();
     setMarquee(null);
+    setModifierSelectionPress(null);
     setPanning(null);
     setHasUnsavedChanges(false);
     writeOperationLog(`加载模型：${project.name}`);
@@ -16041,6 +16226,10 @@ export function App() {
     if (event.button !== 0 || !svgRef.current || !activeLayerEdgeIdSet.has(edgeId)) {
       return;
     }
+    if (hasCanvasSelectionModifier(event)) {
+      startModifierSelectionPress(event, { kind: "edge", edgeId });
+      return;
+    }
     const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
     if (event.detail >= 2) {
       event.preventDefault();
@@ -16068,6 +16257,10 @@ export function App() {
   const startManualPointDrag = (event: PointerEvent<SVGCircleElement>, edgeId: string, pointIndex: number, routePoints: Point[]) => {
     event.stopPropagation();
     if (event.button !== 0 || !svgRef.current || !activeLayerEdgeIdSet.has(edgeId)) {
+      return;
+    }
+    if (hasCanvasSelectionModifier(event)) {
+      startModifierSelectionPress(event, { kind: "edge", edgeId });
       return;
     }
     const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
@@ -16256,6 +16449,10 @@ export function App() {
     if (!activeLayerEdgeIdSet.has(edgeId)) {
       return;
     }
+    if (hasCanvasSelectionModifier(event)) {
+      startModifierSelectionPress(event, { kind: "edge", edgeId });
+      return;
+    }
     activateInspectorFromCanvas();
     selectCanvasGraphics([], [edgeId]);
     const clickPoint = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
@@ -16382,6 +16579,10 @@ export function App() {
       return;
     }
     if (!activeLayerNodeIdSet.has(node.id)) {
+      return;
+    }
+    if (event.button === 0 && hasCanvasSelectionModifier(event)) {
+      startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
       return;
     }
     setCanvasSelectionScope("direct");
@@ -18567,6 +18768,7 @@ export function App() {
     transformDrag ||
     panning ||
     marquee ||
+    modifierSelectionPress ||
     connectSource ||
     staticDrawing ||
     rewiring ||
@@ -19528,19 +19730,32 @@ export function App() {
             className="canvas-scroll-surface"
             style={{ width: canvasScrollSurfaceWidth, height: canvasScrollSurfaceHeight }}
             onPointerDown={(event) => {
-              if (event.button !== 0 || event.target !== event.currentTarget || staticDrawing || connectSource || hasCanvasSelectionModifier(event)) {
+              if (event.button !== 0 || event.target !== event.currentTarget || staticDrawing || connectSource) {
+                return;
+              }
+              if (hasCanvasSelectionModifier(event)) {
+                startModifierSelectionPress(event);
                 return;
               }
               startCanvasPanning(event);
             }}
             onPointerMove={(event) => {
-              if (panning) {
+              if (panning || modifierSelectionPressRef.current) {
                 handlePointerMove(event as unknown as PointerEvent<SVGSVGElement>);
               }
             }}
-            onPointerUp={() => setPanning(null)}
-            onPointerCancel={() => setPanning(null)}
-            onLostPointerCapture={() => setPanning(null)}
+            onPointerUp={(event) => {
+              finishModifierSelectionPress(event.pointerId);
+              setPanning(null);
+            }}
+            onPointerCancel={() => {
+              cancelModifierSelectionPress();
+              setPanning(null);
+            }}
+            onLostPointerCapture={() => {
+              cancelModifierSelectionPress();
+              setPanning(null);
+            }}
             onDoubleClick={(event) => {
               if (event.button !== 0 || event.target !== event.currentTarget) {
                 return;
@@ -19566,6 +19781,9 @@ export function App() {
               projectListPointerInsideRef.current = false;
             }}
             onPointerUp={(event) => {
+              if (finishModifierSelectionPress(event.pointerId)) {
+                return;
+              }
               finishRewiring(event);
               finishTerminalPress();
               finishNodeLabelDrag();
@@ -19587,6 +19805,9 @@ export function App() {
               if (panning) {
                 return;
               }
+              if (modifierSelectionPressRef.current) {
+                return;
+              }
               setTerminalPress(null);
               finishManualPathDrag();
               finishTransformDrag();
@@ -19594,6 +19815,7 @@ export function App() {
               setRewiring(null);
             }}
             onPointerCancel={() => {
+              cancelModifierSelectionPress();
               finishNodeLabelDrag();
               finishNodeLabelRotateDrag();
               finishNodeDrag();
@@ -19605,6 +19827,7 @@ export function App() {
               setRewiring(null);
             }}
             onLostPointerCapture={() => {
+              cancelModifierSelectionPress();
               finishNodeLabelDrag();
               finishNodeLabelRotateDrag();
               finishNodeDrag();
@@ -19639,11 +19862,11 @@ export function App() {
                 }
                 return;
               }
-              if (event.ctrlKey || event.shiftKey) {
-                startCanvasPanning(event);
+              const routeHit = findConnectionRouteHitAtPoint(pointer);
+              if (hasCanvasSelectionModifier(event)) {
+                startModifierSelectionPress(event, routeHit ? { kind: "edge", edgeId: routeHit.edgeId } : undefined);
                 return;
               }
-              const routeHit = findConnectionRouteHitAtPoint(pointer);
               if (routeHit) {
                 const edgeClick = {
                   edgeId: routeHit.edgeId,
@@ -19662,15 +19885,6 @@ export function App() {
                   insertManualBendFromPointer(routeHit.edgeId, routeHit.routePoints, pointer);
                   lastEdgePointerClickRef.current = null;
                 }
-                return;
-              }
-              if (hasCanvasSelectionModifier(event)) {
-                event.preventDefault();
-                setConnectSource(null);
-                resetConnectPreviewState();
-                setRewiring(null);
-                setContextMenu(null);
-                setMarquee({ start: pointer, current: pointer });
                 return;
               }
               lastEdgePointerClickRef.current = null;
@@ -19928,6 +20142,10 @@ export function App() {
                         if (event.button !== 0 || !svgRef.current) {
                           return;
                         }
+                        if (hasCanvasSelectionModifier(event)) {
+                          startModifierSelectionPress(event, { kind: "edge", edgeId: edge.id });
+                          return;
+                        }
                         setRewiring({
                           edgeId: edge.id,
                           endpoint: "source",
@@ -19947,6 +20165,10 @@ export function App() {
                       onPointerDown={(event) => {
                         event.stopPropagation();
                         if (event.button !== 0 || !svgRef.current) {
+                          return;
+                        }
+                        if (hasCanvasSelectionModifier(event)) {
+                          startModifierSelectionPress(event, { kind: "edge", edgeId: edge.id });
                           return;
                         }
                         setRewiring({
