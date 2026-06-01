@@ -60,6 +60,50 @@ describe("SVG export", () => {
     expect(svg).toContain('stroke="#dc2626"');
   });
 
+  test("exports static layer buttons with standalone SVG layer switching logic", () => {
+    const layerA = { id: "layer-a", name: "一次系统", visible: true };
+    const layerB = { id: "layer-b", name: "二次系统", visible: false };
+    const source = { ...createDefaultNode("ac-source", { x: 120, y: 120 }), id: "source-a", layerId: layerA.id };
+    const load = { ...createDefaultNode("ac-load", { x: 280, y: 120 }), id: "load-b", layerId: layerB.id };
+    const layerButton = {
+      ...createDefaultNode("static-button", { x: 120, y: 220 }),
+      id: "button-b",
+      layerId: layerA.id,
+      params: {
+        ...createDefaultNode("static-button", { x: 0, y: 0 }).params,
+        text: "显示二次",
+        buttonEnabled: "1",
+        buttonActionType: "layer",
+        buttonTargetLayerId: layerB.id,
+        buttonTargetLayerName: layerB.name
+      }
+    };
+    const edges: Edge[] = [
+      { id: "cross-layer-edge", sourceId: source.id, targetId: load.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
+    ];
+
+    const svg = buildSvgDocument([source, load, layerButton], edges, {
+      width: 420,
+      height: 280,
+      layers: [layerA, layerB],
+      activeLayerId: layerA.id
+    });
+
+    expect(svg).toContain('data-export-layer-def="layer-b"');
+    expect(svg).toContain('data-export-layer-visible="0"');
+    expect(svg).toContain('data-export-node-id="load-b"');
+    expect(svg).toContain('data-export-layer-id="layer-b"');
+    expect(svg).toContain('data-export-edge-id="cross-layer-edge"');
+    expect(svg).toContain('data-export-source-layer-id="layer-a"');
+    expect(svg).toContain('data-export-target-layer-id="layer-b"');
+    expect(svg).toContain('data-export-button-action="layer"');
+    expect(svg).toContain('data-export-button-target-layer-id="layer-b"');
+    expect(svg).toContain("function exportSvgApplyLayerVisibility");
+    expect(svg).toContain("function exportSvgActivateLayer");
+    expect(svg).toContain("addEventListener(\"click\"");
+    expect(svg.indexOf("<script")).toBeGreaterThan(svg.indexOf('data-export-button-action="layer"'));
+  });
+
   test("exports energy buses as square ended rectangles", () => {
     const buses = [
       createDefaultNode("ac-bus", { x: 120, y: 120 }),

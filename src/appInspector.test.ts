@@ -115,7 +115,7 @@ describe("graph inspector panel", () => {
     const modelPanelStart = source.indexOf("{inspectorTab === \"model\" && currentModelRecord");
     const modelPanelEnd = source.indexOf(") : inspectorTab === \"graph\"", modelPanelStart);
     const modelPanelBlock = source.slice(modelPanelStart, modelPanelEnd);
-    const canvasStart = source.indexOf("<rect width={canvasWidth} height={canvasHeight} fill={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND} />");
+    const canvasStart = source.indexOf("<rect width={canvasRenderBounds.width} height={canvasRenderBounds.height} fill={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND} />");
     const canvasEnd = source.indexOf("{marquee && (", canvasStart);
     const canvasBlock = source.slice(canvasStart, canvasEnd);
     const backgroundRenderStart = source.indexOf("const renderReadonlyBackgroundPage = () =>");
@@ -172,14 +172,118 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const [expandedAttributeLibraryComponentTypes, setExpandedAttributeLibraryComponentTypes] = useState<string[]>([]);");
     expect(source).toContain("const attributeLibraryComponentTypeKey = (attributeLibraryName: string, sectionName: string) =>");
     expect(source).toContain("const toggleAttributeLibraryComponentType = (attributeLibraryName: string, sectionName: string) =>");
-    expect(libraryPanelBlock).toContain("const componentTypeExpanded = librarySearchNeedle");
+    expect(libraryPanelBlock).toContain("const componentTypeExpanded = libraryExpanded || librarySearchNeedle");
     expect(libraryPanelBlock).toContain("expandedAttributeLibraryComponentTypes.includes(componentTypeKey) || hoveredAttributeLibraryComponentType === componentTypeKey");
-    expect(libraryPanelBlock).toContain("aria-expanded={componentTypeExpanded}");
+    expect(libraryPanelBlock).toContain("aria-expanded={componentTypeExpanded || componentTypeFlyoutVisible}");
     expect(libraryPanelBlock).toContain("onClick={() => toggleAttributeLibraryComponentType(group, typeGroup.section)}");
-    expect(libraryPanelBlock).toContain("onMouseEnter={() => setHoveredAttributeLibraryComponentType(componentTypeKey)}");
+    expect(libraryPanelBlock).toContain("setHoveredAttributeLibraryComponentType(componentTypeKey);");
     expect(libraryPanelBlock).toContain("{componentTypeExpanded && (");
     expect(styles).toContain(".attribute-library-component-type-header");
     expect(styles).toContain("cursor: pointer");
+  });
+
+  test("switches component library display between downward expansion and right floating modes", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const libraryPanelStart = source.indexOf("const renderLibraryPanel");
+    const libraryPanelEnd = source.indexOf("const renderLeftPanelContent", libraryPanelStart);
+    const libraryPanelBlock = source.slice(libraryPanelStart, libraryPanelEnd);
+
+    expect(source).toContain("type ComponentLibraryDisplayMode = \"expanded\" | \"right\";");
+    expect(source).toContain("const [componentLibraryDisplayMode, setComponentLibraryDisplayMode] = useState<ComponentLibraryDisplayMode>(\"expanded\");");
+    expect(libraryPanelBlock).toContain("className=\"library-display-mode\"");
+    expect(libraryPanelBlock).toContain("role=\"radiogroup\"");
+    expect(libraryPanelBlock).toContain("向下展开");
+    expect(libraryPanelBlock).toContain("向右浮动");
+    expect(libraryPanelBlock).not.toContain("[\"down\", \"向下\"]");
+    expect(libraryPanelBlock).not.toContain(">向下<");
+    expect(libraryPanelBlock).not.toContain(">向右<");
+    expect(libraryPanelBlock).toContain("const libraryExpanded = componentLibraryDisplayMode === \"expanded\";");
+    expect(libraryPanelBlock).toContain("const libraryFlyout = componentLibraryDisplayMode === \"right\";");
+    expect(libraryPanelBlock).toContain("const expanded = libraryExpanded || librarySearchNeedle ? true");
+    expect(libraryPanelBlock).toContain("const componentTypeExpanded = libraryExpanded || librarySearchNeedle");
+    expect(libraryPanelBlock).toContain("libraryFlyout ? false");
+    expect(libraryPanelBlock).toContain("onMouseEnter={() => {");
+    expect(libraryPanelBlock).toContain("if (!libraryExpanded)");
+    expect(libraryPanelBlock).toContain("libraryFlyout && !librarySearchNeedle && hoveredAttributeLibraryComponentType === componentTypeKey");
+    expect(source).toContain("className=\"library-group flyout-library-group\"");
+    expect(libraryPanelBlock).toContain("renderLibraryFlyout(flyoutListKey, componentTypeKey, group, typeGroup)");
+    expect(libraryPanelBlock).toContain("className=\"library-group inline-library-group\"");
+    expect(styles).toContain(".library-display-mode");
+    expect(styles).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
+    expect(styles).toContain(".attribute-library-component-type-section.flyout-mode");
+    const flyoutLibraryGroupBlock = cssRuleBlock(styles, ".flyout-library-group");
+    expect(flyoutLibraryGroupBlock).toContain("position: fixed;");
+    expect(flyoutLibraryGroupBlock).toContain("grid-template-columns: repeat(3, 56px);");
+    expect(flyoutLibraryGroupBlock).toContain("width: 204px;");
+    expect(flyoutLibraryGroupBlock).toContain("max-height: none;");
+    expect(flyoutLibraryGroupBlock).toContain("overflow: visible;");
+    expect(flyoutLibraryGroupBlock).toContain("top: var(--library-flyout-top, 0px);");
+    expect(flyoutLibraryGroupBlock).toContain("left: var(--library-flyout-left, 0px);");
+    expect(flyoutLibraryGroupBlock).not.toContain("calc(100% -");
+    expect(flyoutLibraryGroupBlock).not.toContain("overflow-x");
+    expect(flyoutLibraryGroupBlock).not.toContain("overflow-y");
+  });
+
+  test("keeps right-side component lists inside the visible library panel without the old downward mode", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const libraryPanelStart = source.indexOf("const renderLibraryPanel");
+    const libraryPanelEnd = source.indexOf("const renderLeftPanelContent", libraryPanelStart);
+    const libraryPanelBlock = source.slice(libraryPanelStart, libraryPanelEnd);
+
+    expect(source).toContain("const [libraryFlyoutPositions, setLibraryFlyoutPositions] = useState<Record<string, { top: number; left: number }>>({});");
+    expect(source).toContain("const libraryScrollRef = useRef<HTMLDivElement | null>(null);");
+    expect(source).toContain("const libraryComponentListRefs = useRef<Map<string, HTMLDivElement>>(new Map());");
+    expect(source).toContain("const libraryComponentTypeHeaderRefs = useRef<Map<string, HTMLButtonElement>>(new Map());");
+    expect(source).toContain("const setLibraryComponentTypeHeaderRef = (key: string) => (element: HTMLButtonElement | null) =>");
+    expect(source).toContain("const renderLibraryFlyout = (flyoutListKey: string, componentTypeKey: string, group: AttributeLibrary, typeGroup: AttributeLibraryComponentTypeGroup) =>");
+    expect(source).toContain("return createPortal(flyout, document.body);");
+    expect(source).not.toContain("const scrollLibraryListIntoView = (listElement: HTMLElement) =>");
+    expect(source).not.toContain("scrollElement.scrollTop += listRect.bottom - maxBottom;");
+    expect(source).toContain("const fitLibraryFlyoutsToVisibleArea = () =>");
+    expect(source).toContain("const headerElement = libraryComponentTypeHeaderRefs.current.get(key);");
+    expect(source).toContain("const desiredLeft = headerRect.right + gap;");
+    expect(source).toContain("const horizontallyOverlapsHeader =");
+    expect(source).toContain("setLibraryFlyoutPositions(nextPositions);");
+    expect(libraryPanelBlock).toContain("ref={libraryScrollRef}");
+    expect(libraryPanelBlock).toContain("hideLibraryFlyout();");
+    expect(libraryPanelBlock).toContain("ref={setLibraryComponentTypeHeaderRef(flyoutListKey)}");
+    expect(libraryPanelBlock).toContain("ref={setLibraryComponentListRef(inlineListKey)}");
+    expect(libraryPanelBlock).toContain("renderLibraryFlyout(flyoutListKey, componentTypeKey, group, typeGroup)");
+    expect(libraryPanelBlock).not.toContain("ref={setLibraryComponentListRef(flyoutListKey)}");
+    expect(styles).toContain("top: var(--library-flyout-top, 0px);");
+    expect(styles).toContain("left: var(--library-flyout-left, 0px);");
+  });
+
+  test("uses an explicit hide policy for right-side component library flyouts", async () => {
+    const source = await readAppSource();
+    const libraryPanelStart = source.indexOf("const renderLibraryPanel");
+    const libraryPanelEnd = source.indexOf("const renderLeftPanelContent", libraryPanelStart);
+    const libraryPanelBlock = source.slice(libraryPanelStart, libraryPanelEnd);
+    const hideStart = source.indexOf("const hideLibraryFlyout = () =>");
+    const hideEnd = source.indexOf("const scheduleLibraryFlyoutClose", hideStart);
+    const hideBlock = source.slice(hideStart, hideEnd);
+    const outsideStart = source.indexOf("const hideLibraryFlyoutOnOutsidePointerDown = (event: globalThis.PointerEvent) =>");
+    const outsideEnd = source.indexOf("window.addEventListener(\"pointerdown\", hideLibraryFlyoutOnOutsidePointerDown, true);", outsideStart);
+    const outsideBlock = source.slice(outsideStart, outsideEnd);
+
+    expect(hideBlock).toContain("clearLibraryFlyoutCloseTimer();");
+    expect(hideBlock).toContain("setHoveredAttributeLibrary(\"\");");
+    expect(hideBlock).toContain("setHoveredAttributeLibraryComponentType(\"\");");
+    expect(hideBlock).toContain("setLibraryFlyoutPositions({});");
+    expect(source).toContain("setHoveredAttributeLibraryComponentType((current) => componentTypeKey ? current === componentTypeKey ? \"\" : current : \"\");");
+    expect(source).toContain("if (leftPanelTab !== \"library\" || componentLibraryDisplayMode !== \"right\" || librarySearchNeedle) {");
+    expect(source).toContain("if (!leftPanelVisible) {");
+    expect(source).toContain("hideLibraryFlyout();");
+    expect(outsideBlock).toContain("event.target as Node | null");
+    expect(outsideBlock).toContain("libraryPanel?.contains(target)");
+    expect(outsideBlock).toContain("flyoutElement?.contains(target)");
+    expect(source).toContain("window.addEventListener(\"pointerdown\", hideLibraryFlyoutOnOutsidePointerDown, true);");
+    expect(source).toContain("window.removeEventListener(\"pointerdown\", hideLibraryFlyoutOnOutsidePointerDown, true);");
+    expect(libraryPanelBlock).toContain("hideLibraryFlyout();");
+    expect(libraryPanelBlock).toContain("if (componentLibraryDisplayMode === \"right\") {");
+    expect(source).toContain("onDragStart={(event) => {");
   });
 
   test("uses library group names for terminal energy dropdowns in device definition dialogs", async () => {
@@ -222,7 +326,7 @@ describe("graph inspector panel", () => {
     const canvasBlock = cssRuleBlock(styles, ".diagram-canvas");
     const boundaryBlock = cssRuleBlock(styles, ".canvas-boundary");
 
-    expect(source).toContain("<rect className=\"canvas-boundary\" x=\"0\" y=\"0\" width={canvasWidth} height={canvasHeight} />");
+    expect(source).toContain("<rect className=\"canvas-boundary\" x=\"0\" y=\"0\" width={canvasRenderBounds.width} height={canvasRenderBounds.height} />");
     expect(canvasBlock).not.toContain("border:");
     expect(canvasBlock).not.toContain("box-shadow:");
     expect(canvasBlock).toContain("background: transparent;");
@@ -253,6 +357,57 @@ describe("graph inspector panel", () => {
     expect(busFocusedBlock).toContain("stroke-width: 2.25");
     expect(storageSelectedBlock).toContain("stroke-width: 2");
     expect(storageFocusedBlock).toContain("stroke-width: 2.25");
+  });
+
+  test("keeps upright static symbol selection outlines aligned after right-angle rotation", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const renderStart = source.indexOf("{detailedViewportNodes.map((node) =>");
+    const renderEnd = source.indexOf("{renderSingleTransformRotateOriginGhost()}", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+    const singleDragStart = source.indexOf("const startSingleTransformDrag");
+    const singleDragEnd = source.indexOf("const startGroupMoveDrag", singleDragStart);
+    const singleDragBlock = source.slice(singleDragStart, singleDragEnd);
+    const pointerStart = source.indexOf("if (transformDrag && svgRef.current)");
+    const pointerEnd = source.indexOf("if (!draggingRef.current || !svgRef.current)", pointerStart);
+    const pointerBlock = source.slice(pointerStart, pointerEnd);
+    const lodStart = source.indexOf("const lodSelectedNodeMarkup = useMemo");
+    const lodEnd = source.indexOf("const lodNodeFromEvent", lodStart);
+    const lodBlock = source.slice(lodStart, lodEnd);
+    const selectedHitboxOverrideBlock = cssRuleBlock(styles, ".diagram-node.static-upright-selection-node.selected .node-hitbox");
+    const focusedHitboxOverrideBlock = cssRuleBlock(styles, ".diagram-node.static-upright-selection-node.selected.focused .node-hitbox");
+    const outlineBlock = cssRuleBlock(styles, ".node-upright-selection-outline");
+    const selectedOutlineBlock = cssRuleBlock(styles, ".diagram-node.static-upright-selection-node.selected .node-upright-selection-outline");
+    const focusedOutlineBlock = cssRuleBlock(styles, ".diagram-node.static-upright-selection-node.selected.focused .node-upright-selection-outline");
+
+    expect(source).toContain("function nodeUsesUprightStaticSelectionOutline");
+    expect(source).toContain("function nodeUprightSelectionOutlineRect");
+    expect(source).toContain("function nodeUprightRotateHandleControlPoints");
+    expect(source).toContain("function nodeScaleHandleControlPoint");
+    expect(source).toContain("const signedScaleFromUprightHandleDelta");
+    expect(source).toContain("const proportionalSignedScaleFromUprightHandleDelta");
+    expect(source).toContain("uprightStaticSelection?: boolean;");
+    expect(singleDragBlock).toContain("uprightStaticSelection: nodeUsesUprightStaticSelectionOutline(node, nodeImage(node), nodeForegroundImage(node))");
+    expect(pointerBlock).toContain("transformDrag.uprightStaticSelection");
+    expect(pointerBlock).toContain("signedScaleFromUprightHandleDelta");
+    expect(pointerBlock).toContain("proportionalSignedScaleFromUprightHandleDelta");
+    expect(renderBlock).toContain("const uprightStaticSelectionOutline = nodeUsesUprightStaticSelectionOutline(node, imageHref, foregroundImageHref);");
+    expect(renderBlock).toContain("${uprightStaticSelectionOutline ? \"static-upright-selection-node\" : \"\"}");
+    expect(renderBlock).toContain("const uprightSelectionOutlineRect = uprightStaticSelectionOutline ? nodeUprightSelectionOutlineRect(node) : null;");
+    expect(renderBlock).toContain("const rotateHandlePoints = uprightStaticSelectionOutline");
+    expect(renderBlock).toContain("nodeUprightRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap)");
+    expect(renderBlock).toContain("nodeScaleHandleControlPoint(node, handle, handleGapX, handleGapY, uprightStaticSelectionOutline)");
+    expect(renderBlock).toContain("className=\"node-upright-selection-outline\"");
+    expect(renderBlock).toContain("x={uprightSelectionOutlineRect.x}");
+    expect(renderBlock).toContain("width={uprightSelectionOutlineRect.width}");
+    expect(lodBlock).toContain("nodeUsesUprightStaticSelectionOutline(node)");
+    expect(lodBlock).toContain("class=\"lod-node-selection lod-node-upright-selection\"");
+    expect(outlineBlock).toContain("pointer-events: none");
+    expect(outlineBlock).toContain("vector-effect: non-scaling-stroke");
+    expect(selectedHitboxOverrideBlock).toContain("stroke: transparent");
+    expect(focusedHitboxOverrideBlock).toContain("stroke: transparent");
+    expect(selectedOutlineBlock).toContain("stroke: #1d4ed8");
+    expect(focusedOutlineBlock).toContain("stroke: #f97316");
   });
 
   test("rebuilds moved-to-stationary connection routes without a moved-node count gate", async () => {
@@ -329,6 +484,55 @@ describe("graph inspector panel", () => {
     expect(keyboardNudgeBlock.indexOf("moveSelection(dx, dy);")).toBeLessThan(
       keyboardNudgeBlock.indexOf("startKeyboardMoveSession(false)")
     );
+  });
+
+  test("snaps placed and moved graphics to the 5px canvas grid", async () => {
+    const source = await readAppSource();
+    const pasteStart = source.indexOf("const pasteSelection = () =>");
+    const pasteEnd = source.indexOf("const createGraphTemplateType", pasteStart);
+    const pasteBlock = source.slice(pasteStart, pasteEnd);
+    const templateDropStart = source.indexOf("const dropGraphTemplate = ");
+    const templateDropEnd = source.indexOf("function finishMarqueeSelectionFromPoints", templateDropStart);
+    const templateDropBlock = source.slice(templateDropStart, templateDropEnd);
+    const dragDeltaStart = source.indexOf("const computeNodeDragDelta = ");
+    const dragDeltaEnd = source.indexOf("const applyNodeDragMove", dragDeltaStart);
+    const dragDeltaBlock = source.slice(dragDeltaStart, dragDeltaEnd);
+    const keyboardDeltaStart = source.indexOf("const applyKeyboardMoveDelta = ");
+    const keyboardDeltaEnd = source.indexOf("const flushPendingKeyboardMove", keyboardDeltaStart);
+    const keyboardDeltaBlock = source.slice(keyboardDeltaStart, keyboardDeltaEnd);
+    const moveSelectionStart = source.indexOf("const moveSelection = ");
+    const moveSelectionEnd = source.indexOf("const undoScopeForNodeFootprintPatch", moveSelectionStart);
+    const moveSelectionBlock = source.slice(moveSelectionStart, moveSelectionEnd);
+    const dropStart = source.indexOf("const handleDrop = ");
+    const dropEnd = source.indexOf("const handleNodePointerDown", dropStart);
+    const dropBlock = source.slice(dropStart, dropEnd);
+    const placeStart = source.indexOf("const placeLibraryDeviceAtPoint =");
+    const placeEnd = source.indexOf("const commitLibraryPlacementAtPoint", placeStart);
+    const placeBlock = source.slice(placeStart, placeEnd);
+    const staticDrawStart = source.indexOf("const startInteractiveStaticDrawing = ");
+    const staticDrawEnd = source.indexOf("const renderInteractiveStaticDrawingPreview", staticDrawStart);
+    const staticDrawBlock = source.slice(staticDrawStart, staticDrawEnd);
+
+    expect(source).toContain("CANVAS_GRID_SIZE");
+    expect(source).toContain("snapNodePositionToGrid");
+    expect(source).toContain("snapPointToGrid");
+    expect(source).toContain("const snapNodeToCanvasGrid = ");
+    expect(source).toContain("const snapMoveDeltaToGrid = ");
+    expect(pasteBlock).toContain("const pasteTargetPoint = snapPointToGrid({");
+    expect(templateDropBlock).toContain("const targetTopLeft = snapPointToGrid({");
+    expect(dropBlock).toContain("placeLibraryDeviceAtPoint(template");
+    expect(placeBlock).toContain("const rawNode = snapNodeToCanvasGrid({ ...createNodeFromTemplate(template, position), layerId: activeLayerId });");
+    expect(placeBlock).toContain("node.position = snapNodeToCanvasGrid(node, dropCanvasBounds, shiftedPointerPosition).position;");
+    expect(staticDrawBlock).toContain("const pointer = snapPointToGrid(clampPointToCanvas(startPoint));");
+    expect(staticDrawBlock).toContain("appendDistinctStaticDrawingPoint(staticDrawing.points, snapPointToGrid(clampPointToCanvas(finalPoint)))");
+    expect(staticDrawBlock).toContain("const nextPoint = snapPointToGrid(clampPointToCanvas(point));");
+    expect(staticDrawBlock).toContain("const previewPoint = snapPointToGrid(clampPointToCanvas(point));");
+    expect(dragDeltaBlock).toContain("const gridDelta = snapMoveDeltaToGrid(");
+    expect(dragDeltaBlock).toContain("movementDelta.x !== 0");
+    expect(dragDeltaBlock).toContain("movementDelta.y !== 0");
+    expect(keyboardDeltaBlock).toContain("const gridDelta = snapMoveDeltaToGrid(");
+    expect(moveSelectionBlock).toContain("const gridDelta = snapMoveDeltaToGrid(");
+    expect(source).toContain('<pattern id="small-grid" width="5" height="5" patternUnits="userSpaceOnUse">');
   });
 
   test("manages custom component libraries from the new-device manager tree", async () => {
@@ -423,10 +627,10 @@ describe("graph inspector panel", () => {
     expect(source).toContain("(groupedAttributeLibraryByComponentType[group] ?? []).map((typeGroup)");
     expect(source).toContain("attribute-library-component-type-section");
     expect(source).toContain("attribute-library-component-type-header");
-    expect(source).toContain("onMouseEnter={() => setHoveredAttributeLibrary(group)}");
+    expect(source).toContain("setHoveredAttributeLibrary(group);");
     expect(source).toContain("setHoveredAttributeLibrary((current) => current === group ? \"\" : current)");
     expect(source).toContain("expandedAttributeLibraries.includes(group) || hoveredAttributeLibrary === group");
-    expect(source).toContain("onMouseEnter={() => setHoveredAttributeLibraryComponentType(componentTypeKey)}");
+    expect(source).toContain("setHoveredAttributeLibraryComponentType(componentTypeKey);");
     expect(source).toContain("setHoveredAttributeLibraryComponentType((current) => current === componentTypeKey ? \"\" : current)");
     expect(source).toContain("expandedAttributeLibraryComponentTypes.includes(componentTypeKey) || hoveredAttributeLibraryComponentType === componentTypeKey");
     expect(source).toContain("component-definition-type-group");
@@ -1098,8 +1302,9 @@ describe("graph inspector panel", () => {
     expect(finishTransformBlock).toContain("activeTransform.nodeIds");
     expect(finishTransformBlock).toContain("buildGroupTransformNodeUpdates(activeTransform, finalPreviewPoint, current, { snapRotation: activeTransform.kind === \"rotate\" })");
     expect(finishTransformBlock).toContain("graphStorePatchGraphFromArrays");
-    expect(finishTransformBlock).toContain("rebuildEdgeUpdatesAfterNodeGeometryChange(nodes, transformedNodeIds)");
-    expect(finishTransformBlock).toContain("graphStorePatchEdges(current, edgeUpdates)");
+    expect(finishTransformBlock).toContain("rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, transformedNodeIds, current.edges)");
+    expect(finishTransformBlock).toContain("graphStoreApplyPatch(current, {");
+    expect(finishTransformBlock).toContain("edgeUpserts: edgeUpdates");
     expect(edgeRenderBlock).toContain("groupTransformPreviewEdgeIdSet.has(edge.id)");
     expect(nodeRenderBlock).toContain("groupTransformPreviewNodeIdSet.has(node.id)");
     expect(mirrorBlock).toContain("selectedLayoutUnits");
@@ -1135,9 +1340,22 @@ describe("graph inspector panel", () => {
     const finishTransformStart = source.indexOf("const finishTransformDrag");
     const finishTransformEnd = source.indexOf("const transformedNode =", finishTransformStart);
     const finishTransformBlock = source.slice(finishTransformStart, finishTransformEnd);
+    const groupGeometryStart = source.indexOf("function groupTransformGeometry");
+    const groupGeometryEnd = source.indexOf("function transformGroupPoint", groupGeometryStart);
+    const groupGeometryBlock = source.slice(groupGeometryStart, groupGeometryEnd);
+    const groupStartDragStart = source.indexOf("const startGroupTransformDrag");
+    const groupStartDragEnd = source.indexOf("const startSingleTransformDrag", groupStartDragStart);
+    const groupStartDragBlock = source.slice(groupStartDragStart, groupStartDragEnd);
 
     expect(layoutBlock).toContain("buildCanvasLayoutUnits(activeLayerGroups, activeLayerNodes, activeSelectedNodeIds, activeSelectedEdgeIds, activeLayerEdges, routedEdges)");
     expect(source).toContain("const buildGroupTransformEdgeUpdates");
+    expect(source).toContain("handleXDirection?: -1 | 0 | 1;");
+    expect(source).toContain("handleYDirection?: -1 | 0 | 1;");
+    expect(groupGeometryBlock).toContain("point.x - drag.startPoint.x");
+    expect(groupGeometryBlock).toContain("point.y - drag.startPoint.y");
+    expect(groupGeometryBlock).not.toContain("Math.abs(point.x - drag.center.x) / halfWidth");
+    expect(groupStartDragBlock).toContain("handleXDirection: kind === \"scale-y\" ? 0 : startPoint.x >= center.x ? 1 : -1");
+    expect(groupStartDragBlock).toContain("handleYDirection: kind === \"scale-x\" ? 0 : startPoint.y >= center.y ? 1 : -1");
     expect(previewBlock).toContain("transformDrag.originalEdgeRoutes.flatMap");
     expect(previewBlock).toContain("const geometry = groupTransformGeometry(transformDrag, transformDrag.previewPoint)");
     expect(previewBlock).toContain("transformGroupPoint(transformDrag, geometry, routePoint)");
@@ -1265,7 +1483,6 @@ describe("graph inspector panel", () => {
     const finishEnd = source.indexOf("const moveSelection", finishStart);
     const finishBlock = source.slice(finishStart, finishEnd);
 
-    expect(source).not.toContain("import { flushSync } from \"react-dom\";");
     expect(finishBlock).not.toContain("flushSync(() =>");
     expect(source).toContain("const commitFastMovedGraph");
     expect(source).toContain("graphStorePatchGraphFromArrays");
@@ -1313,8 +1530,9 @@ describe("graph inspector panel", () => {
     expect(mirrorBlock).toContain("graphStoreApplyPatch(current, {");
     expect(mirrorBlock).not.toContain("setGraphArrays(nextNodes, nextEdges)");
     expect(finishTransformBlock).toContain("transformDragChangedRef.current");
-    expect(finishTransformBlock).toContain("rebuildEdgeUpdatesAfterNodeGeometryChange(nodes, transformedNodeIds)");
-    expect(finishTransformBlock).toContain("graphStorePatchEdges(current, edgeUpdates)");
+    expect(finishTransformBlock).toContain("rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, transformedNodeIds, current.edges)");
+    expect(finishTransformBlock).toContain("graphStoreApplyPatch(current, {");
+    expect(finishTransformBlock).toContain("edgeUpserts: edgeUpdates");
     expect(pointerBlock).toContain("transformDragChangedRef.current = true");
     expect(source).toContain("finishTransformDrag();");
   });
@@ -1330,29 +1548,81 @@ describe("graph inspector panel", () => {
     const renderStart = source.indexOf("{detailedViewportNodes.map((node) =>");
     const renderEnd = source.indexOf("{renderGroupTransformPhotoPreview()}", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
+    const proportionalStart = source.indexOf("const proportionalSignedScaleFromHandleDelta =");
+    const proportionalEnd = source.indexOf("const proportionalSignedScaleFromUprightHandleDelta", proportionalStart);
+    const proportionalBlock = source.slice(proportionalStart, proportionalEnd);
+    const uprightProportionalStart = source.indexOf("const proportionalSignedScaleFromUprightHandleDelta =");
+    const uprightProportionalEnd = source.indexOf("const snapshotGroupTransformNodes", uprightProportionalStart);
+    const uprightProportionalBlock = source.slice(uprightProportionalStart, uprightProportionalEnd);
 
     expect(source).toContain("type SingleTransformDrag");
     expect(source).toContain("const startSingleTransformDrag");
     expect(source).toContain("const singleTransformBaseNode");
-    expect(source).toContain("const signedScaleFromScreenHandleDelta");
+    expect(source).toContain("function scaleHandleControlPoint");
+    expect(source).toContain("function nodeScaleHandleControlPoint");
+    expect(source).toContain("function scaleHandleCursorClass");
+    expect(source).toContain("const signedScaleFromRotatedHandleDelta");
+    expect(source).toContain("const signedScaleFromUprightHandleDelta");
+    expect(source).toContain("const proportionalSignedScaleFromHandleDelta");
+    expect(source).toContain("const proportionalSignedScaleFromUprightHandleDelta");
     expect(source).toContain("startPoint: Point");
     expect(helperStart).toBeGreaterThan(-1);
     expect(helperBlock).toContain("rotation");
     expect(helperBlock).toContain("screenAxis");
     expect(helperBlock).toContain("localVector");
     expect(pointerBlock).toContain("const baseNode = singleTransformBaseNode(transformDrag, node);");
-    expect(pointerBlock).toContain("toLocalNodePoint(baseNode, point)");
+    expect(pointerBlock).toContain("const rawPoint = lastRawCanvasPointerRef.current");
     expect(pointerBlock).not.toContain("toLocalNodePoint(node, point)");
     expect(pointerBlock).toContain("const localScaleKind = event.shiftKey || transformDrag.kind === \"scale-both\"");
-    expect(pointerBlock).toContain("localScaleKindForScreenHandle(transformDrag.kind, baseNode.rotation)");
+    expect(pointerBlock).toContain(": transformDrag.kind;");
+    expect(pointerBlock).not.toContain("localScaleKindForScreenHandle(transformDrag.kind, baseNode.rotation)");
     expect(pointerBlock).toContain("if (localScaleKind === \"scale-x\")");
     expect(pointerBlock).toContain("} else if (localScaleKind === \"scale-y\")");
     expect(pointerBlock).toContain("const currentSignedScaleX = getNodeScaleX(baseNode);");
     expect(pointerBlock).toContain("const currentSignedScaleY = getNodeScaleY(baseNode);");
     expect(pointerBlock).toContain("scaleY: currentSignedScaleY");
     expect(pointerBlock).toContain("scaleX: currentSignedScaleX");
+    expect(pointerBlock).toContain("const signedScaleFromHandleDelta = transformDrag.uprightStaticSelection");
+    expect(pointerBlock).toContain("? signedScaleFromUprightHandleDelta");
+    expect(pointerBlock).toContain(": signedScaleFromRotatedHandleDelta;");
+    expect(pointerBlock).toContain("signedScaleFromHandleDelta(transformDrag, point, baseNode, \"scale-x\")");
+    expect(pointerBlock).toContain("signedScaleFromHandleDelta(transformDrag, point, baseNode, \"scale-y\")");
+    expect(pointerBlock).toContain("const nextSignedScale = transformDrag.uprightStaticSelection");
+    expect(pointerBlock).toContain("? proportionalSignedScaleFromUprightHandleDelta(transformDrag, point, baseNode)");
+    expect(pointerBlock).toContain(": proportionalSignedScaleFromHandleDelta(transformDrag, point, baseNode);");
+    expect(pointerBlock).not.toContain("normalizeScale(Math.max(nextScaleX, nextScaleY))");
+    expect(proportionalBlock).toContain("const startLocal = toLocalNodePoint(baseNode, drag.startPoint);");
+    expect(proportionalBlock).toContain("const currentLocal = toLocalNodePoint(baseNode, point);");
+    expect(proportionalBlock).not.toContain("point.x - drag.startPoint.x");
+    expect(proportionalBlock).not.toContain("point.y - drag.startPoint.y");
+    expect(uprightProportionalBlock).toContain("point.x - drag.startPoint.x");
+    expect(uprightProportionalBlock).toContain("point.y - drag.startPoint.y");
     expect(renderBlock).toContain("startSingleTransformDrag(event, node, \"rotate\")");
+    expect(renderBlock).toContain("const handlePoint = nodeScaleHandleControlPoint(node, handle, handleGapX, handleGapY, uprightStaticSelectionOutline);");
+    expect(renderBlock).toContain("const handleCursorClass = scaleHandleCursorClass(handle, uprightStaticSelectionOutline ? 0 : node.rotation);");
+    expect(renderBlock).toContain("transform={handleTransform(handlePoint.x, handlePoint.y)}");
+    expect(renderBlock).toContain("className={`scale-handle ${handleCursorClass}`}");
     expect(renderBlock).toContain("startSingleTransformDrag(event, node, handle.kind, handle)");
+  });
+
+  test("keeps scale handles under the cursor by deferring canvas expansion until transform release", async () => {
+    const source = await readAppSource();
+    const pointerStart = source.indexOf("if (transformDrag && svgRef.current)");
+    const pointerEnd = source.indexOf("if (!draggingRef.current || !svgRef.current)", pointerStart);
+    const pointerBlock = source.slice(pointerStart, pointerEnd);
+    const finishStart = source.indexOf("const finishTransformDrag");
+    const finishEnd = source.indexOf("const finishKeyboardMove", finishStart);
+    const finishBlock = source.slice(finishStart, finishEnd);
+
+    expect(pointerBlock).toContain("if (isGroupTransformDrag(transformDrag))");
+    expect(pointerBlock).toContain("patchGraphNodes([nextNode]);");
+    expect(pointerBlock).not.toContain("applyCanvasBounds(transformBounds);");
+    expect(pointerBlock).not.toContain("clampNodePositionToBounds(nextNode, transformBounds");
+    expect(finishBlock).toContain("applyCanvasBounds(transformBounds);");
+    expect(finishBlock).toContain("const currentSingleNode = currentStore.nodeMap.get(activeTransform.nodeId);");
+    expect(finishBlock).toContain("[currentSingleNode]");
+    expect(finishBlock).toContain("clampNodePositionToBounds(currentNode, transformBounds");
+    expect(finishBlock).toContain("rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, transformedNodeIds, current.edges)");
   });
 
   test("previews mouse rotation continuously and snaps to right angles only on release", async () => {
@@ -1413,7 +1683,9 @@ describe("graph inspector panel", () => {
     expect(source).toContain("stemStart: rotatePointAround({ x: 0, y: -halfHeight - rotateStemStart }, origin, node.rotation)");
     expect(source).toContain("handle: rotatePointAround({ x: 0, y: -halfHeight - rotateHandleGap }, origin, node.rotation)");
     expect(source).toContain("rotateControlAvoidRectFromCanvasPoints(selectedNodeRotateHandlePoints)");
-    expect(renderBlock).toContain("const rotateHandlePoints = nodeRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap);");
+    expect(renderBlock).toContain("const rotateHandlePoints = uprightStaticSelectionOutline");
+    expect(renderBlock).toContain("? nodeUprightRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap)");
+    expect(renderBlock).toContain(": nodeRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap);");
     expect(renderBlock).toContain("x1={rotateHandlePoints.stemStart.x}");
     expect(renderBlock).toContain("transform={handleTransform(rotateHandlePoints.handle.x, rotateHandlePoints.handle.y)}");
     expect(source).not.toContain("rotationDeltaFromTransformPoint(drag.center, point, Boolean(options?.snapRotation))");
@@ -1534,6 +1806,9 @@ describe("graph inspector panel", () => {
     const dropStart = source.indexOf("const handleDrop =");
     const dropEnd = source.indexOf("const handleNodePointerDown", dropStart);
     const dropBlock = source.slice(dropStart, dropEnd);
+    const placeStart = source.indexOf("const placeLibraryDeviceAtPoint =");
+    const placeEnd = source.indexOf("const commitLibraryPlacementAtPoint", placeStart);
+    const placeBlock = source.slice(placeStart, placeEnd);
 
     expect(source).toContain("type CanvasResizeEdge");
     expect(source).toContain("const [canvasResizeDrag, setCanvasResizeDrag]");
@@ -1549,8 +1824,9 @@ describe("graph inspector panel", () => {
     expect(moveBlock).toContain("commitFastMovedGraphPatches(");
     expect(updateBlock).toContain("selectedNodeCanvasBounds");
     expect(updateBlock).toContain("applyCanvasBounds(selectedNodeCanvasBounds)");
-    expect(dropBlock).toContain("dropCanvasBounds");
-    expect(dropBlock).toContain("applyCanvasBounds(dropCanvasBounds, dropOriginShift)");
+    expect(dropBlock).toContain("placeLibraryDeviceAtPoint(template");
+    expect(placeBlock).toContain("dropCanvasBounds");
+    expect(placeBlock).toContain("applyCanvasBounds(dropCanvasBounds, dropOriginShift)");
   });
 
   test("keeps canvas edge resizing anchored instead of recentering or changing zoom scale", async () => {
@@ -1567,16 +1843,124 @@ describe("graph inspector panel", () => {
     const startResizeStart = source.indexOf("const startCanvasResize =");
     const startResizeEnd = source.indexOf("const startStatusbarResize", startResizeStart);
     const startResizeBlock = source.slice(startResizeStart, startResizeEnd);
+    const scrollSurfaceStart = source.indexOf("className=\"canvas-scroll-surface\"");
+    const scrollSurfaceEnd = source.indexOf("<svg", scrollSurfaceStart);
+    const scrollSurfaceBlock = source.slice(scrollSurfaceStart, scrollSurfaceEnd);
+    const edgeTriggerStart = source.indexOf("const renderSidePanelEdgeTrigger =");
+    const edgeTriggerEnd = source.indexOf("const normalizeScale", edgeTriggerStart);
+    const edgeTriggerBlock = source.slice(edgeTriggerStart, edgeTriggerEnd);
+    const resizeMoveStart = resizeBlock.indexOf("const handlePointerMove");
+    const resizeMoveEnd = resizeBlock.indexOf("const handlePointerUp", resizeMoveStart);
+    const resizeMoveBlock = resizeBlock.slice(resizeMoveStart, resizeMoveEnd);
 
     expect(centerBlock).toContain("}, [canvasCenterRequest]);");
     expect(centerBlock).not.toContain("}, [canvasCenterRequest, canvasHeight, canvasWidth]);");
     expect(startResizeBlock).toContain("unitsPerCssX: svgRect.width > 0 ? canvasBounds.width / svgRect.width : 1");
     expect(startResizeBlock).toContain("unitsPerCssY: svgRect.height > 0 ? canvasBounds.height / svgRect.height : 1");
+    expect(startResizeBlock).toContain("const startCanvasResizeFromRightOverlay = (event: PointerEvent<Element>) =>");
+    expect(startResizeBlock).toContain("const startCanvasResizeFromBottomOverlay = (event: PointerEvent<Element>) =>");
+    expect(startResizeBlock).toContain("Math.abs(event.clientX - svgRect.right) <= rightEdgeHotspot");
+    expect(startResizeBlock).toContain("startCanvasResize(event, \"right\");");
+    expect(startResizeBlock).toContain("Math.abs(event.clientY - svgRect.bottom) <= bottomEdgeHotspot");
+    expect(startResizeBlock).toContain("startCanvasResize(event, \"bottom\");");
+    expect(scrollSurfaceBlock).toContain("if (startCanvasResizeFromBottomOverlay(event))");
+    expect(scrollSurfaceBlock.indexOf("startCanvasResizeFromBottomOverlay(event)")).toBeLessThan(
+      scrollSurfaceBlock.indexOf("startCanvasPanning(event);")
+    );
+    expect(edgeTriggerBlock).toContain("onPointerDown={(event) => {");
+    expect(edgeTriggerBlock).toContain("side === \"right\" && startCanvasResizeFromRightOverlay(event)");
+    expect(source).toContain("const canvasRenderBounds = canvasResizeDraft ?? canvasBounds;");
+    expect(source).toContain("const canvasRenderViewBox = useMemo<CanvasViewBox>(() =>");
+    expect(source).toContain("const canvasScrollScale = canvasScrollScaleFromViewBox(canvasRenderViewBox, canvasRenderBounds);");
+    expect(source).toContain("const canvasDisplayWidth = Math.max(1, Math.round(canvasRenderBounds.width * canvasScrollScale.x));");
+    expect(source).toContain("const canvasDisplayHeight = Math.max(1, Math.round(canvasRenderBounds.height * canvasScrollScale.y));");
+    expect(source).toContain("function canvasResizeAnchoredDisplayOffset(");
+    expect(source).toContain("startDisplayOffsetX: canvasDisplayOffsetX");
+    expect(source).toContain("startDisplayOffsetY: canvasDisplayOffsetY");
+    expect(source).toContain("startScrollTop: canvasFrameRef.current?.scrollTop ?? 0");
+    expect(source).toContain("startScrollSurfaceHeight: canvasScrollSurfaceHeight");
+    expect(source).toContain("startVerticalScrollbarsActive: canvasVerticalScrollbarsActive");
+    expect(source).toContain("const canvasDisplayOffsetX = canvasResizeAnchoredDisplayOffset(");
+    expect(source).toContain("const canvasDisplayOffsetY = canvasResizeAnchoredDisplayOffset(");
+    expect(source).toContain("const canvasResizeKeepsVerticalScrollRange = canvasResizeKeepsScrollRange(canvasResizeDrag, \"y\");");
+    expect(source).toContain("Math.max(computedCanvasScrollSurfaceHeight, canvasResizeDrag.startScrollSurfaceHeight)");
+    expect(source).toContain("const canvasNoScrollOffsetForCanvasResizeAnchor = (drag: NonNullable<CanvasResizeState>, nextBounds: CanvasBounds): Point =>");
+    expect(source).toContain("const nextCanvasNoScrollOffset = canvasNoScrollOffsetForCanvasResizeAnchor(canvasResizeDrag, draftBounds);");
+    expect(source).toContain("setCanvasNoScrollOffset((current) =>");
+    expect(source).toContain("viewBox={`0 0 ${canvasRenderBounds.width} ${canvasRenderBounds.height}`}");
+    expect(source).toContain("<rect className=\"canvas-boundary\" x=\"0\" y=\"0\" width={canvasRenderBounds.width} height={canvasRenderBounds.height} />");
+    expect(source).toContain("x={canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE / 2}");
+    expect(source).toContain("y={canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE / 2}");
     expect(applyBlock).toContain("const nextViewBoxSize = scaledViewBoxSizeForBounds(current, canvasBounds, nextBounds);");
     expect(applyBlock).toContain("...clampViewBoxDimensionsForZoom(nextViewBoxSize, nextBounds)");
-    expect(resizeBlock).toContain("setCanvasResizeDraft");
-    expect(resizeBlock).toContain("requestAnimationFrame");
+    expect(source).toContain("import { createPortal, flushSync } from \"react-dom\";");
+    expect(resizeMoveBlock).toContain("flushSync(() => setCanvasResizeDraft(clampedBounds));");
+    expect(resizeMoveBlock).toContain("canvasResizeDrag.startScrollTop");
+    expect(resizeMoveBlock).not.toContain("requestAnimationFrame");
+    expect(resizeMoveBlock).not.toContain("commitCanvasResizeBounds");
+    expect(resizeBlock).not.toContain("const flushCanvasResizeDraft");
     expect(resizeBlock).not.toContain("applyCanvasBounds(clampedBounds);");
+  });
+
+  test("keeps the actively dragged canvas resize edge in view when scrollbars appear", async () => {
+    const source = await readAppSource();
+    const resizeStart = source.indexOf("useEffect(() => {\n    if (!canvasResizeDrag)");
+    const resizeEnd = source.indexOf("useEffect(() => {\n    if (!statusbarResize)", resizeStart);
+    const resizeBlock = source.slice(resizeStart, resizeEnd);
+    const syncStart = source.indexOf("const syncCanvasFrameScrollToResizeAnchorNow =");
+    const syncEnd = source.indexOf("const syncCanvasFrameScrollToResizeAnchor =", syncStart);
+    const syncBlock = source.slice(syncStart, syncEnd);
+
+    expect(source).toContain("const syncCanvasFrameScrollToResizeAnchorNow = (drag: NonNullable<CanvasResizeState>, pointer: Pick<globalThis.PointerEvent, \"clientX\" | \"clientY\">) =>");
+    expect(source).toContain("const syncCanvasFrameScrollToResizeAnchor = (drag: NonNullable<CanvasResizeState>, pointer: Pick<globalThis.PointerEvent, \"clientX\" | \"clientY\">) =>");
+    expect(source).toContain("window.requestAnimationFrame(() => syncCanvasFrameScrollToResizeAnchorNow(drag, pointer));");
+    expect(syncBlock).toContain("canvasResizeEdgeAnchorsAxis(drag.edge, \"y\")");
+    expect(syncBlock).toContain("const desiredBottomY = clampNumber(pointer.clientY - frameRect.top, CANVAS_FRAME_INSET, frame.clientHeight - CANVAS_FRAME_INSET);");
+    expect(syncBlock).toContain("clampNumber(frame.scrollTop + svgRect.bottom - frameRect.top - desiredBottomY, 0, maxTop)");
+    expect(syncBlock).toContain("setCanvasFrameScrollPosition(frame, nextLeft, nextTop);");
+    expect(syncBlock).toContain("const scrolledViewBox = currentViewBoxFromCanvasFrameScroll();");
+    expect(syncBlock).toContain("skipNextCanvasScrollSyncRef.current = true;");
+    expect(resizeBlock).toContain("const handlePointerUp = (event: globalThis.PointerEvent) =>");
+    expect(resizeBlock).toContain("skipNextCanvasScrollSyncRef.current = true;");
+    expect(resizeBlock).toContain("flushSync(() => {");
+    expect(resizeBlock).toContain("setCanvasResizeDrag(null);");
+    expect(resizeBlock).toContain("syncCanvasFrameScrollToResizeAnchorNow(canvasResizeDrag, event);");
+  });
+
+  test("keeps the untouched canvas resize axis from jumping when scrollbar state changes", async () => {
+    const source = await readAppSource();
+    const offsetStart = source.indexOf("function canvasResizeAnchoredDisplayOffset(");
+    const offsetEnd = source.indexOf("function canvasResizeKeepsScrollRange", offsetStart);
+    const offsetBlock = source.slice(offsetStart, offsetEnd);
+    const keepRangeStart = source.indexOf("function canvasResizeKeepsScrollRange(");
+    const keepRangeEnd = source.indexOf("function clampCanvasNoScrollOffset", keepRangeStart);
+    const keepRangeBlock = source.slice(keepRangeStart, keepRangeEnd);
+    const noScrollStart = source.indexOf("const canvasNoScrollOffsetForCanvasResizeAnchor =");
+    const noScrollEnd = source.indexOf("const syncCanvasFrameScrollToResizeAnchor =", noScrollStart);
+    const noScrollBlock = source.slice(noScrollStart, noScrollEnd);
+    const syncStart = source.indexOf("const syncCanvasFrameScrollToResizeAnchorNow =");
+    const syncEnd = source.indexOf("const syncCanvasFrameScrollToResizeAnchor =", syncStart);
+    const syncBlock = source.slice(syncStart, syncEnd);
+
+    expect(offsetBlock).toContain("if (!drag) {");
+    expect(offsetBlock).toContain("return Math.round(axis === \"x\" ? drag.startDisplayOffsetX : drag.startDisplayOffsetY);");
+    expect(offsetBlock).not.toContain("canvasResizeEdgeAnchorsAxis(drag.edge, axis)");
+    expect(keepRangeBlock).toContain("if (!drag) {");
+    expect(keepRangeBlock).toContain("return axis === \"x\" ? drag.startHorizontalScrollbarsActive : drag.startVerticalScrollbarsActive;");
+    expect(keepRangeBlock).not.toContain("canvasResizeEdgeAnchorsAxis(drag.edge, axis)");
+    expect(noScrollBlock).toContain("drag.startDisplayOffsetX - nextBaseDisplayOffsetX");
+    expect(noScrollBlock).toContain("drag.startDisplayOffsetY - nextBaseDisplayOffsetY");
+    expect(noScrollBlock).not.toContain("const currentOffset = canvasNoScrollOffsetRef.current;");
+    expect(noScrollBlock).not.toContain("currentOffset.x");
+    expect(noScrollBlock).not.toContain("currentOffset.y");
+    expect(syncBlock).toContain("const preserveStartLeft = canvasHorizontalScrollbarsActiveRef.current && maxLeft > 0");
+    expect(syncBlock).toContain("clampNumber(drag.startScrollLeft, 0, maxLeft)");
+    expect(syncBlock).toContain("const preserveStartTop = canvasVerticalScrollbarsActiveRef.current && maxTop > 0");
+    expect(syncBlock).toContain("clampNumber(drag.startScrollTop, 0, maxTop)");
+    expect(syncBlock).not.toContain("frame.scrollLeft + svgRect.left - frameRect.left - drag.startDisplayOffsetX");
+    expect(syncBlock).not.toContain("frame.scrollTop + svgRect.top - frameRect.top - drag.startDisplayOffsetY");
+    expect(syncBlock).toContain("x: canvasHorizontalScrollbarsActiveRef.current ? scrolledViewBox.x : current.x");
+    expect(syncBlock).toContain("y: canvasVerticalScrollbarsActiveRef.current ? scrolledViewBox.y : current.y");
   });
 
   test("uses raw canvas landing points and expands before paste or new-device placement", async () => {
@@ -1590,10 +1974,16 @@ describe("graph inspector panel", () => {
     const dropStart = source.indexOf("const handleDrop =");
     const dropEnd = source.indexOf("const handleNodePointerDown", dropStart);
     const dropBlock = source.slice(dropStart, dropEnd);
+    const placeStart = source.indexOf("const placeLibraryDeviceAtPoint =");
+    const placeEnd = source.indexOf("const commitLibraryPlacementAtPoint", placeStart);
+    const placeBlock = source.slice(placeStart, placeEnd);
     const pointerMoveStart = source.indexOf("const handlePointerMove = (event: PointerEvent<SVGSVGElement>)");
     const pointerMoveEnd = source.indexOf("const handleWheel", pointerMoveStart);
     const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
-    const pointerDownStart = source.indexOf("onPointerDown={(event) => {");
+    const pointerDownStart = source.indexOf(
+      "onPointerDown={(event) => {",
+      source.indexOf("className={`diagram-canvas")
+    );
     const pointerDownEnd = source.indexOf("onContextMenu={(event) => {", pointerDownStart);
     const pointerDownBlock = source.slice(pointerDownStart, pointerDownEnd);
     const contextMenuStart = source.indexOf("onContextMenu={(event) => {", pointerDownEnd);
@@ -1621,19 +2011,20 @@ describe("graph inspector panel", () => {
     expect(pasteBlock.indexOf("applyCanvasBounds(pastedCanvasBounds, pasteOriginShift);")).toBeLessThan(
       pasteBlock.indexOf("setGraphArrays(nextNodes, nextEdges);")
     );
-    expect(dropBlock).toContain("const dropOriginShift = leftTopCanvasOriginShiftForContent([...nodes, rawNode], edges);");
-    expect(dropBlock).toContain("translateNodeBy(rawNode, dropOriginShift)");
-    expect(dropBlock).toContain("translateEdgeBy(edge, dropOriginShift)");
-    expect(dropBlock).toContain("shiftCachedRoutesForCanvasOrigin(dropOriginShift);");
-    expect(dropBlock).toContain("markBusTerminalSyncDirtyForEdges(dropSourceEdges);");
-    expect(dropBlock.indexOf("applyCanvasBounds(dropCanvasBounds, dropOriginShift);")).toBeLessThan(
-      dropBlock.indexOf("shiftCachedRoutesForCanvasOrigin(dropOriginShift);")
+    expect(dropBlock).toContain("placeLibraryDeviceAtPoint(template");
+    expect(placeBlock).toContain("const dropOriginShift = leftTopCanvasOriginShiftForContent([...nodes, rawNode], edges);");
+    expect(placeBlock).toContain("translateNodeBy(rawNode, dropOriginShift)");
+    expect(placeBlock).toContain("translateEdgeBy(edge, dropOriginShift)");
+    expect(placeBlock).toContain("shiftCachedRoutesForCanvasOrigin(dropOriginShift);");
+    expect(placeBlock).toContain("markBusTerminalSyncDirtyForEdges(dropSourceEdges);");
+    expect(placeBlock.indexOf("applyCanvasBounds(dropCanvasBounds, dropOriginShift);")).toBeLessThan(
+      placeBlock.indexOf("shiftCachedRoutesForCanvasOrigin(dropOriginShift);")
     );
-    expect(dropBlock.indexOf("shiftCachedRoutesForCanvasOrigin(dropOriginShift);")).toBeLessThan(
-      dropBlock.indexOf("clampNodePositionToBounds(node, dropCanvasBounds")
+    expect(placeBlock.indexOf("shiftCachedRoutesForCanvasOrigin(dropOriginShift);")).toBeLessThan(
+      placeBlock.indexOf("snapNodeToCanvasGrid(node, dropCanvasBounds")
     );
-    expect(dropBlock.indexOf("applyCanvasBounds(dropCanvasBounds, dropOriginShift);")).toBeLessThan(
-      dropBlock.indexOf("setGraphArrays([...dropSourceNodes, indexed.node], dropSourceEdges);")
+    expect(placeBlock.indexOf("applyCanvasBounds(dropCanvasBounds, dropOriginShift);")).toBeLessThan(
+      placeBlock.indexOf("setGraphArrays([...dropSourceNodes, indexed.node], dropSourceEdges);")
     );
   });
 
@@ -1784,26 +2175,32 @@ describe("graph inspector panel", () => {
     expect(source).toContain("function clampCanvasNoScrollOffset(");
     expect(source).toContain("function viewBoxStartToScrollPosition(");
     expect(source).toContain("function scrollPositionToViewBoxStart(");
-    expect(source).toContain("const canvasDisplayWidth = Math.max(1, Math.round(canvasBounds.width * canvasScrollScale.x))");
-    expect(source).toContain("const canvasDisplayHeight = Math.max(1, Math.round(canvasBounds.height * canvasScrollScale.y))");
-    expect(source).toContain("const canvasHorizontalScrollbarsActive =");
-    expect(source).toContain("const canvasVerticalScrollbarsActive =");
+    expect(source).toContain("const canvasDisplayWidth = Math.max(1, Math.round(canvasRenderBounds.width * canvasScrollScale.x))");
+    expect(source).toContain("const canvasDisplayHeight = Math.max(1, Math.round(canvasRenderBounds.height * canvasScrollScale.y))");
+    expect(source).toContain("const computedCanvasHorizontalScrollbarsActive =");
+    expect(source).toContain("const computedCanvasVerticalScrollbarsActive =");
+    expect(source).toContain("const canvasHorizontalScrollbarsActive = computedCanvasHorizontalScrollbarsActive || canvasResizeKeepsHorizontalScrollRange;");
+    expect(source).toContain("const canvasVerticalScrollbarsActive = computedCanvasVerticalScrollbarsActive || canvasResizeKeepsVerticalScrollRange;");
     expect(source).toContain("const canvasScrollbarsActive =");
     expect(source).toContain("canvasDisplayWidth + CANVAS_FRAME_INSET * 2 > canvasFrameViewportSize.width + CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE");
     expect(source).toContain("canvasDisplayHeight + CANVAS_FRAME_INSET * 2 > canvasFrameViewportSize.height + CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE");
     expect(source).toContain("canvasScrollbarsActiveRef.current = canvasScrollbarsActive;");
     expect(source).toContain("canvasHorizontalScrollbarsActiveRef.current = canvasHorizontalScrollbarsActive;");
     expect(source).toContain("canvasVerticalScrollbarsActiveRef.current = canvasVerticalScrollbarsActive;");
-    expect(source).toContain("const canvasScrollSurfaceWidth = canvasScrollSurfaceSize(");
+    expect(source).toContain("const computedCanvasScrollSurfaceWidth = canvasScrollSurfaceSize(");
     expect(source).toContain("canvasHorizontalScrollbarsActive");
-    expect(source).toContain("const canvasScrollSurfaceHeight = canvasScrollSurfaceSize(");
+    expect(source).toContain("const computedCanvasScrollSurfaceHeight = canvasScrollSurfaceSize(");
     expect(source).toContain("canvasVerticalScrollbarsActive");
+    expect(source).toContain("const canvasScrollSurfaceWidth =");
+    expect(source).toContain("const canvasScrollSurfaceHeight =");
     expect(source).toContain("const canvasBaseDisplayOffsetX = canvasDisplayOffset(");
     expect(source).toContain("const canvasBaseDisplayOffsetY = canvasDisplayOffset(");
     expect(source).toContain("const [canvasNoScrollOffset, setCanvasNoScrollOffset] = useState<Point>({ x: 0, y: 0 });");
     expect(source).toContain("const clampedCanvasNoScrollOffset = {");
-    expect(source).toContain("const canvasDisplayOffsetX = Math.round(canvasBaseDisplayOffsetX + clampedCanvasNoScrollOffset.x);");
-    expect(source).toContain("const canvasDisplayOffsetY = Math.round(canvasBaseDisplayOffsetY + clampedCanvasNoScrollOffset.y);");
+    expect(source).toContain("const canvasDisplayOffsetX = canvasResizeAnchoredDisplayOffset(");
+    expect(source).toContain("Math.round(canvasBaseDisplayOffsetX + clampedCanvasNoScrollOffset.x),");
+    expect(source).toContain("const canvasDisplayOffsetY = canvasResizeAnchoredDisplayOffset(");
+    expect(source).toContain("Math.round(canvasBaseDisplayOffsetY + clampedCanvasNoScrollOffset.y),");
     expect(source).toContain("const canvasNoScrollOffsetRef = useRef(clampedCanvasNoScrollOffset);");
     expect(source).toContain("canvasNoScrollOffsetRef.current = clampedCanvasNoScrollOffset;");
     expect(source).toContain("const clampCanvasNoScrollOffsetPoint = (offset: Point): Point =>");
@@ -1816,7 +2213,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("style={{ overflow: canvasScrollbarsActive ? \"auto\" : \"hidden\" }}");
     expect(canvasRenderBlock).toContain("style={{ width: canvasScrollSurfaceWidth, height: canvasScrollSurfaceHeight }}");
     expect(canvasRenderBlock).toContain("style={{ width: canvasDisplayWidth, height: canvasDisplayHeight, left: canvasDisplayOffsetX, top: canvasDisplayOffsetY }}");
-    expect(canvasRenderBlock).toContain("viewBox={`0 0 ${canvasBounds.width} ${canvasBounds.height}`}");
+    expect(canvasRenderBlock).toContain("viewBox={`0 0 ${canvasRenderBounds.width} ${canvasRenderBounds.height}`}");
     expect(canvasRenderBlock).not.toContain("viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}");
   });
 
@@ -1914,8 +2311,15 @@ describe("graph inspector panel", () => {
     expect(syncBlock).toContain("setCanvasFrameScrollPosition(");
     expect(syncBlock).toContain("canvasHorizontalScrollbarsActiveRef.current ? scrollPosition.left : 0");
     expect(syncBlock).toContain("canvasVerticalScrollbarsActiveRef.current ? scrollPosition.top : 0");
+    expect(syncBlock).toContain("const nextViewBox = normalizeViewBoxToCanvas({");
+    expect(syncBlock).toContain("scrollPositionToViewBoxStart(");
+    expect(syncBlock).toContain("setViewBox((current) => {");
     expect(syncBlock).toContain("setCanvasNoScrollOffset((current) => {");
     expect(syncBlock).toContain("skipNextCanvasScrollSyncRef.current = true;");
+    expect(source).toContain("function canvasFrameViewportSizeChanged(");
+    expect(source).toContain("const wheelZoomViewportChanged = canvasFrameViewportSizeChanged(canvasFrameRef.current, canvasFrameViewportSize);");
+    expect(source).toContain("pendingWheelZoomAnchorRef.current = pendingWheelZoomAnchor;");
+    expect(source).toContain("updateCanvasFrameViewportSize();");
   });
 
   test("pans zoomed scrollable canvas by moving the frame scrollbars directly", async () => {
@@ -1987,9 +2391,12 @@ describe("graph inspector panel", () => {
     const blankPointerStart = source.indexOf("if (hasCanvasSelectionModifier(event))", source.indexOf("const routeHit = findConnectionRouteHitAtPoint(pointer);"));
     const blankPointerEnd = source.indexOf("lastEdgePointerClickRef.current = null;", blankPointerStart);
     const blankPointerBlock = source.slice(blankPointerStart, blankPointerEnd);
-    const svgBlankStart = source.indexOf("if (connectSource) {", source.indexOf("onPointerDown={(event) => {"));
+    const svgBlankStart = source.indexOf("if (connectSource) {", source.indexOf("className={`diagram-canvas"));
     const svgBlankEnd = source.indexOf("const routeHit = findConnectionRouteHitAtPoint(pointer);", svgBlankStart);
     const svgBlankBeforeRouteHitBlock = source.slice(svgBlankStart, svgBlankEnd);
+    const blankPanStart = source.indexOf("if (event.detail >= 2)", source.indexOf("setInspectorTab(\"model\");"));
+    const blankPanEnd = source.indexOf("}}\n            onContextMenu", blankPanStart);
+    const blankPanBlock = source.slice(blankPanStart, blankPanEnd);
     const scrollSurfaceStart = source.indexOf("className=\"canvas-scroll-surface\"");
     const scrollSurfaceEnd = source.indexOf("<svg", scrollSurfaceStart);
     const scrollSurfaceBlock = source.slice(scrollSurfaceStart, scrollSurfaceEnd);
@@ -2019,7 +2426,11 @@ describe("graph inspector panel", () => {
     expect(blankPointerBlock).toContain("if (hasCanvasSelectionModifier(event))");
     expect(blankPointerBlock).toContain("startModifierSelectionPress(event, routeHit ? { kind: \"edge\", edgeId: routeHit.edgeId } : undefined);");
     expect(blankPointerBlock).toContain("return;");
+    expect(blankPanBlock).toContain("startCanvasPanning(event);");
+    expect(blankPanBlock).not.toContain("if (!canvasScrollbarsActiveRef.current)");
+    expect(blankPanBlock).not.toContain("setMarquee({ start: point, current: point });");
     expect(scrollSurfaceBlock).toContain("hasCanvasSelectionModifier(event)");
+    expect(scrollSurfaceBlock).toContain("startCanvasPanning(event);");
   });
 
   test("fits the whole canvas to the viewport when blank canvas is double-clicked", async () => {
@@ -2031,7 +2442,7 @@ describe("graph inspector panel", () => {
     const fitHandlerEnd = source.indexOf("const fitViewToBounds", fitHandlerStart);
     const fitHandlerBlock = source.slice(fitHandlerStart, fitHandlerEnd);
     const blankPointerStart = source.indexOf("if (event.detail >= 2)", source.indexOf("setInspectorTab(\"model\");"));
-    const blankPointerEnd = source.indexOf("const point = lastCanvasPointerRef.current;", blankPointerStart);
+    const blankPointerEnd = source.indexOf("}}\n            onContextMenu", blankPointerStart);
     const blankPointerBlock = source.slice(blankPointerStart, blankPointerEnd);
     const scrollSurfaceStart = source.indexOf("className=\"canvas-scroll-surface\"");
     const scrollSurfaceEnd = source.indexOf("<svg", scrollSurfaceStart);
@@ -2055,8 +2466,9 @@ describe("graph inspector panel", () => {
     expect(blankPointerBlock).toContain("if (event.detail >= 2)");
     expect(blankPointerBlock).toContain("fitWholeCanvasToFrame();");
     expect(blankPointerBlock).toContain("return;");
-    expect(blankPointerBlock).toContain("if (!canvasScrollbarsActiveRef.current) {");
     expect(blankPointerBlock).toContain("startCanvasPanning(event);");
+    expect(blankPointerBlock).not.toContain("if (!canvasScrollbarsActiveRef.current)");
+    expect(blankPointerBlock).not.toContain("setMarquee({ start: point, current: point });");
     expect(scrollSurfaceBlock).toContain("onDoubleClick={(event) =>");
     expect(scrollSurfaceBlock).toContain("event.target !== event.currentTarget");
     expect(scrollSurfaceBlock).toContain("fitWholeCanvasToFrame();");
@@ -2168,10 +2580,25 @@ describe("graph inspector panel", () => {
     const hitStart = source.indexOf("const findConnectionRouteHitAtPoint = (point: Point) =>");
     const hitEnd = source.indexOf("const insertManualBendAtPoint", hitStart);
     const hitBlock = source.slice(hitStart, hitEnd);
+    const toleranceStart = source.indexOf("const connectionHitTolerance = () =>");
+    const toleranceEnd = source.indexOf("const findConnectionRouteHitAtPoint = (point: Point) =>", toleranceStart);
+    const toleranceBlock = source.slice(toleranceStart, toleranceEnd);
+    const styles = await readStyles();
+    const hitlineStyleStart = styles.indexOf(".connection-hitline");
+    const hitlineStyleEnd = styles.indexOf(".connection-line", hitlineStyleStart);
+    const hitlineStyleBlock = styles.slice(hitlineStyleStart, hitlineStyleEnd);
 
+    expect(toleranceBlock).toContain("const svgViewBox = svg.viewBox.baseVal;");
+    expect(toleranceBlock).toContain("const xTolerance = (svgViewBox.width / rect.width) * CONNECTION_HIT_SCREEN_TOLERANCE;");
+    expect(toleranceBlock).toContain("const yTolerance = (svgViewBox.height / rect.height) * CONNECTION_HIT_SCREEN_TOLERANCE;");
+    expect(toleranceBlock).not.toContain("viewBox.width / rect.width");
+    expect(toleranceBlock).not.toContain("viewBox.height / rect.height");
+    expect(toleranceBlock).not.toContain("Math.max(12");
     expect(hitBlock).toContain("const hitBounds");
     expect(hitBlock).toContain("queryRouteSpatialIndex(routedEdgeSpatialIndex, hitBounds)");
     expect(hitBlock).not.toContain("renderedRoutedEdges");
+    expect(hitlineStyleBlock).toContain("stroke-width: 18;");
+    expect(hitlineStyleBlock).toContain("vector-effect: non-scaling-stroke");
   });
 
   test("uses graph store layer and adjacency indexes for active layer graphics", async () => {
@@ -3072,7 +3499,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("simplifiedMarkup && showImperativeMultiNodeDragOverlay(simplifiedMarkup)");
     expect(source).toContain("if (imperativeMultiNodeDragActiveRef.current && !dragging)");
     expect(overlayBlock).not.toContain("multiNodeDragDegradedPreview");
-    expect(source).toContain("className={`diagram-canvas ${connectSource ? \"connect-mode\" : \"\"} ${staticDrawing ? \"static-draw-mode\" : \"\"} ${activeDropReady ? \"connect-drop-ready\" : \"\"} ${panning ? \"panning\" : \"\"} ${multiNodeDragging ? \"multi-node-dragging\" : \"\"}`}");
+    expect(source).toContain("className={`diagram-canvas ${connectSource ? \"connect-mode\" : \"\"} ${staticDrawing ? \"static-draw-mode\" : \"\"} ${libraryPlacement ? \"library-place-mode\" : \"\"} ${activeDropReady ? \"connect-drop-ready\" : \"\"} ${panning ? \"panning\" : \"\"} ${multiNodeDragging ? \"multi-node-dragging\" : \"\"}`}");
     expect(source).toContain("<g className=\"canvas-content\">");
     expect(source).not.toContain("if (multiNodeDragging && draggingNodeIdSet.has(node.id)) {\n                return null;");
     expect(source).toContain("{visibleSelectedGroupLayoutUnits.map");
@@ -3118,14 +3545,14 @@ describe("graph inspector panel", () => {
     const previewEnd = source.indexOf("const renderMultiNodeDragOverlay", previewStart);
     const previewBlock = source.slice(previewStart, previewEnd);
     const renderStart = source.indexOf("{detailedViewportNodes.map((node) =>");
-    const renderEnd = source.indexOf("{selected && focused", renderStart);
+    const renderEnd = source.indexOf("{renderMultiNodeDragOverlay()}", renderStart);
     const nodeRenderBlock = source.slice(renderStart, renderEnd);
 
     expect(source).toContain("const nodeHasUprightBoundsContent");
     expect(previewBlock).toContain("const includeUprightContentInBounds = nodeHasUprightBoundsContent(");
     expect(previewBlock).toContain("nodeVisualInteractionBounds(node, originalPosition, 0, includeUprightContentInBounds)");
     expect(previewBlock).not.toContain("nodeTransformedHalfExtents(node, true)");
-    expect(nodeRenderBlock).toContain("const includeUprightContentInHandles = nodeHasUprightBoundsContent(");
+    expect(nodeRenderBlock).toContain("nodeScaleHandleControlPoint(node, handle, handleGapX, handleGapY, uprightStaticSelectionOutline)");
   });
 
   test("snapshots drag and transform routes from current rotated node geometry instead of stale routed cache", async () => {
@@ -3714,7 +4141,7 @@ describe("graph inspector panel", () => {
     const constantsStart = source.indexOf("const CANVAS_LOD_NODE_DETAIL_LIMIT");
     const constantsEnd = source.indexOf("const CANVAS_FLOATING_TOOLBAR_GAP", constantsStart);
     const constantsBlock = source.slice(constantsStart, constantsEnd);
-    const lodStart = source.indexOf("const useSimplifiedCanvasNodes =");
+    const lodStart = source.indexOf("const viewportNodeLodScreenSize = useMemo(");
     const lodEnd = source.indexOf("const connectPreviewDom", lodStart);
     const lodBlock = source.slice(lodStart, lodEnd);
     const routeStart = source.indexOf("const selected = activeSelectedEdgeSet.has(edge.id);");
@@ -3735,9 +4162,14 @@ describe("graph inspector panel", () => {
 
     expect(constantsBlock).toContain("const CANVAS_LOD_NODE_DETAIL_LIMIT = 650;");
     expect(constantsBlock).toContain("const CANVAS_LOD_MAX_ZOOM_PERCENT = 120;");
+    expect(constantsBlock).toContain("const CANVAS_LOD_MAX_NODE_SCREEN_SIZE = 18;");
+    expect(constantsBlock).toContain("const CANVAS_LOD_NODE_SCREEN_SAMPLE_LIMIT = 96;");
     expect(constantsBlock).toContain("const CANVAS_LOD_SELECTED_DETAIL_LIMIT = 12;");
+    expect(source).toContain("function estimatedViewportNodeScreenSize(");
+    expect(lodBlock).toContain("const viewportNodeLodScreenSize = useMemo(");
     expect(lodBlock).toContain("viewportNodes.length > CANVAS_LOD_NODE_DETAIL_LIMIT");
     expect(lodBlock).toContain("currentZoomPercent <= CANVAS_LOD_MAX_ZOOM_PERCENT");
+    expect(lodBlock).toContain("viewportNodeLodScreenSize <= CANVAS_LOD_MAX_NODE_SCREEN_SIZE");
     expect(lodBlock).toContain("const useSimplifiedSelectedCanvasNodes =");
     expect(lodBlock).toContain("selectedNodeIdSet.size > CANVAS_LOD_SELECTED_DETAIL_LIMIT");
     expect(lodBlock).toContain("const detailedViewportNodes = useMemo");
@@ -4136,6 +4568,63 @@ describe("graph inspector panel", () => {
     expect(confirmBlock).not.toContain("setHasUnsavedChanges(true)");
   });
 
+  test("places library devices and templates through click-to-draw mode instead of requiring drag", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const templatePanelStart = source.indexOf("const renderTemplateLibraryPanel = () => (");
+    const templatePanelEnd = source.indexOf("const renderLibraryPanel = () => (", templatePanelStart);
+    const templatePanelBlock = source.slice(templatePanelStart, templatePanelEnd);
+    const libraryButtonStart = source.indexOf("const renderLibraryTemplateButton = ");
+    const libraryButtonEnd = source.indexOf("const renderLibraryFlyout = ", libraryButtonStart);
+    const libraryButtonBlock = source.slice(libraryButtonStart, libraryButtonEnd);
+    const pointerMoveStart = source.indexOf("const handlePointerMove = (event: PointerEvent<SVGSVGElement>)");
+    const pointerMoveEnd = source.indexOf("if (nodeLabelRotateDrag", pointerMoveStart);
+    const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
+    const canvasStart = source.indexOf("className={`diagram-canvas");
+    const pointerDownStart = source.indexOf("onPointerDown={(event) => {", canvasStart);
+    const pointerDownEnd = source.indexOf("if (staticDrawing)", pointerDownStart);
+    const pointerDownBlock = source.slice(pointerDownStart, pointerDownEnd);
+    const contextMenuStart = source.indexOf("onContextMenu={(event) => {", canvasStart);
+    const contextMenuEnd = source.indexOf("if (connectSource)", contextMenuStart);
+    const contextMenuBlock = source.slice(contextMenuStart, contextMenuEnd);
+    const keyHandlerStart = source.indexOf("const handleKeyDown = (event: KeyboardEvent)");
+    const keyHandlerEnd = source.indexOf("if (staticDrawing && isCanvasShortcutTarget)", keyHandlerStart);
+    const keyHandlerBlock = source.slice(keyHandlerStart, keyHandlerEnd);
+
+    expect(source).toContain("type LibraryPlacementState =");
+    expect(source).toContain("const [libraryPlacement, setLibraryPlacement]");
+    expect(source).toContain("const startLibraryDevicePlacement");
+    expect(source).toContain("const startLibraryGraphTemplatePlacement");
+    expect(source).toContain("const cancelLibraryPlacement");
+    expect(source).toContain("const commitLibraryPlacementAtPoint");
+    expect(source).toContain("const updateLibraryPlacementPreview");
+    expect(source).toContain("const renderLibraryPlacementPreview");
+    expect(libraryButtonBlock).toContain("onClick={() => startLibraryDevicePlacement(item)}");
+    expect(libraryButtonBlock).toContain("onContextMenu={(event) => {");
+    expect(libraryButtonBlock).toContain("cancelLibraryPlacement()");
+    expect(templatePanelBlock).toContain("onClick={() => startLibraryGraphTemplatePlacement(template)}");
+    expect(templatePanelBlock).toContain("onContextMenu={(event) => {");
+    expect(templatePanelBlock).toContain("cancelLibraryPlacement()");
+    expect(pointerMoveBlock).toContain("updateLibraryPlacementPreview(pointer)");
+    expect(pointerDownBlock).toContain("if (libraryPlacement)");
+    expect(pointerDownBlock).toContain("commitLibraryPlacementAtPoint(pointer)");
+    expect(contextMenuBlock).toContain("if (libraryPlacement)");
+    expect(contextMenuBlock).toContain("cancelLibraryPlacement()");
+    expect(keyHandlerBlock).toContain("if (libraryPlacement && isCanvasShortcutTarget)");
+    expect(source).toContain("{renderLibraryPlacementPreview()}");
+    expect(styles).toContain(".library-placement-preview");
+  });
+
+  test("uses a crosshair cursor over all canvas content while drawing", async () => {
+    const styles = await readStyles();
+    const drawingCursorBlock = cssRuleBlock(styles, ".diagram-canvas.connect-mode:not(.connect-drop-ready),");
+
+    expect(drawingCursorBlock).toContain(".diagram-canvas.connect-mode:not(.connect-drop-ready) *");
+    expect(drawingCursorBlock).toContain(".diagram-canvas.static-draw-mode *");
+    expect(drawingCursorBlock).toContain(".diagram-canvas.library-place-mode *");
+    expect(drawingCursorBlock).toContain("cursor: crosshair !important;");
+  });
+
   test("routes line-like static symbols through an interactive canvas drawing interface", async () => {
     const source = await readAppSource();
     const model = await readModelSource();
@@ -4143,6 +4632,9 @@ describe("graph inspector panel", () => {
     const dropStart = source.indexOf("const handleDrop =");
     const dropEnd = source.indexOf("const handleNodePointerDown", dropStart);
     const dropBlock = source.slice(dropStart, dropEnd);
+    const placeStart = source.indexOf("const placeLibraryDeviceAtPoint =");
+    const placeEnd = source.indexOf("const commitLibraryPlacementAtPoint", placeStart);
+    const placeBlock = source.slice(placeStart, placeEnd);
     const pointerMoveStart = source.indexOf("const handlePointerMove = (event: PointerEvent<SVGSVGElement>)");
     const pointerMoveEnd = source.indexOf("if (nodeLabelRotateDrag", pointerMoveStart);
     const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
@@ -4179,8 +4671,9 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const updateInteractiveStaticDrawingPreview");
     expect(source).toContain("const renderInteractiveStaticDrawingPreview");
     expect(source).toContain("function staticDrawPointsForNode");
-    expect(dropBlock).toContain("isInteractiveStaticDrawingKind(kind)");
-    expect(dropBlock).toContain("startInteractiveStaticDrawing(template, pointerPosition)");
+    expect(dropBlock).toContain("placeLibraryDeviceAtPoint(template");
+    expect(placeBlock).toContain("isInteractiveStaticDrawingKind(kind)");
+    expect(placeBlock).toContain("startInteractiveStaticDrawing(template, pointerPosition)");
     expect(pointerMoveBlock).toContain("updateInteractiveStaticDrawingPreview(pointer)");
     expect(pointerDownBlock).toContain("appendStaticDrawingPoint(pointer");
     expect(keyHandlerBlock).toContain("finishInteractiveStaticDrawing()");
@@ -4195,6 +4688,9 @@ describe("graph inspector panel", () => {
     const dropStart = source.indexOf("const handleDrop =");
     const dropEnd = source.indexOf("const handleNodePointerDown", dropStart);
     const dropBlock = source.slice(dropStart, dropEnd);
+    const placeStart = source.indexOf("const placeLibraryDeviceAtPoint =");
+    const placeEnd = source.indexOf("const commitLibraryPlacementAtPoint", placeStart);
+    const placeBlock = source.slice(placeStart, placeEnd);
     const staticDrawingStart = source.indexOf("const startInteractiveStaticDrawing");
     const staticDrawingEnd = source.indexOf("const startSidePanelResize", staticDrawingStart);
     const staticDrawingBlock = source.slice(staticDrawingStart, staticDrawingEnd);
@@ -4205,8 +4701,9 @@ describe("graph inspector panel", () => {
     expect(model).toContain("export function isStaticBoxLikeKind");
     expect(model).toContain("export function createStaticBoxNodeFromDrawing");
     expect(source).toContain("isStaticBoxLikeKind");
-    expect(dropBlock).toContain("isStaticBoxLikeKind(kind)");
-    expect(dropBlock).toContain("startInteractiveStaticDrawing(template, pointerPosition)");
+    expect(dropBlock).toContain("placeLibraryDeviceAtPoint(template");
+    expect(placeBlock).toContain("isStaticBoxLikeKind(kind)");
+    expect(placeBlock).toContain("startInteractiveStaticDrawing(template, pointerPosition)");
     expect(staticDrawingBlock).toContain("createStaticBoxNodeFromDrawing(staticDrawing.template");
     expect(staticDrawingBlock).toContain("renderStaticBoxDrawingPreview");
     expect(selectedPanelBlock).toContain("isStaticBoxLikeNode(inspectorSelectedNode)");
@@ -4473,14 +4970,17 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const pendingBackendSchemesPayloadRef = useRef<string | null>(null)");
     expect(source).toContain("const backendSchemesLoadTokenRef = useRef(0)");
     expect(source).toContain("const schemesChangedBeforeBackendLoadRef = useRef(false)");
+    expect(source).toContain("const startupHadStoredSchemesRef = useRef(Boolean(initialStoredSchemesPayload))");
+    expect(source).toContain("shouldPreferLocalSchemesOverBackend(");
     expect(source).toContain("const latestSchemesRef = useRef<SavedSchemeRecord[]>(initialSavedSchemes)");
     expect(setterBlock).toContain("schemesChangedBeforeBackendLoadRef.current = true");
     expect(setterBlock).toContain("setSchemesState(value)");
     expect(backendLoadBlock).toContain("const localChangedBeforeBackendLoad = schemesChangedBeforeBackendLoadRef.current");
+    expect(backendLoadBlock).toContain("const localSchemesShouldWin = shouldPreferLocalSchemesOverBackend(");
     expect(backendLoadBlock).toContain("const loadToken = ++backendSchemesLoadTokenRef.current");
     expect(backendLoadBlock).toContain("if (loadToken !== backendSchemesLoadTokenRef.current)");
     expect(backendLoadBlock).toContain("const currentSchemesPayload = serializeSchemesForStorage(latestSchemesRef.current)");
-    expect(backendLoadBlock).toContain("if (localChangedBeforeBackendLoad)");
+    expect(backendLoadBlock).toContain("if (localChangedBeforeBackendLoad || localSchemesShouldWin)");
     expect(backendLoadBlock).toContain("persistBackendSchemesPayload(pendingPayload)");
     expect(backendLoadBlock).toContain("setSchemesState(backendSchemes)");
     expect(schemePersistBlock).toContain("suppressNextBackendSchemeSyncRef.current && normalizedSchemesPayload === lastPersistedSchemesPayloadRef.current");
@@ -4494,6 +4994,38 @@ describe("graph inspector panel", () => {
     expect(persistHelperBlock).toContain("pendingBackendSchemesPayloadRef.current = null");
     expect(persistHelperBlock).toContain("writeOperationLog(\"方案/模型目录已自动保存到后台\")");
     expect(schemePersistBlock).not.toContain("if (suppressNextBackendSchemeSyncRef.current) {\n        suppressNextBackendSchemeSyncRef.current = false;\n        return;\n      }\n      void saveBackendSchemesPayload");
+  });
+
+  test("keeps unsaved page-refresh recovery separate from manual draft saving", async () => {
+    const source = await readAppSource();
+    const initialStateStart = source.indexOf("const initialProjectSources = useMemo(() => {");
+    const initialStateEnd = source.indexOf("const initialLayeredProject = useMemo", initialStateStart);
+    const initialStateBlock = source.slice(initialStateStart, initialStateEnd);
+    const recoveryPersistStart = source.indexOf("const persistRefreshRecoveryNow = () => {");
+    const recoveryPersistEnd = source.indexOf("useEffect(() => {\n    const handleBeforeUnload", recoveryPersistStart);
+    const recoveryPersistBlock = source.slice(recoveryPersistStart, recoveryPersistEnd);
+    const unloadStart = source.indexOf("const handleBeforeUnload = (event: BeforeUnloadEvent) => {");
+    const unloadEnd = source.indexOf("window.addEventListener(\"beforeunload\"", unloadStart);
+    const unloadBlock = source.slice(unloadStart, unloadEnd);
+    const saveDraftStart = source.indexOf("const saveDraftProject =");
+    const saveDraftEnd = source.indexOf("const setActiveLayer", saveDraftStart);
+    const saveDraftBlock = source.slice(saveDraftStart, saveDraftEnd);
+
+    expect(source).toContain('const REFRESH_RECOVERY_STORAGE_KEY = "power-system-refresh-recovery";');
+    expect(source).toContain("function readRefreshRecoveryProject()");
+    expect(source).toContain("function writeRefreshRecoveryProject(state: RefreshRecoveryProjectState)");
+    expect(source).toContain("window.sessionStorage.setItem(REFRESH_RECOVERY_STORAGE_KEY");
+    expect(source).toContain("window.sessionStorage.removeItem(REFRESH_RECOVERY_STORAGE_KEY)");
+    expect(initialStateBlock).toContain("const refreshRecovery = readRefreshRecoveryProject();");
+    expect(initialStateBlock).toContain("draft: refreshRecovery ?? readDraftProject()");
+    expect(source).toContain("const [hasUnsavedChanges, setHasUnsavedChanges] = useState(() => initialProjectSources.recoveredFromRefresh);");
+    expect(recoveryPersistBlock).toContain("if (!saveRequiredRef.current)");
+    expect(recoveryPersistBlock).toContain("writeRefreshRecoveryProject(recoveryProject)");
+    expect(unloadBlock).toContain("persistRefreshRecoveryNow();");
+    expect(source).toContain('window.addEventListener("pagehide", persistRefreshRecoveryNow);');
+    expect(source).toContain('window.addEventListener("vite:beforeFullReload", persistRefreshRecoveryNow);');
+    expect(saveDraftBlock).not.toContain("REFRESH_RECOVERY_STORAGE_KEY");
+    expect(source).not.toContain("window.localStorage.setItem(REFRESH_RECOVERY_STORAGE_KEY");
   });
 
   test("persists custom device library definitions through the backend", async () => {

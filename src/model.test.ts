@@ -122,9 +122,12 @@ import {
   voltageLevelColor,
   boundaryBusInternalConnectorSegment,
   boundaryBusInternalConnectorStrokeWidth,
+  CANVAS_GRID_SIZE,
   DEFAULT_COLOR_PALETTE,
   STATIC_DRAW_POINTS_PARAM,
   serializeProject,
+  snapNodePositionToGrid,
+  snapPointToGrid,
   synchronizeBusTerminalsWithEdges,
   deserializeProject,
   type Edge,
@@ -2515,6 +2518,16 @@ describe("power system model", () => {
     expect(position.y).toBeLessThanOrEqual(1024 - (node.size.height * Math.abs(node.scaleY ?? node.scale)) / 2);
   });
 
+  test("snaps graphic placement to a 5px canvas grid by body top-left", () => {
+    const node = createDefaultNode("ac-source", { x: 123, y: 117 });
+    const position = snapNodePositionToGrid(node, node.position);
+
+    expect(CANVAS_GRID_SIZE).toBe(5);
+    expect(snapPointToGrid({ x: 112.4, y: 118.6 })).toEqual({ x: 110, y: 120 });
+    expect((position.x - (node.size.width * Math.abs(getNodeScaleX(node))) / 2) % CANVAS_GRID_SIZE).toBe(0);
+    expect((position.y - (node.size.height * Math.abs(getNodeScaleY(node))) / 2) % CANVAS_GRID_SIZE).toBe(0);
+  });
+
   test("allows canvas edges to be panned to the center of the SVG view box", () => {
     const bounds = { width: 1980, height: 1024 };
 
@@ -2564,11 +2577,11 @@ describe("power system model", () => {
   test("scales keyboard move steps with the current view box zoom", () => {
     const bounds = { width: 1980, height: 1024 };
 
-    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 1980, height: 1024 }, bounds)).toBe(6);
-    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 990, height: 512 }, bounds)).toBe(3);
-    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 3960, height: 2048 }, bounds)).toBe(12);
-    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 120, height: 80 }, bounds)).toBe(1);
-    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 990, height: 512 }, bounds, 24)).toBe(12);
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 1980, height: 1024 }, bounds)).toBe(5);
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 990, height: 512 }, bounds)).toBe(5);
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 3960, height: 2048 }, bounds)).toBe(10);
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 120, height: 80 }, bounds)).toBe(5);
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 990, height: 512 }, bounds, 25)).toBe(15);
   });
 
   test("reports the current view box zoom as a percentage", () => {

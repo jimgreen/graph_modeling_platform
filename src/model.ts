@@ -449,6 +449,7 @@ export type ProjectFile = {
 
 export const DEFAULT_MODEL_LAYER_ID = "layer-default";
 export const DEFAULT_MODEL_LAYER_NAME = "默认图层";
+export const CANVAS_GRID_SIZE = 5;
 export const STATIC_DRAW_POINTS_PARAM = "drawPoints";
 export const INTERACTIVE_STATIC_DRAWING_KINDS = [
   "static-line",
@@ -4690,6 +4691,26 @@ export function clampPointToBounds(point: Point, bounds: CanvasBounds): Point {
   };
 }
 
+export function snapValueToGrid(value: number, gridSize = CANVAS_GRID_SIZE): number {
+  const safeGridSize = Math.max(1, Math.abs(gridSize || CANVAS_GRID_SIZE));
+  return Math.round(value / safeGridSize) * safeGridSize;
+}
+
+export function snapPointToGrid(point: Point, gridSize = CANVAS_GRID_SIZE): Point {
+  return {
+    x: snapValueToGrid(point.x, gridSize),
+    y: snapValueToGrid(point.y, gridSize)
+  };
+}
+
+export function snapNodePositionToGrid(node: ModelNode, position = node.position, gridSize = CANVAS_GRID_SIZE): Point {
+  const bodyBox = bodyVisualBoxForNode(node, 0, position);
+  return {
+    x: Math.round(position.x + snapValueToGrid(bodyBox.left, gridSize) - bodyBox.left),
+    y: Math.round(position.y + snapValueToGrid(bodyBox.top, gridSize) - bodyBox.top)
+  };
+}
+
 export function clampEdgeGeometryToBounds(edge: Edge, bounds: CanvasBounds): Edge {
   let changed = false;
   const clampOptionalPoint = (point?: Point) => {
@@ -4835,7 +4856,7 @@ function viewBoxScaleRatio(viewBox: ViewBox, bounds: CanvasBounds): number {
 export function keyboardMoveStepForViewBox(viewBox: ViewBox, bounds: CanvasBounds, baseStep = 6): number {
   const safeBase = Math.max(1, Math.abs(baseStep));
   const zoomRatio = viewBoxScaleRatio(viewBox, bounds);
-  return Math.max(1, Math.round(safeBase * zoomRatio));
+  return Math.max(CANVAS_GRID_SIZE, snapValueToGrid(safeBase * zoomRatio));
 }
 
 export function viewBoxZoomPercent(viewBox: ViewBox, bounds: CanvasBounds): number {

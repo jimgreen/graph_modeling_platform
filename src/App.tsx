@@ -1,4 +1,5 @@
 import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, memo, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, type SetStateAction, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal, flushSync } from "react-dom";
 import {
   AlignEndHorizontal,
   AlignEndVertical,
@@ -78,6 +79,7 @@ import {
   createNodeFromTemplate,
   createStaticBoxNodeFromDrawing,
   containerRelationNameKey,
+  CANVAS_GRID_SIZE,
   CUSTOM_DEVICE_TEMPLATE_KEY,
   CUSTOM_PARAM_DEFINITIONS_KEY,
   DEFAULT_COLOR_PALETTE,
@@ -121,6 +123,7 @@ import {
   createModelLayer,
   DEFAULT_MODEL_LAYER_ID,
   filterProjectByVisibleLayers,
+  normalizeModelLayers,
   normalizeDeviceIndexCounters,
   normalizeNodeTerminalsByTemplate,
   normalizeProjectLayers,
@@ -157,6 +160,8 @@ import {
   rerouteEdgesAroundMovedNodes,
   resolveStraightBusSlideEndpoint,
   resolveStraightBusSlideEndpointToPoint,
+  snapNodePositionToGrid,
+  snapPointToGrid,
   synchronizeBusTerminalsWithEdges,
   validateTopology,
   validateConnectionEndpointRules,
@@ -298,6 +303,9 @@ type StaticDrawingState = {
   points: Point[];
   previewPoint: Point;
 };
+type LibraryPlacementState =
+  | { kind: "device"; template: DeviceTemplate; previewPoint: Point | null }
+  | { kind: "graph-template"; template: GraphTemplate; previewPoint: Point | null };
 type AttributeLibrary = string;
 type CustomComponentTypeDefinition = {
   name: string;
@@ -312,6 +320,7 @@ type CustomComponentTreeSelection =
   | { kind: "componentType"; attributeLibraryName: AttributeLibrary; section: string }
   | { kind: "component"; attributeLibraryName: AttributeLibrary; section: string; templateKind: string };
 type EdgeEndpoint = "source" | "target";
+type ComponentLibraryDisplayMode = "expanded" | "right";
 type ScaleHandleKind = "scale-x" | "scale-y" | "scale-both";
 type GroupTransformNodeSnapshot = Pick<ModelNode, "position" | "rotation" | "scale" | "scaleX" | "scaleY">;
 type GroupTransformEdgeRouteSnapshot = {
@@ -332,6 +341,8 @@ type GroupTransformDrag = {
   originalNodes: Record<string, GroupTransformNodeSnapshot>;
   originalEdgeRoutes: GroupTransformEdgeRouteSnapshot[];
   previewPoint?: Point;
+  handleXDirection?: -1 | 0 | 1;
+  handleYDirection?: -1 | 0 | 1;
   proportionalScale?: boolean;
   historyCaptured?: boolean;
 };
@@ -344,6 +355,7 @@ type SingleTransformDrag = {
   previewPoint?: Point;
   handleXDirection?: -1 | 0 | 1;
   handleYDirection?: -1 | 0 | 1;
+  uprightStaticSelection?: boolean;
   proportionalScale?: boolean;
   historyCaptured?: boolean;
 };
@@ -500,8 +512,12 @@ function groupTransformGeometry(drag: GroupTransformDrag, point: Point, options?
 
   const halfWidth = Math.max(1, (drag.bounds.right - drag.bounds.left) / 2);
   const halfHeight = Math.max(1, (drag.bounds.bottom - drag.bounds.top) / 2);
-  const rawScaleX = normalizeScaleValue(Math.abs(point.x - drag.center.x) / halfWidth);
-  const rawScaleY = normalizeScaleValue(Math.abs(point.y - drag.center.y) / halfHeight);
+  const rawScaleX = drag.handleXDirection
+    ? normalizeScaleValue(Math.max(0, 1 + ((point.x - drag.startPoint.x) * drag.handleXDirection) / halfWidth))
+    : 1;
+  const rawScaleY = drag.handleYDirection
+    ? normalizeScaleValue(Math.max(0, 1 + ((point.y - drag.startPoint.y) * drag.handleYDirection) / halfHeight))
+    : 1;
   const proportionalScale = drag.proportionalScale || drag.kind === "scale-both";
   const unitScale = proportionalScale
     ? drag.kind === "scale-x"
@@ -619,6 +635,14 @@ type CanvasResizeState = {
   startClientY: number;
   startWidth: number;
   startHeight: number;
+  startDisplayOffsetX: number;
+  startDisplayOffsetY: number;
+  startScrollLeft: number;
+  startScrollTop: number;
+  startScrollSurfaceWidth: number;
+  startScrollSurfaceHeight: number;
+  startHorizontalScrollbarsActive: boolean;
+  startVerticalScrollbarsActive: boolean;
   unitsPerCssX: number;
   unitsPerCssY: number;
   minBounds: CanvasBounds;
@@ -814,6 +838,10 @@ type DraftProjectState = {
   nodes: ModelNode[];
   edges: Edge[];
 };
+type RefreshRecoveryProjectState = DraftProjectState & {
+  dirty: true;
+  savedAt: string;
+};
 type ImageAsset = {
   id: string;
   name: string;
@@ -838,6 +866,8 @@ type CanvasRenderOptions = CanvasBounds & {
   backgroundImage?: string;
   colorDisplayMode?: ColorDisplayMode;
   colorPalette?: ColorPalette;
+  layers?: ModelLayer[];
+  activeLayerId?: string;
 };
 type BackendSchemesResponse = {
   schemes: SavedSchemeRecord[];
@@ -960,8 +990,11 @@ const CANVAS_MINIMAP_MAX_NODE_MARKS = 360;
 const CANVAS_MINIMAP_MAX_ROUTE_MARKS = 160;
 const CANVAS_LOD_NODE_DETAIL_LIMIT = 650;
 const CANVAS_LOD_MAX_ZOOM_PERCENT = 120;
+const CANVAS_LOD_MAX_NODE_SCREEN_SIZE = 18;
+const CANVAS_LOD_NODE_SCREEN_SAMPLE_LIMIT = 96;
 const CANVAS_LOD_SELECTED_DETAIL_LIMIT = 12;
 const CANVAS_LOD_MARKUP_CHUNK_SIZE = 64;
+const CONNECTION_HIT_SCREEN_TOLERANCE = 18;
 const CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT = 24;
 const CANVAS_FLOATING_TOOLBAR_GAP = 7;
 const NODE_FLOATING_TOOLBAR_WIDTH = 224;
@@ -1230,6 +1263,7 @@ const PROJECT_STORAGE_KEY = "power-system-model-projects";
 const SCHEME_STORAGE_KEY = "power-system-model-schemes";
 const ACTIVE_PROJECT_STORAGE_KEY = "power-system-active-project";
 const DRAFT_PROJECT_STORAGE_KEY = "power-system-current-draft";
+const REFRESH_RECOVERY_STORAGE_KEY = "power-system-refresh-recovery";
 const EMPTY_VOLTAGE_COLOR_KEY_SET = new Set<string>();
 const IMAGE_STORAGE_KEY = "power-system-image-assets";
 const CUSTOM_DEVICE_LIBRARY_STORAGE_KEY = "power-system-custom-device-library";
@@ -1340,6 +1374,16 @@ function renderedCanvasFullyFitsFrame(frameRect: RectLike, svgRect: RectLike) {
     svgRect.top >= frameRect.top - 1 &&
     svgRect.bottom <= frameRect.bottom + 1;
 }
+function canvasFrameViewportSizeChanged(
+  frame: Pick<HTMLElement, "clientWidth" | "clientHeight"> | null,
+  viewportSize: Pick<CanvasBounds, "width" | "height">
+) {
+  return Boolean(
+    frame &&
+    (Math.abs(frame.clientWidth - viewportSize.width) > 1 ||
+      Math.abs(frame.clientHeight - viewportSize.height) > 1)
+  );
+}
 function visibleCanvasViewBoxFromRects(frameRect: RectLike, svgRect: RectLike, viewBox: CanvasViewBox): CanvasViewBox {
   if (svgRect.width <= 0 || svgRect.height <= 0 || viewBox.width <= 0 || viewBox.height <= 0) {
     return viewBox;
@@ -1366,6 +1410,26 @@ function canvasScrollScaleFromViewBox(viewBox: Pick<CanvasViewBox, "width" | "he
     y: bounds.height > 0 && viewBox.height > 0 ? bounds.height / viewBox.height : 1
   };
 }
+function estimatedViewportNodeScreenSize(
+  nodes: readonly ModelNode[],
+  scale: { x: number; y: number },
+  sampleLimit = CANVAS_LOD_NODE_SCREEN_SAMPLE_LIMIT
+) {
+  if (nodes.length === 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const step = Math.max(1, Math.ceil(nodes.length / sampleLimit));
+  let maxSize = 0;
+  let sampled = 0;
+  for (let index = 0; index < nodes.length && sampled < sampleLimit; index += step) {
+    const node = nodes[index];
+    const width = node.size.width * Math.abs(getNodeScaleX(node)) * scale.x;
+    const height = node.size.height * Math.abs(getNodeScaleY(node)) * scale.y;
+    maxSize = Math.max(maxSize, width, height);
+    sampled += 1;
+  }
+  return maxSize;
+}
 function canvasScrollEdgeInset(viewportSize: number) {
   return Math.max(CANVAS_FRAME_INSET, Math.round(viewportSize * CANVAS_SCROLL_EDGE_VIEWPORT_RATIO));
 }
@@ -1377,6 +1441,23 @@ function canvasDisplayOffset(displaySize: number, surfaceSize: number, viewportS
   return scrollActive
     ? canvasScrollEdgeInset(viewportSize)
     : Math.max(CANVAS_FRAME_INSET, Math.round((surfaceSize - displaySize) / 2));
+}
+function canvasResizeEdgeAnchorsAxis(edge: CanvasResizeEdge, axis: "x" | "y") {
+  return axis === "x"
+    ? edge === "right" || edge === "corner"
+    : edge === "bottom" || edge === "corner";
+}
+function canvasResizeAnchoredDisplayOffset(offset: number, drag: CanvasResizeState, axis: "x" | "y") {
+  if (!drag) {
+    return Math.round(offset);
+  }
+  return Math.round(axis === "x" ? drag.startDisplayOffsetX : drag.startDisplayOffsetY);
+}
+function canvasResizeKeepsScrollRange(drag: CanvasResizeState, axis: "x" | "y") {
+  if (!drag) {
+    return false;
+  }
+  return axis === "x" ? drag.startHorizontalScrollbarsActive : drag.startVerticalScrollbarsActive;
 }
 function clampCanvasNoScrollOffset(
   offset: number,
@@ -1850,9 +1931,16 @@ function normalizeSavedSchemeIndexes(scheme: SavedSchemeRecord): SavedSchemeReco
   };
 }
 
-function readSavedSchemes(): SavedSchemeRecord[] {
+function readStoredSchemesPayload(): string | null {
   try {
-    const raw = window.localStorage.getItem(SCHEME_STORAGE_KEY);
+    return window.localStorage.getItem(SCHEME_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function readSavedSchemes(raw = readStoredSchemesPayload()): SavedSchemeRecord[] {
+  try {
     if (raw) {
       const parsed = JSON.parse(raw) as SavedSchemeRecord[];
       if (Array.isArray(parsed)) {
@@ -1866,6 +1954,39 @@ function readSavedSchemes(): SavedSchemeRecord[] {
   }
 }
 
+function normalizeStoredDraftProject(parsed: DraftProjectState): DraftProjectState | null {
+  if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
+    return null;
+  }
+  return {
+    ...parsed,
+    projectName: normalizeLegacyPowerSystemLabel(parsed.projectName),
+    ...normalizeProjectLayers({
+      version: 1,
+      name: parsed.projectName,
+      layers: parsed.layers,
+      activeLayerId: parsed.activeLayerId,
+      groups: parsed.groups,
+      nodes: parsed.nodes.map(normalizeNodeTerminalsByTemplate),
+      edges: parsed.edges
+    }),
+    activeProjectId: parsed.activeProjectId,
+    activeSchemeId: parsed.activeSchemeId,
+    canvasWidth: parsed.canvasWidth,
+    canvasHeight: parsed.canvasHeight,
+    canvasBackgroundColor: parsed.canvasBackgroundColor,
+    canvasBackgroundImage: parsed.canvasBackgroundImage,
+    canvasBackgroundImageAssetId: parsed.canvasBackgroundImageAssetId,
+    backgroundProjectId: parsed.backgroundProjectId,
+    backgroundLayerIds: parsed.backgroundLayerIds,
+    powerUnit: parsed.powerUnit,
+    voltageUnit: parsed.voltageUnit,
+    currentUnit: parsed.currentUnit,
+    powerBaseValue: parsed.powerBaseValue,
+    deviceIndexCounters: parsed.deviceIndexCounters
+  };
+}
+
 function readDraftProject(): DraftProjectState | null {
   try {
     const raw = window.localStorage.getItem(DRAFT_PROJECT_STORAGE_KEY);
@@ -1873,38 +1994,41 @@ function readDraftProject(): DraftProjectState | null {
       return null;
     }
     const parsed = JSON.parse(raw) as DraftProjectState;
-    if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
-      return null;
-    }
-    return {
-      ...parsed,
-      projectName: normalizeLegacyPowerSystemLabel(parsed.projectName),
-      ...normalizeProjectLayers({
-        version: 1,
-        name: parsed.projectName,
-        layers: parsed.layers,
-        activeLayerId: parsed.activeLayerId,
-        groups: parsed.groups,
-        nodes: parsed.nodes.map(normalizeNodeTerminalsByTemplate),
-        edges: parsed.edges
-      }),
-      activeProjectId: parsed.activeProjectId,
-      activeSchemeId: parsed.activeSchemeId,
-      canvasWidth: parsed.canvasWidth,
-      canvasHeight: parsed.canvasHeight,
-      canvasBackgroundColor: parsed.canvasBackgroundColor,
-      canvasBackgroundImage: parsed.canvasBackgroundImage,
-      canvasBackgroundImageAssetId: parsed.canvasBackgroundImageAssetId,
-      backgroundProjectId: parsed.backgroundProjectId,
-      backgroundLayerIds: parsed.backgroundLayerIds,
-      powerUnit: parsed.powerUnit,
-      voltageUnit: parsed.voltageUnit,
-      currentUnit: parsed.currentUnit,
-      powerBaseValue: parsed.powerBaseValue,
-      deviceIndexCounters: parsed.deviceIndexCounters
-    };
+    return normalizeStoredDraftProject(parsed);
   } catch {
     return null;
+  }
+}
+
+function readRefreshRecoveryProject(): DraftProjectState | null {
+  try {
+    const raw = window.sessionStorage.getItem(REFRESH_RECOVERY_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as RefreshRecoveryProjectState;
+    if (!parsed.dirty) {
+      return null;
+    }
+    return normalizeStoredDraftProject(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function writeRefreshRecoveryProject(state: RefreshRecoveryProjectState) {
+  try {
+    window.sessionStorage.setItem(REFRESH_RECOVERY_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // 恢复缓存只是防止页面自动刷新丢失未保存内容，写入失败不阻断编辑。
+  }
+}
+
+function clearRefreshRecoveryProject() {
+  try {
+    window.sessionStorage.removeItem(REFRESH_RECOVERY_STORAGE_KEY);
+  } catch {
+    // 忽略浏览器会话缓存不可写/不可删的情况。
   }
 }
 
@@ -2067,6 +2191,43 @@ function normalizeSchemesForBackend(schemes: SavedSchemeRecord[]): SavedSchemeRe
 
 function serializeSchemesForStorage(schemes: SavedSchemeRecord[]) {
   return JSON.stringify(normalizeSchemesForBackend(schemes));
+}
+
+function savedRecordTimestamp(value: string | undefined) {
+  const timestamp = Date.parse(value ?? "");
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function latestSavedSchemesTimestamp(schemes: SavedSchemeRecord[]) {
+  let latest = 0;
+  for (const scheme of schemes) {
+    latest = Math.max(latest, savedRecordTimestamp(scheme.updatedAt));
+    for (const project of scheme.projects) {
+      latest = Math.max(latest, savedRecordTimestamp(project.updatedAt));
+    }
+  }
+  return latest;
+}
+
+function shouldPreferLocalSchemesOverBackend(options: {
+  localSchemes: SavedSchemeRecord[];
+  backendSchemes: SavedSchemeRecord[];
+  hadStoredLocalSchemes: boolean;
+  recoveredFromRefresh: boolean;
+}) {
+  if (!options.hadStoredLocalSchemes) {
+    return false;
+  }
+  if (serializeSchemesForStorage(options.localSchemes) === serializeSchemesForStorage(options.backendSchemes)) {
+    return false;
+  }
+  if (options.recoveredFromRefresh) {
+    return true;
+  }
+  if (options.backendSchemes.length === 0) {
+    return true;
+  }
+  return latestSavedSchemesTimestamp(options.localSchemes) > latestSavedSchemesTimestamp(options.backendSchemes);
 }
 
 const clonePoint = (point: Point): Point => ({ x: point.x, y: point.y });
@@ -3233,6 +3394,105 @@ function nodeRotateHandleControlPoints(
     stemStart: rotatePointAround({ x: 0, y: -halfHeight - rotateStemStart }, origin, node.rotation),
     stemEnd: rotatePointAround({ x: 0, y: -halfHeight - rotateStemEnd }, origin, node.rotation),
     handle: rotatePointAround({ x: 0, y: -halfHeight - rotateHandleGap }, origin, node.rotation)
+  };
+}
+
+function nodeUprightRotateHandleControlPoints(
+  node: ModelNode,
+  rotateStemStart: number,
+  rotateStemEnd: number,
+  rotateHandleGap: number
+) {
+  const rect = nodeUprightSelectionOutlineRect(node);
+  const halfHeight = rect.height / 2;
+  return {
+    stemStart: { x: 0, y: -halfHeight - rotateStemStart },
+    stemEnd: { x: 0, y: -halfHeight - rotateStemEnd },
+    handle: { x: 0, y: -halfHeight - rotateHandleGap }
+  };
+}
+
+function scaleHandleControlPoint(
+  node: ModelNode,
+  handle: ScaleHandleConfig,
+  handleGapX: number,
+  handleGapY: number
+) {
+  const { halfWidth, halfHeight } = nodeScaledLocalHalfExtents(node);
+  const localPoint = {
+    x: handle.xDirection === 0 ? 0 : handle.xDirection * (halfWidth + handleGapX),
+    y: handle.yDirection === 0 ? 0 : handle.yDirection * (halfHeight + handleGapY)
+  };
+  return rotatePointAround(localPoint, { x: 0, y: 0 }, node.rotation);
+}
+
+function nodeScaleHandleControlPoint(
+  node: ModelNode,
+  handle: ScaleHandleConfig,
+  handleGapX: number,
+  handleGapY: number,
+  uprightStaticSelectionOutline = false
+) {
+  if (!uprightStaticSelectionOutline) {
+    return scaleHandleControlPoint(node, handle, handleGapX, handleGapY);
+  }
+  const rect = nodeUprightSelectionOutlineRect(node);
+  return {
+    x: handle.xDirection === 0 ? 0 : handle.xDirection * (rect.width / 2 + handleGapX),
+    y: handle.yDirection === 0 ? 0 : handle.yDirection * (rect.height / 2 + handleGapY)
+  };
+}
+
+function scaleHandleCursorClass(handle: ScaleHandleConfig, rotationDegrees: number) {
+  const direction = rotatePointAround(
+    { x: handle.xDirection, y: handle.yDirection },
+    { x: 0, y: 0 },
+    rotationDegrees
+  );
+  if (Math.abs(direction.x) < 0.0001 && Math.abs(direction.y) < 0.0001) {
+    return handle.className;
+  }
+  const angle = ((Math.atan2(direction.y, direction.x) * 180) / Math.PI + 180) % 180;
+  if (angle < 22.5 || angle >= 157.5) {
+    return "horizontal";
+  }
+  if (angle < 67.5) {
+    return "diagonal-nwse";
+  }
+  if (angle < 112.5) {
+    return "vertical";
+  }
+  return "diagonal-nesw";
+}
+
+function nodeUsesUprightStaticSelectionOutline(
+  node: ModelNode,
+  imageHref = "",
+  foregroundImageHref = ""
+) {
+  return (
+    isStaticNode(node) &&
+    Boolean(
+      node.kind === "static-text" ||
+      node.kind === "static-image" ||
+      imageHref ||
+      foregroundImageHref ||
+      node.params.backgroundImage ||
+      node.params.backgroundImageAssetId ||
+      node.params.foregroundImage ||
+      node.params.foregroundImageAssetId
+    )
+  );
+}
+
+function nodeUprightSelectionOutlineRect(node: ModelNode) {
+  const width = Math.max(1, node.size.width * Math.abs(getNodeScaleX(node)));
+  const height = Math.max(1, node.size.height * Math.abs(getNodeScaleY(node)));
+  return {
+    x: -width / 2,
+    y: -height / 2,
+    width,
+    height
   };
 }
 
@@ -5088,12 +5348,108 @@ function buildSvgNodeLabelMarkup(node: ModelNode) {
   return `<g class="export-node-label ${nodeLabelVertical(node) ? "vertical" : "horizontal"}" transform="${nodeLabelTransform(node)}">${buildSvgNodeLabelTextMarkup(node)}</g>`;
 }
 
+function svgDisplayAttribute(visible: boolean) {
+  return visible ? "" : ' style="display:none"';
+}
+
+function exportSvgLayerScriptMarkup(includeScript: boolean) {
+  if (!includeScript) {
+    return "";
+  }
+  return `<style><![CDATA[
+.export-static-button { cursor: pointer; }
+.export-static-button.export-active-layer-button { filter: drop-shadow(0 0 5px rgba(37, 99, 235, 0.42)); }
+]]></style>
+<script><![CDATA[
+(function () {
+  const root = document.currentScript && document.currentScript.ownerSVGElement;
+  if (!root) {
+    return;
+  }
+  const layerState = Object.create(null);
+  const layerDefs = root.querySelectorAll("[data-export-layer-def]");
+  layerDefs.forEach((layer) => {
+    const id = layer.getAttribute("data-export-layer-def");
+    if (id) {
+      layerState[id] = layer.getAttribute("data-export-layer-visible") !== "0";
+    }
+  });
+  function exportSvgLayerVisible(layerId) {
+    return !layerId || layerState[layerId] !== false;
+  }
+  function exportSvgApplyLayerVisibility() {
+    root.querySelectorAll("[data-export-node-id][data-export-layer-id]").forEach((node) => {
+      const layerId = node.getAttribute("data-export-layer-id") || "";
+      node.style.display = exportSvgLayerVisible(layerId) ? "" : "none";
+    });
+    root.querySelectorAll("[data-export-edge-id]").forEach((edge) => {
+      const sourceLayerId = edge.getAttribute("data-export-source-layer-id") || "";
+      const targetLayerId = edge.getAttribute("data-export-target-layer-id") || "";
+      edge.style.display = exportSvgLayerVisible(sourceLayerId) && exportSvgLayerVisible(targetLayerId) ? "" : "none";
+    });
+    const activeLayerId = root.getAttribute("data-export-active-layer-id") || "";
+    root.querySelectorAll("[data-export-button-action='layer']").forEach((button) => {
+      button.classList.toggle("export-active-layer-button", button.getAttribute("data-export-button-target-layer-id") === activeLayerId);
+    });
+  }
+  function exportSvgActivateLayer(layerId) {
+    if (!layerId) {
+      return;
+    }
+    if (!(layerId in layerState)) {
+      layerState[layerId] = true;
+    }
+    layerState[layerId] = true;
+    root.setAttribute("data-export-active-layer-id", layerId);
+    exportSvgApplyLayerVisibility();
+  }
+  root.exportSvgApplyLayerVisibility = exportSvgApplyLayerVisibility;
+  root.exportSvgActivateLayer = exportSvgActivateLayer;
+  root.querySelectorAll("[data-export-button-action='layer']").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      exportSvgActivateLayer(button.getAttribute("data-export-button-target-layer-id") || "");
+    });
+  });
+  exportSvgApplyLayerVisibility();
+})();
+]]></script>`;
+}
+
 export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: CanvasRenderOptions = { width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT }) {
   const imageAssets = readImageAssets();
   const backgroundColor = canvasSize.backgroundColor ?? DEFAULT_CANVAS_BACKGROUND;
   const backgroundImage = canvasSize.backgroundImage ?? "";
   const colorDisplayMode = canvasSize.colorDisplayMode ?? "energy";
   const colorPalette = normalizeColorPalette(canvasSize.colorPalette ?? DEFAULT_COLOR_PALETTE);
+  const normalizedLayers = normalizeModelLayers(canvasSize.layers, nodes, canvasSize.activeLayerId);
+  const activeExportLayerId = normalizedLayers.some((layer) => layer.id === canvasSize.activeLayerId)
+    ? canvasSize.activeLayerId!
+    : normalizedLayers[0]?.id ?? DEFAULT_MODEL_LAYER_ID;
+  const layerById = new Map(normalizedLayers.map((layer) => [layer.id, layer]));
+  const layerIdByName = new Map(normalizedLayers.map((layer) => [layer.name.trim(), layer.id]));
+  const layerVisible = (layerId: string) => layerById.get(layerId)?.visible !== false;
+  const nodeLayerId = (node: ModelNode) =>
+    layerById.has(node.layerId ?? "") ? node.layerId! : DEFAULT_MODEL_LAYER_ID;
+  const resolveExportLayerButtonTargetId = (node: ModelNode) => {
+    if (!isStaticButtonCapableKind(node.kind) || node.params.buttonEnabled !== "1" || node.params.buttonActionType !== "layer") {
+      return "";
+    }
+    const targetLayerId = node.params.buttonTargetLayerId?.trim();
+    if (targetLayerId && layerById.has(targetLayerId)) {
+      return targetLayerId;
+    }
+    const targetLayerName = node.params.buttonTargetLayerName?.trim();
+    return targetLayerName ? layerIdByName.get(targetLayerName) ?? "" : "";
+  };
+  const exportLayerDefinitionsMarkup = normalizedLayers
+    .map((layer) =>
+      `<g data-export-layer-def="${escapeXml(layer.id)}" data-export-layer-name="${escapeXml(layer.name)}" data-export-layer-visible="${layer.visible === false ? "0" : "1"}" data-export-layer-active="${layer.id === activeExportLayerId ? "1" : "0"}"/>`
+    )
+    .join("\n");
+  const hasLayerButtons = nodes.some((node) => Boolean(resolveExportLayerButtonTargetId(node)));
+  const includeLayerScript = hasLayerButtons || normalizedLayers.length > 1;
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const edgeById = new Map(edges.map((edge) => [edge.id, edge]));
   const buildBoundaryBusInternalConnectorMarkup = (edge: Edge, endpoint: "source" | "target", stroke: string) => {
@@ -5118,16 +5474,29 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
     .map((route) => {
       const edge = edgeById.get(route.edgeId);
       const stroke = edge ? getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette) : "#334155";
+      const sourceNode = edge ? nodeById.get(edge.sourceId) : undefined;
+      const targetNode = edge ? nodeById.get(edge.targetId) : undefined;
+      const sourceLayerId = sourceNode ? nodeLayerId(sourceNode) : DEFAULT_MODEL_LAYER_ID;
+      const targetLayerId = targetNode ? nodeLayerId(targetNode) : DEFAULT_MODEL_LAYER_ID;
+      const edgeVisible = layerVisible(sourceLayerId) && layerVisible(targetLayerId);
       const internalConnectors = edge
         ? [buildBoundaryBusInternalConnectorMarkup(edge, "source", stroke), buildBoundaryBusInternalConnectorMarkup(edge, "target", stroke)]
             .filter(Boolean)
             .join("\n")
         : "";
-      return `<path d="${route.path}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${internalConnectors ? `\n${internalConnectors}` : ""}`;
+      return `<g class="export-edge" data-export-edge-id="${escapeXml(route.edgeId)}" data-export-source-layer-id="${escapeXml(sourceLayerId)}" data-export-target-layer-id="${escapeXml(targetLayerId)}"${svgDisplayAttribute(edgeVisible)}>
+<path d="${route.path}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${internalConnectors ? `\n${internalConnectors}` : ""}
+</g>`;
     })
     .join("\n");
   const nodeMarkup = nodes
     .map((node) => {
+      const layerId = nodeLayerId(node);
+      const targetLayerId = resolveExportLayerButtonTargetId(node);
+      const exportButtonAttributes = targetLayerId
+        ? ` data-export-button-action="layer" data-export-button-target-layer-id="${escapeXml(targetLayerId)}"`
+        : "";
+      const exportButtonClass = targetLayerId ? " export-static-button" : "";
       const imageHref = resolveNodeImage(node, imageAssets);
       const foregroundHref = resolveNodeForegroundImage(node, imageAssets);
       const allowNodeImage = !isBusNode(node);
@@ -5149,7 +5518,7 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
           : "";
       const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
       const labelMarkup = buildSvgNodeLabelMarkup(node);
-      return `<g class="export-node" transform="translate(${node.position.x} ${node.position.y})">
+      return `<g class="export-node${exportButtonClass}" transform="translate(${node.position.x} ${node.position.y})" data-export-node-id="${escapeXml(node.id)}" data-export-layer-id="${escapeXml(layerId)}"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}>
   <title>${escapeXml(node.name)}</title>
   <g class="export-node-geometry" transform="${geometryTransform}">
   ${glyphMarkup}
@@ -5168,16 +5537,27 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
 </g>`;
     })
     .join("\n");
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasSize.width}" height="${canvasSize.height}" viewBox="0 0 ${canvasSize.width} ${canvasSize.height}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasSize.width}" height="${canvasSize.height}" viewBox="0 0 ${canvasSize.width} ${canvasSize.height}" data-export-active-layer-id="${escapeXml(activeExportLayerId)}">
+<g class="export-layer-definitions" style="display:none">
+${exportLayerDefinitionsMarkup}
+</g>
 <rect width="100%" height="100%" fill="${backgroundColor}"/>
 ${backgroundImage ? `<image href="${backgroundImage}" x="0" y="0" width="${canvasSize.width}" height="${canvasSize.height}" preserveAspectRatio="xMidYMid slice"/>` : ""}
 ${edgeMarkup}
 ${nodeMarkup}
+${exportSvgLayerScriptMarkup(includeLayerScript)}
 </svg>`;
 }
 
 export function App() {
-  const initialDraft = useMemo(() => readDraftProject(), []);
+  const initialProjectSources = useMemo(() => {
+    const refreshRecovery = readRefreshRecoveryProject();
+    return {
+      recoveredFromRefresh: Boolean(refreshRecovery),
+      draft: refreshRecovery ?? readDraftProject()
+    };
+  }, []);
+  const initialDraft = initialProjectSources.draft;
   const initialLayeredProject = useMemo(() => normalizeProjectLayers({
     version: 1,
     name: initialDraft?.projectName ?? "电力能源系统图上模型",
@@ -5191,7 +5571,8 @@ export function App() {
     () => assignMissingDeviceIndexes(initialLayeredProject.nodes, initialDraft?.deviceIndexCounters),
     [initialDraft?.deviceIndexCounters, initialLayeredProject.nodes]
   );
-  const initialSavedSchemes = useMemo(() => readSavedSchemes(), []);
+  const initialStoredSchemesPayload = useMemo(() => readStoredSchemesPayload(), []);
+  const initialSavedSchemes = useMemo(() => readSavedSchemes(initialStoredSchemesPayload), [initialStoredSchemesPayload]);
   const initialDeviceLibrary = useMemo(() => readLocalDeviceLibraryPersistencePayload(), []);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
@@ -5211,6 +5592,8 @@ export function App() {
   const schemeBackendSyncSequenceRef = useRef(0);
   const backendSchemesLoadTokenRef = useRef(0);
   const schemesChangedBeforeBackendLoadRef = useRef(false);
+  const startupHadStoredSchemesRef = useRef(Boolean(initialStoredSchemesPayload));
+  const startupRecoveredFromRefreshRef = useRef(initialProjectSources.recoveredFromRefresh);
   const latestSchemesRef = useRef<SavedSchemeRecord[]>(initialSavedSchemes);
   const backendColorConfigLoadedRef = useRef(false);
   const suppressNextBackendColorSyncRef = useRef(false);
@@ -5253,7 +5636,6 @@ export function App() {
   const keyboardMoveCommitCancelRef = useRef<(() => void) | null>(null);
   const dragUndoCapturedRef = useRef(false);
   const canvasResizeUndoCapturedRef = useRef(false);
-  const canvasResizeFrameRef = useRef<number | null>(null);
   const canvasResizeDraftRef = useRef<CanvasBounds | null>(null);
   const cachedRoutedEdgesRef = useRef<RoutedEdge[]>([]);
   const cachedRouteStoreRef = useRef<RouteStore | null>(null);
@@ -5273,6 +5655,8 @@ export function App() {
   const elementTreeSourceRef = useRef<ElementTreeSource | null>(null);
   const graphDirtyBaselineRef = useRef<GraphDirtyBaseline | null>(null);
   const suppressNextGraphDirtyRef = useRef(false);
+  const saveRequiredRef = useRef(false);
+  const refreshRecoveryProjectRef = useRef<RefreshRecoveryProjectState | null>(null);
   const latestNodesRef = useRef<ModelNode[]>([]);
   const latestEdgesRef = useRef<Edge[]>([]);
   const latestGraphStoreRef = useRef<GraphStore | null>(null);
@@ -5357,6 +5741,7 @@ export function App() {
   const [canvasSelectionScope, setCanvasSelectionScope] = useState<CanvasSelectionScope>("group");
   const [connectSource, setConnectSource] = useState<{ nodeId: string; terminalId: string; point?: Point } | null>(null);
   const [staticDrawing, setStaticDrawing] = useState<StaticDrawingState | null>(null);
+  const [libraryPlacement, setLibraryPlacement] = useState<LibraryPlacementState | null>(null);
   const [staticButtonVisual, setStaticButtonVisual] = useState<{ nodeId: string; state: StaticButtonVisualState } | null>(null);
   const [connectDropReady, setConnectDropReady] = useState(false);
   const [dragging, setDragging] = useState<DraggingState | null>(null);
@@ -5396,6 +5781,7 @@ export function App() {
   const [leftPanelTab, setLeftPanelTab] = useState<"projects" | "library" | "templates">("projects");
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const [librarySearchQuery, setLibrarySearchQuery] = useState("");
+  const [componentLibraryDisplayMode, setComponentLibraryDisplayMode] = useState<ComponentLibraryDisplayMode>("expanded");
   const [leftPanelMode, setLeftPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(LEFT_PANEL_MODE_STORAGE_KEY));
   const [rightPanelMode, setRightPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(RIGHT_PANEL_MODE_STORAGE_KEY));
   const [leftPanelWidth, setLeftPanelWidth] = useState(() =>
@@ -5422,6 +5808,12 @@ export function App() {
   const [expandedAttributeLibraryComponentTypes, setExpandedAttributeLibraryComponentTypes] = useState<string[]>([]);
   const [hoveredAttributeLibrary, setHoveredAttributeLibrary] = useState<AttributeLibrary | "">("");
   const [hoveredAttributeLibraryComponentType, setHoveredAttributeLibraryComponentType] = useState("");
+  const [libraryFlyoutPositions, setLibraryFlyoutPositions] = useState<Record<string, { top: number; left: number }>>({});
+  const libraryScrollRef = useRef<HTMLDivElement | null>(null);
+  const libraryComponentListRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const libraryComponentTypeHeaderRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const libraryFlyoutPositionsRef = useRef<Record<string, { top: number; left: number }>>({});
+  const libraryFlyoutCloseTimerRef = useRef<number | null>(null);
   const [collapsedElementTreeGroups, setCollapsedElementTreeGroups] = useState<string[]>([]);
   const [elementTreeItemLimits, setElementTreeItemLimits] = useState<Record<string, number>>({});
   const [customAttributeLibraries, setCustomAttributeLibraries] = useState<AttributeLibrary[]>(() => initialDeviceLibrary.customAttributeLibraries);
@@ -5482,7 +5874,7 @@ export function App() {
   const [selectedSchemeId, setSelectedSchemeId] = useState<string>("");
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
   const [selectedSchemeIds, setSelectedSchemeIds] = useState<string[]>([]);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(() => initialProjectSources.recoveredFromRefresh);
   const [expandedSchemeIds, setExpandedSchemeIds] = useState<string[]>(() => {
     const preferredSchemeId = initialDraft?.activeSchemeId || schemes[0]?.id;
     return preferredSchemeId ? [preferredSchemeId] : [];
@@ -6455,6 +6847,174 @@ export function App() {
       : attributeLibraries,
     [attributeLibraries, filteredAttributeLibraryByComponentType, librarySearchNeedle]
   );
+  useEffect(() => {
+    libraryFlyoutPositionsRef.current = libraryFlyoutPositions;
+  }, [libraryFlyoutPositions]);
+  const libraryComponentListRefKey = (layout: "inline" | "flyout", componentTypeKey: string) => `${layout}:${componentTypeKey}`;
+  const setLibraryComponentListRef = (key: string) => (element: HTMLDivElement | null) => {
+    if (element) {
+      libraryComponentListRefs.current.set(key, element);
+    } else {
+      libraryComponentListRefs.current.delete(key);
+    }
+  };
+  const setLibraryComponentTypeHeaderRef = (key: string) => (element: HTMLButtonElement | null) => {
+    if (element) {
+      libraryComponentTypeHeaderRefs.current.set(key, element);
+    } else {
+      libraryComponentTypeHeaderRefs.current.delete(key);
+    }
+  };
+  const clearLibraryFlyoutCloseTimer = () => {
+    if (libraryFlyoutCloseTimerRef.current !== null) {
+      window.clearTimeout(libraryFlyoutCloseTimerRef.current);
+      libraryFlyoutCloseTimerRef.current = null;
+    }
+  };
+  const hideLibraryFlyout = () => {
+    clearLibraryFlyoutCloseTimer();
+    setHoveredAttributeLibrary("");
+    setHoveredAttributeLibraryComponentType("");
+    if (Object.keys(libraryFlyoutPositionsRef.current).length > 0) {
+      setLibraryFlyoutPositions({});
+    }
+  };
+  const scheduleLibraryFlyoutClose = (group: AttributeLibrary, componentTypeKey?: string) => {
+    clearLibraryFlyoutCloseTimer();
+    libraryFlyoutCloseTimerRef.current = window.setTimeout(() => {
+      setHoveredAttributeLibrary((current) => current === group ? "" : current);
+      setHoveredAttributeLibraryComponentType((current) => componentTypeKey ? current === componentTypeKey ? "" : current : "");
+      setLibraryFlyoutPositions((current) => {
+        if (!componentTypeKey) {
+          return Object.keys(current).length > 0 ? {} : current;
+        }
+        const key = libraryComponentListRefKey("flyout", componentTypeKey);
+        if (!(key in current)) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      libraryFlyoutCloseTimerRef.current = null;
+    }, 120);
+  };
+  useEffect(() => () => clearLibraryFlyoutCloseTimer(), []);
+  const libraryFlyoutStyle = (key: string) => {
+    const position = libraryFlyoutPositions[key];
+    return {
+      "--library-flyout-top": `${position?.top ?? 0}px`,
+      "--library-flyout-left": `${position?.left ?? 0}px`,
+      visibility: position ? "visible" : "hidden"
+    } as CSSProperties;
+  };
+  const fitLibraryFlyoutsToVisibleArea = () => {
+    const scrollElement = libraryScrollRef.current;
+    if (!scrollElement) {
+      return;
+    }
+    const margin = 8;
+    const scrollRect = scrollElement.getBoundingClientRect();
+    const minTop = scrollRect.top + margin;
+    const maxBottom = scrollRect.bottom - margin;
+    const viewportRight = window.innerWidth || document.documentElement.clientWidth || scrollRect.right;
+    const maxRight = viewportRight - margin;
+    const gap = 8;
+    const nextPositions: Record<string, { top: number; left: number }> = {};
+    libraryComponentListRefs.current.forEach((element, key) => {
+      if (!key.startsWith("flyout:")) {
+        return;
+      }
+      const headerElement = libraryComponentTypeHeaderRefs.current.get(key);
+      if (!headerElement) {
+        return;
+      }
+      const rect = element.getBoundingClientRect();
+      const headerRect = headerElement.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      const desiredLeft = headerRect.right + gap;
+      let left = Math.min(desiredLeft, Math.max(margin, maxRight - width));
+      left = Math.max(margin, left);
+      const maxTop = Math.max(minTop, maxBottom - height);
+      let top = Math.min(Math.max(headerRect.top, minTop), maxTop);
+      const horizontallyOverlapsHeader =
+        left < headerRect.right + gap &&
+        left + width > headerRect.left - gap;
+      if (horizontallyOverlapsHeader) {
+        const belowTop = headerRect.bottom + gap;
+        const aboveTop = headerRect.top - gap - height;
+        const belowOverflow = Math.max(0, belowTop + height - maxBottom) + Math.max(0, minTop - belowTop);
+        const aboveOverflow = Math.max(0, aboveTop + height - maxBottom) + Math.max(0, minTop - aboveTop);
+        top = belowOverflow <= aboveOverflow ? belowTop : aboveTop;
+        top = Math.min(Math.max(top, minTop), maxTop);
+      }
+      nextPositions[key] = {
+        top: Math.round(top),
+        left: Math.round(left)
+      };
+    });
+    const currentPositions = libraryFlyoutPositionsRef.current;
+    const currentKeys = Object.keys(currentPositions);
+    const nextKeys = Object.keys(nextPositions);
+    const unchanged =
+      currentKeys.length === nextKeys.length &&
+      nextKeys.every((key) => {
+        const currentPosition = currentPositions[key];
+        const nextPosition = nextPositions[key];
+        return currentPosition?.top === nextPosition.top && currentPosition?.left === nextPosition.left;
+      });
+    if (!unchanged) {
+      setLibraryFlyoutPositions(nextPositions);
+    }
+  };
+  useLayoutEffect(() => {
+    if (leftPanelTab !== "library") {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      if (componentLibraryDisplayMode === "right") {
+        fitLibraryFlyoutsToVisibleArea();
+        return;
+      }
+      if (Object.keys(libraryFlyoutPositionsRef.current).length > 0) {
+        setLibraryFlyoutPositions({});
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    componentLibraryDisplayMode,
+    displayedAttributeLibraries,
+    expandedAttributeLibraryComponentTypes,
+    filteredAttributeLibraryByComponentType,
+    hoveredAttributeLibraryComponentType,
+    leftPanelTab,
+    librarySearchNeedle
+  ]);
+  useEffect(() => {
+    if (leftPanelTab !== "library" || componentLibraryDisplayMode !== "right" || librarySearchNeedle) {
+      hideLibraryFlyout();
+    }
+  }, [componentLibraryDisplayMode, leftPanelTab, librarySearchNeedle]);
+  useEffect(() => {
+    if (leftPanelTab !== "library" || componentLibraryDisplayMode !== "right" || !hoveredAttributeLibraryComponentType) {
+      return;
+    }
+    const hideLibraryFlyoutOnOutsidePointerDown = (event: globalThis.PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) {
+        return;
+      }
+      const libraryPanel = libraryScrollRef.current?.closest(".library-panel");
+      const flyoutElement = document.querySelector(".flyout-library-group");
+      if (libraryPanel?.contains(target) || flyoutElement?.contains(target)) {
+        return;
+      }
+      hideLibraryFlyout();
+    };
+    window.addEventListener("pointerdown", hideLibraryFlyoutOnOutsidePointerDown, true);
+    return () => window.removeEventListener("pointerdown", hideLibraryFlyoutOnOutsidePointerDown, true);
+  }, [componentLibraryDisplayMode, hoveredAttributeLibraryComponentType, leftPanelTab]);
   const toggleAttributeLibraryComponentType = (attributeLibraryName: string, sectionName: string) => {
     const key = attributeLibraryComponentTypeKey(attributeLibraryName, sectionName);
     setExpandedAttributeLibraryComponentTypes((current) =>
@@ -6580,6 +7140,31 @@ export function App() {
       nodes,
       edges
     }
+  };
+  saveRequiredRef.current = saveRequired;
+  refreshRecoveryProjectRef.current = {
+    dirty: true,
+    savedAt: new Date().toISOString(),
+    projectName,
+    activeProjectId,
+    activeSchemeId,
+    canvasWidth,
+    canvasHeight,
+    canvasBackgroundColor,
+    canvasBackgroundImage,
+    canvasBackgroundImageAssetId,
+    backgroundProjectId,
+    backgroundLayerIds,
+    powerUnit,
+    voltageUnit,
+    currentUnit,
+    powerBaseValue,
+    deviceIndexCounters,
+    layers,
+    activeLayerId,
+    groups,
+    nodes,
+    edges
   };
   const selectedSchemeRecord = schemes.find((scheme) => scheme.id === selectedSchemeId);
   const backgroundProjectOptions = useMemo(
@@ -6966,29 +7551,52 @@ export function App() {
 
   const canvasBounds = useMemo<CanvasBounds>(() => ({ width: canvasWidth, height: canvasHeight }), [canvasHeight, canvasWidth]);
   const canvasFullViewBox = useMemo<CanvasViewBox>(() => canvasFullViewBoxFromBounds(canvasBounds), [canvasBounds]);
-  const canvasScrollScale = canvasScrollScaleFromViewBox(viewBox, canvasBounds);
-  const canvasDisplayWidth = Math.max(1, Math.round(canvasBounds.width * canvasScrollScale.x));
-  const canvasDisplayHeight = Math.max(1, Math.round(canvasBounds.height * canvasScrollScale.y));
-  const canvasHorizontalScrollbarsActive =
+  const canvasRenderBounds = canvasResizeDraft ?? canvasBounds;
+  const canvasRenderViewBox = useMemo<CanvasViewBox>(() => {
+    if (!canvasResizeDraft) {
+      return viewBox;
+    }
+    const nextViewBoxSize = scaledViewBoxSizeForBounds(viewBox, canvasBounds, canvasRenderBounds);
+    return normalizeViewBoxToCanvas({
+      ...viewBox,
+      ...clampViewBoxDimensionsForZoom(nextViewBoxSize, canvasRenderBounds)
+    }, canvasRenderBounds);
+  }, [canvasBounds, canvasRenderBounds, canvasResizeDraft, viewBox]);
+  const canvasScrollScale = canvasScrollScaleFromViewBox(canvasRenderViewBox, canvasRenderBounds);
+  const canvasDisplayWidth = Math.max(1, Math.round(canvasRenderBounds.width * canvasScrollScale.x));
+  const canvasDisplayHeight = Math.max(1, Math.round(canvasRenderBounds.height * canvasScrollScale.y));
+  const computedCanvasHorizontalScrollbarsActive =
     canvasFrameViewportSize.width > 0 &&
     canvasDisplayWidth + CANVAS_FRAME_INSET * 2 > canvasFrameViewportSize.width + CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE;
-  const canvasVerticalScrollbarsActive =
+  const computedCanvasVerticalScrollbarsActive =
     canvasFrameViewportSize.height > 0 &&
     canvasDisplayHeight + CANVAS_FRAME_INSET * 2 > canvasFrameViewportSize.height + CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE;
+  const canvasResizeKeepsHorizontalScrollRange = canvasResizeKeepsScrollRange(canvasResizeDrag, "x");
+  const canvasResizeKeepsVerticalScrollRange = canvasResizeKeepsScrollRange(canvasResizeDrag, "y");
+  const canvasHorizontalScrollbarsActive = computedCanvasHorizontalScrollbarsActive || canvasResizeKeepsHorizontalScrollRange;
+  const canvasVerticalScrollbarsActive = computedCanvasVerticalScrollbarsActive || canvasResizeKeepsVerticalScrollRange;
   const canvasScrollbarsActive =
     canvasFrameViewportSize.width > 0 &&
     canvasFrameViewportSize.height > 0 &&
     (canvasHorizontalScrollbarsActive || canvasVerticalScrollbarsActive);
-  const canvasScrollSurfaceWidth = canvasScrollSurfaceSize(
+  const computedCanvasScrollSurfaceWidth = canvasScrollSurfaceSize(
     canvasDisplayWidth,
     canvasFrameViewportSize.width,
     canvasHorizontalScrollbarsActive
   );
-  const canvasScrollSurfaceHeight = canvasScrollSurfaceSize(
+  const computedCanvasScrollSurfaceHeight = canvasScrollSurfaceSize(
     canvasDisplayHeight,
     canvasFrameViewportSize.height,
     canvasVerticalScrollbarsActive
   );
+  const canvasScrollSurfaceWidth =
+    canvasResizeKeepsHorizontalScrollRange && canvasResizeDrag
+      ? Math.max(computedCanvasScrollSurfaceWidth, canvasResizeDrag.startScrollSurfaceWidth)
+      : computedCanvasScrollSurfaceWidth;
+  const canvasScrollSurfaceHeight =
+    canvasResizeKeepsVerticalScrollRange && canvasResizeDrag
+      ? Math.max(computedCanvasScrollSurfaceHeight, canvasResizeDrag.startScrollSurfaceHeight)
+      : computedCanvasScrollSurfaceHeight;
   const canvasBaseDisplayOffsetX = canvasDisplayOffset(
     canvasDisplayWidth,
     canvasScrollSurfaceWidth,
@@ -7017,8 +7625,16 @@ export function App() {
       canvasVerticalScrollbarsActive
     )
   };
-  const canvasDisplayOffsetX = Math.round(canvasBaseDisplayOffsetX + clampedCanvasNoScrollOffset.x);
-  const canvasDisplayOffsetY = Math.round(canvasBaseDisplayOffsetY + clampedCanvasNoScrollOffset.y);
+  const canvasDisplayOffsetX = canvasResizeAnchoredDisplayOffset(
+    Math.round(canvasBaseDisplayOffsetX + clampedCanvasNoScrollOffset.x),
+    canvasResizeDrag,
+    "x"
+  );
+  const canvasDisplayOffsetY = canvasResizeAnchoredDisplayOffset(
+    Math.round(canvasBaseDisplayOffsetY + clampedCanvasNoScrollOffset.y),
+    canvasResizeDrag,
+    "y"
+  );
   const canvasBoundsRef = useRef<CanvasBounds>(canvasBounds);
   const canvasFullViewBoxRef = useRef<CanvasViewBox>(canvasFullViewBox);
   const canvasScrollScaleRef = useRef(canvasScrollScale);
@@ -7171,9 +7787,10 @@ export function App() {
       [...contentRoutes, ...edgeRoutesForGeometryBounds(contentEdges)],
       0
     );
+    const gridCeil = (value: number) => Math.ceil(Math.ceil(value) / CANVAS_GRID_SIZE) * CANVAS_GRID_SIZE;
     return {
-      x: geometryBounds && geometryBounds.left < 0 ? Math.ceil(-geometryBounds.left) : 0,
-      y: geometryBounds && geometryBounds.top < 0 ? Math.ceil(-geometryBounds.top) : 0
+      x: geometryBounds && geometryBounds.left < 0 ? gridCeil(-geometryBounds.left) : 0,
+      y: geometryBounds && geometryBounds.top < 0 ? gridCeil(-geometryBounds.top) : 0
     };
   };
   const canvasBoundsWithOriginShift = (baseBounds: CanvasBounds, originShift: Point): CanvasBounds => ({
@@ -7185,6 +7802,13 @@ export function App() {
     return {
       x: position.x < clamped.x ? Math.round(position.x) : clamped.x,
       y: position.y < clamped.y ? Math.round(position.y) : clamped.y
+    };
+  };
+  const snapNodeToCanvasGrid = (node: ModelNode, bounds?: CanvasBounds, position = node.position): ModelNode => {
+    const snapped = snapNodePositionToGrid(node, position, CANVAS_GRID_SIZE);
+    return {
+      ...node,
+      position: bounds ? clampNodePositionToBounds(node, bounds, snapped) : snapped
     };
   };
   const clampPointToExpandableBounds = (point: Point, bounds: CanvasBounds): Point => {
@@ -7230,6 +7854,110 @@ export function App() {
       canvasVerticalScrollbarsActive
     )
   });
+  const canvasNoScrollOffsetForCanvasResizeAnchor = (drag: NonNullable<CanvasResizeState>, nextBounds: CanvasBounds): Point => {
+    const currentBounds = canvasBoundsRef.current;
+    const currentViewBox = viewBoxRef.current;
+    const nextViewBoxSize = scaledViewBoxSizeForBounds(currentViewBox, currentBounds, nextBounds);
+    const nextViewBox = normalizeViewBoxToCanvas({
+      ...currentViewBox,
+      ...clampViewBoxDimensionsForZoom(nextViewBoxSize, nextBounds)
+    }, nextBounds);
+    const nextScrollScale = canvasScrollScaleFromViewBox(nextViewBox, nextBounds);
+    const nextDisplayWidth = Math.max(1, Math.round(nextBounds.width * nextScrollScale.x));
+    const nextDisplayHeight = Math.max(1, Math.round(nextBounds.height * nextScrollScale.y));
+    const nextHorizontalScrollbarsActive =
+      canvasFrameViewportSize.width > 0 &&
+      nextDisplayWidth + CANVAS_FRAME_INSET * 2 > canvasFrameViewportSize.width + CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE;
+    const nextVerticalScrollbarsActive =
+      canvasFrameViewportSize.height > 0 &&
+      nextDisplayHeight + CANVAS_FRAME_INSET * 2 > canvasFrameViewportSize.height + CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE;
+    const nextScrollSurfaceWidth = canvasScrollSurfaceSize(
+      nextDisplayWidth,
+      canvasFrameViewportSize.width,
+      nextHorizontalScrollbarsActive
+    );
+    const nextScrollSurfaceHeight = canvasScrollSurfaceSize(
+      nextDisplayHeight,
+      canvasFrameViewportSize.height,
+      nextVerticalScrollbarsActive
+    );
+    const nextBaseDisplayOffsetX = canvasDisplayOffset(
+      nextDisplayWidth,
+      nextScrollSurfaceWidth,
+      canvasFrameViewportSize.width,
+      nextHorizontalScrollbarsActive
+    );
+    const nextBaseDisplayOffsetY = canvasDisplayOffset(
+      nextDisplayHeight,
+      nextScrollSurfaceHeight,
+      canvasFrameViewportSize.height,
+      nextVerticalScrollbarsActive
+    );
+    return {
+      x: clampCanvasNoScrollOffset(
+        drag.startDisplayOffsetX - nextBaseDisplayOffsetX,
+        nextDisplayWidth,
+        canvasFrameViewportSize.width,
+        nextBaseDisplayOffsetX,
+        nextHorizontalScrollbarsActive
+      ),
+      y: clampCanvasNoScrollOffset(
+        drag.startDisplayOffsetY - nextBaseDisplayOffsetY,
+        nextDisplayHeight,
+        canvasFrameViewportSize.height,
+        nextBaseDisplayOffsetY,
+        nextVerticalScrollbarsActive
+      )
+    };
+  };
+  const syncCanvasFrameScrollToResizeAnchorNow = (drag: NonNullable<CanvasResizeState>, pointer: Pick<globalThis.PointerEvent, "clientX" | "clientY">) => {
+    const frame = canvasFrameRef.current;
+    const svg = svgRef.current;
+    if (!frame || !svg) {
+      return;
+    }
+    const frameRect = frame.getBoundingClientRect();
+    const svgRect = svg.getBoundingClientRect();
+    const maxLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
+    const maxTop = Math.max(0, frame.scrollHeight - frame.clientHeight);
+    const desiredRightX = clampNumber(pointer.clientX - frameRect.left, CANVAS_FRAME_INSET, frame.clientWidth - CANVAS_FRAME_INSET);
+    const desiredBottomY = clampNumber(pointer.clientY - frameRect.top, CANVAS_FRAME_INSET, frame.clientHeight - CANVAS_FRAME_INSET);
+    const preserveStartLeft = canvasHorizontalScrollbarsActiveRef.current && maxLeft > 0
+      ? clampNumber(drag.startScrollLeft, 0, maxLeft)
+      : 0;
+    const preserveStartTop = canvasVerticalScrollbarsActiveRef.current && maxTop > 0
+      ? clampNumber(drag.startScrollTop, 0, maxTop)
+      : 0;
+    const nextLeft = canvasResizeEdgeAnchorsAxis(drag.edge, "x") && maxLeft > 0
+      ? clampNumber(frame.scrollLeft + svgRect.right - frameRect.left - desiredRightX, 0, maxLeft)
+      : preserveStartLeft;
+    const nextTop = canvasResizeEdgeAnchorsAxis(drag.edge, "y") && maxTop > 0
+      ? clampNumber(frame.scrollTop + svgRect.bottom - frameRect.top - desiredBottomY, 0, maxTop)
+      : preserveStartTop;
+    if (Math.abs(frame.scrollLeft - nextLeft) > 1 || Math.abs(frame.scrollTop - nextTop) > 1) {
+      setCanvasFrameScrollPosition(frame, nextLeft, nextTop);
+    }
+    const scrolledViewBox = currentViewBoxFromCanvasFrameScroll();
+    setViewBox((current) => {
+      const nextViewBox = normalizeViewBoxToCanvas({
+        ...current,
+        x: canvasHorizontalScrollbarsActiveRef.current ? scrolledViewBox.x : current.x,
+        y: canvasVerticalScrollbarsActiveRef.current ? scrolledViewBox.y : current.y
+      }, canvasBoundsRef.current);
+      if (
+        Math.round(nextViewBox.x) === Math.round(current.x) &&
+        Math.round(nextViewBox.y) === Math.round(current.y)
+      ) {
+        return current;
+      }
+      skipNextCanvasScrollSyncRef.current = true;
+      return nextViewBox;
+    });
+    scheduleCanvasVisibleViewBoxUpdate();
+  };
+  const syncCanvasFrameScrollToResizeAnchor = (drag: NonNullable<CanvasResizeState>, pointer: Pick<globalThis.PointerEvent, "clientX" | "clientY">) => {
+    window.requestAnimationFrame(() => syncCanvasFrameScrollToResizeAnchorNow(drag, pointer));
+  };
   const setCanvasFrameScrollPosition = (frame: HTMLElement, left: number, top: number) => {
     canvasFrameProgrammaticScrollRef.current = true;
     frame.scrollLeft = left;
@@ -7280,14 +8008,15 @@ export function App() {
       x: svgRect.width > 0 ? svgRect.width / bounds.width : canvasScrollScaleRef.current.x,
       y: svgRect.height > 0 ? svgRect.height / bounds.height : canvasScrollScaleRef.current.y
     };
+    const maxScroll = {
+      left: Math.max(0, frame.scrollWidth - frame.clientWidth),
+      top: Math.max(0, frame.scrollHeight - frame.clientHeight)
+    };
     const scrollPosition = anchoredCanvasScrollPosition(
       anchor,
       scale,
       canvasFramePaddingOffset(frame, svg),
-      {
-        left: Math.max(0, frame.scrollWidth - frame.clientWidth),
-        top: Math.max(0, frame.scrollHeight - frame.clientHeight)
-      }
+      maxScroll
     );
     const noScrollOffset = anchoredCanvasNoScrollOffset(
       anchor,
@@ -7301,11 +8030,40 @@ export function App() {
       x: canvasHorizontalScrollbarsActiveRef.current ? 0 : noScrollOffset.x,
       y: canvasVerticalScrollbarsActiveRef.current ? 0 : noScrollOffset.y
     });
+    const targetScrollLeft = canvasHorizontalScrollbarsActiveRef.current ? scrollPosition.left : 0;
+    const targetScrollTop = canvasVerticalScrollbarsActiveRef.current ? scrollPosition.top : 0;
+    const currentViewBox = viewBoxRef.current;
+    const nextViewBox = normalizeViewBoxToCanvas({
+      ...currentViewBox,
+      x: canvasHorizontalScrollbarsActiveRef.current
+        ? scrollPositionToViewBoxStart(targetScrollLeft, currentViewBox.width, bounds.width, maxScroll.left, currentViewBox.x)
+        : currentViewBox.x,
+      y: canvasVerticalScrollbarsActiveRef.current
+        ? scrollPositionToViewBoxStart(targetScrollTop, currentViewBox.height, bounds.height, maxScroll.top, currentViewBox.y)
+        : currentViewBox.y
+    }, bounds);
     setCanvasFrameScrollPosition(
       frame,
-      canvasHorizontalScrollbarsActiveRef.current ? scrollPosition.left : 0,
-      canvasVerticalScrollbarsActiveRef.current ? scrollPosition.top : 0
+      targetScrollLeft,
+      targetScrollTop
     );
+    setViewBox((current) => {
+      const updated = normalizeViewBoxToCanvas({
+        ...current,
+        x: canvasHorizontalScrollbarsActiveRef.current ? nextViewBox.x : current.x,
+        y: canvasVerticalScrollbarsActiveRef.current ? nextViewBox.y : current.y
+      }, canvasBoundsRef.current);
+      if (
+        Math.round(updated.x) === Math.round(current.x) &&
+        Math.round(updated.y) === Math.round(current.y) &&
+        Math.round(updated.width) === Math.round(current.width) &&
+        Math.round(updated.height) === Math.round(current.height)
+      ) {
+        return current;
+      }
+      skipNextCanvasScrollSyncRef.current = true;
+      return updated;
+    });
     if (!canvasHorizontalScrollbarsActiveRef.current || !canvasVerticalScrollbarsActiveRef.current) {
       skipNextCanvasScrollSyncRef.current = true;
       setCanvasNoScrollOffset((current) => {
@@ -7412,6 +8170,11 @@ export function App() {
   ]);
   const leftPanelVisible = isSidePanelVisible(leftPanelMode, leftPanelAutoVisible);
   const rightPanelVisible = isSidePanelVisible(rightPanelMode, rightPanelAutoVisible);
+  useEffect(() => {
+    if (!leftPanelVisible) {
+      hideLibraryFlyout();
+    }
+  }, [leftPanelVisible]);
   const nodeImage = (node: ModelNode) => resolveNodeImage(node, imageAssets);
   const nodeForegroundImage = (node: ModelNode) => resolveNodeForegroundImage(node, imageAssets);
   const nodeHasUprightBoundsContent = (
@@ -7446,6 +8209,11 @@ export function App() {
     if (pendingWheelZoomAnchor) {
       pendingWheelZoomAnchorRef.current = null;
       syncCanvasFrameScrollToWheelAnchor(pendingWheelZoomAnchor);
+      const wheelZoomViewportChanged = canvasFrameViewportSizeChanged(canvasFrameRef.current, canvasFrameViewportSize);
+      if (wheelZoomViewportChanged) {
+        pendingWheelZoomAnchorRef.current = pendingWheelZoomAnchor;
+        updateCanvasFrameViewportSize();
+      }
       scheduleCanvasVisibleViewBoxUpdate();
       return;
     }
@@ -8496,8 +9264,14 @@ export function App() {
         const currentSchemesPayload = serializeSchemesForStorage(latestSchemesRef.current);
         if (backendSchemes.length > 0) {
           const backendPayload = serializeSchemesForStorage(backendSchemes);
+          const localSchemesShouldWin = shouldPreferLocalSchemesOverBackend({
+            localSchemes: latestSchemesRef.current,
+            backendSchemes,
+            hadStoredLocalSchemes: startupHadStoredSchemesRef.current,
+            recoveredFromRefresh: startupRecoveredFromRefreshRef.current
+          });
           lastPersistedSchemesPayloadRef.current = backendPayload;
-          if (localChangedBeforeBackendLoad) {
+          if (localChangedBeforeBackendLoad || localSchemesShouldWin) {
             suppressNextBackendSchemeSyncRef.current = false;
             schemesChangedBeforeBackendLoadRef.current = false;
             const pendingPayload = pendingBackendSchemesPayloadRef.current ?? currentSchemesPayload;
@@ -8799,10 +9573,6 @@ export function App() {
         window.cancelAnimationFrame(canvasVisibleViewBoxFrameRef.current);
         canvasVisibleViewBoxFrameRef.current = null;
       }
-      if (canvasResizeFrameRef.current !== null) {
-        window.cancelAnimationFrame(canvasResizeFrameRef.current);
-        canvasResizeFrameRef.current = null;
-      }
       keyboardMoveCommitCancelRef.current?.();
       keyboardMoveCommitCancelRef.current = null;
       if (keyboardMoveFrameRef.current !== null) {
@@ -8820,8 +9590,25 @@ export function App() {
     };
   }, []);
 
+  const persistRefreshRecoveryNow = () => {
+    if (!saveRequiredRef.current) {
+      clearRefreshRecoveryProject();
+      return;
+    }
+    const recoveryProjectSnapshot = refreshRecoveryProjectRef.current;
+    if (!recoveryProjectSnapshot) {
+      return;
+    }
+    const recoveryProject = {
+      ...recoveryProjectSnapshot,
+      savedAt: new Date().toISOString()
+    };
+    writeRefreshRecoveryProject(recoveryProject);
+  };
+
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      persistRefreshRecoveryNow();
       if (!saveRequired) {
         return;
       }
@@ -8830,8 +9617,20 @@ export function App() {
       return event.returnValue;
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("pagehide", persistRefreshRecoveryNow);
+    window.addEventListener("vite:beforeFullReload", persistRefreshRecoveryNow);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("pagehide", persistRefreshRecoveryNow);
+      window.removeEventListener("vite:beforeFullReload", persistRefreshRecoveryNow);
+    };
   }, [saveRequired]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) {
+      clearRefreshRecoveryProject();
+    }
+  }, [hasUnsavedChanges]);
 
   useEffect(() => {
     connectDropReadyRef.current = connectDropReady;
@@ -9224,41 +10023,52 @@ export function App() {
       canvasResizeDraftRef.current = null;
       setCanvasResizeDraft(null);
     };
-    const flushCanvasResizeDraft = () => {
-      canvasResizeFrameRef.current = null;
-      const draftBounds = canvasResizeDraftRef.current;
-      if (!draftBounds) {
-        return;
-      }
-      commitCanvasResizeBounds(draftBounds);
-    };
     const handlePointerMove = (event: globalThis.PointerEvent) => {
       event.preventDefault();
       const nextBounds = canvasResizeBoundsFromPointerDrag(canvasResizeDrag, event, canvasResizeDrag.minBounds);
       const clampedBounds = clampCanvasBounds(nextBounds);
       canvasResizeDraftRef.current = clampedBounds;
-      setCanvasResizeDraft(clampedBounds);
-      if (canvasResizeFrameRef.current === null) {
-        canvasResizeFrameRef.current = window.requestAnimationFrame(flushCanvasResizeDraft);
+      flushSync(() => setCanvasResizeDraft(clampedBounds));
+      const frame = canvasFrameRef.current;
+      if (frame) {
+        const nextScrollLeft = canvasResizeKeepsScrollRange(canvasResizeDrag, "x")
+          ? canvasResizeDrag.startScrollLeft
+          : frame.scrollLeft;
+        const nextScrollTop = canvasResizeKeepsScrollRange(canvasResizeDrag, "y")
+          ? canvasResizeDrag.startScrollTop
+          : frame.scrollTop;
+        if (Math.abs(frame.scrollLeft - nextScrollLeft) > 1 || Math.abs(frame.scrollTop - nextScrollTop) > 1) {
+          setCanvasFrameScrollPosition(frame, nextScrollLeft, nextScrollTop);
+        }
       }
     };
-    const handlePointerUp = () => {
-      if (canvasResizeFrameRef.current !== null) {
-        window.cancelAnimationFrame(canvasResizeFrameRef.current);
-        canvasResizeFrameRef.current = null;
-      }
+    const handlePointerUp = (event: globalThis.PointerEvent) => {
       const draftBounds = canvasResizeDraftRef.current;
       if (draftBounds) {
-        commitCanvasResizeBounds(draftBounds);
+        const nextCanvasNoScrollOffset = canvasNoScrollOffsetForCanvasResizeAnchor(canvasResizeDrag, draftBounds);
+        skipNextCanvasScrollSyncRef.current = true;
+        flushSync(() => {
+          setCanvasNoScrollOffset((current) =>
+            Math.round(current.x) === Math.round(nextCanvasNoScrollOffset.x) &&
+            Math.round(current.y) === Math.round(nextCanvasNoScrollOffset.y)
+              ? current
+              : nextCanvasNoScrollOffset
+          );
+          commitCanvasResizeBounds(draftBounds);
+          setCanvasResizeDrag(null);
+        });
+        syncCanvasFrameScrollToResizeAnchorNow(canvasResizeDrag, event);
       }
       if (canvasResizeUndoCapturedRef.current) {
-        const currentBounds = canvasBoundsRef.current;
+        const currentBounds = draftBounds ?? canvasBoundsRef.current;
         writeOperationLog(`调整画布尺寸为 ${currentBounds.width} x ${currentBounds.height}`);
       }
       canvasResizeUndoCapturedRef.current = false;
       canvasResizeDraftRef.current = null;
-      setCanvasResizeDraft(null);
-      setCanvasResizeDrag(null);
+      if (!draftBounds) {
+        setCanvasResizeDraft(null);
+        setCanvasResizeDrag(null);
+      }
     };
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
@@ -9267,10 +10077,6 @@ export function App() {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
-      if (canvasResizeFrameRef.current !== null) {
-        window.cancelAnimationFrame(canvasResizeFrameRef.current);
-        canvasResizeFrameRef.current = null;
-      }
     };
   }, [canvasResizeDrag, canvasHeight, canvasWidth, edges, nodes, routedEdges]);
 
@@ -9344,6 +10150,13 @@ export function App() {
       if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
         return;
       }
+      if (libraryPlacement && isCanvasShortcutTarget) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          cancelLibraryPlacement();
+          return;
+        }
+      }
       if (staticDrawing && isCanvasShortcutTarget) {
         if (event.key === "Enter") {
           event.preventDefault();
@@ -9416,16 +10229,16 @@ export function App() {
         }
       } else if (isCanvasShortcutTarget && event.key === "ArrowLeft") {
         event.preventDefault();
-        nudgeSelectionByKeyboard(event.key, -keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6), 0, event.repeat);
+        nudgeSelectionByKeyboard(event.key, -keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 25 : CANVAS_GRID_SIZE), 0, event.repeat);
       } else if (isCanvasShortcutTarget && event.key === "ArrowRight") {
         event.preventDefault();
-        nudgeSelectionByKeyboard(event.key, keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6), 0, event.repeat);
+        nudgeSelectionByKeyboard(event.key, keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 25 : CANVAS_GRID_SIZE), 0, event.repeat);
       } else if (isCanvasShortcutTarget && event.key === "ArrowUp") {
         event.preventDefault();
-        nudgeSelectionByKeyboard(event.key, 0, -keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6), event.repeat);
+        nudgeSelectionByKeyboard(event.key, 0, -keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 25 : CANVAS_GRID_SIZE), event.repeat);
       } else if (isCanvasShortcutTarget && event.key === "ArrowDown") {
         event.preventDefault();
-        nudgeSelectionByKeyboard(event.key, 0, keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 24 : 6), event.repeat);
+        nudgeSelectionByKeyboard(event.key, 0, keyboardMoveStepForViewBox(viewBox, canvasBounds, event.shiftKey ? 25 : CANVAS_GRID_SIZE), event.repeat);
       }
     };
     const handleKeyUp = (event: KeyboardEvent) => {
@@ -9439,7 +10252,7 @@ export function App() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, canvasBounds, canvasClipboard, canvasSelectionScope, deviceIndexCounters, displaySelectedEdgeIds, displaySelectedNodeIds, edges, hasUnsavedChanges, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, staticDrawing, topologyErrors, viewBox]);
+  }, [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, canvasBounds, canvasClipboard, canvasSelectionScope, deviceIndexCounters, displaySelectedEdgeIds, displaySelectedNodeIds, edges, hasUnsavedChanges, libraryPlacement, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, staticDrawing, topologyErrors, viewBox]);
 
   useEffect(() => {
     if (leftPanelTab !== "projects") {
@@ -10034,10 +10847,10 @@ export function App() {
     }
     const width = bounds.right - bounds.left;
     const height = bounds.bottom - bounds.top;
-    const pasteTargetPoint = {
+    const pasteTargetPoint = snapPointToGrid({
       x: targetPoint.x,
       y: targetPoint.y
-    };
+    });
     const cloned = cloneCanvasClipboard(
       canvasClipboard,
       pasteTargetPoint,
@@ -10212,10 +11025,10 @@ export function App() {
   };
 
   const dropGraphTemplate = (template: GraphTemplate, pointerPosition: Point) => {
-    const targetTopLeft = {
-      x: Math.round(pointerPosition.x - template.sourceSize.width / 2),
-      y: Math.round(pointerPosition.y - template.sourceSize.height / 2)
-    };
+    const targetTopLeft = snapPointToGrid({
+      x: pointerPosition.x - template.sourceSize.width / 2,
+      y: pointerPosition.y - template.sourceSize.height / 2
+    });
     const cloned = cloneCanvasClipboard(
       template.clipboard,
       targetTopLeft,
@@ -11586,6 +12399,27 @@ export function App() {
   const axisLockedDelta = (dx: number, dy: number): Point => (
     Math.abs(dx) >= Math.abs(dy) ? { x: dx, y: 0 } : { x: 0, y: dy }
   );
+  const snapMoveDeltaToGrid = (
+    nodeIds: string[],
+    originalPositions: Record<string, Point>,
+    delta: Point,
+    axes: { x: boolean; y: boolean } = { x: true, y: true }
+  ): Point => {
+    const selected = new Set(nodeIds);
+    const anchor = orderedNodesForIds(nodes, selected).find((node) => Boolean(originalPositions[node.id]));
+    if (!anchor) {
+      return delta;
+    }
+    const original = originalPositions[anchor.id];
+    const snappedPosition = snapNodePositionToGrid(anchor, {
+      x: original.x + delta.x,
+      y: original.y + delta.y
+    });
+    return {
+      x: axes.x ? snappedPosition.x - original.x : delta.x,
+      y: axes.y ? snappedPosition.y - original.y : delta.y
+    };
+  };
   const boundedDeltaForNodes = (
     nodeIds: string[],
     originalPositions: Record<string, Point>,
@@ -11761,17 +12595,23 @@ export function App() {
     const rawDx = point.x - dragState.startPoint.x;
     const rawDy = point.y - dragState.startPoint.y;
     const movementDelta = ctrlKey || shiftKey ? axisLockedDelta(rawDx, rawDy) : { x: rawDx, y: rawDy };
+    const gridDelta = snapMoveDeltaToGrid(
+      dragState.nodeIds,
+      dragState.originalPositions,
+      movementDelta,
+      { x: movementDelta.x !== 0, y: movementDelta.y !== 0 }
+    );
     if (isMultiNodeMoveState(dragState)) {
-      const expandedBounds = canvasBoundsForMovedNodeDelta(dragState.nodeIds, dragState.originalPositions, movementDelta.x, movementDelta.y);
+      const expandedBounds = canvasBoundsForMovedNodeDelta(dragState.nodeIds, dragState.originalPositions, gridDelta.x, gridDelta.y);
       return boundedDeltaForNodes(
         dragState.nodeIds,
         dragState.originalPositions,
-        movementDelta.x,
-        movementDelta.y,
+        gridDelta.x,
+        gridDelta.y,
         expandedBounds
       );
     }
-    const expandedBounds = canvasBoundsForMoveDelta(dragState.nodeIds, dragState.originalPositions, movementDelta.x, movementDelta.y);
+    const expandedBounds = canvasBoundsForMoveDelta(dragState.nodeIds, dragState.originalPositions, gridDelta.x, gridDelta.y);
     return boundedDeltaForMoveGeometry(
       dragState.nodeIds,
       dragState.edgeIds,
@@ -11779,8 +12619,8 @@ export function App() {
       dragState.originalPositions,
       dragState.originalEdgePoints,
       dragState.originalRoutePoints,
-      movementDelta.x,
-      movementDelta.y,
+      gridDelta.x,
+      gridDelta.y,
       dragState.currentDelta ?? { x: 0, y: 0 },
       expandedBounds
     );
@@ -12193,11 +13033,34 @@ export function App() {
           });
         }
       } else {
-        const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nodes, transformedNodeIds);
-        if (edgeUpdates.length > 0) {
-          setGraphStore((current) =>
-            graphStorePatchEdges(current, edgeUpdates)
+        const currentStore = latestGraphStoreRef.current ?? graphStore;
+        const currentSingleNode = currentStore.nodeMap.get(activeTransform.nodeId);
+        if (currentSingleNode) {
+          const transformBounds = canvasBoundsForGraphContent(
+            canvasBounds,
+            [currentSingleNode],
+            [],
+            [],
+            CANVAS_AUTO_EXPAND_PADDING
           );
+          applyCanvasBounds(transformBounds);
+          setGraphStore((current) => {
+            const currentNode = current.nodeMap.get(activeTransform.nodeId);
+            if (!currentNode) {
+              return current;
+            }
+            const clampedPosition = clampNodePositionToBounds(currentNode, transformBounds, currentNode.position);
+            const nodeUpdates =
+              clampedPosition.x === currentNode.position.x && clampedPosition.y === currentNode.position.y
+                ? []
+                : [{ ...currentNode, position: clampedPosition }];
+            const nextNodes = nodeUpdates.length > 0 ? overlayGraphStoreNodes(current, nodeUpdates) : current.nodes;
+            const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, transformedNodeIds, current.edges);
+            return graphStoreApplyPatch(current, {
+              nodeUpdates,
+              edgeUpserts: edgeUpdates
+            });
+          });
         }
       }
       const transformedNode = isGroupTransformDrag(activeTransform) ? null : nodeById.get(activeTransform.nodeId);
@@ -12241,15 +13104,21 @@ export function App() {
       return false;
     }
     const previousDelta = activeDragging.currentDelta ?? { x: 0, y: 0 };
+    const gridDelta = snapMoveDeltaToGrid(
+      activeDragging.nodeIds,
+      activeDragging.originalPositions,
+      requestedDelta,
+      { x: requestedDelta.x !== 0, y: requestedDelta.y !== 0 }
+    );
     const expandedBounds = isMultiNodeMoveState(activeDragging)
-      ? canvasBoundsForMovedNodeDelta(activeDragging.nodeIds, activeDragging.originalPositions, requestedDelta.x, requestedDelta.y)
-      : canvasBoundsForMoveDelta(activeDragging.nodeIds, activeDragging.originalPositions, requestedDelta.x, requestedDelta.y);
+      ? canvasBoundsForMovedNodeDelta(activeDragging.nodeIds, activeDragging.originalPositions, gridDelta.x, gridDelta.y)
+      : canvasBoundsForMoveDelta(activeDragging.nodeIds, activeDragging.originalPositions, gridDelta.x, gridDelta.y);
     const boundedDelta = isMultiNodeMoveState(activeDragging)
       ? boundedDeltaForNodes(
           activeDragging.nodeIds,
           activeDragging.originalPositions,
-          requestedDelta.x,
-          requestedDelta.y,
+          gridDelta.x,
+          gridDelta.y,
           expandedBounds
         )
       : boundedDeltaForMoveGeometry(
@@ -12259,8 +13128,8 @@ export function App() {
           activeDragging.originalPositions,
           activeDragging.originalEdgePoints,
           activeDragging.originalRoutePoints,
-          requestedDelta.x,
-          requestedDelta.y,
+          gridDelta.x,
+          gridDelta.y,
           previousDelta,
           expandedBounds
         );
@@ -12477,13 +13346,19 @@ export function App() {
         currentStoredRoutePointsForEdge(edge)
       ])
     );
-    const expandedBounds = canvasBoundsForMoveDelta(moveNodeIds, originalPositions, dx, dy);
+    const gridDelta = snapMoveDeltaToGrid(
+      moveNodeIds,
+      originalPositions,
+      { x: dx, y: dy },
+      { x: dx !== 0, y: dy !== 0 }
+    );
+    const expandedBounds = canvasBoundsForMoveDelta(moveNodeIds, originalPositions, gridDelta.x, gridDelta.y);
     const boundedDelta = moveNodeIds.length > 1
       ? boundedDeltaForNodes(
           moveNodeIds,
           originalPositions,
-          dx,
-          dy,
+          gridDelta.x,
+          gridDelta.y,
           expandedBounds
         )
       : boundedDeltaForMoveGeometry(
@@ -12493,8 +13368,8 @@ export function App() {
           originalPositions,
           originalEdgePoints,
           originalRoutePoints,
-          dx,
-          dy,
+          gridDelta.x,
+          gridDelta.y,
           undefined,
           expandedBounds
         );
@@ -13258,7 +14133,7 @@ export function App() {
   };
 
   const startInteractiveStaticDrawing = (template: DeviceTemplate, startPoint: Point) => {
-    const pointer = clampPointToCanvas(startPoint);
+    const pointer = snapPointToGrid(clampPointToCanvas(startPoint));
     setMode("static-draw");
     setStaticDrawing({
       kind: template.kind,
@@ -13292,7 +14167,7 @@ export function App() {
       return;
     }
     const points = finalPoint
-      ? appendDistinctStaticDrawingPoint(staticDrawing.points, clampPointToCanvas(finalPoint))
+      ? appendDistinctStaticDrawingPoint(staticDrawing.points, snapPointToGrid(clampPointToCanvas(finalPoint)))
       : staticDrawingPreviewPoints(staticDrawing);
     if (points.length < 2) {
       writeOperationLog("绘制图元至少需要两个落点");
@@ -13317,7 +14192,7 @@ export function App() {
     if (!staticDrawing) {
       return;
     }
-    const nextPoint = clampPointToCanvas(point);
+    const nextPoint = snapPointToGrid(clampPointToCanvas(point));
     const nextPoints = appendDistinctStaticDrawingPoint(staticDrawing.points, nextPoint);
     if (forceFinish || (!interactiveStaticDrawingNeedsExplicitFinish(staticDrawing.kind) && nextPoints.length >= 2)) {
       finishInteractiveStaticDrawing(nextPoint);
@@ -13331,11 +14206,12 @@ export function App() {
   };
 
   const updateInteractiveStaticDrawingPreview = (point: Point) => {
+    const previewPoint = snapPointToGrid(clampPointToCanvas(point));
     setStaticDrawing((current) => {
-      if (!current || sameOptionalPoint(current.previewPoint, point)) {
+      if (!current || sameOptionalPoint(current.previewPoint, previewPoint)) {
         return current;
       }
-      return { ...current, previewPoint: point };
+      return { ...current, previewPoint };
     });
   };
 
@@ -13357,6 +14233,155 @@ export function App() {
     );
   };
 
+  const libraryPlacementInitialPoint = () =>
+    lastCanvasPointerRef.current ? snapPointToGrid(clampPointToCanvas(lastCanvasPointerRef.current)) : null;
+
+  const startLibraryDevicePlacement = (template: DeviceTemplate) => {
+    setLibraryPlacement({ kind: "device", template, previewPoint: libraryPlacementInitialPoint() });
+    setStaticDrawing(null);
+    setConnectSource(null);
+    resetConnectPreviewState();
+    setRewiring(null);
+    setContextMenu(null);
+    setMode("select");
+    if (componentLibraryDisplayMode === "right") {
+      hideLibraryFlyout();
+    }
+    writeOperationLog(`进入图元绘制模式：${template.label}`);
+  };
+
+  const startLibraryGraphTemplatePlacement = (template: GraphTemplate) => {
+    setLibraryPlacement({ kind: "graph-template", template, previewPoint: libraryPlacementInitialPoint() });
+    setStaticDrawing(null);
+    setConnectSource(null);
+    resetConnectPreviewState();
+    setRewiring(null);
+    setContextMenu(null);
+    setMode("select");
+    writeOperationLog(`进入模板绘制模式：${template.typeName} / ${template.name}`);
+  };
+
+  const cancelLibraryPlacement = () => {
+    setLibraryPlacement(null);
+    setMode("select");
+    setContextMenu(null);
+  };
+
+  const updateLibraryPlacementPreview = (point: Point) => {
+    const previewPoint = snapPointToGrid(clampPointToCanvas(point));
+    setLibraryPlacement((current) => {
+      if (!current || (current.previewPoint && sameOptionalPoint(current.previewPoint, previewPoint))) {
+        return current;
+      }
+      return { ...current, previewPoint };
+    });
+  };
+
+  const placeLibraryDeviceAtPoint = (template: DeviceTemplate, pointerPosition: Point) => {
+    const kind = template.kind;
+    if (isInteractiveStaticDrawingKind(kind) || isStaticBoxLikeKind(kind)) {
+      startInteractiveStaticDrawing(template, pointerPosition);
+      return;
+    }
+    const position = { x: pointerPosition.x, y: pointerPosition.y };
+    const rawNode = snapNodeToCanvasGrid({ ...createNodeFromTemplate(template, position), layerId: activeLayerId });
+    const dropOriginShift = leftTopCanvasOriginShiftForContent([...nodes, rawNode], edges);
+    const dropSourceNodes = hasCanvasOriginShift(dropOriginShift)
+      ? nodes.map((node) => translateNodeBy(node, dropOriginShift))
+      : nodes;
+    const dropSourceEdges = hasCanvasOriginShift(dropOriginShift)
+      ? edges.map((edge) => translateEdgeBy(edge, dropOriginShift))
+      : edges;
+    const node = translateNodeBy(rawNode, dropOriginShift);
+    const shiftedPointerPosition = translatePointBy(pointerPosition, dropOriginShift);
+    const dropCanvasBounds = canvasBoundsForGraphContent(
+      canvasBoundsWithOriginShift(canvasBounds, dropOriginShift),
+      [...dropSourceNodes, node],
+      dropSourceEdges,
+      [],
+      CANVAS_AUTO_EXPAND_PADDING
+    );
+    applyCanvasBounds(dropCanvasBounds, dropOriginShift);
+    shiftCachedRoutesForCanvasOrigin(dropOriginShift);
+    if (hasCanvasOriginShift(dropOriginShift)) {
+      markBusTerminalSyncDirtyForEdges(dropSourceEdges);
+    }
+    node.position = snapNodeToCanvasGrid(node, dropCanvasBounds, shiftedPointerPosition).position;
+    lastRawCanvasPointerRef.current = shiftedPointerPosition;
+    lastCanvasPointerRef.current = clampPointToBounds(shiftedPointerPosition, dropCanvasBounds);
+    const indexed = assignPermanentDeviceIndex(node, deviceIndexCounters);
+    pushUndoSnapshot();
+    setDeviceIndexCounters(indexed.counters);
+    setGraphArrays([...dropSourceNodes, indexed.node], dropSourceEdges);
+    setCanvasSelectionScope("group");
+    setSelectedNodeIds([indexed.node.id]);
+    setSelectedEdgeId("");
+    setSelectedEdgeIds([]);
+    activateInspectorFromCanvas();
+    writeOperationLog(`新增图元：${indexed.node.name}`);
+  };
+
+  const commitLibraryPlacementAtPoint = (point: Point) => {
+    if (!libraryPlacement) {
+      return;
+    }
+    const placement = libraryPlacement;
+    setLibraryPlacement(null);
+    if (placement.kind === "graph-template") {
+      dropGraphTemplate(placement.template, point);
+      return;
+    }
+    placeLibraryDeviceAtPoint(placement.template, point);
+  };
+
+  const renderLibraryPlacementPreview = () => {
+    if (!libraryPlacement?.previewPoint) {
+      return null;
+    }
+    const previewPoint = libraryPlacement.previewPoint;
+    if (libraryPlacement.kind === "device") {
+      const previewNode = { ...createNodeFromTemplate(libraryPlacement.template, previewPoint), layerId: activeLayerId };
+      return (
+        <g className="library-placement-preview library-placement-preview-device">
+          <g transform={`translate(${formatSvgNumber(previewNode.position.x)} ${formatSvgNumber(previewNode.position.y)})`}>
+            <g transform={nodeGeometryTransform(previewNode)}>
+              <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+              <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+            </g>
+          </g>
+        </g>
+      );
+    }
+    const bounds = canvasClipboardBounds(libraryPlacement.template.clipboard);
+    if (!bounds) {
+      return null;
+    }
+    const targetTopLeft = snapPointToGrid({
+      x: previewPoint.x - libraryPlacement.template.sourceSize.width / 2,
+      y: previewPoint.y - libraryPlacement.template.sourceSize.height / 2
+    });
+    const offset = { x: targetTopLeft.x - bounds.left, y: targetTopLeft.y - bounds.top };
+    return (
+      <g className="library-placement-preview library-placement-preview-template" transform={`translate(${formatSvgNumber(offset.x)} ${formatSvgNumber(offset.y)})`}>
+        {libraryPlacement.template.clipboard.edges.map((item) => (
+          <path
+            key={item.edge.id}
+            d={pointsToPreviewPath(item.routePoints)}
+            className="library-placement-preview-line"
+          />
+        ))}
+        {libraryPlacement.template.clipboard.nodes.map((node) => (
+          <g key={node.id} transform={`translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})`}>
+            <g transform={nodeGeometryTransform(node)}>
+              <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+              <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+            </g>
+          </g>
+        ))}
+      </g>
+    );
+  };
+
   const startSidePanelResize = (event: PointerEvent<HTMLDivElement>, side: SidePanelSide) => {
     event.preventDefault();
     event.stopPropagation();
@@ -13368,7 +14393,7 @@ export function App() {
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
-  const startCanvasResize = (event: PointerEvent<SVGRectElement>, edge: CanvasResizeEdge) => {
+  const startCanvasResize = (event: PointerEvent<Element>, edge: CanvasResizeEdge) => {
     event.preventDefault();
     event.stopPropagation();
     if (!svgRef.current) {
@@ -13382,11 +14407,67 @@ export function App() {
       startClientY: event.clientY,
       startWidth: canvasWidth,
       startHeight: canvasHeight,
+      startDisplayOffsetX: canvasDisplayOffsetX,
+      startDisplayOffsetY: canvasDisplayOffsetY,
+      startScrollLeft: canvasFrameRef.current?.scrollLeft ?? 0,
+      startScrollTop: canvasFrameRef.current?.scrollTop ?? 0,
+      startScrollSurfaceWidth: canvasScrollSurfaceWidth,
+      startScrollSurfaceHeight: canvasScrollSurfaceHeight,
+      startHorizontalScrollbarsActive: canvasHorizontalScrollbarsActive,
+      startVerticalScrollbarsActive: canvasVerticalScrollbarsActive,
       unitsPerCssX: svgRect.width > 0 ? canvasBounds.width / svgRect.width : 1,
       unitsPerCssY: svgRect.height > 0 ? canvasBounds.height / svgRect.height : 1,
       minBounds: minimumCanvasBoundsForContent()
     });
     event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const startCanvasResizeFromRightOverlay = (event: PointerEvent<Element>) => {
+    if (!svgRef.current) {
+      return false;
+    }
+    const svgRect = svgRef.current.getBoundingClientRect();
+    if (svgRect.width <= 0 || svgRect.height <= 0) {
+      return false;
+    }
+    const unitsPerCssX = canvasBounds.width / svgRect.width;
+    const handleHalfWidthCss = unitsPerCssX > 0
+      ? CANVAS_RESIZE_HANDLE_SIZE / 2 / unitsPerCssX
+      : CANVAS_RESIZE_HANDLE_SIZE / 2;
+    const rightEdgeHotspot = Math.max(10, handleHalfWidthCss + 3);
+    const insideRightEdge =
+      Math.abs(event.clientX - svgRect.right) <= rightEdgeHotspot &&
+      event.clientY >= svgRect.top &&
+      event.clientY <= svgRect.bottom;
+    if (!insideRightEdge) {
+      return false;
+    }
+    startCanvasResize(event, "right");
+    return true;
+  };
+
+  const startCanvasResizeFromBottomOverlay = (event: PointerEvent<Element>) => {
+    if (!svgRef.current) {
+      return false;
+    }
+    const svgRect = svgRef.current.getBoundingClientRect();
+    if (svgRect.width <= 0 || svgRect.height <= 0) {
+      return false;
+    }
+    const unitsPerCssY = canvasBounds.height / svgRect.height;
+    const handleHalfHeightCss = unitsPerCssY > 0
+      ? CANVAS_RESIZE_HANDLE_SIZE / 2 / unitsPerCssY
+      : CANVAS_RESIZE_HANDLE_SIZE / 2;
+    const bottomEdgeHotspot = Math.max(10, handleHalfHeightCss + 3);
+    const insideBottomEdge =
+      Math.abs(event.clientY - svgRect.bottom) <= bottomEdgeHotspot &&
+      event.clientX >= svgRect.left &&
+      event.clientX <= svgRect.right;
+    if (!insideBottomEdge) {
+      return false;
+    }
+    startCanvasResize(event, "bottom");
+    return true;
   };
 
   const startStatusbarResize = (event: PointerEvent<HTMLDivElement>) => {
@@ -13456,6 +14537,11 @@ export function App() {
           title={mode === "hidden" ? `${label}并切换为永久显示` : label}
           aria-label={label}
           onPointerEnter={() => updateAutoPanelVisibility(side, "edge-enter")}
+          onPointerDown={(event) => {
+            if (side === "right" && startCanvasResizeFromRightOverlay(event)) {
+              return;
+            }
+          }}
           onClick={() => {
             if (mode === "hidden") {
               setSidePanelMode(side, "pinned");
@@ -13521,7 +14607,7 @@ export function App() {
     };
   };
 
-  const signedScaleFromScreenHandleDelta = (
+  const signedScaleFromRotatedHandleDelta = (
     drag: SingleTransformDrag,
     point: Point,
     baseNode: ModelNode,
@@ -13529,12 +14615,79 @@ export function App() {
   ) => {
     const currentSignedScale = localScaleKind === "scale-x" ? getNodeScaleX(baseNode) : getNodeScaleY(baseNode);
     const dimension = Math.max(1, localScaleKind === "scale-x" ? baseNode.size.width : baseNode.size.height);
-    const screenDelta =
-      drag.kind === "scale-x"
-        ? (point.x - drag.startPoint.x) * (drag.handleXDirection || 1)
-        : (point.y - drag.startPoint.y) * (drag.handleYDirection || 1);
+    const startLocal = toLocalNodePoint(baseNode, drag.startPoint);
+    const currentLocal = toLocalNodePoint(baseNode, point);
+    const localDelta = localScaleKind === "scale-x"
+      ? currentLocal.x - startLocal.x
+      : currentLocal.y - startLocal.y;
+    const localDirection = localScaleKind === "scale-x"
+      ? drag.handleXDirection || Math.sign(startLocal.x) || 1
+      : drag.handleYDirection || Math.sign(startLocal.y) || 1;
+    const nextMagnitude = Math.max(0, Math.abs(currentSignedScale) + (localDelta * localDirection * 2) / dimension);
+    return signedScale(nextMagnitude, currentSignedScale);
+  };
+
+  const signedScaleFromUprightHandleDelta = (
+    drag: SingleTransformDrag,
+    point: Point,
+    baseNode: ModelNode,
+    localScaleKind: "scale-x" | "scale-y"
+  ) => {
+    const currentSignedScale = localScaleKind === "scale-x" ? getNodeScaleX(baseNode) : getNodeScaleY(baseNode);
+    const dimension = Math.max(1, localScaleKind === "scale-x" ? baseNode.size.width : baseNode.size.height);
+    const screenDelta = localScaleKind === "scale-x"
+      ? (point.x - drag.startPoint.x) * (drag.handleXDirection || 1)
+      : (point.y - drag.startPoint.y) * (drag.handleYDirection || 1);
     const nextMagnitude = Math.max(0, Math.abs(currentSignedScale) + (screenDelta * 2) / dimension);
     return signedScale(nextMagnitude, currentSignedScale);
+  };
+
+  const proportionalSignedScaleFromHandleDelta = (
+    drag: SingleTransformDrag,
+    point: Point,
+    baseNode: ModelNode
+  ) => {
+    const currentSignedScaleX = getNodeScaleX(baseNode);
+    const currentSignedScaleY = getNodeScaleY(baseNode);
+    const startLocal = toLocalNodePoint(baseNode, drag.startPoint);
+    const currentLocal = toLocalNodePoint(baseNode, point);
+    const scaleXDeltaRatio = drag.handleXDirection
+      ? ((currentLocal.x - startLocal.x) * drag.handleXDirection * 2) / Math.max(1, baseNode.size.width)
+      : 0;
+    const scaleYDeltaRatio = drag.handleYDirection
+      ? ((currentLocal.y - startLocal.y) * drag.handleYDirection * 2) / Math.max(1, baseNode.size.height)
+      : 0;
+    const scaleDeltaRatio = Math.abs(scaleXDeltaRatio) >= Math.abs(scaleYDeltaRatio) ? scaleXDeltaRatio : scaleYDeltaRatio;
+    const currentScale = Math.max(Math.abs(currentSignedScaleX), Math.abs(currentSignedScaleY));
+    const nextScale = normalizeScale(Math.max(0, currentScale + scaleDeltaRatio), currentScale);
+    return {
+      scale: nextScale,
+      scaleX: signedScale(nextScale, currentSignedScaleX),
+      scaleY: signedScale(nextScale, currentSignedScaleY)
+    };
+  };
+
+  const proportionalSignedScaleFromUprightHandleDelta = (
+    drag: SingleTransformDrag,
+    point: Point,
+    baseNode: ModelNode
+  ) => {
+    const currentSignedScaleX = getNodeScaleX(baseNode);
+    const currentSignedScaleY = getNodeScaleY(baseNode);
+    const scaleXDeltaRatio = drag.handleXDirection
+      ? ((point.x - drag.startPoint.x) * drag.handleXDirection * 2) / Math.max(1, baseNode.size.width)
+      : 0;
+    const scaleYDeltaRatio = drag.handleYDirection
+      ? ((point.y - drag.startPoint.y) * drag.handleYDirection * 2) / Math.max(1, baseNode.size.height)
+      : 0;
+    const scaleDeltaRatio = Math.abs(scaleXDeltaRatio) >= Math.abs(scaleYDeltaRatio) ? scaleXDeltaRatio : scaleYDeltaRatio;
+    const currentScale = Math.max(Math.abs(currentSignedScaleX), Math.abs(currentSignedScaleY));
+    const nextScale = normalizeScale(Math.max(0, currentScale + scaleDeltaRatio), currentScale);
+    return {
+      scale: nextScale,
+      scaleX: signedScale(nextScale, currentSignedScaleX),
+      scaleY: signedScale(nextScale, currentSignedScaleY)
+    };
   };
 
   const snapshotGroupTransformNodes = (unit: CanvasLayoutUnit) =>
@@ -13717,7 +14870,9 @@ export function App() {
       startPoint,
       rotationStartPoint: kind === "rotate" ? { x: center.x, y: unit.bounds.top - TRANSFORM_ROTATE_HANDLE_GAP } : undefined,
       originalNodes: snapshotGroupTransformNodes(unit),
-      originalEdgeRoutes: snapshotGroupTransformEdgeRoutes(unit)
+      originalEdgeRoutes: snapshotGroupTransformEdgeRoutes(unit),
+      handleXDirection: kind === "scale-y" ? 0 : startPoint.x >= center.x ? 1 : -1,
+      handleYDirection: kind === "scale-x" ? 0 : startPoint.y >= center.y ? 1 : -1
     });
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -13737,11 +14892,11 @@ export function App() {
     const startPoint = svgRef.current
       ? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY))
       : { ...node.position };
-    const rotateHandleStart = nodeRotateHandleControlPoints(
-      node,
-      TRANSFORM_ROTATE_STEM_START,
-      TRANSFORM_ROTATE_STEM_END,
-      TRANSFORM_ROTATE_HANDLE_GAP
+    const uprightStaticSelection = nodeUsesUprightStaticSelectionOutline(node, nodeImage(node), nodeForegroundImage(node));
+    const rotateHandleStart = (
+      uprightStaticSelection
+        ? nodeUprightRotateHandleControlPoints(node, TRANSFORM_ROTATE_STEM_START, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_HANDLE_GAP)
+        : nodeRotateHandleControlPoints(node, TRANSFORM_ROTATE_STEM_START, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_HANDLE_GAP)
     ).handle;
     setTransformDrag({
       kind,
@@ -13752,7 +14907,8 @@ export function App() {
         ? { x: node.position.x + rotateHandleStart.x, y: node.position.y + rotateHandleStart.y }
         : undefined,
       handleXDirection: handle?.xDirection,
-      handleYDirection: handle?.yDirection
+      handleYDirection: handle?.yDirection,
+      uprightStaticSelection: nodeUsesUprightStaticSelectionOutline(node, nodeImage(node), nodeForegroundImage(node))
     });
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -14203,45 +15359,7 @@ export function App() {
     if (!template) {
       return;
     }
-    if (isInteractiveStaticDrawingKind(kind) || isStaticBoxLikeKind(kind)) {
-      startInteractiveStaticDrawing(template, pointerPosition);
-      return;
-    }
-    const rawNode = { ...createNodeFromTemplate(template, position), layerId: activeLayerId };
-    const dropOriginShift = leftTopCanvasOriginShiftForContent([...nodes, rawNode], edges);
-    const dropSourceNodes = hasCanvasOriginShift(dropOriginShift)
-      ? nodes.map((node) => translateNodeBy(node, dropOriginShift))
-      : nodes;
-    const dropSourceEdges = hasCanvasOriginShift(dropOriginShift)
-      ? edges.map((edge) => translateEdgeBy(edge, dropOriginShift))
-      : edges;
-    const node = translateNodeBy(rawNode, dropOriginShift);
-    const shiftedPointerPosition = translatePointBy(pointerPosition, dropOriginShift);
-    const dropCanvasBounds = canvasBoundsForGraphContent(
-      canvasBoundsWithOriginShift(canvasBounds, dropOriginShift),
-      [...dropSourceNodes, node],
-      dropSourceEdges,
-      [],
-      CANVAS_AUTO_EXPAND_PADDING
-    );
-    applyCanvasBounds(dropCanvasBounds, dropOriginShift);
-    shiftCachedRoutesForCanvasOrigin(dropOriginShift);
-    if (hasCanvasOriginShift(dropOriginShift)) {
-      markBusTerminalSyncDirtyForEdges(dropSourceEdges);
-    }
-    node.position = clampNodePositionToBounds(node, dropCanvasBounds, shiftedPointerPosition);
-    lastRawCanvasPointerRef.current = shiftedPointerPosition;
-    lastCanvasPointerRef.current = clampPointToBounds(shiftedPointerPosition, dropCanvasBounds);
-    const indexed = assignPermanentDeviceIndex(node, deviceIndexCounters);
-    pushUndoSnapshot();
-    setDeviceIndexCounters(indexed.counters);
-    setGraphArrays([...dropSourceNodes, indexed.node], dropSourceEdges);
-    setCanvasSelectionScope("group");
-    setSelectedNodeIds([indexed.node.id]);
-    setSelectedEdgeId("");
-    setSelectedEdgeIds([]);
-    activateInspectorFromCanvas();
-    writeOperationLog(`新增图元：${indexed.node.name}`);
+    placeLibraryDeviceAtPoint(template, position);
   };
 
   const handleNodePointerDown = (event: PointerEvent<SVGGElement>, node: ModelNode) => {
@@ -14402,6 +15520,9 @@ export function App() {
       lastRawCanvasPointerRef.current = rawPointer;
       lastCanvasPointerRef.current = pointer;
       updateMouseStatus(pointer);
+      if (libraryPlacement) {
+        updateLibraryPlacementPreview(pointer);
+      }
       if (connectSource) {
         const previewPoint = resolveConnectPreviewPoint(pointer, event);
         scheduleConnectPreviewPoint(previewPoint);
@@ -14620,7 +15741,8 @@ export function App() {
       return;
     }
     if (transformDrag && svgRef.current) {
-      const point = lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      const rawPoint = lastRawCanvasPointerRef.current ?? screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
+      const point = transformDrag.kind === "rotate" ? clampPointToCanvas(rawPoint) : rawPoint;
       transformDragChangedRef.current = true;
       if (!transformDrag.historyCaptured) {
         pushUndoSnapshot();
@@ -14644,14 +15766,6 @@ export function App() {
               : { ...current, historyCaptured: true, proportionalScale: transformForMove.proportionalScale, previewPoint: point }
             : current
         );
-        const transformBounds = canvasBoundsForGraphContent(
-          canvasBounds,
-          overlayGraphStoreNodes(currentStore, nextNodeUpdates),
-          currentStore.edges,
-          [],
-          CANVAS_AUTO_EXPAND_PADDING
-        );
-        applyCanvasBounds(transformBounds);
         return;
       }
       const node = currentStore.nodeMap.get(transformDrag.nodeId);
@@ -14678,15 +15792,15 @@ export function App() {
             : current
         );
       } else {
-        const local = toLocalNodePoint(baseNode, point);
-        const nextScaleX = normalizeScale((Math.abs(local.x) * 2) / baseNode.size.width);
-        const nextScaleY = normalizeScale((Math.abs(local.y) * 2) / baseNode.size.height);
         const currentSignedScaleX = getNodeScaleX(baseNode);
         const currentSignedScaleY = getNodeScaleY(baseNode);
         const localScaleKind = event.shiftKey || transformDrag.kind === "scale-both"
           ? "scale-both"
-          : localScaleKindForScreenHandle(transformDrag.kind, baseNode.rotation);
+          : transformDrag.kind;
         const proportionalScale = localScaleKind === "scale-both";
+        const signedScaleFromHandleDelta = transformDrag.uprightStaticSelection
+          ? signedScaleFromUprightHandleDelta
+          : signedScaleFromRotatedHandleDelta;
         setTransformDrag((current) =>
           current && !isGroupTransformDrag(current) && current.nodeId === transformDrag.nodeId
             ? current.historyCaptured && current.proportionalScale === proportionalScale
@@ -14695,7 +15809,7 @@ export function App() {
             : current
         );
         if (localScaleKind === "scale-x") {
-          const nextSignedScaleX = signedScaleFromScreenHandleDelta(transformDrag, point, baseNode, "scale-x");
+          const nextSignedScaleX = signedScaleFromHandleDelta(transformDrag, point, baseNode, "scale-x");
           nextNode = {
             ...node,
             position: baseNode.position,
@@ -14705,7 +15819,7 @@ export function App() {
             scaleY: currentSignedScaleY
           };
         } else if (localScaleKind === "scale-y") {
-          const nextSignedScaleY = signedScaleFromScreenHandleDelta(transformDrag, point, baseNode, "scale-y");
+          const nextSignedScaleY = signedScaleFromHandleDelta(transformDrag, point, baseNode, "scale-y");
           nextNode = {
             ...node,
             position: baseNode.position,
@@ -14715,23 +15829,12 @@ export function App() {
             scaleY: nextSignedScaleY
           };
         } else {
-          const nextScale = normalizeScale(Math.max(nextScaleX, nextScaleY));
-          const nextSignedScale = {
-            x: signedScale(nextScale, currentSignedScaleX),
-            y: signedScale(nextScale, currentSignedScaleY)
-          };
-          nextNode = { ...node, position: baseNode.position, rotation: baseNode.rotation, scale: nextScale, scaleX: nextSignedScale.x, scaleY: nextSignedScale.y };
+          const nextSignedScale = transformDrag.uprightStaticSelection
+            ? proportionalSignedScaleFromUprightHandleDelta(transformDrag, point, baseNode)
+            : proportionalSignedScaleFromHandleDelta(transformDrag, point, baseNode);
+          nextNode = { ...node, position: baseNode.position, rotation: baseNode.rotation, scale: nextSignedScale.scale, scaleX: nextSignedScale.scaleX, scaleY: nextSignedScale.scaleY };
         }
       }
-      const transformBounds = canvasBoundsForGraphContent(
-        canvasBounds,
-        [nextNode],
-        [],
-        [],
-        CANVAS_AUTO_EXPAND_PADDING
-      );
-      applyCanvasBounds(transformBounds);
-      nextNode = { ...nextNode, position: clampNodePositionToBounds(nextNode, transformBounds, nextNode.position) };
       patchGraphNodes([nextNode]);
       return;
     }
@@ -15057,6 +16160,7 @@ export function App() {
   };
 
   const loadSavedProject = (project: SavedProjectRecord, schemeId = findSchemeForProject(project.id)?.id ?? "") => {
+    clearRefreshRecoveryProject();
     const normalizedNodes = project.project.nodes.map(normalizeNodeTerminalsByTemplate);
     const indexed = assignMissingDeviceIndexes(normalizedNodes, project.project.deviceIndexCounters);
     const lockedProject = lockProjectEdgeTerminals({
@@ -15743,6 +16847,7 @@ export function App() {
         graphDirtyBaselineRef.current = currentGraphDirtyBaseline();
         setHasUnsavedChanges(false);
         saveDraftProject(targetId, activeSchemeId || findSchemeForProject(targetId)?.id || selectedSchemeId);
+        clearRefreshRecoveryProject();
         writeOperationLog(`保存模型：${projectName}`);
         return;
       }
@@ -15763,6 +16868,7 @@ export function App() {
     graphDirtyBaselineRef.current = currentGraphDirtyBaseline();
     setHasUnsavedChanges(false);
     saveDraftProject(record.id, targetSchemeId);
+    clearRefreshRecoveryProject();
     writeOperationLog(`保存模型：${projectName}`);
   };
 
@@ -16339,13 +17445,15 @@ export function App() {
       }, null)?.index ?? -1;
 
   const connectionHitTolerance = () => {
-    const rect = svgRef.current?.getBoundingClientRect();
-    if (!rect || rect.width <= 0 || rect.height <= 0) {
+    const svg = svgRef.current;
+    const rect = svg?.getBoundingClientRect();
+    if (!svg || !rect || rect.width <= 0 || rect.height <= 0) {
       return 16;
     }
-    const xTolerance = (viewBox.width / rect.width) * 18;
-    const yTolerance = (viewBox.height / rect.height) * 18;
-    return Math.max(12, Math.max(xTolerance, yTolerance));
+    const svgViewBox = svg.viewBox.baseVal;
+    const xTolerance = (svgViewBox.width / rect.width) * CONNECTION_HIT_SCREEN_TOLERANCE;
+    const yTolerance = (svgViewBox.height / rect.height) * CONNECTION_HIT_SCREEN_TOLERANCE;
+    return Math.max(xTolerance, yTolerance);
   };
 
   const findConnectionRouteHitAtPoint = (point: Point) => {
@@ -16695,7 +17803,9 @@ export function App() {
         backgroundColor: canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND,
         backgroundImage: canvasBackgroundImageUrl,
         colorDisplayMode,
-        colorPalette
+        colorPalette,
+        layers,
+        activeLayerId
       }),
       mime: "image/svg+xml",
       description: "SVG 图形文件",
@@ -17019,7 +18129,9 @@ export function App() {
             backgroundColor: project.project.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND,
             backgroundImage: resolveProjectImage(project.project),
             colorDisplayMode,
-            colorPalette
+            colorPalette,
+            layers: project.project.layers,
+            activeLayerId: project.project.activeLayerId
           }),
           "image/svg+xml"
         );
@@ -18245,7 +19357,13 @@ export function App() {
                         className="template-library-item"
                         draggable
                         title={`${template.typeName} / ${template.name} / ${template.sourceSize.width}×${template.sourceSize.height}`}
+                        onClick={() => startLibraryGraphTemplatePlacement(template)}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          cancelLibraryPlacement();
+                        }}
                         onDragStart={(event) => {
+                          cancelLibraryPlacement();
                           event.dataTransfer.setData("application/graph-template-id", template.id);
                           event.dataTransfer.effectAllowed = "copy";
                         }}
@@ -18269,6 +19387,59 @@ export function App() {
     </div>
   );
 
+  const renderLibraryTemplateButton = (item: DeviceTemplate, section: string) => {
+    const preview = libraryPreviewByKind.get(item.kind) ?? createNodeFromTemplate(item, { x: 0, y: 0 });
+    const previewRotation = ((Math.round(preview.rotation) % 360) + 360) % 360;
+    const previewViewBox = previewRotation === 90 || previewRotation === 270 ? "-48 -48 96 96" : "-40 -28 80 56";
+    return (
+      <button
+        key={item.kind}
+        className="library-item"
+        draggable
+        title={`${item.label} / ${section}`}
+        onClick={() => startLibraryDevicePlacement(item)}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          cancelLibraryPlacement();
+        }}
+        onDragStart={(event) => {
+          cancelLibraryPlacement();
+          event.dataTransfer.setData("application/device-kind", item.kind);
+          if (componentLibraryDisplayMode === "right") {
+            hideLibraryFlyout();
+          }
+        }}
+      >
+        <svg viewBox={previewViewBox} aria-hidden="true">
+          <g transform={nodeGeometryTransform(preview)}>
+            <MemoDeviceGlyph node={preview} miniature colorPalette={colorPalette} />
+          </g>
+        </svg>
+      </button>
+    );
+  };
+  const renderLibraryFlyout = (flyoutListKey: string, componentTypeKey: string, group: AttributeLibrary, typeGroup: AttributeLibraryComponentTypeGroup) => {
+    const flyout = (
+      <div
+        className="library-group flyout-library-group"
+        ref={setLibraryComponentListRef(flyoutListKey)}
+        style={libraryFlyoutStyle(flyoutListKey)}
+        onMouseEnter={() => {
+          clearLibraryFlyoutCloseTimer();
+          setHoveredAttributeLibrary(group);
+          setHoveredAttributeLibraryComponentType(componentTypeKey);
+        }}
+        onMouseLeave={() => scheduleLibraryFlyoutClose(group, componentTypeKey)}
+      >
+        {typeGroup.templates.map((item) => renderLibraryTemplateButton(item, typeGroup.section))}
+      </div>
+    );
+    if (typeof document === "undefined") {
+      return flyout;
+    }
+    return createPortal(flyout, document.body);
+  };
+
   const renderLibraryPanel = () => (
     <div className="library-panel-stack">
       <div className="library-search">
@@ -18285,18 +19456,56 @@ export function App() {
           </button>
         )}
       </div>
-      <div className="library-scroll">
+      <div className="library-display-mode" role="radiogroup" aria-label="图元库展开方式">
+        {([
+          ["expanded", "向下展开"],
+          ["right", "向右浮动"]
+        ] as const).map(([mode, label]) => (
+          <label key={mode} className={componentLibraryDisplayMode === mode ? "active" : ""}>
+            <input
+              type="radio"
+              name="component-library-display-mode"
+              value={mode}
+              checked={componentLibraryDisplayMode === mode}
+              onChange={() => setComponentLibraryDisplayMode(mode)}
+            />
+            <span>{label}</span>
+          </label>
+        ))}
+      </div>
+      <div
+        className={`library-scroll ${componentLibraryDisplayMode === "right" ? "library-scroll-flyout" : ""}`}
+        ref={libraryScrollRef}
+        onScroll={() => {
+          if (componentLibraryDisplayMode === "right") {
+            hideLibraryFlyout();
+          }
+        }}
+      >
         {displayedAttributeLibraries.length > 0 ? displayedAttributeLibraries.map((group) => {
-          const expanded = librarySearchNeedle ? true : expandedAttributeLibraries.includes(group) || hoveredAttributeLibrary === group;
+          const libraryExpanded = componentLibraryDisplayMode === "expanded";
+          const libraryFlyout = componentLibraryDisplayMode === "right";
+          const expanded = libraryExpanded || librarySearchNeedle ? true : expandedAttributeLibraries.includes(group) || hoveredAttributeLibrary === group;
           const typeGroups = filteredAttributeLibraryByComponentType[group] ?? [];
           return (
             <section
               className="library-group-section"
               key={group}
-              onMouseEnter={() => setHoveredAttributeLibrary(group)}
+              onMouseEnter={() => {
+                if (!libraryExpanded) {
+                  clearLibraryFlyoutCloseTimer();
+                  setHoveredAttributeLibrary(group);
+                }
+              }}
               onMouseLeave={() => {
-                setHoveredAttributeLibrary((current) => current === group ? "" : current);
-                setHoveredAttributeLibraryComponentType("");
+                if (!libraryExpanded) {
+                  if (libraryFlyout) {
+                    scheduleLibraryFlyoutClose(group);
+                  } else {
+                    setHoveredAttributeLibrary((current) => current === group ? "" : current);
+                    setHoveredAttributeLibraryComponentType("");
+                  }
+                }
               }}
             >
               <button
@@ -18314,20 +19523,37 @@ export function App() {
                 <div className="attribute-library-component-type-list">
                   {typeGroups.map((typeGroup) => {
                     const componentTypeKey = attributeLibraryComponentTypeKey(group, typeGroup.section);
-                    const componentTypeExpanded = librarySearchNeedle
+                    const componentTypeExpanded = libraryExpanded || librarySearchNeedle
                       ? true
-                      : expandedAttributeLibraryComponentTypes.includes(componentTypeKey) || hoveredAttributeLibraryComponentType === componentTypeKey;
+                      : libraryFlyout ? false : expandedAttributeLibraryComponentTypes.includes(componentTypeKey) || hoveredAttributeLibraryComponentType === componentTypeKey;
+                    const componentTypeFlyoutVisible = libraryFlyout && !librarySearchNeedle && hoveredAttributeLibraryComponentType === componentTypeKey;
+                    const inlineListKey = libraryComponentListRefKey("inline", componentTypeKey);
+                    const flyoutListKey = libraryComponentListRefKey("flyout", componentTypeKey);
                     return (
                       <section
-                        className="attribute-library-component-type-section"
+                        className={`attribute-library-component-type-section ${libraryFlyout ? "flyout-mode" : ""}`}
                         key={`${group}-${typeGroup.section}`}
-                        onMouseEnter={() => setHoveredAttributeLibraryComponentType(componentTypeKey)}
-                        onMouseLeave={() => setHoveredAttributeLibraryComponentType((current) => current === componentTypeKey ? "" : current)}
+                        onMouseEnter={() => {
+                          if (!libraryExpanded) {
+                            clearLibraryFlyoutCloseTimer();
+                            setHoveredAttributeLibraryComponentType(componentTypeKey);
+                          }
+                        }}
+                        onMouseLeave={() => {
+                          if (!libraryExpanded) {
+                            if (libraryFlyout) {
+                              scheduleLibraryFlyoutClose(group, componentTypeKey);
+                            } else {
+                              setHoveredAttributeLibraryComponentType((current) => current === componentTypeKey ? "" : current);
+                            }
+                          }
+                        }}
                       >
                         <button
                           type="button"
-                          className={`attribute-library-component-type-header ${componentTypeExpanded ? "active" : ""}`}
-                          aria-expanded={componentTypeExpanded}
+                          ref={setLibraryComponentTypeHeaderRef(flyoutListKey)}
+                          className={`attribute-library-component-type-header ${componentTypeExpanded || componentTypeFlyoutVisible ? "active" : ""}`}
+                          aria-expanded={componentTypeExpanded || componentTypeFlyoutVisible}
                           onClick={() => toggleAttributeLibraryComponentType(group, typeGroup.section)}
                         >
                           <span>
@@ -18337,29 +19563,11 @@ export function App() {
                           <strong>{typeGroup.templates.length}</strong>
                         </button>
                         {componentTypeExpanded && (
-                          <div className="library-group">
-                            {typeGroup.templates.map((item) => {
-                              const preview = libraryPreviewByKind.get(item.kind) ?? createNodeFromTemplate(item, { x: 0, y: 0 });
-                              const previewRotation = ((Math.round(preview.rotation) % 360) + 360) % 360;
-                              const previewViewBox = previewRotation === 90 || previewRotation === 270 ? "-48 -48 96 96" : "-40 -28 80 56";
-                              return (
-                                <button
-                                  key={item.kind}
-                                  className="library-item"
-                                  draggable
-                                  title={`${item.label} / ${typeGroup.section}`}
-                                  onDragStart={(event) => event.dataTransfer.setData("application/device-kind", item.kind)}
-                                >
-                                  <svg viewBox={previewViewBox} aria-hidden="true">
-                                    <g transform={nodeGeometryTransform(preview)}>
-                                      <MemoDeviceGlyph node={preview} miniature colorPalette={colorPalette} />
-                                    </g>
-                                  </svg>
-                                </button>
-                              );
-                            })}
+                          <div className="library-group inline-library-group" ref={setLibraryComponentListRef(inlineListKey)}>
+                            {typeGroup.templates.map((item) => renderLibraryTemplateButton(item, typeGroup.section))}
                           </div>
                         )}
+                        {componentTypeFlyoutVisible && renderLibraryFlyout(flyoutListKey, componentTypeKey, group, typeGroup)}
                       </section>
                     );
                   })}
@@ -18539,9 +19747,14 @@ export function App() {
     ? topologyErrors.slice(0, 5).map((error, index) => `${index + 1}. ${topologyWarningDisplayMessage(error.message)}`).join("\n")
     : "当前没有拓扑告警。";
   const currentZoomPercent = viewBoxZoomPercent(viewBox, canvasBounds);
+  const viewportNodeLodScreenSize = useMemo(
+    () => estimatedViewportNodeScreenSize(viewportNodes, canvasScrollScale),
+    [canvasScrollScale.x, canvasScrollScale.y, viewportNodes]
+  );
   const useSimplifiedCanvasNodes =
     viewportNodes.length > CANVAS_LOD_NODE_DETAIL_LIMIT &&
     currentZoomPercent <= CANVAS_LOD_MAX_ZOOM_PERCENT &&
+    viewportNodeLodScreenSize <= CANVAS_LOD_MAX_NODE_SCREEN_SIZE &&
     !connectSource &&
     !staticDrawing;
   const useSimplifiedSelectedCanvasNodes =
@@ -18682,6 +19895,13 @@ export function App() {
       const node = visibleNodeById.get(nodeId);
       if (!node) {
         return [];
+      }
+      if (nodeUsesUprightStaticSelectionOutline(node)) {
+        const rect = nodeUprightSelectionOutlineRect(node);
+        const transform = `translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})`;
+        return [
+          `<rect class="lod-node-selection lod-node-upright-selection" transform="${escapeXml(transform)}" x="${formatSvgNumber(rect.x)}" y="${formatSvgNumber(rect.y)}" width="${formatSvgNumber(rect.width)}" height="${formatSvgNumber(rect.height)}" rx="4"/>`
+        ];
       }
       const transform = `translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)}) ${nodeGeometryTransform(node)}`;
       return [
@@ -18860,12 +20080,10 @@ export function App() {
       rotateControlAvoidRectFromCanvas(selectionRectCenter(selectedTransformGroupUnit.bounds).x, selectedTransformGroupUnit.bounds.top)
     );
   } else if (selectedNode && selectedNodeCount === 1 && activeSelectedEdgeIds.length === 0) {
-    const selectedNodeRotateHandle = nodeRotateHandleControlPoints(
-      selectedNode,
-      TRANSFORM_ROTATE_STEM_START,
-      TRANSFORM_ROTATE_STEM_END,
-      TRANSFORM_ROTATE_HANDLE_GAP
-    );
+    const selectedNodeUprightStaticSelectionOutline = nodeUsesUprightStaticSelectionOutline(selectedNode, nodeImage(selectedNode), nodeForegroundImage(selectedNode));
+    const selectedNodeRotateHandle = selectedNodeUprightStaticSelectionOutline
+      ? nodeUprightRotateHandleControlPoints(selectedNode, TRANSFORM_ROTATE_STEM_START, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_HANDLE_GAP)
+      : nodeRotateHandleControlPoints(selectedNode, TRANSFORM_ROTATE_STEM_START, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_HANDLE_GAP);
     const selectedNodeRotateHandlePoints = [
       selectedNodeRotateHandle.stemStart,
       selectedNodeRotateHandle.stemEnd,
@@ -19502,12 +20720,14 @@ export function App() {
     () => renderLibraryPanel(),
     [
       colorPalette,
+      componentLibraryDisplayMode,
       displayedAttributeLibraries,
       expandedAttributeLibraries,
       expandedAttributeLibraryComponentTypes,
       filteredAttributeLibraryByComponentType,
       hoveredAttributeLibrary,
       hoveredAttributeLibraryComponentType,
+      libraryFlyoutPositions,
       libraryPreviewByKind,
       librarySearchNeedle,
       librarySearchQuery
@@ -19730,7 +20950,10 @@ export function App() {
             className="canvas-scroll-surface"
             style={{ width: canvasScrollSurfaceWidth, height: canvasScrollSurfaceHeight }}
             onPointerDown={(event) => {
-              if (event.button !== 0 || event.target !== event.currentTarget || staticDrawing || connectSource) {
+              if (event.button !== 0 || event.target !== event.currentTarget || staticDrawing || libraryPlacement || connectSource) {
+                return;
+              }
+              if (startCanvasResizeFromBottomOverlay(event)) {
                 return;
               }
               if (hasCanvasSelectionModifier(event)) {
@@ -19767,9 +20990,9 @@ export function App() {
           >
             <svg
               ref={svgRef}
-              className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${staticDrawing ? "static-draw-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""} ${multiNodeDragging ? "multi-node-dragging" : ""}`}
+              className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${staticDrawing ? "static-draw-mode" : ""} ${libraryPlacement ? "library-place-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""} ${multiNodeDragging ? "multi-node-dragging" : ""}`}
               style={{ width: canvasDisplayWidth, height: canvasDisplayHeight, left: canvasDisplayOffsetX, top: canvasDisplayOffsetY }}
-            viewBox={`0 0 ${canvasBounds.width} ${canvasBounds.height}`}
+            viewBox={`0 0 ${canvasRenderBounds.width} ${canvasRenderBounds.height}`}
             onDrop={handleDrop}
             onDragOver={(event) => event.preventDefault()}
             onWheel={handleWheel}
@@ -19847,6 +21070,10 @@ export function App() {
               lastRawCanvasPointerRef.current = rawPointer;
               lastCanvasPointerRef.current = pointer;
               updateMouseStatus(pointer);
+              if (libraryPlacement) {
+                commitLibraryPlacementAtPoint(pointer);
+                return;
+              }
               if (staticDrawing) {
                 appendStaticDrawingPoint(pointer, event.detail >= 2);
                 return;
@@ -19908,12 +21135,8 @@ export function App() {
                 fitWholeCanvasToFrame();
                 return;
               }
-              if (!canvasScrollbarsActiveRef.current) {
-                startCanvasPanning(event);
-                return;
-              }
-              const point = lastCanvasPointerRef.current;
-              setMarquee({ start: point, current: point });
+              startCanvasPanning(event);
+              return;
             }}
             onContextMenu={(event) => {
               event.preventDefault();
@@ -19922,6 +21145,10 @@ export function App() {
               lastRawCanvasPointerRef.current = rawPointer;
               lastCanvasPointerRef.current = pointer;
               updateMouseStatus(pointer);
+              if (libraryPlacement) {
+                cancelLibraryPlacement();
+                return;
+              }
               if (staticDrawing) {
                 finishInteractiveStaticDrawing(pointer);
                 return;
@@ -19953,28 +21180,28 @@ export function App() {
             }}
           >
             <defs>
-              <pattern id="small-grid" width="24" height="24" patternUnits="userSpaceOnUse">
-                <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#e2e8f0" strokeWidth="1" />
+              <pattern id="small-grid" width="5" height="5" patternUnits="userSpaceOnUse">
+                <path d="M 5 0 L 0 0 0 5" fill="none" stroke="#e2e8f0" strokeWidth="0.45" />
               </pattern>
-              <pattern id="large-grid" width="120" height="120" patternUnits="userSpaceOnUse">
-                <rect width="120" height="120" fill="url(#small-grid)" />
-                <path d="M 120 0 L 0 0 0 120" fill="none" stroke="#cbd5e1" strokeWidth="1.2" />
+              <pattern id="large-grid" width="25" height="25" patternUnits="userSpaceOnUse">
+                <rect width="25" height="25" fill="url(#small-grid)" />
+                <path d="M 25 0 L 0 0 0 25" fill="none" stroke="#cbd5e1" strokeWidth="0.8" />
               </pattern>
             </defs>
-            <rect width={canvasWidth} height={canvasHeight} fill={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND} />
+            <rect width={canvasRenderBounds.width} height={canvasRenderBounds.height} fill={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND} />
             {canvasBackgroundImageUrl && (
               <image
                 href={canvasBackgroundImageUrl}
                 x="0"
                 y="0"
-                width={canvasWidth}
-                height={canvasHeight}
+                width={canvasRenderBounds.width}
+                height={canvasRenderBounds.height}
                 preserveAspectRatio="xMidYMid slice"
                 pointerEvents="none"
               />
             )}
-            <rect width={canvasWidth} height={canvasHeight} fill="url(#large-grid)" />
-            <rect className="canvas-boundary" x="0" y="0" width={canvasWidth} height={canvasHeight} />
+            <rect width={canvasRenderBounds.width} height={canvasRenderBounds.height} fill="url(#large-grid)" />
+            <rect className="canvas-boundary" x="0" y="0" width={canvasRenderBounds.width} height={canvasRenderBounds.height} />
             {renderReadonlyBackgroundPage()}
             <g className="canvas-content">
             {marquee && (
@@ -19986,6 +21213,7 @@ export function App() {
                 height={Math.abs(marquee.current.y - marquee.start.y)}
               />
             )}
+            {renderLibraryPlacementPreview()}
             {renderInteractiveStaticDrawingPreview()}
             {dragGhostEdgeRoutes.map((route) => (
               <path key={`drag-ghost-edge-${route.edgeId}`} d={route.path} className="connection-line drag-ghost" style={connectionLineStyle(route.edgeId)} />
@@ -20256,6 +21484,7 @@ export function App() {
                         />
                       </g>
                       {SCALE_HANDLE_CONFIGS.map((handle) => {
+                        const handleCursorClass = scaleHandleCursorClass(handle, 0);
                         const x =
                           handle.xDirection === 0
                             ? center.x
@@ -20271,7 +21500,7 @@ export function App() {
                         return (
                           <g key={handle.id} transform={`translate(${x} ${y})`}>
                             <rect
-                              className={`scale-handle ${handle.className}`}
+                              className={`scale-handle ${handleCursorClass}`}
                               x="-8"
                               y="-8"
                               width="16"
@@ -20335,6 +21564,8 @@ export function App() {
               }
               const imageHref = nodeImage(node);
               const foregroundImageHref = nodeForegroundImage(node);
+              const uprightStaticSelectionOutline = nodeUsesUprightStaticSelectionOutline(node, imageHref, foregroundImageHref);
+              const uprightSelectionOutlineRect = uprightStaticSelectionOutline ? nodeUprightSelectionOutlineRect(node) : null;
               const nodeScaleX = getNodeScaleX(node);
               const nodeScaleY = getNodeScaleY(node);
               const inverseScaleX = nodeScaleX === 0 ? 1 : 1 / nodeScaleX;
@@ -20342,23 +21573,21 @@ export function App() {
               const terminalStubDashArray = svgStrokeDashArray(node.params.strokeStyle);
               const terminalControlTransform = (x: number, y: number) => `translate(${x} ${y}) scale(${inverseScaleX} ${inverseScaleY})`;
               const handleTransform = (x: number, y: number) => `translate(${x} ${y})`;
-              const includeUprightContentInHandles = nodeHasUprightBoundsContent(node, imageHref, foregroundImageHref);
-              const transformedHalfExtents = nodeTransformedHalfExtents(node, includeUprightContentInHandles);
               const handleGapX = 14;
               const handleGapY = 14;
-              const visibleHalfWidth = transformedHalfExtents.halfWidth;
-              const visibleHalfHeight = transformedHalfExtents.halfHeight;
               const rotateStemStart = TRANSFORM_ROTATE_STEM_START;
               const rotateStemEnd = TRANSFORM_ROTATE_STEM_END;
               const rotateHandleGap = TRANSFORM_ROTATE_HANDLE_GAP;
-              const rotateHandlePoints = nodeRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap);
+              const rotateHandlePoints = uprightStaticSelectionOutline
+                ? nodeUprightRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap)
+                : nodeRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap);
               const staticButtonEnabled = isStaticButtonEnabledForNode(node);
               const staticButtonState = staticButtonVisual?.nodeId === node.id ? staticButtonVisual.state : "";
               const staticButtonCornerRadius = Math.max(0, Number(node.params.cornerRadius || 8));
               return (
                 <g
                   key={node.id}
-                  className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${staticButtonEnabled ? "static-button-enabled" : ""} ${staticButtonState ? `static-button-${staticButtonState}` : ""} ${multiNodeDragging && draggingNodeIdSet.has(node.id) ? "multi-drag-origin" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${isConnectSource ? "connect-source" : ""}`}
+                  className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${uprightStaticSelectionOutline ? "static-upright-selection-node" : ""} ${staticButtonEnabled ? "static-button-enabled" : ""} ${staticButtonState ? `static-button-${staticButtonState}` : ""} ${multiNodeDragging && draggingNodeIdSet.has(node.id) ? "multi-drag-origin" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${isConnectSource ? "connect-source" : ""}`}
                   transform={`translate(${renderPosition.x} ${renderPosition.y})`}
                   onPointerDown={(event) => handleNodePointerDown(event, node)}
                   onPointerEnter={() => {
@@ -20498,6 +21727,16 @@ export function App() {
                       )}
                     </g>
                   )}
+                  {uprightSelectionOutlineRect && (
+                    <rect
+                      className="node-upright-selection-outline"
+                      x={uprightSelectionOutlineRect.x}
+                      y={uprightSelectionOutlineRect.y}
+                      width={uprightSelectionOutlineRect.width}
+                      height={uprightSelectionOutlineRect.height}
+                      rx="4"
+                    />
+                  )}
                   {nodeLabelShouldRender(node, deviceLabelsVisible) && (
                     <g
                       className={`node-device-label ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${nodeLabelVertical(node) ? "vertical" : "horizontal"}`}
@@ -20603,18 +21842,12 @@ export function App() {
                         />
                       </g>
                       {SCALE_HANDLE_CONFIGS.map((handle) => {
-                        const x =
-                          handle.xDirection === 0
-                            ? 0
-                            : handle.xDirection * (visibleHalfWidth + handleGapX);
-                        const y =
-                          handle.yDirection === 0
-                            ? 0
-                            : handle.yDirection * (visibleHalfHeight + handleGapY);
+                        const handlePoint = nodeScaleHandleControlPoint(node, handle, handleGapX, handleGapY, uprightStaticSelectionOutline);
+                        const handleCursorClass = scaleHandleCursorClass(handle, uprightStaticSelectionOutline ? 0 : node.rotation);
                         return (
-                          <g key={handle.id} transform={handleTransform(x, y)}>
+                          <g key={handle.id} transform={handleTransform(handlePoint.x, handlePoint.y)}>
                             <rect
-                              className={`scale-handle ${handle.className}`}
+                              className={`scale-handle ${handleCursorClass}`}
                               x="-8"
                               y="-8"
                               width="16"
@@ -20828,24 +22061,24 @@ export function App() {
             <g className="canvas-resize-handles" aria-hidden="true">
               <rect
                 className="canvas-resize-handle canvas-resize-handle-right"
-                x={canvasWidth - CANVAS_RESIZE_HANDLE_SIZE / 2}
+                x={canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE / 2}
                 y={0}
                 width={CANVAS_RESIZE_HANDLE_SIZE}
-                height={Math.max(CANVAS_RESIZE_HANDLE_SIZE, canvasHeight - CANVAS_RESIZE_HANDLE_SIZE)}
+                height={Math.max(CANVAS_RESIZE_HANDLE_SIZE, canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE)}
                 onPointerDown={(event) => startCanvasResize(event, "right")}
               />
               <rect
                 className="canvas-resize-handle canvas-resize-handle-bottom"
                 x={0}
-                y={canvasHeight - CANVAS_RESIZE_HANDLE_SIZE / 2}
-                width={Math.max(CANVAS_RESIZE_HANDLE_SIZE, canvasWidth - CANVAS_RESIZE_HANDLE_SIZE)}
+                y={canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE / 2}
+                width={Math.max(CANVAS_RESIZE_HANDLE_SIZE, canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE)}
                 height={CANVAS_RESIZE_HANDLE_SIZE}
                 onPointerDown={(event) => startCanvasResize(event, "bottom")}
               />
               <rect
                 className="canvas-resize-handle canvas-resize-handle-corner"
-                x={canvasWidth - CANVAS_RESIZE_HANDLE_SIZE}
-                y={canvasHeight - CANVAS_RESIZE_HANDLE_SIZE}
+                x={canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE}
+                y={canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE}
                 width={CANVAS_RESIZE_HANDLE_SIZE}
                 height={CANVAS_RESIZE_HANDLE_SIZE}
                 onPointerDown={(event) => startCanvasResize(event, "corner")}

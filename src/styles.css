@@ -412,6 +412,46 @@ button:disabled {
   outline: none;
 }
 
+.library-display-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 14px 8px;
+}
+
+.library-display-mode label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 28px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  color: #475569;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.library-display-mode input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.library-display-mode label:hover,
+.library-display-mode label:focus-within {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.library-display-mode label.active {
+  color: #ffffff;
+  border-color: #2563eb;
+  background: #2563eb;
+}
+
 .project-search {
   flex: 0 0 auto;
   margin: 0 0 8px;
@@ -749,6 +789,34 @@ button:disabled {
   background: #e2e8f0;
   font-size: 11px;
   text-align: center;
+}
+
+.attribute-library-component-type-section.flyout-mode {
+  position: relative;
+}
+
+.flyout-library-group {
+  position: fixed;
+  top: var(--library-flyout-top, 0px);
+  left: var(--library-flyout-left, 0px);
+  z-index: 40;
+  display: grid;
+  grid-template-columns: repeat(3, 56px);
+  gap: 7px;
+  width: 204px;
+  max-height: none;
+  overflow: visible;
+  margin: 0;
+  padding: 9px;
+  border: 1px solid #bfdbfe;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.18);
+}
+
+.flyout-library-group .library-item {
+  min-height: 56px;
+  aspect-ratio: auto;
 }
 
 .library-group-toggle {
@@ -1302,12 +1370,17 @@ button:disabled {
   -webkit-user-select: none;
 }
 
-.diagram-canvas.connect-mode {
-  cursor: crosshair;
+.diagram-canvas.connect-mode:not(.connect-drop-ready),
+.diagram-canvas.connect-mode:not(.connect-drop-ready) *,
+.diagram-canvas.static-draw-mode,
+.diagram-canvas.static-draw-mode *,
+.diagram-canvas.library-place-mode,
+.diagram-canvas.library-place-mode * {
+  cursor: crosshair !important;
 }
 
-.diagram-canvas.static-draw-mode {
-  cursor: crosshair;
+.diagram-canvas.library-place-mode .canvas-content {
+  pointer-events: none;
 }
 
 .diagram-canvas.connect-drop-ready {
@@ -1406,6 +1479,7 @@ button:disabled {
   fill: none;
   stroke: transparent;
   stroke-width: 18;
+  vector-effect: non-scaling-stroke;
   stroke-linecap: round;
   stroke-linejoin: round;
   pointer-events: stroke;
@@ -1497,6 +1571,26 @@ button:disabled {
 
 .static-drawing-preview {
   pointer-events: none;
+}
+
+.library-placement-preview {
+  opacity: 0.48;
+  pointer-events: none;
+}
+
+.library-placement-preview-device,
+.library-placement-preview-template {
+  filter: drop-shadow(0 8px 16px rgba(37, 99, 235, 0.18));
+}
+
+.library-placement-preview-line {
+  fill: none;
+  stroke: #2563eb;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 7 5;
+  vector-effect: non-scaling-stroke;
 }
 
 .static-drawing-preview-line {
@@ -1997,6 +2091,14 @@ button:disabled {
   pointer-events: none;
 }
 
+.node-upright-selection-outline {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
 .diagram-node.selected.focused .node-hitbox {
   stroke: #f97316;
   stroke-width: 3.5;
@@ -2010,6 +2112,38 @@ button:disabled {
 
 .diagram-node.selected:hover .node-hitbox,
 .diagram-node.focused .node-hitbox {
+  filter: drop-shadow(0 0 7px rgba(249, 115, 22, 0.32));
+}
+
+.diagram-node.static-upright-selection-node.selected .node-hitbox {
+  stroke: transparent;
+  filter: none;
+}
+
+.diagram-node.static-upright-selection-node.selected.focused .node-hitbox {
+  stroke: transparent;
+  filter: none;
+}
+
+.diagram-node.static-upright-selection-node:hover .node-hitbox {
+  stroke: transparent;
+  filter: none;
+}
+
+.diagram-node.static-upright-selection-node:hover .node-upright-selection-outline {
+  stroke: rgba(37, 99, 235, 0.52);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 6px rgba(37, 99, 235, 0.28));
+}
+
+.diagram-node.static-upright-selection-node.selected .node-upright-selection-outline {
+  stroke: #1d4ed8;
+  stroke-width: 3;
+}
+
+.diagram-node.static-upright-selection-node.selected.focused .node-upright-selection-outline {
+  stroke: #f97316;
+  stroke-width: 3.5;
   filter: drop-shadow(0 0 7px rgba(249, 115, 22, 0.32));
 }
 
