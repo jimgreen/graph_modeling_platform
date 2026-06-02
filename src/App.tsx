@@ -198,6 +198,7 @@ import {
   type TopologyValidationError,
   routeEdgesForCachedStoredRendering,
   routeEdgesForIncrementalRendering,
+  routeEdgesForSavedPathRendering,
   routeEdgesForStoredRendering,
   modelGeometryInsideCanvasBounds,
   mirrorNodes,
@@ -9031,7 +9032,7 @@ export function App() {
   const routedRouteState = useMemo((): { routes: RoutedEdge[]; store: RouteStore | null } => {
     if (!routeRenderingEnabled) {
       return {
-        routes: routeEdgesForStoredRendering(routingNodes, routingEdges, canvasBounds),
+        routes: routeEdgesForSavedPathRendering(routingNodes, routingEdges, canvasBounds),
         store: null
       };
     }
@@ -21730,7 +21731,7 @@ export function App() {
       width: backgroundProject.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
       height: backgroundProject.canvasHeight ?? DEFAULT_CANVAS_HEIGHT
     };
-    const routes = routeEdgesForStoredRendering(backgroundNodes, backgroundEdges, backgroundBounds);
+    const routes = routeEdgesForSavedPathRendering(backgroundNodes, backgroundEdges, backgroundBounds);
     return {
       backgroundBounds,
       backgroundColor: backgroundProject.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND,

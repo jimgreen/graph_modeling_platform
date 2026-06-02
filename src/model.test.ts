@@ -38,6 +38,7 @@ import {
   routeEdgesForRendering,
   routeEdgesForCachedStoredRendering,
   routeEdgesForIncrementalRendering,
+  routeEdgesForSavedPathRendering,
   routeEdgesForStoredRendering,
   ACAC_CONVERTER_CONTROL_TYPES,
   AC_GENERATOR_CONTROL_TYPES,
@@ -242,6 +243,68 @@ function routeIntersectsTestBox(points: Point[], box: TestBox) {
 }
 
 describe("power system model", () => {
+  test("renders large saved model paths without opening-time rerouting", () => {
+    const nodes: ModelNode[] = [];
+    const edges: Edge[] = [];
+    for (let index = 0; index < 1200; index += 1) {
+      const row = Math.floor(index / 40);
+      const column = index % 40;
+      const kind = index % 5 === 0 ? "ac-bus" : index % 2 === 0 ? "ac-source" : "ac-load";
+      const node = {
+        ...createDefaultNode(kind, { x: 120 + column * 180, y: 100 + row * 130 }),
+        id: `n-${index}`,
+        name: `设备-${index}`
+      };
+      nodes.push(node);
+    }
+    for (let index = 0; index < 1000; index += 1) {
+      const source = nodes[index];
+      const target = nodes[index + 80];
+      if (!source || !target) {
+        continue;
+      }
+      const midX = Math.round((source.position.x + target.position.x) / 2);
+      const midY = Math.round((source.position.y + target.position.y) / 2);
+      edges.push({
+        id: `e-${index}`,
+        sourceId: source.id,
+        targetId: target.id,
+        manualPoints: [
+          { x: midX, y: source.position.y },
+          { x: midX, y: midY },
+          { x: target.position.x, y: midY }
+        ]
+      });
+    }
+
+    const routes = routeEdgesForSavedPathRendering(nodes, edges, { width: 50000, height: 50000 });
+
+    expect(routes).toHaveLength(edges.length);
+    expect(routes.every((route) => route.path.startsWith("M "))).toBe(true);
+    expect(Math.max(...routes.map((route) => route.points.length))).toBeLessThanOrEqual(12);
+  });
+
+  test("keeps saved manual route points on the model-open render path", () => {
+    const source = withHiddenDeviceLabel(createDefaultNode("ac-source", { x: 100, y: 100 }));
+    const target = withHiddenDeviceLabel(createDefaultNode("ac-load", { x: 360, y: 180 }));
+    const manualPoints = [
+      { x: 207, y: 72 },
+      { x: 467, y: 72 }
+    ];
+    const edge: Edge = {
+      id: "saved-manual",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: source.terminals[0].id,
+      targetTerminalId: target.terminals[0].id,
+      manualPoints
+    };
+
+    const route = routeEdgesForSavedPathRendering([source, target], [edge], { width: 520, height: 320 })[0];
+
+    expect(route.points).toEqual(expect.arrayContaining(manualPoints));
+  });
+
   test("does not scan node or edge arrays when there are no model groups", () => {
     const nodes = [] as ModelNode[];
     const edges = [] as Edge[];

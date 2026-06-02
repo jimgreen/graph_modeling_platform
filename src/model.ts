@@ -10384,11 +10384,24 @@ export function refreshCrossingArcPaths(
   previousRoutes: RoutedEdge[] = []
 ): RoutedEdge[] {
   if (!changedEdgeIds || changedEdgeIds.size === 0) {
-    const crossingSegments = routes.flatMap((route, index) => getSegments(route.edgeId, index, route.points));
-    return routes.map((route, index) => ({
-      ...route,
-      path: pathWithCrossingArcs(route, crossingSegments, index)
-    }));
+    const routeBoxes = routes.map((route) => routeBoundsForPoints(route.points, CROSSING_TERMINAL_MARGIN));
+    const routeSpatialIndex = buildCrossingRouteSpatialIndex(routeBoxes);
+    const segmentCache = new Map<number, Segment[]>();
+    const segmentsForRouteIndex = (routeIndex: number) => {
+      const cached = segmentCache.get(routeIndex);
+      if (cached) {
+        return cached;
+      }
+      const route = routes[routeIndex];
+      const segments = route ? getSegments(route.edgeId, routeIndex, route.points) : [];
+      segmentCache.set(routeIndex, segments);
+      return segments;
+    };
+    return routes.map((route, index) => {
+      const crossingSegments = queryCrossingRouteSpatialIndex(routeSpatialIndex, routeBoxes[index]).flatMap(segmentsForRouteIndex);
+      const path = pathWithCrossingArcs(route, crossingSegments, index);
+      return path === route.path ? route : { ...route, path };
+    });
   }
 
   const routeBoxes = routes.map((route) => routeBoundsForPoints(route.points, CROSSING_TERMINAL_MARGIN));
@@ -10516,23 +10529,23 @@ export function routeEdgesForStoredRendering(nodes: ModelNode[], edges: Edge[], 
       const simplificationBlockers = relevantBlockers.length > 0
         ? [...endpointBlockers, ...relevantBlockers]
         : endpointBlockers;
-      const simplerAutomaticRoute = selectClearlySimplerAutomaticManualRoute(
+      points = chooseSimplerAutomaticRouteForContext(
         points,
-        start,
-        startOut,
-        endOut,
-        end,
         source,
         target,
-        simplificationBlockers,
+        {
+          start,
+          end,
+          startOut,
+          endOut,
+          sourceNormal,
+          targetNormal,
+          blockers: simplificationBlockers,
+          endpointNodeIds: new Set([source.id, target.id])
+        },
         [],
-        bounds,
-        sourceNormal,
-        targetNormal
+        bounds
       );
-      if (simplerAutomaticRoute) {
-        points = simplerAutomaticRoute;
-      }
     }
     if (routeHasImmediateReversal(points) || routeIntersectsBlockers(points, endpointBlockers, ROUTE_BLOCKER_PADDING, 1)) {
       points = simplifyRoutePreservingEndpointStubs(
@@ -10541,6 +10554,47 @@ export function routeEdgesForStoredRendering(nodes: ModelNode[], edges: Edge[], 
           blockers: filterBlockersForRoutePoints(points, nodes),
           reduceTinyDoglegs: true
         }
+      );
+    }
+    return [{
+      edgeId: edge.id,
+      points,
+      path: pointsToOrthogonalPath(points)
+    }];
+  });
+  return refreshCrossingArcPaths(routes);
+}
+
+export function routeEdgesForSavedPathRendering(nodes: ModelNode[], edges: Edge[], bounds?: CanvasBounds): RoutedEdge[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const routes = edges.flatMap((edge) => {
+    const source = nodeById.get(edge.sourceId) ?? (edge.sourcePoint ? createFloatingEndpointNode(edge.sourcePoint, edge.targetId ? nodeById.get(edge.targetId) : undefined) : undefined);
+    const target = nodeById.get(edge.targetId) ?? (edge.targetPoint ? createFloatingEndpointNode(edge.targetPoint, edge.sourceId ? nodeById.get(edge.sourceId) : undefined) : undefined);
+    if (!source || !target) {
+      return [];
+    }
+    const routingEdge = edgeWithProjectedMissingBusEndpointPoints(edge, source, target);
+    const start = getEdgeEndpointPoint(source, routingEdge.sourcePoint, routingEdge.sourceTerminalId);
+    const end = getEdgeEndpointPoint(target, routingEdge.targetPoint, routingEdge.targetTerminalId);
+    const sourceNormal = routeEndpointNormal(source, start, end, routingEdge.sourceTerminalId);
+    const targetNormal = routeEndpointNormal(target, end, start, routingEdge.targetTerminalId);
+    const endpointBlockers = [source, target];
+    const stubLength = ROUTE_ENDPOINT_STUB_LENGTH;
+    const startOut = endpointStubPoint(start, sourceNormal, source, endpointBlockers, stubLength);
+    const endOut = endpointStubPoint(end, targetNormal, target, endpointBlockers, stubLength);
+    const middle = routingEdge.manualPoints?.length
+      ? routingEdge.manualPoints
+      : startOut.x === endOut.x || startOut.y === endOut.y
+        ? []
+        : [{ x: endOut.x, y: startOut.y }];
+    const boundedPoints = [start, startOut, ...middle, endOut, end].map((point) =>
+      bounds ? clampPointToBounds(point, bounds) : point
+    );
+    let points = simplifyRoutePreservingEndpointStubs(orthogonalizeRouteKeepingCollinear(boundedPoints));
+    if (routeHasImmediateReversal(points) || routeIntersectsBlockers(points, endpointBlockers, ROUTE_BLOCKER_PADDING, 1)) {
+      points = simplifyRoutePreservingEndpointStubs(
+        repairRouteAroundBlockers(points, endpointBlockers, bounds, 1),
+        { blockers: endpointBlockers, reduceTinyDoglegs: true }
       );
     }
     return [{
@@ -10875,14 +10929,25 @@ type EdgeRoutingContext = {
   end: Point;
   startOut: Point;
   endOut: Point;
+  sourceNormal: Point;
+  targetNormal: Point;
   blockers: ModelNode[];
+  endpointNodeIds: ReadonlySet<string>;
 };
 
+/**
+ * 联络线自动布线原则：
+ * 1. 首末点必须落在端子或母线连接点，首末段必须沿端子法线向外延伸。
+ * 2. 新建、重建和移动后修复时，先保证不穿越设备/静态图元/标识，再按总长最短、同线长少折点选择。
+ * 3. 打开模型或普通渲染时优先按保存路径绘制，只修复端点反向、穿越端点设备、明显陈旧且安全更短的路径。
+ * 4. 连接线绘制不为了避让已有连接线而绕远，交叉弧线只属于渲染表现。
+ * 5. 移动后只处理受影响或被干涉的连接线，避免大模型下全量重算。
+ */
 function buildEdgeRoutingContext(source: ModelNode, target: ModelNode, nodes: ModelNode[], edge?: Edge): EdgeRoutingContext {
   const start = getEdgeEndpointPoint(source, edge?.sourcePoint, edge?.sourceTerminalId);
   const end = getEdgeEndpointPoint(target, edge?.targetPoint, edge?.targetTerminalId);
-  const sourceNormal = isBusNode(source) ? getBusEndpointNormal(source, start, end) : getTerminalNormal(source, edge?.sourceTerminalId);
-  const targetNormal = isBusNode(target) ? getBusEndpointNormal(target, end, start) : getTerminalNormal(target, edge?.targetTerminalId);
+  const sourceNormal = routeEndpointNormal(source, start, end, edge?.sourceTerminalId);
+  const targetNormal = routeEndpointNormal(target, end, start, edge?.targetTerminalId);
   const stubLength = ROUTE_ENDPOINT_STUB_LENGTH;
   const initialStartOut = {
     x: start.x + sourceNormal.x * stubLength,
@@ -10897,13 +10962,116 @@ function buildEdgeRoutingContext(source: ModelNode, target: ModelNode, nodes: Mo
     target,
     ...relevantBlockersForRoute(source, target, nodes, initialStartOut, initialEndOut, false)
   ];
+  const endpointNodeIds = new Set([source.id, target.id]);
   return {
     start,
     end,
     startOut: endpointStubPoint(start, sourceNormal, source, blockers, stubLength),
     endOut: endpointStubPoint(end, targetNormal, target, blockers, stubLength),
-    blockers
+    sourceNormal,
+    targetNormal,
+    blockers,
+    endpointNodeIds
   };
+}
+
+function buildEndpointAlignedDirectCandidatesForContext(context: EdgeRoutingContext, bounds?: CanvasBounds) {
+  return buildEndpointAlignedDirectCandidates(
+    context.start,
+    context.end,
+    context.sourceNormal,
+    context.targetNormal,
+    bounds
+  );
+}
+
+function selectRenderableRouteForContext(
+  source: ModelNode,
+  target: ModelNode,
+  context: EdgeRoutingContext,
+  avoidedSegments: Segment[],
+  bounds?: CanvasBounds
+) {
+  return selectRenderableRouteCandidate(
+    context.start,
+    context.startOut,
+    context.endOut,
+    context.end,
+    source,
+    target,
+    context.blockers,
+    avoidedSegments,
+    bounds,
+    buildEndpointAlignedDirectCandidatesForContext(context, bounds)
+  );
+}
+
+function buildManualRouteForContext(context: EdgeRoutingContext, manualPoints: Point[], bounds?: CanvasBounds) {
+  const route = orthogonalizeRouteKeepingCollinear([
+    context.start,
+    context.startOut,
+    ...manualPoints,
+    context.endOut,
+    context.end
+  ]);
+  return bounds
+    ? orthogonalizeRouteKeepingCollinear(route.map((point) => clampPointToBounds(point, bounds)))
+    : route;
+}
+
+function routeHasRenderableIssue(points: Point[], context: EdgeRoutingContext) {
+  return (
+    routeHasImmediateReversal(points) ||
+    routeIntersectsBlockers(points, context.blockers, ROUTE_BLOCKER_PADDING, 1)
+  );
+}
+
+function chooseSimplerAutomaticRouteForContext(
+  route: Point[],
+  source: ModelNode,
+  target: ModelNode,
+  context: EdgeRoutingContext,
+  avoidedSegments: Segment[],
+  bounds?: CanvasBounds
+) {
+  return selectClearlySimplerAutomaticManualRoute(
+    route,
+    context.start,
+    context.startOut,
+    context.endOut,
+    context.end,
+    source,
+    target,
+    context.blockers,
+    avoidedSegments,
+    bounds,
+    context.sourceNormal,
+    context.targetNormal
+  ) ?? route;
+}
+
+function resolveManualRouteForContext(
+  source: ModelNode,
+  target: ModelNode,
+  context: EdgeRoutingContext,
+  manualPoints: Point[] | undefined,
+  avoidedSegments: Segment[],
+  bounds?: CanvasBounds
+) {
+  if (!manualPoints?.length) {
+    return null;
+  }
+  const boundedManualRoute = buildManualRouteForContext(context, manualPoints, bounds);
+  const simplifiedManualRoute = simplifyRoutePreservingEndpointStubs(boundedManualRoute);
+  if (!routeHasRenderableIssue(simplifiedManualRoute, context)) {
+    return chooseSimplerAutomaticRouteForContext(simplifiedManualRoute, source, target, context, avoidedSegments, bounds);
+  }
+  const repairedManualRoute = repairRouteAroundBlockers(boundedManualRoute, context.blockers, bounds, 1);
+  const simplifiedRepairedManualRoute = simplifyRoutePreservingEndpointStubs(repairedManualRoute);
+  if (!routeHasRenderableIssue(simplifiedRepairedManualRoute, context)) {
+    return chooseSimplerAutomaticRouteForContext(simplifiedRepairedManualRoute, source, target, context, avoidedSegments, bounds);
+  }
+  return null;
 }
 
 function routeHasCommitBlockingIssue(points: Point[], nodes: ModelNode[], source: ModelNode, target: ModelNode, bounds?: CanvasBounds) {
@@ -11146,16 +11314,7 @@ function designCommitSafeRoute(
 
   for (const candidateEdge of candidateEdges) {
     const context = buildEdgeRoutingContext(source, target, nodes, candidateEdge);
-    const sourceNormal = routeEndpointNormal(source, context.start, context.end, candidateEdge.sourceTerminalId);
-    const targetNormal = routeEndpointNormal(target, context.end, context.start, candidateEdge.targetTerminalId);
-    const endpointAlignedCandidates = buildEndpointAlignedDirectCandidates(
-      context.start,
-      context.end,
-      sourceNormal,
-      targetNormal,
-      bounds
-    );
-    const endpointNodeIds = new Set([source.id, target.id]);
+    const endpointAlignedCandidates = buildEndpointAlignedDirectCandidatesForContext(context, bounds);
     const selectFromMiddleCandidates = (middleCandidates: Point[][]) => {
       const fullCandidates: Point[][] = [...endpointAlignedCandidates];
       for (const middle of middleCandidates) {
@@ -11171,7 +11330,7 @@ function designCommitSafeRoute(
       context.blockers,
       avoidedSegments,
       bounds,
-      endpointNodeIds
+      context.endpointNodeIds
     ));
     if (!selected) {
       selected = selectFromMiddleCandidates(buildExpandedRouteCandidates(
@@ -11179,7 +11338,7 @@ function designCommitSafeRoute(
         context.endOut,
         context.blockers,
         bounds,
-        endpointNodeIds
+        context.endpointNodeIds
       ));
     }
     if (!selected) {
@@ -11554,103 +11713,23 @@ function createFloatingEndpointNode(point: Point, relatedNode?: ModelNode): Mode
 }
 
 export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes: ModelNode[], edge?: Edge, avoidedSegments: Segment[] = [], bounds?: CanvasBounds): Point[] {
-  const start = getEdgeEndpointPoint(source, edge?.sourcePoint, edge?.sourceTerminalId);
-  const end = getEdgeEndpointPoint(target, edge?.targetPoint, edge?.targetTerminalId);
-  const sourceNormal = isBusNode(source) ? getBusEndpointNormal(source, start, end) : getTerminalNormal(source, edge?.sourceTerminalId);
-  const targetNormal = isBusNode(target) ? getBusEndpointNormal(target, end, start) : getTerminalNormal(target, edge?.targetTerminalId);
-  const stubLength = 28;
-  const initialStartOut = {
-    x: start.x + sourceNormal.x * stubLength,
-    y: start.y + sourceNormal.y * stubLength
-  };
-  const initialEndOut = {
-    x: end.x + targetNormal.x * stubLength,
-    y: end.y + targetNormal.y * stubLength
-  };
-  const blockers = [
+  const context = buildEdgeRoutingContext(source, target, nodes, edge);
+  const manualRoute = resolveManualRouteForContext(
     source,
     target,
-    ...relevantBlockersForRoute(source, target, nodes, initialStartOut, initialEndOut, false)
-  ];
-  const startOut = endpointStubPoint(start, sourceNormal, source, blockers, stubLength);
-  const endOut = endpointStubPoint(end, targetNormal, target, blockers, stubLength);
-  if (edge?.manualPoints?.length) {
-    const manualRoute = orthogonalizeRouteKeepingCollinear([start, startOut, ...edge.manualPoints, endOut, end]);
-    const boundedManualRoute = bounds ? orthogonalizeRouteKeepingCollinear(manualRoute.map((point) => clampPointToBounds(point, bounds))) : manualRoute;
-    const simplifiedManualRoute = simplifyRoutePreservingEndpointStubs(boundedManualRoute);
-    if (
-      !routeHasImmediateReversal(simplifiedManualRoute) &&
-      !routeIntersectsBlockers(simplifiedManualRoute, blockers, ROUTE_BLOCKER_PADDING, 1)
-    ) {
-      const simplerAutomaticRoute = selectClearlySimplerAutomaticManualRoute(
-        simplifiedManualRoute,
-        start,
-        startOut,
-        endOut,
-        end,
-        source,
-        target,
-        blockers,
-        avoidedSegments,
-        bounds,
-        sourceNormal,
-        targetNormal
-      );
-      if (simplerAutomaticRoute) {
-        return simplerAutomaticRoute;
-      }
-      return simplifiedManualRoute;
-    }
-    const repairedManualRoute = repairRouteAroundBlockers(boundedManualRoute, blockers, bounds, 1);
-    const simplifiedRepairedManualRoute = simplifyRoutePreservingEndpointStubs(repairedManualRoute);
-    if (
-      !routeHasImmediateReversal(simplifiedRepairedManualRoute) &&
-      !routeIntersectsBlockers(simplifiedRepairedManualRoute, blockers, ROUTE_BLOCKER_PADDING, 1)
-    ) {
-      const simplerAutomaticRoute = selectClearlySimplerAutomaticManualRoute(
-        simplifiedRepairedManualRoute,
-        start,
-        startOut,
-        endOut,
-        end,
-        source,
-        target,
-        blockers,
-        avoidedSegments,
-        bounds,
-        sourceNormal,
-        targetNormal
-      );
-      if (simplerAutomaticRoute) {
-        return simplerAutomaticRoute;
-      }
-      return simplifiedRepairedManualRoute;
-    }
-    const endpointAlignedCandidates = buildEndpointAlignedDirectCandidates(start, end, sourceNormal, targetNormal, bounds);
-    return selectRenderableRouteCandidate(
-      start,
-      startOut,
-      endOut,
-      end,
-      source,
-      target,
-      blockers,
-      avoidedSegments,
-      bounds,
-      endpointAlignedCandidates
-    );
-  }
-  const endpointAlignedCandidates = buildEndpointAlignedDirectCandidates(start, end, sourceNormal, targetNormal, bounds);
-  return selectRenderableRouteCandidate(
-    start,
-    startOut,
-    endOut,
-    end,
-    source,
-    target,
-    blockers,
+    context,
+    edge?.manualPoints,
     avoidedSegments,
-    bounds,
-    endpointAlignedCandidates
+    bounds
+  );
+  if (manualRoute) {
+    return manualRoute;
+  }
+  return selectRenderableRouteForContext(
+    source,
+    target,
+    context,
+    avoidedSegments,
+    bounds
   );
 }

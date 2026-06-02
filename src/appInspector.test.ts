@@ -169,7 +169,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("function backgroundPageCanvasTransform");
     expect(source).toContain("const backgroundPageRender = useMemo");
     expect(source).toContain("filterProjectByVisibleLayers(backgroundProject.nodes, backgroundProject.edges, backgroundLayers)");
-    expect(source).toContain("routeEdgesForStoredRendering(backgroundNodes, backgroundEdges, backgroundBounds)");
+    expect(source).toContain("routeEdgesForSavedPathRendering(backgroundNodes, backgroundEdges, backgroundBounds)");
     expect(source).toContain("backgroundColor: backgroundProject.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND");
     expect(source).toContain("backgroundImageUrl: resolveProjectImage(backgroundProject, imageAssets)");
     expect(source).toContain("const renderReadonlyBackgroundPage = () =>");
@@ -1886,6 +1886,7 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("routeRenderingReady");
     expect(source).toContain("setRouteRenderingReady(true)");
+    expect(source).toContain("routeEdgesForSavedPathRendering");
     expect(source).toContain("routeEdgesForStoredRendering");
     expect(source).toContain("routeEdgesForCachedStoredRendering");
     expect(source).toContain("setRouteRenderingReady(false)");
@@ -1894,7 +1895,7 @@ describe("graph inspector panel", () => {
     expect(routingBlock).toContain("routeEdgesForCachedStoredRendering");
     expect(routingBlock).toContain("routeEdgesForIncrementalRendering");
     expect(routingBlock).toContain("cachedRoutedEdgesRef.current");
-    expect(routingBlock).toContain("routes: routeEdgesForStoredRendering(routingNodes, routingEdges, canvasBounds)");
+    expect(routingBlock).toContain("routes: routeEdgesForSavedPathRendering(routingNodes, routingEdges, canvasBounds)");
     expect(routingBlock).not.toContain("routeEdgesForRendering(routingNodes, routingEdges");
   });
 
