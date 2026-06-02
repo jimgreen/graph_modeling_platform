@@ -1512,6 +1512,63 @@ function viewBoxStartToScrollPosition(viewStart: number, viewSize: number, bound
   const maxViewStart = Math.max(0, boundSize - viewSize);
   return maxScroll > 1 && maxViewStart > 0 ? clampNumber((viewStart / maxViewStart) * maxScroll, 0, maxScroll) : 0;
 }
+export function canvasFrameScrollTargetForViewBox({
+  targetViewBox,
+  canvasBounds,
+  maxScrollLeft,
+  maxScrollTop,
+  horizontalScrollbarsActive,
+  verticalScrollbarsActive
+}: {
+  targetViewBox: CanvasViewBox;
+  canvasBounds: CanvasBounds;
+  maxScrollLeft: number;
+  maxScrollTop: number;
+  horizontalScrollbarsActive: boolean;
+  verticalScrollbarsActive: boolean;
+}) {
+  const syncHorizontal = horizontalScrollbarsActive || maxScrollLeft > 1;
+  const syncVertical = verticalScrollbarsActive || maxScrollTop > 1;
+  return {
+    left: syncHorizontal
+      ? viewBoxStartToScrollPosition(targetViewBox.x, targetViewBox.width, canvasBounds.width, maxScrollLeft)
+      : 0,
+    top: syncVertical
+      ? viewBoxStartToScrollPosition(targetViewBox.y, targetViewBox.height, canvasBounds.height, maxScrollTop)
+      : 0
+  };
+}
+export function canvasViewBoxFromFrameScrollPosition({
+  currentViewBox,
+  canvasBounds,
+  scrollLeft,
+  scrollTop,
+  maxScrollLeft,
+  maxScrollTop,
+  horizontalScrollbarsActive,
+  verticalScrollbarsActive
+}: {
+  currentViewBox: CanvasViewBox;
+  canvasBounds: CanvasBounds;
+  scrollLeft: number;
+  scrollTop: number;
+  maxScrollLeft: number;
+  maxScrollTop: number;
+  horizontalScrollbarsActive: boolean;
+  verticalScrollbarsActive: boolean;
+}) {
+  const syncHorizontal = horizontalScrollbarsActive || maxScrollLeft > 1;
+  const syncVertical = verticalScrollbarsActive || maxScrollTop > 1;
+  return normalizeViewBoxToCanvas({
+    ...currentViewBox,
+    x: syncHorizontal
+      ? scrollPositionToViewBoxStart(scrollLeft, currentViewBox.width, canvasBounds.width, maxScrollLeft, currentViewBox.x)
+      : currentViewBox.x,
+    y: syncVertical
+      ? scrollPositionToViewBoxStart(scrollTop, currentViewBox.height, canvasBounds.height, maxScrollTop, currentViewBox.y)
+      : currentViewBox.y
+  }, canvasBounds);
+}
 function scrollPositionToViewBoxStart(scrollPosition: number, viewSize: number, boundSize: number, maxScroll: number, fallbackStart: number) {
   const maxViewStart = Math.max(0, boundSize - viewSize);
   return maxScroll > 1 && maxViewStart > 0
@@ -8048,20 +8105,16 @@ export function App() {
     if (!frame) {
       return;
     }
-    if (!canvasScrollbarsActiveRef.current) {
-      if (Math.abs(frame.scrollLeft) > 1 || Math.abs(frame.scrollTop) > 1) {
-        setCanvasFrameScrollPosition(frame, 0, 0);
-      }
-      return;
-    }
     const maxLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
     const maxTop = Math.max(0, frame.scrollHeight - frame.clientHeight);
-    const nextLeft = canvasHorizontalScrollbarsActiveRef.current
-      ? viewBoxStartToScrollPosition(targetViewBox.x, targetViewBox.width, canvasBoundsRef.current.width, maxLeft)
-      : 0;
-    const nextTop = canvasVerticalScrollbarsActiveRef.current
-      ? viewBoxStartToScrollPosition(targetViewBox.y, targetViewBox.height, canvasBoundsRef.current.height, maxTop)
-      : 0;
+    const { left: nextLeft, top: nextTop } = canvasFrameScrollTargetForViewBox({
+      targetViewBox,
+      canvasBounds: canvasBoundsRef.current,
+      maxScrollLeft: maxLeft,
+      maxScrollTop: maxTop,
+      horizontalScrollbarsActive: canvasHorizontalScrollbarsActiveRef.current,
+      verticalScrollbarsActive: canvasVerticalScrollbarsActiveRef.current
+    });
     if (Math.abs(frame.scrollLeft - nextLeft) > 1 || Math.abs(frame.scrollTop - nextTop) > 1) {
       setCanvasFrameScrollPosition(frame, nextLeft, nextTop);
     }
@@ -8152,20 +8205,18 @@ export function App() {
     if (!frame) {
       return viewBoxRef.current;
     }
-    if (!canvasScrollbarsActiveRef.current) {
-      return viewBoxRef.current;
-    }
     const maxLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
     const maxTop = Math.max(0, frame.scrollHeight - frame.clientHeight);
-    const bounds = canvasBoundsRef.current;
-    const current = viewBoxRef.current;
-    const nextX = canvasHorizontalScrollbarsActiveRef.current
-      ? scrollPositionToViewBoxStart(frame.scrollLeft, current.width, bounds.width, maxLeft, current.x)
-      : current.x;
-    const nextY = canvasVerticalScrollbarsActiveRef.current
-      ? scrollPositionToViewBoxStart(frame.scrollTop, current.height, bounds.height, maxTop, current.y)
-      : current.y;
-    return normalizeViewBoxToCanvas({ ...viewBoxRef.current, x: nextX, y: nextY }, canvasBoundsRef.current);
+    return canvasViewBoxFromFrameScrollPosition({
+      currentViewBox: viewBoxRef.current,
+      canvasBounds: canvasBoundsRef.current,
+      scrollLeft: frame.scrollLeft,
+      scrollTop: frame.scrollTop,
+      maxScrollLeft: maxLeft,
+      maxScrollTop: maxTop,
+      horizontalScrollbarsActive: canvasHorizontalScrollbarsActiveRef.current,
+      verticalScrollbarsActive: canvasVerticalScrollbarsActiveRef.current
+    });
   };
   const scheduleCanvasVisibleViewBoxUpdate = () => {
     if (canvasVisibleViewBoxFrameRef.current !== null) {
@@ -15922,7 +15973,7 @@ export function App() {
       canvasOffset: canvasNoScrollOffsetRef.current,
       scrollLeft: frame?.scrollLeft ?? 0,
       scrollTop: frame?.scrollTop ?? 0,
-      scrollMode: frame ? canvasScrollbarsActiveRef.current && canvasFrameHasScrollableRange(frame) : false
+      scrollMode: frame ? canvasFrameHasScrollableRange(frame) : false
     });
     event.preventDefault();
     event.stopPropagation();
