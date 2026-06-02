@@ -3143,6 +3143,35 @@ function clonePoint(point: Point): Point {
   return { x: point.x, y: point.y };
 }
 
+const DEFAULT_DEVICE_LONGEST_SIDE = 150;
+const DEFAULT_DEVICE_LABEL_FONT_SIZE = 12;
+const DEFAULT_DEVICE_LABEL_GAP = 18;
+
+function roundDefaultDeviceSize(value: number): number {
+  return Math.max(2, Math.round(value / 2) * 2);
+}
+
+function normalizeDefaultDeviceSize(kind: string, size: DeviceTemplate["size"]): DeviceTemplate["size"] {
+  if (kind.startsWith("static-")) {
+    return { ...size };
+  }
+  const width = Number.isFinite(size.width) && size.width > 0 ? size.width : DEFAULT_DEVICE_LONGEST_SIDE;
+  const height = Number.isFinite(size.height) && size.height > 0 ? size.height : DEFAULT_DEVICE_LONGEST_SIDE;
+  const longestSide = Math.max(width, height);
+  const scale = DEFAULT_DEVICE_LONGEST_SIDE / longestSide;
+  return {
+    width: roundDefaultDeviceSize(width * scale),
+    height: roundDefaultDeviceSize(height * scale)
+  };
+}
+
+function normalizeDeviceTemplateDefaultSize(template: DeviceTemplate): DeviceTemplate {
+  return {
+    ...template,
+    size: normalizeDefaultDeviceSize(template.kind, template.size)
+  };
+}
+
 function createVerticalDeviceTemplate(template: DeviceTemplate): DeviceTemplate {
   return {
     ...template,
@@ -3160,9 +3189,11 @@ function createVerticalDeviceTemplate(template: DeviceTemplate): DeviceTemplate 
   };
 }
 
+const NORMALIZED_BASE_DEVICE_LIBRARY = BASE_DEVICE_LIBRARY.map(normalizeDeviceTemplateDefaultSize);
+
 export const DEVICE_LIBRARY: DeviceTemplate[] = [
-  ...BASE_DEVICE_LIBRARY,
-  ...BASE_DEVICE_LIBRARY.filter(shouldCreateVerticalDeviceTemplate).map(createVerticalDeviceTemplate)
+  ...NORMALIZED_BASE_DEVICE_LIBRARY,
+  ...NORMALIZED_BASE_DEVICE_LIBRARY.filter(shouldCreateVerticalDeviceTemplate).map(createVerticalDeviceTemplate)
 ];
 
 let nodeNumberSeed = 1;
@@ -4282,9 +4313,9 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
           _labelVisible: "1",
           _labelDisplayMode: "follow",
           _labelX: "0",
-          _labelY: String(Math.round(template.size.height / 2 + 22)),
+          _labelY: String(Math.round(template.size.height / 2 + DEFAULT_DEVICE_LABEL_GAP)),
           _labelColor: "#334155",
-          _labelFontSize: "14",
+          _labelFontSize: String(DEFAULT_DEVICE_LABEL_FONT_SIZE),
           _labelFontFamily: "Arial",
           _labelFontWeight: "500",
           _labelFontStyle: "normal",
@@ -4524,7 +4555,7 @@ export function createNodeFromTemplate(template: DeviceTemplate, position: Point
     acTopologyNode: 0,
     dcTopologyNode: 0,
     position,
-    size: { ...template.size },
+    size: normalizeDefaultDeviceSize(template.kind, template.size),
     rotation: template.rotation ?? 0,
     scale: 1,
     scaleX: 1,
@@ -4989,10 +5020,11 @@ export function normalizeNodeTerminalsByTemplate(node: ModelNode): ModelNode {
   }
   let changed = false;
   const expectedTypes = templateTerminalTypes(template);
+  const shouldNormalizeTerminalAnchors = expectedTypes.length > 1;
   const terminals = node.terminals.map((terminal, index) => {
     const expectedType = expectedTypes[index];
     const expectedLabel = template.terminalLabels?.[index] ?? (expectedType ? terminalLabelForType(expectedType, index) : undefined);
-    const expectedAnchor = template.terminalAnchors?.[index];
+    const expectedAnchor = shouldNormalizeTerminalAnchors ? template.terminalAnchors?.[index] : undefined;
     let nextTerminal = terminal;
     if (expectedType && terminal.type !== expectedType) {
       changed = true;
@@ -5035,24 +5067,28 @@ export function terminalStubSegment(
     x: terminal.anchor.x * (Math.sign(scaleX) || 1),
     y: terminal.anchor.y * (Math.sign(scaleY) || 1)
   };
+  const internalLength = terminalStubInternalLength(terminal, length);
   if (Math.abs(displayedAnchor.x) >= Math.abs(displayedAnchor.y)) {
-    const scaledLength = length * Math.abs(scaleX || 1) + terminalOutwardOffsetLength(terminal, nodeKind);
+    const scaledLength = internalLength * Math.abs(scaleX || 1) + terminalOutwardOffsetLength(terminal, nodeKind);
     return {
       from: { x: displayedAnchor.x >= 0 ? -scaledLength : scaledLength, y: 0 },
       to: { x: 0, y: 0 }
     };
   }
-  const scaledLength = length * Math.abs(scaleY || 1) + terminalOutwardOffsetLength(terminal, nodeKind);
+  const scaledLength = internalLength * Math.abs(scaleY || 1) + terminalOutwardOffsetLength(terminal, nodeKind);
   return {
     from: { x: 0, y: displayedAnchor.y >= 0 ? -scaledLength : scaledLength },
     to: { x: 0, y: 0 }
   };
 }
 
+const TERMINAL_STUB_INTERNAL_LINK_LENGTH = 72;
 const TERMINAL_OUTWARD_OFFSET = 4;
 const CLOSE_BORDER_TERMINAL_OUTWARD_OFFSET = 12;
 const CONVERTER_TERMINAL_OUTWARD_OFFSET = 12;
+const PIPELINE_TERMINAL_OUTWARD_OFFSET = 16;
 const CONVERTER_TERMINAL_KINDS = new Set<DeviceKind>(["dcdc-converter", "acdc-converter", "acac-converter"]);
+const LONG_STUB_PIPELINE_TERMINAL_KINDS = new Set<DeviceKind>(["hydrogen-pipeline", "heat-pipeline"]);
 const CLOSE_BORDER_TERMINAL_KINDS = new Set<DeviceKind>([
   "ac-electrolyzer",
   "dc-electrolyzer",
@@ -5084,10 +5120,20 @@ function terminalOutwardOffsetLength(terminal: Pick<Terminal, "anchor">, nodeKin
   if (terminalNodeKind && CONVERTER_TERMINAL_KINDS.has(terminalNodeKind)) {
     return CONVERTER_TERMINAL_OUTWARD_OFFSET;
   }
+  if (terminalNodeKind && LONG_STUB_PIPELINE_TERMINAL_KINDS.has(terminalNodeKind)) {
+    return PIPELINE_TERMINAL_OUTWARD_OFFSET;
+  }
   if (terminalNodeKind && CLOSE_BORDER_TERMINAL_KINDS.has(terminalNodeKind)) {
     return CLOSE_BORDER_TERMINAL_OUTWARD_OFFSET;
   }
   return TERMINAL_OUTWARD_OFFSET;
+}
+
+function terminalStubInternalLength(terminal: Pick<Terminal, "anchor">, requestedLength: number): number {
+  if (!terminalOutwardAxis(terminal)) {
+    return requestedLength;
+  }
+  return Math.max(requestedLength, TERMINAL_STUB_INTERNAL_LINK_LENGTH);
 }
 
 export function terminalRenderLocalPoint(
@@ -7848,7 +7894,7 @@ function routeNodeLabelVerticalSegments(text: string) {
 }
 
 function routeNodeLabelFontSize(node: ModelNode) {
-  const baseSize = numericNodeParamForRoute(node, "_labelFontSize", 14);
+  const baseSize = numericNodeParamForRoute(node, "_labelFontSize", DEFAULT_DEVICE_LABEL_FONT_SIZE);
   const scaleX = Math.abs(getNodeScaleX(node)) || 1;
   const scaleY = Math.abs(getNodeScaleY(node)) || 1;
   return baseSize * Math.sqrt(scaleX * scaleY);
@@ -8734,6 +8780,10 @@ function routeCandidateIsSafe(points: Point[], options: InternalRouteSimplifyOpt
   return true;
 }
 
+function normalizeRouteCandidate(points: Point[]) {
+  return compactRoutePreservingEndpointStubs(orthogonalizeRouteKeepingCollinear(points));
+}
+
 function reduceTinyDoglegs(points: Point[], options: InternalRouteSimplifyOptions) {
   let route = compactRoutePreservingEndpointStubs(orthogonalizeRouteKeepingCollinear(points));
   for (let attempt = 0; attempt < 16; attempt += 1) {
@@ -8756,7 +8806,7 @@ function reduceTinyDoglegs(points: Point[], options: InternalRouteSimplifyOption
         ...route.slice(index + 3)
       ]);
       if (candidate.length < route.length && routeCandidateIsSafe(candidate, options)) {
-        route = candidate;
+        route = normalizeRouteCandidate(candidate);
         changed = true;
         break;
       }
@@ -8803,7 +8853,7 @@ function reduceTinyDoglegs(points: Point[], options: InternalRouteSimplifyOption
 
       const compacted = compactRoutePreservingEndpointStubs(candidate);
       if (compacted.length < route.length && routeCandidateIsSafe(compacted, options)) {
-        route = compacted;
+        route = normalizeRouteCandidate(compacted);
         changed = true;
         break;
       }

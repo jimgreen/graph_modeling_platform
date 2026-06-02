@@ -1370,6 +1370,11 @@ button:disabled {
   -webkit-user-select: none;
 }
 
+body.canvas-drawing-mode:not(.canvas-connect-drop-ready),
+body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
+  cursor: crosshair !important;
+}
+
 .diagram-canvas.connect-mode:not(.connect-drop-ready),
 .diagram-canvas.connect-mode:not(.connect-drop-ready) *,
 .diagram-canvas.static-draw-mode,

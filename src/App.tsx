@@ -243,6 +243,7 @@ import {
 import {
   EMPTY_CANVAS_CLIPBOARD,
   alignNodeLayoutUnits,
+  autoSpreadNodeLayoutUnits,
   buildCanvasLayoutUnits,
   buildCanvasClipboard,
   canDissolveSingleCanvasGroupSelection,
@@ -430,6 +431,38 @@ function routeMidpoint(points: Point[]): Point | null {
 
 function normalizeRotationDegrees(value: number) {
   return ((Math.round(value) % 360) + 360) % 360;
+}
+
+export function snapSingleTerminalAnchorToNearestSide(node: ModelNode, point: Point): Point {
+  const radians = (-normalizeRotationDegrees(node.rotation) * Math.PI) / 180;
+  const dx = point.x - node.position.x;
+  const dy = point.y - node.position.y;
+  const local = {
+    x: dx * Math.cos(radians) - dy * Math.sin(radians),
+    y: dx * Math.sin(radians) + dy * Math.cos(radians)
+  };
+  const signedWidth = node.size.width * (getNodeScaleX(node) || 1);
+  const signedHeight = node.size.height * (getNodeScaleY(node) || 1);
+  const candidates: Point[] = [
+    { x: 0.5, y: 0 },
+    { x: -0.5, y: 0 },
+    { x: 0, y: 0.5 },
+    { x: 0, y: -0.5 }
+  ];
+  let best = candidates[0];
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const candidate of candidates) {
+    const candidateLocal = {
+      x: candidate.x * signedWidth,
+      y: candidate.y * signedHeight
+    };
+    const distance = (local.x - candidateLocal.x) ** 2 + (local.y - candidateLocal.y) ** 2;
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return { ...best };
 }
 
 const formatStatusNumber = (value: number) => {
@@ -1496,6 +1529,27 @@ function scaledViewBoxSizeForBounds(viewBox: Pick<CanvasViewBox, "width" | "heig
     width: (viewBox.width / currentBounds.width) * nextBounds.width,
     height: (viewBox.height / currentBounds.height) * nextBounds.height
   };
+}
+export function viewBoxAfterCanvasBoundsChange(
+  current: CanvasViewBox,
+  nextBounds: CanvasBounds,
+  originShift: Point = { x: 0, y: 0 },
+  currentBounds?: CanvasBounds
+): CanvasViewBox {
+  const boundsDelta = currentBounds
+    ? {
+        x: Math.max(0, nextBounds.width - currentBounds.width),
+        y: Math.max(0, nextBounds.height - currentBounds.height)
+      }
+    : { x: 0, y: 0 };
+  const currentTouchesRightEdge = currentBounds && current.x + current.width >= currentBounds.width - 1;
+  const currentTouchesBottomEdge = currentBounds && current.y + current.height >= currentBounds.height - 1;
+  return normalizeViewBoxToCanvas({
+    ...current,
+    x: current.x + originShift.x + (originShift.x === 0 && currentTouchesRightEdge ? boundsDelta.x : 0),
+    y: current.y + originShift.y + (originShift.y === 0 && currentTouchesBottomEdge ? boundsDelta.y : 0),
+    ...clampViewBoxDimensionsForZoom(current, nextBounds)
+  }, nextBounds);
 }
 function canvasFramePaddingOffset(frame: HTMLElement, svg?: SVGSVGElement | null) {
   if (svg) {
@@ -3333,7 +3387,7 @@ function nodeLabelTextAnchor(node: ModelNode) {
 }
 
 function nodeLabelFontSize(node: ModelNode) {
-  const baseSize = numericNodeParam(node, "_labelFontSize", 14);
+  const baseSize = numericNodeParam(node, "_labelFontSize", 12);
   const scaleX = Math.abs(getNodeScaleX(node)) || 1;
   const scaleY = Math.abs(getNodeScaleY(node)) || 1;
   return baseSize * Math.sqrt(scaleX * scaleY);
@@ -3708,14 +3762,22 @@ function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorDisplayM
     .join("\n");
 }
 
+const DEVICE_GLYPH_DESIGN_LONGEST_SIDE = 100;
+
 function renderBusGlyphRect(width: number, height: number, color: string) {
   const thickness = Math.max(8, height / 3);
   return <rect className="bus-glyph" x={-width / 2} y={-thickness / 2} width={width} height={thickness} fill={color} stroke={color} strokeWidth="0" />;
 }
 
 function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode = "energy", colorPalette = DEFAULT_COLOR_PALETTE }: DeviceGlyphProps) {
-  const w = miniature ? 58 : node.size.width;
-  const h = miniature ? 38 : node.size.height;
+  const rawW = miniature ? 58 : node.size.width;
+  const rawH = miniature ? 38 : node.size.height;
+  const isStaticGlyph = isStaticNode(node);
+  const glyphContentScale = miniature || isStaticGlyph
+    ? 1
+    : Math.max(1, Math.max(rawW, rawH) / DEVICE_GLYPH_DESIGN_LONGEST_SIDE);
+  const w = rawW / glyphContentScale;
+  const h = rawH / glyphContentScale;
   const glyphVariant = getDeviceGlyphVariant(node.kind);
   const renderGeometry = mode !== "text";
   const renderText = mode !== "geometry";
@@ -3743,7 +3805,9 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
                       : glyphVariant === "breaker"
                       ? "#eef2ff"
                       : "#ffffff";
-  if (isStaticNode(node)) {
+
+  const renderDeviceGlyphContent = (): ReactNode => {
+  if (isStaticGlyph) {
     const staticStroke = node.params.strokeColor || stroke;
     const staticFill = node.params.fillColor || "transparent";
     const lineWidth = Number(node.params.lineWidth || 2);
@@ -4715,6 +4779,7 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
             : glyphVariant === "dc-two-port-heat-electric-heater"
               ? "dc-two-port-heat-electric-heater-glyph"
               : "heat-electric-heater-glyph";
+    const heaterPortY = miniature ? 13 : h * 0.25;
     return (
       <g className={heaterClass} fill="none" stroke={stroke} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
         <rect x={-w / 2 + 7} y={-h / 2 + 6} width={w - 14} height={h - 12} rx="6" fill={fill} />
@@ -4731,8 +4796,8 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
         <path d="M 9 -12 C 15 -7 15 -2 9 3 C 15 8 15 13 9 18" />
         {isTwoPortHeater ? (
           <g className="heater-two-port-heat-marker">
-            <path className="heater-two-port-supply-marker" d="M 23 -13 H 34 M 29 -17 L 35 -13 L 29 -9" />
-            <path className="heater-two-port-return-marker" d="M 23 13 H 34 M 29 9 L 23 13 L 29 17" />
+            <path className="heater-two-port-supply-marker" d={`M 23 ${-heaterPortY} H 34 M 29 ${-heaterPortY - 4} L 35 ${-heaterPortY} L 29 ${-heaterPortY + 4}`} />
+            <path className="heater-two-port-return-marker" d={`M 23 ${heaterPortY} H 34 M 29 ${heaterPortY - 4} L 23 ${heaterPortY} L 29 ${heaterPortY + 4}`} />
           </g>
         ) : (
           <path d="M 25 -11 H 34 M 30 -15 L 35 -11 L 30 -7" />
@@ -4751,7 +4816,7 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
       return null;
     }
     const coilRadius = miniature ? 10 : 16;
-    const branchY = miniature ? 11 : 15;
+    const branchY = miniature ? 11 : h * 0.25;
     return (
       <g className={`heat-exchanger-${exchangerKind}-glyph`} fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="-13" cy="0" r={coilRadius} fill={fill} />
@@ -5220,6 +5285,17 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
     <g>
       <circle cx="0" cy="0" r={miniature ? 16 : 24} fill={fill} stroke={stroke} strokeWidth="2.5" />
       <path d="M -10 0 H 10 M 0 -10 V 10" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" />
+    </g>
+  );
+  };
+
+  const content = renderDeviceGlyphContent();
+  if (!content || glyphContentScale === 1) {
+    return content;
+  }
+  return (
+    <g transform={`scale(${formatSvgNumber(glyphContentScale)})`}>
+      {content}
     </g>
   );
 }
@@ -7695,13 +7771,7 @@ export function App() {
     setCanvasHeight(nextBounds.height);
     setCanvasSizeDraft({ width: String(nextBounds.width), height: String(nextBounds.height) });
     setViewBox((current) => {
-      const nextViewBoxSize = scaledViewBoxSizeForBounds(current, canvasBounds, nextBounds);
-      return normalizeViewBoxToCanvas({
-        ...current,
-        x: current.x + originShift.x,
-        y: current.y + originShift.y,
-        ...clampViewBoxDimensionsForZoom(nextViewBoxSize, nextBounds)
-      }, nextBounds);
+      return viewBoxAfterCanvasBoundsChange(current, nextBounds, originShift, canvasBounds);
     });
     return true;
   };
@@ -9074,9 +9144,18 @@ export function App() {
   }, [colorPalette, dragPreviewMovedNodeById, nodeById, nodeTerminalSnapTarget]);
   const activeDropHintPoint = rewiring?.dropTargetPoint ?? nodeTerminalSnapTarget?.point ?? null;
   const activeDropReady = connectDropReady || Boolean(rewiring?.dropTargetPoint) || Boolean(nodeTerminalSnapTarget);
+  const drawingModeActive = Boolean(libraryPlacement || staticDrawing || connectSource);
   const activeDropHintStyle = rewiring?.dropTargetPoint
     ? connectionLineStyle(rewiring.edgeId)
     : nodeTerminalSnapHintStyle;
+  useEffect(() => {
+    document.body.classList.toggle("canvas-drawing-mode", drawingModeActive);
+    document.body.classList.toggle("canvas-connect-drop-ready", drawingModeActive && activeDropReady);
+    return () => {
+      document.body.classList.remove("canvas-drawing-mode");
+      document.body.classList.remove("canvas-connect-drop-ready");
+    };
+  }, [activeDropReady, drawingModeActive]);
   const groupTransformPreviewTransform = useMemo(
     () => transformDrag && isGroupTransformDrag(transformDrag) ? groupTransformSvgTransform(transformDrag, transformDrag.previewPoint) : "",
     [transformDrag]
@@ -14233,11 +14312,8 @@ export function App() {
     );
   };
 
-  const libraryPlacementInitialPoint = () =>
-    lastCanvasPointerRef.current ? snapPointToGrid(clampPointToCanvas(lastCanvasPointerRef.current)) : null;
-
   const startLibraryDevicePlacement = (template: DeviceTemplate) => {
-    setLibraryPlacement({ kind: "device", template, previewPoint: libraryPlacementInitialPoint() });
+    setLibraryPlacement({ kind: "device", template, previewPoint: null });
     setStaticDrawing(null);
     setConnectSource(null);
     resetConnectPreviewState();
@@ -14251,7 +14327,7 @@ export function App() {
   };
 
   const startLibraryGraphTemplatePlacement = (template: GraphTemplate) => {
-    setLibraryPlacement({ kind: "graph-template", template, previewPoint: libraryPlacementInitialPoint() });
+    setLibraryPlacement({ kind: "graph-template", template, previewPoint: null });
     setStaticDrawing(null);
     setConnectSource(null);
     resetConnectPreviewState();
@@ -14275,6 +14351,10 @@ export function App() {
       }
       return { ...current, previewPoint };
     });
+  };
+
+  const clearLibraryPlacementPreview = () => {
+    setLibraryPlacement((current) => current?.previewPoint ? { ...current, previewPoint: null } : current);
   };
 
   const placeLibraryDeviceAtPoint = (template: DeviceTemplate, pointerPosition: Point) => {
@@ -15099,34 +15179,6 @@ export function App() {
     return projectPointToBusCenterline(node, point);
   };
 
-  const snapSingleTerminalAnchor = (node: ModelNode, point: Point): Point => {
-    const radians = (-node.rotation * Math.PI) / 180;
-    const dx = point.x - node.position.x;
-    const dy = point.y - node.position.y;
-    const local = {
-      x: dx * Math.cos(radians) - dy * Math.sin(radians),
-      y: dx * Math.sin(radians) + dy * Math.cos(radians)
-    };
-    const halfWidth = Math.max(1, Math.abs(node.size.width * getNodeScaleX(node)) / 2);
-    const halfHeight = Math.max(1, Math.abs(node.size.height * getNodeScaleY(node)) / 2);
-    const xRatio = Math.abs(local.x) / halfWidth;
-    const yRatio = Math.abs(local.y) / halfHeight;
-    if (xRatio >= yRatio) {
-      return { x: local.x >= 0 ? 0.5 : -0.5, y: 0 };
-    }
-    return { x: 0, y: local.y >= 0 ? 0.5 : -0.5 };
-  };
-
-  const clampSingleTerminalAnchor = (node: ModelNode, point: Point): Point => {
-    const local = toLocalNodePoint(node, point);
-    const scaleX = Math.max(0.001, Math.abs(getNodeScaleX(node)));
-    const scaleY = Math.max(0.001, Math.abs(getNodeScaleY(node)));
-    return {
-      x: Math.max(-0.5, Math.min(0.5, local.x / (node.size.width * scaleX))),
-      y: Math.max(-0.5, Math.min(0.5, local.y / (node.size.height * scaleY)))
-    };
-  };
-
   const isPointOnBus = (node: ModelNode, point: Point) => {
     return isPointNearBus(node, point, 0);
   };
@@ -15628,7 +15680,7 @@ export function App() {
         if (!currentNode) {
           return current;
         }
-        const anchor = clampSingleTerminalAnchor(currentNode, point);
+        const anchor = snapSingleTerminalAnchorToNearestSide(currentNode, point);
         let changed = false;
         const nextTerminals = currentNode.terminals.map((terminal) => {
           if (terminal.id !== terminalPress.terminalId || sameOptionalPoint(terminal.anchor, anchor)) {
@@ -15974,6 +16026,95 @@ export function App() {
     setProjectMenu(null);
   };
 
+  const commitLayoutNodePositions = (layoutNodeIds: string[], arranged: ModelNode[]) => {
+    const uniqueLayoutNodeIds = Array.from(new Set(layoutNodeIds));
+    if (uniqueLayoutNodeIds.length === 0) {
+      return 0;
+    }
+    const movedNodeUpdates = uniqueLayoutNodeIds.flatMap((nodeId) => {
+      const previous = nodeById.get(nodeId);
+      const nextNode = orderedNodeFromList(arranged, nodeId);
+      if (!previous || !nextNode) {
+        return [];
+      }
+      return previous.position.x !== nextNode.position.x || previous.position.y !== nextNode.position.y ? [nextNode] : [];
+    });
+    if (movedNodeUpdates.length === 0) {
+      return 0;
+    }
+    const movedNodeIds = movedNodeUpdates.map((node) => node.id);
+    const movedNodeIdSet = new Set(movedNodeIds);
+    const affectedEdgesForLayout = edgeListForNodeIds(movedNodeIds);
+    pushUndoSnapshot(true, false, undoScopeForGraphPatch(movedNodeIds, affectedEdgesForLayout.map((edge) => edge.id)));
+    const layoutCanvasBounds = canvasBoundsForGraphContent(
+      canvasBounds,
+      arranged,
+      edges,
+      [],
+      CANVAS_AUTO_EXPAND_PADDING
+    );
+    applyCanvasBounds(layoutCanvasBounds);
+    const originalPositions = Object.fromEntries(
+      movedNodeIds.flatMap((id) => {
+        const node = nodeById.get(id);
+        return node ? [[id, node.position]] : [];
+      })
+    );
+    const deltas = Object.fromEntries(
+      movedNodeUpdates.map((node) => {
+        const previous = nodeById.get(node.id);
+        return [
+          node.id,
+          {
+            x: node.position.x - (previous?.position.x ?? node.position.x),
+            y: node.position.y - (previous?.position.y ?? node.position.y)
+          }
+        ];
+      })
+    );
+    const originalEdgePoints = snapshotEdgePoints(affectedEdgesForLayout);
+    const originalRoutePoints = Object.fromEntries(
+      affectedEdgesForLayout.map((edge) => [
+        edge.id,
+        currentStoredRoutePointsForEdge(edge)
+      ])
+    );
+    const adjustedAffectedEdges = affectedEdgesForLayout.length > 0
+      ? adjustEdgesAfterNodeMove(
+          affectedEdgesForLayout,
+          arranged,
+          movedNodeIdSet,
+          originalEdgePoints,
+          deltas,
+          originalRoutePoints,
+          new Set<string>(),
+          layoutCanvasBounds
+        )
+      : affectedEdgesForLayout;
+    const finalizedCandidateEdges = adjustedAffectedEdges.length > 0
+      ? finalizeMovedNodeEdgesFast(
+          nodes,
+          arranged,
+          adjustedAffectedEdges,
+          movedNodeIds,
+          adjustedAffectedEdges
+        )
+      : adjustedAffectedEdges;
+    commitFastMovedGraphPatches(
+      movedNodeUpdates,
+      arranged,
+      finalizedCandidateEdges,
+      affectedEdgesForLayout,
+      movedNodeIds,
+      originalRoutePoints,
+      new Set<string>(),
+      originalPositions,
+      nodes,
+      layoutCanvasBounds
+    );
+    return movedNodeUpdates.length;
+  };
+
   const applySelectedNodeLayout = (
     minimumUnitCount: number,
     layoutNodes: (currentNodes: ModelNode[], currentLayoutUnits: typeof selectedLayoutUnits) => ModelNode[]
@@ -15985,78 +16126,34 @@ export function App() {
     if (layoutNodeIds.length === 0) {
       return;
     }
-    pushUndoSnapshot();
     const arranged = layoutNodes(nodes, selectedLayoutUnits);
-    const layoutCanvasBounds = canvasBoundsForGraphContent(
-      canvasBounds,
-      arranged,
-      edges,
+    commitLayoutNodePositions(layoutNodeIds, arranged);
+  };
+
+  const autoSpreadCanvasGraphics = () => {
+    const activeNodeIds = activeLayerNodes.map((node) => node.id);
+    if (activeNodeIds.length < 2) {
+      writeOperationLog("自动散开需要至少 2 个可操作图元");
+      return;
+    }
+    const layoutUnits = buildCanvasLayoutUnits(
+      activeLayerGroups,
+      activeLayerNodes,
+      activeNodeIds,
       [],
-      CANVAS_AUTO_EXPAND_PADDING
+      activeLayerEdges,
+      routedEdges
     );
-    applyCanvasBounds(layoutCanvasBounds);
-    const selected = new Set(layoutNodeIds);
-    const originalPositions = Object.fromEntries(
-      layoutNodeIds.flatMap((id) => {
-        const node = nodeById.get(id);
-        return node ? [[id, node.position]] : [];
-      })
-    );
-    const deltas = Object.fromEntries(
+    if (layoutUnits.length < 2) {
+      writeOperationLog("自动散开没有发现可调整的图元");
+      return;
+    }
+    const arranged = autoSpreadNodeLayoutUnits(nodes, layoutUnits, { padding: 4, bounds: canvasBounds });
+    const movedCount = commitLayoutNodePositions(
+      Array.from(new Set(layoutUnits.flatMap((unit) => unit.nodeIds))),
       arranged
-        .filter((node) => selected.has(node.id))
-        .map((node) => {
-          const previous = nodeById.get(node.id);
-          return [
-            node.id,
-            {
-              x: node.position.x - (previous?.position.x ?? node.position.x),
-              y: node.position.y - (previous?.position.y ?? node.position.y)
-            }
-          ];
-        })
     );
-    const affectedEdgesForLayout = edgeListForNodeIds(layoutNodeIds);
-    const originalEdgePoints = snapshotEdgePoints(affectedEdgesForLayout);
-    const originalRoutePoints = Object.fromEntries(
-      affectedEdgesForLayout.map((edge) => [
-        edge.id,
-        currentStoredRoutePointsForEdge(edge)
-      ])
-    );
-    const adjustedAffectedEdges = adjustEdgesAfterNodeMove(
-      affectedEdgesForLayout,
-      arranged,
-      selected,
-      originalEdgePoints,
-      deltas,
-      originalRoutePoints,
-      new Set<string>(),
-      layoutCanvasBounds
-    );
-    const finalizedCandidateEdges = finalizeMovedNodeEdgesFast(
-      nodes,
-      arranged,
-      adjustedAffectedEdges,
-      layoutNodeIds,
-      adjustedAffectedEdges
-    );
-    const movedNodeUpdates = layoutNodeIds.flatMap((nodeId) => {
-      const nextNode = orderedNodeFromList(arranged, nodeId);
-      return nextNode && nodeById.get(nodeId) !== nextNode ? [nextNode] : [];
-    });
-    commitFastMovedGraphPatches(
-      movedNodeUpdates,
-      arranged,
-      finalizedCandidateEdges,
-      affectedEdgesForLayout,
-      layoutNodeIds,
-      originalRoutePoints,
-      new Set<string>(),
-      originalPositions,
-      nodes,
-      layoutCanvasBounds
-    );
+    writeOperationLog(movedCount > 0 ? `自动散开 ${movedCount} 个图元` : "自动散开未发现重叠图元");
   };
 
   const alignSelected = (direction: AlignMode) => {
@@ -17630,7 +17727,7 @@ export function App() {
       return;
     }
     if (!isBusNode(node) && node.terminals.length === 1) {
-      const anchor = snapSingleTerminalAnchor(node, terminalPress.currentPoint);
+      const anchor = snapSingleTerminalAnchorToNearestSide(node, terminalPress.currentPoint);
       const nextNode = {
         ...node,
         terminals: node.terminals.map((terminal) =>
@@ -20999,9 +21096,17 @@ export function App() {
             onDoubleClick={fitWholeCanvasFromBlankDoubleClick}
             onPointerDownCapture={handleCanvasPointerDownCapture}
             onPointerMove={handlePointerMove}
-            onPointerEnter={() => {
+            onPointerEnter={(event) => {
               canvasInteractionRef.current = true;
               projectListPointerInsideRef.current = false;
+              const rawPointer = screenToSvgPoint(event.currentTarget, event.clientX, event.clientY);
+              const pointer = clampPointToCanvas(rawPointer);
+              lastRawCanvasPointerRef.current = rawPointer;
+              lastCanvasPointerRef.current = pointer;
+              updateMouseStatus(pointer);
+              if (libraryPlacement) {
+                updateLibraryPlacementPreview(pointer);
+              }
             }}
             onPointerUp={(event) => {
               if (finishModifierSelectionPress(event.pointerId)) {
@@ -21019,6 +21124,7 @@ export function App() {
             }}
             onPointerLeave={() => {
               canvasInteractionRef.current = false;
+              clearLibraryPlacementPreview();
               if (manualPathDrag) {
                 return;
               }
@@ -22694,7 +22800,7 @@ export function App() {
                               type="number"
                               min="6"
                               max="96"
-                              value={inspectorSelectedNode.params._labelFontSize || "14"}
+                              value={inspectorSelectedNode.params._labelFontSize || "12"}
                               onChange={(event) => updateParam("_labelFontSize", event.target.value)}
                             />
                           </td>
@@ -23155,6 +23261,12 @@ export function App() {
             <button onClick={() => runContextMenuAction(pasteSelection)}>
               <FileInput size={14} />
               粘贴
+            </button>
+          )}
+          {!contextMenuForEdge && activeLayerNodes.length > 1 && (
+            <button onClick={() => runContextMenuAction(autoSpreadCanvasGraphics)}>
+              <ScanSearch size={14} />
+              自动散开
             </button>
           )}
           {contextMenuForEdge && selectedEdge && (

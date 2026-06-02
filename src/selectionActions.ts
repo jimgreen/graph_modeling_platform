@@ -3,6 +3,7 @@ import {
   type AlignMode,
   calculateNodeVisualBounds,
   resetDeviceIndexesForPaste,
+  type CanvasBounds,
   type Edge,
   type ModelGroup,
   type ModelNode,
@@ -803,4 +804,349 @@ export function distributeNodeLayoutUnits(nodes: ModelNode[], units: readonly Ca
     deltas.set(unit.id, direction === "horizontal" ? { x: target - current, y: 0 } : { x: 0, y: target - current });
   });
   return moveNodesByUnitDeltas(nodes, units, deltas);
+}
+
+export type AutoSpreadNodeLayoutUnitsOptions = {
+  padding?: number;
+  maxIterations?: number;
+  minSeparation?: number;
+  bounds?: CanvasBounds;
+};
+
+function offsetRect(rect: SelectionRect, delta: Point): SelectionRect {
+  return {
+    left: rect.left + delta.x,
+    right: rect.right + delta.x,
+    top: rect.top + delta.y,
+    bottom: rect.bottom + delta.y
+  };
+}
+
+function padRect(rect: SelectionRect, padding: number): SelectionRect {
+  return {
+    left: rect.left - padding,
+    right: rect.right + padding,
+    top: rect.top - padding,
+    bottom: rect.bottom + padding
+  };
+}
+
+function rectOverlap(first: SelectionRect, second: SelectionRect) {
+  return {
+    x: Math.min(first.right, second.right) - Math.max(first.left, second.left),
+    y: Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top)
+  };
+}
+
+function rectsOverlap(first: SelectionRect, second: SelectionRect) {
+  const overlap = rectOverlap(first, second);
+  return overlap.x > 0 && overlap.y > 0;
+}
+
+function rectOverlapsAny(rect: SelectionRect, candidates: readonly SelectionRect[]) {
+  return candidates.some((candidate) => rectsOverlap(rect, candidate));
+}
+
+function rectCanvasOverflow(rect: SelectionRect, bounds: CanvasBounds | undefined) {
+  if (!bounds) {
+    return 0;
+  }
+  return Math.max(0, -rect.left) +
+    Math.max(0, -rect.top) +
+    Math.max(0, rect.right - bounds.width) +
+    Math.max(0, rect.bottom - bounds.height);
+}
+
+function rectWidth(rect: SelectionRect) {
+  return Math.max(1, rect.right - rect.left);
+}
+
+function rectHeight(rect: SelectionRect) {
+  return Math.max(1, rect.bottom - rect.top);
+}
+
+function rectCenterPoint(rect: SelectionRect): Point {
+  return {
+    x: (rect.left + rect.right) / 2,
+    y: (rect.top + rect.bottom) / 2
+  };
+}
+
+function boundsForRects(rects: readonly SelectionRect[]): SelectionRect {
+  return {
+    left: Math.min(...rects.map((rect) => rect.left)),
+    right: Math.max(...rects.map((rect) => rect.right)),
+    top: Math.min(...rects.map((rect) => rect.top)),
+    bottom: Math.max(...rects.map((rect) => rect.bottom))
+  };
+}
+
+function uniqueNearestValues(values: number[], limit: number) {
+  const seen = new Set<number>();
+  return values
+    .map((value) => Math.round(value))
+    .filter((value) => {
+      if (seen.has(value)) {
+        return false;
+      }
+      seen.add(value);
+      return true;
+    })
+    .sort((first, second) => Math.abs(first) - Math.abs(second) || first - second)
+    .slice(0, limit);
+}
+
+function nearestNonOverlappingDelta(
+  baseRect: SelectionRect,
+  placedRects: readonly SelectionRect[],
+  minSeparation: number,
+  bounds: CanvasBounds | undefined
+) {
+  if (!rectOverlapsAny(baseRect, placedRects)) {
+    return { x: 0, y: 0 };
+  }
+  const axisValueLimit = placedRects.length < 80 ? Math.max(1, placedRects.length * 2 + 1) : 48;
+  const xValues = [0];
+  const yValues = [0];
+  for (const placed of placedRects) {
+    xValues.push(placed.right - baseRect.left + minSeparation);
+    xValues.push(placed.left - baseRect.right - minSeparation);
+    yValues.push(placed.bottom - baseRect.top + minSeparation);
+    yValues.push(placed.top - baseRect.bottom - minSeparation);
+  }
+  const candidateXValues = uniqueNearestValues(xValues, axisValueLimit);
+  const candidateYValues = uniqueNearestValues(yValues, axisValueLimit);
+  let bestDelta: Point | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+  const consider = (delta: Point) => {
+    const rect = offsetRect(baseRect, delta);
+    if (rectOverlapsAny(rect, placedRects)) {
+      return;
+    }
+    const overflow = rectCanvasOverflow(rect, bounds);
+    const score = overflow * 1_000_000 + delta.x * delta.x + delta.y * delta.y + (delta.x !== 0 && delta.y !== 0 ? 0.25 : 0);
+    if (score < bestScore) {
+      bestScore = score;
+      bestDelta = delta;
+    }
+  };
+
+  for (const x of candidateXValues) {
+    consider({ x, y: 0 });
+  }
+  for (const y of candidateYValues) {
+    consider({ x: 0, y });
+  }
+  for (const x of candidateXValues) {
+    for (const y of candidateYValues) {
+      consider({ x, y });
+    }
+  }
+  if (bestDelta) {
+    return bestDelta;
+  }
+
+  const width = Math.max(1, baseRect.right - baseRect.left);
+  const height = Math.max(1, baseRect.bottom - baseRect.top);
+  const stepX = width + minSeparation;
+  const stepY = height + minSeparation;
+  const maxRing = Math.max(8, Math.ceil(Math.sqrt(placedRects.length)) + 8);
+  for (let ring = 1; ring <= maxRing; ring += 1) {
+    for (let ix = -ring; ix <= ring; ix += 1) {
+      for (let iy = -ring; iy <= ring; iy += 1) {
+        if (Math.max(Math.abs(ix), Math.abs(iy)) !== ring) {
+          continue;
+        }
+        consider({ x: ix * stepX, y: iy * stepY });
+      }
+    }
+    if (bestDelta) {
+      return bestDelta;
+    }
+  }
+  return { x: 0, y: 0 };
+}
+
+type AutoSpreadLayoutItem = {
+  unit: CanvasLayoutUnit;
+  index: number;
+  baseRect: SelectionRect;
+};
+
+function buildOverlapComponents(items: readonly AutoSpreadLayoutItem[]) {
+  const components: AutoSpreadLayoutItem[][] = [];
+  const visited = new Set<number>();
+  for (let index = 0; index < items.length; index += 1) {
+    if (visited.has(index)) {
+      continue;
+    }
+    const component: AutoSpreadLayoutItem[] = [];
+    const stack = [index];
+    visited.add(index);
+    while (stack.length > 0) {
+      const currentIndex = stack.pop()!;
+      const current = items[currentIndex];
+      component.push(current);
+      for (let nextIndex = 0; nextIndex < items.length; nextIndex += 1) {
+        if (visited.has(nextIndex)) {
+          continue;
+        }
+        if (rectsOverlap(current.baseRect, items[nextIndex].baseRect)) {
+          visited.add(nextIndex);
+          stack.push(nextIndex);
+        }
+      }
+    }
+    components.push(component);
+  }
+  return components;
+}
+
+function clampSpreadOrigin(value: number, size: number, limit: number | undefined) {
+  if (limit === undefined || size >= limit) {
+    return Math.round(value);
+  }
+  return Math.round(Math.max(0, Math.min(limit - size, value)));
+}
+
+function balancedGridShape(component: readonly AutoSpreadLayoutItem[], minSeparation: number, bounds: CanvasBounds | undefined) {
+  const count = component.length;
+  const maxWidth = Math.max(...component.map((item) => rectWidth(item.baseRect)));
+  const maxHeight = Math.max(...component.map((item) => rectHeight(item.baseRect)));
+  const targetAspect = bounds ? Math.max(0.75, Math.min(1.5, bounds.width / Math.max(1, bounds.height))) : 1;
+  let best = {
+    columns: 1,
+    rows: count,
+    gridWidth: maxWidth,
+    gridHeight: count * maxHeight + (count - 1) * minSeparation,
+    score: Number.POSITIVE_INFINITY
+  };
+  for (let columns = 1; columns <= count; columns += 1) {
+    const rows = Math.ceil(count / columns);
+    const gridWidth = columns * maxWidth + (columns - 1) * minSeparation;
+    const gridHeight = rows * maxHeight + (rows - 1) * minSeparation;
+    const aspect = gridWidth / Math.max(1, gridHeight);
+    const emptyCells = columns * rows - count;
+    const score =
+      Math.abs(Math.log(aspect / targetAspect)) +
+      (emptyCells / count) * 0.12 +
+      Math.abs(columns - rows) * 0.01;
+    if (score < best.score) {
+      best = { columns, rows, gridWidth, gridHeight, score };
+    }
+  }
+  return { ...best, maxWidth, maxHeight };
+}
+
+function balancedGridDeltasForComponent(
+  component: readonly AutoSpreadLayoutItem[],
+  placedRects: readonly SelectionRect[],
+  minSeparation: number,
+  bounds: CanvasBounds | undefined
+) {
+  const shape = balancedGridShape(component, minSeparation, bounds);
+  const componentBounds = boundsForRects(component.map((item) => item.baseRect));
+  const componentCenter = rectCenterPoint(componentBounds);
+  const origin = {
+    x: clampSpreadOrigin(componentCenter.x - shape.gridWidth / 2, shape.gridWidth, bounds?.width),
+    y: clampSpreadOrigin(componentCenter.y - shape.gridHeight / 2, shape.gridHeight, bounds?.height)
+  };
+  const ordered = [...component].sort((first, second) =>
+    first.baseRect.top - second.baseRect.top ||
+    first.baseRect.left - second.baseRect.left ||
+    first.index - second.index
+  );
+  const proposedRects = ordered.map((item, index) => {
+    const column = index % shape.columns;
+    const row = Math.floor(index / shape.columns);
+    const width = rectWidth(item.baseRect);
+    const height = rectHeight(item.baseRect);
+    const left = origin.x + column * (shape.maxWidth + minSeparation) + (shape.maxWidth - width) / 2;
+    const top = origin.y + row * (shape.maxHeight + minSeparation) + (shape.maxHeight - height) / 2;
+    return {
+      left: Math.round(left),
+      right: Math.round(left + width),
+      top: Math.round(top),
+      bottom: Math.round(top + height)
+    };
+  });
+  const clusterDelta = nearestNonOverlappingDelta(
+    boundsForRects(proposedRects),
+    placedRects,
+    minSeparation,
+    bounds
+  );
+  const deltas = new Map<string, Point>();
+  const rects: SelectionRect[] = [];
+  ordered.forEach((item, index) => {
+    const finalRect = offsetRect(proposedRects[index], clusterDelta);
+    const from = rectCenterPoint(item.baseRect);
+    const to = rectCenterPoint(finalRect);
+    const delta = {
+      x: Math.round(to.x - from.x),
+      y: Math.round(to.y - from.y)
+    };
+    if (delta.x !== 0 || delta.y !== 0) {
+      deltas.set(item.unit.id, delta);
+    }
+    rects.push(finalRect);
+  });
+  return { deltas, rects };
+}
+
+export function autoSpreadNodeLayoutUnits(
+  nodes: ModelNode[],
+  units: readonly CanvasLayoutUnit[],
+  options: AutoSpreadNodeLayoutUnitsOptions = {}
+): ModelNode[] {
+  const movableUnits = units.filter((unit) => unit.nodeIds.length > 0);
+  if (movableUnits.length < 2) {
+    return nodes;
+  }
+  const padding = Math.max(0, options.padding ?? 4);
+  const minSeparation = Math.max(1, options.minSeparation ?? 1);
+  const orderedUnits = movableUnits
+    .map((unit, index) => ({ unit, index }))
+    .sort((first, second) =>
+      first.unit.bounds.top - second.unit.bounds.top ||
+      first.unit.bounds.left - second.unit.bounds.left ||
+      first.index - second.index
+    );
+  const layoutItems = orderedUnits.map((item) => ({
+    ...item,
+    baseRect: padRect(item.unit.bounds, padding)
+  }));
+  const components = buildOverlapComponents(layoutItems);
+  const orderedComponents = [
+    ...components.filter((component) => component.length === 1),
+    ...components.filter((component) => component.length > 1)
+  ].sort((first, second) => {
+    const firstBounds = boundsForRects(first.map((item) => item.baseRect));
+    const secondBounds = boundsForRects(second.map((item) => item.baseRect));
+    const firstSingleton = first.length === 1 ? 0 : 1;
+    const secondSingleton = second.length === 1 ? 0 : 1;
+    return firstSingleton - secondSingleton ||
+      firstBounds.top - secondBounds.top ||
+      firstBounds.left - secondBounds.left;
+  });
+  const placedRects: SelectionRect[] = [];
+  const deltas = new Map<string, Point>();
+  for (const component of orderedComponents) {
+    if (component.length >= 4) {
+      const gridLayout = balancedGridDeltasForComponent(component, placedRects, minSeparation, options.bounds);
+      for (const [unitId, delta] of gridLayout.deltas) {
+        deltas.set(unitId, delta);
+      }
+      placedRects.push(...gridLayout.rects);
+      continue;
+    }
+    for (const item of component) {
+      const delta = nearestNonOverlappingDelta(item.baseRect, placedRects, minSeparation, options.bounds);
+      placedRects.push(offsetRect(item.baseRect, delta));
+      if (delta.x !== 0 || delta.y !== 0) {
+        deltas.set(item.unit.id, delta);
+      }
+    }
+  }
+  return deltas.size > 0 ? moveNodesByUnitDeltas(nodes, movableUnits, deltas) : nodes;
 }

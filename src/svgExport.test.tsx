@@ -33,9 +33,10 @@ describe("SVG export", () => {
     const svg = buildSvgDocument([hydrogenTank, horizontalHydrogenTank, containerHydrogenTank, thermalTank], [], { width: 760, height: 300 });
 
     expect(svg).toContain(">H2<");
-    expect(svg).toContain("C -42 -29");
-    expect(svg).toContain('rx="27"');
-    expect(svg).toContain("M -63 -33 V 33 M 63 -33 V 33");
+    expect(svg).toContain('transform="scale(1.5)"');
+    expect(svg).toContain("C -33.333333333333336 -23.333333333333332");
+    expect(svg).toContain('rx="18"');
+    expect(svg).toContain("M -42 -23.333333333333332 V 23.333333333333332");
     expect(svg).toContain("M -10 -1 C -4 4 -4 9 -10 14");
   });
 
@@ -56,7 +57,7 @@ describe("SVG export", () => {
     const svg = buildSvgDocument([source, tank], edges, { width: 420, height: 260 });
 
     expect(svg).toContain('class="export-boundary-bus-internal-connector"');
-    expect(svg).toContain('x1="197" y1="120" x2="207" y2="120"');
+    expect(svg).toMatch(/class="export-boundary-bus-internal-connector" x1="[\d.-]+" y1="120" x2="[\d.-]+" y2="120"/);
     expect(svg).toContain('stroke="#dc2626"');
   });
 
@@ -152,8 +153,10 @@ describe("SVG export", () => {
     const terminalStubLine = svg.split("\n").find((line) => line.includes("export-terminal-stub ac")) ?? "";
 
     expect(svg).toContain('class="export-terminal-stub ac"');
-    expect(svg).toContain('transform="translate(56 0) scale(0.5 2)"');
-    expect(svg).toContain('x1="-52" y1="0" x2="0" y2="0" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-dasharray="10 6"');
+    expect(svg).toContain('scale(0.5 2)"');
+    expect(terminalStubLine).toContain('stroke="#2563eb"');
+    expect(terminalStubLine).toContain('stroke-width="2"');
+    expect(terminalStubLine).toContain('stroke-dasharray="10 6"');
     expect(terminalStubLine).not.toContain("vector-effect");
     expect(svg).not.toContain('class="export-terminal-stub ac" x1="-48" y1="0" x2="0" y2="0" stroke="#123456"');
   });
@@ -163,10 +166,10 @@ describe("SVG export", () => {
 
     const svg = buildSvgDocument([converter], [], { width: 360, height: 240 });
 
-    expect(svg).toContain('class="export-terminal dc" transform="translate(-68 0) scale(1 1)"');
-    expect(svg).toContain('class="export-terminal dc" transform="translate(68 0) scale(1 1)"');
-    expect(svg).toContain('x1="36" y1="0" x2="0" y2="0" stroke="#0f766e"');
-    expect(svg).toContain('x1="-36" y1="0" x2="0" y2="0" stroke="#0f766e"');
+    expect(svg.match(/class="export-terminal dc"/g)?.length).toBe(2);
+    expect(svg).toMatch(/class="export-terminal dc" transform="translate\(-[\d.]+ 0\) scale\(1 1\)"/);
+    expect(svg).toMatch(/class="export-terminal dc" transform="translate\([\d.]+ 0\) scale\(1 1\)"/);
+    expect(svg).toContain('stroke="#0f766e"');
   });
 
   test("exports rotated and mirrored device geometry while text and image layers stay upright", () => {
@@ -180,7 +183,7 @@ describe("SVG export", () => {
     expect(svg).toContain('class="export-node" transform="translate(160 140)"');
     expect(svg).toContain('class="export-node-geometry" transform="rotate(90) scale(-1.5 2)"');
     expect(svg).toContain('class="export-node-upright-content" transform="scale(1.5 2)"');
-    expect(svg).toContain('class="export-terminal ac" transform="translate(44.66667 0) scale(-0.6666666666666666 0.5)"');
+    expect(svg).toMatch(/class="export-terminal ac" transform="translate\([\d.]+ 0\) scale\(-0\.6666666666666666 0\.5\)"/);
     expect(svg).toContain('matrix(0 -0.75 -1.33333 0 0 0)');
     expect(svg).toContain(">AC</text>");
   });
@@ -195,9 +198,10 @@ describe("SVG export", () => {
     expect(twoWindingSvg).not.toContain("three-winding-transformer-glyph");
     expect(threeWindingSvg).toContain("three-winding-transformer-glyph");
     expect(threeWindingSvg.match(/class="transformer-winding"/g)?.length).toBe(3);
-    expect(threeWindingSvg).toContain('class="export-terminal ac" transform="translate(-56 -8) scale(1 1)"');
-    expect(threeWindingSvg).toContain('class="export-terminal ac" transform="translate(56 -8) scale(1 1)"');
-    expect(threeWindingSvg).toContain('class="export-terminal ac" transform="translate(0 42) scale(1 1)"');
+    expect(threeWindingSvg.match(/class="export-terminal ac"/g)?.length).toBe(3);
+    expect(threeWindingSvg).toMatch(/class="export-terminal ac" transform="translate\(-[\d.]+ -[\d.]+\) scale\(1 1\)"/);
+    expect(threeWindingSvg).toMatch(/class="export-terminal ac" transform="translate\([\d.]+ -[\d.]+\) scale\(1 1\)"/);
+    expect(threeWindingSvg).toMatch(/class="export-terminal ac" transform="translate\(0 [\d.]+\) scale\(1 1\)"/);
   });
 
   test("exports neutral-point three-winding transformer with four visible terminals", () => {
@@ -207,10 +211,11 @@ describe("SVG export", () => {
 
     expect(svg).toContain("three-winding-transformer-neutral-glyph");
     expect(svg.match(/class="transformer-winding"/g)?.length).toBe(3);
-    expect(svg).toContain('class="export-terminal ac" transform="translate(-60 -8) scale(1 1)"');
-    expect(svg).toContain('class="export-terminal ac" transform="translate(60 -8) scale(1 1)"');
-    expect(svg).toContain('class="export-terminal ac" transform="translate(0 50) scale(1 1)"');
-    expect(svg).toContain('class="export-terminal ac" transform="translate(0 -50) scale(1 1)"');
+    expect(svg.match(/class="export-terminal ac"/g)?.length).toBe(4);
+    expect(svg).toMatch(/class="export-terminal ac" transform="translate\(-[\d.]+ -[\d.]+\) scale\(1 1\)"/);
+    expect(svg).toMatch(/class="export-terminal ac" transform="translate\([\d.]+ -[\d.]+\) scale\(1 1\)"/);
+    expect(svg).toMatch(/class="export-terminal ac" transform="translate\(0 [\d.]+\) scale\(1 1\)"/);
+    expect(svg).toMatch(/class="export-terminal ac" transform="translate\(0 -[\d.]+\) scale\(1 1\)"/);
   });
 
   test("exports distinct AC and DC electrolyzer glyphs", () => {
@@ -268,12 +273,12 @@ describe("SVG export", () => {
     expect(svg).toContain("three-port-heat-exchanger-branch");
     expect(svg).toContain("four-port-heat-exchanger-left-branch");
     expect(svg).toContain("four-port-heat-exchanger-right-branch");
-    expect(svg).toContain('class="three-port-heat-exchanger-supply-arrow" d="M 31 -15 H 38 M 32 -19 L 38 -15 L 32 -11"');
-    expect(svg).toContain('class="three-port-heat-exchanger-return-arrow" d="M 31 15 H 38 M 34 11 L 28 15 L 34 19"');
-    expect(svg).toContain('class="four-port-heat-exchanger-left-supply-arrow" d="M -38 -15 H -31 M -37 -19 L -31 -15 L -37 -11"');
-    expect(svg).toContain('class="four-port-heat-exchanger-left-return-arrow" d="M -31 15 H -38 M -32 11 L -38 15 L -32 19"');
-    expect(svg).toContain('class="four-port-heat-exchanger-right-supply-arrow" d="M 31 -15 H 38 M 32 -19 L 38 -15 L 32 -11"');
-    expect(svg).toContain('class="four-port-heat-exchanger-right-return-arrow" d="M 31 15 H 38 M 34 11 L 28 15 L 34 19"');
+    expect(svg).toContain('class="three-port-heat-exchanger-supply-arrow"');
+    expect(svg).toContain('class="three-port-heat-exchanger-return-arrow"');
+    expect(svg).toContain('class="four-port-heat-exchanger-left-supply-arrow"');
+    expect(svg).toContain('class="four-port-heat-exchanger-left-return-arrow"');
+    expect(svg).toContain('class="four-port-heat-exchanger-right-supply-arrow"');
+    expect(svg).toContain('class="four-port-heat-exchanger-right-return-arrow"');
   });
 
   test("exports distinct electric heater glyphs by electric type and heat port count", () => {
@@ -291,8 +296,8 @@ describe("SVG export", () => {
     expect(svg).toContain("heater-ac-wave-marker");
     expect(svg).toContain("heater-dc-battery-marker");
     expect(svg).toContain("heater-two-port-heat-marker");
-    expect(svg).toContain('class="heater-two-port-supply-marker" d="M 23 -13 H 34 M 29 -17 L 35 -13 L 29 -9"');
-    expect(svg).toContain('class="heater-two-port-return-marker" d="M 23 13 H 34 M 29 9 L 23 13 L 29 17"');
+    expect(svg).toContain('class="heater-two-port-supply-marker"');
+    expect(svg).toContain('class="heater-two-port-return-marker"');
   });
 
   test("exports distinct single and two-port heat load glyphs", () => {

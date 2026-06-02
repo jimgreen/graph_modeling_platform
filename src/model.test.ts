@@ -61,6 +61,7 @@ import {
   validateConnectionEndpointRules,
   validateTopology,
   validateVoltageSetpointDeviations,
+  getTerminalNormal,
   getTerminalPoint,
   getBusTerminalType,
   getMovableRouteSegmentIndexes,
@@ -94,6 +95,7 @@ import {
   validateContainerTerminalAssociations,
   validateContainerTerminalRoles,
   isGeneratorNode,
+  isStaticKind,
   isStaticNode,
   keyboardMoveStepForViewBox,
   viewBoxZoomPercent,
@@ -774,19 +776,19 @@ describe("power system model", () => {
   });
 
   test("sizes each bus terminal list from the number of connected line endpoints", () => {
-    const bus = createDefaultNode("ac-bus", { x: 200, y: 100 });
-    const loadA = createDefaultNode("ac-load", { x: 80, y: 100 });
-    const loadB = createDefaultNode("ac-load", { x: 320, y: 100 });
-    const loadC = createDefaultNode("ac-load", { x: 440, y: 100 });
+    const bus = createDefaultNode("ac-bus", { x: 500, y: 100 });
+    const loadA = createDefaultNode("ac-load", { x: 180, y: 100 });
+    const loadB = createDefaultNode("ac-load", { x: 820, y: 100 });
+    const loadC = createDefaultNode("ac-load", { x: 1140, y: 100 });
 
     const locked = lockProjectEdgeTerminals({
       version: 1,
       name: "母线动态端子",
       nodes: [bus, loadA, loadB, loadC],
       edges: [
-        { id: "a", sourceId: loadA.id, targetId: bus.id, sourceTerminalId: "t1", targetTerminalId: "t1", targetPoint: { x: 160, y: 100 } },
-        { id: "b", sourceId: loadB.id, targetId: bus.id, sourceTerminalId: "t1", targetTerminalId: "t1", targetPoint: { x: 200, y: 100 } },
-        { id: "c", sourceId: bus.id, targetId: loadC.id, sourceTerminalId: "t1", targetTerminalId: "t1", sourcePoint: { x: 240, y: 100 } }
+        { id: "a", sourceId: loadA.id, targetId: bus.id, sourceTerminalId: "t1", targetTerminalId: "t1", targetPoint: { x: 440, y: 100 } },
+        { id: "b", sourceId: loadB.id, targetId: bus.id, sourceTerminalId: "t1", targetTerminalId: "t1", targetPoint: { x: 500, y: 100 } },
+        { id: "c", sourceId: bus.id, targetId: loadC.id, sourceTerminalId: "t1", targetTerminalId: "t1", sourcePoint: { x: 560, y: 100 } }
       ]
     });
     const lockedBus = locked.nodes.find((node) => node.id === bus.id)!;
@@ -802,10 +804,10 @@ describe("power system model", () => {
   });
 
   test("synchronizes bus terminals only around affected moved nodes", () => {
-    const busA = createDefaultNode("ac-bus", { x: 200, y: 100 });
-    const busB = createDefaultNode("ac-bus", { x: 500, y: 100 });
-    const loadA = createDefaultNode("ac-load", { x: 80, y: 100 });
-    const loadB = createDefaultNode("ac-load", { x: 380, y: 100 });
+    const busA = createDefaultNode("ac-bus", { x: 500, y: 100 });
+    const busB = createDefaultNode("ac-bus", { x: 1100, y: 100 });
+    const loadA = createDefaultNode("ac-load", { x: 180, y: 100 });
+    const loadB = createDefaultNode("ac-load", { x: 1420, y: 100 });
     const nodes = [busA, busB, loadA, loadB];
     const edges: Edge[] = [
       { id: "edge-a", sourceId: loadA.id, targetId: busA.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
@@ -1031,7 +1033,10 @@ describe("power system model", () => {
       expect(node.rotation).toBe(90);
       if (busKinds.includes(kind)) {
         expect(getBusTerminalType(node)).toBe(getBusTerminalType(createDefaultNode(kind, { x: 200, y: 200 })));
-        expect(projectPointToBusCenterline(node, { x: 210, y: 120 })).toEqual({ x: 200, y: 140 });
+        expect(projectPointToBusCenterline(node, { x: 210, y: node.position.y - node.size.width })).toEqual({
+          x: node.position.x,
+          y: node.position.y - node.size.width / 2
+        });
       } else {
         expect(node.terminals).toHaveLength(2);
         expect(node.terminals.map((terminal) => terminal.anchor)).toEqual(createDefaultNode(kind, { x: 200, y: 200 }).terminals.map((terminal) => terminal.anchor));
@@ -1043,6 +1048,25 @@ describe("power system model", () => {
         expect(secondPoint.y).toBeGreaterThan(200);
       }
     }
+  });
+
+  test("normalizes non-static device default sizes to a 150px longest side", () => {
+    const nonStaticTemplates = DEVICE_LIBRARY.filter((template) => !isStaticKind(template.kind));
+
+    expect(nonStaticTemplates.length).toBeGreaterThan(0);
+    for (const template of nonStaticTemplates) {
+      expect(Math.max(template.size.width, template.size.height)).toBe(150);
+      expect(createDefaultNode(template.kind, { x: 100, y: 100 }).size).toEqual(template.size);
+    }
+
+    const baseTemplate = DEVICE_LIBRARY.find((template) => template.kind === "ac-source")!;
+    const customSizedTemplate: DeviceTemplate = {
+      ...baseTemplate,
+      size: { width: 50, height: 20 }
+    };
+
+    expect(createNodeFromTemplate(customSizedTemplate, { x: 0, y: 0 }).size).toEqual({ width: 150, height: 60 });
+    expect(createDefaultNode("ac-source", { x: 0, y: 0 }).params._labelFontSize).toBe("12");
   });
 
   test("places converter elements under AC/DC device library groups", () => {
@@ -1094,6 +1118,27 @@ describe("power system model", () => {
       expect.objectContaining({ idx: "1", name: "接地刀闸1", node: "1", status: "0", run_stat: "1" }),
       expect.objectContaining({ idx: "2", name: "竖向接地刀闸1", node: "2", status: "0", run_stat: "1" })
     ]);
+  });
+
+  test("preserves manually rotated single-terminal anchors during template normalization", () => {
+    const groundingDisconnector = createDefaultNode("ac-ground-disconnector", { x: 100, y: 100 });
+    const terminalTransformerLoad = createDefaultNode("ac-terminal-transformer-load", { x: 240, y: 100 });
+    groundingDisconnector.terminals[0] = {
+      ...groundingDisconnector.terminals[0],
+      anchor: { x: 0, y: 0.5 }
+    };
+    terminalTransformerLoad.terminals[0] = {
+      ...terminalTransformerLoad.terminals[0],
+      anchor: { x: 0.5, y: 0 }
+    };
+
+    const normalizedGroundingDisconnector = normalizeNodeTerminalsByTemplate(groundingDisconnector);
+    const normalizedTerminalTransformerLoad = normalizeNodeTerminalsByTemplate(terminalTransformerLoad);
+
+    expect(normalizedGroundingDisconnector.terminals[0].anchor).toEqual({ x: 0, y: 0.5 });
+    expect(normalizedTerminalTransformerLoad.terminals[0].anchor).toEqual({ x: 0.5, y: 0 });
+    expect(normalizedGroundingDisconnector.terminals[0].label).toBe("交流系统端");
+    expect(normalizedTerminalTransformerLoad.terminals[0].label).toBe("交流设备端1");
   });
 
   test("builds a downloadable E file export for the current model", () => {
@@ -1214,37 +1259,61 @@ describe("power system model", () => {
 
   test("scales terminal stubs from the device body toward visible terminals", () => {
     expect(terminalStubSegment({ anchor: { x: 0.5, y: 0 } })).toEqual({
-      from: { x: -28, y: 0 },
+      from: { x: -76, y: 0 },
       to: { x: 0, y: 0 }
     });
     expect(terminalStubSegment({ anchor: { x: -0.5, y: 0 } })).toEqual({
-      from: { x: 28, y: 0 },
+      from: { x: 76, y: 0 },
       to: { x: 0, y: 0 }
     });
     expect(terminalStubSegment({ anchor: { x: 0, y: -0.5 } })).toEqual({
-      from: { x: 0, y: 28 },
+      from: { x: 0, y: 76 },
       to: { x: 0, y: 0 }
     });
     expect(terminalStubSegment({ anchor: { x: 0, y: 0.5 } })).toEqual({
-      from: { x: 0, y: -28 },
+      from: { x: 0, y: -76 },
       to: { x: 0, y: 0 }
     });
     expect(terminalStubSegment({ anchor: { x: 0.5, y: 0 } }, -1, 1)).toEqual({
-      from: { x: 28, y: 0 },
+      from: { x: 76, y: 0 },
       to: { x: 0, y: 0 }
     });
     expect(terminalStubSegment({ anchor: { x: 0.5, y: 0 } }, 2, 0.5)).toEqual({
-      from: { x: -52, y: 0 },
+      from: { x: -148, y: 0 },
       to: { x: 0, y: 0 }
     });
     expect(terminalStubSegment({ anchor: { x: 0, y: 0.5 } }, 2, 0.5)).toEqual({
-      from: { x: 0, y: -16 },
+      from: { x: 0, y: -40 },
       to: { x: 0, y: 0 }
     });
     expect(terminalStubSegment({ anchor: { x: 0.25, y: 0 } })).toEqual({
       from: { x: -24, y: 0 },
       to: { x: 0, y: 0 }
     });
+  });
+
+  test("extends border terminal stubs deep enough to meet enlarged device internals", () => {
+    const sampleKinds = [
+      "ac-source",
+      "ac-load",
+      "hydrogen-pipeline",
+      "heat-pump",
+      "four-port-heat-exchanger"
+    ] as const;
+
+    for (const kind of sampleKinds) {
+      const node = createDefaultNode(kind, { x: 200, y: 120 });
+      const terminal = node.terminals[0];
+      const renderPoint = terminalRenderLocalPoint(terminal, node.size, 1, 1, node.kind);
+      const stub = terminalStubSegment(terminal, 1, 1, 24, node.kind);
+      const inwardDepth = Math.abs(
+        Math.abs(terminal.anchor.x) >= Math.abs(terminal.anchor.y)
+          ? terminal.anchor.x * node.size.width - (renderPoint.x + stub.from.x)
+          : terminal.anchor.y * node.size.height - (renderPoint.y + stub.from.y)
+      );
+
+      expect(inwardDepth).toBeGreaterThanOrEqual(64);
+    }
   });
 
   test("moves terminals on device borders outward by four pixels", () => {
@@ -1255,12 +1324,12 @@ describe("power system model", () => {
     };
     const scaledLine = { ...createDefaultNode("ac-line", { x: 160, y: 120 }), scaleX: 2, scaleY: 0.5 };
 
-    expect(getTerminalPoint(line, "t1")).toEqual({ x: 142, y: 120 });
-    expect(getTerminalPoint(line, "t2")).toEqual({ x: 258, y: 120 });
-    expect(getTerminalPoint(insideTerminal, "t1")).toEqual({ x: 227, y: 120 });
-    expect(terminalRenderLocalPoint(line.terminals[0], line.size, 1, 1)).toEqual({ x: -58, y: 0 });
-    expect(terminalRenderLocalPoint(line.terminals[1], line.size, 1, 1)).toEqual({ x: 58, y: 0 });
-    expect(terminalRenderLocalPoint(scaledLine.terminals[1], scaledLine.size, 2, 0.5)).toEqual({ x: 56, y: 0 });
+    expect(getTerminalPoint(line, "t1")).toEqual({ x: line.position.x - line.size.width / 2 - 4, y: 120 });
+    expect(getTerminalPoint(line, "t2")).toEqual({ x: line.position.x + line.size.width / 2 + 4, y: 120 });
+    expect(getTerminalPoint(insideTerminal, "t1")).toEqual({ x: Math.round(line.position.x + line.size.width * 0.25), y: 120 });
+    expect(terminalRenderLocalPoint(line.terminals[0], line.size, 1, 1)).toEqual({ x: -line.size.width / 2 - 4, y: 0 });
+    expect(terminalRenderLocalPoint(line.terminals[1], line.size, 1, 1)).toEqual({ x: line.size.width / 2 + 4, y: 0 });
+    expect(terminalRenderLocalPoint(scaledLine.terminals[1], scaledLine.size, 2, 0.5)).toEqual({ x: scaledLine.size.width / 2 + 4 / 2, y: 0 });
   });
 
   test("moves converter terminals twelve pixels away from the device border", () => {
@@ -1269,17 +1338,17 @@ describe("power system model", () => {
     const acac = createDefaultNode("acac-converter", { x: 420, y: 100 });
     const scaled = { ...createDefaultNode("dcdc-converter", { x: 100, y: 200 }), scaleX: 2, scaleY: 0.5 };
 
-    expect(getTerminalPoint(dcdc, "t1")).toEqual({ x: 32, y: 100 });
-    expect(getTerminalPoint(dcdc, "t2")).toEqual({ x: 168, y: 100 });
-    expect(getTerminalPoint(dcac, "t1")).toEqual({ x: 192, y: 100 });
-    expect(getTerminalPoint(dcac, "t2")).toEqual({ x: 328, y: 100 });
-    expect(getTerminalPoint(acac, "t1")).toEqual({ x: 352, y: 100 });
-    expect(getTerminalPoint(acac, "t2")).toEqual({ x: 488, y: 100 });
-    expect(terminalRenderLocalPoint(dcdc.terminals[0], dcdc.size, 1, 1, dcdc.kind)).toEqual({ x: -68, y: 0 });
-    expect(terminalRenderLocalPoint(dcdc.terminals[1], dcdc.size, 1, 1, dcdc.kind)).toEqual({ x: 68, y: 0 });
-    expect(terminalRenderLocalPoint(scaled.terminals[1], scaled.size, 2, 0.5, scaled.kind)).toEqual({ x: 62, y: 0 });
+    expect(getTerminalPoint(dcdc, "t1")).toEqual({ x: dcdc.position.x - dcdc.size.width / 2 - 12, y: 100 });
+    expect(getTerminalPoint(dcdc, "t2")).toEqual({ x: dcdc.position.x + dcdc.size.width / 2 + 12, y: 100 });
+    expect(getTerminalPoint(dcac, "t1")).toEqual({ x: dcac.position.x - dcac.size.width / 2 - 12, y: 100 });
+    expect(getTerminalPoint(dcac, "t2")).toEqual({ x: dcac.position.x + dcac.size.width / 2 + 12, y: 100 });
+    expect(getTerminalPoint(acac, "t1")).toEqual({ x: acac.position.x - acac.size.width / 2 - 12, y: 100 });
+    expect(getTerminalPoint(acac, "t2")).toEqual({ x: acac.position.x + acac.size.width / 2 + 12, y: 100 });
+    expect(terminalRenderLocalPoint(dcdc.terminals[0], dcdc.size, 1, 1, dcdc.kind)).toEqual({ x: -dcdc.size.width / 2 - 12, y: 0 });
+    expect(terminalRenderLocalPoint(dcdc.terminals[1], dcdc.size, 1, 1, dcdc.kind)).toEqual({ x: dcdc.size.width / 2 + 12, y: 0 });
+    expect(terminalRenderLocalPoint(scaled.terminals[1], scaled.size, 2, 0.5, scaled.kind)).toEqual({ x: scaled.size.width / 2 + 12 / 2, y: 0 });
     expect(terminalStubSegment(dcdc.terminals[0], 1, 1, 24, dcdc.kind)).toEqual({
-      from: { x: 36, y: 0 },
+      from: { x: 84, y: 0 },
       to: { x: 0, y: 0 }
     });
   });
@@ -1300,7 +1369,21 @@ describe("power system model", () => {
       const node = createDefaultNode(kind, { x: 200, y: 120 });
       expect(getTerminalPoint(node, "t1").x).toBe(200 - node.size.width / 2 - 12);
       expect(terminalRenderLocalPoint(node.terminals[0], node.size, 1, 1, node.kind).x).toBe(-node.size.width / 2 - 12);
-      expect(terminalStubSegment(node.terminals[0], 1, 1, 24, node.kind).from.x).toBe(36);
+      expect(terminalStubSegment(node.terminals[0], 1, 1, 24, node.kind).from.x).toBe(84);
+    }
+  });
+
+  test("moves hydrogen and heat pipeline terminals sixteen pixels away from the device border", () => {
+    const kinds = ["hydrogen-pipeline", "heat-pipeline"] as const;
+
+    for (const kind of kinds) {
+      const node = createDefaultNode(kind, { x: 200, y: 120 });
+      expect(getTerminalPoint(node, "t1")).toEqual({ x: 200 - node.size.width / 2 - 16, y: 120 });
+      expect(getTerminalPoint(node, "t2")).toEqual({ x: 200 + node.size.width / 2 + 16, y: 120 });
+      expect(terminalRenderLocalPoint(node.terminals[0], node.size, 1, 1, node.kind).x).toBe(-node.size.width / 2 - 16);
+      expect(terminalRenderLocalPoint(node.terminals[1], node.size, 1, 1, node.kind).x).toBe(node.size.width / 2 + 16);
+      expect(terminalStubSegment(node.terminals[0], 1, 1, 24, node.kind).from.x).toBe(88);
+      expect(terminalStubSegment(node.terminals[1], 1, 1, 24, node.kind).from.x).toBe(-88);
     }
   });
 
@@ -1337,22 +1420,22 @@ describe("power system model", () => {
     const thermalEndpoint = projectPointToBusCenterline(thermalTank, { x: 100, y: 120 });
     const thermalSegment = boundaryBusInternalConnectorSegment(thermalTank, thermalEndpoint);
     expect(thermalSegment).toEqual({
-      from: { x: 137, y: 120 },
-      to: { x: 147, y: 120 }
+      from: thermalEndpoint,
+      to: { x: thermalEndpoint.x + 10, y: thermalEndpoint.y }
     });
 
     const movedThermalEndpoint = projectPointToBusCenterline(thermalTank, { x: 300, y: 128 });
     const movedThermalSegment = boundaryBusInternalConnectorSegment(thermalTank, movedThermalEndpoint);
     expect(movedThermalSegment).toEqual({
-      from: { x: 263, y: 128 },
-      to: { x: 253, y: 128 }
+      from: movedThermalEndpoint,
+      to: { x: movedThermalEndpoint.x - 10, y: movedThermalEndpoint.y }
     });
 
     const hydrogenEndpoint = projectPointToBusCenterline(hydrogenTank, { x: 300, y: 120 });
     const hydrogenSegment = boundaryBusInternalConnectorSegment(hydrogenTank, hydrogenEndpoint);
     expect(hydrogenSegment).toEqual({
-      from: { x: 297, y: 120 },
-      to: { x: 307, y: 120 }
+      from: hydrogenEndpoint,
+      to: { x: hydrogenEndpoint.x + 10, y: hydrogenEndpoint.y }
     });
 
     expect(boundaryBusInternalConnectorSegment(heatBus, projectPointToBusCenterline(heatBus, { x: 470, y: 120 }))).toBeNull();
@@ -1640,10 +1723,10 @@ describe("power system model", () => {
   });
 
   test("expands three-winding transformers into three ACTransformer branches with an auto neutral node", () => {
-    const highBus = createDefaultNode("ac-bus", { x: 80, y: 100 });
-    const mediumBus = createDefaultNode("ac-bus", { x: 80, y: 220 });
-    const lowBus = createDefaultNode("ac-bus", { x: 80, y: 340 });
-    const transformer = assignPermanentDeviceIndex(createDefaultNode("ac-three-winding-transformer", { x: 260, y: 220 }), {}).node;
+    const highBus = createDefaultNode("ac-bus", { x: 80, y: 80 });
+    const mediumBus = createDefaultNode("ac-bus", { x: 80, y: 260 });
+    const lowBus = createDefaultNode("ac-bus", { x: 80, y: 440 });
+    const transformer = assignPermanentDeviceIndex(createDefaultNode("ac-three-winding-transformer", { x: 460, y: 260 }), {}).node;
     transformer.name = "T3";
     transformer.terminals[0].vbase = "220 kV";
     transformer.terminals[1].vbase = "110 kV";
@@ -1844,15 +1927,15 @@ describe("power system model", () => {
       y: terminal.anchor.y * node.size.height
     }));
 
-    expect(terminalPoints).toEqual([
-      { x: -52, y: -8 },
-      { x: 52, y: -8 },
-      { x: 0, y: 38 }
-    ]);
+    expect(terminalPoints[0].x).toBeCloseTo(-node.size.width / 2);
+    expect(terminalPoints[0].y).toBeCloseTo((-8 / 76) * node.size.height);
+    expect(terminalPoints[1].x).toBeCloseTo(node.size.width / 2);
+    expect(terminalPoints[1].y).toBeCloseTo((-8 / 76) * node.size.height);
+    expect(terminalPoints[2]).toEqual({ x: 0, y: node.size.height / 2 });
     expect(node.terminals.map((terminal) => terminalStubSegment(terminal))).toEqual([
-      { from: { x: 28, y: 0 }, to: { x: 0, y: 0 } },
-      { from: { x: -28, y: 0 }, to: { x: 0, y: 0 } },
-      { from: { x: 0, y: -28 }, to: { x: 0, y: 0 } }
+      { from: { x: 76, y: 0 }, to: { x: 0, y: 0 } },
+      { from: { x: -76, y: 0 }, to: { x: 0, y: 0 } },
+      { from: { x: 0, y: -76 }, to: { x: 0, y: 0 } }
     ]);
   });
 
@@ -1866,14 +1949,15 @@ describe("power system model", () => {
 
     const normalized = normalizeNodeTerminalsByTemplate(legacy);
 
-    expect(normalized.terminals.map((terminal) => ({
+    const normalizedTerminalPoints = normalized.terminals.map((terminal) => ({
       x: terminal.anchor.x * normalized.size.width,
       y: terminal.anchor.y * normalized.size.height
-    }))).toEqual([
-      { x: -52, y: -8 },
-      { x: 52, y: -8 },
-      { x: 0, y: 38 }
-    ]);
+    }));
+    expect(normalizedTerminalPoints[0].x).toBeCloseTo(-normalized.size.width / 2);
+    expect(normalizedTerminalPoints[0].y).toBeCloseTo((-8 / 76) * normalized.size.height);
+    expect(normalizedTerminalPoints[1].x).toBeCloseTo(normalized.size.width / 2);
+    expect(normalizedTerminalPoints[1].y).toBeCloseTo((-8 / 76) * normalized.size.height);
+    expect(normalizedTerminalPoints[2]).toEqual({ x: 0, y: normalized.size.height / 2 });
   });
 
   test("adds a four-terminal three-winding transformer with a visible neutral point", () => {
@@ -1892,17 +1976,17 @@ describe("power system model", () => {
     });
     expect(node.terminals.map((terminal) => terminal.label)).toEqual(["高压绕组端", "中压绕组端", "低压绕组端", "中性点"]);
     expect(node.terminals.map((terminal) => terminal.type)).toEqual(["ac", "ac", "ac", "ac"]);
-    expect(terminalPoints).toEqual([
-      { x: -56, y: -8 },
-      { x: 56, y: -8 },
-      { x: 0, y: 46 },
-      { x: 0, y: -46 }
-    ]);
+    expect(terminalPoints[0].x).toBeCloseTo(-node.size.width / 2);
+    expect(terminalPoints[0].y).toBeCloseTo((-8 / 92) * node.size.height);
+    expect(terminalPoints[1].x).toBeCloseTo(node.size.width / 2);
+    expect(terminalPoints[1].y).toBeCloseTo((-8 / 92) * node.size.height);
+    expect(terminalPoints[2]).toEqual({ x: 0, y: node.size.height / 2 });
+    expect(terminalPoints[3]).toEqual({ x: 0, y: -node.size.height / 2 });
     expect(node.terminals.map((terminal) => terminalStubSegment(terminal))).toEqual([
-      { from: { x: 28, y: 0 }, to: { x: 0, y: 0 } },
-      { from: { x: -28, y: 0 }, to: { x: 0, y: 0 } },
-      { from: { x: 0, y: -28 }, to: { x: 0, y: 0 } },
-      { from: { x: 0, y: 28 }, to: { x: 0, y: 0 } }
+      { from: { x: 76, y: 0 }, to: { x: 0, y: 0 } },
+      { from: { x: -76, y: 0 }, to: { x: 0, y: 0 } },
+      { from: { x: 0, y: -76 }, to: { x: 0, y: 0 } },
+      { from: { x: 0, y: 76 }, to: { x: 0, y: 0 } }
     ]);
     expect(describeContainerTerminalAssociations(template!)).toHaveLength(3);
   });
@@ -1953,8 +2037,8 @@ describe("power system model", () => {
 
   test("repairs manual connection paths that would be covered by a device", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
-    const target = createDefaultNode("ac-load", { x: 460, y: 100 });
-    const blocker = createDefaultNode("ac-switch", { x: 280, y: 100 });
+    const target = createDefaultNode("ac-load", { x: 700, y: 100 });
+    const blocker = createDefaultNode("ac-switch", { x: 400, y: 100 });
     const edge: Edge = {
       id: "manual-covered",
       sourceId: source.id,
@@ -1962,8 +2046,8 @@ describe("power system model", () => {
       sourceTerminalId: "t1",
       targetTerminalId: "t1",
       manualPoints: [
-        { x: 220, y: 100 },
-        { x: 340, y: 100 }
+        { x: 280, y: 100 },
+        { x: 520, y: 100 }
       ]
     };
     const blockerBox = {
@@ -2032,16 +2116,16 @@ describe("power system model", () => {
   });
 
   test("routes connection lines around visible device labels and the device-label gap", () => {
-    const source = createDefaultNode("ac-line", { x: 80, y: 108 });
-    const target = createDefaultNode("ac-line", { x: 440, y: 108 });
-    const blockerBase = createDefaultNode("ac-switch", { x: 260, y: 70 });
+    const source = createDefaultNode("ac-line", { x: 160, y: 160 });
+    const target = createDefaultNode("ac-line", { x: 840, y: 160 });
+    const blockerBase = createDefaultNode("ac-switch", { x: 500, y: 120 });
     const blocker = {
       ...blockerBase,
       params: {
         ...blockerBase.params,
         _labelText: "交流开关",
         _labelX: "0",
-        _labelY: "46",
+        _labelY: "90",
         _labelFontSize: "14",
         _labelTextAnchor: "middle",
         _labelRotation: "0"
@@ -2050,7 +2134,7 @@ describe("power system model", () => {
     const route = routeEdgesForRendering(
       [source, target, blocker],
       [{ id: "label-detour", sourceId: source.id, targetId: target.id, sourceTerminalId: "t2", targetTerminalId: "t1" }],
-      { width: 640, height: 260 }
+      { width: 1000, height: 420 }
     )[0];
     const bodyBox = {
       left: blocker.position.x - blocker.size.width / 2,
@@ -2060,7 +2144,7 @@ describe("power system model", () => {
     };
     const labelWidth = 14 * 4;
     const labelHeight = 14 * 1.35;
-    const labelCenter = { x: blocker.position.x, y: blocker.position.y + 46 };
+    const labelCenter = { x: blocker.position.x, y: blocker.position.y + 90 };
     const labelBox = {
       left: labelCenter.x - labelWidth / 2,
       right: labelCenter.x + labelWidth / 2,
@@ -2080,13 +2164,13 @@ describe("power system model", () => {
   });
 
   test("avoids canvas-edge lanes when a safe local reroute is available", () => {
-    const bounds = { width: 1000, height: 600 };
-    const source = { ...createDefaultNode("ac-line", { x: 500, y: 80 }), id: "source" };
-    const target = { ...createDefaultNode("ac-line", { x: 500, y: 540 }), id: "target" };
+    const bounds = { width: 1200, height: 900 };
+    const source = { ...createDefaultNode("ac-line", { x: 500, y: 120 }), id: "source" };
+    const target = { ...createDefaultNode("ac-line", { x: 500, y: 760 }), id: "target" };
     const blockers = [
-      { ...createDefaultNode("ac-switch", { x: 438, y: 437 }), id: "blocker-a" },
-      { ...createDefaultNode("ac-switch", { x: 417, y: 547 }), id: "blocker-b" },
-      { ...createDefaultNode("ac-switch", { x: 599, y: 528 }), id: "blocker-c" }
+      { ...createDefaultNode("ac-switch", { x: 520, y: 560 }), id: "blocker-a" },
+      { ...createDefaultNode("ac-switch", { x: 480, y: 720 }), id: "blocker-b" },
+      { ...createDefaultNode("ac-switch", { x: 720, y: 700 }), id: "blocker-c" }
     ];
     const route = routeEdgesForRendering(
       [source, target, ...blockers],
@@ -2171,10 +2255,10 @@ describe("power system model", () => {
   });
 
   test("reroutes committed connection endpoints around nearby graphics instead of surfacing blocker failures", () => {
-    const source = { ...createDefaultNode("ac-source", { x: 100, y: 100 }), id: "source" };
-    const target = { ...createDefaultNode("ac-load", { x: 460, y: 100 }), id: "target" };
+    const source = { ...createDefaultNode("ac-source", { x: 160, y: 120 }), id: "source" };
+    const target = { ...createDefaultNode("ac-load", { x: 900, y: 120 }), id: "target" };
     const blocker = {
-      ...createDefaultNode("ac-pv-source", { x: 180, y: 140 }),
+      ...createDefaultNode("ac-pv-source", { x: 380, y: 220 }),
       id: "pv-blocker",
       name: "交流光伏"
     };
@@ -2186,9 +2270,9 @@ describe("power system model", () => {
       targetTerminalId: "t1"
     };
 
-    const prepared = prepareConnectionEdgeForCommit([source, target, blocker], [edge], edge.id, { width: 640, height: 300 });
+    const prepared = prepareConnectionEdgeForCommit([source, target, blocker], [edge], edge.id, { width: 1100, height: 500 });
     const validation = prepared.edge
-      ? validateConnectionEdgeRoute([source, target, blocker], [prepared.edge], prepared.edge.id, { width: 640, height: 300 })
+      ? validateConnectionEdgeRoute([source, target, blocker], [prepared.edge], prepared.edge.id, { width: 1100, height: 500 })
       : prepared;
 
     expect(prepared.ok).toBe(true);
@@ -3185,10 +3269,10 @@ describe("power system model", () => {
   });
 
   test("reroutes unrelated connection lines when a moved graphic blocks their previous path", () => {
-    const source = { ...createDefaultNode("ac-source", { x: 120, y: 140 }), id: "source" };
-    const target = { ...createDefaultNode("ac-load", { x: 520, y: 140 }), id: "target" };
-    const blocker = { ...createDefaultNode("ac-pv-source", { x: 900, y: 140 }), id: "moved-pv", name: "交流光伏" };
-    const movedBlocker = { ...blocker, position: { x: 300, y: 201 } };
+    const source = { ...createDefaultNode("ac-source", { x: 160, y: 140 }), id: "source" };
+    const target = { ...createDefaultNode("ac-load", { x: 900, y: 140 }), id: "target" };
+    const blocker = { ...createDefaultNode("ac-pv-source", { x: 1000, y: 140 }), id: "moved-pv", name: "交流光伏" };
+    const movedBlocker = { ...blocker, position: { x: 480, y: 200 } };
     const edge: Edge = {
       id: "blocked-after-move",
       sourceId: source.id,
@@ -3196,20 +3280,20 @@ describe("power system model", () => {
       sourceTerminalId: "t1",
       targetTerminalId: "t1"
     };
-    const beforeRoutes = routeEdgesForRendering([source, target, blocker], [edge], { width: 700, height: 320 });
+    const beforeRoutes = routeEdgesForRendering([source, target, blocker], [edge], { width: 1100, height: 420 });
 
     const nextEdges = rerouteEdgesAroundMovedNodes(
       [source, target, movedBlocker],
       [edge],
       [movedBlocker.id],
       beforeRoutes,
-      { width: 700, height: 320 }
+      { width: 1100, height: 420 }
     );
     const validation = validateConnectionEdgeRoute(
       [source, target, movedBlocker],
       nextEdges,
       edge.id,
-      { width: 700, height: 320 }
+      { width: 1100, height: 420 }
     );
 
     expect(nextEdges[0].manualPoints?.length).toBeGreaterThan(0);
@@ -3275,10 +3359,10 @@ describe("power system model", () => {
   });
 
   test("rebuilds every moved-to-stationary connection without rebuilding moved-to-moved connections", () => {
-    const left = { ...createDefaultNode("ac-line", { x: 80, y: 140 }), id: "left" };
-    const movedA = { ...createDefaultNode("ac-line", { x: 240, y: 140 }), id: "moved-a" };
-    const movedB = { ...createDefaultNode("ac-line", { x: 380, y: 140 }), id: "moved-b" };
-    const right = { ...createDefaultNode("ac-line", { x: 540, y: 140 }), id: "right" };
+    const left = { ...createDefaultNode("ac-line", { x: 160, y: 200 }), id: "left" };
+    const movedA = { ...createDefaultNode("ac-line", { x: 460, y: 200 }), id: "moved-a" };
+    const movedB = { ...createDefaultNode("ac-line", { x: 760, y: 200 }), id: "moved-b" };
+    const right = { ...createDefaultNode("ac-line", { x: 1060, y: 200 }), id: "right" };
     const leftEdge: Edge = {
       id: "left-external",
       sourceId: left.id,
@@ -3286,9 +3370,9 @@ describe("power system model", () => {
       sourceTerminalId: "t2",
       targetTerminalId: "t1",
       manualPoints: [
-        { x: 150, y: 80 },
-        { x: 200, y: 80 },
-        { x: 200, y: 220 }
+        { x: 280, y: 110 },
+        { x: 380, y: 110 },
+        { x: 380, y: 300 }
       ]
     };
     const internalEdge: Edge = {
@@ -3298,8 +3382,8 @@ describe("power system model", () => {
       sourceTerminalId: "t2",
       targetTerminalId: "t1",
       manualPoints: [
-        { x: 270, y: 80 },
-        { x: 340, y: 80 }
+        { x: 540, y: 110 },
+        { x: 680, y: 110 }
       ]
     };
     const rightEdge: Edge = {
@@ -3309,9 +3393,9 @@ describe("power system model", () => {
       sourceTerminalId: "t2",
       targetTerminalId: "t1",
       manualPoints: [
-        { x: 420, y: 220 },
-        { x: 480, y: 220 },
-        { x: 480, y: 80 }
+        { x: 840, y: 300 },
+        { x: 940, y: 300 },
+        { x: 940, y: 110 }
       ]
     };
 
@@ -3319,7 +3403,7 @@ describe("power system model", () => {
       [left, movedA, movedB, right],
       [leftEdge, internalEdge, rightEdge],
       [movedA.id, movedB.id],
-      { width: 700, height: 320 }
+      { width: 1220, height: 520 }
     );
 
     expect(rebuilt[0]).not.toBe(leftEdge);
@@ -3327,8 +3411,8 @@ describe("power system model", () => {
     expect(rebuilt[2]).not.toBe(rightEdge);
     expect(rebuilt[0].manualPoints).not.toEqual(leftEdge.manualPoints);
     expect(rebuilt[2].manualPoints).not.toEqual(rightEdge.manualPoints);
-    expect(validateConnectionEdgeRoute([left, movedA, movedB, right], rebuilt, leftEdge.id, { width: 700, height: 320 }).ok).toBe(true);
-    expect(validateConnectionEdgeRoute([left, movedA, movedB, right], rebuilt, rightEdge.id, { width: 700, height: 320 }).ok).toBe(true);
+    expect(validateConnectionEdgeRoute([left, movedA, movedB, right], rebuilt, leftEdge.id, { width: 1220, height: 520 }).ok).toBe(true);
+    expect(validateConnectionEdgeRoute([left, movedA, movedB, right], rebuilt, rightEdge.id, { width: 1220, height: 520 }).ok).toBe(true);
   });
 
   test("limits moved-to-stationary route rebuild discovery to supplied candidate edges", () => {
@@ -3364,9 +3448,9 @@ describe("power system model", () => {
   });
 
   test("rebuilds moved-to-moved connection routes when they interfere with stationary devices", () => {
-    const movedA = { ...createDefaultNode("ac-line", { x: 180, y: 140 }), id: "moved-a" };
-    const movedB = { ...createDefaultNode("ac-line", { x: 500, y: 140 }), id: "moved-b" };
-    const blocker = { ...createDefaultNode("ac-line", { x: 340, y: 140 }), id: "stationary-blocker" };
+    const movedA = { ...createDefaultNode("ac-line", { x: 180, y: 180 }), id: "moved-a" };
+    const movedB = { ...createDefaultNode("ac-line", { x: 780, y: 180 }), id: "moved-b" };
+    const blocker = { ...createDefaultNode("ac-line", { x: 480, y: 180 }), id: "stationary-blocker" };
     const edge: Edge = {
       id: "blocked-internal",
       sourceId: movedA.id,
@@ -3379,10 +3463,10 @@ describe("power system model", () => {
       [movedA, movedB, blocker],
       [edge],
       [movedA.id, movedB.id],
-      { width: 700, height: 320 }
+      { width: 1000, height: 420 }
     );
-    const route = routeEdgesForRendering([movedA, movedB, blocker], rebuilt, { width: 700, height: 320 })[0];
-    const validation = validateConnectionEdgeRoute([movedA, movedB, blocker], rebuilt, edge.id, { width: 700, height: 320 });
+    const route = routeEdgesForRendering([movedA, movedB, blocker], rebuilt, { width: 1000, height: 420 })[0];
+    const validation = validateConnectionEdgeRoute([movedA, movedB, blocker], rebuilt, edge.id, { width: 1000, height: 420 });
 
     expect(rebuilt[0]).not.toBe(edge);
     expect(rebuilt[0].manualPoints?.length ?? 0).toBeGreaterThan(0);
@@ -3523,7 +3607,7 @@ describe("power system model", () => {
       targetTerminalId: "t1"
     };
 
-    const route = routeEdgesForRendering([source, target, blocker], [edge], { width: 640, height: 260 })[0];
+    const route = routeEdgesForRendering([source, target, blocker], [edge], { width: 900, height: 360 })[0];
     const blockerHalfWidth = (blocker.size.width * Math.abs(getNodeScaleX(blocker))) / 2;
     const blockerHalfHeight = (blocker.size.height * Math.abs(getNodeScaleY(blocker))) / 2;
     const blockerRadians = (blocker.rotation * Math.PI) / 180;
@@ -3708,7 +3792,7 @@ describe("power system model", () => {
     const prepared = prepareConnectionEdgeForCommit(nodes, [edge], edge.id, { width: 700, height: 320 });
 
     expect(prepared.ok).toBe(true);
-    expect(prepared.edge?.targetPoint).toEqual({ x: 360, y: 220 });
+    expect(prepared.edge?.targetPoint).toEqual(projectPointToBusCenterline(bus, getTerminalPoint(source, "t2")));
     const afterRoute = routeEdgesForRendering(nodes, [prepared.edge!], { width: 700, height: 320 })[0].points;
     expect(bendsOf(afterRoute)).toBeLessThanOrEqual(bendsOf(beforeRoute));
     expect(lengthOf(afterRoute)).toBeLessThan(lengthOf(beforeRoute));
@@ -3738,7 +3822,7 @@ describe("power system model", () => {
       nextNodes: [movedLoad, bus]
     });
 
-    expect(patch).toEqual({ targetPoint: { x: 307, y: 100 } });
+    expect(patch).toEqual({ targetPoint: projectPointToBusCenterline(bus, getTerminalPoint(movedLoad, "t1")) });
   });
 
   test("slides bus endpoints for manual routes when the terminal segment stays outward", () => {
@@ -3769,7 +3853,7 @@ describe("power system model", () => {
       nextNodes: [movedLoad, bus]
     });
 
-    expect(patch).toEqual({ targetPoint: { x: 307, y: 100 } });
+    expect(patch).toEqual({ targetPoint: projectPointToBusCenterline(bus, getTerminalPoint(movedLoad, "t1")) });
   });
 
   test("does not slide a bus endpoint when the device terminal would connect sideways", () => {
@@ -3860,6 +3944,14 @@ describe("power system model", () => {
     };
     const nodes = [upperBus, lowerBus, branch];
     const nextNodes = [upperBus, lowerBus, movedBranch];
+    const projectedEndpointStubPoint = (bus: ModelNode, node: ModelNode, terminalId: string) => {
+      const terminalPoint = getTerminalPoint(node, terminalId);
+      const normal = getTerminalNormal(node, terminalId);
+      return projectPointToBusCenterline(bus, {
+        x: Math.round(terminalPoint.x + normal.x * 28),
+        y: Math.round(terminalPoint.y + normal.y * 28)
+      });
+    };
 
     const upperPatch = resolveStraightBusSlideEndpoint({
       edge: upperEdge,
@@ -3882,8 +3974,8 @@ describe("power system model", () => {
       nextNodes
     });
 
-    expect(upperPatch).toEqual({ sourcePoint: { x: 254, y: 100 } });
-    expect(lowerPatch).toEqual({ targetPoint: { x: 426, y: 300 } });
+    expect(upperPatch).toEqual({ sourcePoint: projectedEndpointStubPoint(upperBus, movedBranch, "t1") });
+    expect(lowerPatch).toEqual({ targetPoint: projectedEndpointStubPoint(lowerBus, movedBranch, "t2") });
   });
 
   test("slides the opposite bus endpoint while a connection endpoint is being rewired or dragged", () => {
@@ -5026,8 +5118,13 @@ describe("power system model", () => {
       id: "edge-a",
       name: "电源A -> 负荷A"
     });
+    const edgeFocusPoints = [getTerminalPoint(source, "t1"), ...edge.manualPoints!, getTerminalPoint(load, "t1")];
+    const expectedEdgeFocus = {
+      x: Math.round((Math.min(...edgeFocusPoints.map((point) => point.x)) + Math.max(...edgeFocusPoints.map((point) => point.x))) / 2),
+      y: Math.round((Math.min(...edgeFocusPoints.map((point) => point.y)) + Math.max(...edgeFocusPoints.map((point) => point.y))) / 2)
+    };
     expect(getElementFocusPoint({ kind: "node", id: text.id }, [source, load, text], [edge])).toEqual(text.position);
-    expect(getElementFocusPoint({ kind: "edge", id: "edge-a" }, [source, load, text], [edge])).toEqual({ x: 227, y: 120 });
+    expect(getElementFocusPoint({ kind: "edge", id: "edge-a" }, [source, load, text], [edge])).toEqual(expectedEdgeFocus);
   });
 
   test("colors connection lines by their connected terminal energy type", () => {
@@ -6472,23 +6569,23 @@ describe("power system model", () => {
   });
 
   test("warns when voltage setpoints deviate more than 30 percent from rated topology voltage", () => {
-    const acBus10 = createDefaultNode("ac-bus", { x: 160, y: 100 });
-    const acBus35 = createDefaultNode("ac-bus", { x: 160, y: 260 });
-    const dcBus750 = createDefaultNode("dc-bus", { x: 160, y: 420 });
-    const dcBus750B = createDefaultNode("dc-bus", { x: 560, y: 420 });
-    const source = createDefaultNode("ac-source", { x: 40, y: 100 });
-    const dcdc = createDefaultNode("dcdc-converter", { x: 360, y: 420 });
-    const acdc = createDefaultNode("acdc-converter", { x: 360, y: 100 });
-    const acac = createDefaultNode("acac-converter", { x: 360, y: 260 });
+    const acBus10 = createDefaultNode("ac-bus", { x: 260, y: 120 });
+    const acBus10B = createDefaultNode("ac-bus", { x: 260, y: 360 });
+    const dcBus750 = createDefaultNode("dc-bus", { x: 260, y: 600 });
+    const dcBus750B = createDefaultNode("dc-bus", { x: 820, y: 600 });
+    const source = createDefaultNode("ac-source", { x: 40, y: 120 });
+    const dcdc = createDefaultNode("dcdc-converter", { x: 540, y: 600 });
+    const acdc = createDefaultNode("acdc-converter", { x: 540, y: 120 });
+    const acac = createDefaultNode("acac-converter", { x: 540, y: 360 });
     acBus10.name = "交流母线10";
-    acBus35.name = "交流母线35";
+    acBus10B.name = "交流母线10B";
     dcBus750.name = "直流母线750A";
     dcBus750B.name = "直流母线750B";
     acBus10.terminals.forEach((terminal) => {
       terminal.vbase = "10 kV";
     });
-    acBus35.terminals.forEach((terminal) => {
-      terminal.vbase = "35 kV";
+    acBus10B.terminals.forEach((terminal) => {
+      terminal.vbase = "10 kV";
     });
     dcBus750.terminals.forEach((terminal) => {
       terminal.vbase = "750 V";
@@ -6506,12 +6603,12 @@ describe("power system model", () => {
     acdc.params.v_ac_set = "12";
     acdc.params.v_dc_set = "1000";
     acac.terminals[0].vbase = "10 kV";
-    acac.terminals[1].vbase = "35 kV";
+    acac.terminals[1].vbase = "10 kV";
     acac.params.i_v_set = "14";
-    acac.params.j_v_set = "40";
+    acac.params.j_v_set = "12";
 
     const errors = validateTopology(
-      [acBus10, acBus35, dcBus750, dcBus750B, source, dcdc, acdc, acac],
+      [acBus10, acBus10B, dcBus750, dcBus750B, source, dcdc, acdc, acac],
       [
         { id: "source-ac", sourceId: source.id, targetId: acBus10.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
         { id: "dcdc-i", sourceId: dcdc.id, targetId: dcBus750.id, sourceTerminalId: "t1", targetTerminalId: "t2" },
@@ -6519,7 +6616,7 @@ describe("power system model", () => {
         { id: "acdc-ac", sourceId: acdc.id, targetId: acBus10.id, sourceTerminalId: "t1", targetTerminalId: "t2" },
         { id: "acdc-dc", sourceId: acdc.id, targetId: dcBus750.id, sourceTerminalId: "t2", targetTerminalId: "t1" },
         { id: "acac-i", sourceId: acac.id, targetId: acBus10.id, sourceTerminalId: "t1", targetTerminalId: "t3" },
-        { id: "acac-j", sourceId: acac.id, targetId: acBus35.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+        { id: "acac-j", sourceId: acac.id, targetId: acBus10B.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
       ]
     );
 
@@ -6530,7 +6627,7 @@ describe("power system model", () => {
       expect.objectContaining({ type: "voltage-setpoint-deviation", nodeId: acac.id, message: expect.stringContaining("i_v_set=14") })
     ]));
     expect(errors.some((error) => error.message.includes("v_ac_set=12"))).toBe(false);
-    expect(errors.some((error) => error.message.includes("j_v_set=40"))).toBe(false);
+    expect(errors.some((error) => error.message.includes("j_v_set=12"))).toBe(false);
   });
 
   test("does not warn zero voltage setpoints before topology can fill them", () => {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   assignPermanentDeviceIndex,
+  calculateNodeVisualBounds,
   createDefaultNode,
   normalizeDeviceIndexCounters,
   routeEdgesForRendering,
@@ -10,6 +11,7 @@ import {
 import {
   CANVAS_EMPTY_SELECTION_MESSAGE,
   alignNodeLayoutUnits,
+  autoSpreadNodeLayoutUnits,
   buildCanvasLayoutUnits,
   buildCanvasClipboard,
   canDissolveSingleCanvasGroupSelection,
@@ -55,7 +57,7 @@ describe("canvas selection actions", () => {
     const selection = selectGraphicsInRect(
       [source, target, outside],
       routes,
-      { left: 0, right: 400, top: 0, bottom: 200 }
+      { left: 0, right: 450, top: 0, bottom: 360 }
     );
 
     expect(selection.nodeIds).toEqual([source.id, target.id]);
@@ -664,6 +666,85 @@ describe("canvas selection actions", () => {
     expect(movedSecond.position.x - movedFirst.position.x).toBe(secondGrouped.position.x - firstGrouped.position.x);
   });
 
+  test("auto-spreads overlapping layout units while preserving grouped relative positions", () => {
+    const standalone = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const firstGrouped = createDefaultNode("ac-load", { x: 104, y: 100 });
+    const secondGrouped = createDefaultNode("dc-load", { x: 154, y: 100 });
+    const groups: ModelGroup[] = [{
+      id: "group-auto-spread",
+      name: "组合1",
+      nodeIds: [firstGrouped.id, secondGrouped.id],
+      edgeIds: []
+    }];
+    const nodes = [standalone, firstGrouped, secondGrouped];
+    const units = buildCanvasLayoutUnits(groups, nodes, nodes.map((node) => node.id), []);
+
+    const arranged = autoSpreadNodeLayoutUnits(nodes, units, { padding: 4 });
+    const nextUnits = buildCanvasLayoutUnits(groups, arranged, arranged.map((node) => node.id), []);
+    const firstBounds = nextUnits[0].bounds;
+    const secondBounds = nextUnits[1].bounds;
+    const movedFirst = arranged.find((node) => node.id === firstGrouped.id)!;
+    const movedSecond = arranged.find((node) => node.id === secondGrouped.id)!;
+
+    expect(units).toHaveLength(2);
+    const overlapX = Math.min(firstBounds.right, secondBounds.right) - Math.max(firstBounds.left, secondBounds.left);
+    const overlapY = Math.min(firstBounds.bottom, secondBounds.bottom) - Math.max(firstBounds.top, secondBounds.top);
+    expect(overlapX <= 0 || overlapY <= 0).toBe(true);
+    expect(movedSecond.position.x - movedFirst.position.x).toBe(secondGrouped.position.x - firstGrouped.position.x);
+  });
+
+  test("auto-spread keeps dense clusters near their original in-canvas area", () => {
+    const nodes = Array.from({ length: 6 }, (_, index) =>
+      createDefaultNode("ac-source", { x: 100 + (index % 2) * 4, y: 100 + Math.floor(index / 2) * 4 })
+    );
+    const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), []);
+
+    const arranged = autoSpreadNodeLayoutUnits(nodes, units, { padding: 4, bounds: { width: 1200, height: 900 } });
+    const nextUnits = buildCanvasLayoutUnits([], arranged, arranged.map((node) => node.id), []);
+
+    for (const unit of nextUnits) {
+      expect(unit.bounds.left).toBeGreaterThanOrEqual(0);
+      expect(unit.bounds.top).toBeGreaterThanOrEqual(0);
+      expect(unit.bounds.right).toBeLessThanOrEqual(1200);
+      expect(unit.bounds.bottom).toBeLessThanOrEqual(900);
+    }
+    for (let firstIndex = 0; firstIndex < nextUnits.length - 1; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < nextUnits.length; secondIndex += 1) {
+        const firstBounds = nextUnits[firstIndex].bounds;
+        const secondBounds = nextUnits[secondIndex].bounds;
+        const overlapX = Math.min(firstBounds.right, secondBounds.right) - Math.max(firstBounds.left, secondBounds.left);
+        const overlapY = Math.min(firstBounds.bottom, secondBounds.bottom) - Math.max(firstBounds.top, secondBounds.top);
+        expect(overlapX <= 0 || overlapY <= 0).toBe(true);
+      }
+    }
+  });
+
+  test("auto-spread balances horizontal and vertical expansion for tightly overlapped clusters", () => {
+    const nodes = Array.from({ length: 16 }, (_, index) =>
+      createDefaultNode("ac-source", { x: 400 + (index % 4), y: 300 + Math.floor(index / 4) })
+    );
+    const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), []);
+
+    const arranged = autoSpreadNodeLayoutUnits(nodes, units, { padding: 4, bounds: { width: 2000, height: 1600 } });
+    const nextUnits = buildCanvasLayoutUnits([], arranged, arranged.map((node) => node.id), []);
+    const bounds = {
+      left: Math.min(...nextUnits.map((unit) => unit.bounds.left)),
+      right: Math.max(...nextUnits.map((unit) => unit.bounds.right)),
+      top: Math.min(...nextUnits.map((unit) => unit.bounds.top)),
+      bottom: Math.max(...nextUnits.map((unit) => unit.bounds.bottom))
+    };
+    const uniqueColumns = new Set(arranged.map((node) => Math.round(node.position.x)));
+    const uniqueRows = new Set(arranged.map((node) => Math.round(node.position.y)));
+    const aspectRatio = (bounds.right - bounds.left) / Math.max(1, bounds.bottom - bounds.top);
+
+    expect(uniqueColumns.size).toBeGreaterThan(1);
+    expect(uniqueRows.size).toBeGreaterThan(1);
+    expect(uniqueColumns.size).toBeLessThanOrEqual(5);
+    expect(uniqueRows.size).toBeLessThanOrEqual(5);
+    expect(aspectRatio).toBeGreaterThan(0.55);
+    expect(aspectRatio).toBeLessThan(1.8);
+  });
+
   test("includes grouped connection line geometry in the layout unit bounds", () => {
     const firstGrouped = createDefaultNode("ac-load", { x: 420, y: 220 });
     const secondGrouped = createDefaultNode("ac-source", { x: 540, y: 220 });
@@ -728,12 +809,22 @@ describe("canvas selection actions", () => {
     }];
 
     const units = buildCanvasLayoutUnits(groups, [firstGrouped, secondGrouped], [firstGrouped.id], [], [edge], routedEdges);
+    const routeBounds = {
+      left: Math.min(...routedEdges[0].points.map((point) => point.x)),
+      top: Math.min(...routedEdges[0].points.map((point) => point.y)),
+      right: Math.max(...routedEdges[0].points.map((point) => point.x)),
+      bottom: Math.max(...routedEdges[0].points.map((point) => point.y))
+    };
+    const boxes = [calculateNodeVisualBounds(firstGrouped), calculateNodeVisualBounds(secondGrouped), routeBounds];
+    const expectedBounds = {
+      left: Math.min(...boxes.map((box) => box.left)) - 4,
+      top: Math.min(...boxes.map((box) => box.top)) - 4,
+      right: Math.max(...boxes.map((box) => box.right)) + 4,
+      bottom: Math.max(...boxes.map((box) => box.bottom)) + 4
+    };
 
     expect(units).toHaveLength(1);
     expect(units[0].edgeIds).toEqual([edge.id]);
-    expect(units[0].bounds.left).toBe(373);
-    expect(units[0].bounds.top).toBe(36);
-    expect(units[0].bounds.right).toBe(724);
-    expect(units[0].bounds.bottom).toBe(253);
+    expect(units[0].bounds).toEqual(expectedBounds);
   });
 });

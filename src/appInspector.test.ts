@@ -698,7 +698,7 @@ describe("graph inspector panel", () => {
   test("adds React-Flow-style static symbols and exposes unified style editors", async () => {
     const source = await readAppSource();
     const modelSource = await readModelSource();
-    const glyphStart = source.indexOf("if (isStaticNode(node)) {");
+    const glyphStart = source.indexOf("if (isStaticGlyph) {");
     const glyphEnd = source.indexOf("if (glyphVariant === \"ac-generator\"", glyphStart);
     const glyphBlock = source.slice(glyphStart, glyphEnd);
     const inspectorStart = source.indexOf("{isStaticNode(inspectorSelectedNode) && (");
@@ -775,6 +775,32 @@ describe("graph inspector panel", () => {
     expect(serverSource).toContain('if (kind === "dc-two-port-heater") return "DcElec2Heat2";');
     expect(serverSource).not.toContain('if (kind === "ac-heater" || kind === "dc-heater") return "Elec2Heat";');
     expect(serverSource).not.toContain('if (kind === "ac-two-port-heater" || kind === "dc-two-port-heater") return "Elec2Heat2";');
+  });
+
+  test("scales built-in device glyph internals with normalized device size", async () => {
+    const source = await readAppSource();
+    const glyphStart = source.indexOf("function DeviceGlyph(");
+    const glyphEnd = source.indexOf("const MemoDeviceGlyph = memo(", glyphStart);
+    const glyphBlock = source.slice(glyphStart, glyphEnd);
+
+    expect(glyphBlock).toContain("DEVICE_GLYPH_DESIGN_LONGEST_SIDE");
+    expect(glyphBlock).toContain("glyphContentScale");
+    expect(glyphBlock).toContain("renderDeviceGlyphContent");
+    expect(glyphBlock).toContain("transform={`scale(${formatSvgNumber(glyphContentScale)})`}");
+    expect(glyphBlock).toContain("const w = rawW / glyphContentScale");
+    expect(glyphBlock).toContain("const h = rawH / glyphContentScale");
+  });
+
+  test("aligns multi-port heat glyph branches to their terminal anchor ratios", async () => {
+    const source = await readAppSource();
+    const glyphStart = source.indexOf("function DeviceGlyph(");
+    const glyphEnd = source.indexOf("const MemoDeviceGlyph = memo(", glyphStart);
+    const glyphBlock = source.slice(glyphStart, glyphEnd);
+
+    expect(glyphBlock).toContain("const branchY = miniature ? 11 : h * 0.25;");
+    expect(glyphBlock).toContain("const heaterPortY = miniature ? 13 : h * 0.25;");
+    expect(glyphBlock).toContain("heater-two-port-supply-marker");
+    expect(glyphBlock).toContain("heater-two-port-return-marker");
   });
 
   test("keeps backend SVG bus export square ended", async () => {
@@ -1083,6 +1109,20 @@ describe("graph inspector panel", () => {
     expect(previewBlock).not.toContain("simpleOrthogonalPolyline");
   });
 
+  test("snaps dragged single-terminal anchors to the nearest side point", async () => {
+    const source = await readAppSource();
+    const previewStart = source.indexOf("if (terminalPress && svgRef.current) {");
+    const previewEnd = source.indexOf("if (manualPathDrag && svgRef.current)", previewStart);
+    const previewBlock = source.slice(previewStart, previewEnd);
+    const finishStart = source.indexOf("const finishTerminalPress = () => {");
+    const finishEnd = source.indexOf("const handleTerminalPointerDown", finishStart);
+    const finishBlock = source.slice(finishStart, finishEnd);
+
+    expect(previewBlock).toContain("const anchor = snapSingleTerminalAnchorToNearestSide(currentNode, point);");
+    expect(finishBlock).toContain("const anchor = snapSingleTerminalAnchorToNearestSide(node, terminalPress.currentPoint);");
+    expect(source).not.toContain("clampSingleTerminalAnchor");
+  });
+
   test("draws original dragged edges as dashed ghosts and moving edges as selected solid lines", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
@@ -1130,7 +1170,7 @@ describe("graph inspector panel", () => {
     const dragStart = source.indexOf("const handleNodePointerDown");
     const dragEnd = source.indexOf("const startMarquee", dragStart);
     const dragBlock = source.slice(dragStart, dragEnd);
-    const layoutStart = source.indexOf("const applySelectedNodeLayout");
+    const layoutStart = source.indexOf("const commitLayoutNodePositions");
     const layoutEnd = source.indexOf("const alignSelected", layoutStart);
     const layoutBlock = source.slice(layoutStart, layoutEnd);
 
@@ -1156,7 +1196,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const selectedLayoutUnits = useMemo");
     expect(source).toContain("buildCanvasLayoutUnits(activeLayerGroups, activeLayerNodes, activeSelectedNodeIds, activeSelectedEdgeIds, activeLayerEdges, routedEdges)");
     expect(layoutBlock).toContain("layoutNodes(nodes, selectedLayoutUnits)");
-    expect(layoutBlock).toContain("const selected = new Set(layoutNodeIds)");
+    expect(layoutBlock).toContain("const movedNodeIdSet = new Set(movedNodeIds)");
     expect(source).toContain("if (!activeLayerEdgeIdSet.has(edgeId))");
     expect(source).toContain("const visibleNodeSpatialIndex = visibleProject.nodeSpatialIndex");
   });
@@ -1891,8 +1931,9 @@ describe("graph inspector panel", () => {
     expect(source).toContain("<rect className=\"canvas-boundary\" x=\"0\" y=\"0\" width={canvasRenderBounds.width} height={canvasRenderBounds.height} />");
     expect(source).toContain("x={canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE / 2}");
     expect(source).toContain("y={canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE / 2}");
-    expect(applyBlock).toContain("const nextViewBoxSize = scaledViewBoxSizeForBounds(current, canvasBounds, nextBounds);");
-    expect(applyBlock).toContain("...clampViewBoxDimensionsForZoom(nextViewBoxSize, nextBounds)");
+    expect(applyBlock).toContain("return viewBoxAfterCanvasBoundsChange(current, nextBounds, originShift, canvasBounds);");
+    expect(applyBlock).not.toContain("scaledViewBoxSizeForBounds(current, canvasBounds, nextBounds)");
+    expect(applyBlock).not.toContain("clampViewBoxDimensionsForZoom(nextViewBoxSize, nextBounds)");
     expect(source).toContain("import { createPortal, flushSync } from \"react-dom\";");
     expect(resizeMoveBlock).toContain("flushSync(() => setCanvasResizeDraft(clampedBounds));");
     expect(resizeMoveBlock).toContain("canvasResizeDrag.startScrollTop");
@@ -3572,7 +3613,7 @@ describe("graph inspector panel", () => {
     const dragStart = source.indexOf("const handleNodePointerDown");
     const dragEnd = source.indexOf("const handlePointerMove", dragStart);
     const dragBlock = source.slice(dragStart, dragEnd);
-    const layoutStart = source.indexOf("const applySelectedNodeLayout");
+    const layoutStart = source.indexOf("const commitLayoutNodePositions");
     const layoutEnd = source.indexOf("const handleWheel", layoutStart);
     const layoutBlock = source.slice(layoutStart, layoutEnd);
 
@@ -4625,6 +4666,39 @@ describe("graph inspector panel", () => {
     expect(drawingCursorBlock).toContain("cursor: crosshair !important;");
   });
 
+  test("marks the whole page as drawing mode but only previews placed symbols inside the canvas", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const startDeviceStart = source.indexOf("const startLibraryDevicePlacement = (template: DeviceTemplate) => {");
+    const startDeviceEnd = source.indexOf("const startLibraryGraphTemplatePlacement", startDeviceStart);
+    const startDeviceBlock = source.slice(startDeviceStart, startDeviceEnd);
+    const startTemplateStart = source.indexOf("const startLibraryGraphTemplatePlacement = (template: GraphTemplate) => {");
+    const startTemplateEnd = source.indexOf("const cancelLibraryPlacement", startTemplateStart);
+    const startTemplateBlock = source.slice(startTemplateStart, startTemplateEnd);
+    const canvasSvgStart = source.indexOf("className={`diagram-canvas");
+    const pointerEnterStart = source.indexOf("onPointerEnter={(event) => {", canvasSvgStart);
+    const pointerEnterEnd = source.indexOf("}}\n            onPointerUp", pointerEnterStart);
+    const pointerEnterBlock = source.slice(pointerEnterStart, pointerEnterEnd);
+    const pointerLeaveStart = source.indexOf("onPointerLeave={() => {", pointerEnterEnd);
+    const pointerLeaveEnd = source.indexOf("}}\n            onPointerCancel", pointerLeaveStart);
+    const pointerLeaveBlock = source.slice(pointerLeaveStart, pointerLeaveEnd);
+    const bodyCursorBlock = cssRuleBlock(styles, "body.canvas-drawing-mode:not(.canvas-connect-drop-ready),");
+
+    expect(source).toContain("const drawingModeActive = Boolean(libraryPlacement || staticDrawing || connectSource);");
+    expect(source).toContain("document.body.classList.toggle(\"canvas-drawing-mode\", drawingModeActive);");
+    expect(source).toContain("document.body.classList.toggle(\"canvas-connect-drop-ready\", drawingModeActive && activeDropReady);");
+    expect(source).toContain("const clearLibraryPlacementPreview = () =>");
+    expect(startDeviceBlock).toContain("previewPoint: null");
+    expect(startTemplateBlock).toContain("previewPoint: null");
+    expect(source).not.toContain("const libraryPlacementInitialPoint = () =>");
+    expect(pointerEnterBlock).toContain("const rawPointer = screenToSvgPoint(event.currentTarget, event.clientX, event.clientY);");
+    expect(pointerEnterBlock).toContain("if (libraryPlacement) {");
+    expect(pointerEnterBlock).toContain("updateLibraryPlacementPreview(pointer);");
+    expect(pointerLeaveBlock).toContain("clearLibraryPlacementPreview();");
+    expect(bodyCursorBlock).toContain("body.canvas-drawing-mode:not(.canvas-connect-drop-ready) *");
+    expect(bodyCursorBlock).toContain("cursor: crosshair !important;");
+  });
+
   test("routes line-like static symbols through an interactive canvas drawing interface", async () => {
     const source = await readAppSource();
     const model = await readModelSource();
@@ -4739,6 +4813,18 @@ describe("graph inspector panel", () => {
     expect(contextBlock).toContain("groupSelectedGraphics");
     expect(contextBlock).toContain("ungroupSelectedGraphics");
     expect(contextBlock).not.toContain("disabled=");
+  });
+
+  test("adds canvas context-menu action for auto-spreading overlapping graphics", async () => {
+    const source = await readAppSource();
+    const contextStart = source.indexOf("{contextMenu && (");
+    const contextEnd = source.indexOf("{projectMenu && (", contextStart);
+    const contextBlock = source.slice(contextStart, contextEnd);
+
+    expect(source).toContain("autoSpreadCanvasGraphics");
+    expect(source).toContain("autoSpreadNodeLayoutUnits");
+    expect(contextBlock).toContain("自动散开");
+    expect(contextBlock).toContain("runContextMenuAction(autoSpreadCanvasGraphics)");
   });
 
   test("uses explicit model scheme and blank project-list context-menu actions", async () => {
