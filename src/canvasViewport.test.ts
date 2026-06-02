@@ -1,9 +1,14 @@
 import { describe, expect, test } from "vitest";
 import {
+  canvasBoundsChangeIsMeaningful,
+  canvasBoundsScrollSyncTarget,
+  canvasFrameScrollIsUserDriven,
   canvasFrameScrollTargetForViewBox,
   canvasRenderViewBoxAfterBoundsDraft,
   canvasResizePreviewRectForDraft,
   canvasResizeScrollTargetForCommitAnchor,
+  canvasScrollSyncShouldRun,
+  canvasVisualRectScrollTarget,
   canvasViewBoxFromFrameScrollPosition,
   viewBoxAfterCanvasBoundsChange
 } from "./App";
@@ -57,6 +62,18 @@ describe("canvas viewport bounds changes", () => {
     expect(next).toEqual({ x: current.x, y: current.y, width: 900, height: 720 });
     expect(currentBounds.width / current.width).toBe(nextBounds.width / next.width);
     expect(currentBounds.height / current.height).toBe(nextBounds.height / next.height);
+  });
+
+  test("skips duplicate canvas bounds applications in one commit batch", () => {
+    const currentBounds = { width: 1200, height: 1000 };
+    const nextBounds = { width: 1800, height: 1600 };
+    const currentViewBox = { x: 240, y: 180, width: 600, height: 450 };
+
+    expect(canvasBoundsChangeIsMeaningful(currentBounds, nextBounds)).toBe(true);
+    const once = viewBoxAfterCanvasBoundsChange(currentViewBox, nextBounds, { x: 0, y: 0 }, currentBounds);
+    expect(once).toEqual({ x: 240, y: 180, width: 900, height: 720 });
+
+    expect(canvasBoundsChangeIsMeaningful(nextBounds, nextBounds)).toBe(false);
   });
 
   test("keeps the zoom ratio unchanged while previewing a canvas resize draft", () => {
@@ -216,6 +233,82 @@ describe("canvas viewport bounds changes", () => {
     });
 
     expect(viewBox).toEqual({ x: 0, y: 400, width: 1200, height: 1000 });
+  });
+
+  test("does not treat canvas bounds synchronization scroll events as user scrolling", () => {
+    expect(canvasFrameScrollIsUserDriven({
+      programmaticScroll: false,
+      boundsScrollSyncPending: true
+    })).toBe(false);
+    expect(canvasFrameScrollIsUserDriven({
+      programmaticScroll: true,
+      boundsScrollSyncPending: false
+    })).toBe(false);
+    expect(canvasFrameScrollIsUserDriven({
+      programmaticScroll: false,
+      boundsScrollSyncPending: false
+    })).toBe(true);
+  });
+
+  test("does not let a stale skipped scroll sync suppress canvas bounds synchronization", () => {
+    expect(canvasScrollSyncShouldRun({
+      skipNextScrollSync: true,
+      boundsScrollSyncPending: true
+    })).toBe(true);
+    expect(canvasScrollSyncShouldRun({
+      skipNextScrollSync: true,
+      boundsScrollSyncPending: false
+    })).toBe(false);
+    expect(canvasScrollSyncShouldRun({
+      skipNextScrollSync: false,
+      boundsScrollSyncPending: false
+    })).toBe(true);
+  });
+
+  test("preserves the frame scroll anchor when bounds change in edge-pan zoom mode", () => {
+    const target = canvasBoundsScrollSyncTarget({
+      anchorScrollLeft: 502,
+      anchorScrollTop: 250,
+      targetScrollLeft: 0,
+      targetScrollTop: 0,
+      maxScrollLeft: 1116,
+      maxScrollTop: 555,
+      targetViewBox: { x: 0, y: 0, width: 2458, height: 1625 },
+      canvasBounds: { width: 2186, height: 1343 }
+    });
+
+    expect(target).toEqual({ left: 502, top: 250 });
+  });
+
+  test("compensates the visual canvas rect when auto expansion creates scroll range", () => {
+    const target = canvasVisualRectScrollTarget({
+      desiredRect: { left: 18, top: 111, width: 1364, height: 705 },
+      currentRect: { left: 467, top: 79, width: 1850, height: 769 },
+      currentScrollLeft: 0,
+      currentScrollTop: 0,
+      maxScrollLeft: 1384,
+      maxScrollTop: 0
+    });
+
+    expect(target.left).toBe(449);
+    expect(target.top).toBe(0);
+    expect(target.deltaX).toBe(449);
+    expect(target.deltaY).toBe(-32);
+  });
+
+  test("uses the viewBox scroll target when bounds change in normal zoom mode", () => {
+    const target = canvasBoundsScrollSyncTarget({
+      anchorScrollLeft: 502,
+      anchorScrollTop: 250,
+      targetScrollLeft: 640,
+      targetScrollTop: 360,
+      maxScrollLeft: 1116,
+      maxScrollTop: 555,
+      targetViewBox: { x: 120, y: 80, width: 900, height: 700 },
+      canvasBounds: { width: 2186, height: 1343 }
+    });
+
+    expect(target).toEqual({ left: 640, top: 360 });
   });
 
   test("maps viewBox and scroll positions across scrollbar presence transitions", () => {

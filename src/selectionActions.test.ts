@@ -9,8 +9,12 @@ import {
   type ModelGroup
 } from "./model";
 import {
+  AUTO_ALIGN_DEFAULT_THRESHOLD_PX,
+  AUTO_ALIGN_MAX_THRESHOLD_PX,
+  AUTO_ALIGN_MIN_THRESHOLD_PX,
   CANVAS_EMPTY_SELECTION_MESSAGE,
   alignNodeLayoutUnits,
+  autoAlignNodeLayoutUnits,
   autoSpreadNodeLayoutUnits,
   buildCanvasLayoutUnits,
   buildCanvasClipboard,
@@ -29,6 +33,12 @@ import {
 } from "./selectionActions";
 
 describe("canvas selection actions", () => {
+  test("defines auto-align threshold defaults and limits", () => {
+    expect(AUTO_ALIGN_DEFAULT_THRESHOLD_PX).toBe(50);
+    expect(AUTO_ALIGN_MIN_THRESHOLD_PX).toBe(5);
+    expect(AUTO_ALIGN_MAX_THRESHOLD_PX).toBe(200);
+  });
+
   test("deletes selected graphics including nodes and connection lines", () => {
     expect(resolveCanvasDeleteAction({ selectedNodeCount: 1, hasSelectedEdge: false })).toEqual({ kind: "delete" });
     expect(resolveCanvasDeleteAction({ selectedNodeCount: 0, hasSelectedEdge: true })).toEqual({ kind: "delete" });
@@ -743,6 +753,35 @@ describe("canvas selection actions", () => {
     expect(uniqueRows.size).toBeLessThanOrEqual(5);
     expect(aspectRatio).toBeGreaterThan(0.55);
     expect(aspectRatio).toBeLessThan(1.8);
+  });
+
+  test("auto-aligns layout units with nearby horizontal or vertical coordinates", () => {
+    const firstColumn = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const secondColumn = createDefaultNode("ac-load", { x: 106, y: 260 });
+    const firstRow = createDefaultNode("dc-load", { x: 360, y: 401 });
+    const secondRow = createDefaultNode("ac-load", { x: 520, y: 406 });
+    const farAway = createDefaultNode("dc-source", { x: 760, y: 640 });
+    const exactThresholdFirst = createDefaultNode("ac-source", { x: 900, y: 900 });
+    const exactThresholdSecond = createDefaultNode("ac-load", { x: 910, y: 960 });
+    const nodes = [firstColumn, secondColumn, firstRow, secondRow, farAway, exactThresholdFirst, exactThresholdSecond];
+    const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), []);
+
+    const aligned = autoAlignNodeLayoutUnits(nodes, units, 10);
+    const movedFirstColumn = aligned.find((node) => node.id === firstColumn.id)!;
+    const movedSecondColumn = aligned.find((node) => node.id === secondColumn.id)!;
+    const movedFirstRow = aligned.find((node) => node.id === firstRow.id)!;
+    const movedSecondRow = aligned.find((node) => node.id === secondRow.id)!;
+    const movedFarAway = aligned.find((node) => node.id === farAway.id)!;
+    const movedExactThresholdFirst = aligned.find((node) => node.id === exactThresholdFirst.id)!;
+    const movedExactThresholdSecond = aligned.find((node) => node.id === exactThresholdSecond.id)!;
+
+    expect(movedFirstColumn.position.x).toBe(movedSecondColumn.position.x);
+    expect(movedFirstRow.position.y).toBe(movedSecondRow.position.y);
+    expect(movedFirstColumn.position.y).toBe(firstColumn.position.y);
+    expect(movedSecondRow.position.x).toBe(secondRow.position.x);
+    expect(movedFarAway.position).toEqual(farAway.position);
+    expect(movedExactThresholdFirst.position).toEqual(exactThresholdFirst.position);
+    expect(movedExactThresholdSecond.position).toEqual(exactThresholdSecond.position);
   });
 
   test("includes grouped connection line geometry in the layout unit bounds", () => {

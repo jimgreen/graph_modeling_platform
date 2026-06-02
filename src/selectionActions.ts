@@ -64,6 +64,10 @@ export type CanvasLayoutUnit = {
   bounds: SelectionRect;
 };
 
+export const AUTO_ALIGN_DEFAULT_THRESHOLD_PX = 50;
+export const AUTO_ALIGN_MIN_THRESHOLD_PX = 5;
+export const AUTO_ALIGN_MAX_THRESHOLD_PX = 200;
+
 function normalizedRect(rect: SelectionRect): SelectionRect {
   return {
     left: Math.min(rect.left, rect.right),
@@ -804,6 +808,66 @@ export function distributeNodeLayoutUnits(nodes: ModelNode[], units: readonly Ca
     deltas.set(unit.id, direction === "horizontal" ? { x: target - current, y: 0 } : { x: 0, y: target - current });
   });
   return moveNodesByUnitDeltas(nodes, units, deltas);
+}
+
+export function autoAlignNodeLayoutUnits(
+  nodes: ModelNode[],
+  units: readonly CanvasLayoutUnit[],
+  threshold = AUTO_ALIGN_DEFAULT_THRESHOLD_PX
+): ModelNode[] {
+  const movableUnits = units.filter((unit) => unit.nodeIds.length > 0);
+  const normalizedThreshold = Math.max(0, threshold);
+  if (movableUnits.length < 2 || normalizedThreshold <= 0) {
+    return nodes;
+  }
+  const deltas = new Map<string, Point>();
+  const mergeDelta = (unitId: string, delta: Point) => {
+    const current = deltas.get(unitId) ?? { x: 0, y: 0 };
+    deltas.set(unitId, {
+      x: current.x + delta.x,
+      y: current.y + delta.y
+    });
+  };
+  const collectAxisDeltas = (axis: "x" | "y") => {
+    const ordered = movableUnits
+      .map((unit, index) => ({ unit, index, center: unitCenter(unit, axis) }))
+      .sort((first, second) => first.center - second.center || first.index - second.index);
+    let cluster: typeof ordered = [];
+    const flushCluster = () => {
+      if (cluster.length < 2) {
+        cluster = [];
+        return;
+      }
+      const target = Math.round(cluster.reduce((sum, item) => sum + item.center, 0) / cluster.length);
+      for (const item of cluster) {
+        const offset = target - item.center;
+        if (offset === 0) {
+          continue;
+        }
+        mergeDelta(item.unit.id, axis === "x" ? { x: offset, y: 0 } : { x: 0, y: offset });
+      }
+      cluster = [];
+    };
+
+    for (const item of ordered) {
+      if (cluster.length === 0) {
+        cluster = [item];
+        continue;
+      }
+      const previous = cluster[cluster.length - 1];
+      if (Math.abs(item.center - previous.center) < normalizedThreshold) {
+        cluster.push(item);
+        continue;
+      }
+      flushCluster();
+      cluster = [item];
+    }
+    flushCluster();
+  };
+
+  collectAxisDeltas("x");
+  collectAxisDeltas("y");
+  return deltas.size > 0 ? moveNodesByUnitDeltas(nodes, movableUnits, deltas) : nodes;
 }
 
 export type AutoSpreadNodeLayoutUnitsOptions = {

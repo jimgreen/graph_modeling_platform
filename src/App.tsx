@@ -243,7 +243,11 @@ import {
 } from "./routeStore";
 import {
   EMPTY_CANVAS_CLIPBOARD,
+  AUTO_ALIGN_DEFAULT_THRESHOLD_PX,
+  AUTO_ALIGN_MAX_THRESHOLD_PX,
+  AUTO_ALIGN_MIN_THRESHOLD_PX,
   alignNodeLayoutUnits,
+  autoAlignNodeLayoutUnits,
   autoSpreadNodeLayoutUnits,
   buildCanvasLayoutUnits,
   buildCanvasClipboard,
@@ -698,6 +702,11 @@ type CanvasResizeCommitAnchor = {
   edge: CanvasResizeEdge;
   desiredRect: CanvasResizePreviewRect;
 };
+type CanvasBoundsScrollAnchor = {
+  left: number;
+  top: number;
+  visualRect?: CanvasResizePreviewRect;
+};
 type CanvasResizeCommitScrollTarget = {
   left: number;
   top: number;
@@ -1063,6 +1072,7 @@ const NODE_FLOATING_TOOLBAR_WIDTH = 224;
 const NODE_FLOATING_TOOLBAR_HEIGHT = 38;
 const EDGE_FLOATING_TOOLBAR_WIDTH = 160;
 const EDGE_FLOATING_TOOLBAR_HEIGHT = 38;
+const CONTEXT_MENU_AUTO_HIDE_MARGIN = 28;
 const TRANSFORM_ROTATE_STEM_START = 12;
 const TRANSFORM_ROTATE_STEM_END = 36;
 const TRANSFORM_ROTATE_HANDLE_GAP = 42;
@@ -1581,6 +1591,36 @@ export function canvasResizeScrollTargetForCommitAnchor({
     affectsY
   };
 }
+export function canvasVisualRectScrollTarget({
+  desiredRect,
+  currentRect,
+  currentScrollLeft,
+  currentScrollTop,
+  maxScrollLeft,
+  maxScrollTop,
+  affectsX = true,
+  affectsY = true
+}: {
+  desiredRect: CanvasResizePreviewRect;
+  currentRect: CanvasResizePreviewRect;
+  currentScrollLeft: number;
+  currentScrollTop: number;
+  maxScrollLeft: number;
+  maxScrollTop: number;
+  affectsX?: boolean;
+  affectsY?: boolean;
+}): CanvasResizeCommitScrollTarget {
+  const deltaX = affectsX ? currentRect.left - desiredRect.left : 0;
+  const deltaY = affectsY ? currentRect.top - desiredRect.top : 0;
+  return {
+    left: affectsX ? clampNumber(currentScrollLeft + deltaX, 0, maxScrollLeft) : currentScrollLeft,
+    top: affectsY ? clampNumber(currentScrollTop + deltaY, 0, maxScrollTop) : currentScrollTop,
+    deltaX,
+    deltaY,
+    affectsX,
+    affectsY
+  };
+}
 function canvasResizeAnchoredDisplayOffset(offset: number, drag: CanvasResizeState, axis: "x" | "y", displaySize: number) {
   if (!drag) {
     return Math.round(offset);
@@ -1720,6 +1760,62 @@ export function viewBoxAfterCanvasBoundsChange(
     y: current.y + originShift.y,
     ...viewBoxSizePreservingCanvasUnitScale(current, currentBounds, nextBounds)
   }, nextBounds);
+}
+export function canvasBoundsChangeIsMeaningful(
+  currentBounds: CanvasBounds,
+  nextBounds: CanvasBounds,
+  originShift: Point = { x: 0, y: 0 }
+) {
+  return (
+    nextBounds.width !== currentBounds.width ||
+    nextBounds.height !== currentBounds.height ||
+    originShift.x !== 0 ||
+    originShift.y !== 0
+  );
+}
+export function canvasFrameScrollIsUserDriven({
+  programmaticScroll,
+  boundsScrollSyncPending
+}: {
+  programmaticScroll: boolean;
+  boundsScrollSyncPending: boolean;
+}) {
+  return !programmaticScroll && !boundsScrollSyncPending;
+}
+export function canvasScrollSyncShouldRun({
+  skipNextScrollSync,
+  boundsScrollSyncPending
+}: {
+  skipNextScrollSync: boolean;
+  boundsScrollSyncPending: boolean;
+}) {
+  return boundsScrollSyncPending || !skipNextScrollSync;
+}
+export function canvasBoundsScrollSyncTarget({
+  anchorScrollLeft,
+  anchorScrollTop,
+  targetScrollLeft,
+  targetScrollTop,
+  maxScrollLeft,
+  maxScrollTop,
+  targetViewBox,
+  canvasBounds
+}: {
+  anchorScrollLeft: number;
+  anchorScrollTop: number;
+  targetScrollLeft: number;
+  targetScrollTop: number;
+  maxScrollLeft: number;
+  maxScrollTop: number;
+  targetViewBox: CanvasViewBox;
+  canvasBounds: CanvasBounds;
+}) {
+  const useHorizontalAnchor = targetViewBox.width >= canvasBounds.width - 1;
+  const useVerticalAnchor = targetViewBox.height >= canvasBounds.height - 1;
+  return {
+    left: useHorizontalAnchor ? clampNumber(anchorScrollLeft, 0, maxScrollLeft) : targetScrollLeft,
+    top: useVerticalAnchor ? clampNumber(anchorScrollTop, 0, maxScrollTop) : targetScrollTop
+  };
 }
 function canvasFramePaddingOffset(frame: HTMLElement, svg?: SVGSVGElement | null) {
   if (svg) {
@@ -5830,6 +5926,7 @@ export function App() {
   const schemeImportInputRef = useRef<HTMLInputElement | null>(null);
   const canvasFrameRef = useRef<HTMLDivElement | null>(null);
   const canvasInteractionRef = useRef(false);
+  const canvasSelectionShortcutActiveRef = useRef(false);
   const lastCanvasPointerRef = useRef<Point | null>(null);
   const lastRawCanvasPointerRef = useRef<Point | null>(null);
   const projectListPointerInsideRef = useRef(false);
@@ -6353,6 +6450,7 @@ export function App() {
   const selectedNodeId = activeSelectedNodeIds[0] ?? "";
   const displaySelectedNodeIds = canvasSelectionScope === "direct" ? groupExpandedCanvasSelection.nodeIds : activeSelectedNodeIds;
   const displaySelectedEdgeIds = canvasSelectionScope === "direct" ? groupExpandedCanvasSelection.edgeIds : activeCanvasSelection.edgeIds;
+  canvasSelectionShortcutActiveRef.current = activeSelectedNodeIds.length > 0 || activeCanvasSelection.edgeIds.length > 0;
   const selectedNodeIdSet = useMemo(() => new Set(displaySelectedNodeIds), [displaySelectedNodeIds]);
   const selectedNode = visibleNodeById.get(selectedNodeId);
   const activeSelectedEdgeIds = activeCanvasSelection.edgeIds;
@@ -7903,6 +8001,9 @@ export function App() {
   const skipNextCanvasScrollSyncRef = useRef(false);
   const canvasFrameUserScrollRef = useRef(false);
   const canvasFrameProgrammaticScrollRef = useRef(false);
+  const canvasBoundsScrollSyncPendingRef = useRef(false);
+  const canvasBoundsScrollSyncPendingFrameRef = useRef<number | null>(null);
+  const pendingCanvasBoundsScrollAnchorRef = useRef<CanvasBoundsScrollAnchor | null>(null);
   const pendingWheelZoomAnchorRef = useRef<WheelZoomAnchor | null>(null);
   const pendingCanvasResizeCommitAnchorRef = useRef<CanvasResizeCommitAnchor | null>(null);
   canvasBoundsRef.current = canvasBounds;
@@ -7917,6 +8018,49 @@ export function App() {
     width: clampCanvasDimension(bounds.width, MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH, canvasWidth),
     height: clampCanvasDimension(bounds.height, MIN_CANVAS_HEIGHT, MAX_CANVAS_HEIGHT, canvasHeight)
   });
+  const cancelCanvasBoundsScrollSyncPendingRelease = () => {
+    if (canvasBoundsScrollSyncPendingFrameRef.current !== null) {
+      window.cancelAnimationFrame(canvasBoundsScrollSyncPendingFrameRef.current);
+      canvasBoundsScrollSyncPendingFrameRef.current = null;
+    }
+  };
+  const clearCanvasBoundsScrollSyncPending = () => {
+    cancelCanvasBoundsScrollSyncPendingRelease();
+    canvasBoundsScrollSyncPendingRef.current = false;
+    pendingCanvasBoundsScrollAnchorRef.current = null;
+  };
+  const releaseCanvasBoundsScrollSyncPending = () => {
+    cancelCanvasBoundsScrollSyncPendingRelease();
+    canvasBoundsScrollSyncPendingFrameRef.current = window.requestAnimationFrame(() => {
+      canvasBoundsScrollSyncPendingFrameRef.current = window.requestAnimationFrame(() => {
+        canvasBoundsScrollSyncPendingFrameRef.current = null;
+        canvasBoundsScrollSyncPendingRef.current = false;
+        pendingCanvasBoundsScrollAnchorRef.current = null;
+      });
+    });
+  };
+  const markCanvasBoundsScrollSyncPending = () => {
+    const frame = canvasFrameRef.current;
+    if (!pendingCanvasBoundsScrollAnchorRef.current) {
+      const hotzones = frame?.querySelector<HTMLElement>(".canvas-resize-hotzones");
+      const visualRect = hotzones
+        ? (() => {
+            const rect = hotzones.getBoundingClientRect();
+            return {
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+              height: rect.height
+            };
+          })()
+        : undefined;
+      pendingCanvasBoundsScrollAnchorRef.current = frame
+        ? { left: frame.scrollLeft, top: frame.scrollTop, visualRect }
+        : null;
+    }
+    canvasBoundsScrollSyncPendingRef.current = true;
+    releaseCanvasBoundsScrollSyncPending();
+  };
   const canvasBoundsForGraphContent = (
     baseBounds: CanvasBounds,
     contentNodes: ModelNode[] = nodes,
@@ -7943,17 +8087,25 @@ export function App() {
       contentRoutes,
       padding
     );
-  const applyCanvasBounds = (bounds: CanvasBounds, originShift: Point = { x: 0, y: 0 }) => {
+  const applyCanvasBounds = (
+    bounds: CanvasBounds,
+    originShift: Point = { x: 0, y: 0 },
+    options: { preserveScrollAnchor?: boolean } = {}
+  ) => {
+    const currentBoundsForApply = canvasBoundsRef.current;
     const nextBounds = clampCanvasBounds(bounds);
-    const hasOriginShift = originShift.x !== 0 || originShift.y !== 0;
-    if (nextBounds.width === canvasWidth && nextBounds.height === canvasHeight && !hasOriginShift) {
+    if (!canvasBoundsChangeIsMeaningful(currentBoundsForApply, nextBounds, originShift)) {
       return false;
     }
+    if (options.preserveScrollAnchor !== false) {
+      markCanvasBoundsScrollSyncPending();
+    }
+    canvasBoundsRef.current = nextBounds;
     setCanvasWidth(nextBounds.width);
     setCanvasHeight(nextBounds.height);
     setCanvasSizeDraft({ width: String(nextBounds.width), height: String(nextBounds.height) });
     setViewBox((current) => {
-      return viewBoxAfterCanvasBoundsChange(current, nextBounds, originShift, canvasBounds);
+      return viewBoxAfterCanvasBoundsChange(current, nextBounds, originShift, currentBoundsForApply);
     });
     return true;
   };
@@ -8064,12 +8216,13 @@ export function App() {
   const leftTopCanvasOriginShiftForContent = (
     contentNodes: ModelNode[],
     contentEdges: Edge[] = [],
-    contentRoutes: Pick<RoutedEdge, "points">[] = []
+    contentRoutes: Pick<RoutedEdge, "points">[] = [],
+    padding = 0
   ): Point => {
     const geometryBounds = calculateModelGeometryBounds(
       contentNodes,
       [...contentRoutes, ...edgeRoutesForGeometryBounds(contentEdges)],
-      0
+      padding
     );
     const gridCeil = (value: number) => Math.ceil(Math.ceil(value) / CANVAS_GRID_SIZE) * CANVAS_GRID_SIZE;
     return {
@@ -8230,7 +8383,10 @@ export function App() {
       Math.max(0, (frame.scrollHeight - frame.clientHeight) / 2)
     );
   };
-  const syncCanvasFrameScrollToViewBox = (targetViewBox = viewBoxRef.current) => {
+  const syncCanvasFrameScrollToViewBox = (
+    targetViewBox = viewBoxRef.current,
+    boundsScrollAnchor: CanvasBoundsScrollAnchor | null = null
+  ) => {
     const frame = canvasFrameRef.current;
     if (!frame) {
       return;
@@ -8245,8 +8401,60 @@ export function App() {
       horizontalScrollbarsActive: canvasHorizontalScrollbarsActiveRef.current,
       verticalScrollbarsActive: canvasVerticalScrollbarsActiveRef.current
     });
-    if (Math.abs(frame.scrollLeft - nextLeft) > 1 || Math.abs(frame.scrollTop - nextTop) > 1) {
-      setCanvasFrameScrollPosition(frame, nextLeft, nextTop);
+    const scrollTarget = boundsScrollAnchor
+      ? canvasBoundsScrollSyncTarget({
+          anchorScrollLeft: boundsScrollAnchor.left,
+          anchorScrollTop: boundsScrollAnchor.top,
+          targetScrollLeft: nextLeft,
+          targetScrollTop: nextTop,
+          maxScrollLeft: maxLeft,
+          maxScrollTop: maxTop,
+          targetViewBox,
+          canvasBounds: canvasBoundsRef.current
+        })
+      : { left: nextLeft, top: nextTop };
+    const useHorizontalBoundsAnchor = Boolean(boundsScrollAnchor && targetViewBox.width >= canvasBoundsRef.current.width - 1);
+    const useVerticalBoundsAnchor = Boolean(boundsScrollAnchor && targetViewBox.height >= canvasBoundsRef.current.height - 1);
+    const hotzones = boundsScrollAnchor?.visualRect
+      ? frame.querySelector<HTMLElement>(".canvas-resize-hotzones")
+      : null;
+    const hotzoneRect = hotzones?.getBoundingClientRect();
+    const visualTarget = boundsScrollAnchor?.visualRect && hotzoneRect
+      ? canvasVisualRectScrollTarget({
+          desiredRect: boundsScrollAnchor.visualRect,
+          currentRect: {
+            left: hotzoneRect.left,
+            top: hotzoneRect.top,
+            width: hotzoneRect.width,
+            height: hotzoneRect.height
+          },
+          currentScrollLeft: frame.scrollLeft,
+          currentScrollTop: frame.scrollTop,
+          maxScrollLeft: maxLeft,
+          maxScrollTop: maxTop,
+          affectsX: useHorizontalBoundsAnchor,
+          affectsY: useVerticalBoundsAnchor
+        })
+      : null;
+    const syncVisualScrollX = Boolean(visualTarget?.affectsX && maxLeft > 1);
+    const syncVisualScrollY = Boolean(visualTarget?.affectsY && maxTop > 1);
+    const targetLeft = syncVisualScrollX ? visualTarget!.left : scrollTarget.left;
+    const targetTop = syncVisualScrollY ? visualTarget!.top : scrollTarget.top;
+    if (Math.abs(frame.scrollLeft - targetLeft) > 1 || Math.abs(frame.scrollTop - targetTop) > 1) {
+      setCanvasFrameScrollPosition(frame, targetLeft, targetTop);
+      if (syncVisualScrollX || syncVisualScrollY) {
+        skipNextCanvasScrollSyncRef.current = true;
+      }
+    }
+    if (visualTarget && ((visualTarget.affectsX && !syncVisualScrollX) || (visualTarget.affectsY && !syncVisualScrollY))) {
+      skipNextCanvasScrollSyncRef.current = true;
+      setCanvasNoScrollOffset((current) => {
+        const next = clampCanvasNoScrollOffsetPoint({
+          x: visualTarget.affectsX && !syncVisualScrollX ? current.x - visualTarget.deltaX : current.x,
+          y: visualTarget.affectsY && !syncVisualScrollY ? current.y - visualTarget.deltaY : current.y
+        });
+        return next.x === current.x && next.y === current.y ? current : next;
+      });
     }
   };
   const syncCanvasFrameScrollToCanvasResizeCommitAnchor = (anchor: CanvasResizeCommitAnchor) => {
@@ -8451,7 +8659,10 @@ export function App() {
     });
   };
   const handleCanvasFrameScroll = () => {
-    if (!canvasFrameProgrammaticScrollRef.current) {
+    if (canvasFrameScrollIsUserDriven({
+      programmaticScroll: canvasFrameProgrammaticScrollRef.current,
+      boundsScrollSyncPending: canvasBoundsScrollSyncPendingRef.current
+    })) {
       canvasFrameUserScrollRef.current = true;
     }
     scheduleCanvasVisibleViewBoxUpdate();
@@ -8545,11 +8756,18 @@ export function App() {
       scheduleCanvasVisibleViewBoxUpdate();
       return;
     }
-    if (skipNextCanvasScrollSyncRef.current) {
+    if (!canvasScrollSyncShouldRun({
+      skipNextScrollSync: skipNextCanvasScrollSyncRef.current,
+      boundsScrollSyncPending: canvasBoundsScrollSyncPendingRef.current
+    })) {
       skipNextCanvasScrollSyncRef.current = false;
       return;
     }
-    syncCanvasFrameScrollToViewBox(viewBox);
+    skipNextCanvasScrollSyncRef.current = false;
+    syncCanvasFrameScrollToViewBox(
+      viewBox,
+      canvasBoundsScrollSyncPendingRef.current ? pendingCanvasBoundsScrollAnchorRef.current : null
+    );
     scheduleCanvasVisibleViewBoxUpdate();
   }, [
     canvasDisplayHeight,
@@ -9898,6 +10116,46 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (!contextMenu || contextMenu.target !== "blank") {
+      return;
+    }
+    const closeBlankContextMenuIfPointerLeaves = (event: globalThis.PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest(".context-menu")) {
+        return;
+      }
+      const menu = document.querySelector<HTMLElement>("[data-canvas-context-menu='true']");
+      if (!menu) {
+        setContextMenu(null);
+        return;
+      }
+      const rect = menu.getBoundingClientRect();
+      const withinMenuSafeZone =
+        event.clientX >= rect.left - CONTEXT_MENU_AUTO_HIDE_MARGIN &&
+        event.clientX <= rect.right + CONTEXT_MENU_AUTO_HIDE_MARGIN &&
+        event.clientY >= rect.top - CONTEXT_MENU_AUTO_HIDE_MARGIN &&
+        event.clientY <= rect.bottom + CONTEXT_MENU_AUTO_HIDE_MARGIN;
+      if (!withinMenuSafeZone) {
+        setContextMenu(null);
+      }
+    };
+    const closeBlankContextMenuOnCanvasMotion = () => setContextMenu(null);
+    const closeBlankContextMenuOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setContextMenu(null);
+      }
+    };
+    window.addEventListener("pointermove", closeBlankContextMenuIfPointerLeaves);
+    window.addEventListener("wheel", closeBlankContextMenuOnCanvasMotion, { capture: true });
+    window.addEventListener("keydown", closeBlankContextMenuOnEscape);
+    return () => {
+      window.removeEventListener("pointermove", closeBlankContextMenuIfPointerLeaves);
+      window.removeEventListener("wheel", closeBlankContextMenuOnCanvasMotion, { capture: true });
+      window.removeEventListener("keydown", closeBlankContextMenuOnEscape);
+    };
+  }, [contextMenu]);
+
+  useEffect(() => {
     return () => {
       if (mouseStatusFrameRef.current !== null) {
         window.cancelAnimationFrame(mouseStatusFrameRef.current);
@@ -10367,7 +10625,7 @@ export function App() {
         );
         shiftCachedRoutesForCanvasOrigin(originShift);
       }
-      applyCanvasBounds(draftBounds, originShift);
+      applyCanvasBounds(draftBounds, originShift, { preserveScrollAnchor: false });
       canvasResizeDraftRef.current = null;
       setCanvasResizeDraft(null);
     };
@@ -10853,6 +11111,7 @@ export function App() {
     const selection = scope === "direct"
       ? resolveCanvasSelection([], nodeIds, edgeIds, "direct")
       : expandActiveGroupSelection(nodeIds, edgeIds);
+    canvasSelectionShortcutActiveRef.current = selection.nodeIds.length > 0 || selection.edgeIds.length > 0;
     setCanvasSelectionScope(scope);
     setSelectedNodeIds(selection.nodeIds);
     setSelectedEdgeIds(selection.edgeIds);
@@ -10943,6 +11202,7 @@ export function App() {
     if (!snapshot) {
       return;
     }
+    canvasSelectionShortcutActiveRef.current = snapshot.nodeIds.length > 0 || snapshot.edgeIds.length > 0;
     setCanvasSelectionScope(snapshot.scope);
     setSelectedNodeIds(snapshot.nodeIds);
     setSelectedEdgeIds(snapshot.edgeIds);
@@ -12337,10 +12597,14 @@ export function App() {
     movedNodeIds: string[],
     candidateEdges: Edge[],
     expectedPatch: { nodeUpdates: ModelNode[]; edgeUpserts: Edge[]; edgeDeleteIds: string[] },
-    effectiveCanvasBounds: CanvasBounds = canvasBounds
+    effectiveCanvasBounds: CanvasBounds = canvasBounds,
+    previousNodesForMove: ModelNode[] = [],
+    originalPositions?: Record<string, Point>,
+    originalRoutePoints: DraggingState["originalRoutePoints"] = {},
+    selectedEdgeIds = new Set<string>()
   ) => {
     deferredMoveOptimizationCancelRef.current?.();
-    if (movedNodeIds.length <= 1 || candidateEdges.length === 0) {
+    if (movedNodeIds.length === 0 || candidateEdges.length === 0) {
       deferredMoveOptimizationCancelRef.current = null;
       return;
     }
@@ -12381,7 +12645,16 @@ export function App() {
         movedBlockerRoutePoints,
         repairCanvasBounds
       );
-      const repairRoutePoints = { ...movedBlockerRoutePoints, ...stationaryBlockerRoutePoints };
+      const blockerRoutePoints = { ...movedBlockerRoutePoints, ...stationaryBlockerRoutePoints };
+      const repairRoutePoints = previousNodesForMove.length > 0
+        ? routePointsNearOriginalMovedNodes(
+            previousNodesForMove,
+            latestCandidateEdges,
+            movedNodeIds,
+            originalPositions,
+            blockerRoutePoints
+          )
+        : blockerRoutePoints;
       const repairEdgeIds = new Set(Object.keys(repairRoutePoints));
       if (repairEdgeIds.size === 0) {
         return;
@@ -12391,8 +12664,8 @@ export function App() {
         latestNodes,
         latestCandidateEdges,
         movedNodeIds,
-        {},
-        new Set<string>(),
+        originalRoutePoints,
+        selectedEdgeIds,
         repairRoutePoints,
         repairEdgeIds,
         repairCandidateEdges
@@ -12432,7 +12705,7 @@ export function App() {
   ) => {
     markStoredRouteEdgesDirty(dirtyEdgeIdsForMovedLocalRoutes(selectedEdgeIds, originalRoutePoints));
     let committedCandidateEdges = candidateEdges;
-    const deferMovedRouteRepair = movedNodeIds.length > 1;
+    const deferMovedRouteRepair = movedNodeIds.length > 0 && candidateEdges.length > 0;
     const originShift = allowAutoExpandCanvas ? leftTopCanvasOriginShiftForContent(movedNodeUpdates, committedCandidateEdges) : { x: 0, y: 0 };
     if (hasCanvasOriginShift(originShift)) {
       const candidateEdgeById = new Map(committedCandidateEdges.map((edge) => [edge.id, edge]));
@@ -12491,7 +12764,16 @@ export function App() {
       if (candidateEdges.length > 0) {
         deferredMoveRepairFrameRef.current = window.requestAnimationFrame(() => {
           deferredMoveRepairFrameRef.current = null;
-          scheduleDeferredMovedConnectionRepair(movedNodeIds, committedCandidateEdges, expectedPatch, commitCanvasBounds);
+          scheduleDeferredMovedConnectionRepair(
+            movedNodeIds,
+            committedCandidateEdges,
+            expectedPatch,
+            commitCanvasBounds,
+            previousNodes,
+            originalPositions,
+            originalRoutePoints,
+            selectedEdgeIds
+          );
         });
       }
       return;
@@ -12860,7 +13142,9 @@ export function App() {
         : [];
     const affectedRoutes =
       nextAffectedEdges.length > 0 ? routeEdgesForStoredRendering(nextNodes, nextAffectedEdges, bounds) : [];
-    const originShift = allowAutoExpandCanvas ? leftTopCanvasOriginShiftForContent(movedNodes, [], affectedRoutes) : { x: 0, y: 0 };
+    const originShift = allowAutoExpandCanvas
+      ? leftTopCanvasOriginShiftForContent(movedNodes, [], affectedRoutes, MOVE_BOUNDARY_GUARD)
+      : { x: 0, y: 0 };
     const shiftedBounds = canvasBoundsWithOriginShift(bounds, originShift);
     const shiftedMovedNodes = hasCanvasOriginShift(originShift)
       ? movedNodes.map((node) => translateNodeBy(node, originShift))
@@ -13157,6 +13441,8 @@ export function App() {
     const delta = activeDragging.currentDelta;
     if (!delta || (delta.x === 0 && delta.y === 0)) {
       restoreCanvasSelectionSnapshot(activeDragging.selection);
+      canvasInteractionRef.current = true;
+      projectListPointerInsideRef.current = false;
       clearDraggingMoveState();
       return false;
     }
@@ -13182,6 +13468,8 @@ export function App() {
         : delta;
     if (finalDelta.x === 0 && finalDelta.y === 0) {
       restoreCanvasSelectionSnapshot(activeDragging.selection);
+      canvasInteractionRef.current = true;
+      projectListPointerInsideRef.current = false;
       clearDraggingMoveState();
       return false;
     }
@@ -13225,6 +13513,8 @@ export function App() {
       finalBounds
     );
     restoreCanvasSelectionSnapshot(activeDragging.selection);
+    canvasInteractionRef.current = true;
+    projectListPointerInsideRef.current = false;
     clearDraggingMoveState();
     const snapText =
       effectiveSnapTarget &&
@@ -13250,6 +13540,8 @@ export function App() {
       draggingRef.current = null;
       setDragging(null);
       restoreCanvasSelectionSnapshot(activeDragging.selection);
+      canvasInteractionRef.current = true;
+      projectListPointerInsideRef.current = false;
       return;
     }
     ensureDraggingUndoSnapshot();
@@ -13279,6 +13571,8 @@ export function App() {
       draggingRef.current = null;
       setDragging(null);
       restoreCanvasSelectionSnapshot(activeDragging.selection);
+      canvasInteractionRef.current = true;
+      projectListPointerInsideRef.current = false;
       return;
     }
     const finalBounds = canvasBoundsForMoveDelta(activeDragging.nodeIds, activeDragging.originalPositions, finalDelta.x, finalDelta.y);
@@ -13326,6 +13620,8 @@ export function App() {
     draggingRef.current = null;
     setDragging(null);
     restoreCanvasSelectionSnapshot(activeDragging.selection);
+    canvasInteractionRef.current = true;
+    projectListPointerInsideRef.current = false;
     dragUndoCapturedRef.current = false;
     const snapText =
       effectiveSnapTarget &&
@@ -14813,6 +15109,8 @@ export function App() {
     }
     const svgRect = svgRef.current.getBoundingClientRect();
     canvasResizeUndoCapturedRef.current = false;
+    clearCanvasBoundsScrollSyncPending();
+    pendingCanvasResizeCommitAnchorRef.current = null;
     setCanvasResizeDrag({
       edge,
       startClientX: event.clientX,
@@ -16544,6 +16842,45 @@ export function App() {
     writeOperationLog(movedCount > 0 ? `自动散开 ${movedCount} 个图元` : "自动散开未发现重叠图元");
   };
 
+  const autoAlignCanvasGraphics = () => {
+    const activeNodeIds = activeLayerNodes.map((node) => node.id);
+    if (activeNodeIds.length < 2) {
+      writeOperationLog("自动对齐需要至少 2 个可操作图元");
+      return;
+    }
+    const rawThreshold = window.prompt(
+      `请输入自动对齐判定门槛（${AUTO_ALIGN_MIN_THRESHOLD_PX}-${AUTO_ALIGN_MAX_THRESHOLD_PX}px）`,
+      String(AUTO_ALIGN_DEFAULT_THRESHOLD_PX)
+    );
+    if (rawThreshold === null) {
+      return;
+    }
+    const parsedThreshold = Number.parseFloat(rawThreshold.trim());
+    if (!Number.isFinite(parsedThreshold)) {
+      writeOperationLog("自动对齐判定门槛无效");
+      return;
+    }
+    const threshold = Math.max(AUTO_ALIGN_MIN_THRESHOLD_PX, Math.min(AUTO_ALIGN_MAX_THRESHOLD_PX, Math.round(parsedThreshold)));
+    const layoutUnits = buildCanvasLayoutUnits(
+      activeLayerGroups,
+      activeLayerNodes,
+      activeNodeIds,
+      [],
+      activeLayerEdges,
+      routedEdges
+    );
+    if (layoutUnits.length < 2) {
+      writeOperationLog("自动对齐没有发现可调整的图元");
+      return;
+    }
+    const arranged = autoAlignNodeLayoutUnits(nodes, layoutUnits, threshold);
+    const movedCount = commitLayoutNodePositions(
+      Array.from(new Set(layoutUnits.flatMap((unit) => unit.nodeIds))),
+      arranged
+    );
+    writeOperationLog(movedCount > 0 ? `自动对齐 ${movedCount} 个图元，门槛 ${threshold}px` : `自动对齐未发现坐标相近图元，门槛 ${threshold}px`);
+  };
+
   const alignSelected = (direction: AlignMode) => {
     applySelectedNodeLayout(2, (currentNodes, currentLayoutUnits) => alignNodeLayoutUnits(currentNodes, currentLayoutUnits, direction));
     if (selectedLayoutUnitCount >= 2) {
@@ -18118,47 +18455,55 @@ export function App() {
       return;
     }
     if (!isBusNode(node) && node.terminals.length === 1) {
-      const anchor = snapSingleTerminalAnchorToNearestSide(node, terminalPress.currentPoint);
-      const nextNode = {
-        ...node,
-        terminals: node.terminals.map((terminal) =>
-          terminal.id === terminalPress.terminalId ? { ...terminal, anchor } : terminal
-        )
-      };
-      const nodeIndex = graphStore.nodeIndexById.get(terminalPress.nodeId);
-      const nextNodes = nodeIndex === undefined ? nodes : nodes.slice();
-      if (nodeIndex !== undefined) {
-        nextNodes[nodeIndex] = nextNode;
-      }
-      const dirtyEdges = edgeListForNodeIds([terminalPress.nodeId]).filter((edge) =>
-        (edge.sourceId === terminalPress.nodeId && edge.sourceTerminalId === terminalPress.terminalId) ||
-        (edge.targetId === terminalPress.nodeId && edge.targetTerminalId === terminalPress.terminalId)
-      );
-      const dirtyEdgeIds = dirtyEdges.map((edge) => edge.id);
-      markRouteEdgesDirty(dirtyEdgeIds);
-      markStoredRouteEdgesDirty(dirtyEdgeIds);
-      const nextEdges = dirtyEdges.map((edge) => {
-        const sourceAffected = edge.sourceId === terminalPress.nodeId && edge.sourceTerminalId === terminalPress.terminalId;
-        const sourceNode = nodeById.get(edge.sourceId);
-        const targetNode = nodeById.get(edge.targetId);
-        const nextSourceNode = edge.sourceId === terminalPress.nodeId ? nextNode : sourceNode;
-        const nextTargetNode = edge.targetId === terminalPress.nodeId ? nextNode : targetNode;
-        const slidePatch = sourceNode && targetNode && nextSourceNode && nextTargetNode
-          ? resolveStraightBusSlideEndpoint({
-              edge,
-              sourceNode,
-              targetNode,
-              nextSourceNode,
-              nextTargetNode,
-              movingEndpoint: sourceAffected ? "source" : "target",
-              nodes,
-              nextNodes,
-              originalMovingPoint: terminalPress.startPoint
-            })
-          : null;
-        return slidePatch ? { ...edge, ...slidePatch } : edge;
+      setGraphStore((current) => {
+        const currentNode = current.nodeMap.get(terminalPress.nodeId);
+        if (!currentNode || isBusNode(currentNode) || currentNode.terminals.length !== 1) {
+          return current;
+        }
+        const anchor = snapSingleTerminalAnchorToNearestSide(currentNode, terminalPress.currentPoint);
+        let changed = false;
+        const nextTerminals = currentNode.terminals.map((terminal) => {
+          if (terminal.id !== terminalPress.terminalId || sameOptionalPoint(terminal.anchor, anchor)) {
+            return terminal;
+          }
+          changed = true;
+          return { ...terminal, anchor };
+        });
+        const nextNode = changed ? { ...currentNode, terminals: nextTerminals } : currentNode;
+        const nextNodes = changed ? overlayGraphStoreNodes(current, [nextNode]) : current.nodes;
+        const dirtyEdges = (current.edgesByNodeId.get(terminalPress.nodeId) ?? []).filter((edge) =>
+          (edge.sourceId === terminalPress.nodeId && edge.sourceTerminalId === terminalPress.terminalId) ||
+          (edge.targetId === terminalPress.nodeId && edge.targetTerminalId === terminalPress.terminalId)
+        );
+        const dirtyEdgeIds = dirtyEdges.map((edge) => edge.id);
+        markRouteEdgesDirty(dirtyEdgeIds);
+        markStoredRouteEdgesDirty(dirtyEdgeIds);
+        const nextEdges = dirtyEdges.map((edge) => {
+          const sourceAffected = edge.sourceId === terminalPress.nodeId && edge.sourceTerminalId === terminalPress.terminalId;
+          const sourceNode = current.nodeMap.get(edge.sourceId);
+          const targetNode = current.nodeMap.get(edge.targetId);
+          const nextSourceNode = edge.sourceId === terminalPress.nodeId ? nextNode : sourceNode;
+          const nextTargetNode = edge.targetId === terminalPress.nodeId ? nextNode : targetNode;
+          const slidePatch = sourceNode && targetNode && nextSourceNode && nextTargetNode
+            ? resolveStraightBusSlideEndpoint({
+                edge,
+                sourceNode,
+                targetNode,
+                nextSourceNode,
+                nextTargetNode,
+                movingEndpoint: sourceAffected ? "source" : "target",
+                nodes: current.nodes,
+                nextNodes,
+                originalMovingPoint: terminalPress.startPoint
+              })
+            : null;
+          return slidePatch ? { ...edge, ...slidePatch } : edge;
+        });
+        return graphStoreApplyPatch(current, {
+          nodeUpdates: changed ? [nextNode] : [],
+          edgeUpserts: nextEdges
+        });
       });
-      setGraphStore((current) => graphStorePatchGraph(current, [nextNode], nextEdges));
     }
     setTerminalPress(null);
   };
@@ -20584,6 +20929,12 @@ export function App() {
       rotateControlAvoidRectFromCanvasPoints(selectedNodeRotateHandlePoints)
     );
   }
+  const selectedFloatingToolbarAvoidRect = selectedFloatingToolbarBounds
+    ? canvasRectToSurfaceCssRect(
+        selectedFloatingToolbarBounds,
+        Math.max(floatingToolbarGap, Math.round(8 * floatingToolbarScreenScale))
+      )
+    : null;
   const placeFloatingToolbar = (
     candidates: Point[],
     width: number,
@@ -20600,8 +20951,9 @@ export function App() {
         drift: Math.abs(point.x - candidate.x) + Math.abs(point.y - candidate.y)
       };
     });
-    const chosen = placements.find((placement) => placement.overlap === 0) ??
-      [...placements].sort((first, second) => first.overlap - second.overlap || first.drift - second.drift || first.index - second.index)[0];
+    const chosen = [...placements].sort(
+      (first, second) => first.overlap - second.overlap || first.drift - second.drift || first.index - second.index
+    )[0];
     return {
       x: Math.round(chosen.x),
       y: Math.round(chosen.y),
@@ -20621,17 +20973,19 @@ export function App() {
           const bottomCenter = canvasPointToSurfaceCss({ x: centerX, y: selectedFloatingToolbarBounds.bottom });
           const leftCenter = canvasPointToSurfaceCss({ x: selectedFloatingToolbarBounds.left, y: centerY });
           const rightCenter = canvasPointToSurfaceCss({ x: selectedFloatingToolbarBounds.right, y: centerY });
-          const nodeFloatingToolbarAvoidRects = selectedRotateControlAvoidRects;
-          const rotateAvoidTop = nodeFloatingToolbarAvoidRects.length > 0
-            ? Math.min(...nodeFloatingToolbarAvoidRects.map((rect) => rect.top))
+          const nodeFloatingToolbarAvoidRects = [
+            ...(selectedFloatingToolbarAvoidRect ? [selectedFloatingToolbarAvoidRect] : []),
+            ...selectedRotateControlAvoidRects
+          ];
+          const rotateAvoidTop = selectedRotateControlAvoidRects.length > 0
+            ? Math.min(...selectedRotateControlAvoidRects.map((rect) => rect.top))
             : null;
           const nodeToolbarCandidates = [
             ...(rotateAvoidTop === null ? [] : [{ x: topCenter.x - width / 2, y: rotateAvoidTop - height - floatingToolbarGap }]),
             { x: topCenter.x - width / 2, y: topCenter.y - height - floatingToolbarGap },
             { x: bottomCenter.x - width / 2, y: bottomCenter.y + floatingToolbarGap },
             { x: rightCenter.x + floatingToolbarGap, y: rightCenter.y - height / 2 },
-            { x: leftCenter.x - width - floatingToolbarGap, y: leftCenter.y - height / 2 },
-            { x: topCenter.x - width / 2, y: floatingToolbarViewport.top + floatingToolbarPadding }
+            { x: leftCenter.x - width - floatingToolbarGap, y: leftCenter.y - height / 2 }
           ];
           return placeFloatingToolbar(nodeToolbarCandidates, width, height, nodeFloatingToolbarAvoidRects);
         })()
@@ -21523,11 +21877,18 @@ export function App() {
               setPanning(null);
             }}
             onPointerLeave={() => {
-              canvasInteractionRef.current = false;
               clearLibraryPlacementPreview();
               if (draggingRef.current) {
+                canvasInteractionRef.current = true;
+                projectListPointerInsideRef.current = false;
                 return;
               }
+              if (canvasSelectionShortcutActiveRef.current) {
+                canvasInteractionRef.current = true;
+                projectListPointerInsideRef.current = false;
+                return;
+              }
+              canvasInteractionRef.current = false;
               if (manualPathDrag) {
                 return;
               }
@@ -22940,17 +23301,16 @@ export function App() {
                   <tr>
                     {renderChineseParamHeader("allowAutoExpandCanvas")}
                     <td>
-                      <label className="inline-checkbox-field">
-                        <input
-                          type="checkbox"
-                          checked={allowAutoExpandCanvas}
-                          onChange={(event) => {
-                            pushUndoSnapshot();
-                            setAllowAutoExpandCanvas(event.target.checked);
-                          }}
-                        />
-                        <span>{allowAutoExpandCanvas ? "允许" : "不允许"}</span>
-                      </label>
+                      <select
+                        value={allowAutoExpandCanvas ? "allow" : "deny"}
+                        onChange={(event) => {
+                          pushUndoSnapshot();
+                          setAllowAutoExpandCanvas(event.target.value === "allow");
+                        }}
+                      >
+                        <option value="allow">允许</option>
+                        <option value="deny">不允许</option>
+                      </select>
                     </td>
                   </tr>
                   <tr>
@@ -23712,7 +24072,7 @@ export function App() {
         )}
       </aside>
       {contextMenu && (
-        <div className="context-menu" style={contextMenuStyle(contextMenu)}>
+        <div className="context-menu" data-canvas-context-menu="true" style={contextMenuStyle(contextMenu)}>
           {undoStack.length > 0 && (
             <button onClick={() => runContextMenuAction(undoLastOperation)}>
               <Undo2 size={14} />
@@ -23741,6 +24101,12 @@ export function App() {
             <button onClick={() => runContextMenuAction(pasteSelection)}>
               <FileInput size={14} />
               粘贴
+            </button>
+          )}
+          {!contextMenuForEdge && activeLayerNodes.length > 1 && (
+            <button onClick={() => runContextMenuAction(autoAlignCanvasGraphics)}>
+              <AlignCenterHorizontal size={14} />
+              自动对齐
             </button>
           )}
           {!contextMenuForEdge && activeLayerNodes.length > 1 && (

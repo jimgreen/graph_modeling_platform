@@ -83,8 +83,10 @@ describe("graph inspector panel", () => {
     expect(source).toContain("allowAutoExpandCanvas,");
     expect(source).toContain("previous.allowAutoExpandCanvas !== next.allowAutoExpandCanvas");
     expect(modelPanelBlock).toContain("renderChineseParamHeader(\"allowAutoExpandCanvas\"");
-    expect(modelPanelBlock).toContain("checked={allowAutoExpandCanvas}");
-    expect(modelPanelBlock).toContain("setAllowAutoExpandCanvas(event.target.checked)");
+    expect(modelPanelBlock).toContain("value={allowAutoExpandCanvas ? \"allow\" : \"deny\"}");
+    expect(modelPanelBlock).toContain("setAllowAutoExpandCanvas(event.target.value === \"allow\")");
+    expect(modelPanelBlock).toContain("<option value=\"allow\">允许</option>");
+    expect(modelPanelBlock).toContain("<option value=\"deny\">不允许</option>");
     expect(autoExpandBlock).toContain("if (!allowAutoExpandCanvas)");
     expect(autoExpandBlock).toContain("return baseBounds;");
     expect(autoExpandBlock).toContain("modelGeometryInsideCanvasBounds(contentNodes, [...contentRoutes, ...edgeRoutesForGeometryBounds(contentEdges)], bounds, 0)");
@@ -971,13 +973,20 @@ describe("graph inspector panel", () => {
     expect(toolbarBlock).toContain("const rotateControlAvoidRectFromCanvas = (centerX: number, topY: number): RenderViewportBounds =>");
     expect(toolbarBlock).toContain("const selectedRotateControlAvoidRects: RenderViewportBounds[] = [];");
     expect(toolbarBlock).toContain("selectedRotateControlAvoidRects.push(");
-    expect(toolbarBlock).toContain("const nodeFloatingToolbarAvoidRects = selectedRotateControlAvoidRects;");
-    expect(toolbarBlock).toContain("const rotateAvoidTop = nodeFloatingToolbarAvoidRects.length > 0");
+    expect(toolbarBlock).toContain("const selectedFloatingToolbarAvoidRect = selectedFloatingToolbarBounds");
+    expect(toolbarBlock).toContain("const nodeFloatingToolbarAvoidRects = [");
+    expect(toolbarBlock).toContain("...(selectedFloatingToolbarAvoidRect ? [selectedFloatingToolbarAvoidRect] : [])");
+    expect(toolbarBlock).toContain("...selectedRotateControlAvoidRects");
+    expect(toolbarBlock).toContain("const rotateAvoidTop = selectedRotateControlAvoidRects.length > 0");
     expect(toolbarBlock).toContain("const nodeToolbarCandidates = [");
     expect(toolbarBlock).toContain("return placeFloatingToolbar(nodeToolbarCandidates, width, height, nodeFloatingToolbarAvoidRects);");
+    expect(toolbarBlock).not.toContain("y: floatingToolbarViewport.top + floatingToolbarPadding");
     expect(toolbarBlock).toContain("const nodeFloatingToolbarRect = nodeFloatingToolbar ? floatingToolbarBounds(nodeFloatingToolbar) : null;");
     expect(toolbarBlock).toContain("const avoidRects = nodeFloatingToolbarRect ? [nodeFloatingToolbarRect] : [];");
     expect(toolbarBlock).toContain("toolbarOverlapArea(rect, avoidRect)");
+    expect(toolbarBlock).toContain("const chosen = [...placements].sort(");
+    expect(toolbarBlock).toContain("first.overlap - second.overlap || first.drift - second.drift || first.index - second.index");
+    expect(toolbarBlock).not.toContain("placements.find((placement) => placement.overlap === 0)");
     expect(toolbarBlock).toContain("width = Math.round(nodeFloatingToolbarWidth * floatingToolbarScreenScale)");
     expect(toolbarBlock).toContain("height = Math.round(EDGE_FLOATING_TOOLBAR_HEIGHT * floatingToolbarScreenScale)");
     expect(toolbarBlock).toContain("const floatingToolbarWrapperStyle = (toolbar: FloatingToolbarPlacement)");
@@ -1178,7 +1187,11 @@ describe("graph inspector panel", () => {
     const finishBlock = source.slice(finishStart, finishEnd);
 
     expect(previewBlock).toContain("const anchor = snapSingleTerminalAnchorToNearestSide(currentNode, point);");
-    expect(finishBlock).toContain("const anchor = snapSingleTerminalAnchorToNearestSide(node, terminalPress.currentPoint);");
+    expect(finishBlock).toContain("const currentNode = current.nodeMap.get(terminalPress.nodeId);");
+    expect(finishBlock).toContain("const anchor = snapSingleTerminalAnchorToNearestSide(currentNode, terminalPress.currentPoint);");
+    expect(finishBlock).toContain("current.edgesByNodeId.get(terminalPress.nodeId)");
+    expect(finishBlock).toContain("nodes: current.nodes");
+    expect(finishBlock).not.toContain("graphStorePatchGraph(current, [nextNode], nextEdges)");
     expect(source).not.toContain("clampSingleTerminalAnchor");
   });
 
@@ -1810,6 +1823,9 @@ describe("graph inspector panel", () => {
     const scheduleStart = source.indexOf("const scheduleMovedEdgeOptimization", optimizeEnd);
     const scheduleEnd = source.indexOf("const commitFastMovedGraph", scheduleStart);
     const scheduleBlock = source.slice(scheduleStart, scheduleEnd);
+    const commitStart = source.indexOf("const commitFastMovedGraphPatches");
+    const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
     const finishStart = source.indexOf("const finishNodeDrag = () =>");
     const finishEnd = source.indexOf("const moveSelection", finishStart);
     const finishBlock = source.slice(finishStart, finishEnd);
@@ -1833,6 +1849,11 @@ describe("graph inspector panel", () => {
     expect(scheduleBlock).toContain("deferredMoveOptimizationCancelRef.current = null");
     expect(scheduleBlock).toContain("scheduleIdleWork");
     expect(scheduleBlock).toContain("graphStorePatchStillCurrent");
+    expect(commitBlock).toContain("const deferMovedRouteRepair = movedNodeIds.length > 0 && candidateEdges.length > 0");
+    expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(");
+    expect(commitBlock).toContain("previousNodes");
+    expect(commitBlock).toContain("originalPositions");
+    expect(commitBlock).toContain("originalRoutePoints");
     expect(finishBlock).toContain("finalizeMovedNodeEdgesFast");
     expect(finishBlock).toContain("commitFastMovedGraphPatches");
     expect(finishBlock).not.toContain("routePointsForMovedNodeBlockers");
@@ -2044,7 +2065,14 @@ describe("graph inspector panel", () => {
     expect(styles).toContain("pointer-events: all;");
     expect(source).toContain("onPointerDown={(event) => startCanvasResize(event, \"top-right\")}");
     expect(source).toContain("onPointerDown={(event) => startCanvasResize(event, \"bottom-left\")}");
-    expect(applyBlock).toContain("return viewBoxAfterCanvasBoundsChange(current, nextBounds, originShift, canvasBounds);");
+    expect(source).toContain("const clearCanvasBoundsScrollSyncPending = () => {");
+    expect(startResizeBlock).toContain("clearCanvasBoundsScrollSyncPending();");
+    expect(startResizeBlock).toContain("pendingCanvasResizeCommitAnchorRef.current = null;");
+    expect(resizeBlock).toContain("applyCanvasBounds(draftBounds, originShift, { preserveScrollAnchor: false });");
+    expect(applyBlock).toContain("const currentBoundsForApply = canvasBoundsRef.current;");
+    expect(applyBlock).toContain("if (!canvasBoundsChangeIsMeaningful(currentBoundsForApply, nextBounds, originShift))");
+    expect(applyBlock).toContain("canvasBoundsRef.current = nextBounds;");
+    expect(applyBlock).toContain("return viewBoxAfterCanvasBoundsChange(current, nextBounds, originShift, currentBoundsForApply);");
     expect(source).not.toContain("function scaledViewBoxSizeForBounds(");
     expect(applyBlock).not.toContain("scaledViewBoxSizeForBounds(current, canvasBounds, nextBounds)");
     expect(applyBlock).not.toContain("clampViewBoxDimensionsForZoom(nextViewBoxSize, nextBounds)");
@@ -2386,7 +2414,10 @@ describe("graph inspector panel", () => {
     expect(syncBlock).toContain("const { left: nextLeft, top: nextTop } = canvasFrameScrollTargetForViewBox({");
     expect(syncBlock).toContain("horizontalScrollbarsActive: canvasHorizontalScrollbarsActiveRef.current");
     expect(syncBlock).toContain("verticalScrollbarsActive: canvasVerticalScrollbarsActiveRef.current");
-    expect(syncBlock).toContain("setCanvasFrameScrollPosition(frame, nextLeft, nextTop);");
+    expect(syncBlock).toContain("canvasBoundsScrollSyncTarget({");
+    expect(syncBlock).toContain("anchorScrollLeft: boundsScrollAnchor.left");
+    expect(syncBlock).toContain("targetScrollLeft: nextLeft");
+    expect(syncBlock).toContain("setCanvasFrameScrollPosition(frame, targetLeft, targetTop);");
     expect(syncBlock).not.toContain("setCanvasFrameScrollPosition(frame, 0, 0);");
     expect(visibleUpdateBlock).toContain("const frameRect = frame.getBoundingClientRect();");
     expect(visibleUpdateBlock).toContain("const svgRect = svg.getBoundingClientRect();");
@@ -2415,8 +2446,11 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("const handleCanvasFrameScroll = () => {");
     expect(source).toContain("const canvasFrameProgrammaticScrollRef = useRef(false);");
+    expect(source).toContain("const canvasBoundsScrollSyncPendingRef = useRef(false);");
     expect(source).toContain("const setCanvasFrameScrollPosition = (frame: HTMLElement, left: number, top: number) => {");
-    expect(source).toContain("if (!canvasFrameProgrammaticScrollRef.current) {\n      canvasFrameUserScrollRef.current = true;\n    }");
+    expect(source).toContain("canvasFrameScrollIsUserDriven({");
+    expect(source).toContain("programmaticScroll: canvasFrameProgrammaticScrollRef.current");
+    expect(source).toContain("boundsScrollSyncPending: canvasBoundsScrollSyncPendingRef.current");
     expect(source).toContain("type WheelZoomAnchor = {");
     expect(source).toContain("function anchoredCanvasScrollPosition(");
     expect(source).toContain("const pendingWheelZoomAnchorRef = useRef<WheelZoomAnchor | null>(null);");
@@ -2927,7 +2961,10 @@ describe("graph inspector panel", () => {
     expect(deferBlock).toContain("const edgePatch = edgePatchFromCandidateEdges(previousCandidateEdges, committedCandidateEdges);");
     expect(deferBlock).toContain("graphStoreApplyPatch(current, {");
     expect(deferBlock).toContain("edgeUpserts: expectedPatch.edgeUpserts");
-    expect(deferBlock).toContain("scheduleDeferredMovedConnectionRepair(movedNodeIds, committedCandidateEdges, expectedPatch, commitCanvasBounds);");
+    expect(deferBlock).toContain("scheduleDeferredMovedConnectionRepair(");
+    expect(deferBlock).toContain("previousNodes");
+    expect(deferBlock).toContain("originalPositions");
+    expect(deferBlock).toContain("originalRoutePoints");
     expect(deferBlock).not.toContain("graphStorePatchNodes(current, expectedPatch.nodeUpdates)");
   });
 
@@ -3029,11 +3066,13 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const MAX_DEFERRED_MOVE_REPAIR_MOVED_NODES = 16;");
     expect(source).toContain("const MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES = 96;");
     expect(helperBlock).toContain("routeIntersectsSpecificNodes(route.points, edge, blockers)");
+    expect(scheduleBlock).toContain("movedNodeIds.length === 0");
     expect(scheduleBlock).toContain("movedNodeIds.length > MAX_DEFERRED_MOVE_REPAIR_MOVED_NODES");
     expect(scheduleBlock).toContain("candidateEdges.length > MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES");
     expect(scheduleBlock).toContain("const movedBlockerRoutePoints = routePointsForMovedNodeBlockers");
     expect(scheduleBlock).toContain("const stationaryBlockerRoutePoints = routePointsForMovedEdgesBlockedByStationaryNodes");
-    expect(scheduleBlock).toContain("const repairRoutePoints = { ...movedBlockerRoutePoints, ...stationaryBlockerRoutePoints };");
+    expect(scheduleBlock).toContain("const blockerRoutePoints = { ...movedBlockerRoutePoints, ...stationaryBlockerRoutePoints };");
+    expect(scheduleBlock).toContain("routePointsNearOriginalMovedNodes(");
     expect(scheduleBlock).toContain("const repairEdgeIds = new Set(Object.keys(repairRoutePoints));");
     expect(scheduleBlock).toContain("if (repairEdgeIds.size === 0)");
     expect(scheduleBlock).toContain("const repairCandidateEdges = latestCandidateEdges.filter((edge) => repairEdgeIds.has(edge.id));");
@@ -3588,7 +3627,9 @@ describe("graph inspector panel", () => {
     expect(commitBlock).toContain("markStoredRouteEdgesDirty(candidateEdgeIds);");
     expect(commitBlock).not.toContain("markStoredRouteEdgesDirty(shiftedNextEdges.map((edge) => edge.id));");
     expect(commitBlock).toContain("canvasBoundsForAutoExpandedGraphContent(effectiveCanvasBounds, movedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING)");
-    expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(movedNodeIds, committedCandidateEdges, expectedPatch, commitCanvasBounds);");
+    expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(");
+    expect(commitBlock).toContain("commitCanvasBounds");
+    expect(commitBlock).toContain("previousNodes");
     expect(commitBlock).toContain("expandCanvasToFitGraph(movedNodeUpdates, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);");
     expect(finishMoveBlock).toContain("nodes,\n      finalBounds");
     expect(finishDragBlock).toContain("nodes,\n      finalBounds");
@@ -3598,9 +3639,15 @@ describe("graph inspector panel", () => {
 
   test("preserves moved connection geometry before left or top canvas expansion shifts origin", async () => {
     const source = await readAppSource();
+    const leftTopShiftStart = source.indexOf("const leftTopCanvasOriginShiftForContent");
+    const leftTopShiftEnd = source.indexOf("const minimumCanvasBoundsForResizeEdge", leftTopShiftStart);
+    const leftTopShiftBlock = source.slice(leftTopShiftStart, leftTopShiftEnd);
     const helperStart = source.indexOf("const clampNodePositionToExpandableBounds");
     const helperEnd = source.indexOf("const scheduleCanvasVisibleViewBoxUpdate", helperStart);
     const helperBlock = source.slice(helperStart, helperEnd);
+    const boundaryStart = source.indexOf("const nodeMoveGeometryInsideCanvas =");
+    const boundaryEnd = source.indexOf("const nearestBoundarySafeDelta", boundaryStart);
+    const boundaryBlock = source.slice(boundaryStart, boundaryEnd);
     const adjustStart = source.indexOf("const adjustEdgesAfterNodeMove =");
     const adjustEnd = source.indexOf("const routePointsForMovedNodeBlockers", adjustStart);
     const adjustBlock = source.slice(adjustStart, adjustEnd);
@@ -3610,6 +3657,9 @@ describe("graph inspector panel", () => {
     expect(adjustBlock).toContain("position: clampNodePositionToExpandableBounds(");
     expect(adjustBlock).toContain("const boundedNextEdge = clampEdgeGeometryToExpandableBounds(nextEdge, bounds);");
     expect(adjustBlock).not.toContain("clampEdgeGeometryToBounds(nextEdge, canvasBounds)");
+    expect(leftTopShiftBlock).toContain("padding = 0");
+    expect(leftTopShiftBlock).toContain("[...contentRoutes, ...edgeRoutesForGeometryBounds(contentEdges)],\n      padding");
+    expect(boundaryBlock).toContain("leftTopCanvasOriginShiftForContent(movedNodes, [], affectedRoutes, MOVE_BOUNDARY_GUARD)");
   });
 
   test("moves multi-node drag previews through one SVG overlay transform without React state churn", async () => {
@@ -3649,7 +3699,7 @@ describe("graph inspector panel", () => {
     expect(multiMoveBlock).toContain("previewDelta,");
     expect(multiMoveBlock).toContain("updateMultiNodeDragOverlayTransform(previewDelta)");
     expect(multiMoveBlock).not.toContain("setDragging");
-    expect(commitBlock).toContain("const deferMovedRouteRepair = movedNodeIds.length > 1");
+    expect(commitBlock).toContain("const deferMovedRouteRepair = movedNodeIds.length > 0 && candidateEdges.length > 0");
     expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(");
     expect(commitBlock).toContain("markGraphDirtyForInteractiveCommit()");
     expect(finishBlock).toContain("const activeDragging = draggingRef.current;");
@@ -3698,6 +3748,39 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const dragOverlayEdgeIdSet = useMemo");
     expect(renderBlock).toContain("(multiNodeDragging && dragOverlayEdgeIdSet.has(edge.id))");
     expect(renderBlock).not.toContain("(multiNodeDragging && dragAffectedEdgeIdSet.has(edge.id))");
+  });
+
+  test("keeps canvas shortcuts active after dropping dragged graphics outside the canvas bounds", async () => {
+    const source = await readAppSource();
+    const finishMoveStart = source.indexOf("const finishDraggingMove");
+    const finishMoveEnd = source.indexOf("const finishNodeDrag", finishMoveStart);
+    const finishMoveBlock = source.slice(finishMoveStart, finishMoveEnd);
+    const finishDragStart = source.indexOf("const finishNodeDrag = () =>");
+    const finishDragEnd = source.indexOf("const finishTransformDrag", finishDragStart);
+    const finishDragBlock = source.slice(finishDragStart, finishDragEnd);
+    const canvasSvgStart = source.indexOf("viewBox={`0 0 ${canvasRenderBounds.width} ${canvasRenderBounds.height}`");
+    const pointerLeaveStart = source.indexOf("onPointerLeave={() => {", canvasSvgStart);
+    const pointerLeaveEnd = source.indexOf("onPointerCancel={() => {", pointerLeaveStart);
+    const pointerLeaveBlock = source.slice(pointerLeaveStart, pointerLeaveEnd);
+    const finishMoveCommitIndex = finishMoveBlock.indexOf("commitFastMovedGraphPatches(");
+    const finishDragCommitIndex = finishDragBlock.indexOf("commitFastMovedGraphPatches(");
+
+    expect(source).toContain("const canvasSelectionShortcutActiveRef = useRef(false);");
+    expect(source).toContain("canvasSelectionShortcutActiveRef.current = activeSelectedNodeIds.length > 0 || activeCanvasSelection.edgeIds.length > 0;");
+    expect(source).toContain("canvasSelectionShortcutActiveRef.current = snapshot.nodeIds.length > 0 || snapshot.edgeIds.length > 0;");
+    expect(finishMoveBlock).toContain("canvasInteractionRef.current = true;");
+    expect(finishMoveBlock).toContain("projectListPointerInsideRef.current = false;");
+    expect(finishMoveCommitIndex).toBeGreaterThan(-1);
+    expect(finishMoveBlock.indexOf("canvasInteractionRef.current = true;", finishMoveCommitIndex)).toBeGreaterThan(finishMoveCommitIndex);
+    expect(finishMoveBlock.indexOf("projectListPointerInsideRef.current = false;", finishMoveCommitIndex)).toBeGreaterThan(finishMoveCommitIndex);
+    expect(finishDragBlock).toContain("canvasInteractionRef.current = true;");
+    expect(finishDragBlock).toContain("projectListPointerInsideRef.current = false;");
+    expect(finishDragCommitIndex).toBeGreaterThan(-1);
+    expect(finishDragBlock.indexOf("canvasInteractionRef.current = true;", finishDragCommitIndex)).toBeGreaterThan(finishDragCommitIndex);
+    expect(finishDragBlock.indexOf("projectListPointerInsideRef.current = false;", finishDragCommitIndex)).toBeGreaterThan(finishDragCommitIndex);
+    expect(pointerLeaveBlock).toContain("if (draggingRef.current) {");
+    expect(pointerLeaveBlock).toContain("if (canvasSelectionShortcutActiveRef.current) {");
+    expect(pointerLeaveBlock.indexOf("canvasInteractionRef.current = false;")).toBeGreaterThan(pointerLeaveBlock.indexOf("if (canvasSelectionShortcutActiveRef.current) {"));
   });
 
   test("keeps rotated bus graphics from inflating multi-node drag preview bounds", async () => {
@@ -4935,6 +5018,28 @@ describe("graph inspector panel", () => {
     expect(contextBlock).not.toContain("disabled=");
   });
 
+  test("auto-hides blank canvas context menus when users leave or move the canvas", async () => {
+    const source = await readAppSource();
+    const pointerCloseStart = source.indexOf("const closeContextMenus = (event: globalThis.PointerEvent) =>");
+    const pointerCloseEnd = source.indexOf("useEffect(() => {\n    return () => {", pointerCloseStart);
+    const closeBlock = source.slice(pointerCloseStart, pointerCloseEnd);
+    const contextStart = source.indexOf("{contextMenu && (");
+    const contextEnd = source.indexOf("{projectMenu && (", contextStart);
+    const contextBlock = source.slice(contextStart, contextEnd);
+
+    expect(source).toContain("const CONTEXT_MENU_AUTO_HIDE_MARGIN = 28;");
+    expect(contextBlock).toContain("data-canvas-context-menu=\"true\"");
+    expect(closeBlock).toContain("if (!contextMenu || contextMenu.target !== \"blank\")");
+    expect(closeBlock).toContain("const closeBlankContextMenuIfPointerLeaves = (event: globalThis.PointerEvent) =>");
+    expect(closeBlock).toContain("target?.closest(\".context-menu\")");
+    expect(closeBlock).toContain("document.querySelector<HTMLElement>(\"[data-canvas-context-menu='true']\")");
+    expect(closeBlock).toContain("CONTEXT_MENU_AUTO_HIDE_MARGIN");
+    expect(closeBlock).toContain("window.addEventListener(\"pointermove\", closeBlankContextMenuIfPointerLeaves)");
+    expect(closeBlock).toContain("window.addEventListener(\"wheel\", closeBlankContextMenuOnCanvasMotion, { capture: true })");
+    expect(closeBlock).toContain("event.key === \"Escape\"");
+    expect(closeBlock).toContain("window.removeEventListener(\"pointermove\", closeBlankContextMenuIfPointerLeaves)");
+  });
+
   test("adds canvas context-menu action for auto-spreading overlapping graphics", async () => {
     const source = await readAppSource();
     const contextStart = source.indexOf("{contextMenu && (");
@@ -4945,6 +5050,23 @@ describe("graph inspector panel", () => {
     expect(source).toContain("autoSpreadNodeLayoutUnits");
     expect(contextBlock).toContain("自动散开");
     expect(contextBlock).toContain("runContextMenuAction(autoSpreadCanvasGraphics)");
+  });
+
+  test("adds canvas context-menu action for threshold-based auto-align", async () => {
+    const source = await readAppSource();
+    const contextStart = source.indexOf("{contextMenu && (");
+    const contextEnd = source.indexOf("{projectMenu && (", contextStart);
+    const contextBlock = source.slice(contextStart, contextEnd);
+
+    expect(source).toContain("autoAlignCanvasGraphics");
+    expect(source).toContain("autoAlignNodeLayoutUnits");
+    expect(source).toContain("AUTO_ALIGN_DEFAULT_THRESHOLD_PX");
+    expect(source).toContain("AUTO_ALIGN_MIN_THRESHOLD_PX");
+    expect(source).toContain("AUTO_ALIGN_MAX_THRESHOLD_PX");
+    expect(source).toContain("window.prompt");
+    expect(source).toContain("Math.max(AUTO_ALIGN_MIN_THRESHOLD_PX, Math.min(AUTO_ALIGN_MAX_THRESHOLD_PX");
+    expect(contextBlock).toContain("自动对齐");
+    expect(contextBlock).toContain("runContextMenuAction(autoAlignCanvasGraphics)");
   });
 
   test("uses explicit model scheme and blank project-list context-menu actions", async () => {
