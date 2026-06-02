@@ -211,7 +211,7 @@ export type ViewBox = CanvasBounds & {
 };
 
 export type CanvasResizeDragMetrics = {
-  edge: "right" | "bottom" | "corner";
+  edge: "right" | "bottom" | "corner" | "left" | "top" | "top-left" | "top-right" | "bottom-left";
   startClientX: number;
   startClientY: number;
   startWidth: number;
@@ -432,6 +432,7 @@ export type ProjectFile = {
   activeLayerId?: string;
   canvasWidth?: number;
   canvasHeight?: number;
+  allowAutoExpandCanvas?: boolean;
   canvasBackgroundColor?: string;
   canvasBackgroundImage?: string;
   canvasBackgroundImageAssetId?: string;
@@ -4861,17 +4862,68 @@ export function canvasResizeBoundsFromPointerDrag(
   const safeUnitsPerCssY = Number.isFinite(drag.unitsPerCssY) && drag.unitsPerCssY > 0 ? drag.unitsPerCssY : 1;
   const deltaX = (pointer.clientX - drag.startClientX) * safeUnitsPerCssX;
   const deltaY = (pointer.clientY - drag.startClientY) * safeUnitsPerCssY;
+  const resizesRight = drag.edge === "right" || drag.edge === "corner" || drag.edge === "top-right";
+  const resizesBottom = drag.edge === "bottom" || drag.edge === "corner" || drag.edge === "bottom-left";
+  const resizesLeft = drag.edge === "left" || drag.edge === "top-left" || drag.edge === "bottom-left";
+  const resizesTop = drag.edge === "top" || drag.edge === "top-left" || drag.edge === "top-right";
   return {
     width: Math.round(
-      drag.edge === "right" || drag.edge === "corner"
+      resizesRight
         ? Math.max(minBounds.width, drag.startWidth + deltaX)
+        : resizesLeft
+          ? Math.max(minBounds.width, drag.startWidth - deltaX)
         : drag.startWidth
     ),
     height: Math.round(
-      drag.edge === "bottom" || drag.edge === "corner"
+      resizesBottom
         ? Math.max(minBounds.height, drag.startHeight + deltaY)
+        : resizesTop
+          ? Math.max(minBounds.height, drag.startHeight - deltaY)
         : drag.startHeight
     )
+  };
+}
+
+export function canvasResizeMinimumBoundsForGeometry(
+  edge: CanvasResizeDragMetrics["edge"],
+  currentBounds: CanvasBounds,
+  geometryBounds: GeometryBounds | null,
+  absoluteMinBounds: CanvasBounds
+): CanvasBounds {
+  const resizesRight = edge === "right" || edge === "corner" || edge === "top-right";
+  const resizesBottom = edge === "bottom" || edge === "corner" || edge === "bottom-left";
+  const resizesLeft = edge === "left" || edge === "top-left" || edge === "bottom-left";
+  const resizesTop = edge === "top" || edge === "top-left" || edge === "top-right";
+  const minWidth = Math.max(0, Math.ceil(absoluteMinBounds.width));
+  const minHeight = Math.max(0, Math.ceil(absoluteMinBounds.height));
+  if (!geometryBounds) {
+    return { width: minWidth, height: minHeight };
+  }
+  return {
+    width: resizesRight
+      ? Math.max(minWidth, Math.ceil(geometryBounds.right))
+      : resizesLeft
+        ? Math.max(minWidth, Math.ceil(currentBounds.width - geometryBounds.left))
+        : minWidth,
+    height: resizesBottom
+      ? Math.max(minHeight, Math.ceil(geometryBounds.bottom))
+      : resizesTop
+        ? Math.max(minHeight, Math.ceil(currentBounds.height - geometryBounds.top))
+        : minHeight
+  };
+}
+
+export function canvasResizeOriginShiftFromPointerDrag(
+  drag: CanvasResizeDragMetrics,
+  pointer: Pick<globalThis.PointerEvent, "clientX" | "clientY">,
+  minBounds: CanvasBounds
+): Point {
+  const bounds = canvasResizeBoundsFromPointerDrag(drag, pointer, minBounds);
+  const shiftsLeft = drag.edge === "left" || drag.edge === "top-left" || drag.edge === "bottom-left";
+  const shiftsTop = drag.edge === "top" || drag.edge === "top-left" || drag.edge === "top-right";
+  return {
+    x: shiftsLeft ? Math.round(bounds.width - drag.startWidth) : 0,
+    y: shiftsTop ? Math.round(bounds.height - drag.startHeight) : 0
   };
 }
 

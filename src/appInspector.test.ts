@@ -63,6 +63,35 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const MAX_CANVAS_HEIGHT = 50000;");
   });
 
+  test("adds a per-model switch that gates automatic canvas expansion", async () => {
+    const source = await readAppSource();
+    const model = await readModelSource();
+    const modelPanelStart = source.indexOf("{inspectorTab === \"model\" && currentModelRecord");
+    const modelPanelEnd = source.indexOf(") : inspectorTab === \"graph\"", modelPanelStart);
+    const modelPanelBlock = source.slice(modelPanelStart, modelPanelEnd);
+    const autoExpandStart = source.indexOf("const autoCanvasExpansionBlockedMessage");
+    const autoExpandEnd = source.indexOf("const hasCanvasOriginShift", autoExpandStart);
+    const autoExpandBlock = source.slice(autoExpandStart, autoExpandEnd);
+    const moveBoundsStart = source.indexOf("const canvasBoundsForMoveDelta");
+    const moveBoundsEnd = source.indexOf("const computeNodeDragDelta", moveBoundsStart);
+    const moveBoundsBlock = source.slice(moveBoundsStart, moveBoundsEnd);
+
+    expect(model).toContain("allowAutoExpandCanvas?: boolean;");
+    expect(source).toContain("allowAutoExpandCanvas: boolean;");
+    expect(source).toContain("const [allowAutoExpandCanvas, setAllowAutoExpandCanvas] = useState(() => initialDraft?.allowAutoExpandCanvas ?? true);");
+    expect(source).toContain("setAllowAutoExpandCanvas(project.project.allowAutoExpandCanvas ?? true)");
+    expect(source).toContain("allowAutoExpandCanvas,");
+    expect(source).toContain("previous.allowAutoExpandCanvas !== next.allowAutoExpandCanvas");
+    expect(modelPanelBlock).toContain("renderChineseParamHeader(\"allowAutoExpandCanvas\"");
+    expect(modelPanelBlock).toContain("checked={allowAutoExpandCanvas}");
+    expect(modelPanelBlock).toContain("setAllowAutoExpandCanvas(event.target.checked)");
+    expect(autoExpandBlock).toContain("if (!allowAutoExpandCanvas)");
+    expect(autoExpandBlock).toContain("return baseBounds;");
+    expect(autoExpandBlock).toContain("modelGeometryInsideCanvasBounds(contentNodes, [...contentRoutes, ...edgeRoutesForGeometryBounds(contentEdges)], bounds, 0)");
+    expect(moveBoundsBlock).toContain("if (!allowAutoExpandCanvas)");
+    expect(moveBoundsBlock).toContain("return canvasBounds;");
+  });
+
   test("adds a searchable component library for large symbol sets", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
@@ -254,6 +283,36 @@ describe("graph inspector panel", () => {
     expect(libraryPanelBlock).not.toContain("ref={setLibraryComponentListRef(flyoutListKey)}");
     expect(styles).toContain("top: var(--library-flyout-top, 0px);");
     expect(styles).toContain("left: var(--library-flyout-left, 0px);");
+  });
+
+  test("keeps node drag previews visible outside the canvas boundary while preserving bounded commit delta", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const dragDeltaStart = source.indexOf("const draggingCommitDelta = dragging?.currentDelta;");
+    const dragDeltaEnd = source.indexOf("const dragAffectedEdgeIdSet", dragDeltaStart);
+    const dragDeltaBlock = source.slice(dragDeltaStart, dragDeltaEnd);
+    const applyMoveStart = source.indexOf("const applyNodeDragMove = (point: Point");
+    const applyMoveEnd = source.indexOf("const scheduleNodeDragMove", applyMoveStart);
+    const applyMoveBlock = source.slice(applyMoveStart, applyMoveEnd);
+    const canvasStart = source.indexOf("className={`diagram-canvas");
+    const leaveStart = source.indexOf("onPointerLeave={() => {", canvasStart);
+    const leaveEnd = source.indexOf("onPointerCancel={() => {", leaveStart);
+    const leaveBlock = source.slice(leaveStart, leaveEnd);
+    const diagramCanvasBlock = cssRuleBlock(styles, ".diagram-canvas");
+
+    expect(source).toContain("previewDelta?: Point;");
+    expect(source).toContain("const computeNodeDragPreviewDelta = (");
+    expect(dragDeltaBlock).toContain("const draggingCommitDelta = dragging?.currentDelta;");
+    expect(dragDeltaBlock).toContain("const draggingDelta = dragging?.previewDelta ?? draggingCommitDelta;");
+    expect(applyMoveBlock).toContain("const previewDelta = computeNodeDragPreviewDelta(currentDrag, point, ctrlKey, shiftKey);");
+    expect(applyMoveBlock).toContain("currentDrag.previewDelta?.x === previewDelta.x");
+    expect(applyMoveBlock).toContain("previewDelta,");
+    expect(applyMoveBlock).toContain("updateMultiNodeDragOverlayTransform(previewDelta);");
+    expect(source).toContain("const renderPosition = draggingDelta && originalDragPosition");
+    expect(source).not.toContain("const renderPosition = draggingDelta && originalDragPosition\n                ? clampNodeToCanvas");
+    expect(leaveBlock).toContain("if (draggingRef.current) {");
+    expect(leaveBlock).toContain("return;");
+    expect(diagramCanvasBlock).toContain("overflow: visible;");
   });
 
   test("uses an explicit hide policy for right-side component library flyouts", async () => {
@@ -494,7 +553,7 @@ describe("graph inspector panel", () => {
     const templateDropStart = source.indexOf("const dropGraphTemplate = ");
     const templateDropEnd = source.indexOf("function finishMarqueeSelectionFromPoints", templateDropStart);
     const templateDropBlock = source.slice(templateDropStart, templateDropEnd);
-    const dragDeltaStart = source.indexOf("const computeNodeDragDelta = ");
+    const dragDeltaStart = source.indexOf("const computeNodeDragPreviewDelta = ");
     const dragDeltaEnd = source.indexOf("const applyNodeDragMove", dragDeltaStart);
     const dragDeltaBlock = source.slice(dragDeltaStart, dragDeltaEnd);
     const keyboardDeltaStart = source.indexOf("const applyKeyboardMoveDelta = ");
@@ -1855,7 +1914,17 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const startCanvasResize");
     expect(source).toContain("minimumCanvasBoundsForContent");
     expect(source).toContain("canvas-resize-handle-right");
+    expect(source).toContain("canvas-resize-handle-left");
+    expect(source).toContain("canvas-resize-handle-top");
+    expect(source).toContain("canvas-resize-handle-top-left");
+    expect(source).toContain("canvas-resize-handle-top-right");
+    expect(source).toContain("canvas-resize-handle-bottom-left");
     expect(styles).toContain(".canvas-resize-handle-right");
+    expect(styles).toContain(".canvas-resize-handle-left");
+    expect(styles).toContain(".canvas-resize-handle-top");
+    expect(styles).toContain(".canvas-resize-handle-top-left");
+    expect(styles).toContain(".canvas-resize-handle-top-right");
+    expect(styles).toContain(".canvas-resize-handle-bottom-left");
     expect(styles).toContain(".canvas-resize-handle-corner");
     expect(pasteBlock).toContain("pastedCanvasBounds");
     expect(pasteBlock).toContain("applyCanvasBounds(pastedCanvasBounds, pasteOriginShift)");
@@ -1871,6 +1940,7 @@ describe("graph inspector panel", () => {
 
   test("keeps canvas edge resizing anchored instead of recentering or changing zoom scale", async () => {
     const source = await readAppSource();
+    const styles = await readStyles();
     const resizeStart = source.indexOf("useEffect(() => {\n    if (!canvasResizeDrag)");
     const resizeEnd = source.indexOf("useEffect(() => {\n    if (!statusbarResize)", resizeStart);
     const resizeBlock = source.slice(resizeStart, resizeEnd);
@@ -1898,19 +1968,32 @@ describe("graph inspector panel", () => {
     expect(startResizeBlock).toContain("unitsPerCssX: svgRect.width > 0 ? canvasBounds.width / svgRect.width : 1");
     expect(startResizeBlock).toContain("unitsPerCssY: svgRect.height > 0 ? canvasBounds.height / svgRect.height : 1");
     expect(startResizeBlock).toContain("const startCanvasResizeFromRightOverlay = (event: PointerEvent<Element>) =>");
+    expect(startResizeBlock).toContain("const startCanvasResizeFromLeftOverlay = (event: PointerEvent<Element>) =>");
+    expect(startResizeBlock).toContain("const startCanvasResizeFromTopOverlay = (event: PointerEvent<Element>) =>");
     expect(startResizeBlock).toContain("const startCanvasResizeFromBottomOverlay = (event: PointerEvent<Element>) =>");
     expect(startResizeBlock).toContain("Math.abs(event.clientX - svgRect.right) <= rightEdgeHotspot");
     expect(startResizeBlock).toContain("startCanvasResize(event, \"right\");");
+    expect(startResizeBlock).toContain("Math.abs(event.clientX - svgRect.left) <= leftEdgeHotspot");
+    expect(startResizeBlock).toContain("startCanvasResize(event, \"left\");");
+    expect(startResizeBlock).toContain("Math.abs(event.clientY - svgRect.top) <= topEdgeHotspot");
+    expect(startResizeBlock).toContain("startCanvasResize(event, \"top\");");
     expect(startResizeBlock).toContain("Math.abs(event.clientY - svgRect.bottom) <= bottomEdgeHotspot");
     expect(startResizeBlock).toContain("startCanvasResize(event, \"bottom\");");
+    expect(scrollSurfaceBlock).toContain("if (startCanvasResizeFromTopOverlay(event))");
+    expect(scrollSurfaceBlock).toContain("if (startCanvasResizeFromLeftOverlay(event))");
+    expect(scrollSurfaceBlock).toContain("if (startCanvasResizeFromRightOverlay(event))");
     expect(scrollSurfaceBlock).toContain("if (startCanvasResizeFromBottomOverlay(event))");
     expect(scrollSurfaceBlock.indexOf("startCanvasResizeFromBottomOverlay(event)")).toBeLessThan(
       scrollSurfaceBlock.indexOf("startCanvasPanning(event);")
     );
     expect(edgeTriggerBlock).toContain("onPointerDown={(event) => {");
+    expect(edgeTriggerBlock).toContain("side === \"left\" && startCanvasResizeFromLeftOverlay(event)");
     expect(edgeTriggerBlock).toContain("side === \"right\" && startCanvasResizeFromRightOverlay(event)");
-    expect(source).toContain("const canvasRenderBounds = canvasResizeDraft ?? canvasBounds;");
-    expect(source).toContain("const canvasRenderViewBox = useMemo<CanvasViewBox>(() =>");
+    expect(source).toContain("const canvasRenderBounds = canvasBounds;");
+    expect(source).toContain("const canvasRenderViewBox = viewBox;");
+    expect(source).toContain("const canvasResizePreviewRect = canvasResizeDrag && canvasResizeDraft");
+    expect(source).toContain("canvasResizePreviewRectForDraft(canvasResizeDrag, canvasResizeDraft)");
+    expect(source).toContain("export function canvasRenderViewBoxAfterBoundsDraft(");
     expect(source).toContain("const canvasScrollScale = canvasScrollScaleFromViewBox(canvasRenderViewBox, canvasRenderBounds);");
     expect(source).toContain("const canvasDisplayWidth = Math.max(1, Math.round(canvasRenderBounds.width * canvasScrollScale.x));");
     expect(source).toContain("const canvasDisplayHeight = Math.max(1, Math.round(canvasRenderBounds.height * canvasScrollScale.y));");
@@ -1925,18 +2008,50 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const canvasResizeKeepsVerticalScrollRange = canvasResizeKeepsScrollRange(canvasResizeDrag, \"y\");");
     expect(source).toContain("Math.max(computedCanvasScrollSurfaceHeight, canvasResizeDrag.startScrollSurfaceHeight)");
     expect(source).toContain("const canvasNoScrollOffsetForCanvasResizeAnchor = (drag: NonNullable<CanvasResizeState>, nextBounds: CanvasBounds): Point =>");
+    expect(source).toContain("const nextViewBox = canvasRenderViewBoxAfterBoundsDraft(currentViewBox, currentBounds, nextBounds);");
+    expect(source).toContain("const desiredLeft = canvasResizeEdgeAnchorsStart(drag.edge, \"x\")");
+    expect(source).toContain("const desiredTop = canvasResizeEdgeAnchorsStart(drag.edge, \"y\")");
+    expect(source).toContain("function canvasResizeOriginShiftForBounds(edge: CanvasResizeEdge, startBounds: CanvasBounds, nextBounds: CanvasBounds): Point");
+    expect(resizeBlock).toContain("const resizeOriginShift = canvasResizeOriginShiftForBounds(");
+    expect(resizeBlock).toContain("nodes.map((node) => translateNodeBy(node, originShift))");
+    expect(resizeBlock).toContain("edges.map((edge) => translateEdgeBy(edge, originShift))");
+    expect(resizeBlock).toContain("shiftCachedRoutesForCanvasOrigin(originShift);");
     expect(source).toContain("const nextCanvasNoScrollOffset = canvasNoScrollOffsetForCanvasResizeAnchor(canvasResizeDrag, draftBounds);");
     expect(source).toContain("setCanvasNoScrollOffset((current) =>");
     expect(source).toContain("viewBox={`0 0 ${canvasRenderBounds.width} ${canvasRenderBounds.height}`}");
     expect(source).toContain("<rect className=\"canvas-boundary\" x=\"0\" y=\"0\" width={canvasRenderBounds.width} height={canvasRenderBounds.height} />");
     expect(source).toContain("x={canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE / 2}");
     expect(source).toContain("y={canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE / 2}");
+    expect(source).toContain("className=\"canvas-resize-preview\"");
+    expect(source).toContain("const canvasResizeHotzoneWidth = Math.round(clampNumber(CANVAS_RESIZE_HANDLE_SIZE * canvasScrollScale.x, 10, 28));");
+    expect(source).toContain("const canvasResizeHotzoneHeight = Math.round(clampNumber(CANVAS_RESIZE_HANDLE_SIZE * canvasScrollScale.y, 10, 28));");
+    expect(source).toContain("const canvasResizeHotzoneStyle = {");
+    expect(source).toContain("\"--canvas-resize-hotzone-x\": `${canvasResizeHotzoneWidth}px`");
+    expect(source).toContain("\"--canvas-resize-hotzone-y\": `${canvasResizeHotzoneHeight}px`");
+    expect(source).toContain("<div className=\"canvas-resize-hotzones\" style={canvasResizeHotzoneStyle} aria-hidden=\"true\">");
+    expect(source).toContain("className=\"canvas-resize-hotzone canvas-resize-hotzone-left\"");
+    expect(source).toContain("className=\"canvas-resize-hotzone canvas-resize-hotzone-top\"");
+    expect(source).toContain("className=\"canvas-resize-hotzone canvas-resize-hotzone-right\"");
+    expect(source).toContain("className=\"canvas-resize-hotzone canvas-resize-hotzone-bottom\"");
+    expect(source).toContain("className=\"canvas-resize-hotzone canvas-resize-hotzone-top-left\"");
+    expect(source).toContain("className=\"canvas-resize-hotzone canvas-resize-hotzone-top-right\"");
+    expect(source).toContain("className=\"canvas-resize-hotzone canvas-resize-hotzone-bottom-left\"");
+    expect(source).toContain("className=\"canvas-resize-hotzone canvas-resize-hotzone-bottom-right\"");
+    expect(styles).toContain(".canvas-resize-hotzones");
+    expect(styles).toContain("z-index: 46;");
+    expect(styles).toContain("pointer-events: none;");
+    expect(styles).toContain(".canvas-resize-hotzone");
+    expect(styles).toContain("pointer-events: all;");
+    expect(source).toContain("onPointerDown={(event) => startCanvasResize(event, \"top-right\")}");
+    expect(source).toContain("onPointerDown={(event) => startCanvasResize(event, \"bottom-left\")}");
     expect(applyBlock).toContain("return viewBoxAfterCanvasBoundsChange(current, nextBounds, originShift, canvasBounds);");
+    expect(source).not.toContain("function scaledViewBoxSizeForBounds(");
     expect(applyBlock).not.toContain("scaledViewBoxSizeForBounds(current, canvasBounds, nextBounds)");
     expect(applyBlock).not.toContain("clampViewBoxDimensionsForZoom(nextViewBoxSize, nextBounds)");
     expect(source).toContain("import { createPortal, flushSync } from \"react-dom\";");
     expect(resizeMoveBlock).toContain("flushSync(() => setCanvasResizeDraft(clampedBounds));");
-    expect(resizeMoveBlock).toContain("canvasResizeDrag.startScrollTop");
+    expect(resizeMoveBlock).not.toContain("setCanvasFrameScrollPosition");
+    expect(resizeMoveBlock).not.toContain("canvasResizeDrag.startScrollTop");
     expect(resizeMoveBlock).not.toContain("requestAnimationFrame");
     expect(resizeMoveBlock).not.toContain("commitCanvasResizeBounds");
     expect(resizeBlock).not.toContain("const flushCanvasResizeDraft");
@@ -1948,24 +2063,23 @@ describe("graph inspector panel", () => {
     const resizeStart = source.indexOf("useEffect(() => {\n    if (!canvasResizeDrag)");
     const resizeEnd = source.indexOf("useEffect(() => {\n    if (!statusbarResize)", resizeStart);
     const resizeBlock = source.slice(resizeStart, resizeEnd);
-    const syncStart = source.indexOf("const syncCanvasFrameScrollToResizeAnchorNow =");
-    const syncEnd = source.indexOf("const syncCanvasFrameScrollToResizeAnchor =", syncStart);
-    const syncBlock = source.slice(syncStart, syncEnd);
+    const resizeMoveStart = resizeBlock.indexOf("const handlePointerMove");
+    const resizeMoveEnd = resizeBlock.indexOf("const handlePointerUp", resizeMoveStart);
+    const resizeMoveBlock = resizeBlock.slice(resizeMoveStart, resizeMoveEnd);
 
-    expect(source).toContain("const syncCanvasFrameScrollToResizeAnchorNow = (drag: NonNullable<CanvasResizeState>, pointer: Pick<globalThis.PointerEvent, \"clientX\" | \"clientY\">) =>");
-    expect(source).toContain("const syncCanvasFrameScrollToResizeAnchor = (drag: NonNullable<CanvasResizeState>, pointer: Pick<globalThis.PointerEvent, \"clientX\" | \"clientY\">) =>");
-    expect(source).toContain("window.requestAnimationFrame(() => syncCanvasFrameScrollToResizeAnchorNow(drag, pointer));");
-    expect(syncBlock).toContain("canvasResizeEdgeAnchorsAxis(drag.edge, \"y\")");
-    expect(syncBlock).toContain("const desiredBottomY = clampNumber(pointer.clientY - frameRect.top, CANVAS_FRAME_INSET, frame.clientHeight - CANVAS_FRAME_INSET);");
-    expect(syncBlock).toContain("clampNumber(frame.scrollTop + svgRect.bottom - frameRect.top - desiredBottomY, 0, maxTop)");
-    expect(syncBlock).toContain("setCanvasFrameScrollPosition(frame, nextLeft, nextTop);");
-    expect(syncBlock).toContain("const scrolledViewBox = currentViewBoxFromCanvasFrameScroll();");
-    expect(syncBlock).toContain("skipNextCanvasScrollSyncRef.current = true;");
+    expect(source).not.toContain("const syncCanvasFrameScrollToResizeAnchorNow =");
+    expect(source).not.toContain("const syncCanvasFrameScrollToResizeAnchor =");
+    expect(source).toContain("const canvasResizePreviewRect = canvasResizeDrag && canvasResizeDraft");
+    expect(source).toContain("className=\"canvas-resize-preview\"");
+    expect(resizeMoveBlock).toContain("canvasResizeDraftRef.current = clampedBounds;");
+    expect(resizeMoveBlock).toContain("flushSync(() => setCanvasResizeDraft(clampedBounds));");
+    expect(resizeMoveBlock).not.toContain("setCanvasFrameScrollPosition");
+    expect(resizeMoveBlock).not.toContain("setViewBox");
+    expect(resizeMoveBlock).not.toContain("applyCanvasBounds");
     expect(resizeBlock).toContain("const handlePointerUp = (event: globalThis.PointerEvent) =>");
-    expect(resizeBlock).toContain("skipNextCanvasScrollSyncRef.current = true;");
     expect(resizeBlock).toContain("flushSync(() => {");
     expect(resizeBlock).toContain("setCanvasResizeDrag(null);");
-    expect(resizeBlock).toContain("syncCanvasFrameScrollToResizeAnchorNow(canvasResizeDrag, event);");
+    expect(resizeBlock).toContain("commitCanvasResizeBounds(draftBounds, resizeOriginShift);");
   });
 
   test("keeps the untouched canvas resize axis from jumping when scrollbar state changes", async () => {
@@ -1977,11 +2091,8 @@ describe("graph inspector panel", () => {
     const keepRangeEnd = source.indexOf("function clampCanvasNoScrollOffset", keepRangeStart);
     const keepRangeBlock = source.slice(keepRangeStart, keepRangeEnd);
     const noScrollStart = source.indexOf("const canvasNoScrollOffsetForCanvasResizeAnchor =");
-    const noScrollEnd = source.indexOf("const syncCanvasFrameScrollToResizeAnchor =", noScrollStart);
+    const noScrollEnd = source.indexOf("const setCanvasFrameScrollPosition =", noScrollStart);
     const noScrollBlock = source.slice(noScrollStart, noScrollEnd);
-    const syncStart = source.indexOf("const syncCanvasFrameScrollToResizeAnchorNow =");
-    const syncEnd = source.indexOf("const syncCanvasFrameScrollToResizeAnchor =", syncStart);
-    const syncBlock = source.slice(syncStart, syncEnd);
 
     expect(offsetBlock).toContain("if (!drag) {");
     expect(offsetBlock).toContain("return Math.round(axis === \"x\" ? drag.startDisplayOffsetX : drag.startDisplayOffsetY);");
@@ -1989,19 +2100,15 @@ describe("graph inspector panel", () => {
     expect(keepRangeBlock).toContain("if (!drag) {");
     expect(keepRangeBlock).toContain("return axis === \"x\" ? drag.startHorizontalScrollbarsActive : drag.startVerticalScrollbarsActive;");
     expect(keepRangeBlock).not.toContain("canvasResizeEdgeAnchorsAxis(drag.edge, axis)");
-    expect(noScrollBlock).toContain("drag.startDisplayOffsetX - nextBaseDisplayOffsetX");
-    expect(noScrollBlock).toContain("drag.startDisplayOffsetY - nextBaseDisplayOffsetY");
+    expect(noScrollBlock).toContain("const desiredLeft = canvasResizeEdgeAnchorsStart(drag.edge, \"x\")");
+    expect(noScrollBlock).toContain("const desiredTop = canvasResizeEdgeAnchorsStart(drag.edge, \"y\")");
+    expect(noScrollBlock).toContain("desiredLeft - nextBaseDisplayOffsetX");
+    expect(noScrollBlock).toContain("desiredTop - nextBaseDisplayOffsetY");
     expect(noScrollBlock).not.toContain("const currentOffset = canvasNoScrollOffsetRef.current;");
     expect(noScrollBlock).not.toContain("currentOffset.x");
     expect(noScrollBlock).not.toContain("currentOffset.y");
-    expect(syncBlock).toContain("const preserveStartLeft = canvasHorizontalScrollbarsActiveRef.current && maxLeft > 0");
-    expect(syncBlock).toContain("clampNumber(drag.startScrollLeft, 0, maxLeft)");
-    expect(syncBlock).toContain("const preserveStartTop = canvasVerticalScrollbarsActiveRef.current && maxTop > 0");
-    expect(syncBlock).toContain("clampNumber(drag.startScrollTop, 0, maxTop)");
-    expect(syncBlock).not.toContain("frame.scrollLeft + svgRect.left - frameRect.left - drag.startDisplayOffsetX");
-    expect(syncBlock).not.toContain("frame.scrollTop + svgRect.top - frameRect.top - drag.startDisplayOffsetY");
-    expect(syncBlock).toContain("x: canvasHorizontalScrollbarsActiveRef.current ? scrolledViewBox.x : current.x");
-    expect(syncBlock).toContain("y: canvasVerticalScrollbarsActiveRef.current ? scrolledViewBox.y : current.y");
+    expect(source).not.toContain("frame.scrollLeft + svgRect.left - frameRect.left - drag.startDisplayOffsetX");
+    expect(source).not.toContain("frame.scrollTop + svgRect.top - frameRect.top - drag.startDisplayOffsetY");
   });
 
   test("uses raw canvas landing points and expands before paste or new-device placement", async () => {
@@ -2850,7 +2957,7 @@ describe("graph inspector panel", () => {
     const adjustEnd = source.indexOf("const rebuildSingleAffectedConnectionRoute", adjustStart);
     const adjustBlock = source.slice(adjustStart, adjustEnd);
 
-    expect(adjustBlock).toContain("const preserveAffectedRoutesForCanvasOriginShift = hasCanvasOriginShift(leftTopCanvasOriginShiftForContent(Array.from(movedNextNodeById.values())));");
+    expect(adjustBlock).toContain("allowAutoExpandCanvas && hasCanvasOriginShift(leftTopCanvasOriginShiftForContent(Array.from(movedNextNodeById.values())));");
     expect(adjustBlock).toContain("(preserveAffectedRoutesForCanvasOriginShift && (sourceMoved || targetMoved))");
     expect(adjustBlock).toContain("preserveDraggedRouteShape({");
   });
@@ -3401,12 +3508,12 @@ describe("graph inspector panel", () => {
     expect(dragDeltaBlock).toContain("return boundedDeltaForNodes(");
     expect(dragDeltaBlock).toContain("return boundedDeltaForMoveGeometry(");
     expect(dragMoveBlock).toContain("if (!isMultiNodeMoveState(currentDrag) && !currentDrag.historyCaptured");
-    expect(dragMoveBlock).toContain("if (!isMultiNodeMoveState(currentDrag))");
+    expect(dragMoveBlock).not.toContain("applyCanvasBounds(");
     expect(keyboardMoveBlock).toContain("isMultiNodeMoveState(activeDragging)");
     expect(keyboardMoveBlock).toContain("? boundedDeltaForNodes(");
     expect(keyboardMoveBlock).toContain("canvasBoundsForMovedNodeDelta(");
     expect(keyboardMoveBlock).toContain("if (!isMultiNodeMoveState(activeDragging) && !activeDragging.historyCaptured");
-    expect(keyboardMoveBlock).toContain("if (!isMultiNodeMoveState(activeDragging))");
+    expect(keyboardMoveBlock).not.toContain("applyCanvasBounds(");
     expect(moveSelectionBlock).toContain("moveNodeIds.length > 1");
     expect(moveSelectionBlock).toContain("? boundedDeltaForNodes(");
     expect(finishMoveBlock).toContain("ensureDraggingUndoSnapshot();");
@@ -3471,14 +3578,16 @@ describe("graph inspector panel", () => {
 
     expect(pointerMoveBlock).toContain("const rawPointer = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);");
     expect(pointerMoveBlock).toContain("const pointer = draggingRef.current ? rawPointer : clampPointToCanvas(rawPointer);");
-    expect(dragMoveBlock).toContain("applyCanvasBounds(canvasBoundsForMovedNodeDelta(currentDrag.nodeIds, currentDrag.originalPositions, boundedDelta.x, boundedDelta.y));");
-    expect(keyboardMoveBlock).toContain("applyCanvasBounds(canvasBoundsForMovedNodeDelta(activeDragging.nodeIds, activeDragging.originalPositions, boundedDelta.x, boundedDelta.y));");
+    expect(pointerMoveBlock).toContain("const pointer = draggingRef.current ? rawPointer : clampPointToCanvas(rawPointer);");
+    expect(dragMoveBlock).not.toContain("applyCanvasBounds(");
+    expect(keyboardMoveBlock).toContain("const expandedBounds = isMultiNodeMoveState(activeDragging)");
+    expect(keyboardMoveBlock).not.toContain("applyCanvasBounds(");
     expect(commitBlock).toContain("effectiveCanvasBounds: CanvasBounds = canvasBounds");
     expect(commitBlock).toContain("shiftCachedRoutesForCanvasOrigin(originShift);");
     expect(commitBlock).toContain("const candidateEdgeIds = committedCandidateEdges.map((edge) => edge.id);");
     expect(commitBlock).toContain("markStoredRouteEdgesDirty(candidateEdgeIds);");
     expect(commitBlock).not.toContain("markStoredRouteEdgesDirty(shiftedNextEdges.map((edge) => edge.id));");
-    expect(commitBlock).toContain("canvasBoundsForGraphContent(effectiveCanvasBounds, movedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING)");
+    expect(commitBlock).toContain("canvasBoundsForAutoExpandedGraphContent(effectiveCanvasBounds, movedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING)");
     expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(movedNodeIds, committedCandidateEdges, expectedPatch, commitCanvasBounds);");
     expect(commitBlock).toContain("expandCanvasToFitGraph(movedNodeUpdates, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);");
     expect(finishMoveBlock).toContain("nodes,\n      finalBounds");
@@ -3537,7 +3646,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const deferredElementTreeSource = useDeferredValue(elementTreeSource)");
     expect(source).toContain("multiNodeDragOverlayRef.current?.setAttribute(\"transform\"");
     expect(source).toContain("imperativeMultiNodeDragOverlayRef.current?.setAttribute(\"transform\"");
-    expect(multiMoveBlock).toContain("updateMultiNodeDragOverlayTransform(boundedDelta)");
+    expect(multiMoveBlock).toContain("previewDelta,");
+    expect(multiMoveBlock).toContain("updateMultiNodeDragOverlayTransform(previewDelta)");
     expect(multiMoveBlock).not.toContain("setDragging");
     expect(commitBlock).toContain("const deferMovedRouteRepair = movedNodeIds.length > 1");
     expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(");
@@ -3928,7 +4038,7 @@ describe("graph inspector panel", () => {
     expect(adjustBlock).toContain("leftTopCanvasOriginShiftForContent(Array.from(movedNextNodeById.values()))");
     expect(adjustBlock).not.toContain("leftTopCanvasOriginShiftForContent(nextNodes)");
     expect(commitBlock).toContain("leftTopCanvasOriginShiftForContent(movedNodeUpdates, committedCandidateEdges)");
-    expect(commitBlock).toContain("canvasBoundsForGraphContent(effectiveCanvasBounds, movedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING)");
+    expect(commitBlock).toContain("canvasBoundsForAutoExpandedGraphContent(effectiveCanvasBounds, movedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING)");
     expect(commitBlock).toContain("expandCanvasToFitGraph(movedNodeUpdates, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);");
     expect(commitBlock).not.toContain("canvasBoundsForGraphContent(effectiveCanvasBounds, nextNodes, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING)");
     expect(commitBlock).not.toContain("expandCanvasToFitGraph(nextNodes, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);");
@@ -4015,13 +4125,13 @@ describe("graph inspector panel", () => {
     expect(helperBlock).not.toContain("currentEdges.map((edge)");
     expect(updateBlock).not.toContain("const previewNodes = nodes.map");
     expect(updateBlock).not.toContain("canvasBoundsForGraphContent(\n          canvasBounds,\n          previewNodes,\n          edges");
-    expect(updateBlock).toContain("canvasBoundsForGraphContent(canvasBounds, [candidateNode], [], [], CANVAS_AUTO_EXPAND_PADDING)");
+    expect(updateBlock).toContain("canvasBoundsForAutoExpandedGraphContent(canvasBounds, [candidateNode], [], [], CANVAS_AUTO_EXPAND_PADDING)");
     expect(updateBlock).toContain("const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, [selectedNodeId]);");
     expect(updateBlock).toContain("expandCanvasToFitGraph([nextSelectedNode], edgeUpdates, [], CANVAS_AUTO_EXPAND_PADDING, selectedNodeCanvasBounds);");
     expect(updateBlock).toContain("graphStoreApplyPatch(current, {");
     expect(footprintBlock).toContain("const directCandidateEdges = edgeListForNodeIds(changedNodeIds);");
     expect(footprintBlock).toContain("leftTopCanvasOriginShiftForContent(existingUpdates, directCandidateEdges)");
-    expect(footprintBlock).toContain("canvasBoundsForGraphContent(\n      canvasBounds,\n      existingUpdates,\n      directCandidateEdges");
+    expect(footprintBlock).toContain("canvasBoundsForAutoExpandedGraphContent(\n      canvasBounds,\n      existingUpdates,\n      directCandidateEdges");
     expect(footprintBlock).toContain("optimizeMovedNodeEdgeRoutes(\n          nextNodes,\n          optimizationEdges");
     expect(footprintBlock).toContain("expandCanvasToFitGraph(existingUpdates, edgeUpdates, [], CANVAS_AUTO_EXPAND_PADDING, footprintCanvasBounds);");
     expect(footprintBlock).not.toContain("const nextEdges = blockedEdgeIds.size > 0");

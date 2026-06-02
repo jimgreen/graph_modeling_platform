@@ -65,6 +65,7 @@ import {
   calculateModelGeometryBounds,
   calculateNodeVisualBounds,
   canvasResizeBoundsFromPointerDrag,
+  canvasResizeMinimumBoundsForGeometry,
   clampEdgeGeometryToBounds,
   canConnectTerminals,
   clampNodePositionToBounds,
@@ -661,13 +662,24 @@ type PendingRecordPasteConflict =
 type SidePanelResizeState = { side: SidePanelSide; startX: number; startWidth: number } | null;
 type StatusbarResizeState = { startY: number; startHeight: number } | null;
 type ValidationPanelResizeState = { startY: number; startHeight: number } | null;
-type CanvasResizeEdge = "right" | "bottom" | "corner";
+export type CanvasResizeEdge = "right" | "bottom" | "corner" | "left" | "top" | "top-left" | "top-right" | "bottom-left";
+export type CanvasResizePreviewMetrics = {
+  edge: CanvasResizeEdge;
+  startWidth: number;
+  startHeight: number;
+  startDisplayWidth: number;
+  startDisplayHeight: number;
+  startDisplayOffsetX: number;
+  startDisplayOffsetY: number;
+};
 type CanvasResizeState = {
   edge: CanvasResizeEdge;
   startClientX: number;
   startClientY: number;
   startWidth: number;
   startHeight: number;
+  startDisplayWidth: number;
+  startDisplayHeight: number;
   startDisplayOffsetX: number;
   startDisplayOffsetY: number;
   startScrollLeft: number;
@@ -681,6 +693,19 @@ type CanvasResizeState = {
   minBounds: CanvasBounds;
   historyCaptured?: boolean;
 } | null;
+export type CanvasResizePreviewRect = { left: number; top: number; width: number; height: number };
+type CanvasResizeCommitAnchor = {
+  edge: CanvasResizeEdge;
+  desiredRect: CanvasResizePreviewRect;
+};
+type CanvasResizeCommitScrollTarget = {
+  left: number;
+  top: number;
+  deltaX: number;
+  deltaY: number;
+  affectsX: boolean;
+  affectsY: boolean;
+};
 type RewiringState = {
   edgeId: string;
   endpoint: EdgeEndpoint;
@@ -778,6 +803,7 @@ type DraggingState = {
   originalEdgePoints: Record<string, { sourcePoint?: Point; targetPoint?: Point; manualPoints?: Point[] }>;
   originalRoutePoints: Record<string, Point[]>;
   currentDelta?: Point;
+  previewDelta?: Point;
   historyCaptured?: boolean;
   overlayPreview?: MultiNodeDragOverlayPreview;
   selection?: CanvasSelectionSnapshot;
@@ -796,6 +822,7 @@ type GraphDirtyBaseline = {
   activeLayerId: string;
   canvasWidth: number;
   canvasHeight: number;
+  allowAutoExpandCanvas: boolean;
   canvasBackgroundColor: string;
   canvasBackgroundImage: string;
   canvasBackgroundImageAssetId: string;
@@ -825,6 +852,7 @@ type UndoSnapshot = {
   activeLayerId: string;
   canvasWidth: number;
   canvasHeight: number;
+  allowAutoExpandCanvas: boolean;
   canvasBackgroundColor: string;
   canvasBackgroundImage: string;
   canvasBackgroundImageAssetId: string;
@@ -857,6 +885,7 @@ type DraftProjectState = {
   activeLayerId?: string;
   canvasWidth?: number;
   canvasHeight?: number;
+  allowAutoExpandCanvas?: boolean;
   canvasBackgroundColor?: string;
   canvasBackgroundImage?: string;
   canvasBackgroundImageAssetId?: string;
@@ -1477,12 +1506,89 @@ function canvasDisplayOffset(displaySize: number, surfaceSize: number, viewportS
 }
 function canvasResizeEdgeAnchorsAxis(edge: CanvasResizeEdge, axis: "x" | "y") {
   return axis === "x"
-    ? edge === "right" || edge === "corner"
-    : edge === "bottom" || edge === "corner";
+    ? edge === "right" || edge === "corner" || edge === "left" || edge === "top-left" || edge === "top-right" || edge === "bottom-left"
+    : edge === "bottom" || edge === "corner" || edge === "top" || edge === "top-left" || edge === "top-right" || edge === "bottom-left";
 }
-function canvasResizeAnchoredDisplayOffset(offset: number, drag: CanvasResizeState, axis: "x" | "y") {
+function canvasResizeRectSide(rect: CanvasResizePreviewRect, side: "left" | "right" | "top" | "bottom") {
+  switch (side) {
+    case "left":
+      return rect.left;
+    case "right":
+      return rect.left + rect.width;
+    case "top":
+      return rect.top;
+    case "bottom":
+      return rect.top + rect.height;
+  }
+}
+function canvasResizeEdgeAnchorsStart(edge: CanvasResizeEdge, axis: "x" | "y") {
+  return axis === "x"
+    ? edge === "left" || edge === "top-left" || edge === "bottom-left"
+    : edge === "top" || edge === "top-left" || edge === "top-right";
+}
+function canvasResizeOriginShiftForBounds(edge: CanvasResizeEdge, startBounds: CanvasBounds, nextBounds: CanvasBounds): Point {
+  return {
+    x: canvasResizeEdgeAnchorsStart(edge, "x") ? Math.round(nextBounds.width - startBounds.width) : 0,
+    y: canvasResizeEdgeAnchorsStart(edge, "y") ? Math.round(nextBounds.height - startBounds.height) : 0
+  };
+}
+export function canvasResizePreviewRectForDraft(drag: CanvasResizePreviewMetrics, draftBounds: CanvasBounds): CanvasResizePreviewRect {
+  const scaleX = drag.startWidth > 0 ? drag.startDisplayWidth / drag.startWidth : 1;
+  const scaleY = drag.startHeight > 0 ? drag.startDisplayHeight / drag.startHeight : 1;
+  const width = Math.max(1, Math.round(draftBounds.width * scaleX));
+  const height = Math.max(1, Math.round(draftBounds.height * scaleY));
+  const left = canvasResizeEdgeAnchorsStart(drag.edge, "x")
+    ? Math.round(drag.startDisplayOffsetX + drag.startDisplayWidth - width)
+    : Math.round(drag.startDisplayOffsetX);
+  const top = canvasResizeEdgeAnchorsStart(drag.edge, "y")
+    ? Math.round(drag.startDisplayOffsetY + drag.startDisplayHeight - height)
+    : Math.round(drag.startDisplayOffsetY);
+  return { left, top, width, height };
+}
+export function canvasResizeScrollTargetForCommitAnchor({
+  edge,
+  desiredRect,
+  currentRect,
+  currentScrollLeft,
+  currentScrollTop,
+  maxScrollLeft,
+  maxScrollTop
+}: {
+  edge: CanvasResizeEdge;
+  desiredRect: CanvasResizePreviewRect;
+  currentRect: CanvasResizePreviewRect;
+  currentScrollLeft: number;
+  currentScrollTop: number;
+  maxScrollLeft: number;
+  maxScrollTop: number;
+}): CanvasResizeCommitScrollTarget {
+  const affectsX = canvasResizeEdgeAnchorsAxis(edge, "x");
+  const affectsY = canvasResizeEdgeAnchorsAxis(edge, "y");
+  const anchorX = canvasResizeEdgeAnchorsStart(edge, "x") ? "right" : "left";
+  const anchorY = canvasResizeEdgeAnchorsStart(edge, "y") ? "bottom" : "top";
+  const deltaX = affectsX
+    ? canvasResizeRectSide(currentRect, anchorX) - canvasResizeRectSide(desiredRect, anchorX)
+    : 0;
+  const deltaY = affectsY
+    ? canvasResizeRectSide(currentRect, anchorY) - canvasResizeRectSide(desiredRect, anchorY)
+    : 0;
+  return {
+    left: affectsX ? clampNumber(currentScrollLeft + deltaX, 0, maxScrollLeft) : currentScrollLeft,
+    top: affectsY ? clampNumber(currentScrollTop + deltaY, 0, maxScrollTop) : currentScrollTop,
+    deltaX,
+    deltaY,
+    affectsX,
+    affectsY
+  };
+}
+function canvasResizeAnchoredDisplayOffset(offset: number, drag: CanvasResizeState, axis: "x" | "y", displaySize: number) {
   if (!drag) {
     return Math.round(offset);
+  }
+  if (canvasResizeEdgeAnchorsStart(drag.edge, axis)) {
+    const startDisplaySize = axis === "x" ? drag.startDisplayWidth : drag.startDisplayHeight;
+    const startDisplayOffset = axis === "x" ? drag.startDisplayOffsetX : drag.startDisplayOffsetY;
+    return Math.round(startDisplayOffset - (displaySize - startDisplaySize));
   }
   return Math.round(axis === "x" ? drag.startDisplayOffsetX : drag.startDisplayOffsetY);
 }
@@ -1578,14 +1684,29 @@ function scrollPositionToViewBoxStart(scrollPosition: number, viewSize: number, 
 function canvasFullViewBoxFromBounds(bounds: CanvasBounds): CanvasViewBox {
   return { x: 0, y: 0, width: bounds.width, height: bounds.height };
 }
-function scaledViewBoxSizeForBounds(viewBox: Pick<CanvasViewBox, "width" | "height">, currentBounds: CanvasBounds, nextBounds: CanvasBounds) {
-  if (viewBox.width <= 0 || viewBox.height <= 0 || currentBounds.width <= 0 || currentBounds.height <= 0) {
-    return viewBox;
+function viewBoxSizePreservingCanvasUnitScale(
+  current: Pick<CanvasViewBox, "width" | "height">,
+  currentBounds: CanvasBounds | undefined,
+  nextBounds: CanvasBounds
+) {
+  if (!currentBounds || currentBounds.width <= 0 || currentBounds.height <= 0) {
+    return clampViewBoxDimensionsForZoom(current, nextBounds);
   }
-  return {
-    width: (viewBox.width / currentBounds.width) * nextBounds.width,
-    height: (viewBox.height / currentBounds.height) * nextBounds.height
-  };
+  return clampViewBoxDimensionsForZoom({
+    width: Math.round(current.width * (nextBounds.width / currentBounds.width)),
+    height: Math.round(current.height * (nextBounds.height / currentBounds.height))
+  }, nextBounds);
+}
+
+export function canvasRenderViewBoxAfterBoundsDraft(
+  current: CanvasViewBox,
+  currentBounds: CanvasBounds,
+  nextBounds: CanvasBounds
+): CanvasViewBox {
+  return normalizeViewBoxToCanvas({
+    ...current,
+    ...viewBoxSizePreservingCanvasUnitScale(current, currentBounds, nextBounds)
+  }, nextBounds);
 }
 export function viewBoxAfterCanvasBoundsChange(
   current: CanvasViewBox,
@@ -1593,19 +1714,11 @@ export function viewBoxAfterCanvasBoundsChange(
   originShift: Point = { x: 0, y: 0 },
   currentBounds?: CanvasBounds
 ): CanvasViewBox {
-  const boundsDelta = currentBounds
-    ? {
-        x: Math.max(0, nextBounds.width - currentBounds.width),
-        y: Math.max(0, nextBounds.height - currentBounds.height)
-      }
-    : { x: 0, y: 0 };
-  const currentTouchesRightEdge = currentBounds && current.x + current.width >= currentBounds.width - 1;
-  const currentTouchesBottomEdge = currentBounds && current.y + current.height >= currentBounds.height - 1;
   return normalizeViewBoxToCanvas({
     ...current,
-    x: current.x + originShift.x + (originShift.x === 0 && currentTouchesRightEdge ? boundsDelta.x : 0),
-    y: current.y + originShift.y + (originShift.y === 0 && currentTouchesBottomEdge ? boundsDelta.y : 0),
-    ...clampViewBoxDimensionsForZoom(current, nextBounds)
+    x: current.x + originShift.x,
+    y: current.y + originShift.y,
+    ...viewBoxSizePreservingCanvasUnitScale(current, currentBounds, nextBounds)
   }, nextBounds);
 }
 function canvasFramePaddingOffset(frame: HTMLElement, svg?: SVGSVGElement | null) {
@@ -1767,6 +1880,7 @@ const PARAM_LABELS: Record<string, string> = {
   updatedAt: "更新时间",
   canvasWidth: "显示宽度",
   canvasHeight: "显示高度",
+  allowAutoExpandCanvas: "允许自动扩界",
   canvasBackgroundColor: "背景色",
   canvasBackgroundImage: "背景图片",
   backgroundProjectId: "背景页面",
@@ -2085,6 +2199,7 @@ function normalizeStoredDraftProject(parsed: DraftProjectState): DraftProjectSta
     activeSchemeId: parsed.activeSchemeId,
     canvasWidth: parsed.canvasWidth,
     canvasHeight: parsed.canvasHeight,
+    allowAutoExpandCanvas: parsed.allowAutoExpandCanvas,
     canvasBackgroundColor: parsed.canvasBackgroundColor,
     canvasBackgroundImage: parsed.canvasBackgroundImage,
     canvasBackgroundImageAssetId: parsed.canvasBackgroundImageAssetId,
@@ -5848,6 +5963,7 @@ export function App() {
     width: String(initialDraft?.canvasWidth ?? DEFAULT_CANVAS_WIDTH),
     height: String(initialDraft?.canvasHeight ?? DEFAULT_CANVAS_HEIGHT)
   }));
+  const [allowAutoExpandCanvas, setAllowAutoExpandCanvas] = useState(() => initialDraft?.allowAutoExpandCanvas ?? true);
   const [canvasBackgroundColor, setCanvasBackgroundColor] = useState(() => initialDraft?.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND);
   const [canvasBackgroundImage, setCanvasBackgroundImage] = useState(() => initialDraft?.canvasBackgroundImage ?? "");
   const [canvasBackgroundImageAssetId, setCanvasBackgroundImageAssetId] = useState(() => initialDraft?.canvasBackgroundImageAssetId ?? "");
@@ -6355,7 +6471,7 @@ export function App() {
           ref={(element) => {
             multiNodeDragOverlayRef.current = element;
             if (element) {
-              updateMultiNodeDragOverlayTransform(draggingRef.current?.currentDelta ?? multiNodeDragOverlayDeltaRef.current);
+              updateMultiNodeDragOverlayTransform(draggingRef.current?.previewDelta ?? draggingRef.current?.currentDelta ?? multiNodeDragOverlayDeltaRef.current);
             }
           }}
           className="multi-node-drag-overlay"
@@ -6369,7 +6485,7 @@ export function App() {
         ref={(element) => {
           multiNodeDragOverlayRef.current = element;
           if (element) {
-            updateMultiNodeDragOverlayTransform(draggingRef.current?.currentDelta ?? multiNodeDragOverlayDeltaRef.current);
+            updateMultiNodeDragOverlayTransform(draggingRef.current?.previewDelta ?? draggingRef.current?.currentDelta ?? multiNodeDragOverlayDeltaRef.current);
           }
         }}
         className="multi-node-drag-overlay"
@@ -7257,6 +7373,7 @@ export function App() {
       name: projectName,
       canvasWidth,
       canvasHeight,
+      allowAutoExpandCanvas,
       canvasBackgroundColor,
       canvasBackgroundImage,
       canvasBackgroundImageAssetId,
@@ -7283,6 +7400,7 @@ export function App() {
     activeSchemeId,
     canvasWidth,
     canvasHeight,
+    allowAutoExpandCanvas,
     canvasBackgroundColor,
     canvasBackgroundImage,
     canvasBackgroundImageAssetId,
@@ -7684,17 +7802,8 @@ export function App() {
 
   const canvasBounds = useMemo<CanvasBounds>(() => ({ width: canvasWidth, height: canvasHeight }), [canvasHeight, canvasWidth]);
   const canvasFullViewBox = useMemo<CanvasViewBox>(() => canvasFullViewBoxFromBounds(canvasBounds), [canvasBounds]);
-  const canvasRenderBounds = canvasResizeDraft ?? canvasBounds;
-  const canvasRenderViewBox = useMemo<CanvasViewBox>(() => {
-    if (!canvasResizeDraft) {
-      return viewBox;
-    }
-    const nextViewBoxSize = scaledViewBoxSizeForBounds(viewBox, canvasBounds, canvasRenderBounds);
-    return normalizeViewBoxToCanvas({
-      ...viewBox,
-      ...clampViewBoxDimensionsForZoom(nextViewBoxSize, canvasRenderBounds)
-    }, canvasRenderBounds);
-  }, [canvasBounds, canvasRenderBounds, canvasResizeDraft, viewBox]);
+  const canvasRenderBounds = canvasBounds;
+  const canvasRenderViewBox = viewBox;
   const canvasScrollScale = canvasScrollScaleFromViewBox(canvasRenderViewBox, canvasRenderBounds);
   const canvasDisplayWidth = Math.max(1, Math.round(canvasRenderBounds.width * canvasScrollScale.x));
   const canvasDisplayHeight = Math.max(1, Math.round(canvasRenderBounds.height * canvasScrollScale.y));
@@ -7761,13 +7870,28 @@ export function App() {
   const canvasDisplayOffsetX = canvasResizeAnchoredDisplayOffset(
     Math.round(canvasBaseDisplayOffsetX + clampedCanvasNoScrollOffset.x),
     canvasResizeDrag,
-    "x"
+    "x",
+    canvasDisplayWidth
   );
   const canvasDisplayOffsetY = canvasResizeAnchoredDisplayOffset(
     Math.round(canvasBaseDisplayOffsetY + clampedCanvasNoScrollOffset.y),
     canvasResizeDrag,
-    "y"
+    "y",
+    canvasDisplayHeight
   );
+  const canvasResizeHotzoneWidth = Math.round(clampNumber(CANVAS_RESIZE_HANDLE_SIZE * canvasScrollScale.x, 10, 28));
+  const canvasResizeHotzoneHeight = Math.round(clampNumber(CANVAS_RESIZE_HANDLE_SIZE * canvasScrollScale.y, 10, 28));
+  const canvasResizeHotzoneStyle = {
+    left: canvasDisplayOffsetX,
+    top: canvasDisplayOffsetY,
+    width: canvasDisplayWidth,
+    height: canvasDisplayHeight,
+    "--canvas-resize-hotzone-x": `${canvasResizeHotzoneWidth}px`,
+    "--canvas-resize-hotzone-y": `${canvasResizeHotzoneHeight}px`
+  } as CSSProperties;
+  const canvasResizePreviewRect = canvasResizeDrag && canvasResizeDraft
+    ? canvasResizePreviewRectForDraft(canvasResizeDrag, canvasResizeDraft)
+    : null;
   const canvasBoundsRef = useRef<CanvasBounds>(canvasBounds);
   const canvasFullViewBoxRef = useRef<CanvasViewBox>(canvasFullViewBox);
   const canvasScrollScaleRef = useRef(canvasScrollScale);
@@ -7780,6 +7904,7 @@ export function App() {
   const canvasFrameUserScrollRef = useRef(false);
   const canvasFrameProgrammaticScrollRef = useRef(false);
   const pendingWheelZoomAnchorRef = useRef<WheelZoomAnchor | null>(null);
+  const pendingCanvasResizeCommitAnchorRef = useRef<CanvasResizeCommitAnchor | null>(null);
   canvasBoundsRef.current = canvasBounds;
   canvasFullViewBoxRef.current = canvasFullViewBox;
   canvasScrollScaleRef.current = canvasScrollScale;
@@ -7832,13 +7957,54 @@ export function App() {
     });
     return true;
   };
+  const edgeRoutesForGeometryBounds = (edgeList: Edge[]): Pick<RoutedEdge, "points">[] =>
+    edgeList.flatMap((edge) => {
+      const points = [
+        edge.sourcePoint,
+        ...(edge.manualPoints ?? []),
+        edge.targetPoint
+      ].filter((point): point is Point => Boolean(point));
+      return points.length > 0 ? [{ points }] : [];
+    });
+  const autoCanvasExpansionBlockedMessage = "当前模型未允许自动扩界，请先人工调整画布边界。";
+  const graphContentFitsFixedCanvasBounds = (
+    contentNodes: ModelNode[],
+    contentEdges: Edge[] = [],
+    contentRoutes: Pick<RoutedEdge, "points">[] = [],
+    bounds = canvasBounds
+  ) =>
+    modelGeometryInsideCanvasBounds(contentNodes, [...contentRoutes, ...edgeRoutesForGeometryBounds(contentEdges)], bounds, 0);
+  const rejectAutoCanvasExpansionForContent = (
+    contentNodes: ModelNode[],
+    contentEdges: Edge[] = [],
+    contentRoutes: Pick<RoutedEdge, "points">[] = [],
+    bounds = canvasBounds
+  ) => {
+    if (allowAutoExpandCanvas || graphContentFitsFixedCanvasBounds(contentNodes, contentEdges, contentRoutes, bounds)) {
+      return false;
+    }
+    writeOperationLog(autoCanvasExpansionBlockedMessage);
+    return true;
+  };
+  const canvasBoundsForAutoExpandedGraphContent = (
+    baseBounds: CanvasBounds,
+    contentNodes: ModelNode[] = nodes,
+    contentEdges: Edge[] = edges,
+    contentRoutes: RoutedEdge[] = routedEdges,
+    padding = CANVAS_AUTO_EXPAND_PADDING
+  ): CanvasBounds => {
+    if (!allowAutoExpandCanvas) {
+      return baseBounds;
+    }
+    return canvasBoundsForGraphContent(baseBounds, contentNodes, contentEdges, contentRoutes, padding);
+  };
   const expandCanvasToFitGraph = (
     contentNodes: ModelNode[] = nodes,
     contentEdges: Edge[] = edges,
     contentRoutes: RoutedEdge[] = routedEdges,
     padding = CANVAS_AUTO_EXPAND_PADDING,
     baseBounds = canvasBounds
-  ) => applyCanvasBounds(canvasBoundsForGraphContent(baseBounds, contentNodes, contentEdges, contentRoutes, padding));
+  ) => applyCanvasBounds(canvasBoundsForAutoExpandedGraphContent(baseBounds, contentNodes, contentEdges, contentRoutes, padding));
   const hasCanvasOriginShift = (shift: Point) => shift.x !== 0 || shift.y !== 0;
   const translatePointBy = (point: Point, shift: Point): Point => ({
     x: Math.round(point.x + shift.x),
@@ -7895,15 +8061,6 @@ export function App() {
     cachedRoutedEdgesRef.current = shiftedRoutes;
     cachedRouteStoreRef.current = routeStoreSetRoutes(cachedRouteStoreRef.current, shiftedRoutes);
   };
-  const edgeRoutesForGeometryBounds = (edgeList: Edge[]): Pick<RoutedEdge, "points">[] =>
-    edgeList.flatMap((edge) => {
-      const points = [
-        edge.sourcePoint,
-        ...(edge.manualPoints ?? []),
-        edge.targetPoint
-      ].filter((point): point is Point => Boolean(point));
-      return points.length > 0 ? [{ points }] : [];
-    });
   const leftTopCanvasOriginShiftForContent = (
     contentNodes: ModelNode[],
     contentEdges: Edge[] = [],
@@ -7920,12 +8077,28 @@ export function App() {
       y: geometryBounds && geometryBounds.top < 0 ? gridCeil(-geometryBounds.top) : 0
     };
   };
+  const minimumCanvasBoundsForResizeEdge = (edge: CanvasResizeEdge): CanvasBounds => {
+    const geometryBounds = calculateModelGeometryBounds(
+      nodes,
+      [...routedEdges, ...edgeRoutesForGeometryBounds(edges)],
+      MOVE_BOUNDARY_GUARD
+    );
+    return clampCanvasBounds(canvasResizeMinimumBoundsForGeometry(
+      edge,
+      canvasBounds,
+      geometryBounds,
+      { width: MIN_CANVAS_WIDTH, height: MIN_CANVAS_HEIGHT }
+    ));
+  };
   const canvasBoundsWithOriginShift = (baseBounds: CanvasBounds, originShift: Point): CanvasBounds => ({
     width: baseBounds.width + originShift.x,
     height: baseBounds.height + originShift.y
   });
   const clampNodePositionToExpandableBounds = (node: ModelNode, bounds: CanvasBounds, position = node.position): Point => {
     const clamped = clampNodePositionToBounds(node, bounds, position);
+    if (!allowAutoExpandCanvas) {
+      return clamped;
+    }
     return {
       x: position.x < clamped.x ? Math.round(position.x) : clamped.x,
       y: position.y < clamped.y ? Math.round(position.y) : clamped.y
@@ -7940,6 +8113,9 @@ export function App() {
   };
   const clampPointToExpandableBounds = (point: Point, bounds: CanvasBounds): Point => {
     const clamped = clampPointToBounds(point, bounds);
+    if (!allowAutoExpandCanvas) {
+      return clamped;
+    }
     return {
       x: point.x < clamped.x ? Math.round(point.x) : clamped.x,
       y: point.y < clamped.y ? Math.round(point.y) : clamped.y
@@ -7984,11 +8160,7 @@ export function App() {
   const canvasNoScrollOffsetForCanvasResizeAnchor = (drag: NonNullable<CanvasResizeState>, nextBounds: CanvasBounds): Point => {
     const currentBounds = canvasBoundsRef.current;
     const currentViewBox = viewBoxRef.current;
-    const nextViewBoxSize = scaledViewBoxSizeForBounds(currentViewBox, currentBounds, nextBounds);
-    const nextViewBox = normalizeViewBoxToCanvas({
-      ...currentViewBox,
-      ...clampViewBoxDimensionsForZoom(nextViewBoxSize, nextBounds)
-    }, nextBounds);
+    const nextViewBox = canvasRenderViewBoxAfterBoundsDraft(currentViewBox, currentBounds, nextBounds);
     const nextScrollScale = canvasScrollScaleFromViewBox(nextViewBox, nextBounds);
     const nextDisplayWidth = Math.max(1, Math.round(nextBounds.width * nextScrollScale.x));
     const nextDisplayHeight = Math.max(1, Math.round(nextBounds.height * nextScrollScale.y));
@@ -8020,70 +8192,28 @@ export function App() {
       canvasFrameViewportSize.height,
       nextVerticalScrollbarsActive
     );
+    const desiredLeft = canvasResizeEdgeAnchorsStart(drag.edge, "x")
+      ? drag.startDisplayOffsetX + drag.startDisplayWidth - nextDisplayWidth
+      : drag.startDisplayOffsetX;
+    const desiredTop = canvasResizeEdgeAnchorsStart(drag.edge, "y")
+      ? drag.startDisplayOffsetY + drag.startDisplayHeight - nextDisplayHeight
+      : drag.startDisplayOffsetY;
     return {
       x: clampCanvasNoScrollOffset(
-        drag.startDisplayOffsetX - nextBaseDisplayOffsetX,
+        desiredLeft - nextBaseDisplayOffsetX,
         nextDisplayWidth,
         canvasFrameViewportSize.width,
         nextBaseDisplayOffsetX,
         nextHorizontalScrollbarsActive
       ),
       y: clampCanvasNoScrollOffset(
-        drag.startDisplayOffsetY - nextBaseDisplayOffsetY,
+        desiredTop - nextBaseDisplayOffsetY,
         nextDisplayHeight,
         canvasFrameViewportSize.height,
         nextBaseDisplayOffsetY,
         nextVerticalScrollbarsActive
       )
     };
-  };
-  const syncCanvasFrameScrollToResizeAnchorNow = (drag: NonNullable<CanvasResizeState>, pointer: Pick<globalThis.PointerEvent, "clientX" | "clientY">) => {
-    const frame = canvasFrameRef.current;
-    const svg = svgRef.current;
-    if (!frame || !svg) {
-      return;
-    }
-    const frameRect = frame.getBoundingClientRect();
-    const svgRect = svg.getBoundingClientRect();
-    const maxLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
-    const maxTop = Math.max(0, frame.scrollHeight - frame.clientHeight);
-    const desiredRightX = clampNumber(pointer.clientX - frameRect.left, CANVAS_FRAME_INSET, frame.clientWidth - CANVAS_FRAME_INSET);
-    const desiredBottomY = clampNumber(pointer.clientY - frameRect.top, CANVAS_FRAME_INSET, frame.clientHeight - CANVAS_FRAME_INSET);
-    const preserveStartLeft = canvasHorizontalScrollbarsActiveRef.current && maxLeft > 0
-      ? clampNumber(drag.startScrollLeft, 0, maxLeft)
-      : 0;
-    const preserveStartTop = canvasVerticalScrollbarsActiveRef.current && maxTop > 0
-      ? clampNumber(drag.startScrollTop, 0, maxTop)
-      : 0;
-    const nextLeft = canvasResizeEdgeAnchorsAxis(drag.edge, "x") && maxLeft > 0
-      ? clampNumber(frame.scrollLeft + svgRect.right - frameRect.left - desiredRightX, 0, maxLeft)
-      : preserveStartLeft;
-    const nextTop = canvasResizeEdgeAnchorsAxis(drag.edge, "y") && maxTop > 0
-      ? clampNumber(frame.scrollTop + svgRect.bottom - frameRect.top - desiredBottomY, 0, maxTop)
-      : preserveStartTop;
-    if (Math.abs(frame.scrollLeft - nextLeft) > 1 || Math.abs(frame.scrollTop - nextTop) > 1) {
-      setCanvasFrameScrollPosition(frame, nextLeft, nextTop);
-    }
-    const scrolledViewBox = currentViewBoxFromCanvasFrameScroll();
-    setViewBox((current) => {
-      const nextViewBox = normalizeViewBoxToCanvas({
-        ...current,
-        x: canvasHorizontalScrollbarsActiveRef.current ? scrolledViewBox.x : current.x,
-        y: canvasVerticalScrollbarsActiveRef.current ? scrolledViewBox.y : current.y
-      }, canvasBoundsRef.current);
-      if (
-        Math.round(nextViewBox.x) === Math.round(current.x) &&
-        Math.round(nextViewBox.y) === Math.round(current.y)
-      ) {
-        return current;
-      }
-      skipNextCanvasScrollSyncRef.current = true;
-      return nextViewBox;
-    });
-    scheduleCanvasVisibleViewBoxUpdate();
-  };
-  const syncCanvasFrameScrollToResizeAnchor = (drag: NonNullable<CanvasResizeState>, pointer: Pick<globalThis.PointerEvent, "clientX" | "clientY">) => {
-    window.requestAnimationFrame(() => syncCanvasFrameScrollToResizeAnchorNow(drag, pointer));
   };
   const setCanvasFrameScrollPosition = (frame: HTMLElement, left: number, top: number) => {
     canvasFrameProgrammaticScrollRef.current = true;
@@ -8117,6 +8247,72 @@ export function App() {
     });
     if (Math.abs(frame.scrollLeft - nextLeft) > 1 || Math.abs(frame.scrollTop - nextTop) > 1) {
       setCanvasFrameScrollPosition(frame, nextLeft, nextTop);
+    }
+  };
+  const syncCanvasFrameScrollToCanvasResizeCommitAnchor = (anchor: CanvasResizeCommitAnchor) => {
+    const frame = canvasFrameRef.current;
+    const hotzones = frame?.querySelector<HTMLElement>(".canvas-resize-hotzones");
+    if (!frame || !hotzones) {
+      return;
+    }
+    const hotzoneRect = hotzones.getBoundingClientRect();
+    const currentRect: CanvasResizePreviewRect = {
+      left: hotzoneRect.left,
+      top: hotzoneRect.top,
+      width: hotzoneRect.width,
+      height: hotzoneRect.height
+    };
+    const maxScrollLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
+    const maxScrollTop = Math.max(0, frame.scrollHeight - frame.clientHeight);
+    const target = canvasResizeScrollTargetForCommitAnchor({
+      edge: anchor.edge,
+      desiredRect: anchor.desiredRect,
+      currentRect,
+      currentScrollLeft: frame.scrollLeft,
+      currentScrollTop: frame.scrollTop,
+      maxScrollLeft,
+      maxScrollTop
+    });
+    const syncScrollX = target.affectsX && maxScrollLeft > 1;
+    const syncScrollY = target.affectsY && maxScrollTop > 1;
+    const nextScrollLeft = syncScrollX ? target.left : frame.scrollLeft;
+    const nextScrollTop = syncScrollY ? target.top : frame.scrollTop;
+    if (
+      Math.abs(frame.scrollLeft - nextScrollLeft) > 1 ||
+      Math.abs(frame.scrollTop - nextScrollTop) > 1
+    ) {
+      setCanvasFrameScrollPosition(frame, nextScrollLeft, nextScrollTop);
+      skipNextCanvasScrollSyncRef.current = true;
+    }
+    if (syncScrollX || syncScrollY) {
+      const scrolledViewBox = canvasViewBoxFromFrameScrollPosition({
+        currentViewBox: viewBoxRef.current,
+        canvasBounds: canvasBoundsRef.current,
+        scrollLeft: nextScrollLeft,
+        scrollTop: nextScrollTop,
+        maxScrollLeft,
+        maxScrollTop,
+        horizontalScrollbarsActive: canvasHorizontalScrollbarsActiveRef.current || maxScrollLeft > 1,
+        verticalScrollbarsActive: canvasVerticalScrollbarsActiveRef.current || maxScrollTop > 1
+      });
+      skipNextCanvasScrollSyncRef.current = true;
+      setViewBox((current) => {
+        const nextViewBox = normalizeViewBoxToCanvas({
+          ...current,
+          x: syncScrollX ? scrolledViewBox.x : current.x,
+          y: syncScrollY ? scrolledViewBox.y : current.y
+        }, canvasBoundsRef.current);
+        return sameCanvasViewBox(current, nextViewBox) ? current : nextViewBox;
+      });
+    }
+    if ((target.affectsX && !syncScrollX) || (target.affectsY && !syncScrollY)) {
+      setCanvasNoScrollOffset((current) => {
+        const next = clampCanvasNoScrollOffsetPoint({
+          x: target.affectsX && !syncScrollX ? current.x - target.deltaX : current.x,
+          y: target.affectsY && !syncScrollY ? current.y - target.deltaY : current.y
+        });
+        return next.x === current.x && next.y === current.y ? current : next;
+      });
     }
   };
   const syncCanvasFrameScrollToWheelAnchor = (anchor: WheelZoomAnchor) => {
@@ -8335,6 +8531,17 @@ export function App() {
         pendingWheelZoomAnchorRef.current = pendingWheelZoomAnchor;
         updateCanvasFrameViewportSize();
       }
+      scheduleCanvasVisibleViewBoxUpdate();
+      return;
+    }
+    const pendingCanvasResizeCommitAnchor = pendingCanvasResizeCommitAnchorRef.current;
+    if (pendingCanvasResizeCommitAnchor) {
+      pendingCanvasResizeCommitAnchorRef.current = null;
+      syncCanvasFrameScrollToCanvasResizeCommitAnchor(pendingCanvasResizeCommitAnchor);
+      window.requestAnimationFrame(() => {
+        syncCanvasFrameScrollToCanvasResizeCommitAnchor(pendingCanvasResizeCommitAnchor);
+        scheduleCanvasVisibleViewBoxUpdate();
+      });
       scheduleCanvasVisibleViewBoxUpdate();
       return;
     }
@@ -9005,7 +9212,8 @@ export function App() {
     () => new Set(terminalPressPreviewEdgeRoutes.map((route) => route.edgeId)),
     [terminalPressPreviewEdgeRoutes]
   );
-  const draggingDelta = dragging?.currentDelta;
+  const draggingCommitDelta = dragging?.currentDelta;
+  const draggingDelta = dragging?.previewDelta ?? draggingCommitDelta;
   const multiNodeDragging = Boolean(dragging && isMultiNodeMoveState(dragging));
   const dragAffectedEdgeIdSet = useMemo(
     () => new Set((dragging?.affectedEdges ?? []).map((edge) => edge.id)),
@@ -9035,14 +9243,14 @@ export function App() {
       }
       preview.set(nodeId, {
         ...node,
-        position: clampNodePositionToExpandableBounds(node, canvasBounds, {
+        position: {
           x: originalPosition.x + draggingDelta.x,
           y: originalPosition.y + draggingDelta.y
-        })
+        }
       });
     }
     return preview;
-  }, [canvasBounds, dragging, draggingDelta, nodeById]);
+  }, [dragging, draggingDelta, nodeById]);
   const dragPreviewNodeFor = (nodeId: string) => dragPreviewMovedNodeById.get(nodeId) ?? nodeById.get(nodeId);
   const dragInteractionBounds = useMemo<RenderViewportBounds | null>(() => {
     if (!dragging || !draggingDelta || isMultiNodeMoveState(dragging)) {
@@ -9847,6 +10055,7 @@ export function App() {
     activeLayerId,
     canvasWidth,
     canvasHeight,
+    allowAutoExpandCanvas,
     canvasBackgroundColor,
     canvasBackgroundImage,
     canvasBackgroundImageAssetId,
@@ -10034,6 +10243,7 @@ export function App() {
       setActiveLayerId(snapshot.activeLayerId);
       setCanvasWidth(snapshot.canvasWidth);
       setCanvasHeight(snapshot.canvasHeight);
+      setAllowAutoExpandCanvas(snapshot.allowAutoExpandCanvas);
       setCanvasBackgroundColor(snapshot.canvasBackgroundColor);
       setCanvasBackgroundImage(snapshot.canvasBackgroundImage);
       setCanvasBackgroundImageAssetId(snapshot.canvasBackgroundImageAssetId);
@@ -10143,13 +10353,21 @@ export function App() {
     if (!canvasResizeDrag) {
       return;
     }
-    const commitCanvasResizeBounds = (draftBounds: CanvasBounds) => {
+    const commitCanvasResizeBounds = (draftBounds: CanvasBounds, originShift: Point = { x: 0, y: 0 }) => {
       const changed = draftBounds.width !== canvasWidth || draftBounds.height !== canvasHeight;
-      if (changed && !canvasResizeUndoCapturedRef.current) {
+      const shifted = hasCanvasOriginShift(originShift);
+      if ((changed || shifted) && !canvasResizeUndoCapturedRef.current) {
         pushUndoSnapshot();
         canvasResizeUndoCapturedRef.current = true;
       }
-      applyCanvasBounds(draftBounds);
+      if (shifted) {
+        setGraphArrays(
+          nodes.map((node) => translateNodeBy(node, originShift)),
+          edges.map((edge) => translateEdgeBy(edge, originShift))
+        );
+        shiftCachedRoutesForCanvasOrigin(originShift);
+      }
+      applyCanvasBounds(draftBounds, originShift);
       canvasResizeDraftRef.current = null;
       setCanvasResizeDraft(null);
     };
@@ -10159,24 +10377,29 @@ export function App() {
       const clampedBounds = clampCanvasBounds(nextBounds);
       canvasResizeDraftRef.current = clampedBounds;
       flushSync(() => setCanvasResizeDraft(clampedBounds));
-      const frame = canvasFrameRef.current;
-      if (frame) {
-        const nextScrollLeft = canvasResizeKeepsScrollRange(canvasResizeDrag, "x")
-          ? canvasResizeDrag.startScrollLeft
-          : frame.scrollLeft;
-        const nextScrollTop = canvasResizeKeepsScrollRange(canvasResizeDrag, "y")
-          ? canvasResizeDrag.startScrollTop
-          : frame.scrollTop;
-        if (Math.abs(frame.scrollLeft - nextScrollLeft) > 1 || Math.abs(frame.scrollTop - nextScrollTop) > 1) {
-          setCanvasFrameScrollPosition(frame, nextScrollLeft, nextScrollTop);
-        }
-      }
     };
     const handlePointerUp = (event: globalThis.PointerEvent) => {
       const draftBounds = canvasResizeDraftRef.current;
+      let resizeCommitAnchor: CanvasResizeCommitAnchor | null = null;
       if (draftBounds) {
         const nextCanvasNoScrollOffset = canvasNoScrollOffsetForCanvasResizeAnchor(canvasResizeDrag, draftBounds);
-        skipNextCanvasScrollSyncRef.current = true;
+        const desiredSurfaceRect = canvasResizePreviewRectForDraft(canvasResizeDrag, draftBounds);
+        const frameRect = canvasFrameRef.current?.getBoundingClientRect();
+        resizeCommitAnchor = {
+          edge: canvasResizeDrag.edge,
+          desiredRect: {
+            left: Math.round((frameRect?.left ?? 0) - canvasResizeDrag.startScrollLeft + desiredSurfaceRect.left),
+            top: Math.round((frameRect?.top ?? 0) - canvasResizeDrag.startScrollTop + desiredSurfaceRect.top),
+            width: desiredSurfaceRect.width,
+            height: desiredSurfaceRect.height
+          }
+        };
+        pendingCanvasResizeCommitAnchorRef.current = resizeCommitAnchor;
+        const resizeOriginShift = canvasResizeOriginShiftForBounds(
+          canvasResizeDrag.edge,
+          { width: canvasResizeDrag.startWidth, height: canvasResizeDrag.startHeight },
+          draftBounds
+        );
         flushSync(() => {
           setCanvasNoScrollOffset((current) =>
             Math.round(current.x) === Math.round(nextCanvasNoScrollOffset.x) &&
@@ -10184,10 +10407,21 @@ export function App() {
               ? current
               : nextCanvasNoScrollOffset
           );
-          commitCanvasResizeBounds(draftBounds);
+          commitCanvasResizeBounds(draftBounds, resizeOriginShift);
           setCanvasResizeDrag(null);
         });
-        syncCanvasFrameScrollToResizeAnchorNow(canvasResizeDrag, event);
+        window.requestAnimationFrame(() => {
+          if (!resizeCommitAnchor) {
+            return;
+          }
+          syncCanvasFrameScrollToCanvasResizeCommitAnchor(resizeCommitAnchor);
+          window.requestAnimationFrame(() => {
+            if (resizeCommitAnchor) {
+              syncCanvasFrameScrollToCanvasResizeCommitAnchor(resizeCommitAnchor);
+              scheduleCanvasVisibleViewBoxUpdate();
+            }
+          });
+        });
       }
       if (canvasResizeUndoCapturedRef.current) {
         const currentBounds = draftBounds ?? canvasBoundsRef.current;
@@ -10460,6 +10694,7 @@ export function App() {
       activeLayerId,
       canvasWidth,
       canvasHeight,
+      allowAutoExpandCanvas,
       canvasBackgroundColor,
       canvasBackgroundImage,
       canvasBackgroundImageAssetId,
@@ -10481,6 +10716,7 @@ export function App() {
     activeLayerId,
     canvasWidth,
     canvasHeight,
+    allowAutoExpandCanvas,
     canvasBackgroundColor,
     canvasBackgroundImage,
     canvasBackgroundImageAssetId,
@@ -10502,6 +10738,7 @@ export function App() {
     previous.activeLayerId !== next.activeLayerId ||
     previous.canvasWidth !== next.canvasWidth ||
     previous.canvasHeight !== next.canvasHeight ||
+    previous.allowAutoExpandCanvas !== next.allowAutoExpandCanvas ||
     previous.canvasBackgroundColor !== next.canvasBackgroundColor ||
     previous.canvasBackgroundImage !== next.canvasBackgroundImage ||
     previous.canvasBackgroundImageAssetId !== next.canvasBackgroundImageAssetId ||
@@ -10530,7 +10767,7 @@ export function App() {
     if (graphDirtyBaselineChanged(previousBaseline, nextBaseline)) {
       setHasUnsavedChanges(true);
     }
-  }, [activeLayerId, backgroundLayerIds, backgroundProjectId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, groups, layers, nodes, powerBaseValue, powerUnit, projectName, voltageUnit]);
+  }, [activeLayerId, allowAutoExpandCanvas, backgroundLayerIds, backgroundProjectId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, groups, layers, nodes, powerBaseValue, powerUnit, projectName, voltageUnit]);
 
   const clearTransientSelectionState = () => {
     setSelectedEdgeId("");
@@ -10994,6 +11231,9 @@ export function App() {
       }
       return;
     }
+    if (rejectAutoCanvasExpansionForContent([...nodes, ...cloned.nodes], [...edges, ...cloned.edges])) {
+      return;
+    }
     pushUndoSnapshot();
     const pasteOriginShift = leftTopCanvasOriginShiftForContent(
       [...nodes, ...cloned.nodes],
@@ -11011,7 +11251,7 @@ export function App() {
     const shiftedClonedEdges = hasCanvasOriginShift(pasteOriginShift)
       ? cloned.edges.map((edge) => translateEdgeBy(edge, pasteOriginShift))
       : cloned.edges;
-    const pastedCanvasBounds = canvasBoundsForGraphContent(
+    const pastedCanvasBounds = canvasBoundsForAutoExpandedGraphContent(
       canvasBoundsWithOriginShift(canvasBounds, pasteOriginShift),
       [...pasteSourceNodes, ...shiftedClonedNodes],
       [...pasteSourceEdges, ...shiftedClonedEdges],
@@ -11170,6 +11410,9 @@ export function App() {
       window.alert("模板内容为空或包含悬空联络线，无法生成。");
       return;
     }
+    if (rejectAutoCanvasExpansionForContent([...nodes, ...cloned.nodes], [...edges, ...cloned.edges])) {
+      return;
+    }
     const dropOriginShift = leftTopCanvasOriginShiftForContent(
       [...nodes, ...cloned.nodes],
       [...edges, ...cloned.edges]
@@ -11187,7 +11430,7 @@ export function App() {
       ? cloned.edges.map((edge) => translateEdgeBy(edge, dropOriginShift))
       : cloned.edges;
     const shiftedPointerPosition = translatePointBy(pointerPosition, dropOriginShift);
-    const dropCanvasBounds = canvasBoundsForGraphContent(
+    const dropCanvasBounds = canvasBoundsForAutoExpandedGraphContent(
       canvasBoundsWithOriginShift(canvasBounds, dropOriginShift),
       [...dropSourceNodes, ...shiftedClonedNodes],
       [...dropSourceEdges, ...shiftedClonedEdges],
@@ -11748,7 +11991,8 @@ export function App() {
       }
     }
     const nextNodeForEndpoint = (nodeId: string) => movedNextNodeById.get(nodeId) ?? nodeById.get(nodeId);
-    const preserveAffectedRoutesForCanvasOriginShift = hasCanvasOriginShift(leftTopCanvasOriginShiftForContent(Array.from(movedNextNodeById.values())));
+    const preserveAffectedRoutesForCanvasOriginShift =
+      allowAutoExpandCanvas && hasCanvasOriginShift(leftTopCanvasOriginShiftForContent(Array.from(movedNextNodeById.values())));
     let changed = false;
     const nextEdges = currentEdges.map((edge) => {
       const sourceMoved = movedNodeIds.has(edge.sourceId);
@@ -12122,7 +12366,7 @@ export function App() {
       if (latestCandidateEdges.length === 0) {
         return;
       }
-      const repairCanvasBounds = canvasBoundsForGraphContent(
+      const repairCanvasBounds = canvasBoundsForAutoExpandedGraphContent(
         effectiveCanvasBounds,
         [],
         latestCandidateEdges,
@@ -12189,7 +12433,7 @@ export function App() {
     markStoredRouteEdgesDirty(dirtyEdgeIdsForMovedLocalRoutes(selectedEdgeIds, originalRoutePoints));
     let committedCandidateEdges = candidateEdges;
     const deferMovedRouteRepair = movedNodeIds.length > 1;
-    const originShift = leftTopCanvasOriginShiftForContent(movedNodeUpdates, committedCandidateEdges);
+    const originShift = allowAutoExpandCanvas ? leftTopCanvasOriginShiftForContent(movedNodeUpdates, committedCandidateEdges) : { x: 0, y: 0 };
     if (hasCanvasOriginShift(originShift)) {
       const candidateEdgeById = new Map(committedCandidateEdges.map((edge) => [edge.id, edge]));
       const rawNextEdges = edges.map((edge) => candidateEdgeById.get(edge.id) ?? edge);
@@ -12211,7 +12455,7 @@ export function App() {
       setGraphStore((current) => graphStoreSetGraph(current, shiftedNextNodes, shiftedNextEdges));
       return;
     }
-    const commitCanvasBounds = canvasBoundsForGraphContent(effectiveCanvasBounds, movedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING);
+    const commitCanvasBounds = canvasBoundsForAutoExpandedGraphContent(effectiveCanvasBounds, movedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING);
     if (deferMovedRouteRepair) {
       const edgePatch = edgePatchFromCandidateEdges(previousCandidateEdges, committedCandidateEdges);
       const expectedPatch = { nodeUpdates: movedNodeUpdates, edgeUpserts: edgePatch.edgeUpserts, edgeDeleteIds: edgePatch.edgeDeleteIds };
@@ -12616,7 +12860,7 @@ export function App() {
         : [];
     const affectedRoutes =
       nextAffectedEdges.length > 0 ? routeEdgesForStoredRendering(nextNodes, nextAffectedEdges, bounds) : [];
-    const originShift = leftTopCanvasOriginShiftForContent(movedNodes, [], affectedRoutes);
+    const originShift = allowAutoExpandCanvas ? leftTopCanvasOriginShiftForContent(movedNodes, [], affectedRoutes) : { x: 0, y: 0 };
     const shiftedBounds = canvasBoundsWithOriginShift(bounds, originShift);
     const shiftedMovedNodes = hasCanvasOriginShift(originShift)
       ? movedNodes.map((node) => translateNodeBy(node, originShift))
@@ -12691,6 +12935,9 @@ export function App() {
     if (nodeIds.length === 0) {
       return canvasBounds;
     }
+    if (!allowAutoExpandCanvas) {
+      return canvasBounds;
+    }
     const movedNodes: ModelNode[] = [];
     const seen = new Set<string>();
     for (const nodeId of nodeIds) {
@@ -12716,7 +12963,7 @@ export function App() {
       : canvasBounds;
   };
 
-  const computeNodeDragDelta = (
+  const computeNodeDragPreviewDelta = (
     dragState: DraggingState,
     point: Point,
     ctrlKey: boolean,
@@ -12731,6 +12978,16 @@ export function App() {
       movementDelta,
       { x: movementDelta.x !== 0, y: movementDelta.y !== 0 }
     );
+    return gridDelta;
+  };
+
+  const computeNodeDragDelta = (
+    dragState: DraggingState,
+    point: Point,
+    ctrlKey: boolean,
+    shiftKey: boolean
+  ) => {
+    const gridDelta = computeNodeDragPreviewDelta(dragState, point, ctrlKey, shiftKey);
     if (isMultiNodeMoveState(dragState)) {
       const expandedBounds = canvasBoundsForMovedNodeDelta(dragState.nodeIds, dragState.originalPositions, gridDelta.x, gridDelta.y);
       return boundedDeltaForNodes(
@@ -12764,35 +13021,36 @@ export function App() {
     if (!isMultiNodeMoveState(currentDrag) && !currentDrag.historyCaptured && !dragUndoCapturedRef.current) {
       ensureDraggingUndoSnapshot();
     }
+    const previewDelta = computeNodeDragPreviewDelta(currentDrag, point, ctrlKey, shiftKey);
     const boundedDelta = computeNodeDragDelta(currentDrag, point, ctrlKey, shiftKey);
     if (
       currentDrag.historyCaptured &&
       currentDrag.currentDelta?.x === boundedDelta.x &&
-      currentDrag.currentDelta?.y === boundedDelta.y
+      currentDrag.currentDelta?.y === boundedDelta.y &&
+      currentDrag.previewDelta?.x === previewDelta.x &&
+      currentDrag.previewDelta?.y === previewDelta.y
     ) {
       draggingRef.current = currentDrag;
       return;
     }
     if (isMultiNodeMoveState(currentDrag)) {
-      applyCanvasBounds(canvasBoundsForMovedNodeDelta(currentDrag.nodeIds, currentDrag.originalPositions, boundedDelta.x, boundedDelta.y));
       draggingRef.current = {
         ...currentDrag,
         currentDelta: boundedDelta,
+        previewDelta,
         historyCaptured: true
       };
       if (renderPreview) {
-        updateMultiNodeDragOverlayTransform(boundedDelta);
+        updateMultiNodeDragOverlayTransform(previewDelta);
       }
       return;
     }
     const nextDragState = {
       ...currentDrag,
       currentDelta: boundedDelta,
+      previewDelta,
       historyCaptured: true
     };
-    if (!isMultiNodeMoveState(currentDrag)) {
-      applyCanvasBounds(canvasBoundsForMoveDelta(currentDrag.nodeIds, currentDrag.originalPositions, boundedDelta.x, boundedDelta.y));
-    }
     draggingRef.current = nextDragState;
     if (!renderPreview) {
       return;
@@ -12807,7 +13065,9 @@ export function App() {
       if (
         current.historyCaptured &&
         current.currentDelta?.x === boundedDelta.x &&
-        current.currentDelta?.y === boundedDelta.y
+        current.currentDelta?.y === boundedDelta.y &&
+        current.previewDelta?.x === previewDelta.x &&
+        current.previewDelta?.y === previewDelta.y
       ) {
         draggingRef.current = current;
         return current;
@@ -12815,6 +13075,7 @@ export function App() {
       const next = {
         ...current,
         currentDelta: boundedDelta,
+        previewDelta,
         historyCaptured: true
       };
       draggingRef.current = next;
@@ -13091,7 +13352,11 @@ export function App() {
           let transformedNodeUpdates = buildGroupTransformNodeUpdates(activeTransform, finalPreviewPoint, currentStore, { snapRotation: activeTransform.kind === "rotate" });
           const transformedEdgeUpdates = buildGroupTransformEdgeUpdates(activeTransform, finalPreviewPoint, currentStore, { snapRotation: activeTransform.kind === "rotate" });
           const transformedEdges = overlayEdgeUpdatesForTransform(currentStore.edges, transformedEdgeUpdates);
-          const transformBounds = canvasBoundsForGraphContent(
+          if (rejectAutoCanvasExpansionForContent(transformedNodeUpdates, transformedEdgeUpdates)) {
+            setTransformDrag(null);
+            return;
+          }
+          const transformBounds = canvasBoundsForAutoExpandedGraphContent(
             canvasBounds,
             overlayGraphStoreNodes(currentStore, transformedNodeUpdates),
             transformedEdges,
@@ -13130,7 +13395,11 @@ export function App() {
         const currentStore = latestGraphStoreRef.current ?? graphStore;
         let singleNodeUpdate = singleTransformNodeUpdate(activeTransform, activeTransform.previewPoint, currentStore, true);
         if (singleNodeUpdate) {
-          const transformBounds = canvasBoundsForGraphContent(
+          if (rejectAutoCanvasExpansionForContent([singleNodeUpdate])) {
+            setTransformDrag(null);
+            return;
+          }
+          const transformBounds = canvasBoundsForAutoExpandedGraphContent(
             canvasBounds,
             [singleNodeUpdate],
             [],
@@ -13166,7 +13435,11 @@ export function App() {
         const currentStore = latestGraphStoreRef.current ?? graphStore;
         const currentSingleNode = currentStore.nodeMap.get(activeTransform.nodeId);
         if (currentSingleNode) {
-          const transformBounds = canvasBoundsForGraphContent(
+          if (rejectAutoCanvasExpansionForContent([currentSingleNode])) {
+            setTransformDrag(null);
+            return;
+          }
+          const transformBounds = canvasBoundsForAutoExpandedGraphContent(
             canvasBounds,
             [currentSingleNode],
             [],
@@ -13278,15 +13551,11 @@ export function App() {
       historyCaptured: true
     };
     if (isMultiNodeMoveState(activeDragging)) {
-      applyCanvasBounds(canvasBoundsForMovedNodeDelta(activeDragging.nodeIds, activeDragging.originalPositions, boundedDelta.x, boundedDelta.y));
       draggingRef.current = nextDragging;
       if (renderPreview) {
         updateMultiNodeDragOverlayTransform(boundedDelta);
       }
       return true;
-    }
-    if (!isMultiNodeMoveState(activeDragging)) {
-      applyCanvasBounds(canvasBoundsForMoveDelta(activeDragging.nodeIds, activeDragging.originalPositions, boundedDelta.x, boundedDelta.y));
     }
     draggingRef.current = nextDragging;
     if (renderPreview) {
@@ -13593,23 +13862,27 @@ export function App() {
       return;
     }
     const changesCanvasFootprint = Boolean(patch.position) || geometryPatch;
+    let selectedNodeCanvasBounds = canvasBounds;
+    const footprintSourceNode = selectedNode ?? currentSelectedNode;
+    if (footprintSourceNode) {
+      if (changesCanvasFootprint) {
+        const requestedPosition = nextPatch.position
+          ? { x: nextPatch.position.x, y: nextPatch.position.y }
+          : footprintSourceNode.position;
+        const candidateNode = { ...footprintSourceNode, ...nextPatch, position: requestedPosition };
+        if (rejectAutoCanvasExpansionForContent([candidateNode])) {
+          return;
+        }
+        selectedNodeCanvasBounds = canvasBoundsForAutoExpandedGraphContent(canvasBounds, [candidateNode], [], [], CANVAS_AUTO_EXPAND_PADDING);
+        applyCanvasBounds(selectedNodeCanvasBounds);
+        nextPatch.position = clampNodePositionToExpandableBounds(candidateNode, selectedNodeCanvasBounds, requestedPosition);
+      }
+    }
     if (changesCanvasFootprint) {
       const footprintEdges = edgeListForNodeIds([selectedNodeId]);
       pushUndoSnapshot(true, false, undoScopeForGraphPatch([selectedNodeId], footprintEdges.map((edge) => edge.id)));
     } else {
       pushNodeOnlyUndoSnapshot(selectedNodeId);
-    }
-    let selectedNodeCanvasBounds = canvasBounds;
-    if (selectedNode) {
-      if (changesCanvasFootprint) {
-        const requestedPosition = nextPatch.position
-          ? { x: nextPatch.position.x, y: nextPatch.position.y }
-          : selectedNode.position;
-        const candidateNode = { ...selectedNode, ...nextPatch, position: requestedPosition };
-        selectedNodeCanvasBounds = canvasBoundsForGraphContent(canvasBounds, [candidateNode], [], [], CANVAS_AUTO_EXPAND_PADDING);
-        applyCanvasBounds(selectedNodeCanvasBounds);
-        nextPatch.position = clampNodePositionToExpandableBounds(candidateNode, selectedNodeCanvasBounds, requestedPosition);
-      }
     }
     const nextSelectedNode = { ...currentSelectedNode, ...nextPatch };
     const nextNodes = overlayGraphStoreNodes(graphStore, [nextSelectedNode]);
@@ -13686,7 +13959,10 @@ export function App() {
     const previousNodes = options.previousNodes ?? nodes;
     const nextNodes = overlayGraphStoreNodes(graphStore, existingUpdates);
     const directCandidateEdges = edgeListForNodeIds(changedNodeIds);
-    const originShift = leftTopCanvasOriginShiftForContent(existingUpdates, directCandidateEdges);
+    if (rejectAutoCanvasExpansionForContent(existingUpdates, directCandidateEdges)) {
+      return;
+    }
+    const originShift = allowAutoExpandCanvas ? leftTopCanvasOriginShiftForContent(existingUpdates, directCandidateEdges) : { x: 0, y: 0 };
     if (hasCanvasOriginShift(originShift)) {
       const shiftedNodes = nextNodes.map((node) => translateNodeBy(node, originShift));
       const shiftedEdges = edges.map((edge) => translateEdgeBy(edge, originShift));
@@ -13706,7 +13982,7 @@ export function App() {
       setGraphStore((current) => graphStoreSetGraph(current, shiftedNodes, shiftedEdges));
       return;
     }
-    const footprintCanvasBounds = canvasBoundsForGraphContent(
+    const footprintCanvasBounds = canvasBoundsForAutoExpandedGraphContent(
       canvasBounds,
       existingUpdates,
       directCandidateEdges,
@@ -14416,6 +14692,11 @@ export function App() {
     }
     const position = { x: pointerPosition.x, y: pointerPosition.y };
     const rawNode = snapNodeToCanvasGrid({ ...createNodeFromTemplate(template, position), layerId: activeLayerId });
+    if (rejectAutoCanvasExpansionForContent([...nodes, rawNode], edges)) {
+      setLibraryPlacement(null);
+      setMode("select");
+      return;
+    }
     const dropOriginShift = leftTopCanvasOriginShiftForContent([...nodes, rawNode], edges);
     const dropSourceNodes = hasCanvasOriginShift(dropOriginShift)
       ? nodes.map((node) => translateNodeBy(node, dropOriginShift))
@@ -14425,7 +14706,7 @@ export function App() {
       : edges;
     const node = translateNodeBy(rawNode, dropOriginShift);
     const shiftedPointerPosition = translatePointBy(pointerPosition, dropOriginShift);
-    const dropCanvasBounds = canvasBoundsForGraphContent(
+    const dropCanvasBounds = canvasBoundsForAutoExpandedGraphContent(
       canvasBoundsWithOriginShift(canvasBounds, dropOriginShift),
       [...dropSourceNodes, node],
       dropSourceEdges,
@@ -14538,6 +14819,8 @@ export function App() {
       startClientY: event.clientY,
       startWidth: canvasWidth,
       startHeight: canvasHeight,
+      startDisplayWidth: canvasDisplayWidth,
+      startDisplayHeight: canvasDisplayHeight,
       startDisplayOffsetX: canvasDisplayOffsetX,
       startDisplayOffsetY: canvasDisplayOffsetY,
       startScrollLeft: canvasFrameRef.current?.scrollLeft ?? 0,
@@ -14548,7 +14831,7 @@ export function App() {
       startVerticalScrollbarsActive: canvasVerticalScrollbarsActive,
       unitsPerCssX: svgRect.width > 0 ? canvasBounds.width / svgRect.width : 1,
       unitsPerCssY: svgRect.height > 0 ? canvasBounds.height / svgRect.height : 1,
-      minBounds: minimumCanvasBoundsForContent()
+      minBounds: minimumCanvasBoundsForResizeEdge(edge)
     });
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -14577,6 +14860,30 @@ export function App() {
     return true;
   };
 
+  const startCanvasResizeFromLeftOverlay = (event: PointerEvent<Element>) => {
+    if (!svgRef.current) {
+      return false;
+    }
+    const svgRect = svgRef.current.getBoundingClientRect();
+    if (svgRect.width <= 0 || svgRect.height <= 0) {
+      return false;
+    }
+    const unitsPerCssX = canvasBounds.width / svgRect.width;
+    const handleHalfWidthCss = unitsPerCssX > 0
+      ? CANVAS_RESIZE_HANDLE_SIZE / 2 / unitsPerCssX
+      : CANVAS_RESIZE_HANDLE_SIZE / 2;
+    const leftEdgeHotspot = Math.max(10, handleHalfWidthCss + 3);
+    const insideLeftEdge =
+      Math.abs(event.clientX - svgRect.left) <= leftEdgeHotspot &&
+      event.clientY >= svgRect.top &&
+      event.clientY <= svgRect.bottom;
+    if (!insideLeftEdge) {
+      return false;
+    }
+    startCanvasResize(event, "left");
+    return true;
+  };
+
   const startCanvasResizeFromBottomOverlay = (event: PointerEvent<Element>) => {
     if (!svgRef.current) {
       return false;
@@ -14598,6 +14905,30 @@ export function App() {
       return false;
     }
     startCanvasResize(event, "bottom");
+    return true;
+  };
+
+  const startCanvasResizeFromTopOverlay = (event: PointerEvent<Element>) => {
+    if (!svgRef.current) {
+      return false;
+    }
+    const svgRect = svgRef.current.getBoundingClientRect();
+    if (svgRect.width <= 0 || svgRect.height <= 0) {
+      return false;
+    }
+    const unitsPerCssY = canvasBounds.height / svgRect.height;
+    const handleHalfHeightCss = unitsPerCssY > 0
+      ? CANVAS_RESIZE_HANDLE_SIZE / 2 / unitsPerCssY
+      : CANVAS_RESIZE_HANDLE_SIZE / 2;
+    const topEdgeHotspot = Math.max(10, handleHalfHeightCss + 3);
+    const insideTopEdge =
+      Math.abs(event.clientY - svgRect.top) <= topEdgeHotspot &&
+      event.clientX >= svgRect.left &&
+      event.clientX <= svgRect.right;
+    if (!insideTopEdge) {
+      return false;
+    }
+    startCanvasResize(event, "top");
     return true;
   };
 
@@ -14669,6 +15000,9 @@ export function App() {
           aria-label={label}
           onPointerEnter={() => updateAutoPanelVisibility(side, "edge-enter")}
           onPointerDown={(event) => {
+            if (side === "left" && startCanvasResizeFromLeftOverlay(event)) {
+              return;
+            }
             if (side === "right" && startCanvasResizeFromRightOverlay(event)) {
               return;
             }
@@ -16096,8 +16430,11 @@ export function App() {
     const movedNodeIds = movedNodeUpdates.map((node) => node.id);
     const movedNodeIdSet = new Set(movedNodeIds);
     const affectedEdgesForLayout = edgeListForNodeIds(movedNodeIds);
+    if (rejectAutoCanvasExpansionForContent(movedNodeUpdates, affectedEdgesForLayout)) {
+      return 0;
+    }
     pushUndoSnapshot(true, false, undoScopeForGraphPatch(movedNodeIds, affectedEdgesForLayout.map((edge) => edge.id)));
-    const layoutCanvasBounds = canvasBoundsForGraphContent(
+    const layoutCanvasBounds = canvasBoundsForAutoExpandedGraphContent(
       canvasBounds,
       arranged,
       edges,
@@ -16336,6 +16673,7 @@ export function App() {
     setProjectName(project.name);
     setCanvasWidth(nextCanvasBounds.width);
     setCanvasHeight(nextCanvasBounds.height);
+    setAllowAutoExpandCanvas(project.project.allowAutoExpandCanvas ?? true);
     setCanvasBackgroundColor(project.project.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND);
     setCanvasBackgroundImage(project.project.canvasBackgroundImage ?? "");
     setCanvasBackgroundImageAssetId(project.project.canvasBackgroundImageAssetId ?? "");
@@ -16827,6 +17165,7 @@ export function App() {
           activeSchemeId: draftSchemeId,
           canvasWidth,
           canvasHeight,
+          allowAutoExpandCanvas,
           canvasBackgroundColor,
           canvasBackgroundImage,
           canvasBackgroundImageAssetId,
@@ -17152,6 +17491,7 @@ export function App() {
       name,
       canvasWidth,
       canvasHeight,
+      allowAutoExpandCanvas: true,
       canvasBackgroundColor: DEFAULT_CANVAS_BACKGROUND,
       powerUnit: DEFAULT_POWER_UNIT,
       voltageUnit: DEFAULT_VOLTAGE_UNIT,
@@ -21101,6 +21441,15 @@ export function App() {
               if (event.button !== 0 || event.target !== event.currentTarget || staticDrawing || libraryPlacement || connectSource) {
                 return;
               }
+              if (startCanvasResizeFromTopOverlay(event)) {
+                return;
+              }
+              if (startCanvasResizeFromLeftOverlay(event)) {
+                return;
+              }
+              if (startCanvasResizeFromRightOverlay(event)) {
+                return;
+              }
               if (startCanvasResizeFromBottomOverlay(event)) {
                 return;
               }
@@ -21176,6 +21525,9 @@ export function App() {
             onPointerLeave={() => {
               canvasInteractionRef.current = false;
               clearLibraryPlacementPreview();
+              if (draggingRef.current) {
+                return;
+              }
               if (manualPathDrag) {
                 return;
               }
@@ -21704,10 +22056,10 @@ export function App() {
               const isConnectSource = node.id === connectSource?.nodeId;
               const originalDragPosition = dragging?.originalPositions[node.id];
               const renderPosition = draggingDelta && originalDragPosition
-                ? clampNodeToCanvas(node, {
+                ? {
                     x: originalDragPosition.x + draggingDelta.x,
                     y: originalDragPosition.y + draggingDelta.y
-                  })
+                  }
                 : node.position;
               const renderSimplifiedNode =
                 useSimplifiedCanvasNodes &&
@@ -22217,18 +22569,34 @@ export function App() {
             )}
             <g className="canvas-resize-handles" aria-hidden="true">
               <rect
+                className="canvas-resize-handle canvas-resize-handle-left"
+                x={-CANVAS_RESIZE_HANDLE_SIZE / 2}
+                y={CANVAS_RESIZE_HANDLE_SIZE}
+                width={CANVAS_RESIZE_HANDLE_SIZE}
+                height={Math.max(CANVAS_RESIZE_HANDLE_SIZE, canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE * 2)}
+                onPointerDown={(event) => startCanvasResize(event, "left")}
+              />
+              <rect
+                className="canvas-resize-handle canvas-resize-handle-top"
+                x={CANVAS_RESIZE_HANDLE_SIZE}
+                y={-CANVAS_RESIZE_HANDLE_SIZE / 2}
+                width={Math.max(CANVAS_RESIZE_HANDLE_SIZE, canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE * 2)}
+                height={CANVAS_RESIZE_HANDLE_SIZE}
+                onPointerDown={(event) => startCanvasResize(event, "top")}
+              />
+              <rect
                 className="canvas-resize-handle canvas-resize-handle-right"
                 x={canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE / 2}
-                y={0}
+                y={CANVAS_RESIZE_HANDLE_SIZE}
                 width={CANVAS_RESIZE_HANDLE_SIZE}
-                height={Math.max(CANVAS_RESIZE_HANDLE_SIZE, canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE)}
+                height={Math.max(CANVAS_RESIZE_HANDLE_SIZE, canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE * 2)}
                 onPointerDown={(event) => startCanvasResize(event, "right")}
               />
               <rect
                 className="canvas-resize-handle canvas-resize-handle-bottom"
-                x={0}
+                x={CANVAS_RESIZE_HANDLE_SIZE}
                 y={canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE / 2}
-                width={Math.max(CANVAS_RESIZE_HANDLE_SIZE, canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE)}
+                width={Math.max(CANVAS_RESIZE_HANDLE_SIZE, canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE * 2)}
                 height={CANVAS_RESIZE_HANDLE_SIZE}
                 onPointerDown={(event) => startCanvasResize(event, "bottom")}
               />
@@ -22240,8 +22608,53 @@ export function App() {
                 height={CANVAS_RESIZE_HANDLE_SIZE}
                 onPointerDown={(event) => startCanvasResize(event, "corner")}
               />
+              <rect
+                className="canvas-resize-handle canvas-resize-handle-top-left"
+                x={0}
+                y={0}
+                width={CANVAS_RESIZE_HANDLE_SIZE}
+                height={CANVAS_RESIZE_HANDLE_SIZE}
+                onPointerDown={(event) => startCanvasResize(event, "top-left")}
+              />
+              <rect
+                className="canvas-resize-handle canvas-resize-handle-top-right"
+                x={canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE}
+                y={0}
+                width={CANVAS_RESIZE_HANDLE_SIZE}
+                height={CANVAS_RESIZE_HANDLE_SIZE}
+                onPointerDown={(event) => startCanvasResize(event, "top-right")}
+              />
+              <rect
+                className="canvas-resize-handle canvas-resize-handle-bottom-left"
+                x={0}
+                y={canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE}
+                width={CANVAS_RESIZE_HANDLE_SIZE}
+                height={CANVAS_RESIZE_HANDLE_SIZE}
+                onPointerDown={(event) => startCanvasResize(event, "bottom-left")}
+              />
             </g>
             </svg>
+            {canvasResizePreviewRect && (
+              <div
+                className="canvas-resize-preview"
+                style={{
+                  left: canvasResizePreviewRect.left,
+                  top: canvasResizePreviewRect.top,
+                  width: canvasResizePreviewRect.width,
+                  height: canvasResizePreviewRect.height
+                }}
+              />
+            )}
+            <div className="canvas-resize-hotzones" style={canvasResizeHotzoneStyle} aria-hidden="true">
+              <div className="canvas-resize-hotzone canvas-resize-hotzone-left" onPointerDown={(event) => startCanvasResize(event, "left")} />
+              <div className="canvas-resize-hotzone canvas-resize-hotzone-top" onPointerDown={(event) => startCanvasResize(event, "top")} />
+              <div className="canvas-resize-hotzone canvas-resize-hotzone-right" onPointerDown={(event) => startCanvasResize(event, "right")} />
+              <div className="canvas-resize-hotzone canvas-resize-hotzone-bottom" onPointerDown={(event) => startCanvasResize(event, "bottom")} />
+              <div className="canvas-resize-hotzone canvas-resize-hotzone-top-left" onPointerDown={(event) => startCanvasResize(event, "top-left")} />
+              <div className="canvas-resize-hotzone canvas-resize-hotzone-top-right" onPointerDown={(event) => startCanvasResize(event, "top-right")} />
+              <div className="canvas-resize-hotzone canvas-resize-hotzone-bottom-left" onPointerDown={(event) => startCanvasResize(event, "bottom-left")} />
+              <div className="canvas-resize-hotzone canvas-resize-hotzone-bottom-right" onPointerDown={(event) => startCanvasResize(event, "corner")} />
+            </div>
             {(nodeFloatingToolbar || edgeFloatingToolbar) && (
               <div className="canvas-floating-toolbar-layer">
                 {nodeFloatingToolbar && (
@@ -22522,6 +22935,22 @@ export function App() {
                         onBlur={handleCanvasSizeBlur}
                         onKeyDown={handleCanvasSizeKeyDown}
                       />
+                    </td>
+                  </tr>
+                  <tr>
+                    {renderChineseParamHeader("allowAutoExpandCanvas")}
+                    <td>
+                      <label className="inline-checkbox-field">
+                        <input
+                          type="checkbox"
+                          checked={allowAutoExpandCanvas}
+                          onChange={(event) => {
+                            pushUndoSnapshot();
+                            setAllowAutoExpandCanvas(event.target.checked);
+                          }}
+                        />
+                        <span>{allowAutoExpandCanvas ? "允许" : "不允许"}</span>
+                      </label>
                     </td>
                   </tr>
                   <tr>

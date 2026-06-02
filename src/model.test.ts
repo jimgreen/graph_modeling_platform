@@ -12,8 +12,10 @@ import {
   buildContainerDeviceParameterViews,
   describeContainerTerminalAssociations,
   calculateModelGeometryBounds,
+  canvasResizeMinimumBoundsForGeometry,
   clampNodePositionToBounds,
   canvasResizeBoundsFromPointerDrag,
+  canvasResizeOriginShiftFromPointerDrag,
   clampViewBoxDimensionsForZoom,
   geometryBoundsInsideCanvas,
   assignPermanentDeviceIndex,
@@ -1158,6 +1160,20 @@ describe("power system model", () => {
     expect(file.text).toContain("@ p_base u_unit p_unit i_unit");
     expect(file.text).toContain("<ACGenerator>");
     expect(() => JSON.parse(file.text)).toThrow();
+  });
+
+  test("preserves the per-model automatic canvas expansion setting", () => {
+    const project: ProjectFile = {
+      version: 1,
+      name: "固定边界模型",
+      allowAutoExpandCanvas: false,
+      nodes: [createDefaultNode("ac-source", { x: 100, y: 100 })],
+      edges: []
+    };
+
+    const restored = deserializeProject(serializeProject(project));
+
+    expect(restored.allowAutoExpandCanvas).toBe(false);
   });
 
   test("exports hydrogen, heat, and cross-energy devices to E sections and reports unsupported devices", () => {
@@ -2656,6 +2672,103 @@ describe("power system model", () => {
       width: 960,
       height: 800
     });
+  });
+
+  test("calculates canvas resize origin shift for left and top edges", () => {
+    const drag = {
+      edge: "left" as const,
+      startClientX: 1000,
+      startClientY: 500,
+      startWidth: 1000,
+      startHeight: 800,
+      unitsPerCssX: 1,
+      unitsPerCssY: 1
+    };
+
+    expect(canvasResizeBoundsFromPointerDrag(drag, { clientX: 900, clientY: 500 }, { width: 640, height: 360 })).toEqual({
+      width: 1100,
+      height: 800
+    });
+    expect(canvasResizeOriginShiftFromPointerDrag(drag, { clientX: 900, clientY: 500 }, { width: 640, height: 360 })).toEqual({
+      x: 100,
+      y: 0
+    });
+    expect(canvasResizeBoundsFromPointerDrag({ ...drag, edge: "top" }, { clientX: 1000, clientY: 450 }, { width: 640, height: 360 })).toEqual({
+      width: 1000,
+      height: 850
+    });
+    expect(canvasResizeOriginShiftFromPointerDrag({ ...drag, edge: "top" }, { clientX: 1000, clientY: 450 }, { width: 640, height: 360 })).toEqual({
+      x: 0,
+      y: 50
+    });
+    expect(canvasResizeBoundsFromPointerDrag({ ...drag, edge: "top-left" }, { clientX: 900, clientY: 450 }, { width: 640, height: 360 })).toEqual({
+      width: 1100,
+      height: 850
+    });
+    expect(canvasResizeOriginShiftFromPointerDrag({ ...drag, edge: "top-left" }, { clientX: 900, clientY: 450 }, { width: 640, height: 360 })).toEqual({
+      x: 100,
+      y: 50
+    });
+    expect(canvasResizeBoundsFromPointerDrag({ ...drag, edge: "top-right" }, { clientX: 1050, clientY: 450 }, { width: 640, height: 360 })).toEqual({
+      width: 1050,
+      height: 850
+    });
+    expect(canvasResizeOriginShiftFromPointerDrag({ ...drag, edge: "top-right" }, { clientX: 1050, clientY: 450 }, { width: 640, height: 360 })).toEqual({
+      x: 0,
+      y: 50
+    });
+    expect(canvasResizeBoundsFromPointerDrag({ ...drag, edge: "bottom-left" }, { clientX: 900, clientY: 540 }, { width: 640, height: 360 })).toEqual({
+      width: 1100,
+      height: 840
+    });
+    expect(canvasResizeOriginShiftFromPointerDrag({ ...drag, edge: "bottom-left" }, { clientX: 900, clientY: 540 }, { width: 640, height: 360 })).toEqual({
+      x: 100,
+      y: 0
+    });
+  });
+
+  test("does not let right-edge content lock left-edge canvas shrink", () => {
+    const startBounds = { width: 2000, height: 1000 };
+    const rightAndBottomEdgeContent = { left: 1900, right: 2000, top: 900, bottom: 1000 };
+    const absoluteMinBounds = { width: 640, height: 360 };
+
+    const leftMinBounds = canvasResizeMinimumBoundsForGeometry("left", startBounds, rightAndBottomEdgeContent, absoluteMinBounds);
+    expect(leftMinBounds.width).toBe(640);
+    expect(canvasResizeBoundsFromPointerDrag(
+      {
+        edge: "left",
+        startClientX: 1000,
+        startClientY: 500,
+        startWidth: startBounds.width,
+        startHeight: startBounds.height,
+        unitsPerCssX: 1,
+        unitsPerCssY: 1
+      },
+      { clientX: 1100, clientY: 500 },
+      leftMinBounds
+    )).toEqual({ width: 1900, height: 1000 });
+
+    const rightMinBounds = canvasResizeMinimumBoundsForGeometry("right", startBounds, rightAndBottomEdgeContent, absoluteMinBounds);
+    expect(rightMinBounds.width).toBe(2000);
+
+    const topMinBounds = canvasResizeMinimumBoundsForGeometry("top", startBounds, rightAndBottomEdgeContent, absoluteMinBounds);
+    expect(topMinBounds.height).toBe(360);
+    expect(canvasResizeBoundsFromPointerDrag(
+      {
+        edge: "top",
+        startClientX: 1000,
+        startClientY: 500,
+        startWidth: startBounds.width,
+        startHeight: startBounds.height,
+        unitsPerCssX: 1,
+        unitsPerCssY: 1
+      },
+      { clientX: 1000, clientY: 600 },
+      topMinBounds
+    )).toEqual({ width: 2000, height: 900 });
+
+    const bottomMinBounds = canvasResizeMinimumBoundsForGeometry("bottom", startBounds, rightAndBottomEdgeContent, absoluteMinBounds);
+    expect(bottomMinBounds.height).toBe(1000);
   });
 
   test("scales keyboard move steps with the current view box zoom", () => {

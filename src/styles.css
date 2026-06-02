@@ -1358,6 +1358,7 @@ button:disabled {
   display: block;
   width: 1980px;
   height: 1024px;
+  overflow: visible;
   background: transparent;
   touch-action: none;
 }
@@ -1461,16 +1462,110 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   pointer-events: all;
 }
 
-.canvas-resize-handle-right {
+.canvas-resize-preview {
+  position: absolute;
+  z-index: 24;
+  box-sizing: border-box;
+  border: 2px solid #2563eb;
+  background: rgba(37, 99, 235, 0.04);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.78), 0 0 0 4px rgba(37, 99, 235, 0.14);
+  pointer-events: none;
+}
+
+.canvas-resize-hotzones {
+  position: absolute;
+  z-index: 46;
+  pointer-events: none;
+}
+
+.canvas-resize-hotzone {
+  position: absolute;
+  background: transparent;
+  pointer-events: all;
+}
+
+.canvas-resize-hotzone-left,
+.canvas-resize-hotzone-right {
+  top: var(--canvas-resize-hotzone-y);
+  width: var(--canvas-resize-hotzone-x);
+  height: calc(100% - var(--canvas-resize-hotzone-y) * 2);
   cursor: ew-resize;
 }
 
-.canvas-resize-handle-bottom {
+.canvas-resize-hotzone-left {
+  left: calc(var(--canvas-resize-hotzone-x) / -2);
+}
+
+.canvas-resize-hotzone-right {
+  right: calc(var(--canvas-resize-hotzone-x) / -2);
+}
+
+.canvas-resize-hotzone-top,
+.canvas-resize-hotzone-bottom {
+  left: var(--canvas-resize-hotzone-x);
+  width: calc(100% - var(--canvas-resize-hotzone-x) * 2);
+  height: var(--canvas-resize-hotzone-y);
   cursor: ns-resize;
 }
 
-.canvas-resize-handle-corner {
+.canvas-resize-hotzone-top {
+  top: calc(var(--canvas-resize-hotzone-y) / -2);
+}
+
+.canvas-resize-hotzone-bottom {
+  bottom: calc(var(--canvas-resize-hotzone-y) / -2);
+}
+
+.canvas-resize-hotzone-top-left,
+.canvas-resize-hotzone-top-right,
+.canvas-resize-hotzone-bottom-left,
+.canvas-resize-hotzone-bottom-right {
+  width: var(--canvas-resize-hotzone-x);
+  height: var(--canvas-resize-hotzone-y);
+}
+
+.canvas-resize-hotzone-top-left {
+  left: calc(var(--canvas-resize-hotzone-x) / -2);
+  top: calc(var(--canvas-resize-hotzone-y) / -2);
   cursor: nwse-resize;
+}
+
+.canvas-resize-hotzone-top-right {
+  right: calc(var(--canvas-resize-hotzone-x) / -2);
+  top: calc(var(--canvas-resize-hotzone-y) / -2);
+  cursor: nesw-resize;
+}
+
+.canvas-resize-hotzone-bottom-left {
+  left: calc(var(--canvas-resize-hotzone-x) / -2);
+  bottom: calc(var(--canvas-resize-hotzone-y) / -2);
+  cursor: nesw-resize;
+}
+
+.canvas-resize-hotzone-bottom-right {
+  right: calc(var(--canvas-resize-hotzone-x) / -2);
+  bottom: calc(var(--canvas-resize-hotzone-y) / -2);
+  cursor: nwse-resize;
+}
+
+.canvas-resize-handle-right,
+.canvas-resize-handle-left {
+  cursor: ew-resize;
+}
+
+.canvas-resize-handle-bottom,
+.canvas-resize-handle-top {
+  cursor: ns-resize;
+}
+
+.canvas-resize-handle-corner,
+.canvas-resize-handle-top-left {
+  cursor: nwse-resize;
+}
+
+.canvas-resize-handle-top-right,
+.canvas-resize-handle-bottom-left {
+  cursor: nesw-resize;
 }
 
 .canvas-resize-handle:hover,
