@@ -81,6 +81,7 @@ import {
   createStaticBoxNodeFromDrawing,
   containerRelationNameKey,
   CANVAS_GRID_SIZE,
+  CONVERTER_GLYPH_BORDER_INSET,
   CUSTOM_DEVICE_TEMPLATE_KEY,
   CUSTOM_PARAM_DEFINITIONS_KEY,
   DEFAULT_COLOR_PALETTE,
@@ -802,6 +803,12 @@ type CanvasSelectionSnapshot = {
   edgeIds: string[];
   edgeId: string;
 };
+type SingleNodeDragCache = {
+  movedNodeIds: Set<string>;
+  draggedEdgeIds: Set<string>;
+  movedBusNodeIds: Set<string>;
+  relevantEdges: Edge[];
+};
 type DraggingState = {
   source?: "pointer" | "keyboard";
   nodeIds: string[];
@@ -811,6 +818,8 @@ type DraggingState = {
   originalPositions: Record<string, Point>;
   originalEdgePoints: Record<string, { sourcePoint?: Point; targetPoint?: Point; manualPoints?: Point[] }>;
   originalRoutePoints: Record<string, Point[]>;
+  originalRouteBounds: Record<string, RenderViewportBounds | null>;
+  singleNodeDragCache?: SingleNodeDragCache;
   currentDelta?: Point;
   previewDelta?: Point;
   historyCaptured?: boolean;
@@ -1067,6 +1076,9 @@ const CANVAS_LOD_SELECTED_DETAIL_LIMIT = 12;
 const CANVAS_LOD_MARKUP_CHUNK_SIZE = 64;
 const CONNECTION_HIT_SCREEN_TOLERANCE = 18;
 const CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT = 24;
+const CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT = 24;
+const CANVAS_SINGLE_NODE_DRAG_SNAP_EDGE_LIMIT = 48;
+const CANVAS_SINGLE_NODE_DRAG_PREVIEW_PADDING = 160;
 const CANVAS_FLOATING_TOOLBAR_GAP = 7;
 const NODE_FLOATING_TOOLBAR_WIDTH = 224;
 const NODE_FLOATING_TOOLBAR_HEIGHT = 38;
@@ -4018,7 +4030,7 @@ function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorDisplayM
   return node.terminals
     .map((terminal) => {
       const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
-      const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind);
+      const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
       const strokeWidth = terminalStubStrokeWidth(node, terminal);
       const terminalColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
       const label = `${terminal.label} / ${terminal.type.toUpperCase()}`;
@@ -5507,8 +5519,13 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
     if (mode === "text") {
       return null;
     }
-    const leftX = -w / 2 + 10;
-    const rightX = w / 2 - 24;
+    const borderInset = CONVERTER_GLYPH_BORDER_INSET;
+    const borderX = -w / 2 + borderInset;
+    const borderY = -h / 2 + borderInset;
+    const borderWidth = Math.max(2, w - borderInset * 2);
+    const borderHeight = Math.max(2, h - borderInset * 2);
+    const leftX = -w / 2 + borderInset + 2;
+    const rightX = w / 2 - borderInset - 24;
     const symbolY = 0;
     const dcSymbol = (x: number) => (
       <g>
@@ -5521,7 +5538,7 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
     );
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="6" fill={fill} />
+        <rect x={borderX} y={borderY} width={borderWidth} height={borderHeight} rx="6" fill={fill} />
         {glyphVariant === "dcdc-converter" ? dcSymbol(leftX) : acSymbol(leftX - 1)}
         {glyphVariant === "acdc-converter" ? dcSymbol(rightX + 4) : glyphVariant === "acac-converter" ? acSymbol(rightX) : dcSymbol(rightX + 4)}
         <path d={glyphVariant === "acac-converter" ? "M -5 -8 L 0 0 L -5 8 M 5 -8 L 0 0 L 5 8" : "M -7 0 H 7 M 2 -5 L 7 0 L 2 5"} />
@@ -5970,6 +5987,10 @@ export function App() {
   const imperativeMultiNodeDragOverlayRef = useRef<SVGGElement | null>(null);
   const imperativeMultiNodeDragActiveRef = useRef(false);
   const multiNodeDragOverlayDeltaRef = useRef<Point>({ x: 0, y: 0 });
+  const imperativeSingleNodeDragNodeOverlayRef = useRef<SVGGElement | null>(null);
+  const imperativeSingleNodeDragEdgePreviewRef = useRef<SVGGElement | null>(null);
+  const imperativeNodeDragDropHintRef = useRef<SVGGElement | null>(null);
+  const imperativeSingleNodeDragActiveRef = useRef(false);
   const nodeTerminalSnapTargetRef = useRef<NodeTerminalSnapTarget | null>(null);
   const pendingNodeDragMoveRef = useRef<{ point: Point; ctrlKey: boolean; shiftKey: boolean } | null>(null);
   const nodeDragMoveFrameRef = useRef<number | null>(null);
@@ -6257,6 +6278,38 @@ export function App() {
       }
     }
     return Array.from(collected.values());
+  };
+  const snapshotRouteBounds = (routePointsByEdgeId: Record<string, Point[]>) =>
+    Object.fromEntries(
+      Object.entries(routePointsByEdgeId).map(([edgeId, points]) => [
+        edgeId,
+        routeRenderBounds({ points }, CANVAS_SINGLE_NODE_DRAG_PREVIEW_PADDING)
+      ])
+    ) as Record<string, RenderViewportBounds | null>;
+  const buildSingleNodeDragCache = (nodeIds: string[], edgeIds: string[], affectedEdges: Edge[]): SingleNodeDragCache | undefined => {
+    if (nodeIds.length !== 1) {
+      return undefined;
+    }
+    const movedNodeIds = new Set(nodeIds);
+    const draggedEdgeIds = new Set(edgeIds);
+    const movedBusNodeIds = new Set(
+      nodeIds.filter((nodeId) => {
+        const node = nodeById.get(nodeId);
+        return node && isBusNode(node);
+      })
+    );
+    const relevantEdges = affectedEdges.filter((edge) => {
+      if (!visibleEdgeIdSet.has(edge.id)) {
+        return false;
+      }
+      return movedNodeIds.has(edge.sourceId) || movedNodeIds.has(edge.targetId) || draggedEdgeIds.has(edge.id);
+    });
+    return {
+      movedNodeIds,
+      draggedEdgeIds,
+      movedBusNodeIds,
+      relevantEdges
+    };
   };
   const orderedNodeFromList = (sourceNodes: ModelNode[], nodeId: string) => {
     const index = graphStore.nodeIndexById.get(nodeId);
@@ -6683,7 +6736,7 @@ export function App() {
                 <g className="node-terminal-layer" transform={nodeGeometryTransform(node)}>
                   {node.terminals.map((terminal) => {
                     const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
-                    const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind);
+                    const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
                     const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
                     return (
                       <g key={terminal.id} transform={terminalControlTransform(renderPoint.x, renderPoint.y)}>
@@ -6861,7 +6914,7 @@ export function App() {
                   <g className="node-terminal-layer" transform={nodeGeometryTransform(node)}>
                     {node.terminals.map((terminal) => {
                       const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
-                      const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind);
+                      const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
                       const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
                       return (
                         <g key={terminal.id} transform={terminalControlTransform(renderPoint.x, renderPoint.y)}>
@@ -9433,6 +9486,7 @@ export function App() {
   const draggingCommitDelta = dragging?.currentDelta;
   const draggingDelta = dragging?.previewDelta ?? draggingCommitDelta;
   const multiNodeDragging = Boolean(dragging && isMultiNodeMoveState(dragging));
+  const singleNodeDragging = Boolean(dragging && !isMultiNodeMoveState(dragging));
   const dragAffectedEdgeIdSet = useMemo(
     () => new Set((dragging?.affectedEdges ?? []).map((edge) => edge.id)),
     [dragging?.affectedEdges]
@@ -9608,7 +9662,9 @@ export function App() {
     ),
     [dragInteractionNodes, dragging, draggingDelta, draggingNodeIdSet]
   );
-  nodeTerminalSnapTargetRef.current = nodeTerminalSnapTarget;
+  if (!imperativeSingleNodeDragActiveRef.current) {
+    nodeTerminalSnapTargetRef.current = nodeTerminalSnapTarget;
+  }
   const nodeTerminalSnapHintStyle = useMemo(() => {
     if (!nodeTerminalSnapTarget) {
       return undefined;
@@ -12280,6 +12336,8 @@ export function App() {
       const originalTarget = nodeById.get(edge.targetId);
       const nextSource = nextNodeForEndpoint(edge.sourceId);
       const nextTarget = nextNodeForEndpoint(edge.targetId);
+      const previousSlideNodes = routingNodesForConnectionEdge(edge, nodes);
+      const nextSlideNodes = routingNodesForConnectionEdge(baseEdge, nextNodes);
       const slidePatch =
         sourceMoved !== targetMoved && originalSource && originalTarget && nextSource && nextTarget
           ? resolveStraightBusSlideEndpoint({
@@ -12289,8 +12347,8 @@ export function App() {
               nextSourceNode: nextSource,
               nextTargetNode: nextTarget,
               movingEndpoint: sourceMoved ? "source" : "target",
-              nodes,
-              nextNodes
+              nodes: previousSlideNodes,
+              nextNodes: nextSlideNodes
             })
           : null;
       const nextEdgeWithSlide = slidePatch ? { ...baseEdge, ...slidePatch } : baseEdge;
@@ -12705,7 +12763,15 @@ export function App() {
   ) => {
     markStoredRouteEdgesDirty(dirtyEdgeIdsForMovedLocalRoutes(selectedEdgeIds, originalRoutePoints));
     let committedCandidateEdges = candidateEdges;
-    const deferMovedRouteRepair = movedNodeIds.length > 0 && candidateEdges.length > 0;
+    const routeRepairCandidateEdges = localRouteOptimizationCandidateEdges(
+      previousNodes,
+      nextNodes,
+      movedNodeIds,
+      selectedEdgeIds,
+      originalPositions,
+      committedCandidateEdges
+    );
+    const deferMovedRouteRepair = movedNodeIds.length > 0 && routeRepairCandidateEdges.length > 0;
     const originShift = allowAutoExpandCanvas ? leftTopCanvasOriginShiftForContent(movedNodeUpdates, committedCandidateEdges) : { x: 0, y: 0 };
     if (hasCanvasOriginShift(originShift)) {
       const candidateEdgeById = new Map(committedCandidateEdges.map((edge) => [edge.id, edge]));
@@ -12761,12 +12827,12 @@ export function App() {
       }
       deferredMoveOptimizationCancelRef.current?.();
       deferredMoveOptimizationCancelRef.current = null;
-      if (candidateEdges.length > 0) {
+      if (routeRepairCandidateEdges.length > 0) {
         deferredMoveRepairFrameRef.current = window.requestAnimationFrame(() => {
           deferredMoveRepairFrameRef.current = null;
           scheduleDeferredMovedConnectionRepair(
             movedNodeIds,
-            committedCandidateEdges,
+            routeRepairCandidateEdges,
             expectedPatch,
             commitCanvasBounds,
             previousNodes,
@@ -12850,12 +12916,12 @@ export function App() {
     scheduleMovedEdgeOptimization(
       previousNodes,
       nextNodes,
-      committedCandidateEdges,
+      routeRepairCandidateEdges,
       movedNodeIds,
       originalRoutePoints,
       selectedEdgeIds,
       originalPositions,
-      committedCandidateEdges,
+      routeRepairCandidateEdges,
       expectedPatch
     );
   };
@@ -12919,14 +12985,373 @@ export function App() {
   const resetMultiNodeDragOverlayTransform = () => {
     updateMultiNodeDragOverlayTransform({ x: 0, y: 0 });
   };
+  const singleNodeDragRenderState = (dragState: DraggingState): DraggingState => ({
+    ...dragState,
+    currentDelta: undefined,
+    previewDelta: undefined
+  });
+  const buildSingleNodeDragPreviewNodeMarkup = (dragState: DraggingState) => {
+    if (isMultiNodeMoveState(dragState) || dragState.nodeIds.length !== 1) {
+      return "";
+    }
+    const nodeId = dragState.nodeIds[0];
+    const node = nodeById.get(nodeId);
+    const originalPosition = dragState.originalPositions[nodeId] ?? node?.position;
+    if (!node || !originalPosition || !visibleNodeIdSet.has(node.id)) {
+      return "";
+    }
+    const nodeIsBus = isBusNode(node);
+    const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette }));
+    const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette }));
+    const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
+    const labelMarkup = buildSvgNodeLabelMarkup(node);
+    return `<g class="single-node-drag-preview-node ${nodeIsBus ? "bus-node" : ""}" transform="translate(${formatSvgNumber(originalPosition.x)} ${formatSvgNumber(originalPosition.y)})">
+  <title>${escapeXml(node.name)}</title>
+  <g class="node-geometry" transform="${escapeXml(nodeGeometryTransform(node))}">
+    <rect class="node-hitbox ${nodeIsBus ? "bus-hitbox" : ""} ${isStaticNode(node) ? "static-hitbox" : ""}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${nodeIsBus ? 0 : 8}"/>
+    ${glyphMarkup}
+    ${glyphTextMarkup}
+  </g>
+  <g class="node-terminal-layer" transform="${escapeXml(nodeGeometryTransform(node))}">
+    ${terminalMarkup}
+  </g>
+  ${labelMarkup}
+</g>`;
+  };
+  const showImperativeSingleNodeDragPreview = (dragState: DraggingState) => {
+    const markup = buildSingleNodeDragPreviewNodeMarkup(dragState);
+    const nodeOverlay = imperativeSingleNodeDragNodeOverlayRef.current;
+    if (!nodeOverlay || !markup) {
+      return false;
+    }
+    imperativeSingleNodeDragActiveRef.current = true;
+    nodeOverlay.innerHTML = markup;
+    nodeOverlay.style.display = "";
+    nodeOverlay.setAttribute("transform", "translate(0 0)");
+    const edgePreview = imperativeSingleNodeDragEdgePreviewRef.current;
+    if (edgePreview) {
+      edgePreview.innerHTML = "";
+      edgePreview.style.display = "none";
+    }
+    return true;
+  };
+  const hideImperativeSingleNodeDragPreview = () => {
+    imperativeSingleNodeDragActiveRef.current = false;
+    const nodeOverlay = imperativeSingleNodeDragNodeOverlayRef.current;
+    if (nodeOverlay) {
+      nodeOverlay.innerHTML = "";
+      nodeOverlay.style.display = "none";
+      nodeOverlay.setAttribute("transform", "translate(0 0)");
+    }
+    const edgePreview = imperativeSingleNodeDragEdgePreviewRef.current;
+    if (edgePreview) {
+      edgePreview.innerHTML = "";
+      edgePreview.style.display = "none";
+    }
+    const dropHint = imperativeNodeDragDropHintRef.current;
+    if (dropHint) {
+      dropHint.style.display = "none";
+    }
+    nodeTerminalSnapTargetRef.current = null;
+  };
+  const singleNodeDragPreviewNodeFor = (dragState: DraggingState, nodeId: string, delta: Point) => {
+    const node = nodeById.get(nodeId);
+    const originalPosition = dragState.originalPositions[nodeId];
+    return node && originalPosition
+      ? {
+          ...node,
+          position: {
+            x: originalPosition.x + delta.x,
+            y: originalPosition.y + delta.y
+          }
+        }
+      : node;
+  };
+  const singleNodeDragRelevantEdges = (dragState: DraggingState) => {
+    if (isMultiNodeMoveState(dragState) || dragState.nodeIds.length !== 1) {
+      return [];
+    }
+    if (dragState.singleNodeDragCache) {
+      return dragState.singleNodeDragCache.relevantEdges;
+    }
+    const movedNodeIds = new Set(dragState.nodeIds);
+    const draggedEdgeIds = new Set(dragState.edgeIds);
+    return dragState.affectedEdges.filter((edge) => {
+      if (!visibleEdgeIdSet.has(edge.id)) {
+        return false;
+      }
+      return movedNodeIds.has(edge.sourceId) || movedNodeIds.has(edge.targetId) || draggedEdgeIds.has(edge.id);
+    });
+  };
+  const singleNodeDragPreviewBounds = (dragState: DraggingState, delta: Point): RenderViewportBounds => {
+    const baseBounds = expandRouteBox(renderViewportBounds, CANVAS_SINGLE_NODE_DRAG_PREVIEW_PADDING);
+    const nodeId = dragState.nodeIds[0];
+    const movedNode = nodeId ? singleNodeDragPreviewNodeFor(dragState, nodeId, delta) : undefined;
+    return movedNode
+      ? mergeRenderViewportBounds(baseBounds, nodeVisualInteractionBounds(movedNode, movedNode.position, CANVAS_SINGLE_NODE_DRAG_PREVIEW_PADDING, nodeHasUprightBoundsContent(movedNode)))
+      : baseBounds;
+  };
+  const singleNodeDragEdgeTouchesBounds = (dragState: DraggingState, edge: Edge, delta: Point, bounds: RenderViewportBounds) => {
+    const routeBounds = dragState.originalRouteBounds[edge.id];
+    if (routeBounds && boxesOverlap(routeBounds, bounds)) {
+      return true;
+    }
+    const sourcePreviewNode = singleNodeDragPreviewNodeFor(dragState, edge.sourceId, delta);
+    const targetPreviewNode = singleNodeDragPreviewNodeFor(dragState, edge.targetId, delta);
+    const sourceMoved = dragState.nodeIds.includes(edge.sourceId);
+    const targetMoved = dragState.nodeIds.includes(edge.targetId);
+    const stationaryEndpoint = sourceMoved ? targetPreviewNode : targetMoved ? sourcePreviewNode : undefined;
+    return Boolean(stationaryEndpoint && nodeIntersectsRenderViewport(stationaryEndpoint, bounds));
+  };
+  const singleNodeDragViewportLocalEdgesByScan = (
+    dragState: DraggingState,
+    edgesToCheck: Edge[],
+    delta: Point,
+    bounds: RenderViewportBounds,
+    localLimit = Number.POSITIVE_INFINITY
+  ) => {
+    const viewportLocalEdges: Edge[] = [];
+    for (const edge of edgesToCheck) {
+      if (!singleNodeDragEdgeTouchesBounds(dragState, edge, delta, bounds)) {
+        continue;
+      }
+      viewportLocalEdges.push(edge);
+      if (viewportLocalEdges.length >= localLimit) {
+        break;
+      }
+    }
+    return viewportLocalEdges;
+  };
+  const singleNodeDragScopedEdges = (dragState: DraggingState, delta: Point) => {
+    const relevantEdges = singleNodeDragRelevantEdges(dragState);
+    if (relevantEdges.length <= CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT) {
+      return { previewEdges: relevantEdges, snapEdges: relevantEdges };
+    }
+    const bounds = singleNodeDragPreviewBounds(dragState, delta);
+    const localLimit = Math.max(CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_SNAP_EDGE_LIMIT);
+    const viewportLocalEdges = singleNodeDragViewportLocalEdgesByScan(dragState, relevantEdges, delta, bounds, localLimit);
+    const scopedEdges = viewportLocalEdges.length > 0 ? viewportLocalEdges : relevantEdges;
+    return {
+      previewEdges: scopedEdges.slice(0, CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT),
+      snapEdges: scopedEdges.slice(0, CANVAS_SINGLE_NODE_DRAG_SNAP_EDGE_LIMIT)
+    };
+  };
+  const singleNodeDragPreviewEdges = (dragState: DraggingState, delta: Point) =>
+    singleNodeDragScopedEdges(dragState, delta).previewEdges;
+  const singleNodeDragSnapEdges = (dragState: DraggingState, delta: Point) =>
+    singleNodeDragScopedEdges(dragState, delta).snapEdges;
+  const buildSingleNodeDragPreviewRouteMarkup = (dragState: DraggingState, delta: Point, scopedPreviewEdges?: Edge[]) => {
+    if (isMultiNodeMoveState(dragState) || dragState.nodeIds.length !== 1) {
+      return "";
+    }
+    const previewEdges = scopedPreviewEdges ?? singleNodeDragPreviewEdges(dragState, delta);
+    const dragCache = dragState.singleNodeDragCache;
+    const movedNodeIds = dragCache?.movedNodeIds ?? new Set(dragState.nodeIds);
+    const draggedEdgeIds = dragCache?.draggedEdgeIds ?? new Set(dragState.edgeIds);
+    const movedBusIds = dragCache?.movedBusNodeIds ?? new Set(
+      dragState.nodeIds.filter((nodeId) => {
+        const node = nodeById.get(nodeId);
+        return node && isBusNode(node);
+      })
+    );
+    const straightPath = (points: Point[]) =>
+      points.map((point, index) => `${index === 0 ? "M" : "L"} ${Math.round(point.x)} ${Math.round(point.y)}`).join(" ");
+    const orthogonalPoints = (start: Point, end: Point) => {
+      if (start.x === end.x || start.y === end.y) {
+        return [start, end];
+      }
+      const midX = Math.round((start.x + end.x) / 2);
+      return [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end];
+    };
+    return previewEdges.flatMap((edge) => {
+      const sourceMoved = movedNodeIds.has(edge.sourceId);
+      const targetMoved = movedNodeIds.has(edge.targetId);
+      if (!sourceMoved && !targetMoved && !draggedEdgeIds.has(edge.id)) {
+        return [];
+      }
+      const originalPoints = dragState.originalEdgePoints[edge.id];
+      const previewEdge = {
+        ...edge,
+        sourcePoint: movedBusIds.has(edge.sourceId) && originalPoints?.sourcePoint
+          ? { x: originalPoints.sourcePoint.x + delta.x, y: originalPoints.sourcePoint.y + delta.y }
+          : edge.sourcePoint,
+        targetPoint: movedBusIds.has(edge.targetId) && originalPoints?.targetPoint
+          ? { x: originalPoints.targetPoint.x + delta.x, y: originalPoints.targetPoint.y + delta.y }
+          : edge.targetPoint,
+        manualPoints: originalPoints?.manualPoints
+          ? originalPoints.manualPoints.map((point) => ({ x: point.x + delta.x, y: point.y + delta.y }))
+          : edge.manualPoints
+      };
+      const source = singleNodeDragPreviewNodeFor(dragState, previewEdge.sourceId, delta);
+      const target = singleNodeDragPreviewNodeFor(dragState, previewEdge.targetId, delta);
+      const originalSource = nodeById.get(edge.sourceId);
+      const originalTarget = nodeById.get(edge.targetId);
+      if (!source || !target || !originalSource || !originalTarget) {
+        return [];
+      }
+      const slidePatch =
+        sourceMoved !== targetMoved
+          ? resolveStraightBusSlideEndpoint({
+              edge: previewEdge,
+              sourceNode: originalSource,
+              targetNode: originalTarget,
+              nextSourceNode: source,
+              nextTargetNode: target,
+              movingEndpoint: sourceMoved ? "source" : "target",
+              nodes: compactPreviewNodes(originalSource, originalTarget),
+              nextNodes: compactPreviewNodes(source, target)
+            })
+          : null;
+      const slidablePreviewEdge = slidePatch ? { ...previewEdge, ...slidePatch } : previewEdge;
+      const end = getModelEdgeEndpointPoint(target, slidablePreviewEdge.targetPoint, slidablePreviewEdge.targetTerminalId);
+      const adjustedStart = getModelEdgeEndpointPoint(source, slidablePreviewEdge.sourcePoint, slidablePreviewEdge.sourceTerminalId);
+      const sourceNormal = getRouteEndpointNormal(source, adjustedStart, end, slidablePreviewEdge.sourceTerminalId);
+      const targetNormal = getRouteEndpointNormal(target, end, adjustedStart, slidablePreviewEdge.targetTerminalId);
+      const originalRoutePoints = dragState.originalRoutePoints[edge.id];
+      const originalStart = originalRoutePoints?.[0];
+      const originalEnd = originalRoutePoints?.[originalRoutePoints.length - 1];
+      const points = originalRoutePoints?.length && originalStart && originalEnd
+        ? preserveDraggedRouteShape({
+            routePoints: originalRoutePoints,
+            nextStart: adjustedStart,
+            nextEnd: end,
+            sourceDelta: { x: adjustedStart.x - originalStart.x, y: adjustedStart.y - originalStart.y },
+            targetDelta: { x: end.x - originalEnd.x, y: end.y - originalEnd.y },
+            routeDelta: draggedEdgeIds.has(edge.id) ? delta : undefined,
+            sourceNormal,
+            targetNormal
+          })
+        : slidablePreviewEdge.manualPoints && slidablePreviewEdge.manualPoints.length > 0
+          ? [adjustedStart, ...slidablePreviewEdge.manualPoints, end]
+          : orthogonalPoints(adjustedStart, end);
+      const color = getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette);
+      return [`<path class="connection-line drag-preview" data-drag-preview-edge-id="${escapeXml(edge.id)}" d="${escapeXml(straightPath(points))}" style="--connection-color:${escapeXml(color)}"/>`];
+    }).join("");
+  };
+  const singleNodeDragInteractionNodes = (dragState: DraggingState, delta: Point, scopedSnapEdges?: Edge[]) => {
+    if (isMultiNodeMoveState(dragState) || dragState.nodeIds.length !== 1) {
+      return [];
+    }
+    const padding = Math.max(160, CONNECT_TERMINAL_SNAP_TOLERANCE * 4);
+    const dragCache = dragState.singleNodeDragCache;
+    const movedNodeIds = dragCache?.movedNodeIds ?? new Set(dragState.nodeIds);
+    const snapEdges = scopedSnapEdges ?? singleNodeDragSnapEdges(dragState, delta);
+    let bounds: RenderViewportBounds | null = null;
+    const includeBox = (box: RenderViewportBounds) => {
+      bounds = bounds
+        ? {
+            left: Math.min(bounds.left, box.left),
+            right: Math.max(bounds.right, box.right),
+            top: Math.min(bounds.top, box.top),
+            bottom: Math.max(bounds.bottom, box.bottom)
+          }
+        : { ...box };
+    };
+    const includeNode = (node: ModelNode | undefined) => {
+      if (!node) {
+        return;
+      }
+      const halfDiagonal = Math.hypot(node.size.width * getNodeScaleX(node), node.size.height * getNodeScaleY(node)) / 2 + 24;
+      includeBox({
+        left: node.position.x - halfDiagonal,
+        right: node.position.x + halfDiagonal,
+        top: node.position.y - halfDiagonal,
+        bottom: node.position.y + halfDiagonal
+      });
+    };
+    for (const nodeId of dragState.nodeIds) {
+      includeNode(nodeById.get(nodeId));
+      includeNode(singleNodeDragPreviewNodeFor(dragState, nodeId, delta));
+    }
+    for (const edge of snapEdges) {
+      includeNode(singleNodeDragPreviewNodeFor(dragState, edge.sourceId, delta));
+      includeNode(singleNodeDragPreviewNodeFor(dragState, edge.targetId, delta));
+    }
+    if (!bounds) {
+      return [];
+    }
+    const finalBounds = bounds as RenderViewportBounds;
+    const queryBounds = {
+      left: finalBounds.left - padding,
+      right: finalBounds.right + padding,
+      top: finalBounds.top - padding,
+      bottom: finalBounds.bottom + padding
+    };
+    const candidatesById = new Map<string, ModelNode>();
+    const addNode = (node: ModelNode | undefined) => {
+      if (node && visibleNodeIdSet.has(node.id) && nodeIntersectsRenderViewport(node, queryBounds)) {
+        candidatesById.set(node.id, node);
+      }
+    };
+    for (const nodeId of dragState.nodeIds) {
+      addNode(singleNodeDragPreviewNodeFor(dragState, nodeId, delta));
+    }
+    for (const edge of snapEdges) {
+      addNode(singleNodeDragPreviewNodeFor(dragState, edge.sourceId, delta));
+      addNode(singleNodeDragPreviewNodeFor(dragState, edge.targetId, delta));
+    }
+    for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, queryBounds)) {
+      addNode(movedNodeIds.has(node.id) ? singleNodeDragPreviewNodeFor(dragState, node.id, delta) : node);
+    }
+    return Array.from(candidatesById.values());
+  };
+  const updateImperativeNodeDragDropHint = (snapTarget: NodeTerminalSnapTarget | null) => {
+    const dropHint = imperativeNodeDragDropHintRef.current;
+    if (!dropHint) {
+      return;
+    }
+    if (!snapTarget) {
+      dropHint.style.display = "none";
+      return;
+    }
+    const targetNode = nodeById.get(snapTarget.targetNodeId);
+    const terminalType = targetNode && isBusNode(targetNode)
+      ? getBusTerminalType(targetNode)
+      : targetNode?.terminals.find((terminal) => terminal.id === snapTarget.targetTerminalId)?.type;
+    if (terminalType) {
+      dropHint.style.setProperty("--connection-color", terminalColor(terminalType, colorPalette));
+    }
+    dropHint.setAttribute("transform", `translate(${Math.round(snapTarget.point.x)} ${Math.round(snapTarget.point.y)})`);
+    dropHint.style.display = "";
+  };
+  const updateSingleNodeDragImperativePreview = (dragState: DraggingState, previewDelta: Point) => {
+    if (isMultiNodeMoveState(dragState)) {
+      return;
+    }
+    if (!imperativeSingleNodeDragActiveRef.current && !showImperativeSingleNodeDragPreview(dragState)) {
+      return;
+    }
+    const transform = `translate(${Math.round(previewDelta.x)} ${Math.round(previewDelta.y)})`;
+    imperativeSingleNodeDragNodeOverlayRef.current?.setAttribute("transform", transform);
+    const scopedEdges = singleNodeDragScopedEdges(dragState, previewDelta);
+    const edgePreview = imperativeSingleNodeDragEdgePreviewRef.current;
+    if (edgePreview) {
+      const markup = buildSingleNodeDragPreviewRouteMarkup(dragState, previewDelta, scopedEdges.previewEdges);
+      edgePreview.innerHTML = markup;
+      edgePreview.style.display = markup ? "" : "none";
+    }
+    const candidates = singleNodeDragInteractionNodes(dragState, previewDelta, scopedEdges.snapEdges);
+    const movedNodeIds = dragState.singleNodeDragCache?.movedNodeIds ?? new Set(dragState.nodeIds);
+    const snapTarget =
+      findNodeTerminalSnapTarget(candidates, movedNodeIds) ??
+      findNodeBusSnapTarget(candidates, movedNodeIds);
+    nodeTerminalSnapTargetRef.current = snapTarget;
+    updateImperativeNodeDragDropHint(snapTarget);
+  };
   const startDraggingState = (nextDragging: DraggingState) => {
     draggingRef.current = nextDragging;
     resetMultiNodeDragOverlayTransform();
     const simplifiedMarkup = isMultiNodeMoveState(nextDragging) ? nextDragging.overlayPreview?.simplifiedMarkup : "";
     if (simplifiedMarkup && showImperativeMultiNodeDragOverlay(simplifiedMarkup)) {
+      hideImperativeSingleNodeDragPreview();
       return;
     }
     hideImperativeMultiNodeDragOverlay();
+    if (!isMultiNodeMoveState(nextDragging)) {
+      showImperativeSingleNodeDragPreview(nextDragging);
+    } else {
+      hideImperativeSingleNodeDragPreview();
+    }
     setDragging(nextDragging);
   };
   const flushConnectPreviewDom = () => {
@@ -13203,6 +13628,25 @@ export function App() {
     );
   };
 
+  const commitSafeDeltaForDraggingState = (dragState: DraggingState) => {
+    const delta = dragState.currentDelta;
+    if (!delta || isMultiNodeMoveState(dragState)) {
+      return delta;
+    }
+    return boundedDeltaForMoveGeometry(
+      dragState.nodeIds,
+      dragState.edgeIds,
+      dragState.affectedEdges,
+      dragState.originalPositions,
+      dragState.originalEdgePoints,
+      dragState.originalRoutePoints,
+      delta.x,
+      delta.y,
+      delta,
+      canvasBoundsForMoveDelta(dragState.nodeIds, dragState.originalPositions, delta.x, delta.y)
+    );
+  };
+
   const canvasBoundsForMoveDelta = (
     nodeIds: string[],
     originalPositions: Record<string, Point>,
@@ -13306,7 +13750,16 @@ export function App() {
       ensureDraggingUndoSnapshot();
     }
     const previewDelta = computeNodeDragPreviewDelta(currentDrag, point, ctrlKey, shiftKey);
-    const boundedDelta = computeNodeDragDelta(currentDrag, point, ctrlKey, shiftKey);
+    const boundedDelta =
+      renderPreview && !isMultiNodeMoveState(currentDrag)
+        ? boundedDeltaForNodes(
+            currentDrag.nodeIds,
+            currentDrag.originalPositions,
+            previewDelta.x,
+            previewDelta.y,
+            canvasBoundsForMovedNodeDelta(currentDrag.nodeIds, currentDrag.originalPositions, previewDelta.x, previewDelta.y)
+          )
+        : computeNodeDragDelta(currentDrag, point, ctrlKey, shiftKey);
     if (
       currentDrag.historyCaptured &&
       currentDrag.currentDelta?.x === boundedDelta.x &&
@@ -13339,32 +13792,10 @@ export function App() {
     if (!renderPreview) {
       return;
     }
-    setDragging((current) => {
-      if (!current) {
-        if (draggingRef.current === nextDragState) {
-          return nextDragState;
-        }
-        return current;
-      }
-      if (
-        current.historyCaptured &&
-        current.currentDelta?.x === boundedDelta.x &&
-        current.currentDelta?.y === boundedDelta.y &&
-        current.previewDelta?.x === previewDelta.x &&
-        current.previewDelta?.y === previewDelta.y
-      ) {
-        draggingRef.current = current;
-        return current;
-      }
-      const next = {
-        ...current,
-        currentDelta: boundedDelta,
-        previewDelta,
-        historyCaptured: true
-      };
-      draggingRef.current = next;
-      return next;
-    });
+    updateSingleNodeDragImperativePreview(nextDragState, previewDelta);
+    if (!currentDrag.historyCaptured) {
+      setDragging(singleNodeDragRenderState(nextDragState));
+    }
   };
 
   const scheduleNodeDragMove = (point: Point, ctrlKey: boolean, shiftKey: boolean) => {
@@ -13425,6 +13856,7 @@ export function App() {
     clearKeyboardMoveCommitSchedule();
     resetMultiNodeDragOverlayTransform();
     hideImperativeMultiNodeDragOverlay();
+    hideImperativeSingleNodeDragPreview();
     draggingRef.current = null;
     setDragging(null);
     dragUndoCapturedRef.current = false;
@@ -13438,7 +13870,7 @@ export function App() {
     if (!activeDragging) {
       return false;
     }
-    const delta = activeDragging.currentDelta;
+    const delta = commitSafeDeltaForDraggingState(activeDragging);
     if (!delta || (delta.x === 0 && delta.y === 0)) {
       restoreCanvasSelectionSnapshot(activeDragging.selection);
       canvasInteractionRef.current = true;
@@ -13532,11 +13964,12 @@ export function App() {
     if (!activeDragging) {
       return;
     }
-    const delta = activeDragging.currentDelta;
+    const delta = commitSafeDeltaForDraggingState(activeDragging);
     if (!delta || (delta.x === 0 && delta.y === 0)) {
       clearNodeDragMoveSchedule();
       resetMultiNodeDragOverlayTransform();
       hideImperativeMultiNodeDragOverlay();
+      hideImperativeSingleNodeDragPreview();
       draggingRef.current = null;
       setDragging(null);
       restoreCanvasSelectionSnapshot(activeDragging.selection);
@@ -13546,7 +13979,7 @@ export function App() {
     }
     ensureDraggingUndoSnapshot();
     const dragNodeIds = new Set(activeDragging.nodeIds);
-    const effectiveSnapTarget = isMultiNodeMoveState(activeDragging) ? null : nodeTerminalSnapTarget;
+    const effectiveSnapTarget = isMultiNodeMoveState(activeDragging) ? null : nodeTerminalSnapTargetRef.current;
     const multiNodeMove = isMultiNodeMoveState(activeDragging);
     const snappedDelta = applyNodeTerminalSnap(delta, effectiveSnapTarget);
     const finalDelta =
@@ -13568,6 +14001,7 @@ export function App() {
       clearNodeDragMoveSchedule();
       resetMultiNodeDragOverlayTransform();
       hideImperativeMultiNodeDragOverlay();
+      hideImperativeSingleNodeDragPreview();
       draggingRef.current = null;
       setDragging(null);
       restoreCanvasSelectionSnapshot(activeDragging.selection);
@@ -13617,6 +14051,7 @@ export function App() {
     clearNodeDragMoveSchedule();
     resetMultiNodeDragOverlayTransform();
     hideImperativeMultiNodeDragOverlay();
+    hideImperativeSingleNodeDragPreview();
     draggingRef.current = null;
     setDragging(null);
     restoreCanvasSelectionSnapshot(activeDragging.selection);
@@ -13812,26 +14247,27 @@ export function App() {
     const expandedBounds = isMultiNodeMoveState(activeDragging)
       ? canvasBoundsForMovedNodeDelta(activeDragging.nodeIds, activeDragging.originalPositions, gridDelta.x, gridDelta.y)
       : canvasBoundsForMoveDelta(activeDragging.nodeIds, activeDragging.originalPositions, gridDelta.x, gridDelta.y);
-    const boundedDelta = isMultiNodeMoveState(activeDragging)
-      ? boundedDeltaForNodes(
-          activeDragging.nodeIds,
-          activeDragging.originalPositions,
-          gridDelta.x,
-          gridDelta.y,
-          expandedBounds
-        )
-      : boundedDeltaForMoveGeometry(
-          activeDragging.nodeIds,
-          activeDragging.edgeIds,
-          activeDragging.affectedEdges,
-          activeDragging.originalPositions,
-          activeDragging.originalEdgePoints,
-          activeDragging.originalRoutePoints,
-          gridDelta.x,
-          gridDelta.y,
-          previousDelta,
-          expandedBounds
-        );
+    const boundedDelta =
+      isMultiNodeMoveState(activeDragging) || (renderPreview && !isMultiNodeMoveState(activeDragging))
+        ? boundedDeltaForNodes(
+            activeDragging.nodeIds,
+            activeDragging.originalPositions,
+            gridDelta.x,
+            gridDelta.y,
+            expandedBounds
+          )
+        : boundedDeltaForMoveGeometry(
+            activeDragging.nodeIds,
+            activeDragging.edgeIds,
+            activeDragging.affectedEdges,
+            activeDragging.originalPositions,
+            activeDragging.originalEdgePoints,
+            activeDragging.originalRoutePoints,
+            gridDelta.x,
+            gridDelta.y,
+            previousDelta,
+            expandedBounds
+          );
     if (boundedDelta.x === previousDelta.x && boundedDelta.y === previousDelta.y) {
       if (logBoundary) {
         writeOperationLog("移动已到显示边界，联络线或图元接近边界，已停止移动");
@@ -13855,7 +14291,10 @@ export function App() {
     }
     draggingRef.current = nextDragging;
     if (renderPreview) {
-      setDragging((current) => (current?.source === "keyboard" || current === null ? nextDragging : current));
+      updateSingleNodeDragImperativePreview(nextDragging, boundedDelta);
+      if (!activeDragging.historyCaptured) {
+        setDragging(singleNodeDragRenderState(nextDragging));
+      }
       if (keyboardMoveActiveKeyDeltasRef.current.size === 0) {
         scheduleKeyboardMoveCommit();
       }
@@ -13984,6 +14423,8 @@ export function App() {
         ])
       ),
       originalRoutePoints: originalRoutePointsForMove,
+      originalRouteBounds: snapshotRouteBounds(originalRoutePointsForMove),
+      singleNodeDragCache: buildSingleNodeDragCache(moveNodeIds, moveEdgeIds, affectedEdgesForMove),
       overlayPreview: isMultiNodeMoveState({ nodeIds: moveNodeIds })
         ? buildMultiNodeDragOverlayPreview(moveNodeIds, affectedEdgesForMove, originalPositionsForMove, originalRoutePointsForMove, moveEdgeIds)
         : undefined,
@@ -15742,6 +16183,8 @@ export function App() {
         ])
       ),
       originalRoutePoints: originalRoutePointsForDrag,
+      originalRouteBounds: snapshotRouteBounds(originalRoutePointsForDrag),
+      singleNodeDragCache: buildSingleNodeDragCache(dragNodeIds, edgeIdsForDrag, affectedEdgesForDrag),
       overlayPreview: isMultiNodeMoveState({ nodeIds: dragNodeIds })
         ? buildMultiNodeDragOverlayPreview(dragNodeIds, affectedEdgesForDrag, originalPositionsForDrag, originalRoutePointsForDrag, edgeIdsForDrag)
         : undefined,
@@ -16231,6 +16674,8 @@ export function App() {
         ])
       ),
       originalRoutePoints: originalRoutePointsForDrag,
+      originalRouteBounds: snapshotRouteBounds(originalRoutePointsForDrag),
+      singleNodeDragCache: buildSingleNodeDragCache(dragNodeIds, edgeIdsForDrag, affectedEdgesForDrag),
       overlayPreview: isMultiNodeMoveState({ nodeIds: dragNodeIds })
         ? buildMultiNodeDragOverlayPreview(dragNodeIds, affectedEdgesForDrag, originalPositionsForDrag, originalRoutePointsForDrag, edgeIdsForDrag)
         : undefined,
@@ -20653,6 +21098,7 @@ export function App() {
       const detailedSelected = selected && detailedSelectedEdgeIdSet.has(edge.id);
       const hidden =
         detailedSelected ||
+        (singleNodeDragging && dragAffectedEdgeIdSet.has(edge.id)) ||
         (draggingDelta && dragPreviewEdgeIdSet.has(edge.id)) ||
         (multiNodeDragging && dragOverlayEdgeIdSet.has(edge.id)) ||
         groupTransformPreviewEdgeIdSet.has(edge.id) ||
@@ -20675,6 +21121,7 @@ export function App() {
     colorDisplayMode,
     colorPalette,
     detailedSelectedEdgeIdSet,
+    dragAffectedEdgeIdSet,
     dragOverlayEdgeIdSet,
     dragPreviewEdgeIdSet,
     draggingDelta,
@@ -20682,6 +21129,7 @@ export function App() {
     groupTransformPreviewEdgeIdSet,
     multiNodeDragging,
     nodeById,
+    singleNodeDragging,
     terminalPressPreviewEdgeIdSet,
     useSimplifiedCanvasRoutes,
     viewportRoutedEdges
@@ -21513,7 +21961,7 @@ export function App() {
                   {node.terminals.map((terminal) => {
                     const hideFixedTerminal = nodeIsBus || isStaticNode(node);
                     const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
-                    const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind);
+                    const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
                     const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
                     return hideFixedTerminal ? null : (
                       <g key={terminal.id} transform={terminalControlTransform(renderPoint.x, renderPoint.y)}>
@@ -21841,7 +22289,7 @@ export function App() {
           >
             <svg
               ref={svgRef}
-              className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${staticDrawing ? "static-draw-mode" : ""} ${libraryPlacement ? "library-place-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""} ${multiNodeDragging ? "multi-node-dragging" : ""}`}
+              className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${staticDrawing ? "static-draw-mode" : ""} ${libraryPlacement ? "library-place-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""} ${multiNodeDragging ? "multi-node-dragging" : ""} ${singleNodeDragging ? "single-node-dragging" : ""}`}
               style={{ width: canvasDisplayWidth, height: canvasDisplayHeight, left: canvasDisplayOffsetX, top: canvasDisplayOffsetY }}
             viewBox={`0 0 ${canvasRenderBounds.width} ${canvasRenderBounds.height}`}
             onDrop={handleDrop}
@@ -22129,6 +22577,7 @@ export function App() {
               if (!edge) return null;
               const selected = activeSelectedEdgeSet.has(edge.id);
               if (
+                (singleNodeDragging && dragAffectedEdgeIdSet.has(edge.id)) ||
                 (draggingDelta && dragPreviewEdgeIdSet.has(edge.id)) ||
                 (multiNodeDragging && dragOverlayEdgeIdSet.has(edge.id)) ||
                 groupTransformPreviewEdgeIdSet.has(edge.id) ||
@@ -22457,7 +22906,7 @@ export function App() {
               return (
                 <g
                   key={node.id}
-                  className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${uprightStaticSelectionOutline ? "static-upright-selection-node" : ""} ${staticButtonEnabled ? "static-button-enabled" : ""} ${staticButtonState ? `static-button-${staticButtonState}` : ""} ${multiNodeDragging && draggingNodeIdSet.has(node.id) ? "multi-drag-origin" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${isConnectSource ? "connect-source" : ""}`}
+                  className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${uprightStaticSelectionOutline ? "static-upright-selection-node" : ""} ${staticButtonEnabled ? "static-button-enabled" : ""} ${staticButtonState ? `static-button-${staticButtonState}` : ""} ${multiNodeDragging && draggingNodeIdSet.has(node.id) ? "multi-drag-origin" : ""} ${singleNodeDragging && draggingNodeIdSet.has(node.id) ? "single-drag-origin" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${isConnectSource ? "connect-source" : ""}`}
                   transform={`translate(${renderPosition.x} ${renderPosition.y})`}
                   onPointerDown={(event) => handleNodePointerDown(event, node)}
                   onPointerEnter={() => {
@@ -22666,7 +23115,7 @@ export function App() {
                         !canConnectTerminals(sourceNode!, connectSource!.terminalId, node, terminal.id);
                       const overlapped = overlappedTerminalKeys.has(`${node.id}:${terminal.id}`);
                       const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
-                      const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind);
+                      const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
                       const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
                       return hideFixedTerminal ? null : (
                         <g
@@ -22744,6 +23193,18 @@ export function App() {
               aria-hidden="true"
             />
             {renderMultiNodeDragOverlay()}
+            <g
+              ref={imperativeSingleNodeDragEdgePreviewRef}
+              className="single-node-drag-overlay imperative-single-node-drag-edge-preview"
+              style={{ display: "none" }}
+              aria-hidden="true"
+            />
+            <g
+              ref={imperativeSingleNodeDragNodeOverlayRef}
+              className="single-node-drag-overlay imperative-single-node-drag-node-overlay"
+              style={{ display: "none" }}
+              aria-hidden="true"
+            />
             {dragPreviewEdgeRoutes.map((route) => (
               <path key={`drag-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
             ))}
@@ -22798,8 +23259,19 @@ export function App() {
                 <circle className="connect-drop-hint-core" cx="0" cy="0" r="5" />
               </g>
             )}
+            <g
+              ref={imperativeNodeDragDropHintRef}
+              className="connect-drop-hint imperative-node-drag-drop-hint"
+              style={{ display: "none" }}
+              aria-hidden="true"
+            >
+              <circle className="connect-drop-hint-halo" cx="0" cy="0" r="24" />
+              <circle className="connect-drop-hint-ring" cx="0" cy="0" r="16" />
+              <circle className="connect-drop-hint-core" cx="0" cy="0" r="5" />
+            </g>
             {selectedRoutedEdge &&
               selectedEdge &&
+              !(singleNodeDragging && dragAffectedEdgeIdSet.has(selectedEdge.id)) &&
               !(draggingDelta && dragPreviewEdgeIdSet.has(selectedEdge.id)) &&
               !(multiNodeDragging && dragOverlayEdgeIdSet.has(selectedEdge.id)) &&
               !groupTransformPreviewEdgeIdSet.has(selectedEdge.id) &&

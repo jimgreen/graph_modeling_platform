@@ -11,6 +11,7 @@ import {
   buildDefaultDeviceParameterDefinitions,
   buildContainerDeviceParameterViews,
   describeContainerTerminalAssociations,
+  calculateNodeVisualBounds,
   calculateModelGeometryBounds,
   canvasResizeMinimumBoundsForGeometry,
   clampNodePositionToBounds,
@@ -59,12 +60,14 @@ import {
   rebuildSingleConnectionRoute,
   upsertSavedProject,
   rerouteEdgesAroundMovedNodes,
+  routeIntersectsSpecificNodes,
   validateConnectionEdgeRoute,
   validateConnectionEndpointRules,
   validateTopology,
   validateVoltageSetpointDeviations,
   getTerminalNormal,
   getTerminalPoint,
+  getRouteEndpointNormal,
   getBusTerminalType,
   getMovableRouteSegmentIndexes,
   getNodeScaleX,
@@ -188,6 +191,28 @@ function hasImmediateRouteReversal(points: Point[]) {
   return false;
 }
 
+function routeBendCountForTest(points: Point[]) {
+  let bends = 0;
+  let previousOrientation: "horizontal" | "vertical" | null = null;
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1];
+    const point = points[index];
+    const orientation = previous.y === point.y
+      ? "horizontal"
+      : previous.x === point.x
+        ? "vertical"
+        : null;
+    if (!orientation) {
+      continue;
+    }
+    if (previousOrientation && previousOrientation !== orientation) {
+      bends += 1;
+    }
+    previousOrientation = orientation;
+  }
+  return bends;
+}
+
 function withHiddenDeviceLabel(node: ModelNode): ModelNode {
   return { ...node, params: { ...node.params, _labelVisible: "0", _labelDisplayMode: "hidden" } };
 }
@@ -250,13 +275,12 @@ describe("power system model", () => {
   });
 
   test("can render saved connection geometry without full obstacle-aware rerouting", () => {
-    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
-    const target = createDefaultNode("ac-load", { x: 360, y: 180 });
-    const blocker = createDefaultNode("ac-load", { x: 210, y: 180 });
+    const source = withHiddenDeviceLabel(createDefaultNode("ac-source", { x: 100, y: 100 }));
+    const target = withHiddenDeviceLabel(createDefaultNode("ac-load", { x: 360, y: 180 }));
+    const blocker = withHiddenDeviceLabel(createDefaultNode("ac-load", { x: 210, y: 180 }));
     const manualPoints = [
-      { x: 160, y: 100 },
-      { x: 160, y: 220 },
-      { x: 300, y: 220 }
+      { x: 207, y: 263 },
+      { x: 300, y: 263 }
     ];
     const edge: Edge = {
       id: "e1",
@@ -269,18 +293,37 @@ describe("power system model", () => {
 
     const route = routeEdgesForStoredRendering([source, target, blocker], [edge], { width: 520, height: 320 })[0];
 
-    expect(route.points).toEqual(expect.arrayContaining(manualPoints.slice(0, 2)));
-    expect(route.points.some((point) => point.y === 220)).toBe(true);
+    expect(route.points).toContainEqual(manualPoints[0]);
+    expect(route.points.some((point) => point.y === 263)).toBe(true);
     expect(route.path).toContain("M");
     expect(route.path).toContain("L");
+  });
+
+  test("renders unstored bus endpoint connections without folded backtracking", () => {
+    const switchNode = { ...createDefaultNode("ac-switch", { x: 360, y: 210 }), id: "switch" };
+    const bus = { ...createDefaultNode("ac-bus", { x: 540, y: 210 }), id: "bus" };
+    const edge: Edge = {
+      id: "switch-to-bus-without-stored-point",
+      sourceId: switchNode.id,
+      targetId: bus.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1"
+    };
+
+    const route = routeEdgesForStoredRendering([switchNode, bus], [edge], { width: 900, height: 420 })[0];
+
+    expect(route.points[0]).toEqual(getTerminalPoint(switchNode, "t2"));
+    expect(route.points[route.points.length - 1]).toEqual(projectPointToBusCenterline(bus, getTerminalPoint(switchNode, "t2")));
+    expect(hasImmediateRouteReversal(route.points)).toBe(false);
+    expect(route.points.length).toBeLessThanOrEqual(5);
   });
 
   test("incremental rendering reroutes only affected connections and keeps others stored", () => {
     const unaffectedSource = createDefaultNode("ac-source", { x: 100, y: 220 });
     const unaffectedTarget = createDefaultNode("ac-load", { x: 360, y: 220 });
-    const affectedSource = createDefaultNode("ac-line", { x: 100, y: 100 });
-    const affectedTarget = createDefaultNode("ac-line", { x: 360, y: 100 });
-    const blocker = createDefaultNode("ac-load", { x: 230, y: 100 });
+    const affectedSource = createDefaultNode("ac-line", { x: 50, y: 100 });
+    const affectedTarget = createDefaultNode("ac-line", { x: 450, y: 100 });
+    const blocker = createDefaultNode("ac-load", { x: 250, y: 100 });
     const unaffectedManualPoints = [
       { x: 160, y: 100 },
       { x: 160, y: 220 },
@@ -310,9 +353,15 @@ describe("power system model", () => {
     expect(incremental.find((route) => route.edgeId === "unaffected")?.points).toEqual(
       stored.find((route) => route.edgeId === "unaffected")?.points
     );
-    expect(incremental.find((route) => route.edgeId === "affected")?.points).not.toEqual(
-      stored.find((route) => route.edgeId === "affected")?.points
-    );
+    const affectedRoute = incremental.find((route) => route.edgeId === "affected");
+    const blockerBox = {
+      left: blocker.position.x - blocker.size.width / 2 - 8,
+      right: blocker.position.x + blocker.size.width / 2 + 8,
+      top: blocker.position.y - blocker.size.height / 2 - 8,
+      bottom: blocker.position.y + blocker.size.height / 2 + 8
+    };
+    expect(affectedRoute).toBeDefined();
+    expect(routeIntersectsTestBox(affectedRoute?.points ?? [], blockerBox)).toBe(false);
   });
 
   test("incremental rendering refreshes cached paths only for crossing neighbors", () => {
@@ -1273,33 +1322,32 @@ describe("power system model", () => {
     expect(normalizeVoltageBaseInput("kV")).toBe("");
   });
 
-  test("scales terminal stubs from the device body toward visible terminals", () => {
-    expect(terminalStubSegment({ anchor: { x: 0.5, y: 0 } })).toEqual({
-      from: { x: -76, y: 0 },
+  test("scales terminal stubs from the visible device boundary toward terminals", () => {
+    const converter = createDefaultNode("dcdc-converter", { x: 100, y: 100 });
+    const line = createDefaultNode("ac-line", { x: 100, y: 100 });
+
+    expect(terminalStubSegment(converter.terminals[0], 1, 1, 24, converter.kind, converter.size)).toEqual({
+      from: { x: 24, y: 0 },
       to: { x: 0, y: 0 }
     });
-    expect(terminalStubSegment({ anchor: { x: -0.5, y: 0 } })).toEqual({
-      from: { x: 76, y: 0 },
+    expect(terminalStubSegment(converter.terminals[1], 1, 1, 24, converter.kind, converter.size)).toEqual({
+      from: { x: -24, y: 0 },
       to: { x: 0, y: 0 }
     });
-    expect(terminalStubSegment({ anchor: { x: 0, y: -0.5 } })).toEqual({
-      from: { x: 0, y: 76 },
+    expect(terminalStubSegment(line.terminals[0], 1, 1, 24, line.kind, line.size)).toEqual({
+      from: { x: 16, y: 0 },
       to: { x: 0, y: 0 }
     });
-    expect(terminalStubSegment({ anchor: { x: 0, y: 0.5 } })).toEqual({
-      from: { x: 0, y: -76 },
+    expect(terminalStubSegment(line.terminals[1], 1, 1, 24, line.kind, line.size)).toEqual({
+      from: { x: -16, y: 0 },
       to: { x: 0, y: 0 }
     });
-    expect(terminalStubSegment({ anchor: { x: 0.5, y: 0 } }, -1, 1)).toEqual({
-      from: { x: 76, y: 0 },
+    expect(terminalStubSegment(converter.terminals[1], -1, 1, 24, converter.kind, converter.size)).toEqual({
+      from: { x: 24, y: 0 },
       to: { x: 0, y: 0 }
     });
-    expect(terminalStubSegment({ anchor: { x: 0.5, y: 0 } }, 2, 0.5)).toEqual({
-      from: { x: -148, y: 0 },
-      to: { x: 0, y: 0 }
-    });
-    expect(terminalStubSegment({ anchor: { x: 0, y: 0.5 } }, 2, 0.5)).toEqual({
-      from: { x: 0, y: -40 },
+    expect(terminalStubSegment(converter.terminals[1], 2, 0.5, 24, converter.kind, converter.size)).toEqual({
+      from: { x: -36, y: 0 },
       to: { x: 0, y: 0 }
     });
     expect(terminalStubSegment({ anchor: { x: 0.25, y: 0 } })).toEqual({
@@ -1308,28 +1356,32 @@ describe("power system model", () => {
     });
   });
 
-  test("extends border terminal stubs deep enough to meet enlarged device internals", () => {
-    const sampleKinds = [
-      "ac-source",
-      "ac-load",
-      "hydrogen-pipeline",
-      "heat-pump",
-      "four-port-heat-exchanger"
-    ] as const;
-
-    for (const kind of sampleKinds) {
-      const node = createDefaultNode(kind, { x: 200, y: 120 });
-      const terminal = node.terminals[0];
+  test("stops border terminal stubs at visible arcs and borders", () => {
+    const stubStartPoint = (node: ModelNode, terminal = node.terminals[0]) => {
       const renderPoint = terminalRenderLocalPoint(terminal, node.size, 1, 1, node.kind);
-      const stub = terminalStubSegment(terminal, 1, 1, 24, node.kind);
-      const inwardDepth = Math.abs(
-        Math.abs(terminal.anchor.x) >= Math.abs(terminal.anchor.y)
-          ? terminal.anchor.x * node.size.width - (renderPoint.x + stub.from.x)
-          : terminal.anchor.y * node.size.height - (renderPoint.y + stub.from.y)
-      );
+      const stub = terminalStubSegment(terminal, 1, 1, 24, node.kind, node.size);
+      return {
+        x: renderPoint.x + stub.from.x,
+        y: renderPoint.y + stub.from.y
+      };
+    };
 
-      expect(inwardDepth).toBeGreaterThanOrEqual(64);
-    }
+    const acSource = createDefaultNode("ac-source", { x: 200, y: 120 });
+    expect(stubStartPoint(acSource).x).toBeCloseTo(Math.min(acSource.size.width, acSource.size.height) * 0.37);
+
+    const converter = createDefaultNode("acac-converter", { x: 200, y: 120 });
+    const converterGlyphScale = Math.max(1, Math.max(converter.size.width, converter.size.height) / 100);
+    expect(stubStartPoint(converter, converter.terminals[0]).x).toBeCloseTo(-converter.size.width / 2 + 8 * converterGlyphScale);
+    expect(stubStartPoint(converter, converter.terminals[1]).x).toBeCloseTo(converter.size.width / 2 - 8 * converterGlyphScale);
+
+    const transformer = createDefaultNode("ac-three-winding-transformer", { x: 200, y: 120 });
+    const transformerGlyphScale = Math.max(1, Math.max(transformer.size.width, transformer.size.height) / 100);
+    expect(stubStartPoint(transformer, transformer.terminals[0]).x).toBeCloseTo(-(16 + 15 + 8) * transformerGlyphScale);
+    expect(stubStartPoint(transformer, transformer.terminals[1]).x).toBeCloseTo((16 + 15 + 8) * transformerGlyphScale);
+
+    const pipeline = createDefaultNode("hydrogen-pipeline", { x: 200, y: 120 });
+    const pipelineGlyphScale = Math.max(1, Math.max(pipeline.size.width, pipeline.size.height) / 100);
+    expect(stubStartPoint(pipeline, pipeline.terminals[0]).x).toBeCloseTo((-pipeline.size.width / 2) + 8 * pipelineGlyphScale);
   });
 
   test("moves terminals on device borders outward by four pixels", () => {
@@ -1363,8 +1415,8 @@ describe("power system model", () => {
     expect(terminalRenderLocalPoint(dcdc.terminals[0], dcdc.size, 1, 1, dcdc.kind)).toEqual({ x: -dcdc.size.width / 2 - 12, y: 0 });
     expect(terminalRenderLocalPoint(dcdc.terminals[1], dcdc.size, 1, 1, dcdc.kind)).toEqual({ x: dcdc.size.width / 2 + 12, y: 0 });
     expect(terminalRenderLocalPoint(scaled.terminals[1], scaled.size, 2, 0.5, scaled.kind)).toEqual({ x: scaled.size.width / 2 + 12 / 2, y: 0 });
-    expect(terminalStubSegment(dcdc.terminals[0], 1, 1, 24, dcdc.kind)).toEqual({
-      from: { x: 84, y: 0 },
+    expect(terminalStubSegment(dcdc.terminals[0], 1, 1, 24, dcdc.kind, dcdc.size)).toEqual({
+      from: { x: 24, y: 0 },
       to: { x: 0, y: 0 }
     });
   });
@@ -1385,7 +1437,8 @@ describe("power system model", () => {
       const node = createDefaultNode(kind, { x: 200, y: 120 });
       expect(getTerminalPoint(node, "t1").x).toBe(200 - node.size.width / 2 - 12);
       expect(terminalRenderLocalPoint(node.terminals[0], node.size, 1, 1, node.kind).x).toBe(-node.size.width / 2 - 12);
-      expect(terminalStubSegment(node.terminals[0], 1, 1, 24, node.kind).from.x).toBe(84);
+      const expectedStubLength = kind.includes("electrolyzer") ? 21 : 22.5;
+      expect(terminalStubSegment(node.terminals[0], 1, 1, 24, node.kind, node.size).from.x).toBeCloseTo(expectedStubLength);
     }
   });
 
@@ -1398,8 +1451,8 @@ describe("power system model", () => {
       expect(getTerminalPoint(node, "t2")).toEqual({ x: 200 + node.size.width / 2 + 16, y: 120 });
       expect(terminalRenderLocalPoint(node.terminals[0], node.size, 1, 1, node.kind).x).toBe(-node.size.width / 2 - 16);
       expect(terminalRenderLocalPoint(node.terminals[1], node.size, 1, 1, node.kind).x).toBe(node.size.width / 2 + 16);
-      expect(terminalStubSegment(node.terminals[0], 1, 1, 24, node.kind).from.x).toBe(88);
-      expect(terminalStubSegment(node.terminals[1], 1, 1, 24, node.kind).from.x).toBe(-88);
+      expect(terminalStubSegment(node.terminals[0], 1, 1, 24, node.kind, node.size).from.x).toBe(28);
+      expect(terminalStubSegment(node.terminals[1], 1, 1, 24, node.kind, node.size).from.x).toBe(-28);
     }
   });
 
@@ -1948,11 +2001,10 @@ describe("power system model", () => {
     expect(terminalPoints[1].x).toBeCloseTo(node.size.width / 2);
     expect(terminalPoints[1].y).toBeCloseTo((-8 / 76) * node.size.height);
     expect(terminalPoints[2]).toEqual({ x: 0, y: node.size.height / 2 });
-    expect(node.terminals.map((terminal) => terminalStubSegment(terminal))).toEqual([
-      { from: { x: 76, y: 0 }, to: { x: 0, y: 0 } },
-      { from: { x: -76, y: 0 }, to: { x: 0, y: 0 } },
-      { from: { x: 0, y: -76 }, to: { x: 0, y: 0 } }
-    ]);
+    const terminalStubs = node.terminals.map((terminal) => terminalStubSegment(terminal, 1, 1, 24, node.kind, node.size));
+    expect(terminalStubs[0].from.x).toBeCloseTo(20.5);
+    expect(terminalStubs[1].from.x).toBeCloseTo(-20.5);
+    expect(terminalStubs[2].from.y).toBeCloseTo(-0.5);
   });
 
   test("normalizes legacy three-winding transformer terminal anchors to winding lead exits", () => {
@@ -1998,12 +2050,11 @@ describe("power system model", () => {
     expect(terminalPoints[1].y).toBeCloseTo((-8 / 92) * node.size.height);
     expect(terminalPoints[2]).toEqual({ x: 0, y: node.size.height / 2 });
     expect(terminalPoints[3]).toEqual({ x: 0, y: -node.size.height / 2 });
-    expect(node.terminals.map((terminal) => terminalStubSegment(terminal))).toEqual([
-      { from: { x: 76, y: 0 }, to: { x: 0, y: 0 } },
-      { from: { x: -76, y: 0 }, to: { x: 0, y: 0 } },
-      { from: { x: 0, y: -76 }, to: { x: 0, y: 0 } },
-      { from: { x: 0, y: 76 }, to: { x: 0, y: 0 } }
-    ]);
+    const terminalStubs = node.terminals.map((terminal) => terminalStubSegment(terminal, 1, 1, 24, node.kind, node.size));
+    expect(terminalStubs[0].from.x).toBeCloseTo(20.5);
+    expect(terminalStubs[1].from.x).toBeCloseTo(-20.5);
+    expect(terminalStubs[2].from.y).toBeCloseTo(-6);
+    expect(terminalStubs[3].from.y).toBeCloseTo(3);
     expect(describeContainerTerminalAssociations(template!)).toHaveLength(3);
   });
 
@@ -2492,6 +2543,179 @@ describe("power system model", () => {
     expect(hasImmediateRouteReversal(route?.points ?? [])).toBe(false);
   });
 
+  test("repairs stored endpoint paths that would approach a right-side terminal through the device body", () => {
+    const source = { ...createDefaultNode("ac-load", { x: 120, y: 160 }), id: "source" };
+    const target = { ...createDefaultNode("ac-source", { x: 460, y: 160 }), id: "target" };
+    const targetTerminal = getTerminalPoint(target, "t1");
+    const targetBodyBox = {
+      left: target.position.x - target.size.width / 2,
+      right: target.position.x + target.size.width / 2,
+      top: target.position.y - target.size.height / 2,
+      bottom: target.position.y + target.size.height / 2
+    };
+    const edge: Edge = {
+      id: "stored-back-approach-to-right-terminal",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: targetBodyBox.left - 24, y: targetTerminal.y }
+      ]
+    };
+
+    const route = routeEdgesForStoredRendering([source, target], [edge], { width: 720, height: 320 })[0];
+
+    expect(route.points[route.points.length - 1]).toEqual(targetTerminal);
+    expect(route.points[route.points.length - 2].x).toBeGreaterThan(targetTerminal.x);
+    expect(routeIntersectsTestBox(route.points, targetBodyBox)).toBe(false);
+    expect(hasImmediateRouteReversal(route.points)).toBe(false);
+  });
+
+  test("refreshes cached routes that approach a right-side terminal through the device body", () => {
+    const source = { ...createDefaultNode("ac-source", { x: 270, y: 360 }), id: "source" };
+    const target = { ...createDefaultNode("ac-source", { x: 695, y: 160 }), id: "target" };
+    const sourceTerminal = getTerminalPoint(source, "t1");
+    const targetTerminal = getTerminalPoint(target, "t1");
+    const edge: Edge = {
+      id: "cached-back-approach-to-right-terminal",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const badCachedRoute = {
+      edgeId: edge.id,
+      points: [
+        sourceTerminal,
+        { x: sourceTerminal.x + 28, y: sourceTerminal.y },
+        { x: sourceTerminal.x + 28, y: targetTerminal.y },
+        { x: target.position.x - target.size.width / 2 - 24, y: targetTerminal.y },
+        targetTerminal
+      ],
+      path: ""
+    };
+    const targetBodyBox = {
+      left: target.position.x - target.size.width / 2,
+      right: target.position.x + target.size.width / 2,
+      top: target.position.y - target.size.height / 2,
+      bottom: target.position.y + target.size.height / 2
+    };
+
+    const [route] = routeEdgesForIncrementalRendering(
+      [source, target],
+      [edge],
+      new Set(),
+      { width: 1100, height: 650 },
+      [badCachedRoute]
+    );
+
+    expect(route.points[route.points.length - 1]).toEqual(targetTerminal);
+    expect(route.points[route.points.length - 2].x).toBeGreaterThan(targetTerminal.x);
+    expect(routeIntersectsTestBox(route.points, targetBodyBox)).toBe(false);
+  });
+
+  test("keeps bus-move preserved routes attached through the stationary device terminal side", () => {
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 360, y: 240 }),
+      id: "bus",
+      size: { width: 420, height: 24 }
+    };
+    const source = { ...createDefaultNode("ac-source", { x: 360, y: 120 }), id: "source" };
+    const initialEdge: Edge = {
+      id: "bus-to-source-after-bus-move",
+      sourceId: bus.id,
+      targetId: source.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      sourcePoint: projectPointToBusCenterline(bus, getTerminalPoint(source, "t1"))
+    };
+    const prepared = prepareConnectionEdgeForCommit([bus, source], [initialEdge], initialEdge.id, { width: 720, height: 420 });
+    const initialRoute = prepared.edge
+      ? routeEdgesForStoredRendering([bus, source], [prepared.edge], { width: 720, height: 420 })[0]
+      : undefined;
+    const movedBus = { ...bus, position: { x: bus.position.x, y: bus.position.y + 80 } };
+    const movedEdge = prepared.edge && initialRoute
+      ? {
+          ...prepared.edge,
+          sourcePoint: prepared.edge.sourcePoint
+            ? { x: prepared.edge.sourcePoint.x, y: prepared.edge.sourcePoint.y + 80 }
+            : prepared.edge.sourcePoint,
+          manualPoints: preserveDraggedRouteShape({
+            routePoints: initialRoute.points,
+            nextStart: {
+              x: initialRoute.points[0].x,
+              y: initialRoute.points[0].y + 80
+            },
+            nextEnd: initialRoute.points[initialRoute.points.length - 1],
+            sourceDelta: { x: 0, y: 80 },
+            targetDelta: { x: 0, y: 0 },
+            sourceNormal: getRouteEndpointNormal(
+              movedBus,
+              { x: initialRoute.points[0].x, y: initialRoute.points[0].y + 80 },
+              initialRoute.points[initialRoute.points.length - 1],
+              prepared.edge.sourceTerminalId
+            ),
+            targetNormal: getRouteEndpointNormal(
+              source,
+              initialRoute.points[initialRoute.points.length - 1],
+              { x: initialRoute.points[0].x, y: initialRoute.points[0].y + 80 },
+              prepared.edge.targetTerminalId
+            )
+          }).slice(1, -1)
+        }
+      : undefined;
+    const targetTerminal = getTerminalPoint(source, "t1");
+    const targetBodyBox = {
+      left: source.position.x - source.size.width / 2,
+      right: source.position.x + source.size.width / 2,
+      top: source.position.y - source.size.height / 2,
+      bottom: source.position.y + source.size.height / 2
+    };
+
+    const route = movedEdge
+      ? routeEdgesForStoredRendering([movedBus, source], [movedEdge], { width: 720, height: 420 })[0]
+      : undefined;
+
+    expect(prepared.ok).toBe(true);
+    expect(route).toBeDefined();
+    expect(route?.points[route.points.length - 1]).toEqual(targetTerminal);
+    expect(route?.points[route.points.length - 2].x).toBeGreaterThan(targetTerminal.x);
+    expect(routeIntersectsTestBox(route?.points ?? [], targetBodyBox)).toBe(false);
+    expect(hasImmediateRouteReversal(route?.points ?? [])).toBe(false);
+  });
+
+  test("repairs stored bus-move routes that immediately reverse near the moved bus endpoint", () => {
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 360, y: 260 }),
+      id: "bus",
+      size: { width: 420, height: 24 }
+    };
+    const source = { ...createDefaultNode("ac-source", { x: 360, y: 120 }), id: "source" };
+    const sourceTerminal = getTerminalPoint(source, "t1");
+    const busPoint = projectPointToBusCenterline(bus, sourceTerminal);
+    const edge: Edge = {
+      id: "stored-bus-endpoint-backtrack",
+      sourceId: bus.id,
+      targetId: source.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      sourcePoint: busPoint,
+      manualPoints: [
+        { x: busPoint.x, y: busPoint.y - 28 },
+        { x: busPoint.x, y: busPoint.y },
+        { x: sourceTerminal.x + 28, y: busPoint.y }
+      ]
+    };
+
+    const route = routeEdgesForStoredRendering([bus, source], [edge], { width: 720, height: 420 })[0];
+
+    expect(route.points[0]).toEqual(busPoint);
+    expect(route.points[route.points.length - 1]).toEqual(sourceTerminal);
+    expect(route.points[route.points.length - 2].x).toBeGreaterThan(sourceTerminal.x);
+    expect(hasImmediateRouteReversal(route.points)).toBe(false);
+  });
+
   test("connects heater and heat exchanger right-side heat terminals without false space exhaustion", () => {
     const source = { ...createDefaultNode("ac-two-port-heater", { x: 545, y: 333 }), id: "heater" };
     const target = { ...createDefaultNode("four-port-heat-exchanger", { x: 1013, y: 366 }), id: "heat-exchanger" };
@@ -2518,6 +2742,295 @@ describe("power system model", () => {
     expect(route?.points[0]).toEqual(getTerminalPoint(source, "t3"));
     expect(route?.points[route.points.length - 1]).toEqual(getTerminalPoint(target, "t3"));
     expect(hasImmediateRouteReversal(route?.points ?? [])).toBe(false);
+  });
+
+  test("routes a box breaker right terminal to a vertical ACAC converter bottom terminal with one visible bend", () => {
+    const source = { ...createDefaultNode("ac-box-breaker", { x: 420, y: 520 }), id: "box-breaker" };
+    const target = { ...createDefaultNode("acac-converter-vertical", { x: 720, y: 360 }), id: "vertical-acac" };
+    const edge: Edge = {
+      id: "box-breaker-to-vertical-acac-bottom",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t2"
+    };
+    const sourcePoint = getTerminalPoint(source, "t2");
+    const targetPoint = getTerminalPoint(target, "t2");
+
+    const route = routeOrthogonalEdge(source, target, [source, target], edge, [], { width: 1200, height: 900 });
+
+    expect(route).toEqual([
+      sourcePoint,
+      { x: targetPoint.x, y: sourcePoint.y },
+      targetPoint
+    ]);
+    expect(hasImmediateRouteReversal(route)).toBe(false);
+  });
+
+  test("collapses stale box breaker dogleg routes when nearby graphics do not block the one-bend route", () => {
+    const source = { ...createDefaultNode("ac-box-breaker", { x: 420, y: 520 }), id: "box-breaker" };
+    const target = { ...createDefaultNode("acac-converter-vertical", { x: 720, y: 360 }), id: "vertical-acac" };
+    const sourcePoint = getTerminalPoint(source, "t2");
+    const targetPoint = getTerminalPoint(target, "t2");
+    const nearbyGraphic = withHiddenDeviceLabel({
+      ...createDefaultNode("ac-load", {
+        x: Math.round((sourcePoint.x + targetPoint.x) / 2),
+        y: targetPoint.y - 7
+      }),
+      id: "nearby-graphic"
+    });
+    const staleLaneX = Math.round((sourcePoint.x + targetPoint.x) / 2);
+    const staleLaneY = targetPoint.y - 70;
+    const edge: Edge = {
+      id: "box-breaker-to-vertical-acac-bottom-stale-dogleg",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t2",
+      manualPoints: [
+        { x: sourcePoint.x + 28, y: staleLaneY },
+        { x: staleLaneX, y: staleLaneY },
+        { x: staleLaneX, y: targetPoint.y + 28 }
+      ]
+    };
+
+    const route = routeEdgesForStoredRendering([source, target, nearbyGraphic], [edge], { width: 1200, height: 900 })[0].points;
+
+    expect(route[0]).toEqual(sourcePoint);
+    expect(route[route.length - 1]).toEqual(targetPoint);
+    expect(routeBendCountForTest(route)).toBe(1);
+    expect(route.some((point) => point.y === staleLaneY)).toBe(false);
+    expect(route.some((point) => point.x === staleLaneX && point.y === targetPoint.y + 28)).toBe(false);
+    expect(hasImmediateRouteReversal(route)).toBe(false);
+  });
+
+  test("routes a line right terminal to a vertical ACAC converter top terminal with one visible bend", () => {
+    const source = { ...createDefaultNode("ac-line", { x: 520, y: 260 }), id: "ac-line" };
+    const target = { ...createDefaultNode("acac-converter-vertical", { x: 720, y: 360 }), id: "vertical-acac" };
+    const edge: Edge = {
+      id: "line-to-vertical-acac-top",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1"
+    };
+    const sourcePoint = getTerminalPoint(source, "t2");
+    const targetPoint = getTerminalPoint(target, "t1");
+
+    const route = routeOrthogonalEdge(source, target, [source, target], edge, [], { width: 1200, height: 900 });
+    const maxRouteX = Math.max(...route.map((point) => point.x));
+
+    expect(route).toEqual([
+      sourcePoint,
+      { x: targetPoint.x, y: sourcePoint.y },
+      targetPoint
+    ]);
+    expect(maxRouteX).toBeLessThanOrEqual(targetPoint.x);
+    expect(hasImmediateRouteReversal(route)).toBe(false);
+  });
+
+  test("collapses stale dogleg manual routes when a line right terminal connects to a vertical ACAC converter top terminal", () => {
+    const source = { ...createDefaultNode("ac-line", { x: 520, y: 260 }), id: "ac-line" };
+    const target = { ...createDefaultNode("acac-converter-vertical", { x: 720, y: 520 }), id: "vertical-acac" };
+    const sourcePoint = getTerminalPoint(source, "t2");
+    const targetPoint = getTerminalPoint(target, "t1");
+    const edge: Edge = {
+      id: "line-to-vertical-acac-top-stale-dogleg",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: Math.round((sourcePoint.x + targetPoint.x) / 2), y: sourcePoint.y + 80 },
+        { x: targetPoint.x, y: sourcePoint.y + 80 },
+        { x: targetPoint.x, y: targetPoint.y - 28 }
+      ]
+    };
+
+    const route = routeEdgesForStoredRendering([source, target], [edge], { width: 1200, height: 900 })[0].points;
+    const maxRouteX = Math.max(...route.map((point) => point.x));
+
+    expect(route).toHaveLength(5);
+    expect(route[0]).toEqual(sourcePoint);
+    expect(route[1].y).toBe(sourcePoint.y);
+    expect(route[2]).toEqual({ x: targetPoint.x, y: sourcePoint.y });
+    expect(route[3].x).toBe(targetPoint.x);
+    expect(route[route.length - 1]).toEqual(targetPoint);
+    expect(maxRouteX).toBeLessThanOrEqual(targetPoint.x);
+    expect(hasImmediateRouteReversal(route)).toBe(false);
+  });
+
+  test("collapses stale rectangular manual loops when opposed terminals are already aligned", () => {
+    const source = withHiddenDeviceLabel({ ...createDefaultNode("acac-converter-vertical", { x: 420, y: 180 }), id: "upper-acac" });
+    const target = withHiddenDeviceLabel({ ...createDefaultNode("acac-converter-vertical", { x: 420, y: 520 }), id: "lower-acac" });
+    const sourcePoint = getTerminalPoint(source, "t2");
+    const targetPoint = getTerminalPoint(target, "t1");
+    const edge: Edge = {
+      id: "stale-rectangular-loop",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: sourcePoint.x - 140, y: sourcePoint.y + 28 },
+        { x: sourcePoint.x - 140, y: targetPoint.y - 28 },
+        { x: sourcePoint.x + 220, y: targetPoint.y - 28 }
+      ]
+    };
+
+    const route = routeOrthogonalEdge(source, target, [source, target], edge, [], { width: 900, height: 760 });
+
+    expect(route.every((point) => point.x === sourcePoint.x)).toBe(true);
+    expect(route).toHaveLength(4);
+    expect(route[0]).toEqual(sourcePoint);
+    expect(route[route.length - 1]).toEqual(targetPoint);
+    expect(hasImmediateRouteReversal(route)).toBe(false);
+  });
+
+  test("collapses stale downward manual loops when a right-side terminal connects to an upper bus", () => {
+    const source = withHiddenDeviceLabel({ ...createDefaultNode("ac-source", { x: 560, y: 440 }), id: "ac-source" });
+    const bus = withHiddenDeviceLabel({
+      ...createDefaultNode("ac-bus", { x: 650, y: 100 }),
+      id: "upper-bus",
+      size: { width: 1000, height: 34 }
+    });
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const busPoint = projectPointToBusCenterline(bus, { x: 270, y: 100 });
+    const edge: Edge = {
+      id: "source-to-upper-bus-stale-loop",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: busPoint,
+      manualPoints: [
+        { x: sourcePoint.x + 28, y: 700 },
+        { x: busPoint.x, y: 700 }
+      ]
+    };
+
+    const route = routeOrthogonalEdge(source, bus, [source, bus], edge, [], { width: 1200, height: 760 });
+    const maxY = Math.max(...route.map((point) => point.y));
+    const minX = Math.min(...route.map((point) => point.x));
+
+    expect(route[0]).toEqual(sourcePoint);
+    expect(route[route.length - 1]).toEqual(busPoint);
+    expect(maxY).toBeLessThanOrEqual(sourcePoint.y + 32);
+    expect(minX).toBeGreaterThanOrEqual(busPoint.x);
+    expect(hasImmediateRouteReversal(route)).toBe(false);
+  });
+
+  test("collapses stored upward manual loops when a right-side terminal connects to a lower line terminal", () => {
+    const source = withHiddenDeviceLabel({ ...createDefaultNode("ac-source", { x: 1180, y: 540 }), id: "ac-source" });
+    const line = withHiddenDeviceLabel({ ...createDefaultNode("ac-line", { x: 1760, y: 660 }), id: "ac-line" });
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const targetPoint = getTerminalPoint(line, "t1");
+    const edge: Edge = {
+      id: "source-to-line-stored-stale-loop",
+      sourceId: source.id,
+      targetId: line.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: sourcePoint.x + 28, y: sourcePoint.y - 400 },
+        { x: targetPoint.x - 28, y: sourcePoint.y - 400 },
+        { x: targetPoint.x - 28, y: targetPoint.y }
+      ]
+    };
+
+    const route = routeEdgesForStoredRendering([source, line], [edge], { width: 2200, height: 900 })[0].points;
+    const minY = Math.min(...route.map((point) => point.y));
+    const maxX = Math.max(...route.map((point) => point.x));
+
+    expect(route[0]).toEqual(sourcePoint);
+    expect(route[route.length - 1]).toEqual(targetPoint);
+    expect(minY).toBeGreaterThanOrEqual(Math.min(sourcePoint.y, targetPoint.y) - 32);
+    expect(maxX).toBeLessThanOrEqual(targetPoint.x + 32);
+    expect(hasImmediateRouteReversal(route)).toBe(false);
+  });
+
+  test("collapses stored stair-step routes between opposed horizontal terminals", () => {
+    const source = withHiddenDeviceLabel({ ...createDefaultNode("ac-source", { x: 600, y: 420 }), id: "stair-source" });
+    const line = withHiddenDeviceLabel({ ...createDefaultNode("ac-line", { x: 980, y: 300 }), id: "stair-line" });
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const targetPoint = getTerminalPoint(line, "t1");
+    const staleLaneY = Math.round((sourcePoint.y + targetPoint.y) / 2);
+    const edge: Edge = {
+      id: "source-to-line-stored-stair-step",
+      sourceId: source.id,
+      targetId: line.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: sourcePoint.x + 28, y: staleLaneY },
+        { x: targetPoint.x - 28, y: staleLaneY },
+        { x: targetPoint.x - 28, y: targetPoint.y }
+      ]
+    };
+
+    const route = routeEdgesForStoredRendering([source, line], [edge], { width: 1400, height: 760 })[0].points;
+
+    expect(route[0]).toEqual(sourcePoint);
+    expect(route[route.length - 1]).toEqual(targetPoint);
+    expect(route.some((point) => point.y === staleLaneY)).toBe(false);
+    expect(routeBendCountForTest(route)).toBeLessThanOrEqual(2);
+    expect(hasImmediateRouteReversal(route)).toBe(false);
+  });
+
+  test("collapses stored far-side loops between same-facing right-side terminals when a shorter side lane is clear", () => {
+    const source = withHiddenDeviceLabel({ ...createDefaultNode("ac-source", { x: 360, y: 620 }), id: "same-facing-source" });
+    const target = withHiddenDeviceLabel({ ...createDefaultNode("ac-source", { x: 1180, y: 360 }), id: "same-facing-target" });
+    const nearbyGraphic = withHiddenDeviceLabel({
+      ...createDefaultNode("ac-source", { x: 760, y: 460 }),
+      id: "nearby-but-not-blocking"
+    });
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const targetPoint = getTerminalPoint(target, "t1");
+    const targetOutX = targetPoint.x + 28;
+    const farLeftX = sourcePoint.x - 360;
+    const farTopY = targetPoint.y - 160;
+    const edge: Edge = {
+      id: "source-to-source-stored-far-side-loop",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: sourcePoint.x + 28, y: sourcePoint.y - 90 },
+        { x: farLeftX, y: sourcePoint.y - 90 },
+        { x: farLeftX, y: farTopY },
+        { x: targetOutX, y: farTopY },
+        { x: targetOutX, y: targetPoint.y }
+      ]
+    };
+
+    const route = routeEdgesForStoredRendering([source, target, nearbyGraphic], [edge], { width: 1600, height: 900 })[0].points;
+
+    expect(route[0]).toEqual(sourcePoint);
+    expect(route[route.length - 1]).toEqual(targetPoint);
+    expect(Math.min(...route.map((point) => point.x))).toBeGreaterThanOrEqual(sourcePoint.x - 1);
+    expect(Math.max(...route.map((point) => point.y))).toBeLessThanOrEqual(sourcePoint.y + 1);
+    expect(route.some((point) => point.x === farLeftX || point.y === farTopY)).toBe(false);
+    expect(routeBendCountForTest(route)).toBeLessThanOrEqual(2);
+    expect(hasImmediateRouteReversal(route)).toBe(false);
+  });
+
+  test("routes same-facing source terminals around endpoint device labels", () => {
+    const source = { ...createDefaultNode("ac-source", { x: 240, y: 220 }), id: "source", name: "交流电源-288" };
+    const target = { ...createDefaultNode("ac-source", { x: 620, y: 220 }), id: "target", name: "交流电源-276" };
+    const edge: Edge = {
+      id: "source-to-target-around-label",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const targetVisualBounds = calculateNodeVisualBounds(target, 0);
+
+    const route = routeOrthogonalEdge(source, target, [source, target], edge, [], { width: 1000, height: 520 });
+
+    expect(routeIntersectsTestBox(route, targetVisualBounds)).toBe(false);
+    expect(hasImmediateRouteReversal(route)).toBe(false);
   });
 
   test("expands route search when initial local lanes are blocked outside the narrow endpoint corridor", () => {
@@ -3210,8 +3723,8 @@ describe("power system model", () => {
   });
 
   test("keeps endpoint stubs perpendicular after routing through inserted manual bends", () => {
-    const source = createDefaultNode("ac-source", { x: 120, y: 120 });
-    const target = createDefaultNode("ac-load", { x: 520, y: 120 });
+    const source = withHiddenDeviceLabel(createDefaultNode("ac-source", { x: 120, y: 120 }));
+    const target = withHiddenDeviceLabel(createDefaultNode("ac-load", { x: 520, y: 120 }));
     const edge: Edge = {
       id: "manual-bend-perpendicular",
       sourceId: source.id,
@@ -3385,7 +3898,6 @@ describe("power system model", () => {
     const source = { ...createDefaultNode("ac-source", { x: 160, y: 140 }), id: "source" };
     const target = { ...createDefaultNode("ac-load", { x: 900, y: 140 }), id: "target" };
     const blocker = { ...createDefaultNode("ac-pv-source", { x: 1000, y: 140 }), id: "moved-pv", name: "交流光伏" };
-    const movedBlocker = { ...blocker, position: { x: 480, y: 200 } };
     const edge: Edge = {
       id: "blocked-after-move",
       sourceId: source.id,
@@ -3394,6 +3906,20 @@ describe("power system model", () => {
       targetTerminalId: "t1"
     };
     const beforeRoutes = routeEdgesForRendering([source, target, blocker], [edge], { width: 1100, height: 420 });
+    const beforePoints = beforeRoutes[0]?.points ?? [];
+    const blockingSegment =
+      beforePoints
+        .slice(1, -1)
+        .map((point, index) => ({ a: beforePoints[index + 1], b: beforePoints[index + 2] }))
+        .find(({ a, b }) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) > 160) ??
+      { a: { x: 480, y: 140 }, b: { x: 640, y: 140 } };
+    const movedBlocker = {
+      ...blocker,
+      position: {
+        x: Math.round((blockingSegment.a.x + blockingSegment.b.x) / 2),
+        y: Math.round((blockingSegment.a.y + blockingSegment.b.y) / 2)
+      }
+    };
 
     const nextEdges = rerouteEdgesAroundMovedNodes(
       [source, target, movedBlocker],
@@ -3413,6 +3939,66 @@ describe("power system model", () => {
     expect(validation.ok).toBe(true);
     expect(validation.issues).toEqual([]);
     expect(validation.route?.points).not.toEqual(beforeRoutes[0].points);
+  });
+
+  test("moves unrelated connection lines into and out of local obstacle avoidance", () => {
+    const bounds = { width: 1100, height: 460 };
+    const source = { ...createDefaultNode("ac-source", { x: 160, y: 140 }), id: "source" };
+    const target = { ...createDefaultNode("ac-source", { x: 900, y: 140 }), id: "target" };
+    const blocker = { ...createDefaultNode("ac-source", { x: 560, y: 360 }), id: "moved-source", name: "交流电源-中间" };
+    const edge: Edge = {
+      id: "auto-avoid-line",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const beforeRoutes = routeEdgesForRendering([source, target, blocker], [edge], bounds);
+    const beforeRoute = beforeRoutes[0];
+    const longMiddleSegment = beforeRoute.points
+      .slice(1, -1)
+      .map((_point, index) => ({ a: beforeRoute.points[index + 1], b: beforeRoute.points[index + 2] }))
+      .find(({ a, b }) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) > 180);
+    expect(longMiddleSegment).toBeTruthy();
+    const movedBlocker = {
+      ...blocker,
+      position: {
+        x: Math.round((longMiddleSegment!.a.x + longMiddleSegment!.b.x) / 2),
+        y: Math.round((longMiddleSegment!.a.y + longMiddleSegment!.b.y) / 2)
+      }
+    };
+
+    const avoidedEdges = rerouteEdgesAroundMovedNodes(
+      [source, target, movedBlocker],
+      [edge],
+      [movedBlocker.id],
+      beforeRoutes,
+      bounds
+    );
+    const avoidedRoute = routeEdgesForStoredRendering([source, target, movedBlocker], avoidedEdges, bounds)[0];
+    const avoidedValidation = validateConnectionEdgeRoute([source, target, movedBlocker], avoidedEdges, edge.id, bounds);
+
+    expect(avoidedEdges[0]).not.toBe(edge);
+    expect(avoidedEdges[0].manualPoints?.length ?? 0).toBeGreaterThan(0);
+    expect(avoidedValidation.ok).toBe(true);
+    expect(routeIntersectsSpecificNodes(avoidedRoute.points, avoidedEdges[0], [movedBlocker])).toBe(false);
+
+    const restoredEdges = rerouteEdgesAroundMovedNodes(
+      [source, target, blocker],
+      avoidedEdges,
+      [blocker.id],
+      [avoidedRoute],
+      bounds,
+      [edge.id],
+      avoidedEdges
+    );
+    const restoredRoute = routeEdgesForStoredRendering([source, target, blocker], restoredEdges, bounds)[0];
+    const restoredValidation = validateConnectionEdgeRoute([source, target, blocker], restoredEdges, edge.id, bounds);
+
+    expect(restoredValidation.ok).toBe(true);
+    expect(routeIntersectsSpecificNodes(restoredRoute.points, restoredEdges[0], [blocker])).toBe(false);
+    expect(restoredRoute.points).toEqual(beforeRoute.points);
+    expect(restoredRoute.points).not.toEqual(avoidedRoute.points);
   });
 
   test("filters moved node blockers by route bounds before reroute collision checks", () => {
@@ -3911,6 +4497,36 @@ describe("power system model", () => {
     expect(lengthOf(afterRoute)).toBeLessThan(lengthOf(beforeRoute));
   });
 
+  test("optimizes a lower bus endpoint under a single-terminal source outward stub", () => {
+    const source = { ...createDefaultNode("ac-source", { x: 400, y: 260 }), id: "source" };
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 620, y: 680 }),
+      id: "lower-bus",
+      size: { width: 900, height: 28 }
+    };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const initialBusPoint = projectPointToBusCenterline(bus, { x: sourcePoint.x - 80, y: bus.position.y });
+    const edge: Edge = {
+      id: "source-to-lower-bus-folded",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: initialBusPoint
+    };
+
+    const prepared = prepareConnectionEdgeForCommit([source, bus], [edge], edge.id, { width: 1200, height: 900 });
+    const route = prepared.edge
+      ? routeEdgesForStoredRendering([source, bus], [prepared.edge], { width: 1200, height: 900 })[0].points
+      : [];
+
+    expect(prepared.ok).toBe(true);
+    expect(prepared.edge?.targetPoint).toEqual(projectPointToBusCenterline(bus, { x: sourcePoint.x + 28, y: bus.position.y }));
+    expect(routeBendCountForTest(route)).toBe(1);
+    expect(route[0]).toEqual(sourcePoint);
+    expect(route[route.length - 1]).toEqual(prepared.edge?.targetPoint);
+  });
+
   test("slides the bus endpoint when the opposite device moves so a straight line remains straight", () => {
     const load = createDefaultNode("ac-load", { x: 200, y: 100 });
     const movedLoad = { ...load, position: { x: 260, y: 100 } };
@@ -3969,7 +4585,45 @@ describe("power system model", () => {
     expect(patch).toEqual({ targetPoint: projectPointToBusCenterline(bus, getTerminalPoint(movedLoad, "t1")) });
   });
 
-  test("does not slide a bus endpoint when the device terminal would connect sideways", () => {
+  test("slides a lower bus endpoint to a moved single-terminal source outward stub", () => {
+    const source = { ...createDefaultNode("ac-source", { x: 400, y: 260 }), id: "source" };
+    const movedSource = { ...source, position: { x: 470, y: 260 } };
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 620, y: 680 }),
+      id: "lower-bus",
+      size: { width: 900, height: 28 }
+    };
+    const originalSourcePoint = getTerminalPoint(source, "t1");
+    const movedSourcePoint = getTerminalPoint(movedSource, "t1");
+    const edge: Edge = {
+      id: "slide-single-source-lower-bus",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: projectPointToBusCenterline(bus, { x: originalSourcePoint.x + 28, y: bus.position.y })
+    };
+
+    const patch = resolveStraightBusSlideEndpoint({
+      edge,
+      sourceNode: source,
+      targetNode: bus,
+      nextSourceNode: movedSource,
+      nextTargetNode: bus,
+      movingEndpoint: "source",
+      nodes: [source, bus],
+      nextNodes: [movedSource, bus]
+    });
+
+    expect(patch).toEqual({
+      targetPoint: projectPointToBusCenterline(bus, { x: movedSourcePoint.x + 28, y: bus.position.y })
+    });
+    const nextEdge = { ...edge, ...patch };
+    const route = routeEdgesForStoredRendering([movedSource, bus], [nextEdge], { width: 1200, height: 900 })[0].points;
+    expect(routeBendCountForTest(route)).toBe(1);
+  });
+
+  test("slides a bus endpoint through an outward stub when the direct terminal segment would be sideways", () => {
     const load = createDefaultNode("ac-load", { x: 200, y: 100 });
     const movedLoad = { ...load, position: { x: 260, y: 140 } };
     const bus = createDefaultNode("ac-bus", { x: 300, y: 100 });
@@ -3993,7 +4647,10 @@ describe("power system model", () => {
       nextNodes: [movedLoad, bus]
     });
 
-    expect(patch).toBeNull();
+    const movedLoadPoint = getTerminalPoint(movedLoad, "t1");
+    expect(patch).toEqual({
+      targetPoint: projectPointToBusCenterline(bus, { x: movedLoadPoint.x + 28, y: bus.position.y })
+    });
   });
 
   test("does not clamp a bus endpoint behind the moved device terminal", () => {

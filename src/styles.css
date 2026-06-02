@@ -1413,6 +1413,10 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   pointer-events: none;
 }
 
+.diagram-canvas.single-node-dragging .diagram-node.single-drag-origin {
+  opacity: 0.24;
+}
+
 .canvas-resizing,
 .canvas-resizing * {
   user-select: none;
@@ -1999,6 +2003,19 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .multi-node-drag-overlay {
   pointer-events: none;
   will-change: transform;
+}
+
+.single-node-drag-overlay {
+  pointer-events: none;
+}
+
+.imperative-single-node-drag-node-overlay {
+  will-change: transform;
+}
+
+.single-node-drag-preview-node {
+  opacity: 0.96;
+  filter: drop-shadow(0 5px 10px rgba(37, 99, 235, 0.18));
 }
 
 .multi-node-drag-preview-node {

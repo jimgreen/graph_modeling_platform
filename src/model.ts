@@ -5113,21 +5113,22 @@ export function terminalStubSegment(
   scaleX = 1,
   scaleY = 1,
   length = 24,
-  nodeKind?: DeviceKind
+  nodeKind?: DeviceKind,
+  size?: Pick<ModelNode["size"], "width" | "height">
 ): { from: Point; to: Point } {
   const displayedAnchor = {
     x: terminal.anchor.x * (Math.sign(scaleX) || 1),
     y: terminal.anchor.y * (Math.sign(scaleY) || 1)
   };
-  const internalLength = terminalStubInternalLength(terminal, length);
+  const internalLength = terminalStubInternalLength(terminal, length, nodeKind, size);
   if (Math.abs(displayedAnchor.x) >= Math.abs(displayedAnchor.y)) {
-    const scaledLength = internalLength * Math.abs(scaleX || 1) + terminalOutwardOffsetLength(terminal, nodeKind);
+    const scaledLength = Math.max(0, internalLength * Math.abs(scaleX || 1) + terminalOutwardOffsetLength(terminal, nodeKind));
     return {
       from: { x: displayedAnchor.x >= 0 ? -scaledLength : scaledLength, y: 0 },
       to: { x: 0, y: 0 }
     };
   }
-  const scaledLength = internalLength * Math.abs(scaleY || 1) + terminalOutwardOffsetLength(terminal, nodeKind);
+  const scaledLength = Math.max(0, internalLength * Math.abs(scaleY || 1) + terminalOutwardOffsetLength(terminal, nodeKind));
   return {
     from: { x: 0, y: displayedAnchor.y >= 0 ? -scaledLength : scaledLength },
     to: { x: 0, y: 0 }
@@ -5138,7 +5139,9 @@ const TERMINAL_STUB_INTERNAL_LINK_LENGTH = 72;
 const TERMINAL_OUTWARD_OFFSET = 4;
 const CLOSE_BORDER_TERMINAL_OUTWARD_OFFSET = 12;
 const CONVERTER_TERMINAL_OUTWARD_OFFSET = 12;
+export const CONVERTER_GLYPH_BORDER_INSET = 8;
 const PIPELINE_TERMINAL_OUTWARD_OFFSET = 16;
+const DEVICE_GLYPH_DESIGN_LONGEST_SIDE = 100;
 const CONVERTER_TERMINAL_KINDS = new Set<DeviceKind>(["dcdc-converter", "acdc-converter", "acac-converter"]);
 const LONG_STUB_PIPELINE_TERMINAL_KINDS = new Set<DeviceKind>(["hydrogen-pipeline", "heat-pipeline"]);
 const CLOSE_BORDER_TERMINAL_KINDS = new Set<DeviceKind>([
@@ -5181,7 +5184,151 @@ function terminalOutwardOffsetLength(terminal: Pick<Terminal, "anchor">, nodeKin
   return TERMINAL_OUTWARD_OFFSET;
 }
 
-function terminalStubInternalLength(terminal: Pick<Terminal, "anchor">, requestedLength: number): number {
+function deviceGlyphScaleForSize(size: Pick<ModelNode["size"], "width" | "height">): number {
+  return Math.max(1, Math.max(size.width, size.height) / DEVICE_GLYPH_DESIGN_LONGEST_SIDE);
+}
+
+function isConverterGlyphVariant(glyphVariant: string): boolean {
+  return glyphVariant === "dcdc-converter" || glyphVariant === "acdc-converter" || glyphVariant === "acac-converter";
+}
+
+function terminalStubVisibleBoundaryDistance(
+  terminal: Pick<Terminal, "anchor">,
+  size: Pick<ModelNode["size"], "width" | "height">,
+  nodeKind: DeviceKind,
+  axis: "x" | "y"
+): number {
+  const glyphScale = deviceGlyphScaleForSize(size);
+  const w = size.width / glyphScale;
+  const h = size.height / glyphScale;
+  const baseKind = baseDeviceKind(nodeKind) as DeviceKind;
+  const glyphVariant = getDeviceGlyphVariant(baseKind);
+  const fullRectDistance = axis === "x" ? size.width / 2 : size.height / 2;
+  const scaled = (value: number) => value * glyphScale;
+
+  if (axis === "x") {
+    if (glyphVariant === "ac-generator" || glyphVariant === "dc-generator") {
+      return Math.min(size.width, size.height) * 0.37;
+    }
+    if (glyphVariant === "hydrogen-source") {
+      return Math.min(size.width, size.height) * 0.35;
+    }
+    if (glyphVariant === "single-heat-source" || glyphVariant === "two-port-heat-source" || glyphVariant === "heat-source") {
+      return Math.max(Math.min(size.width, size.height) * 0.27, scaled(31));
+    }
+    if (nodeKind === "ac-three-winding-transformer" || nodeKind === "ac-three-winding-transformer-neutral") {
+      const hasNeutralTerminal = nodeKind === "ac-three-winding-transformer-neutral";
+      const windingRadius = hasNeutralTerminal ? 14 : 15;
+      const sideX = hasNeutralTerminal ? 17 : 16;
+      return scaled(sideX + windingRadius + 8);
+    }
+    if (glyphVariant === "transformer" || glyphVariant === "terminal-transformer-load") {
+      return scaled(32);
+    }
+    if (isConverterGlyphVariant(glyphVariant)) {
+      return Math.max(0, fullRectDistance - scaled(CONVERTER_GLYPH_BORDER_INSET));
+    }
+    if (glyphVariant === "ac-hydrogen-electrolyzer" || glyphVariant === "dc-hydrogen-electrolyzer" || glyphVariant === "hydrogen-electrolyzer") {
+      return scaled(w / 2 - 6);
+    }
+    if (glyphVariant === "ac-hydrogen-fuel-cell" || glyphVariant === "dc-hydrogen-fuel-cell" || glyphVariant === "hydrogen-fuel-cell") {
+      return scaled(w / 2 - 7);
+    }
+    if (
+      glyphVariant === "heat-electric-heater" ||
+      glyphVariant === "ac-heat-electric-heater" ||
+      glyphVariant === "ac-two-port-heat-electric-heater" ||
+      glyphVariant === "dc-heat-electric-heater" ||
+      glyphVariant === "dc-two-port-heat-electric-heater"
+    ) {
+      return scaled(w / 2 - 7);
+    }
+    if (glyphVariant === "heat-exchanger-two") {
+      return scaled(28);
+    }
+    if (glyphVariant === "heat-exchanger-three" || glyphVariant === "heat-exchanger-four") {
+      return scaled(38);
+    }
+    if (glyphVariant === "hydrogen-compressor" || glyphVariant === "heat-pump") {
+      return scaled(24);
+    }
+    if (glyphVariant === "hydrogen-regulator" || glyphVariant === "hydrogen-valve" || glyphVariant === "heat-valve") {
+      return scaled(28);
+    }
+    if (
+      glyphVariant === "line" ||
+      glyphVariant === "ac-line" ||
+      glyphVariant === "dc-line" ||
+      glyphVariant === "hydrogen-pipeline" ||
+      glyphVariant === "heat-pipeline" ||
+      glyphVariant === "switch" ||
+      glyphVariant === "disconnector" ||
+      glyphVariant === "breaker" ||
+      glyphVariant === "ground-disconnector" ||
+      glyphVariant === "box-breaker"
+    ) {
+      return scaled(w / 2 - 8);
+    }
+    if (glyphVariant === "battery-storage") {
+      return scaled(Math.min(w * 0.68, 56) / 2 + 6);
+    }
+    if (glyphVariant === "hydrogen-load" || glyphVariant === "load" || glyphVariant === "heat-load" || glyphVariant === "single-heat-load") {
+      return scaled(w / 6);
+    }
+    if (glyphVariant === "two-port-heat-load") {
+      return scaled(Math.max(w / 2 - 10, 31));
+    }
+    if (baseKind.includes("wind-source") || baseKind.includes("pv-source") || baseKind.includes("thermal-source") || baseKind.includes("hydro-source")) {
+      return scaled(22);
+    }
+    if (baseKind.includes("nuclear-source")) {
+      return scaled(22);
+    }
+    return fullRectDistance;
+  }
+
+  if (nodeKind === "ac-three-winding-transformer" || nodeKind === "ac-three-winding-transformer-neutral") {
+    const hasNeutralTerminal = nodeKind === "ac-three-winding-transformer-neutral";
+    const windingRadius = hasNeutralTerminal ? 14 : 15;
+    const topY = -8;
+    const bottomY = hasNeutralTerminal ? 16 : 14;
+    return terminal.anchor.y < 0
+      ? scaled(Math.abs(topY - windingRadius - 20))
+      : scaled(bottomY + windingRadius + 10);
+  }
+  if (glyphVariant === "ground-disconnector-vertical") {
+    return scaled(h / 2 - 8);
+  }
+  if (glyphVariant === "ac-generator" || glyphVariant === "dc-generator") {
+    return Math.min(size.width, size.height) * 0.37;
+  }
+  if (glyphVariant === "hydrogen-source") {
+    return Math.min(size.width, size.height) * 0.35;
+  }
+  if (glyphVariant === "hydrogen-load" || glyphVariant === "load" || glyphVariant === "heat-load" || glyphVariant === "single-heat-load") {
+    return scaled(h / 3);
+  }
+  if (isConverterGlyphVariant(glyphVariant)) {
+    return Math.max(0, fullRectDistance - scaled(CONVERTER_GLYPH_BORDER_INSET));
+  }
+  return fullRectDistance;
+}
+
+function terminalStubInternalLength(
+  terminal: Pick<Terminal, "anchor">,
+  requestedLength: number,
+  nodeKind?: DeviceKind,
+  size?: Pick<ModelNode["size"], "width" | "height">
+): number {
+  const axis = terminalOutwardAxis(terminal);
+  if (!axis) {
+    return requestedLength;
+  }
+  if (nodeKind && size) {
+    const anchorDistance = axis === "x" ? Math.abs(terminal.anchor.x * size.width) : Math.abs(terminal.anchor.y * size.height);
+    const boundaryDistance = terminalStubVisibleBoundaryDistance(terminal, size, nodeKind, axis);
+    return anchorDistance - boundaryDistance;
+  }
   if (!terminalOutwardAxis(terminal)) {
     return requestedLength;
   }
@@ -8067,21 +8214,6 @@ function mergeRouteBlockerBoxes(boxes: RouteBlockerBox[]): RouteBlockerBox {
   }));
 }
 
-const routeEndpointBodyOnlyBlockerCache = new WeakMap<ModelNode, ModelNode>();
-
-function routeEndpointBodyOnlyBlocker(node: ModelNode): ModelNode {
-  if (!routeNodeLabelBlocksRouting(node)) {
-    return node;
-  }
-  const cached = routeEndpointBodyOnlyBlockerCache.get(node);
-  if (cached) {
-    return cached;
-  }
-  const blocker = { ...node, params: { ...node.params, _labelVisible: "0", _labelDisplayMode: "hidden" } };
-  routeEndpointBodyOnlyBlockerCache.set(node, blocker);
-  return blocker;
-}
-
 function routeBlockerPadding(node: ModelNode, padding: number) {
   return isBoundaryBusNode(node) ? 0 : padding;
 }
@@ -8227,7 +8359,7 @@ function normalAxisDistance(from: Point, to: Point, normal: Point) {
   return 0;
 }
 
-// Two-terminal devices may leave the terminal on its outward stub before turning toward a bus.
+// Devices may leave the terminal on its outward stub before turning toward a bus.
 function routedBusSlideEndpointPoint(options: {
   busNode: ModelNode;
   originalBusNode: ModelNode;
@@ -8237,9 +8369,6 @@ function routedBusSlideEndpointPoint(options: {
   nodes: ModelNode[];
   nextNodes?: ModelNode[];
 }): Point | null {
-  if (options.movingNode.terminals.length < 2) {
-    return null;
-  }
   const normal = getTerminalNormal(options.movingNode, options.movingTerminalId);
   const referencePoint = {
     x: Math.round(options.movingPoint.x + normal.x * ROUTE_ENDPOINT_STUB_LENGTH),
@@ -9590,8 +9719,8 @@ function expandedCandidateLanes(
     ...yBoundaryLanes
   ].map(clampY);
   return {
-    xs: prioritizeLaneValues([...xAnchors, ...xLaneOffsets].map(clampX), xAnchors),
-    ys: prioritizeLaneValues([...yAnchors, ...yLaneOffsets].map(clampY), yAnchors)
+    xs: prioritizeLaneValues([...xAnchors, ...xLaneOffsets].map(clampX), xAnchors, ROUTE_MAX_LANES_PER_AXIS * 2),
+    ys: prioritizeLaneValues([...yAnchors, ...yLaneOffsets].map(clampY), yAnchors, ROUTE_MAX_LANES_PER_AXIS * 2)
   };
 }
 
@@ -9606,46 +9735,537 @@ function buildExpandedRouteCandidates(
   return routeCandidatesFromLanes(startOut, endOut, xs, ys, ROUTE_MAX_LANE_PAIRS * 2);
 }
 
-function selectRouteCandidate(candidates: Point[][], blockers: ModelNode[], avoidedSegments: Segment[]) {
-  let bestCandidate = candidates[0];
+function buildEndpointAlignedDirectCandidates(
+  start: Point,
+  end: Point,
+  sourceNormal: Point,
+  targetNormal: Point,
+  bounds?: CanvasBounds
+) {
+  if (start.x === end.x || start.y === end.y) {
+    return [];
+  }
+  const rawCandidates: Point[][] = [
+    [start, { x: end.x, y: start.y }, end],
+    [start, { x: start.x, y: end.y }, end]
+  ];
+  const seen = new Set<string>();
+  return rawCandidates.flatMap((candidate) => {
+    const route = orthogonalizeRouteKeepingCollinear(
+      bounds ? candidate.map((point) => clampPointToBounds(point, bounds)) : candidate
+    );
+    if (route.length < 3 || samePoint(route[0], route[1]) || samePoint(route[route.length - 1], route[route.length - 2])) {
+      return [];
+    }
+    if (
+      !routeSegmentMatchesNormal(route[0], route[1], sourceNormal) ||
+      !routeSegmentMatchesNormal(route[route.length - 1], route[route.length - 2], targetNormal)
+    ) {
+      return [];
+    }
+    const signature = routeSignature(route);
+    if (seen.has(signature)) {
+      return [];
+    }
+    seen.add(signature);
+    return [route];
+  });
+}
+
+function routeIntersectsEndpointAwareBlockers(
+  points: Point[],
+  blockers: ModelNode[],
+  sourceId: string,
+  targetId: string
+) {
+  if (points.length < 2) {
+    return false;
+  }
+  const lastSegmentIndex = points.length - 2;
+  const routeBlockers = filterBlockersForRoutePoints(points, blockers);
+  for (let index = 1; index < points.length; index += 1) {
+    const a = points[index - 1];
+    const b = points[index];
+    for (const node of routeBlockers) {
+      if (segmentIntersectsRouteBlocker(a, b, index - 1, lastSegmentIndex, node, sourceId, targetId)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function routeHasEndpointAwareBlockingIssue(
+  points: Point[],
+  blockers: ModelNode[],
+  sourceId: string,
+  targetId: string
+) {
+  return routeHasImmediateReversal(points) || routeIntersectsEndpointAwareBlockers(points, blockers, sourceId, targetId);
+}
+
+function firstEndpointAwareBlockerIntersection(
+  points: Point[],
+  blockers: ModelNode[],
+  sourceId: string,
+  targetId: string
+) {
+  if (points.length < 2) {
+    return null;
+  }
+  const lastSegmentIndex = points.length - 2;
+  const routeBlockers = filterBlockersForRoutePoints(points, blockers);
+  for (let segmentIndex = 1; segmentIndex < points.length; segmentIndex += 1) {
+    const routeSegmentIndex = segmentIndex - 1;
+    const a = points[segmentIndex - 1];
+    const b = points[segmentIndex];
+    for (const blocker of routeBlockers) {
+      if (segmentIntersectsRouteBlocker(a, b, routeSegmentIndex, lastSegmentIndex, blocker, sourceId, targetId)) {
+        return { segmentIndex: routeSegmentIndex, box: routeBlockerBox(blocker, ROUTE_BLOCKER_PADDING) };
+      }
+    }
+  }
+  return null;
+}
+
+function repairEndpointAwareRouteAroundBlockers(
+  points: Point[],
+  blockers: ModelNode[],
+  sourceId: string,
+  targetId: string,
+  bounds?: CanvasBounds
+) {
+  let route = orthogonalizeRouteKeepingCollinear(points);
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const intersection = firstEndpointAwareBlockerIntersection(route, blockers, sourceId, targetId);
+    if (!intersection) {
+      return route;
+    }
+    const a = route[intersection.segmentIndex];
+    const b = route[intersection.segmentIndex + 1];
+    const box = intersection.box;
+    let replacement: Point[];
+    if (a.y === b.y) {
+      const topLane = clampLane(box.top - 24, 0, bounds?.height ?? box.top - 24, bounds);
+      const bottomLane = clampLane(box.bottom + 24, 0, bounds?.height ?? box.bottom + 24, bounds);
+      const lane = Math.abs(a.y - bottomLane) <= Math.abs(a.y - topLane) ? bottomLane : topLane;
+      replacement = [a, { x: a.x, y: lane }, { x: b.x, y: lane }, b];
+    } else if (a.x === b.x) {
+      const leftLane = clampLane(box.left - 24, 0, bounds?.width ?? box.left - 24, bounds);
+      const rightLane = clampLane(box.right + 24, 0, bounds?.width ?? box.right + 24, bounds);
+      const lane = Math.abs(a.x - rightLane) <= Math.abs(a.x - leftLane) ? rightLane : leftLane;
+      replacement = [a, { x: lane, y: a.y }, { x: lane, y: b.y }, b];
+    } else {
+      replacement = orthogonalizeRoute([a, b]);
+    }
+    route = orthogonalizeRouteKeepingCollinear([
+      ...route.slice(0, intersection.segmentIndex),
+      ...replacement,
+      ...route.slice(intersection.segmentIndex + 2)
+    ]);
+  }
+  return route;
+}
+
+function selectFullRouteCandidate(
+  candidates: Point[][],
+  start: Point,
+  startOut: Point,
+  endOut: Point,
+  end: Point,
+  blockers: ModelNode[],
+  avoidedSegments: Segment[],
+  bounds: CanvasBounds | undefined,
+  sourceId: string,
+  targetId: string,
+  extraFullCandidates: Point[][] = []
+) {
+  let bestRoute: Point[] | null = null;
   let bestTier = Number.POSITIVE_INFINITY;
   let bestBends = Number.POSITIVE_INFINITY;
   let bestLength = Number.POSITIVE_INFINITY;
   let bestScore = Number.POSITIVE_INFINITY;
+  const seen = new Set<string>();
 
-  for (const candidate of candidates) {
-    const candidateBlockers = filterBlockersForRoutePoints(candidate, blockers);
-    const candidateAvoidedSegments = filterSegmentsForRoutePoints(candidate, avoidedSegments);
-    const hasImmediateReversal = routeHasImmediateReversal(candidate);
-    const intersectsBlocker = routeIntersectsBlockers(candidate, candidateBlockers);
+  const evaluateRoute = (candidateRoute: Point[]) => {
+    const routeBlockers = filterBlockersForRoutePoints(candidateRoute, blockers);
+    const routeAvoidedSegments = filterSegmentsForRoutePoints(candidateRoute, avoidedSegments);
+    const route = simplifyRoutePreservingEndpointStubs(candidateRoute, {
+      blockers: routeBlockers,
+      avoidedSegments: routeAvoidedSegments
+    });
+    const signature = routeSignature(route);
+    if (seen.has(signature)) {
+      return;
+    }
+    seen.add(signature);
+    const hasImmediateReversal = routeHasImmediateReversal(route);
+    const intersectsBlocker = routeIntersectsEndpointAwareBlockers(route, routeBlockers, sourceId, targetId);
     const tier = hasImmediateReversal
       ? 3
       : !intersectsBlocker
-      ? routeOverlapsSegments(candidate, candidateAvoidedSegments) ? 1 : 0
+      ? routeOverlapsSegments(route, routeAvoidedSegments) ? 1 : 0
       : 2;
     if (tier > bestTier) {
-      continue;
+      return;
     }
-    const candidateBends = routeBendCount(candidate);
-    const candidateLength = routeManhattanLength(candidate);
-    const candidateScore = scoreRoute(candidate, candidateBlockers, candidateAvoidedSegments);
+    const bends = routeBendCount(route);
+    const length = routeManhattanLength(route);
+    const score = scoreRoute(route, routeBlockers, routeAvoidedSegments);
     if (
+      !bestRoute ||
       tier < bestTier ||
       (tier === bestTier &&
-        (candidateLength < bestLength ||
-          (candidateLength === bestLength &&
-            (candidateBends < bestBends ||
-              (candidateBends === bestBends && candidateScore < bestScore)))))
+        (length < bestLength ||
+          (length === bestLength &&
+            (bends < bestBends ||
+              (bends === bestBends && score < bestScore)))))
     ) {
+      bestRoute = route;
       bestTier = tier;
-      bestBends = candidateBends;
-      bestLength = candidateLength;
-      bestScore = candidateScore;
-      bestCandidate = candidate;
+      bestBends = bends;
+      bestLength = length;
+      bestScore = score;
     }
+  };
+
+  for (const candidate of extraFullCandidates) {
+    evaluateRoute(candidate);
+  }
+  for (const candidate of candidates) {
+    const fullRoute = buildFullRoute(start, startOut, candidate.slice(1, -1), endOut, end, bounds);
+    evaluateRoute(fullRoute);
+    evaluateRoute(repairRouteAroundBlockers(fullRoute, blockers, bounds, 1));
   }
 
-  return bestCandidate;
+  return bestRoute ?? simplifyRoutePreservingEndpointStubs(buildFullRoute(start, startOut, [], endOut, end, bounds), {
+    blockers,
+    avoidedSegments,
+    reduceTinyDoglegs: true
+  });
+}
+
+function selectRenderableRouteCandidate(
+  start: Point,
+  startOut: Point,
+  endOut: Point,
+  end: Point,
+  source: ModelNode,
+  target: ModelNode,
+  blockers: ModelNode[],
+  avoidedSegments: Segment[],
+  bounds: CanvasBounds | undefined,
+  endpointAlignedCandidates: Point[][]
+) {
+  const endpointNodeIds = new Set([source.id, target.id]);
+  const selected = selectFullRouteCandidate(
+    buildRouteCandidates(startOut, endOut, blockers, avoidedSegments, bounds, endpointNodeIds),
+    start,
+    startOut,
+    endOut,
+    end,
+    blockers,
+    avoidedSegments,
+    bounds,
+    source.id,
+    target.id,
+    endpointAlignedCandidates
+  );
+  if (!routeHasEndpointAwareBlockingIssue(selected, blockers, source.id, target.id)) {
+    return selected;
+  }
+  const repaired = simplifyRoutePreservingEndpointStubs(
+    repairEndpointAwareRouteAroundBlockers(selected, blockers, source.id, target.id, bounds),
+    { blockers, avoidedSegments, reduceTinyDoglegs: true }
+  );
+  if (!routeHasEndpointAwareBlockingIssue(repaired, blockers, source.id, target.id)) {
+    return repaired;
+  }
+  const expanded = selectFullRouteCandidate(
+    buildExpandedRouteCandidates(startOut, endOut, blockers, bounds, endpointNodeIds),
+    start,
+    startOut,
+    endOut,
+    end,
+    blockers,
+    avoidedSegments,
+    bounds,
+    source.id,
+    target.id,
+    endpointAlignedCandidates
+  );
+  if (!routeHasEndpointAwareBlockingIssue(expanded, blockers, source.id, target.id)) {
+    return expanded;
+  }
+  const repairedExpanded = simplifyRoutePreservingEndpointStubs(
+    repairEndpointAwareRouteAroundBlockers(expanded, blockers, source.id, target.id, bounds),
+    { blockers, avoidedSegments, reduceTinyDoglegs: true }
+  );
+  return routeHasEndpointAwareBlockingIssue(repairedExpanded, blockers, source.id, target.id) ? selected : repairedExpanded;
+}
+
+function routeEndpointSegmentsMatchNormals(points: Point[], sourceNormal: Point, targetNormal: Point) {
+  return (
+    points.length >= 2 &&
+    routeSegmentMatchesNormal(points[0], points[1], sourceNormal) &&
+    routeSegmentMatchesNormal(points[points.length - 1], points[points.length - 2], targetNormal)
+  );
+}
+
+function routeIsSafeForEndpointPair(
+  points: Point[],
+  blockers: ModelNode[],
+  avoidedSegments: Segment[],
+  sourceId: string,
+  targetId: string
+) {
+  const routeBlockers = filterBlockersForRoutePoints(points, blockers);
+  if (routeHasEndpointAwareBlockingIssue(points, routeBlockers, sourceId, targetId)) {
+    return false;
+  }
+  const routeAvoidedSegments = filterSegmentsForRoutePoints(points, avoidedSegments);
+  return !routeOverlapsSegments(points, routeAvoidedSegments);
+}
+
+function endpointsAreAlignedThroughOpposedNormals(
+  start: Point,
+  end: Point,
+  sourceNormal: Point,
+  targetNormal: Point
+) {
+  const verticalOpposed =
+    start.x === end.x &&
+    sourceNormal.x === 0 &&
+    targetNormal.x === 0 &&
+    sourceNormal.y === -targetNormal.y &&
+    (end.y - start.y) * sourceNormal.y > 0;
+  const horizontalOpposed =
+    start.y === end.y &&
+    sourceNormal.y === 0 &&
+    targetNormal.y === 0 &&
+    sourceNormal.x === -targetNormal.x &&
+    (end.x - start.x) * sourceNormal.x > 0;
+  return verticalOpposed || horizontalOpposed;
+}
+
+function endpointNormalsAreOpposedOnSameAxis(sourceNormal: Point, targetNormal: Point) {
+  const horizontalOpposed =
+    sourceNormal.y === 0 &&
+    targetNormal.y === 0 &&
+    sourceNormal.x !== 0 &&
+    sourceNormal.x === -targetNormal.x;
+  const verticalOpposed =
+    sourceNormal.x === 0 &&
+    targetNormal.x === 0 &&
+    sourceNormal.y !== 0 &&
+    sourceNormal.y === -targetNormal.y;
+  return horizontalOpposed || verticalOpposed;
+}
+
+function endpointNormalsAreSameFacingOnSameAxis(sourceNormal: Point, targetNormal: Point) {
+  const horizontalSameFacing =
+    sourceNormal.y === 0 &&
+    targetNormal.y === 0 &&
+    sourceNormal.x !== 0 &&
+    sourceNormal.x === targetNormal.x;
+  const verticalSameFacing =
+    sourceNormal.x === 0 &&
+    targetNormal.x === 0 &&
+    sourceNormal.y !== 0 &&
+    sourceNormal.y === targetNormal.y;
+  return horizontalSameFacing || verticalSameFacing;
+}
+
+function routeBoundsFromPoints(points: Point[]) {
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  return {
+    left: Math.min(...xs),
+    right: Math.max(...xs),
+    top: Math.min(...ys),
+    bottom: Math.max(...ys)
+  };
+}
+
+function routeHasEndpointOuterDetour(route: Point[], start: Point, end: Point) {
+  const endpointBox = {
+    left: Math.min(start.x, end.x),
+    right: Math.max(start.x, end.x),
+    top: Math.min(start.y, end.y),
+    bottom: Math.max(start.y, end.y)
+  };
+  const routeBox = routeBoundsFromPoints(route);
+  const margin = ROUTE_ENDPOINT_STUB_LENGTH;
+  return (
+    routeBox.left < endpointBox.left - margin ||
+    routeBox.right > endpointBox.right + margin ||
+    routeBox.top < endpointBox.top - margin ||
+    routeBox.bottom > endpointBox.bottom + margin
+  );
+}
+
+function routeStaysWithinEndpointStubEnvelope(
+  route: Point[],
+  start: Point,
+  startOut: Point,
+  endOut: Point,
+  end: Point
+) {
+  const envelope = routeBoundsFromPoints([start, startOut, endOut, end]);
+  const routeBox = routeBoundsFromPoints(route);
+  const margin = ROUTE_CLEARANCE;
+  return (
+    routeBox.left >= envelope.left - margin &&
+    routeBox.right <= envelope.right + margin &&
+    routeBox.top >= envelope.top - margin &&
+    routeBox.bottom <= envelope.bottom + margin
+  );
+}
+
+function routeDetoursOppositeSameFacingEndpointSide(
+  route: Point[],
+  start: Point,
+  end: Point,
+  normal: Point
+) {
+  const endpointBox = routeBoundsFromPoints([start, end]);
+  const routeBox = routeBoundsFromPoints(route);
+  const margin = ROUTE_ENDPOINT_STUB_LENGTH;
+  if (normal.x > 0) {
+    return routeBox.left < endpointBox.left - margin;
+  }
+  if (normal.x < 0) {
+    return routeBox.right > endpointBox.right + margin;
+  }
+  if (normal.y > 0) {
+    return routeBox.top < endpointBox.top - margin;
+  }
+  if (normal.y < 0) {
+    return routeBox.bottom > endpointBox.bottom + margin;
+  }
+  return false;
+}
+
+function candidateRemovesManualOuterDetour(manualRoute: Point[], candidateRoute: Point[], start: Point, end: Point) {
+  const endpointBox = {
+    left: Math.min(start.x, end.x),
+    right: Math.max(start.x, end.x),
+    top: Math.min(start.y, end.y),
+    bottom: Math.max(start.y, end.y)
+  };
+  const manualBox = routeBoundsFromPoints(manualRoute);
+  const candidateBox = routeBoundsFromPoints(candidateRoute);
+  const margin = ROUTE_ENDPOINT_STUB_LENGTH;
+  return (
+    (manualBox.left < endpointBox.left - margin && candidateBox.left >= endpointBox.left - margin) ||
+    (manualBox.right > endpointBox.right + margin && candidateBox.right <= endpointBox.right + margin) ||
+    (manualBox.top < endpointBox.top - margin && candidateBox.top >= endpointBox.top - margin) ||
+    (manualBox.bottom > endpointBox.bottom + margin && candidateBox.bottom <= endpointBox.bottom + margin)
+  );
+}
+
+function selectClearlySimplerAutomaticManualRoute(
+  manualRoute: Point[],
+  start: Point,
+  startOut: Point,
+  endOut: Point,
+  end: Point,
+  source: ModelNode,
+  target: ModelNode,
+  blockers: ModelNode[],
+  avoidedSegments: Segment[],
+  bounds: CanvasBounds | undefined,
+  sourceNormal: Point,
+  targetNormal: Point
+) {
+  const rawDirectRoute = buildFullRoute(start, startOut, [], endOut, end, bounds);
+  const routeBlockers = filterBlockersForRoutePoints(rawDirectRoute, blockers);
+  const routeAvoidedSegments = filterSegmentsForRoutePoints(rawDirectRoute, avoidedSegments);
+  const directRoute = simplifyRoutePreservingEndpointStubs(rawDirectRoute, {
+    blockers: routeBlockers,
+    avoidedSegments: routeAvoidedSegments,
+    reduceTinyDoglegs: true
+  });
+  const automaticRoute = selectRenderableRouteCandidate(
+    start,
+    startOut,
+    endOut,
+    end,
+    source,
+    target,
+    blockers,
+    avoidedSegments,
+    bounds,
+    buildEndpointAlignedDirectCandidates(start, end, sourceNormal, targetNormal, bounds)
+  );
+  const manualBends = routeBendCount(manualRoute);
+  const manualLength = routeManhattanLength(manualRoute);
+  const hasNonEndpointBlockers = blockers.some((node) => node.id !== source.id && node.id !== target.id);
+  let bestRoute: Point[] | null = null;
+  let bestBends = Number.POSITIVE_INFINITY;
+  let bestLength = Number.POSITIVE_INFINITY;
+  const seen = new Set<string>();
+
+  for (const candidateRoute of [directRoute, automaticRoute]) {
+    const signature = routeSignature(candidateRoute);
+    if (seen.has(signature) || signature === routeSignature(manualRoute)) {
+      continue;
+    }
+    seen.add(signature);
+    if (
+      !routeEndpointSegmentsMatchNormals(candidateRoute, sourceNormal, targetNormal) ||
+      !routeIsSafeForEndpointPair(candidateRoute, blockers, avoidedSegments, source.id, target.id)
+    ) {
+      continue;
+    }
+    const candidateBends = routeBendCount(candidateRoute);
+    const candidateLength = routeManhattanLength(candidateRoute);
+    const bendGain = manualBends - candidateBends;
+    const lengthGain = manualLength - candidateLength;
+    const hasEndpointAlignedBendWin =
+      candidateBends <= 1 || endpointsAreAlignedThroughOpposedNormals(start, end, sourceNormal, targetNormal);
+    const hasClearBendWin =
+      bendGain > 0 &&
+      lengthGain >= ROUTE_TINY_DOGLEG_LIMIT &&
+      (
+        hasEndpointAlignedBendWin ||
+        (!hasNonEndpointBlockers && candidateRemovesManualOuterDetour(manualRoute, candidateRoute, start, end))
+      );
+    const hasClearLengthWin =
+      !hasNonEndpointBlockers &&
+      candidateBends <= manualBends &&
+      lengthGain >= ROUTE_ENDPOINT_STUB_LENGTH * 4 &&
+      candidateRemovesManualOuterDetour(manualRoute, candidateRoute, start, end);
+    const hasEqualOrShorterBendWin =
+      bendGain > 0 &&
+      lengthGain >= 0 &&
+      hasEndpointAlignedBendWin;
+    const hasLocalEndpointBendWin =
+      bendGain > 0 &&
+      lengthGain >= 0 &&
+      candidateBends <= 2 &&
+      (
+        endpointNormalsAreOpposedOnSameAxis(sourceNormal, targetNormal) ||
+        (
+          endpointNormalsAreSameFacingOnSameAxis(sourceNormal, targetNormal) &&
+          routeDetoursOppositeSameFacingEndpointSide(manualRoute, start, end, sourceNormal)
+        )
+      ) &&
+      routeStaysWithinEndpointStubEnvelope(candidateRoute, start, startOut, endOut, end);
+    if (!hasClearBendWin && !hasClearLengthWin && !hasEqualOrShorterBendWin && !hasLocalEndpointBendWin) {
+      continue;
+    }
+    if (
+      !bestRoute ||
+      candidateLength < bestLength ||
+      (candidateLength === bestLength && candidateBends < bestBends)
+    ) {
+      bestRoute = candidateRoute;
+      bestBends = candidateBends;
+      bestLength = candidateLength;
+    }
+  }
+  return bestRoute;
 }
 
 function pathWithCrossingArcs(route: RoutedEdge, allSegments: Segment[], routeIndex: number) {
@@ -9841,6 +10461,21 @@ export function routeEdgesForRendering(nodes: ModelNode[], edges: Edge[], bounds
   return refreshCrossingArcPaths(renderRoutes);
 }
 
+function edgeWithProjectedMissingBusEndpointPoints(edge: Edge, source: ModelNode, target: ModelNode): Edge {
+  let next = edge;
+  let start = getEdgeEndpointPoint(source, edge.sourcePoint, edge.sourceTerminalId);
+  let end = getEdgeEndpointPoint(target, edge.targetPoint, edge.targetTerminalId);
+  if (isBusNode(source) && !edge.sourcePoint) {
+    start = projectPointToBusCenterline(source, end);
+    next = { ...next, sourcePoint: start };
+  }
+  if (isBusNode(target) && !edge.targetPoint) {
+    end = projectPointToBusCenterline(target, start);
+    next = { ...next, targetPoint: end };
+  }
+  return next;
+}
+
 export function routeEdgesForStoredRendering(nodes: ModelNode[], edges: Edge[], bounds?: CanvasBounds): RoutedEdge[] {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const routes = edges.flatMap((edge) => {
@@ -9849,19 +10484,15 @@ export function routeEdgesForStoredRendering(nodes: ModelNode[], edges: Edge[], 
     if (!source || !target) {
       return [];
     }
-    const start = getEdgeEndpointPoint(source, edge.sourcePoint, edge.sourceTerminalId);
-    const end = getEdgeEndpointPoint(target, edge.targetPoint, edge.targetTerminalId);
-    const sourceNormal = routeEndpointNormal(source, start, end, edge.sourceTerminalId);
-    const targetNormal = routeEndpointNormal(target, end, start, edge.targetTerminalId);
+    const routingEdge = edgeWithProjectedMissingBusEndpointPoints(edge, source, target);
+    const start = getEdgeEndpointPoint(source, routingEdge.sourcePoint, routingEdge.sourceTerminalId);
+    const end = getEdgeEndpointPoint(target, routingEdge.targetPoint, routingEdge.targetTerminalId);
+    const sourceNormal = routeEndpointNormal(source, start, end, routingEdge.sourceTerminalId);
+    const targetNormal = routeEndpointNormal(target, end, start, routingEdge.targetTerminalId);
     const stubLength = ROUTE_ENDPOINT_STUB_LENGTH;
-    const startOut = {
-      x: start.x + sourceNormal.x * stubLength,
-      y: start.y + sourceNormal.y * stubLength
-    };
-    const endOut = {
-      x: end.x + targetNormal.x * stubLength,
-      y: end.y + targetNormal.y * stubLength
-    };
+    const endpointBlockers = [source, target];
+    const startOut = endpointStubPoint(start, sourceNormal, source, endpointBlockers, stubLength);
+    const endOut = endpointStubPoint(end, targetNormal, target, endpointBlockers, stubLength);
     const middle = edge.manualPoints?.length
       ? edge.manualPoints
       : startOut.x === endOut.x || startOut.y === endOut.y
@@ -9870,7 +10501,48 @@ export function routeEdgesForStoredRendering(nodes: ModelNode[], edges: Edge[], 
     const boundedPoints = [start, startOut, ...middle, endOut, end].map((point) =>
       bounds ? clampPointToBounds(point, bounds) : point
     );
-    const points = simplifyRoutePreservingEndpointStubs(orthogonalizeRouteKeepingCollinear(boundedPoints));
+    let points = simplifyRoutePreservingEndpointStubs(orthogonalizeRouteKeepingCollinear(boundedPoints), {
+      blockers: endpointBlockers,
+      reduceTinyDoglegs: true
+    });
+    if (routeHasImmediateReversal(points) || routeIntersectsBlockers(points, endpointBlockers, ROUTE_BLOCKER_PADDING, 1)) {
+      points = simplifyRoutePreservingEndpointStubs(
+        repairRouteAroundBlockers(points, endpointBlockers, bounds, 1),
+        { blockers: endpointBlockers, reduceTinyDoglegs: true }
+      );
+    }
+    if (edge.manualPoints?.length) {
+      const relevantBlockers = relevantBlockersForRoute(source, target, nodes, startOut, endOut, true);
+      const simplificationBlockers = relevantBlockers.length > 0
+        ? [...endpointBlockers, ...relevantBlockers]
+        : endpointBlockers;
+      const simplerAutomaticRoute = selectClearlySimplerAutomaticManualRoute(
+        points,
+        start,
+        startOut,
+        endOut,
+        end,
+        source,
+        target,
+        simplificationBlockers,
+        [],
+        bounds,
+        sourceNormal,
+        targetNormal
+      );
+      if (simplerAutomaticRoute) {
+        points = simplerAutomaticRoute;
+      }
+    }
+    if (routeHasImmediateReversal(points) || routeIntersectsBlockers(points, endpointBlockers, ROUTE_BLOCKER_PADDING, 1)) {
+      points = simplifyRoutePreservingEndpointStubs(
+        routeOrthogonalEdge(source, target, nodes, edgeWithoutManualPoints(routingEdge), [], bounds),
+        {
+          blockers: filterBlockersForRoutePoints(points, nodes),
+          reduceTinyDoglegs: true
+        }
+      );
+    }
     return [{
       edgeId: edge.id,
       points,
@@ -9904,6 +10576,19 @@ export function routeEdgesForCachedStoredRendering(
   return refreshCrossingArcPaths(routes, affectedEdgeIds, previousRoutes);
 }
 
+function cachedRouteEndpointNeedsRefresh(
+  route: RoutedEdge | undefined,
+  edge: Edge,
+  source: ModelNode | undefined,
+  target: ModelNode | undefined
+) {
+  if (!route || !source || !target || route.points.length < 2) {
+    return true;
+  }
+  const routingEdge = edgeWithProjectedMissingBusEndpointPoints(edge, source, target);
+  return !routeEndpointSegmentsAreValid(route.points, source, target, routingEdge) || routeHasImmediateReversal(route.points);
+}
+
 export function routeEdgesForIncrementalRendering(
   nodes: ModelNode[],
   edges: Edge[],
@@ -9917,7 +10602,21 @@ export function routeEdgesForIncrementalRendering(
         previousRoutes.length === edges.length &&
         edges.every((edge, index) => previousRoutes[index]?.edgeId === edge.id)
       ) {
-        return previousRoutes;
+        const nodeById = new Map(nodes.map((node) => [node.id, node]));
+        const endpointRefreshEdges = edges.filter((edge, index) => {
+          const source = nodeById.get(edge.sourceId) ?? (edge.sourcePoint ? createFloatingEndpointNode(edge.sourcePoint, edge.targetId ? nodeById.get(edge.targetId) : undefined) : undefined);
+          const target = nodeById.get(edge.targetId) ?? (edge.targetPoint ? createFloatingEndpointNode(edge.targetPoint, edge.sourceId ? nodeById.get(edge.sourceId) : undefined) : undefined);
+          return cachedRouteEndpointNeedsRefresh(previousRoutes[index], edge, source, target);
+        });
+        if (endpointRefreshEdges.length === 0) {
+          return previousRoutes;
+        }
+        const refreshedRouteById = new Map(
+          routeEdgesForStoredRendering(nodes, endpointRefreshEdges, bounds).map((route) => [route.edgeId, route])
+        );
+        const endpointRefreshIds = new Set(endpointRefreshEdges.map((edge) => edge.id));
+        const routes = previousRoutes.map((route) => refreshedRouteById.get(route.edgeId) ?? route);
+        return refreshCrossingArcPaths(routes, endpointRefreshIds, previousRoutes);
       }
       const previousRouteById = new Map(previousRoutes.map((route) => [route.edgeId, route]));
       const missingEdges = edges.filter((edge) => !previousRouteById.has(edge.id));
@@ -10035,14 +10734,13 @@ function segmentIntersectsRouteBlocker(
   if (node.id.startsWith("floating-")) {
     return false;
   }
-  if (node.id === sourceId && segmentIndex === 0) {
+  if (node.id === sourceId && segmentIndex <= 1) {
     return false;
   }
-  if (node.id === targetId && segmentIndex === lastSegmentIndex) {
+  if (node.id === targetId && segmentIndex >= lastSegmentIndex - 1) {
     return false;
   }
-  const blockerNode = node.id === sourceId || node.id === targetId ? routeEndpointBodyOnlyBlocker(node) : node;
-  return segmentIntersectsNodeBody(a, b, blockerNode);
+  return segmentIntersectsNodeBody(a, b, node);
 }
 
 function routeSingleConnectionForValidation(nodes: ModelNode[], edge: Edge, bounds?: CanvasBounds): RoutedEdge | null {
@@ -10194,11 +10892,9 @@ function buildEdgeRoutingContext(source: ModelNode, target: ModelNode, nodes: Mo
     x: end.x + targetNormal.x * stubLength,
     y: end.y + targetNormal.y * stubLength
   };
-  const sourceBodyBlocker = routeEndpointBodyOnlyBlocker(source);
-  const targetBodyBlocker = routeEndpointBodyOnlyBlocker(target);
   const blockers = [
-    sourceBodyBlocker,
-    targetBodyBlocker,
+    source,
+    target,
     ...relevantBlockersForRoute(source, target, nodes, initialStartOut, initialEndOut, false)
   ];
   return {
@@ -10450,9 +11146,18 @@ function designCommitSafeRoute(
 
   for (const candidateEdge of candidateEdges) {
     const context = buildEdgeRoutingContext(source, target, nodes, candidateEdge);
+    const sourceNormal = routeEndpointNormal(source, context.start, context.end, candidateEdge.sourceTerminalId);
+    const targetNormal = routeEndpointNormal(target, context.end, context.start, candidateEdge.targetTerminalId);
+    const endpointAlignedCandidates = buildEndpointAlignedDirectCandidates(
+      context.start,
+      context.end,
+      sourceNormal,
+      targetNormal,
+      bounds
+    );
     const endpointNodeIds = new Set([source.id, target.id]);
     const selectFromMiddleCandidates = (middleCandidates: Point[][]) => {
-      const fullCandidates: Point[][] = [];
+      const fullCandidates: Point[][] = [...endpointAlignedCandidates];
       for (const middle of middleCandidates) {
         const route = buildFullRoute(context.start, context.startOut, middle.slice(1, -1), context.endOut, context.end, bounds);
         fullCandidates.push(route);
@@ -10862,11 +11567,9 @@ export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes:
     x: end.x + targetNormal.x * stubLength,
     y: end.y + targetNormal.y * stubLength
   };
-  const sourceBodyBlocker = routeEndpointBodyOnlyBlocker(source);
-  const targetBodyBlocker = routeEndpointBodyOnlyBlocker(target);
   const blockers = [
-    sourceBodyBlocker,
-    targetBodyBlocker,
+    source,
+    target,
     ...relevantBlockersForRoute(source, target, nodes, initialStartOut, initialEndOut, false)
   ];
   const startOut = endpointStubPoint(start, sourceNormal, source, blockers, stubLength);
@@ -10879,6 +11582,23 @@ export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes:
       !routeHasImmediateReversal(simplifiedManualRoute) &&
       !routeIntersectsBlockers(simplifiedManualRoute, blockers, ROUTE_BLOCKER_PADDING, 1)
     ) {
+      const simplerAutomaticRoute = selectClearlySimplerAutomaticManualRoute(
+        simplifiedManualRoute,
+        start,
+        startOut,
+        endOut,
+        end,
+        source,
+        target,
+        blockers,
+        avoidedSegments,
+        bounds,
+        sourceNormal,
+        targetNormal
+      );
+      if (simplerAutomaticRoute) {
+        return simplerAutomaticRoute;
+      }
       return simplifiedManualRoute;
     }
     const repairedManualRoute = repairRouteAroundBlockers(boundedManualRoute, blockers, bounds, 1);
@@ -10887,23 +11607,50 @@ export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes:
       !routeHasImmediateReversal(simplifiedRepairedManualRoute) &&
       !routeIntersectsBlockers(simplifiedRepairedManualRoute, blockers, ROUTE_BLOCKER_PADDING, 1)
     ) {
+      const simplerAutomaticRoute = selectClearlySimplerAutomaticManualRoute(
+        simplifiedRepairedManualRoute,
+        start,
+        startOut,
+        endOut,
+        end,
+        source,
+        target,
+        blockers,
+        avoidedSegments,
+        bounds,
+        sourceNormal,
+        targetNormal
+      );
+      if (simplerAutomaticRoute) {
+        return simplerAutomaticRoute;
+      }
       return simplifiedRepairedManualRoute;
     }
-    const candidates = buildRouteCandidates(startOut, endOut, blockers, avoidedSegments, bounds, new Set([source.id, target.id]));
-    const repairedMiddle = selectRouteCandidate(candidates, blockers, avoidedSegments);
-    return simplifyRoutePreservingEndpointStubs(repairRouteAroundBlockers(
-      buildFullRoute(start, startOut, repairedMiddle.slice(1, -1), endOut, end, bounds),
+    const endpointAlignedCandidates = buildEndpointAlignedDirectCandidates(start, end, sourceNormal, targetNormal, bounds);
+    return selectRenderableRouteCandidate(
+      start,
+      startOut,
+      endOut,
+      end,
+      source,
+      target,
       blockers,
+      avoidedSegments,
       bounds,
-      1
-    ), { blockers, avoidedSegments, reduceTinyDoglegs: true });
+      endpointAlignedCandidates
+    );
   }
-  const candidates = buildRouteCandidates(startOut, endOut, blockers, avoidedSegments, bounds, new Set([source.id, target.id]));
-  const routedMiddle = selectRouteCandidate(candidates, blockers, avoidedSegments);
-  return simplifyRoutePreservingEndpointStubs(repairRouteAroundBlockers(
-    buildFullRoute(start, startOut, routedMiddle.slice(1, -1), endOut, end, bounds),
+  const endpointAlignedCandidates = buildEndpointAlignedDirectCandidates(start, end, sourceNormal, targetNormal, bounds);
+  return selectRenderableRouteCandidate(
+    start,
+    startOut,
+    endOut,
+    end,
+    source,
+    target,
     blockers,
+    avoidedSegments,
     bounds,
-    1
-  ), { blockers, avoidedSegments, reduceTinyDoglegs: true });
+    endpointAlignedCandidates
+  );
 }

@@ -520,13 +520,15 @@ describe("graph inspector panel", () => {
     expect(keyboardMoveBlock).toContain("keyboardMoveActiveKeyDeltasRef.current.size > 0");
     expect(keyboardMoveBlock).toContain("keyboardMoveActiveKeyDeltasRef.current.size === 0");
     expect(keyboardMoveBlock).toContain("ensureDraggingUndoSnapshot");
-    expect(keyboardMoveBlock).toContain("setDragging");
+    expect(keyboardMoveBlock).toContain("renderPreview && !isMultiNodeMoveState(activeDragging)");
+    expect(keyboardMoveBlock).toContain("updateSingleNodeDragImperativePreview(nextDragging, boundedDelta);");
+    expect(keyboardMoveBlock).toContain("setDragging(singleNodeDragRenderState(nextDragging));");
+    expect(keyboardMoveBlock).not.toContain("setDragging((current) =>");
     expect(keyboardMoveBlock).toContain("scheduleKeyboardMoveCommit");
     expect(keyboardMoveBlock).toContain("scheduleIdleWork");
     expect(keyboardMoveBlock).toContain("finishKeyboardMove");
     expect(keyboardMoveBlock).toContain("flushPendingKeyboardMove(true)");
     expect(keyboardMoveBlock).toContain("clearKeyboardMoveCommitSchedule();");
-    expect(keyboardMoveBlock).toContain("current?.source === \"keyboard\" || current === null");
     expect(keyboardReleaseBlock).toContain("scheduleKeyboardMoveCommit();");
     expect(keyboardReleaseBlock).not.toContain("finishKeyboardMove();");
     expect(keyboardNudgeBlock).not.toContain("boundedDeltaForMoveGeometry");
@@ -1340,8 +1342,8 @@ describe("graph inspector panel", () => {
     expect(moveBlock).toContain("const moveEdgeIds = canvasSelectionScope === \"direct\" ? displaySelectedEdgeIds : activeSelectedEdgeIds");
     expect(moveBlock).toContain("commitFastMovedGraphPatches(");
     expect(moveBlock).toContain("moveNodeIds");
-    expect(dragMoveBlock).toContain("if (draggingRef.current === nextDragState)");
-    expect(dragMoveBlock).toContain("return nextDragState;");
+    expect(dragMoveBlock).toContain("setDragging(singleNodeDragRenderState(nextDragState));");
+    expect(dragMoveBlock).not.toContain("setDragging((current) =>");
     expect(dragMoveBlock).not.toContain("draggingRef.current = null;\n        return current;");
     expect(updateBlock).toContain("if (patch.position && focusedGroupedNodeMovesGroup && selectedNode)");
     expect(updateBlock).toContain("moveSelection(nextPosition.x - selectedNode.position.x, nextPosition.y - selectedNode.position.y)");
@@ -1849,7 +1851,8 @@ describe("graph inspector panel", () => {
     expect(scheduleBlock).toContain("deferredMoveOptimizationCancelRef.current = null");
     expect(scheduleBlock).toContain("scheduleIdleWork");
     expect(scheduleBlock).toContain("graphStorePatchStillCurrent");
-    expect(commitBlock).toContain("const deferMovedRouteRepair = movedNodeIds.length > 0 && candidateEdges.length > 0");
+    expect(commitBlock).toContain("const routeRepairCandidateEdges = localRouteOptimizationCandidateEdges");
+    expect(commitBlock).toContain("const deferMovedRouteRepair = movedNodeIds.length > 0 && routeRepairCandidateEdges.length > 0");
     expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(");
     expect(commitBlock).toContain("previousNodes");
     expect(commitBlock).toContain("originalPositions");
@@ -3053,6 +3056,19 @@ describe("graph inspector panel", () => {
     expect(scheduleBlock).not.toContain("expectedEdges,");
   });
 
+  test("repairs local third-party routes after moving an unconnected graphic", async () => {
+    const source = await readAppSource();
+    const commitStart = source.indexOf("const commitFastMovedGraphPatches");
+    const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
+
+    expect(commitBlock).toContain("const routeRepairCandidateEdges = localRouteOptimizationCandidateEdges");
+    expect(commitBlock).toContain("const deferMovedRouteRepair = movedNodeIds.length > 0 && routeRepairCandidateEdges.length > 0;");
+    expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(\n            movedNodeIds,\n            routeRepairCandidateEdges,");
+    expect(commitBlock).toContain("scheduleMovedEdgeOptimization(\n      previousNodes,\n      nextNodes,\n      routeRepairCandidateEdges,");
+    expect(commitBlock).not.toContain("const deferMovedRouteRepair = movedNodeIds.length > 0 && candidateEdges.length > 0;");
+  });
+
   test("limits deferred drag route repair to actually interfered connection lines", async () => {
     const source = await readAppSource();
     const helperStart = source.indexOf("const routePointsForMovedEdgesBlockedByStationaryNodes");
@@ -3126,7 +3142,7 @@ describe("graph inspector panel", () => {
 
   test("spatially filters route blockers and connection segments before scoring commit candidates", async () => {
     const source = await readModelSource();
-    const selectStart = source.indexOf("function selectRouteCandidate");
+    const selectStart = source.indexOf("function selectFullRouteCandidate");
     const selectEnd = source.indexOf("function pathWithCrossingArcs", selectStart);
     const selectBlock = source.slice(selectStart, selectEnd);
     const commitStart = source.indexOf("function selectCommitSafeRoute");
@@ -3135,8 +3151,8 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("function filterBlockersForRoutePoints");
     expect(source).toContain("function filterSegmentsForRoutePoints");
-    expect(selectBlock).toContain("filterBlockersForRoutePoints(candidate, blockers");
-    expect(selectBlock).toContain("filterSegmentsForRoutePoints(candidate, avoidedSegments");
+    expect(selectBlock).toContain("filterBlockersForRoutePoints(candidateRoute, blockers");
+    expect(selectBlock).toContain("filterSegmentsForRoutePoints(candidateRoute, avoidedSegments");
     expect(commitBlock).toContain("filterBlockersForRoutePoints(simplified, nodes");
     expect(commitBlock).toContain("filterSegmentsForRoutePoints(simplified, avoidedSegments");
   });
@@ -3198,6 +3214,8 @@ describe("graph inspector panel", () => {
     expect(footprintBlock).toContain("localRouteOptimizationCandidateEdges");
     expect(footprintBlock).toContain("routePointsForMovedNodeBlockers");
     expect(footprintBlock).toContain("optimizeMovedNodeEdgeRoutes");
+    expect(footprintBlock).toContain("optimizedEdges === optimizationEdges");
+    expect(footprintBlock).not.toContain("optimizedEdges === optimizedEdges");
     expect(updateParamBlock).toContain("NODE_LABEL_FOOTPRINT_PARAM_KEYS.has(key)");
     expect(updateParamBlock).toContain("commitNodeFootprintUpdates([nextNode]");
     expect(finishDragBlock).toContain("commitNodeFootprintUpdates([currentNode]");
@@ -3558,7 +3576,7 @@ describe("graph inspector panel", () => {
     expect(finishMoveBlock).toContain("ensureDraggingUndoSnapshot();");
     expect(finishMoveBlock).toContain("const effectiveSnapTarget = isMultiNodeMoveState(activeDragging) ? null : snapTarget;");
     expect(finishDragBlock).toContain("ensureDraggingUndoSnapshot();");
-    expect(finishDragBlock).toContain("const effectiveSnapTarget = isMultiNodeMoveState(activeDragging) ? null : nodeTerminalSnapTarget;");
+    expect(finishDragBlock).toContain("const effectiveSnapTarget = isMultiNodeMoveState(activeDragging) ? null : nodeTerminalSnapTargetRef.current;");
     expect(interactionBlock).toContain("isMultiNodeMoveState(dragging)");
     expect(interactionBlock).toContain("const suppressDragTerminalInteraction");
     expect(interactionBlock).toContain("if (suppressDragTerminalInteraction)");
@@ -3699,7 +3717,8 @@ describe("graph inspector panel", () => {
     expect(multiMoveBlock).toContain("previewDelta,");
     expect(multiMoveBlock).toContain("updateMultiNodeDragOverlayTransform(previewDelta)");
     expect(multiMoveBlock).not.toContain("setDragging");
-    expect(commitBlock).toContain("const deferMovedRouteRepair = movedNodeIds.length > 0 && candidateEdges.length > 0");
+    expect(commitBlock).toContain("const routeRepairCandidateEdges = localRouteOptimizationCandidateEdges");
+    expect(commitBlock).toContain("const deferMovedRouteRepair = movedNodeIds.length > 0 && routeRepairCandidateEdges.length > 0");
     expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(");
     expect(commitBlock).toContain("markGraphDirtyForInteractiveCommit()");
     expect(finishBlock).toContain("const activeDragging = draggingRef.current;");
@@ -3710,7 +3729,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("simplifiedMarkup && showImperativeMultiNodeDragOverlay(simplifiedMarkup)");
     expect(source).toContain("if (imperativeMultiNodeDragActiveRef.current && !dragging)");
     expect(overlayBlock).not.toContain("multiNodeDragDegradedPreview");
-    expect(source).toContain("className={`diagram-canvas ${connectSource ? \"connect-mode\" : \"\"} ${staticDrawing ? \"static-draw-mode\" : \"\"} ${libraryPlacement ? \"library-place-mode\" : \"\"} ${activeDropReady ? \"connect-drop-ready\" : \"\"} ${panning ? \"panning\" : \"\"} ${multiNodeDragging ? \"multi-node-dragging\" : \"\"}`}");
+    expect(source).toContain("className={`diagram-canvas ${connectSource ? \"connect-mode\" : \"\"} ${staticDrawing ? \"static-draw-mode\" : \"\"} ${libraryPlacement ? \"library-place-mode\" : \"\"} ${activeDropReady ? \"connect-drop-ready\" : \"\"} ${panning ? \"panning\" : \"\"} ${multiNodeDragging ? \"multi-node-dragging\" : \"\"} ${singleNodeDragging ? \"single-node-dragging\" : \"\"}`}");
     expect(source).toContain("<g className=\"canvas-content\">");
     expect(source).not.toContain("if (multiNodeDragging && draggingNodeIdSet.has(node.id)) {\n                return null;");
     expect(source).toContain("{visibleSelectedGroupLayoutUnits.map");
@@ -3719,6 +3738,172 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".multi-node-drag-overlay");
     expect(styles).toContain(".multi-node-drag-preview-node-lite");
     expect(styles).toContain(".diagram-canvas.multi-node-dragging .canvas-content");
+  });
+
+  test("moves single-node drag previews imperatively without per-frame React state churn", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const dragMoveStart = source.indexOf("const applyNodeDragMove");
+    const dragMoveEnd = source.indexOf("const scheduleNodeDragMove", dragMoveStart);
+    const dragMoveBlock = source.slice(dragMoveStart, dragMoveEnd);
+    const singleMoveStart = dragMoveBlock.indexOf("const nextDragState");
+    const singleMoveBlock = dragMoveBlock.slice(singleMoveStart);
+    const finishStart = source.indexOf("const finishNodeDrag = () =>");
+    const finishEnd = source.indexOf("const finishTransformDrag", finishStart);
+    const finishBlock = source.slice(finishStart, finishEnd);
+    const renderStart = source.indexOf("{viewportRoutedEdges.map((route) =>");
+    const renderEnd = source.indexOf("{rewiringPreviewRoute", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+
+    expect(source).toContain("const imperativeSingleNodeDragNodeOverlayRef");
+    expect(source).toContain("const imperativeSingleNodeDragEdgePreviewRef");
+    expect(source).toContain("const imperativeNodeDragDropHintRef");
+    expect(source).toContain("const imperativeSingleNodeDragActiveRef");
+    expect(source).toContain("const buildSingleNodeDragPreviewNodeMarkup");
+    expect(source).toContain("const updateSingleNodeDragImperativePreview");
+    expect(source).toContain("const hideImperativeSingleNodeDragPreview");
+    expect(source).toContain("if (!imperativeSingleNodeDragActiveRef.current) {\n    nodeTerminalSnapTargetRef.current = nodeTerminalSnapTarget;\n  }");
+    expect(dragMoveBlock).toContain("renderPreview && !isMultiNodeMoveState(currentDrag)");
+    expect(dragMoveBlock).toContain("boundedDeltaForNodes(");
+    expect(dragMoveBlock).toContain("computeNodeDragDelta(currentDrag, point, ctrlKey, shiftKey)");
+    expect(singleMoveBlock).toContain("updateSingleNodeDragImperativePreview(nextDragState, previewDelta);");
+    expect(singleMoveBlock).toContain("singleNodeDragRenderState(nextDragState)");
+    expect(singleMoveBlock).not.toContain("setDragging((current) =>");
+    expect(renderBlock).toContain("singleNodeDragging && dragAffectedEdgeIdSet.has(edge.id)");
+    expect(finishBlock).toContain("const effectiveSnapTarget = isMultiNodeMoveState(activeDragging) ? null : nodeTerminalSnapTargetRef.current;");
+    expect(source).toContain("className=\"single-node-drag-overlay imperative-single-node-drag-edge-preview\"");
+    expect(source).toContain("className=\"single-node-drag-overlay imperative-single-node-drag-node-overlay\"");
+    expect(source).toContain("className=\"connect-drop-hint imperative-node-drag-drop-hint\"");
+    expect(source).toContain("singleNodeDragging ? \"single-node-dragging\" : \"\"");
+    expect(source).toContain("singleNodeDragging && draggingNodeIdSet.has(node.id) ? \"single-drag-origin\" : \"\"");
+    expect(styles).toContain(".single-node-drag-overlay");
+    expect(styles).toContain(".diagram-node.single-drag-origin");
+  });
+
+  test("keeps moved bus endpoint slide checks local during drag and move commits", async () => {
+    const source = await readAppSource();
+    const adjustStart = source.indexOf("const adjustEdgesAfterNodeMove =");
+    const adjustEnd = source.indexOf("const rebuildSingleAffectedConnectionRoute", adjustStart);
+    const adjustBlock = source.slice(adjustStart, adjustEnd);
+    const slideStart = adjustBlock.indexOf("const slidePatch =");
+    const slideEnd = adjustBlock.indexOf(": null;", slideStart);
+    const slideBlock = adjustBlock.slice(slideStart, slideEnd);
+
+    expect(adjustBlock).toContain("const previousSlideNodes = routingNodesForConnectionEdge(edge, nodes);");
+    expect(adjustBlock).toContain("const nextSlideNodes = routingNodesForConnectionEdge(baseEdge, nextNodes);");
+    expect(slideBlock).toContain("nodes: previousSlideNodes");
+    expect(slideBlock).toContain("nextNodes: nextSlideNodes");
+    expect(slideBlock).not.toContain("nodes,\n              nextNodes");
+  });
+
+  test("limits high-fanout single-node drag preview and snap work to viewport-local candidates", async () => {
+    const source = await readAppSource();
+    const previewStart = source.indexOf("const buildSingleNodeDragPreviewRouteMarkup");
+    const previewEnd = source.indexOf("const singleNodeDragInteractionNodes", previewStart);
+    const previewBlock = source.slice(previewStart, previewEnd);
+    const interactionStart = source.indexOf("const singleNodeDragInteractionNodes");
+    const interactionEnd = source.indexOf("const updateImperativeNodeDragDropHint", interactionStart);
+    const interactionBlock = source.slice(interactionStart, interactionEnd);
+    const updateStart = source.indexOf("const updateSingleNodeDragImperativePreview");
+    const updateEnd = source.indexOf("const startDraggingState", updateStart);
+    const updateBlock = source.slice(updateStart, updateEnd);
+
+    expect(source).toContain("const CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT");
+    expect(source).toContain("const CANVAS_SINGLE_NODE_DRAG_SNAP_EDGE_LIMIT");
+    expect(source).toContain("const singleNodeDragRelevantEdges =");
+    expect(source).toContain("const singleNodeDragPreviewEdges =");
+    expect(source).toContain("const singleNodeDragSnapEdges =");
+    expect(previewBlock).toContain("const previewEdges = scopedPreviewEdges ?? singleNodeDragPreviewEdges(dragState, delta);");
+    expect(previewBlock).toContain("return previewEdges.flatMap((edge) =>");
+    expect(previewBlock).not.toContain("return dragState.affectedEdges.flatMap((edge)");
+    expect(interactionBlock).toContain("const snapEdges = scopedSnapEdges ?? singleNodeDragSnapEdges(dragState, delta);");
+    expect(interactionBlock).toContain("for (const edge of snapEdges)");
+    expect(interactionBlock).not.toContain("for (const edge of dragState.affectedEdges)");
+    expect(updateBlock).toContain("const scopedEdges = singleNodeDragScopedEdges(dragState, previewDelta);");
+    expect(updateBlock).toContain("buildSingleNodeDragPreviewRouteMarkup(dragState, previewDelta, scopedEdges.previewEdges)");
+    expect(updateBlock).toContain("singleNodeDragInteractionNodes(dragState, previewDelta, scopedEdges.snapEdges)");
+  });
+
+  test("reuses precomputed single-node drag route bounds and edge scopes across preview work", async () => {
+    const source = await readAppSource();
+    const draggingTypeStart = source.indexOf("type DraggingState =");
+    const draggingTypeEnd = source.indexOf("type MultiNodeDragOverlayPreview", draggingTypeStart);
+    const draggingTypeBlock = source.slice(draggingTypeStart, draggingTypeEnd);
+    const touchesStart = source.indexOf("const singleNodeDragEdgeTouchesBounds");
+    const touchesEnd = source.indexOf("const singleNodeDragScopedEdges", touchesStart);
+    const touchesBlock = source.slice(touchesStart, touchesEnd);
+    const updateStart = source.indexOf("const updateSingleNodeDragImperativePreview");
+    const updateEnd = source.indexOf("const startDraggingState", updateStart);
+    const updateBlock = source.slice(updateStart, updateEnd);
+
+    expect(draggingTypeBlock).toContain("originalRouteBounds: Record<string, RenderViewportBounds | null>;");
+    expect(source).toContain("const snapshotRouteBounds =");
+    expect(source).toContain("originalRouteBounds: snapshotRouteBounds(originalRoutePointsForMove)");
+    expect(source).toContain("originalRouteBounds: snapshotRouteBounds(originalRoutePointsForDrag)");
+    expect(source).toContain("const singleNodeDragScopedEdges =");
+    expect(touchesBlock).toContain("dragState.originalRouteBounds[edge.id]");
+    expect(touchesBlock).not.toContain("routeRenderBounds({ points: dragState.originalRoutePoints");
+    expect(updateBlock).toContain("const scopedEdges = singleNodeDragScopedEdges(dragState, previewDelta);");
+    expect(updateBlock).toContain("buildSingleNodeDragPreviewRouteMarkup(dragState, previewDelta, scopedEdges.previewEdges)");
+    expect(updateBlock).toContain("singleNodeDragInteractionNodes(dragState, previewDelta, scopedEdges.snapEdges)");
+    expect(updateBlock).not.toContain("const previewEdges = singleNodeDragPreviewEdges(dragState, previewDelta);");
+    expect(updateBlock).not.toContain("singleNodeDragInteractionNodes(dragState, previewDelta);");
+  });
+
+  test("precomputes single-node drag candidate edges and id sets for smooth drag frames", async () => {
+    const source = await readAppSource();
+    const draggingTypeStart = source.indexOf("type DraggingState =");
+    const draggingTypeEnd = source.indexOf("type MultiNodeDragOverlayPreview", draggingTypeStart);
+    const draggingTypeBlock = source.slice(draggingTypeStart, draggingTypeEnd);
+    const relevantStart = source.indexOf("const singleNodeDragRelevantEdges");
+    const relevantEnd = source.indexOf("const singleNodeDragPreviewBounds", relevantStart);
+    const relevantBlock = source.slice(relevantStart, relevantEnd);
+    const previewStart = source.indexOf("const buildSingleNodeDragPreviewRouteMarkup");
+    const previewEnd = source.indexOf("const singleNodeDragInteractionNodes", previewStart);
+    const previewBlock = source.slice(previewStart, previewEnd);
+    const interactionStart = source.indexOf("const singleNodeDragInteractionNodes");
+    const interactionEnd = source.indexOf("const updateImperativeNodeDragDropHint", interactionStart);
+    const interactionBlock = source.slice(interactionStart, interactionEnd);
+
+    expect(source).toContain("type SingleNodeDragCache =");
+    expect(draggingTypeBlock).toContain("singleNodeDragCache?: SingleNodeDragCache;");
+    expect(source).toContain("const buildSingleNodeDragCache =");
+    expect(source).toContain("singleNodeDragCache: buildSingleNodeDragCache(moveNodeIds, moveEdgeIds, affectedEdgesForMove)");
+    expect(source).toContain("singleNodeDragCache: buildSingleNodeDragCache(dragNodeIds, edgeIdsForDrag, affectedEdgesForDrag)");
+    expect(relevantBlock).toContain("if (dragState.singleNodeDragCache) {");
+    expect(relevantBlock).toContain("return dragState.singleNodeDragCache.relevantEdges;");
+    expect(previewBlock).toContain("const dragCache = dragState.singleNodeDragCache;");
+    expect(previewBlock).toContain("const movedNodeIds = dragCache?.movedNodeIds ?? new Set(dragState.nodeIds);");
+    expect(previewBlock).toContain("const draggedEdgeIds = dragCache?.draggedEdgeIds ?? new Set(dragState.edgeIds);");
+    expect(previewBlock).toContain("const movedBusIds = dragCache?.movedBusNodeIds ?? new Set(");
+    expect(interactionBlock).toContain("const dragCache = dragState.singleNodeDragCache;");
+    expect(interactionBlock).toContain("const movedNodeIds = dragCache?.movedNodeIds ?? new Set(dragState.nodeIds);");
+  });
+
+  test("stops collecting single-node drag viewport candidates once preview and snap caps are satisfied", async () => {
+    const source = await readAppSource();
+    const cacheTypeStart = source.indexOf("type SingleNodeDragCache =");
+    const cacheTypeEnd = source.indexOf("type DraggingState =", cacheTypeStart);
+    const cacheTypeBlock = source.slice(cacheTypeStart, cacheTypeEnd);
+    const scanStart = source.indexOf("const singleNodeDragViewportLocalEdgesByScan");
+    const scanEnd = source.indexOf("const singleNodeDragScopedEdges", scanStart);
+    const scanBlock = source.slice(scanStart, scanEnd);
+    const scopeStart = source.indexOf("const singleNodeDragScopedEdges");
+    const scopeEnd = source.indexOf("const singleNodeDragPreviewEdges", scopeStart);
+    const scopeBlock = source.slice(scopeStart, scopeEnd);
+
+    expect(source).not.toContain("buildRouteSpatialIndex");
+    expect(cacheTypeBlock).not.toContain("routeSpatialIndex");
+    expect(cacheTypeBlock).not.toContain("edgeByRouteId");
+    expect(scanBlock).toContain("localLimit = Number.POSITIVE_INFINITY");
+    expect(scanBlock).toContain("const viewportLocalEdges: Edge[] = [];");
+    expect(scanBlock).toContain("for (const edge of edgesToCheck)");
+    expect(scanBlock).toContain("if (viewportLocalEdges.length >= localLimit)");
+    expect(scanBlock).toContain("break;");
+    expect(scopeBlock).toContain("const localLimit = Math.max(CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_SNAP_EDGE_LIMIT);");
+    expect(scopeBlock).toContain("singleNodeDragViewportLocalEdgesByScan(dragState, relevantEdges, delta, bounds, localLimit)");
+    expect(scopeBlock).not.toContain("queryRouteSpatialIndex");
+    expect(scopeBlock).not.toContain("relevantEdges.filter((edge)");
   });
 
   test("keeps multi-node drag preview bounds scoped to moved graphics instead of all affected external lines", async () => {
@@ -4515,11 +4700,10 @@ describe("graph inspector panel", () => {
 
   test("caches route blocker boxes during drag-end route checks", async () => {
     const source = await readModelSource();
-    const blockerStart = source.indexOf("const routeEndpointBodyOnlyBlockerCache");
+    const blockerStart = source.indexOf("const routeBlockerBoxCache");
     const blockerEnd = source.indexOf("export function calculateModelContentSize", blockerStart);
     const blockerBlock = source.slice(blockerStart, blockerEnd);
 
-    expect(blockerBlock).toContain("const routeEndpointBodyOnlyBlockerCache = new WeakMap<ModelNode, ModelNode>();");
     expect(blockerBlock).toContain("const routeBlockerBoxCache = new WeakMap<ModelNode, Map<number, RouteBlockerBox>>();");
     expect(blockerBlock).toContain("function computeRouteBlockerBox");
     expect(blockerBlock).toContain("const cached = boxesByPadding.get(padding)");
