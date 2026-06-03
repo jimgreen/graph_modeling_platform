@@ -56,6 +56,22 @@ function cssRuleBlock(styles: string, selector: string) {
 }
 
 describe("graph inspector panel", () => {
+  test("creates new models with the default 1920 by 1024 canvas size", async () => {
+    const source = await readAppSource();
+    const serverSource = await readServerSource();
+    const createStart = source.indexOf("const createBlankProject =");
+    const createEnd = source.indexOf("const locateTopologyError", createStart);
+    const createBlock = source.slice(createStart, createEnd);
+
+    expect(source).toContain("const DEFAULT_CANVAS_WIDTH = 1920;");
+    expect(source).toContain("const DEFAULT_CANVAS_HEIGHT = 1024;");
+    expect(createBlock).toContain("canvasWidth: DEFAULT_CANVAS_WIDTH");
+    expect(createBlock).toContain("canvasHeight: DEFAULT_CANVAS_HEIGHT");
+    expect(createBlock).not.toContain("canvasWidth,\n      canvasHeight,");
+    expect(serverSource).toContain("Number(project.canvasWidth ?? 1920)");
+    expect(serverSource).toContain("Number(project.canvasHeight ?? 1024)");
+  });
+
   test("allows canvas width and height up to 50000", async () => {
     const source = await readAppSource();
 
@@ -92,6 +108,52 @@ describe("graph inspector panel", () => {
     expect(autoExpandBlock).toContain("modelGeometryInsideCanvasBounds(contentNodes, [...contentRoutes, ...edgeRoutesForGeometryBounds(contentEdges)], bounds, 0)");
     expect(moveBoundsBlock).toContain("if (!allowAutoExpandCanvas)");
     expect(moveBoundsBlock).toContain("return canvasBounds;");
+  });
+
+  test("adds browse and edit modes that default to readonly browsing", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const topbarStart = source.indexOf("<header className=\"topbar\"");
+    const topbarEnd = source.indexOf("</header>", topbarStart);
+    const topbarBlock = source.slice(topbarStart, topbarEnd);
+    const keydownStart = source.indexOf("const handleKeyDown = (event: KeyboardEvent) => {");
+    const keydownEnd = source.indexOf("const handleKeyUp = (event: KeyboardEvent) => {", keydownStart);
+    const keydownBlock = source.slice(keydownStart, keydownEnd);
+    const canvasScrollSurfaceStart = source.indexOf("className=\"canvas-scroll-surface\"");
+    const canvasScrollSurfaceEnd = source.indexOf("<svg", canvasScrollSurfaceStart);
+    const canvasScrollSurfaceBlock = source.slice(canvasScrollSurfaceStart, canvasScrollSurfaceEnd);
+    const nodePointerStart = source.indexOf("const handleNodePointerDown");
+    const nodePointerEnd = source.indexOf("const handlePointerMove", nodePointerStart);
+    const nodePointerBlock = source.slice(nodePointerStart, nodePointerEnd);
+    const staticButtonStart = source.indexOf("const beginStaticButtonPointerFeedback");
+    const staticButtonEnd = source.indexOf("const resolveStaticButtonTargetProject", staticButtonStart);
+    const staticButtonBlock = source.slice(staticButtonStart, staticButtonEnd);
+
+    expect(source).toContain("type InteractionMode = \"browse\" | \"edit\";");
+    expect(source).toContain("const [interactionMode, setInteractionMode] = useState<InteractionMode>(\"browse\");");
+    expect(source).toContain("const isBrowseMode = interactionMode === \"browse\";");
+    expect(source).toContain("const isEditMode = interactionMode === \"edit\";");
+    expect(source).toContain("const requireEditMode = (action: string) => {");
+    expect(source).toContain("浏览模式下不能");
+    expect(topbarBlock).toContain("mode-toggle-button");
+    expect(topbarBlock).toContain("onClick={toggleInteractionMode}");
+    expect(topbarBlock).toContain("aria-label={isEditMode ? \"切换到浏览模式\" : \"切换到编辑模式\"}");
+    expect(topbarBlock).toContain("<span>{isEditMode ? \"编辑模式\" : \"浏览模式\"}</span>");
+    expect(topbarBlock).toContain("disabled={isBrowseMode}");
+    expect(topbarBlock).toContain("disabled={isBrowseMode || !saveRequired}");
+    expect(keydownBlock).toContain("if (!isEditMode) {");
+    expect(keydownBlock).toContain("releaseKeyboardMoveKey(event.key)");
+    expect(canvasScrollSurfaceBlock).toContain("if (isEditMode && startCanvasResizeFromTopOverlay(event))");
+    expect(canvasScrollSurfaceBlock).toContain("if (isEditMode && hasCanvasSelectionModifier(event))");
+    expect(nodePointerBlock).toContain("if (isBrowseMode) {");
+    expect(nodePointerBlock).toContain("selectCanvasGraphics([node.id], [], { scope: \"direct\" });");
+    expect(nodePointerBlock).not.toContain("if (isBrowseMode) {\n      startDraggingState");
+    expect(staticButtonBlock).toContain("if (!isBrowseMode || !isStaticButtonEnabledForNode(node)");
+    expect(source).toContain("{isEditMode && canvasResizeHandles}");
+    expect(source).toContain("{isEditMode && (nodeFloatingToolbar || edgeFloatingToolbar) && (");
+    expect(source).toContain("const canvasResizeHandles = (");
+    expect(styles).toContain(".mode-toggle-button");
+    expect(styles).toContain(".app-shell.browse-mode");
   });
 
   test("adds a searchable component library for large symbol sets", async () => {
@@ -828,6 +890,41 @@ describe("graph inspector panel", () => {
     expect(source).toContain("static-button-feedback-surface");
   });
 
+  test("configures static button actions with dropdown enablement and multiple target layers", async () => {
+    const source = await readAppSource();
+    const modelSource = await readModelSource();
+    const editorStart = source.indexOf("const renderStaticButtonActionEditor");
+    const editorEnd = source.indexOf("const renderParamHeader", editorStart);
+    const editorBlock = source.slice(editorStart, editorEnd);
+    const runtimeStart = source.indexOf("const resolveStaticButtonTargetLayers");
+    const runtimeEnd = source.indexOf("const handleStaticButtonClick", runtimeStart);
+    const runtimeBlock = source.slice(runtimeStart, runtimeEnd);
+    const exportStart = source.indexOf("function exportSvgLayerScriptMarkup");
+    const exportEnd = source.indexOf("export function buildSvgDocument", exportStart);
+    const exportBlock = source.slice(exportStart, exportEnd);
+
+    expect(modelSource).toContain("buttonTargetLayerIds: \"\",");
+    expect(modelSource).toContain("buttonTargetLayerNames: \"\",");
+    expect(source).toContain("const parseStaticButtonTargetLayerValues = (value?: string) =>");
+    expect(source).toContain("const serializeStaticButtonTargetLayerIds = (layerIds: string[]) => JSON.stringify(layerIds);");
+    expect(editorBlock).toContain("value={buttonEnabled ? \"1\" : \"0\"}");
+    expect(editorBlock).toContain("<option value=\"1\">启用</option>");
+    expect(editorBlock).toContain("<option value=\"0\">禁用</option>");
+    expect(editorBlock).not.toContain("type=\"checkbox\"");
+    expect(editorBlock).toContain("multiple");
+    expect(editorBlock).toContain("value={resolveStaticButtonTargetLayers(node, layers).map((layer) => layer.id)}");
+    expect(editorBlock).toContain("Array.from(event.target.selectedOptions)");
+    expect(editorBlock).toContain("buttonTargetLayerIds: serializeStaticButtonTargetLayerIds(selectedLayers.map((layer) => layer.id))");
+    expect(editorBlock).toContain("buttonTargetLayerNames: serializeStaticButtonTargetLayerIds(selectedLayers.map((layer) => layer.name))");
+    expect(runtimeBlock).toContain("const targetLayers = resolveStaticButtonTargetLayers(node, layers);");
+    expect(runtimeBlock).toContain("const targetLayerIdSet = new Set(targetLayers.map((layer) => layer.id));");
+    expect(runtimeBlock).toContain("setActiveLayerId(targetLayers[0].id);");
+    expect(runtimeBlock).toContain("setLayers((current) => current.map((item) => ({ ...item, visible: targetLayerIdSet.has(item.id) })))");
+    expect(exportBlock).toContain("data-export-button-target-layer-ids");
+    expect(exportBlock).toContain("function exportSvgActivateLayers(layerIds)");
+    expect(exportBlock).toContain("const targetLayerIds = exportSvgButtonTargetLayerIds(button);");
+  });
+
   test("keeps backend electric heat sections split by AC and DC device types", async () => {
     const serverSource = await readServerSource();
 
@@ -1190,12 +1287,20 @@ describe("graph inspector panel", () => {
     const finishStart = source.indexOf("const finishTerminalPress = () => {");
     const finishEnd = source.indexOf("const handleTerminalPointerDown", finishStart);
     const finishBlock = source.slice(finishStart, finishEnd);
+    const helperStart = source.indexOf("const patchSingleTerminalAnchorFromPoint = (");
+    const helperEnd = source.indexOf("const rebuildEdgeUpdatesAfterNodeGeometryChange", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
 
-    expect(previewBlock).toContain("const anchor = snapSingleTerminalAnchorToNearestSide(currentNode, point);");
-    expect(finishBlock).toContain("const currentNode = current.nodeMap.get(terminalPress.nodeId);");
-    expect(finishBlock).toContain("const anchor = snapSingleTerminalAnchorToNearestSide(currentNode, terminalPress.currentPoint);");
-    expect(finishBlock).toContain("current.edgesByNodeId.get(terminalPress.nodeId)");
-    expect(finishBlock).toContain("nodes: current.nodes");
+    expect(helperBlock).toContain("markGraphDirtyForInteractiveCommit();");
+    expect(helperBlock).toContain("const anchor = snapSingleTerminalAnchorToNearestSide(currentNode, point);");
+    expect(helperBlock).toContain("current.edgesByNodeId.get(nodeId)");
+    expect(helperBlock).toContain("markRouteEdgesDirty(dirtyEdgeIds);");
+    expect(helperBlock).toContain("markStoredRouteEdgesDirty(dirtyEdgeIds);");
+    expect(helperBlock).toContain("nodes: current.nodes");
+    expect(previewBlock).toContain("patchSingleTerminalAnchorFromPoint(terminalPress.nodeId, terminalPress.terminalId, point, terminalPress.startPoint);");
+    expect(finishBlock).toContain("patchSingleTerminalAnchorFromPoint(");
+    expect(finishBlock).toContain("terminalPress.currentPoint");
+    expect(finishBlock).toContain("terminalPress.startPoint");
     expect(finishBlock).not.toContain("graphStorePatchGraph(current, [nextNode], nextEdges)");
     expect(source).not.toContain("clampSingleTerminalAnchor");
   });
@@ -2016,8 +2121,9 @@ describe("graph inspector panel", () => {
 
     expect(centerBlock).toContain("}, [canvasCenterRequest]);");
     expect(centerBlock).not.toContain("}, [canvasCenterRequest, canvasHeight, canvasWidth]);");
-    expect(startResizeBlock).toContain("unitsPerCssX: svgRect.width > 0 ? canvasBounds.width / svgRect.width : 1");
-    expect(startResizeBlock).toContain("unitsPerCssY: svgRect.height > 0 ? canvasBounds.height / svgRect.height : 1");
+    expect(startResizeBlock).toContain("const currentCanvasBounds = canvasBoundsRef.current;");
+    expect(startResizeBlock).toContain("unitsPerCssX: svgRect.width > 0 ? currentCanvasBounds.width / svgRect.width : 1");
+    expect(startResizeBlock).toContain("unitsPerCssY: svgRect.height > 0 ? currentCanvasBounds.height / svgRect.height : 1");
     expect(startResizeBlock).toContain("const startCanvasResizeFromRightOverlay = (event: PointerEvent<Element>) =>");
     expect(startResizeBlock).toContain("const startCanvasResizeFromLeftOverlay = (event: PointerEvent<Element>) =>");
     expect(startResizeBlock).toContain("const startCanvasResizeFromTopOverlay = (event: PointerEvent<Element>) =>");
@@ -2114,6 +2220,35 @@ describe("graph inspector panel", () => {
     expect(resizeMoveBlock).not.toContain("commitCanvasResizeBounds");
     expect(resizeBlock).not.toContain("const flushCanvasResizeDraft");
     expect(resizeBlock).not.toContain("applyCanvasBounds(clampedBounds);");
+  });
+
+  test("keeps canvas control-point resizing single-sided after inspector width or height edits", async () => {
+    const source = await readAppSource();
+    const updateStart = source.indexOf("const updateCanvasSize =");
+    const updateEnd = source.indexOf("const commitCanvasSizeDraft", updateStart);
+    const updateBlock = source.slice(updateStart, updateEnd);
+    const blurStart = source.indexOf("const handleCanvasSizeBlur =");
+    const blurEnd = source.indexOf("const handleCanvasSizeKeyDown", blurStart);
+    const blurBlock = source.slice(blurStart, blurEnd);
+    const keydownStart = source.indexOf("const handleCanvasSizeKeyDown =");
+    const keydownEnd = source.indexOf("const renderStaticDrawingPreview", keydownStart);
+    const keydownBlock = source.slice(keydownStart, keydownEnd);
+    const startResizeStart = source.indexOf("const startCanvasResize =");
+    const startResizeEnd = source.indexOf("const startCanvasResizeFromRightOverlay", startResizeStart);
+    const startResizeBlock = source.slice(startResizeStart, startResizeEnd);
+
+    expect(updateBlock).toContain("const currentBounds = canvasBoundsRef.current;");
+    expect(updateBlock).toContain("const nextBounds = { width, height };");
+    expect(updateBlock).toContain("applyCanvasBounds(nextBounds);");
+    expect(updateBlock).not.toContain("setCanvasWidth(width);");
+    expect(updateBlock).not.toContain("setCanvasHeight(height);");
+    expect(blurBlock).toContain("flushSync(() => commitCanvasSizeDraft());");
+    expect(keydownBlock).toContain("flushSync(() => commitCanvasSizeDraft());");
+    expect(startResizeBlock).toContain("const currentCanvasBounds = canvasBoundsRef.current;");
+    expect(startResizeBlock).toContain("startWidth: currentCanvasBounds.width");
+    expect(startResizeBlock).toContain("startHeight: currentCanvasBounds.height");
+    expect(startResizeBlock).toContain("unitsPerCssX: svgRect.width > 0 ? currentCanvasBounds.width / svgRect.width : 1");
+    expect(startResizeBlock).toContain("unitsPerCssY: svgRect.height > 0 ? currentCanvasBounds.height / svgRect.height : 1");
   });
 
   test("keeps the actively dragged canvas resize edge in view when scrollbars appear", async () => {
@@ -2368,7 +2503,7 @@ describe("graph inspector panel", () => {
 
   test("scales the canvas scroll surface with viewport zoom instead of clipping zoomed content", async () => {
     const source = await readAppSource();
-    const canvasRenderStart = source.indexOf("<section className=\"canvas-frame\"");
+    const canvasRenderStart = source.indexOf("className=\"canvas-frame\"");
     const canvasRenderEnd = source.indexOf("onDrop={handleDrop}", canvasRenderStart);
     const canvasRenderBlock = source.slice(canvasRenderStart, canvasRenderEnd);
 
@@ -2421,7 +2556,9 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const next = canvasFullyVisible ? fullViewBox : visibleCanvasViewBoxFromRects(frameRect, svgRect, fullViewBox)");
     expect(source).toContain("if (canvasFullyVisible || !frameScrollWasUserDriven) {\n        return;\n      }");
     expect(canvasRenderBlock).toContain("className=\"canvas-scroll-surface\"");
-    expect(source).toContain("style={{ overflow: canvasScrollbarsActive ? \"auto\" : \"hidden\" }}");
+    expect(source).toContain("overflowX: canvasHorizontalScrollbarsActive ? \"auto\" : \"hidden\"");
+    expect(source).toContain("overflowY: canvasVerticalScrollbarsActive ? \"auto\" : \"hidden\"");
+    expect(source).not.toContain("style={{ overflow: canvasScrollbarsActive ? \"auto\" : \"hidden\" }}");
     expect(canvasRenderBlock).toContain("style={{ width: canvasScrollSurfaceWidth, height: canvasScrollSurfaceHeight }}");
     expect(canvasRenderBlock).toContain("style={{ width: canvasDisplayWidth, height: canvasDisplayHeight, left: canvasDisplayOffsetX, top: canvasDisplayOffsetY }}");
     expect(canvasRenderBlock).toContain("viewBox={`0 0 ${canvasRenderBounds.width} ${canvasRenderBounds.height}`}");
@@ -2545,13 +2682,13 @@ describe("graph inspector panel", () => {
 
   test("pans zoomed scrollable canvas by moving the frame scrollbars directly", async () => {
     const source = await readAppSource();
-    const panningStateStart = source.indexOf("const [panning, setPanning] = useState<{");
+    const panningStateStart = source.indexOf("type CanvasPanningState =");
     const panningStateEnd = source.indexOf("const [marquee, setMarquee]", panningStateStart);
     const panningStateBlock = source.slice(panningStateStart, panningStateEnd);
     const currentScrollStart = source.indexOf("const currentViewBoxFromCanvasFrameScroll =");
     const currentScrollEnd = source.indexOf("const scheduleCanvasVisibleViewBoxUpdate", currentScrollStart);
     const currentScrollBlock = source.slice(currentScrollStart, currentScrollEnd);
-    const pointerMoveStart = source.indexOf("if (panning && svgRef.current) {");
+    const pointerMoveStart = source.indexOf("const activePanning = panningRef.current ?? panning;");
     const pointerMoveEnd = source.indexOf("if (transformDrag && svgRef.current)", pointerMoveStart);
     const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
     const startPanStart = source.indexOf("const startCanvasPanning =");
@@ -2564,7 +2701,8 @@ describe("graph inspector panel", () => {
     expect(panningStateBlock).toContain("scrollLeft: number;");
     expect(panningStateBlock).toContain("scrollTop: number;");
     expect(panningStateBlock).toContain("canvasOffset: Point;");
-    expect(panningStateBlock).toContain("scrollMode: boolean;");
+    expect(panningStateBlock).toContain("horizontalScrollMode: boolean;");
+    expect(panningStateBlock).toContain("verticalScrollMode: boolean;");
     expect(source).toContain("export function canvasViewBoxFromFrameScrollPosition({");
     expect(source).toContain("scrollPositionToViewBoxStart(scrollLeft, currentViewBox.width, canvasBounds.width, maxScrollLeft, currentViewBox.x)");
     expect(source).toContain("scrollPositionToViewBoxStart(scrollTop, currentViewBox.height, canvasBounds.height, maxScrollTop, currentViewBox.y)");
@@ -2572,23 +2710,82 @@ describe("graph inspector panel", () => {
     expect(currentScrollBlock).toContain("scrollLeft: frame.scrollLeft");
     expect(currentScrollBlock).toContain("scrollTop: frame.scrollTop");
     expect(currentScrollBlock).not.toContain("if (!canvasScrollbarsActiveRef.current)");
-    expect(pointerMoveBlock).toContain("if (frame && panning.scrollMode)");
-    expect(pointerMoveBlock).toContain("const nextLeft = clampNumber(panning.scrollLeft - (event.clientX - panning.clientX), 0, maxLeft);");
-    expect(pointerMoveBlock).toContain("const nextTop = clampNumber(panning.scrollTop - (event.clientY - panning.clientY), 0, maxTop);");
+    expect(pointerMoveBlock).toContain("const useHorizontalScrollPanning = Boolean(frame && activePanning.horizontalScrollMode);");
+    expect(pointerMoveBlock).toContain("const useVerticalScrollPanning = Boolean(frame && activePanning.verticalScrollMode);");
+    expect(pointerMoveBlock).toContain("const nextLeft = clampNumber(activePanning.scrollLeft - (event.clientX - activePanning.clientX), 0, maxLeft);");
+    expect(pointerMoveBlock).toContain("const nextTop = clampNumber(activePanning.scrollTop - (event.clientY - activePanning.clientY), 0, maxTop);");
     expect(pointerMoveBlock).toContain("frame.scrollLeft = nextLeft;");
     expect(pointerMoveBlock).toContain("frame.scrollTop = nextTop;");
     expect(pointerMoveBlock).toContain("canvasFrameUserScrollRef.current = true;");
     expect(pointerMoveBlock).toContain("const nextOffset = clampCanvasNoScrollOffsetPoint({");
-    expect(pointerMoveBlock).toContain("x: panning.canvasOffset.x + event.clientX - panning.clientX");
+    expect(pointerMoveBlock).toContain("x: useHorizontalScrollPanning ? activePanning.canvasOffset.x : activePanning.canvasOffset.x + event.clientX - activePanning.clientX");
     expect(pointerMoveBlock).toContain("setCanvasNoScrollOffset((current) =>");
     expect(startPanBlock).toContain("const panningViewBox = currentViewBoxFromCanvasFrameScroll();");
     expect(startPanBlock).toContain("canvasOffset: canvasNoScrollOffsetRef.current");
-    expect(startPanBlock).toContain("scrollMode: frame ? canvasFrameHasScrollableRange(frame) : false");
+    expect(startPanBlock).toContain("horizontalScrollMode: frame ? canvasHorizontalScrollbarsActiveRef.current && canvasFrameHasHorizontalScrollableRange(frame) : false");
+    expect(startPanBlock).toContain("verticalScrollMode: frame ? canvasVerticalScrollbarsActiveRef.current && canvasFrameHasVerticalScrollableRange(frame) : false");
     expect(startPanBlock).toContain("event.preventDefault();");
     expect(startPanBlock).toContain("event.stopPropagation();");
     expect(source).toContain("onPointerDownCapture={handleCanvasPointerDownCapture}");
-    expect(source).toContain("onPointerMove={(event) => {\n              if (panning || modifierSelectionPressRef.current) {\n                handlePointerMove(event as unknown as PointerEvent<SVGSVGElement>);");
-    expect(pointerLeaveBlock).toContain("if (panning) {\n                return;\n              }");
+    expect(source).toContain("onPointerMove={(event) => {\n              if (panningRef.current || modifierSelectionPressRef.current) {\n                handlePointerMove(event as unknown as PointerEvent<SVGSVGElement>);");
+    expect(pointerLeaveBlock).toContain("if (panningRef.current) {\n                return;\n              }");
+  });
+
+  test("pans canvas per axis so fitted edge targets remain reachable without scrollbars", async () => {
+    const source = await readAppSource();
+    const panningStateStart = source.indexOf("type CanvasPanningState =");
+    const panningStateEnd = source.indexOf("const [marquee, setMarquee]", panningStateStart);
+    const panningStateBlock = source.slice(panningStateStart, panningStateEnd);
+    const pointerMoveStart = source.indexOf("const activePanning = panningRef.current ?? panning;");
+    const pointerMoveEnd = source.indexOf("if (transformDrag && svgRef.current)", pointerMoveStart);
+    const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
+    const startPanStart = source.indexOf("const startCanvasPanning =");
+    const startPanEnd = source.indexOf("const handleCanvasPointerDownCapture", startPanStart);
+    const startPanBlock = source.slice(startPanStart, startPanEnd);
+
+    expect(source).toContain("function canvasFrameHasHorizontalScrollableRange(frame: HTMLElement)");
+    expect(source).toContain("function canvasFrameHasVerticalScrollableRange(frame: HTMLElement)");
+    expect(panningStateBlock).toContain("horizontalScrollMode: boolean;");
+    expect(panningStateBlock).toContain("verticalScrollMode: boolean;");
+    expect(startPanBlock).toContain("horizontalScrollMode: frame ? canvasHorizontalScrollbarsActiveRef.current && canvasFrameHasHorizontalScrollableRange(frame) : false");
+    expect(startPanBlock).toContain("verticalScrollMode: frame ? canvasVerticalScrollbarsActiveRef.current && canvasFrameHasVerticalScrollableRange(frame) : false");
+    expect(pointerMoveBlock).toContain("const useHorizontalScrollPanning = Boolean(frame && activePanning.horizontalScrollMode);");
+    expect(pointerMoveBlock).toContain("const useVerticalScrollPanning = Boolean(frame && activePanning.verticalScrollMode);");
+    expect(pointerMoveBlock).toContain("if (useHorizontalScrollPanning) {");
+    expect(pointerMoveBlock).toContain("if (useVerticalScrollPanning) {");
+    expect(pointerMoveBlock).toContain("x: useHorizontalScrollPanning ? activePanning.canvasOffset.x : activePanning.canvasOffset.x + event.clientX - activePanning.clientX");
+    expect(pointerMoveBlock).toContain("y: useVerticalScrollPanning ? activePanning.canvasOffset.y : activePanning.canvasOffset.y + event.clientY - activePanning.clientY");
+    expect(pointerMoveBlock).not.toContain("if (frame && panning.scrollMode)");
+  });
+
+  test("keeps canvas panning active immediately when dragging from page or canvas blank areas", async () => {
+    const source = await readAppSource();
+    const stateStart = source.indexOf("const [panning, setPanning] = useState<");
+    const stateEnd = source.indexOf("const [marquee, setMarquee]", stateStart);
+    const stateBlock = source.slice(stateStart, stateEnd);
+    const pointerMoveStart = source.indexOf("const activePanning = panningRef.current ?? panning;");
+    const pointerMoveEnd = source.indexOf("if (transformDrag && svgRef.current)", pointerMoveStart);
+    const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
+    const startPanStart = source.indexOf("const startCanvasPanning =");
+    const startPanEnd = source.indexOf("const handleCanvasPointerDownCapture", startPanStart);
+    const startPanBlock = source.slice(startPanStart, startPanEnd);
+    const scrollSurfaceStart = source.indexOf("className=\"canvas-scroll-surface\"");
+    const scrollSurfaceEnd = source.indexOf("<svg", scrollSurfaceStart);
+    const scrollSurfaceBlock = source.slice(scrollSurfaceStart, scrollSurfaceEnd);
+    const svgPointerUpStart = source.indexOf("onPointerUp={(event) => {", source.indexOf("className={`diagram-canvas"));
+    const svgPointerUpEnd = source.indexOf("onPointerLeave={() => {", svgPointerUpStart);
+    const svgPointerUpBlock = source.slice(svgPointerUpStart, svgPointerUpEnd);
+
+    expect(stateBlock).toContain("const panningRef = useRef<CanvasPanningState>(null);");
+    expect(stateBlock).toContain("const setCanvasPanning = (next: CanvasPanningState) => {");
+    expect(stateBlock).toContain("panningRef.current = next;");
+    expect(pointerMoveBlock).toContain("const activePanning = panningRef.current ?? panning;");
+    expect(pointerMoveBlock).toContain("if (activePanning && svgRef.current) {");
+    expect(pointerMoveBlock).toContain("activePanning.verticalScrollMode");
+    expect(startPanBlock).toContain("setCanvasPanning({");
+    expect(scrollSurfaceBlock).toContain("if (panningRef.current || modifierSelectionPressRef.current)");
+    expect(scrollSurfaceBlock).toContain("setCanvasPanning(null);");
+    expect(svgPointerUpBlock).toContain("setCanvasPanning(null);");
   });
 
   test("uses Ctrl or Shift on the canvas for marquee selection and node selection toggles", async () => {
@@ -3049,7 +3246,8 @@ describe("graph inspector panel", () => {
     expect(helperStart).toBeGreaterThan(-1);
     expect(helperBlock).toContain("getRouteBlockingCandidates(movedNodes)");
     expect(helperBlock).toContain("movedCandidateBounds");
-    expect(helperBlock).toContain("boxesOverlap(routePointBounds(route.points, 8), movedCandidateBounds)");
+    expect(helperBlock).toContain("routeSpatialIndexRenderBounds(routedEdgeSpatialIndex, edge.id, 8) ?? routeRenderBounds(route, 8)");
+    expect(helperBlock).toContain("boxesOverlap(routeBounds, movedCandidateBounds)");
     expect(helperBlock).toContain("getRouteBlockingCandidateNodesFromBoxes");
     expect(helperBlock).toContain("routedEdgeById.get(edge.id)");
     expect(helperBlock).toContain("baseRoutePoints[edge.id]");
@@ -3177,7 +3375,8 @@ describe("graph inspector panel", () => {
     expect(helperStart).toBeGreaterThan(-1);
     expect(helperBlock).toContain("movedIds.size > MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES");
     expect(helperBlock).toContain("originalPositions[node.id]");
-    expect(helperBlock).toContain("routePointBounds(route.points, 8)");
+    expect(helperBlock).toContain("routeSpatialIndexRenderBounds(routedEdgeSpatialIndex, edge.id, 8) ?? routeRenderBounds(route, 8)");
+    expect(source).not.toContain("const routePointBounds =");
     expect(helperBlock).toContain("routeTouchesExpandedBoxes");
     expect(helperBlock).toContain("movedIds.has(edge.sourceId) || movedIds.has(edge.targetId)");
     expect(scheduleBlock).toContain("routePointsNearOriginalMovedNodes");
@@ -4950,6 +5149,11 @@ describe("graph inspector panel", () => {
     expect(source).toContain("className=\"lod-route-layer-chunk\"");
     expect(nodeMarkupBlock).toContain("const lodCanvasNodeChunks = useMemo");
     expect(nodeMarkupBlock).toContain("diagram-node lod-node");
+    expect(nodeMarkupBlock).toContain("customSingleTerminalAnchorToken(node, libraryTemplateByKind.get(node.kind))");
+    expect(nodeMarkupBlock).toContain("custom-terminal-lod-node");
+    expect(nodeMarkupBlock).toContain("lod-terminal-layer");
+    expect(nodeMarkupBlock).toContain("buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette)");
+    expect(nodeMarkupBlock).toContain("if (customTerminalAnchorToken) {");
     expect(nodeMarkupBlock).not.toContain("selectedNodeIdSet.has(node.id)");
     expect(nodeMarkupBlock).toContain("data-node-id");
     expect(source).toContain("handleLodNodePointerDown");
@@ -4968,7 +5172,12 @@ describe("graph inspector panel", () => {
     expect(renderBlock).not.toContain("node.terminals.map");
     expect(renderBlock).not.toContain("nodeLabelShouldRender");
     expect(styles).toContain(".lod-node-selection");
+    expect(styles).toContain(".lod-node-selection-layer");
     expect(styles).toContain("vector-effect: non-scaling-stroke");
+    const lodSelectionLayerStart = styles.indexOf(".lod-node-selection-layer");
+    const lodSelectionLayerEnd = styles.indexOf("}", lodSelectionLayerStart);
+    const lodSelectionLayerBlock = styles.slice(lodSelectionLayerStart, lodSelectionLayerEnd);
+    expect(lodSelectionLayerBlock).toContain("pointer-events: none");
   });
 
   test("keeps left library panels memoized across graph-only drag commits", async () => {

@@ -424,9 +424,17 @@ function nodeAffectsRouteSpatialBounds(previousNode: ModelNode, nextNode: ModelN
   );
 }
 
-function nodeAffectsRouteGeometry(previousNode: ModelNode, nextNode: ModelNode) {
+function nodeAffectsNodeSpatialIndex(previousNode: ModelNode, nextNode: ModelNode) {
+  return nodeAffectsRouteSpatialBounds(previousNode, nextNode) || nodeRouteTerminalsChanged(previousNode, nextNode);
+}
+
+function nodeAffectsRouteGeometry(
+  previousNode: ModelNode,
+  nextNode: ModelNode,
+  routeSpatialBoundsChanged = nodeAffectsRouteSpatialBounds(previousNode, nextNode)
+) {
   return (
-    nodeAffectsRouteSpatialBounds(previousNode, nextNode) ||
+    routeSpatialBoundsChanged ||
     graphNodeLayerId(previousNode) !== graphNodeLayerId(nextNode) ||
     nodeRouteTerminalsChanged(previousNode, nextNode)
   );
@@ -469,9 +477,13 @@ function routePointArrayChanged(previousPoints: readonly { x: number; y: number 
   return (previousPoints ?? []).some((point, index) => pointChanged(point, nextPoints?.[index]));
 }
 
-function edgeAffectsRouteGeometry(previousEdge: Edge, nextEdge: Edge) {
+function edgeAffectsRouteGeometry(
+  previousEdge: Edge,
+  nextEdge: Edge,
+  endpointChanged = edgeEndpointChanged(previousEdge, nextEdge)
+) {
   return (
-    edgeEndpointChanged(previousEdge, nextEdge) ||
+    endpointChanged ||
     pointChanged(previousEdge.sourcePoint, nextEdge.sourcePoint) ||
     pointChanged(previousEdge.targetPoint, nextEdge.targetPoint) ||
     routePointArrayChanged(previousEdge.manualPoints, nextEdge.manualPoints)
@@ -621,7 +633,7 @@ function nextNodeSpatialIndexForNodes(store: GraphStore, nodeList: readonly Mode
     if (!previousNode) {
       return buildGraphNodeSpatialIndex(nodeList);
     }
-    if (previousNode !== nextNode && nodeAffectsRouteSpatialBounds(previousNode, nextNode)) {
+    if (previousNode !== nextNode && nodeAffectsNodeSpatialIndex(previousNode, nextNode)) {
       spatialUpdates.push({ previousNode, nextNode });
     }
   }
@@ -828,10 +840,11 @@ export function graphStorePatchNodesFromArray(
     nodeList[index] = nextNode;
     nodesByLayerId = patchNodeLayerIndex(nodesByLayerId, previousNode, nextNode);
     busNodeIdSet = patchBusNodeIdSet(busNodeIdSet, previousNode, nextNode);
+    const routeSpatialBoundsChanged = nodeAffectsRouteSpatialBounds(previousNode, nextNode);
     elementTreeChanged ||= nodeAffectsElementTree(previousNode, nextNode);
-    routeGeometryChanged ||= nodeAffectsRouteGeometry(previousNode, nextNode);
+    routeGeometryChanged ||= nodeAffectsRouteGeometry(previousNode, nextNode, routeSpatialBoundsChanged);
     topologyChanged ||= nodeAffectsTopology(previousNode, nextNode);
-    if (nodeAffectsRouteSpatialBounds(previousNode, nextNode)) {
+    if (nodeAffectsNodeSpatialIndex(previousNode, nextNode)) {
       spatialUpdates.push({ previousNode, nextNode });
     }
   }
@@ -882,10 +895,11 @@ export function graphStorePatchNodes(store: GraphStore, nodeUpdates: Iterable<Mo
     nodeList[index] = nextNode;
     nodesByLayerId = patchNodeLayerIndex(nodesByLayerId, previousNode, nextNode);
     busNodeIdSet = patchBusNodeIdSet(busNodeIdSet, previousNode, nextNode);
+    const routeSpatialBoundsChanged = nodeAffectsRouteSpatialBounds(previousNode, nextNode);
     elementTreeChanged ||= nodeAffectsElementTree(previousNode, nextNode);
-    routeGeometryChanged ||= nodeAffectsRouteGeometry(previousNode, nextNode);
+    routeGeometryChanged ||= nodeAffectsRouteGeometry(previousNode, nextNode, routeSpatialBoundsChanged);
     topologyChanged ||= nodeAffectsTopology(previousNode, nextNode);
-    if (nodeAffectsRouteSpatialBounds(previousNode, nextNode)) {
+    if (nodeAffectsNodeSpatialIndex(previousNode, nextNode)) {
       spatialUpdates.push({ previousNode, nextNode });
     }
   }
@@ -949,10 +963,11 @@ export function graphStorePatchEdgesFromArray(
     addEdgeToAdjacency(edgesByNodeId, nextEdge.targetId, nextEdge);
     removeEdgeFromTerminalRef(edgesByTerminalRef, previousEdge);
     addEdgeToTerminalRef(edgesByTerminalRef, nextEdge);
-    elementTreeChanged ||= edgeAffectsElementTree(previousEdge, nextEdge);
-    edgeEndpointChangedInPatch ||= edgeEndpointChanged(previousEdge, nextEdge);
-    routeGeometryChanged ||= edgeAffectsRouteGeometry(previousEdge, nextEdge);
-    topologyChanged ||= edgeAffectsTopology(previousEdge, nextEdge);
+    const endpointChanged = edgeEndpointChanged(previousEdge, nextEdge);
+    elementTreeChanged ||= endpointChanged;
+    edgeEndpointChangedInPatch ||= endpointChanged;
+    routeGeometryChanged ||= edgeAffectsRouteGeometry(previousEdge, nextEdge, endpointChanged);
+    topologyChanged ||= endpointChanged;
   }
   return changed
     ? {
@@ -1003,10 +1018,11 @@ export function graphStorePatchEdges(store: GraphStore, edgeUpdates: Iterable<Ed
     addEdgeToAdjacency(edgesByNodeId, nextEdge.targetId, nextEdge);
     removeEdgeFromTerminalRef(edgesByTerminalRef, previousEdge);
     addEdgeToTerminalRef(edgesByTerminalRef, nextEdge);
-    elementTreeChanged ||= edgeAffectsElementTree(previousEdge, nextEdge);
-    edgeEndpointChangedInPatch ||= edgeEndpointChanged(previousEdge, nextEdge);
-    routeGeometryChanged ||= edgeAffectsRouteGeometry(previousEdge, nextEdge);
-    topologyChanged ||= edgeAffectsTopology(previousEdge, nextEdge);
+    const endpointChanged = edgeEndpointChanged(previousEdge, nextEdge);
+    elementTreeChanged ||= endpointChanged;
+    edgeEndpointChangedInPatch ||= endpointChanged;
+    routeGeometryChanged ||= edgeAffectsRouteGeometry(previousEdge, nextEdge, endpointChanged);
+    topologyChanged ||= endpointChanged;
   }
   return changed
     ? {
@@ -1053,10 +1069,11 @@ export function graphStoreApplyPatch(store: GraphStore, patch: GraphStorePatch):
     const nextEdge = upsertById.get(edgeId) ?? currentEdge;
     if (nextEdge !== currentEdge) {
       changed = true;
-      elementTreeChanged ||= edgeAffectsElementTree(currentEdge, nextEdge);
-      edgeEndpointChangedInPatch ||= edgeEndpointChanged(currentEdge, nextEdge);
-      routeGeometryChanged ||= edgeAffectsRouteGeometry(currentEdge, nextEdge);
-      topologyChanged ||= edgeAffectsTopology(currentEdge, nextEdge);
+      const endpointChanged = edgeEndpointChanged(currentEdge, nextEdge);
+      elementTreeChanged ||= endpointChanged;
+      edgeEndpointChangedInPatch ||= endpointChanged;
+      routeGeometryChanged ||= edgeAffectsRouteGeometry(currentEdge, nextEdge, endpointChanged);
+      topologyChanged ||= endpointChanged;
     }
     edgeList.push(nextEdge);
     upsertById.delete(edgeId);

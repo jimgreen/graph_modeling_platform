@@ -1517,6 +1517,22 @@ describe("power system model", () => {
     const acSource = createDefaultNode("ac-source", { x: 200, y: 120 });
     expect(stubStartPoint(acSource).x).toBeCloseTo(Math.min(acSource.size.width, acSource.size.height) * 0.37);
 
+    const withTerminalAnchor = (node: ModelNode, anchor: Point): ModelNode => ({
+      ...node,
+      terminals: [{ ...node.terminals[0], anchor }]
+    });
+    const glyphScale = (node: ModelNode) => Math.max(1, Math.max(node.size.width, node.size.height) / 100);
+    const pvSource = createDefaultNode("ac-pv-source", { x: 200, y: 120 });
+    const windSource = createDefaultNode("ac-wind-source", { x: 200, y: 120 });
+    const thermalSource = createDefaultNode("ac-thermal-source", { x: 200, y: 120 });
+    const hydroSource = createDefaultNode("ac-hydro-source", { x: 200, y: 120 });
+    const nuclearSource = createDefaultNode("ac-nuclear-source", { x: 200, y: 120 });
+    expect(stubStartPoint(withTerminalAnchor(pvSource, { x: 0, y: -0.5 })).y).toBeCloseTo(-22 * glyphScale(pvSource));
+    expect(stubStartPoint(withTerminalAnchor(windSource, { x: 0, y: -0.5 })).y).toBeCloseTo(-18 * glyphScale(windSource));
+    expect(stubStartPoint(withTerminalAnchor(thermalSource, { x: 0, y: -0.5 })).y).toBeCloseTo(-32 * glyphScale(thermalSource));
+    expect(stubStartPoint(withTerminalAnchor(hydroSource, { x: 0, y: -0.5 })).y).toBeCloseTo(-24 * glyphScale(hydroSource));
+    expect(stubStartPoint(withTerminalAnchor(nuclearSource, { x: 0, y: -0.5 })).y).toBeCloseTo(-22 * glyphScale(nuclearSource));
+
     const converter = createDefaultNode("acac-converter", { x: 200, y: 120 });
     const converterGlyphScale = Math.max(1, Math.max(converter.size.width, converter.size.height) / 100);
     expect(stubStartPoint(converter, converter.terminals[0]).x).toBeCloseTo(-converter.size.width / 2 + 8 * converterGlyphScale);

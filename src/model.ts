@@ -2033,6 +2033,8 @@ function defaultStaticButtonParams(kind: DeviceKind): Record<string, string> {
     buttonTargetProjectName: "",
     buttonTargetLayerId: "",
     buttonTargetLayerName: "",
+    buttonTargetLayerIds: "",
+    buttonTargetLayerNames: "",
     buttonCommand: "none"
   };
 }
@@ -5335,6 +5337,21 @@ function terminalStubVisibleBoundaryDistance(
   }
   if (glyphVariant === "hydrogen-source") {
     return Math.min(size.width, size.height) * 0.35;
+  }
+  if (baseKind.includes("wind-source")) {
+    return terminal.anchor.y < 0 ? scaled(18) : scaled(22);
+  }
+  if (baseKind.includes("pv-source")) {
+    return terminal.anchor.y < 0 ? scaled(22) : scaled(14);
+  }
+  if (baseKind.includes("thermal-source")) {
+    return terminal.anchor.y < 0 ? scaled(32) : scaled(18);
+  }
+  if (baseKind.includes("hydro-source")) {
+    return terminal.anchor.y < 0 ? scaled(24) : scaled(22);
+  }
+  if (baseKind.includes("nuclear-source")) {
+    return scaled(22);
   }
   if (isHeatSourceGlyphVariant(glyphVariant)) {
     const sourceRadius = Math.min(w, h) * 0.27;

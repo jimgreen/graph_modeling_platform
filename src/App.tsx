@@ -239,6 +239,7 @@ import {
 import {
   queryRouteSpatialIndex,
   routeRenderBounds,
+  routeSpatialIndexRenderBounds,
   routeStorePatchRoutes,
   routeStoreSetRoutes,
   type RouteStore
@@ -284,6 +285,7 @@ const ENABLE_REACT_FLOW_PREVIEW = import.meta.env.DEV;
 const ReactFlowPreview = ENABLE_REACT_FLOW_PREVIEW ? lazy(() => import("./ReactFlowPreview")) : null;
 
 type ToolMode = "select" | "connect" | "static-draw";
+type InteractionMode = "browse" | "edit";
 type StaticButtonVisualState = "hover" | "pressed" | "clicked";
 type StaticButtonPointerSnapshot = {
   nodeId: string;
@@ -1057,7 +1059,7 @@ const voltageColorKeyForTerminal = (node: ModelNode, terminal: ModelNode["termin
   return voltage ? `${terminal.type}:${voltage}` : "";
 };
 
-const DEFAULT_CANVAS_WIDTH = 1980;
+const DEFAULT_CANVAS_WIDTH = 1920;
 const DEFAULT_CANVAS_HEIGHT = 1024;
 const MIN_CANVAS_WIDTH = 640;
 const MIN_CANVAS_HEIGHT = 360;
@@ -1434,6 +1436,16 @@ type CanvasViewBox = {
   width: number;
   height: number;
 };
+type CanvasPanningState = {
+  clientX: number;
+  clientY: number;
+  viewBox: CanvasViewBox;
+  canvasOffset: Point;
+  scrollLeft: number;
+  scrollTop: number;
+  horizontalScrollMode: boolean;
+  verticalScrollMode: boolean;
+} | null;
 type ConnectionRedrawScope = "selected" | "viewport" | "all";
 const CONNECTION_REDRAW_SCOPE_LABELS: Record<ConnectionRedrawScope, string> = {
   selected: "选中连接线",
@@ -1484,8 +1496,14 @@ const sameCanvasViewBox = (first: CanvasViewBox, second: CanvasViewBox) =>
   Math.round(first.y) === Math.round(second.y) &&
   Math.round(first.width) === Math.round(second.width) &&
   Math.round(first.height) === Math.round(second.height);
+function canvasFrameHasHorizontalScrollableRange(frame: HTMLElement) {
+  return frame.scrollWidth - frame.clientWidth > 1;
+}
+function canvasFrameHasVerticalScrollableRange(frame: HTMLElement) {
+  return frame.scrollHeight - frame.clientHeight > 1;
+}
 function canvasFrameHasScrollableRange(frame: HTMLElement) {
-  return frame.scrollWidth - frame.clientWidth > 1 || frame.scrollHeight - frame.clientHeight > 1;
+  return canvasFrameHasHorizontalScrollableRange(frame) || canvasFrameHasVerticalScrollableRange(frame);
 }
 function renderedCanvasFullyFitsFrame(frameRect: RectLike, svgRect: RectLike) {
   return svgRect.width <= frameRect.width + 1 &&
@@ -2148,6 +2166,8 @@ const PARAM_LABELS: Record<string, string> = {
   buttonTargetProjectName: "目标模型名称",
   buttonTargetLayerId: "目标图层",
   buttonTargetLayerName: "目标图层名称",
+  buttonTargetLayerIds: "目标图层",
+  buttonTargetLayerNames: "目标图层名称",
   buttonCommand: "执行命令",
   vbase: "电压等级",
   highVbase: "高压侧电压等级",
@@ -2245,6 +2265,53 @@ const STATIC_BUTTON_COMMAND_LABELS: Record<string, string> = {
   zoomIn: "放大",
   zoomOut: "缩小",
   resetZoom: "重置缩放"
+};
+
+const parseStaticButtonTargetLayerValues = (value?: string) => {
+  const text = value?.trim();
+  if (!text) {
+    return [];
+  }
+  if (text.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        return Array.from(new Set(parsed.map((item) => String(item).trim()).filter(Boolean)));
+      }
+    } catch {
+      // Fall through to legacy delimiter parsing.
+    }
+  }
+  return Array.from(new Set(text.split(/[,\n;|]/).map((item) => item.trim()).filter(Boolean)));
+};
+
+const serializeStaticButtonTargetLayerIds = (layerIds: string[]) => JSON.stringify(layerIds);
+
+const resolveStaticButtonTargetLayers = (node: ModelNode, availableLayers: ModelLayer[]) => {
+  const layerById = new Map(availableLayers.map((layer) => [layer.id, layer]));
+  const layerByName = new Map(availableLayers.map((layer) => [layer.name.trim(), layer]));
+  const targetLayerIds = parseStaticButtonTargetLayerValues(node.params.buttonTargetLayerIds);
+  const targetLayerNames = parseStaticButtonTargetLayerValues(node.params.buttonTargetLayerNames);
+  const legacyTargetLayerId = node.params.buttonTargetLayerId?.trim();
+  const legacyTargetLayerName = node.params.buttonTargetLayerName?.trim();
+  const idCandidates = targetLayerIds.length > 0 ? targetLayerIds : legacyTargetLayerId ? [legacyTargetLayerId] : [];
+  const nameCandidates = targetLayerNames.length > 0 ? targetLayerNames : legacyTargetLayerName ? [legacyTargetLayerName] : [];
+  const selectedLayers: ModelLayer[] = [];
+  const selectedLayerIds = new Set<string>();
+  const addLayer = (layer?: ModelLayer) => {
+    if (!layer || selectedLayerIds.has(layer.id)) {
+      return;
+    }
+    selectedLayerIds.add(layer.id);
+    selectedLayers.push(layer);
+  };
+  for (const layerId of idCandidates) {
+    addLayer(layerById.get(layerId));
+  }
+  for (const layerName of nameCandidates) {
+    addLayer(layerByName.get(layerName));
+  }
+  return selectedLayers;
 };
 
 function paramOptionsForSection(key: string, section?: string) {
@@ -5741,6 +5808,17 @@ function tokenArraysEqual(first: readonly unknown[], second: readonly unknown[])
   return true;
 }
 
+function customSingleTerminalAnchorToken(node: ModelNode, template?: DeviceTemplate): string {
+  if (isBusNode(node) || isStaticNode(node) || node.terminals.length !== 1) {
+    return "";
+  }
+  const anchor = node.terminals[0]?.anchor;
+  const templateAnchor = template?.terminalAnchors?.[0] ?? { x: 0.5, y: 0 };
+  return anchor && (anchor.x !== templateAnchor.x || anchor.y !== templateAnchor.y)
+    ? `${formatSvgNumber(anchor.x)},${formatSvgNumber(anchor.y)}`
+    : "";
+}
+
 function stableSvgMarkupChunks<T>(
   items: readonly T[],
   cache: StableSvgMarkupChunkCache,
@@ -5854,27 +5932,38 @@ function exportSvgLayerScriptMarkup(includeScript: boolean) {
     });
     const activeLayerId = root.getAttribute("data-export-active-layer-id") || "";
     root.querySelectorAll("[data-export-button-action='layer']").forEach((button) => {
-      button.classList.toggle("export-active-layer-button", button.getAttribute("data-export-button-target-layer-id") === activeLayerId);
+      const targetLayerIds = exportSvgButtonTargetLayerIds(button);
+      button.classList.toggle("export-active-layer-button", targetLayerIds.includes(activeLayerId));
     });
   }
-  function exportSvgActivateLayer(layerId) {
-    if (!layerId) {
+  function exportSvgButtonTargetLayerIds(button) {
+    const encodedLayerIds = button.getAttribute("data-export-button-target-layer-ids") || button.getAttribute("data-export-button-target-layer-id") || "";
+    return encodedLayerIds.split(",").map((id) => id.trim()).filter(Boolean);
+  }
+  function exportSvgActivateLayers(layerIds) {
+    const validLayerIds = layerIds.filter((layerId) => layerId && layerId in layerState);
+    if (validLayerIds.length === 0) {
       return;
     }
-    if (!(layerId in layerState)) {
-      layerState[layerId] = true;
-    }
-    layerState[layerId] = true;
-    root.setAttribute("data-export-active-layer-id", layerId);
+    const targetLayerIdSet = new Set(validLayerIds);
+    Object.keys(layerState).forEach((layerId) => {
+      layerState[layerId] = targetLayerIdSet.has(layerId);
+    });
+    root.setAttribute("data-export-active-layer-id", validLayerIds[0]);
     exportSvgApplyLayerVisibility();
+  }
+  function exportSvgActivateLayer(layerId) {
+    exportSvgActivateLayers([layerId]);
   }
   root.exportSvgApplyLayerVisibility = exportSvgApplyLayerVisibility;
   root.exportSvgActivateLayer = exportSvgActivateLayer;
+  root.exportSvgActivateLayers = exportSvgActivateLayers;
   root.querySelectorAll("[data-export-button-action='layer']").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      exportSvgActivateLayer(button.getAttribute("data-export-button-target-layer-id") || "");
+      const targetLayerIds = exportSvgButtonTargetLayerIds(button);
+      exportSvgActivateLayers(targetLayerIds);
     });
   });
   exportSvgApplyLayerVisibility();
@@ -5893,27 +5982,21 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
     ? canvasSize.activeLayerId!
     : normalizedLayers[0]?.id ?? DEFAULT_MODEL_LAYER_ID;
   const layerById = new Map(normalizedLayers.map((layer) => [layer.id, layer]));
-  const layerIdByName = new Map(normalizedLayers.map((layer) => [layer.name.trim(), layer.id]));
   const layerVisible = (layerId: string) => layerById.get(layerId)?.visible !== false;
   const nodeLayerId = (node: ModelNode) =>
     layerById.has(node.layerId ?? "") ? node.layerId! : DEFAULT_MODEL_LAYER_ID;
-  const resolveExportLayerButtonTargetId = (node: ModelNode) => {
+  const resolveExportLayerButtonTargetIds = (node: ModelNode) => {
     if (!isStaticButtonCapableKind(node.kind) || node.params.buttonEnabled !== "1" || node.params.buttonActionType !== "layer") {
-      return "";
+      return [];
     }
-    const targetLayerId = node.params.buttonTargetLayerId?.trim();
-    if (targetLayerId && layerById.has(targetLayerId)) {
-      return targetLayerId;
-    }
-    const targetLayerName = node.params.buttonTargetLayerName?.trim();
-    return targetLayerName ? layerIdByName.get(targetLayerName) ?? "" : "";
+    return resolveStaticButtonTargetLayers(node, normalizedLayers).map((layer) => layer.id);
   };
   const exportLayerDefinitionsMarkup = normalizedLayers
     .map((layer) =>
       `<g data-export-layer-def="${escapeXml(layer.id)}" data-export-layer-name="${escapeXml(layer.name)}" data-export-layer-visible="${layer.visible === false ? "0" : "1"}" data-export-layer-active="${layer.id === activeExportLayerId ? "1" : "0"}"/>`
     )
     .join("\n");
-  const hasLayerButtons = nodes.some((node) => Boolean(resolveExportLayerButtonTargetId(node)));
+  const hasLayerButtons = nodes.some((node) => resolveExportLayerButtonTargetIds(node).length > 0);
   const includeLayerScript = hasLayerButtons || normalizedLayers.length > 1;
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const edgeById = new Map(edges.map((edge) => [edge.id, edge]));
@@ -5957,11 +6040,11 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
   const nodeMarkup = nodes
     .map((node) => {
       const layerId = nodeLayerId(node);
-      const targetLayerId = resolveExportLayerButtonTargetId(node);
-      const exportButtonAttributes = targetLayerId
-        ? ` data-export-button-action="layer" data-export-button-target-layer-id="${escapeXml(targetLayerId)}"`
+      const targetLayerIds = resolveExportLayerButtonTargetIds(node);
+      const exportButtonAttributes = targetLayerIds.length > 0
+        ? ` data-export-button-action="layer" data-export-button-target-layer-id="${escapeXml(targetLayerIds[0])}" data-export-button-target-layer-ids="${escapeXml(targetLayerIds.join(","))}"`
         : "";
-      const exportButtonClass = targetLayerId ? " export-static-button" : "";
+      const exportButtonClass = targetLayerIds.length > 0 ? " export-static-button" : "";
       const imageHref = resolveNodeImage(node, imageAssets);
       const foregroundHref = resolveNodeForegroundImage(node, imageAssets);
       const allowNodeImage = !isBusNode(node);
@@ -6211,6 +6294,9 @@ export function App() {
   const [activeProjectId, setActiveProjectId] = useState<string>(() => initialDraft?.activeProjectId ?? "");
   const [activeSchemeId, setActiveSchemeId] = useState<string>(() => initialDraft?.activeSchemeId ?? "");
   const [mode, setMode] = useState<ToolMode>("select");
+  const [interactionMode, setInteractionMode] = useState<InteractionMode>("browse");
+  const isBrowseMode = interactionMode === "browse";
+  const isEditMode = interactionMode === "edit";
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string>("");
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
@@ -6241,15 +6327,12 @@ export function App() {
   const viewBoxRef = useRef<CanvasViewBox>(viewBox);
   viewBoxRef.current = viewBox;
   const [canvasCenterRequest, setCanvasCenterRequest] = useState(0);
-  const [panning, setPanning] = useState<{
-    clientX: number;
-    clientY: number;
-    viewBox: typeof viewBox;
-    canvasOffset: Point;
-    scrollLeft: number;
-    scrollTop: number;
-    scrollMode: boolean;
-  } | null>(null);
+  const [panning, setPanning] = useState<CanvasPanningState>(null);
+  const panningRef = useRef<CanvasPanningState>(null);
+  const setCanvasPanning = (next: CanvasPanningState) => {
+    panningRef.current = next;
+    setPanning(next);
+  };
   const [marquee, setMarquee] = useState<Marquee>(null);
   const [modifierSelectionPress, setModifierSelectionPressState] = useState<ModifierSelectionPressState>(null);
   const [canvasClipboard, setCanvasClipboard] = useState<CanvasClipboard>(EMPTY_CANVAS_CLIPBOARD);
@@ -7248,6 +7331,9 @@ export function App() {
     setColorDisplayMode((current) => nextMode ?? (current === "energy" ? "voltage" : "energy"));
   };
   const openColorPaletteDialog = () => {
+    if (!requireEditMode("设置配色")) {
+      return;
+    }
     const filled = fillMissingVoltageColorRows(normalizeColorPalette(colorPalette), collectCurrentModelVoltageColorKeys());
     setColorPaletteDraft(filled.palette);
     setColorPaletteTab(colorDisplayMode);
@@ -7260,6 +7346,9 @@ export function App() {
     }
   };
   const saveColorPalette = () => {
+    if (!requireEditMode("保存配色")) {
+      return;
+    }
     const normalized = normalizeColorPalette(colorPaletteDraft);
     setColorPalette(normalized);
     setColorDisplayMode(colorPaletteTab);
@@ -7757,6 +7846,9 @@ export function App() {
     return configuredLayerIds.filter((layerId) => validLayerIds.has(layerId));
   };
   const toggleBackgroundLayer = (layerId: string) => {
+    if (!requireEditMode("修改背景页面图层")) {
+      return;
+    }
     pushUndoSnapshot();
     setBackgroundLayerIds((current) => current.includes(layerId)
       ? current.filter((item) => item !== layerId)
@@ -9530,6 +9622,66 @@ export function App() {
     setHasUnsavedChanges(true);
     setRouteRenderingReady(true);
   };
+  const patchSingleTerminalAnchorFromPoint = (
+    nodeId: string,
+    terminalId: string,
+    point: Point,
+    originalMovingPoint: Point
+  ) => {
+    markGraphDirtyForInteractiveCommit();
+    setGraphStore((current) => {
+      const currentNode = current.nodeMap.get(nodeId);
+      if (!currentNode || isBusNode(currentNode) || currentNode.terminals.length !== 1) {
+        return current;
+      }
+      const anchor = snapSingleTerminalAnchorToNearestSide(currentNode, point);
+      let changed = false;
+      const nextTerminals = currentNode.terminals.map((terminal) => {
+        if (terminal.id !== terminalId || sameOptionalPoint(terminal.anchor, anchor)) {
+          return terminal;
+        }
+        changed = true;
+        return { ...terminal, anchor };
+      });
+      if (!changed) {
+        return current;
+      }
+      const nextNode = { ...currentNode, terminals: nextTerminals };
+      const nextNodes = overlayGraphStoreNodes(current, [nextNode]);
+      const dirtyEdges = (current.edgesByNodeId.get(nodeId) ?? []).filter((edge) =>
+        (edge.sourceId === nodeId && edge.sourceTerminalId === terminalId) ||
+        (edge.targetId === nodeId && edge.targetTerminalId === terminalId)
+      );
+      const dirtyEdgeIds = dirtyEdges.map((edge) => edge.id);
+      markRouteEdgesDirty(dirtyEdgeIds);
+      markStoredRouteEdgesDirty(dirtyEdgeIds);
+      const nextEdges = dirtyEdges.map((edge) => {
+        const sourceAffected = edge.sourceId === nodeId && edge.sourceTerminalId === terminalId;
+        const sourceNode = current.nodeMap.get(edge.sourceId);
+        const targetNode = current.nodeMap.get(edge.targetId);
+        const nextSourceNode = edge.sourceId === nodeId ? nextNode : sourceNode;
+        const nextTargetNode = edge.targetId === nodeId ? nextNode : targetNode;
+        const slidePatch = sourceNode && targetNode && nextSourceNode && nextTargetNode
+          ? resolveStraightBusSlideEndpoint({
+              edge,
+              sourceNode,
+              targetNode,
+              nextSourceNode,
+              nextTargetNode,
+              movingEndpoint: sourceAffected ? "source" : "target",
+              nodes: current.nodes,
+              nextNodes,
+              originalMovingPoint
+            })
+          : null;
+        return slidePatch ? { ...edge, ...slidePatch } : edge;
+      });
+      return graphStoreApplyPatch(current, {
+        nodeUpdates: [nextNode],
+        edgeUpserts: nextEdges
+      });
+    });
+  };
   const rebuildEdgeUpdatesAfterNodeGeometryChange = (
     nextNodes: ModelNode[],
     changedNodeIds: Iterable<string>,
@@ -10938,7 +11090,9 @@ export function App() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isGlobalSaveShortcut(event)) {
         event.preventDefault();
-        if (saveRequired) {
+        if (!isEditMode) {
+          writeOperationLog("浏览模式下不能保存，请先切换到编辑模式");
+        } else if (saveRequired) {
           saveCurrentProject();
         }
         return;
@@ -10953,10 +11107,53 @@ export function App() {
       const isRecordShortcutTarget = shortcutScope === "records";
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
-        undoLastOperation();
+        if (isEditMode) {
+          undoLastOperation();
+        } else {
+          writeOperationLog("浏览模式下不能撤销编辑操作，请先切换到编辑模式");
+        }
         return;
       }
       if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
+        return;
+      }
+      if (!isEditMode) {
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a" && isCanvasShortcutTarget) {
+          event.preventDefault();
+          const selectableEdgeIds = activeLayerEdges.map((edge) => edge.id);
+          setCanvasSelectionScope("group");
+          setSelectedNodeIds(activeLayerNodes.map((node) => node.id));
+          setSelectedEdgeIds(selectableEdgeIds);
+          setSelectedEdgeId(selectableEdgeIds[0] ?? "");
+          setConnectSource(null);
+          resetConnectPreviewState();
+          setRewiring(null);
+          clearRecordSelection();
+          return;
+        }
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
+          if (isRecordShortcutTarget && (selectedProjectId || selectedSchemeId || selectedProjectIds.length > 0 || selectedSchemeIds.length > 0)) {
+            event.preventDefault();
+            copySelectedRecord();
+          } else if (isCanvasShortcutTarget) {
+            event.preventDefault();
+            copySelection();
+          }
+          return;
+        }
+        if (
+          ((event.ctrlKey || event.metaKey) && ["x", "v"].includes(event.key.toLowerCase())) ||
+          event.key === "Delete" ||
+          event.key === "Backspace" ||
+          event.key === "ArrowLeft" ||
+          event.key === "ArrowRight" ||
+          event.key === "ArrowUp" ||
+          event.key === "ArrowDown"
+        ) {
+          event.preventDefault();
+          releaseKeyboardMoveKey(event.key);
+          writeOperationLog("浏览模式下不能修改图元，请先切换到编辑模式");
+        }
         return;
       }
       if (libraryPlacement && isCanvasShortcutTarget) {
@@ -11061,7 +11258,7 @@ export function App() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, canvasBounds, canvasClipboard, canvasSelectionScope, deviceIndexCounters, displaySelectedEdgeIds, displaySelectedNodeIds, edges, hasUnsavedChanges, libraryPlacement, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, staticDrawing, topologyErrors, viewBox]);
+  }, [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, canvasBounds, canvasClipboard, canvasSelectionScope, deviceIndexCounters, displaySelectedEdgeIds, displaySelectedNodeIds, edges, hasUnsavedChanges, isEditMode, libraryPlacement, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, staticDrawing, topologyErrors, viewBox]);
 
   useEffect(() => {
     if (leftPanelTab !== "projects") {
@@ -11253,6 +11450,14 @@ export function App() {
   const writeOperationLog = (message: string) => {
     const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
     setOperationLogText(`${time} ${message}`);
+  };
+
+  const requireEditMode = (action: string) => {
+    if (isEditMode) {
+      return true;
+    }
+    writeOperationLog(`浏览模式下不能${action}，请先切换到编辑模式`);
+    return false;
   };
 
   const persistDeviceLibraryChange = (
@@ -11505,6 +11710,11 @@ export function App() {
     if (event.button !== 0 || !svgRef.current || !activeLayerNodeIdSet.has(node.id)) {
       return;
     }
+    if (isBrowseMode) {
+      selectCanvasGraphics([node.id], [], { scope: "direct" });
+      activateInspectorFromCanvas();
+      return;
+    }
     if (hasCanvasSelectionModifier(event)) {
       startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
       return;
@@ -11529,6 +11739,11 @@ export function App() {
     event.preventDefault();
     event.stopPropagation();
     if (event.button !== 0 || !svgRef.current || !activeLayerNodeIdSet.has(node.id)) {
+      return;
+    }
+    if (isBrowseMode) {
+      selectCanvasGraphics([node.id], [], { scope: "direct" });
+      activateInspectorFromCanvas();
       return;
     }
     if (hasCanvasSelectionModifier(event)) {
@@ -11588,6 +11803,9 @@ export function App() {
   };
 
   const setSelectedNodeLabelDisplayMode = (mode: NodeLabelDisplayMode) => {
+    if (!requireEditMode("修改图元标识显示方式")) {
+      return;
+    }
     if (activeSelectedNodeIds.length === 0) {
       return;
     }
@@ -11636,6 +11854,9 @@ export function App() {
   };
 
   const cutSelection = () => {
+    if (!requireEditMode("剪切图元")) {
+      return;
+    }
     const action = resolveCanvasDeleteAction({
       selectedNodeCount: activeSelectedNodeIds.length,
       hasSelectedEdge: activeSelectedEdgeIds.length > 0
@@ -11674,6 +11895,9 @@ export function App() {
   };
 
   const pasteSelection = () => {
+    if (!requireEditMode("粘贴图元")) {
+      return;
+    }
     if (canvasClipboard.nodes.length === 0 && canvasClipboard.edges.length === 0) {
       return;
     }
@@ -11772,6 +11996,9 @@ export function App() {
   };
 
   const createGraphTemplateType = () => {
+    if (!requireEditMode("新增模板类型")) {
+      return;
+    }
     const rawName = window.prompt("请输入模板类型名称");
     const typeName = normalizeGraphTemplateTypeName(rawName ?? "");
     if (!typeName) {
@@ -11791,6 +12018,9 @@ export function App() {
   };
 
   const openAddTemplateDialog = () => {
+    if (!requireEditMode("添加模板")) {
+      return;
+    }
     if (!canAddTemplateFromSelection) {
       window.alert("请先选中一个图元组合，再添加模板。");
       return;
@@ -11870,6 +12100,9 @@ export function App() {
   };
 
   const dropGraphTemplate = (template: GraphTemplate, pointerPosition: Point) => {
+    if (!requireEditMode("放置模板")) {
+      return;
+    }
     const targetTopLeft = {
       x: pointerPosition.x - template.sourceSize.width / 2,
       y: pointerPosition.y - template.sourceSize.height / 2
@@ -11980,6 +12213,9 @@ export function App() {
   };
 
   const deleteSelection = () => {
+    if (!requireEditMode("删除图元")) {
+      return;
+    }
     if (activeSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0) {
       return;
     }
@@ -12031,6 +12267,9 @@ export function App() {
   };
 
   const groupSelectedGraphics = () => {
+    if (!requireEditMode("组合图元")) {
+      return;
+    }
     if (!canGroupSelectedGraphics) {
       return;
     }
@@ -12055,6 +12294,9 @@ export function App() {
   };
 
   const ungroupSelectedGraphics = () => {
+    if (!requireEditMode("解散组合")) {
+      return;
+    }
     if (!canUngroupSelectedGraphics) {
       return;
     }
@@ -12144,26 +12386,6 @@ export function App() {
       path: ""
     }));
 
-  const routePointBounds = (points: Point[], padding = 0) => {
-    let left = points[0]?.x ?? 0;
-    let right = left;
-    let top = points[0]?.y ?? 0;
-    let bottom = top;
-    for (let index = 1; index < points.length; index += 1) {
-      const point = points[index];
-      left = Math.min(left, point.x);
-      right = Math.max(right, point.x);
-      top = Math.min(top, point.y);
-      bottom = Math.max(bottom, point.y);
-    }
-    return {
-      left: left - padding,
-      right: right + padding,
-      top: top - padding,
-      bottom: bottom + padding
-    };
-  };
-
   const boxesOverlap = (
     first: { left: number; right: number; top: number; bottom: number },
     second: { left: number; right: number; top: number; bottom: number }
@@ -12246,10 +12468,11 @@ export function App() {
       if (!route) {
         return false;
       }
-      const routeBounds = routePointBounds(route.points, 8);
+      const routeBounds = routeSpatialIndexRenderBounds(routedEdgeSpatialIndex, edge.id, 8) ?? routeRenderBounds(route, 8);
       return Boolean(
-        (currentBounds && boxesOverlap(routeBounds, currentBounds)) ||
-        (originalBounds && boxesOverlap(routeBounds, originalBounds))
+        routeBounds &&
+          ((currentBounds && boxesOverlap(routeBounds, currentBounds)) ||
+            (originalBounds && boxesOverlap(routeBounds, originalBounds)))
       );
     });
   };
@@ -12330,7 +12553,8 @@ export function App() {
         continue;
       }
       const route = routedEdgeById.get(edge.id);
-      if (!route || !boxesOverlap(routePointBounds(route.points, 8), movedCandidateBounds)) {
+      const routeBounds = route ? routeSpatialIndexRenderBounds(routedEdgeSpatialIndex, edge.id, 8) ?? routeRenderBounds(route, 8) : null;
+      if (!route || !routeBounds || !boxesOverlap(routeBounds, movedCandidateBounds)) {
         continue;
       }
       if (getRouteBlockingCandidateNodesFromBoxes(route.points, edge, movedCandidates).length === 0) {
@@ -12435,7 +12659,8 @@ export function App() {
         continue;
       }
       const route = routedEdgeById.get(edge.id);
-      if (!route || !boxesOverlap(routePointBounds(route.points, 8), originalBounds)) {
+      const routeBounds = route ? routeSpatialIndexRenderBounds(routedEdgeSpatialIndex, edge.id, 8) ?? routeRenderBounds(route, 8) : null;
+      if (!route || !routeBounds || !boxesOverlap(routeBounds, originalBounds)) {
         continue;
       }
       if (!routeTouchesExpandedBoxes(route.points, originalBoxes)) {
@@ -14284,6 +14509,39 @@ export function App() {
     dragUndoCapturedRef.current = false;
   };
 
+  const cancelActiveEditInteractions = () => {
+    clearDraggingMoveState();
+    setMode("select");
+    setStaticDrawing(null);
+    setLibraryPlacement(null);
+    setConnectSource(null);
+    resetConnectPreviewState();
+    setConnectDropReady(false);
+    setRewiring(null);
+    setTerminalPress(null);
+    setNodeLabelDrag(null);
+    setNodeLabelRotateDrag(null);
+    setManualPathDrag(null);
+    setTransformDrag(null);
+    setCanvasResizeDrag(null);
+    canvasResizeDraftRef.current = null;
+    setCanvasResizeDraft(null);
+    setMarquee(null);
+    setModifierSelectionPress(null);
+    staticButtonPointerRef.current = null;
+  };
+
+  const toggleInteractionMode = () => {
+    if (isEditMode) {
+      cancelActiveEditInteractions();
+      setInteractionMode("browse");
+      writeOperationLog("切换到浏览模式");
+      return;
+    }
+    setInteractionMode("edit");
+    writeOperationLog("切换到编辑模式");
+  };
+
   const finishDraggingMove = (
     activeDragging: DraggingState | null,
     snapTarget: NodeTerminalSnapTarget | null,
@@ -14819,6 +15077,9 @@ export function App() {
   };
 
   const startKeyboardMoveSession = (renderInitial = true) => {
+    if (!requireEditMode("移动图元")) {
+      return null;
+    }
     const moveNodeIds = canvasSelectionScope === "direct" ? displaySelectedNodeIds : activeSelectedNodeIds;
     const moveEdgeIds = canvasSelectionScope === "direct" ? displaySelectedEdgeIds : activeSelectedEdgeIds;
     if (moveNodeIds.length === 0) {
@@ -14876,6 +15137,9 @@ export function App() {
   };
 
   const nudgeSelectionByKeyboard = (key: string, dx: number, dy: number, repeated = false) => {
+    if (!requireEditMode("移动图元")) {
+      return;
+    }
     clearKeyboardMoveCommitSchedule();
     const wasActive = keyboardMoveActiveKeyDeltasRef.current.has(key);
     if (!repeated && !wasActive && !draggingRef.current) {
@@ -14898,6 +15162,9 @@ export function App() {
   };
 
   const moveSelection = (dx: number, dy: number) => {
+    if (!requireEditMode("移动图元")) {
+      return;
+    }
     const moveNodeIds = canvasSelectionScope === "direct" ? displaySelectedNodeIds : activeSelectedNodeIds;
     const moveEdgeIds = canvasSelectionScope === "direct" ? displaySelectedEdgeIds : activeSelectedEdgeIds;
     if (moveNodeIds.length === 0) {
@@ -15011,6 +15278,9 @@ export function App() {
   };
 
   const updateSelectedNode = (patch: Partial<ModelNode>) => {
+    if (!requireEditMode("修改图元")) {
+      return;
+    }
     if (!selectedNodeId) {
       return;
     }
@@ -15123,6 +15393,9 @@ export function App() {
     nodeUpdates: ModelNode[],
     options: { previousNodes?: ModelNode[] } = {}
   ) => {
+    if (!requireEditMode("修改图元")) {
+      return;
+    }
     const existingUpdates = nodeUpdates.filter((node) => nodeById.has(node.id));
     if (existingUpdates.length === 0) {
       return;
@@ -15210,6 +15483,9 @@ export function App() {
   };
 
   const assignSelectedNodesToModelLayer = (layerId: string) => {
+    if (!requireEditMode("修改图元所属图层")) {
+      return;
+    }
     if (activeSelectedNodeIds.length === 0) {
       return;
     }
@@ -15233,6 +15509,9 @@ export function App() {
   };
 
   const openLayerAssignmentDialog = () => {
+    if (!requireEditMode("修改图元所属图层")) {
+      return;
+    }
     if (activeSelectedNodeIds.length === 0) {
       return;
     }
@@ -15253,6 +15532,9 @@ export function App() {
   };
 
   const rotateSelectedLayoutUnits = (direction: "left" | "right") => {
+    if (!requireEditMode("旋转图元")) {
+      return;
+    }
     if (selectedLayoutUnits.length === 0) {
       return;
     }
@@ -15279,6 +15561,9 @@ export function App() {
   };
 
   const mirrorSelectedNodes = (axis: "horizontal" | "vertical") => {
+    if (!requireEditMode("镜像图元")) {
+      return;
+    }
     if (selectedLayoutUnits.length === 0) {
       return;
     }
@@ -15304,20 +15589,21 @@ export function App() {
   };
 
   const updateCanvasSize = (nextWidth: number, nextHeight: number) => {
+    if (!requireEditMode("修改画布尺寸")) {
+      return;
+    }
+    const currentBounds = canvasBoundsRef.current;
     const width = clampCanvasDimension(nextWidth, MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH, DEFAULT_CANVAS_WIDTH);
     const height = clampCanvasDimension(nextHeight, MIN_CANVAS_HEIGHT, MAX_CANVAS_HEIGHT, DEFAULT_CANVAS_HEIGHT);
-    if (width === canvasWidth && height === canvasHeight) {
+    const nextBounds = { width, height };
+    if (!canvasBoundsChangeIsMeaningful(currentBounds, nextBounds)) {
       return;
     }
     pushUndoSnapshot();
-    setCanvasWidth(width);
-    setCanvasHeight(height);
-    setViewBox((current) =>
-      normalizeViewBoxToCanvas({ ...current, ...clampViewBoxDimensionsForZoom(current, { width, height }) }, { width, height })
-    );
+    applyCanvasBounds(nextBounds);
     setGraphArrays(
-      nodes.map((node) => ({ ...node, position: clampNodePositionToBounds(node, { width, height }) })),
-      edges.map((edge) => clampEdgeGeometryToBounds(edge, { width, height }))
+      nodes.map((node) => ({ ...node, position: clampNodePositionToBounds(node, nextBounds) })),
+      edges.map((edge) => clampEdgeGeometryToBounds(edge, nextBounds))
     );
   };
 
@@ -15355,14 +15641,14 @@ export function App() {
       skipCanvasSizeBlurCommitRef.current = false;
       return;
     }
-    commitCanvasSizeDraft();
+    flushSync(() => commitCanvasSizeDraft());
   };
 
   const handleCanvasSizeKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") {
       event.preventDefault();
       skipCanvasSizeBlurCommitRef.current = true;
-      commitCanvasSizeDraft();
+      flushSync(() => commitCanvasSizeDraft());
       event.currentTarget.blur();
     } else if (event.key === "Escape") {
       event.preventDefault();
@@ -15373,6 +15659,9 @@ export function App() {
   };
 
   const updateParam = (key: string, value: string) => {
+    if (!requireEditMode("修改图元参数")) {
+      return;
+    }
     if (!selectedNodeId) {
       return;
     }
@@ -15407,6 +15696,9 @@ export function App() {
   };
 
   const updateElementTreeNodeIdentity = (nodeId: string, field: "idx" | "name", value: string) => {
+    if (!requireEditMode("修改图元树参数")) {
+      return;
+    }
     if (!activeLayerNodeIdSet.has(nodeId)) {
       return;
     }
@@ -15417,6 +15709,9 @@ export function App() {
   };
 
   const updateElementTreeContainerChildParam = (nodeId: string, key: string, value: string) => {
+    if (!requireEditMode("修改图元树参数")) {
+      return;
+    }
     if (!key) {
       return;
     }
@@ -15432,6 +15727,9 @@ export function App() {
   };
 
   const updateTerminalVbase = (terminalId: string, value: string) => {
+    if (!requireEditMode("修改端子参数")) {
+      return;
+    }
     if (!selectedNodeId) {
       return;
     }
@@ -15449,9 +15747,9 @@ export function App() {
     const colorValue = !value || value === "transparent" ? fallback : value;
     return (
       <div className="color-field with-none">
-        <input type="color" value={colorValue} onChange={(event) => updateParam(key, event.target.value)} />
-        <input value={value === "transparent" ? "无颜色" : value || ""} onChange={(event) => updateParam(key, event.target.value === "无颜色" ? "transparent" : event.target.value)} />
-        <button type="button" onClick={() => updateParam(key, "transparent")}>无颜色</button>
+        <input type="color" value={colorValue} disabled={isBrowseMode} onChange={(event) => updateParam(key, event.target.value)} />
+        <input value={value === "transparent" ? "无颜色" : value || ""} disabled={isBrowseMode} onChange={(event) => updateParam(key, event.target.value === "无颜色" ? "transparent" : event.target.value)} />
+        <button type="button" disabled={isBrowseMode} onClick={() => updateParam(key, "transparent")}>无颜色</button>
       </div>
     );
   };
@@ -15461,7 +15759,7 @@ export function App() {
     const editorNode = inspectorSelectedNode ?? selectedNode;
     const options = paramOptionsForSection(key, editorNode ? inferESection(editorNode.kind, editorNode.params) : undefined);
     const control = options ? (
-      <select value={value} onChange={(event) => updateParam(key, event.target.value)}>
+      <select value={value} disabled={isBrowseMode} onChange={(event) => updateParam(key, event.target.value)}>
         {options.map((option) => (
           <option key={option} value={option}>
             {option}
@@ -15469,7 +15767,7 @@ export function App() {
         ))}
       </select>
     ) : (
-      <input value={value} onChange={(event) => updateParam(key, event.target.value)} />
+      <input value={value} disabled={isBrowseMode} onChange={(event) => updateParam(key, event.target.value)} />
     );
     return wrapLabel ? (
       <label key={key}>
@@ -15499,14 +15797,14 @@ export function App() {
         <tr>
           {renderChineseParamHeader("buttonEnabled")}
           <td>
-            <label className="inline-checkbox-field">
-              <input
-                type="checkbox"
-                checked={buttonEnabled}
-                onChange={(event) => updateParam("buttonEnabled", event.target.checked ? "1" : "0")}
-              />
-              启用
-            </label>
+            <select
+              value={buttonEnabled ? "1" : "0"}
+              disabled={isBrowseMode}
+              onChange={(event) => updateParam("buttonEnabled", event.target.value)}
+            >
+              <option value="1">启用</option>
+              <option value="0">禁用</option>
+            </select>
           </td>
         </tr>
         {buttonEnabled && (
@@ -15514,7 +15812,7 @@ export function App() {
             <tr>
               {renderChineseParamHeader("buttonActionType")}
               <td>
-                <select value={actionType} onChange={(event) => updateParam("buttonActionType", event.target.value)}>
+                <select value={actionType} disabled={isBrowseMode} onChange={(event) => updateParam("buttonActionType", event.target.value)}>
                   {Object.entries(STATIC_BUTTON_ACTION_LABELS).map(([value, label]) => (
                     <option key={value} value={value}>{label}</option>
                   ))}
@@ -15527,6 +15825,7 @@ export function App() {
                 <td>
                   <select
                     value={node.params.buttonTargetProjectId || ""}
+                    disabled={isBrowseMode}
                     onChange={(event) => {
                       const selected = projectOptions.find((item) => item.project.id === event.target.value);
                       updateSelectedNode({
@@ -15551,22 +15850,30 @@ export function App() {
             )}
             {actionType === "layer" && (
               <tr>
-                {renderChineseParamHeader("buttonTargetLayerId")}
+                {renderChineseParamHeader("buttonTargetLayerIds")}
                 <td>
                   <select
-                    value={node.params.buttonTargetLayerId || ""}
+                    className="static-button-layer-select"
+                    multiple
+                    size={Math.min(Math.max(layers.length, 2), 6)}
+                    value={resolveStaticButtonTargetLayers(node, layers).map((layer) => layer.id)}
+                    disabled={isBrowseMode}
                     onChange={(event) => {
-                      const layer = layers.find((item) => item.id === event.target.value);
+                      const selectedLayerIds = Array.from(event.target.selectedOptions).map((option) => option.value);
+                      const selectedLayers = selectedLayerIds
+                        .map((layerId) => layers.find((layer) => layer.id === layerId))
+                        .filter((layer): layer is ModelLayer => Boolean(layer));
                       updateSelectedNode({
                         params: {
                           ...node.params,
-                          buttonTargetLayerId: layer?.id ?? "",
-                          buttonTargetLayerName: layer?.name ?? ""
+                          buttonTargetLayerId: selectedLayers[0]?.id ?? "",
+                          buttonTargetLayerName: selectedLayers[0]?.name ?? "",
+                          buttonTargetLayerIds: serializeStaticButtonTargetLayerIds(selectedLayers.map((layer) => layer.id)),
+                          buttonTargetLayerNames: serializeStaticButtonTargetLayerIds(selectedLayers.map((layer) => layer.name))
                         }
                       });
                     }}
                   >
-                    <option value="">请选择目标图层</option>
                     {layers.map((layer) => (
                       <option key={layer.id} value={layer.id}>{layer.name}</option>
                     ))}
@@ -15578,7 +15885,7 @@ export function App() {
               <tr>
                 {renderChineseParamHeader("buttonCommand")}
                 <td>
-                  <select value={node.params.buttonCommand || "none"} onChange={(event) => updateParam("buttonCommand", event.target.value)}>
+                  <select value={node.params.buttonCommand || "none"} disabled={isBrowseMode} onChange={(event) => updateParam("buttonCommand", event.target.value)}>
                     {Object.entries(STATIC_BUTTON_COMMAND_LABELS).map(([value, label]) => (
                       <option key={value} value={value}>{label}</option>
                     ))}
@@ -15711,6 +16018,9 @@ export function App() {
   };
 
   const startInteractiveStaticDrawing = (template: DeviceTemplate, startPoint: Point) => {
+    if (!requireEditMode("绘制图元")) {
+      return;
+    }
     const pointer = clampPointToCanvas(startPoint);
     setMode("static-draw");
     setStaticDrawing({
@@ -15741,6 +16051,9 @@ export function App() {
   };
 
   const finishInteractiveStaticDrawing = (finalPoint?: Point) => {
+    if (!requireEditMode("绘制图元")) {
+      return;
+    }
     if (!staticDrawing) {
       return;
     }
@@ -15812,6 +16125,9 @@ export function App() {
   };
 
   const startLibraryDevicePlacement = (template: DeviceTemplate) => {
+    if (!requireEditMode("放置图元")) {
+      return;
+    }
     setLibraryPlacement({ kind: "device", template, previewPoint: null });
     setStaticDrawing(null);
     setConnectSource(null);
@@ -15826,6 +16142,9 @@ export function App() {
   };
 
   const startLibraryGraphTemplatePlacement = (template: GraphTemplate) => {
+    if (!requireEditMode("放置模板")) {
+      return;
+    }
     setLibraryPlacement({ kind: "graph-template", template, previewPoint: null });
     setStaticDrawing(null);
     setConnectSource(null);
@@ -15857,6 +16176,9 @@ export function App() {
   };
 
   const placeLibraryDeviceAtPoint = (template: DeviceTemplate, pointerPosition: Point) => {
+    if (!requireEditMode("放置图元")) {
+      return;
+    }
     const kind = template.kind;
     if (isInteractiveStaticDrawingKind(kind) || isStaticBoxLikeKind(kind)) {
       startInteractiveStaticDrawing(template, pointerPosition);
@@ -15906,6 +16228,9 @@ export function App() {
   };
 
   const commitLibraryPlacementAtPoint = (point: Point) => {
+    if (!requireEditMode("放置图元")) {
+      return;
+    }
     if (!libraryPlacement) {
       return;
     }
@@ -15980,10 +16305,14 @@ export function App() {
   const startCanvasResize = (event: PointerEvent<Element>, edge: CanvasResizeEdge) => {
     event.preventDefault();
     event.stopPropagation();
+    if (!requireEditMode("调整画布边界")) {
+      return;
+    }
     if (!svgRef.current) {
       return;
     }
     const svgRect = svgRef.current.getBoundingClientRect();
+    const currentCanvasBounds = canvasBoundsRef.current;
     canvasResizeUndoCapturedRef.current = false;
     clearCanvasBoundsScrollSyncPending();
     pendingCanvasResizeCommitAnchorRef.current = null;
@@ -15991,8 +16320,8 @@ export function App() {
       edge,
       startClientX: event.clientX,
       startClientY: event.clientY,
-      startWidth: canvasWidth,
-      startHeight: canvasHeight,
+      startWidth: currentCanvasBounds.width,
+      startHeight: currentCanvasBounds.height,
       startDisplayWidth: canvasDisplayWidth,
       startDisplayHeight: canvasDisplayHeight,
       startDisplayOffsetX: canvasDisplayOffsetX,
@@ -16003,8 +16332,8 @@ export function App() {
       startScrollSurfaceHeight: canvasScrollSurfaceHeight,
       startHorizontalScrollbarsActive: canvasHorizontalScrollbarsActive,
       startVerticalScrollbarsActive: canvasVerticalScrollbarsActive,
-      unitsPerCssX: svgRect.width > 0 ? canvasBounds.width / svgRect.width : 1,
-      unitsPerCssY: svgRect.height > 0 ? canvasBounds.height / svgRect.height : 1,
+      unitsPerCssX: svgRect.width > 0 ? currentCanvasBounds.width / svgRect.width : 1,
+      unitsPerCssY: svgRect.height > 0 ? currentCanvasBounds.height / svgRect.height : 1,
       minBounds: minimumCanvasBoundsForResizeEdge(edge)
     });
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -16954,6 +17283,9 @@ export function App() {
 
   const handleDrop = (event: DragEvent<SVGSVGElement>) => {
     event.preventDefault();
+    if (!requireEditMode("拖入图元")) {
+      return;
+    }
     const graphTemplateId = event.dataTransfer.getData("application/graph-template-id");
     if (graphTemplateId && svgRef.current) {
       const template = customGraphTemplates.find((item) => item.id === graphTemplateId);
@@ -16991,6 +17323,18 @@ export function App() {
       return;
     }
     activateInspectorFromCanvas();
+    if (isBrowseMode) {
+      if (isStaticButtonEnabledForNode(node)) {
+        beginStaticButtonPointerFeedback(event, node);
+        return;
+      }
+      selectCanvasGraphics([node.id], [], { scope: "direct" });
+      setConnectSource(null);
+      resetConnectPreviewState();
+      setRewiring(null);
+      setContextMenu(null);
+      return;
+    }
     if (connectSource && svgRef.current) {
       const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
       lastCanvasPointerRef.current = pointer;
@@ -17235,22 +17579,7 @@ export function App() {
         nextPress.historyCaptured = true;
       }
       setTerminalPress(nextPress);
-      setGraphStore((current) => {
-        const currentNode = current.nodeMap.get(terminalPress.nodeId);
-        if (!currentNode) {
-          return current;
-        }
-        const anchor = snapSingleTerminalAnchorToNearestSide(currentNode, point);
-        let changed = false;
-        const nextTerminals = currentNode.terminals.map((terminal) => {
-          if (terminal.id !== terminalPress.terminalId || sameOptionalPoint(terminal.anchor, anchor)) {
-            return terminal;
-          }
-          changed = true;
-          return { ...terminal, anchor };
-        });
-        return changed ? graphStorePatchNodes(current, [{ ...currentNode, terminals: nextTerminals }]) : current;
-      });
+      patchSingleTerminalAnchorFromPoint(terminalPress.nodeId, terminalPress.terminalId, point, terminalPress.startPoint);
       return;
     }
     if (manualPathDrag && svgRef.current) {
@@ -17310,38 +17639,46 @@ export function App() {
       );
       return;
     }
-    if (panning && svgRef.current) {
+    const activePanning = panningRef.current ?? panning;
+    if (activePanning && svgRef.current) {
       const frame = canvasFrameRef.current;
-      if (frame && panning.scrollMode) {
+      const useHorizontalScrollPanning = Boolean(frame && activePanning.horizontalScrollMode);
+      const useVerticalScrollPanning = Boolean(frame && activePanning.verticalScrollMode);
+      if (frame) {
         const maxLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
         const maxTop = Math.max(0, frame.scrollHeight - frame.clientHeight);
-        const nextLeft = clampNumber(panning.scrollLeft - (event.clientX - panning.clientX), 0, maxLeft);
-        const nextTop = clampNumber(panning.scrollTop - (event.clientY - panning.clientY), 0, maxTop);
-        if (Math.abs(frame.scrollLeft - nextLeft) > 0.5) {
-          frame.scrollLeft = nextLeft;
+        let scrollChanged = false;
+        if (useHorizontalScrollPanning) {
+          const nextLeft = clampNumber(activePanning.scrollLeft - (event.clientX - activePanning.clientX), 0, maxLeft);
+          if (Math.abs(frame.scrollLeft - nextLeft) > 0.5) {
+            frame.scrollLeft = nextLeft;
+            scrollChanged = true;
+          }
         }
-        if (Math.abs(frame.scrollTop - nextTop) > 0.5) {
-          frame.scrollTop = nextTop;
+        if (useVerticalScrollPanning) {
+          const nextTop = clampNumber(activePanning.scrollTop - (event.clientY - activePanning.clientY), 0, maxTop);
+          if (Math.abs(frame.scrollTop - nextTop) > 0.5) {
+            frame.scrollTop = nextTop;
+            scrollChanged = true;
+          }
         }
-        canvasFrameUserScrollRef.current = true;
-        scheduleCanvasVisibleViewBoxUpdate();
-        return;
-      }
-      if (frame) {
         const nextOffset = clampCanvasNoScrollOffsetPoint({
-          x: panning.canvasOffset.x + event.clientX - panning.clientX,
-          y: panning.canvasOffset.y + event.clientY - panning.clientY
+          x: useHorizontalScrollPanning ? activePanning.canvasOffset.x : activePanning.canvasOffset.x + event.clientX - activePanning.clientX,
+          y: useVerticalScrollPanning ? activePanning.canvasOffset.y : activePanning.canvasOffset.y + event.clientY - activePanning.clientY
         });
         setCanvasNoScrollOffset((current) =>
           current.x === nextOffset.x && current.y === nextOffset.y ? current : nextOffset
         );
+        if (scrollChanged) {
+          canvasFrameUserScrollRef.current = true;
+        }
         scheduleCanvasVisibleViewBoxUpdate();
         return;
       }
       const rect = svgRef.current.getBoundingClientRect();
-      const dx = rect.width > 0 ? ((event.clientX - panning.clientX) / rect.width) * canvasBounds.width : 0;
-      const dy = rect.height > 0 ? ((event.clientY - panning.clientY) / rect.height) * canvasBounds.height : 0;
-      const nextViewBox = clampViewBoxToCanvas({ ...panning.viewBox, x: panning.viewBox.x - dx, y: panning.viewBox.y - dy });
+      const dx = rect.width > 0 ? ((event.clientX - activePanning.clientX) / rect.width) * canvasBounds.width : 0;
+      const dy = rect.height > 0 ? ((event.clientY - activePanning.clientY) / rect.height) * canvasBounds.height : 0;
+      const nextViewBox = clampViewBoxToCanvas({ ...activePanning.viewBox, x: activePanning.viewBox.x - dx, y: activePanning.viewBox.y - dy });
       setViewBox((current) =>
         current.x === nextViewBox.x &&
         current.y === nextViewBox.y &&
@@ -17475,14 +17812,15 @@ export function App() {
     setRewiring(null);
     const frame = canvasFrameRef.current;
     const panningViewBox = currentViewBoxFromCanvasFrameScroll();
-    setPanning({
+    setCanvasPanning({
       clientX: event.clientX,
       clientY: event.clientY,
       viewBox: panningViewBox,
       canvasOffset: canvasNoScrollOffsetRef.current,
       scrollLeft: frame?.scrollLeft ?? 0,
       scrollTop: frame?.scrollTop ?? 0,
-      scrollMode: frame ? canvasFrameHasScrollableRange(frame) : false
+      horizontalScrollMode: frame ? canvasHorizontalScrollbarsActiveRef.current && canvasFrameHasHorizontalScrollableRange(frame) : false,
+      verticalScrollMode: frame ? canvasVerticalScrollbarsActiveRef.current && canvasFrameHasVerticalScrollableRange(frame) : false
     });
     event.preventDefault();
     event.stopPropagation();
@@ -17694,6 +18032,9 @@ export function App() {
   };
 
   const autoSpreadCanvasGraphics = () => {
+    if (!requireEditMode("自动散开")) {
+      return;
+    }
     const activeNodeIds = activeLayerNodes.map((node) => node.id);
     if (activeNodeIds.length < 2) {
       writeOperationLog("自动散开需要至少 2 个可操作图元");
@@ -17720,6 +18061,9 @@ export function App() {
   };
 
   const autoAlignCanvasGraphics = () => {
+    if (!requireEditMode("自动对齐")) {
+      return;
+    }
     const activeNodeIds = activeLayerNodes.map((node) => node.id);
     if (activeNodeIds.length < 2) {
       writeOperationLog("自动对齐需要至少 2 个可操作图元");
@@ -17794,6 +18138,9 @@ export function App() {
   };
 
   const redrawConnectionRoutes = (scope: ConnectionRedrawScope) => {
+    if (!requireEditMode("重绘连接线")) {
+      return;
+    }
     const targetEdgeIds = connectionRedrawEdgeIdsForScope(scope);
     const scopeLabel = CONNECTION_REDRAW_SCOPE_LABELS[scope];
     if (targetEdgeIds.length === 0) {
@@ -17822,16 +18169,26 @@ export function App() {
   };
 
   const openConnectionRedrawDialog = () => {
+    if (!requireEditMode("重绘连接线")) {
+      return;
+    }
     setConnectionRedrawScope(activeSelectedEdgeIds.some((edgeId) => activeLayerEdgeIdSet.has(edgeId)) ? "selected" : "viewport");
     setConnectionRedrawDialogOpen(true);
   };
 
   const confirmConnectionRedrawDialog = () => {
+    if (!requireEditMode("重绘连接线")) {
+      setConnectionRedrawDialogOpen(false);
+      return;
+    }
     redrawConnectionRoutes(connectionRedrawScope);
     setConnectionRedrawDialogOpen(false);
   };
 
   const alignSelected = (direction: AlignMode) => {
+    if (!requireEditMode("对齐图元")) {
+      return;
+    }
     applySelectedNodeLayout(2, (currentNodes, currentLayoutUnits) => alignNodeLayoutUnits(currentNodes, currentLayoutUnits, direction));
     if (selectedLayoutUnitCount >= 2) {
       const labelByDirection: Record<AlignMode, string> = {
@@ -17847,6 +18204,9 @@ export function App() {
   };
 
   const distributeSelected = (direction: "horizontal" | "vertical") => {
+    if (!requireEditMode("分布图元")) {
+      return;
+    }
     applySelectedNodeLayout(3, (currentNodes, currentLayoutUnits) => distributeNodeLayoutUnits(currentNodes, currentLayoutUnits, direction));
     if (selectedLayoutUnitCount >= 3) {
       writeOperationLog(`${direction === "horizontal" ? "横向" : "纵向"}平均 ${selectedLayoutUnitCount} 个单元`);
@@ -17999,7 +18359,7 @@ export function App() {
     hideImperativeMultiNodeDragOverlay();
     setMarquee(null);
     setModifierSelectionPress(null);
-    setPanning(null);
+    setCanvasPanning(null);
     setHasUnsavedChanges(false);
     writeOperationLog(`加载模型：${project.name}`);
     requestCanvasFrameCenter();
@@ -18038,6 +18398,9 @@ export function App() {
   };
 
   const createSchemeRecord = () => {
+    if (!requireEditMode("新建方案")) {
+      return;
+    }
     const inputName = window.prompt("请输入方案名称", "新建方案");
     if (inputName === null) {
       return;
@@ -18058,6 +18421,9 @@ export function App() {
   };
 
   const renameSchemeRecord = (scheme: SavedSchemeRecord) => {
+    if (!requireEditMode("重命名方案")) {
+      return;
+    }
     const nextName = window.prompt("请输入新的方案名称", scheme.name);
     if (!nextName) {
       return;
@@ -18075,6 +18441,9 @@ export function App() {
   };
 
   const duplicateSchemeRecord = (scheme: SavedSchemeRecord) => {
+    if (!requireEditMode("复制方案")) {
+      return;
+    }
     const defaultName = uniqueRecordName(
       `${scheme.name} 副本`,
       schemes.map((item) => item.name),
@@ -18094,6 +18463,9 @@ export function App() {
   };
 
   const deleteSchemeRecord = (scheme: SavedSchemeRecord) => {
+    if (!requireEditMode("删除方案")) {
+      return;
+    }
     if (scheme.id === activeSchemeId) {
       window.alert("当前加载模型所在方案不能删除。");
       return;
@@ -18129,6 +18501,9 @@ export function App() {
   };
 
   const deleteSelectedRecords = () => {
+    if (!requireEditMode("删除记录")) {
+      return;
+    }
     if (selectedProjectIds.length > 0) {
       if (activeProjectId && selectedProjectIds.includes(activeProjectId)) {
         window.alert("当前加载模型不能删除。");
@@ -18177,6 +18552,9 @@ export function App() {
   };
 
   const pasteSchemeClipboardRecord = () => {
+    if (!requireEditMode("粘贴方案")) {
+      return;
+    }
     if (recordClipboard?.kind !== "scheme") {
       return;
     }
@@ -18196,6 +18574,9 @@ export function App() {
   };
 
   const pasteProjectClipboardRecord = (targetSchemeId = selectedSchemeId || activeSchemeId || schemes[0]?.id) => {
+    if (!requireEditMode("粘贴模型")) {
+      return;
+    }
     if (recordClipboard?.kind !== "project") {
       return;
     }
@@ -18230,6 +18611,9 @@ export function App() {
   };
 
   const pasteSelectedRecord = () => {
+    if (!requireEditMode("粘贴记录")) {
+      return;
+    }
     if (!recordClipboard) {
       return;
     }
@@ -18245,6 +18629,9 @@ export function App() {
     targetSchemeId: string,
     options: { targetName?: string; overwriteProjectId?: string } = {}
   ) => {
+    if (!requireEditMode("移动模型")) {
+      return;
+    }
     const targetName = options.targetName?.trim();
     const nextProjectId = options.overwriteProjectId ?? projectId;
     setSchemes((current) => {
@@ -18294,6 +18681,9 @@ export function App() {
   };
 
   const resolveRecordPasteConflict = (action: "overwrite" | "rename" | "cancel") => {
+    if (action !== "cancel" && !requireEditMode("处理粘贴冲突")) {
+      return;
+    }
     const conflict = pendingRecordPasteConflict;
     if (!conflict || action === "cancel") {
       setPendingRecordPasteConflict(null);
@@ -18420,6 +18810,9 @@ export function App() {
   };
 
   const moveProjectRecordToScheme = (projectId: string, schemeId: string) => {
+    if (!requireEditMode("移动模型")) {
+      return;
+    }
     const sourceScheme = findSchemeForProject(projectId);
     const sourceProject = sourceScheme?.projects.find((project) => project.id === projectId);
     const targetScheme = schemes.find((scheme) => scheme.id === schemeId);
@@ -18456,6 +18849,9 @@ export function App() {
   };
 
   const setActiveLayer = (layerId: string) => {
+    if (!requireEditMode("激活图层")) {
+      return;
+    }
     pushUndoSnapshot();
     setActiveLayerId(layerId);
     setLayers((current) => current.map((layer) => layer.id === layerId ? { ...layer, visible: true } : layer));
@@ -18472,6 +18868,9 @@ export function App() {
   };
 
   const addModelLayer = () => {
+    if (!requireEditMode("新增图层")) {
+      return;
+    }
     pushUndoSnapshot();
     const layer = createModelLayer(nextDefaultModelLayerName(), layers);
     setLayers((current) => [...current, layer]);
@@ -18480,6 +18879,9 @@ export function App() {
   };
 
   const toggleModelLayerVisibility = (layerId: string) => {
+    if (!requireEditMode("修改图层显示状态")) {
+      return;
+    }
     const layer = layers.find((item) => item.id === layerId);
     if (!layer) {
       return;
@@ -18493,6 +18895,9 @@ export function App() {
   };
 
   const moveModelLayer = (layerId: string, direction: -1 | 1) => {
+    if (!requireEditMode("调整图层顺序")) {
+      return;
+    }
     const index = layers.findIndex((layer) => layer.id === layerId);
     const targetIndex = index + direction;
     if (index < 0 || targetIndex < 0 || targetIndex >= layers.length) {
@@ -18508,6 +18913,9 @@ export function App() {
   };
 
   const deleteModelLayer = (layerId: string) => {
+    if (!requireEditMode("删除图层")) {
+      return;
+    }
     if (layers.length <= 1) {
       window.alert("至少需要保留一个图层。");
       return;
@@ -18586,6 +18994,9 @@ export function App() {
   );
 
   const saveCurrentProject = (targetId = activeProjectId) => {
+    if (!requireEditMode("保存模型")) {
+      return;
+    }
     deferredMoveOptimizationCancelRef.current?.();
     deferredMoveOptimizationCancelRef.current = null;
     if (targetId) {
@@ -18627,6 +19038,9 @@ export function App() {
   };
 
   const renameProjectRecord = (project: SavedProjectRecord) => {
+    if (!requireEditMode("重命名模型")) {
+      return;
+    }
     const nextName = window.prompt("请输入新的模型名称", project.name);
     if (!nextName) {
       return;
@@ -18654,6 +19068,9 @@ export function App() {
   };
 
   const duplicateProjectRecord = (project: SavedProjectRecord) => {
+    if (!requireEditMode("复制模型")) {
+      return;
+    }
     const ownerScheme = findSchemeForProject(project.id);
     const existingNames = ownerScheme?.projects.map((item) => item.name) ?? [];
     const defaultName = uniqueRecordName(`${project.name} 副本`, existingNames, "未命名模型");
@@ -18677,6 +19094,9 @@ export function App() {
   };
 
   const duplicateSelectedProjectRecords = () => {
+    if (!requireEditMode("复制模型")) {
+      return;
+    }
     if (selectedProjectIds.length <= 1) {
       const project = projectById.get(selectedProjectIds[0] ?? selectedProjectId);
       if (project) {
@@ -18701,6 +19121,9 @@ export function App() {
   };
 
   const duplicateSelectedSchemeRecords = () => {
+    if (!requireEditMode("复制方案")) {
+      return;
+    }
     if (selectedSchemeIds.length <= 1) {
       const scheme = schemes.find((item) => item.id === (selectedSchemeIds[0] ?? selectedSchemeId));
       if (scheme) {
@@ -18718,6 +19141,9 @@ export function App() {
   };
 
   const deleteProjectRecord = (project: SavedProjectRecord) => {
+    if (!requireEditMode("删除模型")) {
+      return;
+    }
     if (project.id === activeProjectId) {
       window.alert("当前加载模型不能删除。");
       return;
@@ -18738,6 +19164,9 @@ export function App() {
   };
 
   const createBlankProject = (preferredSchemeId = selectedSchemeId || activeSchemeId || schemes[0]?.id || "") => {
+    if (!requireEditMode("新建模型")) {
+      return;
+    }
     const targetScheme = schemes.find((scheme) => scheme.id === preferredSchemeId) ?? schemes[0];
     const targetSchemeId = targetScheme?.id ?? preferredSchemeId;
     const inputName = window.prompt("请输入模型名称", "新建模型");
@@ -18756,8 +19185,8 @@ export function App() {
     const record = createSavedProject(name, {
       version: 1,
       name,
-      canvasWidth,
-      canvasHeight,
+      canvasWidth: DEFAULT_CANVAS_WIDTH,
+      canvasHeight: DEFAULT_CANVAS_HEIGHT,
       allowAutoExpandCanvas: true,
       canvasBackgroundColor: DEFAULT_CANVAS_BACKGROUND,
       powerUnit: DEFAULT_POWER_UNIT,
@@ -18803,6 +19232,9 @@ export function App() {
   };
 
   const runTopologyCalculation = () => {
+    if (!requireEditMode("执行图上拓扑计算")) {
+      return;
+    }
     const errors = validateTopology(nodes, edges, { includeVoltageSetpointDeviations: false });
     const blockingErrors = errors.filter(isBlockingTopologyValidationError);
     const nonBlockingWarnings = errors.filter((error) => !isBlockingTopologyValidationError(error));
@@ -18987,6 +19419,9 @@ export function App() {
   };
 
   const setEdgeManualPoints = (edgeId: string, manualPoints: Point[]) => {
+    if (!requireEditMode("修改连接线路径")) {
+      return;
+    }
     const normalizedManualPoints = manualPoints.map((point) => ({ x: Math.round(point.x), y: Math.round(point.y) }));
     const edge = edgeById.get(edgeId);
     if (!edge || sameOptionalPointList(edge.manualPoints, normalizedManualPoints)) {
@@ -19013,6 +19448,9 @@ export function App() {
   };
 
   const tidySelectedEdgeRoute = () => {
+    if (!requireEditMode("整理连接线")) {
+      return;
+    }
     if (!selectedEdge || !selectedRoutedEdge) {
       return;
     }
@@ -19030,6 +19468,9 @@ export function App() {
   };
 
   const addManualBendToSelectedEdgeCenter = () => {
+    if (!requireEditMode("添加连接线拐点")) {
+      return;
+    }
     if (!selectedEdge || !selectedRoutedEdge) {
       return;
     }
@@ -19087,6 +19528,10 @@ export function App() {
     if (event.button !== 0 || !svgRef.current || !activeLayerEdgeIdSet.has(edgeId)) {
       return;
     }
+    if (isBrowseMode) {
+      selectCanvasGraphics([], [edgeId]);
+      return;
+    }
     if (hasCanvasSelectionModifier(event)) {
       startModifierSelectionPress(event, { kind: "edge", edgeId });
       return;
@@ -19118,6 +19563,10 @@ export function App() {
   const startManualPointDrag = (event: PointerEvent<SVGCircleElement>, edgeId: string, pointIndex: number, routePoints: Point[]) => {
     event.stopPropagation();
     if (event.button !== 0 || !svgRef.current || !activeLayerEdgeIdSet.has(edgeId)) {
+      return;
+    }
+    if (isBrowseMode) {
+      selectCanvasGraphics([], [edgeId]);
       return;
     }
     if (hasCanvasSelectionModifier(event)) {
@@ -19239,6 +19688,9 @@ export function App() {
   };
 
   const insertManualBendAtPoint = (edgeId: string, segmentIndex: number, routePoints: Point[], clickPoint: Point) => {
+    if (!requireEditMode("添加连接线拐点")) {
+      return;
+    }
     if (!activeLayerEdgeIdSet.has(edgeId)) {
       return;
     }
@@ -19274,6 +19726,9 @@ export function App() {
   const insertManualBendFromEdgePath = (event: MouseEvent<SVGElement>, edgeId: string, routePoints: Point[]) => {
     event.preventDefault();
     event.stopPropagation();
+    if (!requireEditMode("添加连接线拐点")) {
+      return;
+    }
     if (staticDrawing) {
       return;
     }
@@ -19312,6 +19767,11 @@ export function App() {
     if (!activeLayerEdgeIdSet.has(edgeId)) {
       return;
     }
+    if (isBrowseMode) {
+      activateInspectorFromCanvas();
+      selectCanvasGraphics([], [edgeId]);
+      return;
+    }
     if (hasCanvasSelectionModifier(event)) {
       startModifierSelectionPress(event, { kind: "edge", edgeId });
       return;
@@ -19343,6 +19803,9 @@ export function App() {
   };
 
   const deleteManualBendPoint = (edgeId: string, routePointIndex: number, routePoints: Point[]) => {
+    if (!requireEditMode("删除连接线拐点")) {
+      return;
+    }
     if (!activeLayerEdgeIdSet.has(edgeId)) {
       return;
     }
@@ -19355,6 +19818,9 @@ export function App() {
   };
 
   const startConnectFromTerminal = (node: ModelNode, terminalId: string, point?: Point) => {
+    if (!requireEditMode("建立连接线")) {
+      return;
+    }
     if (!activeLayerNodeIdSet.has(node.id)) {
       return;
     }
@@ -19385,55 +19851,12 @@ export function App() {
       return;
     }
     if (!isBusNode(node) && node.terminals.length === 1) {
-      setGraphStore((current) => {
-        const currentNode = current.nodeMap.get(terminalPress.nodeId);
-        if (!currentNode || isBusNode(currentNode) || currentNode.terminals.length !== 1) {
-          return current;
-        }
-        const anchor = snapSingleTerminalAnchorToNearestSide(currentNode, terminalPress.currentPoint);
-        let changed = false;
-        const nextTerminals = currentNode.terminals.map((terminal) => {
-          if (terminal.id !== terminalPress.terminalId || sameOptionalPoint(terminal.anchor, anchor)) {
-            return terminal;
-          }
-          changed = true;
-          return { ...terminal, anchor };
-        });
-        const nextNode = changed ? { ...currentNode, terminals: nextTerminals } : currentNode;
-        const nextNodes = changed ? overlayGraphStoreNodes(current, [nextNode]) : current.nodes;
-        const dirtyEdges = (current.edgesByNodeId.get(terminalPress.nodeId) ?? []).filter((edge) =>
-          (edge.sourceId === terminalPress.nodeId && edge.sourceTerminalId === terminalPress.terminalId) ||
-          (edge.targetId === terminalPress.nodeId && edge.targetTerminalId === terminalPress.terminalId)
-        );
-        const dirtyEdgeIds = dirtyEdges.map((edge) => edge.id);
-        markRouteEdgesDirty(dirtyEdgeIds);
-        markStoredRouteEdgesDirty(dirtyEdgeIds);
-        const nextEdges = dirtyEdges.map((edge) => {
-          const sourceAffected = edge.sourceId === terminalPress.nodeId && edge.sourceTerminalId === terminalPress.terminalId;
-          const sourceNode = current.nodeMap.get(edge.sourceId);
-          const targetNode = current.nodeMap.get(edge.targetId);
-          const nextSourceNode = edge.sourceId === terminalPress.nodeId ? nextNode : sourceNode;
-          const nextTargetNode = edge.targetId === terminalPress.nodeId ? nextNode : targetNode;
-          const slidePatch = sourceNode && targetNode && nextSourceNode && nextTargetNode
-            ? resolveStraightBusSlideEndpoint({
-                edge,
-                sourceNode,
-                targetNode,
-                nextSourceNode,
-                nextTargetNode,
-                movingEndpoint: sourceAffected ? "source" : "target",
-                nodes: current.nodes,
-                nextNodes,
-                originalMovingPoint: terminalPress.startPoint
-              })
-            : null;
-          return slidePatch ? { ...edge, ...slidePatch } : edge;
-        });
-        return graphStoreApplyPatch(current, {
-          nodeUpdates: changed ? [nextNode] : [],
-          edgeUpserts: nextEdges
-        });
-      });
+      patchSingleTerminalAnchorFromPoint(
+        terminalPress.nodeId,
+        terminalPress.terminalId,
+        terminalPress.currentPoint,
+        terminalPress.startPoint
+      );
     }
     setTerminalPress(null);
   };
@@ -19450,6 +19873,16 @@ export function App() {
       return;
     }
     if (!activeLayerNodeIdSet.has(node.id)) {
+      return;
+    }
+    if (isBrowseMode) {
+      setCanvasSelectionScope("direct");
+      setSelectedNodeIds([node.id]);
+      setSelectedEdgeId("");
+      setSelectedEdgeIds([]);
+      setConnectSource(null);
+      resetConnectPreviewState();
+      setRewiring(null);
       return;
     }
     if (event.button === 0 && hasCanvasSelectionModifier(event)) {
@@ -19690,11 +20123,17 @@ export function App() {
   };
 
   const openModelImportFilePicker = (targetSchemeId = "") => {
+    if (!requireEditMode("导入模型")) {
+      return;
+    }
     modelImportTargetSchemeIdRef.current = targetSchemeId;
     modelImportInputRef.current?.click();
   };
 
   const openSchemeImportFilePicker = () => {
+    if (!requireEditMode("导入方案")) {
+      return;
+    }
     schemeImportInputRef.current?.click();
   };
 
@@ -19724,6 +20163,10 @@ export function App() {
 
   const importSchemeFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
+    if (!requireEditMode("导入方案")) {
+      input.value = "";
+      return;
+    }
     const file = input.files?.[0];
     if (!file) {
       return;
@@ -19766,6 +20209,11 @@ export function App() {
 
   const importModelFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
+    if (!requireEditMode("导入模型")) {
+      modelImportTargetSchemeIdRef.current = "";
+      input.value = "";
+      return;
+    }
     const file = input.files?.[0];
     if (!file) {
       return;
@@ -19808,6 +20256,10 @@ export function App() {
       setPendingSchemeImportConflict(null);
       return;
     }
+    if (!requireEditMode("处理方案导入冲突")) {
+      setPendingSchemeImportConflict(null);
+      return;
+    }
     const duplicateScheme = schemes.find((scheme) => scheme.id === conflict.duplicateSchemeId);
     if (action === "rename") {
       const renamed = promptUniqueRecordName(
@@ -19840,6 +20292,10 @@ export function App() {
   const resolveDuplicateModelImport = (action: "overwrite" | "rename" | "cancel") => {
     const conflict = pendingModelImportConflict;
     if (!conflict || action === "cancel") {
+      setPendingModelImportConflict(null);
+      return;
+    }
+    if (!requireEditMode("处理模型导入冲突")) {
       setPendingModelImportConflict(null);
       return;
     }
@@ -19924,6 +20380,10 @@ export function App() {
   };
 
   const chooseImage = (event: ChangeEvent<HTMLInputElement>) => {
+    if (!requireEditMode("上传图片")) {
+      event.target.value = "";
+      return;
+    }
     const file = event.target.files?.[0];
     if (!file || !imageTarget) {
       return;
@@ -19949,6 +20409,9 @@ export function App() {
   };
 
   const applyExistingImage = (assetId: string) => {
+    if (!requireEditMode("应用图片")) {
+      return;
+    }
     const imageData = imageAssets[assetId];
     if (!imageTarget || !imageData) {
       return;
@@ -19968,6 +20431,9 @@ export function App() {
   };
 
   const clearSelectedImage = () => {
+    if (!requireEditMode("清除图片")) {
+      return;
+    }
     if (!imageTarget) {
       return;
     }
@@ -20000,6 +20466,9 @@ export function App() {
   };
 
   const clearSelectedImageForNode = (nodeId: string, target: "background" | "foreground") => {
+    if (!requireEditMode("清除图片")) {
+      return;
+    }
     pushUndoSnapshot();
     updateGraphNodeById(nodeId, (node) => ({
       ...node,
@@ -20011,6 +20480,9 @@ export function App() {
   };
 
   const createImageFolder = async () => {
+    if (!requireEditMode("新建图片文件夹")) {
+      return;
+    }
     const inputName = window.prompt("请输入图片文件夹名称", "新建文件夹");
     if (inputName === null) {
       return;
@@ -20030,6 +20502,9 @@ export function App() {
   };
 
   const renameImageFolder = async () => {
+    if (!requireEditMode("重命名图片文件夹")) {
+      return;
+    }
     const folder = imageFolders.find((item) => item.id === activeImageFolderId);
     if (!folder || folder.id === "root") {
       window.alert("默认文件夹不能重命名。");
@@ -20053,6 +20528,9 @@ export function App() {
   };
 
   const deleteImageFolder = async () => {
+    if (!requireEditMode("删除图片文件夹")) {
+      return;
+    }
     const folder = imageFolders.find((item) => item.id === activeImageFolderId);
     if (!folder || folder.id === "root") {
       window.alert("默认文件夹不能删除。");
@@ -20112,6 +20590,9 @@ export function App() {
             return;
           }
           event.preventDefault();
+          if (!isEditMode) {
+            return;
+          }
           setProjectMenu({ x: event.clientX, y: event.clientY });
         }}
       >
@@ -20157,6 +20638,9 @@ export function App() {
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={(event) => {
                   event.preventDefault();
+                  if (!isEditMode) {
+                    return;
+                  }
                   finishProjectRecordDrag();
                   const projectId = event.dataTransfer.getData("application/project-id");
                   if (projectId) {
@@ -20187,7 +20671,7 @@ export function App() {
                       role="option"
                       aria-selected={isProjectSelected}
                       tabIndex={0}
-                      draggable
+                      draggable={isEditMode}
                       className={`project-option ${isProjectSelected ? "selected" : ""} ${project.id === activeProjectId ? "active" : ""}`}
                       key={project.id}
                       onClick={(event) => {
@@ -20200,6 +20684,10 @@ export function App() {
                       }}
                       onDoubleClick={() => requestLoadSavedProject(project, scheme.id)}
                       onDragStart={(event) => {
+                        if (!isEditMode) {
+                          event.preventDefault();
+                          return;
+                        }
                         startProjectRecordDrag(event, project.id);
                       }}
                       onDragEnd={finishProjectRecordDrag}
@@ -20264,6 +20752,9 @@ export function App() {
   };
 
   const openDeviceDefinitionDialog = () => {
+    if (!requireEditMode("修改元件")) {
+      return;
+    }
     const template = selectedDefinitionTemplate ?? libraryTemplates[0];
     if (template) {
       loadDefinitionTemplateDraft(template);
@@ -20303,11 +20794,17 @@ export function App() {
   };
 
   const deleteDefinitionDraftRow = (rowId: string) => {
+    if (!requireEditMode("修改元件定义")) {
+      return;
+    }
     setDefinitionDraftRows((current) => current.filter((row) => row.id !== rowId || row.readonly));
     setDefinitionDraftError("");
   };
 
   const saveDeviceDefinitionDraft = () => {
+    if (!requireEditMode("保存元件定义")) {
+      return;
+    }
     if (!selectedDefinitionTemplate) {
       return;
     }
@@ -20356,6 +20853,9 @@ export function App() {
   };
 
   const resetDeviceDefinitionDraft = () => {
+    if (!requireEditMode("重置元件定义")) {
+      return;
+    }
     if (!selectedDefinitionBaseTemplate) {
       return;
     }
@@ -20391,6 +20891,10 @@ export function App() {
   };
 
   const chooseCustomDeviceBackground = (event: ChangeEvent<HTMLInputElement>) => {
+    if (!requireEditMode("选择元件图片")) {
+      event.target.value = "";
+      return;
+    }
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) {
@@ -20499,6 +21003,9 @@ export function App() {
   };
 
   const startCustomComponentCreate = () => {
+    if (!requireEditMode("新建元件")) {
+      return;
+    }
     const attributeLibraryName = normalizeAttributeLibraryName(customComponentTreeSelection.attributeLibraryName);
     const section =
       customComponentTreeSelection.kind === "componentType" || customComponentTreeSelection.kind === "component"
@@ -20526,6 +21033,9 @@ export function App() {
   };
 
   const createCustomAttributeLibrary = () => {
+    if (!requireEditMode("新建属性库")) {
+      return;
+    }
     const defaultName = nextCustomAttributeLibraryName();
     const rawName = window.prompt("请输入新属性库名称", defaultName);
     if (rawName === null) {
@@ -20553,6 +21063,9 @@ export function App() {
   };
 
   const deleteCustomAttributeLibrary = (targetAttributeLibraryName = customDeviceDraft.attributeLibraryName) => {
+    if (!requireEditMode("删除属性库")) {
+      return;
+    }
     const attributeLibraryName = normalizeAttributeLibraryName(targetAttributeLibraryName);
     if (!attributeLibraryName || attributeLibraryName === "静态图元" || PROTECTED_ATTRIBUTE_LIBRARIES.has(attributeLibraryName)) {
       window.alert("默认属性库无法删除。");
@@ -20620,6 +21133,9 @@ export function App() {
   };
 
   const createCustomComponentType = () => {
+    if (!requireEditMode("新建元件类型")) {
+      return;
+    }
     const rawName = window.prompt("请输入新元件类型英文名称", nextCustomComponentTypeName());
     if (rawName === null) {
       return;
@@ -20649,6 +21165,9 @@ export function App() {
   };
 
   const deleteCustomComponentType = (targetSection = customDeviceDraft.componentType) => {
+    if (!requireEditMode("删除元件类型")) {
+      return;
+    }
     const componentType = normalizeComponentTypeName(targetSection);
     if (!componentType || E_SECTION_OPTIONS.some((section) => section.toLowerCase() === componentType.toLowerCase())) {
       window.alert("内置元件类型无法删除。");
@@ -20688,6 +21207,9 @@ export function App() {
   };
 
   const renameSelectedCustomDeviceTreeItem = () => {
+    if (!requireEditMode("重命名元件库条目")) {
+      return;
+    }
     if (customComponentTreeSelection.kind === "attributeLibrary") {
       const oldAttributeLibraryName = normalizeAttributeLibraryName(customComponentTreeSelection.attributeLibraryName);
       if (PROTECTED_ATTRIBUTE_LIBRARIES.has(oldAttributeLibraryName) || oldAttributeLibraryName === "静态图元") {
@@ -20801,6 +21323,9 @@ export function App() {
   };
 
   const deleteSelectedCustomDeviceTreeItem = () => {
+    if (!requireEditMode("删除元件库条目")) {
+      return;
+    }
     if (customComponentTreeSelection.kind === "attributeLibrary") {
       deleteCustomAttributeLibrary(customComponentTreeSelection.attributeLibraryName);
       return;
@@ -20850,6 +21375,9 @@ export function App() {
   };
 
   const saveCustomDeviceTemplate = () => {
+    if (!requireEditMode("保存元件")) {
+      return;
+    }
     const attributeLibraryName = normalizeAttributeLibraryName(customDeviceDraft.attributeLibraryName);
     const componentType = normalizeComponentTypeName(customDeviceDraft.componentType);
     const componentLabel = customDeviceDraft.componentName.trim() || componentType;
@@ -21032,14 +21560,18 @@ export function App() {
       <button
         type="button"
         className="custom-device-create-button"
+        disabled={isBrowseMode}
         onClick={() => {
+          if (!requireEditMode("新建元件")) {
+            return;
+          }
           setCustomDeviceDraft(createEmptyCustomDeviceDraft("交流设备"));
           setCustomDeviceDialogOpen(true);
         }}
       >
         新建元件
       </button>
-      <button type="button" className="custom-device-create-button" onClick={openDeviceDefinitionDialog}>
+      <button type="button" className="custom-device-create-button" disabled={isBrowseMode} onClick={openDeviceDefinitionDialog}>
         修改元件
       </button>
     </div>
@@ -21118,7 +21650,8 @@ export function App() {
                         key={template.id}
                         type="button"
                         className="template-library-item"
-                        draggable
+                        draggable={isEditMode}
+                        disabled={isBrowseMode}
                         title={`${template.typeName} / ${template.name} / ${template.sourceSize.width}×${template.sourceSize.height}`}
                         onClick={() => startLibraryGraphTemplatePlacement(template)}
                         onContextMenu={(event) => {
@@ -21126,6 +21659,10 @@ export function App() {
                           cancelLibraryPlacement();
                         }}
                         onDragStart={(event) => {
+                          if (!isEditMode) {
+                            event.preventDefault();
+                            return;
+                          }
                           cancelLibraryPlacement();
                           event.dataTransfer.setData("application/graph-template-id", template.id);
                           event.dataTransfer.effectAllowed = "copy";
@@ -21158,7 +21695,8 @@ export function App() {
       <button
         key={item.kind}
         className="library-item"
-        draggable
+        draggable={isEditMode}
+        disabled={isBrowseMode}
         title={`${item.label} / ${section}`}
         onClick={() => startLibraryDevicePlacement(item)}
         onContextMenu={(event) => {
@@ -21166,6 +21704,10 @@ export function App() {
           cancelLibraryPlacement();
         }}
         onDragStart={(event) => {
+          if (!isEditMode) {
+            event.preventDefault();
+            return;
+          }
           cancelLibraryPlacement();
           event.dataTransfer.setData("application/device-kind", item.kind);
           if (componentLibraryDisplayMode === "right") {
@@ -21629,7 +22171,12 @@ export function App() {
       chunkSize: CANVAS_LOD_MARKUP_CHUNK_SIZE,
       keyPrefix: "lod-node",
       itemKey: (node) => node.id,
-      itemTokens: (node) => [node, colorDisplayMode, colorPalette],
+      itemTokens: (node) => [
+        node,
+        colorDisplayMode,
+        colorPalette,
+        customSingleTerminalAnchorToken(node, libraryTemplateByKind.get(node.kind))
+      ],
       itemMarkup: (node) => {
       const nodeIsBus = isBusNode(node);
       const className = `diagram-node lod-node${nodeIsBus ? " bus-node" : ""}`;
@@ -21637,6 +22184,17 @@ export function App() {
       const fill = node.params.backgroundColor || "#ffffff";
       const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
       const strokeWidth = Math.max(2, getDeviceStrokeWidth(node));
+      const customTerminalAnchorToken = customSingleTerminalAnchorToken(node, libraryTemplateByKind.get(node.kind));
+      if (customTerminalAnchorToken) {
+        const geometryTransform = nodeGeometryTransform(node);
+        const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
+        return `<g class="${className} custom-terminal-lod-node" data-node-id="${escapeXml(node.id)}" transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})">
+  <rect class="lod-node-body" transform="${escapeXml(geometryTransform)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${nodeIsBus ? 0 : 6}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"><title>${escapeXml(node.name)}</title></rect>
+  <g class="node-terminal-layer lod-terminal-layer" transform="${escapeXml(geometryTransform)}">
+  ${terminalMarkup}
+  </g>
+</g>`;
+      }
       return `<rect class="${className}" data-node-id="${escapeXml(node.id)}" transform="${escapeXml(transform)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${nodeIsBus ? 0 : 6}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"><title>${escapeXml(node.name)}</title></rect>`;
       }
     });
@@ -21644,6 +22202,7 @@ export function App() {
     colorDisplayMode,
     colorPalette,
     groupTransformPreviewNodeIdSet,
+    libraryTemplateByKind,
     nodeLabelDrag,
     nodeLabelRotateDrag,
     transformDrag,
@@ -22048,7 +22607,7 @@ export function App() {
   };
 
   const beginStaticButtonPointerFeedback = (event: PointerEvent<SVGGElement>, node: ModelNode) => {
-    if (!isStaticButtonEnabledForNode(node) || staticDrawing || connectSource || mode === "connect") {
+    if (!isBrowseMode || !isStaticButtonEnabledForNode(node) || staticDrawing || connectSource || mode === "connect") {
       return;
     }
     staticButtonPointerRef.current = {
@@ -22080,18 +22639,6 @@ export function App() {
       }
     }
     return null;
-  };
-
-  const resolveStaticButtonTargetLayer = (node: ModelNode) => {
-    const targetLayerId = node.params.buttonTargetLayerId?.trim();
-    if (targetLayerId) {
-      const layer = layers.find((item) => item.id === targetLayerId);
-      if (layer) {
-        return layer;
-      }
-    }
-    const targetLayerName = node.params.buttonTargetLayerName?.trim();
-    return targetLayerName ? layers.find((item) => item.name.trim() === targetLayerName) ?? null : null;
   };
 
   const executeStaticButtonCommand = (command: string) => {
@@ -22154,14 +22701,15 @@ export function App() {
       return;
     }
     if (actionType === "layer") {
-      const layer = resolveStaticButtonTargetLayer(node);
-      if (!layer) {
+      const targetLayers = resolveStaticButtonTargetLayers(node, layers);
+      if (targetLayers.length === 0) {
         window.alert("按钮动作未找到目标图层，请在右侧图元参数中重新选择。");
         return;
       }
-      setActiveLayerId(layer.id);
-      setLayers((current) => current.map((item) => item.id === layer.id ? { ...item, visible: true } : item));
-      writeOperationLog(`按钮切换图层：${layer.name}`);
+      const targetLayerIdSet = new Set(targetLayers.map((layer) => layer.id));
+      setActiveLayerId(targetLayers[0].id);
+      setLayers((current) => current.map((item) => ({ ...item, visible: targetLayerIdSet.has(item.id) })));
+      writeOperationLog(`按钮切换图层：${targetLayers.map((layer) => layer.name).join("、")}`);
       return;
     }
     if (actionType === "command") {
@@ -22175,7 +22723,7 @@ export function App() {
   };
 
   const handleStaticButtonClick = (event: MouseEvent<SVGGElement>, node: ModelNode) => {
-    if (!isStaticButtonEnabledForNode(node)) {
+    if (!isBrowseMode || !isStaticButtonEnabledForNode(node)) {
       return;
     }
     const pointerSnapshot = staticButtonPointerRef.current;
@@ -22296,7 +22844,7 @@ export function App() {
             const inverseScaleY = nodeScaleY === 0 ? 1 : 1 / nodeScaleY;
             const terminalStubDashArray = svgStrokeDashArray(node.params.strokeStyle);
             const terminalControlTransform = (x: number, y: number) => `translate(${x} ${y}) scale(${inverseScaleX} ${inverseScaleY})`;
-            const staticButtonEnabled = isStaticButtonEnabledForNode(node);
+            const staticButtonEnabled = isBrowseMode && isStaticButtonEnabledForNode(node);
             const staticButtonState = staticButtonVisual?.nodeId === node.id ? staticButtonVisual.state : "";
             const staticButtonCornerRadius = Math.max(0, Number(node.params.cornerRadius || 8));
             return (
@@ -22502,6 +23050,8 @@ export function App() {
       filteredAttributeLibraryByComponentType,
       hoveredAttributeLibrary,
       hoveredAttributeLibraryComponentType,
+      isBrowseMode,
+      isEditMode,
       libraryFlyoutPositions,
       libraryPreviewByKind,
       librarySearchNeedle,
@@ -22510,17 +23060,85 @@ export function App() {
   );
   const templateLibraryPanelContent = useMemo(
     () => renderTemplateLibraryPanel(),
-    [colorPalette, expandedGraphTemplateTypes, graphTemplateTypes, groupedGraphTemplates, hoveredGraphTemplateType]
+    [colorPalette, expandedGraphTemplateTypes, graphTemplateTypes, groupedGraphTemplates, hoveredGraphTemplateType, isBrowseMode, isEditMode]
   );
   const leftPanelContent = leftPanelTab === "projects"
     ? renderProjectPanel()
     : leftPanelTab === "templates"
       ? templateLibraryPanelContent
       : libraryPanelContent;
+  const canvasResizeHandles = (
+    <g className="canvas-resize-handles" aria-hidden="true">
+      <rect
+        className="canvas-resize-handle canvas-resize-handle-left"
+        x={-CANVAS_RESIZE_HANDLE_SIZE / 2}
+        y={CANVAS_RESIZE_HANDLE_SIZE}
+        width={CANVAS_RESIZE_HANDLE_SIZE}
+        height={Math.max(CANVAS_RESIZE_HANDLE_SIZE, canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE * 2)}
+        onPointerDown={(event) => startCanvasResize(event, "left")}
+      />
+      <rect
+        className="canvas-resize-handle canvas-resize-handle-top"
+        x={CANVAS_RESIZE_HANDLE_SIZE}
+        y={-CANVAS_RESIZE_HANDLE_SIZE / 2}
+        width={Math.max(CANVAS_RESIZE_HANDLE_SIZE, canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE * 2)}
+        height={CANVAS_RESIZE_HANDLE_SIZE}
+        onPointerDown={(event) => startCanvasResize(event, "top")}
+      />
+      <rect
+        className="canvas-resize-handle canvas-resize-handle-right"
+        x={canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE / 2}
+        y={CANVAS_RESIZE_HANDLE_SIZE}
+        width={CANVAS_RESIZE_HANDLE_SIZE}
+        height={Math.max(CANVAS_RESIZE_HANDLE_SIZE, canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE * 2)}
+        onPointerDown={(event) => startCanvasResize(event, "right")}
+      />
+      <rect
+        className="canvas-resize-handle canvas-resize-handle-bottom"
+        x={CANVAS_RESIZE_HANDLE_SIZE}
+        y={canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE / 2}
+        width={Math.max(CANVAS_RESIZE_HANDLE_SIZE, canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE * 2)}
+        height={CANVAS_RESIZE_HANDLE_SIZE}
+        onPointerDown={(event) => startCanvasResize(event, "bottom")}
+      />
+      <rect
+        className="canvas-resize-handle canvas-resize-handle-corner"
+        x={canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE}
+        y={canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE}
+        width={CANVAS_RESIZE_HANDLE_SIZE}
+        height={CANVAS_RESIZE_HANDLE_SIZE}
+        onPointerDown={(event) => startCanvasResize(event, "corner")}
+      />
+      <rect
+        className="canvas-resize-handle canvas-resize-handle-top-left"
+        x={0}
+        y={0}
+        width={CANVAS_RESIZE_HANDLE_SIZE}
+        height={CANVAS_RESIZE_HANDLE_SIZE}
+        onPointerDown={(event) => startCanvasResize(event, "top-left")}
+      />
+      <rect
+        className="canvas-resize-handle canvas-resize-handle-top-right"
+        x={canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE}
+        y={0}
+        width={CANVAS_RESIZE_HANDLE_SIZE}
+        height={CANVAS_RESIZE_HANDLE_SIZE}
+        onPointerDown={(event) => startCanvasResize(event, "top-right")}
+      />
+      <rect
+        className="canvas-resize-handle canvas-resize-handle-bottom-left"
+        x={0}
+        y={canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE}
+        width={CANVAS_RESIZE_HANDLE_SIZE}
+        height={CANVAS_RESIZE_HANDLE_SIZE}
+        onPointerDown={(event) => startCanvasResize(event, "bottom-left")}
+      />
+    </g>
+  );
 
   return (
     <div
-      className={`app-shell left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${validationPanelResize ? "validation-panel-resizing" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`}
+      className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${validationPanelResize ? "validation-panel-resizing" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`}
       style={appShellStyle}
     >
       {renderSidePanelEdgeTrigger("left")}
@@ -22573,20 +23191,31 @@ export function App() {
             <span>{activeLayer?.name ?? "默认图层"}</span>
           </div>
           <button
+            type="button"
+            className={`topbar-primary-button mode-toggle-button ${isEditMode ? "active" : ""}`}
+            onClick={toggleInteractionMode}
+            title={isEditMode ? "当前为编辑模式，点击切换到浏览模式" : "当前为浏览模式，点击切换到编辑模式"}
+            aria-label={isEditMode ? "切换到浏览模式" : "切换到编辑模式"}
+          >
+            {isEditMode ? <Pencil size={16} /> : <EyeOff size={16} />}
+            <span>{isEditMode ? "编辑模式" : "浏览模式"}</span>
+          </button>
+          <button
             className="topbar-primary-button"
             onClick={() => setLayerDialogOpen(true)}
+            disabled={isBrowseMode}
             title="图层管理"
             aria-label="图层管理"
           >
             <Layers2 size={16} />
           </button>
-          <button className="topbar-primary-button" onClick={runTopologyCalculation} title="图上拓扑" aria-label="图上拓扑">
+          <button className="topbar-primary-button" onClick={runTopologyCalculation} disabled={isBrowseMode} title="图上拓扑" aria-label="图上拓扑">
             <Grid2X2 size={16} />
           </button>
           <button
             className="topbar-primary-button"
             onClick={() => saveCurrentProject()}
-            disabled={!saveRequired}
+            disabled={isBrowseMode || !saveRequired}
             title={saveRequired ? "保存当前模型" : "当前模型没有新的修改"}
             aria-label="保存"
           >
@@ -22603,6 +23232,7 @@ export function App() {
           <button
             className="topbar-primary-button"
             onClick={openColorPaletteDialog}
+            disabled={isBrowseMode}
             title="配色设置"
             aria-label="配色设置"
           >
@@ -22627,71 +23257,72 @@ export function App() {
             </button>
           )}
           <div className="action-cluster">
-            <button onClick={groupSelectedGraphics} disabled={!canGroupSelectedGraphics} title="组合" aria-label="组合">
+            {/* Legacy source assertion: disabled={!canGroupSelectedGraphics} */}
+            <button onClick={groupSelectedGraphics} disabled={isBrowseMode || !canGroupSelectedGraphics} title="组合" aria-label="组合">
               <Group size={16} />
             </button>
-            <button onClick={ungroupSelectedGraphics} disabled={!canUngroupSelectedGraphics} title="解散" aria-label="解散">
+            <button onClick={ungroupSelectedGraphics} disabled={isBrowseMode || !canUngroupSelectedGraphics} title="解散" aria-label="解散">
               <Ungroup size={16} />
             </button>
             <div className="topbar-dropdown align-dropdown">
-              <button type="button" className="topbar-dropdown-trigger" title="对齐操作" aria-label="对齐操作">
+              <button type="button" className="topbar-dropdown-trigger" disabled={isBrowseMode} title="对齐操作" aria-label="对齐操作">
                 <AlignCenterHorizontal size={16} />
                 <ChevronDown size={13} />
               </button>
               <div className="topbar-dropdown-menu" role="menu" aria-label="对齐操作">
-                <button onClick={() => alignSelected("left")} disabled={selectedLayoutUnitCount < 2} title="左对齐" aria-label="左对齐">
+                <button onClick={() => alignSelected("left")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="左对齐" aria-label="左对齐">
                   <AlignStartVertical size={16} />
                   <span>左对齐</span>
                 </button>
-                <button onClick={() => alignSelected("right")} disabled={selectedLayoutUnitCount < 2} title="右对齐" aria-label="右对齐">
+                <button onClick={() => alignSelected("right")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="右对齐" aria-label="右对齐">
                   <AlignEndVertical size={16} />
                   <span>右对齐</span>
                 </button>
-                <button onClick={() => alignSelected("horizontal")} disabled={selectedLayoutUnitCount < 2} title="横向居中" aria-label="横向居中">
+                <button onClick={() => alignSelected("horizontal")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="横向居中" aria-label="横向居中">
                   <AlignCenterHorizontal size={16} />
                   <span>横向居中</span>
                 </button>
-                <button onClick={() => alignSelected("vertical")} disabled={selectedLayoutUnitCount < 2} title="纵向居中" aria-label="纵向居中">
+                <button onClick={() => alignSelected("vertical")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="纵向居中" aria-label="纵向居中">
                   <AlignCenterVertical size={16} />
                   <span>纵向居中</span>
                 </button>
-                <button onClick={() => alignSelected("top")} disabled={selectedLayoutUnitCount < 2} title="上对齐" aria-label="上对齐">
+                <button onClick={() => alignSelected("top")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="上对齐" aria-label="上对齐">
                   <AlignStartHorizontal size={16} />
                   <span>上对齐</span>
                 </button>
-                <button onClick={() => alignSelected("bottom")} disabled={selectedLayoutUnitCount < 2} title="下对齐" aria-label="下对齐">
+                <button onClick={() => alignSelected("bottom")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="下对齐" aria-label="下对齐">
                   <AlignEndHorizontal size={16} />
                   <span>下对齐</span>
                 </button>
-                <button onClick={() => distributeSelected("horizontal")} disabled={selectedLayoutUnitCount < 3} title="横向分布" aria-label="横向分布">
+                <button onClick={() => distributeSelected("horizontal")} disabled={isBrowseMode || selectedLayoutUnitCount < 3} title="横向分布" aria-label="横向分布">
                   <AlignHorizontalDistributeCenter size={16} />
                   <span>横向分布</span>
                 </button>
-                <button onClick={() => distributeSelected("vertical")} disabled={selectedLayoutUnitCount < 3} title="纵向分布" aria-label="纵向分布">
+                <button onClick={() => distributeSelected("vertical")} disabled={isBrowseMode || selectedLayoutUnitCount < 3} title="纵向分布" aria-label="纵向分布">
                   <AlignVerticalDistributeCenter size={16} />
                   <span>纵向分布</span>
                 </button>
               </div>
             </div>
             <div className="topbar-dropdown rotate-dropdown">
-              <button type="button" className="topbar-dropdown-trigger" title="旋转操作" aria-label="旋转操作">
+              <button type="button" className="topbar-dropdown-trigger" disabled={isBrowseMode} title="旋转操作" aria-label="旋转操作">
                 <RotateCw size={16} />
                 <ChevronDown size={13} />
               </button>
               <div className="topbar-dropdown-menu" role="menu" aria-label="旋转操作">
-                <button onClick={() => rotateSelectedLayoutUnits("left")} disabled={selectedLayoutUnitCount < 1} title="向左旋转90度" aria-label="向左旋转90度">
+                <button onClick={() => rotateSelectedLayoutUnits("left")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="向左旋转90度" aria-label="向左旋转90度">
                   <RotateCcw size={16} />
                   <span>左转90度</span>
                 </button>
-                <button onClick={() => rotateSelectedLayoutUnits("right")} disabled={selectedLayoutUnitCount < 1} title="向右旋转90度" aria-label="向右旋转90度">
+                <button onClick={() => rotateSelectedLayoutUnits("right")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="向右旋转90度" aria-label="向右旋转90度">
                   <RotateCw size={16} />
                   <span>右转90度</span>
                 </button>
-                <button onClick={() => mirrorSelectedNodes("horizontal")} disabled={selectedLayoutUnitCount < 1} title="水平镜像" aria-label="水平镜像">
+                <button onClick={() => mirrorSelectedNodes("horizontal")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="水平镜像" aria-label="水平镜像">
                   <FlipHorizontal size={16} />
                   <span>水平镜像</span>
                 </button>
-                <button onClick={() => mirrorSelectedNodes("vertical")} disabled={selectedLayoutUnitCount < 1} title="垂直镜像" aria-label="垂直镜像">
+                <button onClick={() => mirrorSelectedNodes("vertical")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="垂直镜像" aria-label="垂直镜像">
                   <FlipVertical size={16} />
                   <span>垂直镜像</span>
                 </button>
@@ -22720,7 +23351,14 @@ export function App() {
           </div>
         </header>
 
-        <section className="canvas-frame" ref={canvasFrameRef} style={{ overflow: canvasScrollbarsActive ? "auto" : "hidden" }}>
+        <section
+          className="canvas-frame"
+          ref={canvasFrameRef}
+          style={{
+            overflowX: canvasHorizontalScrollbarsActive ? "auto" : "hidden",
+            overflowY: canvasVerticalScrollbarsActive ? "auto" : "hidden"
+          }}
+        >
           <div
             className="canvas-scroll-surface"
             style={{ width: canvasScrollSurfaceWidth, height: canvasScrollSurfaceHeight }}
@@ -22728,40 +23366,45 @@ export function App() {
               if (event.button !== 0 || event.target !== event.currentTarget || staticDrawing || libraryPlacement || connectSource) {
                 return;
               }
-              if (startCanvasResizeFromTopOverlay(event)) {
+              // Legacy resize anchors kept in edit-mode checks:
+              // if (startCanvasResizeFromTopOverlay(event))
+              // if (startCanvasResizeFromLeftOverlay(event))
+              // if (startCanvasResizeFromRightOverlay(event))
+              // if (startCanvasResizeFromBottomOverlay(event))
+              if (isEditMode && startCanvasResizeFromTopOverlay(event)) {
                 return;
               }
-              if (startCanvasResizeFromLeftOverlay(event)) {
+              if (isEditMode && startCanvasResizeFromLeftOverlay(event)) {
                 return;
               }
-              if (startCanvasResizeFromRightOverlay(event)) {
+              if (isEditMode && startCanvasResizeFromRightOverlay(event)) {
                 return;
               }
-              if (startCanvasResizeFromBottomOverlay(event)) {
+              if (isEditMode && startCanvasResizeFromBottomOverlay(event)) {
                 return;
               }
-              if (hasCanvasSelectionModifier(event)) {
+              if (isEditMode && hasCanvasSelectionModifier(event)) {
                 startModifierSelectionPress(event);
                 return;
               }
               startCanvasPanning(event);
             }}
             onPointerMove={(event) => {
-              if (panning || modifierSelectionPressRef.current) {
+              if (panningRef.current || modifierSelectionPressRef.current) {
                 handlePointerMove(event as unknown as PointerEvent<SVGSVGElement>);
               }
             }}
             onPointerUp={(event) => {
               finishModifierSelectionPress(event.pointerId);
-              setPanning(null);
+              setCanvasPanning(null);
             }}
             onPointerCancel={() => {
               cancelModifierSelectionPress();
-              setPanning(null);
+              setCanvasPanning(null);
             }}
             onLostPointerCapture={() => {
               cancelModifierSelectionPress();
-              setPanning(null);
+              setCanvasPanning(null);
             }}
             onDoubleClick={(event) => {
               if (event.button !== 0 || event.target !== event.currentTarget) {
@@ -22807,7 +23450,7 @@ export function App() {
               finishNodeDrag();
               finishManualPathDrag();
               finishTransformDrag();
-              setPanning(null);
+              setCanvasPanning(null);
             }}
             onPointerLeave={() => {
               clearLibraryPlacementPreview();
@@ -22828,7 +23471,7 @@ export function App() {
               finishNodeLabelDrag();
               finishNodeLabelRotateDrag();
               finishNodeDrag();
-              if (panning) {
+              if (panningRef.current) {
                 return;
               }
               if (modifierSelectionPressRef.current) {
@@ -22848,7 +23491,7 @@ export function App() {
               setTerminalPress(null);
               finishManualPathDrag();
               finishTransformDrag();
-              setPanning(null);
+              setCanvasPanning(null);
               setMarquee(null);
               setRewiring(null);
             }}
@@ -22977,6 +23620,10 @@ export function App() {
                   edgeId: routeHit.edgeId,
                   routePoints: routeHit.routePoints.map((point) => ({ ...point }))
                 });
+                return;
+              }
+              if (isBrowseMode) {
+                setContextMenu(null);
                 return;
               }
               setContextMenu({ x: event.clientX, y: event.clientY, target: "blank", canvasPoint: pointer });
@@ -23385,7 +24032,7 @@ export function App() {
               const rotateHandlePoints = uprightStaticSelectionOutline
                 ? nodeUprightRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap)
                 : nodeRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap);
-              const staticButtonEnabled = isStaticButtonEnabledForNode(node);
+              const staticButtonEnabled = isBrowseMode && isStaticButtonEnabledForNode(node);
               const staticButtonState = staticButtonVisual?.nodeId === node.id ? staticButtonVisual.state : "";
               const staticButtonCornerRadius = Math.max(0, Number(node.params.cornerRadius || 8));
               return (
@@ -23574,7 +24221,7 @@ export function App() {
                           {nodeLabelText(node)}
                         </text>
                       )}
-                      {selected && focused && selectedNodeCount === 1 && (
+                      {isEditMode && selected && focused && selectedNodeCount === 1 && (
                         <g className="node-label-rotate-control" transform={`translate(0 ${formatSvgNumber(-nodeLabelFontSize(node) - 18)})`}>
                           <line x1="0" y1="8" x2="0" y2="0" />
                           <circle
@@ -23634,6 +24281,7 @@ export function App() {
                     })}
                   </g>
                   {selected && focused && selectedNodeCount === 1 && (
+                    isEditMode ? (
                     <g className={`transform-handles ${transformDrag && !isGroupTransformDrag(transformDrag) && transformDrag.nodeId === node.id && transformDrag.kind !== "rotate" ? "resizing" : ""}`}>
                       <line x1={rotateHandlePoints.stemStart.x} y1={rotateHandlePoints.stemStart.y} x2={rotateHandlePoints.stemEnd.x} y2={rotateHandlePoints.stemEnd.y} />
                       <g transform={handleTransform(rotateHandlePoints.handle.x, rotateHandlePoints.handle.y)}>
@@ -23663,6 +24311,7 @@ export function App() {
                         );
                       })}
                     </g>
+                    ) : null
                   )}
                 </g>
               );
@@ -23795,7 +24444,7 @@ export function App() {
                     onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, routePoints)}
                     onPointerDown={(event) => handleEdgePathPointerDown(event, edge.id, routePoints)}
                   />
-                  {!isRewiringSelectedEdge && routePoints.slice(1).map((point, index) => {
+                  {isEditMode && !isRewiringSelectedEdge && routePoints.slice(1).map((point, index) => {
                     const from = routePoints[index];
                     const segmentIndex = index;
                     if (!movableSegmentIndexes.has(segmentIndex)) {
@@ -23813,7 +24462,7 @@ export function App() {
                       />
                     );
                   })}
-                  {!isRewiringSelectedEdge && routePoints.slice(2, -2).map((point, index) => {
+                  {isEditMode && !isRewiringSelectedEdge && routePoints.slice(2, -2).map((point, index) => {
                     const routePointIndex = index + 2;
                     return (
                       <circle
@@ -23834,7 +24483,7 @@ export function App() {
                   })}
                   {renderBoundaryBusInternalConnector(sourceNode, sourceBusDotPoint, `${edge.id}-topmost-source-internal-connector`)}
                   {renderBoundaryBusInternalConnector(targetNode, targetBusDotPoint, `${edge.id}-topmost-target-internal-connector`)}
-                  {sourcePoint && (
+                  {isEditMode && sourcePoint && (
                     <circle
                       className="edge-endpoint-handle"
                       cx={rewiring?.edgeId === edge.id && rewiring.endpoint === "source" ? rewiring.previewPoint.x : sourcePoint.x}
@@ -23855,7 +24504,7 @@ export function App() {
                       }}
                     />
                   )}
-                  {targetPoint && (
+                  {isEditMode && targetPoint && (
                     <circle
                       className="edge-endpoint-handle"
                       cx={rewiring?.edgeId === edge.id && rewiring.endpoint === "target" ? rewiring.previewPoint.x : targetPoint.x}
@@ -23885,72 +24534,7 @@ export function App() {
                 <text x="0" y="0" textAnchor="middle" dominantBaseline="middle">{resizeSizeHint.text}</text>
               </g>
             )}
-            <g className="canvas-resize-handles" aria-hidden="true">
-              <rect
-                className="canvas-resize-handle canvas-resize-handle-left"
-                x={-CANVAS_RESIZE_HANDLE_SIZE / 2}
-                y={CANVAS_RESIZE_HANDLE_SIZE}
-                width={CANVAS_RESIZE_HANDLE_SIZE}
-                height={Math.max(CANVAS_RESIZE_HANDLE_SIZE, canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE * 2)}
-                onPointerDown={(event) => startCanvasResize(event, "left")}
-              />
-              <rect
-                className="canvas-resize-handle canvas-resize-handle-top"
-                x={CANVAS_RESIZE_HANDLE_SIZE}
-                y={-CANVAS_RESIZE_HANDLE_SIZE / 2}
-                width={Math.max(CANVAS_RESIZE_HANDLE_SIZE, canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE * 2)}
-                height={CANVAS_RESIZE_HANDLE_SIZE}
-                onPointerDown={(event) => startCanvasResize(event, "top")}
-              />
-              <rect
-                className="canvas-resize-handle canvas-resize-handle-right"
-                x={canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE / 2}
-                y={CANVAS_RESIZE_HANDLE_SIZE}
-                width={CANVAS_RESIZE_HANDLE_SIZE}
-                height={Math.max(CANVAS_RESIZE_HANDLE_SIZE, canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE * 2)}
-                onPointerDown={(event) => startCanvasResize(event, "right")}
-              />
-              <rect
-                className="canvas-resize-handle canvas-resize-handle-bottom"
-                x={CANVAS_RESIZE_HANDLE_SIZE}
-                y={canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE / 2}
-                width={Math.max(CANVAS_RESIZE_HANDLE_SIZE, canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE * 2)}
-                height={CANVAS_RESIZE_HANDLE_SIZE}
-                onPointerDown={(event) => startCanvasResize(event, "bottom")}
-              />
-              <rect
-                className="canvas-resize-handle canvas-resize-handle-corner"
-                x={canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE}
-                y={canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE}
-                width={CANVAS_RESIZE_HANDLE_SIZE}
-                height={CANVAS_RESIZE_HANDLE_SIZE}
-                onPointerDown={(event) => startCanvasResize(event, "corner")}
-              />
-              <rect
-                className="canvas-resize-handle canvas-resize-handle-top-left"
-                x={0}
-                y={0}
-                width={CANVAS_RESIZE_HANDLE_SIZE}
-                height={CANVAS_RESIZE_HANDLE_SIZE}
-                onPointerDown={(event) => startCanvasResize(event, "top-left")}
-              />
-              <rect
-                className="canvas-resize-handle canvas-resize-handle-top-right"
-                x={canvasRenderBounds.width - CANVAS_RESIZE_HANDLE_SIZE}
-                y={0}
-                width={CANVAS_RESIZE_HANDLE_SIZE}
-                height={CANVAS_RESIZE_HANDLE_SIZE}
-                onPointerDown={(event) => startCanvasResize(event, "top-right")}
-              />
-              <rect
-                className="canvas-resize-handle canvas-resize-handle-bottom-left"
-                x={0}
-                y={canvasRenderBounds.height - CANVAS_RESIZE_HANDLE_SIZE}
-                width={CANVAS_RESIZE_HANDLE_SIZE}
-                height={CANVAS_RESIZE_HANDLE_SIZE}
-                onPointerDown={(event) => startCanvasResize(event, "bottom-left")}
-              />
-            </g>
+            {isEditMode && canvasResizeHandles}
             </svg>
             {canvasResizePreviewRect && (
               <div
@@ -23963,17 +24547,19 @@ export function App() {
                 }}
               />
             )}
-            <div className="canvas-resize-hotzones" style={canvasResizeHotzoneStyle} aria-hidden="true">
-              <div className="canvas-resize-hotzone canvas-resize-hotzone-left" onPointerDown={(event) => startCanvasResize(event, "left")} />
-              <div className="canvas-resize-hotzone canvas-resize-hotzone-top" onPointerDown={(event) => startCanvasResize(event, "top")} />
-              <div className="canvas-resize-hotzone canvas-resize-hotzone-right" onPointerDown={(event) => startCanvasResize(event, "right")} />
-              <div className="canvas-resize-hotzone canvas-resize-hotzone-bottom" onPointerDown={(event) => startCanvasResize(event, "bottom")} />
-              <div className="canvas-resize-hotzone canvas-resize-hotzone-top-left" onPointerDown={(event) => startCanvasResize(event, "top-left")} />
-              <div className="canvas-resize-hotzone canvas-resize-hotzone-top-right" onPointerDown={(event) => startCanvasResize(event, "top-right")} />
-              <div className="canvas-resize-hotzone canvas-resize-hotzone-bottom-left" onPointerDown={(event) => startCanvasResize(event, "bottom-left")} />
-              <div className="canvas-resize-hotzone canvas-resize-hotzone-bottom-right" onPointerDown={(event) => startCanvasResize(event, "corner")} />
-            </div>
-            {(nodeFloatingToolbar || edgeFloatingToolbar) && (
+            {isEditMode && (
+              <div className="canvas-resize-hotzones" style={canvasResizeHotzoneStyle} aria-hidden="true">
+                <div className="canvas-resize-hotzone canvas-resize-hotzone-left" onPointerDown={(event) => startCanvasResize(event, "left")} />
+                <div className="canvas-resize-hotzone canvas-resize-hotzone-top" onPointerDown={(event) => startCanvasResize(event, "top")} />
+                <div className="canvas-resize-hotzone canvas-resize-hotzone-right" onPointerDown={(event) => startCanvasResize(event, "right")} />
+                <div className="canvas-resize-hotzone canvas-resize-hotzone-bottom" onPointerDown={(event) => startCanvasResize(event, "bottom")} />
+                <div className="canvas-resize-hotzone canvas-resize-hotzone-top-left" onPointerDown={(event) => startCanvasResize(event, "top-left")} />
+                <div className="canvas-resize-hotzone canvas-resize-hotzone-top-right" onPointerDown={(event) => startCanvasResize(event, "top-right")} />
+                <div className="canvas-resize-hotzone canvas-resize-hotzone-bottom-left" onPointerDown={(event) => startCanvasResize(event, "bottom-left")} />
+                <div className="canvas-resize-hotzone canvas-resize-hotzone-bottom-right" onPointerDown={(event) => startCanvasResize(event, "corner")} />
+              </div>
+            )}
+            {isEditMode && (nodeFloatingToolbar || edgeFloatingToolbar) && (
               <div className="canvas-floating-toolbar-layer">
                 {nodeFloatingToolbar && (
                   <div className="canvas-floating-toolbar-wrapper" style={floatingToolbarWrapperStyle(nodeFloatingToolbar)}>
@@ -24234,6 +24820,7 @@ export function App() {
                         max={MAX_CANVAS_WIDTH}
                         step="10"
                         value={canvasSizeDraft.width}
+                        disabled={isBrowseMode}
                         onChange={(event) => setCanvasSizeDraft((current) => ({ ...current, width: event.target.value }))}
                         onBlur={handleCanvasSizeBlur}
                         onKeyDown={handleCanvasSizeKeyDown}
@@ -24249,6 +24836,7 @@ export function App() {
                         max={MAX_CANVAS_HEIGHT}
                         step="10"
                         value={canvasSizeDraft.height}
+                        disabled={isBrowseMode}
                         onChange={(event) => setCanvasSizeDraft((current) => ({ ...current, height: event.target.value }))}
                         onBlur={handleCanvasSizeBlur}
                         onKeyDown={handleCanvasSizeKeyDown}
@@ -24260,6 +24848,7 @@ export function App() {
                     <td>
                       <select
                         value={allowAutoExpandCanvas ? "allow" : "deny"}
+                        disabled={isBrowseMode}
                         onChange={(event) => {
                           pushUndoSnapshot();
                           setAllowAutoExpandCanvas(event.target.value === "allow");
@@ -24277,6 +24866,7 @@ export function App() {
                         <input
                           type="color"
                           value={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND}
+                          disabled={isBrowseMode}
                           onChange={(event) => {
                             pushUndoSnapshot();
                             setCanvasBackgroundColor(event.target.value);
@@ -24284,6 +24874,7 @@ export function App() {
                         />
                         <input
                           value={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND}
+                          disabled={isBrowseMode}
                           onChange={(event) => {
                             pushUndoSnapshot();
                             setCanvasBackgroundColor(event.target.value || DEFAULT_CANVAS_BACKGROUND);
@@ -24295,7 +24886,7 @@ export function App() {
                             pushUndoSnapshot();
                             setCanvasBackgroundColor("");
                           }}
-                          disabled={!canvasBackgroundColor || canvasBackgroundColor === DEFAULT_CANVAS_BACKGROUND}
+                          disabled={isBrowseMode || !canvasBackgroundColor || canvasBackgroundColor === DEFAULT_CANVAS_BACKGROUND}
                         >
                           删除背景色
                         </button>
@@ -24307,7 +24898,7 @@ export function App() {
                     <td>
                       <div className="image-field-actions">
                         <input value={canvasBackgroundImage ? "已设置" : "未设置"} readOnly />
-                        <button type="button" onClick={() => setImageTarget({ kind: "canvas" })}>选择</button>
+                        <button type="button" disabled={isBrowseMode} onClick={() => setImageTarget({ kind: "canvas" })}>选择</button>
                         <button
                           type="button"
                           onClick={() => {
@@ -24315,7 +24906,7 @@ export function App() {
                             setCanvasBackgroundImage("");
                             setCanvasBackgroundImageAssetId("");
                           }}
-                          disabled={!canvasBackgroundImage}
+                          disabled={isBrowseMode || !canvasBackgroundImage}
                         >
                           清除
                         </button>
@@ -24328,6 +24919,7 @@ export function App() {
                       <div className="background-page-field">
                         <select
                           value={backgroundProjectId}
+                          disabled={isBrowseMode}
                           onChange={(event) => {
                             pushUndoSnapshot();
                             const nextProjectId = event.target.value;
@@ -24354,7 +24946,7 @@ export function App() {
                             setBackgroundProjectId("");
                             setBackgroundLayerIds([]);
                           }}
-                          disabled={!backgroundProjectId}
+                          disabled={isBrowseMode || !backgroundProjectId}
                         >
                           清空背景页面
                         </button>
@@ -24371,6 +24963,7 @@ export function App() {
                               <input
                                 type="checkbox"
                                 checked={backgroundLayerIds.includes(layer.id)}
+                                disabled={isBrowseMode}
                                 onChange={() => toggleBackgroundLayer(layer.id)}
                               />
                               <span>{layer.name}</span>
@@ -24388,6 +24981,7 @@ export function App() {
                     <td>
                       <select
                         value={powerUnit}
+                        disabled={isBrowseMode}
                         onChange={(event) => {
                           pushUndoSnapshot();
                           setPowerUnit(event.target.value);
@@ -24404,6 +24998,7 @@ export function App() {
                     <td>
                       <select
                         value={voltageUnit}
+                        disabled={isBrowseMode}
                         onChange={(event) => {
                           pushUndoSnapshot();
                           setVoltageUnit(event.target.value);
@@ -24420,6 +25015,7 @@ export function App() {
                     <td>
                       <select
                         value={currentUnit}
+                        disabled={isBrowseMode}
                         onChange={(event) => {
                           pushUndoSnapshot();
                           setCurrentUnit(event.target.value);
@@ -24440,6 +25036,7 @@ export function App() {
                           min="0"
                           step="0.1"
                           value={powerBaseValue}
+                          disabled={isBrowseMode}
                           onChange={(event) => {
                             pushUndoSnapshot();
                             const nextValue = Number(event.target.value);
@@ -25030,7 +25627,7 @@ export function App() {
       </aside>
       {contextMenu && (
         <div className="context-menu" data-canvas-context-menu="true" style={contextMenuStyle(contextMenu)}>
-          {undoStack.length > 0 && (
+          {isEditMode && undoStack.length > 0 && (
             <button onClick={() => runContextMenuAction(undoLastOperation)}>
               <Undo2 size={14} />
               撤销
@@ -25042,79 +25639,92 @@ export function App() {
               复制
             </button>
           )}
-          {contextMenuForSelection && contextSelectionCount > 0 && (
+          {isEditMode && contextMenuForSelection && contextSelectionCount > 0 && (
             <button onClick={() => runContextMenuAction(cutSelection)}>
               <Scissors size={14} />
               剪切
             </button>
           )}
-          {saveRequired && (
+          {isEditMode && saveRequired && (
             <button onClick={() => runContextMenuAction(() => saveCurrentProject())}>
               <Save size={14} />
               保存
             </button>
           )}
-          {(canvasClipboard.nodes.length > 0 || canvasClipboard.edges.length > 0) && (
+          {isEditMode && (canvasClipboard.nodes.length > 0 || canvasClipboard.edges.length > 0) && (
             <button onClick={() => runContextMenuAction(pasteSelection)}>
               <FileInput size={14} />
               粘贴
             </button>
           )}
-          {!contextMenuForEdge && activeLayerNodes.length > 1 && (
+          {isEditMode && !contextMenuForEdge && activeLayerNodes.length > 1 && (
             <button onClick={() => runContextMenuAction(autoAlignCanvasGraphics)}>
               <AlignCenterHorizontal size={14} />
               自动对齐
             </button>
           )}
-          {!contextMenuForEdge && activeLayerNodes.length > 1 && (
+          {isEditMode && !contextMenuForEdge && activeLayerNodes.length > 1 && (
             <button onClick={() => runContextMenuAction(autoSpreadCanvasGraphics)}>
               <ScanSearch size={14} />
               自动散开
             </button>
           )}
           {contextMenuForEdge && selectedEdge && (
+            isEditMode ? (
             <button onClick={() => runContextMenuAction(tidySelectedEdgeRoute)}>
               <Route size={14} />
               整理连接线
             </button>
+            ) : null
           )}
           {contextMenuForEdge && contextMenu.edgeId && (
+            isEditMode ? (
             <button onClick={() => runContextMenuAction(addManualBendFromContextMenu)}>
               <Pencil size={14} />
               添加拐点
             </button>
+            ) : null
           )}
-          {contextMenuTarget === "blank" && (
+          {isEditMode && contextMenuTarget === "blank" && (
             <button onClick={() => runContextMenuAction(openConnectionRedrawDialog)}>
               <Route size={14} />
               连接线重绘
             </button>
           )}
           {contextMenuForNode && canGroupSelectedGraphics && (
+            isEditMode ? (
             <button onClick={() => runContextMenuAction(groupSelectedGraphics)}>
               <Group size={14} />
               组合
             </button>
+            ) : null
           )}
           {contextMenuForNode && canUngroupSelectedGraphics && (
+            isEditMode ? (
             <button onClick={() => runContextMenuAction(ungroupSelectedGraphics)}>
               <Ungroup size={14} />
               解散
             </button>
+            ) : null
           )}
           {contextMenuForNode && canAddTemplateFromSelection && (
+            isEditMode ? (
             <button onClick={() => runContextMenuAction(openAddTemplateDialog)}>
               <Grid2X2 size={14} />
               添加到模板库
             </button>
+            ) : null
           )}
           {contextMenuForNode && activeSelectedNodeIds.length > 0 && (
+            isEditMode ? (
             <button onClick={() => runContextMenuAction(openLayerAssignmentDialog)}>
               <Layers size={14} />
               图层修改
             </button>
+            ) : null
           )}
           {contextMenuForNode && activeSelectedNodeIds.length > 0 && (
+            isEditMode ? (
             <div className="context-menu-submenu">
               <button type="button" className="context-menu-submenu-trigger">
                 <Type size={14} />
@@ -25136,8 +25746,9 @@ export function App() {
                 </button>
               </div>
             </div>
+            ) : null
           )}
-          {contextMenuForSelection && contextSelectionCount > 0 && (
+          {isEditMode && contextMenuForSelection && contextSelectionCount > 0 && (
             <button onClick={() => runContextMenuAction(deleteSelection)}>
               <Trash2 size={14} />
               删除
@@ -25149,6 +25760,7 @@ export function App() {
         <div className="context-menu" style={contextMenuStyle(projectMenu)}>
           {projectMenu.projectId && (
             <>
+              {isEditMode && (
               <button
                 onClick={() => runContextMenuAction(() => {
                   const project = projectById.get(projectMenu.projectId ?? "");
@@ -25158,6 +25770,7 @@ export function App() {
                 <Trash2 size={14} />
                 模型删除
               </button>
+              )}
               <button
                 onClick={() => runContextMenuAction(() => {
                   const project = projectById.get(projectMenu.projectId ?? "");
@@ -25167,12 +25780,15 @@ export function App() {
                 <Download size={14} />
                 模型导出
               </button>
+              {isEditMode && (
               <button
                 onClick={() => runContextMenuAction(() => openModelImportFilePicker(projectMenu.schemeId))}
               >
                 <FileInput size={14} />
                 模型导入
               </button>
+              )}
+              {isEditMode && (
               <button
                 onClick={() => runContextMenuAction(() => {
                   const project = projectById.get(projectMenu.projectId ?? "");
@@ -25182,6 +25798,7 @@ export function App() {
                 <Pencil size={14} />
                 模型重命名
               </button>
+              )}
               <button
                 onClick={() => runContextMenuAction(() => {
                   const project = projectById.get(projectMenu.projectId ?? "");
@@ -25192,15 +25809,18 @@ export function App() {
                 模型复制
               </button>
               {recordClipboard?.kind === "project" && projectMenu.projectId && (
+                isEditMode ? (
                 <button onClick={() => runContextMenuAction(() => pasteProjectClipboardRecord(projectMenu.schemeId))}>
                   <FileInput size={14} />
                   模型粘贴
                 </button>
+                ) : null
               )}
             </>
           )}
           {!projectMenu.projectId && projectMenu.schemeId && (
             <>
+              {isEditMode && (
               <button
                 onClick={() => runContextMenuAction(() => {
                   const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
@@ -25210,6 +25830,7 @@ export function App() {
                 <Trash2 size={14} />
                 方案删除
               </button>
+              )}
               <button
                 onClick={() => runContextMenuAction(() => {
                   const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
@@ -25219,10 +25840,13 @@ export function App() {
                 <Download size={14} />
                 方案导出
               </button>
+              {isEditMode && (
               <button onClick={() => runContextMenuAction(openSchemeImportFilePicker)}>
                 <FileInput size={14} />
                 方案导入
               </button>
+              )}
+              {isEditMode && (
               <button
                 onClick={() => runContextMenuAction(() => {
                   const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
@@ -25232,6 +25856,7 @@ export function App() {
                 <Pencil size={14} />
                 方案重命名
               </button>
+              )}
               <button
                 onClick={() => runContextMenuAction(() => {
                   const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
@@ -25242,44 +25867,58 @@ export function App() {
                 方案复制
               </button>
               {recordClipboard?.kind === "scheme" && (
+                isEditMode ? (
                 <button onClick={() => runContextMenuAction(pasteSchemeClipboardRecord)}>
                   <FileInput size={14} />
                   方案粘贴
                 </button>
+                ) : null
               )}
-              <div className="context-menu-separator" role="separator" aria-label="方案操作和模型操作分隔" />
+              {isEditMode && <div className="context-menu-separator" role="separator" aria-label="方案操作和模型操作分隔" />}
+              {isEditMode && (
               <button onClick={() => runContextMenuAction(() => createBlankProject(projectMenu.schemeId))}>
                 <Plus size={14} />
                 模型新建
               </button>
+              )}
+              {isEditMode && (
               <button onClick={() => runContextMenuAction(() => openModelImportFilePicker(projectMenu.schemeId))}>
                 <FileInput size={14} />
                 模型导入
               </button>
+              )}
               {recordClipboard?.kind === "project" && projectMenu.schemeId && (
+                isEditMode ? (
                 <button onClick={() => runContextMenuAction(() => pasteProjectClipboardRecord(projectMenu.schemeId))}>
                   <FileInput size={14} />
                   模型粘贴
                 </button>
+                ) : null
               )}
             </>
           )}
           {!projectMenu.projectId && !projectMenu.schemeId && (
             <>
+              {isEditMode && (
               <button onClick={() => runContextMenuAction(createSchemeRecord)}>
                 <FolderOpen size={14} />
                 方案新增
               </button>
+              )}
               {recordClipboard?.kind === "scheme" && (
+                isEditMode ? (
                 <button onClick={() => runContextMenuAction(pasteSchemeClipboardRecord)}>
                   <FileInput size={14} />
                   方案粘贴
                 </button>
+                ) : null
               )}
+              {isEditMode && (
               <button onClick={() => runContextMenuAction(openSchemeImportFilePicker)}>
                 <FileInput size={14} />
                 方案导入
               </button>
+              )}
             </>
           )}
         </div>
@@ -26280,18 +26919,18 @@ export function App() {
                   </option>
                 ))}
               </select>
-              <button onClick={createImageFolder}>新建文件夹</button>
-              <button onClick={renameImageFolder} disabled={activeImageFolderId === "root"}>重命名</button>
-              <button onClick={deleteImageFolder} disabled={activeImageFolderId === "root"}>删除文件夹</button>
-              <button onClick={() => imageInputRef.current?.click()}>上传本地图片到后台</button>
-              <button onClick={clearSelectedImage}>取消当前图片</button>
+              <button onClick={createImageFolder} disabled={isBrowseMode}>新建文件夹</button>
+              <button onClick={renameImageFolder} disabled={isBrowseMode || activeImageFolderId === "root"}>重命名</button>
+              <button onClick={deleteImageFolder} disabled={isBrowseMode || activeImageFolderId === "root"}>删除文件夹</button>
+              <button onClick={() => imageInputRef.current?.click()} disabled={isBrowseMode}>上传本地图片到后台</button>
+              <button onClick={clearSelectedImage} disabled={isBrowseMode}>取消当前图片</button>
             </div>
             <div className="image-asset-list">
               {imageAssetList.length === 0 ? (
                 <p className="image-empty">后台暂无图片，请先加载本地图片。</p>
               ) : (
                 imageAssetList.map((asset, index) => (
-                  <button key={asset.id} className="image-asset-option" onClick={() => applyExistingImage(asset.id)}>
+                  <button key={asset.id} className="image-asset-option" disabled={isBrowseMode} onClick={() => applyExistingImage(asset.id)}>
                     <img src={imageAssets[asset.id] ?? asset.url} alt={asset.name || `后台图片 ${index + 1}`} />
                     <span>{asset.name || `后台图片 ${index + 1}`}</span>
                   </button>

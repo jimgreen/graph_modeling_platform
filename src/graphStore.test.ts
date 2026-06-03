@@ -189,6 +189,26 @@ describe("normalized graph store", () => {
     expect(queryGraphStoreNodeSpatialIndex(patched, { left: 120, right: 260, top: 100, bottom: 220 }).map((node) => node.id)).toContain(left.id);
   });
 
+  test("refreshes spatial index node objects when a single terminal anchor moves", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const store = createGraphStore([source], []);
+    const rotatedTerminalSource = {
+      ...source,
+      terminals: source.terminals.map((terminal) => ({
+        ...terminal,
+        anchor: { x: 0, y: -0.5 }
+      }))
+    };
+
+    const patched = graphStorePatchNodes(store, [rotatedTerminalSource]);
+    const queriedNode = queryGraphStoreNodeSpatialIndex(patched, { left: 0, right: 220, top: 0, bottom: 220 })
+      .find((node) => node.id === source.id);
+
+    expect(patched.nodeSpatialIndex).not.toBe(store.nodeSpatialIndex);
+    expect(queriedNode).toBe(rotatedTerminalSource);
+    expect(queriedNode?.terminals[0].anchor).toEqual({ x: 0, y: -0.5 });
+  });
+
   test("indexes visible device labels so local routing and viewport queries include far labels", () => {
     const base = createDefaultNode("ac-switch", { x: 100, y: 100 });
     const labeled = {

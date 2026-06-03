@@ -1001,6 +1001,13 @@ button:disabled {
   padding: 0;
 }
 
+.mode-toggle-button {
+  width: auto;
+  min-width: 96px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
 .topbar-primary-button.active {
   color: #ffffff;
   border-color: #1d4ed8;
@@ -1406,6 +1413,14 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .diagram-canvas.panning {
+  cursor: grabbing;
+}
+
+.app-shell.browse-mode .diagram-canvas {
+  cursor: grab;
+}
+
+.app-shell.browse-mode .diagram-canvas.panning {
   cursor: grabbing;
 }
 
@@ -2198,6 +2213,10 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   stroke: #1d4ed8;
   stroke-width: 3;
   vector-effect: non-scaling-stroke;
+}
+
+.lod-node-selection-layer {
+  pointer-events: none;
 }
 
 .lod-node-selection {
@@ -4680,6 +4699,11 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   width: auto;
   min-height: auto;
   margin: 0;
+}
+
+.static-button-layer-select {
+  min-height: 92px;
+  resize: vertical;
 }
 
 .device-label-style-actions {

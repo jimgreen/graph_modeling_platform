@@ -11,6 +11,7 @@ export type RouteSpatialIndex = {
   bucketSize: number;
   buckets: Map<string, RoutedEdge[]>;
   routeBucketKeysById: Map<string, string[]>;
+  routeBoundsById: Map<string, RouteRenderBounds | null>;
 };
 
 export type RouteStore = {
@@ -52,15 +53,34 @@ export function routeRenderBounds(route: Pick<RoutedEdge, "points">, padding = 0
   return { left: left - padding, right: right + padding, top: top - padding, bottom: bottom + padding };
 }
 
+function routeBoundsIntersect(first: RouteRenderBounds, second: RouteRenderBounds) {
+  return first.left <= second.right && first.right >= second.left && first.top <= second.bottom && first.bottom >= second.top;
+}
+
+function expandRouteBounds(bounds: RouteRenderBounds, padding: number): RouteRenderBounds {
+  return {
+    left: bounds.left - padding,
+    right: bounds.right + padding,
+    top: bounds.top - padding,
+    bottom: bounds.bottom + padding
+  };
+}
+
+export function routeSpatialIndexRenderBounds(
+  index: RouteSpatialIndex,
+  edgeId: string,
+  padding = 0
+): RouteRenderBounds | null {
+  const bounds = index.routeBoundsById.get(edgeId);
+  if (!bounds || padding === 0) {
+    return bounds ?? null;
+  }
+  return expandRouteBounds(bounds, padding);
+}
+
 export function routeIntersectsRenderBounds(route: Pick<RoutedEdge, "points">, bounds: RouteRenderBounds) {
   const routeBounds = routeRenderBounds(route);
-  return Boolean(
-    routeBounds &&
-      routeBounds.left <= bounds.right &&
-      routeBounds.right >= bounds.left &&
-      routeBounds.top <= bounds.bottom &&
-      routeBounds.bottom >= bounds.top
-  );
+  return Boolean(routeBounds && routeBoundsIntersect(routeBounds, bounds));
 }
 
 export function buildRouteSpatialIndex(
@@ -69,8 +89,11 @@ export function buildRouteSpatialIndex(
 ): RouteSpatialIndex {
   const buckets = new Map<string, RoutedEdge[]>();
   const routeBucketKeysById = new Map<string, string[]>();
+  const routeBoundsById = new Map<string, RouteRenderBounds | null>();
   for (const route of routes) {
-    const bounds = routeRenderBounds(route, 8);
+    const routeBounds = routeRenderBounds(route);
+    routeBoundsById.set(route.edgeId, routeBounds);
+    const bounds = routeBounds ? expandRouteBounds(routeBounds, 8) : null;
     if (!bounds) {
       routeBucketKeysById.set(route.edgeId, []);
       continue;
@@ -91,7 +114,7 @@ export function buildRouteSpatialIndex(
     }
     routeBucketKeysById.set(route.edgeId, routeBucketKeys);
   }
-  return { bucketSize, buckets, routeBucketKeysById };
+  return { bucketSize, buckets, routeBucketKeysById, routeBoundsById };
 }
 
 function patchRouteSpatialIndex(
@@ -107,6 +130,7 @@ function patchRouteSpatialIndex(
 
   const buckets = new Map(index.buckets);
   const routeBucketKeysById = new Map(index.routeBucketKeysById);
+  const routeBoundsById = new Map(index.routeBoundsById);
   const copiedBucketKeys = new Set<string>();
   for (const edgeId of removedIds) {
     for (const key of routeBucketKeysById.get(edgeId) ?? []) {
@@ -124,10 +148,13 @@ function patchRouteSpatialIndex(
       }
     }
     routeBucketKeysById.delete(edgeId);
+    routeBoundsById.delete(edgeId);
   }
 
   for (const route of routeUpdates) {
-    const bounds = routeRenderBounds(route, 8);
+    const routeBounds = routeRenderBounds(route);
+    routeBoundsById.set(route.edgeId, routeBounds);
+    const bounds = routeBounds ? expandRouteBounds(routeBounds, 8) : null;
     const routeBucketKeys: string[] = [];
     if (bounds) {
       const range = routeSpatialBucketRange(bounds, index.bucketSize);
@@ -155,7 +182,7 @@ function patchRouteSpatialIndex(
     routeBucketKeysById.set(route.edgeId, routeBucketKeys);
   }
 
-  return { ...index, buckets, routeBucketKeysById };
+  return { ...index, buckets, routeBucketKeysById, routeBoundsById };
 }
 
 export function queryRouteSpatialIndex(index: RouteSpatialIndex, bounds: RouteRenderBounds): RoutedEdge[] {
@@ -169,7 +196,11 @@ export function queryRouteSpatialIndex(index: RouteSpatialIndex, bounds: RouteRe
         continue;
       }
       for (const route of bucket) {
-        if (seen.has(route.edgeId) || !routeIntersectsRenderBounds(route, bounds)) {
+        if (seen.has(route.edgeId)) {
+          continue;
+        }
+        const routeBounds = routeSpatialIndexRenderBounds(index, route.edgeId) ?? routeRenderBounds(route);
+        if (!routeBounds || !routeBoundsIntersect(routeBounds, bounds)) {
           continue;
         }
         seen.add(route.edgeId);

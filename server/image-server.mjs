@@ -885,7 +885,7 @@ function endpointPoint(project, edge, side) {
 }
 
 function buildSvgFile(project) {
-  const width = Number(project.canvasWidth ?? 1980);
+  const width = Number(project.canvasWidth ?? 1920);
   const height = Number(project.canvasHeight ?? 1024);
   const edgeMarkup = (project.edges ?? [])
     .map((edge) => {
