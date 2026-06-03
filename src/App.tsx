@@ -1101,6 +1101,7 @@ const CANVAS_MINIMAP_HEIGHT = 142;
 const CANVAS_MINIMAP_PADDING = 9;
 const CANVAS_MINIMAP_MAX_NODE_MARKS = 360;
 const CANVAS_MINIMAP_MAX_ROUTE_MARKS = 160;
+const CANVAS_MINIMAP_DEFER_SAMPLE_THRESHOLD = 1200;
 const CANVAS_LOD_NODE_DETAIL_LIMIT = 650;
 const CANVAS_LOD_MAX_ZOOM_PERCENT = 120;
 const CANVAS_LOD_MAX_NODE_SCREEN_SIZE = 18;
@@ -1973,6 +1974,70 @@ const boxesIntersect = (
   first: RenderViewportBounds,
   second: RenderViewportBounds
 ) => first.left <= second.right && first.right >= second.left && first.top <= second.bottom && first.bottom >= second.top;
+const sameRenderViewportBounds = (first: RenderViewportBounds, second: RenderViewportBounds) =>
+  first.left === second.left &&
+  first.right === second.right &&
+  first.top === second.top &&
+  first.bottom === second.bottom;
+const VIEWPORT_RESULT_CACHE_LIMIT = 24;
+type ViewportResultCache<T> = {
+  ownerRefs: readonly unknown[];
+  token: string;
+  values: Map<string, T>;
+};
+function viewportBoundsCacheKey(bounds: RenderViewportBounds) {
+  return `${bounds.left}:${bounds.right}:${bounds.top}:${bounds.bottom}`;
+}
+function viewportResultCacheOwnersEqual(first: readonly unknown[], second: readonly unknown[]) {
+  if (first.length !== second.length) {
+    return false;
+  }
+  for (let index = 0; index < first.length; index += 1) {
+    if (first[index] !== second[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+function resetViewportResultCache<T>(
+  cache: ViewportResultCache<T>,
+  ownerRefs: readonly unknown[],
+  token: string
+) {
+  cache.ownerRefs = ownerRefs;
+  cache.token = token;
+  cache.values = new Map();
+}
+function readViewportResultCache<T>(
+  cache: ViewportResultCache<T>,
+  ownerRefs: readonly unknown[],
+  token: string,
+  key: string
+): T | null {
+  if (cache.token !== token || !viewportResultCacheOwnersEqual(cache.ownerRefs, ownerRefs)) {
+    resetViewportResultCache(cache, ownerRefs, token);
+    return null;
+  }
+  return cache.values.get(key) ?? null;
+}
+function writeViewportResultCache<T>(
+  cache: ViewportResultCache<T>,
+  key: string,
+  value: T,
+  limit = VIEWPORT_RESULT_CACHE_LIMIT
+) {
+  if (cache.values.has(key)) {
+    cache.values.delete(key);
+  }
+  cache.values.set(key, value);
+  while (cache.values.size > limit) {
+    const oldestKey = cache.values.keys().next().value;
+    if (typeof oldestKey !== "string") {
+      break;
+    }
+    cache.values.delete(oldestKey);
+  }
+}
 function mergeRenderViewportBounds(first: RenderViewportBounds, second: RenderViewportBounds): RenderViewportBounds {
   return {
     left: Math.min(first.left, second.left),
@@ -5818,6 +5883,12 @@ type StableSvgMarkupChunkCache = {
   chunks: CachedStableSvgMarkupChunk[];
 };
 
+type ConnectionStrokeColorCache = {
+  nodeById: ReadonlyMap<string, Pick<ModelNode, "kind" | "terminals" | "params">> | null;
+  token: string;
+  colors: Map<string, { edge: Edge; color: string }>;
+};
+
 type ElementTreeSource = {
   revision: number;
   layerSignature: string;
@@ -6212,7 +6283,7 @@ export function App() {
   const imperativeSingleNodeDragEdgePreviewRef = useRef<SVGGElement | null>(null);
   const imperativeNodeDragDropHintRef = useRef<SVGGElement | null>(null);
   const imperativeSingleNodeDragActiveRef = useRef(false);
-  const imperativeNodeDragEdgePreviewMarkupRef = useRef("");
+  const imperativeNodeDragEdgePreviewPathRefs = useRef<Map<string, SVGPathElement>>(new Map());
   const imperativeNodeDragEdgePreviewKeyRef = useRef("");
   const nodePatchListLookupCacheRef = useRef<WeakMap<ModelNode[], Map<string, ModelNode>>>(new WeakMap());
   const nodeTerminalSnapTargetRef = useRef<NodeTerminalSnapTarget | null>(null);
@@ -6231,6 +6302,7 @@ export function App() {
   const cachedRouteStoreRef = useRef<RouteStore | null>(null);
   const lodCanvasNodeChunkCacheRef = useRef<StableSvgMarkupChunkCache>({ chunks: [] });
   const lodCanvasRouteChunkCacheRef = useRef<StableSvgMarkupChunkCache>({ chunks: [] });
+  const connectionStrokeColorCacheRef = useRef<ConnectionStrokeColorCache>({ nodeById: null, token: "", colors: new Map() });
   const cachedRouteInputRef = useRef<{
     routeGeometryRevision: number;
     layerSignature: string;
@@ -6241,6 +6313,17 @@ export function App() {
   const pendingStoredRouteEdgeIdsRef = useRef<Set<string>>(new Set());
   const routeDirtyGenerationRef = useRef(0);
   const canvasVisibleViewBoxFrameRef = useRef<number | null>(null);
+  const viewportQueryBoundsCacheRef = useRef<RenderViewportBounds | null>(null);
+  const viewportRoutedEdgesResultCacheRef = useRef<ViewportResultCache<RoutedEdge[]>>({ ownerRefs: [], token: "", values: new Map() });
+  const viewportNodesResultCacheRef = useRef<ViewportResultCache<ModelNode[]>>({ ownerRefs: [], token: "", values: new Map() });
+  const minimapSampleCacheRef = useRef<{
+    nodeSource: ModelNode[] | null;
+    nodeStep: number;
+    nodes: ModelNode[];
+    routeSource: RoutedEdge[] | null;
+    routeStep: number;
+    routes: RoutedEdge[];
+  }>({ nodeSource: null, nodeStep: 1, nodes: [], routeSource: null, routeStep: 1, routes: [] });
   const elementTreeCacheRef = useRef<{ signature: string; tree: ElementTreeGroup[] }>({ signature: "", tree: [] });
   const elementTreeSourceRef = useRef<ElementTreeSource | null>(null);
   const graphDirtyBaselineRef = useRef<GraphDirtyBaseline | null>(null);
@@ -6329,6 +6412,7 @@ export function App() {
   const [interactionMode, setInteractionMode] = useState<InteractionMode>("browse");
   const isBrowseMode = interactionMode === "browse";
   const isEditMode = interactionMode === "edit";
+  const isReadonlyCanvasMode = isBrowseMode;
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string>("");
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
@@ -6442,6 +6526,8 @@ export function App() {
   const [topologyStatus, setTopologyStatus] = useState<TopologyRunStatus>(INITIAL_TOPOLOGY_STATUS);
   const [routeRenderingReady, setRouteRenderingReady] = useState(false);
   const [savedRouteCrossingArcsReady, setSavedRouteCrossingArcsReady] = useState(false);
+  const [backgroundPageRenderReady, setBackgroundPageRenderReady] = useState(false);
+  const [minimapSamplingReady, setMinimapSamplingReady] = useState(false);
   const [colorDisplayMode, setColorDisplayMode] = useState<ColorDisplayMode>(() => readColorDisplayMode());
   const [colorPalette, setColorPalette] = useState<ColorPalette>(() => readColorPalette());
   const [colorPaletteDraft, setColorPaletteDraft] = useState<ColorPalette>(() => readColorPalette());
@@ -6772,16 +6858,37 @@ export function App() {
   const displaySelectedEdgeIds = canvasSelectionScope === "direct" ? groupExpandedCanvasSelection.edgeIds : activeCanvasSelection.edgeIds;
   canvasSelectionShortcutActiveRef.current = activeSelectedNodeIds.length > 0 || activeCanvasSelection.edgeIds.length > 0;
   const selectedNodeIdSet = useMemo(() => new Set(displaySelectedNodeIds), [displaySelectedNodeIds]);
+  const displaySelectedNodeKey = useMemo(() => displaySelectedNodeIds.join("|"), [displaySelectedNodeIds]);
   const selectedNode = visibleNodeById.get(selectedNodeId);
   const activeSelectedEdgeIds = activeCanvasSelection.edgeIds;
   const activeSelectedEdgeSet = useMemo(() => new Set(displaySelectedEdgeIds), [displaySelectedEdgeIds]);
+  const displaySelectedEdgeKey = useMemo(() => displaySelectedEdgeIds.join("|"), [displaySelectedEdgeIds]);
   const selectedEdge = activeLayerEdgeIdSet.has(selectedEdgeId) ? edgeById.get(selectedEdgeId) : undefined;
   const inspectorSelectedNode = selectedNode;
   const inspectorSelectedEdge = selectedEdge;
   const inspectorTopologyErrors = useDeferredValue(topologyErrors);
+  const connectionStrokeColorCacheToken = useMemo(
+    () => `${colorDisplayMode}:${JSON.stringify(colorPalette)}`,
+    [colorDisplayMode, colorPalette]
+  );
+  const cachedConnectionStrokeColor = (edge: Edge) => {
+    const cache = connectionStrokeColorCacheRef.current;
+    if (cache.nodeById !== nodeById || cache.token !== connectionStrokeColorCacheToken) {
+      cache.nodeById = nodeById;
+      cache.token = connectionStrokeColorCacheToken;
+      cache.colors = new Map();
+    }
+    const cached = cache.colors.get(edge.id);
+    if (cached && cached.edge === edge) {
+      return cached.color;
+    }
+    const color = getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette);
+    cache.colors.set(edge.id, { edge, color });
+    return color;
+  };
   const connectionLineStyle = (edgeId: string) => {
     const edge = edgeById.get(edgeId);
-    return edge ? ({ "--connection-color": getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette) } as CSSProperties) : undefined;
+    return edge ? ({ "--connection-color": cachedConnectionStrokeColor(edge) } as CSSProperties) : undefined;
   };
   const buildMultiNodeDragOverlayPreview = (
     dragNodeIds: string[],
@@ -7821,36 +7928,61 @@ export function App() {
     schemes.find((scheme) => scheme.id === activeSchemeId) ??
     schemes.find((scheme) => scheme.projects.some((project) => project.id === activeProjectId));
   const activeModelPathName = `${activeSchemeRecord?.name ?? "未选择方案"} / ${activeModelName}`;
-  const currentModelRecord: SavedProjectRecord = selectedProjectRecord ?? activeProjectRecord ?? {
-    id: activeProjectId || "current-project",
-    name: projectName,
-    updatedAt: new Date().toISOString(),
-    project: {
-      version: 1,
+  const currentModelRecord = useMemo<SavedProjectRecord>(() => (
+    selectedProjectRecord ?? activeProjectRecord ?? {
+      id: activeProjectId || "current-project",
       name: projectName,
-      canvasWidth,
-      canvasHeight,
-      allowAutoExpandCanvas,
-      canvasBackgroundColor,
-      canvasBackgroundImage,
-      canvasBackgroundImageAssetId,
-      backgroundProjectId,
-      backgroundLayerIds,
-      powerUnit,
-      voltageUnit,
-      currentUnit,
-      powerBaseValue,
-      deviceIndexCounters,
-      layers,
-      activeLayerId,
-      groups,
-      nodes,
-      edges
+      updatedAt: new Date().toISOString(),
+      project: {
+        version: 1,
+        name: projectName,
+        canvasWidth,
+        canvasHeight,
+        allowAutoExpandCanvas,
+        canvasBackgroundColor,
+        canvasBackgroundImage,
+        canvasBackgroundImageAssetId,
+        backgroundProjectId,
+        backgroundLayerIds,
+        powerUnit,
+        voltageUnit,
+        currentUnit,
+        powerBaseValue,
+        deviceIndexCounters,
+        layers,
+        activeLayerId,
+        groups,
+        nodes,
+        edges
+      }
     }
-  };
+  ), [
+    activeLayerId,
+    activeProjectId,
+    activeProjectRecord,
+    allowAutoExpandCanvas,
+    backgroundLayerIds,
+    backgroundProjectId,
+    canvasBackgroundColor,
+    canvasBackgroundImage,
+    canvasBackgroundImageAssetId,
+    canvasHeight,
+    canvasWidth,
+    currentUnit,
+    deviceIndexCounters,
+    edges,
+    groups,
+    layers,
+    nodes,
+    powerBaseValue,
+    powerUnit,
+    projectName,
+    selectedProjectRecord,
+    voltageUnit
+  ]);
   saveRequiredRef.current = saveRequired;
   latestActiveProjectPointerRef.current = { activeProjectId, activeSchemeId };
-  refreshRecoveryProjectRef.current = {
+  const refreshRecoveryProjectSnapshot = useMemo<RefreshRecoveryProjectState>(() => ({
     dirty: true,
     savedAt: new Date().toISOString(),
     projectName,
@@ -7874,7 +8006,30 @@ export function App() {
     groups,
     nodes,
     edges
-  };
+  }), [
+    activeLayerId,
+    activeProjectId,
+    activeSchemeId,
+    allowAutoExpandCanvas,
+    backgroundLayerIds,
+    backgroundProjectId,
+    canvasBackgroundColor,
+    canvasBackgroundImage,
+    canvasBackgroundImageAssetId,
+    canvasHeight,
+    canvasWidth,
+    currentUnit,
+    deviceIndexCounters,
+    edges,
+    groups,
+    layers,
+    nodes,
+    powerBaseValue,
+    powerUnit,
+    projectName,
+    voltageUnit
+  ]);
+  refreshRecoveryProjectRef.current = refreshRecoveryProjectSnapshot;
   const selectedSchemeRecord = schemes.find((scheme) => scheme.id === selectedSchemeId);
   const backgroundProjectOptions = useMemo(
     () => schemes.flatMap((scheme) =>
@@ -7976,6 +8131,7 @@ export function App() {
   );
   const hiddenTopologyErrorCount = Math.max(0, inspectorTopologyErrors.length - visibleTopologyErrors.length);
   const draggingNodeIdSet = useMemo(() => new Set(dragging?.nodeIds ?? []), [dragging?.nodeIds]);
+  const draggingNodeKey = useMemo(() => (dragging?.nodeIds ?? []).join("|"), [dragging?.nodeIds]);
   const graphTreePanelActive = inspectorTab === "graph" && graphInfoView === "tree";
   const elementTreeLayerSignature = useMemo(
     () => layers.map((layer) => `${layer.id}:${layer.visible !== false ? "1" : "0"}`).join("|"),
@@ -9404,14 +9560,34 @@ export function App() {
     pendingStoredRouteEdgeIdsRef.current = new Set();
   }, [committedRouteDirtyGeneration, routedEdgeStore, routedEdges]);
   const renderViewportBounds = useMemo(() => expandViewBoxForRendering(canvasVisibleViewBox), [canvasVisibleViewBox]);
-  const viewportQueryBounds = useMemo(() => snapRenderViewportBoundsForQuery(renderViewportBounds), [renderViewportBounds]);
+  const viewportQueryBounds = useMemo(() => {
+    const nextViewportQueryBounds = snapRenderViewportBoundsForQuery(renderViewportBounds);
+    const previousViewportQueryBounds = viewportQueryBoundsCacheRef.current;
+    if (
+      previousViewportQueryBounds &&
+      sameRenderViewportBounds(previousViewportQueryBounds, nextViewportQueryBounds)
+    ) {
+      return previousViewportQueryBounds;
+    }
+    viewportQueryBoundsCacheRef.current = nextViewportQueryBounds;
+    return nextViewportQueryBounds;
+  }, [renderViewportBounds]);
   const deferredViewportQueryBounds = useDeferredValue(viewportQueryBounds);
   const routeRenderOrder = (first: RoutedEdge, second: RoutedEdge) =>
     (routedEdgeIndexById.get(first.edgeId) ?? Number.MAX_SAFE_INTEGER) -
     (routedEdgeIndexById.get(second.edgeId) ?? Number.MAX_SAFE_INTEGER);
   const viewportRoutedEdges = useMemo(() => {
+    const viewportQueryCacheKey = viewportBoundsCacheKey(deferredViewportQueryBounds);
+    const cacheOwnerRefs = [routedEdgeStore, routedEdgeSpatialIndex, routedEdgeById, routedEdgeIndexById];
+    const cachedRoutes = readViewportResultCache(viewportRoutedEdgesResultCacheRef.current, cacheOwnerRefs, displaySelectedEdgeKey, viewportQueryCacheKey);
+    if (cachedRoutes) {
+      return cachedRoutes;
+    }
+    let routes: RoutedEdge[];
     if (activeSelectedEdgeSet.size === 0) {
-      return queryRouteSpatialIndex(routedEdgeSpatialIndex, deferredViewportQueryBounds).sort(routeRenderOrder);
+      routes = queryRouteSpatialIndex(routedEdgeSpatialIndex, deferredViewportQueryBounds).sort(routeRenderOrder);
+      writeViewportResultCache(viewportRoutedEdgesResultCacheRef.current, viewportQueryCacheKey, routes);
+      return routes;
     }
     const regularRoutes: RoutedEdge[] = [];
     const selectedRoutes: RoutedEdge[] = [];
@@ -9435,9 +9611,18 @@ export function App() {
     }
     regularRoutes.sort(routeRenderOrder);
     selectedRoutes.sort(routeRenderOrder);
-    return selectedRoutes.length > 0 ? [...regularRoutes, ...selectedRoutes] : regularRoutes;
-  }, [activeSelectedEdgeSet, deferredViewportQueryBounds, routedEdgeById, routedEdgeIndexById, routedEdgeSpatialIndex]);
+    routes = selectedRoutes.length > 0 ? [...regularRoutes, ...selectedRoutes] : regularRoutes;
+    writeViewportResultCache(viewportRoutedEdgesResultCacheRef.current, viewportQueryCacheKey, routes);
+    return routes;
+  }, [activeSelectedEdgeSet, deferredViewportQueryBounds, displaySelectedEdgeKey, routedEdgeById, routedEdgeIndexById, routedEdgeSpatialIndex, routedEdgeStore]);
   const viewportNodes = useMemo(() => {
+    const viewportQueryCacheKey = viewportBoundsCacheKey(deferredViewportQueryBounds);
+    const cacheOwnerRefs = [visibleNodeSpatialIndex, visibleNodeById, visibleNodeIdSet, edgeById, graphStore.nodeIndexById, routedEdgeStore];
+    const cacheToken = `${displaySelectedNodeKey}/${draggingNodeKey}/${connectSource?.nodeId ?? ""}/${displaySelectedEdgeKey}`;
+    const cachedNodes = readViewportResultCache(viewportNodesResultCacheRef.current, cacheOwnerRefs, cacheToken, viewportQueryCacheKey);
+    if (cachedNodes) {
+      return cachedNodes;
+    }
     const viewportNodeById = new Map<string, ModelNode>();
     const addVisibleNode = (node: ModelNode | undefined) => {
       if (node && visibleNodeIdSet.has(node.id)) {
@@ -9460,12 +9645,14 @@ export function App() {
         addVisibleNodeId(edge.targetId);
       }
     }
-    return Array.from(viewportNodeById.values()).sort(
+    const nodes = Array.from(viewportNodeById.values()).sort(
       (first, second) =>
         (graphStore.nodeIndexById.get(first.id) ?? Number.MAX_SAFE_INTEGER) -
         (graphStore.nodeIndexById.get(second.id) ?? Number.MAX_SAFE_INTEGER)
     );
-  }, [connectSource?.nodeId, deferredViewportQueryBounds, draggingNodeIdSet, edgeById, graphStore.nodeIndexById, selectedNodeIdSet, viewportRoutedEdges, visibleNodeById, visibleNodeIdSet, visibleNodeSpatialIndex]);
+    writeViewportResultCache(viewportNodesResultCacheRef.current, viewportQueryCacheKey, nodes);
+    return nodes;
+  }, [connectSource?.nodeId, deferredViewportQueryBounds, displaySelectedEdgeKey, displaySelectedNodeKey, draggingNodeIdSet, draggingNodeKey, edgeById, graphStore.nodeIndexById, routedEdgeStore, selectedNodeIdSet, viewportRoutedEdges, visibleNodeById, visibleNodeIdSet, visibleNodeSpatialIndex]);
   const activeLayerRoutedEdges = useMemo(
     () => activeLayerEdges === visibleEdges ? routedEdges : (() => {
       const routes: RoutedEdge[] = [];
@@ -10055,6 +10242,9 @@ export function App() {
   const terminalOverlapAffectedNodeIds = dragging && draggingDelta && !suppressDragTerminalInteraction ? draggingNodeIdSet : undefined;
   const overlappedTerminalKeys = useMemo(
     () => {
+      if (isReadonlyCanvasMode) {
+        return new Set<string>();
+      }
       if (suppressDragTerminalInteraction) {
         return new Set<string>();
       }
@@ -10069,16 +10259,16 @@ export function App() {
         ]
       );
     },
-    [suppressDragTerminalInteraction, terminalOverlapAffectedNodeIds, terminalOverlapNodes]
+    [isReadonlyCanvasMode, suppressDragTerminalInteraction, terminalOverlapAffectedNodeIds, terminalOverlapNodes]
   );
   const nodeTerminalSnapTarget = useMemo(
     () => (
-      dragging && draggingDelta && !isMultiNodeMoveState(dragging)
+      !isReadonlyCanvasMode && dragging && draggingDelta && !isMultiNodeMoveState(dragging)
         ? findNodeTerminalSnapTarget(dragInteractionNodes, draggingNodeIdSet) ??
           findNodeBusSnapTarget(dragInteractionNodes, draggingNodeIdSet)
         : null
     ),
-    [dragInteractionNodes, dragging, draggingDelta, draggingNodeIdSet]
+    [dragInteractionNodes, dragging, draggingDelta, draggingNodeIdSet, isReadonlyCanvasMode]
   );
   if (!imperativeSingleNodeDragActiveRef.current) {
     nodeTerminalSnapTargetRef.current = nodeTerminalSnapTarget;
@@ -11193,15 +11383,7 @@ export function App() {
       if (!isEditMode) {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a" && isCanvasShortcutTarget) {
           event.preventDefault();
-          const selectableEdgeIds = activeLayerEdges.map((edge) => edge.id);
-          setCanvasSelectionScope("group");
-          setSelectedNodeIds(activeLayerNodes.map((node) => node.id));
-          setSelectedEdgeIds(selectableEdgeIds);
-          setSelectedEdgeId(selectableEdgeIds[0] ?? "");
-          setConnectSource(null);
-          resetConnectPreviewState();
-          setRewiring(null);
-          clearRecordSelection();
+          writeOperationLog("浏览模式下不执行全画布全选，请先切换到编辑模式");
           return;
         }
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
@@ -13774,7 +13956,7 @@ export function App() {
 </g>`;
   };
   const clearImperativeNodeDragEdgePreview = () => {
-    imperativeNodeDragEdgePreviewMarkupRef.current = "";
+    imperativeNodeDragEdgePreviewPathRefs.current.clear();
     imperativeNodeDragEdgePreviewKeyRef.current = "";
     const edgePreview = imperativeSingleNodeDragEdgePreviewRef.current;
     if (edgePreview) {
@@ -14011,7 +14193,7 @@ export function App() {
       if (!endpoints) {
         return [];
       }
-      const color = getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette);
+      const color = cachedConnectionStrokeColor(edge);
       return [{
         edgeId: edge.id,
         path: pointsToPreviewPath(simpleOrthogonalDragPreviewPoints(endpoints.start, endpoints.end)),
@@ -14026,6 +14208,45 @@ export function App() {
     return buildLightweightNodeDragPreviewRoutes(dragState, delta, previewEdges)
       .map((route) => `<path class="connection-line drag-preview" data-drag-preview-edge-id="${escapeXml(route.edgeId)}" d="${escapeXml(route.path)}" style="--connection-color:${escapeXml(route.color)}"/>`)
       .join("");
+  };
+  const syncImperativeNodeDragPreviewPaths = (edgePreview: SVGGElement, routes: NodeDragPreviewRoute[]) => {
+    const pathRefs = imperativeNodeDragEdgePreviewPathRefs.current;
+    if (routes.length === 0) {
+      for (const path of pathRefs.values()) {
+        path.remove();
+      }
+      pathRefs.clear();
+      edgePreview.style.display = "none";
+      return;
+    }
+    const activeEdgeIds = new Set<string>();
+    for (const route of routes) {
+      activeEdgeIds.add(route.edgeId);
+      let path = pathRefs.get(route.edgeId);
+      if (!path) {
+        path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("class", "connection-line drag-preview");
+        path.setAttribute("data-drag-preview-edge-id", route.edgeId);
+        pathRefs.set(route.edgeId, path);
+        edgePreview.appendChild(path);
+      } else if (path.parentNode !== edgePreview) {
+        edgePreview.appendChild(path);
+      }
+      if (path.getAttribute("d") !== route.path) {
+        path.setAttribute("d", route.path);
+      }
+      if (path.style.getPropertyValue("--connection-color") !== route.color) {
+        path.style.setProperty("--connection-color", route.color);
+      }
+    }
+    for (const [edgeId, path] of pathRefs) {
+      if (activeEdgeIds.has(edgeId)) {
+        continue;
+      }
+      path.remove();
+      pathRefs.delete(edgeId);
+    }
+    edgePreview.style.display = routes.length > 0 ? "" : "none";
   };
   const updateNodeDragLightweightEdgePreview = (dragState: DraggingState, previewDelta: Point, scopedPreviewEdges?: Edge[]) => {
     const edgePreview = imperativeSingleNodeDragEdgePreviewRef.current;
@@ -14044,13 +14265,9 @@ export function App() {
         return;
       }
     }
-    const markup = buildLightweightNodeDragPreviewRouteMarkup(dragState, roundedPreviewDelta, previewEdges);
-    if (imperativeNodeDragEdgePreviewMarkupRef.current !== markup) {
-      imperativeNodeDragEdgePreviewMarkupRef.current = markup;
-      edgePreview.innerHTML = markup;
-    }
+    const routes = buildLightweightNodeDragPreviewRoutes(dragState, roundedPreviewDelta, previewEdges);
+    syncImperativeNodeDragPreviewPaths(edgePreview, routes);
     imperativeNodeDragEdgePreviewKeyRef.current = previewKey;
-    edgePreview.style.display = markup ? "" : "none";
   };
   const singleNodeDragInteractionNodes = (dragState: DraggingState, delta: Point, scopedSnapEdges?: Edge[]) => {
     if (isMultiNodeMoveState(dragState) || dragState.nodeIds.length !== 1) {
@@ -22291,7 +22508,7 @@ export function App() {
         (multiNodeDragging && dragOverlayEdgeIdSet.has(edge.id)) ||
         groupTransformPreviewEdgeIdSet.has(edge.id) ||
         terminalPressPreviewEdgeIdSet.has(edge.id);
-      const color = getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette);
+      const color = cachedConnectionStrokeColor(edge);
       return [{ route, edge, hidden, selected, color }];
     });
     return stableSvgMarkupChunks(items, lodCanvasRouteChunkCacheRef.current, {
@@ -22561,11 +22778,11 @@ export function App() {
       { x: centerX, y: topY - 6 }
     ]);
   const selectedRotateControlAvoidRects: RenderViewportBounds[] = [];
-  if (selectedTransformGroupUnit) {
+  if (isEditMode && selectedTransformGroupUnit) {
     selectedRotateControlAvoidRects.push(
       rotateControlAvoidRectFromCanvas(selectionRectCenter(selectedTransformGroupUnit.bounds).x, selectedTransformGroupUnit.bounds.top)
     );
-  } else if (selectedNode && selectedNodeCount === 1 && activeSelectedEdgeIds.length === 0) {
+  } else if (isEditMode && selectedNode && selectedNodeCount === 1 && activeSelectedEdgeIds.length === 0) {
     const selectedNodeUprightStaticSelectionOutline = nodeUsesUprightStaticSelectionOutline(selectedNode, nodeImage(selectedNode), nodeForegroundImage(selectedNode));
     const selectedNodeRotateHandle = selectedNodeUprightStaticSelectionOutline
       ? nodeUprightRotateHandleControlPoints(selectedNode, TRANSFORM_ROTATE_STEM_START, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_HANDLE_GAP)
@@ -22616,7 +22833,7 @@ export function App() {
     };
   };
   const nodeFloatingToolbar =
-    !selectedToolbarHidden && activeSelectedNodeIds.length > 0 && selectedFloatingToolbarBounds
+    isEditMode && !selectedToolbarHidden && activeSelectedNodeIds.length > 0 && selectedFloatingToolbarBounds
       ? (() => {
           const width = Math.round(nodeFloatingToolbarWidth * floatingToolbarScreenScale);
           const height = Math.round(NODE_FLOATING_TOOLBAR_HEIGHT * floatingToolbarScreenScale);
@@ -22646,7 +22863,7 @@ export function App() {
   const nodeFloatingToolbarRect = nodeFloatingToolbar ? floatingToolbarBounds(nodeFloatingToolbar) : null;
   const selectedEdgeMidpoint = selectedRoutedEdge ? routeMidpoint(selectedRoutedEdge.points) : null;
   const edgeFloatingToolbar =
-    !selectedToolbarHidden && selectedEdge && selectedRoutedEdge && selectedEdgeMidpoint
+    isEditMode && !selectedToolbarHidden && selectedEdge && selectedRoutedEdge && selectedEdgeMidpoint
       ? (() => {
           const width = Math.round(EDGE_FLOATING_TOOLBAR_WIDTH * floatingToolbarScreenScale);
           const height = Math.round(EDGE_FLOATING_TOOLBAR_HEIGHT * floatingToolbarScreenScale);
@@ -22701,6 +22918,15 @@ export function App() {
           };
         })()
       : null;
+  useEffect(() => {
+    const minimapSampleSize = visibleNodes.length + routedEdges.length;
+    if (minimapSampleSize <= CANVAS_MINIMAP_DEFER_SAMPLE_THRESHOLD) {
+      setMinimapSamplingReady(true);
+      return;
+    }
+    setMinimapSamplingReady(false);
+    return scheduleIdleWork(() => setMinimapSamplingReady(true), 80, 1500);
+  }, [routedEdges, visibleNodes]);
   const minimapScale = Math.min(
     (CANVAS_MINIMAP_WIDTH - CANVAS_MINIMAP_PADDING * 2) / Math.max(1, canvasWidth),
     (CANVAS_MINIMAP_HEIGHT - CANVAS_MINIMAP_PADDING * 2) / Math.max(1, canvasHeight)
@@ -22711,14 +22937,34 @@ export function App() {
   const minimapOffsetY = (CANVAS_MINIMAP_HEIGHT - minimapContentHeight) / 2;
   const minimapNodeStep = Math.max(1, Math.ceil(visibleNodes.length / CANVAS_MINIMAP_MAX_NODE_MARKS));
   const minimapRouteStep = Math.max(1, Math.ceil(routedEdges.length / CANVAS_MINIMAP_MAX_ROUTE_MARKS));
-  const minimapNodes = useMemo(
-    () => visibleNodes.filter((_, index) => index % minimapNodeStep === 0),
-    [minimapNodeStep, visibleNodes]
-  );
-  const minimapRoutes = useMemo(
-    () => routedEdges.filter((_, index) => index % minimapRouteStep === 0),
-    [minimapRouteStep, routedEdges]
-  );
+  const minimapNodes = useMemo(() => {
+    const cache = minimapSampleCacheRef.current;
+    if (!minimapSamplingReady) {
+      return cache.nodeSource === visibleNodes && cache.nodeStep === minimapNodeStep ? cache.nodes : [];
+    }
+    if (cache.nodeSource === visibleNodes && cache.nodeStep === minimapNodeStep) {
+      return cache.nodes;
+    }
+    const nodes = visibleNodes.filter((_, index) => index % minimapNodeStep === 0);
+    cache.nodeSource = visibleNodes;
+    cache.nodeStep = minimapNodeStep;
+    cache.nodes = nodes;
+    return nodes;
+  }, [minimapNodeStep, minimapSamplingReady, visibleNodes]);
+  const minimapRoutes = useMemo(() => {
+    const cache = minimapSampleCacheRef.current;
+    if (!minimapSamplingReady) {
+      return cache.routeSource === routedEdges && cache.routeStep === minimapRouteStep ? cache.routes : [];
+    }
+    if (cache.routeSource === routedEdges && cache.routeStep === minimapRouteStep) {
+      return cache.routes;
+    }
+    const routes = routedEdges.filter((_, index) => index % minimapRouteStep === 0);
+    cache.routeSource = routedEdges;
+    cache.routeStep = minimapRouteStep;
+    cache.routes = routes;
+    return routes;
+  }, [minimapRouteStep, minimapSamplingReady, routedEdges]);
   const mapPointToMinimap = (point: Point) => ({
     x: minimapOffsetX + point.x * minimapScale,
     y: minimapOffsetY + point.y * minimapScale
@@ -22908,11 +23154,47 @@ export function App() {
     executeStaticButtonAction(node);
   };
 
-  const backgroundPageRender = useMemo(() => {
+  useEffect(() => {
+    if (!backgroundProjectId || backgroundProjectId === activeProjectId || !backgroundProjectRecord) {
+      setBackgroundPageRenderReady(false);
+      return;
+    }
+    setBackgroundPageRenderReady(false);
+    return scheduleIdleWork(() => setBackgroundPageRenderReady(true), 80, 1500);
+  }, [activeProjectId, backgroundLayerIds, backgroundProjectId, backgroundProjectRecord, savedRouteCrossingArcsReady]);
+
+  const backgroundPageFrameRender = useMemo(() => {
     if (!backgroundProjectId || backgroundProjectId === activeProjectId || !backgroundProjectRecord) {
       return null;
     }
-    const backgroundProject = normalizeProjectLayers(backgroundProjectRecord.project);
+    const backgroundProject = backgroundProjectRecord.project;
+    const backgroundBounds = {
+      width: backgroundProject.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
+      height: backgroundProject.canvasHeight ?? DEFAULT_CANVAS_HEIGHT
+    };
+    return {
+      project: backgroundProject,
+      backgroundBounds,
+      backgroundColor: backgroundProject.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND,
+      backgroundImageUrl: resolveProjectImage(backgroundProject, imageAssets),
+      transform: backgroundPageCanvasTransform(backgroundBounds, { width: canvasWidth, height: canvasHeight })
+    };
+  }, [activeProjectId, backgroundProjectId, backgroundProjectRecord, canvasHeight, canvasWidth, imageAssets]);
+
+  const backgroundPageRender = useMemo(() => {
+    if (!backgroundPageFrameRender || !backgroundPageRenderReady) {
+      return backgroundPageFrameRender
+        ? {
+            ...backgroundPageFrameRender,
+            nodes: [] as ModelNode[],
+            edges: [] as Edge[],
+            routes: [] as RoutedEdge[],
+            nodeById: new Map<string, ModelNode>(),
+            edgeById: new Map<string, Edge>()
+          }
+        : null;
+    }
+    const backgroundProject = normalizeProjectLayers(backgroundPageFrameRender.project);
     const visibleBackgroundLayerIds = new Set(backgroundLayerIds);
     const backgroundLayers = (backgroundProject.layers ?? []).map((layer) => ({
       ...layer,
@@ -22920,23 +23202,16 @@ export function App() {
     }));
     const { nodes: backgroundNodes, edges: backgroundEdges } =
       filterProjectByVisibleLayers(backgroundProject.nodes, backgroundProject.edges, backgroundLayers);
-    const backgroundBounds = {
-      width: backgroundProject.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
-      height: backgroundProject.canvasHeight ?? DEFAULT_CANVAS_HEIGHT
-    };
-    const routes = routeEdgesForSavedPathRendering(backgroundNodes, backgroundEdges, backgroundBounds, { refreshCrossingArcs: savedRouteCrossingArcsReady });
+    const routes = routeEdgesForSavedPathRendering(backgroundNodes, backgroundEdges, backgroundPageFrameRender.backgroundBounds, { refreshCrossingArcs: savedRouteCrossingArcsReady });
     return {
-      backgroundBounds,
-      backgroundColor: backgroundProject.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND,
-      backgroundImageUrl: resolveProjectImage(backgroundProject, imageAssets),
-      transform: backgroundPageCanvasTransform(backgroundBounds, { width: canvasWidth, height: canvasHeight }),
+      ...backgroundPageFrameRender,
       nodes: backgroundNodes,
       edges: backgroundEdges,
       routes,
       nodeById: new Map(backgroundNodes.map((node) => [node.id, node])),
       edgeById: new Map(backgroundEdges.map((edge) => [edge.id, edge]))
     };
-  }, [activeProjectId, backgroundLayerIds, backgroundProjectId, backgroundProjectRecord, canvasHeight, canvasWidth, imageAssets, savedRouteCrossingArcsReady]);
+  }, [backgroundLayerIds, backgroundPageFrameRender, backgroundPageRenderReady, savedRouteCrossingArcsReady]);
 
   const beginReadonlyBackgroundStaticButtonPointerFeedback = (event: PointerEvent<SVGGElement>, node: ModelNode) => {
     event.preventDefault();
@@ -23696,7 +23971,7 @@ export function App() {
                 }
                 return;
               }
-              const routeHit = findConnectionRouteHitAtPoint(pointer);
+              const routeHit = isReadonlyCanvasMode ? null : findConnectionRouteHitAtPoint(pointer);
               if (hasCanvasSelectionModifier(event)) {
                 startModifierSelectionPress(event, routeHit ? { kind: "edge", edgeId: routeHit.edgeId } : undefined);
                 return;
@@ -23766,6 +24041,10 @@ export function App() {
                 setMode("select");
                 return;
               }
+              if (isReadonlyCanvasMode) {
+                setContextMenu(null);
+                return;
+              }
               const routeHit = findConnectionRouteHitAtPoint(pointer);
               if (routeHit) {
                 selectCanvasGraphics([], [routeHit.edgeId]);
@@ -23781,10 +24060,6 @@ export function App() {
                   edgeId: routeHit.edgeId,
                   routePoints: routeHit.routePoints.map((point) => ({ ...point }))
                 });
-                return;
-              }
-              if (isBrowseMode) {
-                setContextMenu(null);
                 return;
               }
               setContextMenu({ x: event.clientX, y: event.clientY, target: "blank", canvasPoint: pointer });
@@ -23889,7 +24164,7 @@ export function App() {
               const targetPoint = getEdgeEndpointPoint(edge, "target");
               const sourceNode = nodeById.get(edge.sourceId);
               const targetNode = nodeById.get(edge.targetId);
-              const editable = activeLayerEdgeIdSet.has(edge.id);
+              const editable = isEditMode && activeLayerEdgeIdSet.has(edge.id);
               const rewiringSource = rewiring?.edgeId === edge.id && rewiring.endpoint === "source";
               const rewiringTarget = rewiring?.edgeId === edge.id && rewiring.endpoint === "target";
               const rewireTarget = rewiring?.edgeId === edge.id ? findRewireTargetAtPoint(rewiring.previewPoint, rewiring) : null;
@@ -24391,7 +24666,7 @@ export function App() {
                       data-node-id={node.id}
                       data-label-owner="device"
                       transform={nodeLabelTransform(node)}
-                      onPointerDown={(event) => startNodeLabelDrag(event, node)}
+                      onPointerDown={isEditMode ? (event) => startNodeLabelDrag(event, node) : undefined}
                     >
                       {nodeLabelVertical(node) ? (
                         nodeLabelVerticalSegments(nodeLabelText(node)).map((segment, index) => (
@@ -24435,14 +24710,15 @@ export function App() {
                   )}
                   <g className="node-terminal-layer" transform={nodeGeometryTransform(node)}>
                     {node.terminals.map((terminal) => {
-                      const sourceNode = connectSource ? visibleNodeById.get(connectSource.nodeId) : undefined;
+                      const sourceNode = isEditMode && connectSource ? visibleNodeById.get(connectSource.nodeId) : undefined;
                       const hideFixedTerminal = nodeIsBus || isStaticNode(node);
                       const disabled =
+                        isEditMode &&
                         !hideFixedTerminal &&
                         mode === "connect" &&
                         Boolean(sourceNode) &&
                         !canConnectTerminals(sourceNode!, connectSource!.terminalId, node, terminal.id);
-                      const overlapped = overlappedTerminalKeys.has(`${node.id}:${terminal.id}`);
+                      const overlapped = isEditMode && overlappedTerminalKeys.has(`${node.id}:${terminal.id}`);
                       const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
                       const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
                       const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
@@ -24469,7 +24745,7 @@ export function App() {
                             cx="0"
                             cy="0"
                             r={overlapped ? 7.2 : 6}
-                            onPointerDown={(event) => handleTerminalPointerDown(event, node, terminal.id)}
+                            onPointerDown={isEditMode ? (event) => handleTerminalPointerDown(event, node, terminal.id) : undefined}
                           >
                             <title>{`${terminal.label} / ${terminal.type.toUpperCase()}`}</title>
                           </circle>
@@ -24630,16 +24906,16 @@ export function App() {
                   <path
                     d={displayPath}
                     className="connection-hitline"
-                    onContextMenu={(event) => openEdgeContextMenu(event, edge.id, routePoints)}
-                    onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, routePoints)}
-                    onPointerDown={(event) => handleEdgePathPointerDown(event, edge.id, routePoints)}
+                    onContextMenu={isEditMode ? (event) => openEdgeContextMenu(event, edge.id, routePoints) : undefined}
+                    onDoubleClick={isEditMode ? (event) => insertManualBendFromEdgePath(event, edge.id, routePoints) : undefined}
+                    onPointerDown={isEditMode ? (event) => handleEdgePathPointerDown(event, edge.id, routePoints) : undefined}
                   />
                   <path
                     d={displayPath}
                     className="connection-line"
-                    onContextMenu={(event) => openEdgeContextMenu(event, edge.id, routePoints)}
-                    onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, routePoints)}
-                    onPointerDown={(event) => handleEdgePathPointerDown(event, edge.id, routePoints)}
+                    onContextMenu={isEditMode ? (event) => openEdgeContextMenu(event, edge.id, routePoints) : undefined}
+                    onDoubleClick={isEditMode ? (event) => insertManualBendFromEdgePath(event, edge.id, routePoints) : undefined}
+                    onPointerDown={isEditMode ? (event) => handleEdgePathPointerDown(event, edge.id, routePoints) : undefined}
                   />
                   {isEditMode && !isRewiringSelectedEdge && routePoints.slice(1).map((point, index) => {
                     const from = routePoints[index];

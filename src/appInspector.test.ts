@@ -205,6 +205,57 @@ describe("graph inspector panel", () => {
     expect(renderEdgeBlock).toContain("{isEditMode && selected && targetPoint && (");
   });
 
+  test("keeps pure browse canvas on readonly hit testing and rendering paths", async () => {
+    const source = await readAppSource();
+    const keyStart = source.indexOf("const handleKeyDown =");
+    const keyEnd = source.indexOf("const handleKeyUp = (event: KeyboardEvent) => {", keyStart);
+    const keyBlock = source.slice(keyStart, keyEnd);
+    const browseStart = keyBlock.indexOf("if (!isEditMode) {\n        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === \"a\"");
+    const browseEnd = keyBlock.indexOf("return;\n      }", browseStart);
+    const browseBlock = keyBlock.slice(browseStart, browseEnd);
+    const svgPointerStart = source.indexOf("onPointerDown={(event) => {\n              if (event.button !== 0)");
+    const svgPointerEnd = source.indexOf("lastEdgePointerClickRef.current = null;", svgPointerStart);
+    const svgPointerBlock = source.slice(svgPointerStart, svgPointerEnd);
+    const svgContextStart = source.indexOf("onContextMenu={(event) => {", source.indexOf("className={`diagram-canvas"));
+    const svgContextEnd = source.indexOf("setContextMenu({ x: event.clientX, y: event.clientY, target: \"blank\"", svgContextStart);
+    const svgContextBlock = source.slice(svgContextStart, svgContextEnd);
+    const routeRenderStart = source.indexOf("viewportRoutedEdges.map");
+    const routeRenderEnd = source.indexOf("{selectedRoutedEdge &&", routeRenderStart);
+    const routeRenderBlock = source.slice(routeRenderStart, routeRenderEnd);
+    const selectedRouteStart = source.indexOf("{selectedRoutedEdge &&");
+    const selectedRouteEnd = source.indexOf("{resizeSizeHint &&", selectedRouteStart);
+    const selectedRouteBlock = source.slice(selectedRouteStart, selectedRouteEnd);
+    const terminalStart = source.indexOf("<g className=\"node-terminal-layer\"");
+    const terminalEnd = source.indexOf("{selected && focused && selectedNodeCount === 1", terminalStart);
+    const terminalBlock = source.slice(terminalStart, terminalEnd);
+    const overlapStart = source.indexOf("const overlappedTerminalKeys = useMemo");
+    const overlapEnd = source.indexOf("const nodeTerminalSnapTarget = useMemo", overlapStart);
+    const overlapBlock = source.slice(overlapStart, overlapEnd);
+    const snapStart = source.indexOf("const nodeTerminalSnapTarget = useMemo");
+    const snapEnd = source.indexOf("if (!imperativeSingleNodeDragActiveRef.current)", snapStart);
+    const snapBlock = source.slice(snapStart, snapEnd);
+    const toolbarStart = source.indexOf("const nodeFloatingToolbar =");
+    const toolbarEnd = source.indexOf("const floatingToolbarWrapperStyle", toolbarStart);
+    const toolbarBlock = source.slice(toolbarStart, toolbarEnd);
+
+    expect(source).toContain("const isReadonlyCanvasMode = isBrowseMode;");
+    expect(browseBlock).toContain("浏览模式下不执行全画布全选");
+    expect(browseBlock).not.toContain("setSelectedNodeIds(activeLayerNodes.map((node) => node.id))");
+    expect(svgPointerBlock).toContain("const routeHit = isReadonlyCanvasMode ? null : findConnectionRouteHitAtPoint(pointer);");
+    expect(svgContextBlock.indexOf("if (isReadonlyCanvasMode)")).toBeLessThan(svgContextBlock.indexOf("findConnectionRouteHitAtPoint(pointer)"));
+    expect(routeRenderBlock).toContain("const editable = isEditMode && activeLayerEdgeIdSet.has(edge.id);");
+    expect(selectedRouteBlock).toContain("onContextMenu={isEditMode ? (event) => openEdgeContextMenu(event, edge.id, routePoints) : undefined}");
+    expect(selectedRouteBlock).toContain("onPointerDown={isEditMode ? (event) => handleEdgePathPointerDown(event, edge.id, routePoints) : undefined}");
+    expect(terminalBlock).toContain("const sourceNode = isEditMode && connectSource ? visibleNodeById.get(connectSource.nodeId) : undefined;");
+    expect(terminalBlock).toContain("const disabled =\n                        isEditMode &&");
+    expect(terminalBlock).toContain("const overlapped = isEditMode && overlappedTerminalKeys.has(`${node.id}:${terminal.id}`);");
+    expect(terminalBlock).toContain("onPointerDown={isEditMode ? (event) => handleTerminalPointerDown(event, node, terminal.id) : undefined}");
+    expect(overlapBlock).toContain("if (isReadonlyCanvasMode)");
+    expect(overlapBlock).toContain("if (suppressDragTerminalInteraction)");
+    expect(snapBlock).toContain("!isReadonlyCanvasMode &&");
+    expect(toolbarBlock).toContain("isEditMode && !selectedToolbarHidden");
+  });
+
   test("adds a searchable component library for large symbol sets", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
@@ -280,7 +331,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("function backgroundPageCanvasTransform");
     expect(source).toContain("const backgroundPageRender = useMemo");
     expect(source).toContain("filterProjectByVisibleLayers(backgroundProject.nodes, backgroundProject.edges, backgroundLayers)");
-    expect(source).toContain("routeEdgesForSavedPathRendering(backgroundNodes, backgroundEdges, backgroundBounds, { refreshCrossingArcs: savedRouteCrossingArcsReady })");
+    expect(source).toContain("routeEdgesForSavedPathRendering(backgroundNodes, backgroundEdges, backgroundPageFrameRender.backgroundBounds, { refreshCrossingArcs: savedRouteCrossingArcsReady })");
     expect(source).toContain("backgroundColor: backgroundProject.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND");
     expect(source).toContain("backgroundImageUrl: resolveProjectImage(backgroundProject, imageAssets)");
     expect(source).toContain("const renderReadonlyBackgroundPage = () =>");
@@ -1499,7 +1550,7 @@ describe("graph inspector panel", () => {
     const keyStart = source.indexOf("const handleKeyDown =");
     const keyEnd = source.indexOf("window.addEventListener(\"keydown\"", keyStart);
     const keyBlock = source.slice(keyStart, keyEnd);
-    const ctrlAStart = keyBlock.indexOf("event.key.toLowerCase() === \"a\"");
+    const ctrlAStart = keyBlock.lastIndexOf("event.key.toLowerCase() === \"a\"");
     const ctrlAEnd = keyBlock.indexOf("} else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === \"c\")", ctrlAStart);
     const ctrlABlock = keyBlock.slice(ctrlAStart, ctrlAEnd);
     const copyStart = source.indexOf("const copySelection =");
@@ -2610,6 +2661,47 @@ describe("graph inspector panel", () => {
     expect(nodeRenderIndex).toBeGreaterThan(-1);
   });
 
+  test("reuses snapped viewport query bounds so pan and zoom do not recalc visible graphics inside the same tile", async () => {
+    const source = await readAppSource();
+    const refsStart = source.indexOf("const canvasVisibleViewBoxFrameRef");
+    const refsEnd = source.indexOf("const nodeDragMovePerfRef", refsStart);
+    const refsBlock = source.slice(refsStart, refsEnd);
+    const viewportStart = source.indexOf("const renderViewportBounds = useMemo");
+    const viewportEnd = source.indexOf("const viewportRoutedEdges = useMemo", viewportStart);
+    const viewportBlock = source.slice(viewportStart, viewportEnd);
+
+    expect(source).toContain("const sameRenderViewportBounds = (first: RenderViewportBounds, second: RenderViewportBounds)");
+    expect(refsBlock).toContain("const viewportQueryBoundsCacheRef = useRef<RenderViewportBounds | null>(null);");
+    expect(viewportBlock).toContain("const nextViewportQueryBounds = snapRenderViewportBoundsForQuery(renderViewportBounds);");
+    expect(viewportBlock).toContain("const previousViewportQueryBounds = viewportQueryBoundsCacheRef.current;");
+    expect(viewportBlock).toContain("sameRenderViewportBounds(previousViewportQueryBounds, nextViewportQueryBounds)");
+    expect(viewportBlock).toContain("return previousViewportQueryBounds;");
+    expect(viewportBlock).toContain("viewportQueryBoundsCacheRef.current = nextViewportQueryBounds;");
+    expect(viewportBlock).toContain("const deferredViewportQueryBounds = useDeferredValue(viewportQueryBounds);");
+  });
+
+  test("caches viewport route and node query results across repeated snapped bounds", async () => {
+    const source = await readAppSource();
+    const refsStart = source.indexOf("const viewportQueryBoundsCacheRef");
+    const refsEnd = source.indexOf("const elementTreeCacheRef", refsStart);
+    const refsBlock = source.slice(refsStart, refsEnd);
+    const routeCullStart = source.indexOf("const viewportRoutedEdges = useMemo");
+    const routeCullEnd = source.indexOf("const activeLayerRoutedEdges", routeCullStart);
+    const routeCullBlock = source.slice(routeCullStart, routeCullEnd);
+
+    expect(source).toContain("type ViewportResultCache<T>");
+    expect(source).toContain("function viewportBoundsCacheKey(bounds: RenderViewportBounds)");
+    expect(source).toContain("function readViewportResultCache<T>(");
+    expect(source).toContain("function writeViewportResultCache<T>(");
+    expect(refsBlock).toContain("const viewportRoutedEdgesResultCacheRef = useRef<ViewportResultCache<RoutedEdge[]>>");
+    expect(refsBlock).toContain("const viewportNodesResultCacheRef = useRef<ViewportResultCache<ModelNode[]>>");
+    expect(routeCullBlock).toContain("const viewportQueryCacheKey = viewportBoundsCacheKey(deferredViewportQueryBounds);");
+    expect(routeCullBlock).toContain("readViewportResultCache(viewportRoutedEdgesResultCacheRef.current");
+    expect(routeCullBlock).toContain("writeViewportResultCache(viewportRoutedEdgesResultCacheRef.current");
+    expect(routeCullBlock).toContain("readViewportResultCache(viewportNodesResultCacheRef.current");
+    expect(routeCullBlock).toContain("writeViewportResultCache(viewportNodesResultCacheRef.current");
+  });
+
   test("scales the canvas scroll surface with viewport zoom instead of clipping zoomed content", async () => {
     const source = await readAppSource();
     const canvasRenderStart = source.indexOf("className=\"canvas-frame\"");
@@ -2920,11 +3012,11 @@ describe("graph inspector panel", () => {
     const svgPointerUpStart = source.indexOf("onPointerUp={(event) => {", source.indexOf("onPointerMove={handlePointerMove}"));
     const svgPointerUpEnd = source.indexOf("onPointerLeave={() => {", svgPointerUpStart);
     const svgPointerUpBlock = source.slice(svgPointerUpStart, svgPointerUpEnd);
-    const blankPointerStart = source.indexOf("if (hasCanvasSelectionModifier(event))", source.indexOf("const routeHit = findConnectionRouteHitAtPoint(pointer);"));
+    const blankPointerStart = source.indexOf("if (hasCanvasSelectionModifier(event))", source.indexOf("const routeHit = isReadonlyCanvasMode ? null : findConnectionRouteHitAtPoint(pointer);"));
     const blankPointerEnd = source.indexOf("lastEdgePointerClickRef.current = null;", blankPointerStart);
     const blankPointerBlock = source.slice(blankPointerStart, blankPointerEnd);
     const svgBlankStart = source.indexOf("if (connectSource) {", source.indexOf("className={`diagram-canvas"));
-    const svgBlankEnd = source.indexOf("const routeHit = findConnectionRouteHitAtPoint(pointer);", svgBlankStart);
+    const svgBlankEnd = source.indexOf("const routeHit = isReadonlyCanvasMode ? null : findConnectionRouteHitAtPoint(pointer);", svgBlankStart);
     const svgBlankBeforeRouteHitBlock = source.slice(svgBlankStart, svgBlankEnd);
     const blankPanStart = source.indexOf("if (event.detail >= 2)", source.indexOf("setInspectorTab(\"model\");"));
     const blankPanEnd = source.indexOf("}}\n            onContextMenu", blankPanStart);
@@ -4152,8 +4244,9 @@ describe("graph inspector panel", () => {
     expect(updateBlock).toContain("const previewKey");
     expect(updateBlock).toContain("if (imperativeNodeDragEdgePreviewKeyRef.current === previewKey)");
     expect(updateBlock.indexOf("if (imperativeNodeDragEdgePreviewKeyRef.current === previewKey)"))
-      .toBeLessThan(updateBlock.indexOf("const markup = buildLightweightNodeDragPreviewRouteMarkup"));
-    expect(updateBlock).toContain("buildLightweightNodeDragPreviewRouteMarkup(dragState, roundedPreviewDelta, previewEdges)");
+      .toBeLessThan(updateBlock.indexOf("const routes = buildLightweightNodeDragPreviewRoutes"));
+    expect(updateBlock).toContain("const routes = buildLightweightNodeDragPreviewRoutes(dragState, roundedPreviewDelta, previewEdges);");
+    expect(updateBlock).toContain("syncImperativeNodeDragPreviewPaths(edgePreview, routes);");
     expect(transformBlock).toContain("updateNodeDragLightweightEdgePreview(activeDragging, roundedDelta");
   });
 
@@ -4348,6 +4441,49 @@ describe("graph inspector panel", () => {
     expect(previewBlock).toContain("return cachedSingleNodePreviewRoutes;");
     expect(previewBlock.indexOf("buildCachedSingleNodeDragPreviewRoutes(dragCache, delta, previewEdges)"))
       .toBeLessThan(previewBlock.indexOf("return previewEdges.flatMap((edge) =>"));
+  });
+
+  test("updates node drag preview paths in place instead of rebuilding svg markup every frame", async () => {
+    const source = await readAppSource();
+    const refStart = source.indexOf("const imperativeNodeDragEdgePreviewPathRefs");
+    const refEnd = source.indexOf("const nodePatchListLookupCacheRef", refStart);
+    const refBlock = source.slice(refStart, refEnd);
+    const updateStart = source.indexOf("const updateNodeDragLightweightEdgePreview =");
+    const updateEnd = source.indexOf("const singleNodeDragInteractionNodes", updateStart);
+    const updateBlock = source.slice(updateStart, updateEnd);
+    const hideStart = source.indexOf("const clearImperativeNodeDragEdgePreview =");
+    const hideEnd = source.indexOf("const showImperativeSingleNodeDragPreview", hideStart);
+    const hideBlock = source.slice(hideStart, hideEnd);
+
+    expect(refBlock).toContain("const imperativeNodeDragEdgePreviewPathRefs = useRef<Map<string, SVGPathElement>>(new Map());");
+    expect(source).toContain("const syncImperativeNodeDragPreviewPaths =");
+    expect(updateBlock).toContain("syncImperativeNodeDragPreviewPaths(edgePreview, routes);");
+    expect(updateBlock).not.toContain("const markup = buildLightweightNodeDragPreviewRouteMarkup");
+    expect(updateBlock).not.toContain("edgePreview.innerHTML = markup");
+    expect(updateBlock).not.toContain("imperativeNodeDragEdgePreviewMarkupRef.current !== markup");
+    expect(hideBlock).toContain("imperativeNodeDragEdgePreviewPathRefs.current.clear();");
+  });
+
+  test("reuses cached connection colors while preparing LOD route markup", async () => {
+    const source = await readAppSource();
+    const refStart = source.indexOf("const connectionStrokeColorCacheRef");
+    const refEnd = source.indexOf("const cachedRouteInputRef", refStart);
+    const refBlock = source.slice(refStart, refEnd);
+    const colorStart = source.indexOf("const connectionStrokeColorCacheToken =");
+    const colorEnd = source.indexOf("const buildMultiNodeDragOverlayPreview", colorStart);
+    const colorBlock = source.slice(colorStart, colorEnd);
+    const lodStart = source.indexOf("const lodCanvasRouteChunks = useMemo");
+    const lodEnd = source.indexOf("const lodCanvasNodeChunks = useMemo", lodStart);
+    const lodBlock = source.slice(lodStart, lodEnd);
+
+    expect(source).toContain("type ConnectionStrokeColorCache");
+    expect(refBlock).toContain("const connectionStrokeColorCacheRef = useRef<ConnectionStrokeColorCache>");
+    expect(colorBlock).toContain("const connectionStrokeColorCacheToken = useMemo");
+    expect(colorBlock).toContain("const cachedConnectionStrokeColor = (edge: Edge)");
+    expect(colorBlock).toContain("connectionStrokeColorCacheRef.current");
+    expect(colorBlock).toContain("getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette)");
+    expect(lodBlock).toContain("const color = cachedConnectionStrokeColor(edge);");
+    expect(lodBlock).not.toContain("const color = getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette);");
   });
 
   test("uses lightweight orthogonal node-drag route previews without preserving or rerouting during drag frames", async () => {
@@ -4637,7 +4773,7 @@ describe("graph inspector panel", () => {
     expect(renderBlock).toContain("nodeLabelShouldRender(node, deviceLabelsVisible)");
     expect(renderBlock).toContain("className={`node-device-label");
     expect(renderBlock).toContain("transform={nodeLabelTransform(node)}");
-    expect(renderBlock).toContain("onPointerDown={(event) => startNodeLabelDrag(event, node)}");
+    expect(renderBlock).toContain("onPointerDown={isEditMode ? (event) => startNodeLabelDrag(event, node) : undefined}");
     expect(topbarBlock).toContain("setDeviceLabelsVisible((current) => !current)");
     expect(topbarBlock).toContain("aria-label={deviceLabelsVisible ? \"隐藏设备标识\" : \"显示设备标识\"}");
     expect(pointerMoveBlock).toContain("if (nodeLabelDrag && svgRef.current)");
@@ -5219,14 +5355,27 @@ describe("graph inspector panel", () => {
     const minimapStart = source.indexOf("const CANVAS_MINIMAP_MAX_NODE_MARKS");
     const minimapEnd = source.indexOf("const CANVAS_SCROLLBAR_THICKNESS", minimapStart);
     const minimapConstantsBlock = source.slice(minimapStart, minimapEnd);
+    const refsStart = source.indexOf("const minimapSampleCacheRef");
+    const refsEnd = source.indexOf("const elementTreeCacheRef", refsStart);
+    const refsBlock = source.slice(refsStart, refsEnd);
+    const deferredStart = source.indexOf("useEffect(() => {\n    const minimapSampleSize = visibleNodes.length + routedEdges.length;");
+    const deferredEnd = source.indexOf("const minimapScale = Math.min", deferredStart);
+    const deferredBlock = source.slice(deferredStart, deferredEnd);
     const renderStart = source.indexOf("const minimapNodeStep =");
     const renderEnd = source.indexOf("const handleMinimapPointerDown", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
 
     expect(minimapConstantsBlock).toContain("const CANVAS_MINIMAP_MAX_NODE_MARKS = 360;");
     expect(minimapConstantsBlock).toContain("const CANVAS_MINIMAP_MAX_ROUTE_MARKS = 160;");
+    expect(minimapConstantsBlock).toContain("const CANVAS_MINIMAP_DEFER_SAMPLE_THRESHOLD = 1200;");
+    expect(source).toContain("const [minimapSamplingReady, setMinimapSamplingReady] = useState(false);");
+    expect(refsBlock).toContain("const minimapSampleCacheRef = useRef<");
+    expect(deferredBlock).toContain("minimapSampleSize <= CANVAS_MINIMAP_DEFER_SAMPLE_THRESHOLD");
+    expect(deferredBlock).toContain("return scheduleIdleWork(() => setMinimapSamplingReady(true)");
     expect(renderBlock).toContain("Math.ceil(visibleNodes.length / CANVAS_MINIMAP_MAX_NODE_MARKS)");
     expect(renderBlock).toContain("Math.ceil(routedEdges.length / CANVAS_MINIMAP_MAX_ROUTE_MARKS)");
+    expect(renderBlock).toContain("if (!minimapSamplingReady)");
+    expect(renderBlock).toContain("minimapSampleCacheRef.current");
     expect(renderBlock).toContain("visibleNodes.filter((_, index) => index % minimapNodeStep === 0)");
     expect(renderBlock).toContain("routedEdges.filter((_, index) => index % minimapRouteStep === 0)");
   });
@@ -6322,6 +6471,51 @@ describe("graph inspector panel", () => {
     expect(saveDraftBlock).not.toContain("edges");
     expect(saveDraftBlock).not.toContain("groups");
     expect(source).not.toContain("window.localStorage.setItem(REFRESH_RECOVERY_STORAGE_KEY");
+  });
+
+  test("keeps model record and refresh recovery snapshots stable across viewport-only renders", async () => {
+    const source = await readAppSource();
+    const recordStart = source.indexOf("const currentModelRecord = useMemo<SavedProjectRecord>(() =>");
+    const recordEnd = source.indexOf("saveRequiredRef.current = saveRequired;", recordStart);
+    const recordBlock = source.slice(recordStart, recordEnd);
+    const recoveryStart = source.indexOf("const refreshRecoveryProjectSnapshot = useMemo<RefreshRecoveryProjectState>(() =>");
+    const recoveryEnd = source.indexOf("refreshRecoveryProjectRef.current = refreshRecoveryProjectSnapshot;", recoveryStart);
+    const recoveryBlock = source.slice(recoveryStart, recoveryEnd);
+
+    expect(recordBlock).toContain("selectedProjectRecord ?? activeProjectRecord");
+    expect(recordBlock).toContain("updatedAt: new Date().toISOString()");
+    expect(recordBlock).toContain("), [");
+    expect(recoveryBlock).toContain("savedAt: new Date().toISOString()");
+    expect(recoveryBlock).toContain("nodes,");
+    expect(recoveryBlock).toContain("edges");
+    expect(recoveryBlock).toContain("groups");
+    expect(recoveryBlock).toContain("}), [");
+    expect(recordBlock).not.toContain("viewBox");
+    expect(recordBlock).not.toContain("canvasVisibleViewBox");
+    expect(recoveryBlock).not.toContain("viewBox");
+    expect(recoveryBlock).not.toContain("canvasVisibleViewBox");
+  });
+
+  test("defers expensive background page routing until after first-screen rendering", async () => {
+    const source = await readAppSource();
+    const effectStart = source.indexOf("useEffect(() => {\n    if (!backgroundProjectId");
+    const effectEnd = source.indexOf("const backgroundPageFrameRender = useMemo", effectStart);
+    const effectBlock = source.slice(effectStart, effectEnd);
+    const frameStart = source.indexOf("const backgroundPageFrameRender = useMemo");
+    const frameEnd = source.indexOf("const backgroundPageRender = useMemo", frameStart);
+    const frameBlock = source.slice(frameStart, frameEnd);
+    const renderStart = source.indexOf("const backgroundPageRender = useMemo");
+    const renderEnd = source.indexOf("const beginReadonlyBackgroundStaticButtonPointerFeedback", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+
+    expect(source).toContain("const [backgroundPageRenderReady, setBackgroundPageRenderReady] = useState(false);");
+    expect(effectBlock).toContain("setBackgroundPageRenderReady(false);");
+    expect(effectBlock).toContain("return scheduleIdleWork(() => setBackgroundPageRenderReady(true)");
+    expect(frameBlock).toContain("backgroundPageFrameRender");
+    expect(frameBlock).not.toContain("filterProjectByVisibleLayers");
+    expect(frameBlock).not.toContain("routeEdgesForSavedPathRendering");
+    expect(renderBlock).toContain("if (!backgroundPageFrameRender || !backgroundPageRenderReady)");
+    expect(renderBlock).toContain("routeEdgesForSavedPathRendering(backgroundNodes, backgroundEdges, backgroundPageFrameRender.backgroundBounds");
   });
 
   test("persists custom device library definitions through the backend", async () => {
