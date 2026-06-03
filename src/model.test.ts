@@ -59,6 +59,7 @@ import {
   rebuildExternalConnectionRoutesForMovedNodes,
   rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes,
   rebuildSingleConnectionRoute,
+  redrawConnectionRoutesForEdges,
   upsertSavedProject,
   rerouteEdgesAroundMovedNodes,
   routeIntersectsSpecificNodes,
@@ -130,15 +131,13 @@ import {
   voltageLevelColor,
   boundaryBusInternalConnectorSegment,
   boundaryBusInternalConnectorStrokeWidth,
-  CANVAS_GRID_SIZE,
   DEFAULT_COLOR_PALETTE,
   STATIC_DRAW_POINTS_PARAM,
   serializeProject,
-  snapNodePositionToGrid,
-  snapPointToGrid,
   synchronizeBusTerminalsWithEdges,
   deserializeProject,
   type Edge,
+  type DeviceKind,
   type DeviceTemplate,
   type ModelNode,
   type Point,
@@ -1445,6 +1444,93 @@ describe("power system model", () => {
     const pipeline = createDefaultNode("hydrogen-pipeline", { x: 200, y: 120 });
     const pipelineGlyphScale = Math.max(1, Math.max(pipeline.size.width, pipeline.size.height) / 100);
     expect(stubStartPoint(pipeline, pipeline.terminals[0]).x).toBeCloseTo((-pipeline.size.width / 2) + 8 * pipelineGlyphScale);
+  });
+
+  test("connects heat source and boiler terminal stubs to the visible body", () => {
+    const stubStartPoint = (node: ModelNode, terminal = node.terminals[0]) => {
+      const renderPoint = terminalRenderLocalPoint(terminal, node.size, 1, 1, node.kind);
+      const stub = terminalStubSegment(terminal, 1, 1, 24, node.kind, node.size);
+      return {
+        x: renderPoint.x + stub.from.x,
+        y: renderPoint.y + stub.from.y
+      };
+    };
+    const glyphScale = (node: ModelNode) => Math.max(1, Math.max(node.size.width, node.size.height) / 100);
+    const designSize = (node: ModelNode) => {
+      const scale = glyphScale(node);
+      return { width: node.size.width / scale, height: node.size.height / scale, scale };
+    };
+    const withOnlyTerminal = (node: ModelNode, anchor: Point): ModelNode => ({
+      ...node,
+      terminals: [{ ...node.terminals[0], anchor }]
+    });
+
+    const boiler = createDefaultNode("heat-boiler", { x: 200, y: 120 });
+    const boilerDesign = designSize(boiler);
+    const boilerBodyHalfWidth = Math.min(boilerDesign.width * 0.66, 58) * boilerDesign.scale / 2;
+    expect(stubStartPoint(boiler).x).toBeCloseTo(boilerBodyHalfWidth);
+
+    const twoPortBoiler = createDefaultNode("two-port-heat-boiler", { x: 200, y: 120 });
+    const twoPortBoilerDesign = designSize(twoPortBoiler);
+    const twoPortBoilerBodyHalfWidth = Math.min(twoPortBoilerDesign.width * 0.66, 58) * twoPortBoilerDesign.scale / 2;
+    expect(stubStartPoint(twoPortBoiler, twoPortBoiler.terminals[0]).x).toBeCloseTo(-twoPortBoilerBodyHalfWidth);
+    expect(stubStartPoint(twoPortBoiler, twoPortBoiler.terminals[1]).x).toBeCloseTo(twoPortBoilerBodyHalfWidth);
+
+    const verticalBoiler = withOnlyTerminal(boiler, { x: 0, y: -0.5 });
+    expect(stubStartPoint(verticalBoiler).y).toBeCloseTo(-24 * boilerDesign.scale);
+    const verticalBoilerBottom = withOnlyTerminal(boiler, { x: 0, y: 0.5 });
+    expect(stubStartPoint(verticalBoilerBottom).y).toBeCloseTo(25 * boilerDesign.scale);
+
+    const heatSource = createDefaultNode("heat-source", { x: 200, y: 120 });
+    const heatSourceDesign = designSize(heatSource);
+    const sourceRadius = Math.min(heatSourceDesign.width, heatSourceDesign.height) * 0.27;
+    const verticalSourceTop = withOnlyTerminal(heatSource, { x: 0, y: -0.5 });
+    expect(stubStartPoint(verticalSourceTop).y).toBeCloseTo(-24 * heatSourceDesign.scale);
+    const verticalSourceBottom = withOnlyTerminal(heatSource, { x: 0, y: 0.5 });
+    expect(stubStartPoint(verticalSourceBottom).y).toBeCloseTo((sourceRadius + 2) * heatSourceDesign.scale);
+  });
+
+  test("connects vertical terminal stubs for compact body devices", () => {
+    const stubStartPoint = (node: ModelNode) => {
+      const terminal = node.terminals[0];
+      const renderPoint = terminalRenderLocalPoint(terminal, node.size, 1, 1, node.kind);
+      const stub = terminalStubSegment(terminal, 1, 1, 24, node.kind, node.size);
+      return {
+        x: renderPoint.x + stub.from.x,
+        y: renderPoint.y + stub.from.y
+      };
+    };
+    const withTopTerminal = (kind: DeviceKind): ModelNode => {
+      const node = createDefaultNode(kind, { x: 200, y: 120 });
+      return {
+        ...node,
+        terminals: [{ ...node.terminals[0], anchor: { x: 0, y: -0.5 } }]
+      };
+    };
+    const designSize = (node: ModelNode) => {
+      const scale = Math.max(1, Math.max(node.size.width, node.size.height) / 100);
+      return { width: node.size.width / scale, height: node.size.height / scale, scale };
+    };
+
+    const storage = withTopTerminal("ac-storage");
+    const storageDesign = designSize(storage);
+    expect(stubStartPoint(storage).y).toBeCloseTo(-Math.min(storageDesign.height * 0.58, 32) * storageDesign.scale / 2);
+
+    const electrolyzer = withTopTerminal("ac-electrolyzer");
+    const electrolyzerDesign = designSize(electrolyzer);
+    expect(stubStartPoint(electrolyzer).y).toBeCloseTo(-(electrolyzerDesign.height / 2 - 5) * electrolyzerDesign.scale);
+
+    const fuelCell = withTopTerminal("dc-fuel-cell");
+    const fuelCellDesign = designSize(fuelCell);
+    expect(stubStartPoint(fuelCell).y).toBeCloseTo(-(fuelCellDesign.height / 2 - 6) * fuelCellDesign.scale);
+
+    const heater = withTopTerminal("ac-heater");
+    const heaterDesign = designSize(heater);
+    expect(stubStartPoint(heater).y).toBeCloseTo(-(heaterDesign.height / 2 - 6) * heaterDesign.scale);
+
+    const heatPump = withTopTerminal("heat-pump");
+    const heatPumpDesign = designSize(heatPump);
+    expect(stubStartPoint(heatPump).y).toBeCloseTo(-20 * heatPumpDesign.scale);
   });
 
   test("moves terminals on device borders outward by four pixels", () => {
@@ -3194,14 +3280,13 @@ describe("power system model", () => {
     expect(position.y).toBeLessThanOrEqual(1024 - (node.size.height * Math.abs(node.scaleY ?? node.scale)) / 2);
   });
 
-  test("snaps graphic placement to a 5px canvas grid by body top-left", () => {
-    const node = createDefaultNode("ac-source", { x: 123, y: 117 });
-    const position = snapNodePositionToGrid(node, node.position);
+  test("keeps keyboard move step independent from the old 5px canvas grid", () => {
+    const bounds = { width: 1000, height: 800 };
 
-    expect(CANVAS_GRID_SIZE).toBe(5);
-    expect(snapPointToGrid({ x: 112.4, y: 118.6 })).toEqual({ x: 110, y: 120 });
-    expect((position.x - (node.size.width * Math.abs(getNodeScaleX(node))) / 2) % CANVAS_GRID_SIZE).toBe(0);
-    expect((position.y - (node.size.height * Math.abs(getNodeScaleY(node))) / 2) % CANVAS_GRID_SIZE).toBe(0);
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 1000, height: 800 }, bounds, 1)).toBe(1);
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 500, height: 400 }, bounds, 1)).toBe(0.5);
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 2000, height: 1600 }, bounds, 1)).toBe(2);
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 1000, height: 800 }, bounds, 25)).toBe(25);
   });
 
   test("allows canvas edges to be panned to the center of the SVG view box", () => {
@@ -3350,11 +3435,14 @@ describe("power system model", () => {
   test("scales keyboard move steps with the current view box zoom", () => {
     const bounds = { width: 1980, height: 1024 };
 
-    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 1980, height: 1024 }, bounds)).toBe(5);
-    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 990, height: 512 }, bounds)).toBe(5);
-    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 3960, height: 2048 }, bounds)).toBe(10);
-    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 120, height: 80 }, bounds)).toBe(5);
-    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 990, height: 512 }, bounds, 25)).toBe(15);
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 1980, height: 1024 }, bounds)).toBe(6);
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 990, height: 512 }, bounds)).toBe(3);
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 3960, height: 2048 }, bounds)).toBe(12);
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 120, height: 80 }, bounds)).toBeCloseTo(
+      6 * Math.sqrt((120 / bounds.width) * (80 / bounds.height)),
+      10
+    );
+    expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 990, height: 512 }, bounds, 25)).toBe(12.5);
   });
 
   test("reports the current view box zoom as a percentage", () => {
@@ -4118,6 +4206,72 @@ describe("power system model", () => {
     expect(validation.issues).toEqual([]);
     expect(rebuiltEdge.manualPoints?.length ?? 0).toBeLessThan(edge.manualPoints!.length);
     expect(new Set(route.points.map((point) => point.y))).toEqual(new Set([140]));
+  });
+
+  test("redraws only requested connection routes from scratch", () => {
+    const leftA = { ...createDefaultNode("ac-line", { x: 120, y: 140 }), id: "left-a" };
+    const rightA = { ...createDefaultNode("ac-line", { x: 520, y: 140 }), id: "right-a" };
+    const leftB = { ...createDefaultNode("ac-line", { x: 120, y: 260 }), id: "left-b" };
+    const rightB = { ...createDefaultNode("ac-line", { x: 520, y: 260 }), id: "right-b" };
+    const staleEdge: Edge = {
+      id: "stale-edge",
+      sourceId: leftA.id,
+      targetId: rightA.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: 200, y: 80 },
+        { x: 320, y: 80 },
+        { x: 320, y: 220 },
+        { x: 460, y: 220 }
+      ]
+    };
+    const untouchedEdge: Edge = {
+      id: "untouched-edge",
+      sourceId: leftB.id,
+      targetId: rightB.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: 220, y: 320 },
+        { x: 420, y: 320 }
+      ]
+    };
+
+    const nodes = [leftA, rightA, leftB, rightB];
+    const redrawn = redrawConnectionRoutesForEdges(nodes, [staleEdge, untouchedEdge], [staleEdge.id], { width: 700, height: 420 });
+    const redrawnRoute = routeEdgesForRendering(nodes, redrawn, { width: 700, height: 420 }).find((route) => route.edgeId === staleEdge.id);
+
+    expect(redrawn[0]).not.toBe(staleEdge);
+    expect(redrawn[1]).toBe(untouchedEdge);
+    expect(redrawn[0].manualPoints?.length ?? 0).toBeLessThan(staleEdge.manualPoints!.length);
+    expect(new Set(redrawnRoute?.points.map((point) => point.y))).toEqual(new Set([140]));
+  });
+
+  test("redraws connection routes by releasing stale bus endpoint points", () => {
+    const source = { ...createDefaultNode("ac-load", { x: 220, y: 160 }), id: "source-load" };
+    const bus = { ...createDefaultNode("ac-bus", { x: 520, y: 160 }), id: "target-bus" };
+    const edge: Edge = {
+      id: "bus-redraw-edge",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: { x: 640, y: 160 },
+      manualPoints: [
+        { x: 220, y: 300 },
+        { x: 640, y: 300 }
+      ]
+    };
+
+    const redrawn = redrawConnectionRoutesForEdges([source, bus], [edge], [edge.id], { width: 760, height: 360 });
+    const redrawnEdge = redrawn[0];
+    const route = routeEdgesForRendering([source, bus], redrawn, { width: 760, height: 360 })[0];
+
+    expect(redrawnEdge).not.toBe(edge);
+    expect(redrawnEdge.targetPoint?.x).toBeLessThan(edge.targetPoint!.x);
+    expect(redrawnEdge.manualPoints?.length ?? 0).toBeLessThan(edge.manualPoints!.length);
+    expect(route.points[route.points.length - 1]).toEqual(redrawnEdge.targetPoint);
   });
 
   test("rebuilds every moved-to-stationary connection without rebuilding moved-to-moved connections", () => {

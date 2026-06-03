@@ -450,7 +450,6 @@ export type ProjectFile = {
 
 export const DEFAULT_MODEL_LAYER_ID = "layer-default";
 export const DEFAULT_MODEL_LAYER_NAME = "默认图层";
-export const CANVAS_GRID_SIZE = 5;
 export const STATIC_DRAW_POINTS_PARAM = "drawPoints";
 export const INTERACTIVE_STATIC_DRAWING_KINDS = [
   "static-line",
@@ -4723,26 +4722,6 @@ export function clampPointToBounds(point: Point, bounds: CanvasBounds): Point {
   };
 }
 
-export function snapValueToGrid(value: number, gridSize = CANVAS_GRID_SIZE): number {
-  const safeGridSize = Math.max(1, Math.abs(gridSize || CANVAS_GRID_SIZE));
-  return Math.round(value / safeGridSize) * safeGridSize;
-}
-
-export function snapPointToGrid(point: Point, gridSize = CANVAS_GRID_SIZE): Point {
-  return {
-    x: snapValueToGrid(point.x, gridSize),
-    y: snapValueToGrid(point.y, gridSize)
-  };
-}
-
-export function snapNodePositionToGrid(node: ModelNode, position = node.position, gridSize = CANVAS_GRID_SIZE): Point {
-  const bodyBox = bodyVisualBoxForNode(node, 0, position);
-  return {
-    x: Math.round(position.x + snapValueToGrid(bodyBox.left, gridSize) - bodyBox.left),
-    y: Math.round(position.y + snapValueToGrid(bodyBox.top, gridSize) - bodyBox.top)
-  };
-}
-
 export function clampEdgeGeometryToBounds(edge: Edge, bounds: CanvasBounds): Edge {
   let changed = false;
   const clampOptionalPoint = (point?: Point) => {
@@ -4939,7 +4918,7 @@ function viewBoxScaleRatio(viewBox: ViewBox, bounds: CanvasBounds): number {
 export function keyboardMoveStepForViewBox(viewBox: ViewBox, bounds: CanvasBounds, baseStep = 6): number {
   const safeBase = Math.max(1, Math.abs(baseStep));
   const zoomRatio = viewBoxScaleRatio(viewBox, bounds);
-  return Math.max(CANVAS_GRID_SIZE, snapValueToGrid(safeBase * zoomRatio));
+  return safeBase * zoomRatio;
 }
 
 export function viewBoxZoomPercent(viewBox: ViewBox, bounds: CanvasBounds): number {
@@ -5192,6 +5171,32 @@ function isConverterGlyphVariant(glyphVariant: string): boolean {
   return glyphVariant === "dcdc-converter" || glyphVariant === "acdc-converter" || glyphVariant === "acac-converter";
 }
 
+function isHeatSourceGlyphVariant(glyphVariant: string): boolean {
+  return glyphVariant === "single-heat-source" || glyphVariant === "two-port-heat-source" || glyphVariant === "heat-source";
+}
+
+function isHeatBoilerGlyphVariant(glyphVariant: string): boolean {
+  return glyphVariant === "single-heat-boiler" || glyphVariant === "two-port-heat-boiler" || glyphVariant === "heat-boiler";
+}
+
+function isHydrogenElectrolyzerGlyphVariant(glyphVariant: string): boolean {
+  return glyphVariant === "hydrogen-electrolyzer" || glyphVariant === "ac-hydrogen-electrolyzer" || glyphVariant === "dc-hydrogen-electrolyzer";
+}
+
+function isHydrogenFuelCellGlyphVariant(glyphVariant: string): boolean {
+  return glyphVariant === "hydrogen-fuel-cell" || glyphVariant === "ac-hydrogen-fuel-cell" || glyphVariant === "dc-hydrogen-fuel-cell";
+}
+
+function isHeatElectricHeaterGlyphVariant(glyphVariant: string): boolean {
+  return (
+    glyphVariant === "heat-electric-heater" ||
+    glyphVariant === "ac-heat-electric-heater" ||
+    glyphVariant === "ac-two-port-heat-electric-heater" ||
+    glyphVariant === "dc-heat-electric-heater" ||
+    glyphVariant === "dc-two-port-heat-electric-heater"
+  );
+}
+
 function terminalStubVisibleBoundaryDistance(
   terminal: Pick<Terminal, "anchor">,
   size: Pick<ModelNode["size"], "width" | "height">,
@@ -5213,8 +5218,12 @@ function terminalStubVisibleBoundaryDistance(
     if (glyphVariant === "hydrogen-source") {
       return Math.min(size.width, size.height) * 0.35;
     }
-    if (glyphVariant === "single-heat-source" || glyphVariant === "two-port-heat-source" || glyphVariant === "heat-source") {
-      return Math.max(Math.min(size.width, size.height) * 0.27, scaled(31));
+    if (isHeatSourceGlyphVariant(glyphVariant)) {
+      return scaled(Math.max(Math.min(w, h) * 0.27, 31));
+    }
+    if (isHeatBoilerGlyphVariant(glyphVariant)) {
+      const bodyWidth = Math.min(w * 0.66, 58);
+      return scaled(bodyWidth / 2);
     }
     if (nodeKind === "ac-three-winding-transformer" || nodeKind === "ac-three-winding-transformer-neutral") {
       const hasNeutralTerminal = nodeKind === "ac-three-winding-transformer-neutral";
@@ -5305,11 +5314,44 @@ function terminalStubVisibleBoundaryDistance(
   if (glyphVariant === "hydrogen-source") {
     return Math.min(size.width, size.height) * 0.35;
   }
+  if (isHeatSourceGlyphVariant(glyphVariant)) {
+    const sourceRadius = Math.min(w, h) * 0.27;
+    return terminal.anchor.y < 0
+      ? scaled(Math.max(24, sourceRadius - 2))
+      : scaled(Math.max(16, sourceRadius + 2));
+  }
+  if (isHeatBoilerGlyphVariant(glyphVariant)) {
+    const bodyHeight = Math.min(h * 0.66, 40);
+    return terminal.anchor.y < 0
+      ? scaled(Math.max(24, bodyHeight / 2 - 5))
+      : scaled(Math.max(18, bodyHeight / 2 + 5));
+  }
   if (glyphVariant === "hydrogen-load" || glyphVariant === "load" || glyphVariant === "heat-load" || glyphVariant === "single-heat-load") {
     return scaled(h / 3);
   }
   if (isConverterGlyphVariant(glyphVariant)) {
     return Math.max(0, fullRectDistance - scaled(CONVERTER_GLYPH_BORDER_INSET));
+  }
+  if (glyphVariant === "battery-storage") {
+    const bodyHeight = Math.min(h * 0.58, 32);
+    return scaled(bodyHeight / 2);
+  }
+  if (isHydrogenElectrolyzerGlyphVariant(glyphVariant)) {
+    return scaled(Math.max(0, h / 2 - 5));
+  }
+  if (isHydrogenFuelCellGlyphVariant(glyphVariant)) {
+    return scaled(Math.max(0, h / 2 - 6));
+  }
+  if (isHeatElectricHeaterGlyphVariant(glyphVariant)) {
+    return scaled(Math.max(0, h / 2 - 6));
+  }
+  if (glyphVariant === "hydrogen-compressor" || glyphVariant === "heat-pump") {
+    return scaled(20);
+  }
+  if (glyphVariant === "hydrogen-regulator" || glyphVariant === "hydrogen-valve" || glyphVariant === "heat-valve") {
+    return terminal.anchor.y < 0
+      ? scaled(glyphVariant === "hydrogen-regulator" ? 20 : 18)
+      : scaled(12);
   }
   return fullRectDistance;
 }
@@ -10916,6 +10958,13 @@ function edgeWithoutManualPoints(edge: Edge): Edge {
   return next;
 }
 
+function edgeWithoutStoredRouteGeometry(edge: Edge): Edge {
+  const next = edgeWithoutManualPoints(edge);
+  delete next.sourcePoint;
+  delete next.targetPoint;
+  return next;
+}
+
 function edgeWithCommitManualPoints(edge: Edge, route: RoutedEdge): Edge {
   const manualPoints = commitManualPointsFromRoute(route.points);
   const withoutManualPoints = edgeWithoutManualPoints(edge);
@@ -11418,6 +11467,32 @@ export function rebuildSingleConnectionRoute(
     return edges;
   }
   return edges.map((item) => item.id === edgeId ? prepared.edge! : item);
+}
+
+export function redrawConnectionRoutesForEdges(
+  nodes: ModelNode[],
+  edges: Edge[],
+  edgeIds: Iterable<string>,
+  bounds?: CanvasBounds
+): Edge[] {
+  const requestedEdgeIds = new Set(edgeIds);
+  if (requestedEdgeIds.size === 0 || edges.length === 0) {
+    return edges;
+  }
+
+  const updates = new Map<string, Edge>();
+  for (const edge of edges) {
+    if (!requestedEdgeIds.has(edge.id)) {
+      continue;
+    }
+    const prepared = prepareConnectionEdgeForCommit(nodes, [edgeWithoutStoredRouteGeometry(edge)], edge.id, bounds);
+    if (!prepared.ok || !prepared.edge) {
+      continue;
+    }
+    updates.set(edge.id, prepared.edge);
+  }
+
+  return applyEdgeUpdateMap(edges, updates);
 }
 
 function applyEdgeUpdateMap(edges: Edge[], updates: ReadonlyMap<string, Edge>): Edge[] {
