@@ -806,6 +806,14 @@ type CanvasSelectionSnapshot = {
   edgeIds: string[];
   edgeId: string;
 };
+type SingleNodeDragPreviewEndpoint = {
+  edgeId: string;
+  color: string;
+  start: Point;
+  end: Point;
+  startMoves: boolean;
+  endMoves: boolean;
+};
 type SingleNodeDragCache = {
   movedNodeIds: Set<string>;
   draggedEdgeIds: Set<string>;
@@ -813,6 +821,7 @@ type SingleNodeDragCache = {
   relevantEdges: Edge[];
   previewEdges: Edge[];
   snapEdges: Edge[];
+  previewEndpointByEdgeId: Map<string, SingleNodeDragPreviewEndpoint>;
 };
 type DraggingState = {
   source?: "pointer" | "keyboard";
@@ -844,6 +853,9 @@ type NodeDragPreviewRoute = {
   edgeId: string;
   path: string;
   color: string;
+};
+type SingleNodeDeferredRepairOptions = {
+  reconcileTerminalConnections?: boolean;
 };
 function isMultiNodeMoveState(dragState: Pick<DraggingState, "nodeIds"> | null | undefined) {
   return (dragState?.nodeIds.length ?? 0) > 1;
@@ -2714,16 +2726,12 @@ function shouldPreferLocalSchemesOverBackend(options: {
   localSchemes: SavedSchemeRecord[];
   backendSchemes: SavedSchemeRecord[];
   hadStoredLocalSchemes: boolean;
-  recoveredFromRefresh: boolean;
 }) {
   if (!options.hadStoredLocalSchemes) {
     return false;
   }
   if (serializeSchemesForStorage(options.localSchemes) === serializeSchemesForStorage(options.backendSchemes)) {
     return false;
-  }
-  if (options.recoveredFromRefresh) {
-    return true;
   }
   if (options.backendSchemes.length === 0) {
     return true;
@@ -6165,7 +6173,6 @@ export function App() {
   const backendSchemesLoadTokenRef = useRef(0);
   const schemesChangedBeforeBackendLoadRef = useRef(false);
   const startupHadStoredSchemesRef = useRef(Boolean(initialStoredSchemesPayload));
-  const startupRecoveredFromRefreshRef = useRef(initialProjectSources.recoveredFromRefresh);
   const latestSchemesRef = useRef<SavedSchemeRecord[]>(initialSavedSchemes);
   const latestActiveProjectPointerRef = useRef<ActiveProjectPointer>({
     activeProjectId: initialDraft?.activeProjectId ?? "",
@@ -6524,13 +6531,40 @@ export function App() {
       }
       return movedNodeIds.has(edge.sourceId) || movedNodeIds.has(edge.targetId) || draggedEdgeIds.has(edge.id);
     });
+    const previewEdges = relevantEdges.slice(0, CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT);
+    const previewEndpointByEdgeId = new Map<string, SingleNodeDragPreviewEndpoint>();
+    for (const edge of previewEdges) {
+      const sourceMoves = movedNodeIds.has(edge.sourceId);
+      const targetMoves = movedNodeIds.has(edge.targetId);
+      const wholeEdgeMoves = draggedEdgeIds.has(edge.id) && !sourceMoves && !targetMoves;
+      if (wholeEdgeMoves || movedBusNodeIds.has(edge.sourceId) || movedBusNodeIds.has(edge.targetId)) {
+        continue;
+      }
+      const sourceNode = nodeById.get(edge.sourceId);
+      const targetNode = nodeById.get(edge.targetId);
+      if (!sourceNode || !targetNode) {
+        continue;
+      }
+      if ((isBusNode(sourceNode) && !edge.sourcePoint) || (isBusNode(targetNode) && !edge.targetPoint)) {
+        continue;
+      }
+      previewEndpointByEdgeId.set(edge.id, {
+        edgeId: edge.id,
+        color: getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette),
+        start: getModelEdgeEndpointPoint(sourceNode, edge.sourcePoint, edge.sourceTerminalId),
+        end: getModelEdgeEndpointPoint(targetNode, edge.targetPoint, edge.targetTerminalId),
+        startMoves: sourceMoves,
+        endMoves: targetMoves
+      });
+    }
     return {
       movedNodeIds,
       draggedEdgeIds,
       movedBusNodeIds,
       relevantEdges,
-      previewEdges: relevantEdges.slice(0, CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT),
-      snapEdges: relevantEdges.slice(0, CANVAS_SINGLE_NODE_DRAG_SNAP_EDGE_LIMIT)
+      previewEdges,
+      snapEdges: relevantEdges.slice(0, CANVAS_SINGLE_NODE_DRAG_SNAP_EDGE_LIMIT),
+      previewEndpointByEdgeId
     };
   };
   const orderedNodeFromList = (sourceNodes: ModelNode[], nodeId: string) => {
@@ -10204,8 +10238,7 @@ export function App() {
           const localSchemesShouldWin = shouldPreferLocalSchemesOverBackend({
             localSchemes: latestSchemesRef.current,
             backendSchemes,
-            hadStoredLocalSchemes: startupHadStoredSchemesRef.current,
-            recoveredFromRefresh: startupRecoveredFromRefreshRef.current
+            hadStoredLocalSchemes: startupHadStoredSchemesRef.current
           });
           lastPersistedSchemesPayloadRef.current = backendPayload;
           if (localChangedBeforeBackendLoad || localSchemesShouldWin) {
@@ -12923,7 +12956,12 @@ export function App() {
   };
 
   const shouldFinalizeMovedNodeEdgesSynchronously = (movedNodeIds: string[], candidateEdges: Edge[]) =>
-    movedNodeIds.length !== 1 || candidateEdges.length <= CANVAS_SINGLE_NODE_DRAG_SYNC_EDGE_LIMIT;
+    movedNodeIds.length > 1 && candidateEdges.length <= CANVAS_SINGLE_NODE_DRAG_SYNC_EDGE_LIMIT;
+
+  const shouldDeferSingleNodeTerminalReconciliation = (movedNodeIds: string[], candidateEdges: Edge[]) =>
+    movedNodeIds.length === 1 &&
+    candidateEdges.length > 0 &&
+    candidateEdges.length <= CANVAS_SINGLE_NODE_DRAG_SYNC_EDGE_LIMIT;
 
   const terminalReconcileNodeScope = (
     previousNodes: ModelNode[],
@@ -13171,7 +13209,8 @@ export function App() {
     previousNodesForMove: ModelNode[] = [],
     originalPositions?: Record<string, Point>,
     originalRoutePoints: DraggingState["originalRoutePoints"] = {},
-    selectedEdgeIds = new Set<string>()
+    selectedEdgeIds = new Set<string>(),
+    options: SingleNodeDeferredRepairOptions = {}
   ) => {
     deferredMoveOptimizationCancelRef.current?.();
     if (movedNodeIds.length === 0 || candidateEdges.length === 0) {
@@ -13200,17 +13239,38 @@ export function App() {
       if (latestCandidateEdges.length === 0) {
         return;
       }
+      let workingCandidateEdges = latestCandidateEdges;
+      const dirtyDeferredEdgeIds = new Set<string>();
+      if (options.reconcileTerminalConnections) {
+        const finalizedEdges = finalizeMovedNodeEdgesFast(
+          previousNodesForMove.length > 0 ? previousNodesForMove : latestNodes,
+          latestNodes,
+          workingCandidateEdges,
+          movedNodeIds,
+          workingCandidateEdges
+        );
+        if (finalizedEdges !== workingCandidateEdges) {
+          const terminalPatch = edgePatchFromCandidateEdges(workingCandidateEdges, finalizedEdges);
+          for (const edge of terminalPatch.edgeUpserts) {
+            dirtyDeferredEdgeIds.add(edge.id);
+          }
+          for (const edgeId of terminalPatch.edgeDeleteIds) {
+            dirtyDeferredEdgeIds.add(edgeId);
+          }
+          workingCandidateEdges = finalizedEdges;
+        }
+      }
       const repairCanvasBounds = canvasBoundsForAutoExpandedGraphContent(
         effectiveCanvasBounds,
         [],
-        latestCandidateEdges,
+        workingCandidateEdges,
         [],
         CANVAS_AUTO_EXPAND_PADDING
       );
-      const movedBlockerRoutePoints = routePointsForMovedNodeBlockers(latestNodes, latestCandidateEdges, movedNodeIds, {});
+      const movedBlockerRoutePoints = routePointsForMovedNodeBlockers(latestNodes, workingCandidateEdges, movedNodeIds, {});
       const stationaryBlockerRoutePoints = routePointsForMovedEdgesBlockedByStationaryNodes(
         latestNodes,
-        latestCandidateEdges,
+        workingCandidateEdges,
         movedNodeIds,
         movedBlockerRoutePoints,
         repairCanvasBounds
@@ -13219,45 +13279,58 @@ export function App() {
       const repairRoutePoints = previousNodesForMove.length > 0
         ? routePointsNearOriginalMovedNodes(
             previousNodesForMove,
-            latestCandidateEdges,
+            workingCandidateEdges,
             movedNodeIds,
             originalPositions,
             blockerRoutePoints
           )
         : blockerRoutePoints;
       const repairEdgeIds = new Set(Object.keys(repairRoutePoints));
-      if (repairEdgeIds.size === 0) {
-        return;
-      }
-      const repairCandidateEdges = latestCandidateEdges.filter((edge) => repairEdgeIds.has(edge.id));
-      const optimized = optimizeMovedNodeEdgeRoutes(
-        latestNodes,
-        latestCandidateEdges,
-        movedNodeIds,
-        originalRoutePoints,
-        selectedEdgeIds,
-        repairRoutePoints,
-        repairEdgeIds,
-        repairCandidateEdges
-      );
-      if (optimized.edges === latestCandidateEdges) {
-        return;
-      }
-      const previousRepairEdgeById = new Map(latestCandidateEdges.map((edge) => [edge.id, edge]));
-      const optimizedRepairEdgeById = new Map(optimized.edges.map((edge) => [edge.id, edge]));
-      const edgeUpdates = Array.from(repairEdgeIds).flatMap((edgeId) => {
-        const edge = optimizedRepairEdgeById.get(edgeId);
-        if (edge && previousRepairEdgeById.get(edgeId) === edge) {
-          return [];
+      let optimizedEdges = workingCandidateEdges;
+      if (repairEdgeIds.size > 0) {
+        const repairCandidateEdges = workingCandidateEdges.filter((edge) => repairEdgeIds.has(edge.id));
+        const optimized = optimizeMovedNodeEdgeRoutes(
+          latestNodes,
+          workingCandidateEdges,
+          movedNodeIds,
+          originalRoutePoints,
+          selectedEdgeIds,
+          repairRoutePoints,
+          repairEdgeIds,
+          repairCandidateEdges
+        );
+        optimizedEdges = optimized.edges;
+        for (const edgeId of repairEdgeIds) {
+          dirtyDeferredEdgeIds.add(edgeId);
         }
-        return edge ? [edge] : [];
-      });
-      if (edgeUpdates.length === 0) {
+      }
+      const deferredEdgePatch = edgePatchFromCandidateEdges(latestCandidateEdges, optimizedEdges);
+      if (deferredEdgePatch.edgeUpserts.length === 0 && deferredEdgePatch.edgeDeleteIds.length === 0) {
         return;
       }
-      markRouteEdgesDirty(repairEdgeIds);
-      markStoredRouteEdgesDirty(repairEdgeIds);
-      setGraphStore((current) => graphStorePatchEdges(current, edgeUpdates));
+      for (const edge of deferredEdgePatch.edgeUpserts) {
+        dirtyDeferredEdgeIds.add(edge.id);
+      }
+      for (const edgeId of deferredEdgePatch.edgeDeleteIds) {
+        dirtyDeferredEdgeIds.add(edgeId);
+      }
+      markRouteEdgesDirty(dirtyDeferredEdgeIds);
+      markStoredRouteEdgesDirty(dirtyDeferredEdgeIds);
+      markBusTerminalSyncDirty(
+        busTerminalSyncNodeIdsForGraphPatch(
+          movedNodeIds,
+          latestCandidateEdges,
+          deferredEdgePatch.edgeUpserts,
+          deferredEdgePatch.edgeDeleteIds
+        )
+      );
+      markGraphDirtyForInteractiveCommit();
+      setGraphStore((current) =>
+        graphStoreApplyPatch(current, {
+          edgeUpserts: deferredEdgePatch.edgeUpserts,
+          edgeDeleteIds: deferredEdgePatch.edgeDeleteIds
+        })
+      );
     }, 60, 1500);
   };
 
@@ -13422,7 +13495,12 @@ export function App() {
       originalPositions,
       routeRepairSeedEdges
     );
-    const deferMovedRouteRepair = movedNodeIds.length > 0 && routeRepairCandidateEdges.length > 0;
+    const deferSingleNodeTerminalReconciliation = shouldDeferSingleNodeTerminalReconciliation(
+      movedNodeIds,
+      committedCandidateEdges
+    );
+    const deferMovedRouteRepair =
+      movedNodeIds.length > 0 && (routeRepairCandidateEdges.length > 0 || deferSingleNodeTerminalReconciliation);
     const originShift = allowAutoExpandCanvas ? leftTopCanvasOriginShiftForContent(movedNodeUpdates, committedCandidateEdges) : { x: 0, y: 0 };
     if (hasCanvasOriginShift(originShift)) {
       const candidateEdgeById = new Map(committedCandidateEdges.map((edge) => [edge.id, edge]));
@@ -13487,18 +13565,21 @@ export function App() {
       }
       deferredMoveOptimizationCancelRef.current?.();
       deferredMoveOptimizationCancelRef.current = null;
-      if (routeRepairCandidateEdges.length > 0) {
+      if (routeRepairCandidateEdges.length > 0 || deferSingleNodeTerminalReconciliation) {
+        const deferredRepairCandidateEdges =
+          routeRepairCandidateEdges.length > 0 ? routeRepairCandidateEdges : committedCandidateEdges;
         deferredMoveRepairFrameRef.current = window.requestAnimationFrame(() => {
           deferredMoveRepairFrameRef.current = null;
           scheduleDeferredMovedConnectionRepair(
             movedNodeIds,
-            routeRepairCandidateEdges,
+            deferredRepairCandidateEdges,
             expectedPatch,
             commitCanvasBounds,
             previousNodes,
             originalPositions,
             originalRoutePoints,
-            selectedEdgeIds
+            selectedEdgeIds,
+            { reconcileTerminalConnections: deferSingleNodeTerminalReconciliation }
           );
         });
       }
@@ -13828,6 +13909,32 @@ export function App() {
   };
   const shiftedDragPreviewPoint = (point: Point | undefined, delta: Point | undefined) =>
     point && delta ? { x: point.x + delta.x, y: point.y + delta.y } : point;
+  const shiftPreviewEndpointForDelta = (point: Point, moves: boolean, delta: Point) =>
+    moves ? { x: point.x + delta.x, y: point.y + delta.y } : point;
+  const buildCachedSingleNodeDragPreviewRoutes = (
+    cache: SingleNodeDragCache | undefined,
+    delta: Point,
+    previewEdges: Edge[]
+  ): NodeDragPreviewRoute[] | null => {
+    if (!cache) {
+      return null;
+    }
+    const routes: NodeDragPreviewRoute[] = [];
+    for (const edge of previewEdges) {
+      const endpoint = cache.previewEndpointByEdgeId.get(edge.id);
+      if (!endpoint) {
+        return null;
+      }
+      const start = shiftPreviewEndpointForDelta(endpoint.start, endpoint.startMoves, delta);
+      const end = shiftPreviewEndpointForDelta(endpoint.end, endpoint.endMoves, delta);
+      routes.push({
+        edgeId: endpoint.edgeId,
+        path: pointsToPreviewPath(simpleOrthogonalDragPreviewPoints(start, end)),
+        color: endpoint.color
+      });
+    }
+    return routes;
+  };
   const buildDragPreviewEndpointPoints = (
     dragState: DraggingState,
     edge: Edge,
@@ -13861,6 +13968,8 @@ export function App() {
     }
     return { start, end };
   };
+  const singleNodeDragPreviewKey = (dragState: DraggingState, roundedDelta: Point, previewEdges: Edge[]) =>
+    `single:${dragState.nodeIds[0] ?? ""}:${roundedDelta.x},${roundedDelta.y}:${previewEdges.length}:${previewEdges[0]?.id ?? ""}:${previewEdges[previewEdges.length - 1]?.id ?? ""}`;
   const buildLightweightNodeDragPreviewRoutes = (
     dragState: DraggingState,
     delta: Point,
@@ -13871,6 +13980,12 @@ export function App() {
     );
     const multiNodeMove = isMultiNodeMoveState(dragState);
     const dragCache = dragState.singleNodeDragCache;
+    const cachedSingleNodePreviewRoutes = !multiNodeMove
+      ? buildCachedSingleNodeDragPreviewRoutes(dragCache, delta, previewEdges)
+      : null;
+    if (cachedSingleNodePreviewRoutes) {
+      return cachedSingleNodePreviewRoutes;
+    }
     const overlayPreviewCache = multiNodeMove ? dragState.overlayPreview : undefined;
     const movedNodeIds = dragCache?.movedNodeIds ?? overlayPreviewCache?.movedNodeIds ?? new Set(dragState.nodeIds);
     const draggedEdgeIds = dragCache?.draggedEdgeIds ?? overlayPreviewCache?.draggedEdgeIds ?? new Set(dragState.edgeIds);
@@ -13923,7 +14038,7 @@ export function App() {
     const roundedPreviewDelta = { x: Math.round(previewDelta.x), y: Math.round(previewDelta.y) };
     const previewKey = isMultiNodeMoveState(dragState)
       ? `multi:${roundedPreviewDelta.x},${roundedPreviewDelta.y}:${previewEdges.length}:${previewEdges[0]?.id ?? ""}:${previewEdges[previewEdges.length - 1]?.id ?? ""}`
-      : "";
+      : singleNodeDragPreviewKey(dragState, roundedPreviewDelta, previewEdges);
     if (imperativeNodeDragEdgePreviewKeyRef.current === previewKey) {
       if (previewKey) {
         return;
@@ -16871,6 +16986,9 @@ export function App() {
       startModifierSelectionPress(event, { kind: "selection", nodeIds: unit.nodeIds, edgeIds: unit.edgeIds });
       return;
     }
+    if (!requireEditMode("拖拽图元")) {
+      return;
+    }
     const center = selectionRectCenter(unit.bounds);
     const startPoint = svgRef.current
       ? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY))
@@ -16901,6 +17019,9 @@ export function App() {
     event.stopPropagation();
     if (hasCanvasSelectionModifier(event)) {
       startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
+      return;
+    }
+    if (!requireEditMode("拖拽图元")) {
       return;
     }
     transformDragChangedRef.current = false;
@@ -16936,6 +17057,9 @@ export function App() {
     }
     if (hasCanvasSelectionModifier(event)) {
       startModifierSelectionPress(event, { kind: "selection", nodeIds: unit.nodeIds, edgeIds: unit.edgeIds });
+      return;
+    }
+    if (!requireEditMode("拖拽图元")) {
       return;
     }
     if (unit.nodeIds.length === 0 || unit.nodeIds.some((nodeId) => !activeLayerNodeIdSet.has(nodeId))) {
@@ -23801,7 +23925,7 @@ export function App() {
                   />
                   {renderBoundaryBusInternalConnector(sourceNode, sourceBusDotPoint, `${edge.id}-source-internal-connector`)}
                   {renderBoundaryBusInternalConnector(targetNode, targetBusDotPoint, `${edge.id}-target-internal-connector`)}
-                  {sourceBusDotPoint && (
+                  {isEditMode && sourceBusDotPoint && (
                     <circle
                       className="bus-connection-dot"
                       cx={sourceBusDotPoint.x}
@@ -23824,7 +23948,7 @@ export function App() {
                       } : undefined}
                     />
                   )}
-                  {targetBusDotPoint && (
+                  {isEditMode && targetBusDotPoint && (
                     <circle
                       className="bus-connection-dot"
                       cx={targetBusDotPoint.x}
@@ -23847,7 +23971,7 @@ export function App() {
                       } : undefined}
                     />
                   )}
-                  {selected && sourcePoint && (
+                  {isEditMode && selected && sourcePoint && (
                     <circle
                       className="edge-endpoint-handle"
                       cx={rewiring?.edgeId === edge.id && rewiring.endpoint === "source" ? rewiring.previewPoint.x : sourcePoint.x}
@@ -23872,7 +23996,7 @@ export function App() {
                       }}
                     />
                   )}
-                  {selected && targetPoint && (
+                  {isEditMode && selected && targetPoint && (
                     <circle
                       className="edge-endpoint-handle"
                       cx={rewiring?.edgeId === edge.id && rewiring.endpoint === "target" ? rewiring.previewPoint.x : targetPoint.x}
