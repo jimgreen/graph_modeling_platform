@@ -2209,6 +2209,40 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   stroke-width: 3;
 }
 
+.node-static-selection-frame {
+  pointer-events: none;
+}
+
+.node-static-selection-glow {
+  fill: rgba(249, 115, 22, 0.16);
+  stroke: transparent;
+  stroke-width: 0;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+  filter: drop-shadow(0 0 13px rgba(249, 115, 22, 0.58));
+}
+
+.node-static-selection-corner {
+  fill: #f97316;
+  stroke: #fff7ed;
+  stroke-width: 1.75;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 4px rgba(124, 45, 18, 0.38));
+}
+
+.diagram-node.selected.focused .node-static-selection-glow {
+  fill: rgba(234, 88, 12, 0.2);
+  stroke: transparent;
+  stroke-width: 0;
+  filter: drop-shadow(0 0 15px rgba(234, 88, 12, 0.66));
+}
+
+.diagram-node.selected.focused .node-static-selection-corner {
+  fill: #ea580c;
+  stroke-width: 2;
+}
+
 .lod-node.selected {
   stroke: #1d4ed8;
   stroke-width: 3;
@@ -2267,20 +2301,23 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .diagram-node.static-upright-selection-node:hover .node-upright-selection-outline {
-  stroke: rgba(37, 99, 235, 0.52);
-  stroke-width: 2;
-  filter: drop-shadow(0 0 6px rgba(37, 99, 235, 0.28));
+  stroke: rgba(249, 115, 22, 0.7);
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 7px rgba(249, 115, 22, 0.36));
 }
 
 .diagram-node.static-upright-selection-node.selected .node-upright-selection-outline {
-  stroke: #1d4ed8;
-  stroke-width: 3;
+  stroke: transparent;
+  stroke-width: 0;
+  fill: rgba(249, 115, 22, 0.16);
+  filter: drop-shadow(0 0 13px rgba(249, 115, 22, 0.58));
 }
 
 .diagram-node.static-upright-selection-node.selected.focused .node-upright-selection-outline {
-  stroke: #f97316;
-  stroke-width: 3.5;
-  filter: drop-shadow(0 0 7px rgba(249, 115, 22, 0.32));
+  stroke: transparent;
+  stroke-width: 0;
+  fill: rgba(234, 88, 12, 0.2);
+  filter: drop-shadow(0 0 15px rgba(234, 88, 12, 0.66));
 }
 
 .diagram-node.bus-node.selected .node-hitbox,

@@ -502,6 +502,11 @@ describe("graph inspector panel", () => {
     const outlineBlock = cssRuleBlock(styles, ".node-upright-selection-outline");
     const selectedOutlineBlock = cssRuleBlock(styles, ".diagram-node.static-upright-selection-node.selected .node-upright-selection-outline");
     const focusedOutlineBlock = cssRuleBlock(styles, ".diagram-node.static-upright-selection-node.selected.focused .node-upright-selection-outline");
+    const staticFrameBlock = cssRuleBlock(styles, ".node-static-selection-frame");
+    const staticGlowBlock = cssRuleBlock(styles, ".node-static-selection-glow");
+    const staticCornerBlock = cssRuleBlock(styles, ".node-static-selection-corner");
+    const focusedStaticGlowBlock = cssRuleBlock(styles, ".diagram-node.selected.focused .node-static-selection-glow");
+    const focusedStaticCornerBlock = cssRuleBlock(styles, ".diagram-node.selected.focused .node-static-selection-corner");
 
     expect(source).toContain("function nodeUsesUprightStaticSelectionOutline");
     expect(source).toContain("function nodeUprightSelectionOutlineRect");
@@ -521,6 +526,12 @@ describe("graph inspector panel", () => {
     expect(renderBlock).toContain("nodeUprightRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap)");
     expect(renderBlock).toContain("nodeScaleHandleControlPoint(node, handle, handleGapX, handleGapY, uprightStaticSelectionOutline)");
     expect(renderBlock).toContain("className=\"node-upright-selection-outline\"");
+    expect(renderBlock).toContain("const showStaticSelectionFrame = isStaticNode(node) && selected && !uprightStaticSelectionOutline;");
+    expect(renderBlock).toContain("const staticSelectionCornerPoints = [");
+    expect(renderBlock).toContain("className=\"node-static-selection-frame\"");
+    expect(renderBlock).toContain("className=\"node-static-selection-glow\"");
+    expect(renderBlock).toContain("className=\"node-static-selection-corner\"");
+    expect(renderBlock).not.toContain("className=\"node-static-selection-halo\"");
     expect(renderBlock).toContain("x={uprightSelectionOutlineRect.x}");
     expect(renderBlock).toContain("width={uprightSelectionOutlineRect.width}");
     expect(lodBlock).toContain("nodeUsesUprightStaticSelectionOutline(node)");
@@ -529,8 +540,21 @@ describe("graph inspector panel", () => {
     expect(outlineBlock).toContain("vector-effect: non-scaling-stroke");
     expect(selectedHitboxOverrideBlock).toContain("stroke: transparent");
     expect(focusedHitboxOverrideBlock).toContain("stroke: transparent");
-    expect(selectedOutlineBlock).toContain("stroke: #1d4ed8");
-    expect(focusedOutlineBlock).toContain("stroke: #f97316");
+    expect(selectedOutlineBlock).toContain("stroke: transparent");
+    expect(selectedOutlineBlock).toContain("stroke-width: 0");
+    expect(focusedOutlineBlock).toContain("stroke: transparent");
+    expect(focusedOutlineBlock).toContain("stroke-width: 0");
+    expect(selectedOutlineBlock).toContain("fill: rgba(249, 115, 22, 0.16)");
+    expect(staticFrameBlock).toContain("pointer-events: none");
+    expect(staticGlowBlock).toContain("stroke: transparent");
+    expect(staticGlowBlock).toContain("stroke-width: 0");
+    expect(staticGlowBlock).toContain("filter: drop-shadow(0 0 13px rgba(249, 115, 22, 0.58))");
+    expect(staticCornerBlock).toContain("fill: #f97316");
+    expect(staticCornerBlock).toContain("stroke: #fff7ed");
+    expect(focusedStaticGlowBlock).toContain("stroke: transparent");
+    expect(focusedStaticGlowBlock).toContain("stroke-width: 0");
+    expect(focusedStaticCornerBlock).toContain("fill: #ea580c");
+    expect(styles).not.toContain(".node-static-selection-halo");
   });
 
   test("rebuilds moved-to-stationary connection routes without a moved-node count gate", async () => {

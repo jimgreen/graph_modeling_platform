@@ -24072,6 +24072,19 @@ export function App() {
               const staticButtonEnabled = isBrowseMode && isStaticButtonEnabledForNode(node);
               const staticButtonState = staticButtonVisual?.nodeId === node.id ? staticButtonVisual.state : "";
               const staticButtonCornerRadius = Math.max(0, Number(node.params.cornerRadius || 8));
+              const showStaticSelectionFrame = isStaticNode(node) && selected && !uprightStaticSelectionOutline;
+              const staticSelectionPadding = 10;
+              const staticSelectionCornerSize = 12;
+              const staticSelectionX = -node.size.width / 2 - staticSelectionPadding;
+              const staticSelectionY = -node.size.height / 2 - staticSelectionPadding;
+              const staticSelectionWidth = node.size.width + staticSelectionPadding * 2;
+              const staticSelectionHeight = node.size.height + staticSelectionPadding * 2;
+              const staticSelectionCornerPoints = [
+                { x: staticSelectionX, y: staticSelectionY },
+                { x: staticSelectionX + staticSelectionWidth - staticSelectionCornerSize, y: staticSelectionY },
+                { x: staticSelectionX, y: staticSelectionY + staticSelectionHeight - staticSelectionCornerSize },
+                { x: staticSelectionX + staticSelectionWidth - staticSelectionCornerSize, y: staticSelectionY + staticSelectionHeight - staticSelectionCornerSize }
+              ];
               return (
                 <g
                   key={node.id}
@@ -24163,6 +24176,29 @@ export function App() {
                         rx={staticButtonCornerRadius}
                         className="static-button-feedback-surface"
                       />
+                    )}
+                    {showStaticSelectionFrame && (
+                      <g className="node-static-selection-frame">
+                        <rect
+                          x={staticSelectionX}
+                          y={staticSelectionY}
+                          width={staticSelectionWidth}
+                          height={staticSelectionHeight}
+                          rx={Math.max(8, staticButtonCornerRadius + staticSelectionPadding)}
+                          className="node-static-selection-glow"
+                        />
+                        {staticSelectionCornerPoints.map((point, index) => (
+                          <rect
+                            key={`static-selection-corner-${index}`}
+                            x={point.x}
+                            y={point.y}
+                            width={staticSelectionCornerSize}
+                            height={staticSelectionCornerSize}
+                            rx="3"
+                            className="node-static-selection-corner"
+                          />
+                        ))}
+                      </g>
                     )}
                   </g>
                   {!nodeIsBus && (imageHref || foregroundImageHref) && (
