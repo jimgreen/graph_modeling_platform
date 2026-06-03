@@ -136,6 +136,7 @@ import {
   serializeProject,
   synchronizeBusTerminalsWithEdges,
   deserializeProject,
+  edgeWithSavedRouteGeometry,
   type Edge,
   type DeviceKind,
   type DeviceTemplate,
@@ -302,6 +303,91 @@ describe("power system model", () => {
     const route = routeEdgesForSavedPathRendering([source, target], [edge], { width: 520, height: 320 })[0];
 
     expect(route.points).toEqual(expect.arrayContaining(manualPoints));
+  });
+
+  test("persists the current rendered route geometry for saved-path reopening", () => {
+    const source = withHiddenDeviceLabel(createDefaultNode("ac-source", { x: 120, y: 120 }));
+    const target = withHiddenDeviceLabel(createDefaultNode("ac-load", { x: 420, y: 260 }));
+    const edge: Edge = {
+      id: "visible-route",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: source.terminals[0].id,
+      targetTerminalId: target.terminals[0].id
+    };
+    const defaultRoute = routeEdgesForSavedPathRendering([source, target], [edge], { width: 800, height: 600 })[0];
+    const targetStub = defaultRoute.points[defaultRoute.points.length - 2];
+    const renderedRoute = {
+      ...defaultRoute,
+      points: [
+        defaultRoute.points[0],
+        defaultRoute.points[1],
+        { x: 210, y: 92 },
+        { x: targetStub.x, y: 92 },
+        targetStub,
+        defaultRoute.points[defaultRoute.points.length - 1]
+      ]
+    };
+
+    const persisted = lockProjectEdgeTerminals({
+      version: 1,
+      name: "saved-route",
+      canvasWidth: 800,
+      canvasHeight: 600,
+      nodes: [source, target],
+      edges: [edgeWithSavedRouteGeometry(edge, renderedRoute, source, target)]
+    });
+    const reopenedRoute = routeEdgesForSavedPathRendering(persisted.nodes, persisted.edges, { width: 800, height: 600 }, { refreshCrossingArcs: false })[0];
+
+    expect(persisted.edges[0].sourcePoint).toBeUndefined();
+    expect(persisted.edges[0].targetPoint).toBeUndefined();
+    expect(persisted.edges[0].manualPoints).toEqual([
+      { x: 210, y: 92 },
+      { x: targetStub.x, y: 92 }
+    ]);
+    expect(persisted.edges[0].routePoints).toEqual(renderedRoute.points);
+    expect(reopenedRoute.points).toEqual(renderedRoute.points);
+  });
+
+  test("persists bus endpoint landing points from the current rendered route", () => {
+    const bus = withHiddenDeviceLabel(createDefaultNode("ac-bus", { x: 280, y: 120 }));
+    const load = withHiddenDeviceLabel(createDefaultNode("ac-load", { x: 480, y: 260 }));
+    const edge: Edge = {
+      id: "visible-bus-route",
+      sourceId: bus.id,
+      targetId: load.id,
+      targetTerminalId: load.terminals[0].id
+    };
+    const busLanding = { x: 310, y: 120 };
+    const defaultRoute = routeEdgesForSavedPathRendering([bus, load], [edge], { width: 800, height: 600 })[0];
+    const renderedRoute = {
+      ...defaultRoute,
+      points: [
+        busLanding,
+        { x: 310, y: 152 },
+        { x: 390, y: 152 },
+        { x: 390, y: 228 },
+        defaultRoute.points[defaultRoute.points.length - 2],
+        defaultRoute.points[defaultRoute.points.length - 1]
+      ]
+    };
+
+    const persisted = lockProjectEdgeTerminals({
+      version: 1,
+      name: "saved-bus-route",
+      canvasWidth: 800,
+      canvasHeight: 600,
+      nodes: [bus, load],
+      edges: [edgeWithSavedRouteGeometry(edge, renderedRoute, bus, load)]
+    });
+
+    expect(persisted.edges[0].sourcePoint).toEqual(busLanding);
+    expect(persisted.edges[0].targetPoint).toBeUndefined();
+    expect(persisted.edges[0].routePoints).toEqual(renderedRoute.points);
+    expect(persisted.edges[0].manualPoints).toEqual([
+      { x: 390, y: 152 },
+      { x: 390, y: 228 }
+    ]);
   });
 
   test("does not scan node or edge arrays when there are no model groups", () => {
@@ -6716,6 +6802,61 @@ describe("power system model", () => {
 
     expect(routes.find((route) => route.edgeId === "vertical")?.path).toContain("Q");
     expect(routes.find((route) => route.edgeId === "horizontal")?.path).not.toContain("Q");
+  });
+
+  test("can skip crossing arc refresh on the saved-path startup render", () => {
+    const edges: Edge[] = [
+      {
+        id: "vertical",
+        sourceId: "vertical-source",
+        targetId: "vertical-target",
+        sourcePoint: { x: 300, y: 80 },
+        targetPoint: { x: 300, y: 400 }
+      },
+      {
+        id: "horizontal",
+        sourceId: "horizontal-source",
+        targetId: "horizontal-target",
+        sourcePoint: { x: 100, y: 240 },
+        targetPoint: { x: 500, y: 240 }
+      }
+    ];
+
+    const refreshedRoutes = routeEdgesForSavedPathRendering([], edges, { width: 700, height: 520 });
+    const startupRoutes = routeEdgesForSavedPathRendering([], edges, { width: 700, height: 520 }, {
+      refreshCrossingArcs: false
+    });
+
+    expect(refreshedRoutes.find((route) => route.edgeId === "vertical")?.path).toContain("Q");
+    expect(startupRoutes.find((route) => route.edgeId === "vertical")?.path).not.toContain("Q");
+    expect(startupRoutes.find((route) => route.edgeId === "horizontal")?.path).not.toContain("Q");
+  });
+
+  test("opens complete saved route points directly without scanning nodes", () => {
+    const nodes = [] as ModelNode[];
+    nodes.map = () => {
+      throw new Error("node scan should be skipped when every edge has complete saved route points");
+    };
+    const edge: Edge = {
+      id: "saved-direct-route",
+      sourceId: "source",
+      targetId: "target",
+      routePoints: [
+        { x: 40, y: 60 },
+        { x: 160, y: 60 },
+        { x: 160, y: 240 }
+      ]
+    };
+
+    const routes = routeEdgesForSavedPathRendering(nodes, [edge], { width: 400, height: 300 }, {
+      refreshCrossingArcs: false
+    });
+
+    expect(routes).toEqual([{
+      edgeId: edge.id,
+      points: edge.routePoints,
+      path: "M 40 60 L 160 60 L 160 240"
+    }]);
   });
 
   test("renders vertical crossing arcs near ordinary bend points", () => {

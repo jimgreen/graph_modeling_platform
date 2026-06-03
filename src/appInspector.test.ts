@@ -169,7 +169,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("function backgroundPageCanvasTransform");
     expect(source).toContain("const backgroundPageRender = useMemo");
     expect(source).toContain("filterProjectByVisibleLayers(backgroundProject.nodes, backgroundProject.edges, backgroundLayers)");
-    expect(source).toContain("routeEdgesForSavedPathRendering(backgroundNodes, backgroundEdges, backgroundBounds)");
+    expect(source).toContain("routeEdgesForSavedPathRendering(backgroundNodes, backgroundEdges, backgroundBounds, { refreshCrossingArcs: savedRouteCrossingArcsReady })");
     expect(source).toContain("backgroundColor: backgroundProject.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND");
     expect(source).toContain("backgroundImageUrl: resolveProjectImage(backgroundProject, imageAssets)");
     expect(source).toContain("const renderReadonlyBackgroundPage = () =>");
@@ -1902,8 +1902,27 @@ describe("graph inspector panel", () => {
     expect(routingBlock).toContain("routeEdgesForCachedStoredRendering");
     expect(routingBlock).toContain("routeEdgesForIncrementalRendering");
     expect(routingBlock).toContain("cachedRoutedEdgesRef.current");
-    expect(routingBlock).toContain("routes: routeEdgesForSavedPathRendering(routingNodes, routingEdges, canvasBounds)");
+    expect(routingBlock).toContain("savedRouteCrossingArcsReady");
+    expect(routingBlock).toContain("routes: routeEdgesForSavedPathRendering(routingNodes, routingEdges, canvasBounds, { refreshCrossingArcs: savedRouteCrossingArcsReady })");
     expect(routingBlock).not.toContain("routeEdgesForRendering(routingNodes, routingEdges");
+  });
+
+  test("keeps graph tree and saved-route crossing arcs off the startup render path", async () => {
+    const source = await readAppSource();
+    const routingStart = source.indexOf("const routeInputLayerSignature = useMemo");
+    const routingEnd = source.indexOf("const routedEdgeById", routingStart);
+    const routingBlock = source.slice(routingStart, routingEnd);
+    const savedArcEffectStart = source.indexOf("useEffect(() => {\n    if (routeRenderingReady || savedRouteCrossingArcsReady");
+    const savedArcEffectEnd = source.indexOf("const routeRenderingEnabled = routeRenderingReady", savedArcEffectStart);
+    const savedArcEffectBlock = source.slice(savedArcEffectStart, savedArcEffectEnd);
+
+    expect(source).toContain("const [graphInfoView, setGraphInfoView] = useState<\"tree\" | \"selected\">(\"selected\");");
+    expect(source).toContain("const [savedRouteCrossingArcsReady, setSavedRouteCrossingArcsReady] = useState(false);");
+    expect(savedArcEffectBlock).toContain("scheduleIdleWork");
+    expect(savedArcEffectBlock).toContain("setSavedRouteCrossingArcsReady(true)");
+    expect(savedArcEffectBlock).toContain("routingEdges.length === 0");
+    expect(routingBlock).toContain("routeEdgesForSavedPathRendering(routingNodes, routingEdges, canvasBounds, { refreshCrossingArcs: savedRouteCrossingArcsReady })");
+    expect(routingBlock).not.toContain("routeEdgesForSavedPathRendering(routingNodes, routingEdges, canvasBounds)");
   });
 
   test("keeps svg export and canvas size checks on stored connection geometry", async () => {
@@ -2329,12 +2348,16 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const [canvasVisibleViewBox, setCanvasVisibleViewBox]");
     expect(source).toContain("frame.addEventListener(\"scroll\", handleCanvasFrameScroll");
     expect(source).toContain("expandViewBoxForRendering(canvasVisibleViewBox)");
+    expect(source).toContain("const viewportQueryBounds = useMemo");
+    expect(source).toContain("snapRenderViewportBoundsForQuery(renderViewportBounds)");
+    expect(source).toContain("const deferredViewportQueryBounds = useDeferredValue(viewportQueryBounds)");
     expect(source).toContain("setCanvasVisibleViewBox(canvasFullViewBoxFromBounds(nextCanvasBounds))");
     expect(source).not.toContain("expandViewBoxForRendering(viewBox)");
     expect(source).toContain("nodeIntersectsRenderViewport");
     expect(routeCullBlock).toContain("if (activeSelectedEdgeSet.size === 0)");
     expect(routeCullBlock).toContain("activeSelectedEdgeSet.has(route.edgeId)");
-    expect(routeCullBlock).toContain("queryRouteSpatialIndex(routedEdgeSpatialIndex, renderViewportBounds)");
+    expect(routeCullBlock).toContain("queryRouteSpatialIndex(routedEdgeSpatialIndex, deferredViewportQueryBounds)");
+    expect(routeCullBlock).toContain("queryNodeSpatialIndex(visibleNodeSpatialIndex, deferredViewportQueryBounds)");
     expect(routeCullBlock).not.toContain("renderedRoutedEdges.filter");
     expect(routeCullBlock).not.toContain("visibleNodes.filter");
     expect(routeCullBlock).toContain("selectedNodeIdSet.forEach(addVisibleNodeId)");
@@ -2744,7 +2767,7 @@ describe("graph inspector panel", () => {
     const routeCullBlock = source.slice(routeCullStart, routeCullEnd);
 
     expect(source).not.toContain("const renderedRoutedEdges = useMemo");
-    expect(routeCullBlock).toContain("queryRouteSpatialIndex(routedEdgeSpatialIndex, renderViewportBounds)");
+    expect(routeCullBlock).toContain("queryRouteSpatialIndex(routedEdgeSpatialIndex, deferredViewportQueryBounds)");
     expect(routeCullBlock).toContain("selectedRoutes.push(route)");
     expect(routeCullBlock).toContain("routedEdgeById.get(edgeId)");
     expect(routeCullBlock).not.toContain("routedEdges.filter");
@@ -4052,7 +4075,7 @@ describe("graph inspector panel", () => {
     expect(snapshotHelperStart).toBeGreaterThan(-1);
     expect(snapshotHelperBlock).toContain("selectedEdgeIds.has(edge.id)");
     expect(snapshotHelperBlock).toContain("movedIds.has(edge.sourceId) && movedIds.has(edge.targetId)");
-    expect(snapshotHelperBlock).toContain("Boolean(edge.manualPoints?.length)");
+    expect(snapshotHelperBlock).toContain("Boolean(edge.manualPoints?.length || edge.routePoints?.length)");
     expect(routePointsHelperBlock).toContain("routeSnapshotEdgesForMove(candidateEdges, movedNodeIds, selectedEdgeIds)");
     expect(routePointsHelperBlock).toContain("currentStoredRoutePointsForEdge(edge)");
     expect(keyboardBlock).toContain("routePointsSnapshotForMove(affectedEdgesForMove, moveNodeIds, moveEdgeIds)");
@@ -4413,8 +4436,8 @@ describe("graph inspector panel", () => {
     const busSyncEffectStart = source.indexOf("const pendingBusSyncNodeIds = pendingBusTerminalSyncNodeIdsRef.current;");
     const busSyncEffectEnd = source.indexOf("const canvasBounds", busSyncEffectStart);
     const busSyncEffectBlock = source.slice(busSyncEffectStart, busSyncEffectEnd);
-    const saveDraftStart = source.indexOf("const saveDraftProject =");
-    const saveDraftEnd = source.indexOf("const saveCurrentProject", saveDraftStart);
+    const saveDraftStart = source.indexOf("const saveActiveProjectPointer =");
+    const saveDraftEnd = source.indexOf("const setActiveLayer", saveDraftStart);
     const saveDraftBlock = source.slice(saveDraftStart, saveDraftEnd);
     const saveStart = source.indexOf("const saveCurrentProject");
     const saveEnd = source.indexOf("const renameProjectRecord", saveStart);
@@ -4428,10 +4451,14 @@ describe("graph inspector panel", () => {
     expect(busSyncEffectBlock).toContain("lastBusTerminalSyncEndpointRevisionRef.current === graphStore.edgeEndpointRevision");
     expect(busSyncEffectBlock).toContain("lastBusTerminalSyncEndpointRevisionRef.current = graphStore.edgeEndpointRevision");
     expect(busSyncEffectBlock).toContain("scheduleIdleWork");
+    expect(saveDraftBlock).toContain("ACTIVE_PROJECT_STORAGE_KEY");
     expect(saveDraftBlock).toContain("DRAFT_PROJECT_STORAGE_KEY");
     expect(saveDraftBlock).toContain("window.localStorage.setItem");
-    expect(saveBlock).toContain("saveDraftProject(targetId");
-    expect(saveBlock).toContain("saveDraftProject(record.id");
+    expect(saveDraftBlock).not.toContain("nodes");
+    expect(saveDraftBlock).not.toContain("edges");
+    expect(saveDraftBlock).not.toContain("groups");
+    expect(saveBlock).toContain("saveActiveProjectPointer(targetId");
+    expect(saveBlock).toContain("saveActiveProjectPointer(record.id");
     expect(source).not.toContain("draftAutosaveProjectId");
     expect(source).not.toContain("saveDraftProject(draftAutosaveProjectId");
     expect(source).not.toContain("[activeProjectId, activeSchemeId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, nodes, powerBaseValue, powerUnit, projectName, voltageUnit]");
@@ -4457,8 +4484,8 @@ describe("graph inspector panel", () => {
       ["finishConnectToTarget", source.indexOf("const finishConnectToTarget"), source.indexOf("const finishRewiring", source.indexOf("const finishConnectToTarget"))]
     ] as const;
 
-    expect(manualSaveBlock).toContain("saveDraftProject(targetId");
-    expect(manualSaveBlock).toContain("saveDraftProject(record.id");
+    expect(manualSaveBlock).toContain("saveActiveProjectPointer(targetId");
+    expect(manualSaveBlock).toContain("saveActiveProjectPointer(record.id");
     expect(schemePersistBlock).toContain("persistBackendSchemesPayload(normalizedSchemesPayload)");
     expect(source).not.toContain("draftAutosaveProjectId");
     expect(source).not.toContain("saveDraftProject(draftAutosaveProjectId");
@@ -5215,7 +5242,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const [groups, setGroups]");
     expect(source).toContain("expandSelectionByGroups(activeLayerGroups");
     expect(source).toContain("expandSelectionByGroups(nextGroups, activeSelectedNodeIds, activeSelectedEdgeIds)");
-    expect(source).toContain("groups: normalizeModelGroups(groups, nodes, edges)");
+    expect(source).toContain("groups: normalizeModelGroups(groups, nodes, projectEdges)");
     expect(source).toContain("setGroups(snapshot.groups)");
     expect(topbarBlock).toContain("aria-label=\"组合\"");
     expect(topbarBlock).toContain("aria-label=\"解散\"");
@@ -5686,7 +5713,7 @@ describe("graph inspector panel", () => {
   test("prompts for overwrite rename or cancel when dragged model names already exist", async () => {
     const source = await readAppSource();
     const moveStart = source.indexOf("const moveProjectRecordToScheme =");
-    const moveEnd = source.indexOf("const saveDraftProject", moveStart);
+    const moveEnd = source.indexOf("const saveActiveProjectPointer", moveStart);
     const moveBlock = source.slice(moveStart, moveEnd);
     const visibilityStart = source.indexOf("const updateAutoPanelVisibility =");
     const visibilityEnd = source.indexOf("const activateInspectorFromCanvas", visibilityStart);
@@ -5786,6 +5813,20 @@ describe("graph inspector panel", () => {
     expect(busSyncBlock).toContain("suppressNextGraphDirtyRef.current = true");
   });
 
+  test("saves the currently rendered connection routes instead of raw edge geometry", async () => {
+    const source = await readAppSource();
+    const projectStart = source.indexOf("const currentProject = ()");
+    const projectEnd = source.indexOf("const currentGraphDirtyBaseline", projectStart);
+    const projectBlock = source.slice(projectStart, projectEnd);
+
+    expect(source).toContain("edgeWithSavedRouteGeometry");
+    expect(projectBlock).toContain("const projectEdges = edges.map(edgeWithCurrentRouteGeometryForSave);");
+    expect(projectBlock).toContain("groups: normalizeModelGroups(groups, nodes, projectEdges)");
+    expect(projectBlock).toContain("edges: projectEdges");
+    expect(projectBlock).not.toContain("groups: normalizeModelGroups(groups, nodes, edges)");
+    expect(projectBlock).not.toContain("\n      edges\n");
+  });
+
   test("keeps full saved-scheme normalization off the initial render path", async () => {
     const source = await readAppSource();
     const savedProjectNormalizerStart = source.indexOf("function normalizeSavedProjectIndexes");
@@ -5856,7 +5897,7 @@ describe("graph inspector panel", () => {
     const unloadStart = source.indexOf("const handleBeforeUnload = (event: BeforeUnloadEvent) => {");
     const unloadEnd = source.indexOf("window.addEventListener(\"beforeunload\"", unloadStart);
     const unloadBlock = source.slice(unloadStart, unloadEnd);
-    const saveDraftStart = source.indexOf("const saveDraftProject =");
+    const saveDraftStart = source.indexOf("const saveActiveProjectPointer =");
     const saveDraftEnd = source.indexOf("const setActiveLayer", saveDraftStart);
     const saveDraftBlock = source.slice(saveDraftStart, saveDraftEnd);
 
@@ -5866,7 +5907,9 @@ describe("graph inspector panel", () => {
     expect(source).toContain("window.sessionStorage.setItem(REFRESH_RECOVERY_STORAGE_KEY");
     expect(source).toContain("window.sessionStorage.removeItem(REFRESH_RECOVERY_STORAGE_KEY)");
     expect(initialStateBlock).toContain("const refreshRecovery = readRefreshRecoveryProject();");
-    expect(initialStateBlock).toContain("draft: refreshRecovery ?? readDraftProject()");
+    expect(initialStateBlock).toContain("draft: refreshRecovery ?? savedProjectDraft ?? readDraftProject()");
+    expect(initialStateBlock).toContain("readActiveProjectPointer()");
+    expect(initialStateBlock).toContain("draftProjectFromSavedSchemes(initialSavedSchemes");
     expect(source).toContain("const [hasUnsavedChanges, setHasUnsavedChanges] = useState(() => initialProjectSources.recoveredFromRefresh);");
     expect(recoveryPersistBlock).toContain("if (!saveRequiredRef.current)");
     expect(recoveryPersistBlock).toContain("writeRefreshRecoveryProject(recoveryProject)");
@@ -5874,6 +5917,9 @@ describe("graph inspector panel", () => {
     expect(source).toContain('window.addEventListener("pagehide", persistRefreshRecoveryNow);');
     expect(source).toContain('window.addEventListener("vite:beforeFullReload", persistRefreshRecoveryNow);');
     expect(saveDraftBlock).not.toContain("REFRESH_RECOVERY_STORAGE_KEY");
+    expect(saveDraftBlock).not.toContain("nodes");
+    expect(saveDraftBlock).not.toContain("edges");
+    expect(saveDraftBlock).not.toContain("groups");
     expect(source).not.toContain("window.localStorage.setItem(REFRESH_RECOVERY_STORAGE_KEY");
   });
 

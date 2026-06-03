@@ -347,6 +347,7 @@ export type Edge = {
   sourcePoint?: Point;
   targetPoint?: Point;
   manualPoints?: Point[];
+  routePoints?: Point[];
 };
 
 export type ModelGroup = {
@@ -4773,29 +4774,50 @@ export function calculateModelGeometryBounds(
   routedEdges: Pick<RoutedEdge, "points">[] = [],
   padding = 0
 ): GeometryBounds | null {
-  const boxes: GeometryBounds[] = [];
+  let left = Number.POSITIVE_INFINITY;
+  let right = Number.NEGATIVE_INFINITY;
+  let top = Number.POSITIVE_INFINITY;
+  let bottom = Number.NEGATIVE_INFINITY;
+  let hasBounds = false;
+  const includeBox = (box: GeometryBounds) => {
+    left = Math.min(left, box.left);
+    right = Math.max(right, box.right);
+    top = Math.min(top, box.top);
+    bottom = Math.max(bottom, box.bottom);
+    hasBounds = true;
+  };
   for (const node of nodes) {
-    boxes.push(calculateNodeVisualBounds(node, padding));
+    includeBox(calculateNodeVisualBounds(node, padding));
   }
   for (const route of routedEdges) {
     if (route.points.length === 0) {
       continue;
     }
-    boxes.push({
-      left: Math.min(...route.points.map((point) => point.x)) - padding,
-      right: Math.max(...route.points.map((point) => point.x)) + padding,
-      top: Math.min(...route.points.map((point) => point.y)) - padding,
-      bottom: Math.max(...route.points.map((point) => point.y)) + padding
+    let routeLeft = Number.POSITIVE_INFINITY;
+    let routeRight = Number.NEGATIVE_INFINITY;
+    let routeTop = Number.POSITIVE_INFINITY;
+    let routeBottom = Number.NEGATIVE_INFINITY;
+    for (const point of route.points) {
+      routeLeft = Math.min(routeLeft, point.x);
+      routeRight = Math.max(routeRight, point.x);
+      routeTop = Math.min(routeTop, point.y);
+      routeBottom = Math.max(routeBottom, point.y);
+    }
+    includeBox({
+      left: routeLeft - padding,
+      right: routeRight + padding,
+      top: routeTop - padding,
+      bottom: routeBottom + padding
     });
   }
-  if (boxes.length === 0) {
+  if (!hasBounds) {
     return null;
   }
   return {
-    left: Math.min(...boxes.map((box) => box.left)),
-    right: Math.max(...boxes.map((box) => box.right)),
-    top: Math.min(...boxes.map((box) => box.top)),
-    bottom: Math.max(...boxes.map((box) => box.bottom))
+    left,
+    right,
+    top,
+    bottom
   };
 }
 
@@ -7877,7 +7899,8 @@ export function createSavedProject(name: string, project: ProjectFile): SavedPro
         ...edge,
         sourcePoint: edge.sourcePoint ? { ...edge.sourcePoint } : undefined,
         targetPoint: edge.targetPoint ? { ...edge.targetPoint } : undefined,
-        manualPoints: edge.manualPoints?.map((point) => ({ ...point }))
+        manualPoints: edge.manualPoints?.map((point) => ({ ...point })),
+        routePoints: edge.routePoints?.map((point) => ({ ...point }))
       })),
       groups: normalizeModelGroups(lockedProject.groups, lockedProject.nodes, lockedProject.edges)
         .map((group) => ({
@@ -8316,10 +8339,16 @@ export function calculateModelContentSize(
   for (const edge of edges) {
     includePoint(edge.sourcePoint);
     includePoint(edge.targetPoint);
-    edge.manualPoints?.forEach(includePoint);
+    if (edge.manualPoints) {
+      for (const point of edge.manualPoints) {
+        includePoint(point);
+      }
+    }
   }
   for (const route of routedEdges) {
-    route.points.forEach(includePoint);
+    for (const point of route.points) {
+      includePoint(point);
+    }
   }
 
   return {
@@ -10607,9 +10636,38 @@ export function routeEdgesForStoredRendering(nodes: ModelNode[], edges: Edge[], 
   return refreshCrossingArcPaths(routes);
 }
 
-export function routeEdgesForSavedPathRendering(nodes: ModelNode[], edges: Edge[], bounds?: CanvasBounds): RoutedEdge[] {
+type SavedPathRenderingOptions = {
+  refreshCrossingArcs?: boolean;
+};
+
+export function routeEdgesForSavedPathRendering(
+  nodes: ModelNode[],
+  edges: Edge[],
+  bounds?: CanvasBounds,
+  options: SavedPathRenderingOptions = {}
+): RoutedEdge[] {
+  const savedRouteFromEdge = (edge: Edge): RoutedEdge | null => {
+    if (!edge.routePoints || edge.routePoints.length < 2) {
+      return null;
+    }
+    const points = edge.routePoints.map((point) => (bounds ? clampPointToBounds(point, bounds) : { ...point }));
+    return {
+      edgeId: edge.id,
+      points,
+      path: pointsToOrthogonalPath(points)
+    };
+  };
+  const directRoutes = edges.map(savedRouteFromEdge);
+  if (directRoutes.every(Boolean)) {
+    const routes = directRoutes as RoutedEdge[];
+    return options.refreshCrossingArcs === false ? routes : refreshCrossingArcPaths(routes);
+  }
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const routes = edges.flatMap((edge) => {
+    const savedRoute = savedRouteFromEdge(edge);
+    if (savedRoute) {
+      return [savedRoute];
+    }
     const source = nodeById.get(edge.sourceId) ?? (edge.sourcePoint ? createFloatingEndpointNode(edge.sourcePoint, edge.targetId ? nodeById.get(edge.targetId) : undefined) : undefined);
     const target = nodeById.get(edge.targetId) ?? (edge.targetPoint ? createFloatingEndpointNode(edge.targetPoint, edge.sourceId ? nodeById.get(edge.sourceId) : undefined) : undefined);
     if (!source || !target) {
@@ -10645,7 +10703,7 @@ export function routeEdgesForSavedPathRendering(nodes: ModelNode[], edges: Edge[
       path: pointsToOrthogonalPath(points)
     }];
   });
-  return refreshCrossingArcPaths(routes);
+  return options.refreshCrossingArcs === false ? routes : refreshCrossingArcPaths(routes);
 }
 
 export function routeEdgesForCachedStoredRendering(
@@ -10962,15 +11020,41 @@ function edgeWithoutStoredRouteGeometry(edge: Edge): Edge {
   const next = edgeWithoutManualPoints(edge);
   delete next.sourcePoint;
   delete next.targetPoint;
+  delete next.routePoints;
   return next;
 }
 
 function edgeWithCommitManualPoints(edge: Edge, route: RoutedEdge): Edge {
   const manualPoints = commitManualPointsFromRoute(route.points);
   const withoutManualPoints = edgeWithoutManualPoints(edge);
+  const routePoints = route.points.map((point) => ({ ...point }));
   return manualPoints.length > 0
-    ? { ...withoutManualPoints, manualPoints }
-    : withoutManualPoints;
+    ? { ...withoutManualPoints, manualPoints, routePoints }
+    : { ...withoutManualPoints, routePoints };
+}
+
+export function edgeWithSavedRouteGeometry(edge: Edge, route: RoutedEdge | undefined, source?: ModelNode, target?: ModelNode): Edge {
+  if (!route || route.points.length < 2) {
+    return edge;
+  }
+  const points = route.points.map((point) => ({ ...point }));
+  const manualPoints = commitManualPointsFromRoute(points);
+  const next = edgeWithoutManualPoints(edge);
+  next.routePoints = points.map((point) => ({ ...point }));
+  if (manualPoints.length > 0) {
+    next.manualPoints = manualPoints;
+  }
+  if (!source || isBusNode(source)) {
+    next.sourcePoint = { ...points[0] };
+  } else {
+    delete next.sourcePoint;
+  }
+  if (!target || isBusNode(target)) {
+    next.targetPoint = { ...points[points.length - 1] };
+  } else {
+    delete next.targetPoint;
+  }
+  return next;
 }
 
 type EdgeRoutingContext = {
