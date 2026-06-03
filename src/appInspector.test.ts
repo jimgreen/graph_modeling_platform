@@ -4685,7 +4685,7 @@ describe("graph inspector panel", () => {
 
     expect(manualSaveBlock).toContain("saveActiveProjectPointer(targetId");
     expect(manualSaveBlock).toContain("saveActiveProjectPointer(record.id");
-    expect(schemePersistBlock).toContain("persistBackendSchemesPayload(normalizedSchemesPayload)");
+    expect(schemePersistBlock).toContain("persistSchemesPayloadToStorageAndBackend(normalizedSchemesPayload)");
     expect(source).not.toContain("draftAutosaveProjectId");
     expect(source).not.toContain("saveDraftProject(draftAutosaveProjectId");
     expect(schemePersistBlock).not.toContain("nodes");
@@ -4698,6 +4698,7 @@ describe("graph inspector panel", () => {
       expect(block, `${name} must not call draft save`).not.toContain("saveDraftProject(");
       expect(block, `${name} must not call manual save`).not.toContain("saveCurrentProject(");
       expect(block, `${name} must not persist scheme payload`).not.toContain("persistBackendSchemesPayload(");
+      expect(block, `${name} must not persist scheme payload`).not.toContain("persistSchemesPayloadToStorageAndBackend(");
       expect(block, `${name} must not serialize schemes`).not.toContain("serializeSchemesForStorage(");
       expect(block, `${name} must not mutate scheme records`).not.toContain("setSchemes(");
       expect(block, `${name} must not mutate saved project records`).not.toContain("updateProjectInSchemes(");
@@ -5971,6 +5972,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("pendingUnsavedAction");
     expect(source).toContain("requestUnsavedChangeAction");
     expect(source).toContain("resolveUnsavedChangeAction");
+    expect(source).toContain("function findProjectRecordInSchemes(");
     expect(source).toContain("window.addEventListener(\"beforeunload\", handleBeforeUnload)");
     expect(source).toContain("当前模型尚未保存");
     expect(source).toContain("不保存继续切换");
@@ -6030,6 +6032,9 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("edgeWithSavedRouteGeometry");
     expect(projectBlock).toContain("const projectEdges = edges.map(edgeWithCurrentRouteGeometryForSave);");
+    expect(projectBlock).toContain("layers,");
+    expect(projectBlock).toContain("activeLayerId,");
+    expect(projectBlock).toContain("backgroundLayerIds,");
     expect(projectBlock).toContain("groups: normalizeModelGroups(groups, nodes, projectEdges)");
     expect(projectBlock).toContain("edges: projectEdges");
     expect(projectBlock).not.toContain("groups: normalizeModelGroups(groups, nodes, edges)");
@@ -6063,15 +6068,20 @@ describe("graph inspector panel", () => {
     const schemePersistStart = source.indexOf("const normalizedSchemesPayload = serializeSchemesForStorage(schemes);");
     const schemePersistEnd = source.indexOf("}, [schemes]);", schemePersistStart);
     const schemePersistBlock = source.slice(schemePersistStart, schemePersistEnd);
+    const saveStart = source.indexOf("const saveCurrentProject =");
+    const saveEnd = source.indexOf("const renameProjectRecord", saveStart);
+    const saveBlock = source.slice(saveStart, saveEnd);
     const saveCallIndex = persistHelperBlock.indexOf("saveBackendSchemesPayload(normalizedSchemesPayload)");
     const persistedAssignmentIndex = persistHelperBlock.indexOf("lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload");
 
     expect(source).toContain("const pendingBackendSchemesPayloadRef = useRef<string | null>(null)");
     expect(source).toContain("const backendSchemesLoadTokenRef = useRef(0)");
     expect(source).toContain("const schemesChangedBeforeBackendLoadRef = useRef(false)");
+    expect(source).toContain("const latestActiveProjectPointerRef = useRef<ActiveProjectPointer>");
     expect(source).toContain("const startupHadStoredSchemesRef = useRef(Boolean(initialStoredSchemesPayload))");
     expect(source).toContain("shouldPreferLocalSchemesOverBackend(");
     expect(source).toContain("const latestSchemesRef = useRef<SavedSchemeRecord[]>(initialSavedSchemes)");
+    expect(source).toContain("latestActiveProjectPointerRef.current = { activeProjectId, activeSchemeId };");
     expect(setterBlock).toContain("schemesChangedBeforeBackendLoadRef.current = true");
     expect(setterBlock).toContain("setSchemesState(value)");
     expect(backendLoadBlock).toContain("const localChangedBeforeBackendLoad = schemesChangedBeforeBackendLoadRef.current");
@@ -6082,10 +6092,19 @@ describe("graph inspector panel", () => {
     expect(backendLoadBlock).toContain("if (localChangedBeforeBackendLoad || localSchemesShouldWin)");
     expect(backendLoadBlock).toContain("persistBackendSchemesPayload(pendingPayload)");
     expect(backendLoadBlock).toContain("setSchemesState(backendSchemes)");
+    expect(backendLoadBlock).toContain("const activePointer = latestActiveProjectPointerRef.current;");
+    expect(backendLoadBlock).toContain("const backendActiveProject = findProjectRecordInSchemes(backendSchemes, activePointer.activeProjectId, activePointer.activeSchemeId);");
+    expect(backendLoadBlock).toContain("loadSavedProject(backendActiveProject.project, backendActiveProject.scheme.id);");
+    expect(source).toContain("const persistSchemesPayloadToStorageAndBackend = (normalizedSchemesPayload: string) => {");
+    expect(source).toContain("window.localStorage.setItem(SCHEME_STORAGE_KEY, normalizedSchemesPayload)");
     expect(schemePersistBlock).toContain("suppressNextBackendSchemeSyncRef.current && normalizedSchemesPayload === lastPersistedSchemesPayloadRef.current");
     expect(schemePersistBlock).toContain("suppressNextBackendSchemeSyncRef.current = false;");
-    expect(schemePersistBlock).toContain("pendingBackendSchemesPayloadRef.current = normalizedSchemesPayload");
-    expect(schemePersistBlock).toContain("persistBackendSchemesPayload(normalizedSchemesPayload)");
+    expect(persistHelperBlock).toContain("pendingBackendSchemesPayloadRef.current = normalizedSchemesPayload");
+    expect(schemePersistBlock).toContain("persistSchemesPayloadToStorageAndBackend(normalizedSchemesPayload)");
+    expect(saveBlock).toContain("project: currentProject(),");
+    expect(saveBlock).toContain("setSchemes(nextSchemes);");
+    expect(saveBlock).toContain("persistSchemesPayloadToStorageAndBackend(serializeSchemesForStorage(nextSchemes));");
+    expect(saveBlock).not.toContain("updateProjectInSchemes(");
     expect(saveCallIndex).toBeGreaterThan(-1);
     expect(persistedAssignmentIndex).toBeGreaterThan(saveCallIndex);
     expect(persistHelperBlock).toContain(".then(() => {");

@@ -2731,6 +2731,27 @@ function shouldPreferLocalSchemesOverBackend(options: {
   return latestSavedSchemesTimestamp(options.localSchemes) > latestSavedSchemesTimestamp(options.backendSchemes);
 }
 
+function findProjectRecordInSchemes(
+  schemes: SavedSchemeRecord[],
+  projectId: string,
+  preferredSchemeId = ""
+): { scheme: SavedSchemeRecord; project: SavedProjectRecord } | null {
+  if (!projectId) {
+    return null;
+  }
+  const preferredScheme = preferredSchemeId ? schemes.find((scheme) => scheme.id === preferredSchemeId) : undefined;
+  const searchSchemes = preferredScheme
+    ? [preferredScheme, ...schemes.filter((scheme) => scheme.id !== preferredScheme.id)]
+    : schemes;
+  for (const scheme of searchSchemes) {
+    const project = scheme.projects.find((item) => item.id === projectId);
+    if (project) {
+      return { scheme, project };
+    }
+  }
+  return null;
+}
+
 const clonePoint = (point: Point): Point => ({ x: point.x, y: point.y });
 
 function cloneNodesForUndo(sourceNodes: ModelNode[]): ModelNode[] {
@@ -6146,6 +6167,10 @@ export function App() {
   const startupHadStoredSchemesRef = useRef(Boolean(initialStoredSchemesPayload));
   const startupRecoveredFromRefreshRef = useRef(initialProjectSources.recoveredFromRefresh);
   const latestSchemesRef = useRef<SavedSchemeRecord[]>(initialSavedSchemes);
+  const latestActiveProjectPointerRef = useRef<ActiveProjectPointer>({
+    activeProjectId: initialDraft?.activeProjectId ?? "",
+    activeSchemeId: initialDraft?.activeSchemeId ?? ""
+  });
   const backendColorConfigLoadedRef = useRef(false);
   const suppressNextBackendColorSyncRef = useRef(false);
   const lastPersistedColorConfigPayloadRef = useRef<string | null>(null);
@@ -7790,6 +7815,7 @@ export function App() {
     }
   };
   saveRequiredRef.current = saveRequired;
+  latestActiveProjectPointerRef.current = { activeProjectId, activeSchemeId };
   refreshRecoveryProjectRef.current = {
     dirty: true,
     savedAt: new Date().toISOString(),
@@ -10147,6 +10173,22 @@ export function App() {
       });
   };
 
+  const persistSchemesPayloadToStorageAndBackend = (normalizedSchemesPayload: string) => {
+    try {
+      window.localStorage.setItem(SCHEME_STORAGE_KEY, normalizedSchemesPayload);
+    } catch {
+      // 浏览器缓存不可写时不阻断当前编辑，后台同步仍会继续尝试。
+    }
+    if (!backendSchemesLoadedRef.current) {
+      pendingBackendSchemesPayloadRef.current = normalizedSchemesPayload;
+      return;
+    }
+    if (pendingBackendSchemesPayloadRef.current === normalizedSchemesPayload) {
+      return;
+    }
+    persistBackendSchemesPayload(normalizedSchemesPayload);
+  };
+
   useEffect(() => {
     const loadToken = ++backendSchemesLoadTokenRef.current;
     fetchBackendSchemes()
@@ -10180,6 +10222,13 @@ export function App() {
           pendingBackendSchemesPayloadRef.current = null;
           suppressNextBackendSchemeSyncRef.current = true;
           setSchemesState(backendSchemes);
+          if (!saveRequiredRef.current) {
+            const activePointer = latestActiveProjectPointerRef.current;
+            const backendActiveProject = findProjectRecordInSchemes(backendSchemes, activePointer.activeProjectId, activePointer.activeSchemeId);
+            if (backendActiveProject) {
+              loadSavedProject(backendActiveProject.project, backendActiveProject.scheme.id);
+            }
+          }
           setExpandedSchemeIds((current) => {
             const backendSchemeIds = new Set(backendSchemes.map((scheme) => scheme.id));
             const retained = current.filter((schemeId) => backendSchemeIds.has(schemeId));
@@ -10287,19 +10336,10 @@ export function App() {
       if (normalizedSchemesPayload === lastPersistedSchemesPayloadRef.current) {
         return;
       }
-      try {
-        window.localStorage.setItem(SCHEME_STORAGE_KEY, normalizedSchemesPayload);
-      } catch {
-        // 浏览器缓存不可写时不阻断当前编辑，后台同步仍会继续尝试。
-      }
-      if (!backendSchemesLoadedRef.current) {
-        pendingBackendSchemesPayloadRef.current = normalizedSchemesPayload;
-        return;
-      }
       if (suppressNextBackendSchemeSyncRef.current) {
         suppressNextBackendSchemeSyncRef.current = false;
       }
-      persistBackendSchemesPayload(normalizedSchemesPayload);
+      persistSchemesPayloadToStorageAndBackend(normalizedSchemesPayload);
     }, 150);
     return () => window.clearTimeout(timeoutId);
   }, [schemes]);
@@ -18222,16 +18262,6 @@ export function App() {
     );
   };
 
-  const updateProjectInSchemes = (projectId: string, updater: (project: SavedProjectRecord) => SavedProjectRecord) => {
-    setSchemes((current) =>
-      current.map((scheme) => ({
-        ...scheme,
-        updatedAt: scheme.projects.some((project) => project.id === projectId) ? new Date().toISOString() : scheme.updatedAt,
-        projects: scheme.projects.map((project) => (project.id === projectId ? updater(project) : project))
-      }))
-    );
-  };
-
   const promptUniqueRecordName = (
     promptText: string,
     defaultName: string,
@@ -19005,9 +19035,16 @@ export function App() {
         const record: SavedProjectRecord = {
           ...existing,
           name: projectName,
-          project: currentProject()
+          project: currentProject(),
+          updatedAt: new Date().toISOString()
         };
-        updateProjectInSchemes(targetId, () => ({ ...record, updatedAt: new Date().toISOString() }));
+        const nextSchemes = schemes.map((scheme) => ({
+          ...scheme,
+          updatedAt: scheme.projects.some((project) => project.id === targetId) ? record.updatedAt : scheme.updatedAt,
+          projects: scheme.projects.map((project) => (project.id === targetId ? record : project))
+        }));
+        setSchemes(nextSchemes);
+        persistSchemesPayloadToStorageAndBackend(serializeSchemesForStorage(nextSchemes));
         setActiveProjectId(targetId);
         graphDirtyBaselineRef.current = currentGraphDirtyBaseline();
         setHasUnsavedChanges(false);
@@ -19019,20 +19056,20 @@ export function App() {
     }
     const record = createSavedProject(projectName, currentProject());
     const targetSchemeId = activeSchemeId || selectedSchemeId || schemes[0]?.id || createSavedScheme("默认方案").id;
-    setSchemes((current) => {
-      const fallback = current.length > 0 ? current : [createSavedScheme("默认方案")];
-      const schemeId = fallback.some((scheme) => scheme.id === targetSchemeId) ? targetSchemeId : fallback[0].id;
-      return fallback.map((scheme) =>
-        scheme.id === schemeId
-          ? { ...scheme, updatedAt: new Date().toISOString(), projects: upsertSavedProject(scheme.projects, record) }
-          : scheme
-      );
-    });
+    const fallbackSchemes = schemes.length > 0 ? schemes : [createSavedScheme("默认方案")];
+    const resolvedSchemeId = fallbackSchemes.some((scheme) => scheme.id === targetSchemeId) ? targetSchemeId : fallbackSchemes[0].id;
+    const nextSchemes = fallbackSchemes.map((scheme) =>
+      scheme.id === resolvedSchemeId
+        ? { ...scheme, updatedAt: new Date().toISOString(), projects: upsertSavedProject(scheme.projects, record) }
+        : scheme
+    );
+    setSchemes(nextSchemes);
+    persistSchemesPayloadToStorageAndBackend(serializeSchemesForStorage(nextSchemes));
     setActiveProjectId(record.id);
-    setActiveSchemeId(targetSchemeId);
+    setActiveSchemeId(resolvedSchemeId);
     graphDirtyBaselineRef.current = currentGraphDirtyBaseline();
     setHasUnsavedChanges(false);
-    saveActiveProjectPointer(record.id, targetSchemeId);
+    saveActiveProjectPointer(record.id, resolvedSchemeId);
     clearRefreshRecoveryProject();
     writeOperationLog(`保存模型：${projectName}`);
   };
