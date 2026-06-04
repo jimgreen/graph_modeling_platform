@@ -8189,6 +8189,35 @@ export function flattenSavedProjects(schemes: SavedSchemeRecord[]): SavedProject
   return schemes.flatMap((scheme) => [...scheme.projects, ...flattenSavedProjects(savedSchemeChildren(scheme))]);
 }
 
+export type SavedProjectPathOption = {
+  scheme: SavedSchemeRecord;
+  project: SavedProjectRecord;
+  schemePath: string[];
+  label: string;
+};
+
+export function savedProjectPathOptions(
+  schemes: SavedSchemeRecord[],
+  excludeProjectId = "",
+  parentPath: string[] = []
+): SavedProjectPathOption[] {
+  return schemes.flatMap((scheme) => {
+    const schemePath = [...parentPath, scheme.name];
+    const projectOptions = scheme.projects
+      .filter((project) => project.id !== excludeProjectId)
+      .map((project) => ({
+        scheme,
+        project,
+        schemePath,
+        label: [...schemePath, project.name].join(" / ")
+      }));
+    return [
+      ...projectOptions,
+      ...savedProjectPathOptions(savedSchemeChildren(scheme), excludeProjectId, schemePath)
+    ];
+  });
+}
+
 export function findSavedSchemeById(
   schemes: SavedSchemeRecord[],
   schemeId: string

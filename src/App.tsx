@@ -222,6 +222,7 @@ import {
   renameSavedProject,
   replaceSavedSchemeById,
   savedChildSchemeNames,
+  savedProjectPathOptions,
   savedSchemeSiblingNames,
   moveOrthogonalRouteSegment,
   terminalRenderLocalPoint,
@@ -8483,11 +8484,7 @@ export function App() {
   refreshRecoveryProjectRef.current = refreshRecoveryProjectSnapshot;
   const selectedSchemeRecord = findSavedSchemeById(schemes, selectedSchemeId);
   const backgroundProjectOptions = useMemo(
-    () => flattenSavedSchemes(schemes).flatMap((scheme) =>
-      scheme.projects
-        .filter((project) => project.id !== activeProjectKey)
-        .map((project) => ({ scheme, project }))
-    ),
+    () => savedProjectPathOptions(schemes, activeProjectKey),
     [activeProjectKey, schemes]
   );
   const backgroundProjectRecord = backgroundProjectId && backgroundProjectId !== activeProjectKey
@@ -26483,9 +26480,9 @@ export function App() {
                           }}
                         >
                           <option value="">不使用背景页面</option>
-                          {backgroundProjectOptions.map(({ scheme, project }) => (
+                          {backgroundProjectOptions.map(({ project, label }) => (
                             <option key={project.id} value={project.id}>
-                              {scheme.name} / {project.name}
+                              {label}
                             </option>
                           ))}
                         </select>

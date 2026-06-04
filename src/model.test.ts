@@ -57,6 +57,7 @@ import {
   resolveStraightBusSlideEndpointToPoint,
   moveProjectToScheme,
   moveSavedSchemeToParent,
+  savedProjectPathOptions,
   moveOrthogonalRouteSegment,
   modelGeometryInsideCanvasBounds,
   insertOrthogonalRouteBend,
@@ -7240,6 +7241,27 @@ describe("power system model", () => {
 
     expect(findSavedSchemeById(moved, root.id)?.projects).toEqual([]);
     expect(findSavedSchemeById(moved, child.id)?.projects.map((item) => item.name)).toEqual(["模型A"]);
+  });
+
+  test("builds saved project options with full nested scheme paths", () => {
+    const rootProject = createSavedProject("根模型", { version: 1, name: "根模型", nodes: [], edges: [] });
+    const childProject = createSavedProject("子模型", { version: 1, name: "子模型", nodes: [], edges: [] });
+    const grandChildProject = createSavedProject("孙模型", { version: 1, name: "孙模型", nodes: [], edges: [] });
+    const grandChild = createSavedScheme("孙方案", [grandChildProject]);
+    const child = createSavedScheme("子方案", [childProject], [grandChild]);
+    const root = createSavedScheme("父方案", [rootProject], [child]);
+
+    const options = savedProjectPathOptions([root], rootProject.id);
+
+    expect(options.map((option) => option.label)).toEqual([
+      "父方案 / 子方案 / 子模型",
+      "父方案 / 子方案 / 孙方案 / 孙模型"
+    ]);
+    expect(options.map((option) => option.schemePath)).toEqual([
+      ["父方案", "子方案"],
+      ["父方案", "子方案", "孙方案"]
+    ]);
+    expect(options.map((option) => option.project.id)).toEqual([childProject.id, grandChildProject.id]);
   });
 
   test("moves saved schemes under another scheme without allowing cycles", () => {

@@ -405,12 +405,16 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const backgroundPageRender = useMemo");
     expect(source).toContain("filterProjectByVisibleLayers(backgroundProject.nodes, backgroundProject.edges, backgroundLayers)");
     expect(source).toContain("routeEdgesForSavedPathRendering(backgroundNodes, backgroundEdges, backgroundPageFrameRender.backgroundBounds, { refreshCrossingArcs: savedRouteCrossingArcsReady })");
+    expect(source).toContain("savedProjectPathOptions(schemes, activeProjectKey)");
     expect(source).toContain("backgroundColor: backgroundProject.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND");
     expect(source).toContain("backgroundImageUrl: resolveProjectImage(backgroundProject, imageAssets)");
     expect(source).toContain("const renderReadonlyBackgroundPage = () =>");
     expect(source).toContain("beginReadonlyBackgroundStaticButtonPointerFeedback");
     expect(modelPanelBlock).toContain("renderChineseParamHeader(\"backgroundProjectId\"");
     expect(modelPanelBlock).toContain("<option value=\"\">不使用背景页面</option>");
+    expect(modelPanelBlock).toContain("backgroundProjectOptions.map(({ project, label })");
+    expect(modelPanelBlock).toContain("{label}");
+    expect(modelPanelBlock).not.toContain("{scheme.name} / {project.name}");
     expect(modelPanelBlock).toContain("setBackgroundProjectId(nextProjectId)");
     expect(modelPanelBlock).toContain("setBackgroundLayerIds(defaultBackgroundLayerIdsForProject(backgroundProject.project))");
     expect(modelPanelBlock).toContain("renderChineseParamHeader(\"backgroundLayerIds\"");
