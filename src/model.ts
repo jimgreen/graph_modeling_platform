@@ -9151,7 +9151,15 @@ export function tidyOrthogonalRoute(points: Point[], options: TidyRouteOptions =
 }
 
 export function pointsToOrthogonalPath(points: Point[]): string {
-  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+  if (points.length === 0) {
+    return "";
+  }
+  let path = `M ${points[0].x} ${points[0].y}`;
+  for (let index = 1; index < points.length; index += 1) {
+    const point = points[index];
+    path += ` L ${point.x} ${point.y}`;
+  }
+  return path;
 }
 
 export type EdgePointerClick = {
@@ -10657,6 +10665,20 @@ type SavedPathRenderingOptions = {
   refreshCrossingArcs?: boolean;
 };
 
+function savedRoutePointCanReuse(point: Point, bounds?: CanvasBounds) {
+  if (Math.round(point.x) !== point.x || Math.round(point.y) !== point.y) {
+    return false;
+  }
+  return !bounds || (point.x >= 0 && point.x <= bounds.width && point.y >= 0 && point.y <= bounds.height);
+}
+
+function savedRoutePointsForRendering(points: Point[], bounds?: CanvasBounds): Point[] {
+  if (points.every((point) => savedRoutePointCanReuse(point, bounds))) {
+    return points;
+  }
+  return points.map((point) => (bounds ? clampPointToBounds(point, bounds) : { ...point }));
+}
+
 export function routeEdgesForSavedPathRendering(
   nodes: ModelNode[],
   edges: Edge[],
@@ -10667,28 +10689,39 @@ export function routeEdgesForSavedPathRendering(
     if (!edge.routePoints || edge.routePoints.length < 2) {
       return null;
     }
-    const points = edge.routePoints.map((point) => (bounds ? clampPointToBounds(point, bounds) : { ...point }));
+    const points = savedRoutePointsForRendering(edge.routePoints, bounds);
     return {
       edgeId: edge.id,
       points,
       path: pointsToOrthogonalPath(points)
     };
   };
-  const directRoutes = edges.map(savedRouteFromEdge);
-  if (directRoutes.every(Boolean)) {
+  const directRoutes: Array<RoutedEdge | null> = [];
+  let allEdgesHaveSavedRoutes = true;
+  for (const edge of edges) {
+    const savedRoute = savedRouteFromEdge(edge);
+    directRoutes.push(savedRoute);
+    if (!savedRoute) {
+      allEdgesHaveSavedRoutes = false;
+    }
+  }
+  if (allEdgesHaveSavedRoutes) {
     const routes = directRoutes as RoutedEdge[];
     return options.refreshCrossingArcs === false ? routes : refreshCrossingArcPaths(routes);
   }
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const routes = edges.flatMap((edge) => {
-    const savedRoute = savedRouteFromEdge(edge);
+  const routes: RoutedEdge[] = [];
+  for (let edgeIndex = 0; edgeIndex < edges.length; edgeIndex += 1) {
+    const edge = edges[edgeIndex];
+    const savedRoute = directRoutes[edgeIndex];
     if (savedRoute) {
-      return [savedRoute];
+      routes.push(savedRoute);
+      continue;
     }
     const source = nodeById.get(edge.sourceId) ?? (edge.sourcePoint ? createFloatingEndpointNode(edge.sourcePoint, edge.targetId ? nodeById.get(edge.targetId) : undefined) : undefined);
     const target = nodeById.get(edge.targetId) ?? (edge.targetPoint ? createFloatingEndpointNode(edge.targetPoint, edge.sourceId ? nodeById.get(edge.sourceId) : undefined) : undefined);
     if (!source || !target) {
-      return [];
+      continue;
     }
     const routingEdge = edgeWithProjectedMissingBusEndpointPoints(edge, source, target);
     const start = getEdgeEndpointPoint(source, routingEdge.sourcePoint, routingEdge.sourceTerminalId);
@@ -10714,12 +10747,12 @@ export function routeEdgesForSavedPathRendering(
         { blockers: endpointBlockers, reduceTinyDoglegs: true }
       );
     }
-    return [{
+    routes.push({
       edgeId: edge.id,
       points,
       path: pointsToOrthogonalPath(points)
-    }];
-  });
+    });
+  }
   return options.refreshCrossingArcs === false ? routes : refreshCrossingArcPaths(routes);
 }
 

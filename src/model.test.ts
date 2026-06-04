@@ -6873,6 +6873,42 @@ describe("power system model", () => {
       points: edge.routePoints,
       path: "M 40 60 L 160 60 L 160 240"
     }]);
+    expect(routes[0].points).toBe(edge.routePoints);
+  });
+
+  test("only copies saved route points on open when canvas bounds would change them", () => {
+    const reusableEdge: Edge = {
+      id: "inside-saved-direct-route",
+      sourceId: "source",
+      targetId: "target",
+      routePoints: [
+        { x: 40, y: 60 },
+        { x: 160, y: 60 }
+      ]
+    };
+    const clampedEdge: Edge = {
+      id: "clamped-saved-direct-route",
+      sourceId: "source",
+      targetId: "target",
+      routePoints: [
+        { x: -4, y: 60.4 },
+        { x: 460, y: 340 }
+      ]
+    };
+
+    const reusableRoute = routeEdgesForSavedPathRendering([], [reusableEdge], { width: 400, height: 300 }, {
+      refreshCrossingArcs: false
+    })[0];
+    const clampedRoute = routeEdgesForSavedPathRendering([], [clampedEdge], { width: 400, height: 300 }, {
+      refreshCrossingArcs: false
+    })[0];
+
+    expect(reusableRoute.points).toBe(reusableEdge.routePoints);
+    expect(clampedRoute.points).not.toBe(clampedEdge.routePoints);
+    expect(clampedRoute.points).toEqual([
+      { x: 0, y: 60 },
+      { x: 400, y: 300 }
+    ]);
   });
 
   test("renders vertical crossing arcs near ordinary bend points", () => {

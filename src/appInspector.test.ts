@@ -182,7 +182,7 @@ describe("graph inspector panel", () => {
     const terminalStart = source.indexOf("const handleTerminalPointerDown =");
     const terminalEnd = source.indexOf("const handleNodePointerDown", terminalStart);
     const terminalBlock = source.slice(terminalStart, terminalEnd);
-    const renderEdgeStart = source.indexOf("viewportRoutedEdges.map");
+    const renderEdgeStart = source.indexOf("renderViewportRoutedEdges.map");
     const renderEdgeEnd = source.indexOf("{selectedEdge &&", renderEdgeStart);
     const renderEdgeBlock = source.slice(renderEdgeStart, renderEdgeEnd);
 
@@ -219,7 +219,7 @@ describe("graph inspector panel", () => {
     const svgContextStart = source.indexOf("onContextMenu={(event) => {", source.indexOf("className={`diagram-canvas"));
     const svgContextEnd = source.indexOf("setContextMenu({ x: event.clientX, y: event.clientY, target: \"blank\"", svgContextStart);
     const svgContextBlock = source.slice(svgContextStart, svgContextEnd);
-    const routeRenderStart = source.indexOf("viewportRoutedEdges.map");
+    const routeRenderStart = source.indexOf("renderViewportRoutedEdges.map");
     const routeRenderEnd = source.indexOf("{selectedRoutedEdge &&", routeRenderStart);
     const routeRenderBlock = source.slice(routeRenderStart, routeRenderEnd);
     const selectedRouteStart = source.indexOf("{selectedRoutedEdge &&");
@@ -246,8 +246,9 @@ describe("graph inspector panel", () => {
     expect(routeRenderBlock).toContain("const editable = isEditMode && activeLayerEdgeIdSet.has(edge.id);");
     expect(selectedRouteBlock).toContain("onContextMenu={isEditMode ? (event) => openEdgeContextMenu(event, edge.id, routePoints) : undefined}");
     expect(selectedRouteBlock).toContain("onPointerDown={isEditMode ? (event) => handleEdgePathPointerDown(event, edge.id, routePoints) : undefined}");
-    expect(terminalBlock).toContain("const sourceNode = isEditMode && connectSource ? visibleNodeById.get(connectSource.nodeId) : undefined;");
-    expect(terminalBlock).toContain("const disabled =\n                        isEditMode &&");
+    expect(source).toContain("const connectSourceNode = isEditMode && connectSource ? visibleNodeById.get(connectSource.nodeId) : undefined;");
+    expect(source).toContain("const connectTerminalCompatibilityActive = isEditMode && mode === \"connect\" && Boolean(connectSourceNode);");
+    expect(terminalBlock).toContain("const disabled =\n                        connectTerminalCompatibilityActive &&");
     expect(terminalBlock).toContain("const overlapped = isEditMode && overlappedTerminalKeys.has(`${node.id}:${terminal.id}`);");
     expect(terminalBlock).toContain("onPointerDown={isEditMode ? (event) => handleTerminalPointerDown(event, node, terminal.id) : undefined}");
     expect(overlapBlock).toContain("if (isReadonlyCanvasMode)");
@@ -469,9 +470,9 @@ describe("graph inspector panel", () => {
     expect(dragDeltaBlock).toContain("const draggingCommitDelta = dragging?.currentDelta;");
     expect(dragDeltaBlock).toContain("const draggingDelta = dragging?.previewDelta ?? draggingCommitDelta;");
     expect(applyMoveBlock).toContain("const previewDelta = computeNodeDragPreviewDelta(currentDrag, point, ctrlKey, shiftKey);");
-    expect(applyMoveBlock).toContain("currentDrag.previewDelta?.x === previewDelta.x");
-    expect(applyMoveBlock).toContain("previewDelta,");
-    expect(applyMoveBlock).toContain("updateMultiNodeDragOverlayTransform(previewDelta);");
+    expect(applyMoveBlock).toContain("currentDrag.previewDelta?.x === effectivePreviewDelta.x");
+    expect(applyMoveBlock).toContain("previewDelta: effectivePreviewDelta");
+    expect(applyMoveBlock).toContain("updateMultiNodeDragOverlayTransform(effectivePreviewDelta);");
     expect(source).toContain("const renderPosition = draggingDelta && originalDragPosition");
     expect(source).not.toContain("const renderPosition = draggingDelta && originalDragPosition\n                ? clampNodeToCanvas");
     expect(leaveBlock).toContain("if (draggingRef.current) {");
@@ -626,7 +627,8 @@ describe("graph inspector panel", () => {
     expect(renderBlock).toContain("nodeUprightRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap)");
     expect(renderBlock).toContain("nodeScaleHandleControlPoint(node, handle, handleGapX, handleGapY, uprightStaticSelectionOutline)");
     expect(renderBlock).toContain("className=\"node-upright-selection-outline\"");
-    expect(renderBlock).toContain("const showStaticSelectionFrame = isStaticNode(node) && selected && !uprightStaticSelectionOutline;");
+    expect(renderBlock).toContain("const nodeIsStatic = isStaticNode(node);");
+    expect(renderBlock).toContain("const showStaticSelectionFrame = nodeIsStatic && selected && !uprightStaticSelectionOutline;");
     expect(renderBlock).toContain("const staticSelectionCornerPoints = [");
     expect(renderBlock).toContain("className=\"node-static-selection-frame\"");
     expect(renderBlock).toContain("className=\"node-static-selection-glow\"");
@@ -1657,7 +1659,7 @@ describe("graph inspector panel", () => {
     const renderStart = source.indexOf("{visibleSelectedGroupLayoutUnits.map");
     const renderEnd = source.indexOf("{detailedViewportNodes.map", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
-    const edgeRenderStart = source.indexOf("{viewportRoutedEdges.map((route) =>");
+    const edgeRenderStart = source.indexOf("{renderViewportRoutedEdges.map((route) =>");
     const edgeRenderEnd = source.indexOf("{visibleSelectedGroupLayoutUnits.map", edgeRenderStart);
     const edgeRenderBlock = source.slice(edgeRenderStart, edgeRenderEnd);
     const nodeRenderStart = source.indexOf("{detailedViewportNodes.map((node) =>");
@@ -2177,7 +2179,7 @@ describe("graph inspector panel", () => {
     const routingStart = source.indexOf("const routeInputLayerSignature = useMemo");
     const routingEnd = source.indexOf("const routedEdgeById", routingStart);
     const routingBlock = source.slice(routingStart, routingEnd);
-    const savedArcEffectStart = source.indexOf("useEffect(() => {\n    if (routeRenderingReady || savedRouteCrossingArcsReady");
+    const savedArcEffectStart = source.indexOf("useEffect(() => {\n    if (isBrowseMode || routeRenderingReady || savedRouteCrossingArcsReady");
     const savedArcEffectEnd = source.indexOf("const routeRenderingEnabled = routeRenderingReady", savedArcEffectStart);
     const savedArcEffectBlock = source.slice(savedArcEffectStart, savedArcEffectEnd);
 
@@ -2185,7 +2187,10 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const [savedRouteCrossingArcsReady, setSavedRouteCrossingArcsReady] = useState(false);");
     expect(savedArcEffectBlock).toContain("scheduleIdleWork");
     expect(savedArcEffectBlock).toContain("setSavedRouteCrossingArcsReady(true)");
+    expect(savedArcEffectBlock).toContain("isBrowseMode");
     expect(savedArcEffectBlock).toContain("routingEdges.length === 0");
+    expect(source).toContain("const renderViewportRoutedEdges = useMemo");
+    expect(source).toContain("return refreshCrossingArcPaths(viewportRoutedEdges);");
     expect(routingBlock).toContain("routeEdgesForSavedPathRendering(routingNodes, routingEdges, canvasBounds, { refreshCrossingArcs: savedRouteCrossingArcsReady })");
     expect(routingBlock).not.toContain("routeEdgesForSavedPathRendering(routingNodes, routingEdges, canvasBounds)");
   });
@@ -2635,7 +2640,7 @@ describe("graph inspector panel", () => {
     const routeCullStart = source.indexOf("const viewportRoutedEdges = useMemo");
     const routeCullEnd = source.indexOf("const activeLayerRoutedEdges", routeCullStart);
     const routeCullBlock = source.slice(routeCullStart, routeCullEnd);
-    const edgeRenderIndex = source.indexOf("{viewportRoutedEdges.map((route) =>");
+    const edgeRenderIndex = source.indexOf("{renderViewportRoutedEdges.map((route) =>");
     const nodeRenderIndex = source.indexOf("{detailedViewportNodes.map((node) =>");
 
     expect(source).toContain("visibleCanvasViewBoxFromRects");
@@ -3241,23 +3246,37 @@ describe("graph inspector panel", () => {
     expect(activeLayerBlock).not.toContain("visibleEdges.filter");
   });
 
-  test("reuses the graph store node spatial index when visible nodes keep graph order", async () => {
+  test("reuses graph store visible indexes when visible nodes keep graph order", async () => {
     const source = await readAppSource();
     const visibleProjectStart = source.indexOf("const visibleProject = useMemo");
     const visibleProjectEnd = source.indexOf("const visibleNodes = visibleProject.nodes", visibleProjectStart);
     const visibleProjectBlock = source.slice(visibleProjectStart, visibleProjectEnd);
-    const visibleIndexStart = source.indexOf("const visibleNodeById = useMemo");
+    const visibleIndexStart = source.indexOf("const visibleNodeById = visibleProject.nodeById");
     const visibleIndexEnd = source.indexOf("const activeLayerNodes = useMemo", visibleIndexStart);
     const visibleIndexBlock = source.slice(visibleIndexStart, visibleIndexEnd);
 
     expect(visibleProjectBlock).toContain("allModelLayersVisible");
-    expect(visibleProjectBlock).toContain("return { nodes, edges, nodeSpatialIndex: graphStore.nodeSpatialIndex }");
+    expect(visibleProjectBlock).toContain("nodeById: graphStore.nodeMap");
+    expect(visibleProjectBlock).toContain("nodeIdSet: graphStore.nodeIdSet");
+    expect(visibleProjectBlock).toContain("edgeIdSet: graphStore.edgeIdSet");
+    expect(visibleProjectBlock).toContain("nodeSpatialIndex: graphStore.nodeSpatialIndex");
+    expect(visibleProjectBlock).toContain("const normalizedLayers = normalizeModelLayers(layers, nodes);");
+    expect(visibleProjectBlock).toContain("graphStore.nodesByLayerId.get(layer.id)");
+    expect(visibleProjectBlock).toContain("graphStore.edgesByNodeId.get(node.id)");
+    expect(visibleProjectBlock).toContain("graphStore.edgeIndexById.get(first.id)");
     expect(visibleProjectBlock).toContain("visibleProjectNodesMatchGraphStoreOrder");
+    expect(visibleProjectBlock).toContain("visibleNodeByIdForLayers");
+    expect(visibleProjectBlock).toContain("visibleNodeIdSetForLayers");
+    expect(visibleProjectBlock).toContain("visibleEdgeIdSetForLayers");
     expect(visibleProjectBlock).toContain("graphStore.nodeSpatialIndex");
-    expect(visibleProjectBlock).toContain("buildNodeSpatialIndex(filtered.nodes)");
-    expect(visibleIndexBlock).toContain("visibleNodes === nodes ? graphStore.nodeMap");
-    expect(visibleIndexBlock).toContain("visibleNodes === nodes ? graphStore.nodeIdSet");
-    expect(visibleIndexBlock).toContain("visibleEdges === edges ? graphStore.edgeIdSet");
+    expect(visibleProjectBlock).toContain("buildNodeSpatialIndex(visibleNodesByLayer)");
+    expect(visibleProjectBlock).not.toContain("filterProjectByVisibleLayers(nodes, edges, layers)");
+    expect(visibleIndexBlock).toContain("const visibleNodeById = visibleProject.nodeById;");
+    expect(visibleIndexBlock).toContain("const visibleNodeIdSet = visibleProject.nodeIdSet;");
+    expect(visibleIndexBlock).toContain("const visibleEdgeIdSet = visibleProject.edgeIdSet;");
+    expect(visibleIndexBlock).not.toContain("new Map(visibleNodes.map");
+    expect(visibleIndexBlock).not.toContain("new Set(visibleNodes.map");
+    expect(visibleIndexBlock).not.toContain("new Set(visibleEdges.map");
     expect(visibleIndexBlock).toContain("if (visibleEdges === edges)");
     expect(visibleIndexBlock).toContain("return graphStore.edgesByTerminalRef");
   });
@@ -3799,8 +3818,15 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const dragInteractionNodes = useMemo");
     expect(source).toContain("const dragPreviewMovedNodeById = useMemo");
     expect(source).not.toContain("Array.from(dragPreviewNodeById.values()).filter");
-    expect(overlapBlock).toContain("dragging && draggingDelta && !suppressDragTerminalInteraction ? dragInteractionNodes : viewportNodes");
+    expect(source).toContain("const TERMINAL_OVERLAP_DEFER_NODE_THRESHOLD");
+    expect(source).toContain("const [staticTerminalOverlapReadyKey");
+    expect(source).toContain("const staticTerminalOverlapDeferred =");
+    expect(source).toContain("return scheduleIdleWork(() => setStaticTerminalOverlapReadyKey(staticTerminalOverlapSourceKey), 120, 1500);");
+    expect(overlapBlock).toContain("? dragInteractionNodes");
+    expect(overlapBlock).toContain("? viewportNodes");
+    expect(overlapBlock).toContain(": []");
     expect(overlapBlock).toContain("if (suppressDragTerminalInteraction)");
+    expect(overlapBlock).toContain("if (!terminalOverlapCalculationReady)");
     expect(overlapBlock).toContain("terminalOverlapAffectedNodeIds");
     expect(overlapBlock).toContain("getOverlappingTerminalGroups(terminalOverlapNodes, terminalOverlapAffectedNodeIds)");
     expect(overlapBlock).toContain("getTerminalBusContactGroups(terminalOverlapNodes, 0, terminalOverlapAffectedNodeIds)");
@@ -3846,9 +3872,17 @@ describe("graph inspector panel", () => {
     const dragPreviewStart = source.indexOf("const dragInteractionNodes = useMemo");
     const dragPreviewEnd = source.indexOf("const terminalOverlapNodes", dragPreviewStart);
     const dragPreviewBlock = source.slice(dragPreviewStart, dragPreviewEnd);
+    const nodeQueryStart = source.indexOf("function queryNodeSpatialIndex");
+    const nodeQueryEnd = source.indexOf("const compactPreviewNodes", nodeQueryStart);
+    const nodeQueryBlock = source.slice(nodeQueryStart, nodeQueryEnd);
 
+    expect(source).toContain("type SpatialQueryState =");
+    expect(source).toContain("const nextSpatialQueryMark =");
     expect(source).toContain("function buildNodeSpatialIndex");
     expect(source).toContain("function queryNodeSpatialIndex");
+    expect(nodeQueryBlock).toContain("const queryMark = nextSpatialQueryMark(index.queryState);");
+    expect(nodeQueryBlock).toContain("seenById.get(node.id) === queryMark");
+    expect(nodeQueryBlock).not.toContain("const seen = new Set<string>();");
     expect(source).toContain("const visibleNodeSpatialIndex = visibleProject.nodeSpatialIndex");
     expect(findConnectBlock).toContain("queryNodeSpatialIndex(visibleNodeSpatialIndex, searchBounds)");
     expect(findConnectBlock).not.toContain("for (const node of visibleNodes)");
@@ -4021,7 +4055,12 @@ describe("graph inspector panel", () => {
     expect(source).toContain("dynamicEdgePreviewEdges: Edge[];");
     expect(source).toContain("const buildMultiNodeDragOverlayPreview");
     expect(source).toContain("const CANVAS_MULTI_NODE_DRAG_PREVIEW_EDGE_LIMIT");
+    expect(source).toContain("const CANVAS_MULTI_NODE_DRAG_SNAP_NODE_LIMIT");
     expect(source).toContain("overlayPreview: isMultiNodeMoveState({ nodeIds: dragNodeIds })");
+    expect(source).toContain("const multiNodeDragInteractionNodes =");
+    expect(source).toContain("const snapMovedNodeIds = new Set<string>();");
+    expect(source).not.toContain("movedNodeIds.size === 0 || movedNodeIds.size > CANVAS_MULTI_NODE_DRAG_SNAP_NODE_LIMIT");
+    expect(source).toContain("const findMultiNodeDragSnapTargetAtDelta =");
     expect(source).toContain("const ensureDraggingUndoSnapshot");
     expect(source).toContain("const canvasBoundsForMovedNodeDelta");
     expect(source).toContain("const boundedDeltaForMultiNodeInteractiveMove =");
@@ -4031,17 +4070,23 @@ describe("graph inspector panel", () => {
     expect(dragDeltaBlock).toContain("return boundedDeltaForMoveGeometry(");
     expect(dragMoveBlock).not.toContain("ensureDraggingUndoSnapshot()");
     expect(dragMoveBlock).not.toContain("applyCanvasBounds(");
+    expect(dragMoveBlock).toContain("const multiNodeSnapTarget = multiNodeMove && renderPreview ? findMultiNodeDragSnapTargetAtDelta(currentDrag, boundedDelta) : null;");
+    expect(dragMoveBlock).toContain("updateImperativeNodeDragDropHint(multiNodeSnapTarget);");
     expect(keyboardMoveBlock).toContain("isMultiNodeMoveState(activeDragging)");
     expect(keyboardMoveBlock).toContain("? boundedDeltaForMultiNodeInteractiveMove(activeDragging, requestedDelta)");
     expect(keyboardMoveBlock).not.toContain("? canvasBoundsForMovedNodeDelta(");
     expect(keyboardMoveBlock).not.toContain("ensureDraggingUndoSnapshot()");
     expect(keyboardMoveBlock).not.toContain("applyCanvasBounds(");
+    expect(keyboardMoveBlock).toContain("findMultiNodeDragSnapTargetAtDelta(activeDragging, boundedDelta)");
     expect(moveSelectionBlock).toContain("moveNodeIds.length > 1");
     expect(moveSelectionBlock).toContain("? boundedDeltaForNodes(");
     expect(finishMoveBlock).toContain("ensureDraggingUndoSnapshot();");
-    expect(finishMoveBlock).toContain("snapTarget ?? findSingleNodeDragSnapTargetAtDelta(activeDragging, delta)");
+    expect(finishMoveBlock).toContain("findMultiNodeDragSnapTargetAtDelta(activeDragging, delta)");
+    expect(finishMoveBlock).toContain("findSingleNodeDragSnapTargetAtDelta(activeDragging, delta)");
     expect(finishDragBlock).toContain("ensureDraggingUndoSnapshot();");
-    expect(finishDragBlock).toContain("const releaseSnapTarget = multiNodeMove ? null : findSingleNodeDragSnapTargetAtDelta(activeDragging, delta);");
+    expect(finishDragBlock).toContain("nodeTerminalSnapTargetRef.current ?? (");
+    expect(finishDragBlock).toContain("findMultiNodeDragSnapTargetAtDelta(activeDragging, delta)");
+    expect(finishDragBlock).toContain("findSingleNodeDragSnapTargetAtDelta(activeDragging, delta)");
     expect(finishDragBlock).not.toContain("const releaseSnapTarget = findSingleNodeDragSnapTargetAtDelta(activeDragging, delta);");
     expect(interactionBlock).toContain("isMultiNodeMoveState(dragging)");
     expect(interactionBlock).toContain("const suppressDragTerminalInteraction");
@@ -4153,7 +4198,7 @@ describe("graph inspector panel", () => {
     const dragMoveStart = source.indexOf("const applyNodeDragMove");
     const dragMoveEnd = source.indexOf("const scheduleNodeDragMove", dragMoveStart);
     const dragMoveBlock = source.slice(dragMoveStart, dragMoveEnd);
-    const multiMoveStart = dragMoveBlock.indexOf("if (isMultiNodeMoveState(currentDrag))");
+    const multiMoveStart = dragMoveBlock.indexOf("if (multiNodeMove)");
     const multiMoveEnd = dragMoveBlock.indexOf("const nextDragState", multiMoveStart);
     const multiMoveBlock = dragMoveBlock.slice(multiMoveStart, multiMoveEnd);
     const overlayStart = source.indexOf("const renderMultiNodeDragOverlay");
@@ -4183,8 +4228,10 @@ describe("graph inspector panel", () => {
     expect(source).toContain("imperativeMultiNodeDragOverlayRef.current?.setAttribute(\"transform\"");
     expect(source).toContain("activeDragging.overlayPreview?.dynamicEdgePreviewEdges ?? []");
     expect(source).not.toContain("updateNodeDragLightweightEdgePreview(activeDragging, nextDelta, activeDragging.affectedEdges)");
-    expect(multiMoveBlock).toContain("previewDelta,");
-    expect(multiMoveBlock).toContain("updateMultiNodeDragOverlayTransform(previewDelta)");
+    expect(multiMoveBlock).toContain("previewDelta: effectivePreviewDelta");
+    expect(multiMoveBlock).toContain("nodeTerminalSnapTargetRef.current = multiNodeSnapTarget");
+    expect(multiMoveBlock).toContain("updateImperativeNodeDragDropHint(multiNodeSnapTarget)");
+    expect(multiMoveBlock).toContain("updateMultiNodeDragOverlayTransform(effectivePreviewDelta)");
     expect(multiMoveBlock).not.toContain("setDragging");
     expect(commitBlock).toContain("const routeRepairCandidateEdges = localRouteOptimizationCandidateEdges");
     expect(commitBlock).toContain("const deferSingleNodeTerminalReconciliation = shouldDeferSingleNodeTerminalReconciliation(");
@@ -4261,7 +4308,7 @@ describe("graph inspector panel", () => {
     const finishStart = source.indexOf("const finishNodeDrag = () =>");
     const finishEnd = source.indexOf("const finishTransformDrag", finishStart);
     const finishBlock = source.slice(finishStart, finishEnd);
-    const renderStart = source.indexOf("{viewportRoutedEdges.map((route) =>");
+    const renderStart = source.indexOf("{renderViewportRoutedEdges.map((route) =>");
     const renderEnd = source.indexOf("{rewiringPreviewRoute", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
 
@@ -4280,7 +4327,9 @@ describe("graph inspector panel", () => {
     expect(singleMoveBlock).toContain("singleNodeDragRenderState(nextDragState)");
     expect(singleMoveBlock).not.toContain("setDragging((current) =>");
     expect(renderBlock).toContain("singleNodeDragging && dragAffectedEdgeIdSet.has(edge.id)");
-    expect(finishBlock).toContain("const releaseSnapTarget = multiNodeMove ? null : findSingleNodeDragSnapTargetAtDelta(activeDragging, delta);");
+    expect(finishBlock).toContain("nodeTerminalSnapTargetRef.current ?? (");
+    expect(finishBlock).toContain("findMultiNodeDragSnapTargetAtDelta(activeDragging, delta)");
+    expect(finishBlock).toContain("findSingleNodeDragSnapTargetAtDelta(activeDragging, delta)");
     expect(source).toContain("className=\"single-node-drag-overlay imperative-single-node-drag-edge-preview\"");
     expect(source).toContain("className=\"single-node-drag-overlay imperative-single-node-drag-node-overlay\"");
     expect(source).toContain("className=\"connect-drop-hint imperative-node-drag-drop-hint\"");
@@ -4330,8 +4379,10 @@ describe("graph inspector panel", () => {
     expect(interactionBlock).toContain("for (const edge of snapEdges)");
     expect(interactionBlock).not.toContain("for (const edge of dragState.affectedEdges)");
     expect(updateBlock).toContain("const scopedEdges = singleNodeDragScopedEdges(dragState, previewDelta);");
-    expect(updateBlock).toContain("updateNodeDragLightweightEdgePreview(dragState, previewDelta, scopedEdges.previewEdges)");
-    expect(updateBlock).toContain("nodeTerminalSnapTargetRef.current = null");
+    expect(updateBlock).toContain("const snapTarget = findSingleNodeDragSnapTargetAtDelta(dragState, previewDelta, scopedEdges.snapEdges);");
+    expect(updateBlock).toContain("const visualDelta = applyNodeTerminalSnap(previewDelta, snapTarget);");
+    expect(updateBlock).toContain("updateNodeDragLightweightEdgePreview(dragState, visualDelta, scopedEdges.previewEdges)");
+    expect(updateBlock).toContain("nodeTerminalSnapTargetRef.current = snapTarget");
     expect(updateBlock).not.toContain("singleNodeDragInteractionNodes");
   });
 
@@ -4355,8 +4406,10 @@ describe("graph inspector panel", () => {
     expect(touchesBlock).toContain("dragState.originalRouteBounds[edge.id]");
     expect(touchesBlock).not.toContain("routeRenderBounds({ points: dragState.originalRoutePoints");
     expect(updateBlock).toContain("const scopedEdges = singleNodeDragScopedEdges(dragState, previewDelta);");
-    expect(updateBlock).toContain("updateNodeDragLightweightEdgePreview(dragState, previewDelta, scopedEdges.previewEdges)");
-    expect(updateBlock).toContain("nodeTerminalSnapTargetRef.current = null");
+    expect(updateBlock).toContain("const snapTarget = findSingleNodeDragSnapTargetAtDelta(dragState, previewDelta, scopedEdges.snapEdges);");
+    expect(updateBlock).toContain("const visualDelta = applyNodeTerminalSnap(previewDelta, snapTarget);");
+    expect(updateBlock).toContain("updateNodeDragLightweightEdgePreview(dragState, visualDelta, scopedEdges.previewEdges)");
+    expect(updateBlock).toContain("nodeTerminalSnapTargetRef.current = snapTarget");
     expect(updateBlock).not.toContain("singleNodeDragInteractionNodes");
     expect(updateBlock).not.toContain("const previewEdges = singleNodeDragPreviewEdges(dragState, previewDelta);");
     expect(updateBlock).not.toContain("singleNodeDragInteractionNodes(dragState, previewDelta);");
@@ -4509,13 +4562,13 @@ describe("graph inspector panel", () => {
     expect(lightweightBlock).not.toContain("resolveStraightBusSlideEndpoint");
     expect(lightweightBlock).not.toContain("routeEdgesForStoredRendering");
     expect(markupBlock).toContain("buildLightweightNodeDragPreviewRoutes(dragState, delta, previewEdges)");
-    expect(updateBlock).toContain("updateNodeDragLightweightEdgePreview(dragState, previewDelta, scopedEdges.previewEdges)");
+    expect(updateBlock).toContain("updateNodeDragLightweightEdgePreview(dragState, visualDelta, scopedEdges.previewEdges)");
     expect(fallbackBlock).toContain("buildLightweightNodeDragPreviewRoutes(dragging, draggingDelta, previewEdges)");
     expect(fallbackBlock).not.toContain("preserveDraggedRouteShape");
     expect(fallbackBlock).not.toContain("resolveStraightBusSlideEndpoint");
   });
 
-  test("keeps single-node drag frames free of terminal snap scans and undo state writes", async () => {
+  test("keeps single-node drag frames lightweight while retaining terminal snap feedback", async () => {
     const source = await readAppSource();
     const updateStart = source.indexOf("const updateSingleNodeDragImperativePreview");
     const updateEnd = source.indexOf("const startDraggingState", updateStart);
@@ -4523,18 +4576,22 @@ describe("graph inspector panel", () => {
     const dragMoveStart = source.indexOf("const applyNodeDragMove");
     const dragMoveEnd = source.indexOf("const scheduleNodeDragMove", dragMoveStart);
     const dragMoveBlock = source.slice(dragMoveStart, dragMoveEnd);
+    const noPreviewStart = dragMoveBlock.indexOf("if (!renderPreview) {", dragMoveBlock.indexOf("draggingRef.current = nextDragState"));
+    const noPreviewEnd = dragMoveBlock.indexOf("updateSingleNodeDragImperativePreview", noPreviewStart);
+    const noPreviewBlock = dragMoveBlock.slice(noPreviewStart, noPreviewEnd);
     const finishStart = source.indexOf("const finishNodeDrag = () =>");
     const finishEnd = source.indexOf("const finishTransformDrag", finishStart);
     const finishBlock = source.slice(finishStart, finishEnd);
 
-    expect(updateBlock).toContain("updateNodeDragLightweightEdgePreview(dragState, previewDelta, scopedEdges.previewEdges)");
-    expect(updateBlock).toContain("nodeTerminalSnapTargetRef.current = null");
-    expect(updateBlock).toContain("updateImperativeNodeDragDropHint(null)");
-    expect(updateBlock).not.toContain("singleNodeDragInteractionNodes");
-    expect(updateBlock).not.toContain("findNodeTerminalSnapTarget");
-    expect(updateBlock).not.toContain("findNodeBusSnapTarget");
+    expect(updateBlock).toContain("const snapTarget = findSingleNodeDragSnapTargetAtDelta(dragState, previewDelta, scopedEdges.snapEdges);");
+    expect(updateBlock).toContain("const visualDelta = applyNodeTerminalSnap(previewDelta, snapTarget);");
+    expect(updateBlock).toContain("updateNodeDragLightweightEdgePreview(dragState, visualDelta, scopedEdges.previewEdges)");
+    expect(updateBlock).toContain("nodeTerminalSnapTargetRef.current = snapTarget");
+    expect(updateBlock).toContain("updateImperativeNodeDragDropHint(snapTarget)");
+    expect(noPreviewBlock).toContain("nodeTerminalSnapTargetRef.current = null");
     expect(dragMoveBlock).not.toContain("ensureDraggingUndoSnapshot()");
     expect(finishBlock).toContain("ensureDraggingUndoSnapshot();");
+    expect(finishBlock).toContain("nodeTerminalSnapTargetRef.current ?? (");
     expect(finishBlock).toContain("findSingleNodeDragSnapTargetAtDelta(activeDragging, delta)");
   });
 
@@ -4650,7 +4707,7 @@ describe("graph inspector panel", () => {
     const nodeDragStart = source.indexOf("const handleNodePointerDown");
     const nodeDragEnd = source.indexOf("const handlePointerMove", nodeDragStart);
     const nodeDragBlock = source.slice(nodeDragStart, nodeDragEnd);
-    const renderStart = source.indexOf("{viewportRoutedEdges.map((route) =>");
+    const renderStart = source.indexOf("{renderViewportRoutedEdges.map((route) =>");
     const renderEnd = source.indexOf("{rewiringPreviewRoute", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
 
@@ -4834,7 +4891,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const finishNodeLabelRotateDrag");
     expect(transformBlock).not.toContain("rotate(");
     expect(transformBlock).not.toContain("scale(");
-    expect(renderBlock).toContain("${nodeLabelVertical(node) ? \"vertical\" : \"horizontal\"}");
+    expect(renderBlock).toContain("${nodeLabelIsVertical ? \"vertical\" : \"horizontal\"}");
     expect(renderBlock).toContain("className=\"node-label-rotate-control\"");
     expect(renderBlock).toContain("onPointerDown={(event) => startNodeLabelRotateDrag(event, node)}");
     expect(graphPanelBlock).toContain("_labelRotation");
@@ -4856,9 +4913,10 @@ describe("graph inspector panel", () => {
     expect(source).toContain("function nodeLabelVerticalSegments");
     expect(source).toContain("nodeLabelNumericTokenPattern");
     expect(source).toContain("\\d+(?:[./:：-]\\d+)*");
-    expect(renderBlock).toContain("nodeLabelVerticalSegments(nodeLabelText(node)).map");
+    expect(renderBlock).toContain("const nodeLabelVerticalTokens = nodeLabelIsVertical ? nodeLabelVerticalSegments(nodeLabelContent) : [];");
+    expect(renderBlock).toContain("nodeLabelVerticalTokens.map");
     expect(renderBlock).toContain("className={`node-label-vertical-token ${segment.numeric ? \"numeric\" : \"\"}`}");
-    expect(renderBlock).toContain("nodeLabelVerticalTokenY(index, nodeLabelVerticalSegments(nodeLabelText(node)).length, node)");
+    expect(renderBlock).toContain("nodeLabelVerticalTokenY(index, nodeLabelVerticalTokens.length, node)");
     expect(source).toContain("buildSvgNodeLabelTextMarkup(node)");
     expect(styles).toContain(".node-label-vertical-token.numeric");
     expect(styles).toContain("letter-spacing: 0");
@@ -5299,9 +5357,43 @@ describe("graph inspector panel", () => {
 
     expect(activeGroupsStart).toBeGreaterThan(-1);
     expect(activeGroupsBlock).toContain("graphStore.elementTreeRevision");
+    expect(activeGroupsBlock).toContain("isEditMode ? normalizeModelGroups(groups, activeLayerNodes, activeLayerEdges) : EMPTY_MODEL_GROUPS");
     expect(activeGroupsBlock).not.toContain("[activeLayerEdges, activeLayerNodes, groups]");
+    expect(selectedLayoutBlock).toContain("if (!isEditMode)");
     expect(selectedLayoutBlock).toContain("activeSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0");
-    expect(selectedLayoutBlock).toContain("return [];");
+    expect(selectedLayoutBlock).toContain("return EMPTY_CANVAS_LAYOUT_UNITS;");
+  });
+
+  test("keeps pure browse mode off edit-only selection and layout derivations", async () => {
+    const source = await readAppSource();
+    const selectionStart = source.indexOf("const activeCanvasSelection = useMemo");
+    const selectionEnd = source.indexOf("const activeSelectedNodeIds = activeCanvasSelection.nodeIds", selectionStart);
+    const selectionBlock = source.slice(selectionStart, selectionEnd);
+    const groupActionsStart = source.indexOf("const activeSelectedGroupIds = useMemo");
+    const groupActionsEnd = source.indexOf("const topologyWarningPageCount", groupActionsStart);
+    const groupActionsBlock = source.slice(groupActionsStart, groupActionsEnd);
+    const boundsStart = source.indexOf("const browseSelectedCanvasBounds = useMemo");
+    const boundsEnd = source.indexOf("const selectedFloatingToolbarBounds", boundsStart);
+    const boundsBlock = source.slice(boundsStart, boundsEnd);
+
+    expect(source).toContain("const EMPTY_MODEL_GROUPS: ModelGroup[] = [];");
+    expect(source).toContain("const EMPTY_CANVAS_LAYOUT_UNITS: CanvasLayoutUnit[] = [];");
+    expect(source).toContain("const EMPTY_CANVAS_SELECTION: ReturnType<typeof resolveCanvasSelection>");
+    expect(selectionBlock).toContain("return EMPTY_CANVAS_SELECTION;");
+    expect(selectionBlock).toContain("if (!isEditMode)");
+    expect(selectionBlock).toContain("return resolveCanvasSelection([], rawActiveSelectedNodeIds, rawActiveSelectedEdgeIds, \"direct\");");
+    expect(selectionBlock).toContain("return resolveCanvasSelection(activeLayerGroups, rawActiveSelectedNodeIds, rawActiveSelectedEdgeIds, canvasSelectionScope);");
+    expect(groupActionsBlock).toContain("isEditMode");
+    expect(groupActionsBlock).toContain("selectedCanvasGroupIds(activeLayerGroups");
+    expect(groupActionsBlock).toContain("canvasGroupMemberNodeIds(activeLayerGroups");
+    expect(groupActionsBlock).toContain("isEditMode && canDissolveSingleCanvasGroupSelection");
+    expect(groupActionsBlock).toContain("isEditMode && canGroupCanvasSelection");
+    expect(boundsBlock).toContain("const browseSelectedCanvasBounds = useMemo");
+    expect(boundsBlock).toContain("if (isEditMode || (activeSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0))");
+    expect(boundsBlock).toContain("calculateNodeVisualBounds(node)");
+    expect(boundsBlock).toContain("calculateModelGeometryBounds([], [{ points: route.points }], 24)");
+    expect(boundsBlock).toContain("const selectedCanvasBounds = isEditMode");
+    expect(boundsBlock).toContain(": browseSelectedCanvasBounds");
   });
 
   test("reuses the element tree while drag-only geometry changes do not alter tree content", async () => {
@@ -5322,6 +5414,37 @@ describe("graph inspector panel", () => {
     expect(elementTreeBlock).toContain("elementTreeCacheRef.current.signature === elementTreeSignature");
     expect(elementTreeBlock).toContain("return elementTreeCacheRef.current.tree");
     expect(elementTreeBlock).toContain("buildElementTree(deferredElementTreeSource.nodes, deferredElementTreeSource.edges, libraryTemplates, { includeContainerChildren: false })");
+  });
+
+  test("freezes nonessential edit-mode derivations during hot canvas interactions", async () => {
+    const source = await readAppSource();
+    const elementTreeSourceStart = source.indexOf("const elementTreeSource = useMemo");
+    const elementTreeSourceEnd = source.indexOf("const deferredElementTreeSource", elementTreeSourceStart);
+    const elementTreeSourceBlock = source.slice(elementTreeSourceStart, elementTreeSourceEnd);
+    const selectedLayoutStart = source.indexOf("const selectedLayoutUnits = useMemo");
+    const selectedLayoutEnd = source.indexOf("const selectedGroupLayoutUnits", selectedLayoutStart);
+    const selectedLayoutBlock = source.slice(selectedLayoutStart, selectedLayoutEnd);
+    const minimapEffectStart = source.indexOf("useEffect(() => {\n    if (editHotInteractionActive) {");
+    const minimapEffectEnd = source.indexOf("const minimapScale = Math.min", minimapEffectStart);
+    const minimapEffectBlock = source.slice(minimapEffectStart, minimapEffectEnd);
+    const minimapNodesStart = source.indexOf("const minimapNodes = useMemo");
+    const minimapRoutesEnd = source.indexOf("const mapPointToMinimap", minimapNodesStart);
+    const minimapBlock = source.slice(minimapNodesStart, minimapRoutesEnd);
+    const rotateAvoidStart = source.indexOf("const selectedRotateControlAvoidRects");
+    const rotateAvoidEnd = source.indexOf("const selectedFloatingToolbarAvoidRect", rotateAvoidStart);
+    const rotateAvoidBlock = source.slice(rotateAvoidStart, rotateAvoidEnd);
+
+    expect(source).toContain("const editHotInteractionActive = isEditMode && Boolean(");
+    expect(source).toContain("const selectedLayoutUnitsCacheRef = useRef<CanvasLayoutUnit[]>([]);");
+    expect(elementTreeSourceBlock).toContain("!editHotInteractionActive");
+    expect(elementTreeSourceBlock).toContain("editHotInteractionActive");
+    expect(selectedLayoutBlock).toContain("if (editHotInteractionActive && selectedLayoutUnitsCacheRef.current.length > 0)");
+    expect(selectedLayoutBlock).toContain("selectedLayoutUnitsCacheRef.current = units;");
+    expect(minimapEffectBlock).toContain("if (editHotInteractionActive) {");
+    expect(minimapBlock).toContain("if (editHotInteractionActive) {");
+    expect(minimapBlock).toContain("return cache.nodes;");
+    expect(minimapBlock).toContain("return cache.routes;");
+    expect(rotateAvoidBlock).toContain("!editHotInteractionActive");
   });
 
   test("bounds right-panel tree and topology warning rendering for large models", async () => {
@@ -5358,7 +5481,7 @@ describe("graph inspector panel", () => {
     const refsStart = source.indexOf("const minimapSampleCacheRef");
     const refsEnd = source.indexOf("const elementTreeCacheRef", refsStart);
     const refsBlock = source.slice(refsStart, refsEnd);
-    const deferredStart = source.indexOf("useEffect(() => {\n    const minimapSampleSize = visibleNodes.length + routedEdges.length;");
+    const deferredStart = source.indexOf("useEffect(() => {\n    if (editHotInteractionActive) {");
     const deferredEnd = source.indexOf("const minimapScale = Math.min", deferredStart);
     const deferredBlock = source.slice(deferredStart, deferredEnd);
     const renderStart = source.indexOf("const minimapNodeStep =");

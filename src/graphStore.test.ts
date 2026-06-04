@@ -189,6 +189,21 @@ describe("normalized graph store", () => {
     expect(queryGraphStoreNodeSpatialIndex(patched, { left: 120, right: 260, top: 100, bottom: 220 }).map((node) => node.id)).toContain(left.id);
   });
 
+  test("reuses node spatial query markers without cross-contaminating patched stores", () => {
+    const left = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const right = createDefaultNode("ac-load", { x: 800, y: 100 });
+    const store = createGraphStore([left, right], []);
+    const movedLeft = { ...left, position: { x: 320, y: 120 } };
+    const patched = graphStorePatchNodes(store, [movedLeft]);
+    const originalBounds = { left: 0, right: 240, top: 0, bottom: 220 };
+    const movedBounds = { left: 260, right: 420, top: 40, bottom: 220 };
+
+    expect(queryGraphStoreNodeSpatialIndex(store, originalBounds).map((node) => node.id)).toEqual([left.id]);
+    expect(queryGraphStoreNodeSpatialIndex(patched, movedBounds).map((node) => node.id)).toEqual([movedLeft.id]);
+    expect(queryGraphStoreNodeSpatialIndex(store, originalBounds).map((node) => node.id)).toEqual([left.id]);
+    expect(queryGraphStoreNodeSpatialIndex(patched, movedBounds).map((node) => node.id)).toEqual([movedLeft.id]);
+  });
+
   test("refreshes spatial index node objects when a single terminal anchor moves", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
     const store = createGraphStore([source], []);

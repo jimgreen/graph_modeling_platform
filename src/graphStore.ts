@@ -7,11 +7,17 @@ export type GraphRenderBounds = {
   bottom: number;
 };
 
+type GraphSpatialQueryState = {
+  mark: number;
+  seenById: Map<string, number>;
+};
+
 export type GraphNodeSpatialIndex = {
   bucketSize: number;
   buckets: Map<string, ModelNode[]>;
   nodeBucketKeysById: Map<string, string[]>;
   nodeBoundsById: Map<string, GraphRenderBounds>;
+  queryState: GraphSpatialQueryState;
 };
 
 export type GraphStore = {
@@ -43,6 +49,15 @@ export type GraphStorePatch = {
 };
 
 const GRAPH_NODE_SPATIAL_BUCKET_SIZE = 256;
+
+const nextSpatialQueryMark = (state: GraphSpatialQueryState) => {
+  state.mark += 1;
+  if (!Number.isSafeInteger(state.mark)) {
+    state.mark = 1;
+    state.seenById.clear();
+  }
+  return state.mark;
+};
 
 const spatialBucketKey = (x: number, y: number) => `${x}:${y}`;
 
@@ -102,7 +117,7 @@ export function buildGraphNodeSpatialIndex(
     }
     nodeBucketKeysById.set(node.id, nodeBucketKeys);
   }
-  return { bucketSize, buckets, nodeBucketKeysById, nodeBoundsById };
+  return { bucketSize, buckets, nodeBucketKeysById, nodeBoundsById, queryState: { mark: 0, seenById: new Map() } };
 }
 
 function patchNodeSpatialIndex(index: GraphNodeSpatialIndex, previousNode: ModelNode, nextNode: ModelNode): GraphNodeSpatialIndex {
@@ -156,7 +171,8 @@ export function queryGraphStoreNodeSpatialIndex(storeOrIndex: GraphStore | Graph
   const index = "nodeSpatialIndex" in storeOrIndex ? storeOrIndex.nodeSpatialIndex : storeOrIndex;
   const range = spatialBucketRange(bounds, index.bucketSize);
   const matches: ModelNode[] = [];
-  const seen = new Set<string>();
+  const queryMark = nextSpatialQueryMark(index.queryState);
+  const seenById = index.queryState.seenById;
   for (let x = range.left; x <= range.right; x += 1) {
     for (let y = range.top; y <= range.bottom; y += 1) {
       const bucket = index.buckets.get(spatialBucketKey(x, y));
@@ -164,10 +180,10 @@ export function queryGraphStoreNodeSpatialIndex(storeOrIndex: GraphStore | Graph
         continue;
       }
       for (const node of bucket) {
-        if (seen.has(node.id) || !boxesIntersect(index.nodeBoundsById.get(node.id) ?? graphNodeRenderBounds(node), bounds)) {
+        if (seenById.get(node.id) === queryMark || !boxesIntersect(index.nodeBoundsById.get(node.id) ?? graphNodeRenderBounds(node), bounds)) {
           continue;
         }
-        seen.add(node.id);
+        seenById.set(node.id, queryMark);
         matches.push(node);
       }
     }

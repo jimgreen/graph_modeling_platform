@@ -102,6 +102,21 @@ describe("normalized route store", () => {
     expect(patched.routeIndexById).toBe(store.routeIndexById);
   });
 
+  test("reuses route spatial query markers without cross-contaminating patched stores", () => {
+    const first = route("edge-1", 40, 40);
+    const second = route("edge-2", 80, 80);
+    const store = createRouteStore([first, second]);
+    const movedFirst = route("edge-1", 360, 80);
+    const patched = routeStorePatchRoutes(store, [movedFirst]);
+    const originalBounds = { left: 0, right: 260, top: 0, bottom: 160 };
+    const movedBounds = { left: 320, right: 500, top: 40, bottom: 130 };
+
+    expect(queryRouteSpatialIndex(store.routeSpatialIndex, originalBounds)).toEqual([first, second]);
+    expect(queryRouteSpatialIndex(patched.routeSpatialIndex, movedBounds)).toEqual([movedFirst]);
+    expect(queryRouteSpatialIndex(store.routeSpatialIndex, originalBounds)).toEqual([first, second]);
+    expect(queryRouteSpatialIndex(patched.routeSpatialIndex, movedBounds)).toEqual([movedFirst]);
+  });
+
   test("removes cached route bounds when deleting routes", () => {
     const first = route("edge-1", 40, 40);
     const second = route("edge-2", 640, 640);
