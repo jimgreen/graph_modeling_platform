@@ -6,7 +6,8 @@ import {
   normalizeDeviceIndexCounters,
   routeEdgesForRendering,
   type Edge,
-  type ModelGroup
+  type ModelGroup,
+  type ModelNode
 } from "./model";
 import {
   AUTO_ALIGN_DEFAULT_THRESHOLD_PX,
@@ -26,6 +27,7 @@ import {
   createCanvasGroupFromSelection,
   dissolveSelectedCanvasGroups,
   expandSelectionByGroups,
+  reorderItemsByDisplayLayer,
   resolveCanvasSelection,
   resolveCanvasDeleteAction,
   selectedCanvasGroupIds,
@@ -49,6 +51,17 @@ describe("canvas selection actions", () => {
       kind: "warn",
       message: CANVAS_EMPTY_SELECTION_MESSAGE
     });
+  });
+
+  test("reorders selected graphics by display layer while preserving selected relative order", () => {
+    const items = ["a", "b", "c", "d", "e"].map((id) => ({ id }));
+
+    expect(reorderItemsByDisplayLayer(items, ["b", "c"], "raise").map((item) => item.id)).toEqual(["a", "d", "b", "c", "e"]);
+    expect(reorderItemsByDisplayLayer(items, ["c", "d"], "lower").map((item) => item.id)).toEqual(["a", "c", "d", "b", "e"]);
+    expect(reorderItemsByDisplayLayer(items, ["b", "d"], "front").map((item) => item.id)).toEqual(["a", "c", "e", "b", "d"]);
+    expect(reorderItemsByDisplayLayer(items, ["b", "d"], "back").map((item) => item.id)).toEqual(["b", "d", "a", "c", "e"]);
+    expect(reorderItemsByDisplayLayer(items, [], "front")).toBe(items);
+    expect(reorderItemsByDisplayLayer(items, ["missing"], "front")).toBe(items);
   });
 
   test("selects nodes and routed connection lines fully enclosed by the marquee rectangle", () => {
@@ -96,7 +109,7 @@ describe("canvas selection actions", () => {
     expect(selection.edgeIds).toEqual([]);
   });
 
-  test("includes visible device labels in selection, clipboard, and layout bounds", () => {
+  test("includes visible device labels in selection and clipboard bounds while keeping alignment bounds body-only", () => {
     const base = createDefaultNode("ac-source", { x: 100, y: 100 });
     const labeled = {
       ...base,
@@ -124,6 +137,7 @@ describe("canvas selection actions", () => {
     expect(selection.nodeIds).toEqual([]);
     expect(clipboardBounds.right).toBeGreaterThan(bodyRight + 80);
     expect(units[0].bounds.right).toBeGreaterThan(bodyRight + 80);
+    expect(units[0].layoutBounds.right).toBeCloseTo(bodyRight);
   });
 
   test("includes default-rendered device labels in grouped layout bounds even when label params are absent", () => {
@@ -151,13 +165,16 @@ describe("canvas selection actions", () => {
       nodeIds: [labeled.id, other.id],
       edgeIds: []
     }];
-    const bodyBottom = labeled.position.y + (labeled.size.height * Math.abs(Number(labeled.scaleY ?? labeled.scale ?? 1))) / 2;
+    const nodeBodyBottom = (node: ModelNode) => node.position.y + (node.size.height * Math.abs(Number(node.scaleY ?? node.scale ?? 1))) / 2;
+    const bodyBottom = nodeBodyBottom(labeled);
+    const groupBodyBottom = Math.max(nodeBodyBottom(labeled), nodeBodyBottom(other));
 
     const units = buildCanvasLayoutUnits(groups, [labeled, other], [labeled.id], []);
 
     expect(units).toHaveLength(1);
     expect(units[0].kind).toBe("group");
     expect(units[0].bounds.bottom).toBeGreaterThan(bodyBottom + 20);
+    expect(units[0].layoutBounds.bottom).toBeCloseTo(groupBodyBottom + 4);
   });
 
   test("does not build full layout indexes when nothing is selected", () => {
@@ -674,6 +691,41 @@ describe("canvas selection actions", () => {
     expect(firstDelta).toBeLessThan(0);
     expect(firstDelta).toBe(secondDelta);
     expect(movedSecond.position.x - movedFirst.position.x).toBe(secondGrouped.position.x - firstGrouped.position.x);
+  });
+
+  test("aligns layout units by device body bounds instead of visible label bounds", () => {
+    const labeledBase = createDefaultNode("ac-source", { x: 220, y: 100 });
+    const labeled = {
+      ...labeledBase,
+      params: {
+        ...labeledBase.params,
+        _labelText: "很长的左侧标识",
+        _labelX: "-180",
+        _labelY: "0",
+        _labelFontSize: "22",
+        _labelTextAnchor: "middle",
+        _labelRotation: "0"
+      }
+    };
+    const plainBase = createDefaultNode("ac-load", { x: 360, y: 160 });
+    const plain = {
+      ...plainBase,
+      params: {
+        ...plainBase.params,
+        _labelVisible: "0",
+        _labelDisplayMode: "hidden"
+      }
+    };
+    const bodyLeft = (node: ModelNode) =>
+      Math.round(node.position.x - (node.size.width * Math.abs(Number(node.scaleX ?? node.scale ?? 1))) / 2);
+    const units = buildCanvasLayoutUnits([], [labeled, plain], [labeled.id, plain.id], []);
+
+    const aligned = alignNodeLayoutUnits([labeled, plain], units, "left");
+    const alignedLabeled = aligned.find((node) => node.id === labeled.id)!;
+    const alignedPlain = aligned.find((node) => node.id === plain.id)!;
+
+    expect(units[0].bounds.left).toBeLessThan(bodyLeft(labeled) - 80);
+    expect(bodyLeft(alignedLabeled)).toBe(bodyLeft(alignedPlain));
   });
 
   test("auto-spreads overlapping layout units while preserving grouped relative positions", () => {

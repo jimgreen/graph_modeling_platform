@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+﻿import { describe, expect, test } from "vitest";
 
 async function readAppSource() {
   // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
@@ -110,7 +110,7 @@ describe("graph inspector panel", () => {
     expect(moveBoundsBlock).toContain("return canvasBounds;");
   });
 
-  test("adds browse and edit modes that default to readonly browsing", async () => {
+  test("adds browse and edit modes that persist the last selected mode", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
     const topbarStart = source.indexOf("<header className=\"topbar\"");
@@ -130,7 +130,14 @@ describe("graph inspector panel", () => {
     const staticButtonBlock = source.slice(staticButtonStart, staticButtonEnd);
 
     expect(source).toContain("type InteractionMode = \"browse\" | \"edit\";");
-    expect(source).toContain("const [interactionMode, setInteractionMode] = useState<InteractionMode>(\"browse\");");
+    expect(source).toContain("const INTERACTION_MODE_STORAGE_KEY = \"graph-modeling-platform:interaction-mode\";");
+    expect(source).toContain("function normalizeInteractionMode(value: unknown): InteractionMode");
+    expect(source).toContain("function readStoredInteractionMode(): InteractionMode");
+    expect(source).toContain("function writeStoredInteractionMode(mode: InteractionMode)");
+    expect(source).toContain("return normalizeInteractionMode(window.localStorage.getItem(INTERACTION_MODE_STORAGE_KEY));");
+    expect(source).toContain("window.localStorage.setItem(INTERACTION_MODE_STORAGE_KEY, mode);");
+    expect(source).toContain("const [interactionMode, setInteractionMode] = useState<InteractionMode>(() => readStoredInteractionMode());");
+    expect(source).toContain("writeStoredInteractionMode(interactionMode);");
     expect(source).toContain("const isBrowseMode = interactionMode === \"browse\";");
     expect(source).toContain("const isEditMode = interactionMode === \"edit\";");
     expect(source).toContain("const requireEditMode = (action: string) => {");
@@ -154,6 +161,31 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const canvasResizeHandles = (");
     expect(styles).toContain(".mode-toggle-button");
     expect(styles).toContain(".app-shell.browse-mode");
+  });
+
+  test("forces the left panel back to the model library and hides edit-only library tabs in browse mode", async () => {
+    const source = await readAppSource();
+    const effectStart = source.indexOf("useEffect(() => {\n    if (isBrowseMode && leftPanelTab !== \"projects\")");
+    const effectEnd = source.indexOf("useEffect(() => {\n    if (leftPanelTab !== \"projects\")", effectStart);
+    const effectBlock = source.slice(effectStart, effectEnd);
+    const leftContentStart = source.indexOf("const effectiveLeftPanelTab =");
+    const leftContentEnd = source.indexOf("const canvasResizeHandles = (", leftContentStart);
+    const leftContentBlock = source.slice(leftContentStart, leftContentEnd);
+    const tabStart = source.indexOf("<div className=\"left-panel-tabs\"");
+    const tabEnd = source.indexOf("<div className=\"left-panel-content\">", tabStart);
+    const tabBlock = source.slice(tabStart, tabEnd);
+
+    expect(effectStart).toBeGreaterThan(-1);
+    expect(effectBlock).toContain("setLeftPanelTab(\"projects\");");
+    expect(effectBlock).toContain("}, [isBrowseMode, leftPanelTab]);");
+    expect(leftContentBlock).toContain("const effectiveLeftPanelTab = isBrowseMode ? \"projects\" : leftPanelTab;");
+    expect(leftContentBlock).toContain("const leftPanelContent = effectiveLeftPanelTab === \"projects\"");
+    expect(tabBlock).toContain("aria-selected={effectiveLeftPanelTab === \"projects\"}");
+    expect(tabBlock).toContain("{isEditMode && (");
+    expect(tabBlock).toContain("leftPanelTab === \"library\"");
+    expect(tabBlock).toContain("图元库");
+    expect(tabBlock).toContain("leftPanelTab === \"templates\"");
+    expect(tabBlock).toContain("模板库");
   });
 
   test("prevents all canvas graphic drag entry points in browse mode", async () => {
@@ -257,6 +289,43 @@ describe("graph inspector panel", () => {
     expect(toolbarBlock).toContain("isEditMode && !selectedToolbarHidden");
   });
 
+  test("prevents selected graphic right-clicks from falling through to the blank canvas menu", async () => {
+    const source = await readAppSource();
+    const svgContextStart = source.indexOf("onContextMenu={(event) => {", source.indexOf("className={`diagram-canvas"));
+    const svgContextEnd = source.indexOf("setContextMenu({ x: event.clientX, y: event.clientY, target: \"blank\"", svgContextStart);
+    const svgContextBlock = source.slice(svgContextStart, svgContextEnd);
+
+    expect(source).toContain("const CANVAS_GRAPHIC_CONTEXT_MENU_TARGET_SELECTOR =");
+    expect(source).toContain("function isCanvasGraphicContextMenuTarget(target: EventTarget | null)");
+    expect(source).toContain(".diagram-node");
+    expect(source).toContain(".lod-node");
+    expect(source).toContain(".lod-node-layer");
+    expect(source).toContain(".lod-node-selection-layer");
+    expect(source).toContain(".group-selection-overlay");
+    expect(source).toContain(".group-selection-hitbox");
+    expect(source).toContain(".group-selection-outline");
+    expect(source).toContain(".transform-handles");
+    expect(source).toContain(".scale-handle");
+    expect(source).toContain(".rotate-handle");
+    expect(source).toContain(".manual-bend-handle");
+    expect(source).toContain("const canvasGraphicContextMenuHandledRef = useRef(false);");
+    expect(source).toContain("const openGraphicContextMenu = (menu: NonNullable<ContextMenuState>) => {");
+    expect(source).toContain("canvasGraphicContextMenuHandledRef.current = true;");
+    expect(source).toContain("const consumeGraphicContextMenuHandled = () => {");
+    expect(svgContextBlock).toContain("if (isCanvasGraphicContextMenuTarget(event.target))");
+    expect(svgContextBlock).toContain("consumeGraphicContextMenuHandled()");
+    expect(svgContextBlock.indexOf("if (isCanvasGraphicContextMenuTarget(event.target))")).toBeLessThan(
+      svgContextBlock.indexOf("const rawPointer = screenToSvgPoint")
+    );
+    expect(svgContextBlock.indexOf("consumeGraphicContextMenuHandled()")).toBeLessThan(
+      svgContextBlock.indexOf("const rawPointer = screenToSvgPoint")
+    );
+    expect(source).toContain("openGraphicContextMenu({ x: event.clientX, y: event.clientY, target: \"node\", nodeId: node.id })");
+    expect(source).toContain("openGraphicContextMenu({ x: event.clientX, y: event.clientY, target: \"group\", canvasPoint: pointer })");
+    expect(source).toContain("openGraphicContextMenu({");
+    expect(source).toContain("target: \"edge\"");
+  });
+
   test("adds a searchable component library for large symbol sets", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
@@ -279,7 +348,7 @@ describe("graph inspector panel", () => {
   test("adds a searchable model library with clear empty results", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
-    const projectPanelStart = source.indexOf("const renderProjectPanel = () => (");
+    const projectPanelStart = source.indexOf("const renderProjectSchemeNode =");
     const projectPanelEnd = source.indexOf("const customDraftTerminalTypes", projectPanelStart);
     const projectPanelBlock = source.slice(projectPanelStart, projectPanelEnd);
 
@@ -290,6 +359,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("normalizeLibrarySearchText(project.name).includes(projectSearchNeedle)");
     expect(source).toContain("const [hoveredSchemeId, setHoveredSchemeId] = useState(\"\");");
     expect(source).toContain("const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id) || hoveredSchemeId === scheme.id;");
+    expect(source).toContain("const projects = useMemo(() => flattenSavedProjects(schemes), [schemes]);");
+    expect(source).toContain("(scheme.children ?? []).map(filterScheme)");
     expect(projectPanelBlock).toContain("onMouseEnter={() => setHoveredSchemeId(scheme.id)}");
     expect(projectPanelBlock).toContain("onMouseLeave={() => setHoveredSchemeId((current) => current === scheme.id ? \"\" : current)}");
     expect(projectPanelBlock).toContain("className=\"library-search project-search\"");
@@ -297,7 +368,7 @@ describe("graph inspector panel", () => {
     expect(projectPanelBlock).toContain("aria-label=\"搜索模型库\"");
     expect(projectPanelBlock).toContain("aria-label=\"清空模型库搜索\"");
     expect(projectPanelBlock).toContain("未找到匹配方案或模型");
-    expect(projectPanelBlock).toContain("filteredProjectSchemes.map((scheme)");
+    expect(projectPanelBlock).toContain("filteredProjectSchemes.map((scheme) => renderProjectSchemeNode(scheme))");
     expect(styles).toContain(".project-search");
     expect(styles).toContain(".project-search-empty");
   });
@@ -356,7 +427,7 @@ describe("graph inspector panel", () => {
     expect(styles).toContain("pointer-events: all");
   });
 
-  test("collapses component type groups in the library by default and toggles them on click", async () => {
+  test("tracks component type groups in the library and toggles them on click", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
     const libraryPanelStart = source.indexOf("const renderLibraryPanel");
@@ -366,7 +437,9 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const [expandedAttributeLibraryComponentTypes, setExpandedAttributeLibraryComponentTypes] = useState<string[]>([]);");
     expect(source).toContain("const attributeLibraryComponentTypeKey = (attributeLibraryName: string, sectionName: string) =>");
     expect(source).toContain("const toggleAttributeLibraryComponentType = (attributeLibraryName: string, sectionName: string) =>");
-    expect(libraryPanelBlock).toContain("const componentTypeExpanded = libraryExpanded || librarySearchNeedle");
+    expect(libraryPanelBlock).toContain("const componentTypeExpanded = librarySearchNeedle");
+    expect(libraryPanelBlock).toContain("libraryExpanded");
+    expect(libraryPanelBlock).toContain("!collapsedExpandedModeComponentTypes.includes(componentTypeKey)");
     expect(libraryPanelBlock).toContain("expandedAttributeLibraryComponentTypes.includes(componentTypeKey) || hoveredAttributeLibraryComponentType === componentTypeKey");
     expect(libraryPanelBlock).toContain("aria-expanded={componentTypeExpanded || componentTypeFlyoutVisible}");
     expect(libraryPanelBlock).toContain("onClick={() => toggleAttributeLibraryComponentType(group, typeGroup.section)}");
@@ -374,6 +447,51 @@ describe("graph inspector panel", () => {
     expect(libraryPanelBlock).toContain("{componentTypeExpanded && (");
     expect(styles).toContain(".attribute-library-component-type-header");
     expect(styles).toContain("cursor: pointer");
+  });
+
+  test("lets downward expanded library groups collapse by click without hover forcing them open", async () => {
+    const source = await readAppSource();
+    const libraryPanelStart = source.indexOf("const renderLibraryPanel");
+    const libraryPanelEnd = source.indexOf("const renderLeftPanelContent", libraryPanelStart);
+    const libraryPanelBlock = source.slice(libraryPanelStart, libraryPanelEnd);
+
+    expect(source).toContain("const [collapsedExpandedModeAttributeLibraries, setCollapsedExpandedModeAttributeLibraries] = useState<AttributeLibrary[]>([]);");
+    expect(source).toContain("const [collapsedExpandedModeComponentTypes, setCollapsedExpandedModeComponentTypes] = useState<string[]>([]);");
+    expect(source).toContain("const toggleAttributeLibrary = (group: AttributeLibrary) =>");
+    expect(source).toContain("componentLibraryDisplayMode === \"expanded\"");
+    expect(source).toContain("setCollapsedExpandedModeAttributeLibraries");
+    expect(source).toContain("setCollapsedExpandedModeComponentTypes");
+    expect(libraryPanelBlock).toContain("const expanded = librarySearchNeedle ? true : libraryExpanded");
+    expect(libraryPanelBlock).toContain("!collapsedExpandedModeAttributeLibraries.includes(group)");
+    expect(libraryPanelBlock).toContain("!collapsedExpandedModeComponentTypes.includes(componentTypeKey)");
+    expect(libraryPanelBlock).not.toContain("const expanded = libraryExpanded || librarySearchNeedle ? true");
+    expect(libraryPanelBlock).not.toContain("const componentTypeExpanded = libraryExpanded || librarySearchNeedle");
+    expect(libraryPanelBlock).toContain("onClick={() => toggleAttributeLibrary(group)}");
+  });
+
+  test("shows component library type entries in Chinese and English", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const libraryPanelStart = source.indexOf("const renderLibraryPanel");
+    const libraryPanelEnd = source.indexOf("const renderElementTreePanel", libraryPanelStart);
+    const libraryPanelBlock = source.slice(libraryPanelStart, libraryPanelEnd);
+    const searchStart = source.indexOf("function libraryTemplateMatchesSearch");
+    const searchEnd = source.indexOf("function normalizeAttributeLibraryName", searchStart);
+    const searchBlock = source.slice(searchStart, searchEnd);
+
+    expect(source).toContain("const COMPONENT_TYPE_LABELS: Record<string, string> = {");
+    expect(source).toContain("ACLoad: \"交流负荷\"");
+    expect(source).toContain("StaticFlowNode: \"流程节点\"");
+    expect(source).toContain("function componentTypeDisplayParts(sectionName: string)");
+    expect(source).toContain("function componentTypeDisplayName(sectionName: string)");
+    expect(searchBlock).toContain("componentTypeDisplayName(section)");
+    expect(libraryPanelBlock).toContain("const componentTypeDisplay = componentTypeDisplayParts(typeGroup.section);");
+    expect(libraryPanelBlock).toContain("className=\"component-type-name-cn\"");
+    expect(libraryPanelBlock).toContain("className=\"component-type-name-en\"");
+    expect(libraryPanelBlock).toContain("{componentTypeDisplay.chinese}");
+    expect(libraryPanelBlock).toContain("{componentTypeDisplay.english}");
+    expect(styles).toContain(".component-type-name-cn");
+    expect(styles).toContain(".component-type-name-en");
   });
 
   test("switches component library display between downward expansion and right floating modes", async () => {
@@ -394,8 +512,10 @@ describe("graph inspector panel", () => {
     expect(libraryPanelBlock).not.toContain(">向右<");
     expect(libraryPanelBlock).toContain("const libraryExpanded = componentLibraryDisplayMode === \"expanded\";");
     expect(libraryPanelBlock).toContain("const libraryFlyout = componentLibraryDisplayMode === \"right\";");
-    expect(libraryPanelBlock).toContain("const expanded = libraryExpanded || librarySearchNeedle ? true");
-    expect(libraryPanelBlock).toContain("const componentTypeExpanded = libraryExpanded || librarySearchNeedle");
+    expect(libraryPanelBlock).toContain("const expanded = librarySearchNeedle ? true : libraryExpanded");
+    expect(libraryPanelBlock).toContain("!collapsedExpandedModeAttributeLibraries.includes(group)");
+    expect(libraryPanelBlock).toContain("const componentTypeExpanded = librarySearchNeedle");
+    expect(libraryPanelBlock).toContain("!collapsedExpandedModeComponentTypes.includes(componentTypeKey)");
     expect(libraryPanelBlock).toContain("libraryFlyout ? false");
     expect(libraryPanelBlock).toContain("onMouseEnter={() => {");
     expect(libraryPanelBlock).toContain("if (!libraryExpanded)");
@@ -501,8 +621,11 @@ describe("graph inspector panel", () => {
     expect(source).toContain("if (!leftPanelVisible) {");
     expect(source).toContain("hideLibraryFlyout();");
     expect(outsideBlock).toContain("event.target as Node | null");
-    expect(outsideBlock).toContain("libraryPanel?.contains(target)");
+    expect(outsideBlock).toContain("const targetElement = target instanceof Element ? target : target.parentElement;");
+    expect(outsideBlock).toContain("targetElement?.closest(\".attribute-library-component-type-section.flyout-mode\")");
+    expect(outsideBlock).not.toContain("libraryPanel?.contains(target)");
     expect(outsideBlock).toContain("flyoutElement?.contains(target)");
+    expect(source).toContain("if (event.key === \"Escape\" && hoveredAttributeLibraryComponentType) {");
     expect(source).toContain("window.addEventListener(\"pointerdown\", hideLibraryFlyoutOnOutsidePointerDown, true);");
     expect(source).toContain("window.removeEventListener(\"pointerdown\", hideLibraryFlyoutOnOutsidePointerDown, true);");
     expect(libraryPanelBlock).toContain("hideLibraryFlyout();");
@@ -542,6 +665,62 @@ describe("graph inspector panel", () => {
     const terminalStubBlock = cssRuleBlock(styles, ".terminal-stub");
 
     expect(terminalStubBlock).not.toContain("vector-effect");
+  });
+
+  test("keeps upright static symbol text from deforming under non-uniform resize", async () => {
+    const source = await readAppSource();
+    const matrixStart = source.indexOf("function nodeCounterTransformMatrix");
+    const matrixEnd = source.indexOf("function uprightText", matrixStart);
+    const matrixBlock = source.slice(matrixStart, matrixEnd);
+    const staticTextStart = source.indexOf("function staticShapeText");
+    const staticTextEnd = source.indexOf("function staticConnectorMarker", staticTextStart);
+    const staticTextBlock = source.slice(staticTextStart, staticTextEnd);
+
+    expect(matrixBlock).toContain("const desiredScale = preserveScale ? Math.sqrt((Math.abs(scaleX) || 1) * (Math.abs(scaleY) || 1)) : 1;");
+    expect(matrixBlock).toContain("const desiredScaleX = desiredScale;");
+    expect(matrixBlock).toContain("const desiredScaleY = desiredScale;");
+    expect(matrixBlock).not.toContain("preserveScale ? Math.abs(scaleX)");
+    expect(matrixBlock).not.toContain("preserveScale ? Math.abs(scaleY)");
+    expect(staticTextBlock).toContain("return uprightText(");
+  });
+
+  test("exposes selected graphic display-layer controls in the topbar and context menu", async () => {
+    const source = await readAppSource();
+    const importStart = source.indexOf("} from \"./selectionActions\";");
+    const actionStart = source.indexOf("const adjustSelectedDisplayLayer =");
+    const actionEnd = source.indexOf("const clearTransientSelectionState", actionStart);
+    const actionBlock = source.slice(actionStart, actionEnd);
+    const topbarStart = source.indexOf("<header className=\"topbar\">");
+    const topbarEnd = source.indexOf("</header>", topbarStart);
+    const topbarBlock = source.slice(topbarStart, topbarEnd);
+    const contextStart = source.indexOf("{contextMenu && (");
+    const contextEnd = source.indexOf("{projectMenu && (", contextStart);
+    const contextBlock = source.slice(contextStart, contextEnd);
+
+    expect(source.slice(0, importStart)).toContain("reorderItemsByDisplayLayer");
+    expect(actionBlock).toContain("const nextNodes = reorderItemsByDisplayLayer(nodes, activeSelectedNodeIds, action);");
+    expect(actionBlock).toContain("if (nextNodes === nodes)");
+    expect(actionBlock).toContain("pushUndoSnapshot();");
+    expect(actionBlock).toContain("setNodes(nextNodes);");
+    expect(topbarBlock).toContain("className=\"topbar-dropdown display-layer-dropdown\"");
+    expect(topbarBlock).toContain("title=\"显示层级\"");
+    expect(topbarBlock).toContain("aria-label=\"显示层级\"");
+    expect(topbarBlock).toContain("role=\"menu\" aria-label=\"显示层级\"");
+    expect(topbarBlock).toContain("<span>提升显示层级</span>");
+    expect(topbarBlock).toContain("<span>降低显示层级</span>");
+    expect(topbarBlock).toContain("<span>顶层显示</span>");
+    expect(topbarBlock).toContain("<span>底层显示</span>");
+    expect(topbarBlock).toContain("adjustSelectedDisplayLayer(\"raise\")");
+    expect(topbarBlock).toContain("adjustSelectedDisplayLayer(\"lower\")");
+    expect(topbarBlock).toContain("adjustSelectedDisplayLayer(\"front\")");
+    expect(topbarBlock).toContain("adjustSelectedDisplayLayer(\"back\")");
+    expect(topbarBlock).toContain("disabled={!canAdjustSelectedDisplayLayer}");
+    expect(topbarBlock).not.toContain("className=\"display-layer-button-group\"");
+    expect(contextBlock).toContain("显示层级");
+    expect(contextBlock).toContain("提升显示层级");
+    expect(contextBlock).toContain("降低显示层级");
+    expect(contextBlock).toContain("顶层显示");
+    expect(contextBlock).toContain("底层显示");
   });
 
   test("keeps only the real canvas boundary as the visible canvas border", async () => {
@@ -818,7 +997,8 @@ describe("graph inspector panel", () => {
     expect(staticDrawBlock).toContain("const nextPoint = clampPointToCanvas(point);");
     expect(staticDrawBlock).toContain("const previewPoint = clampPointToCanvas(point);");
     expect(dragDeltaBlock).not.toContain("snapMoveDeltaToGrid");
-    expect(dragDeltaBlock).toContain("return movementDelta;");
+    expect(dragDeltaBlock).toContain("const smartSnap = computeSmartAlignmentSnap(dragState, movementDelta, ctrlKey || shiftKey);");
+    expect(dragDeltaBlock).toContain("return smartSnap.delta;");
     expect(keyboardDeltaBlock).not.toContain("snapMoveDeltaToGrid");
     expect(moveSelectionBlock).not.toContain("snapMoveDeltaToGrid");
   });
@@ -1083,6 +1263,26 @@ describe("graph inspector panel", () => {
     expect(exportBlock).toContain("data-export-button-target-layer-ids");
     expect(exportBlock).toContain("function exportSvgActivateLayers(layerIds)");
     expect(exportBlock).toContain("const targetLayerIds = exportSvgButtonTargetLayerIds(button);");
+  });
+
+  test("shows Chinese labels in the generic device parameter table", async () => {
+    const source = await readAppSource();
+    const headerStart = source.indexOf("const renderParamHeader =");
+    const headerEnd = source.indexOf("const renderChineseParamHeader", headerStart);
+    const headerBlock = source.slice(headerStart, headerEnd);
+    const editorStart = source.indexOf("const renderParamEditor =");
+    const editorEnd = source.indexOf("const renderStaticButtonActionEditor", editorStart);
+    const editorBlock = source.slice(editorStart, editorEnd);
+
+    expect(source).toContain("const PARAM_OPTION_LABELS: Record<string, Record<string, string>> = {");
+    expect(source).toContain("buttonEnabled: { \"1\": \"启用\", \"0\": \"禁用\" }");
+    expect(source).toContain("buttonActionType: STATIC_BUTTON_ACTION_LABELS");
+    expect(source).toContain("buttonCommand: STATIC_BUTTON_COMMAND_LABELS");
+    expect(source).toContain("component_type: \"元件类型\"");
+    expect(headerBlock).toContain("const visibleLabel = displayName === key ? title : displayName;");
+    expect(headerBlock).toContain("<th title={key}>{visibleLabel}</th>");
+    expect(editorBlock).toContain("const optionLabels = PARAM_OPTION_LABELS[key] ?? {};");
+    expect(editorBlock).toContain("{optionLabels[option] ?? option}");
   });
 
   test("keeps backend electric heat sections split by AC and DC device types", async () => {
@@ -1381,6 +1581,25 @@ describe("graph inspector panel", () => {
     expect(finishBlock.indexOf("finalizeMovedNodeEdgesFast")).toBeGreaterThan(finishBlock.indexOf("adjustEdgesAfterNodeMove"));
   });
 
+  test("finalizes separated implicit terminal overlaps even when moves have no explicit edge candidates", async () => {
+    const source = await readAppSource();
+    const syncFinalizeStart = source.indexOf("const shouldFinalizeMovedNodeEdgesSynchronously");
+    const syncFinalizeEnd = source.indexOf("const terminalReconcileNodeScope", syncFinalizeStart);
+    const syncFinalizeBlock = source.slice(syncFinalizeStart, syncFinalizeEnd);
+    const finishStart = source.indexOf("const finishNodeDrag = () =>");
+    const finishEnd = source.indexOf("const finishTransformDrag", finishStart);
+    const finishBlock = source.slice(finishStart, finishEnd);
+    const moveStart = source.indexOf("const moveSelection =");
+    const moveEnd = source.indexOf("const updateSelectedNode", moveStart);
+    const moveBlock = source.slice(moveStart, moveEnd);
+
+    expect(syncFinalizeBlock).toContain("candidateEdges.length === 0");
+    expect(finishBlock).not.toContain("multiNodeMove || !shouldFinalizeMovedNodeEdgesSynchronously");
+    expect(moveBlock).not.toContain("multiNodeMove || !shouldFinalizeMovedNodeEdgesSynchronously");
+    expect(finishBlock).toContain("shouldFinalizeMovedNodeEdgesSynchronously(activeDragging.nodeIds, adjustedAffectedEdges)\n      ? finalizeMovedNodeEdgesFast");
+    expect(moveBlock).toContain("shouldFinalizeMovedNodeEdgesSynchronously(moveNodeIds, adjustedAffectedEdges)\n      ? finalizeMovedNodeEdgesFast");
+  });
+
   test("keeps connection previews on the lightweight stored-route path", async () => {
     const source = await readAppSource();
     const previewStart = source.indexOf("const buildConnectPreviewPath = (");
@@ -1545,6 +1764,37 @@ describe("graph inspector panel", () => {
     expect(layoutBlock).toContain("const movedNodeIdSet = new Set(movedNodeIds)");
     expect(source).toContain("if (!activeLayerEdgeIdSet.has(edgeId))");
     expect(source).toContain("const visibleNodeSpatialIndex = visibleProject.nodeSpatialIndex");
+  });
+
+  test("visually de-emphasizes visible graphics outside the active layer in edit mode", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const routeRenderStart = source.indexOf("renderViewportRoutedEdges.map");
+    const routeRenderEnd = source.indexOf("{selectedRoutedEdge &&", routeRenderStart);
+    const routeRenderBlock = source.slice(routeRenderStart, routeRenderEnd);
+    const nodeRenderStart = source.indexOf("{detailedViewportNodes.map((node)");
+    const nodeRenderEnd = source.indexOf("{selectedRoutedEdge &&", nodeRenderStart);
+    const nodeRenderBlock = source.slice(nodeRenderStart, nodeRenderEnd);
+    const lodRouteStart = source.indexOf("const lodCanvasRouteChunks = useMemo");
+    const lodRouteEnd = source.indexOf("const lodCanvasNodeChunks = useMemo", lodRouteStart);
+    const lodRouteBlock = source.slice(lodRouteStart, lodRouteEnd);
+    const lodNodeStart = source.indexOf("const lodCanvasNodeChunks = useMemo");
+    const lodNodeEnd = source.indexOf("const lodSelectedNodeMarkup = useMemo", lodNodeStart);
+    const lodNodeBlock = source.slice(lodNodeStart, lodNodeEnd);
+    const inactiveBlock = cssRuleBlock(styles, ".diagram-node.inactive-layer-graphic");
+
+    expect(routeRenderBlock).toContain("const inactiveLayerGraphic = isEditMode && !editable;");
+    expect(routeRenderBlock).toContain("${inactiveLayerGraphic ? \"inactive-layer-graphic\" : \"\"}");
+    expect(nodeRenderBlock).toContain("const inactiveLayerGraphic = isEditMode && !editable;");
+    expect(nodeRenderBlock).toContain("${inactiveLayerGraphic ? \"inactive-layer-graphic\" : \"\"}");
+    expect(lodRouteBlock).toContain("inactiveLayerGraphic: isEditMode && !activeLayerEdgeIdSet.has(edge.id)");
+    expect(lodRouteBlock).toContain("inactiveLayerGraphic ? \" inactive-layer-graphic\" : \"\"");
+    expect(lodNodeBlock).toContain("const inactiveLayerGraphic = isEditMode && !activeLayerNodeIdSet.has(node.id);");
+    expect(lodNodeBlock).toContain("${inactiveLayerGraphic ? \" inactive-layer-graphic\" : \"\"}");
+    expect(inactiveBlock).toContain("opacity: 0.36");
+    expect(inactiveBlock).toContain("filter: grayscale(0.45) saturate(0.55)");
+    expect(styles).toContain(".connection-group.inactive-layer-graphic:hover .connection-line");
+    expect(styles).toContain(".diagram-node.inactive-layer-graphic:hover .node-hitbox");
   });
 
   test("selects visible operable nodes and connection lines for Ctrl+A copy paste", async () => {
@@ -2568,7 +2818,7 @@ describe("graph inspector panel", () => {
     expect(importBlock).not.toContain("模型名称重复。请输入 1 覆盖已有模型，2 重命名为新模型，3 不导入。");
     expect(importBlock).not.toContain("duplicateChoice");
     expect(importBlock).toContain("promptUniqueRecordName");
-    expect(source).toContain("upsertSavedProject(scheme.projects, importedRecord)");
+    expect(source).toContain("upsertSavedProjectInScheme(nextSchemes, targetScheme.id, importedRecord)");
     expect(source).toContain("loadSavedProject(importedRecord, targetScheme.id)");
     expect(source).toContain("模型名称重复</h2>");
     expect(source).toContain("请选择导入处理方式");
@@ -2583,7 +2833,7 @@ describe("graph inspector panel", () => {
     expect(contextBlock).not.toContain("导入模型");
     expect(contextBlock).not.toContain("导出模型");
     expect(projectContextBlock).toContain("exportProjectRecordFile");
-    expect(projectContextBlock).toContain("openModelImportFilePicker(projectMenu.schemeId)");
+    expect(projectContextBlock).toContain("openModelImportFilePicker(projectMenu.schemeId");
     expect(projectContextBlock).toContain("模型导入");
     expect(projectContextBlock).toContain("模型导出");
   });
@@ -2607,7 +2857,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const schemeImportInputRef = useRef<HTMLInputElement | null>(null)");
     expect(source).toContain("pendingSchemeImportConflict");
     expect(source).toContain("resolveDuplicateSchemeImport");
-    expect(source).toContain("const openSchemeImportFilePicker = () =>");
+    expect(source).toContain("const openSchemeImportFilePicker = (parentSchemeId = \"\")");
+    expect(source).toContain("const schemeImportParentSchemeIdRef = useRef<string>(\"\")");
     expect(source).toContain("const importSchemeFile = async");
     expect(exportBlock).toContain("showDirectoryPicker");
     expect(exportBlock).toContain("writeTextFileToDirectory(directoryHandle");
@@ -2817,6 +3068,9 @@ describe("graph inspector panel", () => {
     const wheelGuardStart = source.indexOf("const preventPageWheelZoom = (event: WheelEvent) => {");
     const wheelGuardEnd = source.indexOf("window.addEventListener(\"wheel\", preventPageWheelZoom", wheelGuardStart);
     const wheelGuardBlock = source.slice(wheelGuardStart, wheelGuardEnd);
+    const canvasPointStart = source.indexOf("const clientPointInsideRenderedCanvas =");
+    const canvasPointEnd = source.indexOf("const wheelZoomAnchorFromClient =", canvasPointStart);
+    const canvasPointBlock = source.slice(canvasPointStart, canvasPointEnd);
     const wheelStart = source.indexOf("const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {");
     const wheelEnd = source.indexOf("const deleteSelected = () => {", wheelStart);
     const wheelBlock = source.slice(wheelStart, wheelEnd);
@@ -2841,7 +3095,17 @@ describe("graph inspector panel", () => {
     expect(syncEffectBlock).toContain("canvasScrollSurfaceHeight");
     expect(syncEffectBlock).toContain("canvasScrollSurfaceWidth");
     expect(syncEffectBlock).not.toContain("viewBox");
-    expect(wheelGuardBlock).toContain("event.ctrlKey || event.metaKey");
+    expect(source).toContain("function canvasWheelEventHasNoModifier");
+    expect(source).toContain("function shouldZoomCanvasFromWheelEvent");
+    expect(source).toContain("const clientPointInsideRenderedCanvas = (clientX: number, clientY: number) => {");
+    expect(wheelGuardBlock).toContain("const cursorInsideCanvas = clientPointInsideRenderedCanvas(event.clientX, event.clientY);");
+    expect(wheelGuardBlock).toContain("if (cursorInsideCanvas && shouldZoomCanvasFromWheelEvent(event))");
+    expect(wheelGuardBlock).not.toContain("if (event.ctrlKey || event.metaKey");
+    expect(wheelGuardBlock).not.toContain("plainWheelInsideCanvasFrame");
+    expect(canvasPointBlock).toContain("clientX >= frameRect.left");
+    expect(canvasPointBlock).toContain("clientY <= frameRect.bottom");
+    expect(canvasPointBlock).toContain("clientX >= svgRect.left");
+    expect(canvasPointBlock).toContain("clientY <= svgRect.bottom");
     expect(wheelGuardBlock).toContain("zoomCanvasFromWheelEvent(event);");
     expect(wheelGuardBlock).not.toContain("if ((event.target as Element | null)?.closest(\".diagram-canvas\"))");
     expect(wheelGuardBlock).not.toContain(".closest(\".diagram-canvas\")");
@@ -2852,12 +3116,31 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const anchor = wheelZoomAnchorFromClient(event.clientX, event.clientY);");
     expect(source).toContain("const bounds = canvasBoundsRef.current;");
     expect(source).toContain("return normalizeViewBoxToCanvas({");
-    expect(wheelBlock).toContain("if (!event.ctrlKey && !event.metaKey)");
+    expect(wheelBlock).toContain("if (!shouldZoomCanvasFromWheelEvent(event))");
     expect(wheelBlock).toContain("if (event.nativeEvent.defaultPrevented)");
     expect(wheelBlock).toContain("zoomCanvasFromWheelEvent(event);");
     expect(wheelBlock).not.toContain("const frame = canvasFrameRef.current;");
     expect(wheelBlock).not.toContain("const frameRect = frame.getBoundingClientRect();");
     expect(wheelBlock).not.toContain("const ratioX = (pointer.x - viewBox.x) / viewBox.width;");
+  });
+
+  test("does not route side-panel wheel events into canvas zoom", async () => {
+    const source = await readAppSource();
+    const selectorStart = source.indexOf("const CANVAS_WHEEL_ZOOM_EXCLUSION_SELECTOR =");
+    const selectorEnd = source.indexOf("].join(\", \");", selectorStart);
+    const selectorBlock = source.slice(selectorStart, selectorEnd);
+    const wheelGuardStart = source.indexOf("const preventPageWheelZoom = (event: WheelEvent) => {");
+    const wheelGuardEnd = source.indexOf("window.addEventListener(\"wheel\", preventPageWheelZoom", wheelGuardStart);
+    const wheelGuardBlock = source.slice(wheelGuardStart, wheelGuardEnd);
+
+    expect(selectorStart).toBeGreaterThan(-1);
+    expect(selectorBlock).toContain(".floating-side-panel");
+    expect(selectorBlock).toContain(".side-panel-edge-trigger");
+    expect(source).toContain("function isCanvasWheelZoomExcludedTarget(target: EventTarget | null)");
+    expect(wheelGuardBlock).toContain("if (isCanvasWheelZoomExcludedTarget(event.target))");
+    expect(wheelGuardBlock.indexOf("if (isCanvasWheelZoomExcludedTarget(event.target))")).toBeLessThan(
+      wheelGuardBlock.indexOf("const cursorInsideCanvas = clientPointInsideRenderedCanvas")
+    );
   });
 
   test("keeps wheel zoom anchored when canvas scrollbars appear or disappear", async () => {
@@ -3890,6 +4173,59 @@ describe("graph inspector panel", () => {
     expect(findRewireBlock).not.toContain("for (const node of visibleNodes)");
     expect(dragPreviewBlock).toContain("queryNodeSpatialIndex(visibleNodeSpatialIndex, dragInteractionBounds)");
     expect(dragPreviewBlock).not.toContain("for (const node of visibleNodes)");
+  });
+
+  test("shows smart alignment guides and snaps node drag deltas to visible nearby nodes", async () => {
+    const source = await readAppSource();
+    const styleSource = await readStyles();
+    const dragStart = source.indexOf("const computeSmartAlignmentSnap =");
+    const dragEnd = source.indexOf("const computeNodeDragPreviewDelta =", dragStart);
+    const smartAlignBlock = source.slice(dragStart, dragEnd);
+    const previewStart = source.indexOf("const computeNodeDragPreviewDelta =");
+    const previewEnd = source.indexOf("const computeNodeDragDelta =", previewStart);
+    const previewBlock = source.slice(previewStart, previewEnd);
+    const renderStart = source.indexOf("{smartAlignmentGuides.map");
+    const renderEnd = source.indexOf("{dragging?.historyCaptured", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+
+    expect(source).toContain("type SmartAlignmentGuide =");
+    expect(source).toContain("const SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE = 8;");
+    expect(source).toContain("const [smartAlignmentGuides, setSmartAlignmentGuides] = useState<SmartAlignmentGuide[]>([]);");
+    expect(source).toContain("const smartAlignmentGuidesRef = useRef<SmartAlignmentGuide[]>([]);");
+    expect(smartAlignBlock).toContain("queryNodeSpatialIndex(visibleNodeSpatialIndex, verticalSearchBounds)");
+    expect(smartAlignBlock).toContain("queryNodeSpatialIndex(visibleNodeSpatialIndex, horizontalSearchBounds)");
+    expect(smartAlignBlock).toContain("draggedNodeIds.has(candidate.id)");
+    expect(smartAlignBlock).toContain("const xSnap = bestSmartAlignmentAxisSnap");
+    expect(smartAlignBlock).toContain("const ySnap = bestSmartAlignmentAxisSnap");
+    expect(previewBlock).toContain("const smartSnap = computeSmartAlignmentSnap(dragState, movementDelta, ctrlKey || shiftKey);");
+    expect(previewBlock).toContain("updateSmartAlignmentGuides(smartSnap.guides);");
+    expect(previewBlock).toContain("return smartSnap.delta;");
+    expect(source).toContain("updateSmartAlignmentGuides([]);");
+    expect(renderBlock).toContain("className={`smart-alignment-guide smart-alignment-guide-${guide.orientation}`}");
+    expect(renderBlock).toContain("vectorEffect=\"non-scaling-stroke\"");
+    expect(styleSource).toContain(".smart-alignment-guide");
+    expect(styleSource).toContain(".smart-alignment-guide-vertical");
+    expect(styleSource).toContain(".smart-alignment-guide-horizontal");
+  });
+
+  test("uses node body bounds rather than labels or terminals for smart alignment centers", async () => {
+    const source = await readAppSource();
+    const helperStart = source.indexOf("function nodeSmartAlignmentBounds");
+    const helperEnd = source.indexOf("function nodeVisualInteractionBounds", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+    const dragStart = source.indexOf("const dragBoundsForSmartAlignment =");
+    const dragEnd = source.indexOf("const computeSmartAlignmentSnap =", dragStart);
+    const dragBoundsBlock = source.slice(dragStart, dragEnd);
+    const computeStart = source.indexOf("const computeSmartAlignmentSnap =");
+    const computeEnd = source.indexOf("const computeNodeDragPreviewDelta =", computeStart);
+    const computeBlock = source.slice(computeStart, computeEnd);
+
+    expect(helperStart).toBeGreaterThan(-1);
+    expect(helperBlock).toContain("nodeTransformedHalfExtents(node, includeUprightContent)");
+    expect(helperBlock).not.toContain("calculateNodeVisualBounds");
+    expect(dragBoundsBlock).toContain("const nodeBounds = nodeSmartAlignmentBounds(node, movedPosition, nodeHasUprightBoundsContent(node));");
+    expect(dragBoundsBlock).not.toContain("nodeVisualInteractionBounds(node, movedPosition");
+    expect(computeBlock).toContain("bounds: nodeSmartAlignmentBounds(candidate, candidate.position, nodeHasUprightBoundsContent(candidate))");
   });
 
   test("keeps graph nodes and edges in a normalized store instead of array state", async () => {
@@ -5001,10 +5337,10 @@ describe("graph inspector panel", () => {
     expect(saveDraftBlock).not.toContain("edges");
     expect(saveDraftBlock).not.toContain("groups");
     expect(saveBlock).toContain("saveActiveProjectPointer(targetId");
-    expect(saveBlock).toContain("saveActiveProjectPointer(record.id");
+    expect(saveBlock).toContain("saveActiveProjectPointer(savedRecord.id");
     expect(source).not.toContain("draftAutosaveProjectId");
     expect(source).not.toContain("saveDraftProject(draftAutosaveProjectId");
-    expect(source).not.toContain("[activeProjectId, activeSchemeId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, nodes, powerBaseValue, powerUnit, projectName, voltageUnit]");
+    expect(source).not.toContain("[activeProjectKey, activeSchemeKey, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, nodes, powerBaseValue, powerUnit, projectName, voltageUnit]");
     const topologyStaleBlock = source.slice(Math.max(0, topologyStaleStart - 400), topologyStaleStart + 300);
     expect(topologyStaleBlock).toContain("scheduleIdleWork");
     expect(topologyStaleBlock).toContain("graphStore.topologyRevision");
@@ -5028,7 +5364,7 @@ describe("graph inspector panel", () => {
     ] as const;
 
     expect(manualSaveBlock).toContain("saveActiveProjectPointer(targetId");
-    expect(manualSaveBlock).toContain("saveActiveProjectPointer(record.id");
+    expect(manualSaveBlock).toContain("saveActiveProjectPointer(savedRecord.id");
     expect(schemePersistBlock).toContain("persistSchemesPayloadToStorageAndBackend(normalizedSchemesPayload)");
     expect(source).not.toContain("draftAutosaveProjectId");
     expect(source).not.toContain("saveDraftProject(draftAutosaveProjectId");
@@ -5620,7 +5956,8 @@ describe("graph inspector panel", () => {
     expect(memoBlock).toContain("() => renderLibraryPanel()");
     expect(memoBlock).toContain("const templateLibraryPanelContent = useMemo");
     expect(memoBlock).toContain("() => renderTemplateLibraryPanel()");
-    expect(memoBlock).toContain("const leftPanelContent = leftPanelTab === \"projects\"");
+    expect(memoBlock).toContain("const effectiveLeftPanelTab = isBrowseMode ? \"projects\" : leftPanelTab;");
+    expect(memoBlock).toContain("const leftPanelContent = effectiveLeftPanelTab === \"projects\"");
     expect(memoBlock).toContain("librarySearchQuery");
     expect(memoBlock).toContain("expandedAttributeLibraryComponentTypes");
     expect(memoBlock).toContain("hoveredAttributeLibrary");
@@ -5687,6 +6024,19 @@ describe("graph inspector panel", () => {
     expect(styles).toMatch(/(?:^|\n)\.element-tree\s*\{[^}]*align-content: start/s);
     expect(styles).toMatch(/(?:^|\n)\.element-tree-group\s*\{[^}]*align-content: start/s);
     expect(styles).toMatch(/(?:^|\n)\.element-tree-items\s*\{[^}]*align-content: start/s);
+  });
+
+  test("vertically centers plain element tree item text", async () => {
+    const styles = await readStyles();
+    const itemMainBlock = cssRuleBlock(styles, ".element-tree-item-main");
+    const itemTextBlock = cssRuleBlock(styles, ".element-tree-item > .element-tree-item-main > span");
+
+    expect(itemMainBlock).toContain("display: grid");
+    expect(itemMainBlock).toContain("align-items: center");
+    expect(itemMainBlock).toContain("min-height: 30px");
+    expect(itemTextBlock).toContain("display: flex");
+    expect(itemTextBlock).toContain("align-items: center");
+    expect(itemTextBlock).toContain("min-height: 30px");
   });
 
   test("adds a topbar color palette entry and passes the mode into canvas coloring", async () => {
@@ -5768,7 +6118,8 @@ describe("graph inspector panel", () => {
     expect(serverSource).toContain("readColorConfig");
     expect(serverSource).toContain("writeColorConfig");
     expect(serverSource).toContain("handleSaveColorConfig");
-    expect(serverSource).toContain("\"/api/color-config\"");
+    expect(serverSource).toContain("[\"GET /api/color-config\"");
+    expect(serverSource).toContain("[\"PUT /api/color-config\"");
   });
 
   test("moves model layer definition controls from the inspector table to a topbar dialog", async () => {
@@ -6191,6 +6542,42 @@ describe("graph inspector panel", () => {
     expect(closeBlock).toContain("window.removeEventListener(\"pointermove\", closeBlankContextMenuIfPointerLeaves)");
   });
 
+  test("closes graphic context menus before blank-canvas panning consumes left clicks", async () => {
+    const source = await readAppSource();
+    const panningStart = source.indexOf("const startCanvasPanning =");
+    const panningEnd = source.indexOf("const handleCanvasPointerDownCapture", panningStart);
+    const panningBlock = source.slice(panningStart, panningEnd);
+    const contextStart = source.indexOf("{contextMenu && (");
+    const contextEnd = source.indexOf("{projectMenu && (", contextStart);
+    const contextBlock = source.slice(contextStart, contextEnd);
+
+    expect(panningBlock.indexOf("setContextMenu(null);")).toBeGreaterThanOrEqual(0);
+    expect(panningBlock.indexOf("setProjectMenu(null);")).toBeGreaterThanOrEqual(0);
+    expect(panningBlock.indexOf("setContextMenu(null);")).toBeLessThan(panningBlock.indexOf("event.stopPropagation();"));
+    expect(panningBlock.indexOf("setProjectMenu(null);")).toBeLessThan(panningBlock.indexOf("event.stopPropagation();"));
+    expect(contextBlock).toContain("{isEditMode && contextMenuTarget === \"blank\" && activeLayerNodes.length > 1 && (");
+    expect(contextBlock).not.toContain("{isEditMode && !contextMenuForEdge && activeLayerNodes.length > 1 && (");
+  });
+
+  test("closes open context menus on left clicks before graphic handlers stop propagation", async () => {
+    const source = await readAppSource();
+    const globalCloseStart = source.indexOf("const closeContextMenus = (event: globalThis.PointerEvent) =>");
+    const globalCloseEnd = source.indexOf("}, []);", globalCloseStart);
+    const globalCloseBlock = source.slice(globalCloseStart, globalCloseEnd);
+    const nodePointerStart = source.indexOf("const handleNodePointerDown =");
+    const nodePointerEnd = source.indexOf("const handlePointerMove", nodePointerStart);
+    const nodePointerBlock = source.slice(nodePointerStart, nodePointerEnd);
+
+    expect(nodePointerBlock).toContain("event.stopPropagation();");
+    expect(globalCloseBlock).toContain("event.button !== 0");
+    expect(globalCloseBlock).toContain("target instanceof Element");
+    expect(globalCloseBlock).toContain("target.closest(\".context-menu\")");
+    expect(globalCloseBlock).toContain("setContextMenu(null);");
+    expect(globalCloseBlock).toContain("setProjectMenu(null);");
+    expect(globalCloseBlock).toContain("window.addEventListener(\"pointerdown\", closeContextMenus, { capture: true });");
+    expect(globalCloseBlock).toContain("window.removeEventListener(\"pointerdown\", closeContextMenus, { capture: true });");
+  });
+
   test("adds canvas context-menu action for auto-spreading overlapping graphics", async () => {
     const source = await readAppSource();
     const contextStart = source.indexOf("{contextMenu && (");
@@ -6218,6 +6605,30 @@ describe("graph inspector panel", () => {
     expect(source).toContain("Math.max(AUTO_ALIGN_MIN_THRESHOLD_PX, Math.min(AUTO_ALIGN_MAX_THRESHOLD_PX");
     expect(contextBlock).toContain("自动对齐");
     expect(contextBlock).toContain("runContextMenuAction(autoAlignCanvasGraphics)");
+  });
+
+  test("readjusts bus endpoint landing points after automatic alignment", async () => {
+    const source = await readAppSource();
+    const helperStart = source.indexOf("const readjustMovedBusConnectionRoutes");
+    const helperEnd = source.indexOf("const commitLayoutNodePositions", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+    const commitStart = source.indexOf("const commitLayoutNodePositions =");
+    const commitEnd = source.indexOf("const applySelectedNodeLayout", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
+    const autoAlignStart = source.indexOf("const autoAlignCanvasGraphics =");
+    const autoAlignEnd = source.indexOf("const connectionRedrawViewportBounds", autoAlignStart);
+    const autoAlignBlock = source.slice(autoAlignStart, autoAlignEnd);
+
+    expect(helperStart).toBeGreaterThan(-1);
+    expect(helperBlock).toContain("isBusNode(source)");
+    expect(helperBlock).toContain("isBusNode(target)");
+    expect(helperBlock).toContain("movedIds.has(edge.sourceId) || movedIds.has(edge.targetId)");
+    expect(helperBlock).toContain("redrawConnectionRoutesForEdges(nextNodes, candidateEdges, busConnectedEdgeIds, bounds)");
+    expect(commitBlock).toContain("options: { readjustBusEndpoints?: boolean } = {}");
+    expect(commitBlock).toContain("options.readjustBusEndpoints");
+    expect(commitBlock).toContain("readjustMovedBusConnectionRoutes(");
+    expect(autoAlignBlock).toContain("commitLayoutNodePositions(");
+    expect(autoAlignBlock).toContain("{ readjustBusEndpoints: true }");
   });
 
   test("opens a scoped connection-redraw dialog from the blank canvas context menu", async () => {
@@ -6255,14 +6666,14 @@ describe("graph inspector panel", () => {
 
   test("uses explicit model scheme and blank project-list context-menu actions", async () => {
     const source = await readAppSource();
-    const projectPanelStart = source.indexOf("const renderProjectPanel = () => (");
+    const projectPanelStart = source.indexOf("const renderProjectSchemeNode =");
     const projectPanelEnd = source.indexOf("const customDraftTerminalTypes", projectPanelStart);
     const projectPanelBlock = source.slice(projectPanelStart, projectPanelEnd);
     const projectContextStart = source.indexOf("{projectMenu && (");
     const projectContextEnd = source.indexOf("{pendingModelImportConflict && (", projectContextStart);
     const projectContextBlock = source.slice(projectContextStart, projectContextEnd);
     const modelLabels = ["模型删除", "模型导出", "模型导入", "模型重命名", "模型复制", "模型粘贴"];
-    const schemeLabels = ["方案删除", "方案导出", "方案导入", "方案重命名", "方案复制", "方案粘贴", "模型新建", "模型导入", "模型粘贴"];
+    const schemeLabels = ["方案新增", "方案删除", "方案导出", "方案导入", "方案重命名", "方案复制", "方案粘贴", "模型新建", "模型导入", "模型粘贴"];
     const blankLabels = ["方案新增", "方案粘贴", "方案导入"];
     const expectOrderedLabels = (labels: string[]) => {
       let cursor = -1;
@@ -6285,8 +6696,11 @@ describe("graph inspector panel", () => {
     expect(projectContextBlock).toContain("role=\"separator\"");
     expect(projectContextBlock).toContain("aria-label=\"方案操作和模型操作分隔\"");
     expect(projectContextBlock).toContain("createSchemeRecord");
-    expect(projectContextBlock).toContain("createBlankProject(projectMenu.schemeId)");
-    expect(projectContextBlock).toContain("openModelImportFilePicker(projectMenu.schemeId)");
+    expect(projectContextBlock).toContain("createSchemeRecord(projectMenu.schemeId ?? \"\")");
+    expect(projectContextBlock).toContain("openSchemeImportFilePicker(projectMenu.schemeId ?? \"\")");
+    expect(projectContextBlock).toContain("pasteSchemeClipboardRecord(projectMenu.schemeId ?? \"\")");
+    expect(projectContextBlock).toContain("createBlankProject(projectMenu.schemeId ?? \"\")");
+    expect(projectContextBlock).toContain("openModelImportFilePicker(projectMenu.schemeId ?? \"\")");
     expectOrderedLabels(modelLabels);
     expectOrderedLabels(schemeLabels);
     expectOrderedLabels(blankLabels);
@@ -6357,7 +6771,7 @@ describe("graph inspector panel", () => {
     const hideStart = source.indexOf("const hideAutoPanelsFromWorkspace =");
     const hideEnd = source.indexOf("const interactiveStaticDrawingNeedsExplicitFinish", hideStart);
     const hideBlock = source.slice(hideStart, hideEnd);
-    const projectPanelStart = source.indexOf("const renderProjectPanel = () => (");
+    const projectPanelStart = source.indexOf("const renderProjectSchemeNode =");
     const projectPanelEnd = source.indexOf("const customDraftTerminalTypes", projectPanelStart);
     const projectPanelBlock = source.slice(projectPanelStart, projectPanelEnd);
     const resolveStart = source.indexOf("const resolveRecordPasteConflict =");
@@ -6483,7 +6897,7 @@ describe("graph inspector panel", () => {
   test("persists scheme and model list changes to the backend without swallowing the first edit", async () => {
     const source = await readAppSource();
     const setterStart = source.indexOf("const [schemes, setSchemesState] = useState<SavedSchemeRecord[]>(initialSavedSchemes);");
-    const setterEnd = source.indexOf("const [activeProjectId", setterStart);
+    const setterEnd = source.indexOf("const [activeProjectKey", setterStart);
     const setterBlock = source.slice(setterStart, setterEnd);
     const backendLoadStart = source.indexOf("const loadToken = ++backendSchemesLoadTokenRef.current;");
     const backendLoadEnd = source.indexOf("fetchBackendColorConfig()", backendLoadStart);
@@ -6503,11 +6917,11 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const pendingBackendSchemesPayloadRef = useRef<string | null>(null)");
     expect(source).toContain("const backendSchemesLoadTokenRef = useRef(0)");
     expect(source).toContain("const schemesChangedBeforeBackendLoadRef = useRef(false)");
-    expect(source).toContain("const latestActiveProjectPointerRef = useRef<ActiveProjectPointer>");
+    expect(source).toContain("const latestActiveProjectPointerRef = useRef<ActiveProjectPointer | null>(null)");
     expect(source).toContain("const startupHadStoredSchemesRef = useRef(Boolean(initialStoredSchemesPayload))");
     expect(source).toContain("shouldPreferLocalSchemesOverBackend(");
     expect(source).toContain("const latestSchemesRef = useRef<SavedSchemeRecord[]>(initialSavedSchemes)");
-    expect(source).toContain("latestActiveProjectPointerRef.current = { activeProjectId, activeSchemeId };");
+    expect(source).toContain("latestActiveProjectPointerRef.current = activeProjectPointerPayload(schemes, activeProjectKey, activeSchemeKey);");
     expect(setterBlock).toContain("schemesChangedBeforeBackendLoadRef.current = true");
     expect(setterBlock).toContain("setSchemesState(value)");
     expect(backendLoadBlock).toContain("const localChangedBeforeBackendLoad = schemesChangedBeforeBackendLoadRef.current");
@@ -6519,7 +6933,7 @@ describe("graph inspector panel", () => {
     expect(backendLoadBlock).toContain("persistBackendSchemesPayload(pendingPayload)");
     expect(backendLoadBlock).toContain("setSchemesState(backendSchemes)");
     expect(backendLoadBlock).toContain("const activePointer = latestActiveProjectPointerRef.current;");
-    expect(backendLoadBlock).toContain("const backendActiveProject = findProjectRecordInSchemes(backendSchemes, activePointer.activeProjectId, activePointer.activeSchemeId);");
+    expect(backendLoadBlock).toContain("const backendActiveProject = findSavedProjectByActivePointer(backendSchemes, activePointer);");
     expect(backendLoadBlock).toContain("loadSavedProject(backendActiveProject.project, backendActiveProject.scheme.id);");
     expect(source).toContain("const persistSchemesPayloadToStorageAndBackend = (normalizedSchemesPayload: string) => {");
     expect(source).toContain("window.localStorage.setItem(SCHEME_STORAGE_KEY, normalizedSchemesPayload)");
@@ -6527,7 +6941,9 @@ describe("graph inspector panel", () => {
     expect(schemePersistBlock).toContain("suppressNextBackendSchemeSyncRef.current = false;");
     expect(persistHelperBlock).toContain("pendingBackendSchemesPayloadRef.current = normalizedSchemesPayload");
     expect(schemePersistBlock).toContain("persistSchemesPayloadToStorageAndBackend(normalizedSchemesPayload)");
-    expect(saveBlock).toContain("project: currentProject(),");
+    expect(saveBlock).toContain("const projectSnapshot = currentProject();");
+    expect(saveBlock).toContain("project: projectSnapshot,");
+    expect(saveBlock).toContain("upsertSavedProjectInScheme(fallbackSchemes, resolvedSchemeId, record)");
     expect(saveBlock).toContain("setSchemes(nextSchemes);");
     expect(saveBlock).toContain("persistSchemesPayloadToStorageAndBackend(serializeSchemesForStorage(nextSchemes));");
     expect(saveBlock).not.toContain("updateProjectInSchemes(");
@@ -6555,6 +6971,9 @@ describe("graph inspector panel", () => {
     expect(initialStateBlock).toContain("const refreshRecovery = readRefreshRecoveryProject();");
     expect(initialStateBlock).toContain("draft: refreshRecovery ?? savedProjectDraft ?? readDraftProject()");
     expect(preferBlock).not.toContain("recoveredFromRefresh");
+    expect(preferBlock).not.toContain("latestSavedSchemesTimestamp");
+    expect(preferBlock).toContain("if (options.backendSchemes.length === 0)");
+    expect(preferBlock).toContain("return false;");
     expect(backendLoadBlock).not.toContain("recoveredFromRefresh:");
     expect(source).not.toContain("startupRecoveredFromRefreshRef");
   });
@@ -6596,6 +7015,40 @@ describe("graph inspector panel", () => {
     expect(source).not.toContain("window.localStorage.setItem(REFRESH_RECOVERY_STORAGE_KEY");
   });
 
+  test("persists the active model pointer by scheme path and model name instead of ids", async () => {
+    const source = await readAppSource();
+    const pointerTypeStart = source.indexOf("type ActiveProjectPointer =");
+    const pointerTypeEnd = source.indexOf("type RefreshRecoveryProjectState", pointerTypeStart);
+    const pointerTypeBlock = source.slice(pointerTypeStart, pointerTypeEnd);
+    const readPointerStart = source.indexOf("function readActiveProjectPointer");
+    const readPointerEnd = source.indexOf("function draftProjectFromSavedSchemes", readPointerStart);
+    const readPointerBlock = source.slice(readPointerStart, readPointerEnd);
+    const savePointerStart = source.indexOf("const saveActiveProjectPointer =");
+    const savePointerEnd = source.indexOf("const setActiveLayer", savePointerStart);
+    const savePointerBlock = source.slice(savePointerStart, savePointerEnd);
+    const activePointerEffectStart = source.indexOf("useEffect(() => {\n    const activePointerPayload");
+    const activePointerEffectEnd = source.indexOf("useEffect(() => {\n    setExpandedSchemeIds", activePointerEffectStart);
+    const activePointerEffectBlock = source.slice(activePointerEffectStart, activePointerEffectEnd);
+
+    expect(source).not.toContain("activeProjectId");
+    expect(source).not.toContain("activeSchemeId");
+    expect(pointerTypeBlock).toContain("activeProjectName: string;");
+    expect(pointerTypeBlock).toContain("activeSchemePath: string[];");
+    expect(pointerTypeBlock).not.toContain("activeProjectKey");
+    expect(pointerTypeBlock).not.toContain("activeSchemeKey");
+    expect(readPointerBlock).toContain("activeProjectName");
+    expect(readPointerBlock).toContain("activeSchemePath");
+    expect(readPointerBlock).not.toContain("parsed.activeProjectKey");
+    expect(readPointerBlock).not.toContain("parsed.activeSchemeKey");
+    expect(source).toContain("function activeProjectPointerPayload(");
+    expect(savePointerBlock).toContain("const pointerPayload = activeProjectPointerPayload(schemes, draftProjectId, draftSchemeId);");
+    expect(savePointerBlock).toContain("window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, JSON.stringify(pointerPayload ?? {}));");
+    expect(activePointerEffectBlock).toContain("const activePointerPayload = activeProjectPointerPayload(schemes, activeProjectKey, activeSchemeKey);");
+    expect(activePointerEffectBlock).toContain("JSON.stringify(activePointerPayload ?? {})");
+    expect(savePointerBlock).not.toContain("activeProjectKey: draftProjectId");
+    expect(activePointerEffectBlock).not.toContain("JSON.stringify({ activeProjectKey, activeSchemeKey })");
+  });
+
   test("keeps model record and refresh recovery snapshots stable across viewport-only renders", async () => {
     const source = await readAppSource();
     const recordStart = source.indexOf("const currentModelRecord = useMemo<SavedProjectRecord>(() =>");
@@ -6617,6 +7070,44 @@ describe("graph inspector panel", () => {
     expect(recordBlock).not.toContain("canvasVisibleViewBox");
     expect(recoveryBlock).not.toContain("viewBox");
     expect(recoveryBlock).not.toContain("canvasVisibleViewBox");
+  });
+
+  test("normalizes duplicate model names from backend data before rendering and saving", async () => {
+    const source = await readAppSource();
+    const serverSource = await readServerSource();
+    const normalizerStart = source.indexOf("function normalizeSavedSchemeIndexes");
+    const normalizerEnd = source.indexOf("function readStoredSchemesPayload", normalizerStart);
+    const normalizerBlock = source.slice(normalizerStart, normalizerEnd);
+    const backendSerializerStart = source.indexOf("function normalizeSchemesForBackendRuntime");
+    const backendSerializerEnd = source.indexOf("function normalizeSchemesForBackend", backendSerializerStart + 1);
+    const backendSerializerBlock = source.slice(backendSerializerStart, backendSerializerEnd);
+    const saveStart = source.indexOf("const saveCurrentProject =");
+    const saveEnd = source.indexOf("const renameProjectRecord", saveStart);
+    const saveBlock = source.slice(saveStart, saveEnd);
+    const serverNormalizeStart = serverSource.indexOf("function normalizeSchemesForStorage");
+    const serverNormalizeEnd = serverSource.indexOf("function inferESection", serverNormalizeStart);
+    const serverNormalizeBlock = serverSource.slice(serverNormalizeStart, serverNormalizeEnd);
+    const serverGetStart = serverSource.indexOf("[\"GET /api/schemes\"");
+    const serverGetEnd = serverSource.indexOf("[\"PUT /api/schemes\"", serverGetStart);
+    const serverGetBlock = serverSource.slice(serverGetStart, serverGetEnd);
+
+    expect(source).toContain("normalizeSavedProjectRecordNames");
+    expect(source).toContain("savedProjectRecordNameKey");
+    expect(source).toContain("function findProjectRecordByNameInScheme");
+    expect(normalizerBlock).toContain("normalizeSavedProjectRecordNames(scheme.projects.map(normalizeSavedProjectIndexes))");
+    expect(normalizerBlock).toContain("scheme.children.map(normalizeSavedSchemeIndexes)");
+    expect(backendSerializerBlock).toContain("projects: normalizeSavedProjectRecordNames(");
+    expect(backendSerializerBlock).toContain("children: Array.isArray(scheme.children) ? normalizeSchemesForBackendRuntime(scheme.children) : []");
+    expect(saveBlock).toContain("upsertSavedProjectInScheme(schemes, ownerScheme.id, record)");
+    expect(saveBlock).toContain("const recoveredRecord = findProjectRecordByNameInScheme(targetScheme, projectName);");
+    expect(saveBlock).toContain("setActiveProjectKey(savedRecord.id);");
+    expect(saveBlock).toContain("saveActiveProjectPointer(savedRecord.id, resolvedSchemeId);");
+    expect(saveBlock).not.toContain("projects: scheme.projects.map((project) => (project.id === targetId ? record : project))");
+    expect(serverSource).toContain("normalizeSchemeProjectRecordNamesForStorage");
+    expect(serverSource).toContain("function storageProjectNameKey");
+    expect(serverNormalizeBlock).toContain("normalizeSchemeProjectRecordNamesForStorage(");
+    expect(serverNormalizeBlock).toContain("children: Array.isArray(scheme.children) ? normalizeSchemesForStorage(scheme.children) : []");
+    expect(serverGetBlock).toContain("normalizeSchemesForStorage(await readSchemes())");
   });
 
   test("defers expensive background page routing until after first-screen rendering", async () => {
@@ -6647,7 +7138,8 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("fetchBackendDeviceLibrary");
     expect(source).toContain("saveBackendDeviceLibraryPayload");
-    expect(source).toContain('fetch("/api/device-library")');
+    expect(source).toContain("fetchBackendJson<BackendDeviceLibraryResponse>");
+    expect(source).toContain('"/api/device-library"');
     expect(source).toContain("backendDeviceLibraryLoadedRef");
     expect(source).toContain("lastPersistedDeviceLibraryPayloadRef");
     expect(source).toContain("CUSTOM_DEVICE_LIBRARY_STORAGE_KEY");
@@ -6659,7 +7151,8 @@ describe("graph inspector panel", () => {
     expect(serverSource).toContain('const deviceLibraryPath = join(deviceLibraryDataDir, "library.json");');
     expect(serverSource).toContain("readDeviceLibraryConfig");
     expect(serverSource).toContain("writeDeviceLibraryConfig");
-    expect(serverSource).toContain('url.pathname === "/api/device-library"');
+    expect(serverSource).toContain("[\"GET /api/device-library\"");
+    expect(serverSource).toContain("[\"PUT /api/device-library\"");
   });
 
   test("keeps backend scheme persistence helpers self contained", async () => {
@@ -6674,9 +7167,20 @@ describe("graph inspector panel", () => {
     const electricalTopologyEnd = serverSource.indexOf("function terminalNodeNumber", electricalTopologyStart);
     const electricalTopologyBlock = serverSource.slice(electricalTopologyStart, electricalTopologyEnd);
     const writeSchemesStart = serverSource.indexOf("async function writeSchemes");
-    const writeSchemesEnd = serverSource.indexOf("async function ensureSettingsStore", writeSchemesStart);
+    const writeSchemesEnd = serverSource.indexOf("function normalizeColorRecord", writeSchemesStart);
     const writeSchemesBlock = serverSource.slice(writeSchemesStart, writeSchemesEnd);
+    const writeSchemeFilesStart = serverSource.indexOf("async function writeSchemeFiles");
+    const writeSchemeFilesEnd = serverSource.indexOf("function publicAsset", writeSchemeFilesStart);
+    const writeSchemeFilesBlock = serverSource.slice(writeSchemeFilesStart, writeSchemeFilesEnd);
+    const routeHandlersStart = serverSource.indexOf("const exactRouteHandlers = new Map([");
+    const routeHandlersEnd = serverSource.indexOf("const server = createServer", routeHandlersStart);
+    const routeHandlersBlock = serverSource.slice(routeHandlersStart, routeHandlersEnd);
 
+    expect(serverSource).toContain("const accessControlHeaders = {");
+    expect(serverSource).toContain("async function readJsonBody");
+    expect(serverSource).toContain("async function readJsonStoreFile");
+    expect(serverSource).toContain("async function writeJsonStoreFile");
+    expect(serverSource).toContain("function imageCountsByFolder");
     expect(serverSource).toContain("function isStaticKind(kind)");
     expect(inferBlock).toContain("isStaticKind(kind)");
     expect(inferBlock).not.toContain("isStaticNode(kind)");
@@ -6686,8 +7190,65 @@ describe("graph inspector panel", () => {
     expect(topologyBlock).toContain("const group = groups[terminal.type];");
     expect(topologyBlock).toContain("if (!group) continue;");
     expect(topologyBlock).not.toContain("groups[terminal.type].get");
-    expect(writeSchemesBlock.indexOf("await writeSchemeFiles(schemes);")).toBeLessThan(
-      writeSchemesBlock.indexOf("await writeTextIfChanged(schemeManifestPath")
-    );
+    expect(writeSchemesBlock).toContain("await writeSchemeFiles(schemes);");
+    expect(writeSchemesBlock).toContain("await removeLegacySchemeManifest();");
+    expect(writeSchemesBlock).not.toContain("writeJsonStoreFile(schemeDataDir");
+    expect(writeSchemeFilesBlock).toContain("const writeTasks = [];");
+    expect(writeSchemeFilesBlock).toContain("writeTasks.push(");
+    expect(writeSchemeFilesBlock).toContain("await Promise.all(writeTasks);");
+    expect(routeHandlersBlock).toContain("[\"GET /api/images\"");
+    expect(routeHandlersBlock).toContain("[\"GET /api/image-folders\"");
+    expect(routeHandlersBlock).toContain("const counts = imageCountsByFolder(manifest);");
+    expect(routeHandlersBlock).not.toContain("manifest.filter((item) => (item.folderId || \"root\") === folder.id).length");
+    expect(routeHandlersBlock).toContain("dynamicRouteHandlers");
+    expect(serverSource).not.toContain("url.pathname ===");
+  });
+
+  test("stores backend scheme files by visible scheme and model names without hidden id suffixes", async () => {
+    const serverSource = await readServerSource();
+    const readSchemesStart = serverSource.indexOf("async function readSchemes");
+    const readSchemesEnd = serverSource.indexOf("async function writeSchemes", readSchemesStart);
+    const readSchemesBlock = serverSource.slice(readSchemesStart, readSchemesEnd);
+    const writeSchemesStart = serverSource.indexOf("async function writeSchemes");
+    const writeSchemesEnd = serverSource.indexOf("function normalizeColorRecord", writeSchemesStart);
+    const writeSchemesBlock = serverSource.slice(writeSchemesStart, writeSchemesEnd);
+    const normalizerStart = serverSource.indexOf("function normalizeSchemesForStorage");
+    const normalizerEnd = serverSource.indexOf("function inferESection", normalizerStart);
+    const normalizerBlock = serverSource.slice(normalizerStart, normalizerEnd);
+    const writeSchemeFilesStart = serverSource.indexOf("async function writeSchemeFiles");
+    const writeSchemeFilesEnd = serverSource.indexOf("function publicAsset", writeSchemeFilesStart);
+    const writeSchemeFilesBlock = serverSource.slice(writeSchemeFilesStart, writeSchemeFilesEnd);
+    const safeFilePartStart = serverSource.indexOf("function safeFilePart");
+    const safeFilePartEnd = serverSource.indexOf("function normalizeProjectForStorage", safeFilePartStart);
+    const safeFilePartBlock = serverSource.slice(safeFilePartStart, safeFilePartEnd);
+    const uniqueNameStart = serverSource.indexOf("function uniqueRecordNameForFilePartStorage");
+    const uniqueNameEnd = serverSource.indexOf("function normalizeSchemeProjectRecordNamesForStorage", uniqueNameStart);
+    const uniqueNameBlock = serverSource.slice(uniqueNameStart, uniqueNameEnd);
+
+    expect(serverSource).not.toContain("schemeManifestPath");
+    expect(serverSource).toContain("async function readSchemesFromFiles");
+    expect(readSchemesBlock).toContain("return readSchemesFromFiles()");
+    expect(writeSchemesBlock).not.toContain("writeJsonStoreFile(schemeDataDir");
+    expect(writeSchemesBlock).toContain("await removeLegacySchemeManifest()");
+    expect(serverSource).toContain("function uniqueRecordNameForFilePartStorage");
+    expect(serverSource).toContain("const maxFilePartLength = 80;");
+    expect(normalizerBlock).toContain("normalizeSchemeRecordNamesForStorage(schemes)");
+    expect(normalizerBlock).toContain("normalizeSchemeProjectRecordNamesForStorage(");
+    expect(serverSource).toContain("const { id: _schemeRuntimeId");
+    expect(serverSource).toContain("const { id: _projectRuntimeId");
+    expect(writeSchemeFilesBlock).toContain("const writeSchemeTree = async (scheme, parentDir) =>");
+    expect(writeSchemeFilesBlock).toContain('const schemeDir = join(parentDir, safeFilePart(scheme.name, "方案"));');
+    expect(writeSchemeFilesBlock).toContain('const baseName = safeFilePart(record.name, "模型");');
+    expect(writeSchemeFilesBlock).toContain("for (const childScheme of scheme.children ?? [])");
+    expect(writeSchemeFilesBlock).toContain("await writeSchemeTree(childScheme, schemeDir);");
+    expect(safeFilePartBlock).toContain(".slice(0, maxFilePartLength)");
+    expect(uniqueNameBlock).toContain("const baseLimit = Math.max(1, maxFilePartLength - suffix.length);");
+    expect(uniqueNameBlock).toContain("candidate = `${visibleBase}${suffix}`;");
+    expect(writeSchemeFilesBlock).not.toContain('"scheme.json"');
+    expect(writeSchemeFilesBlock).not.toContain("__${scheme.id}");
+    expect(writeSchemeFilesBlock).not.toContain("__${record.id}");
+    expect(writeSchemeFilesBlock).not.toContain("__project");
+    expect(writeSchemeFilesBlock).not.toContain("__scheme");
+    expect(safeFilePartBlock).not.toContain(".replace(/\\s+/g");
   });
 });

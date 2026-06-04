@@ -184,7 +184,8 @@ describe("SVG export", () => {
     expect(svg).toContain('class="export-node-geometry" transform="rotate(90) scale(-1.5 2)"');
     expect(svg).toContain('class="export-node-upright-content" transform="scale(1.5 2)"');
     expect(svg).toMatch(/class="export-terminal ac" transform="translate\([\d.]+ 0\) scale\(-0\.6666666666666666 0\.5\)"/);
-    expect(svg).toContain('matrix(0 -0.75 -1.33333 0 0 0)');
+    expect(svg).toContain('matrix(0 -0.86603 -1.1547 0 0 0)');
+    expect(svg).not.toContain('matrix(0 -0.75 -1.33333 0 0 0)');
     expect(svg).toContain(">AC</text>");
   });
 

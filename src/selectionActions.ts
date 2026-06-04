@@ -1,6 +1,7 @@
 import {
   type AlignDirection,
   type AlignMode,
+  calculateNodeBodyBounds,
   calculateNodeVisualBounds,
   resetDeviceIndexesForPaste,
   type CanvasBounds,
@@ -62,6 +63,7 @@ export type CanvasLayoutUnit = {
   nodeIds: string[];
   edgeIds: string[];
   bounds: SelectionRect;
+  layoutBounds: SelectionRect;
 };
 
 export const AUTO_ALIGN_DEFAULT_THRESHOLD_PX = 50;
@@ -89,6 +91,10 @@ function nodeSelectionBounds(node: ModelNode): SelectionRect {
   return calculateNodeVisualBounds(node);
 }
 
+function nodeLayoutBounds(node: ModelNode): SelectionRect {
+  return calculateNodeBodyBounds(node);
+}
+
 function routeContainedInRect(points: Point[], rect: SelectionRect) {
   return points.length > 0 && points.every((point) => pointInRect(point, rect));
 }
@@ -114,6 +120,39 @@ function uniqueIds(ids: readonly string[]) {
     seen.add(id);
     return true;
   });
+}
+
+export type DisplayLayerAction = "raise" | "lower" | "front" | "back";
+
+export function reorderItemsByDisplayLayer<T extends { id: string }>(
+  items: readonly T[],
+  selectedIds: readonly string[],
+  action: DisplayLayerAction
+): T[] {
+  const selectedIdSet = new Set(uniqueIds(selectedIds));
+  if (selectedIdSet.size === 0 || !items.some((item) => selectedIdSet.has(item.id))) {
+    return items as T[];
+  }
+  const selected = (item: T) => selectedIdSet.has(item.id);
+  let next = Array.from(items);
+  if (action === "front") {
+    next = [...next.filter((item) => !selected(item)), ...next.filter(selected)];
+  } else if (action === "back") {
+    next = [...next.filter(selected), ...next.filter((item) => !selected(item))];
+  } else if (action === "raise") {
+    for (let index = next.length - 2; index >= 0; index -= 1) {
+      if (selected(next[index]) && !selected(next[index + 1])) {
+        [next[index], next[index + 1]] = [next[index + 1], next[index]];
+      }
+    }
+  } else {
+    for (let index = 1; index < next.length; index += 1) {
+      if (selected(next[index]) && !selected(next[index - 1])) {
+        [next[index - 1], next[index]] = [next[index], next[index - 1]];
+      }
+    }
+  }
+  return next.every((item, index) => item === items[index]) ? items as T[] : next;
 }
 
 function groupChildIds(group: ModelGroup) {
@@ -620,9 +659,10 @@ function edgeStoredPoints(edge: Edge): Point[] {
 function boundsForNodesAndEdges(
   nodes: ModelNode[],
   edges: Edge[],
-  routeByEdgeId: ReadonlyMap<string, RoutedEdge> = new Map()
+  routeByEdgeId: ReadonlyMap<string, RoutedEdge> = new Map(),
+  nodeBounds: (node: ModelNode) => SelectionRect = nodeSelectionBounds
 ) {
-  const boxes = nodes.map(nodeSelectionBounds);
+  const boxes = nodes.map(nodeBounds);
   const edgePoints = edges.flatMap((edge) => routeByEdgeId.get(edge.id)?.points ?? edgeStoredPoints(edge));
   if (edgePoints.length > 0) {
     boxes.push({
@@ -687,7 +727,13 @@ export function buildCanvasLayoutUnits(
       groupEdges,
       routeByEdgeId
     );
-    if (!bounds) {
+    const layoutBounds = boundsForNodesAndEdges(
+      groupNodeIds.flatMap((nodeId) => nodesById.get(nodeId) ?? []),
+      groupEdges,
+      routeByEdgeId,
+      nodeLayoutBounds
+    );
+    if (!bounds || !layoutBounds) {
       continue;
     }
     groupNodeIds.forEach((nodeId) => coveredNodeIds.add(nodeId));
@@ -696,7 +742,8 @@ export function buildCanvasLayoutUnits(
       kind: "group",
       nodeIds: groupNodeIds,
       edgeIds: groupEdgeIds,
-      bounds: padSelectionRect(bounds, GROUP_LAYOUT_BOUNDS_PADDING)
+      bounds: padSelectionRect(bounds, GROUP_LAYOUT_BOUNDS_PADDING),
+      layoutBounds: padSelectionRect(layoutBounds, GROUP_LAYOUT_BOUNDS_PADDING)
     });
   }
   for (const nodeId of uniqueIds(selectedNodeIds)) {
@@ -712,16 +759,22 @@ export function buildCanvasLayoutUnits(
       kind: "node",
       nodeIds: [node.id],
       edgeIds: [],
-      bounds: nodeSelectionBounds(node)
+      bounds: nodeSelectionBounds(node),
+      layoutBounds: nodeLayoutBounds(node)
     });
   }
   return units;
 }
 
+function unitLayoutBounds(unit: CanvasLayoutUnit) {
+  return unit.layoutBounds ?? unit.bounds;
+}
+
 function unitCenter(unit: CanvasLayoutUnit, axis: "x" | "y") {
+  const bounds = unitLayoutBounds(unit);
   return axis === "x"
-    ? (unit.bounds.left + unit.bounds.right) / 2
-    : (unit.bounds.top + unit.bounds.bottom) / 2;
+    ? (bounds.left + bounds.right) / 2
+    : (bounds.top + bounds.bottom) / 2;
 }
 
 function moveNodesByUnitDeltas(nodes: ModelNode[], units: readonly CanvasLayoutUnit[], deltas: ReadonlyMap<string, Point>) {
@@ -759,21 +812,22 @@ export function alignNodeLayoutUnits(nodes: ModelNode[], units: readonly CanvasL
   if (direction === "left" || direction === "right" || direction === "top" || direction === "bottom") {
     const alignedCoordinate =
       direction === "left"
-        ? Math.min(...units.map((unit) => unit.bounds.left))
+        ? Math.min(...units.map((unit) => unitLayoutBounds(unit).left))
         : direction === "right"
-          ? Math.max(...units.map((unit) => unit.bounds.right))
+          ? Math.max(...units.map((unit) => unitLayoutBounds(unit).right))
           : direction === "top"
-            ? Math.min(...units.map((unit) => unit.bounds.top))
-            : Math.max(...units.map((unit) => unit.bounds.bottom));
+            ? Math.min(...units.map((unit) => unitLayoutBounds(unit).top))
+            : Math.max(...units.map((unit) => unitLayoutBounds(unit).bottom));
     for (const unit of units) {
+      const bounds = unitLayoutBounds(unit);
       const delta =
         direction === "left"
-          ? { x: alignedCoordinate - unit.bounds.left, y: 0 }
+          ? { x: alignedCoordinate - bounds.left, y: 0 }
           : direction === "right"
-            ? { x: alignedCoordinate - unit.bounds.right, y: 0 }
+            ? { x: alignedCoordinate - bounds.right, y: 0 }
             : direction === "top"
-              ? { x: 0, y: alignedCoordinate - unit.bounds.top }
-              : { x: 0, y: alignedCoordinate - unit.bounds.bottom };
+              ? { x: 0, y: alignedCoordinate - bounds.top }
+              : { x: 0, y: alignedCoordinate - bounds.bottom };
       deltas.set(unit.id, delta);
     }
     return moveNodesByUnitDeltas(nodes, units, deltas);

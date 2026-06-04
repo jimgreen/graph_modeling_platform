@@ -1,4 +1,4 @@
-import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, memo, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, type SetStateAction, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+﻿import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, memo, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, type SetStateAction, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 import {
   AlignEndHorizontal,
@@ -9,7 +9,11 @@ import {
   AlignStartHorizontal,
   AlignStartVertical,
   AlignVerticalDistributeCenter,
+  ArrowDown,
+  ArrowUp,
   Cable,
+  ChevronsDown,
+  ChevronsUp,
   CircleDot,
   Download,
   FileInput,
@@ -86,6 +90,7 @@ import {
   DEFAULT_COLOR_PALETTE,
   describeContainerTerminalAssociations,
   deleteNodesWithConnectedEdges,
+  deleteSavedProjectsFromSchemes,
   deleteSavedScheme,
   deleteSavedProject,
   DEVICE_LIBRARY,
@@ -114,6 +119,12 @@ import {
   getEParamValue,
   getEExportWarnings,
   getTemplateParameterDefinitions,
+  findSavedProjectRecordInSchemes,
+  findSavedSchemeById,
+  findSavedSchemeParentById,
+  flattenSavedProjects,
+  flattenSavedSchemes,
+  hydrateSavedSchemeRuntimeIds,
   getOverlappingTerminalGroups,
   getRouteEndpointNormal,
   getRouteBlockingCandidates,
@@ -129,11 +140,14 @@ import {
   normalizeNodeTerminalsByTemplate,
   normalizeProjectLayers,
   normalizeModelGroups,
+  normalizeSavedProjectRecordNames,
+  savedProjectRecordNameKey,
   normalizeColorPalette,
   normalizeVoltageBaseInput,
   normalizeScaleValue,
   parseStaticDrawPoints,
   serializeProject,
+  stripSavedSchemeRuntimeIds,
   deserializeProject,
   edgeWithSavedRouteGeometry,
   isBusNode,
@@ -148,6 +162,7 @@ import {
   isStaticNode,
   inferESection,
   insertOrthogonalRouteBend,
+  insertChildSavedScheme,
   keyboardMoveStepForViewBox,
   lockProjectEdgeTerminals,
   pointsToOrthogonalPath,
@@ -204,6 +219,9 @@ import {
   mirrorNodes,
   renameSavedScheme,
   renameSavedProject,
+  replaceSavedSchemeById,
+  savedChildSchemeNames,
+  savedSchemeSiblingNames,
   moveOrthogonalRouteSegment,
   terminalRenderLocalPoint,
   terminalStubSegment,
@@ -215,9 +233,11 @@ import {
   tidyOrthogonalRoute,
   topologyCalculationMessage,
   upsertSavedProject,
+  upsertSavedProjectInScheme,
   uniqueRecordName,
   validateContainerTerminalAssociations,
   viewBoxZoomPercent,
+  type PersistedSavedSchemeRecord,
   type SavedSchemeRecord,
   type SavedProjectRecord
 } from "./model";
@@ -264,6 +284,7 @@ import {
   dissolveSelectedCanvasGroups,
   expandSelectionByGroups,
   removeGraphicsFromGroups,
+  reorderItemsByDisplayLayer,
   resolveCanvasDeleteAction,
   resolveCanvasSelection,
   selectedCanvasGroupIds,
@@ -271,7 +292,8 @@ import {
   type CanvasClipboard,
   type CanvasLayoutUnit,
   type SelectionRect,
-  type CanvasSelectionScope
+  type CanvasSelectionScope,
+  type DisplayLayerAction
 } from "./selectionActions";
 import {
   isSidePanelVisible,
@@ -286,6 +308,67 @@ const ReactFlowPreview = ENABLE_REACT_FLOW_PREVIEW ? lazy(() => import("./ReactF
 
 type ToolMode = "select" | "connect" | "static-draw";
 type InteractionMode = "browse" | "edit";
+const INTERACTION_MODE_STORAGE_KEY = "graph-modeling-platform:interaction-mode";
+const CANVAS_GRAPHIC_CONTEXT_MENU_TARGET_SELECTOR = [
+  ".diagram-node",
+  ".lod-node",
+  ".lod-node-layer",
+  ".lod-node-selection-layer",
+  ".connection-group",
+  ".edge-endpoint-handle",
+  ".manual-segment-handle",
+  ".manual-bend-handle",
+  ".transform-handles",
+  ".group-selection-overlay",
+  ".group-selection-hitbox",
+  ".group-selection-outline",
+  ".scale-handle",
+  ".rotate-handle",
+  ".canvas-resize-handles",
+  ".node-device-label",
+  ".node-label-rotate-control",
+  ".terminal-dot",
+  ".canvas-floating-toolbar"
+].join(", ");
+const CANVAS_WHEEL_ZOOM_EXCLUSION_SELECTOR = [
+  ".floating-side-panel",
+  ".side-panel-edge-trigger"
+].join(", ");
+
+function normalizeInteractionMode(value: unknown): InteractionMode {
+  return value === "edit" ? "edit" : "browse";
+}
+
+function isCanvasGraphicContextMenuTarget(target: EventTarget | null) {
+  return target instanceof Element && Boolean(target.closest(CANVAS_GRAPHIC_CONTEXT_MENU_TARGET_SELECTOR));
+}
+
+function isCanvasWheelZoomExcludedTarget(target: EventTarget | null) {
+  return target instanceof Element && Boolean(target.closest(CANVAS_WHEEL_ZOOM_EXCLUSION_SELECTOR));
+}
+
+function readStoredInteractionMode(): InteractionMode {
+  if (typeof window === "undefined") {
+    return "browse";
+  }
+  try {
+    return normalizeInteractionMode(window.localStorage.getItem(INTERACTION_MODE_STORAGE_KEY));
+  } catch {
+    return "browse";
+  }
+}
+
+function writeStoredInteractionMode(mode: InteractionMode) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(INTERACTION_MODE_STORAGE_KEY, mode);
+  } catch {
+    // Ignore storage failures; the visible mode state should still update.
+  }
+}
+
 type StaticButtonVisualState = "hover" | "pressed" | "clicked";
 type StaticButtonPointerSnapshot = {
   nodeId: string;
@@ -296,6 +379,8 @@ type StaticButtonPointerSnapshot = {
 type CanvasWheelZoomEvent = {
   ctrlKey: boolean;
   metaKey: boolean;
+  shiftKey?: boolean;
+  altKey?: boolean;
   deltaY: number;
   clientX: number;
   clientY: number;
@@ -306,6 +391,12 @@ type CanvasWheelZoomEvent = {
 const CANVAS_SELECTION_DRAG_THRESHOLD = 4;
 function hasCanvasSelectionModifier(event: { ctrlKey: boolean; shiftKey: boolean; metaKey?: boolean }) {
   return event.ctrlKey || event.shiftKey || Boolean(event.metaKey);
+}
+function canvasWheelEventHasNoModifier(event: { ctrlKey: boolean; metaKey?: boolean; shiftKey?: boolean; altKey?: boolean }) {
+  return !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey;
+}
+function shouldZoomCanvasFromWheelEvent(event: { ctrlKey: boolean; metaKey?: boolean; shiftKey?: boolean; altKey?: boolean }) {
+  return event.ctrlKey || Boolean(event.metaKey) || canvasWheelEventHasNoModifier(event);
 }
 type StaticDrawingState = {
   kind: DeviceKind;
@@ -643,6 +734,7 @@ type PendingSchemeImportConflict = {
   importedName: string;
   duplicateSchemeId: string;
   duplicateSchemeName: string;
+  targetParentSchemeId?: string;
 } | null;
 type PendingRecordPasteConflict =
   | {
@@ -650,6 +742,7 @@ type PendingRecordPasteConflict =
       sourceScheme: SavedSchemeRecord;
       duplicateSchemeId: string;
       duplicateName: string;
+      targetParentSchemeId?: string;
     }
   | {
       kind: "project";
@@ -926,8 +1019,8 @@ type UndoGraphSnapshotPatchPlan =
   | { mode: "patch"; nodeIds: string[]; edgeIds: string[]; dirtyEdgeIds: Set<string> };
 type DraftProjectState = {
   projectName: string;
-  activeProjectId: string;
-  activeSchemeId: string;
+  activeProjectKey: string;
+  activeSchemeKey: string;
   layers?: ModelLayer[];
   activeLayerId?: string;
   canvasWidth?: number;
@@ -948,8 +1041,8 @@ type DraftProjectState = {
   edges: Edge[];
 };
 type ActiveProjectPointer = {
-  activeProjectId: string;
-  activeSchemeId: string;
+  activeProjectName: string;
+  activeSchemePath: string[];
 };
 type RefreshRecoveryProjectState = DraftProjectState & {
   dirty: true;
@@ -1113,6 +1206,8 @@ const CONNECTION_HIT_SCREEN_TOLERANCE = 18;
 const CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT = 24;
 const CANVAS_MULTI_NODE_DRAG_PREVIEW_EDGE_LIMIT = 32;
 const CANVAS_MULTI_NODE_DRAG_SNAP_NODE_LIMIT = 96;
+const SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE = 8;
+const SMART_ALIGNMENT_GUIDE_PADDING = 36;
 const CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT = 24;
 const CANVAS_SINGLE_NODE_DRAG_SNAP_EDGE_LIMIT = 48;
 const CANVAS_SINGLE_NODE_DRAG_SYNC_EDGE_LIMIT = 12;
@@ -1133,6 +1228,69 @@ const DEFAULT_POWER_BASE_VALUE = 100;
 const EMPTY_TOPOLOGY: Topology = { nodes: {}, connectedComponents: [] };
 const INITIAL_TOPOLOGY_STATUS: TopologyRunStatus = { state: "idle", message: "未拓扑" };
 const E_SECTION_OPTIONS = Object.keys(E_SECTION_COLUMNS);
+const COMPONENT_TYPE_LABELS: Record<string, string> = {
+  StaticTextSymbol: "静态文本",
+  StaticMediaSymbol: "静态媒体",
+  StaticBasicShape: "基础图形",
+  StaticFlowNode: "流程节点",
+  StaticButton: "按钮图元",
+  StaticContainerSymbol: "容器图元",
+  StaticConnectorSymbol: "连接图元",
+  StaticAnnotationSymbol: "标注图元",
+  ACRealBs: "交流母线",
+  DCRealBs: "直流母线",
+  ACNode: "交流节点",
+  DCNode: "直流节点",
+  ACBranch: "交流支路",
+  DCBranch: "直流支路",
+  ACLoad: "交流负荷",
+  DCLoad: "直流负荷",
+  ACGenerator: "交流电源",
+  DCGenerator: "直流电源",
+  ACShuntCompensator: "交流无功补偿",
+  ACZeroBranch: "交流零阻支路",
+  DCZeroBranch: "直流零阻支路",
+  ACSwitch: "交流开关",
+  DCSwitch: "直流开关",
+  ACBreak: "交流断路器",
+  DCBreak: "直流断路器",
+  GroundDisconnector: "接地刀闸",
+  ACTransformer: "双绕组变压器",
+  ACTransfomer3: "三绕组变压器",
+  DCDCConverter: "直流变换器",
+  DCACConverter: "交直流变换器",
+  ACACConverter: "交流变换器",
+  HydroSource: "氢源",
+  HydroLoad: "氢负荷",
+  HydroPipe: "输氢管道",
+  HydroCompressor: "氢压缩机",
+  HydroPressRegulator: "氢调压器",
+  HydroStopValve: "氢截止阀",
+  HydroBus: "氢母线",
+  HydroStorage: "储氢",
+  AcE2Hydro: "交流电制氢",
+  DcE2Hydro: "直流电制氢",
+  Hydro2AcE: "氢转交流电",
+  Hydro2DcE: "氢转直流电",
+  HeatSource: "单端热源",
+  HeatSource2: "双端热源",
+  HeatLoad: "单端热负荷",
+  HeatLoad2: "双端热负荷",
+  HeatPipe: "输热管道",
+  HeatStopValve: "热截止阀",
+  HeatBus: "热母线",
+  HeatStorage: "储热",
+  HeatBoiler: "单端锅炉",
+  HeatBoiler2: "双端锅炉",
+  AcElec2Heat: "交流电制热",
+  DcElec2Heat: "直流电制热",
+  AcElec2Heat2: "交流电制热双端",
+  DcElec2Heat2: "直流电制热双端",
+  HeatExchanger: "双端换热器",
+  HeatExchanger3: "三端换热器",
+  HeatExchanger4: "四端换热器",
+  HeatPump: "热泵"
+};
 const SCALE_HANDLE_CONFIGS: ScaleHandleConfig[] = [
   { id: "north-west", kind: "scale-both", xDirection: -1, yDirection: -1, className: "diagonal-nwse" },
   { id: "north", kind: "scale-y", xDirection: 0, yDirection: -1, className: "vertical" },
@@ -1470,6 +1628,13 @@ type CanvasPanningState = {
   horizontalScrollMode: boolean;
   verticalScrollMode: boolean;
 } | null;
+type SmartAlignmentGuide = {
+  id: string;
+  orientation: "vertical" | "horizontal";
+  position: number;
+  start: number;
+  end: number;
+};
 type ConnectionRedrawScope = "selected" | "viewport" | "all";
 const CONNECTION_REDRAW_SCOPE_LABELS: Record<ConnectionRedrawScope, string> = {
   selected: "选中连接线",
@@ -2070,6 +2235,77 @@ function mergeRenderViewportBounds(first: RenderViewportBounds, second: RenderVi
     bottom: Math.max(first.bottom, second.bottom)
   };
 }
+type SmartAlignmentAxis = "x" | "y";
+type SmartAlignmentAnchor = {
+  key: "start" | "center" | "end";
+  value: number;
+  priority: number;
+};
+type SmartAlignmentAxisCandidate = {
+  id: string;
+  bounds: RenderViewportBounds;
+};
+type SmartAlignmentAxisSnap = {
+  adjustment: number;
+  distance: number;
+  priority: number;
+  guide: SmartAlignmentGuide;
+};
+const smartAlignmentAxisAnchors = (bounds: RenderViewportBounds, axis: SmartAlignmentAxis): SmartAlignmentAnchor[] => axis === "x"
+  ? [
+      { key: "start", value: bounds.left, priority: 1 },
+      { key: "center", value: (bounds.left + bounds.right) / 2, priority: 0 },
+      { key: "end", value: bounds.right, priority: 1 }
+    ]
+  : [
+      { key: "start", value: bounds.top, priority: 1 },
+      { key: "center", value: (bounds.top + bounds.bottom) / 2, priority: 0 },
+      { key: "end", value: bounds.bottom, priority: 1 }
+    ];
+function bestSmartAlignmentAxisSnap(
+  axis: SmartAlignmentAxis,
+  draggedBounds: RenderViewportBounds,
+  candidates: SmartAlignmentAxisCandidate[],
+  threshold: number
+): SmartAlignmentAxisSnap | null {
+  let best: SmartAlignmentAxisSnap | null = null;
+  const draggedAnchors = smartAlignmentAxisAnchors(draggedBounds, axis);
+  for (const candidate of candidates) {
+    const candidateAnchors = smartAlignmentAxisAnchors(candidate.bounds, axis);
+    for (const draggedAnchor of draggedAnchors) {
+      for (const candidateAnchor of candidateAnchors) {
+        const adjustment = candidateAnchor.value - draggedAnchor.value;
+        const distance = Math.abs(adjustment);
+        const priority = draggedAnchor.priority + candidateAnchor.priority;
+        if (distance > threshold) {
+          continue;
+        }
+        if (best && (distance > best.distance || (distance === best.distance && priority >= best.priority))) {
+          continue;
+        }
+        const position = candidateAnchor.value;
+        const guide =
+          axis === "x"
+            ? {
+                id: `vertical:${candidate.id}:${candidateAnchor.key}:${draggedAnchor.key}`,
+                orientation: "vertical" as const,
+                position,
+                start: Math.min(draggedBounds.top, candidate.bounds.top) - SMART_ALIGNMENT_GUIDE_PADDING,
+                end: Math.max(draggedBounds.bottom, candidate.bounds.bottom) + SMART_ALIGNMENT_GUIDE_PADDING
+              }
+            : {
+                id: `horizontal:${candidate.id}:${candidateAnchor.key}:${draggedAnchor.key}`,
+                orientation: "horizontal" as const,
+                position,
+                start: Math.min(draggedBounds.left, candidate.bounds.left) - SMART_ALIGNMENT_GUIDE_PADDING,
+                end: Math.max(draggedBounds.right, candidate.bounds.right) + SMART_ALIGNMENT_GUIDE_PADDING
+              };
+        best = { adjustment, distance, priority, guide };
+      }
+    }
+  }
+  return best;
+}
 const nodeRenderBounds = (node: ModelNode): RenderViewportBounds => {
   const labelAwareBounds = calculateNodeVisualBounds(node, 24);
   const halfDiagonal = Math.hypot(node.size.width * getNodeScaleX(node), node.size.height * getNodeScaleY(node)) / 2 + 24;
@@ -2369,6 +2605,22 @@ const STATIC_BUTTON_COMMAND_LABELS: Record<string, string> = {
   resetZoom: "重置缩放"
 };
 
+const PARAM_OPTION_LABELS: Record<string, Record<string, string>> = {
+  buttonEnabled: { "1": "启用", "0": "禁用" },
+  buttonActionType: STATIC_BUTTON_ACTION_LABELS,
+  buttonCommand: STATIC_BUTTON_COMMAND_LABELS,
+  shadowEnabled: { "1": "启用", "0": "禁用" },
+  status: { "1": "闭合", "0": "打开" },
+  run_stat: { "1": "投运", "0": "停运" },
+  strokeStyle: { solid: "实线", dashed: "虚线", dotted: "点线" },
+  fontStyle: { normal: "常规", italic: "斜体" },
+  textDecoration: { none: "无", underline: "下划线" },
+  textAlign: { left: "左对齐", center: "居中", right: "右对齐" },
+  verticalAlign: { top: "顶部", middle: "居中", bottom: "底部" },
+  markerStart: { none: "无", arrow: "箭头", dot: "圆点" },
+  markerEnd: { none: "无", arrow: "箭头", dot: "圆点" }
+};
+
 const parseStaticButtonTargetLayerValues = (value?: string) => {
   const text = value?.trim();
   if (!text) {
@@ -2466,7 +2718,12 @@ function normalizeSavedSchemeIndexes(scheme: SavedSchemeRecord): SavedSchemeReco
   return {
     ...scheme,
     name: normalizeLegacyPowerSystemLabel(scheme.name),
-    projects: Array.isArray(scheme.projects) ? scheme.projects.map(normalizeSavedProjectIndexes) : []
+    projects: Array.isArray(scheme.projects)
+      ? normalizeSavedProjectRecordNames(scheme.projects.map(normalizeSavedProjectIndexes))
+      : [],
+    children: Array.isArray(scheme.children)
+      ? scheme.children.map(normalizeSavedSchemeIndexes)
+      : []
   };
 }
 
@@ -2483,13 +2740,15 @@ function readSavedSchemes(raw = readStoredSchemesPayload()): SavedSchemeRecord[]
     if (raw) {
       const parsed = JSON.parse(raw) as SavedSchemeRecord[];
       if (Array.isArray(parsed)) {
-        return parsed.map(normalizeSavedSchemeIndexes);
+        return hydrateSavedSchemeRuntimeIds(parsed.map(normalizeSavedSchemeIndexes));
       }
     }
     const legacyProjects = readSavedProjects();
-    return legacyProjects.length > 0 ? [createSavedScheme("默认方案", legacyProjects)] : [createSavedScheme("默认方案")];
+    return hydrateSavedSchemeRuntimeIds(
+      legacyProjects.length > 0 ? [createSavedScheme("默认方案", legacyProjects)] : [createSavedScheme("默认方案")]
+    );
   } catch {
-    return [createSavedScheme("默认方案")];
+    return hydrateSavedSchemeRuntimeIds([createSavedScheme("默认方案")]);
   }
 }
 
@@ -2509,8 +2768,8 @@ function normalizeStoredDraftProject(parsed: DraftProjectState): DraftProjectSta
       nodes: parsed.nodes.map(normalizeNodeTerminalsByTemplate),
       edges: parsed.edges
     }),
-    activeProjectId: parsed.activeProjectId,
-    activeSchemeId: parsed.activeSchemeId,
+    activeProjectKey: parsed.activeProjectKey,
+    activeSchemeKey: parsed.activeSchemeKey,
     canvasWidth: parsed.canvasWidth,
     canvasHeight: parsed.canvasHeight,
     allowAutoExpandCanvas: parsed.allowAutoExpandCanvas,
@@ -2547,38 +2806,110 @@ function readActiveProjectPointer(): ActiveProjectPointer | null {
       return null;
     }
     const parsed = JSON.parse(raw) as ActiveProjectPointer;
-    if (typeof parsed.activeProjectId !== "string" || typeof parsed.activeSchemeId !== "string") {
+    const activeProjectName = typeof parsed.activeProjectName === "string" ? parsed.activeProjectName : "";
+    const activeSchemePath = Array.isArray(parsed.activeSchemePath)
+      ? parsed.activeSchemePath.filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+      : [];
+    if (!activeProjectName) {
       return null;
     }
     return {
-      activeProjectId: parsed.activeProjectId,
-      activeSchemeId: parsed.activeSchemeId
+      activeProjectName,
+      activeSchemePath
     };
   } catch {
     return null;
   }
 }
 
+function savedSchemePathForId(
+  schemes: SavedSchemeRecord[],
+  schemeId: string,
+  parentPath: string[] = []
+): string[] | null {
+  for (const scheme of schemes) {
+    const path = [...parentPath, scheme.name];
+    if (scheme.id === schemeId) {
+      return path;
+    }
+    const childPath = savedSchemePathForId(scheme.children ?? [], schemeId, path);
+    if (childPath) {
+      return childPath;
+    }
+  }
+  return null;
+}
+
+function findSavedSchemeByPath(
+  schemes: SavedSchemeRecord[],
+  schemePath: string[]
+): SavedSchemeRecord | undefined {
+  if (schemePath.length === 0) {
+    return undefined;
+  }
+  const [head, ...tail] = schemePath;
+  const scheme = schemes.find((item) => item.name.trim() === head.trim());
+  if (!scheme || tail.length === 0) {
+    return scheme;
+  }
+  return findSavedSchemeByPath(scheme.children ?? [], tail);
+}
+
+function findSavedProjectByActivePointer(
+  schemes: SavedSchemeRecord[],
+  pointer: ActiveProjectPointer | null
+): { scheme: SavedSchemeRecord; project: SavedProjectRecord } | null {
+  const projectName = pointer?.activeProjectName?.trim();
+  if (!projectName) {
+    return null;
+  }
+  const projectNameKey = savedProjectRecordNameKey(projectName);
+  const activeSchemePath = pointer?.activeSchemePath ?? [];
+  const preferredScheme = findSavedSchemeByPath(schemes, activeSchemePath);
+  const searchSchemes = preferredScheme
+    ? [preferredScheme, ...flattenSavedSchemes(schemes).filter((scheme) => scheme.id !== preferredScheme.id)]
+    : flattenSavedSchemes(schemes);
+  for (const scheme of searchSchemes) {
+    const project = scheme.projects.find((item) => savedProjectRecordNameKey(item.name) === projectNameKey);
+    if (project) {
+      return { scheme, project };
+    }
+  }
+  return null;
+}
+
+function activeProjectPointerPayload(
+  schemes: SavedSchemeRecord[],
+  projectKey: string,
+  schemeKey: string
+): ActiveProjectPointer | null {
+  if (!projectKey) {
+    return null;
+  }
+  const found = findSavedProjectRecordInSchemes(schemes, projectKey, schemeKey);
+  if (!found) {
+    return null;
+  }
+  return {
+    activeProjectName: found.project.name,
+    activeSchemePath: savedSchemePathForId(schemes, found.scheme.id) ?? [found.scheme.name]
+  };
+}
+
 function draftProjectFromSavedSchemes(
   schemes: SavedSchemeRecord[],
   pointer: ActiveProjectPointer | null
 ): DraftProjectState | null {
-  if (!pointer?.activeProjectId) {
+  if (!pointer?.activeProjectName) {
     return null;
   }
-  const preferredScheme = schemes.find((scheme) => scheme.id === pointer.activeSchemeId);
-  const searchSchemes = preferredScheme
-    ? [preferredScheme, ...schemes.filter((scheme) => scheme.id !== preferredScheme.id)]
-    : schemes;
-  for (const scheme of searchSchemes) {
-    const record = scheme.projects.find((project) => project.id === pointer.activeProjectId);
-    if (!record) {
-      continue;
-    }
+  const found = findSavedProjectByActivePointer(schemes, pointer);
+  if (found) {
+    const { scheme, project: record } = found;
     return normalizeStoredDraftProject({
       projectName: record.project.name ?? record.name,
-      activeProjectId: record.id,
-      activeSchemeId: scheme.id,
+      activeProjectKey: record.id,
+      activeSchemeKey: scheme.id,
       canvasWidth: record.project.canvasWidth,
       canvasHeight: record.project.canvasHeight,
       allowAutoExpandCanvas: record.project.allowAutoExpandCanvas,
@@ -2674,69 +3005,65 @@ function pointsToPreviewPath(points: Point[]) {
   return points.map((point, index) => `${index === 0 ? "M" : "L"} ${Math.round(point.x)} ${Math.round(point.y)}`).join(" ");
 }
 
-async function fetchBackendImageFolders(): Promise<ImageFolder[]> {
-  const response = await fetch("/api/image-folders");
+const backendJsonHeaders = { "content-type": "application/json" };
+
+async function backendErrorMessage(response: Response, fallbackMessage: string) {
+  const payload = await response.json().catch(() => ({}));
+  return typeof payload.error === "string" ? payload.error : fallbackMessage;
+}
+
+async function fetchBackendJson<T>(url: string, fallbackMessage: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init);
   if (!response.ok) {
-    throw new Error("读取后台图片文件夹失败。");
+    throw new Error(await backendErrorMessage(response, fallbackMessage));
   }
-  return (await response.json()) as ImageFolder[];
+  return (await response.json()) as T;
+}
+
+function backendJsonRequest(method: "POST" | "PUT", body: string): RequestInit {
+  return {
+    method,
+    headers: backendJsonHeaders,
+    body
+  };
+}
+
+async function fetchBackendImageFolders(): Promise<ImageFolder[]> {
+  return fetchBackendJson<ImageFolder[]>("/api/image-folders", "读取后台图片文件夹失败。");
 }
 
 async function createBackendImageFolder(name: string): Promise<ImageFolder> {
-  const response = await fetch("/api/image-folders", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name })
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(typeof payload.error === "string" ? payload.error : "新建图片文件夹失败。");
-  }
-  return (await response.json()) as ImageFolder;
+  return fetchBackendJson<ImageFolder>(
+    "/api/image-folders",
+    "新建图片文件夹失败。",
+    backendJsonRequest("POST", JSON.stringify({ name }))
+  );
 }
 
 async function renameBackendImageFolder(folderId: string, name: string): Promise<ImageFolder> {
-  const response = await fetch(`/api/image-folders/${encodeURIComponent(folderId)}`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name })
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(typeof payload.error === "string" ? payload.error : "重命名图片文件夹失败。");
-  }
-  return (await response.json()) as ImageFolder;
+  return fetchBackendJson<ImageFolder>(
+    `/api/image-folders/${encodeURIComponent(folderId)}`,
+    "重命名图片文件夹失败。",
+    backendJsonRequest("PUT", JSON.stringify({ name }))
+  );
 }
 
 async function deleteBackendImageFolder(folderId: string): Promise<void> {
-  const response = await fetch(`/api/image-folders/${encodeURIComponent(folderId)}`, {
+  await fetchBackendJson<{ ok?: boolean }>(`/api/image-folders/${encodeURIComponent(folderId)}`, "删除图片文件夹失败。", {
     method: "DELETE"
   });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(typeof payload.error === "string" ? payload.error : "删除图片文件夹失败。");
-  }
 }
 
 async function fetchBackendImages(folderId = "root"): Promise<ImageAsset[]> {
-  const response = await fetch(`/api/images?folderId=${encodeURIComponent(folderId)}`);
-  if (!response.ok) {
-    throw new Error("读取后台图片列表失败。");
-  }
-  return (await response.json()) as ImageAsset[];
+  return fetchBackendJson<ImageAsset[]>(`/api/images?folderId=${encodeURIComponent(folderId)}`, "读取后台图片列表失败。");
 }
 
 async function uploadBackendImage(fileName: string, dataUrl: string, folderId = "root"): Promise<ImageAsset> {
-  const response = await fetch("/api/images", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name: fileName, dataUrl, folderId })
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(typeof payload.error === "string" ? payload.error : "上传图片到后台失败。");
-  }
-  return (await response.json()) as ImageAsset;
+  return fetchBackendJson<ImageAsset>(
+    "/api/images",
+    "上传图片到后台失败。",
+    backendJsonRequest("POST", JSON.stringify({ name: fileName, dataUrl, folderId }))
+  );
 }
 
 function normalizeProjectForBackend(project: ProjectFile): ProjectFile {
@@ -2782,34 +3109,25 @@ function normalizeProjectForBackend(project: ProjectFile): ProjectFile {
   };
 }
 
-function normalizeSchemesForBackend(schemes: SavedSchemeRecord[]): SavedSchemeRecord[] {
+function normalizeSchemesForBackendRuntime(schemes: SavedSchemeRecord[]): SavedSchemeRecord[] {
   return schemes.map((scheme) => ({
     ...scheme,
-    projects: scheme.projects.map((project) => ({
-      ...project,
-      project: normalizeProjectForBackend(project.project)
-    }))
+    projects: normalizeSavedProjectRecordNames(
+      scheme.projects.map((project) => ({
+        ...project,
+        project: normalizeProjectForBackend(project.project)
+      }))
+    ),
+    children: Array.isArray(scheme.children) ? normalizeSchemesForBackendRuntime(scheme.children) : []
   }));
+}
+
+function normalizeSchemesForBackend(schemes: SavedSchemeRecord[]): PersistedSavedSchemeRecord[] {
+  return stripSavedSchemeRuntimeIds(normalizeSchemesForBackendRuntime(schemes));
 }
 
 function serializeSchemesForStorage(schemes: SavedSchemeRecord[]) {
   return JSON.stringify(normalizeSchemesForBackend(schemes));
-}
-
-function savedRecordTimestamp(value: string | undefined) {
-  const timestamp = Date.parse(value ?? "");
-  return Number.isFinite(timestamp) ? timestamp : 0;
-}
-
-function latestSavedSchemesTimestamp(schemes: SavedSchemeRecord[]) {
-  let latest = 0;
-  for (const scheme of schemes) {
-    latest = Math.max(latest, savedRecordTimestamp(scheme.updatedAt));
-    for (const project of scheme.projects) {
-      latest = Math.max(latest, savedRecordTimestamp(project.updatedAt));
-    }
-  }
-  return latest;
 }
 
 function shouldPreferLocalSchemesOverBackend(options: {
@@ -2826,7 +3144,7 @@ function shouldPreferLocalSchemesOverBackend(options: {
   if (options.backendSchemes.length === 0) {
     return true;
   }
-  return latestSavedSchemesTimestamp(options.localSchemes) > latestSavedSchemesTimestamp(options.backendSchemes);
+  return false;
 }
 
 function findProjectRecordInSchemes(
@@ -2834,20 +3152,18 @@ function findProjectRecordInSchemes(
   projectId: string,
   preferredSchemeId = ""
 ): { scheme: SavedSchemeRecord; project: SavedProjectRecord } | null {
-  if (!projectId) {
+  return findSavedProjectRecordInSchemes(schemes, projectId, preferredSchemeId);
+}
+
+function findProjectRecordByNameInScheme(
+  scheme: SavedSchemeRecord | undefined,
+  projectName: string
+): SavedProjectRecord | null {
+  if (!scheme) {
     return null;
   }
-  const preferredScheme = preferredSchemeId ? schemes.find((scheme) => scheme.id === preferredSchemeId) : undefined;
-  const searchSchemes = preferredScheme
-    ? [preferredScheme, ...schemes.filter((scheme) => scheme.id !== preferredScheme.id)]
-    : schemes;
-  for (const scheme of searchSchemes) {
-    const project = scheme.projects.find((item) => item.id === projectId);
-    if (project) {
-      return { scheme, project };
-    }
-  }
-  return null;
+  const key = savedProjectRecordNameKey(projectName);
+  return scheme.projects.find((project) => savedProjectRecordNameKey(project.name) === key) ?? null;
 }
 
 const clonePoint = (point: Point): Point => ({ x: point.x, y: point.y });
@@ -2906,13 +3222,9 @@ function clampCanvasDimension(value: number, min: number, max: number, fallback:
 }
 
 async function fetchBackendSchemes(): Promise<SavedSchemeRecord[]> {
-  const response = await fetch("/api/schemes");
-  if (!response.ok) {
-    throw new Error("读取后台方案/模型失败。");
-  }
-  const payload = (await response.json()) as BackendSchemesResponse | SavedSchemeRecord[];
+  const payload = await fetchBackendJson<BackendSchemesResponse | SavedSchemeRecord[]>("/api/schemes", "读取后台方案/模型失败。");
   const schemes = Array.isArray(payload) ? payload : Array.isArray(payload.schemes) ? payload.schemes : [];
-  return schemes.map(normalizeSavedSchemeIndexes);
+  return hydrateSavedSchemeRuntimeIds(schemes.map(normalizeSavedSchemeIndexes));
 }
 
 async function saveBackendSchemes(schemes: SavedSchemeRecord[]): Promise<void> {
@@ -2920,15 +3232,11 @@ async function saveBackendSchemes(schemes: SavedSchemeRecord[]): Promise<void> {
 }
 
 async function saveBackendSchemesPayload(normalizedSchemesPayload: string): Promise<void> {
-  const response = await fetch("/api/schemes", {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: `{"schemes":${normalizedSchemesPayload}}`
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(typeof payload.error === "string" ? payload.error : "保存方案/模型到后台失败。");
-  }
+  await fetchBackendJson<{ ok?: boolean }>(
+    "/api/schemes",
+    "保存方案/模型到后台失败。",
+    backendJsonRequest("PUT", `{"schemes":${normalizedSchemesPayload}}`)
+  );
 }
 
 function normalizeColorDisplayMode(value?: string): ColorDisplayMode {
@@ -2943,11 +3251,7 @@ function serializeColorConfigForStorage(mode: ColorDisplayMode, palette: ColorPa
 }
 
 async function fetchBackendColorConfig(): Promise<{ colorDisplayMode: ColorDisplayMode; colorPalette: ColorPalette; exists: boolean }> {
-  const response = await fetch("/api/color-config");
-  if (!response.ok) {
-    throw new Error("读取后台配色配置失败。");
-  }
-  const payload = (await response.json()) as BackendColorConfigResponse;
+  const payload = await fetchBackendJson<BackendColorConfigResponse>("/api/color-config", "读取后台配色配置失败。");
   return {
     colorDisplayMode: normalizeColorDisplayMode(payload.colorDisplayMode),
     colorPalette: normalizeColorPalette(payload.colorPalette),
@@ -2956,15 +3260,11 @@ async function fetchBackendColorConfig(): Promise<{ colorDisplayMode: ColorDispl
 }
 
 async function saveBackendColorConfigPayload(normalizedColorConfigPayload: string): Promise<void> {
-  const response = await fetch("/api/color-config", {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: normalizedColorConfigPayload
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(typeof payload.error === "string" ? payload.error : "保存配色配置到后台失败。");
-  }
+  await fetchBackendJson<{ ok?: boolean }>(
+    "/api/color-config",
+    "保存配色配置到后台失败。",
+    backendJsonRequest("PUT", normalizedColorConfigPayload)
+  );
 }
 
 function serializeDeviceLibraryForStorage(payload: DeviceLibraryPersistencePayload) {
@@ -2972,11 +3272,7 @@ function serializeDeviceLibraryForStorage(payload: DeviceLibraryPersistencePaylo
 }
 
 async function fetchBackendDeviceLibrary(): Promise<DeviceLibraryPersistencePayload & { exists: boolean }> {
-  const response = await fetch("/api/device-library");
-  if (!response.ok) {
-    throw new Error("读取后台图元库失败。");
-  }
-  const payload = (await response.json()) as BackendDeviceLibraryResponse;
+  const payload = await fetchBackendJson<BackendDeviceLibraryResponse>("/api/device-library", "读取后台图元库失败。");
   return {
     ...normalizeDeviceLibraryPersistencePayload(payload),
     exists: Boolean(payload.exists)
@@ -2984,15 +3280,11 @@ async function fetchBackendDeviceLibrary(): Promise<DeviceLibraryPersistencePayl
 }
 
 async function saveBackendDeviceLibraryPayload(normalizedDeviceLibraryPayload: string): Promise<void> {
-  const response = await fetch("/api/device-library", {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: normalizedDeviceLibraryPayload
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(typeof payload.error === "string" ? payload.error : "保存图元库到后台失败。");
-  }
+  await fetchBackendJson<{ ok?: boolean }>(
+    "/api/device-library",
+    "保存图元库到后台失败。",
+    backendJsonRequest("PUT", normalizedDeviceLibraryPayload)
+  );
 }
 
 function groupDeviceTemplatesByAttributeLibrary(templates: DeviceTemplate[]): Record<string, DeviceTemplate[]> {
@@ -3032,11 +3324,26 @@ function normalizeLibrarySearchText(value: string) {
 const attributeLibraryComponentTypeKey = (attributeLibraryName: string, sectionName: string) =>
   `${normalizeAttributeLibraryName(attributeLibraryName)}::${sectionName}`;
 
+function componentTypeDisplayParts(sectionName: string) {
+  const english = normalizeComponentTypeName(sectionName);
+  const chinese = COMPONENT_TYPE_LABELS[english] ?? "自定义元件类型";
+  return {
+    chinese,
+    english,
+    title: `${chinese} / ${english}`
+  };
+}
+
+function componentTypeDisplayName(sectionName: string) {
+  const display = componentTypeDisplayParts(sectionName);
+  return display.english ? display.title : display.chinese;
+}
+
 function libraryTemplateMatchesSearch(template: DeviceTemplate, group: string, section: string, needle: string) {
   if (!needle) {
     return true;
   }
-  return [group, section, template.label, template.kind, template.params?.component_type]
+  return [group, section, componentTypeDisplayName(section), template.label, template.kind, template.params?.component_type]
     .filter((value): value is string => typeof value === "string")
     .some((value) => normalizeLibrarySearchText(value).includes(needle));
 }
@@ -3397,52 +3704,36 @@ function normalizeDeviceLibraryPersistencePayload(value: unknown): DeviceLibrary
   };
 }
 
-function readCustomDeviceTemplates(): DeviceTemplate[] {
+function readLocalStorageJson<T>(storageKey: string, emptyJson: string, normalize: (value: unknown) => T, fallback: T): T {
   try {
-    return normalizeCustomDeviceTemplates(JSON.parse(window.localStorage.getItem(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY) ?? "[]"));
+    return normalize(JSON.parse(window.localStorage.getItem(storageKey) ?? emptyJson));
   } catch {
-    return [];
+    return fallback;
   }
+}
+
+function readCustomDeviceTemplates(): DeviceTemplate[] {
+  return readLocalStorageJson(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, "[]", normalizeCustomDeviceTemplates, []);
 }
 
 function readCustomAttributeLibraries(): AttributeLibrary[] {
-  try {
-    return normalizeCustomAttributeLibraries(JSON.parse(window.localStorage.getItem(CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY) ?? "[]"));
-  } catch {
-    return [];
-  }
+  return readLocalStorageJson(CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY, "[]", normalizeCustomAttributeLibraries, []);
 }
 
 function readCustomComponentTypes(): CustomComponentTypeDefinition[] {
-  try {
-    return normalizeCustomComponentTypes(JSON.parse(window.localStorage.getItem(CUSTOM_COMPONENT_TYPES_STORAGE_KEY) ?? "[]"));
-  } catch {
-    return [];
-  }
+  return readLocalStorageJson(CUSTOM_COMPONENT_TYPES_STORAGE_KEY, "[]", normalizeCustomComponentTypes, []);
 }
 
 function readDeviceDefinitionOverrides(): Record<string, DeviceTemplateDefinitionOverride> {
-  try {
-    return normalizeDeviceDefinitionOverrides(JSON.parse(window.localStorage.getItem(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY) ?? "{}"));
-  } catch {
-    return {};
-  }
+  return readLocalStorageJson(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, "{}", normalizeDeviceDefinitionOverrides, {});
 }
 
 function readCustomGraphTemplateTypes(): string[] {
-  try {
-    return normalizeGraphTemplateTypes(JSON.parse(window.localStorage.getItem(CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY) ?? "[]"));
-  } catch {
-    return [];
-  }
+  return readLocalStorageJson(CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, "[]", normalizeGraphTemplateTypes, []);
 }
 
 function readCustomGraphTemplates(): GraphTemplate[] {
-  try {
-    return normalizeGraphTemplates(JSON.parse(window.localStorage.getItem(CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY) ?? "[]"));
-  } catch {
-    return [];
-  }
+  return readLocalStorageJson(CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, "[]", normalizeGraphTemplates, []);
 }
 
 function readLocalDeviceLibraryPersistencePayload(): DeviceLibraryPersistencePayload {
@@ -4120,6 +4411,20 @@ function nodeUprightSelectionOutlineRect(node: ModelNode) {
   };
 }
 
+function nodeSmartAlignmentBounds(
+  node: ModelNode,
+  position: Point = node.position,
+  includeUprightContent = false
+): RenderViewportBounds {
+  const halfExtents = nodeTransformedHalfExtents(node, includeUprightContent);
+  return {
+    left: position.x - halfExtents.halfWidth,
+    right: position.x + halfExtents.halfWidth,
+    top: position.y - halfExtents.halfHeight,
+    bottom: position.y + halfExtents.halfHeight
+  };
+}
+
 function nodeVisualInteractionBounds(
   node: ModelNode,
   position: Point = node.position,
@@ -4142,8 +4447,9 @@ function nodeVisualInteractionBounds(
 function nodeCounterTransformMatrix(node: ModelNode, preserveScale = true) {
   const scaleX = getNodeScaleX(node) || 1;
   const scaleY = getNodeScaleY(node) || 1;
-  const desiredScaleX = preserveScale ? Math.abs(scaleX) || 1 : 1;
-  const desiredScaleY = preserveScale ? Math.abs(scaleY) || 1 : 1;
+  const desiredScale = preserveScale ? Math.sqrt((Math.abs(scaleX) || 1) * (Math.abs(scaleY) || 1)) : 1;
+  const desiredScaleX = desiredScale;
+  const desiredScaleY = desiredScale;
   const radians = (node.rotation * Math.PI) / 180;
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
@@ -6255,6 +6561,7 @@ export function App() {
   const modelImportInputRef = useRef<HTMLInputElement | null>(null);
   const modelImportTargetSchemeIdRef = useRef<string>("");
   const schemeImportInputRef = useRef<HTMLInputElement | null>(null);
+  const schemeImportParentSchemeIdRef = useRef<string>("");
   const canvasFrameRef = useRef<HTMLDivElement | null>(null);
   const canvasInteractionRef = useRef(false);
   const canvasSelectionShortcutActiveRef = useRef(false);
@@ -6270,10 +6577,7 @@ export function App() {
   const schemesChangedBeforeBackendLoadRef = useRef(false);
   const startupHadStoredSchemesRef = useRef(Boolean(initialStoredSchemesPayload));
   const latestSchemesRef = useRef<SavedSchemeRecord[]>(initialSavedSchemes);
-  const latestActiveProjectPointerRef = useRef<ActiveProjectPointer>({
-    activeProjectId: initialDraft?.activeProjectId ?? "",
-    activeSchemeId: initialDraft?.activeSchemeId ?? ""
-  });
+  const latestActiveProjectPointerRef = useRef<ActiveProjectPointer | null>(null);
   const backendColorConfigLoadedRef = useRef(false);
   const suppressNextBackendColorSyncRef = useRef(false);
   const lastPersistedColorConfigPayloadRef = useRef<string | null>(null);
@@ -6432,13 +6736,18 @@ export function App() {
     }
     setSchemesState(value);
   };
-  const [activeProjectId, setActiveProjectId] = useState<string>(() => initialDraft?.activeProjectId ?? "");
-  const [activeSchemeId, setActiveSchemeId] = useState<string>(() => initialDraft?.activeSchemeId ?? "");
+  const [activeProjectKey, setActiveProjectKey] = useState<string>(() => initialDraft?.activeProjectKey ?? "");
+  const [activeSchemeKey, setActiveSchemeKey] = useState<string>(() => initialDraft?.activeSchemeKey ?? "");
   const [mode, setMode] = useState<ToolMode>("select");
-  const [interactionMode, setInteractionMode] = useState<InteractionMode>("browse");
+  const [interactionMode, setInteractionMode] = useState<InteractionMode>(() => readStoredInteractionMode());
   const isBrowseMode = interactionMode === "browse";
   const isEditMode = interactionMode === "edit";
   const isReadonlyCanvasMode = isBrowseMode;
+
+  useEffect(() => {
+    writeStoredInteractionMode(interactionMode);
+  }, [interactionMode]);
+
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string>("");
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
@@ -6451,6 +6760,17 @@ export function App() {
   const [staticButtonVisual, setStaticButtonVisual] = useState<{ nodeId: string; state: StaticButtonVisualState } | null>(null);
   const [connectDropReady, setConnectDropReady] = useState(false);
   const [dragging, setDragging] = useState<DraggingState | null>(null);
+  const [smartAlignmentGuides, setSmartAlignmentGuides] = useState<SmartAlignmentGuide[]>([]);
+  const smartAlignmentGuidesRef = useRef<SmartAlignmentGuide[]>([]);
+  const smartAlignmentGuideSignature = (guides: SmartAlignmentGuide[]) =>
+    guides.map((guide) => `${guide.id}:${Math.round(guide.position)}:${Math.round(guide.start)}:${Math.round(guide.end)}`).join("|");
+  const updateSmartAlignmentGuides = (guides: SmartAlignmentGuide[]) => {
+    if (smartAlignmentGuideSignature(smartAlignmentGuidesRef.current) === smartAlignmentGuideSignature(guides)) {
+      return;
+    }
+    smartAlignmentGuidesRef.current = guides;
+    setSmartAlignmentGuides(guides);
+  };
   const [rewiring, setRewiring] = useState<RewiringState>(null);
   const [terminalPress, setTerminalPress] = useState<TerminalPressState>(null);
   const [nodeLabelDrag, setNodeLabelDrag] = useState<NodeLabelDragState>(null);
@@ -6479,6 +6799,31 @@ export function App() {
   const [modifierSelectionPress, setModifierSelectionPressState] = useState<ModifierSelectionPressState>(null);
   const [canvasClipboard, setCanvasClipboard] = useState<CanvasClipboard>(EMPTY_CANVAS_CLIPBOARD);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
+  const canvasGraphicContextMenuHandledRef = useRef(false);
+  const canvasGraphicContextMenuHandledTimerRef = useRef<number | null>(null);
+  const markGraphicContextMenuHandled = () => {
+    canvasGraphicContextMenuHandledRef.current = true;
+    if (canvasGraphicContextMenuHandledTimerRef.current !== null) {
+      window.clearTimeout(canvasGraphicContextMenuHandledTimerRef.current);
+    }
+    canvasGraphicContextMenuHandledTimerRef.current = window.setTimeout(() => {
+      canvasGraphicContextMenuHandledRef.current = false;
+      canvasGraphicContextMenuHandledTimerRef.current = null;
+    }, 0);
+  };
+  const consumeGraphicContextMenuHandled = () => {
+    const handled = canvasGraphicContextMenuHandledRef.current;
+    canvasGraphicContextMenuHandledRef.current = false;
+    if (canvasGraphicContextMenuHandledTimerRef.current !== null) {
+      window.clearTimeout(canvasGraphicContextMenuHandledTimerRef.current);
+      canvasGraphicContextMenuHandledTimerRef.current = null;
+    }
+    return handled;
+  };
+  const openGraphicContextMenu = (menu: NonNullable<ContextMenuState>) => {
+    markGraphicContextMenuHandled();
+    setContextMenu(menu);
+  };
   const [inspectorTab, setInspectorTab] = useState<"model" | "graph" | "device">("graph");
   const [graphInfoView, setGraphInfoView] = useState<"tree" | "selected">("selected");
   const [leftPanelTab, setLeftPanelTab] = useState<"projects" | "library" | "templates">("projects");
@@ -6509,6 +6854,8 @@ export function App() {
   const [containerParamViewId, setContainerParamViewId] = useState("container");
   const [expandedAttributeLibraries, setExpandedAttributeLibraries] = useState<AttributeLibrary[]>([...DEFAULT_ATTRIBUTE_LIBRARIES]);
   const [expandedAttributeLibraryComponentTypes, setExpandedAttributeLibraryComponentTypes] = useState<string[]>([]);
+  const [collapsedExpandedModeAttributeLibraries, setCollapsedExpandedModeAttributeLibraries] = useState<AttributeLibrary[]>([]);
+  const [collapsedExpandedModeComponentTypes, setCollapsedExpandedModeComponentTypes] = useState<string[]>([]);
   const [hoveredAttributeLibrary, setHoveredAttributeLibrary] = useState<AttributeLibrary | "">("");
   const [hoveredAttributeLibraryComponentType, setHoveredAttributeLibraryComponentType] = useState("");
   const [libraryFlyoutPositions, setLibraryFlyoutPositions] = useState<Record<string, { top: number; left: number }>>({});
@@ -6583,7 +6930,7 @@ export function App() {
   const [selectedSchemeIds, setSelectedSchemeIds] = useState<string[]>([]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(() => initialProjectSources.recoveredFromRefresh);
   const [expandedSchemeIds, setExpandedSchemeIds] = useState<string[]>(() => {
-    const preferredSchemeId = initialDraft?.activeSchemeId || schemes[0]?.id;
+    const preferredSchemeId = initialDraft?.activeSchemeKey || schemes[0]?.id;
     return preferredSchemeId ? [preferredSchemeId] : [];
   });
   const [hoveredSchemeId, setHoveredSchemeId] = useState("");
@@ -7663,20 +8010,26 @@ export function App() {
     const voltage = baseVoltages.find((item) => !existingKeys.has(`ac:${item}`)) ?? `${voltageColorRows.length + 1}`;
     setVoltageColorRows([...voltageColorRows, { type: "ac", voltage, color: DEFAULT_COLOR_PALETTE.voltage[`ac:${voltage}`] ?? "#2563eb" }]);
   };
-  const projects = useMemo(() => schemes.flatMap((scheme) => scheme.projects), [schemes]);
+  const projects = useMemo(() => flattenSavedProjects(schemes), [schemes]);
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const projectSearchNeedle = normalizeLibrarySearchText(projectSearchQuery);
   const filteredProjectSchemes = useMemo<SavedSchemeRecord[]>(() => {
     if (!projectSearchNeedle) {
       return schemes;
     }
-    return schemes.flatMap((scheme) => {
+    const filterScheme = (scheme: SavedSchemeRecord): SavedSchemeRecord | null => {
       const schemeMatches = normalizeLibrarySearchText(scheme.name).includes(projectSearchNeedle);
       const filteredProjects = schemeMatches
         ? scheme.projects
         : scheme.projects.filter((project) => normalizeLibrarySearchText(project.name).includes(projectSearchNeedle));
-      return schemeMatches || filteredProjects.length > 0 ? [{ ...scheme, projects: filteredProjects }] : [];
-    });
+      const filteredChildren = schemeMatches
+        ? (scheme.children ?? [])
+        : (scheme.children ?? []).map(filterScheme).filter((child): child is SavedSchemeRecord => Boolean(child));
+      return schemeMatches || filteredProjects.length > 0 || filteredChildren.length > 0
+        ? { ...scheme, projects: filteredProjects, children: filteredChildren }
+        : null;
+    };
+    return schemes.map(filterScheme).filter((scheme): scheme is SavedSchemeRecord => Boolean(scheme));
   }, [projectSearchNeedle, schemes]);
   const baseLibraryTemplates = useMemo<DeviceTemplate[]>(() => [...DEVICE_LIBRARY, ...customDeviceTemplates], [customDeviceTemplates]);
   const libraryTemplates = useMemo<DeviceTemplate[]>(
@@ -7889,9 +8242,10 @@ export function App() {
       if (!target) {
         return;
       }
-      const libraryPanel = libraryScrollRef.current?.closest(".library-panel");
+      const targetElement = target instanceof Element ? target : target.parentElement;
       const flyoutElement = document.querySelector(".flyout-library-group");
-      if (libraryPanel?.contains(target) || flyoutElement?.contains(target)) {
+      const activeTypeSection = targetElement?.closest(".attribute-library-component-type-section.flyout-mode");
+      if (flyoutElement?.contains(target) || activeTypeSection) {
         return;
       }
       hideLibraryFlyout();
@@ -7899,8 +8253,26 @@ export function App() {
     window.addEventListener("pointerdown", hideLibraryFlyoutOnOutsidePointerDown, true);
     return () => window.removeEventListener("pointerdown", hideLibraryFlyoutOnOutsidePointerDown, true);
   }, [componentLibraryDisplayMode, hoveredAttributeLibraryComponentType, leftPanelTab]);
+  const toggleAttributeLibrary = (group: AttributeLibrary) => {
+    if (componentLibraryDisplayMode === "expanded") {
+      setCollapsedExpandedModeAttributeLibraries((current) =>
+        current.includes(group) ? current.filter((item) => item !== group) : [...current, group]
+      );
+      return;
+    }
+    setExpandedAttributeLibraries((current) =>
+      current.includes(group) ? current.filter((item) => item !== group) : [...current, group]
+    );
+  };
+
   const toggleAttributeLibraryComponentType = (attributeLibraryName: string, sectionName: string) => {
     const key = attributeLibraryComponentTypeKey(attributeLibraryName, sectionName);
+    if (componentLibraryDisplayMode === "expanded") {
+      setCollapsedExpandedModeComponentTypes((current) =>
+        current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
+      );
+      return;
+    }
     setExpandedAttributeLibraryComponentTypes((current) =>
       current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
     );
@@ -7991,17 +8363,17 @@ export function App() {
   const selectedContainerParameterView =
     selectedContainerParameterViews.find((view) => view.id === containerParamViewId) ?? selectedContainerParameterViews[0];
   const selectedProjectRecord = projectById.get(selectedProjectId);
-  const activeProjectRecord = projectById.get(activeProjectId);
+  const activeProjectRecord = projectById.get(activeProjectKey);
   const saveRequired = hasUnsavedChanges;
   const canExportCurrentModel = !saveRequired;
   const activeModelName = projectName || activeProjectRecord?.name || "未命名模型";
   const activeSchemeRecord =
-    schemes.find((scheme) => scheme.id === activeSchemeId) ??
-    schemes.find((scheme) => scheme.projects.some((project) => project.id === activeProjectId));
+    findSavedSchemeById(schemes, activeSchemeKey) ??
+    findProjectRecordInSchemes(schemes, activeProjectKey)?.scheme;
   const activeModelPathName = `${activeSchemeRecord?.name ?? "未选择方案"} / ${activeModelName}`;
   const currentModelRecord = useMemo<SavedProjectRecord>(() => (
     selectedProjectRecord ?? activeProjectRecord ?? {
-      id: activeProjectId || "current-project",
+      id: activeProjectKey || "current-project",
       name: projectName,
       updatedAt: new Date().toISOString(),
       project: {
@@ -8029,7 +8401,7 @@ export function App() {
     }
   ), [
     activeLayerId,
-    activeProjectId,
+    activeProjectKey,
     activeProjectRecord,
     allowAutoExpandCanvas,
     backgroundLayerIds,
@@ -8052,13 +8424,13 @@ export function App() {
     voltageUnit
   ]);
   saveRequiredRef.current = saveRequired;
-  latestActiveProjectPointerRef.current = { activeProjectId, activeSchemeId };
+  latestActiveProjectPointerRef.current = activeProjectPointerPayload(schemes, activeProjectKey, activeSchemeKey);
   const refreshRecoveryProjectSnapshot = useMemo<RefreshRecoveryProjectState>(() => ({
     dirty: true,
     savedAt: new Date().toISOString(),
     projectName,
-    activeProjectId,
-    activeSchemeId,
+    activeProjectKey,
+    activeSchemeKey,
     canvasWidth,
     canvasHeight,
     allowAutoExpandCanvas,
@@ -8079,8 +8451,8 @@ export function App() {
     edges
   }), [
     activeLayerId,
-    activeProjectId,
-    activeSchemeId,
+    activeProjectKey,
+    activeSchemeKey,
     allowAutoExpandCanvas,
     backgroundLayerIds,
     backgroundProjectId,
@@ -8101,16 +8473,16 @@ export function App() {
     voltageUnit
   ]);
   refreshRecoveryProjectRef.current = refreshRecoveryProjectSnapshot;
-  const selectedSchemeRecord = schemes.find((scheme) => scheme.id === selectedSchemeId);
+  const selectedSchemeRecord = findSavedSchemeById(schemes, selectedSchemeId);
   const backgroundProjectOptions = useMemo(
-    () => schemes.flatMap((scheme) =>
+    () => flattenSavedSchemes(schemes).flatMap((scheme) =>
       scheme.projects
-        .filter((project) => project.id !== activeProjectId)
+        .filter((project) => project.id !== activeProjectKey)
         .map((project) => ({ scheme, project }))
     ),
-    [activeProjectId, schemes]
+    [activeProjectKey, schemes]
   );
-  const backgroundProjectRecord = backgroundProjectId && backgroundProjectId !== activeProjectId
+  const backgroundProjectRecord = backgroundProjectId && backgroundProjectId !== activeProjectKey
     ? projectById.get(backgroundProjectId)
     : undefined;
   const backgroundLayerOptions = useMemo(
@@ -10578,7 +10950,7 @@ export function App() {
           setSchemesState(backendSchemes);
           if (!saveRequiredRef.current) {
             const activePointer = latestActiveProjectPointerRef.current;
-            const backendActiveProject = findProjectRecordInSchemes(backendSchemes, activePointer.activeProjectId, activePointer.activeSchemeId);
+            const backendActiveProject = findSavedProjectByActivePointer(backendSchemes, activePointer);
             if (backendActiveProject) {
               loadSavedProject(backendActiveProject.project, backendActiveProject.scheme.id);
             }
@@ -10590,7 +10962,7 @@ export function App() {
               return retained;
             }
             const preferredSchemeId =
-              (activeSchemeId && backendSchemeIds.has(activeSchemeId) ? activeSchemeId : "") ||
+              (activeSchemeKey && backendSchemeIds.has(activeSchemeKey) ? activeSchemeKey : "") ||
               backendSchemes[0]?.id ||
               "";
             return preferredSchemeId ? [preferredSchemeId] : [];
@@ -10799,32 +11171,38 @@ export function App() {
   }, [activeImageFolderId, imageTarget]);
 
   useEffect(() => {
+    const activePointerPayload = activeProjectPointerPayload(schemes, activeProjectKey, activeSchemeKey);
     try {
-      window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, JSON.stringify({ activeProjectId, activeSchemeId }));
+      window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, JSON.stringify(activePointerPayload ?? {}));
     } catch {
       // 忽略浏览器缓存写入失败，避免影响画布编辑。
     }
-  }, [activeProjectId, activeSchemeId]);
+  }, [activeProjectKey, activeSchemeKey, schemes]);
 
   useEffect(() => {
     setExpandedSchemeIds((current) => {
-      const schemeIds = new Set(schemes.map((scheme) => scheme.id));
+      const flatSchemes = flattenSavedSchemes(schemes);
+      const schemeIds = new Set(flatSchemes.map((scheme) => scheme.id));
       const retained = current.filter((id) => schemeIds.has(id));
       if (retained.length > 0) {
         return retained;
       }
       const preferredSchemeId =
-        (activeSchemeId && schemeIds.has(activeSchemeId) ? activeSchemeId : "") ||
+        (activeSchemeKey && schemeIds.has(activeSchemeKey) ? activeSchemeKey : "") ||
         (selectedSchemeId && schemeIds.has(selectedSchemeId) ? selectedSchemeId : "") ||
-        schemes[0]?.id ||
+        flatSchemes[0]?.id ||
         "";
       return preferredSchemeId ? [preferredSchemeId] : [];
     });
-  }, [activeSchemeId, schemes, selectedSchemeId]);
+  }, [activeSchemeKey, schemes, selectedSchemeId]);
 
   useEffect(() => {
     const preventPageWheelZoom = (event: WheelEvent) => {
-      if (event.ctrlKey || event.metaKey) {
+      if (isCanvasWheelZoomExcludedTarget(event.target)) {
+        return;
+      }
+      const cursorInsideCanvas = clientPointInsideRenderedCanvas(event.clientX, event.clientY);
+      if (cursorInsideCanvas && shouldZoomCanvasFromWheelEvent(event)) {
         zoomCanvasFromWheelEvent(event);
       }
     };
@@ -10837,15 +11215,15 @@ export function App() {
       if (event.button !== 0) {
         return;
       }
-      const target = event.target as HTMLElement | null;
-      if (target?.closest(".context-menu")) {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".context-menu")) {
         return;
       }
       setContextMenu(null);
       setProjectMenu(null);
     };
-    window.addEventListener("pointerdown", closeContextMenus);
-    return () => window.removeEventListener("pointerdown", closeContextMenus);
+    window.addEventListener("pointerdown", closeContextMenus, { capture: true });
+    return () => window.removeEventListener("pointerdown", closeContextMenus, { capture: true });
   }, []);
 
   useEffect(() => {
@@ -10978,10 +11356,12 @@ export function App() {
 
   useEffect(() => {
     if (imperativeMultiNodeDragActiveRef.current && !dragging) {
+      updateSmartAlignmentGuides([]);
       return;
     }
     draggingRef.current = dragging;
     if (!dragging) {
+      updateSmartAlignmentGuides([]);
       resetMultiNodeDragOverlayTransform();
       dragUndoCapturedRef.current = false;
     } else if (isMultiNodeMoveState(dragging)) {
@@ -11508,6 +11888,11 @@ export function App() {
         }
         return;
       }
+      if (event.key === "Escape" && hoveredAttributeLibraryComponentType) {
+        event.preventDefault();
+        hideLibraryFlyout();
+        return;
+      }
       if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
         return;
       }
@@ -11615,7 +12000,7 @@ export function App() {
             const project = projectById.get(selectedProjectId);
             if (project) deleteProjectRecord(project);
           } else if (selectedSchemeId) {
-            const scheme = schemes.find((item) => item.id === selectedSchemeId);
+            const scheme = findSavedSchemeById(schemes, selectedSchemeId);
             if (scheme) deleteSchemeRecord(scheme);
           }
         }
@@ -11644,7 +12029,13 @@ export function App() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, canvasBounds, canvasClipboard, canvasSelectionScope, deviceIndexCounters, displaySelectedEdgeIds, displaySelectedNodeIds, edges, hasUnsavedChanges, isEditMode, libraryPlacement, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, staticDrawing, topologyErrors, viewBox]);
+  }, [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, canvasBounds, canvasClipboard, canvasSelectionScope, deviceIndexCounters, displaySelectedEdgeIds, displaySelectedNodeIds, edges, hasUnsavedChanges, hoveredAttributeLibraryComponentType, isEditMode, libraryPlacement, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, staticDrawing, topologyErrors, viewBox]);
+
+  useEffect(() => {
+    if (isBrowseMode && leftPanelTab !== "projects") {
+      setLeftPanelTab("projects");
+    }
+  }, [isBrowseMode, leftPanelTab]);
 
   useEffect(() => {
     if (leftPanelTab !== "projects") {
@@ -11823,6 +12214,38 @@ export function App() {
       setHasUnsavedChanges(true);
     }
   }, [activeLayerId, allowAutoExpandCanvas, backgroundLayerIds, backgroundProjectId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, groups, layers, nodes, powerBaseValue, powerUnit, projectName, voltageUnit]);
+
+  const canAdjustSelectedDisplayLayer = isEditMode && activeSelectedNodeIds.length > 0;
+
+  const adjustSelectedDisplayLayer = (action: DisplayLayerAction) => {
+    if (!requireEditMode("调整显示层级")) {
+      return;
+    }
+    if (activeSelectedNodeIds.length === 0) {
+      writeOperationLog("当前没有被选中元件。");
+      return;
+    }
+    const nextNodes = reorderItemsByDisplayLayer(nodes, activeSelectedNodeIds, action);
+    if (nextNodes === nodes) {
+      writeOperationLog("选中元件显示层级未变化。");
+      setContextMenu(null);
+      return;
+    }
+    const actionLabels: Record<DisplayLayerAction, string> = {
+      raise: "提升显示层级",
+      lower: "降低显示层级",
+      front: "顶层显示",
+      back: "底层显示"
+    };
+    pushUndoSnapshot();
+    setNodes(nextNodes);
+    setCanvasSelectionScope("group");
+    setSelectedNodeIds(activeSelectedNodeIds);
+    setSelectedEdgeIds(activeSelectedEdgeIds);
+    setSelectedEdgeId(activeSelectedEdgeIds[0] ?? "");
+    setContextMenu(null);
+    writeOperationLog(`${actionLabels[action]}：${activeSelectedNodeIds.length} 个元件`);
+  };
 
   const clearTransientSelectionState = () => {
     setSelectedEdgeId("");
@@ -12028,10 +12451,11 @@ export function App() {
     lastRawCanvasPointerRef.current = rawPointer;
     lastCanvasPointerRef.current = pointer;
     updateMouseStatus(pointer);
+    setContextMenu(null);
+    setProjectMenu(null);
     setConnectSource(null);
     resetConnectPreviewState();
     setRewiring(null);
-    setContextMenu(null);
     setMarquee(null);
     lastEdgePointerClickRef.current = null;
     staticButtonPointerRef.current = null;
@@ -13269,7 +13693,9 @@ export function App() {
   };
 
   const shouldFinalizeMovedNodeEdgesSynchronously = (movedNodeIds: string[], candidateEdges: Edge[]) =>
-    movedNodeIds.length > 1 && candidateEdges.length <= CANVAS_SINGLE_NODE_DRAG_SYNC_EDGE_LIMIT;
+    movedNodeIds.length > 0 &&
+    candidateEdges.length <= CANVAS_SINGLE_NODE_DRAG_SYNC_EDGE_LIMIT &&
+    (movedNodeIds.length > 1 || candidateEdges.length === 0);
 
   const shouldDeferSingleNodeTerminalReconciliation = (movedNodeIds: string[], candidateEdges: Edge[]) =>
     movedNodeIds.length === 1 &&
@@ -14619,6 +15045,7 @@ export function App() {
   };
   const startDraggingState = (nextDragging: DraggingState) => {
     draggingRef.current = nextDragging;
+    updateSmartAlignmentGuides([]);
     resetMultiNodeDragOverlayTransform();
     const simplifiedMarkup = isMultiNodeMoveState(nextDragging) ? nextDragging.overlayPreview?.simplifiedMarkup : "";
     if (simplifiedMarkup && showImperativeMultiNodeDragOverlay(simplifiedMarkup)) {
@@ -14966,6 +15393,81 @@ export function App() {
       : canvasBounds;
   };
 
+  const dragBoundsForSmartAlignment = (dragState: DraggingState, delta: Point): RenderViewportBounds | null => {
+    let bounds: RenderViewportBounds | null = null;
+    for (const nodeId of dragState.nodeIds) {
+      const node = nodeById.get(nodeId);
+      const originalPosition = dragState.originalPositions[nodeId];
+      if (!node || !originalPosition) {
+        continue;
+      }
+      const movedPosition = {
+        x: originalPosition.x + delta.x,
+        y: originalPosition.y + delta.y
+      };
+      const nodeBounds = nodeSmartAlignmentBounds(node, movedPosition, nodeHasUprightBoundsContent(node));
+      bounds = bounds ? mergeRenderViewportBounds(bounds, nodeBounds) : nodeBounds;
+    }
+    return bounds;
+  };
+
+  const computeSmartAlignmentSnap = (dragState: DraggingState, movementDelta: Point, axisLocked: boolean) => {
+    if (axisLocked || !isEditMode || dragState.nodeIds.length === 0) {
+      return { delta: movementDelta, guides: [] as SmartAlignmentGuide[] };
+    }
+    const draggedBounds = dragBoundsForSmartAlignment(dragState, movementDelta);
+    if (!draggedBounds) {
+      return { delta: movementDelta, guides: [] as SmartAlignmentGuide[] };
+    }
+    const visible = canvasVisibleViewBoxRef.current.width > 0 && canvasVisibleViewBoxRef.current.height > 0
+      ? canvasVisibleViewBoxRef.current
+      : viewBoxRef.current;
+    const snapThreshold = SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE / Math.max(0.2, Math.max(canvasScrollScaleRef.current.x, canvasScrollScaleRef.current.y));
+    const verticalSearchBounds: RenderViewportBounds = {
+      left: draggedBounds.left - snapThreshold,
+      right: draggedBounds.right + snapThreshold,
+      top: visible.y,
+      bottom: visible.y + visible.height
+    };
+    const horizontalSearchBounds: RenderViewportBounds = {
+      left: visible.x,
+      right: visible.x + visible.width,
+      top: draggedBounds.top - snapThreshold,
+      bottom: draggedBounds.bottom + snapThreshold
+    };
+    const draggedNodeIds = new Set(dragState.nodeIds);
+    const candidatesById = new Map<string, SmartAlignmentAxisCandidate>();
+    const includeCandidate = (candidate: ModelNode) => {
+      if (draggedNodeIds.has(candidate.id) || candidatesById.has(candidate.id)) {
+        return;
+      }
+      candidatesById.set(candidate.id, {
+        id: candidate.id,
+        bounds: nodeSmartAlignmentBounds(candidate, candidate.position, nodeHasUprightBoundsContent(candidate))
+      });
+    };
+    for (const candidate of queryNodeSpatialIndex(visibleNodeSpatialIndex, verticalSearchBounds)) {
+      includeCandidate(candidate);
+    }
+    for (const candidate of queryNodeSpatialIndex(visibleNodeSpatialIndex, horizontalSearchBounds)) {
+      includeCandidate(candidate);
+    }
+    const candidates = Array.from(candidatesById.values());
+    if (candidates.length === 0) {
+      return { delta: movementDelta, guides: [] as SmartAlignmentGuide[] };
+    }
+    const xSnap = bestSmartAlignmentAxisSnap("x", draggedBounds, candidates, snapThreshold);
+    const ySnap = bestSmartAlignmentAxisSnap("y", draggedBounds, candidates, snapThreshold);
+    const guides = [xSnap?.guide, ySnap?.guide].filter((guide): guide is SmartAlignmentGuide => Boolean(guide));
+    return {
+      delta: {
+        x: movementDelta.x + (xSnap?.adjustment ?? 0),
+        y: movementDelta.y + (ySnap?.adjustment ?? 0)
+      },
+      guides
+    };
+  };
+
   const computeNodeDragPreviewDelta = (
     dragState: DraggingState,
     point: Point,
@@ -14975,7 +15477,9 @@ export function App() {
     const rawDx = point.x - dragState.startPoint.x;
     const rawDy = point.y - dragState.startPoint.y;
     const movementDelta = ctrlKey || shiftKey ? axisLockedDelta(rawDx, rawDy) : { x: rawDx, y: rawDy };
-    return movementDelta;
+    const smartSnap = computeSmartAlignmentSnap(dragState, movementDelta, ctrlKey || shiftKey);
+    updateSmartAlignmentGuides(smartSnap.guides);
+    return smartSnap.delta;
   };
 
   const computeNodeDragDelta = (
@@ -15245,15 +15749,15 @@ export function App() {
         )
       : synchronousCandidateEdges;
     const adjustedAffectedEdges = mergeAdjustedCandidateEdges(activeDragging.affectedEdges, adjustedSynchronousEdges);
-    const finalizedCandidateEdges = multiNodeMove || !shouldFinalizeMovedNodeEdgesSynchronously(activeDragging.nodeIds, adjustedAffectedEdges)
-      ? adjustedAffectedEdges
-      : finalizeMovedNodeEdgesFast(
+    const finalizedCandidateEdges = shouldFinalizeMovedNodeEdgesSynchronously(activeDragging.nodeIds, adjustedAffectedEdges)
+      ? finalizeMovedNodeEdgesFast(
           nodes,
           nextNodes,
           adjustedAffectedEdges,
           activeDragging.nodeIds,
           adjustedAffectedEdges
-        );
+        )
+      : adjustedAffectedEdges;
     commitFastMovedGraphPatches(
       movedNodeUpdates,
       nextNodes,
@@ -15365,15 +15869,15 @@ export function App() {
         )
       : synchronousCandidateEdges;
     const adjustedAffectedEdges = mergeAdjustedCandidateEdges(activeDragging.affectedEdges, adjustedSynchronousEdges);
-    const finalizedCandidateEdges = multiNodeMove || !shouldFinalizeMovedNodeEdgesSynchronously(activeDragging.nodeIds, adjustedAffectedEdges)
-      ? adjustedAffectedEdges
-      : finalizeMovedNodeEdgesFast(
+    const finalizedCandidateEdges = shouldFinalizeMovedNodeEdgesSynchronously(activeDragging.nodeIds, adjustedAffectedEdges)
+      ? finalizeMovedNodeEdgesFast(
           nodes,
           nextNodes,
           adjustedAffectedEdges,
           activeDragging.nodeIds,
           adjustedAffectedEdges
-        );
+        )
+      : adjustedAffectedEdges;
     commitFastMovedGraphPatches(
       movedNodeUpdates,
       nextNodes,
@@ -15879,15 +16383,15 @@ export function App() {
         )
       : synchronousCandidateEdges;
     const adjustedAffectedEdges = mergeAdjustedCandidateEdges(affectedEdgesForMove, adjustedSynchronousEdges);
-    const finalizedCandidateEdges = multiNodeMove || !shouldFinalizeMovedNodeEdgesSynchronously(moveNodeIds, adjustedAffectedEdges)
-      ? adjustedAffectedEdges
-      : finalizeMovedNodeEdgesFast(
+    const finalizedCandidateEdges = shouldFinalizeMovedNodeEdgesSynchronously(moveNodeIds, adjustedAffectedEdges)
+      ? finalizeMovedNodeEdgesFast(
           nodes,
           nextNodes,
           adjustedAffectedEdges,
           moveNodeIds,
           adjustedAffectedEdges
-        );
+        )
+      : adjustedAffectedEdges;
     commitFastMovedGraphPatches(
       movedNodeUpdates,
       nextNodes,
@@ -16401,11 +16905,12 @@ export function App() {
     const label = PARAM_LABELS[key] ?? key;
     const editorNode = inspectorSelectedNode ?? selectedNode;
     const options = paramOptionsForSection(key, editorNode ? inferESection(editorNode.kind, editorNode.params) : undefined);
+    const optionLabels = PARAM_OPTION_LABELS[key] ?? {};
     const control = options ? (
       <select value={value} disabled={isBrowseMode} onChange={(event) => updateParam(key, event.target.value)}>
         {options.map((option) => (
           <option key={option} value={option}>
-            {option}
+            {optionLabels[option] ?? option}
           </option>
         ))}
       </select>
@@ -16428,7 +16933,7 @@ export function App() {
     }
     const buttonEnabled = node.params.buttonEnabled === "1";
     const actionType = node.params.buttonActionType || "none";
-    const projectOptions = schemes.flatMap((scheme) =>
+    const projectOptions = flattenSavedSchemes(schemes).flatMap((scheme) =>
       scheme.projects.map((project) => ({
         schemeId: scheme.id,
         schemeName: scheme.name,
@@ -16542,9 +17047,10 @@ export function App() {
     );
   };
 
-  const renderParamHeader = (key: string, displayName = key, title = PARAM_LABELS[key] ?? displayName) => (
-    <th title={title}>{displayName}</th>
-  );
+  const renderParamHeader = (key: string, displayName = key, title = PARAM_LABELS[key] ?? displayName) => {
+    const visibleLabel = displayName === key ? title : displayName;
+    return <th title={key}>{visibleLabel}</th>;
+  };
 
   const renderChineseParamHeader = (key: string, fallback = key) => (
     <th title={key}>{PARAM_LABELS[key] ?? fallback}</th>
@@ -18459,6 +18965,8 @@ export function App() {
     lastRawCanvasPointerRef.current = rawPointer;
     lastCanvasPointerRef.current = pointer;
     updateMouseStatus(pointer);
+    setContextMenu(null);
+    setProjectMenu(null);
     setConnectSource(null);
     resetConnectPreviewState();
     setRewiring(null);
@@ -18484,6 +18992,26 @@ export function App() {
     if (!hasCanvasSelectionModifier(event) || staticDrawing || connectSource) {
       return;
     }
+  };
+
+  const clientPointInsideRenderedCanvas = (clientX: number, clientY: number) => {
+    const frame = canvasFrameRef.current;
+    const svg = svgRef.current;
+    if (!frame || !svg) {
+      return false;
+    }
+    const frameRect = frame.getBoundingClientRect();
+    const svgRect = svg.getBoundingClientRect();
+    return (
+      clientX >= frameRect.left &&
+      clientX <= frameRect.right &&
+      clientY >= frameRect.top &&
+      clientY <= frameRect.bottom &&
+      clientX >= svgRect.left &&
+      clientX <= svgRect.right &&
+      clientY >= svgRect.top &&
+      clientY <= svgRect.bottom
+    );
   };
 
   const wheelZoomAnchorFromClient = (clientX: number, clientY: number): WheelZoomAnchor | null => {
@@ -18524,7 +19052,7 @@ export function App() {
   };
 
   const zoomCanvasFromWheelEvent = (event: CanvasWheelZoomEvent) => {
-    if (!event.ctrlKey && !event.metaKey) {
+    if (!shouldZoomCanvasFromWheelEvent(event)) {
       return false;
     }
     if (!event.defaultPrevented) {
@@ -18556,7 +19084,7 @@ export function App() {
   };
 
   const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
-    if (!event.ctrlKey && !event.metaKey) {
+    if (!shouldZoomCanvasFromWheelEvent(event)) {
       return;
     }
     if (event.nativeEvent.defaultPrevented) {
@@ -18576,7 +19104,39 @@ export function App() {
     setProjectMenu(null);
   };
 
-  const commitLayoutNodePositions = (layoutNodeIds: string[], arranged: ModelNode[]) => {
+  const readjustMovedBusConnectionRoutes = (
+    nextNodes: ModelNode[],
+    candidateEdges: Edge[],
+    movedNodeIds: Iterable<string>,
+    bounds: CanvasBounds
+  ) => {
+    const movedIds = new Set(movedNodeIds);
+    if (movedIds.size === 0 || candidateEdges.length === 0) {
+      return candidateEdges;
+    }
+    const nextNodeById = new Map(nextNodes.map((node) => [node.id, node]));
+    const busConnectedEdgeIds: string[] = [];
+    for (const edge of candidateEdges) {
+      if (!(movedIds.has(edge.sourceId) || movedIds.has(edge.targetId))) {
+        continue;
+      }
+      const source = nextNodeById.get(edge.sourceId);
+      const target = nextNodeById.get(edge.targetId);
+      if (!source || !target || (!isBusNode(source) && !isBusNode(target))) {
+        continue;
+      }
+      busConnectedEdgeIds.push(edge.id);
+    }
+    return busConnectedEdgeIds.length > 0
+      ? redrawConnectionRoutesForEdges(nextNodes, candidateEdges, busConnectedEdgeIds, bounds)
+      : candidateEdges;
+  };
+
+  const commitLayoutNodePositions = (
+    layoutNodeIds: string[],
+    arranged: ModelNode[],
+    options: { readjustBusEndpoints?: boolean } = {}
+  ) => {
     const uniqueLayoutNodeIds = Array.from(new Set(layoutNodeIds));
     if (uniqueLayoutNodeIds.length === 0) {
       return 0;
@@ -18653,10 +19213,18 @@ export function App() {
           adjustedAffectedEdges
         )
       : adjustedAffectedEdges;
+    const committedCandidateEdges = options.readjustBusEndpoints
+      ? readjustMovedBusConnectionRoutes(
+          arranged,
+          finalizedCandidateEdges,
+          movedNodeIds,
+          layoutCanvasBounds
+        )
+      : finalizedCandidateEdges;
     commitFastMovedGraphPatches(
       movedNodeUpdates,
       arranged,
-      finalizedCandidateEdges,
+      committedCandidateEdges,
       affectedEdgesForLayout,
       movedNodeIds,
       originalRoutePoints,
@@ -18749,7 +19317,8 @@ export function App() {
     const arranged = autoAlignNodeLayoutUnits(nodes, layoutUnits, threshold);
     const movedCount = commitLayoutNodePositions(
       Array.from(new Set(layoutUnits.flatMap((unit) => unit.nodeIds))),
-      arranged
+      arranged,
+      { readjustBusEndpoints: true }
     );
     writeOperationLog(movedCount > 0 ? `自动对齐 ${movedCount} 个图元，门槛 ${threshold}px` : `自动对齐未发现坐标相近图元，门槛 ${threshold}px`);
   };
@@ -18866,7 +19435,7 @@ export function App() {
   };
 
   const findSchemeForProject = (projectId: string) =>
-    schemes.find((scheme) => scheme.projects.some((project) => project.id === projectId));
+    findProjectRecordInSchemes(schemes, projectId)?.scheme;
 
   const toggleSchemeExpanded = (schemeId: string) => {
     setExpandedSchemeIds((current) =>
@@ -18912,16 +19481,12 @@ export function App() {
       : record;
   };
 
-  const cloneSchemeRecord = (scheme: SavedSchemeRecord, existingSchemes = schemes, suffix = "副本"): SavedSchemeRecord => {
-    return copySavedSchemeWithUniqueName(scheme, existingSchemes.map((item) => item.name), suffix);
+  const cloneSchemeRecord = (scheme: SavedSchemeRecord, existingNames = savedChildSchemeNames(schemes), suffix = "副本"): SavedSchemeRecord => {
+    return copySavedSchemeWithUniqueName(scheme, existingNames, suffix);
   };
 
   const cloneSchemeRecordWithName = (scheme: SavedSchemeRecord, name: string): SavedSchemeRecord => {
-    const projects = scheme.projects.reduce<SavedProjectRecord[]>(
-      (current, project) => upsertSavedProject(current, cloneProjectRecord(project, "副本", current.map((item) => item.name))),
-      []
-    );
-    return createSavedScheme(name, projects);
+    return cloneSchemeRecordForPaste(scheme, name);
   };
 
   const cloneSchemeRecordForPaste = (scheme: SavedSchemeRecord, name = scheme.name, existingScheme?: SavedSchemeRecord): SavedSchemeRecord => {
@@ -18929,7 +19494,12 @@ export function App() {
       const duplicateProject = existingScheme?.projects.find((item) => hasSameName(item.name, [project.name]));
       return upsertSavedProject(current, cloneProjectRecordForPaste(project, project.name, duplicateProject?.id));
     }, []);
-    const record = createSavedScheme(name, projects);
+    const existingChildren = existingScheme?.children ?? [];
+    const children = (scheme.children ?? []).reduce<SavedSchemeRecord[]>((current, child) => {
+      const duplicateChild = existingChildren.find((item) => hasSameName(item.name, [child.name]));
+      return [...current, cloneSchemeRecordForPaste(child, child.name, duplicateChild)];
+    }, []);
+    const record = createSavedScheme(name, projects, children);
     return existingScheme ? { ...record, id: existingScheme.id, name: record.name } : record;
   };
 
@@ -18984,8 +19554,8 @@ export function App() {
     setTopologyStatus(INITIAL_TOPOLOGY_STATUS);
     setRouteRenderingReady(false);
     setSavedRouteCrossingArcsReady(false);
-    setActiveProjectId(project.id);
-    setActiveSchemeId(schemeId);
+    setActiveProjectKey(project.id);
+    setActiveSchemeKey(schemeId);
     selectSingleProject(schemeId, project.id);
     setCanvasSelectionScope("direct");
     setSelectedNodeIds([]);
@@ -19039,7 +19609,7 @@ export function App() {
     }
   };
 
-  const createSchemeRecord = () => {
+  const createSchemeRecord = (parentSchemeId = "") => {
     if (!requireEditMode("新建方案")) {
       return;
     }
@@ -19052,12 +19622,15 @@ export function App() {
       window.alert("方案名称不能为空。");
       return;
     }
-    if (hasSameName(name, schemes.map((scheme) => scheme.name))) {
+    if (hasSameName(name, savedChildSchemeNames(schemes, parentSchemeId))) {
       window.alert("方案名称重复，无法新建方案。");
       return;
     }
     const record = createSavedScheme(name);
-    setSchemes((current) => [...current, record]);
+    setSchemes((current) => insertChildSavedScheme(current, parentSchemeId, record));
+    if (parentSchemeId) {
+      setExpandedSchemeIds((current) => (current.includes(parentSchemeId) ? current : [...current, parentSchemeId]));
+    }
     selectSingleScheme(record.id);
     writeOperationLog(`新建方案：${record.name}`);
   };
@@ -19075,7 +19648,7 @@ export function App() {
       window.alert("方案名称不能为空。");
       return;
     }
-    if (hasSameName(name, schemes.filter((item) => item.id !== scheme.id).map((item) => item.name))) {
+    if (hasSameName(name, savedSchemeSiblingNames(schemes, scheme.id, scheme.id))) {
       window.alert("方案名称重复，无法修改。");
       return;
     }
@@ -19088,27 +19661,33 @@ export function App() {
     }
     const defaultName = uniqueRecordName(
       `${scheme.name} 副本`,
-      schemes.map((item) => item.name),
+      savedSchemeSiblingNames(schemes, scheme.id),
       "未命名方案"
     );
     const name = promptUniqueRecordName(
       "请输入新方案名称",
       defaultName,
-      schemes.map((item) => item.name),
+      savedSchemeSiblingNames(schemes, scheme.id),
       "方案名称不能为空。",
       "方案名称重复，无法复制。"
     );
     if (!name) {
       return;
     }
-    setSchemes((current) => [...current, cloneSchemeRecordWithName(scheme, name)]);
+    const parentSchemeId = findSavedSchemeParentById(schemes, scheme.id)?.id ?? "";
+    const record = cloneSchemeRecordWithName(scheme, name);
+    setSchemes((current) => insertChildSavedScheme(current, parentSchemeId, record));
+    if (parentSchemeId) {
+      setExpandedSchemeIds((current) => (current.includes(parentSchemeId) ? current : [...current, parentSchemeId]));
+    }
   };
 
   const deleteSchemeRecord = (scheme: SavedSchemeRecord) => {
     if (!requireEditMode("删除方案")) {
       return;
     }
-    if (scheme.id === activeSchemeId) {
+    const deletingSchemeIds = new Set(flattenSavedSchemes([scheme]).map((item) => item.id));
+    if (activeSchemeKey && deletingSchemeIds.has(activeSchemeKey)) {
       window.alert("当前加载模型所在方案不能删除。");
       return;
     }
@@ -19119,7 +19698,7 @@ export function App() {
       const next = deleteSavedScheme(current, scheme.id);
       return next.length > 0 ? next : [createSavedScheme("默认方案")];
     });
-    if (selectedSchemeId === scheme.id) {
+    if (selectedSchemeId && deletingSchemeIds.has(selectedSchemeId)) {
       clearRecordSelection();
     }
   };
@@ -19135,7 +19714,7 @@ export function App() {
     }
     const schemeId = selectedSchemeIds[0] ?? selectedSchemeId;
     if (schemeId) {
-      const scheme = schemes.find((item) => item.id === schemeId);
+      const scheme = findSavedSchemeById(schemes, schemeId);
       if (scheme) {
         copySchemeRecord(scheme);
       }
@@ -19147,7 +19726,7 @@ export function App() {
       return;
     }
     if (selectedProjectIds.length > 0) {
-      if (activeProjectId && selectedProjectIds.includes(activeProjectId)) {
+      if (activeProjectKey && selectedProjectIds.includes(activeProjectKey)) {
         window.alert("当前加载模型不能删除。");
         return;
       }
@@ -19156,27 +19735,26 @@ export function App() {
         return;
       }
       const selected = new Set(selectedProjectIds);
-      setSchemes((current) =>
-        current.map((scheme) => ({
-          ...scheme,
-          updatedAt: scheme.projects.some((project) => selected.has(project.id)) ? new Date().toISOString() : scheme.updatedAt,
-          projects: scheme.projects.filter((project) => !selected.has(project.id))
-        }))
-      );
+      setSchemes((current) => deleteSavedProjectsFromSchemes(current, selected));
       clearRecordSelection();
       return;
     }
     if (selectedSchemeIds.length > 0) {
-      if (activeSchemeId && selectedSchemeIds.includes(activeSchemeId)) {
+      const deletingSchemeIds = new Set(
+        selectedSchemeIds.flatMap((schemeId) => {
+          const scheme = findSavedSchemeById(schemes, schemeId);
+          return scheme ? flattenSavedSchemes([scheme]).map((item) => item.id) : [schemeId];
+        })
+      );
+      if (activeSchemeKey && deletingSchemeIds.has(activeSchemeKey)) {
         window.alert("当前加载模型所在方案不能删除。");
         return;
       }
       if (!window.confirm(`删除选中的 ${selectedSchemeIds.length} 个方案及其全部模型？`)) {
         return;
       }
-      const selected = new Set(selectedSchemeIds);
       setSchemes((current) => {
-        const next = current.filter((scheme) => !selected.has(scheme.id));
+        const next = selectedSchemeIds.reduce((nextSchemes, schemeId) => deleteSavedScheme(nextSchemes, schemeId), current);
         return next.length > 0 ? next : [createSavedScheme("默认方案")];
       });
       clearRecordSelection();
@@ -19193,7 +19771,7 @@ export function App() {
     writeOperationLog(`复制方案记录：${scheme.name}`);
   };
 
-  const pasteSchemeClipboardRecord = () => {
+  const pasteSchemeClipboardRecord = (parentSchemeId = "") => {
     if (!requireEditMode("粘贴方案")) {
       return;
     }
@@ -19201,21 +19779,27 @@ export function App() {
       return;
     }
     const sourceScheme = recordClipboard.scheme;
-    const duplicateScheme = schemes.find((scheme) => hasSameName(scheme.name, [sourceScheme.name]));
+    const targetSchemes = parentSchemeId ? findSavedSchemeById(schemes, parentSchemeId)?.children ?? [] : schemes;
+    const duplicateScheme = targetSchemes.find((scheme) => hasSameName(scheme.name, [sourceScheme.name]));
     if (duplicateScheme) {
       setPendingRecordPasteConflict({
         kind: "scheme",
         sourceScheme,
         duplicateSchemeId: duplicateScheme.id,
-        duplicateName: duplicateScheme.name
+        duplicateName: duplicateScheme.name,
+        targetParentSchemeId: parentSchemeId
       });
       return;
     }
-    setSchemes((current) => [...current, cloneSchemeRecordForPaste(sourceScheme, sourceScheme.name)]);
+    const record = cloneSchemeRecordForPaste(sourceScheme, sourceScheme.name);
+    setSchemes((current) => insertChildSavedScheme(current, parentSchemeId, record));
+    if (parentSchemeId) {
+      setExpandedSchemeIds((current) => (current.includes(parentSchemeId) ? current : [...current, parentSchemeId]));
+    }
     writeOperationLog(`粘贴方案记录：${sourceScheme.name}`);
   };
 
-  const pasteProjectClipboardRecord = (targetSchemeId = selectedSchemeId || activeSchemeId || schemes[0]?.id) => {
+  const pasteProjectClipboardRecord = (targetSchemeId = selectedSchemeId || activeSchemeKey || schemes[0]?.id) => {
     if (!requireEditMode("粘贴模型")) {
       return;
     }
@@ -19223,7 +19807,7 @@ export function App() {
       return;
     }
     const sourceProject = recordClipboard.project;
-    const targetScheme = schemes.find((scheme) => scheme.id === targetSchemeId) ?? schemes[0];
+    const targetScheme = findSavedSchemeById(schemes, targetSchemeId) ?? schemes[0];
     if (!targetScheme) {
       return;
     }
@@ -19238,17 +19822,7 @@ export function App() {
       });
       return;
     }
-    setSchemes((current) =>
-      current.map((scheme) =>
-        scheme.id === targetScheme.id
-          ? {
-              ...scheme,
-              updatedAt: new Date().toISOString(),
-              projects: upsertSavedProject(scheme.projects, cloneProjectRecordForPaste(sourceProject, sourceProject.name))
-            }
-          : scheme
-      )
-    );
+    setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, cloneProjectRecordForPaste(sourceProject, sourceProject.name)));
     writeOperationLog(`粘贴模型记录：${sourceProject.name}`);
   };
 
@@ -19277,9 +19851,10 @@ export function App() {
     const targetName = options.targetName?.trim();
     const nextProjectId = options.overwriteProjectId ?? projectId;
     setSchemes((current) => {
-      const sourceScheme = current.find((scheme) => scheme.projects.some((project) => project.id === projectId));
-      const targetScheme = current.find((scheme) => scheme.id === targetSchemeId);
-      const project = sourceScheme?.projects.find((item) => item.id === projectId);
+      const sourceRecord = findSavedProjectRecordInSchemes(current, projectId);
+      const targetScheme = findSavedSchemeById(current, targetSchemeId);
+      const project = sourceRecord?.project;
+      const sourceScheme = sourceRecord?.scheme;
       if (!sourceScheme || !targetScheme || !project || sourceScheme.id === targetSchemeId) {
         return current;
       }
@@ -19292,15 +19867,8 @@ export function App() {
         updatedAt: now,
         project: { ...project.project, name: movedName }
       };
-      return current.map((scheme) => {
-        if (scheme.id === sourceScheme.id) {
-          return { ...scheme, updatedAt: now, projects: scheme.projects.filter((item) => item.id !== projectId) };
-        }
-        if (scheme.id === targetScheme.id) {
-          return { ...scheme, updatedAt: now, projects: upsertSavedProject(scheme.projects, movedProject) };
-        }
-        return scheme;
-      });
+      const withoutSourceProject = deleteSavedProjectsFromSchemes(current, new Set([projectId]));
+      return upsertSavedProjectInScheme(withoutSourceProject, targetScheme.id, movedProject);
     });
     setExpandedSchemeIds((current) => (current.includes(targetSchemeId) ? current : [...current, targetSchemeId]));
     if (
@@ -19313,9 +19881,9 @@ export function App() {
       setSelectedProjectId(nextProjectId);
       setSelectedSchemeIds([]);
     }
-    if (activeProjectId === projectId || activeProjectId === options.overwriteProjectId) {
-      setActiveProjectId(nextProjectId);
-      setActiveSchemeId(targetSchemeId);
+    if (activeProjectKey === projectId || activeProjectKey === options.overwriteProjectId) {
+      setActiveProjectKey(nextProjectId);
+      setActiveSchemeKey(targetSchemeId);
       if (targetName) {
         setProjectName(targetName);
       }
@@ -19332,11 +19900,13 @@ export function App() {
       return;
     }
     if (conflict.kind === "scheme") {
+      const targetParentSchemeId = conflict.targetParentSchemeId ?? "";
+      const siblingNames = savedChildSchemeNames(schemes, targetParentSchemeId);
       if (action === "rename") {
         const renamed = promptUniqueRecordName(
           "请输入粘贴后的方案名称",
-          uniqueRecordName(conflict.sourceScheme.name, schemes.map((scheme) => scheme.name), "未命名方案"),
-          schemes.map((scheme) => scheme.name),
+          uniqueRecordName(conflict.sourceScheme.name, siblingNames, "未命名方案"),
+          siblingNames,
           "方案名称不能为空。",
           "方案名称重复，无法粘贴。"
         );
@@ -19344,29 +19914,29 @@ export function App() {
           return;
         }
         setPendingRecordPasteConflict(null);
-        setSchemes((current) => [...current, cloneSchemeRecordForPaste(conflict.sourceScheme, renamed)]);
+        const record = cloneSchemeRecordForPaste(conflict.sourceScheme, renamed);
+        setSchemes((current) => insertChildSavedScheme(current, targetParentSchemeId, record));
+        if (targetParentSchemeId) {
+          setExpandedSchemeIds((current) => (current.includes(targetParentSchemeId) ? current : [...current, targetParentSchemeId]));
+        }
         writeOperationLog(`新命名粘贴方案记录：${renamed}`);
         return;
       }
       setPendingRecordPasteConflict(null);
       setSchemes((current) => {
-        const duplicateScheme = current.find((scheme) => scheme.id === conflict.duplicateSchemeId);
+        const duplicateScheme = findSavedSchemeById(current, conflict.duplicateSchemeId);
         if (!duplicateScheme) {
-          return [...current, cloneSchemeRecordForPaste(conflict.sourceScheme, conflict.duplicateName)];
+          return insertChildSavedScheme(current, targetParentSchemeId, cloneSchemeRecordForPaste(conflict.sourceScheme, conflict.duplicateName));
         }
-        return current.map((scheme) =>
-          scheme.id === conflict.duplicateSchemeId
-            ? cloneSchemeRecordForPaste(conflict.sourceScheme, scheme.name, scheme)
-            : scheme
-        );
+        return replaceSavedSchemeById(current, duplicateScheme.id, cloneSchemeRecordForPaste(conflict.sourceScheme, duplicateScheme.name, duplicateScheme));
       });
       writeOperationLog(`覆盖粘贴方案记录：${conflict.duplicateName}`);
       return;
     }
     if (conflict.kind === "project-drag") {
-      const sourceScheme = schemes.find((scheme) => scheme.id === conflict.sourceSchemeId);
+      const sourceScheme = findSavedSchemeById(schemes, conflict.sourceSchemeId);
       const sourceProject = sourceScheme?.projects.find((project) => project.id === conflict.projectId);
-      const targetScheme = schemes.find((scheme) => scheme.id === conflict.targetSchemeId);
+      const targetScheme = findSavedSchemeById(schemes, conflict.targetSchemeId);
       if (!sourceProject || !targetScheme) {
         setPendingRecordPasteConflict(null);
         return;
@@ -19396,7 +19966,7 @@ export function App() {
       return;
     }
     const targetScheme =
-      schemes.find((scheme) => scheme.id === conflict.targetSchemeId) ??
+      findSavedSchemeById(schemes, conflict.targetSchemeId) ??
       activeSchemeRecord ??
       selectedSchemeRecord ??
       schemes[0];
@@ -19416,38 +19986,24 @@ export function App() {
         return;
       }
       setPendingRecordPasteConflict(null);
-      setSchemes((current) =>
-        current.map((scheme) =>
-          scheme.id === targetScheme.id
-            ? {
-                ...scheme,
-                updatedAt: new Date().toISOString(),
-                projects: upsertSavedProject(scheme.projects, cloneProjectRecordForPaste(conflict.sourceProject, renamed))
-              }
-            : scheme
-        )
-      );
+      setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, cloneProjectRecordForPaste(conflict.sourceProject, renamed)));
       writeOperationLog(`新命名粘贴模型记录：${renamed}`);
       return;
     }
     setPendingRecordPasteConflict(null);
-    setSchemes((current) =>
-      current.map((scheme) => {
-        if (scheme.id !== targetScheme.id) {
-          return scheme;
-        }
-        const duplicateProject = scheme.projects.find((project) => project.id === conflict.duplicateProjectId);
+    setSchemes((current) => {
+      const currentTargetScheme = findSavedSchemeById(current, targetScheme.id);
+      if (!currentTargetScheme) {
+        return current;
+      }
+      const duplicateProject = currentTargetScheme.projects.find((project) => project.id === conflict.duplicateProjectId);
         const targetName = duplicateProject?.name ?? conflict.duplicateName;
-        return {
-          ...scheme,
-          updatedAt: new Date().toISOString(),
-          projects: upsertSavedProject(
-            scheme.projects,
-            cloneProjectRecordForPaste(conflict.sourceProject, targetName, conflict.duplicateProjectId)
-          )
-        };
-      })
-    );
+      return upsertSavedProjectInScheme(
+        current,
+        currentTargetScheme.id,
+        cloneProjectRecordForPaste(conflict.sourceProject, targetName, conflict.duplicateProjectId)
+      );
+    });
     writeOperationLog(`覆盖粘贴模型记录：${conflict.duplicateName}`);
   };
 
@@ -19457,7 +20013,7 @@ export function App() {
     }
     const sourceScheme = findSchemeForProject(projectId);
     const sourceProject = sourceScheme?.projects.find((project) => project.id === projectId);
-    const targetScheme = schemes.find((scheme) => scheme.id === schemeId);
+    const targetScheme = findSavedSchemeById(schemes, schemeId);
     if (!sourceScheme || !sourceProject || !targetScheme || sourceScheme.id === targetScheme.id) {
       return;
     }
@@ -19479,11 +20035,9 @@ export function App() {
   };
 
   const saveActiveProjectPointer = (draftProjectId: string, draftSchemeId: string) => {
+    const pointerPayload = activeProjectPointerPayload(schemes, draftProjectId, draftSchemeId);
     try {
-      window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, JSON.stringify({
-        activeProjectId: draftProjectId,
-        activeSchemeId: draftSchemeId
-      }));
+      window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, JSON.stringify(pointerPayload ?? {}));
       window.localStorage.removeItem(DRAFT_PROJECT_STORAGE_KEY);
     } catch {
       // 活动模型指针只是加速下次打开/刷新，写入失败不阻断手动保存。
@@ -19635,7 +20189,7 @@ export function App() {
     </div>
   );
 
-  const saveCurrentProject = (targetId = activeProjectId) => {
+  const saveCurrentProject = (targetId = activeProjectKey) => {
     if (!requireEditMode("保存模型")) {
       return;
     }
@@ -19650,40 +20204,55 @@ export function App() {
           project: currentProject(),
           updatedAt: new Date().toISOString()
         };
-        const nextSchemes = schemes.map((scheme) => ({
-          ...scheme,
-          updatedAt: scheme.projects.some((project) => project.id === targetId) ? record.updatedAt : scheme.updatedAt,
-          projects: scheme.projects.map((project) => (project.id === targetId ? record : project))
-        }));
+        let savedRecord = record;
+        const ownerScheme = findSchemeForProject(targetId);
+        const nextSchemes = ownerScheme ? upsertSavedProjectInScheme(schemes, ownerScheme.id, record) : schemes;
+        savedRecord = findProjectRecordInSchemes(nextSchemes, targetId)?.project ?? record;
         setSchemes(nextSchemes);
         persistSchemesPayloadToStorageAndBackend(serializeSchemesForStorage(nextSchemes));
-        setActiveProjectId(targetId);
+        setActiveProjectKey(targetId);
+        if (savedRecord.name !== projectName) {
+          suppressNextGraphDirtyRef.current = true;
+          setProjectName(savedRecord.name);
+        }
         graphDirtyBaselineRef.current = currentGraphDirtyBaseline();
         setHasUnsavedChanges(false);
-        saveActiveProjectPointer(targetId, activeSchemeId || findSchemeForProject(targetId)?.id || selectedSchemeId);
+        saveActiveProjectPointer(targetId, activeSchemeKey || findSchemeForProject(targetId)?.id || selectedSchemeId);
         clearRefreshRecoveryProject();
-        writeOperationLog(`保存模型：${projectName}`);
+        writeOperationLog(`保存模型：${savedRecord.name}`);
         return;
       }
     }
-    const record = createSavedProject(projectName, currentProject());
-    const targetSchemeId = activeSchemeId || selectedSchemeId || schemes[0]?.id || createSavedScheme("默认方案").id;
+    const targetSchemeId = activeSchemeKey || selectedSchemeId || schemes[0]?.id || createSavedScheme("默认方案").id;
     const fallbackSchemes = schemes.length > 0 ? schemes : [createSavedScheme("默认方案")];
-    const resolvedSchemeId = fallbackSchemes.some((scheme) => scheme.id === targetSchemeId) ? targetSchemeId : fallbackSchemes[0].id;
-    const nextSchemes = fallbackSchemes.map((scheme) =>
-      scheme.id === resolvedSchemeId
-        ? { ...scheme, updatedAt: new Date().toISOString(), projects: upsertSavedProject(scheme.projects, record) }
-        : scheme
-    );
+    const resolvedSchemeId = findSavedSchemeById(fallbackSchemes, targetSchemeId) ? targetSchemeId : fallbackSchemes[0].id;
+    const targetScheme = findSavedSchemeById(fallbackSchemes, resolvedSchemeId);
+    const recoveredRecord = findProjectRecordByNameInScheme(targetScheme, projectName);
+    const projectSnapshot = currentProject();
+    const createdRecord = createSavedProject(projectName, projectSnapshot);
+    const record: SavedProjectRecord = recoveredRecord
+      ? {
+          ...recoveredRecord,
+          name: projectName,
+          project: projectSnapshot,
+          updatedAt: new Date().toISOString()
+        }
+      : createdRecord;
+    let savedRecord = record;
+    const nextSchemes = upsertSavedProjectInScheme(fallbackSchemes, resolvedSchemeId, record);
+    savedRecord =
+      findProjectRecordInSchemes(nextSchemes, record.id)?.project ??
+      findSavedSchemeById(nextSchemes, resolvedSchemeId)?.projects.find((project) => savedProjectRecordNameKey(project.name) === savedProjectRecordNameKey(record.name)) ??
+      record;
     setSchemes(nextSchemes);
     persistSchemesPayloadToStorageAndBackend(serializeSchemesForStorage(nextSchemes));
-    setActiveProjectId(record.id);
-    setActiveSchemeId(resolvedSchemeId);
+    setActiveProjectKey(savedRecord.id);
+    setActiveSchemeKey(resolvedSchemeId);
     graphDirtyBaselineRef.current = currentGraphDirtyBaseline();
     setHasUnsavedChanges(false);
-    saveActiveProjectPointer(record.id, resolvedSchemeId);
+    saveActiveProjectPointer(savedRecord.id, resolvedSchemeId);
     clearRefreshRecoveryProject();
-    writeOperationLog(`保存模型：${projectName}`);
+    writeOperationLog(`保存模型：${savedRecord.name}`);
   };
 
   const renameProjectRecord = (project: SavedProjectRecord) => {
@@ -19704,14 +20273,14 @@ export function App() {
       window.alert("模型名称重复，无法修改。");
       return;
     }
-    setSchemes((current) =>
-      current.map((scheme) => ({
-        ...scheme,
-        updatedAt: scheme.projects.some((item) => item.id === project.id) ? new Date().toISOString() : scheme.updatedAt,
-        projects: renameSavedProject(scheme.projects, project.id, nextName)
-      }))
-    );
-    if (activeProjectId === project.id) {
+    if (ownerScheme) {
+      const renamedProjects = renameSavedProject(ownerScheme.projects, project.id, nextName);
+      const renamedProject = renamedProjects.find((item) => item.id === project.id);
+      if (renamedProject) {
+        setSchemes((current) => upsertSavedProjectInScheme(current, ownerScheme.id, renamedProject));
+      }
+    }
+    if (activeProjectKey === project.id) {
       setProjectName(nextName.trim() || "未命名模型");
     }
   };
@@ -19733,13 +20302,9 @@ export function App() {
     if (!name) {
       return;
     }
-    setSchemes((current) =>
-      current.map((scheme) =>
-        scheme.projects.some((item) => item.id === project.id)
-          ? { ...scheme, updatedAt: new Date().toISOString(), projects: upsertSavedProject(scheme.projects, cloneProjectRecordWithName(project, name)) }
-          : scheme
-      )
-    );
+    if (ownerScheme) {
+      setSchemes((current) => upsertSavedProjectInScheme(current, ownerScheme.id, cloneProjectRecordWithName(project, name)));
+    }
   };
 
   const duplicateSelectedProjectRecords = () => {
@@ -19755,17 +20320,17 @@ export function App() {
     }
     const selected = new Set(selectedProjectIds);
     setSchemes((current) =>
-      current.map((scheme) => {
+      flattenSavedSchemes(current).reduce((nextSchemes, scheme) => {
         const selectedProjects = scheme.projects.filter((project) => selected.has(project.id));
         if (selectedProjects.length === 0) {
-          return scheme;
+          return nextSchemes;
         }
         let nextProjects = scheme.projects;
         for (const project of selectedProjects) {
           nextProjects = upsertSavedProject(nextProjects, cloneProjectRecord(project, "副本", nextProjects.map((item) => item.name)));
         }
-        return { ...scheme, updatedAt: new Date().toISOString(), projects: nextProjects };
-      })
+        return nextProjects.reduce((updatedSchemes, project) => upsertSavedProjectInScheme(updatedSchemes, scheme.id, project), nextSchemes);
+      }, current)
     );
   };
 
@@ -19774,7 +20339,7 @@ export function App() {
       return;
     }
     if (selectedSchemeIds.length <= 1) {
-      const scheme = schemes.find((item) => item.id === (selectedSchemeIds[0] ?? selectedSchemeId));
+      const scheme = findSavedSchemeById(schemes, selectedSchemeIds[0] ?? selectedSchemeId);
       if (scheme) {
         duplicateSchemeRecord(scheme);
       }
@@ -19782,8 +20347,14 @@ export function App() {
     }
     setSchemes((current) => {
       let nextSchemes = current;
-      for (const scheme of current.filter((item) => selectedSchemeIds.includes(item.id))) {
-        nextSchemes = [...nextSchemes, cloneSchemeRecord(scheme, nextSchemes)];
+      for (const schemeId of selectedSchemeIds) {
+        const scheme = findSavedSchemeById(nextSchemes, schemeId);
+        if (!scheme) {
+          continue;
+        }
+        const parentSchemeId = findSavedSchemeParentById(nextSchemes, scheme.id)?.id ?? "";
+        const siblingNames = savedSchemeSiblingNames(nextSchemes, scheme.id);
+        nextSchemes = insertChildSavedScheme(nextSchemes, parentSchemeId, cloneSchemeRecord(scheme, siblingNames));
       }
       return nextSchemes;
     });
@@ -19793,30 +20364,24 @@ export function App() {
     if (!requireEditMode("删除模型")) {
       return;
     }
-    if (project.id === activeProjectId) {
+    if (project.id === activeProjectKey) {
       window.alert("当前加载模型不能删除。");
       return;
     }
     if (!window.confirm(`删除模型“${project.name}”？`)) {
       return;
     }
-    setSchemes((current) =>
-      current.map((scheme) =>
-        scheme.projects.some((item) => item.id === project.id)
-          ? { ...scheme, updatedAt: new Date().toISOString(), projects: deleteSavedProject(scheme.projects, project.id) }
-          : scheme
-      )
-    );
+    setSchemes((current) => deleteSavedProjectsFromSchemes(current, new Set([project.id])));
     if (selectedProjectId === project.id) {
       clearRecordSelection();
     }
   };
 
-  const createBlankProject = (preferredSchemeId = selectedSchemeId || activeSchemeId || schemes[0]?.id || "") => {
+  const createBlankProject = (preferredSchemeId = selectedSchemeId || activeSchemeKey || schemes[0]?.id || "") => {
     if (!requireEditMode("新建模型")) {
       return;
     }
-    const targetScheme = schemes.find((scheme) => scheme.id === preferredSchemeId) ?? schemes[0];
+    const targetScheme = findSavedSchemeById(schemes, preferredSchemeId) ?? schemes[0];
     const targetSchemeId = targetScheme?.id ?? preferredSchemeId;
     const inputName = window.prompt("请输入模型名称", "新建模型");
     if (inputName === null) {
@@ -19846,13 +20411,7 @@ export function App() {
       nodes: [],
       edges: []
     });
-    setSchemes((current) =>
-      current.map((scheme, index) =>
-        scheme.id === targetSchemeId || (!targetSchemeId && index === 0)
-          ? { ...scheme, updatedAt: new Date().toISOString(), projects: upsertSavedProject(scheme.projects, record) }
-          : scheme
-      )
-    );
+    setSchemes((current) => upsertSavedProjectInScheme(current, targetSchemeId || current[0]?.id || "", record));
     selectSingleProject(targetSchemeId ?? schemes[0]?.id ?? "", record.id);
     requestLoadSavedProject(record, targetSchemeId ?? schemes[0]?.id ?? "");
     writeOperationLog(`新建模型：${record.name}`);
@@ -20148,7 +20707,7 @@ export function App() {
       updateMouseStatus(pointer);
     }
     selectCanvasGraphics([], [edgeId]);
-    setContextMenu({
+    openGraphicContextMenu({
       x: event.clientX,
       y: event.clientY,
       target: "edge",
@@ -20687,7 +21246,7 @@ export function App() {
 
   const safeFilePart = (name: string) => name.trim().replace(/[\\/:*?"<>|]+/g, "_") || "未命名";
 
-  const serializeSchemeRecordForFile = (scheme: SavedSchemeRecord) =>
+  const serializeSchemeRecordForFile = (scheme: SavedSchemeRecord): string =>
     JSON.stringify(
       {
         version: 1,
@@ -20695,7 +21254,8 @@ export function App() {
         projects: scheme.projects.map((project) => ({
           name: project.name,
           project: normalizeProjectLayers(lockProjectEdgeTerminals(project.project))
-        }))
+        })),
+        children: (scheme.children ?? []).map((child): unknown => JSON.parse(serializeSchemeRecordForFile(child)))
       },
       null,
       2
@@ -20711,7 +21271,7 @@ export function App() {
     return value.version === 1 && Array.isArray(value.nodes) && Array.isArray(value.edges);
   };
 
-  const createImportedSchemeRecord = (text: string, fileName: string) => {
+  const createImportedSchemeRecord = (text: string, fileName: string): SavedSchemeRecord => {
     const payload = JSON.parse(text) as unknown;
     const payloadRecord = isObjectRecord(payload) ? payload : null;
     const rawScheme =
@@ -20741,15 +21301,21 @@ export function App() {
           : projectFile.name || `导入模型${index + 1}`;
       return createSavedProject(importedProjectName, projectFile);
     });
-    return createSavedScheme(
-      importedName,
-      importedProjects
-    );
+    const importedChildren: SavedSchemeRecord[] = Array.isArray(rawScheme.children)
+      ? rawScheme.children.map((childPayload, index): SavedSchemeRecord => {
+          try {
+            return createImportedSchemeRecord(JSON.stringify(childPayload), `子方案${index + 1}.json`);
+          } catch (error) {
+            throw new Error(error instanceof Error ? `子方案${index + 1}：${error.message}` : `子方案${index + 1}格式不正确。`);
+          }
+        })
+      : [];
+    return createSavedScheme(importedName, importedProjects, importedChildren);
   };
 
   const exportProjectRecordFile = async (project: SavedProjectRecord) => {
-    const projectFile = project.id === activeProjectId ? currentProject() : project.project;
-    const exportName = project.id === activeProjectId ? projectName : project.name;
+    const projectFile = project.id === activeProjectKey ? currentProject() : project.project;
+    const exportName = project.id === activeProjectKey ? projectName : project.name;
     await saveTextFile({
       filename: `${safeFilePart(exportName)}.json`,
       text: serializeProject(projectFile),
@@ -20779,10 +21345,11 @@ export function App() {
     modelImportInputRef.current?.click();
   };
 
-  const openSchemeImportFilePicker = () => {
+  const openSchemeImportFilePicker = (parentSchemeId = "") => {
     if (!requireEditMode("导入方案")) {
       return;
     }
+    schemeImportParentSchemeIdRef.current = parentSchemeId;
     schemeImportInputRef.current?.click();
   };
 
@@ -20800,11 +21367,21 @@ export function App() {
         project: { ...importedProject.project, name: duplicateProject.name }
       });
     }, existingScheme.projects);
-    return { ...existingScheme, updatedAt: now, projects: nextProjects };
+    const nextChildren = (importedScheme.children ?? []).reduce<SavedSchemeRecord[]>((current, importedChild) => {
+      const duplicateChild = current.find((child) => hasSameName(child.name, [importedChild.name]));
+      if (!duplicateChild) {
+        return [...current, importedChild];
+      }
+      return current.map((child) => child.id === duplicateChild.id ? mergeImportedSchemeIntoExisting(child, importedChild) : child);
+    }, existingScheme.children ?? []);
+    return { ...existingScheme, updatedAt: now, projects: nextProjects, children: nextChildren };
   };
 
-  const commitImportedSchemeRecord = (importedScheme: SavedSchemeRecord) => {
-    setSchemes((current) => [...current, importedScheme]);
+  const commitImportedSchemeRecord = (importedScheme: SavedSchemeRecord, parentSchemeId = "") => {
+    setSchemes((current) => insertChildSavedScheme(current, parentSchemeId, importedScheme));
+    if (parentSchemeId) {
+      setExpandedSchemeIds((current) => (current.includes(parentSchemeId) ? current : [...current, parentSchemeId]));
+    }
     setExpandedSchemeIds((current) => (current.includes(importedScheme.id) ? current : [...current, importedScheme.id]));
     selectSingleScheme(importedScheme.id);
     writeOperationLog(`导入方案：${importedScheme.name}`);
@@ -20813,6 +21390,7 @@ export function App() {
   const importSchemeFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
     if (!requireEditMode("导入方案")) {
+      schemeImportParentSchemeIdRef.current = "";
       input.value = "";
       return;
     }
@@ -20823,20 +21401,24 @@ export function App() {
     try {
       const text = await file.text();
       const importedScheme = createImportedSchemeRecord(text, file.name);
-      const duplicateScheme = schemes.find((scheme) => hasSameName(importedScheme.name, [scheme.name]));
+      const parentSchemeId = schemeImportParentSchemeIdRef.current;
+      const targetSchemes = parentSchemeId ? findSavedSchemeById(schemes, parentSchemeId)?.children ?? [] : schemes;
+      const duplicateScheme = targetSchemes.find((scheme) => hasSameName(importedScheme.name, [scheme.name]));
       if (duplicateScheme) {
         setPendingSchemeImportConflict({
           importedScheme,
           importedName: importedScheme.name,
           duplicateSchemeId: duplicateScheme.id,
-          duplicateSchemeName: duplicateScheme.name
+          duplicateSchemeName: duplicateScheme.name,
+          targetParentSchemeId: parentSchemeId
         });
         return;
       }
-      commitImportedSchemeRecord(importedScheme);
+      commitImportedSchemeRecord(importedScheme, parentSchemeId);
     } catch (error) {
       window.alert(error instanceof Error ? `导入方案失败：${error.message}` : "导入方案失败。");
     } finally {
+      schemeImportParentSchemeIdRef.current = "";
       input.value = "";
     }
   };
@@ -20844,12 +21426,8 @@ export function App() {
   const commitImportedModelRecord = (targetScheme: SavedSchemeRecord, importedRecord: SavedProjectRecord) => {
     setSchemes((current) => {
       const fallback = current.length > 0 ? current : [targetScheme];
-      const nextSchemes = fallback.some((scheme) => scheme.id === targetScheme.id) ? fallback : [...fallback, targetScheme];
-      return nextSchemes.map((scheme) =>
-        scheme.id === targetScheme.id
-          ? { ...scheme, updatedAt: new Date().toISOString(), projects: upsertSavedProject(scheme.projects, importedRecord) }
-          : scheme
-      );
+      const nextSchemes = findSavedSchemeById(fallback, targetScheme.id) ? fallback : [...fallback, targetScheme];
+      return upsertSavedProjectInScheme(nextSchemes, targetScheme.id, importedRecord);
     });
     setExpandedSchemeIds((current) => (current.includes(targetScheme.id) ? current : [...current, targetScheme.id]));
     loadSavedProject(importedRecord, targetScheme.id);
@@ -20872,7 +21450,7 @@ export function App() {
       const importedProject = deserializeProject(text);
       const importTargetSchemeId = modelImportTargetSchemeIdRef.current;
       const targetScheme =
-        schemes.find((scheme) => scheme.id === importTargetSchemeId) ??
+        findSavedSchemeById(schemes, importTargetSchemeId) ??
         activeSchemeRecord ??
         selectedSchemeRecord ??
         schemes[0] ??
@@ -20909,12 +21487,14 @@ export function App() {
       setPendingSchemeImportConflict(null);
       return;
     }
-    const duplicateScheme = schemes.find((scheme) => scheme.id === conflict.duplicateSchemeId);
+    const duplicateScheme = findSavedSchemeById(schemes, conflict.duplicateSchemeId);
+    const targetParentSchemeId = conflict.targetParentSchemeId ?? "";
+    const siblingNames = savedChildSchemeNames(schemes, targetParentSchemeId);
     if (action === "rename") {
       const renamed = promptUniqueRecordName(
         "请输入导入后的方案名称",
-        uniqueRecordName(conflict.importedName, schemes.map((scheme) => scheme.name), "导入方案"),
-        schemes.map((scheme) => scheme.name),
+        uniqueRecordName(conflict.importedName, siblingNames, "导入方案"),
+        siblingNames,
         "方案名称不能为空。",
         "方案名称重复，无法导入。"
       );
@@ -20922,17 +21502,17 @@ export function App() {
         return;
       }
       setPendingSchemeImportConflict(null);
-      commitImportedSchemeRecord({ ...conflict.importedScheme, name: renamed, updatedAt: new Date().toISOString() });
+      commitImportedSchemeRecord({ ...conflict.importedScheme, name: renamed, updatedAt: new Date().toISOString() }, targetParentSchemeId);
       return;
     }
     if (!duplicateScheme) {
       setPendingSchemeImportConflict(null);
-      commitImportedSchemeRecord(conflict.importedScheme);
+      commitImportedSchemeRecord(conflict.importedScheme, targetParentSchemeId);
       return;
     }
     setPendingSchemeImportConflict(null);
     const mergedScheme = mergeImportedSchemeIntoExisting(duplicateScheme, conflict.importedScheme);
-    setSchemes((current) => current.map((scheme) => (scheme.id === duplicateScheme.id ? mergedScheme : scheme)));
+    setSchemes((current) => replaceSavedSchemeById(current, duplicateScheme.id, mergedScheme));
     setExpandedSchemeIds((current) => (current.includes(duplicateScheme.id) ? current : [...current, duplicateScheme.id]));
     selectSingleScheme(duplicateScheme.id);
     writeOperationLog(`合并覆盖导入方案：${duplicateScheme.name}`);
@@ -20949,7 +21529,7 @@ export function App() {
       return;
     }
     const targetScheme =
-      schemes.find((scheme) => scheme.id === conflict.targetSchemeId) ??
+      findSavedSchemeById(schemes, conflict.targetSchemeId) ??
       activeSchemeRecord ??
       selectedSchemeRecord ??
       schemes[0] ??
@@ -20986,7 +21566,7 @@ export function App() {
     const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
     const writeSchemeFiles = async (writer: (filename: string, text: string, mime: string) => Promise<void> | void) => {
       await writer(`${safeFilePart(scheme.name)}.scheme.json`, serializeSchemeRecordForFile(scheme), "application/json");
-      for (const project of scheme.projects) {
+      for (const project of flattenSavedProjects([scheme])) {
         const prefix = `${safeFilePart(scheme.name)}_${safeFilePart(project.name)}`;
         await writer(`${prefix}.json`, serializeProject(project.project), "application/json");
         await writer(
@@ -21019,7 +21599,7 @@ export function App() {
       });
       await writeSchemeFiles((filename, text, mime) => writeTextFileToDirectory(directoryHandle, filename, text, mime));
       writeOperationLog(`导出方案：${scheme.name}`);
-      window.alert(`已导出方案“${scheme.name}”，共 ${scheme.projects.length} 个模型。`);
+      window.alert(`已导出方案“${scheme.name}”，共 ${flattenSavedProjects([scheme]).length} 个模型。`);
     } catch (error) {
       if (isPickerAbort(error)) {
         return;
@@ -21207,6 +21787,139 @@ export function App() {
     projectRecordDragActiveRef.current = false;
   };
 
+  const renderProjectSchemeNode = (scheme: SavedSchemeRecord, depth = 0): ReactNode => {
+    const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id) || hoveredSchemeId === scheme.id;
+    const children = scheme.children ?? [];
+    const hasContent = scheme.projects.length > 0 || children.length > 0;
+    const schemeIndentStyle = { "--scheme-depth": depth } as CSSProperties;
+    const projectIndentStyle = { "--scheme-depth": depth + 1 } as CSSProperties;
+    return (
+      <div
+        className={`scheme-group ${depth > 0 ? "nested" : ""}`}
+        key={scheme.id}
+        onMouseEnter={() => setHoveredSchemeId(scheme.id)}
+        onMouseLeave={() => setHoveredSchemeId((current) => current === scheme.id ? "" : current)}
+      >
+        <div
+          role="option"
+          aria-selected={selectedSchemeIds.includes(scheme.id) || selectedSchemeId === scheme.id}
+          aria-expanded={isExpanded}
+          tabIndex={0}
+          className={`scheme-option ${selectedSchemeIds.includes(scheme.id) || selectedSchemeId === scheme.id ? "selected" : ""}`}
+          style={schemeIndentStyle}
+          onClick={(event) => {
+            if (event.ctrlKey || event.metaKey || event.shiftKey) {
+              toggleSchemeSelection(scheme.id);
+            } else {
+              selectSingleScheme(scheme.id);
+            }
+            toggleSchemeExpanded(scheme.id);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
+              event.preventDefault();
+              if (event.ctrlKey || event.metaKey || event.shiftKey) {
+                toggleSchemeSelection(scheme.id);
+              } else {
+                selectSingleScheme(scheme.id);
+              }
+              toggleSchemeExpanded(scheme.id);
+            }
+          }}
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
+            if (!isEditMode) {
+              return;
+            }
+            finishProjectRecordDrag();
+            const projectId = event.dataTransfer.getData("application/project-id");
+            if (projectId) {
+              moveProjectRecordToScheme(projectId, scheme.id);
+            }
+          }}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!selectedSchemeIds.includes(scheme.id)) {
+              selectSingleScheme(scheme.id);
+            }
+            setProjectMenu({ x: event.clientX, y: event.clientY, schemeId: scheme.id });
+          }}
+        >
+          {isExpanded ? <ChevronDown className="scheme-toggle-icon" size={14} /> : <ChevronRight className="scheme-toggle-icon" size={14} />}
+          <FolderOpen size={14} />
+          <span>{scheme.name}</span>
+        </div>
+        {isExpanded && (
+          <div className="scheme-projects">
+            {!hasContent ? (
+              <p className="project-empty" style={projectIndentStyle}>暂无模型或子方案</p>
+            ) : (
+              <>
+                {scheme.projects.map((project) => {
+                  const isProjectSelected = selectedProjectIds.includes(project.id) || project.id === selectedProjectId;
+                  return (
+                    <div
+                      role="option"
+                      aria-selected={isProjectSelected}
+                      tabIndex={0}
+                      draggable={isEditMode}
+                      className={`project-option ${isProjectSelected ? "selected" : ""} ${project.id === activeProjectKey ? "active" : ""}`}
+                      style={projectIndentStyle}
+                      key={project.id}
+                      onClick={(event) => {
+                        if (event.ctrlKey || event.metaKey || event.shiftKey) {
+                          toggleProjectSelection(scheme.id, project.id);
+                        } else {
+                          selectSingleProject(scheme.id, project.id);
+                        }
+                        setInspectorTab("model");
+                      }}
+                      onDoubleClick={() => requestLoadSavedProject(project, scheme.id)}
+                      onDragStart={(event) => {
+                        if (!isEditMode) {
+                          event.preventDefault();
+                          return;
+                        }
+                        startProjectRecordDrag(event, project.id);
+                      }}
+                      onDragEnd={finishProjectRecordDrag}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          requestLoadSavedProject(project, scheme.id);
+                        } else if (event.key === " " || event.key === "Spacebar") {
+                          event.preventDefault();
+                          if (event.ctrlKey || event.metaKey || event.shiftKey) {
+                            toggleProjectSelection(scheme.id, project.id);
+                          } else {
+                            selectSingleProject(scheme.id, project.id);
+                          }
+                        }
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (!selectedProjectIds.includes(project.id)) {
+                          selectSingleProject(scheme.id, project.id);
+                        }
+                        setProjectMenu({ x: event.clientX, y: event.clientY, schemeId: scheme.id, projectId: project.id });
+                      }}
+                    >
+                      <FileJson className="project-item-icon" size={14} />
+                      <span>{project.name}</span>
+                    </div>
+                  );
+                })}
+                {children.map((child) => renderProjectSchemeNode(child, depth + 1))}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderProjectPanel = () => (
     <section className="project-panel">
       <div className="library-search project-search">
@@ -21250,127 +21963,7 @@ export function App() {
         ) : filteredProjectSchemes.length === 0 ? (
           <p className="project-empty project-search-empty">未找到匹配方案或模型</p>
         ) : (
-          filteredProjectSchemes.map((scheme) => {
-            const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id) || hoveredSchemeId === scheme.id;
-            return (
-            <div
-              className="scheme-group"
-              key={scheme.id}
-              onMouseEnter={() => setHoveredSchemeId(scheme.id)}
-              onMouseLeave={() => setHoveredSchemeId((current) => current === scheme.id ? "" : current)}
-            >
-              <div
-                role="option"
-                aria-selected={false}
-                aria-expanded={isExpanded}
-                tabIndex={0}
-                className="scheme-option"
-                onClick={(event) => {
-                  if (event.ctrlKey || event.metaKey || event.shiftKey) {
-                    toggleSchemeSelection(scheme.id);
-                  } else {
-                    selectSingleScheme(scheme.id);
-                  }
-                  toggleSchemeExpanded(scheme.id);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
-                    event.preventDefault();
-                    if (event.ctrlKey || event.metaKey || event.shiftKey) {
-                      toggleSchemeSelection(scheme.id);
-                    } else {
-                      selectSingleScheme(scheme.id);
-                    }
-                    toggleSchemeExpanded(scheme.id);
-                  }
-                }}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  if (!isEditMode) {
-                    return;
-                  }
-                  finishProjectRecordDrag();
-                  const projectId = event.dataTransfer.getData("application/project-id");
-                  if (projectId) {
-                    moveProjectRecordToScheme(projectId, scheme.id);
-                  }
-                }}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  if (!selectedSchemeIds.includes(scheme.id)) {
-                    selectSingleScheme(scheme.id);
-                  }
-                  setProjectMenu({ x: event.clientX, y: event.clientY, schemeId: scheme.id });
-                }}
-              >
-                {isExpanded ? <ChevronDown className="scheme-toggle-icon" size={14} /> : <ChevronRight className="scheme-toggle-icon" size={14} />}
-                <FolderOpen size={14} />
-                <span>{scheme.name}</span>
-              </div>
-              {isExpanded && <div className="scheme-projects">
-                {scheme.projects.length === 0 ? (
-                  <p className="project-empty">暂无模型</p>
-                ) : (
-                  scheme.projects.map((project) => {
-                    const isProjectSelected = selectedProjectIds.includes(project.id) || project.id === selectedProjectId;
-                    return (
-                    <div
-                      role="option"
-                      aria-selected={isProjectSelected}
-                      tabIndex={0}
-                      draggable={isEditMode}
-                      className={`project-option ${isProjectSelected ? "selected" : ""} ${project.id === activeProjectId ? "active" : ""}`}
-                      key={project.id}
-                      onClick={(event) => {
-                        if (event.ctrlKey || event.metaKey || event.shiftKey) {
-                          toggleProjectSelection(scheme.id, project.id);
-                        } else {
-                          selectSingleProject(scheme.id, project.id);
-                        }
-                        setInspectorTab("model");
-                      }}
-                      onDoubleClick={() => requestLoadSavedProject(project, scheme.id)}
-                      onDragStart={(event) => {
-                        if (!isEditMode) {
-                          event.preventDefault();
-                          return;
-                        }
-                        startProjectRecordDrag(event, project.id);
-                      }}
-                      onDragEnd={finishProjectRecordDrag}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          requestLoadSavedProject(project, scheme.id);
-                        } else if (event.key === " " || event.key === "Spacebar") {
-                          event.preventDefault();
-                          if (event.ctrlKey || event.metaKey || event.shiftKey) {
-                            toggleProjectSelection(scheme.id, project.id);
-                          } else {
-                            selectSingleProject(scheme.id, project.id);
-                          }
-                        }
-                      }}
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        if (!selectedProjectIds.includes(project.id)) {
-                          selectSingleProject(scheme.id, project.id);
-                        }
-                        setProjectMenu({ x: event.clientX, y: event.clientY, schemeId: scheme.id, projectId: project.id });
-                      }}
-                    >
-                      <FileJson className="project-item-icon" size={14} />
-                      <span>{project.name}</span>
-                    </div>
-                    );
-                  })
-                )}
-              </div>}
-            </div>
-            );
-          })
+          filteredProjectSchemes.map((scheme) => renderProjectSchemeNode(scheme))
         )}
       </div>
     </section>
@@ -22439,7 +23032,9 @@ export function App() {
         {displayedAttributeLibraries.length > 0 ? displayedAttributeLibraries.map((group) => {
           const libraryExpanded = componentLibraryDisplayMode === "expanded";
           const libraryFlyout = componentLibraryDisplayMode === "right";
-          const expanded = libraryExpanded || librarySearchNeedle ? true : expandedAttributeLibraries.includes(group) || hoveredAttributeLibrary === group;
+          const expanded = librarySearchNeedle ? true : libraryExpanded
+            ? !collapsedExpandedModeAttributeLibraries.includes(group)
+            : expandedAttributeLibraries.includes(group) || hoveredAttributeLibrary === group;
           const typeGroups = filteredAttributeLibraryByComponentType[group] ?? [];
           return (
             <section
@@ -22464,11 +23059,7 @@ export function App() {
             >
               <button
                 className={`library-group-toggle ${expanded ? "active" : ""}`}
-                onClick={() =>
-                  setExpandedAttributeLibraries((current) =>
-                    current.includes(group) ? current.filter((item) => item !== group) : [...current, group]
-                  )
-                }
+                onClick={() => toggleAttributeLibrary(group)}
               >
                 {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 {group}
@@ -22477,9 +23068,12 @@ export function App() {
                 <div className="attribute-library-component-type-list">
                   {typeGroups.map((typeGroup) => {
                     const componentTypeKey = attributeLibraryComponentTypeKey(group, typeGroup.section);
-                    const componentTypeExpanded = libraryExpanded || librarySearchNeedle
+                    const componentTypeDisplay = componentTypeDisplayParts(typeGroup.section);
+                    const componentTypeExpanded = librarySearchNeedle
                       ? true
-                      : libraryFlyout ? false : expandedAttributeLibraryComponentTypes.includes(componentTypeKey) || hoveredAttributeLibraryComponentType === componentTypeKey;
+                      : libraryExpanded
+                        ? !collapsedExpandedModeComponentTypes.includes(componentTypeKey)
+                        : libraryFlyout ? false : expandedAttributeLibraryComponentTypes.includes(componentTypeKey) || hoveredAttributeLibraryComponentType === componentTypeKey;
                     const componentTypeFlyoutVisible = libraryFlyout && !librarySearchNeedle && hoveredAttributeLibraryComponentType === componentTypeKey;
                     const inlineListKey = libraryComponentListRefKey("inline", componentTypeKey);
                     const flyoutListKey = libraryComponentListRefKey("flyout", componentTypeKey);
@@ -22510,9 +23104,12 @@ export function App() {
                           aria-expanded={componentTypeExpanded || componentTypeFlyoutVisible}
                           onClick={() => toggleAttributeLibraryComponentType(group, typeGroup.section)}
                         >
-                          <span>
+                          <span className="component-type-title">
                             {componentTypeExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                            <span>{typeGroup.section}</span>
+                            <span className="component-type-name" title={componentTypeDisplay.title}>
+                              <span className="component-type-name-cn">{componentTypeDisplay.chinese}</span>
+                              <span className="component-type-name-en">{componentTypeDisplay.english}</span>
+                            </span>
                           </span>
                           <strong>{typeGroup.templates.length}</strong>
                         </button>
@@ -22786,19 +23383,20 @@ export function App() {
         groupTransformPreviewEdgeIdSet.has(edge.id) ||
         terminalPressPreviewEdgeIdSet.has(edge.id);
       const color = cachedConnectionStrokeColor(edge);
-      return [{ route, edge, hidden, selected, color }];
+      return [{ route, edge, hidden, selected, color, inactiveLayerGraphic: isEditMode && !activeLayerEdgeIdSet.has(edge.id) }];
     });
     return stableSvgMarkupChunks(items, lodCanvasRouteChunkCacheRef.current, {
       chunkSize: CANVAS_LOD_MARKUP_CHUNK_SIZE,
       keyPrefix: "lod-route",
       itemKey: (item) => item.edge.id,
-      itemTokens: (item) => item.hidden ? [false] : [true, item.route, item.edge, item.selected, item.color],
+      itemTokens: (item) => item.hidden ? [false] : [true, item.route, item.edge, item.selected, item.color, item.inactiveLayerGraphic],
       itemMarkup: (item) =>
         item.hidden
           ? ""
-          : `<path class="connection-line lod-edge${item.selected ? " lod-selected-edge" : ""}" d="${escapeXml(item.route.path)}" style="--connection-color:${escapeXml(item.color)}"/>`
+          : `<path class="connection-line lod-edge${item.selected ? " lod-selected-edge" : ""}${item.inactiveLayerGraphic ? " inactive-layer-graphic" : ""}" d="${escapeXml(item.route.path)}" style="--connection-color:${escapeXml(item.color)}"/>`
     });
   }, [
+    activeLayerEdgeIdSet,
     activeSelectedEdgeSet,
     colorDisplayMode,
     colorPalette,
@@ -22809,6 +23407,7 @@ export function App() {
     draggingDelta,
     edgeById,
     groupTransformPreviewEdgeIdSet,
+    isEditMode,
     multiNodeDragging,
     nodeById,
     singleNodeDragging,
@@ -22830,11 +23429,13 @@ export function App() {
         node,
         colorDisplayMode,
         colorPalette,
+        isEditMode && !activeLayerNodeIdSet.has(node.id),
         customSingleTerminalAnchorToken(node, libraryTemplateByKind.get(node.kind))
       ],
       itemMarkup: (node) => {
       const nodeIsBus = isBusNode(node);
-      const className = `diagram-node lod-node${nodeIsBus ? " bus-node" : ""}`;
+      const inactiveLayerGraphic = isEditMode && !activeLayerNodeIdSet.has(node.id);
+      const className = `diagram-node lod-node${nodeIsBus ? " bus-node" : ""}${inactiveLayerGraphic ? " inactive-layer-graphic" : ""}`;
       const transform = `translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)}) ${nodeGeometryTransform(node)}`;
       const fill = node.params.backgroundColor || "#ffffff";
       const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
@@ -22854,9 +23455,11 @@ export function App() {
       }
     });
   }, [
+    activeLayerNodeIdSet,
     colorDisplayMode,
     colorPalette,
     groupTransformPreviewNodeIdSet,
+    isEditMode,
     libraryTemplateByKind,
     nodeLabelDrag,
     nodeLabelRotateDrag,
@@ -22934,7 +23537,7 @@ export function App() {
     if (!selectedNodeIdSet.has(node.id)) {
       selectCanvasGraphics([node.id], []);
     }
-    setContextMenu({ x: event.clientX, y: event.clientY, target: "node", nodeId: node.id });
+    openGraphicContextMenu({ x: event.clientX, y: event.clientY, target: "node", nodeId: node.id });
   };
   const handleLodNodeDoubleClick = (event: MouseEvent<SVGGElement>) => {
     const node = lodNodeFromEvent(event);
@@ -23338,7 +23941,7 @@ export function App() {
   const resolveStaticButtonTargetProject = (node: ModelNode) => {
     const targetProjectId = node.params.buttonTargetProjectId?.trim();
     if (targetProjectId) {
-      for (const scheme of schemes) {
+      for (const scheme of flattenSavedSchemes(schemes)) {
         const project = scheme.projects.find((item) => item.id === targetProjectId);
         if (project) {
           return { scheme, project };
@@ -23347,7 +23950,7 @@ export function App() {
     }
     const targetName = node.params.buttonTargetProjectName?.trim();
     if (targetName) {
-      for (const scheme of schemes) {
+      for (const scheme of flattenSavedSchemes(schemes)) {
         const project = scheme.projects.find((item) => item.name.trim() === targetName);
         if (project) {
           return { scheme, project };
@@ -23464,16 +24067,16 @@ export function App() {
   };
 
   useEffect(() => {
-    if (!backgroundProjectId || backgroundProjectId === activeProjectId || !backgroundProjectRecord) {
+    if (!backgroundProjectId || backgroundProjectId === activeProjectKey || !backgroundProjectRecord) {
       setBackgroundPageRenderReady(false);
       return;
     }
     setBackgroundPageRenderReady(false);
     return scheduleIdleWork(() => setBackgroundPageRenderReady(true), 80, 1500);
-  }, [activeProjectId, backgroundLayerIds, backgroundProjectId, backgroundProjectRecord, savedRouteCrossingArcsReady]);
+  }, [activeProjectKey, backgroundLayerIds, backgroundProjectId, backgroundProjectRecord, savedRouteCrossingArcsReady]);
 
   const backgroundPageFrameRender = useMemo(() => {
-    if (!backgroundProjectId || backgroundProjectId === activeProjectId || !backgroundProjectRecord) {
+    if (!backgroundProjectId || backgroundProjectId === activeProjectKey || !backgroundProjectRecord) {
       return null;
     }
     const backgroundProject = backgroundProjectRecord.project;
@@ -23488,7 +24091,7 @@ export function App() {
       backgroundImageUrl: resolveProjectImage(backgroundProject, imageAssets),
       transform: backgroundPageCanvasTransform(backgroundBounds, { width: canvasWidth, height: canvasHeight })
     };
-  }, [activeProjectId, backgroundProjectId, backgroundProjectRecord, canvasHeight, canvasWidth, imageAssets]);
+  }, [activeProjectKey, backgroundProjectId, backgroundProjectRecord, canvasHeight, canvasWidth, imageAssets]);
 
   const backgroundPageRender = useMemo(() => {
     if (!backgroundPageFrameRender || !backgroundPageRenderReady) {
@@ -23789,6 +24392,8 @@ export function App() {
     [
       colorPalette,
       componentLibraryDisplayMode,
+      collapsedExpandedModeAttributeLibraries,
+      collapsedExpandedModeComponentTypes,
       displayedAttributeLibraries,
       expandedAttributeLibraries,
       expandedAttributeLibraryComponentTypes,
@@ -23807,9 +24412,10 @@ export function App() {
     () => renderTemplateLibraryPanel(),
     [colorPalette, expandedGraphTemplateTypes, graphTemplateTypes, groupedGraphTemplates, hoveredGraphTemplateType, isBrowseMode, isEditMode]
   );
-  const leftPanelContent = leftPanelTab === "projects"
+  const effectiveLeftPanelTab = isBrowseMode ? "projects" : leftPanelTab;
+  const leftPanelContent = effectiveLeftPanelTab === "projects"
     ? renderProjectPanel()
-    : leftPanelTab === "templates"
+    : effectiveLeftPanelTab === "templates"
       ? templateLibraryPanelContent
       : libraryPanelContent;
   const canvasResizeHandles = (
@@ -23903,15 +24509,19 @@ export function App() {
         />
         {renderSidePanelModeControls("left")}
         <div className="left-panel-tabs" role="tablist" aria-label="左侧资源库">
-          <button className={leftPanelTab === "projects" ? "active" : ""} onClick={() => setLeftPanelTab("projects")} role="tab" aria-selected={leftPanelTab === "projects"}>
+          <button className={effectiveLeftPanelTab === "projects" ? "active" : ""} onClick={() => setLeftPanelTab("projects")} role="tab" aria-selected={effectiveLeftPanelTab === "projects"}>
             模型库
           </button>
-          <button className={leftPanelTab === "library" ? "active" : ""} onClick={() => setLeftPanelTab("library")} role="tab" aria-selected={leftPanelTab === "library"}>
-            图元库
-          </button>
-          <button className={leftPanelTab === "templates" ? "active" : ""} onClick={() => setLeftPanelTab("templates")} role="tab" aria-selected={leftPanelTab === "templates"}>
-            模板库
-          </button>
+          {isEditMode && (
+            <>
+              <button className={leftPanelTab === "library" ? "active" : ""} onClick={() => setLeftPanelTab("library")} role="tab" aria-selected={leftPanelTab === "library"}>
+                图元库
+              </button>
+              <button className={leftPanelTab === "templates" ? "active" : ""} onClick={() => setLeftPanelTab("templates")} role="tab" aria-selected={leftPanelTab === "templates"}>
+                模板库
+              </button>
+            </>
+          )}
         </div>
         <div className="left-panel-content">
           {leftPanelContent}
@@ -24009,6 +24619,30 @@ export function App() {
             <button onClick={ungroupSelectedGraphics} disabled={isBrowseMode || !canUngroupSelectedGraphics} title="解散" aria-label="解散">
               <Ungroup size={16} />
             </button>
+            <div className="topbar-dropdown display-layer-dropdown">
+              <button type="button" className="topbar-dropdown-trigger" disabled={!canAdjustSelectedDisplayLayer} title="显示层级" aria-label="显示层级">
+                <Layers2 size={16} />
+                <ChevronDown size={13} />
+              </button>
+              <div className="topbar-dropdown-menu" role="menu" aria-label="显示层级">
+                <button onClick={() => adjustSelectedDisplayLayer("raise")} disabled={!canAdjustSelectedDisplayLayer} title="提升显示层级" aria-label="提升显示层级">
+                  <ArrowUp size={16} />
+                  <span>提升显示层级</span>
+                </button>
+                <button onClick={() => adjustSelectedDisplayLayer("lower")} disabled={!canAdjustSelectedDisplayLayer} title="降低显示层级" aria-label="降低显示层级">
+                  <ArrowDown size={16} />
+                  <span>降低显示层级</span>
+                </button>
+                <button onClick={() => adjustSelectedDisplayLayer("front")} disabled={!canAdjustSelectedDisplayLayer} title="顶层显示" aria-label="顶层显示">
+                  <ChevronsUp size={16} />
+                  <span>顶层显示</span>
+                </button>
+                <button onClick={() => adjustSelectedDisplayLayer("back")} disabled={!canAdjustSelectedDisplayLayer} title="底层显示" aria-label="底层显示">
+                  <ChevronsDown size={16} />
+                  <span>底层显示</span>
+                </button>
+              </div>
+            </div>
             <div className="topbar-dropdown align-dropdown">
               <button type="button" className="topbar-dropdown-trigger" disabled={isBrowseMode} title="对齐操作" aria-label="对齐操作">
                 <AlignCenterHorizontal size={16} />
@@ -24314,10 +24948,10 @@ export function App() {
               resetConnectPreviewState();
               setRewiring(null);
               setInspectorTab("model");
-              if (activeProjectId) {
-                setSelectedProjectId(activeProjectId);
-                setSelectedProjectIds([activeProjectId]);
-                setSelectedSchemeId(activeSchemeId);
+              if (activeProjectKey) {
+                setSelectedProjectId(activeProjectKey);
+                setSelectedProjectIds([activeProjectKey]);
+                setSelectedSchemeId(activeSchemeKey);
                 setSelectedSchemeIds([]);
               }
               if (event.detail >= 2) {
@@ -24331,6 +24965,14 @@ export function App() {
             }}
             onContextMenu={(event) => {
               event.preventDefault();
+              if (consumeGraphicContextMenuHandled()) {
+                event.stopPropagation();
+                return;
+              }
+              if (isCanvasGraphicContextMenuTarget(event.target)) {
+                event.stopPropagation();
+                return;
+              }
               const rawPointer = screenToSvgPoint(event.currentTarget, event.clientX, event.clientY);
               const pointer = clampPointToCanvas(rawPointer);
               lastRawCanvasPointerRef.current = rawPointer;
@@ -24410,6 +25052,17 @@ export function App() {
             )}
             {renderLibraryPlacementPreview()}
             {renderInteractiveStaticDrawingPreview()}
+            {smartAlignmentGuides.map((guide) => (
+              <line
+                key={guide.id}
+                className={`smart-alignment-guide smart-alignment-guide-${guide.orientation}`}
+                x1={guide.orientation === "vertical" ? guide.position : guide.start}
+                y1={guide.orientation === "vertical" ? guide.start : guide.position}
+                x2={guide.orientation === "vertical" ? guide.position : guide.end}
+                y2={guide.orientation === "vertical" ? guide.end : guide.position}
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
             {dragGhostEdgeRoutes.map((route) => (
               <path key={`drag-ghost-edge-${route.edgeId}`} d={route.path} className="connection-line drag-ghost" style={connectionLineStyle(route.edgeId)} />
             ))}
@@ -24474,6 +25127,7 @@ export function App() {
               const sourceNode = nodeById.get(edge.sourceId);
               const targetNode = nodeById.get(edge.targetId);
               const editable = isEditMode && activeLayerEdgeIdSet.has(edge.id);
+              const inactiveLayerGraphic = isEditMode && !editable;
               const rewiringSource = rewiring?.edgeId === edge.id && rewiring.endpoint === "source";
               const rewiringTarget = rewiring?.edgeId === edge.id && rewiring.endpoint === "target";
               const rewireTarget = rewiring?.edgeId === edge.id ? findRewireTargetAtPoint(rewiring.previewPoint, rewiring) : null;
@@ -24492,7 +25146,7 @@ export function App() {
                   ? targetPoint
                   : undefined;
               return (
-                <g key={edge.id} className={`connection-group ${selected ? "selected" : ""}`} style={connectionLineStyle(edge.id)}>
+                <g key={edge.id} className={`connection-group ${selected ? "selected" : ""} ${inactiveLayerGraphic ? "inactive-layer-graphic" : ""}`} style={connectionLineStyle(edge.id)}>
                   <path
                     d={route.path}
                     className="connection-hitline"
@@ -24657,7 +25311,7 @@ export function App() {
                         setMode("select");
                         return;
                       }
-                      setContextMenu({ x: event.clientX, y: event.clientY, target: "group", canvasPoint: pointer });
+                      openGraphicContextMenu({ x: event.clientX, y: event.clientY, target: "group", canvasPoint: pointer });
                     }}
                   />
                   <rect
@@ -24734,6 +25388,7 @@ export function App() {
               const selected = selectedNodeIdSet.has(node.id);
               const focused = node.id === selectedNodeId;
               const editable = activeLayerNodeIdSet.has(node.id);
+              const inactiveLayerGraphic = isEditMode && !editable;
               const nodeIsBus = isBusNode(node);
               const nodeIsStatic = isStaticNode(node);
               const isStorageBus =
@@ -24803,7 +25458,7 @@ export function App() {
               return (
                 <g
                   key={node.id}
-                  className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${uprightStaticSelectionOutline ? "static-upright-selection-node" : ""} ${staticButtonEnabled ? "static-button-enabled" : ""} ${staticButtonState ? `static-button-${staticButtonState}` : ""} ${multiNodeDragging && draggingNodeIdSet.has(node.id) ? "multi-drag-origin" : ""} ${singleNodeDragging && draggingNodeIdSet.has(node.id) ? "single-drag-origin" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${isConnectSource ? "connect-source" : ""}`}
+                  className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${uprightStaticSelectionOutline ? "static-upright-selection-node" : ""} ${staticButtonEnabled ? "static-button-enabled" : ""} ${staticButtonState ? `static-button-${staticButtonState}` : ""} ${multiNodeDragging && draggingNodeIdSet.has(node.id) ? "multi-drag-origin" : ""} ${singleNodeDragging && draggingNodeIdSet.has(node.id) ? "single-drag-origin" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${isConnectSource ? "connect-source" : ""} ${inactiveLayerGraphic ? "inactive-layer-graphic" : ""}`}
                   transform={`translate(${renderPosition.x} ${renderPosition.y})`}
                   onPointerDown={(event) => handleNodePointerDown(event, node)}
                   onPointerEnter={() => {
@@ -24845,7 +25500,7 @@ export function App() {
                     if (!selectedNodeIdSet.has(node.id)) {
                       selectCanvasGraphics([node.id], []);
                     }
-                    setContextMenu({ x: event.clientX, y: event.clientY, target: "node", nodeId: node.id });
+                    openGraphicContextMenu({ x: event.clientX, y: event.clientY, target: "node", nodeId: node.id });
                   }}
                   onDoubleClick={(event) => {
                     event.stopPropagation();
@@ -26443,13 +27098,13 @@ export function App() {
               粘贴
             </button>
           )}
-          {isEditMode && !contextMenuForEdge && activeLayerNodes.length > 1 && (
+          {isEditMode && contextMenuTarget === "blank" && activeLayerNodes.length > 1 && (
             <button onClick={() => runContextMenuAction(autoAlignCanvasGraphics)}>
               <AlignCenterHorizontal size={14} />
               自动对齐
             </button>
           )}
-          {isEditMode && !contextMenuForEdge && activeLayerNodes.length > 1 && (
+          {isEditMode && contextMenuTarget === "blank" && activeLayerNodes.length > 1 && (
             <button onClick={() => runContextMenuAction(autoSpreadCanvasGraphics)}>
               <ScanSearch size={14} />
               自动散开
@@ -26513,6 +27168,35 @@ export function App() {
             isEditMode ? (
             <div className="context-menu-submenu">
               <button type="button" className="context-menu-submenu-trigger">
+                <Layers2 size={14} />
+                显示层级
+                <ChevronRight size={14} />
+              </button>
+              <div className="context-menu-submenu-panel">
+                <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("raise"))}>
+                  <ArrowUp size={14} />
+                  提升显示层级
+                </button>
+                <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("lower"))}>
+                  <ArrowDown size={14} />
+                  降低显示层级
+                </button>
+                <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("front"))}>
+                  <ChevronsUp size={14} />
+                  顶层显示
+                </button>
+                <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("back"))}>
+                  <ChevronsDown size={14} />
+                  底层显示
+                </button>
+              </div>
+            </div>
+            ) : null
+          )}
+          {contextMenuForNode && activeSelectedNodeIds.length > 0 && (
+            isEditMode ? (
+            <div className="context-menu-submenu">
+              <button type="button" className="context-menu-submenu-trigger">
                 <Type size={14} />
                 标识显示
                 <ChevronRight size={14} />
@@ -26568,7 +27252,7 @@ export function App() {
               </button>
               {isEditMode && (
               <button
-                onClick={() => runContextMenuAction(() => openModelImportFilePicker(projectMenu.schemeId))}
+                onClick={() => runContextMenuAction(() => openModelImportFilePicker(projectMenu.schemeId ?? ""))}
               >
                 <FileInput size={14} />
                 模型导入
@@ -26596,7 +27280,7 @@ export function App() {
               </button>
               {recordClipboard?.kind === "project" && projectMenu.projectId && (
                 isEditMode ? (
-                <button onClick={() => runContextMenuAction(() => pasteProjectClipboardRecord(projectMenu.schemeId))}>
+                <button onClick={() => runContextMenuAction(() => pasteProjectClipboardRecord(projectMenu.schemeId ?? ""))}>
                   <FileInput size={14} />
                   模型粘贴
                 </button>
@@ -26607,9 +27291,15 @@ export function App() {
           {!projectMenu.projectId && projectMenu.schemeId && (
             <>
               {isEditMode && (
+              <button onClick={() => runContextMenuAction(() => createSchemeRecord(projectMenu.schemeId ?? ""))}>
+                <FolderOpen size={14} />
+                方案新增
+              </button>
+              )}
+              {isEditMode && (
               <button
                 onClick={() => runContextMenuAction(() => {
-                  const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
+                  const scheme = findSavedSchemeById(schemes, projectMenu.schemeId ?? "");
                   if (scheme) deleteSchemeRecord(scheme);
                 })}
               >
@@ -26619,7 +27309,7 @@ export function App() {
               )}
               <button
                 onClick={() => runContextMenuAction(() => {
-                  const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
+                  const scheme = findSavedSchemeById(schemes, projectMenu.schemeId ?? "");
                   if (scheme) void exportSchemeRecord(scheme);
                 })}
               >
@@ -26627,7 +27317,7 @@ export function App() {
                 方案导出
               </button>
               {isEditMode && (
-              <button onClick={() => runContextMenuAction(openSchemeImportFilePicker)}>
+              <button onClick={() => runContextMenuAction(() => openSchemeImportFilePicker(projectMenu.schemeId ?? ""))}>
                 <FileInput size={14} />
                 方案导入
               </button>
@@ -26635,7 +27325,7 @@ export function App() {
               {isEditMode && (
               <button
                 onClick={() => runContextMenuAction(() => {
-                  const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
+                  const scheme = findSavedSchemeById(schemes, projectMenu.schemeId ?? "");
                   if (scheme) renameSchemeRecord(scheme);
                 })}
               >
@@ -26645,7 +27335,7 @@ export function App() {
               )}
               <button
                 onClick={() => runContextMenuAction(() => {
-                  const scheme = schemes.find((item) => item.id === projectMenu.schemeId);
+                  const scheme = findSavedSchemeById(schemes, projectMenu.schemeId ?? "");
                   if (scheme) copySchemeRecord(scheme);
                 })}
               >
@@ -26654,7 +27344,7 @@ export function App() {
               </button>
               {recordClipboard?.kind === "scheme" && (
                 isEditMode ? (
-                <button onClick={() => runContextMenuAction(pasteSchemeClipboardRecord)}>
+                <button onClick={() => runContextMenuAction(() => pasteSchemeClipboardRecord(projectMenu.schemeId ?? ""))}>
                   <FileInput size={14} />
                   方案粘贴
                 </button>
@@ -26662,20 +27352,20 @@ export function App() {
               )}
               {isEditMode && <div className="context-menu-separator" role="separator" aria-label="方案操作和模型操作分隔" />}
               {isEditMode && (
-              <button onClick={() => runContextMenuAction(() => createBlankProject(projectMenu.schemeId))}>
+              <button onClick={() => runContextMenuAction(() => createBlankProject(projectMenu.schemeId ?? ""))}>
                 <Plus size={14} />
                 模型新建
               </button>
               )}
               {isEditMode && (
-              <button onClick={() => runContextMenuAction(() => openModelImportFilePicker(projectMenu.schemeId))}>
+              <button onClick={() => runContextMenuAction(() => openModelImportFilePicker(projectMenu.schemeId ?? ""))}>
                 <FileInput size={14} />
                 模型导入
               </button>
               )}
               {recordClipboard?.kind === "project" && projectMenu.schemeId && (
                 isEditMode ? (
-                <button onClick={() => runContextMenuAction(() => pasteProjectClipboardRecord(projectMenu.schemeId))}>
+                <button onClick={() => runContextMenuAction(() => pasteProjectClipboardRecord(projectMenu.schemeId ?? ""))}>
                   <FileInput size={14} />
                   模型粘贴
                 </button>

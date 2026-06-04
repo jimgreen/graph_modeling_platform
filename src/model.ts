@@ -1899,11 +1899,19 @@ export type SavedProjectRecord = {
   project: ProjectFile;
 };
 
+export type PersistedSavedProjectRecord = Omit<SavedProjectRecord, "id">;
+
 export type SavedSchemeRecord = {
   id: string;
   name: string;
   updatedAt: string;
   projects: SavedProjectRecord[];
+  children?: SavedSchemeRecord[];
+};
+
+export type PersistedSavedSchemeRecord = Omit<SavedSchemeRecord, "id" | "projects" | "children"> & {
+  projects: PersistedSavedProjectRecord[];
+  children?: PersistedSavedSchemeRecord[];
 };
 
 export type Topology = {
@@ -7942,37 +7950,192 @@ export function uniqueRecordName(baseName: string, existingNames: string[], fall
   return `${base} (${index})`;
 }
 
+function savedRecordTimestamp(value: string | undefined): number {
+  const timestamp = Date.parse(value ?? "");
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function savedProjectDisplayName(name: string, fallback = "未命名模型"): string {
+  const normalized = name.trim().replace(/电力系统/g, "电力能源系统") || fallback;
+  const suffixMatch = /^(.*?)\s*\((\d+)\)$/u.exec(normalized);
+  if (!suffixMatch) {
+    return normalized;
+  }
+  const base = suffixMatch[1].trim();
+  // Explicit copies are intentionally named "副本", while numeric suffixes on
+  // ordinary model names come from older duplicate-normalization bugs.
+  return base && !base.endsWith("副本") ? base : normalized;
+}
+
+export function savedProjectRecordNameKey(name: string): string {
+  return savedProjectDisplayName(name).toLocaleLowerCase();
+}
+
+function savedSchemeDisplayName(name: string, fallback = "未命名方案"): string {
+  return name.trim().replace(/电力系统/g, "电力能源系统") || fallback;
+}
+
+function savedRuntimePathKey(kind: "scheme" | "project", path: string[]): string {
+  return `${kind}:${path.map((part) => encodeURIComponent(part)).join("/")}`;
+}
+
+export function normalizeSavedSchemeRecordNames(schemes: SavedSchemeRecord[]): SavedSchemeRecord[] {
+  const normalized: SavedSchemeRecord[] = [];
+  const usedNames: string[] = [];
+  let changed = false;
+  for (const scheme of schemes) {
+    const displayName = savedSchemeDisplayName(scheme.name);
+    const name = uniqueRecordName(displayName, usedNames, "未命名方案");
+    usedNames.push(name);
+    const projects = Array.isArray(scheme.projects)
+      ? normalizeSavedProjectRecordNames(scheme.projects)
+      : [];
+    const children = Array.isArray(scheme.children)
+      ? normalizeSavedSchemeRecordNames(scheme.children)
+      : [];
+    const record = {
+      ...scheme,
+      name,
+      projects,
+      children
+    };
+    normalized.push(record);
+    if (record !== scheme || name !== scheme.name || projects !== scheme.projects || children !== scheme.children) {
+      changed = true;
+    }
+  }
+  return changed ? normalized : schemes;
+}
+
+function hydrateSavedSchemeRuntimeIdsForPath(
+  schemes: SavedSchemeRecord[],
+  parentPath: string[]
+): SavedSchemeRecord[] {
+  return schemes.map((scheme) => {
+    const schemePath = [...parentPath, savedSchemeDisplayName(scheme.name)];
+    return {
+      ...scheme,
+      id: savedRuntimePathKey("scheme", schemePath),
+      projects: normalizeSavedProjectRecordNames(scheme.projects ?? []).map((project) => {
+        const name = savedProjectDisplayName(project.name);
+        return {
+          ...project,
+          id: savedRuntimePathKey("project", [...schemePath, name]),
+          name,
+          project: {
+            ...project.project,
+            name
+          }
+        };
+      }),
+      children: hydrateSavedSchemeRuntimeIdsForPath(scheme.children ?? [], schemePath)
+    };
+  });
+}
+
+export function hydrateSavedSchemeRuntimeIds(schemes: SavedSchemeRecord[]): SavedSchemeRecord[] {
+  return hydrateSavedSchemeRuntimeIdsForPath(normalizeSavedSchemeRecordNames(schemes), []);
+}
+
+export function stripSavedSchemeRuntimeIds(schemes: SavedSchemeRecord[]): PersistedSavedSchemeRecord[] {
+  return normalizeSavedSchemeRecordNames(schemes).map((scheme) => {
+    const { id: _schemeRuntimeId, projects, children, ...schemeRecord } = scheme;
+    return {
+      ...schemeRecord,
+      projects: normalizeSavedProjectRecordNames(projects ?? []).map((project) => {
+        const { id: _projectRuntimeId, ...projectRecord } = project;
+        return {
+          ...projectRecord,
+          project: {
+            ...projectRecord.project,
+            name: projectRecord.name
+          }
+        };
+      }),
+      children: stripSavedSchemeRuntimeIds(children ?? [])
+    };
+  });
+}
+
+export function normalizeSavedProjectRecordNames(projects: SavedProjectRecord[]): SavedProjectRecord[] {
+  const normalized: SavedProjectRecord[] = [];
+  const indexByNameKey = new Map<string, number>();
+  let changed = false;
+  for (const project of projects) {
+    const name = savedProjectDisplayName(project.name);
+    const record = {
+      ...project,
+      name,
+      project: {
+        ...project.project,
+        name
+      }
+    };
+    const key = savedProjectRecordNameKey(name);
+    const existingIndex = indexByNameKey.get(key);
+    if (existingIndex === undefined) {
+      indexByNameKey.set(key, normalized.length);
+      normalized.push(record);
+      if (record !== project || name !== project.name || record.project.name !== project.project.name) {
+        changed = true;
+      }
+      continue;
+    }
+    changed = true;
+    const existing = normalized[existingIndex];
+    const candidateTimestamp = savedRecordTimestamp(record.updatedAt);
+    const existingTimestamp = savedRecordTimestamp(existing.updatedAt);
+    if (candidateTimestamp >= existingTimestamp) {
+      normalized[existingIndex] = record;
+    }
+  }
+  return changed ? normalized : projects;
+}
+
 export function copySavedProjectWithUniqueName(project: SavedProjectRecord, existingNames: string[], suffix = "副本"): SavedProjectRecord {
   const name = uniqueRecordName(`${project.name} ${suffix}`, existingNames, "未命名模型");
   return createSavedProject(name, project.project);
 }
 
-export function copySavedSchemeWithUniqueName(scheme: SavedSchemeRecord, existingNames: string[], suffix = "副本"): SavedSchemeRecord {
-  const name = uniqueRecordName(`${scheme.name} ${suffix}`, existingNames, "未命名方案");
+function savedSchemeChildren(scheme: SavedSchemeRecord): SavedSchemeRecord[] {
+  return Array.isArray(scheme.children) ? scheme.children : [];
+}
+
+function copySavedSchemeTreeWithName(scheme: SavedSchemeRecord, name: string): SavedSchemeRecord {
   const projects = scheme.projects.reduce<SavedProjectRecord[]>(
     (current, project) => upsertSavedProject(current, copySavedProjectWithUniqueName(project, current.map((item) => item.name))),
     []
   );
-  return createSavedScheme(name, projects);
+  const children = savedSchemeChildren(scheme).reduce<SavedSchemeRecord[]>((current, child) => {
+    const childName = uniqueRecordName(child.name, current.map((item) => item.name), "未命名方案");
+    return [...current, copySavedSchemeTreeWithName(child, childName)];
+  }, []);
+  return createSavedScheme(name, projects, children);
+}
+
+export function copySavedSchemeWithUniqueName(scheme: SavedSchemeRecord, existingNames: string[], suffix = "副本"): SavedSchemeRecord {
+  const name = uniqueRecordName(`${scheme.name} ${suffix}`, existingNames, "未命名方案");
+  return copySavedSchemeTreeWithName(scheme, name);
 }
 
 export function upsertSavedProject(projects: SavedProjectRecord[], record: SavedProjectRecord): SavedProjectRecord[] {
   const index = projects.findIndex((project) => project.id === record.id);
-  const name = uniqueRecordName(
-    record.name,
-    projects.filter((project) => project.id !== record.id).map((project) => project.name),
-    "未命名模型"
-  );
+  const requestedName = savedProjectDisplayName(record.name);
+  const duplicateNameIndex = projects.findIndex((project) => project.id !== record.id && savedProjectRecordNameKey(project.name) === savedProjectRecordNameKey(requestedName));
+  const name = index !== -1 && duplicateNameIndex !== -1 ? projects[index].name : requestedName;
+  const retainedId = index === -1 && duplicateNameIndex !== -1 ? projects[duplicateNameIndex].id : record.id;
   const nextRecord = {
     ...record,
+    id: retainedId,
     name,
     updatedAt: new Date().toISOString(),
     project: { ...record.project, name }
   };
-  if (index === -1) {
+  const targetIndex = index === -1 ? duplicateNameIndex : index;
+  if (targetIndex === -1) {
     return [...projects, nextRecord];
   }
-  return projects.map((project) => (project.id === record.id ? nextRecord : project));
+  return projects.map((project, projectIndex) => (projectIndex === targetIndex ? nextRecord : project));
 }
 
 export function renameSavedProject(
@@ -7981,7 +8144,7 @@ export function renameSavedProject(
   nextName: string
 ): SavedProjectRecord[] {
   const name = nextName.trim() || "未命名模型";
-  const hasConflict = projects.some((project) => project.id !== projectId && project.name.trim() === name);
+  const hasConflict = projects.some((project) => project.id !== projectId && savedProjectRecordNameKey(project.name) === savedProjectRecordNameKey(name));
   if (hasConflict) {
     return projects;
   }
@@ -8004,13 +8167,187 @@ export function deleteSavedProject(projects: SavedProjectRecord[], projectId: st
   return projects.filter((project) => project.id !== projectId);
 }
 
-export function createSavedScheme(name: string, projects: SavedProjectRecord[] = []): SavedSchemeRecord {
+export function createSavedScheme(
+  name: string,
+  projects: SavedProjectRecord[] = [],
+  children: SavedSchemeRecord[] = []
+): SavedSchemeRecord {
   return {
     id: makeId("scheme"),
     name: name.trim() || "未命名方案",
     updatedAt: new Date().toISOString(),
-    projects
+    projects,
+    children
   };
+}
+
+export function flattenSavedSchemes(schemes: SavedSchemeRecord[]): SavedSchemeRecord[] {
+  return schemes.flatMap((scheme) => [scheme, ...flattenSavedSchemes(savedSchemeChildren(scheme))]);
+}
+
+export function flattenSavedProjects(schemes: SavedSchemeRecord[]): SavedProjectRecord[] {
+  return schemes.flatMap((scheme) => [...scheme.projects, ...flattenSavedProjects(savedSchemeChildren(scheme))]);
+}
+
+export function findSavedSchemeById(
+  schemes: SavedSchemeRecord[],
+  schemeId: string
+): SavedSchemeRecord | undefined {
+  if (!schemeId) {
+    return undefined;
+  }
+  for (const scheme of schemes) {
+    if (scheme.id === schemeId) {
+      return scheme;
+    }
+    const child = findSavedSchemeById(savedSchemeChildren(scheme), schemeId);
+    if (child) {
+      return child;
+    }
+  }
+  return undefined;
+}
+
+export function findSavedSchemeParentById(
+  schemes: SavedSchemeRecord[],
+  schemeId: string
+): SavedSchemeRecord | undefined {
+  if (!schemeId) {
+    return undefined;
+  }
+  for (const scheme of schemes) {
+    if (savedSchemeChildren(scheme).some((child) => child.id === schemeId)) {
+      return scheme;
+    }
+    const parent = findSavedSchemeParentById(savedSchemeChildren(scheme), schemeId);
+    if (parent) {
+      return parent;
+    }
+  }
+  return undefined;
+}
+
+export function findSavedProjectRecordInSchemes(
+  schemes: SavedSchemeRecord[],
+  projectId: string,
+  preferredSchemeId = ""
+): { scheme: SavedSchemeRecord; project: SavedProjectRecord } | null {
+  if (!projectId) {
+    return null;
+  }
+  const flattenedSchemes = flattenSavedSchemes(schemes);
+  const preferredScheme = preferredSchemeId ? flattenedSchemes.find((scheme) => scheme.id === preferredSchemeId) : undefined;
+  const searchSchemes = preferredScheme
+    ? [preferredScheme, ...flattenedSchemes.filter((scheme) => scheme.id !== preferredScheme.id)]
+    : flattenedSchemes;
+  for (const scheme of searchSchemes) {
+    const project = scheme.projects.find((item) => item.id === projectId);
+    if (project) {
+      return { scheme, project };
+    }
+  }
+  return null;
+}
+
+export function savedSchemeSiblingNames(
+  schemes: SavedSchemeRecord[],
+  schemeId: string,
+  excludeSchemeId = ""
+): string[] {
+  const parent = findSavedSchemeParentById(schemes, schemeId);
+  const siblings = parent ? savedSchemeChildren(parent) : schemes;
+  return siblings.filter((scheme) => scheme.id !== excludeSchemeId).map((scheme) => scheme.name);
+}
+
+export function savedChildSchemeNames(schemes: SavedSchemeRecord[], parentSchemeId = ""): string[] {
+  if (!parentSchemeId) {
+    return schemes.map((scheme) => scheme.name);
+  }
+  const parent = findSavedSchemeById(schemes, parentSchemeId);
+  return parent ? savedSchemeChildren(parent).map((scheme) => scheme.name) : [];
+}
+
+export function mapSavedSchemeTree(
+  schemes: SavedSchemeRecord[],
+  mapper: (scheme: SavedSchemeRecord) => SavedSchemeRecord
+): SavedSchemeRecord[] {
+  let changed = false;
+  const mapped = schemes.map((scheme) => {
+    const children = savedSchemeChildren(scheme);
+    const nextChildren = children.length > 0 ? mapSavedSchemeTree(children, mapper) : children;
+    const normalizedScheme = nextChildren !== children ? { ...scheme, children: nextChildren } : scheme;
+    const nextScheme = mapper(normalizedScheme);
+    if (nextScheme !== scheme) {
+      changed = true;
+    }
+    return nextScheme;
+  });
+  return changed ? mapped : schemes;
+}
+
+export function insertChildSavedScheme(
+  schemes: SavedSchemeRecord[],
+  parentSchemeId: string,
+  childScheme: SavedSchemeRecord
+): SavedSchemeRecord[] {
+  if (!parentSchemeId) {
+    return [...schemes, childScheme];
+  }
+  const now = new Date().toISOString();
+  let inserted = false;
+  const nextSchemes = mapSavedSchemeTree(schemes, (scheme) => {
+    if (scheme.id !== parentSchemeId) {
+      return scheme;
+    }
+    inserted = true;
+    return {
+      ...scheme,
+      updatedAt: now,
+      children: [...savedSchemeChildren(scheme), childScheme]
+    };
+  });
+  return inserted ? nextSchemes : [...schemes, childScheme];
+}
+
+export function replaceSavedSchemeById(
+  schemes: SavedSchemeRecord[],
+  schemeId: string,
+  replacement: SavedSchemeRecord
+): SavedSchemeRecord[] {
+  return mapSavedSchemeTree(schemes, (scheme) => (scheme.id === schemeId ? replacement : scheme));
+}
+
+export function upsertSavedProjectInScheme(
+  schemes: SavedSchemeRecord[],
+  schemeId: string,
+  record: SavedProjectRecord
+): SavedSchemeRecord[] {
+  const now = new Date().toISOString();
+  return mapSavedSchemeTree(schemes, (scheme) =>
+    scheme.id === schemeId
+      ? {
+          ...scheme,
+          updatedAt: now,
+          projects: upsertSavedProject(scheme.projects, record)
+        }
+      : scheme
+  );
+}
+
+export function deleteSavedProjectsFromSchemes(
+  schemes: SavedSchemeRecord[],
+  projectIds: Set<string>
+): SavedSchemeRecord[] {
+  return mapSavedSchemeTree(schemes, (scheme) => {
+    if (!scheme.projects.some((project) => projectIds.has(project.id))) {
+      return scheme;
+    }
+    return {
+      ...scheme,
+      updatedAt: new Date().toISOString(),
+      projects: scheme.projects.filter((project) => !projectIds.has(project.id))
+    };
+  });
 }
 
 export function renameSavedScheme(
@@ -8019,17 +8356,50 @@ export function renameSavedScheme(
   nextName: string
 ): SavedSchemeRecord[] {
   const name = nextName.trim() || "未命名方案";
-  const hasConflict = schemes.some((scheme) => scheme.id !== schemeId && scheme.name.trim() === name);
-  if (hasConflict) {
-    return schemes;
-  }
-  return schemes.map((scheme) =>
-    scheme.id === schemeId ? { ...scheme, name, updatedAt: new Date().toISOString() } : scheme
-  );
+  const renameInLevel = (level: SavedSchemeRecord[]): { schemes: SavedSchemeRecord[]; changed: boolean } => {
+    const target = level.find((scheme) => scheme.id === schemeId);
+    if (target) {
+      const hasConflict = level.some((scheme) => scheme.id !== schemeId && scheme.name.trim() === name);
+      if (hasConflict) {
+        return { schemes: level, changed: false };
+      }
+      return {
+        schemes: level.map((scheme) =>
+          scheme.id === schemeId ? { ...scheme, name, updatedAt: new Date().toISOString() } : scheme
+        ),
+        changed: true
+      };
+    }
+    let changed = false;
+    const nextLevel = level.map((scheme) => {
+      const result = renameInLevel(savedSchemeChildren(scheme));
+      if (!result.changed) {
+        return scheme;
+      }
+      changed = true;
+      return { ...scheme, updatedAt: new Date().toISOString(), children: result.schemes };
+    });
+    return { schemes: changed ? nextLevel : level, changed };
+  };
+  return renameInLevel(schemes).schemes;
 }
 
 export function deleteSavedScheme(schemes: SavedSchemeRecord[], schemeId: string): SavedSchemeRecord[] {
-  return schemes.filter((scheme) => scheme.id !== schemeId);
+  let changed = false;
+  const nextSchemes = schemes.flatMap((scheme) => {
+    if (scheme.id === schemeId) {
+      changed = true;
+      return [];
+    }
+    const children = savedSchemeChildren(scheme);
+    const nextChildren = children.length > 0 ? deleteSavedScheme(children, schemeId) : children;
+    if (nextChildren !== children) {
+      changed = true;
+      return [{ ...scheme, updatedAt: new Date().toISOString(), children: nextChildren }];
+    }
+    return [scheme];
+  });
+  return changed ? nextSchemes : schemes;
 }
 
 export function moveProjectToScheme(
@@ -8037,14 +8407,15 @@ export function moveProjectToScheme(
   projectId: string,
   targetSchemeId: string
 ): SavedSchemeRecord[] {
-  const sourceScheme = schemes.find((scheme) => scheme.projects.some((project) => project.id === projectId));
-  const project = sourceScheme?.projects.find((item) => item.id === projectId);
-  if (!sourceScheme || !project || sourceScheme.id === targetSchemeId) {
+  const sourceRecord = findSavedProjectRecordInSchemes(schemes, projectId);
+  const targetScheme = findSavedSchemeById(schemes, targetSchemeId);
+  const project = sourceRecord?.project;
+  if (!sourceRecord || !targetScheme || !project || sourceRecord.scheme.id === targetSchemeId) {
     return schemes;
   }
   const now = new Date().toISOString();
-  return schemes.map((scheme) => {
-    if (scheme.id === sourceScheme.id) {
+  return mapSavedSchemeTree(schemes, (scheme) => {
+    if (scheme.id === sourceRecord.scheme.id) {
       return { ...scheme, updatedAt: now, projects: scheme.projects.filter((item) => item.id !== projectId) };
     }
     if (scheme.id === targetSchemeId) {
@@ -8097,6 +8468,10 @@ function bodyVisualBoxForNode(node: ModelNode, padding = 0, position = node.posi
 
 function boxFor(node: ModelNode, padding = 0) {
   return bodyVisualBoxForNode(node, padding);
+}
+
+export function calculateNodeBodyBounds(node: ModelNode, padding = 0, position = node.position): GeometryBounds {
+  return bodyVisualBoxForNode(node, padding, position);
 }
 
 export function calculateNodeVisualBounds(node: ModelNode, padding = 0, position = node.position): GeometryBounds {
@@ -10144,6 +10519,45 @@ function endpointsAreAlignedThroughOpposedNormals(
   return verticalOpposed || horizontalOpposed;
 }
 
+function buildAlignedOpposedDirectRoute(
+  start: Point,
+  end: Point,
+  sourceNormal: Point,
+  targetNormal: Point,
+  bounds?: CanvasBounds
+): Point[] | null {
+  if (!endpointsAreAlignedThroughOpposedNormals(start, end, sourceNormal, targetNormal)) {
+    return null;
+  }
+  const rawRoute = bounds
+    ? [start, end].map((point) => clampPointToBounds(point, bounds))
+    : [start, end];
+  const route = orthogonalizeRouteKeepingCollinear(rawRoute);
+  if (route.length !== 2 || samePoint(route[0], route[1])) {
+    return null;
+  }
+  return routeEndpointSegmentsMatchNormals(route, sourceNormal, targetNormal) ? route : null;
+}
+
+function buildAlignedOpposedDirectRouteWhenEndpointStubsOverlap(
+  start: Point,
+  startOut: Point,
+  endOut: Point,
+  end: Point,
+  sourceNormal: Point,
+  targetNormal: Point,
+  bounds?: CanvasBounds
+): Point[] | null {
+  const directRoute = buildAlignedOpposedDirectRoute(start, end, sourceNormal, targetNormal, bounds);
+  if (!directRoute) {
+    return null;
+  }
+  const stubRoute = buildFullRoute(start, startOut, [], endOut, end, bounds);
+  return routeHasImmediateReversal(stubRoute) || routeManhattanLength(stubRoute) > routeManhattanLength(directRoute)
+    ? directRoute
+    : null;
+}
+
 function endpointNormalsAreOpposedOnSameAxis(sourceNormal: Point, targetNormal: Point) {
   const horizontalOpposed =
     sourceNormal.y === 0 &&
@@ -10277,7 +10691,16 @@ function selectClearlySimplerAutomaticManualRoute(
   const rawDirectRoute = buildFullRoute(start, startOut, [], endOut, end, bounds);
   const routeBlockers = filterBlockersForRoutePoints(rawDirectRoute, blockers);
   const routeAvoidedSegments = filterSegmentsForRoutePoints(rawDirectRoute, avoidedSegments);
-  const directRoute = simplifyRoutePreservingEndpointStubs(rawDirectRoute, {
+  const alignedOpposedDirectRoute = buildAlignedOpposedDirectRouteWhenEndpointStubsOverlap(
+    start,
+    startOut,
+    endOut,
+    end,
+    sourceNormal,
+    targetNormal,
+    bounds
+  );
+  const directRoute = alignedOpposedDirectRoute ?? simplifyRoutePreservingEndpointStubs(rawDirectRoute, {
     blockers: routeBlockers,
     avoidedSegments: routeAvoidedSegments,
     reduceTinyDoglegs: true
@@ -10292,7 +10715,9 @@ function selectClearlySimplerAutomaticManualRoute(
     blockers,
     avoidedSegments,
     bounds,
-    buildEndpointAlignedDirectCandidates(start, end, sourceNormal, targetNormal, bounds)
+    alignedOpposedDirectRoute
+      ? [alignedOpposedDirectRoute, ...buildEndpointAlignedDirectCandidates(start, end, sourceNormal, targetNormal, bounds)]
+      : buildEndpointAlignedDirectCandidates(start, end, sourceNormal, targetNormal, bounds)
   );
   const manualBends = routeBendCount(manualRoute);
   const manualLength = routeManhattanLength(manualRoute);
@@ -10348,7 +10773,19 @@ function selectClearlySimplerAutomaticManualRoute(
         )
       ) &&
       routeStaysWithinEndpointStubEnvelope(candidateRoute, start, startOut, endOut, end);
-    if (!hasClearBendWin && !hasClearLengthWin && !hasEqualOrShorterBendWin && !hasLocalEndpointBendWin) {
+    const hasAlignedOpposedDirectWin =
+      alignedOpposedDirectRoute !== null &&
+      signature === routeSignature(alignedOpposedDirectRoute) &&
+      candidateBends <= manualBends &&
+      lengthGain > 0 &&
+      routeStaysWithinEndpointStubEnvelope(candidateRoute, start, startOut, endOut, end);
+    if (
+      !hasClearBendWin &&
+      !hasClearLengthWin &&
+      !hasEqualOrShorterBendWin &&
+      !hasLocalEndpointBendWin &&
+      !hasAlignedOpposedDirectWin
+    ) {
       continue;
     }
     if (
@@ -11159,13 +11596,23 @@ function buildEdgeRoutingContext(source: ModelNode, target: ModelNode, nodes: Mo
 }
 
 function buildEndpointAlignedDirectCandidatesForContext(context: EdgeRoutingContext, bounds?: CanvasBounds) {
-  return buildEndpointAlignedDirectCandidates(
+  const candidates = buildEndpointAlignedDirectCandidates(
     context.start,
     context.end,
     context.sourceNormal,
     context.targetNormal,
     bounds
   );
+  const directRoute = buildAlignedOpposedDirectRouteWhenEndpointStubsOverlap(
+    context.start,
+    context.startOut,
+    context.endOut,
+    context.end,
+    context.sourceNormal,
+    context.targetNormal,
+    bounds
+  );
+  return directRoute ? [directRoute, ...candidates] : candidates;
 }
 
 function selectRenderableRouteForContext(

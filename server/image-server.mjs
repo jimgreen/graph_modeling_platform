@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +10,6 @@ const imageDataDir = resolve(repoRoot, "data", "images");
 const manifestPath = join(imageDataDir, "manifest.json");
 const imageFoldersPath = join(imageDataDir, "folders.json");
 const schemeDataDir = resolve(repoRoot, "data", "schemes");
-const schemeManifestPath = join(schemeDataDir, "schemes.json");
 const settingsDataDir = resolve(repoRoot, "data", "settings");
 const colorConfigPath = join(settingsDataDir, "color-config.json");
 const deviceLibraryDataDir = resolve(repoRoot, "data", "device-library");
@@ -19,6 +18,17 @@ const maxImageBodyBytes = 16 * 1024 * 1024;
 const maxSchemeBodyBytes = 64 * 1024 * 1024;
 const maxColorConfigBodyBytes = 1024 * 1024;
 const maxDeviceLibraryBodyBytes = 16 * 1024 * 1024;
+const maxFilePartLength = 80;
+const accessControlHeaders = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
+  "access-control-allow-headers": "content-type"
+};
+const noStoreJsonHeaders = {
+  "content-type": "application/json; charset=utf-8",
+  "cache-control": "no-store",
+  ...accessControlHeaders
+};
 const defaultPowerUnit = "MW";
 const defaultVoltageUnit = "kV";
 const defaultCurrentUnit = "A";
@@ -145,91 +155,7 @@ const mimeExt = {
   "image/svg+xml": ".svg"
 };
 
-async function ensureStore() {
-  await mkdir(imageDataDir, { recursive: true });
-  try {
-    await readFile(manifestPath, "utf-8");
-  } catch {
-    await writeFile(manifestPath, "[]", "utf-8");
-  }
-  try {
-    await readFile(imageFoldersPath, "utf-8");
-  } catch {
-    await writeFile(imageFoldersPath, JSON.stringify([rootImageFolder()], null, 2), "utf-8");
-  }
-}
-
-async function readManifest() {
-  await ensureStore();
-  try {
-    const raw = await readFile(manifestPath, "utf-8");
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map((item) => ({ ...item, folderId: item.folderId || "root" })) : [];
-  } catch {
-    return [];
-  }
-}
-
-async function writeManifest(items) {
-  await ensureStore();
-  await writeFile(manifestPath, JSON.stringify(items, null, 2), "utf-8");
-}
-
-function rootImageFolder() {
-  return {
-    id: "root",
-    name: "默认文件夹",
-    createdAt: new Date(0).toISOString()
-  };
-}
-
-async function readImageFolders() {
-  await ensureStore();
-  try {
-    const raw = await readFile(imageFoldersPath, "utf-8");
-    const parsed = JSON.parse(raw);
-    const folders = Array.isArray(parsed) ? parsed : [];
-    const withRoot = folders.some((folder) => folder.id === "root") ? folders : [rootImageFolder(), ...folders];
-    return withRoot.map((folder) => ({
-      id: String(folder.id || "root"),
-      name: safeName(folder.name || "默认文件夹"),
-      createdAt: folder.createdAt || new Date().toISOString()
-    }));
-  } catch {
-    return [rootImageFolder()];
-  }
-}
-
-async function writeImageFolders(folders) {
-  await ensureStore();
-  const withRoot = folders.some((folder) => folder.id === "root") ? folders : [rootImageFolder(), ...folders];
-  await writeFile(imageFoldersPath, JSON.stringify(withRoot, null, 2), "utf-8");
-}
-
-async function resolveFolderId(folderId) {
-  const folders = await readImageFolders();
-  return folders.some((folder) => folder.id === folderId) ? folderId : "root";
-}
-
-async function ensureSchemeStore() {
-  await mkdir(schemeDataDir, { recursive: true });
-  try {
-    await readFile(schemeManifestPath, "utf-8");
-  } catch {
-    await writeFile(schemeManifestPath, "[]", "utf-8");
-  }
-}
-
-async function readSchemes() {
-  await ensureSchemeStore();
-  try {
-    const raw = await readFile(schemeManifestPath, "utf-8");
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
+const stringifyJson = (value) => JSON.stringify(value, null, 2);
 
 async function writeTextIfChanged(filePath, content) {
   try {
@@ -243,14 +169,200 @@ async function writeTextIfChanged(filePath, content) {
   await writeFile(filePath, content, "utf-8");
 }
 
+async function ensureJsonStoreFile(dirPath, filePath, defaultValue) {
+  await mkdir(dirPath, { recursive: true });
+  try {
+    await readFile(filePath, "utf-8");
+  } catch {
+    await writeTextIfChanged(filePath, stringifyJson(defaultValue));
+  }
+}
+
+async function readJsonStoreFile(dirPath, filePath, defaultValue, normalize = (value) => value) {
+  await ensureJsonStoreFile(dirPath, filePath, defaultValue);
+  try {
+    return normalize(JSON.parse(await readFile(filePath, "utf-8")));
+  } catch {
+    return normalize(defaultValue);
+  }
+}
+
+async function readOptionalJsonStoreFile(dirPath, filePath) {
+  await mkdir(dirPath, { recursive: true });
+  try {
+    return JSON.parse(await readFile(filePath, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+async function writeJsonStoreFile(dirPath, filePath, value) {
+  await mkdir(dirPath, { recursive: true });
+  await writeTextIfChanged(filePath, stringifyJson(value));
+}
+
+async function ensureStore() {
+  await ensureJsonStoreFile(imageDataDir, manifestPath, []);
+  await ensureJsonStoreFile(imageDataDir, imageFoldersPath, [rootImageFolder()]);
+}
+
+async function readManifest() {
+  return readJsonStoreFile(imageDataDir, manifestPath, [], (parsed) =>
+    Array.isArray(parsed) ? parsed.map((item) => ({ ...item, folderId: item.folderId || "root" })) : []
+  );
+}
+
+async function writeManifest(items) {
+  await writeJsonStoreFile(imageDataDir, manifestPath, items);
+}
+
+function rootImageFolder() {
+  return {
+    id: "root",
+    name: "默认文件夹",
+    createdAt: new Date(0).toISOString()
+  };
+}
+
+async function readImageFolders() {
+  return readJsonStoreFile(imageDataDir, imageFoldersPath, [rootImageFolder()], (parsed) => {
+    const folders = Array.isArray(parsed) ? parsed : [];
+    const withRoot = folders.some((folder) => folder.id === "root") ? folders : [rootImageFolder(), ...folders];
+    return withRoot.map((folder) => ({
+      id: String(folder.id || "root"),
+      name: safeName(folder.name || "默认文件夹"),
+      createdAt: folder.createdAt || new Date().toISOString()
+    }));
+  });
+}
+
+async function writeImageFolders(folders) {
+  const withRoot = folders.some((folder) => folder.id === "root") ? folders : [rootImageFolder(), ...folders];
+  await writeJsonStoreFile(imageDataDir, imageFoldersPath, withRoot);
+}
+
+async function resolveFolderId(folderId) {
+  const folders = await readImageFolders();
+  return folders.some((folder) => folder.id === folderId) ? folderId : "root";
+}
+
+function storedSchemeFilePartDisplayName(filePart, fallback = "未命名方案") {
+  return String(filePart || "")
+    .replace(/__scheme-[a-z0-9]+$/iu, "")
+    .trim() || fallback;
+}
+
+function storedProjectFilePartDisplayName(filePart, fallback = "未命名模型") {
+  return String(filePart || "")
+    .replace(/__project-[a-z0-9]+$/iu, "")
+    .trim() || fallback;
+}
+
+async function fileUpdatedAt(filePath) {
+  try {
+    return (await stat(filePath)).mtime.toISOString();
+  } catch {
+    return new Date(0).toISOString();
+  }
+}
+
+async function readLegacySchemeDirectoryMeta(schemeDir) {
+  try {
+    const parsed = JSON.parse(await readFile(join(schemeDir, "scheme.json"), "utf-8"));
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function readSchemeProjectFile(filePath, fileName) {
+  try {
+    const project = normalizeProjectForStorage(JSON.parse(await readFile(filePath, "utf-8")));
+    const fileBaseName = fileName.replace(/\.json$/iu, "");
+    const name = storageProjectDisplayName(project.name || storedProjectFilePartDisplayName(fileBaseName));
+    return {
+      name,
+      updatedAt: await fileUpdatedAt(filePath),
+      project: {
+        ...project,
+        name
+      }
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function readSchemeDirectory(dirent, parentDir) {
+  const schemeDir = join(parentDir, dirent.name);
+  const legacyMeta = await readLegacySchemeDirectoryMeta(schemeDir);
+  let entries = [];
+  try {
+    entries = await readdir(schemeDir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const projects = [];
+  const children = [];
+  for (const entry of entries) {
+    const entryPath = join(schemeDir, entry.name);
+    if (entry.isDirectory()) {
+      const child = await readSchemeDirectory(entry, schemeDir);
+      if (child) {
+        children.push(child);
+      }
+      continue;
+    }
+    if (!entry.isFile() || !/\.json$/iu.test(entry.name) || entry.name.toLocaleLowerCase() === "scheme.json") {
+      continue;
+    }
+    const project = await readSchemeProjectFile(entryPath, entry.name);
+    if (project) {
+      projects.push(project);
+    }
+  }
+  const name = storedSchemeFilePartDisplayName(legacyMeta?.name || dirent.name);
+  return {
+    name,
+    updatedAt: legacyMeta?.updatedAt || await fileUpdatedAt(schemeDir),
+    projects,
+    children
+  };
+}
+
+async function readSchemesFromFiles() {
+  const filesRoot = join(schemeDataDir, "files");
+  await mkdir(filesRoot, { recursive: true });
+  const entries = await readdir(filesRoot, { withFileTypes: true });
+  const schemes = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const scheme = await readSchemeDirectory(entry, filesRoot);
+    if (scheme) {
+      schemes.push(scheme);
+    }
+  }
+  return schemes;
+}
+
+async function removeLegacySchemeManifest() {
+  await rm(join(schemeDataDir, "schemes.json"), { force: true });
+}
+
+async function ensureSchemeStore() {
+  await mkdir(join(schemeDataDir, "files"), { recursive: true });
+}
+
+async function readSchemes() {
+  return readSchemesFromFiles();
+}
+
 async function writeSchemes(schemes) {
   await ensureSchemeStore();
   await writeSchemeFiles(schemes);
-  await writeTextIfChanged(schemeManifestPath, JSON.stringify(schemes, null, 2));
-}
-
-async function ensureSettingsStore() {
-  await mkdir(settingsDataDir, { recursive: true });
+  await removeLegacySchemeManifest();
 }
 
 function normalizeColorRecord(source) {
@@ -277,37 +389,30 @@ function normalizeColorConfig(payload) {
 }
 
 async function readColorConfig() {
-  await ensureSettingsStore();
-  try {
-    const raw = await readFile(colorConfigPath, "utf-8");
+  const parsed = await readOptionalJsonStoreFile(settingsDataDir, colorConfigPath);
+  if (parsed) {
     return {
       exists: true,
-      ...normalizeColorConfig(JSON.parse(raw))
-    };
-  } catch {
-    return {
-      exists: false,
-      colorDisplayMode: "energy",
-      colorPalette: {
-        energy: {},
-        voltage: {}
-      }
+      ...normalizeColorConfig(parsed)
     };
   }
+  return {
+    exists: false,
+    colorDisplayMode: "energy",
+    colorPalette: {
+      energy: {},
+      voltage: {}
+    }
+  };
 }
 
 async function writeColorConfig(config) {
-  await ensureSettingsStore();
   const normalized = {
     ...normalizeColorConfig(config),
     savedAt: new Date().toISOString()
   };
-  await writeTextIfChanged(colorConfigPath, JSON.stringify(normalized, null, 2));
+  await writeJsonStoreFile(settingsDataDir, colorConfigPath, normalized);
   return normalized;
-}
-
-async function ensureDeviceLibraryStore() {
-  await mkdir(deviceLibraryDataDir, { recursive: true });
 }
 
 function normalizeDeviceLibraryConfig(payload) {
@@ -332,39 +437,30 @@ function normalizeDeviceLibraryConfig(payload) {
 }
 
 async function readDeviceLibraryConfig() {
-  await ensureDeviceLibraryStore();
-  try {
-    const raw = await readFile(deviceLibraryPath, "utf-8");
+  const parsed = await readOptionalJsonStoreFile(deviceLibraryDataDir, deviceLibraryPath);
+  if (parsed) {
     return {
       exists: true,
-      ...normalizeDeviceLibraryConfig(JSON.parse(raw))
-    };
-  } catch {
-    return {
-      exists: false,
-      ...normalizeDeviceLibraryConfig({})
+      ...normalizeDeviceLibraryConfig(parsed)
     };
   }
+  return {
+    exists: false,
+    ...normalizeDeviceLibraryConfig({})
+  };
 }
 
 async function writeDeviceLibraryConfig(config) {
-  await ensureDeviceLibraryStore();
   const normalized = {
     ...normalizeDeviceLibraryConfig(config),
     savedAt: new Date().toISOString()
   };
-  await writeTextIfChanged(deviceLibraryPath, JSON.stringify(normalized, null, 2));
+  await writeJsonStoreFile(deviceLibraryDataDir, deviceLibraryPath, normalized);
   return normalized;
 }
 
 function sendJson(response, status, data) {
-  response.writeHead(status, {
-    "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store",
-    "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,POST,PUT,OPTIONS",
-    "access-control-allow-headers": "content-type"
-  });
+  response.writeHead(status, noStoreJsonHeaders);
   response.end(JSON.stringify(data));
 }
 
@@ -390,6 +486,11 @@ function readBody(request, maxBodyBytes = maxImageBodyBytes, oversizeMessage = "
   });
 }
 
+async function readJsonBody(request, maxBodyBytes = maxImageBodyBytes, oversizeMessage = "请求体过大。") {
+  const body = await readBody(request, maxBodyBytes, oversizeMessage);
+  return JSON.parse(body || "{}");
+}
+
 function parseDataUrl(dataUrl) {
   const match = /^data:([^;,]+);base64,(.+)$/u.exec(dataUrl);
   if (!match) {
@@ -403,15 +504,14 @@ function parseDataUrl(dataUrl) {
 }
 
 function safeName(name) {
-  return String(name || "未命名图片").replace(/[\\/:*?"<>|]+/g, "_").slice(0, 80);
+  return String(name || "未命名图片").replace(/[\\/:*?"<>|]+/g, "_").slice(0, maxFilePartLength);
 }
 
 function safeFilePart(name, fallback = "未命名") {
   return String(name || fallback)
     .trim()
     .replace(/[\\/:*?"<>|]+/g, "_")
-    .replace(/\s+/g, "_")
-    .slice(0, 80) || fallback;
+    .slice(0, maxFilePartLength) || fallback;
 }
 
 function normalizeProjectForStorage(project) {
@@ -441,15 +541,100 @@ function normalizeProjectForStorage(project) {
   };
 }
 
+function uniqueRecordNameForFilePartStorage(baseName, existingNames, fallback) {
+  const base = String(baseName || "").trim() || fallback;
+  const usedNames = new Set(existingNames.map((name) => String(name || "").trim()).filter(Boolean));
+  const usedFileParts = new Set(existingNames.map((name) => safeFilePart(name, fallback)).filter(Boolean));
+  const available = (name) => !usedNames.has(name) && !usedFileParts.has(safeFilePart(name, fallback));
+  if (available(base)) {
+    return base;
+  }
+  let index = 2;
+  let candidate = base;
+  do {
+    const suffix = ` (${index})`;
+    const baseLimit = Math.max(1, maxFilePartLength - suffix.length);
+    const visibleBase = base.slice(0, baseLimit).trim() || fallback.slice(0, baseLimit).trim() || fallback;
+    candidate = `${visibleBase}${suffix}`;
+    index += 1;
+  } while (!available(candidate));
+  return candidate;
+}
+
+function savedRecordTimestamp(value) {
+  const timestamp = Date.parse(value ?? "");
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function storageProjectDisplayName(name, fallback = "未命名模型") {
+  const normalized = String(name || "").trim().replace(/电力系统/g, "电力能源系统") || fallback;
+  const suffixMatch = /^(.*?)\s*\((\d+)\)$/u.exec(normalized);
+  if (!suffixMatch) {
+    return normalized;
+  }
+  const base = suffixMatch[1].trim();
+  return base && !base.endsWith("副本") ? base : normalized;
+}
+
+function storageProjectNameKey(name) {
+  return storageProjectDisplayName(name).toLocaleLowerCase();
+}
+
+function normalizeSchemeProjectRecordNamesForStorage(projects) {
+  const normalized = [];
+  const indexByNameKey = new Map();
+  for (const record of projects) {
+    const { id: _projectRuntimeId, ...recordWithoutRuntimeId } = record ?? {};
+    const name = storageProjectDisplayName(record?.name);
+    const nextRecord = {
+      ...recordWithoutRuntimeId,
+      name,
+      project: {
+        ...(record?.project ?? {}),
+        name
+      }
+    };
+    const key = storageProjectNameKey(name);
+    const existingIndex = indexByNameKey.get(key);
+    if (existingIndex === undefined) {
+      indexByNameKey.set(key, normalized.length);
+      normalized.push(nextRecord);
+      continue;
+    }
+    const existing = normalized[existingIndex];
+    if (savedRecordTimestamp(nextRecord.updatedAt) >= savedRecordTimestamp(existing.updatedAt)) {
+      normalized[existingIndex] = nextRecord;
+    }
+  }
+  return normalized;
+}
+
+function normalizeSchemeRecordNamesForStorage(schemes) {
+  const usedNames = [];
+  return schemes.map((scheme) => {
+    const { id: _schemeRuntimeId, ...schemeWithoutRuntimeId } = scheme ?? {};
+    const name = uniqueRecordNameForFilePartStorage(scheme?.name, usedNames, "未命名方案");
+    usedNames.push(name);
+    return {
+      ...schemeWithoutRuntimeId,
+      name,
+      children: Array.isArray(scheme?.children) ? normalizeSchemeRecordNamesForStorage(scheme.children) : []
+    };
+  });
+}
+
 function normalizeSchemesForStorage(schemes) {
-  return schemes.map((scheme) => ({
+  return normalizeSchemeRecordNamesForStorage(schemes).map((scheme) => ({
     ...scheme,
     projects: Array.isArray(scheme.projects)
-      ? scheme.projects.map((project) => ({
-          ...project,
-          project: normalizeProjectForStorage(project.project)
-        }))
-      : []
+      ? normalizeSchemeProjectRecordNamesForStorage(
+          scheme.projects.map((project) => ({
+            ...project,
+            project: normalizeProjectForStorage(project.project)
+          }))
+        )
+      : [],
+    children: Array.isArray(scheme.children) ? normalizeSchemesForStorage(scheme.children) : []
   }));
 }
 
@@ -959,26 +1144,35 @@ async function writeSchemeFiles(schemes) {
   await mkdir(filesRoot, { recursive: true });
   const expectedFiles = new Set();
   const expectedDirs = new Set([filesRoot]);
-  for (const scheme of schemes) {
-    const schemeDir = join(filesRoot, `${safeFilePart(scheme.name, "方案")}__${scheme.id}`);
+  const writeTasks = [];
+
+  const writeSchemeTree = async (scheme, parentDir) => {
+    const schemeDir = join(parentDir, safeFilePart(scheme.name, "方案"));
     expectedDirs.add(schemeDir);
     await mkdir(schemeDir, { recursive: true });
-    const schemeFilePath = join(schemeDir, "scheme.json");
-    expectedFiles.add(schemeFilePath);
-    await writeTextIfChanged(schemeFilePath, JSON.stringify(scheme, null, 2));
     for (const record of scheme.projects ?? []) {
-      const baseName = `${safeFilePart(record.name, "模型")}__${record.id}`;
+      const baseName = safeFilePart(record.name, "模型");
       const jsonPath = join(schemeDir, `${baseName}.json`);
       const ePath = join(schemeDir, `${baseName}.e`);
       const svgPath = join(schemeDir, `${baseName}.svg`);
       expectedFiles.add(jsonPath);
       expectedFiles.add(ePath);
       expectedFiles.add(svgPath);
-      await writeTextIfChanged(jsonPath, JSON.stringify(record.project, null, 2));
-      await writeTextIfChanged(ePath, buildDeviceParameterFile(record.project));
-      await writeTextIfChanged(svgPath, buildSvgFile(record.project));
+      writeTasks.push(
+        writeTextIfChanged(jsonPath, stringifyJson(record.project)),
+        writeTextIfChanged(ePath, buildDeviceParameterFile(record.project)),
+        writeTextIfChanged(svgPath, buildSvgFile(record.project))
+      );
     }
+    for (const childScheme of scheme.children ?? []) {
+      await writeSchemeTree(childScheme, schemeDir);
+    }
+  };
+
+  for (const scheme of schemes) {
+    await writeSchemeTree(scheme, filesRoot);
   }
+  await Promise.all(writeTasks);
   await removeStaleSchemeFiles(filesRoot, expectedFiles, expectedDirs);
 }
 
@@ -994,9 +1188,17 @@ function publicAsset(item) {
   };
 }
 
+function imageCountsByFolder(manifest) {
+  const counts = new Map();
+  for (const item of manifest) {
+    const folderId = item.folderId || "root";
+    counts.set(folderId, (counts.get(folderId) ?? 0) + 1);
+  }
+  return counts;
+}
+
 async function handleUpload(request, response) {
-  const body = await readBody(request, maxImageBodyBytes, "图片过大，最大支持 16MB。");
-  const payload = JSON.parse(body || "{}");
+  const payload = await readJsonBody(request, maxImageBodyBytes, "图片过大，最大支持 16MB。");
   const { dataUrl, name } = payload;
   if (typeof dataUrl !== "string") {
     sendError(response, 400, "缺少图片数据。");
@@ -1023,8 +1225,7 @@ async function handleUpload(request, response) {
 }
 
 async function handleCreateImageFolder(request, response) {
-  const body = await readBody(request);
-  const payload = JSON.parse(body || "{}");
+  const payload = await readJsonBody(request);
   const name = safeName(payload.name || "新建文件夹");
   const folders = await readImageFolders();
   if (folders.some((folder) => folder.name.trim() === name.trim())) {
@@ -1045,8 +1246,7 @@ async function handleRenameImageFolder(folderId, request, response) {
     sendError(response, 400, "默认文件夹不能重命名。");
     return;
   }
-  const body = await readBody(request);
-  const payload = JSON.parse(body || "{}");
+  const payload = await readJsonBody(request);
   const name = safeName(payload.name || "");
   if (!name) {
     sendError(response, 400, "文件夹名称不能为空。");
@@ -1098,8 +1298,7 @@ async function handleDownload(id, response) {
 }
 
 async function handleSaveSchemes(request, response) {
-  const body = await readBody(request, maxSchemeBodyBytes, "方案/模型数据过大，最大支持 64MB。");
-  const payload = JSON.parse(body || "{}");
+  const payload = await readJsonBody(request, maxSchemeBodyBytes, "方案/模型数据过大，最大支持 64MB。");
   const schemes = Array.isArray(payload) ? payload : payload.schemes;
   if (!Array.isArray(schemes)) {
     sendError(response, 400, "缺少方案/模型数据。");
@@ -1111,100 +1310,111 @@ async function handleSaveSchemes(request, response) {
 }
 
 async function handleSaveColorConfig(request, response) {
-  const body = await readBody(request, maxColorConfigBodyBytes, "配色配置数据过大，最大支持 1MB。");
-  const payload = JSON.parse(body || "{}");
+  const payload = await readJsonBody(request, maxColorConfigBodyBytes, "配色配置数据过大，最大支持 1MB。");
   const normalized = await writeColorConfig(payload);
   sendJson(response, 200, { ok: true, ...normalized });
 }
 
 async function handleSaveDeviceLibrary(request, response) {
-  const body = await readBody(request, maxDeviceLibraryBodyBytes, "图元库数据过大，最大支持 16MB。");
-  const payload = JSON.parse(body || "{}");
+  const payload = await readJsonBody(request, maxDeviceLibraryBodyBytes, "图元库数据过大，最大支持 16MB。");
   const normalized = await writeDeviceLibraryConfig(payload);
   sendJson(response, 200, { ok: true, ...normalized });
 }
 
 export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
+  const exactRouteHandlers = new Map([
+    ["GET /api/images", async ({ url, response }) => {
+      const manifest = await readManifest();
+      const folderId = url.searchParams.get("folderId");
+      const filtered = folderId ? manifest.filter((item) => (item.folderId || "root") === folderId) : manifest;
+      sendJson(response, 200, filtered.map(publicAsset));
+    }],
+    ["POST /api/images", async ({ request, response }) => {
+      await handleUpload(request, response);
+    }],
+    ["GET /api/image-folders", async ({ response }) => {
+      const folders = await readImageFolders();
+      const manifest = await readManifest();
+      const counts = imageCountsByFolder(manifest);
+      sendJson(
+        response,
+        200,
+        folders.map((folder) => ({
+          ...folder,
+          imageCount: counts.get(folder.id) ?? 0
+        }))
+      );
+    }],
+    ["POST /api/image-folders", async ({ request, response }) => {
+      await handleCreateImageFolder(request, response);
+    }],
+    ["GET /api/schemes", async ({ response }) => {
+      const schemes = normalizeSchemesForStorage(await readSchemes());
+      sendJson(response, 200, { schemes });
+    }],
+    ["PUT /api/schemes", async ({ request, response }) => {
+      await handleSaveSchemes(request, response);
+    }],
+    ["GET /api/color-config", async ({ response }) => {
+      const colorConfig = await readColorConfig();
+      sendJson(response, 200, colorConfig);
+    }],
+    ["PUT /api/color-config", async ({ request, response }) => {
+      await handleSaveColorConfig(request, response);
+    }],
+    ["GET /api/device-library", async ({ response }) => {
+      const deviceLibraryConfig = await readDeviceLibraryConfig();
+      sendJson(response, 200, deviceLibraryConfig);
+    }],
+    ["PUT /api/device-library", async ({ request, response }) => {
+      await handleSaveDeviceLibrary(request, response);
+    }]
+  ]);
+  const dynamicRouteHandlers = [
+    {
+      method: "PUT",
+      pattern: /^\/api\/image-folders\/([^/]+)$/u,
+      handle: async ({ match, request, response }) => {
+        await handleRenameImageFolder(decodeURIComponent(match[1]), request, response);
+      }
+    },
+    {
+      method: "DELETE",
+      pattern: /^\/api\/image-folders\/([^/]+)$/u,
+      handle: async ({ match, response }) => {
+        await handleDeleteImageFolder(decodeURIComponent(match[1]), response);
+      }
+    },
+    {
+      method: "GET",
+      pattern: /^\/api\/images\/([^/]+)$/u,
+      handle: async ({ match, response }) => {
+        await handleDownload(match[1], response);
+      }
+    }
+  ];
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
       if (request.method === "OPTIONS") {
-        response.writeHead(204, {
-          "access-control-allow-origin": "*",
-          "access-control-allow-methods": "GET,POST,PUT,OPTIONS",
-          "access-control-allow-headers": "content-type"
-        });
+        response.writeHead(204, accessControlHeaders);
         response.end();
         return;
       }
-      if (request.method === "GET" && url.pathname === "/api/images") {
-        const manifest = await readManifest();
-        const folderId = url.searchParams.get("folderId");
-        const filtered = folderId ? manifest.filter((item) => (item.folderId || "root") === folderId) : manifest;
-        sendJson(response, 200, filtered.map(publicAsset));
+      const exactRouteHandler = exactRouteHandlers.get(`${request.method} ${url.pathname}`);
+      if (exactRouteHandler) {
+        await exactRouteHandler({ request, response, url });
         return;
       }
-      if (request.method === "POST" && url.pathname === "/api/images") {
-        await handleUpload(request, response);
-        return;
-      }
-      if (request.method === "GET" && url.pathname === "/api/image-folders") {
-        const folders = await readImageFolders();
-        const manifest = await readManifest();
-        sendJson(
-          response,
-          200,
-          folders.map((folder) => ({
-            ...folder,
-            imageCount: manifest.filter((item) => (item.folderId || "root") === folder.id).length
-          }))
-        );
-        return;
-      }
-      if (request.method === "POST" && url.pathname === "/api/image-folders") {
-        await handleCreateImageFolder(request, response);
-        return;
-      }
-      const imageFolderMatch = /^\/api\/image-folders\/([^/]+)$/u.exec(url.pathname);
-      if (imageFolderMatch && request.method === "PUT") {
-        await handleRenameImageFolder(decodeURIComponent(imageFolderMatch[1]), request, response);
-        return;
-      }
-      if (imageFolderMatch && request.method === "DELETE") {
-        await handleDeleteImageFolder(decodeURIComponent(imageFolderMatch[1]), response);
-        return;
-      }
-      if (request.method === "GET" && url.pathname === "/api/schemes") {
-        const schemes = await readSchemes();
-        sendJson(response, 200, { schemes });
-        return;
-      }
-      if (request.method === "PUT" && url.pathname === "/api/schemes") {
-        await handleSaveSchemes(request, response);
-        return;
-      }
-      if (request.method === "GET" && url.pathname === "/api/color-config") {
-        const colorConfig = await readColorConfig();
-        sendJson(response, 200, colorConfig);
-        return;
-      }
-      if (request.method === "PUT" && url.pathname === "/api/color-config") {
-        await handleSaveColorConfig(request, response);
-        return;
-      }
-      if (request.method === "GET" && url.pathname === "/api/device-library") {
-        const deviceLibraryConfig = await readDeviceLibraryConfig();
-        sendJson(response, 200, deviceLibraryConfig);
-        return;
-      }
-      if (request.method === "PUT" && url.pathname === "/api/device-library") {
-        await handleSaveDeviceLibrary(request, response);
-        return;
-      }
-      const imageMatch = /^\/api\/images\/([^/]+)$/u.exec(url.pathname);
-      if (request.method === "GET" && imageMatch) {
-        await handleDownload(imageMatch[1], response);
-        return;
+      for (const route of dynamicRouteHandlers) {
+        if (route.method !== request.method) {
+          continue;
+        }
+        const match = route.pattern.exec(url.pathname);
+        if (match) {
+          await route.handle({ match, request, response, url });
+          return;
+        }
       }
       sendError(response, 404, "接口不存在。");
     } catch (error) {

@@ -24,12 +24,17 @@ import {
   createSavedScheme,
   copySavedProjectWithUniqueName,
   copySavedSchemeWithUniqueName,
+  findSavedSchemeById,
+  flattenSavedProjects,
+  flattenSavedSchemes,
+  insertChildSavedScheme,
   createDefaultNode,
   createNodeFromTemplate,
   CUSTOM_DEVICE_TEMPLATE_KEY,
   CUSTOM_PARAM_DEFINITIONS_KEY,
   deriveDeviceIndexCounters,
   deleteNodesWithConnectedEdges,
+  deleteSavedScheme,
   deleteSavedProject,
   DEVICE_LIBRARY,
   distributeNodes,
@@ -112,7 +117,9 @@ import {
   createModelLayer,
   DEFAULT_MODEL_LAYER_ID,
   filterProjectByVisibleLayers,
+  hydrateSavedSchemeRuntimeIds,
   normalizeModelGroups,
+  normalizeSavedProjectRecordNames,
   normalizeProjectLayers,
   resolveActiveModelLayerId,
   normalizeScaleValue,
@@ -134,6 +141,7 @@ import {
   DEFAULT_COLOR_PALETTE,
   STATIC_DRAW_POINTS_PARAM,
   serializeProject,
+  stripSavedSchemeRuntimeIds,
   synchronizeBusTerminalsWithEdges,
   deserializeProject,
   edgeWithSavedRouteGeometry,
@@ -2572,6 +2580,104 @@ describe("power system model", () => {
     expect(new Set(route?.points.map((point) => point.y))).toEqual(new Set([120]));
   });
 
+  test("commits aligned opposed terminals as a zero-bend route when unobstructed", () => {
+    const source = withHiddenDeviceLabel({ ...createDefaultNode("ac-line", { x: 100, y: 120 }), id: "source" });
+    const target = withHiddenDeviceLabel({ ...createDefaultNode("ac-switch", { x: 460, y: 120 }), id: "target" });
+    const sourceTerminal = getTerminalPoint(source, "t2");
+    const targetTerminal = getTerminalPoint(target, "t1");
+    const edge: Edge = {
+      id: "aligned-opposed-zero-bend",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: sourceTerminal.x + 44, y: sourceTerminal.y },
+        { x: sourceTerminal.x + 44, y: sourceTerminal.y + 64 },
+        { x: targetTerminal.x - 44, y: sourceTerminal.y + 64 },
+        { x: targetTerminal.x - 44, y: targetTerminal.y }
+      ]
+    };
+
+    const prepared = prepareConnectionEdgeForCommit([source, target], [edge], edge.id, { width: 720, height: 320 });
+    const route = prepared.edge
+      ? routeEdgesForRendering([source, target], [prepared.edge], { width: 720, height: 320 })[0]
+      : undefined;
+
+    expect(sourceTerminal.y).toBe(targetTerminal.y);
+    expect(prepared.ok).toBe(true);
+    expect(prepared.issues).toEqual([]);
+    expect(route).toBeDefined();
+    expect(route?.points[0]).toEqual(sourceTerminal);
+    expect(route?.points[route.points.length - 1]).toEqual(targetTerminal);
+    expect(routeBendCountForTest(route?.points ?? [])).toBe(0);
+    expect(new Set(route?.points.map((point) => point.y))).toEqual(new Set([sourceTerminal.y]));
+  });
+
+  test("commits nearby aligned opposed terminals as a direct zero-bend route when endpoint stubs would overlap", () => {
+    const source = withHiddenDeviceLabel({ ...createDefaultNode("ac-line", { x: 100, y: 120 }), id: "source" });
+    const sourceTerminal = getTerminalPoint(source, "t2");
+    const targetProbe = withHiddenDeviceLabel({ ...createDefaultNode("ac-switch", { x: 300, y: 120 }), id: "target" });
+    const targetProbeTerminal = getTerminalPoint(targetProbe, "t1");
+    const target = {
+      ...targetProbe,
+      position: {
+        x: targetProbe.position.x + sourceTerminal.x + 40 - targetProbeTerminal.x,
+        y: targetProbe.position.y
+      }
+    };
+    const targetTerminal = getTerminalPoint(target, "t1");
+    const edge: Edge = {
+      id: "nearby-aligned-opposed-zero-bend",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1"
+    };
+
+    const prepared = prepareConnectionEdgeForCommit([source, target], [edge], edge.id, { width: 720, height: 320 });
+    const route = prepared.edge
+      ? routeEdgesForRendering([source, target], [prepared.edge], { width: 720, height: 320 })[0]
+      : undefined;
+
+    expect(sourceTerminal.y).toBe(targetTerminal.y);
+    expect(targetTerminal.x - sourceTerminal.x).toBeLessThan(56);
+    expect(prepared.ok).toBe(true);
+    expect(prepared.issues).toEqual([]);
+    expect(prepared.edge?.manualPoints).toBeUndefined();
+    expect(route?.points).toEqual([sourceTerminal, targetTerminal]);
+    expect(routeBendCountForTest(route?.points ?? [])).toBe(0);
+  });
+
+  test("renders stored aligned opposed terminals as a zero-bend route when unobstructed", () => {
+    const source = withHiddenDeviceLabel({ ...createDefaultNode("ac-line", { x: 100, y: 120 }), id: "source" });
+    const target = withHiddenDeviceLabel({ ...createDefaultNode("ac-switch", { x: 460, y: 120 }), id: "target" });
+    const sourceTerminal = getTerminalPoint(source, "t2");
+    const targetTerminal = getTerminalPoint(target, "t1");
+    const edge: Edge = {
+      id: "stored-aligned-opposed-zero-bend",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints: [
+        { x: sourceTerminal.x + 44, y: sourceTerminal.y },
+        { x: sourceTerminal.x + 44, y: sourceTerminal.y + 64 },
+        { x: targetTerminal.x - 44, y: sourceTerminal.y + 64 },
+        { x: targetTerminal.x - 44, y: targetTerminal.y }
+      ]
+    };
+
+    const route = routeEdgesForRendering([source, target], [edge], { width: 720, height: 320 })[0];
+
+    expect(sourceTerminal.y).toBe(targetTerminal.y);
+    expect(route).toBeDefined();
+    expect(route.points[0]).toEqual(sourceTerminal);
+    expect(route.points[route.points.length - 1]).toEqual(targetTerminal);
+    expect(routeBendCountForTest(route.points)).toBe(0);
+    expect(new Set(route.points.map((point) => point.y))).toEqual(new Set([sourceTerminal.y]));
+  });
+
   test("reroutes committed connection endpoints around nearby graphics instead of surfacing blocker failures", () => {
     const source = { ...createDefaultNode("ac-source", { x: 160, y: 120 }), id: "source" };
     const target = { ...createDefaultNode("ac-load", { x: 900, y: 120 }), id: "target" };
@@ -2738,6 +2844,39 @@ describe("power system model", () => {
     expect(prepared.ok).toBe(true);
     expect(prepared.edge).toBeDefined();
     expect(new Set(route?.points.map((point) => point.y))).toEqual(new Set([140]));
+  });
+
+  test("renders an aligned opposed connection without doglegs only to avoid another connection lane", () => {
+    const existingSource = withHiddenDeviceLabel({ ...createDefaultNode("ac-line", { x: 80, y: 140 }), id: "existing-source" });
+    const existingTarget = withHiddenDeviceLabel({ ...createDefaultNode("ac-line", { x: 620, y: 140 }), id: "existing-target" });
+    const newSource = withHiddenDeviceLabel({ ...createDefaultNode("ac-line", { x: 180, y: 140 }), id: "new-source" });
+    const newTarget = withHiddenDeviceLabel({ ...createDefaultNode("ac-switch", { x: 520, y: 140 }), id: "new-target" });
+    const existingEdge: Edge = {
+      id: "existing-direct-lane",
+      sourceId: existingSource.id,
+      targetId: existingTarget.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1"
+    };
+    const newEdge: Edge = {
+      id: "new-aligned-lane",
+      sourceId: newSource.id,
+      targetId: newTarget.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1"
+    };
+
+    const routes = routeEdgesForRendering(
+      [existingSource, existingTarget, newSource, newTarget],
+      [existingEdge, newEdge],
+      { width: 800, height: 320 }
+    );
+    const route = routes.find((item) => item.edgeId === newEdge.id);
+
+    expect(getTerminalPoint(newSource, "t2").y).toBe(getTerminalPoint(newTarget, "t1").y);
+    expect(route).toBeDefined();
+    expect(routeBendCountForTest(route?.points ?? [])).toBe(0);
+    expect(new Set(route?.points.map((point) => point.y))).toEqual(new Set([getTerminalPoint(newSource, "t2").y]));
   });
 
   test("routes same-facing terminals without an immediate 180 degree reversal at endpoint stubs", () => {
@@ -7013,25 +7152,49 @@ describe("power system model", () => {
     expect(deleted[0].name).toBe("模型B 副本");
   });
 
-  test("rejects duplicate project names when renaming inside the same scheme", () => {
+  test("merges duplicate project names instead of creating hidden same-name records", () => {
     const first = createSavedProject("模型A", {
       version: 1,
       name: "模型A",
+      canvasWidth: 1200,
       nodes: [],
       edges: []
     });
     const second = createSavedProject("模型A", {
       version: 1,
       name: "模型A",
+      canvasWidth: 1800,
       nodes: [],
       edges: []
     });
 
     const saved = upsertSavedProject(upsertSavedProject([], first), second);
-    expect(saved.map((project) => project.name)).toEqual(["模型A", "模型A (2)"]);
+    expect(saved).toHaveLength(1);
+    expect(saved[0].id).toBe(first.id);
+    expect(saved[0].name).toBe("模型A");
+    expect(saved[0].project.name).toBe("模型A");
+    expect(saved[0].project.canvasWidth).toBe(1800);
 
-    const renamed = renameSavedProject(saved, saved[1].id, "模型A");
-    expect(renamed.map((project) => project.name)).toEqual(["模型A", "模型A (2)"]);
+    const other = createSavedProject("模型B", { version: 1, name: "模型B", nodes: [], edges: [] });
+    const renamed = renameSavedProject([...saved, other], other.id, "模型A");
+    expect(renamed.map((project) => project.name)).toEqual(["模型A", "模型B"]);
+  });
+
+  test("normalizes duplicate saved project base names by keeping the latest backend record", () => {
+    const records = [
+      { ...createSavedProject("模型A", { version: 1, name: "模型A", canvasWidth: 1000, nodes: [], edges: [] }), id: "project-a", updatedAt: "2026-06-01T00:00:00.000Z" },
+      { ...createSavedProject("模型A (2)", { version: 1, name: "模型A (2)", canvasWidth: 1200, nodes: [], edges: [] }), id: "project-a2", updatedAt: "2026-06-02T00:00:00.000Z" },
+      { ...createSavedProject("模型A", { version: 1, name: "模型A", canvasWidth: 1400, nodes: [], edges: [] }), id: "project-b", updatedAt: "2026-06-03T00:00:00.000Z" },
+      { ...createSavedProject("模型A", { version: 1, name: "模型A", canvasWidth: 1600, nodes: [], edges: [] }), id: "project-c", updatedAt: "2026-06-04T00:00:00.000Z" }
+    ];
+
+    const normalized = normalizeSavedProjectRecordNames(records);
+
+    expect(normalized).toHaveLength(1);
+    expect(normalized[0].id).toBe("project-c");
+    expect(normalized[0].name).toBe("模型A");
+    expect(normalized[0].project.name).toBe("模型A");
+    expect(normalized[0].project.canvasWidth).toBe(1600);
   });
 
   test("rejects duplicate scheme names and renames moved projects on conflict", () => {
@@ -7045,7 +7208,70 @@ describe("power system model", () => {
 
     const moved = moveProjectToScheme([firstScheme, secondScheme], sourceProject.id, secondScheme.id);
     const target = moved.find((scheme) => scheme.id === secondScheme.id);
-    expect(target?.projects.map((project) => project.name)).toEqual(["模型A", "模型A (2)"]);
+    expect(target?.projects.map((project) => project.name)).toEqual(["模型A"]);
+  });
+
+  test("manages nested saved schemes as a recursive tree", () => {
+    const nestedProject = createSavedProject("子模型", { version: 1, name: "子模型", nodes: [], edges: [] });
+    const root = createSavedScheme("父方案");
+    const child = createSavedScheme("子方案", [nestedProject]);
+    const tree = insertChildSavedScheme([root], root.id, child);
+
+    expect(findSavedSchemeById(tree, child.id)?.name).toBe("子方案");
+    expect(flattenSavedSchemes(tree).map((scheme) => scheme.name)).toEqual(["父方案", "子方案"]);
+    expect(flattenSavedProjects(tree).map((project) => project.name)).toEqual(["子模型"]);
+
+    const renamed = renameSavedScheme(tree, child.id, "子方案重命名");
+    expect(findSavedSchemeById(renamed, child.id)?.name).toBe("子方案重命名");
+
+    const deleted = deleteSavedScheme(renamed, child.id);
+    expect(findSavedSchemeById(deleted, child.id)).toBeUndefined();
+    expect(deleted[0].children).toEqual([]);
+  });
+
+  test("moves saved projects into nested schemes", () => {
+    const project = createSavedProject("模型A", { version: 1, name: "模型A", nodes: [], edges: [] });
+    const root = createSavedScheme("父方案", [project]);
+    const child = createSavedScheme("子方案");
+    const tree = insertChildSavedScheme([root], root.id, child);
+
+    const moved = moveProjectToScheme(tree, project.id, child.id);
+
+    expect(findSavedSchemeById(moved, root.id)?.projects).toEqual([]);
+    expect(findSavedSchemeById(moved, child.id)?.projects.map((item) => item.name)).toEqual(["模型A"]);
+  });
+
+  test("uses scheme and model names as runtime keys while stripping ids from persisted records", () => {
+    const legacyProject = {
+      ...createSavedProject("模型A", { version: 1, name: "模型A", nodes: [], edges: [] }),
+      id: "project-legacy"
+    };
+    const legacyChild = {
+      ...createSavedScheme("子方案", [legacyProject]),
+      id: "scheme-child-legacy"
+    };
+    const legacyRoot = {
+      ...createSavedScheme("父方案", [], [legacyChild]),
+      id: "scheme-root-legacy"
+    };
+
+    const hydrated = hydrateSavedSchemeRuntimeIds([legacyRoot]);
+
+    expect(hydrated[0].id).not.toBe("scheme-root-legacy");
+    expect(hydrated[0].children?.[0]?.id).not.toBe("scheme-child-legacy");
+    expect(hydrated[0].children?.[0]?.projects[0]?.id).not.toBe("project-legacy");
+    expect(hydrated[0].id).toContain(encodeURIComponent("父方案"));
+    expect(hydrated[0].children?.[0]?.projects[0]?.id).toContain(encodeURIComponent("模型A"));
+
+    const persisted = stripSavedSchemeRuntimeIds(hydrated);
+    const persistedText = JSON.stringify(persisted);
+
+    expect(persisted[0]).not.toHaveProperty("id");
+    expect(persisted[0].children?.[0]).not.toHaveProperty("id");
+    expect(persisted[0].children?.[0]?.projects[0]).not.toHaveProperty("id");
+    expect(persistedText).not.toContain("scheme-root-legacy");
+    expect(persistedText).not.toContain("scheme-child-legacy");
+    expect(persistedText).not.toContain("project-legacy");
   });
 
   test("copies saved project and scheme records with automatic unique names", () => {
@@ -7063,6 +7289,15 @@ describe("power system model", () => {
 
     expect(copiedScheme.name).toBe("方案A 副本 (2)");
     expect(copiedScheme.projects.map((item) => item.name)).toEqual(["模型A 副本", "模型A 副本 副本"]);
+
+    const childScheme = createSavedScheme("子方案", [
+      createSavedProject("子模型", { version: 1, name: "子模型", nodes: [], edges: [] })
+    ]);
+    const nestedScheme = createSavedScheme("父方案", [], [childScheme]);
+    const copiedNestedScheme = copySavedSchemeWithUniqueName(nestedScheme, ["父方案"]);
+
+    expect(copiedNestedScheme.children?.map((item) => item.name)).toEqual(["子方案"]);
+    expect(copiedNestedScheme.children?.[0]?.projects.map((item) => item.name)).toEqual(["子模型 副本"]);
   });
 
   test("deletes selected devices and automatically removes their connected lines", () => {
