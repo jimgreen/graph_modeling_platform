@@ -6942,7 +6942,6 @@ export function App() {
     const preferredSchemeId = initialDraft?.activeSchemeKey || schemes[0]?.id;
     return preferredSchemeId ? [preferredSchemeId] : [];
   });
-  const [hoveredSchemeId, setHoveredSchemeId] = useState("");
   const [projectMenu, setProjectMenu] = useState<ProjectMenuState>(null);
   const [projectPanelHeight, setProjectPanelHeight] = useState(PROJECT_PANEL_DEFAULT_HEIGHT);
   const [projectPanelResize, setProjectPanelResize] = useState<{ startY: number; startHeight: number } | null>(null);
@@ -21884,7 +21883,7 @@ export function App() {
   };
 
   const renderProjectSchemeNode = (scheme: SavedSchemeRecord, depth = 0): ReactNode => {
-    const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id) || hoveredSchemeId === scheme.id;
+    const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id);
     const children = scheme.children ?? [];
     const hasContent = scheme.projects.length > 0 || children.length > 0;
     const schemeIndentStyle = { "--scheme-depth": depth } as CSSProperties;
@@ -21893,8 +21892,6 @@ export function App() {
       <div
         className={`scheme-group ${depth > 0 ? "nested" : ""}`}
         key={scheme.id}
-        onMouseEnter={() => setHoveredSchemeId(scheme.id)}
-        onMouseLeave={() => setHoveredSchemeId((current) => current === scheme.id ? "" : current)}
       >
         <div
           role="option"

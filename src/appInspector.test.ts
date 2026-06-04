@@ -357,12 +357,13 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const filteredProjectSchemes = useMemo<SavedSchemeRecord[]>");
     expect(source).toContain("normalizeLibrarySearchText(scheme.name).includes(projectSearchNeedle)");
     expect(source).toContain("normalizeLibrarySearchText(project.name).includes(projectSearchNeedle)");
-    expect(source).toContain("const [hoveredSchemeId, setHoveredSchemeId] = useState(\"\");");
-    expect(source).toContain("const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id) || hoveredSchemeId === scheme.id;");
+    expect(source).toContain("const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id);");
+    expect(source).not.toContain("hoveredSchemeId");
+    expect(source).not.toContain("setHoveredSchemeId");
     expect(source).toContain("const projects = useMemo(() => flattenSavedProjects(schemes), [schemes]);");
     expect(source).toContain("(scheme.children ?? []).map(filterScheme)");
-    expect(projectPanelBlock).toContain("onMouseEnter={() => setHoveredSchemeId(scheme.id)}");
-    expect(projectPanelBlock).toContain("onMouseLeave={() => setHoveredSchemeId((current) => current === scheme.id ? \"\" : current)}");
+    expect(projectPanelBlock).not.toContain("onMouseEnter={() => setHoveredSchemeId(scheme.id)}");
+    expect(projectPanelBlock).not.toContain("onMouseLeave={() => setHoveredSchemeId((current) => current === scheme.id ? \"\" : current)}");
     expect(projectPanelBlock).toContain("className=\"library-search project-search\"");
     expect(projectPanelBlock).toContain("placeholder=\"搜索方案/模型\"");
     expect(projectPanelBlock).toContain("aria-label=\"搜索模型库\"");
