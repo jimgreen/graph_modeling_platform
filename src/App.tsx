@@ -217,6 +217,7 @@ import {
   routeEdgesForStoredRendering,
   modelGeometryInsideCanvasBounds,
   mirrorNodes,
+  moveSavedSchemeToParent,
   renameSavedScheme,
   renameSavedProject,
   replaceSavedSchemeById,
@@ -757,6 +758,13 @@ type PendingRecordPasteConflict =
       sourceSchemeId: string;
       targetSchemeId: string;
       duplicateProjectId: string;
+      duplicateName: string;
+    }
+  | {
+      kind: "scheme-drag";
+      schemeId: string;
+      targetSchemeId: string;
+      duplicateSchemeId: string;
       duplicateName: string;
     }
   | null;
@@ -6851,6 +6859,7 @@ export function App() {
   const [leftPanelAutoVisible, setLeftPanelAutoVisible] = useState(false);
   const [rightPanelAutoVisible, setRightPanelAutoVisible] = useState(false);
   const projectRecordDragActiveRef = useRef(false);
+  const schemeRecordDragActiveRef = useRef(false);
   const [containerParamViewId, setContainerParamViewId] = useState("container");
   const [expandedAttributeLibraries, setExpandedAttributeLibraries] = useState<AttributeLibrary[]>([...DEFAULT_ATTRIBUTE_LIBRARIES]);
   const [expandedAttributeLibraryComponentTypes, setExpandedAttributeLibraryComponentTypes] = useState<string[]>([]);
@@ -17086,6 +17095,9 @@ export function App() {
     if (side === "left" && event === "panel-leave" && projectRecordDragActiveRef.current) {
       return;
     }
+    if (side === "left" && event === "panel-leave" && schemeRecordDragActiveRef.current) {
+      return;
+    }
     if (side === "left") {
       setLeftPanelAutoVisible((current) => nextSidePanelAutoVisible("left", leftPanelMode, current, event));
     } else {
@@ -17102,6 +17114,9 @@ export function App() {
       return;
     }
     if (projectRecordDragActiveRef.current) {
+      return;
+    }
+    if (schemeRecordDragActiveRef.current) {
       return;
     }
     if (projectMenu) {
@@ -19933,6 +19948,40 @@ export function App() {
       writeOperationLog(`覆盖粘贴方案记录：${conflict.duplicateName}`);
       return;
     }
+    if (conflict.kind === "scheme-drag") {
+      const sourceScheme = findSavedSchemeById(schemes, conflict.schemeId);
+      const targetScheme = findSavedSchemeById(schemes, conflict.targetSchemeId);
+      if (!sourceScheme || !targetScheme) {
+        setPendingRecordPasteConflict(null);
+        return;
+      }
+      const targetChildNames = (targetScheme.children ?? []).map((scheme) => scheme.name);
+      if (action === "rename") {
+        const renamed = promptUniqueRecordName(
+          "请输入拖拽后的方案名称",
+          uniqueRecordName(sourceScheme.name, targetChildNames, "未命名方案"),
+          targetChildNames,
+          "方案名称不能为空。",
+          "方案名称重复，无法拖拽。"
+        );
+        if (!renamed) {
+          return;
+        }
+        setPendingRecordPasteConflict(null);
+        setSchemes((current) => moveSavedSchemeToParent(current, conflict.schemeId, conflict.targetSchemeId, { targetName: renamed }));
+        setExpandedSchemeIds((current) => (current.includes(conflict.targetSchemeId) ? current : [...current, conflict.targetSchemeId]));
+        writeOperationLog(`新命名拖拽方案记录：${renamed}`);
+        return;
+      }
+      setPendingRecordPasteConflict(null);
+      setSchemes((current) => moveSavedSchemeToParent(current, conflict.schemeId, conflict.targetSchemeId, {
+        targetName: conflict.duplicateName,
+        overwriteSchemeId: conflict.duplicateSchemeId
+      }));
+      setExpandedSchemeIds((current) => (current.includes(conflict.targetSchemeId) ? current : [...current, conflict.targetSchemeId]));
+      writeOperationLog(`覆盖拖拽方案记录：${conflict.duplicateName}`);
+      return;
+    }
     if (conflict.kind === "project-drag") {
       const sourceScheme = findSavedSchemeById(schemes, conflict.sourceSchemeId);
       const sourceProject = sourceScheme?.projects.find((project) => project.id === conflict.projectId);
@@ -20032,6 +20081,43 @@ export function App() {
       return;
     }
     commitProjectRecordMove(projectId, schemeId);
+  };
+
+  const moveSchemeRecordToScheme = (schemeId: string, targetSchemeId: string) => {
+    if (!requireEditMode("移动方案")) {
+      return;
+    }
+    const sourceScheme = findSavedSchemeById(schemes, schemeId);
+    const targetScheme = findSavedSchemeById(schemes, targetSchemeId);
+    if (!sourceScheme || !targetScheme || sourceScheme.id === targetScheme.id) {
+      return;
+    }
+    const movedSchemeIds = new Set(flattenSavedSchemes([sourceScheme]).map((scheme) => scheme.id));
+    if (movedSchemeIds.has(targetScheme.id)) {
+      return;
+    }
+    const duplicateScheme = (targetScheme.children ?? []).find(
+      (scheme) => scheme.id !== sourceScheme.id && hasSameName(scheme.name, [sourceScheme.name])
+    );
+    if (duplicateScheme) {
+      setPendingRecordPasteConflict({
+        kind: "scheme-drag",
+        schemeId,
+        targetSchemeId: targetScheme.id,
+        duplicateSchemeId: duplicateScheme.id,
+        duplicateName: duplicateScheme.name
+      });
+      return;
+    }
+    setSchemes((current) => moveSavedSchemeToParent(current, schemeId, targetScheme.id));
+    setExpandedSchemeIds((current) => (current.includes(targetScheme.id) ? current : [...current, targetScheme.id]));
+    if (selectedSchemeId === schemeId || selectedSchemeIds.includes(schemeId)) {
+      setSelectedSchemeId(schemeId);
+      setSelectedSchemeIds([]);
+      setSelectedProjectId("");
+      setSelectedProjectIds([]);
+    }
+    writeOperationLog(`移动方案“${sourceScheme.name}”到“${targetScheme.name}”下`);
   };
 
   const saveActiveProjectPointer = (draftProjectId: string, draftSchemeId: string) => {
@@ -21787,6 +21873,16 @@ export function App() {
     projectRecordDragActiveRef.current = false;
   };
 
+  const startSchemeRecordDrag = (event: DragEvent<HTMLDivElement>, schemeId: string) => {
+    schemeRecordDragActiveRef.current = true;
+    event.dataTransfer.setData("application/scheme-id", schemeId);
+    event.dataTransfer.effectAllowed = "move";
+  };
+
+  const finishSchemeRecordDrag = () => {
+    schemeRecordDragActiveRef.current = false;
+  };
+
   const renderProjectSchemeNode = (scheme: SavedSchemeRecord, depth = 0): ReactNode => {
     const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id) || hoveredSchemeId === scheme.id;
     const children = scheme.children ?? [];
@@ -21805,6 +21901,7 @@ export function App() {
           aria-selected={selectedSchemeIds.includes(scheme.id) || selectedSchemeId === scheme.id}
           aria-expanded={isExpanded}
           tabIndex={0}
+          draggable={isEditMode}
           className={`scheme-option ${selectedSchemeIds.includes(scheme.id) || selectedSchemeId === scheme.id ? "selected" : ""}`}
           style={schemeIndentStyle}
           onClick={(event) => {
@@ -21827,12 +21924,27 @@ export function App() {
             }
           }}
           onDragOver={(event) => event.preventDefault()}
+          onDragStart={(event) => {
+            if (!isEditMode) {
+              event.preventDefault();
+              return;
+            }
+            startSchemeRecordDrag(event, scheme.id);
+          }}
+          onDragEnd={finishSchemeRecordDrag}
           onDrop={(event) => {
             event.preventDefault();
+            event.stopPropagation();
             if (!isEditMode) {
               return;
             }
             finishProjectRecordDrag();
+            finishSchemeRecordDrag();
+            const schemeId = event.dataTransfer.getData("application/scheme-id");
+            if (schemeId) {
+              moveSchemeRecordToScheme(schemeId, scheme.id);
+              return;
+            }
             const projectId = event.dataTransfer.getData("application/project-id");
             if (projectId) {
               moveProjectRecordToScheme(projectId, scheme.id);
@@ -27406,14 +27518,14 @@ export function App() {
               <div>
                 <h2 id="record-paste-conflict-title">名称重复</h2>
                 <p>
-                  当前{pendingRecordPasteConflict.kind === "scheme" ? "模型库" : "方案"}中已存在“{pendingRecordPasteConflict.duplicateName}”。请选择{pendingRecordPasteConflict.kind === "project-drag" ? "拖拽" : "粘贴"}处理方式。
+                  当前{pendingRecordPasteConflict.kind === "scheme" ? "模型库" : pendingRecordPasteConflict.kind === "scheme-drag" ? "目标方案" : "方案"}中已存在“{pendingRecordPasteConflict.duplicateName}”。请选择{pendingRecordPasteConflict.kind === "project-drag" || pendingRecordPasteConflict.kind === "scheme-drag" ? "拖拽" : "粘贴"}处理方式。
                 </p>
               </div>
             </div>
             <div className="unsaved-change-actions">
               <button type="button" onClick={() => resolveRecordPasteConflict("overwrite")}>覆盖</button>
               <button type="button" onClick={() => resolveRecordPasteConflict("rename")}>新命名</button>
-              <button type="button" onClick={() => resolveRecordPasteConflict("cancel")}>{pendingRecordPasteConflict.kind === "project-drag" ? "取消拖拽" : "取消粘贴"}</button>
+              <button type="button" onClick={() => resolveRecordPasteConflict("cancel")}>{pendingRecordPasteConflict.kind === "project-drag" || pendingRecordPasteConflict.kind === "scheme-drag" ? "取消拖拽" : "取消粘贴"}</button>
             </div>
           </section>
         </div>

@@ -56,6 +56,7 @@ import {
   resolveStraightBusSlideEndpoint,
   resolveStraightBusSlideEndpointToPoint,
   moveProjectToScheme,
+  moveSavedSchemeToParent,
   moveOrthogonalRouteSegment,
   modelGeometryInsideCanvasBounds,
   insertOrthogonalRouteBend,
@@ -7239,6 +7240,51 @@ describe("power system model", () => {
 
     expect(findSavedSchemeById(moved, root.id)?.projects).toEqual([]);
     expect(findSavedSchemeById(moved, child.id)?.projects.map((item) => item.name)).toEqual(["模型A"]);
+  });
+
+  test("moves saved schemes under another scheme without allowing cycles", () => {
+    const first = createSavedScheme("方案A", [
+      createSavedProject("模型A", { version: 1, name: "模型A", nodes: [], edges: [] })
+    ]);
+    const second = createSavedScheme("方案B");
+    const child = createSavedScheme("子方案");
+    const tree = insertChildSavedScheme([first, second], first.id, child);
+
+    const moved = moveSavedSchemeToParent(tree, first.id, second.id);
+
+    expect(moved.map((scheme) => scheme.name)).toEqual(["方案B"]);
+    expect(findSavedSchemeById(moved, second.id)?.children?.map((scheme) => scheme.name)).toEqual(["方案A"]);
+    expect(findSavedSchemeById(moved, first.id)?.projects.map((project) => project.name)).toEqual(["模型A"]);
+    expect(findSavedSchemeById(moved, first.id)?.children?.map((scheme) => scheme.name)).toEqual(["子方案"]);
+
+    const cycleAttempt = moveSavedSchemeToParent(tree, first.id, child.id);
+
+    expect(cycleAttempt).toBe(tree);
+  });
+
+  test("moves saved schemes with explicit rename or overwrite conflict handling", () => {
+    const source = createSavedScheme("同名方案", [
+      createSavedProject("源模型", { version: 1, name: "源模型", nodes: [], edges: [] })
+    ]);
+    const duplicate = createSavedScheme("同名方案", [
+      createSavedProject("旧模型", { version: 1, name: "旧模型", nodes: [], edges: [] })
+    ]);
+    const target = createSavedScheme("目标方案", [], [duplicate]);
+    const tree = [source, target];
+
+    const renamed = moveSavedSchemeToParent(tree, source.id, target.id, { targetName: "同名方案 新" });
+
+    expect(findSavedSchemeById(renamed, target.id)?.children?.map((scheme) => scheme.name)).toEqual(["同名方案", "同名方案 新"]);
+    expect(findSavedSchemeById(renamed, source.id)?.projects.map((project) => project.name)).toEqual(["源模型"]);
+
+    const overwritten = moveSavedSchemeToParent(tree, source.id, target.id, {
+      targetName: duplicate.name,
+      overwriteSchemeId: duplicate.id
+    });
+
+    expect(findSavedSchemeById(overwritten, target.id)?.children?.map((scheme) => scheme.name)).toEqual(["同名方案"]);
+    expect(findSavedSchemeById(overwritten, duplicate.id)).toBeUndefined();
+    expect(findSavedSchemeById(overwritten, source.id)?.projects.map((project) => project.name)).toEqual(["源模型"]);
   });
 
   test("uses scheme and model names as runtime keys while stripping ids from persisted records", () => {

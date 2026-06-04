@@ -8402,6 +8402,95 @@ export function deleteSavedScheme(schemes: SavedSchemeRecord[], schemeId: string
   return changed ? nextSchemes : schemes;
 }
 
+function savedSchemeTreeContainsId(scheme: SavedSchemeRecord, schemeId: string): boolean {
+  return scheme.id === schemeId || savedSchemeChildren(scheme).some((child) => savedSchemeTreeContainsId(child, schemeId));
+}
+
+function removeSavedSchemesByIds(
+  schemes: SavedSchemeRecord[],
+  schemeIds: Set<string>,
+  updatedAt: string
+): { schemes: SavedSchemeRecord[]; changed: boolean } {
+  let changed = false;
+  const nextSchemes = schemes.flatMap((scheme) => {
+    if (schemeIds.has(scheme.id)) {
+      changed = true;
+      return [];
+    }
+    const children = savedSchemeChildren(scheme);
+    const childResult = children.length > 0
+      ? removeSavedSchemesByIds(children, schemeIds, updatedAt)
+      : { schemes: children, changed: false };
+    if (!childResult.changed) {
+      return [scheme];
+    }
+    changed = true;
+    return [{ ...scheme, updatedAt, children: childResult.schemes }];
+  });
+  return { schemes: changed ? nextSchemes : schemes, changed };
+}
+
+export function moveSavedSchemeToParent(
+  schemes: SavedSchemeRecord[],
+  schemeId: string,
+  targetParentSchemeId: string,
+  options: { targetName?: string; overwriteSchemeId?: string } = {}
+): SavedSchemeRecord[] {
+  const sourceScheme = findSavedSchemeById(schemes, schemeId);
+  if (!sourceScheme || schemeId === targetParentSchemeId) {
+    return schemes;
+  }
+  if (targetParentSchemeId && savedSchemeTreeContainsId(sourceScheme, targetParentSchemeId)) {
+    return schemes;
+  }
+  const targetParentScheme = targetParentSchemeId ? findSavedSchemeById(schemes, targetParentSchemeId) : undefined;
+  if (targetParentSchemeId && !targetParentScheme) {
+    return schemes;
+  }
+  const overwriteSchemeId = options.overwriteSchemeId ?? "";
+  if (overwriteSchemeId && (overwriteSchemeId === schemeId || savedSchemeTreeContainsId(sourceScheme, overwriteSchemeId))) {
+    return schemes;
+  }
+  const targetSiblings = targetParentScheme ? savedSchemeChildren(targetParentScheme) : schemes;
+  if (overwriteSchemeId && !targetSiblings.some((scheme) => scheme.id === overwriteSchemeId)) {
+    return schemes;
+  }
+  const sourceParentId = findSavedSchemeParentById(schemes, schemeId)?.id ?? "";
+  const targetName = (options.targetName ?? sourceScheme.name).trim() || "未命名方案";
+  if (!overwriteSchemeId) {
+    const hasNameConflict = targetSiblings.some((scheme) => scheme.id !== schemeId && scheme.name.trim() === targetName);
+    if (hasNameConflict) {
+      return schemes;
+    }
+  }
+  if (sourceParentId === targetParentSchemeId && targetName === sourceScheme.name && !overwriteSchemeId) {
+    return schemes;
+  }
+  const now = new Date().toISOString();
+  const movedScheme: SavedSchemeRecord = { ...sourceScheme, name: targetName, updatedAt: now };
+  const removeIds = new Set([schemeId, overwriteSchemeId].filter(Boolean));
+  const removed = removeSavedSchemesByIds(schemes, removeIds, now);
+  if (!removed.changed) {
+    return schemes;
+  }
+  if (!targetParentSchemeId) {
+    return [...removed.schemes, movedScheme];
+  }
+  let inserted = false;
+  const insertedSchemes = mapSavedSchemeTree(removed.schemes, (scheme) => {
+    if (scheme.id !== targetParentSchemeId) {
+      return scheme;
+    }
+    inserted = true;
+    return {
+      ...scheme,
+      updatedAt: now,
+      children: [...savedSchemeChildren(scheme), movedScheme]
+    };
+  });
+  return inserted ? insertedSchemes : schemes;
+}
+
 export function moveProjectToScheme(
   schemes: SavedSchemeRecord[],
   projectId: string,

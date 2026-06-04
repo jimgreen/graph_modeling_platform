@@ -6798,6 +6798,48 @@ describe("graph inspector panel", () => {
     expect(dialogBlock).toContain("取消拖拽");
   });
 
+  test("supports dragging schemes under another scheme with conflict choices", async () => {
+    const source = await readAppSource();
+    const moveStart = source.indexOf("const moveSchemeRecordToScheme =");
+    const moveEnd = source.indexOf("const saveActiveProjectPointer", moveStart);
+    const moveBlock = source.slice(moveStart, moveEnd);
+    const visibilityStart = source.indexOf("const updateAutoPanelVisibility =");
+    const visibilityEnd = source.indexOf("const activateInspectorFromCanvas", visibilityStart);
+    const visibilityBlock = source.slice(visibilityStart, visibilityEnd);
+    const hideStart = source.indexOf("const hideAutoPanelsFromWorkspace =");
+    const hideEnd = source.indexOf("const interactiveStaticDrawingNeedsExplicitFinish", hideStart);
+    const hideBlock = source.slice(hideStart, hideEnd);
+    const projectPanelStart = source.indexOf("const renderProjectSchemeNode =");
+    const projectPanelEnd = source.indexOf("const customDraftTerminalTypes", projectPanelStart);
+    const projectPanelBlock = source.slice(projectPanelStart, projectPanelEnd);
+    const resolveStart = source.indexOf("const resolveRecordPasteConflict =");
+    const resolveEnd = source.indexOf("const moveProjectRecordToScheme", resolveStart);
+    const resolveBlock = source.slice(resolveStart, resolveEnd);
+    const dialogStart = source.indexOf("{pendingRecordPasteConflict && (");
+    const dialogEnd = source.indexOf("{pendingModelImportConflict && (", dialogStart);
+    const dialogBlock = source.slice(dialogStart, dialogEnd);
+
+    expect(source).toContain("moveSavedSchemeToParent");
+    expect(source).toContain("kind: \"scheme-drag\"");
+    expect(source).toContain("const schemeRecordDragActiveRef = useRef(false);");
+    expect(source).toContain("const startSchemeRecordDrag =");
+    expect(source).toContain("const finishSchemeRecordDrag =");
+    expect(visibilityBlock).toContain("side === \"left\" && event === \"panel-leave\" && schemeRecordDragActiveRef.current");
+    expect(hideBlock).toContain("if (schemeRecordDragActiveRef.current)");
+    expect(projectPanelBlock).toContain("draggable={isEditMode}");
+    expect(projectPanelBlock).toContain("startSchemeRecordDrag(event, scheme.id)");
+    expect(projectPanelBlock).toContain("onDragEnd={finishSchemeRecordDrag}");
+    expect(projectPanelBlock).toContain("finishSchemeRecordDrag();");
+    expect(projectPanelBlock).toContain("application/scheme-id");
+    expect(projectPanelBlock).toContain("moveSchemeRecordToScheme(schemeId, scheme.id)");
+    expect(moveBlock).toContain("duplicateScheme");
+    expect(moveBlock).toContain("setPendingRecordPasteConflict");
+    expect(moveBlock).toContain("moveSavedSchemeToParent");
+    expect(resolveBlock).toContain("请输入拖拽后的方案名称");
+    expect(resolveBlock).toContain("moveSavedSchemeToParent");
+    expect(dialogBlock).toContain("取消拖拽");
+  });
+
   test("guards page unload and model switching when the current model has unsaved changes", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
