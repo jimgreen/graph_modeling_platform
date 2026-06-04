@@ -64,6 +64,20 @@ describe("canvas selection actions", () => {
     expect(reorderItemsByDisplayLayer(items, ["missing"], "front")).toBe(items);
   });
 
+  test("reorders selected graphics only inside their model layer", () => {
+    const items = [
+      { id: "a1", layerId: "layer-a" },
+      { id: "b1", layerId: "layer-b" },
+      { id: "a2", layerId: "layer-a" },
+      { id: "b2", layerId: "layer-b" },
+      { id: "a3", layerId: "layer-a" }
+    ];
+
+    expect(reorderItemsByDisplayLayer(items, ["a1"], "raise").map((item) => item.id)).toEqual(["a2", "b1", "a1", "b2", "a3"]);
+    expect(reorderItemsByDisplayLayer(items, ["a3"], "back").map((item) => item.id)).toEqual(["a3", "b1", "a1", "b2", "a2"]);
+    expect(reorderItemsByDisplayLayer(items, ["b1"], "front").map((item) => item.id)).toEqual(["a1", "b2", "a2", "b1", "a3"]);
+  });
+
   test("selects nodes and routed connection lines fully enclosed by the marquee rectangle", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
     const target = createDefaultNode("ac-load", { x: 300, y: 100 });

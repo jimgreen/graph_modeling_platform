@@ -7666,7 +7666,7 @@ export function createModelLayer(name: string, existingLayers: ModelLayer[] = []
   };
 }
 
-export function normalizeModelLayers(layers?: ModelLayer[], nodes: Pick<ModelNode, "layerId">[] = [], activeLayerId?: string): ModelLayer[] {
+export function normalizeModelLayers(layers?: readonly ModelLayer[], nodes: readonly Pick<ModelNode, "layerId">[] = [], activeLayerId?: string): ModelLayer[] {
   const normalized: ModelLayer[] = [];
   const seenIds = new Set<string>();
   const appendLayer = (layer: Partial<ModelLayer> | undefined, fallbackId: string, fallbackName: string) => {
@@ -7821,8 +7821,63 @@ export function normalizeProjectLayers(project: ProjectFile): ProjectFile {
   };
 }
 
+function modelLayerIdForOrdering(node: Pick<ModelNode, "layerId">) {
+  return node.layerId ?? DEFAULT_MODEL_LAYER_ID;
+}
+
+function nodesAlreadyInModelLayerOrder(nodes: readonly Pick<ModelNode, "layerId">[], layerOrder: ReadonlyMap<string, number>) {
+  let previousLayerOrder = -1;
+  for (const node of nodes) {
+    const currentLayerOrder = layerOrder.get(modelLayerIdForOrdering(node)) ?? 0;
+    if (currentLayerOrder < previousLayerOrder) {
+      return false;
+    }
+    previousLayerOrder = currentLayerOrder;
+  }
+  return true;
+}
+
+function collectNodesByModelLayerOrder<T extends Pick<ModelNode, "layerId">>(
+  nodes: readonly T[],
+  layers: readonly ModelLayer[],
+  visibleLayerIds?: ReadonlySet<string>
+): T[] {
+  const buckets = new Map<string, T[]>();
+  for (const node of nodes) {
+    const layerId = modelLayerIdForOrdering(node);
+    if (visibleLayerIds && !visibleLayerIds.has(layerId)) {
+      continue;
+    }
+    const bucket = buckets.get(layerId);
+    if (bucket) {
+      bucket.push(node);
+    } else {
+      buckets.set(layerId, [node]);
+    }
+  }
+  const ordered: T[] = [];
+  for (const layer of layers) {
+    if (visibleLayerIds && !visibleLayerIds.has(layer.id)) {
+      continue;
+    }
+    ordered.push(...(buckets.get(layer.id) ?? []));
+  }
+  return ordered;
+}
+
+export function orderNodesByModelLayer<T extends Pick<ModelNode, "layerId">>(nodes: readonly T[], layers?: readonly ModelLayer[]): T[] {
+  if (nodes.length < 2) {
+    return nodes as T[];
+  }
+  const normalizedLayers = normalizeModelLayers(layers, nodes);
+  const layerOrder = new Map(normalizedLayers.map((layer, index) => [layer.id, index]));
+  return nodesAlreadyInModelLayerOrder(nodes, layerOrder)
+    ? nodes as T[]
+    : collectNodesByModelLayerOrder(nodes, normalizedLayers);
+}
+
 export function filterProjectByVisibleLayers(nodes: ModelNode[], edges: Edge[], layers?: ModelLayer[]) {
-  if (!layers || layers.length === 0 || layers.every((layer) => layer.visible !== false)) {
+  if (!layers || layers.length === 0) {
     return { nodes, edges };
   }
   const normalizedLayers = normalizeModelLayers(layers, nodes);
@@ -7830,27 +7885,13 @@ export function filterProjectByVisibleLayers(nodes: ModelNode[], edges: Edge[], 
   const visibleLayers = normalizedLayers.filter((layer) => layer.visible);
   const allLayersVisible = visibleLayers.length === normalizedLayers.length;
   if (allLayersVisible) {
-    let alreadyInLayerOrder = true;
-    let previousLayerOrder = -1;
-    for (const node of nodes) {
-      const currentLayerOrder = layerOrder.get(node.layerId ?? DEFAULT_MODEL_LAYER_ID) ?? 0;
-      if (currentLayerOrder < previousLayerOrder) {
-        alreadyInLayerOrder = false;
-        break;
-      }
-      previousLayerOrder = currentLayerOrder;
-    }
-    if (alreadyInLayerOrder) {
-      return { nodes, edges };
-    }
+    const orderedNodes = nodesAlreadyInModelLayerOrder(nodes, layerOrder)
+      ? nodes
+      : collectNodesByModelLayerOrder(nodes, normalizedLayers);
+    return { nodes: orderedNodes, edges };
   }
   const visibleLayerIds = new Set(visibleLayers.map((layer) => layer.id));
-  const visibleNodes = nodes
-    .filter((node) => visibleLayerIds.has(node.layerId ?? DEFAULT_MODEL_LAYER_ID))
-    .sort((left, right) =>
-      (layerOrder.get(left.layerId ?? DEFAULT_MODEL_LAYER_ID) ?? 0) -
-      (layerOrder.get(right.layerId ?? DEFAULT_MODEL_LAYER_ID) ?? 0)
-    );
+  const visibleNodes = collectNodesByModelLayerOrder(nodes, normalizedLayers, visibleLayerIds);
   const visibleNodeIds = new Set(visibleNodes.map((node) => node.id));
   return {
     nodes: visibleNodes,

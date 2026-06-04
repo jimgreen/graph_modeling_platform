@@ -2460,7 +2460,8 @@ describe("graph inspector panel", () => {
     const sizeBlock = source.slice(sizeStart, sizeEnd);
 
     expect(source).not.toContain("routeEdgesForRendering,");
-    expect(exportBlock).toContain("routeEdgesForStoredRendering(nodes, edges, canvasSize)");
+    expect(exportBlock).toContain("const exportNodes = orderNodesByModelLayer(nodes, normalizedLayers);");
+    expect(exportBlock).toContain("routeEdgesForStoredRendering(exportNodes, edges, canvasSize)");
     expect(exportBlock).not.toContain("routeEdgesForRendering");
     expect(sizeBlock).toContain("routeEdgesForStoredRendering(nodes, edges");
     expect(sizeBlock).not.toContain("routeEdgesForRendering");

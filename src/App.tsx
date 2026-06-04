@@ -140,6 +140,7 @@ import {
   normalizeNodeTerminalsByTemplate,
   normalizeProjectLayers,
   normalizeModelGroups,
+  orderNodesByModelLayer,
   normalizeSavedProjectRecordNames,
   savedProjectRecordNameKey,
   normalizeColorPalette,
@@ -6418,6 +6419,7 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
   const colorDisplayMode = canvasSize.colorDisplayMode ?? "energy";
   const colorPalette = normalizeColorPalette(canvasSize.colorPalette ?? DEFAULT_COLOR_PALETTE);
   const normalizedLayers = normalizeModelLayers(canvasSize.layers, nodes, canvasSize.activeLayerId);
+  const exportNodes = orderNodesByModelLayer(nodes, normalizedLayers);
   const activeExportLayerId = normalizedLayers.some((layer) => layer.id === canvasSize.activeLayerId)
     ? canvasSize.activeLayerId!
     : normalizedLayers[0]?.id ?? DEFAULT_MODEL_LAYER_ID;
@@ -6436,9 +6438,9 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
       `<g data-export-layer-def="${escapeXml(layer.id)}" data-export-layer-name="${escapeXml(layer.name)}" data-export-layer-visible="${layer.visible === false ? "0" : "1"}" data-export-layer-active="${layer.id === activeExportLayerId ? "1" : "0"}"/>`
     )
     .join("\n");
-  const hasLayerButtons = nodes.some((node) => resolveExportLayerButtonTargetIds(node).length > 0);
+  const hasLayerButtons = exportNodes.some((node) => resolveExportLayerButtonTargetIds(node).length > 0);
   const includeLayerScript = hasLayerButtons || normalizedLayers.length > 1;
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const nodeById = new Map(exportNodes.map((node) => [node.id, node]));
   const edgeById = new Map(edges.map((edge) => [edge.id, edge]));
   const buildBoundaryBusInternalConnectorMarkup = (edge: Edge, endpoint: "source" | "target", stroke: string) => {
     const node = nodeById.get(endpoint === "source" ? edge.sourceId : edge.targetId);
@@ -6458,7 +6460,7 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
     const dashAttribute = dashArray ? ` stroke-dasharray="${escapeXml(dashArray)}"` : "";
     return `<line class="export-boundary-bus-internal-connector" x1="${formatSvgNumber(segment.from.x)}" y1="${formatSvgNumber(segment.from.y)}" x2="${formatSvgNumber(segment.to.x)}" y2="${formatSvgNumber(segment.to.y)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(boundaryBusInternalConnectorStrokeWidth(node, segment))}" stroke-linecap="round"${dashAttribute}/>`;
   };
-  const edgeMarkup = routeEdgesForStoredRendering(nodes, edges, canvasSize)
+  const edgeMarkup = routeEdgesForStoredRendering(exportNodes, edges, canvasSize)
     .map((route) => {
       const edge = edgeById.get(route.edgeId);
       const stroke = edge ? getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette) : "#334155";
@@ -6477,7 +6479,7 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
 </g>`;
     })
     .join("\n");
-  const nodeMarkup = nodes
+  const nodeMarkup = exportNodes
     .map((node) => {
       const layerId = nodeLayerId(node);
       const targetLayerIds = resolveExportLayerButtonTargetIds(node);
@@ -7072,16 +7074,6 @@ export function App() {
   );
   const allModelLayersVisible = layers.length === 0 || layers.every((layer) => layer.visible !== false);
   const visibleProject = useMemo(() => {
-    if (allModelLayersVisible) {
-      return {
-        nodes,
-        edges,
-        nodeById: graphStore.nodeMap,
-        nodeIdSet: graphStore.nodeIdSet,
-        edgeIdSet: graphStore.edgeIdSet,
-        nodeSpatialIndex: graphStore.nodeSpatialIndex
-      };
-    }
     const normalizedLayers = normalizeModelLayers(layers, nodes);
     const visibleNodesByLayer: ModelNode[] = [];
     for (const layer of normalizedLayers) {
@@ -7092,15 +7084,26 @@ export function App() {
     const visibleProjectNodesMatchGraphStoreOrder =
       visibleNodesByLayer.length === nodes.length &&
       visibleNodesByLayer.every((node, index) => node === nodes[index]);
-    const visibleNodeIdSetForLayers = visibleProjectNodesMatchGraphStoreOrder
+    if (allModelLayersVisible && visibleProjectNodesMatchGraphStoreOrder) {
+      return {
+        nodes,
+        edges,
+        nodeById: graphStore.nodeMap,
+        nodeIdSet: graphStore.nodeIdSet,
+        edgeIdSet: graphStore.edgeIdSet,
+        nodeSpatialIndex: graphStore.nodeSpatialIndex
+      };
+    }
+    const visibleProjectIncludesAllNodes = allModelLayersVisible && visibleNodesByLayer.length === nodes.length;
+    const visibleNodeIdSetForLayers = visibleProjectIncludesAllNodes
       ? graphStore.nodeIdSet
       : new Set(visibleNodesByLayer.map((node) => node.id));
-    const visibleNodeByIdForLayers = visibleProjectNodesMatchGraphStoreOrder
+    const visibleNodeByIdForLayers = visibleProjectIncludesAllNodes
       ? graphStore.nodeMap
       : new Map(visibleNodesByLayer.map((node) => [node.id, node]));
     let visibleEdgesByLayer = edges;
     let visibleEdgeIdSetForLayers = graphStore.edgeIdSet;
-    if (visibleNodeIdSetForLayers.size !== graphStore.nodeIdSet.size) {
+    if (!visibleProjectIncludesAllNodes) {
       const visibleEdgeById = new Map<string, Edge>();
       for (const node of visibleNodesByLayer) {
         for (const edge of graphStore.edgesByNodeId.get(node.id) ?? []) {
@@ -7122,7 +7125,7 @@ export function App() {
       nodeById: visibleNodeByIdForLayers,
       nodeIdSet: visibleNodeIdSetForLayers,
       edgeIdSet: visibleEdgeIdSetForLayers,
-      nodeSpatialIndex: visibleProjectNodesMatchGraphStoreOrder
+      nodeSpatialIndex: visibleProjectIncludesAllNodes
         ? graphStore.nodeSpatialIndex
         : buildNodeSpatialIndex(visibleNodesByLayer)
     };

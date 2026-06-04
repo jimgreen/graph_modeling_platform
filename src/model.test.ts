@@ -814,7 +814,7 @@ describe("power system model", () => {
     expect(filtered.edges).toBe(edges);
   });
 
-  test("reuses graph arrays when every layer is visible without sorting large models", () => {
+  test("orders graph content by layer even when every layer is visible", () => {
     const primary = { ...createDefaultNode("ac-source", { x: 100, y: 100 }), id: "primary", layerId: DEFAULT_MODEL_LAYER_ID };
     const visibleExtra = { ...createDefaultNode("ac-load", { x: 500, y: 100 }), id: "visible-extra", layerId: "layer-extra" };
     const nodes = [visibleExtra, primary];
@@ -828,9 +828,9 @@ describe("power system model", () => {
 
     const filtered = filterProjectByVisibleLayers(nodes, edges, layers);
 
-    expect(filtered.nodes).toBe(nodes);
+    expect(filtered.nodes).not.toBe(nodes);
     expect(filtered.edges).toBe(edges);
-    expect(filtered.nodes.map((item) => item.id)).toEqual(["visible-extra", "primary"]);
+    expect(filtered.nodes.map((item) => item.id)).toEqual(["primary", "visible-extra"]);
   });
 
   test("creates uniquely named model layers", () => {

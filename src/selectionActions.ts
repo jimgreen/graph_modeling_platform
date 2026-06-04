@@ -124,15 +124,11 @@ function uniqueIds(ids: readonly string[]) {
 
 export type DisplayLayerAction = "raise" | "lower" | "front" | "back";
 
-export function reorderItemsByDisplayLayer<T extends { id: string }>(
+function reorderDisplayLayerItems<T extends { id: string }>(
   items: readonly T[],
-  selectedIds: readonly string[],
+  selectedIdSet: ReadonlySet<string>,
   action: DisplayLayerAction
 ): T[] {
-  const selectedIdSet = new Set(uniqueIds(selectedIds));
-  if (selectedIdSet.size === 0 || !items.some((item) => selectedIdSet.has(item.id))) {
-    return items as T[];
-  }
   const selected = (item: T) => selectedIdSet.has(item.id);
   let next = Array.from(items);
   if (action === "front") {
@@ -152,7 +148,57 @@ export function reorderItemsByDisplayLayer<T extends { id: string }>(
       }
     }
   }
-  return next.every((item, index) => item === items[index]) ? items as T[] : next;
+  return next;
+}
+
+function itemModelLayerId(item: { layerId?: unknown }) {
+  return typeof item.layerId === "string" && item.layerId.trim() ? item.layerId : "__default_model_layer__";
+}
+
+export function reorderItemsByDisplayLayer<T extends { id: string }>(
+  items: readonly T[],
+  selectedIds: readonly string[],
+  action: DisplayLayerAction
+): T[] {
+  const selectedIdSet = new Set(uniqueIds(selectedIds));
+  if (selectedIdSet.size === 0 || !items.some((item) => selectedIdSet.has(item.id))) {
+    return items as T[];
+  }
+
+  const hasModelLayerIds = items.some((item) => typeof (item as { layerId?: unknown }).layerId === "string");
+  if (!hasModelLayerIds) {
+    const reordered = reorderDisplayLayerItems(items, selectedIdSet, action);
+    return reordered.every((item, index) => item === items[index]) ? items as T[] : reordered;
+  }
+
+  const groups = new Map<string, { indexes: number[]; items: T[] }>();
+  items.forEach((item, index) => {
+    const layerId = itemModelLayerId(item as { layerId?: unknown });
+    const group = groups.get(layerId);
+    if (group) {
+      group.indexes.push(index);
+      group.items.push(item);
+    } else {
+      groups.set(layerId, { indexes: [index], items: [item] });
+    }
+  });
+
+  let changed = false;
+  const next = Array.from(items);
+  for (const group of groups.values()) {
+    if (!group.items.some((item) => selectedIdSet.has(item.id))) {
+      continue;
+    }
+    const reordered = reorderDisplayLayerItems(group.items, selectedIdSet, action);
+    if (reordered.every((item, index) => item === group.items[index])) {
+      continue;
+    }
+    changed = true;
+    reordered.forEach((item, index) => {
+      next[group.indexes[index]] = item;
+    });
+  }
+  return changed ? next : items as T[];
 }
 
 function groupChildIds(group: ModelGroup) {
