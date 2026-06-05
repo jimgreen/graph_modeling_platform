@@ -1,3 +1,5 @@
+import { normalizeProjectMeasurements, type ProjectMeasurementConfig } from "./measurements";
+
 export type DeviceKind =
   | "static-text"
   | "static-line"
@@ -452,6 +454,7 @@ export type ProjectFile = {
   powerBaseValue?: number;
   deviceIndexCounters?: DeviceIndexCounters;
   groups?: ModelGroup[];
+  measurements?: ProjectMeasurementConfig;
   nodes: ModelNode[];
   edges: Edge[];
 };
@@ -9064,7 +9067,15 @@ export function filterProjectByVisibleLayers(nodes: ModelNode[], edges: Edge[], 
 }
 
 export function serializeProject(project: ProjectFile): string {
-  return JSON.stringify(normalizeProjectLayers(lockProjectEdgeTerminals(project)), null, 2);
+  const locked = normalizeProjectLayers(lockProjectEdgeTerminals(project));
+  return JSON.stringify(
+    {
+      ...locked,
+      measurements: normalizeProjectMeasurements(locked.measurements, locked.nodes)
+    },
+    null,
+    2
+  );
 }
 
 export function deserializeProject(json: string): ProjectFile {
@@ -9072,7 +9083,11 @@ export function deserializeProject(json: string): ProjectFile {
   if (parsed.version !== 1 || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
     throw new Error("Unsupported or invalid model file");
   }
-  return normalizeProjectLayers(lockProjectEdgeTerminals(parsed));
+  const locked = normalizeProjectLayers(lockProjectEdgeTerminals(parsed));
+  return {
+    ...locked,
+    measurements: normalizeProjectMeasurements(locked.measurements, locked.nodes)
+  };
 }
 
 export function lockProjectEdgeTerminals(project: ProjectFile): ProjectFile {

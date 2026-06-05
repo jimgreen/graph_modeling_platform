@@ -1445,6 +1445,73 @@ describe("power system model", () => {
     expect(restored.allowAutoExpandCanvas).toBe(false);
   });
 
+  test("serializes and deserializes model measurement groups", () => {
+    const node = { ...createDefaultNode("ac-load", { x: 100, y: 100 }), id: "node-1" };
+    const project: ProjectFile = {
+      version: 1,
+      name: "量测模型",
+      nodes: [node],
+      edges: [],
+      measurements: {
+        version: 1,
+        groups: [
+          {
+            id: "measurement-group-1",
+            nodeId: "node-1",
+            visible: true,
+            anchor: "bottom",
+            offset: { x: 0, y: 90 },
+            layout: "vertical",
+            items: [
+              {
+                id: "measurement-item-1",
+                measurementTypeId: "activePower",
+                sourcePoint: "plant.load.1.p",
+                decimalsOverride: 2
+              }
+            ]
+          }
+        ]
+      }
+    };
+
+    const restored = deserializeProject(serializeProject(project));
+
+    expect(restored.measurements?.groups).toHaveLength(1);
+    expect(restored.measurements?.groups[0].items[0]).toMatchObject({
+      measurementTypeId: "activePower",
+      sourcePoint: "plant.load.1.p",
+      decimalsOverride: 2
+    });
+  });
+
+  test("drops measurement groups for missing nodes when loading a model", () => {
+    const json = JSON.stringify({
+      version: 1,
+      name: "量测模型",
+      nodes: [],
+      edges: [],
+      measurements: {
+        version: 1,
+        groups: [
+          {
+            id: "measurement-group-1",
+            nodeId: "missing-node",
+            visible: true,
+            anchor: "bottom",
+            offset: { x: 0, y: 90 },
+            layout: "vertical",
+            items: []
+          }
+        ]
+      }
+    });
+
+    const restored = deserializeProject(json);
+
+    expect(restored.measurements?.groups).toEqual([]);
+  });
+
   test("exports hydrogen, heat, and cross-energy devices to E sections and reports unsupported devices", () => {
     const electrolyzer = assignPermanentDeviceIndex(createDefaultNode("ac-electrolyzer", { x: 100, y: 100 }), {}).node;
     const hydrogenPipe = assignPermanentDeviceIndex(createDefaultNode("hydrogen-pipeline", { x: 240, y: 100 }), {}).node;
