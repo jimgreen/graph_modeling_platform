@@ -3,6 +3,7 @@ dist/
 data/
 .codex-logs/
 logs/
+.worktrees/
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
