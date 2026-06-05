@@ -325,9 +325,35 @@ import {
   type SidePanelMode,
   type SidePanelSide
 } from "./sidePanelVisibility";
+import {
+  DEFAULT_MEASUREMENT_CONFIG,
+  createDefaultMeasurementGroupForNode,
+  formatMeasurementDisplayValue,
+  normalizeMeasurementConfig,
+  normalizeProjectMeasurements,
+  removeMeasurementGroupsForNodeIds,
+  resolveMeasurementItemDisplay,
+  type MeasurementGroup,
+  type PlatformMeasurementConfig,
+  type ProjectMeasurementConfig
+} from "./measurements";
+import {
+  fetchMeasurementCatalog,
+  fetchMeasurementConfig,
+  fetchMeasurementSnapshot,
+  openMeasurementStream,
+  type MeasurementCatalogPoint
+} from "./measurementClient";
+import { createMeasurementRuntimeStore, type MeasurementRuntimeStore } from "./measurementRuntimeStore";
 
 const ENABLE_REACT_FLOW_PREVIEW = import.meta.env.DEV;
 const ReactFlowPreview = ENABLE_REACT_FLOW_PREVIEW ? lazy(() => import("./ReactFlowPreview")) : null;
+
+function useMeasurementRuntimeSnapshot(store: MeasurementRuntimeStore) {
+  const [, forceVersion] = useState(0);
+  useEffect(() => store.subscribe(() => forceVersion((value) => value + 1)), [store]);
+  return store.getSnapshot();
+}
 
 type ToolMode = "select" | "connect" | "static-draw";
 type InteractionMode = "browse" | "edit";
@@ -1081,6 +1107,7 @@ type DraftProjectState = {
   powerBaseValue?: number;
   deviceIndexCounters?: DeviceIndexCounters;
   groups?: ModelGroup[];
+  measurements?: ProjectMeasurementConfig;
   nodes: ModelNode[];
   edges: Edge[];
 };
@@ -2845,6 +2872,7 @@ function normalizeStoredDraftProject(parsed: DraftProjectState): DraftProjectSta
       layers: parsed.layers,
       activeLayerId: parsed.activeLayerId,
       groups: parsed.groups,
+      measurements: parsed.measurements,
       nodes: parsed.nodes.map(normalizeNodeTerminalsByTemplate),
       edges: parsed.edges
     }),
@@ -2862,7 +2890,8 @@ function normalizeStoredDraftProject(parsed: DraftProjectState): DraftProjectSta
     voltageUnit: parsed.voltageUnit,
     currentUnit: parsed.currentUnit,
     powerBaseValue: parsed.powerBaseValue,
-    deviceIndexCounters: parsed.deviceIndexCounters
+    deviceIndexCounters: parsed.deviceIndexCounters,
+    measurements: normalizeProjectMeasurements(parsed.measurements, parsed.nodes)
   };
 }
 
@@ -3006,6 +3035,7 @@ function draftProjectFromSavedSchemes(
       layers: record.project.layers,
       activeLayerId: record.project.activeLayerId,
       groups: record.project.groups,
+      measurements: record.project.measurements,
       nodes: record.project.nodes,
       edges: record.project.edges
     });
@@ -6719,6 +6749,7 @@ export function App() {
     layers: initialDraft?.layers,
     activeLayerId: initialDraft?.activeLayerId,
     groups: initialDraft?.groups,
+    measurements: initialDraft?.measurements,
     nodes: initialDraft?.nodes ?? SAMPLE_NODES,
     edges: initialDraft?.edges ?? SAMPLE_EDGES
   }), [initialDraft]);
@@ -6905,6 +6936,19 @@ export function App() {
   const [voltageUnit, setVoltageUnit] = useState(() => initialDraft?.voltageUnit ?? DEFAULT_VOLTAGE_UNIT);
   const [currentUnit, setCurrentUnit] = useState(() => initialDraft?.currentUnit ?? DEFAULT_CURRENT_UNIT);
   const [powerBaseValue, setPowerBaseValue] = useState(() => initialDraft?.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE);
+  const [platformMeasurementConfig, setPlatformMeasurementConfig] = useState<PlatformMeasurementConfig>(() => normalizeMeasurementConfig(DEFAULT_MEASUREMENT_CONFIG));
+  const [measurementCatalog, setMeasurementCatalog] = useState<MeasurementCatalogPoint[]>([]);
+  const [measurements, setMeasurements] = useState<ProjectMeasurementConfig>(() =>
+    normalizeProjectMeasurements(initialDraft?.measurements, initialIndexedNodes.nodes)
+  );
+  const [measurementDrag, setMeasurementDrag] = useState<{
+    groupId: string;
+    pointerId: number;
+    startCanvasPoint: Point;
+    startOffset: Point;
+    changed: boolean;
+  } | null>(null);
+  const measurementRuntimeStoreRef = useRef(createMeasurementRuntimeStore());
   const [schemes, setSchemesState] = useState<SavedSchemeRecord[]>(initialSavedSchemes);
   latestSchemesRef.current = schemes;
   const setSchemes = (value: SetStateAction<SavedSchemeRecord[]>) => {
@@ -7311,6 +7355,11 @@ export function App() {
   const visibleNodeById = visibleProject.nodeById;
   const visibleNodeIdSet = visibleProject.nodeIdSet;
   const visibleNodeSpatialIndex = visibleProject.nodeSpatialIndex;
+  const measurementRuntimeSnapshot = useMeasurementRuntimeSnapshot(measurementRuntimeStoreRef.current);
+  const visibleMeasurementGroups = useMemo(
+    () => measurements.groups.filter((group) => group.visible && visibleNodeById.has(group.nodeId)),
+    [measurements.groups, visibleNodeById]
+  );
   const visibleEdgeIdSet = visibleProject.edgeIdSet;
   const nodeForRoutingList = (sourceNodes: ModelNode[], nodeId: string) =>
     sourceNodes === visibleNodes
@@ -7472,6 +7521,14 @@ export function App() {
   const selectedEdge = activeLayerEdgeIdSet.has(selectedEdgeId) ? edgeById.get(selectedEdgeId) : undefined;
   const inspectorSelectedNode = selectedNode;
   const inspectorSelectedEdge = selectedEdge;
+  const selectedMeasurementGroup = useMemo(
+    () => (selectedNodeId ? measurements.groups.find((group) => group.nodeId === selectedNodeId) : undefined),
+    [measurements.groups, selectedNodeId]
+  );
+  const measurementTypeById = useMemo(
+    () => new Map(platformMeasurementConfig.measurementTypes.map((type) => [type.id, type])),
+    [platformMeasurementConfig.measurementTypes]
+  );
   const inspectorTopologyErrors = useDeferredValue(topologyErrors);
   const connectionStrokeColorCacheToken = useMemo(
     () => `${colorDisplayMode}:${JSON.stringify(colorPalette)}`,
@@ -8559,6 +8616,73 @@ export function App() {
     findSavedSchemeById(schemes, activeSchemeKey) ??
     findProjectRecordInSchemes(schemes, activeProjectKey)?.scheme;
   const activeModelPathName = `${activeSchemeRecord?.name ?? "未选择方案"} / ${activeModelName}`;
+  const activeMeasurementSchemePath = useMemo(
+    () => activeSchemeKey
+      ? savedSchemePathForId(schemes, activeSchemeKey) ?? (activeSchemeRecord ? [activeSchemeRecord.name] : [])
+      : [],
+    [activeSchemeKey, activeSchemeRecord, schemes]
+  );
+
+  useEffect(() => {
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    setMeasurements((current) => {
+      const groups = removeMeasurementGroupsForNodeIds(current.groups, new Set<string>());
+      const filtered = groups.filter((group) => nodeIds.has(group.nodeId));
+      return filtered.length === current.groups.length ? current : { version: 1, groups: filtered };
+    });
+  }, [nodes]);
+
+  useEffect(() => {
+    let canceled = false;
+    fetchMeasurementConfig()
+      .then((config) => {
+        if (!canceled) {
+          setPlatformMeasurementConfig(normalizeMeasurementConfig(config));
+        }
+      })
+      .catch(() => {
+        if (!canceled) {
+          setPlatformMeasurementConfig(normalizeMeasurementConfig(DEFAULT_MEASUREMENT_CONFIG));
+        }
+      });
+    fetchMeasurementCatalog()
+      .then((catalog) => {
+        if (!canceled) {
+          setMeasurementCatalog(catalog.points);
+        }
+      })
+      .catch(() => {
+        if (!canceled) {
+          setMeasurementCatalog([]);
+        }
+      });
+    return () => {
+      canceled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let closed = false;
+    const schemePath = activeMeasurementSchemePath.join("/");
+    fetchMeasurementSnapshot(schemePath, projectName)
+      .then((snapshot) => {
+        if (!closed) {
+          measurementRuntimeStoreRef.current.applySnapshot(snapshot);
+        }
+      })
+      .catch(() => undefined);
+    const closeStream = openMeasurementStream({
+      schemePath,
+      modelName: projectName,
+      onPatch: (patch) => {
+        measurementRuntimeStoreRef.current.applyPatch(patch);
+      }
+    });
+    return () => {
+      closed = true;
+      closeStream();
+    };
+  }, [activeMeasurementSchemePath, projectName]);
   const currentModelRecord = useMemo<SavedProjectRecord>(() => (
     selectedProjectRecord ?? activeProjectRecord ?? {
       id: activeProjectKey || "current-project",
@@ -8583,6 +8707,7 @@ export function App() {
         layers,
         activeLayerId,
         groups,
+        measurements: normalizeProjectMeasurements(measurements, nodes),
         nodes,
         edges
       }
@@ -8604,6 +8729,7 @@ export function App() {
     edges,
     groups,
     layers,
+    measurements,
     nodes,
     powerBaseValue,
     powerUnit,
@@ -8635,6 +8761,7 @@ export function App() {
     layers,
     activeLayerId,
     groups,
+    measurements: normalizeProjectMeasurements(measurements, nodes),
     nodes,
     edges
   }), [
@@ -8654,6 +8781,7 @@ export function App() {
     edges,
     groups,
     layers,
+    measurements,
     nodes,
     powerBaseValue,
     powerUnit,
@@ -12475,6 +12603,7 @@ export function App() {
       powerBaseValue,
       deviceIndexCounters,
       groups: normalizeModelGroups(groups, nodes, projectEdges),
+      measurements: normalizeProjectMeasurements(measurements, nodes),
       nodes,
       edges: projectEdges
     }));
@@ -17319,6 +17448,49 @@ export function App() {
     patchGraphNodes([nextNode]);
   };
 
+  const updateMeasurementGroup = (groupId: string, updater: (group: MeasurementGroup) => MeasurementGroup) => {
+    if (!requireEditMode("修改动态量测")) {
+      return;
+    }
+    setMeasurements((current) => ({
+      version: 1,
+      groups: current.groups.map((group) => (group.id === groupId ? updater(group) : group))
+    }));
+    setHasUnsavedChanges(true);
+  };
+
+  const addDefaultMeasurementGroupForSelectedNode = () => {
+    if (!requireEditMode("添加动态量测")) {
+      return;
+    }
+    if (!inspectorSelectedNode || selectedMeasurementGroup || isStaticNode(inspectorSelectedNode)) {
+      return;
+    }
+    const group = createDefaultMeasurementGroupForNode({ node: inspectorSelectedNode, config: platformMeasurementConfig });
+    if (!group) {
+      window.alert("当前图元类型还没有默认量测模板。");
+      return;
+    }
+    setMeasurements((current) => ({ version: 1, groups: [...current.groups, group] }));
+    setHasUnsavedChanges(true);
+    writeOperationLog(`添加动态量测：${inspectorSelectedNode.name}`);
+  };
+
+  const removeSelectedMeasurementGroup = () => {
+    if (!requireEditMode("删除动态量测")) {
+      return;
+    }
+    if (!selectedMeasurementGroup) {
+      return;
+    }
+    setMeasurements((current) => ({
+      version: 1,
+      groups: current.groups.filter((group) => group.id !== selectedMeasurementGroup.id)
+    }));
+    setHasUnsavedChanges(true);
+    writeOperationLog("删除动态量测");
+  };
+
   const updateElementTreeNodeIdentity = (nodeId: string, field: "idx" | "name", value: string) => {
     if (!requireEditMode("修改图元树参数")) {
       return;
@@ -20515,6 +20687,7 @@ export function App() {
     setDeviceIndexCounters(indexed.counters);
     setGraphArrays(repairedNodes, layeredProject.edges);
     setGroups(normalizeModelGroups(layeredProject.groups, repairedNodes, layeredProject.edges));
+    setMeasurements(normalizeProjectMeasurements(project.project.measurements, repairedNodes));
     setTopology(EMPTY_TOPOLOGY);
     setTopologyErrors([]);
     setTopologyStatus(INITIAL_TOPOLOGY_STATUS);
@@ -25214,6 +25387,111 @@ export function App() {
     beginStaticButtonPointerFeedback(event, node);
   };
 
+  const beginMeasurementDrag = (event: PointerEvent<SVGGElement>, group: MeasurementGroup) => {
+    if (isBrowseMode || !svgRef.current) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    setMeasurementDrag({
+      groupId: group.id,
+      pointerId: event.pointerId,
+      startCanvasPoint: screenToSvgPoint(svgRef.current, event.clientX, event.clientY),
+      startOffset: group.offset,
+      changed: false
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const updateMeasurementDrag = (event: PointerEvent<SVGSVGElement>) => {
+    if (!measurementDrag || event.pointerId !== measurementDrag.pointerId || !svgRef.current) {
+      return false;
+    }
+    const point = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
+    const offset = {
+      x: measurementDrag.startOffset.x + point.x - measurementDrag.startCanvasPoint.x,
+      y: measurementDrag.startOffset.y + point.y - measurementDrag.startCanvasPoint.y
+    };
+    setMeasurements((current) => ({
+      version: 1,
+      groups: current.groups.map((group) => group.id === measurementDrag.groupId ? { ...group, offset, anchor: "custom" } : group)
+    }));
+    setMeasurementDrag((current) => current && current.pointerId === event.pointerId ? { ...current, changed: true } : current);
+    return true;
+  };
+
+  const finishMeasurementDrag = (event: PointerEvent<SVGSVGElement>) => {
+    if (!measurementDrag || event.pointerId !== measurementDrag.pointerId) {
+      return false;
+    }
+    if (measurementDrag.changed) {
+      setHasUnsavedChanges(true);
+      writeOperationLog("调整动态量测位置");
+    }
+    setMeasurementDrag(null);
+    return true;
+  };
+
+  const renderMeasurementGroup = (group: MeasurementGroup) => {
+    const node = dragPreviewMovedNodeById.get(group.nodeId) ?? visibleNodeById.get(group.nodeId);
+    if (!node) {
+      return null;
+    }
+    const x = node.position.x + group.offset.x;
+    const y = node.position.y + group.offset.y;
+    const rows = group.items
+      .map((item) => {
+        const display = resolveMeasurementItemDisplay({ config: platformMeasurementConfig, node, group, item });
+        if (!display.visible) {
+          return null;
+        }
+        const runtime = item.sourcePoint ? measurementRuntimeSnapshot.get(item.sourcePoint) : undefined;
+        return {
+          item,
+          display,
+          text: formatMeasurementDisplayValue(runtime, display.decimals, display.unit),
+          quality: runtime?.quality ?? "missing"
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+    if (rows.length === 0) {
+      return null;
+    }
+
+    return (
+      <g
+        key={group.id}
+        className={`measurement-group measurement-layout-${group.layout}`}
+        transform={`translate(${x} ${y})`}
+        onPointerDown={(event) => beginMeasurementDrag(event, group)}
+      >
+        {rows.map((row, index) => {
+          const lineHeight = row.display.fontSize + 4;
+          const itemX = group.layout === "vertical" ? 0 : group.layout === "grid" ? (index % 2) * 110 : index * 110;
+          const itemY = group.layout === "vertical" ? index * lineHeight : group.layout === "grid" ? Math.floor(index / 2) * lineHeight : 0;
+          return (
+            <text
+              key={row.item.id}
+              className={`measurement-item measurement-quality-${row.quality}`}
+              x={itemX}
+              y={itemY}
+              fill={row.display.color}
+              fontFamily={row.display.fontFamily}
+              fontSize={row.display.fontSize}
+              fontWeight={row.display.fontWeight}
+              fontStyle={row.display.fontStyle}
+              textDecoration={row.display.textDecoration}
+              dominantBaseline="middle"
+            >
+              {`${row.display.label} ${row.text}`}
+            </text>
+          );
+        })}
+      </g>
+    );
+  };
+
   const renderReadonlyBackgroundPage = () => {
     if (!backgroundPageRender) {
       return null;
@@ -25887,7 +26165,12 @@ export function App() {
             onWheel={handleWheel}
             onDoubleClick={fitWholeCanvasFromBlankDoubleClick}
             onPointerDownCapture={handleCanvasPointerDownCapture}
-            onPointerMove={handlePointerMove}
+            onPointerMove={(event) => {
+              if (updateMeasurementDrag(event)) {
+                return;
+              }
+              handlePointerMove(event);
+            }}
             onPointerEnter={(event) => {
               canvasInteractionRef.current = true;
               projectListPointerInsideRef.current = false;
@@ -25904,6 +26187,9 @@ export function App() {
               }
             }}
             onPointerUp={(event) => {
+              if (finishMeasurementDrag(event)) {
+                return;
+              }
               if (finishModifierSelectionPress(event.pointerId)) {
                 return;
               }
@@ -25939,6 +26225,7 @@ export function App() {
               }
               finishNodeLabelDrag();
               finishNodeLabelRotateDrag();
+              setMeasurementDrag(null);
               finishNodeDrag();
               if (panningRef.current) {
                 return;
@@ -25957,6 +26244,7 @@ export function App() {
               cancelModifierSelectionPress();
               finishNodeLabelDrag();
               finishNodeLabelRotateDrag();
+              setMeasurementDrag(null);
               finishNodeDrag();
               setTerminalPress(null);
               setRoutableLineEndpointDrag(null);
@@ -25970,6 +26258,7 @@ export function App() {
               cancelModifierSelectionPress();
               finishNodeLabelDrag();
               finishNodeLabelRotateDrag();
+              setMeasurementDrag(null);
               finishNodeDrag();
               setTerminalPress(null);
               setRoutableLineEndpointDrag(null);
@@ -26886,6 +27175,11 @@ export function App() {
                 </g>
               );
             })}
+            {visibleMeasurementGroups.length > 0 && (
+              <g className="measurement-layer" pointerEvents={isBrowseMode ? "none" : "auto"}>
+                {visibleMeasurementGroups.map(renderMeasurementGroup)}
+              </g>
+            )}
             {renderSingleTransformRotateOriginGhost()}
             {renderGroupTransformPhotoPreview()}
             {renderTransformRotationTrajectory()}
@@ -27879,6 +28173,193 @@ export function App() {
                             />
                           </td>
                         </tr>
+                        <tr>
+                          <th>动态量测</th>
+                          <td>
+                            <div className="measurement-sidebar-actions">
+                              <button type="button" disabled={isBrowseMode || Boolean(selectedMeasurementGroup)} onClick={addDefaultMeasurementGroupForSelectedNode}>
+                                添加默认量测
+                              </button>
+                              <button type="button" disabled={isBrowseMode || !selectedMeasurementGroup} onClick={removeSelectedMeasurementGroup}>
+                                删除量测
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {selectedMeasurementGroup && (
+                          <>
+                            <tr>
+                              <th>量测显示</th>
+                              <td>
+                                <select
+                                  value={selectedMeasurementGroup.visible ? "1" : "0"}
+                                  disabled={isBrowseMode}
+                                  onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({ ...group, visible: event.target.value === "1" }))}
+                                >
+                                  <option value="1">显示</option>
+                                  <option value="0">隐藏</option>
+                                </select>
+                              </td>
+                            </tr>
+                            <tr>
+                              <th>量测布局</th>
+                              <td>
+                                <select
+                                  value={selectedMeasurementGroup.layout}
+                                  disabled={isBrowseMode}
+                                  onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({ ...group, layout: event.target.value as MeasurementGroup["layout"] }))}
+                                >
+                                  <option value="vertical">竖向</option>
+                                  <option value="horizontal">横向</option>
+                                  <option value="grid">表格</option>
+                                </select>
+                              </td>
+                            </tr>
+                            <tr>
+                              <th>量测偏移</th>
+                              <td>
+                                <div className="measurement-offset-fields">
+                                  <input
+                                    type="number"
+                                    step="1"
+                                    value={Math.round(selectedMeasurementGroup.offset.x * 10) / 10}
+                                    disabled={isBrowseMode}
+                                    onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({
+                                      ...group,
+                                      anchor: "custom",
+                                      offset: { ...group.offset, x: Number(event.target.value) }
+                                    }))}
+                                  />
+                                  <input
+                                    type="number"
+                                    step="1"
+                                    value={Math.round(selectedMeasurementGroup.offset.y * 10) / 10}
+                                    disabled={isBrowseMode}
+                                    onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({
+                                      ...group,
+                                      anchor: "custom",
+                                      offset: { ...group.offset, y: Number(event.target.value) }
+                                    }))}
+                                  />
+                                </div>
+                              </td>
+                            </tr>
+                            {selectedMeasurementGroup.items.map((item, itemIndex) => {
+                              const measurementType = measurementTypeById.get(item.measurementTypeId);
+                              return (
+                                <Fragment key={item.id}>
+                                  <tr>
+                                    <th>{measurementType?.name ?? `量测${itemIndex + 1}`}</th>
+                                    <td>
+                                      <select
+                                        value={item.measurementTypeId}
+                                        disabled={isBrowseMode}
+                                        onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({
+                                          ...group,
+                                          items: group.items.map((candidate) => candidate.id === item.id ? { ...candidate, measurementTypeId: event.target.value } : candidate)
+                                        }))}
+                                      >
+                                        {platformMeasurementConfig.measurementTypes.map((type) => (
+                                          <option key={type.id} value={type.id}>{type.name} / {type.shortLabel}</option>
+                                        ))}
+                                      </select>
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <th>测点绑定</th>
+                                    <td>
+                                      <select
+                                        value={item.sourcePoint}
+                                        disabled={isBrowseMode}
+                                        onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({
+                                          ...group,
+                                          items: group.items.map((candidate) => candidate.id === item.id ? { ...candidate, sourcePoint: event.target.value } : candidate)
+                                        }))}
+                                      >
+                                        <option value="">未绑定测点</option>
+                                        {measurementCatalog.map((point) => (
+                                          <option key={point.sourcePoint} value={point.sourcePoint}>
+                                            {point.name || point.sourcePoint}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <th>量测显示名</th>
+                                    <td>
+                                      <input
+                                        value={item.labelOverride ?? ""}
+                                        disabled={isBrowseMode}
+                                        title="为空时继承量测类型"
+                                        onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({
+                                          ...group,
+                                          items: group.items.map((candidate) => candidate.id === item.id ? { ...candidate, labelOverride: event.target.value } : candidate)
+                                        }))}
+                                      />
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <th>单位/小数</th>
+                                    <td>
+                                      <div className="measurement-unit-fields">
+                                        <input
+                                          value={item.unitOverride ?? ""}
+                                          disabled={isBrowseMode}
+                                          title="为空时继承量测类型单位"
+                                          onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({
+                                            ...group,
+                                            items: group.items.map((candidate) => candidate.id === item.id ? { ...candidate, unitOverride: event.target.value } : candidate)
+                                          }))}
+                                        />
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="12"
+                                          value={item.decimalsOverride ?? measurementType?.defaultDecimals ?? 3}
+                                          disabled={isBrowseMode}
+                                          onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({
+                                            ...group,
+                                            items: group.items.map((candidate) => candidate.id === item.id ? { ...candidate, decimalsOverride: Number(event.target.value) } : candidate)
+                                          }))}
+                                        />
+                                      </div>
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <th>量测样式</th>
+                                    <td>
+                                      <div className="measurement-style-fields">
+                                        <select
+                                          value={item.visible === false ? "0" : "1"}
+                                          disabled={isBrowseMode}
+                                          onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({
+                                            ...group,
+                                            items: group.items.map((candidate) => candidate.id === item.id ? { ...candidate, visible: event.target.value === "1" } : candidate)
+                                          }))}
+                                        >
+                                          <option value="1">显示</option>
+                                          <option value="0">隐藏</option>
+                                        </select>
+                                        <input
+                                          type="color"
+                                          value={item.styleOverride?.color ?? measurementType?.defaultColor ?? "#334155"}
+                                          disabled={isBrowseMode}
+                                          onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({
+                                            ...group,
+                                            items: group.items.map((candidate) => candidate.id === item.id
+                                              ? { ...candidate, styleOverride: { ...(candidate.styleOverride ?? {}), color: event.target.value } }
+                                              : candidate)
+                                          }))}
+                                        />
+                                      </div>
+                                    </td>
+                                  </tr>
+                                </Fragment>
+                              );
+                            })}
+                          </>
+                        )}
                         <tr>
                           {renderChineseParamHeader("terminalCount")}
                           <td>

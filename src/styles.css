@@ -5548,6 +5548,80 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   }
 }
 
+.measurement-layer {
+  overflow: visible;
+}
+
+.measurement-group {
+  pointer-events: none;
+  user-select: none;
+}
+
+.edit-mode .measurement-group {
+  cursor: move;
+  pointer-events: auto;
+}
+
+.browse-mode .measurement-group {
+  pointer-events: none;
+}
+
+.measurement-item {
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.measurement-quality-good {
+  opacity: 1;
+}
+
+.measurement-quality-stale {
+  opacity: 0.62;
+}
+
+.measurement-quality-bad {
+  fill: #b45309;
+}
+
+.measurement-quality-missing {
+  fill: #94a3b8;
+}
+
+.measurement-sidebar-actions,
+.measurement-offset-fields,
+.measurement-unit-fields,
+.measurement-style-fields {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.measurement-sidebar-actions button {
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.measurement-offset-fields input,
+.measurement-unit-fields input {
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+.measurement-style-fields select {
+  flex: 1 1 auto;
+}
+
+.measurement-style-fields input[type="color"] {
+  width: 28px;
+  height: 22px;
+  flex: 0 0 auto;
+  padding: 0;
+}
+
 @media (max-width: 1180px) {
   .app-shell {
     --left-panel-width: 250px;

@@ -14,11 +14,15 @@ import type { ModelNode } from "./model";
 
 const node = (id: string, kind = "ACLoad"): ModelNode => ({
   id,
-  kind,
+  kind: kind as ModelNode["kind"],
   name: `${kind}-1`,
+  nodeNumber: "",
+  acTopologyNode: 0,
+  dcTopologyNode: 0,
   position: { x: 0, y: 0 },
   size: { width: 100, height: 60 },
   rotation: 0,
+  scale: 1,
   terminals: [],
   params: {}
 });

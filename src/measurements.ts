@@ -49,6 +49,11 @@ export type PlatformMeasurementConfig = {
   deviceProfiles: DeviceMeasurementProfile[];
 };
 
+export type PlatformMeasurementConfigInput = {
+  measurementTypes?: Array<Partial<MeasurementTypeDefinition> & { id: string }>;
+  deviceProfiles?: DeviceMeasurementProfile[];
+};
+
 export type MeasurementItemBinding = {
   id: string;
   measurementTypeId: string;
@@ -306,11 +311,13 @@ const normalizeStyleOverride = (style: MeasurementStyleOverride | undefined): Me
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 };
 
-export function normalizeMeasurementConfig(input: Partial<PlatformMeasurementConfig> | undefined): PlatformMeasurementConfig {
+export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput | undefined): PlatformMeasurementConfig {
   const defaultTypes = byId(DEFAULT_MEASUREMENT_CONFIG.measurementTypes);
-  const rawTypes = Array.isArray(input?.measurementTypes) ? input.measurementTypes : DEFAULT_MEASUREMENT_CONFIG.measurementTypes;
+  const rawTypes: Array<Partial<MeasurementTypeDefinition> & { id: string }> = Array.isArray(input?.measurementTypes)
+    ? input.measurementTypes
+    : DEFAULT_MEASUREMENT_CONFIG.measurementTypes;
   const measurementTypes = rawTypes
-    .filter((item): item is Partial<MeasurementTypeDefinition> & { id: string } => typeof item?.id === "string" && item.id.trim().length > 0)
+    .filter((item) => typeof item?.id === "string" && item.id.trim().length > 0)
     .map((item) => {
       const id = item.id.trim();
       const fallback = defaultTypes.get(id);
