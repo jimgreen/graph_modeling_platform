@@ -24,14 +24,14 @@ describe("SVG export", () => {
     expect(svg).toContain("export-terminal-dot ac");
   });
 
-  test("exports routable line-like device glyphs as thick saved paths", () => {
+  test("exports routable line-like device glyphs as slightly thicker saved paths without extra terminals", () => {
     const line = createDefaultNode("ac-routable-line", { x: 180, y: 120 });
 
     const svg = buildSvgDocument([line], [], { width: 360, height: 240 });
 
     expect(svg).toContain("routable-line-device-glyph");
-    expect(svg).toContain('stroke-width="7"');
-    expect(svg).toContain("export-terminal-dot ac");
+    expect(svg).toContain('stroke-width="4"');
+    expect(svg).not.toContain("export-terminal-dot ac");
   });
 
   test("exports bus-connected tank devices as tank glyphs instead of plain bus lines", () => {
