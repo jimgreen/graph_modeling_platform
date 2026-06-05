@@ -381,49 +381,34 @@ import {
   useCanvasSelectionBounds,
   useCanvasStatusDerivations
 } from "./useCanvasViewportDerivations";
+import { useProjectPersistenceController } from "./useProjectPersistenceController";
 import {
-  ACTIVE_PROJECT_STORAGE_KEY,
   DEFAULT_CANVAS_BACKGROUND,
   DEFAULT_CURRENT_UNIT,
   DEFAULT_POWER_BASE_VALUE,
   DEFAULT_POWER_UNIT,
   DEFAULT_VOLTAGE_UNIT,
-  DRAFT_PROJECT_STORAGE_KEY,
-  SCHEME_STORAGE_KEY,
-  activeProjectPointerPayload,
   backendJsonRequest,
   clearRefreshRecoveryProject,
   createBackendImageFolder,
   deleteBackendImageFolder,
-  draftProjectFromSavedSchemes,
   fetchBackendImageFolders,
   fetchBackendImages,
   fetchBackendJson,
-  fetchBackendSchemes,
   findProjectRecordByNameInScheme,
   findProjectRecordInSchemes,
-  findSavedProjectByActivePointer,
   imageAssetsToMap,
   localImageAssetsFromStorage,
-  readActiveProjectPointer,
-  readDraftProject,
   readImageAssets,
-  readRefreshRecoveryProject,
-  readSavedSchemes,
-  readStoredSchemesPayload,
   renameBackendImageFolder,
   resolveNodeForegroundImage,
   resolveNodeImage,
   resolveProjectImage,
-  saveBackendSchemesPayload,
   savedSchemePathForId,
   saveImageAsset,
   serializeSchemesForStorage,
-  shouldPreferLocalSchemesOverBackend,
   uploadBackendImage,
   writeRefreshRecoveryProject,
-  type ActiveProjectPointer,
-  type DraftProjectState,
   type ImageAsset,
   type ImageFolder,
   type RefreshRecoveryProjectState
@@ -3932,18 +3917,39 @@ ${exportSvgLayerScriptMarkup(includeLayerScript)}
 }
 
 export function App() {
-  const initialStoredSchemesPayload = useMemo(() => readStoredSchemesPayload(), []);
-  const initialSavedSchemes = useMemo(() => readSavedSchemes(initialStoredSchemesPayload), [initialStoredSchemesPayload]);
-  const initialProjectSources = useMemo(() => {
-    const refreshRecovery = readRefreshRecoveryProject();
-    const activeProjectPointer = readActiveProjectPointer();
-    const savedProjectDraft = draftProjectFromSavedSchemes(initialSavedSchemes, activeProjectPointer);
-    return {
-      recoveredFromRefresh: Boolean(refreshRecovery),
-      draft: refreshRecovery ?? savedProjectDraft ?? readDraftProject()
-    };
-  }, [initialSavedSchemes]);
-  const initialDraft = initialProjectSources.draft;
+  const saveRequiredRef = useRef(false);
+  const operationLogRef = useRef("就绪");
+  const operationLogStatusRef = useRef<HTMLSpanElement | null>(null);
+  const setOperationLogText = (nextLog: string) => {
+    operationLogRef.current = nextLog;
+    const element = operationLogStatusRef.current;
+    if (!element) {
+      return;
+    }
+    element.title = nextLog;
+    element.textContent = `日志 ${nextLog}`;
+  };
+  const writeOperationLog = (message: string) => {
+    const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    setOperationLogText(`${time} ${message}`);
+  };
+  const {
+    activeProjectKey,
+    activeSchemeKey,
+    backendProjectLoadRequest,
+    clearBackendProjectLoadRequest,
+    initialDraft,
+    initialProjectSources,
+    persistSchemesPayloadToStorageAndBackend,
+    saveActiveProjectPointer,
+    schemes,
+    setActiveProjectKey,
+    setActiveSchemeKey,
+    setSchemes
+  } = useProjectPersistenceController({
+    saveRequiredRef,
+    onOperationLog: writeOperationLog
+  });
   const initialLayeredProject = useMemo(() => normalizeProjectLayers({
     version: 1,
     name: initialDraft?.projectName ?? "电力能源系统图上模型",
@@ -3972,16 +3978,6 @@ export function App() {
   const lastCanvasPointerRef = useRef<Point | null>(null);
   const lastRawCanvasPointerRef = useRef<Point | null>(null);
   const projectListPointerInsideRef = useRef(false);
-  const backendSchemesLoadedRef = useRef(false);
-  const suppressNextBackendSchemeSyncRef = useRef(false);
-  const lastPersistedSchemesPayloadRef = useRef<string | null>(null);
-  const pendingBackendSchemesPayloadRef = useRef<string | null>(null);
-  const schemeBackendSyncSequenceRef = useRef(0);
-  const backendSchemesLoadTokenRef = useRef(0);
-  const schemesChangedBeforeBackendLoadRef = useRef(false);
-  const startupHadStoredSchemesRef = useRef(Boolean(initialStoredSchemesPayload));
-  const latestSchemesRef = useRef<SavedSchemeRecord[]>(initialSavedSchemes);
-  const latestActiveProjectPointerRef = useRef<ActiveProjectPointer | null>(null);
   const backendColorConfigLoadedRef = useRef(false);
   const suppressNextBackendColorSyncRef = useRef(false);
   const lastPersistedColorConfigPayloadRef = useRef<string | null>(null);
@@ -4067,7 +4063,6 @@ export function App() {
   const selectedLayoutUnitsCacheRef = useRef<CanvasLayoutUnit[]>([]);
   const graphDirtyBaselineRef = useRef<GraphDirtyBaseline | null>(null);
   const suppressNextGraphDirtyRef = useRef(false);
-  const saveRequiredRef = useRef(false);
   const refreshRecoveryProjectRef = useRef<RefreshRecoveryProjectState | null>(null);
   const latestNodesRef = useRef<ModelNode[]>([]);
   const latestEdgesRef = useRef<Edge[]>([]);
@@ -4150,16 +4145,6 @@ export function App() {
     changed: boolean;
   } | null>(null);
   const measurementRuntimeStoreRef = useRef(createMeasurementRuntimeStore());
-  const [schemes, setSchemesState] = useState<SavedSchemeRecord[]>(initialSavedSchemes);
-  latestSchemesRef.current = schemes;
-  const setSchemes = (value: SetStateAction<SavedSchemeRecord[]>) => {
-    if (!backendSchemesLoadedRef.current) {
-      schemesChangedBeforeBackendLoadRef.current = true;
-    }
-    setSchemesState(value);
-  };
-  const [activeProjectKey, setActiveProjectKey] = useState<string>(() => initialDraft?.activeProjectKey ?? "");
-  const [activeSchemeKey, setActiveSchemeKey] = useState<string>(() => initialDraft?.activeSchemeKey ?? "");
   const [mode, setMode] = useState<ToolMode>("select");
   const [interactionMode, setInteractionMode] = useState<InteractionMode>(() => readStoredInteractionMode());
   const isBrowseMode = interactionMode === "browse";
@@ -4346,17 +4331,6 @@ export function App() {
   const [pendingSchemeImportConflict, setPendingSchemeImportConflict] = useState<PendingSchemeImportConflict>(null);
   const [pendingRecordPasteConflict, setPendingRecordPasteConflict] = useState<PendingRecordPasteConflict>(null);
   const mousePositionTextRef = useRef<HTMLSpanElement | null>(null);
-  const operationLogRef = useRef("就绪");
-  const operationLogStatusRef = useRef<HTMLSpanElement | null>(null);
-  const setOperationLogText = (nextLog: string) => {
-    operationLogRef.current = nextLog;
-    const element = operationLogStatusRef.current;
-    if (!element) {
-      return;
-    }
-    element.title = nextLog;
-    element.textContent = `日志 ${nextLog}`;
-  };
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedSchemeId, setSelectedSchemeId] = useState<string>("");
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
@@ -5947,7 +5921,6 @@ export function App() {
     voltageUnit
   ]);
   saveRequiredRef.current = saveRequired;
-  latestActiveProjectPointerRef.current = activeProjectPointerPayload(schemes, activeProjectKey, activeSchemeKey);
   const refreshRecoveryProjectSnapshot = useMemo<RefreshRecoveryProjectState>(() => ({
     dirty: true,
     savedAt: new Date().toISOString(),
@@ -8515,116 +8488,6 @@ export function App() {
     }
   }, [containerParamViewId, selectedContainerParameterViews]);
 
-  const persistBackendSchemesPayload = (normalizedSchemesPayload: string) => {
-    pendingBackendSchemesPayloadRef.current = normalizedSchemesPayload;
-    const syncSequence = ++schemeBackendSyncSequenceRef.current;
-    void saveBackendSchemesPayload(normalizedSchemesPayload)
-      .then(() => {
-        if (syncSequence !== schemeBackendSyncSequenceRef.current) {
-          return;
-        }
-        lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload;
-        if (pendingBackendSchemesPayloadRef.current === normalizedSchemesPayload) {
-          pendingBackendSchemesPayloadRef.current = null;
-        }
-        writeOperationLog("方案/模型目录已自动保存到后台");
-      })
-      .catch(() => {
-        if (syncSequence !== schemeBackendSyncSequenceRef.current) {
-          return;
-        }
-        pendingBackendSchemesPayloadRef.current = normalizedSchemesPayload;
-        writeOperationLog("方案/模型目录自动保存到后台失败");
-      });
-  };
-
-  const persistSchemesPayloadToStorageAndBackend = (normalizedSchemesPayload: string) => {
-    try {
-      window.localStorage.setItem(SCHEME_STORAGE_KEY, normalizedSchemesPayload);
-    } catch {
-      // 浏览器缓存不可写时不阻断当前编辑，后台同步仍会继续尝试。
-    }
-    if (!backendSchemesLoadedRef.current) {
-      pendingBackendSchemesPayloadRef.current = normalizedSchemesPayload;
-      return;
-    }
-    if (pendingBackendSchemesPayloadRef.current === normalizedSchemesPayload) {
-      return;
-    }
-    persistBackendSchemesPayload(normalizedSchemesPayload);
-  };
-
-  useEffect(() => {
-    const loadToken = ++backendSchemesLoadTokenRef.current;
-    fetchBackendSchemes()
-      .then((backendSchemes) => {
-        if (loadToken !== backendSchemesLoadTokenRef.current) {
-          return;
-        }
-        backendSchemesLoadedRef.current = true;
-        const localChangedBeforeBackendLoad = schemesChangedBeforeBackendLoadRef.current;
-        const currentSchemesPayload = serializeSchemesForStorage(latestSchemesRef.current);
-        if (backendSchemes.length > 0) {
-          const backendPayload = serializeSchemesForStorage(backendSchemes);
-          const localSchemesShouldWin = shouldPreferLocalSchemesOverBackend({
-            localSchemes: latestSchemesRef.current,
-            backendSchemes,
-            hadStoredLocalSchemes: startupHadStoredSchemesRef.current
-          });
-          lastPersistedSchemesPayloadRef.current = backendPayload;
-          if (localChangedBeforeBackendLoad || localSchemesShouldWin) {
-            suppressNextBackendSchemeSyncRef.current = false;
-            schemesChangedBeforeBackendLoadRef.current = false;
-            const pendingPayload = pendingBackendSchemesPayloadRef.current ?? currentSchemesPayload;
-            if (pendingPayload !== backendPayload) {
-              persistBackendSchemesPayload(pendingPayload);
-            } else {
-              pendingBackendSchemesPayloadRef.current = null;
-            }
-            return;
-          }
-          pendingBackendSchemesPayloadRef.current = null;
-          suppressNextBackendSchemeSyncRef.current = true;
-          setSchemesState(backendSchemes);
-          if (!saveRequiredRef.current) {
-            const activePointer = latestActiveProjectPointerRef.current;
-            const backendActiveProject = findSavedProjectByActivePointer(backendSchemes, activePointer);
-            if (backendActiveProject) {
-              loadSavedProject(backendActiveProject.project, backendActiveProject.scheme.id);
-            }
-          }
-          setExpandedSchemeIds((current) => {
-            const backendSchemeIds = new Set(backendSchemes.map((scheme) => scheme.id));
-            const retained = current.filter((schemeId) => backendSchemeIds.has(schemeId));
-            if (retained.length > 0) {
-              return retained;
-            }
-            const preferredSchemeId =
-              (activeSchemeKey && backendSchemeIds.has(activeSchemeKey) ? activeSchemeKey : "") ||
-              backendSchemes[0]?.id ||
-              "";
-            return preferredSchemeId ? [preferredSchemeId] : [];
-          });
-          return;
-        }
-        const payloadToPersist = pendingBackendSchemesPayloadRef.current ?? currentSchemesPayload;
-        if (payloadToPersist) {
-          suppressNextBackendSchemeSyncRef.current = false;
-          schemesChangedBeforeBackendLoadRef.current = false;
-          persistBackendSchemesPayload(payloadToPersist);
-        }
-      })
-      .catch(() => {
-        if (loadToken !== backendSchemesLoadTokenRef.current) {
-          return;
-        }
-        backendSchemesLoadedRef.current = false;
-        // 后台不可用时继续使用浏览器本地保存。
-      });
-    // 仅在启动时从后台拉取一次，避免后台数据刷新打断当前画布。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   useEffect(() => {
     fetchBackendColorConfig()
       .then((backendColorConfig) => {
@@ -8689,24 +8552,6 @@ export function App() {
     // 仅在启动时从后台拉取一次，避免后台定义刷新打断当前编辑。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      const normalizedSchemesPayload = serializeSchemesForStorage(schemes);
-      if (suppressNextBackendSchemeSyncRef.current && normalizedSchemesPayload === lastPersistedSchemesPayloadRef.current) {
-        suppressNextBackendSchemeSyncRef.current = false;
-        return;
-      }
-      if (normalizedSchemesPayload === lastPersistedSchemesPayloadRef.current) {
-        return;
-      }
-      if (suppressNextBackendSchemeSyncRef.current) {
-        suppressNextBackendSchemeSyncRef.current = false;
-      }
-      persistSchemesPayloadToStorageAndBackend(normalizedSchemesPayload);
-    }, 150);
-    return () => window.clearTimeout(timeoutId);
-  }, [schemes]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -8807,15 +8652,6 @@ export function App() {
     void refreshImagesForFolder(activeImageFolderId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeImageFolderId, imageTarget]);
-
-  useEffect(() => {
-    const activePointerPayload = activeProjectPointerPayload(schemes, activeProjectKey, activeSchemeKey);
-    try {
-      window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, JSON.stringify(activePointerPayload ?? {}));
-    } catch {
-      // 忽略浏览器缓存写入失败，避免影响画布编辑。
-    }
-  }, [activeProjectKey, activeSchemeKey, schemes]);
 
   useEffect(() => {
     setExpandedSchemeIds((current) => {
@@ -9902,11 +9738,6 @@ export function App() {
     resetConnectPreviewState();
     setRewiring(null);
     setContextMenu(null);
-  };
-
-  const writeOperationLog = (message: string) => {
-    const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-    setOperationLogText(`${time} ${message}`);
   };
 
   const requireEditMode = (action: string) => {
@@ -17911,6 +17742,14 @@ export function App() {
     requestCanvasFrameCenter();
   };
 
+  useEffect(() => {
+    if (!backendProjectLoadRequest) {
+      return;
+    }
+    loadSavedProject(backendProjectLoadRequest.project, backendProjectLoadRequest.schemeId);
+    clearBackendProjectLoadRequest(backendProjectLoadRequest.id);
+  }, [backendProjectLoadRequest]);
+
   const requestUnsavedChangeAction = (action: UnsavedChangeAction) => {
     if (!saveRequired) {
       loadSavedProject(action.project, action.schemeId);
@@ -18437,16 +18276,6 @@ export function App() {
       setSelectedProjectIds([]);
     }
     writeOperationLog(`移动方案“${sourceScheme.name}”到“${targetScheme.name}”下`);
-  };
-
-  const saveActiveProjectPointer = (draftProjectId: string, draftSchemeId: string) => {
-    const pointerPayload = activeProjectPointerPayload(schemes, draftProjectId, draftSchemeId);
-    try {
-      window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, JSON.stringify(pointerPayload ?? {}));
-      window.localStorage.removeItem(DRAFT_PROJECT_STORAGE_KEY);
-    } catch {
-      // 活动模型指针只是加速下次打开/刷新，写入失败不阻断手动保存。
-    }
   };
 
   const setActiveLayer = (layerId: string) => {

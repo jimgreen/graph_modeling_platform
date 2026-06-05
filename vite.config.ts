@@ -65,6 +65,9 @@ const frontendManualChunks = (id: string) => {
   if (isSourceModule(moduleId, "/src/projectPersistence.ts")) {
     return "project-persistence";
   }
+  if (isSourceModule(moduleId, "/src/useProjectPersistenceController.ts")) {
+    return "project-persistence-controller";
+  }
   if (
     isSourceModule(moduleId, "/src/graphStore.ts") ||
     isSourceModule(moduleId, "/src/routeStore.ts") ||
