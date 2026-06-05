@@ -11,7 +11,7 @@ import {
   canvasVisualRectScrollTarget,
   canvasViewBoxFromFrameScrollPosition,
   viewBoxAfterCanvasBoundsChange
-} from "./App";
+} from "./canvasViewport";
 
 describe("canvas viewport bounds changes", () => {
   test("preserves the visible viewport when the canvas auto-expands downward or rightward", () => {

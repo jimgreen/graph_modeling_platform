@@ -26,6 +26,12 @@ const frontendManualChunks = (id: string) => {
   if (isSourceModule(moduleId, "/src/model.ts")) {
     return "model-core";
   }
+  if (isSourceModule(moduleId, "/src/DeviceGlyph.tsx")) {
+    return "device-glyph";
+  }
+  if (isSourceModule(moduleId, "/src/canvasViewport.ts")) {
+    return "canvas-viewport";
+  }
   if (
     isSourceModule(moduleId, "/src/graphStore.ts") ||
     isSourceModule(moduleId, "/src/routeStore.ts") ||
