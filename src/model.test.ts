@@ -6,6 +6,9 @@ import {
   buildEFileExport,
   buildEDeviceParameterFile,
   calculateElectricalTopology,
+  clearVoltageBaseValuesForScope,
+  setVoltageBaseTerminalValuesForScope,
+  setVoltageBaseValuesForScope,
   calculateModelContentSize,
   canConnectTerminals,
   buildDefaultDeviceParameterDefinitions,
@@ -84,8 +87,18 @@ import {
   getDeviceGlyphVariant,
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
+  isRoutableLineDeviceKind,
   getConnectionStrokeColor,
   getTerminalDisplayColor,
+  rebuildRoutableLineDeviceRouteUpdates,
+  routeRoutableLineDevice,
+  createRoutableLineDeviceFromEndpoints,
+  routableLineDeviceEndpointRefForNode,
+  routableLineDeviceEndpointRefs,
+  setRoutableLineDeviceEndpoints,
+  routableLineDeviceCanvasPoints,
+  routableLineDeviceLocalPoints,
+  ROUTABLE_LINE_POINTS_PARAM,
   createStaticBoxNodeFromDrawing,
   createInteractiveStaticDrawingNode,
   getElementFocusPoint,
@@ -142,6 +155,7 @@ import {
   boundaryBusInternalConnectorStrokeWidth,
   DEFAULT_COLOR_PALETTE,
   STATIC_DRAW_POINTS_PARAM,
+  STATIC_ROUTE_AVOIDANCE_PARAM,
   serializeProject,
   stripSavedSchemeRuntimeIds,
   synchronizeBusTerminalsWithEdges,
@@ -228,6 +242,14 @@ function withHiddenDeviceLabel(node: ModelNode): ModelNode {
   return { ...node, params: { ...node.params, _labelVisible: "0", _labelDisplayMode: "hidden" } };
 }
 
+function createRightTerminalLoad(position: Point, overrides: Partial<ModelNode> = {}): ModelNode {
+  const node = { ...createDefaultNode("ac-load", position), ...overrides };
+  return {
+    ...node,
+    terminals: [{ ...node.terminals[0], anchor: { x: 0.5, y: 0 } }, ...node.terminals.slice(1)]
+  };
+}
+
 type TestBox = { left: number; right: number; top: number; bottom: number };
 
 function routeIntersectsTestBox(points: Point[], box: TestBox) {
@@ -296,7 +318,7 @@ describe("power system model", () => {
 
   test("keeps saved manual route points on the model-open render path", () => {
     const source = withHiddenDeviceLabel(createDefaultNode("ac-source", { x: 100, y: 100 }));
-    const target = withHiddenDeviceLabel(createDefaultNode("ac-load", { x: 360, y: 180 }));
+    const target = withHiddenDeviceLabel(createRightTerminalLoad({ x: 360, y: 180 }));
     const manualPoints = [
       { x: 207, y: 72 },
       { x: 467, y: 72 }
@@ -434,8 +456,8 @@ describe("power system model", () => {
 
   test("can render saved connection geometry without full obstacle-aware rerouting", () => {
     const source = withHiddenDeviceLabel(createDefaultNode("ac-source", { x: 100, y: 100 }));
-    const target = withHiddenDeviceLabel(createDefaultNode("ac-load", { x: 360, y: 180 }));
-    const blocker = withHiddenDeviceLabel(createDefaultNode("ac-load", { x: 210, y: 180 }));
+    const target = withHiddenDeviceLabel(createRightTerminalLoad({ x: 360, y: 180 }));
+    const blocker = withHiddenDeviceLabel(createRightTerminalLoad({ x: 210, y: 180 }));
     const manualPoints = [
       { x: 207, y: 263 },
       { x: 300, y: 263 }
@@ -1463,6 +1485,146 @@ describe("power system model", () => {
     expect(getDeviceGlyphVariant("dc-zero-branch")).toBe("line");
   });
 
+  test("adds routable line-like device variants for electric, hydrogen, and heat networks", () => {
+    const cases = [
+      ["ac-routable-line", "交流线路（自适应）", "交流设备", "ac", "ACBranch"],
+      ["dc-routable-line", "直流线路（自适应）", "直流设备", "dc", "DCBranch"],
+      ["hydrogen-routable-pipeline", "输氢管道（自适应）", "氢能设备", "h2", "HydroPipe"],
+      ["heat-routable-line", "热力线路（自适应）", "热能设备", "heat", "HeatPipe"]
+    ] as const;
+
+    for (const [kind, label, attributeLibrary, terminalType, section] of cases) {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
+      expect(template).toMatchObject({ label, attributeLibrary, terminalType, terminalCount: 2 });
+      const node = createDefaultNode(kind, { x: 300, y: 160 });
+      const points = routableLineDeviceLocalPoints(node);
+
+      expect(isRoutableLineDeviceKind(kind)).toBe(true);
+      expect(node.params[ROUTABLE_LINE_POINTS_PARAM]).toBeTruthy();
+      expect(points).toHaveLength(2);
+      expect(points[0].x).toBeLessThan(points[1].x);
+      expect(getDeviceGlyphVariant(kind)).toBe("routable-line");
+      expect(getDeviceStrokeWidth(node)).toBe(7);
+      expect(inferESection(kind, node.params)).toBe(section);
+    }
+  });
+
+  test("routes routable line-like devices around blockers and stores local path points", () => {
+    const line = createDefaultNode("ac-routable-line", { x: 300, y: 180 });
+    line.params = {
+      ...line.params,
+      [ROUTABLE_LINE_POINTS_PARAM]: JSON.stringify([{ x: -260, y: 0 }, { x: 260, y: 0 }])
+    };
+    const blocker = createDefaultNode("ac-load", { x: 300, y: 180 });
+
+    const routed = routeRoutableLineDevice(line, [line, blocker], { width: 700, height: 420 });
+    const points = routableLineDeviceCanvasPoints(routed);
+
+    expect(routed).not.toBe(line);
+    expect(points.length).toBeGreaterThan(2);
+    expect(points[0].x).toBeLessThan(blocker.position.x);
+    expect(points[points.length - 1].x).toBeGreaterThan(blocker.position.x);
+    for (let index = 1; index < points.length; index += 1) {
+      expect(segmentIntersectsNodeBody(points[index - 1], points[index], blocker)).toBe(false);
+    }
+  });
+
+  test("creates routable line-like devices from snapped endpoint terminal points", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    expect(template).toBeTruthy();
+    const source = { ...createDefaultNode("ac-source", { x: 100, y: 120 }), id: "source-node" };
+    const target = { ...createDefaultNode("ac-load", { x: 420, y: 260 }), id: "target-node" };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const targetPoint = getTerminalPoint(target, "t1");
+
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      sourcePoint,
+      targetPoint,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: routableLineDeviceEndpointRefForNode(target, "t1")
+      }
+    );
+    const points = routableLineDeviceCanvasPoints(line);
+    const refs = routableLineDeviceEndpointRefs(line);
+
+    expect(line.layerId).toBe("layer-a");
+    expect(line.terminals).toHaveLength(2);
+    expect(getTerminalPoint(line, "t1")).toEqual(sourcePoint);
+    expect(getTerminalPoint(line, "t2")).toEqual(targetPoint);
+    expect(points[0]).toEqual(sourcePoint);
+    expect(points[points.length - 1]).toEqual(targetPoint);
+    expect(Math.abs(line.terminals[0].anchor.x)).toBeLessThan(0.499);
+    expect(Math.abs(line.terminals[1].anchor.y)).toBeLessThan(0.499);
+    expect(refs.source).toMatchObject({ nodeId: "source-node", terminalId: "t1" });
+    expect(refs.target).toMatchObject({ nodeId: "target-node", terminalId: "t1" });
+  });
+
+  test("retargets routable line-like device endpoints without changing its device identity", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "dc-routable-line");
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      { x: 80, y: 100 },
+      { x: 360, y: 100 },
+      "layer-a"
+    );
+
+    const retargeted = setRoutableLineDeviceEndpoints(line, { x: 120, y: 160 }, { x: 500, y: 280 });
+    const points = routableLineDeviceCanvasPoints(retargeted);
+
+    expect(retargeted.id).toBe(line.id);
+    expect(retargeted.name).toBe(line.name);
+    expect(retargeted.layerId).toBe(line.layerId);
+    expect(getTerminalPoint(retargeted, "t1")).toEqual({ x: 120, y: 160 });
+    expect(getTerminalPoint(retargeted, "t2")).toEqual({ x: 500, y: 280 });
+    expect(points[0]).toEqual({ x: 120, y: 160 });
+    expect(points[points.length - 1]).toEqual({ x: 500, y: 280 });
+  });
+
+  test("syncs routable line-like device endpoints to attached terminals before rerouting", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = { ...createDefaultNode("ac-source", { x: 100, y: 120 }), id: "source-node" };
+    const target = { ...createDefaultNode("ac-load", { x: 420, y: 120 }), id: "target-node" };
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      getTerminalPoint(source, "t1"),
+      getTerminalPoint(target, "t1"),
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: routableLineDeviceEndpointRefForNode(target, "t1")
+      }
+    );
+    const movedTarget = { ...target, position: { x: 520, y: 180 } };
+
+    const updates = rebuildRoutableLineDeviceRouteUpdates(
+      [source, movedTarget, line],
+      [line.id],
+      { width: 760, height: 480 }
+    );
+
+    expect(updates.map((node) => node.id)).toEqual([line.id]);
+    expect(getTerminalPoint(updates[0], "t1")).toEqual(getTerminalPoint(source, "t1"));
+    expect(getTerminalPoint(updates[0], "t2")).toEqual(getTerminalPoint(movedTarget, "t1"));
+  });
+
+  test("rebuilds only requested routable line-like device routes", () => {
+    const line = { ...createDefaultNode("heat-routable-line", { x: 320, y: 180 }), id: "heat-route" };
+    line.params = {
+      ...line.params,
+      [ROUTABLE_LINE_POINTS_PARAM]: JSON.stringify([{ x: -260, y: 0 }, { x: 260, y: 0 }])
+    };
+    const untouched = { ...createDefaultNode("dc-routable-line", { x: 320, y: 300 }), id: "dc-route" };
+    const blocker = createDefaultNode("single-port-heat-load", { x: 320, y: 180 });
+
+    const updates = rebuildRoutableLineDeviceRouteUpdates([line, untouched, blocker], [line.id], { width: 760, height: 480 });
+
+    expect(updates.map((node) => node.id)).toEqual([line.id]);
+    expect(routableLineDeviceCanvasPoints(updates[0]).length).toBeGreaterThan(2);
+  });
+
   test("initializes editable terminal voltage bases to zero", () => {
     const acLine = createDefaultNode("ac-line", { x: 100, y: 100 });
     const dcLine = createDefaultNode("dc-line", { x: 220, y: 100 });
@@ -1512,6 +1674,27 @@ describe("power system model", () => {
       from: { x: -24, y: 0 },
       to: { x: 0, y: 0 }
     });
+  });
+
+  test("extends electric load terminal stubs to the smaller vertical load body", () => {
+    const stubStartPoint = (node: ModelNode, terminal = node.terminals[0]) => {
+      const renderPoint = terminalRenderLocalPoint(terminal, node.size, 1, 1, node.kind);
+      const stub = terminalStubSegment(terminal, 1, 1, 24, node.kind, node.size);
+      return {
+        x: renderPoint.x + stub.from.x,
+        y: renderPoint.y + stub.from.y
+      };
+    };
+    const withOnlyTerminal = (node: ModelNode, anchor: Point): ModelNode => ({
+      ...node,
+      terminals: [{ ...node.terminals[0], anchor }]
+    });
+
+    for (const node of [createDefaultNode("ac-load", { x: 100, y: 100 }), createDefaultNode("dc-load", { x: 220, y: 100 })]) {
+      expect(stubStartPoint(node).y).toBeCloseTo(-node.size.height * 2 / 9);
+      expect(stubStartPoint(withOnlyTerminal(node, { x: 0.5, y: 0 })).x).toBeCloseTo(node.size.width / 9);
+      expect(node.size).toEqual({ width: 150, height: 102 });
+    }
   });
 
   test("stops border terminal stubs at visible arcs and borders", () => {
@@ -2406,7 +2589,7 @@ describe("power system model", () => {
 
   test("keeps terminal stubs perpendicular after local obstacle repair", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
-    const target = createDefaultNode("ac-load", { x: 420, y: 100 });
+    const target = createRightTerminalLoad({ x: 420, y: 100 });
     const blocker = createDefaultNode("ac-switch", { x: 190, y: 100 });
     const edge: Edge = {
       id: "near-terminal-obstacle",
@@ -2741,8 +2924,8 @@ describe("power system model", () => {
 
   test("branches a second connection from the same terminal without treating the shared endpoint stub as impossible", () => {
     const source = { ...createDefaultNode("ac-source", { x: 120, y: 140 }), id: "source" };
-    const loadA = { ...createDefaultNode("ac-load", { x: 420, y: 80 }), id: "load-a" };
-    const loadB = { ...createDefaultNode("ac-load", { x: 420, y: 220 }), id: "load-b" };
+    const loadA = createRightTerminalLoad({ x: 420, y: 80 }, { id: "load-a" });
+    const loadB = createRightTerminalLoad({ x: 420, y: 220 }, { id: "load-b" });
     const firstEdge: Edge = {
       id: "first-branch",
       sourceId: source.id,
@@ -4118,7 +4301,7 @@ describe("power system model", () => {
 
   test("keeps endpoint stubs perpendicular after routing through inserted manual bends", () => {
     const source = withHiddenDeviceLabel(createDefaultNode("ac-source", { x: 120, y: 120 }));
-    const target = withHiddenDeviceLabel(createDefaultNode("ac-load", { x: 520, y: 120 }));
+    const target = withHiddenDeviceLabel(createRightTerminalLoad({ x: 520, y: 120 }));
     const edge: Edge = {
       id: "manual-bend-perpendicular",
       sourceId: source.id,
@@ -4706,7 +4889,7 @@ describe("power system model", () => {
 
   test("keeps same-side endpoint stubs outside device bodies", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 120 });
-    const target = createDefaultNode("ac-load", { x: 420, y: 120 });
+    const target = createRightTerminalLoad({ x: 420, y: 120 });
     const edge: Edge = {
       id: "same-side-terminals",
       sourceId: source.id,
@@ -4988,7 +5171,7 @@ describe("power system model", () => {
   });
 
   test("slides the bus endpoint when the opposite device moves so a straight line remains straight", () => {
-    const load = createDefaultNode("ac-load", { x: 200, y: 100 });
+    const load = createRightTerminalLoad({ x: 200, y: 100 });
     const movedLoad = { ...load, position: { x: 260, y: 100 } };
     const bus = createDefaultNode("ac-bus", { x: 300, y: 100 });
     const edge: Edge = {
@@ -5015,7 +5198,7 @@ describe("power system model", () => {
   });
 
   test("slides bus endpoints for manual routes when the terminal segment stays outward", () => {
-    const load = createDefaultNode("ac-load", { x: 200, y: 100 });
+    const load = createRightTerminalLoad({ x: 200, y: 100 });
     const movedLoad = { ...load, position: { x: 260, y: 100 } };
     const bus = createDefaultNode("ac-bus", { x: 300, y: 100 });
     const edge: Edge = {
@@ -5084,7 +5267,7 @@ describe("power system model", () => {
   });
 
   test("slides a bus endpoint through an outward stub when the direct terminal segment would be sideways", () => {
-    const load = createDefaultNode("ac-load", { x: 200, y: 100 });
+    const load = createRightTerminalLoad({ x: 200, y: 100 });
     const movedLoad = { ...load, position: { x: 260, y: 140 } };
     const bus = createDefaultNode("ac-bus", { x: 300, y: 100 });
     const edge: Edge = {
@@ -6742,6 +6925,55 @@ describe("power system model", () => {
     expect(node.params[STATIC_DRAW_POINTS_PARAM]).toBeUndefined();
   });
 
+  test("lets static graphics opt in or out of connection route avoidance", () => {
+    const edge: Edge = {
+      id: "static-avoidance-edge",
+      sourceId: "source",
+      targetId: "target",
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const route = [
+      { x: 100, y: 160 },
+      { x: 320, y: 160 }
+    ];
+    const ordinaryStatic = {
+      ...createDefaultNode("static-rect", { x: 200, y: 160 }),
+      id: "ordinary-static",
+      size: { width: 80, height: 80 }
+    };
+    const containerStatic = {
+      ...createDefaultNode("static-group-box", { x: 200, y: 160 }),
+      id: "container-static",
+      size: { width: 80, height: 80 }
+    };
+    const ignoredOrdinaryStatic = {
+      ...ordinaryStatic,
+      id: "ignored-ordinary-static",
+      params: { ...ordinaryStatic.params, [STATIC_ROUTE_AVOIDANCE_PARAM]: "0" }
+    };
+    const activeContainerStatic = {
+      ...containerStatic,
+      id: "active-container-static",
+      params: { ...containerStatic.params, [STATIC_ROUTE_AVOIDANCE_PARAM]: "1" }
+    };
+
+    expect(ordinaryStatic.params[STATIC_ROUTE_AVOIDANCE_PARAM]).toBe("1");
+    expect(containerStatic.params[STATIC_ROUTE_AVOIDANCE_PARAM]).toBe("0");
+    expect(
+      getRouteBlockingCandidateNodes(route, edge, [
+        ordinaryStatic,
+        containerStatic,
+        ignoredOrdinaryStatic,
+        activeContainerStatic
+      ]).map((node) => node.id)
+    ).toEqual(["ordinary-static", "active-container-static"]);
+    expect(routeIntersectsSpecificNodes(route, edge, [ordinaryStatic])).toBe(true);
+    expect(routeIntersectsSpecificNodes(route, edge, [ignoredOrdinaryStatic])).toBe(false);
+    expect(routeIntersectsSpecificNodes(route, edge, [containerStatic])).toBe(false);
+    expect(routeIntersectsSpecificNodes(route, edge, [activeContainerStatic])).toBe(true);
+  });
+
   test("adds run_stat operating status to every device type", () => {
     for (const template of DEVICE_LIBRARY.filter((item) => !item.kind.startsWith("static-"))) {
       const node = createDefaultNode(template.kind, { x: 100, y: 100 });
@@ -7712,6 +7944,320 @@ describe("power system model", () => {
 
     expect(byId.get(acSource.id)?.params.v_set).toBe("35");
     expect(byId.get(dcFuelCell.id)?.params.v_set_dc_unit_t1).toBe("1500");
+  });
+
+  test("clears selected device voltage base and voltage setpoint values without touching other parameters", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 260, y: 100 });
+    source.terminals[0].vbase = "35 kV";
+    load.terminals[0].vbase = "10 kV";
+    source.params = {
+      ...source.params,
+      vbase: "35",
+      v_base: "35",
+      highVbase: "35",
+      v_set: "35",
+      ac_v_set: "35",
+      v_set_ac_unit_t1: "35",
+      voltage: "35",
+      ratedVoltage: "35"
+    };
+    load.params = { ...load.params, vbase: "10", v_set: "10", voltage: "10", ratedVoltage: "10" };
+
+    const result = clearVoltageBaseValuesForScope([source, load], [], [source.id], "selected");
+    const byId = new Map(result.nodes.map((node) => [node.id, node]));
+
+    expect(result.changedNodeIds).toEqual([source.id]);
+    expect(byId.get(source.id)?.terminals[0].vbase).toBe("0.0");
+    expect(byId.get(source.id)?.params).toMatchObject({
+      vbase: "0.0",
+      v_base: "0.0",
+      highVbase: "0.0",
+      v_set: "0.0",
+      ac_v_set: "0.0",
+      v_set_ac_unit_t1: "0.0",
+      voltage: "0.0",
+      ratedVoltage: "35"
+    });
+    expect(byId.get(load.id)?.terminals[0].vbase).toBe("10 kV");
+    expect(byId.get(load.id)?.params.vbase).toBe("10");
+  });
+
+  test("clears voltage base values for the topology island containing the selected device", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const line = createDefaultNode("ac-line", { x: 220, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 340, y: 100 });
+    const other = createDefaultNode("dc-source", { x: 100, y: 240 });
+    for (const node of [source, line, load, other]) {
+      node.terminals.forEach((terminal) => {
+        terminal.vbase = node.kind.startsWith("dc") ? "750 V" : "35 kV";
+      });
+      node.params = { ...node.params, vbase: node.kind.startsWith("dc") ? "750" : "35", v_set: node.kind.startsWith("dc") ? "750" : "35" };
+    }
+    const edges = [
+      { id: "e-source-line", sourceId: source.id, targetId: line.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+      { id: "e-line-load", sourceId: line.id, targetId: load.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+    ];
+
+    const result = clearVoltageBaseValuesForScope([source, line, load, other], edges, [source.id], "island");
+    const byId = new Map(result.nodes.map((node) => [node.id, node]));
+
+    expect(new Set(result.changedNodeIds)).toEqual(new Set([source.id, line.id, load.id]));
+    expect(byId.get(source.id)?.terminals[0].vbase).toBe("0.0");
+    expect(byId.get(line.id)?.terminals.map((terminal) => terminal.vbase)).toEqual(["0.0", "0.0"]);
+    expect(byId.get(load.id)?.params.vbase).toBe("0.0");
+    expect(byId.get(other.id)?.terminals[0].vbase).toBe("750 V");
+    expect(byId.get(other.id)?.params.vbase).toBe("750");
+  });
+
+  test("clears only matching terminal voltage fields on a multi-island transformer", () => {
+    const highSource = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const lowLoad = createDefaultNode("ac-load", { x: 500, y: 100 });
+    const transformer = createDefaultNode("ac-transformer", { x: 300, y: 100 });
+    highSource.terminals[0].vbase = "110";
+    lowLoad.terminals[0].vbase = "10";
+    transformer.terminals[0].vbase = "110";
+    transformer.terminals[1].vbase = "10";
+    highSource.params = { ...highSource.params, vbase: "110", v_set: "110" };
+    lowLoad.params = { ...lowLoad.params, vbase: "10", v_set: "10" };
+    transformer.params = {
+      ...transformer.params,
+      vbase: "110",
+      highVbase: "110",
+      lowVbase: "10",
+      sourceVbase: "110",
+      targetVbase: "10",
+      i_vbase: "110",
+      j_vbase: "10"
+    };
+    const edges = [
+      { id: "high-transformer", sourceId: highSource.id, targetId: transformer.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+      { id: "transformer-low", sourceId: transformer.id, targetId: lowLoad.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+    ];
+
+    const result = clearVoltageBaseValuesForScope([highSource, transformer, lowLoad], edges, [highSource.id], "island");
+    const byId = new Map(result.nodes.map((node) => [node.id, node]));
+    const nextTransformer = byId.get(transformer.id);
+
+    expect(new Set(result.changedNodeIds)).toEqual(new Set([highSource.id, transformer.id]));
+    expect(nextTransformer?.terminals.map((terminal) => terminal.vbase)).toEqual(["0.0", "10"]);
+    expect(nextTransformer?.params.highVbase).toBe("0.0");
+    expect(nextTransformer?.params.sourceVbase).toBe("0.0");
+    expect(nextTransformer?.params.i_vbase).toBe("0.0");
+    expect(nextTransformer?.params.lowVbase).toBe("10");
+    expect(nextTransformer?.params.targetVbase).toBe("10");
+    expect(nextTransformer?.params.j_vbase).toBe("10");
+    expect(nextTransformer?.params.vbase).toBe("110");
+    expect(byId.get(lowLoad.id)?.terminals[0].vbase).toBe("10");
+    expect(byId.get(lowLoad.id)?.params.vbase).toBe("10");
+  });
+
+  test("clears voltage base values across the whole model", () => {
+    const acSource = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const dcSource = createDefaultNode("dc-source", { x: 260, y: 100 });
+    acSource.terminals[0].vbase = "10";
+    dcSource.terminals[0].vbase = "750";
+    acSource.params = { ...acSource.params, vbase: "10", v_set: "10" };
+    dcSource.params = { ...dcSource.params, vbase: "750", v_set: "750" };
+
+    const result = clearVoltageBaseValuesForScope([acSource, dcSource], [], [], "all");
+
+    expect(new Set(result.changedNodeIds)).toEqual(new Set([acSource.id, dcSource.id]));
+    expect(result.nodes.flatMap((node) => node.terminals.map((terminal) => terminal.vbase))).toEqual(["0.0", "0.0"]);
+    expect(result.nodes.map((node) => node.params.vbase)).toEqual(["0.0", "0.0"]);
+    expect(result.nodes.map((node) => node.params.v_set)).toEqual(["0.0", "0.0"]);
+  });
+
+  test("sets selected device voltage base and voltage setpoint values without touching other parameters", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 260, y: 100 });
+    source.terminals[0].vbase = "35";
+    load.terminals[0].vbase = "10";
+    source.params = {
+      ...source.params,
+      vbase: "35",
+      v_base: "35",
+      highVbase: "35",
+      sourceVbase: "35",
+      i_vbase: "35",
+      v_set: "35",
+      i_v_set: "35",
+      ac_v_set: "35",
+      voltage: "35",
+      ratedVoltage: "35"
+    };
+    load.params = { ...load.params, vbase: "10", v_set: "10", voltage: "10", ratedVoltage: "10" };
+
+    const result = setVoltageBaseValuesForScope([source, load], [], [source.id], "selected", "110");
+    const byId = new Map(result.nodes.map((node) => [node.id, node]));
+
+    expect(result.changedNodeIds).toEqual([source.id]);
+    expect(byId.get(source.id)?.terminals[0].vbase).toBe("110");
+    expect(byId.get(source.id)?.params).toMatchObject({
+      vbase: "110",
+      v_base: "110",
+      highVbase: "110",
+      sourceVbase: "110",
+      i_vbase: "110",
+      v_set: "110",
+      i_v_set: "110",
+      ac_v_set: "110",
+      voltage: "110",
+      ratedVoltage: "35"
+    });
+    expect(byId.get(load.id)?.terminals[0].vbase).toBe("10");
+    expect(byId.get(load.id)?.params.vbase).toBe("10");
+  });
+
+  test("sets voltage base values for the topology island containing the selected device", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const line = createDefaultNode("ac-line", { x: 220, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 340, y: 100 });
+    const other = createDefaultNode("dc-source", { x: 100, y: 240 });
+    for (const node of [source, line, load, other]) {
+      node.terminals.forEach((terminal) => {
+        terminal.vbase = node.kind.startsWith("dc") ? "750" : "35";
+      });
+      node.params = { ...node.params, vbase: node.kind.startsWith("dc") ? "750" : "35", v_set: node.kind.startsWith("dc") ? "750" : "35" };
+    }
+    const edges = [
+      { id: "e-source-line", sourceId: source.id, targetId: line.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+      { id: "e-line-load", sourceId: line.id, targetId: load.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+    ];
+
+    const result = setVoltageBaseValuesForScope([source, line, load, other], edges, [source.id], "island", "220");
+    const byId = new Map(result.nodes.map((node) => [node.id, node]));
+
+    expect(new Set(result.changedNodeIds)).toEqual(new Set([source.id, line.id, load.id]));
+    expect(byId.get(source.id)?.terminals[0].vbase).toBe("220");
+    expect(byId.get(line.id)?.terminals.map((terminal) => terminal.vbase)).toEqual(["220", "220"]);
+    expect(byId.get(load.id)?.params.vbase).toBe("220");
+    expect(byId.get(other.id)?.terminals[0].vbase).toBe("750");
+    expect(byId.get(other.id)?.params.vbase).toBe("750");
+  });
+
+  test("sets only matching terminal voltage fields on a multi-island converter", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 500, y: 100 });
+    const converter = createDefaultNode("acac-converter", { x: 300, y: 100 });
+    source.terminals[0].vbase = "110";
+    load.terminals[0].vbase = "10";
+    converter.terminals[0].vbase = "110";
+    converter.terminals[1].vbase = "10";
+    source.params = { ...source.params, vbase: "110", v_set: "110" };
+    load.params = { ...load.params, vbase: "10", v_set: "10" };
+    converter.params = {
+      ...converter.params,
+      vbase: "110",
+      i_vbase: "110",
+      j_vbase: "10",
+      i_v_set: "110",
+      j_v_set: "10",
+      v_set: "110"
+    };
+    const edges = [
+      { id: "source-converter", sourceId: source.id, targetId: converter.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+      { id: "converter-load", sourceId: converter.id, targetId: load.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+    ];
+
+    const result = setVoltageBaseValuesForScope([source, converter, load], edges, [load.id], "island", "35");
+    const byId = new Map(result.nodes.map((node) => [node.id, node]));
+    const nextConverter = byId.get(converter.id);
+
+    expect(new Set(result.changedNodeIds)).toEqual(new Set([converter.id, load.id]));
+    expect(nextConverter?.terminals.map((terminal) => terminal.vbase)).toEqual(["110", "35"]);
+    expect(nextConverter?.params.i_vbase).toBe("110");
+    expect(nextConverter?.params.i_v_set).toBe("110");
+    expect(nextConverter?.params.v_set).toBe("110");
+    expect(nextConverter?.params.j_vbase).toBe("35");
+    expect(nextConverter?.params.j_v_set).toBe("35");
+    expect(nextConverter?.params.vbase).toBe("110");
+    expect(byId.get(source.id)?.terminals[0].vbase).toBe("110");
+    expect(byId.get(load.id)?.terminals[0].vbase).toBe("35");
+    expect(byId.get(load.id)?.params.vbase).toBe("35");
+  });
+
+  test("sets selected multi-terminal device voltage bases per terminal", () => {
+    const transformer = createDefaultNode("ac-three-winding-transformer-neutral", { x: 100, y: 100 });
+    transformer.terminals.forEach((terminal, index) => {
+      terminal.vbase = ["110", "35", "10", "0.4"][index];
+    });
+    transformer.params = {
+      ...transformer.params,
+      highVbase: "110",
+      mediumVbase: "35",
+      lowVbase: "10",
+      neutral_vbase: "0.4",
+      vbase: "110"
+    };
+
+    const result = setVoltageBaseTerminalValuesForScope(
+      [transformer],
+      [],
+      {
+        [transformer.id]: {
+          t1: "220",
+          t2: "66",
+          t3: "20",
+          t4: "0.8"
+        }
+      },
+      "selected"
+    );
+    const nextTransformer = result.nodes[0];
+
+    expect(result.changedNodeIds).toEqual([transformer.id]);
+    expect(nextTransformer.terminals.map((terminal) => terminal.vbase)).toEqual(["220", "66", "20", "0.8"]);
+    expect(nextTransformer.params.highVbase).toBe("220");
+    expect(nextTransformer.params.mediumVbase).toBe("66");
+    expect(nextTransformer.params.lowVbase).toBe("20");
+    expect(nextTransformer.params.neutral_vbase).toBe("0.8");
+    expect(nextTransformer.params.vbase).toBe("110");
+  });
+
+  test("sets each selected terminal voltage base through its own topology island", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 500, y: 100 });
+    const converter = createDefaultNode("acac-converter", { x: 300, y: 100 });
+    source.terminals[0].vbase = "110";
+    load.terminals[0].vbase = "10";
+    converter.terminals[0].vbase = "110";
+    converter.terminals[1].vbase = "10";
+    source.params = { ...source.params, vbase: "110", v_set: "110" };
+    load.params = { ...load.params, vbase: "10", v_set: "10" };
+    converter.params = {
+      ...converter.params,
+      i_vbase: "110",
+      j_vbase: "10",
+      i_v_set: "110",
+      j_v_set: "10",
+      v_set: "110"
+    };
+    const edges = [
+      { id: "source-converter", sourceId: source.id, targetId: converter.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+      { id: "converter-load", sourceId: converter.id, targetId: load.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+    ];
+
+    const result = setVoltageBaseTerminalValuesForScope(
+      [source, converter, load],
+      edges,
+      { [converter.id]: { t1: "220", t2: "35" } },
+      "island"
+    );
+    const byId = new Map(result.nodes.map((node) => [node.id, node]));
+    const nextConverter = byId.get(converter.id);
+
+    expect(new Set(result.changedNodeIds)).toEqual(new Set([source.id, converter.id, load.id]));
+    expect(byId.get(source.id)?.terminals[0].vbase).toBe("220");
+    expect(byId.get(source.id)?.params.vbase).toBe("220");
+    expect(nextConverter?.terminals.map((terminal) => terminal.vbase)).toEqual(["220", "35"]);
+    expect(nextConverter?.params.i_vbase).toBe("220");
+    expect(nextConverter?.params.i_v_set).toBe("220");
+    expect(nextConverter?.params.v_set).toBe("220");
+    expect(nextConverter?.params.j_vbase).toBe("35");
+    expect(nextConverter?.params.j_v_set).toBe("35");
+    expect(byId.get(load.id)?.terminals[0].vbase).toBe("35");
+    expect(byId.get(load.id)?.params.vbase).toBe("35");
   });
 
   test("fills zero converter voltage setpoints from the related topology node rated voltage", () => {

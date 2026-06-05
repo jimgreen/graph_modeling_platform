@@ -280,7 +280,14 @@ describe("graph inspector panel", () => {
     expect(selectedRouteBlock).toContain("onPointerDown={isEditMode ? (event) => handleEdgePathPointerDown(event, edge.id, routePoints) : undefined}");
     expect(source).toContain("const connectSourceNode = isEditMode && connectSource ? visibleNodeById.get(connectSource.nodeId) : undefined;");
     expect(source).toContain("const connectTerminalCompatibilityActive = isEditMode && mode === \"connect\" && Boolean(connectSourceNode);");
-    expect(terminalBlock).toContain("const disabled =\n                        connectTerminalCompatibilityActive &&");
+    expect(source).toContain("const routableLineTerminalCompatibilityActive = isEditMode && Boolean(routableLinePlacement || routableLineEndpointDrag);");
+    expect(source).toContain("const routableLineActiveTerminalType =");
+    expect(source).toContain("routableLineTemplateTerminalType(routableLinePlacement.template)");
+    expect(terminalBlock).toContain("const disabled =");
+    expect(terminalBlock).toContain("connectTerminalCompatibilityActive");
+    expect(terminalBlock).toContain("!canConnectTerminals(connectSourceNode!, connectSource!.terminalId, node, terminal.id)");
+    expect(terminalBlock).toContain("routableLineTerminalCompatibilityActive");
+    expect(terminalBlock).toContain("terminal.type !== routableLineActiveTerminalType");
     expect(terminalBlock).toContain("const overlapped = isEditMode && overlappedTerminalKeys.has(`${node.id}:${terminal.id}`);");
     expect(terminalBlock).toContain("onPointerDown={isEditMode ? (event) => handleTerminalPointerDown(event, node, terminal.id) : undefined}");
     expect(overlapBlock).toContain("if (isReadonlyCanvasMode)");
@@ -369,9 +376,22 @@ describe("graph inspector panel", () => {
     expect(projectPanelBlock).toContain("aria-label=\"搜索模型库\"");
     expect(projectPanelBlock).toContain("aria-label=\"清空模型库搜索\"");
     expect(projectPanelBlock).toContain("未找到匹配方案或模型");
+    expect(projectPanelBlock).toContain("aria-label={`方案：${scheme.name}`}");
+    expect(projectPanelBlock).toContain("aria-label={`模型：${project.name}`}");
+    expect(projectPanelBlock).toContain("className=\"scheme-folder-icon\"");
+    expect(projectPanelBlock).toContain("className=\"project-item-icon\"");
+    expect(projectPanelBlock).toContain("className=\"project-tree-name\"");
+    expect(projectPanelBlock).not.toContain("scheme-kind-badge");
+    expect(projectPanelBlock).not.toContain("model-kind-badge");
     expect(projectPanelBlock).toContain("filteredProjectSchemes.map((scheme) => renderProjectSchemeNode(scheme))");
     expect(styles).toContain(".project-search");
     expect(styles).toContain(".project-search-empty");
+    expect(styles).not.toContain(".project-tree-kind-badge");
+    expect(styles).not.toContain(".scheme-kind-badge");
+    expect(styles).not.toContain(".model-kind-badge");
+    expect(styles).toContain(".scheme-folder-icon");
+    expect(styles).toContain(".project-item-icon");
+    expect(styles).toContain(".project-tree-name");
   });
 
   test("configures and renders a readonly background model page from the basic inspector", async () => {
@@ -686,7 +706,31 @@ describe("graph inspector panel", () => {
     expect(matrixBlock).toContain("const desiredScaleY = desiredScale;");
     expect(matrixBlock).not.toContain("preserveScale ? Math.abs(scaleX)");
     expect(matrixBlock).not.toContain("preserveScale ? Math.abs(scaleY)");
+    expect(staticTextBlock).toContain('const fontSize = miniature ? 12 : staticNumericParam(node, "fontSize", 16, 8);');
+    expect(staticTextBlock).toContain("fontSize,");
     expect(staticTextBlock).toContain("return uprightText(");
+  });
+
+  test("shows static symbol font size as a 100 percent baseline before text styles", async () => {
+    const source = await readAppSource();
+    const staticPanelStart = source.indexOf("{isStaticNode(inspectorSelectedNode) && (");
+    const fontFamilyIndex = source.indexOf('renderChineseParamHeader("fontFamily")', staticPanelStart);
+    const fontSizeIndex = source.indexOf('<th title="fontSize">字体大小（100%）</th>', staticPanelStart);
+    const textStyleIndex = source.indexOf("<th>文字样式</th>", staticPanelStart);
+    const buttonEditorIndex = source.indexOf("{renderStaticButtonActionEditor(inspectorSelectedNode)}", staticPanelStart);
+    const fontSizeRowStart = source.lastIndexOf("<tr>", fontSizeIndex);
+    const fontSizeRowEnd = source.indexOf("</tr>", fontSizeIndex);
+    const fontSizeRow = source.slice(fontSizeRowStart, fontSizeRowEnd);
+
+    expect(staticPanelStart).toBeGreaterThanOrEqual(0);
+    expect(fontFamilyIndex).toBeGreaterThan(staticPanelStart);
+    expect(fontSizeIndex).toBeGreaterThan(fontFamilyIndex);
+    expect(textStyleIndex).toBeGreaterThan(fontSizeIndex);
+    expect(buttonEditorIndex).toBeGreaterThan(textStyleIndex);
+    expect(fontSizeRow).toContain('type="number"');
+    expect(fontSizeRow).toContain('min="8"');
+    expect(fontSizeRow).toContain('max="160"');
+    expect(fontSizeRow).toContain('updateParam("fontSize", event.target.value)');
   });
 
   test("exposes selected graphic display-layer controls in the topbar and context menu", async () => {
@@ -994,7 +1038,8 @@ describe("graph inspector panel", () => {
     expect(pasteBlock).not.toContain("snapPointToGrid");
     expect(templateDropBlock).not.toContain("snapPointToGrid");
     expect(dropBlock).toContain("placeLibraryDeviceAtPoint(template");
-    expect(placeBlock).toContain("const rawNode = { ...createNodeFromTemplate(template, position), layerId: activeLayerId };");
+    expect(placeBlock).toContain("const createdNode = { ...createNodeFromTemplate(template, position), layerId: activeLayerId };");
+    expect(placeBlock).toContain("const rawNode = isRoutableLineDeviceKind(createdNode.kind)");
     expect(placeBlock).not.toContain("snapNodeToCanvasGrid");
     expect(staticDrawBlock).not.toContain("snapPointToGrid");
     expect(staticDrawBlock).toContain("const pointer = clampPointToCanvas(startPoint);");
@@ -1353,6 +1398,69 @@ describe("graph inspector panel", () => {
     expect(row).not.toContain("<input");
   });
 
+  test("shows inspector parameter tables as compact click-to-edit rows", async () => {
+    const styles = await readStyles();
+    const tableBlockStart = styles.indexOf(".param-table {\n  --param-table-row-height");
+    const tableBlock = tableBlockStart >= 0 ? styles.slice(tableBlockStart, styles.indexOf("}", tableBlockStart)) : "";
+    const rowBlock = cssRuleBlock(styles, ".param-table tr");
+    const cellBlock = cssRuleBlock(styles, ".param-table th,\n.param-table td");
+    const defaultInputBlock = cssRuleBlock(styles, ".param-table td:not(:focus-within) input:not([type=\"color\"]):not([type=\"checkbox\"]),");
+    const focusCellBlock = cssRuleBlock(styles, ".param-table td:focus-within");
+    const focusInputBlock = cssRuleBlock(styles, ".param-table td:focus-within input:not([type=\"color\"]):not([type=\"checkbox\"]),");
+    const directFocusBlock = cssRuleBlock(styles, ".param-table input:focus,\n.param-table select:focus,\n.param-table textarea:focus");
+    const compactUnitBlock = cssRuleBlock(styles, ".param-table .unit-value-field");
+    const textStyleLabelBlock = cssRuleBlock(styles, ".text-style-actions label");
+
+    expect(tableBlock).toContain("--param-table-row-height: 40px");
+    expect(tableBlock).toContain("--param-table-control-height: 26px");
+    expect(rowBlock).toContain("height: var(--param-table-row-height)");
+    expect(cellBlock).toContain("height: var(--param-table-row-height)");
+    expect(cellBlock).toContain("padding: 3px 7px");
+    expect(defaultInputBlock).toContain("border-color: transparent");
+    expect(defaultInputBlock).toContain("background: transparent");
+    expect(defaultInputBlock).toContain("box-shadow: none");
+    expect(focusCellBlock).toContain("background: #f8fafc");
+    expect(focusInputBlock).toContain("border-color: transparent");
+    expect(focusInputBlock).toContain("background: transparent");
+    expect(focusInputBlock).toContain("box-shadow: none");
+    expect(focusInputBlock).toContain("outline: none");
+    expect(directFocusBlock).toContain("outline: none");
+    expect(compactUnitBlock).toContain("gap: 4px");
+    expect(compactUnitBlock).toContain("min-height: var(--param-table-control-height)");
+    expect(textStyleLabelBlock).toContain("border: 0");
+    expect(textStyleLabelBlock).toContain("background: transparent");
+    expect(textStyleLabelBlock).toContain("min-height: var(--param-table-control-height)");
+  });
+
+  test("keeps embedded controls inside parameter tables from expanding row height", async () => {
+    const styles = await readStyles();
+    const compactControlBlock = cssRuleBlock(styles, ".param-table .color-field button,\n.param-table .image-field-actions button,\n.param-table .background-page-field button");
+    const compactColorInputBlock = cssRuleBlock(styles, ".param-table .color-field input[type=\"color\"]");
+    const compactFieldBlock = cssRuleBlock(styles, ".param-table .color-field,\n.param-table .image-field-actions,\n.param-table .background-page-field");
+    const compactColorLayoutBlock = cssRuleBlock(styles, ".param-table .color-field.with-none,\n.param-table .color-field.with-clear");
+    const compactIconBlock = cssRuleBlock(styles, ".param-table button svg");
+    const backgroundLayerListBlock = cssRuleBlock(styles, ".background-layer-checklist");
+    const backgroundLayerOptionBlock = cssRuleBlock(styles, ".background-layer-option");
+    const mutedInlineStart = styles.lastIndexOf(".muted-inline-text {");
+    const mutedInlineBlock = mutedInlineStart >= 0 ? styles.slice(mutedInlineStart, styles.indexOf("}", mutedInlineStart)) : "";
+
+    expect(compactControlBlock).toContain("min-height: var(--param-table-control-height)");
+    expect(compactControlBlock).toContain("height: var(--param-table-control-height)");
+    expect(compactControlBlock).toContain("padding: 0 6px");
+    expect(compactControlBlock).toContain("font-size: 11px");
+    expect(compactColorInputBlock).toContain("width: 28px");
+    expect(compactColorInputBlock).toContain("height: var(--param-table-control-height)");
+    expect(compactColorInputBlock).toContain("border: 0");
+    expect(compactFieldBlock).toContain("gap: 4px");
+    expect(compactFieldBlock).toContain("align-items: center");
+    expect(compactColorLayoutBlock).toContain("grid-template-columns: 28px minmax(0, 1fr) auto");
+    expect(compactIconBlock).toContain("width: 12px");
+    expect(compactIconBlock).toContain("height: 12px");
+    expect(backgroundLayerListBlock).toContain("padding: 0");
+    expect(backgroundLayerOptionBlock).toContain("min-height: var(--param-table-control-height");
+    expect(mutedInlineBlock).toContain("line-height: var(--param-table-control-height");
+  });
+
   test("uses fuzzy connection drop targets with an animated snap hint", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
@@ -1488,6 +1596,19 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".bottom-statusbar .status-transform");
   });
 
+  test("rounds inspector scale input display to three decimal places", async () => {
+    const source = await readAppSource();
+    const scaleRowsStart = source.indexOf('renderChineseParamHeader("scaleX")');
+    const scaleRowsEnd = source.indexOf('renderChineseParamHeader("layerId"', scaleRowsStart);
+    const scaleRowsBlock = source.slice(scaleRowsStart, scaleRowsEnd);
+
+    expect(source).toContain("const formatInspectorScaleValue = (value: number) => Number.isFinite(value) ? value.toFixed(3) : \"1.000\";");
+    expect(scaleRowsBlock).toContain("formatInspectorScaleValue(getNodeScaleX(inspectorSelectedNode))");
+    expect(scaleRowsBlock).toContain("formatInspectorScaleValue(getNodeScaleY(inspectorSelectedNode))");
+    expect(scaleRowsBlock).not.toContain("value={getNodeScaleX(inspectorSelectedNode)}");
+    expect(scaleRowsBlock).not.toContain("value={getNodeScaleY(inspectorSelectedNode)}");
+  });
+
   test("loads additional React Flow interaction and animation controls in the preview runtime only", async () => {
     const preview = await readReactFlowPreviewSource();
     const styles = await readStyles();
@@ -1544,7 +1665,12 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const dropTargetPoint = target ? connectTargetSnapPoint(target) : undefined;");
     expect(source).toContain("dropTarget: target ?? undefined");
     expect(source).toContain("rewiring?.dropTargetPoint");
-    expect(source).toContain("const activeDropReady = connectDropReady || Boolean(rewiring?.dropTargetPoint) || Boolean(nodeTerminalSnapTarget);");
+    expect(source).toContain("const activeDropReady =");
+    expect(source).toContain("connectDropReady");
+    expect(source).toContain("Boolean(rewiring?.dropTargetPoint)");
+    expect(source).toContain("Boolean(nodeTerminalSnapTarget)");
+    expect(source).toContain("Boolean(routableLinePreview.targetPoint)");
+    expect(source).toContain("Boolean(routableLineEndpointDrag?.dropTargetPoint)");
   });
 
   test("uses the fuzzy snap hint while dragging device terminals near matching device terminals", async () => {
@@ -1557,7 +1683,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("findNodeTerminalSnapTarget");
     expect(source).toContain("nodeTerminalSnapTarget");
     expect(source).toContain("nodeTerminalSnapTarget?.point");
-    expect(source).toContain("|| Boolean(nodeTerminalSnapTarget)");
+    expect(source).toContain("Boolean(nodeTerminalSnapTarget)");
     expect(source).toContain("CONNECT_TERMINAL_SNAP_TOLERANCE");
     expect(finishBlock).toContain("applyNodeTerminalSnap");
     expect(finishBlock.indexOf("applyNodeTerminalSnap")).toBeLessThan(finishBlock.indexOf("adjustEdgesAfterNodeMove"));
@@ -3809,7 +3935,7 @@ describe("graph inspector panel", () => {
     expect(commitBlock).toContain("const deferredRepairCandidateEdges =");
     expect(commitBlock).toContain("routeRepairCandidateEdges.length > 0 ? routeRepairCandidateEdges : committedCandidateEdges");
     expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(\n            movedNodeIds,\n            deferredRepairCandidateEdges,");
-    expect(commitBlock).toContain("scheduleMovedEdgeOptimization(\n      previousNodes,\n      nextNodes,\n      routeRepairCandidateEdges,");
+    expect(commitBlock).toContain("scheduleMovedEdgeOptimization(\n      previousNodes,\n      committedNextNodes,\n      routeRepairCandidateEdges,");
     expect(commitBlock).not.toContain("const deferMovedRouteRepair = movedNodeIds.length > 0 && candidateEdges.length > 0;");
   });
 
@@ -4214,6 +4340,29 @@ describe("graph inspector panel", () => {
     expect(styleSource).toContain(".smart-alignment-guide-horizontal");
   });
 
+  test("adds terminal outflow axes to smart alignment guides for off-center terminals", async () => {
+    const source = await readAppSource();
+    const helperStart = source.indexOf("function nodeTerminalOutflowSmartAlignmentAnchors");
+    const helperEnd = source.indexOf("function nodeSmartAlignmentBounds", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+    const computeStart = source.indexOf("const computeSmartAlignmentSnap =");
+    const computeEnd = source.indexOf("const computeNodeDragPreviewDelta =", computeStart);
+    const computeBlock = source.slice(computeStart, computeEnd);
+
+    expect(helperStart).toBeGreaterThan(-1);
+    expect(source).toContain("type SmartAlignmentAnchorMap = Record<SmartAlignmentAxis, SmartAlignmentAnchor[]>;");
+    expect(helperBlock).toContain("getTerminalPoint(positionedNode, terminal.id)");
+    expect(helperBlock).toContain("getRouteEndpointNormal(positionedNode, terminalPoint");
+    expect(helperBlock).toContain("normal.x !== 0");
+    expect(helperBlock).toContain("anchors.y.push");
+    expect(helperBlock).toContain("normal.y !== 0");
+    expect(helperBlock).toContain("anchors.x.push");
+    expect(computeBlock).toContain("const draggedTerminalAnchors = terminalOutflowAnchorsForSmartAlignmentDrag(dragState, movementDelta);");
+    expect(computeBlock).toContain("anchors: nodeTerminalOutflowSmartAlignmentAnchors(candidate, candidate.position)");
+    expect(computeBlock).toContain("bestSmartAlignmentAxisSnap(\"x\", draggedBounds, draggedTerminalAnchors.x");
+    expect(computeBlock).toContain("bestSmartAlignmentAxisSnap(\"y\", draggedBounds, draggedTerminalAnchors.y");
+  });
+
   test("uses node body bounds rather than labels or terminals for smart alignment centers", async () => {
     const source = await readAppSource();
     const helperStart = source.indexOf("function nodeSmartAlignmentBounds");
@@ -4498,11 +4647,11 @@ describe("graph inspector panel", () => {
     expect(commitBlock).toContain("const candidateEdgeIds = committedCandidateEdges.map((edge) => edge.id);");
     expect(commitBlock).toContain("markStoredRouteEdgesDirty(candidateEdgeIds);");
     expect(commitBlock).not.toContain("markStoredRouteEdgesDirty(shiftedNextEdges.map((edge) => edge.id));");
-    expect(commitBlock).toContain("canvasBoundsForAutoExpandedGraphContent(effectiveCanvasBounds, movedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING)");
+    expect(commitBlock).toContain("canvasBoundsForAutoExpandedGraphContent(effectiveCanvasBounds, committedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING)");
     expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(");
     expect(commitBlock).toContain("commitCanvasBounds");
     expect(commitBlock).toContain("previousNodes");
-    expect(commitBlock).toContain("expandCanvasToFitGraph(movedNodeUpdates, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);");
+    expect(commitBlock).toContain("expandCanvasToFitGraph(committedNodeUpdates, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);");
     expect(finishMoveBlock).toContain("nodes,\n      finalBounds");
     expect(finishDragBlock).toContain("nodes,\n      finalBounds");
     expect(moveSelectionBlock).toContain("nodes,\n      finalBounds");
@@ -5266,10 +5415,15 @@ describe("graph inspector panel", () => {
 
   test("offers device label content style and alignment editors in the graph panel", async () => {
     const source = await readAppSource();
+    const styles = await readStyles();
     const graphPanelStart = source.indexOf("graphInfoView === \"tree\"");
     const graphPanelEnd = source.indexOf("{isStaticNode(inspectorSelectedNode)", graphPanelStart);
     const graphPanelBlock = source.slice(graphPanelStart, graphPanelEnd);
+    const styleActionsBlock = cssRuleBlock(styles, ".device-label-style-actions {");
+    const styleLabelBlock = cssRuleBlock(styles, ".device-label-style-actions label");
+    const styleInputBlock = cssRuleBlock(styles, ".device-label-style-actions input");
 
+    expect(source).toContain("const FONT_FAMILY_OPTIONS");
     expect(source).toContain("device-label-style-actions");
     expect(graphPanelBlock).toContain("_labelDisplayMode");
     expect(graphPanelBlock).toContain("_labelText");
@@ -5280,7 +5434,17 @@ describe("graph inspector panel", () => {
     expect(graphPanelBlock).toContain("_labelFontStyle");
     expect(graphPanelBlock).toContain("_labelTextDecoration");
     expect(graphPanelBlock).toContain("_labelTextAnchor");
+    expect(source).toContain("fontFamily: FONT_FAMILY_OPTIONS");
+    expect(source).toContain("_labelFontFamily: FONT_FAMILY_OPTIONS");
     expect(graphPanelBlock).toContain("<option value=\"middle\">居中</option>");
+    expect(styleActionsBlock).toContain("display: flex");
+    expect(styleActionsBlock).toContain("flex-wrap: nowrap");
+    expect(styleActionsBlock).not.toContain("repeat(3");
+    expect(styleLabelBlock).toContain("min-height: var(--param-table-control-height)");
+    expect(styleLabelBlock).toContain("border: 0");
+    expect(styleLabelBlock).toContain("padding: 0 2px");
+    expect(styleInputBlock).toContain("width: 14px");
+    expect(styleInputBlock).toContain("height: 14px");
   });
 
   test("sets selected device label display mode from context menu and graph inspector", async () => {
@@ -5443,9 +5607,9 @@ describe("graph inspector panel", () => {
     expect(moveBoundsBlock).not.toContain("edges,");
     expect(adjustBlock).toContain("leftTopCanvasOriginShiftForContent(Array.from(movedNextNodeById.values()))");
     expect(adjustBlock).not.toContain("leftTopCanvasOriginShiftForContent(nextNodes)");
-    expect(commitBlock).toContain("leftTopCanvasOriginShiftForContent(movedNodeUpdates, committedCandidateEdges)");
-    expect(commitBlock).toContain("canvasBoundsForAutoExpandedGraphContent(effectiveCanvasBounds, movedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING)");
-    expect(commitBlock).toContain("expandCanvasToFitGraph(movedNodeUpdates, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);");
+    expect(commitBlock).toContain("leftTopCanvasOriginShiftForContent(committedNodeUpdates, committedCandidateEdges)");
+    expect(commitBlock).toContain("canvasBoundsForAutoExpandedGraphContent(effectiveCanvasBounds, committedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING)");
+    expect(commitBlock).toContain("expandCanvasToFitGraph(committedNodeUpdates, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);");
     expect(commitBlock).not.toContain("canvasBoundsForGraphContent(effectiveCanvasBounds, nextNodes, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING)");
     expect(commitBlock).not.toContain("expandCanvasToFitGraph(nextNodes, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);");
   });
@@ -5798,6 +5962,12 @@ describe("graph inspector panel", () => {
     const validationStart = source.indexOf("{inspectorTopologyErrors.length > 0 && (");
     const validationEnd = source.indexOf("</section>", validationStart);
     const validationBlock = source.slice(validationStart, validationEnd);
+    const validationListStart = styles.indexOf(".validation-list {");
+    const validationListEnd = styles.indexOf(".validation-list button", validationListStart);
+    const validationListBlock = styles.slice(validationListStart, validationListEnd);
+    const validationButtonStart = styles.indexOf(".validation-list button");
+    const validationButtonEnd = styles.indexOf(".validation-list span", validationButtonStart);
+    const validationButtonBlock = styles.slice(validationButtonStart, validationButtonEnd);
 
     expect(source).toContain("ELEMENT_TREE_INITIAL_ITEM_LIMIT");
     expect(source).toContain("ELEMENT_TREE_ITEM_LIMIT_STEP");
@@ -5813,6 +5983,9 @@ describe("graph inspector panel", () => {
     expect(validationBlock).toContain("validation-pagination");
     expect(styles).toContain("content-visibility: auto");
     expect(styles).toContain(".validation-pagination");
+    expect(validationListBlock).toContain("align-content: start");
+    expect(validationListBlock).toContain("grid-auto-rows: max-content");
+    expect(validationButtonBlock).toContain("align-self: start");
   });
 
   test("keeps minimap rendering sampled for large models", async () => {
@@ -6039,10 +6212,102 @@ describe("graph inspector panel", () => {
 
     expect(itemMainBlock).toContain("display: grid");
     expect(itemMainBlock).toContain("align-items: center");
-    expect(itemMainBlock).toContain("min-height: 30px");
+    expect(itemMainBlock).toContain("min-height: 26px");
     expect(itemTextBlock).toContain("display: flex");
     expect(itemTextBlock).toContain("align-items: center");
-    expect(itemTextBlock).toContain("min-height: 30px");
+    expect(itemTextBlock).toContain("min-height: 26px");
+  });
+
+  test("renders element tree identity fields as compact click-to-edit table cells", async () => {
+    const styles = await readStyles();
+    const itemBlock = cssRuleBlock(styles, ".element-tree-item {");
+    const deviceFieldsBlock = cssRuleBlock(styles, ".element-tree-device-fields");
+    const hiddenLabelBlock = cssRuleBlock(styles, ".element-tree-device-fields label > span,\n.element-tree-child-item label > span");
+    const inputBlock = cssRuleBlock(styles, ".element-tree-device-fields input,\n.element-tree-child-item input");
+    const focusBlock = cssRuleBlock(styles, ".element-tree-device-fields input:focus,\n.element-tree-child-item input:focus");
+    const childBlock = cssRuleBlock(styles, ".element-tree-child-item {");
+
+    expect(itemBlock).toContain("min-height: 26px");
+    expect(deviceFieldsBlock).toContain("align-items: center");
+    expect(deviceFieldsBlock).toContain("padding: 1px 0");
+    expect(hiddenLabelBlock).toContain("clip: rect(0 0 0 0)");
+    expect(inputBlock).toContain("border-color: transparent");
+    expect(inputBlock).toContain("background: transparent");
+    expect(inputBlock).toContain("color: inherit");
+    expect(focusBlock).toContain("background: #ffffff");
+    expect(focusBlock).toContain("color: #0f172a");
+    expect(childBlock).toContain("padding: 2px 4px");
+  });
+
+  test("uses a low-saturation right-panel selection palette", async () => {
+    const styles = await readStyles();
+    const toolSwitchActiveBlock = cssRuleBlock(styles, ".tool-switch button.active");
+    const leftPanelTabActiveBlock = cssRuleBlock(styles, ".left-panel-tabs button.active");
+    const libraryDisplayActiveBlock = cssRuleBlock(styles, ".library-display-mode label.active");
+    const topbarPrimaryActiveBlock = cssRuleBlock(styles, ".topbar-primary-button.active");
+    const viewportActiveBlock = cssRuleBlock(styles, ".viewport-controls button.active");
+    const projectActiveBlock = cssRuleBlock(styles, ".project-option.active {");
+    const projectSelectedActiveBlock = cssRuleBlock(styles, ".project-option.selected.active {");
+    const projectSelectedBlock = cssRuleBlock(styles, ".project-option.selected {");
+    const schemeSelectedBlock = cssRuleBlock(styles, ".scheme-option.selected {");
+    const projectActiveNameBlock = cssRuleBlock(styles, ".project-option.active .project-tree-name,\n.project-option.selected.active .project-tree-name");
+    const panelModeActiveBlock = cssRuleBlock(styles, ".side-panel-mode-controls button.active");
+    const inspectorPanelModeActiveBlock = cssRuleBlock(styles, ".inspector-title .side-panel-mode-controls button.active");
+    const inspectorTabActiveBlock = cssRuleBlock(styles, ".inspector-tabs button.active");
+    const graphToolbarActiveBlock = cssRuleBlock(styles, ".graph-info-toolbar button.active");
+    const treeTypeHoverBlock = cssRuleBlock(styles, ".element-tree-type:hover,\n.element-tree-type:focus-visible");
+    const treeItemHoverBlock = cssRuleBlock(styles, ".element-tree-item:hover,\n.element-tree-item:focus-visible");
+    const selectedItemBlock = cssRuleBlock(styles, ".element-tree-item.selected");
+    const selectedChildListBlock = cssRuleBlock(styles, ".element-tree-item.selected .element-tree-child-list");
+    const selectedChildItemBlock = cssRuleBlock(styles, ".element-tree-item.selected .element-tree-child-item {");
+    const treeInputFocusBlock = cssRuleBlock(styles, ".element-tree-device-fields input:focus,\n.element-tree-child-item input:focus");
+
+    for (const activeBlock of [
+      toolSwitchActiveBlock,
+      leftPanelTabActiveBlock,
+      libraryDisplayActiveBlock,
+      topbarPrimaryActiveBlock,
+      viewportActiveBlock,
+      panelModeActiveBlock,
+      inspectorTabActiveBlock,
+      graphToolbarActiveBlock
+    ]) {
+      expect(activeBlock).toContain("background: #e8eef5");
+      expect(activeBlock).toContain("color: #1f2937");
+      expect(activeBlock).not.toContain("color: #ffffff");
+      expect(activeBlock).not.toContain("#1d4ed8");
+      expect(activeBlock).not.toContain("#2563eb");
+    }
+    expect(projectSelectedBlock).toContain("background: #f1f5f9");
+    expect(projectSelectedBlock).toContain("box-shadow: inset 3px 0 0 #94a3b8");
+    expect(schemeSelectedBlock).toContain("background: #f1f5f9");
+    expect(schemeSelectedBlock).toContain("box-shadow: inset 3px 0 0 #94a3b8");
+    expect(projectActiveBlock).toContain("background: #e8eef5");
+    expect(projectActiveBlock).toContain("box-shadow: inset 4px 0 0 #64748b");
+    expect(projectActiveBlock).not.toContain("#facc15");
+    expect(projectSelectedActiveBlock).toContain("background: #dfe7f0");
+    expect(projectActiveNameBlock).toContain("color: #1f2937");
+    expect(panelModeActiveBlock).toContain("background: #e8eef5");
+    expect(panelModeActiveBlock).toContain("color: #1f2937");
+    expect(panelModeActiveBlock).not.toContain("#1d4ed8");
+    expect(panelModeActiveBlock).not.toContain("#2563eb");
+    expect(inspectorPanelModeActiveBlock).toContain("color: #1f2937");
+    expect(inspectorTabActiveBlock).toContain("background: #e8eef5");
+    expect(inspectorTabActiveBlock).toContain("color: #1f2937");
+    expect(graphToolbarActiveBlock).toContain("background: #e8eef5");
+    expect(graphToolbarActiveBlock).toContain("color: #1f2937");
+    expect(treeTypeHoverBlock).toContain("background: #e8eef5");
+    expect(treeItemHoverBlock).toContain("background: #f1f5f9");
+    expect(selectedItemBlock).toContain("background: #e8eef5");
+    expect(selectedItemBlock).toContain("color: #1e293b");
+    expect(selectedItemBlock).toContain("box-shadow: inset 3px 0 0 #64748b");
+    expect(selectedItemBlock).not.toContain("color: #ffffff");
+    expect(selectedItemBlock).not.toContain("#1d4ed8");
+    expect(selectedChildListBlock).toContain("border-left-color: #94a3b8");
+    expect(selectedChildItemBlock).toContain("color: #334155");
+    expect(selectedChildItemBlock).toContain("rgba(248, 250, 252, 0.9)");
+    expect(treeInputFocusBlock).toContain("border-color: #94a3b8");
+    expect(treeInputFocusBlock).toContain("rgba(100, 116, 139, 0.12)");
   });
 
   test("adds a topbar color palette entry and passes the mode into canvas coloring", async () => {
@@ -6395,7 +6660,7 @@ describe("graph inspector panel", () => {
     const pointerLeaveBlock = source.slice(pointerLeaveStart, pointerLeaveEnd);
     const bodyCursorBlock = cssRuleBlock(styles, "body.canvas-drawing-mode:not(.canvas-connect-drop-ready),");
 
-    expect(source).toContain("const drawingModeActive = Boolean(libraryPlacement || staticDrawing || connectSource);");
+    expect(source).toContain("const drawingModeActive = Boolean(libraryPlacement || staticDrawing || connectSource || routableLinePlacement);");
     expect(source).toContain("document.body.classList.toggle(\"canvas-drawing-mode\", drawingModeActive);");
     expect(source).toContain("document.body.classList.toggle(\"canvas-connect-drop-ready\", drawingModeActive && activeDropReady);");
     expect(source).toContain("const clearLibraryPlacementPreview = () =>");
@@ -6465,6 +6730,50 @@ describe("graph inspector panel", () => {
     expect(keyHandlerBlock).toContain("cancelInteractiveStaticDrawing()");
     expect(source).toContain("{renderInteractiveStaticDrawingPreview()}");
     expect(styles).toContain(".static-drawing-preview-line");
+  });
+
+  test("draws routable line-like devices from snapped terminals and supports endpoint retargeting", async () => {
+    const source = await readAppSource();
+    const model = await readModelSource();
+    const styles = await readStyles();
+    const startDeviceStart = source.indexOf("const startLibraryDevicePlacement = (template: DeviceTemplate) => {");
+    const startDeviceEnd = source.indexOf("const startLibraryGraphTemplatePlacement", startDeviceStart);
+    const startDeviceBlock = source.slice(startDeviceStart, startDeviceEnd);
+    const terminalStart = source.indexOf("const handleTerminalPointerDown =");
+    const terminalEnd = source.indexOf("const handleNodePointerDown", terminalStart);
+    const terminalBlock = source.slice(terminalStart, terminalEnd);
+    const pointerMoveStart = source.indexOf("const handlePointerMove = (event: PointerEvent<SVGSVGElement>)");
+    const pointerMoveEnd = source.indexOf("if (nodeLabelRotateDrag", pointerMoveStart);
+    const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
+
+    expect(model).toContain("export function createRoutableLineDeviceFromEndpoints");
+    expect(model).toContain("export function setRoutableLineDeviceEndpoints");
+    expect(source).toContain("type RoutableLinePlacementState =");
+    expect(source).toContain("type RoutableLineEndpointDragState =");
+    expect(source).toContain("const [routableLinePlacement, setRoutableLinePlacement]");
+    expect(source).toContain("const [routableLineEndpointDrag, setRoutableLineEndpointDrag]");
+    expect(startDeviceBlock).toContain("isRoutableLineDeviceKind(template.kind)");
+    expect(startDeviceBlock).toContain("setRoutableLinePlacement({ template, source: null });");
+    expect(source).toContain("const findRoutableLineEndpointTargetAtPoint");
+    expect(source).toContain("const startRoutableLineFromTerminal");
+    expect(source).toContain("const finishRoutableLineToTarget");
+    expect(source).toContain("const startRoutableLineEndpointDrag");
+    expect(source).toContain("const finishRoutableLineEndpointDrag");
+    expect(terminalBlock).toContain("if (routableLinePlacement)");
+    expect(terminalBlock).toContain("startRoutableLineFromTerminal");
+    expect(terminalBlock).toContain("finishRoutableLineToTarget");
+    expect(pointerMoveBlock).toContain("scheduleRoutableLinePreviewPoint");
+    expect(pointerMoveBlock).toContain("updateRoutableLineEndpointDrag");
+    expect(source).toContain("finishRoutableLineEndpointDrag");
+    expect(source).toContain("createRoutableLineDeviceFromEndpoints");
+    expect(source).toContain("setRoutableLineDeviceEndpoints");
+    expect(source).toContain("routableLineDeviceEndpointRefForNode");
+    expect(source).toContain("routableLineDeviceEndpointRefs");
+    expect(source).toContain("routeRoutableLineDevice(rawLine");
+    expect(source).toContain("routable-line-drawing-preview");
+    expect(source).toContain("routable-line-endpoint-handle");
+    expect(styles).toContain(".routable-line-drawing-preview");
+    expect(styles).toContain(".routable-line-endpoint-handle");
   });
 
   test("draws box-like static symbols by rectangle and edits their real width and height", async () => {
@@ -6668,6 +6977,75 @@ describe("graph inspector panel", () => {
     expect(dialogBlock).toContain("确定");
     expect(styles).toContain(".connection-redraw-dialog");
     expect(styles).toContain(".connection-redraw-options");
+  });
+
+  test("opens a scoped voltage-base clear dialog from the canvas context menu", async () => {
+    const source = await readAppSource();
+    const model = await readModelSource();
+    const contextStart = source.indexOf("{contextMenu && (");
+    const contextEnd = source.indexOf("{projectMenu && (", contextStart);
+    const contextBlock = source.slice(contextStart, contextEnd);
+    const clearStart = source.indexOf("const voltageBaseClearPreviewByScope =");
+    const clearEnd = source.indexOf("const alignSelected =", clearStart);
+    const clearBlock = source.slice(clearStart, clearEnd);
+    const dialogStart = source.indexOf("{voltageBaseClearDialogOpen && (");
+    const dialogEnd = source.indexOf("{connectionRedrawDialogOpen && (", dialogStart);
+    const dialogBlock = source.slice(dialogStart, dialogEnd);
+
+    expect(model).toContain("export type VoltageBaseClearScope = \"selected\" | \"island\" | \"all\"");
+    expect(model).toContain("export function clearVoltageBaseValuesForScope");
+    expect(source).toContain("clearVoltageBaseValuesForScope");
+    expect(source).toContain("VOLTAGE_BASE_CLEAR_SCOPE_LABELS");
+    expect(contextBlock).toContain("openVoltageBaseClearDialog");
+    expect(contextBlock).toContain("清空电压基值");
+    expect(clearBlock).toContain("clearVoltageBaseValuesForScope(nodes, edges, activeSelectedNodeIds, scope)");
+    expect(clearBlock).toContain("pushUndoSnapshot(true, false, undoScopeForGraphPatch(result.changedNodeIds, []))");
+    expect(clearBlock).toContain("patchGraphNodes(result.nodeUpdates)");
+    expect(dialogBlock).toContain("role=\"radiogroup\"");
+    expect(source).toContain("selected: \"选中设备\"");
+    expect(source).toContain("island: \"所在拓扑岛\"");
+    expect(source).toContain("all: \"全网\"");
+    expect(dialogBlock).toContain("VOLTAGE_BASE_CLEAR_SCOPE_LABELS[scope]");
+    expect(dialogBlock).toContain("confirmVoltageBaseClearDialog");
+  });
+
+  test("opens a scoped voltage-base set dialog from the canvas context menu", async () => {
+    const source = await readAppSource();
+    const model = await readModelSource();
+    const contextStart = source.indexOf("{contextMenu && (");
+    const contextEnd = source.indexOf("{projectMenu && (", contextStart);
+    const contextBlock = source.slice(contextStart, contextEnd);
+    const setStart = source.indexOf("const voltageBaseSetPreviewByScope =");
+    const setEnd = source.indexOf("const connectionRedrawViewportBounds =", setStart);
+    const setBlock = source.slice(setStart, setEnd);
+    const dialogStart = source.indexOf("{voltageBaseSetDialogOpen && (");
+    const dialogEnd = source.indexOf("{voltageBaseClearDialogOpen && (", dialogStart);
+    const dialogBlock = source.slice(dialogStart, dialogEnd);
+
+    expect(model).toContain("export type VoltageBaseSetScope = \"selected\" | \"island\"");
+    expect(model).toContain("export function setVoltageBaseValuesForScope");
+    expect(model).toContain("export function setVoltageBaseTerminalValuesForScope");
+    expect(source).toContain("setVoltageBaseValuesForScope");
+    expect(source).toContain("setVoltageBaseTerminalValuesForScope");
+    expect(source).toContain("VOLTAGE_BASE_SET_SCOPE_LABELS");
+    expect(contextBlock).toContain("openVoltageBaseSetDialog");
+    expect(contextBlock).toContain("设置电压基值");
+    expect(setBlock).toContain("setVoltageBaseValuesForScope(nodes, edges, activeSelectedNodeIds, scope, voltageBaseSetValue.trim())");
+    expect(setBlock).toContain("setVoltageBaseTerminalValuesForScope(nodes, edges, voltageBaseTerminalValues, scope)");
+    expect(setBlock).toContain("pushUndoSnapshot(true, false, undoScopeForGraphPatch(result.changedNodeIds, []))");
+    expect(setBlock).toContain("patchGraphNodes(result.nodeUpdates)");
+    expect(dialogBlock).toContain("设置方式");
+    expect(dialogBlock).toContain("统一设置");
+    expect(dialogBlock).toContain("按端子设置");
+    expect(dialogBlock).toContain("voltage-base-terminal-grid");
+    expect(dialogBlock).toContain("setVoltageBaseTerminalValue");
+    expect(dialogBlock).toContain("list=\"voltage-base-set-options\"");
+    expect(dialogBlock).toContain("<datalist id=\"voltage-base-set-options\">");
+    expect(dialogBlock).toContain("role=\"radiogroup\"");
+    expect(source).toContain("selected: \"选中设备\"");
+    expect(source).toContain("island: \"所在拓扑岛\"");
+    expect(dialogBlock).toContain("VOLTAGE_BASE_SET_SCOPE_LABELS[scope]");
+    expect(dialogBlock).toContain("confirmVoltageBaseSetDialog");
   });
 
   test("uses explicit model scheme and blank project-list context-menu actions", async () => {

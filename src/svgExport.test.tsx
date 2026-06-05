@@ -24,6 +24,16 @@ describe("SVG export", () => {
     expect(svg).toContain("export-terminal-dot ac");
   });
 
+  test("exports routable line-like device glyphs as thick saved paths", () => {
+    const line = createDefaultNode("ac-routable-line", { x: 180, y: 120 });
+
+    const svg = buildSvgDocument([line], [], { width: 360, height: 240 });
+
+    expect(svg).toContain("routable-line-device-glyph");
+    expect(svg).toContain('stroke-width="7"');
+    expect(svg).toContain("export-terminal-dot ac");
+  });
+
   test("exports bus-connected tank devices as tank glyphs instead of plain bus lines", () => {
     const hydrogenTank = createDefaultNode("hydrogen-tank", { x: 180, y: 120 });
     const horizontalHydrogenTank = createDefaultNode("hydrogen-tank-horizontal", { x: 320, y: 120 });
@@ -105,6 +115,40 @@ describe("SVG export", () => {
     expect(svg.indexOf("<script")).toBeGreaterThan(svg.indexOf('data-export-button-action="layer"'));
   });
 
+  test("keeps static group-box header line clear of the title text", () => {
+    const group = createDefaultNode("static-group-box", { x: 180, y: 140 });
+    group.size = { width: 220, height: 120 };
+    group.params = {
+      ...group.params,
+      text: "分组",
+      fontSize: "16",
+      padding: "12"
+    };
+
+    const svg = buildSvgDocument([group], [], { width: 360, height: 260 });
+    const headerRule = svg.match(/class="static-group-box-header-rule" d="M ([\d.-]+) ([\d.-]+) H ([\d.-]+)"/);
+
+    expect(headerRule).not.toBeNull();
+    expect(Number(headerRule?.[1])).toBeGreaterThan(-70);
+    expect(svg).not.toContain('d="M -98 -36 H 98"');
+  });
+
+  test("keeps intentionally empty static symbol text empty instead of falling back to defaults", () => {
+    const toolbarNode = createDefaultNode("static-toolbar-node", { x: 160, y: 120 });
+    toolbarNode.name = "默认工具条节点";
+    toolbarNode.params = { ...toolbarNode.params, text: "" };
+    const button = createDefaultNode("static-button", { x: 160, y: 220 });
+    button.name = "默认按钮节点";
+    button.params = { ...button.params, text: "" };
+
+    const svg = buildSvgDocument([toolbarNode, button], [], { width: 360, height: 320 });
+
+    expect(svg).not.toMatch(/<tspan[^>]*>默认工具条节点<\/tspan>/);
+    expect(svg).not.toMatch(/<tspan[^>]*>工具条节点<\/tspan>/);
+    expect(svg).not.toMatch(/<text[^>]*>默认按钮节点<\/text>/);
+    expect(svg).not.toMatch(/<text[^>]*>按钮<\/text>/);
+  });
+
   test("exports energy buses as square ended rectangles", () => {
     const buses = [
       createDefaultNode("ac-bus", { x: 120, y: 120 }),
@@ -136,6 +180,23 @@ describe("SVG export", () => {
 
     expect(svg).toContain('stroke="#2563eb"');
     expect(svg).toContain('stroke="#0f766e"');
+  });
+
+  test("exports AC and DC electric loads with smaller vertical bodies", () => {
+    const acLoad = createDefaultNode("ac-load", { x: 160, y: 120 });
+    const dcLoad = createDefaultNode("dc-load", { x: 320, y: 120 });
+    const svg = buildSvgDocument([acLoad, dcLoad], [], { width: 480, height: 260 });
+    const glyphScale = Math.max(1, Math.max(acLoad.size.width, acLoad.size.height) / 100);
+    const designWidth = acLoad.size.width / glyphScale;
+    const designHeight = acLoad.size.height / glyphScale;
+    const bodyHalfWidth = designWidth * 2 / 9;
+    const bodyHalfHeight = designHeight * 2 / 9;
+    const bodyPath = `M ${-bodyHalfWidth} ${-bodyHalfHeight} L ${bodyHalfWidth} ${-bodyHalfHeight} L 0 ${bodyHalfHeight} Z`;
+
+    expect(acLoad.size).toEqual({ width: 150, height: 102 });
+    expect(dcLoad.size).toEqual(acLoad.size);
+    expect(svg.match(/class="electric-load-glyph"/g)?.length).toBe(2);
+    expect(svg.match(new RegExp(`d="${bodyPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`, "g"))?.length).toBe(2);
   });
 
   test("exports terminal stubs with terminal color and scaled device line style", () => {

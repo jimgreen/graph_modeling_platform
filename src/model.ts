@@ -66,6 +66,7 @@ export type DeviceKind =
   | "hydrogen-pressure-reducer"
   | "hydrogen-shutoff-valve"
   | "hydrogen-pipeline"
+  | "hydrogen-routable-pipeline"
   | "heat-boiler"
   | "two-port-heat-boiler"
   | "heat-source"
@@ -83,9 +84,11 @@ export type DeviceKind =
   | "two-port-heat-load"
   | "heat-bus"
   | "heat-pipeline"
+  | "heat-routable-line"
   | "heat-pump"
   | "heat-shutoff-valve"
   | "ac-line"
+  | "ac-routable-line"
   | "ac-zero-branch"
   | "ac-bus"
   | "ac-switch"
@@ -103,6 +106,7 @@ export type DeviceKind =
   | "dc-source"
   | "dc-storage"
   | "dc-line"
+  | "dc-routable-line"
   | "dc-zero-branch"
   | "dc-bus"
   | "dc-switch"
@@ -167,6 +171,7 @@ export type DeviceGlyphVariant =
   | "bus"
   | "ac-line"
   | "dc-line"
+  | "routable-line"
   | "line"
   | "transformer"
   | "switch"
@@ -452,6 +457,14 @@ export type ProjectFile = {
 export const DEFAULT_MODEL_LAYER_ID = "layer-default";
 export const DEFAULT_MODEL_LAYER_NAME = "默认图层";
 export const STATIC_DRAW_POINTS_PARAM = "drawPoints";
+export const STATIC_ROUTE_AVOIDANCE_PARAM = "routeAvoidance";
+export const ROUTABLE_LINE_POINTS_PARAM = "_routableLinePoints";
+export const ROUTABLE_LINE_SOURCE_NODE_PARAM = "_routableLineSourceNodeId";
+export const ROUTABLE_LINE_SOURCE_TERMINAL_PARAM = "_routableLineSourceTerminalId";
+export const ROUTABLE_LINE_SOURCE_LOCAL_POINT_PARAM = "_routableLineSourceLocalPoint";
+export const ROUTABLE_LINE_TARGET_NODE_PARAM = "_routableLineTargetNodeId";
+export const ROUTABLE_LINE_TARGET_TERMINAL_PARAM = "_routableLineTargetTerminalId";
+export const ROUTABLE_LINE_TARGET_LOCAL_POINT_PARAM = "_routableLineTargetLocalPoint";
 export const INTERACTIVE_STATIC_DRAWING_KINDS = [
   "static-line",
   "static-polyline",
@@ -525,6 +538,35 @@ const STATIC_COMPONENT_TYPE_BY_KIND: Record<string, string> = {
 
 function staticComponentTypeForKind(kind: string): string {
   return STATIC_COMPONENT_TYPE_BY_KIND[baseDeviceKind(kind)] ?? DEFAULT_STATIC_COMPONENT_TYPE;
+}
+
+export function isStaticContainerKind(kind: string): boolean {
+  return staticComponentTypeForKind(kind) === "StaticContainerSymbol";
+}
+
+function defaultStaticRouteAvoidanceValue(kind: string): "0" | "1" {
+  return isStaticContainerKind(kind) ? "0" : "1";
+}
+
+function normalizeRouteAvoidanceFlag(value: string | undefined, fallback: "0" | "1"): "0" | "1" {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on" || normalized === "是" || normalized === "参与") {
+    return "1";
+  }
+  if (normalized === "0" || normalized === "false" || normalized === "no" || normalized === "off" || normalized === "否" || normalized === "不参与") {
+    return "0";
+  }
+  return fallback;
+}
+
+export function staticNodeParticipatesInRoutingAvoidance(node: Pick<ModelNode, "kind" | "params">): boolean {
+  if (!node.kind.startsWith("static-")) {
+    return true;
+  }
+  return normalizeRouteAvoidanceFlag(
+    node.params?.[STATIC_ROUTE_AVOIDANCE_PARAM],
+    defaultStaticRouteAvoidanceValue(node.kind)
+  ) === "1";
 }
 
 export const E_SECTION_COLUMNS: Record<string, string[]> = {
@@ -639,6 +681,17 @@ function baseDeviceKind(kind: string): string {
     return kind;
   }
   return kind.slice(0, -GENERATED_VERTICAL_KIND_SUFFIX.length);
+}
+
+const ROUTABLE_LINE_DEVICE_KINDS = new Set<string>([
+  "ac-routable-line",
+  "dc-routable-line",
+  "hydrogen-routable-pipeline",
+  "heat-routable-line"
+]);
+
+export function isRoutableLineDeviceKind(kind: string): boolean {
+  return ROUTABLE_LINE_DEVICE_KINDS.has(baseDeviceKind(kind));
 }
 
 export function inferESection(kind: string, params: Record<string, string> = {}) {
@@ -2061,6 +2114,7 @@ const staticSymbolParams = (
 ): Record<string, string> => ({
   ...withStaticButtonCapability(kind, {
     component_type: staticComponentTypeForKind(kind),
+    [STATIC_ROUTE_AVOIDANCE_PARAM]: defaultStaticRouteAvoidanceValue(kind),
     text,
     fillColor: "#ffffff",
     strokeColor: "#64748b",
@@ -2093,6 +2147,7 @@ const staticVisualParams = (
 ): Record<string, string> => ({
   ...withStaticButtonCapability(kind, {
     component_type: staticComponentTypeForKind(kind),
+    [STATIC_ROUTE_AVOIDANCE_PARAM]: defaultStaticRouteAvoidanceValue(kind),
     ...params
   })
 });
@@ -2671,6 +2726,15 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalCount: 2
   },
   {
+    kind: "hydrogen-routable-pipeline",
+    label: "输氢管道（自适应）",
+    attributeLibrary: "氢能设备",
+    size: { width: 150, height: 36 },
+    params: { length: "1 km", diameter: "DN200", component_type: "HydroPipe", lineWidth: "7" },
+    terminalType: "h2",
+    terminalCount: 2
+  },
+  {
     kind: "heat-boiler",
     label: "供热锅炉",
     attributeLibrary: "热能设备",
@@ -2874,6 +2938,15 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalCount: 2
   },
   {
+    kind: "heat-routable-line",
+    label: "热力线路（自适应）",
+    attributeLibrary: "热能设备",
+    size: { width: 150, height: 36 },
+    params: { length: "1 km", diameter: "DN200", component_type: "HeatPipe", lineWidth: "7" },
+    terminalType: "heat",
+    terminalCount: 2
+  },
+  {
     kind: "heat-pump",
     label: "循环水泵",
     attributeLibrary: "热能设备",
@@ -2897,6 +2970,15 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     attributeLibrary: "交流设备",
     size: { width: 108, height: 36 },
     params: { r: "0.1", x: "1.0", b: "0.0" },
+    terminalType: "ac",
+    terminalCount: 2
+  },
+  {
+    kind: "ac-routable-line",
+    label: "交流线路（自适应）",
+    attributeLibrary: "交流设备",
+    size: { width: 150, height: 36 },
+    params: { r: "0.1", x: "1.0", b: "0.0", component_type: "ACBranch", lineWidth: "7" },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -2974,7 +3056,8 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 86, height: 58 },
     params: { activePower: "5 MW", reactivePower: "1.2 Mvar", powerFactor: "0.95" },
     terminalType: "ac",
-    terminalCount: 1
+    terminalCount: 1,
+    terminalAnchors: [{ x: 0, y: -0.5 }]
   },
   {
     kind: "ac-terminal-transformer-load",
@@ -3067,6 +3150,15 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalCount: 2
   },
   {
+    kind: "dc-routable-line",
+    label: "直流线路（自适应）",
+    attributeLibrary: "直流设备",
+    size: { width: 150, height: 36 },
+    params: { r: "1.0", component_type: "DCBranch", lineWidth: "7" },
+    terminalType: "dc",
+    terminalCount: 2
+  },
+  {
     kind: "dc-zero-branch",
     label: "直流零阻抗支路",
     attributeLibrary: "直流设备",
@@ -3109,7 +3201,8 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 86, height: 58 },
     params: { power: "1.5 MW", voltage: "750 V" },
     terminalType: "dc",
-    terminalCount: 1
+    terminalCount: 1,
+    terminalAnchors: [{ x: 0, y: -0.5 }]
   },
   {
     kind: "dcdc-converter",
@@ -3829,6 +3922,7 @@ export function getDeviceGlyphVariant(kind: DeviceKind): DeviceGlyphVariant {
   if (glyphKind.includes("hydro-source")) return "hydro-source";
   if (glyphKind.includes("nuclear-source")) return "nuclear-source";
   if (glyphKind.includes("bus")) return "bus";
+  if (isRoutableLineDeviceKind(glyphKind)) return "routable-line";
   if (glyphKind === "ac-line") return "ac-line";
   if (glyphKind === "dc-line") return "dc-line";
   if (glyphKind.includes("line") || glyphKind.includes("zero-branch")) return "line";
@@ -4087,6 +4181,7 @@ const DEVICE_STROKE_WIDTH_BY_VARIANT: Partial<Record<DeviceGlyphVariant, number>
   "heat-valve": 2.4,
   "ac-line": 4,
   "dc-line": 4,
+  "routable-line": 7,
   line: 4,
   "dcdc-converter": 2.2,
   "acdc-converter": 2.2,
@@ -4557,7 +4652,7 @@ export function createDefaultNode(kind: DeviceKind, position: Point): ModelNode 
 }
 
 export function createNodeFromTemplate(template: DeviceTemplate, position: Point): ModelNode {
-  return {
+  const node: ModelNode = {
     id: makeId(template.kind),
     kind: template.kind,
     name: template.label,
@@ -4574,6 +4669,7 @@ export function createNodeFromTemplate(template: DeviceTemplate, position: Point
     terminals: createTemplateTerminals(template),
     params: buildDefaultParams(template)
   };
+  return ensureRoutableLineDevicePathParam(node);
 }
 
 const INTERACTIVE_STATIC_DRAWING_KIND_SET = new Set<DeviceKind>(INTERACTIVE_STATIC_DRAWING_KINDS);
@@ -4628,6 +4724,423 @@ export function parseStaticDrawPoints(value?: string): Point[] {
   } catch {
     return [];
   }
+}
+
+function roundRoutableLineCoordinate(value: number) {
+  return Math.round(value * 10) / 10;
+}
+
+function normalizeRoutableLineDevicePoints(points: readonly Point[]): Point[] {
+  const normalized: Point[] = [];
+  for (const point of points) {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+      continue;
+    }
+    const next = {
+      x: roundRoutableLineCoordinate(point.x),
+      y: roundRoutableLineCoordinate(point.y)
+    };
+    const previous = normalized.at(-1);
+    if (!previous || previous.x !== next.x || previous.y !== next.y) {
+      normalized.push(next);
+    }
+  }
+  return normalized;
+}
+
+export function serializeRoutableLineDevicePoints(points: readonly Point[]): string {
+  return JSON.stringify(normalizeRoutableLineDevicePoints(points));
+}
+
+export function parseRoutableLineDevicePoints(value?: string): Point[] {
+  if (!value) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return normalizeRoutableLineDevicePoints(
+      parsed.map((item) => ({
+        x: Number((item as Point).x),
+        y: Number((item as Point).y)
+      }))
+    );
+  } catch {
+    return [];
+  }
+}
+
+function defaultRoutableLineDeviceLocalPoints(node: ModelNode): Point[] {
+  const [sourceTerminal, targetTerminal] = node.terminals;
+  if (sourceTerminal && targetTerminal) {
+    return [
+      terminalRenderLocalPoint(sourceTerminal, node.size, getNodeScaleX(node), getNodeScaleY(node), node.kind),
+      terminalRenderLocalPoint(targetTerminal, node.size, getNodeScaleX(node), getNodeScaleY(node), node.kind)
+    ];
+  }
+  return [
+    { x: -node.size.width / 2, y: 0 },
+    { x: node.size.width / 2, y: 0 }
+  ];
+}
+
+export function routableLineDeviceLocalPoints(node: ModelNode): Point[] {
+  if (!isRoutableLineDeviceKind(node.kind)) {
+    return [];
+  }
+  const storedPoints = parseRoutableLineDevicePoints(node.params[ROUTABLE_LINE_POINTS_PARAM]);
+  return storedPoints.length >= 2 ? storedPoints : defaultRoutableLineDeviceLocalPoints(node);
+}
+
+function nodeLocalPointToCanvasPoint(node: ModelNode, local: Point, position = node.position): Point {
+  const scaleX = getNodeScaleX(node) || 1;
+  const scaleY = getNodeScaleY(node) || 1;
+  const scaled = {
+    x: local.x * scaleX,
+    y: local.y * scaleY
+  };
+  const radians = (node.rotation * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return {
+    x: roundRoutableLineCoordinate(position.x + scaled.x * cos - scaled.y * sin),
+    y: roundRoutableLineCoordinate(position.y + scaled.x * sin + scaled.y * cos)
+  };
+}
+
+function canvasPointToNodeLocalPoint(node: ModelNode, point: Point): Point {
+  const dx = point.x - node.position.x;
+  const dy = point.y - node.position.y;
+  const radians = (-node.rotation * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const scaleX = getNodeScaleX(node) || 1;
+  const scaleY = getNodeScaleY(node) || 1;
+  const unrotated = {
+    x: dx * cos - dy * sin,
+    y: dx * sin + dy * cos
+  };
+  return {
+    x: roundRoutableLineCoordinate(unrotated.x / scaleX),
+    y: roundRoutableLineCoordinate(unrotated.y / scaleY)
+  };
+}
+
+export function routableLineDeviceCanvasPoints(node: ModelNode, position = node.position): Point[] {
+  return routableLineDeviceLocalPoints(node).map((point) => nodeLocalPointToCanvasPoint(node, point, position));
+}
+
+function routableLineEndpointAnchorForLocalPoint(local: Point, size: Pick<ModelNode["size"], "width" | "height">): Point {
+  const safeWidth = Math.max(1, size.width);
+  const safeHeight = Math.max(1, size.height);
+  const clampAnchor = (value: number) => Math.max(-0.48, Math.min(0.48, value));
+  return {
+    x: clampAnchor(local.x / safeWidth),
+    y: clampAnchor(local.y / safeHeight)
+  };
+}
+
+export function setRoutableLineDeviceEndpoints(
+  node: ModelNode,
+  start: Point,
+  end: Point,
+  endpointRefs?: RoutableLineDeviceEndpointRefs
+): ModelNode {
+  if (!isRoutableLineDeviceKind(node.kind)) {
+    return node;
+  }
+  const nextPosition = {
+    x: roundRoutableLineCoordinate((start.x + end.x) / 2),
+    y: roundRoutableLineCoordinate((start.y + end.y) / 2)
+  };
+  const localStart = {
+    x: roundRoutableLineCoordinate(start.x - nextPosition.x),
+    y: roundRoutableLineCoordinate(start.y - nextPosition.y)
+  };
+  const localEnd = {
+    x: roundRoutableLineCoordinate(end.x - nextPosition.x),
+    y: roundRoutableLineCoordinate(end.y - nextPosition.y)
+  };
+  const terminals = node.terminals.map((terminal, index) => ({
+    ...terminal,
+    anchor: index === 0
+      ? routableLineEndpointAnchorForLocalPoint(localStart, node.size)
+      : index === 1
+        ? routableLineEndpointAnchorForLocalPoint(localEnd, node.size)
+        : terminal.anchor
+  }));
+  return {
+    ...node,
+    position: nextPosition,
+    rotation: 0,
+    scale: 1,
+    scaleX: 1,
+    scaleY: 1,
+    terminals,
+    params: applyRoutableLineEndpointRefs({
+      ...node.params,
+      [ROUTABLE_LINE_POINTS_PARAM]: serializeRoutableLineDevicePoints([localStart, localEnd])
+    }, endpointRefs)
+  };
+}
+
+export function createRoutableLineDeviceFromEndpoints(
+  template: DeviceTemplate,
+  start: Point,
+  end: Point,
+  layerId = DEFAULT_MODEL_LAYER_ID,
+  endpointRefs?: RoutableLineDeviceEndpointRefs
+): ModelNode {
+  const midpoint = {
+    x: roundRoutableLineCoordinate((start.x + end.x) / 2),
+    y: roundRoutableLineCoordinate((start.y + end.y) / 2)
+  };
+  const baseNode = createNodeFromTemplate(template, midpoint);
+  return setRoutableLineDeviceEndpoints({ ...baseNode, layerId }, start, end, endpointRefs);
+}
+
+function ensureRoutableLineDevicePathParam(node: ModelNode): ModelNode {
+  if (!isRoutableLineDeviceKind(node.kind)) {
+    return node;
+  }
+  if (parseRoutableLineDevicePoints(node.params[ROUTABLE_LINE_POINTS_PARAM]).length >= 2) {
+    return node;
+  }
+  return {
+    ...node,
+    params: {
+      ...node.params,
+      [ROUTABLE_LINE_POINTS_PARAM]: serializeRoutableLineDevicePoints(defaultRoutableLineDeviceLocalPoints(node))
+    }
+  };
+}
+
+function samePointList(first: Point[], second: Point[]) {
+  return first.length === second.length && first.every((point, index) => point.x === second[index]?.x && point.y === second[index]?.y);
+}
+
+export type RoutableLineDeviceEndpointRef = {
+  nodeId: string;
+  terminalId: string;
+  localPoint?: Point;
+};
+
+export type RoutableLineDeviceEndpointRefs = {
+  source?: RoutableLineDeviceEndpointRef;
+  target?: RoutableLineDeviceEndpointRef;
+};
+
+function parseRoutableLineEndpointLocalPoint(value?: string): Point | undefined {
+  const points = parseRoutableLineDevicePoints(value);
+  return points[0];
+}
+
+function routableLineEndpointRefFromParams(
+  params: Record<string, string>,
+  nodeParam: string,
+  terminalParam: string,
+  localPointParam: string
+): RoutableLineDeviceEndpointRef | undefined {
+  const nodeId = params[nodeParam];
+  const terminalId = params[terminalParam];
+  if (!nodeId || !terminalId) {
+    return undefined;
+  }
+  return {
+    nodeId,
+    terminalId,
+    localPoint: parseRoutableLineEndpointLocalPoint(params[localPointParam])
+  };
+}
+
+export function routableLineDeviceEndpointRefs(node: ModelNode): RoutableLineDeviceEndpointRefs {
+  if (!isRoutableLineDeviceKind(node.kind)) {
+    return {};
+  }
+  return {
+    source: routableLineEndpointRefFromParams(
+      node.params,
+      ROUTABLE_LINE_SOURCE_NODE_PARAM,
+      ROUTABLE_LINE_SOURCE_TERMINAL_PARAM,
+      ROUTABLE_LINE_SOURCE_LOCAL_POINT_PARAM
+    ),
+    target: routableLineEndpointRefFromParams(
+      node.params,
+      ROUTABLE_LINE_TARGET_NODE_PARAM,
+      ROUTABLE_LINE_TARGET_TERMINAL_PARAM,
+      ROUTABLE_LINE_TARGET_LOCAL_POINT_PARAM
+    )
+  };
+}
+
+export function routableLineDeviceEndpointRefForNode(
+  node: ModelNode,
+  terminalId: string,
+  point?: Point
+): RoutableLineDeviceEndpointRef {
+  return {
+    nodeId: node.id,
+    terminalId,
+    localPoint: point ? pointToNodeLocal(node, point) : undefined
+  };
+}
+
+function writeRoutableLineEndpointRef(
+  params: Record<string, string>,
+  ref: RoutableLineDeviceEndpointRef | undefined | null,
+  nodeParam: string,
+  terminalParam: string,
+  localPointParam: string
+) {
+  if (!ref) {
+    delete params[nodeParam];
+    delete params[terminalParam];
+    delete params[localPointParam];
+    return;
+  }
+  params[nodeParam] = ref.nodeId;
+  params[terminalParam] = ref.terminalId;
+  if (ref.localPoint) {
+    params[localPointParam] = serializeRoutableLineDevicePoints([ref.localPoint]);
+  } else {
+    delete params[localPointParam];
+  }
+}
+
+function applyRoutableLineEndpointRefs(
+  params: Record<string, string>,
+  refs?: RoutableLineDeviceEndpointRefs
+) {
+  if (!refs) {
+    return params;
+  }
+  const nextParams = { ...params };
+  if ("source" in refs) {
+    writeRoutableLineEndpointRef(
+      nextParams,
+      refs.source,
+      ROUTABLE_LINE_SOURCE_NODE_PARAM,
+      ROUTABLE_LINE_SOURCE_TERMINAL_PARAM,
+      ROUTABLE_LINE_SOURCE_LOCAL_POINT_PARAM
+    );
+  }
+  if ("target" in refs) {
+    writeRoutableLineEndpointRef(
+      nextParams,
+      refs.target,
+      ROUTABLE_LINE_TARGET_NODE_PARAM,
+      ROUTABLE_LINE_TARGET_TERMINAL_PARAM,
+      ROUTABLE_LINE_TARGET_LOCAL_POINT_PARAM
+    );
+  }
+  return nextParams;
+}
+
+function routableLineEndpointPointFromRef(
+  ref: RoutableLineDeviceEndpointRef | undefined,
+  nodeById: Map<string, ModelNode>
+): Point | undefined {
+  if (!ref) {
+    return undefined;
+  }
+  const node = nodeById.get(ref.nodeId);
+  if (!node) {
+    return undefined;
+  }
+  if (isBusNode(node)) {
+    const referencePoint = ref.localPoint ? nodeLocalToPoint(node, ref.localPoint) : getTerminalPoint(node, ref.terminalId);
+    return projectPointToBusCenterline(node, referencePoint);
+  }
+  return getTerminalPoint(node, ref.terminalId);
+}
+
+export function syncRoutableLineDeviceEndpointsToRefs(
+  node: ModelNode,
+  nodes: ModelNode[],
+  nodeById: Map<string, ModelNode> = new Map(nodes.map((item) => [item.id, item]))
+): ModelNode {
+  if (!isRoutableLineDeviceKind(node.kind)) {
+    return node;
+  }
+  const refs = routableLineDeviceEndpointRefs(node);
+  if (!refs.source && !refs.target) {
+    return node;
+  }
+  const currentPoints = routableLineDeviceCanvasPoints(node);
+  const currentStart = currentPoints[0];
+  const currentEnd = currentPoints[currentPoints.length - 1];
+  if (!currentStart || !currentEnd) {
+    return node;
+  }
+  const nextStart = routableLineEndpointPointFromRef(refs.source, nodeById) ?? currentStart;
+  const nextEnd = routableLineEndpointPointFromRef(refs.target, nodeById) ?? currentEnd;
+  if (nextStart.x === currentStart.x && nextStart.y === currentStart.y && nextEnd.x === currentEnd.x && nextEnd.y === currentEnd.y) {
+    return node;
+  }
+  return setRoutableLineDeviceEndpoints(node, nextStart, nextEnd);
+}
+
+export function routeRoutableLineDevice(node: ModelNode, nodes: ModelNode[], bounds?: CanvasBounds): ModelNode {
+  if (!isRoutableLineDeviceKind(node.kind)) {
+    return node;
+  }
+  const endpoints = routableLineDeviceCanvasPoints(node);
+  const start = endpoints[0];
+  const end = endpoints[endpoints.length - 1];
+  if (!start || !end) {
+    return ensureRoutableLineDevicePathParam(node);
+  }
+  const routeEdge: Edge = {
+    id: `${node.id}-routable-line-route`,
+    sourceId: `${node.id}-routable-line-source`,
+    targetId: `${node.id}-routable-line-target`,
+    sourcePoint: start,
+    targetPoint: end
+  };
+  const blockers = nodes.filter((candidate) => candidate.id !== node.id);
+  const route = routeEdgesForRendering(blockers, [routeEdge], bounds)[0];
+  if (!route || route.points.length < 2) {
+    return ensureRoutableLineDevicePathParam(node);
+  }
+  const nextLocalPoints = normalizeRoutableLineDevicePoints(route.points.map((point) => canvasPointToNodeLocalPoint(node, point)));
+  const currentLocalPoints = routableLineDeviceLocalPoints(node);
+  if (samePointList(currentLocalPoints, nextLocalPoints)) {
+    return ensureRoutableLineDevicePathParam(node);
+  }
+  return {
+    ...node,
+    params: {
+      ...node.params,
+      [ROUTABLE_LINE_POINTS_PARAM]: serializeRoutableLineDevicePoints(nextLocalPoints)
+    }
+  };
+}
+
+export function rebuildRoutableLineDeviceRouteUpdates(
+  nodes: ModelNode[],
+  lineNodeIds: Iterable<string>,
+  bounds?: CanvasBounds
+): ModelNode[] {
+  const requestedIds = new Set(lineNodeIds);
+  if (requestedIds.size === 0) {
+    return [];
+  }
+  const updates: ModelNode[] = [];
+  const nodeById = new Map(nodes.map((item) => [item.id, item]));
+  for (const node of nodes) {
+    if (!requestedIds.has(node.id) || !isRoutableLineDeviceKind(node.kind)) {
+      continue;
+    }
+    const syncedNode = syncRoutableLineDeviceEndpointsToRefs(node, nodes, nodeById);
+    const routingNodes = syncedNode === node ? nodes : nodes.map((item) => (item.id === syncedNode.id ? syncedNode : item));
+    const nextNode = routeRoutableLineDevice(syncedNode, routingNodes, bounds);
+    if (nextNode !== node) {
+      updates.push(nextNode);
+    }
+  }
+  return updates;
 }
 
 export function createStaticBoxNodeFromDrawing(
@@ -5154,7 +5667,12 @@ export const CONVERTER_GLYPH_BORDER_INSET = 8;
 const PIPELINE_TERMINAL_OUTWARD_OFFSET = 16;
 const DEVICE_GLYPH_DESIGN_LONGEST_SIDE = 100;
 const CONVERTER_TERMINAL_KINDS = new Set<DeviceKind>(["dcdc-converter", "acdc-converter", "acac-converter"]);
-const LONG_STUB_PIPELINE_TERMINAL_KINDS = new Set<DeviceKind>(["hydrogen-pipeline", "heat-pipeline"]);
+const LONG_STUB_PIPELINE_TERMINAL_KINDS = new Set<DeviceKind>([
+  "hydrogen-pipeline",
+  "hydrogen-routable-pipeline",
+  "heat-pipeline",
+  "heat-routable-line"
+]);
 const CLOSE_BORDER_TERMINAL_KINDS = new Set<DeviceKind>([
   "ac-electrolyzer",
   "dc-electrolyzer",
@@ -5300,6 +5818,7 @@ function terminalStubVisibleBoundaryDistance(
       glyphVariant === "line" ||
       glyphVariant === "ac-line" ||
       glyphVariant === "dc-line" ||
+      glyphVariant === "routable-line" ||
       glyphVariant === "hydrogen-pipeline" ||
       glyphVariant === "heat-pipeline" ||
       glyphVariant === "switch" ||
@@ -5313,7 +5832,10 @@ function terminalStubVisibleBoundaryDistance(
     if (glyphVariant === "battery-storage") {
       return scaled(Math.min(w * 0.68, 56) / 2 + 6);
     }
-    if (glyphVariant === "hydrogen-load" || glyphVariant === "load" || glyphVariant === "heat-load" || glyphVariant === "single-heat-load") {
+    if (glyphVariant === "load") {
+      return scaled(w / 9);
+    }
+    if (glyphVariant === "hydrogen-load" || glyphVariant === "heat-load" || glyphVariant === "single-heat-load") {
       return scaled(w / 6);
     }
     if (glyphVariant === "two-port-heat-load") {
@@ -5373,7 +5895,10 @@ function terminalStubVisibleBoundaryDistance(
       ? scaled(Math.max(24, bodyHeight / 2 - 5))
       : scaled(Math.max(18, bodyHeight / 2 + 5));
   }
-  if (glyphVariant === "hydrogen-load" || glyphVariant === "load" || glyphVariant === "heat-load" || glyphVariant === "single-heat-load") {
+  if (glyphVariant === "load") {
+    return scaled(h * 2 / 9);
+  }
+  if (glyphVariant === "hydrogen-load" || glyphVariant === "heat-load" || glyphVariant === "single-heat-load") {
     return scaled(h / 3);
   }
   if (isConverterGlyphVariant(glyphVariant)) {
@@ -5457,6 +5982,13 @@ export function getTerminal(node: ModelNode, terminalId?: string): Terminal {
 }
 
 export function getTerminalPoint(node: ModelNode, terminalId?: string): Point {
+  if (isRoutableLineDeviceKind(node.kind)) {
+    const endpointPoints = routableLineDeviceCanvasPoints(node);
+    if (endpointPoints.length >= 2) {
+      const terminalIndex = Math.max(0, node.terminals.findIndex((terminal) => terminal.id === terminalId));
+      return terminalIndex === 1 ? endpointPoints[endpointPoints.length - 1] : endpointPoints[0];
+    }
+  }
   const terminal = getTerminal(node, terminalId);
   const width = node.size.width * getNodeScaleX(node);
   const height = node.size.height * getNodeScaleY(node);
@@ -6762,6 +7294,23 @@ type TopologyConnectivity = {
   islandRoot: (nodeId: string, terminalId: string) => string;
 };
 
+export type VoltageBaseClearScope = "selected" | "island" | "all";
+export type VoltageBaseSetScope = "selected" | "island";
+
+export type VoltageBaseClearResult = {
+  nodes: ModelNode[];
+  nodeUpdates: ModelNode[];
+  targetNodeIds: string[];
+  changedNodeIds: string[];
+};
+export type VoltageBaseSetResult = VoltageBaseClearResult;
+export type VoltageBaseTerminalValuesByNodeId = Record<string, Record<string, string>>;
+
+type VoltageBaseScopeTargets = {
+  nodeIds: Set<string>;
+  terminalIdsByNodeId: Map<string, Set<string>> | null;
+};
+
 function buildTopologyConnectivity(nodes: ModelNode[], edges: Edge[]): TopologyConnectivity {
   const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
   nodes = synchronized.nodes;
@@ -6837,6 +7386,452 @@ function buildTopologyConnectivity(nodes: ModelNode[], edges: Edge[]): TopologyC
     terminalKey,
     topologyRoot: (nodeId, terminalId) => topology.find(terminalKey(nodeId, terminalId)),
     islandRoot: (nodeId, terminalId) => island.find(topology.find(terminalKey(nodeId, terminalId)))
+  };
+}
+
+function isVoltageBaseValueParamKey(key: string): boolean {
+  const normalized = key.trim().toLowerCase();
+  const compact = normalized.replace(/[_\-\s]/g, "");
+  return (
+    normalized === "voltage" ||
+    compact === "vbase" ||
+    compact.endsWith("vbase") ||
+    compact === "vset" ||
+    compact.endsWith("vset") ||
+    normalized === "v_set" ||
+    normalized.startsWith("v_set_") ||
+    normalized.endsWith("_v_set") ||
+    /^v_[a-z0-9]+_set$/.test(normalized)
+  );
+}
+
+function setNodeVoltageBaseValues(node: ModelNode, value: string): ModelNode {
+  let params = node.params;
+  for (const key of Object.keys(node.params)) {
+    if (!isVoltageBaseValueParamKey(key) || node.params[key] === value) {
+      continue;
+    }
+    if (params === node.params) {
+      params = { ...node.params };
+    }
+    params[key] = value;
+  }
+  let terminals = node.terminals;
+  for (let index = 0; index < node.terminals.length; index += 1) {
+    const terminal = node.terminals[index];
+    if (terminal.vbase === value) {
+      continue;
+    }
+    if (terminals === node.terminals) {
+      terminals = [...node.terminals];
+    }
+    terminals[index] = { ...terminal, vbase: value };
+  }
+  return params === node.params && terminals === node.terminals
+    ? node
+    : { ...node, params, terminals };
+}
+
+function terminalIdSet(...ids: Array<string | undefined>): Set<string> | null {
+  const validIds = ids.filter((id): id is string => Boolean(id));
+  return validIds.length > 0 ? new Set(validIds) : null;
+}
+
+function terminalIdAt(node: ModelNode, index: number): string | undefined {
+  return node.terminals[index]?.id;
+}
+
+function terminalIdByType(node: ModelNode, type: TerminalType, fallbackIndex: number): string | undefined {
+  return node.terminals.find((terminal) => terminal.type === type)?.id ?? terminalIdAt(node, fallbackIndex);
+}
+
+function containerVoltageBaseParamTerminalIds(node: ModelNode, key: string): Set<string> | null {
+  const normalized = key.trim().toLowerCase();
+  const prefixes = ["v_set_", "vbase_", "v_base_"];
+  for (const prefix of prefixes) {
+    if (!normalized.startsWith(prefix)) {
+      continue;
+    }
+    const relation = parseContainerRelationField(`idx_${normalized.slice(prefix.length)}`);
+    if (!relation) {
+      continue;
+    }
+    return terminalIdSet(terminalIdAt(node, relation.terminalNumber - 1));
+  }
+  return null;
+}
+
+function voltageBaseParamTerminalIds(node: ModelNode, key: string): Set<string> | null {
+  const normalized = key.trim().toLowerCase();
+  const compact = normalized.replace(/[_\-\s]/g, "");
+  const containerTerminalIds = containerVoltageBaseParamTerminalIds(node, key);
+  if (containerTerminalIds) {
+    return containerTerminalIds;
+  }
+  if (compact === "highvbase") {
+    return terminalIdSet(terminalIdAt(node, 0));
+  }
+  if (compact === "mediumvbase") {
+    return terminalIdSet(terminalIdAt(node, 1));
+  }
+  if (compact === "lowvbase") {
+    return terminalIdSet(terminalIdAt(node, isThreeWindingTransformer(node) ? 2 : 1));
+  }
+  if (compact === "neutralvbase") {
+    return terminalIdSet(terminalIdAt(node, 3));
+  }
+  if (compact === "sourcevbase" || compact === "ivbase" || compact === "ivset") {
+    return terminalIdSet(terminalIdAt(node, 0));
+  }
+  if (compact === "targetvbase" || compact === "jvbase" || compact === "jvset") {
+    return terminalIdSet(terminalIdAt(node, 1));
+  }
+  if (compact === "vacset" || compact === "acvset") {
+    return terminalIdSet(terminalIdByType(node, "ac", 0));
+  }
+  if (compact === "vdcset" || compact === "dcvset") {
+    return terminalIdSet(terminalIdByType(node, "dc", 1));
+  }
+  if (compact === "vset") {
+    if (node.terminals.length <= 1) {
+      return terminalIdSet(terminalIdAt(node, 0));
+    }
+    const section = inferESection(node.kind, node.params);
+    if (section === "DCDCConverter" || section === "DCACConverter" || section === "ACACConverter") {
+      return terminalIdSet(terminalIdAt(node, 0));
+    }
+  }
+  return null;
+}
+
+function terminalIdsOverlap(first: ReadonlySet<string>, second: ReadonlySet<string>): boolean {
+  for (const id of first) {
+    if (second.has(id)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function allVoltageBaseTerminalIdsTargeted(node: ModelNode, targetTerminalIds: ReadonlySet<string>): boolean {
+  const terminalIds = node.terminals.map((terminal) => terminal.id);
+  return terminalIds.length > 0 && terminalIds.every((id) => targetTerminalIds.has(id));
+}
+
+function shouldUpdateVoltageBaseParamForTerminals(node: ModelNode, key: string, targetTerminalIds: ReadonlySet<string>): boolean {
+  const paramTerminalIds = voltageBaseParamTerminalIds(node, key);
+  if (paramTerminalIds) {
+    return terminalIdsOverlap(paramTerminalIds, targetTerminalIds);
+  }
+  return allVoltageBaseTerminalIdsTargeted(node, targetTerminalIds);
+}
+
+function setNodeVoltageBaseValuesForTerminals(node: ModelNode, targetTerminalIds: ReadonlySet<string>, value: string): ModelNode {
+  if (targetTerminalIds.size === 0) {
+    return node;
+  }
+  let params = node.params;
+  for (const key of Object.keys(node.params)) {
+    if (!isVoltageBaseValueParamKey(key) || node.params[key] === value) {
+      continue;
+    }
+    if (!shouldUpdateVoltageBaseParamForTerminals(node, key, targetTerminalIds)) {
+      continue;
+    }
+    if (params === node.params) {
+      params = { ...node.params };
+    }
+    params[key] = value;
+  }
+  let terminals = node.terminals;
+  for (let index = 0; index < node.terminals.length; index += 1) {
+    const terminal = node.terminals[index];
+    if (!targetTerminalIds.has(terminal.id) || terminal.vbase === value) {
+      continue;
+    }
+    if (terminals === node.terminals) {
+      terminals = [...node.terminals];
+    }
+    terminals[index] = { ...terminal, vbase: value };
+  }
+  return params === node.params && terminals === node.terminals
+    ? node
+    : { ...node, params, terminals };
+}
+
+function voltageBaseValueForParamTerminals(
+  node: ModelNode,
+  key: string,
+  valueByTerminalId: ReadonlyMap<string, string>
+): string | null {
+  const paramTerminalIds = voltageBaseParamTerminalIds(node, key);
+  const candidateValues: string[] = [];
+  if (paramTerminalIds) {
+    for (const terminalId of paramTerminalIds) {
+      const value = valueByTerminalId.get(terminalId);
+      if (value) {
+        candidateValues.push(value);
+      }
+    }
+  } else {
+    for (const terminal of node.terminals) {
+      const value = valueByTerminalId.get(terminal.id);
+      if (!value) {
+        return null;
+      }
+      candidateValues.push(value);
+    }
+  }
+  if (candidateValues.length === 0) {
+    return null;
+  }
+  const uniqueValues = new Set(candidateValues);
+  return uniqueValues.size === 1 ? candidateValues[0] : null;
+}
+
+function setNodeVoltageBaseValuesByTerminal(
+  node: ModelNode,
+  valueByTerminalId: ReadonlyMap<string, string>
+): ModelNode {
+  if (valueByTerminalId.size === 0) {
+    return node;
+  }
+  let params = node.params;
+  for (const key of Object.keys(node.params)) {
+    if (!isVoltageBaseValueParamKey(key)) {
+      continue;
+    }
+    const value = voltageBaseValueForParamTerminals(node, key, valueByTerminalId);
+    if (!value || node.params[key] === value) {
+      continue;
+    }
+    if (params === node.params) {
+      params = { ...node.params };
+    }
+    params[key] = value;
+  }
+  let terminals = node.terminals;
+  for (let index = 0; index < node.terminals.length; index += 1) {
+    const terminal = node.terminals[index];
+    const value = valueByTerminalId.get(terminal.id);
+    if (!value || terminal.vbase === value) {
+      continue;
+    }
+    if (terminals === node.terminals) {
+      terminals = [...node.terminals];
+    }
+    terminals[index] = { ...terminal, vbase: value };
+  }
+  return params === node.params && terminals === node.terminals
+    ? node
+    : { ...node, params, terminals };
+}
+
+function selectedVoltageBaseTerminalValues(
+  nodes: ModelNode[],
+  terminalValuesByNodeId: VoltageBaseTerminalValuesByNodeId
+): Map<string, Map<string, string>> {
+  const valuesByNodeId = new Map<string, Map<string, string>>();
+  for (const node of nodes) {
+    const inputValues = terminalValuesByNodeId[node.id];
+    if (!inputValues) {
+      continue;
+    }
+    const valuesByTerminalId = new Map<string, string>();
+    for (const terminal of node.terminals) {
+      const value = normalizeVoltageBaseInput(inputValues[terminal.id]);
+      if (value) {
+        valuesByTerminalId.set(terminal.id, value);
+      }
+    }
+    if (valuesByTerminalId.size > 0) {
+      valuesByNodeId.set(node.id, valuesByTerminalId);
+    }
+  }
+  return valuesByNodeId;
+}
+
+function islandVoltageBaseTerminalValues(
+  nodes: ModelNode[],
+  edges: Edge[],
+  terminalValuesByNodeId: VoltageBaseTerminalValuesByNodeId
+): Map<string, Map<string, string>> {
+  const selectedValues = selectedVoltageBaseTerminalValues(nodes, terminalValuesByNodeId);
+  if (selectedValues.size === 0) {
+    return selectedValues;
+  }
+  const connectivity = buildTopologyConnectivity(nodes, edges);
+  const valueByIslandRoot = new Map<string, string>();
+  for (const node of nodes) {
+    const valuesByTerminalId = selectedValues.get(node.id);
+    if (!valuesByTerminalId) {
+      continue;
+    }
+    for (const terminal of node.terminals) {
+      const value = valuesByTerminalId.get(terminal.id);
+      if (!value) {
+        continue;
+      }
+      const root = connectivity.islandRoot(node.id, terminal.id);
+      if (!valueByIslandRoot.has(root)) {
+        valueByIslandRoot.set(root, value);
+      }
+    }
+  }
+  const valuesByNodeId = new Map<string, Map<string, string>>();
+  for (const node of nodes) {
+    for (const terminal of node.terminals) {
+      const value = valueByIslandRoot.get(connectivity.islandRoot(node.id, terminal.id));
+      if (!value) {
+        continue;
+      }
+      const valuesByTerminalId = valuesByNodeId.get(node.id) ?? new Map<string, string>();
+      valuesByTerminalId.set(terminal.id, value);
+      valuesByNodeId.set(node.id, valuesByTerminalId);
+    }
+  }
+  return valuesByNodeId;
+}
+
+function collectVoltageBaseScopeTargets(
+  nodes: ModelNode[],
+  edges: Edge[],
+  selectedNodeIds: Iterable<string>,
+  scope: VoltageBaseClearScope
+): VoltageBaseScopeTargets {
+  if (scope === "all") {
+    return { nodeIds: new Set(nodes.map((node) => node.id)), terminalIdsByNodeId: null };
+  }
+
+  const selected = new Set(selectedNodeIds);
+  if (scope === "selected") {
+    return {
+      nodeIds: new Set(nodes.filter((node) => selected.has(node.id)).map((node) => node.id)),
+      terminalIdsByNodeId: null
+    };
+  }
+  if (selected.size === 0) {
+    return { nodeIds: new Set(), terminalIdsByNodeId: new Map() };
+  }
+
+  const connectivity = buildTopologyConnectivity(nodes, edges);
+  const selectedIslandRoots = new Set<string>();
+  for (const node of nodes) {
+    if (!selected.has(node.id)) {
+      continue;
+    }
+    for (const terminal of node.terminals) {
+      selectedIslandRoots.add(connectivity.islandRoot(node.id, terminal.id));
+    }
+  }
+  if (selectedIslandRoots.size === 0) {
+    return {
+      nodeIds: new Set(nodes.filter((node) => selected.has(node.id)).map((node) => node.id)),
+      terminalIdsByNodeId: null
+    };
+  }
+
+  const nodeIds = new Set<string>();
+  const terminalIdsByNodeId = new Map<string, Set<string>>();
+  for (const node of nodes) {
+    for (const terminal of node.terminals) {
+      if (!selectedIslandRoots.has(connectivity.islandRoot(node.id, terminal.id))) {
+        continue;
+      }
+      nodeIds.add(node.id);
+      const terminalIds = terminalIdsByNodeId.get(node.id) ?? new Set<string>();
+      terminalIds.add(terminal.id);
+      terminalIdsByNodeId.set(node.id, terminalIds);
+    }
+  }
+  return { nodeIds, terminalIdsByNodeId };
+}
+
+export function clearVoltageBaseValuesForScope(
+  nodes: ModelNode[],
+  edges: Edge[],
+  selectedNodeIds: Iterable<string>,
+  scope: VoltageBaseClearScope
+): VoltageBaseClearResult {
+  const targets = collectVoltageBaseScopeTargets(nodes, edges, selectedNodeIds, scope);
+  const nodeUpdates: ModelNode[] = [];
+  const nextNodes = nodes.map((node) => {
+    if (!targets.nodeIds.has(node.id)) {
+      return node;
+    }
+    const targetTerminalIds = targets.terminalIdsByNodeId?.get(node.id);
+    const nextNode = targetTerminalIds
+      ? setNodeVoltageBaseValuesForTerminals(node, targetTerminalIds, "0.0")
+      : setNodeVoltageBaseValues(node, "0.0");
+    if (nextNode !== node) {
+      nodeUpdates.push(nextNode);
+    }
+    return nextNode;
+  });
+  return {
+    nodes: nextNodes,
+    nodeUpdates,
+    targetNodeIds: Array.from(targets.nodeIds),
+    changedNodeIds: nodeUpdates.map((node) => node.id)
+  };
+}
+
+export function setVoltageBaseValuesForScope(
+  nodes: ModelNode[],
+  edges: Edge[],
+  selectedNodeIds: Iterable<string>,
+  scope: VoltageBaseSetScope,
+  value: string
+): VoltageBaseSetResult {
+  const targets = collectVoltageBaseScopeTargets(nodes, edges, selectedNodeIds, scope);
+  const nodeUpdates: ModelNode[] = [];
+  const nextNodes = nodes.map((node) => {
+    if (!targets.nodeIds.has(node.id)) {
+      return node;
+    }
+    const targetTerminalIds = targets.terminalIdsByNodeId?.get(node.id);
+    const nextNode = targetTerminalIds
+      ? setNodeVoltageBaseValuesForTerminals(node, targetTerminalIds, value)
+      : setNodeVoltageBaseValues(node, value);
+    if (nextNode !== node) {
+      nodeUpdates.push(nextNode);
+    }
+    return nextNode;
+  });
+  return {
+    nodes: nextNodes,
+    nodeUpdates,
+    targetNodeIds: Array.from(targets.nodeIds),
+    changedNodeIds: nodeUpdates.map((node) => node.id)
+  };
+}
+
+export function setVoltageBaseTerminalValuesForScope(
+  nodes: ModelNode[],
+  edges: Edge[],
+  terminalValuesByNodeId: VoltageBaseTerminalValuesByNodeId,
+  scope: VoltageBaseSetScope
+): VoltageBaseSetResult {
+  const valuesByNodeId = scope === "island"
+    ? islandVoltageBaseTerminalValues(nodes, edges, terminalValuesByNodeId)
+    : selectedVoltageBaseTerminalValues(nodes, terminalValuesByNodeId);
+  const nodeUpdates: ModelNode[] = [];
+  const nextNodes = nodes.map((node) => {
+    const valuesByTerminalId = valuesByNodeId.get(node.id);
+    if (!valuesByTerminalId) {
+      return node;
+    }
+    const nextNode = setNodeVoltageBaseValuesByTerminal(node, valuesByTerminalId);
+    if (nextNode !== node) {
+      nodeUpdates.push(nextNode);
+    }
+    return nextNode;
+  });
+  return {
+    nodes: nextNodes,
+    nodeUpdates,
+    targetNodeIds: Array.from(valuesByNodeId.keys()),
+    changedNodeIds: nodeUpdates.map((node) => node.id)
   };
 }
 
@@ -8625,6 +9620,25 @@ function bodyVisualBoxForNode(node: ModelNode, padding = 0, position = node.posi
   };
 }
 
+function routableLineDeviceRouteBox(node: ModelNode, padding = 0, position = node.position): RouteBlockerBox | null {
+  if (!isRoutableLineDeviceKind(node.kind)) {
+    return null;
+  }
+  const points = routableLineDeviceCanvasPoints(node, position);
+  if (points.length < 2) {
+    return null;
+  }
+  const strokePadding = Math.max(padding, getDeviceStrokeWidth(node) / 2 + padding);
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  return {
+    left: Math.min(...xs) - strokePadding,
+    right: Math.max(...xs) + strokePadding,
+    top: Math.min(...ys) - strokePadding,
+    bottom: Math.max(...ys) + strokePadding
+  };
+}
+
 function boxFor(node: ModelNode, padding = 0) {
   return bodyVisualBoxForNode(node, padding);
 }
@@ -8635,8 +9649,10 @@ export function calculateNodeBodyBounds(node: ModelNode, padding = 0, position =
 
 export function calculateNodeVisualBounds(node: ModelNode, padding = 0, position = node.position): GeometryBounds {
   const bodyBox = bodyVisualBoxForNode(node, padding, position);
+  const routeBox = routableLineDeviceRouteBox(node, padding, position);
   const labelBox = nodeLabelVisualBox(node, padding, position);
-  return labelBox ? mergeRouteBlockerBoxes([bodyBox, labelBox]) : bodyBox;
+  const boxes = [bodyBox, routeBox, labelBox].filter((box): box is RouteBlockerBox => Boolean(box));
+  return mergeRouteBlockerBoxes(boxes);
 }
 
 type RouteBlockerBox = ReturnType<typeof boxFor>;
@@ -8835,7 +9851,10 @@ function routeBlockerPadding(node: ModelNode, padding: number) {
 }
 
 function routeBodyBlockerBox(node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
-  return boxFor(node, routeBlockerPadding(node, padding));
+  const effectivePadding = routeBlockerPadding(node, padding);
+  const bodyBox = boxFor(node, effectivePadding);
+  const routeBox = routableLineDeviceRouteBox(node, effectivePadding);
+  return routeBox ? mergeRouteBlockerBoxes([bodyBox, routeBox]) : bodyBox;
 }
 
 const routeBlockerBoxCache = new WeakMap<ModelNode, Map<number, RouteBlockerBox>>();
@@ -8934,6 +9953,9 @@ function segmentIntersectsBox(a: Point, b: Point, box: ReturnType<typeof boxFor>
 }
 
 export function segmentIntersectsNodeBody(a: Point, b: Point, node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
+  if (!staticNodeParticipatesInRoutingAvoidance(node)) {
+    return false;
+  }
   return segmentIntersectsBox(a, b, routeBlockerBox(node, padding));
 }
 
@@ -8967,6 +9989,7 @@ function directSegmentClearOfNodeBodies(a: Point, b: Point, nodes: ModelNode[], 
   return nodes.every((node) =>
     excludedNodeIds.has(node.id) ||
     node.id.startsWith("floating-") ||
+    !staticNodeParticipatesInRoutingAvoidance(node) ||
     !segmentIntersectsNodeBody(a, b, node)
   );
 }
@@ -9136,6 +10159,9 @@ function relevantBlockersForRoute(source: ModelNode, target: ModelNode, nodes: M
     if (node.id === source.id || node.id === target.id || node.id.startsWith("floating-")) {
       return false;
     }
+    if (!staticNodeParticipatesInRoutingAvoidance(node)) {
+      return false;
+    }
     return !useCorridor || boxesOverlap(routeBlockerBox(node, 24), corridor);
   });
 }
@@ -9159,7 +10185,9 @@ function pointOutsideRoutingBounds(point: Point, bounds: ReturnType<typeof route
 }
 
 function routeBounds(points: Point[], blockers: ModelNode[]) {
-  const boxes = blockers.map((node) => routeBlockerBox(node, 36));
+  const boxes = blockers
+    .filter(staticNodeParticipatesInRoutingAvoidance)
+    .map((node) => routeBlockerBox(node, 36));
   return {
     left: Math.min(0, ...points.map((point) => point.x), ...boxes.map((box) => box.left)) - 96,
     right: Math.max(1980, ...points.map((point) => point.x), ...boxes.map((box) => box.right)) + 96,
@@ -10049,7 +11077,10 @@ function filterBlockersForRoutePoints(points: Point[], blockers: ModelNode[], pa
     return [];
   }
   const routeBox = routeBoundsForPoints(points, padding);
-  return blockers.filter((blocker) => boxesOverlap(routeBlockerBox(blocker, padding), routeBox));
+  return blockers.filter((blocker) =>
+    staticNodeParticipatesInRoutingAvoidance(blocker) &&
+    boxesOverlap(routeBlockerBox(blocker, padding), routeBox)
+  );
 }
 
 function filterSegmentsForRoutePoints(points: Point[], segments: Segment[], padding = ROUTE_LANE_SEGMENT_MARGIN) {
@@ -10235,6 +11266,7 @@ function candidateLanes(
     point.y >= box.top - margin &&
     point.y <= box.bottom + margin;
   const blockerBoxes = blockers
+    .filter(staticNodeParticipatesInRoutingAvoidance)
     .map((node) => ({ node, box: routeBlockerBox(node, 32) }))
     .filter(({ node, box }) => {
       if (!boxesOverlap(box, laneCorridor)) {
@@ -10314,6 +11346,7 @@ function expandedCandidateLanes(
     point.y >= box.top - margin &&
     point.y <= box.bottom + margin;
   const blockerBoxes = blockers
+    .filter(staticNodeParticipatesInRoutingAvoidance)
     .map((node) => ({ node, box: routeBlockerBox(node, 32) }))
     .filter(({ node, box }) =>
       !(
@@ -12399,7 +13432,9 @@ export type RouteBlockingCandidate = {
 };
 
 export function getRouteBlockingCandidates(blockers: ModelNode[]): RouteBlockingCandidate[] {
-  return blockers.map((node) => ({ node, box: routeBlockerBox(node, ROUTE_BLOCKER_PADDING) }));
+  return blockers
+    .filter(staticNodeParticipatesInRoutingAvoidance)
+    .map((node) => ({ node, box: routeBlockerBox(node, ROUTE_BLOCKER_PADDING) }));
 }
 
 export function getRouteBlockingCandidateNodesFromBoxes(points: Point[], edge: Edge, candidates: RouteBlockingCandidate[]) {
@@ -12460,7 +13495,7 @@ export function rerouteEdgesAroundMovedNodes(
     return edges;
   }
 
-  const movedCandidates = movedNodes.map((node) => ({ node, box: routeBlockerBox(node, ROUTE_BLOCKER_PADDING) }));
+  const movedCandidates = getRouteBlockingCandidates(movedNodes);
   const previousRouteById = new Map(previousRoutes.map((route) => [route.edgeId, route]));
   const forcedEdgeIds = new Set(forceEdgeIds);
   const fallbackRoutes = previousRoutes.length > 0 ? [] : routeEdgesForRendering(nodes, searchEdges, bounds);

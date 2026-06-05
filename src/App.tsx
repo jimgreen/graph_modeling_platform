@@ -52,7 +52,9 @@ import {
   Type,
   Undo2,
   Ungroup,
-  X
+  X,
+  Zap,
+  ZapOff
 } from "lucide-react";
 import {
   buildContainerDeviceParameterViews,
@@ -71,6 +73,9 @@ import {
   canvasResizeBoundsFromPointerDrag,
   canvasResizeMinimumBoundsForGeometry,
   clampEdgeGeometryToBounds,
+  clearVoltageBaseValuesForScope,
+  setVoltageBaseTerminalValuesForScope,
+  setVoltageBaseValuesForScope,
   canConnectTerminals,
   clampNodePositionToBounds,
   clampPointToBounds,
@@ -82,12 +87,14 @@ import {
   createDefaultNode,
   createInteractiveStaticDrawingNode,
   createNodeFromTemplate,
+  createRoutableLineDeviceFromEndpoints,
   createStaticBoxNodeFromDrawing,
   containerRelationNameKey,
   CONVERTER_GLYPH_BORDER_INSET,
   CUSTOM_DEVICE_TEMPLATE_KEY,
   CUSTOM_PARAM_DEFINITIONS_KEY,
   DEFAULT_COLOR_PALETTE,
+  STATIC_ROUTE_AVOIDANCE_PARAM,
   describeContainerTerminalAssociations,
   deleteNodesWithConnectedEdges,
   deleteSavedProjectsFromSchemes,
@@ -115,6 +122,7 @@ import {
   getContainerTerminalAssociationSourceIndex,
   getSwitchVisualState,
   isInteractiveStaticDrawingKind,
+  isRoutableLineDeviceKind,
   getEParameterKeys,
   getEParamValue,
   getEExportWarnings,
@@ -130,6 +138,7 @@ import {
   getRouteBlockingCandidates,
   getRouteBlockingCandidateNodesFromBoxes,
   routeIntersectsSpecificNodes,
+  staticNodeParticipatesInRoutingAvoidance,
   getTerminalBusContactGroups,
   getTerminalPoint,
   createModelLayer,
@@ -173,6 +182,7 @@ import {
   rebuildConnectionRoutesForNodes,
   rebuildExternalConnectionRoutesForMovedNodes,
   rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes,
+  rebuildRoutableLineDeviceRouteUpdates,
   rebuildSingleConnectionRoute,
   redrawConnectionRoutesForEdges,
   reconcileOverlappingTerminalConnections,
@@ -180,6 +190,12 @@ import {
   rerouteEdgesAroundMovedNodes,
   resolveStraightBusSlideEndpoint,
   resolveStraightBusSlideEndpointToPoint,
+  routeRoutableLineDevice,
+  routableLineDeviceCanvasPoints,
+  routableLineDeviceEndpointRefForNode,
+  routableLineDeviceEndpointRefs,
+  routableLineDeviceLocalPoints,
+  setRoutableLineDeviceEndpoints,
   synchronizeBusTerminalsWithEdges,
   validateTopology,
   validateConnectionEndpointRules,
@@ -212,6 +228,9 @@ import {
   type ContainerTerminalRole,
   type TerminalType,
   type TopologyValidationError,
+  type VoltageBaseClearScope,
+  type VoltageBaseSetScope,
+  type VoltageBaseTerminalValuesByNodeId,
   routeEdgesForCachedStoredRendering,
   routeEdgesForIncrementalRendering,
   routeEdgesForSavedPathRendering,
@@ -410,6 +429,10 @@ type StaticDrawingState = {
 type LibraryPlacementState =
   | { kind: "device"; template: DeviceTemplate; previewPoint: Point | null }
   | { kind: "graph-template"; template: GraphTemplate; previewPoint: Point | null };
+type RoutableLinePlacementState = {
+  template: DeviceTemplate;
+  source: ConnectTarget | null;
+} | null;
 type AttributeLibrary = string;
 type CustomComponentTypeDefinition = {
   name: string;
@@ -572,6 +595,8 @@ const formatStatusNumber = (value: number) => {
   const rounded = Math.round(value * 10) / 10;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 };
+
+const formatInspectorScaleValue = (value: number) => Number.isFinite(value) ? value.toFixed(3) : "1.000";
 
 const formatStatusScalePercent = (value: number) => `${formatStatusNumber(value * 100)}%`;
 
@@ -831,6 +856,14 @@ type RewiringState = {
   pointerId?: number;
 } | null;
 type ConnectTarget = { node: ModelNode; terminalId: string; point?: Point };
+type RoutableLineEndpointDragState = {
+  nodeId: string;
+  endpoint: EdgeEndpoint;
+  previewPoint: Point;
+  dropTargetPoint?: Point;
+  dropTarget?: ConnectTarget;
+  pointerId?: number;
+} | null;
 type NodeTerminalSnapTarget = {
   movingNodeId: string;
   movingTerminalId: string;
@@ -1651,6 +1684,19 @@ const CONNECTION_REDRAW_SCOPE_LABELS: Record<ConnectionRedrawScope, string> = {
   viewport: "视图内连接线",
   all: "全部连接线"
 };
+const VOLTAGE_BASE_CLEAR_SCOPES: VoltageBaseClearScope[] = ["selected", "island", "all"];
+const VOLTAGE_BASE_CLEAR_SCOPE_LABELS: Record<VoltageBaseClearScope, string> = {
+  selected: "选中设备",
+  island: "所在拓扑岛",
+  all: "全网"
+};
+const VOLTAGE_BASE_SET_SCOPES: VoltageBaseSetScope[] = ["selected", "island"];
+const VOLTAGE_BASE_SET_SCOPE_LABELS: Record<VoltageBaseSetScope, string> = {
+  selected: "选中设备",
+  island: "所在拓扑岛"
+};
+const VOLTAGE_BASE_SET_PRESETS = ["0.4", "6", "10", "35", "66", "110", "220", "330", "500", "750", "1000"];
+type VoltageBaseSetMode = "uniform" | "terminal";
 type WheelZoomAnchor = {
   point: Point;
   cursorOffsetX: number;
@@ -2247,13 +2293,15 @@ function mergeRenderViewportBounds(first: RenderViewportBounds, second: RenderVi
 }
 type SmartAlignmentAxis = "x" | "y";
 type SmartAlignmentAnchor = {
-  key: "start" | "center" | "end";
+  key: string;
   value: number;
   priority: number;
 };
+type SmartAlignmentAnchorMap = Record<SmartAlignmentAxis, SmartAlignmentAnchor[]>;
 type SmartAlignmentAxisCandidate = {
   id: string;
   bounds: RenderViewportBounds;
+  anchors?: SmartAlignmentAnchorMap;
 };
 type SmartAlignmentAxisSnap = {
   adjustment: number;
@@ -2275,13 +2323,20 @@ const smartAlignmentAxisAnchors = (bounds: RenderViewportBounds, axis: SmartAlig
 function bestSmartAlignmentAxisSnap(
   axis: SmartAlignmentAxis,
   draggedBounds: RenderViewportBounds,
+  draggedExtraAnchors: SmartAlignmentAnchor[],
   candidates: SmartAlignmentAxisCandidate[],
   threshold: number
 ): SmartAlignmentAxisSnap | null {
   let best: SmartAlignmentAxisSnap | null = null;
-  const draggedAnchors = smartAlignmentAxisAnchors(draggedBounds, axis);
+  const draggedAnchors = [
+    ...smartAlignmentAxisAnchors(draggedBounds, axis),
+    ...draggedExtraAnchors
+  ];
   for (const candidate of candidates) {
-    const candidateAnchors = smartAlignmentAxisAnchors(candidate.bounds, axis);
+    const candidateAnchors = [
+      ...smartAlignmentAxisAnchors(candidate.bounds, axis),
+      ...(candidate.anchors?.[axis] ?? [])
+    ];
     for (const draggedAnchor of draggedAnchors) {
       for (const candidateAnchor of candidateAnchors) {
         const adjustment = candidateAnchor.value - draggedAnchor.value;
@@ -2507,6 +2562,7 @@ const PARAM_LABELS: Record<string, string> = {
   arrowSize: "箭头尺寸",
   handleColor: "端口颜色",
   handleSize: "端口大小",
+  routeAvoidance: "参与连接线避障",
   buttonEnabled: "按钮功能",
   buttonActionType: "按钮动作",
   buttonTargetSchemeId: "目标方案",
@@ -2569,6 +2625,16 @@ const PARAM_LABELS: Record<string, string> = {
   qbase: "无功基准"
 };
 
+const FONT_FAMILY_OPTIONS = ["Arial", "Microsoft YaHei", "SimSun", "KaiTi", "SimHei"];
+
+const FONT_FAMILY_OPTION_LABELS: Record<string, string> = {
+  Arial: "Arial",
+  "Microsoft YaHei": "微软雅黑",
+  SimSun: "宋体",
+  KaiTi: "楷体",
+  SimHei: "黑体"
+};
+
 const PARAM_OPTIONS: Record<string, string[]> = {
   controlType: ["PV", "PQ", "PH", "P", "V"],
   control_type: ["PV", "PQ", "PH", "P", "V", "I", "Q", "Z", "DCV", "ACV", "ACP", "PQQ"],
@@ -2581,7 +2647,8 @@ const PARAM_OPTIONS: Record<string, string[]> = {
   closedStatus: ["闭合", "打开"],
   status: ["1", "0"],
   run_stat: ["1", "0"],
-  fontFamily: ["Arial", "Microsoft YaHei", "SimSun", "KaiTi", "SimHei"],
+  fontFamily: FONT_FAMILY_OPTIONS,
+  _labelFontFamily: FONT_FAMILY_OPTIONS,
   fontWeight: ["400", "700", "900"],
   fontStyle: ["normal", "italic"],
   textDecoration: ["none", "underline"],
@@ -2616,6 +2683,8 @@ const STATIC_BUTTON_COMMAND_LABELS: Record<string, string> = {
 };
 
 const PARAM_OPTION_LABELS: Record<string, Record<string, string>> = {
+  fontFamily: FONT_FAMILY_OPTION_LABELS,
+  _labelFontFamily: FONT_FAMILY_OPTION_LABELS,
   buttonEnabled: { "1": "启用", "0": "禁用" },
   buttonActionType: STATIC_BUTTON_ACTION_LABELS,
   buttonCommand: STATIC_BUTTON_COMMAND_LABELS,
@@ -4421,6 +4490,47 @@ function nodeUprightSelectionOutlineRect(node: ModelNode) {
   };
 }
 
+function emptySmartAlignmentAnchorMap(): SmartAlignmentAnchorMap {
+  return { x: [], y: [] };
+}
+
+function positionedNodeForSmartAlignment(node: ModelNode, position: Point): ModelNode {
+  return position.x === node.position.x && position.y === node.position.y ? node : { ...node, position };
+}
+
+function nodeTerminalOutflowSmartAlignmentAnchors(
+  node: ModelNode,
+  position: Point = node.position
+): SmartAlignmentAnchorMap {
+  const anchors = emptySmartAlignmentAnchorMap();
+  if (isBusNode(node) || isStaticNode(node)) {
+    return anchors;
+  }
+  const positionedNode = positionedNodeForSmartAlignment(node, position);
+  for (const terminal of positionedNode.terminals) {
+    const terminalPoint = getTerminalPoint(positionedNode, terminal.id);
+    const normal = getRouteEndpointNormal(positionedNode, terminalPoint, {
+      x: terminalPoint.x + 1,
+      y: terminalPoint.y + 1
+    }, terminal.id);
+    if (normal.x !== 0) {
+      anchors.y.push({
+        key: `terminal-${terminal.id}`,
+        value: terminalPoint.y,
+        priority: 0
+      });
+    }
+    if (normal.y !== 0) {
+      anchors.x.push({
+        key: `terminal-${terminal.id}`,
+        value: terminalPoint.x,
+        priority: 0
+      });
+    }
+  }
+  return anchors;
+}
+
 function nodeSmartAlignmentBounds(
   node: ModelNode,
   position: Point = node.position,
@@ -4501,6 +4611,14 @@ function staticSymbolShadowStyle(node: ModelNode): CSSProperties | undefined {
     : undefined;
 }
 
+function staticSymbolTextValue(node: ModelNode, fallback: string): string {
+  return node.params.text ?? fallback;
+}
+
+function staticSymbolMiniatureTextValue(node: ModelNode, fallback: string): string {
+  return node.params.text === undefined ? fallback : node.params.text.slice(0, 2);
+}
+
 function staticShapeText(node: ModelNode, width: number, height: number, miniature = false) {
   const fontSize = miniature ? 12 : staticNumericParam(node, "fontSize", 16, 8);
   const padding = Math.min(staticNumericParam(node, "padding", 12, 0), Math.max(0, Math.min(width, height) / 2 - 2));
@@ -4514,7 +4632,7 @@ function staticShapeText(node: ModelNode, width: number, height: number, miniatu
       : verticalAlign === "bottom"
         ? height / 2 - padding - fontSize / 2
         : 0;
-  const text = miniature ? node.params.text?.slice(0, 2) || "图元" : node.params.text || node.name;
+  const text = miniature ? staticSymbolMiniatureTextValue(node, "图元") : staticSymbolTextValue(node, node.name);
   const lines = text.split(/\r?\n/);
   return uprightText(
     node,
@@ -4539,6 +4657,10 @@ function staticShapeText(node: ModelNode, width: number, height: number, miniatu
       ))}
     </>
   );
+}
+
+function estimateSvgTextWidth(text: string, fontSize: number): number {
+  return Array.from(text).reduce((total, char) => total + (/^[\u0000-\u00ff]$/.test(char) ? 0.56 : 1), 0) * fontSize;
 }
 
 function staticConnectorMarker(
@@ -4693,7 +4815,34 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
                       : "#ffffff";
 
   const renderDeviceGlyphContent = (): ReactNode => {
-  if (isStaticGlyph) {
+    if (isRoutableLineDeviceKind(node.kind)) {
+      if (mode === "text") {
+        return null;
+      }
+      const routePoints = miniature
+        ? [{ x: -w / 2 + 6, y: 0 }, { x: w / 2 - 6, y: 0 }]
+        : routableLineDeviceLocalPoints(node);
+      if (routePoints.length < 2) {
+        return null;
+      }
+      const inverseGlyphScaleTransform = glyphContentScale === 1 || miniature
+        ? undefined
+        : `scale(${formatSvgNumber(1 / glyphContentScale)})`;
+      return (
+        <g
+          className="routable-line-device-glyph"
+          transform={inverseGlyphScaleTransform}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={getDeviceStrokeWidth(node)}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d={pointsToOrthogonalPath(routePoints)} />
+        </g>
+      );
+    }
+    if (isStaticGlyph) {
     const staticStroke = node.params.strokeColor || stroke;
     const staticFill = node.params.fillColor || "transparent";
     const lineWidth = Number(node.params.lineWidth || 2);
@@ -4706,7 +4855,7 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
         return null;
       }
       const fontSize = miniature ? 18 : Number(node.params.fontSize || 24);
-      const textLines = (miniature ? "文" : node.params.text || node.name).split(/\r?\n/);
+      const textLines = (miniature ? "文" : staticSymbolTextValue(node, node.name)).split(/\r?\n/);
       return uprightText(
         node,
         0,
@@ -4876,10 +5025,19 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
       if (!renderGeometry) {
         return null;
       }
+      const fontSize = miniature ? 12 : staticNumericParam(node, "fontSize", 16, 8);
+      const padding = Math.min(staticNumericParam(node, "padding", 12, 0), Math.max(0, Math.min(w, h) / 2 - 2));
+      const title = (miniature ? staticSymbolMiniatureTextValue(node, "图元") : staticSymbolTextValue(node, node.name)).split(/\r?\n/)[0]?.trim() ?? "";
+      const titleWidth = title ? estimateSvgTextWidth(title, fontSize) : 0;
+      const ruleLeft = -w / 2 + padding + titleWidth + Math.max(12, fontSize * 0.6);
+      const ruleRight = w / 2 - 12;
+      const ruleY = -h / 2 + 24;
       return (
         <g>
           <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray || "6 4"} />
-          <path d={`M ${-w / 2 + 12} ${-h / 2 + 24} H ${w / 2 - 12}`} stroke={accentColor} strokeWidth={Math.max(1, lineWidth)} strokeLinecap="round" />
+          {ruleLeft < ruleRight - 8 && (
+            <path className="static-group-box-header-rule" d={`M ${ruleLeft} ${ruleY} H ${ruleRight}`} stroke={accentColor} strokeWidth={Math.max(1, lineWidth)} strokeLinecap="round" />
+          )}
           {renderText && staticShapeText(node, w, h, miniature)}
         </g>
       );
@@ -5293,7 +5451,7 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
     }
     if (node.kind === "static-web") {
       if (mode === "text") {
-        return uprightText(node, 0, 12, { fill: node.params.textColor || "#334155", fontSize: miniature ? 10 : 13, textAnchor: "middle" }, miniature ? "WEB" : node.params.text || "https://");
+        return uprightText(node, 0, 12, { fill: node.params.textColor || "#334155", fontSize: miniature ? 10 : 13, textAnchor: "middle" }, miniature ? "WEB" : staticSymbolTextValue(node, "https://"));
       }
       if (!renderGeometry) {
         return null;
@@ -5302,13 +5460,13 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
         <g>
           <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="4" fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
           <rect x={-w / 2} y={-h / 2} width={w} height="22" rx="4" fill="#e2e8f0" />
-          {renderText && uprightText(node, 0, 12, { fill: node.params.textColor || "#334155", fontSize: miniature ? 10 : 13, textAnchor: "middle" }, miniature ? "WEB" : node.params.text || "https://")}
+          {renderText && uprightText(node, 0, 12, { fill: node.params.textColor || "#334155", fontSize: miniature ? 10 : 13, textAnchor: "middle" }, miniature ? "WEB" : staticSymbolTextValue(node, "https://"))}
         </g>
       );
     }
     if (["static-date", "static-time", "static-datetime", "static-input"].includes(node.kind)) {
       if (mode === "text") {
-        return uprightText(node, -w / 2 + 10, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 11 : Number(node.params.fontSize || 16), dominantBaseline: "middle" }, miniature ? "控件" : node.params.text || node.name);
+        return uprightText(node, -w / 2 + 10, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 11 : Number(node.params.fontSize || 16), dominantBaseline: "middle" }, miniature ? "控件" : staticSymbolTextValue(node, node.name));
       }
       if (!renderGeometry) {
         return null;
@@ -5316,13 +5474,13 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
       return (
         <g>
           <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="5" fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          {renderText && uprightText(node, -w / 2 + 10, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 11 : Number(node.params.fontSize || 16), dominantBaseline: "middle" }, miniature ? "控件" : node.params.text || node.name)}
+          {renderText && uprightText(node, -w / 2 + 10, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 11 : Number(node.params.fontSize || 16), dominantBaseline: "middle" }, miniature ? "控件" : staticSymbolTextValue(node, node.name))}
         </g>
       );
     }
     if (node.kind === "static-button") {
       if (mode === "text") {
-        return uprightText(node, 0, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 12 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, miniature ? "按钮" : node.params.text || node.name);
+        return uprightText(node, 0, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 12 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, miniature ? "按钮" : staticSymbolTextValue(node, node.name));
       }
       if (!renderGeometry) {
         return null;
@@ -5330,7 +5488,7 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
       return (
         <g>
           <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="6" fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          {renderText && uprightText(node, 0, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 12 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, miniature ? "按钮" : node.params.text || node.name)}
+          {renderText && uprightText(node, 0, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 12 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, miniature ? "按钮" : staticSymbolTextValue(node, node.name))}
         </g>
       );
     }
@@ -6110,13 +6268,15 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
     );
   }
 
-  if (node.kind.includes("load")) {
+  if (glyphVariant === "load") {
     if (mode === "text") {
       return null;
     }
+    const bodyHalfWidth = w * 2 / 9;
+    const bodyHalfHeight = h * 2 / 9;
     return (
-      <g fill={fill} stroke={stroke} strokeWidth="2.5" strokeLinejoin="round">
-        <path d={`M ${-w / 3} ${-h / 3} L ${w / 3} ${-h / 3} L 0 ${h / 3} Z`} />
+      <g className="electric-load-glyph" fill={fill} stroke={stroke} strokeWidth="2.5" strokeLinejoin="round">
+        <path d={`M ${-bodyHalfWidth} ${-bodyHalfHeight} L ${bodyHalfWidth} ${-bodyHalfHeight} L 0 ${bodyHalfHeight} Z`} />
       </g>
     );
   }
@@ -6609,6 +6769,11 @@ export function App() {
   const connectDropReadyRef = useRef(false);
   const pendingConnectPreviewRef = useRef<{ point: Point | null; ready: boolean; targetPoint: Point | null; target: ConnectTarget | null } | null>(null);
   const connectPreviewFrameRef = useRef<number | null>(null);
+  const routableLinePreviewPointRef = useRef<Point | null>(null);
+  const routableLineDropTargetPointRef = useRef<Point | null>(null);
+  const routableLineDropTargetRef = useRef<ConnectTarget | null>(null);
+  const pendingRoutableLinePreviewRef = useRef<{ point: Point | null } | null>(null);
+  const routableLinePreviewFrameRef = useRef<number | null>(null);
   const pendingRewirePreviewRef = useRef<{ point: Point; rewiring: Exclude<RewiringState, null> } | null>(null);
   const rewirePreviewFrameRef = useRef<number | null>(null);
   const draggingRef = useRef<DraggingState | null>(null);
@@ -6763,11 +6928,21 @@ export function App() {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string>("");
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
   const [canvasSelectionScope, setCanvasSelectionScope] = useState<CanvasSelectionScope>("group");
+  const [voltageBaseClearDialogOpen, setVoltageBaseClearDialogOpen] = useState(false);
+  const [voltageBaseClearScope, setVoltageBaseClearScope] = useState<VoltageBaseClearScope>("selected");
+  const [voltageBaseSetDialogOpen, setVoltageBaseSetDialogOpen] = useState(false);
+  const [voltageBaseSetScope, setVoltageBaseSetScope] = useState<VoltageBaseSetScope>("selected");
+  const [voltageBaseSetValue, setVoltageBaseSetValue] = useState("110");
+  const [voltageBaseSetMode, setVoltageBaseSetMode] = useState<VoltageBaseSetMode>("uniform");
+  const [voltageBaseTerminalValues, setVoltageBaseTerminalValues] = useState<VoltageBaseTerminalValuesByNodeId>({});
   const [connectionRedrawDialogOpen, setConnectionRedrawDialogOpen] = useState(false);
   const [connectionRedrawScope, setConnectionRedrawScope] = useState<ConnectionRedrawScope>("selected");
   const [connectSource, setConnectSource] = useState<{ nodeId: string; terminalId: string; point?: Point } | null>(null);
   const [staticDrawing, setStaticDrawing] = useState<StaticDrawingState | null>(null);
   const [libraryPlacement, setLibraryPlacement] = useState<LibraryPlacementState | null>(null);
+  const [routableLinePlacement, setRoutableLinePlacement] = useState<RoutableLinePlacementState>(null);
+  const [routableLinePreview, setRoutableLinePreview] = useState<{ path: string; targetPoint: Point | null }>({ path: "", targetPoint: null });
+  const [routableLineEndpointDrag, setRoutableLineEndpointDrag] = useState<RoutableLineEndpointDragState>(null);
   const [staticButtonVisual, setStaticButtonVisual] = useState<{ nodeId: string; state: StaticButtonVisualState } | null>(null);
   const [connectDropReady, setConnectDropReady] = useState(false);
   const [dragging, setDragging] = useState<DraggingState | null>(null);
@@ -9843,14 +10018,62 @@ export function App() {
         ? terminalColor(terminalType, colorPalette)
         : "";
   }, [colorDisplayMode, colorPalette, connectSource, visibleNodeById]);
+  const routableLineTemplateTerminalType = (template: DeviceTemplate): TerminalType =>
+    template.terminalTypes?.[0] ?? template.terminalType;
+  const connectTargetTerminalType = (target: ConnectTarget): TerminalType | undefined =>
+    isBusNode(target.node)
+      ? getBusTerminalType(target.node)
+      : target.node.terminals.find((terminal) => terminal.id === target.terminalId)?.type;
+  const connectTargetPoint = (target: ConnectTarget): Point =>
+    target.point ?? getTerminalPoint(target.node, target.terminalId);
+  const buildRoutableLinePreviewPath = (
+    placement: RoutableLinePlacementState,
+    point: Point | null,
+    targetPoint: Point | null = null,
+    target: ConnectTarget | null = null
+  ) => {
+    if (!placement?.source || !point) {
+      return "";
+    }
+    const sourcePoint = connectTargetPoint(placement.source);
+    const endPoint = targetPoint ?? point;
+    const route = routeEdgesForStoredRendering(
+      compactPreviewNodes(placement.source.node, target?.node),
+      [{
+        id: "routable-line-device-preview",
+        sourceId: placement.source.node.id,
+        targetId: target?.node.id ?? "floating-routable-line-target",
+        sourceTerminalId: placement.source.terminalId,
+        targetTerminalId: target?.terminalId ?? "t1",
+        sourcePoint,
+        targetPoint: target ? connectTargetPoint(target) : endPoint
+      }],
+      canvasBounds
+    )[0];
+    return route?.path ?? pointsToPreviewPath([sourcePoint, endPoint]);
+  };
+  const routableLinePlacementColor = useMemo(() => {
+    if (!routableLinePlacement) {
+      return "";
+    }
+    return terminalColor(routableLineTemplateTerminalType(routableLinePlacement.template), colorPalette);
+  }, [colorPalette, routableLinePlacement]);
+  const routableLineEndpointDragColor = useMemo(() => {
+    if (!routableLineEndpointDrag) {
+      return "";
+    }
+    const node = nodeById.get(routableLineEndpointDrag.nodeId);
+    const terminal = node?.terminals[routableLineEndpointDrag.endpoint === "source" ? 0 : 1] ?? node?.terminals[0];
+    return terminal ? terminalColor(terminal.type, colorPalette) : "";
+  }, [colorPalette, nodeById, routableLineEndpointDrag]);
   useEffect(() => {
     if (routeRenderingReady) {
       return;
     }
-    if (hasUnsavedChanges || manualPathDrag || rewiring || terminalPress?.moved || dragging || connectSource) {
+    if (hasUnsavedChanges || manualPathDrag || rewiring || routableLinePlacement || routableLineEndpointDrag || terminalPress?.moved || dragging || connectSource) {
       setRouteRenderingReady(true);
     }
-  }, [connectSource, dragging, hasUnsavedChanges, manualPathDrag, rewiring, routeRenderingReady, terminalPress?.moved]);
+  }, [connectSource, dragging, hasUnsavedChanges, manualPathDrag, rewiring, routableLineEndpointDrag, routableLinePlacement, routeRenderingReady, terminalPress?.moved]);
 
   const routeInputLayerSignature = useMemo(
     () => layers.map((layer) => `${layer.id}:${layer.visible !== false ? "1" : "0"}`).join("|"),
@@ -10462,6 +10685,35 @@ export function App() {
     return changed ? nextEdges : currentEdges;
   };
   const selectedRoutedEdge = selectedEdge ? routedEdgeById.get(selectedEdge.id) : undefined;
+  const routableLineEndpointHandles = useMemo(() => {
+    if (!isEditMode) {
+      return [];
+    }
+    return activeSelectedNodeIds.flatMap((nodeId) => {
+      const node = visibleNodeById.get(nodeId);
+      if (!node || !activeLayerNodeIdSet.has(node.id) || !isRoutableLineDeviceKind(node.kind)) {
+        return [];
+      }
+      const points = routableLineDeviceCanvasPoints(node);
+      const start = points[0];
+      const end = points[points.length - 1];
+      if (!start || !end) {
+        return [];
+      }
+      const sourcePoint =
+        routableLineEndpointDrag?.nodeId === node.id && routableLineEndpointDrag.endpoint === "source"
+          ? routableLineEndpointDrag.previewPoint
+          : start;
+      const targetPoint =
+        routableLineEndpointDrag?.nodeId === node.id && routableLineEndpointDrag.endpoint === "target"
+          ? routableLineEndpointDrag.previewPoint
+          : end;
+      return [
+        { node, endpoint: "source" as const, point: sourcePoint },
+        { node, endpoint: "target" as const, point: targetPoint }
+      ];
+    });
+  }, [activeLayerNodeIdSet, activeSelectedNodeIds, isEditMode, routableLineEndpointDrag, visibleNodeById]);
   const rewiringPreviewRoute = useMemo(() => {
     if (!rewiring) {
       return null;
@@ -10526,6 +10778,31 @@ export function App() {
       path: route?.path ?? ""
     };
   }, [canvasBounds, edgeById, nodeById, rewiring]);
+  const routableLineEndpointDragPreviewRoute = useMemo(() => {
+    if (!routableLineEndpointDrag) {
+      return null;
+    }
+    const lineNode = nodeById.get(routableLineEndpointDrag.nodeId);
+    if (!lineNode || !isRoutableLineDeviceKind(lineNode.kind)) {
+      return null;
+    }
+    const points = routableLineDeviceCanvasPoints(lineNode);
+    const currentStart = points[0];
+    const currentEnd = points[points.length - 1];
+    if (!currentStart || !currentEnd) {
+      return null;
+    }
+    const nextStart = routableLineEndpointDrag.endpoint === "source" ? routableLineEndpointDrag.previewPoint : currentStart;
+    const nextEnd = routableLineEndpointDrag.endpoint === "target" ? routableLineEndpointDrag.previewPoint : currentEnd;
+    const rawLine = setRoutableLineDeviceEndpoints(lineNode, nextStart, nextEnd);
+    const nextNodesForRouting = nodes.map((node) => (node.id === rawLine.id ? rawLine : node));
+    const routedLine = routeRoutableLineDevice(rawLine, nextNodesForRouting, canvasBounds);
+    const routePoints = routableLineDeviceCanvasPoints(routedLine);
+    return {
+      nodeId: lineNode.id,
+      path: pointsToPreviewPath(routePoints)
+    };
+  }, [canvasBounds, nodeById, nodes, routableLineEndpointDrag]);
   const manualPathPreviewRoute = useMemo(() => {
     if (!manualPathDrag?.previewRoutePoints?.length) {
       return null;
@@ -10722,6 +10999,8 @@ export function App() {
     isEditMode &&
     !dragging &&
     !connectSource &&
+    !routableLinePlacement &&
+    !routableLineEndpointDrag &&
     !terminalPress?.moved &&
     viewportNodes.length > TERMINAL_OVERLAP_DEFER_NODE_THRESHOLD;
   const staticTerminalOverlapSourceKey = staticTerminalOverlapDeferred
@@ -10792,14 +11071,34 @@ export function App() {
       : targetNode?.terminals.find((terminal) => terminal.id === nodeTerminalSnapTarget.targetTerminalId)?.type;
     return terminalType ? ({ "--connection-color": terminalColor(terminalType, colorPalette) } as CSSProperties) : undefined;
   }, [colorPalette, dragPreviewMovedNodeById, nodeById, nodeTerminalSnapTarget]);
-  const activeDropHintPoint = rewiring?.dropTargetPoint ?? nodeTerminalSnapTarget?.point ?? null;
-  const activeDropReady = connectDropReady || Boolean(rewiring?.dropTargetPoint) || Boolean(nodeTerminalSnapTarget);
+  const activeDropHintPoint =
+    routableLineEndpointDrag?.dropTargetPoint ??
+    routableLinePreview.targetPoint ??
+    rewiring?.dropTargetPoint ??
+    nodeTerminalSnapTarget?.point ??
+    null;
+  const activeDropReady =
+    connectDropReady ||
+    Boolean(routableLinePreview.targetPoint) ||
+    Boolean(routableLineEndpointDrag?.dropTargetPoint) ||
+    Boolean(rewiring?.dropTargetPoint) ||
+    Boolean(nodeTerminalSnapTarget);
   const connectSourceNode = isEditMode && connectSource ? visibleNodeById.get(connectSource.nodeId) : undefined;
   const connectTerminalCompatibilityActive = isEditMode && mode === "connect" && Boolean(connectSourceNode);
-  const drawingModeActive = Boolean(libraryPlacement || staticDrawing || connectSource);
+  const routableLineActiveTerminalType =
+    routableLinePlacement
+      ? routableLineTemplateTerminalType(routableLinePlacement.template)
+      : routableLineEndpointDrag
+        ? nodeById.get(routableLineEndpointDrag.nodeId)?.terminals[routableLineEndpointDrag.endpoint === "source" ? 0 : 1]?.type ??
+          nodeById.get(routableLineEndpointDrag.nodeId)?.terminals[0]?.type
+        : undefined;
+  const routableLineTerminalCompatibilityActive = isEditMode && Boolean(routableLinePlacement || routableLineEndpointDrag);
+  const drawingModeActive = Boolean(libraryPlacement || staticDrawing || connectSource || routableLinePlacement);
   const activeDropHintStyle = rewiring?.dropTargetPoint
     ? connectionLineStyle(rewiring.edgeId)
-    : nodeTerminalSnapHintStyle;
+    : routableLinePlacementColor || routableLineEndpointDragColor
+      ? ({ "--connection-color": routableLinePlacementColor || routableLineEndpointDragColor } as CSSProperties)
+      : nodeTerminalSnapHintStyle;
   useEffect(() => {
     document.body.classList.toggle("canvas-drawing-mode", drawingModeActive);
     document.body.classList.toggle("canvas-connect-drop-ready", drawingModeActive && activeDropReady);
@@ -11942,6 +12241,15 @@ export function App() {
           return;
         }
       }
+      if (routableLinePlacement && isCanvasShortcutTarget) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setRoutableLinePlacement(null);
+          resetRoutableLinePreviewState();
+          setMode("select");
+          return;
+        }
+      }
       if (staticDrawing && isCanvasShortcutTarget) {
         if (event.key === "Enter") {
           event.preventDefault();
@@ -12705,6 +13013,8 @@ export function App() {
     setSelectedNodeIds([]);
     setSelectedEdgeId("");
     setSelectedEdgeIds([]);
+    setRoutableLinePlacement(null);
+    resetRoutableLinePreviewState();
     setConnectSource(null);
     resetConnectPreviewState();
     setRewiring(null);
@@ -13262,6 +13572,64 @@ export function App() {
         : nodeBounds;
     }
     return bounds;
+  };
+
+  const mergeNodeUpdateLists = (baseUpdates: ModelNode[], extraUpdates: ModelNode[]) => {
+    if (extraUpdates.length === 0) {
+      return baseUpdates;
+    }
+    const updateById = new Map(baseUpdates.map((node) => [node.id, node]));
+    const orderedIds = baseUpdates.map((node) => node.id);
+    for (const node of extraUpdates) {
+      if (!updateById.has(node.id)) {
+        orderedIds.push(node.id);
+      }
+      updateById.set(node.id, node);
+    }
+    return orderedIds.flatMap((id) => {
+      const node = updateById.get(id);
+      return node ? [node] : [];
+    });
+  };
+
+  const routableLineRouteCandidateIdsForMovedNodes = (
+    previousNodes: ModelNode[],
+    nextNodes: ModelNode[],
+    movedNodeIds: string[],
+    originalPositions?: Record<string, Point>
+  ) => {
+    const movedIds = new Set(movedNodeIds);
+    const candidateIds = new Set<string>();
+    if (movedIds.size === 0) {
+      return candidateIds;
+    }
+    for (const node of orderedNodesForIds(nextNodes, movedIds)) {
+      if (isRoutableLineDeviceKind(node.kind)) {
+        candidateIds.add(node.id);
+      }
+    }
+    for (const node of nextNodes) {
+      if (!isRoutableLineDeviceKind(node.kind)) {
+        continue;
+      }
+      const refs = routableLineDeviceEndpointRefs(node);
+      if ((refs.source && movedIds.has(refs.source.nodeId)) || (refs.target && movedIds.has(refs.target.nodeId))) {
+        candidateIds.add(node.id);
+      }
+    }
+    const addLinesNearBounds = (bounds: ReturnType<typeof boundsForNodeSet>) => {
+      if (!bounds) {
+        return;
+      }
+      for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, bounds)) {
+        if (isRoutableLineDeviceKind(node.kind)) {
+          candidateIds.add(node.id);
+        }
+      }
+    };
+    addLinesNearBounds(boundsForNodeSet(previousNodes, movedIds, originalPositions, MOVE_ROUTE_LOCAL_SEARCH_PADDING));
+    addLinesNearBounds(boundsForNodeSet(nextNodes, movedIds, undefined, MOVE_ROUTE_LOCAL_SEARCH_PADDING));
+    return candidateIds;
   };
 
   const localRouteOptimizationEdges = (
@@ -14248,11 +14616,30 @@ export function App() {
     );
     const deferMovedRouteRepair =
       movedNodeIds.length > 0 && (routeRepairCandidateEdges.length > 0 || deferSingleNodeTerminalReconciliation);
-    const originShift = allowAutoExpandCanvas ? leftTopCanvasOriginShiftForContent(movedNodeUpdates, committedCandidateEdges) : { x: 0, y: 0 };
+    const routableLineCandidateIds = routableLineRouteCandidateIdsForMovedNodes(
+      previousNodes,
+      nextNodes,
+      movedNodeIds,
+      originalPositions
+    );
+    const routableLineRouteBounds = routableLineCandidateIds.size > 0
+      ? canvasBoundsForAutoExpandedGraphContent(effectiveCanvasBounds, movedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING)
+      : effectiveCanvasBounds;
+    const fullNextNodesForRoutableLines = routableLineCandidateIds.size > 0
+      ? overlayGraphStoreNodes(graphStore, movedNodeUpdates)
+      : nextNodes;
+    const routableLineNodeUpdates = routableLineCandidateIds.size > 0
+      ? rebuildRoutableLineDeviceRouteUpdates(fullNextNodesForRoutableLines, routableLineCandidateIds, routableLineRouteBounds)
+      : [];
+    const committedNodeUpdates = mergeNodeUpdateLists(movedNodeUpdates, routableLineNodeUpdates);
+    const committedNextNodes = routableLineNodeUpdates.length > 0
+      ? overlayGraphStoreNodes(graphStore, committedNodeUpdates)
+      : nextNodes;
+    const originShift = allowAutoExpandCanvas ? leftTopCanvasOriginShiftForContent(committedNodeUpdates, committedCandidateEdges) : { x: 0, y: 0 };
     if (hasCanvasOriginShift(originShift)) {
       const candidateEdgeById = new Map(committedCandidateEdges.map((edge) => [edge.id, edge]));
       const rawNextEdges = edges.map((edge) => candidateEdgeById.get(edge.id) ?? edge);
-      const rawNextNodes = overlayGraphStoreNodes(graphStore, movedNodeUpdates);
+      const rawNextNodes = overlayGraphStoreNodes(graphStore, committedNodeUpdates);
       const shiftedNextNodes = rawNextNodes.map((node) => translateNodeBy(node, originShift));
       const shiftedNextEdges = rawNextEdges.map((edge) => translateEdgeBy(edge, originShift));
       const shiftedCanvasBounds = canvasBoundsForGraphContent(
@@ -14271,10 +14658,10 @@ export function App() {
       setGraphStore((current) => graphStoreSetGraph(current, shiftedNextNodes, shiftedNextEdges));
       return;
     }
-    const commitCanvasBounds = canvasBoundsForAutoExpandedGraphContent(effectiveCanvasBounds, movedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING);
+    const commitCanvasBounds = canvasBoundsForAutoExpandedGraphContent(effectiveCanvasBounds, committedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING);
     if (deferMovedRouteRepair) {
       const edgePatch = edgePatchFromCandidateEdges(previousCandidateEdges, committedCandidateEdges);
-      const expectedPatch = { nodeUpdates: movedNodeUpdates, edgeUpserts: edgePatch.edgeUpserts, edgeDeleteIds: edgePatch.edgeDeleteIds };
+      const expectedPatch = { nodeUpdates: committedNodeUpdates, edgeUpserts: edgePatch.edgeUpserts, edgeDeleteIds: edgePatch.edgeDeleteIds };
       const edgePatchDirtyIds = [
         ...edgePatch.edgeUpserts.map((edge) => edge.id),
         ...edgePatch.edgeDeleteIds
@@ -14283,7 +14670,7 @@ export function App() {
         previousCandidateEdges,
         committedCandidateEdges,
         movedNodeIds,
-        nextNodes,
+        committedNextNodes,
         commitCanvasBounds
       );
       const movedRouteDirtyIds = dirtyEdgeIdsAfterMove(previousCandidateEdges, committedCandidateEdges, movedNodeIds, edgePatchDirtyIds);
@@ -14334,7 +14721,7 @@ export function App() {
     }
     if (shouldRunSynchronousMoveBlockerRepair(movedNodeIds, previousCandidateEdges, committedCandidateEdges)) {
       const blockedConnectedRoutePoints = routePointsForMovedEdgesBlockedByStationaryNodes(
-        nextNodes,
+        committedNextNodes,
         committedCandidateEdges,
         movedNodeIds,
         {},
@@ -14343,7 +14730,7 @@ export function App() {
       const blockedConnectedEdgeIds = new Set(Object.keys(blockedConnectedRoutePoints));
       if (blockedConnectedEdgeIds.size > 0) {
         let blockedCandidateEdges = committedCandidateEdges.filter((edge) => blockedConnectedEdgeIds.has(edge.id));
-        let routingNodes = routingNodesForConnectionEdges(blockedCandidateEdges, nextNodes, movedNodeIds);
+        let routingNodes = routingNodesForConnectionEdges(blockedCandidateEdges, committedNextNodes, movedNodeIds);
         const rebuiltEdges = rebuildExternalConnectionRoutesForMovedNodes(
           routingNodes,
           committedCandidateEdges,
@@ -14358,7 +14745,7 @@ export function App() {
           committedCandidateEdges = rebuiltEdges;
         }
         blockedCandidateEdges = committedCandidateEdges.filter((edge) => blockedConnectedEdgeIds.has(edge.id));
-        routingNodes = routingNodesForConnectionEdges(blockedCandidateEdges, nextNodes, movedNodeIds);
+        routingNodes = routingNodesForConnectionEdges(blockedCandidateEdges, committedNextNodes, movedNodeIds);
         const rebuiltInternalEdges = rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes(
           routingNodes,
           committedCandidateEdges,
@@ -14376,17 +14763,17 @@ export function App() {
     }
     const edgePatch = edgePatchFromCandidateEdges(previousCandidateEdges, committedCandidateEdges);
     const nextEdgesForBounds = edgePatch.edgeUpserts;
-    expandCanvasToFitGraph(movedNodeUpdates, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);
+    expandCanvasToFitGraph(committedNodeUpdates, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);
     const edgePatchDirtyIds = [
       ...edgePatch.edgeUpserts.map((edge) => edge.id),
       ...edgePatch.edgeDeleteIds
     ];
-    const expectedPatch = { nodeUpdates: movedNodeUpdates, edgeUpserts: edgePatch.edgeUpserts, edgeDeleteIds: edgePatch.edgeDeleteIds };
+    const expectedPatch = { nodeUpdates: committedNodeUpdates, edgeUpserts: edgePatch.edgeUpserts, edgeDeleteIds: edgePatch.edgeDeleteIds };
     const routeCachePatchedEdgeIds = patchCachedRoutesForHighFanoutMove(
       previousCandidateEdges,
       committedCandidateEdges,
       movedNodeIds,
-      nextNodes,
+      committedNextNodes,
       commitCanvasBounds
     );
     const movedRouteDirtyIds = dirtyEdgeIdsAfterMove(previousCandidateEdges, committedCandidateEdges, movedNodeIds, edgePatchDirtyIds);
@@ -14411,7 +14798,7 @@ export function App() {
     );
     scheduleMovedEdgeOptimization(
       previousNodes,
-      nextNodes,
+      committedNextNodes,
       routeRepairCandidateEdges,
       movedNodeIds,
       originalRoutePoints,
@@ -15146,6 +15533,59 @@ export function App() {
       );
     });
   };
+  const applyRoutableLinePreviewState = (
+    point: Point | null,
+    targetPoint: Point | null = null,
+    target: ConnectTarget | null = null,
+    placementOverride: RoutableLinePlacementState = routableLinePlacement
+  ) => {
+    if (!sameOptionalPoint(routableLinePreviewPointRef.current ?? undefined, point ?? undefined)) {
+      routableLinePreviewPointRef.current = point;
+    }
+    if (!sameOptionalPoint(routableLineDropTargetPointRef.current ?? undefined, targetPoint ?? undefined)) {
+      routableLineDropTargetPointRef.current = targetPoint;
+    }
+    if (!sameConnectTarget(routableLineDropTargetRef.current ?? undefined, target)) {
+      routableLineDropTargetRef.current = target;
+    }
+    const path = buildRoutableLinePreviewPath(placementOverride, point, targetPoint, target);
+    setRoutableLinePreview((current) =>
+      current.path === path && sameOptionalPoint(current.targetPoint ?? undefined, targetPoint ?? undefined)
+        ? current
+        : { path, targetPoint }
+    );
+  };
+  const scheduleRoutableLinePreviewPoint = (point: Point | null) => {
+    pendingRoutableLinePreviewRef.current = { point };
+    if (routableLinePreviewFrameRef.current !== null) {
+      return;
+    }
+    routableLinePreviewFrameRef.current = window.requestAnimationFrame(() => {
+      routableLinePreviewFrameRef.current = null;
+      const next = pendingRoutableLinePreviewRef.current;
+      pendingRoutableLinePreviewRef.current = null;
+      if (!next) {
+        return;
+      }
+      const target = next.point ? findRoutableLineEndpointTargetAtPoint(next.point) : null;
+      applyRoutableLinePreviewState(
+        next.point,
+        target ? connectTargetPoint(target) : null,
+        target
+      );
+    });
+  };
+  const resetRoutableLinePreviewState = () => {
+    pendingRoutableLinePreviewRef.current = null;
+    if (routableLinePreviewFrameRef.current !== null) {
+      window.cancelAnimationFrame(routableLinePreviewFrameRef.current);
+      routableLinePreviewFrameRef.current = null;
+    }
+    routableLinePreviewPointRef.current = null;
+    routableLineDropTargetPointRef.current = null;
+    routableLineDropTargetRef.current = null;
+    setRoutableLinePreview((current) => current.path || current.targetPoint ? { path: "", targetPoint: null } : current);
+  };
   const scheduleRewirePreviewPoint = (point: Point, rewiring: Exclude<RewiringState, null>) => {
     pendingRewirePreviewRef.current = { point, rewiring };
     if (rewirePreviewFrameRef.current !== null) {
@@ -15419,6 +15859,25 @@ export function App() {
     return bounds;
   };
 
+  const terminalOutflowAnchorsForSmartAlignmentDrag = (dragState: DraggingState, delta: Point): SmartAlignmentAnchorMap => {
+    const anchors = emptySmartAlignmentAnchorMap();
+    for (const nodeId of dragState.nodeIds) {
+      const node = nodeById.get(nodeId);
+      const originalPosition = dragState.originalPositions[nodeId];
+      if (!node || !originalPosition) {
+        continue;
+      }
+      const movedPosition = {
+        x: originalPosition.x + delta.x,
+        y: originalPosition.y + delta.y
+      };
+      const nodeAnchors = nodeTerminalOutflowSmartAlignmentAnchors(node, movedPosition);
+      anchors.x.push(...nodeAnchors.x);
+      anchors.y.push(...nodeAnchors.y);
+    }
+    return anchors;
+  };
+
   const computeSmartAlignmentSnap = (dragState: DraggingState, movementDelta: Point, axisLocked: boolean) => {
     if (axisLocked || !isEditMode || dragState.nodeIds.length === 0) {
       return { delta: movementDelta, guides: [] as SmartAlignmentGuide[] };
@@ -15451,7 +15910,8 @@ export function App() {
       }
       candidatesById.set(candidate.id, {
         id: candidate.id,
-        bounds: nodeSmartAlignmentBounds(candidate, candidate.position, nodeHasUprightBoundsContent(candidate))
+        bounds: nodeSmartAlignmentBounds(candidate, candidate.position, nodeHasUprightBoundsContent(candidate)),
+        anchors: nodeTerminalOutflowSmartAlignmentAnchors(candidate, candidate.position)
       });
     };
     for (const candidate of queryNodeSpatialIndex(visibleNodeSpatialIndex, verticalSearchBounds)) {
@@ -15464,8 +15924,9 @@ export function App() {
     if (candidates.length === 0) {
       return { delta: movementDelta, guides: [] as SmartAlignmentGuide[] };
     }
-    const xSnap = bestSmartAlignmentAxisSnap("x", draggedBounds, candidates, snapThreshold);
-    const ySnap = bestSmartAlignmentAxisSnap("y", draggedBounds, candidates, snapThreshold);
+    const draggedTerminalAnchors = terminalOutflowAnchorsForSmartAlignmentDrag(dragState, movementDelta);
+    const xSnap = bestSmartAlignmentAxisSnap("x", draggedBounds, draggedTerminalAnchors.x, candidates, snapThreshold);
+    const ySnap = bestSmartAlignmentAxisSnap("y", draggedBounds, draggedTerminalAnchors.y, candidates, snapThreshold);
     const guides = [xSnap?.guide, ySnap?.guide].filter((guide): guide is SmartAlignmentGuide => Boolean(guide));
     return {
       delta: {
@@ -17291,7 +17752,25 @@ export function App() {
     if (!requireEditMode("放置图元")) {
       return;
     }
+    if (isRoutableLineDeviceKind(template.kind)) {
+      setRoutableLinePlacement({ template, source: null });
+      resetRoutableLinePreviewState();
+      setLibraryPlacement(null);
+      setStaticDrawing(null);
+      setConnectSource(null);
+      resetConnectPreviewState();
+      setRewiring(null);
+      setContextMenu(null);
+      setMode("connect");
+      if (componentLibraryDisplayMode === "right") {
+        hideLibraryFlyout();
+      }
+      writeOperationLog(`进入线路绘制模式：${template.label}`);
+      return;
+    }
     setLibraryPlacement({ kind: "device", template, previewPoint: null });
+    setRoutableLinePlacement(null);
+    resetRoutableLinePreviewState();
     setStaticDrawing(null);
     setConnectSource(null);
     resetConnectPreviewState();
@@ -17309,6 +17788,8 @@ export function App() {
       return;
     }
     setLibraryPlacement({ kind: "graph-template", template, previewPoint: null });
+    setRoutableLinePlacement(null);
+    resetRoutableLinePreviewState();
     setStaticDrawing(null);
     setConnectSource(null);
     resetConnectPreviewState();
@@ -17320,6 +17801,8 @@ export function App() {
 
   const cancelLibraryPlacement = () => {
     setLibraryPlacement(null);
+    setRoutableLinePlacement(null);
+    resetRoutableLinePreviewState();
     setMode("select");
     setContextMenu(null);
   };
@@ -17343,12 +17826,19 @@ export function App() {
       return;
     }
     const kind = template.kind;
+    if (isRoutableLineDeviceKind(kind)) {
+      startLibraryDevicePlacement(template);
+      return;
+    }
     if (isInteractiveStaticDrawingKind(kind) || isStaticBoxLikeKind(kind)) {
       startInteractiveStaticDrawing(template, pointerPosition);
       return;
     }
     const position = { x: pointerPosition.x, y: pointerPosition.y };
-    const rawNode = { ...createNodeFromTemplate(template, position), layerId: activeLayerId };
+    const createdNode = { ...createNodeFromTemplate(template, position), layerId: activeLayerId };
+    const rawNode = isRoutableLineDeviceKind(createdNode.kind)
+      ? routeRoutableLineDevice(createdNode, [...nodes, createdNode], canvasBounds)
+      : createdNode;
     if (rejectAutoCanvasExpansionForContent([...nodes, rawNode], edges)) {
       setLibraryPlacement(null);
       setMode("select");
@@ -18324,6 +18814,237 @@ export function App() {
     return null;
   };
 
+  const findRoutableLineEndpointTargetAtPoint = (
+    point: Point,
+    options: { terminalType?: TerminalType; source?: ConnectTarget | null; excludedNodeId?: string } = {}
+  ): ConnectTarget | null => {
+    const terminalType = options.terminalType ?? (routableLinePlacement ? routableLineTemplateTerminalType(routableLinePlacement.template) : undefined);
+    if (!terminalType) {
+      return null;
+    }
+    const source = options.source ?? routableLinePlacement?.source ?? null;
+    const searchBounds = connectTargetSearchBounds(point);
+    for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, searchBounds)) {
+      if (!activeLayerNodeIdSet.has(node.id) || node.id === options.excludedNodeId || isRoutableLineDeviceKind(node.kind)) {
+        continue;
+      }
+      if (isBusNode(node) && isPointNearBus(node, point, CONNECT_BUS_SNAP_TOLERANCE)) {
+        const terminalId = node.terminals[0]?.id ?? "t1";
+        if (
+          getBusTerminalType(node) === terminalType &&
+          !(source && source.node.id === node.id && source.terminalId === terminalId)
+        ) {
+          return { node, terminalId, point: busAnchorFromPoint(node, point) };
+        }
+        continue;
+      }
+      for (const terminal of node.terminals) {
+        if (terminal.type !== terminalType) {
+          continue;
+        }
+        if (source && source.node.id === node.id && source.terminalId === terminal.id) {
+          continue;
+        }
+        const terminalPoint = getTerminalPoint(node, terminal.id);
+        const distance = Math.hypot(point.x - terminalPoint.x, point.y - terminalPoint.y);
+        if (distance <= CONNECT_TERMINAL_SNAP_TOLERANCE) {
+          return { node, terminalId: terminal.id, point: undefined };
+        }
+      }
+    }
+    return null;
+  };
+
+  const commitRoutableLineDevice = (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget) => {
+    const sourcePoint = connectTargetPoint(source);
+    const targetPoint = connectTargetPoint(target);
+    const rawLine = createRoutableLineDeviceFromEndpoints(
+      template,
+      sourcePoint,
+      targetPoint,
+      activeLayerId,
+      {
+        source: routableLineDeviceEndpointRefForNode(source.node, source.terminalId, source.point),
+        target: routableLineDeviceEndpointRefForNode(target.node, target.terminalId, target.point)
+      }
+    );
+    const routedLine = routeRoutableLineDevice(rawLine, [...nodes, rawLine], canvasBounds);
+    if (rejectAutoCanvasExpansionForContent([...nodes, routedLine], edges)) {
+      return false;
+    }
+    const dropOriginShift = leftTopCanvasOriginShiftForContent([...nodes, routedLine], edges);
+    const dropSourceNodes = hasCanvasOriginShift(dropOriginShift)
+      ? nodes.map((node) => translateNodeBy(node, dropOriginShift))
+      : nodes;
+    const dropSourceEdges = hasCanvasOriginShift(dropOriginShift)
+      ? edges.map((edge) => translateEdgeBy(edge, dropOriginShift))
+      : edges;
+    const shiftedLine = translateNodeBy(routedLine, dropOriginShift);
+    const dropCanvasBounds = canvasBoundsForAutoExpandedGraphContent(
+      canvasBoundsWithOriginShift(canvasBounds, dropOriginShift),
+      [...dropSourceNodes, shiftedLine],
+      dropSourceEdges,
+      [],
+      CANVAS_AUTO_EXPAND_PADDING
+    );
+    applyCanvasBounds(dropCanvasBounds, dropOriginShift);
+    shiftCachedRoutesForCanvasOrigin(dropOriginShift);
+    if (hasCanvasOriginShift(dropOriginShift)) {
+      markBusTerminalSyncDirtyForEdges(dropSourceEdges);
+    }
+    const indexed = assignPermanentDeviceIndex(shiftedLine, deviceIndexCounters);
+    pushUndoSnapshot();
+    setDeviceIndexCounters(indexed.counters);
+    setGraphArrays([...dropSourceNodes, indexed.node], dropSourceEdges);
+    setCanvasSelectionScope("group");
+    setSelectedNodeIds([indexed.node.id]);
+    setSelectedEdgeId("");
+    setSelectedEdgeIds([]);
+    setRoutableLinePlacement(null);
+    resetRoutableLinePreviewState();
+    setMode("select");
+    activateInspectorFromCanvas();
+    writeOperationLog(`新增线路：${indexed.node.name}`);
+    return true;
+  };
+
+  const startRoutableLineFromTerminal = (node: ModelNode, terminalId: string, point?: Point) => {
+    if (!routableLinePlacement || !activeLayerNodeIdSet.has(node.id)) {
+      return false;
+    }
+    const source: ConnectTarget = { node, terminalId, point };
+    if (connectTargetTerminalType(source) !== routableLineTemplateTerminalType(routableLinePlacement.template)) {
+      return false;
+    }
+    const nextPlacement: RoutableLinePlacementState = { ...routableLinePlacement, source };
+    setRoutableLinePlacement(nextPlacement);
+    applyRoutableLinePreviewState(connectTargetPoint(source), null, null, nextPlacement);
+    setCanvasSelectionScope("group");
+    setSelectedNodeIds([]);
+    setSelectedEdgeId("");
+    setSelectedEdgeIds([]);
+    setContextMenu(null);
+    setMode("connect");
+    writeOperationLog(`线路起点：${node.name}`);
+    return true;
+  };
+
+  const finishRoutableLineToTarget = (target: ConnectTarget) => {
+    if (!routableLinePlacement?.source) {
+      return false;
+    }
+    if (connectTargetTerminalType(target) !== routableLineTemplateTerminalType(routableLinePlacement.template)) {
+      return false;
+    }
+    const committed = commitRoutableLineDevice(routableLinePlacement.template, routableLinePlacement.source, target);
+    if (committed) {
+      writeOperationLog(`线路终点：${target.node.name}`);
+    }
+    return committed;
+  };
+
+  const updateRoutableLineEndpointDrag = (point: Point) => {
+    if (!routableLineEndpointDrag) {
+      return;
+    }
+    const lineNode = nodeById.get(routableLineEndpointDrag.nodeId);
+    if (!lineNode) {
+      return;
+    }
+    const terminalIndex = routableLineEndpointDrag.endpoint === "source" ? 0 : 1;
+    const terminalType = lineNode.terminals[terminalIndex]?.type ?? lineNode.terminals[0]?.type;
+    const target = terminalType
+      ? findRoutableLineEndpointTargetAtPoint(point, { terminalType, excludedNodeId: lineNode.id })
+      : null;
+    const snappedPoint = target ? connectTargetPoint(target) : point;
+    setRoutableLineEndpointDrag((current) =>
+      current && current.nodeId === routableLineEndpointDrag.nodeId && current.endpoint === routableLineEndpointDrag.endpoint
+        ? sameOptionalPoint(current.previewPoint, snappedPoint) &&
+          sameOptionalPoint(current.dropTargetPoint, target ? snappedPoint : undefined) &&
+          sameConnectTarget(current.dropTarget, target)
+          ? current
+          : {
+              ...current,
+              previewPoint: snappedPoint,
+              dropTargetPoint: target ? snappedPoint : undefined,
+              dropTarget: target ?? undefined
+            }
+        : current
+    );
+  };
+
+  const startRoutableLineEndpointDrag = (
+    event: PointerEvent<SVGCircleElement>,
+    node: ModelNode,
+    endpoint: EdgeEndpoint
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.button !== 0 || isBrowseMode || !activeLayerNodeIdSet.has(node.id)) {
+      return;
+    }
+    const points = routableLineDeviceCanvasPoints(node);
+    const previewPoint = endpoint === "source" ? points[0] : points[points.length - 1];
+    if (!previewPoint) {
+      return;
+    }
+    setRoutableLineEndpointDrag({
+      nodeId: node.id,
+      endpoint,
+      previewPoint,
+      pointerId: event.pointerId
+    });
+    setCanvasSelectionScope("group");
+    setSelectedNodeIds([node.id]);
+    setSelectedEdgeId("");
+    setSelectedEdgeIds([]);
+    setContextMenu(null);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const finishRoutableLineEndpointDrag = () => {
+    if (!routableLineEndpointDrag) {
+      return;
+    }
+    const lineNode = nodeById.get(routableLineEndpointDrag.nodeId);
+    const target = routableLineEndpointDrag.dropTarget;
+    if (lineNode && target) {
+      const points = routableLineDeviceCanvasPoints(lineNode);
+      const currentStart = points[0];
+      const currentEnd = points[points.length - 1];
+      if (currentStart && currentEnd) {
+        const targetPoint = connectTargetPoint(target);
+        const nextStart = routableLineEndpointDrag.endpoint === "source" ? targetPoint : currentStart;
+        const nextEnd = routableLineEndpointDrag.endpoint === "target" ? targetPoint : currentEnd;
+        const refs = routableLineDeviceEndpointRefs(lineNode);
+        const nextRefs =
+          routableLineEndpointDrag.endpoint === "source"
+            ? {
+                source: routableLineDeviceEndpointRefForNode(target.node, target.terminalId, target.point),
+                target: refs.target
+              }
+            : {
+                source: refs.source,
+                target: routableLineDeviceEndpointRefForNode(target.node, target.terminalId, target.point)
+              };
+        const rawLine = setRoutableLineDeviceEndpoints(lineNode, nextStart, nextEnd, nextRefs);
+        const nextNodesForRouting = nodes.map((node) => (node.id === rawLine.id ? rawLine : node));
+        const routedLine = routeRoutableLineDevice(rawLine, nextNodesForRouting, canvasBounds);
+        pushUndoSnapshot();
+        patchGraphNodes([routedLine]);
+        setCanvasSelectionScope("group");
+        setSelectedNodeIds([routedLine.id]);
+        setSelectedEdgeId("");
+        setSelectedEdgeIds([]);
+        writeOperationLog(`调整线路端点：${routedLine.name}`);
+      }
+    } else if (lineNode) {
+      window.alert("线路端点必须连接到同类型设备端子或母线，已保持原连接。");
+      writeOperationLog("线路端点调整失败");
+    }
+    setRoutableLineEndpointDrag(null);
+  };
+
   const commitNewConnectionEdge = (newEdge: Edge, sourceName: string, targetName: string) => {
     const endpointRuleMessage = connectionEndpointRuleFailureMessage(newEdge);
     if (endpointRuleMessage) {
@@ -18507,6 +19228,10 @@ export function App() {
       setContextMenu(null);
       return;
     }
+    if (routableLinePlacement && isBusNode(node)) {
+      handleTerminalPointerDown(event as unknown as PointerEvent<SVGCircleElement>, node, node.terminals[0]?.id ?? "t1");
+      return;
+    }
     if (connectSource && svgRef.current) {
       const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
       lastCanvasPointerRef.current = pointer;
@@ -18650,6 +19375,12 @@ export function App() {
       updateMouseStatus(pointer);
       if (libraryPlacement) {
         updateLibraryPlacementPreview(pointer);
+      }
+      if (routableLinePlacement) {
+        scheduleRoutableLinePreviewPoint(pointer);
+      }
+      if (routableLineEndpointDrag) {
+        updateRoutableLineEndpointDrag(pointer);
       }
       if (connectSource) {
         const previewPoint = resolveConnectPreviewPoint(pointer, event);
@@ -19335,6 +20066,218 @@ export function App() {
       { readjustBusEndpoints: true }
     );
     writeOperationLog(movedCount > 0 ? `自动对齐 ${movedCount} 个图元，门槛 ${threshold}px` : `自动对齐未发现坐标相近图元，门槛 ${threshold}px`);
+  };
+
+  const voltageBaseSetOptions = useMemo(() => {
+    const values = new Set(VOLTAGE_BASE_SET_PRESETS);
+    const includeValue = (value: string | undefined) => {
+      const normalized = normalizeVoltageBaseInput(value);
+      if (normalized) {
+        values.add(normalized);
+      }
+    };
+    const paramKeys = ["vbase", "v_base", "highVbase", "mediumVbase", "lowVbase", "neutral_vbase", "sourceVbase", "targetVbase", "i_vbase", "j_vbase", "v_set", "i_v_set", "j_v_set", "ac_v_set", "dc_v_set", "voltage"];
+    for (const node of nodes) {
+      for (const terminal of node.terminals) {
+        includeValue(terminal.vbase);
+      }
+      for (const key of paramKeys) {
+        includeValue(node.params[key]);
+      }
+    }
+    return Array.from(values).sort((left, right) => Number(left) - Number(right));
+  }, [nodes]);
+
+  const defaultVoltageBaseSetValue = () => {
+    for (const nodeId of activeSelectedNodeIds) {
+      const node = nodeById.get(nodeId);
+      if (!node) {
+        continue;
+      }
+      const candidates = [
+        node.terminals[0]?.vbase,
+        node.params.vbase,
+        node.params.highVbase,
+        node.params.sourceVbase,
+        node.params.i_vbase,
+        node.params.v_set,
+        node.params.ac_v_set,
+        node.params.dc_v_set,
+        node.params.voltage
+      ];
+      for (const candidate of candidates) {
+        const normalized = normalizeVoltageBaseInput(candidate);
+        if (normalized) {
+          return normalized;
+        }
+      }
+    }
+    return "110";
+  };
+
+  const voltageBaseSetTerminalRows = useMemo(() => {
+    const selected = new Set(activeSelectedNodeIds);
+    return nodes
+      .filter((node) => selected.has(node.id) && !isBusNode(node) && !isStaticNode(node) && node.terminals.length > 1)
+      .flatMap((node) => node.terminals.map((terminal, index) => ({
+        nodeId: node.id,
+        nodeName: node.name,
+        terminalId: terminal.id,
+        terminalLabel: terminal.label || `端子${index + 1}`,
+        terminalType: terminal.type.toUpperCase(),
+        value: voltageBaseTerminalValues[node.id]?.[terminal.id] ?? ""
+      })));
+  }, [activeSelectedNodeIds, nodes, voltageBaseTerminalValues]);
+
+  const defaultVoltageBaseTerminalValues = () => {
+    const fallback = defaultVoltageBaseSetValue();
+    const values: VoltageBaseTerminalValuesByNodeId = {};
+    const selected = new Set(activeSelectedNodeIds);
+    for (const node of nodes) {
+      if (!selected.has(node.id) || isBusNode(node) || isStaticNode(node) || node.terminals.length <= 1) {
+        continue;
+      }
+      values[node.id] = Object.fromEntries(
+        node.terminals.map((terminal) => [
+          terminal.id,
+          normalizeVoltageBaseInput(terminal.vbase) || fallback
+        ])
+      );
+    }
+    return values;
+  };
+
+  const hasVoltageBaseTerminalValues = (values: VoltageBaseTerminalValuesByNodeId) =>
+    Object.values(values).some((terminalValues) =>
+      Object.values(terminalValues).some((value) => value.trim().length > 0)
+    );
+
+  const setVoltageBaseTerminalValue = (nodeId: string, terminalId: string, value: string) => {
+    setVoltageBaseTerminalValues((current) => ({
+      ...current,
+      [nodeId]: {
+        ...(current[nodeId] ?? {}),
+        [terminalId]: value
+      }
+    }));
+  };
+
+  const voltageBaseSetPreviewByScope = useMemo<Partial<Record<VoltageBaseSetScope, ReturnType<typeof setVoltageBaseValuesForScope>>>>(() => {
+    if (!voltageBaseSetDialogOpen) {
+      return {};
+    }
+    if (voltageBaseSetMode === "terminal") {
+      if (!hasVoltageBaseTerminalValues(voltageBaseTerminalValues)) {
+        return {};
+      }
+      return Object.fromEntries(
+        VOLTAGE_BASE_SET_SCOPES.map((scope) => [
+          scope,
+          setVoltageBaseTerminalValuesForScope(nodes, edges, voltageBaseTerminalValues, scope)
+        ])
+      ) as Partial<Record<VoltageBaseSetScope, ReturnType<typeof setVoltageBaseValuesForScope>>>;
+    }
+    if (voltageBaseSetValue.trim().length === 0) {
+      return {};
+    }
+    return Object.fromEntries(
+      VOLTAGE_BASE_SET_SCOPES.map((scope) => [
+        scope,
+        setVoltageBaseValuesForScope(nodes, edges, activeSelectedNodeIds, scope, voltageBaseSetValue.trim())
+      ])
+    ) as Partial<Record<VoltageBaseSetScope, ReturnType<typeof setVoltageBaseValuesForScope>>>;
+  }, [activeSelectedNodeIds, edges, nodes, voltageBaseSetDialogOpen, voltageBaseSetMode, voltageBaseSetValue, voltageBaseTerminalValues]);
+
+  const voltageBaseSetResultForScope = (scope: VoltageBaseSetScope) => {
+    if (voltageBaseSetMode === "terminal") {
+      return hasVoltageBaseTerminalValues(voltageBaseTerminalValues)
+        ? voltageBaseSetPreviewByScope[scope] ?? setVoltageBaseTerminalValuesForScope(nodes, edges, voltageBaseTerminalValues, scope)
+        : { nodes, nodeUpdates: [], targetNodeIds: [], changedNodeIds: [] };
+    }
+    return voltageBaseSetValue.trim().length === 0
+      ? { nodes, nodeUpdates: [], targetNodeIds: [], changedNodeIds: [] }
+      : voltageBaseSetPreviewByScope[scope] ?? setVoltageBaseValuesForScope(nodes, edges, activeSelectedNodeIds, scope, voltageBaseSetValue.trim());
+  };
+
+  const openVoltageBaseSetDialog = () => {
+    if (!requireEditMode("设置电压基值")) {
+      return;
+    }
+    const terminalValues = defaultVoltageBaseTerminalValues();
+    setVoltageBaseSetScope("selected");
+    setVoltageBaseSetValue(defaultVoltageBaseSetValue());
+    setVoltageBaseTerminalValues(terminalValues);
+    setVoltageBaseSetMode(Object.keys(terminalValues).length > 0 ? "terminal" : "uniform");
+    setVoltageBaseSetDialogOpen(true);
+  };
+
+  const confirmVoltageBaseSetDialog = () => {
+    if (!requireEditMode("设置电压基值")) {
+      setVoltageBaseSetDialogOpen(false);
+      return;
+    }
+    const value = voltageBaseSetValue.trim();
+    const terminalMode = voltageBaseSetMode === "terminal";
+    if (terminalMode && !hasVoltageBaseTerminalValues(voltageBaseTerminalValues)) {
+      writeOperationLog("端子电压基值不能为空");
+      return;
+    }
+    if (!terminalMode && !value) {
+      writeOperationLog("设置电压基值不能为空");
+      return;
+    }
+    const result = voltageBaseSetResultForScope(voltageBaseSetScope);
+    const scopeLabel = VOLTAGE_BASE_SET_SCOPE_LABELS[voltageBaseSetScope];
+    if (result.changedNodeIds.length === 0) {
+      writeOperationLog(`${scopeLabel}没有需要设置的电压基值`);
+      setVoltageBaseSetDialogOpen(false);
+      return;
+    }
+    pushUndoSnapshot(true, false, undoScopeForGraphPatch(result.changedNodeIds, []));
+    patchGraphNodes(result.nodeUpdates);
+    writeOperationLog(`设置电压基值（${scopeLabel}）：${result.changedNodeIds.length}/${result.targetNodeIds.length} 个设备，${terminalMode ? "按端子设置" : `值 ${value}`}`);
+    setVoltageBaseSetDialogOpen(false);
+  };
+
+  const voltageBaseClearPreviewByScope = useMemo<Partial<Record<VoltageBaseClearScope, ReturnType<typeof clearVoltageBaseValuesForScope>>>>(() => {
+    if (!voltageBaseClearDialogOpen) {
+      return {};
+    }
+    return Object.fromEntries(
+      VOLTAGE_BASE_CLEAR_SCOPES.map((scope) => [
+        scope,
+        clearVoltageBaseValuesForScope(nodes, edges, activeSelectedNodeIds, scope)
+      ])
+    ) as Partial<Record<VoltageBaseClearScope, ReturnType<typeof clearVoltageBaseValuesForScope>>>;
+  }, [activeSelectedNodeIds, edges, nodes, voltageBaseClearDialogOpen]);
+
+  const voltageBaseClearResultForScope = (scope: VoltageBaseClearScope) =>
+    voltageBaseClearPreviewByScope[scope] ?? clearVoltageBaseValuesForScope(nodes, edges, activeSelectedNodeIds, scope);
+
+  const openVoltageBaseClearDialog = () => {
+    if (!requireEditMode("清空电压基值")) {
+      return;
+    }
+    setVoltageBaseClearScope(activeSelectedNodeIds.length > 0 ? "selected" : "all");
+    setVoltageBaseClearDialogOpen(true);
+  };
+
+  const confirmVoltageBaseClearDialog = () => {
+    if (!requireEditMode("清空电压基值")) {
+      setVoltageBaseClearDialogOpen(false);
+      return;
+    }
+    const result = voltageBaseClearResultForScope(voltageBaseClearScope);
+    const scopeLabel = VOLTAGE_BASE_CLEAR_SCOPE_LABELS[voltageBaseClearScope];
+    if (result.changedNodeIds.length === 0) {
+      writeOperationLog(`${scopeLabel}没有可清空的电压基值`);
+      setVoltageBaseClearDialogOpen(false);
+      return;
+    }
+    pushUndoSnapshot(true, false, undoScopeForGraphPatch(result.changedNodeIds, []));
+    patchGraphNodes(result.nodeUpdates);
+    writeOperationLog(`清空电压基值（${scopeLabel}）：${result.changedNodeIds.length}/${result.targetNodeIds.length} 个设备`);
+    setVoltageBaseClearDialogOpen(false);
   };
 
   const connectionRedrawViewportBounds = () => {
@@ -20641,7 +21584,7 @@ export function App() {
   };
 
   const fitWholeCanvasFromBlankDoubleClick = (event: MouseEvent<SVGSVGElement>) => {
-    if (event.button !== 0 || staticDrawing || connectSource) {
+    if (event.button !== 0 || staticDrawing || connectSource || routableLinePlacement) {
       return;
     }
     const target = event.target as Element | null;
@@ -21119,6 +22062,8 @@ export function App() {
     }
     const sourcePoint = point ?? getModelEdgeEndpointPoint(node, undefined, terminalId);
     const nextConnectSource: NonNullable<typeof connectSource> = point ? { nodeId: node.id, terminalId, point } : { nodeId: node.id, terminalId };
+    setRoutableLinePlacement(null);
+    resetRoutableLinePreviewState();
     setConnectSource(nextConnectSource);
     applyConnectPreviewState(sourcePoint, false, null, null, nextConnectSource);
     setMode("connect");
@@ -21176,6 +22121,18 @@ export function App() {
       setConnectSource(null);
       resetConnectPreviewState();
       setRewiring(null);
+      return;
+    }
+    if (routableLinePlacement && event.button === 0 && svgRef.current) {
+      const busPoint = busAnchorFromEvent(node, event);
+      const target: ConnectTarget = { node, terminalId, point: busPoint };
+      if (routableLinePlacement.source) {
+        if (connectTargetTerminalType(target) === routableLineTemplateTerminalType(routableLinePlacement.template)) {
+          finishRoutableLineToTarget(target);
+        }
+      } else {
+        startRoutableLineFromTerminal(node, terminalId, busPoint);
+      }
       return;
     }
     if (event.button === 0 && hasCanvasSelectionModifier(event)) {
@@ -21895,6 +22852,7 @@ export function App() {
       >
         <div
           role="option"
+          aria-label={`方案：${scheme.name}`}
           aria-selected={selectedSchemeIds.includes(scheme.id) || selectedSchemeId === scheme.id}
           aria-expanded={isExpanded}
           tabIndex={0}
@@ -21957,8 +22915,8 @@ export function App() {
           }}
         >
           {isExpanded ? <ChevronDown className="scheme-toggle-icon" size={14} /> : <ChevronRight className="scheme-toggle-icon" size={14} />}
-          <FolderOpen size={14} />
-          <span>{scheme.name}</span>
+          <FolderOpen className="scheme-folder-icon" size={15} />
+          <span className="project-tree-name">{scheme.name}</span>
         </div>
         {isExpanded && (
           <div className="scheme-projects">
@@ -21971,6 +22929,7 @@ export function App() {
                   return (
                     <div
                       role="option"
+                      aria-label={`模型：${project.name}`}
                       aria-selected={isProjectSelected}
                       tabIndex={0}
                       draggable={isEditMode}
@@ -22016,7 +22975,7 @@ export function App() {
                       }}
                     >
                       <FileJson className="project-item-icon" size={14} />
-                      <span>{project.name}</span>
+                      <span className="project-tree-name">{project.name}</span>
                     </div>
                   );
                 })}
@@ -23643,6 +24602,12 @@ export function App() {
       setMode("select");
       return;
     }
+    if (routableLinePlacement) {
+      setRoutableLinePlacement(null);
+      resetRoutableLinePreviewState();
+      setMode("select");
+      return;
+    }
     if (!selectedNodeIdSet.has(node.id)) {
       selectCanvasGraphics([node.id], []);
     }
@@ -24925,12 +25890,16 @@ export function App() {
               if (libraryPlacement) {
                 updateLibraryPlacementPreview(pointer);
               }
+              if (routableLinePlacement) {
+                scheduleRoutableLinePreviewPoint(pointer);
+              }
             }}
             onPointerUp={(event) => {
               if (finishModifierSelectionPress(event.pointerId)) {
                 return;
               }
               finishRewiring(event);
+              finishRoutableLineEndpointDrag();
               finishTerminalPress();
               finishNodeLabelDrag();
               finishNodeLabelRotateDrag();
@@ -24942,6 +25911,9 @@ export function App() {
             }}
             onPointerLeave={() => {
               clearLibraryPlacementPreview();
+              if (routableLinePlacement) {
+                resetRoutableLinePreviewState();
+              }
               if (draggingRef.current) {
                 canvasInteractionRef.current = true;
                 projectListPointerInsideRef.current = false;
@@ -24966,6 +25938,7 @@ export function App() {
                 return;
               }
               setTerminalPress(null);
+              setRoutableLineEndpointDrag(null);
               finishManualPathDrag();
               finishTransformDrag();
               setMarquee(null);
@@ -24977,6 +25950,7 @@ export function App() {
               finishNodeLabelRotateDrag();
               finishNodeDrag();
               setTerminalPress(null);
+              setRoutableLineEndpointDrag(null);
               finishManualPathDrag();
               finishTransformDrag();
               setCanvasPanning(null);
@@ -24989,6 +25963,7 @@ export function App() {
               finishNodeLabelRotateDrag();
               finishNodeDrag();
               setTerminalPress(null);
+              setRoutableLineEndpointDrag(null);
               finishManualPathDrag();
               finishTransformDrag();
             }}
@@ -25004,6 +25979,18 @@ export function App() {
               lastRawCanvasPointerRef.current = rawPointer;
               lastCanvasPointerRef.current = pointer;
               updateMouseStatus(pointer);
+              if (routableLinePlacement) {
+                const target = findRoutableLineEndpointTargetAtPoint(pointer);
+                applyRoutableLinePreviewState(pointer, target ? connectTargetPoint(target) : null, target);
+                if (target) {
+                  if (routableLinePlacement.source) {
+                    finishRoutableLineToTarget(target);
+                  } else {
+                    startRoutableLineFromTerminal(target.node, target.terminalId, target.point);
+                  }
+                }
+                return;
+              }
               if (libraryPlacement) {
                 commitLibraryPlacementAtPoint(pointer);
                 return;
@@ -25089,6 +26076,12 @@ export function App() {
               updateMouseStatus(pointer);
               if (libraryPlacement) {
                 cancelLibraryPlacement();
+                return;
+              }
+              if (routableLinePlacement) {
+                setRoutableLinePlacement(null);
+                resetRoutableLinePreviewState();
+                setMode("select");
                 return;
               }
               if (staticDrawing) {
@@ -25420,6 +26413,12 @@ export function App() {
                         setMode("select");
                         return;
                       }
+                      if (routableLinePlacement) {
+                        setRoutableLinePlacement(null);
+                        resetRoutableLinePreviewState();
+                        setMode("select");
+                        return;
+                      }
                       openGraphicContextMenu({ x: event.clientX, y: event.clientY, target: "group", canvasPoint: pointer });
                     }}
                   />
@@ -25599,6 +26598,12 @@ export function App() {
                       const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
                       lastCanvasPointerRef.current = pointer;
                       updateMouseStatus(pointer);
+                    }
+                    if (routableLinePlacement) {
+                      setRoutableLinePlacement(null);
+                      resetRoutableLinePreviewState();
+                      setMode("select");
+                      return;
                     }
                     if (connectSource) {
                       setConnectSource(null);
@@ -25792,9 +26797,14 @@ export function App() {
                     {node.terminals.map((terminal) => {
                       const hideFixedTerminal = nodeIsBus || isStaticNode(node);
                       const disabled =
-                        connectTerminalCompatibilityActive &&
                         !hideFixedTerminal &&
-                        !canConnectTerminals(connectSourceNode!, connectSource!.terminalId, node, terminal.id);
+                        (
+                          (connectTerminalCompatibilityActive &&
+                            !canConnectTerminals(connectSourceNode!, connectSource!.terminalId, node, terminal.id)) ||
+                          (routableLineTerminalCompatibilityActive &&
+                            Boolean(routableLineActiveTerminalType) &&
+                            terminal.type !== routableLineActiveTerminalType)
+                        );
                       const overlapped = isEditMode && overlappedTerminalKeys.has(`${node.id}:${terminal.id}`);
                       const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
                       const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
@@ -25908,6 +26918,20 @@ export function App() {
                 style={connectPreviewColor ? ({ "--connection-color": connectPreviewColor } as CSSProperties) : undefined}
               />
             )}
+            {routableLinePlacement && routableLinePreview.path && (
+              <path
+                d={routableLinePreview.path}
+                className="routable-line-drawing-preview"
+                style={routableLinePlacementColor ? ({ "--connection-color": routableLinePlacementColor } as CSSProperties) : undefined}
+              />
+            )}
+            {routableLineEndpointDragPreviewRoute && (
+              <path
+                d={routableLineEndpointDragPreviewRoute.path}
+                className="routable-line-drawing-preview endpoint-retarget-preview"
+                style={routableLineEndpointDragColor ? ({ "--connection-color": routableLineEndpointDragColor } as CSSProperties) : undefined}
+              />
+            )}
             {connectSource && (
               <g
                 ref={(element) => {
@@ -25953,6 +26977,22 @@ export function App() {
               <circle className="connect-drop-hint-ring" cx="0" cy="0" r="16" />
               <circle className="connect-drop-hint-core" cx="0" cy="0" r="5" />
             </g>
+            {routableLineEndpointHandles.length > 0 && (
+              <g className="routable-line-endpoint-handle-layer">
+                {routableLineEndpointHandles.map((handle) => (
+                  <circle
+                    key={`${handle.node.id}-${handle.endpoint}`}
+                    className={`routable-line-endpoint-handle ${handle.endpoint}`}
+                    cx={handle.point.x}
+                    cy={handle.point.y}
+                    r="7"
+                    onPointerDown={(event) => startRoutableLineEndpointDrag(event, handle.node, handle.endpoint)}
+                  >
+                    <title>{handle.endpoint === "source" ? "调整线路起点" : "调整线路终点"}</title>
+                  </circle>
+                ))}
+              </g>
+            )}
             {selectedRoutedEdge &&
               selectedEdge &&
               !(singleNodeDragging && dragAffectedEdgeIdSet.has(selectedEdge.id)) &&
@@ -26678,7 +27718,7 @@ export function App() {
                     </tr>
                     <tr>
                       {renderChineseParamHeader("scaleX")}
-                      <td><input type="number" step="0.1" value={getNodeScaleX(inspectorSelectedNode)} onChange={(event) => {
+                      <td><input type="number" step="0.1" value={formatInspectorScaleValue(getNodeScaleX(inspectorSelectedNode))} onChange={(event) => {
                         const scaleX = normalizeScale(Number(event.target.value), getNodeScaleX(inspectorSelectedNode));
                         const scaleY = getNodeScaleY(inspectorSelectedNode);
                         updateSelectedNode({ scale: Math.max(Math.abs(scaleX), Math.abs(scaleY)), scaleX, scaleY });
@@ -26686,7 +27726,7 @@ export function App() {
                     </tr>
                     <tr>
                       {renderChineseParamHeader("scaleY")}
-                      <td><input type="number" step="0.1" value={getNodeScaleY(inspectorSelectedNode)} onChange={(event) => {
+                      <td><input type="number" step="0.1" value={formatInspectorScaleValue(getNodeScaleY(inspectorSelectedNode))} onChange={(event) => {
                         const scaleY = normalizeScale(Number(event.target.value), getNodeScaleY(inspectorSelectedNode));
                         const scaleX = getNodeScaleX(inspectorSelectedNode);
                         updateSelectedNode({ scale: Math.max(Math.abs(scaleX), Math.abs(scaleY)), scaleX, scaleY });
@@ -26868,12 +27908,28 @@ export function App() {
                     {isStaticNode(inspectorSelectedNode) && (
                       <>
                         <tr>
+                          {renderChineseParamHeader(STATIC_ROUTE_AVOIDANCE_PARAM)}
+                          <td>
+                            <select
+                              value={staticNodeParticipatesInRoutingAvoidance(inspectorSelectedNode) ? "1" : "0"}
+                              onChange={(event) => updateParam(STATIC_ROUTE_AVOIDANCE_PARAM, event.target.value)}
+                            >
+                              <option value="1">参与</option>
+                              <option value="0">不参与</option>
+                            </select>
+                          </td>
+                        </tr>
+                        <tr>
                           {renderChineseParamHeader("text")}
                           <td><textarea rows={4} value={inspectorSelectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} /></td>
                         </tr>
                         <tr>
                           {renderChineseParamHeader("fontFamily")}
                           <td>{renderParamEditor("fontFamily", inspectorSelectedNode.params.fontFamily || "Arial", false)}</td>
+                        </tr>
+                        <tr>
+                          <th title="fontSize">字体大小（100%）</th>
+                          <td><input type="number" min="8" max="160" value={inspectorSelectedNode.params.fontSize || "24"} onChange={(event) => updateParam("fontSize", event.target.value)} /></td>
                         </tr>
                         <tr>
                           <th>文字样式</th>
@@ -26959,10 +28015,6 @@ export function App() {
                           <td><input type="number" min="3" max="40" value={inspectorSelectedNode.params.handleSize || "8"} onChange={(event) => updateParam("handleSize", event.target.value)} /></td>
                         </tr>
                         {renderStaticButtonActionEditor(inspectorSelectedNode)}
-                        <tr>
-                          {renderChineseParamHeader("fontSize")}
-                          <td><input type="number" min="8" max="160" value={inspectorSelectedNode.params.fontSize || "24"} onChange={(event) => updateParam("fontSize", event.target.value)} /></td>
-                        </tr>
                         <tr>
                           {renderChineseParamHeader("backgroundImage")}
                           <td>
@@ -27205,6 +28257,18 @@ export function App() {
             <button onClick={() => runContextMenuAction(pasteSelection)}>
               <FileInput size={14} />
               粘贴
+            </button>
+          )}
+          {isEditMode && nodes.length > 0 && (
+            <button onClick={() => runContextMenuAction(openVoltageBaseSetDialog)}>
+              <Zap size={14} />
+              设置电压基值
+            </button>
+          )}
+          {isEditMode && nodes.length > 0 && (
+            <button onClick={() => runContextMenuAction(openVoltageBaseClearDialog)}>
+              <ZapOff size={14} />
+              清空电压基值
             </button>
           )}
           {isEditMode && contextMenuTarget === "blank" && activeLayerNodes.length > 1 && (
@@ -27580,6 +28644,144 @@ export function App() {
               <button type="button" onClick={() => resolveUnsavedChangeAction("cancel")}>退出操作</button>
             </div>
             <p className="unsaved-change-note">关闭网页时，浏览器也会在离开前提示当前模型未保存。</p>
+          </section>
+        </div>
+      )}
+      {voltageBaseSetDialogOpen && (
+        <div className="image-picker-backdrop" onPointerDown={() => setVoltageBaseSetDialogOpen(false)}>
+          <section className="connection-redraw-dialog voltage-base-set-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="voltage-base-set-title">
+            <div className="image-picker-title">
+              <div>
+                <h2 id="voltage-base-set-title">设置电压基值</h2>
+                <p>将指定范围内设备端子和电压相关参数中的 vbase、v_base、v_set 等值设为输入值；多端设备可按端子分别设置。</p>
+              </div>
+              <button type="button" onClick={() => setVoltageBaseSetDialogOpen(false)}>关闭</button>
+            </div>
+            <label className="voltage-base-set-value-row">
+              <span>设置方式</span>
+              <select
+                value={voltageBaseSetMode}
+                onChange={(event) => setVoltageBaseSetMode(event.target.value as VoltageBaseSetMode)}
+              >
+                <option value="uniform">统一设置</option>
+                <option value="terminal" disabled={voltageBaseSetTerminalRows.length === 0}>按端子设置</option>
+              </select>
+            </label>
+            {voltageBaseSetMode === "uniform" ? (
+            <label className="voltage-base-set-value-row">
+              <span>电压基值</span>
+              <input
+                type="text"
+                value={voltageBaseSetValue}
+                onChange={(event) => setVoltageBaseSetValue(event.target.value)}
+                list="voltage-base-set-options"
+                placeholder="例如 110"
+                autoFocus
+              />
+            </label>
+            ) : (
+              <div className="voltage-base-terminal-grid" aria-label="按端子设置电压基值">
+                <div className="voltage-base-terminal-grid-head">
+                  <span>设备</span>
+                  <span>端子</span>
+                  <span>电压基值</span>
+                </div>
+                {voltageBaseSetTerminalRows.map((row, index) => (
+                  <label className="voltage-base-terminal-row" key={`${row.nodeId}:${row.terminalId}`}>
+                    <span title={row.nodeName}>{row.nodeName}</span>
+                    <span title={`${row.terminalLabel} / ${row.terminalType}`}>{row.terminalLabel} / {row.terminalType}</span>
+                    <input
+                      type="text"
+                      value={row.value}
+                      onChange={(event) => setVoltageBaseTerminalValue(row.nodeId, row.terminalId, event.target.value)}
+                      list="voltage-base-set-options"
+                      placeholder="例如 110"
+                      autoFocus={index === 0}
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
+            <datalist id="voltage-base-set-options">
+              {voltageBaseSetOptions.map((value) => (
+                <option key={value} value={value} />
+              ))}
+            </datalist>
+            <div className="connection-redraw-options voltage-base-set-options" role="radiogroup" aria-label="设置电压基值范围">
+              {VOLTAGE_BASE_SET_SCOPES.map((scope) => {
+                const result = voltageBaseSetResultForScope(scope);
+                const count = result.changedNodeIds.length;
+                const disabled = count === 0 || voltageBaseSetValue.trim().length === 0;
+                return (
+                  <button
+                    key={scope}
+                    type="button"
+                    className={voltageBaseSetScope === scope ? "active" : ""}
+                    role="radio"
+                    aria-checked={voltageBaseSetScope === scope}
+                    onClick={() => setVoltageBaseSetScope(scope)}
+                    disabled={disabled}
+                  >
+                    <span>{VOLTAGE_BASE_SET_SCOPE_LABELS[scope]}</span>
+                    <strong>{count}</strong>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="image-picker-actions connection-redraw-actions">
+              <button type="button" onClick={() => setVoltageBaseSetDialogOpen(false)}>取消</button>
+              <button
+                type="button"
+                onClick={confirmVoltageBaseSetDialog}
+                disabled={(voltageBaseSetMode === "terminal" ? !hasVoltageBaseTerminalValues(voltageBaseTerminalValues) : voltageBaseSetValue.trim().length === 0) || voltageBaseSetResultForScope(voltageBaseSetScope).changedNodeIds.length === 0}
+              >
+                确定
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {voltageBaseClearDialogOpen && (
+        <div className="image-picker-backdrop" onPointerDown={() => setVoltageBaseClearDialogOpen(false)}>
+          <section className="connection-redraw-dialog voltage-base-clear-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="voltage-base-clear-title">
+            <div className="image-picker-title">
+              <div>
+                <h2 id="voltage-base-clear-title">清空电压基值</h2>
+                <p>将指定范围内设备端子和电压相关参数中的 vbase、v_base、v_set 等值统一设为 0.0。</p>
+              </div>
+              <button type="button" onClick={() => setVoltageBaseClearDialogOpen(false)}>关闭</button>
+            </div>
+            <div className="connection-redraw-options voltage-base-clear-options" role="radiogroup" aria-label="清空电压基值范围">
+              {VOLTAGE_BASE_CLEAR_SCOPES.map((scope) => {
+                const result = voltageBaseClearResultForScope(scope);
+                const count = result.changedNodeIds.length;
+                const disabled = count === 0;
+                return (
+                  <button
+                    key={scope}
+                    type="button"
+                    className={voltageBaseClearScope === scope ? "active" : ""}
+                    role="radio"
+                    aria-checked={voltageBaseClearScope === scope}
+                    onClick={() => setVoltageBaseClearScope(scope)}
+                    disabled={disabled}
+                  >
+                    <span>{VOLTAGE_BASE_CLEAR_SCOPE_LABELS[scope]}</span>
+                    <strong>{count}</strong>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="image-picker-actions connection-redraw-actions">
+              <button type="button" onClick={() => setVoltageBaseClearDialogOpen(false)}>取消</button>
+              <button
+                type="button"
+                onClick={confirmVoltageBaseClearDialog}
+                disabled={voltageBaseClearResultForScope(voltageBaseClearScope).changedNodeIds.length === 0}
+              >
+                确定
+              </button>
+            </div>
           </section>
         </div>
       )}
