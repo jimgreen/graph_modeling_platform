@@ -32,6 +32,15 @@ const frontendManualChunks = (id: string) => {
   if (isSourceModule(moduleId, "/src/canvasViewport.ts")) {
     return "canvas-viewport";
   }
+  if (isSourceModule(moduleId, "/src/LeftPanels.tsx")) {
+    return "left-panels";
+  }
+  if (isSourceModule(moduleId, "/src/RightInspectorPanel.tsx")) {
+    return "right-inspector-panel";
+  }
+  if (isSourceModule(moduleId, "/src/AppDialogs.tsx")) {
+    return "app-dialogs";
+  }
   if (
     isSourceModule(moduleId, "/src/graphStore.ts") ||
     isSourceModule(moduleId, "/src/routeStore.ts") ||

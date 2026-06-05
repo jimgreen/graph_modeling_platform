@@ -374,6 +374,15 @@ import {
   scrollPositionToViewBoxStart,
   viewBoxAfterCanvasBoundsChange
 } from "./canvasViewport";
+import {
+  ElementTreePanel,
+  GraphTemplatePreview,
+  LibraryPanel,
+  ProjectPanel,
+  TemplateLibraryPanel
+} from "./LeftPanels";
+import { RightInspectorPanel } from "./RightInspectorPanel";
+import { AppDialogs } from "./AppDialogs";
 
 const ENABLE_REACT_FLOW_PREVIEW = import.meta.env.DEV;
 const ReactFlowPreview = ENABLE_REACT_FLOW_PREVIEW ? lazy(() => import("./ReactFlowPreview")) : null;
@@ -20937,52 +20946,16 @@ export function App() {
   };
 
   const renderProjectPanel = () => (
-    <section className="project-panel">
-      <div className="library-search project-search">
-        <Search size={15} aria-hidden="true" />
-        <input
-          value={projectSearchQuery}
-          onChange={(event) => setProjectSearchQuery(event.target.value)}
-          placeholder="搜索方案/模型"
-          aria-label="搜索模型库"
-        />
-        {projectSearchQuery && (
-          <button type="button" aria-label="清空模型库搜索" title="清空" onClick={() => setProjectSearchQuery("")}>
-            <X size={14} />
-          </button>
-        )}
-      </div>
-      <div
-        className="project-list listbox"
-        role="listbox"
-        aria-label="绘图模型列表"
-        onPointerEnter={() => {
-          projectListPointerInsideRef.current = true;
-        }}
-        onPointerLeave={() => {
-          projectListPointerInsideRef.current = false;
-        }}
-        onContextMenu={(event) => {
-          const target = event.target as HTMLElement | null;
-          if (target?.closest(".scheme-option, .project-option")) {
-            return;
-          }
-          event.preventDefault();
-          if (!isEditMode) {
-            return;
-          }
-          setProjectMenu({ x: event.clientX, y: event.clientY });
-        }}
-      >
-        {schemes.length === 0 ? (
-          <p className="project-empty">暂无方案</p>
-        ) : filteredProjectSchemes.length === 0 ? (
-          <p className="project-empty project-search-empty">未找到匹配方案或模型</p>
-        ) : (
-          filteredProjectSchemes.map((scheme) => renderProjectSchemeNode(scheme))
-        )}
-      </div>
-    </section>
+    <ProjectPanel
+      projectSearchQuery={projectSearchQuery}
+      setProjectSearchQuery={setProjectSearchQuery}
+      projectListPointerInsideRef={projectListPointerInsideRef}
+      isEditMode={isEditMode}
+      setProjectMenu={setProjectMenu}
+      schemesLength={schemes.length}
+      filteredProjectSchemes={filteredProjectSchemes}
+      renderProjectSchemeNode={(scheme) => renderProjectSchemeNode(scheme as SavedSchemeRecord)}
+    />
   );
 
   const customDraftTerminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
@@ -21835,473 +21808,89 @@ export function App() {
     </div>
   );
 
-  const renderGraphTemplatePreview = (template: GraphTemplate) => {
-    const bounds = canvasClipboardBounds(template.clipboard);
-    if (!bounds) {
-      return (
-        <svg viewBox="0 0 80 56" aria-hidden="true" className="template-preview-svg">
-          <rect x="8" y="10" width="64" height="36" rx="6" fill="#f8fafc" stroke="#cbd5e1" />
-        </svg>
-      );
-    }
-    const padding = 8;
-    const width = Math.max(1, bounds.right - bounds.left + padding * 2);
-    const height = Math.max(1, bounds.bottom - bounds.top + padding * 2);
-    return (
-      <svg
-        viewBox={`${bounds.left - padding} ${bounds.top - padding} ${width} ${height}`}
-        aria-hidden="true"
-        className="template-preview-svg"
-      >
-        {template.clipboard.edges.map((item) => (
-          <path
-            key={item.edge.id}
-            d={pointsToPreviewPath(item.routePoints)}
-            fill="none"
-            stroke="#64748b"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        ))}
-        {template.clipboard.nodes.map((node) => (
-          <g key={node.id} transform={`translate(${node.position.x} ${node.position.y})`}>
-            <g transform={nodeGeometryTransform(node)}>
-              <MemoDeviceGlyph node={node} miniature colorPalette={colorPalette} />
-            </g>
-          </g>
-        ))}
-      </svg>
-    );
-  };
-
-  const renderTemplateLibraryPanel = () => (
-    <div className="template-library-panel library-panel-stack">
-      <div className="library-scroll">
-        {graphTemplateTypes.map((typeName) => {
-          const expanded = expandedGraphTemplateTypes.includes(typeName) || hoveredGraphTemplateType === typeName;
-          const templates = groupedGraphTemplates[typeName] ?? [];
-          return (
-            <section
-              className="library-group-section"
-              key={typeName}
-              onMouseEnter={() => setHoveredGraphTemplateType(typeName)}
-              onMouseLeave={() => setHoveredGraphTemplateType((current) => current === typeName ? "" : current)}
-            >
-              <button
-                className={`library-group-toggle ${expanded ? "active" : ""}`}
-                onClick={() =>
-                  setExpandedGraphTemplateTypes((current) =>
-                    current.includes(typeName) ? current.filter((item) => item !== typeName) : [...current, typeName]
-                  )
-                }
-              >
-                {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                {typeName}
-                <strong>{templates.length}</strong>
-              </button>
-              {expanded && (
-                templates.length > 0 ? (
-                  <div className="template-library-grid">
-                    {templates.map((template) => (
-                      <button
-                        key={template.id}
-                        type="button"
-                        className="template-library-item"
-                        draggable={isEditMode}
-                        disabled={isBrowseMode}
-                        title={`${template.typeName} / ${template.name} / ${template.sourceSize.width}×${template.sourceSize.height}`}
-                        onClick={() => startLibraryGraphTemplatePlacement(template)}
-                        onContextMenu={(event) => {
-                          event.preventDefault();
-                          cancelLibraryPlacement();
-                        }}
-                        onDragStart={(event) => {
-                          if (!isEditMode) {
-                            event.preventDefault();
-                            return;
-                          }
-                          cancelLibraryPlacement();
-                          event.dataTransfer.setData("application/graph-template-id", template.id);
-                          event.dataTransfer.effectAllowed = "copy";
-                        }}
-                      >
-                        <span className="template-library-icon">
-                          {renderGraphTemplatePreview(template)}
-                        </span>
-                        <span className="template-library-name">{template.name}</span>
-                        <small>{template.sourceSize.width}×{template.sourceSize.height}</small>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="template-library-empty">暂无模板</div>
-                )
-              )}
-            </section>
-          );
-        })}
-      </div>
-    </div>
+  const renderGraphTemplatePreview = (template: GraphTemplate) => (
+    <GraphTemplatePreview
+      template={template}
+      colorPalette={colorPalette}
+      pointsToPreviewPath={pointsToPreviewPath}
+    />
   );
 
-  const renderLibraryTemplateButton = (item: DeviceTemplate, section: string) => {
-    const preview = libraryPreviewByKind.get(item.kind) ?? createNodeFromTemplate(item, { x: 0, y: 0 });
-    const previewRotation = ((Math.round(preview.rotation) % 360) + 360) % 360;
-    const previewViewBox = previewRotation === 90 || previewRotation === 270 ? "-48 -48 96 96" : "-40 -28 80 56";
-    return (
-      <button
-        key={item.kind}
-        className="library-item"
-        draggable={isEditMode}
-        disabled={isBrowseMode}
-        title={`${item.label} / ${section}`}
-        onClick={() => startLibraryDevicePlacement(item)}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          cancelLibraryPlacement();
-        }}
-        onDragStart={(event) => {
-          if (!isEditMode) {
-            event.preventDefault();
-            return;
-          }
-          cancelLibraryPlacement();
-          event.dataTransfer.setData("application/device-kind", item.kind);
-          if (componentLibraryDisplayMode === "right") {
-            hideLibraryFlyout();
-          }
-        }}
-      >
-        <svg viewBox={previewViewBox} aria-hidden="true">
-          <g transform={nodeGeometryTransform(preview)}>
-            <MemoDeviceGlyph node={preview} miniature colorPalette={colorPalette} />
-          </g>
-        </svg>
-      </button>
-    );
-  };
-  const renderLibraryFlyout = (flyoutListKey: string, componentTypeKey: string, group: AttributeLibrary, typeGroup: AttributeLibraryComponentTypeGroup) => {
-    const flyout = (
-      <div
-        className="library-group flyout-library-group"
-        ref={setLibraryComponentListRef(flyoutListKey)}
-        style={libraryFlyoutStyle(flyoutListKey)}
-        onMouseEnter={() => {
-          clearLibraryFlyoutCloseTimer();
-          setHoveredAttributeLibrary(group);
-          setHoveredAttributeLibraryComponentType(componentTypeKey);
-        }}
-        onMouseLeave={() => scheduleLibraryFlyoutClose(group, componentTypeKey)}
-      >
-        {typeGroup.templates.map((item) => renderLibraryTemplateButton(item, typeGroup.section))}
-      </div>
-    );
-    if (typeof document === "undefined") {
-      return flyout;
-    }
-    return createPortal(flyout, document.body);
-  };
+  const renderTemplateLibraryPanel = () => (
+    <TemplateLibraryPanel
+      graphTemplateTypes={graphTemplateTypes}
+      expandedGraphTemplateTypes={expandedGraphTemplateTypes}
+      hoveredGraphTemplateType={hoveredGraphTemplateType}
+      setHoveredGraphTemplateType={setHoveredGraphTemplateType}
+      setExpandedGraphTemplateTypes={setExpandedGraphTemplateTypes}
+      groupedGraphTemplates={groupedGraphTemplates}
+      isEditMode={isEditMode}
+      isBrowseMode={isBrowseMode}
+      colorPalette={colorPalette}
+      startLibraryGraphTemplatePlacement={startLibraryGraphTemplatePlacement}
+      cancelLibraryPlacement={cancelLibraryPlacement}
+      pointsToPreviewPath={pointsToPreviewPath}
+    />
+  );
 
   const renderLibraryPanel = () => (
-    <div className="library-panel-stack">
-      <div className="library-search">
-        <Search size={15} aria-hidden="true" />
-        <input
-          value={librarySearchQuery}
-          onChange={(event) => setLibrarySearchQuery(event.target.value)}
-          placeholder="搜索图元/类型"
-          aria-label="搜索图元库"
-        />
-        {librarySearchQuery && (
-          <button type="button" aria-label="清空图元库搜索" title="清空" onClick={() => setLibrarySearchQuery("")}>
-            <X size={14} />
-          </button>
-        )}
-      </div>
-      <div className="library-display-mode" role="radiogroup" aria-label="图元库展开方式">
-        {([
-          ["expanded", "向下展开"],
-          ["right", "向右浮动"]
-        ] as const).map(([mode, label]) => (
-          <label key={mode} className={componentLibraryDisplayMode === mode ? "active" : ""}>
-            <input
-              type="radio"
-              name="component-library-display-mode"
-              value={mode}
-              checked={componentLibraryDisplayMode === mode}
-              onChange={() => setComponentLibraryDisplayMode(mode)}
-            />
-            <span>{label}</span>
-          </label>
-        ))}
-      </div>
-      <div
-        className={`library-scroll ${componentLibraryDisplayMode === "right" ? "library-scroll-flyout" : ""}`}
-        ref={libraryScrollRef}
-        onScroll={() => {
-          if (componentLibraryDisplayMode === "right") {
-            hideLibraryFlyout();
-          }
-        }}
-      >
-        {displayedAttributeLibraries.length > 0 ? displayedAttributeLibraries.map((group) => {
-          const libraryExpanded = componentLibraryDisplayMode === "expanded";
-          const libraryFlyout = componentLibraryDisplayMode === "right";
-          const expanded = librarySearchNeedle ? true : libraryExpanded
-            ? !collapsedExpandedModeAttributeLibraries.includes(group)
-            : expandedAttributeLibraries.includes(group) || hoveredAttributeLibrary === group;
-          const typeGroups = filteredAttributeLibraryByComponentType[group] ?? [];
-          return (
-            <section
-              className="library-group-section"
-              key={group}
-              onMouseEnter={() => {
-                if (!libraryExpanded) {
-                  clearLibraryFlyoutCloseTimer();
-                  setHoveredAttributeLibrary(group);
-                }
-              }}
-              onMouseLeave={() => {
-                if (!libraryExpanded) {
-                  if (libraryFlyout) {
-                    scheduleLibraryFlyoutClose(group);
-                  } else {
-                    setHoveredAttributeLibrary((current) => current === group ? "" : current);
-                    setHoveredAttributeLibraryComponentType("");
-                  }
-                }
-              }}
-            >
-              <button
-                className={`library-group-toggle ${expanded ? "active" : ""}`}
-                onClick={() => toggleAttributeLibrary(group)}
-              >
-                {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                {group}
-              </button>
-              {expanded && (
-                <div className="attribute-library-component-type-list">
-                  {typeGroups.map((typeGroup) => {
-                    const componentTypeKey = attributeLibraryComponentTypeKey(group, typeGroup.section);
-                    const componentTypeDisplay = componentTypeDisplayParts(typeGroup.section);
-                    const componentTypeExpanded = librarySearchNeedle
-                      ? true
-                      : libraryExpanded
-                        ? !collapsedExpandedModeComponentTypes.includes(componentTypeKey)
-                        : libraryFlyout ? false : expandedAttributeLibraryComponentTypes.includes(componentTypeKey) || hoveredAttributeLibraryComponentType === componentTypeKey;
-                    const componentTypeFlyoutVisible = libraryFlyout && !librarySearchNeedle && hoveredAttributeLibraryComponentType === componentTypeKey;
-                    const inlineListKey = libraryComponentListRefKey("inline", componentTypeKey);
-                    const flyoutListKey = libraryComponentListRefKey("flyout", componentTypeKey);
-                    return (
-                      <section
-                        className={`attribute-library-component-type-section ${libraryFlyout ? "flyout-mode" : ""}`}
-                        key={`${group}-${typeGroup.section}`}
-                        onMouseEnter={() => {
-                          if (!libraryExpanded) {
-                            clearLibraryFlyoutCloseTimer();
-                            setHoveredAttributeLibraryComponentType(componentTypeKey);
-                          }
-                        }}
-                        onMouseLeave={() => {
-                          if (!libraryExpanded) {
-                            if (libraryFlyout) {
-                              scheduleLibraryFlyoutClose(group, componentTypeKey);
-                            } else {
-                              setHoveredAttributeLibraryComponentType((current) => current === componentTypeKey ? "" : current);
-                            }
-                          }
-                        }}
-                      >
-                        <button
-                          type="button"
-                          ref={setLibraryComponentTypeHeaderRef(flyoutListKey)}
-                          className={`attribute-library-component-type-header ${componentTypeExpanded || componentTypeFlyoutVisible ? "active" : ""}`}
-                          aria-expanded={componentTypeExpanded || componentTypeFlyoutVisible}
-                          onClick={() => toggleAttributeLibraryComponentType(group, typeGroup.section)}
-                        >
-                          <span className="component-type-title">
-                            {componentTypeExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                            <span className="component-type-name" title={componentTypeDisplay.title}>
-                              <span className="component-type-name-cn">{componentTypeDisplay.chinese}</span>
-                              <span className="component-type-name-en">{componentTypeDisplay.english}</span>
-                            </span>
-                          </span>
-                          <strong>{typeGroup.templates.length}</strong>
-                        </button>
-                        {componentTypeExpanded && (
-                          <div className="library-group inline-library-group" ref={setLibraryComponentListRef(inlineListKey)}>
-                            {typeGroup.templates.map((item) => renderLibraryTemplateButton(item, typeGroup.section))}
-                          </div>
-                        )}
-                        {componentTypeFlyoutVisible && renderLibraryFlyout(flyoutListKey, componentTypeKey, group, typeGroup)}
-                      </section>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-          );
-        }) : (
-          <div className="library-empty">未找到匹配图元</div>
-        )}
-      </div>
-      {renderLibraryDefinitionActions()}
-    </div>
+    <LibraryPanel
+      librarySearchQuery={librarySearchQuery}
+      setLibrarySearchQuery={setLibrarySearchQuery}
+      componentLibraryDisplayMode={componentLibraryDisplayMode}
+      setComponentLibraryDisplayMode={setComponentLibraryDisplayMode}
+      libraryScrollRef={libraryScrollRef}
+      displayedAttributeLibraries={displayedAttributeLibraries}
+      librarySearchNeedle={librarySearchNeedle}
+      collapsedExpandedModeAttributeLibraries={collapsedExpandedModeAttributeLibraries}
+      expandedAttributeLibraries={expandedAttributeLibraries}
+      hoveredAttributeLibrary={hoveredAttributeLibrary}
+      filteredAttributeLibraryByComponentType={filteredAttributeLibraryByComponentType}
+      collapsedExpandedModeComponentTypes={collapsedExpandedModeComponentTypes}
+      expandedAttributeLibraryComponentTypes={expandedAttributeLibraryComponentTypes}
+      hoveredAttributeLibraryComponentType={hoveredAttributeLibraryComponentType}
+      colorPalette={colorPalette}
+      isEditMode={isEditMode}
+      isBrowseMode={isBrowseMode}
+      libraryPreviewByKind={libraryPreviewByKind}
+      renderLibraryDefinitionActions={renderLibraryDefinitionActions}
+      toggleAttributeLibrary={toggleAttributeLibrary}
+      attributeLibraryComponentTypeKey={attributeLibraryComponentTypeKey}
+      componentTypeDisplayParts={componentTypeDisplayParts}
+      libraryComponentListRefKey={libraryComponentListRefKey}
+      setLibraryComponentTypeHeaderRef={setLibraryComponentTypeHeaderRef}
+      setLibraryComponentListRef={setLibraryComponentListRef}
+      libraryFlyoutStyle={libraryFlyoutStyle}
+      clearLibraryFlyoutCloseTimer={clearLibraryFlyoutCloseTimer}
+      setHoveredAttributeLibrary={setHoveredAttributeLibrary}
+      setHoveredAttributeLibraryComponentType={setHoveredAttributeLibraryComponentType}
+      scheduleLibraryFlyoutClose={scheduleLibraryFlyoutClose}
+      hideLibraryFlyout={hideLibraryFlyout}
+      toggleAttributeLibraryComponentType={toggleAttributeLibraryComponentType}
+      startLibraryDevicePlacement={startLibraryDevicePlacement}
+      cancelLibraryPlacement={cancelLibraryPlacement}
+    />
   );
 
   const renderElementTreePanel = () => (
-    <div className="element-tree" role="tree" aria-label="图元树">
-      {elementTree.length === 0 ? (
-        <div className="empty-state compact">
-          <Grid2X2 size={24} />
-          <p>当前画布暂无图元。</p>
-        </div>
-      ) : (
-        elementTree.map((group) => {
-          const expanded = !collapsedElementTreeGroups.includes(group.typeKey);
-          const visibleLimit = elementTreeItemLimits[group.typeKey] ?? ELEMENT_TREE_INITIAL_ITEM_LIMIT;
-          const visibleItems = group.items.slice(0, visibleLimit);
-          const hiddenItemCount = Math.max(0, group.items.length - visibleItems.length);
-          return (
-            <section className="element-tree-group" key={group.typeKey}>
-              <button
-                type="button"
-                className="element-tree-type"
-                role="treeitem"
-                aria-expanded={expanded}
-                onClick={() => toggleElementTreeGroup(group.typeKey)}
-              >
-                <span className="element-tree-type-label">
-                  {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                  <span>{group.typeLabel}</span>
-                </span>
-                <strong>{group.items.length}</strong>
-              </button>
-              {expanded && (
-                <div className="element-tree-items" role="group">
-                  {visibleItems.map((item) => {
-                    const editable = item.kind === "node" ? activeLayerNodeIdSet.has(item.id) : activeLayerEdgeIdSet.has(item.id);
-                    const selected = editable && (item.kind === "node" ? selectedNodeIdSet.has(item.id) : activeSelectedEdgeSet.has(item.id));
-                    const itemChildren = elementTreeItemChildren(item);
-                    const selectTreeItem = () => {
-                      if (!editable) {
-                        return;
-                      }
-                      if (item.kind === "node") {
-                        selectCanvasGraphics([item.id], []);
-                        clearRecordSelection();
-                      } else {
-                        selectCanvasGraphics([], [item.id]);
-                      }
-                    };
-                    return (
-                      <div
-                        role="treeitem"
-                        aria-level={2}
-                        aria-selected={selected}
-                        className={`element-tree-item ${selected ? "selected" : ""}`}
-                        key={`${item.kind}:${item.id}`}
-                        title="双击定位并选中图元"
-                        tabIndex={0}
-                        onClick={selectTreeItem}
-                        onDoubleClick={() => focusElementTreeItem(item, true)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault();
-                            focusElementTreeItem(item);
-                          }
-                        }}
-                      >
-                        <div className="element-tree-item-main">
-                          {item.kind === "node" && item.editableDevice ? (
-                            <div className="element-tree-device-fields">
-                              <label>
-                                <span>idx</span>
-                                <input
-                                  value={item.idx ?? ""}
-                                  inputMode="numeric"
-                                  onClick={(event) => event.stopPropagation()}
-                                  onDoubleClick={(event) => event.stopPropagation()}
-                                  onKeyDown={(event) => event.stopPropagation()}
-                                  disabled={!editable}
-                                  onChange={(event) => updateElementTreeNodeIdentity(item.id, "idx", event.target.value)}
-                                />
-                              </label>
-                              <label>
-                                <span>name</span>
-                                <input
-                                  value={item.name}
-                                  onClick={(event) => event.stopPropagation()}
-                                  onDoubleClick={(event) => event.stopPropagation()}
-                                  onKeyDown={(event) => event.stopPropagation()}
-                                  disabled={!editable}
-                                  onChange={(event) => updateElementTreeNodeIdentity(item.id, "name", event.target.value)}
-                                />
-                              </label>
-                            </div>
-                          ) : (
-                            <span>{item.name}</span>
-                          )}
-                        </div>
-                        {itemChildren.length ? (
-                          <div className="element-tree-child-list" role="group" aria-label={`${item.name}关联子设备`}>
-                            {itemChildren.map((child) => (
-                              <div className="element-tree-child-item" key={child.id}>
-                                <span className="element-tree-child-type" title={child.componentType}>
-                                  {child.componentType}
-                                </span>
-                                <label>
-                                  <span>idx</span>
-                                  <input
-                                    value={child.idx}
-                                    inputMode="numeric"
-                                    onClick={(event) => event.stopPropagation()}
-                                    onDoubleClick={(event) => event.stopPropagation()}
-                                    onKeyDown={(event) => event.stopPropagation()}
-                                    disabled={!editable}
-                                    onChange={(event) => updateElementTreeContainerChildParam(item.id, child.relationKeys[0] ?? "", event.target.value)}
-                                  />
-                                </label>
-                                <label className="element-tree-child-name-field">
-                                  <span>name</span>
-                                  <input
-                                    value={child.name}
-                                    onClick={(event) => event.stopPropagation()}
-                                    onDoubleClick={(event) => event.stopPropagation()}
-                                    onKeyDown={(event) => event.stopPropagation()}
-                                    disabled={!editable}
-                                    onChange={(event) => updateElementTreeContainerChildParam(item.id, child.nameKey, event.target.value)}
-                                  />
-                                </label>
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                  {hiddenItemCount > 0 && (
-                    <button
-                      type="button"
-                      className="element-tree-more"
-                      onClick={() =>
-                        setElementTreeItemLimits((current) => ({
-                          ...current,
-                          [group.typeKey]: visibleLimit + ELEMENT_TREE_ITEM_LIMIT_STEP
-                        }))
-                      }
-                    >
-                      显示更多（还有 {hiddenItemCount} 个）
-                    </button>
-                  )}
-                </div>
-              )}
-            </section>
-          );
-        })
-      )}
-    </div>
+    <ElementTreePanel
+      elementTree={elementTree}
+      collapsedElementTreeGroups={collapsedElementTreeGroups}
+      elementTreeItemLimits={elementTreeItemLimits}
+      initialItemLimit={ELEMENT_TREE_ITEM_LIMIT_STEP}
+      activeLayerNodeIdSet={activeLayerNodeIdSet}
+      activeLayerEdgeIdSet={activeLayerEdgeIdSet}
+      selectedNodeIdSet={selectedNodeIdSet}
+      activeSelectedEdgeSet={activeSelectedEdgeSet}
+      toggleElementTreeGroup={toggleElementTreeGroup}
+      elementTreeItemChildren={elementTreeItemChildren}
+      selectCanvasGraphics={selectCanvasGraphics}
+      clearRecordSelection={clearRecordSelection}
+      focusElementTreeItem={focusElementTreeItem}
+      updateElementTreeNodeIdentity={updateElementTreeNodeIdentity}
+      updateElementTreeContainerChildParam={updateElementTreeContainerChildParam}
+      setElementTreeItemLimits={setElementTreeItemLimits}
+    />
   );
 
   const topologyWarningDisplayMessage = (message: string) =>
@@ -23514,6 +23103,323 @@ export function App() {
     "--statusbar-height": `${statusbarHeight}px`,
     "--validation-panel-height": `${validationPanelHeight}px`
   } as CSSProperties;
+  const appDialogsProps = {
+    activeImageFolderId,
+    activeLayer,
+    activeLayerNodes,
+    activeSelectedNodeIds,
+    addDefinitionDraftRow,
+    addManualBendFromContextMenu,
+    addVoltageColorRow,
+    adjustSelectedDisplayLayer,
+    applyExistingImage,
+    applyLayerAssignmentDialog,
+    attributeLibraries,
+    attributeLibraryOptionClass,
+    autoAlignCanvasGraphics,
+    autoSpreadCanvasGraphics,
+    canAddTemplateFromSelection,
+    cancelTemplateDialog,
+    canGroupSelectedGraphics,
+    canUngroupSelectedGraphics,
+    canvasClipboard,
+    clearSelectedImage,
+    colorPaletteDialogOpen,
+    colorPaletteDraft,
+    colorPaletteTab,
+    componentTypeOptionClass,
+    confirmAddGraphTemplate,
+    confirmConnectionRedrawDialog,
+    confirmVoltageBaseClearDialog,
+    confirmVoltageBaseSetDialog,
+    CONNECTION_REDRAW_SCOPE_LABELS,
+    connectionRedrawDialogOpen,
+    connectionRedrawEdgeIdsForScope,
+    connectionRedrawScope,
+    CONTAINER_TERMINAL_ASSOCIATION_OPTIONS,
+    contextMenu,
+    contextMenuForEdge,
+    contextMenuForNode,
+    contextMenuForSelection,
+    contextMenuStyle,
+    contextMenuTarget,
+    contextSelectionCount,
+    copyProjectRecord,
+    copySchemeRecord,
+    copySelection,
+    createBlankProject,
+    createGraphTemplateType,
+    createImageFolder,
+    createSchemeRecord,
+    currentAttributeLibraryComponentTypeOptions,
+    currentModelVoltageColorKeys,
+    customDeviceDialogOpen,
+    customDeviceDraft,
+    customDeviceImageInputRef,
+    customDevicePreviewImage,
+    customDraftDefaultParams,
+    customParamId,
+    cutSelection,
+    DEFAULT_COLOR_PALETTE,
+    defaultContainerAssociationForTerminalType,
+    definitionAttributeLibraryComponentTypeOptions,
+    definitionDraftError,
+    definitionDraftRows,
+    definitionDraftSection,
+    deleteDefinitionDraftRow,
+    deleteImageFolder,
+    deleteProjectRecord,
+    deleteSchemeRecord,
+    deleteSelection,
+    deleteVoltageColorRow,
+    deviceDefinitionDialogOpen,
+    deviceDefinitionOverrides,
+    ELECTRIC_COLOR_TYPE_LABELS,
+    ELECTRIC_COLOR_TYPES,
+    ENABLE_REACT_FLOW_PREVIEW,
+    ENERGY_COLOR_ROWS,
+    expandedDefinitionGroups,
+    exportProjectRecordFile,
+    exportSchemeRecord,
+    findSavedSchemeById,
+    generateCustomDeviceImage,
+    getContainerTerminalAssociationSourceIndex,
+    graphTemplateTypes,
+    groupedAttributeLibrary,
+    groupedAttributeLibraryByComponentType,
+    groupSelectedGraphics,
+    hasVoltageBaseTerminalValues,
+    imageAssetList,
+    imageAssets,
+    imageFolders,
+    imageInputRef,
+    imageTarget,
+    isBrowseMode,
+    isBuiltInAttributeLibrary,
+    isBuiltInComponentType,
+    isContainerTerminalAssociationDependent,
+    isDoubleContainerTerminalAssociation,
+    isEditMode,
+    layerAssignmentDialogOpen,
+    layerAssignmentTargetId,
+    layerAssignmentUnchanged,
+    layerDialogOpen,
+    layers,
+    loadDefinitionTemplateDraft,
+    nodes,
+    normalizeAttributeLibraryName,
+    normalizeContainerTerminalAssociations,
+    openAddTemplateDialog,
+    openConnectionRedrawDialog,
+    openLayerAssignmentDialog,
+    openModelImportFilePicker,
+    openSchemeImportFilePicker,
+    openVoltageBaseClearDialog,
+    openVoltageBaseSetDialog,
+    PARAM_VALUE_TYPE_OPTIONS,
+    pasteProjectClipboardRecord,
+    pasteSchemeClipboardRecord,
+    pasteSelection,
+    pendingModelImportConflict,
+    pendingRecordPasteConflict,
+    pendingSchemeImportConflict,
+    pendingUnsavedAction,
+    projectById,
+    projectMenu,
+    projectName,
+    ReactFlowPreview,
+    reactFlowPreviewOpen,
+    recordClipboard,
+    renameImageFolder,
+    renameProjectRecord,
+    renameSchemeRecord,
+    renderCustomComponentManagerTree,
+    renderGraphTemplatePreview,
+    renderLayerManager,
+    resetDeviceDefinitionDraft,
+    resetEnergyColors,
+    resetVoltageColors,
+    resolveDuplicateModelImport,
+    resolveDuplicateSchemeImport,
+    resolveRecordPasteConflict,
+    resolveUnsavedChangeAction,
+    runContextMenuAction,
+    saveColorPalette,
+    saveCurrentProject,
+    saveCustomDeviceTemplate,
+    saveDeviceDefinitionDraft,
+    saveRequired,
+    schemes,
+    selectableAttributeLibraries,
+    selectCustomAttributeLibrary,
+    selectCustomComponentType,
+    selectedDefinitionBaseTemplate,
+    selectedDefinitionTemplate,
+    selectedDefinitionTerminalAssociations,
+    selectedEdge,
+    setActiveImageFolderId,
+    setColorPaletteDialogOpen,
+    setColorPaletteTab,
+    setConnectionRedrawDialogOpen,
+    setConnectionRedrawScope,
+    setCustomDeviceDialogOpen,
+    setCustomDeviceDraft,
+    setDefinitionDraftError,
+    setDefinitionDraftSection,
+    setDeviceDefinitionDialogOpen,
+    setImageTarget,
+    setLayerAssignmentDialogOpen,
+    setLayerAssignmentTargetId,
+    setLayerDialogOpen,
+    setReactFlowPreviewOpen,
+    setSelectedNodeLabelDisplayMode,
+    setTemplateDraftName,
+    setTemplateDraftType,
+    setVoltageBaseClearDialogOpen,
+    setVoltageBaseClearScope,
+    setVoltageBaseSetDialogOpen,
+    setVoltageBaseSetMode,
+    setVoltageBaseSetScope,
+    setVoltageBaseSetValue,
+    setVoltageBaseTerminalValue,
+    setVoltageColorVisibility,
+    sourceSelectClassName,
+    templateDialog,
+    templateDraftName,
+    templateDraftType,
+    TERMINAL_TYPE_OPTIONS,
+    tidySelectedEdgeRoute,
+    toggleColorDisplayMode,
+    toggleDefinitionGroup,
+    undoLastOperation,
+    undoStack,
+    ungroupSelectedGraphics,
+    updateCustomDraftTerminalCount,
+    updateDefinitionDraftRow,
+    updateEnergyColor,
+    updateVoltageColorRow,
+    visibleEdges,
+    visibleNodes,
+    visibleVoltageColorRows,
+    VOLTAGE_BASE_CLEAR_SCOPE_LABELS,
+    VOLTAGE_BASE_CLEAR_SCOPES,
+    VOLTAGE_BASE_SET_SCOPE_LABELS,
+    VOLTAGE_BASE_SET_SCOPES,
+    voltageBaseClearDialogOpen,
+    voltageBaseClearResultForScope,
+    voltageBaseClearScope,
+    voltageBaseSetDialogOpen,
+    voltageBaseSetMode,
+    voltageBaseSetOptions,
+    voltageBaseSetResultForScope,
+    voltageBaseSetScope,
+    voltageBaseSetTerminalRows,
+    voltageBaseSetValue,
+    voltageBaseTerminalValues,
+    voltageColorVisibility
+  };
+  const rightInspectorPanelProps = {
+    rightPanelVisible,
+    updateAutoPanelVisibility,
+    startSidePanelResize,
+    renderSidePanelModeControls,
+    inspectorSelectedNode,
+    currentModelRecord,
+    inspectorTab,
+    setInspectorTab,
+    renderChineseParamHeader,
+    selectedSchemeRecord,
+    MIN_CANVAS_WIDTH,
+    MAX_CANVAS_WIDTH,
+    MIN_CANVAS_HEIGHT,
+    MAX_CANVAS_HEIGHT,
+    canvasSizeDraft,
+    isBrowseMode,
+    setCanvasSizeDraft,
+    handleCanvasSizeBlur,
+    handleCanvasSizeKeyDown,
+    allowAutoExpandCanvas,
+    pushUndoSnapshot,
+    setAllowAutoExpandCanvas,
+    canvasBackgroundColor,
+    DEFAULT_CANVAS_BACKGROUND,
+    setCanvasBackgroundColor,
+    canvasBackgroundImage,
+    setImageTarget,
+    setCanvasBackgroundImage,
+    setCanvasBackgroundImageAssetId,
+    backgroundProjectId,
+    setBackgroundProjectId,
+    projectById,
+    defaultBackgroundLayerIdsForProject,
+    setBackgroundLayerIds,
+    backgroundProjectOptions,
+    backgroundProjectRecord,
+    backgroundLayerOptions,
+    backgroundLayerIds,
+    toggleBackgroundLayer,
+    powerUnit,
+    setPowerUnit,
+    POWER_UNIT_OPTIONS,
+    voltageUnit,
+    setVoltageUnit,
+    VOLTAGE_UNIT_OPTIONS,
+    currentUnit,
+    setCurrentUnit,
+    CURRENT_UNIT_OPTIONS,
+    powerBaseValue,
+    setPowerBaseValue,
+    DEFAULT_POWER_BASE_VALUE,
+    graphInfoView,
+    setGraphInfoView,
+    renderElementTreePanel,
+    updateSelectedNode,
+    normalizeStaticBoxDimension,
+    formatInspectorScaleValue,
+    normalizeScale,
+    layers,
+    nodeLabelDisplayMode,
+    updateParam,
+    renderColorEditor,
+    renderParamEditor,
+    normalizeNodeLabelRotation,
+    nodeLabelTextAnchor,
+    nodeLabelOffset,
+    selectedMeasurementGroup,
+    addDefaultMeasurementGroupForSelectedNode,
+    removeSelectedMeasurementGroup,
+    updateMeasurementGroup,
+    measurementTypeById,
+    platformMeasurementConfig,
+    measurementCatalog,
+    terminalVbaseFallback,
+    updateTerminalVbase,
+    renderStaticButtonActionEditor,
+    clearSelectedImageForNode,
+    terminalColor,
+    colorPalette,
+    selectedContainerParameterViews,
+    selectedContainerParameterView,
+    setContainerParamViewId,
+    paramOptionsForSection,
+    renderParamHeader,
+    PARAM_LABELS,
+    parseCustomDefinitions,
+    READONLY_E_PARAM_KEYS,
+    inspectorSelectedEdge,
+    nodeById,
+    inspectorTopologyErrors,
+    startValidationPanelResize,
+    visibleTopologyErrors,
+    locateTopologyError,
+    topologyWarningDisplayMessage,
+    TOPOLOGY_WARNING_PAGE_SIZE,
+    setTopologyWarningPage,
+    normalizedTopologyWarningPage,
+    topologyWarningPageCount,
+    hiddenTopologyErrorCount,
+    topology
+  };
   const libraryPanelContent = useMemo(
     () => renderLibraryPanel(),
     [
@@ -25425,2565 +25331,8 @@ export function App() {
         </footer>
       </main>
 
-      <aside
-        className={`inspector-panel floating-side-panel ${rightPanelVisible ? "visible" : "hidden"}`}
-        onPointerEnter={() => updateAutoPanelVisibility("right", "panel-enter")}
-        onPointerLeave={() => updateAutoPanelVisibility("right", "panel-leave")}
-      >
-        <div
-          className="side-panel-resize-handle left-edge"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="调整右侧栏宽度"
-          title="拖拽调整右侧栏宽度"
-          onPointerDown={(event) => startSidePanelResize(event, "right")}
-        />
-        <div className="inspector-title">
-          <div className="inspector-title-actions">
-            {renderSidePanelModeControls("right")}
-          </div>
-        </div>
-        {inspectorSelectedNode || currentModelRecord ? (
-          <div className={`form-stack ${inspectorTab === "graph" ? "graph-form-stack" : ""}`}>
-            <div className="inspector-tabs">
-              <button className={inspectorTab === "model" ? "active" : ""} onClick={() => setInspectorTab("model")} disabled={!currentModelRecord}>
-                基础
-              </button>
-              <button className={inspectorTab === "graph" ? "active" : ""} onClick={() => setInspectorTab("graph")}>
-                图元
-              </button>
-              <button className={inspectorTab === "device" ? "active" : ""} onClick={() => setInspectorTab("device")}>
-                设备
-              </button>
-            </div>
-            {inspectorTab === "model" && currentModelRecord ? (
-              <table className="param-table">
-                <tbody>
-                  <tr>
-                    {renderChineseParamHeader("name", "模型名称")}
-                    <td><input value={currentModelRecord.name} readOnly /></td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("schemeName")}
-                    <td><input value={selectedSchemeRecord?.name ?? "未选择方案"} readOnly /></td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("updatedAt", "模型更新时间")}
-                    <td><input value={new Date(currentModelRecord.updatedAt).toLocaleString()} readOnly /></td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("canvasWidth")}
-                    <td>
-                      <input
-                        type="number"
-                        min={MIN_CANVAS_WIDTH}
-                        max={MAX_CANVAS_WIDTH}
-                        step="10"
-                        value={canvasSizeDraft.width}
-                        disabled={isBrowseMode}
-                        onChange={(event) => setCanvasSizeDraft((current) => ({ ...current, width: event.target.value }))}
-                        onBlur={handleCanvasSizeBlur}
-                        onKeyDown={handleCanvasSizeKeyDown}
-                      />
-                    </td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("canvasHeight")}
-                    <td>
-                      <input
-                        type="number"
-                        min={MIN_CANVAS_HEIGHT}
-                        max={MAX_CANVAS_HEIGHT}
-                        step="10"
-                        value={canvasSizeDraft.height}
-                        disabled={isBrowseMode}
-                        onChange={(event) => setCanvasSizeDraft((current) => ({ ...current, height: event.target.value }))}
-                        onBlur={handleCanvasSizeBlur}
-                        onKeyDown={handleCanvasSizeKeyDown}
-                      />
-                    </td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("allowAutoExpandCanvas")}
-                    <td>
-                      <select
-                        value={allowAutoExpandCanvas ? "allow" : "deny"}
-                        disabled={isBrowseMode}
-                        onChange={(event) => {
-                          pushUndoSnapshot();
-                          setAllowAutoExpandCanvas(event.target.value === "allow");
-                        }}
-                      >
-                        <option value="allow">允许</option>
-                        <option value="deny">不允许</option>
-                      </select>
-                    </td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("canvasBackgroundColor")}
-                    <td>
-                      <div className="color-field with-clear">
-                        <input
-                          type="color"
-                          value={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND}
-                          disabled={isBrowseMode}
-                          onChange={(event) => {
-                            pushUndoSnapshot();
-                            setCanvasBackgroundColor(event.target.value);
-                          }}
-                        />
-                        <input
-                          value={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND}
-                          disabled={isBrowseMode}
-                          onChange={(event) => {
-                            pushUndoSnapshot();
-                            setCanvasBackgroundColor(event.target.value || DEFAULT_CANVAS_BACKGROUND);
-                          }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            pushUndoSnapshot();
-                            setCanvasBackgroundColor("");
-                          }}
-                          disabled={isBrowseMode || !canvasBackgroundColor || canvasBackgroundColor === DEFAULT_CANVAS_BACKGROUND}
-                        >
-                          删除背景色
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("canvasBackgroundImage")}
-                    <td>
-                      <div className="image-field-actions">
-                        <input value={canvasBackgroundImage ? "已设置" : "未设置"} readOnly />
-                        <button type="button" disabled={isBrowseMode} onClick={() => setImageTarget({ kind: "canvas" })}>选择</button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            pushUndoSnapshot();
-                            setCanvasBackgroundImage("");
-                            setCanvasBackgroundImageAssetId("");
-                          }}
-                          disabled={isBrowseMode || !canvasBackgroundImage}
-                        >
-                          清除
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("backgroundProjectId")}
-                    <td>
-                      <div className="background-page-field">
-                        <select
-                          value={backgroundProjectId}
-                          disabled={isBrowseMode}
-                          onChange={(event) => {
-                            pushUndoSnapshot();
-                            const nextProjectId = event.target.value;
-                            setBackgroundProjectId(nextProjectId);
-                            const backgroundProject = projectById.get(nextProjectId);
-                            if (backgroundProject) {
-                              setBackgroundLayerIds(defaultBackgroundLayerIdsForProject(backgroundProject.project));
-                            } else {
-                              setBackgroundLayerIds([]);
-                            }
-                          }}
-                        >
-                          <option value="">不使用背景页面</option>
-                          {backgroundProjectOptions.map(({ project, label }) => (
-                            <option key={project.id} value={project.id}>
-                              {label}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            pushUndoSnapshot();
-                            setBackgroundProjectId("");
-                            setBackgroundLayerIds([]);
-                          }}
-                          disabled={isBrowseMode || !backgroundProjectId}
-                        >
-                          清空背景页面
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("backgroundLayerIds")}
-                    <td>
-                      {backgroundProjectRecord ? (
-                        <div className="background-layer-checklist">
-                          {backgroundLayerOptions.map((layer) => (
-                            <label key={layer.id} className="background-layer-option">
-                              <input
-                                type="checkbox"
-                                checked={backgroundLayerIds.includes(layer.id)}
-                                disabled={isBrowseMode}
-                                onChange={() => toggleBackgroundLayer(layer.id)}
-                              />
-                              <span>{layer.name}</span>
-                            </label>
-                          ))}
-                          {backgroundLayerOptions.length === 0 && <span className="muted-inline-text">背景页面没有可配置图层</span>}
-                        </div>
-                      ) : (
-                        <span className="muted-inline-text">未设置背景页面</span>
-                      )}
-                    </td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("powerUnit")}
-                    <td>
-                      <select
-                        value={powerUnit}
-                        disabled={isBrowseMode}
-                        onChange={(event) => {
-                          pushUndoSnapshot();
-                          setPowerUnit(event.target.value);
-                        }}
-                      >
-                        {POWER_UNIT_OPTIONS.map((unit) => (
-                          <option key={unit} value={unit}>{unit}</option>
-                        ))}
-                      </select>
-                    </td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("voltageUnit")}
-                    <td>
-                      <select
-                        value={voltageUnit}
-                        disabled={isBrowseMode}
-                        onChange={(event) => {
-                          pushUndoSnapshot();
-                          setVoltageUnit(event.target.value);
-                        }}
-                      >
-                        {VOLTAGE_UNIT_OPTIONS.map((unit) => (
-                          <option key={unit} value={unit}>{unit}</option>
-                        ))}
-                      </select>
-                    </td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("currentUnit")}
-                    <td>
-                      <select
-                        value={currentUnit}
-                        disabled={isBrowseMode}
-                        onChange={(event) => {
-                          pushUndoSnapshot();
-                          setCurrentUnit(event.target.value);
-                        }}
-                      >
-                        {CURRENT_UNIT_OPTIONS.map((unit) => (
-                          <option key={unit} value={unit}>{unit}</option>
-                        ))}
-                      </select>
-                    </td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("powerBaseValue")}
-                    <td>
-                      <div className="unit-value-field">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          value={powerBaseValue}
-                          disabled={isBrowseMode}
-                          onChange={(event) => {
-                            pushUndoSnapshot();
-                            const nextValue = Number(event.target.value);
-                            setPowerBaseValue(Number.isFinite(nextValue) ? nextValue : DEFAULT_POWER_BASE_VALUE);
-                          }}
-                        />
-                        <span>{powerUnit}</span>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            ) : inspectorTab === "graph" ? (
-              <div className="graph-info-panel">
-                <div className="graph-info-toolbar" role="tablist" aria-label="图元信息子页面">
-                  <button
-                    type="button"
-                    className={graphInfoView === "selected" ? "active" : ""}
-                    onClick={() => setGraphInfoView("selected")}
-                    role="tab"
-                    aria-selected={graphInfoView === "selected"}
-                    disabled={!inspectorSelectedNode}
-                  >
-                    选中图元
-                  </button>
-                  <button
-                    type="button"
-                    className={graphInfoView === "tree" ? "active" : ""}
-                    onClick={() => setGraphInfoView("tree")}
-                    role="tab"
-                    aria-selected={graphInfoView === "tree"}
-                  >
-                    图元树
-                  </button>
-                </div>
-                {graphInfoView === "tree" ? (
-                  renderElementTreePanel()
-                ) : inspectorSelectedNode ? (
-                  <div className="graph-param-table-wrap">
-                  <table className="param-table">
-                  <tbody>
-                    <tr>
-                      {renderChineseParamHeader("graph_x", "X坐标")}
-                      <td><input type="number" value={Math.round(inspectorSelectedNode.position.x)} onChange={(event) => updateSelectedNode({ position: { ...inspectorSelectedNode.position, x: Number(event.target.value) } })} /></td>
-                    </tr>
-                    <tr>
-                      {renderChineseParamHeader("graph_y", "Y坐标")}
-                      <td><input type="number" value={Math.round(inspectorSelectedNode.position.y)} onChange={(event) => updateSelectedNode({ position: { ...inspectorSelectedNode.position, y: Number(event.target.value) } })} /></td>
-                    </tr>
-                    {isStaticBoxLikeNode(inspectorSelectedNode) && (
-                      <>
-                        <tr>
-                          {renderChineseParamHeader("staticWidth", "宽度")}
-                          <td>
-                            <input
-                              type="number"
-                              min="4"
-                              max={MAX_CANVAS_WIDTH}
-                              step="1"
-                              value={Math.round(inspectorSelectedNode.size.width * 10) / 10}
-                              onChange={(event) => {
-                                const width = normalizeStaticBoxDimension(Number(event.target.value), inspectorSelectedNode.size.width, MAX_CANVAS_WIDTH);
-                                updateSelectedNode({ size: { ...inspectorSelectedNode.size, width: width } });
-                              }}
-                            />
-                          </td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("staticHeight", "高度")}
-                          <td>
-                            <input
-                              type="number"
-                              min="4"
-                              max={MAX_CANVAS_HEIGHT}
-                              step="1"
-                              value={Math.round(inspectorSelectedNode.size.height * 10) / 10}
-                              onChange={(event) => {
-                                const height = normalizeStaticBoxDimension(Number(event.target.value), inspectorSelectedNode.size.height, MAX_CANVAS_HEIGHT);
-                                updateSelectedNode({ size: { ...inspectorSelectedNode.size, height: height } });
-                              }}
-                            />
-                          </td>
-                        </tr>
-                      </>
-                    )}
-                    <tr>
-                      {renderChineseParamHeader("rotation")}
-                      <td><input type="number" value={inspectorSelectedNode.rotation} onChange={(event) => updateSelectedNode({ rotation: Number(event.target.value) })} /></td>
-                    </tr>
-                    <tr>
-                      {renderChineseParamHeader("scaleX")}
-                      <td><input type="number" step="0.1" value={formatInspectorScaleValue(getNodeScaleX(inspectorSelectedNode))} onChange={(event) => {
-                        const scaleX = normalizeScale(Number(event.target.value), getNodeScaleX(inspectorSelectedNode));
-                        const scaleY = getNodeScaleY(inspectorSelectedNode);
-                        updateSelectedNode({ scale: Math.max(Math.abs(scaleX), Math.abs(scaleY)), scaleX, scaleY });
-                      }} /></td>
-                    </tr>
-                    <tr>
-                      {renderChineseParamHeader("scaleY")}
-                      <td><input type="number" step="0.1" value={formatInspectorScaleValue(getNodeScaleY(inspectorSelectedNode))} onChange={(event) => {
-                        const scaleY = normalizeScale(Number(event.target.value), getNodeScaleY(inspectorSelectedNode));
-                        const scaleX = getNodeScaleX(inspectorSelectedNode);
-                        updateSelectedNode({ scale: Math.max(Math.abs(scaleX), Math.abs(scaleY)), scaleX, scaleY });
-                      }} /></td>
-                    </tr>
-                    <tr>
-                      {renderChineseParamHeader("layerId", "所属图层")}
-                      <td>
-                        <select
-                          value={inspectorSelectedNode.layerId ?? DEFAULT_MODEL_LAYER_ID}
-                          onChange={(event) => updateSelectedNode({ layerId: event.target.value })}
-                        >
-                          {layers.map((layer) => (
-                            <option key={layer.id} value={layer.id}>{layer.name}</option>
-                          ))}
-                        </select>
-                      </td>
-                    </tr>
-                    {!isStaticNode(inspectorSelectedNode) && (
-                      <>
-                        <tr>
-                          {renderChineseParamHeader("_labelDisplayMode")}
-                          <td>
-                            <select
-                              value={nodeLabelDisplayMode(inspectorSelectedNode)}
-                              onChange={(event) => updateParam("_labelDisplayMode", event.target.value)}
-                            >
-                              <option value="always">始终显示</option>
-                              <option value="hidden">始终隐藏</option>
-                              <option value="follow">跟随显示</option>
-                            </select>
-                          </td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("_labelText")}
-                          <td>
-                            <input
-                              value={inspectorSelectedNode.params._labelText ?? inspectorSelectedNode.name}
-                              onChange={(event) => updateParam("_labelText", event.target.value)}
-                            />
-                          </td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("_labelColor")}
-                          <td>{renderColorEditor("_labelColor", inspectorSelectedNode.params._labelColor || "#334155", "#334155")}</td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("_labelFontFamily")}
-                          <td>{renderParamEditor("_labelFontFamily", inspectorSelectedNode.params._labelFontFamily || "Arial", false)}</td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("_labelFontSize")}
-                          <td>
-                            <input
-                              type="number"
-                              min="6"
-                              max="96"
-                              value={inspectorSelectedNode.params._labelFontSize || "12"}
-                              onChange={(event) => updateParam("_labelFontSize", event.target.value)}
-                            />
-                          </td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("_labelRotation")}
-                          <td>
-                            <select
-                              value={String(normalizeNodeLabelRotation(inspectorSelectedNode.params._labelRotation))}
-                              onChange={(event) => updateParam("_labelRotation", String(normalizeNodeLabelRotation(event.target.value)))}
-                            >
-                              <option value="0">0° 横排</option>
-                              <option value="90">90° 纵排</option>
-                              <option value="180">180° 横排</option>
-                              <option value="270">270° 纵排</option>
-                            </select>
-                          </td>
-                        </tr>
-                        <tr>
-                          <th>标识样式</th>
-                          <td>
-                            <div className="device-label-style-actions">
-                              <label>
-                                <input
-                                  type="checkbox"
-                                  checked={(inspectorSelectedNode.params._labelFontWeight || "500") !== "400"}
-                                  onChange={(event) => updateParam("_labelFontWeight", event.target.checked ? "700" : "400")}
-                                />
-                                加粗
-                              </label>
-                              <label>
-                                <input
-                                  type="checkbox"
-                                  checked={(inspectorSelectedNode.params._labelFontStyle || "normal") === "italic"}
-                                  onChange={(event) => updateParam("_labelFontStyle", event.target.checked ? "italic" : "normal")}
-                                />
-                                斜体
-                              </label>
-                              <label>
-                                <input
-                                  type="checkbox"
-                                  checked={(inspectorSelectedNode.params._labelTextDecoration || "none") === "underline"}
-                                  onChange={(event) => updateParam("_labelTextDecoration", event.target.checked ? "underline" : "none")}
-                                />
-                                下划线
-                              </label>
-                            </div>
-                          </td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("_labelTextAnchor")}
-                          <td>
-                            <select
-                              value={nodeLabelTextAnchor(inspectorSelectedNode)}
-                              onChange={(event) => updateParam("_labelTextAnchor", event.target.value)}
-                            >
-                              <option value="start">左对齐</option>
-                              <option value="middle">居中</option>
-                              <option value="end">右对齐</option>
-                            </select>
-                          </td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("_labelX")}
-                          <td>
-                            <input
-                              type="number"
-                              step="0.1"
-                              value={nodeLabelOffset(inspectorSelectedNode).x}
-                              onChange={(event) => updateParam("_labelX", event.target.value)}
-                            />
-                          </td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("_labelY")}
-                          <td>
-                            <input
-                              type="number"
-                              step="0.1"
-                              value={nodeLabelOffset(inspectorSelectedNode).y}
-                              onChange={(event) => updateParam("_labelY", event.target.value)}
-                            />
-                          </td>
-                        </tr>
-                        <tr>
-                          <th>动态量测</th>
-                          <td>
-                            <div className="measurement-sidebar-actions">
-                              <button type="button" disabled={isBrowseMode || Boolean(selectedMeasurementGroup)} onClick={addDefaultMeasurementGroupForSelectedNode}>
-                                添加默认量测
-                              </button>
-                              <button type="button" disabled={isBrowseMode || !selectedMeasurementGroup} onClick={removeSelectedMeasurementGroup}>
-                                删除量测
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                        {selectedMeasurementGroup && (
-                          <>
-                            <tr>
-                              <th>量测显示</th>
-                              <td>
-                                <select
-                                  value={selectedMeasurementGroup.visible ? "1" : "0"}
-                                  disabled={isBrowseMode}
-                                  onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({ ...group, visible: event.target.value === "1" }))}
-                                >
-                                  <option value="1">显示</option>
-                                  <option value="0">隐藏</option>
-                                </select>
-                              </td>
-                            </tr>
-                            <tr>
-                              <th>量测布局</th>
-                              <td>
-                                <select
-                                  value={selectedMeasurementGroup.layout}
-                                  disabled={isBrowseMode}
-                                  onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({ ...group, layout: event.target.value as MeasurementGroup["layout"] }))}
-                                >
-                                  <option value="vertical">竖向</option>
-                                  <option value="horizontal">横向</option>
-                                  <option value="grid">表格</option>
-                                </select>
-                              </td>
-                            </tr>
-                            <tr>
-                              <th>量测偏移</th>
-                              <td>
-                                <div className="measurement-offset-fields">
-                                  <input
-                                    type="number"
-                                    step="1"
-                                    value={Math.round(selectedMeasurementGroup.offset.x * 10) / 10}
-                                    disabled={isBrowseMode}
-                                    onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({
-                                      ...group,
-                                      anchor: "custom",
-                                      offset: { ...group.offset, x: Number(event.target.value) }
-                                    }))}
-                                  />
-                                  <input
-                                    type="number"
-                                    step="1"
-                                    value={Math.round(selectedMeasurementGroup.offset.y * 10) / 10}
-                                    disabled={isBrowseMode}
-                                    onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({
-                                      ...group,
-                                      anchor: "custom",
-                                      offset: { ...group.offset, y: Number(event.target.value) }
-                                    }))}
-                                  />
-                                </div>
-                              </td>
-                            </tr>
-                            {selectedMeasurementGroup.items.map((item, itemIndex) => {
-                              const measurementType = measurementTypeById.get(item.measurementTypeId);
-                              return (
-                                <Fragment key={item.id}>
-                                  <tr>
-                                    <th>{measurementType?.name ?? `量测${itemIndex + 1}`}</th>
-                                    <td>
-                                      <select
-                                        value={item.measurementTypeId}
-                                        disabled={isBrowseMode}
-                                        onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({
-                                          ...group,
-                                          items: group.items.map((candidate) => candidate.id === item.id ? { ...candidate, measurementTypeId: event.target.value } : candidate)
-                                        }))}
-                                      >
-                                        {platformMeasurementConfig.measurementTypes.map((type) => (
-                                          <option key={type.id} value={type.id}>{type.name} / {type.shortLabel}</option>
-                                        ))}
-                                      </select>
-                                    </td>
-                                  </tr>
-                                  <tr>
-                                    <th>测点绑定</th>
-                                    <td>
-                                      <select
-                                        value={item.sourcePoint}
-                                        disabled={isBrowseMode}
-                                        onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({
-                                          ...group,
-                                          items: group.items.map((candidate) => candidate.id === item.id ? { ...candidate, sourcePoint: event.target.value } : candidate)
-                                        }))}
-                                      >
-                                        <option value="">未绑定测点</option>
-                                        {measurementCatalog.map((point) => (
-                                          <option key={point.sourcePoint} value={point.sourcePoint}>
-                                            {point.name || point.sourcePoint}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </td>
-                                  </tr>
-                                  <tr>
-                                    <th>量测显示名</th>
-                                    <td>
-                                      <input
-                                        value={item.labelOverride ?? ""}
-                                        disabled={isBrowseMode}
-                                        title="为空时继承量测类型"
-                                        onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({
-                                          ...group,
-                                          items: group.items.map((candidate) => candidate.id === item.id ? { ...candidate, labelOverride: event.target.value } : candidate)
-                                        }))}
-                                      />
-                                    </td>
-                                  </tr>
-                                  <tr>
-                                    <th>单位/小数</th>
-                                    <td>
-                                      <div className="measurement-unit-fields">
-                                        <input
-                                          value={item.unitOverride ?? ""}
-                                          disabled={isBrowseMode}
-                                          title="为空时继承量测类型单位"
-                                          onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({
-                                            ...group,
-                                            items: group.items.map((candidate) => candidate.id === item.id ? { ...candidate, unitOverride: event.target.value } : candidate)
-                                          }))}
-                                        />
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          max="12"
-                                          value={item.decimalsOverride ?? measurementType?.defaultDecimals ?? 3}
-                                          disabled={isBrowseMode}
-                                          onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({
-                                            ...group,
-                                            items: group.items.map((candidate) => candidate.id === item.id ? { ...candidate, decimalsOverride: Number(event.target.value) } : candidate)
-                                          }))}
-                                        />
-                                      </div>
-                                    </td>
-                                  </tr>
-                                  <tr>
-                                    <th>量测样式</th>
-                                    <td>
-                                      <div className="measurement-style-fields">
-                                        <select
-                                          value={item.visible === false ? "0" : "1"}
-                                          disabled={isBrowseMode}
-                                          onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({
-                                            ...group,
-                                            items: group.items.map((candidate) => candidate.id === item.id ? { ...candidate, visible: event.target.value === "1" } : candidate)
-                                          }))}
-                                        >
-                                          <option value="1">显示</option>
-                                          <option value="0">隐藏</option>
-                                        </select>
-                                        <input
-                                          type="color"
-                                          value={item.styleOverride?.color ?? measurementType?.defaultColor ?? "#334155"}
-                                          disabled={isBrowseMode}
-                                          onChange={(event) => updateMeasurementGroup(selectedMeasurementGroup.id, (group) => ({
-                                            ...group,
-                                            items: group.items.map((candidate) => candidate.id === item.id
-                                              ? { ...candidate, styleOverride: { ...(candidate.styleOverride ?? {}), color: event.target.value } }
-                                              : candidate)
-                                          }))}
-                                        />
-                                      </div>
-                                    </td>
-                                  </tr>
-                                </Fragment>
-                              );
-                            })}
-                          </>
-                        )}
-                        <tr>
-                          {renderChineseParamHeader("terminalCount")}
-                          <td>
-                            <span
-                              className="graph-readonly-value"
-                              title={isBusNode(inspectorSelectedNode) ? "母线端子数量由已连接联络线端点数自动生成" : "端子数量由元件定义决定"}
-                            >
-                              {inspectorSelectedNode.terminals.length}
-                            </span>
-                          </td>
-                        </tr>
-                        {inspectorSelectedNode.terminals.map((terminal, terminalIndex) => (
-                          <Fragment key={terminal.id}>
-                            <tr>
-                              <th title={terminal.id}>{terminal.label}</th>
-                              <td>{`${terminal.type.toUpperCase()} / ${terminal.nodeNumber}`}</td>
-                            </tr>
-                            {(terminal.type === "ac" || terminal.type === "dc") && (
-                              <tr>
-                                <th title={`${terminal.id}:vbase`}>{`${terminal.label}电压基值`}</th>
-                                <td>
-                                  <div className="unit-value-field">
-                                    <input
-                                      inputMode="decimal"
-                                      value={terminalVoltageBaseNumber(terminal.vbase ?? terminalVbaseFallback(inspectorSelectedNode, terminalIndex))}
-                                      onChange={(event) => updateTerminalVbase(terminal.id, event.target.value)}
-                                    />
-                                    <span>{voltageUnit}</span>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </Fragment>
-                        ))}
-                      </>
-                    )}
-                    {isStaticNode(inspectorSelectedNode) && (
-                      <>
-                        <tr>
-                          {renderChineseParamHeader(STATIC_ROUTE_AVOIDANCE_PARAM)}
-                          <td>
-                            <select
-                              value={staticNodeParticipatesInRoutingAvoidance(inspectorSelectedNode) ? "1" : "0"}
-                              onChange={(event) => updateParam(STATIC_ROUTE_AVOIDANCE_PARAM, event.target.value)}
-                            >
-                              <option value="1">参与</option>
-                              <option value="0">不参与</option>
-                            </select>
-                          </td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("text")}
-                          <td><textarea rows={4} value={inspectorSelectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} /></td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("fontFamily")}
-                          <td>{renderParamEditor("fontFamily", inspectorSelectedNode.params.fontFamily || "Arial", false)}</td>
-                        </tr>
-                        <tr>
-                          <th title="fontSize">字体大小（100%）</th>
-                          <td><input type="number" min="8" max="160" value={inspectorSelectedNode.params.fontSize || "24"} onChange={(event) => updateParam("fontSize", event.target.value)} /></td>
-                        </tr>
-                        <tr>
-                          <th>文字样式</th>
-                          <td>
-                            <div className="text-style-actions">
-                              <label>
-                                <input type="checkbox" checked={(inspectorSelectedNode.params.fontWeight || "400") !== "400"} onChange={(event) => updateParam("fontWeight", event.target.checked ? "700" : "400")} />
-                                加粗
-                              </label>
-                              <label>
-                                <input type="checkbox" checked={(inspectorSelectedNode.params.fontStyle || "normal") === "italic"} onChange={(event) => updateParam("fontStyle", event.target.checked ? "italic" : "normal")} />
-                                斜体
-                              </label>
-                              <label>
-                                <input type="checkbox" checked={(inspectorSelectedNode.params.textDecoration || "none") === "underline"} onChange={(event) => updateParam("textDecoration", event.target.checked ? "underline" : "none")} />
-                                下划线
-                              </label>
-                            </div>
-                          </td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("fillColor")}
-                          <td>{renderColorEditor("fillColor", inspectorSelectedNode.params.fillColor || "transparent", "#ffffff")}</td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("strokeColor")}
-                          <td>{renderColorEditor("strokeColor", inspectorSelectedNode.params.strokeColor || "transparent", "#334155")}</td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("textColor")}
-                          <td>{renderColorEditor("textColor", inspectorSelectedNode.params.textColor || "#111827", "#111827")}</td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("lineWidth")}
-                          <td><input type="number" min="0" max="20" value={inspectorSelectedNode.params.lineWidth || "2"} onChange={(event) => updateParam("lineWidth", event.target.value)} /></td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("strokeStyle")}
-                          <td>{renderParamEditor("strokeStyle", inspectorSelectedNode.params.strokeStyle || "solid", false)}</td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("cornerRadius")}
-                          <td><input type="number" min="0" max="999" value={inspectorSelectedNode.params.cornerRadius || "8"} onChange={(event) => updateParam("cornerRadius", event.target.value)} /></td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("accentColor")}
-                          <td>{renderColorEditor("accentColor", inspectorSelectedNode.params.accentColor || "#2563eb", "#2563eb")}</td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("shadowEnabled")}
-                          <td>{renderParamEditor("shadowEnabled", inspectorSelectedNode.params.shadowEnabled || "0", false)}</td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("padding")}
-                          <td><input type="number" min="0" max="120" value={inspectorSelectedNode.params.padding || "12"} onChange={(event) => updateParam("padding", event.target.value)} /></td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("textAlign")}
-                          <td>{renderParamEditor("textAlign", inspectorSelectedNode.params.textAlign || "center", false)}</td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("verticalAlign")}
-                          <td>{renderParamEditor("verticalAlign", inspectorSelectedNode.params.verticalAlign || "middle", false)}</td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("markerStart")}
-                          <td>{renderParamEditor("markerStart", inspectorSelectedNode.params.markerStart || "none", false)}</td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("markerEnd")}
-                          <td>{renderParamEditor("markerEnd", inspectorSelectedNode.params.markerEnd || "none", false)}</td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("arrowSize")}
-                          <td><input type="number" min="4" max="80" value={inspectorSelectedNode.params.arrowSize || "10"} onChange={(event) => updateParam("arrowSize", event.target.value)} /></td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("handleColor")}
-                          <td>{renderColorEditor("handleColor", inspectorSelectedNode.params.handleColor || "#2563eb", "#2563eb")}</td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("handleSize")}
-                          <td><input type="number" min="3" max="40" value={inspectorSelectedNode.params.handleSize || "8"} onChange={(event) => updateParam("handleSize", event.target.value)} /></td>
-                        </tr>
-                        {renderStaticButtonActionEditor(inspectorSelectedNode)}
-                        <tr>
-                          {renderChineseParamHeader("backgroundImage")}
-                          <td>
-                            <div className="image-field-actions">
-                              <input value={inspectorSelectedNode.params.backgroundImage ? "已设置" : "未设置"} readOnly />
-                              <button type="button" onClick={() => setImageTarget({ kind: "node", nodeId: inspectorSelectedNode.id })}>选择</button>
-                              <button type="button" onClick={() => clearSelectedImageForNode(inspectorSelectedNode.id, "background")} disabled={!inspectorSelectedNode.params.backgroundImage}>清除</button>
-                            </div>
-                          </td>
-                        </tr>
-                      </>
-                    )}
-                    {!isStaticNode(inspectorSelectedNode) && (
-                      <>
-                        <tr>
-                          {renderChineseParamHeader("foregroundColor")}
-                          <td>{renderColorEditor("foregroundColor", inspectorSelectedNode.params.foregroundColor || "", terminalColor(inspectorSelectedNode.terminals[0]?.type, colorPalette))}</td>
-                        </tr>
-                        <tr>
-                          {renderChineseParamHeader("foregroundImage")}
-                          <td>
-                            <div className="image-field-actions">
-                              <input value={inspectorSelectedNode.params.foregroundImage ? "已设置" : "未设置"} readOnly />
-                              <button type="button" onClick={() => setImageTarget({ kind: "nodeForeground", nodeId: inspectorSelectedNode.id })}>选择</button>
-                              <button type="button" onClick={() => clearSelectedImageForNode(inspectorSelectedNode.id, "foreground")} disabled={!inspectorSelectedNode.params.foregroundImage}>清除</button>
-                            </div>
-                          </td>
-                        </tr>
-                      </>
-                    )}
-                    </tbody>
-                  </table>
-                  </div>
-                ) : (
-                  <div className="empty-state compact">
-                    <FileJson size={24} />
-                    <p>当前没有被选中图元。</p>
-                  </div>
-                )}
-              </div>
-            ) : inspectorSelectedNode ? (
-              <div className="device-param-stack">
-                {selectedContainerParameterViews.length > 0 && (
-                  <div className="container-param-tabs" role="tablist" aria-label="容器设备参数切换">
-                    {selectedContainerParameterViews.map((view) => (
-                      <button
-                        key={view.id}
-                        type="button"
-                        className={selectedContainerParameterView?.id === view.id ? "active" : ""}
-                        onClick={() => setContainerParamViewId(view.id)}
-                      >
-                        {view.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {selectedContainerParameterView ? (
-                  <table className="param-table">
-                    <tbody>
-                      {selectedContainerParameterView.rows.map((row) => {
-                        const options = paramOptionsForSection(row.key, selectedContainerParameterView.componentType);
-                        return (
-                          <tr key={row.key}>
-                            {renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
-                            <td>
-                              {row.key === "name" && selectedContainerParameterView.kind === "container" ? (
-                                <input value={inspectorSelectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
-                              ) : row.readonly || !row.paramKey ? (
-                                <input value={row.value} readOnly />
-                              ) : options ? (
-                                <select value={row.value} onChange={(event) => updateParam(row.paramKey!, event.target.value)}>
-                                  {options.map((option) => (
-                                    <option key={option} value={option}>
-                                      {option}
-                                    </option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <input value={row.value} onChange={(event) => updateParam(row.paramKey!, event.target.value)} />
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                ) : (
-                  <table className="param-table">
-                    <tbody>
-                      {(() => {
-                        const eKeys = getEParameterKeys(inspectorSelectedNode.kind, inspectorSelectedNode.params);
-                        const customDefinitions = parseCustomDefinitions(inspectorSelectedNode.params);
-                        const customKeys = customDefinitions.map((definition) => definition.enName);
-                        const customExtraKeys = customKeys.filter((key) => !eKeys.includes(key));
-                        const keys =
-                          eKeys.length > 0
-                            ? [...eKeys, ...customExtraKeys]
-                            : customKeys.length > 0
-                              ? customKeys
-                              : Object.keys(inspectorSelectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container");
-                        const readonlyKeys = new Set(customDefinitions.filter((definition) => definition.readonly).map((definition) => definition.enName));
-                        return keys.map((key) => {
-                          const value = eKeys.length > 0 ? getEParamValue(key, inspectorSelectedNode) : key === "name" ? inspectorSelectedNode.name : inspectorSelectedNode.params[key] ?? "";
-                          const definition = customDefinitions.find((item) => item.enName === key);
-                          return (
-                            <tr key={key}>
-                              {renderParamHeader(key, key, definition?.cnName ?? PARAM_LABELS[key] ?? key)}
-                              <td>
-                                {key === "name" ? (
-                                  <input value={inspectorSelectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
-                                ) : READONLY_E_PARAM_KEYS.has(key) || readonlyKeys.has(key) ? (
-                                  <input value={value} readOnly />
-                                ) : (
-                                  renderParamEditor(key, value, false)
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        });
-                      })()}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            ) : (
-              <div className="empty-state">
-                <FileJson size={28} />
-                <p>选择画布设备后，可切换查看图元和设备。</p>
-              </div>
-            )}
-            {inspectorSelectedNode && inspectorTab === "graph" && graphInfoView === "selected" && (
-              <div className="topology-card">
-                <span>连接度</span>
-                <strong>{topology.nodes[inspectorSelectedNode.id]?.degree ?? 0}</strong>
-                <small>
-                  {(topology.nodes[inspectorSelectedNode.id]?.neighbors ?? [])
-                    .map((id) => nodeById.get(id)?.name)
-                    .filter(Boolean)
-                    .join("、") || "暂无相邻元件"}
-                </small>
-              </div>
-            )}
-          </div>
-        ) : inspectorSelectedEdge ? (
-          <div className="form-stack">
-            <div className="topology-card">
-              <span>联络线</span>
-              <strong>{inspectorSelectedEdge.id}</strong>
-              <small>
-                {(nodeById.get(inspectorSelectedEdge.sourceId)?.name ?? "未知设备") +
-                  " -> " +
-                  (nodeById.get(inspectorSelectedEdge.targetId)?.name ?? "未知设备")}
-              </small>
-            </div>
-            <div className="empty-state">
-              <Cable size={28} />
-              <p>拖拽线两端的圆形控制点到其他同类型端子，可调整联络线首端或末端。</p>
-            </div>
-          </div>
-        ) : (
-          <div className="empty-state">
-            <Save size={28} />
-            <p>从左侧拖入元件，或使用联络线模式点击两个元件建立拓扑关系。</p>
-          </div>
-        )}
-        {inspectorTopologyErrors.length > 0 && (
-          <section className="validation-panel">
-            <div
-              className="validation-panel-resize-handle"
-              role="separator"
-              aria-orientation="horizontal"
-              title="拖拽调整拓扑告警栏高度"
-              onPointerDown={startValidationPanelResize}
-            />
-            <div className="validation-panel-title">
-              <h2>拓扑告警</h2>
-              <span>{inspectorTopologyErrors.length} 条</span>
-            </div>
-            <div className="validation-list">
-              {visibleTopologyErrors.map((error) => (
-                <button key={error.id} onClick={() => locateTopologyError(error)} onDoubleClick={() => locateTopologyError(error)}>
-                  <span>{topologyWarningDisplayMessage(error.message)}</span>
-                </button>
-              ))}
-            </div>
-            {inspectorTopologyErrors.length > TOPOLOGY_WARNING_PAGE_SIZE && (
-              <div className="validation-pagination">
-                <button
-                  type="button"
-                  onClick={() => setTopologyWarningPage((current) => Math.max(0, current - 1))}
-                  disabled={normalizedTopologyWarningPage === 0}
-                >
-                  上一页
-                </button>
-                <span>
-                  {normalizedTopologyWarningPage + 1} / {topologyWarningPageCount}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setTopologyWarningPage((current) => Math.min(topologyWarningPageCount - 1, current + 1))}
-                  disabled={normalizedTopologyWarningPage >= topologyWarningPageCount - 1}
-                >
-                  下一页
-                </button>
-              </div>
-            )}
-            {hiddenTopologyErrorCount > 0 && (
-              <p className="validation-more">每页显示 {TOPOLOGY_WARNING_PAGE_SIZE} 条告警，请分页处理或重新拓扑。</p>
-            )}
-          </section>
-        )}
-      </aside>
-      {contextMenu && (
-        <div className="context-menu" data-canvas-context-menu="true" style={contextMenuStyle(contextMenu)}>
-          {isEditMode && undoStack.length > 0 && (
-            <button onClick={() => runContextMenuAction(undoLastOperation)}>
-              <Undo2 size={14} />
-              撤销
-            </button>
-          )}
-          {contextMenuForSelection && contextSelectionCount > 0 && (
-            <button onClick={() => runContextMenuAction(copySelection)}>
-              <Copy size={14} />
-              复制
-            </button>
-          )}
-          {isEditMode && contextMenuForSelection && contextSelectionCount > 0 && (
-            <button onClick={() => runContextMenuAction(cutSelection)}>
-              <Scissors size={14} />
-              剪切
-            </button>
-          )}
-          {isEditMode && saveRequired && (
-            <button onClick={() => runContextMenuAction(() => saveCurrentProject())}>
-              <Save size={14} />
-              保存
-            </button>
-          )}
-          {isEditMode && (canvasClipboard.nodes.length > 0 || canvasClipboard.edges.length > 0) && (
-            <button onClick={() => runContextMenuAction(pasteSelection)}>
-              <FileInput size={14} />
-              粘贴
-            </button>
-          )}
-          {isEditMode && nodes.length > 0 && (
-            <button onClick={() => runContextMenuAction(openVoltageBaseSetDialog)}>
-              <Zap size={14} />
-              设置电压基值
-            </button>
-          )}
-          {isEditMode && nodes.length > 0 && (
-            <button onClick={() => runContextMenuAction(openVoltageBaseClearDialog)}>
-              <ZapOff size={14} />
-              清空电压基值
-            </button>
-          )}
-          {isEditMode && contextMenuTarget === "blank" && activeLayerNodes.length > 1 && (
-            <button onClick={() => runContextMenuAction(autoAlignCanvasGraphics)}>
-              <AlignCenterHorizontal size={14} />
-              自动对齐
-            </button>
-          )}
-          {isEditMode && contextMenuTarget === "blank" && activeLayerNodes.length > 1 && (
-            <button onClick={() => runContextMenuAction(autoSpreadCanvasGraphics)}>
-              <ScanSearch size={14} />
-              自动散开
-            </button>
-          )}
-          {contextMenuForEdge && selectedEdge && (
-            isEditMode ? (
-            <button onClick={() => runContextMenuAction(tidySelectedEdgeRoute)}>
-              <Route size={14} />
-              整理连接线
-            </button>
-            ) : null
-          )}
-          {contextMenuForEdge && contextMenu.edgeId && (
-            isEditMode ? (
-            <button onClick={() => runContextMenuAction(addManualBendFromContextMenu)}>
-              <Pencil size={14} />
-              添加拐点
-            </button>
-            ) : null
-          )}
-          {isEditMode && contextMenuTarget === "blank" && (
-            <button onClick={() => runContextMenuAction(openConnectionRedrawDialog)}>
-              <Route size={14} />
-              连接线重绘
-            </button>
-          )}
-          {contextMenuForNode && canGroupSelectedGraphics && (
-            isEditMode ? (
-            <button onClick={() => runContextMenuAction(groupSelectedGraphics)}>
-              <Group size={14} />
-              组合
-            </button>
-            ) : null
-          )}
-          {contextMenuForNode && canUngroupSelectedGraphics && (
-            isEditMode ? (
-            <button onClick={() => runContextMenuAction(ungroupSelectedGraphics)}>
-              <Ungroup size={14} />
-              解散
-            </button>
-            ) : null
-          )}
-          {contextMenuForNode && canAddTemplateFromSelection && (
-            isEditMode ? (
-            <button onClick={() => runContextMenuAction(openAddTemplateDialog)}>
-              <Grid2X2 size={14} />
-              添加到模板库
-            </button>
-            ) : null
-          )}
-          {contextMenuForNode && activeSelectedNodeIds.length > 0 && (
-            isEditMode ? (
-            <button onClick={() => runContextMenuAction(openLayerAssignmentDialog)}>
-              <Layers size={14} />
-              图层修改
-            </button>
-            ) : null
-          )}
-          {contextMenuForNode && activeSelectedNodeIds.length > 0 && (
-            isEditMode ? (
-            <div className="context-menu-submenu">
-              <button type="button" className="context-menu-submenu-trigger">
-                <Layers2 size={14} />
-                显示层级
-                <ChevronRight size={14} />
-              </button>
-              <div className="context-menu-submenu-panel">
-                <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("raise"))}>
-                  <ArrowUp size={14} />
-                  提升显示层级
-                </button>
-                <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("lower"))}>
-                  <ArrowDown size={14} />
-                  降低显示层级
-                </button>
-                <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("front"))}>
-                  <ChevronsUp size={14} />
-                  顶层显示
-                </button>
-                <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("back"))}>
-                  <ChevronsDown size={14} />
-                  底层显示
-                </button>
-              </div>
-            </div>
-            ) : null
-          )}
-          {contextMenuForNode && activeSelectedNodeIds.length > 0 && (
-            isEditMode ? (
-            <div className="context-menu-submenu">
-              <button type="button" className="context-menu-submenu-trigger">
-                <Type size={14} />
-                标识显示
-                <ChevronRight size={14} />
-              </button>
-              <div className="context-menu-submenu-panel">
-                <button onClick={() => runContextMenuAction(() => setSelectedNodeLabelDisplayMode("always"))}>
-                  <Type size={14} />
-                  标识始终显示
-                </button>
-                <button onClick={() => runContextMenuAction(() => setSelectedNodeLabelDisplayMode("hidden"))}>
-                  <Type size={14} />
-                  标识始终隐藏
-                </button>
-                <button onClick={() => runContextMenuAction(() => setSelectedNodeLabelDisplayMode("follow"))}>
-                  <Type size={14} />
-                  标识跟随显示
-                </button>
-              </div>
-            </div>
-            ) : null
-          )}
-          {isEditMode && contextMenuForSelection && contextSelectionCount > 0 && (
-            <button onClick={() => runContextMenuAction(deleteSelection)}>
-              <Trash2 size={14} />
-              删除
-            </button>
-          )}
-        </div>
-      )}
-      {projectMenu && (
-        <div className="context-menu" style={contextMenuStyle(projectMenu)}>
-          {projectMenu.projectId && (
-            <>
-              {isEditMode && (
-              <button
-                onClick={() => runContextMenuAction(() => {
-                  const project = projectById.get(projectMenu.projectId ?? "");
-                  if (project) deleteProjectRecord(project);
-                })}
-              >
-                <Trash2 size={14} />
-                模型删除
-              </button>
-              )}
-              <button
-                onClick={() => runContextMenuAction(() => {
-                  const project = projectById.get(projectMenu.projectId ?? "");
-                  if (project) void exportProjectRecordFile(project);
-                })}
-              >
-                <Download size={14} />
-                模型导出
-              </button>
-              {isEditMode && (
-              <button
-                onClick={() => runContextMenuAction(() => openModelImportFilePicker(projectMenu.schemeId ?? ""))}
-              >
-                <FileInput size={14} />
-                模型导入
-              </button>
-              )}
-              {isEditMode && (
-              <button
-                onClick={() => runContextMenuAction(() => {
-                  const project = projectById.get(projectMenu.projectId ?? "");
-                  if (project) renameProjectRecord(project);
-                })}
-              >
-                <Pencil size={14} />
-                模型重命名
-              </button>
-              )}
-              <button
-                onClick={() => runContextMenuAction(() => {
-                  const project = projectById.get(projectMenu.projectId ?? "");
-                  if (project) copyProjectRecord(project);
-                })}
-              >
-                <Copy size={14} />
-                模型复制
-              </button>
-              {recordClipboard?.kind === "project" && projectMenu.projectId && (
-                isEditMode ? (
-                <button onClick={() => runContextMenuAction(() => pasteProjectClipboardRecord(projectMenu.schemeId ?? ""))}>
-                  <FileInput size={14} />
-                  模型粘贴
-                </button>
-                ) : null
-              )}
-            </>
-          )}
-          {!projectMenu.projectId && projectMenu.schemeId && (
-            <>
-              {isEditMode && (
-              <button onClick={() => runContextMenuAction(() => createSchemeRecord(projectMenu.schemeId ?? ""))}>
-                <FolderOpen size={14} />
-                方案新增
-              </button>
-              )}
-              {isEditMode && (
-              <button
-                onClick={() => runContextMenuAction(() => {
-                  const scheme = findSavedSchemeById(schemes, projectMenu.schemeId ?? "");
-                  if (scheme) deleteSchemeRecord(scheme);
-                })}
-              >
-                <Trash2 size={14} />
-                方案删除
-              </button>
-              )}
-              <button
-                onClick={() => runContextMenuAction(() => {
-                  const scheme = findSavedSchemeById(schemes, projectMenu.schemeId ?? "");
-                  if (scheme) void exportSchemeRecord(scheme);
-                })}
-              >
-                <Download size={14} />
-                方案导出
-              </button>
-              {isEditMode && (
-              <button onClick={() => runContextMenuAction(() => openSchemeImportFilePicker(projectMenu.schemeId ?? ""))}>
-                <FileInput size={14} />
-                方案导入
-              </button>
-              )}
-              {isEditMode && (
-              <button
-                onClick={() => runContextMenuAction(() => {
-                  const scheme = findSavedSchemeById(schemes, projectMenu.schemeId ?? "");
-                  if (scheme) renameSchemeRecord(scheme);
-                })}
-              >
-                <Pencil size={14} />
-                方案重命名
-              </button>
-              )}
-              <button
-                onClick={() => runContextMenuAction(() => {
-                  const scheme = findSavedSchemeById(schemes, projectMenu.schemeId ?? "");
-                  if (scheme) copySchemeRecord(scheme);
-                })}
-              >
-                <Copy size={14} />
-                方案复制
-              </button>
-              {recordClipboard?.kind === "scheme" && (
-                isEditMode ? (
-                <button onClick={() => runContextMenuAction(() => pasteSchemeClipboardRecord(projectMenu.schemeId ?? ""))}>
-                  <FileInput size={14} />
-                  方案粘贴
-                </button>
-                ) : null
-              )}
-              {isEditMode && <div className="context-menu-separator" role="separator" aria-label="方案操作和模型操作分隔" />}
-              {isEditMode && (
-              <button onClick={() => runContextMenuAction(() => createBlankProject(projectMenu.schemeId ?? ""))}>
-                <Plus size={14} />
-                模型新建
-              </button>
-              )}
-              {isEditMode && (
-              <button onClick={() => runContextMenuAction(() => openModelImportFilePicker(projectMenu.schemeId ?? ""))}>
-                <FileInput size={14} />
-                模型导入
-              </button>
-              )}
-              {recordClipboard?.kind === "project" && projectMenu.schemeId && (
-                isEditMode ? (
-                <button onClick={() => runContextMenuAction(() => pasteProjectClipboardRecord(projectMenu.schemeId ?? ""))}>
-                  <FileInput size={14} />
-                  模型粘贴
-                </button>
-                ) : null
-              )}
-            </>
-          )}
-          {!projectMenu.projectId && !projectMenu.schemeId && (
-            <>
-              {isEditMode && (
-              <button onClick={() => runContextMenuAction(createSchemeRecord)}>
-                <FolderOpen size={14} />
-                方案新增
-              </button>
-              )}
-              {recordClipboard?.kind === "scheme" && (
-                isEditMode ? (
-                <button onClick={() => runContextMenuAction(pasteSchemeClipboardRecord)}>
-                  <FileInput size={14} />
-                  方案粘贴
-                </button>
-                ) : null
-              )}
-              {isEditMode && (
-              <button onClick={() => runContextMenuAction(openSchemeImportFilePicker)}>
-                <FileInput size={14} />
-                方案导入
-              </button>
-              )}
-            </>
-          )}
-        </div>
-      )}
-      {pendingRecordPasteConflict && (
-        <div className="image-picker-backdrop" onPointerDown={() => resolveRecordPasteConflict("cancel")}>
-          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="record-paste-conflict-title">
-            <div className="image-picker-title">
-              <div>
-                <h2 id="record-paste-conflict-title">名称重复</h2>
-                <p>
-                  当前{pendingRecordPasteConflict.kind === "scheme" ? "模型库" : pendingRecordPasteConflict.kind === "scheme-drag" ? "目标方案" : "方案"}中已存在“{pendingRecordPasteConflict.duplicateName}”。请选择{pendingRecordPasteConflict.kind === "project-drag" || pendingRecordPasteConflict.kind === "scheme-drag" ? "拖拽" : "粘贴"}处理方式。
-                </p>
-              </div>
-            </div>
-            <div className="unsaved-change-actions">
-              <button type="button" onClick={() => resolveRecordPasteConflict("overwrite")}>覆盖</button>
-              <button type="button" onClick={() => resolveRecordPasteConflict("rename")}>新命名</button>
-              <button type="button" onClick={() => resolveRecordPasteConflict("cancel")}>{pendingRecordPasteConflict.kind === "project-drag" || pendingRecordPasteConflict.kind === "scheme-drag" ? "取消拖拽" : "取消粘贴"}</button>
-            </div>
-          </section>
-        </div>
-      )}
-      {pendingModelImportConflict && (
-        <div className="image-picker-backdrop" onPointerDown={() => resolveDuplicateModelImport("cancel")}>
-          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="model-import-conflict-title">
-            <div className="image-picker-title">
-              <div>
-                <h2 id="model-import-conflict-title">模型名称重复</h2>
-                <p>
-                  当前方案中已存在模型“{pendingModelImportConflict.duplicateProjectName}”。请选择导入处理方式。
-                </p>
-              </div>
-            </div>
-            <div className="unsaved-change-actions">
-              <button type="button" onClick={() => resolveDuplicateModelImport("overwrite")}>覆盖</button>
-              <button type="button" onClick={() => resolveDuplicateModelImport("rename")}>重命名</button>
-              <button type="button" onClick={() => resolveDuplicateModelImport("cancel")}>不导入</button>
-            </div>
-          </section>
-        </div>
-      )}
-      {pendingSchemeImportConflict && (
-        <div className="image-picker-backdrop" onPointerDown={() => resolveDuplicateSchemeImport("cancel")}>
-          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="scheme-import-conflict-title">
-            <div className="image-picker-title">
-              <div>
-                <h2 id="scheme-import-conflict-title">方案名称重复</h2>
-                <p>
-                  当前模型库中已存在方案“{pendingSchemeImportConflict.duplicateSchemeName}”。请选择导入处理方式。
-                </p>
-              </div>
-            </div>
-            <div className="unsaved-change-actions">
-              <button type="button" onClick={() => resolveDuplicateSchemeImport("merge")}>合并覆盖</button>
-              <button type="button" onClick={() => resolveDuplicateSchemeImport("rename")}>重新命名</button>
-              <button type="button" onClick={() => resolveDuplicateSchemeImport("cancel")}>不导入</button>
-            </div>
-          </section>
-        </div>
-      )}
-      {pendingUnsavedAction && (
-        <div className="image-picker-backdrop" onPointerDown={() => resolveUnsavedChangeAction("cancel")}>
-          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="unsaved-change-title">
-            <div className="image-picker-title">
-              <div>
-                <h2 id="unsaved-change-title">当前模型尚未保存</h2>
-                <p>当前模型“{projectName}”存在未保存修改。{pendingUnsavedAction.label}之前，请选择如何处理这些修改。</p>
-              </div>
-            </div>
-            <div className="unsaved-change-actions">
-              <button type="button" onClick={() => resolveUnsavedChangeAction("discard")}>不保存继续切换/关闭</button>
-              <button type="button" onClick={() => resolveUnsavedChangeAction("save")}>保存后切换/关闭</button>
-              <button type="button" onClick={() => resolveUnsavedChangeAction("cancel")}>退出操作</button>
-            </div>
-            <p className="unsaved-change-note">关闭网页时，浏览器也会在离开前提示当前模型未保存。</p>
-          </section>
-        </div>
-      )}
-      {voltageBaseSetDialogOpen && (
-        <div className="image-picker-backdrop" onPointerDown={() => setVoltageBaseSetDialogOpen(false)}>
-          <section className="connection-redraw-dialog voltage-base-set-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="voltage-base-set-title">
-            <div className="image-picker-title">
-              <div>
-                <h2 id="voltage-base-set-title">设置电压基值</h2>
-                <p>将指定范围内设备端子和电压相关参数中的 vbase、v_base、v_set 等值设为输入值；多端设备可按端子分别设置。</p>
-              </div>
-              <button type="button" onClick={() => setVoltageBaseSetDialogOpen(false)}>关闭</button>
-            </div>
-            <label className="voltage-base-set-value-row">
-              <span>设置方式</span>
-              <select
-                value={voltageBaseSetMode}
-                onChange={(event) => setVoltageBaseSetMode(event.target.value as VoltageBaseSetMode)}
-              >
-                <option value="uniform">统一设置</option>
-                <option value="terminal" disabled={voltageBaseSetTerminalRows.length === 0}>按端子设置</option>
-              </select>
-            </label>
-            {voltageBaseSetMode === "uniform" ? (
-            <label className="voltage-base-set-value-row">
-              <span>电压基值</span>
-              <input
-                type="text"
-                value={voltageBaseSetValue}
-                onChange={(event) => setVoltageBaseSetValue(event.target.value)}
-                list="voltage-base-set-options"
-                placeholder="例如 110"
-                autoFocus
-              />
-            </label>
-            ) : (
-              <div className="voltage-base-terminal-grid" aria-label="按端子设置电压基值">
-                <div className="voltage-base-terminal-grid-head">
-                  <span>设备</span>
-                  <span>端子</span>
-                  <span>电压基值</span>
-                </div>
-                {voltageBaseSetTerminalRows.map((row, index) => (
-                  <label className="voltage-base-terminal-row" key={`${row.nodeId}:${row.terminalId}`}>
-                    <span title={row.nodeName}>{row.nodeName}</span>
-                    <span title={`${row.terminalLabel} / ${row.terminalType}`}>{row.terminalLabel} / {row.terminalType}</span>
-                    <input
-                      type="text"
-                      value={row.value}
-                      onChange={(event) => setVoltageBaseTerminalValue(row.nodeId, row.terminalId, event.target.value)}
-                      list="voltage-base-set-options"
-                      placeholder="例如 110"
-                      autoFocus={index === 0}
-                    />
-                  </label>
-                ))}
-              </div>
-            )}
-            <datalist id="voltage-base-set-options">
-              {voltageBaseSetOptions.map((value) => (
-                <option key={value} value={value} />
-              ))}
-            </datalist>
-            <div className="connection-redraw-options voltage-base-set-options" role="radiogroup" aria-label="设置电压基值范围">
-              {VOLTAGE_BASE_SET_SCOPES.map((scope) => {
-                const result = voltageBaseSetResultForScope(scope);
-                const count = result.changedNodeIds.length;
-                const disabled = count === 0 || voltageBaseSetValue.trim().length === 0;
-                return (
-                  <button
-                    key={scope}
-                    type="button"
-                    className={voltageBaseSetScope === scope ? "active" : ""}
-                    role="radio"
-                    aria-checked={voltageBaseSetScope === scope}
-                    onClick={() => setVoltageBaseSetScope(scope)}
-                    disabled={disabled}
-                  >
-                    <span>{VOLTAGE_BASE_SET_SCOPE_LABELS[scope]}</span>
-                    <strong>{count}</strong>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="image-picker-actions connection-redraw-actions">
-              <button type="button" onClick={() => setVoltageBaseSetDialogOpen(false)}>取消</button>
-              <button
-                type="button"
-                onClick={confirmVoltageBaseSetDialog}
-                disabled={(voltageBaseSetMode === "terminal" ? !hasVoltageBaseTerminalValues(voltageBaseTerminalValues) : voltageBaseSetValue.trim().length === 0) || voltageBaseSetResultForScope(voltageBaseSetScope).changedNodeIds.length === 0}
-              >
-                确定
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
-      {voltageBaseClearDialogOpen && (
-        <div className="image-picker-backdrop" onPointerDown={() => setVoltageBaseClearDialogOpen(false)}>
-          <section className="connection-redraw-dialog voltage-base-clear-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="voltage-base-clear-title">
-            <div className="image-picker-title">
-              <div>
-                <h2 id="voltage-base-clear-title">清空电压基值</h2>
-                <p>将指定范围内设备端子和电压相关参数中的 vbase、v_base、v_set 等值统一设为 0.0。</p>
-              </div>
-              <button type="button" onClick={() => setVoltageBaseClearDialogOpen(false)}>关闭</button>
-            </div>
-            <div className="connection-redraw-options voltage-base-clear-options" role="radiogroup" aria-label="清空电压基值范围">
-              {VOLTAGE_BASE_CLEAR_SCOPES.map((scope) => {
-                const result = voltageBaseClearResultForScope(scope);
-                const count = result.changedNodeIds.length;
-                const disabled = count === 0;
-                return (
-                  <button
-                    key={scope}
-                    type="button"
-                    className={voltageBaseClearScope === scope ? "active" : ""}
-                    role="radio"
-                    aria-checked={voltageBaseClearScope === scope}
-                    onClick={() => setVoltageBaseClearScope(scope)}
-                    disabled={disabled}
-                  >
-                    <span>{VOLTAGE_BASE_CLEAR_SCOPE_LABELS[scope]}</span>
-                    <strong>{count}</strong>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="image-picker-actions connection-redraw-actions">
-              <button type="button" onClick={() => setVoltageBaseClearDialogOpen(false)}>取消</button>
-              <button
-                type="button"
-                onClick={confirmVoltageBaseClearDialog}
-                disabled={voltageBaseClearResultForScope(voltageBaseClearScope).changedNodeIds.length === 0}
-              >
-                确定
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
-      {connectionRedrawDialogOpen && (
-        <div className="image-picker-backdrop" onPointerDown={() => setConnectionRedrawDialogOpen(false)}>
-          <section className="connection-redraw-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="connection-redraw-title">
-            <div className="image-picker-title">
-              <div>
-                <h2 id="connection-redraw-title">连接线重绘</h2>
-                <p>清除指定连接线的旧路径几何，并按当前端子、母线落点和避障规则重新生成。</p>
-              </div>
-              <button type="button" onClick={() => setConnectionRedrawDialogOpen(false)}>关闭</button>
-            </div>
-            <div className="connection-redraw-options" role="radiogroup" aria-label="连接线重绘范围">
-              {(["selected", "viewport", "all"] as const).map((scope) => {
-                const count = connectionRedrawEdgeIdsForScope(scope).length;
-                const disabled = count === 0;
-                return (
-                  <button
-                    key={scope}
-                    type="button"
-                    className={connectionRedrawScope === scope ? "active" : ""}
-                    role="radio"
-                    aria-checked={connectionRedrawScope === scope}
-                    onClick={() => setConnectionRedrawScope(scope)}
-                    disabled={disabled}
-                  >
-                    <span>{CONNECTION_REDRAW_SCOPE_LABELS[scope]}</span>
-                    <strong>{count}</strong>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="image-picker-actions connection-redraw-actions">
-              <button type="button" onClick={() => setConnectionRedrawDialogOpen(false)}>取消</button>
-              <button
-                type="button"
-                onClick={confirmConnectionRedrawDialog}
-                disabled={connectionRedrawEdgeIdsForScope(connectionRedrawScope).length === 0}
-              >
-                确定
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
-      {templateDialog && (
-        <div className="image-picker-backdrop" onPointerDown={cancelTemplateDialog}>
-          <section className="template-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="template-dialog-title">
-            <div className="image-picker-title">
-              <div>
-                <h2 id="template-dialog-title">添加模板</h2>
-                <p>将当前选中的图元组合保存到模板库，后续可按原始尺寸拖拽生成。</p>
-              </div>
-              <button type="button" onClick={cancelTemplateDialog}>关闭</button>
-            </div>
-            <div className="template-dialog-grid">
-              <div className="template-dialog-preview">
-                {renderGraphTemplatePreview({
-                  id: "template-dialog-preview",
-                  typeName: templateDraftType,
-                  name: templateDraftName || "新模板",
-                  sourceSize: templateDialog.sourceSize,
-                  clipboard: templateDialog.clipboard,
-                  createdAt: "",
-                  updatedAt: ""
-                })}
-                <small>真实尺寸：{templateDialog.sourceSize.width}×{templateDialog.sourceSize.height}</small>
-              </div>
-              <div className="template-dialog-fields">
-                <label>
-                  <span>模板类型</span>
-                  <div className="template-type-row">
-                    <select value={templateDraftType} onChange={(event) => setTemplateDraftType(event.target.value)}>
-                      {graphTemplateTypes.map((typeName) => (
-                        <option key={typeName} value={typeName}>{typeName}</option>
-                      ))}
-                    </select>
-                    <button type="button" onClick={createGraphTemplateType}>新增模板类型</button>
-                  </div>
-                </label>
-                <label>
-                  <span>模板名字</span>
-                  <input
-                    value={templateDraftName}
-                    onChange={(event) => setTemplateDraftName(event.target.value)}
-                    placeholder="请输入模板名字"
-                    autoFocus
-                  />
-                </label>
-              </div>
-            </div>
-            <div className="template-dialog-actions">
-              <button type="button" onClick={cancelTemplateDialog}>取消</button>
-              <button type="button" onClick={confirmAddGraphTemplate}>确认</button>
-            </div>
-          </section>
-        </div>
-      )}
-      {layerDialogOpen && (
-        <div className="image-picker-backdrop" onPointerDown={() => setLayerDialogOpen(false)}>
-          <section className="layer-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="layer-dialog-title">
-            <div className="image-picker-title">
-              <div>
-                <h2 id="layer-dialog-title">图层管理</h2>
-                <p>管理模型图层的显示、顺序和激活状态。新建或拖入的图元默认进入当前激活图层。</p>
-              </div>
-              <button type="button" onClick={() => setLayerDialogOpen(false)}>关闭</button>
-            </div>
-            <div className="layer-dialog-status">
-              <span>激活图层</span>
-              <strong>{activeLayer?.name ?? "默认图层"}</strong>
-            </div>
-            {renderLayerManager()}
-          </section>
-        </div>
-      )}
-      {layerAssignmentDialogOpen && (
-        <div className="image-picker-backdrop" onPointerDown={() => setLayerAssignmentDialogOpen(false)}>
-          <section className="layer-assignment-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="layer-assignment-title">
-            <div className="image-picker-title">
-              <div>
-                <h2 id="layer-assignment-title">图层修改</h2>
-                <p>当前选中 {activeSelectedNodeIds.length} 个图元。选择目标图层后，确认应用到这些图元。</p>
-              </div>
-              <button type="button" onClick={() => setLayerAssignmentDialogOpen(false)}>关闭</button>
-            </div>
-            <label className="layer-assignment-field">
-              <span>目标图层</span>
-              <select
-                value={layerAssignmentTargetId}
-                onChange={(event) => setLayerAssignmentTargetId(event.target.value)}
-              >
-                {layers.map((layer) => (
-                  <option key={layer.id} value={layer.id}>
-                    {layer.visible ? layer.name : `${layer.name}（隐藏）`}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="layer-assignment-note">如果目标图层处于隐藏状态，应用后这些图元会按图层显示规则从画布上隐藏。</p>
-            <div className="image-picker-actions layer-assignment-actions">
-              <button type="button" onClick={() => setLayerAssignmentDialogOpen(false)}>取消</button>
-              <button
-                type="button"
-                onClick={applyLayerAssignmentDialog}
-                disabled={activeSelectedNodeIds.length === 0 || !layers.some((layer) => layer.id === layerAssignmentTargetId) || layerAssignmentUnchanged}
-              >
-                应用
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
-      {ENABLE_REACT_FLOW_PREVIEW && ReactFlowPreview && reactFlowPreviewOpen && (
-        <div className="image-picker-backdrop react-flow-preview-backdrop" onPointerDown={() => setReactFlowPreviewOpen(false)}>
-          <section className="react-flow-preview-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="react-flow-preview-title">
-            <div className="image-picker-title">
-              <div>
-                <h2 id="react-flow-preview-title">React Flow 预览</h2>
-                <p>开发态验证入口：仅展示当前可见模型，主画布、拓扑、布线和导出逻辑保持不变。</p>
-              </div>
-              <button type="button" onClick={() => setReactFlowPreviewOpen(false)}>关闭</button>
-            </div>
-            <div className="react-flow-preview-stage">
-              <Suspense fallback={<div className="react-flow-preview-loading">正在加载 React Flow 预览...</div>}>
-                <ReactFlowPreview nodes={visibleNodes} edges={visibleEdges} />
-              </Suspense>
-            </div>
-          </section>
-        </div>
-      )}
-      {colorPaletteDialogOpen && (
-        <div className="image-picker-backdrop" onPointerDown={() => setColorPaletteDialogOpen(false)}>
-          <section className="color-palette-dialog" onPointerDown={(event) => event.stopPropagation()}>
-            <div className="image-picker-title">
-              <div>
-                <h2>配色设置</h2>
-                <p>配置能流类型和电压等级颜色，保存后用于图元、端子、联络线和导出图形。</p>
-              </div>
-              <button onClick={() => setColorPaletteDialogOpen(false)}>关闭</button>
-            </div>
-            <div className="color-palette-tabs" role="tablist" aria-label="配色方式">
-              <button
-                className={colorPaletteTab === "energy" ? "active" : ""}
-                onClick={() => {
-                  setColorPaletteTab("energy");
-                  toggleColorDisplayMode("energy");
-                }}
-                type="button"
-              >
-                按能流类型
-              </button>
-              <button
-                className={colorPaletteTab === "voltage" ? "active" : ""}
-                onClick={() => {
-                  setColorPaletteTab("voltage");
-                  toggleColorDisplayMode("voltage");
-                }}
-                type="button"
-              >
-                按电压等级
-              </button>
-            </div>
-            {colorPaletteTab === "energy" ? (
-              <div className="color-palette-table" aria-label="能流类型配色">
-                {ENERGY_COLOR_ROWS.map((row) => {
-                  const color = colorPaletteDraft.energy[row.type] ?? DEFAULT_COLOR_PALETTE.energy[row.type];
-                  return (
-                    <label className="color-palette-row" key={row.type}>
-                      <span>{row.label}</span>
-                      <input
-                        type="color"
-                        value={color.startsWith("#") ? color : DEFAULT_COLOR_PALETTE.energy[row.type]}
-                        onChange={(event) => updateEnergyColor(row.type, event.target.value)}
-                        aria-label={`${row.label}颜色`}
-                      />
-                      <input
-                        value={color}
-                        onChange={(event) => updateEnergyColor(row.type, event.target.value)}
-                        aria-label={`${row.label}颜色值`}
-                      />
-                    </label>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="voltage-color-panel">
-                <div className="voltage-color-toolbar" role="group" aria-label="电压等级显示范围">
-                  <button
-                    type="button"
-                    className={voltageColorVisibility === "all" ? "active" : ""}
-                    onClick={() => setVoltageColorVisibility("all")}
-                  >
-                    全部电压等级
-                  </button>
-                  <button
-                    type="button"
-                    className={voltageColorVisibility === "current" ? "active" : ""}
-                    onClick={() => setVoltageColorVisibility("current")}
-                  >
-                    当前模型电压等级
-                  </button>
-                  <span>{`当前模型 ${currentModelVoltageColorKeys.size} 项`}</span>
-                </div>
-                <div className="voltage-color-header">
-                  <span>AC/DC</span>
-                  <span>电压基值</span>
-                  <span>颜色</span>
-                  <span>操作</span>
-                </div>
-                <div className="voltage-color-list">
-                  {visibleVoltageColorRows.length > 0 ? (
-                    visibleVoltageColorRows.map((row) => (
-                      <div className="voltage-color-row" key={row.key}>
-                        <select
-                          value={row.type}
-                          onChange={(event) => updateVoltageColorRow(row.key, { type: event.target.value as "ac" | "dc" })}
-                          aria-label="AC/DC"
-                        >
-                          {ELECTRIC_COLOR_TYPES.map((type) => (
-                            <option key={type} value={type}>{ELECTRIC_COLOR_TYPE_LABELS[type]}</option>
-                          ))}
-                        </select>
-                        <input
-                          value={row.voltage}
-                          onChange={(event) => updateVoltageColorRow(row.key, { voltage: event.target.value })}
-                          aria-label="电压基值"
-                        />
-                        <div className="color-field">
-                          <input
-                            type="color"
-                            value={row.color.startsWith("#") ? row.color : "#64748b"}
-                            onChange={(event) => updateVoltageColorRow(row.key, { color: event.target.value })}
-                            aria-label={`${row.type.toUpperCase()} ${row.voltage}颜色`}
-                          />
-                          <input
-                            value={row.color}
-                            onChange={(event) => updateVoltageColorRow(row.key, { color: event.target.value })}
-                            aria-label={`${row.type.toUpperCase()} ${row.voltage}颜色值`}
-                          />
-                        </div>
-                        <button type="button" onClick={() => deleteVoltageColorRow(row.key)}>删除</button>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="voltage-color-empty">当前模型暂无交流/直流电压等级。</div>
-                  )}
-                </div>
-                {voltageColorVisibility === "all" && (
-                  <button type="button" className="secondary-action" onClick={addVoltageColorRow}>新增电压等级</button>
-                )}
-              </div>
-            )}
-            <div className="image-picker-actions color-palette-actions">
-              <button type="button" onClick={colorPaletteTab === "energy" ? resetEnergyColors : resetVoltageColors}>
-                {colorPaletteTab === "energy" ? "恢复默认能流配色" : "恢复默认电压配色"}
-              </button>
-              <button type="button" onClick={saveColorPalette}>保存</button>
-            </div>
-          </section>
-        </div>
-      )}
-      {deviceDefinitionDialogOpen && (
-        <div className="image-picker-backdrop" onPointerDown={() => setDeviceDefinitionDialogOpen(false)}>
-          <section className="device-definition-dialog" onPointerDown={(event) => event.stopPropagation()}>
-            <div className="image-picker-title">
-              <div>
-                <h2>修改元件</h2>
-                <p>查看内置和自定义元件定义，维护新建图元时使用的设备属性。</p>
-              </div>
-              <button onClick={() => setDeviceDefinitionDialogOpen(false)}>关闭</button>
-            </div>
-            <div className="device-definition-layout">
-              <aside className="device-definition-list" aria-label="元件定义列表">
-                {attributeLibraries.map((group) => {
-                  const templates = groupedAttributeLibrary[group] ?? [];
-                  if (templates.length === 0) {
-                    return null;
-                  }
-                  const expanded = expandedDefinitionGroups.includes(group);
-                  return (
-                    <section className="device-definition-group" key={group}>
-                      <button
-                        type="button"
-                        className="device-definition-group-toggle"
-                        aria-expanded={expanded}
-                        onClick={() => toggleDefinitionGroup(group)}
-                      >
-                        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                        <span>{group}</span>
-                        <strong>{templates.length}</strong>
-                      </button>
-                      {expanded && (
-                        <div className="component-definition-type-list" role="group" aria-label={`${group}元件类型列表`}>
-                          {(groupedAttributeLibraryByComponentType[group] ?? []).map((typeGroup) => (
-                            <section className="component-definition-type-group" key={`${group}-${typeGroup.section}`}>
-                              <div className="component-definition-type-header">
-                                <span>{typeGroup.section}</span>
-                                <strong>{typeGroup.templates.length}</strong>
-                              </div>
-                              <div className="device-definition-items" role="group" aria-label={`${group}/${typeGroup.section}元件列表`}>
-                                {typeGroup.templates.map((template) => (
-                                  <button
-                                    type="button"
-                                    key={template.kind}
-                                    className={`device-definition-item ${selectedDefinitionTemplate?.kind === template.kind ? "active" : ""}`}
-                                    onClick={() => loadDefinitionTemplateDraft(template)}
-                                  >
-                                    <span>{template.label}</span>
-                                    <small>{template.kind}</small>
-                                  </button>
-                                ))}
-                              </div>
-                            </section>
-                          ))}
-                        </div>
-                      )}
-                    </section>
-                  );
-                })}
-              </aside>
-              <section className="device-definition-detail">
-                {selectedDefinitionTemplate ? (
-                  <>
-                    <div className="device-definition-summary">
-                      <div>
-                        <span>元件名称</span>
-                        <strong>{selectedDefinitionTemplate.label}</strong>
-                      </div>
-                      <div>
-                        <span>图元类型</span>
-                        <strong>{selectedDefinitionTemplate.kind}</strong>
-                      </div>
-                      <div>
-                        <span>属性库</span>
-                        <strong>{normalizeAttributeLibraryName(selectedDefinitionTemplate.attributeLibrary)}</strong>
-                      </div>
-                      <div>
-                        <span>来源</span>
-                        <strong>{selectedDefinitionTemplate.custom ? "自定义" : "内置"}</strong>
-                      </div>
-                      <div>
-                        <span>端子数量</span>
-                        <strong>{selectedDefinitionTemplate.terminalCount}</strong>
-                      </div>
-                      <div>
-                        <span>是否容器</span>
-                        <strong>{selectedDefinitionTemplate.isContainer ? "是" : "否"}</strong>
-                      </div>
-                      <div>
-                        <span>能源属性</span>
-                        <strong>
-                          {(selectedDefinitionTemplate.terminalTypes ?? Array.from({ length: selectedDefinitionTemplate.terminalCount }, () => selectedDefinitionTemplate.terminalType))
-                            .map((type) => TERMINAL_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? type)
-                            .join(" / ") || "无端子"}
-                        </strong>
-                      </div>
-                      <div>
-                        <span>默认尺寸</span>
-                        <strong>{selectedDefinitionTemplate.size.width} x {selectedDefinitionTemplate.size.height}</strong>
-                      </div>
-                      <div>
-                        <span>定义状态</span>
-                        <strong>{deviceDefinitionOverrides[selectedDefinitionTemplate.kind]?.updatedAt ? "已自定义" : "默认"}</strong>
-                      </div>
-                      <div>
-                        <span>元件类型</span>
-                        <select
-                          className={sourceSelectClassName(isBuiltInComponentType(definitionDraftSection))}
-                          value={definitionDraftSection}
-                          onChange={(event) => {
-                            setDefinitionDraftSection(event.target.value);
-                            setDefinitionDraftError("");
-                          }}
-                        >
-                          {definitionAttributeLibraryComponentTypeOptions.map((section) => (
-                            <option
-                              key={section}
-                              value={section}
-                              className={componentTypeOptionClass(section)}
-                              title={isBuiltInComponentType(section) ? "系统内置元件类型，无法删除" : "用户自定义元件类型，可以删除"}
-                            >
-                              {section}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                    {selectedDefinitionTemplate.isContainer && selectedDefinitionTerminalAssociations.length > 0 && (
-                      <section className="device-definition-associations">
-                        <div className="device-definition-section-title">
-                          <h3>端子关联信息</h3>
-                          <span>{selectedDefinitionTerminalAssociations.length} 个端子</span>
-                        </div>
-                        <div className="custom-param-table-wrap compact-table-wrap">
-                          <table className="custom-param-table">
-                            <thead>
-                              <tr>
-                                <th>端子</th>
-                                <th>能源属性</th>
-                                <th>关联对象</th>
-                                <th>关联字段</th>
-                                <th>说明</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {selectedDefinitionTerminalAssociations.map((association) => (
-                                <tr key={`${selectedDefinitionTemplate.kind}-terminal-${association.terminalIndex}`}>
-                                  <td>{association.terminalLabel}</td>
-                                  <td>{TERMINAL_TYPE_OPTIONS.find((option) => option.value === association.terminalType)?.label ?? association.terminalType}</td>
-                                  <td>{association.deviceModel ? `${association.roleLabel} / ${association.deviceModel}` : association.roleLabel}</td>
-                                  <td><code>{association.relationKey || "-"}</code></td>
-                                  <td>
-                                    {association.dependent
-                                      ? `随端子${association.sourceTerminalIndex + 1}分配到同一个关联设备`
-                                      : association.relationName}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </section>
-                    )}
-                    {definitionDraftError && <p className="custom-device-error">{definitionDraftError}</p>}
-                    <div className="custom-param-table-wrap device-definition-table-wrap">
-                      <table className="custom-param-table">
-                        <thead>
-                          <tr>
-                            <th>中文名称</th>
-                            <th>英文名称</th>
-                            <th>取值类型</th>
-                            <th>典型取值</th>
-                            <th>操作</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {definitionDraftRows.map((row) => (
-                            <tr key={row.id} className={row.readonly ? "readonly-row" : ""}>
-                              <td>
-                                <input
-                                  value={row.cnName}
-                                  disabled={row.readonly}
-                                  onChange={(event) => updateDefinitionDraftRow(row.id, { cnName: event.target.value })}
-                                />
-                              </td>
-                              <td>
-                                <input
-                                  value={row.enName}
-                                  disabled={row.readonly}
-                                  onChange={(event) => updateDefinitionDraftRow(row.id, { enName: event.target.value })}
-                                />
-                              </td>
-                              <td>
-                                <select
-                                  value={row.valueType}
-                                  disabled={row.readonly}
-                                  onChange={(event) => updateDefinitionDraftRow(row.id, { valueType: event.target.value as DeviceParameterValueType })}
-                                >
-                                  {PARAM_VALUE_TYPE_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td>
-                                <input
-                                  value={row.typicalValue}
-                                  disabled={row.readonly}
-                                  onChange={(event) => updateDefinitionDraftRow(row.id, { typicalValue: event.target.value })}
-                                />
-                              </td>
-                              <td>
-                                <div className="custom-param-actions">
-                                  <button type="button" onClick={() => deleteDefinitionDraftRow(row.id)} disabled={row.readonly}>
-                                    删除
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="custom-device-actions">
-                      <button type="button" onClick={addDefinitionDraftRow}>新增参数</button>
-                      <button type="button" onClick={saveDeviceDefinitionDraft}>保存定义</button>
-                      <button type="button" onClick={resetDeviceDefinitionDraft} disabled={!selectedDefinitionBaseTemplate}>
-                        恢复默认
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="empty-state compact">
-                    <Grid2X2 size={24} />
-                    <p>当前属性库暂无元件。</p>
-                  </div>
-                )}
-              </section>
-            </div>
-          </section>
-        </div>
-      )}
-      {customDeviceDialogOpen && (
-        <div className="image-picker-backdrop" onPointerDown={() => setCustomDeviceDialogOpen(false)}>
-          <section className="custom-device-dialog" onPointerDown={(event) => event.stopPropagation()}>
-            <div className="image-picker-title">
-              <div>
-                <h2>新建元件</h2>
-                <p>定义后会出现在左侧图元库，可拖拽到画布建模。</p>
-              </div>
-              <button onClick={() => setCustomDeviceDialogOpen(false)}>关闭</button>
-            </div>
-            {customDeviceDraft.error && <p className="custom-device-error">{customDeviceDraft.error}</p>}
-            <div className="custom-device-dialog-layout">
-              {renderCustomComponentManagerTree()}
-              <div className="custom-device-editor-panel">
-            <div className="custom-device-form-grid">
-              <label className="custom-attribute-library-field">
-                <span>属性库类型</span>
-                <div className="custom-attribute-library-select-row single-control">
-                  <select
-                    className={sourceSelectClassName(isBuiltInAttributeLibrary(customDeviceDraft.attributeLibraryName))}
-                    value={customDeviceDraft.attributeLibraryName}
-                    onChange={(event) => selectCustomAttributeLibrary(event.target.value)}
-                  >
-                    {selectableAttributeLibraries.map((group) => (
-                      <option
-                        key={group}
-                        value={group}
-                        className={attributeLibraryOptionClass(group)}
-                        title={isBuiltInAttributeLibrary(group) ? "系统内置属性库，无法删除" : "用户自定义属性库，可以删除"}
-                      >
-                        {group}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </label>
-              <label className="custom-component-type-field">
-                <span>元件类型</span>
-                <div className="custom-attribute-library-select-row single-control">
-                  <select
-                    className={sourceSelectClassName(isBuiltInComponentType(customDeviceDraft.componentType))}
-                    value={customDeviceDraft.componentType}
-                    onChange={(event) => selectCustomComponentType(customDeviceDraft.attributeLibraryName, event.target.value)}
-                  >
-                    {currentAttributeLibraryComponentTypeOptions.map((section) => (
-                      <option
-                        key={section}
-                        value={section}
-                        className={componentTypeOptionClass(section)}
-                        title={isBuiltInComponentType(section) ? "系统内置元件类型，无法删除" : "用户自定义元件类型，可以删除"}
-                      >
-                        {section}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </label>
-              <label>
-                元件名称
-                <input
-                  value={customDeviceDraft.componentName}
-                  placeholder="例如 水电、核电、风电、光伏"
-                  onChange={(event) => setCustomDeviceDraft((current) => ({ ...current, componentName: event.target.value, error: "" }))}
-                />
-              </label>
-              <label>
-                是否容器
-                <select
-                  value={customDeviceDraft.isContainer ? "1" : "0"}
-                  onChange={(event) =>
-                    setCustomDeviceDraft((current) => ({
-                      ...current,
-                      isContainer: event.target.value === "1",
-                      error: ""
-                    }))
-                  }
-                >
-                  <option value="0">否</option>
-                  <option value="1">是</option>
-                </select>
-              </label>
-              <label>
-                端子数量
-                <input
-                  type="number"
-                  min="0"
-                  max="4"
-                  value={customDeviceDraft.terminalCount}
-                  onChange={(event) => updateCustomDraftTerminalCount(Number(event.target.value))}
-                />
-              </label>
-            </div>
-            <div className="custom-device-image-row">
-              <span>背景照片</span>
-              <button type="button" onClick={() => customDeviceImageInputRef.current?.click()}>选择本地图片</button>
-              <button
-                type="button"
-                onClick={() =>
-                  setCustomDeviceDraft((current) => ({
-                    ...current,
-                    backgroundImage: generateCustomDeviceImage(
-                      current.componentName.trim() || current.componentType || "Unit",
-                      current.terminalTypes.slice(0, current.terminalCount)
-                    ),
-                    error: ""
-                  }))
-                }
-              >
-                程序自动生成
-              </button>
-              <button type="button" onClick={() => setCustomDeviceDraft((current) => ({ ...current, backgroundImage: "", error: "" }))}>清除</button>
-              <strong>{customDeviceDraft.backgroundImage ? "已设置" : "未设置"}</strong>
-            </div>
-            <div className="custom-device-preview">
-              <span>背景预览</span>
-              <div>
-                <img src={customDevicePreviewImage} alt="自定义元件背景图片预览" />
-              </div>
-              <small>{customDeviceDraft.backgroundImage ? "当前显示本地图片预览" : "当前显示默认样例预览"}</small>
-            </div>
-            <div className="custom-terminal-grid">
-              {Array.from({ length: customDeviceDraft.terminalCount }).map((_, index) => {
-                const terminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
-                const terminalAssociations = normalizeContainerTerminalAssociations(
-                  terminalTypes,
-                  customDeviceDraft.terminalAssociations,
-                  customDeviceDraft.terminalCount
-                );
-                const associationSourceIndex = getContainerTerminalAssociationSourceIndex(terminalAssociations, index);
-                const associationDependent = customDeviceDraft.isContainer && isContainerTerminalAssociationDependent(terminalAssociations, index);
-                const terminalType = customDeviceDraft.terminalTypes[index] ?? "ac";
-                const associationOptions = CONTAINER_TERMINAL_ASSOCIATION_OPTIONS[terminalType];
-                return (
-                  <label key={index} className={associationDependent ? "custom-terminal-dependent" : ""}>
-                    {`端子${index + 1}能源属性`}
-                    <select
-                      value={terminalType}
-                      disabled={associationDependent}
-                      onChange={(event) =>
-                        setCustomDeviceDraft((current) => {
-                          const terminalTypes = [...current.terminalTypes];
-                          terminalTypes[index] = event.target.value as TerminalType;
-                          const terminalAssociations = [...current.terminalAssociations];
-                          if (current.isContainer) {
-                            if (isDoubleContainerTerminalAssociation(terminalAssociations[index]) && index + 1 < current.terminalCount) {
-                              terminalAssociations[index + 1] = defaultContainerAssociationForTerminalType(terminalTypes[index + 1] ?? "ac");
-                            }
-                            terminalAssociations[index] = defaultContainerAssociationForTerminalType(terminalTypes[index]);
-                          }
-                          return {
-                            ...current,
-                            terminalTypes,
-                            terminalAssociations: normalizeContainerTerminalAssociations(
-                              terminalTypes.slice(0, current.terminalCount),
-                              terminalAssociations,
-                              current.terminalCount
-                            ),
-                            error: ""
-                          };
-                        })
-                      }
-                    >
-                      {TERMINAL_TYPE_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    {customDeviceDraft.isContainer && (
-                      <>
-                        <span>关联设备</span>
-                        <select
-                          value={associationDependent ? "" : terminalAssociations[index] || defaultContainerAssociationForTerminalType(terminalType)}
-                          disabled={associationDependent}
-                          onChange={(event) =>
-                            setCustomDeviceDraft((current) => {
-                              const selectedAssociation = event.target.value as ContainerTerminalAssociationType;
-                              if (isDoubleContainerTerminalAssociation(selectedAssociation) && index + 1 >= current.terminalCount) {
-                                const message = `端子${index + 1}是最后一个端子，不能设置为双端热源/热荷。`;
-                                window.alert(message);
-                                return { ...current, error: message };
-                              }
-                              const terminalTypes = [...current.terminalTypes];
-                              const terminalAssociations = [...current.terminalAssociations];
-                              const previousAssociation = terminalAssociations[index];
-                              terminalAssociations[index] = selectedAssociation;
-                              if (isDoubleContainerTerminalAssociation(selectedAssociation) && index + 1 < current.terminalCount) {
-                                terminalTypes[index + 1] = terminalTypes[index] ?? "heat";
-                                terminalAssociations[index + 1] = "";
-                              } else if (isDoubleContainerTerminalAssociation(previousAssociation) && index + 1 < current.terminalCount) {
-                                terminalAssociations[index + 1] = defaultContainerAssociationForTerminalType(terminalTypes[index + 1] ?? "ac");
-                              }
-                              return {
-                                ...current,
-                                terminalTypes,
-                                terminalAssociations: normalizeContainerTerminalAssociations(
-                                  terminalTypes.slice(0, current.terminalCount),
-                                  terminalAssociations,
-                                  current.terminalCount
-                                ),
-                                error: ""
-                              };
-                            })
-                          }
-                        >
-                          {associationDependent && <option value="">随上一个端子关联同一个双端元件</option>}
-                          {associationOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                        {associationDependent && <small>{`随端子${associationSourceIndex + 1}分配到同一个双端元件，关联属性为空。`}</small>}
-                      </>
-                    )}
-                  </label>
-                );
-              })}
-            </div>
-            <div className="custom-param-table-wrap">
-              <table className="custom-param-table">
-                <thead>
-                  <tr>
-                    <th>中文名称</th>
-                    <th>英文名称</th>
-                    <th>取值类型</th>
-                    <th>典型取值</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {customDraftDefaultParams.map((row) => (
-                    <tr key={`default-${row.enName}`} className="readonly-row">
-                      <td>{row.cnName}</td>
-                      <td>{row.enName}</td>
-                      <td>{PARAM_VALUE_TYPE_OPTIONS.find((option) => option.value === row.valueType)?.label ?? row.valueType}</td>
-                      <td>{row.typicalValue}</td>
-                      <td>默认</td>
-                    </tr>
-                  ))}
-                  {customDeviceDraft.params.map((row, index) => (
-                    <tr key={row.id}>
-                      <td>
-                        <input
-                          value={row.cnName}
-                          onChange={(event) =>
-                            setCustomDeviceDraft((current) => ({
-                              ...current,
-                              params: current.params.map((item) => (item.id === row.id ? { ...item, cnName: event.target.value } : item)),
-                              error: ""
-                            }))
-                          }
-                        />
-                      </td>
-                      <td>
-                        <input
-                          value={row.enName}
-                          onChange={(event) =>
-                            setCustomDeviceDraft((current) => ({
-                              ...current,
-                              params: current.params.map((item) => (item.id === row.id ? { ...item, enName: event.target.value } : item)),
-                              error: ""
-                            }))
-                          }
-                        />
-                      </td>
-                      <td>
-                        <select
-                          value={row.valueType}
-                          onChange={(event) =>
-                            setCustomDeviceDraft((current) => ({
-                              ...current,
-                              params: current.params.map((item) => (item.id === row.id ? { ...item, valueType: event.target.value as DeviceParameterValueType } : item)),
-                              error: ""
-                            }))
-                          }
-                        >
-                          {PARAM_VALUE_TYPE_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td>
-                        <input
-                          value={row.typicalValue}
-                          onChange={(event) =>
-                            setCustomDeviceDraft((current) => ({
-                              ...current,
-                              params: current.params.map((item) => (item.id === row.id ? { ...item, typicalValue: event.target.value } : item)),
-                              error: ""
-                            }))
-                          }
-                        />
-                      </td>
-                      <td>
-                        <div className="custom-param-actions">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setCustomDeviceDraft((current) => {
-                                if (index === 0) return current;
-                                const params = [...current.params];
-                                [params[index - 1], params[index]] = [params[index], params[index - 1]];
-                                return { ...current, params };
-                              })
-                            }
-                            disabled={index === 0}
-                          >
-                            上移
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setCustomDeviceDraft((current) => {
-                                if (index >= current.params.length - 1) return current;
-                                const params = [...current.params];
-                                [params[index + 1], params[index]] = [params[index], params[index + 1]];
-                                return { ...current, params };
-                              })
-                            }
-                            disabled={index >= customDeviceDraft.params.length - 1}
-                          >
-                            下移
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setCustomDeviceDraft((current) => ({ ...current, params: current.params.filter((item) => item.id !== row.id) }))}
-                          >
-                            删除
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="custom-device-actions">
-              <button
-                type="button"
-                onClick={() =>
-                  setCustomDeviceDraft((current) => ({
-                    ...current,
-                    params: [
-                      ...current.params,
-                      { id: customParamId(), cnName: "", enName: "", valueType: "string", typicalValue: "" }
-                    ]
-                  }))
-                }
-              >
-                新增参数
-              </button>
-              <button type="button" onClick={saveCustomDeviceTemplate}>保存自定义设备</button>
-            </div>
-              </div>
-            </div>
-          </section>
-        </div>
-      )}
-      {imageTarget && (
-        <div className="image-picker-backdrop" onPointerDown={() => setImageTarget(null)}>
-          <section className="image-picker-dialog" onPointerDown={(event) => event.stopPropagation()}>
-            <div className="image-picker-title">
-              <div>
-                <h2>{imageTarget.kind === "canvas" ? "选择模型背景图片" : imageTarget.kind === "nodeForeground" ? "选择设备前景图片" : "选择设备图片"}</h2>
-                <p>本地图片会先上传到后台图片库；请再从后台可用图片列表中选择应用。</p>
-              </div>
-              <button onClick={() => setImageTarget(null)}>关闭</button>
-            </div>
-            <div className="image-picker-actions">
-              <select value={activeImageFolderId} onChange={(event) => setActiveImageFolderId(event.target.value)}>
-                {imageFolders.map((folder) => (
-                  <option key={folder.id} value={folder.id}>
-                    {folder.name}{typeof folder.imageCount === "number" ? ` (${folder.imageCount})` : ""}
-                  </option>
-                ))}
-              </select>
-              <button onClick={createImageFolder} disabled={isBrowseMode}>新建文件夹</button>
-              <button onClick={renameImageFolder} disabled={isBrowseMode || activeImageFolderId === "root"}>重命名</button>
-              <button onClick={deleteImageFolder} disabled={isBrowseMode || activeImageFolderId === "root"}>删除文件夹</button>
-              <button onClick={() => imageInputRef.current?.click()} disabled={isBrowseMode}>上传本地图片到后台</button>
-              <button onClick={clearSelectedImage} disabled={isBrowseMode}>取消当前图片</button>
-            </div>
-            <div className="image-asset-list">
-              {imageAssetList.length === 0 ? (
-                <p className="image-empty">后台暂无图片，请先加载本地图片。</p>
-              ) : (
-                imageAssetList.map((asset, index) => (
-                  <button key={asset.id} className="image-asset-option" disabled={isBrowseMode} onClick={() => applyExistingImage(asset.id)}>
-                    <img src={imageAssets[asset.id] ?? asset.url} alt={asset.name || `后台图片 ${index + 1}`} />
-                    <span>{asset.name || `后台图片 ${index + 1}`}</span>
-                  </button>
-                ))
-              )}
-            </div>
-          </section>
-        </div>
-      )}
+      <RightInspectorPanel {...rightInspectorPanelProps} />
+      <AppDialogs {...appDialogsProps} />
     </div>
   );
 }
