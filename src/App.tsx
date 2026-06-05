@@ -128,7 +128,6 @@ import {
   findSavedSchemeParentById,
   flattenSavedProjects,
   flattenSavedSchemes,
-  hydrateSavedSchemeRuntimeIds,
   getOverlappingTerminalGroups,
   getRouteEndpointNormal,
   getRouteBlockingCandidates,
@@ -146,14 +145,12 @@ import {
   normalizeProjectLayers,
   normalizeModelGroups,
   orderNodesByModelLayer,
-  normalizeSavedProjectRecordNames,
   savedProjectRecordNameKey,
   normalizeColorPalette,
   normalizeVoltageBaseInput,
   normalizeScaleValue,
   parseStaticDrawPoints,
   serializeProject,
-  stripSavedSchemeRuntimeIds,
   deserializeProject,
   edgeWithSavedRouteGeometry,
   isBusNode,
@@ -255,7 +252,6 @@ import {
   uniqueRecordName,
   validateContainerTerminalAssociations,
   viewBoxZoomPercent,
-  type PersistedSavedSchemeRecord,
   type SavedSchemeRecord,
   type SavedProjectRecord
 } from "./model";
@@ -379,6 +375,59 @@ import { AppDialogs } from "./AppDialogs";
 import { MainWorkspace } from "./MainWorkspace";
 import { useLeftPanelRenderers } from "./useLeftPanelRenderers";
 import { useCanvasAuxiliaryRenderers, useCanvasLodRenderLayers } from "./useCanvasRenderLayers";
+import {
+  useCanvasFloatingToolbarLayout,
+  useCanvasMinimapState,
+  useCanvasSelectionBounds,
+  useCanvasStatusDerivations
+} from "./useCanvasViewportDerivations";
+import {
+  ACTIVE_PROJECT_STORAGE_KEY,
+  DEFAULT_CANVAS_BACKGROUND,
+  DEFAULT_CURRENT_UNIT,
+  DEFAULT_POWER_BASE_VALUE,
+  DEFAULT_POWER_UNIT,
+  DEFAULT_VOLTAGE_UNIT,
+  DRAFT_PROJECT_STORAGE_KEY,
+  SCHEME_STORAGE_KEY,
+  activeProjectPointerPayload,
+  backendJsonRequest,
+  clearRefreshRecoveryProject,
+  createBackendImageFolder,
+  deleteBackendImageFolder,
+  draftProjectFromSavedSchemes,
+  fetchBackendImageFolders,
+  fetchBackendImages,
+  fetchBackendJson,
+  fetchBackendSchemes,
+  findProjectRecordByNameInScheme,
+  findProjectRecordInSchemes,
+  findSavedProjectByActivePointer,
+  imageAssetsToMap,
+  localImageAssetsFromStorage,
+  readActiveProjectPointer,
+  readDraftProject,
+  readImageAssets,
+  readRefreshRecoveryProject,
+  readSavedSchemes,
+  readStoredSchemesPayload,
+  renameBackendImageFolder,
+  resolveNodeForegroundImage,
+  resolveNodeImage,
+  resolveProjectImage,
+  saveBackendSchemesPayload,
+  savedSchemePathForId,
+  saveImageAsset,
+  serializeSchemesForStorage,
+  shouldPreferLocalSchemesOverBackend,
+  uploadBackendImage,
+  writeRefreshRecoveryProject,
+  type ActiveProjectPointer,
+  type DraftProjectState,
+  type ImageAsset,
+  type ImageFolder,
+  type RefreshRecoveryProjectState
+} from "./projectPersistence";
 
 const ENABLE_REACT_FLOW_PREVIEW = import.meta.env.DEV;
 const ReactFlowPreview = ENABLE_REACT_FLOW_PREVIEW ? lazy(() => import("./ReactFlowPreview")) : null;
@@ -652,16 +701,7 @@ export function snapSingleTerminalAnchorToNearestSide(node: ModelNode, point: Po
   return { ...best };
 }
 
-const formatStatusNumber = (value: number) => {
-  const rounded = Math.round(value * 10) / 10;
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
-};
-
 const formatInspectorScaleValue = (value: number) => Number.isFinite(value) ? value.toFixed(3) : "1.000";
-
-const formatStatusScalePercent = (value: number) => `${formatStatusNumber(value * 100)}%`;
-
-const formatStatusRotationDegrees = (value: number) => `${formatStatusNumber(normalizeRotationDegrees(value))}°`;
 
 function rotatePointAround(point: Point, center: Point, degrees: number): Point {
   const radians = (degrees * Math.PI) / 180;
@@ -1121,53 +1161,6 @@ type UndoGraphPatchScope = {
 type UndoGraphSnapshotPatchPlan =
   | { mode: "full"; dirtyEdgeIds: Set<string> }
   | { mode: "patch"; nodeIds: string[]; edgeIds: string[]; dirtyEdgeIds: Set<string> };
-type DraftProjectState = {
-  projectName: string;
-  activeProjectKey: string;
-  activeSchemeKey: string;
-  layers?: ModelLayer[];
-  activeLayerId?: string;
-  canvasWidth?: number;
-  canvasHeight?: number;
-  allowAutoExpandCanvas?: boolean;
-  canvasBackgroundColor?: string;
-  canvasBackgroundImage?: string;
-  canvasBackgroundImageAssetId?: string;
-  backgroundProjectId?: string;
-  backgroundLayerIds?: string[];
-  powerUnit?: string;
-  voltageUnit?: string;
-  currentUnit?: string;
-  powerBaseValue?: number;
-  deviceIndexCounters?: DeviceIndexCounters;
-  groups?: ModelGroup[];
-  measurements?: ProjectMeasurementConfig;
-  nodes: ModelNode[];
-  edges: Edge[];
-};
-type ActiveProjectPointer = {
-  activeProjectName: string;
-  activeSchemePath: string[];
-};
-type RefreshRecoveryProjectState = DraftProjectState & {
-  dirty: true;
-  savedAt: string;
-};
-type ImageAsset = {
-  id: string;
-  name: string;
-  folderId?: string;
-  mimeType?: string;
-  size?: number;
-  createdAt?: string;
-  url: string;
-};
-type ImageFolder = {
-  id: string;
-  name: string;
-  createdAt?: string;
-  imageCount?: number;
-};
 type ImageTarget =
   | { kind: "node"; nodeId: string }
   | { kind: "nodeForeground"; nodeId: string }
@@ -1179,9 +1172,6 @@ type CanvasRenderOptions = CanvasBounds & {
   colorPalette?: ColorPalette;
   layers?: ModelLayer[];
   activeLayerId?: string;
-};
-type BackendSchemesResponse = {
-  schemes: SavedSchemeRecord[];
 };
 type BackendColorConfigResponse = {
   colorDisplayMode?: ColorDisplayMode;
@@ -1275,7 +1265,6 @@ const MIN_CANVAS_WIDTH = 640;
 const MIN_CANVAS_HEIGHT = 360;
 const MAX_CANVAS_WIDTH = 50000;
 const MAX_CANVAS_HEIGHT = 50000;
-const DEFAULT_CANVAS_BACKGROUND = "#f1f5f9";
 const MOVE_BOUNDARY_GUARD = 8;
 const CANVAS_AUTO_EXPAND_PADDING = 96;
 const CANVAS_FRAME_INSET = 16;
@@ -1294,12 +1283,6 @@ const KEYBOARD_MOVE_FRAME_INTERVAL_MS = 1000 / KEYBOARD_MOVE_REPEAT_RATE_PER_SEC
 const ELEMENT_TREE_INITIAL_ITEM_LIMIT = 120;
 const ELEMENT_TREE_ITEM_LIMIT_STEP = 120;
 const TOPOLOGY_WARNING_PAGE_SIZE = 50;
-const CANVAS_MINIMAP_WIDTH = 220;
-const CANVAS_MINIMAP_HEIGHT = 142;
-const CANVAS_MINIMAP_PADDING = 9;
-const CANVAS_MINIMAP_MAX_NODE_MARKS = 360;
-const CANVAS_MINIMAP_MAX_ROUTE_MARKS = 160;
-const CANVAS_MINIMAP_DEFER_SAMPLE_THRESHOLD = 1200;
 const TERMINAL_OVERLAP_DEFER_NODE_THRESHOLD = 600;
 const CONNECTION_HIT_SCREEN_TOLERANCE = 18;
 const CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT = 24;
@@ -1311,19 +1294,10 @@ const CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT = 24;
 const CANVAS_SINGLE_NODE_DRAG_SNAP_EDGE_LIMIT = 48;
 const CANVAS_SINGLE_NODE_DRAG_SYNC_EDGE_LIMIT = 12;
 const CANVAS_SINGLE_NODE_DRAG_PREVIEW_PADDING = 160;
-const CANVAS_FLOATING_TOOLBAR_GAP = 7;
-const NODE_FLOATING_TOOLBAR_WIDTH = 224;
-const NODE_FLOATING_TOOLBAR_HEIGHT = 38;
-const EDGE_FLOATING_TOOLBAR_WIDTH = 160;
-const EDGE_FLOATING_TOOLBAR_HEIGHT = 38;
 const CONTEXT_MENU_AUTO_HIDE_MARGIN = 28;
 const TRANSFORM_ROTATE_STEM_START = 12;
 const TRANSFORM_ROTATE_STEM_END = 36;
 const TRANSFORM_ROTATE_HANDLE_GAP = 42;
-const DEFAULT_POWER_UNIT = "MW";
-const DEFAULT_VOLTAGE_UNIT = "kV";
-const DEFAULT_CURRENT_UNIT = "A";
-const DEFAULT_POWER_BASE_VALUE = 100;
 const EMPTY_TOPOLOGY: Topology = { nodes: {}, connectedComponents: [] };
 const INITIAL_TOPOLOGY_STATUS: TopologyRunStatus = { state: "idle", message: "未拓扑" };
 const E_SECTION_OPTIONS = Object.keys(E_SECTION_COLUMNS);
@@ -1638,11 +1612,6 @@ const SAMPLE_EDGES: Edge[] = [
   { id: "seed-e5", sourceId: "seed-5", targetId: "seed-6", sourceTerminalId: "t1", targetTerminalId: "t1" }
 ];
 
-const PROJECT_STORAGE_KEY = "power-system-model-projects";
-const SCHEME_STORAGE_KEY = "power-system-model-schemes";
-const ACTIVE_PROJECT_STORAGE_KEY = "power-system-active-project";
-const DRAFT_PROJECT_STORAGE_KEY = "power-system-current-draft";
-const REFRESH_RECOVERY_STORAGE_KEY = "power-system-refresh-recovery";
 const EMPTY_VOLTAGE_COLOR_KEY_SET = new Set<string>();
 const EMPTY_ID_LIST: string[] = [];
 const EMPTY_EDGE_ID_LIST: string[] = [];
@@ -1653,7 +1622,6 @@ const EMPTY_CANVAS_SELECTION: ReturnType<typeof resolveCanvasSelection> = {
   nodeIds: EMPTY_ID_LIST,
   edgeIds: EMPTY_EDGE_ID_LIST
 };
-const IMAGE_STORAGE_KEY = "power-system-image-assets";
 const CUSTOM_DEVICE_LIBRARY_STORAGE_KEY = "power-system-custom-device-library";
 const CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY = "power-system-custom-attribute-libraries";
 const CUSTOM_COMPONENT_TYPES_STORAGE_KEY = "power-system-custom-component-types";
@@ -1757,13 +1725,6 @@ type WheelZoomAnchor = {
   point: Point;
   cursorOffsetX: number;
   cursorOffsetY: number;
-};
-type FloatingToolbarPlacement = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  scale: number;
 };
 type RectLike = Pick<DOMRectReadOnly, "left" | "right" | "top" | "bottom" | "width" | "height">;
 type SpatialQueryState = {
@@ -2531,487 +2492,8 @@ function paramOptionsForSection(key: string, section?: string) {
 
 const READONLY_E_PARAM_KEYS = new Set(["idx", "node", "i_node", "j_node", "ac_node", "dc_node"]);
 
-function readSavedProjects(): SavedProjectRecord[] {
-  try {
-    const raw = window.localStorage.getItem(PROJECT_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as SavedProjectRecord[]) : [];
-    return Array.isArray(parsed) ? parsed.map(normalizeSavedProjectIndexes) : [];
-  } catch {
-    return [];
-  }
-}
-
-function normalizeLegacyPowerSystemLabel(value: string) {
-  return value.replace(/电力系统/g, "电力能源系统");
-}
-
-function normalizeSavedProjectIndexes(project: SavedProjectRecord): SavedProjectRecord {
-  const normalizedName = normalizeLegacyPowerSystemLabel(project.name);
-  const normalizedProject = normalizeProjectLayers({
-    ...project.project,
-    name: normalizeLegacyPowerSystemLabel(project.project.name ?? normalizedName),
-    nodes: project.project.nodes.map(normalizeNodeTerminalsByTemplate)
-  });
-  return {
-    ...project,
-    name: normalizedName,
-    project: normalizedProject
-  };
-}
-
-function normalizeSavedSchemeIndexes(scheme: SavedSchemeRecord): SavedSchemeRecord {
-  return {
-    ...scheme,
-    name: normalizeLegacyPowerSystemLabel(scheme.name),
-    projects: Array.isArray(scheme.projects)
-      ? normalizeSavedProjectRecordNames(scheme.projects.map(normalizeSavedProjectIndexes))
-      : [],
-    children: Array.isArray(scheme.children)
-      ? scheme.children.map(normalizeSavedSchemeIndexes)
-      : []
-  };
-}
-
-function readStoredSchemesPayload(): string | null {
-  try {
-    return window.localStorage.getItem(SCHEME_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function readSavedSchemes(raw = readStoredSchemesPayload()): SavedSchemeRecord[] {
-  try {
-    if (raw) {
-      const parsed = JSON.parse(raw) as SavedSchemeRecord[];
-      if (Array.isArray(parsed)) {
-        return hydrateSavedSchemeRuntimeIds(parsed.map(normalizeSavedSchemeIndexes));
-      }
-    }
-    const legacyProjects = readSavedProjects();
-    return hydrateSavedSchemeRuntimeIds(
-      legacyProjects.length > 0 ? [createSavedScheme("默认方案", legacyProjects)] : [createSavedScheme("默认方案")]
-    );
-  } catch {
-    return hydrateSavedSchemeRuntimeIds([createSavedScheme("默认方案")]);
-  }
-}
-
-function normalizeStoredDraftProject(parsed: DraftProjectState): DraftProjectState | null {
-  if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
-    return null;
-  }
-  return {
-    ...parsed,
-    projectName: normalizeLegacyPowerSystemLabel(parsed.projectName),
-    ...normalizeProjectLayers({
-      version: 1,
-      name: parsed.projectName,
-      layers: parsed.layers,
-      activeLayerId: parsed.activeLayerId,
-      groups: parsed.groups,
-      measurements: parsed.measurements,
-      nodes: parsed.nodes.map(normalizeNodeTerminalsByTemplate),
-      edges: parsed.edges
-    }),
-    activeProjectKey: parsed.activeProjectKey,
-    activeSchemeKey: parsed.activeSchemeKey,
-    canvasWidth: parsed.canvasWidth,
-    canvasHeight: parsed.canvasHeight,
-    allowAutoExpandCanvas: parsed.allowAutoExpandCanvas,
-    canvasBackgroundColor: parsed.canvasBackgroundColor,
-    canvasBackgroundImage: parsed.canvasBackgroundImage,
-    canvasBackgroundImageAssetId: parsed.canvasBackgroundImageAssetId,
-    backgroundProjectId: parsed.backgroundProjectId,
-    backgroundLayerIds: parsed.backgroundLayerIds,
-    powerUnit: parsed.powerUnit,
-    voltageUnit: parsed.voltageUnit,
-    currentUnit: parsed.currentUnit,
-    powerBaseValue: parsed.powerBaseValue,
-    deviceIndexCounters: parsed.deviceIndexCounters,
-    measurements: normalizeProjectMeasurements(parsed.measurements, parsed.nodes)
-  };
-}
-
-function readDraftProject(): DraftProjectState | null {
-  try {
-    const raw = window.localStorage.getItem(DRAFT_PROJECT_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw) as DraftProjectState;
-    return normalizeStoredDraftProject(parsed);
-  } catch {
-    return null;
-  }
-}
-
-function readActiveProjectPointer(): ActiveProjectPointer | null {
-  try {
-    const raw = window.localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw) as ActiveProjectPointer;
-    const activeProjectName = typeof parsed.activeProjectName === "string" ? parsed.activeProjectName : "";
-    const activeSchemePath = Array.isArray(parsed.activeSchemePath)
-      ? parsed.activeSchemePath.filter((part): part is string => typeof part === "string" && part.trim().length > 0)
-      : [];
-    if (!activeProjectName) {
-      return null;
-    }
-    return {
-      activeProjectName,
-      activeSchemePath
-    };
-  } catch {
-    return null;
-  }
-}
-
-function savedSchemePathForId(
-  schemes: SavedSchemeRecord[],
-  schemeId: string,
-  parentPath: string[] = []
-): string[] | null {
-  for (const scheme of schemes) {
-    const path = [...parentPath, scheme.name];
-    if (scheme.id === schemeId) {
-      return path;
-    }
-    const childPath = savedSchemePathForId(scheme.children ?? [], schemeId, path);
-    if (childPath) {
-      return childPath;
-    }
-  }
-  return null;
-}
-
-function findSavedSchemeByPath(
-  schemes: SavedSchemeRecord[],
-  schemePath: string[]
-): SavedSchemeRecord | undefined {
-  if (schemePath.length === 0) {
-    return undefined;
-  }
-  const [head, ...tail] = schemePath;
-  const scheme = schemes.find((item) => item.name.trim() === head.trim());
-  if (!scheme || tail.length === 0) {
-    return scheme;
-  }
-  return findSavedSchemeByPath(scheme.children ?? [], tail);
-}
-
-function findSavedProjectByActivePointer(
-  schemes: SavedSchemeRecord[],
-  pointer: ActiveProjectPointer | null
-): { scheme: SavedSchemeRecord; project: SavedProjectRecord } | null {
-  const projectName = pointer?.activeProjectName?.trim();
-  if (!projectName) {
-    return null;
-  }
-  const projectNameKey = savedProjectRecordNameKey(projectName);
-  const activeSchemePath = pointer?.activeSchemePath ?? [];
-  const preferredScheme = findSavedSchemeByPath(schemes, activeSchemePath);
-  const searchSchemes = preferredScheme
-    ? [preferredScheme, ...flattenSavedSchemes(schemes).filter((scheme) => scheme.id !== preferredScheme.id)]
-    : flattenSavedSchemes(schemes);
-  for (const scheme of searchSchemes) {
-    const project = scheme.projects.find((item) => savedProjectRecordNameKey(item.name) === projectNameKey);
-    if (project) {
-      return { scheme, project };
-    }
-  }
-  return null;
-}
-
-function activeProjectPointerPayload(
-  schemes: SavedSchemeRecord[],
-  projectKey: string,
-  schemeKey: string
-): ActiveProjectPointer | null {
-  if (!projectKey) {
-    return null;
-  }
-  const found = findSavedProjectRecordInSchemes(schemes, projectKey, schemeKey);
-  if (!found) {
-    return null;
-  }
-  return {
-    activeProjectName: found.project.name,
-    activeSchemePath: savedSchemePathForId(schemes, found.scheme.id) ?? [found.scheme.name]
-  };
-}
-
-function draftProjectFromSavedSchemes(
-  schemes: SavedSchemeRecord[],
-  pointer: ActiveProjectPointer | null
-): DraftProjectState | null {
-  if (!pointer?.activeProjectName) {
-    return null;
-  }
-  const found = findSavedProjectByActivePointer(schemes, pointer);
-  if (found) {
-    const { scheme, project: record } = found;
-    return normalizeStoredDraftProject({
-      projectName: record.project.name ?? record.name,
-      activeProjectKey: record.id,
-      activeSchemeKey: scheme.id,
-      canvasWidth: record.project.canvasWidth,
-      canvasHeight: record.project.canvasHeight,
-      allowAutoExpandCanvas: record.project.allowAutoExpandCanvas,
-      canvasBackgroundColor: record.project.canvasBackgroundColor,
-      canvasBackgroundImage: record.project.canvasBackgroundImage,
-      canvasBackgroundImageAssetId: record.project.canvasBackgroundImageAssetId,
-      backgroundProjectId: record.project.backgroundProjectId,
-      backgroundLayerIds: record.project.backgroundLayerIds,
-      powerUnit: record.project.powerUnit,
-      voltageUnit: record.project.voltageUnit,
-      currentUnit: record.project.currentUnit,
-      powerBaseValue: record.project.powerBaseValue,
-      deviceIndexCounters: record.project.deviceIndexCounters,
-      layers: record.project.layers,
-      activeLayerId: record.project.activeLayerId,
-      groups: record.project.groups,
-      measurements: record.project.measurements,
-      nodes: record.project.nodes,
-      edges: record.project.edges
-    });
-  }
-  return null;
-}
-
-function readRefreshRecoveryProject(): DraftProjectState | null {
-  try {
-    const raw = window.sessionStorage.getItem(REFRESH_RECOVERY_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw) as RefreshRecoveryProjectState;
-    if (!parsed.dirty) {
-      return null;
-    }
-    return normalizeStoredDraftProject(parsed);
-  } catch {
-    return null;
-  }
-}
-
-function writeRefreshRecoveryProject(state: RefreshRecoveryProjectState) {
-  try {
-    window.sessionStorage.setItem(REFRESH_RECOVERY_STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // 恢复缓存只是防止页面自动刷新丢失未保存内容，写入失败不阻断编辑。
-  }
-}
-
-function clearRefreshRecoveryProject() {
-  try {
-    window.sessionStorage.removeItem(REFRESH_RECOVERY_STORAGE_KEY);
-  } catch {
-    // 忽略浏览器会话缓存不可写/不可删的情况。
-  }
-}
-
-function readImageAssets(): Record<string, string> {
-  try {
-    const raw = window.localStorage.getItem(IMAGE_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveImageAsset(id: string, dataUrl: string) {
-  const assets = readImageAssets();
-  window.localStorage.setItem(IMAGE_STORAGE_KEY, JSON.stringify({ ...assets, [id]: dataUrl }));
-}
-
-function resolveNodeImage(node: ModelNode, assets = readImageAssets()) {
-  const assetId = node.params.backgroundImageAssetId;
-  return (assetId && assets[assetId]) || node.params.backgroundImage || "";
-}
-
-function resolveNodeForegroundImage(node: ModelNode, assets = readImageAssets()) {
-  const assetId = node.params.foregroundImageAssetId;
-  return (assetId && assets[assetId]) || node.params.foregroundImage || "";
-}
-
-function resolveProjectImage(project: Pick<ProjectFile, "canvasBackgroundImage" | "canvasBackgroundImageAssetId">, assets = readImageAssets()) {
-  const assetId = project.canvasBackgroundImageAssetId;
-  return (assetId && assets[assetId]) || project.canvasBackgroundImage || "";
-}
-
-const imageAssetsToMap = (assets: ImageAsset[]) =>
-  Object.fromEntries(assets.map((asset) => [asset.id, asset.url]));
-
-const localImageAssetsFromStorage = (): ImageAsset[] =>
-  Object.entries(readImageAssets()).map(([id, url], index) => ({ id, name: `本地图片 ${index + 1}`, folderId: "root", url }));
-
 function pointsToPreviewPath(points: Point[]) {
   return points.map((point, index) => `${index === 0 ? "M" : "L"} ${Math.round(point.x)} ${Math.round(point.y)}`).join(" ");
-}
-
-const backendJsonHeaders = { "content-type": "application/json" };
-
-async function backendErrorMessage(response: Response, fallbackMessage: string) {
-  const payload = await response.json().catch(() => ({}));
-  return typeof payload.error === "string" ? payload.error : fallbackMessage;
-}
-
-async function fetchBackendJson<T>(url: string, fallbackMessage: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
-  if (!response.ok) {
-    throw new Error(await backendErrorMessage(response, fallbackMessage));
-  }
-  return (await response.json()) as T;
-}
-
-function backendJsonRequest(method: "POST" | "PUT", body: string): RequestInit {
-  return {
-    method,
-    headers: backendJsonHeaders,
-    body
-  };
-}
-
-async function fetchBackendImageFolders(): Promise<ImageFolder[]> {
-  return fetchBackendJson<ImageFolder[]>("/api/image-folders", "读取后台图片文件夹失败。");
-}
-
-async function createBackendImageFolder(name: string): Promise<ImageFolder> {
-  return fetchBackendJson<ImageFolder>(
-    "/api/image-folders",
-    "新建图片文件夹失败。",
-    backendJsonRequest("POST", JSON.stringify({ name }))
-  );
-}
-
-async function renameBackendImageFolder(folderId: string, name: string): Promise<ImageFolder> {
-  return fetchBackendJson<ImageFolder>(
-    `/api/image-folders/${encodeURIComponent(folderId)}`,
-    "重命名图片文件夹失败。",
-    backendJsonRequest("PUT", JSON.stringify({ name }))
-  );
-}
-
-async function deleteBackendImageFolder(folderId: string): Promise<void> {
-  await fetchBackendJson<{ ok?: boolean }>(`/api/image-folders/${encodeURIComponent(folderId)}`, "删除图片文件夹失败。", {
-    method: "DELETE"
-  });
-}
-
-async function fetchBackendImages(folderId = "root"): Promise<ImageAsset[]> {
-  return fetchBackendJson<ImageAsset[]>(`/api/images?folderId=${encodeURIComponent(folderId)}`, "读取后台图片列表失败。");
-}
-
-async function uploadBackendImage(fileName: string, dataUrl: string, folderId = "root"): Promise<ImageAsset> {
-  return fetchBackendJson<ImageAsset>(
-    "/api/images",
-    "上传图片到后台失败。",
-    backendJsonRequest("POST", JSON.stringify({ name: fileName, dataUrl, folderId }))
-  );
-}
-
-function normalizeProjectForBackend(project: ProjectFile): ProjectFile {
-  const projectBackground =
-    project.canvasBackgroundImageAssetId && typeof project.canvasBackgroundImage === "string" && project.canvasBackgroundImage.startsWith("data:")
-      ? `/api/images/${project.canvasBackgroundImageAssetId}`
-      : project.canvasBackgroundImage;
-  return {
-    ...project,
-    canvasBackgroundColor: project.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND,
-    canvasBackgroundImage: projectBackground,
-    powerUnit: project.powerUnit ?? DEFAULT_POWER_UNIT,
-    voltageUnit: project.voltageUnit ?? DEFAULT_VOLTAGE_UNIT,
-    currentUnit: project.currentUnit ?? DEFAULT_CURRENT_UNIT,
-    powerBaseValue:
-      typeof project.powerBaseValue === "number" && Number.isFinite(project.powerBaseValue)
-        ? project.powerBaseValue
-        : DEFAULT_POWER_BASE_VALUE,
-    nodes: project.nodes.map((node) => {
-      const assetId = node.params.backgroundImageAssetId;
-      const backgroundImage = node.params.backgroundImage;
-      const params: Record<string, string> =
-        assetId && typeof backgroundImage === "string" && backgroundImage.startsWith("data:")
-          ? { ...node.params, backgroundImage: `/api/images/${assetId}` }
-          : { ...node.params };
-      if (params.foregroundImageAssetId && typeof params.foregroundImage === "string" && params.foregroundImage.startsWith("data:")) {
-        params.foregroundImage = `/api/images/${params.foregroundImageAssetId}`;
-      }
-      return {
-        ...node,
-        params,
-        terminals: node.terminals.map((terminal) => ({ ...terminal, anchor: { ...terminal.anchor } }))
-      };
-    }),
-    edges: project.edges.map((edge) => ({
-      ...edge,
-      sourcePoint: edge.sourcePoint ? { ...edge.sourcePoint } : undefined,
-      targetPoint: edge.targetPoint ? { ...edge.targetPoint } : undefined,
-      manualPoints: edge.manualPoints?.map((point) => ({ ...point })),
-      routePoints: edge.routePoints?.map((point) => ({ ...point }))
-    })),
-    groups: normalizeModelGroups(project.groups, project.nodes, project.edges)
-  };
-}
-
-function normalizeSchemesForBackendRuntime(schemes: SavedSchemeRecord[]): SavedSchemeRecord[] {
-  return schemes.map((scheme) => ({
-    ...scheme,
-    projects: normalizeSavedProjectRecordNames(
-      scheme.projects.map((project) => ({
-        ...project,
-        project: normalizeProjectForBackend(project.project)
-      }))
-    ),
-    children: Array.isArray(scheme.children) ? normalizeSchemesForBackendRuntime(scheme.children) : []
-  }));
-}
-
-function normalizeSchemesForBackend(schemes: SavedSchemeRecord[]): PersistedSavedSchemeRecord[] {
-  return stripSavedSchemeRuntimeIds(normalizeSchemesForBackendRuntime(schemes));
-}
-
-function serializeSchemesForStorage(schemes: SavedSchemeRecord[]) {
-  return JSON.stringify(normalizeSchemesForBackend(schemes));
-}
-
-function shouldPreferLocalSchemesOverBackend(options: {
-  localSchemes: SavedSchemeRecord[];
-  backendSchemes: SavedSchemeRecord[];
-  hadStoredLocalSchemes: boolean;
-}) {
-  if (!options.hadStoredLocalSchemes) {
-    return false;
-  }
-  if (serializeSchemesForStorage(options.localSchemes) === serializeSchemesForStorage(options.backendSchemes)) {
-    return false;
-  }
-  if (options.backendSchemes.length === 0) {
-    return true;
-  }
-  return false;
-}
-
-function findProjectRecordInSchemes(
-  schemes: SavedSchemeRecord[],
-  projectId: string,
-  preferredSchemeId = ""
-): { scheme: SavedSchemeRecord; project: SavedProjectRecord } | null {
-  return findSavedProjectRecordInSchemes(schemes, projectId, preferredSchemeId);
-}
-
-function findProjectRecordByNameInScheme(
-  scheme: SavedSchemeRecord | undefined,
-  projectName: string
-): SavedProjectRecord | null {
-  if (!scheme) {
-    return null;
-  }
-  const key = savedProjectRecordNameKey(projectName);
-  return scheme.projects.find((project) => savedProjectRecordNameKey(project.name) === key) ?? null;
 }
 
 const clonePoint = (point: Point): Point => ({ x: point.x, y: point.y });
@@ -3067,24 +2549,6 @@ function cloneTopologyErrorsForUndo(errors: TopologyValidationError[]): Topology
 
 function clampCanvasDimension(value: number, min: number, max: number, fallback: number) {
   return Math.round(Math.max(min, Math.min(max, Number.isFinite(value) ? value : fallback)));
-}
-
-async function fetchBackendSchemes(): Promise<SavedSchemeRecord[]> {
-  const payload = await fetchBackendJson<BackendSchemesResponse | SavedSchemeRecord[]>("/api/schemes", "读取后台方案/模型失败。");
-  const schemes = Array.isArray(payload) ? payload : Array.isArray(payload.schemes) ? payload.schemes : [];
-  return hydrateSavedSchemeRuntimeIds(schemes.map(normalizeSavedSchemeIndexes));
-}
-
-async function saveBackendSchemes(schemes: SavedSchemeRecord[]): Promise<void> {
-  return saveBackendSchemesPayload(serializeSchemesForStorage(schemes));
-}
-
-async function saveBackendSchemesPayload(normalizedSchemesPayload: string): Promise<void> {
-  await fetchBackendJson<{ ok?: boolean }>(
-    "/api/schemes",
-    "保存方案/模型到后台失败。",
-    backendJsonRequest("PUT", `{"schemes":${normalizedSchemesPayload}}`)
-  );
 }
 
 function normalizeColorDisplayMode(value?: string): ColorDisplayMode {
@@ -6570,34 +6034,19 @@ export function App() {
       : [...current, layerId]
     );
   };
-  const selectedNodeCount = activeSelectedNodeIds.length;
-  const selectedCount = selectedNodeCount + activeSelectedEdgeIds.length;
-  const selectedNodeTransformStatus = useMemo(() => {
-    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => visibleNodeById.get(nodeId) ?? []);
-    if (selectedNodes.length === 0) {
-      return null;
-    }
-    const firstNode = selectedNodes[0];
-    const firstScaleX = getNodeScaleX(firstNode);
-    const firstScaleY = getNodeScaleY(firstNode);
-    const firstRotation = normalizeRotationDegrees(firstNode.rotation);
-    const sameScale = selectedNodes.every((node) =>
-      Math.abs(getNodeScaleX(node) - firstScaleX) < 0.0005 &&
-      Math.abs(getNodeScaleY(node) - firstScaleY) < 0.0005
-    );
-    const sameRotation = selectedNodes.every((node) => normalizeRotationDegrees(node.rotation) === firstRotation);
-    const scaleText = sameScale
-      ? `X ${formatStatusScalePercent(firstScaleX)} / Y ${formatStatusScalePercent(firstScaleY)}`
-      : "多值";
-    const rotationText = sameRotation ? formatStatusRotationDegrees(firstRotation) : "多值";
-    return {
-      scaleText,
-      rotationText,
-      title: selectedNodes.length === 1
-        ? `${firstNode.name}：缩放 ${scaleText}，旋转 ${rotationText}`
-        : `已选 ${selectedNodes.length} 个图元：缩放 ${scaleText}，旋转 ${rotationText}`
-    };
-  }, [activeSelectedNodeIds, visibleNodeById]);
+  const {
+    selectedCount,
+    selectedNodeCount,
+    selectedNodeTransformStatus,
+    topologyWarningDisplayMessage,
+    warningStatusText,
+    warningStatusTitle
+  } = useCanvasStatusDerivations({
+    activeSelectedEdgeIds,
+    activeSelectedNodeIds,
+    topologyErrors,
+    visibleNodeById
+  });
   const contextSelectionCount = activeSelectedNodeIds.length + activeSelectedEdgeIds.length;
   const activeSelectedGroupIds = useMemo(
     () => isEditMode
@@ -6937,6 +6386,7 @@ export function App() {
   }, [inspectorTopologyErrors.length]);
 
   const canvasBounds = useMemo<CanvasBounds>(() => ({ width: canvasWidth, height: canvasHeight }), [canvasHeight, canvasWidth]);
+  const currentZoomPercent = viewBoxZoomPercent(viewBox, canvasBounds);
   const canvasFullViewBox = useMemo<CanvasViewBox>(() => canvasFullViewBoxFromBounds(canvasBounds), [canvasBounds]);
   const canvasRenderBounds = canvasBounds;
   const canvasRenderViewBox = viewBox;
@@ -21502,16 +20952,6 @@ export function App() {
     setCustomDeviceDraft((current) => ({ ...current, error: "" }));
   };
 
-  const topologyWarningDisplayMessage = (message: string) =>
-    message.replace(/^(?:图上拓扑失败|拓扑失败)\s*[:：]\s*/, "");
-
-  const warningStatusText = topologyErrors.length > 0
-    ? `告警 ${topologyErrors.length} 条：${topologyWarningDisplayMessage(topologyErrors[0]?.message ?? "请查看拓扑告警")}`
-    : "告警 无";
-  const warningStatusTitle = topologyErrors.length > 0
-    ? topologyErrors.slice(0, 5).map((error, index) => `${index + 1}. ${topologyWarningDisplayMessage(error.message)}`).join("\n")
-    : "当前没有拓扑告警。";
-  const currentZoomPercent = viewBoxZoomPercent(viewBox, canvasBounds);
   const {
     detailedSelectedEdgeIdSet,
     detailedViewportNodes,
@@ -21629,336 +21069,99 @@ export function App() {
   const layerAssignmentUnchanged = activeSelectedNodeIds.length > 0 && activeSelectedNodeIds.every(
     (nodeId) => (nodeById.get(nodeId)?.layerId ?? DEFAULT_MODEL_LAYER_ID) === layerAssignmentTargetId
   );
-  const browseSelectedCanvasBounds = useMemo(() => {
-    if (isEditMode || (activeSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0)) {
-      return null;
-    }
-    const rects: Array<SelectionRect | null> = [];
-    for (const nodeId of activeSelectedNodeIds) {
-      const node = visibleNodeById.get(nodeId);
-      if (node) {
-        rects.push(calculateNodeVisualBounds(node));
-      }
-    }
-    for (const edgeId of activeSelectedEdgeIds) {
-      const route = routedEdgeById.get(edgeId);
-      const bounds = route ? calculateModelGeometryBounds([], [{ points: route.points }], 24) : null;
-      if (bounds) {
-        rects.push(bounds);
-      }
-    }
-    return combineSelectionRects(rects);
-  }, [activeSelectedEdgeIds, activeSelectedNodeIds, isEditMode, routedEdgeById, visibleNodeById]);
-  const selectedCanvasBounds = isEditMode
-    ? combineSelectionRects(selectedLayoutUnits.map((unit) => unit.bounds)) ??
-      calculateModelGeometryBounds(
-        [],
-        activeSelectedEdgeIds.flatMap((edgeId) => {
-          const route = routedEdgeById.get(edgeId);
-          return route ? [{ points: route.points }] : [];
-        }),
-        24
-      )
-    : browseSelectedCanvasBounds;
-  const selectedFloatingToolbarBounds = isEditMode
-    ? focusedGroupedNodeMovesGroup && selectedNode ? calculateNodeVisualBounds(selectedNode) : selectedCanvasBounds
-    : null;
-  const selectedToolbarHidden = Boolean(
-    dragging ||
-    transformDrag ||
-    panning ||
-    marquee ||
-    modifierSelectionPress ||
-    connectSource ||
-    staticDrawing ||
-    rewiring ||
-    terminalPress ||
-    manualPathDrag ||
-    nodeLabelDrag ||
-    nodeLabelRotateDrag
-  );
+  const {
+    selectedCanvasBounds,
+    selectedFloatingToolbarBounds
+  } = useCanvasSelectionBounds({
+    activeSelectedEdgeIds,
+    activeSelectedNodeIds,
+    focusedGroupedNodeMovesGroup,
+    isEditMode,
+    routedEdgeById,
+    selectedLayoutUnits,
+    selectedNode,
+    visibleNodeById
+  });
   const contextMenuTarget = contextMenu?.target ?? (contextMenu?.edgeId ? "edge" : "blank");
   const contextMenuForSelection = contextMenuTarget !== "blank";
   const contextMenuForNode = contextMenuTarget === "node" || contextMenuTarget === "group";
   const contextMenuForEdge = contextMenuTarget === "edge";
-  const nodeFloatingToolbarActionCount =
-    6 +
-    (canGroupSelectedGraphics ? 1 : 0) +
-    (canUngroupSelectedGraphics ? 1 : 0) +
-    (canAddTemplateFromSelection ? 1 : 0);
-  const nodeFloatingToolbarWidth = Math.max(NODE_FLOATING_TOOLBAR_WIDTH, nodeFloatingToolbarActionCount * 34 + 16);
-  const svgUiUnitX = viewBox.width / Math.max(1, canvasWidth);
-  const svgUiUnitY = viewBox.height / Math.max(1, canvasHeight);
-  const floatingToolbarScreenScale = clampNumber(Math.sqrt(currentZoomPercent / 100), 0.78, 1);
-  const floatingToolbarGap = Math.max(5, Math.round(CANVAS_FLOATING_TOOLBAR_GAP * floatingToolbarScreenScale));
-  const floatingToolbarPadding = Math.max(6, Math.round(8 * floatingToolbarScreenScale));
-  const floatingToolbarButtonSize = Math.max(24, Math.round(30 * floatingToolbarScreenScale));
-  const floatingToolbarIconSize = Math.max(12, Math.round(15 * floatingToolbarScreenScale));
-  const floatingToolbarViewportCanvas =
-    canvasVisibleViewBox.width > 0 && canvasVisibleViewBox.height > 0 ? canvasVisibleViewBox : viewBox;
-  const canvasPointToSurfaceCss = (point: Point): Point => ({
-    x: canvasDisplayOffsetX + point.x * canvasScrollScale.x,
-    y: canvasDisplayOffsetY + point.y * canvasScrollScale.y
+  const {
+    edgeFloatingToolbar,
+    floatingToolbarIconSize,
+    floatingToolbarWrapperStyle,
+    nodeFloatingToolbar,
+    resizeSizeHint
+  } = useCanvasFloatingToolbarLayout({
+    activeSelectedEdgeIds,
+    activeSelectedNodeIds,
+    canAddTemplateFromSelection,
+    canGroupSelectedGraphics,
+    canUngroupSelectedGraphics,
+    canvasDisplayOffsetX,
+    canvasDisplayOffsetY,
+    canvasHeight,
+    canvasScrollScale,
+    canvasVisibleViewBox,
+    canvasWidth,
+    connectSource,
+    currentZoomPercent,
+    dragging,
+    editHotInteractionActive,
+    groupTransformGeometry,
+    isEditMode,
+    manualPathDrag,
+    marquee,
+    modifierSelectionPress,
+    nodeById,
+    nodeForegroundImage,
+    nodeImage,
+    nodeLabelDrag,
+    nodeLabelRotateDrag,
+    nodeRotateHandleControlPoints,
+    nodeUprightRotateHandleControlPoints,
+    nodeUsesUprightStaticSelectionOutline,
+    panning,
+    rewiring,
+    selectedCanvasBounds,
+    selectedEdge,
+    selectedFloatingToolbarBounds,
+    selectedNode,
+    selectedNodeCount,
+    selectedRoutedEdge,
+    selectedTransformGroupUnit,
+    staticDrawing,
+    terminalPress,
+    transformDrag,
+    viewBox
   });
-  const floatingToolbarViewport = {
-    left: canvasDisplayOffsetX + floatingToolbarViewportCanvas.x * canvasScrollScale.x,
-    right: canvasDisplayOffsetX + (floatingToolbarViewportCanvas.x + floatingToolbarViewportCanvas.width) * canvasScrollScale.x,
-    top: canvasDisplayOffsetY + floatingToolbarViewportCanvas.y * canvasScrollScale.y,
-    bottom: canvasDisplayOffsetY + (floatingToolbarViewportCanvas.y + floatingToolbarViewportCanvas.height) * canvasScrollScale.y
-  };
-  const clampFloatingToolbarPosition = (x: number, y: number, width: number, height: number) => {
-    const minX = floatingToolbarViewport.left + floatingToolbarPadding;
-    const minY = floatingToolbarViewport.top + floatingToolbarPadding;
-    const maxX = Math.max(minX, floatingToolbarViewport.right - width - floatingToolbarPadding);
-    const maxY = Math.max(minY, floatingToolbarViewport.bottom - height - floatingToolbarPadding);
-    return {
-      x: clampNumber(x, minX, maxX),
-      y: clampNumber(y, minY, maxY)
-    };
-  };
-  const floatingToolbarBounds = (toolbar: FloatingToolbarPlacement) => ({
-    left: toolbar.x,
-    right: toolbar.x + toolbar.width,
-    top: toolbar.y,
-    bottom: toolbar.y + toolbar.height
+  const {
+    CANVAS_MINIMAP_HEIGHT,
+    CANVAS_MINIMAP_WIDTH,
+    mapPointToMinimap,
+    minimapContentHeight,
+    minimapContentWidth,
+    minimapNodes,
+    minimapOffsetX,
+    minimapOffsetY,
+    minimapRoutes,
+    minimapScale,
+    minimapViewportBottom,
+    minimapViewportLeft,
+    minimapViewportRight,
+    minimapViewportTop
+  } = useCanvasMinimapState({
+    canvasHeight,
+    canvasVisibleViewBox,
+    canvasWidth,
+    editHotInteractionActive,
+    minimapSampleCacheRef,
+    minimapSamplingReady,
+    routedEdges,
+    scheduleIdleWork,
+    setMinimapSamplingReady,
+    visibleNodes
   });
-  const toolbarOverlapArea = (first: RenderViewportBounds, second: RenderViewportBounds) => {
-    if (!boxesIntersect(first, second)) {
-      return 0;
-    }
-    return Math.max(0, Math.min(first.right, second.right) - Math.max(first.left, second.left)) *
-      Math.max(0, Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top));
-  };
-  const canvasRectToSurfaceCssRect = (rect: RenderViewportBounds, padding = 0): RenderViewportBounds => {
-    const topLeft = canvasPointToSurfaceCss({ x: rect.left, y: rect.top });
-    const bottomRight = canvasPointToSurfaceCss({ x: rect.right, y: rect.bottom });
-    return {
-      left: Math.min(topLeft.x, bottomRight.x) - padding,
-      right: Math.max(topLeft.x, bottomRight.x) + padding,
-      top: Math.min(topLeft.y, bottomRight.y) - padding,
-      bottom: Math.max(topLeft.y, bottomRight.y) + padding
-    };
-  };
-  const rotateControlAvoidRectFromCanvasPoints = (points: Point[]): RenderViewportBounds => {
-    const xs = points.map((point) => point.x);
-    const ys = points.map((point) => point.y);
-    return canvasRectToSurfaceCssRect({
-      left: Math.min(...xs) - 12,
-      right: Math.max(...xs) + 12,
-      top: Math.min(...ys) - 12,
-      bottom: Math.max(...ys) + 12
-    }, Math.max(4, Math.round(6 * floatingToolbarScreenScale)));
-  };
-  const rotateControlAvoidRectFromCanvas = (centerX: number, topY: number): RenderViewportBounds =>
-    rotateControlAvoidRectFromCanvasPoints([
-      { x: centerX, y: topY - 52 },
-      { x: centerX, y: topY - 6 }
-    ]);
-  const selectedRotateControlAvoidRects: RenderViewportBounds[] = [];
-  if (isEditMode && !editHotInteractionActive && selectedTransformGroupUnit) {
-    selectedRotateControlAvoidRects.push(
-      rotateControlAvoidRectFromCanvas(selectionRectCenter(selectedTransformGroupUnit.bounds).x, selectedTransformGroupUnit.bounds.top)
-    );
-  } else if (isEditMode && !editHotInteractionActive && selectedNode && selectedNodeCount === 1 && activeSelectedEdgeIds.length === 0) {
-    const selectedNodeUprightStaticSelectionOutline = nodeUsesUprightStaticSelectionOutline(selectedNode, nodeImage(selectedNode), nodeForegroundImage(selectedNode));
-    const selectedNodeRotateHandle = selectedNodeUprightStaticSelectionOutline
-      ? nodeUprightRotateHandleControlPoints(selectedNode, TRANSFORM_ROTATE_STEM_START, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_HANDLE_GAP)
-      : nodeRotateHandleControlPoints(selectedNode, TRANSFORM_ROTATE_STEM_START, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_HANDLE_GAP);
-    const selectedNodeRotateHandlePoints = [
-      selectedNodeRotateHandle.stemStart,
-      selectedNodeRotateHandle.stemEnd,
-      selectedNodeRotateHandle.handle
-    ].map((point) => ({
-      x: selectedNode.position.x + point.x,
-      y: selectedNode.position.y + point.y
-    }));
-    selectedRotateControlAvoidRects.push(
-      rotateControlAvoidRectFromCanvasPoints(selectedNodeRotateHandlePoints)
-    );
-  }
-  const selectedFloatingToolbarAvoidRect = selectedFloatingToolbarBounds
-    ? canvasRectToSurfaceCssRect(
-        selectedFloatingToolbarBounds,
-        Math.max(floatingToolbarGap, Math.round(8 * floatingToolbarScreenScale))
-      )
-    : null;
-  const placeFloatingToolbar = (
-    candidates: Point[],
-    width: number,
-    height: number,
-    avoidRects: RenderViewportBounds[] = []
-  ): FloatingToolbarPlacement => {
-    const placements = candidates.map((candidate, index) => {
-      const point = clampFloatingToolbarPosition(candidate.x, candidate.y, width, height);
-      const rect = { left: point.x, right: point.x + width, top: point.y, bottom: point.y + height };
-      return {
-        ...point,
-        index,
-        overlap: avoidRects.reduce((total, avoidRect) => total + toolbarOverlapArea(rect, avoidRect), 0),
-        drift: Math.abs(point.x - candidate.x) + Math.abs(point.y - candidate.y)
-      };
-    });
-    const chosen = [...placements].sort(
-      (first, second) => first.overlap - second.overlap || first.drift - second.drift || first.index - second.index
-    )[0];
-    return {
-      x: Math.round(chosen.x),
-      y: Math.round(chosen.y),
-      width,
-      height,
-      scale: floatingToolbarScreenScale
-    };
-  };
-  const nodeFloatingToolbar =
-    isEditMode && !selectedToolbarHidden && activeSelectedNodeIds.length > 0 && selectedFloatingToolbarBounds
-      ? (() => {
-          const width = Math.round(nodeFloatingToolbarWidth * floatingToolbarScreenScale);
-          const height = Math.round(NODE_FLOATING_TOOLBAR_HEIGHT * floatingToolbarScreenScale);
-          const centerX = (selectedFloatingToolbarBounds.left + selectedFloatingToolbarBounds.right) / 2;
-          const centerY = (selectedFloatingToolbarBounds.top + selectedFloatingToolbarBounds.bottom) / 2;
-          const topCenter = canvasPointToSurfaceCss({ x: centerX, y: selectedFloatingToolbarBounds.top });
-          const bottomCenter = canvasPointToSurfaceCss({ x: centerX, y: selectedFloatingToolbarBounds.bottom });
-          const leftCenter = canvasPointToSurfaceCss({ x: selectedFloatingToolbarBounds.left, y: centerY });
-          const rightCenter = canvasPointToSurfaceCss({ x: selectedFloatingToolbarBounds.right, y: centerY });
-          const nodeFloatingToolbarAvoidRects = [
-            ...(selectedFloatingToolbarAvoidRect ? [selectedFloatingToolbarAvoidRect] : []),
-            ...selectedRotateControlAvoidRects
-          ];
-          const rotateAvoidTop = selectedRotateControlAvoidRects.length > 0
-            ? Math.min(...selectedRotateControlAvoidRects.map((rect) => rect.top))
-            : null;
-          const nodeToolbarCandidates = [
-            ...(rotateAvoidTop === null ? [] : [{ x: topCenter.x - width / 2, y: rotateAvoidTop - height - floatingToolbarGap }]),
-            { x: topCenter.x - width / 2, y: topCenter.y - height - floatingToolbarGap },
-            { x: bottomCenter.x - width / 2, y: bottomCenter.y + floatingToolbarGap },
-            { x: rightCenter.x + floatingToolbarGap, y: rightCenter.y - height / 2 },
-            { x: leftCenter.x - width - floatingToolbarGap, y: leftCenter.y - height / 2 }
-          ];
-          return placeFloatingToolbar(nodeToolbarCandidates, width, height, nodeFloatingToolbarAvoidRects);
-        })()
-      : null;
-  const nodeFloatingToolbarRect = nodeFloatingToolbar ? floatingToolbarBounds(nodeFloatingToolbar) : null;
-  const selectedEdgeMidpoint = selectedRoutedEdge ? routeMidpoint(selectedRoutedEdge.points) : null;
-  const edgeFloatingToolbar =
-    isEditMode && !selectedToolbarHidden && selectedEdge && selectedRoutedEdge && selectedEdgeMidpoint
-      ? (() => {
-          const width = Math.round(EDGE_FLOATING_TOOLBAR_WIDTH * floatingToolbarScreenScale);
-          const height = Math.round(EDGE_FLOATING_TOOLBAR_HEIGHT * floatingToolbarScreenScale);
-          const midpoint = canvasPointToSurfaceCss(selectedEdgeMidpoint);
-          const avoidRects = nodeFloatingToolbarRect ? [nodeFloatingToolbarRect] : [];
-          return placeFloatingToolbar([
-            { x: midpoint.x - width / 2, y: midpoint.y - height - floatingToolbarGap },
-            { x: midpoint.x - width / 2, y: midpoint.y + floatingToolbarGap },
-            { x: midpoint.x + floatingToolbarGap, y: midpoint.y - height / 2 },
-            { x: midpoint.x - width - floatingToolbarGap, y: midpoint.y - height / 2 }
-          ], width, height, avoidRects);
-        })()
-      : null;
-  const floatingToolbarWrapperStyle = (toolbar: FloatingToolbarPlacement) => ({
-    left: toolbar.x,
-    top: toolbar.y,
-    width: toolbar.width,
-    height: toolbar.height,
-    "--canvas-floating-toolbar-button-size": `${floatingToolbarButtonSize}px`,
-    "--canvas-floating-toolbar-gap": `${Math.max(2, Math.round(4 * toolbar.scale))}px`,
-    "--canvas-floating-toolbar-padding": `${Math.max(3, Math.round(4 * toolbar.scale))}px`,
-    "--canvas-floating-toolbar-radius": `${Math.max(6, Math.round(8 * toolbar.scale))}px`
-  } as CSSProperties);
-  const resizeSizeHint =
-    transformDrag && transformDrag.kind !== "rotate"
-      ? (() => {
-          if (isGroupTransformDrag(transformDrag)) {
-            const point = transformDrag.previewPoint;
-            if (!point) {
-              return null;
-            }
-            const geometry = groupTransformGeometry(transformDrag, point);
-            if (geometry.kind !== "scale") {
-              return null;
-            }
-            const width = Math.round((transformDrag.bounds.right - transformDrag.bounds.left) * geometry.scaleX);
-            const height = Math.round((transformDrag.bounds.bottom - transformDrag.bounds.top) * geometry.scaleY);
-            return {
-              x: transformDrag.center.x,
-              y: transformDrag.bounds.bottom + 26 * svgUiUnitY,
-              text: `${width} x ${height}${transformDrag.proportionalScale ? " 等比" : ""}`
-            };
-          }
-          const node = nodeById.get(transformDrag.nodeId);
-          if (!node) {
-            return null;
-          }
-          return {
-            x: node.position.x,
-            y: node.position.y + (node.size.height * Math.abs(getNodeScaleY(node))) / 2 + 30 * svgUiUnitY,
-            text: `${Math.round(node.size.width * Math.abs(getNodeScaleX(node)))} x ${Math.round(node.size.height * Math.abs(getNodeScaleY(node)))}${transformDrag.proportionalScale || transformDrag.kind === "scale-both" ? " 等比" : ""}`
-          };
-        })()
-      : null;
-  useEffect(() => {
-    if (editHotInteractionActive) {
-      return;
-    }
-    const minimapSampleSize = visibleNodes.length + routedEdges.length;
-    if (minimapSampleSize <= CANVAS_MINIMAP_DEFER_SAMPLE_THRESHOLD) {
-      setMinimapSamplingReady(true);
-      return;
-    }
-    setMinimapSamplingReady(false);
-    return scheduleIdleWork(() => setMinimapSamplingReady(true), 80, 1500);
-  }, [editHotInteractionActive, routedEdges, visibleNodes]);
-  const minimapScale = Math.min(
-    (CANVAS_MINIMAP_WIDTH - CANVAS_MINIMAP_PADDING * 2) / Math.max(1, canvasWidth),
-    (CANVAS_MINIMAP_HEIGHT - CANVAS_MINIMAP_PADDING * 2) / Math.max(1, canvasHeight)
-  );
-  const minimapContentWidth = canvasWidth * minimapScale;
-  const minimapContentHeight = canvasHeight * minimapScale;
-  const minimapOffsetX = (CANVAS_MINIMAP_WIDTH - minimapContentWidth) / 2;
-  const minimapOffsetY = (CANVAS_MINIMAP_HEIGHT - minimapContentHeight) / 2;
-  const minimapNodeStep = Math.max(1, Math.ceil(visibleNodes.length / CANVAS_MINIMAP_MAX_NODE_MARKS));
-  const minimapRouteStep = Math.max(1, Math.ceil(routedEdges.length / CANVAS_MINIMAP_MAX_ROUTE_MARKS));
-  const minimapNodes = useMemo(() => {
-    const cache = minimapSampleCacheRef.current;
-    if (editHotInteractionActive) {
-      return cache.nodes;
-    }
-    if (!minimapSamplingReady) {
-      return cache.nodeSource === visibleNodes && cache.nodeStep === minimapNodeStep ? cache.nodes : [];
-    }
-    if (cache.nodeSource === visibleNodes && cache.nodeStep === minimapNodeStep) {
-      return cache.nodes;
-    }
-    const nodes = visibleNodes.filter((_, index) => index % minimapNodeStep === 0);
-    cache.nodeSource = visibleNodes;
-    cache.nodeStep = minimapNodeStep;
-    cache.nodes = nodes;
-    return nodes;
-  }, [editHotInteractionActive, minimapNodeStep, minimapSamplingReady, visibleNodes]);
-  const minimapRoutes = useMemo(() => {
-    const cache = minimapSampleCacheRef.current;
-    if (editHotInteractionActive) {
-      return cache.routes;
-    }
-    if (!minimapSamplingReady) {
-      return cache.routeSource === routedEdges && cache.routeStep === minimapRouteStep ? cache.routes : [];
-    }
-    if (cache.routeSource === routedEdges && cache.routeStep === minimapRouteStep) {
-      return cache.routes;
-    }
-    const routes = routedEdges.filter((_, index) => index % minimapRouteStep === 0);
-    cache.routeSource = routedEdges;
-    cache.routeStep = minimapRouteStep;
-    cache.routes = routes;
-    return routes;
-  }, [editHotInteractionActive, minimapRouteStep, minimapSamplingReady, routedEdges]);
-  const mapPointToMinimap = (point: Point) => ({
-    x: minimapOffsetX + point.x * minimapScale,
-    y: minimapOffsetY + point.y * minimapScale
-  });
-  const minimapViewportLeft = clampNumber(minimapOffsetX + canvasVisibleViewBox.x * minimapScale, minimapOffsetX, minimapOffsetX + minimapContentWidth);
-  const minimapViewportTop = clampNumber(minimapOffsetY + canvasVisibleViewBox.y * minimapScale, minimapOffsetY, minimapOffsetY + minimapContentHeight);
-  const minimapViewportRight = clampNumber(minimapOffsetX + (canvasVisibleViewBox.x + canvasVisibleViewBox.width) * minimapScale, minimapOffsetX, minimapOffsetX + minimapContentWidth);
-  const minimapViewportBottom = clampNumber(minimapOffsetY + (canvasVisibleViewBox.y + canvasVisibleViewBox.height) * minimapScale, minimapOffsetY, minimapOffsetY + minimapContentHeight);
   const handleMinimapNavigate = (event: PointerEvent<SVGSVGElement>) => {
     event.preventDefault();
     event.stopPropagation();

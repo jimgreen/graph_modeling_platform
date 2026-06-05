@@ -59,6 +59,12 @@ const frontendManualChunks = (id: string) => {
   if (isSourceModule(moduleId, "/src/useCanvasRenderLayers.tsx")) {
     return "canvas-render-layers";
   }
+  if (isSourceModule(moduleId, "/src/useCanvasViewportDerivations.ts")) {
+    return "canvas-viewport-derivations";
+  }
+  if (isSourceModule(moduleId, "/src/projectPersistence.ts")) {
+    return "project-persistence";
+  }
   if (
     isSourceModule(moduleId, "/src/graphStore.ts") ||
     isSourceModule(moduleId, "/src/routeStore.ts") ||
