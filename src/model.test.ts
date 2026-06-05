@@ -126,7 +126,6 @@ import {
   isGeneratorNode,
   isStaticKind,
   isStaticNode,
-  isDeviceTemplateVisibleInPlacementLibrary,
   keyboardMoveStepForViewBox,
   viewBoxZoomPercent,
   getSwitchVisualState,
@@ -1291,8 +1290,8 @@ describe("power system model", () => {
     }
   });
 
-  test("shows only adaptive routable line-like entries in the placement library", () => {
-    const replacedKinds = [
+  test("keeps fixed and adaptive line-like entries available in the device library", () => {
+    const fixedKinds = [
       "ac-line",
       "dc-line",
       "hydrogen-pipeline",
@@ -1309,19 +1308,16 @@ describe("power system model", () => {
       "dc-zero-routable-branch"
     ];
 
-    for (const kind of replacedKinds) {
+    for (const kind of fixedKinds) {
       const baseTemplate = DEVICE_LIBRARY.find((template) => template.kind === kind);
       const verticalTemplate = DEVICE_LIBRARY.find((template) => template.kind === `${kind}-vertical`);
       expect(baseTemplate).toBeTruthy();
       expect(verticalTemplate).toBeTruthy();
-      expect(isDeviceTemplateVisibleInPlacementLibrary(baseTemplate!)).toBe(false);
-      expect(isDeviceTemplateVisibleInPlacementLibrary(verticalTemplate!)).toBe(false);
     }
 
     for (const kind of visibleAdaptiveKinds) {
       const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
       expect(template).toBeTruthy();
-      expect(isDeviceTemplateVisibleInPlacementLibrary(template!)).toBe(true);
     }
   });
 

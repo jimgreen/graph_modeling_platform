@@ -696,22 +696,8 @@ const ROUTABLE_LINE_DEVICE_KINDS = new Set<string>([
   "heat-routable-line"
 ]);
 
-const ROUTABLE_LINE_REPLACED_LIBRARY_KINDS = new Set<string>([
-  "ac-line",
-  "dc-line",
-  "hydrogen-pipeline",
-  "heat-pipeline",
-  "ac-zero-branch",
-  "dc-zero-branch"
-]);
-
 export function isRoutableLineDeviceKind(kind: string): boolean {
   return ROUTABLE_LINE_DEVICE_KINDS.has(baseDeviceKind(kind));
-}
-
-export function isDeviceTemplateVisibleInPlacementLibrary(template: Pick<DeviceTemplate, "kind"> | string): boolean {
-  const kind = typeof template === "string" ? template : template.kind;
-  return !ROUTABLE_LINE_REPLACED_LIBRARY_KINDS.has(baseDeviceKind(kind));
 }
 
 export function inferESection(kind: string, params: Record<string, string> = {}) {

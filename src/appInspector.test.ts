@@ -352,14 +352,13 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".library-empty");
   });
 
-  test("filters replaced fixed line-like templates from the placement component library", async () => {
+  test("keeps fixed line-like templates in the placement component library", async () => {
     const source = await readAppSource();
 
-    expect(source).toContain("isDeviceTemplateVisibleInPlacementLibrary");
-    expect(source).toContain("const placementLibraryTemplates = useMemo(");
-    expect(source).toContain("libraryTemplates.filter(isDeviceTemplateVisibleInPlacementLibrary)");
-    expect(source).toContain("groupDeviceTemplatesByAttributeLibraryAndComponentType(placementLibraryTemplates)");
-    expect(source).toContain("const placementAttributeLibraries = useMemo<AttributeLibrary[]>(");
+    expect(source).not.toContain("libraryTemplates.filter(isDeviceTemplateVisibleInPlacementLibrary)");
+    expect(source).toContain("if (!librarySearchNeedle) {\n      return groupedAttributeLibraryByComponentType;");
+    expect(source).toContain("const filteredEntries = Object.entries(groupedAttributeLibraryByComponentType)");
+    expect(source).toContain("? attributeLibraries.filter((group) => (filteredAttributeLibraryByComponentType[group] ?? []).length > 0)\n      : attributeLibraries");
     expect(source).toContain("new Map(libraryTemplates.map((template) => [template.kind, template]))");
   });
 

@@ -170,7 +170,6 @@ import {
   isStaticBoxLikeKind,
   isStaticBoxLikeNode,
   isStaticNode,
-  isDeviceTemplateVisibleInPlacementLibrary,
   inferESection,
   insertOrthogonalRouteBend,
   insertChildSavedScheme,
@@ -8225,24 +8224,16 @@ export function App() {
     () => baseLibraryTemplates.map((template) => applyDeviceTemplateDefinitionOverride(template, deviceDefinitionOverrides[template.kind])),
     [baseLibraryTemplates, deviceDefinitionOverrides]
   );
-  const placementLibraryTemplates = useMemo(
-    () => libraryTemplates.filter(isDeviceTemplateVisibleInPlacementLibrary),
-    [libraryTemplates]
-  );
   const libraryTemplateByKind = useMemo(() => new Map(libraryTemplates.map((template) => [template.kind, template])), [libraryTemplates]);
   const baseLibraryTemplateByKind = useMemo(() => new Map(baseLibraryTemplates.map((template) => [template.kind, template])), [baseLibraryTemplates]);
   const groupedAttributeLibrary = useMemo(() => groupDeviceTemplatesByAttributeLibrary(libraryTemplates), [libraryTemplates]);
   const groupedAttributeLibraryByComponentType = useMemo(() => groupDeviceTemplatesByAttributeLibraryAndComponentType(libraryTemplates), [libraryTemplates]);
-  const placementGroupedAttributeLibraryByComponentType = useMemo(
-    () => groupDeviceTemplatesByAttributeLibraryAndComponentType(placementLibraryTemplates),
-    [placementLibraryTemplates]
-  );
   const librarySearchNeedle = normalizeLibrarySearchText(librarySearchQuery);
   const filteredAttributeLibraryByComponentType = useMemo(() => {
     if (!librarySearchNeedle) {
-      return placementGroupedAttributeLibraryByComponentType;
+      return groupedAttributeLibraryByComponentType;
     }
-    const filteredEntries = Object.entries(placementGroupedAttributeLibraryByComponentType)
+    const filteredEntries = Object.entries(groupedAttributeLibraryByComponentType)
       .map(([group, typeGroups]) => {
         const groupMatches = normalizeLibrarySearchText(group).includes(librarySearchNeedle);
         const filteredTypeGroups = typeGroups
@@ -8258,7 +8249,7 @@ export function App() {
       })
       .filter((entry): entry is readonly [string, AttributeLibraryComponentTypeGroup[]] => Boolean(entry));
     return Object.fromEntries(filteredEntries);
-  }, [placementGroupedAttributeLibraryByComponentType, librarySearchNeedle]);
+  }, [groupedAttributeLibraryByComponentType, librarySearchNeedle]);
   const libraryPreviewByKind = useMemo(
     () => new Map(libraryTemplates.map((template) => [template.kind, createNodeFromTemplate(template, { x: 0, y: 0 })])),
     [libraryTemplates]
@@ -8275,15 +8266,11 @@ export function App() {
     () => Array.from(new Set([...DEFAULT_ATTRIBUTE_LIBRARIES, ...customAttributeLibraries, ...libraryTemplates.map((item) => normalizeAttributeLibraryName(item.attributeLibrary))])),
     [customAttributeLibraries, libraryTemplates]
   );
-  const placementAttributeLibraries = useMemo<AttributeLibrary[]>(
-    () => Array.from(new Set([...DEFAULT_ATTRIBUTE_LIBRARIES, ...customAttributeLibraries, ...placementLibraryTemplates.map((item) => normalizeAttributeLibraryName(item.attributeLibrary))])),
-    [customAttributeLibraries, placementLibraryTemplates]
-  );
   const displayedAttributeLibraries = useMemo(
     () => librarySearchNeedle
-      ? placementAttributeLibraries.filter((group) => (filteredAttributeLibraryByComponentType[group] ?? []).length > 0)
-      : placementAttributeLibraries,
-    [placementAttributeLibraries, filteredAttributeLibraryByComponentType, librarySearchNeedle]
+      ? attributeLibraries.filter((group) => (filteredAttributeLibraryByComponentType[group] ?? []).length > 0)
+      : attributeLibraries,
+    [attributeLibraries, filteredAttributeLibraryByComponentType, librarySearchNeedle]
   );
   useEffect(() => {
     libraryFlyoutPositionsRef.current = libraryFlyoutPositions;
