@@ -1,0 +1,9 @@
+{
+  "timestamp": 1717550000000,
+  "sequence": 1,
+  "points": [
+    { "sourcePoint": "sample.ac-load-1.p", "name": "交流负荷-1 有功", "deviceName": "交流负荷-1", "key": "p", "label": "P", "unit": "MW", "valueType": "number", "value": 12.345, "quality": "good" },
+    { "sourcePoint": "sample.ac-load-1.q", "name": "交流负荷-1 无功", "deviceName": "交流负荷-1", "key": "q", "label": "Q", "unit": "Mvar", "valueType": "number", "value": 3.21, "quality": "good" },
+    { "sourcePoint": "sample.ac-load-1.u", "name": "交流负荷-1 电压", "deviceName": "交流负荷-1", "key": "u", "label": "U", "unit": "kV", "valueType": "number", "value": 110.0, "quality": "good" }
+  ]
+}

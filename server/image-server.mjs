@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import { createReadStream } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createMeasurementService, diffMeasurementValues } from "./measurement-service.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(__dirname, "..");
@@ -12,6 +13,9 @@ const imageFoldersPath = join(imageDataDir, "folders.json");
 const schemeDataDir = resolve(repoRoot, "data", "schemes");
 const settingsDataDir = resolve(repoRoot, "data", "settings");
 const colorConfigPath = join(settingsDataDir, "color-config.json");
+const measurementConfigPath = join(settingsDataDir, "measurement-config.json");
+const measurementDataDir = resolve(repoRoot, "data", "measurements");
+const measurementSampleValuesPath = join(measurementDataDir, "sample-values.json");
 const deviceLibraryDataDir = resolve(repoRoot, "data", "device-library");
 const deviceLibraryPath = join(deviceLibraryDataDir, "library.json");
 const maxImageBodyBytes = 16 * 1024 * 1024;
@@ -1322,6 +1326,10 @@ async function handleSaveDeviceLibrary(request, response) {
 }
 
 export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
+  const measurementService = createMeasurementService({
+    configPath: measurementConfigPath,
+    sampleValuesPath: measurementSampleValuesPath
+  });
   const exactRouteHandlers = new Map([
     ["GET /api/images", async ({ url, response }) => {
       const manifest = await readManifest();
@@ -1368,6 +1376,47 @@ export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
     }],
     ["PUT /api/device-library", async ({ request, response }) => {
       await handleSaveDeviceLibrary(request, response);
+    }],
+    ["GET /api/measurements/config", async ({ response }) => {
+      sendJson(response, 200, await measurementService.getConfig());
+    }],
+    ["GET /api/measurements/status", async ({ response }) => {
+      sendJson(response, 200, await measurementService.getStatus());
+    }],
+    ["GET /api/measurements/catalog", async ({ response }) => {
+      sendJson(response, 200, await measurementService.getCatalog());
+    }],
+    ["GET /api/measurements/snapshot", async ({ url, response }) => {
+      sendJson(response, 200, await measurementService.getSnapshot({
+        schemePath: url.searchParams.get("schemePath") || "",
+        modelName: url.searchParams.get("modelName") || ""
+      }));
+    }],
+    ["GET /api/measurements/stream", async ({ url, request, response }) => {
+      response.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-store",
+        connection: "keep-alive",
+        ...accessControlHeaders
+      });
+      let lastValues = [];
+      const writePatch = async () => {
+        const snapshot = await measurementService.getSnapshot({
+          schemePath: url.searchParams.get("schemePath") || "",
+          modelName: url.searchParams.get("modelName") || ""
+        });
+        const values = diffMeasurementValues(lastValues, snapshot.values);
+        lastValues = snapshot.values;
+        if (values.length > 0) {
+          response.write("event: measurement.patch\n");
+          response.write(`data: ${JSON.stringify({ version: "1.0", timestamp: snapshot.timestamp, sequence: snapshot.sequence, values })}\n\n`);
+        }
+      };
+      await writePatch();
+      const timer = setInterval(() => {
+        writePatch().catch(() => undefined);
+      }, 1000);
+      request.on("close", () => clearInterval(timer));
     }]
   ]);
   const dynamicRouteHandlers = [
