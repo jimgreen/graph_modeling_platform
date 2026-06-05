@@ -41,6 +41,24 @@ const frontendManualChunks = (id: string) => {
   if (isSourceModule(moduleId, "/src/AppDialogs.tsx")) {
     return "app-dialogs";
   }
+  if (isSourceModule(moduleId, "/src/MainWorkspace.tsx")) {
+    return "main-workspace";
+  }
+  if (isSourceModule(moduleId, "/src/WorkspaceCanvasFrame.tsx")) {
+    return "workspace-canvas-frame";
+  }
+  if (isSourceModule(moduleId, "/src/WorkspaceTopbar.tsx")) {
+    return "workspace-topbar";
+  }
+  if (isSourceModule(moduleId, "/src/useWorkspaceCanvasInteractions.ts")) {
+    return "workspace-interactions";
+  }
+  if (isSourceModule(moduleId, "/src/useLeftPanelRenderers.tsx")) {
+    return "left-panel-renderers";
+  }
+  if (isSourceModule(moduleId, "/src/useCanvasRenderLayers.tsx")) {
+    return "canvas-render-layers";
+  }
   if (
     isSourceModule(moduleId, "/src/graphStore.ts") ||
     isSourceModule(moduleId, "/src/routeStore.ts") ||

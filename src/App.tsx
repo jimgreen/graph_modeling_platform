@@ -1,4 +1,4 @@
-﻿import { ChangeEvent, DragEvent, Fragment, Suspense, lazy, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, type SetStateAction, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+﻿import { ChangeEvent, DragEvent, Fragment, Suspense, lazy, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type SetStateAction, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 import {
   AlignEndHorizontal,
@@ -374,15 +374,11 @@ import {
   scrollPositionToViewBoxStart,
   viewBoxAfterCanvasBoundsChange
 } from "./canvasViewport";
-import {
-  ElementTreePanel,
-  GraphTemplatePreview,
-  LibraryPanel,
-  ProjectPanel,
-  TemplateLibraryPanel
-} from "./LeftPanels";
 import { RightInspectorPanel } from "./RightInspectorPanel";
 import { AppDialogs } from "./AppDialogs";
+import { MainWorkspace } from "./MainWorkspace";
+import { useLeftPanelRenderers } from "./useLeftPanelRenderers";
+import { useCanvasAuxiliaryRenderers, useCanvasLodRenderLayers } from "./useCanvasRenderLayers";
 
 const ENABLE_REACT_FLOW_PREVIEW = import.meta.env.DEV;
 const ReactFlowPreview = ENABLE_REACT_FLOW_PREVIEW ? lazy(() => import("./ReactFlowPreview")) : null;
@@ -1305,12 +1301,6 @@ const CANVAS_MINIMAP_MAX_NODE_MARKS = 360;
 const CANVAS_MINIMAP_MAX_ROUTE_MARKS = 160;
 const CANVAS_MINIMAP_DEFER_SAMPLE_THRESHOLD = 1200;
 const TERMINAL_OVERLAP_DEFER_NODE_THRESHOLD = 600;
-const CANVAS_LOD_NODE_DETAIL_LIMIT = 650;
-const CANVAS_LOD_MAX_ZOOM_PERCENT = 120;
-const CANVAS_LOD_MAX_NODE_SCREEN_SIZE = 18;
-const CANVAS_LOD_NODE_SCREEN_SAMPLE_LIMIT = 96;
-const CANVAS_LOD_SELECTED_DETAIL_LIMIT = 12;
-const CANVAS_LOD_MARKUP_CHUNK_SIZE = 64;
 const CONNECTION_HIT_SCREEN_TOLERANCE = 18;
 const CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT = 24;
 const CANVAS_MULTI_NODE_DRAG_PREVIEW_EDGE_LIMIT = 32;
@@ -1872,26 +1862,6 @@ function canvasScrollScaleFromViewBox(viewBox: Pick<CanvasViewBox, "width" | "he
     x: bounds.width > 0 && viewBox.width > 0 ? bounds.width / viewBox.width : 1,
     y: bounds.height > 0 && viewBox.height > 0 ? bounds.height / viewBox.height : 1
   };
-}
-function estimatedViewportNodeScreenSize(
-  nodes: readonly ModelNode[],
-  scale: { x: number; y: number },
-  sampleLimit = CANVAS_LOD_NODE_SCREEN_SAMPLE_LIMIT
-) {
-  if (nodes.length === 0) {
-    return Number.POSITIVE_INFINITY;
-  }
-  const step = Math.max(1, Math.ceil(nodes.length / sampleLimit));
-  let maxSize = 0;
-  let sampled = 0;
-  for (let index = 0; index < nodes.length && sampled < sampleLimit; index += step) {
-    const node = nodes[index];
-    const width = node.size.width * Math.abs(getNodeScaleX(node)) * scale.x;
-    const height = node.size.height * Math.abs(getNodeScaleY(node)) * scale.y;
-    maxSize = Math.max(maxSize, width, height);
-    sampled += 1;
-  }
-  return maxSize;
 }
 function canvasScrollEdgeInset(viewportSize: number) {
   return Math.max(CANVAS_FRAME_INSET, Math.round(viewportSize * CANVAS_SCROLL_EDGE_VIEWPORT_RATIO));
@@ -20796,168 +20766,6 @@ export function App() {
     schemeRecordDragActiveRef.current = false;
   };
 
-  const renderProjectSchemeNode = (scheme: SavedSchemeRecord, depth = 0): ReactNode => {
-    const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id);
-    const children = scheme.children ?? [];
-    const hasContent = scheme.projects.length > 0 || children.length > 0;
-    const schemeIndentStyle = { "--scheme-depth": depth } as CSSProperties;
-    const projectIndentStyle = { "--scheme-depth": depth + 1 } as CSSProperties;
-    return (
-      <div
-        className={`scheme-group ${depth > 0 ? "nested" : ""}`}
-        key={scheme.id}
-      >
-        <div
-          role="option"
-          aria-label={`方案：${scheme.name}`}
-          aria-selected={selectedSchemeIds.includes(scheme.id) || selectedSchemeId === scheme.id}
-          aria-expanded={isExpanded}
-          tabIndex={0}
-          draggable={isEditMode}
-          className={`scheme-option ${selectedSchemeIds.includes(scheme.id) || selectedSchemeId === scheme.id ? "selected" : ""}`}
-          style={schemeIndentStyle}
-          onClick={(event) => {
-            if (event.ctrlKey || event.metaKey || event.shiftKey) {
-              toggleSchemeSelection(scheme.id);
-            } else {
-              selectSingleScheme(scheme.id);
-            }
-            toggleSchemeExpanded(scheme.id);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
-              event.preventDefault();
-              if (event.ctrlKey || event.metaKey || event.shiftKey) {
-                toggleSchemeSelection(scheme.id);
-              } else {
-                selectSingleScheme(scheme.id);
-              }
-              toggleSchemeExpanded(scheme.id);
-            }
-          }}
-          onDragOver={(event) => event.preventDefault()}
-          onDragStart={(event) => {
-            if (!isEditMode) {
-              event.preventDefault();
-              return;
-            }
-            startSchemeRecordDrag(event, scheme.id);
-          }}
-          onDragEnd={finishSchemeRecordDrag}
-          onDrop={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            if (!isEditMode) {
-              return;
-            }
-            finishProjectRecordDrag();
-            finishSchemeRecordDrag();
-            const schemeId = event.dataTransfer.getData("application/scheme-id");
-            if (schemeId) {
-              moveSchemeRecordToScheme(schemeId, scheme.id);
-              return;
-            }
-            const projectId = event.dataTransfer.getData("application/project-id");
-            if (projectId) {
-              moveProjectRecordToScheme(projectId, scheme.id);
-            }
-          }}
-          onContextMenu={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            if (!selectedSchemeIds.includes(scheme.id)) {
-              selectSingleScheme(scheme.id);
-            }
-            setProjectMenu({ x: event.clientX, y: event.clientY, schemeId: scheme.id });
-          }}
-        >
-          {isExpanded ? <ChevronDown className="scheme-toggle-icon" size={14} /> : <ChevronRight className="scheme-toggle-icon" size={14} />}
-          <FolderOpen className="scheme-folder-icon" size={15} />
-          <span className="project-tree-name">{scheme.name}</span>
-        </div>
-        {isExpanded && (
-          <div className="scheme-projects">
-            {!hasContent ? (
-              <p className="project-empty" style={projectIndentStyle}>暂无模型或子方案</p>
-            ) : (
-              <>
-                {scheme.projects.map((project) => {
-                  const isProjectSelected = selectedProjectIds.includes(project.id) || project.id === selectedProjectId;
-                  return (
-                    <div
-                      role="option"
-                      aria-label={`模型：${project.name}`}
-                      aria-selected={isProjectSelected}
-                      tabIndex={0}
-                      draggable={isEditMode}
-                      className={`project-option ${isProjectSelected ? "selected" : ""} ${project.id === activeProjectKey ? "active" : ""}`}
-                      style={projectIndentStyle}
-                      key={project.id}
-                      onClick={(event) => {
-                        if (event.ctrlKey || event.metaKey || event.shiftKey) {
-                          toggleProjectSelection(scheme.id, project.id);
-                        } else {
-                          selectSingleProject(scheme.id, project.id);
-                        }
-                        setInspectorTab("model");
-                      }}
-                      onDoubleClick={() => requestLoadSavedProject(project, scheme.id)}
-                      onDragStart={(event) => {
-                        if (!isEditMode) {
-                          event.preventDefault();
-                          return;
-                        }
-                        startProjectRecordDrag(event, project.id);
-                      }}
-                      onDragEnd={finishProjectRecordDrag}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          requestLoadSavedProject(project, scheme.id);
-                        } else if (event.key === " " || event.key === "Spacebar") {
-                          event.preventDefault();
-                          if (event.ctrlKey || event.metaKey || event.shiftKey) {
-                            toggleProjectSelection(scheme.id, project.id);
-                          } else {
-                            selectSingleProject(scheme.id, project.id);
-                          }
-                        }
-                      }}
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        if (!selectedProjectIds.includes(project.id)) {
-                          selectSingleProject(scheme.id, project.id);
-                        }
-                        setProjectMenu({ x: event.clientX, y: event.clientY, schemeId: scheme.id, projectId: project.id });
-                      }}
-                    >
-                      <FileJson className="project-item-icon" size={14} />
-                      <span className="project-tree-name">{project.name}</span>
-                    </div>
-                  );
-                })}
-                {children.map((child) => renderProjectSchemeNode(child, depth + 1))}
-              </>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderProjectPanel = () => (
-    <ProjectPanel
-      projectSearchQuery={projectSearchQuery}
-      setProjectSearchQuery={setProjectSearchQuery}
-      projectListPointerInsideRef={projectListPointerInsideRef}
-      isEditMode={isEditMode}
-      setProjectMenu={setProjectMenu}
-      schemesLength={schemes.length}
-      filteredProjectSchemes={filteredProjectSchemes}
-      renderProjectSchemeNode={(scheme) => renderProjectSchemeNode(scheme as SavedSchemeRecord)}
-    />
-  );
-
   const customDraftTerminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
   const customDraftTerminalAssociations = normalizeContainerTerminalAssociations(
     customDraftTerminalTypes,
@@ -21694,205 +21502,6 @@ export function App() {
     setCustomDeviceDraft((current) => ({ ...current, error: "" }));
   };
 
-  const renderCustomComponentManagerTree = () => (
-    <aside className="custom-component-manager-panel" aria-label="属性库元件类型元件管理">
-      <div className="custom-component-manager-title">
-        <strong>元件结构</strong>
-        <span>属性库 / 元件类型 / 元件</span>
-      </div>
-      <div className="custom-component-manager-actions">
-        <button type="button" onClick={createCustomAttributeLibrary}>新建属性库</button>
-        <button type="button" onClick={createCustomComponentType}>新建元件类型</button>
-        <button type="button" onClick={startCustomComponentCreate}>新建元件</button>
-        <button type="button" onClick={renameSelectedCustomDeviceTreeItem}>重命名</button>
-        <button type="button" onClick={deleteSelectedCustomDeviceTreeItem}>删除</button>
-      </div>
-      <div className="custom-component-manager-tree" role="tree">
-        {attributeLibraries.map((group) => {
-          const typeGroups = groupedAttributeLibraryByComponentType[group] ?? [];
-          const librarySelected = customComponentTreeSelection.kind === "attributeLibrary" && customComponentTreeSelection.attributeLibraryName === group;
-          const libraryCollapsed = collapsedCustomComponentTreeLibraries.some((item) => normalizeAttributeLibraryName(item) === group);
-          return (
-            <section className="custom-component-tree-library" key={group}>
-              <button
-                type="button"
-                className={`custom-component-tree-row library ${librarySelected ? "active" : ""}`}
-                role="treeitem"
-                aria-selected={librarySelected}
-                aria-expanded={!libraryCollapsed}
-                onClick={() => {
-                  selectCustomAttributeLibrary(group, { expand: false });
-                  toggleCustomComponentTreeLibrary(group);
-                }}
-              >
-                {libraryCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
-                <span>{group}</span>
-                <strong>{typeGroups.reduce((sum, typeGroup) => sum + typeGroup.templates.length, 0)}</strong>
-              </button>
-              {!libraryCollapsed && <div className="custom-component-tree-type-list" role="group">
-                {typeGroups.map((typeGroup) => {
-                  const typeKey = customComponentTreeTypeKey(group, typeGroup.section);
-                  const typeCollapsed = collapsedCustomComponentTreeTypes.includes(typeKey);
-                  const typeSelected =
-                    customComponentTreeSelection.kind === "componentType" &&
-                    customComponentTreeSelection.attributeLibraryName === group &&
-                    customComponentTreeSelection.section === typeGroup.section;
-                  return (
-                    <section className="custom-component-tree-type" key={`${group}-${typeGroup.section}`}>
-                      <button
-                        type="button"
-                        className={`custom-component-tree-row type ${typeSelected ? "active" : ""}`}
-                        role="treeitem"
-                        aria-selected={typeSelected}
-                        aria-expanded={!typeCollapsed}
-                        onClick={() => {
-                          selectCustomComponentType(group, typeGroup.section, { expand: false });
-                          toggleCustomComponentTreeType(group, typeGroup.section);
-                        }}
-                      >
-                        {typeCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
-                        <span>{typeGroup.section}</span>
-                        <strong>{typeGroup.templates.length}</strong>
-                      </button>
-                      {!typeCollapsed && <div className="custom-component-tree-components" role="group" aria-label={`${group}/${typeGroup.section}元件列表`}>
-                        {typeGroup.templates.map((template) => {
-                          const componentSelected =
-                            customComponentTreeSelection.kind === "component" &&
-                            customComponentTreeSelection.templateKind === template.kind;
-                          return (
-                            <button
-                              type="button"
-                              key={template.kind}
-                              className={`custom-component-tree-row component ${componentSelected ? "active" : ""}`}
-                              role="treeitem"
-                              aria-selected={componentSelected}
-                              title={`${template.label} / ${typeGroup.section} / ${template.custom ? "自定义" : "系统内置"}`}
-                              onClick={() => selectCustomComponentTemplate(template, typeGroup.section)}
-                            >
-                              <span>{template.label}</span>
-                              <small>{template.custom ? "自定义" : "内置"}</small>
-                            </button>
-                          );
-                        })}
-                      </div>}
-                    </section>
-                  );
-                })}
-              </div>}
-            </section>
-          );
-        })}
-      </div>
-    </aside>
-  );
-
-  const renderLibraryDefinitionActions = () => (
-    <div className="library-definition-actions">
-      <button
-        type="button"
-        className="custom-device-create-button"
-        disabled={isBrowseMode}
-        onClick={() => {
-          if (!requireEditMode("新建元件")) {
-            return;
-          }
-          setCustomDeviceDraft(createEmptyCustomDeviceDraft("交流设备"));
-          setCustomDeviceDialogOpen(true);
-        }}
-      >
-        新建元件
-      </button>
-      <button type="button" className="custom-device-create-button" disabled={isBrowseMode} onClick={openDeviceDefinitionDialog}>
-        修改元件
-      </button>
-    </div>
-  );
-
-  const renderGraphTemplatePreview = (template: GraphTemplate) => (
-    <GraphTemplatePreview
-      template={template}
-      colorPalette={colorPalette}
-      pointsToPreviewPath={pointsToPreviewPath}
-    />
-  );
-
-  const renderTemplateLibraryPanel = () => (
-    <TemplateLibraryPanel
-      graphTemplateTypes={graphTemplateTypes}
-      expandedGraphTemplateTypes={expandedGraphTemplateTypes}
-      hoveredGraphTemplateType={hoveredGraphTemplateType}
-      setHoveredGraphTemplateType={setHoveredGraphTemplateType}
-      setExpandedGraphTemplateTypes={setExpandedGraphTemplateTypes}
-      groupedGraphTemplates={groupedGraphTemplates}
-      isEditMode={isEditMode}
-      isBrowseMode={isBrowseMode}
-      colorPalette={colorPalette}
-      startLibraryGraphTemplatePlacement={startLibraryGraphTemplatePlacement}
-      cancelLibraryPlacement={cancelLibraryPlacement}
-      pointsToPreviewPath={pointsToPreviewPath}
-    />
-  );
-
-  const renderLibraryPanel = () => (
-    <LibraryPanel
-      librarySearchQuery={librarySearchQuery}
-      setLibrarySearchQuery={setLibrarySearchQuery}
-      componentLibraryDisplayMode={componentLibraryDisplayMode}
-      setComponentLibraryDisplayMode={setComponentLibraryDisplayMode}
-      libraryScrollRef={libraryScrollRef}
-      displayedAttributeLibraries={displayedAttributeLibraries}
-      librarySearchNeedle={librarySearchNeedle}
-      collapsedExpandedModeAttributeLibraries={collapsedExpandedModeAttributeLibraries}
-      expandedAttributeLibraries={expandedAttributeLibraries}
-      hoveredAttributeLibrary={hoveredAttributeLibrary}
-      filteredAttributeLibraryByComponentType={filteredAttributeLibraryByComponentType}
-      collapsedExpandedModeComponentTypes={collapsedExpandedModeComponentTypes}
-      expandedAttributeLibraryComponentTypes={expandedAttributeLibraryComponentTypes}
-      hoveredAttributeLibraryComponentType={hoveredAttributeLibraryComponentType}
-      colorPalette={colorPalette}
-      isEditMode={isEditMode}
-      isBrowseMode={isBrowseMode}
-      libraryPreviewByKind={libraryPreviewByKind}
-      renderLibraryDefinitionActions={renderLibraryDefinitionActions}
-      toggleAttributeLibrary={toggleAttributeLibrary}
-      attributeLibraryComponentTypeKey={attributeLibraryComponentTypeKey}
-      componentTypeDisplayParts={componentTypeDisplayParts}
-      libraryComponentListRefKey={libraryComponentListRefKey}
-      setLibraryComponentTypeHeaderRef={setLibraryComponentTypeHeaderRef}
-      setLibraryComponentListRef={setLibraryComponentListRef}
-      libraryFlyoutStyle={libraryFlyoutStyle}
-      clearLibraryFlyoutCloseTimer={clearLibraryFlyoutCloseTimer}
-      setHoveredAttributeLibrary={setHoveredAttributeLibrary}
-      setHoveredAttributeLibraryComponentType={setHoveredAttributeLibraryComponentType}
-      scheduleLibraryFlyoutClose={scheduleLibraryFlyoutClose}
-      hideLibraryFlyout={hideLibraryFlyout}
-      toggleAttributeLibraryComponentType={toggleAttributeLibraryComponentType}
-      startLibraryDevicePlacement={startLibraryDevicePlacement}
-      cancelLibraryPlacement={cancelLibraryPlacement}
-    />
-  );
-
-  const renderElementTreePanel = () => (
-    <ElementTreePanel
-      elementTree={elementTree}
-      collapsedElementTreeGroups={collapsedElementTreeGroups}
-      elementTreeItemLimits={elementTreeItemLimits}
-      initialItemLimit={ELEMENT_TREE_ITEM_LIMIT_STEP}
-      activeLayerNodeIdSet={activeLayerNodeIdSet}
-      activeLayerEdgeIdSet={activeLayerEdgeIdSet}
-      selectedNodeIdSet={selectedNodeIdSet}
-      activeSelectedEdgeSet={activeSelectedEdgeSet}
-      toggleElementTreeGroup={toggleElementTreeGroup}
-      elementTreeItemChildren={elementTreeItemChildren}
-      selectCanvasGraphics={selectCanvasGraphics}
-      clearRecordSelection={clearRecordSelection}
-      focusElementTreeItem={focusElementTreeItem}
-      updateElementTreeNodeIdentity={updateElementTreeNodeIdentity}
-      updateElementTreeContainerChildParam={updateElementTreeContainerChildParam}
-      setElementTreeItemLimits={setElementTreeItemLimits}
-    />
-  );
-
   const topologyWarningDisplayMessage = (message: string) =>
     message.replace(/^(?:图上拓扑失败|拓扑失败)\s*[:：]\s*/, "");
 
@@ -21903,206 +21512,60 @@ export function App() {
     ? topologyErrors.slice(0, 5).map((error, index) => `${index + 1}. ${topologyWarningDisplayMessage(error.message)}`).join("\n")
     : "当前没有拓扑告警。";
   const currentZoomPercent = viewBoxZoomPercent(viewBox, canvasBounds);
-  const viewportNodeLodScreenSize = useMemo(
-    () => estimatedViewportNodeScreenSize(viewportNodes, canvasScrollScale),
-    [canvasScrollScale.x, canvasScrollScale.y, viewportNodes]
-  );
-  const useSimplifiedCanvasNodes =
-    viewportNodes.length > CANVAS_LOD_NODE_DETAIL_LIMIT &&
-    currentZoomPercent <= CANVAS_LOD_MAX_ZOOM_PERCENT &&
-    viewportNodeLodScreenSize <= CANVAS_LOD_MAX_NODE_SCREEN_SIZE &&
-    !connectSource &&
-    !staticDrawing;
-  const useSimplifiedSelectedCanvasNodes =
-    useSimplifiedCanvasNodes &&
-    selectedNodeIdSet.size > CANVAS_LOD_SELECTED_DETAIL_LIMIT &&
-    !transformDrag &&
-    !nodeLabelDrag &&
-    !nodeLabelRotateDrag;
-  const detailedViewportNodes = useMemo(() => {
-    if (!useSimplifiedCanvasNodes || transformDrag || nodeLabelDrag || nodeLabelRotateDrag) {
-      return viewportNodes;
-    }
-    return viewportNodes.filter((node) => {
-      if (groupTransformPreviewNodeIdSet.has(node.id)) {
-        return false;
-      }
-      if (!selectedNodeIdSet.has(node.id)) {
-        return false;
-      }
-      return !useSimplifiedSelectedCanvasNodes || node.id === selectedNodeId;
-    });
-  }, [
-    groupTransformPreviewNodeIdSet,
-    nodeLabelDrag,
-    nodeLabelRotateDrag,
-    selectedNodeId,
-    selectedNodeIdSet,
-    transformDrag,
+  const {
+    detailedSelectedEdgeIdSet,
+    detailedViewportNodes,
+    lodCanvasNodeChunks,
+    lodCanvasRouteChunks,
+    lodSelectedNodeMarkup,
+    renderViewportRoutedEdges,
     useSimplifiedCanvasNodes,
-    useSimplifiedSelectedCanvasNodes,
-    viewportNodes
-  ]);
-  const useSimplifiedCanvasRoutes =
-    useSimplifiedCanvasNodes &&
-    !rewiring &&
-    !manualPathDrag &&
-    !terminalPress;
-  const renderViewportRoutedEdges = useMemo(() => {
-    if (!isBrowseMode || savedRouteCrossingArcsReady || useSimplifiedCanvasRoutes || viewportRoutedEdges.length < 2) {
-      return viewportRoutedEdges;
-    }
-    return refreshCrossingArcPaths(viewportRoutedEdges);
-  }, [isBrowseMode, savedRouteCrossingArcsReady, useSimplifiedCanvasRoutes, viewportRoutedEdges]);
-  const useSimplifiedSelectedCanvasEdges =
-    useSimplifiedCanvasRoutes &&
-    activeSelectedEdgeSet.size > CANVAS_LOD_SELECTED_DETAIL_LIMIT &&
-    !rewiring &&
-    !manualPathDrag &&
-    !terminalPress;
-  const detailedSelectedEdgeIdSet = useMemo(() => {
-    if (!useSimplifiedSelectedCanvasEdges) {
-      return activeSelectedEdgeSet;
-    }
-    return selectedEdgeId && activeSelectedEdgeSet.has(selectedEdgeId)
-      ? new Set([selectedEdgeId])
-      : new Set<string>();
-  }, [activeSelectedEdgeSet, selectedEdgeId, useSimplifiedSelectedCanvasEdges]);
-  const lodCanvasRouteChunks = useMemo(() => {
-    if (!useSimplifiedCanvasRoutes) {
-      lodCanvasRouteChunkCacheRef.current.chunks = [];
-      return [];
-    }
-    const items = viewportRoutedEdges.flatMap((route) => {
-      const edge = edgeById.get(route.edgeId);
-      if (!edge) {
-        return [];
-      }
-      const selected = activeSelectedEdgeSet.has(edge.id);
-      const detailedSelected = selected && detailedSelectedEdgeIdSet.has(edge.id);
-      const hidden =
-        detailedSelected ||
-        (singleNodeDragging && dragAffectedEdgeIdSet.has(edge.id)) ||
-        (draggingDelta && dragPreviewEdgeIdSet.has(edge.id)) ||
-        (multiNodeDragging && dragOverlayEdgeIdSet.has(edge.id)) ||
-        groupTransformPreviewEdgeIdSet.has(edge.id) ||
-        terminalPressPreviewEdgeIdSet.has(edge.id);
-      const color = cachedConnectionStrokeColor(edge);
-      return [{ route, edge, hidden, selected, color, inactiveLayerGraphic: isEditMode && !activeLayerEdgeIdSet.has(edge.id) }];
-    });
-    return stableSvgMarkupChunks(items, lodCanvasRouteChunkCacheRef.current, {
-      chunkSize: CANVAS_LOD_MARKUP_CHUNK_SIZE,
-      keyPrefix: "lod-route",
-      itemKey: (item) => item.edge.id,
-      itemTokens: (item) => item.hidden ? [false] : [true, item.route, item.edge, item.selected, item.color, item.inactiveLayerGraphic],
-      itemMarkup: (item) =>
-        item.hidden
-          ? ""
-          : `<path class="connection-line lod-edge${item.selected ? " lod-selected-edge" : ""}${item.inactiveLayerGraphic ? " inactive-layer-graphic" : ""}" d="${escapeXml(item.route.path)}" style="--connection-color:${escapeXml(item.color)}"/>`
-    });
-  }, [
+    useSimplifiedCanvasRoutes,
+    useSimplifiedSelectedCanvasNodes
+  } = useCanvasLodRenderLayers({
     activeLayerEdgeIdSet,
+    activeLayerNodeIdSet,
     activeSelectedEdgeSet,
+    cachedConnectionStrokeColor,
+    canvasScrollScale,
     colorDisplayMode,
     colorPalette,
-    detailedSelectedEdgeIdSet,
+    connectSource,
+    currentZoomPercent,
+    displaySelectedNodeIds,
     dragAffectedEdgeIdSet,
     dragOverlayEdgeIdSet,
     dragPreviewEdgeIdSet,
     draggingDelta,
     edgeById,
     groupTransformPreviewEdgeIdSet,
-    isEditMode,
-    multiNodeDragging,
-    nodeById,
-    singleNodeDragging,
-    terminalPressPreviewEdgeIdSet,
-    useSimplifiedCanvasRoutes,
-    viewportRoutedEdges
-  ]);
-  const lodCanvasNodeChunks = useMemo(() => {
-    if (!useSimplifiedCanvasNodes || transformDrag || nodeLabelDrag || nodeLabelRotateDrag) {
-      lodCanvasNodeChunkCacheRef.current.chunks = [];
-      return [];
-    }
-    const items = viewportNodes.filter((node) => !groupTransformPreviewNodeIdSet.has(node.id));
-    return stableSvgMarkupChunks(items, lodCanvasNodeChunkCacheRef.current, {
-      chunkSize: CANVAS_LOD_MARKUP_CHUNK_SIZE,
-      keyPrefix: "lod-node",
-      itemKey: (node) => node.id,
-      itemTokens: (node) => [
-        node,
-        colorDisplayMode,
-        colorPalette,
-        isEditMode && !activeLayerNodeIdSet.has(node.id),
-        customSingleTerminalAnchorToken(node, libraryTemplateByKind.get(node.kind))
-      ],
-      itemMarkup: (node) => {
-      const nodeIsBus = isBusNode(node);
-      const inactiveLayerGraphic = isEditMode && !activeLayerNodeIdSet.has(node.id);
-      const className = `diagram-node lod-node${nodeIsBus ? " bus-node" : ""}${inactiveLayerGraphic ? " inactive-layer-graphic" : ""}`;
-      const transform = `translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)}) ${nodeGeometryTransform(node)}`;
-      const fill = node.params.backgroundColor || "#ffffff";
-      const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
-      const strokeWidth = Math.max(2, getDeviceStrokeWidth(node));
-      const customTerminalAnchorToken = customSingleTerminalAnchorToken(node, libraryTemplateByKind.get(node.kind));
-      if (customTerminalAnchorToken) {
-        const geometryTransform = nodeGeometryTransform(node);
-        const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
-        return `<g class="${className} custom-terminal-lod-node" data-node-id="${escapeXml(node.id)}" transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})">
-  <rect class="lod-node-body" transform="${escapeXml(geometryTransform)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${nodeIsBus ? 0 : 6}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"><title>${escapeXml(node.name)}</title></rect>
-  <g class="node-terminal-layer lod-terminal-layer" transform="${escapeXml(geometryTransform)}">
-  ${terminalMarkup}
-  </g>
-</g>`;
-      }
-      return `<rect class="${className}" data-node-id="${escapeXml(node.id)}" transform="${escapeXml(transform)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${nodeIsBus ? 0 : 6}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"><title>${escapeXml(node.name)}</title></rect>`;
-      }
-    });
-  }, [
-    activeLayerNodeIdSet,
-    colorDisplayMode,
-    colorPalette,
     groupTransformPreviewNodeIdSet,
+    isBrowseMode,
     isEditMode,
     libraryTemplateByKind,
+    lodCanvasNodeChunkCacheRef,
+    lodCanvasRouteChunkCacheRef,
+    manualPathDrag,
+    multiNodeDragging,
+    nodeById,
     nodeLabelDrag,
     nodeLabelRotateDrag,
-    transformDrag,
-    useSimplifiedCanvasNodes,
-    viewportNodes
-  ]);
-  const lodSelectedNodeMarkup = useMemo(() => {
-    if (!useSimplifiedSelectedCanvasNodes) {
-      return "";
-    }
-    return displaySelectedNodeIds.flatMap((nodeId) => {
-      if (nodeId === selectedNodeId || groupTransformPreviewNodeIdSet.has(nodeId)) {
-        return [];
-      }
-      const node = visibleNodeById.get(nodeId);
-      if (!node) {
-        return [];
-      }
-      if (nodeUsesUprightStaticSelectionOutline(node)) {
-        const rect = nodeUprightSelectionOutlineRect(node);
-        const transform = `translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})`;
-        return [
-          `<rect class="lod-node-selection lod-node-upright-selection" transform="${escapeXml(transform)}" x="${formatSvgNumber(rect.x)}" y="${formatSvgNumber(rect.y)}" width="${formatSvgNumber(rect.width)}" height="${formatSvgNumber(rect.height)}" rx="4"/>`
-        ];
-      }
-      const transform = `translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)}) ${nodeGeometryTransform(node)}`;
-      return [
-        `<rect class="lod-node-selection${isBusNode(node) ? " bus-node" : ""}" transform="${escapeXml(transform)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${isBusNode(node) ? 0 : 6}"/>`
-      ];
-    }).join("");
-  }, [
-    displaySelectedNodeIds,
-    groupTransformPreviewNodeIdSet,
+    nodeUprightSelectionOutlineRect,
+    nodeUsesUprightStaticSelectionOutline,
+    rewiring,
+    savedRouteCrossingArcsReady,
+    selectedEdgeId,
     selectedNodeId,
-    useSimplifiedSelectedCanvasNodes,
+    selectedNodeIdSet,
+    singleNodeDragging,
+    staticDrawing,
+    terminalPress,
+    terminalPressPreviewEdgeIdSet,
+    transformDrag,
+    viewportNodes,
+    viewportRoutedEdges,
     visibleNodeById
-  ]);
+  });
   const lodNodeFromEvent = (event: PointerEvent<SVGGElement> | MouseEvent<SVGGElement>) => {
     const target = event.target instanceof Element
       ? event.target.closest(".lod-node[data-node-id]")
@@ -22787,311 +22250,40 @@ export function App() {
     return true;
   };
 
-  const renderMeasurementGroup = (group: MeasurementGroup) => {
-    const node = dragPreviewMovedNodeById.get(group.nodeId) ?? visibleNodeById.get(group.nodeId);
-    if (!node) {
-      return null;
-    }
-    const x = node.position.x + group.offset.x;
-    const y = node.position.y + group.offset.y;
-    const rows = group.items
-      .map((item) => {
-        const display = resolveMeasurementItemDisplay({ config: platformMeasurementConfig, node, group, item });
-        if (!display.visible) {
-          return null;
-        }
-        const runtime = item.sourcePoint ? measurementRuntimeSnapshot.get(item.sourcePoint) : undefined;
-        return {
-          item,
-          display,
-          text: formatMeasurementDisplayValue(runtime, display.decimals, display.unit),
-          quality: runtime?.quality ?? "missing"
-        };
-      })
-      .filter((row): row is NonNullable<typeof row> => Boolean(row));
-
-    if (rows.length === 0) {
-      return null;
-    }
-
-    return (
-      <g
-        key={group.id}
-        className={`measurement-group measurement-layout-${group.layout}`}
-        transform={`translate(${x} ${y})`}
-        onPointerDown={(event) => beginMeasurementDrag(event, group)}
-      >
-        {rows.map((row, index) => {
-          const lineHeight = row.display.fontSize + 4;
-          const itemX = group.layout === "vertical" ? 0 : group.layout === "grid" ? (index % 2) * 110 : index * 110;
-          const itemY = group.layout === "vertical" ? index * lineHeight : group.layout === "grid" ? Math.floor(index / 2) * lineHeight : 0;
-          return (
-            <text
-              key={row.item.id}
-              className={`measurement-item measurement-quality-${row.quality}`}
-              x={itemX}
-              y={itemY}
-              fill={row.display.color}
-              fontFamily={row.display.fontFamily}
-              fontSize={row.display.fontSize}
-              fontWeight={row.display.fontWeight}
-              fontStyle={row.display.fontStyle}
-              textDecoration={row.display.textDecoration}
-              dominantBaseline="middle"
-            >
-              {`${row.display.label} ${row.text}`}
-            </text>
-          );
-        })}
-      </g>
-    );
-  };
-
-  const renderReadonlyBackgroundPage = () => {
-    if (!backgroundPageRender) {
-      return null;
-    }
-    const backgroundConnectionLineStyle = (edge: Edge) => ({
-      "--connection-color": getConnectionStrokeColor(edge, backgroundPageRender.nodeById, colorDisplayMode, colorPalette)
-    } as CSSProperties);
-    return (
-      <g className="background-page-layer" transform={backgroundPageRender.transform} aria-label="背景页面">
-        <rect
-          className="background-page-fill"
-          x="0"
-          y="0"
-          width={backgroundPageRender.backgroundBounds.width}
-          height={backgroundPageRender.backgroundBounds.height}
-          fill={backgroundPageRender.backgroundColor || DEFAULT_CANVAS_BACKGROUND}
-        />
-        {backgroundPageRender.backgroundImageUrl && (
-          <image
-            className="background-page-image"
-            href={backgroundPageRender.backgroundImageUrl}
-            x="0"
-            y="0"
-            width={backgroundPageRender.backgroundBounds.width}
-            height={backgroundPageRender.backgroundBounds.height}
-            preserveAspectRatio="xMidYMid slice"
-          />
-        )}
-        <rect
-          className="background-page-frame"
-          x="0"
-          y="0"
-          width={backgroundPageRender.backgroundBounds.width}
-          height={backgroundPageRender.backgroundBounds.height}
-        />
-        <g className="background-page-edges">
-          {backgroundPageRender.routes.map((route) => {
-            const edge = backgroundPageRender.edgeById.get(route.edgeId);
-            return edge ? (
-              <g key={`background-edge-${edge.id}`} className="connection-group background-page-edge" style={backgroundConnectionLineStyle(edge)}>
-                <path d={route.path} className="connection-line" />
-              </g>
-            ) : null;
-          })}
-        </g>
-        <g className="background-page-nodes">
-          {backgroundPageRender.nodes.map((node) => {
-            const nodeIsBus = isBusNode(node);
-            const isStorageBus =
-              node.kind === "hydrogen-tank" ||
-              node.kind === "hydrogen-tank-horizontal" ||
-              node.kind === "hydrogen-tank-container" ||
-              node.kind === "thermal-storage-tank";
-            const imageHref = nodeImage(node);
-            const foregroundImageHref = nodeForegroundImage(node);
-            const nodeScaleX = getNodeScaleX(node);
-            const nodeScaleY = getNodeScaleY(node);
-            const inverseScaleX = nodeScaleX === 0 ? 1 : 1 / nodeScaleX;
-            const inverseScaleY = nodeScaleY === 0 ? 1 : 1 / nodeScaleY;
-            const terminalStubDashArray = svgStrokeDashArray(node.params.strokeStyle);
-            const terminalControlTransform = (x: number, y: number) => `translate(${x} ${y}) scale(${inverseScaleX} ${inverseScaleY})`;
-            const staticButtonEnabled = isBrowseMode && isStaticButtonEnabledForNode(node);
-            const staticButtonState = staticButtonVisual?.nodeId === node.id ? staticButtonVisual.state : "";
-            const staticButtonCornerRadius = Math.max(0, Number(node.params.cornerRadius || 8));
-            return (
-              <g
-                key={`background-node-${node.id}`}
-                className={`diagram-node background-page-node ${nodeIsBus ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${staticButtonEnabled ? "background-page-button static-button-enabled" : ""} ${staticButtonState ? `static-button-${staticButtonState}` : ""}`}
-                transform={`translate(${node.position.x} ${node.position.y})`}
-                onPointerDown={staticButtonEnabled ? (event) => beginReadonlyBackgroundStaticButtonPointerFeedback(event, node) : undefined}
-                onPointerEnter={staticButtonEnabled ? () => setStaticButtonFeedback(node.id, "hover") : undefined}
-                onPointerLeave={staticButtonEnabled ? () => {
-                  staticButtonPointerRef.current = null;
-                  clearStaticButtonFeedback(node.id);
-                } : undefined}
-                onPointerUp={staticButtonEnabled ? () => {
-                  if (staticButtonVisual?.nodeId === node.id && staticButtonVisual.state === "pressed") {
-                    setStaticButtonFeedback(node.id, "hover");
-                  }
-                } : undefined}
-                onClick={staticButtonEnabled ? (event) => {
-                  event.stopPropagation();
-                  handleStaticButtonClick(event, node);
-                } : undefined}
-                onContextMenu={staticButtonEnabled ? (event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                } : undefined}
-              >
-                <title>{`背景：${node.name}`}</title>
-                {imageHref && !nodeIsBus && (
-                  <clipPath id={`background-clip-${node.id}`}>
-                    <rect
-                      x={-node.size.width / 2}
-                      y={-node.size.height / 2}
-                      width={node.size.width}
-                      height={node.size.height}
-                      rx="8"
-                    />
-                  </clipPath>
-                )}
-                <g className="node-geometry" transform={nodeGeometryTransform(node)}>
-                  <rect
-                    x={-node.size.width / 2}
-                    y={-node.size.height / 2}
-                    width={node.size.width}
-                    height={node.size.height}
-                    rx="8"
-                    className={`node-hitbox ${nodeIsBus ? "bus-hitbox" : ""} ${isStaticNode(node) ? "static-hitbox" : ""}`}
-                  />
-                  <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-                  <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-                  {staticButtonEnabled && (
-                    <rect
-                      x={-node.size.width / 2}
-                      y={-node.size.height / 2}
-                      width={node.size.width}
-                      height={node.size.height}
-                      rx={staticButtonCornerRadius}
-                      className="static-button-feedback-surface"
-                    />
-                  )}
-                </g>
-                {!nodeIsBus && (imageHref || foregroundImageHref) && (
-                  <g className="node-upright-content" transform={nodeUprightScaleTransform(node)}>
-                    {imageHref && isStaticNode(node) && (
-                      <image
-                        href={imageHref}
-                        x={-node.size.width / 2}
-                        y={-node.size.height / 2}
-                        width={node.size.width}
-                        height={node.size.height}
-                        preserveAspectRatio="xMidYMid slice"
-                        clipPath={`url(#background-clip-${node.id})`}
-                        className="node-background-image"
-                      />
-                    )}
-                    {imageHref && !isStaticNode(node) && (
-                      <rect
-                        x={-node.size.width / 2}
-                        y={-node.size.height / 2}
-                        width={node.size.width}
-                        height={node.size.height}
-                        rx="8"
-                        className="node-image-cover"
-                      />
-                    )}
-                    {imageHref && !isStaticNode(node) && (
-                      <image
-                        href={imageHref}
-                        x={-node.size.width / 2}
-                        y={-node.size.height / 2}
-                        width={node.size.width}
-                        height={node.size.height}
-                        preserveAspectRatio="xMidYMid slice"
-                        clipPath={`url(#background-clip-${node.id})`}
-                        className="node-background-image"
-                      />
-                    )}
-                    {foregroundImageHref && (
-                      <image
-                        href={foregroundImageHref}
-                        x={-node.size.width / 2}
-                        y={-node.size.height / 2}
-                        width={node.size.width}
-                        height={node.size.height}
-                        preserveAspectRatio="xMidYMid slice"
-                        clipPath={`url(#background-clip-${node.id})`}
-                        className="node-foreground-image"
-                      />
-                    )}
-                  </g>
-                )}
-                {nodeLabelShouldRender(node, deviceLabelsVisible) && (
-                  <g
-                    className={`node-device-label ${nodeLabelVertical(node) ? "vertical" : "horizontal"}`}
-                    data-node-id={node.id}
-                    data-label-owner="background-device"
-                    transform={nodeLabelTransform(node)}
-                  >
-                    {nodeLabelVertical(node) ? (
-                      nodeLabelVerticalSegments(nodeLabelText(node)).map((segment, index) => (
-                        <text
-                          key={`${segment.text}-${index}`}
-                          className={`node-label-vertical-token ${segment.numeric ? "numeric" : ""}`}
-                          x="0"
-                          y={nodeLabelVerticalTokenY(index, nodeLabelVerticalSegments(nodeLabelText(node)).length, node)}
-                          dominantBaseline="middle"
-                          textAnchor="middle"
-                          style={nodeLabelVerticalTokenStyle(node)}
-                        >
-                          {segment.text}
-                        </text>
-                      ))
-                    ) : (
-                      <text
-                        x="0"
-                        y="0"
-                        dominantBaseline="middle"
-                        textAnchor={nodeLabelTextAnchor(node)}
-                        style={nodeLabelTextStyle(node)}
-                      >
-                        {nodeLabelText(node)}
-                      </text>
-                    )}
-                  </g>
-                )}
-                <g className="node-terminal-layer" transform={nodeGeometryTransform(node)}>
-                  {node.terminals.map((terminal) => {
-                    const hideFixedTerminal = nodeIsBus || isStaticNode(node) || isRoutableLineDeviceKind(node.kind);
-                    const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
-                    const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
-                    const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
-                    return hideFixedTerminal ? null : (
-                      <g key={terminal.id} transform={terminalControlTransform(renderPoint.x, renderPoint.y)}>
-                        <line
-                          className={`terminal-stub ${terminal.type}`}
-                          strokeDasharray={terminalStubDashArray}
-                          style={{
-                            stroke: terminalDisplayColor,
-                            strokeWidth: terminalStubStrokeWidth(node, terminal)
-                          }}
-                          x1={stub.from.x}
-                          y1={stub.from.y}
-                          x2={stub.to.x}
-                          y2={stub.to.y}
-                        />
-                        <circle
-                          className={`terminal-dot ${terminal.type}`}
-                          style={{ "--terminal-color": terminalDisplayColor } as CSSProperties}
-                          cx="0"
-                          cy="0"
-                          r={6}
-                        />
-                      </g>
-                    );
-                  })}
-                </g>
-              </g>
-            );
-          })}
-        </g>
-      </g>
-    );
-  };
+  const {
+    renderMeasurementGroup,
+    renderReadonlyBackgroundPage
+  } = useCanvasAuxiliaryRenderers({
+    backgroundPageRender,
+    beginMeasurementDrag,
+    beginReadonlyBackgroundStaticButtonPointerFeedback,
+    clearStaticButtonFeedback,
+    colorDisplayMode,
+    colorPalette,
+    defaultCanvasBackground: DEFAULT_CANVAS_BACKGROUND,
+    deviceLabelsVisible,
+    dragPreviewMovedNodeById,
+    handleStaticButtonClick,
+    isBrowseMode,
+    isStaticButtonEnabledForNode,
+    measurementRuntimeSnapshot,
+    nodeForegroundImage,
+    nodeImage,
+    nodeLabelShouldRender,
+    nodeLabelText,
+    nodeLabelTextAnchor,
+    nodeLabelTextStyle,
+    nodeLabelTransform,
+    nodeLabelVertical,
+    nodeLabelVerticalSegments,
+    nodeLabelVerticalTokenStyle,
+    nodeLabelVerticalTokenY,
+    platformMeasurementConfig,
+    setStaticButtonFeedback,
+    staticButtonPointerRef,
+    staticButtonVisual,
+    visibleNodeById
+  });
 
   const viewportOverlayStyle = {
     "--viewport-overlay-right": `${rightPanelVisible ? rightPanelWidth + 28 : 16}px`,
@@ -23103,6 +22295,122 @@ export function App() {
     "--statusbar-height": `${statusbarHeight}px`,
     "--validation-panel-height": `${validationPanelHeight}px`
   } as CSSProperties;
+  const leftPanelRenderers = useLeftPanelRenderers({
+    ELEMENT_TREE_ITEM_LIMIT_STEP,
+    activeLayerEdgeIdSet,
+    activeLayerNodeIdSet,
+    activeProjectKey,
+    activeSelectedEdgeSet,
+    attributeLibraries,
+    attributeLibraryComponentTypeKey,
+    cancelLibraryPlacement,
+    clearLibraryFlyoutCloseTimer,
+    clearRecordSelection,
+    collapsedCustomComponentTreeLibraries,
+    collapsedCustomComponentTreeTypes,
+    collapsedElementTreeGroups,
+    collapsedExpandedModeAttributeLibraries,
+    collapsedExpandedModeComponentTypes,
+    colorPalette,
+    componentLibraryDisplayMode,
+    componentTypeDisplayParts,
+    createCustomAttributeLibrary,
+    createCustomComponentType,
+    createEmptyCustomDeviceDraft,
+    customComponentTreeSelection,
+    customComponentTreeTypeKey,
+    deleteSelectedCustomDeviceTreeItem,
+    displayedAttributeLibraries,
+    elementTree,
+    elementTreeItemChildren,
+    elementTreeItemLimits,
+    expandedAttributeLibraries,
+    expandedAttributeLibraryComponentTypes,
+    expandedGraphTemplateTypes,
+    expandedSchemeIds,
+    filteredAttributeLibraryByComponentType,
+    filteredProjectSchemes,
+    finishProjectRecordDrag,
+    finishSchemeRecordDrag,
+    focusElementTreeItem,
+    graphTemplateTypes,
+    groupedAttributeLibraryByComponentType,
+    groupedGraphTemplates,
+    hideLibraryFlyout,
+    hoveredAttributeLibrary,
+    hoveredAttributeLibraryComponentType,
+    hoveredGraphTemplateType,
+    isBrowseMode,
+    isEditMode,
+    leftPanelTab,
+    libraryComponentListRefKey,
+    libraryFlyoutPositions,
+    libraryFlyoutStyle,
+    libraryPreviewByKind,
+    libraryScrollRef,
+    librarySearchNeedle,
+    librarySearchQuery,
+    moveProjectRecordToScheme,
+    moveSchemeRecordToScheme,
+    normalizeAttributeLibraryName,
+    openDeviceDefinitionDialog,
+    pointsToPreviewPath,
+    projectListPointerInsideRef,
+    projectSearchNeedle,
+    projectSearchQuery,
+    renameSelectedCustomDeviceTreeItem,
+    requestLoadSavedProject,
+    requireEditMode,
+    scheduleLibraryFlyoutClose,
+    schemes,
+    selectCanvasGraphics,
+    selectCustomAttributeLibrary,
+    selectCustomComponentTemplate,
+    selectCustomComponentType,
+    selectSingleProject,
+    selectSingleScheme,
+    selectedNodeIdSet,
+    selectedProjectId,
+    selectedProjectIds,
+    selectedSchemeId,
+    selectedSchemeIds,
+    setComponentLibraryDisplayMode,
+    setCustomDeviceDialogOpen,
+    setCustomDeviceDraft,
+    setElementTreeItemLimits,
+    setExpandedGraphTemplateTypes,
+    setHoveredAttributeLibrary,
+    setHoveredAttributeLibraryComponentType,
+    setHoveredGraphTemplateType,
+    setInspectorTab,
+    setLibraryComponentListRef,
+    setLibraryComponentTypeHeaderRef,
+    setLibrarySearchQuery,
+    setProjectMenu,
+    setProjectSearchQuery,
+    startCustomComponentCreate,
+    startLibraryDevicePlacement,
+    startLibraryGraphTemplatePlacement,
+    startProjectRecordDrag,
+    startSchemeRecordDrag,
+    toggleAttributeLibrary,
+    toggleAttributeLibraryComponentType,
+    toggleCustomComponentTreeLibrary,
+    toggleCustomComponentTreeType,
+    toggleElementTreeGroup,
+    toggleProjectSelection,
+    toggleSchemeExpanded,
+    toggleSchemeSelection,
+    updateElementTreeContainerChildParam,
+    updateElementTreeNodeIdentity
+  });
+  const {
+    effectiveLeftPanelTab,
+    leftPanelContent,
+    renderCustomComponentManagerTree,
+    renderElementTreePanel,
+    renderGraphTemplatePreview
+  } = leftPanelRenderers;
   const appDialogsProps = {
     activeImageFolderId,
     activeLayer,
@@ -23420,37 +22728,6 @@ export function App() {
     hiddenTopologyErrorCount,
     topology
   };
-  const libraryPanelContent = useMemo(
-    () => renderLibraryPanel(),
-    [
-      colorPalette,
-      componentLibraryDisplayMode,
-      collapsedExpandedModeAttributeLibraries,
-      collapsedExpandedModeComponentTypes,
-      displayedAttributeLibraries,
-      expandedAttributeLibraries,
-      expandedAttributeLibraryComponentTypes,
-      filteredAttributeLibraryByComponentType,
-      hoveredAttributeLibrary,
-      hoveredAttributeLibraryComponentType,
-      isBrowseMode,
-      isEditMode,
-      libraryFlyoutPositions,
-      libraryPreviewByKind,
-      librarySearchNeedle,
-      librarySearchQuery
-    ]
-  );
-  const templateLibraryPanelContent = useMemo(
-    () => renderTemplateLibraryPanel(),
-    [colorPalette, expandedGraphTemplateTypes, graphTemplateTypes, groupedGraphTemplates, hoveredGraphTemplateType, isBrowseMode, isEditMode]
-  );
-  const effectiveLeftPanelTab = isBrowseMode ? "projects" : leftPanelTab;
-  const leftPanelContent = effectiveLeftPanelTab === "projects"
-    ? renderProjectPanel()
-    : effectiveLeftPanelTab === "templates"
-      ? templateLibraryPanelContent
-      : libraryPanelContent;
   const canvasResizeHandles = (
     <g className="canvas-resize-handles" aria-hidden="true">
       <rect
@@ -23520,6 +22797,400 @@ export function App() {
     </g>
   );
 
+  const mainWorkspaceProps = {
+    activateInspectorFromCanvas,
+    activeDropHintPoint,
+    activeDropHintStyle,
+    activeDropReady,
+    activeLayer,
+    activeLayerEdgeIdSet,
+    activeLayerId,
+    activeLayerNodeIdSet,
+    activeModelPathName,
+    activeProjectKey,
+    activeSchemeKey,
+    activeSelectedEdgeSet,
+    addManualBendToSelectedEdgeCenter,
+    adjustSelectedDisplayLayer,
+    AlignCenterHorizontal,
+    AlignCenterVertical,
+    AlignEndHorizontal,
+    AlignEndVertical,
+    AlignHorizontalDistributeCenter,
+    alignSelected,
+    AlignStartHorizontal,
+    AlignStartVertical,
+    AlignVerticalDistributeCenter,
+    appendStaticDrawingPoint,
+    applyConnectPreviewState,
+    applyRoutableLinePreviewState,
+    ArrowDown,
+    ArrowUp,
+    assignSelectedNodesToModelLayer,
+    busEndpointColor,
+    canAddTemplateFromSelection,
+    canAdjustSelectedDisplayLayer,
+    cancelLibraryPlacement,
+    cancelModifierSelectionPress,
+    canConnectTerminals,
+    canExportCurrentModel,
+    canGroupSelectedGraphics,
+    canUngroupSelectedGraphics,
+    CANVAS_MINIMAP_HEIGHT,
+    CANVAS_MINIMAP_WIDTH,
+    canvasBackgroundColor,
+    canvasBackgroundImageUrl,
+    canvasDisplayHeight,
+    canvasDisplayOffsetX,
+    canvasDisplayOffsetY,
+    canvasDisplayWidth,
+    canvasFrameRef,
+    canvasHorizontalScrollbarsActive,
+    canvasInteractionRef,
+    canvasRenderBounds,
+    canvasResizeHandles,
+    canvasResizeHotzoneStyle,
+    canvasResizePreviewRect,
+    canvasScrollSurfaceHeight,
+    canvasScrollSurfaceWidth,
+    canvasSelectionShortcutActiveRef,
+    canvasVerticalScrollbarsActive,
+    centerSelectedInView,
+    ChevronDown,
+    ChevronsDown,
+    ChevronsUp,
+    chooseCustomDeviceBackground,
+    chooseImage,
+    CircleDot,
+    clampPointToCanvas,
+    clearLibraryPlacementPreview,
+    clearRecordSelection,
+    clearStaticButtonFeedback,
+    colorDisplayMode,
+    colorPalette,
+    commitLibraryPlacementAtPoint,
+    connectDropHintElementRef,
+    connectionLineStyle,
+    connectPreviewColor,
+    connectPreviewDom,
+    connectPreviewPathElementRef,
+    connectSource,
+    connectSourceNode,
+    connectTargetPoint,
+    connectTargetSnapPoint,
+    connectTerminalCompatibilityActive,
+    consumeGraphicContextMenuHandled,
+    Copy,
+    copySelection,
+    currentZoomPercent,
+    customDeviceImageInputRef,
+    cutSelection,
+    DEFAULT_CANVAS_BACKGROUND,
+    deleteManualBendPoint,
+    deleteSelection,
+    detailedSelectedEdgeIdSet,
+    detailedViewportNodes,
+    deviceLabelsVisible,
+    distributeSelected,
+    Download,
+    dragAffectedEdgeIdSet,
+    dragGhostEdgeRoutes,
+    dragging,
+    draggingDelta,
+    draggingNodeIdSet,
+    draggingRef,
+    dragOverlayEdgeIdSet,
+    dragPreviewEdgeIdSet,
+    dragPreviewEdgeRoutes,
+    edgeById,
+    edgeFloatingToolbar,
+    edges,
+    ENABLE_REACT_FLOW_PREVIEW,
+    exportEFile,
+    exportSvg,
+    EyeOff,
+    FileJson,
+    findConnectionRouteHitAtPoint,
+    findConnectTargetAtPoint,
+    findRewireTargetAtPoint,
+    findRoutableLineEndpointTargetAtPoint,
+    finishConnectToTarget,
+    finishInteractiveStaticDrawing,
+    finishManualPathDrag,
+    finishMarqueeSelection,
+    finishMeasurementDrag,
+    finishModifierSelectionPress,
+    finishNodeDrag,
+    finishNodeLabelDrag,
+    finishNodeLabelRotateDrag,
+    finishRewiring,
+    finishRoutableLineEndpointDrag,
+    finishRoutableLineToTarget,
+    finishTerminalPress,
+    finishTransformDrag,
+    fitViewToContent,
+    fitViewToSelection,
+    fitWholeCanvasFromBlankDoubleClick,
+    fitWholeCanvasToFrame,
+    FlipHorizontal,
+    FlipVertical,
+    floatingToolbarIconSize,
+    floatingToolbarWrapperStyle,
+    flushConnectPreviewDom,
+    formatSvgNumber,
+    getEdgeEndpointPoint,
+    getMovableRouteSegmentIndexes,
+    getNodeScaleX,
+    getNodeScaleY,
+    getTerminalDisplayColor,
+    Grid2X2,
+    Group,
+    groupSelectedGraphics,
+    groupTransformPreviewEdgeIdSet,
+    groupTransformPreviewGroupId,
+    groupTransformPreviewNodeIdSet,
+    handleCanvasPointerDownCapture,
+    handleDrop,
+    handleEdgePathPointerDown,
+    handleLodNodeContextMenu,
+    handleLodNodeDoubleClick,
+    handleLodNodePointerDown,
+    handleMinimapNavigate,
+    handleNodePointerDown,
+    handlePointerMove,
+    handleStaticButtonClick,
+    handleTerminalPointerDown,
+    handleWheel,
+    hasCanvasSelectionModifier,
+    hideAutoPanelsFromWorkspace,
+    imageInputRef,
+    imperativeMultiNodeDragOverlayRef,
+    imperativeNodeDragDropHintRef,
+    imperativeSingleNodeDragEdgePreviewRef,
+    imperativeSingleNodeDragNodeOverlayRef,
+    importModelFile,
+    importSchemeFile,
+    insertManualBendFromEdgePath,
+    insertManualBendFromPointer,
+    isBrowseMode,
+    isBusNode,
+    isCanvasGraphicContextMenuTarget,
+    isEditMode,
+    isGroupTransformDrag,
+    isReadonlyCanvasMode,
+    isRepeatedEdgePointerClick,
+    isRoutableLineDeviceKind,
+    isStaticButtonEnabledForNode,
+    isStaticNode,
+    lastCanvasPointerRef,
+    lastEdgePointerClickRef,
+    lastRawCanvasPointerRef,
+    Layers,
+    Layers2,
+    libraryPlacement,
+    LocateFixed,
+    lodCanvasNodeChunks,
+    lodCanvasRouteChunks,
+    lodSelectedNodeMarkup,
+    manualPathDrag,
+    manualPathPreviewRoute,
+    MapIcon,
+    mapPointToMinimap,
+    marquee,
+    Maximize2,
+    MemoDeviceGlyph,
+    minimapContentHeight,
+    minimapContentWidth,
+    minimapNodes,
+    minimapOffsetX,
+    minimapOffsetY,
+    minimapRoutes,
+    minimapScale,
+    minimapViewportBottom,
+    minimapViewportLeft,
+    minimapViewportRight,
+    minimapViewportTop,
+    minimapVisible,
+    Minus,
+    mirrorSelectedNodes,
+    mode,
+    modelImportInputRef,
+    modifierSelectionPressRef,
+    mousePositionTextRef,
+    multiNodeDragging,
+    nodeById,
+    nodeFloatingToolbar,
+    nodeForegroundImage,
+    nodeGeometryTransform,
+    nodeImage,
+    nodeLabelDrag,
+    nodeLabelFontSize,
+    nodeLabelRotateDrag,
+    nodeLabelShouldRender,
+    nodeLabelText,
+    nodeLabelTextAnchor,
+    nodeLabelTextStyle,
+    nodeLabelTransform,
+    nodeLabelVertical,
+    nodeLabelVerticalSegments,
+    nodeLabelVerticalTokenStyle,
+    nodeLabelVerticalTokenY,
+    nodeRotateHandleControlPoints,
+    nodes,
+    nodeScaleHandleControlPoint,
+    nodeUprightRotateHandleControlPoints,
+    nodeUprightScaleTransform,
+    nodeUprightSelectionOutlineRect,
+    nodeUsesUprightStaticSelectionOutline,
+    openAddTemplateDialog,
+    openColorPaletteDialog,
+    openEdgeContextMenu,
+    openGraphicContextMenu,
+    openLayerAssignmentDialog,
+    operationLogRef,
+    operationLogStatusRef,
+    overlappedTerminalKeys,
+    Paintbrush,
+    Palette,
+    panning,
+    panningRef,
+    Pencil,
+    Plus,
+    projectListPointerInsideRef,
+    renderBoundaryBusInternalConnector,
+    renderGroupTransformPhotoPreview,
+    renderInteractiveStaticDrawingPreview,
+    renderLibraryPlacementPreview,
+    renderMeasurementGroup,
+    renderMultiNodeDragOverlay,
+    renderReadonlyBackgroundPage,
+    renderSingleTransformRotateOriginGhost,
+    renderTransformRotationTrajectory,
+    renderViewportRoutedEdges,
+    resetConnectPreviewState,
+    resetRoutableLinePreviewState,
+    resetViewport,
+    resizeSizeHint,
+    resolveConnectPreviewPoint,
+    rewiring,
+    rewiringPreviewRoute,
+    RotateCcw,
+    RotateCw,
+    rotateSelectedLayoutUnits,
+    routableLineActiveTerminalType,
+    routableLineEndpointDragColor,
+    routableLineEndpointDragPreviewRoute,
+    routableLineEndpointHandles,
+    routableLinePlacement,
+    routableLinePlacementColor,
+    routableLinePreview,
+    routableLineTerminalCompatibilityActive,
+    Route,
+    runTopologyCalculation,
+    Save,
+    saveCurrentProject,
+    saveRequired,
+    SCALE_HANDLE_CONFIGS,
+    scaleHandleCursorClass,
+    ScanSearch,
+    scheduleRoutableLinePreviewPoint,
+    schemeImportInputRef,
+    Scissors,
+    screenToSvgPoint,
+    selectCanvasGraphics,
+    selectedCanvasBounds,
+    selectedCount,
+    selectedEdge,
+    selectedLayoutUnitCount,
+    selectedNodeCount,
+    selectedNodeId,
+    selectedNodeIdSet,
+    selectedNodeTransformStatus,
+    selectedRoutedEdge,
+    selectedTransformGroupUnit,
+    selectionRectCenter,
+    setCanvasPanning,
+    setCanvasSelectionScope,
+    setConnectSource,
+    setContextMenu,
+    setDeviceLabelsVisible,
+    setImageTarget,
+    setInspectorTab,
+    setLayerDialogOpen,
+    setMarquee,
+    setMeasurementDrag,
+    setMinimapVisible,
+    setMode,
+    setReactFlowPreviewOpen,
+    setRewiring,
+    setRoutableLineEndpointDrag,
+    setRoutableLinePlacement,
+    setSelectedEdgeId,
+    setSelectedEdgeIds,
+    setSelectedNodeIds,
+    setSelectedProjectId,
+    setSelectedProjectIds,
+    setSelectedSchemeId,
+    setSelectedSchemeIds,
+    setStaticButtonFeedback,
+    setTerminalPress,
+    singleNodeDragging,
+    smartAlignmentGuides,
+    startCanvasPanning,
+    startCanvasResize,
+    startCanvasResizeFromBottomOverlay,
+    startCanvasResizeFromLeftOverlay,
+    startCanvasResizeFromRightOverlay,
+    startCanvasResizeFromTopOverlay,
+    startGroupMoveDrag,
+    startGroupTransformDrag,
+    startManualPointDrag,
+    startManualSegmentDrag,
+    startModifierSelectionPress,
+    startNodeLabelDrag,
+    startNodeLabelRotateDrag,
+    startRoutableLineEndpointDrag,
+    startRoutableLineFromTerminal,
+    startSingleTransformDrag,
+    startStatusbarResize,
+    staticButtonPointerRef,
+    staticButtonVisual,
+    staticDrawing,
+    SvgMarkupChunk,
+    svgRef,
+    svgStrokeDashArray,
+    terminalPressPreviewEdgeIdSet,
+    terminalPressPreviewEdgeRoutes,
+    terminalRenderLocalPoint,
+    terminalStubSegment,
+    terminalStubStrokeWidth,
+    tidySelectedEdgeRoute,
+    toggleColorDisplayMode,
+    toggleInteractionMode,
+    toggleSelectedNodeLabelDisplay,
+    topologyErrors,
+    topologyStatus,
+    TRANSFORM_ROTATE_HANDLE_GAP,
+    TRANSFORM_ROTATE_STEM_END,
+    TRANSFORM_ROTATE_STEM_START,
+    transformDrag,
+    Trash2,
+    Type,
+    Ungroup,
+    ungroupSelectedGraphics,
+    updateLibraryPlacementPreview,
+    updateMeasurementDrag,
+    updateMouseStatus,
+    useSimplifiedCanvasNodes,
+    useSimplifiedCanvasRoutes,
+    useSimplifiedSelectedCanvasNodes,
+    viewportOverlayStyle,
+    visibleMeasurementGroups,
+    visibleSelectedGroupLayoutUnits,
+    warningStatusText,
+    warningStatusTitle,
+    zoomViewportAtCenter
+  };
   return (
     <div
       className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${validationPanelResize ? "validation-panel-resizing" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`}
@@ -23561,1775 +23232,7 @@ export function App() {
         </div>
       </aside>
 
-      <main className="workspace" onPointerEnter={hideAutoPanelsFromWorkspace}>
-        <header className="topbar">
-          <div className="brand topbar-brand">
-            <div className="brand-mark">PS</div>
-            <div>
-              <h1>电力能源系统图上建模平台</h1>
-              <p>拖拽建模、拓扑关联、参数维护</p>
-            </div>
-          </div>
-          <div className="topbar-model" title={`当前模型：${activeModelPathName}`}>
-            <span>当前模型</span>
-            <strong>{activeModelPathName}</strong>
-          </div>
-          <div className="active-layer-indicator" title={`激活图层：${activeLayer?.name ?? "默认图层"}`}>
-            <Layers size={15} />
-            <span>{activeLayer?.name ?? "默认图层"}</span>
-          </div>
-          <button
-            type="button"
-            className={`topbar-primary-button mode-toggle-button ${isEditMode ? "active" : ""}`}
-            onClick={toggleInteractionMode}
-            title={isEditMode ? "当前为编辑模式，点击切换到浏览模式" : "当前为浏览模式，点击切换到编辑模式"}
-            aria-label={isEditMode ? "切换到浏览模式" : "切换到编辑模式"}
-          >
-            {isEditMode ? <Pencil size={16} /> : <EyeOff size={16} />}
-            <span>{isEditMode ? "编辑模式" : "浏览模式"}</span>
-          </button>
-          <button
-            className="topbar-primary-button"
-            onClick={() => setLayerDialogOpen(true)}
-            disabled={isBrowseMode}
-            title="图层管理"
-            aria-label="图层管理"
-          >
-            <Layers2 size={16} />
-          </button>
-          <button className="topbar-primary-button" onClick={runTopologyCalculation} disabled={isBrowseMode} title="图上拓扑" aria-label="图上拓扑">
-            <Grid2X2 size={16} />
-          </button>
-          <button
-            className="topbar-primary-button"
-            onClick={() => saveCurrentProject()}
-            disabled={isBrowseMode || !saveRequired}
-            title={saveRequired ? "保存当前模型" : "当前模型没有新的修改"}
-            aria-label="保存"
-          >
-            <Save size={16} />
-          </button>
-          <button
-            className={`topbar-primary-button ${colorDisplayMode === "voltage" ? "active" : ""}`}
-            onClick={() => toggleColorDisplayMode()}
-            title={colorDisplayMode === "voltage" ? "当前交流/直流按电压等级显示，点击切换为按能源类型显示；氢能、热能始终按能源类型显示" : "当前交流/直流按能源类型显示，点击切换为按电压等级显示；氢能、热能始终按能源类型显示"}
-            aria-label="颜色切换"
-          >
-            <Paintbrush size={16} />
-          </button>
-          <button
-            className="topbar-primary-button"
-            onClick={openColorPaletteDialog}
-            disabled={isBrowseMode}
-            title="配色设置"
-            aria-label="配色设置"
-          >
-            <Palette size={16} />
-          </button>
-          <button
-            className={`topbar-primary-button ${deviceLabelsVisible ? "active" : ""}`}
-            onClick={() => setDeviceLabelsVisible((current) => !current)}
-            title={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"}
-            aria-label={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"}
-          >
-            <Type size={16} />
-          </button>
-          {ENABLE_REACT_FLOW_PREVIEW && (
-            <button
-              className="topbar-primary-button react-flow-preview-button"
-              onClick={() => setReactFlowPreviewOpen(true)}
-              title="React Flow 预览"
-              aria-label="React Flow 预览"
-            >
-              <Route size={16} />
-            </button>
-          )}
-          <div className="action-cluster">
-            {/* Legacy source assertion: disabled={!canGroupSelectedGraphics} */}
-            <button onClick={groupSelectedGraphics} disabled={isBrowseMode || !canGroupSelectedGraphics} title="组合" aria-label="组合">
-              <Group size={16} />
-            </button>
-            <button onClick={ungroupSelectedGraphics} disabled={isBrowseMode || !canUngroupSelectedGraphics} title="解散" aria-label="解散">
-              <Ungroup size={16} />
-            </button>
-            <div className="topbar-dropdown display-layer-dropdown">
-              <button type="button" className="topbar-dropdown-trigger" disabled={!canAdjustSelectedDisplayLayer} title="显示层级" aria-label="显示层级">
-                <Layers2 size={16} />
-                <ChevronDown size={13} />
-              </button>
-              <div className="topbar-dropdown-menu" role="menu" aria-label="显示层级">
-                <button onClick={() => adjustSelectedDisplayLayer("raise")} disabled={!canAdjustSelectedDisplayLayer} title="提升显示层级" aria-label="提升显示层级">
-                  <ArrowUp size={16} />
-                  <span>提升显示层级</span>
-                </button>
-                <button onClick={() => adjustSelectedDisplayLayer("lower")} disabled={!canAdjustSelectedDisplayLayer} title="降低显示层级" aria-label="降低显示层级">
-                  <ArrowDown size={16} />
-                  <span>降低显示层级</span>
-                </button>
-                <button onClick={() => adjustSelectedDisplayLayer("front")} disabled={!canAdjustSelectedDisplayLayer} title="顶层显示" aria-label="顶层显示">
-                  <ChevronsUp size={16} />
-                  <span>顶层显示</span>
-                </button>
-                <button onClick={() => adjustSelectedDisplayLayer("back")} disabled={!canAdjustSelectedDisplayLayer} title="底层显示" aria-label="底层显示">
-                  <ChevronsDown size={16} />
-                  <span>底层显示</span>
-                </button>
-              </div>
-            </div>
-            <div className="topbar-dropdown align-dropdown">
-              <button type="button" className="topbar-dropdown-trigger" disabled={isBrowseMode} title="对齐操作" aria-label="对齐操作">
-                <AlignCenterHorizontal size={16} />
-                <ChevronDown size={13} />
-              </button>
-              <div className="topbar-dropdown-menu" role="menu" aria-label="对齐操作">
-                <button onClick={() => alignSelected("left")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="左对齐" aria-label="左对齐">
-                  <AlignStartVertical size={16} />
-                  <span>左对齐</span>
-                </button>
-                <button onClick={() => alignSelected("right")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="右对齐" aria-label="右对齐">
-                  <AlignEndVertical size={16} />
-                  <span>右对齐</span>
-                </button>
-                <button onClick={() => alignSelected("horizontal")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="横向居中" aria-label="横向居中">
-                  <AlignCenterHorizontal size={16} />
-                  <span>横向居中</span>
-                </button>
-                <button onClick={() => alignSelected("vertical")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="纵向居中" aria-label="纵向居中">
-                  <AlignCenterVertical size={16} />
-                  <span>纵向居中</span>
-                </button>
-                <button onClick={() => alignSelected("top")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="上对齐" aria-label="上对齐">
-                  <AlignStartHorizontal size={16} />
-                  <span>上对齐</span>
-                </button>
-                <button onClick={() => alignSelected("bottom")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="下对齐" aria-label="下对齐">
-                  <AlignEndHorizontal size={16} />
-                  <span>下对齐</span>
-                </button>
-                <button onClick={() => distributeSelected("horizontal")} disabled={isBrowseMode || selectedLayoutUnitCount < 3} title="横向分布" aria-label="横向分布">
-                  <AlignHorizontalDistributeCenter size={16} />
-                  <span>横向分布</span>
-                </button>
-                <button onClick={() => distributeSelected("vertical")} disabled={isBrowseMode || selectedLayoutUnitCount < 3} title="纵向分布" aria-label="纵向分布">
-                  <AlignVerticalDistributeCenter size={16} />
-                  <span>纵向分布</span>
-                </button>
-              </div>
-            </div>
-            <div className="topbar-dropdown rotate-dropdown">
-              <button type="button" className="topbar-dropdown-trigger" disabled={isBrowseMode} title="旋转操作" aria-label="旋转操作">
-                <RotateCw size={16} />
-                <ChevronDown size={13} />
-              </button>
-              <div className="topbar-dropdown-menu" role="menu" aria-label="旋转操作">
-                <button onClick={() => rotateSelectedLayoutUnits("left")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="向左旋转90度" aria-label="向左旋转90度">
-                  <RotateCcw size={16} />
-                  <span>左转90度</span>
-                </button>
-                <button onClick={() => rotateSelectedLayoutUnits("right")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="向右旋转90度" aria-label="向右旋转90度">
-                  <RotateCw size={16} />
-                  <span>右转90度</span>
-                </button>
-                <button onClick={() => mirrorSelectedNodes("horizontal")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="水平镜像" aria-label="水平镜像">
-                  <FlipHorizontal size={16} />
-                  <span>水平镜像</span>
-                </button>
-                <button onClick={() => mirrorSelectedNodes("vertical")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="垂直镜像" aria-label="垂直镜像">
-                  <FlipVertical size={16} />
-                  <span>垂直镜像</span>
-                </button>
-              </div>
-            </div>
-            <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={chooseImage} />
-            <input ref={customDeviceImageInputRef} type="file" accept="image/*" hidden onChange={chooseCustomDeviceBackground} />
-            <input ref={modelImportInputRef} type="file" accept=".json,application/json" hidden onChange={importModelFile} />
-            <input ref={schemeImportInputRef} type="file" accept=".json,application/json" hidden onChange={importSchemeFile} />
-            <button
-              onClick={exportSvg}
-              disabled={!canExportCurrentModel}
-              title={canExportCurrentModel ? "导出 SVG 图形文件" : "请先保存当前模型后再导出图形文件"}
-              aria-label="导出图形文件"
-            >
-              <Download size={16} />
-            </button>
-            <button
-              onClick={exportEFile}
-              disabled={!canExportCurrentModel}
-              title={canExportCurrentModel ? "导出 E 模型文件" : "请先保存当前模型后再导出模型文件"}
-              aria-label="导出模型文件"
-            >
-              <FileJson size={16} />
-            </button>
-          </div>
-        </header>
-
-        <section
-          className="canvas-frame"
-          ref={canvasFrameRef}
-          style={{
-            overflowX: canvasHorizontalScrollbarsActive ? "auto" : "hidden",
-            overflowY: canvasVerticalScrollbarsActive ? "auto" : "hidden"
-          }}
-        >
-          <div
-            className="canvas-scroll-surface"
-            style={{ width: canvasScrollSurfaceWidth, height: canvasScrollSurfaceHeight }}
-            onPointerDown={(event) => {
-              if (event.button !== 0 || event.target !== event.currentTarget || staticDrawing || libraryPlacement || connectSource) {
-                return;
-              }
-              // Legacy resize anchors kept in edit-mode checks:
-              // if (startCanvasResizeFromTopOverlay(event))
-              // if (startCanvasResizeFromLeftOverlay(event))
-              // if (startCanvasResizeFromRightOverlay(event))
-              // if (startCanvasResizeFromBottomOverlay(event))
-              if (isEditMode && startCanvasResizeFromTopOverlay(event)) {
-                return;
-              }
-              if (isEditMode && startCanvasResizeFromLeftOverlay(event)) {
-                return;
-              }
-              if (isEditMode && startCanvasResizeFromRightOverlay(event)) {
-                return;
-              }
-              if (isEditMode && startCanvasResizeFromBottomOverlay(event)) {
-                return;
-              }
-              if (isEditMode && hasCanvasSelectionModifier(event)) {
-                startModifierSelectionPress(event);
-                return;
-              }
-              startCanvasPanning(event);
-            }}
-            onPointerMove={(event) => {
-              if (panningRef.current || modifierSelectionPressRef.current) {
-                handlePointerMove(event as unknown as PointerEvent<SVGSVGElement>);
-              }
-            }}
-            onPointerUp={(event) => {
-              finishModifierSelectionPress(event.pointerId);
-              setCanvasPanning(null);
-            }}
-            onPointerCancel={() => {
-              cancelModifierSelectionPress();
-              setCanvasPanning(null);
-            }}
-            onLostPointerCapture={() => {
-              cancelModifierSelectionPress();
-              setCanvasPanning(null);
-            }}
-            onDoubleClick={(event) => {
-              if (event.button !== 0 || event.target !== event.currentTarget) {
-                return;
-              }
-              event.preventDefault();
-              event.stopPropagation();
-              fitWholeCanvasToFrame();
-            }}
-          >
-            <svg
-              ref={svgRef}
-              className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${staticDrawing ? "static-draw-mode" : ""} ${libraryPlacement ? "library-place-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""} ${multiNodeDragging ? "multi-node-dragging" : ""} ${singleNodeDragging ? "single-node-dragging" : ""}`}
-              style={{ width: canvasDisplayWidth, height: canvasDisplayHeight, left: canvasDisplayOffsetX, top: canvasDisplayOffsetY }}
-            viewBox={`0 0 ${canvasRenderBounds.width} ${canvasRenderBounds.height}`}
-            onDrop={handleDrop}
-            onDragOver={(event) => event.preventDefault()}
-            onWheel={handleWheel}
-            onDoubleClick={fitWholeCanvasFromBlankDoubleClick}
-            onPointerDownCapture={handleCanvasPointerDownCapture}
-            onPointerMove={(event) => {
-              if (updateMeasurementDrag(event)) {
-                return;
-              }
-              handlePointerMove(event);
-            }}
-            onPointerEnter={(event) => {
-              canvasInteractionRef.current = true;
-              projectListPointerInsideRef.current = false;
-              const rawPointer = screenToSvgPoint(event.currentTarget, event.clientX, event.clientY);
-              const pointer = clampPointToCanvas(rawPointer);
-              lastRawCanvasPointerRef.current = rawPointer;
-              lastCanvasPointerRef.current = pointer;
-              updateMouseStatus(pointer);
-              if (libraryPlacement) {
-                updateLibraryPlacementPreview(pointer);
-              }
-              if (routableLinePlacement) {
-                scheduleRoutableLinePreviewPoint(pointer);
-              }
-            }}
-            onPointerUp={(event) => {
-              if (finishMeasurementDrag(event)) {
-                return;
-              }
-              if (finishModifierSelectionPress(event.pointerId)) {
-                return;
-              }
-              finishRewiring(event);
-              finishRoutableLineEndpointDrag();
-              finishTerminalPress();
-              finishNodeLabelDrag();
-              finishNodeLabelRotateDrag();
-              finishMarqueeSelection();
-              finishNodeDrag();
-              finishManualPathDrag();
-              finishTransformDrag();
-              setCanvasPanning(null);
-            }}
-            onPointerLeave={() => {
-              clearLibraryPlacementPreview();
-              if (routableLinePlacement) {
-                resetRoutableLinePreviewState();
-              }
-              if (draggingRef.current) {
-                canvasInteractionRef.current = true;
-                projectListPointerInsideRef.current = false;
-                return;
-              }
-              if (canvasSelectionShortcutActiveRef.current) {
-                canvasInteractionRef.current = true;
-                projectListPointerInsideRef.current = false;
-                return;
-              }
-              canvasInteractionRef.current = false;
-              if (manualPathDrag) {
-                return;
-              }
-              finishNodeLabelDrag();
-              finishNodeLabelRotateDrag();
-              setMeasurementDrag(null);
-              finishNodeDrag();
-              if (panningRef.current) {
-                return;
-              }
-              if (modifierSelectionPressRef.current) {
-                return;
-              }
-              setTerminalPress(null);
-              setRoutableLineEndpointDrag(null);
-              finishManualPathDrag();
-              finishTransformDrag();
-              setMarquee(null);
-              setRewiring(null);
-            }}
-            onPointerCancel={() => {
-              cancelModifierSelectionPress();
-              finishNodeLabelDrag();
-              finishNodeLabelRotateDrag();
-              setMeasurementDrag(null);
-              finishNodeDrag();
-              setTerminalPress(null);
-              setRoutableLineEndpointDrag(null);
-              finishManualPathDrag();
-              finishTransformDrag();
-              setCanvasPanning(null);
-              setMarquee(null);
-              setRewiring(null);
-            }}
-            onLostPointerCapture={() => {
-              cancelModifierSelectionPress();
-              finishNodeLabelDrag();
-              finishNodeLabelRotateDrag();
-              setMeasurementDrag(null);
-              finishNodeDrag();
-              setTerminalPress(null);
-              setRoutableLineEndpointDrag(null);
-              finishManualPathDrag();
-              finishTransformDrag();
-            }}
-            onPointerDown={(event) => {
-              if (event.button !== 0) {
-                return;
-              }
-              activateInspectorFromCanvas();
-              canvasInteractionRef.current = true;
-              projectListPointerInsideRef.current = false;
-              const rawPointer = screenToSvgPoint(event.currentTarget, event.clientX, event.clientY);
-              const pointer = clampPointToCanvas(rawPointer);
-              lastRawCanvasPointerRef.current = rawPointer;
-              lastCanvasPointerRef.current = pointer;
-              updateMouseStatus(pointer);
-              if (routableLinePlacement) {
-                const target = findRoutableLineEndpointTargetAtPoint(pointer);
-                applyRoutableLinePreviewState(pointer, target ? connectTargetPoint(target) : null, target);
-                if (target) {
-                  if (routableLinePlacement.source) {
-                    finishRoutableLineToTarget(target);
-                  } else {
-                    startRoutableLineFromTerminal(target.node, target.terminalId, target.point);
-                  }
-                }
-                return;
-              }
-              if (libraryPlacement) {
-                commitLibraryPlacementAtPoint(pointer);
-                return;
-              }
-              if (staticDrawing) {
-                appendStaticDrawingPoint(pointer, event.detail >= 2);
-                return;
-              }
-              if (connectSource) {
-                const previewPoint = resolveConnectPreviewPoint(pointer, event);
-                const target = findConnectTargetAtPoint(previewPoint);
-                applyConnectPreviewState(previewPoint, Boolean(target), target ? connectTargetSnapPoint(target) : null);
-                if (target) {
-                  finishConnectToTarget(target, previewPoint);
-                } else {
-                  applyConnectPreviewState(previewPoint, false);
-                }
-                return;
-              }
-              const routeHit = isReadonlyCanvasMode ? null : findConnectionRouteHitAtPoint(pointer);
-              if (hasCanvasSelectionModifier(event)) {
-                startModifierSelectionPress(event, routeHit ? { kind: "edge", edgeId: routeHit.edgeId } : undefined);
-                return;
-              }
-              if (routeHit) {
-                const edgeClick = {
-                  edgeId: routeHit.edgeId,
-                  clientX: event.clientX,
-                  clientY: event.clientY,
-                  at: Date.now()
-                };
-                const repeatedClick = isRepeatedEdgePointerClick(lastEdgePointerClickRef.current, edgeClick);
-                lastEdgePointerClickRef.current = edgeClick;
-                selectCanvasGraphics([], [routeHit.edgeId]);
-                setConnectSource(null);
-                resetConnectPreviewState();
-                setRewiring(null);
-                clearRecordSelection();
-                if (event.detail >= 2 || repeatedClick) {
-                  insertManualBendFromPointer(routeHit.edgeId, routeHit.routePoints, pointer);
-                  lastEdgePointerClickRef.current = null;
-                }
-                return;
-              }
-              lastEdgePointerClickRef.current = null;
-              setCanvasSelectionScope("group");
-              setSelectedNodeIds([]);
-              setSelectedEdgeId("");
-              setSelectedEdgeIds([]);
-              setConnectSource(null);
-              resetConnectPreviewState();
-              setRewiring(null);
-              setInspectorTab("model");
-              if (activeProjectKey) {
-                setSelectedProjectId(activeProjectKey);
-                setSelectedProjectIds([activeProjectKey]);
-                setSelectedSchemeId(activeSchemeKey);
-                setSelectedSchemeIds([]);
-              }
-              if (event.detail >= 2) {
-                event.preventDefault();
-                setMarquee(null);
-                fitWholeCanvasToFrame();
-                return;
-              }
-              startCanvasPanning(event);
-              return;
-            }}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              if (consumeGraphicContextMenuHandled()) {
-                event.stopPropagation();
-                return;
-              }
-              if (isCanvasGraphicContextMenuTarget(event.target)) {
-                event.stopPropagation();
-                return;
-              }
-              const rawPointer = screenToSvgPoint(event.currentTarget, event.clientX, event.clientY);
-              const pointer = clampPointToCanvas(rawPointer);
-              lastRawCanvasPointerRef.current = rawPointer;
-              lastCanvasPointerRef.current = pointer;
-              updateMouseStatus(pointer);
-              if (libraryPlacement) {
-                cancelLibraryPlacement();
-                return;
-              }
-              if (routableLinePlacement) {
-                setRoutableLinePlacement(null);
-                resetRoutableLinePreviewState();
-                setMode("select");
-                return;
-              }
-              if (staticDrawing) {
-                finishInteractiveStaticDrawing(pointer);
-                return;
-              }
-              if (connectSource) {
-                setConnectSource(null);
-                resetConnectPreviewState();
-                setMode("select");
-                return;
-              }
-              if (isReadonlyCanvasMode) {
-                setContextMenu(null);
-                return;
-              }
-              const routeHit = findConnectionRouteHitAtPoint(pointer);
-              if (routeHit) {
-                selectCanvasGraphics([], [routeHit.edgeId]);
-                setConnectSource(null);
-                resetConnectPreviewState();
-                setRewiring(null);
-                clearRecordSelection();
-                setContextMenu({
-                  x: event.clientX,
-                  y: event.clientY,
-                  target: "edge",
-                  canvasPoint: pointer,
-                  edgeId: routeHit.edgeId,
-                  routePoints: routeHit.routePoints.map((point) => ({ ...point }))
-                });
-                return;
-              }
-              setContextMenu({ x: event.clientX, y: event.clientY, target: "blank", canvasPoint: pointer });
-            }}
-          >
-            <defs>
-              <pattern id="small-grid" width="5" height="5" patternUnits="userSpaceOnUse">
-                <path d="M 5 0 L 0 0 0 5" fill="none" stroke="#e2e8f0" strokeWidth="0.45" />
-              </pattern>
-              <pattern id="large-grid" width="25" height="25" patternUnits="userSpaceOnUse">
-                <rect width="25" height="25" fill="url(#small-grid)" />
-                <path d="M 25 0 L 0 0 0 25" fill="none" stroke="#cbd5e1" strokeWidth="0.8" />
-              </pattern>
-            </defs>
-            <rect width={canvasRenderBounds.width} height={canvasRenderBounds.height} fill={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND} />
-            {canvasBackgroundImageUrl && (
-              <image
-                href={canvasBackgroundImageUrl}
-                x="0"
-                y="0"
-                width={canvasRenderBounds.width}
-                height={canvasRenderBounds.height}
-                preserveAspectRatio="xMidYMid slice"
-                pointerEvents="none"
-              />
-            )}
-            <rect width={canvasRenderBounds.width} height={canvasRenderBounds.height} fill="url(#large-grid)" />
-            <rect className="canvas-boundary" x="0" y="0" width={canvasRenderBounds.width} height={canvasRenderBounds.height} />
-            {renderReadonlyBackgroundPage()}
-            <g className="canvas-content">
-            {marquee && (
-              <rect
-                className="marquee-box"
-                x={Math.min(marquee.start.x, marquee.current.x)}
-                y={Math.min(marquee.start.y, marquee.current.y)}
-                width={Math.abs(marquee.current.x - marquee.start.x)}
-                height={Math.abs(marquee.current.y - marquee.start.y)}
-              />
-            )}
-            {renderLibraryPlacementPreview()}
-            {renderInteractiveStaticDrawingPreview()}
-            {smartAlignmentGuides.map((guide) => (
-              <line
-                key={guide.id}
-                className={`smart-alignment-guide smart-alignment-guide-${guide.orientation}`}
-                x1={guide.orientation === "vertical" ? guide.position : guide.start}
-                y1={guide.orientation === "vertical" ? guide.start : guide.position}
-                x2={guide.orientation === "vertical" ? guide.position : guide.end}
-                y2={guide.orientation === "vertical" ? guide.end : guide.position}
-                vectorEffect="non-scaling-stroke"
-              />
-            ))}
-            {dragGhostEdgeRoutes.map((route) => (
-              <path key={`drag-ghost-edge-${route.edgeId}`} d={route.path} className="connection-line drag-ghost" style={connectionLineStyle(route.edgeId)} />
-            ))}
-            {lodCanvasRouteChunks.length > 0 && (
-              <g className="lod-route-layer">
-                {lodCanvasRouteChunks.map((chunk) => (
-                  <SvgMarkupChunk key={chunk.key} className="lod-route-layer-chunk" markup={chunk.markup} />
-                ))}
-              </g>
-            )}
-            {dragging?.historyCaptured && !multiNodeDragging && dragging.nodeIds.map((nodeId) => {
-              const node = nodeById.get(nodeId);
-              const originalPosition = dragging.originalPositions[nodeId];
-              if (!node || !originalPosition) {
-                return null;
-              }
-              const ghostNode = { ...node, position: originalPosition };
-              const ghostNodeIsBus = isBusNode(ghostNode);
-              return (
-                <g
-                  key={`drag-ghost-${node.id}`}
-                  className={`node-drag-ghost ${ghostNodeIsBus ? "bus-node" : ""}`}
-                  transform={`translate(${ghostNode.position.x} ${ghostNode.position.y})`}
-                >
-                  <g transform={nodeGeometryTransform(ghostNode)}>
-                    <rect
-                      x={-ghostNode.size.width / 2}
-                      y={-ghostNode.size.height / 2}
-                      width={ghostNode.size.width}
-                      height={ghostNode.size.height}
-                      rx="8"
-                      className="node-drag-ghost-box"
-                    />
-                    <MemoDeviceGlyph node={ghostNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-                    <MemoDeviceGlyph node={ghostNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-                  </g>
-                </g>
-              );
-            })}
-            {renderViewportRoutedEdges.map((route) => {
-              const edge = edgeById.get(route.edgeId);
-              if (!edge) return null;
-              const selected = activeSelectedEdgeSet.has(edge.id);
-              if (
-                (singleNodeDragging && dragAffectedEdgeIdSet.has(edge.id)) ||
-                (draggingDelta && dragPreviewEdgeIdSet.has(edge.id)) ||
-                (multiNodeDragging && dragOverlayEdgeIdSet.has(edge.id)) ||
-                groupTransformPreviewEdgeIdSet.has(edge.id) ||
-                terminalPressPreviewEdgeIdSet.has(edge.id) ||
-                rewiring?.edgeId === edge.id
-              ) {
-                return null;
-              }
-              if (useSimplifiedCanvasRoutes && !selected) {
-                return null;
-              }
-              if (useSimplifiedCanvasRoutes && selected && !detailedSelectedEdgeIdSet.has(edge.id)) {
-                return null;
-              }
-              const sourcePoint = getEdgeEndpointPoint(edge, "source");
-              const targetPoint = getEdgeEndpointPoint(edge, "target");
-              const sourceNode = nodeById.get(edge.sourceId);
-              const targetNode = nodeById.get(edge.targetId);
-              const editable = isEditMode && activeLayerEdgeIdSet.has(edge.id);
-              const inactiveLayerGraphic = isEditMode && !editable;
-              const rewiringSource = rewiring?.edgeId === edge.id && rewiring.endpoint === "source";
-              const rewiringTarget = rewiring?.edgeId === edge.id && rewiring.endpoint === "target";
-              const rewireTarget = rewiring?.edgeId === edge.id ? findRewireTargetAtPoint(rewiring.previewPoint, rewiring) : null;
-              const sourceBusDotPoint = rewiringSource
-                ? rewireTarget?.node && isBusNode(rewireTarget.node)
-                  ? rewireTarget.point
-                  : undefined
-                : sourcePoint && sourceNode && isBusNode(sourceNode)
-                  ? sourcePoint
-                  : undefined;
-              const targetBusDotPoint = rewiringTarget
-                ? rewireTarget?.node && isBusNode(rewireTarget.node)
-                  ? rewireTarget.point
-                  : undefined
-                : targetPoint && targetNode && isBusNode(targetNode)
-                  ? targetPoint
-                  : undefined;
-              return (
-                <g key={edge.id} className={`connection-group ${selected ? "selected" : ""} ${inactiveLayerGraphic ? "inactive-layer-graphic" : ""}`} style={connectionLineStyle(edge.id)}>
-                  <path
-                    d={route.path}
-                    className="connection-hitline"
-                    onContextMenu={editable ? (event) => openEdgeContextMenu(event, edge.id, route.points) : undefined}
-                    onDoubleClick={editable ? (event) => insertManualBendFromEdgePath(event, edge.id, route.points) : undefined}
-                    onPointerDown={editable ? (event) => handleEdgePathPointerDown(event, edge.id, route.points) : undefined}
-                  />
-                  <path
-                    d={route.path}
-                    className="connection-line"
-                    onContextMenu={editable ? (event) => openEdgeContextMenu(event, edge.id, route.points) : undefined}
-                    onDoubleClick={editable ? (event) => insertManualBendFromEdgePath(event, edge.id, route.points) : undefined}
-                    onPointerDown={editable ? (event) => handleEdgePathPointerDown(event, edge.id, route.points) : undefined}
-                  />
-                  {renderBoundaryBusInternalConnector(sourceNode, sourceBusDotPoint, `${edge.id}-source-internal-connector`)}
-                  {renderBoundaryBusInternalConnector(targetNode, targetBusDotPoint, `${edge.id}-target-internal-connector`)}
-                  {isEditMode && sourceBusDotPoint && (
-                    <circle
-                      className="bus-connection-dot"
-                      cx={sourceBusDotPoint.x}
-                      cy={sourceBusDotPoint.y}
-                      r={7}
-                      fill={busEndpointColor((rewiringSource ? rewireTarget?.node : sourceNode) ?? sourceNode!, colorPalette)}
-                      onPointerDown={editable ? (event) => {
-                        event.stopPropagation();
-                        if (event.button !== 0 || !svgRef.current) {
-                          return;
-                        }
-                        selectCanvasGraphics([], [edge.id]);
-                        setRewiring({
-                          edgeId: edge.id,
-                          endpoint: "source",
-                          previewPoint: clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY)),
-                          pointerId: event.pointerId
-                        });
-                        event.currentTarget.setPointerCapture(event.pointerId);
-                      } : undefined}
-                    />
-                  )}
-                  {isEditMode && targetBusDotPoint && (
-                    <circle
-                      className="bus-connection-dot"
-                      cx={targetBusDotPoint.x}
-                      cy={targetBusDotPoint.y}
-                      r={7}
-                      fill={busEndpointColor((rewiringTarget ? rewireTarget?.node : targetNode) ?? targetNode!, colorPalette)}
-                      onPointerDown={editable ? (event) => {
-                        event.stopPropagation();
-                        if (event.button !== 0 || !svgRef.current) {
-                          return;
-                        }
-                        selectCanvasGraphics([], [edge.id]);
-                        setRewiring({
-                          edgeId: edge.id,
-                          endpoint: "target",
-                          previewPoint: clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY)),
-                          pointerId: event.pointerId
-                        });
-                        event.currentTarget.setPointerCapture(event.pointerId);
-                      } : undefined}
-                    />
-                  )}
-                  {isEditMode && selected && sourcePoint && (
-                    <circle
-                      className="edge-endpoint-handle"
-                      cx={rewiring?.edgeId === edge.id && rewiring.endpoint === "source" ? rewiring.previewPoint.x : sourcePoint.x}
-                      cy={rewiring?.edgeId === edge.id && rewiring.endpoint === "source" ? rewiring.previewPoint.y : sourcePoint.y}
-                      r={8}
-                      onPointerDown={(event) => {
-                        event.stopPropagation();
-                        if (event.button !== 0 || !svgRef.current) {
-                          return;
-                        }
-                        if (hasCanvasSelectionModifier(event)) {
-                          startModifierSelectionPress(event, { kind: "edge", edgeId: edge.id });
-                          return;
-                        }
-                        setRewiring({
-                          edgeId: edge.id,
-                          endpoint: "source",
-                          previewPoint: clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY)),
-                          pointerId: event.pointerId
-                        });
-                        event.currentTarget.setPointerCapture(event.pointerId);
-                      }}
-                    />
-                  )}
-                  {isEditMode && selected && targetPoint && (
-                    <circle
-                      className="edge-endpoint-handle"
-                      cx={rewiring?.edgeId === edge.id && rewiring.endpoint === "target" ? rewiring.previewPoint.x : targetPoint.x}
-                      cy={rewiring?.edgeId === edge.id && rewiring.endpoint === "target" ? rewiring.previewPoint.y : targetPoint.y}
-                      r={8}
-                      onPointerDown={(event) => {
-                        event.stopPropagation();
-                        if (event.button !== 0 || !svgRef.current) {
-                          return;
-                        }
-                        if (hasCanvasSelectionModifier(event)) {
-                          startModifierSelectionPress(event, { kind: "edge", edgeId: edge.id });
-                          return;
-                        }
-                        setRewiring({
-                          edgeId: edge.id,
-                          endpoint: "target",
-                          previewPoint: clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY)),
-                          pointerId: event.pointerId
-                        });
-                        event.currentTarget.setPointerCapture(event.pointerId);
-                      }}
-                    />
-                  )}
-                </g>
-              );
-            })}
-            {rewiringPreviewRoute && (
-              <path
-                key={`rewiring-preview-edge-${rewiringPreviewRoute.edgeId}`}
-                d={rewiringPreviewRoute.path}
-                className="connection-line drag-preview"
-                style={connectionLineStyle(rewiringPreviewRoute.edgeId)}
-              />
-            )}
-            {visibleSelectedGroupLayoutUnits.map((unit) => {
-              const transforming = groupTransformPreviewGroupId === unit.id;
-              const focused = selectedTransformGroupUnit?.id === unit.id;
-              const bounds = unit.bounds;
-              const width = Math.max(1, bounds.right - bounds.left);
-              const height = Math.max(1, bounds.bottom - bounds.top);
-              const center = selectionRectCenter(bounds);
-              const handleGapX = 14;
-              const handleGapY = 14;
-              const rotateStemStart = TRANSFORM_ROTATE_STEM_START;
-              const rotateStemEnd = TRANSFORM_ROTATE_STEM_END;
-              const rotateHandleGap = TRANSFORM_ROTATE_HANDLE_GAP;
-              return (
-                <g key={`group-selection-${unit.id}`} className={`group-selection-overlay ${focused ? "focused" : ""} ${transforming ? "transforming" : ""}`}>
-                  <rect
-                    className="group-selection-hitbox"
-                    x={bounds.left}
-                    y={bounds.top}
-                    width={width}
-                    height={height}
-                    onPointerDown={(event) => startGroupMoveDrag(event, unit)}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      if (!activeLayer?.visible) {
-                        return;
-                      }
-                      canvasInteractionRef.current = true;
-                      projectListPointerInsideRef.current = false;
-                      let pointer: Point | undefined;
-                      if (svgRef.current) {
-                        pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-                        lastCanvasPointerRef.current = pointer;
-                        updateMouseStatus(pointer);
-                      }
-                      if (connectSource) {
-                        setConnectSource(null);
-                        resetConnectPreviewState();
-                        setMode("select");
-                        return;
-                      }
-                      if (routableLinePlacement) {
-                        setRoutableLinePlacement(null);
-                        resetRoutableLinePreviewState();
-                        setMode("select");
-                        return;
-                      }
-                      openGraphicContextMenu({ x: event.clientX, y: event.clientY, target: "group", canvasPoint: pointer });
-                    }}
-                  />
-                  <rect
-                    className="group-selection-outline"
-                    x={bounds.left}
-                    y={bounds.top}
-                    width={width}
-                    height={height}
-                  />
-                  {focused && (
-                    <g className={`transform-handles group-transform-handles ${transformDrag && isGroupTransformDrag(transformDrag) && transformDrag.groupId === unit.id.replace(/^group:/, "") && transformDrag.kind !== "rotate" ? "resizing" : ""}`}>
-                      <line x1={center.x} y1={bounds.top - rotateStemStart} x2={center.x} y2={bounds.top - rotateStemEnd} />
-                      <g transform={`translate(${center.x} ${bounds.top - rotateHandleGap})`}>
-                        <circle
-                          className="rotate-handle"
-                          cx="0"
-                          cy="0"
-                          r="8"
-                          onPointerDown={(event) => startGroupTransformDrag(event, unit, "rotate")}
-                        />
-                      </g>
-                      {SCALE_HANDLE_CONFIGS.map((handle) => {
-                        const handleCursorClass = scaleHandleCursorClass(handle, 0);
-                        const x =
-                          handle.xDirection === 0
-                            ? center.x
-                            : handle.xDirection < 0
-                              ? bounds.left - handleGapX
-                              : bounds.right + handleGapX;
-                        const y =
-                          handle.yDirection === 0
-                            ? center.y
-                            : handle.yDirection < 0
-                              ? bounds.top - handleGapY
-                              : bounds.bottom + handleGapY;
-                        return (
-                          <g key={handle.id} transform={`translate(${x} ${y})`}>
-                            <rect
-                              className={`scale-handle ${handleCursorClass}`}
-                              x="-8"
-                              y="-8"
-                              width="16"
-                              height="16"
-                              rx="3"
-                              onPointerDown={(event) => startGroupTransformDrag(event, unit, handle.kind)}
-                            />
-                          </g>
-                        );
-                      })}
-                    </g>
-                  )}
-                </g>
-              );
-            })}
-            {lodCanvasNodeChunks.length > 0 && (
-              <g
-                className="lod-node-layer"
-                onPointerDown={handleLodNodePointerDown}
-                onContextMenu={handleLodNodeContextMenu}
-                onDoubleClick={handleLodNodeDoubleClick}
-              >
-                {lodCanvasNodeChunks.map((chunk) => (
-                  <SvgMarkupChunk key={chunk.key} className="lod-node-layer-chunk" markup={chunk.markup} />
-                ))}
-              </g>
-            )}
-            {lodSelectedNodeMarkup && (
-              <g className="lod-node-selection-layer" dangerouslySetInnerHTML={{ __html: lodSelectedNodeMarkup }} />
-            )}
-            {detailedViewportNodes.map((node) => {
-              if (groupTransformPreviewNodeIdSet.has(node.id)) {
-                return null;
-              }
-              const selected = selectedNodeIdSet.has(node.id);
-              const focused = node.id === selectedNodeId;
-              const editable = activeLayerNodeIdSet.has(node.id);
-              const inactiveLayerGraphic = isEditMode && !editable;
-              const nodeIsBus = isBusNode(node);
-              const nodeIsStatic = isStaticNode(node);
-              const nodeIsRoutableLineDevice = isRoutableLineDeviceKind(node.kind);
-              const isStorageBus =
-                node.kind === "hydrogen-tank" ||
-                node.kind === "hydrogen-tank-horizontal" ||
-                node.kind === "hydrogen-tank-container" ||
-                node.kind === "thermal-storage-tank";
-              const isConnectSource = node.id === connectSource?.nodeId;
-              const originalDragPosition = dragging?.originalPositions[node.id];
-              const renderPosition = draggingDelta && originalDragPosition
-                ? {
-                    x: originalDragPosition.x + draggingDelta.x,
-                    y: originalDragPosition.y + draggingDelta.y
-                  }
-                : node.position;
-              const renderSimplifiedNode =
-                useSimplifiedCanvasNodes &&
-                (!selected || (useSimplifiedSelectedCanvasNodes && !focused)) &&
-                !isConnectSource &&
-                !transformDrag &&
-                !nodeLabelDrag &&
-                !nodeLabelRotateDrag;
-              if (renderSimplifiedNode) {
-                return null;
-              }
-              const imageHref = nodeImage(node);
-              const foregroundImageHref = nodeForegroundImage(node);
-              const uprightStaticSelectionOutline = nodeUsesUprightStaticSelectionOutline(node, imageHref, foregroundImageHref);
-              const uprightSelectionOutlineRect = uprightStaticSelectionOutline ? nodeUprightSelectionOutlineRect(node) : null;
-              const nodeGeometryTransformValue = nodeGeometryTransform(node);
-              const nodeScaleX = getNodeScaleX(node);
-              const nodeScaleY = getNodeScaleY(node);
-              const inverseScaleX = nodeScaleX === 0 ? 1 : 1 / nodeScaleX;
-              const inverseScaleY = nodeScaleY === 0 ? 1 : 1 / nodeScaleY;
-              const terminalStubDashArray = svgStrokeDashArray(node.params.strokeStyle);
-              const terminalControlTransform = (x: number, y: number) => `translate(${x} ${y}) scale(${inverseScaleX} ${inverseScaleY})`;
-              const handleTransform = (x: number, y: number) => `translate(${x} ${y})`;
-              const handleGapX = 14;
-              const handleGapY = 14;
-              const rotateStemStart = TRANSFORM_ROTATE_STEM_START;
-              const rotateStemEnd = TRANSFORM_ROTATE_STEM_END;
-              const rotateHandleGap = TRANSFORM_ROTATE_HANDLE_GAP;
-              const rotateHandlePoints = uprightStaticSelectionOutline
-                ? nodeUprightRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap)
-                : nodeRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap);
-              const staticButtonEnabled = isBrowseMode && isStaticButtonEnabledForNode(node);
-              const staticButtonState = staticButtonVisual?.nodeId === node.id ? staticButtonVisual.state : "";
-              const staticButtonCornerRadius = Math.max(0, Number(node.params.cornerRadius || 8));
-              const showStaticSelectionFrame = nodeIsStatic && selected && !uprightStaticSelectionOutline;
-              const staticSelectionPadding = 10;
-              const staticSelectionCornerSize = 12;
-              const staticSelectionX = -node.size.width / 2 - staticSelectionPadding;
-              const staticSelectionY = -node.size.height / 2 - staticSelectionPadding;
-              const staticSelectionWidth = node.size.width + staticSelectionPadding * 2;
-              const staticSelectionHeight = node.size.height + staticSelectionPadding * 2;
-              const staticSelectionCornerPoints = [
-                { x: staticSelectionX, y: staticSelectionY },
-                { x: staticSelectionX + staticSelectionWidth - staticSelectionCornerSize, y: staticSelectionY },
-                { x: staticSelectionX, y: staticSelectionY + staticSelectionHeight - staticSelectionCornerSize },
-                { x: staticSelectionX + staticSelectionWidth - staticSelectionCornerSize, y: staticSelectionY + staticSelectionHeight - staticSelectionCornerSize }
-              ];
-              const nodeLabelVisible = nodeLabelShouldRender(node, deviceLabelsVisible);
-              const nodeLabelContent = nodeLabelVisible ? nodeLabelText(node) : "";
-              const nodeLabelIsVertical = nodeLabelVisible && nodeLabelVertical(node);
-              const nodeLabelVerticalTokens = nodeLabelIsVertical ? nodeLabelVerticalSegments(nodeLabelContent) : [];
-              const nodeLabelFontSizeValue = nodeLabelVisible ? nodeLabelFontSize(node) : 0;
-              return (
-                <g
-                  key={node.id}
-                  className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${nodeIsRoutableLineDevice ? "routable-line-node" : ""} ${isStorageBus ? "storage-node" : ""} ${uprightStaticSelectionOutline ? "static-upright-selection-node" : ""} ${staticButtonEnabled ? "static-button-enabled" : ""} ${staticButtonState ? `static-button-${staticButtonState}` : ""} ${multiNodeDragging && draggingNodeIdSet.has(node.id) ? "multi-drag-origin" : ""} ${singleNodeDragging && draggingNodeIdSet.has(node.id) ? "single-drag-origin" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${isConnectSource ? "connect-source" : ""} ${inactiveLayerGraphic ? "inactive-layer-graphic" : ""}`}
-                  transform={`translate(${renderPosition.x} ${renderPosition.y})`}
-                  onPointerDown={(event) => handleNodePointerDown(event, node)}
-                  onPointerEnter={() => {
-                    if (staticButtonEnabled) {
-                      setStaticButtonFeedback(node.id, "hover");
-                    }
-                  }}
-                  onPointerLeave={() => {
-                    if (staticButtonEnabled) {
-                      staticButtonPointerRef.current = null;
-                      clearStaticButtonFeedback(node.id);
-                    }
-                  }}
-                  onPointerUp={() => {
-                    if (staticButtonEnabled && staticButtonVisual?.nodeId === node.id && staticButtonVisual.state === "pressed") {
-                      setStaticButtonFeedback(node.id, "hover");
-                    }
-                  }}
-                  onClick={(event) => handleStaticButtonClick(event, node)}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    if (!editable) {
-                      return;
-                    }
-                    canvasInteractionRef.current = true;
-                    projectListPointerInsideRef.current = false;
-                    if (svgRef.current) {
-                      const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-                      lastCanvasPointerRef.current = pointer;
-                      updateMouseStatus(pointer);
-                    }
-                    if (routableLinePlacement) {
-                      setRoutableLinePlacement(null);
-                      resetRoutableLinePreviewState();
-                      setMode("select");
-                      return;
-                    }
-                    if (connectSource) {
-                      setConnectSource(null);
-                      resetConnectPreviewState();
-                      setMode("select");
-                      return;
-                    }
-                    if (!selectedNodeIdSet.has(node.id)) {
-                      selectCanvasGraphics([node.id], []);
-                    }
-                    openGraphicContextMenu({ x: event.clientX, y: event.clientY, target: "node", nodeId: node.id });
-                  }}
-                  onDoubleClick={(event) => {
-                    event.stopPropagation();
-                    if (!editable) {
-                      return;
-                    }
-                    if (isBusNode(node)) {
-                      return;
-                    }
-                    selectCanvasGraphics([node.id], []);
-                    setImageTarget({ kind: "node", nodeId: node.id });
-                  }}
-                >
-                  <title>{node.name}</title>
-                  {imageHref && !nodeIsBus && (
-                    <clipPath id={`clip-${node.id}`}>
-                      <rect
-                        x={-node.size.width / 2}
-                        y={-node.size.height / 2}
-                        width={node.size.width}
-                        height={node.size.height}
-                        rx="8"
-                      />
-                    </clipPath>
-                  )}
-                  <g className="node-geometry" transform={nodeGeometryTransformValue}>
-                    <rect
-                      x={-node.size.width / 2}
-                      y={-node.size.height / 2}
-                      width={node.size.width}
-                      height={node.size.height}
-                      rx="8"
-                      className={`node-hitbox ${nodeIsBus ? "bus-hitbox" : ""} ${nodeIsStatic ? "static-hitbox" : ""}`}
-                    />
-                    <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-                    <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-                    {staticButtonEnabled && (
-                      <rect
-                        x={-node.size.width / 2}
-                        y={-node.size.height / 2}
-                        width={node.size.width}
-                        height={node.size.height}
-                        rx={staticButtonCornerRadius}
-                        className="static-button-feedback-surface"
-                      />
-                    )}
-                    {showStaticSelectionFrame && (
-                      <g className="node-static-selection-frame">
-                        <rect
-                          x={staticSelectionX}
-                          y={staticSelectionY}
-                          width={staticSelectionWidth}
-                          height={staticSelectionHeight}
-                          rx={Math.max(8, staticButtonCornerRadius + staticSelectionPadding)}
-                          className="node-static-selection-glow"
-                        />
-                        {staticSelectionCornerPoints.map((point, index) => (
-                          <rect
-                            key={`static-selection-corner-${index}`}
-                            x={point.x}
-                            y={point.y}
-                            width={staticSelectionCornerSize}
-                            height={staticSelectionCornerSize}
-                            rx="3"
-                            className="node-static-selection-corner"
-                          />
-                        ))}
-                      </g>
-                    )}
-                  </g>
-                  {!nodeIsBus && (imageHref || foregroundImageHref) && (
-                    <g className="node-upright-content" transform={nodeUprightScaleTransform(node)}>
-                      {imageHref && nodeIsStatic && (
-                        <image
-                          href={imageHref}
-                          x={-node.size.width / 2}
-                          y={-node.size.height / 2}
-                          width={node.size.width}
-                          height={node.size.height}
-                          preserveAspectRatio="xMidYMid slice"
-                          clipPath={`url(#clip-${node.id})`}
-                          className="node-background-image"
-                        />
-                      )}
-                      {imageHref && !nodeIsStatic && (
-                        <rect
-                          x={-node.size.width / 2}
-                          y={-node.size.height / 2}
-                          width={node.size.width}
-                          height={node.size.height}
-                          rx="8"
-                          className="node-image-cover"
-                        />
-                      )}
-                      {imageHref && !nodeIsStatic && (
-                        <image
-                          href={imageHref}
-                          x={-node.size.width / 2}
-                          y={-node.size.height / 2}
-                          width={node.size.width}
-                          height={node.size.height}
-                          preserveAspectRatio="xMidYMid slice"
-                          clipPath={`url(#clip-${node.id})`}
-                          className="node-background-image"
-                        />
-                      )}
-                      {foregroundImageHref && (
-                        <image
-                          href={foregroundImageHref}
-                          x={-node.size.width / 2}
-                          y={-node.size.height / 2}
-                          width={node.size.width}
-                          height={node.size.height}
-                          preserveAspectRatio="xMidYMid slice"
-                          clipPath={`url(#clip-${node.id})`}
-                          className="node-foreground-image"
-                        />
-                      )}
-                    </g>
-                  )}
-                  {uprightSelectionOutlineRect && (
-                    <rect
-                      className="node-upright-selection-outline"
-                      x={uprightSelectionOutlineRect.x}
-                      y={uprightSelectionOutlineRect.y}
-                      width={uprightSelectionOutlineRect.width}
-                      height={uprightSelectionOutlineRect.height}
-                      rx="4"
-                    />
-                  )}
-                  {nodeLabelVisible && (
-                    <g
-                      className={`node-device-label ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${nodeLabelIsVertical ? "vertical" : "horizontal"}`}
-                      data-node-id={node.id}
-                      data-label-owner="device"
-                      transform={nodeLabelTransform(node)}
-                      onPointerDown={isEditMode ? (event) => startNodeLabelDrag(event, node) : undefined}
-                    >
-                      {nodeLabelIsVertical ? (
-                        nodeLabelVerticalTokens.map((segment, index) => (
-                          <text
-                            key={`${segment.text}-${index}`}
-                            className={`node-label-vertical-token ${segment.numeric ? "numeric" : ""}`}
-                            x="0"
-                            y={nodeLabelVerticalTokenY(index, nodeLabelVerticalTokens.length, node)}
-                            dominantBaseline="middle"
-                            textAnchor="middle"
-                            style={nodeLabelVerticalTokenStyle(node)}
-                          >
-                            {segment.text}
-                          </text>
-                        ))
-                      ) : (
-                        <text
-                          x="0"
-                          y="0"
-                          dominantBaseline="middle"
-                          textAnchor={nodeLabelTextAnchor(node)}
-                          style={nodeLabelTextStyle(node)}
-                        >
-                          {nodeLabelContent}
-                        </text>
-                      )}
-                      {isEditMode && selected && focused && selectedNodeCount === 1 && (
-                        <g className="node-label-rotate-control" transform={`translate(0 ${formatSvgNumber(-nodeLabelFontSizeValue - 18)})`}>
-                          <line x1="0" y1="8" x2="0" y2="0" />
-                          <circle
-                            cx="0"
-                            cy="0"
-                            r="6"
-                            onPointerDown={(event) => startNodeLabelRotateDrag(event, node)}
-                          >
-                            <title>旋转标识</title>
-                          </circle>
-                        </g>
-                      )}
-                    </g>
-                  )}
-                  <g className="node-terminal-layer" transform={nodeGeometryTransformValue}>
-                    {node.terminals.map((terminal) => {
-                      const hideFixedTerminal = nodeIsBus || isStaticNode(node) || isRoutableLineDeviceKind(node.kind);
-                      const disabled =
-                        !hideFixedTerminal &&
-                        (
-                          (connectTerminalCompatibilityActive &&
-                            !canConnectTerminals(connectSourceNode!, connectSource!.terminalId, node, terminal.id)) ||
-                          (routableLineTerminalCompatibilityActive &&
-                            Boolean(routableLineActiveTerminalType) &&
-                            terminal.type !== routableLineActiveTerminalType)
-                        );
-                      const overlapped = isEditMode && overlappedTerminalKeys.has(`${node.id}:${terminal.id}`);
-                      const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
-                      const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
-                      const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
-                      return hideFixedTerminal ? null : (
-                        <g
-                          key={terminal.id}
-                          transform={terminalControlTransform(renderPoint.x, renderPoint.y)}
-                        >
-                          <line
-                            className={`terminal-stub ${terminal.type} ${disabled ? "disabled" : ""}`}
-                            strokeDasharray={terminalStubDashArray}
-                            style={{
-                              stroke: disabled ? "#cbd5e1" : terminalDisplayColor,
-                              strokeWidth: terminalStubStrokeWidth(node, terminal)
-                            }}
-                            x1={stub.from.x}
-                            y1={stub.from.y}
-                            x2={stub.to.x}
-                            y2={stub.to.y}
-                          />
-                          <circle
-                            className={`terminal-dot ${terminal.type} ${overlapped ? "overlapped" : ""} ${disabled ? "disabled" : ""}`}
-                            style={{ "--terminal-color": terminalDisplayColor } as CSSProperties}
-                            cx="0"
-                            cy="0"
-                            r={overlapped ? 7.2 : 6}
-                            onPointerDown={isEditMode ? (event) => handleTerminalPointerDown(event, node, terminal.id) : undefined}
-                          >
-                            <title>{`${terminal.label} / ${terminal.type.toUpperCase()}`}</title>
-                          </circle>
-                        </g>
-                      );
-                    })}
-                  </g>
-                  {selected && focused && selectedNodeCount === 1 && !nodeIsRoutableLineDevice && (
-                    isEditMode ? (
-                    <g className={`transform-handles ${transformDrag && !isGroupTransformDrag(transformDrag) && transformDrag.nodeId === node.id && transformDrag.kind !== "rotate" ? "resizing" : ""}`}>
-                      <line x1={rotateHandlePoints.stemStart.x} y1={rotateHandlePoints.stemStart.y} x2={rotateHandlePoints.stemEnd.x} y2={rotateHandlePoints.stemEnd.y} />
-                      <g transform={handleTransform(rotateHandlePoints.handle.x, rotateHandlePoints.handle.y)}>
-                        <circle
-                          className="rotate-handle"
-                          cx="0"
-                          cy="0"
-                          r="8"
-                          onPointerDown={(event) => startSingleTransformDrag(event, node, "rotate")}
-                        />
-                      </g>
-                      {SCALE_HANDLE_CONFIGS.map((handle) => {
-                        const handlePoint = nodeScaleHandleControlPoint(node, handle, handleGapX, handleGapY, uprightStaticSelectionOutline);
-                        const handleCursorClass = scaleHandleCursorClass(handle, uprightStaticSelectionOutline ? 0 : node.rotation);
-                        return (
-                          <g key={handle.id} transform={handleTransform(handlePoint.x, handlePoint.y)}>
-                            <rect
-                              className={`scale-handle ${handleCursorClass}`}
-                              x="-8"
-                              y="-8"
-                              width="16"
-                              height="16"
-                              rx="3"
-                              onPointerDown={(event) => startSingleTransformDrag(event, node, handle.kind, handle)}
-                            />
-                          </g>
-                        );
-                      })}
-                    </g>
-                    ) : null
-                  )}
-                </g>
-              );
-            })}
-            {visibleMeasurementGroups.length > 0 && (
-              <g className="measurement-layer" pointerEvents={isBrowseMode ? "none" : "auto"}>
-                {visibleMeasurementGroups.map(renderMeasurementGroup)}
-              </g>
-            )}
-            {renderSingleTransformRotateOriginGhost()}
-            {renderGroupTransformPhotoPreview()}
-            {renderTransformRotationTrajectory()}
-            </g>
-            <g
-              ref={imperativeMultiNodeDragOverlayRef}
-              className="multi-node-drag-overlay imperative-multi-node-drag-overlay"
-              style={{ display: "none" }}
-              aria-hidden="true"
-            />
-            {renderMultiNodeDragOverlay()}
-            <g
-              ref={imperativeSingleNodeDragEdgePreviewRef}
-              className="single-node-drag-overlay imperative-single-node-drag-edge-preview"
-              style={{ display: "none" }}
-              aria-hidden="true"
-            />
-            <g
-              ref={imperativeSingleNodeDragNodeOverlayRef}
-              className="single-node-drag-overlay imperative-single-node-drag-node-overlay"
-              style={{ display: "none" }}
-              aria-hidden="true"
-            />
-            {dragPreviewEdgeRoutes.map((route) => (
-              <path key={`drag-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
-            ))}
-            {terminalPressPreviewEdgeRoutes.map((route) => (
-              <path key={`terminal-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
-            ))}
-            {connectSource && (
-              <path
-                ref={(element) => {
-                  connectPreviewPathElementRef.current = element;
-                  if (element) {
-                    flushConnectPreviewDom();
-                  }
-                }}
-                d={connectPreviewDom.path}
-                className="connection-preview-line"
-                style={connectPreviewColor ? ({ "--connection-color": connectPreviewColor } as CSSProperties) : undefined}
-              />
-            )}
-            {routableLinePlacement && routableLinePreview.path && (
-              <path
-                d={routableLinePreview.path}
-                className="routable-line-drawing-preview"
-                style={routableLinePlacementColor ? ({ "--connection-color": routableLinePlacementColor } as CSSProperties) : undefined}
-              />
-            )}
-            {routableLineEndpointDragPreviewRoute && (
-              <path
-                d={routableLineEndpointDragPreviewRoute.path}
-                className="routable-line-drawing-preview endpoint-retarget-preview"
-                style={routableLineEndpointDragColor ? ({ "--connection-color": routableLineEndpointDragColor } as CSSProperties) : undefined}
-              />
-            )}
-            {connectSource && (
-              <g
-                ref={(element) => {
-                  connectDropHintElementRef.current = element;
-                  if (element) {
-                    flushConnectPreviewDom();
-                  }
-                }}
-                className="connect-drop-hint"
-                transform={
-                  connectPreviewDom.targetPoint
-                    ? `translate(${Math.round(connectPreviewDom.targetPoint.x)} ${Math.round(connectPreviewDom.targetPoint.y)})`
-                    : undefined
-                }
-                style={{
-                  ...(connectPreviewColor ? ({ "--connection-color": connectPreviewColor } as CSSProperties) : {}),
-                  display: connectPreviewDom.targetPoint ? undefined : "none"
-                }}
-              >
-                <circle className="connect-drop-hint-halo" cx="0" cy="0" r="24" />
-                <circle className="connect-drop-hint-ring" cx="0" cy="0" r="16" />
-                <circle className="connect-drop-hint-core" cx="0" cy="0" r="5" />
-              </g>
-            )}
-            {activeDropHintPoint && (
-              <g
-                className="connect-drop-hint"
-                transform={`translate(${activeDropHintPoint.x} ${activeDropHintPoint.y})`}
-                style={activeDropHintStyle}
-              >
-                <circle className="connect-drop-hint-halo" cx="0" cy="0" r="24" />
-                <circle className="connect-drop-hint-ring" cx="0" cy="0" r="16" />
-                <circle className="connect-drop-hint-core" cx="0" cy="0" r="5" />
-              </g>
-            )}
-            <g
-              ref={imperativeNodeDragDropHintRef}
-              className="connect-drop-hint imperative-node-drag-drop-hint"
-              style={{ display: "none" }}
-              aria-hidden="true"
-            >
-              <circle className="connect-drop-hint-halo" cx="0" cy="0" r="24" />
-              <circle className="connect-drop-hint-ring" cx="0" cy="0" r="16" />
-              <circle className="connect-drop-hint-core" cx="0" cy="0" r="5" />
-            </g>
-            {routableLineEndpointHandles.length > 0 && (
-              <g className="routable-line-endpoint-handle-layer">
-                {routableLineEndpointHandles.map((handle) => (
-                  <circle
-                    key={`${handle.node.id}-${handle.endpoint}`}
-                    className={`routable-line-endpoint-handle ${handle.endpoint}`}
-                    cx={handle.point.x}
-                    cy={handle.point.y}
-                    r="7"
-                    onPointerDown={(event) => startRoutableLineEndpointDrag(event, handle.node, handle.endpoint)}
-                  >
-                    <title>{handle.endpoint === "source" ? "调整线路起点" : "调整线路终点"}</title>
-                  </circle>
-                ))}
-              </g>
-            )}
-            {selectedRoutedEdge &&
-              selectedEdge &&
-              !(singleNodeDragging && dragAffectedEdgeIdSet.has(selectedEdge.id)) &&
-              !(draggingDelta && dragPreviewEdgeIdSet.has(selectedEdge.id)) &&
-              !(multiNodeDragging && dragOverlayEdgeIdSet.has(selectedEdge.id)) &&
-              !groupTransformPreviewEdgeIdSet.has(selectedEdge.id) &&
-              !terminalPressPreviewEdgeIdSet.has(selectedEdge.id) &&
-              (() => {
-              const edge = selectedEdge;
-              const route = selectedRoutedEdge;
-              const isRewiringSelectedEdge = rewiring?.edgeId === edge.id;
-              const isManualPathSelectedEdge = manualPathPreviewRoute?.edgeId === edge.id;
-              const routePoints = isManualPathSelectedEdge ? manualPathPreviewRoute.points : route.points;
-              const displayPath = isRewiringSelectedEdge && rewiringPreviewRoute
-                ? rewiringPreviewRoute.path
-                : isManualPathSelectedEdge
-                  ? manualPathPreviewRoute.path
-                  : route.path;
-              const sourcePoint = getEdgeEndpointPoint(edge, "source");
-              const targetPoint = getEdgeEndpointPoint(edge, "target");
-              const sourceNode = nodeById.get(edge.sourceId);
-              const targetNode = nodeById.get(edge.targetId);
-              const sourceBusDotPoint = sourcePoint && sourceNode && isBusNode(sourceNode) ? sourcePoint : undefined;
-              const targetBusDotPoint = targetPoint && targetNode && isBusNode(targetNode) ? targetPoint : undefined;
-              const movableSegmentIndexes = new Set(getMovableRouteSegmentIndexes(routePoints));
-              return (
-                <g className="connection-group selected topmost" style={connectionLineStyle(edge.id)}>
-                  <path
-                    d={displayPath}
-                    className="connection-hitline"
-                    onContextMenu={isEditMode ? (event) => openEdgeContextMenu(event, edge.id, routePoints) : undefined}
-                    onDoubleClick={isEditMode ? (event) => insertManualBendFromEdgePath(event, edge.id, routePoints) : undefined}
-                    onPointerDown={isEditMode ? (event) => handleEdgePathPointerDown(event, edge.id, routePoints) : undefined}
-                  />
-                  <path
-                    d={displayPath}
-                    className="connection-line"
-                    onContextMenu={isEditMode ? (event) => openEdgeContextMenu(event, edge.id, routePoints) : undefined}
-                    onDoubleClick={isEditMode ? (event) => insertManualBendFromEdgePath(event, edge.id, routePoints) : undefined}
-                    onPointerDown={isEditMode ? (event) => handleEdgePathPointerDown(event, edge.id, routePoints) : undefined}
-                  />
-                  {isEditMode && !isRewiringSelectedEdge && routePoints.slice(1).map((point, index) => {
-                    const from = routePoints[index];
-                    const segmentIndex = index;
-                    if (!movableSegmentIndexes.has(segmentIndex)) {
-                      return null;
-                    }
-                    const orientation = from.y === point.y ? "horizontal" : "vertical";
-                    return (
-                      <path
-                        key={`segment-${segmentIndex}`}
-                        d={`M ${from.x} ${from.y} L ${point.x} ${point.y}`}
-                        className={`manual-segment-handle ${orientation}`}
-                        onPointerDown={(event) => startManualSegmentDrag(event, edge.id, segmentIndex, orientation, routePoints)}
-                        onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, routePoints)}
-                        onContextMenu={(event) => openEdgeContextMenu(event, edge.id, routePoints)}
-                      />
-                    );
-                  })}
-                  {isEditMode && !isRewiringSelectedEdge && routePoints.slice(2, -2).map((point, index) => {
-                    const routePointIndex = index + 2;
-                    return (
-                      <circle
-                        key={`bend-${routePointIndex}`}
-                        className="manual-bend-handle"
-                        cx={point.x}
-                        cy={point.y}
-                        r={5.5}
-                        onPointerDown={(event) => startManualPointDrag(event, edge.id, routePointIndex, routePoints)}
-                        onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, routePoints)}
-                        onContextMenu={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          deleteManualBendPoint(edge.id, routePointIndex, routePoints);
-                        }}
-                      />
-                    );
-                  })}
-                  {renderBoundaryBusInternalConnector(sourceNode, sourceBusDotPoint, `${edge.id}-topmost-source-internal-connector`)}
-                  {renderBoundaryBusInternalConnector(targetNode, targetBusDotPoint, `${edge.id}-topmost-target-internal-connector`)}
-                  {isEditMode && sourcePoint && (
-                    <circle
-                      className="edge-endpoint-handle"
-                      cx={rewiring?.edgeId === edge.id && rewiring.endpoint === "source" ? rewiring.previewPoint.x : sourcePoint.x}
-                      cy={rewiring?.edgeId === edge.id && rewiring.endpoint === "source" ? rewiring.previewPoint.y : sourcePoint.y}
-                      r={8}
-                      onPointerDown={(event) => {
-                        event.stopPropagation();
-                        if (event.button !== 0 || !svgRef.current) {
-                          return;
-                        }
-                        setRewiring({
-                          edgeId: edge.id,
-                          endpoint: "source",
-                          previewPoint: clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY)),
-                          pointerId: event.pointerId
-                        });
-                        event.currentTarget.setPointerCapture(event.pointerId);
-                      }}
-                    />
-                  )}
-                  {isEditMode && targetPoint && (
-                    <circle
-                      className="edge-endpoint-handle"
-                      cx={rewiring?.edgeId === edge.id && rewiring.endpoint === "target" ? rewiring.previewPoint.x : targetPoint.x}
-                      cy={rewiring?.edgeId === edge.id && rewiring.endpoint === "target" ? rewiring.previewPoint.y : targetPoint.y}
-                      r={8}
-                      onPointerDown={(event) => {
-                        event.stopPropagation();
-                        if (event.button !== 0 || !svgRef.current) {
-                          return;
-                        }
-                        setRewiring({
-                          edgeId: edge.id,
-                          endpoint: "target",
-                          previewPoint: clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY)),
-                          pointerId: event.pointerId
-                        });
-                        event.currentTarget.setPointerCapture(event.pointerId);
-                      }}
-                    />
-                  )}
-                </g>
-              );
-            })()}
-            {resizeSizeHint && (
-              <g className="resize-size-badge" transform={`translate(${resizeSizeHint.x} ${resizeSizeHint.y})`}>
-                <rect x="-48" y="-13" width="96" height="26" rx="6" />
-                <text x="0" y="0" textAnchor="middle" dominantBaseline="middle">{resizeSizeHint.text}</text>
-              </g>
-            )}
-            {isEditMode && canvasResizeHandles}
-            </svg>
-            {canvasResizePreviewRect && (
-              <div
-                className="canvas-resize-preview"
-                style={{
-                  left: canvasResizePreviewRect.left,
-                  top: canvasResizePreviewRect.top,
-                  width: canvasResizePreviewRect.width,
-                  height: canvasResizePreviewRect.height
-                }}
-              />
-            )}
-            {isEditMode && (
-              <div className="canvas-resize-hotzones" style={canvasResizeHotzoneStyle} aria-hidden="true">
-                <div className="canvas-resize-hotzone canvas-resize-hotzone-left" onPointerDown={(event) => startCanvasResize(event, "left")} />
-                <div className="canvas-resize-hotzone canvas-resize-hotzone-top" onPointerDown={(event) => startCanvasResize(event, "top")} />
-                <div className="canvas-resize-hotzone canvas-resize-hotzone-right" onPointerDown={(event) => startCanvasResize(event, "right")} />
-                <div className="canvas-resize-hotzone canvas-resize-hotzone-bottom" onPointerDown={(event) => startCanvasResize(event, "bottom")} />
-                <div className="canvas-resize-hotzone canvas-resize-hotzone-top-left" onPointerDown={(event) => startCanvasResize(event, "top-left")} />
-                <div className="canvas-resize-hotzone canvas-resize-hotzone-top-right" onPointerDown={(event) => startCanvasResize(event, "top-right")} />
-                <div className="canvas-resize-hotzone canvas-resize-hotzone-bottom-left" onPointerDown={(event) => startCanvasResize(event, "bottom-left")} />
-                <div className="canvas-resize-hotzone canvas-resize-hotzone-bottom-right" onPointerDown={(event) => startCanvasResize(event, "corner")} />
-              </div>
-            )}
-            {isEditMode && (nodeFloatingToolbar || edgeFloatingToolbar) && (
-              <div className="canvas-floating-toolbar-layer">
-                {nodeFloatingToolbar && (
-                  <div className="canvas-floating-toolbar-wrapper" style={floatingToolbarWrapperStyle(nodeFloatingToolbar)}>
-                    <div
-                      className="canvas-floating-toolbar node-toolbar"
-                      role="toolbar"
-                      aria-label="选中图元快捷操作"
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      <button type="button" title="复制" aria-label="复制" onClick={copySelection}>
-                        <Copy size={floatingToolbarIconSize} />
-                      </button>
-                      <button type="button" title="剪切" aria-label="剪切" onClick={cutSelection}>
-                        <Scissors size={floatingToolbarIconSize} />
-                      </button>
-                      <button type="button" title="删除" aria-label="删除" onClick={deleteSelection}>
-                        <Trash2 size={floatingToolbarIconSize} />
-                      </button>
-                      <button type="button" title="图层修改" aria-label="图层修改" onClick={openLayerAssignmentDialog}>
-                        <Layers size={floatingToolbarIconSize} />
-                      </button>
-                      <button type="button" title="置于当前图层" aria-label="置于当前图层" onClick={() => assignSelectedNodesToModelLayer(activeLayerId)}>
-                        <Layers2 size={floatingToolbarIconSize} />
-                      </button>
-                      {canGroupSelectedGraphics && (
-                        <button type="button" title="组合" aria-label="组合" onClick={groupSelectedGraphics}>
-                          <Group size={floatingToolbarIconSize} />
-                        </button>
-                      )}
-                      {canUngroupSelectedGraphics && (
-                        <button type="button" title="解散" aria-label="解散" onClick={ungroupSelectedGraphics}>
-                          <Ungroup size={floatingToolbarIconSize} />
-                        </button>
-                      )}
-                      {canAddTemplateFromSelection && (
-                        <button type="button" title="添加到模板库" aria-label="添加到模板库" onClick={openAddTemplateDialog}>
-                          <Grid2X2 size={floatingToolbarIconSize} />
-                        </button>
-                      )}
-                      <button type="button" title="标识显示" aria-label="标识显示" onClick={toggleSelectedNodeLabelDisplay}>
-                        <Type size={floatingToolbarIconSize} />
-                      </button>
-                    </div>
-                  </div>
-                )}
-                {edgeFloatingToolbar && (
-                  <div className="canvas-floating-toolbar-wrapper" style={floatingToolbarWrapperStyle(edgeFloatingToolbar)}>
-                    <div
-                      className="canvas-floating-toolbar edge-toolbar"
-                      role="toolbar"
-                      aria-label="选中连接线快捷操作"
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      <button type="button" title="复制连接线" aria-label="复制连接线" onClick={copySelection}>
-                        <Copy size={floatingToolbarIconSize} />
-                      </button>
-                      <button type="button" title="添加拐点" aria-label="添加拐点" onClick={addManualBendToSelectedEdgeCenter}>
-                        <CircleDot size={floatingToolbarIconSize} />
-                      </button>
-                      <button type="button" title="整理连接线" aria-label="整理连接线" onClick={tidySelectedEdgeRoute}>
-                        <Route size={floatingToolbarIconSize} />
-                      </button>
-                      <button type="button" title="删除连接线" aria-label="删除连接线" onClick={deleteSelection}>
-                        <Trash2 size={floatingToolbarIconSize} />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </section>
-        <div
-          className="viewport-overlay"
-          style={viewportOverlayStyle}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <div className="viewport-controls" role="group" aria-label="视口控制">
-            <button type="button" title="适配视图" aria-label="适配视图" onClick={fitViewToContent}>
-              <Maximize2 size={16} />
-            </button>
-            <button type="button" title="居中选中" aria-label="居中选中" disabled={!selectedCanvasBounds} onClick={centerSelectedInView}>
-              <LocateFixed size={16} />
-            </button>
-            <button type="button" title="缩放到选中区域" aria-label="缩放到选中区域" disabled={!selectedCanvasBounds} onClick={fitViewToSelection}>
-              <ScanSearch size={16} />
-            </button>
-            <button type="button" title="放大" aria-label="放大" onClick={() => zoomViewportAtCenter(0.82)}>
-              <Plus size={16} />
-            </button>
-            <button type="button" title="缩小" aria-label="缩小" onClick={() => zoomViewportAtCenter(1.18)}>
-              <Minus size={16} />
-            </button>
-            <button type="button" title="重置缩放" aria-label="重置缩放" onClick={resetViewport}>
-              <RotateCcw size={16} />
-            </button>
-            <button
-              type="button"
-              className={minimapVisible ? "active" : ""}
-              title={minimapVisible ? "隐藏小地图" : "显示小地图"}
-              aria-label={minimapVisible ? "隐藏小地图" : "显示小地图"}
-              onClick={() => setMinimapVisible((current) => !current)}
-            >
-              <MapIcon size={16} />
-            </button>
-          </div>
-          {minimapVisible && (
-            <div className="canvas-minimap" aria-label="鸟瞰导航">
-              <svg
-                viewBox={`0 0 ${CANVAS_MINIMAP_WIDTH} ${CANVAS_MINIMAP_HEIGHT}`}
-                onPointerDown={(event) => {
-                  handleMinimapNavigate(event);
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                }}
-                onPointerMove={(event) => {
-                  if (event.buttons & 1) {
-                    handleMinimapNavigate(event);
-                  }
-                }}
-              >
-                <rect
-                  className="minimap-canvas"
-                  x={minimapOffsetX}
-                  y={minimapOffsetY}
-                  width={minimapContentWidth}
-                  height={minimapContentHeight}
-                />
-                {minimapRoutes.map((route) => (
-                  <polyline
-                    key={`minimap-route-${route.edgeId}`}
-                    className="minimap-route"
-                    points={route.points.map(mapPointToMinimap).map((point) => `${formatSvgNumber(point.x)},${formatSvgNumber(point.y)}`).join(" ")}
-                  />
-                ))}
-                {minimapNodes.map((node) => {
-                  const center = mapPointToMinimap(node.position);
-                  const width = Math.max(1.8, Math.abs(getNodeScaleX(node)) * node.size.width * minimapScale);
-                  const height = Math.max(1.8, Math.abs(getNodeScaleY(node)) * node.size.height * minimapScale);
-                  return (
-                    <rect
-                      key={`minimap-node-${node.id}`}
-                      className={`minimap-node ${selectedNodeIdSet.has(node.id) ? "selected" : ""}`}
-                      x={center.x - width / 2}
-                      y={center.y - height / 2}
-                      width={width}
-                      height={height}
-                      rx="1"
-                    />
-                  );
-                })}
-                <rect
-                  className="minimap-viewport"
-                  x={minimapViewportLeft}
-                  y={minimapViewportTop}
-                  width={Math.max(4, minimapViewportRight - minimapViewportLeft)}
-                  height={Math.max(4, minimapViewportBottom - minimapViewportTop)}
-                />
-              </svg>
-            </div>
-          )}
-        </div>
-        <footer className="bottom-statusbar" aria-label="运行状态">
-          <div
-            className="statusbar-resize-handle"
-            role="separator"
-            aria-orientation="horizontal"
-            aria-label="调整提示信息栏高度"
-            title="拖拽调整提示信息栏高度"
-            onPointerDown={startStatusbarResize}
-          />
-          <span className="status-pill">
-            坐标 <span ref={mousePositionTextRef}>X:- Y:-</span>
-          </span>
-          <span className="status-pill" title={`当前视图缩放比 ${currentZoomPercent}%`}>
-            缩放 {currentZoomPercent}%
-          </span>
-          <span className={`status-pill topology-${topologyStatus.state}`} title={topologyStatus.message}>
-            拓扑 {topologyStatus.message}
-          </span>
-          <span className={`status-pill warning-${topologyErrors.length > 0 ? "active" : "idle"}`} title={warningStatusTitle}>
-            {warningStatusText}
-          </span>
-          <span ref={operationLogStatusRef} className="status-pill status-log" title={operationLogRef.current}>
-            日志 {operationLogRef.current}
-          </span>
-          <span className="status-pill">
-            <Grid2X2 size={15} />
-            元件 {nodes.length}
-          </span>
-          <span className="status-pill">联络线 {edges.length}</span>
-          <span className="status-pill">选中 {selectedCount}</span>
-          {selectedNodeTransformStatus && (
-            <span className="status-pill status-transform" title={selectedNodeTransformStatus.title}>
-              图元 缩放 {selectedNodeTransformStatus.scaleText} 旋转 {selectedNodeTransformStatus.rotationText}
-            </span>
-          )}
-          {saveRequired && <strong>未保存</strong>}
-          {mode === "connect" && <strong>{connectSource ? "选择同类型目标端子" : "选择起点端子"}</strong>}
-          {mode === "static-draw" && <strong>点击落点，双击或 Enter 完成，Esc 取消</strong>}
-        </footer>
-      </main>
+      <MainWorkspace {...mainWorkspaceProps} />
 
       <RightInspectorPanel {...rightInspectorPanelProps} />
       <AppDialogs {...appDialogsProps} />
