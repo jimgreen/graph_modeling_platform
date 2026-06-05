@@ -50,4 +50,22 @@ describe("measurement runtime store", () => {
     unsubscribe();
     vi.useRealTimers();
   });
+
+  test("applies 5000 runtime values without graph-shaped work", () => {
+    const store = createMeasurementRuntimeStore({ batchMs: 0 });
+    const values = Array.from({ length: 5000 }, (_, index) => ({
+      sourcePoint: `p-${index}`,
+      value: index,
+      quality: "good" as const,
+      timestamp: 1000,
+      sequence: 1
+    }));
+    const startedAt = performance.now();
+
+    store.applySnapshot({ version: "1.0", timestamp: 1000, sequence: 1, values });
+    const elapsed = performance.now() - startedAt;
+
+    expect(store.getValue("p-4999")?.value).toBe(4999);
+    expect(elapsed).toBeLessThan(50);
+  });
 });

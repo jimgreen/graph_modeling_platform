@@ -8667,7 +8667,11 @@ export function App() {
     fetchMeasurementSnapshot(schemePath, projectName)
       .then((snapshot) => {
         if (!closed) {
+          const startedAt = performance.now();
           measurementRuntimeStoreRef.current.applySnapshot(snapshot);
+          if (import.meta.env.DEV && snapshot.values.length > 0) {
+            console.debug(`[measurement] snapshot values=${snapshot.values.length} applyMs=${(performance.now() - startedAt).toFixed(2)}`);
+          }
         }
       })
       .catch(() => undefined);
@@ -8675,7 +8679,11 @@ export function App() {
       schemePath,
       modelName: projectName,
       onPatch: (patch) => {
+        const startedAt = performance.now();
         measurementRuntimeStoreRef.current.applyPatch(patch);
+        if (import.meta.env.DEV && patch.values.length > 0) {
+          console.debug(`[measurement] patch values=${patch.values.length} applyMs=${(performance.now() - startedAt).toFixed(2)}`);
+        }
       }
     });
     return () => {
