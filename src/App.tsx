@@ -170,6 +170,7 @@ import {
   isStaticBoxLikeKind,
   isStaticBoxLikeNode,
   isStaticNode,
+  isDeviceTemplateVisibleInPlacementLibrary,
   inferESection,
   insertOrthogonalRouteBend,
   insertChildSavedScheme,
@@ -183,6 +184,7 @@ import {
   rebuildExternalConnectionRoutesForMovedNodes,
   rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes,
   rebuildRoutableLineDeviceRouteUpdates,
+  repairUnsafeRoutableLineDeviceRoutes,
   rebuildSingleConnectionRoute,
   redrawConnectionRoutesForEdges,
   reconcileOverlappingTerminalConnections,
@@ -4746,7 +4748,7 @@ function staticFrameHandles(node: ModelNode, width: number, height: number) {
 }
 
 function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorDisplayMode = "energy", colorPalette: ColorPalette = DEFAULT_COLOR_PALETTE) {
-  if (isBusNode(node) || isStaticNode(node)) {
+  if (isBusNode(node) || isStaticNode(node) || isRoutableLineDeviceKind(node.kind)) {
     return "";
   }
   const nodeScaleX = getNodeScaleX(node);
@@ -7015,7 +7017,7 @@ export function App() {
   const [leftPanelTab, setLeftPanelTab] = useState<"projects" | "library" | "templates">("projects");
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const [librarySearchQuery, setLibrarySearchQuery] = useState("");
-  const [componentLibraryDisplayMode, setComponentLibraryDisplayMode] = useState<ComponentLibraryDisplayMode>("expanded");
+  const [componentLibraryDisplayMode, setComponentLibraryDisplayMode] = useState<ComponentLibraryDisplayMode>("right");
   const [leftPanelMode, setLeftPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(LEFT_PANEL_MODE_STORAGE_KEY));
   const [rightPanelMode, setRightPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(RIGHT_PANEL_MODE_STORAGE_KEY));
   const [leftPanelWidth, setLeftPanelWidth] = useState(() =>
@@ -7744,7 +7746,7 @@ export function App() {
                   )}
                 </g>
               )}
-              {!nodeIsBus && !isStaticNode(node) && (
+              {!nodeIsBus && !isStaticNode(node) && !isRoutableLineDeviceKind(node.kind) && (
                 <g className="node-terminal-layer" transform={nodeGeometryTransform(node)}>
                   {node.terminals.map((terminal) => {
                     const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
@@ -7922,7 +7924,7 @@ export function App() {
                     )}
                   </g>
                 )}
-                {!nodeIsBus && !isStaticNode(node) && (
+                {!nodeIsBus && !isStaticNode(node) && !isRoutableLineDeviceKind(node.kind) && (
                   <g className="node-terminal-layer" transform={nodeGeometryTransform(node)}>
                     {node.terminals.map((terminal) => {
                       const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
@@ -8223,16 +8225,24 @@ export function App() {
     () => baseLibraryTemplates.map((template) => applyDeviceTemplateDefinitionOverride(template, deviceDefinitionOverrides[template.kind])),
     [baseLibraryTemplates, deviceDefinitionOverrides]
   );
+  const placementLibraryTemplates = useMemo(
+    () => libraryTemplates.filter(isDeviceTemplateVisibleInPlacementLibrary),
+    [libraryTemplates]
+  );
   const libraryTemplateByKind = useMemo(() => new Map(libraryTemplates.map((template) => [template.kind, template])), [libraryTemplates]);
   const baseLibraryTemplateByKind = useMemo(() => new Map(baseLibraryTemplates.map((template) => [template.kind, template])), [baseLibraryTemplates]);
   const groupedAttributeLibrary = useMemo(() => groupDeviceTemplatesByAttributeLibrary(libraryTemplates), [libraryTemplates]);
   const groupedAttributeLibraryByComponentType = useMemo(() => groupDeviceTemplatesByAttributeLibraryAndComponentType(libraryTemplates), [libraryTemplates]);
+  const placementGroupedAttributeLibraryByComponentType = useMemo(
+    () => groupDeviceTemplatesByAttributeLibraryAndComponentType(placementLibraryTemplates),
+    [placementLibraryTemplates]
+  );
   const librarySearchNeedle = normalizeLibrarySearchText(librarySearchQuery);
   const filteredAttributeLibraryByComponentType = useMemo(() => {
     if (!librarySearchNeedle) {
-      return groupedAttributeLibraryByComponentType;
+      return placementGroupedAttributeLibraryByComponentType;
     }
-    const filteredEntries = Object.entries(groupedAttributeLibraryByComponentType)
+    const filteredEntries = Object.entries(placementGroupedAttributeLibraryByComponentType)
       .map(([group, typeGroups]) => {
         const groupMatches = normalizeLibrarySearchText(group).includes(librarySearchNeedle);
         const filteredTypeGroups = typeGroups
@@ -8248,7 +8258,7 @@ export function App() {
       })
       .filter((entry): entry is readonly [string, AttributeLibraryComponentTypeGroup[]] => Boolean(entry));
     return Object.fromEntries(filteredEntries);
-  }, [groupedAttributeLibraryByComponentType, librarySearchNeedle]);
+  }, [placementGroupedAttributeLibraryByComponentType, librarySearchNeedle]);
   const libraryPreviewByKind = useMemo(
     () => new Map(libraryTemplates.map((template) => [template.kind, createNodeFromTemplate(template, { x: 0, y: 0 })])),
     [libraryTemplates]
@@ -8265,11 +8275,15 @@ export function App() {
     () => Array.from(new Set([...DEFAULT_ATTRIBUTE_LIBRARIES, ...customAttributeLibraries, ...libraryTemplates.map((item) => normalizeAttributeLibraryName(item.attributeLibrary))])),
     [customAttributeLibraries, libraryTemplates]
   );
+  const placementAttributeLibraries = useMemo<AttributeLibrary[]>(
+    () => Array.from(new Set([...DEFAULT_ATTRIBUTE_LIBRARIES, ...customAttributeLibraries, ...placementLibraryTemplates.map((item) => normalizeAttributeLibraryName(item.attributeLibrary))])),
+    [customAttributeLibraries, placementLibraryTemplates]
+  );
   const displayedAttributeLibraries = useMemo(
     () => librarySearchNeedle
-      ? attributeLibraries.filter((group) => (filteredAttributeLibraryByComponentType[group] ?? []).length > 0)
-      : attributeLibraries,
-    [attributeLibraries, filteredAttributeLibraryByComponentType, librarySearchNeedle]
+      ? placementAttributeLibraries.filter((group) => (filteredAttributeLibraryByComponentType[group] ?? []).length > 0)
+      : placementAttributeLibraries,
+    [placementAttributeLibraries, filteredAttributeLibraryByComponentType, librarySearchNeedle]
   );
   useEffect(() => {
     libraryFlyoutPositionsRef.current = libraryFlyoutPositions;
@@ -10794,7 +10808,14 @@ export function App() {
     }
     const nextStart = routableLineEndpointDrag.endpoint === "source" ? routableLineEndpointDrag.previewPoint : currentStart;
     const nextEnd = routableLineEndpointDrag.endpoint === "target" ? routableLineEndpointDrag.previewPoint : currentEnd;
-    const rawLine = setRoutableLineDeviceEndpoints(lineNode, nextStart, nextEnd);
+    const refs = routableLineDeviceEndpointRefs(lineNode);
+    const movingTarget = routableLineEndpointDrag.dropTarget;
+    const movingRef = movingTarget ? routableLineDeviceEndpointRefForNode(movingTarget.node, movingTarget.terminalId, movingTarget.point) : undefined;
+    const previewRefs = {
+      source: routableLineEndpointDrag.endpoint === "source" ? movingRef : refs.source,
+      target: routableLineEndpointDrag.endpoint === "target" ? movingRef : refs.target
+    };
+    const rawLine = setRoutableLineDeviceEndpoints(lineNode, nextStart, nextEnd, previewRefs);
     const nextNodesForRouting = nodes.map((node) => (node.id === rawLine.id ? rawLine : node));
     const routedLine = routeRoutableLineDevice(rawLine, nextNodesForRouting, canvasBounds);
     const routePoints = routableLineDeviceCanvasPoints(routedLine);
@@ -20473,6 +20494,7 @@ export function App() {
       width: project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
       height: project.project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT
     };
+    const repairedNodes = repairUnsafeRoutableLineDeviceRoutes(layeredProject.nodes, nextCanvasBounds);
     clearNodeDragMoveSchedule();
     draggingRef.current = null;
     hideImperativeMultiNodeDragOverlay();
@@ -20504,8 +20526,8 @@ export function App() {
     setLayers(layeredProject.layers ?? []);
     setActiveLayerId(layeredProject.activeLayerId ?? DEFAULT_MODEL_LAYER_ID);
     setDeviceIndexCounters(indexed.counters);
-    setGraphArrays(layeredProject.nodes, layeredProject.edges);
-    setGroups(normalizeModelGroups(layeredProject.groups, layeredProject.nodes, layeredProject.edges));
+    setGraphArrays(repairedNodes, layeredProject.edges);
+    setGroups(normalizeModelGroups(layeredProject.groups, repairedNodes, layeredProject.edges));
     setTopology(EMPTY_TOPOLOGY);
     setTopologyErrors([]);
     setTopologyStatus(INITIAL_TOPOLOGY_STATUS);
@@ -25414,7 +25436,7 @@ export function App() {
                 )}
                 <g className="node-terminal-layer" transform={nodeGeometryTransform(node)}>
                   {node.terminals.map((terminal) => {
-                    const hideFixedTerminal = nodeIsBus || isStaticNode(node);
+                    const hideFixedTerminal = nodeIsBus || isStaticNode(node) || isRoutableLineDeviceKind(node.kind);
                     const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
                     const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
                     const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
@@ -26499,6 +26521,7 @@ export function App() {
               const inactiveLayerGraphic = isEditMode && !editable;
               const nodeIsBus = isBusNode(node);
               const nodeIsStatic = isStaticNode(node);
+              const nodeIsRoutableLineDevice = isRoutableLineDeviceKind(node.kind);
               const isStorageBus =
                 node.kind === "hydrogen-tank" ||
                 node.kind === "hydrogen-tank-horizontal" ||
@@ -26566,7 +26589,7 @@ export function App() {
               return (
                 <g
                   key={node.id}
-                  className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${uprightStaticSelectionOutline ? "static-upright-selection-node" : ""} ${staticButtonEnabled ? "static-button-enabled" : ""} ${staticButtonState ? `static-button-${staticButtonState}` : ""} ${multiNodeDragging && draggingNodeIdSet.has(node.id) ? "multi-drag-origin" : ""} ${singleNodeDragging && draggingNodeIdSet.has(node.id) ? "single-drag-origin" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${isConnectSource ? "connect-source" : ""} ${inactiveLayerGraphic ? "inactive-layer-graphic" : ""}`}
+                  className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${nodeIsRoutableLineDevice ? "routable-line-node" : ""} ${isStorageBus ? "storage-node" : ""} ${uprightStaticSelectionOutline ? "static-upright-selection-node" : ""} ${staticButtonEnabled ? "static-button-enabled" : ""} ${staticButtonState ? `static-button-${staticButtonState}` : ""} ${multiNodeDragging && draggingNodeIdSet.has(node.id) ? "multi-drag-origin" : ""} ${singleNodeDragging && draggingNodeIdSet.has(node.id) ? "single-drag-origin" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${isConnectSource ? "connect-source" : ""} ${inactiveLayerGraphic ? "inactive-layer-graphic" : ""}`}
                   transform={`translate(${renderPosition.x} ${renderPosition.y})`}
                   onPointerDown={(event) => handleNodePointerDown(event, node)}
                   onPointerEnter={() => {
@@ -26795,7 +26818,7 @@ export function App() {
                   )}
                   <g className="node-terminal-layer" transform={nodeGeometryTransformValue}>
                     {node.terminals.map((terminal) => {
-                      const hideFixedTerminal = nodeIsBus || isStaticNode(node);
+                      const hideFixedTerminal = nodeIsBus || isStaticNode(node) || isRoutableLineDeviceKind(node.kind);
                       const disabled =
                         !hideFixedTerminal &&
                         (
@@ -26840,7 +26863,7 @@ export function App() {
                       );
                     })}
                   </g>
-                  {selected && focused && selectedNodeCount === 1 && (
+                  {selected && focused && selectedNodeCount === 1 && !nodeIsRoutableLineDevice && (
                     isEditMode ? (
                     <g className={`transform-handles ${transformDrag && !isGroupTransformDrag(transformDrag) && transformDrag.nodeId === node.id && transformDrag.kind !== "rotate" ? "resizing" : ""}`}>
                       <line x1={rotateHandlePoints.stemStart.x} y1={rotateHandlePoints.stemStart.y} x2={rotateHandlePoints.stemEnd.x} y2={rotateHandlePoints.stemEnd.y} />

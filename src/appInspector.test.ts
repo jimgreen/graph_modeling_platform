@@ -352,6 +352,17 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".library-empty");
   });
 
+  test("filters replaced fixed line-like templates from the placement component library", async () => {
+    const source = await readAppSource();
+
+    expect(source).toContain("isDeviceTemplateVisibleInPlacementLibrary");
+    expect(source).toContain("const placementLibraryTemplates = useMemo(");
+    expect(source).toContain("libraryTemplates.filter(isDeviceTemplateVisibleInPlacementLibrary)");
+    expect(source).toContain("groupDeviceTemplatesByAttributeLibraryAndComponentType(placementLibraryTemplates)");
+    expect(source).toContain("const placementAttributeLibraries = useMemo<AttributeLibrary[]>(");
+    expect(source).toContain("new Map(libraryTemplates.map((template) => [template.kind, template]))");
+  });
+
   test("adds a searchable model library with clear empty results", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
@@ -527,7 +538,7 @@ describe("graph inspector panel", () => {
     const libraryPanelBlock = source.slice(libraryPanelStart, libraryPanelEnd);
 
     expect(source).toContain("type ComponentLibraryDisplayMode = \"expanded\" | \"right\";");
-    expect(source).toContain("const [componentLibraryDisplayMode, setComponentLibraryDisplayMode] = useState<ComponentLibraryDisplayMode>(\"expanded\");");
+    expect(source).toContain("const [componentLibraryDisplayMode, setComponentLibraryDisplayMode] = useState<ComponentLibraryDisplayMode>(\"right\");");
     expect(libraryPanelBlock).toContain("className=\"library-display-mode\"");
     expect(libraryPanelBlock).toContain("role=\"radiogroup\"");
     expect(libraryPanelBlock).toContain("向下展开");
@@ -1524,7 +1535,7 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".resize-size-badge");
     expect(styles).toContain(".scale-handle:hover");
     expect(styles).toContain(".terminal-dot:not(.disabled):hover");
-    expect(styles).toContain(".diagram-node:not(.bus-node):not(.storage-node):hover .node-hitbox");
+    expect(styles).toContain(".diagram-node:not(.bus-node):not(.storage-node):not(.routable-line-node):hover .node-hitbox");
     expect(styles).toContain(".edge-endpoint-handle:hover");
     expect(styles).toContain(".connect-drop-hint-halo");
     expect(styles).toContain(".diagram-canvas.connect-drop-ready .connection-preview-line");
@@ -1982,7 +1993,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("new Set(displaySelectedNodeIds)");
     expect(source).toContain("const focused = node.id === selectedNodeId");
     expect(source).toContain("selected ? \"selected\" : \"\"} ${focused ? \"focused\" : \"\"}");
-    expect(source).toContain("{selected && focused && selectedNodeCount === 1 && (");
+    expect(source).toContain("{selected && focused && selectedNodeCount === 1 && !nodeIsRoutableLineDevice && (");
     expect(styles).toContain(".diagram-node.selected.focused .node-hitbox");
     expect(selectionStateBlock).toContain("selectedCanvasGroupIds(activeLayerGroups, groupExpandedCanvasSelection.nodeIds, groupExpandedCanvasSelection.edgeIds)");
     expect(selectionStateBlock).toContain("canvasGroupMemberNodeIds(activeLayerGroups, activeSelectedGroupIds)");
@@ -6745,6 +6756,9 @@ describe("graph inspector panel", () => {
     const pointerMoveStart = source.indexOf("const handlePointerMove = (event: PointerEvent<SVGSVGElement>)");
     const pointerMoveEnd = source.indexOf("if (nodeLabelRotateDrag", pointerMoveStart);
     const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
+    const endpointPreviewStart = source.indexOf("const routableLineEndpointDragPreviewRoute = useMemo");
+    const endpointPreviewEnd = source.indexOf("const manualPathPreviewRoute = useMemo", endpointPreviewStart);
+    const endpointPreviewBlock = source.slice(endpointPreviewStart, endpointPreviewEnd);
 
     expect(model).toContain("export function createRoutableLineDeviceFromEndpoints");
     expect(model).toContain("export function setRoutableLineDeviceEndpoints");
@@ -6762,6 +6776,9 @@ describe("graph inspector panel", () => {
     expect(terminalBlock).toContain("if (routableLinePlacement)");
     expect(terminalBlock).toContain("startRoutableLineFromTerminal");
     expect(terminalBlock).toContain("finishRoutableLineToTarget");
+    expect(source).toContain("const hideFixedTerminal = nodeIsBus || isStaticNode(node) || isRoutableLineDeviceKind(node.kind);");
+    expect(source).toContain("if (isBusNode(node) || isStaticNode(node) || isRoutableLineDeviceKind(node.kind))");
+    expect(source).toContain("!nodeIsBus && !isStaticNode(node) && !isRoutableLineDeviceKind(node.kind)");
     expect(pointerMoveBlock).toContain("scheduleRoutableLinePreviewPoint");
     expect(pointerMoveBlock).toContain("updateRoutableLineEndpointDrag");
     expect(source).toContain("finishRoutableLineEndpointDrag");
@@ -6770,10 +6787,27 @@ describe("graph inspector panel", () => {
     expect(source).toContain("routableLineDeviceEndpointRefForNode");
     expect(source).toContain("routableLineDeviceEndpointRefs");
     expect(source).toContain("routeRoutableLineDevice(rawLine");
+    expect(endpointPreviewBlock).toContain("const refs = routableLineDeviceEndpointRefs(lineNode);");
+    expect(endpointPreviewBlock).toContain("const movingTarget = routableLineEndpointDrag.dropTarget;");
+    expect(endpointPreviewBlock).toContain("source: routableLineEndpointDrag.endpoint === \"source\"");
+    expect(endpointPreviewBlock).toContain("target: routableLineEndpointDrag.endpoint === \"target\"");
+    expect(endpointPreviewBlock).toContain("movingTarget ? routableLineDeviceEndpointRefForNode");
+    expect(endpointPreviewBlock).toContain(": undefined");
+    expect(source).toContain("const nodeIsRoutableLineDevice = isRoutableLineDeviceKind(node.kind);");
+    expect(source).toContain("${nodeIsRoutableLineDevice ? \"routable-line-node\" : \"\"}");
+    expect(source).toContain("selected && focused && selectedNodeCount === 1 && !nodeIsRoutableLineDevice");
     expect(source).toContain("routable-line-drawing-preview");
     expect(source).toContain("routable-line-endpoint-handle");
     expect(styles).toContain(".routable-line-drawing-preview");
     expect(styles).toContain(".routable-line-endpoint-handle");
+    expect(styles).toContain(".diagram-node.routable-line-node.selected .node-hitbox");
+    expect(styles).toContain("pointer-events: none;");
+    expect(styles).toContain(".diagram-node.routable-line-node.selected .routable-line-device-glyph path");
+    const routableLineGlyphPathBlock = cssRuleBlock(styles, ".diagram-node.routable-line-node .routable-line-device-glyph path");
+    expect(routableLineGlyphPathBlock).not.toContain("vector-effect: non-scaling-stroke");
+    const endpointHoverBlock = cssRuleBlock(styles, ".routable-line-endpoint-handle:hover");
+    expect(endpointHoverBlock).not.toContain("transform:");
+    expect(endpointHoverBlock).not.toContain("stroke-width:");
   });
 
   test("draws box-like static symbols by rectangle and edits their real width and height", async () => {

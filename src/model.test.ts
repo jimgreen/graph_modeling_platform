@@ -91,6 +91,7 @@ import {
   getConnectionStrokeColor,
   getTerminalDisplayColor,
   rebuildRoutableLineDeviceRouteUpdates,
+  repairUnsafeRoutableLineDeviceRoutes,
   routeRoutableLineDevice,
   createRoutableLineDeviceFromEndpoints,
   routableLineDeviceEndpointRefForNode,
@@ -99,6 +100,7 @@ import {
   routableLineDeviceCanvasPoints,
   routableLineDeviceLocalPoints,
   ROUTABLE_LINE_POINTS_PARAM,
+  ROUTABLE_LINE_DEFAULT_STROKE_WIDTH,
   createStaticBoxNodeFromDrawing,
   createInteractiveStaticDrawingNode,
   getElementFocusPoint,
@@ -124,6 +126,7 @@ import {
   isGeneratorNode,
   isStaticKind,
   isStaticNode,
+  isDeviceTemplateVisibleInPlacementLibrary,
   keyboardMoveStepForViewBox,
   viewBoxZoomPercent,
   getSwitchVisualState,
@@ -1239,13 +1242,20 @@ describe("power system model", () => {
     expect(exported.DCZeroBranch.rows).toHaveLength(1);
   });
 
-  test("adds vertical library variants for buses and every built-in two-terminal device", () => {
+  test("adds vertical library variants for buses and non-routable two-terminal devices", () => {
     const baseTemplates = DEVICE_LIBRARY.filter((template) => !template.kind.endsWith("-vertical"));
     const baseByKind = new Map(baseTemplates.map((template) => [template.kind, template]));
     const busKinds = ["ac-bus", "dc-bus", "hydrogen-bus", "heat-bus"];
-    const twoTerminalKinds = baseTemplates
-      .filter((template) => template.terminalCount === 2)
+    const routableLineKinds = baseTemplates
+      .filter((template) => isRoutableLineDeviceKind(template.kind))
       .map((template) => template.kind);
+    const twoTerminalKinds = baseTemplates
+      .filter((template) => template.terminalCount === 2 && !isRoutableLineDeviceKind(template.kind))
+      .map((template) => template.kind);
+
+    for (const kind of routableLineKinds) {
+      expect(DEVICE_LIBRARY.some((template) => template.kind === `${kind}-vertical`)).toBe(false);
+    }
 
     for (const kind of [...busKinds, ...twoTerminalKinds]) {
       const baseTemplate = baseByKind.get(kind)!;
@@ -1278,6 +1288,40 @@ describe("power system model", () => {
         expect(firstPoint.y).toBeLessThan(200);
         expect(secondPoint.y).toBeGreaterThan(200);
       }
+    }
+  });
+
+  test("shows only adaptive routable line-like entries in the placement library", () => {
+    const replacedKinds = [
+      "ac-line",
+      "dc-line",
+      "hydrogen-pipeline",
+      "heat-pipeline",
+      "ac-zero-branch",
+      "dc-zero-branch"
+    ];
+    const visibleAdaptiveKinds = [
+      "ac-routable-line",
+      "dc-routable-line",
+      "hydrogen-routable-pipeline",
+      "heat-routable-line",
+      "ac-zero-routable-branch",
+      "dc-zero-routable-branch"
+    ];
+
+    for (const kind of replacedKinds) {
+      const baseTemplate = DEVICE_LIBRARY.find((template) => template.kind === kind);
+      const verticalTemplate = DEVICE_LIBRARY.find((template) => template.kind === `${kind}-vertical`);
+      expect(baseTemplate).toBeTruthy();
+      expect(verticalTemplate).toBeTruthy();
+      expect(isDeviceTemplateVisibleInPlacementLibrary(baseTemplate!)).toBe(false);
+      expect(isDeviceTemplateVisibleInPlacementLibrary(verticalTemplate!)).toBe(false);
+    }
+
+    for (const kind of visibleAdaptiveKinds) {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
+      expect(template).toBeTruthy();
+      expect(isDeviceTemplateVisibleInPlacementLibrary(template!)).toBe(true);
     }
   });
 
@@ -1488,7 +1532,9 @@ describe("power system model", () => {
   test("adds routable line-like device variants for electric, hydrogen, and heat networks", () => {
     const cases = [
       ["ac-routable-line", "交流线路（自适应）", "交流设备", "ac", "ACBranch"],
+      ["ac-zero-routable-branch", "交流零阻抗支路（自适应）", "交流设备", "ac", "ACZeroBranch"],
       ["dc-routable-line", "直流线路（自适应）", "直流设备", "dc", "DCBranch"],
+      ["dc-zero-routable-branch", "直流零阻抗支路（自适应）", "直流设备", "dc", "DCZeroBranch"],
       ["hydrogen-routable-pipeline", "输氢管道（自适应）", "氢能设备", "h2", "HydroPipe"],
       ["heat-routable-line", "热力线路（自适应）", "热能设备", "heat", "HeatPipe"]
     ] as const;
@@ -1504,9 +1550,31 @@ describe("power system model", () => {
       expect(points).toHaveLength(2);
       expect(points[0].x).toBeLessThan(points[1].x);
       expect(getDeviceGlyphVariant(kind)).toBe("routable-line");
-      expect(getDeviceStrokeWidth(node)).toBe(7);
+      expect(node.params.lineWidth).toBe(String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH));
+      expect(getDeviceStrokeWidth(node)).toBe(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH);
       expect(inferESection(kind, node.params)).toBe(section);
     }
+  });
+
+  test("renders legacy routable line-like device widths only slightly thicker than connection lines", () => {
+    const legacyLine = {
+      ...createDefaultNode("ac-routable-line", { x: 300, y: 160 }),
+      params: {
+        ...createDefaultNode("ac-routable-line", { x: 300, y: 160 }).params,
+        lineWidth: "7"
+      }
+    };
+    const customLine = {
+      ...legacyLine,
+      params: {
+        ...legacyLine.params,
+        lineWidth: "5"
+      }
+    };
+
+    expect(getDeviceStrokeWidth(legacyLine)).toBe(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH);
+    expect(normalizeNodeTerminalsByTemplate(legacyLine).params.lineWidth).toBe(String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH));
+    expect(getDeviceStrokeWidth(customLine)).toBe(5);
   });
 
   test("routes routable line-like devices around blockers and stores local path points", () => {
@@ -1608,6 +1676,221 @@ describe("power system model", () => {
     expect(updates.map((node) => node.id)).toEqual([line.id]);
     expect(getTerminalPoint(updates[0], "t1")).toEqual(getTerminalPoint(source, "t1"));
     expect(getTerminalPoint(updates[0], "t2")).toEqual(getTerminalPoint(movedTarget, "t1"));
+  });
+
+  test("routes routable line-like device endpoints along attached terminal directions", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = { ...createDefaultNode("ac-source", { x: 100, y: 120 }), id: "source-node" };
+    const bus = { ...createDefaultNode("ac-bus", { x: 520, y: 80 }), id: "target-bus" };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const targetPoint = projectPointToBusCenterline(bus, { x: 480, y: 80 });
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      sourcePoint,
+      targetPoint,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: routableLineDeviceEndpointRefForNode(bus, "t1", targetPoint)
+      }
+    );
+
+    const routed = routeRoutableLineDevice(line, [source, bus, line], { width: 760, height: 480 });
+    const points = routableLineDeviceCanvasPoints(routed);
+    const firstSegmentNormal = {
+      x: Math.sign(points[1].x - points[0].x),
+      y: Math.sign(points[1].y - points[0].y)
+    };
+    const expectedNormal = getRouteEndpointNormal(source, points[0], points[points.length - 1], "t1");
+
+    expect(points.length).toBeGreaterThan(2);
+    expect(points[0]).toEqual(sourcePoint);
+    expect(firstSegmentNormal).toEqual(expectedNormal);
+  });
+
+  test("routes routable line-like devices around attached endpoint device bodies", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const bus = { ...createDefaultNode("ac-bus", { x: 260, y: 140 }), id: "source-bus" };
+    const source = { ...createDefaultNode("ac-source", { x: 700, y: 420 }), id: "target-source" };
+    const busPoint = projectPointToBusCenterline(bus, { x: 170, y: 140 });
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      busPoint,
+      sourcePoint,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(bus, "t1", busPoint),
+        target: routableLineDeviceEndpointRefForNode(source, "t1")
+      }
+    );
+
+    const routed = routeRoutableLineDevice(line, [bus, source, line], { width: 980, height: 680 });
+    const points = routableLineDeviceCanvasPoints(routed);
+
+    expect(points.length).toBeGreaterThan(2);
+    for (let index = 1; index < points.length - 1; index += 1) {
+      expect(segmentIntersectsNodeBody(points[index - 1], points[index], source)).toBe(false);
+    }
+  });
+
+  test("routes routable line-like devices outward from a source terminal before returning to a bus", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = { ...createDefaultNode("ac-source", { x: 700, y: 420 }), id: "source-node" };
+    const bus = { ...createDefaultNode("ac-bus", { x: 260, y: 140 }), id: "target-bus" };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const busPoint = projectPointToBusCenterline(bus, { x: 170, y: 140 });
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      sourcePoint,
+      busPoint,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: routableLineDeviceEndpointRefForNode(bus, "t1", busPoint)
+      }
+    );
+
+    const routed = routeRoutableLineDevice(line, [source, bus, line], { width: 980, height: 680 });
+    const points = routableLineDeviceCanvasPoints(routed);
+
+    expect(points.length).toBeGreaterThan(2);
+    for (let index = 2; index < points.length; index += 1) {
+      expect(segmentIntersectsNodeBody(points[index - 1], points[index], source)).toBe(false);
+    }
+  });
+
+  test("reroutes screenshot-like routable line devices away from the source device body", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = {
+      ...createDefaultNode("ac-source", { x: 1163, y: 468 }),
+      id: "source-node",
+      size: { width: 150, height: 100 }
+    };
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 790, y: 241 }),
+      id: "target-bus",
+      size: { width: 150, height: 36 }
+    };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const busPoint = projectPointToBusCenterline(bus, { x: 751, y: 241 });
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      sourcePoint,
+      busPoint,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: routableLineDeviceEndpointRefForNode(bus, "t1", busPoint)
+      }
+    );
+
+    const routed = routeRoutableLineDevice(line, [source, bus, line], { width: 1400, height: 820 });
+    const points = routableLineDeviceCanvasPoints(routed);
+
+    expect(points.length).toBeGreaterThan(2);
+    for (let index = 2; index < points.length; index += 1) {
+      expect(segmentIntersectsNodeBody(points[index - 1], points[index], source)).toBe(false);
+    }
+  });
+
+  test("repairs unsafe stored routable line-like device paths on model load", () => {
+    const source = {
+      ...createDefaultNode("ac-source", { x: 1163, y: 468 }),
+      id: "ac-source-z23vius",
+      name: "交流电源-2",
+      size: { width: 150, height: 100 },
+      terminals: [
+        {
+          id: "t1",
+          label: "交流设备端1",
+          type: "ac" as const,
+          anchor: { x: 0.5, y: 0 },
+          nodeNumber: "N2038",
+          vbase: "0"
+        }
+      ]
+    };
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 790, y: 241 }),
+      id: "ac-bus-lnkvr4n",
+      name: "交流母线-1",
+      size: { width: 150, height: 36 },
+      terminals: [
+        {
+          id: "t1",
+          label: "交流设备端1",
+          type: "ac" as const,
+          anchor: { x: -0.5, y: 0 },
+          nodeNumber: "N1957",
+          vbase: "0"
+        },
+        {
+          id: "t2",
+          label: "交流设备端2",
+          type: "ac" as const,
+          anchor: { x: 0.5, y: 0 },
+          nodeNumber: "N1957",
+          vbase: "0"
+        }
+      ]
+    };
+    const baseLine = createDefaultNode("ac-routable-line", { x: 996.5, y: 354.5 });
+    const unsafeLine = {
+      ...baseLine,
+      id: "ac-routable-line-vertical-dv06kpa",
+      kind: "ac-routable-line-vertical",
+      name: "交流线路（自适应）（竖向）-6",
+      rotation: 0,
+      size: { width: 150, height: 36 },
+      terminals: [
+        {
+          id: "t1",
+          label: "交流设备端1",
+          type: "ac" as const,
+          anchor: { x: 0.48, y: 0.48 },
+          nodeNumber: "N1958",
+          vbase: "0"
+        },
+        {
+          id: "t2",
+          label: "交流设备端2",
+          type: "ac" as const,
+          anchor: { x: -0.48, y: -0.48 },
+          nodeNumber: "N1959",
+          vbase: "0"
+        }
+      ],
+      params: {
+        ...baseLine.params,
+        [ROUTABLE_LINE_POINTS_PARAM]: JSON.stringify([
+          { x: 245.5, y: 113.5 },
+          { x: 273.5, y: 113.5 },
+          { x: 273.5, y: 92.5 },
+          { x: -245.5, y: 92.5 },
+          { x: -245.5, y: -81.5 },
+          { x: -245.5, y: -113.5 }
+        ]),
+        _routableLineSourceNodeId: source.id,
+        _routableLineSourceTerminalId: "t1",
+        _routableLineTargetNodeId: bus.id,
+        _routableLineTargetTerminalId: "t1",
+        _routableLineTargetLocalPoint: JSON.stringify([{ x: -39, y: 0 }])
+      }
+    };
+    const unsafePoints = routableLineDeviceCanvasPoints(unsafeLine);
+    expect(unsafePoints.some((point, index) =>
+      index > 0 && segmentIntersectsNodeBody(unsafePoints[index - 1], point, source)
+    )).toBe(true);
+
+    const repairedNodes = repairUnsafeRoutableLineDeviceRoutes([source, bus, unsafeLine], { width: 1400, height: 820 });
+    const repairedLine = repairedNodes.find((node) => node.id === unsafeLine.id)!;
+    const repairedPoints = routableLineDeviceCanvasPoints(repairedLine);
+
+    expect(repairedLine).not.toBe(unsafeLine);
+    for (let index = 2; index < repairedPoints.length; index += 1) {
+      expect(segmentIntersectsNodeBody(repairedPoints[index - 1], repairedPoints[index], source)).toBe(false);
+    }
   });
 
   test("rebuilds only requested routable line-like device routes", () => {

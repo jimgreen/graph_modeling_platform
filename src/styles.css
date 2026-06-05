@@ -1772,7 +1772,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .routable-line-drawing-preview {
   fill: none;
   stroke: var(--connection-color, #2563eb);
-  stroke-width: 7;
+  stroke-width: 4;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-dasharray: 12 8;
@@ -1918,6 +1918,26 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   stroke-width: 4;
 }
 
+.diagram-node.routable-line-node .node-hitbox,
+.diagram-node.routable-line-node:hover .node-hitbox,
+.diagram-node.routable-line-node.selected .node-hitbox,
+.diagram-node.routable-line-node.selected.focused .node-hitbox,
+.diagram-node.routable-line-node.connect-source .node-hitbox {
+  stroke: transparent;
+  filter: none;
+  pointer-events: none;
+}
+
+.diagram-node.routable-line-node.selected .routable-line-device-glyph path,
+.diagram-node.routable-line-node.connect-source .routable-line-device-glyph path {
+  stroke: #dc2626;
+  stroke-width: 4;
+}
+
+.diagram-node.routable-line-node:hover .routable-line-device-glyph path {
+  filter: drop-shadow(0 0 6px rgba(220, 38, 38, 0.28));
+}
+
 .boundary-bus-internal-connector {
   stroke: var(--connection-color, #334155);
   fill: none;
@@ -1965,15 +1985,13 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   vector-effect: non-scaling-stroke;
   filter: drop-shadow(0 1px 4px rgba(37, 99, 235, 0.24));
   transition:
-    stroke-width 120ms ease,
-    filter 120ms ease,
-    transform 120ms ease;
+    fill 120ms ease,
+    filter 120ms ease;
 }
 
 .routable-line-endpoint-handle:hover {
-  stroke-width: 4.5;
+  fill: color-mix(in srgb, var(--connection-color, #2563eb) 12%, #ffffff);
   filter: drop-shadow(0 0 7px rgba(37, 99, 235, 0.55));
-  transform: scale(1.12);
 }
 
 .routable-line-endpoint-handle:active {
@@ -2424,14 +2442,14 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   stroke-width: 3.5;
 }
 
-.diagram-node:not(.bus-node):not(.storage-node):hover .node-hitbox {
+.diagram-node:not(.bus-node):not(.storage-node):not(.routable-line-node):hover .node-hitbox {
   stroke: rgba(37, 99, 235, 0.52);
   stroke-width: 2;
   filter: drop-shadow(0 0 6px rgba(37, 99, 235, 0.28));
 }
 
-.diagram-node.selected:hover .node-hitbox,
-.diagram-node.focused .node-hitbox {
+.diagram-node.selected:not(.routable-line-node):hover .node-hitbox,
+.diagram-node.focused:not(.routable-line-node) .node-hitbox {
   filter: drop-shadow(0 0 7px rgba(249, 115, 22, 0.32));
 }
 

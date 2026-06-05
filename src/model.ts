@@ -90,6 +90,7 @@ export type DeviceKind =
   | "ac-line"
   | "ac-routable-line"
   | "ac-zero-branch"
+  | "ac-zero-routable-branch"
   | "ac-bus"
   | "ac-switch"
   | "ac-disconnector"
@@ -108,6 +109,7 @@ export type DeviceKind =
   | "dc-line"
   | "dc-routable-line"
   | "dc-zero-branch"
+  | "dc-zero-routable-branch"
   | "dc-bus"
   | "dc-switch"
   | "dc-disconnector"
@@ -465,6 +467,8 @@ export const ROUTABLE_LINE_SOURCE_LOCAL_POINT_PARAM = "_routableLineSourceLocalP
 export const ROUTABLE_LINE_TARGET_NODE_PARAM = "_routableLineTargetNodeId";
 export const ROUTABLE_LINE_TARGET_TERMINAL_PARAM = "_routableLineTargetTerminalId";
 export const ROUTABLE_LINE_TARGET_LOCAL_POINT_PARAM = "_routableLineTargetLocalPoint";
+export const ROUTABLE_LINE_DEFAULT_STROKE_WIDTH = 4;
+const ROUTABLE_LINE_LEGACY_DEFAULT_STROKE_WIDTH = 7;
 export const INTERACTIVE_STATIC_DRAWING_KINDS = [
   "static-line",
   "static-polyline",
@@ -685,13 +689,29 @@ function baseDeviceKind(kind: string): string {
 
 const ROUTABLE_LINE_DEVICE_KINDS = new Set<string>([
   "ac-routable-line",
+  "ac-zero-routable-branch",
   "dc-routable-line",
+  "dc-zero-routable-branch",
   "hydrogen-routable-pipeline",
   "heat-routable-line"
 ]);
 
+const ROUTABLE_LINE_REPLACED_LIBRARY_KINDS = new Set<string>([
+  "ac-line",
+  "dc-line",
+  "hydrogen-pipeline",
+  "heat-pipeline",
+  "ac-zero-branch",
+  "dc-zero-branch"
+]);
+
 export function isRoutableLineDeviceKind(kind: string): boolean {
   return ROUTABLE_LINE_DEVICE_KINDS.has(baseDeviceKind(kind));
+}
+
+export function isDeviceTemplateVisibleInPlacementLibrary(template: Pick<DeviceTemplate, "kind"> | string): boolean {
+  const kind = typeof template === "string" ? template : template.kind;
+  return !ROUTABLE_LINE_REPLACED_LIBRARY_KINDS.has(baseDeviceKind(kind));
 }
 
 export function inferESection(kind: string, params: Record<string, string> = {}) {
@@ -715,7 +735,9 @@ export function inferESection(kind: string, params: Record<string, string> = {})
   if (sectionKind === "ac-line") return "ACBranch";
   if (sectionKind === "dc-line") return "DCBranch";
   if (sectionKind === "ac-zero-branch") return "ACZeroBranch";
+  if (sectionKind === "ac-zero-routable-branch") return "ACZeroBranch";
   if (sectionKind === "dc-zero-branch") return "DCZeroBranch";
+  if (sectionKind === "dc-zero-routable-branch") return "DCZeroBranch";
   if (sectionKind === "ac-load" || sectionKind === "ac-terminal-transformer-load") return "ACLoad";
   if (sectionKind === "dc-load") return "DCLoad";
   if (sectionKind === "ac-storage") return "ACGenerator";
@@ -2730,7 +2752,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "输氢管道（自适应）",
     attributeLibrary: "氢能设备",
     size: { width: 150, height: 36 },
-    params: { length: "1 km", diameter: "DN200", component_type: "HydroPipe", lineWidth: "7" },
+    params: { length: "1 km", diameter: "DN200", component_type: "HydroPipe", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "h2",
     terminalCount: 2
   },
@@ -2942,7 +2964,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "热力线路（自适应）",
     attributeLibrary: "热能设备",
     size: { width: 150, height: 36 },
-    params: { length: "1 km", diameter: "DN200", component_type: "HeatPipe", lineWidth: "7" },
+    params: { length: "1 km", diameter: "DN200", component_type: "HeatPipe", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "heat",
     terminalCount: 2
   },
@@ -2978,7 +3000,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流线路（自适应）",
     attributeLibrary: "交流设备",
     size: { width: 150, height: 36 },
-    params: { r: "0.1", x: "1.0", b: "0.0", component_type: "ACBranch", lineWidth: "7" },
+    params: { r: "0.1", x: "1.0", b: "0.0", component_type: "ACBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -2988,6 +3010,15 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     attributeLibrary: "交流设备",
     size: { width: 108, height: 36 },
     params: {},
+    terminalType: "ac",
+    terminalCount: 2
+  },
+  {
+    kind: "ac-zero-routable-branch",
+    label: "交流零阻抗支路（自适应）",
+    attributeLibrary: "交流设备",
+    size: { width: 150, height: 36 },
+    params: { component_type: "ACZeroBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -3154,7 +3185,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流线路（自适应）",
     attributeLibrary: "直流设备",
     size: { width: 150, height: 36 },
-    params: { r: "1.0", component_type: "DCBranch", lineWidth: "7" },
+    params: { r: "1.0", component_type: "DCBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -3164,6 +3195,15 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     attributeLibrary: "直流设备",
     size: { width: 108, height: 36 },
     params: {},
+    terminalType: "dc",
+    terminalCount: 2
+  },
+  {
+    kind: "dc-zero-routable-branch",
+    label: "直流零阻抗支路（自适应）",
+    attributeLibrary: "直流设备",
+    size: { width: 150, height: 36 },
+    params: { component_type: "DCZeroBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -3238,6 +3278,9 @@ const VERTICAL_BUS_TEMPLATE_KINDS = new Set<string>(["ac-bus", "dc-bus", "hydrog
 
 function shouldCreateVerticalDeviceTemplate(template: DeviceTemplate): boolean {
   if (template.kind.endsWith(GENERATED_VERTICAL_KIND_SUFFIX)) {
+    return false;
+  }
+  if (isRoutableLineDeviceKind(template.kind)) {
     return false;
   }
   return VERTICAL_BUS_TEMPLATE_KINDS.has(template.kind) || template.terminalCount === 2;
@@ -4181,7 +4224,7 @@ const DEVICE_STROKE_WIDTH_BY_VARIANT: Partial<Record<DeviceGlyphVariant, number>
   "heat-valve": 2.4,
   "ac-line": 4,
   "dc-line": 4,
-  "routable-line": 7,
+  "routable-line": ROUTABLE_LINE_DEFAULT_STROKE_WIDTH,
   line: 4,
   "dcdc-converter": 2.2,
   "acdc-converter": 2.2,
@@ -4191,9 +4234,32 @@ const DEVICE_STROKE_WIDTH_BY_VARIANT: Partial<Record<DeviceGlyphVariant, number>
 export function getDeviceStrokeWidth(node: Pick<ModelNode, "kind" | "params">): number {
   const explicitWidth = Number(node.params.lineWidth ?? "");
   if (Number.isFinite(explicitWidth) && explicitWidth > 0) {
+    if (isRoutableLineDeviceKind(node.kind) && explicitWidth === ROUTABLE_LINE_LEGACY_DEFAULT_STROKE_WIDTH) {
+      return ROUTABLE_LINE_DEFAULT_STROKE_WIDTH;
+    }
     return explicitWidth;
   }
   return DEVICE_STROKE_WIDTH_BY_VARIANT[getDeviceGlyphVariant(node.kind)] ?? 2.5;
+}
+
+export function normalizeRoutableLineDeviceStrokeWidthParam(node: ModelNode): ModelNode {
+  if (!isRoutableLineDeviceKind(node.kind)) {
+    return node;
+  }
+  const explicitWidth = Number(node.params.lineWidth ?? "");
+  if (
+    node.params.lineWidth &&
+    explicitWidth !== ROUTABLE_LINE_LEGACY_DEFAULT_STROKE_WIDTH
+  ) {
+    return node;
+  }
+  return {
+    ...node,
+    params: {
+      ...node.params,
+      lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH)
+    }
+  };
 }
 
 export function getSwitchVisualState(node: ModelNode): "open" | "closed" {
@@ -5056,6 +5122,52 @@ function routableLineEndpointPointFromRef(
   return getTerminalPoint(node, ref.terminalId);
 }
 
+type RoutableLineRoutingEndpoint = {
+  nodeId: string;
+  terminalId?: string;
+  point?: Point;
+};
+
+function routableLineEndpointRoutingRef(
+  side: EdgeSide,
+  ref: RoutableLineDeviceEndpointRef | undefined,
+  endpointPoint: Point,
+  nodeById: Map<string, ModelNode>
+): RoutableLineRoutingEndpoint {
+  const node = ref ? nodeById.get(ref.nodeId) : undefined;
+  if (!ref || !node) {
+    return {
+      nodeId: `floating-routable-line-${side}`,
+      point: endpointPoint
+    };
+  }
+  return {
+    nodeId: ref.nodeId,
+    terminalId: ref.terminalId,
+    ...(isBusNode(node) ? { point: endpointPoint } : {})
+  };
+}
+
+function routableLineDeviceRoutingEdge(
+  node: ModelNode,
+  start: Point,
+  end: Point,
+  nodeById: Map<string, ModelNode>
+): Edge {
+  const refs = routableLineDeviceEndpointRefs(node);
+  const source = routableLineEndpointRoutingRef("source", refs.source, start, nodeById);
+  const target = routableLineEndpointRoutingRef("target", refs.target, end, nodeById);
+  return {
+    id: `${node.id}-routable-line-route`,
+    sourceId: source.nodeId,
+    targetId: target.nodeId,
+    ...(source.terminalId ? { sourceTerminalId: source.terminalId } : {}),
+    ...(target.terminalId ? { targetTerminalId: target.terminalId } : {}),
+    ...(source.point ? { sourcePoint: source.point } : {}),
+    ...(target.point ? { targetPoint: target.point } : {})
+  };
+}
+
 export function syncRoutableLineDeviceEndpointsToRefs(
   node: ModelNode,
   nodes: ModelNode[],
@@ -5092,14 +5204,9 @@ export function routeRoutableLineDevice(node: ModelNode, nodes: ModelNode[], bou
   if (!start || !end) {
     return ensureRoutableLineDevicePathParam(node);
   }
-  const routeEdge: Edge = {
-    id: `${node.id}-routable-line-route`,
-    sourceId: `${node.id}-routable-line-source`,
-    targetId: `${node.id}-routable-line-target`,
-    sourcePoint: start,
-    targetPoint: end
-  };
   const blockers = nodes.filter((candidate) => candidate.id !== node.id);
+  const nodeById = new Map(blockers.map((candidate) => [candidate.id, candidate]));
+  const routeEdge = routableLineDeviceRoutingEdge(node, start, end, nodeById);
   const route = routeEdgesForRendering(blockers, [routeEdge], bounds)[0];
   if (!route || route.points.length < 2) {
     return ensureRoutableLineDevicePathParam(node);
@@ -5141,6 +5248,81 @@ export function rebuildRoutableLineDeviceRouteUpdates(
     }
   }
   return updates;
+}
+
+function routableLineEndpointNormalNeedsRepair(points: Point[], edge: Edge, nodeById: Map<string, ModelNode>) {
+  if (points.length < 2) {
+    return true;
+  }
+  const first = points[0];
+  const second = points[1];
+  const last = points[points.length - 1];
+  const beforeLast = points[points.length - 2];
+  const source = nodeById.get(edge.sourceId);
+  if (
+    source &&
+    !routeSegmentMatchesNormal(first, second, routeEndpointNormal(source, first, last, edge.sourceTerminalId))
+  ) {
+    return true;
+  }
+  const target = nodeById.get(edge.targetId);
+  if (
+    target &&
+    !routeSegmentMatchesNormal(last, beforeLast, routeEndpointNormal(target, last, first, edge.targetTerminalId))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function unsafeRoutableLineStoredPath(node: ModelNode, nodes: ModelNode[]) {
+  const points = routableLineDeviceCanvasPoints(node);
+  if (points.length < 2) {
+    return true;
+  }
+  const blockers = nodes.filter((candidate) => candidate.id !== node.id);
+  const nodeById = new Map(blockers.map((candidate) => [candidate.id, candidate]));
+  const routeEdge = routableLineDeviceRoutingEdge(node, points[0], points[points.length - 1], nodeById);
+  if (routableLineEndpointNormalNeedsRepair(points, routeEdge, nodeById)) {
+    return true;
+  }
+  return routeHasEndpointAwareBlockingIssue(
+    points,
+    filterBlockersForRoutePoints(points, blockers),
+    routeEdge.sourceId,
+    routeEdge.targetId
+  );
+}
+
+export function repairUnsafeRoutableLineDeviceRoutes(nodes: ModelNode[], bounds?: CanvasBounds): ModelNode[] {
+  let nextNodes = nodes;
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nextNodes[index];
+    if (!node || !isRoutableLineDeviceKind(node.kind)) {
+      continue;
+    }
+    const syncedNode = syncRoutableLineDeviceEndpointsToRefs(node, nextNodes, nodeById);
+    if (syncedNode !== node) {
+      if (nextNodes === nodes) {
+        nextNodes = nodes.slice();
+      }
+      nextNodes[index] = syncedNode;
+      nodeById.set(syncedNode.id, syncedNode);
+    }
+    if (!unsafeRoutableLineStoredPath(syncedNode, nextNodes)) {
+      continue;
+    }
+    const routedNode = routeRoutableLineDevice(syncedNode, nextNodes, bounds);
+    if (routedNode !== syncedNode) {
+      if (nextNodes === nodes) {
+        nextNodes = nodes.slice();
+      }
+      nextNodes[index] = routedNode;
+      nodeById.set(routedNode.id, routedNode);
+    }
+  }
+  return nextNodes;
 }
 
 export function createStaticBoxNodeFromDrawing(
@@ -5590,14 +5772,15 @@ function virtualBusTerminal(node: Pick<ModelNode, "kind" | "terminals">, termina
 }
 
 export function normalizeNodeTerminalsByTemplate(node: ModelNode): ModelNode {
-  const template = DEVICE_LIBRARY.find((item) => item.kind === node.kind);
-  if (!template || node.terminals.length === 0) {
-    return node;
+  const normalizedNode = normalizeRoutableLineDeviceStrokeWidthParam(node);
+  const template = DEVICE_LIBRARY.find((item) => item.kind === normalizedNode.kind);
+  if (!template || normalizedNode.terminals.length === 0) {
+    return normalizedNode;
   }
   let changed = false;
   const expectedTypes = templateTerminalTypes(template);
   const shouldNormalizeTerminalAnchors = expectedTypes.length > 1;
-  const terminals = node.terminals.map((terminal, index) => {
+  const terminals = normalizedNode.terminals.map((terminal, index) => {
     const expectedType = expectedTypes[index];
     const expectedLabel = template.terminalLabels?.[index] ?? (expectedType ? terminalLabelForType(expectedType, index) : undefined);
     const expectedAnchor = shouldNormalizeTerminalAnchors ? template.terminalAnchors?.[index] : undefined;
@@ -5629,7 +5812,7 @@ export function normalizeNodeTerminalsByTemplate(node: ModelNode): ModelNode {
     }
     return nextTerminal;
   });
-  return changed ? { ...node, terminals } : node;
+  return changed ? { ...normalizedNode, terminals } : normalizedNode;
 }
 
 export function terminalStubSegment(
