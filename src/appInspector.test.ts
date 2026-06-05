@@ -12,6 +12,18 @@ async function readStyles() {
   return readFile(new URL("./styles.css", import.meta.url), "utf8") as Promise<string>;
 }
 
+async function readLeftPanelRenderersSource() {
+  // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
+  const { readFile } = await import("node:fs/promises");
+  return readFile(new URL("./useLeftPanelRenderers.tsx", import.meta.url), "utf8") as Promise<string>;
+}
+
+async function readProjectRecordActionsSource() {
+  // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
+  const { readFile } = await import("node:fs/promises");
+  return readFile(new URL("./useProjectRecordActions.ts", import.meta.url), "utf8") as Promise<string>;
+}
+
 async function readReactFlowPreviewSource() {
   // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
   const { readFile } = await import("node:fs/promises");
@@ -364,17 +376,18 @@ describe("graph inspector panel", () => {
 
   test("adds a searchable model library with clear empty results", async () => {
     const source = await readAppSource();
+    const leftPanelSource = await readLeftPanelRenderersSource();
     const styles = await readStyles();
-    const projectPanelStart = source.indexOf("const renderProjectSchemeNode =");
-    const projectPanelEnd = source.indexOf("const customDraftTerminalTypes", projectPanelStart);
-    const projectPanelBlock = source.slice(projectPanelStart, projectPanelEnd);
+    const projectPanelStart = leftPanelSource.indexOf("const renderProjectSchemeNode =");
+    const projectPanelEnd = leftPanelSource.indexOf("const renderCustomComponentManagerTree", projectPanelStart);
+    const projectPanelBlock = leftPanelSource.slice(projectPanelStart, projectPanelEnd);
 
     expect(source).toContain("const [projectSearchQuery, setProjectSearchQuery] = useState(\"\");");
     expect(source).toContain("const projectSearchNeedle = normalizeLibrarySearchText(projectSearchQuery);");
     expect(source).toContain("const filteredProjectSchemes = useMemo<SavedSchemeRecord[]>");
     expect(source).toContain("normalizeLibrarySearchText(scheme.name).includes(projectSearchNeedle)");
     expect(source).toContain("normalizeLibrarySearchText(project.name).includes(projectSearchNeedle)");
-    expect(source).toContain("const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id);");
+    expect(leftPanelSource).toContain("const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id);");
     expect(source).not.toContain("hoveredSchemeId");
     expect(source).not.toContain("setHoveredSchemeId");
     expect(source).toContain("const projects = useMemo(() => flattenSavedProjects(schemes), [schemes]);");
@@ -5499,7 +5512,7 @@ describe("graph inspector panel", () => {
     const saveDraftEnd = source.indexOf("const setActiveLayer", saveDraftStart);
     const saveDraftBlock = source.slice(saveDraftStart, saveDraftEnd);
     const saveStart = source.indexOf("const saveCurrentProject");
-    const saveEnd = source.indexOf("const renameProjectRecord", saveStart);
+    const saveEnd = source.indexOf("const createBlankProject", saveStart);
     const saveBlock = source.slice(saveStart, saveEnd);
     const topologyStaleStart = source.indexOf("拓扑结果已过期");
 
@@ -5530,7 +5543,7 @@ describe("graph inspector panel", () => {
   test("keeps graph operations out of autosave paths and avoids deep undo snapshots for move commits", async () => {
     const source = await readAppSource();
     const saveStart = source.indexOf("const saveCurrentProject");
-    const saveEnd = source.indexOf("const renameProjectRecord", saveStart);
+    const saveEnd = source.indexOf("const createBlankProject", saveStart);
     const manualSaveBlock = source.slice(saveStart, saveEnd);
     const schemePersistStart = source.indexOf("const normalizedSchemesPayload = serializeSchemesForStorage(schemes);");
     const schemePersistEnd = source.indexOf("}, [schemes]);", schemePersistStart);
@@ -7083,9 +7096,10 @@ describe("graph inspector panel", () => {
 
   test("uses explicit model scheme and blank project-list context-menu actions", async () => {
     const source = await readAppSource();
-    const projectPanelStart = source.indexOf("const renderProjectSchemeNode =");
-    const projectPanelEnd = source.indexOf("const customDraftTerminalTypes", projectPanelStart);
-    const projectPanelBlock = source.slice(projectPanelStart, projectPanelEnd);
+    const leftPanelSource = await readLeftPanelRenderersSource();
+    const projectPanelStart = leftPanelSource.indexOf("const renderProjectSchemeNode =");
+    const projectPanelEnd = leftPanelSource.indexOf("const renderCustomComponentManagerTree", projectPanelStart);
+    const projectPanelBlock = leftPanelSource.slice(projectPanelStart, projectPanelEnd);
     const projectContextStart = source.indexOf("{projectMenu && (");
     const projectContextEnd = source.indexOf("{pendingModelImportConflict && (", projectContextStart);
     const projectContextBlock = source.slice(projectContextStart, projectContextEnd);
@@ -7149,18 +7163,19 @@ describe("graph inspector panel", () => {
 
   test("prompts for overwrite rename or cancel when pasted scheme or model names already exist", async () => {
     const source = await readAppSource();
-    const pasteStart = source.indexOf("const pasteSchemeClipboardRecord =");
-    const pasteEnd = source.indexOf("const pasteSelectedRecord", pasteStart);
-    const pasteBlock = source.slice(pasteStart, pasteEnd);
-    const resolveStart = source.indexOf("const resolveRecordPasteConflict =");
-    const resolveEnd = source.indexOf("const moveProjectRecordToScheme", resolveStart);
-    const resolveBlock = source.slice(resolveStart, resolveEnd);
+    const recordActionsSource = await readProjectRecordActionsSource();
+    const pasteStart = recordActionsSource.indexOf("const pasteSchemeClipboardRecord =");
+    const pasteEnd = recordActionsSource.indexOf("const pasteSelectedRecord", pasteStart);
+    const pasteBlock = recordActionsSource.slice(pasteStart, pasteEnd);
+    const resolveStart = recordActionsSource.indexOf("const resolveRecordPasteConflict =");
+    const resolveEnd = recordActionsSource.indexOf("const moveProjectRecordToScheme", resolveStart);
+    const resolveBlock = recordActionsSource.slice(resolveStart, resolveEnd);
     const dialogStart = source.indexOf("{pendingRecordPasteConflict && (");
     const dialogEnd = source.indexOf("{pendingModelImportConflict && (", dialogStart);
     const dialogBlock = source.slice(dialogStart, dialogEnd);
 
-    expect(source).toContain("type PendingRecordPasteConflict");
-    expect(source).toContain("pendingRecordPasteConflict");
+    expect(recordActionsSource).toContain("type PendingRecordPasteConflict");
+    expect(recordActionsSource).toContain("pendingRecordPasteConflict");
     expect(pasteBlock).toContain("setPendingRecordPasteConflict");
     expect(pasteBlock).toContain("duplicateScheme");
     expect(pasteBlock).toContain("duplicateProject");
@@ -7179,26 +7194,28 @@ describe("graph inspector panel", () => {
 
   test("prompts for overwrite rename or cancel when dragged model names already exist", async () => {
     const source = await readAppSource();
-    const moveStart = source.indexOf("const moveProjectRecordToScheme =");
-    const moveEnd = source.indexOf("const saveActiveProjectPointer", moveStart);
-    const moveBlock = source.slice(moveStart, moveEnd);
+    const leftPanelSource = await readLeftPanelRenderersSource();
+    const recordActionsSource = await readProjectRecordActionsSource();
+    const moveStart = recordActionsSource.indexOf("const moveProjectRecordToScheme =");
+    const moveEnd = recordActionsSource.indexOf("const moveSchemeRecordToScheme", moveStart);
+    const moveBlock = recordActionsSource.slice(moveStart, moveEnd);
     const visibilityStart = source.indexOf("const updateAutoPanelVisibility =");
     const visibilityEnd = source.indexOf("const activateInspectorFromCanvas", visibilityStart);
     const visibilityBlock = source.slice(visibilityStart, visibilityEnd);
     const hideStart = source.indexOf("const hideAutoPanelsFromWorkspace =");
     const hideEnd = source.indexOf("const interactiveStaticDrawingNeedsExplicitFinish", hideStart);
     const hideBlock = source.slice(hideStart, hideEnd);
-    const projectPanelStart = source.indexOf("const renderProjectSchemeNode =");
-    const projectPanelEnd = source.indexOf("const customDraftTerminalTypes", projectPanelStart);
-    const projectPanelBlock = source.slice(projectPanelStart, projectPanelEnd);
-    const resolveStart = source.indexOf("const resolveRecordPasteConflict =");
-    const resolveEnd = source.indexOf("const moveProjectRecordToScheme", resolveStart);
-    const resolveBlock = source.slice(resolveStart, resolveEnd);
+    const projectPanelStart = leftPanelSource.indexOf("const renderProjectSchemeNode =");
+    const projectPanelEnd = leftPanelSource.indexOf("const renderCustomComponentManagerTree", projectPanelStart);
+    const projectPanelBlock = leftPanelSource.slice(projectPanelStart, projectPanelEnd);
+    const resolveStart = recordActionsSource.indexOf("const resolveRecordPasteConflict =");
+    const resolveEnd = recordActionsSource.indexOf("const moveProjectRecordToScheme", resolveStart);
+    const resolveBlock = recordActionsSource.slice(resolveStart, resolveEnd);
     const dialogStart = source.indexOf("{pendingRecordPasteConflict && (");
     const dialogEnd = source.indexOf("{pendingModelImportConflict && (", dialogStart);
     const dialogBlock = source.slice(dialogStart, dialogEnd);
 
-    expect(source).toContain("kind: \"project-drag\"");
+    expect(recordActionsSource).toContain("kind: \"project-drag\"");
     expect(source).toContain("const projectRecordDragActiveRef = useRef(false);");
     expect(source).toContain("const startProjectRecordDrag =");
     expect(source).toContain("const finishProjectRecordDrag =");
@@ -7217,27 +7234,29 @@ describe("graph inspector panel", () => {
 
   test("supports dragging schemes under another scheme with conflict choices", async () => {
     const source = await readAppSource();
-    const moveStart = source.indexOf("const moveSchemeRecordToScheme =");
-    const moveEnd = source.indexOf("const saveActiveProjectPointer", moveStart);
-    const moveBlock = source.slice(moveStart, moveEnd);
+    const leftPanelSource = await readLeftPanelRenderersSource();
+    const recordActionsSource = await readProjectRecordActionsSource();
+    const moveStart = recordActionsSource.indexOf("const moveSchemeRecordToScheme =");
+    const moveEnd = recordActionsSource.indexOf("const renameProjectRecord", moveStart);
+    const moveBlock = recordActionsSource.slice(moveStart, moveEnd);
     const visibilityStart = source.indexOf("const updateAutoPanelVisibility =");
     const visibilityEnd = source.indexOf("const activateInspectorFromCanvas", visibilityStart);
     const visibilityBlock = source.slice(visibilityStart, visibilityEnd);
     const hideStart = source.indexOf("const hideAutoPanelsFromWorkspace =");
     const hideEnd = source.indexOf("const interactiveStaticDrawingNeedsExplicitFinish", hideStart);
     const hideBlock = source.slice(hideStart, hideEnd);
-    const projectPanelStart = source.indexOf("const renderProjectSchemeNode =");
-    const projectPanelEnd = source.indexOf("const customDraftTerminalTypes", projectPanelStart);
-    const projectPanelBlock = source.slice(projectPanelStart, projectPanelEnd);
-    const resolveStart = source.indexOf("const resolveRecordPasteConflict =");
-    const resolveEnd = source.indexOf("const moveProjectRecordToScheme", resolveStart);
-    const resolveBlock = source.slice(resolveStart, resolveEnd);
+    const projectPanelStart = leftPanelSource.indexOf("const renderProjectSchemeNode =");
+    const projectPanelEnd = leftPanelSource.indexOf("const renderCustomComponentManagerTree", projectPanelStart);
+    const projectPanelBlock = leftPanelSource.slice(projectPanelStart, projectPanelEnd);
+    const resolveStart = recordActionsSource.indexOf("const resolveRecordPasteConflict =");
+    const resolveEnd = recordActionsSource.indexOf("const moveProjectRecordToScheme", resolveStart);
+    const resolveBlock = recordActionsSource.slice(resolveStart, resolveEnd);
     const dialogStart = source.indexOf("{pendingRecordPasteConflict && (");
     const dialogEnd = source.indexOf("{pendingModelImportConflict && (", dialogStart);
     const dialogBlock = source.slice(dialogStart, dialogEnd);
 
-    expect(source).toContain("moveSavedSchemeToParent");
-    expect(source).toContain("kind: \"scheme-drag\"");
+    expect(recordActionsSource).toContain("moveSavedSchemeToParent");
+    expect(recordActionsSource).toContain("kind: \"scheme-drag\"");
     expect(source).toContain("const schemeRecordDragActiveRef = useRef(false);");
     expect(source).toContain("const startSchemeRecordDrag =");
     expect(source).toContain("const finishSchemeRecordDrag =");
@@ -7261,7 +7280,7 @@ describe("graph inspector panel", () => {
     const source = await readAppSource();
     const styles = await readStyles();
     const loadStart = source.indexOf("const loadSavedProject =");
-    const loadEnd = source.indexOf("const createSchemeRecord", loadStart);
+    const loadEnd = source.indexOf("const requestUnsavedChangeAction", loadStart);
     const loadBlock = source.slice(loadStart, loadEnd);
     const projectListStart = source.indexOf("{isExpanded && <div className=\"scheme-projects\">");
     const projectListEnd = source.indexOf("</div>}", projectListStart);
@@ -7303,7 +7322,7 @@ describe("graph inspector panel", () => {
     const loadEnd = source.indexOf("const requestUnsavedChangeAction", loadStart);
     const loadBlock = source.slice(loadStart, loadEnd);
     const saveStart = source.indexOf("const saveCurrentProject =");
-    const saveEnd = source.indexOf("const renameProjectRecord", saveStart);
+    const saveEnd = source.indexOf("const createBlankProject", saveStart);
     const saveBlock = source.slice(saveStart, saveEnd);
     const busSyncStart = source.indexOf("const pendingBusSyncNodeIds = pendingBusTerminalSyncNodeIdsRef.current;");
     const busSyncEnd = source.indexOf("const canvasBounds", busSyncStart);
@@ -7368,7 +7387,7 @@ describe("graph inspector panel", () => {
     const schemePersistEnd = source.indexOf("}, [schemes]);", schemePersistStart);
     const schemePersistBlock = source.slice(schemePersistStart, schemePersistEnd);
     const saveStart = source.indexOf("const saveCurrentProject =");
-    const saveEnd = source.indexOf("const renameProjectRecord", saveStart);
+    const saveEnd = source.indexOf("const createBlankProject", saveStart);
     const saveBlock = source.slice(saveStart, saveEnd);
     const saveCallIndex = persistHelperBlock.indexOf("saveBackendSchemesPayload(normalizedSchemesPayload)");
     const persistedAssignmentIndex = persistHelperBlock.indexOf("lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload");
@@ -7541,7 +7560,7 @@ describe("graph inspector panel", () => {
     const backendSerializerEnd = source.indexOf("function normalizeSchemesForBackend", backendSerializerStart + 1);
     const backendSerializerBlock = source.slice(backendSerializerStart, backendSerializerEnd);
     const saveStart = source.indexOf("const saveCurrentProject =");
-    const saveEnd = source.indexOf("const renameProjectRecord", saveStart);
+    const saveEnd = source.indexOf("const createBlankProject", saveStart);
     const saveBlock = source.slice(saveStart, saveEnd);
     const serverNormalizeStart = serverSource.indexOf("function normalizeSchemesForStorage");
     const serverNormalizeEnd = serverSource.indexOf("function inferESection", serverNormalizeStart);
