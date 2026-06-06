@@ -333,6 +333,8 @@ import {
   EMPTY_PROJECT_MEASUREMENTS,
   createDefaultMeasurementGroupForNode,
   formatMeasurementDisplayValue,
+  measurementFontScaleForNode,
+  measurementOffsetScaleForNode,
   measurementGroupForNode,
   normalizeMeasurementConfig,
   normalizeProjectMeasurements,
@@ -7653,14 +7655,25 @@ export function App() {
     const edge = edgeById.get(edgeId);
     return edge ? ({ "--connection-color": cachedConnectionStrokeColor(edge) } as CSSProperties) : undefined;
   };
-  const measurementGroupCanvasPosition = (node: ModelNode, group: MeasurementGroup): Point => ({
-    x: node.position.x + group.offset.x,
-    y: node.position.y + group.offset.y
-  });
+  const measurementGroupLocalOffset = (node: ModelNode, group: MeasurementGroup): Point => {
+    const offsetScale = measurementOffsetScaleForNode(node);
+    return {
+      x: group.offset.x * offsetScale.x,
+      y: group.offset.y * offsetScale.y
+    };
+  };
+  const measurementGroupCanvasPosition = (node: ModelNode, group: MeasurementGroup): Point => {
+    const localOffset = measurementGroupLocalOffset(node, group);
+    return {
+      x: node.position.x + localOffset.x,
+      y: node.position.y + localOffset.y
+    };
+  };
   const measurementGroupRenderMetrics = (node: ModelNode, group: MeasurementGroup) => {
     if (!group.visible) {
       return null;
     }
+    const measurementFontScale = measurementFontScaleForNode(node);
     const rows = group.items.flatMap((item) => {
       const display = resolveMeasurementItemDisplay({ config: measurementConfig, node, group, item });
       if (!display.visible) {
@@ -7669,14 +7682,14 @@ export function App() {
       const label = group.labelVisible === false ? "" : display.label;
       const unit = group.unitVisible === false ? "" : display.unit;
       const text = `${label} ${formatMeasurementDisplayValue(undefined, display.decimals, unit)}`.trim();
-      return [{ item, display, text }];
+      return [{ item, display, text, fontSize: display.fontSize * measurementFontScale }];
     });
     if (rows.length === 0) {
       return null;
     }
-    const maxFontSize = Math.max(...rows.map((row) => row.display.fontSize));
+    const maxFontSize = Math.max(...rows.map((row) => row.fontSize));
     const lineHeight = Math.max(16, maxFontSize + 6);
-    const columnWidth = Math.max(72, Math.max(...rows.map((row) => row.text.length * row.display.fontSize * 0.58)) + 12);
+    const columnWidth = Math.max(72, Math.max(...rows.map((row) => row.text.length * row.fontSize * 0.58)) + 12);
     const columns = group.layout === "grid" ? 2 : group.layout === "horizontal" ? rows.length : 1;
     const width = Math.max(64, columnWidth * columns);
     const height = Math.max(lineHeight, Math.ceil(rows.length / columns) * lineHeight);
@@ -7708,14 +7721,14 @@ export function App() {
     if (!metrics) {
       return "";
     }
-    const position = options.absolute ? measurementGroupCanvasPosition(node, group) : group.offset;
+    const position = options.absolute ? measurementGroupCanvasPosition(node, group) : measurementGroupLocalOffset(node, group);
     const selectedClass = selectedMeasurementGroup?.id === group.id ? " selected" : "";
     const rowsMarkup = metrics.rows.map((row, index) => {
       const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
       const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
       const textX = -metrics.width / 2 + col * metrics.columnWidth + 7;
       const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
-      return `<text class="measurement-item" x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.display.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}">${escapeXml(row.text)}</text>`;
+      return `<text class="measurement-item" x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}">${escapeXml(row.text)}</text>`;
     }).join("");
     return `<g class="measurement-group drag-preview-measurement-group${selectedClass}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})">
   <rect class="measurement-group-bg" x="${formatSvgNumber(-metrics.width / 2)}" y="${formatSvgNumber(-metrics.height / 2)}" width="${formatSvgNumber(metrics.width)}" height="${formatSvgNumber(metrics.height)}" rx="4"/>
@@ -12741,9 +12754,12 @@ export function App() {
       pushUndoSnapshot();
       setMeasurementDrag({ ...measurementDrag, historyCaptured: true });
     }
+    const draggedGroup = projectMeasurements.groups.find((group) => group.id === measurementDrag.groupId);
+    const draggedNode = draggedGroup ? nodeById.get(draggedGroup.nodeId) : undefined;
+    const offsetScale = draggedNode ? measurementOffsetScaleForNode(draggedNode) : { x: 1, y: 1 };
     const offset = {
-      x: Math.round((measurementDrag.startOffset.x + point.x - measurementDrag.startPoint.x) * 10) / 10,
-      y: Math.round((measurementDrag.startOffset.y + point.y - measurementDrag.startPoint.y) * 10) / 10
+      x: Math.round((measurementDrag.startOffset.x + (point.x - measurementDrag.startPoint.x) / offsetScale.x) * 10) / 10,
+      y: Math.round((measurementDrag.startOffset.y + (point.y - measurementDrag.startPoint.y) / offsetScale.y) * 10) / 10
     };
     setProjectMeasurements((current) => ({
       version: 1,
@@ -26408,7 +26424,7 @@ export function App() {
               dominantBaseline="middle"
               fill={row.display.color}
               fontFamily={row.display.fontFamily}
-              fontSize={row.display.fontSize}
+              fontSize={row.fontSize}
               fontWeight={row.display.fontWeight}
               fontStyle={row.display.fontStyle}
               textDecoration={row.display.textDecoration}

@@ -3,6 +3,8 @@ import {
   DEFAULT_MEASUREMENT_CONFIG,
   createDefaultMeasurementGroupForNode,
   formatMeasurementDisplayValue,
+  measurementFontScaleForNode,
+  measurementOffsetScaleForNode,
   measurementGroupsForExistingNodes,
   normalizeMeasurementConfig,
   normalizeProjectMeasurements,
@@ -163,6 +165,16 @@ describe("measurement domain", () => {
       labelVisible: false,
       unitVisible: false
     });
+  });
+
+  test("scales measurement font size with the owning device scale without text deformation", () => {
+    expect(measurementFontScaleForNode({ ...node("scaled-node"), scaleX: 4, scaleY: 1 })).toBeCloseTo(2);
+    expect(measurementFontScaleForNode({ ...node("mirrored-node"), scaleX: -2.25, scaleY: 1 })).toBeCloseTo(1.5);
+  });
+
+  test("scales measurement group offset with the owning device axes", () => {
+    expect(measurementOffsetScaleForNode({ ...node("scaled-node"), scaleX: 2, scaleY: 0.5 })).toEqual({ x: 2, y: 0.5 });
+    expect(measurementOffsetScaleForNode({ ...node("mirrored-node"), scaleX: -3, scaleY: -1.5 })).toEqual({ x: 3, y: 1.5 });
   });
 
   test("drops measurement groups whose owning node no longer exists", () => {

@@ -1,4 +1,4 @@
-import type { ModelNode } from "./model";
+import { getNodeScaleX, getNodeScaleY, type ModelNode } from "./model";
 
 export type MeasurementValueType = "number" | "string" | "boolean";
 export type MeasurementQuality = "good" | "bad" | "stale" | "missing";
@@ -182,6 +182,19 @@ export const EMPTY_PROJECT_MEASUREMENTS: ProjectMeasurementConfig = {
 };
 
 const typeById = (types: readonly MeasurementTypeDefinition[]) => new Map(types.map((item) => [item.id, item]));
+
+export function measurementFontScaleForNode(node: ModelNode): number {
+  const scaleX = Math.abs(getNodeScaleX(node)) || 1;
+  const scaleY = Math.abs(getNodeScaleY(node)) || 1;
+  return Math.sqrt(scaleX * scaleY);
+}
+
+export function measurementOffsetScaleForNode(node: ModelNode): { x: number; y: number } {
+  return {
+    x: Math.abs(getNodeScaleX(node)) || 1,
+    y: Math.abs(getNodeScaleY(node)) || 1
+  };
+}
 
 function finiteNumber(value: unknown, fallback: number): number {
   const numeric = Number(value);

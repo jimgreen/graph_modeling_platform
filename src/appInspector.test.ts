@@ -7774,6 +7774,13 @@ describe("graph inspector panel", () => {
     expect(styles).not.toContain(".measurement-offset-editor");
     expect(source).toContain('group.labelVisible === false ? "" : display.label');
     expect(source).toContain('group.unitVisible === false ? "" : display.unit');
+    expect(source).toContain("measurementFontScaleForNode(node)");
+    expect(source).toContain("fontSize: display.fontSize * measurementFontScale");
+    expect(source).toContain("row.fontSize");
+    expect(source).toContain("measurementOffsetScaleForNode(node)");
+    expect(source).toContain("measurementGroupLocalOffset(node, group)");
+    expect(source).toContain("(point.x - measurementDrag.startPoint.x) / offsetScale.x");
+    expect(source).toContain("(point.y - measurementDrag.startPoint.y) / offsetScale.y");
     expect(source).toContain("confirmMeasurementEditorDialog");
     expect(source).toContain("修改量测信息");
     expect(canvasBlock).toContain("measurement-layer");
