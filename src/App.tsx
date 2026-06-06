@@ -327,6 +327,7 @@ import {
   isSidePanelVisible,
   nextSidePanelAutoVisible,
   normalizeSidePanelMode,
+  shouldIgnoreWorkspaceAutoHide,
   type SidePanelMode,
   type SidePanelSide
 } from "./sidePanelVisibility";
@@ -7349,6 +7350,8 @@ export function App() {
   const [canvasResizeDrag, setCanvasResizeDrag] = useState<CanvasResizeState>(null);
   const [leftPanelAutoVisible, setLeftPanelAutoVisible] = useState(false);
   const [rightPanelAutoVisible, setRightPanelAutoVisible] = useState(false);
+  const leftPanelRef = useRef<HTMLElement | null>(null);
+  const rightPanelRef = useRef<HTMLElement | null>(null);
   const projectRecordDragActiveRef = useRef(false);
   const schemeRecordDragActiveRef = useRef(false);
   const [containerParamViewId, setContainerParamViewId] = useState("container");
@@ -19361,6 +19364,31 @@ export function App() {
     }
   };
 
+  const pointerRelatedTargetInside = (event: PointerEvent<HTMLElement>, selector: string) =>
+    event.relatedTarget instanceof Element && Boolean(event.relatedTarget.closest(selector));
+
+  const pointerClientTargetInside = (event: PointerEvent<HTMLElement>, selector: string) => {
+    const target = document.elementFromPoint(event.clientX, event.clientY);
+    return target instanceof Element && Boolean(target.closest(selector));
+  };
+
+  const pointerInsideElementRect = (event: PointerEvent<HTMLElement>, element: HTMLElement | null, padding = 0) => {
+    if (!element) {
+      return false;
+    }
+    const rect = element.getBoundingClientRect();
+    return (
+      event.clientX >= rect.left - padding &&
+      event.clientX <= rect.right + padding &&
+      event.clientY >= rect.top - padding &&
+      event.clientY <= rect.bottom + padding
+    );
+  };
+
+  const pointerInsideFloatingPanelBounds = (event: PointerEvent<HTMLElement>) =>
+    pointerInsideElementRect(event, leftPanelRef.current, 1) ||
+    pointerInsideElementRect(event, rightPanelRef.current, 1);
+
   const updateAutoPanelVisibility = (side: SidePanelSide, event: Parameters<typeof nextSidePanelAutoVisible>[3]) => {
     if (sidePanelResize || validationPanelResize) {
       return;
@@ -19402,8 +19430,25 @@ export function App() {
     });
   };
 
-  const hideAutoPanelsFromWorkspace = () => {
+  const handleSidePanelPointerLeave = (side: SidePanelSide, event: PointerEvent<HTMLElement>) => {
+    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) {
+      return;
+    }
+    if (pointerInsideElementRect(event, event.currentTarget, 1)) {
+      return;
+    }
+    updateAutoPanelVisibility(side, "panel-leave");
+  };
+
+  const hideAutoPanelsFromWorkspace = (event: PointerEvent<HTMLElement>) => {
     if (sidePanelResize || validationPanelResize) {
+      return;
+    }
+    if (shouldIgnoreWorkspaceAutoHide(
+      pointerRelatedTargetInside(event, ".floating-side-panel, .side-panel-edge-trigger"),
+      pointerClientTargetInside(event, ".floating-side-panel, .side-panel-edge-trigger"),
+      pointerInsideFloatingPanelBounds(event)
+    )) {
       return;
     }
     if (projectRecordDragActiveRef.current) {
@@ -28233,9 +28278,10 @@ export function App() {
       {renderSidePanelEdgeTrigger("left")}
       {renderSidePanelEdgeTrigger("right")}
       <aside
+        ref={leftPanelRef}
         className={`library-panel floating-side-panel ${leftPanelVisible ? "visible" : "hidden"}`}
         onPointerEnter={() => updateAutoPanelVisibility("left", "panel-enter")}
-        onPointerLeave={() => updateAutoPanelVisibility("left", "panel-leave")}
+        onPointerLeave={(event) => handleSidePanelPointerLeave("left", event)}
       >
         <div
           className="side-panel-resize-handle right-edge"
@@ -30068,9 +30114,10 @@ export function App() {
       </main>
 
       <aside
+        ref={rightPanelRef}
         className={`inspector-panel floating-side-panel ${rightPanelVisible ? "visible" : "hidden"}`}
         onPointerEnter={() => updateAutoPanelVisibility("right", "panel-enter")}
-        onPointerLeave={() => updateAutoPanelVisibility("right", "panel-leave")}
+        onPointerLeave={(event) => handleSidePanelPointerLeave("right", event)}
       >
         <div
           className="side-panel-resize-handle left-edge"

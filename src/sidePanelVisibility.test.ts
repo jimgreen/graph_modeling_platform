@@ -3,6 +3,7 @@ import {
   isSidePanelVisible,
   nextSidePanelAutoVisible,
   normalizeSidePanelMode,
+  shouldIgnoreWorkspaceAutoHide,
   type SidePanelMode
 } from "./sidePanelVisibility";
 
@@ -43,5 +44,13 @@ describe("floating side panel visibility", () => {
       expect(nextSidePanelAutoVisible("right", mode, false, "edge-enter")).toBe(false);
       expect(nextSidePanelAutoVisible("right", mode, true, "panel-leave")).toBe(true);
     }
+  });
+
+  test("workspace auto-hide ignores pointer transitions involving floating side panel UI", () => {
+    expect(shouldIgnoreWorkspaceAutoHide(true, false)).toBe(true);
+    expect(shouldIgnoreWorkspaceAutoHide(false, true)).toBe(true);
+    expect(shouldIgnoreWorkspaceAutoHide(true, true)).toBe(true);
+    expect(shouldIgnoreWorkspaceAutoHide(false, false, true)).toBe(true);
+    expect(shouldIgnoreWorkspaceAutoHide(false, false)).toBe(false);
   });
 });

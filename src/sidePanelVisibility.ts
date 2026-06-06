@@ -33,3 +33,11 @@ export function nextSidePanelAutoVisible(
   }
   return side === "right" ? true : currentVisible;
 }
+
+export function shouldIgnoreWorkspaceAutoHide(
+  relatedTargetInsideFloatingUi: boolean,
+  pointerTargetInsideFloatingUi: boolean,
+  pointerInsideFloatingBounds = false
+): boolean {
+  return relatedTargetInsideFloatingUi || pointerTargetInsideFloatingUi || pointerInsideFloatingBounds;
+}
