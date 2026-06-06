@@ -372,6 +372,18 @@ describe("SVG export", () => {
     expect(svg).toContain("two-port-heat-load-glyph");
     expect(svg).toContain("heat-load-single-marker");
     expect(svg).toContain("heat-load-two-port-marker");
+    expect(svg).toContain('d="M -22.22222222222222 -15.11111111111111 L 22.22222222222222 -15.11111111111111 L 0 15.11111111111111 Z"');
+    expect(svg).toContain('width="53.333333333333336" height="32"');
+    expect(svg).toContain('d="M -9 -4 H 9 M -7 2 H 7 M -5 8 H 5"');
+    expect(svg).toContain('class="heat-load-single-marker" d="M 20 -18 V -6 M 15 -11 L 20 -6 L 25 -11"');
     expect(svg).toContain('class="heat-load-two-port-marker" d="M -30 -13 H -17 M -23 -17 L -17 -13 L -23 -9 M 17 13 H 30 M 24 9 L 31 13 L 24 17"');
+  });
+
+  test("exports hydrogen load body at two thirds of the previous main structure size", () => {
+    const load = createDefaultNode("hydrogen-load", { x: 140, y: 120 });
+
+    const svg = buildSvgDocument([load], [], { width: 300, height: 220 });
+
+    expect(svg).toContain('d="M -22.22222222222222 -15.11111111111111 L 22.22222222222222 -15.11111111111111 L 0 15.11111111111111 Z"');
   });
 });

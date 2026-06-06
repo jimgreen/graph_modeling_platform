@@ -5715,15 +5715,17 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
 
   if (glyphVariant === "hydrogen-load") {
     if (mode === "text") {
-      return uprightText(node, 0, -4, { fill: stroke, stroke: "none", fontSize: miniature ? 8 : 12, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2");
+      return uprightText(node, 0, miniature ? -2 : -3, { fill: stroke, stroke: "none", fontSize: miniature ? 11 : 18, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2");
     }
     if (!renderGeometry) {
       return null;
     }
+    const bodyWidth = (w * 2) / 9;
+    const bodyHeight = (h * 2) / 9;
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <path d={`M ${-w / 3} ${-h / 3} L ${w / 3} ${-h / 3} L 0 ${h / 3} Z`} fill={fill} />
-        {renderText && uprightText(node, 0, -4, { fill: stroke, stroke: "none", fontSize: miniature ? 8 : 12, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2")}
+        <path d={`M ${-bodyWidth} ${-bodyHeight} L ${bodyWidth} ${-bodyHeight} L 0 ${bodyHeight} Z`} fill={fill} />
+        {renderText && uprightText(node, 0, miniature ? -2 : -3, { fill: stroke, stroke: "none", fontSize: miniature ? 11 : 18, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2")}
       </g>
     );
   }
@@ -6065,18 +6067,22 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
         : glyphVariant === "single-heat-load"
           ? "single-heat-load-glyph"
           : "heat-load-glyph";
+    const singleBodyWidth = (w * 2) / 9;
+    const singleBodyHeight = (h * 2) / 9;
+    const twoPortBodyWidth = (w - 20) * 2 / 3;
+    const twoPortBodyHeight = (h - 16) * 2 / 3;
     return (
       <g className={loadClass} fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
         {isTwoPortLoad ? (
-          <rect x={-w / 2 + 10} y={-h / 2 + 8} width={w - 20} height={h - 16} rx="5" fill={fill} />
+          <rect x={-twoPortBodyWidth / 2} y={-twoPortBodyHeight / 2} width={twoPortBodyWidth} height={twoPortBodyHeight} rx="5" fill={fill} />
         ) : (
-          <path d={`M ${-w / 3} ${-h / 3} L ${w / 3} ${-h / 3} L 0 ${h / 3} Z`} fill={fill} />
+          <path d={`M ${-singleBodyWidth} ${-singleBodyHeight} L ${singleBodyWidth} ${-singleBodyHeight} L 0 ${singleBodyHeight} Z`} fill={fill} />
         )}
-        <path d="M -13 -4 H 13 M -10 3 H 10 M -7 10 H 7" />
+        <path d="M -9 -4 H 9 M -7 2 H 7 M -5 8 H 5" />
         {isTwoPortLoad ? (
           <path className="heat-load-two-port-marker" d="M -30 -13 H -17 M -23 -17 L -17 -13 L -23 -9 M 17 13 H 30 M 24 9 L 31 13 L 24 17" />
         ) : (
-          <path className="heat-load-single-marker" d="M 18 -10 H 30 M 25 -14 L 31 -10 L 25 -6" />
+          <path className="heat-load-single-marker" d="M 20 -18 V -6 M 15 -11 L 20 -6 L 25 -11" />
         )}
       </g>
     );

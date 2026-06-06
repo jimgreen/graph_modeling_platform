@@ -2666,7 +2666,8 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 86, height: 58 },
     params: { pressure: "2 MPa", hydrogenDemand: "500 Nm3/h" },
     terminalType: "h2",
-    terminalCount: 1
+    terminalCount: 1,
+    terminalAnchors: [{ x: 0, y: -0.5 }]
   },
   {
     kind: "ac-fuel-cell",
@@ -2923,7 +2924,8 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 86, height: 58 },
     params: { heatDemand: "5 MW" },
     terminalType: "heat",
-    terminalCount: 1
+    terminalCount: 1,
+    terminalAnchors: [{ x: 0, y: -0.5 }]
   },
   {
     kind: "two-port-heat-load",
@@ -6142,7 +6144,7 @@ function terminalStubVisibleBoundaryDistance(
       return scaled(w / 9);
     }
     if (glyphVariant === "hydrogen-load" || glyphVariant === "heat-load" || glyphVariant === "single-heat-load") {
-      return scaled(w / 6);
+      return scaled((w * 2) / 9);
     }
     if (glyphVariant === "two-port-heat-load") {
       return scaled(Math.max(w / 2 - 10, 31));
@@ -6205,7 +6207,7 @@ function terminalStubVisibleBoundaryDistance(
     return scaled(h * 2 / 9);
   }
   if (glyphVariant === "hydrogen-load" || glyphVariant === "heat-load" || glyphVariant === "single-heat-load") {
-    return scaled(h / 3);
+    return scaled((h * 2) / 9);
   }
   if (isConverterGlyphVariant(glyphVariant)) {
     return Math.max(0, fullRectDistance - scaled(CONVERTER_GLYPH_BORDER_INSET));
