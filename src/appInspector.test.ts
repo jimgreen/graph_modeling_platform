@@ -163,6 +163,61 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".app-shell.browse-mode");
   });
 
+  test("keeps the element tree selection easy to click and synced with canvas selection", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const treeStart = source.indexOf("const renderElementTreePanel = () => (");
+    const treeEnd = source.indexOf("const topologyWarningDisplayMessage", treeStart);
+    const treeBlock = source.slice(treeStart, treeEnd);
+    const selectedRule = cssRuleBlock(styles, ".element-tree-item.selected");
+
+    expect(source).toContain("const elementTreeItemRefs = useRef<Record<string, HTMLDivElement | null>>({});");
+    expect(source).toContain("elementTreeItemRefs.current[selectedElementTreeItemKey]?.scrollIntoView");
+    expect(source).toContain("block: \"nearest\"");
+    expect(source).toContain("inline: \"nearest\"");
+    expect(treeBlock).toContain("onPointerDown={selectTreeItem}");
+    expect(treeBlock).toContain("ref={(element) => {");
+    expect(treeBlock).toContain("elementTreeItemRefs.current[treeItemKey] = element;");
+    expect(selectedRule).toContain("#dbeafe");
+    expect(selectedRule).toContain("#2563eb");
+    expect(selectedRule).toContain("font-weight: 900");
+  });
+
+  test("shows element tree types with Chinese and English labels without duplicating device names", async () => {
+    const source = await readAppSource();
+    const modelSource = await readModelSource();
+    const styles = await readStyles();
+    const treeStart = source.indexOf("const renderElementTreePanel = () => (");
+    const treeEnd = source.indexOf("const topologyWarningDisplayMessage", treeStart);
+    const treeBlock = source.slice(treeStart, treeEnd);
+
+    expect(modelSource).toContain("typeEnglishLabel?: string;");
+    expect(modelSource).toContain("componentTypeLabel?: string;");
+    expect(modelSource).not.toContain("nameEnglish?: string;");
+    expect(treeBlock).toContain("group.typeEnglishLabel");
+    expect(treeBlock).toContain("child.componentTypeLabel || child.componentType");
+    expect(treeBlock).not.toContain("item.nameEnglish");
+    expect(treeBlock).not.toContain("child.nameEnglish");
+    expect(styles).toContain(".element-tree-bilingual");
+    expect(styles).not.toContain(".element-tree-field-secondary");
+  });
+
+  test("sets transformer and converter voltage bases through a single selected terminal dropdown", async () => {
+    const source = await readAppSource();
+    const dialogStart = source.indexOf("{voltageBaseSetDialogOpen && (");
+    const dialogEnd = source.indexOf("{voltageBaseClearDialogOpen && (", dialogStart);
+    const dialogBlock = source.slice(dialogStart, dialogEnd);
+
+    expect(source).toContain("const [activeVoltageBaseTerminalKey, setActiveVoltageBaseTerminalKey] = useState(\"\");");
+    expect(source).toContain("const activeVoltageBaseTerminalValues = ()");
+    expect(dialogBlock).toContain("<select");
+    expect(dialogBlock).toContain("value={activeVoltageBaseTerminalKey}");
+    expect(dialogBlock).toContain("onChange={(event) => setActiveVoltageBaseTerminalKey(event.target.value)}");
+    expect(dialogBlock).toContain("activeVoltageBaseTerminalRow");
+    expect(dialogBlock).toContain("value={activeVoltageBaseTerminalRow.value}");
+    expect(source).toContain("setVoltageBaseTerminalValuesForScope(nodes, edges, activeVoltageBaseTerminalValues(), scope)");
+  });
+
   test("forces the left panel back to the model library and hides edit-only library tabs in browse mode", async () => {
     const source = await readAppSource();
     const effectStart = source.indexOf("useEffect(() => {\n    if (isBrowseMode && leftPanelTab !== \"projects\")");
@@ -1375,8 +1430,9 @@ describe("graph inspector panel", () => {
     expect(exportBlock).toContain("const targetLayerIds = exportSvgButtonTargetLayerIds(button);");
   });
 
-  test("shows Chinese labels in the generic device parameter table", async () => {
+  test("shows Chinese and English labels in the generic device parameter table", async () => {
     const source = await readAppSource();
+    const styles = await readStyles();
     const headerStart = source.indexOf("const renderParamHeader =");
     const headerEnd = source.indexOf("const renderChineseParamHeader", headerStart);
     const headerBlock = source.slice(headerStart, headerEnd);
@@ -1390,9 +1446,12 @@ describe("graph inspector panel", () => {
     expect(source).toContain("buttonCommand: STATIC_BUTTON_COMMAND_LABELS");
     expect(source).toContain("component_type: \"元件类型\"");
     expect(headerBlock).toContain("const visibleLabel = displayName === key ? title : displayName;");
-    expect(headerBlock).toContain("<th title={key}>{visibleLabel}</th>");
+    expect(headerBlock).toContain("className=\"param-header-bilingual\"");
+    expect(headerBlock).toContain("<span>{visibleLabel}</span>");
+    expect(headerBlock).toContain("<small>{englishLabel}</small>");
     expect(editorBlock).toContain("const optionLabels = PARAM_OPTION_LABELS[key] ?? {};");
     expect(editorBlock).toContain("{optionLabels[option] ?? option}");
+    expect(styles).toContain(".param-header-bilingual");
   });
 
   test("keeps backend electric heat sections split by AC and DC device types", async () => {
@@ -7230,12 +7289,12 @@ describe("graph inspector panel", () => {
     expect(voltageBaseMenuBlock).toContain("openVoltageBaseClearDialog");
     expect(voltageBaseMenuBlock).toContain("清空电压基值");
     expect(setBlock).toContain("setVoltageBaseValuesForScope(nodes, edges, activeSelectedNodeIds, scope, voltageBaseSetValue.trim())");
-    expect(setBlock).toContain("setVoltageBaseTerminalValuesForScope(nodes, edges, voltageBaseTerminalValues, scope)");
+    expect(setBlock).toContain("setVoltageBaseTerminalValuesForScope(nodes, edges, activeVoltageBaseTerminalValues(), scope)");
     expect(setBlock).toContain("pushUndoSnapshot(true, false, undoScopeForGraphPatch(result.changedNodeIds, []))");
     expect(setBlock).toContain("patchGraphNodes(result.nodeUpdates)");
     expect(dialogBlock).toContain("设置方式");
-    expect(dialogBlock).toContain("统一设置");
-    expect(dialogBlock).toContain("按端子设置");
+    expect(source).toContain(": \"统一设置\";");
+    expect(source).toContain("? \"按端子设置\"");
     expect(dialogBlock).toContain("voltage-base-terminal-grid");
     expect(dialogBlock).toContain("setVoltageBaseTerminalValue");
     expect(dialogBlock).toContain("list=\"voltage-base-set-options\"");
@@ -7244,6 +7303,9 @@ describe("graph inspector panel", () => {
     expect(source).toContain("selected: \"选中设备\"");
     expect(source).toContain("island: \"所在拓扑岛\"");
     expect(dialogBlock).toContain("VOLTAGE_BASE_SET_SCOPE_LABELS[scope]");
+    expect(dialogBlock).toContain("const count = result.targetNodeIds.length;");
+    expect(dialogBlock).toContain("voltageBaseSetResultForScope(voltageBaseSetScope).targetNodeIds.length === 0");
+    expect(dialogBlock).not.toContain("const count = result.changedNodeIds.length;");
     expect(dialogBlock).toContain("confirmVoltageBaseSetDialog");
   });
 

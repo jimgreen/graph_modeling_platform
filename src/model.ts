@@ -423,6 +423,7 @@ export type ElementTreeChildItem = {
   id: string;
   label: string;
   componentType: string;
+  componentTypeLabel?: string;
   idx: string;
   name: string;
   nameKey: string;
@@ -433,6 +434,7 @@ export type ElementTreeChildItem = {
 export type ElementTreeGroup = {
   typeKey: string;
   typeLabel: string;
+  typeEnglishLabel?: string;
   items: ElementTreeItem[];
 };
 
@@ -7137,6 +7139,58 @@ function getElementTreeTypeLabel(node: ModelNode, templates: readonly DeviceTemp
   return templates.find((template) => template.kind === node.kind)?.label ?? node.kind;
 }
 
+const ELEMENT_TREE_COMPONENT_TYPE_LABELS: Record<string, string> = {
+  StaticTextSymbol: "静态文本",
+  StaticMediaSymbol: "静态媒体",
+  StaticBasicShape: "基础图形",
+  StaticFlowNode: "流程节点",
+  StaticButton: "按钮图元",
+  StaticContainerSymbol: "容器图元",
+  StaticConnectorSymbol: "连接图元",
+  StaticAnnotationSymbol: "标注图元",
+  ACRealBs: "交流母线",
+  DCRealBs: "直流母线",
+  ACNode: "交流节点",
+  DCNode: "直流节点",
+  ACBranch: "交流支路",
+  DCBranch: "直流支路",
+  ACLoad: "交流负荷",
+  DCLoad: "直流负荷",
+  ACGenerator: "交流电源",
+  DCGenerator: "直流电源",
+  ACShuntCompensator: "交流无功补偿",
+  ACZeroBranch: "交流零阻支路",
+  DCZeroBranch: "直流零阻支路",
+  ACSwitch: "交流开关",
+  DCSwitch: "直流开关",
+  ACBreak: "交流断路器",
+  DCBreak: "直流断路器",
+  GroundDisconnector: "接地刀闸",
+  ACTransformer: "双绕组变压器",
+  ACTransfomer3: "三绕组变压器",
+  DCDCConverter: "直流变换器",
+  DCACConverter: "交直流变换器",
+  ACACConverter: "交流变换器",
+  HydroSource: "氢源",
+  HydroLoad: "氢负荷",
+  HydroPipe: "输氢管道",
+  HydroCompressor: "氢压缩机",
+  HydroPressRegulator: "氢调压器",
+  HydroStopValve: "氢截止阀",
+  HydroBus: "氢母线",
+  HeatSource: "热源",
+  HeatLoad: "热负荷",
+  HeatPipe: "热管道",
+  HeatExchanger: "换热器",
+  HeatPump: "热泵",
+  HeatBus: "热母线"
+};
+
+function elementTreeComponentTypeLabel(componentType: string): string {
+  const normalized = componentType.trim();
+  return ELEMENT_TREE_COMPONENT_TYPE_LABELS[normalized] ?? normalized;
+}
+
 function edgeDisplayName(edge: Edge, nodeById: Map<string, ModelNode>): string {
   const sourceName = nodeById.get(edge.sourceId)?.name;
   const targetName = nodeById.get(edge.targetId)?.name;
@@ -7156,10 +7210,10 @@ export function buildElementTree(
   const groupByKey = new Map<string, ElementTreeGroup>();
   const templateByKind = new Map(templates.map((template) => [template.kind, template]));
   const includeContainerChildren = options.includeContainerChildren !== false;
-  const appendItem = (typeKey: string, typeLabel: string, item: ElementTreeItem) => {
+  const appendItem = (typeKey: string, typeLabel: string, item: ElementTreeItem, typeEnglishLabel?: string) => {
     let group = groupByKey.get(typeKey);
     if (!group) {
-      group = { typeKey, typeLabel, items: [] };
+      group = { typeKey, typeLabel, typeEnglishLabel, items: [] };
       groupByKey.set(typeKey, group);
       groups.push(group);
     }
@@ -7168,6 +7222,7 @@ export function buildElementTree(
 
   for (const node of nodes) {
     const typeLabel = getElementTreeTypeLabel(node, templates);
+    const typeEnglishLabel = inferESection(node.kind, node.params) || node.kind;
     const containerChildren = includeContainerChildren
       ? buildContainerDeviceParameterViews(node, templateByKind.get(node.kind))
           .filter((view) => view.kind === "associated")
@@ -7175,6 +7230,7 @@ export function buildElementTree(
             id: `${node.id}:${view.id}`,
             label: view.label,
             componentType: view.componentType ?? "",
+            componentTypeLabel: view.componentType ? elementTreeComponentTypeLabel(view.componentType) : "",
             idx: view.rows.find((row) => row.key === "idx")?.value ?? "",
             name: view.rows.find((row) => row.key === "name")?.value ?? "",
             nameKey: view.relationKeys?.[0] ? containerRelationNameKey(view.relationKeys[0]) : "",
@@ -7192,7 +7248,7 @@ export function buildElementTree(
     if (containerChildren.length > 0) {
       item.children = containerChildren;
     }
-    appendItem(`node:${node.kind}`, typeLabel, item);
+    appendItem(`node:${node.kind}`, typeLabel, item, typeEnglishLabel);
   }
 
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
@@ -7201,7 +7257,7 @@ export function buildElementTree(
       kind: "edge",
       id: edge.id,
       name: edgeDisplayName(edge, nodeById)
-    });
+    }, "ConnectionLine");
   }
 
   return groups;
@@ -7633,6 +7689,16 @@ export type VoltageBaseClearResult = {
 export type VoltageBaseSetResult = VoltageBaseClearResult;
 export type VoltageBaseTerminalValuesByNodeId = Record<string, Record<string, string>>;
 
+export type TwoTerminalVoltageBaseMismatch = {
+  nodeId: string;
+  nodeName: string;
+  section: string;
+  sourceTerminalLabel: string;
+  targetTerminalLabel: string;
+  sourceVoltageBase: string;
+  targetVoltageBase: string;
+};
+
 type VoltageBaseScopeTargets = {
   nodeIds: Set<string>;
   terminalIdsByNodeId: Map<string, Set<string>> | null;
@@ -7730,6 +7796,84 @@ function isVoltageBaseValueParamKey(key: string): boolean {
     normalized.endsWith("_v_set") ||
     /^v_[a-z0-9]+_set$/.test(normalized)
   );
+}
+
+const TWO_TERMINAL_EQUAL_VOLTAGE_BASE_SECTIONS = new Set([
+  "ACBranch",
+  "DCBranch",
+  "ACZeroBranch",
+  "DCZeroBranch",
+  "ACSwitch",
+  "DCSwitch",
+  "ACBreak",
+  "DCBreak"
+]);
+
+const TERMINAL_VOLTAGE_BASE_SETTING_SECTIONS = new Set([
+  "ACTransformer",
+  "ACTransfomer3",
+  "DCDCConverter",
+  "DCACConverter",
+  "ACACConverter"
+]);
+
+const TERMINAL_VOLTAGE_BASE_SETTING_KINDS = new Set([
+  "ac-transformer",
+  "ac-two-winding-transformer",
+  "ac-three-winding-transformer",
+  "ac-three-winding-transformer-neutral",
+  "dcdc-converter",
+  "acdc-converter",
+  "acac-converter"
+]);
+
+export type VoltageBaseSettingMode = "uniform" | "terminal";
+
+export function voltageBaseSettingModeForNode(node: ModelNode): VoltageBaseSettingMode | null {
+  if (isBusNode(node) || isStaticNode(node) || !node.terminals.some((terminal) => isElectricalTerminalType(terminal.type))) {
+    return null;
+  }
+  return TERMINAL_VOLTAGE_BASE_SETTING_KINDS.has(baseDeviceKind(node.kind)) || TERMINAL_VOLTAGE_BASE_SETTING_SECTIONS.has(inferESection(node.kind, node.params))
+    ? "terminal"
+    : "uniform";
+}
+
+function isTwoTerminalEqualVoltageBaseDevice(node: ModelNode): boolean {
+  if (node.terminals.length !== 2 || isBusNode(node) || isStaticNode(node)) {
+    return false;
+  }
+  return TWO_TERMINAL_EQUAL_VOLTAGE_BASE_SECTIONS.has(inferESection(node.kind, node.params));
+}
+
+function voltageBaseComparisonKey(value: string): string {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? String(numeric) : value;
+}
+
+export function validateTwoTerminalVoltageBaseConsistency(nodes: ModelNode[]): TwoTerminalVoltageBaseMismatch[] {
+  const mismatches: TwoTerminalVoltageBaseMismatch[] = [];
+  for (const node of nodes) {
+    if (!isTwoTerminalEqualVoltageBaseDevice(node)) {
+      continue;
+    }
+    const sourceTerminal = node.terminals[0];
+    const targetTerminal = node.terminals[1];
+    const sourceVoltageBase = terminalVoltageBaseNumber(sourceTerminal.vbase ?? node.params.i_vbase ?? node.params.sourceVbase ?? node.params.vbase);
+    const targetVoltageBase = terminalVoltageBaseNumber(targetTerminal.vbase ?? node.params.j_vbase ?? node.params.targetVbase ?? node.params.vbase);
+    if (!sourceVoltageBase || !targetVoltageBase || voltageBaseComparisonKey(sourceVoltageBase) === voltageBaseComparisonKey(targetVoltageBase)) {
+      continue;
+    }
+    mismatches.push({
+      nodeId: node.id,
+      nodeName: node.name,
+      section: inferESection(node.kind, node.params),
+      sourceTerminalLabel: sourceTerminal.label || sourceTerminal.id,
+      targetTerminalLabel: targetTerminal.label || targetTerminal.id,
+      sourceVoltageBase,
+      targetVoltageBase
+    });
+  }
+  return mismatches;
 }
 
 function setNodeVoltageBaseValues(node: ModelNode, value: string): ModelNode {
@@ -7961,7 +8105,7 @@ function selectedVoltageBaseTerminalValues(
   const valuesByNodeId = new Map<string, Map<string, string>>();
   for (const node of nodes) {
     const inputValues = terminalValuesByNodeId[node.id];
-    if (!inputValues) {
+    if (!inputValues || voltageBaseSettingModeForNode(node) !== "terminal") {
       continue;
     }
     const valuesByTerminalId = new Map<string, string>();
@@ -8116,10 +8260,15 @@ export function setVoltageBaseValuesForScope(
     if (!targets.nodeIds.has(node.id)) {
       return node;
     }
+    const settingMode = voltageBaseSettingModeForNode(node);
     const targetTerminalIds = targets.terminalIdsByNodeId?.get(node.id);
-    const nextNode = targetTerminalIds
-      ? setNodeVoltageBaseValuesForTerminals(node, targetTerminalIds, value)
-      : setNodeVoltageBaseValues(node, value);
+    const nextNode = settingMode === "uniform"
+      ? targetTerminalIds
+        ? setNodeVoltageBaseValuesForTerminals(node, targetTerminalIds, value)
+        : setNodeVoltageBaseValues(node, value)
+      : settingMode === "terminal" && targetTerminalIds
+        ? setNodeVoltageBaseValuesForTerminals(node, targetTerminalIds, value)
+        : node;
     if (nextNode !== node) {
       nodeUpdates.push(nextNode);
     }

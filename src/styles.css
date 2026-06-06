@@ -4885,8 +4885,35 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   min-width: 0;
 }
 
-.element-tree-type-label span {
+.element-tree-type-label > span,
+.element-tree-type-label .element-tree-bilingual > span {
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.element-tree-bilingual {
+  display: grid;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.element-tree-bilingual > span,
+.element-tree-child-type > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.element-tree-bilingual small,
+.element-tree-child-type small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4914,14 +4941,20 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   display: block;
   width: 100%;
   min-height: 26px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 6px;
   padding: 1px 8px;
   color: #334155;
   background: transparent;
   text-align: left;
+  cursor: pointer;
   content-visibility: auto;
   contain-intrinsic-size: 36px;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    color 120ms ease;
 }
 
 .element-tree-item span {
@@ -4940,7 +4973,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .element-tree-item > .element-tree-item-main > span {
-  display: flex;
+  display: grid;
   align-items: center;
   min-height: 26px;
   line-height: 1.2;
@@ -4993,6 +5026,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   background: transparent;
   font-size: 12px;
   font-weight: 800;
+  cursor: text;
   box-shadow: none;
   transition:
     background-color 120ms ease,
@@ -5048,7 +5082,15 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .element-tree-child-type {
+  display: grid;
+  min-width: 0;
   font-weight: 800;
+  line-height: 1.15;
+}
+
+.element-tree-item.selected .element-tree-bilingual small,
+.element-tree-item.selected .element-tree-child-type small {
+  color: #1d4ed8;
 }
 
 .element-tree-item:hover,
@@ -5059,9 +5101,13 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .element-tree-item.selected {
-  color: #1e293b;
-  background: #e8eef5;
-  box-shadow: inset 3px 0 0 #64748b;
+  color: #0f172a;
+  border-color: #93c5fd;
+  background: #dbeafe;
+  box-shadow:
+    inset 4px 0 0 #2563eb,
+    0 0 0 1px rgba(37, 99, 235, 0.18);
+  font-weight: 900;
 }
 
 .element-tree-item.selected .element-tree-device-fields input,
@@ -5175,6 +5221,28 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   color: #475569;
   background: #f8fafc;
   text-align: left;
+  font-weight: 700;
+}
+
+.param-header-bilingual {
+  display: grid;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.param-header-bilingual > span,
+.param-header-bilingual small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.param-header-bilingual small {
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 10px;
   font-weight: 700;
 }
 

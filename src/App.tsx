@@ -204,6 +204,8 @@ import {
   synchronizeBusTerminalsWithEdges,
   validateTopology,
   validateConnectionEndpointRules,
+  validateTwoTerminalVoltageBaseConsistency,
+  voltageBaseSettingModeForNode,
   validateVoltageSetpointDeviations,
   normalizeViewBoxToCanvas,
   type DeviceKind,
@@ -1773,7 +1775,7 @@ const VOLTAGE_BASE_SET_SCOPE_LABELS: Record<VoltageBaseSetScope, string> = {
   island: "所在拓扑岛"
 };
 const VOLTAGE_BASE_SET_PRESETS = ["0.4", "6", "10", "35", "66", "110", "220", "330", "500", "750", "1000"];
-type VoltageBaseSetMode = "uniform" | "terminal";
+type VoltageBaseSetMode = "uniform" | "terminal" | "byDevice";
 type WheelZoomAnchor = {
   point: Point;
   cursorOffsetX: number;
@@ -7134,6 +7136,7 @@ export function App() {
   }>({ nodeSource: null, nodeStep: 1, nodes: [], routeSource: null, routeStep: 1, routes: [] });
   const elementTreeCacheRef = useRef<{ signature: string; tree: ElementTreeGroup[] }>({ signature: "", tree: [] });
   const elementTreeSourceRef = useRef<ElementTreeSource | null>(null);
+  const elementTreeItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const selectedLayoutUnitsCacheRef = useRef<CanvasLayoutUnit[]>([]);
   const graphDirtyBaselineRef = useRef<GraphDirtyBaseline | null>(null);
   const suppressNextGraphDirtyRef = useRef(false);
@@ -7242,6 +7245,7 @@ export function App() {
   const [voltageBaseSetValue, setVoltageBaseSetValue] = useState("110");
   const [voltageBaseSetMode, setVoltageBaseSetMode] = useState<VoltageBaseSetMode>("uniform");
   const [voltageBaseTerminalValues, setVoltageBaseTerminalValues] = useState<VoltageBaseTerminalValuesByNodeId>({});
+  const [activeVoltageBaseTerminalKey, setActiveVoltageBaseTerminalKey] = useState("");
   const [connectionRedrawDialogOpen, setConnectionRedrawDialogOpen] = useState(false);
   const [connectionRedrawScope, setConnectionRedrawScope] = useState<ConnectionRedrawScope>("selected");
   const [connectSource, setConnectSource] = useState<{ nodeId: string; terminalId: string; point?: Point } | null>(null);
@@ -9376,6 +9380,17 @@ export function App() {
     elementTreeCacheRef.current = { signature: elementTreeSignature, tree };
     return tree;
   }, [deferredElementTreeSource, elementTreeSignature, graphTreePanelActive, libraryTemplates]);
+  const selectedElementTreeItemKey = useMemo(() => {
+    if (!graphTreePanelActive) {
+      return "";
+    }
+    const selectedNode = activeSelectedNodeIds.find((nodeId) => activeLayerNodeIdSet.has(nodeId));
+    if (selectedNode) {
+      return `node:${selectedNode}`;
+    }
+    const selectedEdge = activeSelectedEdgeIds.find((edgeId) => activeLayerEdgeIdSet.has(edgeId));
+    return selectedEdge ? `edge:${selectedEdge}` : "";
+  }, [activeLayerEdgeIdSet, activeLayerNodeIdSet, activeSelectedEdgeIds, activeSelectedNodeIds, graphTreePanelActive]);
   const elementTreeItemChildren = (item: ElementTreeItem): ElementTreeChildItem[] => {
     if (item.kind !== "node") {
       return [];
@@ -9615,6 +9630,40 @@ export function App() {
       return changed ? next : current;
     });
   }, [elementTree, graphTreePanelActive]);
+
+  useEffect(() => {
+    if (!graphTreePanelActive || !selectedElementTreeItemKey) {
+      return;
+    }
+    for (const group of elementTree) {
+      const selectedIndex = group.items.findIndex((item) => `${item.kind}:${item.id}` === selectedElementTreeItemKey);
+      if (selectedIndex < 0) {
+        continue;
+      }
+      setCollapsedElementTreeGroups((current) =>
+        current.includes(group.typeKey) ? current.filter((key) => key !== group.typeKey) : current
+      );
+      setElementTreeItemLimits((current) => {
+        const currentLimit = current[group.typeKey] ?? ELEMENT_TREE_INITIAL_ITEM_LIMIT;
+        if (selectedIndex < currentLimit) {
+          return current;
+        }
+        const nextLimit = Math.ceil((selectedIndex + 1) / ELEMENT_TREE_ITEM_LIMIT_STEP) * ELEMENT_TREE_ITEM_LIMIT_STEP;
+        return { ...current, [group.typeKey]: Math.max(nextLimit, ELEMENT_TREE_INITIAL_ITEM_LIMIT) };
+      });
+      return;
+    }
+  }, [elementTree, graphTreePanelActive, selectedElementTreeItemKey]);
+
+  useLayoutEffect(() => {
+    if (!graphTreePanelActive || !selectedElementTreeItemKey) {
+      return;
+    }
+    elementTreeItemRefs.current[selectedElementTreeItemKey]?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest"
+    });
+  }, [collapsedElementTreeGroups, elementTreeItemLimits, graphTreePanelActive, selectedElementTreeItemKey]);
 
   useEffect(() => {
     setTopologyWarningPage((current) => Math.min(current, Math.max(0, Math.ceil(inspectorTopologyErrors.length / TOPOLOGY_WARNING_PAGE_SIZE) - 1)));
@@ -19337,11 +19386,19 @@ export function App() {
 
   const renderParamHeader = (key: string, displayName = key, title = PARAM_LABELS[key] ?? displayName) => {
     const visibleLabel = displayName === key ? title : displayName;
-    return <th title={key}>{visibleLabel}</th>;
+    const englishLabel = key.trim();
+    return (
+      <th title={englishLabel ? `${visibleLabel} / ${englishLabel}` : visibleLabel}>
+        <span className="param-header-bilingual">
+          <span>{visibleLabel}</span>
+          {englishLabel && englishLabel !== visibleLabel ? <small>{englishLabel}</small> : null}
+        </span>
+      </th>
+    );
   };
 
   const renderChineseParamHeader = (key: string, fallback = key) => (
-    <th title={key}>{PARAM_LABELS[key] ?? fallback}</th>
+    renderParamHeader(key, key, PARAM_LABELS[key] ?? fallback)
   );
 
   const contextMenuStyle = (menu: ContextMenuState | ProjectMenuState) => {
@@ -22040,10 +22097,35 @@ export function App() {
     return "110";
   };
 
-  const voltageBaseSetTerminalRows = useMemo(() => {
+  const voltageBaseSetCandidateNodes = useMemo(() => {
+    if (activeSelectedNodeIds.length === 0) {
+      return nodes;
+    }
     const selected = new Set(activeSelectedNodeIds);
-    return nodes
-      .filter((node) => selected.has(node.id) && !isBusNode(node) && !isStaticNode(node) && node.terminals.length > 1)
+    return nodes.filter((node) => selected.has(node.id));
+  }, [activeSelectedNodeIds, nodes]);
+
+  const voltageBaseSetHasUniformTargets = voltageBaseSetCandidateNodes.some((node) => voltageBaseSettingModeForNode(node) === "uniform");
+  const voltageBaseSetHasTerminalTargets = voltageBaseSetCandidateNodes.some((node) => voltageBaseSettingModeForNode(node) === "terminal");
+  const recommendedVoltageBaseSetMode = (): VoltageBaseSetMode => {
+    if (voltageBaseSetHasUniformTargets && voltageBaseSetHasTerminalTargets) {
+      return "byDevice";
+    }
+    if (voltageBaseSetHasTerminalTargets) {
+      return "terminal";
+    }
+    return "uniform";
+  };
+  const voltageBaseSetModeLabel =
+    voltageBaseSetMode === "byDevice"
+      ? "按设备类型自动设置"
+      : voltageBaseSetMode === "terminal"
+        ? "按端子设置"
+        : "统一设置";
+
+  const voltageBaseSetTerminalRows = useMemo(() => {
+    return voltageBaseSetCandidateNodes
+      .filter((node) => voltageBaseSettingModeForNode(node) === "terminal" && node.terminals.length > 1)
       .flatMap((node) => node.terminals.map((terminal, index) => ({
         nodeId: node.id,
         nodeName: node.name,
@@ -22052,14 +22134,19 @@ export function App() {
         terminalType: terminal.type.toUpperCase(),
         value: voltageBaseTerminalValues[node.id]?.[terminal.id] ?? ""
       })));
-  }, [activeSelectedNodeIds, nodes, voltageBaseTerminalValues]);
+  }, [voltageBaseSetCandidateNodes, voltageBaseTerminalValues]);
+
+  const voltageBaseTerminalRowKey = (row: { nodeId: string; terminalId: string }) => `${row.nodeId}:${row.terminalId}`;
+  const activeVoltageBaseTerminalRow =
+    voltageBaseSetTerminalRows.find((row) => voltageBaseTerminalRowKey(row) === activeVoltageBaseTerminalKey)
+    ?? voltageBaseSetTerminalRows[0]
+    ?? null;
 
   const defaultVoltageBaseTerminalValues = () => {
     const fallback = defaultVoltageBaseSetValue();
     const values: VoltageBaseTerminalValuesByNodeId = {};
-    const selected = new Set(activeSelectedNodeIds);
-    for (const node of nodes) {
-      if (!selected.has(node.id) || isBusNode(node) || isStaticNode(node) || node.terminals.length <= 1) {
+    for (const node of voltageBaseSetCandidateNodes) {
+      if (voltageBaseSettingModeForNode(node) !== "terminal" || node.terminals.length <= 1) {
         continue;
       }
       values[node.id] = Object.fromEntries(
@@ -22072,10 +22159,33 @@ export function App() {
     return values;
   };
 
+  const defaultVoltageBaseTerminalKey = () => {
+    for (const node of voltageBaseSetCandidateNodes) {
+      if (voltageBaseSettingModeForNode(node) !== "terminal" || node.terminals.length <= 1) {
+        continue;
+      }
+      const [terminal] = node.terminals;
+      if (terminal) {
+        return `${node.id}:${terminal.id}`;
+      }
+    }
+    return "";
+  };
+
   const hasVoltageBaseTerminalValues = (values: VoltageBaseTerminalValuesByNodeId) =>
     Object.values(values).some((terminalValues) =>
       Object.values(terminalValues).some((value) => value.trim().length > 0)
     );
+
+  const activeVoltageBaseTerminalValues = () => {
+    if (!activeVoltageBaseTerminalRow) {
+      return {};
+    }
+    const value = activeVoltageBaseTerminalRow.value.trim();
+    return value
+      ? { [activeVoltageBaseTerminalRow.nodeId]: { [activeVoltageBaseTerminalRow.terminalId]: value } }
+      : {};
+  };
 
   const setVoltageBaseTerminalValue = (nodeId: string, terminalId: string, value: string) => {
     setVoltageBaseTerminalValues((current) => ({
@@ -22087,18 +22197,66 @@ export function App() {
     }));
   };
 
+  const emptyVoltageBaseSetResult = () => ({ nodes, nodeUpdates: [], targetNodeIds: [], changedNodeIds: [] });
+  const mergeVoltageBaseSetResults = (
+    first: ReturnType<typeof setVoltageBaseValuesForScope>,
+    second: ReturnType<typeof setVoltageBaseValuesForScope>
+  ): ReturnType<typeof setVoltageBaseValuesForScope> => {
+    const updatesById = new Map<string, ModelNode>();
+    for (const node of first.nodeUpdates) {
+      updatesById.set(node.id, node);
+    }
+    for (const node of second.nodeUpdates) {
+      updatesById.set(node.id, node);
+    }
+    return {
+      nodes: second.nodes,
+      nodeUpdates: Array.from(updatesById.values()),
+      targetNodeIds: Array.from(new Set([...first.targetNodeIds, ...second.targetNodeIds])),
+      changedNodeIds: Array.from(new Set([...first.changedNodeIds, ...second.changedNodeIds]))
+    };
+  };
+  const voltageBaseSetReady = () => {
+    const terminalReadyForActiveRow = activeVoltageBaseTerminalRow ? activeVoltageBaseTerminalRow.value.trim().length > 0 : false;
+    if (voltageBaseSetMode === "byDevice") {
+      const uniformReady = !voltageBaseSetHasUniformTargets || voltageBaseSetValue.trim().length > 0;
+      const terminalReady = !voltageBaseSetHasTerminalTargets || terminalReadyForActiveRow;
+      return uniformReady && terminalReady;
+    }
+    return voltageBaseSetMode === "terminal"
+      ? terminalReadyForActiveRow
+      : voltageBaseSetValue.trim().length > 0;
+  };
+
   const voltageBaseSetPreviewByScope = useMemo<Partial<Record<VoltageBaseSetScope, ReturnType<typeof setVoltageBaseValuesForScope>>>>(() => {
     if (!voltageBaseSetDialogOpen) {
       return {};
     }
+    if (voltageBaseSetMode === "byDevice") {
+      if (!voltageBaseSetReady()) {
+        return {};
+      }
+      return Object.fromEntries(
+        VOLTAGE_BASE_SET_SCOPES.map((scope) => {
+          const uniformResult = voltageBaseSetValue.trim().length > 0
+            ? setVoltageBaseValuesForScope(nodes, edges, activeSelectedNodeIds, scope, voltageBaseSetValue.trim())
+            : emptyVoltageBaseSetResult();
+          const selectedTerminalValues = activeVoltageBaseTerminalValues();
+          const terminalResult = hasVoltageBaseTerminalValues(selectedTerminalValues)
+            ? setVoltageBaseTerminalValuesForScope(uniformResult.nodes, edges, selectedTerminalValues, scope)
+            : { ...emptyVoltageBaseSetResult(), nodes: uniformResult.nodes };
+          return [scope, mergeVoltageBaseSetResults(uniformResult, terminalResult)];
+        })
+      ) as Partial<Record<VoltageBaseSetScope, ReturnType<typeof setVoltageBaseValuesForScope>>>;
+    }
     if (voltageBaseSetMode === "terminal") {
-      if (!hasVoltageBaseTerminalValues(voltageBaseTerminalValues)) {
+      if (!hasVoltageBaseTerminalValues(activeVoltageBaseTerminalValues())) {
         return {};
       }
       return Object.fromEntries(
         VOLTAGE_BASE_SET_SCOPES.map((scope) => [
           scope,
-          setVoltageBaseTerminalValuesForScope(nodes, edges, voltageBaseTerminalValues, scope)
+          setVoltageBaseTerminalValuesForScope(nodes, edges, activeVoltageBaseTerminalValues(), scope)
         ])
       ) as Partial<Record<VoltageBaseSetScope, ReturnType<typeof setVoltageBaseValuesForScope>>>;
     }
@@ -22111,16 +22269,33 @@ export function App() {
         setVoltageBaseValuesForScope(nodes, edges, activeSelectedNodeIds, scope, voltageBaseSetValue.trim())
       ])
     ) as Partial<Record<VoltageBaseSetScope, ReturnType<typeof setVoltageBaseValuesForScope>>>;
-  }, [activeSelectedNodeIds, edges, nodes, voltageBaseSetDialogOpen, voltageBaseSetMode, voltageBaseSetValue, voltageBaseTerminalValues]);
+  }, [activeSelectedNodeIds, activeVoltageBaseTerminalKey, edges, nodes, voltageBaseSetDialogOpen, voltageBaseSetHasTerminalTargets, voltageBaseSetHasUniformTargets, voltageBaseSetMode, voltageBaseSetValue, voltageBaseTerminalValues]);
 
   const voltageBaseSetResultForScope = (scope: VoltageBaseSetScope) => {
+    if (voltageBaseSetMode === "byDevice") {
+      if (!voltageBaseSetReady()) {
+        return emptyVoltageBaseSetResult();
+      }
+      const preview = voltageBaseSetPreviewByScope[scope];
+      if (preview) {
+        return preview;
+      }
+      const uniformResult = voltageBaseSetValue.trim().length > 0
+        ? setVoltageBaseValuesForScope(nodes, edges, activeSelectedNodeIds, scope, voltageBaseSetValue.trim())
+        : emptyVoltageBaseSetResult();
+      const selectedTerminalValues = activeVoltageBaseTerminalValues();
+      const terminalResult = hasVoltageBaseTerminalValues(selectedTerminalValues)
+        ? setVoltageBaseTerminalValuesForScope(uniformResult.nodes, edges, selectedTerminalValues, scope)
+        : { ...emptyVoltageBaseSetResult(), nodes: uniformResult.nodes };
+      return mergeVoltageBaseSetResults(uniformResult, terminalResult);
+    }
     if (voltageBaseSetMode === "terminal") {
-      return hasVoltageBaseTerminalValues(voltageBaseTerminalValues)
-        ? voltageBaseSetPreviewByScope[scope] ?? setVoltageBaseTerminalValuesForScope(nodes, edges, voltageBaseTerminalValues, scope)
-        : { nodes, nodeUpdates: [], targetNodeIds: [], changedNodeIds: [] };
+      return hasVoltageBaseTerminalValues(activeVoltageBaseTerminalValues())
+        ? voltageBaseSetPreviewByScope[scope] ?? setVoltageBaseTerminalValuesForScope(nodes, edges, activeVoltageBaseTerminalValues(), scope)
+        : emptyVoltageBaseSetResult();
     }
     return voltageBaseSetValue.trim().length === 0
-      ? { nodes, nodeUpdates: [], targetNodeIds: [], changedNodeIds: [] }
+      ? emptyVoltageBaseSetResult()
       : voltageBaseSetPreviewByScope[scope] ?? setVoltageBaseValuesForScope(nodes, edges, activeSelectedNodeIds, scope, voltageBaseSetValue.trim());
   };
 
@@ -22132,9 +22307,25 @@ export function App() {
     setVoltageBaseSetScope("selected");
     setVoltageBaseSetValue(defaultVoltageBaseSetValue());
     setVoltageBaseTerminalValues(terminalValues);
-    setVoltageBaseSetMode(Object.keys(terminalValues).length > 0 ? "terminal" : "uniform");
+    setActiveVoltageBaseTerminalKey(defaultVoltageBaseTerminalKey());
+    setVoltageBaseSetMode(recommendedVoltageBaseSetMode());
     setVoltageBaseSetDialogOpen(true);
   };
+
+  useEffect(() => {
+    if (!voltageBaseSetDialogOpen) {
+      return;
+    }
+    if (voltageBaseSetTerminalRows.length === 0) {
+      if (activeVoltageBaseTerminalKey) {
+        setActiveVoltageBaseTerminalKey("");
+      }
+      return;
+    }
+    if (!voltageBaseSetTerminalRows.some((row) => voltageBaseTerminalRowKey(row) === activeVoltageBaseTerminalKey)) {
+      setActiveVoltageBaseTerminalKey(voltageBaseTerminalRowKey(voltageBaseSetTerminalRows[0]));
+    }
+  }, [activeVoltageBaseTerminalKey, voltageBaseSetDialogOpen, voltageBaseSetTerminalRows]);
 
   const confirmVoltageBaseSetDialog = () => {
     if (!requireEditMode("设置电压基值")) {
@@ -22143,11 +22334,11 @@ export function App() {
     }
     const value = voltageBaseSetValue.trim();
     const terminalMode = voltageBaseSetMode === "terminal";
-    if (terminalMode && !hasVoltageBaseTerminalValues(voltageBaseTerminalValues)) {
+    if ((voltageBaseSetMode === "terminal" || (voltageBaseSetMode === "byDevice" && voltageBaseSetHasTerminalTargets)) && !hasVoltageBaseTerminalValues(activeVoltageBaseTerminalValues())) {
       writeOperationLog("端子电压基值不能为空");
       return;
     }
-    if (!terminalMode && !value) {
+    if ((voltageBaseSetMode === "uniform" || (voltageBaseSetMode === "byDevice" && voltageBaseSetHasUniformTargets)) && !value) {
       writeOperationLog("设置电压基值不能为空");
       return;
     }
@@ -22158,9 +22349,19 @@ export function App() {
       setVoltageBaseSetDialogOpen(false);
       return;
     }
+    const voltageBaseMismatches = validateTwoTerminalVoltageBaseConsistency(result.nodes);
+    if (voltageBaseMismatches.length > 0) {
+      const examples = voltageBaseMismatches.slice(0, 8).map((item) =>
+        `${item.nodeName}：${item.sourceTerminalLabel} ${item.sourceVoltageBase} / ${item.targetTerminalLabel} ${item.targetVoltageBase}`
+      );
+      const suffix = voltageBaseMismatches.length > examples.length ? `\n等 ${voltageBaseMismatches.length} 个两端设备。` : "";
+      window.alert(`两端设备的电压基值必须相同，无法保存本次人工设置。\n\n${examples.join("\n")}${suffix}`);
+      writeOperationLog(`设置电压基值失败：${voltageBaseMismatches.length} 个两端设备电压基值不一致`);
+      return;
+    }
     pushUndoSnapshot(true, false, undoScopeForGraphPatch(result.changedNodeIds, []));
     patchGraphNodes(result.nodeUpdates);
-    writeOperationLog(`设置电压基值（${scopeLabel}）：${result.changedNodeIds.length}/${result.targetNodeIds.length} 个设备，${terminalMode ? "按端子设置" : `值 ${value}`}`);
+    writeOperationLog(`设置电压基值（${scopeLabel}）：${result.changedNodeIds.length}/${result.targetNodeIds.length} 个设备，${voltageBaseSetModeLabel}${terminalMode ? "" : `，值 ${value}`}`);
     setVoltageBaseSetDialogOpen(false);
   };
 
@@ -26833,7 +27034,10 @@ export function App() {
               >
                 <span className="element-tree-type-label">
                   {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                  <span>{group.typeLabel}</span>
+                  <span className="element-tree-bilingual">
+                    <span>{group.typeLabel}</span>
+                    {group.typeEnglishLabel ? <small>{group.typeEnglishLabel}</small> : null}
+                  </span>
                 </span>
                 <strong>{group.items.length}</strong>
               </button>
@@ -26843,6 +27047,7 @@ export function App() {
                     const editable = item.kind === "node" ? activeLayerNodeIdSet.has(item.id) : activeLayerEdgeIdSet.has(item.id);
                     const selected = editable && (item.kind === "node" ? selectedNodeIdSet.has(item.id) : activeSelectedEdgeSet.has(item.id));
                     const itemChildren = elementTreeItemChildren(item);
+                    const treeItemKey = `${item.kind}:${item.id}`;
                     const selectTreeItem = () => {
                       if (!editable) {
                         return;
@@ -26860,9 +27065,13 @@ export function App() {
                         aria-level={2}
                         aria-selected={selected}
                         className={`element-tree-item ${selected ? "selected" : ""}`}
-                        key={`${item.kind}:${item.id}`}
+                        key={treeItemKey}
+                        ref={(element) => {
+                          elementTreeItemRefs.current[treeItemKey] = element;
+                        }}
                         title="双击定位并选中图元"
                         tabIndex={0}
+                        onPointerDown={selectTreeItem}
                         onClick={selectTreeItem}
                         onDoubleClick={() => focusElementTreeItem(item, true)}
                         onKeyDown={(event) => {
@@ -26900,7 +27109,9 @@ export function App() {
                               </label>
                             </div>
                           ) : (
-                            <span>{item.name}</span>
+                            <span className="element-tree-bilingual">
+                              <span>{item.name}</span>
+                            </span>
                           )}
                         </div>
                         {itemChildren.length ? (
@@ -26908,7 +27119,8 @@ export function App() {
                             {itemChildren.map((child) => (
                               <div className="element-tree-child-item" key={child.id}>
                                 <span className="element-tree-child-type" title={child.componentType}>
-                                  {child.componentType}
+                                  <span>{child.componentTypeLabel || child.componentType}</span>
+                                  {child.componentType ? <small>{child.componentType}</small> : null}
                                 </span>
                                 <label>
                                   <span>idx</span>
@@ -31493,47 +31705,49 @@ export function App() {
             </div>
             <label className="voltage-base-set-value-row">
               <span>设置方式</span>
-              <select
-                value={voltageBaseSetMode}
-                onChange={(event) => setVoltageBaseSetMode(event.target.value as VoltageBaseSetMode)}
-              >
-                <option value="uniform">统一设置</option>
-                <option value="terminal" disabled={voltageBaseSetTerminalRows.length === 0}>按端子设置</option>
-              </select>
+              <strong>{voltageBaseSetModeLabel}</strong>
             </label>
-            {voltageBaseSetMode === "uniform" ? (
-            <label className="voltage-base-set-value-row">
-              <span>电压基值</span>
-              <input
-                type="text"
-                value={voltageBaseSetValue}
-                onChange={(event) => setVoltageBaseSetValue(event.target.value)}
-                list="voltage-base-set-options"
-                placeholder="例如 110"
-                autoFocus
-              />
-            </label>
-            ) : (
+            {(voltageBaseSetMode === "uniform" || voltageBaseSetMode === "byDevice") && voltageBaseSetHasUniformTargets && (
+              <label className="voltage-base-set-value-row">
+                <span>{voltageBaseSetMode === "byDevice" ? "普通设备电压基值" : "电压基值"}</span>
+                <input
+                  type="text"
+                  value={voltageBaseSetValue}
+                  onChange={(event) => setVoltageBaseSetValue(event.target.value)}
+                  list="voltage-base-set-options"
+                  placeholder="例如 110"
+                  autoFocus
+                />
+              </label>
+            )}
+            {(voltageBaseSetMode === "terminal" || voltageBaseSetMode === "byDevice") && voltageBaseSetTerminalRows.length > 0 && (
               <div className="voltage-base-terminal-grid" aria-label="按端子设置电压基值">
-                <div className="voltage-base-terminal-grid-head">
-                  <span>设备</span>
+                <label className="voltage-base-set-value-row">
                   <span>端子</span>
-                  <span>电压基值</span>
-                </div>
-                {voltageBaseSetTerminalRows.map((row, index) => (
-                  <label className="voltage-base-terminal-row" key={`${row.nodeId}:${row.terminalId}`}>
-                    <span title={row.nodeName}>{row.nodeName}</span>
-                    <span title={`${row.terminalLabel} / ${row.terminalType}`}>{row.terminalLabel} / {row.terminalType}</span>
+                  <select
+                    value={activeVoltageBaseTerminalKey}
+                    onChange={(event) => setActiveVoltageBaseTerminalKey(event.target.value)}
+                  >
+                    {voltageBaseSetTerminalRows.map((row) => (
+                      <option key={voltageBaseTerminalRowKey(row)} value={voltageBaseTerminalRowKey(row)}>
+                        {row.nodeName} / {row.terminalLabel} / {row.terminalType}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {activeVoltageBaseTerminalRow && (
+                  <label className="voltage-base-set-value-row">
+                    <span>端子电压基值</span>
                     <input
                       type="text"
-                      value={row.value}
-                      onChange={(event) => setVoltageBaseTerminalValue(row.nodeId, row.terminalId, event.target.value)}
+                      value={activeVoltageBaseTerminalRow.value}
+                      onChange={(event) => setVoltageBaseTerminalValue(activeVoltageBaseTerminalRow.nodeId, activeVoltageBaseTerminalRow.terminalId, event.target.value)}
                       list="voltage-base-set-options"
                       placeholder="例如 110"
-                      autoFocus={index === 0}
+                      autoFocus={voltageBaseSetMode === "terminal"}
                     />
                   </label>
-                ))}
+                )}
               </div>
             )}
             <datalist id="voltage-base-set-options">
@@ -31544,8 +31758,8 @@ export function App() {
             <div className="connection-redraw-options voltage-base-set-options" role="radiogroup" aria-label="设置电压基值范围">
               {VOLTAGE_BASE_SET_SCOPES.map((scope) => {
                 const result = voltageBaseSetResultForScope(scope);
-                const count = result.changedNodeIds.length;
-                const disabled = count === 0 || voltageBaseSetValue.trim().length === 0;
+                const count = result.targetNodeIds.length;
+                const disabled = count === 0 || !voltageBaseSetReady();
                 return (
                   <button
                     key={scope}
@@ -31567,7 +31781,7 @@ export function App() {
               <button
                 type="button"
                 onClick={confirmVoltageBaseSetDialog}
-                disabled={(voltageBaseSetMode === "terminal" ? !hasVoltageBaseTerminalValues(voltageBaseTerminalValues) : voltageBaseSetValue.trim().length === 0) || voltageBaseSetResultForScope(voltageBaseSetScope).changedNodeIds.length === 0}
+                disabled={!voltageBaseSetReady() || voltageBaseSetResultForScope(voltageBaseSetScope).targetNodeIds.length === 0}
               >
                 确定
               </button>

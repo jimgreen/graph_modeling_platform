@@ -75,7 +75,9 @@ import {
   routeIntersectsSpecificNodes,
   validateConnectionEdgeRoute,
   validateConnectionEndpointRules,
+  voltageBaseSettingModeForNode,
   validateTopology,
+  validateTwoTerminalVoltageBaseConsistency,
   validateVoltageSetpointDeviations,
   getTerminalNormal,
   getTerminalPoint,
@@ -6898,6 +6900,7 @@ describe("power system model", () => {
     const tree = buildElementTree([source, load, text], [edge]);
 
     expect(tree.map((group) => group.typeLabel)).toEqual(["交流电源", "交流负荷", "文字", "联络线"]);
+    expect(tree.map((group) => group.typeEnglishLabel)).toEqual(["ACGenerator", "ACLoad", "StaticTextSymbol", "ConnectionLine"]);
     expect(tree.find((group) => group.typeLabel === "交流电源")?.items).toEqual([
       { kind: "node", id: source.id, name: "电源A", idx: "", editableDevice: true }
     ]);
@@ -7018,6 +7021,44 @@ describe("power system model", () => {
     expect(getDeviceStrokeColor(dcSource, "voltage", palette)).toBe("#00ff00");
     expect(getConnectionStrokeColor({ id: "ac", sourceId: acSource.id, targetId: acLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }, nodeById, "voltage", palette)).toBe("#ff0000");
     expect(getConnectionStrokeColor({ id: "dc", sourceId: dcSource.id, targetId: dcLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }, nodeById, "voltage", palette)).toBe("#00ff00");
+  });
+
+  test("validates equal voltage base on two-terminal conductive devices", () => {
+    const branch = createDefaultNode("ac-line", { x: 100, y: 100 });
+    branch.name = "线路1";
+    branch.terminals[0].vbase = "10";
+    branch.terminals[1].vbase = "35";
+    const switchNode = createDefaultNode("ac-switch", { x: 220, y: 100 });
+    switchNode.name = "开关1";
+    switchNode.terminals[0].vbase = "110";
+    switchNode.terminals[1].vbase = "110.0";
+    const transformer = createDefaultNode("ac-transformer", { x: 340, y: 100 });
+    transformer.name = "变压器1";
+    transformer.terminals[0].vbase = "110";
+    transformer.terminals[1].vbase = "10";
+
+    const mismatches = validateTwoTerminalVoltageBaseConsistency([branch, switchNode, transformer]);
+
+    expect(mismatches).toEqual([
+      expect.objectContaining({
+        nodeId: branch.id,
+        nodeName: "线路1",
+        section: "ACBranch",
+        sourceVoltageBase: "10",
+        targetVoltageBase: "35"
+      })
+    ]);
+  });
+
+  test("limits voltage base setting mode by electrical device type", () => {
+    expect(voltageBaseSettingModeForNode(createDefaultNode("ac-transformer", { x: 100, y: 100 }))).toBe("terminal");
+    expect(voltageBaseSettingModeForNode(createDefaultNode("ac-three-winding-transformer", { x: 220, y: 100 }))).toBe("terminal");
+    expect(voltageBaseSettingModeForNode(createDefaultNode("dcdc-converter", { x: 340, y: 100 }))).toBe("terminal");
+    expect(voltageBaseSettingModeForNode(createDefaultNode("acdc-converter", { x: 460, y: 100 }))).toBe("terminal");
+    expect(voltageBaseSettingModeForNode(createDefaultNode("acac-converter", { x: 580, y: 100 }))).toBe("terminal");
+    expect(voltageBaseSettingModeForNode(createDefaultNode("ac-line", { x: 100, y: 220 }))).toBe("uniform");
+    expect(voltageBaseSettingModeForNode(createDefaultNode("ac-switch", { x: 220, y: 220 }))).toBe("uniform");
+    expect(voltageBaseSettingModeForNode(createDefaultNode("ac-load", { x: 340, y: 220 }))).toBe("uniform");
   });
 
   test("shows associated container devices as child rows in the element tree", () => {
@@ -8544,7 +8585,7 @@ describe("power system model", () => {
     expect(byId.get(other.id)?.params.vbase).toBe("750");
   });
 
-  test("sets only matching terminal voltage fields on a multi-island converter", () => {
+  test("sets connected converter terminals through uniform topology island setting without crossing converter sides", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
     const load = createDefaultNode("ac-load", { x: 500, y: 100 });
     const converter = createDefaultNode("acac-converter", { x: 300, y: 100 });
@@ -8573,6 +8614,7 @@ describe("power system model", () => {
     const nextConverter = byId.get(converter.id);
 
     expect(new Set(result.changedNodeIds)).toEqual(new Set([converter.id, load.id]));
+    expect(new Set(result.targetNodeIds)).toEqual(new Set([converter.id, load.id]));
     expect(nextConverter?.terminals.map((terminal) => terminal.vbase)).toEqual(["110", "35"]);
     expect(nextConverter?.params.i_vbase).toBe("110");
     expect(nextConverter?.params.i_v_set).toBe("110");
@@ -8623,7 +8665,7 @@ describe("power system model", () => {
     expect(nextTransformer.params.vbase).toBe("110");
   });
 
-  test("sets each selected terminal voltage base through its own topology island", () => {
+  test("sets terminal voltage base through each transformer or converter terminal topology island", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
     const load = createDefaultNode("ac-load", { x: 500, y: 100 });
     const converter = createDefaultNode("acac-converter", { x: 300, y: 100 });
