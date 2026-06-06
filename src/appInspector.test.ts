@@ -7854,6 +7854,16 @@ describe("graph inspector panel", () => {
     expect(contextMeasurementMenuBlock).not.toContain("添加/重置默认量测");
     expect(contextMeasurementMenuBlock).not.toContain("配置量测库");
     expect(measurementEditorBlock).toContain("setMeasurementEditorDialog");
+    expect(measurementEditorBlock).toContain("measurementGroupsForNode(projectMeasurements, node.id)");
+    expect(source).toContain("activeGroupId: string;");
+    expect(source).toContain("drafts: MeasurementGroup[];");
+    expect(source).toContain("const activeMeasurementEditorDraft");
+    expect(source).toContain("setActiveMeasurementEditorGroup");
+    expect(source).toContain("addMeasurementEditorGroup");
+    expect(source).toContain("removeMeasurementEditorGroup");
+    expect(source).toContain("current.groups.filter((group) => group.nodeId !== node.id)");
+    expect(source).toContain("新增量测组");
+    expect(source).toContain("删除量测组");
     expect(measurementEditorBlock).not.toContain("setSelectedDeviceInfoView(\"measurement\")");
     expect(source).toContain("const cloneMeasurementGroupForDraft = (group: MeasurementGroup): MeasurementGroup");
     expect(source).toContain("const renderMeasurementEditorDialog = () =>");

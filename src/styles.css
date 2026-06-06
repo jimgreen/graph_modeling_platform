@@ -5735,7 +5735,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   width: min(1080px, calc(100vw - 48px));
   max-height: min(760px, calc(100vh - 48px));
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
   gap: 12px;
   padding: 18px;
   border-radius: 10px;
@@ -5759,6 +5759,59 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .measurement-editor-dialog p {
   margin: 0;
   color: #64748b;
+  font-size: 12px;
+}
+
+.measurement-editor-groups {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+}
+
+.measurement-editor-group-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.measurement-editor-group-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  border: 1px solid rgba(148, 163, 184, 0.62);
+  border-radius: 6px;
+  padding: 3px 8px;
+  color: #334155;
+  background: #f8fafc;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.measurement-editor-group-tab.is-active {
+  border-color: #0f766e;
+  color: #0f766e;
+  background: #ecfdf5;
+}
+
+.measurement-editor-group-tab em {
+  color: #64748b;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.measurement-editor-group-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.measurement-editor-group-actions button {
+  min-height: 28px;
+  border-radius: 5px;
+  padding: 3px 9px;
   font-size: 12px;
 }
 
