@@ -2648,6 +2648,11 @@ describe("graph inspector panel", () => {
     expect(source).not.toContain("routeEdgesForRendering,");
     expect(exportBlock).toContain("const exportNodes = orderNodesByModelLayer(nodes, normalizedLayers);");
     expect(exportBlock).toContain("routeEdgesForStoredRendering(exportNodes, edges, canvasSize)");
+    expect(source).toContain("function exportDeviceMetadataAttributes");
+    expect(source).toContain('data-export-device-idx="${escapeXml(node.params.idx ?? "")}"');
+    expect(source).toContain('data-export-device-name="${escapeXml(node.name)}"');
+    expect(source).toContain("const measurementMarkup = measurements.groups");
+    expect(source).toContain("buildExportMeasurementGroupMarkup(node, group, measurementConfig)");
     expect(exportBlock).not.toContain("routeEdgesForRendering");
     expect(sizeBlock).toContain("routeEdgesForStoredRendering(nodes, edges");
     expect(sizeBlock).not.toContain("routeEdgesForRendering");
@@ -8045,11 +8050,18 @@ describe("graph inspector panel", () => {
     const renderBlock = source.slice(renderStart, renderEnd);
 
     expect(source).toContain("const buildMeasurementGroupMarkup");
-    expect(singlePreviewBlock).toContain("buildMeasurementGroupMarkup(node)");
+    expect(source).toContain("function exportMeasurementGroupMetadataAttributes");
+    expect(source).toContain("function exportMeasurementItemMetadataAttributes");
+    expect(source).toContain('data-export-measurement-name="${escapeXml(measurementName)}"');
+    expect(source).toContain('data-export-measurement-source-point="${escapeXml(item.sourcePoint)}"');
+    expect(singlePreviewBlock).toContain("buildMeasurementGroupsMarkup(node)");
     expect(singlePreviewBlock).toContain("${measurementMarkup}");
-    expect(multiPreviewBlock).toContain("buildMeasurementGroupMarkup(previewNode, { absolute: true })");
+    expect(multiPreviewBlock).toContain("buildMeasurementGroupsMarkup(previewNode, { absolute: true })");
     expect(multiPreviewBlock).toContain("${measurementMarkup}");
     expect(renderBlock).toContain("measurementGroupCanvasPosition(node, group)");
+    expect(renderBlock).toContain("data-export-measurement-group-id={group.id}");
+    expect(renderBlock).toContain("data-export-measurement-item-id={row.item.id}");
+    expect(renderBlock).toContain("data-export-device-idx={node.params.idx ?? \"\"}");
   });
 
   test("keeps backend scheme persistence helpers self contained", async () => {

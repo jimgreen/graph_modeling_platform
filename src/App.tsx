@@ -1186,6 +1186,8 @@ type CanvasRenderOptions = CanvasBounds & {
   colorPalette?: ColorPalette;
   layers?: ModelLayer[];
   activeLayerId?: string;
+  measurements?: ProjectMeasurementConfig;
+  measurementConfig?: PlatformMeasurementConfig;
 };
 type BackendSchemesResponse = {
   schemes: SavedSchemeRecord[];
@@ -6721,6 +6723,126 @@ function exportSvgLayerScriptMarkup(includeScript: boolean) {
 ]]></script>`;
 }
 
+function exportDeviceMetadataAttributes(node: ModelNode) {
+  if (isStaticNode(node)) {
+    return "";
+  }
+  return [
+    `data-export-device-id="${escapeXml(node.id)}"`,
+    `data-export-device-idx="${escapeXml(node.params.idx ?? "")}"`,
+    `data-export-device-name="${escapeXml(node.name)}"`,
+    `data-export-device-kind="${escapeXml(node.kind)}"`
+  ].join(" ");
+}
+
+function exportMeasurementGroupMetadataAttributes(node: ModelNode, group: MeasurementGroup) {
+  return [
+    `data-export-measurement-group-id="${escapeXml(group.id)}"`,
+    `data-export-device-id="${escapeXml(node.id)}"`,
+    `data-export-device-idx="${escapeXml(node.params.idx ?? "")}"`,
+    `data-export-device-name="${escapeXml(node.name)}"`,
+    `data-export-device-kind="${escapeXml(node.kind)}"`,
+    `data-export-measurement-terminal-id="${escapeXml(group.terminalId ?? "")}"`
+  ].join(" ");
+}
+
+function exportMeasurementItemMetadataAttributes(
+  node: ModelNode,
+  group: MeasurementGroup,
+  item: MeasurementItemBinding,
+  display: { label: string; unit: string }
+) {
+  const measurementName = (item.name ?? display.label ?? item.measurementTypeId).trim();
+  return [
+    `data-export-measurement-item-id="${escapeXml(item.id)}"`,
+    `data-export-measurement-name="${escapeXml(measurementName)}"`,
+    `data-export-measurement-type-id="${escapeXml(item.measurementTypeId)}"`,
+    `data-export-measurement-source-point="${escapeXml(item.sourcePoint)}"`,
+    `data-export-measurement-role="${escapeXml(item.role ?? "")}"`,
+    `data-export-measurement-unit="${escapeXml(display.unit)}"`,
+    `data-export-measurement-group-id="${escapeXml(group.id)}"`,
+    `data-export-device-id="${escapeXml(node.id)}"`,
+    `data-export-device-idx="${escapeXml(node.params.idx ?? "")}"`,
+    `data-export-device-name="${escapeXml(node.name)}"`,
+    `data-export-device-kind="${escapeXml(node.kind)}"`
+  ].join(" ");
+}
+
+const exportMeasurementGroupBackgroundColor = (group: MeasurementGroup) => group.backgroundColor ?? "rgba(255, 255, 255, 0.84)";
+const exportMeasurementGroupBorderColor = (group: MeasurementGroup) => group.borderColor ?? "rgba(100, 116, 139, 0.36)";
+const exportMeasurementGroupBorderWidth = (group: MeasurementGroup) =>
+  group.borderStyle === "none" ? 0 : Math.max(0, Math.min(12, Number(group.borderWidth ?? 1)));
+const exportMeasurementGroupBorderDashArray = (group: MeasurementGroup) =>
+  exportMeasurementGroupBorderWidth(group) <= 0 || group.borderStyle === "none"
+    ? undefined
+    : svgStrokeDashArray(group.borderStyle);
+
+function exportMeasurementGroupAnchorPoint(node: ModelNode, group: MeasurementGroup): Point {
+  if (group.terminalId && node.terminals.some((terminal) => terminal.id === group.terminalId)) {
+    return getTerminalPoint(node, group.terminalId);
+  }
+  return node.position;
+}
+
+function exportMeasurementGroupLocalOffset(node: ModelNode, group: MeasurementGroup): Point {
+  const offsetScale = measurementOffsetScaleForNode(node);
+  return {
+    x: group.offset.x * offsetScale.x,
+    y: group.offset.y * offsetScale.y
+  };
+}
+
+function exportMeasurementGroupMetrics(node: ModelNode, group: MeasurementGroup, measurementConfig: PlatformMeasurementConfig) {
+  if (!group.visible) {
+    return null;
+  }
+  const measurementFontScale = measurementFontScaleForNode(node);
+  const rows = group.items.flatMap((item) => {
+    const display = resolveMeasurementItemDisplay({ config: measurementConfig, node, group, item });
+    if (!display.visible) {
+      return [];
+    }
+    const label = group.labelVisible === false ? "" : display.label;
+    const unit = group.unitVisible === false ? "" : display.unit;
+    const text = `${label} ${formatMeasurementDisplayValue(undefined, display.decimals, unit)}`.trim();
+    return [{ item, display, text, fontSize: display.fontSize * measurementFontScale }];
+  });
+  if (rows.length === 0) {
+    return null;
+  }
+  const maxFontSize = Math.max(...rows.map((row) => row.fontSize));
+  const lineHeight = Math.max(16, maxFontSize + 6);
+  const columnWidth = Math.max(72, Math.max(...rows.map((row) => row.text.length * row.fontSize * 0.58)) + 12);
+  const columns = group.layout === "grid" ? 2 : group.layout === "horizontal" ? rows.length : 1;
+  const width = Math.max(64, columnWidth * columns);
+  const height = Math.max(lineHeight, Math.ceil(rows.length / columns) * lineHeight);
+  return { rows, maxFontSize, lineHeight, columnWidth, columns, width, height };
+}
+
+function buildExportMeasurementGroupMarkup(node: ModelNode, group: MeasurementGroup, measurementConfig: PlatformMeasurementConfig) {
+  const metrics = exportMeasurementGroupMetrics(node, group, measurementConfig);
+  if (!metrics) {
+    return "";
+  }
+  const anchor = exportMeasurementGroupAnchorPoint(node, group);
+  const localOffset = exportMeasurementGroupLocalOffset(node, group);
+  const position = { x: anchor.x + localOffset.x, y: anchor.y + localOffset.y };
+  const borderDashArray = exportMeasurementGroupBorderDashArray(group);
+  const borderDashAttribute = borderDashArray ? ` stroke-dasharray="${escapeXml(borderDashArray)}"` : "";
+  const rowsMarkup = metrics.rows.map((row, index) => {
+    const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
+    const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
+    const textX = -metrics.width / 2 + col * metrics.columnWidth + 7;
+    const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
+    return `<text class="export-measurement-item measurement-item" ${exportMeasurementItemMetadataAttributes(node, group, row.item, row.display)} x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}">${escapeXml(row.text)}</text>`;
+  }).join("");
+  return `<g class="export-measurement-group measurement-group" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>
+  <title>${escapeXml(`${node.name} 动态量测`)}</title>
+  <rect class="measurement-group-bg" x="${formatSvgNumber(-metrics.width / 2)}" y="${formatSvgNumber(-metrics.height / 2)}" width="${formatSvgNumber(metrics.width)}" height="${formatSvgNumber(metrics.height)}" rx="4" fill="${escapeXml(exportMeasurementGroupBackgroundColor(group))}" stroke="${escapeXml(exportMeasurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(exportMeasurementGroupBorderWidth(group))}"${borderDashAttribute}/>
+  ${rowsMarkup}
+</g>`;
+}
+
 export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: CanvasRenderOptions = { width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT }) {
   const imageAssets = readImageAssets();
   const backgroundColor = canvasSize.backgroundColor ?? DEFAULT_CANVAS_BACKGROUND;
@@ -6801,6 +6923,7 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
       const allowNodeImage = !isBusNode(node);
       const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette }));
       const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette }));
+      const deviceMetadataAttributes = exportDeviceMetadataAttributes(node);
       const escapedImageHref = escapeXml(imageHref);
       const escapedForegroundHref = escapeXml(foregroundHref);
       const geometryTransform = nodeGeometryTransform(node);
@@ -6817,7 +6940,7 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
           : "";
       const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
       const labelMarkup = buildSvgNodeLabelMarkup(node);
-      return `<g class="export-node${exportButtonClass}" transform="translate(${node.position.x} ${node.position.y})" data-export-node-id="${escapeXml(node.id)}" data-export-layer-id="${escapeXml(layerId)}"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}>
+      return `<g class="export-node${exportButtonClass}" transform="translate(${node.position.x} ${node.position.y})" data-export-node-id="${escapeXml(node.id)}" data-export-layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}>
   <title>${escapeXml(node.name)}</title>
   <g class="export-node-geometry" transform="${geometryTransform}">
   ${glyphMarkup}
@@ -6836,6 +6959,26 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
 </g>`;
     })
     .join("\n");
+  const measurementConfig = canvasSize.measurementConfig ?? DEFAULT_MEASUREMENT_CONFIG;
+  const measurements = canvasSize.measurements ?? EMPTY_PROJECT_MEASUREMENTS;
+  const measurementNodeById = new Map(exportNodes.map((node) => [node.id, node]));
+  const measurementMarkup = measurements.groups
+    .map((group) => {
+      const node = measurementNodeById.get(group.nodeId);
+      if (!node || isStaticNode(node)) {
+        return "";
+      }
+      const layerId = nodeLayerId(node);
+      const groupMarkup = buildExportMeasurementGroupMarkup(node, group, measurementConfig);
+      if (!groupMarkup) {
+        return "";
+      }
+      return `<g class="export-measurement-layer" data-export-layer-id="${escapeXml(layerId)}"${svgDisplayAttribute(layerVisible(layerId))}>
+${groupMarkup}
+</g>`;
+    })
+    .filter(Boolean)
+    .join("\n");
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasSize.width}" height="${canvasSize.height}" viewBox="0 0 ${canvasSize.width} ${canvasSize.height}" data-export-active-layer-id="${escapeXml(activeExportLayerId)}">
 <g class="export-layer-definitions" style="display:none">
 ${exportLayerDefinitionsMarkup}
@@ -6844,6 +6987,7 @@ ${exportLayerDefinitionsMarkup}
 ${backgroundImage ? `<image href="${backgroundImage}" x="0" y="0" width="${canvasSize.width}" height="${canvasSize.height}" preserveAspectRatio="xMidYMid slice"/>` : ""}
 ${edgeMarkup}
 ${nodeMarkup}
+${measurementMarkup}
 ${exportSvgLayerScriptMarkup(includeLayerScript)}
 </svg>`;
 }
@@ -7810,9 +7954,9 @@ export function App() {
       const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
       const textX = -metrics.width / 2 + col * metrics.columnWidth + 7;
       const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
-      return `<text class="measurement-item" x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}">${escapeXml(row.text)}</text>`;
+      return `<text class="measurement-item" ${exportMeasurementItemMetadataAttributes(node, group, row.item, row.display)} x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}">${escapeXml(row.text)}</text>`;
     }).join("");
-    return `<g class="measurement-group drag-preview-measurement-group${selectedClass}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})">
+    return `<g class="measurement-group drag-preview-measurement-group${selectedClass}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>
   <rect class="measurement-group-bg" x="${formatSvgNumber(-metrics.width / 2)}" y="${formatSvgNumber(-metrics.height / 2)}" width="${formatSvgNumber(metrics.width)}" height="${formatSvgNumber(metrics.height)}" rx="4" fill="${escapeXml(measurementGroupBackgroundColor(group))}" stroke="${escapeXml(measurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(measurementGroupBorderWidth(group))}"${borderDashAttribute}/>
   ${rowsMarkup}
 </g>`;
@@ -24611,7 +24755,9 @@ export function App() {
         colorDisplayMode,
         colorPalette,
         layers,
-        activeLayerId
+        activeLayerId,
+        measurements: projectMeasurements,
+        measurementConfig
       }),
       mime: "image/svg+xml",
       description: "SVG 图形文件",
@@ -24981,7 +25127,9 @@ export function App() {
             colorDisplayMode,
             colorPalette,
             layers: project.project.layers,
-            activeLayerId: project.project.activeLayerId
+            activeLayerId: project.project.activeLayerId,
+            measurements: project.project.measurements,
+            measurementConfig
           }),
           "image/svg+xml"
         );
@@ -26917,12 +27065,14 @@ export function App() {
       const inactiveLayerGraphic = isEditMode && !activeLayerNodeIdSet.has(node.id);
       const className = `diagram-node lod-node${nodeIsBus ? " bus-node" : ""}${nodeIsRoutableLineDevice ? " routable-line-node" : ""}${inactiveLayerGraphic ? " inactive-layer-graphic" : ""}`;
       const transform = `translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)}) ${nodeGeometryTransform(node)}`;
+      const deviceMetadataAttributes = exportDeviceMetadataAttributes(node);
+      const dataNodeAttributes = `data-node-id="${escapeXml(node.id)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}`;
       const fill = node.params.backgroundColor || "#ffffff";
       const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
       const strokeWidth = Math.max(2, getDeviceStrokeWidth(node));
       if (nodeIsRoutableLineDevice) {
         const path = pointsToOrthogonalPath(routableLineDeviceLocalPoints(node));
-        return `<g class="${className}" data-node-id="${escapeXml(node.id)}" transform="${escapeXml(transform)}">
+        return `<g class="${className}" ${dataNodeAttributes} transform="${escapeXml(transform)}">
   <path class="routable-line-device-lod-line" d="${escapeXml(path)}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}" stroke-linecap="round" stroke-linejoin="round"><title>${escapeXml(node.name)}</title></path>
   <path class="routable-line-device-hitline lod-routable-line-hitline" d="${escapeXml(path)}"/>
 </g>`;
@@ -26931,14 +27081,14 @@ export function App() {
       if (customTerminalAnchorToken) {
         const geometryTransform = nodeGeometryTransform(node);
         const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
-        return `<g class="${className} custom-terminal-lod-node" data-node-id="${escapeXml(node.id)}" transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})">
+        return `<g class="${className} custom-terminal-lod-node" ${dataNodeAttributes} transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})">
   <rect class="lod-node-body" transform="${escapeXml(geometryTransform)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${nodeIsBus ? 0 : 6}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"><title>${escapeXml(node.name)}</title></rect>
   <g class="node-terminal-layer lod-terminal-layer" transform="${escapeXml(geometryTransform)}">
   ${terminalMarkup}
   </g>
 </g>`;
       }
-      return `<rect class="${className}" data-node-id="${escapeXml(node.id)}" transform="${escapeXml(transform)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${nodeIsBus ? 0 : 6}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"><title>${escapeXml(node.name)}</title></rect>`;
+      return `<rect class="${className}" ${dataNodeAttributes} transform="${escapeXml(transform)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${nodeIsBus ? 0 : 6}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"><title>${escapeXml(node.name)}</title></rect>`;
       }
     });
   }, [
@@ -27310,6 +27460,12 @@ export function App() {
         key={group.id}
         className={`measurement-group ${selectedMeasurementGroup?.id === group.id ? "selected" : ""} ${draggingOrigin ? "drag-origin" : ""}`}
         transform={`translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})`}
+        data-export-measurement-group-id={group.id}
+        data-export-device-id={node.id}
+        data-export-device-idx={node.params.idx ?? ""}
+        data-export-device-name={node.name}
+        data-export-device-kind={node.kind}
+        data-export-measurement-terminal-id={group.terminalId ?? ""}
         onPointerDown={(event) => beginMeasurementDrag(event, group)}
       >
         <title>{`${node.name} 动态量测；拖拽可调整位置`}</title>
@@ -27343,6 +27499,17 @@ export function App() {
               fontWeight={row.display.fontWeight}
               fontStyle={row.display.fontStyle}
               textDecoration={row.display.textDecoration}
+              data-export-measurement-item-id={row.item.id}
+              data-export-measurement-name={(row.item.name ?? row.display.label ?? row.item.measurementTypeId).trim()}
+              data-export-measurement-type-id={row.item.measurementTypeId}
+              data-export-measurement-source-point={row.item.sourcePoint}
+              data-export-measurement-role={row.item.role ?? ""}
+              data-export-measurement-unit={row.display.unit}
+              data-export-measurement-group-id={group.id}
+              data-export-device-id={node.id}
+              data-export-device-idx={node.params.idx ?? ""}
+              data-export-device-name={node.name}
+              data-export-device-kind={node.kind}
             >
               {row.text}
             </text>
@@ -27761,6 +27928,10 @@ export function App() {
                 key={`background-node-${node.id}`}
                 className={`diagram-node background-page-node ${nodeIsBus ? "bus-node" : ""} ${isStorageBus ? "storage-node" : ""} ${staticButtonEnabled ? "background-page-button static-button-enabled" : ""} ${staticButtonState ? `static-button-${staticButtonState}` : ""}`}
                 transform={`translate(${node.position.x} ${node.position.y})`}
+                data-export-device-id={isStaticNode(node) ? undefined : node.id}
+                data-export-device-idx={isStaticNode(node) ? undefined : node.params.idx ?? ""}
+                data-export-device-name={isStaticNode(node) ? undefined : node.name}
+                data-export-device-kind={isStaticNode(node) ? undefined : node.kind}
                 onPointerDown={staticButtonEnabled ? (event) => beginReadonlyBackgroundStaticButtonPointerFeedback(event, node) : undefined}
                 onPointerEnter={staticButtonEnabled ? () => setStaticButtonFeedback(node.id, "hover") : undefined}
                 onPointerLeave={staticButtonEnabled ? () => {
@@ -29082,6 +29253,10 @@ export function App() {
                   key={node.id}
                   className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${nodeIsRoutableLineDevice ? "routable-line-node" : ""} ${isStorageBus ? "storage-node" : ""} ${uprightStaticSelectionOutline ? "static-upright-selection-node" : ""} ${staticButtonEnabled ? "static-button-enabled" : ""} ${staticButtonState ? `static-button-${staticButtonState}` : ""} ${multiNodeDragging && draggingNodeIdSet.has(node.id) ? "multi-drag-origin" : ""} ${singleNodeDragging && draggingNodeIdSet.has(node.id) ? "single-drag-origin" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${isConnectSource ? "connect-source" : ""} ${inactiveLayerGraphic ? "inactive-layer-graphic" : ""}`}
                   transform={`translate(${renderPosition.x} ${renderPosition.y})`}
+                  data-export-device-id={nodeIsStatic ? undefined : node.id}
+                  data-export-device-idx={nodeIsStatic ? undefined : node.params.idx ?? ""}
+                  data-export-device-name={nodeIsStatic ? undefined : node.name}
+                  data-export-device-kind={nodeIsStatic ? undefined : node.kind}
                   onPointerDown={nodeIsRoutableLineDevice ? undefined : (event) => handleNodePointerDown(event, node)}
                   onPointerEnter={() => {
                     if (staticButtonEnabled) {
