@@ -12636,6 +12636,19 @@ export function App() {
     updateMeasurementGroupById(selectedMeasurementGroup.id, updater, logText);
   };
 
+  const updateSelectedMeasurementGroups = (updater: (group: MeasurementGroup) => MeasurementGroup, logText?: string) => {
+    if (selectedMeasurementGroupIdSet.size === 0) {
+      return;
+    }
+    updateProjectMeasurementsWithUndo(
+      (current) => ({
+        version: 1,
+        groups: current.groups.map((group) => selectedMeasurementGroupIdSet.has(group.id) ? updater(group) : group)
+      }),
+      logText
+    );
+  };
+
   const addMeasurementItemToGroup = (node: ModelNode, group: MeasurementGroup) => {
     if (isStaticNode(node)) {
       return;
@@ -12877,31 +12890,20 @@ export function App() {
   };
 
   const renderSelectedNodeMeasurementTable = (node: ModelNode) => {
-    const renderGroupRows = (group: MeasurementGroup, groupIndex: number) => {
-      const terminal = group.terminalId ? node.terminals.find((item) => item.id === group.terminalId) : undefined;
-      const groupTitle = terminal?.label
-        ? `${terminal.label}量测组`
-        : group.terminalId
-          ? `${group.terminalId}量测组`
-          : selectedMeasurementGroups.length > 1 ? `量测组${groupIndex + 1}` : "量测组";
+    const selectedMeasurementGroupCommonDraft = selectedMeasurementGroups[0];
+    const renderCommonMeasurementGroupRows = () => {
+      if (!selectedMeasurementGroupCommonDraft) {
+        return null;
+      }
       return (
-        <Fragment key={group.id}>
-          <tr className="measurement-section-row measurement-group-section-row">
-            <th>{groupTitle}</th>
-            <td>
-              <div className="measurement-sidebar-actions">
-                <span className="graph-readonly-value">{terminal ? `端子：${terminal.label || terminal.id}` : "设备级量测"}</span>
-                <button type="button" disabled={isBrowseMode} onClick={() => addMeasurementItemToGroup(node, group)}>添加量测项</button>
-              </div>
-            </td>
-          </tr>
+        <>
           <tr>
             <th>量测显示</th>
             <td>
               <select
-                value={group.visible ? "1" : "0"}
+                value={selectedMeasurementGroupCommonDraft.visible ? "1" : "0"}
                 disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementGroupById(group.id, (current) => ({ ...current, visible: event.target.value === "1" }))}
+                onChange={(event) => updateSelectedMeasurementGroups((current) => ({ ...current, visible: event.target.value === "1" }))}
               >
                 <option value="1">显示</option>
                 <option value="0">隐藏</option>
@@ -12912,9 +12914,9 @@ export function App() {
             <th>量测布局</th>
             <td>
               <select
-                value={group.layout}
+                value={selectedMeasurementGroupCommonDraft.layout}
                 disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementGroupById(group.id, (current) => ({ ...current, layout: event.target.value as MeasurementGroup["layout"] }))}
+                onChange={(event) => updateSelectedMeasurementGroups((current) => ({ ...current, layout: event.target.value as MeasurementGroup["layout"] }))}
               >
                 <option value="vertical">竖向</option>
                 <option value="horizontal">横向</option>
@@ -12927,9 +12929,9 @@ export function App() {
             <td>
               <select
                 aria-label="量测标签显示"
-                value={group.labelVisible === false ? "0" : "1"}
+                value={selectedMeasurementGroupCommonDraft.labelVisible === false ? "0" : "1"}
                 disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementGroupById(group.id, (current) => ({ ...current, labelVisible: event.target.value === "1" }))}
+                onChange={(event) => updateSelectedMeasurementGroups((current) => ({ ...current, labelVisible: event.target.value === "1" }))}
               >
                 <option value="1">显示</option>
                 <option value="0">隐藏</option>
@@ -12941,9 +12943,9 @@ export function App() {
             <td>
               <select
                 aria-label="量测单位显示"
-                value={group.unitVisible === false ? "0" : "1"}
+                value={selectedMeasurementGroupCommonDraft.unitVisible === false ? "0" : "1"}
                 disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementGroupById(group.id, (current) => ({ ...current, unitVisible: event.target.value === "1" }))}
+                onChange={(event) => updateSelectedMeasurementGroups((current) => ({ ...current, unitVisible: event.target.value === "1" }))}
               >
                 <option value="1">显示</option>
                 <option value="0">隐藏</option>
@@ -12954,9 +12956,9 @@ export function App() {
             <th>背景显示</th>
             <td>
               <select
-                value={measurementGroupBackgroundColor(group) === "transparent" ? "0" : "1"}
+                value={measurementGroupBackgroundColor(selectedMeasurementGroupCommonDraft) === "transparent" ? "0" : "1"}
                 disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementGroupById(group.id, (current) => ({
+                onChange={(event) => updateSelectedMeasurementGroups((current) => ({
                   ...current,
                   backgroundColor: event.target.value === "1"
                     ? current.backgroundColor === "transparent" ? "#ffffff" : current.backgroundColor ?? "#ffffff"
@@ -12973,10 +12975,10 @@ export function App() {
             <td>
               <input
                 type="color"
-                value={measurementGroupColorInputValue(group.backgroundColor, "#ffffff")}
-                disabled={isBrowseMode || measurementGroupBackgroundColor(group) === "transparent"}
+                value={measurementGroupColorInputValue(selectedMeasurementGroupCommonDraft.backgroundColor, "#ffffff")}
+                disabled={isBrowseMode || measurementGroupBackgroundColor(selectedMeasurementGroupCommonDraft) === "transparent"}
                 aria-label="量测组背景颜色"
-                onChange={(event) => updateMeasurementGroupById(group.id, (current) => ({ ...current, backgroundColor: event.target.value }), "修改量测组背景颜色")}
+                onChange={(event) => updateSelectedMeasurementGroups((current) => ({ ...current, backgroundColor: event.target.value }), "修改量测组背景颜色")}
               />
             </td>
           </tr>
@@ -12984,9 +12986,9 @@ export function App() {
             <th>边框样式</th>
             <td>
               <select
-                value={group.borderStyle ?? "solid"}
+                value={selectedMeasurementGroupCommonDraft.borderStyle ?? "solid"}
                 disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementGroupById(group.id, (current) => ({
+                onChange={(event) => updateSelectedMeasurementGroups((current) => ({
                   ...current,
                   borderStyle: event.target.value as MeasurementGroup["borderStyle"],
                   borderWidth: current.borderWidth ?? 1
@@ -13004,10 +13006,10 @@ export function App() {
             <td>
               <input
                 type="color"
-                value={measurementGroupColorInputValue(group.borderColor, "#64748b")}
-                disabled={isBrowseMode || (group.borderStyle ?? "solid") === "none"}
+                value={measurementGroupColorInputValue(selectedMeasurementGroupCommonDraft.borderColor, "#64748b")}
+                disabled={isBrowseMode || (selectedMeasurementGroupCommonDraft.borderStyle ?? "solid") === "none"}
                 aria-label="量测组边框颜色"
-                onChange={(event) => updateMeasurementGroupById(group.id, (current) => ({ ...current, borderColor: event.target.value }), "修改量测组边框颜色")}
+                onChange={(event) => updateSelectedMeasurementGroups((current) => ({ ...current, borderColor: event.target.value }), "修改量测组边框颜色")}
               />
             </td>
           </tr>
@@ -13019,14 +13021,36 @@ export function App() {
                 min="0"
                 max="12"
                 step="0.5"
-                value={group.borderWidth ?? 1}
-                disabled={isBrowseMode || (group.borderStyle ?? "solid") === "none"}
+                value={selectedMeasurementGroupCommonDraft.borderWidth ?? 1}
+                disabled={isBrowseMode || (selectedMeasurementGroupCommonDraft.borderStyle ?? "solid") === "none"}
                 aria-label="量测组边框宽度"
-                onChange={(event) => updateMeasurementGroupById(group.id, (current) => ({
+                onChange={(event) => updateSelectedMeasurementGroups((current) => ({
                   ...current,
                   borderWidth: Math.max(0, Math.min(12, Number(event.target.value)))
                 }), "修改量测组边框宽度")}
               />
+            </td>
+          </tr>
+        </>
+      );
+    };
+
+    const renderGroupRows = (group: MeasurementGroup, groupIndex: number) => {
+      const terminal = group.terminalId ? node.terminals.find((item) => item.id === group.terminalId) : undefined;
+      const groupTitle = terminal?.label
+        ? `${terminal.label}量测组`
+        : group.terminalId
+          ? `${group.terminalId}量测组`
+          : selectedMeasurementGroups.length > 1 ? `量测组${groupIndex + 1}` : "量测组";
+      return (
+        <Fragment key={group.id}>
+          <tr className="measurement-section-row measurement-group-section-row">
+            <th>{groupTitle}</th>
+            <td>
+              <div className="measurement-sidebar-actions">
+                <span className="graph-readonly-value">{terminal ? `端子：${terminal.label || terminal.id}` : "设备级量测"}</span>
+                <button type="button" disabled={isBrowseMode} onClick={() => addMeasurementItemToGroup(node, group)}>添加量测项</button>
+              </div>
             </td>
           </tr>
           {group.items.length === 0 && (
@@ -13183,7 +13207,10 @@ export function App() {
             </td>
           </tr>
           {selectedMeasurementGroups.length > 0 ? (
-            selectedMeasurementGroups.map(renderGroupRows)
+            <>
+              {renderCommonMeasurementGroupRows()}
+              {selectedMeasurementGroups.map(renderGroupRows)}
+            </>
           ) : (
             <tr>
               <th>量测内容</th>
