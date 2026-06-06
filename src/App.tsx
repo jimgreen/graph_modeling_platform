@@ -11,6 +11,7 @@ import {
   AlignVerticalDistributeCenter,
   ArrowDown,
   ArrowUp,
+  BoxSelect,
   Cable,
   ChevronsDown,
   ChevronsUp,
@@ -775,6 +776,9 @@ type ContextMenuState = {
   edgeId?: string;
   routePoints?: Point[];
 } | null;
+type ContextMarqueeSelectionState = {
+  start: Point;
+} | null;
 type NodeLabelDisplayMode = "always" | "hidden" | "follow";
 const NODE_LABEL_DISPLAY_MODES: Array<{ value: NodeLabelDisplayMode; label: string }> = [
   { value: "always", label: "始终显示" },
@@ -1069,7 +1073,6 @@ type MeasurementDragState = {
 } | null;
 type MeasurementEditorDialogState = {
   nodeId: string;
-  activeGroupId: string;
   drafts: MeasurementGroup[];
 } | null;
 const cloneMeasurementGroupForDraft = (group: MeasurementGroup): MeasurementGroup => ({
@@ -1082,8 +1085,6 @@ const cloneMeasurementGroupForDraft = (group: MeasurementGroup): MeasurementGrou
   }))
 });
 type MeasurementEditorDialogValue = Exclude<MeasurementEditorDialogState, null>;
-const activeMeasurementEditorDraft = (dialog: MeasurementEditorDialogValue): MeasurementGroup | undefined =>
-  dialog.drafts.find((group) => group.id === dialog.activeGroupId) ?? dialog.drafts[0];
 type ClipboardRecord =
   | { kind: "scheme"; scheme: SavedSchemeRecord }
   | { kind: "project"; project: SavedProjectRecord };
@@ -7110,6 +7111,12 @@ export function App() {
     setPanning(next);
   };
   const [marquee, setMarquee] = useState<Marquee>(null);
+  const [contextMarqueeSelection, setContextMarqueeSelectionState] = useState<ContextMarqueeSelectionState>(null);
+  const contextMarqueeSelectionRef = useRef<ContextMarqueeSelectionState>(null);
+  const setContextMarqueeSelection = (next: ContextMarqueeSelectionState) => {
+    contextMarqueeSelectionRef.current = next;
+    setContextMarqueeSelectionState(next);
+  };
   const [modifierSelectionPress, setModifierSelectionPressState] = useState<ModifierSelectionPressState>(null);
   const [canvasClipboard, setCanvasClipboard] = useState<CanvasClipboard>(EMPTY_CANVAS_CLIPBOARD);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
@@ -12672,118 +12679,170 @@ export function App() {
     }), "删除量测项");
   };
 
-  const updateMeasurementEditorDraft = (updater: (group: MeasurementGroup) => MeasurementGroup) => {
+  const applyMeasurementEditorGroupSettings = (group: MeasurementGroup, template: MeasurementGroup): MeasurementGroup => ({
+    ...group,
+    visible: template.visible,
+    labelVisible: template.labelVisible,
+    unitVisible: template.unitVisible,
+    backgroundColor: template.backgroundColor,
+    borderColor: template.borderColor,
+    borderStyle: template.borderStyle,
+    borderWidth: template.borderWidth,
+    anchor: template.anchor,
+    layout: template.layout,
+    groupStyleOverride: template.groupStyleOverride ? { ...template.groupStyleOverride } : undefined
+  });
+
+  const createMeasurementEditorGroupForPosition = (
+    node: ModelNode,
+    terminalId: string | undefined,
+    template?: MeasurementGroup
+  ): MeasurementGroup => {
+    const group = createMeasurementEditorGroupShellForNode(node, terminalId);
+    return template ? applyMeasurementEditorGroupSettings(group, template) : group;
+  };
+
+  const updateMeasurementEditorGroupSettings = (updater: (group: MeasurementGroup) => MeasurementGroup) => {
     setMeasurementEditorDialog((current) => current
       ? {
           ...current,
-          drafts: current.drafts.map((group) => group.id === current.activeGroupId ? updater(group) : group)
+          drafts: current.drafts.map((group) => updater(group))
         }
       : current
     );
   };
 
-  const setActiveMeasurementEditorGroup = (groupId: string) => {
-    setMeasurementEditorDialog((current) => current && current.drafts.some((group) => group.id === groupId)
-      ? { ...current, activeGroupId: groupId }
-      : current
-    );
-  };
-
-  const updateMeasurementEditorDraftTerminal = (node: ModelNode, terminalIdValue: string) => {
-    const terminalId = terminalIdValue || undefined;
-    updateMeasurementEditorDraft((group) => ({
-      ...group,
-      terminalId,
-      offset: measurementGroupShellOffsetForNode(node, terminalId),
-      items: group.items.map((item) => ({
-        ...item,
-        sourcePoint: measurementSourcePointForNodeItem(node, item, terminalId)
-      }))
-    }));
-  };
-
   const updateMeasurementEditorDraftItem = (
+    groupId: string,
     itemId: string,
     updater: (item: MeasurementItemBinding) => MeasurementItemBinding
   ) => {
-    updateMeasurementEditorDraft((group) => ({
-      ...group,
-      items: group.items.map((item) => item.id === itemId ? updater(item) : item)
-    }));
+    setMeasurementEditorDialog((current) => current
+      ? {
+          ...current,
+          drafts: current.drafts.map((group) => group.id === groupId
+            ? { ...group, items: group.items.map((item) => item.id === itemId ? updater(item) : item) }
+            : group
+          )
+        }
+      : current
+    );
   };
 
   const addMeasurementEditorDraftItem = (node: ModelNode) => {
     if (!measurementEditorDialog) {
       return;
     }
-    const draft = activeMeasurementEditorDraft(measurementEditorDialog);
-    if (!draft) {
-      return;
-    }
+    const terminalId = undefined;
+    const draft = measurementEditorDialog.drafts.find((group) => group.terminalId === terminalId);
+    const existingItems = draft?.items ?? [];
     const item = createMeasurementItemForNode(
       node,
       undefined,
-      draft.terminalId,
-      draft.items
+      terminalId,
+      existingItems
     );
     if (!item) {
       window.alert("请先配置至少一个量测类型。");
       return;
     }
-    updateMeasurementEditorDraft((group) => ({
-      ...group,
-      items: [...group.items, item]
-    }));
-  };
-
-  const removeMeasurementEditorDraftItem = (itemId: string) => {
-    updateMeasurementEditorDraft((group) => ({
-      ...group,
-      items: group.items.filter((item) => item.id !== itemId)
-    }));
-  };
-
-  const moveMeasurementEditorDraftItem = (itemId: string, direction: -1 | 1) => {
-    updateMeasurementEditorDraft((group) => {
-      const index = group.items.findIndex((item) => item.id === itemId);
-      const nextIndex = index + direction;
-      if (index < 0 || nextIndex < 0 || nextIndex >= group.items.length) {
-        return group;
+    setMeasurementEditorDialog((current) => {
+      if (!current) {
+        return current;
       }
-      const items = [...group.items];
-      [items[index], items[nextIndex]] = [items[nextIndex], items[index]];
-      return { ...group, items };
+      const targetGroup = current.drafts.find((group) => group.terminalId === terminalId);
+      const template = current.drafts[0];
+      if (!targetGroup) {
+        return {
+          ...current,
+          drafts: [
+            ...current.drafts,
+            { ...createMeasurementEditorGroupForPosition(node, terminalId, template), items: [item] }
+          ]
+        };
+      }
+      return {
+        ...current,
+        drafts: current.drafts.map((group) => group.id === targetGroup.id
+          ? { ...group, items: [...group.items, item] }
+          : group
+        )
+      };
     });
   };
 
-  const addMeasurementEditorGroup = (node: ModelNode) => {
-    if (!measurementEditorDialog) {
-      return;
-    }
-    const usedPositionKeys = new Set(measurementEditorDialog.drafts.map((group) => group.terminalId ?? "__device__"));
-    const terminalId = usedPositionKeys.has("__device__")
-      ? node.terminals.find((terminal) => !usedPositionKeys.has(terminal.id))?.id
-      : undefined;
-    const group = createMeasurementEditorGroupShellForNode(node, terminalId);
+  const removeMeasurementEditorDraftItem = (groupId: string, itemId: string) => {
     setMeasurementEditorDialog((current) => current
       ? {
           ...current,
-          activeGroupId: group.id,
-          drafts: [...current.drafts, group]
+          drafts: current.drafts.map((group) => group.id === groupId
+            ? { ...group, items: group.items.filter((item) => item.id !== itemId) }
+            : group
+          )
         }
       : current
     );
   };
 
-  const removeMeasurementEditorGroup = (groupId: string) => {
+  const moveMeasurementEditorDraftItem = (groupId: string, itemId: string, direction: -1 | 1) => {
+    setMeasurementEditorDialog((current) => current
+      ? {
+          ...current,
+          drafts: current.drafts.map((group) => {
+            if (group.id !== groupId) {
+              return group;
+            }
+            const index = group.items.findIndex((item) => item.id === itemId);
+            const nextIndex = index + direction;
+            if (index < 0 || nextIndex < 0 || nextIndex >= group.items.length) {
+              return group;
+            }
+            const items = [...group.items];
+            [items[index], items[nextIndex]] = [items[nextIndex], items[index]];
+            return { ...group, items };
+          })
+        }
+      : current
+    );
+  };
+
+  const updateMeasurementEditorDraftItemPosition = (
+    node: ModelNode,
+    sourceGroupId: string,
+    itemId: string,
+    terminalIdValue: string
+  ) => {
+    const terminalId = terminalIdValue || undefined;
     setMeasurementEditorDialog((current) => {
-      if (!current || current.drafts.length <= 1) {
+      if (!current) {
         return current;
       }
-      const drafts = current.drafts.filter((group) => group.id !== groupId);
+      const sourceGroup = current.drafts.find((group) => group.id === sourceGroupId);
+      const item = sourceGroup?.items.find((candidate) => candidate.id === itemId);
+      if (!sourceGroup || !item || sourceGroup.terminalId === terminalId) {
+        return current;
+      }
+      const movedItem: MeasurementItemBinding = {
+        ...item,
+        sourcePoint: measurementSourcePointForNodeItem(node, item, terminalId)
+      };
+      const template = current.drafts[0] ?? sourceGroup;
+      const existingTargetGroup = current.drafts.find((group) => group.terminalId === terminalId);
+      const targetGroup = existingTargetGroup ?? createMeasurementEditorGroupForPosition(node, terminalId, template);
+      const targetGroupId = targetGroup.id;
+      const draftsWithoutItem = current.drafts.map((group) => group.id === sourceGroupId
+        ? { ...group, items: group.items.filter((candidate) => candidate.id !== itemId) }
+        : group
+      );
+      const targetExists = draftsWithoutItem.some((group) => group.id === targetGroupId);
+      const drafts = targetExists
+        ? draftsWithoutItem.map((group) => group.id === targetGroupId
+          ? { ...group, items: [...group.items, movedItem] }
+          : group
+        )
+        : [...draftsWithoutItem, { ...targetGroup, items: [movedItem] }];
       return {
         ...current,
-        activeGroupId: current.activeGroupId === groupId ? drafts[0]?.id ?? "" : current.activeGroupId,
         drafts
       };
     });
@@ -12798,10 +12857,12 @@ export function App() {
       setMeasurementEditorDialog(null);
       return;
     }
-    const drafts = measurementEditorDialog.drafts.map((group) => cloneMeasurementGroupForDraft({
-      ...group,
-      nodeId: node.id
-    }));
+    const drafts = measurementEditorDialog.drafts
+      .filter((group) => group.items.length > 0)
+      .map((group) => cloneMeasurementGroupForDraft({
+        ...group,
+        nodeId: node.id
+      }));
     updateProjectMeasurementsWithUndo(
       (current) => ({
         version: 1,
@@ -14631,6 +14692,18 @@ export function App() {
     setMarquee(null);
     return true;
   }
+
+  const startContextMarqueeSelection = () => {
+    if (!contextMenu?.canvasPoint) {
+      return;
+    }
+    setContextMarqueeSelection({ start: contextMenu.canvasPoint });
+    setMarquee({ start: contextMenu.canvasPoint, current: contextMenu.canvasPoint });
+    setConnectSource(null);
+    resetConnectPreviewState();
+    setRewiring(null);
+    writeOperationLog("框选模式：移动鼠标确定范围，左键落点完成选择");
+  };
 
   const finishMarqueeSelection = () => {
     if (!marquee) {
@@ -19080,7 +19153,6 @@ export function App() {
     selectCanvasGraphics([node.id], [], { scope: "direct" });
     setMeasurementEditorDialog({
       nodeId: node.id,
-      activeGroupId: drafts[0].id,
       drafts
     });
   };
@@ -20920,6 +20992,13 @@ export function App() {
       }
       if (routableLinePlacement) {
         scheduleRoutableLinePreviewPoint(pointer);
+      }
+      const activeContextMarqueeSelection = contextMarqueeSelectionRef.current;
+      if (activeContextMarqueeSelection) {
+        setMarquee({ start: activeContextMarqueeSelection.start, current: pointer });
+        event.preventDefault();
+        event.stopPropagation();
+        return;
       }
       if (routableLineEndpointDrag) {
         updateRoutableLineEndpointDrag(pointer);
@@ -23049,18 +23128,17 @@ export function App() {
     if (!node) {
       return null;
     }
-    const draft = activeMeasurementEditorDraft(measurementEditorDialog);
+    const draft = measurementEditorDialog.drafts[0];
     if (!draft) {
       return null;
     }
-    const measurementEditorGroupTitle = (group: MeasurementGroup, groupIndex: number) => {
+    const measurementEditorPositionLabel = (group: MeasurementGroup) => {
       const terminal = group.terminalId ? node.terminals.find((item) => item.id === group.terminalId) : undefined;
-      return terminal?.label
-        ? `${terminal.label}量测组`
-        : group.terminalId
-          ? `${group.terminalId}量测组`
-          : measurementEditorDialog.drafts.length > 1 ? `设备量测组${groupIndex + 1}` : "设备量测组";
+      return terminal?.label || (group.terminalId ? group.terminalId : "设备层");
     };
+    const measurementEditorRows = measurementEditorDialog.drafts.flatMap((group) =>
+      group.items.map((item, itemIndex) => ({ group, groupId: group.id, item, itemIndex }))
+    );
     const draftBackgroundHidden = measurementGroupBackgroundColor(draft) === "transparent";
     const draftBorderHidden = (draft.borderStyle ?? "solid") === "none";
     return (
@@ -23069,61 +23147,17 @@ export function App() {
           <header>
             <div>
               <h2 id="measurement-editor-title">修改量测信息</h2>
-              <p>{node.name}：共 {measurementEditorDialog.drafts.length} 个量测组，先选择量测组，再修改显示量测。</p>
+              <p>{node.name}：共 {measurementEditorRows.length} 项量测，可在同一张表中修改量测名称、位置和显示参数。</p>
             </div>
             <button type="button" onClick={() => setMeasurementEditorDialog(null)}>关闭</button>
           </header>
-          <div className="measurement-editor-groups" aria-label="量测组列表">
-            <div className="measurement-editor-group-list">
-              {measurementEditorDialog.drafts.map((group, groupIndex) => (
-                <button
-                  key={group.id}
-                  type="button"
-                  className={`measurement-editor-group-tab${group.id === draft.id ? " is-active" : ""}`}
-                  onClick={() => setActiveMeasurementEditorGroup(group.id)}
-                >
-                  <span>{measurementEditorGroupTitle(group, groupIndex)}</span>
-                  <em>{group.items.length}项</em>
-                </button>
-              ))}
-            </div>
-            <div className="measurement-editor-group-actions">
-              <button
-                type="button"
-                disabled={isBrowseMode}
-                onClick={() => addMeasurementEditorGroup(node)}
-              >
-                新增量测组
-              </button>
-              <button
-                type="button"
-                disabled={isBrowseMode || measurementEditorDialog.drafts.length <= 1}
-                onClick={() => removeMeasurementEditorGroup(draft.id)}
-              >
-                删除量测组
-              </button>
-            </div>
-          </div>
           <div className="measurement-editor-summary">
-            <label>
-              <span>量测位置</span>
-              <select
-                value={draft.terminalId ?? ""}
-                disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementEditorDraftTerminal(node, event.target.value)}
-              >
-                <option value="">设备层</option>
-                {node.terminals.map((terminal, terminalIndex) => (
-                  <option key={terminal.id} value={terminal.id}>{terminal.label || `端子${terminalIndex + 1}`}</option>
-                ))}
-              </select>
-            </label>
             <label>
               <span>量测组显示</span>
               <select
                 value={draft.visible ? "1" : "0"}
                 disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementEditorDraft((group) => ({ ...group, visible: event.target.value === "1" }))}
+                onChange={(event) => updateMeasurementEditorGroupSettings((group) => ({ ...group, visible: event.target.value === "1" }))}
               >
                 <option value="1">显示</option>
                 <option value="0">隐藏</option>
@@ -23134,7 +23168,7 @@ export function App() {
               <select
                 value={draft.layout}
                 disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementEditorDraft((group) => ({ ...group, layout: event.target.value as MeasurementGroup["layout"] }))}
+                onChange={(event) => updateMeasurementEditorGroupSettings((group) => ({ ...group, layout: event.target.value as MeasurementGroup["layout"] }))}
               >
                 <option value="vertical">竖向</option>
                 <option value="horizontal">横向</option>
@@ -23147,7 +23181,7 @@ export function App() {
                 aria-label="量测标签显示"
                 value={draft.labelVisible === false ? "0" : "1"}
                 disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementEditorDraft((group) => ({ ...group, labelVisible: event.target.value === "1" }))}
+                onChange={(event) => updateMeasurementEditorGroupSettings((group) => ({ ...group, labelVisible: event.target.value === "1" }))}
               >
                 <option value="1">显示</option>
                 <option value="0">隐藏</option>
@@ -23159,7 +23193,7 @@ export function App() {
                 aria-label="量测单位显示"
                 value={draft.unitVisible === false ? "0" : "1"}
                 disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementEditorDraft((group) => ({ ...group, unitVisible: event.target.value === "1" }))}
+                onChange={(event) => updateMeasurementEditorGroupSettings((group) => ({ ...group, unitVisible: event.target.value === "1" }))}
               >
                 <option value="1">显示</option>
                 <option value="0">隐藏</option>
@@ -23170,7 +23204,7 @@ export function App() {
               <select
                 value={draftBackgroundHidden ? "0" : "1"}
                 disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementEditorDraft((group) => ({
+                onChange={(event) => updateMeasurementEditorGroupSettings((group) => ({
                   ...group,
                   backgroundColor: event.target.value === "1"
                     ? group.backgroundColor === "transparent" ? "#ffffff" : group.backgroundColor ?? "#ffffff"
@@ -23187,7 +23221,7 @@ export function App() {
                 type="color"
                 value={measurementGroupColorInputValue(draft.backgroundColor, "#ffffff")}
                 disabled={isBrowseMode || draftBackgroundHidden}
-                onChange={(event) => updateMeasurementEditorDraft((group) => ({ ...group, backgroundColor: event.target.value }))}
+                onChange={(event) => updateMeasurementEditorGroupSettings((group) => ({ ...group, backgroundColor: event.target.value }))}
               />
             </label>
             <label>
@@ -23195,7 +23229,7 @@ export function App() {
               <select
                 value={draft.borderStyle ?? "solid"}
                 disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementEditorDraft((group) => ({
+                onChange={(event) => updateMeasurementEditorGroupSettings((group) => ({
                   ...group,
                   borderStyle: event.target.value as MeasurementGroup["borderStyle"],
                   borderWidth: group.borderWidth ?? 1
@@ -23213,7 +23247,7 @@ export function App() {
                 type="color"
                 value={measurementGroupColorInputValue(draft.borderColor, "#64748b")}
                 disabled={isBrowseMode || draftBorderHidden}
-                onChange={(event) => updateMeasurementEditorDraft((group) => ({ ...group, borderColor: event.target.value }))}
+                onChange={(event) => updateMeasurementEditorGroupSettings((group) => ({ ...group, borderColor: event.target.value }))}
               />
             </label>
             <label>
@@ -23225,7 +23259,7 @@ export function App() {
                 step="0.5"
                 value={draft.borderWidth ?? 1}
                 disabled={isBrowseMode || draftBorderHidden}
-                onChange={(event) => updateMeasurementEditorDraft((group) => ({
+                onChange={(event) => updateMeasurementEditorGroupSettings((group) => ({
                   ...group,
                   borderWidth: Math.max(0, Math.min(12, Number(event.target.value)))
                 }))}
@@ -23247,6 +23281,8 @@ export function App() {
                 <tr>
                   <th>序号</th>
                   <th>操作</th>
+                  <th>量测名称</th>
+                  <th>量测位置</th>
                   <th>量测类型</th>
                   <th>显示</th>
                   <th>测点</th>
@@ -23258,38 +23294,60 @@ export function App() {
                 </tr>
               </thead>
               <tbody>
-                {draft.items.length > 0 ? draft.items.map((item, itemIndex) => {
+                {measurementEditorRows.length > 0 ? measurementEditorRows.map((row, rowIndex) => {
+                  const { group, item, itemIndex } = row;
                   const type = measurementTypeById.get(item.measurementTypeId) ?? measurementConfig.measurementTypes[0];
-                  const measurementTypeOptions = measurementTypeOptionsForMeasurementGroup(node, draft);
+                  const measurementTypeOptions = measurementTypeOptionsForMeasurementGroup(node, group);
                   const itemColor = item.styleOverride?.color ?? type?.defaultColor ?? "#334155";
                   const itemFontSize = item.styleOverride?.fontSize ?? type?.defaultFontSize ?? 12;
                   return (
                     <tr key={item.id}>
-                      <td>{itemIndex + 1}</td>
+                      <td>{rowIndex + 1}</td>
                       <td>
                         <div className="measurement-editor-row-actions">
                           <button
                             type="button"
                             disabled={isBrowseMode || itemIndex === 0}
-                            onClick={() => moveMeasurementEditorDraftItem(item.id, -1)}
+                            onClick={() => moveMeasurementEditorDraftItem(row.groupId, item.id, -1)}
                           >
                             上移
                           </button>
                           <button
                             type="button"
-                            disabled={isBrowseMode || itemIndex === draft.items.length - 1}
-                            onClick={() => moveMeasurementEditorDraftItem(item.id, 1)}
+                            disabled={isBrowseMode || itemIndex === group.items.length - 1}
+                            onClick={() => moveMeasurementEditorDraftItem(row.groupId, item.id, 1)}
                           >
                             下移
                           </button>
                           <button
                             type="button"
                             disabled={isBrowseMode}
-                            onClick={() => removeMeasurementEditorDraftItem(item.id)}
+                            onClick={() => removeMeasurementEditorDraftItem(row.groupId, item.id)}
                           >
                             删除
                           </button>
                         </div>
+                      </td>
+                      <td>
+                        <input
+                          value={type?.name ?? item.measurementTypeId}
+                          disabled
+                          aria-label="量测名称"
+                        />
+                      </td>
+                      <td>
+                        <select
+                          value={group.terminalId ?? ""}
+                          disabled={isBrowseMode}
+                          aria-label="量测位置"
+                          title={measurementEditorPositionLabel(group)}
+                          onChange={(event) => updateMeasurementEditorDraftItemPosition(node, row.groupId, item.id, event.target.value)}
+                        >
+                          <option value="">设备层</option>
+                          {node.terminals.map((terminal, terminalIndex) => (
+                            <option key={terminal.id} value={terminal.id}>{terminal.label || `端子${terminalIndex + 1}`}</option>
+                          ))}
+                        </select>
                       </td>
                       <td>
                         <select
@@ -23297,7 +23355,7 @@ export function App() {
                           disabled={isBrowseMode}
                           onChange={(event) => {
                             const nextTypeId = event.target.value;
-                            updateMeasurementEditorDraftItem(item.id, (current) => ({
+                            updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                               ...current,
                               measurementTypeId: nextTypeId,
                               sourcePoint: current.sourcePoint || `${node.id}.${nextTypeId}`
@@ -23316,7 +23374,7 @@ export function App() {
                         <select
                           value={item.visible === false ? "0" : "1"}
                           disabled={isBrowseMode}
-                          onChange={(event) => updateMeasurementEditorDraftItem(item.id, (current) => ({
+                          onChange={(event) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
                             visible: event.target.value === "1"
                           }))}
@@ -23329,7 +23387,7 @@ export function App() {
                         <input
                           value={item.sourcePoint}
                           disabled={isBrowseMode}
-                          onChange={(event) => updateMeasurementEditorDraftItem(item.id, (current) => ({
+                          onChange={(event) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
                             sourcePoint: event.target.value
                           }))}
@@ -23340,7 +23398,7 @@ export function App() {
                           value={item.labelOverride ?? ""}
                           disabled={isBrowseMode}
                           placeholder={type?.shortLabel ?? "标签"}
-                          onChange={(event) => updateMeasurementEditorDraftItem(item.id, (current) => ({
+                          onChange={(event) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
                             labelOverride: event.target.value || undefined
                           }))}
@@ -23351,7 +23409,7 @@ export function App() {
                           value={item.unitOverride ?? ""}
                           disabled={isBrowseMode}
                           placeholder={type?.defaultUnit ?? "单位"}
-                          onChange={(event) => updateMeasurementEditorDraftItem(item.id, (current) => ({
+                          onChange={(event) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
                             unitOverride: event.target.value || undefined
                           }))}
@@ -23365,7 +23423,7 @@ export function App() {
                           value={item.decimalsOverride ?? ""}
                           disabled={isBrowseMode}
                           placeholder={String(type?.defaultDecimals ?? 3)}
-                          onChange={(event) => updateMeasurementEditorDraftItem(item.id, (current) => ({
+                          onChange={(event) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
                             decimalsOverride: event.target.value === "" ? undefined : Number(event.target.value)
                           }))}
@@ -23376,7 +23434,7 @@ export function App() {
                           type="color"
                           value={itemColor}
                           disabled={isBrowseMode}
-                          onChange={(event) => updateMeasurementEditorDraftItem(item.id, (current) => ({
+                          onChange={(event) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
                             styleOverride: { ...(current.styleOverride ?? {}), color: event.target.value }
                           }))}
@@ -23389,7 +23447,7 @@ export function App() {
                           max="96"
                           value={itemFontSize}
                           disabled={isBrowseMode}
-                          onChange={(event) => updateMeasurementEditorDraftItem(item.id, (current) => ({
+                          onChange={(event) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
                             styleOverride: { ...(current.styleOverride ?? {}), fontSize: Number(event.target.value) }
                           }))}
@@ -23399,7 +23457,7 @@ export function App() {
                   );
                 }) : (
                   <tr>
-                    <td colSpan={10}>当前设备没有量测项。</td>
+                    <td colSpan={12}>当前设备没有量测项。</td>
                   </tr>
                 )}
               </tbody>
@@ -28177,7 +28235,7 @@ export function App() {
           >
             <svg
               ref={svgRef}
-              className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${staticDrawing ? "static-draw-mode" : ""} ${libraryPlacement ? "library-place-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""} ${multiNodeDragging ? "multi-node-dragging" : ""} ${singleNodeDragging ? "single-node-dragging" : ""}`}
+              className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${staticDrawing ? "static-draw-mode" : ""} ${libraryPlacement ? "library-place-mode" : ""} ${contextMarqueeSelection ? "context-marquee-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""} ${multiNodeDragging ? "multi-node-dragging" : ""} ${singleNodeDragging ? "single-node-dragging" : ""}`}
               style={{ width: canvasDisplayWidth, height: canvasDisplayHeight, left: canvasDisplayOffsetX, top: canvasDisplayOffsetY }}
             viewBox={`0 0 ${canvasRenderBounds.width} ${canvasRenderBounds.height}`}
             onDrop={handleDrop}
@@ -28247,6 +28305,9 @@ export function App() {
               if (modifierSelectionPressRef.current) {
                 return;
               }
+              if (contextMarqueeSelectionRef.current) {
+                return;
+              }
               setTerminalPress(null);
               setRoutableLineEndpointDrag(null);
               finishManualPathDrag();
@@ -28265,6 +28326,7 @@ export function App() {
               finishManualPathDrag();
               finishTransformDrag();
               setCanvasPanning(null);
+              setContextMarqueeSelection(null);
               setMarquee(null);
               setRewiring(null);
             }}
@@ -28278,6 +28340,7 @@ export function App() {
               setRoutableLineEndpointDrag(null);
               finishManualPathDrag();
               finishTransformDrag();
+              setContextMarqueeSelection(null);
             }}
             onPointerDown={(event) => {
               if (event.button !== 0) {
@@ -28320,6 +28383,13 @@ export function App() {
                 } else {
                   applyConnectPreviewState(previewPoint, false);
                 }
+                return;
+              }
+              if (contextMarqueeSelectionRef.current) {
+                finishMarqueeSelectionFromPoints(contextMarqueeSelectionRef.current.start, pointer);
+                setContextMarqueeSelection(null);
+                event.preventDefault();
+                event.stopPropagation();
                 return;
               }
               const routeHit = isReadonlyCanvasMode ? null : findConnectionRouteHitAtPoint(pointer);
@@ -30596,6 +30666,12 @@ export function App() {
       </aside>
       {contextMenu && (
         <div className="context-menu" data-canvas-context-menu="true" style={contextMenuStyle(contextMenu)}>
+          {isEditMode && contextMenuTarget === "blank" && contextMenu.canvasPoint && (
+            <button onClick={() => runContextMenuAction(startContextMarqueeSelection)}>
+              <BoxSelect size={14} />
+              框选
+            </button>
+          )}
           {isEditMode && undoStack.length > 0 && (
             <button onClick={() => runContextMenuAction(undoLastOperation)}>
               <Undo2 size={14} />
@@ -30627,16 +30703,23 @@ export function App() {
             </button>
           )}
           {isEditMode && nodes.length > 0 && (
-            <button onClick={() => runContextMenuAction(openVoltageBaseSetDialog)}>
-              <Zap size={14} />
-              设置电压基值
-            </button>
-          )}
-          {isEditMode && nodes.length > 0 && (
-            <button onClick={() => runContextMenuAction(openVoltageBaseClearDialog)}>
-              <ZapOff size={14} />
-              清空电压基值
-            </button>
+            <div className="context-menu-submenu">
+              <button type="button" className="context-menu-submenu-trigger">
+                <Zap size={14} />
+                电压基值
+                <ChevronRight size={14} />
+              </button>
+              <div className="context-menu-submenu-panel">
+                <button onClick={() => runContextMenuAction(openVoltageBaseSetDialog)}>
+                  <Zap size={14} />
+                  设置电压基值
+                </button>
+                <button onClick={() => runContextMenuAction(openVoltageBaseClearDialog)}>
+                  <ZapOff size={14} />
+                  清空电压基值
+                </button>
+              </div>
+            </div>
           )}
           {isEditMode && contextMenuTarget === "blank" && activeLayerNodes.length > 1 && (
             <button onClick={() => runContextMenuAction(autoAlignCanvasGraphics)}>

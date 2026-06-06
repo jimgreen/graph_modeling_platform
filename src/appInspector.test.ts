@@ -3562,6 +3562,31 @@ describe("graph inspector panel", () => {
     expect(scrollSurfaceBlock).toContain("startCanvasPanning(event);");
   });
 
+  test("starts a one-shot marquee selection from the blank canvas context menu", async () => {
+    const source = await readAppSource();
+    const contextStart = source.indexOf("{contextMenu && (");
+    const contextEnd = source.indexOf("{projectMenu && (", contextStart);
+    const contextBlock = source.slice(contextStart, contextEnd);
+    const pointerMoveStart = source.indexOf("const handlePointerMove = (event: PointerEvent<SVGSVGElement>) =>");
+    const pointerMoveEnd = source.indexOf("const startCanvasPanning =", pointerMoveStart);
+    const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
+    const svgPointerDownStart = source.indexOf("onPointerDown={(event) => {", source.indexOf("onPointerMove={handlePointerMove}"));
+    const svgPointerDownEnd = source.indexOf("onContextMenu={(event) => {", svgPointerDownStart);
+    const svgPointerDownBlock = source.slice(svgPointerDownStart, svgPointerDownEnd);
+
+    expect(source).toContain("type ContextMarqueeSelectionState =");
+    expect(source).toContain("const [contextMarqueeSelection, setContextMarqueeSelectionState] = useState<ContextMarqueeSelectionState>(null);");
+    expect(source).toContain("const startContextMarqueeSelection = () =>");
+    expect(contextBlock).toContain("{isEditMode && contextMenuTarget === \"blank\" && contextMenu.canvasPoint && (");
+    expect(contextBlock).toContain("runContextMenuAction(startContextMarqueeSelection)");
+    expect(contextBlock).toContain("框选");
+    expect(pointerMoveBlock).toContain("const activeContextMarqueeSelection = contextMarqueeSelectionRef.current;");
+    expect(pointerMoveBlock).toContain("setMarquee({ start: activeContextMarqueeSelection.start, current: pointer });");
+    expect(svgPointerDownBlock).toContain("if (contextMarqueeSelectionRef.current)");
+    expect(svgPointerDownBlock).toContain("finishMarqueeSelectionFromPoints(contextMarqueeSelectionRef.current.start, pointer);");
+    expect(svgPointerDownBlock).toContain("setContextMarqueeSelection(null);");
+  });
+
   test("fits the whole canvas to the viewport when blank canvas is double-clicked", async () => {
     const source = await readAppSource();
     const fitFunctionStart = source.indexOf("function fitWholeCanvasViewBox");
@@ -7164,8 +7189,19 @@ describe("graph inspector panel", () => {
     expect(source).toContain("setVoltageBaseValuesForScope");
     expect(source).toContain("setVoltageBaseTerminalValuesForScope");
     expect(source).toContain("VOLTAGE_BASE_SET_SCOPE_LABELS");
+    const voltageBaseMenuLabelStart = contextBlock.indexOf("电压基值");
+    const voltageBaseMenuStart = contextBlock.lastIndexOf("<div className=\"context-menu-submenu\">", voltageBaseMenuLabelStart);
+    const voltageBaseMenuEnd = contextBlock.indexOf("{isEditMode && contextMenuTarget === \"blank\"", voltageBaseMenuStart);
+    const voltageBaseMenuBlock = contextBlock.slice(voltageBaseMenuStart, voltageBaseMenuEnd);
+    expect(voltageBaseMenuBlock).toContain("className=\"context-menu-submenu\"");
+    expect(voltageBaseMenuBlock).toContain("className=\"context-menu-submenu-trigger\"");
+    expect(voltageBaseMenuBlock).toContain("className=\"context-menu-submenu-panel\"");
     expect(contextBlock).toContain("openVoltageBaseSetDialog");
     expect(contextBlock).toContain("设置电压基值");
+    expect(voltageBaseMenuBlock).toContain("openVoltageBaseSetDialog");
+    expect(voltageBaseMenuBlock).toContain("设置电压基值");
+    expect(voltageBaseMenuBlock).toContain("openVoltageBaseClearDialog");
+    expect(voltageBaseMenuBlock).toContain("清空电压基值");
     expect(setBlock).toContain("setVoltageBaseValuesForScope(nodes, edges, activeSelectedNodeIds, scope, voltageBaseSetValue.trim())");
     expect(setBlock).toContain("setVoltageBaseTerminalValuesForScope(nodes, edges, voltageBaseTerminalValues, scope)");
     expect(setBlock).toContain("pushUndoSnapshot(true, false, undoScopeForGraphPatch(result.changedNodeIds, []))");
@@ -7855,15 +7891,21 @@ describe("graph inspector panel", () => {
     expect(contextMeasurementMenuBlock).not.toContain("配置量测库");
     expect(measurementEditorBlock).toContain("setMeasurementEditorDialog");
     expect(measurementEditorBlock).toContain("measurementGroupsForNode(projectMeasurements, node.id)");
-    expect(source).toContain("activeGroupId: string;");
     expect(source).toContain("drafts: MeasurementGroup[];");
-    expect(source).toContain("const activeMeasurementEditorDraft");
-    expect(source).toContain("setActiveMeasurementEditorGroup");
-    expect(source).toContain("addMeasurementEditorGroup");
-    expect(source).toContain("removeMeasurementEditorGroup");
     expect(source).toContain("current.groups.filter((group) => group.nodeId !== node.id)");
-    expect(source).toContain("新增量测组");
-    expect(source).toContain("删除量测组");
+    expect(source).toContain("const measurementEditorRows =");
+    expect(source).toContain("updateMeasurementEditorGroupSettings");
+    expect(source).toContain("updateMeasurementEditorDraftItemPosition");
+    expect(source).toContain("<option value=\"\">设备层</option>");
+    expect(source).toContain("terminal.label || `端子${terminalIndex + 1}`");
+    expect(source).toContain("<th>量测名称</th>");
+    expect(source).toContain("<th>量测位置</th>");
+    expect(source).toContain("onChange={(event) => updateMeasurementEditorDraftItemPosition(node, row.groupId, item.id, event.target.value)}");
+    expect(source).not.toContain("measurement-editor-groups");
+    expect(source).not.toContain("新增量测组");
+    expect(source).not.toContain("删除量测组");
+    expect(source).not.toContain("setActiveMeasurementEditorGroup");
+    expect(source).not.toContain("measurement-editor-readonly-value");
     expect(measurementEditorBlock).not.toContain("setSelectedDeviceInfoView(\"measurement\")");
     expect(source).toContain("const cloneMeasurementGroupForDraft = (group: MeasurementGroup): MeasurementGroup");
     expect(source).toContain("const renderMeasurementEditorDialog = () =>");
