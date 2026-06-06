@@ -1144,6 +1144,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("measurementConfigDraft");
     expect(styles).toContain(".device-definition-tabs");
     expect(styles).toContain(".device-definition-measurement-panel");
+    expect(styles).toContain(".device-definition-dialog .custom-param-table input,");
+    expect(styles).toContain(".custom-device-dialog .custom-param-table input,");
   });
 
   test("visually distinguishes built-in and custom library and device type options", async () => {
@@ -7987,6 +7989,13 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".measurement-config-status");
     expect(styles).toContain(".measurement-editor-dialog");
     expect(styles).toContain(".measurement-editor-table");
+    expect(styles).toContain("dialog-table-browse-controls");
+    expect(styles).toContain(".measurement-editor-table input,");
+    expect(styles).toContain(".measurement-config-dialog .measurement-table input,");
+    expect(styles).toContain(".device-definition-dialog .measurement-table input,");
+    expect(styles).toContain("border-color: transparent;");
+    expect(styles).toContain("background: transparent;");
+    expect(styles).toContain(".measurement-editor-table input:focus-visible,");
     expect(styles).toContain(".measurement-sidebar-actions");
     expect(styles).toContain(".device-info-tabs");
     expect(serverSource).toContain('const measurementConfigPath = join(settingsDataDir, "measurement-config.json");');

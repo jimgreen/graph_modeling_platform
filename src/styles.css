@@ -5977,6 +5977,54 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   padding: 1px;
 }
 
+/* dialog-table-browse-controls: popup tables read like text until a field is focused. */
+.measurement-editor-table input,
+.measurement-editor-table select,
+.measurement-config-dialog .measurement-table input,
+.measurement-config-dialog .measurement-table select,
+.device-definition-dialog .measurement-table input,
+.device-definition-dialog .measurement-table select,
+.device-definition-dialog .custom-param-table input,
+.device-definition-dialog .custom-param-table select,
+.custom-device-dialog .custom-param-table input,
+.custom-device-dialog .custom-param-table select {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.measurement-editor-table input:hover:not(:disabled),
+.measurement-editor-table select:hover:not(:disabled),
+.measurement-config-dialog .measurement-table input:hover:not(:disabled),
+.measurement-config-dialog .measurement-table select:hover:not(:disabled),
+.device-definition-dialog .measurement-table input:hover:not(:disabled),
+.device-definition-dialog .measurement-table select:hover:not(:disabled),
+.device-definition-dialog .custom-param-table input:hover:not(:disabled),
+.device-definition-dialog .custom-param-table select:hover:not(:disabled),
+.custom-device-dialog .custom-param-table input:hover:not(:disabled),
+.custom-device-dialog .custom-param-table select:hover:not(:disabled),
+.measurement-editor-table input:focus-visible,
+.measurement-editor-table select:focus-visible,
+.measurement-config-dialog .measurement-table input:focus-visible,
+.measurement-config-dialog .measurement-table select:focus-visible,
+.device-definition-dialog .measurement-table input:focus-visible,
+.device-definition-dialog .measurement-table select:focus-visible,
+.device-definition-dialog .custom-param-table input:focus-visible,
+.device-definition-dialog .custom-param-table select:focus-visible,
+.custom-device-dialog .custom-param-table input:focus-visible,
+.custom-device-dialog .custom-param-table select:focus-visible {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  outline: none;
+}
+
+.measurement-editor-table input[type="color"],
+.measurement-config-dialog .measurement-table input[type="color"],
+.device-definition-dialog .measurement-table input[type="color"] {
+  border-color: transparent;
+  background: transparent;
+}
+
 .measurement-profile-device-select {
   display: grid;
   grid-template-columns: 68px minmax(0, 1fr);
