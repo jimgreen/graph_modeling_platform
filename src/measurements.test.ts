@@ -302,6 +302,34 @@ describe("measurement domain", () => {
     });
   });
 
+  test("keeps editable measurement item names in project measurement groups", () => {
+    const normalized = normalizeProjectMeasurements(
+      {
+        version: 1,
+        groups: [{
+          id: "group-names",
+          nodeId: "node-1",
+          visible: true,
+          anchor: "bottom",
+          offset: { x: 0, y: 70 },
+          layout: "vertical",
+          items: [{
+            id: "item-p",
+            name: "进线有功",
+            measurementTypeId: "activePower",
+            sourcePoint: "node-1.activePower"
+          }]
+        }]
+      },
+      [node("node-1")]
+    );
+
+    expect(normalized.groups[0].items[0]).toMatchObject({
+      name: "进线有功",
+      measurementTypeId: "activePower"
+    });
+  });
+
   test("keeps measurement group box style settings with bounded border width", () => {
     const normalized = normalizeProjectMeasurements(
       {

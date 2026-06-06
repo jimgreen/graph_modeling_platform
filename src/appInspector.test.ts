@@ -1074,6 +1074,11 @@ describe("graph inspector panel", () => {
     expect(source).toContain("selectableAttributeLibraries");
     expect(source).toContain("createCustomAttributeLibrary");
     expect(source).toContain("deleteCustomAttributeLibrary");
+    expect(source).toContain("customComponentTreeSearchQuery");
+    expect(source).toContain("filteredCustomComponentTreeByComponentType");
+    expect(source).toContain("displayedCustomComponentTreeLibraries");
+    expect(source).toContain("aria-label=\"搜索元件结构\"");
+    expect(source).toContain("componentTypeDisplayParts(typeGroup.section)");
     expect(source).toContain("window.prompt(\"请输入新属性库名称\"");
     expect(source).toContain("属性库名称已存在，无法新增同名属性库。");
     expect(source).toContain("默认属性库无法删除。");
@@ -1088,6 +1093,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("selectableAttributeLibraries.map((group)");
     expect(source).not.toContain("新增自定义属性库");
     expect(styles).toContain(".custom-attribute-library-select-row");
+    expect(styles).toContain(".dialog-tree-search");
+    expect(styles).toContain(".dialog-tree-bilingual");
   });
 
   test("manages English device types from the former export-section dropdown", async () => {
@@ -1126,6 +1133,11 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain('const [deviceDefinitionView, setDeviceDefinitionView] = useState<"parameters" | "measurements">("parameters");');
     expect(dialogBlock).toContain("device-definition-tabs");
+    expect(dialogBlock).toContain("deviceDefinitionSearchQuery");
+    expect(dialogBlock).toContain("filteredDeviceDefinitionByComponentType");
+    expect(dialogBlock).toContain("displayedDeviceDefinitionLibraries");
+    expect(dialogBlock).toContain("aria-label=\"搜索元件定义\"");
+    expect(dialogBlock).toContain("componentTypeDisplayParts(typeGroup.section)");
     expect(dialogBlock).toContain("参数定义");
     expect(dialogBlock).toContain("量测定义");
     expect(dialogBlock).toContain('deviceDefinitionView === "parameters"');
@@ -1144,6 +1156,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("measurementConfigDraft");
     expect(styles).toContain(".device-definition-tabs");
     expect(styles).toContain(".device-definition-measurement-panel");
+    expect(styles).toContain(".device-definition-tree-scroll");
     expect(styles).toContain(".device-definition-dialog .custom-param-table input,");
     expect(styles).toContain(".custom-device-dialog .custom-param-table input,");
   });
@@ -1160,12 +1173,17 @@ describe("graph inspector panel", () => {
     expect(source).toContain("className={sourceSelectClassName(isBuiltInAttributeLibrary(customDeviceDraft.attributeLibraryName))}");
     expect(source).toContain("className={sourceSelectClassName(isBuiltInComponentType(customDeviceDraft.componentType))}");
     expect(source).toContain("className={sourceSelectClassName(isBuiltInComponentType(definitionDraftSection))}");
+    expect(source).toContain("definitionDraftSectionEditing");
+    expect(source).toContain("device-definition-summary-value");
+    expect(source).toContain("onClick={() => setDefinitionDraftSectionEditing(true)}");
+    expect(source).toContain("onBlur={() => setDefinitionDraftSectionEditing(false)}");
     expect(source).toContain("className={attributeLibraryOptionClass(group)}");
     expect(source).toContain("className={componentTypeOptionClass(section)}");
     expect(source).toContain("系统内置属性库，无法删除");
     expect(source).toContain("用户自定义元件类型，可以删除");
     expect(styles).toContain(".source-select.builtin-source");
     expect(styles).toContain(".source-select.custom-source");
+    expect(styles).toContain(".device-definition-summary-value");
     expect(styles).toContain(".builtin-option");
     expect(styles).toContain(".custom-option");
   });
@@ -1183,7 +1201,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const [hoveredAttributeLibrary, setHoveredAttributeLibrary]");
     expect(source).toContain("const [hoveredAttributeLibraryComponentType, setHoveredAttributeLibraryComponentType]");
     expect(source).toContain("setCustomComponentTypes((current) => normalizeCustomComponentTypes([...current, { name: componentType, attributeLibraryName }]))");
-    expect(source).toContain("(groupedAttributeLibraryByComponentType[group] ?? []).map((typeGroup)");
+    expect(source).toContain("filterAttributeLibraryComponentTypeGroups");
+    expect(source).toContain("typeGroups.map((typeGroup)");
     expect(source).toContain("attribute-library-component-type-section");
     expect(source).toContain("attribute-library-component-type-header");
     expect(source).toContain("setHoveredAttributeLibrary(group);");
@@ -7925,6 +7944,11 @@ describe("graph inspector panel", () => {
     expect(source).toContain("terminal.label || `端子${terminalIndex + 1}`");
     expect(source).toContain("<th>量测名称</th>");
     expect(source).toContain("<th>量测位置</th>");
+    expect(source).toContain("measurementEditorItemName(item)");
+    expect(source).toContain("duplicateMeasurementEditorItemNames");
+    expect(source).toContain("同一个设备下量测名称不能重复");
+    expect(source).toContain("name: event.target.value");
+    expect(source).toContain("name: measurementEditorItemName(item)");
     expect(source).toContain("onChange={(event) => updateMeasurementEditorDraftItemPosition(node, row.groupId, item.id, event.target.value)}");
     expect(source).not.toContain("measurement-editor-groups");
     expect(source).not.toContain("新增量测组");

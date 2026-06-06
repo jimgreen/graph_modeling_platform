@@ -1081,6 +1081,7 @@ const cloneMeasurementGroupForDraft = (group: MeasurementGroup): MeasurementGrou
   groupStyleOverride: group.groupStyleOverride ? { ...group.groupStyleOverride } : undefined,
   items: group.items.map((item) => ({
     ...item,
+    name: item.name,
     styleOverride: item.styleOverride ? { ...item.styleOverride } : undefined
   }))
 });
@@ -3519,6 +3520,31 @@ function libraryTemplateMatchesSearch(template: DeviceTemplate, group: string, s
   return [group, section, componentTypeDisplayName(section), template.label, template.kind, template.params?.component_type]
     .filter((value): value is string => typeof value === "string")
     .some((value) => normalizeLibrarySearchText(value).includes(needle));
+}
+
+function filterAttributeLibraryComponentTypeGroups(
+  grouped: Record<string, AttributeLibraryComponentTypeGroup[]>,
+  needle: string
+) {
+  if (!needle) {
+    return grouped;
+  }
+  const filteredEntries = Object.entries(grouped)
+    .map(([group, typeGroups]) => {
+      const groupMatches = normalizeLibrarySearchText(group).includes(needle);
+      const filteredTypeGroups = typeGroups
+        .map((typeGroup) => {
+          const sectionMatches = normalizeLibrarySearchText(componentTypeDisplayName(typeGroup.section)).includes(needle);
+          const templates = groupMatches || sectionMatches
+            ? typeGroup.templates
+            : typeGroup.templates.filter((item) => libraryTemplateMatchesSearch(item, group, typeGroup.section, needle));
+          return templates.length ? { ...typeGroup, templates } : null;
+        })
+        .filter((typeGroup): typeGroup is AttributeLibraryComponentTypeGroup => Boolean(typeGroup));
+      return filteredTypeGroups.length ? [group, filteredTypeGroups] as const : null;
+    })
+    .filter((entry): entry is readonly [string, AttributeLibraryComponentTypeGroup[]] => Boolean(entry));
+  return Object.fromEntries(filteredEntries);
 }
 
 function normalizeAttributeLibraryName(attributeLibraryName: string): string {
@@ -7201,6 +7227,7 @@ export function App() {
   const [templateDraftName, setTemplateDraftName] = useState("");
   const [customDeviceDialogOpen, setCustomDeviceDialogOpen] = useState(false);
   const [customComponentTreeSelection, setCustomComponentTreeSelection] = useState<CustomComponentTreeSelection>({ kind: "attributeLibrary", attributeLibraryName: "交流设备" });
+  const [customComponentTreeSearchQuery, setCustomComponentTreeSearchQuery] = useState("");
   const [collapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeLibraries] = useState<AttributeLibrary[]>([]);
   const [collapsedCustomComponentTreeTypes, setCollapsedCustomComponentTreeTypes] = useState<string[]>([]);
   const [editingCustomDeviceKind, setEditingCustomDeviceKind] = useState("");
@@ -7210,8 +7237,10 @@ export function App() {
   const [selectedDefinitionKind, setSelectedDefinitionKind] = useState<DeviceKind | "">("");
   const [deviceDefinitionView, setDeviceDefinitionView] = useState<"parameters" | "measurements">("parameters");
   const [expandedDefinitionGroups, setExpandedDefinitionGroups] = useState<AttributeLibrary[]>([...DEFAULT_ATTRIBUTE_LIBRARIES]);
+  const [deviceDefinitionSearchQuery, setDeviceDefinitionSearchQuery] = useState("");
   const [definitionDraftRows, setDefinitionDraftRows] = useState<DeviceDefinitionDraftRow[]>([]);
   const [definitionDraftSection, setDefinitionDraftSection] = useState("");
+  const [definitionDraftSectionEditing, setDefinitionDraftSectionEditing] = useState(false);
   const [definitionDraftError, setDefinitionDraftError] = useState("");
   const [layerDialogOpen, setLayerDialogOpen] = useState(false);
   const [layerAssignmentDialogOpen, setLayerAssignmentDialogOpen] = useState(false);
@@ -8594,27 +8623,20 @@ export function App() {
   const groupedAttributeLibrary = useMemo(() => groupDeviceTemplatesByAttributeLibrary(libraryTemplates), [libraryTemplates]);
   const groupedAttributeLibraryByComponentType = useMemo(() => groupDeviceTemplatesByAttributeLibraryAndComponentType(libraryTemplates), [libraryTemplates]);
   const librarySearchNeedle = normalizeLibrarySearchText(librarySearchQuery);
-  const filteredAttributeLibraryByComponentType = useMemo(() => {
-    if (!librarySearchNeedle) {
-      return groupedAttributeLibraryByComponentType;
-    }
-    const filteredEntries = Object.entries(groupedAttributeLibraryByComponentType)
-      .map(([group, typeGroups]) => {
-        const groupMatches = normalizeLibrarySearchText(group).includes(librarySearchNeedle);
-        const filteredTypeGroups = typeGroups
-          .map((typeGroup) => {
-            const sectionMatches = normalizeLibrarySearchText(typeGroup.section).includes(librarySearchNeedle);
-            const templates = groupMatches || sectionMatches
-              ? typeGroup.templates
-              : typeGroup.templates.filter((item) => libraryTemplateMatchesSearch(item, group, typeGroup.section, librarySearchNeedle));
-            return templates.length ? { ...typeGroup, templates } : null;
-          })
-          .filter((typeGroup): typeGroup is AttributeLibraryComponentTypeGroup => Boolean(typeGroup));
-        return filteredTypeGroups.length ? [group, filteredTypeGroups] as const : null;
-      })
-      .filter((entry): entry is readonly [string, AttributeLibraryComponentTypeGroup[]] => Boolean(entry));
-    return Object.fromEntries(filteredEntries);
-  }, [groupedAttributeLibraryByComponentType, librarySearchNeedle]);
+  const filteredAttributeLibraryByComponentType = useMemo(
+    () => filterAttributeLibraryComponentTypeGroups(groupedAttributeLibraryByComponentType, librarySearchNeedle),
+    [groupedAttributeLibraryByComponentType, librarySearchNeedle]
+  );
+  const customComponentTreeSearchNeedle = normalizeLibrarySearchText(customComponentTreeSearchQuery);
+  const filteredCustomComponentTreeByComponentType = useMemo(
+    () => filterAttributeLibraryComponentTypeGroups(groupedAttributeLibraryByComponentType, customComponentTreeSearchNeedle),
+    [customComponentTreeSearchNeedle, groupedAttributeLibraryByComponentType]
+  );
+  const deviceDefinitionSearchNeedle = normalizeLibrarySearchText(deviceDefinitionSearchQuery);
+  const filteredDeviceDefinitionByComponentType = useMemo(
+    () => filterAttributeLibraryComponentTypeGroups(groupedAttributeLibraryByComponentType, deviceDefinitionSearchNeedle),
+    [deviceDefinitionSearchNeedle, groupedAttributeLibraryByComponentType]
+  );
   const libraryPreviewByKind = useMemo(
     () => new Map(libraryTemplates.map((template) => [template.kind, createNodeFromTemplate(template, { x: 0, y: 0 })])),
     [libraryTemplates]
@@ -8636,6 +8658,18 @@ export function App() {
       ? attributeLibraries.filter((group) => (filteredAttributeLibraryByComponentType[group] ?? []).length > 0)
       : attributeLibraries,
     [attributeLibraries, filteredAttributeLibraryByComponentType, librarySearchNeedle]
+  );
+  const displayedCustomComponentTreeLibraries = useMemo(
+    () => customComponentTreeSearchNeedle
+      ? attributeLibraries.filter((group) => (filteredCustomComponentTreeByComponentType[group] ?? []).length > 0)
+      : attributeLibraries,
+    [attributeLibraries, customComponentTreeSearchNeedle, filteredCustomComponentTreeByComponentType]
+  );
+  const displayedDeviceDefinitionLibraries = useMemo(
+    () => deviceDefinitionSearchNeedle
+      ? attributeLibraries.filter((group) => (filteredDeviceDefinitionByComponentType[group] ?? []).length > 0)
+      : attributeLibraries,
+    [attributeLibraries, deviceDefinitionSearchNeedle, filteredDeviceDefinitionByComponentType]
   );
   useEffect(() => {
     libraryFlyoutPositionsRef.current = libraryFlyoutPositions;
@@ -12608,6 +12642,7 @@ export function App() {
     );
     return {
       id: `measurement-${node.id}${terminalId ? `-${terminalId}` : ""}-${type.id}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      name: profileItem?.name ?? type.name,
       measurementTypeId: type.id,
       role: profileItem?.role,
       sourcePoint,
@@ -12861,6 +12896,29 @@ export function App() {
     });
   };
 
+  const measurementEditorItemName = (item: MeasurementItemBinding) =>
+    (item.name ?? measurementTypeById.get(item.measurementTypeId)?.name ?? item.measurementTypeId).trim();
+
+  const duplicateMeasurementEditorItemNames = (drafts: readonly MeasurementGroup[]) => {
+    const seen = new Map<string, string>();
+    const duplicates = new Set<string>();
+    for (const group of drafts) {
+      for (const item of group.items) {
+        const name = measurementEditorItemName(item);
+        const key = name.toLowerCase();
+        if (!key) {
+          continue;
+        }
+        if (seen.has(key)) {
+          duplicates.add(seen.get(key) ?? name);
+        } else {
+          seen.set(key, name);
+        }
+      }
+    }
+    return Array.from(duplicates);
+  };
+
   const confirmMeasurementEditorDialog = () => {
     if (!measurementEditorDialog) {
       return;
@@ -12870,11 +12928,20 @@ export function App() {
       setMeasurementEditorDialog(null);
       return;
     }
+    const duplicateNames = duplicateMeasurementEditorItemNames(measurementEditorDialog.drafts);
+    if (duplicateNames.length > 0) {
+      window.alert(`同一个设备下量测名称不能重复：${duplicateNames.join("、")}`);
+      return;
+    }
     const drafts = measurementEditorDialog.drafts
       .filter((group) => group.items.length > 0)
       .map((group) => cloneMeasurementGroupForDraft({
         ...group,
-        nodeId: node.id
+        nodeId: node.id,
+        items: group.items.map((item) => ({
+          ...item,
+          name: measurementEditorItemName(item)
+        }))
       }));
     updateProjectMeasurementsWithUndo(
       (current) => ({
@@ -23357,9 +23424,13 @@ export function App() {
                       </td>
                       <td>
                         <input
-                          value={type?.name ?? item.measurementTypeId}
-                          disabled
+                          value={measurementEditorItemName(item)}
+                          disabled={isBrowseMode}
                           aria-label="量测名称"
+                          onChange={(event) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                            ...current,
+                            name: event.target.value
+                          }))}
                         />
                       </td>
                       <td>
@@ -26091,11 +26162,25 @@ export function App() {
         <button type="button" onClick={renameSelectedCustomDeviceTreeItem}>重命名</button>
         <button type="button" onClick={deleteSelectedCustomDeviceTreeItem}>删除</button>
       </div>
+      <div className="dialog-tree-search">
+        <Search size={14} aria-hidden="true" />
+        <input
+          value={customComponentTreeSearchQuery}
+          onChange={(event) => setCustomComponentTreeSearchQuery(event.target.value)}
+          placeholder="搜索属性库/元件类型/元件"
+          aria-label="搜索元件结构"
+        />
+        {customComponentTreeSearchQuery && (
+          <button type="button" aria-label="清空元件结构搜索" title="清空" onClick={() => setCustomComponentTreeSearchQuery("")}>
+            <X size={13} />
+          </button>
+        )}
+      </div>
       <div className="custom-component-manager-tree" role="tree">
-        {attributeLibraries.map((group) => {
-          const typeGroups = groupedAttributeLibraryByComponentType[group] ?? [];
+        {displayedCustomComponentTreeLibraries.length > 0 ? displayedCustomComponentTreeLibraries.map((group) => {
+          const typeGroups = filteredCustomComponentTreeByComponentType[group] ?? [];
           const librarySelected = customComponentTreeSelection.kind === "attributeLibrary" && customComponentTreeSelection.attributeLibraryName === group;
-          const libraryCollapsed = collapsedCustomComponentTreeLibraries.some((item) => normalizeAttributeLibraryName(item) === group);
+          const libraryCollapsed = customComponentTreeSearchNeedle ? false : collapsedCustomComponentTreeLibraries.some((item) => normalizeAttributeLibraryName(item) === group);
           return (
             <section className="custom-component-tree-library" key={group}>
               <button
@@ -26116,7 +26201,8 @@ export function App() {
               {!libraryCollapsed && <div className="custom-component-tree-type-list" role="group">
                 {typeGroups.map((typeGroup) => {
                   const typeKey = customComponentTreeTypeKey(group, typeGroup.section);
-                  const typeCollapsed = collapsedCustomComponentTreeTypes.includes(typeKey);
+                  const typeCollapsed = customComponentTreeSearchNeedle ? false : collapsedCustomComponentTreeTypes.includes(typeKey);
+                  const typeDisplay = componentTypeDisplayParts(typeGroup.section);
                   const typeSelected =
                     customComponentTreeSelection.kind === "componentType" &&
                     customComponentTreeSelection.attributeLibraryName === group &&
@@ -26135,7 +26221,10 @@ export function App() {
                         }}
                       >
                         {typeCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
-                        <span>{typeGroup.section}</span>
+                        <span className="dialog-tree-bilingual" title={typeDisplay.title}>
+                          <span>{typeDisplay.chinese}</span>
+                          <small>{typeDisplay.english}</small>
+                        </span>
                         <strong>{typeGroup.templates.length}</strong>
                       </button>
                       {!typeCollapsed && <div className="custom-component-tree-components" role="group" aria-label={`${group}/${typeGroup.section}元件列表`}>
@@ -26153,7 +26242,10 @@ export function App() {
                               title={`${template.label} / ${typeGroup.section} / ${template.custom ? "自定义" : "系统内置"}`}
                               onClick={() => selectCustomComponentTemplate(template, typeGroup.section)}
                             >
-                              <span>{template.label}</span>
+                              <span className="dialog-tree-bilingual" title={`${template.label} / ${template.kind}`}>
+                                <span>{template.label}</span>
+                                <small>{template.kind}</small>
+                              </span>
                               <small>{template.custom ? "自定义" : "内置"}</small>
                             </button>
                           );
@@ -26165,7 +26257,9 @@ export function App() {
               </div>}
             </section>
           );
-        })}
+        }) : (
+          <div className="dialog-tree-empty">未找到匹配元件</div>
+        )}
       </div>
     </aside>
   );
@@ -31608,52 +31702,75 @@ export function App() {
             </div>
             <div className="device-definition-layout">
               <aside className="device-definition-list" aria-label="元件定义列表">
-                {attributeLibraries.map((group) => {
-                  const templates = groupedAttributeLibrary[group] ?? [];
-                  if (templates.length === 0) {
-                    return null;
-                  }
-                  const expanded = expandedDefinitionGroups.includes(group);
-                  return (
-                    <section className="device-definition-group" key={group}>
-                      <button
-                        type="button"
-                        className="device-definition-group-toggle"
-                        aria-expanded={expanded}
-                        onClick={() => toggleDefinitionGroup(group)}
-                      >
-                        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                        <span>{group}</span>
-                        <strong>{templates.length}</strong>
-                      </button>
-                      {expanded && (
-                        <div className="component-definition-type-list" role="group" aria-label={`${group}元件类型列表`}>
-                          {(groupedAttributeLibraryByComponentType[group] ?? []).map((typeGroup) => (
-                            <section className="component-definition-type-group" key={`${group}-${typeGroup.section}`}>
-                              <div className="component-definition-type-header">
-                                <span>{typeGroup.section}</span>
-                                <strong>{typeGroup.templates.length}</strong>
-                              </div>
-                              <div className="device-definition-items" role="group" aria-label={`${group}/${typeGroup.section}元件列表`}>
-                                {typeGroup.templates.map((template) => (
-                                  <button
-                                    type="button"
-                                    key={template.kind}
-                                    className={`device-definition-item ${selectedDefinitionTemplate?.kind === template.kind ? "active" : ""}`}
-                                    onClick={() => loadDefinitionTemplateDraft(template)}
-                                  >
-                                    <span>{template.label}</span>
-                                    <small>{template.kind}</small>
-                                  </button>
-                                ))}
-                              </div>
-                            </section>
-                          ))}
-                        </div>
-                      )}
-                    </section>
-                  );
-                })}
+                <div className="dialog-tree-search">
+                  <Search size={14} aria-hidden="true" />
+                  <input
+                    value={deviceDefinitionSearchQuery}
+                    onChange={(event) => setDeviceDefinitionSearchQuery(event.target.value)}
+                    placeholder="搜索属性库/元件类型/元件"
+                    aria-label="搜索元件定义"
+                  />
+                  {deviceDefinitionSearchQuery && (
+                    <button type="button" aria-label="清空元件定义搜索" title="清空" onClick={() => setDeviceDefinitionSearchQuery("")}>
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+                <div className="device-definition-tree-scroll">
+                  {displayedDeviceDefinitionLibraries.length > 0 ? displayedDeviceDefinitionLibraries.map((group) => {
+                    const typeGroups = filteredDeviceDefinitionByComponentType[group] ?? [];
+                    const expanded = deviceDefinitionSearchNeedle ? true : expandedDefinitionGroups.includes(group);
+                    return (
+                      <section className="device-definition-group" key={group}>
+                        <button
+                          type="button"
+                          className="device-definition-group-toggle"
+                          aria-expanded={expanded}
+                          onClick={() => toggleDefinitionGroup(group)}
+                        >
+                          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          <span>{group}</span>
+                          <strong>{typeGroups.reduce((sum, typeGroup) => sum + typeGroup.templates.length, 0)}</strong>
+                        </button>
+                        {expanded && (
+                          <div className="component-definition-type-list" role="group" aria-label={`${group}元件类型列表`}>
+                            {typeGroups.map((typeGroup) => {
+                              const typeDisplay = componentTypeDisplayParts(typeGroup.section);
+                              return (
+                                <section className="component-definition-type-group" key={`${group}-${typeGroup.section}`}>
+                                  <div className="component-definition-type-header">
+                                    <span className="dialog-tree-bilingual" title={typeDisplay.title}>
+                                      <span>{typeDisplay.chinese}</span>
+                                      <small>{typeDisplay.english}</small>
+                                    </span>
+                                    <strong>{typeGroup.templates.length}</strong>
+                                  </div>
+                                  <div className="device-definition-items" role="group" aria-label={`${group}/${typeGroup.section}元件列表`}>
+                                    {typeGroup.templates.map((template) => (
+                                      <button
+                                        type="button"
+                                        key={template.kind}
+                                        className={`device-definition-item ${selectedDefinitionTemplate?.kind === template.kind ? "active" : ""}`}
+                                        onClick={() => loadDefinitionTemplateDraft(template)}
+                                      >
+                                        <span className="dialog-tree-bilingual" title={`${template.label} / ${template.kind}`}>
+                                          <span>{template.label}</span>
+                                          <small>{template.kind}</small>
+                                        </span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </section>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </section>
+                    );
+                  }) : (
+                    <div className="dialog-tree-empty">未找到匹配元件</div>
+                  )}
+                </div>
               </aside>
               <section className="device-definition-detail">
                 {selectedDefinitionTemplate ? (
@@ -31701,25 +31818,39 @@ export function App() {
                       </div>
                       <div>
                         <span>元件类型</span>
-                        <select
-                          className={sourceSelectClassName(isBuiltInComponentType(definitionDraftSection))}
-                          value={definitionDraftSection}
-                          onChange={(event) => {
-                            setDefinitionDraftSection(event.target.value);
-                            setDefinitionDraftError("");
-                          }}
-                        >
-                          {definitionAttributeLibraryComponentTypeOptions.map((section) => (
-                            <option
-                              key={section}
-                              value={section}
-                              className={componentTypeOptionClass(section)}
-                              title={isBuiltInComponentType(section) ? "系统内置元件类型，无法删除" : "用户自定义元件类型，可以删除"}
-                            >
-                              {section}
-                            </option>
-                          ))}
-                        </select>
+                        {definitionDraftSectionEditing ? (
+                          <select
+                            className={sourceSelectClassName(isBuiltInComponentType(definitionDraftSection))}
+                            value={definitionDraftSection}
+                            autoFocus
+                            onBlur={() => setDefinitionDraftSectionEditing(false)}
+                            onChange={(event) => {
+                              setDefinitionDraftSection(event.target.value);
+                              setDefinitionDraftError("");
+                              setDefinitionDraftSectionEditing(false);
+                            }}
+                          >
+                            {definitionAttributeLibraryComponentTypeOptions.map((section) => (
+                              <option
+                                key={section}
+                                value={section}
+                                className={componentTypeOptionClass(section)}
+                                title={isBuiltInComponentType(section) ? "系统内置元件类型，无法删除" : "用户自定义元件类型，可以删除"}
+                              >
+                                {section}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <button
+                            type="button"
+                            className={`device-definition-summary-value ${isBuiltInComponentType(definitionDraftSection) ? "builtin-source" : "custom-source"}`}
+                            title="点击选择元件类型"
+                            onClick={() => setDefinitionDraftSectionEditing(true)}
+                          >
+                            {definitionDraftSection}
+                          </button>
+                        )}
                       </div>
                     </div>
                     <div className="device-definition-tabs" role="tablist" aria-label="元件修改内容切换">

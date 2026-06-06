@@ -62,6 +62,7 @@ export type PlatformMeasurementConfigInput = {
 
 export type MeasurementItemBinding = {
   id: string;
+  name?: string;
   measurementTypeId: string;
   role?: string;
   sourcePoint: string;
@@ -446,6 +447,7 @@ function normalizeMeasurementItem(item: Partial<MeasurementItemBinding>, validTy
   const id = String(item.id ?? `${measurementTypeId}-${item.role ?? "item"}`).trim() || `${measurementTypeId}-${Date.now()}`;
   return {
     id,
+    name: item.name !== undefined ? String(item.name) : undefined,
     measurementTypeId,
     role: item.role ? String(item.role) : undefined,
     sourcePoint: String(item.sourcePoint ?? "").trim(),
