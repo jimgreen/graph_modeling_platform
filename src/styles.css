@@ -3397,6 +3397,31 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   box-shadow: 0 -8px 18px rgba(15, 23, 42, 0.04);
 }
 
+.library-measurement-config-actions {
+  flex: 0 0 auto;
+  padding: 10px 14px 0;
+  border-top: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.library-measurement-config-actions .measurement-config-open-button {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  color: #0f172a;
+  background: #ffffff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.library-measurement-config-actions .measurement-config-open-button:hover,
+.library-measurement-config-actions .measurement-config-open-button:focus-visible {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  outline: none;
+}
+
 .custom-device-dialog {
   display: grid;
   gap: 14px;

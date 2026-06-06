@@ -25199,6 +25199,16 @@ export function App() {
           <div className="library-empty">未找到匹配图元</div>
         )}
       </div>
+      <div className="library-measurement-config-actions">
+        <button
+          type="button"
+          className="measurement-config-open-button"
+          disabled={isBrowseMode}
+          onClick={() => setMeasurementConfigDialogOpen(true)}
+        >
+          配置量测类型/设备绑定
+        </button>
+      </div>
       {renderLibraryDefinitionActions()}
     </div>
   );
@@ -28743,19 +28753,6 @@ export function App() {
                         />
                         <span>{powerUnit}</span>
                       </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <th title="dynamicMeasurements">动态量测</th>
-                    <td>
-                      <button
-                        type="button"
-                        className="measurement-config-open-button"
-                        disabled={isBrowseMode}
-                        onClick={() => setMeasurementConfigDialogOpen(true)}
-                      >
-                        配置量测类型/设备绑定
-                      </button>
                     </td>
                   </tr>
                 </tbody>

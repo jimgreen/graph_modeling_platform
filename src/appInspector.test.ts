@@ -7695,6 +7695,9 @@ describe("graph inspector panel", () => {
     const modelPanelStart = source.indexOf("{inspectorTab === \"model\" && currentModelRecord");
     const modelPanelEnd = source.indexOf(") : inspectorTab === \"graph\"", modelPanelStart);
     const modelPanelBlock = source.slice(modelPanelStart, modelPanelEnd);
+    const libraryPanelStart = source.indexOf("const renderLibraryPanel = () => (");
+    const libraryPanelEnd = source.indexOf("const renderElementTreePanel", libraryPanelStart);
+    const libraryPanelBlock = source.slice(libraryPanelStart, libraryPanelEnd);
     const selectedPanelStart = source.indexOf("{!isStaticNode(inspectorSelectedNode) && (");
     const selectedPanelEnd = source.indexOf("{isStaticNode(inspectorSelectedNode) && (", selectedPanelStart);
     const selectedPanelBlock = source.slice(selectedPanelStart, selectedPanelEnd);
@@ -7709,8 +7712,10 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const [measurementConfig, setMeasurementConfig]");
     expect(source).toContain("const [projectMeasurements, setProjectMeasurements]");
     expect(source).toContain("const [measurementConfigDialogOpen, setMeasurementConfigDialogOpen]");
-    expect(modelPanelBlock).toContain("配置量测类型/设备绑定");
-    expect(modelPanelBlock).toContain("量测类型");
+    expect(source).toContain("量测类型");
+    expect(modelPanelBlock).not.toContain("配置量测类型/设备绑定");
+    expect(libraryPanelBlock).toContain("measurement-config-open-button");
+    expect(libraryPanelBlock).toContain("配置量测类型/设备绑定");
     expect(selectedPanelBlock).toContain("动态量测");
     expect(selectedPanelBlock).toContain("添加默认量测");
     expect(selectedPanelBlock).toContain("添加量测项");
