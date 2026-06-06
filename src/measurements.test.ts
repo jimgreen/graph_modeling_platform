@@ -7,6 +7,7 @@ import {
   measurementFontScaleForNode,
   measurementOffsetScaleForNode,
   measurementGroupsForExistingNodes,
+  measurementProfileItemsForNodePosition,
   normalizeMeasurementConfig,
   normalizeProjectMeasurements,
   resolveMeasurementItemDisplay
@@ -61,7 +62,7 @@ describe("measurement domain", () => {
     expect(group?.items[0].sourcePoint).toBe("node-1.activePower");
   });
 
-  test("creates one default measurement group per terminal for multi-terminal devices", () => {
+  test("keeps legacy unspecified profile items on the device measurement group for multi-terminal devices", () => {
     const threeTerminalNode: ModelNode = {
       ...node("transformer-1", "ac-transformer"),
       terminals: [
@@ -73,15 +74,10 @@ describe("measurement domain", () => {
 
     const groups = createDefaultMeasurementGroupsForNode(threeTerminalNode, DEFAULT_MEASUREMENT_CONFIG);
 
-    expect(groups).toHaveLength(3);
-    expect(groups.map((group) => group.terminalId)).toEqual(["t1", "t2", "t3"]);
-    expect(groups.map((group) => group.id)).toEqual([
-      "measurement-transformer-1-t1",
-      "measurement-transformer-1-t2",
-      "measurement-transformer-1-t3"
-    ]);
-    expect(groups[0].items[0].sourcePoint).toBe("transformer-1.t1.activePower");
-    expect(groups[1].items[0].sourcePoint).toBe("transformer-1.t2.activePower");
+    expect(groups).toHaveLength(1);
+    expect(groups[0].terminalId).toBeUndefined();
+    expect(groups[0].id).toBe("measurement-transformer-1");
+    expect(groups[0].items[0].sourcePoint).toBe("transformer-1.activePower");
   });
 
   test("keeps device profile row names and measurement positions", () => {
@@ -149,6 +145,34 @@ describe("measurement domain", () => {
     ]);
   });
 
+  test("filters profile items strictly by device or terminal measurement position", () => {
+    const threeTerminalNode: ModelNode = {
+      ...node("transformer-3", "ac-transformer"),
+      terminals: [
+        { id: "t1", label: "高压", type: "ac", anchor: { x: -0.5, y: 0 }, nodeNumber: "" },
+        { id: "t2", label: "中压", type: "ac", anchor: { x: 0.5, y: 0 }, nodeNumber: "" },
+        { id: "t3", label: "低压", type: "ac", anchor: { x: 0, y: 0.5 }, nodeNumber: "" }
+      ]
+    };
+    const config = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{
+        deviceKind: "ac-transformer",
+        items: [
+          { name: "整机状态", measurementTypeId: "status", position: "device" },
+          { name: "未指定电压", measurementTypeId: "voltage" },
+          { name: "高压P", measurementTypeId: "activePower", position: "t1" },
+          { name: "中压I", measurementTypeId: "current", position: "t2" }
+        ]
+      }]
+    });
+
+    expect(measurementProfileItemsForNodePosition(threeTerminalNode, config).map((item) => item.name)).toEqual(["整机状态", "未指定电压"]);
+    expect(measurementProfileItemsForNodePosition(threeTerminalNode, config, "t1").map((item) => item.name)).toEqual(["高压P"]);
+    expect(measurementProfileItemsForNodePosition(threeTerminalNode, config, "t2").map((item) => item.name)).toEqual(["中压I"]);
+    expect(measurementProfileItemsForNodePosition(threeTerminalNode, config, "t3").map((item) => item.name)).toEqual([]);
+  });
+
   test("keeps platform default device profiles when persisted config has none", () => {
     const config = normalizeMeasurementConfig({
       measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
@@ -167,6 +191,28 @@ describe("measurement domain", () => {
 
     expect(group?.items.map((item) => item.measurementTypeId)).toEqual(["activePower", "voltage", "current"]);
     expect(group?.items[0].sourcePoint).toBe("node-1.activePower");
+  });
+
+  test("uses component type measurement profiles for concrete device templates", () => {
+    const dcLineNode = node("line-1", "dc-routable-line");
+    dcLineNode.params = { component_type: "DCBranch" };
+    dcLineNode.terminals = [
+      { id: "t1", label: "首端", type: "dc", anchor: { x: -0.5, y: 0 }, nodeNumber: "" },
+      { id: "t2", label: "末端", type: "dc", anchor: { x: 0.5, y: 0 }, nodeNumber: "" }
+    ];
+    const config = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{
+        deviceKind: "DCBranch",
+        items: [
+          { name: "线路P", measurementTypeId: "activePower", position: "device" },
+          { name: "首端U", measurementTypeId: "voltage", position: "t1" }
+        ]
+      }]
+    });
+
+    expect(measurementProfileItemsForNodePosition(dcLineNode, config).map((item) => item.name)).toEqual(["线路P"]);
+    expect(measurementProfileItemsForNodePosition(dcLineNode, config, "t1").map((item) => item.name)).toEqual(["首端U"]);
   });
 
   test("resolves display settings from type defaults, profile overrides, and item overrides", () => {

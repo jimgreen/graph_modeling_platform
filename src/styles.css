@@ -3420,8 +3420,8 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .library-definition-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
   flex: 0 0 auto;
   padding: 10px 14px 12px;
   border-top: 1px solid #e2e8f0;
@@ -3429,29 +3429,16 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   box-shadow: 0 -8px 18px rgba(15, 23, 42, 0.04);
 }
 
-.library-measurement-config-actions {
-  flex: 0 0 auto;
-  padding: 10px 14px 0;
-  border-top: 1px solid #e2e8f0;
-  background: #ffffff;
+.library-definition-actions .custom-device-create-button {
+  min-width: 0;
+  padding: 0 4px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
-.library-measurement-config-actions .measurement-config-open-button {
-  width: 100%;
+.library-definition-actions .measurement-config-open-button {
   min-height: 34px;
-  border: 1px solid #cbd5e1;
   border-radius: 8px;
-  color: #0f172a;
-  background: #ffffff;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.library-measurement-config-actions .measurement-config-open-button:hover,
-.library-measurement-config-actions .measurement-config-open-button:focus-visible {
-  border-color: #93c5fd;
-  background: #eff6ff;
-  outline: none;
 }
 
 .custom-device-dialog {
@@ -3942,6 +3929,54 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   color: #0f172a;
   background: #ffffff;
   font-size: 13px;
+}
+
+.device-definition-tabs {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  width: fit-content;
+  padding: 3px;
+  border: 1px solid #dbe3ef;
+  border-radius: 7px;
+  background: #f8fafc;
+}
+
+.device-definition-tabs button {
+  min-height: 28px;
+  border: 0;
+  border-radius: 5px;
+  padding: 3px 12px;
+  color: #475569;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.device-definition-tabs button:hover,
+.device-definition-tabs button:focus-visible {
+  color: #1d4ed8;
+  background: #eff6ff;
+  outline: none;
+}
+
+.device-definition-tabs button.active {
+  color: #1d4ed8;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.device-definition-measurement-panel {
+  min-height: 0;
+}
+
+.device-definition-measurement-panel .measurement-table-wrap {
+  max-height: 390px;
+}
+
+.device-definition-measurement-actions {
+  margin-top: 2px;
 }
 
 .device-definition-associations {
@@ -5668,7 +5703,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   width: min(980px, calc(100vw - 48px));
   max-height: calc(100vh - 64px);
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 10px;
   padding: 16px;
   border: 1px solid rgba(148, 163, 184, 0.54);
@@ -5854,6 +5889,46 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   min-height: 0;
   display: grid;
   gap: 10px;
+}
+
+.measurement-config-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.measurement-config-actions button {
+  min-height: 28px;
+  border-radius: 5px;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.measurement-config-actions button.primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-color: #2563eb;
+  color: #ffffff;
+  background: #2563eb;
+}
+
+.measurement-config-actions button.primary:disabled {
+  border-color: #93c5fd;
+  background: #93c5fd;
+}
+
+.measurement-config-status {
+  margin-right: auto;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.measurement-config-status.error {
+  color: #b91c1c;
 }
 
 .measurement-table-wrap {

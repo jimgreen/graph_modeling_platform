@@ -500,7 +500,9 @@ function normalizeMeasurementConfig(payload) {
         return [];
       }
       return [{
+        name: item.name !== undefined ? String(item.name) : undefined,
         measurementTypeId,
+        position: item.position !== undefined ? String(item.position).trim() || undefined : undefined,
         role: item.role ? String(item.role) : undefined,
         defaultVisible: item.defaultVisible,
         labelOverride: item.labelOverride ? String(item.labelOverride) : undefined,

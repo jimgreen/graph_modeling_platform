@@ -1,4 +1,4 @@
-import { getNodeScaleX, getNodeScaleY, type ModelNode } from "./model";
+import { getNodeScaleX, getNodeScaleY, inferESection, type ModelNode } from "./model";
 
 export type MeasurementValueType = "number" | "string" | "boolean";
 export type MeasurementQuality = "good" | "bad" | "stale" | "missing";
@@ -341,9 +341,12 @@ function fallbackMeasurementProfileKinds(kind: string): string[] {
   return fallbacks;
 }
 
-function measurementProfileForNodeKind(kind: string, config: PlatformMeasurementConfig): DeviceMeasurementProfile | undefined {
+function measurementProfileForNode(node: ModelNode, config: PlatformMeasurementConfig): DeviceMeasurementProfile | undefined {
+  const kind = node.kind;
   const baseKind = baseDeviceKind(kind);
-  return config.deviceProfiles.find((profile) => profile.deviceKind === kind || profile.deviceKind === baseKind) ??
+  const componentType = inferESection(node.kind, node.params);
+  const directKeys = Array.from(new Set([componentType, kind, baseKind].filter(Boolean)));
+  return directKeys.flatMap((profileKind) => config.deviceProfiles.find((profile) => profile.deviceKind === profileKind) ?? [])[0] ??
     fallbackMeasurementProfileKinds(baseKind).flatMap((profileKind) => config.deviceProfiles.find((profile) => profile.deviceKind === profileKind) ?? [])[0];
 }
 
@@ -537,6 +540,28 @@ export function createDefaultMeasurementGroupForNode(
   return createDefaultMeasurementGroupsForNode(node, config)[0] ?? null;
 }
 
+export function measurementProfileItemsForNodePosition(
+  node: ModelNode,
+  config: PlatformMeasurementConfig,
+  terminalId?: string
+): DeviceMeasurementProfileItem[] {
+  const normalizedConfig = normalizeMeasurementConfig(config);
+  const profile = measurementProfileForNode(node, normalizedConfig);
+  if (!profile || profile.items.length === 0) {
+    return [];
+  }
+  if (terminalId) {
+    const terminalExists = node.terminals.some((terminal) => terminal.id === terminalId);
+    if (!terminalExists) {
+      return [];
+    }
+    return profile.items.filter((item) => item.position === terminalId);
+  }
+  return profile.items.filter((item) =>
+    item.position === "device" || !item.position
+  );
+}
+
 function defaultMeasurementGroupOffsetForNode(node: ModelNode, terminal?: ModelNode["terminals"][number]): { x: number; y: number } {
   const rotateOffset = (offset: { x: number; y: number }) => {
     const radians = (node.rotation * Math.PI) / 180;
@@ -565,40 +590,19 @@ export function createDefaultMeasurementGroupsForNode(
   config: PlatformMeasurementConfig
 ): MeasurementGroup[] {
   const normalizedConfig = normalizeMeasurementConfig(config);
-  const profile = measurementProfileForNodeKind(node.kind, normalizedConfig);
+  const profile = measurementProfileForNode(node, normalizedConfig);
   if (!profile || profile.items.length === 0) {
     return [];
   }
-  const terminalById = new Map(node.terminals.map((terminal) => [terminal.id, terminal]));
-  const itemsByPosition = new Map<string, DeviceMeasurementProfileItem[]>();
-  const addItem = (position: string, item: DeviceMeasurementProfileItem) => {
-    const currentItems = itemsByPosition.get(position) ?? [];
-    itemsByPosition.set(position, [...currentItems, item]);
-  };
-  for (const item of profile.items) {
-    if (item.position === "device") {
-      addItem("device", item);
-      continue;
-    }
-    if (item.position && terminalById.has(item.position)) {
-      addItem(item.position, item);
-      continue;
-    }
-    if (node.terminals.length > 1 && !item.position) {
-      for (const terminal of node.terminals) {
-        addItem(terminal.id, item);
-      }
-      continue;
-    }
-    addItem("device", item);
-  }
-  const orderedPositions = [
-    ...(itemsByPosition.has("device") ? ["device"] : []),
-    ...node.terminals.map((terminal) => terminal.id).filter((terminalId) => itemsByPosition.has(terminalId))
+  const groupPositions = [
+    { key: "device", terminal: undefined },
+    ...node.terminals.map((terminal) => ({ key: terminal.id, terminal }))
   ];
-  return orderedPositions.map((position) => {
-    const terminal = position === "device" ? undefined : terminalById.get(position);
-    const items = itemsByPosition.get(position) ?? [];
+  return groupPositions.flatMap(({ terminal }) => {
+    const items = measurementProfileItemsForNodePosition(node, normalizedConfig, terminal?.id);
+    if (items.length === 0) {
+      return [];
+    }
     return {
       id: terminal ? `measurement-${node.id}-${terminal.id}` : `measurement-${node.id}`,
       nodeId: node.id,
@@ -644,7 +648,7 @@ export function resolveMeasurementItemDisplay({
 }): ResolvedMeasurementDisplay {
   const normalizedConfig = normalizeMeasurementConfig(config);
   const type = normalizedConfig.measurementTypes.find((candidate) => candidate.id === item.measurementTypeId);
-  const profileItem = measurementProfileForNodeKind(node.kind, normalizedConfig)
+  const profileItem = measurementProfileForNode(node, normalizedConfig)
     ?.items.find((candidate) => candidate.measurementTypeId === item.measurementTypeId && (candidate.role ?? "") === (item.role ?? ""));
   const style = { ...(profileItem?.styleOverride ?? {}), ...(item.styleOverride ?? {}) };
   return {

@@ -337,6 +337,7 @@ import {
   measurementOffsetScaleForNode,
   measurementGroupForNode,
   measurementGroupsForNode,
+  measurementProfileItemsForNodePosition,
   normalizeMeasurementConfig,
   normalizeProjectMeasurements,
   removeMeasurementGroupForNode,
@@ -4007,6 +4008,17 @@ function resolveTemplateComponentType(template: DeviceTemplate) {
   return fallbackComponentTypeForAttributeLibrary(template.attributeLibrary);
 }
 
+function deviceDefinitionKeyForTemplate(template: DeviceTemplate) {
+  return normalizeComponentTypeName(resolveTemplateComponentType(template)) || template.kind;
+}
+
+function deviceDefinitionOverrideForTemplate(
+  template: DeviceTemplate,
+  overrides: Record<string, DeviceTemplateDefinitionOverride>
+) {
+  return overrides[deviceDefinitionKeyForTemplate(template)] ?? overrides[template.kind];
+}
+
 function createDefinitionDraftRows(template: DeviceTemplate): DeviceDefinitionDraftRow[] {
   return getTemplateParameterDefinitions(template)
     .filter((definition) => definition.enName !== "component_type" && definition.enName !== "is_container")
@@ -6862,7 +6874,6 @@ export function App() {
   const suppressNextBackendDeviceLibrarySyncRef = useRef(false);
   const lastPersistedDeviceLibraryPayloadRef = useRef<string | null>(null);
   const backendMeasurementConfigLoadedRef = useRef(false);
-  const suppressNextBackendMeasurementConfigSyncRef = useRef(false);
   const lastPersistedMeasurementConfigPayloadRef = useRef<string | null>(null);
   const imageLibraryInitializedRef = useRef(false);
   const lastMouseStatusRef = useRef<Point | null>(null);
@@ -7186,6 +7197,7 @@ export function App() {
   const [deviceDefinitionOverrides, setDeviceDefinitionOverrides] = useState<Record<string, DeviceTemplateDefinitionOverride>>(() => initialDeviceLibrary.deviceDefinitionOverrides);
   const [deviceDefinitionDialogOpen, setDeviceDefinitionDialogOpen] = useState(false);
   const [selectedDefinitionKind, setSelectedDefinitionKind] = useState<DeviceKind | "">("");
+  const [deviceDefinitionView, setDeviceDefinitionView] = useState<"parameters" | "measurements">("parameters");
   const [expandedDefinitionGroups, setExpandedDefinitionGroups] = useState<AttributeLibrary[]>([...DEFAULT_ATTRIBUTE_LIBRARIES]);
   const [definitionDraftRows, setDefinitionDraftRows] = useState<DeviceDefinitionDraftRow[]>([]);
   const [definitionDraftSection, setDefinitionDraftSection] = useState("");
@@ -7195,11 +7207,9 @@ export function App() {
   const [layerAssignmentTargetId, setLayerAssignmentTargetId] = useState("");
   const [reactFlowPreviewOpen, setReactFlowPreviewOpen] = useState(false);
   const [measurementConfigDialogOpen, setMeasurementConfigDialogOpen] = useState(false);
+  const [measurementConfigDraft, setMeasurementConfigDraft] = useState<PlatformMeasurementConfig | null>(null);
+  const [measurementConfigSaveStatus, setMeasurementConfigSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [measurementEditorDialog, setMeasurementEditorDialog] = useState<MeasurementEditorDialogState>(null);
-  const [measurementConfigTab, setMeasurementConfigTab] = useState<"types" | "profiles">("types");
-  const [measurementProfileKind, setMeasurementProfileKind] = useState<DeviceKind | "">(
-    () => DEVICE_LIBRARY.find((template) => !String(template.kind).startsWith("static-"))?.kind ?? ""
-  );
   const [measurementDrag, setMeasurementDrag] = useState<MeasurementDragState>(null);
   const [topologyErrors, setTopologyErrors] = useState<TopologyValidationError[]>([]);
   const [topologyWarningPage, setTopologyWarningPage] = useState(0);
@@ -7633,9 +7643,14 @@ export function App() {
     () => new Map(measurementConfig.deviceProfiles.map((profile) => [profile.deviceKind, profile])),
     [measurementConfig.deviceProfiles]
   );
-  const measurementDeviceTemplates = useMemo(
-    () => DEVICE_LIBRARY.filter((template) => !String(template.kind).startsWith("static-")),
-    []
+  const editableMeasurementConfig = measurementConfigDraft ?? measurementConfig;
+  const editableMeasurementTypeById = useMemo(
+    () => new Map(editableMeasurementConfig.measurementTypes.map((item) => [item.id, item])),
+    [editableMeasurementConfig.measurementTypes]
+  );
+  const editableMeasurementProfileByKind = useMemo(
+    () => new Map(editableMeasurementConfig.deviceProfiles.map((profile) => [profile.deviceKind, profile])),
+    [editableMeasurementConfig.deviceProfiles]
   );
   const inspectorSelectedEdge = selectedEdge;
   const inspectorTopologyErrors = useDeferredValue(topologyErrors);
@@ -8559,7 +8574,7 @@ export function App() {
   }, [projectSearchNeedle, schemes]);
   const baseLibraryTemplates = useMemo<DeviceTemplate[]>(() => [...DEVICE_LIBRARY, ...customDeviceTemplates], [customDeviceTemplates]);
   const libraryTemplates = useMemo<DeviceTemplate[]>(
-    () => baseLibraryTemplates.map((template) => applyDeviceTemplateDefinitionOverride(template, deviceDefinitionOverrides[template.kind])),
+    () => baseLibraryTemplates.map((template) => applyDeviceTemplateDefinitionOverride(template, deviceDefinitionOverrideForTemplate(template, deviceDefinitionOverrides))),
     [baseLibraryTemplates, deviceDefinitionOverrides]
   );
   const libraryTemplateByKind = useMemo(() => new Map(libraryTemplates.map((template) => [template.kind, template])), [libraryTemplates]);
@@ -8876,13 +8891,6 @@ export function App() {
       setLayers((current) => current.map((layer) => layer.id === activeLayerId ? { ...layer, visible: true } : layer));
     }
   }, [activeLayerId, layers]);
-
-  useEffect(() => {
-    if (measurementProfileKind && measurementDeviceTemplates.some((template) => template.kind === measurementProfileKind)) {
-      return;
-    }
-    setMeasurementProfileKind(measurementDeviceTemplates[0]?.kind ?? "");
-  }, [measurementDeviceTemplates, measurementProfileKind]);
 
   useEffect(() => {
     setSelectedNodeIds((current) => current.filter((nodeId) => activeLayerNodeIdSet.has(nodeId)));
@@ -11754,7 +11762,6 @@ export function App() {
         if (backendMeasurementConfig.exists) {
           const backendPayload = serializeMeasurementConfigForStorage(backendMeasurementConfig);
           lastPersistedMeasurementConfigPayloadRef.current = backendPayload;
-          suppressNextBackendMeasurementConfigSyncRef.current = true;
           setMeasurementConfig(backendMeasurementConfig);
           writeMeasurementConfig(backendMeasurementConfig);
           return;
@@ -11823,32 +11830,6 @@ export function App() {
     }, 800);
     return () => window.clearTimeout(timeoutId);
   }, [customDeviceTemplates, customAttributeLibraries, customComponentTypes, deviceDefinitionOverrides, customGraphTemplateTypes, customGraphTemplates]);
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      const normalizedMeasurementConfig = normalizeMeasurementConfig(measurementConfig);
-      const normalizedMeasurementConfigPayload = serializeMeasurementConfigForStorage(normalizedMeasurementConfig);
-      writeMeasurementConfig(normalizedMeasurementConfig);
-      if (normalizedMeasurementConfigPayload === lastPersistedMeasurementConfigPayloadRef.current) {
-        if (suppressNextBackendMeasurementConfigSyncRef.current) {
-          suppressNextBackendMeasurementConfigSyncRef.current = false;
-        }
-        return;
-      }
-      lastPersistedMeasurementConfigPayloadRef.current = normalizedMeasurementConfigPayload;
-      if (!backendMeasurementConfigLoadedRef.current) {
-        return;
-      }
-      if (suppressNextBackendMeasurementConfigSyncRef.current) {
-        suppressNextBackendMeasurementConfigSyncRef.current = false;
-        return;
-      }
-      void saveBackendMeasurementConfigPayload(normalizedMeasurementConfigPayload).catch(() => {
-        // 后台保存失败时不阻塞当前编辑；下一次量测配置变更会继续尝试同步。
-      });
-    }, 500);
-    return () => window.clearTimeout(timeoutId);
-  }, [measurementConfig]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -12341,11 +12322,42 @@ export function App() {
   };
 
   const updateMeasurementConfig = (updater: (current: PlatformMeasurementConfig) => PlatformMeasurementConfig) => {
-    setMeasurementConfig((current) => {
-      const next = normalizeMeasurementConfig(updater(current));
-      writeMeasurementConfig(next);
+    setMeasurementConfigDraft((current) => {
+      const next = normalizeMeasurementConfig(updater(current ?? measurementConfig));
+      setMeasurementConfigSaveStatus("idle");
       return next;
     });
+  };
+
+  const openMeasurementConfigDialog = () => {
+    setMeasurementConfigDraft(normalizeMeasurementConfig(measurementConfig));
+    setMeasurementConfigSaveStatus("idle");
+    setMeasurementConfigDialogOpen(true);
+  };
+
+  const closeMeasurementConfigDialog = () => {
+    setMeasurementConfigDialogOpen(false);
+    setMeasurementConfigDraft(null);
+    setMeasurementConfigSaveStatus("idle");
+  };
+
+  const saveMeasurementConfigDialog = async () => {
+    const normalizedMeasurementConfig = normalizeMeasurementConfig(measurementConfigDraft ?? measurementConfig);
+    const normalizedMeasurementConfigPayload = serializeMeasurementConfigForStorage(normalizedMeasurementConfig);
+    setMeasurementConfigSaveStatus("saving");
+    writeMeasurementConfig(normalizedMeasurementConfig);
+    setMeasurementConfig(normalizedMeasurementConfig);
+    setMeasurementConfigDraft(normalizedMeasurementConfig);
+    lastPersistedMeasurementConfigPayloadRef.current = normalizedMeasurementConfigPayload;
+    try {
+      await saveBackendMeasurementConfigPayload(normalizedMeasurementConfigPayload);
+      backendMeasurementConfigLoadedRef.current = true;
+      setMeasurementConfigSaveStatus("saved");
+      writeOperationLog("保存动态量测配置");
+    } catch {
+      setMeasurementConfigSaveStatus("error");
+      window.alert("量测配置已保存到本地，但保存到后台失败，请检查后台服务。");
+    }
   };
 
   const updateMeasurementType = (typeId: string, patch: Partial<MeasurementTypeDefinition>) => {
@@ -12410,7 +12422,7 @@ export function App() {
   };
 
   const createMeasurementProfileItem = (): DeviceMeasurementProfileItem | null => {
-    const type = measurementConfig.measurementTypes[0];
+    const type = (measurementConfigDraft ?? measurementConfig).measurementTypes[0];
     if (!type) {
       return null;
     }
@@ -12428,12 +12440,12 @@ export function App() {
       window.alert("请先配置至少一个量测类型。");
       return;
     }
-    const currentItems = measurementProfileByKind.get(deviceKind)?.items ?? [];
+    const currentItems = editableMeasurementProfileByKind.get(deviceKind)?.items ?? [];
     setMeasurementProfileItems(deviceKind, [...currentItems, item]);
   };
 
   const updateMeasurementProfileItem = (deviceKind: string, index: number, patch: Partial<DeviceMeasurementProfileItem>) => {
-    const currentItems = measurementProfileByKind.get(deviceKind)?.items ?? [];
+    const currentItems = editableMeasurementProfileByKind.get(deviceKind)?.items ?? [];
     if (index < 0 || index >= currentItems.length) {
       return;
     }
@@ -12443,12 +12455,12 @@ export function App() {
   };
 
   const deleteMeasurementProfileItem = (deviceKind: string, index: number) => {
-    const currentItems = measurementProfileByKind.get(deviceKind)?.items ?? [];
+    const currentItems = editableMeasurementProfileByKind.get(deviceKind)?.items ?? [];
     setMeasurementProfileItems(deviceKind, currentItems.filter((_, itemIndex) => itemIndex !== index));
   };
 
   const moveMeasurementProfileItem = (deviceKind: string, index: number, direction: -1 | 1) => {
-    const currentItems = measurementProfileByKind.get(deviceKind)?.items ?? [];
+    const currentItems = editableMeasurementProfileByKind.get(deviceKind)?.items ?? [];
     const nextIndex = index + direction;
     if (index < 0 || nextIndex < 0 || nextIndex >= currentItems.length) {
       return;
@@ -12528,16 +12540,47 @@ export function App() {
     items: []
   });
 
-  const createMeasurementItemForNode = (node: ModelNode, measurementTypeId?: string, terminalId?: string): MeasurementItemBinding | null => {
-    const type = (measurementTypeId ? measurementTypeById.get(measurementTypeId) : undefined) ?? measurementConfig.measurementTypes[0];
+  const measurementProfileItemsForMeasurementGroup = (node: ModelNode, terminalId?: string) =>
+    measurementProfileItemsForNodePosition(node, measurementConfig, terminalId);
+
+  const measurementTypeOptionsForMeasurementGroup = (node: ModelNode, group?: Pick<MeasurementGroup, "terminalId">): MeasurementTypeDefinition[] => {
+    const profileItems = measurementProfileItemsForMeasurementGroup(node, group?.terminalId);
+    const allowedTypeIds = new Set(profileItems.map((item) => item.measurementTypeId));
+    return allowedTypeIds.size > 0
+      ? measurementConfig.measurementTypes.filter((type) => allowedTypeIds.has(type.id))
+      : measurementConfig.measurementTypes;
+  };
+
+  const createMeasurementItemForNode = (
+    node: ModelNode,
+    measurementTypeId?: string,
+    terminalId?: string,
+    existingItems: readonly MeasurementItemBinding[] = []
+  ): MeasurementItemBinding | null => {
+    const profileItems = measurementProfileItemsForMeasurementGroup(node, terminalId);
+    const usedTypeIds = new Set(existingItems.map((item) => item.measurementTypeId));
+    const profileItem = measurementTypeId
+      ? profileItems.find((item) => item.measurementTypeId === measurementTypeId)
+      : profileItems.find((item) => !usedTypeIds.has(item.measurementTypeId)) ?? profileItems[0];
+    const type = (measurementTypeId ? measurementTypeById.get(measurementTypeId) : undefined) ??
+      (profileItem ? measurementTypeById.get(profileItem.measurementTypeId) : undefined) ??
+      measurementConfig.measurementTypes[0];
     if (!type) {
       return null;
     }
+    const sourcePoint = terminalId
+      ? `${node.id}.${terminalId}.${profileItem?.role ? `${profileItem.role}.` : ""}${type.id}`
+      : `${node.id}.${profileItem?.role ? `${profileItem.role}.` : ""}${type.id}`;
     return {
       id: `measurement-${node.id}${terminalId ? `-${terminalId}` : ""}-${type.id}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
       measurementTypeId: type.id,
-      sourcePoint: terminalId ? `${node.id}.${terminalId}.${type.id}` : `${node.id}.${type.id}`,
-      visible: true
+      role: profileItem?.role,
+      sourcePoint,
+      visible: profileItem?.defaultVisible ?? type.defaultVisible,
+      labelOverride: profileItem?.name ?? profileItem?.labelOverride,
+      unitOverride: profileItem?.unitOverride,
+      decimalsOverride: profileItem?.decimalsOverride,
+      styleOverride: profileItem?.styleOverride
     };
   };
 
@@ -12562,7 +12605,7 @@ export function App() {
     if (isStaticNode(node)) {
       return;
     }
-    const item = createMeasurementItemForNode(node, undefined, group.terminalId);
+    const item = createMeasurementItemForNode(node, undefined, group.terminalId, group.items);
     if (!item) {
       window.alert("请先配置至少一个量测类型。");
       return;
@@ -12619,7 +12662,15 @@ export function App() {
   };
 
   const addMeasurementEditorDraftItem = (node: ModelNode) => {
-    const item = createMeasurementItemForNode(node);
+    if (!measurementEditorDialog) {
+      return;
+    }
+    const item = createMeasurementItemForNode(
+      node,
+      undefined,
+      measurementEditorDialog.draft.terminalId,
+      measurementEditorDialog.draft.items
+    );
     if (!item) {
       window.alert("请先配置至少一个量测类型。");
       return;
@@ -12831,6 +12882,7 @@ export function App() {
           )}
           {group.items.map((item, itemIndex) => {
             const type = measurementTypeById.get(item.measurementTypeId) ?? measurementConfig.measurementTypes[0];
+            const measurementTypeOptions = measurementTypeOptionsForMeasurementGroup(node, group);
             const itemColor = item.styleOverride?.color ?? type?.defaultColor ?? "#334155";
             const itemFontSize = item.styleOverride?.fontSize ?? type?.defaultFontSize ?? 12;
             return (
@@ -12851,7 +12903,10 @@ export function App() {
                           }));
                         }}
                       >
-                        {measurementConfig.measurementTypes.map((candidate) => (
+                        {!measurementTypeOptions.some((candidate) => candidate.id === item.measurementTypeId) && (
+                          <option value={item.measurementTypeId}>{item.measurementTypeId}</option>
+                        )}
+                        {measurementTypeOptions.map((candidate) => (
                           <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
                         ))}
                       </select>
@@ -22625,238 +22680,266 @@ export function App() {
     </div>
   );
 
+  const renderDeviceDefinitionMeasurementPanel = (template: DeviceTemplate) => {
+    const draftConfig = measurementConfigDraft ?? measurementConfig;
+    const selectedKind = normalizeComponentTypeName(definitionDraftSection) || deviceDefinitionKeyForTemplate(template);
+    const selectedProfileItems = editableMeasurementProfileByKind.get(selectedKind)?.items ?? [];
+    const terminalCount = Math.max(0, template.terminalCount ?? template.terminalLabels?.length ?? 0);
+    const measurementProfilePositionOptions = [
+      { value: "device", label: "设备层" },
+      ...Array.from({ length: terminalCount }, (_, index) => {
+        const terminalLabel = template.terminalLabels?.[index] ?? `端子${index + 1}`;
+        return { value: `t${index + 1}`, label: `${terminalLabel}端子层` };
+      })
+    ];
+    const measurementProfilePositionValue = (item: DeviceMeasurementProfileItem) => item.position ?? "device";
+    const measurementConfigStatusText =
+      measurementConfigSaveStatus === "saving"
+        ? "正在保存..."
+        : measurementConfigSaveStatus === "saved"
+          ? "已保存到本地和后台。"
+          : measurementConfigSaveStatus === "error"
+            ? "后台保存失败，请检查后台服务。"
+            : "修改量测定义后，需要点击保存量测定义才会生效。";
+    return (
+      <section className="device-definition-measurement-panel measurement-config-panel measurement-profile-panel">
+        <div className="measurement-profile-toolbar">
+          <button
+            type="button"
+            disabled={isBrowseMode || draftConfig.measurementTypes.length === 0}
+            onClick={() => addMeasurementProfileItem(selectedKind)}
+          >
+            添加量测
+          </button>
+          <span>元件类型 {selectedKind} / 参考图元 {template.label}</span>
+        </div>
+        <div className="measurement-table-wrap">
+          <table className="measurement-table measurement-profile-table">
+            <thead>
+              <tr>
+                <th>序号</th>
+                <th>量测名称</th>
+                <th>量测类型</th>
+                <th>量测位置</th>
+                <th>默认显示</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {selectedProfileItems.length > 0 ? selectedProfileItems.map((item, itemIndex) => {
+                const currentType = editableMeasurementTypeById.get(item.measurementTypeId) ?? draftConfig.measurementTypes[0];
+                return (
+                  <tr key={`${selectedKind}-${item.measurementTypeId}-${item.position ?? "legacy"}-${item.role ?? "item"}-${itemIndex}`}>
+                    <td>{itemIndex + 1}</td>
+                    <td>
+                      <input
+                        value={item.name ?? ""}
+                        disabled={isBrowseMode}
+                        placeholder={currentType?.name ?? "量测名称"}
+                        onChange={(event) => updateMeasurementProfileItem(selectedKind, itemIndex, { name: event.target.value })}
+                      />
+                    </td>
+                    <td>
+                      <select
+                        value={item.measurementTypeId}
+                        disabled={isBrowseMode}
+                        onChange={(event) => {
+                          const nextTypeId = event.target.value;
+                          const nextType = editableMeasurementTypeById.get(nextTypeId);
+                          updateMeasurementProfileItem(selectedKind, itemIndex, {
+                            measurementTypeId: nextTypeId,
+                            name: item.name || nextType?.name || item.name
+                          });
+                        }}
+                      >
+                        {!editableMeasurementTypeById.has(item.measurementTypeId) && (
+                          <option value={item.measurementTypeId}>{item.measurementTypeId}</option>
+                        )}
+                        {draftConfig.measurementTypes.map((type) => (
+                          <option key={type.id} value={type.id}>{type.name}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <select
+                        value={measurementProfilePositionValue(item)}
+                        disabled={isBrowseMode}
+                        onChange={(event) => updateMeasurementProfileItem(selectedKind, itemIndex, {
+                          position: event.target.value
+                        })}
+                      >
+                        {measurementProfilePositionOptions.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <select
+                        value={item.defaultVisible === undefined ? "type" : item.defaultVisible ? "1" : "0"}
+                        disabled={isBrowseMode}
+                        onChange={(event) => updateMeasurementProfileItem(selectedKind, itemIndex, {
+                          defaultVisible: event.target.value === "type" ? undefined : event.target.value === "1"
+                        })}
+                      >
+                        <option value="type">跟随类型</option>
+                        <option value="1">显示</option>
+                        <option value="0">隐藏</option>
+                      </select>
+                    </td>
+                    <td>
+                      <div className="measurement-profile-row-actions">
+                        <button
+                          type="button"
+                          disabled={isBrowseMode || itemIndex === 0}
+                          onClick={() => moveMeasurementProfileItem(selectedKind, itemIndex, -1)}
+                        >
+                          上移
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isBrowseMode || itemIndex === selectedProfileItems.length - 1}
+                          onClick={() => moveMeasurementProfileItem(selectedKind, itemIndex, 1)}
+                        >
+                          下移
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isBrowseMode}
+                          onClick={() => deleteMeasurementProfileItem(selectedKind, itemIndex)}
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              }) : (
+                <tr>
+                  <td colSpan={6}>当前元件类型还没有默认量测模板。</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <footer className="measurement-config-actions device-definition-measurement-actions">
+          <span className={`measurement-config-status ${measurementConfigSaveStatus === "error" ? "error" : ""}`}>
+            {measurementConfigStatusText}
+          </span>
+          <button
+            type="button"
+            className="primary"
+            disabled={isBrowseMode || measurementConfigSaveStatus === "saving"}
+            onClick={() => void saveMeasurementConfigDialog()}
+          >
+            <Save size={14} />
+            保存量测定义
+          </button>
+        </footer>
+      </section>
+    );
+  };
+
   const renderMeasurementConfigDialog = () => {
     if (!measurementConfigDialogOpen) {
       return null;
     }
-    const selectedTemplate = measurementDeviceTemplates.find((template) => template.kind === measurementProfileKind) ?? measurementDeviceTemplates[0];
-    const selectedKind = selectedTemplate?.kind ?? "";
-    const selectedProfileItems = measurementProfileByKind.get(selectedKind)?.items ?? [];
-    const terminalCount = Math.max(0, selectedTemplate?.terminalCount ?? selectedTemplate?.terminalLabels?.length ?? 0);
-    const measurementProfilePositionOptions = [
-      { value: "device", label: "设备层" },
-      ...(terminalCount > 1 ? [{ value: "all-terminals", label: "全部端子层" }] : []),
-      ...Array.from({ length: terminalCount }, (_, index) => {
-        const terminalLabel = selectedTemplate?.terminalLabels?.[index] ?? `端子${index + 1}`;
-        return { value: `t${index + 1}`, label: `${terminalLabel}端子层` };
-      })
-    ];
-    const measurementProfilePositionValue = (item: DeviceMeasurementProfileItem) => item.position ?? (terminalCount > 1 ? "all-terminals" : "device");
-    const normalizeMeasurementProfilePosition = (value: string) => value === "all-terminals" ? undefined : value;
+    const draftConfig = measurementConfigDraft ?? measurementConfig;
+    const measurementConfigStatusText =
+      measurementConfigSaveStatus === "saving"
+        ? "正在保存..."
+        : measurementConfigSaveStatus === "saved"
+          ? "已保存到本地和后台。"
+          : measurementConfigSaveStatus === "error"
+            ? "后台保存失败，请检查后台服务。"
+            : "未点击保存前，本次修改只保留在当前窗口。";
     return (
-      <div className="image-picker-backdrop measurement-config-backdrop" onPointerDown={() => setMeasurementConfigDialogOpen(false)}>
+      <div className="image-picker-backdrop measurement-config-backdrop" onPointerDown={closeMeasurementConfigDialog}>
         <section className="measurement-config-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="measurement-config-title">
           <header>
             <div>
               <h2 id="measurement-config-title">动态量测配置</h2>
-              <p>先配置全平台统一的量测类型，再给设备类型绑定默认可用量测。</p>
+              <p>配置全平台统一的量测类型、单位、小数位和默认显示样式。</p>
             </div>
-            <button type="button" onClick={() => setMeasurementConfigDialogOpen(false)}>关闭</button>
+            <button type="button" onClick={closeMeasurementConfigDialog}>取消</button>
           </header>
-          <div className="measurement-config-tabs" role="tablist" aria-label="量测配置类型">
-            <button type="button" className={measurementConfigTab === "types" ? "active" : ""} onClick={() => setMeasurementConfigTab("types")}>
-              量测类型
-            </button>
-            <button type="button" className={measurementConfigTab === "profiles" ? "active" : ""} onClick={() => setMeasurementConfigTab("profiles")}>
-              设备绑定
-            </button>
-          </div>
-          {measurementConfigTab === "types" ? (
-            <div className="measurement-config-panel">
-              <div className="measurement-config-toolbar">
-                <button type="button" onClick={addMeasurementType}>新增量测类型</button>
-              </div>
-              <div className="measurement-table-wrap">
-                <table className="measurement-table">
-                  <thead>
-                    <tr>
-                      <th>ID</th>
-                      <th>名称</th>
-                      <th>标签</th>
-                      <th>单位</th>
-                      <th>小数</th>
-                      <th>字号</th>
-                      <th>颜色</th>
-                      <th>默认显示</th>
-                      <th>操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {measurementConfig.measurementTypes.map((type) => (
-                      <tr key={type.id}>
-                        <td><input value={type.id} readOnly title="量测类型ID用于保存绑定关系，不能直接修改" /></td>
-                        <td><input value={type.name} onChange={(event) => updateMeasurementType(type.id, { name: event.target.value })} /></td>
-                        <td><input value={type.shortLabel} onChange={(event) => updateMeasurementType(type.id, { shortLabel: event.target.value })} /></td>
-                        <td><input value={type.defaultUnit} onChange={(event) => updateMeasurementType(type.id, { defaultUnit: event.target.value })} /></td>
-                        <td>
-                          <input
-                            type="number"
-                            min="0"
-                            max="8"
-                            value={type.defaultDecimals}
-                            onChange={(event) => updateMeasurementType(type.id, { defaultDecimals: Number(event.target.value) })}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            min="6"
-                            max="96"
-                            value={type.defaultFontSize}
-                            onChange={(event) => updateMeasurementType(type.id, { defaultFontSize: Number(event.target.value) })}
-                          />
-                        </td>
-                        <td>
-                          <input type="color" value={type.defaultColor} onChange={(event) => updateMeasurementType(type.id, { defaultColor: event.target.value })} />
-                        </td>
-                        <td>
-                          <select
-                            value={type.defaultVisible ? "1" : "0"}
-                            onChange={(event) => updateMeasurementType(type.id, { defaultVisible: event.target.value === "1" })}
-                          >
-                            <option value="1">显示</option>
-                            <option value="0">隐藏</option>
-                          </select>
-                        </td>
-                        <td><button type="button" onClick={() => deleteMeasurementType(type.id)}>删除</button></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+          <div className="measurement-config-panel">
+            <div className="measurement-config-toolbar">
+              <button type="button" onClick={addMeasurementType}>新增量测类型</button>
             </div>
-          ) : (
-            <div className="measurement-config-panel measurement-profile-panel">
-              <label className="measurement-profile-device-select">
-                <span>设备类型</span>
-                <select value={selectedKind} onChange={(event) => setMeasurementProfileKind(event.target.value as DeviceKind)}>
-                  {measurementDeviceTemplates.map((template) => (
-                    <option key={template.kind} value={template.kind}>
-                      {template.label} / {template.kind}
-                    </option>
+            <div className="measurement-table-wrap">
+              <table className="measurement-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>名称</th>
+                    <th>标签</th>
+                    <th>单位</th>
+                    <th>小数</th>
+                    <th>字号</th>
+                    <th>颜色</th>
+                    <th>默认显示</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {draftConfig.measurementTypes.map((type) => (
+                    <tr key={type.id}>
+                      <td><input value={type.id} readOnly title="量测类型ID用于保存绑定关系，不能直接修改" /></td>
+                      <td><input value={type.name} onChange={(event) => updateMeasurementType(type.id, { name: event.target.value })} /></td>
+                      <td><input value={type.shortLabel} onChange={(event) => updateMeasurementType(type.id, { shortLabel: event.target.value })} /></td>
+                      <td><input value={type.defaultUnit} onChange={(event) => updateMeasurementType(type.id, { defaultUnit: event.target.value })} /></td>
+                      <td>
+                        <input
+                          type="number"
+                          min="0"
+                          max="8"
+                          value={type.defaultDecimals}
+                          onChange={(event) => updateMeasurementType(type.id, { defaultDecimals: Number(event.target.value) })}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          min="6"
+                          max="96"
+                          value={type.defaultFontSize}
+                          onChange={(event) => updateMeasurementType(type.id, { defaultFontSize: Number(event.target.value) })}
+                        />
+                      </td>
+                      <td>
+                        <input type="color" value={type.defaultColor} onChange={(event) => updateMeasurementType(type.id, { defaultColor: event.target.value })} />
+                      </td>
+                      <td>
+                        <select
+                          value={type.defaultVisible ? "1" : "0"}
+                          onChange={(event) => updateMeasurementType(type.id, { defaultVisible: event.target.value === "1" })}
+                        >
+                          <option value="1">显示</option>
+                          <option value="0">隐藏</option>
+                        </select>
+                      </td>
+                      <td><button type="button" onClick={() => deleteMeasurementType(type.id)}>删除</button></td>
+                    </tr>
                   ))}
-                </select>
-              </label>
-              <div className="measurement-profile-toolbar">
-                <button
-                  type="button"
-                  disabled={isBrowseMode || measurementConfig.measurementTypes.length === 0 || !selectedKind}
-                  onClick={() => addMeasurementProfileItem(selectedKind)}
-                >
-                  添加量测
-                </button>
-                <span>一个设备类型对应一个表格，一行定义一个默认显示量测。</span>
-              </div>
-              <div className="measurement-table-wrap">
-                <table className="measurement-table measurement-profile-table">
-                  <thead>
-                    <tr>
-                      <th>序号</th>
-                      <th>量测名称</th>
-                      <th>量测类型</th>
-                      <th>量测位置</th>
-                      <th>默认显示</th>
-                      <th>操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedProfileItems.length > 0 ? selectedProfileItems.map((item, itemIndex) => {
-                      const currentType = measurementTypeById.get(item.measurementTypeId) ?? measurementConfig.measurementTypes[0];
-                      return (
-                        <tr key={`${item.measurementTypeId}-${item.position ?? "legacy"}-${item.role ?? "item"}-${itemIndex}`}>
-                          <td>{itemIndex + 1}</td>
-                          <td>
-                            <input
-                              value={item.name ?? ""}
-                              disabled={isBrowseMode}
-                              placeholder={currentType?.name ?? "量测名称"}
-                              onChange={(event) => updateMeasurementProfileItem(selectedKind, itemIndex, { name: event.target.value })}
-                            />
-                          </td>
-                          <td>
-                            <select
-                              value={item.measurementTypeId}
-                              disabled={isBrowseMode}
-                              onChange={(event) => {
-                                const nextTypeId = event.target.value;
-                                const nextType = measurementTypeById.get(nextTypeId);
-                                updateMeasurementProfileItem(selectedKind, itemIndex, {
-                                  measurementTypeId: nextTypeId,
-                                  name: item.name || nextType?.name || item.name
-                                });
-                              }}
-                            >
-                              {!measurementTypeById.has(item.measurementTypeId) && (
-                                <option value={item.measurementTypeId}>{item.measurementTypeId}</option>
-                              )}
-                              {measurementConfig.measurementTypes.map((type) => (
-                                <option key={type.id} value={type.id}>{type.name}</option>
-                              ))}
-                            </select>
-                          </td>
-                          <td>
-                            <select
-                              value={measurementProfilePositionValue(item)}
-                              disabled={isBrowseMode}
-                              onChange={(event) => updateMeasurementProfileItem(selectedKind, itemIndex, {
-                                position: normalizeMeasurementProfilePosition(event.target.value)
-                              })}
-                            >
-                              {measurementProfilePositionOptions.map((option) => (
-                                <option key={option.value} value={option.value}>{option.label}</option>
-                              ))}
-                            </select>
-                          </td>
-                          <td>
-                            <select
-                              value={item.defaultVisible === undefined ? "type" : item.defaultVisible ? "1" : "0"}
-                              disabled={isBrowseMode}
-                              onChange={(event) => updateMeasurementProfileItem(selectedKind, itemIndex, {
-                                defaultVisible: event.target.value === "type" ? undefined : event.target.value === "1"
-                              })}
-                            >
-                              <option value="type">跟随类型</option>
-                              <option value="1">显示</option>
-                              <option value="0">隐藏</option>
-                            </select>
-                          </td>
-                          <td>
-                            <div className="measurement-profile-row-actions">
-                              <button
-                                type="button"
-                                disabled={isBrowseMode || itemIndex === 0}
-                                onClick={() => moveMeasurementProfileItem(selectedKind, itemIndex, -1)}
-                              >
-                                上移
-                              </button>
-                              <button
-                                type="button"
-                                disabled={isBrowseMode || itemIndex === selectedProfileItems.length - 1}
-                                onClick={() => moveMeasurementProfileItem(selectedKind, itemIndex, 1)}
-                              >
-                                下移
-                              </button>
-                              <button
-                                type="button"
-                                disabled={isBrowseMode}
-                                onClick={() => deleteMeasurementProfileItem(selectedKind, itemIndex)}
-                              >
-                                删除
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    }) : (
-                      <tr>
-                        <td colSpan={6}>当前设备类型还没有默认量测模板。</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                </tbody>
+              </table>
             </div>
-          )}
+          </div>
+          <footer className="measurement-config-actions">
+            <span className={`measurement-config-status ${measurementConfigSaveStatus === "error" ? "error" : ""}`}>
+              {measurementConfigStatusText}
+            </span>
+            <button type="button" onClick={closeMeasurementConfigDialog}>取消</button>
+            <button
+              type="button"
+              className="primary"
+              disabled={isBrowseMode || measurementConfigSaveStatus === "saving"}
+              onClick={() => void saveMeasurementConfigDialog()}
+            >
+              <Save size={14} />
+              保存
+            </button>
+          </footer>
         </section>
       </div>
     );
@@ -23026,6 +23109,7 @@ export function App() {
               <tbody>
                 {draft.items.length > 0 ? draft.items.map((item, itemIndex) => {
                   const type = measurementTypeById.get(item.measurementTypeId) ?? measurementConfig.measurementTypes[0];
+                  const measurementTypeOptions = measurementTypeOptionsForMeasurementGroup(node, draft);
                   const itemColor = item.styleOverride?.color ?? type?.defaultColor ?? "#334155";
                   const itemFontSize = item.styleOverride?.fontSize ?? type?.defaultFontSize ?? 12;
                   return (
@@ -23069,10 +23153,10 @@ export function App() {
                             }));
                           }}
                         >
-                          {!measurementTypeById.has(item.measurementTypeId) && (
+                          {!measurementTypeOptions.some((candidate) => candidate.id === item.measurementTypeId) && (
                             <option value={item.measurementTypeId}>{item.measurementTypeId}</option>
                           )}
-                          {measurementConfig.measurementTypes.map((candidate) => (
+                          {measurementTypeOptions.map((candidate) => (
                             <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
                           ))}
                         </select>
@@ -25031,7 +25115,16 @@ export function App() {
     if (template) {
       loadDefinitionTemplateDraft(template);
     }
+    setDeviceDefinitionView("parameters");
+    setMeasurementConfigDraft(normalizeMeasurementConfig(measurementConfig));
+    setMeasurementConfigSaveStatus("idle");
     setDeviceDefinitionDialogOpen(true);
+  };
+
+  const closeDeviceDefinitionDialog = () => {
+    setDeviceDefinitionDialogOpen(false);
+    setMeasurementConfigDraft(null);
+    setMeasurementConfigSaveStatus("idle");
   };
 
   const toggleDefinitionGroup = (attributeLibrary: AttributeLibrary) => {
@@ -25103,23 +25196,26 @@ export function App() {
         readonly: Boolean(row.readonly)
       });
     }
+    const definitionKey = normalizeComponentTypeName(definitionDraftSection) || deviceDefinitionKeyForTemplate(selectedDefinitionTemplate);
     const params = normalizedRows.reduce<Record<string, string>>((acc, row) => {
       if (row.enName !== "name") {
         acc[row.enName] = row.typicalValue;
       }
       return acc;
     }, {
-      component_type: definitionDraftSection || resolveTemplateComponentType(selectedDefinitionTemplate)
+      component_type: definitionKey
     });
-    setDeviceDefinitionOverrides((current) => ({
-      ...current,
-      [selectedDefinitionTemplate.kind]: {
-        kind: selectedDefinitionTemplate.kind,
+    setDeviceDefinitionOverrides((current) => {
+      const next = { ...current };
+      delete next[selectedDefinitionTemplate.kind];
+      next[definitionKey] = {
+        kind: definitionKey,
         params,
         parameterDefinitions: normalizedRows,
         updatedAt: new Date().toISOString()
-      }
-    }));
+      };
+      return next;
+    });
     setDefinitionDraftRows(normalizedRows.map((row) => ({ ...row, id: deviceDefinitionRowId() })));
     setDefinitionDraftError("");
   };
@@ -25132,8 +25228,10 @@ export function App() {
       return;
     }
     loadDefinitionTemplateDraft(selectedDefinitionBaseTemplate);
+    const definitionKey = deviceDefinitionKeyForTemplate(selectedDefinitionBaseTemplate);
     setDeviceDefinitionOverrides((current) => {
       const next = { ...current };
+      delete next[definitionKey];
       delete next[selectedDefinitionBaseTemplate.kind];
       return next;
     });
@@ -25831,6 +25929,14 @@ export function App() {
     <div className="library-definition-actions">
       <button
         type="button"
+        className="custom-device-create-button measurement-config-open-button"
+        disabled={isBrowseMode}
+        onClick={openMeasurementConfigDialog}
+      >
+        量测定义
+      </button>
+      <button
+        type="button"
         className="custom-device-create-button"
         disabled={isBrowseMode}
         onClick={() => {
@@ -26159,16 +26265,6 @@ export function App() {
         }) : (
           <div className="library-empty">未找到匹配图元</div>
         )}
-      </div>
-      <div className="library-measurement-config-actions">
-        <button
-          type="button"
-          className="measurement-config-open-button"
-          disabled={isBrowseMode}
-          onClick={() => setMeasurementConfigDialogOpen(true)}
-        >
-          配置量测类型/设备绑定
-        </button>
       </div>
       {renderLibraryDefinitionActions()}
     </div>
@@ -31231,14 +31327,14 @@ export function App() {
         </div>
       )}
       {deviceDefinitionDialogOpen && (
-        <div className="image-picker-backdrop" onPointerDown={() => setDeviceDefinitionDialogOpen(false)}>
+        <div className="image-picker-backdrop" onPointerDown={closeDeviceDefinitionDialog}>
           <section className="device-definition-dialog" onPointerDown={(event) => event.stopPropagation()}>
             <div className="image-picker-title">
               <div>
                 <h2>修改元件</h2>
                 <p>查看内置和自定义元件定义，维护新建图元时使用的设备属性。</p>
               </div>
-              <button onClick={() => setDeviceDefinitionDialogOpen(false)}>关闭</button>
+              <button onClick={closeDeviceDefinitionDialog}>关闭</button>
             </div>
             <div className="device-definition-layout">
               <aside className="device-definition-list" aria-label="元件定义列表">
@@ -31331,7 +31427,7 @@ export function App() {
                       </div>
                       <div>
                         <span>定义状态</span>
-                        <strong>{deviceDefinitionOverrides[selectedDefinitionTemplate.kind]?.updatedAt ? "已自定义" : "默认"}</strong>
+                        <strong>{deviceDefinitionOverrideForTemplate(selectedDefinitionTemplate, deviceDefinitionOverrides)?.updatedAt ? "已自定义" : "默认"}</strong>
                       </div>
                       <div>
                         <span>元件类型</span>
@@ -31356,110 +31452,132 @@ export function App() {
                         </select>
                       </div>
                     </div>
-                    {selectedDefinitionTemplate.isContainer && selectedDefinitionTerminalAssociations.length > 0 && (
-                      <section className="device-definition-associations">
-                        <div className="device-definition-section-title">
-                          <h3>端子关联信息</h3>
-                          <span>{selectedDefinitionTerminalAssociations.length} 个端子</span>
-                        </div>
-                        <div className="custom-param-table-wrap compact-table-wrap">
+                    <div className="device-definition-tabs" role="tablist" aria-label="元件修改内容切换">
+                      <button
+                        type="button"
+                        className={deviceDefinitionView === "parameters" ? "active" : ""}
+                        onClick={() => setDeviceDefinitionView("parameters")}
+                      >
+                        参数定义
+                      </button>
+                      <button
+                        type="button"
+                        className={deviceDefinitionView === "measurements" ? "active" : ""}
+                        onClick={() => setDeviceDefinitionView("measurements")}
+                      >
+                        量测定义
+                      </button>
+                    </div>
+                    {deviceDefinitionView === "parameters" ? (
+                      <>
+                        {selectedDefinitionTemplate.isContainer && selectedDefinitionTerminalAssociations.length > 0 && (
+                          <section className="device-definition-associations">
+                            <div className="device-definition-section-title">
+                              <h3>端子关联信息</h3>
+                              <span>{selectedDefinitionTerminalAssociations.length} 个端子</span>
+                            </div>
+                            <div className="custom-param-table-wrap compact-table-wrap">
+                              <table className="custom-param-table">
+                                <thead>
+                                  <tr>
+                                    <th>端子</th>
+                                    <th>能源属性</th>
+                                    <th>关联对象</th>
+                                    <th>关联字段</th>
+                                    <th>说明</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {selectedDefinitionTerminalAssociations.map((association) => (
+                                    <tr key={`${selectedDefinitionTemplate.kind}-terminal-${association.terminalIndex}`}>
+                                      <td>{association.terminalLabel}</td>
+                                      <td>{TERMINAL_TYPE_OPTIONS.find((option) => option.value === association.terminalType)?.label ?? association.terminalType}</td>
+                                      <td>{association.deviceModel ? `${association.roleLabel} / ${association.deviceModel}` : association.roleLabel}</td>
+                                      <td><code>{association.relationKey || "-"}</code></td>
+                                      <td>
+                                        {association.dependent
+                                          ? `随端子${association.sourceTerminalIndex + 1}分配到同一个关联设备`
+                                          : association.relationName}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </section>
+                        )}
+                        {definitionDraftError && <p className="custom-device-error">{definitionDraftError}</p>}
+                        <div className="custom-param-table-wrap device-definition-table-wrap">
                           <table className="custom-param-table">
                             <thead>
                               <tr>
-                                <th>端子</th>
-                                <th>能源属性</th>
-                                <th>关联对象</th>
-                                <th>关联字段</th>
-                                <th>说明</th>
+                                <th>中文名称</th>
+                                <th>英文名称</th>
+                                <th>取值类型</th>
+                                <th>典型取值</th>
+                                <th>操作</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {selectedDefinitionTerminalAssociations.map((association) => (
-                                <tr key={`${selectedDefinitionTemplate.kind}-terminal-${association.terminalIndex}`}>
-                                  <td>{association.terminalLabel}</td>
-                                  <td>{TERMINAL_TYPE_OPTIONS.find((option) => option.value === association.terminalType)?.label ?? association.terminalType}</td>
-                                  <td>{association.deviceModel ? `${association.roleLabel} / ${association.deviceModel}` : association.roleLabel}</td>
-                                  <td><code>{association.relationKey || "-"}</code></td>
+                              {definitionDraftRows.map((row) => (
+                                <tr key={row.id} className={row.readonly ? "readonly-row" : ""}>
                                   <td>
-                                    {association.dependent
-                                      ? `随端子${association.sourceTerminalIndex + 1}分配到同一个关联设备`
-                                      : association.relationName}
+                                    <input
+                                      value={row.cnName}
+                                      disabled={row.readonly}
+                                      onChange={(event) => updateDefinitionDraftRow(row.id, { cnName: event.target.value })}
+                                    />
+                                  </td>
+                                  <td>
+                                    <input
+                                      value={row.enName}
+                                      disabled={row.readonly}
+                                      onChange={(event) => updateDefinitionDraftRow(row.id, { enName: event.target.value })}
+                                    />
+                                  </td>
+                                  <td>
+                                    <select
+                                      value={row.valueType}
+                                      disabled={row.readonly}
+                                      onChange={(event) => updateDefinitionDraftRow(row.id, { valueType: event.target.value as DeviceParameterValueType })}
+                                    >
+                                      {PARAM_VALUE_TYPE_OPTIONS.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </td>
+                                  <td>
+                                    <input
+                                      value={row.typicalValue}
+                                      disabled={row.readonly}
+                                      onChange={(event) => updateDefinitionDraftRow(row.id, { typicalValue: event.target.value })}
+                                    />
+                                  </td>
+                                  <td>
+                                    <div className="custom-param-actions">
+                                      <button type="button" onClick={() => deleteDefinitionDraftRow(row.id)} disabled={row.readonly}>
+                                        删除
+                                      </button>
+                                    </div>
                                   </td>
                                 </tr>
                               ))}
                             </tbody>
                           </table>
                         </div>
-                      </section>
+                        <div className="custom-device-actions">
+                          <button type="button" onClick={addDefinitionDraftRow}>新增参数</button>
+                          <button type="button" onClick={saveDeviceDefinitionDraft}>保存定义</button>
+                          <button type="button" onClick={resetDeviceDefinitionDraft} disabled={!selectedDefinitionBaseTemplate}>
+                            恢复默认
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      renderDeviceDefinitionMeasurementPanel(selectedDefinitionTemplate)
                     )}
-                    {definitionDraftError && <p className="custom-device-error">{definitionDraftError}</p>}
-                    <div className="custom-param-table-wrap device-definition-table-wrap">
-                      <table className="custom-param-table">
-                        <thead>
-                          <tr>
-                            <th>中文名称</th>
-                            <th>英文名称</th>
-                            <th>取值类型</th>
-                            <th>典型取值</th>
-                            <th>操作</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {definitionDraftRows.map((row) => (
-                            <tr key={row.id} className={row.readonly ? "readonly-row" : ""}>
-                              <td>
-                                <input
-                                  value={row.cnName}
-                                  disabled={row.readonly}
-                                  onChange={(event) => updateDefinitionDraftRow(row.id, { cnName: event.target.value })}
-                                />
-                              </td>
-                              <td>
-                                <input
-                                  value={row.enName}
-                                  disabled={row.readonly}
-                                  onChange={(event) => updateDefinitionDraftRow(row.id, { enName: event.target.value })}
-                                />
-                              </td>
-                              <td>
-                                <select
-                                  value={row.valueType}
-                                  disabled={row.readonly}
-                                  onChange={(event) => updateDefinitionDraftRow(row.id, { valueType: event.target.value as DeviceParameterValueType })}
-                                >
-                                  {PARAM_VALUE_TYPE_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td>
-                                <input
-                                  value={row.typicalValue}
-                                  disabled={row.readonly}
-                                  onChange={(event) => updateDefinitionDraftRow(row.id, { typicalValue: event.target.value })}
-                                />
-                              </td>
-                              <td>
-                                <div className="custom-param-actions">
-                                  <button type="button" onClick={() => deleteDefinitionDraftRow(row.id)} disabled={row.readonly}>
-                                    删除
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="custom-device-actions">
-                      <button type="button" onClick={addDefinitionDraftRow}>新增参数</button>
-                      <button type="button" onClick={saveDeviceDefinitionDraft}>保存定义</button>
-                      <button type="button" onClick={resetDeviceDefinitionDraft} disabled={!selectedDefinitionBaseTemplate}>
-                        恢复默认
-                      </button>
-                    </div>
                   </>
                 ) : (
                   <div className="empty-state compact">
