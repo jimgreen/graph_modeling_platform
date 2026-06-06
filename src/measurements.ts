@@ -7,6 +7,7 @@ export type MeasurementGroupLayout = "vertical" | "horizontal" | "grid";
 export type MeasurementFontWeight = "400" | "500" | "700";
 export type MeasurementFontStyle = "normal" | "italic";
 export type MeasurementTextDecoration = "none" | "underline";
+export type MeasurementGroupBorderStyle = "none" | "solid" | "dashed" | "dotted";
 
 export type MeasurementStyleOverride = {
   color?: string;
@@ -33,7 +34,9 @@ export type MeasurementTypeDefinition = {
 };
 
 export type DeviceMeasurementProfileItem = {
+  name?: string;
   measurementTypeId: string;
+  position?: string;
   role?: string;
   defaultVisible?: boolean;
   labelOverride?: string;
@@ -72,9 +75,14 @@ export type MeasurementItemBinding = {
 export type MeasurementGroup = {
   id: string;
   nodeId: string;
+  terminalId?: string;
   visible: boolean;
   labelVisible?: boolean;
   unitVisible?: boolean;
+  backgroundColor?: string;
+  borderColor?: string;
+  borderStyle?: MeasurementGroupBorderStyle;
+  borderWidth?: number;
   anchor: MeasurementGroupAnchor;
   offset: { x: number; y: number };
   layout: MeasurementGroupLayout;
@@ -223,6 +231,36 @@ function normalizedAnchor(value: unknown): MeasurementGroupAnchor {
 
 function normalizedLayout(value: unknown): MeasurementGroupLayout {
   return value === "horizontal" || value === "grid" ? value : "vertical";
+}
+
+function normalizedGroupBorderStyle(value: unknown): MeasurementGroupBorderStyle | undefined {
+  if (value === "none" || value === "solid" || value === "dashed" || value === "dotted") {
+    return value;
+  }
+  return undefined;
+}
+
+function normalizedGroupColor(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  const color = String(value).trim();
+  return color ? color : undefined;
+}
+
+function normalizedGroupBorderWidth(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+  return Math.max(0, Math.min(12, finiteNumber(value, 1)));
+}
+
+function normalizedProfilePosition(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  const position = String(value).trim();
+  return position ? position : undefined;
 }
 
 function baseDeviceKind(kind: string): string {
@@ -381,7 +419,9 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
         return [];
       }
       return [{
+        name: item.name !== undefined ? String(item.name) : undefined,
         measurementTypeId,
+        position: normalizedProfilePosition(item.position),
         role: item.role ? String(item.role) : undefined,
         defaultVisible: item.defaultVisible,
         labelOverride: item.labelOverride ? String(item.labelOverride) : undefined,
@@ -422,9 +462,14 @@ export function measurementGroupsForExistingNodes(groups: readonly MeasurementGr
     return [{
       id: String(group.id || `measurement-${group.nodeId}`),
       nodeId: group.nodeId,
+      terminalId: group.terminalId ? String(group.terminalId) : undefined,
       visible: group.visible !== false,
       labelVisible: group.labelVisible === undefined ? undefined : group.labelVisible !== false,
       unitVisible: group.unitVisible === undefined ? undefined : group.unitVisible !== false,
+      backgroundColor: normalizedGroupColor(group.backgroundColor),
+      borderColor: normalizedGroupColor(group.borderColor),
+      borderStyle: normalizedGroupBorderStyle(group.borderStyle),
+      borderWidth: normalizedGroupBorderWidth(group.borderWidth),
       anchor: normalizedAnchor(group.anchor),
       offset: {
         x: finiteNumber(group.offset?.x, 0),
@@ -451,11 +496,31 @@ export function measurementGroupForNode(measurements: ProjectMeasurementConfig, 
   return measurements.groups.find((group) => group.nodeId === nodeId);
 }
 
+export function measurementGroupsForNode(measurements: ProjectMeasurementConfig, nodeId: string): MeasurementGroup[] {
+  return measurements.groups.filter((group) => group.nodeId === nodeId);
+}
+
+export function measurementGroupForNodeTerminal(
+  measurements: ProjectMeasurementConfig,
+  nodeId: string,
+  terminalId: string
+): MeasurementGroup | undefined {
+  return measurements.groups.find((group) => group.nodeId === nodeId && group.terminalId === terminalId);
+}
+
 export function upsertMeasurementGroup(measurements: ProjectMeasurementConfig, group: MeasurementGroup): ProjectMeasurementConfig {
-  const groups = measurements.groups.some((item) => item.id === group.id || item.nodeId === group.nodeId)
-    ? measurements.groups.map((item) => (item.id === group.id || item.nodeId === group.nodeId ? group : item))
+  const groups = measurements.groups.some((item) => item.id === group.id)
+    ? measurements.groups.map((item) => (item.id === group.id ? group : item))
     : [...measurements.groups, group];
   return { version: 1, groups };
+}
+
+export function upsertMeasurementGroups(measurements: ProjectMeasurementConfig, incomingGroups: readonly MeasurementGroup[]): ProjectMeasurementConfig {
+  const groupById = new Map(measurements.groups.map((group) => [group.id, group]));
+  for (const group of incomingGroups) {
+    groupById.set(group.id, group);
+  }
+  return { version: 1, groups: Array.from(groupById.values()) };
 }
 
 export function removeMeasurementGroupForNode(measurements: ProjectMeasurementConfig, nodeId: string): ProjectMeasurementConfig {
@@ -469,32 +534,102 @@ export function createDefaultMeasurementGroupForNode(
   node: ModelNode,
   config: PlatformMeasurementConfig
 ): MeasurementGroup | null {
+  return createDefaultMeasurementGroupsForNode(node, config)[0] ?? null;
+}
+
+function defaultMeasurementGroupOffsetForNode(node: ModelNode, terminal?: ModelNode["terminals"][number]): { x: number; y: number } {
+  const rotateOffset = (offset: { x: number; y: number }) => {
+    const radians = (node.rotation * Math.PI) / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    return {
+      x: Math.round((offset.x * cos - offset.y * sin) * 10) / 10,
+      y: Math.round((offset.x * sin + offset.y * cos) * 10) / 10
+    };
+  };
+  if (!terminal) {
+    return { x: 0, y: Math.round(node.size.height / 2 + 42) };
+  }
+  const anchor = terminal.anchor;
+  if (Math.abs(anchor.x) >= Math.abs(anchor.y) && Math.abs(anchor.x) > 0.001) {
+    return rotateOffset({ x: Math.sign(anchor.x) * 54, y: 0 });
+  }
+  if (Math.abs(anchor.y) > 0.001) {
+    return rotateOffset({ x: 0, y: Math.sign(anchor.y) * 42 });
+  }
+  return rotateOffset({ x: 0, y: 42 });
+}
+
+export function createDefaultMeasurementGroupsForNode(
+  node: ModelNode,
+  config: PlatformMeasurementConfig
+): MeasurementGroup[] {
   const normalizedConfig = normalizeMeasurementConfig(config);
   const profile = measurementProfileForNodeKind(node.kind, normalizedConfig);
   if (!profile || profile.items.length === 0) {
-    return null;
+    return [];
   }
-  return {
-    id: `measurement-${node.id}`,
-    nodeId: node.id,
-    visible: true,
-    labelVisible: true,
-    unitVisible: true,
-    anchor: "bottom",
-    offset: { x: 0, y: Math.round(node.size.height / 2 + 42) },
-    layout: "vertical",
-    items: profile.items.map((item, index) => ({
-      id: `measurement-${node.id}-${item.measurementTypeId}-${item.role ?? index}`,
-      measurementTypeId: item.measurementTypeId,
-      role: item.role,
-      sourcePoint: `${node.id}.${item.role ? `${item.role}.` : ""}${item.measurementTypeId}`,
-      visible: item.defaultVisible,
-      labelOverride: item.labelOverride,
-      unitOverride: item.unitOverride,
-      decimalsOverride: item.decimalsOverride,
-      styleOverride: item.styleOverride
-    }))
+  const terminalById = new Map(node.terminals.map((terminal) => [terminal.id, terminal]));
+  const itemsByPosition = new Map<string, DeviceMeasurementProfileItem[]>();
+  const addItem = (position: string, item: DeviceMeasurementProfileItem) => {
+    const currentItems = itemsByPosition.get(position) ?? [];
+    itemsByPosition.set(position, [...currentItems, item]);
   };
+  for (const item of profile.items) {
+    if (item.position === "device") {
+      addItem("device", item);
+      continue;
+    }
+    if (item.position && terminalById.has(item.position)) {
+      addItem(item.position, item);
+      continue;
+    }
+    if (node.terminals.length > 1 && !item.position) {
+      for (const terminal of node.terminals) {
+        addItem(terminal.id, item);
+      }
+      continue;
+    }
+    addItem("device", item);
+  }
+  const orderedPositions = [
+    ...(itemsByPosition.has("device") ? ["device"] : []),
+    ...node.terminals.map((terminal) => terminal.id).filter((terminalId) => itemsByPosition.has(terminalId))
+  ];
+  return orderedPositions.map((position) => {
+    const terminal = position === "device" ? undefined : terminalById.get(position);
+    const items = itemsByPosition.get(position) ?? [];
+    return {
+      id: terminal ? `measurement-${node.id}-${terminal.id}` : `measurement-${node.id}`,
+      nodeId: node.id,
+      terminalId: terminal?.id,
+      visible: true,
+      labelVisible: true,
+      unitVisible: true,
+      backgroundColor: "#ffffff",
+      borderColor: "#64748b",
+      borderStyle: "solid",
+      borderWidth: 1,
+      anchor: "bottom",
+      offset: defaultMeasurementGroupOffsetForNode(node, terminal),
+      layout: "vertical",
+      items: items.map((item, index) => ({
+        id: terminal
+          ? `measurement-${node.id}-${terminal.id}-${item.measurementTypeId}-${item.role ?? index}`
+          : `measurement-${node.id}-${item.measurementTypeId}-${item.role ?? index}`,
+        measurementTypeId: item.measurementTypeId,
+        role: item.role,
+        sourcePoint: terminal
+          ? `${node.id}.${terminal.id}.${item.role ? `${item.role}.` : ""}${item.measurementTypeId}`
+          : `${node.id}.${item.role ? `${item.role}.` : ""}${item.measurementTypeId}`,
+        visible: item.defaultVisible,
+        labelOverride: item.name ?? item.labelOverride,
+        unitOverride: item.unitOverride,
+        decimalsOverride: item.decimalsOverride,
+        styleOverride: item.styleOverride
+      }))
+    };
+  });
 }
 
 export function resolveMeasurementItemDisplay({

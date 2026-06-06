@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   DEFAULT_MEASUREMENT_CONFIG,
   createDefaultMeasurementGroupForNode,
+  createDefaultMeasurementGroupsForNode,
   formatMeasurementDisplayValue,
   measurementFontScaleForNode,
   measurementOffsetScaleForNode,
@@ -58,6 +59,94 @@ describe("measurement domain", () => {
     });
     expect(group?.items.map((item) => item.measurementTypeId)).toEqual(["activePower", "reactivePower", "voltage", "current"]);
     expect(group?.items[0].sourcePoint).toBe("node-1.activePower");
+  });
+
+  test("creates one default measurement group per terminal for multi-terminal devices", () => {
+    const threeTerminalNode: ModelNode = {
+      ...node("transformer-1", "ac-transformer"),
+      terminals: [
+        { id: "t1", label: "高压", type: "ac", anchor: { x: -0.5, y: 0 }, nodeNumber: "" },
+        { id: "t2", label: "中压", type: "ac", anchor: { x: 0.5, y: 0 }, nodeNumber: "" },
+        { id: "t3", label: "低压", type: "ac", anchor: { x: 0, y: 0.5 }, nodeNumber: "" }
+      ]
+    };
+
+    const groups = createDefaultMeasurementGroupsForNode(threeTerminalNode, DEFAULT_MEASUREMENT_CONFIG);
+
+    expect(groups).toHaveLength(3);
+    expect(groups.map((group) => group.terminalId)).toEqual(["t1", "t2", "t3"]);
+    expect(groups.map((group) => group.id)).toEqual([
+      "measurement-transformer-1-t1",
+      "measurement-transformer-1-t2",
+      "measurement-transformer-1-t3"
+    ]);
+    expect(groups[0].items[0].sourcePoint).toBe("transformer-1.t1.activePower");
+    expect(groups[1].items[0].sourcePoint).toBe("transformer-1.t2.activePower");
+  });
+
+  test("keeps device profile row names and measurement positions", () => {
+    const config = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{
+        deviceKind: "ac-transformer",
+        items: [
+          { name: "整机状态", measurementTypeId: "status", position: "device" },
+          { name: "高压侧电压", measurementTypeId: "voltage", position: "t1" }
+        ]
+      }]
+    });
+
+    expect(config.deviceProfiles.find((item) => item.deviceKind === "ac-transformer")?.items).toEqual([
+      expect.objectContaining({ name: "整机状态", measurementTypeId: "status", position: "device" }),
+      expect.objectContaining({ name: "高压侧电压", measurementTypeId: "voltage", position: "t1" })
+    ]);
+  });
+
+  test("creates default measurement groups by device profile row position", () => {
+    const threeTerminalNode: ModelNode = {
+      ...node("transformer-2", "ac-transformer"),
+      terminals: [
+        { id: "t1", label: "高压", type: "ac", anchor: { x: -0.5, y: 0 }, nodeNumber: "" },
+        { id: "t2", label: "中压", type: "ac", anchor: { x: 0.5, y: 0 }, nodeNumber: "" },
+        { id: "t3", label: "低压", type: "ac", anchor: { x: 0, y: 0.5 }, nodeNumber: "" }
+      ]
+    };
+    const config = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{
+        deviceKind: "ac-transformer",
+        items: [
+          { name: "整机状态", measurementTypeId: "status", position: "device" },
+          { name: "高压P", measurementTypeId: "activePower", position: "t1" },
+          { name: "低压U", measurementTypeId: "voltage", position: "t3" }
+        ]
+      }]
+    });
+
+    const groups = createDefaultMeasurementGroupsForNode(threeTerminalNode, config);
+
+    expect(groups.map((group) => group.terminalId)).toEqual([undefined, "t1", "t3"]);
+    expect(groups[0].items).toEqual([
+      expect.objectContaining({
+        measurementTypeId: "status",
+        sourcePoint: "transformer-2.status",
+        labelOverride: "整机状态"
+      })
+    ]);
+    expect(groups[1].items).toEqual([
+      expect.objectContaining({
+        measurementTypeId: "activePower",
+        sourcePoint: "transformer-2.t1.activePower",
+        labelOverride: "高压P"
+      })
+    ]);
+    expect(groups[2].items).toEqual([
+      expect.objectContaining({
+        measurementTypeId: "voltage",
+        sourcePoint: "transformer-2.t3.voltage",
+        labelOverride: "低压U"
+      })
+    ]);
   });
 
   test("keeps platform default device profiles when persisted config has none", () => {
@@ -164,6 +253,54 @@ describe("measurement domain", () => {
     expect(normalized.groups[0]).toMatchObject({
       labelVisible: false,
       unitVisible: false
+    });
+  });
+
+  test("keeps measurement group box style settings with bounded border width", () => {
+    const normalized = normalizeProjectMeasurements(
+      {
+        version: 1,
+        groups: [
+          {
+            id: "group-style",
+            nodeId: "node-1",
+            visible: true,
+            backgroundColor: "#f8fafc",
+            borderColor: "#64748b",
+            borderStyle: "dashed",
+            borderWidth: 16,
+            anchor: "bottom",
+            offset: { x: 0, y: 70 },
+            layout: "vertical",
+            items: []
+          },
+          {
+            id: "group-hidden-box",
+            nodeId: "node-1",
+            visible: true,
+            backgroundColor: "transparent",
+            borderStyle: "none",
+            borderWidth: 0,
+            anchor: "bottom",
+            offset: { x: 0, y: 90 },
+            layout: "vertical",
+            items: []
+          }
+        ]
+      },
+      [node("node-1")]
+    );
+
+    expect(normalized.groups[0]).toMatchObject({
+      backgroundColor: "#f8fafc",
+      borderColor: "#64748b",
+      borderStyle: "dashed",
+      borderWidth: 12
+    });
+    expect(normalized.groups[1]).toMatchObject({
+      backgroundColor: "transparent",
+      borderStyle: "none",
+      borderWidth: 0
     });
   });
 

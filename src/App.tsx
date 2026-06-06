@@ -331,16 +331,18 @@ import {
 import {
   DEFAULT_MEASUREMENT_CONFIG,
   EMPTY_PROJECT_MEASUREMENTS,
-  createDefaultMeasurementGroupForNode,
+  createDefaultMeasurementGroupsForNode,
   formatMeasurementDisplayValue,
   measurementFontScaleForNode,
   measurementOffsetScaleForNode,
   measurementGroupForNode,
+  measurementGroupsForNode,
   normalizeMeasurementConfig,
   normalizeProjectMeasurements,
   removeMeasurementGroupForNode,
   resolveMeasurementItemDisplay,
   upsertMeasurementGroup,
+  upsertMeasurementGroups,
   type DeviceMeasurementProfileItem,
   type MeasurementGroup,
   type MeasurementItemBinding,
@@ -7610,9 +7612,14 @@ export function App() {
   const displaySelectedEdgeKey = useMemo(() => displaySelectedEdgeIds.join("|"), [displaySelectedEdgeIds]);
   const selectedEdge = activeLayerEdgeIdSet.has(selectedEdgeId) ? edgeById.get(selectedEdgeId) : undefined;
   const inspectorSelectedNode = selectedNode;
-  const selectedMeasurementGroup = useMemo(
-    () => (inspectorSelectedNode ? measurementGroupForNode(projectMeasurements, inspectorSelectedNode.id) : undefined),
+  const selectedMeasurementGroups = useMemo(
+    () => (inspectorSelectedNode ? measurementGroupsForNode(projectMeasurements, inspectorSelectedNode.id) : []),
     [inspectorSelectedNode, projectMeasurements]
+  );
+  const selectedMeasurementGroup = selectedMeasurementGroups[0];
+  const selectedMeasurementGroupIdSet = useMemo(
+    () => new Set(selectedMeasurementGroups.map((group) => group.id)),
+    [selectedMeasurementGroups]
   );
   const visibleMeasurementGroups = useMemo(
     () => projectMeasurements.groups.filter((group) => group.visible && visibleNodeById.has(group.nodeId)),
@@ -7655,6 +7662,25 @@ export function App() {
     const edge = edgeById.get(edgeId);
     return edge ? ({ "--connection-color": cachedConnectionStrokeColor(edge) } as CSSProperties) : undefined;
   };
+  const measurementGroupBackgroundColor = (group: MeasurementGroup) => group.backgroundColor ?? "rgba(255, 255, 255, 0.84)";
+  const measurementGroupBorderColor = (group: MeasurementGroup) => group.borderColor ?? "rgba(100, 116, 139, 0.36)";
+  const measurementGroupBorderWidth = (group: MeasurementGroup) =>
+    group.borderStyle === "none" ? 0 : Math.max(0, Math.min(12, Number(group.borderWidth ?? 1)));
+  const measurementGroupBorderDashArray = (group: MeasurementGroup) =>
+    measurementGroupBorderWidth(group) <= 0 || group.borderStyle === "none"
+      ? undefined
+      : svgStrokeDashArray(group.borderStyle);
+  const measurementGroupColorInputValue = (color: string | undefined, fallback: string) =>
+    color && /^#[0-9a-f]{6}$/i.test(color) ? color : fallback;
+  const measurementGroupAnchorPoint = (node: ModelNode, group: MeasurementGroup, absolute: boolean): Point => {
+    if (group.terminalId && node.terminals.some((terminal) => terminal.id === group.terminalId)) {
+      const terminalPoint = getTerminalPoint(node, group.terminalId);
+      return absolute
+        ? terminalPoint
+        : { x: terminalPoint.x - node.position.x, y: terminalPoint.y - node.position.y };
+    }
+    return absolute ? node.position : { x: 0, y: 0 };
+  };
   const measurementGroupLocalOffset = (node: ModelNode, group: MeasurementGroup): Point => {
     const offsetScale = measurementOffsetScaleForNode(node);
     return {
@@ -7663,10 +7689,11 @@ export function App() {
     };
   };
   const measurementGroupCanvasPosition = (node: ModelNode, group: MeasurementGroup): Point => {
+    const anchor = measurementGroupAnchorPoint(node, group, true);
     const localOffset = measurementGroupLocalOffset(node, group);
     return {
-      x: node.position.x + localOffset.x,
-      y: node.position.y + localOffset.y
+      x: anchor.x + localOffset.x,
+      y: anchor.y + localOffset.y
     };
   };
   const measurementGroupRenderMetrics = (node: ModelNode, group: MeasurementGroup) => {
@@ -7696,33 +7723,31 @@ export function App() {
     return { rows, maxFontSize, lineHeight, columnWidth, columns, width, height };
   };
   const includeMeasurementGroupBounds = (node: ModelNode, includeBox: (box: RenderViewportBounds) => void) => {
-    const group = measurementGroupForNode(projectMeasurements, node.id);
-    if (!group) {
-      return;
+    for (const group of measurementGroupsForNode(projectMeasurements, node.id)) {
+      const metrics = measurementGroupRenderMetrics(node, group);
+      if (!metrics) {
+        continue;
+      }
+      const position = measurementGroupCanvasPosition(node, group);
+      includeBox({
+        left: position.x - metrics.width / 2,
+        right: position.x + metrics.width / 2,
+        top: position.y - metrics.height / 2,
+        bottom: position.y + metrics.height / 2
+      });
     }
-    const metrics = measurementGroupRenderMetrics(node, group);
-    if (!metrics) {
-      return;
-    }
-    const position = measurementGroupCanvasPosition(node, group);
-    includeBox({
-      left: position.x - metrics.width / 2,
-      right: position.x + metrics.width / 2,
-      top: position.y - metrics.height / 2,
-      bottom: position.y + metrics.height / 2
-    });
   };
-  const buildMeasurementGroupMarkup = (node: ModelNode, options: { absolute?: boolean } = {}) => {
-    const group = measurementGroupForNode(projectMeasurements, node.id);
-    if (!group) {
-      return "";
-    }
+  const buildMeasurementGroupMarkup = (node: ModelNode, group: MeasurementGroup, options: { absolute?: boolean } = {}) => {
     const metrics = measurementGroupRenderMetrics(node, group);
     if (!metrics) {
       return "";
     }
-    const position = options.absolute ? measurementGroupCanvasPosition(node, group) : measurementGroupLocalOffset(node, group);
-    const selectedClass = selectedMeasurementGroup?.id === group.id ? " selected" : "";
+    const anchor = measurementGroupAnchorPoint(node, group, Boolean(options.absolute));
+    const localOffset = measurementGroupLocalOffset(node, group);
+    const position = { x: anchor.x + localOffset.x, y: anchor.y + localOffset.y };
+    const selectedClass = selectedMeasurementGroupIdSet.has(group.id) ? " selected" : "";
+    const borderDashArray = measurementGroupBorderDashArray(group);
+    const borderDashAttribute = borderDashArray ? ` stroke-dasharray="${escapeXml(borderDashArray)}"` : "";
     const rowsMarkup = metrics.rows.map((row, index) => {
       const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
       const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
@@ -7731,10 +7756,14 @@ export function App() {
       return `<text class="measurement-item" x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}">${escapeXml(row.text)}</text>`;
     }).join("");
     return `<g class="measurement-group drag-preview-measurement-group${selectedClass}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})">
-  <rect class="measurement-group-bg" x="${formatSvgNumber(-metrics.width / 2)}" y="${formatSvgNumber(-metrics.height / 2)}" width="${formatSvgNumber(metrics.width)}" height="${formatSvgNumber(metrics.height)}" rx="4"/>
+  <rect class="measurement-group-bg" x="${formatSvgNumber(-metrics.width / 2)}" y="${formatSvgNumber(-metrics.height / 2)}" width="${formatSvgNumber(metrics.width)}" height="${formatSvgNumber(metrics.height)}" rx="4" fill="${escapeXml(measurementGroupBackgroundColor(group))}" stroke="${escapeXml(measurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(measurementGroupBorderWidth(group))}"${borderDashAttribute}/>
   ${rowsMarkup}
 </g>`;
   };
+  const buildMeasurementGroupsMarkup = (node: ModelNode, options: { absolute?: boolean } = {}) =>
+    measurementGroupsForNode(projectMeasurements, node.id)
+      .map((group) => buildMeasurementGroupMarkup(node, group, options))
+      .join("");
   const buildMultiNodeDragOverlayPreview = (
     dragNodeIds: string[],
     affectedEdgesForDrag: Edge[],
@@ -7784,7 +7813,7 @@ export function App() {
         const fill = node.params.backgroundColor || "#ffffff";
         const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
         const strokeWidth = Math.max(2, getDeviceStrokeWidth(node));
-        const measurementMarkup = buildMeasurementGroupMarkup(previewNode, { absolute: true });
+        const measurementMarkup = buildMeasurementGroupsMarkup(previewNode, { absolute: true });
         simplifiedNodeMarkup.push(
           `<rect class="multi-node-drag-preview-node-lite${nodeIsBus ? " bus-node" : ""}" transform="${escapeXml(transform)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${nodeIsBus ? 0 : 6}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"><title>${escapeXml(node.name)}</title></rect>`
         );
@@ -7918,7 +7947,7 @@ export function App() {
           const nodeIsBus = isBusNode(node);
           const terminalControlTransform = (x: number, y: number) => `translate(${x} ${y}) scale(${inverseScaleX} ${inverseScaleY})`;
           const terminalStubDashArray = svgStrokeDashArray(node.params.strokeStyle);
-          const measurementMarkup = buildMeasurementGroupMarkup(node);
+          const measurementMarkup = buildMeasurementGroupsMarkup(node);
           return (
             <g
               key={`multi-drag-preview-node-${node.id}`}
@@ -12380,16 +12409,53 @@ export function App() {
     });
   };
 
-  const toggleMeasurementProfileType = (deviceKind: string, measurementTypeId: string, enabled: boolean) => {
-    const currentItems = measurementProfileByKind.get(deviceKind)?.items ?? [];
-    if (enabled) {
-      if (currentItems.some((item) => item.measurementTypeId === measurementTypeId && !item.role)) {
-        return;
-      }
-      setMeasurementProfileItems(deviceKind, [...currentItems, { measurementTypeId }]);
+  const createMeasurementProfileItem = (): DeviceMeasurementProfileItem | null => {
+    const type = measurementConfig.measurementTypes[0];
+    if (!type) {
+      return null;
+    }
+    return {
+      name: type.name,
+      measurementTypeId: type.id,
+      position: "device",
+      defaultVisible: type.defaultVisible
+    };
+  };
+
+  const addMeasurementProfileItem = (deviceKind: string) => {
+    const item = createMeasurementProfileItem();
+    if (!item) {
+      window.alert("请先配置至少一个量测类型。");
       return;
     }
-    setMeasurementProfileItems(deviceKind, currentItems.filter((item) => !(item.measurementTypeId === measurementTypeId && !item.role)));
+    const currentItems = measurementProfileByKind.get(deviceKind)?.items ?? [];
+    setMeasurementProfileItems(deviceKind, [...currentItems, item]);
+  };
+
+  const updateMeasurementProfileItem = (deviceKind: string, index: number, patch: Partial<DeviceMeasurementProfileItem>) => {
+    const currentItems = measurementProfileByKind.get(deviceKind)?.items ?? [];
+    if (index < 0 || index >= currentItems.length) {
+      return;
+    }
+    setMeasurementProfileItems(deviceKind, currentItems.map((item, itemIndex) => (
+      itemIndex === index ? { ...item, ...patch } : item
+    )));
+  };
+
+  const deleteMeasurementProfileItem = (deviceKind: string, index: number) => {
+    const currentItems = measurementProfileByKind.get(deviceKind)?.items ?? [];
+    setMeasurementProfileItems(deviceKind, currentItems.filter((_, itemIndex) => itemIndex !== index));
+  };
+
+  const moveMeasurementProfileItem = (deviceKind: string, index: number, direction: -1 | 1) => {
+    const currentItems = measurementProfileByKind.get(deviceKind)?.items ?? [];
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= currentItems.length) {
+      return;
+    }
+    const items = [...currentItems];
+    [items[index], items[nextIndex]] = [items[nextIndex], items[index]];
+    setMeasurementProfileItems(deviceKind, items);
   };
 
   const updateProjectMeasurementsWithUndo = (updater: (current: ProjectMeasurementConfig) => ProjectMeasurementConfig, logText?: string) => {
@@ -12404,13 +12470,13 @@ export function App() {
     if (isStaticNode(node)) {
       return;
     }
-    const group = createDefaultMeasurementGroupForNode(node, measurementConfig);
-    if (!group) {
+    const groups = createDefaultMeasurementGroupsForNode(node, measurementConfig);
+    if (groups.length === 0) {
       window.alert("该设备类型还没有绑定默认量测，请先在基础页配置设备类型可用量测。");
       return;
     }
     updateProjectMeasurementsWithUndo(
-      (current) => upsertMeasurementGroup(current, group),
+      (current) => upsertMeasurementGroups(current, groups),
       `添加动态量测：${node.name}`
     );
   };
@@ -12422,16 +12488,88 @@ export function App() {
     );
   };
 
+  const measurementGroupShellOffsetForNode = (node: ModelNode, terminalId?: string): Point => {
+    const rotateOffset = (offset: Point): Point => {
+      const radians = (node.rotation * Math.PI) / 180;
+      const cos = Math.cos(radians);
+      const sin = Math.sin(radians);
+      return {
+        x: Math.round((offset.x * cos - offset.y * sin) * 10) / 10,
+        y: Math.round((offset.x * sin + offset.y * cos) * 10) / 10
+      };
+    };
+    const terminal = terminalId ? node.terminals.find((item) => item.id === terminalId) : undefined;
+    if (!terminal) {
+      return { x: 0, y: Math.round(node.size.height / 2 + 42) };
+    }
+    if (Math.abs(terminal.anchor.x) >= Math.abs(terminal.anchor.y) && Math.abs(terminal.anchor.x) > 0.001) {
+      return rotateOffset({ x: Math.sign(terminal.anchor.x) * 54, y: 0 });
+    }
+    if (Math.abs(terminal.anchor.y) > 0.001) {
+      return rotateOffset({ x: 0, y: Math.sign(terminal.anchor.y) * 42 });
+    }
+    return rotateOffset({ x: 0, y: 42 });
+  };
+
+  const createMeasurementGroupShellForNode = (node: ModelNode, terminalId?: string): MeasurementGroup => ({
+    id: terminalId ? `measurement-${node.id}-${terminalId}` : `measurement-${node.id}`,
+    nodeId: node.id,
+    terminalId,
+    visible: true,
+    labelVisible: true,
+    unitVisible: true,
+    backgroundColor: "#ffffff",
+    borderColor: "#64748b",
+    borderStyle: "solid",
+    borderWidth: 1,
+    anchor: "bottom",
+    offset: measurementGroupShellOffsetForNode(node, terminalId),
+    layout: "vertical",
+    items: []
+  });
+
+  const createMeasurementItemForNode = (node: ModelNode, measurementTypeId?: string, terminalId?: string): MeasurementItemBinding | null => {
+    const type = (measurementTypeId ? measurementTypeById.get(measurementTypeId) : undefined) ?? measurementConfig.measurementTypes[0];
+    if (!type) {
+      return null;
+    }
+    return {
+      id: `measurement-${node.id}${terminalId ? `-${terminalId}` : ""}-${type.id}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      measurementTypeId: type.id,
+      sourcePoint: terminalId ? `${node.id}.${terminalId}.${type.id}` : `${node.id}.${type.id}`,
+      visible: true
+    };
+  };
+
+  const updateMeasurementGroupById = (groupId: string, updater: (group: MeasurementGroup) => MeasurementGroup, logText?: string) => {
+    updateProjectMeasurementsWithUndo(
+      (current) => ({
+        version: 1,
+        groups: current.groups.map((group) => group.id === groupId ? updater(group) : group)
+      }),
+      logText
+    );
+  };
+
   const updateSelectedMeasurementGroup = (updater: (group: MeasurementGroup) => MeasurementGroup, logText?: string) => {
     if (!selectedMeasurementGroup) {
       return;
     }
+    updateMeasurementGroupById(selectedMeasurementGroup.id, updater, logText);
+  };
+
+  const addMeasurementItemToGroup = (node: ModelNode, group: MeasurementGroup) => {
+    if (isStaticNode(node)) {
+      return;
+    }
+    const item = createMeasurementItemForNode(node, undefined, group.terminalId);
+    if (!item) {
+      window.alert("请先配置至少一个量测类型。");
+      return;
+    }
     updateProjectMeasurementsWithUndo(
-      (current) => ({
-        version: 1,
-        groups: current.groups.map((group) => group.id === selectedMeasurementGroup.id ? updater(group) : group)
-      }),
-      logText
+      (current) => upsertMeasurementGroup(current, { ...group, items: [...group.items, item] }),
+      `添加量测项：${node.name}`
     );
   };
 
@@ -12439,46 +12577,25 @@ export function App() {
     if (isStaticNode(node)) {
       return;
     }
-    const type = measurementConfig.measurementTypes[0];
-    if (!type) {
-      window.alert("请先配置至少一个量测类型。");
-      return;
-    }
     const existingGroup = measurementGroupForNode(projectMeasurements, node.id);
-    const group = existingGroup ?? {
-      id: `measurement-${node.id}`,
-      nodeId: node.id,
-      visible: true,
-      anchor: "bottom" as const,
-      offset: { x: 0, y: Math.round(node.size.height / 2 + 42) },
-      layout: "vertical" as const,
-      items: []
-    };
-    const item: MeasurementItemBinding = {
-      id: `measurement-${node.id}-${type.id}-${Date.now().toString(36)}`,
-      measurementTypeId: type.id,
-      sourcePoint: `${node.id}.${type.id}`,
-      visible: true
-    };
-    updateProjectMeasurementsWithUndo(
-      (current) => upsertMeasurementGroup(current, { ...group, items: [...group.items, item] }),
-      `添加量测项：${node.name}`
-    );
+    const group = existingGroup ?? createMeasurementGroupShellForNode(node);
+    addMeasurementItemToGroup(node, group);
   };
 
   const updateMeasurementItem = (
+    groupId: string,
     itemId: string,
     updater: (item: MeasurementItemBinding) => MeasurementItemBinding,
     logText?: string
   ) => {
-    updateSelectedMeasurementGroup((group) => ({
+    updateMeasurementGroupById(groupId, (group) => ({
       ...group,
       items: group.items.map((item) => item.id === itemId ? updater(item) : item)
     }), logText);
   };
 
-  const removeMeasurementItem = (itemId: string) => {
-    updateSelectedMeasurementGroup((group) => ({
+  const removeMeasurementItem = (groupId: string, itemId: string) => {
+    updateMeasurementGroupById(groupId, (group) => ({
       ...group,
       items: group.items.filter((item) => item.id !== itemId)
     }), "删除量测项");
@@ -12501,6 +12618,38 @@ export function App() {
     }));
   };
 
+  const addMeasurementEditorDraftItem = (node: ModelNode) => {
+    const item = createMeasurementItemForNode(node);
+    if (!item) {
+      window.alert("请先配置至少一个量测类型。");
+      return;
+    }
+    updateMeasurementEditorDraft((group) => ({
+      ...group,
+      items: [...group.items, item]
+    }));
+  };
+
+  const removeMeasurementEditorDraftItem = (itemId: string) => {
+    updateMeasurementEditorDraft((group) => ({
+      ...group,
+      items: group.items.filter((item) => item.id !== itemId)
+    }));
+  };
+
+  const moveMeasurementEditorDraftItem = (itemId: string, direction: -1 | 1) => {
+    updateMeasurementEditorDraft((group) => {
+      const index = group.items.findIndex((item) => item.id === itemId);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= group.items.length) {
+        return group;
+      }
+      const items = [...group.items];
+      [items[index], items[nextIndex]] = [items[nextIndex], items[index]];
+      return { ...group, items };
+    });
+  };
+
   const confirmMeasurementEditorDialog = () => {
     if (!measurementEditorDialog) {
       return;
@@ -12521,212 +12670,320 @@ export function App() {
     setMeasurementEditorDialog(null);
   };
 
-  const renderSelectedNodeMeasurementTable = (node: ModelNode) => (
-    <table className="param-table selected-node-measurement-table">
-      <tbody>
-        <tr className="measurement-section-row">
-          <th>动态量测</th>
-          <td>
-            <div className="measurement-sidebar-actions">
-              <button
-                type="button"
-                disabled={isBrowseMode || Boolean(selectedMeasurementGroup)}
-                onClick={() => addDefaultMeasurementsToNode(node)}
-              >
-                添加默认量测
-              </button>
-              <button
-                type="button"
-                disabled={isBrowseMode}
-                onClick={() => addMeasurementItemToNode(node)}
-              >
-                添加量测项
-              </button>
-              <button
-                type="button"
-                disabled={isBrowseMode || !selectedMeasurementGroup}
-                onClick={() => removeMeasurementsFromNode(node)}
-              >
-                删除量测
-              </button>
-            </div>
-          </td>
-        </tr>
-        {selectedMeasurementGroup ? (
-          <>
-            <tr>
-              <th>量测显示</th>
-              <td>
-                <select
-                  value={selectedMeasurementGroup.visible ? "1" : "0"}
-                  disabled={isBrowseMode}
-                  onChange={(event) => updateSelectedMeasurementGroup((group) => ({ ...group, visible: event.target.value === "1" }))}
-                >
-                  <option value="1">显示</option>
-                  <option value="0">隐藏</option>
-                </select>
-              </td>
-            </tr>
-            <tr>
-              <th>量测布局</th>
-              <td>
-                <select
-                  value={selectedMeasurementGroup.layout}
-                  disabled={isBrowseMode}
-                  onChange={(event) => updateSelectedMeasurementGroup((group) => ({ ...group, layout: event.target.value as MeasurementGroup["layout"] }))}
-                >
-                  <option value="vertical">竖向</option>
-                  <option value="horizontal">横向</option>
-                  <option value="grid">两列</option>
-                </select>
-              </td>
-            </tr>
-            <tr>
-              <th>标签显示</th>
-              <td>
-                <select
-                  aria-label="量测标签显示"
-                  value={selectedMeasurementGroup.labelVisible === false ? "0" : "1"}
-                  disabled={isBrowseMode}
-                  onChange={(event) => updateSelectedMeasurementGroup((group) => ({ ...group, labelVisible: event.target.value === "1" }))}
-                >
-                  <option value="1">显示</option>
-                  <option value="0">隐藏</option>
-                </select>
-              </td>
-            </tr>
-            <tr>
-              <th>单位显示</th>
-              <td>
-                <select
-                  aria-label="量测单位显示"
-                  value={selectedMeasurementGroup.unitVisible === false ? "0" : "1"}
-                  disabled={isBrowseMode}
-                  onChange={(event) => updateSelectedMeasurementGroup((group) => ({ ...group, unitVisible: event.target.value === "1" }))}
-                >
-                  <option value="1">显示</option>
-                  <option value="0">隐藏</option>
-                </select>
-              </td>
-            </tr>
-            {selectedMeasurementGroup.items.map((item, itemIndex) => {
-              const type = measurementTypeById.get(item.measurementTypeId) ?? measurementConfig.measurementTypes[0];
-              const itemColor = item.styleOverride?.color ?? type?.defaultColor ?? "#334155";
-              const itemFontSize = item.styleOverride?.fontSize ?? type?.defaultFontSize ?? 12;
-              return (
-                <Fragment key={item.id}>
-                  <tr className="measurement-item-row">
-                    <th>{`量测${itemIndex + 1}`}</th>
-                    <td>
-                      <div className="measurement-item-toolbar">
-                        <select
-                          value={item.measurementTypeId}
-                          disabled={isBrowseMode}
-                          onChange={(event) => {
-                            const nextTypeId = event.target.value;
-                            updateMeasurementItem(item.id, (current) => ({
-                              ...current,
-                              measurementTypeId: nextTypeId,
-                              sourcePoint: current.sourcePoint || `${node.id}.${nextTypeId}`
-                            }));
-                          }}
-                        >
-                          {measurementConfig.measurementTypes.map((candidate) => (
-                            <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
-                          ))}
-                        </select>
-                        <select
-                          value={item.visible === false ? "0" : "1"}
-                          disabled={isBrowseMode}
-                          onChange={(event) => updateMeasurementItem(item.id, (current) => ({ ...current, visible: event.target.value === "1" }))}
-                        >
-                          <option value="1">显示</option>
-                          <option value="0">隐藏</option>
-                        </select>
-                        <button type="button" disabled={isBrowseMode} onClick={() => removeMeasurementItem(item.id)}>删除</button>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <th>测点</th>
-                    <td>
-                      <input
-                        value={item.sourcePoint}
-                        disabled={isBrowseMode}
-                        placeholder={`${node.id}.${item.measurementTypeId}`}
-                        onChange={(event) => updateMeasurementItem(item.id, (current) => ({ ...current, sourcePoint: event.target.value }))}
-                      />
-                    </td>
-                  </tr>
-                  <tr>
-                    <th>显示</th>
-                    <td>
-                      <div className="measurement-item-display-grid">
-                        <input
-                          value={item.labelOverride ?? ""}
-                          disabled={isBrowseMode}
-                          placeholder={type?.shortLabel ?? "标签"}
-                          aria-label="量测标签"
-                          onChange={(event) => updateMeasurementItem(item.id, (current) => ({ ...current, labelOverride: event.target.value || undefined }))}
-                        />
-                        <input
-                          value={item.unitOverride ?? ""}
-                          disabled={isBrowseMode}
-                          placeholder={type?.defaultUnit ?? "单位"}
-                          aria-label="量测单位"
-                          onChange={(event) => updateMeasurementItem(item.id, (current) => ({ ...current, unitOverride: event.target.value || undefined }))}
-                        />
-                        <input
-                          type="number"
-                          min="0"
-                          max="8"
-                          value={item.decimalsOverride ?? ""}
-                          disabled={isBrowseMode}
-                          placeholder={String(type?.defaultDecimals ?? 3)}
-                          aria-label="量测小数位"
-                          onChange={(event) => updateMeasurementItem(item.id, (current) => ({
-                            ...current,
-                            decimalsOverride: event.target.value === "" ? undefined : Number(event.target.value)
-                          }))}
-                        />
-                        <input
-                          type="color"
-                          value={itemColor}
-                          disabled={isBrowseMode}
-                          aria-label="量测颜色"
-                          onChange={(event) => updateMeasurementItem(item.id, (current) => ({
-                            ...current,
-                            styleOverride: { ...(current.styleOverride ?? {}), color: event.target.value }
-                          }))}
-                        />
-                        <input
-                          type="number"
-                          min="6"
-                          max="96"
-                          value={itemFontSize}
-                          disabled={isBrowseMode}
-                          aria-label="量测字号"
-                          onChange={(event) => updateMeasurementItem(item.id, (current) => ({
-                            ...current,
-                            styleOverride: { ...(current.styleOverride ?? {}), fontSize: Number(event.target.value) }
-                          }))}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                </Fragment>
-              );
-            })}
-          </>
-        ) : (
-          <tr>
-            <th>量测内容</th>
-            <td><span className="graph-readonly-value">当前设备未添加显示量测</span></td>
+  const renderSelectedNodeMeasurementTable = (node: ModelNode) => {
+    const renderGroupRows = (group: MeasurementGroup, groupIndex: number) => {
+      const terminal = group.terminalId ? node.terminals.find((item) => item.id === group.terminalId) : undefined;
+      const groupTitle = terminal?.label
+        ? `${terminal.label}量测组`
+        : group.terminalId
+          ? `${group.terminalId}量测组`
+          : selectedMeasurementGroups.length > 1 ? `量测组${groupIndex + 1}` : "量测组";
+      return (
+        <Fragment key={group.id}>
+          <tr className="measurement-section-row measurement-group-section-row">
+            <th>{groupTitle}</th>
+            <td>
+              <div className="measurement-sidebar-actions">
+                <span className="graph-readonly-value">{terminal ? `端子：${terminal.label || terminal.id}` : "设备级量测"}</span>
+                <button type="button" disabled={isBrowseMode} onClick={() => addMeasurementItemToGroup(node, group)}>添加量测项</button>
+              </div>
+            </td>
           </tr>
-        )}
-      </tbody>
-    </table>
-  );
+          <tr>
+            <th>量测显示</th>
+            <td>
+              <select
+                value={group.visible ? "1" : "0"}
+                disabled={isBrowseMode}
+                onChange={(event) => updateMeasurementGroupById(group.id, (current) => ({ ...current, visible: event.target.value === "1" }))}
+              >
+                <option value="1">显示</option>
+                <option value="0">隐藏</option>
+              </select>
+            </td>
+          </tr>
+          <tr>
+            <th>量测布局</th>
+            <td>
+              <select
+                value={group.layout}
+                disabled={isBrowseMode}
+                onChange={(event) => updateMeasurementGroupById(group.id, (current) => ({ ...current, layout: event.target.value as MeasurementGroup["layout"] }))}
+              >
+                <option value="vertical">竖向</option>
+                <option value="horizontal">横向</option>
+                <option value="grid">两列</option>
+              </select>
+            </td>
+          </tr>
+          <tr>
+            <th>标签显示</th>
+            <td>
+              <select
+                aria-label="量测标签显示"
+                value={group.labelVisible === false ? "0" : "1"}
+                disabled={isBrowseMode}
+                onChange={(event) => updateMeasurementGroupById(group.id, (current) => ({ ...current, labelVisible: event.target.value === "1" }))}
+              >
+                <option value="1">显示</option>
+                <option value="0">隐藏</option>
+              </select>
+            </td>
+          </tr>
+          <tr>
+            <th>单位显示</th>
+            <td>
+              <select
+                aria-label="量测单位显示"
+                value={group.unitVisible === false ? "0" : "1"}
+                disabled={isBrowseMode}
+                onChange={(event) => updateMeasurementGroupById(group.id, (current) => ({ ...current, unitVisible: event.target.value === "1" }))}
+              >
+                <option value="1">显示</option>
+                <option value="0">隐藏</option>
+              </select>
+            </td>
+          </tr>
+          <tr>
+            <th>背景显示</th>
+            <td>
+              <select
+                value={measurementGroupBackgroundColor(group) === "transparent" ? "0" : "1"}
+                disabled={isBrowseMode}
+                onChange={(event) => updateMeasurementGroupById(group.id, (current) => ({
+                  ...current,
+                  backgroundColor: event.target.value === "1"
+                    ? current.backgroundColor === "transparent" ? "#ffffff" : current.backgroundColor ?? "#ffffff"
+                    : "transparent"
+                }), "修改量测组背景显示")}
+              >
+                <option value="1">显示</option>
+                <option value="0">透明</option>
+              </select>
+            </td>
+          </tr>
+          <tr>
+            <th>背景颜色</th>
+            <td>
+              <input
+                type="color"
+                value={measurementGroupColorInputValue(group.backgroundColor, "#ffffff")}
+                disabled={isBrowseMode || measurementGroupBackgroundColor(group) === "transparent"}
+                aria-label="量测组背景颜色"
+                onChange={(event) => updateMeasurementGroupById(group.id, (current) => ({ ...current, backgroundColor: event.target.value }), "修改量测组背景颜色")}
+              />
+            </td>
+          </tr>
+          <tr>
+            <th>边框样式</th>
+            <td>
+              <select
+                value={group.borderStyle ?? "solid"}
+                disabled={isBrowseMode}
+                onChange={(event) => updateMeasurementGroupById(group.id, (current) => ({
+                  ...current,
+                  borderStyle: event.target.value as MeasurementGroup["borderStyle"],
+                  borderWidth: current.borderWidth ?? 1
+                }), "修改量测组边框样式")}
+              >
+                <option value="solid">实线</option>
+                <option value="dashed">虚线</option>
+                <option value="dotted">点线</option>
+                <option value="none">无边框</option>
+              </select>
+            </td>
+          </tr>
+          <tr>
+            <th>边框颜色</th>
+            <td>
+              <input
+                type="color"
+                value={measurementGroupColorInputValue(group.borderColor, "#64748b")}
+                disabled={isBrowseMode || (group.borderStyle ?? "solid") === "none"}
+                aria-label="量测组边框颜色"
+                onChange={(event) => updateMeasurementGroupById(group.id, (current) => ({ ...current, borderColor: event.target.value }), "修改量测组边框颜色")}
+              />
+            </td>
+          </tr>
+          <tr>
+            <th>边框宽度</th>
+            <td>
+              <input
+                type="number"
+                min="0"
+                max="12"
+                step="0.5"
+                value={group.borderWidth ?? 1}
+                disabled={isBrowseMode || (group.borderStyle ?? "solid") === "none"}
+                aria-label="量测组边框宽度"
+                onChange={(event) => updateMeasurementGroupById(group.id, (current) => ({
+                  ...current,
+                  borderWidth: Math.max(0, Math.min(12, Number(event.target.value)))
+                }), "修改量测组边框宽度")}
+              />
+            </td>
+          </tr>
+          {group.items.length === 0 && (
+            <tr>
+              <th>量测内容</th>
+              <td><span className="graph-readonly-value">该端子未定义量测</span></td>
+            </tr>
+          )}
+          {group.items.map((item, itemIndex) => {
+            const type = measurementTypeById.get(item.measurementTypeId) ?? measurementConfig.measurementTypes[0];
+            const itemColor = item.styleOverride?.color ?? type?.defaultColor ?? "#334155";
+            const itemFontSize = item.styleOverride?.fontSize ?? type?.defaultFontSize ?? 12;
+            return (
+              <Fragment key={item.id}>
+                <tr className="measurement-item-row">
+                  <th>{`量测${itemIndex + 1}`}</th>
+                  <td>
+                    <div className="measurement-item-toolbar">
+                      <select
+                        value={item.measurementTypeId}
+                        disabled={isBrowseMode}
+                        onChange={(event) => {
+                          const nextTypeId = event.target.value;
+                          updateMeasurementItem(group.id, item.id, (current) => ({
+                            ...current,
+                            measurementTypeId: nextTypeId,
+                            sourcePoint: current.sourcePoint || (group.terminalId ? `${node.id}.${group.terminalId}.${nextTypeId}` : `${node.id}.${nextTypeId}`)
+                          }));
+                        }}
+                      >
+                        {measurementConfig.measurementTypes.map((candidate) => (
+                          <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={item.visible === false ? "0" : "1"}
+                        disabled={isBrowseMode}
+                        onChange={(event) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, visible: event.target.value === "1" }))}
+                      >
+                        <option value="1">显示</option>
+                        <option value="0">隐藏</option>
+                      </select>
+                      <button type="button" disabled={isBrowseMode} onClick={() => removeMeasurementItem(group.id, item.id)}>删除</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <th>测点</th>
+                  <td>
+                    <input
+                      value={item.sourcePoint}
+                      disabled={isBrowseMode}
+                      placeholder={group.terminalId ? `${node.id}.${group.terminalId}.${item.measurementTypeId}` : `${node.id}.${item.measurementTypeId}`}
+                      onChange={(event) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, sourcePoint: event.target.value }))}
+                    />
+                  </td>
+                </tr>
+                <tr>
+                  <th>显示</th>
+                  <td>
+                    <div className="measurement-item-display-grid">
+                      <input
+                        value={item.labelOverride ?? ""}
+                        disabled={isBrowseMode}
+                        placeholder={type?.shortLabel ?? "标签"}
+                        aria-label="量测标签"
+                        onChange={(event) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, labelOverride: event.target.value || undefined }))}
+                      />
+                      <input
+                        value={item.unitOverride ?? ""}
+                        disabled={isBrowseMode}
+                        placeholder={type?.defaultUnit ?? "单位"}
+                        aria-label="量测单位"
+                        onChange={(event) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, unitOverride: event.target.value || undefined }))}
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        max="8"
+                        value={item.decimalsOverride ?? ""}
+                        disabled={isBrowseMode}
+                        placeholder={String(type?.defaultDecimals ?? 3)}
+                        aria-label="量测小数位"
+                        onChange={(event) => updateMeasurementItem(group.id, item.id, (current) => ({
+                          ...current,
+                          decimalsOverride: event.target.value === "" ? undefined : Number(event.target.value)
+                        }))}
+                      />
+                      <input
+                        type="color"
+                        value={itemColor}
+                        disabled={isBrowseMode}
+                        aria-label="量测颜色"
+                        onChange={(event) => updateMeasurementItem(group.id, item.id, (current) => ({
+                          ...current,
+                          styleOverride: { ...(current.styleOverride ?? {}), color: event.target.value }
+                        }))}
+                      />
+                      <input
+                        type="number"
+                        min="6"
+                        max="96"
+                        value={itemFontSize}
+                        disabled={isBrowseMode}
+                        aria-label="量测字号"
+                        onChange={(event) => updateMeasurementItem(group.id, item.id, (current) => ({
+                          ...current,
+                          styleOverride: { ...(current.styleOverride ?? {}), fontSize: Number(event.target.value) }
+                        }))}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              </Fragment>
+            );
+          })}
+        </Fragment>
+      );
+    };
+
+    return (
+      <table className="param-table selected-node-measurement-table">
+        <tbody>
+          <tr className="measurement-section-row">
+            <th>动态量测</th>
+            <td>
+              <div className="measurement-sidebar-actions">
+                <button
+                  type="button"
+                  disabled={isBrowseMode || selectedMeasurementGroups.length > 0}
+                  onClick={() => addDefaultMeasurementsToNode(node)}
+                >
+                  添加默认量测
+                </button>
+                <button
+                  type="button"
+                  disabled={isBrowseMode}
+                  onClick={() => addMeasurementItemToNode(node)}
+                >
+                  添加量测项
+                </button>
+                <button
+                  type="button"
+                  disabled={isBrowseMode || selectedMeasurementGroups.length === 0}
+                  onClick={() => removeMeasurementsFromNode(node)}
+                >
+                  删除量测
+                </button>
+              </div>
+            </td>
+          </tr>
+          {selectedMeasurementGroups.length > 0 ? (
+            selectedMeasurementGroups.map(renderGroupRows)
+          ) : (
+            <tr>
+              <th>量测内容</th>
+              <td><span className="graph-readonly-value">当前设备未添加显示量测</span></td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    );
+  };
 
   const beginMeasurementDrag = (event: PointerEvent<SVGGElement>, group: MeasurementGroup) => {
     if (isBrowseMode || event.button !== 0 || !svgRef.current) {
@@ -15838,7 +16095,7 @@ export function App() {
     const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette }));
     const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
     const labelMarkup = buildSvgNodeLabelMarkup(node);
-    const measurementMarkup = buildMeasurementGroupMarkup(node);
+    const measurementMarkup = buildMeasurementGroupsMarkup(node);
     return `<g class="single-node-drag-preview-node ${nodeIsBus ? "bus-node" : ""}" transform="translate(${formatSvgNumber(originalPosition.x)} ${formatSvgNumber(originalPosition.y)})">
   <title>${escapeXml(node.name)}</title>
   <g class="node-geometry" transform="${escapeXml(nodeGeometryTransform(node))}">
@@ -22375,7 +22632,17 @@ export function App() {
     const selectedTemplate = measurementDeviceTemplates.find((template) => template.kind === measurementProfileKind) ?? measurementDeviceTemplates[0];
     const selectedKind = selectedTemplate?.kind ?? "";
     const selectedProfileItems = measurementProfileByKind.get(selectedKind)?.items ?? [];
-    const selectedProfileTypeIds = new Set(selectedProfileItems.filter((item) => !item.role).map((item) => item.measurementTypeId));
+    const terminalCount = Math.max(0, selectedTemplate?.terminalCount ?? selectedTemplate?.terminalLabels?.length ?? 0);
+    const measurementProfilePositionOptions = [
+      { value: "device", label: "设备层" },
+      ...(terminalCount > 1 ? [{ value: "all-terminals", label: "全部端子层" }] : []),
+      ...Array.from({ length: terminalCount }, (_, index) => {
+        const terminalLabel = selectedTemplate?.terminalLabels?.[index] ?? `端子${index + 1}`;
+        return { value: `t${index + 1}`, label: `${terminalLabel}端子层` };
+      })
+    ];
+    const measurementProfilePositionValue = (item: DeviceMeasurementProfileItem) => item.position ?? (terminalCount > 1 ? "all-terminals" : "device");
+    const normalizeMeasurementProfilePosition = (value: string) => value === "all-terminals" ? undefined : value;
     return (
       <div className="image-picker-backdrop measurement-config-backdrop" onPointerDown={() => setMeasurementConfigDialogOpen(false)}>
         <section className="measurement-config-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="measurement-config-title">
@@ -22470,18 +22737,123 @@ export function App() {
                   ))}
                 </select>
               </label>
-              <div className="measurement-profile-grid" aria-label="设备类型默认量测绑定">
-                {measurementConfig.measurementTypes.map((type) => (
-                  <label key={type.id} className="measurement-profile-option">
-                    <input
-                      type="checkbox"
-                      checked={selectedProfileTypeIds.has(type.id)}
-                      onChange={(event) => toggleMeasurementProfileType(selectedKind, type.id, event.target.checked)}
-                    />
-                    <span>{type.name}</span>
-                    <small>{type.shortLabel}{type.defaultUnit ? ` / ${type.defaultUnit}` : ""}</small>
-                  </label>
-                ))}
+              <div className="measurement-profile-toolbar">
+                <button
+                  type="button"
+                  disabled={isBrowseMode || measurementConfig.measurementTypes.length === 0 || !selectedKind}
+                  onClick={() => addMeasurementProfileItem(selectedKind)}
+                >
+                  添加量测
+                </button>
+                <span>一个设备类型对应一个表格，一行定义一个默认显示量测。</span>
+              </div>
+              <div className="measurement-table-wrap">
+                <table className="measurement-table measurement-profile-table">
+                  <thead>
+                    <tr>
+                      <th>序号</th>
+                      <th>量测名称</th>
+                      <th>量测类型</th>
+                      <th>量测位置</th>
+                      <th>默认显示</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedProfileItems.length > 0 ? selectedProfileItems.map((item, itemIndex) => {
+                      const currentType = measurementTypeById.get(item.measurementTypeId) ?? measurementConfig.measurementTypes[0];
+                      return (
+                        <tr key={`${item.measurementTypeId}-${item.position ?? "legacy"}-${item.role ?? "item"}-${itemIndex}`}>
+                          <td>{itemIndex + 1}</td>
+                          <td>
+                            <input
+                              value={item.name ?? ""}
+                              disabled={isBrowseMode}
+                              placeholder={currentType?.name ?? "量测名称"}
+                              onChange={(event) => updateMeasurementProfileItem(selectedKind, itemIndex, { name: event.target.value })}
+                            />
+                          </td>
+                          <td>
+                            <select
+                              value={item.measurementTypeId}
+                              disabled={isBrowseMode}
+                              onChange={(event) => {
+                                const nextTypeId = event.target.value;
+                                const nextType = measurementTypeById.get(nextTypeId);
+                                updateMeasurementProfileItem(selectedKind, itemIndex, {
+                                  measurementTypeId: nextTypeId,
+                                  name: item.name || nextType?.name || item.name
+                                });
+                              }}
+                            >
+                              {!measurementTypeById.has(item.measurementTypeId) && (
+                                <option value={item.measurementTypeId}>{item.measurementTypeId}</option>
+                              )}
+                              {measurementConfig.measurementTypes.map((type) => (
+                                <option key={type.id} value={type.id}>{type.name}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td>
+                            <select
+                              value={measurementProfilePositionValue(item)}
+                              disabled={isBrowseMode}
+                              onChange={(event) => updateMeasurementProfileItem(selectedKind, itemIndex, {
+                                position: normalizeMeasurementProfilePosition(event.target.value)
+                              })}
+                            >
+                              {measurementProfilePositionOptions.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td>
+                            <select
+                              value={item.defaultVisible === undefined ? "type" : item.defaultVisible ? "1" : "0"}
+                              disabled={isBrowseMode}
+                              onChange={(event) => updateMeasurementProfileItem(selectedKind, itemIndex, {
+                                defaultVisible: event.target.value === "type" ? undefined : event.target.value === "1"
+                              })}
+                            >
+                              <option value="type">跟随类型</option>
+                              <option value="1">显示</option>
+                              <option value="0">隐藏</option>
+                            </select>
+                          </td>
+                          <td>
+                            <div className="measurement-profile-row-actions">
+                              <button
+                                type="button"
+                                disabled={isBrowseMode || itemIndex === 0}
+                                onClick={() => moveMeasurementProfileItem(selectedKind, itemIndex, -1)}
+                              >
+                                上移
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isBrowseMode || itemIndex === selectedProfileItems.length - 1}
+                                onClick={() => moveMeasurementProfileItem(selectedKind, itemIndex, 1)}
+                              >
+                                下移
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isBrowseMode}
+                                onClick={() => deleteMeasurementProfileItem(selectedKind, itemIndex)}
+                              >
+                                删除
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }) : (
+                      <tr>
+                        <td colSpan={6}>当前设备类型还没有默认量测模板。</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
@@ -22499,6 +22871,8 @@ export function App() {
       return null;
     }
     const draft = measurementEditorDialog.draft;
+    const draftBackgroundHidden = measurementGroupBackgroundColor(draft) === "transparent";
+    const draftBorderHidden = (draft.borderStyle ?? "solid") === "none";
     return (
       <div className="image-picker-backdrop measurement-editor-backdrop" onPointerDown={() => setMeasurementEditorDialog(null)}>
         <section className="measurement-editor-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="measurement-editor-title">
@@ -22557,12 +22931,88 @@ export function App() {
                 <option value="0">隐藏</option>
               </select>
             </label>
+            <label>
+              <span>背景显示</span>
+              <select
+                value={draftBackgroundHidden ? "0" : "1"}
+                disabled={isBrowseMode}
+                onChange={(event) => updateMeasurementEditorDraft((group) => ({
+                  ...group,
+                  backgroundColor: event.target.value === "1"
+                    ? group.backgroundColor === "transparent" ? "#ffffff" : group.backgroundColor ?? "#ffffff"
+                    : "transparent"
+                }))}
+              >
+                <option value="1">显示</option>
+                <option value="0">透明</option>
+              </select>
+            </label>
+            <label>
+              <span>背景颜色</span>
+              <input
+                type="color"
+                value={measurementGroupColorInputValue(draft.backgroundColor, "#ffffff")}
+                disabled={isBrowseMode || draftBackgroundHidden}
+                onChange={(event) => updateMeasurementEditorDraft((group) => ({ ...group, backgroundColor: event.target.value }))}
+              />
+            </label>
+            <label>
+              <span>边框样式</span>
+              <select
+                value={draft.borderStyle ?? "solid"}
+                disabled={isBrowseMode}
+                onChange={(event) => updateMeasurementEditorDraft((group) => ({
+                  ...group,
+                  borderStyle: event.target.value as MeasurementGroup["borderStyle"],
+                  borderWidth: group.borderWidth ?? 1
+                }))}
+              >
+                <option value="solid">实线</option>
+                <option value="dashed">虚线</option>
+                <option value="dotted">点线</option>
+                <option value="none">无边框</option>
+              </select>
+            </label>
+            <label>
+              <span>边框颜色</span>
+              <input
+                type="color"
+                value={measurementGroupColorInputValue(draft.borderColor, "#64748b")}
+                disabled={isBrowseMode || draftBorderHidden}
+                onChange={(event) => updateMeasurementEditorDraft((group) => ({ ...group, borderColor: event.target.value }))}
+              />
+            </label>
+            <label>
+              <span>边框宽度</span>
+              <input
+                type="number"
+                min="0"
+                max="12"
+                step="0.5"
+                value={draft.borderWidth ?? 1}
+                disabled={isBrowseMode || draftBorderHidden}
+                onChange={(event) => updateMeasurementEditorDraft((group) => ({
+                  ...group,
+                  borderWidth: Math.max(0, Math.min(12, Number(event.target.value)))
+                }))}
+              />
+            </label>
+          </div>
+          <div className="measurement-editor-toolbar">
+            <button
+              type="button"
+              disabled={isBrowseMode || measurementConfig.measurementTypes.length === 0}
+              onClick={() => addMeasurementEditorDraftItem(node)}
+            >
+              添加一行量测
+            </button>
           </div>
           <div className="measurement-editor-table-wrap">
             <table className="measurement-editor-table">
               <thead>
                 <tr>
                   <th>序号</th>
+                  <th>操作</th>
                   <th>量测类型</th>
                   <th>显示</th>
                   <th>测点</th>
@@ -22581,6 +23031,31 @@ export function App() {
                   return (
                     <tr key={item.id}>
                       <td>{itemIndex + 1}</td>
+                      <td>
+                        <div className="measurement-editor-row-actions">
+                          <button
+                            type="button"
+                            disabled={isBrowseMode || itemIndex === 0}
+                            onClick={() => moveMeasurementEditorDraftItem(item.id, -1)}
+                          >
+                            上移
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isBrowseMode || itemIndex === draft.items.length - 1}
+                            onClick={() => moveMeasurementEditorDraftItem(item.id, 1)}
+                          >
+                            下移
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isBrowseMode}
+                            onClick={() => removeMeasurementEditorDraftItem(item.id)}
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </td>
                       <td>
                         <select
                           value={item.measurementTypeId}
@@ -22689,7 +23164,7 @@ export function App() {
                   );
                 }) : (
                   <tr>
-                    <td colSpan={9}>当前设备没有量测项。</td>
+                    <td colSpan={10}>当前设备没有量测项。</td>
                   </tr>
                 )}
               </tbody>
@@ -26409,6 +26884,10 @@ export function App() {
           width={formatSvgNumber(metrics.width)}
           height={formatSvgNumber(metrics.height)}
           rx="4"
+          fill={measurementGroupBackgroundColor(group)}
+          stroke={measurementGroupBorderColor(group)}
+          strokeWidth={measurementGroupBorderWidth(group)}
+          strokeDasharray={measurementGroupBorderDashArray(group)}
         />
         {metrics.rows.map((row, index) => {
           const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
