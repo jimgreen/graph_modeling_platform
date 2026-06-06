@@ -94,6 +94,7 @@ import {
   CONVERTER_GLYPH_BORDER_INSET,
   CUSTOM_DEVICE_TEMPLATE_KEY,
   CUSTOM_PARAM_DEFINITIONS_KEY,
+  ALLOW_RESIZE_TRANSFORM_PARAM,
   DEFAULT_COLOR_PALETTE,
   STATIC_ROUTE_AVOIDANCE_PARAM,
   describeContainerTerminalAssociations,
@@ -150,6 +151,7 @@ import {
   normalizeModelLayers,
   normalizeDeviceIndexCounters,
   normalizeNodeTerminalsByTemplate,
+  nodeAllowsResizeTransform,
   normalizeProjectLayers,
   normalizeModelGroups,
   orderNodesByModelLayer,
@@ -843,7 +845,20 @@ type PendingRecordPasteConflict =
   | null;
 type SidePanelResizeState = { side: SidePanelSide; startX: number; startWidth: number } | null;
 type StatusbarResizeState = { startY: number; startHeight: number } | null;
-type ValidationPanelResizeState = { startY: number; startHeight: number } | null;
+type TopologyWarningPanelDragState = {
+  startClientX: number;
+  startClientY: number;
+  startLeft: number;
+  startTop: number;
+} | null;
+type TopologyWarningPanelResizeState = {
+  startClientX: number;
+  startClientY: number;
+  startLeft: number;
+  startTop: number;
+  startWidth: number;
+  startHeight: number;
+} | null;
 export type CanvasResizeEdge = "right" | "bottom" | "corner" | "left" | "top" | "top-left" | "top-right" | "bottom-left";
 export type CanvasResizePreviewMetrics = {
   edge: CanvasResizeEdge;
@@ -1131,6 +1146,12 @@ type UndoGraphPatchScope = {
 type UndoGraphSnapshotPatchPlan =
   | { mode: "full"; dirtyEdgeIds: Set<string> }
   | { mode: "patch"; nodeIds: string[]; edgeIds: string[]; dirtyEdgeIds: Set<string> };
+type BatchCommonParamRow = {
+  key: string;
+  label: string;
+  value: string;
+  mixed: boolean;
+};
 type DraftProjectState = {
   projectName: string;
   activeProjectKey: string;
@@ -1234,6 +1255,8 @@ type CustomDeviceDraft = {
   componentType: string;
   componentName: string;
   backgroundImage: string;
+  backgroundImageAssetId: string;
+  allowResizeTransform: string;
   terminalCount: number;
   terminalTypes: TerminalType[];
   terminalRoles: ContainerTerminalRole[];
@@ -1313,6 +1336,10 @@ const TOPOLOGY_WARNING_PAGE_SIZE = 50;
 const CANVAS_MINIMAP_WIDTH = 220;
 const CANVAS_MINIMAP_HEIGHT = 142;
 const CANVAS_MINIMAP_PADDING = 9;
+const TOPOLOGY_WARNING_PANEL_DEFAULT_WIDTH = 360;
+const TOPOLOGY_WARNING_PANEL_MIN_WIDTH = 280;
+const TOPOLOGY_WARNING_PANEL_MAX_WIDTH = 720;
+const TOPOLOGY_WARNING_PANEL_MARGIN = 12;
 const CANVAS_MINIMAP_MAX_NODE_MARKS = 360;
 const CANVAS_MINIMAP_MAX_ROUTE_MARKS = 160;
 const CANVAS_MINIMAP_DEFER_SAMPLE_THRESHOLD = 1200;
@@ -1422,6 +1449,7 @@ const SCALE_HANDLE_CONFIGS: ScaleHandleConfig[] = [
   { id: "south-west", kind: "scale-both", xDirection: -1, yDirection: 1, className: "diagonal-nesw" },
   { id: "west", kind: "scale-x", xDirection: -1, yDirection: 0, className: "horizontal" }
 ];
+const GROUP_SCALE_HANDLE_CONFIGS = SCALE_HANDLE_CONFIGS.filter((handle) => handle.kind === "scale-both");
 const POWER_UNIT_OPTIONS = ["W", "kW", "MW"];
 const VOLTAGE_UNIT_OPTIONS = ["V", "kV"];
 const CURRENT_UNIT_OPTIONS = ["A", "kA"];
@@ -2545,6 +2573,7 @@ const PARAM_LABELS: Record<string, string> = {
   graph_y: "Y坐标",
   staticWidth: "宽度",
   staticHeight: "高度",
+  allowResizeTransform: "是否允许变形",
   rotation: "旋转角度",
   scaleX: "横向倍率",
   scaleY: "纵向倍率",
@@ -2737,6 +2766,7 @@ const PARAM_OPTIONS: Record<string, string[]> = {
   verticalAlign: ["top", "middle", "bottom"],
   markerStart: ["none", "arrow", "dot"],
   markerEnd: ["none", "arrow", "dot"],
+  allowResizeTransform: ["1", "0"],
   buttonEnabled: ["1", "0"],
   buttonActionType: ["none", "project", "layer", "command"],
   buttonCommand: ["none", "save", "fitCanvas", "centerSelected", "fitSelection", "runTopology", "zoomIn", "zoomOut", "resetZoom"]
@@ -2764,6 +2794,7 @@ const STATIC_BUTTON_COMMAND_LABELS: Record<string, string> = {
 const PARAM_OPTION_LABELS: Record<string, Record<string, string>> = {
   fontFamily: FONT_FAMILY_OPTION_LABELS,
   _labelFontFamily: FONT_FAMILY_OPTION_LABELS,
+  allowResizeTransform: { "1": "允许", "0": "不允许" },
   buttonEnabled: { "1": "启用", "0": "禁用" },
   buttonActionType: STATIC_BUTTON_ACTION_LABELS,
   buttonCommand: STATIC_BUTTON_COMMAND_LABELS,
@@ -2843,6 +2874,37 @@ function paramOptionsForSection(key: string, section?: string) {
 }
 
 const READONLY_E_PARAM_KEYS = new Set(["idx", "node", "i_node", "j_node", "ac_node", "dc_node"]);
+const BATCH_PARAM_EXCLUDED_KEYS = new Set([
+  "idx",
+  "name",
+  "graph_x",
+  "graph_y",
+  "layerId",
+  "terminalCount",
+  "component_type",
+  "is_container",
+  "node",
+  "i_node",
+  "j_node",
+  "ac_node",
+  "dc_node",
+  "_labelText",
+  "_labelX",
+  "_labelY",
+  CUSTOM_DEVICE_TEMPLATE_KEY,
+  CUSTOM_PARAM_DEFINITIONS_KEY
+]);
+const BATCH_PARAM_EXCLUDED_PREFIXES = [
+  "_routableLine",
+  "idx_"
+];
+const canBatchEditParam = (key: string) =>
+  Boolean(key) &&
+  !BATCH_PARAM_EXCLUDED_KEYS.has(key) &&
+  !BATCH_PARAM_EXCLUDED_PREFIXES.some((prefix) => key.startsWith(prefix)) &&
+  !READONLY_E_PARAM_KEYS.has(key) &&
+  !/(^|_)node$/i.test(key) &&
+  !/_node$/i.test(key);
 
 function readSavedProjects(): SavedProjectRecord[] {
   try {
@@ -4072,6 +4134,8 @@ function createEmptyCustomDeviceDraft(attributeLibraryName = "交流设备"): Cu
     componentType: fallbackComponentTypeForAttributeLibrary(attributeLibraryName),
     componentName: "",
     backgroundImage: "",
+    backgroundImageAssetId: "",
+    allowResizeTransform: "0",
     terminalCount: 2,
     terminalTypes: ["ac", "ac", "ac", "ac"],
     terminalRoles: ["single-load", "single-load", "single-load", "single-load"],
@@ -6656,6 +6720,27 @@ function svgDisplayAttribute(visible: boolean) {
   return visible ? "" : ' style="display:none"';
 }
 
+function exportSvgSafeId(value: string, fallback: string) {
+  const normalized = value.trim().replace(/[^A-Za-z0-9_.:-]+/g, "_").replace(/^[^A-Za-z_]+/, "");
+  return normalized || fallback;
+}
+
+function exportSvgLayerId(value: string, fallback: string) {
+  return `${exportSvgSafeId(value, fallback)}_Layer`;
+}
+
+function exportSvgUniqueId(rawId: string, usedIds: Set<string>, fallback: string) {
+  const baseId = exportSvgSafeId(rawId, fallback);
+  let candidate = baseId;
+  let index = 2;
+  while (usedIds.has(candidate)) {
+    candidate = `${baseId}_${index}`;
+    index += 1;
+  }
+  usedIds.add(candidate);
+  return candidate;
+}
+
 function exportSvgLayerScriptMarkup(includeScript: boolean) {
   if (!includeScript) {
     return "";
@@ -6828,7 +6913,12 @@ function exportMeasurementGroupMetrics(node: ModelNode, group: MeasurementGroup,
   return { rows, maxFontSize, lineHeight, columnWidth, columns, width, height };
 }
 
-function buildExportMeasurementGroupMarkup(node: ModelNode, group: MeasurementGroup, measurementConfig: PlatformMeasurementConfig) {
+function buildExportMeasurementGroupMarkup(
+  node: ModelNode,
+  group: MeasurementGroup,
+  measurementConfig: PlatformMeasurementConfig,
+  usedSvgIds?: Set<string>
+) {
   const metrics = exportMeasurementGroupMetrics(node, group, measurementConfig);
   if (!metrics) {
     return "";
@@ -6843,9 +6933,11 @@ function buildExportMeasurementGroupMarkup(node: ModelNode, group: MeasurementGr
     const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
     const textX = -metrics.width / 2 + col * metrics.columnWidth + 7;
     const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
-    return `<text class="export-measurement-item measurement-item" ${exportMeasurementItemMetadataAttributes(node, group, row.item, row.display)} x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}">${escapeXml(row.text)}</text>`;
+    const textId = usedSvgIds ? exportSvgUniqueId(`measurement_${row.item.id}`, usedSvgIds, "measurement_item") : "";
+    const idAttribute = textId ? ` id="${escapeXml(textId)}"` : "";
+    return `<text${idAttribute} class="export-measurement-item measurement-item" measure_type="${escapeXml(row.item.measurementTypeId)}" ${exportMeasurementItemMetadataAttributes(node, group, row.item, row.display)} x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}">${escapeXml(row.text)}</text>`;
   }).join("");
-  return `<g class="export-measurement-group measurement-group" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>
+  return `<g class="export-measurement-group measurement-group" conn-dev="${escapeXml(node.id)}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>
   <title>${escapeXml(`${node.name} 动态量测`)}</title>
   <rect class="measurement-group-bg" x="${formatSvgNumber(-metrics.width / 2)}" y="${formatSvgNumber(-metrics.height / 2)}" width="${formatSvgNumber(metrics.width)}" height="${formatSvgNumber(metrics.height)}" rx="4" fill="${escapeXml(exportMeasurementGroupBackgroundColor(group))}" stroke="${escapeXml(exportMeasurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(exportMeasurementGroupBorderWidth(group))}"${borderDashAttribute}/>
   ${rowsMarkup}
@@ -6867,6 +6959,23 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
   const layerVisible = (layerId: string) => layerById.get(layerId)?.visible !== false;
   const nodeLayerId = (node: ModelNode) =>
     layerById.has(node.layerId ?? "") ? node.layerId! : DEFAULT_MODEL_LAYER_ID;
+  const usedSvgIds = new Set<string>(["root_g"]);
+  const rootId = "root_g";
+  const defsId = exportSvgUniqueId("svg_defs", usedSvgIds, "svg_defs");
+  const backgroundLayerId = exportSvgUniqueId(exportSvgLayerId("Background", "Background"), usedSvgIds, "Background_Layer");
+  const segmentLayerId = exportSvgUniqueId(exportSvgLayerId("Segment", "Segment"), usedSvgIds, "Segment_Layer");
+  const textLayerId = exportSvgUniqueId(exportSvgLayerId("Text", "Text"), usedSvgIds, "Text_Layer");
+  const measurementLayerId = exportSvgUniqueId(exportSvgLayerId("Measurement", "Measurement"), usedSvgIds, "Measurement_Layer");
+  const otherLayerId = exportSvgUniqueId(exportSvgLayerId("Other", "Other"), usedSvgIds, "Other_Layer");
+  const exportNodeType = (node: ModelNode) => inferESection(node.kind, node.params) || node.kind || "Other";
+  const exportNodeLayerKey = (node: ModelNode) => isStaticNode(node) ? "Other" : exportNodeType(node);
+  const nodeTypeLayerIds = new Map<string, string>();
+  for (const node of exportNodes) {
+    const layerKey = exportNodeLayerKey(node);
+    if (!nodeTypeLayerIds.has(layerKey)) {
+      nodeTypeLayerIds.set(layerKey, exportSvgUniqueId(exportSvgLayerId(layerKey, "Device"), usedSvgIds, "Device_Layer"));
+    }
+  }
   const resolveExportLayerButtonTargetIds = (node: ModelNode) => {
     if (!isStaticButtonCapableKind(node.kind) || node.params.buttonEnabled !== "1" || node.params.buttonActionType !== "layer") {
       return [];
@@ -6914,14 +7023,20 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
             .filter(Boolean)
             .join("\n")
         : "";
-      return `<g class="export-edge" data-export-edge-id="${escapeXml(route.edgeId)}" data-export-source-layer-id="${escapeXml(sourceLayerId)}" data-export-target-layer-id="${escapeXml(targetLayerId)}"${svgDisplayAttribute(edgeVisible)}>
+      const edgeElementId = exportSvgUniqueId(`edge_${route.edgeId}`, usedSvgIds, "edge");
+      return `<g id="${escapeXml(edgeElementId)}" class="export-edge" data-export-edge-id="${escapeXml(route.edgeId)}" data-export-source-layer-id="${escapeXml(sourceLayerId)}" data-export-target-layer-id="${escapeXml(targetLayerId)}"${svgDisplayAttribute(edgeVisible)}>
 <path d="${route.path}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${internalConnectors ? `\n${internalConnectors}` : ""}
 </g>`;
     })
     .join("\n");
-  const nodeMarkup = exportNodes
-    .map((node) => {
+  const nodeSymbolMarkup: string[] = [];
+  const nodeLayerMarkup = new Map<string, string[]>();
+  for (const layerId of nodeTypeLayerIds.values()) {
+    nodeLayerMarkup.set(layerId, []);
+  }
+  exportNodes.forEach((node) => {
       const layerId = nodeLayerId(node);
+      const typeLayerId = nodeTypeLayerIds.get(exportNodeLayerKey(node)) ?? otherLayerId;
       const targetLayerIds = resolveExportLayerButtonTargetIds(node);
       const exportButtonAttributes = targetLayerIds.length > 0
         ? ` data-export-button-action="layer" data-export-button-target-layer-id="${escapeXml(targetLayerIds[0])}" data-export-button-target-layer-ids="${escapeXml(targetLayerIds.join(","))}"`
@@ -6949,7 +7064,9 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
           : "";
       const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
       const labelMarkup = buildSvgNodeLabelMarkup(node);
-      return `<g class="export-node${exportButtonClass}" transform="translate(${node.position.x} ${node.position.y})" data-export-node-id="${escapeXml(node.id)}" data-export-layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}>
+      const symbolId = exportSvgUniqueId(`symbol_${exportNodeType(node)}_${node.id}`, usedSvgIds, "device_symbol");
+      const useId = exportSvgUniqueId(node.id, usedSvgIds, "device");
+      nodeSymbolMarkup.push(`<symbol id="${escapeXml(symbolId)}" viewBox="${formatSvgNumber(-node.size.width / 2)} ${formatSvgNumber(-node.size.height / 2)} ${formatSvgNumber(node.size.width)} ${formatSvgNumber(node.size.height)}">
   <title>${escapeXml(node.name)}</title>
   <g class="export-node-geometry" transform="${geometryTransform}">
   ${glyphMarkup}
@@ -6965,9 +7082,9 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
   ${terminalMarkup}
   </g>
   ${labelMarkup}
-</g>`;
-    })
-    .join("\n");
+</symbol>`);
+      nodeLayerMarkup.get(typeLayerId)?.push(`<use id="${escapeXml(useId)}" class="export-node${exportButtonClass}" href="#${escapeXml(symbolId)}" xlink:href="#${escapeXml(symbolId)}" transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})" data-export-node-id="${escapeXml(node.id)}" data-export-layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}/>`);
+  });
   const measurementConfig = canvasSize.measurementConfig ?? DEFAULT_MEASUREMENT_CONFIG;
   const measurements = canvasSize.measurements ?? EMPTY_PROJECT_MEASUREMENTS;
   const measurementNodeById = new Map(exportNodes.map((node) => [node.id, node]));
@@ -6978,25 +7095,47 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
         return "";
       }
       const layerId = nodeLayerId(node);
-      const groupMarkup = buildExportMeasurementGroupMarkup(node, group, measurementConfig);
+      const groupMarkup = buildExportMeasurementGroupMarkup(node, group, measurementConfig, usedSvgIds);
       if (!groupMarkup) {
         return "";
       }
-      return `<g class="export-measurement-layer" data-export-layer-id="${escapeXml(layerId)}"${svgDisplayAttribute(layerVisible(layerId))}>
+      const measurementWrapperId = exportSvgUniqueId(`measurement_${group.id}`, usedSvgIds, "measurement");
+      return `<g id="${escapeXml(measurementWrapperId)}" class="export-measurement-layer" data-export-layer-id="${escapeXml(layerId)}"${svgDisplayAttribute(layerVisible(layerId))}>
 ${groupMarkup}
 </g>`;
     })
     .filter(Boolean)
     .join("\n");
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasSize.width}" height="${canvasSize.height}" viewBox="0 0 ${canvasSize.width} ${canvasSize.height}" data-export-active-layer-id="${escapeXml(activeExportLayerId)}">
+  const backgroundMarkup = `<rect width="100%" height="100%" fill="${backgroundColor}"/>
+${backgroundImage ? `<image href="${backgroundImage}" x="0" y="0" width="${canvasSize.width}" height="${canvasSize.height}" preserveAspectRatio="xMidYMid slice"/>` : ""}`;
+  const deviceLayerMarkup = Array.from(nodeTypeLayerIds.entries())
+    .map(([layerKey, layerId]) => `<g id="${escapeXml(layerId)}" data-export-device-type="${escapeXml(layerKey)}">
+${(nodeLayerMarkup.get(layerId) ?? []).join("\n")}
+</g>`)
+    .join("\n");
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,${canvasSize.width},${canvasSize.height}" data-export-active-layer-id="${escapeXml(activeExportLayerId)}">
+<defs id="${escapeXml(defsId)}">
+${nodeSymbolMarkup.join("\n")}
 <g class="export-layer-definitions" style="display:none">
 ${exportLayerDefinitionsMarkup}
 </g>
-<rect width="100%" height="100%" fill="${backgroundColor}"/>
-${backgroundImage ? `<image href="${backgroundImage}" x="0" y="0" width="${canvasSize.width}" height="${canvasSize.height}" preserveAspectRatio="xMidYMid slice"/>` : ""}
+</defs>
+<g id="${rootId}">
+<g id="${escapeXml(backgroundLayerId)}">
+${backgroundMarkup}
+</g>
+<g id="${escapeXml(segmentLayerId)}">
 ${edgeMarkup}
-${nodeMarkup}
+</g>
+${deviceLayerMarkup}
+<g id="${escapeXml(textLayerId)}">
+</g>
+<g id="${escapeXml(measurementLayerId)}">
 ${measurementMarkup}
+</g>
+<g id="${escapeXml(otherLayerId)}">
+</g>
+</g>
 ${exportSvgLayerScriptMarkup(includeLayerScript)}
 </svg>`;
 }
@@ -7248,6 +7387,8 @@ export function App() {
   const [activeVoltageBaseTerminalKey, setActiveVoltageBaseTerminalKey] = useState("");
   const [connectionRedrawDialogOpen, setConnectionRedrawDialogOpen] = useState(false);
   const [connectionRedrawScope, setConnectionRedrawScope] = useState<ConnectionRedrawScope>("selected");
+  const [filterSelectionDialogOpen, setFilterSelectionDialogOpen] = useState(false);
+  const [filterSelectionTypeKeys, setFilterSelectionTypeKeys] = useState<string[]>([]);
   const [connectSource, setConnectSource] = useState<{ nodeId: string; terminalId: string; point?: Point } | null>(null);
   const [staticDrawing, setStaticDrawing] = useState<StaticDrawingState | null>(null);
   const [libraryPlacement, setLibraryPlacement] = useState<LibraryPlacementState | null>(null);
@@ -7327,8 +7468,7 @@ export function App() {
     markGraphicContextMenuHandled();
     setContextMenu(menu);
   };
-  const [inspectorTab, setInspectorTab] = useState<"model" | "graph" | "device">("graph");
-  const [graphInfoView, setGraphInfoView] = useState<"tree" | "selected">("selected");
+  const [inspectorTab, setInspectorTab] = useState<"model" | "tree" | "graph" | "device">("graph");
   const [selectedDeviceInfoView, setSelectedDeviceInfoView] = useState<"model" | "measurement">("model");
   const [leftPanelTab, setLeftPanelTab] = useState<"projects" | "library" | "templates">("projects");
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
@@ -7345,12 +7485,16 @@ export function App() {
   const [statusbarHeight, setStatusbarHeight] = useState(() =>
     readStoredPanelDimension(STATUSBAR_HEIGHT_STORAGE_KEY, STATUSBAR_DEFAULT_HEIGHT, STATUSBAR_MIN_HEIGHT, STATUSBAR_MAX_HEIGHT)
   );
-  const [validationPanelHeight, setValidationPanelHeight] = useState(() =>
+  const [topologyWarningPanelHeight, setTopologyWarningPanelHeight] = useState(() =>
     readStoredPanelDimension(VALIDATION_PANEL_HEIGHT_STORAGE_KEY, VALIDATION_PANEL_DEFAULT_HEIGHT, VALIDATION_PANEL_MIN_HEIGHT, VALIDATION_PANEL_MAX_HEIGHT)
   );
+  const [topologyWarningPanelWidth, setTopologyWarningPanelWidth] = useState(TOPOLOGY_WARNING_PANEL_DEFAULT_WIDTH);
+  const [topologyWarningPanelPosition, setTopologyWarningPanelPosition] = useState<{ left: number; top: number } | null>(null);
+  const [topologyWarningPanelClosed, setTopologyWarningPanelClosed] = useState(false);
   const [sidePanelResize, setSidePanelResize] = useState<SidePanelResizeState>(null);
   const [statusbarResize, setStatusbarResize] = useState<StatusbarResizeState>(null);
-  const [validationPanelResize, setValidationPanelResize] = useState<ValidationPanelResizeState>(null);
+  const [topologyWarningPanelDrag, setTopologyWarningPanelDrag] = useState<TopologyWarningPanelDragState>(null);
+  const [topologyWarningPanelResize, setTopologyWarningPanelResize] = useState<TopologyWarningPanelResizeState>(null);
   const [canvasResizeDrag, setCanvasResizeDrag] = useState<CanvasResizeState>(null);
   const [leftPanelAutoVisible, setLeftPanelAutoVisible] = useState(false);
   const [rightPanelAutoVisible, setRightPanelAutoVisible] = useState(false);
@@ -7414,6 +7558,7 @@ export function App() {
   const [topologyWarningPage, setTopologyWarningPage] = useState(0);
   const [topology, setTopology] = useState<Topology>(EMPTY_TOPOLOGY);
   const [topologyStatus, setTopologyStatus] = useState<TopologyRunStatus>(INITIAL_TOPOLOGY_STATUS);
+  const topologyWarningPanelRef = useRef<HTMLElement | null>(null);
   const [routeRenderingReady, setRouteRenderingReady] = useState(false);
   const [savedRouteCrossingArcsReady, setSavedRouteCrossingArcsReady] = useState(false);
   const [backgroundPageRenderReady, setBackgroundPageRenderReady] = useState(false);
@@ -7748,6 +7893,30 @@ export function App() {
     const layerNodes = graphStore.nodesByLayerId.get(activeLayerId) ?? [];
     return visibleNodes === nodes && layerNodes.length === nodes.length ? visibleNodes : visibleNodes === nodes ? layerNodes : layerNodes.filter((node) => visibleNodeIdSet.has(node.id));
   }, [activeLayer?.visible, activeLayerId, graphStore.nodesByLayerId, nodes, visibleNodeIdSet, visibleNodes]);
+  const filterSelectionTemplateLabelByKind = useMemo(
+    () => new Map(DEVICE_LIBRARY.map((template) => [template.kind, template.label])),
+    []
+  );
+  const filterSelectionTypeKey = (node: ModelNode) => node.kind;
+  const filterSelectionTypeOptions = useMemo(() => {
+    const optionMap = new Map<string, { typeKey: string; label: string; count: number }>();
+    for (const node of activeLayerNodes) {
+      const typeKey = filterSelectionTypeKey(node);
+      const current = optionMap.get(typeKey);
+      if (current) {
+        current.count += 1;
+        continue;
+      }
+      optionMap.set(typeKey, {
+        typeKey,
+        label: filterSelectionTemplateLabelByKind.get(typeKey) ?? node.params.component_type ?? node.name ?? typeKey,
+        count: 1
+      });
+    }
+    return Array.from(optionMap.values()).sort((first, second) =>
+      first.label.localeCompare(second.label, "zh-Hans-CN") || first.typeKey.localeCompare(second.typeKey)
+    );
+  }, [activeLayerNodes, filterSelectionTemplateLabelByKind]);
   const activeLayerNodeIdSet = useMemo(
     () => (activeLayerNodes === visibleNodes ? visibleNodeIdSet : new Set(activeLayerNodes.map((node) => node.id))),
     [activeLayerNodes, visibleNodeIdSet, visibleNodes]
@@ -7819,6 +7988,28 @@ export function App() {
   const activeSelectedEdgeIds = activeCanvasSelection.edgeIds;
   const activeSelectedEdgeSet = useMemo(() => new Set(displaySelectedEdgeIds), [displaySelectedEdgeIds]);
   const displaySelectedEdgeKey = useMemo(() => displaySelectedEdgeIds.join("|"), [displaySelectedEdgeIds]);
+  const batchCommonParamRows = useMemo<BatchCommonParamRow[]>(() => {
+    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []);
+    if (selectedNodes.length < 2) {
+      return [];
+    }
+    const firstNode = selectedNodes[0];
+    const commonKeys = Object.keys(firstNode.params)
+      .filter((key) => canBatchEditParam(key))
+      .filter((key) => selectedNodes.every((node) => Object.prototype.hasOwnProperty.call(node.params, key)));
+    return commonKeys
+      .map((key) => {
+        const values = selectedNodes.map((node) => node.params[key] ?? "");
+        const definition = parseCustomDefinitions(firstNode.params).find((item) => item.enName === key);
+        return {
+          key,
+          label: definition?.cnName ?? PARAM_LABELS[key] ?? key,
+          value: values[0] ?? "",
+          mixed: values.some((value) => value !== values[0])
+        };
+      })
+      .sort((first, second) => first.label.localeCompare(second.label, "zh-Hans-CN") || first.key.localeCompare(second.key));
+  }, [activeSelectedNodeIds, nodeById]);
   const selectedEdge = activeLayerEdgeIdSet.has(selectedEdgeId) ? edgeById.get(selectedEdgeId) : undefined;
   const inspectorSelectedNode = selectedNode;
   const selectedMeasurementGroups = useMemo(
@@ -9338,7 +9529,7 @@ export function App() {
     staticDrawing ||
     libraryPlacement
   );
-  const graphTreePanelActive = inspectorTab === "graph" && graphInfoView === "tree";
+  const graphTreePanelActive = inspectorTab === "tree";
   const elementTreeLayerSignature = useMemo(
     () => layers.map((layer) => `${layer.id}:${layer.visible !== false ? "1" : "0"}`).join("|"),
     [layers]
@@ -9667,6 +9858,12 @@ export function App() {
 
   useEffect(() => {
     setTopologyWarningPage((current) => Math.min(current, Math.max(0, Math.ceil(inspectorTopologyErrors.length / TOPOLOGY_WARNING_PAGE_SIZE) - 1)));
+  }, [inspectorTopologyErrors.length]);
+
+  useEffect(() => {
+    if (inspectorTopologyErrors.length === 0) {
+      setTopologyWarningPanelClosed(false);
+    }
   }, [inspectorTopologyErrors.length]);
 
   const canvasBounds = useMemo<CanvasBounds>(() => ({ width: canvasWidth, height: canvasHeight }), [canvasHeight, canvasWidth]);
@@ -13797,18 +13994,19 @@ export function App() {
   }, [statusbarResize]);
 
   useEffect(() => {
-    if (!validationPanelResize) {
+    if (!topologyWarningPanelDrag) {
       return;
     }
     const handlePointerMove = (event: globalThis.PointerEvent) => {
-      const deltaY = event.clientY - validationPanelResize.startY;
-      const viewportMax = Math.max(VALIDATION_PANEL_MIN_HEIGHT, Math.min(VALIDATION_PANEL_MAX_HEIGHT, window.innerHeight - 240));
-      setValidationPanelHeight(
-        clampPanelDimension(validationPanelResize.startHeight - deltaY, VALIDATION_PANEL_MIN_HEIGHT, viewportMax)
-      );
+      const nextLeft = topologyWarningPanelDrag.startLeft + event.clientX - topologyWarningPanelDrag.startClientX;
+      const nextTop = topologyWarningPanelDrag.startTop + event.clientY - topologyWarningPanelDrag.startClientY;
+      setTopologyWarningPanelPosition({
+        left: clampNumber(nextLeft, TOPOLOGY_WARNING_PANEL_MARGIN, Math.max(TOPOLOGY_WARNING_PANEL_MARGIN, window.innerWidth - topologyWarningPanelWidth - TOPOLOGY_WARNING_PANEL_MARGIN)),
+        top: clampNumber(nextTop, TOPOLOGY_WARNING_PANEL_MARGIN, Math.max(TOPOLOGY_WARNING_PANEL_MARGIN, window.innerHeight - topologyWarningPanelHeight - TOPOLOGY_WARNING_PANEL_MARGIN))
+      });
     };
     const handlePointerUp = () => {
-      setValidationPanelResize(null);
+      setTopologyWarningPanelDrag(null);
     };
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
@@ -13818,7 +14016,42 @@ export function App() {
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
     };
-  }, [validationPanelResize]);
+  }, [topologyWarningPanelDrag, topologyWarningPanelHeight, topologyWarningPanelWidth]);
+
+  useEffect(() => {
+    if (!topologyWarningPanelResize) {
+      return;
+    }
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      const maxWidth = Math.max(TOPOLOGY_WARNING_PANEL_MIN_WIDTH, Math.min(TOPOLOGY_WARNING_PANEL_MAX_WIDTH, window.innerWidth - topologyWarningPanelResize.startLeft - TOPOLOGY_WARNING_PANEL_MARGIN));
+      const maxHeight = Math.max(VALIDATION_PANEL_MIN_HEIGHT, Math.min(VALIDATION_PANEL_MAX_HEIGHT, window.innerHeight - topologyWarningPanelResize.startTop - TOPOLOGY_WARNING_PANEL_MARGIN));
+      setTopologyWarningPanelWidth(clampPanelDimension(
+        topologyWarningPanelResize.startWidth + event.clientX - topologyWarningPanelResize.startClientX,
+        TOPOLOGY_WARNING_PANEL_MIN_WIDTH,
+        maxWidth
+      ));
+      setTopologyWarningPanelHeight(clampPanelDimension(
+        topologyWarningPanelResize.startHeight + event.clientY - topologyWarningPanelResize.startClientY,
+        VALIDATION_PANEL_MIN_HEIGHT,
+        maxHeight
+      ));
+      setTopologyWarningPanelPosition({
+        left: topologyWarningPanelResize.startLeft,
+        top: topologyWarningPanelResize.startTop
+      });
+    };
+    const handlePointerUp = () => {
+      setTopologyWarningPanelResize(null);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [topologyWarningPanelResize]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -14069,11 +14302,11 @@ export function App() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(VALIDATION_PANEL_HEIGHT_STORAGE_KEY, String(validationPanelHeight));
+      window.localStorage.setItem(VALIDATION_PANEL_HEIGHT_STORAGE_KEY, String(topologyWarningPanelHeight));
     } catch {
-      // Ignore storage failures; validation panel height still works for the active session.
+      // Ignore storage failures; topology warning panel height still works for the active session.
     }
-  }, [validationPanelHeight]);
+  }, [topologyWarningPanelHeight]);
 
   const routeForCurrentEdgeSave = (edge: Edge): RoutedEdge | undefined => {
     const cachedRoute =
@@ -14504,7 +14737,6 @@ export function App() {
     const point = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
     selectCanvasGraphics([node.id], [], { scope: "direct" });
     setInspectorTab("graph");
-    setGraphInfoView("selected");
     activateInspectorFromCanvas();
     setNodeLabelDrag({
       nodeId: node.id,
@@ -14534,7 +14766,6 @@ export function App() {
     }
     selectCanvasGraphics([node.id], [], { scope: "direct" });
     setInspectorTab("graph");
-    setGraphInfoView("selected");
     activateInspectorFromCanvas();
     setNodeLabelRotateDrag({
       nodeId: node.id,
@@ -15000,6 +15231,39 @@ export function App() {
     resetConnectPreviewState();
     setRewiring(null);
     writeOperationLog("框选模式：移动鼠标确定范围，左键落点完成选择");
+  };
+
+  const openFilterSelectionDialog = () => {
+    const activeSelectedTypeKeys = Array.from(new Set(
+      activeSelectedNodeIds
+        .flatMap((nodeId) => {
+          const node = nodeById.get(nodeId);
+          return node && activeLayerNodeIdSet.has(node.id) ? [filterSelectionTypeKey(node)] : [];
+        })
+    ));
+    setFilterSelectionTypeKeys(activeSelectedTypeKeys);
+    setFilterSelectionDialogOpen(true);
+  };
+
+  const toggleFilterSelectionType = (typeKey: string) => {
+    setFilterSelectionTypeKeys((current) =>
+      current.includes(typeKey)
+        ? current.filter((item) => item !== typeKey)
+        : [...current, typeKey]
+    );
+  };
+
+  const confirmFilterSelectionDialog = () => {
+    const selectedTypeKeys = new Set(filterSelectionTypeKeys);
+    const nextSelectedNodes = selectedTypeKeys.size > 0
+      ? activeLayerNodes.filter((node) => selectedTypeKeys.has(filterSelectionTypeKey(node)))
+      : [];
+    selectCanvasGraphics(nextSelectedNodes.map((node) => node.id), [], { scope: "direct" });
+    setConnectSource(null);
+    resetConnectPreviewState();
+    setRewiring(null);
+    setFilterSelectionDialogOpen(false);
+    writeOperationLog(`过滤选择：选中 ${nextSelectedNodes.length} 个图元`);
   };
 
   const finishMarqueeSelection = () => {
@@ -19179,6 +19443,36 @@ export function App() {
     patchGraphNodes([nextNode]);
   };
 
+  const applyBatchCommonParam = (key: string, value: string) => {
+    if (!requireEditMode("批量修改图元参数")) {
+      return;
+    }
+    if (!canBatchEditParam(key)) {
+      return;
+    }
+    const targetNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []);
+    const nextNodes = targetNodes
+      .filter((node) => Object.prototype.hasOwnProperty.call(node.params, key))
+      .filter((node) => node.params[key] !== value)
+      .map((node) => ({
+        ...node,
+        params: { ...node.params, [key]: value }
+      }));
+    if (nextNodes.length === 0) {
+      return;
+    }
+    const nextNodeIds = nextNodes.map((node) => node.id);
+    if (NODE_LABEL_FOOTPRINT_PARAM_KEYS.has(key)) {
+      const affectedEdges = edgeListForNodeIds(nextNodeIds);
+      pushUndoSnapshot(true, false, undoScopeForGraphPatch(nextNodeIds, affectedEdges.map((edge) => edge.id)));
+      commitNodeFootprintUpdates(nextNodes);
+      return;
+    }
+    pushUndoSnapshot(true, false, undoScopeForGraphPatch(nextNodeIds, []));
+    patchGraphNodes(nextNodes);
+    writeOperationLog(`批量修改共同属性：${PARAM_LABELS[key] ?? key}`);
+  };
+
   const updateElementTreeNodeIdentity = (nodeId: string, field: "idx" | "name", value: string) => {
     if (!requireEditMode("修改图元树参数")) {
       return;
@@ -19261,6 +19555,32 @@ export function App() {
       </label>
     ) : (
       control
+    );
+  };
+
+  const renderBatchCommonParamEditor = (row: BatchCommonParamRow) => {
+    const value = row.mixed ? "" : row.value;
+    const options = paramOptionsForSection(row.key);
+    const optionLabels = PARAM_OPTION_LABELS[row.key] ?? {};
+    if (options) {
+      return (
+        <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonParam(row.key, event.target.value)}>
+          {row.mixed && <option value="">多个不同值</option>}
+          {options.map((option) => (
+            <option key={option} value={option}>
+              {optionLabels[option] ?? option}
+            </option>
+          ))}
+        </select>
+      );
+    }
+    return (
+      <input
+        value={value}
+        disabled={isBrowseMode}
+        placeholder={row.mixed ? "多个不同值" : undefined}
+        onChange={(event) => applyBatchCommonParam(row.key, event.target.value)}
+      />
     );
   };
 
@@ -19447,7 +19767,7 @@ export function App() {
     pointerInsideElementRect(event, rightPanelRef.current, 1);
 
   const updateAutoPanelVisibility = (side: SidePanelSide, event: Parameters<typeof nextSidePanelAutoVisible>[3]) => {
-    if (sidePanelResize || validationPanelResize) {
+    if (sidePanelResize || topologyWarningPanelDrag || topologyWarningPanelResize) {
       return;
     }
     if (side === "left" && event === "panel-leave" && projectMenu) {
@@ -19498,7 +19818,7 @@ export function App() {
   };
 
   const hideAutoPanelsFromWorkspace = (event: PointerEvent<HTMLElement>) => {
-    if (sidePanelResize || validationPanelResize) {
+    if (sidePanelResize || topologyWarningPanelDrag || topologyWarningPanelResize) {
       return;
     }
     if (shouldIgnoreWorkspaceAutoHide(
@@ -20033,12 +20353,59 @@ export function App() {
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
-  const startValidationPanelResize = (event: PointerEvent<HTMLDivElement>) => {
+  const currentTopologyWarningPanelRect = () => {
+    const rect = topologyWarningPanelRef.current?.getBoundingClientRect();
+    return rect
+      ? {
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height
+        }
+      : {
+          left: Math.max(
+            TOPOLOGY_WARNING_PANEL_MARGIN,
+            window.innerWidth -
+              (rightPanelVisible ? rightPanelWidth + 28 : 16) -
+              CANVAS_MINIMAP_WIDTH -
+              TOPOLOGY_WARNING_PANEL_MARGIN -
+              topologyWarningPanelWidth
+          ),
+          top: Math.max(
+            TOPOLOGY_WARNING_PANEL_MARGIN,
+            window.innerHeight - statusbarHeight - 14 - CANVAS_MINIMAP_HEIGHT
+          ),
+          width: topologyWarningPanelWidth,
+          height: topologyWarningPanelHeight
+        };
+  };
+
+  const startTopologyWarningPanelDrag = (event: PointerEvent<HTMLElement>) => {
     event.preventDefault();
     event.stopPropagation();
-    setValidationPanelResize({
-      startY: event.clientY,
-      startHeight: validationPanelHeight
+    const rect = currentTopologyWarningPanelRect();
+    setTopologyWarningPanelPosition({ left: rect.left, top: rect.top });
+    setTopologyWarningPanelDrag({
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startLeft: rect.left,
+      startTop: rect.top
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const startTopologyWarningPanelResize = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = currentTopologyWarningPanelRect();
+    setTopologyWarningPanelPosition({ left: rect.left, top: rect.top });
+    setTopologyWarningPanelResize({
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startLeft: rect.left,
+      startTop: rect.top,
+      startWidth: rect.width,
+      startHeight: rect.height
     });
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -20422,6 +20789,9 @@ export function App() {
     if (!requireEditMode("拖拽图元")) {
       return;
     }
+    if (kind !== "rotate" && kind !== "scale-both") {
+      return;
+    }
     const center = selectionRectCenter(unit.bounds);
     const startPoint = svgRef.current
       ? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY))
@@ -20437,8 +20807,9 @@ export function App() {
       rotationStartPoint: kind === "rotate" ? { x: center.x, y: unit.bounds.top - TRANSFORM_ROTATE_HANDLE_GAP } : undefined,
       originalNodes: snapshotGroupTransformNodes(unit),
       originalEdgeRoutes: snapshotGroupTransformEdgeRoutes(unit),
-      handleXDirection: kind === "scale-y" ? 0 : startPoint.x >= center.x ? 1 : -1,
-      handleYDirection: kind === "scale-x" ? 0 : startPoint.y >= center.y ? 1 : -1
+      proportionalScale: kind !== "rotate",
+      handleXDirection: kind === "rotate" ? 0 : startPoint.x >= center.x ? 1 : -1,
+      handleYDirection: kind === "rotate" ? 0 : startPoint.y >= center.y ? 1 : -1
     });
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -20455,6 +20826,9 @@ export function App() {
       return;
     }
     if (!requireEditMode("拖拽图元")) {
+      return;
+    }
+    if (kind !== "rotate" && kind !== "scale-both" && !nodeAllowsResizeTransform(node)) {
       return;
     }
     transformDragChangedRef.current = false;
@@ -21577,7 +21951,7 @@ export function App() {
       if (isGroupTransformDrag(transformDrag)) {
         const transformForMove = transformDrag.kind === "rotate"
           ? transformDrag
-          : { ...transformDrag, proportionalScale: event.shiftKey };
+          : { ...transformDrag, proportionalScale: true };
         const nextNodeUpdates = buildGroupTransformNodeUpdates(transformForMove, point, currentStore);
         if (nextNodeUpdates.length === 0) {
           return;
@@ -25978,7 +26352,7 @@ export function App() {
   };
 
   const chooseCustomDeviceBackground = (event: ChangeEvent<HTMLInputElement>) => {
-    if (!requireEditMode("选择元件图片")) {
+    if (!requireEditMode("上传元件图标")) {
       event.target.value = "";
       return;
     }
@@ -25988,8 +26362,24 @@ export function App() {
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => {
-      setCustomDeviceDraft((current) => ({ ...current, backgroundImage: String(reader.result ?? ""), error: "" }));
+    reader.onload = async () => {
+      const imageData = String(reader.result ?? "");
+      let asset: ImageAsset | null = null;
+      try {
+        const uploadedAsset = await uploadBackendImage(file.name, imageData, activeImageFolderId);
+        asset = uploadedAsset;
+        setImageAssetList((current) => [uploadedAsset, ...current.filter((item) => item.id !== uploadedAsset.id)]);
+        setImageAssets((current) => ({ ...current, [uploadedAsset.id]: uploadedAsset.url }));
+        void refreshImageFolders();
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "上传元件图标到后台失败，将仅保留当前本地预览。");
+      }
+      setCustomDeviceDraft((current) => ({
+        ...current,
+        backgroundImage: asset?.url ?? imageData,
+        backgroundImageAssetId: asset?.id ?? "",
+        error: ""
+      }));
     };
     reader.readAsDataURL(file);
   };
@@ -26079,6 +26469,8 @@ export function App() {
       componentType: section,
       componentName: template.label,
       backgroundImage: template.params.backgroundImage ?? "",
+      backgroundImageAssetId: template.params.backgroundImageAssetId ?? "",
+      allowResizeTransform: template.params[ALLOW_RESIZE_TRANSFORM_PARAM] ?? "0",
       terminalCount: Math.max(0, Math.min(4, template.terminalCount)),
       terminalTypes: [...terminalTypes, "ac", "ac", "ac", "ac"].slice(0, 4) as TerminalType[],
       terminalRoles: [...(template.terminalRoles ?? []), "single-load", "single-load", "single-load", "single-load"].slice(0, 4) as ContainerTerminalRole[],
@@ -26515,6 +26907,9 @@ export function App() {
     }
     const backgroundImage =
       customDeviceDraft.backgroundImage || generateCustomDeviceImage(componentLabel, terminalTypes.length > 0 ? terminalTypes : ["ac"]);
+    const backgroundImageAssetId = customDeviceDraft.backgroundImageAssetId && backgroundImage === `/api/images/${customDeviceDraft.backgroundImageAssetId}`
+      ? customDeviceDraft.backgroundImageAssetId
+      : "";
     const customKind = editingCustomDeviceKind || nextCustomTemplateKind(componentType);
     const template: DeviceTemplate = {
       kind: customKind,
@@ -26526,7 +26921,9 @@ export function App() {
         fillColor: "transparent",
         strokeColor: "transparent",
         lineWidth: "0",
-        backgroundImage
+        backgroundImage,
+        backgroundImageAssetId,
+        [ALLOW_RESIZE_TRANSFORM_PARAM]: customDeviceDraft.allowResizeTransform
       },
       terminalType: terminalTypes[0] ?? "ac",
       terminalCount: terminalTypes.length,
@@ -26590,10 +26987,7 @@ export function App() {
                 role="treeitem"
                 aria-selected={librarySelected}
                 aria-expanded={!libraryCollapsed}
-                onClick={() => {
-                  selectCustomAttributeLibrary(group, { expand: false });
-                  toggleCustomComponentTreeLibrary(group);
-                }}
+                onClick={() => toggleCustomComponentTreeLibrary(group)}
               >
                 {libraryCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                 <span>{group}</span>
@@ -26616,10 +27010,7 @@ export function App() {
                         role="treeitem"
                         aria-selected={typeSelected}
                         aria-expanded={!typeCollapsed}
-                        onClick={() => {
-                          selectCustomComponentType(group, typeGroup.section, { expand: false });
-                          toggleCustomComponentTreeType(group, typeGroup.section);
-                        }}
+                        onClick={() => toggleCustomComponentTreeType(group, typeGroup.section)}
                       >
                         {typeCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                         <span className="dialog-tree-bilingual" title={typeDisplay.title}>
@@ -28376,11 +28767,26 @@ export function App() {
     "--viewport-overlay-right": `${rightPanelVisible ? rightPanelWidth + 28 : 16}px`,
     "--viewport-overlay-bottom": `${statusbarHeight + 14}px`
   } as CSSProperties;
+  const topologyWarningPanelVisible = inspectorTopologyErrors.length > 0 && !topologyWarningPanelClosed;
+  const topologyWarningPanelDefaultRight =
+    (rightPanelVisible ? rightPanelWidth + 28 : 16) + CANVAS_MINIMAP_WIDTH + TOPOLOGY_WARNING_PANEL_MARGIN;
+  const topologyWarningPanelStyle = topologyWarningPanelPosition
+    ? {
+        left: `${topologyWarningPanelPosition.left}px`,
+        top: `${topologyWarningPanelPosition.top}px`,
+        width: `${topologyWarningPanelWidth}px`,
+        height: `${topologyWarningPanelHeight}px`
+      } as CSSProperties
+    : {
+        right: `${topologyWarningPanelDefaultRight}px`,
+        bottom: `${statusbarHeight + 14}px`,
+        width: `${topologyWarningPanelWidth}px`,
+        height: `${topologyWarningPanelHeight}px`
+      } as CSSProperties;
   const appShellStyle = {
     "--left-panel-width": `${leftPanelWidth}px`,
     "--right-panel-width": `${rightPanelWidth}px`,
-    "--statusbar-height": `${statusbarHeight}px`,
-    "--validation-panel-height": `${validationPanelHeight}px`
+    "--statusbar-height": `${statusbarHeight}px`
   } as CSSProperties;
   const libraryPanelContent = useMemo(
     () => renderLibraryPanel(),
@@ -28484,7 +28890,7 @@ export function App() {
 
   return (
     <div
-      className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${validationPanelResize ? "validation-panel-resizing" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`}
+      className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${topologyWarningPanelResize ? "topology-warning-panel-resizing" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`}
       style={appShellStyle}
     >
       {renderSidePanelEdgeTrigger("left")}
@@ -28703,8 +29109,8 @@ export function App() {
                 </button>
               </div>
             </div>
-            <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={chooseImage} />
-            <input ref={customDeviceImageInputRef} type="file" accept="image/*" hidden onChange={chooseCustomDeviceBackground} />
+            <input ref={imageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseImage} />
+            <input ref={customDeviceImageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseCustomDeviceBackground} />
             <input ref={modelImportInputRef} type="file" accept=".json,application/json" hidden onChange={importModelFile} />
             <input ref={schemeImportInputRef} type="file" accept=".json,application/json" hidden onChange={importSchemeFile} />
             <button
@@ -29380,7 +29786,7 @@ export function App() {
                           onPointerDown={(event) => startGroupTransformDrag(event, unit, "rotate")}
                         />
                       </g>
-                      {SCALE_HANDLE_CONFIGS.map((handle) => {
+                      {GROUP_SCALE_HANDLE_CONFIGS.map((handle) => {
                         const handleCursorClass = scaleHandleCursorClass(handle, 0);
                         const x =
                           handle.xDirection === 0
@@ -29488,6 +29894,9 @@ export function App() {
               const rotateHandlePoints = uprightStaticSelectionOutline
                 ? nodeUprightRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap)
                 : nodeRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap);
+              const scaleHandleConfigsForNode = nodeAllowsResizeTransform(node)
+                ? SCALE_HANDLE_CONFIGS
+                : SCALE_HANDLE_CONFIGS.filter((handle) => handle.kind === "scale-both");
               const staticButtonEnabled = isBrowseMode && isStaticButtonEnabledForNode(node);
               const staticButtonState = staticButtonVisual?.nodeId === node.id ? staticButtonVisual.state : "";
               const staticButtonCornerRadius = Math.max(0, Number(node.params.cornerRadius || 8));
@@ -29813,7 +30222,7 @@ export function App() {
                           onPointerDown={(event) => startSingleTransformDrag(event, node, "rotate")}
                         />
                       </g>
-                      {SCALE_HANDLE_CONFIGS.map((handle) => {
+                      {scaleHandleConfigsForNode.map((handle) => {
                         const handlePoint = nodeScaleHandleControlPoint(node, handle, handleGapX, handleGapY, uprightStaticSelectionOutline);
                         const handleCursorClass = scaleHandleCursorClass(handle, uprightStaticSelectionOutline ? 0 : node.rotation);
                         return (
@@ -30284,6 +30693,88 @@ export function App() {
             </div>
           )}
         </div>
+        {topologyWarningPanelVisible && (
+          <section
+            ref={topologyWarningPanelRef}
+            className="topology-warning-floating-panel"
+            style={topologyWarningPanelStyle}
+            aria-label="拓扑警告信息"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="topology-warning-floating-title" onPointerDown={startTopologyWarningPanelDrag}>
+              <div>
+                <h2>拓扑警告信息</h2>
+                <span>{inspectorTopologyErrors.length} 条</span>
+              </div>
+              <button
+                type="button"
+                title="关闭拓扑警告信息"
+                aria-label="关闭拓扑警告信息"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={() => setTopologyWarningPanelClosed(true)}
+              >
+                <X size={14} />
+              </button>
+            </header>
+            <div className="topology-warning-floating-body">
+              <table className="topology-warning-table">
+                <thead>
+                  <tr>
+                    <th>状态</th>
+                    <th>信息</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleTopologyErrors.map((error) => {
+                    const blocking = isBlockingTopologyValidationError(error);
+                    return (
+                      <tr key={error.id} className={blocking ? "error" : "warning"}>
+                        <td>{blocking ? "错误" : "告警"}</td>
+                        <td>
+                          <button type="button" onClick={() => locateTopologyError(error)} onDoubleClick={() => locateTopologyError(error)}>
+                            {topologyWarningDisplayMessage(error.message)}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {inspectorTopologyErrors.length > TOPOLOGY_WARNING_PAGE_SIZE && (
+              <div className="validation-pagination topology-warning-floating-pagination">
+                <button
+                  type="button"
+                  onClick={() => setTopologyWarningPage((current) => Math.max(0, current - 1))}
+                  disabled={normalizedTopologyWarningPage === 0}
+                >
+                  上一页
+                </button>
+                <span>
+                  {normalizedTopologyWarningPage + 1} / {topologyWarningPageCount}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTopologyWarningPage((current) => Math.min(topologyWarningPageCount - 1, current + 1))}
+                  disabled={normalizedTopologyWarningPage >= topologyWarningPageCount - 1}
+                >
+                  下一页
+                </button>
+              </div>
+            )}
+            {hiddenTopologyErrorCount > 0 && (
+              <p className="validation-more topology-warning-floating-more">每页显示 {TOPOLOGY_WARNING_PAGE_SIZE} 条告警，请分页处理或重新拓扑。</p>
+            )}
+            <div
+              className="topology-warning-floating-resize"
+              role="separator"
+              aria-orientation="horizontal"
+              title="拖拽调整拓扑警告信息窗口大小"
+              onPointerDown={startTopologyWarningPanelResize}
+            />
+          </section>
+        )}
         <footer className="bottom-statusbar" aria-label="运行状态">
           <div
             className="statusbar-resize-handle"
@@ -30302,7 +30793,11 @@ export function App() {
           <span className={`status-pill topology-${topologyStatus.state}`} title={topologyStatus.message}>
             拓扑 {topologyStatus.message}
           </span>
-          <span className={`status-pill warning-${topologyErrors.length > 0 ? "active" : "idle"}`} title={warningStatusTitle}>
+          <span
+            className={`status-pill warning-${topologyErrors.length > 0 ? "active" : "idle"}`}
+            title={topologyErrors.length > 0 ? `${warningStatusTitle}；点击打开拓扑告警窗口。` : warningStatusTitle}
+            onClick={() => topologyErrors.length > 0 && setTopologyWarningPanelClosed(false)}
+          >
             {warningStatusText}
           </span>
           <span ref={operationLogStatusRef} className="status-pill status-log" title={operationLogRef.current}>
@@ -30345,16 +30840,16 @@ export function App() {
           </div>
         </div>
         {inspectorSelectedNode || currentModelRecord ? (
-          <div className={`form-stack ${inspectorTab === "graph" ? "graph-form-stack" : ""}`}>
+          <div className={`form-stack ${inspectorTab === "tree" ? "graph-form-stack" : ""}`}>
             <div className="inspector-tabs">
               <button className={inspectorTab === "model" ? "active" : ""} onClick={() => setInspectorTab("model")} disabled={!currentModelRecord}>
                 基础
               </button>
-              <button className={inspectorTab === "graph" ? "active" : ""} onClick={() => setInspectorTab("graph")}>
-                图元
+              <button className={inspectorTab === "tree" ? "active" : ""} onClick={() => setInspectorTab("tree")}>
+                图元树
               </button>
-              <button className={inspectorTab === "device" ? "active" : ""} onClick={() => setInspectorTab("device")}>
-                设备
+              <button className={inspectorTab === "graph" || inspectorTab === "device" ? "active" : ""} onClick={() => setInspectorTab("graph")}>
+                图元
               </button>
             </div>
             {inspectorTab === "model" && currentModelRecord ? (
@@ -30610,32 +31105,49 @@ export function App() {
                   </tr>
                 </tbody>
               </table>
+            ) : inspectorTab === "tree" ? (
+              renderElementTreePanel()
             ) : inspectorTab === "graph" ? (
               <div className="graph-info-panel">
-                <div className="graph-info-toolbar" role="tablist" aria-label="图元信息子页面">
+                <div className="graph-info-toolbar" role="tablist" aria-label="图元属性分类">
                   <button
                     type="button"
-                    className={graphInfoView === "selected" ? "active" : ""}
-                    onClick={() => setGraphInfoView("selected")}
+                    className="active"
+                    onClick={() => setInspectorTab("graph")}
                     role="tab"
-                    aria-selected={graphInfoView === "selected"}
+                    aria-selected={true}
                     disabled={!inspectorSelectedNode}
                   >
-                    选中图元
+                    图形
                   </button>
                   <button
                     type="button"
-                    className={graphInfoView === "tree" ? "active" : ""}
-                    onClick={() => setGraphInfoView("tree")}
+                    className=""
+                    onClick={() => {
+                      setInspectorTab("device");
+                      setSelectedDeviceInfoView("model");
+                    }}
                     role="tab"
-                    aria-selected={graphInfoView === "tree"}
+                    aria-selected={false}
+                    disabled={!inspectorSelectedNode || isStaticNode(inspectorSelectedNode)}
                   >
-                    图元树
+                    模型
+                  </button>
+                  <button
+                    type="button"
+                    className=""
+                    onClick={() => {
+                      setInspectorTab("device");
+                      setSelectedDeviceInfoView("measurement");
+                    }}
+                    role="tab"
+                    aria-selected={false}
+                    disabled={!inspectorSelectedNode || isStaticNode(inspectorSelectedNode)}
+                  >
+                    量测
                   </button>
                 </div>
-                {graphInfoView === "tree" ? (
-                  renderElementTreePanel()
-                ) : inspectorSelectedNode ? (
+                {inspectorSelectedNode ? (
                   <div className="graph-param-table-wrap">
                   <table className="param-table">
                   <tbody>
@@ -31029,7 +31541,16 @@ export function App() {
             ) : inspectorSelectedNode ? (
               <div className="device-param-stack">
                 {!isStaticNode(inspectorSelectedNode) && (
-                  <div className="device-info-tabs" role="tablist" aria-label="设备表格内容切换">
+                  <div className="device-info-tabs" role="tablist" aria-label="图元属性分类">
+                    <button
+                      type="button"
+                      className=""
+                      onClick={() => setInspectorTab("graph")}
+                      role="tab"
+                      aria-selected={false}
+                    >
+                      图形
+                    </button>
                     <button
                       type="button"
                       className={selectedDeviceInfoView === "model" ? "active" : ""}
@@ -31054,6 +31575,24 @@ export function App() {
                   renderSelectedNodeMeasurementTable(inspectorSelectedNode)
                 ) : (
                   <>
+                    {batchCommonParamRows.length > 0 && (
+                      <section className="batch-param-panel" aria-label="批量修改共同属性">
+                        <div className="batch-param-summary">
+                          <strong>批量修改共同属性</strong>
+                          <span>{activeSelectedNodeIds.length} 个图元，{batchCommonParamRows.length} 个共同属性</span>
+                        </div>
+                        <table className="param-table batch-param-table">
+                          <tbody>
+                            {batchCommonParamRows.map((row) => (
+                              <tr key={row.key}>
+                                {renderParamHeader(row.key, row.key, row.label)}
+                                <td>{renderBatchCommonParamEditor(row)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </section>
+                    )}
                     {selectedContainerParameterViews.length > 0 && (
                       <div className="container-param-tabs" role="tablist" aria-label="容器设备参数切换">
                         {selectedContainerParameterViews.map((view) => (
@@ -31141,10 +31680,10 @@ export function App() {
             ) : (
               <div className="empty-state">
                 <FileJson size={28} />
-                <p>选择画布设备后，可切换查看图元和设备。</p>
+                <p>选择画布设备后，可切换查看图形、模型和量测。</p>
               </div>
             )}
-            {inspectorSelectedNode && inspectorTab === "graph" && graphInfoView === "selected" && (
+            {inspectorSelectedNode && inspectorTab === "graph" && (
               <div className="topology-card">
                 <span>连接度</span>
                 <strong>{topology.nodes[inspectorSelectedNode.id]?.degree ?? 0}</strong>
@@ -31179,52 +31718,6 @@ export function App() {
             <p>从左侧拖入元件，或使用联络线模式点击两个元件建立拓扑关系。</p>
           </div>
         )}
-        {inspectorTopologyErrors.length > 0 && (
-          <section className="validation-panel">
-            <div
-              className="validation-panel-resize-handle"
-              role="separator"
-              aria-orientation="horizontal"
-              title="拖拽调整拓扑告警栏高度"
-              onPointerDown={startValidationPanelResize}
-            />
-            <div className="validation-panel-title">
-              <h2>拓扑告警</h2>
-              <span>{inspectorTopologyErrors.length} 条</span>
-            </div>
-            <div className="validation-list">
-              {visibleTopologyErrors.map((error) => (
-                <button key={error.id} onClick={() => locateTopologyError(error)} onDoubleClick={() => locateTopologyError(error)}>
-                  <span>{topologyWarningDisplayMessage(error.message)}</span>
-                </button>
-              ))}
-            </div>
-            {inspectorTopologyErrors.length > TOPOLOGY_WARNING_PAGE_SIZE && (
-              <div className="validation-pagination">
-                <button
-                  type="button"
-                  onClick={() => setTopologyWarningPage((current) => Math.max(0, current - 1))}
-                  disabled={normalizedTopologyWarningPage === 0}
-                >
-                  上一页
-                </button>
-                <span>
-                  {normalizedTopologyWarningPage + 1} / {topologyWarningPageCount}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setTopologyWarningPage((current) => Math.min(topologyWarningPageCount - 1, current + 1))}
-                  disabled={normalizedTopologyWarningPage >= topologyWarningPageCount - 1}
-                >
-                  下一页
-                </button>
-              </div>
-            )}
-            {hiddenTopologyErrorCount > 0 && (
-              <p className="validation-more">每页显示 {TOPOLOGY_WARNING_PAGE_SIZE} 条告警，请分页处理或重新拓扑。</p>
-            )}
-          </section>
-        )}
       </aside>
       {contextMenu && (
         <div className="context-menu" data-canvas-context-menu="true" style={contextMenuStyle(contextMenu)}>
@@ -31232,6 +31725,12 @@ export function App() {
             <button onClick={() => runContextMenuAction(startContextMarqueeSelection)}>
               <BoxSelect size={14} />
               框选
+            </button>
+          )}
+          {isEditMode && contextMenuTarget === "blank" && activeLayerNodes.length > 0 && (
+            <button onClick={() => runContextMenuAction(openFilterSelectionDialog)}>
+              <ScanSearch size={14} />
+              过滤选择
             </button>
           )}
           {isEditMode && undoStack.length > 0 && (
@@ -31984,6 +32483,43 @@ export function App() {
           </section>
         </div>
       )}
+      {filterSelectionDialogOpen && (
+        <div className="image-picker-backdrop" onPointerDown={() => setFilterSelectionDialogOpen(false)}>
+          <section className="filter-selection-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="filter-selection-title">
+            <div className="image-picker-title">
+              <div>
+                <h2 id="filter-selection-title">过滤选择</h2>
+                <p>元件类型列表：{filterSelectionTypeOptions.length} 类，已选择 {filterSelectionTypeKeys.length} 类。</p>
+              </div>
+              <button type="button" onClick={() => setFilterSelectionDialogOpen(false)}>关闭</button>
+            </div>
+            <div className="filter-selection-toolbar">
+              <button type="button" onClick={() => setFilterSelectionTypeKeys(filterSelectionTypeOptions.map((option) => option.typeKey))}>全选</button>
+              <button type="button" onClick={() => setFilterSelectionTypeKeys([])}>清空</button>
+            </div>
+            <div className="filter-selection-list" role="group" aria-label="元件类型列表">
+              {filterSelectionTypeOptions.map((option) => (
+                <label key={option.typeKey} className="filter-selection-option">
+                  <input
+                    type="checkbox"
+                    checked={filterSelectionTypeKeys.includes(option.typeKey)}
+                    onChange={() => toggleFilterSelectionType(option.typeKey)}
+                  />
+                  <span>
+                    <strong>{option.label}</strong>
+                    <small>{option.typeKey}</small>
+                  </span>
+                  <em>{option.count}</em>
+                </label>
+              ))}
+            </div>
+            <div className="template-dialog-actions">
+              <button type="button" onClick={() => setFilterSelectionDialogOpen(false)}>取消</button>
+              <button type="button" disabled={filterSelectionTypeKeys.length === 0} onClick={confirmFilterSelectionDialog}>确认选择</button>
+            </div>
+          </section>
+        </div>
+      )}
       {ENABLE_REACT_FLOW_PREVIEW && ReactFlowPreview && reactFlowPreviewOpen && (
         <div className="image-picker-backdrop react-flow-preview-backdrop" onPointerDown={() => setReactFlowPreviewOpen(false)}>
           <section className="react-flow-preview-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="react-flow-preview-title">
@@ -32491,7 +33027,7 @@ export function App() {
                   </select>
                 </div>
               </label>
-              <label>
+              <label className="custom-device-name-field">
                 元件名称
                 <input
                   value={customDeviceDraft.componentName}
@@ -32499,7 +33035,7 @@ export function App() {
                   onChange={(event) => setCustomDeviceDraft((current) => ({ ...current, componentName: event.target.value, error: "" }))}
                 />
               </label>
-              <label>
+              <label className="custom-device-container-field">
                 是否容器
                 <select
                   value={customDeviceDraft.isContainer ? "1" : "0"}
@@ -32515,7 +33051,23 @@ export function App() {
                   <option value="1">是</option>
                 </select>
               </label>
-              <label>
+              <label className="custom-device-resize-field">
+                是否允许变形
+                <select
+                  value={customDeviceDraft.allowResizeTransform}
+                  onChange={(event) =>
+                    setCustomDeviceDraft((current) => ({
+                      ...current,
+                      allowResizeTransform: event.target.value,
+                      error: ""
+                    }))
+                  }
+                >
+                  <option value="0">否</option>
+                  <option value="1">是</option>
+                </select>
+              </label>
+              <label className="custom-device-terminal-count-field">
                 端子数量
                 <input
                   type="number"
@@ -32527,8 +33079,8 @@ export function App() {
               </label>
             </div>
             <div className="custom-device-image-row">
-              <span>背景照片</span>
-              <button type="button" onClick={() => customDeviceImageInputRef.current?.click()}>选择本地图片</button>
+              <span>SVG/图片图标</span>
+              <button type="button" onClick={() => customDeviceImageInputRef.current?.click()}>上传SVG/图片到后台</button>
               <button
                 type="button"
                 onClick={() =>
@@ -32538,21 +33090,22 @@ export function App() {
                       current.componentName.trim() || current.componentType || "Unit",
                       current.terminalTypes.slice(0, current.terminalCount)
                     ),
+                    backgroundImageAssetId: "",
                     error: ""
                   }))
                 }
               >
                 程序自动生成
               </button>
-              <button type="button" onClick={() => setCustomDeviceDraft((current) => ({ ...current, backgroundImage: "", error: "" }))}>清除</button>
-              <strong>{customDeviceDraft.backgroundImage ? "已设置" : "未设置"}</strong>
+              <button type="button" onClick={() => setCustomDeviceDraft((current) => ({ ...current, backgroundImage: "", backgroundImageAssetId: "", error: "" }))}>清除</button>
+              <strong>{customDeviceDraft.backgroundImageAssetId ? "后台已保存" : customDeviceDraft.backgroundImage ? "已设置" : "未设置"}</strong>
             </div>
             <div className="custom-device-preview">
               <span>背景预览</span>
               <div>
                 <img src={customDevicePreviewImage} alt="自定义元件背景图片预览" />
               </div>
-              <small>{customDeviceDraft.backgroundImage ? "当前显示本地图片预览" : "当前显示默认样例预览"}</small>
+              <small>{customDeviceDraft.backgroundImageAssetId ? "当前显示后台图标预览" : customDeviceDraft.backgroundImage ? "当前显示本地图标预览" : "当前显示默认样例预览"}</small>
             </div>
             <div className="custom-terminal-grid">
               {Array.from({ length: customDeviceDraft.terminalCount }).map((_, index) => {

@@ -1214,9 +1214,63 @@ function endpointPoint(project, edge, side) {
   };
 }
 
+function escapeSvgAttribute(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function escapeSvgText(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function svgSafeId(value, fallback) {
+  const normalized = String(value ?? "").trim().replace(/[^A-Za-z0-9_.:-]+/g, "_").replace(/^[^A-Za-z_]+/, "");
+  return normalized || fallback;
+}
+
+function svgLayerId(value, fallback) {
+  return `${svgSafeId(value, fallback)}_Layer`;
+}
+
+function uniqueSvgId(rawId, usedIds, fallback) {
+  const baseId = svgSafeId(rawId, fallback);
+  let candidate = baseId;
+  let index = 2;
+  while (usedIds.has(candidate)) {
+    candidate = `${baseId}_${index}`;
+    index += 1;
+  }
+  usedIds.add(candidate);
+  return candidate;
+}
+
 function buildSvgFile(project) {
   const width = Number(project.canvasWidth ?? 1920);
   const height = Number(project.canvasHeight ?? 1024);
+  const nodes = Array.isArray(project.nodes) ? project.nodes : [];
+  const edges = Array.isArray(project.edges) ? project.edges : [];
+  const usedIds = new Set(["root_g"]);
+  const backgroundLayerId = uniqueSvgId(svgLayerId("Background", "Background"), usedIds, "Background_Layer");
+  const segmentLayerId = uniqueSvgId(svgLayerId("Segment", "Segment"), usedIds, "Segment_Layer");
+  const textLayerId = uniqueSvgId(svgLayerId("Text", "Text"), usedIds, "Text_Layer");
+  const measurementLayerId = uniqueSvgId(svgLayerId("Measurement", "Measurement"), usedIds, "Measurement_Layer");
+  const otherLayerId = uniqueSvgId(svgLayerId("Other", "Other"), usedIds, "Other_Layer");
+  const nodeLayerKey = (node) => isStaticNode(node) ? "Other" : inferESection(node?.kind, node?.params ?? {}) || node?.kind || "Other";
+  const layerIdsByType = new Map();
+  for (const node of nodes) {
+    const layerKey = nodeLayerKey(node);
+    if (!layerIdsByType.has(layerKey)) {
+      layerIdsByType.set(layerKey, uniqueSvgId(svgLayerId(layerKey, "Device"), usedIds, "Device_Layer"));
+    }
+  }
+  const symbolMarkup = [];
+  const nodeMarkupByLayer = new Map(Array.from(layerIdsByType.values()).map((layerId) => [layerId, []]));
   const edgeMarkup = (project.edges ?? [])
     .map((edge) => {
       const start = endpointPoint(project, edge, "source");
@@ -1225,28 +1279,79 @@ function buildSvgFile(project) {
       const points = [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end]
         .map((point) => `${point.x},${point.y}`)
         .join(" ");
-      return `<polyline points="${points}" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+      const edgeId = uniqueSvgId(`edge_${edge.id ?? `${start.x}_${start.y}_${end.x}_${end.y}`}`, usedIds, "edge");
+      return `<polyline id="${escapeSvgAttribute(edgeId)}" data-export-edge-id="${escapeSvgAttribute(edge.id ?? "")}" points="${escapeSvgAttribute(points)}" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
     })
     .join("\n");
-  const nodeMarkup = (project.nodes ?? [])
-    .map((node) => {
-      const width = node.size?.width ?? 80;
-      const height = node.size?.height ?? 48;
-      const stroke = String(node.kind ?? "").startsWith("dc") || String(node.kind ?? "").includes("dcdc") ? "#0f766e" : "#2563eb";
-      const isBus = String(node.kind ?? "").includes("bus");
-      const image = node.params?.backgroundImageAssetId ? `/api/images/${node.params.backgroundImageAssetId}` : node.params?.backgroundImage ?? "";
-      const transform = `translate(${node.position?.x ?? 0} ${node.position?.y ?? 0}) rotate(${node.rotation ?? 0}) scale(${node.scaleX ?? node.scale ?? 1} ${node.scaleY ?? node.scale ?? 1})`;
-      if (isBus) {
-        const thickness = Math.max(8, height / 3);
-        return `<g transform="${transform}"><title>${node.name ?? ""}</title><rect class="bus-glyph" x="${-width / 2}" y="${-thickness / 2}" width="${width}" height="${thickness}" fill="${stroke}" stroke="none"/></g>`;
-      }
-      return `<g transform="${transform}"><title>${node.name ?? ""}</title><rect x="${-width / 2}" y="${-height / 2}" width="${width}" height="${height}" rx="8" fill="#ffffff" stroke="#94a3b8"/>${image ? `<image href="${image}" x="${-width / 2}" y="${-height / 2}" width="${width}" height="${height}" preserveAspectRatio="xMidYMid slice"/>` : ""}</g>`;
-    })
+  for (const node of nodes) {
+    const nodeWidth = node.size?.width ?? 80;
+    const nodeHeight = node.size?.height ?? 48;
+    const stroke = String(node.kind ?? "").startsWith("dc") || String(node.kind ?? "").includes("dcdc") ? "#0f766e" : "#2563eb";
+    const isBus = String(node.kind ?? "").includes("bus");
+    const image = node.params?.backgroundImageAssetId ? `/api/images/${node.params.backgroundImageAssetId}` : node.params?.backgroundImage ?? "";
+    const rotate = Number(node.rotation ?? 0);
+    const scaleX = Number(node.scaleX ?? node.scale ?? 1);
+    const scaleY = Number(node.scaleY ?? node.scale ?? 1);
+    const symbolId = uniqueSvgId(`symbol_${nodeLayerKey(node)}_${node.id ?? "node"}`, usedIds, "device_symbol");
+    const useId = uniqueSvgId(node.id ?? "device", usedIds, "device");
+    if (isBus) {
+      const thickness = Math.max(8, nodeHeight / 3);
+      symbolMarkup.push(`<symbol id="${escapeSvgAttribute(symbolId)}" viewBox="${-nodeWidth / 2} ${-nodeHeight / 2} ${nodeWidth} ${nodeHeight}">
+<title>${escapeSvgText(node.name ?? "")}</title>
+<rect class="bus-glyph" x="${-nodeWidth / 2}" y="${-thickness / 2}" width="${nodeWidth}" height="${thickness}" fill="${stroke}" stroke="none"/>
+</symbol>`);
+    } else {
+      symbolMarkup.push(`<symbol id="${escapeSvgAttribute(symbolId)}" viewBox="${-nodeWidth / 2} ${-nodeHeight / 2} ${nodeWidth} ${nodeHeight}">
+<title>${escapeSvgText(node.name ?? "")}</title>
+<rect x="${-nodeWidth / 2}" y="${-nodeHeight / 2}" width="${nodeWidth}" height="${nodeHeight}" rx="8" fill="#ffffff" stroke="#94a3b8"/>
+${image ? `<image href="${escapeSvgAttribute(image)}" x="${-nodeWidth / 2}" y="${-nodeHeight / 2}" width="${nodeWidth}" height="${nodeHeight}" preserveAspectRatio="xMidYMid slice"/>` : ""}
+</symbol>`);
+    }
+    const layerId = layerIdsByType.get(nodeLayerKey(node)) ?? otherLayerId;
+    const transform = `translate(${node.position?.x ?? 0} ${node.position?.y ?? 0}) rotate(${rotate}) scale(${scaleX} ${scaleY})`;
+    nodeMarkupByLayer.get(layerId)?.push(`<use id="${escapeSvgAttribute(useId)}" href="#${escapeSvgAttribute(symbolId)}" xlink:href="#${escapeSvgAttribute(symbolId)}" transform="${escapeSvgAttribute(transform)}" data-export-device-id="${escapeSvgAttribute(node.id ?? "")}" data-export-device-idx="${escapeSvgAttribute(node.params?.idx ?? "")}" data-export-device-name="${escapeSvgAttribute(node.name ?? "")}" data-export-device-kind="${escapeSvgAttribute(node.kind ?? "")}"/>`);
+  }
+  const deviceLayersMarkup = Array.from(layerIdsByType.entries())
+    .map(([layerKey, layerId]) => `<g id="${escapeSvgAttribute(layerId)}" data-export-device-type="${escapeSvgAttribute(layerKey)}">
+${(nodeMarkupByLayer.get(layerId) ?? []).join("\n")}
+</g>`)
     .join("\n");
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const measurementMarkup = (project.measurements?.groups ?? [])
+    .map((group) => {
+      const node = nodeById.get(group.nodeId);
+      if (!node) return "";
+      const groupId = uniqueSvgId(`measurement_${group.id ?? node.id}`, usedIds, "measurement");
+      const rows = (group.items ?? []).map((item) => {
+        const itemId = uniqueSvgId(`measurement_${item.id ?? item.measurementTypeId ?? "item"}`, usedIds, "measurement_item");
+        return `<text id="${escapeSvgAttribute(itemId)}" measure_type="${escapeSvgAttribute(item.measurementTypeId ?? "")}" data-export-measurement-name="${escapeSvgAttribute(item.name ?? item.measurementTypeId ?? "")}" data-export-measurement-type-id="${escapeSvgAttribute(item.measurementTypeId ?? "")}" data-export-measurement-source-point="${escapeSvgAttribute(item.sourcePoint ?? "")}" data-export-device-id="${escapeSvgAttribute(node.id ?? "")}">${escapeSvgText(item.name ?? item.measurementTypeId ?? "")}</text>`;
+      }).join("\n");
+      return `<g id="${escapeSvgAttribute(groupId)}" conn-dev="${escapeSvgAttribute(node.id ?? "")}" data-export-measurement-group-id="${escapeSvgAttribute(group.id ?? "")}" data-export-device-id="${escapeSvgAttribute(node.id ?? "")}" data-export-device-idx="${escapeSvgAttribute(node.params?.idx ?? "")}" data-export-device-name="${escapeSvgAttribute(node.name ?? "")}" data-export-device-kind="${escapeSvgAttribute(node.kind ?? "")}">
+${rows}
+</g>`;
+    })
+    .filter(Boolean)
+    .join("\n");
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,${width},${height}">
+<defs>
+${symbolMarkup.join("\n")}
+</defs>
+<g id="root_g">
+<g id="${escapeSvgAttribute(backgroundLayerId)}">
 <rect width="100%" height="100%" fill="#f8fafc"/>
+</g>
+<g id="${escapeSvgAttribute(segmentLayerId)}">
 ${edgeMarkup}
-${nodeMarkup}
+</g>
+${deviceLayersMarkup}
+<g id="${escapeSvgAttribute(textLayerId)}">
+</g>
+<g id="${escapeSvgAttribute(measurementLayerId)}">
+${measurementMarkup}
+</g>
+<g id="${escapeSvgAttribute(otherLayerId)}">
+</g>
+</g>
 </svg>`;
 }
 

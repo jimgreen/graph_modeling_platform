@@ -474,6 +474,7 @@ export const ROUTABLE_LINE_TARGET_NODE_PARAM = "_routableLineTargetNodeId";
 export const ROUTABLE_LINE_TARGET_TERMINAL_PARAM = "_routableLineTargetTerminalId";
 export const ROUTABLE_LINE_TARGET_LOCAL_POINT_PARAM = "_routableLineTargetLocalPoint";
 export const ROUTABLE_LINE_DEFAULT_STROKE_WIDTH = 4;
+export const ALLOW_RESIZE_TRANSFORM_PARAM = "allowResizeTransform";
 const ROUTABLE_LINE_LEGACY_DEFAULT_STROKE_WIDTH = 7;
 export const INTERACTIVE_STATIC_DRAWING_KINDS = [
   "static-line",
@@ -708,6 +709,37 @@ export function isRoutableLineDeviceKind(kind: string): boolean {
 
 export function isCanvasNodeMovable(kind: string): boolean {
   return !isRoutableLineDeviceKind(kind);
+}
+
+const RESIZE_TRANSFORM_DEFAULT_ALLOWED_KINDS = new Set<string>([
+  "hydrogen-tank",
+  "hydrogen-tank-horizontal",
+  "hydrogen-tank-container",
+  "thermal-storage-tank"
+]);
+
+export function defaultAllowsResizeTransformForKind(kind: string): boolean {
+  const baseKind = baseDeviceKind(kind);
+  return (
+    isStaticKind(baseKind) ||
+    baseKind.includes("bus") ||
+    isRoutableLineDeviceKind(baseKind) ||
+    RESIZE_TRANSFORM_DEFAULT_ALLOWED_KINDS.has(baseKind)
+  );
+}
+
+function normalizeBooleanParam(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined || value === "") {
+    return fallback;
+  }
+  return value === "1" || value === "true" || value === "yes" || value === "允许";
+}
+
+export function nodeAllowsResizeTransform(node: Pick<ModelNode, "kind" | "params">): boolean {
+  return normalizeBooleanParam(
+    node.params[ALLOW_RESIZE_TRANSFORM_PARAM],
+    defaultAllowsResizeTransformForKind(node.kind)
+  );
 }
 
 export function inferESection(kind: string, params: Record<string, string> = {}) {
@@ -3863,7 +3895,8 @@ export function buildDefaultDeviceParameterDefinitions(
   const baseDefinitions: DeviceParameterDefinition[] = [
     { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
     { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
-    { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true }
+    { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true },
+    { cnName: "是否允许变形", enName: ALLOW_RESIZE_TRANSFORM_PARAM, valueType: "enum", typicalValue: "0", readonly: false }
   ];
   if (options.isContainer) {
     const relationDefinitions: DeviceParameterDefinition[] = [];
@@ -4374,10 +4407,21 @@ function templateTerminalTypes(template: DeviceTemplate): TerminalType[] {
 }
 
 export function getTemplateParameterDefinitions(template: DeviceTemplate): DeviceParameterDefinition[] {
+  const resizeTransformDefinition: DeviceParameterDefinition = {
+    cnName: "是否允许变形",
+    enName: ALLOW_RESIZE_TRANSFORM_PARAM,
+    valueType: "enum",
+    typicalValue: template.params[ALLOW_RESIZE_TRANSFORM_PARAM] ?? (defaultAllowsResizeTransformForKind(template.kind) ? "1" : "0"),
+    readonly: false
+  };
+  const appendResizeTransformDefinition = (definitions: DeviceParameterDefinition[]) =>
+    definitions.some((definition) => definition.enName === ALLOW_RESIZE_TRANSFORM_PARAM)
+      ? definitions
+      : [...definitions, resizeTransformDefinition];
   if (template.parameterDefinitions?.length) {
-    return template.parameterDefinitions
+    return appendResizeTransformDefinition(template.parameterDefinitions
       .map((definition) => normalizeTemplateDefinition(definition))
-      .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
+      .filter((definition): definition is DeviceParameterDefinition => Boolean(definition)));
   }
   if (template.isContainer) {
     const defaultDefinitions = buildDefaultDeviceParameterDefinitions(templateTerminalTypes(template), {
@@ -4387,7 +4431,7 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
     });
     const defaultKeys = new Set(defaultDefinitions.map((definition) => definition.enName));
     const extraKeys = Object.keys(template.params).filter((key) => key && key !== "is_container" && !key.startsWith("_") && !defaultKeys.has(key));
-    return [
+    return appendResizeTransformDefinition([
       ...defaultDefinitions,
       ...extraKeys.map((key) => ({
         cnName: key,
@@ -4396,18 +4440,18 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
         typicalValue: template.params[key] ?? "",
         readonly: TEMPLATE_DEFINITION_READONLY_KEYS.has(key)
       }))
-    ];
+    ]);
   }
   const eKeys = getEParameterKeys(template.kind, template.params);
   const keys = eKeys.length > 0 ? eKeys : Object.keys(template.params);
   const uniqueKeys = Array.from(new Set(keys.filter((key) => key && !key.startsWith("_"))));
-  return uniqueKeys.map((key) => ({
+  return appendResizeTransformDefinition(uniqueKeys.map((key) => ({
     cnName: key,
     enName: key,
     valueType: inferDefinitionValueType(key, template.params[key] ?? ""),
     typicalValue: template.params[key] ?? "",
     readonly: TEMPLATE_DEFINITION_READONLY_KEYS.has(key)
-  }));
+  })));
 }
 
 export function applyDeviceTemplateDefinitionOverride(
@@ -4476,9 +4520,13 @@ function applyContainerRelationDefaults(params: Record<string, string>, template
 
 function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   const templateKind = baseDeviceKind(template.kind) as DeviceKind;
+  const withResizeTransformDefault = (params: Record<string, string>) => ({
+    [ALLOW_RESIZE_TRANSFORM_PARAM]: defaultAllowsResizeTransformForKind(templateKind) ? "1" : "0",
+    ...params
+  });
   const withDeviceLabelDefaults = (params: Record<string, string>) =>
     isStaticKind(templateKind)
-      ? params
+      ? withResizeTransformDefault(params)
       : {
           _labelVisible: "1",
           _labelDisplayMode: "follow",
@@ -4492,7 +4540,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
           _labelTextDecoration: "none",
           _labelTextAnchor: "middle",
           _labelRotation: "0",
-          ...params
+          ...withResizeTransformDefault(params)
         };
   const withTemplateDefinitions = (params: Record<string, string>) =>
     withDeviceLabelDefaults(applyTemplateDefinitionDefaults(applyContainerRelationDefaults(params, template), template));
@@ -5318,6 +5366,37 @@ export function syncRoutableLineDeviceEndpointsToRefs(
     return nodeWithRefs;
   }
   return setRoutableLineDeviceEndpoints(nodeWithRefs, nextStart, nextEnd);
+}
+
+function routableLineDeviceTopologyEdges(nodes: ModelNode[]): Edge[] {
+  const edges: Edge[] = [];
+  for (const node of nodes) {
+    if (!isRoutableLineDeviceKind(node.kind)) {
+      continue;
+    }
+    const refs = routableLineDeviceEndpointRefs(node);
+    const sourceTerminal = node.terminals[0];
+    const targetTerminal = node.terminals[node.terminals.length - 1];
+    if (refs.source && sourceTerminal) {
+      edges.push({
+        id: `${node.id}:routable-source`,
+        sourceId: refs.source.nodeId,
+        targetId: node.id,
+        sourceTerminalId: refs.source.terminalId,
+        targetTerminalId: sourceTerminal.id
+      });
+    }
+    if (refs.target && targetTerminal) {
+      edges.push({
+        id: `${node.id}:routable-target`,
+        sourceId: node.id,
+        targetId: refs.target.nodeId,
+        sourceTerminalId: targetTerminal.id,
+        targetTerminalId: refs.target.terminalId
+      });
+    }
+  }
+  return edges;
 }
 
 export function routeRoutableLineDevice(node: ModelNode, nodes: ModelNode[], bounds?: CanvasBounds): ModelNode {
@@ -7708,6 +7787,7 @@ function buildTopologyConnectivity(nodes: ModelNode[], edges: Edge[]): TopologyC
   const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
   nodes = synchronized.nodes;
   edges = synchronized.edges;
+  const topologyEdges = [...edges, ...routableLineDeviceTopologyEdges(nodes)];
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const terminalKey = (nodeId: string, terminalId: string) => `${nodeId}:${terminalId}`;
   const topology = createDisjointSet();
@@ -7742,7 +7822,7 @@ function buildTopologyConnectivity(nodes: ModelNode[], edges: Edge[]): TopologyC
     }
   }
 
-  for (const edge of edges) {
+  for (const edge of topologyEdges) {
     const source = nodeById.get(edge.sourceId);
     const target = nodeById.get(edge.targetId);
     const sourceTerminal = resolveTopologyEdgeTerminal(source, edge.sourceTerminalId);
@@ -8811,6 +8891,7 @@ export function validateTopology(
   const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
   nodes = synchronized.nodes;
   edges = synchronized.edges;
+  const topologyEdges = [...edges, ...routableLineDeviceTopologyEdges(nodes)];
   const errors: TopologyValidationError[] = duplicateDeviceIdentityErrors(nodes);
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const terminalKey = (nodeId: string, terminalId: string) => `${nodeId}:${terminalId}`;
@@ -8864,7 +8945,7 @@ export function validateTopology(
     }
   }
 
-  for (const edge of edges) {
+  for (const edge of topologyEdges) {
     const source = nodeById.get(edge.sourceId);
     const target = nodeById.get(edge.targetId);
     const sourceTerminal = source ? resolveEdgeTerminal(source, edge.sourceTerminalId) : undefined;
@@ -9003,7 +9084,7 @@ export function validateTopology(
         type: "missing-island-voltage",
         nodeId: relatedNodeIds[0],
         relatedNodeIds,
-        message: `图上拓扑失败：拓扑岛内没有非零电压基值，请至少设置一个${group.type.toUpperCase()}端子电压基值。`
+        message: "图上拓扑失败：拓扑岛内所有设备端子电压基值均为0，请至少设置一个设备端子的电压基值。"
       });
       continue;
     }

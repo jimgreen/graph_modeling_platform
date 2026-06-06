@@ -3,6 +3,35 @@ import { buildSvgDocument } from "./App";
 import { createDefaultNode, type Edge } from "./model";
 
 describe("SVG export", () => {
+  test("exports template-compatible root, defs, typed layers and unique ids", () => {
+    const generator = { ...createDefaultNode("ac-source", { x: 120, y: 140 }), id: "source-1" };
+    const load = { ...createDefaultNode("ac-load", { x: 280, y: 140 }), id: "load-1" };
+    const edges: Edge[] = [
+      { id: "edge-1", sourceId: generator.id, targetId: load.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
+    ];
+
+    const svg = buildSvgDocument([generator, load], edges, { width: 420, height: 260 });
+
+    expect(svg).toContain('<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,420,260"');
+    expect(svg.indexOf("<defs")).toBeGreaterThan(svg.indexOf("<svg"));
+    expect(svg.indexOf("<defs")).toBeLessThan(svg.indexOf('<g id="root_g">'));
+    expect(svg).toContain('<g id="root_g">');
+    expect(svg).toContain('<g id="Segment_Layer">');
+    expect(svg).toContain('<g id="ACGenerator_Layer"');
+    expect(svg).toContain('<g id="ACLoad_Layer"');
+    expect(svg).toContain('<g id="Measurement_Layer">');
+    expect(svg).toContain('<g id="Other_Layer">');
+    expect(svg).toMatch(/<symbol id="symbol_ACGenerator_source-1" viewBox="-[\d.]+ -[\d.]+ [\d.]+ [\d.]+">/);
+    expect(svg).toContain('<use id="source-1" class="export-node" href="#symbol_ACGenerator_source-1" xlink:href="#symbol_ACGenerator_source-1" transform="translate(120 140)"');
+    expect(svg.indexOf('<g id="Segment_Layer">')).toBeGreaterThan(svg.indexOf('<g id="root_g">'));
+
+    expect(svg.indexOf('<g id="ACGenerator_Layer"')).toBeGreaterThan(svg.indexOf('<g id="root_g">'));
+    expect(svg.indexOf('<g id="Other_Layer">')).toBeGreaterThan(svg.indexOf('<g id="ACGenerator_Layer"'));
+
+    const ids = Array.from(svg.matchAll(/\sid="([^"]+)"/g), (match) => match[1]);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   test("exports the actual device glyph markup for built-in devices", () => {
     const generator = createDefaultNode("ac-source", { x: 120, y: 120 });
     const dcGenerator = createDefaultNode("dc-source", { x: 190, y: 120 });
@@ -30,8 +59,7 @@ describe("SVG export", () => {
     const svg = buildSvgDocument([line], [], { width: 360, height: 240 });
 
     expect(svg).toContain("routable-line-device-glyph");
-    expect(svg).toContain('stroke-width="7"');
-    expect(svg).toContain("export-terminal-dot ac");
+    expect(svg).toContain('stroke-width="4"');
   });
 
   test("exports bus-connected tank devices as tank glyphs instead of plain bus lines", () => {
@@ -241,7 +269,7 @@ describe("SVG export", () => {
 
     const svg = buildSvgDocument([generator], [], { width: 360, height: 260 });
 
-    expect(svg).toContain('class="export-node" transform="translate(160 140)"');
+    expect(svg).toMatch(/<use id="[^"]+" class="export-node"[^>]*transform="translate\(160 140\)"/);
     expect(svg).toContain('class="export-node-geometry" transform="rotate(90) scale(-1.5 2)"');
     expect(svg).toContain('class="export-node-upright-content" transform="scale(1.5 2)"');
     expect(svg).toMatch(/class="export-terminal ac" transform="translate\([\d.]+ 0\) scale\(-0\.6666666666666666 0\.5\)"/);

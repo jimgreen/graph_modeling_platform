@@ -89,6 +89,8 @@ import {
   getDeviceGlyphVariant,
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
+  nodeAllowsResizeTransform,
+  ALLOW_RESIZE_TRANSFORM_PARAM,
   isCanvasNodeMovable,
   isRoutableLineDeviceKind,
   getConnectionStrokeColor,
@@ -1365,7 +1367,29 @@ describe("power system model", () => {
     };
 
     expect(createNodeFromTemplate(customSizedTemplate, { x: 0, y: 0 }).size).toEqual({ width: 150, height: 60 });
-    expect(createDefaultNode("ac-source", { x: 0, y: 0 }).params._labelFontSize).toBe("12");
+    expect(createDefaultNode("ac-source", { x: 0, y: 0 }).params._labelFontSize).toBe("14");
+  });
+
+  test("defaults resize transform permission by element category", () => {
+    const regularDevice = createDefaultNode("ac-load", { x: 0, y: 0 });
+    const staticGraphic = createDefaultNode("static-image", { x: 0, y: 0 });
+    const bus = createDefaultNode("ac-bus", { x: 0, y: 0 });
+    const tankContainer = createDefaultNode("hydrogen-tank-container", { x: 0, y: 0 });
+    const routableBranch = createDefaultNode("ac-routable-line", { x: 0, y: 0 });
+
+    expect(regularDevice.params[ALLOW_RESIZE_TRANSFORM_PARAM]).toBe("0");
+    expect(nodeAllowsResizeTransform(regularDevice)).toBe(false);
+    expect(staticGraphic.params[ALLOW_RESIZE_TRANSFORM_PARAM]).toBe("1");
+    expect(nodeAllowsResizeTransform(staticGraphic)).toBe(true);
+    expect(bus.params[ALLOW_RESIZE_TRANSFORM_PARAM]).toBe("1");
+    expect(nodeAllowsResizeTransform(bus)).toBe(true);
+    expect(tankContainer.params[ALLOW_RESIZE_TRANSFORM_PARAM]).toBe("1");
+    expect(nodeAllowsResizeTransform(tankContainer)).toBe(true);
+    expect(routableBranch.params[ALLOW_RESIZE_TRANSFORM_PARAM]).toBe("1");
+    expect(nodeAllowsResizeTransform(routableBranch)).toBe(true);
+
+    expect(nodeAllowsResizeTransform({ ...regularDevice, params: { ...regularDevice.params, [ALLOW_RESIZE_TRANSFORM_PARAM]: "1" } })).toBe(true);
+    expect(nodeAllowsResizeTransform({ ...bus, params: { ...bus.params, [ALLOW_RESIZE_TRANSFORM_PARAM]: "0" } })).toBe(false);
   });
 
   test("places converter elements under AC/DC device library groups", () => {
@@ -8929,6 +8953,32 @@ describe("power system model", () => {
     expect(conflictingErrors).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "island-voltage-mismatch", relatedNodeIds: expect.arrayContaining([source10.id, zeroBranch.id, load35.id]) })
     ]));
+  });
+
+  test("uses routable line endpoint refs as topology connections", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const branchTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-zero-routable-branch");
+    expect(branchTemplate).toBeDefined();
+    const load = createDefaultNode("ac-load", { x: 460, y: 100 });
+    const branch = createRoutableLineDeviceFromEndpoints(
+      branchTemplate!,
+      getTerminalPoint(source, "t1"),
+      getTerminalPoint(load, "t1"),
+      DEFAULT_MODEL_LAYER_ID,
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: routableLineDeviceEndpointRefForNode(load, "t1")
+      }
+    );
+    source.terminals[0].vbase = "10 kV";
+
+    const errors = validateTopology([source, branch, load], [], { includeVoltageSetpointDeviations: false });
+    const calculated = calculateElectricalTopology([source, branch, load], []);
+    const byId = new Map(calculated.map((node) => [node.id, node]));
+
+    expect(errors.some((error) => error.type === "floating-terminal")).toBe(false);
+    expect(errors.some((error) => error.type === "missing-island-voltage")).toBe(false);
+    expect(byId.get(load.id)?.terminals[0].vbase).toBe("10");
   });
 
   test("reports transformer terminals that fall inside the same topology island", () => {
