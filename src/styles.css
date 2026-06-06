@@ -2891,6 +2891,38 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   scrollbar-width: thin;
 }
 
+.device-info-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.device-info-tabs button {
+  min-height: 28px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  color: #334155;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.device-info-tabs button:hover,
+.device-info-tabs button:focus-visible {
+  color: #1d4ed8;
+  border-color: #93c5fd;
+  background: #eff6ff;
+  outline: none;
+}
+
+.device-info-tabs button.active {
+  color: #ffffff;
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+}
+
 .graph-param-table-wrap .param-table {
   margin-bottom: 0;
 }
@@ -5667,11 +5699,116 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   font-size: 12px;
 }
 
+.measurement-editor-dialog {
+  width: min(1080px, calc(100vw - 48px));
+  max-height: min(760px, calc(100vh - 48px));
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+}
+
+.measurement-editor-dialog header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.measurement-editor-dialog h2 {
+  margin: 0 0 4px;
+  color: #1e293b;
+  font-size: 16px;
+}
+
+.measurement-editor-dialog p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.measurement-editor-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.measurement-editor-summary label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.measurement-editor-summary input,
+.measurement-editor-summary select {
+  min-width: 0;
+  height: 28px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  padding: 0 7px;
+  color: #1f2937;
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.measurement-editor-table-wrap {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid rgba(203, 213, 225, 0.72);
+  border-radius: 7px;
+}
+
+.measurement-editor-table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.measurement-editor-table th,
+.measurement-editor-table td {
+  padding: 6px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.85);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.measurement-editor-table th {
+  color: #475569;
+  background: #f8fafc;
+  font-weight: 700;
+}
+
+.measurement-editor-table input,
+.measurement-editor-table select {
+  width: 100%;
+  min-width: 72px;
+  height: 26px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  padding: 0 6px;
+  color: #1f2937;
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.measurement-editor-table input[type="color"] {
+  width: 38px;
+  min-width: 38px;
+  padding: 1px;
+}
+
 .measurement-config-tabs,
 .measurement-config-toolbar,
 .measurement-sidebar-actions,
-.measurement-item-toolbar,
-.measurement-offset-editor {
+.measurement-item-toolbar {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -5726,8 +5863,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .measurement-table select,
 .measurement-profile-device-select select,
 .measurement-item-toolbar select,
-.measurement-item-display-grid input,
-.measurement-offset-editor input {
+.measurement-item-display-grid input {
   min-height: 24px;
   border: 1px solid rgba(203, 213, 225, 0.72);
   border-radius: 4px;
@@ -5790,10 +5926,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   padding: 2px 7px;
   border-radius: 4px;
   font-size: 12px;
-}
-
-.measurement-offset-editor input {
-  width: 72px;
 }
 
 .measurement-item-toolbar {

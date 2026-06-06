@@ -140,6 +140,31 @@ describe("measurement domain", () => {
     expect(formatMeasurementDisplayValue(undefined, 1, "")).toBe("--");
   });
 
+  test("keeps measurement group label and unit visibility flags", () => {
+    const normalized = normalizeProjectMeasurements(
+      {
+        version: 1,
+        groups: [{
+          id: "group-visibility",
+          nodeId: "node-1",
+          visible: true,
+          labelVisible: false,
+          unitVisible: false,
+          anchor: "bottom",
+          offset: { x: 0, y: 70 },
+          layout: "vertical",
+          items: []
+        }]
+      },
+      [node("node-1")]
+    );
+
+    expect(normalized.groups[0]).toMatchObject({
+      labelVisible: false,
+      unitVisible: false
+    });
+  });
+
   test("drops measurement groups whose owning node no longer exists", () => {
     const normalized = normalizeProjectMeasurements(
       {

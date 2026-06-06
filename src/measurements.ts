@@ -73,6 +73,8 @@ export type MeasurementGroup = {
   id: string;
   nodeId: string;
   visible: boolean;
+  labelVisible?: boolean;
+  unitVisible?: boolean;
   anchor: MeasurementGroupAnchor;
   offset: { x: number; y: number };
   layout: MeasurementGroupLayout;
@@ -408,6 +410,8 @@ export function measurementGroupsForExistingNodes(groups: readonly MeasurementGr
       id: String(group.id || `measurement-${group.nodeId}`),
       nodeId: group.nodeId,
       visible: group.visible !== false,
+      labelVisible: group.labelVisible === undefined ? undefined : group.labelVisible !== false,
+      unitVisible: group.unitVisible === undefined ? undefined : group.unitVisible !== false,
       anchor: normalizedAnchor(group.anchor),
       offset: {
         x: finiteNumber(group.offset?.x, 0),
@@ -461,6 +465,8 @@ export function createDefaultMeasurementGroupForNode(
     id: `measurement-${node.id}`,
     nodeId: node.id,
     visible: true,
+    labelVisible: true,
+    unitVisible: true,
     anchor: "bottom",
     offset: { x: 0, y: Math.round(node.size.height / 2 + 42) },
     layout: "vertical",
