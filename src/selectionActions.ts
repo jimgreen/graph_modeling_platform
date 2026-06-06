@@ -66,6 +66,10 @@ export type CanvasLayoutUnit = {
   layoutBounds: SelectionRect;
 };
 
+export type BuildCanvasLayoutUnitsOptions = {
+  isTransformableNode?: (node: ModelNode) => boolean;
+};
+
 export const AUTO_ALIGN_DEFAULT_THRESHOLD_PX = 50;
 export const AUTO_ALIGN_MIN_THRESHOLD_PX = 5;
 export const AUTO_ALIGN_MAX_THRESHOLD_PX = 200;
@@ -744,7 +748,8 @@ export function buildCanvasLayoutUnits(
   selectedNodeIds: readonly string[],
   selectedEdgeIds: readonly string[],
   edges: readonly Edge[] = [],
-  routedEdges: readonly RoutedEdge[] = []
+  routedEdges: readonly RoutedEdge[] = [],
+  options: BuildCanvasLayoutUnitsOptions = {}
 ): CanvasLayoutUnit[] {
   if (selectedNodeIds.length === 0 && selectedEdgeIds.length === 0) {
     return [];
@@ -761,7 +766,10 @@ export function buildCanvasLayoutUnits(
       continue;
     }
     const groupMembers = collectGroupTreeMembers(group, groupsById);
-    const groupNodeIds = groupMembers.nodeIds.filter((nodeId) => nodesById.has(nodeId));
+    const groupNodeIds = groupMembers.nodeIds.filter((nodeId) => {
+      const node = nodesById.get(nodeId);
+      return Boolean(node && (options.isTransformableNode?.(node) ?? true));
+    });
     const groupNodeIdSet = new Set(groupNodeIds);
     const internalEdgeIds = edges
       .filter((edge) => groupNodeIdSet.has(edge.sourceId) && groupNodeIdSet.has(edge.targetId))
@@ -797,7 +805,7 @@ export function buildCanvasLayoutUnits(
       continue;
     }
     const node = nodesById.get(nodeId);
-    if (!node) {
+    if (!node || !(options.isTransformableNode?.(node) ?? true)) {
       continue;
     }
     units.push({

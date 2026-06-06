@@ -3,6 +3,7 @@ import {
   assignPermanentDeviceIndex,
   calculateNodeVisualBounds,
   createDefaultNode,
+  isCanvasNodeMovable,
   normalizeDeviceIndexCounters,
   routeEdgesForRendering,
   type Edge,
@@ -545,6 +546,32 @@ describe("canvas selection actions", () => {
     expect(expanded.nodeIds).toEqual([first.id, second.id, third.id, fourth.id]);
     expect(selectedGroupIds).toEqual([root.id]);
     expect(canvasGroupMemberNodeIds(groups, selectedGroupIds)).toEqual([first.id, second.id, third.id, fourth.id]);
+  });
+
+  test("can exclude routable line-like devices from transformable group layout nodes", () => {
+    const source = { ...createDefaultNode("ac-source", { x: 100, y: 100 }), id: "source-node" };
+    const target = { ...createDefaultNode("ac-load", { x: 420, y: 100 }), id: "target-node" };
+    const line = { ...createDefaultNode("ac-routable-line", { x: 260, y: 100 }), id: "line-node" };
+    const groups: ModelGroup[] = [{
+      id: "group-with-line",
+      name: "组合1",
+      nodeIds: [source.id, line.id, target.id],
+      edgeIds: []
+    }];
+
+    const units = buildCanvasLayoutUnits(
+      groups,
+      [source, line, target],
+      [source.id],
+      [],
+      [],
+      [],
+      { isTransformableNode: (node) => isCanvasNodeMovable(node.kind) }
+    );
+
+    expect(units).toHaveLength(1);
+    expect(units[0].nodeIds).toEqual([source.id, target.id]);
+    expect(units[0].nodeIds).not.toContain(line.id);
   });
 
   test("copies and pastes selected graphics while preserving their group relationship", () => {

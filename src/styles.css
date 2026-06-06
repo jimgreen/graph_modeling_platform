@@ -1928,6 +1928,26 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   pointer-events: none;
 }
 
+.diagram-node.routable-line-node,
+.diagram-node.routable-line-node:active {
+  cursor: default;
+}
+
+.routable-line-device-hitline {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 18;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: stroke;
+  cursor: default;
+}
+
+.routable-line-device-lod-line {
+  pointer-events: none;
+}
+
 .diagram-node.routable-line-node.selected .routable-line-device-glyph path,
 .diagram-node.routable-line-node.connect-source .routable-line-device-glyph path {
   stroke: #dc2626;
@@ -5540,6 +5560,230 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .react-flow-preview-panel strong {
   color: #0f172a;
   font-size: 12px;
+}
+
+.measurement-layer {
+  overflow: visible;
+}
+
+.measurement-group {
+  cursor: move;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.measurement-group.drag-origin {
+  opacity: 0.24;
+}
+
+.drag-preview-measurement-group {
+  pointer-events: none;
+}
+
+.browse-mode .measurement-group {
+  cursor: default;
+  pointer-events: none;
+}
+
+.measurement-group-bg {
+  fill: rgba(255, 255, 255, 0.84);
+  stroke: rgba(100, 116, 139, 0.36);
+  stroke-width: 1;
+  filter: drop-shadow(0 2px 5px rgba(15, 23, 42, 0.12));
+}
+
+.measurement-group.selected .measurement-group-bg {
+  stroke: rgba(37, 99, 235, 0.72);
+  stroke-width: 1.4;
+}
+
+.measurement-item {
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-linejoin: round;
+  stroke-width: 3px;
+}
+
+.measurement-config-open-button {
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.measurement-config-dialog {
+  width: min(980px, calc(100vw - 48px));
+  max-height: calc(100vh - 64px);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.54);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1f2937;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.22);
+}
+
+.measurement-config-dialog header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.measurement-config-dialog h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.measurement-config-dialog p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.measurement-config-tabs,
+.measurement-config-toolbar,
+.measurement-sidebar-actions,
+.measurement-item-toolbar,
+.measurement-offset-editor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.measurement-config-tabs button {
+  min-height: 26px;
+  padding: 3px 10px;
+  border-radius: 4px;
+}
+
+.measurement-config-tabs button.active {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.measurement-config-panel {
+  min-height: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.measurement-table-wrap {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid rgba(203, 213, 225, 0.72);
+  border-radius: 6px;
+}
+
+.measurement-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.measurement-table th,
+.measurement-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.85);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.measurement-table th {
+  color: #475569;
+  background: #f8fafc;
+  font-weight: 700;
+}
+
+.measurement-table input,
+.measurement-table select,
+.measurement-profile-device-select select,
+.measurement-item-toolbar select,
+.measurement-item-display-grid input,
+.measurement-offset-editor input {
+  min-height: 24px;
+  border: 1px solid rgba(203, 213, 225, 0.72);
+  border-radius: 4px;
+  background: #ffffff;
+  color: #1f2937;
+  font-size: 12px;
+}
+
+.measurement-table input[type="color"],
+.measurement-item-display-grid input[type="color"] {
+  width: 32px;
+  padding: 1px;
+}
+
+.measurement-profile-device-select {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.measurement-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  overflow: auto;
+  padding: 2px;
+}
+
+.measurement-profile-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 6px;
+  align-items: center;
+  padding: 7px 8px;
+  border: 1px solid rgba(203, 213, 225, 0.72);
+  border-radius: 6px;
+  background: #f8fafc;
+  font-size: 12px;
+}
+
+.measurement-profile-option small {
+  grid-column: 2;
+  color: #64748b;
+}
+
+.measurement-section-row th,
+.measurement-item-row th {
+  color: #1d4ed8;
+}
+
+.measurement-sidebar-actions {
+  flex-wrap: wrap;
+}
+
+.measurement-sidebar-actions button,
+.measurement-item-toolbar button {
+  min-height: 24px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.measurement-offset-editor input {
+  width: 72px;
+}
+
+.measurement-item-toolbar {
+  flex-wrap: wrap;
+}
+
+.measurement-item-toolbar select:first-child {
+  min-width: 96px;
+}
+
+.measurement-item-display-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(48px, 0.8fr) 58px 36px 58px;
+  align-items: center;
+  gap: 5px;
 }
 
 @keyframes reactFlowSavedPathDash {

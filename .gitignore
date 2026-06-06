@@ -3,6 +3,8 @@ dist/
 data/
 .codex-logs/
 logs/
+tmp/
+.playwright-cli/
 .worktrees/
 *.tsbuildinfo
 vite.config.js

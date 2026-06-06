@@ -12,11 +12,13 @@ const imageFoldersPath = join(imageDataDir, "folders.json");
 const schemeDataDir = resolve(repoRoot, "data", "schemes");
 const settingsDataDir = resolve(repoRoot, "data", "settings");
 const colorConfigPath = join(settingsDataDir, "color-config.json");
+const measurementConfigPath = join(settingsDataDir, "measurement-config.json");
 const deviceLibraryDataDir = resolve(repoRoot, "data", "device-library");
 const deviceLibraryPath = join(deviceLibraryDataDir, "library.json");
 const maxImageBodyBytes = 16 * 1024 * 1024;
 const maxSchemeBodyBytes = 64 * 1024 * 1024;
 const maxColorConfigBodyBytes = 1024 * 1024;
+const maxMeasurementConfigBodyBytes = 1024 * 1024;
 const maxDeviceLibraryBodyBytes = 16 * 1024 * 1024;
 const maxFilePartLength = 80;
 const accessControlHeaders = {
@@ -412,6 +414,129 @@ async function writeColorConfig(config) {
     savedAt: new Date().toISOString()
   };
   await writeJsonStoreFile(settingsDataDir, colorConfigPath, normalized);
+  return normalized;
+}
+
+function normalizeMeasurementValueType(value) {
+  return value === "string" || value === "boolean" ? value : "number";
+}
+
+function normalizeMeasurementFontWeight(value) {
+  return value === "400" || value === "700" ? value : "500";
+}
+
+function normalizeMeasurementStyleOverride(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const style = {};
+  if (typeof value.color === "string" && value.color.trim()) {
+    style.color = value.color.trim();
+  }
+  if (typeof value.fontFamily === "string" && value.fontFamily.trim()) {
+    style.fontFamily = value.fontFamily.trim();
+  }
+  if (Number.isFinite(Number(value.fontSize))) {
+    style.fontSize = Math.max(6, Math.min(96, Number(value.fontSize)));
+  }
+  if (value.fontWeight === "400" || value.fontWeight === "500" || value.fontWeight === "700") {
+    style.fontWeight = value.fontWeight;
+  }
+  if (value.fontStyle === "italic") {
+    style.fontStyle = "italic";
+  }
+  if (value.textDecoration === "underline") {
+    style.textDecoration = "underline";
+  }
+  return Object.keys(style).length > 0 ? style : undefined;
+}
+
+function normalizeMeasurementConfig(payload) {
+  const source = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+  const seenTypes = new Set();
+  const measurementTypes = (Array.isArray(source.measurementTypes) ? source.measurementTypes : []).flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return [];
+    }
+    const id = String(item.id ?? "").trim();
+    if (!id || seenTypes.has(id)) {
+      return [];
+    }
+    seenTypes.add(id);
+    const key = String(item.key ?? id).trim() || id;
+    const name = String(item.name ?? key).trim() || key;
+    return [{
+      id,
+      key,
+      name,
+      shortLabel: String(item.shortLabel ?? name).trim() || name,
+      defaultUnit: String(item.defaultUnit ?? ""),
+      valueType: normalizeMeasurementValueType(item.valueType),
+      defaultDecimals: Math.max(0, Math.min(8, Number.isFinite(Number(item.defaultDecimals)) ? Number(item.defaultDecimals) : 3)),
+      defaultColor: String(item.defaultColor ?? "#334155").trim() || "#334155",
+      defaultFontFamily: String(item.defaultFontFamily ?? "Arial").trim() || "Arial",
+      defaultFontSize: Math.max(6, Math.min(96, Number.isFinite(Number(item.defaultFontSize)) ? Number(item.defaultFontSize) : 12)),
+      defaultFontWeight: normalizeMeasurementFontWeight(item.defaultFontWeight),
+      defaultVisible: item.defaultVisible !== false
+    }];
+  });
+  const validTypeIds = new Set(measurementTypes.map((item) => item.id));
+  const seenProfiles = new Set();
+  const deviceProfiles = (Array.isArray(source.deviceProfiles) ? source.deviceProfiles : []).flatMap((profile) => {
+    if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
+      return [];
+    }
+    const deviceKind = String(profile.deviceKind ?? "").trim();
+    if (!deviceKind || seenProfiles.has(deviceKind)) {
+      return [];
+    }
+    seenProfiles.add(deviceKind);
+    const items = (Array.isArray(profile.items) ? profile.items : []).flatMap((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return [];
+      }
+      const measurementTypeId = String(item.measurementTypeId ?? "").trim();
+      if (!measurementTypeId || !validTypeIds.has(measurementTypeId)) {
+        return [];
+      }
+      return [{
+        measurementTypeId,
+        role: item.role ? String(item.role) : undefined,
+        defaultVisible: item.defaultVisible,
+        labelOverride: item.labelOverride ? String(item.labelOverride) : undefined,
+        unitOverride: item.unitOverride ? String(item.unitOverride) : undefined,
+        decimalsOverride: item.decimalsOverride === undefined
+          ? undefined
+          : Math.max(0, Math.min(8, Number.isFinite(Number(item.decimalsOverride)) ? Number(item.decimalsOverride) : 3)),
+        styleOverride: normalizeMeasurementStyleOverride(item.styleOverride)
+      }];
+    });
+    return [{ deviceKind, items }];
+  });
+  return { measurementTypes, deviceProfiles };
+}
+
+async function readMeasurementConfig() {
+  const parsed = await readOptionalJsonStoreFile(settingsDataDir, measurementConfigPath);
+  if (parsed) {
+    return {
+      exists: true,
+      ...normalizeMeasurementConfig(parsed)
+    };
+  }
+  return {
+    exists: false,
+    measurementTypes: [],
+    deviceProfiles: []
+  };
+}
+
+async function writeMeasurementConfig(config) {
+  const normalized = {
+    ...normalizeMeasurementConfig(config),
+    savedAt: new Date().toISOString()
+  };
+  await writeJsonStoreFile(settingsDataDir, measurementConfigPath, normalized);
   return normalized;
 }
 
@@ -1315,6 +1440,12 @@ async function handleSaveColorConfig(request, response) {
   sendJson(response, 200, { ok: true, ...normalized });
 }
 
+async function handleSaveMeasurementConfig(request, response) {
+  const payload = await readJsonBody(request, maxMeasurementConfigBodyBytes, "动态量测配置数据过大，最大支持 1MB。");
+  const normalized = await writeMeasurementConfig(payload);
+  sendJson(response, 200, { ok: true, ...normalized });
+}
+
 async function handleSaveDeviceLibrary(request, response) {
   const payload = await readJsonBody(request, maxDeviceLibraryBodyBytes, "图元库数据过大，最大支持 16MB。");
   const normalized = await writeDeviceLibraryConfig(payload);
@@ -1361,6 +1492,13 @@ export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
     }],
     ["PUT /api/color-config", async ({ request, response }) => {
       await handleSaveColorConfig(request, response);
+    }],
+    ["GET /api/measurement-config", async ({ response }) => {
+      const measurementConfig = await readMeasurementConfig();
+      sendJson(response, 200, measurementConfig);
+    }],
+    ["PUT /api/measurement-config", async ({ request, response }) => {
+      await handleSaveMeasurementConfig(request, response);
     }],
     ["GET /api/device-library", async ({ response }) => {
       const deviceLibraryConfig = await readDeviceLibraryConfig();

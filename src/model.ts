@@ -1,3 +1,6 @@
+import { normalizeProjectMeasurements } from "./measurements";
+import type { ProjectMeasurementConfig } from "./measurements";
+
 export type DeviceKind =
   | "static-text"
   | "static-line"
@@ -452,6 +455,7 @@ export type ProjectFile = {
   powerBaseValue?: number;
   deviceIndexCounters?: DeviceIndexCounters;
   groups?: ModelGroup[];
+  measurements?: ProjectMeasurementConfig;
   nodes: ModelNode[];
   edges: Edge[];
 };
@@ -698,6 +702,10 @@ const ROUTABLE_LINE_DEVICE_KINDS = new Set<string>([
 
 export function isRoutableLineDeviceKind(kind: string): boolean {
   return ROUTABLE_LINE_DEVICE_KINDS.has(baseDeviceKind(kind));
+}
+
+export function isCanvasNodeMovable(kind: string): boolean {
+  return !isRoutableLineDeviceKind(kind);
 }
 
 export function inferESection(kind: string, params: Record<string, string> = {}) {
@@ -4984,6 +4992,9 @@ export type RoutableLineDeviceEndpointRefs = {
   target?: RoutableLineDeviceEndpointRef;
 };
 
+const ROUTABLE_LINE_ENDPOINT_TERMINAL_INFER_TOLERANCE = 12;
+const ROUTABLE_LINE_ENDPOINT_BUS_INFER_TOLERANCE = 18;
+
 function parseRoutableLineEndpointLocalPoint(value?: string): Point | undefined {
   const points = parseRoutableLineDevicePoints(value);
   return points[0];
@@ -5036,6 +5047,129 @@ export function routableLineDeviceEndpointRefForNode(
     nodeId: node.id,
     terminalId,
     localPoint: point ? pointToNodeLocal(node, point) : undefined
+  };
+}
+
+function pointDistance(first: Point, second: Point): number {
+  return Math.hypot(first.x - second.x, first.y - second.y);
+}
+
+function routableLineBusEndpointSnapPointWithinTolerance(
+  bus: ModelNode,
+  point: Point,
+  tolerance = ROUTABLE_LINE_ENDPOINT_BUS_INFER_TOLERANCE
+): Point | undefined {
+  if (!isBusNode(bus)) {
+    return undefined;
+  }
+  if (isBoundaryBusNode(bus)) {
+    const projected = projectPointToNodeBoundary(bus, point);
+    return pointDistance(projected, point) <= tolerance ? projected : undefined;
+  }
+  const local = pointToNodeLocal(bus, point);
+  const halfWidth = (bus.size.width * Math.abs(getNodeScaleX(bus))) / 2;
+  const halfHeight = Math.max(4, (bus.size.height * Math.abs(getNodeScaleY(bus))) / 2);
+  if (
+    local.x < -halfWidth - tolerance ||
+    local.x > halfWidth + tolerance ||
+    Math.abs(local.y) > halfHeight + tolerance
+  ) {
+    return undefined;
+  }
+  return projectPointToBusCenterline(bus, point);
+}
+
+function inferRoutableLineEndpointRefForPoint(
+  node: ModelNode,
+  endpointIndex: 0 | 1,
+  point: Point | undefined,
+  referenceNodes: readonly ModelNode[]
+): RoutableLineDeviceEndpointRef | undefined {
+  const endpointTerminal = node.terminals[endpointIndex];
+  if (!endpointTerminal || !point) {
+    return undefined;
+  }
+  let bestRef: RoutableLineDeviceEndpointRef | undefined;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  const accept = (candidate: ModelNode, terminalId: string, snappedPoint: Point, distance: number) => {
+    if (
+      distance > ROUTABLE_LINE_ENDPOINT_TERMINAL_INFER_TOLERANCE &&
+      !isBusNode(candidate)
+    ) {
+      return;
+    }
+    if (distance >= bestDistance) {
+      return;
+    }
+    bestRef = routableLineDeviceEndpointRefForNode(candidate, terminalId, snappedPoint);
+    bestDistance = distance;
+  };
+  for (const candidate of referenceNodes) {
+    if (candidate.id === node.id || isRoutableLineDeviceKind(candidate.kind)) {
+      continue;
+    }
+    if (isBusNode(candidate)) {
+      if (getBusTerminalType(candidate) !== endpointTerminal.type) {
+        continue;
+      }
+      const snappedPoint = routableLineBusEndpointSnapPointWithinTolerance(candidate, point);
+      if (!snappedPoint) {
+        continue;
+      }
+      const terminalId =
+        candidate.terminals.find((terminal) => terminal.type === endpointTerminal.type)?.id ??
+        candidate.terminals[0]?.id ??
+        "t1";
+      accept(candidate, terminalId, snappedPoint, pointDistance(point, snappedPoint));
+      continue;
+    }
+    for (const terminal of candidate.terminals) {
+      if (terminal.type !== endpointTerminal.type) {
+        continue;
+      }
+      const terminalPoint = getTerminalPoint(candidate, terminal.id);
+      const distance = pointDistance(point, terminalPoint);
+      if (distance <= ROUTABLE_LINE_ENDPOINT_TERMINAL_INFER_TOLERANCE) {
+        accept(candidate, terminal.id, terminalPoint, distance);
+      }
+    }
+  }
+  return bestRef;
+}
+
+export function inferMissingRoutableLineDeviceEndpointRefs(
+  node: ModelNode,
+  referenceNodes: readonly ModelNode[]
+): ModelNode {
+  if (!isRoutableLineDeviceKind(node.kind)) {
+    return node;
+  }
+  const refs = routableLineDeviceEndpointRefs(node);
+  if (refs.source && refs.target) {
+    return node;
+  }
+  const points = routableLineDeviceCanvasPoints(node);
+  const firstPoint = points[0];
+  const lastPoint = points[points.length - 1];
+  const inferredSource = refs.source
+    ? undefined
+    : inferRoutableLineEndpointRefForPoint(node, 0, firstPoint, referenceNodes);
+  const inferredTarget = refs.target
+    ? undefined
+    : inferRoutableLineEndpointRefForPoint(node, 1, lastPoint, referenceNodes);
+  if (!inferredSource && !inferredTarget) {
+    return node;
+  }
+  const endpointRefs: RoutableLineDeviceEndpointRefs = {};
+  if (inferredSource) {
+    endpointRefs.source = inferredSource;
+  }
+  if (inferredTarget) {
+    endpointRefs.target = inferredTarget;
+  }
+  return {
+    ...node,
+    params: applyRoutableLineEndpointRefs(node.params, endpointRefs)
   };
 }
 
@@ -5157,27 +5291,29 @@ function routableLineDeviceRoutingEdge(
 export function syncRoutableLineDeviceEndpointsToRefs(
   node: ModelNode,
   nodes: ModelNode[],
-  nodeById: Map<string, ModelNode> = new Map(nodes.map((item) => [item.id, item]))
+  nodeById: Map<string, ModelNode> = new Map(nodes.map((item) => [item.id, item])),
+  referenceNodes: readonly ModelNode[] = nodes
 ): ModelNode {
   if (!isRoutableLineDeviceKind(node.kind)) {
     return node;
   }
-  const refs = routableLineDeviceEndpointRefs(node);
+  const nodeWithRefs = inferMissingRoutableLineDeviceEndpointRefs(node, referenceNodes);
+  const refs = routableLineDeviceEndpointRefs(nodeWithRefs);
   if (!refs.source && !refs.target) {
-    return node;
+    return nodeWithRefs;
   }
-  const currentPoints = routableLineDeviceCanvasPoints(node);
+  const currentPoints = routableLineDeviceCanvasPoints(nodeWithRefs);
   const currentStart = currentPoints[0];
   const currentEnd = currentPoints[currentPoints.length - 1];
   if (!currentStart || !currentEnd) {
-    return node;
+    return nodeWithRefs;
   }
   const nextStart = routableLineEndpointPointFromRef(refs.source, nodeById) ?? currentStart;
   const nextEnd = routableLineEndpointPointFromRef(refs.target, nodeById) ?? currentEnd;
   if (nextStart.x === currentStart.x && nextStart.y === currentStart.y && nextEnd.x === currentEnd.x && nextEnd.y === currentEnd.y) {
-    return node;
+    return nodeWithRefs;
   }
-  return setRoutableLineDeviceEndpoints(node, nextStart, nextEnd);
+  return setRoutableLineDeviceEndpoints(nodeWithRefs, nextStart, nextEnd);
 }
 
 export function routeRoutableLineDevice(node: ModelNode, nodes: ModelNode[], bounds?: CanvasBounds): ModelNode {
@@ -5214,7 +5350,8 @@ export function routeRoutableLineDevice(node: ModelNode, nodes: ModelNode[], bou
 export function rebuildRoutableLineDeviceRouteUpdates(
   nodes: ModelNode[],
   lineNodeIds: Iterable<string>,
-  bounds?: CanvasBounds
+  bounds?: CanvasBounds,
+  referenceNodes: readonly ModelNode[] = nodes
 ): ModelNode[] {
   const requestedIds = new Set(lineNodeIds);
   if (requestedIds.size === 0) {
@@ -5226,7 +5363,7 @@ export function rebuildRoutableLineDeviceRouteUpdates(
     if (!requestedIds.has(node.id) || !isRoutableLineDeviceKind(node.kind)) {
       continue;
     }
-    const syncedNode = syncRoutableLineDeviceEndpointsToRefs(node, nodes, nodeById);
+    const syncedNode = syncRoutableLineDeviceEndpointsToRefs(node, nodes, nodeById, referenceNodes);
     const routingNodes = syncedNode === node ? nodes : nodes.map((item) => (item.id === syncedNode.id ? syncedNode : item));
     const nextNode = routeRoutableLineDevice(syncedNode, routingNodes, bounds);
     if (nextNode !== node) {
@@ -6185,6 +6322,10 @@ function terminalPairKey(first: Pick<OverlappingTerminalRef, "nodeId" | "termina
   return `${refs[0]}|${refs[1]}`;
 }
 
+function canReconcileImplicitTerminalConnection(node: ModelNode | undefined | null): node is ModelNode {
+  return Boolean(node && !isBusNode(node) && !isStaticNode(node) && !isRoutableLineDeviceKind(node.kind));
+}
+
 export function getOverlappingTerminalGroups(nodes: ModelNode[], affectedNodeIds?: ReadonlySet<string>): OverlappingTerminalGroup[] {
   if (affectedNodeIds && affectedNodeIds.size === 0) {
     return [];
@@ -6381,6 +6522,7 @@ export function getTerminalBusContactGroups(
 }
 
 function collectOverlappingTerminalPairs(nodes: ModelNode[], affectedNodeIds?: ReadonlySet<string>) {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const pairs = new Map<string, { first: OverlappingTerminalRef; second: OverlappingTerminalRef }>();
   for (const group of getOverlappingTerminalGroups(nodes, affectedNodeIds)) {
     for (let firstIndex = 0; firstIndex < group.terminals.length; firstIndex += 1) {
@@ -6388,6 +6530,12 @@ function collectOverlappingTerminalPairs(nodes: ModelNode[], affectedNodeIds?: R
         const first = group.terminals[firstIndex];
         const second = group.terminals[secondIndex];
         if (first.nodeId === second.nodeId) {
+          continue;
+        }
+        if (
+          !canReconcileImplicitTerminalConnection(nodeById.get(first.nodeId)) ||
+          !canReconcileImplicitTerminalConnection(nodeById.get(second.nodeId))
+        ) {
           continue;
         }
         if (affectedNodeIds && !affectedNodeIds.has(first.nodeId) && !affectedNodeIds.has(second.nodeId)) {
@@ -6404,10 +6552,18 @@ function terminalBusPairKey(contact: Pick<TerminalBusContact, "nodeId" | "termin
   return `${terminalRefKey(contact.nodeId, contact.terminalId)}|bus:${contact.busId}`;
 }
 
-function collectTerminalBusContacts(nodes: ModelNode[], affectedNodeIds?: ReadonlySet<string>) {
+function collectTerminalBusContacts(
+  nodes: ModelNode[],
+  affectedNodeIds?: ReadonlySet<string>,
+  options: { implicitReconcileOnly?: boolean } = {}
+) {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const contacts = new Map<string, TerminalBusContact>();
   for (const group of getTerminalBusContactGroups(nodes, 0, affectedNodeIds)) {
     for (const contact of group.contacts) {
+      if (options.implicitReconcileOnly && !canReconcileImplicitTerminalConnection(nodeById.get(contact.nodeId))) {
+        continue;
+      }
       contacts.set(terminalBusPairKey(contact), contact);
     }
   }
@@ -6427,7 +6583,7 @@ function explicitEdgeTerminalPairKey(edge: Edge): string | null {
 function sameTypeEndpointTerminalsOverlap(nodesById: Map<string, ModelNode>, edge: Edge): boolean {
   const source = nodesById.get(edge.sourceId);
   const target = nodesById.get(edge.targetId);
-  if (!source || !target || isBusNode(source) || isBusNode(target) || isStaticNode(source) || isStaticNode(target)) {
+  if (!canReconcileImplicitTerminalConnection(source) || !canReconcileImplicitTerminalConnection(target)) {
     return false;
   }
   const sourceTerminal = source.terminals.find((terminal) => terminal.id === edge.sourceTerminalId);
@@ -6448,7 +6604,7 @@ function sameTypeEndpointTouchesBus(nodesById: Map<string, ModelNode>, edge: Edg
   }
   const bus = isBusNode(source) ? source : isBusNode(target) ? target : null;
   const device = bus === source ? target : bus === target ? source : null;
-  if (!bus || !device || isStaticNode(device)) {
+  if (!bus || !canReconcileImplicitTerminalConnection(device)) {
     return false;
   }
   const deviceTerminalId = bus === source ? edge.targetTerminalId : edge.sourceTerminalId;
@@ -6471,8 +6627,8 @@ export function reconcileOverlappingTerminalConnections(
   const nextNodeById = new Map(nextNodes.map((node) => [node.id, node]));
   const previousPairs = collectOverlappingTerminalPairs(previousNodes, affectedNodeIds);
   const nextPairs = collectOverlappingTerminalPairs(nextNodes, affectedNodeIds);
-  const previousBusContacts = collectTerminalBusContacts(previousNodes, affectedNodeIds);
-  const nextBusContacts = collectTerminalBusContacts(nextNodes, affectedNodeIds);
+  const previousBusContacts = collectTerminalBusContacts(previousNodes, affectedNodeIds, { implicitReconcileOnly: true });
+  const nextBusContacts = collectTerminalBusContacts(nextNodes, affectedNodeIds, { implicitReconcileOnly: true });
   const edgeTouchesAffectedNode = (edge: Edge) =>
     !affectedNodeIds || affectedNodeIds.has(edge.sourceId) || affectedNodeIds.has(edge.targetId);
   const relevantEdges = affectedNodeIds ? candidateEdges.filter(edgeTouchesAffectedNode) : candidateEdges;
@@ -8973,15 +9129,17 @@ export function normalizeProjectLayers(project: ProjectFile): ProjectFile {
   const activeLayerId = resolveActiveModelLayerId(baseLayers, project.activeLayerId);
   const layers = normalizeModelLayers(baseLayers, project.nodes, activeLayerId);
   const layerIds = new Set(layers.map((layer) => layer.id));
+  const nodes = project.nodes.map((node) => ({
+    ...node,
+    layerId: node.layerId && layerIds.has(node.layerId) ? node.layerId : DEFAULT_MODEL_LAYER_ID
+  }));
   return {
     ...project,
     layers,
     activeLayerId,
-    nodes: project.nodes.map((node) => ({
-      ...node,
-      layerId: node.layerId && layerIds.has(node.layerId) ? node.layerId : DEFAULT_MODEL_LAYER_ID
-    })),
-    groups: normalizeModelGroups(project.groups, project.nodes, project.edges)
+    nodes,
+    groups: normalizeModelGroups(project.groups, nodes, project.edges),
+    measurements: normalizeProjectMeasurements(project.measurements, nodes)
   };
 }
 
@@ -9110,7 +9268,8 @@ export function lockProjectEdgeTerminals(project: ProjectFile): ProjectFile {
   };
   return {
     ...locked,
-    groups: normalizeModelGroups(project.groups, nodes, locked.edges)
+    groups: normalizeModelGroups(project.groups, nodes, locked.edges),
+    measurements: normalizeProjectMeasurements(project.measurements, nodes)
   };
 }
 
@@ -9137,7 +9296,8 @@ export function createSavedProject(name: string, project: ProjectFile): SavedPro
           ...group,
           nodeIds: [...group.nodeIds],
           edgeIds: [...group.edgeIds]
-        }))
+        })),
+      measurements: normalizeProjectMeasurements(lockedProject.measurements, lockedProject.nodes)
     }
   };
 }

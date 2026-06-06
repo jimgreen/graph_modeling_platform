@@ -3240,7 +3240,9 @@ describe("graph inspector panel", () => {
     expect(source).toContain("function canvasWheelEventHasNoModifier");
     expect(source).toContain("function shouldZoomCanvasFromWheelEvent");
     expect(source).toContain("const clientPointInsideRenderedCanvas = (clientX: number, clientY: number) => {");
+    expect(source).toContain("function canvasWheelTargetIsRenderedCanvas(target: EventTarget | null)");
     expect(wheelGuardBlock).toContain("const cursorInsideCanvas = clientPointInsideRenderedCanvas(event.clientX, event.clientY);");
+    expect(wheelGuardBlock).toContain("if (!canvasWheelTargetIsRenderedCanvas(event.target))");
     expect(wheelGuardBlock).toContain("if (cursorInsideCanvas && shouldZoomCanvasFromWheelEvent(event))");
     expect(wheelGuardBlock).not.toContain("if (event.ctrlKey || event.metaKey");
     expect(wheelGuardBlock).not.toContain("plainWheelInsideCanvasFrame");
@@ -3249,8 +3251,7 @@ describe("graph inspector panel", () => {
     expect(canvasPointBlock).toContain("clientX >= svgRect.left");
     expect(canvasPointBlock).toContain("clientY <= svgRect.bottom");
     expect(wheelGuardBlock).toContain("zoomCanvasFromWheelEvent(event);");
-    expect(wheelGuardBlock).not.toContain("if ((event.target as Element | null)?.closest(\".diagram-canvas\"))");
-    expect(wheelGuardBlock).not.toContain(".closest(\".diagram-canvas\")");
+    expect(source).toContain(".closest(\".diagram-canvas\")");
     expect(source).toContain("const wheelZoomAnchorFromClient = (clientX: number, clientY: number): WheelZoomAnchor | null => {");
     expect(source).toContain("const cursorInsideFrame =");
     expect(source).toContain("const zoomCanvasFromWheelEvent = (event: CanvasWheelZoomEvent) => {");
@@ -3259,6 +3260,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const bounds = canvasBoundsRef.current;");
     expect(source).toContain("return normalizeViewBoxToCanvas({");
     expect(wheelBlock).toContain("if (!shouldZoomCanvasFromWheelEvent(event))");
+    expect(wheelBlock).toContain("if (isCanvasWheelZoomExcludedTarget(event.target) || !canvasWheelTargetIsRenderedCanvas(event.target))");
     expect(wheelBlock).toContain("if (event.nativeEvent.defaultPrevented)");
     expect(wheelBlock).toContain("zoomCanvasFromWheelEvent(event);");
     expect(wheelBlock).not.toContain("const frame = canvasFrameRef.current;");
@@ -3282,6 +3284,50 @@ describe("graph inspector panel", () => {
     expect(wheelGuardBlock).toContain("if (isCanvasWheelZoomExcludedTarget(event.target))");
     expect(wheelGuardBlock.indexOf("if (isCanvasWheelZoomExcludedTarget(event.target))")).toBeLessThan(
       wheelGuardBlock.indexOf("const cursorInsideCanvas = clientPointInsideRenderedCanvas")
+    );
+  });
+
+  test("does not route modal and popup wheel events into canvas zoom", async () => {
+    const source = await readAppSource();
+    const selectorStart = source.indexOf("const CANVAS_WHEEL_ZOOM_EXCLUSION_SELECTOR =");
+    const selectorEnd = source.indexOf("].join(\", \");", selectorStart);
+    const selectorBlock = source.slice(selectorStart, selectorEnd);
+    const wheelGuardStart = source.indexOf("const preventPageWheelZoom = (event: WheelEvent) => {");
+    const wheelGuardEnd = source.indexOf("window.addEventListener(\"wheel\", preventPageWheelZoom", wheelGuardStart);
+    const wheelGuardBlock = source.slice(wheelGuardStart, wheelGuardEnd);
+
+    expect(selectorStart).toBeGreaterThan(-1);
+    expect(selectorBlock).toContain("[role=\\\"dialog\\\"]");
+    expect(selectorBlock).toContain(".image-picker-backdrop");
+    expect(selectorBlock).toContain(".context-menu");
+    expect(wheelGuardBlock).toContain("if (isCanvasWheelZoomExcludedTarget(event.target))");
+    expect(wheelGuardBlock.indexOf("if (isCanvasWheelZoomExcludedTarget(event.target))")).toBeLessThan(
+      wheelGuardBlock.indexOf("const cursorInsideCanvas = clientPointInsideRenderedCanvas")
+    );
+  });
+
+  test("only routes wheel zoom events whose target belongs to the canvas svg", async () => {
+    const source = await readAppSource();
+    const targetStart = source.indexOf("function canvasWheelTargetIsRenderedCanvas(target: EventTarget | null)");
+    const targetEnd = source.indexOf("function readStoredInteractionMode", targetStart);
+    const targetBlock = source.slice(targetStart, targetEnd);
+    const wheelGuardStart = source.indexOf("const preventPageWheelZoom = (event: WheelEvent) => {");
+    const wheelGuardEnd = source.indexOf("window.addEventListener(\"wheel\", preventPageWheelZoom", wheelGuardStart);
+    const wheelGuardBlock = source.slice(wheelGuardStart, wheelGuardEnd);
+    const wheelStart = source.indexOf("const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {");
+    const wheelEnd = source.indexOf("const deleteSelected = () => {", wheelStart);
+    const wheelBlock = source.slice(wheelStart, wheelEnd);
+
+    expect(targetStart).toBeGreaterThan(-1);
+    expect(targetBlock).toContain("target instanceof Element ? target : target instanceof Node ? target.parentElement : null");
+    expect(targetBlock).toContain(".closest(\".diagram-canvas\")");
+    expect(wheelGuardBlock).toContain("if (!canvasWheelTargetIsRenderedCanvas(event.target))");
+    expect(wheelGuardBlock.indexOf("if (!canvasWheelTargetIsRenderedCanvas(event.target))")).toBeLessThan(
+      wheelGuardBlock.indexOf("const cursorInsideCanvas = clientPointInsideRenderedCanvas")
+    );
+    expect(wheelBlock).toContain("!canvasWheelTargetIsRenderedCanvas(event.target)");
+    expect(wheelBlock.indexOf("!canvasWheelTargetIsRenderedCanvas(event.target)")).toBeLessThan(
+      wheelBlock.indexOf("zoomCanvasFromWheelEvent(event)")
     );
   });
 
@@ -6758,6 +6804,24 @@ describe("graph inspector panel", () => {
     const endpointPreviewStart = source.indexOf("const routableLineEndpointDragPreviewRoute = useMemo");
     const endpointPreviewEnd = source.indexOf("const manualPathPreviewRoute = useMemo", endpointPreviewStart);
     const endpointPreviewBlock = source.slice(endpointPreviewStart, endpointPreviewEnd);
+    const routeCandidatesStart = source.indexOf("const routableLineRouteCandidateIdsForMovedNodes =");
+    const routeCandidatesEnd = source.indexOf("const rebuildRoutableLineNodeUpdatesForChangedNodes", routeCandidatesStart);
+    const routeCandidatesBlock = source.slice(routeCandidatesStart, routeCandidatesEnd);
+    const lineRebuildStart = source.indexOf("const rebuildRoutableLineNodeUpdatesForChangedNodes =");
+    const lineRebuildEnd = source.indexOf("const localRouteOptimizationEdges", lineRebuildStart);
+    const lineRebuildBlock = source.slice(lineRebuildStart, lineRebuildEnd);
+    const buildMovedStart = source.indexOf("const buildMovedNodeUpdates =");
+    const buildMovedEnd = source.indexOf("const nextNodesForMovedGraphCommit", buildMovedStart);
+    const buildMovedBlock = source.slice(buildMovedStart, buildMovedEnd);
+    const linePointerStart = source.indexOf("const handleRoutableLineNodePointerDown =");
+    const linePointerEnd = source.indexOf("const handleNodePointerDown =", linePointerStart);
+    const linePointerBlock = source.slice(linePointerStart, linePointerEnd);
+    const linePathPointerStart = source.indexOf("const handleRoutableLineNodePathPointerDown =");
+    const linePathPointerEnd = source.indexOf("const handlePointerMove = (event: PointerEvent<SVGSVGElement>)", linePathPointerStart);
+    const linePathPointerBlock = source.slice(linePathPointerStart, linePathPointerEnd);
+    const lodPointerStart = source.indexOf("const handleLodNodePointerDown =");
+    const lodPointerEnd = source.indexOf("const handleLodNodeContextMenu", lodPointerStart);
+    const lodPointerBlock = source.slice(lodPointerStart, lodPointerEnd);
 
     expect(model).toContain("export function createRoutableLineDeviceFromEndpoints");
     expect(model).toContain("export function setRoutableLineDeviceEndpoints");
@@ -6795,6 +6859,16 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const nodeIsRoutableLineDevice = isRoutableLineDeviceKind(node.kind);");
     expect(source).toContain("${nodeIsRoutableLineDevice ? \"routable-line-node\" : \"\"}");
     expect(source).toContain("selected && focused && selectedNodeCount === 1 && !nodeIsRoutableLineDevice");
+    expect(buildMovedBlock).toContain("!isCanvasNodeMovable(node.kind)");
+    expect(routeCandidatesBlock).toContain("routableLineNodeIdsByEndpointNodeId.get(nodeId)");
+    expect(lineRebuildBlock).toContain("completeNodeListForPartialPatch(previousNodes, nextNodes)");
+    expect(lineRebuildBlock).toContain("rebuildRoutableLineDeviceRouteUpdates(fullNextNodes");
+    expect(linePointerBlock).toContain("selectCanvasGraphics([node.id], [], { scope: \"direct\" })");
+    expect(linePointerBlock).not.toContain("startDraggingState");
+    expect(linePathPointerBlock).toContain("handleRoutableLineNodePointerDown(event, node)");
+    expect(linePathPointerBlock).not.toContain("handleNodePointerDown");
+    expect(lodPointerBlock).toContain("isRoutableLineDeviceKind(node.kind)");
+    expect(lodPointerBlock).toContain("handleRoutableLineNodePointerDown(event, node)");
     expect(source).toContain("routable-line-drawing-preview");
     expect(source).toContain("routable-line-endpoint-handle");
     expect(styles).toContain(".routable-line-drawing-preview");
@@ -7612,6 +7686,68 @@ describe("graph inspector panel", () => {
     expect(serverSource).toContain("writeDeviceLibraryConfig");
     expect(serverSource).toContain("[\"GET /api/device-library\"");
     expect(serverSource).toContain("[\"PUT /api/device-library\"");
+  });
+
+  test("exposes dynamic measurement configuration and per-device measurement operations", async () => {
+    const source = await readAppSource();
+    const serverSource = await readServerSource();
+    const styles = await readStyles();
+    const modelPanelStart = source.indexOf("{inspectorTab === \"model\" && currentModelRecord");
+    const modelPanelEnd = source.indexOf(") : inspectorTab === \"graph\"", modelPanelStart);
+    const modelPanelBlock = source.slice(modelPanelStart, modelPanelEnd);
+    const selectedPanelStart = source.indexOf("{!isStaticNode(inspectorSelectedNode) && (");
+    const selectedPanelEnd = source.indexOf("{isStaticNode(inspectorSelectedNode) && (", selectedPanelStart);
+    const selectedPanelBlock = source.slice(selectedPanelStart, selectedPanelEnd);
+    const canvasStart = source.indexOf("className={`diagram-canvas");
+    const canvasEnd = source.indexOf("{selectedRoutedEdge &&", canvasStart);
+    const canvasBlock = source.slice(canvasStart, canvasEnd);
+
+    expect(source).toContain("MEASUREMENT_CONFIG_STORAGE_KEY");
+    expect(source).toContain('"/api/measurement-config"');
+    expect(source).toContain("backendMeasurementConfigLoadedRef");
+    expect(source).toContain("lastPersistedMeasurementConfigPayloadRef");
+    expect(source).toContain("const [measurementConfig, setMeasurementConfig]");
+    expect(source).toContain("const [projectMeasurements, setProjectMeasurements]");
+    expect(source).toContain("const [measurementConfigDialogOpen, setMeasurementConfigDialogOpen]");
+    expect(modelPanelBlock).toContain("配置量测类型/设备绑定");
+    expect(modelPanelBlock).toContain("量测类型");
+    expect(selectedPanelBlock).toContain("动态量测");
+    expect(selectedPanelBlock).toContain("添加默认量测");
+    expect(selectedPanelBlock).toContain("添加量测项");
+    expect(source).toContain("添加/重置默认量测");
+    expect(source).toContain("配置量测库");
+    expect(canvasBlock).toContain("measurement-layer");
+    expect(canvasBlock).toContain("renderMeasurementGroup");
+    expect(source).toContain("beginMeasurementDrag");
+    expect(source).toContain("measurements: projectMeasurements");
+    expect(styles).toContain(".measurement-layer");
+    expect(styles).toContain(".measurement-config-dialog");
+    expect(styles).toContain(".measurement-sidebar-actions");
+    expect(serverSource).toContain('const measurementConfigPath = join(settingsDataDir, "measurement-config.json");');
+    expect(serverSource).toContain("readMeasurementConfig");
+    expect(serverSource).toContain("writeMeasurementConfig");
+    expect(serverSource).toContain("[\"GET /api/measurement-config\"");
+    expect(serverSource).toContain("[\"PUT /api/measurement-config\"");
+  });
+
+  test("keeps device measurement groups attached to node drag previews", async () => {
+    const source = await readAppSource();
+    const singlePreviewStart = source.indexOf("const buildSingleNodeDragPreviewNodeMarkup");
+    const singlePreviewEnd = source.indexOf("const clearImperativeNodeDragEdgePreview", singlePreviewStart);
+    const singlePreviewBlock = source.slice(singlePreviewStart, singlePreviewEnd);
+    const multiPreviewStart = source.indexOf("const buildMultiNodeDragOverlayPreview");
+    const multiPreviewEnd = source.indexOf("const renderMultiNodeDragOverlay", multiPreviewStart);
+    const multiPreviewBlock = source.slice(multiPreviewStart, multiPreviewEnd);
+    const renderStart = source.indexOf("const renderMeasurementGroup =");
+    const renderEnd = source.indexOf("const resizeSizeHint", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+
+    expect(source).toContain("const buildMeasurementGroupMarkup");
+    expect(singlePreviewBlock).toContain("buildMeasurementGroupMarkup(node)");
+    expect(singlePreviewBlock).toContain("${measurementMarkup}");
+    expect(multiPreviewBlock).toContain("buildMeasurementGroupMarkup(previewNode, { absolute: true })");
+    expect(multiPreviewBlock).toContain("${measurementMarkup}");
+    expect(renderBlock).toContain("measurementGroupCanvasPosition(node, group)");
   });
 
   test("keeps backend scheme persistence helpers self contained", async () => {

@@ -87,6 +87,7 @@ import {
   getDeviceGlyphVariant,
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
+  isCanvasNodeMovable,
   isRoutableLineDeviceKind,
   getConnectionStrokeColor,
   getTerminalDisplayColor,
@@ -768,6 +769,29 @@ describe("power system model", () => {
       voltageUnit: "kV",
       currentUnit: "kA",
       powerBaseValue: 100,
+      measurements: {
+        version: 1,
+        groups: [
+          {
+            id: "measurement-keep",
+            nodeId: node.id,
+            visible: true,
+            anchor: "bottom",
+            offset: { x: 0, y: 80 },
+            layout: "vertical",
+            items: [{ id: "item-p", measurementTypeId: "activePower", sourcePoint: `${node.id}.activePower` }]
+          },
+          {
+            id: "measurement-drop",
+            nodeId: "missing-node",
+            visible: true,
+            anchor: "bottom",
+            offset: { x: 0, y: 80 },
+            layout: "vertical",
+            items: [{ id: "item-q", measurementTypeId: "reactivePower", sourcePoint: "missing.reactivePower" }]
+          }
+        ]
+      },
       nodes: [node],
       edges: []
     });
@@ -783,6 +807,8 @@ describe("power system model", () => {
     expect(loaded.powerBaseValue).toBe(100);
     expect(loaded.nodes[0].name).toBe("1号主变");
     expect(loaded.nodes[0].params.voltageRatio).toBe("110/10 kV");
+    expect(loaded.measurements?.groups.map((group) => group.id)).toEqual(["measurement-keep"]);
+    expect(loaded.measurements?.groups[0].items[0]).toMatchObject({ measurementTypeId: "activePower" });
   });
 
   test("normalizes legacy projects onto a default visible layer", () => {
@@ -1552,6 +1578,19 @@ describe("power system model", () => {
     }
   });
 
+  test("treats routable line-like devices as endpoint-retargeted graphics instead of movable canvas nodes", () => {
+    const routableLineKinds = DEVICE_LIBRARY
+      .filter((template) => isRoutableLineDeviceKind(template.kind))
+      .map((template) => template.kind);
+
+    expect(routableLineKinds).not.toHaveLength(0);
+    for (const kind of routableLineKinds) {
+      expect(isCanvasNodeMovable(kind)).toBe(false);
+    }
+    expect(isCanvasNodeMovable("ac-source")).toBe(true);
+    expect(isCanvasNodeMovable("static-rect")).toBe(true);
+  });
+
   test("renders legacy routable line-like device widths only slightly thicker than connection lines", () => {
     const legacyLine = {
       ...createDefaultNode("ac-routable-line", { x: 300, y: 160 }),
@@ -1666,12 +1705,72 @@ describe("power system model", () => {
     const updates = rebuildRoutableLineDeviceRouteUpdates(
       [source, movedTarget, line],
       [line.id],
-      { width: 760, height: 480 }
+      { width: 760, height: 480 },
+      [source, target, line]
     );
 
     expect(updates.map((node) => node.id)).toEqual([line.id]);
     expect(getTerminalPoint(updates[0], "t1")).toEqual(getTerminalPoint(source, "t1"));
     expect(getTerminalPoint(updates[0], "t2")).toEqual(getTerminalPoint(movedTarget, "t1"));
+  });
+
+  test("syncs routable line-like device endpoints when both attached devices move", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "dc-routable-line");
+    const source = { ...createDefaultNode("dc-source", { x: 120, y: 140 }), id: "source-node" };
+    const target = { ...createDefaultNode("dc-load", { x: 520, y: 260 }), id: "target-node" };
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      getTerminalPoint(source, "t1"),
+      getTerminalPoint(target, "t1"),
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: routableLineDeviceEndpointRefForNode(target, "t1")
+      }
+    );
+    const movedSource = { ...source, position: { x: source.position.x + 80, y: source.position.y + 40 } };
+    const movedTarget = { ...target, position: { x: target.position.x - 70, y: target.position.y + 90 } };
+
+    const updates = rebuildRoutableLineDeviceRouteUpdates(
+      [movedSource, movedTarget, line],
+      [line.id],
+      { width: 900, height: 640 },
+      [source, target, line]
+    );
+
+    expect(updates.map((node) => node.id)).toEqual([line.id]);
+    expect(getTerminalPoint(updates[0], "t1")).toEqual(getTerminalPoint(movedSource, "t1"));
+    expect(getTerminalPoint(updates[0], "t2")).toEqual(getTerminalPoint(movedTarget, "t1"));
+    const points = routableLineDeviceCanvasPoints(updates[0]);
+    expect(points[0]).toEqual(getTerminalPoint(movedSource, "t1"));
+    expect(points[points.length - 1]).toEqual(getTerminalPoint(movedTarget, "t1"));
+  });
+
+  test("infers missing routable line-like device endpoint refs before syncing moved terminals", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "dc-routable-line");
+    const source = { ...createDefaultNode("dc-source", { x: 100, y: 120 }), id: "source-node" };
+    const target = { ...createDefaultNode("dc-load", { x: 420, y: 120 }), id: "target-node" };
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      getTerminalPoint(source, "t1"),
+      getTerminalPoint(target, "t1"),
+      "layer-a"
+    );
+    const movedTarget = { ...target, position: { x: 520, y: 180 } };
+
+    expect(routableLineDeviceEndpointRefs(line)).toEqual({});
+
+    const updates = rebuildRoutableLineDeviceRouteUpdates(
+      [source, movedTarget, line],
+      [line.id],
+      { width: 760, height: 480 },
+      [source, target, line]
+    );
+
+    expect(updates.map((node) => node.id)).toEqual([line.id]);
+    expect(getTerminalPoint(updates[0], "t1")).toEqual(getTerminalPoint(source, "t1"));
+    expect(getTerminalPoint(updates[0], "t2")).toEqual(getTerminalPoint(movedTarget, "t1"));
+    expect(routableLineDeviceEndpointRefs(updates[0]).target).toMatchObject({ nodeId: "target-node", terminalId: "t1" });
   });
 
   test("routes routable line-like device endpoints along attached terminal directions", () => {
@@ -8002,6 +8101,36 @@ describe("power system model", () => {
         targetTerminalId: "t1"
       })
     ]);
+  });
+
+  test("does not add ordinary connections when routable line-like device endpoints separate from moved devices", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = { ...createDefaultNode("ac-source", { x: 100, y: 120 }), id: "source-node" };
+    const target = { ...createDefaultNode("ac-load", { x: 460, y: 120 }), id: "target-node" };
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      getTerminalPoint(source, "t1"),
+      getTerminalPoint(target, "t1"),
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: routableLineDeviceEndpointRefForNode(target, "t1")
+      }
+    );
+    const movedSource = { ...source, position: { x: source.position.x + 80, y: source.position.y + 40 } };
+    const movedTarget = { ...target, position: { x: target.position.x - 60, y: target.position.y + 80 } };
+
+    const result = reconcileOverlappingTerminalConnections(
+      [source, target, line],
+      [movedSource, movedTarget, line],
+      [],
+      (_first, _second, index) => `unexpected-edge-${index}`,
+      new Set([source.id, target.id])
+    );
+
+    expect(result.addedEdgeIds).toEqual([]);
+    expect(result.removedEdgeIds).toEqual([]);
+    expect(result.edges).toEqual([]);
   });
 
   test("limits overlap reconciliation to affected moved nodes when provided", () => {

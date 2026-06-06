@@ -122,6 +122,8 @@ import {
   getContainerTerminalAssociationSourceIndex,
   getSwitchVisualState,
   isInteractiveStaticDrawingKind,
+  inferMissingRoutableLineDeviceEndpointRefs,
+  isCanvasNodeMovable,
   isRoutableLineDeviceKind,
   getEParameterKeys,
   getEParamValue,
@@ -197,6 +199,7 @@ import {
   routableLineDeviceEndpointRefs,
   routableLineDeviceLocalPoints,
   setRoutableLineDeviceEndpoints,
+  syncRoutableLineDeviceEndpointsToRefs,
   synchronizeBusTerminalsWithEdges,
   validateTopology,
   validateConnectionEndpointRules,
@@ -325,6 +328,24 @@ import {
   type SidePanelMode,
   type SidePanelSide
 } from "./sidePanelVisibility";
+import {
+  DEFAULT_MEASUREMENT_CONFIG,
+  EMPTY_PROJECT_MEASUREMENTS,
+  createDefaultMeasurementGroupForNode,
+  formatMeasurementDisplayValue,
+  measurementGroupForNode,
+  normalizeMeasurementConfig,
+  normalizeProjectMeasurements,
+  removeMeasurementGroupForNode,
+  resolveMeasurementItemDisplay,
+  upsertMeasurementGroup,
+  type DeviceMeasurementProfileItem,
+  type MeasurementGroup,
+  type MeasurementItemBinding,
+  type MeasurementTypeDefinition,
+  type PlatformMeasurementConfig,
+  type ProjectMeasurementConfig
+} from "./measurements";
 
 const ENABLE_REACT_FLOW_PREVIEW = import.meta.env.DEV;
 const ReactFlowPreview = ENABLE_REACT_FLOW_PREVIEW ? lazy(() => import("./ReactFlowPreview")) : null;
@@ -350,12 +371,17 @@ const CANVAS_GRAPHIC_CONTEXT_MENU_TARGET_SELECTOR = [
   ".canvas-resize-handles",
   ".node-device-label",
   ".node-label-rotate-control",
+  ".measurement-group",
   ".terminal-dot",
   ".canvas-floating-toolbar"
 ].join(", ");
 const CANVAS_WHEEL_ZOOM_EXCLUSION_SELECTOR = [
   ".floating-side-panel",
-  ".side-panel-edge-trigger"
+  ".side-panel-edge-trigger",
+  "[role=\"dialog\"]",
+  ".image-picker-backdrop",
+  ".context-menu",
+  ".topbar-dropdown-menu"
 ].join(", ");
 
 function normalizeInteractionMode(value: unknown): InteractionMode {
@@ -367,7 +393,13 @@ function isCanvasGraphicContextMenuTarget(target: EventTarget | null) {
 }
 
 function isCanvasWheelZoomExcludedTarget(target: EventTarget | null) {
-  return target instanceof Element && Boolean(target.closest(CANVAS_WHEEL_ZOOM_EXCLUSION_SELECTOR));
+  const element = target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
+  return Boolean(element?.closest(CANVAS_WHEEL_ZOOM_EXCLUSION_SELECTOR));
+}
+
+function canvasWheelTargetIsRenderedCanvas(target: EventTarget | null) {
+  const element = target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
+  return Boolean(element?.closest(".diagram-canvas"));
 }
 
 function readStoredInteractionMode(): InteractionMode {
@@ -990,6 +1022,7 @@ type NodeDragPreviewRoute = {
   edgeId: string;
   path: string;
   color: string;
+  routableLineNodeId?: string;
 };
 type SingleNodeDeferredRepairOptions = {
   reconcileTerminalConnections?: boolean;
@@ -1020,7 +1053,15 @@ type GraphDirtyBaseline = {
   nodes: ModelNode[];
   edges: Edge[];
   groups: ModelGroup[];
+  measurements: ProjectMeasurementConfig;
 };
+type MeasurementDragState = {
+  groupId: string;
+  pointerId: number;
+  startPoint: Point;
+  startOffset: Point;
+  historyCaptured: boolean;
+} | null;
 type ClipboardRecord =
   | { kind: "scheme"; scheme: SavedSchemeRecord }
   | { kind: "project"; project: SavedProjectRecord };
@@ -1053,6 +1094,7 @@ type UndoSnapshot = {
   topologyStatus: TopologyRunStatus;
   deviceIndexCounters: DeviceIndexCounters;
   groups: ModelGroup[];
+  measurements: ProjectMeasurementConfig;
 };
 type UndoGraphPatchScope = {
   nodeIds?: readonly string[];
@@ -1081,6 +1123,7 @@ type DraftProjectState = {
   powerBaseValue?: number;
   deviceIndexCounters?: DeviceIndexCounters;
   groups?: ModelGroup[];
+  measurements?: ProjectMeasurementConfig;
   nodes: ModelNode[];
   edges: Edge[];
 };
@@ -1137,6 +1180,10 @@ type DeviceLibraryPersistencePayload = {
   customGraphTemplates: GraphTemplate[];
 };
 type BackendDeviceLibraryResponse = Partial<DeviceLibraryPersistencePayload> & {
+  exists?: boolean;
+  savedAt?: string;
+};
+type BackendMeasurementConfigResponse = Partial<PlatformMeasurementConfig> & {
   exists?: boolean;
   savedAt?: string;
 };
@@ -1607,6 +1654,7 @@ const CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY = "power-system-custom-graph-templ
 const CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY = "power-system-custom-graph-templates";
 const COLOR_DISPLAY_MODE_STORAGE_KEY = "power-system-color-display-mode";
 const COLOR_PALETTE_STORAGE_KEY = "power-system-color-palette";
+const MEASUREMENT_CONFIG_STORAGE_KEY = "power-system-platform-measurements";
 const LEFT_PANEL_MODE_STORAGE_KEY = "power-system-left-panel-mode";
 const RIGHT_PANEL_MODE_STORAGE_KEY = "power-system-right-panel-mode";
 const LEFT_PANEL_WIDTH_STORAGE_KEY = "power-system-left-panel-width";
@@ -2845,6 +2893,7 @@ function normalizeStoredDraftProject(parsed: DraftProjectState): DraftProjectSta
       layers: parsed.layers,
       activeLayerId: parsed.activeLayerId,
       groups: parsed.groups,
+      measurements: parsed.measurements,
       nodes: parsed.nodes.map(normalizeNodeTerminalsByTemplate),
       edges: parsed.edges
     }),
@@ -3006,6 +3055,7 @@ function draftProjectFromSavedSchemes(
       layers: record.project.layers,
       activeLayerId: record.project.activeLayerId,
       groups: record.project.groups,
+      measurements: record.project.measurements,
       nodes: record.project.nodes,
       edges: record.project.edges
     });
@@ -3364,6 +3414,26 @@ async function saveBackendDeviceLibraryPayload(normalizedDeviceLibraryPayload: s
     "/api/device-library",
     "保存图元库到后台失败。",
     backendJsonRequest("PUT", normalizedDeviceLibraryPayload)
+  );
+}
+
+function serializeMeasurementConfigForStorage(config: PlatformMeasurementConfig) {
+  return JSON.stringify(normalizeMeasurementConfig(config));
+}
+
+async function fetchBackendMeasurementConfig(): Promise<PlatformMeasurementConfig & { exists: boolean }> {
+  const payload = await fetchBackendJson<BackendMeasurementConfigResponse>("/api/measurement-config", "读取后台动态量测配置失败。");
+  return {
+    ...normalizeMeasurementConfig(payload),
+    exists: Boolean(payload.exists)
+  };
+}
+
+async function saveBackendMeasurementConfigPayload(normalizedMeasurementConfigPayload: string): Promise<void> {
+  await fetchBackendJson<{ ok?: boolean }>(
+    "/api/measurement-config",
+    "保存动态量测配置到后台失败。",
+    backendJsonRequest("PUT", normalizedMeasurementConfigPayload)
   );
 }
 
@@ -3837,6 +3907,23 @@ function writeLocalDeviceLibraryPersistencePayload(normalizedDeviceLibrary: Devi
     window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customGraphTemplates));
   } catch {
     // 浏览器缓存不可写时不阻断当前编辑，后台同步仍会继续尝试。
+  }
+}
+
+function readMeasurementConfig(): PlatformMeasurementConfig {
+  try {
+    const raw = window.localStorage.getItem(MEASUREMENT_CONFIG_STORAGE_KEY);
+    return normalizeMeasurementConfig(raw ? JSON.parse(raw) as Partial<PlatformMeasurementConfig> : DEFAULT_MEASUREMENT_CONFIG);
+  } catch {
+    return normalizeMeasurementConfig(DEFAULT_MEASUREMENT_CONFIG);
+  }
+}
+
+function writeMeasurementConfig(config: PlatformMeasurementConfig): void {
+  try {
+    window.localStorage.setItem(MEASUREMENT_CONFIG_STORAGE_KEY, JSON.stringify(normalizeMeasurementConfig(config)));
+  } catch {
+    // 平台量测配置不可写时，不影响当前模型编辑。
   }
 }
 
@@ -6719,6 +6806,7 @@ export function App() {
     layers: initialDraft?.layers,
     activeLayerId: initialDraft?.activeLayerId,
     groups: initialDraft?.groups,
+    measurements: initialDraft?.measurements,
     nodes: initialDraft?.nodes ?? SAMPLE_NODES,
     edges: initialDraft?.edges ?? SAMPLE_EDGES
   }), [initialDraft]);
@@ -6756,6 +6844,9 @@ export function App() {
   const backendDeviceLibraryLoadedRef = useRef(false);
   const suppressNextBackendDeviceLibrarySyncRef = useRef(false);
   const lastPersistedDeviceLibraryPayloadRef = useRef<string | null>(null);
+  const backendMeasurementConfigLoadedRef = useRef(false);
+  const suppressNextBackendMeasurementConfigSyncRef = useRef(false);
+  const lastPersistedMeasurementConfigPayloadRef = useRef<string | null>(null);
   const imageLibraryInitializedRef = useRef(false);
   const lastMouseStatusRef = useRef<Point | null>(null);
   const pendingMouseStatusRef = useRef<Point | null>(null);
@@ -6885,6 +6976,10 @@ export function App() {
     });
   };
   const [groups, setGroups] = useState<ModelGroup[]>(() => normalizeModelGroups(initialLayeredProject.groups, initialIndexedNodes.nodes, initialLayeredProject.edges));
+  const [measurementConfig, setMeasurementConfig] = useState<PlatformMeasurementConfig>(() => readMeasurementConfig());
+  const [projectMeasurements, setProjectMeasurements] = useState<ProjectMeasurementConfig>(() =>
+    normalizeProjectMeasurements(initialLayeredProject.measurements ?? EMPTY_PROJECT_MEASUREMENTS, initialIndexedNodes.nodes)
+  );
   const [layers, setLayers] = useState<ModelLayer[]>(() => initialLayeredProject.layers ?? []);
   const [activeLayerId, setActiveLayerId] = useState(() => initialLayeredProject.activeLayerId ?? DEFAULT_MODEL_LAYER_ID);
   const [deviceIndexCounters, setDeviceIndexCounters] = useState<DeviceIndexCounters>(() => initialIndexedNodes.counters);
@@ -7081,6 +7176,12 @@ export function App() {
   const [layerAssignmentDialogOpen, setLayerAssignmentDialogOpen] = useState(false);
   const [layerAssignmentTargetId, setLayerAssignmentTargetId] = useState("");
   const [reactFlowPreviewOpen, setReactFlowPreviewOpen] = useState(false);
+  const [measurementConfigDialogOpen, setMeasurementConfigDialogOpen] = useState(false);
+  const [measurementConfigTab, setMeasurementConfigTab] = useState<"types" | "profiles">("types");
+  const [measurementProfileKind, setMeasurementProfileKind] = useState<DeviceKind | "">(
+    () => DEVICE_LIBRARY.find((template) => !String(template.kind).startsWith("static-"))?.kind ?? ""
+  );
+  const [measurementDrag, setMeasurementDrag] = useState<MeasurementDragState>(null);
   const [topologyErrors, setTopologyErrors] = useState<TopologyValidationError[]>([]);
   const [topologyWarningPage, setTopologyWarningPage] = useState(0);
   const [topology, setTopology] = useState<Topology>(EMPTY_TOPOLOGY);
@@ -7138,6 +7239,27 @@ export function App() {
   const edgeById = graphStore.edgeMap;
   const edgesByNodeId = graphStore.edgesByNodeId;
   const busNodeIdSet = graphStore.busNodeIdSet;
+  const routableLineNodeIdsByEndpointNodeId = useMemo(() => {
+    const index = new Map<string, string[]>();
+    for (const node of nodes) {
+      if (!isRoutableLineDeviceKind(node.kind)) {
+        continue;
+      }
+      const refs = routableLineDeviceEndpointRefs(inferMissingRoutableLineDeviceEndpointRefs(node, nodes));
+      for (const ref of [refs.source, refs.target]) {
+        if (!ref?.nodeId) {
+          continue;
+        }
+        const existing = index.get(ref.nodeId);
+        if (existing) {
+          existing.push(node.id);
+        } else {
+          index.set(ref.nodeId, [node.id]);
+        }
+      }
+    }
+    return index;
+  }, [nodes]);
   const edgeListForNodeIds = (nodeIds: Iterable<string>, extraEdgeIds: Iterable<string> = []) => {
     const collected = new Map<string, Edge>();
     for (const nodeId of nodeIds) {
@@ -7471,6 +7593,26 @@ export function App() {
   const displaySelectedEdgeKey = useMemo(() => displaySelectedEdgeIds.join("|"), [displaySelectedEdgeIds]);
   const selectedEdge = activeLayerEdgeIdSet.has(selectedEdgeId) ? edgeById.get(selectedEdgeId) : undefined;
   const inspectorSelectedNode = selectedNode;
+  const selectedMeasurementGroup = useMemo(
+    () => (inspectorSelectedNode ? measurementGroupForNode(projectMeasurements, inspectorSelectedNode.id) : undefined),
+    [inspectorSelectedNode, projectMeasurements]
+  );
+  const visibleMeasurementGroups = useMemo(
+    () => projectMeasurements.groups.filter((group) => group.visible && visibleNodeById.has(group.nodeId)),
+    [projectMeasurements.groups, visibleNodeById]
+  );
+  const measurementTypeById = useMemo(
+    () => new Map(measurementConfig.measurementTypes.map((item) => [item.id, item])),
+    [measurementConfig.measurementTypes]
+  );
+  const measurementProfileByKind = useMemo(
+    () => new Map(measurementConfig.deviceProfiles.map((profile) => [profile.deviceKind, profile])),
+    [measurementConfig.deviceProfiles]
+  );
+  const measurementDeviceTemplates = useMemo(
+    () => DEVICE_LIBRARY.filter((template) => !String(template.kind).startsWith("static-")),
+    []
+  );
   const inspectorSelectedEdge = selectedEdge;
   const inspectorTopologyErrors = useDeferredValue(topologyErrors);
   const connectionStrokeColorCacheToken = useMemo(
@@ -7495,6 +7637,73 @@ export function App() {
   const connectionLineStyle = (edgeId: string) => {
     const edge = edgeById.get(edgeId);
     return edge ? ({ "--connection-color": cachedConnectionStrokeColor(edge) } as CSSProperties) : undefined;
+  };
+  const measurementGroupCanvasPosition = (node: ModelNode, group: MeasurementGroup): Point => ({
+    x: node.position.x + group.offset.x,
+    y: node.position.y + group.offset.y
+  });
+  const measurementGroupRenderMetrics = (node: ModelNode, group: MeasurementGroup) => {
+    if (!group.visible) {
+      return null;
+    }
+    const rows = group.items.flatMap((item) => {
+      const display = resolveMeasurementItemDisplay({ config: measurementConfig, node, group, item });
+      if (!display.visible) {
+        return [];
+      }
+      const text = `${display.label} ${formatMeasurementDisplayValue(undefined, display.decimals, display.unit)}`.trim();
+      return [{ item, display, text }];
+    });
+    if (rows.length === 0) {
+      return null;
+    }
+    const maxFontSize = Math.max(...rows.map((row) => row.display.fontSize));
+    const lineHeight = Math.max(16, maxFontSize + 6);
+    const columnWidth = Math.max(72, Math.max(...rows.map((row) => row.text.length * row.display.fontSize * 0.58)) + 12);
+    const columns = group.layout === "grid" ? 2 : group.layout === "horizontal" ? rows.length : 1;
+    const width = Math.max(64, columnWidth * columns);
+    const height = Math.max(lineHeight, Math.ceil(rows.length / columns) * lineHeight);
+    return { rows, maxFontSize, lineHeight, columnWidth, columns, width, height };
+  };
+  const includeMeasurementGroupBounds = (node: ModelNode, includeBox: (box: RenderViewportBounds) => void) => {
+    const group = measurementGroupForNode(projectMeasurements, node.id);
+    if (!group) {
+      return;
+    }
+    const metrics = measurementGroupRenderMetrics(node, group);
+    if (!metrics) {
+      return;
+    }
+    const position = measurementGroupCanvasPosition(node, group);
+    includeBox({
+      left: position.x - metrics.width / 2,
+      right: position.x + metrics.width / 2,
+      top: position.y - metrics.height / 2,
+      bottom: position.y + metrics.height / 2
+    });
+  };
+  const buildMeasurementGroupMarkup = (node: ModelNode, options: { absolute?: boolean } = {}) => {
+    const group = measurementGroupForNode(projectMeasurements, node.id);
+    if (!group) {
+      return "";
+    }
+    const metrics = measurementGroupRenderMetrics(node, group);
+    if (!metrics) {
+      return "";
+    }
+    const position = options.absolute ? measurementGroupCanvasPosition(node, group) : group.offset;
+    const selectedClass = selectedMeasurementGroup?.id === group.id ? " selected" : "";
+    const rowsMarkup = metrics.rows.map((row, index) => {
+      const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
+      const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
+      const textX = -metrics.width / 2 + col * metrics.columnWidth + 7;
+      const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
+      return `<text class="measurement-item" x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.display.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}">${escapeXml(row.text)}</text>`;
+    }).join("");
+    return `<g class="measurement-group drag-preview-measurement-group${selectedClass}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})">
+  <rect class="measurement-group-bg" x="${formatSvgNumber(-metrics.width / 2)}" y="${formatSvgNumber(-metrics.height / 2)}" width="${formatSvgNumber(metrics.width)}" height="${formatSvgNumber(metrics.height)}" rx="4"/>
+  ${rowsMarkup}
+</g>`;
   };
   const buildMultiNodeDragOverlayPreview = (
     dragNodeIds: string[],
@@ -7536,16 +7745,22 @@ export function App() {
         continue;
       }
       const includeUprightContentInBounds = nodeHasUprightBoundsContent(node);
+      const previewNode = originalPosition === node.position ? node : { ...node, position: originalPosition };
       includeBox(nodeVisualInteractionBounds(node, originalPosition, 0, includeUprightContentInBounds));
+      includeMeasurementGroupBounds(previewNode, includeBox);
       if (useSimplifiedOverlay) {
         const nodeIsBus = isBusNode(node);
         const transform = `translate(${formatSvgNumber(originalPosition.x)} ${formatSvgNumber(originalPosition.y)}) ${nodeGeometryTransform(node)}`;
         const fill = node.params.backgroundColor || "#ffffff";
         const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
         const strokeWidth = Math.max(2, getDeviceStrokeWidth(node));
+        const measurementMarkup = buildMeasurementGroupMarkup(previewNode, { absolute: true });
         simplifiedNodeMarkup.push(
           `<rect class="multi-node-drag-preview-node-lite${nodeIsBus ? " bus-node" : ""}" transform="${escapeXml(transform)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${nodeIsBus ? 0 : 6}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"><title>${escapeXml(node.name)}</title></rect>`
         );
+        if (measurementMarkup) {
+          simplifiedNodeMarkup.push(`${measurementMarkup}`);
+        }
       }
     }
     const edgeRoutes: MultiNodeDragOverlayPreview["edgeRoutes"] = [];
@@ -7673,6 +7888,7 @@ export function App() {
           const nodeIsBus = isBusNode(node);
           const terminalControlTransform = (x: number, y: number) => `translate(${x} ${y}) scale(${inverseScaleX} ${inverseScaleY})`;
           const terminalStubDashArray = svgStrokeDashArray(node.params.strokeStyle);
+          const measurementMarkup = buildMeasurementGroupMarkup(node);
           return (
             <g
               key={`multi-drag-preview-node-${node.id}`}
@@ -7777,6 +7993,9 @@ export function App() {
                   })}
                 </g>
               )}
+              {measurementMarkup && (
+                <g dangerouslySetInnerHTML={{ __html: measurementMarkup }} />
+              )}
             </g>
           );
         })}
@@ -7813,6 +8032,58 @@ export function App() {
       return null;
     }
     const bounds = transformDrag.bounds;
+    const geometry = transformDrag.previewPoint ? groupTransformGeometry(transformDrag, transformDrag.previewPoint) : null;
+    const transformedNodeUpdates = geometry
+      ? transformDrag.nodeIds.flatMap((nodeId) => {
+          const snapshot = transformDrag.originalNodes[nodeId];
+          const node = nodeById.get(nodeId);
+          if (!node || !snapshot) {
+            return [];
+          }
+          return [{
+            ...node,
+            position: transformGroupPoint(transformDrag, geometry, snapshot.position),
+            ...(geometry.kind === "rotate"
+              ? { rotation: normalizeRotationDegrees(snapshot.rotation + geometry.degrees) }
+              : {
+                  scale: Math.max(
+                    Math.abs((snapshot.scaleX ?? snapshot.scale ?? 1) * geometry.scaleX),
+                    Math.abs((snapshot.scaleY ?? snapshot.scale ?? 1) * geometry.scaleY)
+                  ),
+                  scaleX: (snapshot.scaleX ?? snapshot.scale ?? 1) * geometry.scaleX,
+                  scaleY: (snapshot.scaleY ?? snapshot.scale ?? 1) * geometry.scaleY
+                })
+          }];
+        })
+      : [];
+    const transformedNodeById = new Map(nodeById);
+    for (const node of transformedNodeUpdates) {
+      transformedNodeById.set(node.id, node);
+    }
+    const routableLineTransformPreviewRoutes = Array.from(groupTransformPreviewRoutableLineNodeIdSet).flatMap((lineId) => {
+      const lineNode = nodeById.get(lineId);
+      if (!lineNode || !visibleNodeIdSet.has(lineNode.id) || !isRoutableLineDeviceKind(lineNode.kind)) {
+        return [];
+      }
+      const syncedLine = syncRoutableLineDeviceEndpointsToRefs(lineNode, [], transformedNodeById, nodes);
+      const points = routableLineDeviceCanvasPoints(syncedLine);
+      const start = points[0];
+      const end = points[points.length - 1];
+      if (!start || !end) {
+        return [];
+      }
+      const previewPoints =
+        Math.round(start.x) === Math.round(end.x) || Math.round(start.y) === Math.round(end.y)
+          ? [start, end]
+          : Math.abs(end.x - start.x) >= Math.abs(end.y - start.y)
+            ? [start, { x: end.x, y: start.y }, end]
+            : [start, { x: start.x, y: end.y }, end];
+      return [{
+        nodeId: lineNode.id,
+        path: pointsToPreviewPath(previewPoints),
+        color: getDeviceStrokeColor(lineNode, colorDisplayMode, colorPalette)
+      }];
+    });
     return (
       <g className="group-transform-photo-preview">
         <g className="group-transform-origin-ghost">
@@ -7834,6 +8105,14 @@ export function App() {
         </g>
         {groupTransformPreviewEdgeRoutes.map((route) => (
           <path key={`group-transform-photo-edge-${route.edgeId}`} d={route.path} className="connection-line group-transform-preview" style={connectionLineStyle(route.edgeId)} />
+        ))}
+        {routableLineTransformPreviewRoutes.map((route) => (
+          <path
+            key={`group-transform-photo-routable-line-${route.nodeId}`}
+            d={route.path}
+            className="connection-line group-transform-preview"
+            style={{ "--connection-color": route.color } as CSSProperties}
+          />
         ))}
         <g className="group-transform-photo-content" transform={groupTransformPreviewTransform}>
           {transformDrag.nodeIds.map((nodeId) => {
@@ -8540,6 +8819,13 @@ export function App() {
   }, [activeLayerId, layers]);
 
   useEffect(() => {
+    if (measurementProfileKind && measurementDeviceTemplates.some((template) => template.kind === measurementProfileKind)) {
+      return;
+    }
+    setMeasurementProfileKind(measurementDeviceTemplates[0]?.kind ?? "");
+  }, [measurementDeviceTemplates, measurementProfileKind]);
+
+  useEffect(() => {
     setSelectedNodeIds((current) => current.filter((nodeId) => activeLayerNodeIdSet.has(nodeId)));
     setSelectedEdgeIds((current) => current.filter((edgeId) => activeLayerEdgeIdSet.has(edgeId)));
     setSelectedEdgeId((current) => current && activeLayerEdgeIdSet.has(current) ? current : "");
@@ -8583,6 +8869,7 @@ export function App() {
         layers,
         activeLayerId,
         groups,
+        measurements: projectMeasurements,
         nodes,
         edges
       }
@@ -8605,6 +8892,7 @@ export function App() {
     groups,
     layers,
     nodes,
+    projectMeasurements,
     powerBaseValue,
     powerUnit,
     projectName,
@@ -8635,6 +8923,7 @@ export function App() {
     layers,
     activeLayerId,
     groups,
+    measurements: projectMeasurements,
     nodes,
     edges
   }), [
@@ -8655,6 +8944,7 @@ export function App() {
     groups,
     layers,
     nodes,
+    projectMeasurements,
     powerBaseValue,
     powerUnit,
     projectName,
@@ -10360,6 +10650,13 @@ export function App() {
     })(),
     [activeLayerEdgeIdSet, activeLayerEdges, routedEdgeById, routedEdgeIndexById, routedEdges, visibleEdges]
   );
+  const transformableActiveSelectedNodeIds = useMemo(
+    () => activeSelectedNodeIds.filter((nodeId) => {
+      const node = nodeById.get(nodeId);
+      return node && isCanvasNodeMovable(node.kind);
+    }),
+    [activeSelectedNodeIds, nodeById]
+  );
   const selectedLayoutUnits = useMemo(
     () => {
       if (!isEditMode) {
@@ -10369,15 +10666,23 @@ export function App() {
       if (editHotInteractionActive && selectedLayoutUnitsCacheRef.current.length > 0) {
         return selectedLayoutUnitsCacheRef.current;
       }
-      if (activeSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0) {
+      if (transformableActiveSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0) {
         selectedLayoutUnitsCacheRef.current = EMPTY_CANVAS_LAYOUT_UNITS;
         return EMPTY_CANVAS_LAYOUT_UNITS;
       }
-      const units = buildCanvasLayoutUnits(activeLayerGroups, activeLayerNodes, activeSelectedNodeIds, activeSelectedEdgeIds, activeLayerEdges, routedEdges);
+      const units = buildCanvasLayoutUnits(
+        activeLayerGroups,
+        activeLayerNodes,
+        transformableActiveSelectedNodeIds,
+        activeSelectedEdgeIds,
+        activeLayerEdges,
+        routedEdges,
+        { isTransformableNode: (node) => isCanvasNodeMovable(node.kind) }
+      );
       selectedLayoutUnitsCacheRef.current = units;
       return units;
     },
-    [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, editHotInteractionActive, isEditMode, routedEdges]
+    [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, editHotInteractionActive, isEditMode, routedEdges, transformableActiveSelectedNodeIds]
   );
   const selectedGroupLayoutUnits = useMemo(
     () => selectedLayoutUnits.length === 0 ? EMPTY_CANVAS_LAYOUT_UNITS : selectedLayoutUnits.filter((unit) => unit.kind === "group"),
@@ -10491,7 +10796,7 @@ export function App() {
     for (const nodeId of nodeIds) {
       const node = nodeById.get(nodeId);
       const originalPosition = originalPositions[nodeId];
-      if (!node || !originalPosition) {
+      if (!node || !originalPosition || !isCanvasNodeMovable(node.kind)) {
         continue;
       }
       updates.push({
@@ -11147,6 +11452,18 @@ export function App() {
     () => new Set(groupTransformPreviewEdgeRoutes.map((route) => route.edgeId)),
     [groupTransformPreviewEdgeRoutes]
   );
+  const groupTransformPreviewRoutableLineNodeIdSet = useMemo(() => {
+    if (!transformDrag || !isGroupTransformDrag(transformDrag) || !transformDrag.previewPoint) {
+      return new Set<string>();
+    }
+    const lineIds = new Set<string>();
+    for (const nodeId of transformDrag.nodeIds) {
+      for (const lineId of routableLineNodeIdsByEndpointNodeId.get(nodeId) ?? []) {
+        lineIds.add(lineId);
+      }
+    }
+    return lineIds;
+  }, [routableLineNodeIdsByEndpointNodeId, transformDrag]);
   const dragPreviewEdgeRoutes = useMemo(() => {
     if (!dragging || !draggingDelta) {
       return [];
@@ -11155,9 +11472,13 @@ export function App() {
       ? dragging.overlayPreview?.dynamicEdgePreviewEdges ?? []
       : singleNodeDragPreviewEdges(dragging, draggingDelta);
     return buildLightweightNodeDragPreviewRoutes(dragging, draggingDelta, previewEdges);
-  }, [colorDisplayMode, colorPalette, dragging, draggingDelta, nodeById, visibleEdgeIdSet]);
+  }, [colorDisplayMode, colorPalette, dragging, draggingDelta, nodeById, routableLineNodeIdsByEndpointNodeId, visibleEdgeIdSet, visibleNodeIdSet]);
   const dragPreviewEdgeIdSet = useMemo(
     () => new Set(dragPreviewEdgeRoutes.map((route) => route.edgeId)),
+    [dragPreviewEdgeRoutes]
+  );
+  const dragPreviewRoutableLineNodeIdSet = useMemo(
+    () => new Set(dragPreviewEdgeRoutes.flatMap((route) => route.routableLineNodeId ? [route.routableLineNodeId] : [])),
     [dragPreviewEdgeRoutes]
   );
   const dragGhostEdgeRoutes = useMemo(() => {
@@ -11368,6 +11689,32 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    fetchBackendMeasurementConfig()
+      .then((backendMeasurementConfig) => {
+        backendMeasurementConfigLoadedRef.current = true;
+        if (backendMeasurementConfig.exists) {
+          const backendPayload = serializeMeasurementConfigForStorage(backendMeasurementConfig);
+          lastPersistedMeasurementConfigPayloadRef.current = backendPayload;
+          suppressNextBackendMeasurementConfigSyncRef.current = true;
+          setMeasurementConfig(backendMeasurementConfig);
+          writeMeasurementConfig(backendMeasurementConfig);
+          return;
+        }
+        const localPayload = serializeMeasurementConfigForStorage(measurementConfig);
+        lastPersistedMeasurementConfigPayloadRef.current = localPayload;
+        void saveBackendMeasurementConfigPayload(localPayload).catch(() => {
+          // 后台暂不可写时仍保留浏览器本地量测配置缓存。
+        });
+      })
+      .catch(() => {
+        backendMeasurementConfigLoadedRef.current = false;
+        // 后台不可用时继续使用浏览器本地量测配置缓存。
+      });
+    // 仅在启动时从后台拉取一次，避免后台配置刷新打断当前操作。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       const normalizedSchemesPayload = serializeSchemesForStorage(schemes);
       if (suppressNextBackendSchemeSyncRef.current && normalizedSchemesPayload === lastPersistedSchemesPayloadRef.current) {
@@ -11417,6 +11764,32 @@ export function App() {
     }, 800);
     return () => window.clearTimeout(timeoutId);
   }, [customDeviceTemplates, customAttributeLibraries, customComponentTypes, deviceDefinitionOverrides, customGraphTemplateTypes, customGraphTemplates]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const normalizedMeasurementConfig = normalizeMeasurementConfig(measurementConfig);
+      const normalizedMeasurementConfigPayload = serializeMeasurementConfigForStorage(normalizedMeasurementConfig);
+      writeMeasurementConfig(normalizedMeasurementConfig);
+      if (normalizedMeasurementConfigPayload === lastPersistedMeasurementConfigPayloadRef.current) {
+        if (suppressNextBackendMeasurementConfigSyncRef.current) {
+          suppressNextBackendMeasurementConfigSyncRef.current = false;
+        }
+        return;
+      }
+      lastPersistedMeasurementConfigPayloadRef.current = normalizedMeasurementConfigPayload;
+      if (!backendMeasurementConfigLoadedRef.current) {
+        return;
+      }
+      if (suppressNextBackendMeasurementConfigSyncRef.current) {
+        suppressNextBackendMeasurementConfigSyncRef.current = false;
+        return;
+      }
+      void saveBackendMeasurementConfigPayload(normalizedMeasurementConfigPayload).catch(() => {
+        // 后台保存失败时不阻塞当前编辑；下一次量测配置变更会继续尝试同步。
+      });
+    }, 500);
+    return () => window.clearTimeout(timeoutId);
+  }, [measurementConfig]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -11514,6 +11887,9 @@ export function App() {
   useEffect(() => {
     const preventPageWheelZoom = (event: WheelEvent) => {
       if (isCanvasWheelZoomExcludedTarget(event.target)) {
+        return;
+      }
+      if (!canvasWheelTargetIsRenderedCanvas(event.target)) {
         return;
       }
       const cursorInsideCanvas = clientPointInsideRenderedCanvas(event.clientX, event.clientY);
@@ -11755,6 +12131,9 @@ export function App() {
     nodes: deepModelSnapshot ? cloneNodesForUndo(nodes) : nodes,
     edges: deepModelSnapshot ? cloneEdgesForUndo(edges) : edges,
     groups: deepModelSnapshot ? cloneGroupsForUndo(groups) : groups,
+    measurements: deepModelSnapshot
+      ? normalizeProjectMeasurements(projectMeasurements, nodes)
+      : projectMeasurements,
     topologyErrors: deepModelSnapshot ? cloneTopologyErrorsForUndo(topologyErrors) : topologyErrors,
     topology: deepModelSnapshot ? cloneTopologyForUndo(topology) : topology,
     topologyStatus: { ...topologyStatus }
@@ -11902,6 +12281,251 @@ export function App() {
     pushUndoSnapshot(true, false, undoScopeForGraphPatch([nodeId], []));
   };
 
+  const updateMeasurementConfig = (updater: (current: PlatformMeasurementConfig) => PlatformMeasurementConfig) => {
+    setMeasurementConfig((current) => {
+      const next = normalizeMeasurementConfig(updater(current));
+      writeMeasurementConfig(next);
+      return next;
+    });
+  };
+
+  const updateMeasurementType = (typeId: string, patch: Partial<MeasurementTypeDefinition>) => {
+    updateMeasurementConfig((current) => ({
+      ...current,
+      measurementTypes: current.measurementTypes.map((item) => item.id === typeId ? { ...item, ...patch } : item)
+    }));
+  };
+
+  const addMeasurementType = () => {
+    const name = window.prompt("请输入量测类型名称", "新量测");
+    const normalizedName = name?.trim();
+    if (!normalizedName) {
+      return;
+    }
+    const id = `customMeasurement${Date.now().toString(36)}`;
+    updateMeasurementConfig((current) => ({
+      ...current,
+      measurementTypes: [
+        ...current.measurementTypes,
+        {
+          id,
+          key: id,
+          name: normalizedName,
+          shortLabel: normalizedName,
+          defaultUnit: "",
+          valueType: "number",
+          defaultDecimals: 3,
+          defaultColor: "#334155",
+          defaultFontFamily: "Arial",
+          defaultFontSize: 12,
+          defaultFontWeight: "500",
+          defaultVisible: true
+        }
+      ]
+    }));
+  };
+
+  const deleteMeasurementType = (typeId: string) => {
+    if (!window.confirm("删除该量测类型后，设备类型默认绑定里也会同步移除，是否继续？")) {
+      return;
+    }
+    updateMeasurementConfig((current) => ({
+      measurementTypes: current.measurementTypes.filter((item) => item.id !== typeId),
+      deviceProfiles: current.deviceProfiles.map((profile) => ({
+        ...profile,
+        items: profile.items.filter((item) => item.measurementTypeId !== typeId)
+      }))
+    }));
+  };
+
+  const setMeasurementProfileItems = (deviceKind: string, items: DeviceMeasurementProfileItem[]) => {
+    updateMeasurementConfig((current) => {
+      const exists = current.deviceProfiles.some((profile) => profile.deviceKind === deviceKind);
+      return {
+        ...current,
+        deviceProfiles: exists
+          ? current.deviceProfiles.map((profile) => profile.deviceKind === deviceKind ? { ...profile, items } : profile)
+          : [...current.deviceProfiles, { deviceKind, items }]
+      };
+    });
+  };
+
+  const toggleMeasurementProfileType = (deviceKind: string, measurementTypeId: string, enabled: boolean) => {
+    const currentItems = measurementProfileByKind.get(deviceKind)?.items ?? [];
+    if (enabled) {
+      if (currentItems.some((item) => item.measurementTypeId === measurementTypeId && !item.role)) {
+        return;
+      }
+      setMeasurementProfileItems(deviceKind, [...currentItems, { measurementTypeId }]);
+      return;
+    }
+    setMeasurementProfileItems(deviceKind, currentItems.filter((item) => !(item.measurementTypeId === measurementTypeId && !item.role)));
+  };
+
+  const updateProjectMeasurementsWithUndo = (updater: (current: ProjectMeasurementConfig) => ProjectMeasurementConfig, logText?: string) => {
+    pushUndoSnapshot();
+    setProjectMeasurements((current) => normalizeProjectMeasurements(updater(current), nodes));
+    if (logText) {
+      writeOperationLog(logText);
+    }
+  };
+
+  const addDefaultMeasurementsToNode = (node: ModelNode) => {
+    if (isStaticNode(node)) {
+      return;
+    }
+    const group = createDefaultMeasurementGroupForNode(node, measurementConfig);
+    if (!group) {
+      window.alert("该设备类型还没有绑定默认量测，请先在基础页配置设备类型可用量测。");
+      return;
+    }
+    updateProjectMeasurementsWithUndo(
+      (current) => upsertMeasurementGroup(current, group),
+      `添加动态量测：${node.name}`
+    );
+  };
+
+  const addDefaultMeasurementsToSelectedNode = () => {
+    if (!inspectorSelectedNode) {
+      return;
+    }
+    addDefaultMeasurementsToNode(inspectorSelectedNode);
+  };
+
+  const removeMeasurementsFromNode = (node: ModelNode) => {
+    updateProjectMeasurementsWithUndo(
+      (current) => removeMeasurementGroupForNode(current, node.id),
+      `删除动态量测：${node.name}`
+    );
+  };
+
+  const removeMeasurementsFromSelectedNode = () => {
+    if (!inspectorSelectedNode) {
+      return;
+    }
+    removeMeasurementsFromNode(inspectorSelectedNode);
+  };
+
+  const updateSelectedMeasurementGroup = (updater: (group: MeasurementGroup) => MeasurementGroup, logText?: string) => {
+    if (!selectedMeasurementGroup) {
+      return;
+    }
+    updateProjectMeasurementsWithUndo(
+      (current) => ({
+        version: 1,
+        groups: current.groups.map((group) => group.id === selectedMeasurementGroup.id ? updater(group) : group)
+      }),
+      logText
+    );
+  };
+
+  const addMeasurementItemToNode = (node: ModelNode) => {
+    if (isStaticNode(node)) {
+      return;
+    }
+    const type = measurementConfig.measurementTypes[0];
+    if (!type) {
+      window.alert("请先配置至少一个量测类型。");
+      return;
+    }
+    const existingGroup = measurementGroupForNode(projectMeasurements, node.id);
+    const group = existingGroup ?? {
+      id: `measurement-${node.id}`,
+      nodeId: node.id,
+      visible: true,
+      anchor: "bottom" as const,
+      offset: { x: 0, y: Math.round(node.size.height / 2 + 42) },
+      layout: "vertical" as const,
+      items: []
+    };
+    const item: MeasurementItemBinding = {
+      id: `measurement-${node.id}-${type.id}-${Date.now().toString(36)}`,
+      measurementTypeId: type.id,
+      sourcePoint: `${node.id}.${type.id}`,
+      visible: true
+    };
+    updateProjectMeasurementsWithUndo(
+      (current) => upsertMeasurementGroup(current, { ...group, items: [...group.items, item] }),
+      `添加量测项：${node.name}`
+    );
+  };
+
+  const addMeasurementItemToSelectedNode = () => {
+    if (!inspectorSelectedNode) {
+      return;
+    }
+    addMeasurementItemToNode(inspectorSelectedNode);
+  };
+
+  const updateMeasurementItem = (
+    itemId: string,
+    updater: (item: MeasurementItemBinding) => MeasurementItemBinding,
+    logText?: string
+  ) => {
+    updateSelectedMeasurementGroup((group) => ({
+      ...group,
+      items: group.items.map((item) => item.id === itemId ? updater(item) : item)
+    }), logText);
+  };
+
+  const removeMeasurementItem = (itemId: string) => {
+    updateSelectedMeasurementGroup((group) => ({
+      ...group,
+      items: group.items.filter((item) => item.id !== itemId)
+    }), "删除量测项");
+  };
+
+  const beginMeasurementDrag = (event: PointerEvent<SVGGElement>, group: MeasurementGroup) => {
+    if (isBrowseMode || event.button !== 0 || !svgRef.current) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const startPoint = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
+    setMeasurementDrag({
+      groupId: group.id,
+      pointerId: event.pointerId,
+      startPoint,
+      startOffset: { ...group.offset },
+      historyCaptured: false
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const updateMeasurementDrag = (event: PointerEvent<SVGSVGElement>) => {
+    if (!measurementDrag || measurementDrag.pointerId !== event.pointerId || !svgRef.current) {
+      return false;
+    }
+    const point = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
+    if (!measurementDrag.historyCaptured) {
+      pushUndoSnapshot();
+      setMeasurementDrag({ ...measurementDrag, historyCaptured: true });
+    }
+    const offset = {
+      x: Math.round((measurementDrag.startOffset.x + point.x - measurementDrag.startPoint.x) * 10) / 10,
+      y: Math.round((measurementDrag.startOffset.y + point.y - measurementDrag.startPoint.y) * 10) / 10
+    };
+    setProjectMeasurements((current) => ({
+      version: 1,
+      groups: current.groups.map((group) => group.id === measurementDrag.groupId ? { ...group, offset, anchor: "custom" } : group)
+    }));
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+  };
+
+  const finishMeasurementDrag = (pointerId?: number) => {
+    if (!measurementDrag || (pointerId !== undefined && measurementDrag.pointerId !== pointerId)) {
+      return false;
+    }
+    setMeasurementDrag(null);
+    if (measurementDrag.historyCaptured) {
+      setHasUnsavedChanges(true);
+      writeOperationLog("调整动态量测位置");
+    }
+    return true;
+  };
+
   const ensureDraggingUndoSnapshot = () => {
     if (dragUndoCapturedRef.current) {
       return;
@@ -11943,6 +12567,7 @@ export function App() {
       skipNextTopologyStaleRef.current = true;
       applyUndoGraphSnapshot(snapshot);
       setGroups(snapshot.groups);
+      setProjectMeasurements(snapshot.measurements);
       setTopologyErrors(snapshot.topologyErrors);
       setTopology(snapshot.topology);
       setTopologyStatus(snapshot.topologyStatus);
@@ -12475,6 +13100,7 @@ export function App() {
       powerBaseValue,
       deviceIndexCounters,
       groups: normalizeModelGroups(groups, nodes, projectEdges),
+      measurements: normalizeProjectMeasurements(projectMeasurements, nodes),
       nodes,
       edges: projectEdges
     }));
@@ -12499,7 +13125,8 @@ export function App() {
     deviceIndexCounters,
     nodes,
     edges,
-    groups
+    groups,
+    measurements: projectMeasurements
   });
 
   const graphDirtyBaselineChanged = (previous: GraphDirtyBaseline, next: GraphDirtyBaseline) =>
@@ -12521,7 +13148,8 @@ export function App() {
     previous.deviceIndexCounters !== next.deviceIndexCounters ||
     previous.nodes !== next.nodes ||
     previous.edges !== next.edges ||
-    previous.groups !== next.groups;
+    previous.groups !== next.groups ||
+    previous.measurements !== next.measurements;
 
   useEffect(() => {
     const nextBaseline = currentGraphDirtyBaseline();
@@ -12537,7 +13165,7 @@ export function App() {
     if (graphDirtyBaselineChanged(previousBaseline, nextBaseline)) {
       setHasUnsavedChanges(true);
     }
-  }, [activeLayerId, allowAutoExpandCanvas, backgroundLayerIds, backgroundProjectId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, groups, layers, nodes, powerBaseValue, powerUnit, projectName, voltageUnit]);
+  }, [activeLayerId, allowAutoExpandCanvas, backgroundLayerIds, backgroundProjectId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, groups, layers, nodes, powerBaseValue, powerUnit, projectMeasurements, projectName, voltageUnit]);
 
   const canAdjustSelectedDisplayLayer = isEditMode && activeSelectedNodeIds.length > 0;
 
@@ -13017,6 +13645,7 @@ export function App() {
     const nextEdges = result.edges.filter((edge) => !selectedEdges.has(edge.id));
     setGraphArrays(result.nodes, nextEdges);
     setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, activeSelectedNodeIds, selectedEdges), result.nodes, nextEdges));
+    setProjectMeasurements((current) => normalizeProjectMeasurements(current, result.nodes));
     setCanvasSelectionScope("group");
     setSelectedNodeIds([]);
     setSelectedEdgeId("");
@@ -13383,6 +14012,7 @@ export function App() {
     const nextEdges = result.edges.filter((edge) => !selectedEdges.has(edge.id));
     setGraphArrays(result.nodes, nextEdges);
     setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, activeSelectedNodeIds, selectedEdges), result.nodes, nextEdges));
+    setProjectMeasurements((current) => normalizeProjectMeasurements(current, result.nodes));
     setCanvasSelectionScope("group");
     setSelectedNodeIds([]);
     setSelectedEdgeId("");
@@ -13600,6 +14230,37 @@ export function App() {
     });
   };
 
+  const completeNodeListForPartialPatch = (previousNodes: ModelNode[], nextNodes: ModelNode[]) => {
+    if (nextNodes.length >= previousNodes.length) {
+      return nextNodes;
+    }
+    const patchById = new Map(nextNodes.map((node) => [node.id, node]));
+    if (patchById.size === 0) {
+      return previousNodes;
+    }
+    const completedNodes = previousNodes.map((node) => {
+      const patchedNode = patchById.get(node.id);
+      if (!patchedNode) {
+        return node;
+      }
+      patchById.delete(node.id);
+      return patchedNode;
+    });
+    if (patchById.size === 0) {
+      return completedNodes;
+    }
+    return [
+      ...completedNodes,
+      ...nextNodes.filter((node) => patchById.has(node.id))
+    ];
+  };
+
+  const movableCanvasNodeIds = (nodeIds: readonly string[]) =>
+    nodeIds.filter((nodeId) => {
+      const node = nodeById.get(nodeId);
+      return node && isCanvasNodeMovable(node.kind);
+    });
+
   const routableLineRouteCandidateIdsForMovedNodes = (
     previousNodes: ModelNode[],
     nextNodes: ModelNode[],
@@ -13610,6 +14271,11 @@ export function App() {
     const candidateIds = new Set<string>();
     if (movedIds.size === 0) {
       return candidateIds;
+    }
+    for (const nodeId of movedIds) {
+      for (const lineId of routableLineNodeIdsByEndpointNodeId.get(nodeId) ?? []) {
+        candidateIds.add(lineId);
+      }
     }
     for (const node of orderedNodesForIds(nextNodes, movedIds)) {
       if (isRoutableLineDeviceKind(node.kind)) {
@@ -13638,6 +14304,20 @@ export function App() {
     addLinesNearBounds(boundsForNodeSet(previousNodes, movedIds, originalPositions, MOVE_ROUTE_LOCAL_SEARCH_PADDING));
     addLinesNearBounds(boundsForNodeSet(nextNodes, movedIds, undefined, MOVE_ROUTE_LOCAL_SEARCH_PADDING));
     return candidateIds;
+  };
+
+  const rebuildRoutableLineNodeUpdatesForChangedNodes = (
+    previousNodes: ModelNode[],
+    nextNodes: ModelNode[],
+    changedNodeIds: string[],
+    bounds: CanvasBounds,
+    originalPositions?: Record<string, Point>
+  ) => {
+    const fullNextNodes = completeNodeListForPartialPatch(previousNodes, nextNodes);
+    const candidateIds = routableLineRouteCandidateIdsForMovedNodes(previousNodes, fullNextNodes, changedNodeIds, originalPositions);
+    return candidateIds.size > 0
+      ? rebuildRoutableLineDeviceRouteUpdates(fullNextNodes, candidateIds, bounds, previousNodes)
+      : [];
   };
 
   const localRouteOptimizationEdges = (
@@ -14637,7 +15317,7 @@ export function App() {
       ? overlayGraphStoreNodes(graphStore, movedNodeUpdates)
       : nextNodes;
     const routableLineNodeUpdates = routableLineCandidateIds.size > 0
-      ? rebuildRoutableLineDeviceRouteUpdates(fullNextNodesForRoutableLines, routableLineCandidateIds, routableLineRouteBounds)
+      ? rebuildRoutableLineDeviceRouteUpdates(fullNextNodesForRoutableLines, routableLineCandidateIds, routableLineRouteBounds, previousNodes)
       : [];
     const committedNodeUpdates = mergeNodeUpdateLists(movedNodeUpdates, routableLineNodeUpdates);
     const committedNextNodes = routableLineNodeUpdates.length > 0
@@ -14902,6 +15582,7 @@ export function App() {
     const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette }));
     const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
     const labelMarkup = buildSvgNodeLabelMarkup(node);
+    const measurementMarkup = buildMeasurementGroupMarkup(node);
     return `<g class="single-node-drag-preview-node ${nodeIsBus ? "bus-node" : ""}" transform="translate(${formatSvgNumber(originalPosition.x)} ${formatSvgNumber(originalPosition.y)})">
   <title>${escapeXml(node.name)}</title>
   <g class="node-geometry" transform="${escapeXml(nodeGeometryTransform(node))}">
@@ -14913,6 +15594,7 @@ export function App() {
     ${terminalMarkup}
   </g>
   ${labelMarkup}
+  ${measurementMarkup}
 </g>`;
   };
   const clearImperativeNodeDragEdgePreview = () => {
@@ -15049,6 +15731,95 @@ export function App() {
       ? [start, { x: end.x, y: start.y }, end]
       : [start, { x: start.x, y: end.y }, end];
   };
+  const routableLineIdsConnectedToNodeIds = (nodeIds: Iterable<string>) => {
+    const lineIds = new Set<string>();
+    for (const nodeId of nodeIds) {
+      for (const lineId of routableLineNodeIdsByEndpointNodeId.get(nodeId) ?? []) {
+        lineIds.add(lineId);
+      }
+    }
+    return lineIds;
+  };
+  const buildRoutableLinePreviewRoutesForNodeUpdates = (
+    baseNodeById: Map<string, ModelNode>,
+    changedNodeIds: Iterable<string>,
+    nodeUpdates: Iterable<ModelNode>,
+    options: { routeFully?: boolean; bounds?: CanvasBounds } = {}
+  ): NodeDragPreviewRoute[] => {
+    const lineIds = routableLineIdsConnectedToNodeIds(changedNodeIds);
+    if (lineIds.size === 0) {
+      return [];
+    }
+    const previewNodeById = new Map(baseNodeById);
+    for (const node of nodeUpdates) {
+      previewNodeById.set(node.id, node);
+    }
+    const previewNodes = options.routeFully ? Array.from(previewNodeById.values()) : [];
+    const referenceNodes = Array.from(baseNodeById.values());
+    const routes: NodeDragPreviewRoute[] = [];
+    for (const lineId of lineIds) {
+      const lineNode = baseNodeById.get(lineId);
+      if (!lineNode || !visibleNodeIdSet.has(lineNode.id) || !isRoutableLineDeviceKind(lineNode.kind)) {
+        continue;
+      }
+      const syncedLine = syncRoutableLineDeviceEndpointsToRefs(lineNode, previewNodes, previewNodeById, referenceNodes);
+      const displayLine = options.routeFully
+        ? routeRoutableLineDevice(syncedLine, previewNodes, options.bounds)
+        : syncedLine;
+      const points = routableLineDeviceCanvasPoints(displayLine);
+      const start = points[0];
+      const end = points[points.length - 1];
+      if (!start || !end) {
+        continue;
+      }
+      const previewPoints = options.routeFully ? points : simpleOrthogonalDragPreviewPoints(start, end);
+      routes.push({
+        edgeId: `routable-line:${lineNode.id}`,
+        routableLineNodeId: lineNode.id,
+        path: pointsToPreviewPath(previewPoints),
+        color: getDeviceStrokeColor(lineNode, colorDisplayMode, colorPalette)
+      });
+    }
+    return routes;
+  };
+  const buildRoutableLineEndpointPreviewNodeUpdates = (
+    sourceNodes: ModelNode[],
+    baseNodeById: Map<string, ModelNode>,
+    changedNodeIds: Iterable<string>,
+    nodeUpdates: Iterable<ModelNode>
+  ) => {
+    const lineIds = routableLineIdsConnectedToNodeIds(changedNodeIds);
+    if (lineIds.size === 0) {
+      return [];
+    }
+    const previewNodeById = new Map(baseNodeById);
+    for (const node of nodeUpdates) {
+      previewNodeById.set(node.id, node);
+    }
+    const updates: ModelNode[] = [];
+    for (const lineId of lineIds) {
+      const lineNode = baseNodeById.get(lineId);
+      if (!lineNode || !isRoutableLineDeviceKind(lineNode.kind)) {
+        continue;
+      }
+      const syncedLine = syncRoutableLineDeviceEndpointsToRefs(lineNode, sourceNodes, previewNodeById, sourceNodes);
+      if (syncedLine !== lineNode) {
+        updates.push(syncedLine);
+      }
+    }
+    return updates;
+  };
+  const buildRoutableLineDragPreviewRoutes = (dragState: DraggingState, delta: Point) => {
+    const movedNodeIds = Array.from(dragMovedNodeIdSet(dragState));
+    if (movedNodeIds.length === 0) {
+      return [];
+    }
+    const previewNodeUpdates = movedNodeIds.flatMap((nodeId) => {
+      const node = singleNodeDragPreviewNodeFor(dragState, nodeId, delta);
+      return node ? [node] : [];
+    });
+    return buildRoutableLinePreviewRoutesForNodeUpdates(nodeById, movedNodeIds, previewNodeUpdates);
+  };
   const shiftedDragPreviewPoint = (point: Point | undefined, delta: Point | undefined) =>
     point && delta ? { x: point.x + delta.x, y: point.y + delta.y } : point;
   const shiftPreviewEndpointForDelta = (point: Point, moves: boolean, delta: Point) =>
@@ -15125,8 +15896,9 @@ export function App() {
     const cachedSingleNodePreviewRoutes = !multiNodeMove
       ? buildCachedSingleNodeDragPreviewRoutes(dragCache, delta, previewEdges)
       : null;
+    const routableLinePreviewRoutes = buildRoutableLineDragPreviewRoutes(dragState, delta);
     if (cachedSingleNodePreviewRoutes) {
-      return cachedSingleNodePreviewRoutes;
+      return [...cachedSingleNodePreviewRoutes, ...routableLinePreviewRoutes];
     }
     const overlayPreviewCache = multiNodeMove ? dragState.overlayPreview : undefined;
     const movedNodeIds = dragCache?.movedNodeIds ?? overlayPreviewCache?.movedNodeIds ?? new Set(dragState.nodeIds);
@@ -15137,7 +15909,7 @@ export function App() {
         return node && isBusNode(node);
       })
     );
-    return previewEdges.flatMap((edge) => {
+    const edgePreviewRoutes = previewEdges.flatMap((edge) => {
       if (!visibleEdgeIdSet.has(edge.id)) {
         return [];
       }
@@ -15160,6 +15932,7 @@ export function App() {
         color
       }];
     });
+    return [...edgePreviewRoutes, ...routableLinePreviewRoutes];
   };
   const buildLightweightNodeDragPreviewRouteMarkup = (dragState: DraggingState, delta: Point, scopedPreviewEdges?: Edge[]) => {
     const previewEdges = scopedPreviewEdges ?? (
@@ -16431,6 +17204,16 @@ export function App() {
             markRouteEdgesDirty(transformedRouteEdgeIds);
             markStoredRouteEdgesDirty(transformedRouteEdgeIds);
             const nextEdges = rebuildEdgesAfterNodeGeometryChange(nextNodes, transformedNodeIds, transformedEdges, transformedRouteEdgeIds);
+            const routableLineNodeUpdates = rebuildRoutableLineNodeUpdatesForChangedNodes(
+              current.nodes,
+              nextNodes,
+              transformedNodeIds,
+              transformBounds
+            );
+            const finalNodeUpdates = mergeNodeUpdateLists(currentTransformedNodeUpdates, routableLineNodeUpdates);
+            const finalNextNodes = routableLineNodeUpdates.length > 0
+              ? overlayGraphStoreNodes(current, finalNodeUpdates)
+              : nextNodes;
             const transformedNodeIdSet = new Set(transformedNodeIds);
             const transformedEdgeIds = Array.from(new Set([
               ...current.edges
@@ -16438,7 +17221,13 @@ export function App() {
                 .map((edge) => edge.id),
               ...transformedRouteEdgeIds
             ]));
-            return graphStorePatchGraphFromArrays(current, nextNodes, nextEdges, transformedNodeIds, transformedEdgeIds);
+            return graphStorePatchGraphFromArrays(
+              current,
+              finalNextNodes,
+              nextEdges,
+              [...transformedNodeIds, ...routableLineNodeUpdates.map((node) => node.id)],
+              transformedEdgeIds
+            );
           });
         }
       } else if (activeTransform.kind === "rotate" && activeTransform.previewPoint) {
@@ -16474,9 +17263,19 @@ export function App() {
               position: clampNodePositionToBounds(currentSingleNodeUpdate, transformBounds, currentSingleNodeUpdate.position)
             };
             const nextNodes = overlayGraphStoreNodes(current, [currentSingleNodeUpdate]);
-            const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, transformedNodeIds, current.edges);
+            const routableLineNodeUpdates = rebuildRoutableLineNodeUpdatesForChangedNodes(
+              current.nodes,
+              nextNodes,
+              transformedNodeIds,
+              transformBounds
+            );
+            const nodeUpdates = [currentSingleNodeUpdate, ...routableLineNodeUpdates];
+            const finalNextNodes = routableLineNodeUpdates.length > 0
+              ? overlayGraphStoreNodes(current, nodeUpdates)
+              : nextNodes;
+            const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(finalNextNodes, transformedNodeIds, current.edges);
             return graphStoreApplyPatch(current, {
-              nodeUpdates: [currentSingleNodeUpdate],
+              nodeUpdates,
               edgeUpserts: edgeUpdates
             });
           });
@@ -16508,9 +17307,19 @@ export function App() {
                 ? []
                 : [{ ...currentNode, position: clampedPosition }];
             const nextNodes = nodeUpdates.length > 0 ? overlayGraphStoreNodes(current, nodeUpdates) : current.nodes;
-            const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, transformedNodeIds, current.edges);
+            const routableLineNodeUpdates = rebuildRoutableLineNodeUpdatesForChangedNodes(
+              current.nodes,
+              nextNodes,
+              transformedNodeIds,
+              transformBounds
+            );
+            const finalNodeUpdates = mergeNodeUpdateLists(nodeUpdates, routableLineNodeUpdates);
+            const finalNextNodes = routableLineNodeUpdates.length > 0
+              ? overlayGraphStoreNodes(current, finalNodeUpdates)
+              : nextNodes;
+            const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(finalNextNodes, transformedNodeIds, current.edges);
             return graphStoreApplyPatch(current, {
-              nodeUpdates,
+              nodeUpdates: finalNodeUpdates,
               edgeUpserts: edgeUpdates
             });
           });
@@ -16704,7 +17513,8 @@ export function App() {
     if (!requireEditMode("移动图元")) {
       return null;
     }
-    const moveNodeIds = canvasSelectionScope === "direct" ? displaySelectedNodeIds : activeSelectedNodeIds;
+    const rawMoveNodeIds = canvasSelectionScope === "direct" ? displaySelectedNodeIds : activeSelectedNodeIds;
+    const moveNodeIds = movableCanvasNodeIds(rawMoveNodeIds);
     const moveEdgeIds = canvasSelectionScope === "direct" ? displaySelectedEdgeIds : activeSelectedEdgeIds;
     if (moveNodeIds.length === 0) {
       return null;
@@ -16789,7 +17599,8 @@ export function App() {
     if (!requireEditMode("移动图元")) {
       return;
     }
-    const moveNodeIds = canvasSelectionScope === "direct" ? displaySelectedNodeIds : activeSelectedNodeIds;
+    const rawMoveNodeIds = canvasSelectionScope === "direct" ? displaySelectedNodeIds : activeSelectedNodeIds;
+    const moveNodeIds = movableCanvasNodeIds(rawMoveNodeIds);
     const moveEdgeIds = canvasSelectionScope === "direct" ? displaySelectedEdgeIds : activeSelectedEdgeIds;
     if (moveNodeIds.length === 0) {
       return;
@@ -17000,11 +17811,21 @@ export function App() {
       return;
     }
     if (geometryPatch) {
-      const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, [selectedNodeId]);
-      expandCanvasToFitGraph([nextSelectedNode], edgeUpdates, [], CANVAS_AUTO_EXPAND_PADDING, selectedNodeCanvasBounds);
+      const routableLineNodeUpdates = rebuildRoutableLineNodeUpdatesForChangedNodes(
+        nodes,
+        nextNodes,
+        [selectedNodeId],
+        selectedNodeCanvasBounds
+      );
+      const nodeUpdates = mergeNodeUpdateLists(nextSelectedNode ? [nextSelectedNode] : [], routableLineNodeUpdates);
+      const finalNextNodes = routableLineNodeUpdates.length > 0
+        ? overlayGraphStoreNodes(graphStore, nodeUpdates)
+        : nextNodes;
+      const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(finalNextNodes, [selectedNodeId]);
+      expandCanvasToFitGraph(nodeUpdates, edgeUpdates, [], CANVAS_AUTO_EXPAND_PADDING, selectedNodeCanvasBounds);
       setGraphStore((current) =>
         graphStoreApplyPatch(current, {
-          nodeUpdates: [nextSelectedNode],
+          nodeUpdates,
           edgeUpserts: edgeUpdates
         })
       );
@@ -17091,16 +17912,23 @@ export function App() {
     const edgeUpdates = optimizedEdges === optimizationEdges
       ? []
       : edgePatchFromCandidateEdges(optimizationEdges, optimizedEdges).edgeUpserts;
+    const routableLineNodeUpdates = rebuildRoutableLineNodeUpdatesForChangedNodes(
+      previousNodes,
+      nextNodes,
+      changedNodeIds,
+      footprintCanvasBounds
+    );
+    const finalNodeUpdates = mergeNodeUpdateLists(existingUpdates, routableLineNodeUpdates);
     if (edgeUpdates.length > 0) {
       const dirtyEdgeIds = edgeUpdates.map((edge) => edge.id);
       markRouteEdgesDirty(dirtyEdgeIds);
       markStoredRouteEdgesDirty(dirtyEdgeIds);
       markBusTerminalSyncDirtyForEdges(edgeUpdates);
     }
-    expandCanvasToFitGraph(existingUpdates, edgeUpdates, [], CANVAS_AUTO_EXPAND_PADDING, footprintCanvasBounds);
+    expandCanvasToFitGraph(finalNodeUpdates, edgeUpdates, [], CANVAS_AUTO_EXPAND_PADDING, footprintCanvasBounds);
     setGraphStore((current) =>
       graphStoreApplyPatch(current, {
-        nodeUpdates: existingUpdates,
+        nodeUpdates: finalNodeUpdates,
         edgeUpserts: edgeUpdates
       })
     );
@@ -18585,7 +19413,7 @@ export function App() {
     setSelectedEdgeIds(dragSelection.edgeIds);
     setSelectedEdgeId(dragSelection.edgeIds[0] ?? "");
     const point = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-    const dragNodeIds = dragSelection.nodeIds;
+    const dragNodeIds = movableCanvasNodeIds(dragSelection.nodeIds);
     if (dragNodeIds.length === 0) {
       return;
     }
@@ -19210,6 +20038,24 @@ export function App() {
     placeLibraryDeviceAtPoint(template, position);
   };
 
+  const handleRoutableLineNodePointerDown = (event: PointerEvent<Element>, node: ModelNode) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.button !== 0 || !activeLayerNodeIdSet.has(node.id)) {
+      return;
+    }
+    activateInspectorFromCanvas();
+    if (hasCanvasSelectionModifier(event)) {
+      startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
+      return;
+    }
+    selectCanvasGraphics([node.id], [], { scope: "direct" });
+    setConnectSource(null);
+    resetConnectPreviewState();
+    setRewiring(null);
+    setContextMenu(null);
+  };
+
   const handleNodePointerDown = (event: PointerEvent<SVGGElement>, node: ModelNode) => {
     event.stopPropagation();
     if (event.button !== 0) {
@@ -19250,6 +20096,10 @@ export function App() {
       if (target) {
         finishConnectToTarget(target, previewPoint);
       }
+      return;
+    }
+    if (isRoutableLineDeviceKind(node.kind)) {
+      handleRoutableLineNodePointerDown(event, node);
       return;
     }
     if (hasCanvasSelectionModifier(event)) {
@@ -19307,7 +20157,7 @@ export function App() {
       setSelectedEdgeId(dragSelection.edgeIds[0] ?? "");
       dragSelectionSnapshot = createCanvasSelectionSnapshot("group", dragSelection.nodeIds, dragSelection.edgeIds, dragSelection.edgeIds[0] ?? "");
     }
-    const dragNodeIds = dragSelection.nodeIds;
+    const dragNodeIds = movableCanvasNodeIds(dragSelection.nodeIds);
     if (mode === "connect") {
       if (isBusNode(node)) {
         handleTerminalPointerDown(event as unknown as PointerEvent<SVGCircleElement>, node, node.terminals[0]?.id ?? "t1");
@@ -19366,6 +20216,10 @@ export function App() {
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
+  const handleRoutableLineNodePathPointerDown = (event: PointerEvent<SVGPathElement>, node: ModelNode) => {
+    handleRoutableLineNodePointerDown(event, node);
+  };
+
   const handlePointerMove = (event: PointerEvent<SVGSVGElement>) => {
     const staticButtonPointer = staticButtonPointerRef.current;
     if (
@@ -19397,6 +20251,9 @@ export function App() {
       if (staticDrawing && !connectSource) {
         updateInteractiveStaticDrawingPreview(pointer);
       }
+    }
+    if (updateMeasurementDrag(event)) {
+      return;
     }
     const modifierPress = modifierSelectionPressRef.current;
     if (modifierPress && svgRef.current && modifierPress.pointerId === event.pointerId) {
@@ -19695,7 +20552,13 @@ export function App() {
           nextNode = { ...node, position: baseNode.position, rotation: baseNode.rotation, scale: nextSignedScale.scale, scaleX: nextSignedScale.scaleX, scaleY: nextSignedScale.scaleY };
         }
       }
-      patchGraphNodes([nextNode]);
+      const routableLinePreviewNodeUpdates = buildRoutableLineEndpointPreviewNodeUpdates(
+        currentStore.nodes,
+        currentStore.nodeMap,
+        [nextNode.id],
+        [nextNode]
+      );
+      patchGraphNodes([nextNode, ...routableLinePreviewNodeUpdates]);
       return;
     }
     if (!draggingRef.current || !svgRef.current) {
@@ -19838,6 +20701,9 @@ export function App() {
 
   const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
     if (!shouldZoomCanvasFromWheelEvent(event)) {
+      return;
+    }
+    if (isCanvasWheelZoomExcludedTarget(event.target) || !canvasWheelTargetIsRenderedCanvas(event.target)) {
       return;
     }
     if (event.nativeEvent.defaultPrevented) {
@@ -20019,7 +20885,8 @@ export function App() {
       activeNodeIds,
       [],
       activeLayerEdges,
-      routedEdges
+      routedEdges,
+      { isTransformableNode: (node) => isCanvasNodeMovable(node.kind) }
     );
     if (layoutUnits.length < 2) {
       writeOperationLog("自动散开没有发现可调整的图元");
@@ -20061,7 +20928,8 @@ export function App() {
       activeNodeIds,
       [],
       activeLayerEdges,
-      routedEdges
+      routedEdges,
+      { isTransformableNode: (node) => isCanvasNodeMovable(node.kind) }
     );
     if (layoutUnits.length < 2) {
       writeOperationLog("自动对齐没有发现可调整的图元");
@@ -20515,6 +21383,7 @@ export function App() {
     setDeviceIndexCounters(indexed.counters);
     setGraphArrays(repairedNodes, layeredProject.edges);
     setGroups(normalizeModelGroups(layeredProject.groups, repairedNodes, layeredProject.edges));
+    setProjectMeasurements(normalizeProjectMeasurements(layeredProject.measurements, repairedNodes));
     setTopology(EMPTY_TOPOLOGY);
     setTopologyErrors([]);
     setTopologyStatus(INITIAL_TOPOLOGY_STATUS);
@@ -21174,6 +22043,7 @@ export function App() {
     const removedEdgeIds = edges.filter((edge) => !remainingEdgeIds.has(edge.id)).map((edge) => edge.id);
     setGraphArrays(result.nodes, result.edges);
     setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, nodeIdsInLayer, removedEdgeIds), result.nodes, result.edges));
+    setProjectMeasurements((current) => normalizeProjectMeasurements(current, result.nodes));
     setLayers(nextLayers);
     setActiveLayerId(nextActiveLayerId);
     setSelectedNodeIds([]);
@@ -21225,6 +22095,128 @@ export function App() {
       </div>
     </div>
   );
+
+  const renderMeasurementConfigDialog = () => {
+    if (!measurementConfigDialogOpen) {
+      return null;
+    }
+    const selectedTemplate = measurementDeviceTemplates.find((template) => template.kind === measurementProfileKind) ?? measurementDeviceTemplates[0];
+    const selectedKind = selectedTemplate?.kind ?? "";
+    const selectedProfileItems = measurementProfileByKind.get(selectedKind)?.items ?? [];
+    const selectedProfileTypeIds = new Set(selectedProfileItems.filter((item) => !item.role).map((item) => item.measurementTypeId));
+    return (
+      <div className="image-picker-backdrop measurement-config-backdrop" onPointerDown={() => setMeasurementConfigDialogOpen(false)}>
+        <section className="measurement-config-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="measurement-config-title">
+          <header>
+            <div>
+              <h2 id="measurement-config-title">动态量测配置</h2>
+              <p>先配置全平台统一的量测类型，再给设备类型绑定默认可用量测。</p>
+            </div>
+            <button type="button" onClick={() => setMeasurementConfigDialogOpen(false)}>关闭</button>
+          </header>
+          <div className="measurement-config-tabs" role="tablist" aria-label="量测配置类型">
+            <button type="button" className={measurementConfigTab === "types" ? "active" : ""} onClick={() => setMeasurementConfigTab("types")}>
+              量测类型
+            </button>
+            <button type="button" className={measurementConfigTab === "profiles" ? "active" : ""} onClick={() => setMeasurementConfigTab("profiles")}>
+              设备绑定
+            </button>
+          </div>
+          {measurementConfigTab === "types" ? (
+            <div className="measurement-config-panel">
+              <div className="measurement-config-toolbar">
+                <button type="button" onClick={addMeasurementType}>新增量测类型</button>
+              </div>
+              <div className="measurement-table-wrap">
+                <table className="measurement-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>名称</th>
+                      <th>标签</th>
+                      <th>单位</th>
+                      <th>小数</th>
+                      <th>字号</th>
+                      <th>颜色</th>
+                      <th>默认显示</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {measurementConfig.measurementTypes.map((type) => (
+                      <tr key={type.id}>
+                        <td><input value={type.id} readOnly title="量测类型ID用于保存绑定关系，不能直接修改" /></td>
+                        <td><input value={type.name} onChange={(event) => updateMeasurementType(type.id, { name: event.target.value })} /></td>
+                        <td><input value={type.shortLabel} onChange={(event) => updateMeasurementType(type.id, { shortLabel: event.target.value })} /></td>
+                        <td><input value={type.defaultUnit} onChange={(event) => updateMeasurementType(type.id, { defaultUnit: event.target.value })} /></td>
+                        <td>
+                          <input
+                            type="number"
+                            min="0"
+                            max="8"
+                            value={type.defaultDecimals}
+                            onChange={(event) => updateMeasurementType(type.id, { defaultDecimals: Number(event.target.value) })}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            min="6"
+                            max="96"
+                            value={type.defaultFontSize}
+                            onChange={(event) => updateMeasurementType(type.id, { defaultFontSize: Number(event.target.value) })}
+                          />
+                        </td>
+                        <td>
+                          <input type="color" value={type.defaultColor} onChange={(event) => updateMeasurementType(type.id, { defaultColor: event.target.value })} />
+                        </td>
+                        <td>
+                          <select
+                            value={type.defaultVisible ? "1" : "0"}
+                            onChange={(event) => updateMeasurementType(type.id, { defaultVisible: event.target.value === "1" })}
+                          >
+                            <option value="1">显示</option>
+                            <option value="0">隐藏</option>
+                          </select>
+                        </td>
+                        <td><button type="button" onClick={() => deleteMeasurementType(type.id)}>删除</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="measurement-config-panel measurement-profile-panel">
+              <label className="measurement-profile-device-select">
+                <span>设备类型</span>
+                <select value={selectedKind} onChange={(event) => setMeasurementProfileKind(event.target.value as DeviceKind)}>
+                  {measurementDeviceTemplates.map((template) => (
+                    <option key={template.kind} value={template.kind}>
+                      {template.label} / {template.kind}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="measurement-profile-grid" aria-label="设备类型默认量测绑定">
+                {measurementConfig.measurementTypes.map((type) => (
+                  <label key={type.id} className="measurement-profile-option">
+                    <input
+                      type="checkbox"
+                      checked={selectedProfileTypeIds.has(type.id)}
+                      onChange={(event) => toggleMeasurementProfileType(selectedKind, type.id, event.target.checked)}
+                    />
+                    <span>{type.name}</span>
+                    <small>{type.shortLabel}{type.defaultUnit ? ` / ${type.defaultUnit}` : ""}</small>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
+    );
+  };
 
   const saveCurrentProject = (targetId = activeProjectKey) => {
     if (!requireEditMode("保存模型")) {
@@ -24497,7 +25489,10 @@ export function App() {
       lodCanvasNodeChunkCacheRef.current.chunks = [];
       return [];
     }
-    const items = viewportNodes.filter((node) => !groupTransformPreviewNodeIdSet.has(node.id));
+    const items = viewportNodes.filter((node) =>
+      !groupTransformPreviewNodeIdSet.has(node.id) &&
+      !(isRoutableLineDeviceKind(node.kind) && dragPreviewRoutableLineNodeIdSet.has(node.id))
+    );
     return stableSvgMarkupChunks(items, lodCanvasNodeChunkCacheRef.current, {
       chunkSize: CANVAS_LOD_MARKUP_CHUNK_SIZE,
       keyPrefix: "lod-node",
@@ -24511,12 +25506,20 @@ export function App() {
       ],
       itemMarkup: (node) => {
       const nodeIsBus = isBusNode(node);
+      const nodeIsRoutableLineDevice = isRoutableLineDeviceKind(node.kind);
       const inactiveLayerGraphic = isEditMode && !activeLayerNodeIdSet.has(node.id);
-      const className = `diagram-node lod-node${nodeIsBus ? " bus-node" : ""}${inactiveLayerGraphic ? " inactive-layer-graphic" : ""}`;
+      const className = `diagram-node lod-node${nodeIsBus ? " bus-node" : ""}${nodeIsRoutableLineDevice ? " routable-line-node" : ""}${inactiveLayerGraphic ? " inactive-layer-graphic" : ""}`;
       const transform = `translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)}) ${nodeGeometryTransform(node)}`;
       const fill = node.params.backgroundColor || "#ffffff";
       const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
       const strokeWidth = Math.max(2, getDeviceStrokeWidth(node));
+      if (nodeIsRoutableLineDevice) {
+        const path = pointsToOrthogonalPath(routableLineDeviceLocalPoints(node));
+        return `<g class="${className}" data-node-id="${escapeXml(node.id)}" transform="${escapeXml(transform)}">
+  <path class="routable-line-device-lod-line" d="${escapeXml(path)}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}" stroke-linecap="round" stroke-linejoin="round"><title>${escapeXml(node.name)}</title></path>
+  <path class="routable-line-device-hitline lod-routable-line-hitline" d="${escapeXml(path)}"/>
+</g>`;
+      }
       const customTerminalAnchorToken = customSingleTerminalAnchorToken(node, libraryTemplateByKind.get(node.kind));
       if (customTerminalAnchorToken) {
         const geometryTransform = nodeGeometryTransform(node);
@@ -24535,6 +25538,7 @@ export function App() {
     activeLayerNodeIdSet,
     colorDisplayMode,
     colorPalette,
+    dragPreviewRoutableLineNodeIdSet,
     groupTransformPreviewNodeIdSet,
     isEditMode,
     libraryTemplateByKind,
@@ -24585,6 +25589,10 @@ export function App() {
   const handleLodNodePointerDown = (event: PointerEvent<SVGGElement>) => {
     const node = lodNodeFromEvent(event);
     if (node) {
+      if (isRoutableLineDeviceKind(node.kind)) {
+        handleRoutableLineNodePointerDown(event, node);
+        return;
+      }
       handleNodePointerDown(event, node);
     }
   };
@@ -24690,6 +25698,12 @@ export function App() {
   const contextMenuForSelection = contextMenuTarget !== "blank";
   const contextMenuForNode = contextMenuTarget === "node" || contextMenuTarget === "group";
   const contextMenuForEdge = contextMenuTarget === "edge";
+  const contextMeasurementNode = contextMenuForNode && activeSelectedNodeIds.length === 1
+    ? nodeById.get(activeSelectedNodeIds[0])
+    : undefined;
+  const contextMeasurementGroup = contextMeasurementNode
+    ? measurementGroupForNode(projectMeasurements, contextMeasurementNode.id)
+    : undefined;
   const nodeFloatingToolbarActionCount =
     6 +
     (canGroupSelectedGraphics ? 1 : 0) +
@@ -24873,6 +25887,59 @@ export function App() {
     "--canvas-floating-toolbar-padding": `${Math.max(3, Math.round(4 * toolbar.scale))}px`,
     "--canvas-floating-toolbar-radius": `${Math.max(6, Math.round(8 * toolbar.scale))}px`
   } as CSSProperties);
+  const renderMeasurementGroup = (group: MeasurementGroup) => {
+    const node = visibleNodeById.get(group.nodeId);
+    if (!node || !group.visible) {
+      return null;
+    }
+    const metrics = measurementGroupRenderMetrics(node, group);
+    if (!metrics) {
+      return null;
+    }
+    const position = measurementGroupCanvasPosition(node, group);
+    const draggingOrigin = draggingNodeIdSet.has(group.nodeId);
+    return (
+      <g
+        key={group.id}
+        className={`measurement-group ${selectedMeasurementGroup?.id === group.id ? "selected" : ""} ${draggingOrigin ? "drag-origin" : ""}`}
+        transform={`translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})`}
+        onPointerDown={(event) => beginMeasurementDrag(event, group)}
+      >
+        <title>{`${node.name} 动态量测；拖拽可调整位置`}</title>
+        <rect
+          className="measurement-group-bg"
+          x={formatSvgNumber(-metrics.width / 2)}
+          y={formatSvgNumber(-metrics.height / 2)}
+          width={formatSvgNumber(metrics.width)}
+          height={formatSvgNumber(metrics.height)}
+          rx="4"
+        />
+        {metrics.rows.map((row, index) => {
+          const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
+          const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
+          const textX = -metrics.width / 2 + col * metrics.columnWidth + 7;
+          const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
+          return (
+            <text
+              key={row.item.id}
+              className="measurement-item"
+              x={formatSvgNumber(textX)}
+              y={formatSvgNumber(textY)}
+              dominantBaseline="middle"
+              fill={row.display.color}
+              fontFamily={row.display.fontFamily}
+              fontSize={row.display.fontSize}
+              fontWeight={row.display.fontWeight}
+              fontStyle={row.display.fontStyle}
+              textDecoration={row.display.textDecoration}
+            >
+              {row.text}
+            </text>
+          );
+        })}
+      </g>
+    );
+  };
   const resizeSizeHint =
     transformDrag && transformDrag.kind !== "rotate"
       ? (() => {
@@ -25904,6 +26971,9 @@ export function App() {
               }
             }}
             onPointerUp={(event) => {
+              if (finishMeasurementDrag(event.pointerId)) {
+                return;
+              }
               if (finishModifierSelectionPress(event.pointerId)) {
                 return;
               }
@@ -25954,6 +27024,7 @@ export function App() {
               setRewiring(null);
             }}
             onPointerCancel={() => {
+              finishMeasurementDrag();
               cancelModifierSelectionPress();
               finishNodeLabelDrag();
               finishNodeLabelRotateDrag();
@@ -25967,6 +27038,7 @@ export function App() {
               setRewiring(null);
             }}
             onLostPointerCapture={() => {
+              finishMeasurementDrag();
               cancelModifierSelectionPress();
               finishNodeLabelDrag();
               finishNodeLabelRotateDrag();
@@ -26509,6 +27581,12 @@ export function App() {
               const nodeIsBus = isBusNode(node);
               const nodeIsStatic = isStaticNode(node);
               const nodeIsRoutableLineDevice = isRoutableLineDeviceKind(node.kind);
+              if (
+                nodeIsRoutableLineDevice &&
+                (dragPreviewRoutableLineNodeIdSet.has(node.id) || groupTransformPreviewRoutableLineNodeIdSet.has(node.id))
+              ) {
+                return null;
+              }
               const isStorageBus =
                 node.kind === "hydrogen-tank" ||
                 node.kind === "hydrogen-tank-horizontal" ||
@@ -26573,12 +27651,15 @@ export function App() {
               const nodeLabelIsVertical = nodeLabelVisible && nodeLabelVertical(node);
               const nodeLabelVerticalTokens = nodeLabelIsVertical ? nodeLabelVerticalSegments(nodeLabelContent) : [];
               const nodeLabelFontSizeValue = nodeLabelVisible ? nodeLabelFontSize(node) : 0;
+              const routableLineDeviceHitPath = nodeIsRoutableLineDevice
+                ? pointsToOrthogonalPath(routableLineDeviceLocalPoints(node))
+                : "";
               return (
                 <g
                   key={node.id}
                   className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${nodeIsRoutableLineDevice ? "routable-line-node" : ""} ${isStorageBus ? "storage-node" : ""} ${uprightStaticSelectionOutline ? "static-upright-selection-node" : ""} ${staticButtonEnabled ? "static-button-enabled" : ""} ${staticButtonState ? `static-button-${staticButtonState}` : ""} ${multiNodeDragging && draggingNodeIdSet.has(node.id) ? "multi-drag-origin" : ""} ${singleNodeDragging && draggingNodeIdSet.has(node.id) ? "single-drag-origin" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${isConnectSource ? "connect-source" : ""} ${inactiveLayerGraphic ? "inactive-layer-graphic" : ""}`}
                   transform={`translate(${renderPosition.x} ${renderPosition.y})`}
-                  onPointerDown={(event) => handleNodePointerDown(event, node)}
+                  onPointerDown={nodeIsRoutableLineDevice ? undefined : (event) => handleNodePointerDown(event, node)}
                   onPointerEnter={() => {
                     if (staticButtonEnabled) {
                       setStaticButtonFeedback(node.id, "hover");
@@ -26631,7 +27712,7 @@ export function App() {
                     if (!editable) {
                       return;
                     }
-                    if (isBusNode(node)) {
+                    if (isBusNode(node) || isRoutableLineDeviceKind(node.kind)) {
                       return;
                     }
                     selectCanvasGraphics([node.id], []);
@@ -26661,6 +27742,13 @@ export function App() {
                     />
                     <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
                     <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                    {routableLineDeviceHitPath && (
+                      <path
+                        className="routable-line-device-hitline"
+                        d={routableLineDeviceHitPath}
+                        onPointerDown={(event) => handleRoutableLineNodePathPointerDown(event, node)}
+                      />
+                    )}
                     {staticButtonEnabled && (
                       <rect
                         x={-node.size.width / 2}
@@ -26886,6 +27974,11 @@ export function App() {
                 </g>
               );
             })}
+            {visibleMeasurementGroups.length > 0 && (
+              <g className="measurement-layer" pointerEvents={isBrowseMode ? "none" : "auto"}>
+                {visibleMeasurementGroups.map(renderMeasurementGroup)}
+              </g>
+            )}
             {renderSingleTransformRotateOriginGhost()}
             {renderGroupTransformPhotoPreview()}
             {renderTransformRotationTrajectory()}
@@ -26910,7 +28003,12 @@ export function App() {
               aria-hidden="true"
             />
             {dragPreviewEdgeRoutes.map((route) => (
-              <path key={`drag-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
+              <path
+                key={`drag-preview-edge-${route.edgeId}`}
+                d={route.path}
+                className="connection-line drag-preview"
+                style={{ "--connection-color": route.color } as CSSProperties}
+              />
             ))}
             {terminalPressPreviewEdgeRoutes.map((route) => (
               <path key={`terminal-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
@@ -27647,6 +28745,19 @@ export function App() {
                       </div>
                     </td>
                   </tr>
+                  <tr>
+                    <th title="dynamicMeasurements">动态量测</th>
+                    <td>
+                      <button
+                        type="button"
+                        className="measurement-config-open-button"
+                        disabled={isBrowseMode}
+                        onClick={() => setMeasurementConfigDialogOpen(true)}
+                      >
+                        配置量测类型/设备绑定
+                      </button>
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             ) : inspectorTab === "graph" ? (
@@ -27879,6 +28990,204 @@ export function App() {
                             />
                           </td>
                         </tr>
+                        <tr className="measurement-section-row">
+                          <th>动态量测</th>
+                          <td>
+                            <div className="measurement-sidebar-actions">
+                              <button
+                                type="button"
+                                disabled={isBrowseMode || Boolean(selectedMeasurementGroup)}
+                                onClick={addDefaultMeasurementsToSelectedNode}
+                              >
+                                添加默认量测
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isBrowseMode}
+                                onClick={addMeasurementItemToSelectedNode}
+                              >
+                                添加量测项
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isBrowseMode || !selectedMeasurementGroup}
+                                onClick={removeMeasurementsFromSelectedNode}
+                              >
+                                删除量测
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {selectedMeasurementGroup && (
+                          <>
+                            <tr>
+                              <th>量测显示</th>
+                              <td>
+                                <select
+                                  value={selectedMeasurementGroup.visible ? "1" : "0"}
+                                  disabled={isBrowseMode}
+                                  onChange={(event) => updateSelectedMeasurementGroup((group) => ({ ...group, visible: event.target.value === "1" }))}
+                                >
+                                  <option value="1">显示</option>
+                                  <option value="0">隐藏</option>
+                                </select>
+                              </td>
+                            </tr>
+                            <tr>
+                              <th>量测布局</th>
+                              <td>
+                                <select
+                                  value={selectedMeasurementGroup.layout}
+                                  disabled={isBrowseMode}
+                                  onChange={(event) => updateSelectedMeasurementGroup((group) => ({ ...group, layout: event.target.value as MeasurementGroup["layout"] }))}
+                                >
+                                  <option value="vertical">竖向</option>
+                                  <option value="horizontal">横向</option>
+                                  <option value="grid">两列</option>
+                                </select>
+                              </td>
+                            </tr>
+                            <tr>
+                              <th>量测偏移</th>
+                              <td>
+                                <div className="measurement-offset-editor">
+                                  <input
+                                    type="number"
+                                    step="1"
+                                    value={selectedMeasurementGroup.offset.x}
+                                    disabled={isBrowseMode}
+                                    aria-label="量测X偏移"
+                                    onChange={(event) => updateSelectedMeasurementGroup((group) => ({
+                                      ...group,
+                                      anchor: "custom",
+                                      offset: { ...group.offset, x: Number(event.target.value) }
+                                    }))}
+                                  />
+                                  <input
+                                    type="number"
+                                    step="1"
+                                    value={selectedMeasurementGroup.offset.y}
+                                    disabled={isBrowseMode}
+                                    aria-label="量测Y偏移"
+                                    onChange={(event) => updateSelectedMeasurementGroup((group) => ({
+                                      ...group,
+                                      anchor: "custom",
+                                      offset: { ...group.offset, y: Number(event.target.value) }
+                                    }))}
+                                  />
+                                </div>
+                              </td>
+                            </tr>
+                            {selectedMeasurementGroup.items.map((item, itemIndex) => {
+                              const type = measurementTypeById.get(item.measurementTypeId) ?? measurementConfig.measurementTypes[0];
+                              const itemColor = item.styleOverride?.color ?? type?.defaultColor ?? "#334155";
+                              const itemFontSize = item.styleOverride?.fontSize ?? type?.defaultFontSize ?? 12;
+                              return (
+                                <Fragment key={item.id}>
+                                  <tr className="measurement-item-row">
+                                    <th>{`量测${itemIndex + 1}`}</th>
+                                    <td>
+                                      <div className="measurement-item-toolbar">
+                                        <select
+                                          value={item.measurementTypeId}
+                                          disabled={isBrowseMode}
+                                          onChange={(event) => {
+                                            const nextTypeId = event.target.value;
+                                            updateMeasurementItem(item.id, (current) => ({
+                                              ...current,
+                                              measurementTypeId: nextTypeId,
+                                              sourcePoint: current.sourcePoint || `${inspectorSelectedNode.id}.${nextTypeId}`
+                                            }));
+                                          }}
+                                        >
+                                          {measurementConfig.measurementTypes.map((candidate) => (
+                                            <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
+                                          ))}
+                                        </select>
+                                        <select
+                                          value={item.visible === false ? "0" : "1"}
+                                          disabled={isBrowseMode}
+                                          onChange={(event) => updateMeasurementItem(item.id, (current) => ({ ...current, visible: event.target.value === "1" }))}
+                                        >
+                                          <option value="1">显示</option>
+                                          <option value="0">隐藏</option>
+                                        </select>
+                                        <button type="button" disabled={isBrowseMode} onClick={() => removeMeasurementItem(item.id)}>删除</button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <th>测点</th>
+                                    <td>
+                                      <input
+                                        value={item.sourcePoint}
+                                        disabled={isBrowseMode}
+                                        placeholder={`${inspectorSelectedNode.id}.${item.measurementTypeId}`}
+                                        onChange={(event) => updateMeasurementItem(item.id, (current) => ({ ...current, sourcePoint: event.target.value }))}
+                                      />
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <th>显示</th>
+                                    <td>
+                                      <div className="measurement-item-display-grid">
+                                        <input
+                                          value={item.labelOverride ?? ""}
+                                          disabled={isBrowseMode}
+                                          placeholder={type?.shortLabel ?? "标签"}
+                                          aria-label="量测标签"
+                                          onChange={(event) => updateMeasurementItem(item.id, (current) => ({ ...current, labelOverride: event.target.value || undefined }))}
+                                        />
+                                        <input
+                                          value={item.unitOverride ?? ""}
+                                          disabled={isBrowseMode}
+                                          placeholder={type?.defaultUnit ?? "单位"}
+                                          aria-label="量测单位"
+                                          onChange={(event) => updateMeasurementItem(item.id, (current) => ({ ...current, unitOverride: event.target.value || undefined }))}
+                                        />
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="8"
+                                          value={item.decimalsOverride ?? ""}
+                                          disabled={isBrowseMode}
+                                          placeholder={String(type?.defaultDecimals ?? 3)}
+                                          aria-label="量测小数位"
+                                          onChange={(event) => updateMeasurementItem(item.id, (current) => ({
+                                            ...current,
+                                            decimalsOverride: event.target.value === "" ? undefined : Number(event.target.value)
+                                          }))}
+                                        />
+                                        <input
+                                          type="color"
+                                          value={itemColor}
+                                          disabled={isBrowseMode}
+                                          aria-label="量测颜色"
+                                          onChange={(event) => updateMeasurementItem(item.id, (current) => ({
+                                            ...current,
+                                            styleOverride: { ...(current.styleOverride ?? {}), color: event.target.value }
+                                          }))}
+                                        />
+                                        <input
+                                          type="number"
+                                          min="6"
+                                          max="96"
+                                          value={itemFontSize}
+                                          disabled={isBrowseMode}
+                                          aria-label="量测字号"
+                                          onChange={(event) => updateMeasurementItem(item.id, (current) => ({
+                                            ...current,
+                                            styleOverride: { ...(current.styleOverride ?? {}), fontSize: Number(event.target.value) }
+                                          }))}
+                                        />
+                                      </div>
+                                    </td>
+                                  </tr>
+                                </Fragment>
+                              );
+                            })}
+                          </>
+                        )}
                         <tr>
                           {renderChineseParamHeader("terminalCount")}
                           <td>
@@ -28339,6 +29648,35 @@ export function App() {
             </button>
             ) : null
           )}
+          {isEditMode && contextMeasurementNode && !isStaticNode(contextMeasurementNode) && (
+            <div className="context-menu-submenu">
+              <button type="button" className="context-menu-submenu-trigger">
+                <CircleDot size={14} />
+                动态量测
+                <ChevronRight size={14} />
+              </button>
+              <div className="context-menu-submenu-panel">
+                <button onClick={() => runContextMenuAction(() => addDefaultMeasurementsToNode(contextMeasurementNode))}>
+                  <Plus size={14} />
+                  添加/重置默认量测
+                </button>
+                <button onClick={() => runContextMenuAction(() => addMeasurementItemToNode(contextMeasurementNode))}>
+                  <Plus size={14} />
+                  添加量测项
+                </button>
+                {contextMeasurementGroup && (
+                  <button onClick={() => runContextMenuAction(() => removeMeasurementsFromNode(contextMeasurementNode))}>
+                    <Trash2 size={14} />
+                    删除量测
+                  </button>
+                )}
+                <button onClick={() => runContextMenuAction(() => setMeasurementConfigDialogOpen(true))}>
+                  <Pencil size={14} />
+                  配置量测库
+                </button>
+              </div>
+            </div>
+          )}
           {contextMenuForNode && activeSelectedNodeIds.length > 0 && (
             isEditMode ? (
             <button onClick={() => runContextMenuAction(openLayerAssignmentDialog)}>
@@ -28582,6 +29920,7 @@ export function App() {
           )}
         </div>
       )}
+      {renderMeasurementConfigDialog()}
       {pendingRecordPasteConflict && (
         <div className="image-picker-backdrop" onPointerDown={() => resolveRecordPasteConflict("cancel")}>
           <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="record-paste-conflict-title">

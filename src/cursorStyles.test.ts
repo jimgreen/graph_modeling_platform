@@ -24,4 +24,10 @@ describe("cursor styles", () => {
     expect(hasCursorRule(styles, ".diagram-canvas.connect-drop-ready .diagram-node", "none")).toBe(true);
     expect(hasCursorRule(styles, ".diagram-canvas.connect-drop-ready .node-hitbox", "none")).toBe(true);
   });
+
+  test("does not show a grab cursor on routable line-like device bodies", async () => {
+    const styles = await readStyles();
+    expect(hasCursorRule(styles, ".diagram-node.routable-line-node", "default")).toBe(true);
+    expect(hasCursorRule(styles, ".routable-line-device-hitline", "default")).toBe(true);
+  });
 });
