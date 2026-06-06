@@ -128,6 +128,14 @@ const DEFAULT_TYPE_VALUES = {
   defaultFontWeight: "500" as MeasurementFontWeight,
   defaultVisible: true
 };
+const LEGACY_DEFAULT_MEASUREMENT_FONT_SIZE = 12;
+
+function normalizedDefaultMeasurementFontSize(value: unknown, fallback?: MeasurementTypeDefinition) {
+  const next = Math.max(6, Math.min(96, finiteNumber(value, fallback?.defaultFontSize ?? DEFAULT_TYPE_VALUES.defaultFontSize)));
+  return fallback?.defaultFontSize === DEFAULT_TYPE_VALUES.defaultFontSize && next === LEGACY_DEFAULT_MEASUREMENT_FONT_SIZE
+    ? DEFAULT_TYPE_VALUES.defaultFontSize
+    : next;
+}
 
 export const DEFAULT_MEASUREMENT_CONFIG: PlatformMeasurementConfig = {
   measurementTypes: [
@@ -403,7 +411,7 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
       defaultDecimals: Math.max(0, Math.min(8, finiteNumber(item.defaultDecimals, fallback?.defaultDecimals ?? DEFAULT_TYPE_VALUES.defaultDecimals))),
       defaultColor: String(item.defaultColor ?? fallback?.defaultColor ?? DEFAULT_TYPE_VALUES.defaultColor),
       defaultFontFamily: String(item.defaultFontFamily ?? fallback?.defaultFontFamily ?? DEFAULT_TYPE_VALUES.defaultFontFamily),
-      defaultFontSize: Math.max(6, Math.min(96, finiteNumber(item.defaultFontSize, fallback?.defaultFontSize ?? DEFAULT_TYPE_VALUES.defaultFontSize))),
+      defaultFontSize: normalizedDefaultMeasurementFontSize(item.defaultFontSize, fallback),
       defaultFontWeight: normalizedFontWeight(item.defaultFontWeight, fallback?.defaultFontWeight ?? DEFAULT_TYPE_VALUES.defaultFontWeight),
       defaultVisible: item.defaultVisible ?? fallback?.defaultVisible ?? DEFAULT_TYPE_VALUES.defaultVisible
     }];
