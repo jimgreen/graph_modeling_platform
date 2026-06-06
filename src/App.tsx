@@ -7208,6 +7208,7 @@ export function App() {
   const [reactFlowPreviewOpen, setReactFlowPreviewOpen] = useState(false);
   const [measurementConfigDialogOpen, setMeasurementConfigDialogOpen] = useState(false);
   const [measurementConfigDraft, setMeasurementConfigDraft] = useState<PlatformMeasurementConfig | null>(null);
+  const measurementConfigDraftRef = useRef<PlatformMeasurementConfig | null>(null);
   const [measurementConfigSaveStatus, setMeasurementConfigSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [measurementEditorDialog, setMeasurementEditorDialog] = useState<MeasurementEditorDialogState>(null);
   const [measurementDrag, setMeasurementDrag] = useState<MeasurementDragState>(null);
@@ -12322,31 +12323,35 @@ export function App() {
   };
 
   const updateMeasurementConfig = (updater: (current: PlatformMeasurementConfig) => PlatformMeasurementConfig) => {
-    setMeasurementConfigDraft((current) => {
-      const next = normalizeMeasurementConfig(updater(current ?? measurementConfig));
-      setMeasurementConfigSaveStatus("idle");
-      return next;
-    });
+    const currentMeasurementConfig = measurementConfigDraftRef.current ?? measurementConfigDraft ?? measurementConfig;
+    const next = normalizeMeasurementConfig(updater(currentMeasurementConfig));
+    measurementConfigDraftRef.current = next;
+    setMeasurementConfigDraft(next);
+    setMeasurementConfigSaveStatus("idle");
   };
 
   const openMeasurementConfigDialog = () => {
-    setMeasurementConfigDraft(normalizeMeasurementConfig(measurementConfig));
+    const nextDraft = normalizeMeasurementConfig(measurementConfig);
+    measurementConfigDraftRef.current = nextDraft;
+    setMeasurementConfigDraft(nextDraft);
     setMeasurementConfigSaveStatus("idle");
     setMeasurementConfigDialogOpen(true);
   };
 
   const closeMeasurementConfigDialog = () => {
     setMeasurementConfigDialogOpen(false);
+    measurementConfigDraftRef.current = null;
     setMeasurementConfigDraft(null);
     setMeasurementConfigSaveStatus("idle");
   };
 
   const saveMeasurementConfigDialog = async () => {
-    const normalizedMeasurementConfig = normalizeMeasurementConfig(measurementConfigDraft ?? measurementConfig);
+    const normalizedMeasurementConfig = normalizeMeasurementConfig(measurementConfigDraftRef.current ?? measurementConfigDraft ?? measurementConfig);
     const normalizedMeasurementConfigPayload = serializeMeasurementConfigForStorage(normalizedMeasurementConfig);
     setMeasurementConfigSaveStatus("saving");
     writeMeasurementConfig(normalizedMeasurementConfig);
     setMeasurementConfig(normalizedMeasurementConfig);
+    measurementConfigDraftRef.current = normalizedMeasurementConfig;
     setMeasurementConfigDraft(normalizedMeasurementConfig);
     lastPersistedMeasurementConfigPayloadRef.current = normalizedMeasurementConfigPayload;
     try {
@@ -25116,13 +25121,16 @@ export function App() {
       loadDefinitionTemplateDraft(template);
     }
     setDeviceDefinitionView("parameters");
-    setMeasurementConfigDraft(normalizeMeasurementConfig(measurementConfig));
+    const nextMeasurementDraft = normalizeMeasurementConfig(measurementConfig);
+    measurementConfigDraftRef.current = nextMeasurementDraft;
+    setMeasurementConfigDraft(nextMeasurementDraft);
     setMeasurementConfigSaveStatus("idle");
     setDeviceDefinitionDialogOpen(true);
   };
 
   const closeDeviceDefinitionDialog = () => {
     setDeviceDefinitionDialogOpen(false);
+    measurementConfigDraftRef.current = null;
     setMeasurementConfigDraft(null);
     setMeasurementConfigSaveStatus("idle");
   };

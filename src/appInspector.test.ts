@@ -7761,6 +7761,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("lastPersistedMeasurementConfigPayloadRef");
     expect(source).toContain("const [measurementConfig, setMeasurementConfig]");
     expect(source).toContain("const [measurementConfigDraft, setMeasurementConfigDraft]");
+    expect(source).toContain("const measurementConfigDraftRef = useRef<PlatformMeasurementConfig | null>(null);");
     expect(source).toContain("const [projectMeasurements, setProjectMeasurements]");
     expect(source).toContain("const [measurementConfigDialogOpen, setMeasurementConfigDialogOpen]");
     expect(source).toContain("const [measurementEditorDialog, setMeasurementEditorDialog]");
@@ -7775,6 +7776,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("openMeasurementConfigDialog");
     expect(source).toContain("closeMeasurementConfigDialog");
     expect(source).toContain("saveMeasurementConfigDialog");
+    expect(source).toContain("const currentMeasurementConfig = measurementConfigDraftRef.current ?? measurementConfigDraft ?? measurementConfig;");
+    expect(source).toContain("normalizeMeasurementConfig(measurementConfigDraftRef.current ?? measurementConfigDraft ?? measurementConfig)");
     expect(source).toContain("const selectedMeasurementGroups = useMemo");
     expect(source).toContain("selectedMeasurementGroups.length");
     expect(source).toContain("buildMeasurementGroupsMarkup");
