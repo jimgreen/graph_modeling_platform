@@ -4200,6 +4200,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("_labelDisplayMode");
     expect(source).toContain("_labelRotation");
     expect(source).toContain("_labelFontSize");
+    expect(source).toContain("export const DEFAULT_DEVICE_LABEL_FONT_SIZE = 14;");
   });
 
   test("uses visible device label bounds for canvas culling, drag preview, and local route search", async () => {

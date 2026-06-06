@@ -44,6 +44,7 @@ describe("measurement domain", () => {
       key: "p",
       defaultUnit: "MW",
       defaultDecimals: 3,
+      defaultFontSize: 14,
       defaultVisible: true
     });
     expect(config.deviceProfiles.find((item) => item.deviceKind === "ac-load")?.items).toHaveLength(1);

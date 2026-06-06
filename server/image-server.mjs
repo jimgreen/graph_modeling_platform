@@ -475,7 +475,7 @@ function normalizeMeasurementConfig(payload) {
       defaultDecimals: Math.max(0, Math.min(8, Number.isFinite(Number(item.defaultDecimals)) ? Number(item.defaultDecimals) : 3)),
       defaultColor: String(item.defaultColor ?? "#334155").trim() || "#334155",
       defaultFontFamily: String(item.defaultFontFamily ?? "Arial").trim() || "Arial",
-      defaultFontSize: Math.max(6, Math.min(96, Number.isFinite(Number(item.defaultFontSize)) ? Number(item.defaultFontSize) : 12)),
+      defaultFontSize: Math.max(6, Math.min(96, Number.isFinite(Number(item.defaultFontSize)) ? Number(item.defaultFontSize) : 14)),
       defaultFontWeight: normalizeMeasurementFontWeight(item.defaultFontWeight),
       defaultVisible: item.defaultVisible !== false
     }];

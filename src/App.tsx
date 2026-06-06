@@ -254,6 +254,7 @@ import {
   terminalStubSegment,
   terminalStubStrokeWidth,
   STATIC_DRAW_POINTS_PARAM,
+  DEFAULT_DEVICE_LABEL_FONT_SIZE,
   TERMINAL_TYPE_LIBRARY_LABELS,
   terminalVoltageBaseNumber,
   terminalTypeColor,
@@ -4475,7 +4476,7 @@ function nodeLabelTextAnchor(node: ModelNode) {
 }
 
 function nodeLabelFontSize(node: ModelNode) {
-  const baseSize = numericNodeParam(node, "_labelFontSize", 12);
+  const baseSize = numericNodeParam(node, "_labelFontSize", DEFAULT_DEVICE_LABEL_FONT_SIZE);
   const scaleX = Math.abs(getNodeScaleX(node)) || 1;
   const scaleY = Math.abs(getNodeScaleY(node)) || 1;
   return baseSize * Math.sqrt(scaleX * scaleY);
@@ -12438,7 +12439,7 @@ export function App() {
           defaultDecimals: 3,
           defaultColor: "#334155",
           defaultFontFamily: "Arial",
-          defaultFontSize: 12,
+          defaultFontSize: 14,
           defaultFontWeight: "500",
           defaultVisible: true
         }
@@ -13130,7 +13131,7 @@ export function App() {
             const type = measurementTypeById.get(item.measurementTypeId) ?? measurementConfig.measurementTypes[0];
             const measurementTypeOptions = measurementTypeOptionsForMeasurementGroup(node, group);
             const itemColor = item.styleOverride?.color ?? type?.defaultColor ?? "#334155";
-            const itemFontSize = item.styleOverride?.fontSize ?? type?.defaultFontSize ?? 12;
+            const itemFontSize = item.styleOverride?.fontSize ?? type?.defaultFontSize ?? 14;
             return (
               <Fragment key={item.id}>
                 <tr className="measurement-item-row">
@@ -23393,7 +23394,7 @@ export function App() {
                   const type = measurementTypeById.get(item.measurementTypeId) ?? measurementConfig.measurementTypes[0];
                   const measurementTypeOptions = measurementTypeOptionsForMeasurementGroup(node, group);
                   const itemColor = item.styleOverride?.color ?? type?.defaultColor ?? "#334155";
-                  const itemFontSize = item.styleOverride?.fontSize ?? type?.defaultFontSize ?? 12;
+                  const itemFontSize = item.styleOverride?.fontSize ?? type?.defaultFontSize ?? 14;
                   return (
                     <tr key={item.id}>
                       <td>{rowIndex + 1}</td>
@@ -30314,7 +30315,7 @@ export function App() {
                               type="number"
                               min="6"
                               max="96"
-                              value={inspectorSelectedNode.params._labelFontSize || "12"}
+                              value={inspectorSelectedNode.params._labelFontSize || String(DEFAULT_DEVICE_LABEL_FONT_SIZE)}
                               onChange={(event) => updateParam("_labelFontSize", event.target.value)}
                             />
                           </td>

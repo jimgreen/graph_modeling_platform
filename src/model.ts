@@ -3285,7 +3285,7 @@ function clonePoint(point: Point): Point {
 }
 
 const DEFAULT_DEVICE_LONGEST_SIDE = 150;
-const DEFAULT_DEVICE_LABEL_FONT_SIZE = 12;
+export const DEFAULT_DEVICE_LABEL_FONT_SIZE = 14;
 const DEFAULT_DEVICE_LABEL_GAP = 18;
 
 function roundDefaultDeviceSize(value: number): number {
