@@ -849,6 +849,36 @@ function addEdgeToAdjacency(map: Map<string, Edge[]>, nodeId: string, edge: Edge
   map.set(nodeId, [...(map.get(nodeId) ?? []), edge]);
 }
 
+function replaceEdgeInAdjacency(map: Map<string, Edge[]>, nodeId: string, edge: Edge) {
+  const bucket = map.get(nodeId);
+  if (!bucket) {
+    return;
+  }
+  const index = bucket.findIndex((item) => item.id === edge.id);
+  if (index === -1 || bucket[index] === edge) {
+    return;
+  }
+  const nextBucket = bucket.slice();
+  nextBucket[index] = edge;
+  map.set(nodeId, nextBucket);
+}
+
+function replaceEdgeInTerminalRef(map: Map<string, Edge[]>, edge: Edge) {
+  for (const key of [terminalRefKey(edge.sourceId, edge.sourceTerminalId), terminalRefKey(edge.targetId, edge.targetTerminalId)]) {
+    const bucket = map.get(key);
+    if (!bucket) {
+      continue;
+    }
+    const index = bucket.findIndex((item) => item.id === edge.id);
+    if (index === -1 || bucket[index] === edge) {
+      continue;
+    }
+    const nextBucket = bucket.slice();
+    nextBucket[index] = edge;
+    map.set(key, nextBucket);
+  }
+}
+
 export function graphStorePatchNodesFromArray(
   store: GraphStore,
   nodes: readonly ModelNode[],
@@ -1001,15 +1031,21 @@ export function graphStorePatchEdgesFromArray(
       edgesByTerminalRef = new Map(store.edgesByTerminalRef);
       changed = true;
     }
+    const endpointChanged = edgeEndpointChanged(previousEdge, nextEdge);
     edgeMap.set(edgeId, nextEdge);
     edgeList[index] = nextEdge;
-    removeEdgeFromAdjacency(edgesByNodeId, previousEdge.sourceId, edgeId);
-    removeEdgeFromAdjacency(edgesByNodeId, previousEdge.targetId, edgeId);
-    addEdgeToAdjacency(edgesByNodeId, nextEdge.sourceId, nextEdge);
-    addEdgeToAdjacency(edgesByNodeId, nextEdge.targetId, nextEdge);
-    removeEdgeFromTerminalRef(edgesByTerminalRef, previousEdge);
-    addEdgeToTerminalRef(edgesByTerminalRef, nextEdge);
-    const endpointChanged = edgeEndpointChanged(previousEdge, nextEdge);
+    if (endpointChanged) {
+      removeEdgeFromAdjacency(edgesByNodeId, previousEdge.sourceId, edgeId);
+      removeEdgeFromAdjacency(edgesByNodeId, previousEdge.targetId, edgeId);
+      addEdgeToAdjacency(edgesByNodeId, nextEdge.sourceId, nextEdge);
+      addEdgeToAdjacency(edgesByNodeId, nextEdge.targetId, nextEdge);
+      removeEdgeFromTerminalRef(edgesByTerminalRef, previousEdge);
+      addEdgeToTerminalRef(edgesByTerminalRef, nextEdge);
+    } else {
+      replaceEdgeInAdjacency(edgesByNodeId, nextEdge.sourceId, nextEdge);
+      replaceEdgeInAdjacency(edgesByNodeId, nextEdge.targetId, nextEdge);
+      replaceEdgeInTerminalRef(edgesByTerminalRef, nextEdge);
+    }
     elementTreeChanged ||= endpointChanged;
     edgeEndpointChangedInPatch ||= endpointChanged;
     routeGeometryChanged ||= edgeAffectsRouteGeometry(previousEdge, nextEdge, endpointChanged);
@@ -1056,15 +1092,21 @@ export function graphStorePatchEdges(store: GraphStore, edgeUpdates: Iterable<Ed
       edgesByTerminalRef = new Map(store.edgesByTerminalRef);
       changed = true;
     }
+    const endpointChanged = edgeEndpointChanged(previousEdge, nextEdge);
     edgeMap.set(nextEdge.id, nextEdge);
     edgeList[index] = nextEdge;
-    removeEdgeFromAdjacency(edgesByNodeId, previousEdge.sourceId, nextEdge.id);
-    removeEdgeFromAdjacency(edgesByNodeId, previousEdge.targetId, nextEdge.id);
-    addEdgeToAdjacency(edgesByNodeId, nextEdge.sourceId, nextEdge);
-    addEdgeToAdjacency(edgesByNodeId, nextEdge.targetId, nextEdge);
-    removeEdgeFromTerminalRef(edgesByTerminalRef, previousEdge);
-    addEdgeToTerminalRef(edgesByTerminalRef, nextEdge);
-    const endpointChanged = edgeEndpointChanged(previousEdge, nextEdge);
+    if (endpointChanged) {
+      removeEdgeFromAdjacency(edgesByNodeId, previousEdge.sourceId, nextEdge.id);
+      removeEdgeFromAdjacency(edgesByNodeId, previousEdge.targetId, nextEdge.id);
+      addEdgeToAdjacency(edgesByNodeId, nextEdge.sourceId, nextEdge);
+      addEdgeToAdjacency(edgesByNodeId, nextEdge.targetId, nextEdge);
+      removeEdgeFromTerminalRef(edgesByTerminalRef, previousEdge);
+      addEdgeToTerminalRef(edgesByTerminalRef, nextEdge);
+    } else {
+      replaceEdgeInAdjacency(edgesByNodeId, nextEdge.sourceId, nextEdge);
+      replaceEdgeInAdjacency(edgesByNodeId, nextEdge.targetId, nextEdge);
+      replaceEdgeInTerminalRef(edgesByTerminalRef, nextEdge);
+    }
     elementTreeChanged ||= endpointChanged;
     edgeEndpointChangedInPatch ||= endpointChanged;
     routeGeometryChanged ||= edgeAffectsRouteGeometry(previousEdge, nextEdge, endpointChanged);
