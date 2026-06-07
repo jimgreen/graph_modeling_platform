@@ -3648,6 +3648,41 @@ describe("power system model", () => {
     expect(route?.points[route.points.length - 2].y).toBeGreaterThan(bus.position.y + bus.size.height / 2);
   });
 
+  test("commits a clear horizontal connection from a vertical dc bus to a breaker terminal", () => {
+    const bus = {
+      ...createDefaultNode("dc-bus-vertical", { x: 659, y: 948 }),
+      id: "dc-bus",
+      name: "直流母线（竖向）-1",
+      scaleX: 11.666666666666668,
+      scaleY: 1
+    };
+    const breaker = { ...createDefaultNode("dc-breaker", { x: 872, y: 850 }), id: "dc-breaker", name: "直流断路器-21" };
+    const busPoint = projectPointToBusCenterline(bus, getTerminalPoint(breaker, "t1"));
+    const edge: Edge = {
+      id: "clear-dc-bus-breaker",
+      sourceId: bus.id,
+      targetId: breaker.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      sourcePoint: busPoint
+    };
+
+    const prepared = prepareConnectionEdgeForCommit([bus, breaker], [edge], edge.id, { width: 1920, height: 1800 });
+    const validation = prepared.edge
+      ? validateConnectionEdgeRoute([bus, breaker], [prepared.edge], edge.id, { width: 1920, height: 1800 })
+      : prepared;
+    const route = prepared.edge
+      ? routeEdgesForRendering([bus, breaker], [prepared.edge], { width: 1920, height: 1800 })[0]
+      : undefined;
+    expect(prepared.issues).toEqual([]);
+    expect(prepared.ok).toBe(true);
+    expect(validation.ok).toBe(true);
+    expect(validation.issues).toEqual([]);
+    expect(route?.points[0]).toEqual(busPoint);
+    expect(route?.points[route.points.length - 1]).toEqual(getTerminalPoint(breaker, "t1"));
+    expect(routeBendCountForTest(route?.points ?? [])).toBe(0);
+  });
+
   test("branches a second connection from the same terminal without treating the shared endpoint stub as impossible", () => {
     const source = { ...createDefaultNode("ac-source", { x: 120, y: 140 }), id: "source" };
     const loadA = createRightTerminalLoad({ x: 420, y: 80 }, { id: "load-a" });

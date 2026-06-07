@@ -12212,7 +12212,7 @@ function routeIntersectsEndpointAwareBlockers(
     const a = points[index - 1];
     const b = points[index];
     for (const node of routeBlockers) {
-      if (segmentIntersectsRouteBlocker(a, b, index - 1, lastSegmentIndex, node, sourceId, targetId)) {
+      if (segmentIntersectsRouteBlocker(a, b, index - 1, lastSegmentIndex, node, sourceId, targetId, points)) {
         return true;
       }
     }
@@ -12245,7 +12245,7 @@ function firstEndpointAwareBlockerIntersection(
     const a = points[segmentIndex - 1];
     const b = points[segmentIndex];
     for (const blocker of routeBlockers) {
-      if (segmentIntersectsRouteBlocker(a, b, routeSegmentIndex, lastSegmentIndex, blocker, sourceId, targetId)) {
+      if (segmentIntersectsRouteBlocker(a, b, routeSegmentIndex, lastSegmentIndex, blocker, sourceId, targetId, points)) {
         return { segmentIndex: routeSegmentIndex, box: routeBlockerBox(blocker, ROUTE_BLOCKER_PADDING) };
       }
     }
@@ -13324,7 +13324,8 @@ function segmentIntersectsRouteBlocker(
   lastSegmentIndex: number,
   node: ModelNode,
   sourceId: string,
-  targetId: string
+  targetId: string,
+  routePoints?: Point[]
 ) {
   if (node.id.startsWith("floating-")) {
     return false;
@@ -13335,7 +13336,40 @@ function segmentIntersectsRouteBlocker(
   if (node.id === targetId && segmentIndex >= lastSegmentIndex - 1) {
     return false;
   }
+  if (routePoints && routeSegmentIsContinuousEndpointBusOverlap(routePoints, segmentIndex, node, sourceId, targetId)) {
+    return false;
+  }
   return segmentIntersectsNodeBody(a, b, node);
+}
+
+function routeSegmentIsContinuousEndpointBusOverlap(
+  points: Point[],
+  segmentIndex: number,
+  node: ModelNode,
+  sourceId: string,
+  targetId: string
+) {
+  if (!isBusNode(node) || segmentIndex < 0 || segmentIndex >= points.length - 1) {
+    return false;
+  }
+  const box = routeBlockerBox(node, ROUTE_BLOCKER_PADDING);
+  if (node.id === sourceId) {
+    for (let index = 0; index <= segmentIndex; index += 1) {
+      if (!segmentIntersectsBox(points[index], points[index + 1], box)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (node.id === targetId) {
+    for (let index = points.length - 2; index >= segmentIndex; index -= 1) {
+      if (!segmentIntersectsBox(points[index], points[index + 1], box)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  return false;
 }
 
 function routeSingleConnectionForValidation(nodes: ModelNode[], edge: Edge, bounds?: CanvasBounds): RoutedEdge | null {
@@ -13432,7 +13466,7 @@ export function validateConnectionEdgeRoute(
       });
     }
     for (const node of routeBlockers) {
-      if (segmentIntersectsRouteBlocker(a, b, index - 1, lastSegmentIndex, node, source.id, target.id)) {
+      if (segmentIntersectsRouteBlocker(a, b, index - 1, lastSegmentIndex, node, source.id, target.id, route.points)) {
         issues.push({
           type: "blocked-by-node",
           edgeId,
@@ -13678,7 +13712,7 @@ function routeHasCommitBlockingIssue(points: Point[], nodes: ModelNode[], source
       return true;
     }
     for (const node of routeBlockers) {
-      if (segmentIntersectsRouteBlocker(a, b, index - 1, lastSegmentIndex, node, source.id, target.id)) {
+      if (segmentIntersectsRouteBlocker(a, b, index - 1, lastSegmentIndex, node, source.id, target.id, points)) {
         return true;
       }
     }
@@ -14261,7 +14295,7 @@ export function routeIntersectsSpecificNodes(points: Point[], edge: Edge, blocke
     if (a.x !== b.x && a.y !== b.y) {
       return true;
     }
-    if (blockers.some((node) => segmentIntersectsRouteBlocker(a, b, index - 1, lastSegmentIndex, node, edge.sourceId, edge.targetId))) {
+    if (blockers.some((node) => segmentIntersectsRouteBlocker(a, b, index - 1, lastSegmentIndex, node, edge.sourceId, edge.targetId, points))) {
       return true;
     }
   }
