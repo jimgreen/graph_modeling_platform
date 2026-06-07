@@ -10972,6 +10972,7 @@ const ROUTE_TINY_DOGLEG_LIMIT = 18;
 const ROUTE_MIN_MOVABLE_SEGMENT_LENGTH = 18;
 const ROUTE_SHARED_ENDPOINT_STUB_LIMIT = 36;
 const ROUTE_ENDPOINT_STUB_LENGTH = 28;
+const ROUTE_ENDPOINT_ESCAPE_CLEARANCE = 1;
 
 function routeIntersectsBlockers(points: Point[], blockers: ModelNode[], padding = ROUTE_BLOCKER_PADDING, protectedEndpointSegments = 0) {
   const routeBlockers = filterBlockersForRoutePoints(points, blockers, padding);
@@ -13021,6 +13022,8 @@ export function routeEdgesForStoredRendering(nodes: ModelNode[], edges: Edge[], 
         source,
         target,
         {
+          sourceId: source.id,
+          targetId: target.id,
           start,
           end,
           startOut,
@@ -13533,6 +13536,8 @@ export function edgeWithSavedRouteGeometry(edge: Edge, route: RoutedEdge | undef
 }
 
 type EdgeRoutingContext = {
+  sourceId: string;
+  targetId: string;
   start: Point;
   end: Point;
   startOut: Point;
@@ -13572,6 +13577,8 @@ function buildEdgeRoutingContext(source: ModelNode, target: ModelNode, nodes: Mo
   ];
   const endpointNodeIds = new Set([source.id, target.id]);
   return {
+    sourceId: source.id,
+    targetId: target.id,
     start,
     end,
     startOut: endpointStubPoint(start, sourceNormal, source, blockers, stubLength),
@@ -13601,6 +13608,127 @@ function buildEndpointAlignedDirectCandidatesForContext(context: EdgeRoutingCont
     bounds
   );
   return directRoute ? [directRoute, ...candidates] : candidates;
+}
+
+function endpointEscapeLaneValues(
+  axis: "x" | "y",
+  sourceBox: ReturnType<typeof boxFor>,
+  targetBox: ReturnType<typeof boxFor>,
+  context: EdgeRoutingContext,
+  bounds?: CanvasBounds
+) {
+  const boundaryLanes = bounds
+    ? axis === "x"
+      ? [32, 64, 96, bounds.width - 96, bounds.width - 64, bounds.width - 32]
+      : [32, 64, 96, bounds.height - 96, bounds.height - 64, bounds.height - 32]
+    : [];
+  const bodyLanes = axis === "x"
+    ? [
+        sourceBox.left - ROUTE_ENDPOINT_ESCAPE_CLEARANCE,
+        sourceBox.left,
+        sourceBox.right,
+        sourceBox.right + ROUTE_ENDPOINT_ESCAPE_CLEARANCE,
+        targetBox.left - ROUTE_ENDPOINT_ESCAPE_CLEARANCE,
+        targetBox.left,
+        targetBox.right,
+        targetBox.right + ROUTE_ENDPOINT_ESCAPE_CLEARANCE
+      ]
+    : [
+        sourceBox.top - ROUTE_ENDPOINT_ESCAPE_CLEARANCE,
+        sourceBox.top,
+        sourceBox.bottom,
+        sourceBox.bottom + ROUTE_ENDPOINT_ESCAPE_CLEARANCE,
+        targetBox.top - ROUTE_ENDPOINT_ESCAPE_CLEARANCE,
+        targetBox.top,
+        targetBox.bottom,
+        targetBox.bottom + ROUTE_ENDPOINT_ESCAPE_CLEARANCE
+      ];
+  const anchors = axis === "x"
+    ? [
+        context.startOut.x,
+        context.endOut.x,
+        Math.round((context.startOut.x + context.endOut.x) / 2)
+      ]
+    : [
+        context.startOut.y,
+        context.endOut.y,
+        Math.round((context.startOut.y + context.endOut.y) / 2)
+      ];
+  const clamp = (value: number) => {
+    if (!bounds) {
+      return value;
+    }
+    return axis === "x"
+      ? Math.max(0, Math.min(bounds.width, value))
+      : Math.max(0, Math.min(bounds.height, value));
+  };
+  return prioritizeLaneValues([...anchors, ...bodyLanes, ...boundaryLanes].map(clamp), anchors, ROUTE_MAX_LANES_PER_AXIS * 2);
+}
+
+function buildEndpointBodyEscapeCandidatesForContext(
+  source: ModelNode,
+  target: ModelNode,
+  context: EdgeRoutingContext,
+  bounds?: CanvasBounds
+) {
+  const sourceBox = routeBodyBlockerBox(source, ROUTE_BLOCKER_PADDING);
+  const targetBox = routeBodyBlockerBox(target, ROUTE_BLOCKER_PADDING);
+  const xLanes = endpointEscapeLaneValues("x", sourceBox, targetBox, context, bounds);
+  const yLanes = endpointEscapeLaneValues("y", sourceBox, targetBox, context, bounds);
+  const routes: Point[][] = [];
+  const seen = new Set<string>();
+  const addRoute = (middle: Point[]) => {
+    const route = buildFullRoute(context.start, context.startOut, middle, context.endOut, context.end, bounds);
+    const signature = routeSignature(route);
+    if (seen.has(signature)) {
+      return;
+    }
+    seen.add(signature);
+    routes.push(route);
+  };
+
+  if (context.sourceNormal.x !== 0) {
+    const escapeX = context.sourceNormal.x < 0 ? sourceBox.left : sourceBox.right;
+    for (const y of yLanes) {
+      addRoute([
+        { x: escapeX, y: context.startOut.y },
+        { x: escapeX, y },
+        { x: context.endOut.x, y }
+      ]);
+    }
+  }
+  if (context.sourceNormal.y !== 0) {
+    const escapeY = context.sourceNormal.y < 0 ? sourceBox.top : sourceBox.bottom;
+    for (const x of xLanes) {
+      addRoute([
+        { x: context.startOut.x, y: escapeY },
+        { x, y: escapeY },
+        { x, y: context.endOut.y }
+      ]);
+    }
+  }
+  if (context.targetNormal.x !== 0) {
+    const escapeX = context.targetNormal.x < 0 ? targetBox.left : targetBox.right;
+    for (const y of yLanes) {
+      addRoute([
+        { x: context.startOut.x, y },
+        { x: escapeX, y },
+        { x: escapeX, y: context.endOut.y }
+      ]);
+    }
+  }
+  if (context.targetNormal.y !== 0) {
+    const escapeY = context.targetNormal.y < 0 ? targetBox.top : targetBox.bottom;
+    for (const x of xLanes) {
+      addRoute([
+        { x, y: context.startOut.y },
+        { x, y: escapeY },
+        { x: context.endOut.x, y: escapeY }
+      ]);
+    }
+  }
+
+  return routes;
 }
 
 function selectRenderableRouteForContext(
@@ -13640,7 +13768,7 @@ function buildManualRouteForContext(context: EdgeRoutingContext, manualPoints: P
 function routeHasRenderableIssue(points: Point[], context: EdgeRoutingContext) {
   return (
     routeHasImmediateReversal(points) ||
-    routeIntersectsBlockers(points, context.blockers, ROUTE_BLOCKER_PADDING, 1)
+    routeIntersectsEndpointAwareBlockers(points, context.blockers, context.sourceId, context.targetId)
   );
 }
 
@@ -13933,8 +14061,9 @@ function designCommitSafeRoute(
   for (const candidateEdge of candidateEdges) {
     const context = buildEdgeRoutingContext(source, target, nodes, candidateEdge);
     const endpointAlignedCandidates = buildEndpointAlignedDirectCandidatesForContext(context, bounds);
+    const endpointEscapeCandidates = buildEndpointBodyEscapeCandidatesForContext(source, target, context, bounds);
     const selectFromMiddleCandidates = (middleCandidates: Point[][]) => {
-      const fullCandidates: Point[][] = [...endpointAlignedCandidates];
+      const fullCandidates: Point[][] = [...endpointAlignedCandidates, ...endpointEscapeCandidates];
       for (const middle of middleCandidates) {
         const route = buildFullRoute(context.start, context.startOut, middle.slice(1, -1), context.endOut, context.end, bounds);
         fullCandidates.push(route);

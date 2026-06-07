@@ -3683,6 +3683,65 @@ describe("power system model", () => {
     expect(routeBendCountForTest(route?.points ?? [])).toBe(0);
   });
 
+  test("commits a clear connection from a breaker left terminal to a stretched vertical dc bus on the right", () => {
+    const breaker = { ...createDefaultNode("dc-breaker", { x: 545, y: 236 }), id: "dc-breaker", name: "直流断路器-2" };
+    const bus = {
+      ...createDefaultNode("dc-bus-vertical", { x: 716, y: 899 }),
+      id: "right-dc-bus",
+      name: "直流母线（竖向）-1",
+      rotation: 90,
+      scale: 11.666666666666668,
+      scaleX: 11.666666666666668,
+      scaleY: 1,
+      params: {
+        ...createDefaultNode("dc-bus-vertical", { x: 716, y: 899 }).params,
+        _labelX: "3.5",
+        _labelY: "957",
+        _labelRotation: "0"
+      }
+    };
+    const sourceSideConverter = {
+      ...createDefaultNode("acdc-converter", { x: 379, y: 236 }),
+      id: "source-side-converter",
+      name: "ACDC变流器-2"
+    };
+    const upperBreaker = {
+      ...createDefaultNode("dc-breaker", { x: 545, y: 121 }),
+      id: "upper-breaker",
+      name: "直流断路器-1"
+    };
+    const lowerBreaker = {
+      ...createDefaultNode("dc-breaker", { x: 545, y: 340 }),
+      id: "lower-breaker",
+      name: "直流断路器-3"
+    };
+    const busPoint = projectPointToBusCenterline(bus, getTerminalPoint(breaker, "t1"));
+    const edge: Edge = {
+      id: "breaker-left-to-right-bus",
+      sourceId: breaker.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: busPoint
+    };
+    const nodes = [breaker, bus, sourceSideConverter, upperBreaker, lowerBreaker];
+
+    const prepared = prepareConnectionEdgeForCommit(nodes, [edge], edge.id, { width: 2019, height: 3639 });
+    const validation = prepared.edge
+      ? validateConnectionEdgeRoute(nodes, [prepared.edge], edge.id, { width: 2019, height: 3639 })
+      : prepared;
+    const route = prepared.edge
+      ? routeEdgesForRendering(nodes, [prepared.edge], { width: 2019, height: 3639 })[0]
+      : undefined;
+
+    expect(prepared.issues).toEqual([]);
+    expect(prepared.ok).toBe(true);
+    expect(validation.ok).toBe(true);
+    expect(validation.issues).toEqual([]);
+    expect(route?.points[0]).toEqual(getTerminalPoint(breaker, "t1"));
+    expect(route?.points[route.points.length - 1]).toEqual(busPoint);
+  });
+
   test("branches a second connection from the same terminal without treating the shared endpoint stub as impossible", () => {
     const source = { ...createDefaultNode("ac-source", { x: 120, y: 140 }), id: "source" };
     const loadA = createRightTerminalLoad({ x: 420, y: 80 }, { id: "load-a" });
