@@ -169,7 +169,7 @@ describe("graph inspector panel", () => {
     const treeStart = source.indexOf("const renderElementTreePanel = () => (");
     const treeEnd = source.indexOf("const topologyWarningDisplayMessage", treeStart);
     const treeBlock = source.slice(treeStart, treeEnd);
-    const selectedRule = cssRuleBlock(styles, ".element-tree-item.selected");
+    const selectedRule = cssRuleBlock(styles, ".element-tree-item.selected {");
 
     expect(source).toContain("const elementTreeItemRefs = useRef<Record<string, HTMLDivElement | null>>({});");
     expect(source).toContain("elementTreeItemRefs.current[selectedElementTreeItemKey]?.scrollIntoView");
@@ -178,9 +178,9 @@ describe("graph inspector panel", () => {
     expect(treeBlock).toContain("onPointerDown={selectTreeItem}");
     expect(treeBlock).toContain("ref={(element) => {");
     expect(treeBlock).toContain("elementTreeItemRefs.current[treeItemKey] = element;");
-    expect(selectedRule).toContain("#dbeafe");
-    expect(selectedRule).toContain("#2563eb");
-    expect(selectedRule).toContain("font-weight: 900");
+    expect(selectedRule).toContain("#d7eeee");
+    expect(selectedRule).toContain("#277b83");
+    expect(selectedRule).toContain("font-weight: 800");
   });
 
   test("shows element tree types with Chinese and English labels without duplicating device names", async () => {
@@ -626,6 +626,7 @@ describe("graph inspector panel", () => {
     expect(flyoutLibraryGroupBlock).toContain("overflow: visible;");
     expect(flyoutLibraryGroupBlock).toContain("top: var(--library-flyout-top, 0px);");
     expect(flyoutLibraryGroupBlock).toContain("left: var(--library-flyout-left, 0px);");
+    expect(flyoutLibraryGroupBlock).toContain("z-index: 75;");
     expect(flyoutLibraryGroupBlock).not.toContain("calc(100% -");
     expect(flyoutLibraryGroupBlock).not.toContain("overflow-x");
     expect(flyoutLibraryGroupBlock).not.toContain("overflow-y");
@@ -1218,14 +1219,28 @@ describe("graph inspector panel", () => {
     const dialogStart = source.indexOf("{deviceDefinitionDialogOpen && (");
     const dialogEnd = source.indexOf("{customDeviceDialogOpen && (", dialogStart);
     const dialogBlock = source.slice(dialogStart, dialogEnd);
+    const visualPanelStart = source.indexOf("const renderDeviceDefinitionVisualPanel = (template: DeviceTemplate) => {");
+    const visualPanelEnd = source.indexOf("const renderCustomComponentManagerTree = () =>", visualPanelStart);
+    const visualPanelBlock = source.slice(visualPanelStart, visualPanelEnd);
+    const definitionSaveStart = source.indexOf("const saveDeviceDefinitionDraft = () =>");
+    const definitionSaveEnd = source.indexOf("const deleteDeviceDefinitionParameter = (index: number) =>", definitionSaveStart);
+    const definitionSaveBlock = source.slice(definitionSaveStart, definitionSaveEnd);
 
-    expect(source).toContain('const [deviceDefinitionView, setDeviceDefinitionView] = useState<"parameters" | "measurements">("parameters");');
+    expect(source).toContain('const [deviceDefinitionView, setDeviceDefinitionView] = useState<"visual" | "parameters" | "measurements">("parameters");');
     expect(dialogBlock).toContain("device-definition-tabs");
     expect(dialogBlock).toContain("deviceDefinitionSearchQuery");
     expect(dialogBlock).toContain("filteredDeviceDefinitionByComponentType");
     expect(dialogBlock).toContain("displayedDeviceDefinitionLibraries");
     expect(dialogBlock).toContain("aria-label=\"搜索元件定义\"");
     expect(dialogBlock).toContain("componentTypeDisplayParts(typeGroup.section)");
+    expect(source).toContain("const [collapsedDefinitionComponentTypes, setCollapsedDefinitionComponentTypes] = useState<string[]>([]);");
+    expect(source).toContain("const toggleDefinitionComponentType = (attributeLibrary: AttributeLibrary, componentType: string) => {");
+    expect(dialogBlock).toContain("const typeKey = attributeLibraryComponentTypeKey(group, typeGroup.section);");
+    expect(dialogBlock).toContain("const typeCollapsed = deviceDefinitionSearchNeedle ? false : collapsedDefinitionComponentTypes.includes(typeKey);");
+    expect(dialogBlock).toContain("className={`component-definition-type-header ${typeCollapsed ? \"\" : \"active\"}`}");
+    expect(dialogBlock).toContain("aria-expanded={!typeCollapsed}");
+    expect(dialogBlock).toContain("onClick={() => toggleDefinitionComponentType(group, typeGroup.section)}");
+    expect(dialogBlock).toContain("!typeCollapsed && <div className=\"device-definition-items\"");
     expect(dialogBlock).toContain("参数定义");
     expect(dialogBlock).toContain("量测定义");
     expect(dialogBlock).toContain('deviceDefinitionView === "parameters"');
@@ -1238,7 +1253,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const definitionKey = normalizeComponentTypeName(definitionDraftSection) || deviceDefinitionKeyForTemplate(selectedDefinitionTemplate);");
     expect(source).toContain("next[definitionKey] =");
     expect(source).not.toContain("const selectedKind = template.kind;");
-    expect(source).not.toContain("[selectedDefinitionTemplate.kind]: {");
+    expect(definitionSaveBlock).not.toContain("[selectedDefinitionTemplate.kind]: {");
     expect(source).toContain("保存量测定义");
     expect(source).toContain("saveMeasurementConfigDialog");
     expect(source).toContain("measurementConfigDraft");
@@ -1247,6 +1262,18 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".device-definition-tree-scroll");
     expect(styles).toContain(".device-definition-dialog .custom-param-table input,");
     expect(styles).toContain(".custom-device-dialog .custom-param-table input,");
+    expect(styles).toContain(".dialog-compact-tree");
+    expect(styles).toContain(".device-definition-list .component-definition-type-header");
+    expect(styles).toContain(".dialog-compact-tree .custom-component-tree-row.library,");
+    expect(styles).toContain(".dialog-compact-tree .device-definition-group-toggle");
+    expect(styles).toContain(".dialog-compact-tree .custom-component-tree-row.type,");
+    expect(styles).toContain(".dialog-compact-tree .component-definition-type-header");
+    expect(styles).toContain(".dialog-compact-tree .custom-component-tree-row.component,");
+    expect(styles).toContain(".dialog-compact-tree .device-definition-item");
+    expect(styles).toContain(".dialog-compact-tree .dialog-tree-bilingual {");
+    expect(styles).toContain("align-items: baseline;");
+    expect(styles).toContain("padding-left: calc(var(--dialog-tree-indent) * 1.45);");
+    expect(styles).toContain("padding-left: calc(var(--dialog-tree-indent) * 1.7);");
   });
 
   test("visually distinguishes built-in and custom library and device type options", async () => {
@@ -1301,6 +1328,9 @@ describe("graph inspector panel", () => {
     expect(source).toContain("aria-label={`${group}/${typeGroup.section}元件列表`}");
     expect(source).toContain("renderCustomComponentManagerTree");
     expect(source).toContain("custom-component-manager-panel");
+    expect(source).toContain("className=\"custom-component-manager-tree dialog-compact-tree\"");
+    expect(source).toContain("className=\"device-definition-tree-scroll dialog-compact-tree\"");
+    expect(source).toContain("className=\"dialog-tree-bilingual dialog-tree-component-label\"");
     expect(source).toContain("custom-device-dialog-layout");
     expect(source).toContain("customComponentTreeSelection");
     expect(source).toContain("collapsedCustomComponentTreeLibraries");
@@ -1325,6 +1355,8 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".custom-component-manager-panel");
     expect(styles).toContain(".custom-component-tree-row");
     expect(styles).toContain(".custom-component-tree-row svg");
+    expect(styles).toContain(".dialog-compact-tree .dialog-tree-component-label {");
+    expect(styles).toContain("overflow-wrap: anywhere;");
     expect(styles).toContain(".custom-attribute-library-select-row.single-control");
   });
 
@@ -1628,12 +1660,25 @@ describe("graph inspector panel", () => {
   test("adds lightweight viewport controls and minimap navigation without replacing the SVG canvas", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
+    const zoomStart = source.indexOf("const zoomViewportAtCenter = (zoomFactor: number) =>");
+    const zoomEnd = source.indexOf("const resetViewportZoom = () =>", zoomStart);
+    const zoomBlock = source.slice(zoomStart, zoomEnd);
     const resetStart = source.indexOf("const resetViewportZoom = () =>");
     const resetEnd = source.indexOf("const fitWholeCanvasToFrame = () =>", resetStart);
     const resetBlock = source.slice(resetStart, resetEnd);
+    const centerStart = source.indexOf("const centerViewBoxOnPoint = (point: Point) =>");
+    const centerEnd = source.indexOf("const zoomViewportAtCenter = (zoomFactor: number) =>", centerStart);
+    const centerBlock = source.slice(centerStart, centerEnd);
+    const fitBoundsStart = source.indexOf("const fitViewToBounds = (bounds: GeometryBounds | SelectionRect | null");
+    const fitBoundsEnd = source.indexOf("const fitViewToContent = () =>", fitBoundsStart);
+    const fitBoundsBlock = source.slice(fitBoundsStart, fitBoundsEnd);
     const controlsStart = source.indexOf("<div className=\"viewport-controls\"");
     const controlsEnd = source.indexOf("{minimapVisible &&", controlsStart);
     const controlsBlock = source.slice(controlsStart, controlsEnd);
+    const viewportActionStart = source.indexOf("const selectedViewportActionDisabled = !selectedCanvasBounds;");
+    const viewportActionEnd = source.indexOf("const nodeFloatingToolbarActionCount =", viewportActionStart);
+    const viewportActionBlock = source.slice(viewportActionStart, viewportActionEnd);
+    const viewportButtonDisabledBlock = cssRuleBlock(styles, ".viewport-controls button:disabled");
 
     expect(source).toContain("const [minimapVisible, setMinimapVisible] = useState(true)");
     expect(source).toContain("const handleMinimapNavigate");
@@ -1642,13 +1687,45 @@ describe("graph inspector panel", () => {
     expect(source).toContain("fitViewToSelection");
     expect(source).toContain("zoomViewportAtCenter");
     expect(source).toContain("resetViewportZoom");
-    expect(resetBlock).toContain("const visible = canvasVisibleViewBoxRef.current");
-    expect(resetBlock).toContain("const center = visible.width > 0 && visible.height > 0");
-    expect(resetBlock).toContain("width: canvasBounds.width");
-    expect(resetBlock).toContain("height: canvasBounds.height");
+    expect(source).toContain("const viewportCenterAnchorForPoint = (point: Point): WheelZoomAnchor | null =>");
+    expect(source).toContain("const setViewBoxAtViewportCenter = (nextViewBox: CanvasViewBox, point: Point) =>");
+    expect(centerBlock).toContain("setViewBoxAtViewportCenter(");
+    expect(fitBoundsBlock).toContain("const viewportAspect = canvasFrameRef.current?.clientWidth");
+    expect(fitBoundsBlock).toContain("setViewBoxAtViewportCenter(");
+    expect(fitBoundsBlock).not.toContain("setViewBox(clampViewBoxToCanvas({");
+    expect(viewportActionBlock).toContain("const selectedViewportActionDisabled = !selectedCanvasBounds;");
+    expect(viewportActionBlock).toContain("先选中图元或连接线后可居中");
+    expect(viewportActionBlock).toContain("先选中图元或连接线后可缩放到选中区域");
+    expect(zoomBlock).toContain("const frame = canvasFrameRef.current;");
+    expect(zoomBlock).toContain("const frameRect = frame.getBoundingClientRect();");
+    expect(zoomBlock).toContain("const anchor = wheelZoomAnchorFromClient(");
+    expect(zoomBlock).toContain("frameRect.left + frameRect.width / 2");
+    expect(zoomBlock).toContain("frameRect.top + frameRect.height / 2");
+    expect(zoomBlock).toContain("pendingWheelZoomAnchorRef.current = anchor;");
+    expect(zoomBlock).toContain("const bounds = canvasBoundsRef.current;");
+    expect(zoomBlock).toContain("const { width: nextWidth, height: nextHeight } = clampViewBoxDimensionsForZoom(");
+    expect(zoomBlock).toContain("x: anchor.point.x - anchor.cursorOffsetX / nextScaleX");
+    expect(zoomBlock).toContain("y: anchor.point.y - anchor.cursorOffsetY / nextScaleY");
+    expect(zoomBlock).not.toContain("const visible = canvasVisibleViewBoxRef.current");
+    expect(resetBlock).toContain("const frame = canvasFrameRef.current;");
+    expect(resetBlock).toContain("const frameRect = frame.getBoundingClientRect();");
+    expect(resetBlock).toContain("const anchor = wheelZoomAnchorFromClient(");
+    expect(resetBlock).toContain("frameRect.left + frameRect.width / 2");
+    expect(resetBlock).toContain("frameRect.top + frameRect.height / 2");
+    expect(resetBlock).toContain("pendingWheelZoomAnchorRef.current = anchor;");
+    expect(resetBlock).toContain("const bounds = canvasBoundsRef.current;");
+    expect(resetBlock).toContain("const { width: nextWidth, height: nextHeight } = clampViewBoxDimensionsForZoom(");
+    expect(resetBlock).toContain("x: anchor.point.x - anchor.cursorOffsetX / nextScaleX");
+    expect(resetBlock).toContain("y: anchor.point.y - anchor.cursorOffsetY / nextScaleY");
     expect(controlsBlock).toContain("aria-label=\"适配视图\"");
     expect(controlsBlock).toContain("onClick={fitWholeCanvasToFrame}");
     expect(controlsBlock).not.toContain("onClick={fitViewToContent}");
+    expect(controlsBlock).toContain("title={centerSelectedViewportTitle}");
+    expect(controlsBlock).toContain("aria-label=\"居中选中\"");
+    expect(controlsBlock).toContain("disabled={selectedViewportActionDisabled}");
+    expect(controlsBlock).toContain("onClick={centerSelectedInView}");
+    expect(controlsBlock).toContain("title={fitSelectedViewportTitle}");
+    expect(controlsBlock).toContain("aria-label=\"缩放到选中区域\"");
     expect(controlsBlock).toContain("aria-label=\"重置缩放\"");
     expect(controlsBlock).toContain("onClick={resetViewportZoom}");
     expect(source).toContain("ScanSearch");
@@ -1659,6 +1736,9 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".viewport-overlay");
     expect(styles).toContain(".canvas-minimap");
     expect(styles).toContain(".minimap-viewport");
+    expect(viewportButtonDisabledBlock).toContain("color: #94a3b8");
+    expect(viewportButtonDisabledBlock).toContain("cursor: not-allowed");
+    expect(viewportButtonDisabledBlock).toContain("opacity: 0.62");
   });
 
   test("adds selected graphic quick toolbars, edge controls, and resize feedback on top of existing actions", async () => {
@@ -2544,7 +2624,7 @@ describe("graph inspector panel", () => {
     expect(renderBlock).toContain("startSingleTransformDrag(event, node, handle.kind, handle)");
   });
 
-  test("filters single-node resize handles by per-element resize permission", async () => {
+  test("filters single-node resize handles by component resize permission", async () => {
     const source = await readAppSource();
     const renderStart = source.indexOf("{detailedViewportNodes.map((node) =>");
     const renderEnd = source.indexOf("{visibleMeasurementGroups.length > 0 &&", renderStart);
@@ -2560,29 +2640,36 @@ describe("graph inspector panel", () => {
     const selectedModelParamBlock = source.slice(selectedModelParamStart, selectedModelParamEnd);
 
     expect(source).toContain("ALLOW_RESIZE_TRANSFORM_PARAM");
-    expect(source).toContain("nodeAllowsResizeTransform");
     expect(source).toContain("allowResizeTransform: [\"1\", \"0\"]");
     expect(source).toContain("allowResizeTransform: { \"1\": \"允许\", \"0\": \"不允许\" }");
     expect(source).toContain("allowResizeTransform: \"是否允许变形\"");
     expect(source).toContain("templateResizeTransformValue");
     expect(source).toContain("templateAllowsResizeTransform");
+    expect(source).toContain("const nodeKindAllowsResizeTransform = (kind: string) => {");
+    expect(source).toContain("return template ? templateAllowsResizeTransform(template) : defaultAllowsResizeTransformForKind(kind);");
     expect(source).toContain("const isReservedDeviceDefinitionParamName = (enName: string)");
     expect(source).toContain("isReservedDeviceDefinitionParamName(enName)");
     expect(source).toContain("是否允许变形是元件属性");
     expect(source).toContain("<span>是否允许变形</span>");
-    expect(source).toContain("templateAllowsResizeTransform(selectedDefinitionTemplate) ? \"是\" : \"否\"");
-    expect(source).toContain("const resizePermissionNodeUpdates = editingCustomDeviceKind");
-    expect(source).toContain("node.kind !== customKind");
-    expect(source).toContain("node.params[ALLOW_RESIZE_TRANSFORM_PARAM] === customDeviceDraft.allowResizeTransform");
-    expect(source).toContain("pushUndoSnapshot(true, false, undoScopeForGraphPatch(resizePermissionNodeUpdates.map((node) => node.id), []));");
-    expect(source).toContain("patchGraphNodes(resizePermissionNodeUpdates);");
+    expect(source).toContain("const updateSelectedDefinitionResizePermission = (value: string) => {");
+    expect(source).toContain("const nextAllowed = value === \"1\";");
+    expect(source).toContain("allowResizeTransform: nextAllowed");
+    expect(source).toContain("value={templateResizeTransformValue(selectedDefinitionTemplate)}");
+    expect(source).toContain("onChange={(event) => updateSelectedDefinitionResizePermission(event.target.value)}");
+    expect(source).not.toContain("<strong>{templateAllowsResizeTransform(selectedDefinitionTemplate) ? \"是\" : \"否\"}</strong>");
+    expect(source).not.toContain("nodeAllowsResizeTransform");
+    expect(source).not.toContain("definitionResizePermissionNodeUpdates");
+    expect(source).not.toContain("node.params[ALLOW_RESIZE_TRANSFORM_PARAM] === value");
+    expect(source).not.toContain("patchGraphNodes(definitionResizePermissionNodeUpdates);");
+    expect(source).not.toContain("resizePermissionNodeUpdates");
+    expect(source).not.toContain("node.params[ALLOW_RESIZE_TRANSFORM_PARAM] === customDeviceDraft.allowResizeTransform");
     expect(definitionSaveBlock).not.toContain("const resizeDefinitionValue = params[ALLOW_RESIZE_TRANSFORM_PARAM];");
     expect(definitionSaveBlock).not.toContain("resizeDefinitionNodeUpdates");
     expect(selectedModelParamBlock).toContain("key !== ALLOW_RESIZE_TRANSFORM_PARAM");
-    expect(renderBlock).toContain("const scaleHandleConfigsForNode = nodeAllowsResizeTransform(node)");
+    expect(renderBlock).toContain("const scaleHandleConfigsForNode = nodeKindAllowsResizeTransform(node.kind)");
     expect(renderBlock).toContain(": SCALE_HANDLE_CONFIGS.filter((handle) => handle.kind === \"scale-both\");");
     expect(renderBlock).toContain("{scaleHandleConfigsForNode.map((handle) => {");
-    expect(singleTransformBlock).toContain("if (kind !== \"rotate\" && kind !== \"scale-both\" && !nodeAllowsResizeTransform(node))");
+    expect(singleTransformBlock).toContain("if (kind !== \"rotate\" && kind !== \"scale-both\" && !nodeKindAllowsResizeTransform(node.kind))");
   });
 
   test("keeps scale handles under the cursor by deferring canvas expansion until transform release", async () => {
@@ -4004,6 +4091,7 @@ describe("graph inspector panel", () => {
 
   test("keeps side panel pointer and keyboard events from reaching the canvas", async () => {
     const source = await readAppSource();
+    const styles = await readStyles();
     const helperStart = source.indexOf("const stopSidePanelEventPropagation =");
     const helperEnd = source.indexOf("const setSidePanelMode =");
     const helperBlock = source.slice(helperStart, helperEnd);
@@ -4013,11 +4101,15 @@ describe("graph inspector panel", () => {
     const rightPanelStart = source.indexOf("<aside\n        ref={rightPanelRef}");
     const rightPanelEnd = source.indexOf(">\n        <div\n          className=\"side-panel-resize-handle left-edge\"", rightPanelStart);
     const rightPanelBlock = source.slice(rightPanelStart, rightPanelEnd);
+    const sidePanelBlock = cssRuleBlock(styles, ".floating-side-panel");
+    const canvasResizeHotzoneBlock = cssRuleBlock(styles, ".canvas-resize-hotzones");
 
     expect(helperBlock).toContain("event.stopPropagation();");
     for (const panelBlock of [leftPanelBlock, rightPanelBlock]) {
       expect(panelBlock).toContain("onPointerDown={stopSidePanelEventPropagation}");
+      expect(panelBlock).toContain("onPointerMoveCapture={stopSidePanelEventPropagation}");
       expect(panelBlock).toContain("onPointerMove={stopSidePanelEventPropagation}");
+      expect(panelBlock).toContain("onMouseMoveCapture={stopSidePanelEventPropagation}");
       expect(panelBlock).toContain("onMouseMove={stopSidePanelEventPropagation}");
       expect(panelBlock).toContain("onClick={stopSidePanelEventPropagation}");
       expect(panelBlock).toContain("onDoubleClick={stopSidePanelEventPropagation}");
@@ -4025,6 +4117,36 @@ describe("graph inspector panel", () => {
       expect(panelBlock).toContain("onKeyDown={stopSidePanelEventPropagation}");
       expect(panelBlock).toContain("onKeyUp={stopSidePanelEventPropagation}");
     }
+    expect(sidePanelBlock).toContain("z-index: 70;");
+    expect(canvasResizeHotzoneBlock).toContain("z-index: 46;");
+  });
+
+  test("captures page-wide Ctrl+S before panels and dialogs stop keyboard propagation", async () => {
+    const source = await readAppSource();
+    const keyHandlerStart = source.indexOf("const handleGlobalSaveKeyDown = (event: KeyboardEvent) => {");
+    const keyHandlerEnd = source.indexOf("const handleKeyDown = (event: KeyboardEvent) => {", keyHandlerStart);
+    const globalSaveBlock = source.slice(keyHandlerStart, keyHandlerEnd);
+    const keydownStart = source.indexOf("const handleKeyDown = (event: KeyboardEvent) => {", keyHandlerEnd);
+    const keydownEnd = source.indexOf("const handleKeyUp = (event: KeyboardEvent) => {", keydownStart);
+    const keydownBlock = source.slice(keydownStart, keydownEnd);
+    const listenerStart = source.indexOf("window.addEventListener(\"keydown\", handleGlobalSaveKeyDown");
+    const listenerEnd = source.indexOf("return () => {", listenerStart);
+    const listenerBlock = source.slice(listenerStart, listenerEnd);
+    const cleanupStart = source.indexOf("window.removeEventListener(\"keydown\", handleGlobalSaveKeyDown", listenerEnd);
+    const cleanupEnd = source.indexOf("};", cleanupStart);
+    const cleanupBlock = source.slice(cleanupStart, cleanupEnd);
+
+    expect(globalSaveBlock).toContain("if (!isGlobalSaveShortcut(event))");
+    expect(globalSaveBlock).toContain("event.preventDefault();");
+    expect(globalSaveBlock).toContain("saveCurrentProject();");
+    expect(globalSaveBlock).toContain("浏览模式下不能保存，请先切换到编辑模式");
+    expect(listenerBlock).toContain("window.addEventListener(\"keydown\", handleGlobalSaveKeyDown, { capture: true });");
+    expect(listenerBlock).toContain("window.addEventListener(\"keydown\", handleKeyDown);");
+    expect(cleanupBlock).toContain("window.removeEventListener(\"keydown\", handleGlobalSaveKeyDown, { capture: true });");
+    expect(cleanupBlock).toContain("window.removeEventListener(\"keydown\", handleKeyDown);");
+    expect(keydownBlock).toContain("if (event.defaultPrevented) {");
+    expect(keydownBlock).toContain("return;");
+    expect(keydownBlock).not.toContain("if (isGlobalSaveShortcut(event))");
   });
 
   test("defers selected device parameter view construction until the device tab is active", async () => {
@@ -4638,6 +4760,7 @@ describe("graph inspector panel", () => {
     expect(excludedBlock).toContain("\"graph_y\"");
     expect(excludedBlock).toContain("\"layerId\"");
     expect(excludedBlock).toContain("\"terminalCount\"");
+    expect(excludedBlock).toContain("ALLOW_RESIZE_TRANSFORM_PARAM");
     expect(commonBlock).toContain("activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? [])");
     expect(commonBlock).toContain("selectedNodes.length < 2");
     expect(commonBlock).toContain("canBatchEditParam(key)");
@@ -4671,6 +4794,23 @@ describe("graph inspector panel", () => {
     expect(devicePanelBlock).toContain("renderBatchCommonParamPanel()");
     expect(styles).toContain(".batch-param-panel");
     expect(styles).toContain(".batch-param-summary");
+  });
+
+  test("shows topology connection card only for one selected device", async () => {
+    const source = await readAppSource();
+    const selectionStart = source.indexOf("const inspectorSelectedNode = selectedNode;");
+    const selectionEnd = source.indexOf("const selectedMeasurementGroups = useMemo", selectionStart);
+    const selectionBlock = source.slice(selectionStart, selectionEnd);
+    const connectionCardIndex = source.indexOf("<span>连接度</span>");
+    const connectionCardGuard = source.slice(Math.max(0, connectionCardIndex - 180), connectionCardIndex);
+
+    expect(selectionBlock).toContain("const singleSelectedDeviceForInspector = Boolean(");
+    expect(selectionBlock).toContain("inspectorSelectedNode");
+    expect(selectionBlock).toContain("!isStaticNode(inspectorSelectedNode)");
+    expect(selectionBlock).toContain("activeSelectedNodeIds.length === 1");
+    expect(selectionBlock).toContain("activeSelectedEdgeIds.length === 0");
+    expect(connectionCardGuard).toContain("{singleSelectedDeviceForInspector && inspectorSelectedNode && inspectorTab === \"graph\" && (");
+    expect(source).not.toContain("{inspectorSelectedNode && inspectorTab === \"graph\" && (");
   });
 
   test("caps orthogonal routing lane candidates to avoid quadratic searches in dense connection areas", async () => {
@@ -6499,6 +6639,9 @@ describe("graph inspector panel", () => {
     const warningTableStart = styles.indexOf(".topology-warning-table {");
     const warningTableEnd = styles.indexOf(".topology-warning-table th,", warningTableStart);
     const warningTableBlock = styles.slice(warningTableStart, warningTableEnd);
+    const warningTitleStart = styles.indexOf(".topology-warning-floating-title div {");
+    const warningTitleEnd = styles.indexOf(".topology-warning-floating-title h2", warningTitleStart);
+    const warningTitleBlock = styles.slice(warningTitleStart, warningTitleEnd);
 
     expect(source).toContain("ELEMENT_TREE_INITIAL_ITEM_LIMIT");
     expect(source).toContain("ELEMENT_TREE_ITEM_LIMIT_STEP");
@@ -6522,6 +6665,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const startTopologyWarningPanelResize = (event: PointerEvent<HTMLDivElement>) =>");
     expect(validationBlock).toContain("className=\"topology-warning-floating-panel\"");
     expect(validationBlock).toContain("aria-label=\"拓扑警告信息\"");
+    expect(validationBlock).toContain("<h2>拓扑警告信息</h2>");
+    expect(validationBlock).toContain("<span>{inspectorTopologyErrors.length}条</span>");
     expect(validationBlock).toContain("onClick={() => setTopologyWarningPanelClosed(true)}");
     expect(validationBlock).toContain("<table className=\"topology-warning-table\">");
     expect(validationBlock).toContain("<th>状态</th>");
@@ -6531,8 +6676,14 @@ describe("graph inspector panel", () => {
     expect(styles).toContain("content-visibility: auto");
     expect(styles).toContain(".validation-pagination");
     expect(styles).toContain(".topology-warning-floating-resize");
-    expect(warningBodyBlock).toContain("overflow: auto");
+    expect(warningTitleBlock).toContain("display: flex");
+    expect(warningTitleBlock).toContain("align-items: baseline");
+    expect(warningBodyBlock).toContain("overflow-y: auto");
+    expect(warningBodyBlock).toContain("overflow-x: hidden");
     expect(warningTableBlock).toContain("border-collapse: collapse");
+    expect(warningTableBlock).toContain("table-layout: fixed");
+    expect(styles).toContain(".topology-warning-table td:nth-child(2)");
+    expect(styles).toContain("overflow-wrap: anywhere");
   });
 
   test("keeps minimap rendering sampled for large models", async () => {
@@ -6810,6 +6961,7 @@ describe("graph inspector panel", () => {
     const selectedChildListBlock = cssRuleBlock(styles, ".element-tree-item.selected .element-tree-child-list");
     const selectedChildItemBlock = cssRuleBlock(styles, ".element-tree-item.selected .element-tree-child-item {");
     const treeInputFocusBlock = cssRuleBlock(styles, ".element-tree-device-fields input:focus,\n.element-tree-child-item input:focus");
+    const containerParamTabActiveBlock = cssRuleBlock(styles, ".container-param-tabs button.active");
 
     for (const activeBlock of [
       toolSwitchActiveBlock,
@@ -6821,7 +6973,6 @@ describe("graph inspector panel", () => {
       inspectorTabActiveBlock,
       graphToolbarActiveBlock
     ]) {
-      expect(activeBlock).toContain("background: #e8eef5");
       expect(activeBlock).toContain("color: #1f2937");
       expect(activeBlock).not.toContain("color: #ffffff");
       expect(activeBlock).not.toContain("#1d4ed8");
@@ -6836,12 +6987,14 @@ describe("graph inspector panel", () => {
     expect(projectActiveBlock).not.toContain("#facc15");
     expect(projectSelectedActiveBlock).toContain("background: #dfe7f0");
     expect(projectActiveNameBlock).toContain("color: #1f2937");
-    expect(panelModeActiveBlock).toContain("background: #e8eef5");
+    expect(panelModeActiveBlock).toContain("background: #d7eeee");
+    expect(panelModeActiveBlock).toContain("border-color: #3f8f96");
     expect(panelModeActiveBlock).toContain("color: #1f2937");
     expect(panelModeActiveBlock).not.toContain("#1d4ed8");
     expect(panelModeActiveBlock).not.toContain("#2563eb");
     expect(inspectorPanelModeActiveBlock).toContain("color: #1f2937");
-    expect(inspectorTabActiveBlock).toContain("background: #e8eef5");
+    expect(inspectorTabActiveBlock).toContain("background: #d7eeee");
+    expect(inspectorTabActiveBlock).toContain("border-color: #3f8f96");
     expect(inspectorTabActiveBlock).toContain("color: #1f2937");
     expect(graphToolbarBlock).toContain("display: flex");
     expect(graphToolbarBlock).toContain("padding: 0 0 8px 12px");
@@ -6851,18 +7004,25 @@ describe("graph inspector panel", () => {
     expect(graphToolbarButtonBlock).toContain("border: 1px solid transparent");
     expect(graphToolbarButtonBlock).toContain("border-radius: 4px");
     expect(graphToolbarButtonBlock).toContain("font-weight: 600");
-    expect(graphToolbarActiveBlock).toContain("background: #e8eef5");
+    expect(graphToolbarActiveBlock).toContain("background: #d7eeee");
+    expect(graphToolbarActiveBlock).toContain("border-color: #3f8f96");
     expect(graphToolbarActiveBlock).toContain("color: #1f2937");
     expect(treeTypeHoverBlock).toContain("background: #e8eef5");
     expect(treeItemHoverBlock).toContain("background: #f1f5f9");
-    expect(selectedItemBlock).toContain("background: #e8eef5");
+    expect(selectedItemBlock).toContain("background: #d7eeee");
     expect(selectedItemBlock).toContain("color: #1e293b");
-    expect(selectedItemBlock).toContain("box-shadow: inset 3px 0 0 #64748b");
+    expect(selectedItemBlock).toContain("border-color: #3f8f96");
+    expect(selectedItemBlock).toContain("box-shadow: inset 4px 0 0 #277b83");
     expect(selectedItemBlock).not.toContain("color: #ffffff");
     expect(selectedItemBlock).not.toContain("#1d4ed8");
-    expect(selectedChildListBlock).toContain("border-left-color: #94a3b8");
+    expect(selectedChildListBlock).toContain("border-left-color: #3f8f96");
     expect(selectedChildItemBlock).toContain("color: #334155");
-    expect(selectedChildItemBlock).toContain("rgba(248, 250, 252, 0.9)");
+    expect(selectedChildItemBlock).toContain("rgba(232, 247, 248, 0.96)");
+    expect(containerParamTabActiveBlock).toContain("background: #d7eeee");
+    expect(containerParamTabActiveBlock).toContain("border-color: #3f8f96");
+    expect(containerParamTabActiveBlock).toContain("color: #1f2937");
+    expect(containerParamTabActiveBlock).not.toContain("color: #ffffff");
+    expect(containerParamTabActiveBlock).not.toContain("#1d4ed8");
     expect(treeInputFocusBlock).toContain("border-color: #94a3b8");
     expect(treeInputFocusBlock).toContain("rgba(100, 116, 139, 0.12)");
   });
@@ -7125,6 +7285,123 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".template-dialog");
   });
 
+  test("creates custom devices from selected graphic groups", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const contextStart = source.indexOf("{contextMenu && (");
+    const contextEnd = source.indexOf("{projectMenu && (", contextStart);
+    const contextBlock = source.slice(contextStart, contextEnd);
+    const toolbarStart = source.indexOf("{nodeFloatingToolbar && (");
+    const toolbarEnd = source.indexOf("{edgeFloatingToolbar && (", toolbarStart);
+    const toolbarBlock = source.slice(toolbarStart, toolbarEnd);
+
+    expect(source).toContain("type GroupDeviceDefinitionDialogState =");
+    expect(source).toContain("type GroupDeviceTerminalDraft =");
+    expect(source).toContain("const [groupDeviceDefinitionDialog, setGroupDeviceDefinitionDialog]");
+    expect(source).toContain("const openGroupDeviceDefinitionDialog = () => {");
+    expect(source).toContain("const createGroupDeviceIconSvg = (clipboard: CanvasClipboard) => {");
+    expect(source).toContain("const groupDeviceExternalTerminals = (clipboard: CanvasClipboard, sourceEdges: Edge[]) => {");
+    expect(source).toContain("const confirmCreateDeviceFromGroup = () => {");
+    expect(source).toContain("setCustomDeviceDraft({");
+    expect(source).toContain("backgroundImage: groupDeviceDefinitionDialog.iconImage");
+    expect(source).toContain("terminalCount: groupDeviceDefinitionDialog.terminals.length");
+    expect(source).toContain("const terminalTypes = groupDeviceDefinitionDialog.terminals.map((terminal) => terminal.type)");
+    expect(source).toContain("terminalLabels: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => groupDeviceDefinitionDialog.terminals[index]?.label ?? \"\")");
+    expect(source).toContain("groupDeviceDefinitionDialog.terminals.map((terminal) => terminal.anchor)");
+    expect(source).toContain("terminalAssociations: normalizeContainerTerminalAssociations(");
+    expect(source).toContain("setCustomDeviceDialogOpen(true)");
+    expect(source).toContain("定义为元件");
+    expect(source).toContain("新建元件");
+    expect(source).toContain("修改已有元件图标");
+    expect(source).toContain("选择元件类型");
+    expect(toolbarBlock).toContain("title=\"定义为元件\" aria-label=\"定义为元件\"");
+    expect(contextBlock).toContain("定义为元件");
+    expect(styles).toContain(".group-device-dialog");
+    expect(styles).toContain(".group-device-mode-options");
+  });
+
+  test("validates replacement icon terminal signature before updating custom templates", async () => {
+    const source = await readAppSource();
+    const replaceStart = source.indexOf("const confirmReplaceDeviceIconFromGroup = () => {");
+    const replaceEnd = source.indexOf("const openAddTemplateDialog = () => {", replaceStart);
+    const replaceBlock = source.slice(replaceStart, replaceEnd);
+
+    expect(source).toContain("const groupDeviceTerminalSignature = (terminalTypes: readonly TerminalType[]) =>");
+    expect(source).toContain("const validateGroupDeviceIconReplacement = (target: DeviceTemplate, terminals: readonly GroupDeviceTerminalDraft[]) => {");
+    expect(source).toContain("图元组合对外端子数量和端子类型必须与已有元件相同");
+    expect(source).toContain("const groupDeviceReplacementTemplates = useMemo(");
+    expect(source).toContain("() => libraryTemplates");
+    expect(source).toContain("const replaceBuiltinDeviceIconOverride = (targetTemplate: DeviceTemplate, groupIcon: string) => {");
+    expect(source).toContain("return overrides[template.kind] ?? overrides[deviceDefinitionKeyForTemplate(template)];");
+    expect(replaceBlock).toContain("validateGroupDeviceIconReplacement(targetTemplate, groupDeviceDefinitionDialog.terminals)");
+    expect(replaceBlock).toContain("setCustomDeviceTemplates((current) =>");
+    expect(replaceBlock).toContain("params: { ...template.params, backgroundImage: groupIcon, backgroundImageAssetId: \"\" }");
+    expect(replaceBlock).toContain("replaceBuiltinDeviceIconOverride(targetTemplate, groupIcon)");
+    expect(replaceBlock).toContain("writeOperationLog(`修改元件图标：${targetTemplate.label}`)");
+  });
+
+  test("preserves custom device terminal anchors and size from group icon drafts", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const customTemplateStart = source.indexOf("const template: DeviceTemplate = {", source.indexOf("const saveCustomDeviceTemplate = () =>"));
+    const customTemplateEnd = source.indexOf("setCustomDeviceTemplates((current) =>", customTemplateStart);
+    const customTemplateBlock = source.slice(customTemplateStart, customTemplateEnd);
+
+    expect(source).toContain("size: { width: number; height: number };");
+    expect(source).toContain("terminalLabels: string[];");
+    expect(source).toContain("terminalAnchors: Point[];");
+    expect(source).toContain("size: { width: 104, height: 64 },");
+    expect(source).toContain("terminalLabels: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, () => \"\"),");
+    expect(source).toContain("terminalAnchors: createDefaultCustomDeviceTerminalAnchors(2),");
+    expect(source).toContain("terminalLabels: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => template.terminalLabels?.[index] ?? \"\")");
+    expect(source).toContain("terminalAnchors: createDefaultCustomDeviceTerminalAnchors(terminalCount, template.terminalAnchors)");
+    expect(source).toContain("terminalAnchors: createDefaultCustomDeviceTerminalAnchors(count, current.terminalAnchors)");
+    expect(source).toContain("const customDeviceTerminalAnchors = createDefaultCustomDeviceTerminalAnchors(customDeviceDraft.terminalCount, customDeviceDraft.terminalAnchors);");
+    expect(source).toContain("const updateCustomDeviceTerminalAnchor = (index: number, patch: Partial<Point>) => {");
+    expect(source).toContain("const CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES = [-0.25, -1 / 6, 0, 1 / 6, 0.25];");
+    expect(source).toContain("const projectCustomDeviceTerminalAnchorToBoundary = (anchor: Point): Point => {");
+    expect(source).toContain("const snapCustomDeviceTerminalAnchor = (anchor: Point): Point => {");
+    expect(source).toContain("const hasOverlappingCustomDeviceTerminalAnchors = (anchors: readonly Point[]) =>");
+    expect(source).toContain("if (hasOverlappingCustomDeviceTerminalAnchors(customDeviceTerminalAnchors))");
+    expect(source).toContain("const customDeviceTerminalConnectorSegment = (anchor: Point) => {");
+    expect(source).toContain("const updateCustomDeviceTerminalAnchorFromPreview = (index: number, svg: SVGSVGElement, event: PointerEvent<SVGElement>) => {");
+    expect(source).toContain("const boundaryAnchor = projectCustomDeviceTerminalAnchorToBoundary(anchor);");
+    expect(source).toContain("const snappedAnchor = snapCustomDeviceTerminalAnchor");
+    expect(source).toContain("customDeviceTerminalAnchorDragIndex !== null");
+    expect(source).toContain("className=\"custom-device-anchor-preview\"");
+    expect(source).toContain("className={`custom-device-terminal-guide ${active ? \"active\" : \"\"}`}");
+    expect(source).toContain("className=\"custom-device-terminal-connector\"");
+    expect(source).toContain("customDeviceTerminalAnchors.map((anchor, index) => {");
+    expect(source).toContain("setCustomDeviceTerminalAnchorDragIndex(index);");
+    expect(source).toContain("updateCustomDeviceTerminalAnchorFromPreview(index, svg, event);");
+    expect(source).toContain("className=\"custom-terminal-anchor-inputs\"");
+    expect(source).toContain("aria-label={`端子${index + 1} X位置`}");
+    expect(source).toContain("aria-label={`端子${index + 1} Y位置`}");
+    expect(styles).toContain(".custom-device-anchor-preview");
+    expect(styles).toContain(".custom-device-terminal-guide");
+    expect(styles).toContain(".custom-device-terminal-connector");
+    expect(styles).toContain(".custom-device-terminal-anchor");
+    expect(styles).toContain(".custom-terminal-anchor-inputs");
+    expect(customTemplateBlock).toContain("size: customDeviceDraft.size");
+    expect(customTemplateBlock).toContain("terminalLabels: customDeviceDraft.terminalLabels.slice(0, terminalTypes.length).map(");
+    expect(customTemplateBlock).toContain("terminalAnchors: customDeviceTerminalAnchors.slice(0, terminalTypes.length).map((anchor) => ({ ...anchor }))");
+  });
+
+  test("preserves image-backed nodes when creating icons from selected graphic groups", async () => {
+    const source = await readAppSource();
+    const iconStart = source.indexOf("const createGroupDeviceIconSvg = (clipboard: CanvasClipboard) => {");
+    const iconEnd = source.indexOf("const groupDeviceTerminalAnchor", iconStart);
+    const iconBlock = source.slice(iconStart, iconEnd);
+
+    expect(iconBlock).toContain("const imageHref = nodeImage(node);");
+    expect(iconBlock).toContain("const foregroundHref = nodeForegroundImage(node);");
+    expect(iconBlock).toContain("const imageMarkup = imageHref");
+    expect(iconBlock).toContain("const foregroundMarkup = foregroundHref");
+    expect(iconBlock).toContain("<image href=\"${escapeXml(imageHref)}\"");
+    expect(iconBlock).toContain("transform=\"${escapeXml(nodeImageContentTransform(node))}\"");
+    expect(iconBlock).toContain("preserveAspectRatio=\"xMidYMid slice\"");
+  });
+
   test("persists template library edits to the backend immediately without graph save", async () => {
     const source = await readAppSource();
     const createTypeStart = source.indexOf("const createGraphTemplateType = () => {");
@@ -7158,6 +7435,9 @@ describe("graph inspector panel", () => {
     const pointerDownStart = source.indexOf("onPointerDown={(event) => {", canvasStart);
     const pointerDownEnd = source.indexOf("if (staticDrawing)", pointerDownStart);
     const pointerDownBlock = source.slice(pointerDownStart, pointerDownEnd);
+    const placementPreviewStart = source.indexOf("const renderLibraryPlacementPreview = () => {");
+    const placementPreviewEnd = source.indexOf("const startSidePanelResize", placementPreviewStart);
+    const placementPreviewBlock = source.slice(placementPreviewStart, placementPreviewEnd);
     const contextMenuStart = source.indexOf("onContextMenu={(event) => {", canvasStart);
     const contextMenuEnd = source.indexOf("if (connectSource)", contextMenuStart);
     const contextMenuBlock = source.slice(contextMenuStart, contextMenuEnd);
@@ -7176,6 +7456,15 @@ describe("graph inspector panel", () => {
     expect(libraryButtonBlock).toContain("onClick={() => startLibraryDevicePlacement(item)}");
     expect(libraryButtonBlock).toContain("onContextMenu={(event) => {");
     expect(libraryButtonBlock).toContain("cancelLibraryPlacement()");
+    expect(libraryButtonBlock).toContain("const libraryPreviewImageHref = nodeImage(preview);");
+    expect(libraryButtonBlock).toContain("const libraryPreviewForegroundHref = nodeForegroundImage(preview);");
+    expect(libraryButtonBlock).toContain("libraryPreviewImageHref || libraryPreviewForegroundHref");
+    expect(libraryButtonBlock).toContain("<image");
+    expect(libraryButtonBlock).toContain("href={libraryPreviewImageHref}");
+    expect(libraryButtonBlock).toContain("className=\"library-preview-image\"");
+    expect(libraryButtonBlock).toContain("{!libraryPreviewHasImage && (");
+    expect(placementPreviewBlock).toContain("renderNodePreviewImageContent(previewNode");
+    expect(placementPreviewBlock).toContain("renderNodePreviewImageContent(node");
     expect(templatePanelBlock).toContain("onClick={() => startLibraryGraphTemplatePlacement(template)}");
     expect(templatePanelBlock).toContain("onContextMenu={(event) => {");
     expect(templatePanelBlock).toContain("cancelLibraryPlacement()");
@@ -8335,8 +8624,8 @@ describe("graph inspector panel", () => {
     expect(deviceInfoTabsButtonBlock).toContain("border: 1px solid transparent;");
     expect(deviceInfoTabsButtonBlock).toContain("background: #f8fafc;");
     expect(deviceInfoTabsActiveBlock).toContain("color: #1f2937;");
-    expect(deviceInfoTabsActiveBlock).toContain("border-color: #94a3b8;");
-    expect(deviceInfoTabsActiveBlock).toContain("background: #e8eef5;");
+    expect(deviceInfoTabsActiveBlock).toContain("border-color: #3f8f96;");
+    expect(deviceInfoTabsActiveBlock).toContain("background: #d7eeee;");
     expect(deviceInfoTabsBlock).toBe(graphToolbarBlock.replace(".graph-info-toolbar", ".device-info-tabs"));
     expect(deviceInfoTabsButtonBlock).toBe(graphToolbarButtonBlock.replace(".graph-info-toolbar", ".device-info-tabs"));
     expect(deviceInfoTabsActiveBlock).toBe(graphToolbarActiveBlock.replace(".graph-info-toolbar", ".device-info-tabs"));
@@ -8524,6 +8813,77 @@ describe("graph inspector panel", () => {
     expect(renderBlock).toContain("data-export-measurement-group-id={group.id}");
     expect(renderBlock).toContain("data-export-measurement-item-id={row.item.id}");
     expect(renderBlock).toContain("data-export-device-idx={node.params.idx ?? \"\"}");
+  });
+
+  test("uses node icon images in drawing and drag ghost previews", async () => {
+    const source = await readAppSource();
+    const previewContentStart = source.indexOf("const renderNodePreviewImageContent = (");
+    const previewContentEnd = source.indexOf("const buildNodePreviewImageMarkup = (", previewContentStart);
+    const previewContentBlock = source.slice(previewContentStart, previewContentEnd);
+    const previewMarkupStart = previewContentEnd;
+    const previewMarkupEnd = source.indexOf("const canvasBackgroundImageUrl", previewMarkupStart);
+    const previewMarkupBlock = source.slice(previewMarkupStart, previewMarkupEnd);
+    const placementPreviewStart = source.indexOf("const renderLibraryPlacementPreview = () => {");
+    const placementPreviewEnd = source.indexOf("const startSidePanelResize", placementPreviewStart);
+    const placementPreviewBlock = source.slice(placementPreviewStart, placementPreviewEnd);
+    const singlePreviewStart = source.indexOf("const buildSingleNodeDragPreviewNodeMarkup");
+    const singlePreviewEnd = source.indexOf("const clearImperativeNodeDragEdgePreview", singlePreviewStart);
+    const singlePreviewBlock = source.slice(singlePreviewStart, singlePreviewEnd);
+    const multiPreviewStart = source.indexOf("const buildMultiNodeDragOverlayPreview");
+    const multiPreviewEnd = source.indexOf("const renderMultiNodeDragOverlay", multiPreviewStart);
+    const multiPreviewBlock = source.slice(multiPreviewStart, multiPreviewEnd);
+    const rotateGhostStart = source.indexOf("const renderSingleTransformRotateOriginGhost");
+    const rotateGhostEnd = source.indexOf("const renderTransformRotationTrajectory", rotateGhostStart);
+    const rotateGhostBlock = source.slice(rotateGhostStart, rotateGhostEnd);
+    const dragGhostStart = source.indexOf("{dragging?.historyCaptured && !multiNodeDragging");
+    const dragGhostEnd = source.indexOf("{renderViewportRoutedEdges.map", dragGhostStart);
+    const dragGhostBlock = source.slice(dragGhostStart, dragGhostEnd);
+
+    expect(source).toContain("const renderNodePreviewImageContent = (");
+    expect(source).toContain("const buildNodePreviewImageMarkup = (");
+    expect(source).toContain("function nodeImageContentTransform(node: ModelNode) {");
+    expect(source).toContain("return nodeGeometryTransform(node);");
+    expect(previewContentBlock).toContain("transform={nodeImageContentTransform(node)}");
+    expect(previewMarkupBlock).toContain("transform=\"${escapeXml(nodeImageContentTransform(node))}\"");
+    expect(placementPreviewBlock).toContain("renderNodePreviewImageContent(previewNode");
+    expect(placementPreviewBlock).toContain("renderNodePreviewImageContent(node");
+    expect(singlePreviewBlock).toContain("buildNodePreviewImageMarkup(node, `single-node-drag-preview-clip-${node.id}`);");
+    expect(singlePreviewBlock).toContain("const imageMarkup = buildNodePreviewImageMarkup(node, `single-node-drag-preview-clip-${node.id}`);");
+    expect(singlePreviewBlock).toContain("${imageMarkup}");
+    expect(multiPreviewBlock).toContain("buildNodePreviewImageMarkup(node, `multi-node-drag-lite-preview-clip-${node.id}`, { clip: false })");
+    expect(dragGhostBlock).toContain("renderNodePreviewImageContent(ghostNode");
+    expect(rotateGhostBlock).toContain("renderNodePreviewImageContent(ghostNode");
+  });
+
+  test("edits template icons and terminal anchors from the device definition dialog", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const dialogStart = source.indexOf("{deviceDefinitionDialogOpen && (");
+    const dialogEnd = source.indexOf("{customDeviceDialogOpen && (", dialogStart);
+    const dialogBlock = source.slice(dialogStart, dialogEnd);
+    const visualPanelStart = source.indexOf("const renderDeviceDefinitionVisualPanel = (template: DeviceTemplate) => {");
+    const visualPanelEnd = source.indexOf("const renderCustomComponentManagerTree = () =>", visualPanelStart);
+    const visualPanelBlock = source.slice(visualPanelStart, visualPanelEnd);
+
+    expect(source).toContain("type DeviceDefinitionVisualDraft =");
+    expect(source).toContain("const [definitionVisualDraft, setDefinitionVisualDraft]");
+    expect(source).toContain("const [definitionTerminalAnchorDragIndex, setDefinitionTerminalAnchorDragIndex]");
+    expect(source).toContain("const chooseDefinitionTemplateIcon = (event: ChangeEvent<HTMLInputElement>) => {");
+    expect(source).toContain("const saveDeviceDefinitionVisualDraft = () => {");
+    expect(source).toContain("const terminalAnchors = definitionVisualTerminalAnchors.slice(0, definitionVisualDraft.terminalCount).map((anchor) => ({ ...anchor }))");
+    expect(source).toContain("terminalAnchors,");
+    expect(source).toContain("backgroundImage: definitionVisualDraft.backgroundImage");
+    expect(dialogBlock).toContain("图标/端子");
+    expect(dialogBlock).toContain("renderDeviceDefinitionVisualPanel(selectedDefinitionTemplate)");
+    expect(visualPanelBlock).toContain("上传SVG/图片到后台");
+    expect(visualPanelBlock).toContain("className=\"custom-device-anchor-preview device-definition-anchor-preview\"");
+    expect(visualPanelBlock).toContain("updateDefinitionTerminalAnchorFromPreview");
+    expect(visualPanelBlock).toContain("CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES.map");
+    expect(visualPanelBlock).toContain("端子位置");
+    expect(visualPanelBlock).toContain("保存图标和端子");
+    expect(visualPanelBlock).toContain("不能放到元件内部");
+    expect(styles).toContain(".device-definition-visual-panel");
+    expect(styles).toContain(".device-definition-anchor-preview");
   });
 
   test("keeps backend scheme persistence helpers self contained", async () => {

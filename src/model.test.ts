@@ -7,6 +7,7 @@ import {
   buildEDeviceParameterFile,
   calculateElectricalTopology,
   clearVoltageBaseValuesForScope,
+  DeviceTemplateDefinitionOverride,
   setVoltageBaseTerminalValuesForScope,
   setVoltageBaseValuesForScope,
   calculateModelContentSize,
@@ -1378,19 +1379,27 @@ describe("power system model", () => {
     const tankContainer = createDefaultNode("hydrogen-tank-container", { x: 0, y: 0 });
     const routableBranch = createDefaultNode("ac-routable-line", { x: 0, y: 0 });
 
-    expect(regularDevice.params[ALLOW_RESIZE_TRANSFORM_PARAM]).toBe("0");
+    expect(regularDevice.params[ALLOW_RESIZE_TRANSFORM_PARAM]).toBeUndefined();
     expect(nodeAllowsResizeTransform(regularDevice)).toBe(false);
-    expect(staticGraphic.params[ALLOW_RESIZE_TRANSFORM_PARAM]).toBe("1");
+    expect(staticGraphic.params[ALLOW_RESIZE_TRANSFORM_PARAM]).toBeUndefined();
     expect(nodeAllowsResizeTransform(staticGraphic)).toBe(true);
-    expect(bus.params[ALLOW_RESIZE_TRANSFORM_PARAM]).toBe("1");
+    expect(bus.params[ALLOW_RESIZE_TRANSFORM_PARAM]).toBeUndefined();
     expect(nodeAllowsResizeTransform(bus)).toBe(true);
-    expect(tankContainer.params[ALLOW_RESIZE_TRANSFORM_PARAM]).toBe("1");
+    expect(tankContainer.params[ALLOW_RESIZE_TRANSFORM_PARAM]).toBeUndefined();
     expect(nodeAllowsResizeTransform(tankContainer)).toBe(true);
-    expect(routableBranch.params[ALLOW_RESIZE_TRANSFORM_PARAM]).toBe("1");
+    expect(routableBranch.params[ALLOW_RESIZE_TRANSFORM_PARAM]).toBeUndefined();
     expect(nodeAllowsResizeTransform(routableBranch)).toBe(true);
 
-    expect(nodeAllowsResizeTransform({ ...regularDevice, params: { ...regularDevice.params, [ALLOW_RESIZE_TRANSFORM_PARAM]: "1" } })).toBe(true);
-    expect(nodeAllowsResizeTransform({ ...bus, params: { ...bus.params, [ALLOW_RESIZE_TRANSFORM_PARAM]: "0" } })).toBe(false);
+    const regularDeviceWithLegacyParam: ModelNode = {
+      ...regularDevice,
+      params: { ...regularDevice.params, [ALLOW_RESIZE_TRANSFORM_PARAM]: "1" }
+    };
+    const busWithLegacyParam: ModelNode = {
+      ...bus,
+      params: { ...bus.params, [ALLOW_RESIZE_TRANSFORM_PARAM]: "0" }
+    };
+    expect(nodeAllowsResizeTransform(regularDeviceWithLegacyParam)).toBe(false);
+    expect(nodeAllowsResizeTransform(busWithLegacyParam)).toBe(true);
     expect(buildDefaultDeviceParameterDefinitions(["ac"]).map((definition) => definition.enName)).not.toContain(ALLOW_RESIZE_TRANSFORM_PARAM);
     expect(getTemplateParameterDefinitions(DEVICE_LIBRARY.find((item) => item.kind === "ac-line")!).map((definition) => definition.enName)).not.toContain(ALLOW_RESIZE_TRANSFORM_PARAM);
   });
@@ -1430,8 +1439,66 @@ describe("power system model", () => {
 
     expect(overriddenTemplate.allowResizeTransform).toBe(true);
     expect(getTemplateParameterDefinitions(overriddenTemplate).map((definition) => definition.enName)).not.toContain(ALLOW_RESIZE_TRANSFORM_PARAM);
-    expect(node.params[ALLOW_RESIZE_TRANSFORM_PARAM]).toBe("1");
-    expect(nodeAllowsResizeTransform(node)).toBe(true);
+    expect(node.params[ALLOW_RESIZE_TRANSFORM_PARAM]).toBeUndefined();
+  });
+
+  test("applies visual and terminal definition overrides to templates", () => {
+    const template: DeviceTemplate = {
+      kind: "custom-visual-override-device",
+      label: "图标覆盖设备",
+      attributeLibrary: "交流设备",
+      size: { width: 104, height: 64 },
+      params: {
+        component_type: "CustomVisualOverrideDevice",
+        backgroundImage: ""
+      },
+      terminalType: "ac",
+      terminalCount: 2,
+      terminalTypes: ["ac", "ac"],
+      terminalLabels: ["左端", "右端"],
+      terminalAnchors: [
+        { x: -0.5, y: 0 },
+        { x: 0.5, y: 0 }
+      ],
+      parameterDefinitions: [
+        { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行" }
+      ]
+    };
+    const overriddenTemplate = applyDeviceTemplateDefinitionOverride(template, {
+      kind: "CustomVisualOverrideDevice",
+      params: {
+        component_type: "CustomVisualOverrideDevice",
+        backgroundImage: "data:image/svg+xml,<svg />",
+        backgroundImageAssetId: ""
+      },
+      size: { width: 150, height: 90 },
+      terminalType: "ac",
+      terminalCount: 2,
+      terminalTypes: ["ac", "dc"],
+      terminalLabels: ["上端", "下端"],
+      terminalAnchors: [
+        { x: 0, y: -0.5 },
+        { x: 0, y: 0.5 }
+      ],
+      parameterDefinitions: [
+        { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行" }
+      ],
+      updatedAt: "2026-06-07T00:00:00.000Z"
+    } as DeviceTemplateDefinitionOverride & Partial<DeviceTemplate>);
+    const node = createNodeFromTemplate(overriddenTemplate, { x: 0, y: 0 });
+
+    expect(overriddenTemplate.size).toEqual({ width: 150, height: 90 });
+    expect(overriddenTemplate.params.backgroundImage).toBe("data:image/svg+xml,<svg />");
+    expect(overriddenTemplate.terminalTypes).toEqual(["ac", "dc"]);
+    expect(overriddenTemplate.terminalLabels).toEqual(["上端", "下端"]);
+    expect(overriddenTemplate.terminalAnchors).toEqual([
+      { x: 0, y: -0.5 },
+      { x: 0, y: 0.5 }
+    ]);
+    expect(node.terminals.map((terminal) => terminal.anchor)).toEqual([
+      { x: 0, y: -0.5 },
+      { x: 0, y: 0.5 }
+    ]);
   });
 
   test("places converter elements under AC/DC device library groups", () => {

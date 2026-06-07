@@ -293,6 +293,16 @@ export type DeviceTemplate = {
 export type DeviceTemplateDefinitionOverride = {
   kind: string;
   params?: Record<string, string>;
+  size?: DeviceTemplate["size"];
+  terminalType?: TerminalType;
+  terminalCount?: number;
+  terminalTypes?: TerminalType[];
+  terminalLabels?: string[];
+  terminalAnchors?: Point[];
+  terminalRoles?: ContainerTerminalRole[];
+  terminalAssociations?: ContainerTerminalAssociationValue[];
+  isContainer?: boolean;
+  allowResizeTransform?: boolean;
   parameterDefinitions?: DeviceParameterDefinition[];
   updatedAt?: string;
 };
@@ -729,18 +739,8 @@ export function defaultAllowsResizeTransformForKind(kind: string): boolean {
   );
 }
 
-function normalizeBooleanParam(value: string | undefined, fallback: boolean): boolean {
-  if (value === undefined || value === "") {
-    return fallback;
-  }
-  return value === "1" || value === "true" || value === "yes" || value === "允许";
-}
-
-export function nodeAllowsResizeTransform(node: Pick<ModelNode, "kind" | "params">): boolean {
-  return normalizeBooleanParam(
-    node.params[ALLOW_RESIZE_TRANSFORM_PARAM],
-    defaultAllowsResizeTransformForKind(node.kind)
-  );
+export function nodeAllowsResizeTransform(node: Pick<ModelNode, "kind">): boolean {
+  return defaultAllowsResizeTransformForKind(node.kind);
 }
 
 export function inferESection(kind: string, params: Record<string, string> = {}) {
@@ -4469,8 +4469,26 @@ export function applyDeviceTemplateDefinitionOverride(
     }
     params[definition.enName] = definition.typicalValue;
   }
+  const terminalTypes = override.terminalTypes?.length
+    ? override.terminalTypes.slice(0, Math.max(0, override.terminalCount ?? override.terminalTypes.length))
+    : template.terminalTypes;
+  const terminalCount = Math.max(
+    0,
+    Math.round(override.terminalCount ?? terminalTypes?.length ?? template.terminalCount)
+  );
+  const terminalType = override.terminalType ?? terminalTypes?.[0] ?? template.terminalType;
   return {
     ...template,
+    size: override.size ? { ...override.size } : template.size,
+    terminalType,
+    terminalCount,
+    terminalTypes: terminalTypes ? [...terminalTypes] : template.terminalTypes,
+    terminalLabels: override.terminalLabels ? override.terminalLabels.slice(0, terminalCount) : template.terminalLabels,
+    terminalAnchors: override.terminalAnchors ? override.terminalAnchors.slice(0, terminalCount).map(clonePoint) : template.terminalAnchors,
+    terminalRoles: override.terminalRoles ? override.terminalRoles.slice(0, terminalCount) : template.terminalRoles,
+    terminalAssociations: override.terminalAssociations ? override.terminalAssociations.slice(0, terminalCount) : template.terminalAssociations,
+    isContainer: override.isContainer ?? template.isContainer,
+    allowResizeTransform: override.allowResizeTransform ?? template.allowResizeTransform,
     params,
     parameterDefinitions
   };
@@ -4518,20 +4536,11 @@ function applyContainerRelationDefaults(params: Record<string, string>, template
 
 function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   const templateKind = baseDeviceKind(template.kind) as DeviceKind;
-  const templateResizeTransformValue = template.allowResizeTransform === undefined
-    ? template.params[ALLOW_RESIZE_TRANSFORM_PARAM]
-    : template.allowResizeTransform ? "1" : "0";
-  const resizeTransformAllowed = normalizeBooleanParam(
-    templateResizeTransformValue,
-    defaultAllowsResizeTransformForKind(templateKind)
-  );
-  const withResizeTransformDefault = (params: Record<string, string>) => ({
-    ...params,
-    [ALLOW_RESIZE_TRANSFORM_PARAM]: resizeTransformAllowed ? "1" : "0"
-  });
+  const withoutResizeTransformParam = (params: Record<string, string>) =>
+    Object.fromEntries(Object.entries(params).filter(([key]) => key !== ALLOW_RESIZE_TRANSFORM_PARAM));
   const withDeviceLabelDefaults = (params: Record<string, string>) =>
     isStaticKind(templateKind)
-      ? withResizeTransformDefault(params)
+      ? params
       : {
           _labelVisible: "1",
           _labelDisplayMode: "follow",
@@ -4545,10 +4554,10 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
           _labelTextDecoration: "none",
           _labelTextAnchor: "middle",
           _labelRotation: "0",
-          ...withResizeTransformDefault(params)
+          ...params
         };
   const withTemplateDefinitions = (params: Record<string, string>) =>
-    withDeviceLabelDefaults(applyTemplateDefinitionDefaults(applyContainerRelationDefaults(params, template), template));
+    withDeviceLabelDefaults(applyTemplateDefinitionDefaults(applyContainerRelationDefaults(withoutResizeTransformParam(params), template), template));
   if (isStaticKind(templateKind)) {
     return withTemplateDefinitions({ ...template.params });
   }

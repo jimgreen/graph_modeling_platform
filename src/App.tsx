@@ -152,7 +152,6 @@ import {
   normalizeModelLayers,
   normalizeDeviceIndexCounters,
   normalizeNodeTerminalsByTemplate,
-  nodeAllowsResizeTransform,
   normalizeProjectLayers,
   normalizeModelGroups,
   orderNodesByModelLayer,
@@ -1258,19 +1257,53 @@ type CustomDeviceDraft = {
   componentName: string;
   backgroundImage: string;
   backgroundImageAssetId: string;
+  size: { width: number; height: number };
   allowResizeTransform: string;
   terminalCount: number;
   terminalTypes: TerminalType[];
+  terminalLabels: string[];
+  terminalAnchors: Point[];
   terminalRoles: ContainerTerminalRole[];
   terminalAssociations: ContainerTerminalAssociationValue[];
   isContainer: boolean;
   params: CustomParamDraft[];
   error: string;
 };
+type DeviceDefinitionVisualDraft = {
+  backgroundImage: string;
+  backgroundImageAssetId: string;
+  size: { width: number; height: number };
+  terminalCount: number;
+  terminalTypes: TerminalType[];
+  terminalLabels: string[];
+  terminalAnchors: Point[];
+  error: string;
+};
 type TemplateDialogState = {
   sourceGroupId: string;
   clipboard: CanvasClipboard;
   sourceSize: { width: number; height: number };
+} | null;
+type GroupDeviceTerminalDraft = {
+  id: string;
+  label: string;
+  type: TerminalType;
+  anchor: Point;
+  association: ContainerTerminalAssociationValue;
+  sourceNodeId: string;
+  sourceTerminalId: string;
+};
+type GroupDeviceDefinitionMode = "new" | "replace";
+type GroupDeviceDefinitionDialogState = {
+  sourceGroupId: string;
+  clipboard: CanvasClipboard;
+  sourceSize: { width: number; height: number };
+  iconImage: string;
+  terminals: GroupDeviceTerminalDraft[];
+  mode: GroupDeviceDefinitionMode;
+  attributeLibraryName: string;
+  componentType: string;
+  targetKind: string;
 } | null;
 type DeviceDefinitionDraftRow = DeviceParameterDefinition & {
   id: string;
@@ -1338,9 +1371,9 @@ const TOPOLOGY_WARNING_PAGE_SIZE = 50;
 const CANVAS_MINIMAP_WIDTH = 220;
 const CANVAS_MINIMAP_HEIGHT = 142;
 const CANVAS_MINIMAP_PADDING = 9;
-const TOPOLOGY_WARNING_PANEL_DEFAULT_WIDTH = 360;
-const TOPOLOGY_WARNING_PANEL_MIN_WIDTH = 280;
-const TOPOLOGY_WARNING_PANEL_MAX_WIDTH = 720;
+const TOPOLOGY_WARNING_PANEL_DEFAULT_WIDTH = 520;
+const TOPOLOGY_WARNING_PANEL_MIN_WIDTH = 360;
+const TOPOLOGY_WARNING_PANEL_MAX_WIDTH = 640;
 const TOPOLOGY_WARNING_PANEL_MARGIN = 12;
 const CANVAS_MINIMAP_MAX_NODE_MARKS = 360;
 const CANVAS_MINIMAP_MAX_ROUTE_MARKS = 160;
@@ -1459,6 +1492,13 @@ const DEFAULT_ATTRIBUTE_LIBRARIES: AttributeLibrary[] = ["静态图元", "交流
 const CUSTOM_ATTRIBUTE_LIBRARY_BASES: AttributeLibrary[] = ["交流设备", "直流设备", "氢能设备", "热能设备"];
 const PROTECTED_ATTRIBUTE_LIBRARIES = new Set(CUSTOM_ATTRIBUTE_LIBRARY_BASES);
 const DEVICE_TYPE_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/;
+const MAX_CUSTOM_DEVICE_TERMINALS = 8;
+const CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES = [-0.25, -1 / 6, 0, 1 / 6, 0.25];
+const CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS = ["1/4", "1/3", "1/2", "2/3", "3/4"];
+const CUSTOM_DEVICE_TERMINAL_ANCHOR_SNAP_SCREEN_TOLERANCE = 8;
+const CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION = 1000;
+const CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET = 14;
+const CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN = 30;
 const TERMINAL_TYPE_OPTIONS: Array<{ value: TerminalType; label: string }> = [
   { value: "ac", label: TERMINAL_TYPE_LIBRARY_LABELS.ac },
   { value: "dc", label: TERMINAL_TYPE_LIBRARY_LABELS.dc },
@@ -2891,6 +2931,7 @@ const BATCH_PARAM_EXCLUDED_KEYS = new Set([
   "terminalCount",
   "component_type",
   "is_container",
+  ALLOW_RESIZE_TRANSFORM_PARAM,
   "node",
   "i_node",
   "j_node",
@@ -3784,11 +3825,11 @@ function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[] {
         size: template.size ?? { width: 96, height: 62 },
         params,
         terminalType: (template.terminalType ?? "ac") as TerminalType,
-        terminalCount: Math.max(0, Math.min(4, Number(template.terminalCount ?? 0))),
-        terminalTypes: (template.terminalTypes ?? []).slice(0, 4) as TerminalType[],
-        terminalLabels: (template.terminalLabels ?? []).slice(0, 4),
-        terminalRoles: (template.terminalRoles ?? []).slice(0, 4) as ContainerTerminalRole[],
-        terminalAssociations: (template.terminalAssociations ?? []).slice(0, 4) as ContainerTerminalAssociationValue[],
+        terminalCount: Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, Number(template.terminalCount ?? 0))),
+        terminalTypes: (template.terminalTypes ?? []).slice(0, MAX_CUSTOM_DEVICE_TERMINALS) as TerminalType[],
+        terminalLabels: (template.terminalLabels ?? []).slice(0, MAX_CUSTOM_DEVICE_TERMINALS),
+        terminalRoles: (template.terminalRoles ?? []).slice(0, MAX_CUSTOM_DEVICE_TERMINALS) as ContainerTerminalRole[],
+        terminalAssociations: (template.terminalAssociations ?? []).slice(0, MAX_CUSTOM_DEVICE_TERMINALS) as ContainerTerminalAssociationValue[],
         isContainer: Boolean(template.isContainer),
         allowResizeTransform: templateAllowsResizeTransform({ ...template, params: rawParams }),
         custom: true,
@@ -3980,6 +4021,71 @@ function normalizeDefinitionRows(value: unknown): DeviceParameterDefinition[] {
     .filter((item) => item.enName && !isReservedDeviceDefinitionParamName(item.enName));
 }
 
+function normalizeDefinitionResizePermission(value: unknown): boolean | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+  if (typeof value === "boolean") {
+    return value;
+  }
+  const text = String(value).trim().toLowerCase();
+  return text === "1" || text === "true" || text === "yes" || text === "允许" || text === "是";
+}
+
+function normalizeDefinitionOverrideSize(value: unknown): DeviceTemplate["size"] | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const source = value as Partial<DeviceTemplate["size"]>;
+  const width = Number(source.width);
+  const height = Number(source.height);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return undefined;
+  }
+  return {
+    width: Math.max(1, Math.round(width)),
+    height: Math.max(1, Math.round(height))
+  };
+}
+
+function normalizeDefinitionOverrideTerminalType(value: unknown): TerminalType | undefined {
+  const text = String(value ?? "").trim() as TerminalType;
+  return TERMINAL_TYPE_OPTIONS.some((option) => option.value === text) ? text : undefined;
+}
+
+function normalizeDefinitionOverrideTerminalTypes(value: unknown, count: number): TerminalType[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const normalized = value
+    .slice(0, Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, count || value.length)))
+    .map(normalizeDefinitionOverrideTerminalType)
+    .filter((type): type is TerminalType => Boolean(type));
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeDefinitionOverrideTerminalAnchors(value: unknown, count: number): Point[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const anchors = value
+    .slice(0, Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, count || value.length)))
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+      const point = item as Partial<Point>;
+      const x = Number(point.x);
+      const y = Number(point.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        return null;
+      }
+      return projectCustomDeviceTerminalAnchorToBoundary({ x, y });
+    })
+    .filter((anchor): anchor is Point => Boolean(anchor));
+  return anchors.length > 0 ? anchors : undefined;
+}
+
 function normalizeDeviceDefinitionOverrides(value: unknown): Record<string, DeviceTemplateDefinitionOverride> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
@@ -3993,16 +4099,39 @@ function normalizeDeviceDefinitionOverrides(value: unknown): Record<string, Devi
       if (!normalizedKind) {
         return overrides;
       }
-      overrides[normalizedKind] = {
+      const rawOverride = override as DeviceTemplateDefinitionOverride & Partial<DeviceTemplate>;
+      const terminalCount = Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, Math.round(Number(rawOverride.terminalCount ?? 0) || 0)));
+      const terminalTypes = normalizeDefinitionOverrideTerminalTypes(rawOverride.terminalTypes, terminalCount);
+      const terminalAnchors = normalizeDefinitionOverrideTerminalAnchors(rawOverride.terminalAnchors, terminalCount || terminalTypes?.length || 0);
+      const normalizedOverride: DeviceTemplateDefinitionOverride = {
         kind: normalizedKind,
         params: Object.fromEntries(
           Object.entries(override.params ?? {})
             .filter(([key]) => !isReservedDeviceDefinitionParamName(key))
             .map(([key, val]) => [key, String(val ?? "")])
         ),
+        size: normalizeDefinitionOverrideSize(rawOverride.size),
+        terminalType: normalizeDefinitionOverrideTerminalType(rawOverride.terminalType),
+        terminalCount: terminalCount > 0 ? terminalCount : undefined,
+        terminalTypes,
+        terminalLabels: Array.isArray(rawOverride.terminalLabels)
+          ? rawOverride.terminalLabels.slice(0, terminalCount || MAX_CUSTOM_DEVICE_TERMINALS).map((label) => String(label ?? ""))
+          : undefined,
+        terminalAnchors,
+        terminalRoles: Array.isArray(rawOverride.terminalRoles)
+          ? rawOverride.terminalRoles.slice(0, terminalCount || MAX_CUSTOM_DEVICE_TERMINALS) as ContainerTerminalRole[]
+          : undefined,
+        terminalAssociations: Array.isArray(rawOverride.terminalAssociations)
+          ? rawOverride.terminalAssociations.slice(0, terminalCount || MAX_CUSTOM_DEVICE_TERMINALS) as ContainerTerminalAssociationValue[]
+          : undefined,
+        isContainer: typeof rawOverride.isContainer === "boolean" ? rawOverride.isContainer : undefined,
+        allowResizeTransform: normalizeDefinitionResizePermission(rawOverride.allowResizeTransform),
         parameterDefinitions: normalizeDefinitionRows(override.parameterDefinitions),
         updatedAt: typeof override.updatedAt === "string" ? override.updatedAt : undefined
       };
+      overrides[normalizedKind] = Object.fromEntries(
+        Object.entries(normalizedOverride).filter(([, val]) => val !== undefined)
+      ) as DeviceTemplateDefinitionOverride;
       return overrides;
     },
     {}
@@ -4165,7 +4294,7 @@ function deviceDefinitionOverrideForTemplate(
   template: DeviceTemplate,
   overrides: Record<string, DeviceTemplateDefinitionOverride>
 ) {
-  return overrides[deviceDefinitionKeyForTemplate(template)] ?? overrides[template.kind];
+  return overrides[template.kind] ?? overrides[deviceDefinitionKeyForTemplate(template)];
 }
 
 const isReservedDeviceDefinitionParamName = (enName: string) =>
@@ -4181,6 +4310,49 @@ function createDefinitionDraftRows(template: DeviceTemplate): DeviceDefinitionDr
     }));
 }
 
+const normalizeCustomDeviceTerminalAnchorCoordinate = (value: number) =>
+  Math.round(clampNumber(Number.isFinite(value) ? value : 0, -0.5, 0.5) * CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION) /
+  CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION;
+
+const projectCustomDeviceTerminalAnchorToBoundary = (anchor: Point): Point => {
+  const x = normalizeCustomDeviceTerminalAnchorCoordinate(anchor.x);
+  const y = normalizeCustomDeviceTerminalAnchorCoordinate(anchor.y);
+  if (Math.abs(x) >= Math.abs(y)) {
+    return {
+      x: x < 0 ? -0.5 : 0.5,
+      y
+    };
+  }
+  return {
+    x,
+    y: y < 0 ? -0.5 : 0.5
+  };
+};
+
+const customDeviceTerminalAnchorKey = (anchor: Point) =>
+  `${normalizeCustomDeviceTerminalAnchorCoordinate(anchor.x)}:${normalizeCustomDeviceTerminalAnchorCoordinate(anchor.y)}`;
+
+const hasOverlappingCustomDeviceTerminalAnchors = (anchors: readonly Point[]) =>
+  new Set(anchors.map(customDeviceTerminalAnchorKey)).size !== anchors.length;
+
+function createDefaultCustomDeviceTerminalAnchors(count: number, sourceAnchors: readonly Point[] = []): Point[] {
+  const fallbackAnchors: Point[] = [
+    { x: -0.5, y: 0 },
+    { x: 0.5, y: 0 },
+    { x: 0, y: -0.5 },
+    { x: 0, y: 0.5 },
+    { x: -0.5, y: -0.25 },
+    { x: 0.5, y: -0.25 },
+    { x: -0.5, y: 0.25 },
+    { x: 0.5, y: 0.25 }
+  ];
+  const safeCount = Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, Math.round(count || 0)));
+  return Array.from({ length: safeCount }, (_, index) => {
+    const source = sourceAnchors[index] ?? fallbackAnchors[index] ?? { x: 0, y: 0 };
+    return projectCustomDeviceTerminalAnchorToBoundary(source);
+  });
+}
+
 function createEmptyCustomDeviceDraft(attributeLibraryName = "交流设备"): CustomDeviceDraft {
   return {
     attributeLibraryName,
@@ -4188,13 +4360,38 @@ function createEmptyCustomDeviceDraft(attributeLibraryName = "交流设备"): Cu
     componentName: "",
     backgroundImage: "",
     backgroundImageAssetId: "",
+    size: { width: 104, height: 64 },
     allowResizeTransform: "0",
     terminalCount: 2,
-    terminalTypes: ["ac", "ac", "ac", "ac"],
-    terminalRoles: ["single-load", "single-load", "single-load", "single-load"],
-    terminalAssociations: ["ac-load", "ac-load", "ac-load", "ac-load"],
+    terminalTypes: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, () => "ac") as TerminalType[],
+    terminalLabels: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, () => ""),
+    terminalAnchors: createDefaultCustomDeviceTerminalAnchors(2),
+    terminalRoles: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, () => "single-load") as ContainerTerminalRole[],
+    terminalAssociations: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, () => "ac-load") as ContainerTerminalAssociationValue[],
     isContainer: false,
     params: [],
+    error: ""
+  };
+}
+
+function createDefinitionVisualDraft(template: DeviceTemplate): DeviceDefinitionVisualDraft {
+  const terminalCount = Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, Math.round(template.terminalCount || 0)));
+  const sourceTerminalTypes = (template.terminalTypes ?? Array.from({ length: terminalCount }, () => template.terminalType)).slice(0, terminalCount) as TerminalType[];
+  const terminalTypes = Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => sourceTerminalTypes[index] ?? template.terminalType ?? "ac") as TerminalType[];
+  return {
+    backgroundImage: template.params.backgroundImage ?? "",
+    backgroundImageAssetId: template.params.backgroundImageAssetId ?? "",
+    size: {
+      width: Math.max(1, Math.round(template.size.width || 104)),
+      height: Math.max(1, Math.round(template.size.height || 64))
+    },
+    terminalCount,
+    terminalTypes,
+    terminalLabels: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => {
+      const type = terminalTypes[index] ?? template.terminalType ?? "ac";
+      return template.terminalLabels?.[index] ?? `${TERMINAL_TYPE_LIBRARY_LABELS[type] ?? type}端${index + 1}`;
+    }),
+    terminalAnchors: createDefaultCustomDeviceTerminalAnchors(terminalCount, template.terminalAnchors),
     error: ""
   };
 }
@@ -4479,6 +4676,10 @@ function nodeGeometryTransform(node: ModelNode) {
 
 function nodeUprightScaleTransform(node: ModelNode) {
   return `scale(${formatSvgNumber(Math.abs(getNodeScaleX(node)) || 1)} ${formatSvgNumber(Math.abs(getNodeScaleY(node)) || 1)})`;
+}
+
+function nodeImageContentTransform(node: ModelNode) {
+  return nodeGeometryTransform(node);
 }
 
 function defaultBackgroundLayerIdsForProject(project: ProjectFile) {
@@ -7104,7 +7305,7 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
       const escapedImageHref = escapeXml(imageHref);
       const escapedForegroundHref = escapeXml(foregroundHref);
       const geometryTransform = nodeGeometryTransform(node);
-      const uprightTransform = nodeUprightScaleTransform(node);
+      const imageContentTransform = nodeImageContentTransform(node);
       const imageMarkup = imageHref
         ? `<image href="${escapedImageHref}" x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" preserveAspectRatio="xMidYMid slice"/>`
         : "";
@@ -7125,7 +7326,7 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
   ${glyphMarkup}
   ${glyphTextMarkup}
   </g>
-  <g class="export-node-upright-content" transform="${uprightTransform}">
+  <g class="export-node-upright-content" transform="${imageContentTransform}">
   ${isStaticNode(node) ? imageMarkup : ""}
   ${imageCoverMarkup}
   ${allowNodeImage && !isStaticNode(node) ? imageMarkup : ""}
@@ -7224,6 +7425,7 @@ export function App() {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const customDeviceImageInputRef = useRef<HTMLInputElement | null>(null);
+  const definitionTemplateIconInputRef = useRef<HTMLInputElement | null>(null);
   const modelImportInputRef = useRef<HTMLInputElement | null>(null);
   const modelImportTargetSchemeIdRef = useRef<string>("");
   const schemeImportInputRef = useRef<HTMLInputElement | null>(null);
@@ -7578,6 +7780,7 @@ export function App() {
   const [expandedGraphTemplateTypes, setExpandedGraphTemplateTypes] = useState<string[]>([...DEFAULT_GRAPH_TEMPLATE_TYPES]);
   const [hoveredGraphTemplateType, setHoveredGraphTemplateType] = useState("");
   const [templateDialog, setTemplateDialog] = useState<TemplateDialogState>(null);
+  const [groupDeviceDefinitionDialog, setGroupDeviceDefinitionDialog] = useState<GroupDeviceDefinitionDialogState>(null);
   const [templateDraftType, setTemplateDraftType] = useState(DEFAULT_GRAPH_TEMPLATE_TYPES[0]);
   const [templateDraftName, setTemplateDraftName] = useState("");
   const [customDeviceDialogOpen, setCustomDeviceDialogOpen] = useState(false);
@@ -7587,16 +7790,20 @@ export function App() {
   const [collapsedCustomComponentTreeTypes, setCollapsedCustomComponentTreeTypes] = useState<string[]>([]);
   const [editingCustomDeviceKind, setEditingCustomDeviceKind] = useState("");
   const [customDeviceDraft, setCustomDeviceDraft] = useState<CustomDeviceDraft>(() => createEmptyCustomDeviceDraft());
+  const [customDeviceTerminalAnchorDragIndex, setCustomDeviceTerminalAnchorDragIndex] = useState<number | null>(null);
   const [deviceDefinitionOverrides, setDeviceDefinitionOverrides] = useState<Record<string, DeviceTemplateDefinitionOverride>>(() => initialDeviceLibrary.deviceDefinitionOverrides);
   const [deviceDefinitionDialogOpen, setDeviceDefinitionDialogOpen] = useState(false);
   const [selectedDefinitionKind, setSelectedDefinitionKind] = useState<DeviceKind | "">("");
-  const [deviceDefinitionView, setDeviceDefinitionView] = useState<"parameters" | "measurements">("parameters");
+  const [deviceDefinitionView, setDeviceDefinitionView] = useState<"visual" | "parameters" | "measurements">("parameters");
   const [expandedDefinitionGroups, setExpandedDefinitionGroups] = useState<AttributeLibrary[]>([...DEFAULT_ATTRIBUTE_LIBRARIES]);
+  const [collapsedDefinitionComponentTypes, setCollapsedDefinitionComponentTypes] = useState<string[]>([]);
   const [deviceDefinitionSearchQuery, setDeviceDefinitionSearchQuery] = useState("");
   const [definitionDraftRows, setDefinitionDraftRows] = useState<DeviceDefinitionDraftRow[]>([]);
   const [definitionDraftSection, setDefinitionDraftSection] = useState("");
   const [definitionDraftSectionEditing, setDefinitionDraftSectionEditing] = useState(false);
   const [definitionDraftError, setDefinitionDraftError] = useState("");
+  const [definitionVisualDraft, setDefinitionVisualDraft] = useState<DeviceDefinitionVisualDraft | null>(null);
+  const [definitionTerminalAnchorDragIndex, setDefinitionTerminalAnchorDragIndex] = useState<number | null>(null);
   const [layerDialogOpen, setLayerDialogOpen] = useState(false);
   const [layerAssignmentDialogOpen, setLayerAssignmentDialogOpen] = useState(false);
   const [layerAssignmentTargetId, setLayerAssignmentTargetId] = useState("");
@@ -8118,6 +8325,12 @@ export function App() {
   }, [activeSelectedNodeIds, nodeById]);
   const selectedEdge = activeLayerEdgeIdSet.has(selectedEdgeId) ? edgeById.get(selectedEdgeId) : undefined;
   const inspectorSelectedNode = selectedNode;
+  const singleSelectedDeviceForInspector = Boolean(
+    inspectorSelectedNode &&
+    !isStaticNode(inspectorSelectedNode) &&
+    activeSelectedNodeIds.length === 1 &&
+    activeSelectedEdgeIds.length === 0
+  );
   const selectedMeasurementGroups = useMemo(
     () => (inspectorSelectedNode ? measurementGroupsForNode(projectMeasurements, inspectorSelectedNode.id) : []),
     [inspectorSelectedNode, projectMeasurements]
@@ -8320,14 +8533,22 @@ export function App() {
       includeMeasurementGroupBounds(previewNode, includeBox);
       if (useSimplifiedOverlay) {
         const nodeIsBus = isBusNode(node);
-        const transform = `translate(${formatSvgNumber(originalPosition.x)} ${formatSvgNumber(originalPosition.y)}) ${nodeGeometryTransform(node)}`;
+        const positionTransform = `translate(${formatSvgNumber(originalPosition.x)} ${formatSvgNumber(originalPosition.y)})`;
+        const transform = `${positionTransform} ${nodeGeometryTransform(node)}`;
         const fill = node.params.backgroundColor || "#ffffff";
         const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
         const strokeWidth = Math.max(2, getDeviceStrokeWidth(node));
+        const imageMarkup = buildNodePreviewImageMarkup(node, `multi-node-drag-lite-preview-clip-${node.id}`, { clip: false });
         const measurementMarkup = buildMeasurementGroupsMarkup(previewNode, { absolute: true });
-        simplifiedNodeMarkup.push(
-          `<rect class="multi-node-drag-preview-node-lite${nodeIsBus ? " bus-node" : ""}" transform="${escapeXml(transform)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${nodeIsBus ? 0 : 6}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"><title>${escapeXml(node.name)}</title></rect>`
-        );
+        if (imageMarkup) {
+          simplifiedNodeMarkup.push(
+            `<g class="multi-node-drag-preview-node-lite${nodeIsBus ? " bus-node" : ""}" transform="${escapeXml(positionTransform)}"><title>${escapeXml(node.name)}</title>${imageMarkup}</g>`
+          );
+        } else {
+          simplifiedNodeMarkup.push(
+            `<rect class="multi-node-drag-preview-node-lite${nodeIsBus ? " bus-node" : ""}" transform="${escapeXml(transform)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${nodeIsBus ? 0 : 6}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"><title>${escapeXml(node.name)}</title></rect>`
+          );
+        }
         if (measurementMarkup) {
           simplifiedNodeMarkup.push(`${measurementMarkup}`);
         }
@@ -8482,7 +8703,7 @@ export function App() {
                 <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
               </g>
               {!nodeIsBus && (imageHref || foregroundImageHref) && (
-                <g className="node-upright-content" transform={nodeUprightScaleTransform(node)}>
+                <g className="node-upright-content" transform={nodeImageContentTransform(node)}>
                   {imageHref && isStaticNode(node) && (
                     <image
                       href={imageHref}
@@ -8723,7 +8944,7 @@ export function App() {
                   <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
                 </g>
                 {!nodeIsBus && (imageHref || foregroundImageHref) && (
-                  <g className="node-upright-content" transform={nodeUprightScaleTransform(node)}>
+                  <g className="node-upright-content" transform={nodeImageContentTransform(node)}>
                     {imageHref && isStaticNode(node) && (
                       <image
                         href={imageHref}
@@ -8851,6 +9072,7 @@ export function App() {
           <MemoDeviceGlyph node={ghostNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
           <MemoDeviceGlyph node={ghostNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
         </g>
+        {renderNodePreviewImageContent(ghostNode, `rotate-origin-ghost-preview-clip-${ghostNode.id}`)}
       </g>
     );
   };
@@ -9074,6 +9296,14 @@ export function App() {
     [baseLibraryTemplates, deviceDefinitionOverrides]
   );
   const libraryTemplateByKind = useMemo(() => new Map(libraryTemplates.map((template) => [template.kind, template])), [libraryTemplates]);
+  const nodeKindAllowsResizeTransform = (kind: string) => {
+    const template = libraryTemplateByKind.get(kind);
+    return template ? templateAllowsResizeTransform(template) : defaultAllowsResizeTransformForKind(kind);
+  };
+  const groupDeviceReplacementTemplates = useMemo(
+    () => libraryTemplates,
+    [libraryTemplates]
+  );
   const baseLibraryTemplateByKind = useMemo(() => new Map(baseLibraryTemplates.map((template) => [template.kind, template])), [baseLibraryTemplates]);
   const groupedAttributeLibrary = useMemo(() => groupDeviceTemplatesByAttributeLibrary(libraryTemplates), [libraryTemplates]);
   const groupedAttributeLibraryByComponentType = useMemo(() => groupDeviceTemplatesByAttributeLibraryAndComponentType(libraryTemplates), [libraryTemplates]);
@@ -10788,6 +11018,94 @@ export function App() {
     imageHref = nodeImage(node),
     foregroundImageHref = nodeForegroundImage(node)
   ) => !isBusNode(node) && Boolean(imageHref || foregroundImageHref || node.kind === "static-text" || node.kind === "static-image");
+  const renderNodePreviewImageContent = (
+    node: ModelNode,
+    clipId: string,
+    options: { imageHref?: string; foregroundImageHref?: string; className?: string } = {}
+  ) => {
+    const imageHref = options.imageHref ?? nodeImage(node);
+    const foregroundImageHref = options.foregroundImageHref ?? nodeForegroundImage(node);
+    if (isBusNode(node) || (!imageHref && !foregroundImageHref)) {
+      return null;
+    }
+    const clipPath = `url(#${clipId})`;
+    return (
+      <>
+        <clipPath id={clipId}>
+          <rect
+            x={-node.size.width / 2}
+            y={-node.size.height / 2}
+            width={node.size.width}
+            height={node.size.height}
+            rx="8"
+          />
+        </clipPath>
+        <g className={options.className ?? "node-upright-content"} transform={nodeImageContentTransform(node)}>
+          {!isStaticNode(node) && (
+            <rect
+              x={-node.size.width / 2}
+              y={-node.size.height / 2}
+              width={node.size.width}
+              height={node.size.height}
+              rx="8"
+              className="node-image-cover"
+            />
+          )}
+          {imageHref && (
+            <image
+              href={imageHref}
+              x={-node.size.width / 2}
+              y={-node.size.height / 2}
+              width={node.size.width}
+              height={node.size.height}
+              preserveAspectRatio="xMidYMid slice"
+              clipPath={clipPath}
+              className="node-background-image"
+            />
+          )}
+          {foregroundImageHref && (
+            <image
+              href={foregroundImageHref}
+              x={-node.size.width / 2}
+              y={-node.size.height / 2}
+              width={node.size.width}
+              height={node.size.height}
+              preserveAspectRatio="xMidYMid slice"
+              clipPath={clipPath}
+              className="node-foreground-image"
+            />
+          )}
+        </g>
+      </>
+    );
+  };
+  const buildNodePreviewImageMarkup = (
+    node: ModelNode,
+    clipId: string,
+    options: { clip?: boolean; className?: string } = {}
+  ) => {
+    const imageHref = nodeImage(node);
+    const foregroundImageHref = nodeForegroundImage(node);
+    if (isBusNode(node) || (!imageHref && !foregroundImageHref)) {
+      return "";
+    }
+    const clipEnabled = options.clip !== false;
+    const clipUrl = `url(#${clipId})`;
+    const clipAttribute = clipEnabled ? ` clip-path="${escapeXml(clipUrl)}"` : "";
+    const clipMarkup = clipEnabled
+      ? `<clipPath id="${escapeXml(clipId)}"><rect x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="8"/></clipPath>`
+      : "";
+    const imageCoverMarkup = !isStaticNode(node)
+      ? `<rect x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="8" class="node-image-cover"/>`
+      : "";
+    const backgroundMarkup = imageHref
+      ? `<image href="${escapeXml(imageHref)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" preserveAspectRatio="xMidYMid slice"${clipAttribute} class="node-background-image"/>`
+      : "";
+    const foregroundMarkup = foregroundImageHref
+      ? `<image href="${escapeXml(foregroundImageHref)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" preserveAspectRatio="xMidYMid slice"${clipAttribute} class="node-foreground-image"/>`
+      : "";
+    return `${clipMarkup}<g class="${escapeXml(options.className ?? "node-upright-content")}" transform="${escapeXml(nodeImageContentTransform(node))}">${imageCoverMarkup}${backgroundMarkup}${foregroundMarkup}</g>`;
+  };
   const canvasBackgroundImageUrl = resolveProjectImage(
     { canvasBackgroundImage, canvasBackgroundImageAssetId },
     imageAssets
@@ -14170,14 +14488,19 @@ export function App() {
   }, [topologyWarningPanelResize]);
 
   useEffect(() => {
+    const handleGlobalSaveKeyDown = (event: KeyboardEvent) => {
+      if (!isGlobalSaveShortcut(event)) {
+        return;
+      }
+      event.preventDefault();
+      if (!isEditMode) {
+        writeOperationLog("浏览模式下不能保存，请先切换到编辑模式");
+      } else {
+        saveCurrentProject();
+      }
+    };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (isGlobalSaveShortcut(event)) {
-        event.preventDefault();
-        if (!isEditMode) {
-          writeOperationLog("浏览模式下不能保存，请先切换到编辑模式");
-        } else if (saveRequired) {
-          saveCurrentProject();
-        }
+      if (event.defaultPrevented) {
         return;
       }
       const target = event.target as HTMLElement | null;
@@ -14342,9 +14665,11 @@ export function App() {
         releaseKeyboardMoveKey(event.key);
       }
     };
+    window.addEventListener("keydown", handleGlobalSaveKeyDown, { capture: true });
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
     return () => {
+      window.removeEventListener("keydown", handleGlobalSaveKeyDown, { capture: true });
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
@@ -15167,6 +15492,301 @@ export function App() {
     setTemplateDraftType(typeName);
     persistTemplateLibraryChange({ customGraphTemplateTypes: nextTypes });
     writeOperationLog(`新增模板类型：${typeName}`);
+  };
+
+  const createGroupDeviceIconSvg = (clipboard: CanvasClipboard) => {
+    const bounds = canvasClipboardBounds(clipboard);
+    if (!bounds) {
+      return generateCustomDeviceImage("Group", ["ac"]);
+    }
+    const padding = 12;
+    const viewBoxX = bounds.left - padding;
+    const viewBoxY = bounds.top - padding;
+    const width = Math.max(1, bounds.right - bounds.left + padding * 2);
+    const height = Math.max(1, bounds.bottom - bounds.top + padding * 2);
+    const edgeMarkup = clipboard.edges
+      .map((item) => `<path d="${escapeXml(pointsToPreviewPath(item.routePoints))}" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`)
+      .join("");
+    const nodeMarkup = clipboard.nodes
+      .map((node) => {
+        const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette }));
+        const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette }));
+        const imageHref = nodeImage(node);
+        const foregroundHref = nodeForegroundImage(node);
+        const nodeIsBus = isBusNode(node);
+        const imageMarkup = imageHref
+          ? `<image href="${escapeXml(imageHref)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" preserveAspectRatio="xMidYMid slice"/>`
+          : "";
+        const foregroundMarkup = foregroundHref
+          ? `<image href="${escapeXml(foregroundHref)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" preserveAspectRatio="xMidYMid slice"/>`
+          : "";
+        const imageCoverMarkup = imageHref && !nodeIsBus && !isStaticNode(node)
+          ? `<rect x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="8" fill="#ffffff" stroke="none"/>`
+          : "";
+        const uprightMarkup = !nodeIsBus && (imageMarkup || foregroundMarkup)
+          ? `<g transform="${escapeXml(nodeImageContentTransform(node))}">${isStaticNode(node) ? imageMarkup : ""}${imageCoverMarkup}${!isStaticNode(node) ? imageMarkup : ""}${foregroundMarkup}</g>`
+          : "";
+        const transform = `translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})`;
+        return `<g transform="${escapeXml(transform)}"><g transform="${escapeXml(nodeGeometryTransform(node))}">${glyphMarkup}${glyphTextMarkup}</g>${uprightMarkup}</g>`;
+      })
+      .join("");
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" viewBox="${formatSvgNumber(viewBoxX)} ${formatSvgNumber(viewBoxY)} ${formatSvgNumber(width)} ${formatSvgNumber(height)}">${edgeMarkup}${nodeMarkup}</svg>`;
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  };
+
+  const groupDeviceTerminalAnchor = (point: Point, bounds: SelectionRect): Point => {
+    const width = Math.max(1, bounds.right - bounds.left);
+    const height = Math.max(1, bounds.bottom - bounds.top);
+    const center = selectionRectCenter(bounds);
+    return {
+      x: clampNumber((point.x - center.x) / width, -0.5, 0.5),
+      y: clampNumber((point.y - center.y) / height, -0.5, 0.5)
+    };
+  };
+
+  const groupDeviceTerminalSortKey = (terminal: GroupDeviceTerminalDraft) => {
+    const anchor = terminal.anchor;
+    const horizontal = Math.abs(anchor.x) >= Math.abs(anchor.y);
+    const side = horizontal ? (anchor.x < 0 ? 0 : 1) : (anchor.y < 0 ? 2 : 3);
+    const position = side <= 1 ? anchor.y : anchor.x;
+    return `${side}:${formatSvgNumber(position + 0.5).padStart(8, "0")}:${terminal.sourceNodeId}:${terminal.sourceTerminalId}`;
+  };
+
+  const groupDeviceTerminalAssociationFor = (node: ModelNode, terminalIndex: number, type: TerminalType): ContainerTerminalAssociationValue => {
+    const template = libraryTemplateByKind.get(node.kind);
+    if (!template?.isContainer) {
+      return defaultContainerAssociationForTerminalType(type);
+    }
+    const terminalTypes = node.terminals.map((terminal) => terminal.type);
+    return normalizeContainerTerminalAssociations(terminalTypes, template.terminalAssociations ?? [], node.terminals.length)[terminalIndex] ||
+      defaultContainerAssociationForTerminalType(type);
+  };
+
+  const groupDeviceExternalTerminals = (clipboard: CanvasClipboard, sourceEdges: Edge[]) => {
+    const bounds = canvasClipboardBounds(clipboard);
+    if (!bounds) {
+      return [] as GroupDeviceTerminalDraft[];
+    }
+    const clipboardNodeById = new Map(clipboard.nodes.map((node) => [node.id, node]));
+    const selectedNodeIds = new Set(clipboard.nodes.map((node) => node.id));
+    const terminals: GroupDeviceTerminalDraft[] = [];
+    const terminalKeys = new Set<string>();
+    const appendTerminal = (node: ModelNode, terminalId?: string) => {
+      const terminal = terminalId ? node.terminals.find((item) => item.id === terminalId) : node.terminals[0];
+      if (!terminal) {
+        return;
+      }
+      const key = `${node.id}:${terminal.id}`;
+      if (terminalKeys.has(key)) {
+        return;
+      }
+      const terminalIndex = node.terminals.findIndex((item) => item.id === terminal.id);
+      const point = getTerminalPoint(node, terminal.id);
+      terminalKeys.add(key);
+      terminals.push({
+        id: key,
+        label: terminal.label || `${TERMINAL_TYPE_LIBRARY_LABELS[terminal.type] ?? terminal.type}端${terminals.length + 1}`,
+        type: terminal.type,
+        anchor: groupDeviceTerminalAnchor(point, bounds),
+        association: groupDeviceTerminalAssociationFor(node, Math.max(0, terminalIndex), terminal.type),
+        sourceNodeId: node.id,
+        sourceTerminalId: terminal.id
+      });
+    };
+    for (const edge of sourceEdges) {
+      const sourceInside = selectedNodeIds.has(edge.sourceId);
+      const targetInside = selectedNodeIds.has(edge.targetId);
+      if (sourceInside === targetInside) {
+        continue;
+      }
+      const nodeId = sourceInside ? edge.sourceId : edge.targetId;
+      const terminalId = sourceInside ? edge.sourceTerminalId : edge.targetTerminalId;
+      const node = clipboardNodeById.get(nodeId) ?? nodeById.get(nodeId);
+      if (node) {
+        appendTerminal(node, terminalId);
+      }
+    }
+    if (terminals.length === 0) {
+      const tolerance = Math.max(8, Math.min(bounds.right - bounds.left, bounds.bottom - bounds.top) * 0.08);
+      for (const node of clipboard.nodes) {
+        for (const terminal of node.terminals) {
+          const point = getTerminalPoint(node, terminal.id);
+          const nearBoundary =
+            Math.abs(point.x - bounds.left) <= tolerance ||
+            Math.abs(point.x - bounds.right) <= tolerance ||
+            Math.abs(point.y - bounds.top) <= tolerance ||
+            Math.abs(point.y - bounds.bottom) <= tolerance;
+          if (nearBoundary) {
+            appendTerminal(node, terminal.id);
+          }
+        }
+      }
+    }
+    return terminals.sort((left, right) => groupDeviceTerminalSortKey(left).localeCompare(groupDeviceTerminalSortKey(right)));
+  };
+
+  const groupDeviceTerminalSignature = (terminalTypes: readonly TerminalType[]) =>
+    `${terminalTypes.length}|${TERMINAL_TYPE_OPTIONS.map((option) => `${option.value}:${terminalTypes.filter((type) => type === option.value).length}`).join("|")}`;
+
+  const validateGroupDeviceIconReplacement = (target: DeviceTemplate, terminals: readonly GroupDeviceTerminalDraft[]) => {
+    const targetTerminalTypes = (target.terminalTypes ?? Array.from({ length: target.terminalCount }, () => target.terminalType)).slice(0, target.terminalCount) as TerminalType[];
+    const sourceTerminalTypes = terminals.map((terminal) => terminal.type);
+    if (targetTerminalTypes.length !== sourceTerminalTypes.length || groupDeviceTerminalSignature(targetTerminalTypes) !== groupDeviceTerminalSignature(sourceTerminalTypes)) {
+      return {
+        valid: false,
+        message: "图元组合对外端子数量和端子类型必须与已有元件相同，无法修改已有元件图标。"
+      };
+    }
+    return { valid: true, message: "" };
+  };
+
+  const replaceBuiltinDeviceIconOverride = (targetTemplate: DeviceTemplate, groupIcon: string) => {
+    setDeviceDefinitionOverrides((current) => {
+      const existingOverride = deviceDefinitionOverrideForTemplate(targetTemplate, current);
+      return {
+        ...current,
+        [targetTemplate.kind]: {
+          ...existingOverride,
+          kind: targetTemplate.kind,
+          params: {
+            ...(existingOverride?.params ?? {}),
+            backgroundImage: groupIcon,
+            backgroundImageAssetId: ""
+          },
+          updatedAt: new Date().toISOString()
+        }
+      };
+    });
+  };
+
+  const openGroupDeviceDefinitionDialog = () => {
+    if (!requireEditMode("定义元件")) {
+      return;
+    }
+    if (!canAddTemplateFromSelection) {
+      window.alert("请先选中一个图元组合，再定义为元件。");
+      return;
+    }
+    const clipboard = buildCanvasClipboard(
+      visibleNodes,
+      visibleEdges,
+      routedEdges,
+      groupExpandedCanvasSelection.nodeIds,
+      groupExpandedCanvasSelection.edgeIds,
+      activeLayerGroups,
+      { expandGroups: true }
+    );
+    const bounds = canvasClipboardBounds(clipboard);
+    if (!bounds || (clipboard.nodes.length === 0 && clipboard.edges.length === 0)) {
+      window.alert("当前组合没有可定义为元件的图元。");
+      return;
+    }
+    const terminals = groupDeviceExternalTerminals(clipboard, edges);
+    if (terminals.length > MAX_CUSTOM_DEVICE_TERMINALS) {
+      window.alert(`当前组合对外端子为 ${terminals.length} 个，暂时最多支持 ${MAX_CUSTOM_DEVICE_TERMINALS} 个端子。`);
+      return;
+    }
+    const attributeLibraryName = normalizeAttributeLibraryName(customDeviceDraft.attributeLibraryName || "交流设备");
+    const componentType = defaultComponentTypeForAttributeLibrary(attributeLibraryName);
+    setGroupDeviceDefinitionDialog({
+      sourceGroupId: activeSelectedGroupIds[0],
+      clipboard: cloneGraphTemplateClipboard(clipboard),
+      sourceSize: {
+        width: Math.max(1, Math.round(bounds.right - bounds.left)),
+        height: Math.max(1, Math.round(bounds.bottom - bounds.top))
+      },
+      iconImage: createGroupDeviceIconSvg(clipboard),
+      terminals,
+      mode: "new",
+      attributeLibraryName,
+      componentType,
+      targetKind: groupDeviceReplacementTemplates[0]?.kind ?? ""
+    });
+  };
+
+  const confirmCreateDeviceFromGroup = () => {
+    if (!groupDeviceDefinitionDialog) {
+      return;
+    }
+    const attributeLibraryName = normalizeAttributeLibraryName(groupDeviceDefinitionDialog.attributeLibraryName);
+    const componentType = normalizeComponentTypeName(groupDeviceDefinitionDialog.componentType);
+    if (!componentType) {
+      window.alert("请选择元件类型。");
+      return;
+    }
+    if (!isValidComponentTypeName(componentType)) {
+      window.alert("元件类型必须是英文名称，只能包含英文字母、数字和下划线，并且必须以英文字母开头。");
+      return;
+    }
+    const terminalTypes = groupDeviceDefinitionDialog.terminals.map((terminal) => terminal.type);
+    const terminalAssociations = normalizeContainerTerminalAssociations(
+      terminalTypes,
+      groupDeviceDefinitionDialog.terminals.map((terminal) => terminal.association),
+      terminalTypes.length
+    );
+    const sourceGroup = activeGroupById.get(groupDeviceDefinitionDialog.sourceGroupId);
+    ensureCustomComponentTreeExpanded(attributeLibraryName, componentType);
+    setCustomComponentTreeSelection({ kind: "componentType", attributeLibraryName, section: componentType });
+    setEditingCustomDeviceKind("");
+    setCustomDeviceDraft({
+      ...createEmptyCustomDeviceDraft(attributeLibraryName),
+      componentType,
+      componentName: sourceGroup?.name ?? "",
+      backgroundImage: groupDeviceDefinitionDialog.iconImage,
+      backgroundImageAssetId: "",
+      size: groupDeviceDefinitionDialog.sourceSize,
+      terminalCount: groupDeviceDefinitionDialog.terminals.length,
+      terminalTypes: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => terminalTypes[index] ?? "ac") as TerminalType[],
+      terminalLabels: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => groupDeviceDefinitionDialog.terminals[index]?.label ?? ""),
+      terminalAnchors: createDefaultCustomDeviceTerminalAnchors(
+        groupDeviceDefinitionDialog.terminals.length,
+        groupDeviceDefinitionDialog.terminals.map((terminal) => terminal.anchor)
+      ),
+      terminalAssociations: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => terminalAssociations[index] ?? "ac-load") as ContainerTerminalAssociationValue[],
+      isContainer: groupDeviceDefinitionDialog.terminals.length > 0,
+      error: ""
+    });
+    setGroupDeviceDefinitionDialog(null);
+    setCustomDeviceDialogOpen(true);
+    writeOperationLog("从图元组合生成新元件草稿");
+  };
+
+  const confirmReplaceDeviceIconFromGroup = () => {
+    if (!groupDeviceDefinitionDialog) {
+      return;
+    }
+    const targetTemplate = groupDeviceReplacementTemplates.find((template) => template.kind === groupDeviceDefinitionDialog.targetKind);
+    if (!targetTemplate) {
+      window.alert("请选择要修改图标的已有元件。");
+      return;
+    }
+    const validation = validateGroupDeviceIconReplacement(targetTemplate, groupDeviceDefinitionDialog.terminals);
+    if (!validation.valid) {
+      window.alert(validation.message);
+      return;
+    }
+    const groupIcon = groupDeviceDefinitionDialog.iconImage;
+    if (targetTemplate.custom) {
+      setCustomDeviceTemplates((current) =>
+        current.map((template) =>
+          template.kind === targetTemplate.kind
+            ? { ...template, params: { ...template.params, backgroundImage: groupIcon, backgroundImageAssetId: "" } }
+            : template
+        )
+      );
+    } else {
+      replaceBuiltinDeviceIconOverride(targetTemplate, groupIcon);
+    }
+    if (editingCustomDeviceKind === targetTemplate.kind) {
+      setCustomDeviceDraft((current) => ({
+        ...current,
+        backgroundImage: groupIcon,
+        backgroundImageAssetId: "",
+        error: ""
+      }));
+    }
+    setGroupDeviceDefinitionDialog(null);
+    writeOperationLog(`修改元件图标：${targetTemplate.label}`);
   };
 
   const openAddTemplateDialog = () => {
@@ -17035,6 +17655,7 @@ export function App() {
     const nodeIsBus = isBusNode(node);
     const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette }));
     const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette }));
+    const imageMarkup = buildNodePreviewImageMarkup(node, `single-node-drag-preview-clip-${node.id}`);
     const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
     const labelMarkup = buildSvgNodeLabelMarkup(node);
     const measurementMarkup = buildMeasurementGroupsMarkup(node);
@@ -17045,6 +17666,7 @@ export function App() {
     ${glyphMarkup}
     ${glyphTextMarkup}
   </g>
+  ${imageMarkup}
   <g class="node-terminal-layer" transform="${escapeXml(nodeGeometryTransform(node))}">
     ${terminalMarkup}
   </g>
@@ -20347,6 +20969,7 @@ export function App() {
               <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
               <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
             </g>
+            {renderNodePreviewImageContent(previewNode, `library-placement-preview-clip-${libraryPlacement.template.kind.replace(/[^A-Za-z0-9_-]/g, "-")}`)}
           </g>
         </g>
       );
@@ -20375,6 +20998,7 @@ export function App() {
               <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
               <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
             </g>
+            {renderNodePreviewImageContent(node, `library-placement-template-preview-clip-${node.id}`)}
           </g>
         ))}
       </g>
@@ -21010,7 +21634,7 @@ export function App() {
     if (!requireEditMode("拖拽图元")) {
       return;
     }
-    if (kind !== "rotate" && kind !== "scale-both" && !nodeAllowsResizeTransform(node)) {
+    if (kind !== "rotate" && kind !== "scale-both" && !nodeKindAllowsResizeTransform(node.kind)) {
       return;
     }
     transformDragChangedRef.current = false;
@@ -24828,71 +25452,154 @@ export function App() {
 
   const centerViewOnPoint = (point: Point) => {
     const visible = canvasVisibleViewBoxRef.current;
-    setViewBox(clampViewBoxToCanvas({
+    const current = viewBoxRef.current;
+    setViewBoxAtViewportCenter(clampViewBoxToCanvas({
       x: point.x - (visible.width > 0 ? visible.width : viewBox.width) / 2,
       y: point.y - (visible.height > 0 ? visible.height : viewBox.height) / 2,
-      width: viewBox.width,
-      height: viewBox.height
-    }));
+      width: current.width,
+      height: current.height
+    }), point);
+  };
+
+  const viewportCenterAnchorForPoint = (point: Point): WheelZoomAnchor | null => {
+    const frame = canvasFrameRef.current;
+    if (!frame) {
+      return null;
+    }
+    const frameRect = frame.getBoundingClientRect();
+    if (frameRect.width <= 0 || frameRect.height <= 0) {
+      return null;
+    }
+    return {
+      point: clampPointToBounds(point, canvasBoundsRef.current),
+      cursorOffsetX: frameRect.width / 2,
+      cursorOffsetY: frameRect.height / 2
+    };
+  };
+
+  const setViewBoxAtViewportCenter = (nextViewBox: CanvasViewBox, point: Point) => {
+    const anchor = viewportCenterAnchorForPoint(point);
+    if (!anchor) {
+      setViewBox(nextViewBox);
+      return;
+    }
+    if (sameCanvasViewBox(viewBoxRef.current, nextViewBox)) {
+      syncCanvasFrameScrollToWheelAnchor(anchor);
+      scheduleCanvasVisibleViewBoxUpdate();
+      return;
+    }
+    pendingWheelZoomAnchorRef.current = anchor;
+    setViewBox(nextViewBox);
   };
 
   const centerViewBoxOnPoint = (point: Point) => {
-    setViewBox((current) =>
-      {
-        const visible = canvasVisibleViewBoxRef.current;
-        return clampViewBoxToCanvas({
-          x: point.x - (visible.width > 0 ? visible.width : current.width) / 2,
-          y: point.y - (visible.height > 0 ? visible.height : current.height) / 2,
-          width: current.width,
-          height: current.height
-        });
-      }
-    );
+    const current = viewBoxRef.current;
+    const visible = canvasVisibleViewBoxRef.current;
+    setViewBoxAtViewportCenter(clampViewBoxToCanvas({
+      x: point.x - (visible.width > 0 ? visible.width : current.width) / 2,
+      y: point.y - (visible.height > 0 ? visible.height : current.height) / 2,
+      width: current.width,
+      height: current.height
+    }), point);
   };
 
   const zoomViewportAtCenter = (zoomFactor: number) => {
-    setViewBox((current) => {
-      const visible = canvasVisibleViewBoxRef.current;
-      const center = visible.width > 0 && visible.height > 0
-        ? {
-            x: visible.x + visible.width / 2,
-            y: visible.y + visible.height / 2
-          }
-        : {
-            x: current.x + current.width / 2,
-            y: current.y + current.height / 2
-          };
-      const size = clampViewBoxDimensionsForZoom(
-        { width: current.width * zoomFactor, height: current.height * zoomFactor },
-        canvasBounds
-      );
-      return clampViewBoxToCanvas({
-        x: center.x - size.width / 2,
-        y: center.y - size.height / 2,
-        width: size.width,
-        height: size.height
+    const frame = canvasFrameRef.current;
+    if (!frame) {
+      setViewBox((current) => {
+        const bounds = canvasBoundsRef.current;
+        const { width: nextWidth, height: nextHeight } = clampViewBoxDimensionsForZoom(
+          { width: current.width * zoomFactor, height: current.height * zoomFactor },
+          bounds
+        );
+        const center = {
+          x: current.x + current.width / 2,
+          y: current.y + current.height / 2
+        };
+        return normalizeViewBoxToCanvas({
+          x: center.x - nextWidth / 2,
+          y: center.y - nextHeight / 2,
+          width: nextWidth,
+          height: nextHeight
+        }, bounds);
       });
+      return;
+    }
+    const frameRect = frame.getBoundingClientRect();
+    const anchor = wheelZoomAnchorFromClient(
+      frameRect.left + frameRect.width / 2,
+      frameRect.top + frameRect.height / 2
+    );
+    if (!anchor) {
+      return;
+    }
+    pendingWheelZoomAnchorRef.current = anchor;
+    setViewBox((current) => {
+      const bounds = canvasBoundsRef.current;
+      const { width: nextWidth, height: nextHeight } = clampViewBoxDimensionsForZoom(
+        { width: current.width * zoomFactor, height: current.height * zoomFactor },
+        bounds
+      );
+      const nextScaleX = bounds.width / Math.max(1, nextWidth);
+      const nextScaleY = bounds.height / Math.max(1, nextHeight);
+      return normalizeViewBoxToCanvas({
+        x: anchor.point.x - anchor.cursorOffsetX / nextScaleX,
+        y: anchor.point.y - anchor.cursorOffsetY / nextScaleY,
+        width: nextWidth,
+        height: nextHeight
+      }, bounds);
     });
   };
 
   const resetViewportZoom = () => {
-    setViewBox((current) => {
-      const visible = canvasVisibleViewBoxRef.current;
-      const center = visible.width > 0 && visible.height > 0
-        ? {
-            x: visible.x + visible.width / 2,
-            y: visible.y + visible.height / 2
-          }
-        : {
-            x: current.x + current.width / 2,
-            y: current.y + current.height / 2
-          };
-      return clampViewBoxToCanvas({
-        x: center.x - canvasBounds.width / 2,
-        y: center.y - canvasBounds.height / 2,
-        width: canvasBounds.width,
-        height: canvasBounds.height
+    const frame = canvasFrameRef.current;
+    if (!frame) {
+      setViewBox((current) => {
+        const bounds = canvasBoundsRef.current;
+        const { width: nextWidth, height: nextHeight } = clampViewBoxDimensionsForZoom(
+          { width: bounds.width, height: bounds.height },
+          bounds,
+          100,
+          100
+        );
+        const center = {
+          x: current.x + current.width / 2,
+          y: current.y + current.height / 2
+        };
+        return normalizeViewBoxToCanvas({
+          x: center.x - nextWidth / 2,
+          y: center.y - nextHeight / 2,
+          width: nextWidth,
+          height: nextHeight
+        }, bounds);
       });
+      return;
+    }
+    const frameRect = frame.getBoundingClientRect();
+    const anchor = wheelZoomAnchorFromClient(
+      frameRect.left + frameRect.width / 2,
+      frameRect.top + frameRect.height / 2
+    );
+    if (!anchor) {
+      return;
+    }
+    pendingWheelZoomAnchorRef.current = anchor;
+    setViewBox(() => {
+      const bounds = canvasBoundsRef.current;
+      const { width: nextWidth, height: nextHeight } = clampViewBoxDimensionsForZoom(
+        { width: bounds.width, height: bounds.height },
+        bounds,
+        100,
+        100
+      );
+      const nextScaleX = bounds.width / Math.max(1, nextWidth);
+      const nextScaleY = bounds.height / Math.max(1, nextHeight);
+      return normalizeViewBoxToCanvas({
+        x: anchor.point.x - anchor.cursorOffsetX / nextScaleX,
+        y: anchor.point.y - anchor.cursorOffsetY / nextScaleY,
+        width: nextWidth,
+        height: nextHeight
+      }, bounds);
     });
   };
 
@@ -24939,23 +25646,25 @@ export function App() {
     }
     const targetWidth = Math.max(80, bounds.right - bounds.left + padding * 2);
     const targetHeight = Math.max(80, bounds.bottom - bounds.top + padding * 2);
-    const currentAspect = viewBox.width > 0 && viewBox.height > 0
-      ? viewBox.width / viewBox.height
+    const viewportAspect = canvasFrameRef.current?.clientWidth && canvasFrameRef.current.clientHeight
+      ? canvasFrameRef.current.clientWidth / canvasFrameRef.current.clientHeight
+      : viewBox.width > 0 && viewBox.height > 0
+        ? viewBox.width / viewBox.height
       : canvasBounds.width / Math.max(1, canvasBounds.height);
-    const fitSize = targetWidth / targetHeight > currentAspect
-      ? { width: targetWidth, height: targetWidth / currentAspect }
-      : { width: targetHeight * currentAspect, height: targetHeight };
+    const fitSize = targetWidth / targetHeight > viewportAspect
+      ? { width: targetWidth, height: targetWidth / viewportAspect }
+      : { width: targetHeight * viewportAspect, height: targetHeight };
     const size = clampViewBoxDimensionsForZoom(fitSize, canvasBounds);
     const center = {
       x: (bounds.left + bounds.right) / 2,
       y: (bounds.top + bounds.bottom) / 2
     };
-    setViewBox(clampViewBoxToCanvas({
+    setViewBoxAtViewportCenter(clampViewBoxToCanvas({
       x: center.x - size.width / 2,
       y: center.y - size.height / 2,
       width: size.width,
       height: size.height
-    }));
+    }), center);
   };
 
   const fitViewToContent = () => {
@@ -26384,14 +27093,181 @@ export function App() {
   const customDevicePreviewImage =
     customDeviceDraft.backgroundImage ||
     generateCustomDeviceImage(customDevicePreviewLabel, customDraftTerminalTypes.length > 0 ? customDraftTerminalTypes : ["ac"]);
+  const customDevicePreviewWidth = Math.max(1, customDeviceDraft.size.width || 104);
+  const customDevicePreviewHeight = Math.max(1, customDeviceDraft.size.height || 64);
+  const customDeviceTerminalAnchors = createDefaultCustomDeviceTerminalAnchors(customDeviceDraft.terminalCount, customDeviceDraft.terminalAnchors);
+  const customDeviceTerminalAnchorValue = (value: number) =>
+    normalizeCustomDeviceTerminalAnchorCoordinate(value);
+  const formatCustomDeviceTerminalAnchorValue = (value: number) =>
+    formatSvgNumber(customDeviceTerminalAnchorValue(value));
+  const snapCustomDeviceTerminalAnchor = (anchor: Point): Point => {
+    const snapAxis = (value: number, tolerance: number) => {
+      const normalizedValue = customDeviceTerminalAnchorValue(value);
+      const guideValue = CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES.find((candidate) => Math.abs(normalizedValue - candidate) <= tolerance);
+      return guideValue === undefined ? normalizedValue : customDeviceTerminalAnchorValue(guideValue);
+    };
+    const boundaryAnchor = projectCustomDeviceTerminalAnchorToBoundary(anchor);
+    if (Math.abs(boundaryAnchor.x) >= Math.abs(boundaryAnchor.y)) {
+      return {
+        x: boundaryAnchor.x,
+        y: snapAxis(boundaryAnchor.y, CUSTOM_DEVICE_TERMINAL_ANCHOR_SNAP_SCREEN_TOLERANCE / customDevicePreviewHeight)
+      };
+    }
+    return {
+      x: snapAxis(boundaryAnchor.x, CUSTOM_DEVICE_TERMINAL_ANCHOR_SNAP_SCREEN_TOLERANCE / customDevicePreviewWidth),
+      y: boundaryAnchor.y
+    };
+  };
+  const customDeviceTerminalConnectorSegment = (anchor: Point) => {
+    const boundaryAnchor = projectCustomDeviceTerminalAnchorToBoundary(anchor);
+    const from = {
+      x: boundaryAnchor.x * customDevicePreviewWidth,
+      y: boundaryAnchor.y * customDevicePreviewHeight
+    };
+    if (Math.abs(boundaryAnchor.x) >= Math.abs(boundaryAnchor.y)) {
+      return {
+        from,
+        to: {
+          x: from.x + Math.sign(boundaryAnchor.x || 1) * CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET,
+          y: from.y
+        },
+      };
+    }
+    return {
+      from,
+      to: {
+        x: from.x,
+        y: from.y + Math.sign(boundaryAnchor.y || 1) * CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET
+      }
+    };
+  };
+  const updateCustomDeviceTerminalAnchor = (index: number, patch: Partial<Point>) => {
+    setCustomDeviceDraft((current) => {
+      if (index < 0 || index >= current.terminalCount) {
+        return current;
+      }
+      const terminalAnchors = createDefaultCustomDeviceTerminalAnchors(current.terminalCount, current.terminalAnchors);
+      const currentAnchor = terminalAnchors[index] ?? { x: 0, y: 0 };
+      terminalAnchors[index] = projectCustomDeviceTerminalAnchorToBoundary({
+        x: customDeviceTerminalAnchorValue(patch.x ?? currentAnchor.x),
+        y: customDeviceTerminalAnchorValue(patch.y ?? currentAnchor.y)
+      });
+      if (hasOverlappingCustomDeviceTerminalAnchors(terminalAnchors)) {
+        return { ...current, error: `端子${index + 1}位置不能与其他端子重叠。` };
+      }
+      return { ...current, terminalAnchors, error: "" };
+    });
+  };
+  const updateCustomDeviceTerminalAnchorFromPreview = (index: number, svg: SVGSVGElement, event: PointerEvent<SVGElement>) => {
+    const matrix = svg.getScreenCTM();
+    if (!matrix) {
+      return;
+    }
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const transformed = point.matrixTransform(matrix.inverse());
+    const snappedAnchor = snapCustomDeviceTerminalAnchor({
+      x: transformed.x / customDevicePreviewWidth,
+      y: transformed.y / customDevicePreviewHeight
+    });
+    updateCustomDeviceTerminalAnchor(index, snappedAnchor);
+  };
+
+  const definitionVisualPreviewWidth = Math.max(1, definitionVisualDraft?.size.width ?? selectedDefinitionTemplate?.size.width ?? 104);
+  const definitionVisualPreviewHeight = Math.max(1, definitionVisualDraft?.size.height ?? selectedDefinitionTemplate?.size.height ?? 64);
+  const definitionVisualTerminalAnchors = definitionVisualDraft
+    ? createDefaultCustomDeviceTerminalAnchors(definitionVisualDraft.terminalCount, definitionVisualDraft.terminalAnchors)
+    : [];
+  const definitionVisualTerminalTypes = definitionVisualDraft
+    ? definitionVisualDraft.terminalTypes.slice(0, definitionVisualDraft.terminalCount)
+    : [];
+  const definitionVisualPreviewImage = definitionVisualDraft?.backgroundImage ?? "";
+  const snapDefinitionTerminalAnchor = (anchor: Point): Point => {
+    const snapAxis = (value: number, tolerance: number) => {
+      const normalizedValue = customDeviceTerminalAnchorValue(value);
+      const guideValue = CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES.find((candidate) => Math.abs(normalizedValue - candidate) <= tolerance);
+      return guideValue === undefined ? normalizedValue : customDeviceTerminalAnchorValue(guideValue);
+    };
+    const boundaryAnchor = projectCustomDeviceTerminalAnchorToBoundary(anchor);
+    if (Math.abs(boundaryAnchor.x) >= Math.abs(boundaryAnchor.y)) {
+      return {
+        x: boundaryAnchor.x,
+        y: snapAxis(boundaryAnchor.y, CUSTOM_DEVICE_TERMINAL_ANCHOR_SNAP_SCREEN_TOLERANCE / definitionVisualPreviewHeight)
+      };
+    }
+    return {
+      x: snapAxis(boundaryAnchor.x, CUSTOM_DEVICE_TERMINAL_ANCHOR_SNAP_SCREEN_TOLERANCE / definitionVisualPreviewWidth),
+      y: boundaryAnchor.y
+    };
+  };
+  const definitionTerminalConnectorSegment = (anchor: Point) => {
+    const boundaryAnchor = projectCustomDeviceTerminalAnchorToBoundary(anchor);
+    const from = {
+      x: boundaryAnchor.x * definitionVisualPreviewWidth,
+      y: boundaryAnchor.y * definitionVisualPreviewHeight
+    };
+    if (Math.abs(boundaryAnchor.x) >= Math.abs(boundaryAnchor.y)) {
+      return {
+        from,
+        to: {
+          x: from.x + Math.sign(boundaryAnchor.x || 1) * CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET,
+          y: from.y
+        },
+      };
+    }
+    return {
+      from,
+      to: {
+        x: from.x,
+        y: from.y + Math.sign(boundaryAnchor.y || 1) * CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET
+      }
+    };
+  };
+  const updateDefinitionTerminalAnchor = (index: number, patch: Partial<Point>) => {
+    setDefinitionVisualDraft((current) => {
+      if (!current || index < 0 || index >= current.terminalCount) {
+        return current;
+      }
+      const terminalAnchors = createDefaultCustomDeviceTerminalAnchors(current.terminalCount, current.terminalAnchors);
+      const currentAnchor = terminalAnchors[index] ?? { x: 0, y: 0 };
+      terminalAnchors[index] = projectCustomDeviceTerminalAnchorToBoundary({
+        x: customDeviceTerminalAnchorValue(patch.x ?? currentAnchor.x),
+        y: customDeviceTerminalAnchorValue(patch.y ?? currentAnchor.y)
+      });
+      if (hasOverlappingCustomDeviceTerminalAnchors(terminalAnchors)) {
+        return { ...current, error: `端子${index + 1}位置不能与其他端子重叠。` };
+      }
+      return { ...current, terminalAnchors, error: "" };
+    });
+  };
+  const updateDefinitionTerminalAnchorFromPreview = (index: number, svg: SVGSVGElement, event: PointerEvent<SVGElement>) => {
+    const matrix = svg.getScreenCTM();
+    if (!matrix) {
+      return;
+    }
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const transformed = point.matrixTransform(matrix.inverse());
+    const snappedAnchor = snapDefinitionTerminalAnchor({
+      x: transformed.x / definitionVisualPreviewWidth,
+      y: transformed.y / definitionVisualPreviewHeight
+    });
+    updateDefinitionTerminalAnchor(index, snappedAnchor);
+  };
 
   const loadDefinitionTemplateDraft = (template: DeviceTemplate) => {
     setSelectedDefinitionKind(template.kind);
     const group = normalizeAttributeLibraryName(template.attributeLibrary);
+    const componentType = resolveTemplateComponentType(template);
     setExpandedDefinitionGroups((current) => (current.includes(group) ? current : [...current, group]));
+    setCollapsedDefinitionComponentTypes((current) => current.filter((item) => item !== attributeLibraryComponentTypeKey(group, componentType)));
     setDefinitionDraftRows(createDefinitionDraftRows(template));
-    setDefinitionDraftSection(resolveTemplateComponentType(template));
+    setDefinitionDraftSection(componentType);
     setDefinitionDraftError("");
+    setDefinitionVisualDraft(createDefinitionVisualDraft(template));
+    setDefinitionTerminalAnchorDragIndex(null);
   };
 
   const openDeviceDefinitionDialog = () => {
@@ -26415,11 +27291,20 @@ export function App() {
     measurementConfigDraftRef.current = null;
     setMeasurementConfigDraft(null);
     setMeasurementConfigSaveStatus("idle");
+    setDefinitionVisualDraft(null);
+    setDefinitionTerminalAnchorDragIndex(null);
   };
 
   const toggleDefinitionGroup = (attributeLibrary: AttributeLibrary) => {
     setExpandedDefinitionGroups((current) =>
       current.includes(attributeLibrary) ? current.filter((item) => item !== attributeLibrary) : [...current, attributeLibrary]
+    );
+  };
+
+  const toggleDefinitionComponentType = (attributeLibrary: AttributeLibrary, componentType: string) => {
+    const typeKey = attributeLibraryComponentTypeKey(attributeLibrary, componentType);
+    setCollapsedDefinitionComponentTypes((current) =>
+      current.includes(typeKey) ? current.filter((item) => item !== typeKey) : [...current, typeKey]
     );
   };
 
@@ -26454,6 +27339,124 @@ export function App() {
     }
     setDefinitionDraftRows((current) => current.filter((row) => row.id !== rowId || row.readonly));
     setDefinitionDraftError("");
+  };
+
+  const updateSelectedDefinitionResizePermission = (value: string) => {
+    if (!requireEditMode("修改元件变形权限")) {
+      return;
+    }
+    if (!selectedDefinitionTemplate) {
+      return;
+    }
+    const nextAllowed = value === "1";
+    const targetKind = selectedDefinitionTemplate.kind;
+    if (selectedDefinitionTemplate.custom) {
+      setCustomDeviceTemplates((current) =>
+        current.map((template) =>
+          template.kind === targetKind
+            ? {
+                ...template,
+                allowResizeTransform: nextAllowed
+              }
+            : template
+        )
+      );
+    } else {
+      setDeviceDefinitionOverrides((current) => {
+        const existingOverride = deviceDefinitionOverrideForTemplate(selectedDefinitionTemplate, current);
+        return {
+          ...current,
+          [targetKind]: {
+            ...existingOverride,
+            kind: targetKind,
+            allowResizeTransform: nextAllowed,
+            updatedAt: new Date().toISOString()
+          }
+        };
+      });
+    }
+    setDefinitionDraftError("");
+    writeOperationLog(`修改元件变形权限：${selectedDefinitionTemplate.label} ${nextAllowed ? "允许" : "不允许"}`);
+  };
+
+  const saveDeviceDefinitionVisualDraft = () => {
+    if (!requireEditMode("保存元件图标和端子")) {
+      return;
+    }
+    if (!selectedDefinitionTemplate || !definitionVisualDraft) {
+      return;
+    }
+    if (hasOverlappingCustomDeviceTerminalAnchors(definitionVisualTerminalAnchors)) {
+      const message = "不同端子位置不能重叠，请调整端子位置后再保存。";
+      window.alert(message);
+      setDefinitionVisualDraft((current) => current ? { ...current, error: message } : current);
+      return;
+    }
+    const terminalTypes = definitionVisualDraft.terminalTypes.slice(0, definitionVisualDraft.terminalCount);
+    const terminalLabels = definitionVisualDraft.terminalLabels.slice(0, definitionVisualDraft.terminalCount).map((label, index) => {
+      const type = terminalTypes[index] ?? selectedDefinitionTemplate.terminalType;
+      return label.trim() || `${TERMINAL_TYPE_LIBRARY_LABELS[type] ?? type}端${index + 1}`;
+    });
+    const terminalAnchors = definitionVisualTerminalAnchors.slice(0, definitionVisualDraft.terminalCount).map((anchor) => ({ ...anchor }));
+    const size = {
+      width: Math.max(1, Math.round(definitionVisualDraft.size.width || selectedDefinitionTemplate.size.width || 104)),
+      height: Math.max(1, Math.round(definitionVisualDraft.size.height || selectedDefinitionTemplate.size.height || 64))
+    };
+    const backgroundParams = {
+      backgroundImage: definitionVisualDraft.backgroundImage,
+      backgroundImageAssetId: definitionVisualDraft.backgroundImageAssetId
+    };
+    if (selectedDefinitionTemplate.custom) {
+      setCustomDeviceTemplates((current) =>
+        current.map((template) =>
+          template.kind === selectedDefinitionTemplate.kind
+            ? {
+                ...template,
+                size,
+                params: {
+                  ...template.params,
+                  ...backgroundParams
+                },
+                terminalType: terminalTypes[0] ?? template.terminalType,
+                terminalCount: definitionVisualDraft.terminalCount,
+                terminalTypes,
+                terminalLabels,
+                terminalAnchors
+              }
+            : template
+        )
+      );
+    } else {
+      setDeviceDefinitionOverrides((current) => {
+        const existingOverride = deviceDefinitionOverrideForTemplate(selectedDefinitionTemplate, current);
+        return {
+          ...current,
+          [selectedDefinitionTemplate.kind]: {
+            ...existingOverride,
+            kind: selectedDefinitionTemplate.kind,
+            params: {
+              ...(existingOverride?.params ?? {}),
+              ...backgroundParams
+            },
+            size,
+            terminalType: terminalTypes[0] ?? selectedDefinitionTemplate.terminalType,
+            terminalCount: definitionVisualDraft.terminalCount,
+            terminalTypes,
+            terminalLabels,
+            terminalAnchors,
+            terminalRoles: existingOverride?.terminalRoles ?? selectedDefinitionTemplate.terminalRoles,
+            terminalAssociations: existingOverride?.terminalAssociations ?? selectedDefinitionTemplate.terminalAssociations,
+            isContainer: existingOverride?.isContainer ?? selectedDefinitionTemplate.isContainer,
+            allowResizeTransform: existingOverride?.allowResizeTransform ?? templateAllowsResizeTransform(selectedDefinitionTemplate),
+            parameterDefinitions: existingOverride?.parameterDefinitions ?? selectedDefinitionTemplate.parameterDefinitions ?? getTemplateParameterDefinitions(selectedDefinitionTemplate),
+            updatedAt: new Date().toISOString()
+          }
+        };
+      });
+    }
+    setDefinitionVisualDraft((current) => current ? { ...current, size, terminalLabels, terminalAnchors, error: "" } : current);
+    setDefinitionTerminalAnchorDragIndex(null);
+    writeOperationLog(`修改元件图标和端子：${selectedDefinitionTemplate.label}`);
   };
 
   const saveDeviceDefinitionDraft = () => {
@@ -26501,10 +27504,16 @@ export function App() {
     });
     setDeviceDefinitionOverrides((current) => {
       const next = { ...current };
+      const existingOverride = deviceDefinitionOverrideForTemplate(selectedDefinitionTemplate, current);
       delete next[selectedDefinitionTemplate.kind];
       next[definitionKey] = {
+        ...existingOverride,
         kind: definitionKey,
-        params,
+        params: {
+          ...(existingOverride?.params ?? {}),
+          ...params
+        },
+        allowResizeTransform: templateAllowsResizeTransform(selectedDefinitionTemplate),
         parameterDefinitions: normalizedRows,
         updatedAt: new Date().toISOString()
       };
@@ -26532,7 +27541,7 @@ export function App() {
   };
 
   const updateCustomDraftTerminalCount = (value: number) => {
-    const count = Math.max(0, Math.min(4, Math.round(value || 0)));
+    const count = Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, Math.round(value || 0)));
     setCustomDeviceDraft((current) => {
       const fallback = current.attributeLibraryName.includes("直流")
         ? "dc"
@@ -26545,12 +27554,26 @@ export function App() {
       while (terminalTypes.length < count) {
         terminalTypes.push(fallback);
       }
+      const terminalLabels = [...current.terminalLabels];
+      while (terminalLabels.length < count) {
+        const type = terminalTypes[terminalLabels.length] ?? fallback;
+        terminalLabels.push(`${TERMINAL_TYPE_LIBRARY_LABELS[type] ?? type}端${terminalLabels.length + 1}`);
+      }
       const terminalRoles = [...current.terminalRoles];
       while (terminalRoles.length < count) {
         terminalRoles.push("single-load");
       }
       const terminalAssociations = normalizeContainerTerminalAssociations([...terminalTypes], current.terminalAssociations, count);
-      return { ...current, terminalCount: count, terminalTypes, terminalRoles, terminalAssociations, error: "" };
+      return {
+        ...current,
+        terminalCount: count,
+        terminalTypes,
+        terminalLabels,
+        terminalAnchors: createDefaultCustomDeviceTerminalAnchors(count, current.terminalAnchors),
+        terminalRoles,
+        terminalAssociations,
+        error: ""
+      };
     });
   };
 
@@ -26583,6 +27606,43 @@ export function App() {
         backgroundImageAssetId: asset?.id ?? "",
         error: ""
       }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const chooseDefinitionTemplateIcon = (event: ChangeEvent<HTMLInputElement>) => {
+    if (!requireEditMode("上传元件图标")) {
+      event.target.value = "";
+      return;
+    }
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const imageData = String(reader.result ?? "");
+      let asset: ImageAsset | null = null;
+      try {
+        const uploadedAsset = await uploadBackendImage(file.name, imageData, activeImageFolderId);
+        asset = uploadedAsset;
+        setImageAssetList((current) => [uploadedAsset, ...current.filter((item) => item.id !== uploadedAsset.id)]);
+        setImageAssets((current) => ({ ...current, [uploadedAsset.id]: uploadedAsset.url }));
+        void refreshImageFolders();
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "上传元件图标到后台失败，将仅保留当前本地预览。");
+      }
+      setDefinitionVisualDraft((current) =>
+        current
+          ? {
+              ...current,
+              backgroundImage: asset?.url ?? imageData,
+              backgroundImageAssetId: asset?.id ?? "",
+              error: ""
+            }
+          : current
+      );
     };
     reader.readAsDataURL(file);
   };
@@ -26651,11 +27711,12 @@ export function App() {
   const selectCustomComponentTemplate = (template: DeviceTemplate, sectionName = resolveTemplateComponentType(template)) => {
     const attributeLibraryName = normalizeAttributeLibraryName(template.attributeLibrary);
     const section = normalizeComponentTypeName(sectionName);
-    const terminalTypes = (template.terminalTypes ?? Array.from({ length: template.terminalCount }, () => template.terminalType)).slice(0, 4) as TerminalType[];
+    const terminalCount = Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, template.terminalCount));
+    const terminalTypes = (template.terminalTypes ?? Array.from({ length: template.terminalCount }, () => template.terminalType)).slice(0, MAX_CUSTOM_DEVICE_TERMINALS) as TerminalType[];
     const terminalAssociations = normalizeContainerTerminalAssociations(
       terminalTypes,
       template.terminalAssociations ?? [],
-      Math.max(0, Math.min(4, template.terminalCount))
+      terminalCount
     );
     const defaultDefinitions = new Set(customDefaultDefinitions(terminalTypes, {
       isContainer: template.isContainer,
@@ -26677,11 +27738,14 @@ export function App() {
       componentName: template.label,
       backgroundImage: template.params.backgroundImage ?? "",
       backgroundImageAssetId: template.params.backgroundImageAssetId ?? "",
+      size: { ...template.size },
       allowResizeTransform: templateResizeTransformValue(template),
-      terminalCount: Math.max(0, Math.min(4, template.terminalCount)),
-      terminalTypes: [...terminalTypes, "ac", "ac", "ac", "ac"].slice(0, 4) as TerminalType[],
-      terminalRoles: [...(template.terminalRoles ?? []), "single-load", "single-load", "single-load", "single-load"].slice(0, 4) as ContainerTerminalRole[],
-      terminalAssociations: [...terminalAssociations, "ac-load", "ac-load", "ac-load", "ac-load"].slice(0, 4) as ContainerTerminalAssociationValue[],
+      terminalCount,
+      terminalTypes: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => terminalTypes[index] ?? "ac") as TerminalType[],
+      terminalLabels: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => template.terminalLabels?.[index] ?? ""),
+      terminalAnchors: createDefaultCustomDeviceTerminalAnchors(terminalCount, template.terminalAnchors),
+      terminalRoles: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => template.terminalRoles?.[index] ?? "single-load") as ContainerTerminalRole[],
+      terminalAssociations: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => terminalAssociations[index] ?? "ac-load") as ContainerTerminalAssociationValue[],
       isContainer: Boolean(template.isContainer),
       params: customParams,
       error: template.custom ? "" : "当前选中的是系统内置元件，可查看并复制为新自定义元件，不能直接覆盖内置定义。"
@@ -27089,6 +28153,12 @@ export function App() {
         return;
       }
     }
+    if (hasOverlappingCustomDeviceTerminalAnchors(customDeviceTerminalAnchors)) {
+      const message = "不同端子位置不能重叠，请调整端子位置后再保存。";
+      window.alert(message);
+      setCustomDeviceDraft((current) => ({ ...current, error: message }));
+      return;
+    }
     const customRows: DeviceParameterDefinition[] = customDeviceDraft.params
       .map((row) => ({
         cnName: row.cnName.trim(),
@@ -27130,7 +28200,7 @@ export function App() {
       kind: customKind,
       label: componentLabel,
       attributeLibrary: attributeLibraryName,
-      size: { width: 104, height: 64 },
+      size: customDeviceDraft.size,
       params: {
         component_type: customDeviceDraft.componentType || defaultComponentTypeForAttributeLibrary(attributeLibraryName),
         fillColor: "transparent",
@@ -27143,7 +28213,10 @@ export function App() {
       terminalCount: terminalTypes.length,
       terminalTypes,
       terminalAssociations: customDeviceDraft.isContainer ? terminalAssociations : undefined,
-      terminalLabels: terminalTypes.map((type, index) => `${TERMINAL_TYPE_LIBRARY_LABELS[type] ?? type}端${index + 1}`),
+      terminalLabels: customDeviceDraft.terminalLabels.slice(0, terminalTypes.length).map(
+        (label, index) => label.trim() || `${TERMINAL_TYPE_LIBRARY_LABELS[terminalTypes[index]] ?? terminalTypes[index]}端${index + 1}`
+      ),
+      terminalAnchors: customDeviceTerminalAnchors.slice(0, terminalTypes.length).map((anchor) => ({ ...anchor })),
       isContainer: customDeviceDraft.isContainer,
       allowResizeTransform: customDeviceDraft.allowResizeTransform === "1",
       custom: true,
@@ -27155,32 +28228,282 @@ export function App() {
       }
       return [...current, template];
     });
-    const resizePermissionNodeUpdates = editingCustomDeviceKind
-      ? nodes.flatMap((node) => {
-          if (node.kind !== customKind) {
-            return [];
-          }
-          if (node.params[ALLOW_RESIZE_TRANSFORM_PARAM] === customDeviceDraft.allowResizeTransform) {
-            return [];
-          }
-          return [{
-            ...node,
-            params: {
-              ...node.params,
-              [ALLOW_RESIZE_TRANSFORM_PARAM]: customDeviceDraft.allowResizeTransform
-            }
-          }];
-        })
-      : [];
-    if (resizePermissionNodeUpdates.length > 0) {
-      pushUndoSnapshot(true, false, undoScopeForGraphPatch(resizePermissionNodeUpdates.map((node) => node.id), []));
-      patchGraphNodes(resizePermissionNodeUpdates);
-    }
     setExpandedAttributeLibraries((current) => Array.from(new Set([...current, attributeLibraryName])));
     ensureCustomComponentTreeExpanded(attributeLibraryName, componentType);
     setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section: componentType, templateKind: customKind });
     setEditingCustomDeviceKind(customKind);
     setCustomDeviceDraft((current) => ({ ...current, error: "" }));
+  };
+
+  const renderDeviceDefinitionVisualPanel = (template: DeviceTemplate) => {
+    if (!definitionVisualDraft) {
+      return null;
+    }
+    const visualTemplate: DeviceTemplate = {
+      ...template,
+      size: definitionVisualDraft.size,
+      params: {
+        ...template.params,
+        backgroundImage: "",
+        backgroundImageAssetId: ""
+      },
+      terminalType: definitionVisualTerminalTypes[0] ?? template.terminalType,
+      terminalCount: definitionVisualDraft.terminalCount,
+      terminalTypes: definitionVisualTerminalTypes,
+      terminalLabels: definitionVisualDraft.terminalLabels.slice(0, definitionVisualDraft.terminalCount),
+      terminalAnchors: definitionVisualTerminalAnchors
+    };
+    const previewNode = createNodeFromTemplate(visualTemplate, { x: 0, y: 0 });
+    return (
+      <section className="device-definition-visual-panel">
+        {definitionVisualDraft.error && <p className="custom-device-error">{definitionVisualDraft.error}</p>}
+        <div className="custom-device-image-row device-definition-image-row">
+          <span>SVG/图片图标</span>
+          <button type="button" onClick={() => definitionTemplateIconInputRef.current?.click()}>上传SVG/图片到后台</button>
+          <button
+            type="button"
+            onClick={() =>
+              setDefinitionVisualDraft((current) =>
+                current
+                  ? {
+                      ...current,
+                      backgroundImage: "",
+                      backgroundImageAssetId: "",
+                      error: ""
+                    }
+                  : current
+              )
+            }
+          >
+            清除图标
+          </button>
+          <strong>{definitionVisualDraft.backgroundImageAssetId ? "后台已保存" : definitionVisualDraft.backgroundImage ? "已设置" : "使用默认图形"}</strong>
+        </div>
+        <div className="device-definition-size-grid">
+          <label>
+            宽度
+            <input
+              type="number"
+              min="1"
+              value={definitionVisualDraft.size.width}
+              onChange={(event) =>
+                setDefinitionVisualDraft((current) =>
+                  current
+                    ? {
+                        ...current,
+                        size: { ...current.size, width: Math.max(1, Math.round(Number(event.target.value) || current.size.width)) },
+                        error: ""
+                      }
+                    : current
+                )
+              }
+            />
+          </label>
+          <label>
+            高度
+            <input
+              type="number"
+              min="1"
+              value={definitionVisualDraft.size.height}
+              onChange={(event) =>
+                setDefinitionVisualDraft((current) =>
+                  current
+                    ? {
+                        ...current,
+                        size: { ...current.size, height: Math.max(1, Math.round(Number(event.target.value) || current.size.height)) },
+                        error: ""
+                      }
+                    : current
+                )
+              }
+            />
+          </label>
+          <span>端子只能拖放到元件四周边框，不能放到元件内部。</span>
+        </div>
+        <div className="custom-device-preview device-definition-visual-preview">
+          <span>图标和端子位置</span>
+          <div className="custom-device-preview-stage">
+            <svg
+              className="custom-device-anchor-preview device-definition-anchor-preview"
+              viewBox={`${formatSvgNumber(-definitionVisualPreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(-definitionVisualPreviewHeight / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(definitionVisualPreviewWidth + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)} ${formatSvgNumber(definitionVisualPreviewHeight + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)}`}
+              role="img"
+              aria-label="修改元件图标和端子位置预览"
+              onPointerMove={(event) => {
+                if (definitionTerminalAnchorDragIndex === null) {
+                  return;
+                }
+                updateDefinitionTerminalAnchorFromPreview(definitionTerminalAnchorDragIndex, event.currentTarget, event);
+              }}
+              onPointerUp={(event) => {
+                if (definitionTerminalAnchorDragIndex !== null && event.currentTarget.hasPointerCapture(event.pointerId)) {
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                }
+                setDefinitionTerminalAnchorDragIndex(null);
+              }}
+              onPointerCancel={(event) => {
+                if (definitionTerminalAnchorDragIndex !== null && event.currentTarget.hasPointerCapture(event.pointerId)) {
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                }
+                setDefinitionTerminalAnchorDragIndex(null);
+              }}
+            >
+              {definitionVisualPreviewImage ? (
+                <image
+                  href={definitionVisualPreviewImage}
+                  x={-definitionVisualPreviewWidth / 2}
+                  y={-definitionVisualPreviewHeight / 2}
+                  width={definitionVisualPreviewWidth}
+                  height={definitionVisualPreviewHeight}
+                  preserveAspectRatio="xMidYMid slice"
+                />
+              ) : (
+                <g transform={nodeGeometryTransform(previewNode)}>
+                  <MemoDeviceGlyph node={previewNode} miniature colorPalette={colorPalette} />
+                </g>
+              )}
+              <rect
+                className="custom-device-preview-frame"
+                x={-definitionVisualPreviewWidth / 2}
+                y={-definitionVisualPreviewHeight / 2}
+                width={definitionVisualPreviewWidth}
+                height={definitionVisualPreviewHeight}
+                rx="8"
+              />
+              {definitionTerminalAnchorDragIndex !== null && (
+                <>
+                  {CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES.map((guideValue, guideIndex) => {
+                    const activeAnchor = definitionVisualTerminalAnchors[definitionTerminalAnchorDragIndex];
+                    const active = Boolean(
+                      activeAnchor &&
+                      (Math.abs(customDeviceTerminalAnchorValue(activeAnchor.x) - guideValue) <= 1 / CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION ||
+                        Math.abs(customDeviceTerminalAnchorValue(activeAnchor.y) - guideValue) <= 1 / CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION)
+                    );
+                    return (
+                      <Fragment key={`definition-terminal-guide-${guideIndex}`}>
+                        <line
+                          className={`custom-device-terminal-guide ${active ? "active" : ""}`}
+                          x1={guideValue * definitionVisualPreviewWidth}
+                          y1={-definitionVisualPreviewHeight / 2}
+                          x2={guideValue * definitionVisualPreviewWidth}
+                          y2={definitionVisualPreviewHeight / 2}
+                        />
+                        <line
+                          className={`custom-device-terminal-guide ${active ? "active" : ""}`}
+                          x1={-definitionVisualPreviewWidth / 2}
+                          y1={guideValue * definitionVisualPreviewHeight}
+                          x2={definitionVisualPreviewWidth / 2}
+                          y2={guideValue * definitionVisualPreviewHeight}
+                        />
+                        <text
+                          className="custom-device-terminal-guide-label"
+                          x={guideValue * definitionVisualPreviewWidth}
+                          y={-definitionVisualPreviewHeight / 2 - 5}
+                        >
+                          {CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS[guideIndex]}
+                        </text>
+                        <text
+                          className="custom-device-terminal-guide-label horizontal"
+                          x={-definitionVisualPreviewWidth / 2 - 5}
+                          y={guideValue * definitionVisualPreviewHeight}
+                        >
+                          {CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS[guideIndex]}
+                        </text>
+                      </Fragment>
+                    );
+                  })}
+                </>
+              )}
+              {definitionVisualTerminalAnchors.map((anchor, index) => {
+                const terminalType = definitionVisualDraft.terminalTypes[index] ?? template.terminalType;
+                const segment = definitionTerminalConnectorSegment(anchor);
+                return (
+                  <line
+                    key={`definition-terminal-connector-${index}`}
+                    className="custom-device-terminal-connector"
+                    x1={segment.from.x}
+                    y1={segment.from.y}
+                    x2={segment.to.x}
+                    y2={segment.to.y}
+                    style={{ "--terminal-color": terminalColor(terminalType, colorPalette) } as CSSProperties}
+                  />
+                );
+              })}
+              {definitionVisualTerminalAnchors.map((anchor, index) => {
+                const terminalType = definitionVisualDraft.terminalTypes[index] ?? template.terminalType;
+                const segment = definitionTerminalConnectorSegment(anchor);
+                const dragging = definitionTerminalAnchorDragIndex === index;
+                return (
+                  <g
+                    key={`definition-terminal-anchor-${index}`}
+                    className={`custom-device-terminal-anchor ${dragging ? "dragging" : ""}`}
+                    transform={`translate(${formatSvgNumber(segment.to.x)} ${formatSvgNumber(segment.to.y)})`}
+                    style={{ "--terminal-color": terminalColor(terminalType, colorPalette) } as CSSProperties}
+                  >
+                    <circle
+                      r="8"
+                      onPointerDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const svg = event.currentTarget.ownerSVGElement;
+                        if (!svg) {
+                          return;
+                        }
+                        setDefinitionTerminalAnchorDragIndex(index);
+                        svg.setPointerCapture(event.pointerId);
+                        updateDefinitionTerminalAnchorFromPreview(index, svg, event);
+                      }}
+                    >
+                      <title>{`拖动调整端子${index + 1}位置`}</title>
+                    </circle>
+                    <text x="0" y="0">{index + 1}</text>
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+          <small>{definitionVisualDraft.backgroundImageAssetId ? "当前显示后台图标预览" : definitionVisualDraft.backgroundImage ? "当前显示本地图标预览" : "当前显示元件默认图形"}</small>
+        </div>
+        <div className="custom-terminal-grid device-definition-terminal-grid">
+          {Array.from({ length: definitionVisualDraft.terminalCount }).map((_, index) => {
+            const terminalType = definitionVisualDraft.terminalTypes[index] ?? template.terminalType;
+            const terminalAnchor = definitionVisualTerminalAnchors[index] ?? { x: 0, y: 0 };
+            return (
+              <label key={index}>
+                {`端子${index + 1}`}
+                <strong>{TERMINAL_TYPE_LIBRARY_LABELS[terminalType] ?? terminalType}</strong>
+                <span>端子位置</span>
+                <div className="custom-terminal-anchor-inputs">
+                  <span>X</span>
+                  <input
+                    type="number"
+                    min="-0.5"
+                    max="0.5"
+                    step="0.01"
+                    value={formatCustomDeviceTerminalAnchorValue(terminalAnchor.x)}
+                    onChange={(event) => updateDefinitionTerminalAnchor(index, { x: Number(event.target.value) })}
+                    aria-label={`修改元件端子${index + 1} X位置`}
+                  />
+                  <span>Y</span>
+                  <input
+                    type="number"
+                    min="-0.5"
+                    max="0.5"
+                    step="0.01"
+                    value={formatCustomDeviceTerminalAnchorValue(terminalAnchor.y)}
+                    onChange={(event) => updateDefinitionTerminalAnchor(index, { y: Number(event.target.value) })}
+                    aria-label={`修改元件端子${index + 1} Y位置`}
+                  />
+                </div>
+              </label>
+            );
+          })}
+        </div>
+        <div className="custom-device-actions">
+          <button type="button" onClick={saveDeviceDefinitionVisualDraft}>保存图标和端子</button>
+          <button type="button" onClick={() => setDefinitionVisualDraft(createDefinitionVisualDraft(template))}>恢复当前元件状态</button>
+        </div>
+      </section>
+    );
   };
 
   const renderCustomComponentManagerTree = () => (
@@ -27210,7 +28533,7 @@ export function App() {
           </button>
         )}
       </div>
-      <div className="custom-component-manager-tree" role="tree">
+      <div className="custom-component-manager-tree dialog-compact-tree" role="tree">
         {displayedCustomComponentTreeLibraries.length > 0 ? displayedCustomComponentTreeLibraries.map((group) => {
           const typeGroups = filteredCustomComponentTreeByComponentType[group] ?? [];
           const librarySelected = customComponentTreeSelection.kind === "attributeLibrary" && customComponentTreeSelection.attributeLibraryName === group;
@@ -27270,7 +28593,7 @@ export function App() {
                               title={`${template.label} / ${typeGroup.section} / ${template.custom ? "自定义" : "系统内置"}`}
                               onClick={() => selectCustomComponentTemplate(template, typeGroup.section)}
                             >
-                              <span className="dialog-tree-bilingual" title={`${template.label} / ${template.kind}`}>
+                              <span className="dialog-tree-bilingual dialog-tree-component-label" title={`${template.label} / ${template.kind}`}>
                                 <span>{template.label}</span>
                                 <small>{template.kind}</small>
                               </span>
@@ -27434,8 +28757,17 @@ export function App() {
 
   const renderLibraryTemplateButton = (item: DeviceTemplate, section: string) => {
     const preview = libraryPreviewByKind.get(item.kind) ?? createNodeFromTemplate(item, { x: 0, y: 0 });
+    const libraryPreviewImageHref = nodeImage(preview);
+    const libraryPreviewForegroundHref = nodeForegroundImage(preview);
+    const libraryPreviewHasImage = !isBusNode(preview) && Boolean(libraryPreviewImageHref || libraryPreviewForegroundHref);
     const previewRotation = ((Math.round(preview.rotation) % 360) + 360) % 360;
-    const previewViewBox = previewRotation === 90 || previewRotation === 270 ? "-48 -48 96 96" : "-40 -28 80 56";
+    const fallbackPreviewViewBox = previewRotation === 90 || previewRotation === 270 ? "-48 -48 96 96" : "-40 -28 80 56";
+    const imagePreviewWidth = Math.max(80, preview.size.width + 16);
+    const imagePreviewHeight = Math.max(56, preview.size.height + 16);
+    const previewViewBox = libraryPreviewHasImage
+      ? `${formatSvgNumber(-imagePreviewWidth / 2)} ${formatSvgNumber(-imagePreviewHeight / 2)} ${formatSvgNumber(imagePreviewWidth)} ${formatSvgNumber(imagePreviewHeight)}`
+      : fallbackPreviewViewBox;
+    const libraryPreviewClipId = `library-preview-clip-${item.kind.replace(/[^A-Za-z0-9_-]/g, "-")}`;
     return (
       <button
         key={item.kind}
@@ -27461,9 +28793,52 @@ export function App() {
         }}
       >
         <svg viewBox={previewViewBox} aria-hidden="true">
-          <g transform={nodeGeometryTransform(preview)}>
-            <MemoDeviceGlyph node={preview} miniature colorPalette={colorPalette} />
-          </g>
+          {libraryPreviewHasImage && (
+            <defs>
+              <clipPath id={libraryPreviewClipId}>
+                <rect
+                  x={-preview.size.width / 2}
+                  y={-preview.size.height / 2}
+                  width={preview.size.width}
+                  height={preview.size.height}
+                  rx="8"
+                />
+              </clipPath>
+            </defs>
+          )}
+          {!libraryPreviewHasImage && (
+            <g transform={nodeGeometryTransform(preview)}>
+              <MemoDeviceGlyph node={preview} miniature colorPalette={colorPalette} />
+            </g>
+          )}
+          {libraryPreviewHasImage && (
+            <g className="library-preview-image-wrap" transform={nodeImageContentTransform(preview)}>
+              {libraryPreviewImageHref && (
+                <image
+                  href={libraryPreviewImageHref}
+                  x={-preview.size.width / 2}
+                  y={-preview.size.height / 2}
+                  width={preview.size.width}
+                  height={preview.size.height}
+                  preserveAspectRatio="xMidYMid meet"
+                  clipPath={`url(#${libraryPreviewClipId})`}
+                  className="library-preview-image"
+                />
+              )}
+              {libraryPreviewForegroundHref && (
+                <image
+                  href={libraryPreviewForegroundHref}
+                  x={-preview.size.width / 2}
+                  y={-preview.size.height / 2}
+                  width={preview.size.width}
+                  height={preview.size.height}
+                  preserveAspectRatio="xMidYMid meet"
+                  clipPath={`url(#${libraryPreviewClipId})`}
+                  className="library-preview-image library-preview-foreground-image"
+                />
+              )}
+            </g>
+          )}
         </svg>
       </button>
     );
@@ -28150,6 +29525,9 @@ export function App() {
   const contextMeasurementGroup = contextMeasurementNode
     ? measurementGroupForNode(projectMeasurements, contextMeasurementNode.id)
     : undefined;
+  const selectedViewportActionDisabled = !selectedCanvasBounds;
+  const centerSelectedViewportTitle = selectedViewportActionDisabled ? "先选中图元或连接线后可居中" : "居中选中";
+  const fitSelectedViewportTitle = selectedViewportActionDisabled ? "先选中图元或连接线后可缩放到选中区域" : "缩放到选中区域";
   const nodeFloatingToolbarActionCount =
     6 +
     (canGroupSelectedGraphics ? 1 : 0) +
@@ -28876,7 +30254,7 @@ export function App() {
                   )}
                 </g>
                 {!nodeIsBus && (imageHref || foregroundImageHref) && (
-                  <g className="node-upright-content" transform={nodeUprightScaleTransform(node)}>
+                  <g className="node-upright-content" transform={nodeImageContentTransform(node)}>
                     {imageHref && isStaticNode(node) && (
                       <image
                         href={imageHref}
@@ -29140,9 +30518,11 @@ export function App() {
         ref={leftPanelRef}
         className={`library-panel floating-side-panel ${leftPanelVisible ? "visible" : "hidden"}`}
         onPointerDown={stopSidePanelEventPropagation}
+        onPointerMoveCapture={stopSidePanelEventPropagation}
         onPointerMove={stopSidePanelEventPropagation}
         onPointerEnter={() => updateAutoPanelVisibility("left", "panel-enter")}
         onPointerLeave={(event) => handleSidePanelPointerLeave("left", event)}
+        onMouseMoveCapture={stopSidePanelEventPropagation}
         onMouseMove={stopSidePanelEventPropagation}
         onClick={stopSidePanelEventPropagation}
         onDoubleClick={stopSidePanelEventPropagation}
@@ -29369,6 +30749,7 @@ export function App() {
             </div>
             <input ref={imageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseImage} />
             <input ref={customDeviceImageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseCustomDeviceBackground} />
+            <input ref={definitionTemplateIconInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseDefinitionTemplateIcon} />
             <input ref={modelImportInputRef} type="file" accept=".json,application/json" hidden onChange={importModelFile} />
             <input ref={schemeImportInputRef} type="file" accept=".json,application/json" hidden onChange={importSchemeFile} />
             <button
@@ -29804,6 +31185,7 @@ export function App() {
                     <MemoDeviceGlyph node={ghostNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
                     <MemoDeviceGlyph node={ghostNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
                   </g>
+                  {renderNodePreviewImageContent(ghostNode, `drag-ghost-preview-clip-${ghostNode.id}`)}
                 </g>
               );
             })}
@@ -30152,7 +31534,7 @@ export function App() {
               const rotateHandlePoints = uprightStaticSelectionOutline
                 ? nodeUprightRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap)
                 : nodeRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap);
-              const scaleHandleConfigsForNode = nodeAllowsResizeTransform(node)
+              const scaleHandleConfigsForNode = nodeKindAllowsResizeTransform(node.kind)
                 ? SCALE_HANDLE_CONFIGS
                 : SCALE_HANDLE_CONFIGS.filter((handle) => handle.kind === "scale-both");
               const staticButtonEnabled = isBrowseMode && isStaticButtonEnabledForNode(node);
@@ -30313,7 +31695,7 @@ export function App() {
                     )}
                   </g>
                   {!nodeIsBus && (imageHref || foregroundImageHref) && (
-                    <g className="node-upright-content" transform={nodeUprightScaleTransform(node)}>
+                    <g className="node-upright-content" transform={nodeImageContentTransform(node)}>
                       {imageHref && nodeIsStatic && (
                         <image
                           href={imageHref}
@@ -30827,6 +32209,11 @@ export function App() {
                           <Grid2X2 size={floatingToolbarIconSize} />
                         </button>
                       )}
+                      {canAddTemplateFromSelection && (
+                        <button type="button" title="定义为元件" aria-label="定义为元件" onClick={openGroupDeviceDefinitionDialog}>
+                          <Plus size={floatingToolbarIconSize} />
+                        </button>
+                      )}
                       <button type="button" title="标识显示" aria-label="标识显示" onClick={toggleSelectedNodeLabelDisplay}>
                         <Type size={floatingToolbarIconSize} />
                       </button>
@@ -30871,10 +32258,22 @@ export function App() {
             <button type="button" title="适配视图" aria-label="适配视图" onClick={fitWholeCanvasToFrame}>
               <Maximize2 size={16} />
             </button>
-            <button type="button" title="居中选中" aria-label="居中选中" disabled={!selectedCanvasBounds} onClick={centerSelectedInView}>
+            <button
+              type="button"
+              title={centerSelectedViewportTitle}
+              aria-label="居中选中"
+              disabled={selectedViewportActionDisabled}
+              onClick={centerSelectedInView}
+            >
               <LocateFixed size={16} />
             </button>
-            <button type="button" title="缩放到选中区域" aria-label="缩放到选中区域" disabled={!selectedCanvasBounds} onClick={fitViewToSelection}>
+            <button
+              type="button"
+              title={fitSelectedViewportTitle}
+              aria-label="缩放到选中区域"
+              disabled={selectedViewportActionDisabled}
+              onClick={fitViewToSelection}
+            >
               <ScanSearch size={16} />
             </button>
             <button type="button" title="放大" aria-label="放大" onClick={() => zoomViewportAtCenter(0.82)}>
@@ -30963,7 +32362,7 @@ export function App() {
             <header className="topology-warning-floating-title" onPointerDown={startTopologyWarningPanelDrag}>
               <div>
                 <h2>拓扑警告信息</h2>
-                <span>{inspectorTopologyErrors.length} 条</span>
+                <span>{inspectorTopologyErrors.length}条</span>
               </div>
               <button
                 type="button"
@@ -31082,9 +32481,11 @@ export function App() {
         ref={rightPanelRef}
         className={`inspector-panel floating-side-panel ${rightPanelVisible ? "visible" : "hidden"}`}
         onPointerDown={stopSidePanelEventPropagation}
+        onPointerMoveCapture={stopSidePanelEventPropagation}
         onPointerMove={stopSidePanelEventPropagation}
         onPointerEnter={() => updateAutoPanelVisibility("right", "panel-enter")}
         onPointerLeave={(event) => handleSidePanelPointerLeave("right", event)}
+        onMouseMoveCapture={stopSidePanelEventPropagation}
         onMouseMove={stopSidePanelEventPropagation}
         onClick={stopSidePanelEventPropagation}
         onDoubleClick={stopSidePanelEventPropagation}
@@ -31954,7 +33355,7 @@ export function App() {
                 <p>选择画布设备后，可切换查看图形、模型和量测。</p>
               </div>
             )}
-            {inspectorSelectedNode && inspectorTab === "graph" && (
+            {singleSelectedDeviceForInspector && inspectorSelectedNode && inspectorTab === "graph" && (
               <div className="topology-card">
                 <span>连接度</span>
                 <strong>{topology.nodes[inspectorSelectedNode.id]?.degree ?? 0}</strong>
@@ -32108,6 +33509,14 @@ export function App() {
             <button onClick={() => runContextMenuAction(openAddTemplateDialog)}>
               <Grid2X2 size={14} />
               添加到模板库
+            </button>
+            ) : null
+          )}
+          {contextMenuForNode && canAddTemplateFromSelection && (
+            isEditMode ? (
+            <button onClick={() => runContextMenuAction(openGroupDeviceDefinitionDialog)}>
+              <Plus size={14} />
+              定义为元件
             </button>
             ) : null
           )}
@@ -32646,6 +34055,127 @@ export function App() {
           </section>
         </div>
       )}
+      {groupDeviceDefinitionDialog && (
+        <div className="image-picker-backdrop" onPointerDown={() => setGroupDeviceDefinitionDialog(null)}>
+          <section className="group-device-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="group-device-dialog-title">
+            <div className="image-picker-title">
+              <div>
+                <h2 id="group-device-dialog-title">定义为元件</h2>
+                <p>把当前图元组合生成新元件图标，或替换已有元件的图标。</p>
+              </div>
+              <button type="button" onClick={() => setGroupDeviceDefinitionDialog(null)}>关闭</button>
+            </div>
+            <div className="group-device-dialog-grid">
+              <div className="template-dialog-preview group-device-preview">
+                <img src={groupDeviceDefinitionDialog.iconImage} alt="图元组合生成的元件图标预览" />
+                <small>组合尺寸：{groupDeviceDefinitionDialog.sourceSize.width}×{groupDeviceDefinitionDialog.sourceSize.height}</small>
+              </div>
+              <div className="template-dialog-fields group-device-fields">
+                <div className="group-device-mode-options" role="radiogroup" aria-label="定义方式">
+                  {([
+                    ["new", "新建元件"],
+                    ["replace", "修改已有元件图标"]
+                  ] as const).map(([modeValue, label]) => (
+                    <button
+                      key={modeValue}
+                      type="button"
+                      className={groupDeviceDefinitionDialog.mode === modeValue ? "active" : ""}
+                      role="radio"
+                      aria-checked={groupDeviceDefinitionDialog.mode === modeValue}
+                      onClick={() =>
+                        setGroupDeviceDefinitionDialog((current) => current ? { ...current, mode: modeValue } : current)
+                      }
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {groupDeviceDefinitionDialog.mode === "new" ? (
+                  <>
+                    <label>
+                      <span>属性库</span>
+                      <select
+                        value={groupDeviceDefinitionDialog.attributeLibraryName}
+                        onChange={(event) => {
+                          const attributeLibraryName = normalizeAttributeLibraryName(event.target.value);
+                          setGroupDeviceDefinitionDialog((current) => current ? {
+                            ...current,
+                            attributeLibraryName,
+                            componentType: defaultComponentTypeForAttributeLibrary(attributeLibraryName)
+                          } : current);
+                        }}
+                      >
+                        {selectableAttributeLibraries.map((group) => (
+                          <option key={group} value={group}>{group}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>选择元件类型</span>
+                      <select
+                        value={groupDeviceDefinitionDialog.componentType}
+                        onChange={(event) =>
+                          setGroupDeviceDefinitionDialog((current) => current ? { ...current, componentType: event.target.value } : current)
+                        }
+                      >
+                        {Array.from(new Set([
+                          groupDeviceDefinitionDialog.componentType,
+                          ...(componentTypeOptionsByAttributeLibrary[groupDeviceDefinitionDialog.attributeLibraryName] ?? [])
+                        ].filter(Boolean))).map((section) => (
+                          <option key={section} value={section}>{section}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </>
+                ) : (
+                  <label>
+                    <span>已有元件</span>
+                    <select
+                      value={groupDeviceDefinitionDialog.targetKind}
+                      disabled={groupDeviceReplacementTemplates.length === 0}
+                      onChange={(event) =>
+                        setGroupDeviceDefinitionDialog((current) => current ? { ...current, targetKind: event.target.value } : current)
+                      }
+                    >
+                      {groupDeviceReplacementTemplates.length === 0 ? (
+                        <option value="">暂无元件</option>
+                      ) : groupDeviceReplacementTemplates.map((template) => (
+                        <option key={template.kind} value={template.kind}>
+                          {template.label} / {resolveTemplateComponentType(template)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <div className="group-device-terminal-summary">
+                  <strong>对外端子</strong>
+                  <span>{groupDeviceDefinitionDialog.terminals.length} 个</span>
+                </div>
+                <div className="group-device-terminal-list">
+                  {groupDeviceDefinitionDialog.terminals.length > 0 ? groupDeviceDefinitionDialog.terminals.map((terminal, index) => (
+                    <div key={terminal.id} className="group-device-terminal-row">
+                      <span>{index + 1}</span>
+                      <strong>{terminal.label}</strong>
+                      <em>{TERMINAL_TYPE_LIBRARY_LABELS[terminal.type] ?? terminal.type}</em>
+                    </div>
+                  )) : (
+                    <p>未识别到对外端子，新元件会按 0 端子创建。</p>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="template-dialog-actions">
+              <button type="button" onClick={() => setGroupDeviceDefinitionDialog(null)}>取消</button>
+              <button
+                type="button"
+                onClick={groupDeviceDefinitionDialog.mode === "new" ? confirmCreateDeviceFromGroup : confirmReplaceDeviceIconFromGroup}
+              >
+                确定
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {templateDialog && (
         <div className="image-picker-backdrop" onPointerDown={cancelTemplateDialog}>
           <section className="template-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="template-dialog-title">
@@ -32991,7 +34521,7 @@ export function App() {
                     </button>
                   )}
                 </div>
-                <div className="device-definition-tree-scroll">
+                <div className="device-definition-tree-scroll dialog-compact-tree" role="tree">
                   {displayedDeviceDefinitionLibraries.length > 0 ? displayedDeviceDefinitionLibraries.map((group) => {
                     const typeGroups = filteredDeviceDefinitionByComponentType[group] ?? [];
                     const expanded = deviceDefinitionSearchNeedle ? true : expandedDefinitionGroups.includes(group);
@@ -33000,6 +34530,7 @@ export function App() {
                         <button
                           type="button"
                           className="device-definition-group-toggle"
+                          role="treeitem"
                           aria-expanded={expanded}
                           onClick={() => toggleDefinitionGroup(group)}
                         >
@@ -33010,31 +34541,42 @@ export function App() {
                         {expanded && (
                           <div className="component-definition-type-list" role="group" aria-label={`${group}元件类型列表`}>
                             {typeGroups.map((typeGroup) => {
+                              const typeKey = attributeLibraryComponentTypeKey(group, typeGroup.section);
+                              const typeCollapsed = deviceDefinitionSearchNeedle ? false : collapsedDefinitionComponentTypes.includes(typeKey);
                               const typeDisplay = componentTypeDisplayParts(typeGroup.section);
                               return (
                                 <section className="component-definition-type-group" key={`${group}-${typeGroup.section}`}>
-                                  <div className="component-definition-type-header">
+                                  <button
+                                    type="button"
+                                    className={`component-definition-type-header ${typeCollapsed ? "" : "active"}`}
+                                    role="treeitem"
+                                    aria-expanded={!typeCollapsed}
+                                    onClick={() => toggleDefinitionComponentType(group, typeGroup.section)}
+                                  >
+                                    {typeCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                                     <span className="dialog-tree-bilingual" title={typeDisplay.title}>
                                       <span>{typeDisplay.chinese}</span>
                                       <small>{typeDisplay.english}</small>
                                     </span>
                                     <strong>{typeGroup.templates.length}</strong>
-                                  </div>
-                                  <div className="device-definition-items" role="group" aria-label={`${group}/${typeGroup.section}元件列表`}>
+                                  </button>
+                                  {!typeCollapsed && <div className="device-definition-items" role="group" aria-label={`${group}/${typeGroup.section}元件列表`}>
                                     {typeGroup.templates.map((template) => (
                                       <button
                                         type="button"
                                         key={template.kind}
                                         className={`device-definition-item ${selectedDefinitionTemplate?.kind === template.kind ? "active" : ""}`}
+                                        role="treeitem"
+                                        aria-selected={selectedDefinitionTemplate?.kind === template.kind}
                                         onClick={() => loadDefinitionTemplateDraft(template)}
                                       >
-                                        <span className="dialog-tree-bilingual" title={`${template.label} / ${template.kind}`}>
+                                        <span className="dialog-tree-bilingual dialog-tree-component-label" title={`${template.label} / ${template.kind}`}>
                                           <span>{template.label}</span>
                                           <small>{template.kind}</small>
                                         </span>
                                       </button>
                                     ))}
-                                  </div>
+                                  </div>}
                                 </section>
                               );
                             })}
@@ -33077,7 +34619,14 @@ export function App() {
                       </div>
                       <div>
                         <span>是否允许变形</span>
-                        <strong>{templateAllowsResizeTransform(selectedDefinitionTemplate) ? "是" : "否"}</strong>
+                        <select
+                          className="device-definition-summary-value"
+                          value={templateResizeTransformValue(selectedDefinitionTemplate)}
+                          onChange={(event) => updateSelectedDefinitionResizePermission(event.target.value)}
+                        >
+                          <option value="0">否</option>
+                          <option value="1">是</option>
+                        </select>
                       </div>
                       <div>
                         <span>能源属性</span>
@@ -33135,6 +34684,13 @@ export function App() {
                     <div className="device-definition-tabs" role="tablist" aria-label="元件修改内容切换">
                       <button
                         type="button"
+                        className={deviceDefinitionView === "visual" ? "active" : ""}
+                        onClick={() => setDeviceDefinitionView("visual")}
+                      >
+                        图标/端子
+                      </button>
+                      <button
+                        type="button"
                         className={deviceDefinitionView === "parameters" ? "active" : ""}
                         onClick={() => setDeviceDefinitionView("parameters")}
                       >
@@ -33148,7 +34704,9 @@ export function App() {
                         量测定义
                       </button>
                     </div>
-                    {deviceDefinitionView === "parameters" ? (
+                    {deviceDefinitionView === "visual" ? (
+                      renderDeviceDefinitionVisualPanel(selectedDefinitionTemplate)
+                    ) : deviceDefinitionView === "parameters" ? (
                       <>
                         {selectedDefinitionTemplate.isContainer && selectedDefinitionTerminalAssociations.length > 0 && (
                           <section className="device-definition-associations">
@@ -33372,7 +34930,7 @@ export function App() {
                 <input
                   type="number"
                   min="0"
-                  max="4"
+                  max={MAX_CUSTOM_DEVICE_TERMINALS}
                   value={customDeviceDraft.terminalCount}
                   onChange={(event) => updateCustomDraftTerminalCount(Number(event.target.value))}
                 />
@@ -33402,8 +34960,140 @@ export function App() {
             </div>
             <div className="custom-device-preview">
               <span>背景预览</span>
-              <div>
-                <img src={customDevicePreviewImage} alt="自定义元件背景图片预览" />
+              <div className="custom-device-preview-stage">
+                <svg
+                  className="custom-device-anchor-preview"
+                  viewBox={`${formatSvgNumber(-customDevicePreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(-customDevicePreviewHeight / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(customDevicePreviewWidth + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)} ${formatSvgNumber(customDevicePreviewHeight + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)}`}
+                  role="img"
+                  aria-label="自定义元件图标和端子位置预览"
+                  onPointerMove={(event) => {
+                    if (customDeviceTerminalAnchorDragIndex === null) {
+                      return;
+                    }
+                    updateCustomDeviceTerminalAnchorFromPreview(customDeviceTerminalAnchorDragIndex, event.currentTarget, event);
+                  }}
+                  onPointerUp={(event) => {
+                    if (customDeviceTerminalAnchorDragIndex !== null && event.currentTarget.hasPointerCapture(event.pointerId)) {
+                      event.currentTarget.releasePointerCapture(event.pointerId);
+                    }
+                    setCustomDeviceTerminalAnchorDragIndex(null);
+                  }}
+                  onPointerCancel={(event) => {
+                    if (customDeviceTerminalAnchorDragIndex !== null && event.currentTarget.hasPointerCapture(event.pointerId)) {
+                      event.currentTarget.releasePointerCapture(event.pointerId);
+                    }
+                    setCustomDeviceTerminalAnchorDragIndex(null);
+                  }}
+                >
+                  <image
+                    href={customDevicePreviewImage}
+                    x={-customDevicePreviewWidth / 2}
+                    y={-customDevicePreviewHeight / 2}
+                    width={customDevicePreviewWidth}
+                    height={customDevicePreviewHeight}
+                    preserveAspectRatio="xMidYMid slice"
+                  />
+                  <rect
+                    className="custom-device-preview-frame"
+                    x={-customDevicePreviewWidth / 2}
+                    y={-customDevicePreviewHeight / 2}
+                    width={customDevicePreviewWidth}
+                    height={customDevicePreviewHeight}
+                    rx="8"
+                  />
+                  {customDeviceTerminalAnchorDragIndex !== null && (
+                    <>
+                      {CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES.map((guideValue, guideIndex) => {
+                        const activeAnchor = customDeviceTerminalAnchors[customDeviceTerminalAnchorDragIndex];
+                        const active = Boolean(
+                          activeAnchor &&
+                          (Math.abs(customDeviceTerminalAnchorValue(activeAnchor.x) - guideValue) <= 1 / CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION ||
+                            Math.abs(customDeviceTerminalAnchorValue(activeAnchor.y) - guideValue) <= 1 / CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION)
+                        );
+                        return (
+                          <Fragment key={`custom-terminal-guide-${guideIndex}`}>
+                            <line
+                              className={`custom-device-terminal-guide ${active ? "active" : ""}`}
+                              x1={guideValue * customDevicePreviewWidth}
+                              y1={-customDevicePreviewHeight / 2}
+                              x2={guideValue * customDevicePreviewWidth}
+                              y2={customDevicePreviewHeight / 2}
+                            />
+                            <line
+                              className={`custom-device-terminal-guide ${active ? "active" : ""}`}
+                              x1={-customDevicePreviewWidth / 2}
+                              y1={guideValue * customDevicePreviewHeight}
+                              x2={customDevicePreviewWidth / 2}
+                              y2={guideValue * customDevicePreviewHeight}
+                            />
+                            <text
+                              className="custom-device-terminal-guide-label"
+                              x={guideValue * customDevicePreviewWidth}
+                              y={-customDevicePreviewHeight / 2 - 5}
+                            >
+                              {CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS[guideIndex]}
+                            </text>
+                            <text
+                              className="custom-device-terminal-guide-label horizontal"
+                              x={-customDevicePreviewWidth / 2 - 5}
+                              y={guideValue * customDevicePreviewHeight}
+                            >
+                              {CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS[guideIndex]}
+                            </text>
+                          </Fragment>
+                        );
+                      })}
+                    </>
+                  )}
+                  {customDeviceTerminalAnchors.map((anchor, index) => {
+                    const terminalType = customDeviceDraft.terminalTypes[index] ?? "ac";
+                    const segment = customDeviceTerminalConnectorSegment(anchor);
+                    return (
+                      <line
+                        key={`custom-terminal-connector-${index}`}
+                        className="custom-device-terminal-connector"
+                        x1={segment.from.x}
+                        y1={segment.from.y}
+                        x2={segment.to.x}
+                        y2={segment.to.y}
+                        style={{ "--terminal-color": terminalColor(terminalType, colorPalette) } as CSSProperties}
+                      />
+                    );
+                  })}
+                  {customDeviceTerminalAnchors.map((anchor, index) => {
+                    const terminalType = customDeviceDraft.terminalTypes[index] ?? "ac";
+                    const segment = customDeviceTerminalConnectorSegment(anchor);
+                    const x = segment.to.x;
+                    const y = segment.to.y;
+                    const dragging = customDeviceTerminalAnchorDragIndex === index;
+                    return (
+                      <g
+                        key={`custom-terminal-anchor-${index}`}
+                        className={`custom-device-terminal-anchor ${dragging ? "dragging" : ""}`}
+                        transform={`translate(${formatSvgNumber(x)} ${formatSvgNumber(y)})`}
+                        style={{ "--terminal-color": terminalColor(terminalType, colorPalette) } as CSSProperties}
+                      >
+                        <circle
+                          r="8"
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            const svg = event.currentTarget.ownerSVGElement;
+                            if (!svg) {
+                              return;
+                            }
+                            setCustomDeviceTerminalAnchorDragIndex(index);
+                            svg.setPointerCapture(event.pointerId);
+                            updateCustomDeviceTerminalAnchorFromPreview(index, svg, event);
+                          }}
+                        >
+                          <title>{`拖动调整端子${index + 1}位置`}</title>
+                        </circle>
+                        <text x="0" y="0">{index + 1}</text>
+                      </g>
+                    );
+                  })}
+                </svg>
               </div>
               <small>{customDeviceDraft.backgroundImageAssetId ? "当前显示后台图标预览" : customDeviceDraft.backgroundImage ? "当前显示本地图标预览" : "当前显示默认样例预览"}</small>
             </div>
@@ -33419,6 +35109,7 @@ export function App() {
                 const associationDependent = customDeviceDraft.isContainer && isContainerTerminalAssociationDependent(terminalAssociations, index);
                 const terminalType = customDeviceDraft.terminalTypes[index] ?? "ac";
                 const associationOptions = CONTAINER_TERMINAL_ASSOCIATION_OPTIONS[terminalType];
+                const terminalAnchor = customDeviceTerminalAnchors[index] ?? { x: 0, y: 0 };
                 return (
                   <label key={index} className={associationDependent ? "custom-terminal-dependent" : ""}>
                     {`端子${index + 1}能源属性`}
@@ -33455,6 +35146,29 @@ export function App() {
                         </option>
                       ))}
                     </select>
+                    <span>端子位置</span>
+                    <div className="custom-terminal-anchor-inputs">
+                      <span>X</span>
+                      <input
+                        type="number"
+                        min="-0.5"
+                        max="0.5"
+                        step="0.01"
+                        value={formatCustomDeviceTerminalAnchorValue(terminalAnchor.x)}
+                        onChange={(event) => updateCustomDeviceTerminalAnchor(index, { x: Number(event.target.value) })}
+                        aria-label={`端子${index + 1} X位置`}
+                      />
+                      <span>Y</span>
+                      <input
+                        type="number"
+                        min="-0.5"
+                        max="0.5"
+                        step="0.01"
+                        value={formatCustomDeviceTerminalAnchorValue(terminalAnchor.y)}
+                        onChange={(event) => updateCustomDeviceTerminalAnchor(index, { y: Number(event.target.value) })}
+                        aria-label={`端子${index + 1} Y位置`}
+                      />
+                    </div>
                     {customDeviceDraft.isContainer && (
                       <>
                         <span>关联设备</span>
