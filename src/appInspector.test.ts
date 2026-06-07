@@ -3238,6 +3238,12 @@ describe("graph inspector panel", () => {
     const projectContextStart = source.indexOf("{projectMenu && (");
     const projectContextEnd = source.indexOf("{pendingModelImportConflict && (", projectContextStart);
     const projectContextBlock = source.slice(projectContextStart, projectContextEnd);
+    const modelProjectMenuStart = projectContextBlock.indexOf("{projectMenu.projectId && (");
+    const modelProjectMenuEnd = projectContextBlock.indexOf("{!projectMenu.projectId && projectMenu.schemeId && (", modelProjectMenuStart);
+    const modelProjectMenuBlock = projectContextBlock.slice(modelProjectMenuStart, modelProjectMenuEnd);
+    const schemeMenuStart = modelProjectMenuEnd;
+    const schemeMenuEnd = projectContextBlock.indexOf("{!projectMenu.projectId && !projectMenu.schemeId && (", schemeMenuStart);
+    const schemeMenuBlock = projectContextBlock.slice(schemeMenuStart, schemeMenuEnd);
 
     expect(source).toContain("serializeProject");
     expect(source).toContain("deserializeProject");
@@ -3270,8 +3276,10 @@ describe("graph inspector panel", () => {
     expect(contextBlock).not.toContain("导入模型");
     expect(contextBlock).not.toContain("导出模型");
     expect(projectContextBlock).toContain("exportProjectRecordFile");
-    expect(projectContextBlock).toContain("openModelImportFilePicker(projectMenu.schemeId");
-    expect(projectContextBlock).toContain("模型导入");
+    expect(modelProjectMenuBlock).not.toContain("openModelImportFilePicker");
+    expect(modelProjectMenuBlock).not.toContain("模型导入");
+    expect(schemeMenuBlock).toContain("openModelImportFilePicker(projectMenu.schemeId");
+    expect(schemeMenuBlock).toContain("模型导入");
     expect(projectContextBlock).toContain("模型导出");
   });
 
@@ -4743,9 +4751,18 @@ describe("graph inspector panel", () => {
     const applyStart = source.indexOf("const applyBatchCommonParam =");
     const applyEnd = source.indexOf("const updateElementTreeNodeIdentity", applyStart);
     const applyBlock = source.slice(applyStart, applyEnd);
+    const batchColorRenderStart = source.indexOf("const renderBatchCommonColorParamEditor =");
+    const batchColorRenderEnd = source.indexOf("const renderBatchCommonParamEditor =", batchColorRenderStart);
+    const batchColorRenderBlock = source.slice(batchColorRenderStart, batchColorRenderEnd);
     const renderStart = source.indexOf("const renderBatchCommonParamEditor =");
     const renderEnd = source.indexOf("const renderStaticButtonActionEditor", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
+    const paramOptionsStart = source.indexOf("const PARAM_OPTIONS: Record<string, string[]> =");
+    const paramOptionsEnd = source.indexOf("const STATIC_BUTTON_ACTION_LABELS", paramOptionsStart);
+    const paramOptionsBlock = source.slice(paramOptionsStart, paramOptionsEnd);
+    const optionLabelsStart = source.indexOf("const PARAM_OPTION_LABELS: Record<string, Record<string, string>> =");
+    const optionLabelsEnd = source.indexOf("const parseStaticButtonTargetLayerValues", optionLabelsStart);
+    const optionLabelsBlock = source.slice(optionLabelsStart, optionLabelsEnd);
     const graphPanelStart = source.indexOf(') : inspectorTab === "graph" ? (');
     const graphPanelSwitch = source.indexOf(') : inspectorSelectedNode ? (', graphPanelStart);
     const graphPanelEnd = source.indexOf('<div className="device-param-stack">', graphPanelSwitch);
@@ -4758,6 +4775,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("type BatchCommonMeasurementGroupRow =");
     expect(source).toContain("const BATCH_GRAPH_PARAM_KEYS");
     expect(source).toContain("const isBatchGraphCommonParamKey = (key: string)");
+    expect(source).toContain("const COLOR_PARAM_KEY_PATTERN");
+    expect(source).toContain("const isColorParamKey = (key: string)");
     expect(source).toContain("const BATCH_PARAM_EXCLUDED_PREFIXES");
     expect(source).toContain("const canBatchEditParam = (key: string)");
     expect(excludedBlock).toContain("\"idx\"");
@@ -4789,7 +4808,11 @@ describe("graph inspector panel", () => {
     expect(applyBlock).toContain("if (!requireEditMode(\"批量修改图元参数\"))");
     expect(applyBlock).toContain("const targetNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? [])");
     expect(applyBlock).toContain("const nextNodes = targetNodes");
-    expect(applyBlock).toContain("filter((node) => node.params[key] !== value)");
+    expect(applyBlock).toContain("const normalizedLabelDisplayMode = key === \"_labelDisplayMode\" ? normalizeNodeLabelDisplayMode(value) : undefined");
+    expect(applyBlock).toContain("const normalizedLabelVisible = normalizedLabelDisplayMode === \"hidden\" ? \"0\" : \"1\"");
+    expect(applyBlock).toContain("node.params._labelDisplayMode !== normalizedLabelDisplayMode || node.params._labelVisible !== normalizedLabelVisible");
+    expect(applyBlock).toContain("node.params[key] !== value");
+    expect(applyBlock).toContain("params: { ...node.params, _labelDisplayMode: normalizedLabelDisplayMode, _labelVisible: normalizedLabelVisible }");
     expect(applyBlock).toContain("pushUndoSnapshot(true, false");
     expect(applyBlock).toContain("commitNodeFootprintUpdates(nextNodes);");
     expect(applyBlock).toContain("patchGraphNodes(nextNodes);");
@@ -4803,13 +4826,35 @@ describe("graph inspector panel", () => {
     expect(renderBlock).toContain("placeholder={row.mixed ? \"多个不同值\" : undefined}");
     expect(renderBlock).toContain("applyBatchCommonParam(row.key, event.target.value)");
     expect(renderBlock).toContain("paramOptionsForSection(row.key)");
+    expect(renderBlock).toContain("if (isColorParamKey(row.key))");
+    expect(renderBlock).toContain("renderBatchCommonColorParamEditor(row)");
+    expect(batchColorRenderBlock).toContain("type=\"color\"");
+    expect(batchColorRenderBlock).toContain("placeholder={row.mixed ? \"多个不同值\" : undefined}");
+    expect(batchColorRenderBlock).toContain("applyBatchCommonParam(row.key, \"transparent\")");
+    expect(batchColorRenderBlock).toContain(">无颜色</button>");
+    expect(paramOptionsBlock).toContain("_labelDisplayMode: [\"always\", \"hidden\", \"follow\"]");
+    expect(paramOptionsBlock).toContain("_labelVisible: [\"1\", \"0\"]");
+    expect(paramOptionsBlock).toContain("_labelTextAnchor: [\"start\", \"middle\", \"end\"]");
+    expect(paramOptionsBlock).toContain("_labelRotation: [\"0\", \"90\", \"180\", \"270\"]");
+    expect(paramOptionsBlock).toContain("_labelFontStyle: [\"normal\", \"italic\"]");
+    expect(paramOptionsBlock).toContain("_labelTextDecoration: [\"none\", \"underline\"]");
+    expect(paramOptionsBlock).toContain("_labelFontWeight: [\"400\", \"500\", \"700\", \"900\"]");
+    expect(optionLabelsBlock).toContain("_labelDisplayMode:");
+    expect(optionLabelsBlock).toContain("_labelTextAnchor:");
+    expect(optionLabelsBlock).toContain("_labelRotation:");
+    expect(optionLabelsBlock).toContain("_labelFontStyle:");
+    expect(optionLabelsBlock).toContain("_labelTextDecoration:");
+    expect(optionLabelsBlock).toContain("_labelFontWeight:");
     expect(renderBlock).toContain("const renderBatchCommonParamTable = (");
     expect(renderBlock).toContain("aria-label={`${title}共同属性表`}");
     expect(renderBlock).toContain("renderBatchCommonParamEditor(row)");
     expect(renderBlock).toContain("const renderBatchCommonMeasurementGroupEditor =");
+    expect(renderBlock).toContain("const renderBatchCommonMeasurementGroupColorEditor =");
     expect(renderBlock).toContain("const renderBatchCommonMeasurementGroupTable = () =>");
     expect(renderBlock).toContain("aria-label=\"量测共同属性表\"");
     expect(renderBlock).toContain("renderBatchCommonMeasurementGroupEditor(row)");
+    expect(renderBlock).toContain("renderBatchCommonMeasurementGroupColorEditor(row)");
+    expect(renderBlock).toContain("applyBatchCommonMeasurementGroupSetting(row.key, \"transparent\")");
     expect(renderBlock).toContain("batchCommonMeasurementGroupRows.map((row)");
     expect(renderBlock).toContain("const renderBatchCommonPropertyPanel = () => (");
     expect(renderBlock).toContain("aria-label=\"批量修改共同属性\"");
@@ -4835,6 +4880,22 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".batch-common-name-col");
     expect(styles).toContain(".batch-common-scroll-area");
     expect(styles).toContain("overflow-y: auto;");
+  });
+
+  test("formats model pbase and qbase rows without unit suffixes", async () => {
+    const source = await readAppSource();
+    const formatterStart = source.indexOf("const formatDeviceModelParamDisplayValue =");
+    const formatterEnd = source.indexOf("const renderColorEditor =", formatterStart);
+    const formatterBlock = source.slice(formatterStart, formatterEnd);
+    const devicePanelStart = source.indexOf("<div className=\"device-param-stack\">");
+    const devicePanelEnd = source.indexOf("{singleSelectedDeviceForInspector", devicePanelStart);
+    const devicePanelBlock = source.slice(devicePanelStart, devicePanelEnd);
+
+    expect(source).toContain("formatPowerBaseDisplayValue,");
+    expect(formatterBlock).toContain("formatPowerBaseDisplayValue(key, value)");
+    expect(devicePanelBlock).toContain("formatDeviceModelParamDisplayValue(row.key, row.value)");
+    expect(devicePanelBlock).toContain("formatDeviceModelParamDisplayValue(key, value)");
+    expect(devicePanelBlock).toContain("renderParamEditor(key, displayValue, false)");
   });
 
   test("shows topology connection card only for one selected device", async () => {
@@ -7638,6 +7699,9 @@ describe("graph inspector panel", () => {
     const routeCandidatesStart = source.indexOf("const routableLineRouteCandidateIdsForMovedNodes =");
     const routeCandidatesEnd = source.indexOf("const rebuildRoutableLineNodeUpdatesForChangedNodes", routeCandidatesStart);
     const routeCandidatesBlock = source.slice(routeCandidatesStart, routeCandidatesEnd);
+    const previewRoutesStart = source.indexOf("const buildRoutableLinePreviewRoutesForNodeUpdates =");
+    const previewRoutesEnd = source.indexOf("const buildRoutableLineEndpointPreviewNodeUpdates", previewRoutesStart);
+    const previewRoutesBlock = source.slice(previewRoutesStart, previewRoutesEnd);
     const lineRebuildStart = source.indexOf("const rebuildRoutableLineNodeUpdatesForChangedNodes =");
     const lineRebuildEnd = source.indexOf("const localRouteOptimizationEdges", lineRebuildStart);
     const lineRebuildBlock = source.slice(lineRebuildStart, lineRebuildEnd);
@@ -7681,6 +7745,29 @@ describe("graph inspector panel", () => {
     expect(source).toContain("routableLineDeviceEndpointRefForNode");
     expect(source).toContain("routableLineDeviceEndpointRefs");
     expect(source).toContain("routeRoutableLineDevice(rawLine");
+    const nodeGeometryTransformStart = source.indexOf("function nodeGeometryTransform(node: ModelNode)");
+    const nodeGeometryTransformEnd = source.indexOf("function nodeUprightScaleTransform", nodeGeometryTransformStart);
+    const nodeGeometryTransformBlock = source.slice(nodeGeometryTransformStart, nodeGeometryTransformEnd);
+    const endpointPreviewNodeUpdatesStart = source.indexOf("const buildRoutableLineEndpointPreviewNodeUpdates = (");
+    const endpointPreviewNodeUpdatesEnd = source.indexOf("const buildRoutableLineDragPreviewRoutes", endpointPreviewNodeUpdatesStart);
+    const endpointPreviewNodeUpdatesBlock = source.slice(endpointPreviewNodeUpdatesStart, endpointPreviewNodeUpdatesEnd);
+    const initialNodesStart = source.indexOf("const initialIndexedNodes = useMemo(() => {");
+    const initialNodesEnd = source.indexOf("const initialDeviceLibrary = useMemo", initialNodesStart);
+    const initialNodesBlock = source.slice(initialNodesStart, initialNodesEnd);
+    const groupTransformPreviewStart = source.indexOf("const renderGroupTransformPhotoPreview = () => {");
+    const groupTransformPreviewEnd = source.indexOf("return (", groupTransformPreviewStart);
+    const groupTransformPreviewBlock = source.slice(groupTransformPreviewStart, groupTransformPreviewEnd);
+    expect(nodeGeometryTransformBlock).toContain("if (isRoutableLineDeviceKind(node.kind))");
+    expect(nodeGeometryTransformBlock).toContain("return \"rotate(0) scale(1 1)\";");
+    expect(source).toContain("function routableLineDeviceRenderLocalPoints(node: ModelNode)");
+    expect(initialNodesBlock).toContain("repairUnsafeRoutableLineDeviceRoutes(indexed.nodes, initialCanvasBounds)");
+    expect(endpointPreviewNodeUpdatesBlock).toContain("const previewNodes = sourceNodes.map");
+    expect(endpointPreviewNodeUpdatesBlock).toContain("const routingNodes = previewNodes.map");
+    expect(endpointPreviewNodeUpdatesBlock).toContain("routeRoutableLineDevice(syncedLine, routingNodes, canvasBounds)");
+    expect(groupTransformPreviewBlock).toContain("const previewNodes = nodes.map");
+    expect(groupTransformPreviewBlock).toContain("const routedLine = routeRoutableLineDevice(syncedLine, routingNodes, canvasBounds)");
+    expect(groupTransformPreviewBlock).toContain("path: pointsToPreviewPath(points)");
+    expect(groupTransformPreviewBlock).not.toContain("Math.abs(end.x - start.x) >= Math.abs(end.y - start.y)");
     expect(endpointPreviewBlock).toContain("const refs = routableLineDeviceEndpointRefs(lineNode);");
     expect(endpointPreviewBlock).toContain("const movingTarget = routableLineEndpointDrag.dropTarget;");
     expect(endpointPreviewBlock).toContain("source: routableLineEndpointDrag.endpoint === \"source\"");
@@ -7692,6 +7779,9 @@ describe("graph inspector panel", () => {
     expect(source).toContain("selected && focused && selectedNodeCount === 1 && !nodeIsRoutableLineDevice");
     expect(buildMovedBlock).toContain("!isCanvasNodeMovable(node.kind)");
     expect(routeCandidatesBlock).toContain("routableLineNodeIdsByEndpointNodeId.get(nodeId)");
+    expect(routeCandidatesBlock).toContain("routeTouchesExpandedBoxes(routableLineDeviceCanvasPoints(node)");
+    expect(previewRoutesBlock).toContain("routableLineRouteCandidateIdsForMovedNodes(");
+    expect(previewRoutesBlock).toContain("routeFully: true");
     expect(lineRebuildBlock).toContain("completeNodeListForPartialPatch(previousNodes, nextNodes)");
     expect(lineRebuildBlock).toContain("rebuildRoutableLineDeviceRouteUpdates(fullNextNodes");
     expect(linePointerBlock).toContain("selectCanvasGraphics([node.id], [], { scope: \"direct\" })");
@@ -8008,15 +8098,24 @@ describe("graph inspector panel", () => {
 
   test("uses explicit model scheme and blank project-list context-menu actions", async () => {
     const source = await readAppSource();
+    const styles = await readStyles();
     const projectPanelStart = source.indexOf("const renderProjectSchemeNode =");
     const projectPanelEnd = source.indexOf("const customDraftTerminalTypes", projectPanelStart);
     const projectPanelBlock = source.slice(projectPanelStart, projectPanelEnd);
     const projectContextStart = source.indexOf("{projectMenu && (");
     const projectContextEnd = source.indexOf("{pendingModelImportConflict && (", projectContextStart);
     const projectContextBlock = source.slice(projectContextStart, projectContextEnd);
-    const modelLabels = ["模型删除", "模型导出", "模型导入", "模型重命名", "模型复制", "模型粘贴"];
+    const contextMenuBlock = cssRuleBlock(styles, ".context-menu {");
+    const sidePanelBlock = cssRuleBlock(styles, ".floating-side-panel {");
+    const modelLabels = ["模型删除", "模型导出", "模型重命名", "模型复制", "模型粘贴"];
     const schemeLabels = ["方案新增", "方案删除", "方案导出", "方案导入", "方案重命名", "方案复制", "方案粘贴", "模型新建", "模型导入", "模型粘贴"];
     const blankLabels = ["方案新增", "方案粘贴", "方案导入"];
+    const modelProjectMenuStart = projectContextBlock.indexOf("{projectMenu.projectId && (");
+    const modelProjectMenuEnd = projectContextBlock.indexOf("{!projectMenu.projectId && projectMenu.schemeId && (", modelProjectMenuStart);
+    const modelProjectMenuBlock = projectContextBlock.slice(modelProjectMenuStart, modelProjectMenuEnd);
+    const schemeMenuStart = modelProjectMenuEnd;
+    const schemeMenuEnd = projectContextBlock.indexOf("{!projectMenu.projectId && !projectMenu.schemeId && (", schemeMenuStart);
+    const schemeMenuBlock = projectContextBlock.slice(schemeMenuStart, schemeMenuEnd);
     const expectOrderedLabels = (labels: string[]) => {
       let cursor = -1;
       for (const label of labels) {
@@ -8042,7 +8141,10 @@ describe("graph inspector panel", () => {
     expect(projectContextBlock).toContain("openSchemeImportFilePicker(projectMenu.schemeId ?? \"\")");
     expect(projectContextBlock).toContain("pasteSchemeClipboardRecord(projectMenu.schemeId ?? \"\")");
     expect(projectContextBlock).toContain("createBlankProject(projectMenu.schemeId ?? \"\")");
-    expect(projectContextBlock).toContain("openModelImportFilePicker(projectMenu.schemeId ?? \"\")");
+    expect(modelProjectMenuBlock).not.toContain("openModelImportFilePicker");
+    expect(modelProjectMenuBlock).not.toContain("模型导入");
+    expect(schemeMenuBlock).toContain("openModelImportFilePicker(projectMenu.schemeId ?? \"\")");
+    expect(schemeMenuBlock).toContain("模型导入");
     expectOrderedLabels(modelLabels);
     expectOrderedLabels(schemeLabels);
     expectOrderedLabels(blankLabels);
@@ -8053,6 +8155,8 @@ describe("graph inspector panel", () => {
     expect(projectContextBlock).not.toContain(">重命名<");
     expect(projectContextBlock).not.toContain(">删除<");
     expect(projectContextBlock).not.toContain("disabled=");
+    expect(sidePanelBlock).toContain("z-index: 70;");
+    expect(contextMenuBlock).toContain("z-index: 80;");
   });
 
   test("keeps the left auto panel visible while project context menus are open", async () => {

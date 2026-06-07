@@ -131,6 +131,7 @@ import {
   getEParameterKeys,
   getEParamValue,
   getEExportWarnings,
+  formatPowerBaseDisplayValue,
   getTemplateParameterDefinitions,
   findSavedProjectRecordInSchemes,
   findSavedSchemeById,
@@ -201,7 +202,6 @@ import {
   routableLineDeviceCanvasPoints,
   routableLineDeviceEndpointRefForNode,
   routableLineDeviceEndpointRefs,
-  routableLineDeviceLocalPoints,
   setRoutableLineDeviceEndpoints,
   syncRoutableLineDeviceEndpointsToRefs,
   synchronizeBusTerminalsWithEdges,
@@ -2821,6 +2821,13 @@ const PARAM_OPTIONS: Record<string, string[]> = {
   run_stat: ["1", "0"],
   fontFamily: FONT_FAMILY_OPTIONS,
   _labelFontFamily: FONT_FAMILY_OPTIONS,
+  _labelDisplayMode: ["always", "hidden", "follow"],
+  _labelVisible: ["1", "0"],
+  _labelTextAnchor: ["start", "middle", "end"],
+  _labelRotation: ["0", "90", "180", "270"],
+  _labelFontStyle: ["normal", "italic"],
+  _labelTextDecoration: ["none", "underline"],
+  _labelFontWeight: ["400", "500", "700", "900"],
   fontWeight: ["400", "700", "900"],
   fontStyle: ["normal", "italic"],
   textDecoration: ["none", "underline"],
@@ -2858,6 +2865,13 @@ const STATIC_BUTTON_COMMAND_LABELS: Record<string, string> = {
 const PARAM_OPTION_LABELS: Record<string, Record<string, string>> = {
   fontFamily: FONT_FAMILY_OPTION_LABELS,
   _labelFontFamily: FONT_FAMILY_OPTION_LABELS,
+  _labelDisplayMode: { always: "始终显示", hidden: "始终隐藏", follow: "跟随显示" },
+  _labelVisible: { "1": "显示", "0": "隐藏" },
+  _labelTextAnchor: { start: "左对齐", middle: "居中", end: "右对齐" },
+  _labelRotation: { "0": "0° 横排", "90": "90° 纵排", "180": "180° 横排", "270": "270° 纵排" },
+  _labelFontStyle: { normal: "常规", italic: "斜体" },
+  _labelTextDecoration: { none: "无", underline: "下划线" },
+  _labelFontWeight: { "400": "常规", "500": "中等", "700": "加粗", "900": "特粗" },
   allowResizeTransform: { "1": "允许", "0": "不允许" },
   buttonEnabled: { "1": "启用", "0": "禁用" },
   buttonActionType: STATIC_BUTTON_ACTION_LABELS,
@@ -3014,6 +3028,12 @@ const isBatchGraphCommonParamKey = (key: string) =>
   BATCH_GRAPH_PARAM_KEYS.has(key) ||
   BATCH_GRAPH_PARAM_PREFIXES.some((prefix) => key.startsWith(prefix));
 
+const COLOR_PARAM_KEY_PATTERN = /color$/i;
+const HEX_COLOR_INPUT_PATTERN = /^#[0-9a-f]{6}$/i;
+const isColorParamKey = (key: string) => COLOR_PARAM_KEY_PATTERN.test(key);
+const colorInputValue = (value: string, fallback = "#ffffff") =>
+  HEX_COLOR_INPUT_PATTERN.test(value) ? value : fallback;
+
 const BATCH_MEASUREMENT_GROUP_KEYS: BatchCommonMeasurementGroupKey[] = [
   "visible",
   "layout",
@@ -3049,11 +3069,11 @@ const measurementGroupCommonValue = (group: MeasurementGroup, key: BatchCommonMe
     case "backgroundVisible":
       return group.backgroundColor === "transparent" ? "0" : "1";
     case "backgroundColor":
-      return group.backgroundColor && group.backgroundColor !== "transparent" ? group.backgroundColor : "#ffffff";
+      return group.backgroundColor ?? "#ffffff";
     case "borderStyle":
       return group.borderStyle ?? "solid";
     case "borderColor":
-      return group.borderColor && group.borderColor !== "transparent" ? group.borderColor : "#64748b";
+      return group.borderColor ?? "#64748b";
     case "borderWidth":
       return String(group.borderWidth ?? 1);
     default:
@@ -4814,7 +4834,17 @@ function formatSvgNumber(value: number) {
 }
 
 function nodeGeometryTransform(node: ModelNode) {
+  if (isRoutableLineDeviceKind(node.kind)) {
+    return "rotate(0) scale(1 1)";
+  }
   return `rotate(${formatSvgNumber(node.rotation)}) scale(${formatSvgNumber(getNodeScaleX(node))} ${formatSvgNumber(getNodeScaleY(node))})`;
+}
+
+function routableLineDeviceRenderLocalPoints(node: ModelNode) {
+  return routableLineDeviceCanvasPoints(node).map((point) => ({
+    x: Number(formatSvgNumber(point.x - node.position.x)),
+    y: Number(formatSvgNumber(point.y - node.position.y))
+  }));
 }
 
 function nodeUprightScaleTransform(node: ModelNode) {
@@ -5396,7 +5426,8 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
   const rawW = miniature ? 58 : node.size.width;
   const rawH = miniature ? 38 : node.size.height;
   const isStaticGlyph = isStaticNode(node);
-  const glyphContentScale = miniature || isStaticGlyph
+  const isRoutableLineGlyph = isRoutableLineDeviceKind(node.kind);
+  const glyphContentScale = miniature || isStaticGlyph || isRoutableLineGlyph
     ? 1
     : Math.max(1, Math.max(rawW, rawH) / DEVICE_GLYPH_DESIGN_LONGEST_SIDE);
   const w = rawW / glyphContentScale;
@@ -5430,13 +5461,13 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
                       : "#ffffff";
 
   const renderDeviceGlyphContent = (): ReactNode => {
-    if (isRoutableLineDeviceKind(node.kind)) {
+    if (isRoutableLineGlyph) {
       if (mode === "text") {
         return null;
       }
       const routePoints = miniature
         ? [{ x: -w / 2 + 6, y: 0 }, { x: w / 2 - 6, y: 0 }]
-        : routableLineDeviceLocalPoints(node);
+        : routableLineDeviceRenderLocalPoints(node);
       if (routePoints.length < 2) {
         return null;
       }
@@ -7550,6 +7581,10 @@ export function App() {
     };
   }, [initialSavedSchemes]);
   const initialDraft = initialProjectSources.draft;
+  const initialCanvasBounds = useMemo(() => ({
+    width: initialDraft?.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
+    height: initialDraft?.canvasHeight ?? DEFAULT_CANVAS_HEIGHT
+  }), [initialDraft]);
   const initialLayeredProject = useMemo(() => normalizeProjectLayers({
     version: 1,
     name: initialDraft?.projectName ?? "电力能源系统图上模型",
@@ -7560,10 +7595,13 @@ export function App() {
     nodes: initialDraft?.nodes ?? SAMPLE_NODES,
     edges: initialDraft?.edges ?? SAMPLE_EDGES
   }), [initialDraft]);
-  const initialIndexedNodes = useMemo(
-    () => assignMissingDeviceIndexes(initialLayeredProject.nodes, initialDraft?.deviceIndexCounters),
-    [initialDraft?.deviceIndexCounters, initialLayeredProject.nodes]
-  );
+  const initialIndexedNodes = useMemo(() => {
+    const indexed = assignMissingDeviceIndexes(initialLayeredProject.nodes, initialDraft?.deviceIndexCounters);
+    return {
+      ...indexed,
+      nodes: repairUnsafeRoutableLineDeviceRoutes(indexed.nodes, initialCanvasBounds)
+    };
+  }, [initialCanvasBounds, initialDraft?.deviceIndexCounters, initialLayeredProject.nodes]);
   const initialDeviceLibrary = useMemo(() => readLocalDeviceLibraryPersistencePayload(), []);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
@@ -9032,27 +9070,24 @@ export function App() {
     for (const node of transformedNodeUpdates) {
       transformedNodeById.set(node.id, node);
     }
+    const previewNodes = nodes.map((node) => transformedNodeById.get(node.id) ?? node);
     const routableLineTransformPreviewRoutes = Array.from(groupTransformPreviewRoutableLineNodeIdSet).flatMap((lineId) => {
       const lineNode = nodeById.get(lineId);
       if (!lineNode || !visibleNodeIdSet.has(lineNode.id) || !isRoutableLineDeviceKind(lineNode.kind)) {
         return [];
       }
-      const syncedLine = syncRoutableLineDeviceEndpointsToRefs(lineNode, [], transformedNodeById, nodes);
-      const points = routableLineDeviceCanvasPoints(syncedLine);
+      const syncedLine = syncRoutableLineDeviceEndpointsToRefs(lineNode, previewNodes, transformedNodeById, nodes);
+      const routingNodes = previewNodes.map((node) => (node.id === syncedLine.id ? syncedLine : node));
+      const routedLine = routeRoutableLineDevice(syncedLine, routingNodes, canvasBounds);
+      const points = routableLineDeviceCanvasPoints(routedLine);
       const start = points[0];
       const end = points[points.length - 1];
       if (!start || !end) {
         return [];
       }
-      const previewPoints =
-        Math.round(start.x) === Math.round(end.x) || Math.round(start.y) === Math.round(end.y)
-          ? [start, end]
-          : Math.abs(end.x - start.x) >= Math.abs(end.y - start.y)
-            ? [start, { x: end.x, y: start.y }, end]
-            : [start, { x: start.x, y: end.y }, end];
       return [{
         nodeId: lineNode.id,
-        path: pointsToPreviewPath(previewPoints),
+        path: pointsToPreviewPath(points),
         color: getDeviceStrokeColor(lineNode, colorDisplayMode, colorPalette)
       }];
     });
@@ -16528,6 +16563,17 @@ export function App() {
     if (movedIds.size === 0) {
       return candidateIds;
     }
+    const routeBlockerBoxesForMovedNodes = (sourceNodes: ModelNode[], positions?: Record<string, Point>) =>
+      getRouteBlockingCandidates(
+        orderedNodesForIds(sourceNodes, movedIds).map((node) => {
+          const position = positions?.[node.id];
+          return position ? { ...node, position } : node;
+        })
+      ).map((candidate) => expandRouteBox(candidate.box, MOVE_ROUTE_LOCAL_SEARCH_PADDING));
+    const movedRouteBlockerBoxes = [
+      ...routeBlockerBoxesForMovedNodes(previousNodes, originalPositions),
+      ...routeBlockerBoxesForMovedNodes(nextNodes)
+    ];
     for (const nodeId of movedIds) {
       for (const lineId of routableLineNodeIdsByEndpointNodeId.get(nodeId) ?? []) {
         candidateIds.add(lineId);
@@ -16552,7 +16598,10 @@ export function App() {
         return;
       }
       for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, bounds)) {
-        if (isRoutableLineDeviceKind(node.kind)) {
+        if (
+          isRoutableLineDeviceKind(node.kind) &&
+          (candidateIds.has(node.id) || routeTouchesExpandedBoxes(routableLineDeviceCanvasPoints(node), movedRouteBlockerBoxes))
+        ) {
           candidateIds.add(node.id);
         }
       }
@@ -18004,16 +18053,21 @@ export function App() {
     nodeUpdates: Iterable<ModelNode>,
     options: { routeFully?: boolean; bounds?: CanvasBounds } = {}
   ): NodeDragPreviewRoute[] => {
-    const lineIds = routableLineIdsConnectedToNodeIds(changedNodeIds);
-    if (lineIds.size === 0) {
+    const changedNodeIdList = Array.from(changedNodeIds);
+    if (changedNodeIdList.length === 0) {
       return [];
     }
     const previewNodeById = new Map(baseNodeById);
     for (const node of nodeUpdates) {
       previewNodeById.set(node.id, node);
     }
-    const previewNodes = options.routeFully ? Array.from(previewNodeById.values()) : [];
     const referenceNodes = Array.from(baseNodeById.values());
+    const previewNodes = referenceNodes.map((node) => previewNodeById.get(node.id) ?? node);
+    const lineIds = routableLineRouteCandidateIdsForMovedNodes(referenceNodes, previewNodes, changedNodeIdList);
+    if (lineIds.size === 0) {
+      return [];
+    }
+    const previewOptions = { routeFully: true, ...options };
     const routes: NodeDragPreviewRoute[] = [];
     for (const lineId of lineIds) {
       const lineNode = baseNodeById.get(lineId);
@@ -18021,8 +18075,8 @@ export function App() {
         continue;
       }
       const syncedLine = syncRoutableLineDeviceEndpointsToRefs(lineNode, previewNodes, previewNodeById, referenceNodes);
-      const displayLine = options.routeFully
-        ? routeRoutableLineDevice(syncedLine, previewNodes, options.bounds)
+      const displayLine = previewOptions.routeFully
+        ? routeRoutableLineDevice(syncedLine, previewNodes, previewOptions.bounds)
         : syncedLine;
       const points = routableLineDeviceCanvasPoints(displayLine);
       const start = points[0];
@@ -18030,7 +18084,7 @@ export function App() {
       if (!start || !end) {
         continue;
       }
-      const previewPoints = options.routeFully ? points : simpleOrthogonalDragPreviewPoints(start, end);
+      const previewPoints = previewOptions.routeFully ? points : simpleOrthogonalDragPreviewPoints(start, end);
       routes.push({
         edgeId: `routable-line:${lineNode.id}`,
         routableLineNodeId: lineNode.id,
@@ -18044,7 +18098,8 @@ export function App() {
     sourceNodes: ModelNode[],
     baseNodeById: Map<string, ModelNode>,
     changedNodeIds: Iterable<string>,
-    nodeUpdates: Iterable<ModelNode>
+    nodeUpdates: Iterable<ModelNode>,
+    canvasBounds: CanvasBounds
   ) => {
     const lineIds = routableLineIdsConnectedToNodeIds(changedNodeIds);
     if (lineIds.size === 0) {
@@ -18054,15 +18109,17 @@ export function App() {
     for (const node of nodeUpdates) {
       previewNodeById.set(node.id, node);
     }
+    const previewNodes = sourceNodes.map((node) => previewNodeById.get(node.id) ?? node);
     const updates: ModelNode[] = [];
     for (const lineId of lineIds) {
       const lineNode = baseNodeById.get(lineId);
       if (!lineNode || !isRoutableLineDeviceKind(lineNode.kind)) {
         continue;
       }
-      const syncedLine = syncRoutableLineDeviceEndpointsToRefs(lineNode, sourceNodes, previewNodeById, sourceNodes);
+      const syncedLine = syncRoutableLineDeviceEndpointsToRefs(lineNode, previewNodes, previewNodeById, sourceNodes);
       if (syncedLine !== lineNode) {
-        updates.push(syncedLine);
+        const routingNodes = previewNodes.map((node) => (node.id === syncedLine.id ? syncedLine : node));
+        updates.push(routeRoutableLineDevice(syncedLine, routingNodes, canvasBounds));
       }
     }
     return updates;
@@ -18076,7 +18133,10 @@ export function App() {
       const node = singleNodeDragPreviewNodeFor(dragState, nodeId, delta);
       return node ? [node] : [];
     });
-    return buildRoutableLinePreviewRoutesForNodeUpdates(nodeById, movedNodeIds, previewNodeUpdates);
+    return buildRoutableLinePreviewRoutesForNodeUpdates(nodeById, movedNodeIds, previewNodeUpdates, {
+      routeFully: true,
+      bounds: canvasBounds
+    });
   };
   const shiftedDragPreviewPoint = (point: Point | undefined, delta: Point | undefined) =>
     point && delta ? { x: point.x + delta.x, y: point.y + delta.y } : point;
@@ -20413,13 +20473,25 @@ export function App() {
       return;
     }
     const targetNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []);
+    const normalizedLabelDisplayMode = key === "_labelDisplayMode" ? normalizeNodeLabelDisplayMode(value) : undefined;
+    const normalizedLabelVisible = normalizedLabelDisplayMode === "hidden" ? "0" : "1";
     const nextNodes = targetNodes
       .filter((node) => Object.prototype.hasOwnProperty.call(node.params, key))
-      .filter((node) => node.params[key] !== value)
-      .map((node) => ({
-        ...node,
-        params: { ...node.params, [key]: value }
-      }));
+      .filter((node) =>
+        normalizedLabelDisplayMode
+          ? node.params._labelDisplayMode !== normalizedLabelDisplayMode || node.params._labelVisible !== normalizedLabelVisible
+          : node.params[key] !== value
+      )
+      .map((node) => normalizedLabelDisplayMode
+        ? {
+            ...node,
+            params: { ...node.params, _labelDisplayMode: normalizedLabelDisplayMode, _labelVisible: normalizedLabelVisible }
+          }
+        : {
+            ...node,
+            params: { ...node.params, [key]: value }
+          }
+      );
     if (nextNodes.length === 0) {
       return;
     }
@@ -20511,8 +20583,11 @@ export function App() {
     }));
   };
 
+  const formatDeviceModelParamDisplayValue = (key: string, value: string) =>
+    formatPowerBaseDisplayValue(key, value);
+
   const renderColorEditor = (key: string, value: string, fallback = "#ffffff") => {
-    const colorValue = !value || value === "transparent" ? fallback : value;
+    const colorValue = colorInputValue(value, fallback);
     return (
       <div className="color-field with-none">
         <input type="color" value={colorValue} disabled={isBrowseMode} onChange={(event) => updateParam(key, event.target.value)} />
@@ -20548,8 +20623,33 @@ export function App() {
     );
   };
 
+  const renderBatchCommonColorParamEditor = (row: BatchCommonParamRow) => {
+    const value = row.mixed ? "" : row.value;
+    const colorValue = colorInputValue(value, "#334155");
+    return (
+      <div className="color-field with-none">
+        <input
+          type="color"
+          value={colorValue}
+          disabled={isBrowseMode}
+          onChange={(event) => applyBatchCommonParam(row.key, event.target.value)}
+        />
+        <input
+          value={value === "transparent" ? "无颜色" : value}
+          disabled={isBrowseMode}
+          placeholder={row.mixed ? "多个不同值" : undefined}
+          onChange={(event) => applyBatchCommonParam(row.key, event.target.value === "无颜色" ? "transparent" : event.target.value)}
+        />
+        <button type="button" disabled={isBrowseMode} onClick={() => applyBatchCommonParam(row.key, "transparent")}>无颜色</button>
+      </div>
+    );
+  };
+
   const renderBatchCommonParamEditor = (row: BatchCommonParamRow) => {
     const value = row.mixed ? "" : row.value;
+    if (isColorParamKey(row.key)) {
+      return renderBatchCommonColorParamEditor(row);
+    }
     const options = paramOptionsForSection(row.key);
     const optionLabels = PARAM_OPTION_LABELS[row.key] ?? {};
     if (options) {
@@ -20609,6 +20709,29 @@ export function App() {
     </section>
   );
 
+  const renderBatchCommonMeasurementGroupColorEditor = (row: BatchCommonMeasurementGroupRow) => {
+    const value = row.mixed ? "" : row.value;
+    const fallback = row.key === "backgroundColor" ? "#ffffff" : "#64748b";
+    return (
+      <div className="color-field with-none">
+        <input
+          type="color"
+          value={colorInputValue(value, fallback)}
+          disabled={isBrowseMode}
+          aria-label={row.label}
+          onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value)}
+        />
+        <input
+          value={value === "transparent" ? "无颜色" : value}
+          disabled={isBrowseMode}
+          placeholder={row.mixed ? "多个不同值" : undefined}
+          onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value === "无颜色" ? "transparent" : event.target.value)}
+        />
+        <button type="button" disabled={isBrowseMode} onClick={() => applyBatchCommonMeasurementGroupSetting(row.key, "transparent")}>无颜色</button>
+      </div>
+    );
+  };
+
   const renderBatchCommonMeasurementGroupEditor = (row: BatchCommonMeasurementGroupRow) => {
     const value = row.mixed ? "" : row.value;
     if (row.key === "visible" || row.key === "labelVisible" || row.key === "unitVisible") {
@@ -20651,16 +20774,7 @@ export function App() {
       );
     }
     if (row.key === "backgroundColor" || row.key === "borderColor") {
-      const fallback = row.key === "backgroundColor" ? "#ffffff" : "#64748b";
-      return (
-        <input
-          type="color"
-          value={row.mixed ? fallback : row.value || fallback}
-          disabled={isBrowseMode}
-          aria-label={row.label}
-          onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value)}
-        />
-      );
+      return renderBatchCommonMeasurementGroupColorEditor(row);
     }
     return (
       <input
@@ -23175,7 +23289,8 @@ export function App() {
         currentStore.nodes,
         currentStore.nodeMap,
         [nextNode.id],
-        [nextNode]
+        [nextNode],
+        canvasBounds
       );
       patchGraphNodes([nextNode, ...routableLinePreviewNodeUpdates]);
       return;
@@ -29665,7 +29780,7 @@ export function App() {
       const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
       const strokeWidth = Math.max(2, getDeviceStrokeWidth(node));
       if (nodeIsRoutableLineDevice) {
-        const path = pointsToOrthogonalPath(routableLineDeviceLocalPoints(node));
+        const path = pointsToOrthogonalPath(routableLineDeviceRenderLocalPoints(node));
         return `<g class="${className}" ${dataNodeAttributes} transform="${escapeXml(transform)}">
   <path class="routable-line-device-lod-line" d="${escapeXml(path)}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}" stroke-linecap="round" stroke-linejoin="round"><title>${escapeXml(node.name)}</title></path>
   <path class="routable-line-device-hitline lod-routable-line-hitline" d="${escapeXml(path)}"/>
@@ -31889,7 +32004,7 @@ export function App() {
               const nodeLabelVerticalTokens = nodeLabelIsVertical ? nodeLabelVerticalSegments(nodeLabelContent) : [];
               const nodeLabelFontSizeValue = nodeLabelVisible ? nodeLabelFontSize(node) : 0;
               const routableLineDeviceHitPath = nodeIsRoutableLineDevice
-                ? pointsToOrthogonalPath(routableLineDeviceLocalPoints(node))
+                ? pointsToOrthogonalPath(routableLineDeviceRenderLocalPoints(node))
                 : "";
               return (
                 <g
@@ -33615,6 +33730,7 @@ export function App() {
                         <tbody>
                           {selectedContainerParameterView.rows.map((row) => {
                             const options = paramOptionsForSection(row.key, selectedContainerParameterView.componentType);
+                            const displayValue = formatDeviceModelParamDisplayValue(row.key, row.value);
                             return (
                               <tr key={row.key}>
                                 {renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
@@ -33622,9 +33738,9 @@ export function App() {
                                   {row.key === "name" && selectedContainerParameterView.kind === "container" ? (
                                     <input value={inspectorSelectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
                                   ) : row.readonly || !row.paramKey ? (
-                                    <input value={row.value} readOnly />
+                                    <input value={displayValue} readOnly />
                                   ) : options ? (
-                                    <select value={row.value} onChange={(event) => updateParam(row.paramKey!, event.target.value)}>
+                                    <select value={displayValue} onChange={(event) => updateParam(row.paramKey!, event.target.value)}>
                                       {options.map((option) => (
                                         <option key={option} value={option}>
                                           {option}
@@ -33632,7 +33748,7 @@ export function App() {
                                       ))}
                                     </select>
                                   ) : (
-                                    <input value={row.value} onChange={(event) => updateParam(row.paramKey!, event.target.value)} />
+                                    <input value={displayValue} onChange={(event) => updateParam(row.paramKey!, event.target.value)} />
                                   )}
                                 </td>
                               </tr>
@@ -33657,6 +33773,7 @@ export function App() {
                             const readonlyKeys = new Set(customDefinitions.filter((definition) => definition.readonly).map((definition) => definition.enName));
                             return keys.map((key) => {
                               const value = eKeys.length > 0 ? getEParamValue(key, inspectorSelectedNode) : key === "name" ? inspectorSelectedNode.name : inspectorSelectedNode.params[key] ?? "";
+                              const displayValue = formatDeviceModelParamDisplayValue(key, value);
                               const definition = customDefinitions.find((item) => item.enName === key);
                               return (
                                 <tr key={key}>
@@ -33665,9 +33782,9 @@ export function App() {
                                     {key === "name" ? (
                                       <input value={inspectorSelectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
                                     ) : READONLY_E_PARAM_KEYS.has(key) || readonlyKeys.has(key) ? (
-                                      <input value={value} readOnly />
+                                      <input value={displayValue} readOnly />
                                     ) : (
-                                      renderParamEditor(key, value, false)
+                                      renderParamEditor(key, displayValue, false)
                                     )}
                                   </td>
                                 </tr>
@@ -33977,14 +34094,6 @@ export function App() {
                 <Download size={14} />
                 模型导出
               </button>
-              {isEditMode && (
-              <button
-                onClick={() => runContextMenuAction(() => openModelImportFilePicker(projectMenu.schemeId ?? ""))}
-              >
-                <FileInput size={14} />
-                模型导入
-              </button>
-              )}
               {isEditMode && (
               <button
                 onClick={() => runContextMenuAction(() => {

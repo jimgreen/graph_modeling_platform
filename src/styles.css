@@ -3022,7 +3022,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .context-menu {
   position: fixed;
-  z-index: 50;
+  z-index: 80;
   display: grid;
   gap: 2px;
   min-width: 128px;

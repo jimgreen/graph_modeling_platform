@@ -510,6 +510,24 @@ export const DEFAULT_VOLTAGE_UNIT = "kV";
 export const DEFAULT_CURRENT_UNIT = "A";
 export const DEFAULT_POWER_BASE_VALUE = 100;
 
+const POWER_VALUE_NUMERIC_PREFIX_PATTERN = /^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)/;
+
+function numericPrefixForPowerDisplay(value: string) {
+  const text = String(value ?? "").trim();
+  return POWER_VALUE_NUMERIC_PREFIX_PATTERN.exec(text)?.[1] ?? text;
+}
+
+export function formatPowerBaseDisplayValue(key: string, value: string) {
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return "";
+  }
+  if (key === "pbase" || key === "qbase") {
+    return numericPrefixForPowerDisplay(text);
+  }
+  return text;
+}
+
 const DEFAULT_STATIC_COMPONENT_TYPE = "StaticBasicShape";
 const STATIC_COMPONENT_TYPE_BY_KIND: Record<string, string> = {
   "static-text": "StaticTextSymbol",
@@ -5354,6 +5372,26 @@ function routableLineDeviceRoutingEdge(
   };
 }
 
+function routableLineRouteHasBlockingIssue(points: Point[], blockers: ModelNode[], edge: Edge) {
+  const nonEndpointBlockers = blockers.filter((blocker) => blocker.id !== edge.sourceId && blocker.id !== edge.targetId);
+  return (
+    routeIntersectsBlockers(points, nonEndpointBlockers, ROUTE_BLOCKER_PADDING, 0) ||
+    routeIntersectsBlockers(points, blockers, ROUTE_BLOCKER_PADDING, 1)
+  );
+}
+
+function repairRoutableLineRouteAroundBlockers(points: Point[], blockers: ModelNode[], bounds?: CanvasBounds) {
+  const routeBlockers = filterBlockersForRoutePoints(points, blockers);
+  if (!routeIntersectsBlockers(points, routeBlockers, ROUTE_BLOCKER_PADDING, 1)) {
+    return points;
+  }
+  const repaired = repairRouteAroundBlockers(points, routeBlockers, bounds, 1);
+  return simplifyRoutePreservingEndpointStubs(repaired, {
+    blockers: routeBlockers,
+    reduceTinyDoglegs: true
+  });
+}
+
 export function syncRoutableLineDeviceEndpointsToRefs(
   node: ModelNode,
   nodes: ModelNode[],
@@ -5430,7 +5468,10 @@ export function routeRoutableLineDevice(node: ModelNode, nodes: ModelNode[], bou
   if (!route || route.points.length < 2) {
     return ensureRoutableLineDevicePathParam(node);
   }
-  const nextLocalPoints = normalizeRoutableLineDevicePoints(route.points.map((point) => canvasPointToNodeLocalPoint(node, point)));
+  const routePoints = routableLineRouteHasBlockingIssue(route.points, blockers, routeEdge)
+    ? repairRoutableLineRouteAroundBlockers(route.points, blockers, bounds)
+    : route.points;
+  const nextLocalPoints = normalizeRoutableLineDevicePoints(routePoints.map((point) => canvasPointToNodeLocalPoint(node, point)));
   const currentLocalPoints = routableLineDeviceLocalPoints(node);
   if (samePointList(currentLocalPoints, nextLocalPoints)) {
     return ensureRoutableLineDevicePathParam(node);
@@ -5504,6 +5545,9 @@ function unsafeRoutableLineStoredPath(node: ModelNode, nodes: ModelNode[]) {
   const nodeById = new Map(blockers.map((candidate) => [candidate.id, candidate]));
   const routeEdge = routableLineDeviceRoutingEdge(node, points[0], points[points.length - 1], nodeById);
   if (routableLineEndpointNormalNeedsRepair(points, routeEdge, nodeById)) {
+    return true;
+  }
+  if (routableLineRouteHasBlockingIssue(points, blockers, routeEdge)) {
     return true;
   }
   return routeHasEndpointAwareBlockingIssue(

@@ -158,6 +158,7 @@ import {
   terminalStubSegment,
   terminalStubStrokeWidth,
   terminalVoltageBaseNumber,
+  formatPowerBaseDisplayValue,
   topologyCalculationMessage,
   voltageLevelColor,
   boundaryBusInternalConnectorSegment,
@@ -245,6 +246,14 @@ function routeBendCountForTest(points: Point[]) {
     previousOrientation = orientation;
   }
   return bends;
+}
+
+function expectOrthogonalSegments(points: Point[]) {
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1];
+    const point = points[index];
+    expect(previous.x === point.x || previous.y === point.y).toBe(true);
+  }
 }
 
 function withHiddenDeviceLabel(node: ModelNode): ModelNode {
@@ -1881,6 +1890,154 @@ describe("power system model", () => {
     expect(points[points.length - 1]).toEqual(getTerminalPoint(movedTarget, "t1"));
   });
 
+  test("keeps routable line-like device routes orthogonal after attached devices are scaled and rotated", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = { ...createDefaultNode("ac-box-breaker", { x: 180, y: 120 }), id: "source-node" };
+    const target = { ...createDefaultNode("ac-load", { x: 620, y: 320 }), id: "target-node" };
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      getTerminalPoint(source, "t2"),
+      getTerminalPoint(target, "t1"),
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t2"),
+        target: routableLineDeviceEndpointRefForNode(target, "t1")
+      }
+    );
+    const scaledSource = { ...source, rotation: 30, scale: 1.6, scaleX: 1.6, scaleY: 0.7 };
+    const scaledTarget = { ...target, rotation: -45, scale: 1.4, scaleX: 0.8, scaleY: 1.4 };
+
+    const updates = rebuildRoutableLineDeviceRouteUpdates(
+      [scaledSource, scaledTarget, line],
+      [line.id],
+      { width: 900, height: 640 },
+      [source, target, line]
+    );
+
+    expect(updates.map((node) => node.id)).toEqual([line.id]);
+    expect(getTerminalPoint(updates[0], "t1")).toEqual(getTerminalPoint(scaledSource, "t2"));
+    expect(getTerminalPoint(updates[0], "t2")).toEqual(getTerminalPoint(scaledTarget, "t1"));
+    expectOrthogonalSegments(routableLineDeviceCanvasPoints(updates[0]));
+  });
+
+  test("routes routable line-like devices around endpoint device bodies", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = { ...createDefaultNode("ac-box-breaker", { x: 180, y: 200 }), id: "source-node" };
+    const target = { ...createDefaultNode("ac-source", { x: 520, y: 200 }), id: "target-node" };
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      getTerminalPoint(source, "t2"),
+      getTerminalPoint(target, "t1"),
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t2"),
+        target: routableLineDeviceEndpointRefForNode(target, "t1")
+      }
+    );
+
+    const routed = routeRoutableLineDevice(line, [source, target, line], { width: 760, height: 420 });
+    const points = routableLineDeviceCanvasPoints(routed);
+
+    expectOrthogonalSegments(points);
+    expect(points[0]).toEqual(getTerminalPoint(source, "t2"));
+    expect(points[points.length - 1]).toEqual(getTerminalPoint(target, "t1"));
+    for (let index = 1; index < points.length - 1; index += 1) {
+      expect(segmentIntersectsNodeBody(points[index - 1], points[index], target)).toBe(false);
+    }
+  });
+
+  test("routes routable line-like devices around non-endpoint blockers", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = { ...createDefaultNode("ac-box-breaker", { x: 100, y: 200 }), id: "source-node" };
+    const target = { ...createDefaultNode("ac-box-breaker", { x: 700, y: 200 }), id: "target-node" };
+    const blocker = { ...createDefaultNode("ac-source", { x: 400, y: 200 }), id: "middle-blocker" };
+    const start = getTerminalPoint(source, "t2");
+    const end = getTerminalPoint(target, "t1");
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      start,
+      end,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t2"),
+        target: routableLineDeviceEndpointRefForNode(target, "t1")
+      }
+    );
+    const directPoints = routableLineDeviceCanvasPoints(line);
+
+    expect(directPoints.some((point, index) =>
+      index > 0 && segmentIntersectsNodeBody(directPoints[index - 1], point, blocker)
+    )).toBe(true);
+
+    const routed = routeRoutableLineDevice(line, [source, blocker, target, line], { width: 900, height: 520 });
+    const points = routableLineDeviceCanvasPoints(routed);
+
+    expectOrthogonalSegments(points);
+    expect(points[0]).toEqual(start);
+    expect(points[points.length - 1]).toEqual(end);
+    for (let index = 1; index < points.length; index += 1) {
+      expect(segmentIntersectsNodeBody(points[index - 1], points[index], blocker)).toBe(false);
+    }
+  });
+
+  test("repairs saved routable line-like device paths that cross endpoint device bodies", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = { ...createDefaultNode("ac-box-breaker", { x: 180, y: 200 }), id: "source-node" };
+    const target = { ...createDefaultNode("ac-source", { x: 520, y: 200 }), id: "target-node" };
+    const start = getTerminalPoint(source, "t2");
+    const end = getTerminalPoint(target, "t1");
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      start,
+      end,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t2"),
+        target: routableLineDeviceEndpointRefForNode(target, "t1")
+      }
+    );
+    const crossingCanvasPoints = [
+      start,
+      { x: start.x + 28, y: start.y },
+      { x: end.x + 28, y: end.y },
+      end
+    ];
+    const crossingLine = {
+      ...line,
+      params: {
+        ...line.params,
+        [ROUTABLE_LINE_POINTS_PARAM]: JSON.stringify(
+          crossingCanvasPoints.map((point) => ({
+            x: point.x - line.position.x,
+            y: point.y - line.position.y
+          }))
+        )
+      }
+    };
+
+    expect(
+      routableLineDeviceCanvasPoints(crossingLine)
+        .slice(1, -1)
+        .some((point, index, middlePoints) => {
+          const previous = index === 0 ? start : middlePoints[index - 1];
+          return segmentIntersectsNodeBody(previous, point, target);
+        })
+    ).toBe(true);
+
+    const repairedNodes = repairUnsafeRoutableLineDeviceRoutes([source, target, crossingLine], { width: 760, height: 420 });
+    const repairedLine = repairedNodes.find((node) => node.id === line.id);
+    expect(repairedLine).toBeDefined();
+    expect(repairedLine).not.toBe(crossingLine);
+    const points = routableLineDeviceCanvasPoints(repairedLine!);
+
+    expectOrthogonalSegments(points);
+    expect(points[0]).toEqual(start);
+    expect(points[points.length - 1]).toEqual(end);
+    for (let index = 1; index < points.length - 1; index += 1) {
+      expect(segmentIntersectsNodeBody(points[index - 1], points[index], target)).toBe(false);
+    }
+  });
+
   test("infers missing routable line-like device endpoint refs before syncing moved terminals", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "dc-routable-line");
     const source = { ...createDefaultNode("dc-source", { x: 100, y: 120 }), id: "source-node" };
@@ -2944,6 +3101,16 @@ describe("power system model", () => {
     expect(getSwitchVisualState(dcBreaker)).toBe("open");
     dcBreaker.params.status = "1";
     expect(getSwitchVisualState(dcBreaker)).toBe("closed");
+  });
+
+  test("formats load base power display values without units", () => {
+    expect(formatPowerBaseDisplayValue("pbase", "5 MW")).toBe("5");
+    expect(formatPowerBaseDisplayValue("qbase", "1.2 Mvar")).toBe("1.2");
+    expect(formatPowerBaseDisplayValue("pbase", "5 kW")).toBe("5");
+    expect(formatPowerBaseDisplayValue("qbase", "1.2 kvar")).toBe("1.2");
+    expect(formatPowerBaseDisplayValue("pbase", "5")).toBe("5");
+    expect(formatPowerBaseDisplayValue("qbase", "1.2")).toBe("1.2");
+    expect(formatPowerBaseDisplayValue("pv0", "1.0 kW")).toBe("1.0 kW");
   });
 
   test("places three-winding transformer terminals on visible winding lead exits", () => {
