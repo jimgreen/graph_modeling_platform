@@ -4122,6 +4122,7 @@ describe("graph inspector panel", () => {
     const source = await readAppSource();
     const styles = await readStyles();
     const rootBlock = cssRuleBlock(styles, "html,\nbody,\n#root");
+    const appShellBlock = cssRuleBlock(styles, ".app-shell");
     const workspaceBlock = cssRuleBlock(styles, ".workspace");
     const canvasFrameBlock = cssRuleBlock(styles, ".canvas-frame");
     const edgeTriggerBlock = cssRuleBlock(styles, ".side-panel-edge-trigger");
@@ -4132,6 +4133,8 @@ describe("graph inspector panel", () => {
 
     expect(rootBlock).toContain("height: 100%;");
     expect(rootBlock).toContain("overflow: hidden;");
+    expect(appShellBlock).toContain("width: 100vw;");
+    expect(appShellBlock).toContain("max-width: 100vw;");
     expect(workspaceBlock).toContain("grid-template-rows: 58px minmax(0, 1fr) var(--statusbar-height);");
     expect(workspaceBlock).toContain("min-height: 0;");
     expect(workspaceBlock).toContain("overflow: hidden;");
@@ -4145,7 +4148,13 @@ describe("graph inspector panel", () => {
     expect(styles).toMatch(/(?:^|\n)\.diagram-canvas\s*\{[^}]*position:\s*absolute/s);
     expect(edgeTriggerBlock).toContain("pointer-events: auto;");
     expect(rightTriggerBlock).toContain("right: 16px;");
+    expect(sideTriggerBlock).toContain("if (visible)");
     expect(sideTriggerBlock).toContain("onPointerEnter={() => updateAutoPanelVisibility(side, \"edge-enter\")}");
+    expect(sideTriggerBlock).toContain("mode === \"hidden\" ? `${label}并切换为永久显示` : label");
+    expect(sideTriggerBlock).toContain("setSidePanelMode(side, \"pinned\")");
+    expect(styles).toContain(".app-shell.right-panel-hidden .inspector-panel.floating-side-panel.hidden");
+    expect(styles).toContain(".app-shell.left-panel-hidden .library-panel.floating-side-panel.hidden");
+    expect(styles).toMatch(/\.app-shell\.right-panel-hidden \.inspector-panel\.floating-side-panel\.hidden,[\s\S]*?display:\s*none;/);
   });
 
   test("keeps side panel pointer and keyboard events from reaching the canvas", async () => {
@@ -6567,6 +6576,7 @@ describe("graph inspector panel", () => {
     expect(scheduleBlock).toContain("scheduleIdleWork");
     expect(scheduleBlock).toContain("routableLineRouteCandidateIdsForMovedNodes(");
     expect(scheduleBlock).toContain("rebuildRoutableLineDeviceRouteUpdates(");
+    expect(scheduleBlock).toContain("{ movedNodeIds: movedNodeIdList }");
     expect(scheduleBlock).toContain("graphStorePatchStillCurrent(latestStore, expectedNodeUpdates, [], [])");
     expect(commitBlock).toContain("scheduleDeferredRoutableLineRouteRepair(");
     expect(commitBlock).toContain("const shiftedExpectedNodeUpdates =");
@@ -7872,6 +7882,7 @@ describe("graph inspector panel", () => {
     expect(dragPreviewRoutesBlock).not.toContain("routeFully: true");
     expect(lineRebuildBlock).toContain("completeNodeListForPartialPatch(previousNodes, nextNodes)");
     expect(lineRebuildBlock).toContain("rebuildRoutableLineDeviceRouteUpdates(fullNextNodes");
+    expect(lineRebuildBlock).toContain("{ movedNodeIds: changedNodeIds }");
     expect(linePointerBlock).toContain("selectCanvasGraphics([node.id], [], { scope: \"direct\" })");
     expect(linePointerBlock).not.toContain("startDraggingState");
     expect(linePathPointerBlock).toContain("handleRoutableLineNodePointerDown(event, node)");
@@ -8262,6 +8273,18 @@ describe("graph inspector panel", () => {
     expect(projectContextBlock).toContain("<div className=\"context-menu\" style={contextMenuStyle(projectMenu)}>");
     expect(visibilityBlock).toContain("side === \"left\" && event === \"panel-leave\" && projectMenu");
     expect(hideBlock).toContain("if (projectMenu)");
+  });
+
+  test("does not auto-open the right inspector when it is not in auto mode", async () => {
+    const source = await readAppSource();
+    const activateStart = source.indexOf("const activateInspectorFromCanvas =");
+    const activateEnd = source.indexOf("const openMeasurementEditorForNode", activateStart);
+    const activateBlock = source.slice(activateStart, activateEnd);
+
+    expect(activateStart).toBeGreaterThan(-1);
+    expect(activateBlock).toContain("if (rightPanelMode !== \"auto\")");
+    expect(activateBlock).toContain("return;");
+    expect(activateBlock).toContain("updateAutoPanelVisibility(\"right\", \"canvas-activate\")");
   });
 
   test("prompts for overwrite rename or cancel when pasted scheme or model names already exist", async () => {

@@ -5392,6 +5392,46 @@ function repairRoutableLineRouteAroundBlockers(points: Point[], blockers: ModelN
   });
 }
 
+type RoutableLineDeviceRoutingOptions = {
+  blockerNodeIds?: ReadonlySet<string>;
+};
+
+type RoutableLineDeviceRouteUpdateOptions = {
+  movedNodeIds?: Iterable<string>;
+};
+
+function routableLineMovesWithNodeIds(node: ModelNode, movedNodeIds: ReadonlySet<string>) {
+  if (movedNodeIds.has(node.id)) {
+    return true;
+  }
+  const refs = routableLineDeviceEndpointRefs(node);
+  return Boolean(
+    (refs.source && movedNodeIds.has(refs.source.nodeId)) ||
+    (refs.target && movedNodeIds.has(refs.target.nodeId))
+  );
+}
+
+function routableLineBlockerNodeIdsForMovedInterference(
+  node: ModelNode,
+  nodes: ModelNode[],
+  movedNodeIds: ReadonlySet<string>
+) {
+  if (movedNodeIds.size === 0) {
+    return undefined;
+  }
+  const lineMoves = routableLineMovesWithNodeIds(node, movedNodeIds);
+  const blockerNodeIds = new Set<string>();
+  for (const candidate of nodes) {
+    if (candidate.id === node.id) {
+      continue;
+    }
+    if (lineMoves ? !movedNodeIds.has(candidate.id) : movedNodeIds.has(candidate.id)) {
+      blockerNodeIds.add(candidate.id);
+    }
+  }
+  return blockerNodeIds;
+}
+
 export function syncRoutableLineDeviceEndpointsToRefs(
   node: ModelNode,
   nodes: ModelNode[],
@@ -5451,7 +5491,12 @@ function routableLineDeviceTopologyEdges(nodes: ModelNode[]): Edge[] {
   return edges;
 }
 
-export function routeRoutableLineDevice(node: ModelNode, nodes: ModelNode[], bounds?: CanvasBounds): ModelNode {
+export function routeRoutableLineDevice(
+  node: ModelNode,
+  nodes: ModelNode[],
+  bounds?: CanvasBounds,
+  options: RoutableLineDeviceRoutingOptions = {}
+): ModelNode {
   if (!isRoutableLineDeviceKind(node.kind)) {
     return node;
   }
@@ -5461,9 +5506,13 @@ export function routeRoutableLineDevice(node: ModelNode, nodes: ModelNode[], bou
   if (!start || !end) {
     return ensureRoutableLineDevicePathParam(node);
   }
-  const blockers = nodes.filter((candidate) => candidate.id !== node.id);
-  const nodeById = new Map(blockers.map((candidate) => [candidate.id, candidate]));
+  const otherNodes = nodes.filter((candidate) => candidate.id !== node.id);
+  const nodeById = new Map(otherNodes.map((candidate) => [candidate.id, candidate]));
   const routeEdge = routableLineDeviceRoutingEdge(node, start, end, nodeById);
+  const endpointNodeIds = new Set([routeEdge.sourceId, routeEdge.targetId]);
+  const blockers = options.blockerNodeIds
+    ? otherNodes.filter((candidate) => endpointNodeIds.has(candidate.id) || options.blockerNodeIds?.has(candidate.id))
+    : otherNodes;
   const route = routeEdgesForRendering(blockers, [routeEdge], bounds)[0];
   if (!route || route.points.length < 2) {
     return ensureRoutableLineDevicePathParam(node);
@@ -5489,7 +5538,8 @@ export function rebuildRoutableLineDeviceRouteUpdates(
   nodes: ModelNode[],
   lineNodeIds: Iterable<string>,
   bounds?: CanvasBounds,
-  referenceNodes: readonly ModelNode[] = nodes
+  referenceNodes: readonly ModelNode[] = nodes,
+  options: RoutableLineDeviceRouteUpdateOptions = {}
 ): ModelNode[] {
   const requestedIds = new Set(lineNodeIds);
   if (requestedIds.size === 0) {
@@ -5497,13 +5547,22 @@ export function rebuildRoutableLineDeviceRouteUpdates(
   }
   const updates: ModelNode[] = [];
   const nodeById = new Map(nodes.map((item) => [item.id, item]));
+  const movedNodeIds = options.movedNodeIds ? new Set(options.movedNodeIds) : undefined;
   for (const node of nodes) {
     if (!requestedIds.has(node.id) || !isRoutableLineDeviceKind(node.kind)) {
       continue;
     }
     const syncedNode = syncRoutableLineDeviceEndpointsToRefs(node, nodes, nodeById, referenceNodes);
     const routingNodes = syncedNode === node ? nodes : nodes.map((item) => (item.id === syncedNode.id ? syncedNode : item));
-    const nextNode = routeRoutableLineDevice(syncedNode, routingNodes, bounds);
+    const blockerNodeIds = movedNodeIds
+      ? routableLineBlockerNodeIdsForMovedInterference(syncedNode, routingNodes, movedNodeIds)
+      : undefined;
+    const nextNode = routeRoutableLineDevice(
+      syncedNode,
+      routingNodes,
+      bounds,
+      blockerNodeIds ? { blockerNodeIds } : undefined
+    );
     if (nextNode !== node) {
       updates.push(nextNode);
     }
@@ -13903,6 +13962,32 @@ function applyEdgeUpdateMap(edges: Edge[], updates: ReadonlyMap<string, Edge>): 
   return changed ? nextEdges : edges;
 }
 
+function routeNodesForMovedInterference(
+  nodes: ModelNode[],
+  edge: Edge,
+  movedNodeIds: ReadonlySet<string>,
+  routeMoves = movedNodeIds.has(edge.sourceId) || movedNodeIds.has(edge.targetId)
+) {
+  if (movedNodeIds.size === 0) {
+    return nodes;
+  }
+  const endpointNodeIds = new Set([edge.sourceId, edge.targetId]);
+  const includeMovedBlockers = !routeMoves;
+  let changed = false;
+  const scopedNodes: ModelNode[] = [];
+  for (const node of nodes) {
+    const include =
+      endpointNodeIds.has(node.id) ||
+      (includeMovedBlockers ? movedNodeIds.has(node.id) : !movedNodeIds.has(node.id));
+    if (include) {
+      scopedNodes.push(node);
+    } else {
+      changed = true;
+    }
+  }
+  return changed ? scopedNodes : nodes;
+}
+
 export function rebuildConnectionRoutesForNodes(
   nodes: ModelNode[],
   edges: Edge[],
@@ -13924,7 +14009,8 @@ export function rebuildConnectionRoutesForNodes(
   const updates = new Map<string, Edge>();
   for (const edge of affectedEdges) {
     const edgeForDesign = edgeWithoutManualPoints(updates.get(edge.id) ?? edge);
-    const prepared = prepareConnectionEdgeForCommit(nodes, [edgeForDesign], edge.id, bounds);
+    const routeNodes = routeNodesForMovedInterference(nodes, edgeForDesign, changedNodeIds);
+    const prepared = prepareConnectionEdgeForCommit(routeNodes, [edgeForDesign], edge.id, bounds);
     if (!prepared.ok || !prepared.edge) {
       continue;
     }
@@ -13946,25 +14032,25 @@ export function rebuildExternalConnectionRoutesForMovedNodes(
     return edges;
   }
 
-  const affectedEdgeIds = candidateEdges
-    .filter((edge) => movedIds.has(edge.sourceId) !== movedIds.has(edge.targetId))
-    .map((edge) => edge.id);
-  if (affectedEdgeIds.length === 0) {
+  const affectedEdges = candidateEdges.filter((edge) => movedIds.has(edge.sourceId) !== movedIds.has(edge.targetId));
+  if (affectedEdges.length === 0) {
     return edges;
   }
 
   const edgeById = new Map(edges.map((edge) => [edge.id, edge]));
   const updates = new Map<string, Edge>();
-  for (const edgeId of affectedEdgeIds) {
-    const edge = updates.get(edgeId) ?? edgeById.get(edgeId);
+  for (const affectedEdge of affectedEdges) {
+    const edge = updates.get(affectedEdge.id) ?? edgeById.get(affectedEdge.id);
     if (!edge) {
       continue;
     }
-    const prepared = prepareConnectionEdgeForCommit(nodes, [edgeWithoutManualPoints(edge)], edgeId, bounds);
+    const edgeForDesign = edgeWithoutManualPoints(edge);
+    const routeNodes = routeNodesForMovedInterference(nodes, edgeForDesign, movedIds, true);
+    const prepared = prepareConnectionEdgeForCommit(routeNodes, [edgeForDesign], affectedEdge.id, bounds);
     if (!prepared.ok || !prepared.edge) {
       continue;
     }
-    updates.set(edgeId, prepared.edge);
+    updates.set(affectedEdge.id, prepared.edge);
   }
 
   return applyEdgeUpdateMap(edges, updates);
@@ -14015,7 +14101,9 @@ export function rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes(
     if (!edge) {
       continue;
     }
-    const prepared = prepareConnectionEdgeForCommit(nodes, [edgeWithoutManualPoints(edge)], edgeId, bounds);
+    const edgeForDesign = edgeWithoutManualPoints(edge);
+    const routeNodes = routeNodesForMovedInterference(nodes, edgeForDesign, movedIds, true);
+    const prepared = prepareConnectionEdgeForCommit(routeNodes, [edgeForDesign], edgeId, bounds);
     if (!prepared.ok || !prepared.edge) {
       continue;
     }
@@ -14117,8 +14205,15 @@ export function rerouteEdgesAroundMovedNodes(
   const movedCandidates = getRouteBlockingCandidates(movedNodes);
   const previousRouteById = new Map(previousRoutes.map((route) => [route.edgeId, route]));
   const forcedEdgeIds = new Set(forceEdgeIds);
-  const fallbackRoutes = previousRoutes.length > 0 ? [] : routeEdgesForRendering(nodes, searchEdges, bounds);
-  const fallbackRouteById = new Map(fallbackRoutes.map((route) => [route.edgeId, route]));
+  const fallbackRouteById = new Map<string, RoutedEdge>();
+  if (previousRoutes.length === 0) {
+    for (const edge of searchEdges) {
+      const route = routeEdgesForRendering(routeNodesForMovedInterference(nodes, edge, movedIds), [edge], bounds)[0];
+      if (route) {
+        fallbackRouteById.set(route.edgeId, route);
+      }
+    }
+  }
   const candidateEdges = previousRoutes.length > 0
     ? searchEdges.filter((edge) => previousRouteById.has(edge.id))
     : searchEdges;
@@ -14147,7 +14242,9 @@ export function rerouteEdgesAroundMovedNodes(
     if (!edge) {
       continue;
     }
-    const prepared = prepareConnectionEdgeForCommit(nodes, [edgeWithoutManualPoints(edge)], edgeId, bounds, previousRoutes);
+    const edgeForDesign = edgeWithoutManualPoints(edge);
+    const routeNodes = routeNodesForMovedInterference(nodes, edgeForDesign, movedIds);
+    const prepared = prepareConnectionEdgeForCommit(routeNodes, [edgeForDesign], edgeId, bounds, previousRoutes);
     if (!prepared.ok || !prepared.edge) {
       continue;
     }

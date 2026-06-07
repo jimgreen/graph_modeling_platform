@@ -146,24 +146,27 @@ function patchRouteSpatialIndex(
   const buckets = new Map(index.buckets);
   const routeBucketKeysById = new Map(index.routeBucketKeysById);
   const routeBoundsById = new Map(index.routeBoundsById);
-  const copiedBucketKeys = new Set<string>();
+  const removedBucketKeys = new Set<string>();
   for (const edgeId of removedIds) {
     for (const key of routeBucketKeysById.get(edgeId) ?? []) {
-      const bucket = buckets.get(key);
-      if (!bucket) {
-        continue;
-      }
-      const nextBucket = bucket.filter((route) => route.edgeId !== edgeId);
-      if (nextBucket.length > 0) {
-        buckets.set(key, nextBucket);
-        copiedBucketKeys.add(key);
-      } else {
-        buckets.delete(key);
-        copiedBucketKeys.delete(key);
-      }
+      removedBucketKeys.add(key);
     }
     routeBucketKeysById.delete(edgeId);
     routeBoundsById.delete(edgeId);
+  }
+  const copiedBucketKeys = new Set<string>();
+  for (const key of removedBucketKeys) {
+    const bucket = buckets.get(key);
+    if (!bucket) {
+      continue;
+    }
+    const nextBucket = bucket.filter((route) => !removedIds.has(route.edgeId));
+    if (nextBucket.length > 0) {
+      buckets.set(key, nextBucket);
+      copiedBucketKeys.add(key);
+    } else {
+      buckets.delete(key);
+    }
   }
 
   for (const route of routeUpdates) {

@@ -102,6 +102,29 @@ describe("normalized route store", () => {
     expect(patched.routeIndexById).toBe(store.routeIndexById);
   });
 
+  test("batch patches dense route spatial buckets without duplicates or stale moved entries", () => {
+    const routes = Array.from({ length: 30 }, (_item, index) => route(`dense-edge-${index}`, 100 + index, 100));
+    const movedRoutes = routes.slice(0, 10).map((item) => {
+      const points = item.points.map((point) => ({ x: point.x + 800, y: point.y }));
+      return {
+        edgeId: item.edgeId,
+        points,
+        path: `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`
+      };
+    });
+    const movedIds = new Set(movedRoutes.map((item) => item.edgeId));
+    const store = createRouteStore(routes);
+
+    const patched = routeStorePatchRoutes(store, movedRoutes);
+    const originalAreaIds = queryRouteSpatialIndex(patched.routeSpatialIndex, { left: 0, right: 260, top: 0, bottom: 220 }).map((item) => item.edgeId);
+    const movedAreaIds = queryRouteSpatialIndex(patched.routeSpatialIndex, { left: 860, right: 1060, top: 0, bottom: 220 }).map((item) => item.edgeId);
+
+    expect(originalAreaIds.some((id) => movedIds.has(id))).toBe(false);
+    expect(movedAreaIds).toEqual(movedRoutes.map((item) => item.edgeId));
+    expect(new Set(movedAreaIds).size).toBe(movedAreaIds.length);
+    expect(queryRouteSpatialIndex(store.routeSpatialIndex, { left: 0, right: 260, top: 0, bottom: 220 }).map((item) => item.edgeId)).toEqual(routes.map((item) => item.edgeId));
+  });
+
   test("reuses route spatial query markers without cross-contaminating patched stores", () => {
     const first = route("edge-1", 40, 40);
     const second = route("edge-2", 80, 80);

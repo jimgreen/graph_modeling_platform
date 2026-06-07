@@ -250,6 +250,29 @@ describe("normalized graph store", () => {
     expect(queriedNode?.params[ROUTABLE_LINE_POINTS_PARAM]).toBe(reroutedLine.params[ROUTABLE_LINE_POINTS_PARAM]);
   });
 
+  test("batch patches dense node spatial buckets without duplicates or stale moved entries", () => {
+    const nodes = Array.from({ length: 30 }, (_item, index) => ({
+      ...createDefaultNode("ac-load", { x: 100 + index, y: 100 }),
+      id: `dense-node-${index}`,
+      name: `dense-node-${index}`
+    }));
+    const movedNodes = nodes.slice(0, 10).map((node) => ({
+      ...node,
+      position: { x: node.position.x + 800, y: node.position.y }
+    }));
+    const movedIds = new Set(movedNodes.map((node) => node.id));
+    const store = createGraphStore(nodes, []);
+
+    const patched = graphStorePatchNodes(store, movedNodes);
+    const originalAreaIds = queryGraphStoreNodeSpatialIndex(patched, { left: 0, right: 260, top: 0, bottom: 220 }).map((node) => node.id);
+    const movedAreaIds = queryGraphStoreNodeSpatialIndex(patched, { left: 760, right: 1060, top: 0, bottom: 220 }).map((node) => node.id);
+
+    expect(originalAreaIds.some((id) => movedIds.has(id))).toBe(false);
+    expect(movedAreaIds).toEqual(movedNodes.map((node) => node.id));
+    expect(new Set(movedAreaIds).size).toBe(movedAreaIds.length);
+    expect(queryGraphStoreNodeSpatialIndex(store, { left: 0, right: 260, top: 0, bottom: 220 }).map((node) => node.id)).toEqual(nodes.map((node) => node.id));
+  });
+
   test("indexes visible device labels so local routing and viewport queries include far labels", () => {
     const base = createDefaultNode("ac-switch", { x: 100, y: 100 });
     const labeled = {

@@ -37,6 +37,8 @@ button:disabled {
 .app-shell {
   position: relative;
   display: block;
+  width: 100vw;
+  max-width: 100vw;
   height: 100vh;
   min-height: 720px;
   overflow: hidden;
@@ -174,6 +176,11 @@ button:disabled {
   opacity: 1;
   pointer-events: auto;
   transform: translateX(0);
+}
+
+.app-shell.right-panel-hidden .inspector-panel.floating-side-panel.hidden,
+.app-shell.left-panel-hidden .library-panel.floating-side-panel.hidden {
+  display: none;
 }
 
 .side-panel-mode-controls {

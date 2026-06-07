@@ -2295,6 +2295,52 @@ describe("power system model", () => {
     expect(routableLineDeviceCanvasPoints(updates[0]).length).toBeGreaterThan(2);
   });
 
+  test("does not reroute stationary routable line-like devices around stationary blockers during a move repair", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = { ...createDefaultNode("ac-source", { x: 120, y: 180 }), id: "stationary-source" };
+    const target = { ...createDefaultNode("ac-load", { x: 820, y: 180 }), id: "stationary-target" };
+    const stationaryBlocker = { ...createDefaultNode("ac-box-breaker", { x: 470, y: 98 }), id: "stationary-blocker" };
+    const movedUnrelated = { ...createDefaultNode("ac-pv-source", { x: 470, y: 360 }), id: "moved-unrelated" };
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      getTerminalPoint(source, "t1"),
+      getTerminalPoint(target, "t1"),
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: routableLineDeviceEndpointRefForNode(target, "t1")
+      }
+    );
+
+    const updates = rebuildRoutableLineDeviceRouteUpdates(
+      [source, target, stationaryBlocker, movedUnrelated, line],
+      [line.id],
+      { width: 1000, height: 520 },
+      [source, target, stationaryBlocker, movedUnrelated, line],
+      { movedNodeIds: [movedUnrelated.id] }
+    );
+    const updatesWithoutStationaryBlocker = rebuildRoutableLineDeviceRouteUpdates(
+      [source, target, movedUnrelated, line],
+      [line.id],
+      { width: 1000, height: 520 },
+      [source, target, movedUnrelated, line],
+      { movedNodeIds: [movedUnrelated.id] }
+    );
+    const fullBlockerUpdates = rebuildRoutableLineDeviceRouteUpdates(
+      [source, target, stationaryBlocker, movedUnrelated, line],
+      [line.id],
+      { width: 1000, height: 520 },
+      [source, target, stationaryBlocker, movedUnrelated, line]
+    );
+
+    expect(routableLineDeviceCanvasPoints(updates[0] ?? line)).toEqual(
+      routableLineDeviceCanvasPoints(updatesWithoutStationaryBlocker[0] ?? line)
+    );
+    expect(routableLineDeviceCanvasPoints(updates[0] ?? line)).not.toEqual(
+      routableLineDeviceCanvasPoints(fullBlockerUpdates[0] ?? line)
+    );
+  });
+
   test("initializes editable terminal voltage bases to zero", () => {
     const acLine = createDefaultNode("ac-line", { x: 100, y: 100 });
     const dcLine = createDefaultNode("dc-line", { x: 220, y: 100 });
@@ -5467,6 +5513,31 @@ describe("power system model", () => {
 
     expect(rebuilt[0]).toBe(connectedEdge);
     expect(rebuilt[1]).toBe(unrelatedCandidate);
+  });
+
+  test("does not route moved-to-stationary connections around other moved devices", () => {
+    const movedSource = { ...createDefaultNode("ac-line", { x: 180, y: 180 }), id: "moved-source" };
+    const stationaryTarget = { ...createDefaultNode("ac-line", { x: 780, y: 180 }), id: "stationary-target" };
+    const movedBlocker = { ...createDefaultNode("ac-line", { x: 480, y: 180 }), id: "moved-blocker" };
+    const edge: Edge = {
+      id: "moved-to-stationary",
+      sourceId: movedSource.id,
+      targetId: stationaryTarget.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1"
+    };
+
+    const rebuilt = rebuildExternalConnectionRoutesForMovedNodes(
+      [movedSource, stationaryTarget, movedBlocker],
+      [edge],
+      [movedSource.id, movedBlocker.id],
+      { width: 1000, height: 420 }
+    );
+    const routePoints = rebuilt[0].routePoints ?? routeEdgesForStoredRendering([movedSource, stationaryTarget, movedBlocker], rebuilt, { width: 1000, height: 420 })[0].points;
+
+    expect(routePoints.some((point, index) =>
+      index > 0 && segmentIntersectsNodeBody(routePoints[index - 1], point, movedBlocker)
+    )).toBe(true);
   });
 
   test("rebuilds moved-to-moved connection routes when they interfere with stationary devices", () => {

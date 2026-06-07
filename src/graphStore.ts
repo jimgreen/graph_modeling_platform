@@ -143,21 +143,28 @@ function patchNodeSpatialIndexMany(
   const buckets = new Map(index.buckets);
   const nextBucketKeysById = new Map(index.nodeBucketKeysById);
   const nextBoundsById = new Map(index.nodeBoundsById);
+  const removedIds = new Set(updates.map(({ previousNode }) => previousNode.id));
+  const removedBucketKeys = new Set<string>();
   for (const { previousNode } of updates) {
     for (const key of index.nodeBucketKeysById.get(previousNode.id) ?? []) {
-      const bucket = buckets.get(key);
-      if (!bucket) {
-        continue;
-      }
-      const nextBucket = bucket.filter((node) => node.id !== previousNode.id);
-      if (nextBucket.length > 0) {
-        buckets.set(key, nextBucket);
-      } else {
-        buckets.delete(key);
-      }
+      removedBucketKeys.add(key);
     }
     nextBucketKeysById.delete(previousNode.id);
     nextBoundsById.delete(previousNode.id);
+  }
+  const copiedBucketKeys = new Set<string>();
+  for (const key of removedBucketKeys) {
+    const bucket = buckets.get(key);
+    if (!bucket) {
+      continue;
+    }
+    const nextBucket = bucket.filter((node) => !removedIds.has(node.id));
+    if (nextBucket.length > 0) {
+      buckets.set(key, nextBucket);
+      copiedBucketKeys.add(key);
+    } else {
+      buckets.delete(key);
+    }
   }
   for (const { nextNode } of updates) {
     const nextBounds = graphNodeRenderBounds(nextNode);
@@ -167,7 +174,20 @@ function patchNodeSpatialIndexMany(
       for (let y = range.top; y <= range.bottom; y += 1) {
         const key = spatialBucketKey(x, y);
         nextBucketKeys.push(key);
-        buckets.set(key, [...(buckets.get(key) ?? []), nextNode]);
+        const bucket = buckets.get(key);
+        if (bucket) {
+          if (!copiedBucketKeys.has(key)) {
+            const copiedBucket = bucket.slice();
+            buckets.set(key, copiedBucket);
+            copiedBucketKeys.add(key);
+            copiedBucket.push(nextNode);
+            continue;
+          }
+          bucket.push(nextNode);
+        } else {
+          buckets.set(key, [nextNode]);
+          copiedBucketKeys.add(key);
+        }
       }
     }
     nextBucketKeysById.set(nextNode.id, nextBucketKeys);

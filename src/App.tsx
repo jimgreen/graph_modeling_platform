@@ -16681,7 +16681,7 @@ export function App() {
     const fullNextNodes = completeNodeListForPartialPatch(previousNodes, nextNodes);
     const candidateIds = routableLineRouteCandidateIdsForMovedNodes(previousNodes, fullNextNodes, changedNodeIds, originalPositions);
     return candidateIds.size > 0
-      ? rebuildRoutableLineDeviceRouteUpdates(fullNextNodes, candidateIds, bounds, previousNodes)
+      ? rebuildRoutableLineDeviceRouteUpdates(fullNextNodes, candidateIds, bounds, previousNodes, { movedNodeIds: changedNodeIds })
       : [];
   };
 
@@ -16717,7 +16717,8 @@ export function App() {
         latestStore.nodes,
         candidateIds,
         effectiveCanvasBounds,
-        previousNodes
+        previousNodes,
+        { movedNodeIds: movedNodeIdList }
       );
       if (nodeUpdates.length === 0) {
         return;
@@ -17110,6 +17111,15 @@ export function App() {
     }
     const affectedEdge = searchEdges.find((edge) => edge.id === affectedEdgeIds[0]);
     const routingNodes = affectedEdge ? routingNodesForConnectionEdge(affectedEdge, nextNodes) : nextNodes;
+    if (affectedEdge && (movedIds.has(affectedEdge.sourceId) || movedIds.has(affectedEdge.targetId))) {
+      return rebuildExternalConnectionRoutesForMovedNodes(
+        routingNodes,
+        candidateEdges,
+        movedNodeIds,
+        canvasBounds,
+        [affectedEdge]
+      );
+    }
     return rebuildSingleConnectionRoute(routingNodes, candidateEdges, affectedEdgeIds[0], canvasBounds);
   };
 
@@ -21147,6 +21157,9 @@ export function App() {
   };
 
   const activateInspectorFromCanvas = () => {
+    if (rightPanelMode !== "auto") {
+      return;
+    }
     updateAutoPanelVisibility("right", "canvas-activate");
   };
 
