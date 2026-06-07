@@ -1,4 +1,13 @@
-import { DEFAULT_MODEL_LAYER_ID, calculateNodeVisualBounds, getNodeScaleX, getNodeScaleY, isBusNode, type Edge, type ModelNode } from "./model";
+import {
+  DEFAULT_MODEL_LAYER_ID,
+  ROUTABLE_LINE_POINTS_PARAM,
+  calculateNodeVisualBounds,
+  getNodeScaleX,
+  getNodeScaleY,
+  isBusNode,
+  type Edge,
+  type ModelNode
+} from "./model";
 
 export type GraphRenderBounds = {
   left: number;
@@ -293,6 +302,7 @@ const elementTreeParamRelevant = (key: string) =>
   key === "idx" || key.startsWith("idx_") || key.startsWith("name_") || key === "is_container";
 
 const routeGeometryParamRelevant = (key: string) =>
+  key === ROUTABLE_LINE_POINTS_PARAM ||
   key === "_labelText" ||
   key === "_labelX" ||
   key === "_labelY" ||

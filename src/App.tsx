@@ -712,6 +712,37 @@ function localScaleKindForScreenHandle(kind: ScaleHandleKind, rotation: number):
   return Math.abs(localVector.x) >= Math.abs(localVector.y) ? "scale-x" : "scale-y";
 }
 
+export function projectedProportionalScaleFromHandleDelta({
+  currentScale,
+  width,
+  height,
+  handleXDirection,
+  handleYDirection,
+  deltaX,
+  deltaY
+}: {
+  currentScale: number;
+  width: number;
+  height: number;
+  handleXDirection?: -1 | 0 | 1;
+  handleYDirection?: -1 | 0 | 1;
+  deltaX: number;
+  deltaY: number;
+}) {
+  const safeCurrentScale = Math.abs(normalizeScaleValue(currentScale, 1));
+  const projectionVector = {
+    x: handleXDirection ? (handleXDirection * Math.max(1, width)) / 2 : 0,
+    y: handleYDirection ? (handleYDirection * Math.max(1, height)) / 2 : 0
+  };
+  const projectionLengthSquared = projectionVector.x ** 2 + projectionVector.y ** 2;
+  if (projectionLengthSquared <= 0) {
+    return safeCurrentScale;
+  }
+  const scaleDelta =
+    (deltaX * projectionVector.x + deltaY * projectionVector.y) / projectionLengthSquared;
+  return normalizeScaleValue(Math.max(0, safeCurrentScale + scaleDelta), safeCurrentScale);
+}
+
 function groupTransformGeometry(drag: GroupTransformDrag, point: Point, options?: { snapRotation?: boolean }): GroupTransformGeometry {
   if (drag.kind === "rotate") {
     return { kind: "rotate", degrees: rotationDeltaBetweenTransformPoints(drag.center, drag.startPoint, point, Boolean(options?.snapRotation)) };
@@ -18061,13 +18092,15 @@ export function App() {
     for (const node of nodeUpdates) {
       previewNodeById.set(node.id, node);
     }
-    const referenceNodes = Array.from(baseNodeById.values());
-    const previewNodes = referenceNodes.map((node) => previewNodeById.get(node.id) ?? node);
-    const lineIds = routableLineRouteCandidateIdsForMovedNodes(referenceNodes, previewNodes, changedNodeIdList);
+    const lineIds = routableLineIdsConnectedToNodeIds(changedNodeIdList);
     if (lineIds.size === 0) {
       return [];
     }
-    const previewOptions = { routeFully: true, ...options };
+    const routeFully = options.routeFully === true;
+    const referenceNodes = Array.from(baseNodeById.values());
+    const previewNodes = routeFully
+      ? referenceNodes.map((node) => previewNodeById.get(node.id) ?? node)
+      : [];
     const routes: NodeDragPreviewRoute[] = [];
     for (const lineId of lineIds) {
       const lineNode = baseNodeById.get(lineId);
@@ -18075,8 +18108,8 @@ export function App() {
         continue;
       }
       const syncedLine = syncRoutableLineDeviceEndpointsToRefs(lineNode, previewNodes, previewNodeById, referenceNodes);
-      const displayLine = previewOptions.routeFully
-        ? routeRoutableLineDevice(syncedLine, previewNodes, previewOptions.bounds)
+      const displayLine = routeFully
+        ? routeRoutableLineDevice(syncedLine, previewNodes, options.bounds)
         : syncedLine;
       const points = routableLineDeviceCanvasPoints(displayLine);
       const start = points[0];
@@ -18084,7 +18117,7 @@ export function App() {
       if (!start || !end) {
         continue;
       }
-      const previewPoints = previewOptions.routeFully ? points : simpleOrthogonalDragPreviewPoints(start, end);
+      const previewPoints = routeFully ? points : simpleOrthogonalDragPreviewPoints(start, end);
       routes.push({
         edgeId: `routable-line:${lineNode.id}`,
         routableLineNodeId: lineNode.id,
@@ -18133,10 +18166,7 @@ export function App() {
       const node = singleNodeDragPreviewNodeFor(dragState, nodeId, delta);
       return node ? [node] : [];
     });
-    return buildRoutableLinePreviewRoutesForNodeUpdates(nodeById, movedNodeIds, previewNodeUpdates, {
-      routeFully: true,
-      bounds: canvasBounds
-    });
+    return buildRoutableLinePreviewRoutesForNodeUpdates(nodeById, movedNodeIds, previewNodeUpdates);
   };
   const shiftedDragPreviewPoint = (point: Point | undefined, delta: Point | undefined) =>
     point && delta ? { x: point.x + delta.x, y: point.y + delta.y } : point;
@@ -21824,15 +21854,16 @@ export function App() {
     const currentSignedScaleY = getNodeScaleY(baseNode);
     const startLocal = toLocalNodePoint(baseNode, drag.startPoint);
     const currentLocal = toLocalNodePoint(baseNode, point);
-    const scaleXDeltaRatio = drag.handleXDirection
-      ? ((currentLocal.x - startLocal.x) * drag.handleXDirection * 2) / Math.max(1, baseNode.size.width)
-      : 0;
-    const scaleYDeltaRatio = drag.handleYDirection
-      ? ((currentLocal.y - startLocal.y) * drag.handleYDirection * 2) / Math.max(1, baseNode.size.height)
-      : 0;
-    const scaleDeltaRatio = Math.abs(scaleXDeltaRatio) >= Math.abs(scaleYDeltaRatio) ? scaleXDeltaRatio : scaleYDeltaRatio;
     const currentScale = Math.max(Math.abs(currentSignedScaleX), Math.abs(currentSignedScaleY));
-    const nextScale = normalizeScale(Math.max(0, currentScale + scaleDeltaRatio), currentScale);
+    const nextScale = projectedProportionalScaleFromHandleDelta({
+      currentScale,
+      width: baseNode.size.width,
+      height: baseNode.size.height,
+      handleXDirection: drag.handleXDirection,
+      handleYDirection: drag.handleYDirection,
+      deltaX: currentLocal.x - startLocal.x,
+      deltaY: currentLocal.y - startLocal.y
+    });
     return {
       scale: nextScale,
       scaleX: signedScale(nextScale, currentSignedScaleX),
@@ -21847,15 +21878,16 @@ export function App() {
   ) => {
     const currentSignedScaleX = getNodeScaleX(baseNode);
     const currentSignedScaleY = getNodeScaleY(baseNode);
-    const scaleXDeltaRatio = drag.handleXDirection
-      ? ((point.x - drag.startPoint.x) * drag.handleXDirection * 2) / Math.max(1, baseNode.size.width)
-      : 0;
-    const scaleYDeltaRatio = drag.handleYDirection
-      ? ((point.y - drag.startPoint.y) * drag.handleYDirection * 2) / Math.max(1, baseNode.size.height)
-      : 0;
-    const scaleDeltaRatio = Math.abs(scaleXDeltaRatio) >= Math.abs(scaleYDeltaRatio) ? scaleXDeltaRatio : scaleYDeltaRatio;
     const currentScale = Math.max(Math.abs(currentSignedScaleX), Math.abs(currentSignedScaleY));
-    const nextScale = normalizeScale(Math.max(0, currentScale + scaleDeltaRatio), currentScale);
+    const nextScale = projectedProportionalScaleFromHandleDelta({
+      currentScale,
+      width: baseNode.size.width,
+      height: baseNode.size.height,
+      handleXDirection: drag.handleXDirection,
+      handleYDirection: drag.handleYDirection,
+      deltaX: point.x - drag.startPoint.x,
+      deltaY: point.y - drag.startPoint.y
+    });
     return {
       scale: nextScale,
       scaleX: signedScale(nextScale, currentSignedScaleX),
@@ -29655,6 +29687,9 @@ export function App() {
       if (groupTransformPreviewNodeIdSet.has(node.id)) {
         return false;
       }
+      if (isRoutableLineDeviceKind(node.kind)) {
+        return true;
+      }
       if (!selectedNodeIdSet.has(node.id)) {
         return false;
       }
@@ -29755,7 +29790,7 @@ export function App() {
     }
     const items = viewportNodes.filter((node) =>
       !groupTransformPreviewNodeIdSet.has(node.id) &&
-      !(isRoutableLineDeviceKind(node.kind) && dragPreviewRoutableLineNodeIdSet.has(node.id))
+      !isRoutableLineDeviceKind(node.kind)
     );
     return stableSvgMarkupChunks(items, lodCanvasNodeChunkCacheRef.current, {
       chunkSize: CANVAS_LOD_MARKUP_CHUNK_SIZE,
@@ -33222,6 +33257,9 @@ export function App() {
             ) : inspectorTab === "graph" ? (
               (() => {
                 const multiNodeGraphSelection = activeSelectedNodeIds.length > 1;
+                const selectedNodeAllowsIndependentScale = inspectorSelectedNode
+                  ? nodeKindAllowsResizeTransform(inspectorSelectedNode.kind)
+                  : true;
                 return (
               <div className="graph-info-panel">
                 <div className="graph-info-toolbar" role="tablist" aria-label="图元属性分类">
@@ -33337,13 +33375,21 @@ export function App() {
                       {renderChineseParamHeader("scaleX")}
                       <td><input type="number" step="0.1" value={formatInspectorScaleValue(getNodeScaleX(inspectorSelectedNode))} onChange={(event) => {
                         const scaleX = normalizeScale(Number(event.target.value), getNodeScaleX(inspectorSelectedNode));
-                        const scaleY = getNodeScaleY(inspectorSelectedNode);
-                        updateSelectedNode({ scale: Math.max(Math.abs(scaleX), Math.abs(scaleY)), scaleX, scaleY });
+                        const nextScaleY = selectedNodeAllowsIndependentScale
+                          ? getNodeScaleY(inspectorSelectedNode)
+                          : scaleX;
+                        updateSelectedNode({ scale: Math.max(Math.abs(scaleX), Math.abs(nextScaleY)), scaleX, scaleY: nextScaleY });
                       }} /></td>
                     </tr>
                     <tr>
                       {renderChineseParamHeader("scaleY")}
-                      <td><input type="number" step="0.1" value={formatInspectorScaleValue(getNodeScaleY(inspectorSelectedNode))} onChange={(event) => {
+                      <td><input
+                        type="number"
+                        step="0.1"
+                        value={selectedNodeAllowsIndependentScale ? formatInspectorScaleValue(getNodeScaleY(inspectorSelectedNode)) : formatInspectorScaleValue(getNodeScaleX(inspectorSelectedNode))}
+                        disabled={!selectedNodeAllowsIndependentScale}
+                        title={!selectedNodeAllowsIndependentScale ? "当前图元不允许变形，纵向倍率跟随横向倍率" : undefined}
+                        onChange={(event) => {
                         const scaleY = normalizeScale(Number(event.target.value), getNodeScaleY(inspectorSelectedNode));
                         const scaleX = getNodeScaleX(inspectorSelectedNode);
                         updateSelectedNode({ scale: Math.max(Math.abs(scaleX), Math.abs(scaleY)), scaleX, scaleY });

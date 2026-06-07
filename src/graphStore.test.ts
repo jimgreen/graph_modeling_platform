@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { createDefaultNode, DEFAULT_MODEL_LAYER_ID, type Edge } from "./model";
+import { createDefaultNode, DEFAULT_MODEL_LAYER_ID, ROUTABLE_LINE_POINTS_PARAM, type Edge } from "./model";
 import {
   createGraphStore,
   graphStoreEdges,
@@ -222,6 +222,32 @@ describe("normalized graph store", () => {
     expect(patched.nodeSpatialIndex).not.toBe(store.nodeSpatialIndex);
     expect(queriedNode).toBe(rotatedTerminalSource);
     expect(queriedNode?.terminals[0].anchor).toEqual({ x: 0, y: -0.5 });
+  });
+
+  test("refreshes spatial index node objects when a routable line path changes", () => {
+    const line = createDefaultNode("ac-routable-line", { x: 300, y: 120 });
+    const store = createGraphStore([line], []);
+    const reroutedLine = {
+      ...line,
+      params: {
+        ...line.params,
+        [ROUTABLE_LINE_POINTS_PARAM]: JSON.stringify([
+          { x: -120, y: 0 },
+          { x: -120, y: 320 },
+          { x: 120, y: 320 },
+          { x: 120, y: 0 }
+        ])
+      }
+    };
+
+    const patched = graphStorePatchNodes(store, [reroutedLine]);
+    const queriedNode = queryGraphStoreNodeSpatialIndex(patched, { left: 250, right: 350, top: 410, bottom: 470 })
+      .find((node) => node.id === line.id);
+
+    expect(patched.nodeSpatialIndex).not.toBe(store.nodeSpatialIndex);
+    expect(patched.routeGeometryRevision).toBe(store.routeGeometryRevision + 1);
+    expect(queriedNode).toBe(reroutedLine);
+    expect(queriedNode?.params[ROUTABLE_LINE_POINTS_PARAM]).toBe(reroutedLine.params[ROUTABLE_LINE_POINTS_PARAM]);
   });
 
   test("indexes visible device labels so local routing and viewport queries include far labels", () => {

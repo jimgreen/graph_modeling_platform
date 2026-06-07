@@ -1856,6 +1856,20 @@ describe("graph inspector panel", () => {
     expect(scaleRowsBlock).not.toContain("value={getNodeScaleY(inspectorSelectedNode)}");
   });
 
+  test("links inspector vertical scale to horizontal scale when the selected node cannot deform", async () => {
+    const source = await readAppSource();
+    const scaleRowsStart = source.indexOf('const selectedNodeAllowsIndependentScale = inspectorSelectedNode');
+    const scaleRowsEnd = source.indexOf('renderChineseParamHeader("layerId"', scaleRowsStart);
+    const scaleRowsBlock = source.slice(scaleRowsStart, scaleRowsEnd);
+
+    expect(scaleRowsStart).toBeGreaterThan(-1);
+    expect(scaleRowsBlock).toContain("nodeKindAllowsResizeTransform(inspectorSelectedNode.kind)");
+    expect(scaleRowsBlock).toContain("const nextScaleY = selectedNodeAllowsIndependentScale");
+    expect(scaleRowsBlock).toContain("disabled={!selectedNodeAllowsIndependentScale}");
+    expect(scaleRowsBlock).toContain('title={!selectedNodeAllowsIndependentScale ? "当前图元不允许变形，纵向倍率跟随横向倍率" : undefined}');
+    expect(scaleRowsBlock).toContain("selectedNodeAllowsIndependentScale ? formatInspectorScaleValue(getNodeScaleY(inspectorSelectedNode)) : formatInspectorScaleValue(getNodeScaleX(inspectorSelectedNode))");
+  });
+
   test("loads additional React Flow interaction and animation controls in the preview runtime only", async () => {
     const preview = await readReactFlowPreviewSource();
     const styles = await readStyles();
@@ -7702,6 +7716,9 @@ describe("graph inspector panel", () => {
     const previewRoutesStart = source.indexOf("const buildRoutableLinePreviewRoutesForNodeUpdates =");
     const previewRoutesEnd = source.indexOf("const buildRoutableLineEndpointPreviewNodeUpdates", previewRoutesStart);
     const previewRoutesBlock = source.slice(previewRoutesStart, previewRoutesEnd);
+    const dragPreviewRoutesStart = source.indexOf("const buildRoutableLineDragPreviewRoutes =");
+    const dragPreviewRoutesEnd = source.indexOf("const shiftedDragPreviewPoint", dragPreviewRoutesStart);
+    const dragPreviewRoutesBlock = source.slice(dragPreviewRoutesStart, dragPreviewRoutesEnd);
     const lineRebuildStart = source.indexOf("const rebuildRoutableLineNodeUpdatesForChangedNodes =");
     const lineRebuildEnd = source.indexOf("const localRouteOptimizationEdges", lineRebuildStart);
     const lineRebuildBlock = source.slice(lineRebuildStart, lineRebuildEnd);
@@ -7757,9 +7774,18 @@ describe("graph inspector panel", () => {
     const groupTransformPreviewStart = source.indexOf("const renderGroupTransformPhotoPreview = () => {");
     const groupTransformPreviewEnd = source.indexOf("return (", groupTransformPreviewStart);
     const groupTransformPreviewBlock = source.slice(groupTransformPreviewStart, groupTransformPreviewEnd);
+    const detailedViewportNodesStart = source.indexOf("const detailedViewportNodes = useMemo(() => {");
+    const detailedViewportNodesEnd = source.indexOf("const useSimplifiedCanvasRoutes =", detailedViewportNodesStart);
+    const detailedViewportNodesBlock = source.slice(detailedViewportNodesStart, detailedViewportNodesEnd);
+    const lodCanvasNodeChunksStart = source.indexOf("const lodCanvasNodeChunks = useMemo(() => {");
+    const lodCanvasNodeChunksEnd = source.indexOf("const lodSelectedNodeMarkup = useMemo", lodCanvasNodeChunksStart);
+    const lodCanvasNodeChunksBlock = source.slice(lodCanvasNodeChunksStart, lodCanvasNodeChunksEnd);
     expect(nodeGeometryTransformBlock).toContain("if (isRoutableLineDeviceKind(node.kind))");
     expect(nodeGeometryTransformBlock).toContain("return \"rotate(0) scale(1 1)\";");
     expect(source).toContain("function routableLineDeviceRenderLocalPoints(node: ModelNode)");
+    expect(detailedViewportNodesBlock).toContain("if (isRoutableLineDeviceKind(node.kind))");
+    expect(detailedViewportNodesBlock).toContain("return true;");
+    expect(lodCanvasNodeChunksBlock).toContain("!isRoutableLineDeviceKind(node.kind)");
     expect(initialNodesBlock).toContain("repairUnsafeRoutableLineDeviceRoutes(indexed.nodes, initialCanvasBounds)");
     expect(endpointPreviewNodeUpdatesBlock).toContain("const previewNodes = sourceNodes.map");
     expect(endpointPreviewNodeUpdatesBlock).toContain("const routingNodes = previewNodes.map");
@@ -7780,8 +7806,9 @@ describe("graph inspector panel", () => {
     expect(buildMovedBlock).toContain("!isCanvasNodeMovable(node.kind)");
     expect(routeCandidatesBlock).toContain("routableLineNodeIdsByEndpointNodeId.get(nodeId)");
     expect(routeCandidatesBlock).toContain("routeTouchesExpandedBoxes(routableLineDeviceCanvasPoints(node)");
-    expect(previewRoutesBlock).toContain("routableLineRouteCandidateIdsForMovedNodes(");
-    expect(previewRoutesBlock).toContain("routeFully: true");
+    expect(previewRoutesBlock).toContain("routableLineIdsConnectedToNodeIds(changedNodeIdList)");
+    expect(previewRoutesBlock).not.toContain("routableLineRouteCandidateIdsForMovedNodes(");
+    expect(dragPreviewRoutesBlock).not.toContain("routeFully: true");
     expect(lineRebuildBlock).toContain("completeNodeListForPartialPatch(previousNodes, nextNodes)");
     expect(lineRebuildBlock).toContain("rebuildRoutableLineDeviceRouteUpdates(fullNextNodes");
     expect(linePointerBlock).toContain("selectCanvasGraphics([node.id], [], { scope: \"direct\" })");
