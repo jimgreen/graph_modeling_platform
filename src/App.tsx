@@ -7281,6 +7281,8 @@ function exportDeviceMetadataAttributes(node: ModelNode) {
     return "";
   }
   return [
+    `idx="${escapeXml(node.params.idx ?? "")}"`,
+    `name="${escapeXml(node.name)}"`,
     `data-export-device-id="${escapeXml(node.id)}"`,
     `data-export-device-idx="${escapeXml(node.params.idx ?? "")}"`,
     `data-export-device-name="${escapeXml(node.name)}"`,
@@ -7314,6 +7316,9 @@ function exportMeasurementItemMetadataAttributes(
     `data-export-measurement-role="${escapeXml(item.role ?? "")}"`,
     `data-export-measurement-unit="${escapeXml(display.unit)}"`,
     `data-export-measurement-group-id="${escapeXml(group.id)}"`,
+    `conn-dev="${escapeXml(node.id)}"`,
+    `dev_idx="${escapeXml(node.params.idx ?? "")}"`,
+    `dev_name="${escapeXml(node.name)}"`,
     `data-export-device-id="${escapeXml(node.id)}"`,
     `data-export-device-idx="${escapeXml(node.params.idx ?? "")}"`,
     `data-export-device-name="${escapeXml(node.name)}"`,
@@ -7357,8 +7362,9 @@ function exportMeasurementGroupMetrics(node: ModelNode, group: MeasurementGroup,
     }
     const label = group.labelVisible === false ? "" : display.label;
     const unit = group.unitVisible === false ? "" : display.unit;
-    const text = `${label} ${formatMeasurementDisplayValue(undefined, display.decimals, unit)}`.trim();
-    return [{ item, display, text, fontSize: display.fontSize * measurementFontScale }];
+    const valueText = "--";
+    const text = [label, valueText, unit].filter(Boolean).join(" ");
+    return [{ item, display, labelText: label, valueText, unitText: unit, text, fontSize: display.fontSize * measurementFontScale }];
   });
   if (rows.length === 0) {
     return null;
@@ -7392,9 +7398,27 @@ function buildExportMeasurementGroupMarkup(
     const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
     const textX = -metrics.width / 2 + col * metrics.columnWidth + 7;
     const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
-    const textId = usedSvgIds ? exportSvgUniqueId(`measurement_${row.item.id}`, usedSvgIds, "measurement_item") : "";
-    const idAttribute = textId ? ` id="${escapeXml(textId)}"` : "";
-    return `<text${idAttribute} class="export-measurement-item measurement-item" measure_type="${escapeXml(row.item.measurementTypeId)}" ${exportMeasurementItemMetadataAttributes(node, group, row.item, row.display)} x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}">${escapeXml(row.text)}</text>`;
+    const textGap = Math.max(4, row.fontSize * 0.36);
+    const textWidth = (text: string) => text.length * row.fontSize * 0.58;
+    const labelWidth = row.labelText ? textWidth(row.labelText) : 0;
+    const valueWidth = textWidth(row.valueText);
+    const valueX = textX + labelWidth + (row.labelText ? textGap : 0);
+    const unitX = valueX + valueWidth + (row.unitText ? textGap : 0);
+    const itemBaseId = `measurement_${row.item.id}`;
+    const itemMetadata = exportMeasurementItemMetadataAttributes(node, group, row.item, row.display);
+    const commonAttributes = `measure_type="${escapeXml(row.item.measurementTypeId)}" ${itemMetadata} y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
+    const textIdAttribute = (suffix: string, fallback: string) => {
+      const textId = usedSvgIds ? exportSvgUniqueId(`${itemBaseId}_${suffix}`, usedSvgIds, fallback) : "";
+      return textId ? ` id="${escapeXml(textId)}"` : "";
+    };
+    const labelMarkup = row.labelText
+      ? `<text${textIdAttribute("label", "measurement_label")} class="export-measurement-label measurement-label" data-export-measurement-text-role="label" ${commonAttributes} x="${formatSvgNumber(textX)}">${escapeXml(row.labelText)}</text>`
+      : "";
+    const valueMarkup = `<text${textIdAttribute("value", "measurement_value")} class="export-measurement-value measurement-value" data-export-measurement-text-role="value" data-export-measurement-value="1" ${commonAttributes} x="${formatSvgNumber(valueX)}">${escapeXml(row.valueText)}</text>`;
+    const unitMarkup = row.unitText
+      ? `<text${textIdAttribute("unit", "measurement_unit")} class="export-measurement-unit measurement-unit" data-export-measurement-text-role="unit" ${commonAttributes} x="${formatSvgNumber(unitX)}">${escapeXml(row.unitText)}</text>`
+      : "";
+    return `${labelMarkup}${valueMarkup}${unitMarkup}`;
   }).join("");
   return `<g class="export-measurement-group measurement-group" conn-dev="${escapeXml(node.id)}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>
   <title>${escapeXml(`${node.name} 动态量测`)}</title>
@@ -7492,6 +7516,7 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
   for (const layerId of nodeTypeLayerIds.values()) {
     nodeLayerMarkup.set(layerId, []);
   }
+  const nodeSymbolMarkup: string[] = [];
   exportNodes.forEach((node) => {
       const layerId = nodeLayerId(node);
       const typeLayerId = nodeTypeLayerIds.get(exportNodeLayerKey(node)) ?? otherLayerId;
@@ -7522,8 +7547,9 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
           : "";
       const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
       const labelMarkup = buildSvgNodeLabelMarkup(node);
+      const symbolId = exportSvgUniqueId(`symbol_${exportNodeType(node)}_${node.id}`, usedSvgIds, "device_symbol");
       const useId = exportSvgUniqueId(node.id, usedSvgIds, "device");
-      nodeLayerMarkup.get(typeLayerId)?.push(`<g id="${escapeXml(useId)}" class="export-node${exportButtonClass}" transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})" data-export-node-id="${escapeXml(node.id)}" data-export-layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}>
+      nodeSymbolMarkup.push(`<symbol id="${escapeXml(symbolId)}" viewBox="${formatSvgNumber(-node.size.width / 2)} ${formatSvgNumber(-node.size.height / 2)} ${formatSvgNumber(node.size.width)} ${formatSvgNumber(node.size.height)}" overflow="visible">
   <title>${escapeXml(node.name)}</title>
   <g class="export-node-geometry" transform="${geometryTransform}">
   ${glyphMarkup}
@@ -7539,7 +7565,8 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
   ${terminalMarkup}
   </g>
   ${labelMarkup}
-</g>`);
+</symbol>`);
+      nodeLayerMarkup.get(typeLayerId)?.push(`<use id="${escapeXml(useId)}" class="export-node${exportButtonClass}" href="#${escapeXml(symbolId)}" xlink:href="#${escapeXml(symbolId)}" x="${formatSvgNumber(node.position.x - node.size.width / 2)}" y="${formatSvgNumber(node.position.y - node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" data-export-node-id="${escapeXml(node.id)}" data-export-layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}/>`);
   });
   const measurementConfig = canvasSize.measurementConfig ?? DEFAULT_MEASUREMENT_CONFIG;
   const measurements = canvasSize.measurements ?? EMPTY_PROJECT_MEASUREMENTS;
@@ -7571,6 +7598,7 @@ ${(nodeLayerMarkup.get(layerId) ?? []).join("\n")}
     .join("\n");
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,${canvasSize.width},${canvasSize.height}" data-export-active-layer-id="${escapeXml(activeExportLayerId)}">
 <defs id="${escapeXml(defsId)}">
+${nodeSymbolMarkup.join("\n")}
 <g class="export-layer-definitions" style="display:none">
 ${exportLayerDefinitionsMarkup}
 </g>
@@ -7749,6 +7777,7 @@ export function App() {
   const latestGraphStoreRef = useRef<GraphStore | null>(null);
   const deferredMoveOptimizationCancelRef = useRef<(() => void) | null>(null);
   const deferredMoveRepairFrameRef = useRef<number | null>(null);
+  const deferredRoutableLineRouteRepairCancelRef = useRef<(() => void) | null>(null);
   const lastBusTerminalSyncEndpointRevisionRef = useRef(-1);
   const pendingBusTerminalSyncNodeIdsRef = useRef<Set<string>>(new Set());
   const initialCanvasFitAppliedRef = useRef(false);
@@ -13404,6 +13433,8 @@ export function App() {
   const pushUndoSnapshot = (markDirty = true, deepModelSnapshot = false, graphPatchScope?: UndoGraphPatchScope) => {
     deferredMoveOptimizationCancelRef.current?.();
     deferredMoveOptimizationCancelRef.current = null;
+    deferredRoutableLineRouteRepairCancelRef.current?.();
+    deferredRoutableLineRouteRepairCancelRef.current = null;
     const snapshot = cloneProjectState(deepModelSnapshot, graphPatchScope);
     setUndoStack((current) => [...current.slice(-49), snapshot]);
     if (markDirty) {
@@ -14435,6 +14466,8 @@ export function App() {
   const undoLastOperation = () => {
     deferredMoveOptimizationCancelRef.current?.();
     deferredMoveOptimizationCancelRef.current = null;
+    deferredRoutableLineRouteRepairCancelRef.current?.();
+    deferredRoutableLineRouteRepairCancelRef.current = null;
     pendingStoredRouteEdgeIdsRef.current = new Set();
     pendingBusTerminalSyncNodeIdsRef.current = new Set();
     setUndoStack((current) => {
@@ -16652,6 +16685,53 @@ export function App() {
       : [];
   };
 
+  const scheduleDeferredRoutableLineRouteRepair = (
+    previousNodes: ModelNode[],
+    movedNodeIds: string[],
+    originalPositions: Record<string, Point> | undefined,
+    expectedNodeUpdates: ModelNode[],
+    effectiveCanvasBounds: CanvasBounds
+  ) => {
+    deferredRoutableLineRouteRepairCancelRef.current?.();
+    if (movedNodeIds.length === 0 || expectedNodeUpdates.length === 0) {
+      deferredRoutableLineRouteRepairCancelRef.current = null;
+      return;
+    }
+    const movedNodeIdList = [...new Set(movedNodeIds)];
+    deferredRoutableLineRouteRepairCancelRef.current = scheduleIdleWork(() => {
+      deferredRoutableLineRouteRepairCancelRef.current = null;
+      const latestStore = latestGraphStoreRef.current;
+      if (!latestStore || !graphStorePatchStillCurrent(latestStore, expectedNodeUpdates, [], [])) {
+        return;
+      }
+      const candidateIds = routableLineRouteCandidateIdsForMovedNodes(
+        previousNodes,
+        latestStore.nodes,
+        movedNodeIdList,
+        originalPositions
+      );
+      if (candidateIds.size === 0) {
+        return;
+      }
+      const nodeUpdates = rebuildRoutableLineDeviceRouteUpdates(
+        latestStore.nodes,
+        candidateIds,
+        effectiveCanvasBounds,
+        previousNodes
+      );
+      if (nodeUpdates.length === 0) {
+        return;
+      }
+      expandCanvasToFitGraph(nodeUpdates, [], [], CANVAS_AUTO_EXPAND_PADDING, effectiveCanvasBounds);
+      markGraphDirtyForInteractiveCommit();
+      setGraphStore((current) =>
+        graphStorePatchStillCurrent(current, expectedNodeUpdates, [], [])
+          ? graphStorePatchNodes(current, nodeUpdates)
+          : current
+      );
+    }, 80, 1500);
+  };
+
   const localRouteOptimizationEdges = (
     previousNodes: ModelNode[],
     nextNodes: ModelNode[],
@@ -17636,25 +17716,8 @@ export function App() {
     );
     const deferMovedRouteRepair =
       movedNodeIds.length > 0 && (routeRepairCandidateEdges.length > 0 || deferSingleNodeTerminalReconciliation);
-    const routableLineCandidateIds = routableLineRouteCandidateIdsForMovedNodes(
-      previousNodes,
-      nextNodes,
-      movedNodeIds,
-      originalPositions
-    );
-    const routableLineRouteBounds = routableLineCandidateIds.size > 0
-      ? canvasBoundsForAutoExpandedGraphContent(effectiveCanvasBounds, movedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING)
-      : effectiveCanvasBounds;
-    const fullNextNodesForRoutableLines = routableLineCandidateIds.size > 0
-      ? overlayGraphStoreNodes(graphStore, movedNodeUpdates)
-      : nextNodes;
-    const routableLineNodeUpdates = routableLineCandidateIds.size > 0
-      ? rebuildRoutableLineDeviceRouteUpdates(fullNextNodesForRoutableLines, routableLineCandidateIds, routableLineRouteBounds, previousNodes)
-      : [];
-    const committedNodeUpdates = mergeNodeUpdateLists(movedNodeUpdates, routableLineNodeUpdates);
-    const committedNextNodes = routableLineNodeUpdates.length > 0
-      ? overlayGraphStoreNodes(graphStore, committedNodeUpdates)
-      : nextNodes;
+    const committedNodeUpdates = movedNodeUpdates;
+    const committedNextNodes = nextNodes;
     const originShift = allowAutoExpandCanvas ? leftTopCanvasOriginShiftForContent(committedNodeUpdates, committedCandidateEdges) : { x: 0, y: 0 };
     if (hasCanvasOriginShift(originShift)) {
       const candidateEdgeById = new Map(committedCandidateEdges.map((edge) => [edge.id, edge]));
@@ -17662,6 +17725,8 @@ export function App() {
       const rawNextNodes = overlayGraphStoreNodes(graphStore, committedNodeUpdates);
       const shiftedNextNodes = rawNextNodes.map((node) => translateNodeBy(node, originShift));
       const shiftedNextEdges = rawNextEdges.map((edge) => translateEdgeBy(edge, originShift));
+      const committedNodeIdSet = new Set(committedNodeUpdates.map((node) => node.id));
+      const shiftedExpectedNodeUpdates = shiftedNextNodes.filter((node) => committedNodeIdSet.has(node.id));
       const shiftedCanvasBounds = canvasBoundsForGraphContent(
         canvasBoundsWithOriginShift(effectiveCanvasBounds, originShift),
         shiftedNextNodes,
@@ -17676,6 +17741,13 @@ export function App() {
       markStoredRouteEdgesDirty(candidateEdgeIds);
       markGraphDirtyForInteractiveCommit();
       setGraphStore((current) => graphStoreSetGraph(current, shiftedNextNodes, shiftedNextEdges));
+      scheduleDeferredRoutableLineRouteRepair(
+        previousNodes,
+        movedNodeIds,
+        originalPositions,
+        shiftedExpectedNodeUpdates,
+        shiftedCanvasBounds
+      );
       return;
     }
     const commitCanvasBounds = canvasBoundsForAutoExpandedGraphContent(effectiveCanvasBounds, committedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING);
@@ -17712,6 +17784,13 @@ export function App() {
           edgeUpserts: expectedPatch.edgeUpserts,
           edgeDeleteIds: expectedPatch.edgeDeleteIds
         })
+      );
+      scheduleDeferredRoutableLineRouteRepair(
+        previousNodes,
+        movedNodeIds,
+        originalPositions,
+        expectedPatch.nodeUpdates,
+        commitCanvasBounds
       );
       if (deferredMoveRepairFrameRef.current !== null) {
         window.cancelAnimationFrame(deferredMoveRepairFrameRef.current);
@@ -17815,6 +17894,13 @@ export function App() {
         edgeUpserts: expectedPatch.edgeUpserts,
         edgeDeleteIds: expectedPatch.edgeDeleteIds
       })
+    );
+    scheduleDeferredRoutableLineRouteRepair(
+      previousNodes,
+      movedNodeIds,
+      originalPositions,
+      expectedPatch.nodeUpdates,
+      commitCanvasBounds
     );
     scheduleMovedEdgeOptimization(
       previousNodes,
@@ -24264,6 +24350,8 @@ export function App() {
     pendingBusTerminalSyncNodeIdsRef.current = new Set();
     deferredMoveOptimizationCancelRef.current?.();
     deferredMoveOptimizationCancelRef.current = null;
+    deferredRoutableLineRouteRepairCancelRef.current?.();
+    deferredRoutableLineRouteRepairCancelRef.current = null;
     suppressNextGraphDirtyRef.current = true;
     setUndoStack([]);
     setProjectName(project.name);
@@ -25632,6 +25720,8 @@ export function App() {
     }
     deferredMoveOptimizationCancelRef.current?.();
     deferredMoveOptimizationCancelRef.current = null;
+    deferredRoutableLineRouteRepairCancelRef.current?.();
+    deferredRoutableLineRouteRepairCancelRef.current = null;
     if (targetId) {
       const existing = projectById.get(targetId);
       if (existing) {

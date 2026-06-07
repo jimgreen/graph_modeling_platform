@@ -22,9 +22,9 @@ describe("SVG export", () => {
     expect(svg).toContain('<g id="ACLoad_Layer"');
     expect(svg).toContain('<g id="Measurement_Layer">');
     expect(svg).toContain('<g id="Other_Layer">');
-    expect(svg).not.toContain('<symbol id="symbol_');
-    expect(svg).not.toMatch(/<use[^>]+href="#symbol_/);
-    expect(svg).toContain('<g id="source-1" class="export-node" transform="translate(120 140)"');
+    expect(svg).toContain('<symbol id="symbol_ACGenerator_source-1"');
+    expect(svg).toContain(`viewBox="${-generator.size.width / 2} ${-generator.size.height / 2} ${generator.size.width} ${generator.size.height}" overflow="visible"`);
+    expect(svg).toContain(`<use id="source-1" class="export-node" href="#symbol_ACGenerator_source-1" xlink:href="#symbol_ACGenerator_source-1" x="${generator.position.x - generator.size.width / 2}" y="${generator.position.y - generator.size.height / 2}" width="${generator.size.width}" height="${generator.size.height}"`);
     expect(svg).toContain('data-export-node-id="source-1"');
     expect(svg.indexOf('<g id="Segment_Layer">')).toBeGreaterThan(svg.indexOf('<g id="root_g">'));
 
@@ -147,13 +147,31 @@ describe("SVG export", () => {
 
     expect(svg).toContain('data-export-device-id="load-export"');
     expect(svg).toContain('data-export-device-idx="LOAD-1"');
+    expect(svg).toContain('idx="LOAD-1"');
+    expect(svg).toContain('name="负荷A"');
     expect(svg).toContain('class="export-node-label horizontal" transform="translate(10 64)"');
     expect(svg).toContain(">LOAD-1</text>");
     expect(svg).toContain('class="export-measurement-group measurement-group" conn-dev="load-export" transform="translate(180 70)"');
     expect(svg).toContain('data-export-measurement-name="P主"');
     expect(svg).toContain('data-export-measurement-source-point="load-export.activePower"');
     expect(svg).toContain('data-export-measurement-unit="kW"');
-    expect(svg).toContain("P -- kW");
+    expect(svg).toContain('class="export-measurement-label measurement-label"');
+    expect(svg).toContain('class="export-measurement-value measurement-value"');
+    expect(svg).toContain('class="export-measurement-unit measurement-unit"');
+    expect(svg).toContain('data-export-measurement-text-role="label"');
+    expect(svg).toContain('data-export-measurement-text-role="value"');
+    expect(svg).toContain('data-export-measurement-text-role="unit"');
+    expect(svg).toContain('data-export-measurement-value="1"');
+    expect(svg).toContain('measure_type="activePower"');
+    const valueText = svg.match(/<text id="measurement_m-active_value" class="export-measurement-value measurement-value"[^>]*>--<\/text>/)?.[0] ?? "";
+    expect(valueText).toContain('data-export-device-id="load-export"');
+    expect(valueText).toContain('data-export-device-idx="LOAD-1"');
+    expect(valueText).toContain('data-export-device-name="负荷A"');
+    expect(valueText).toContain('data-export-measurement-type-id="activePower"');
+    expect(valueText).toContain('data-export-measurement-name="P主"');
+    expect(svg).toContain(">P</text>");
+    expect(svg).toContain(">kW</text>");
+    expect(svg).not.toContain(">P -- kW</text>");
   });
 
   test("exports static layer buttons with standalone SVG layer switching logic", () => {
@@ -326,7 +344,7 @@ describe("SVG export", () => {
 
     const svg = buildSvgDocument([generator], [], { width: 360, height: 260 });
 
-    expect(svg).toMatch(/<g id="[^"]+" class="export-node"[^>]*transform="translate\(160 140\)"/);
+    expect(svg).toMatch(new RegExp(`<use id="[^"]+" class="export-node"[^>]*href="#symbol_ACGenerator_[^"]+"[^>]*x="${generator.position.x - generator.size.width / 2}" y="${generator.position.y - generator.size.height / 2}" width="${generator.size.width}" height="${generator.size.height}"`));
     expect(svg).toContain('class="export-node-geometry" transform="rotate(90) scale(-1.5 2)"');
     expect(svg).toContain('class="export-node-upright-content" transform="rotate(90) scale(-1.5 2)"');
     expect(svg).toMatch(/class="export-terminal ac" transform="translate\([\d.]+ 0\) scale\(-0\.6666666666666666 0\.5\)"/);

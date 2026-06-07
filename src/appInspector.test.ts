@@ -2918,7 +2918,7 @@ describe("graph inspector panel", () => {
     expect(sizeBlock).not.toContain("routeEdgesForRendering");
   });
 
-  test("exports SVG devices as positioned groups instead of implicit symbol uses", async () => {
+  test("exports SVG devices as defs symbols with explicit use dimensions", async () => {
     const source = await readAppSource();
     const serverSource = await readServerSource();
     const exportStart = source.indexOf("export function buildSvgDocument");
@@ -2928,16 +2928,25 @@ describe("graph inspector panel", () => {
     const serverExportEnd = serverSource.indexOf("async function listSchemeStoreEntries", serverExportStart);
     const serverExportBlock = serverSource.slice(serverExportStart, serverExportEnd);
 
-    expect(exportBlock).toContain('class="export-node${exportButtonClass}" transform="translate(');
-    expect(exportBlock).not.toContain("<symbol id=");
-    expect(exportBlock).not.toContain("<use id=");
-    expect(serverExportBlock).toContain('class="export-node" transform="${escapeSvgAttribute(nodeTransform)}"');
+    expect(exportBlock).toContain("const nodeSymbolMarkup: string[] = [];");
+    expect(exportBlock).toContain('<symbol id="${escapeXml(symbolId)}" viewBox="');
+    expect(exportBlock).toContain('<use id="${escapeXml(useId)}" class="export-node${exportButtonClass}" href="#${escapeXml(symbolId)}" xlink:href="#${escapeXml(symbolId)}" x="');
+    expect(exportBlock).toContain('width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}"');
+    expect(serverExportBlock).toContain("const symbolMarkup = [];");
+    expect(serverExportBlock).toContain('<symbol id="${escapeSvgAttribute(symbolId)}" viewBox="');
+    expect(serverExportBlock).toContain('<use id="${escapeSvgAttribute(useId)}" class="export-node" href="#${escapeSvgAttribute(symbolId)}" xlink:href="#${escapeSvgAttribute(symbolId)}" x="');
     expect(serverExportBlock).toContain('class="export-node-geometry" transform="${escapeSvgAttribute(geometryTransform)}"');
     expect(serverExportBlock).toContain("buildServerSvgNodeLabelMarkup(node)");
     expect(serverExportBlock).toContain("buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, usedIds)");
     expect(serverSource).toContain('data-export-measurement-source-point="${escapeSvgAttribute(row.item?.sourcePoint ?? "")}"');
-    expect(serverExportBlock).not.toContain("<symbol id=");
-    expect(serverExportBlock).not.toContain("<use id=");
+    expect(source).toContain('idx="${escapeXml(node.params.idx ?? "")}"');
+    expect(source).toContain('name="${escapeXml(node.name)}"');
+    expect(source).toContain('class="export-measurement-value measurement-value"');
+    expect(source).toContain('data-export-measurement-text-role="value"');
+    expect(source).toContain('data-export-measurement-value="1"');
+    expect(serverSource).toContain('class="export-measurement-value measurement-value"');
+    expect(serverSource).toContain('data-export-measurement-text-role="value"');
+    expect(serverSource).toContain('data-export-measurement-value="1"');
   });
 
   test("resizes the canvas from its edges and expands it for moved or pasted graphics", async () => {
@@ -6542,6 +6551,30 @@ describe("graph inspector panel", () => {
     expect(commitBlock).toContain("const storedRouteDirtyIds = storedRouteDirtyIdsForMove(movedRouteDirtyIds, routeCachePatchedEdgeIds);");
     expect(commitBlock).toContain("markStoredRouteEdgesDirty(storedRouteDirtyIds);");
     expect(commitBlock).not.toContain("markStoredRouteEdgesDirty(movedRouteDirtyIds);");
+  });
+
+  test("defers routable-line rerouting after node drag release", async () => {
+    const source = await readAppSource();
+    const scheduleStart = source.indexOf("const scheduleDeferredRoutableLineRouteRepair =");
+    const scheduleEnd = source.indexOf("const commitFastMovedGraphPatches", scheduleStart);
+    const scheduleBlock = source.slice(scheduleStart, scheduleEnd);
+    const commitStart = source.indexOf("const commitFastMovedGraphPatches");
+    const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
+
+    expect(scheduleStart).toBeGreaterThan(-1);
+    expect(source).toContain("const deferredRoutableLineRouteRepairCancelRef");
+    expect(scheduleBlock).toContain("scheduleIdleWork");
+    expect(scheduleBlock).toContain("routableLineRouteCandidateIdsForMovedNodes(");
+    expect(scheduleBlock).toContain("rebuildRoutableLineDeviceRouteUpdates(");
+    expect(scheduleBlock).toContain("graphStorePatchStillCurrent(latestStore, expectedNodeUpdates, [], [])");
+    expect(commitBlock).toContain("scheduleDeferredRoutableLineRouteRepair(");
+    expect(commitBlock).toContain("const shiftedExpectedNodeUpdates =");
+    expect(commitBlock).toContain("shiftedExpectedNodeUpdates,");
+    expect(commitBlock).toContain("expectedPatch.nodeUpdates,");
+    expect(commitBlock).not.toContain("const routableLineCandidateIds = routableLineRouteCandidateIdsForMovedNodes(");
+    expect(commitBlock).not.toContain("rebuildRoutableLineDeviceRouteUpdates(fullNextNodesForRoutableLines");
+    expect(commitBlock).not.toContain("{ nodeUpdates: shiftedNextNodes, edgeUpserts: shiftedNextEdges, edgeDeleteIds: [] }");
   });
 
   test("does not let an older route-cache effect clear freshly marked moved-edge dirtiness", async () => {
