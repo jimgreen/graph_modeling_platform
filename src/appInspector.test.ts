@@ -857,8 +857,14 @@ describe("graph inspector panel", () => {
 
   test("bridges the topbar dropdown hover gap between trigger and floating menu", async () => {
     const styles = await readStyles();
+    const topbarBlock = cssRuleBlock(styles, ".topbar {");
+    const sidePanelBlock = cssRuleBlock(styles, ".floating-side-panel {");
+    const dropdownMenuBlock = cssRuleBlock(styles, ".topbar-dropdown-menu {");
     const dropdownBridgeBlock = cssRuleBlock(styles, ".topbar-dropdown::after");
 
+    expect(topbarBlock).toContain("z-index: 90;");
+    expect(sidePanelBlock).toContain("z-index: 70;");
+    expect(dropdownMenuBlock).toContain("z-index: 100;");
     expect(dropdownBridgeBlock).toContain("content: \"\"");
     expect(dropdownBridgeBlock).toContain("top: 100%");
     expect(dropdownBridgeBlock).toContain("height: 8px");
