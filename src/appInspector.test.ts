@@ -603,6 +603,8 @@ describe("graph inspector panel", () => {
     expect(libraryPanelBlock).toContain("const libraryExpanded = componentLibraryDisplayMode === \"expanded\";");
     expect(libraryPanelBlock).toContain("const libraryFlyout = componentLibraryDisplayMode === \"right\";");
     expect(libraryPanelBlock).toContain("const expanded = librarySearchNeedle ? true : libraryExpanded");
+    expect(libraryPanelBlock).toContain(": expandedAttributeLibraries.includes(group);");
+    expect(libraryPanelBlock).not.toContain("expandedAttributeLibraries.includes(group) || hoveredAttributeLibrary === group");
     expect(libraryPanelBlock).toContain("!collapsedExpandedModeAttributeLibraries.includes(group)");
     expect(libraryPanelBlock).toContain("const componentTypeExpanded = librarySearchNeedle");
     expect(libraryPanelBlock).toContain("!collapsedExpandedModeComponentTypes.includes(componentTypeKey)");
@@ -1203,6 +1205,7 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".custom-device-form-grid .custom-device-container-field,");
     expect(styles).toContain(".custom-device-form-grid .custom-device-resize-field,");
     expect(styles).toContain(".custom-device-form-grid .custom-device-terminal-count-field");
+    expect(styles).toContain("minmax(190px, 1.35fr)\n    92px\n    112px\n    112px;");
   });
 
   test("places device measurement bindings inside the component definition dialog", async () => {
@@ -1286,9 +1289,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("typeGroups.map((typeGroup)");
     expect(source).toContain("attribute-library-component-type-section");
     expect(source).toContain("attribute-library-component-type-header");
-    expect(source).toContain("setHoveredAttributeLibrary(group);");
-    expect(source).toContain("setHoveredAttributeLibrary((current) => current === group ? \"\" : current)");
-    expect(source).toContain("expandedAttributeLibraries.includes(group) || hoveredAttributeLibrary === group");
+    expect(source).not.toContain("expandedAttributeLibraries.includes(group) || hoveredAttributeLibrary === group");
     expect(source).toContain("setHoveredAttributeLibraryComponentType(componentTypeKey);");
     expect(source).toContain("setHoveredAttributeLibraryComponentType((current) => current === componentTypeKey ? \"\" : current)");
     expect(source).toContain("expandedAttributeLibraryComponentTypes.includes(componentTypeKey) || hoveredAttributeLibraryComponentType === componentTypeKey");
@@ -2538,6 +2539,17 @@ describe("graph inspector panel", () => {
     expect(source).toContain("allowResizeTransform: [\"1\", \"0\"]");
     expect(source).toContain("allowResizeTransform: { \"1\": \"允许\", \"0\": \"不允许\" }");
     expect(source).toContain("allowResizeTransform: \"是否允许变形\"");
+    expect(source).toContain("const resizePermissionNodeUpdates = editingCustomDeviceKind");
+    expect(source).toContain("node.kind !== customKind");
+    expect(source).toContain("node.params[ALLOW_RESIZE_TRANSFORM_PARAM] === customDeviceDraft.allowResizeTransform");
+    expect(source).toContain("pushUndoSnapshot(true, false, undoScopeForGraphPatch(resizePermissionNodeUpdates.map((node) => node.id), []));");
+    expect(source).toContain("patchGraphNodes(resizePermissionNodeUpdates);");
+    expect(source).toContain("const resizeDefinitionValue = params[ALLOW_RESIZE_TRANSFORM_PARAM];");
+    expect(source).toContain("const resizeDefinitionNodeUpdates = resizeDefinitionValue === undefined");
+    expect(source).toContain("node.kind === selectedDefinitionTemplate.kind || deviceDefinitionKeyForTemplate(template) === definitionKey");
+    expect(source).toContain("node.params[ALLOW_RESIZE_TRANSFORM_PARAM] === resizeDefinitionValue");
+    expect(source).toContain("pushUndoSnapshot(true, false, undoScopeForGraphPatch(resizeDefinitionNodeUpdates.map((node) => node.id), []));");
+    expect(source).toContain("patchGraphNodes(resizeDefinitionNodeUpdates);");
     expect(renderBlock).toContain("const scaleHandleConfigsForNode = nodeAllowsResizeTransform(node)");
     expect(renderBlock).toContain(": SCALE_HANDLE_CONFIGS.filter((handle) => handle.kind === \"scale-both\");");
     expect(renderBlock).toContain("{scaleHandleConfigsForNode.map((handle) => {");
@@ -3725,6 +3737,43 @@ describe("graph inspector panel", () => {
     expect(svgPointerDownBlock).toContain("setContextMarqueeSelection(null);");
   });
 
+  test("automatically switches inspector tabs for common canvas selection flows", async () => {
+    const source = await readAppSource();
+    const selectionHelperStart = source.indexOf("const switchInspectorTabForCanvasSelection = (");
+    const selectionHelperEnd = source.indexOf("const selectCanvasGraphics = (", selectionHelperStart);
+    const selectionHelperBlock = source.slice(selectionHelperStart, selectionHelperEnd);
+    const marqueeStart = source.indexOf("function finishMarqueeSelectionFromPoints");
+    const marqueeEnd = source.indexOf("const startContextMarqueeSelection", marqueeStart);
+    const marqueeBlock = source.slice(marqueeStart, marqueeEnd);
+    const svgPointerDownStart = source.indexOf("onPointerDown={(event) => {", source.indexOf("onPointerMove={handlePointerMove}"));
+    const svgPointerDownEnd = source.indexOf("onContextMenu={(event) => {", svgPointerDownStart);
+    const svgPointerDownBlock = source.slice(svgPointerDownStart, svgPointerDownEnd);
+    const nodePointerStart = source.indexOf("const handleNodePointerDown =");
+    const nodePointerEnd = source.indexOf("const handleEdgePathPointerDown", nodePointerStart);
+    const nodePointerBlock = source.slice(nodePointerStart, nodePointerEnd);
+    const filterConfirmStart = source.indexOf("const confirmFilterSelectionDialog = () =>");
+    const filterConfirmEnd = source.indexOf("const finishMarqueeSelection = () =>", filterConfirmStart);
+    const filterConfirmBlock = source.slice(filterConfirmStart, filterConfirmEnd);
+    const ctrlAStart = source.indexOf("if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === \"a\")");
+    const ctrlAEnd = source.indexOf("} else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === \"c\")", ctrlAStart);
+    const ctrlABlock = source.slice(ctrlAStart, ctrlAEnd);
+
+    expect(source).toContain("const switchInspectorTabForCanvasSelection = (");
+    expect(source).toContain("if (selectedCount > 1 && inspectorTab !== \"tree\")");
+    expect(selectionHelperBlock).toContain("nodeIds.length === 0 && edgeIds.length === 0");
+    expect(selectionHelperBlock).toContain("setInspectorTab(\"model\")");
+    expect(selectionHelperBlock).toContain("const selectedGraphicCount = nodeIds.length + edgeIds.length;");
+    expect(selectionHelperBlock).toContain("selectedGraphicCount > 1");
+    expect(selectionHelperBlock).toContain("setInspectorTab(\"tree\")");
+    expect(selectionHelperBlock).toContain("selectedGraphicCount === 1");
+    expect(selectionHelperBlock).toContain("setInspectorTab(\"graph\")");
+    expect(marqueeBlock).toContain("switchInspectorTabForCanvasSelection(selection.nodeIds, selection.edgeIds, \"marquee\");");
+    expect(svgPointerDownBlock).toContain("switchInspectorTabForCanvasSelection([], [], \"blank\");");
+    expect(nodePointerBlock).toContain("switchInspectorTabForCanvasSelection([node.id], [], \"single\");");
+    expect(filterConfirmBlock).toContain("switchInspectorTabForCanvasSelection(nextSelectedNodes.map((node) => node.id), [], \"marquee\");");
+    expect(ctrlABlock).toContain("switchInspectorTabForCanvasSelection(activeLayerNodes.map((node) => node.id), selectableEdgeIds, \"marquee\");");
+  });
+
   test("selects canvas nodes by one or more device types from the blank context menu", async () => {
     const source = await readAppSource();
     const contextStart = source.indexOf("{contextMenu && (");
@@ -3739,15 +3788,23 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("const [filterSelectionDialogOpen, setFilterSelectionDialogOpen] = useState(false);");
     expect(source).toContain("const [filterSelectionTypeKeys, setFilterSelectionTypeKeys] = useState<string[]>([]);");
+    expect(source).toContain("type FilterSelectionTypeOption =");
     expect(source).toContain("const filterSelectionTypeOptions = useMemo");
+    expect(source).toContain("const filterSelectionComponentTypeKey = (node: ModelNode)");
+    expect(source).toContain("const filterSelectionSpecificTypeKey = (node: ModelNode) => node.kind;");
+    expect(source).toContain("const filterSelectionItemKey = (node: ModelNode)");
+    expect(source).toContain("items: Array<{ itemKey: string; typeKey: string; label: string; count: number; nodeIds: string[]; names: string[] }>");
+    expect(source).toContain("const filterSelectionTypeSelected = (option: FilterSelectionTypeOption)");
+    expect(source).toContain("const filterSelectionTypePartial = (option: FilterSelectionTypeOption)");
     expect(source).toContain("const openFilterSelectionDialog = () =>");
     expect(source).toContain("const toggleFilterSelectionType = (typeKey: string) =>");
+    expect(source).toContain("const toggleFilterSelectionItem = (itemKey: string) =>");
     expect(source).toContain("const confirmFilterSelectionDialog = () =>");
     expect(contextBlock).toContain("{isEditMode && contextMenuTarget === \"blank\" && activeLayerNodes.length > 0 && (");
     expect(contextBlock).toContain("runContextMenuAction(openFilterSelectionDialog)");
     expect(contextBlock).toContain("过滤选择");
     expect(confirmBlock).toContain("new Set(filterSelectionTypeKeys)");
-    expect(confirmBlock).toContain("activeLayerNodes.filter((node) => selectedTypeKeys.has(filterSelectionTypeKey(node)))");
+    expect(confirmBlock).toContain("activeLayerNodes.filter((node) => selectedItemKeys.has(filterSelectionItemKey(node)))");
     expect(confirmBlock).toContain("selectCanvasGraphics(nextSelectedNodes.map((node) => node.id), [], { scope: \"direct\" })");
     expect(confirmBlock).toContain("setFilterSelectionDialogOpen(false);");
     expect(confirmBlock).toContain("writeOperationLog(`过滤选择：选中 ${nextSelectedNodes.length} 个图元`)");
@@ -3755,9 +3812,19 @@ describe("graph inspector panel", () => {
     expect(dialogBlock).toContain("aria-labelledby=\"filter-selection-title\"");
     expect(dialogBlock).toContain("元件类型列表");
     expect(dialogBlock).toContain("filterSelectionTypeOptions.map((option) =>");
-    expect(dialogBlock).toContain("checked={filterSelectionTypeKeys.includes(option.typeKey)}");
+    expect(dialogBlock).toContain("className=\"filter-selection-type-row\"");
+    expect(dialogBlock).toContain("input.indeterminate = filterSelectionTypePartial(option);");
+    expect(dialogBlock).toContain("checked={filterSelectionTypeSelected(option)}");
+    expect(dialogBlock).toContain("className=\"filter-selection-node-list\"");
+    expect(dialogBlock).toContain("具体元件列表");
+    expect(dialogBlock).toContain("option.items.map((item) =>");
+    expect(dialogBlock).toContain("key={item.itemKey}");
+    expect(dialogBlock).toContain("className=\"filter-selection-kind-row\"");
+    expect(dialogBlock).toContain("checked={filterSelectionTypeKeys.includes(item.itemKey)}");
     expect(dialogBlock).toContain("toggleFilterSelectionType(option.typeKey)");
+    expect(dialogBlock).toContain("toggleFilterSelectionItem(item.itemKey)");
     expect(dialogBlock).toContain("全选");
+    expect(dialogBlock).toContain("filterSelectionTypeOptions.flatMap((option) => option.items.map((item) => item.itemKey))");
     expect(dialogBlock).toContain("清空");
     expect(dialogBlock).toContain("确认选择");
   });
@@ -6293,6 +6360,9 @@ describe("graph inspector panel", () => {
   test("bounds graph tree and floating topology warning rendering for large models", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
+    const topbarStart = source.indexOf("<header className=\"topbar\">");
+    const topbarEnd = source.indexOf("</header>", topbarStart);
+    const topbarBlock = source.slice(topbarStart, topbarEnd);
     const treeStart = source.indexOf("const renderElementTreePanel = () =>");
     const treeEnd = source.indexOf("const topologyWarningDisplayMessage", treeStart);
     const treeBlock = source.slice(treeStart, treeEnd);
@@ -6318,6 +6388,12 @@ describe("graph inspector panel", () => {
     expect(source).toContain("topologyWarningPageCount");
     expect(source).toContain("normalizedTopologyWarningPage * TOPOLOGY_WARNING_PAGE_SIZE");
     expect(source).toContain("const [topologyWarningPanelClosed, setTopologyWarningPanelClosed] = useState(false);");
+    expect(source).toContain("const openTopologyWarningPanel = () =>");
+    expect(topbarBlock).toContain("aria-label=\"告警窗口\"");
+    expect(topbarBlock).toContain("title={topologyErrors.length > 0 ? \"显示告警窗口\" : \"当前没有拓扑告警\"}");
+    expect(topbarBlock).toContain("disabled={topologyErrors.length === 0}");
+    expect(topbarBlock).toContain("onClick={openTopologyWarningPanel}");
+    expect(topbarBlock).toContain("<Bell size={16} />");
     expect(source).toContain("const startTopologyWarningPanelDrag = (event: PointerEvent<HTMLElement>) =>");
     expect(source).toContain("const startTopologyWarningPanelResize = (event: PointerEvent<HTMLDivElement>) =>");
     expect(validationBlock).toContain("className=\"topology-warning-floating-panel\"");
@@ -6601,10 +6677,12 @@ describe("graph inspector panel", () => {
     const panelModeActiveBlock = cssRuleBlock(styles, ".side-panel-mode-controls button.active");
     const inspectorPanelModeActiveBlock = cssRuleBlock(styles, ".inspector-title .side-panel-mode-controls button.active");
     const inspectorTabActiveBlock = cssRuleBlock(styles, ".inspector-tabs button.active");
+    const graphToolbarBlock = cssRuleBlock(styles, ".graph-info-toolbar");
+    const graphToolbarButtonBlock = cssRuleBlock(styles, ".graph-info-toolbar button");
     const graphToolbarActiveBlock = cssRuleBlock(styles, ".graph-info-toolbar button.active");
     const treeTypeHoverBlock = cssRuleBlock(styles, ".element-tree-type:hover,\n.element-tree-type:focus-visible");
     const treeItemHoverBlock = cssRuleBlock(styles, ".element-tree-item:hover,\n.element-tree-item:focus-visible");
-    const selectedItemBlock = cssRuleBlock(styles, ".element-tree-item.selected");
+    const selectedItemBlock = cssRuleBlock(styles, ".element-tree-item.selected {");
     const selectedChildListBlock = cssRuleBlock(styles, ".element-tree-item.selected .element-tree-child-list");
     const selectedChildItemBlock = cssRuleBlock(styles, ".element-tree-item.selected .element-tree-child-item {");
     const treeInputFocusBlock = cssRuleBlock(styles, ".element-tree-device-fields input:focus,\n.element-tree-child-item input:focus");
@@ -6641,6 +6719,14 @@ describe("graph inspector panel", () => {
     expect(inspectorPanelModeActiveBlock).toContain("color: #1f2937");
     expect(inspectorTabActiveBlock).toContain("background: #e8eef5");
     expect(inspectorTabActiveBlock).toContain("color: #1f2937");
+    expect(graphToolbarBlock).toContain("display: flex");
+    expect(graphToolbarBlock).toContain("padding: 0 0 8px 12px");
+    expect(graphToolbarButtonBlock).toContain("width: auto");
+    expect(graphToolbarButtonBlock).toContain("min-width: 48px");
+    expect(graphToolbarButtonBlock).toContain("height: 24px");
+    expect(graphToolbarButtonBlock).toContain("border: 1px solid transparent");
+    expect(graphToolbarButtonBlock).toContain("border-radius: 4px");
+    expect(graphToolbarButtonBlock).toContain("font-weight: 600");
     expect(graphToolbarActiveBlock).toContain("background: #e8eef5");
     expect(graphToolbarActiveBlock).toContain("color: #1f2937");
     expect(treeTypeHoverBlock).toContain("background: #e8eef5");
@@ -7416,6 +7502,9 @@ describe("graph inspector panel", () => {
     const setStart = source.indexOf("const voltageBaseSetPreviewByScope =");
     const setEnd = source.indexOf("const connectionRedrawViewportBounds =", setStart);
     const setBlock = source.slice(setStart, setEnd);
+    const confirmSetStart = source.indexOf("const confirmVoltageBaseSetDialog = () =>");
+    const confirmSetEnd = source.indexOf("const voltageBaseClearPreviewByScope =", confirmSetStart);
+    const confirmSetBlock = source.slice(confirmSetStart, confirmSetEnd);
     const dialogStart = source.indexOf("{voltageBaseSetDialogOpen && (");
     const dialogEnd = source.indexOf("{voltageBaseClearDialogOpen && (", dialogStart);
     const dialogBlock = source.slice(dialogStart, dialogEnd);
@@ -7454,10 +7543,13 @@ describe("graph inspector panel", () => {
     expect(source).toContain("selected: \"选中设备\"");
     expect(source).toContain("island: \"所在拓扑岛\"");
     expect(dialogBlock).toContain("VOLTAGE_BASE_SET_SCOPE_LABELS[scope]");
-    expect(dialogBlock).toContain("const count = result.targetNodeIds.length;");
-    expect(dialogBlock).toContain("voltageBaseSetResultForScope(voltageBaseSetScope).targetNodeIds.length === 0");
-    expect(dialogBlock).not.toContain("const count = result.changedNodeIds.length;");
+    expect(dialogBlock).toContain("const count = result.changedNodeIds.length;");
+    expect(dialogBlock).toContain("voltageBaseSetResultForScope(voltageBaseSetScope).changedNodeIds.length === 0");
+    expect(dialogBlock).not.toContain("const count = result.targetNodeIds.length;");
     expect(dialogBlock).toContain("confirmVoltageBaseSetDialog");
+    expect(confirmSetBlock).not.toContain("setVoltageBaseSetDialogOpen(false);");
+    expect(dialogBlock).toContain(">退出</button>");
+    expect(dialogBlock).not.toContain(">取消</button>");
   });
 
   test("uses explicit model scheme and blank project-list context-menu actions", async () => {
@@ -8234,6 +8326,15 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".measurement-editor-dialog");
     expect(styles).toContain(".measurement-editor-table");
     expect(styles).toContain("dialog-table-browse-controls");
+    expect(styles).toContain("dialog-table-column-resize");
+    expect(styles).toContain(".measurement-config-dialog .measurement-table th,");
+    expect(styles).toContain(".custom-device-dialog .custom-param-table th");
+    expect(styles).toContain("resize: horizontal;");
+    expect(styles).toContain("min-width: 72px;");
+    expect(styles).toContain("popup-table-borderless-wrap");
+    expect(styles).toContain(".measurement-editor-table-wrap,");
+    expect(styles).toContain("border-color: transparent;");
+    expect(styles).toContain("border-radius: 0;");
     expect(styles).toContain(".measurement-editor-table input,");
     expect(styles).toContain(".measurement-config-dialog .measurement-table input,");
     expect(styles).toContain(".device-definition-dialog .measurement-table input,");

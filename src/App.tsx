@@ -11,6 +11,7 @@ import {
   AlignVerticalDistributeCenter,
   ArrowDown,
   ArrowUp,
+  Bell,
   BoxSelect,
   Cable,
   ChevronsDown,
@@ -1804,6 +1805,12 @@ const VOLTAGE_BASE_SET_SCOPE_LABELS: Record<VoltageBaseSetScope, string> = {
 };
 const VOLTAGE_BASE_SET_PRESETS = ["0.4", "6", "10", "35", "66", "110", "220", "330", "500", "750", "1000"];
 type VoltageBaseSetMode = "uniform" | "terminal" | "byDevice";
+type FilterSelectionTypeOption = {
+  typeKey: string;
+  label: string;
+  count: number;
+  items: Array<{ itemKey: string; typeKey: string; label: string; count: number; nodeIds: string[]; names: string[] }>;
+};
 type WheelZoomAnchor = {
   point: Point;
   cursorOffsetX: number;
@@ -7894,28 +7901,78 @@ export function App() {
     return visibleNodes === nodes && layerNodes.length === nodes.length ? visibleNodes : visibleNodes === nodes ? layerNodes : layerNodes.filter((node) => visibleNodeIdSet.has(node.id));
   }, [activeLayer?.visible, activeLayerId, graphStore.nodesByLayerId, nodes, visibleNodeIdSet, visibleNodes]);
   const filterSelectionTemplateLabelByKind = useMemo(
-    () => new Map(DEVICE_LIBRARY.map((template) => [template.kind, template.label])),
-    []
+    () => new Map([...DEVICE_LIBRARY, ...customDeviceTemplates].map((template) => [template.kind, template.label])),
+    [customDeviceTemplates]
   );
-  const filterSelectionTypeKey = (node: ModelNode) => node.kind;
+  const filterSelectionComponentTypeKey = (node: ModelNode) =>
+    String(node.params.component_type || node.params.componentType || node.kind);
+  const filterSelectionSpecificTypeKey = (node: ModelNode) => node.kind;
+  const filterSelectionItemKey = (node: ModelNode) =>
+    `${filterSelectionComponentTypeKey(node)}::${filterSelectionSpecificTypeKey(node)}`;
+  const filterSelectionNodeName = (node: ModelNode) => node.name || node.params.name || node.params.idx || node.id;
   const filterSelectionTypeOptions = useMemo(() => {
-    const optionMap = new Map<string, { typeKey: string; label: string; count: number }>();
+    const optionMap = new Map<string, FilterSelectionTypeOption>();
     for (const node of activeLayerNodes) {
-      const typeKey = filterSelectionTypeKey(node);
+      const typeKey = filterSelectionComponentTypeKey(node);
+      const itemTypeKey = filterSelectionSpecificTypeKey(node);
+      const itemKey = filterSelectionItemKey(node);
+      const itemLabel = filterSelectionTemplateLabelByKind.get(itemTypeKey) ?? node.name ?? itemTypeKey;
+      const nodeName = filterSelectionNodeName(node);
       const current = optionMap.get(typeKey);
       if (current) {
-        current.count += 1;
+        const currentItem = current.items.find((item) => item.itemKey === itemKey);
+        const nextItems = currentItem
+          ? current.items.map((item) => item.itemKey === itemKey
+            ? {
+                ...item,
+                count: item.count + 1,
+                nodeIds: item.nodeIds.concat(node.id),
+                names: item.names.concat(nodeName)
+              }
+            : item
+          )
+          : current.items.concat({
+              itemKey,
+              typeKey: itemTypeKey,
+              label: itemLabel,
+              count: 1,
+              nodeIds: [node.id],
+              names: [nodeName]
+            });
+        optionMap.set(typeKey, {
+          ...current,
+          count: current.count + 1,
+          items: nextItems
+        });
         continue;
       }
       optionMap.set(typeKey, {
         typeKey,
-        label: filterSelectionTemplateLabelByKind.get(typeKey) ?? node.params.component_type ?? node.name ?? typeKey,
-        count: 1
+        label: componentTypeDisplayName(typeKey),
+        count: 1,
+        items: [{
+          itemKey,
+          typeKey: itemTypeKey,
+          label: itemLabel,
+          count: 1,
+          nodeIds: [node.id],
+          names: [nodeName]
+        }]
       });
     }
-    return Array.from(optionMap.values()).sort((first, second) =>
-      first.label.localeCompare(second.label, "zh-Hans-CN") || first.typeKey.localeCompare(second.typeKey)
-    );
+    return Array.from(optionMap.values())
+      .map((option) => ({
+        ...option,
+        items: option.items.map((item) => ({
+          ...item,
+          names: item.names.sort((first, second) => first.localeCompare(second, "zh-Hans-CN"))
+        })).sort((first, second) =>
+          first.label.localeCompare(second.label, "zh-Hans-CN") || first.typeKey.localeCompare(second.typeKey)
+        )
+      }))
+      .sort((first, second) =>
+        first.label.localeCompare(second.label, "zh-Hans-CN") || first.typeKey.localeCompare(second.typeKey)
+      );
   }, [activeLayerNodes, filterSelectionTemplateLabelByKind]);
   const activeLayerNodeIdSet = useMemo(
     () => (activeLayerNodes === visibleNodes ? visibleNodeIdSet : new Set(activeLayerNodes.map((node) => node.id))),
@@ -9451,6 +9508,11 @@ export function App() {
   };
   const selectedNodeCount = activeSelectedNodeIds.length;
   const selectedCount = selectedNodeCount + activeSelectedEdgeIds.length;
+  useEffect(() => {
+    if (selectedCount > 1 && inspectorTab !== "tree") {
+      setInspectorTab("tree");
+    }
+  }, [inspectorTab, selectedCount]);
   const selectedNodeTransformStatus = useMemo(() => {
     const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => visibleNodeById.get(nodeId) ?? []);
     if (selectedNodes.length === 0) {
@@ -14168,6 +14230,7 @@ export function App() {
           resetConnectPreviewState();
           setRewiring(null);
           clearRecordSelection();
+          switchInspectorTabForCanvasSelection(activeLayerNodes.map((node) => node.id), selectableEdgeIds, "marquee");
         }
       } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
         if (isRecordShortcutTarget && (selectedProjectId || selectedSchemeId || selectedProjectIds.length > 0 || selectedSchemeIds.length > 0)) {
@@ -14534,6 +14597,25 @@ export function App() {
 
   const expandActiveGroupSelection = (nodeIds: readonly string[] = [], edgeIds: readonly string[] = []) =>
     expandSelectionByGroups(activeLayerGroups, nodeIds, edgeIds);
+
+  const switchInspectorTabForCanvasSelection = (
+    nodeIds: readonly string[] = [],
+    edgeIds: readonly string[] = [],
+    source: "single" | "marquee" | "blank" = "single"
+  ) => {
+    if (source === "blank" || (nodeIds.length === 0 && edgeIds.length === 0)) {
+      setInspectorTab("model");
+      return;
+    }
+    const selectedGraphicCount = nodeIds.length + edgeIds.length;
+    if (selectedGraphicCount > 1) {
+      setInspectorTab("tree");
+      return;
+    }
+    if (selectedGraphicCount === 1) {
+      setInspectorTab("graph");
+    }
+  };
 
   const selectCanvasGraphics = (
     nodeIds: readonly string[] = [],
@@ -15213,6 +15295,7 @@ export function App() {
     }
     const selection = selectGraphicsInRect(activeLayerNodes, activeLayerRoutedEdges, { left, right, top, bottom });
     selectCanvasGraphics(selection.nodeIds, selection.edgeIds);
+    switchInspectorTabForCanvasSelection(selection.nodeIds, selection.edgeIds, "marquee");
     setConnectSource(null);
     resetConnectPreviewState();
     setRewiring(null);
@@ -15238,27 +15321,49 @@ export function App() {
       activeSelectedNodeIds
         .flatMap((nodeId) => {
           const node = nodeById.get(nodeId);
-          return node && activeLayerNodeIdSet.has(node.id) ? [filterSelectionTypeKey(node)] : [];
+          return node && activeLayerNodeIdSet.has(node.id) ? [filterSelectionItemKey(node)] : [];
         })
     ));
     setFilterSelectionTypeKeys(activeSelectedTypeKeys);
     setFilterSelectionDialogOpen(true);
   };
 
+  const filterSelectionTypeSelected = (option: FilterSelectionTypeOption) =>
+    option.items.length > 0 && option.items.every((item) => filterSelectionTypeKeys.includes(item.itemKey));
+
+  const filterSelectionTypePartial = (option: FilterSelectionTypeOption) =>
+    option.items.some((item) => filterSelectionTypeKeys.includes(item.itemKey)) && !filterSelectionTypeSelected(option);
+
   const toggleFilterSelectionType = (typeKey: string) => {
+    const option = filterSelectionTypeOptions.find((item) => item.typeKey === typeKey);
+    if (!option) {
+      return;
+    }
+    const itemKeys = option.items.map((item) => item.itemKey);
+    const itemKeySet = new Set(itemKeys);
+    setFilterSelectionTypeKeys((current) => {
+      const allSelected = itemKeys.every((itemKey) => current.includes(itemKey));
+      return allSelected
+        ? current.filter((item) => !itemKeySet.has(item))
+        : [...current, ...itemKeys.filter((itemKey) => !current.includes(itemKey))];
+    });
+  };
+
+  const toggleFilterSelectionItem = (itemKey: string) => {
     setFilterSelectionTypeKeys((current) =>
-      current.includes(typeKey)
-        ? current.filter((item) => item !== typeKey)
-        : [...current, typeKey]
+      current.includes(itemKey)
+        ? current.filter((item) => item !== itemKey)
+        : [...current, itemKey]
     );
   };
 
   const confirmFilterSelectionDialog = () => {
-    const selectedTypeKeys = new Set(filterSelectionTypeKeys);
-    const nextSelectedNodes = selectedTypeKeys.size > 0
-      ? activeLayerNodes.filter((node) => selectedTypeKeys.has(filterSelectionTypeKey(node)))
+    const selectedItemKeys = new Set(filterSelectionTypeKeys);
+    const nextSelectedNodes = selectedItemKeys.size > 0
+      ? activeLayerNodes.filter((node) => selectedItemKeys.has(filterSelectionItemKey(node)))
       : [];
     selectCanvasGraphics(nextSelectedNodes.map((node) => node.id), [], { scope: "direct" });
+    switchInspectorTabForCanvasSelection(nextSelectedNodes.map((node) => node.id), [], "marquee");
     setConnectSource(null);
     resetConnectPreviewState();
     setRewiring(null);
@@ -21523,6 +21628,7 @@ export function App() {
       return;
     }
     selectCanvasGraphics([node.id], [], { scope: "direct" });
+    switchInspectorTabForCanvasSelection([node.id], [], "single");
     setConnectSource(null);
     resetConnectPreviewState();
     setRewiring(null);
@@ -21549,6 +21655,7 @@ export function App() {
         return;
       }
       selectCanvasGraphics([node.id], [], { scope: "direct" });
+      switchInspectorTabForCanvasSelection([node.id], [], "single");
       setConnectSource(null);
       resetConnectPreviewState();
       setRewiring(null);
@@ -21579,6 +21686,7 @@ export function App() {
       startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
       return;
     }
+    switchInspectorTabForCanvasSelection([node.id], [], "single");
     beginStaticButtonPointerFeedback(event, node);
     const nodeWasSelected = selectedNodeIdSet.has(node.id);
     const clickedSelectedGroupMember =
@@ -22703,7 +22811,6 @@ export function App() {
 
   const confirmVoltageBaseSetDialog = () => {
     if (!requireEditMode("设置电压基值")) {
-      setVoltageBaseSetDialogOpen(false);
       return;
     }
     const value = voltageBaseSetValue.trim();
@@ -22720,7 +22827,6 @@ export function App() {
     const scopeLabel = VOLTAGE_BASE_SET_SCOPE_LABELS[voltageBaseSetScope];
     if (result.changedNodeIds.length === 0) {
       writeOperationLog(`${scopeLabel}没有需要设置的电压基值`);
-      setVoltageBaseSetDialogOpen(false);
       return;
     }
     const voltageBaseMismatches = validateTwoTerminalVoltageBaseConsistency(result.nodes);
@@ -22736,7 +22842,6 @@ export function App() {
     pushUndoSnapshot(true, false, undoScopeForGraphPatch(result.changedNodeIds, []));
     patchGraphNodes(result.nodeUpdates);
     writeOperationLog(`设置电压基值（${scopeLabel}）：${result.changedNodeIds.length}/${result.targetNodeIds.length} 个设备，${voltageBaseSetModeLabel}${terminalMode ? "" : `，值 ${value}`}`);
-    setVoltageBaseSetDialogOpen(false);
   };
 
   const voltageBaseClearPreviewByScope = useMemo<Partial<Record<VoltageBaseClearScope, ReturnType<typeof clearVoltageBaseValuesForScope>>>>(() => {
@@ -26307,6 +26412,32 @@ export function App() {
       };
       return next;
     });
+    const resizeDefinitionValue = params[ALLOW_RESIZE_TRANSFORM_PARAM];
+    const resizeDefinitionNodeUpdates = resizeDefinitionValue === undefined
+      ? []
+      : nodes.flatMap((node) => {
+          const template = baseLibraryTemplateByKind.get(node.kind);
+          if (!template) {
+            return [];
+          }
+          if (!(node.kind === selectedDefinitionTemplate.kind || deviceDefinitionKeyForTemplate(template) === definitionKey)) {
+            return [];
+          }
+          if (node.params[ALLOW_RESIZE_TRANSFORM_PARAM] === resizeDefinitionValue) {
+            return [];
+          }
+          return [{
+            ...node,
+            params: {
+              ...node.params,
+              [ALLOW_RESIZE_TRANSFORM_PARAM]: resizeDefinitionValue
+            }
+          }];
+        });
+    if (resizeDefinitionNodeUpdates.length > 0) {
+      pushUndoSnapshot(true, false, undoScopeForGraphPatch(resizeDefinitionNodeUpdates.map((node) => node.id), []));
+      patchGraphNodes(resizeDefinitionNodeUpdates);
+    }
     setDefinitionDraftRows(normalizedRows.map((row) => ({ ...row, id: deviceDefinitionRowId() })));
     setDefinitionDraftError("");
   };
@@ -26940,6 +27071,27 @@ export function App() {
       }
       return [...current, template];
     });
+    const resizePermissionNodeUpdates = editingCustomDeviceKind
+      ? nodes.flatMap((node) => {
+          if (node.kind !== customKind) {
+            return [];
+          }
+          if (node.params[ALLOW_RESIZE_TRANSFORM_PARAM] === customDeviceDraft.allowResizeTransform) {
+            return [];
+          }
+          return [{
+            ...node,
+            params: {
+              ...node.params,
+              [ALLOW_RESIZE_TRANSFORM_PARAM]: customDeviceDraft.allowResizeTransform
+            }
+          }];
+        })
+      : [];
+    if (resizePermissionNodeUpdates.length > 0) {
+      pushUndoSnapshot(true, false, undoScopeForGraphPatch(resizePermissionNodeUpdates.map((node) => node.id), []));
+      patchGraphNodes(resizePermissionNodeUpdates);
+    }
     setExpandedAttributeLibraries((current) => Array.from(new Set([...current, attributeLibraryName])));
     ensureCustomComponentTreeExpanded(attributeLibraryName, componentType);
     setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section: componentType, templateKind: customKind });
@@ -27301,16 +27453,15 @@ export function App() {
           const libraryFlyout = componentLibraryDisplayMode === "right";
           const expanded = librarySearchNeedle ? true : libraryExpanded
             ? !collapsedExpandedModeAttributeLibraries.includes(group)
-            : expandedAttributeLibraries.includes(group) || hoveredAttributeLibrary === group;
+            : expandedAttributeLibraries.includes(group);
           const typeGroups = filteredAttributeLibraryByComponentType[group] ?? [];
           return (
             <section
               className="library-group-section"
               key={group}
               onMouseEnter={() => {
-                if (!libraryExpanded) {
+                if (libraryFlyout) {
                   clearLibraryFlyoutCloseTimer();
-                  setHoveredAttributeLibrary(group);
                 }
               }}
               onMouseLeave={() => {
@@ -28768,6 +28919,12 @@ export function App() {
     "--viewport-overlay-bottom": `${statusbarHeight + 14}px`
   } as CSSProperties;
   const topologyWarningPanelVisible = inspectorTopologyErrors.length > 0 && !topologyWarningPanelClosed;
+  const openTopologyWarningPanel = () => {
+    if (topologyErrors.length === 0) {
+      return;
+    }
+    setTopologyWarningPanelClosed(false);
+  };
   const topologyWarningPanelDefaultRight =
     (rightPanelVisible ? rightPanelWidth + 28 : 16) + CANVAS_MINIMAP_WIDTH + TOPOLOGY_WARNING_PANEL_MARGIN;
   const topologyWarningPanelStyle = topologyWarningPanelPosition
@@ -28968,6 +29125,15 @@ export function App() {
           </button>
           <button className="topbar-primary-button" onClick={runTopologyCalculation} disabled={isBrowseMode} title="图上拓扑" aria-label="图上拓扑">
             <Grid2X2 size={16} />
+          </button>
+          <button
+            className={`topbar-primary-button ${topologyErrors.length > 0 && !topologyWarningPanelClosed ? "active" : ""}`}
+            onClick={openTopologyWarningPanel}
+            disabled={topologyErrors.length === 0}
+            title={topologyErrors.length > 0 ? "显示告警窗口" : "当前没有拓扑告警"}
+            aria-label="告警窗口"
+          >
+            <Bell size={16} />
           </button>
           <button
             className="topbar-primary-button"
@@ -29388,7 +29554,7 @@ export function App() {
               setConnectSource(null);
               resetConnectPreviewState();
               setRewiring(null);
-              setInspectorTab("model");
+              switchInspectorTabForCanvasSelection([], [], "blank");
               if (activeProjectKey) {
                 setSelectedProjectId(activeProjectKey);
                 setSelectedProjectIds([activeProjectKey]);
@@ -32257,7 +32423,7 @@ export function App() {
             <div className="connection-redraw-options voltage-base-set-options" role="radiogroup" aria-label="设置电压基值范围">
               {VOLTAGE_BASE_SET_SCOPES.map((scope) => {
                 const result = voltageBaseSetResultForScope(scope);
-                const count = result.targetNodeIds.length;
+                const count = result.changedNodeIds.length;
                 const disabled = count === 0 || !voltageBaseSetReady();
                 return (
                   <button
@@ -32276,11 +32442,11 @@ export function App() {
               })}
             </div>
             <div className="image-picker-actions connection-redraw-actions">
-              <button type="button" onClick={() => setVoltageBaseSetDialogOpen(false)}>取消</button>
+              <button type="button" onClick={() => setVoltageBaseSetDialogOpen(false)}>退出</button>
               <button
                 type="button"
                 onClick={confirmVoltageBaseSetDialog}
-                disabled={!voltageBaseSetReady() || voltageBaseSetResultForScope(voltageBaseSetScope).targetNodeIds.length === 0}
+                disabled={!voltageBaseSetReady() || voltageBaseSetResultForScope(voltageBaseSetScope).changedNodeIds.length === 0}
               >
                 确定
               </button>
@@ -32489,28 +32655,60 @@ export function App() {
             <div className="image-picker-title">
               <div>
                 <h2 id="filter-selection-title">过滤选择</h2>
-                <p>元件类型列表：{filterSelectionTypeOptions.length} 类，已选择 {filterSelectionTypeKeys.length} 类。</p>
+                <p>元件类型列表：{filterSelectionTypeOptions.length} 类，已选择 {filterSelectionTypeKeys.length} 种。</p>
               </div>
               <button type="button" onClick={() => setFilterSelectionDialogOpen(false)}>关闭</button>
             </div>
             <div className="filter-selection-toolbar">
-              <button type="button" onClick={() => setFilterSelectionTypeKeys(filterSelectionTypeOptions.map((option) => option.typeKey))}>全选</button>
+              <button type="button" onClick={() => setFilterSelectionTypeKeys(filterSelectionTypeOptions.flatMap((option) => option.items.map((item) => item.itemKey)))}>全选</button>
               <button type="button" onClick={() => setFilterSelectionTypeKeys([])}>清空</button>
             </div>
             <div className="filter-selection-list" role="group" aria-label="元件类型列表">
               {filterSelectionTypeOptions.map((option) => (
-                <label key={option.typeKey} className="filter-selection-option">
-                  <input
-                    type="checkbox"
-                    checked={filterSelectionTypeKeys.includes(option.typeKey)}
-                    onChange={() => toggleFilterSelectionType(option.typeKey)}
-                  />
-                  <span>
-                    <strong>{option.label}</strong>
-                    <small>{option.typeKey}</small>
-                  </span>
-                  <em>{option.count}</em>
-                </label>
+                <div key={option.typeKey} className="filter-selection-option">
+                  <label className="filter-selection-type-row">
+                    <input
+                      type="checkbox"
+                      ref={(input) => {
+                        if (input) {
+                          input.indeterminate = filterSelectionTypePartial(option);
+                        }
+                      }}
+                      checked={filterSelectionTypeSelected(option)}
+                      onChange={() => toggleFilterSelectionType(option.typeKey)}
+                    />
+                    <span>
+                      <strong>{option.label}</strong>
+                      <small>{option.typeKey}</small>
+                    </span>
+                    <em>{option.count}</em>
+                  </label>
+                  <div className="filter-selection-node-list" aria-label={`${option.label}具体元件列表`}>
+                    {option.items.map((item) => (
+                      <div key={item.itemKey} className="filter-selection-node-item" title={`${item.label} / ${item.typeKey}`}>
+                        <label className="filter-selection-kind-row">
+                          <input
+                            type="checkbox"
+                            checked={filterSelectionTypeKeys.includes(item.itemKey)}
+                            onChange={() => toggleFilterSelectionItem(item.itemKey)}
+                          />
+                          <span>
+                            <strong>{item.label}</strong>
+                            <small>{item.typeKey}</small>
+                          </span>
+                          <em>{item.count}</em>
+                        </label>
+                        {item.names.length > 0 && (
+                          <div className="filter-selection-node-name-list" aria-label={`${item.label}元件名称`}>
+                            {item.names.map((name) => (
+                              <span key={name} title={name}>{name}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
             <div className="template-dialog-actions">

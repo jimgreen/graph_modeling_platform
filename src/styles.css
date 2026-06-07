@@ -26,6 +26,7 @@ input {
 button {
   border: 0;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 button:disabled {
@@ -2848,24 +2849,24 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .graph-info-toolbar {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  padding: 0 0 8px;
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  padding: 0 0 8px 12px;
 }
 
 .graph-info-toolbar button {
-  width: 100%;
-  min-width: 0;
-  height: 30px;
-  min-height: 30px;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  padding: 0 10px;
+  width: auto;
+  min-width: 48px;
+  height: 24px;
+  min-height: 24px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0 8px;
   color: #334155;
-  background: #ffffff;
+  background: #f8fafc;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1;
   white-space: nowrap;
 }
@@ -4161,9 +4162,9 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
     minmax(140px, 1fr)
     minmax(140px, 1fr)
     minmax(190px, 1.35fr)
-    116px
-    128px
-    96px;
+    92px
+    112px
+    112px;
   align-items: end;
 }
 
@@ -4586,7 +4587,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .filter-selection-dialog {
   display: grid;
   gap: 12px;
-  width: min(520px, calc(100vw - 48px));
+  width: min(640px, calc(100vw - 48px));
   max-height: min(680px, calc(100vh - 48px));
   padding: 18px;
   border-radius: 8px;
@@ -4623,46 +4624,49 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .filter-selection-option {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  min-height: 42px;
   padding: 7px 9px;
   border: 1px solid #e2e8f0;
   border-radius: 6px;
   background: #ffffff;
+}
+
+.filter-selection-type-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 34px;
   cursor: pointer;
 }
 
-.filter-selection-option input {
+.filter-selection-type-row input {
   margin: 0;
 }
 
-.filter-selection-option span {
+.filter-selection-type-row span {
   display: grid;
   gap: 2px;
   min-width: 0;
 }
 
-.filter-selection-option strong,
-.filter-selection-option small {
+.filter-selection-type-row strong,
+.filter-selection-type-row small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.filter-selection-option strong {
+.filter-selection-type-row strong {
   color: #0f172a;
   font-size: 13px;
 }
 
-.filter-selection-option small {
+.filter-selection-type-row small {
   color: #64748b;
   font-size: 11px;
 }
 
-.filter-selection-option em {
+.filter-selection-type-row em {
   min-width: 30px;
   padding: 2px 8px;
   border-radius: 999px;
@@ -4671,6 +4675,91 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   font-size: 12px;
   font-style: normal;
   text-align: center;
+}
+
+.filter-selection-node-list {
+  display: grid;
+  gap: 6px;
+  margin: 7px 0 0 28px;
+  padding-top: 7px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.filter-selection-node-item {
+  display: grid;
+  gap: 6px;
+  min-height: 30px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  color: #475569;
+  background: #f8fafc;
+}
+
+.filter-selection-kind-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 26px;
+  cursor: pointer;
+}
+
+.filter-selection-kind-row input {
+  margin: 0;
+}
+
+.filter-selection-kind-row span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.filter-selection-kind-row strong,
+.filter-selection-kind-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-selection-kind-row strong {
+  color: #1e293b;
+  font-size: 12px;
+}
+
+.filter-selection-kind-row small {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.filter-selection-kind-row em {
+  min-width: 28px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #334155;
+  background: #e2e8f0;
+  font-size: 12px;
+  font-style: normal;
+  text-align: center;
+}
+
+.filter-selection-node-name-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 5px;
+  margin-left: 26px;
+}
+
+.filter-selection-node-name-list span {
+  overflow: hidden;
+  min-height: 22px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  color: #475569;
+  background: #ffffff;
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .connection-redraw-dialog {
@@ -5215,7 +5304,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .element-tree-item.selected .element-tree-bilingual small,
 .element-tree-item.selected .element-tree-child-type small {
-  color: #1d4ed8;
+  color: #475569;
 }
 
 .element-tree-item:hover,
@@ -5226,13 +5315,11 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .element-tree-item.selected {
-  color: #0f172a;
-  border-color: #93c5fd;
-  background: #dbeafe;
-  box-shadow:
-    inset 4px 0 0 #2563eb,
-    0 0 0 1px rgba(37, 99, 235, 0.18);
-  font-weight: 900;
+  color: #1e293b;
+  border-color: #94a3b8;
+  background: #e8eef5;
+  box-shadow: inset 3px 0 0 #64748b, 0 0 0 1px rgba(100, 116, 139, 0.14);
+  font-weight: 800;
 }
 
 .element-tree-item.selected .element-tree-device-fields input,
@@ -6385,6 +6472,38 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .measurement-item-display-grid input[type="color"] {
   width: 32px;
   padding: 1px;
+}
+
+/* dialog-table-column-resize: popup table headers can be dragged wider or narrower by the user. */
+.measurement-editor-table,
+.measurement-config-dialog .measurement-table,
+.device-definition-dialog .measurement-table,
+.device-definition-dialog .custom-param-table,
+.custom-device-dialog .custom-param-table,
+.topology-warning-table {
+  table-layout: auto;
+}
+
+.measurement-editor-table th,
+.measurement-config-dialog .measurement-table th,
+.device-definition-dialog .measurement-table th,
+.device-definition-dialog .custom-param-table th,
+.custom-device-dialog .custom-param-table th,
+.topology-warning-table th {
+  min-width: 72px;
+  max-width: 520px;
+  resize: horizontal;
+  overflow: auto;
+}
+
+/* popup-table-borderless-wrap: edit dialogs avoid an extra framed box around tables. */
+.measurement-editor-table-wrap,
+.measurement-config-dialog .measurement-table-wrap,
+.device-definition-dialog .measurement-table-wrap,
+.device-definition-dialog .custom-param-table-wrap,
+.custom-device-dialog .custom-param-table-wrap {
+  border-color: transparent;
+  border-radius: 0;
 }
 
 /* dialog-table-browse-controls: popup tables read like text until a field is focused. */
