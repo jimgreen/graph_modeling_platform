@@ -284,6 +284,7 @@ export type DeviceTemplate = {
   terminalRoles?: ContainerTerminalRole[];
   terminalAssociations?: ContainerTerminalAssociationValue[];
   isContainer?: boolean;
+  allowResizeTransform?: boolean;
   custom?: boolean;
   parameterDefinitions?: DeviceParameterDefinition[];
   rotation?: number;
@@ -3895,8 +3896,7 @@ export function buildDefaultDeviceParameterDefinitions(
   const baseDefinitions: DeviceParameterDefinition[] = [
     { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
     { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
-    { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true },
-    { cnName: "是否允许变形", enName: ALLOW_RESIZE_TRANSFORM_PARAM, valueType: "enum", typicalValue: "0", readonly: false }
+    { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true }
   ];
   if (options.isContainer) {
     const relationDefinitions: DeviceParameterDefinition[] = [];
@@ -4385,7 +4385,7 @@ function inferDefinitionValueType(key: string, value: string): DeviceParameterVa
 
 function normalizeTemplateDefinition(definition: DeviceParameterDefinition): DeviceParameterDefinition | null {
   const enName = String(definition.enName ?? "").trim();
-  if (!enName || enName === "is_container") {
+  if (!enName || enName === "is_container" || enName === ALLOW_RESIZE_TRANSFORM_PARAM) {
     return null;
   }
   const valueType = TEMPLATE_DEFINITION_VALUE_TYPES[enName] ?? (["integer", "float", "string", "enum"].includes(definition.valueType) ? definition.valueType : "string");
@@ -4407,21 +4407,10 @@ function templateTerminalTypes(template: DeviceTemplate): TerminalType[] {
 }
 
 export function getTemplateParameterDefinitions(template: DeviceTemplate): DeviceParameterDefinition[] {
-  const resizeTransformDefinition: DeviceParameterDefinition = {
-    cnName: "是否允许变形",
-    enName: ALLOW_RESIZE_TRANSFORM_PARAM,
-    valueType: "enum",
-    typicalValue: template.params[ALLOW_RESIZE_TRANSFORM_PARAM] ?? (defaultAllowsResizeTransformForKind(template.kind) ? "1" : "0"),
-    readonly: false
-  };
-  const appendResizeTransformDefinition = (definitions: DeviceParameterDefinition[]) =>
-    definitions.some((definition) => definition.enName === ALLOW_RESIZE_TRANSFORM_PARAM)
-      ? definitions
-      : [...definitions, resizeTransformDefinition];
   if (template.parameterDefinitions?.length) {
-    return appendResizeTransformDefinition(template.parameterDefinitions
+    return template.parameterDefinitions
       .map((definition) => normalizeTemplateDefinition(definition))
-      .filter((definition): definition is DeviceParameterDefinition => Boolean(definition)));
+      .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
   }
   if (template.isContainer) {
     const defaultDefinitions = buildDefaultDeviceParameterDefinitions(templateTerminalTypes(template), {
@@ -4430,8 +4419,14 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
       terminalAssociations: template.terminalAssociations
     });
     const defaultKeys = new Set(defaultDefinitions.map((definition) => definition.enName));
-    const extraKeys = Object.keys(template.params).filter((key) => key && key !== "is_container" && !key.startsWith("_") && !defaultKeys.has(key));
-    return appendResizeTransformDefinition([
+    const extraKeys = Object.keys(template.params).filter((key) =>
+      key &&
+      key !== "is_container" &&
+      key !== ALLOW_RESIZE_TRANSFORM_PARAM &&
+      !key.startsWith("_") &&
+      !defaultKeys.has(key)
+    );
+    return [
       ...defaultDefinitions,
       ...extraKeys.map((key) => ({
         cnName: key,
@@ -4440,18 +4435,18 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
         typicalValue: template.params[key] ?? "",
         readonly: TEMPLATE_DEFINITION_READONLY_KEYS.has(key)
       }))
-    ]);
+    ];
   }
   const eKeys = getEParameterKeys(template.kind, template.params);
   const keys = eKeys.length > 0 ? eKeys : Object.keys(template.params);
-  const uniqueKeys = Array.from(new Set(keys.filter((key) => key && !key.startsWith("_"))));
-  return appendResizeTransformDefinition(uniqueKeys.map((key) => ({
+  const uniqueKeys = Array.from(new Set(keys.filter((key) => key && key !== ALLOW_RESIZE_TRANSFORM_PARAM && !key.startsWith("_"))));
+  return uniqueKeys.map((key) => ({
     cnName: key,
     enName: key,
     valueType: inferDefinitionValueType(key, template.params[key] ?? ""),
     typicalValue: template.params[key] ?? "",
     readonly: TEMPLATE_DEFINITION_READONLY_KEYS.has(key)
-  })));
+  }));
 }
 
 export function applyDeviceTemplateDefinitionOverride(
@@ -4464,7 +4459,10 @@ export function applyDeviceTemplateDefinitionOverride(
   const parameterDefinitions = (override.parameterDefinitions ?? [])
     .map((definition) => normalizeTemplateDefinition(definition))
     .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
-  const params = { ...(override.params ?? template.params) };
+  const overrideParams = Object.fromEntries(
+    Object.entries(override.params ?? {}).filter(([key]) => key !== ALLOW_RESIZE_TRANSFORM_PARAM)
+  );
+  const params = { ...template.params, ...overrideParams };
   for (const definition of parameterDefinitions) {
     if (definition.enName === "name") {
       continue;
@@ -4489,7 +4487,7 @@ function applyTemplateDefinitionDefaults(params: Record<string, string>, templat
   };
   for (const definition of parameterDefinitions) {
     const enName = definition.enName.trim();
-    if (!enName || enName === "name" || enName === "is_container") {
+    if (!enName || enName === "name" || enName === "is_container" || enName === ALLOW_RESIZE_TRANSFORM_PARAM) {
       continue;
     }
     next[enName] = definition.typicalValue;
@@ -4520,9 +4518,16 @@ function applyContainerRelationDefaults(params: Record<string, string>, template
 
 function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   const templateKind = baseDeviceKind(template.kind) as DeviceKind;
+  const templateResizeTransformValue = template.allowResizeTransform === undefined
+    ? template.params[ALLOW_RESIZE_TRANSFORM_PARAM]
+    : template.allowResizeTransform ? "1" : "0";
+  const resizeTransformAllowed = normalizeBooleanParam(
+    templateResizeTransformValue,
+    defaultAllowsResizeTransformForKind(templateKind)
+  );
   const withResizeTransformDefault = (params: Record<string, string>) => ({
-    [ALLOW_RESIZE_TRANSFORM_PARAM]: defaultAllowsResizeTransformForKind(templateKind) ? "1" : "0",
-    ...params
+    ...params,
+    [ALLOW_RESIZE_TRANSFORM_PARAM]: resizeTransformAllowed ? "1" : "0"
   });
   const withDeviceLabelDefaults = (params: Record<string, string>) =>
     isStaticKind(templateKind)
@@ -4561,7 +4566,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       run_stat: template.params.run_stat ?? "运行"
     };
     for (const definition of template.parameterDefinitions ?? []) {
-      if (definition.enName === "name") {
+      if (definition.enName === "name" || definition.enName === "is_container" || definition.enName === ALLOW_RESIZE_TRANSFORM_PARAM) {
         continue;
       }
       params[definition.enName] = params[definition.enName] ?? definition.typicalValue;

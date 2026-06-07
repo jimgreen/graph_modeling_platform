@@ -110,6 +110,7 @@ import {
   createInteractiveStaticDrawingNode,
   getElementFocusPoint,
   getRouteBlockingCandidateNodes,
+  applyDeviceTemplateDefinitionOverride,
   segmentIntersectsNodeBody,
   isInteractiveStaticDrawingKind,
   isStaticBoxLikeKind,
@@ -1390,6 +1391,47 @@ describe("power system model", () => {
 
     expect(nodeAllowsResizeTransform({ ...regularDevice, params: { ...regularDevice.params, [ALLOW_RESIZE_TRANSFORM_PARAM]: "1" } })).toBe(true);
     expect(nodeAllowsResizeTransform({ ...bus, params: { ...bus.params, [ALLOW_RESIZE_TRANSFORM_PARAM]: "0" } })).toBe(false);
+    expect(buildDefaultDeviceParameterDefinitions(["ac"]).map((definition) => definition.enName)).not.toContain(ALLOW_RESIZE_TRANSFORM_PARAM);
+    expect(getTemplateParameterDefinitions(DEVICE_LIBRARY.find((item) => item.kind === "ac-line")!).map((definition) => definition.enName)).not.toContain(ALLOW_RESIZE_TRANSFORM_PARAM);
+  });
+
+  test("keeps custom template resize permission when definition overrides omit it", () => {
+    const template: DeviceTemplate = {
+      kind: "custom-resize-device",
+      label: "可变形自定义设备",
+      attributeLibrary: "交流设备",
+      size: { width: 104, height: 64 },
+      allowResizeTransform: true,
+      params: {
+        component_type: "CustomResizeDevice",
+        backgroundImage: "data:image/svg+xml,<svg />"
+      },
+      terminalType: "ac",
+      terminalCount: 2,
+      terminalTypes: ["ac", "ac"],
+      terminalLabels: ["端1", "端2"],
+      custom: true,
+      parameterDefinitions: [
+        { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行" }
+      ]
+    };
+    const overriddenTemplate = applyDeviceTemplateDefinitionOverride(template, {
+      kind: "CustomResizeDevice",
+      params: {
+        component_type: "CustomResizeDevice",
+        run_stat: "运行"
+      },
+      parameterDefinitions: [
+        { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行" }
+      ],
+      updatedAt: "2026-06-07T00:00:00.000Z"
+    });
+    const node = createNodeFromTemplate(overriddenTemplate, { x: 0, y: 0 });
+
+    expect(overriddenTemplate.allowResizeTransform).toBe(true);
+    expect(getTemplateParameterDefinitions(overriddenTemplate).map((definition) => definition.enName)).not.toContain(ALLOW_RESIZE_TRANSFORM_PARAM);
+    expect(node.params[ALLOW_RESIZE_TRANSFORM_PARAM]).toBe("1");
+    expect(nodeAllowsResizeTransform(node)).toBe(true);
   });
 
   test("places converter elements under AC/DC device library groups", () => {

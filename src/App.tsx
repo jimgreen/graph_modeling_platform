@@ -156,6 +156,7 @@ import {
   normalizeProjectLayers,
   normalizeModelGroups,
   orderNodesByModelLayer,
+  defaultAllowsResizeTransformForKind,
   normalizeSavedProjectRecordNames,
   savedProjectRecordNameKey,
   normalizeColorPalette,
@@ -1809,7 +1810,7 @@ type FilterSelectionTypeOption = {
   typeKey: string;
   label: string;
   count: number;
-  items: Array<{ itemKey: string; typeKey: string; label: string; count: number; nodeIds: string[]; names: string[] }>;
+  items: Array<{ itemKey: string; typeKey: string; label: string; count: number; nodeIds: string[] }>;
 };
 type WheelZoomAnchor = {
   point: Point;
@@ -3588,6 +3589,29 @@ function componentTypeDisplayName(sectionName: string) {
   return display.english ? display.title : display.chinese;
 }
 
+function filterSelectionTreeLabel(label: string, typeKey: string) {
+  const normalizedLabel = label.trim();
+  const normalizedTypeKey = typeKey.trim();
+  if (!normalizedLabel) {
+    return normalizedTypeKey;
+  }
+  if (!normalizedTypeKey) {
+    return normalizedLabel;
+  }
+  const labelHasTypeKey = normalizedLabel
+    .split("/")
+    .map((part) => part.trim().toLowerCase())
+    .includes(normalizedTypeKey.toLowerCase());
+  return labelHasTypeKey || normalizedLabel.toLowerCase() === normalizedTypeKey.toLowerCase()
+    ? normalizedLabel
+    : `${normalizedLabel} / ${normalizedTypeKey}`;
+}
+
+const filterSelectionTemplateComponentTypeKey = (template: DeviceTemplate) =>
+  inferESection(template.kind, {}) ||
+  inferESection(template.kind, template.params) ||
+  String(template.params.component_type || template.params.componentType || template.kind);
+
 function libraryTemplateMatchesSearch(template: DeviceTemplate, group: string, section: string, needle: string) {
   if (!needle) {
     return true;
@@ -3731,29 +3755,46 @@ function normalizeCustomComponentTypes(value: unknown, reservedTypes: readonly s
     });
 }
 
+const templateResizeTransformValue = (template: Pick<DeviceTemplate, "kind" | "params" | "allowResizeTransform">) => {
+  if (template.allowResizeTransform !== undefined) {
+    return template.allowResizeTransform ? "1" : "0";
+  }
+  return template.params[ALLOW_RESIZE_TRANSFORM_PARAM] ??
+    (defaultAllowsResizeTransformForKind(template.kind) ? "1" : "0");
+};
+
+const templateAllowsResizeTransform = (template: Pick<DeviceTemplate, "kind" | "params" | "allowResizeTransform">) =>
+  templateResizeTransformValue(template) === "1";
+
 function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[] {
   if (!Array.isArray(value)) {
     return [];
   }
   return value
     .filter((item): item is DeviceTemplate => Boolean(item && typeof item === "object"))
-    .map((item) => ({
-      ...item,
-      kind: String((item as DeviceTemplate).kind ?? ""),
-      label: String((item as DeviceTemplate).label ?? (item as DeviceTemplate).kind ?? ""),
-      attributeLibrary: normalizeAttributeLibraryName(String((item as DeviceTemplate).attributeLibrary ?? "自定义属性库")),
-      size: (item as DeviceTemplate).size ?? { width: 96, height: 62 },
-      params: (item as DeviceTemplate).params ?? {},
-      terminalType: ((item as DeviceTemplate).terminalType ?? "ac") as TerminalType,
-      terminalCount: Math.max(0, Math.min(4, Number((item as DeviceTemplate).terminalCount ?? 0))),
-      terminalTypes: ((item as DeviceTemplate).terminalTypes ?? []).slice(0, 4) as TerminalType[],
-      terminalLabels: ((item as DeviceTemplate).terminalLabels ?? []).slice(0, 4),
-      terminalRoles: ((item as DeviceTemplate).terminalRoles ?? []).slice(0, 4) as ContainerTerminalRole[],
-      terminalAssociations: ((item as DeviceTemplate).terminalAssociations ?? []).slice(0, 4) as ContainerTerminalAssociationValue[],
-      isContainer: Boolean((item as DeviceTemplate).isContainer),
-      custom: true,
-      parameterDefinitions: normalizeDefinitionRows((item as DeviceTemplate).parameterDefinitions ?? [])
-    }))
+    .map((item) => {
+      const template = item as DeviceTemplate;
+      const rawParams = template.params ?? {};
+      const params = Object.fromEntries(Object.entries(rawParams).filter(([key]) => key !== ALLOW_RESIZE_TRANSFORM_PARAM));
+      return {
+        ...template,
+        kind: String(template.kind ?? ""),
+        label: String(template.label ?? template.kind ?? ""),
+        attributeLibrary: normalizeAttributeLibraryName(String(template.attributeLibrary ?? "自定义属性库")),
+        size: template.size ?? { width: 96, height: 62 },
+        params,
+        terminalType: (template.terminalType ?? "ac") as TerminalType,
+        terminalCount: Math.max(0, Math.min(4, Number(template.terminalCount ?? 0))),
+        terminalTypes: (template.terminalTypes ?? []).slice(0, 4) as TerminalType[],
+        terminalLabels: (template.terminalLabels ?? []).slice(0, 4),
+        terminalRoles: (template.terminalRoles ?? []).slice(0, 4) as ContainerTerminalRole[],
+        terminalAssociations: (template.terminalAssociations ?? []).slice(0, 4) as ContainerTerminalAssociationValue[],
+        isContainer: Boolean(template.isContainer),
+        allowResizeTransform: templateAllowsResizeTransform({ ...template, params: rawParams }),
+        custom: true,
+        parameterDefinitions: normalizeDefinitionRows(template.parameterDefinitions ?? [])
+      };
+    })
     .filter((item) => item.kind.trim() && item.label.trim());
 }
 
@@ -3936,7 +3977,7 @@ function normalizeDefinitionRows(value: unknown): DeviceParameterDefinition[] {
         readonly: Boolean((item as DeviceParameterDefinition).readonly)
       };
     })
-    .filter((item) => item.enName && item.enName !== "is_container");
+    .filter((item) => item.enName && !isReservedDeviceDefinitionParamName(item.enName));
 }
 
 function normalizeDeviceDefinitionOverrides(value: unknown): Record<string, DeviceTemplateDefinitionOverride> {
@@ -3955,7 +3996,9 @@ function normalizeDeviceDefinitionOverrides(value: unknown): Record<string, Devi
       overrides[normalizedKind] = {
         kind: normalizedKind,
         params: Object.fromEntries(
-          Object.entries(override.params ?? {}).map(([key, val]) => [key, String(val ?? "")])
+          Object.entries(override.params ?? {})
+            .filter(([key]) => !isReservedDeviceDefinitionParamName(key))
+            .map(([key, val]) => [key, String(val ?? "")])
         ),
         parameterDefinitions: normalizeDefinitionRows(override.parameterDefinitions),
         updatedAt: typeof override.updatedAt === "string" ? override.updatedAt : undefined
@@ -4125,9 +4168,12 @@ function deviceDefinitionOverrideForTemplate(
   return overrides[deviceDefinitionKeyForTemplate(template)] ?? overrides[template.kind];
 }
 
+const isReservedDeviceDefinitionParamName = (enName: string) =>
+  enName.trim() === "is_container" || enName.trim() === ALLOW_RESIZE_TRANSFORM_PARAM;
+
 function createDefinitionDraftRows(template: DeviceTemplate): DeviceDefinitionDraftRow[] {
   return getTemplateParameterDefinitions(template)
-    .filter((definition) => definition.enName !== "component_type" && definition.enName !== "is_container")
+    .filter((definition) => definition.enName !== "component_type" && !isReservedDeviceDefinitionParamName(definition.enName))
     .map((definition) => ({
       ...definition,
       cnName: definition.cnName === definition.enName ? PARAM_LABELS[definition.enName] ?? definition.cnName : definition.cnName,
@@ -7904,20 +7950,25 @@ export function App() {
     () => new Map([...DEVICE_LIBRARY, ...customDeviceTemplates].map((template) => [template.kind, template.label])),
     [customDeviceTemplates]
   );
+  const filterSelectionTemplateComponentTypeByKind = useMemo(
+    () => new Map([...DEVICE_LIBRARY, ...customDeviceTemplates].map((template) => [template.kind, filterSelectionTemplateComponentTypeKey(template)])),
+    [customDeviceTemplates]
+  );
   const filterSelectionComponentTypeKey = (node: ModelNode) =>
+    filterSelectionTemplateComponentTypeByKind.get(node.kind) ||
+    inferESection(node.kind, {}) ||
+    inferESection(node.kind, node.params) ||
     String(node.params.component_type || node.params.componentType || node.kind);
   const filterSelectionSpecificTypeKey = (node: ModelNode) => node.kind;
   const filterSelectionItemKey = (node: ModelNode) =>
     `${filterSelectionComponentTypeKey(node)}::${filterSelectionSpecificTypeKey(node)}`;
-  const filterSelectionNodeName = (node: ModelNode) => node.name || node.params.name || node.params.idx || node.id;
   const filterSelectionTypeOptions = useMemo(() => {
     const optionMap = new Map<string, FilterSelectionTypeOption>();
     for (const node of activeLayerNodes) {
       const typeKey = filterSelectionComponentTypeKey(node);
       const itemTypeKey = filterSelectionSpecificTypeKey(node);
       const itemKey = filterSelectionItemKey(node);
-      const itemLabel = filterSelectionTemplateLabelByKind.get(itemTypeKey) ?? node.name ?? itemTypeKey;
-      const nodeName = filterSelectionNodeName(node);
+      const itemLabel = filterSelectionTemplateLabelByKind.get(itemTypeKey) ?? itemTypeKey;
       const current = optionMap.get(typeKey);
       if (current) {
         const currentItem = current.items.find((item) => item.itemKey === itemKey);
@@ -7926,8 +7977,7 @@ export function App() {
             ? {
                 ...item,
                 count: item.count + 1,
-                nodeIds: item.nodeIds.concat(node.id),
-                names: item.names.concat(nodeName)
+                nodeIds: item.nodeIds.concat(node.id)
               }
             : item
           )
@@ -7936,8 +7986,7 @@ export function App() {
               typeKey: itemTypeKey,
               label: itemLabel,
               count: 1,
-              nodeIds: [node.id],
-              names: [nodeName]
+              nodeIds: [node.id]
             });
         optionMap.set(typeKey, {
           ...current,
@@ -7955,25 +8004,21 @@ export function App() {
           typeKey: itemTypeKey,
           label: itemLabel,
           count: 1,
-          nodeIds: [node.id],
-          names: [nodeName]
+          nodeIds: [node.id]
         }]
       });
     }
     return Array.from(optionMap.values())
       .map((option) => ({
         ...option,
-        items: option.items.map((item) => ({
-          ...item,
-          names: item.names.sort((first, second) => first.localeCompare(second, "zh-Hans-CN"))
-        })).sort((first, second) =>
+        items: option.items.sort((first, second) =>
           first.label.localeCompare(second.label, "zh-Hans-CN") || first.typeKey.localeCompare(second.typeKey)
         )
       }))
       .sort((first, second) =>
         first.label.localeCompare(second.label, "zh-Hans-CN") || first.typeKey.localeCompare(second.typeKey)
       );
-  }, [activeLayerNodes, filterSelectionTemplateLabelByKind]);
+  }, [activeLayerNodes, filterSelectionTemplateComponentTypeByKind, filterSelectionTemplateLabelByKind]);
   const activeLayerNodeIdSet = useMemo(
     () => (activeLayerNodes === visibleNodes ? visibleNodeIdSet : new Set(activeLayerNodes.map((node) => node.id))),
     [activeLayerNodes, visibleNodeIdSet, visibleNodes]
@@ -8043,6 +8088,10 @@ export function App() {
   const displaySelectedNodeKey = useMemo(() => displaySelectedNodeIds.join("|"), [displaySelectedNodeIds]);
   const selectedNode = visibleNodeById.get(selectedNodeId);
   const activeSelectedEdgeIds = activeCanvasSelection.edgeIds;
+  const activeSelectionKey = useMemo(
+    () => `${activeSelectedNodeIds.join("|")}::${activeSelectedEdgeIds.join("|")}`,
+    [activeSelectedEdgeIds, activeSelectedNodeIds]
+  );
   const activeSelectedEdgeSet = useMemo(() => new Set(displaySelectedEdgeIds), [displaySelectedEdgeIds]);
   const displaySelectedEdgeKey = useMemo(() => displaySelectedEdgeIds.join("|"), [displaySelectedEdgeIds]);
   const batchCommonParamRows = useMemo<BatchCommonParamRow[]>(() => {
@@ -9508,11 +9557,16 @@ export function App() {
   };
   const selectedNodeCount = activeSelectedNodeIds.length;
   const selectedCount = selectedNodeCount + activeSelectedEdgeIds.length;
+  const previousAutoInspectorSelectionKeyRef = useRef(activeSelectionKey);
   useEffect(() => {
-    if (selectedCount > 1 && inspectorTab !== "tree") {
+    if (previousAutoInspectorSelectionKeyRef.current === activeSelectionKey) {
+      return;
+    }
+    previousAutoInspectorSelectionKeyRef.current = activeSelectionKey;
+    if (selectedCount > 1) {
       setInspectorTab("tree");
     }
-  }, [inspectorTab, selectedCount]);
+  }, [activeSelectionKey, selectedCount]);
   const selectedNodeTransformStatus = useMemo(() => {
     const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => visibleNodeById.get(nodeId) ?? []);
     if (selectedNodes.length === 0) {
@@ -19689,6 +19743,25 @@ export function App() {
     );
   };
 
+  const renderBatchCommonParamPanel = () => (
+    <section className="batch-param-panel" aria-label="批量修改共同属性">
+      <div className="batch-param-summary">
+        <strong>批量修改共同属性</strong>
+        <span>{activeSelectedNodeIds.length} 个图元，{batchCommonParamRows.length} 个共同属性</span>
+      </div>
+      <table className="param-table batch-param-table">
+        <tbody>
+          {batchCommonParamRows.map((row) => (
+            <tr key={row.key}>
+              {renderParamHeader(row.key, row.key, row.label)}
+              <td>{renderBatchCommonParamEditor(row)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+
   const renderStaticButtonActionEditor = (node: ModelNode) => {
     if (!isStaticButtonCapableKind(node.kind)) {
       return null;
@@ -19834,6 +19907,10 @@ export function App() {
       top,
       maxHeight: Math.max(120, viewportHeight - top - 8)
     };
+  };
+
+  const stopSidePanelEventPropagation = (event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLElement>) => {
+    event.stopPropagation();
   };
 
   const setSidePanelMode = (side: SidePanelSide, mode: SidePanelMode) => {
@@ -24798,8 +24875,25 @@ export function App() {
     });
   };
 
-  const resetViewport = () => {
-    setViewBox(normalizeViewBoxToCanvas({ x: 0, y: 0, width: canvasBounds.width, height: canvasBounds.height }, canvasBounds));
+  const resetViewportZoom = () => {
+    setViewBox((current) => {
+      const visible = canvasVisibleViewBoxRef.current;
+      const center = visible.width > 0 && visible.height > 0
+        ? {
+            x: visible.x + visible.width / 2,
+            y: visible.y + visible.height / 2
+          }
+        : {
+            x: current.x + current.width / 2,
+            y: current.y + current.height / 2
+          };
+      return clampViewBoxToCanvas({
+        x: center.x - canvasBounds.width / 2,
+        y: center.y - canvasBounds.height / 2,
+        width: canvasBounds.width,
+        height: canvasBounds.height
+      });
+    });
   };
 
   const fitWholeCanvasToFrame = () => {
@@ -24840,7 +24934,7 @@ export function App() {
 
   const fitViewToBounds = (bounds: GeometryBounds | SelectionRect | null, padding = 96) => {
     if (!bounds) {
-      resetViewport();
+      resetViewportZoom();
       return;
     }
     const targetWidth = Math.max(80, bounds.right - bounds.left + padding * 2);
@@ -26378,6 +26472,10 @@ export function App() {
         setDefinitionDraftError("中文名称和英文名称不能为空。");
         return;
       }
+      if (isReservedDeviceDefinitionParamName(enName)) {
+        setDefinitionDraftError(enName === ALLOW_RESIZE_TRANSFORM_PARAM ? "是否允许变形是元件属性，不能在参数定义表中新增。" : "是否容器是元件属性，不能在参数定义表中新增。");
+        return;
+      }
       const key = enName.toLowerCase();
       if (seenNames.has(key)) {
         setDefinitionDraftError(`英文名称 ${enName} 重复，无法保存。`);
@@ -26412,32 +26510,6 @@ export function App() {
       };
       return next;
     });
-    const resizeDefinitionValue = params[ALLOW_RESIZE_TRANSFORM_PARAM];
-    const resizeDefinitionNodeUpdates = resizeDefinitionValue === undefined
-      ? []
-      : nodes.flatMap((node) => {
-          const template = baseLibraryTemplateByKind.get(node.kind);
-          if (!template) {
-            return [];
-          }
-          if (!(node.kind === selectedDefinitionTemplate.kind || deviceDefinitionKeyForTemplate(template) === definitionKey)) {
-            return [];
-          }
-          if (node.params[ALLOW_RESIZE_TRANSFORM_PARAM] === resizeDefinitionValue) {
-            return [];
-          }
-          return [{
-            ...node,
-            params: {
-              ...node.params,
-              [ALLOW_RESIZE_TRANSFORM_PARAM]: resizeDefinitionValue
-            }
-          }];
-        });
-    if (resizeDefinitionNodeUpdates.length > 0) {
-      pushUndoSnapshot(true, false, undoScopeForGraphPatch(resizeDefinitionNodeUpdates.map((node) => node.id), []));
-      patchGraphNodes(resizeDefinitionNodeUpdates);
-    }
     setDefinitionDraftRows(normalizedRows.map((row) => ({ ...row, id: deviceDefinitionRowId() })));
     setDefinitionDraftError("");
   };
@@ -26590,7 +26662,11 @@ export function App() {
       terminalAssociations
     }).map((definition) => definition.enName.toLowerCase()));
     const customParams = (template.parameterDefinitions ?? parseCustomDefinitions(template.params))
-      .filter((definition) => !defaultDefinitions.has(definition.enName.toLowerCase()) && definition.enName !== "component_type" && definition.enName !== "is_container")
+      .filter((definition) =>
+        !defaultDefinitions.has(definition.enName.toLowerCase()) &&
+        definition.enName !== "component_type" &&
+        !isReservedDeviceDefinitionParamName(definition.enName)
+      )
       .map((definition) => ({ ...definition, id: customParamId() }));
     ensureCustomComponentTreeExpanded(attributeLibraryName, section);
     setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section, templateKind: template.kind });
@@ -26601,7 +26677,7 @@ export function App() {
       componentName: template.label,
       backgroundImage: template.params.backgroundImage ?? "",
       backgroundImageAssetId: template.params.backgroundImageAssetId ?? "",
-      allowResizeTransform: template.params[ALLOW_RESIZE_TRANSFORM_PARAM] ?? "0",
+      allowResizeTransform: templateResizeTransformValue(template),
       terminalCount: Math.max(0, Math.min(4, template.terminalCount)),
       terminalTypes: [...terminalTypes, "ac", "ac", "ac", "ac"].slice(0, 4) as TerminalType[],
       terminalRoles: [...(template.terminalRoles ?? []), "single-load", "single-load", "single-load", "single-load"].slice(0, 4) as ContainerTerminalRole[],
@@ -27025,6 +27101,14 @@ export function App() {
       setCustomDeviceDraft((current) => ({ ...current, error: "属性行的中文名称和英文名称不能为空。" }));
       return;
     }
+    const reservedCustomRow = customRows.find((row) => isReservedDeviceDefinitionParamName(row.enName));
+    if (reservedCustomRow) {
+      setCustomDeviceDraft((current) => ({
+        ...current,
+        error: reservedCustomRow.enName === ALLOW_RESIZE_TRANSFORM_PARAM ? "是否允许变形是元件属性，不能在参数定义表中新增。" : "是否容器是元件属性，不能在参数定义表中新增。"
+      }));
+      return;
+    }
     const definitions = [...customDefaultDefinitions(terminalTypes, {
       isContainer: customDeviceDraft.isContainer,
       terminalAssociations
@@ -27053,8 +27137,7 @@ export function App() {
         strokeColor: "transparent",
         lineWidth: "0",
         backgroundImage,
-        backgroundImageAssetId,
-        [ALLOW_RESIZE_TRANSFORM_PARAM]: customDeviceDraft.allowResizeTransform
+        backgroundImageAssetId
       },
       terminalType: terminalTypes[0] ?? "ac",
       terminalCount: terminalTypes.length,
@@ -27062,6 +27145,7 @@ export function App() {
       terminalAssociations: customDeviceDraft.isContainer ? terminalAssociations : undefined,
       terminalLabels: terminalTypes.map((type, index) => `${TERMINAL_TYPE_LIBRARY_LABELS[type] ?? type}端${index + 1}`),
       isContainer: customDeviceDraft.isContainer,
+      allowResizeTransform: customDeviceDraft.allowResizeTransform === "1",
       custom: true,
       parameterDefinitions: definitions
     };
@@ -28531,7 +28615,7 @@ export function App() {
       return true;
     }
     if (command === "resetZoom") {
-      resetViewport();
+      resetViewportZoom();
       return true;
     }
     return false;
@@ -29055,8 +29139,16 @@ export function App() {
       <aside
         ref={leftPanelRef}
         className={`library-panel floating-side-panel ${leftPanelVisible ? "visible" : "hidden"}`}
+        onPointerDown={stopSidePanelEventPropagation}
+        onPointerMove={stopSidePanelEventPropagation}
         onPointerEnter={() => updateAutoPanelVisibility("left", "panel-enter")}
         onPointerLeave={(event) => handleSidePanelPointerLeave("left", event)}
+        onMouseMove={stopSidePanelEventPropagation}
+        onClick={stopSidePanelEventPropagation}
+        onDoubleClick={stopSidePanelEventPropagation}
+        onContextMenu={stopSidePanelEventPropagation}
+        onKeyDown={stopSidePanelEventPropagation}
+        onKeyUp={stopSidePanelEventPropagation}
       >
         <div
           className="side-panel-resize-handle right-edge"
@@ -30776,7 +30868,7 @@ export function App() {
           onClick={(event) => event.stopPropagation()}
         >
           <div className="viewport-controls" role="group" aria-label="视口控制">
-            <button type="button" title="适配视图" aria-label="适配视图" onClick={fitViewToContent}>
+            <button type="button" title="适配视图" aria-label="适配视图" onClick={fitWholeCanvasToFrame}>
               <Maximize2 size={16} />
             </button>
             <button type="button" title="居中选中" aria-label="居中选中" disabled={!selectedCanvasBounds} onClick={centerSelectedInView}>
@@ -30791,7 +30883,7 @@ export function App() {
             <button type="button" title="缩小" aria-label="缩小" onClick={() => zoomViewportAtCenter(1.18)}>
               <Minus size={16} />
             </button>
-            <button type="button" title="重置缩放" aria-label="重置缩放" onClick={resetViewport}>
+            <button type="button" title="重置缩放" aria-label="重置缩放" onClick={resetViewportZoom}>
               <RotateCcw size={16} />
             </button>
             <button
@@ -30989,8 +31081,16 @@ export function App() {
       <aside
         ref={rightPanelRef}
         className={`inspector-panel floating-side-panel ${rightPanelVisible ? "visible" : "hidden"}`}
+        onPointerDown={stopSidePanelEventPropagation}
+        onPointerMove={stopSidePanelEventPropagation}
         onPointerEnter={() => updateAutoPanelVisibility("right", "panel-enter")}
         onPointerLeave={(event) => handleSidePanelPointerLeave("right", event)}
+        onMouseMove={stopSidePanelEventPropagation}
+        onClick={stopSidePanelEventPropagation}
+        onDoubleClick={stopSidePanelEventPropagation}
+        onContextMenu={stopSidePanelEventPropagation}
+        onKeyDown={stopSidePanelEventPropagation}
+        onKeyUp={stopSidePanelEventPropagation}
       >
         <div
           className="side-panel-resize-handle left-edge"
@@ -31274,15 +31374,18 @@ export function App() {
             ) : inspectorTab === "tree" ? (
               renderElementTreePanel()
             ) : inspectorTab === "graph" ? (
+              (() => {
+                const multiNodeGraphSelection = activeSelectedNodeIds.length > 1;
+                return (
               <div className="graph-info-panel">
                 <div className="graph-info-toolbar" role="tablist" aria-label="图元属性分类">
                   <button
                     type="button"
-                    className="active"
+                    className={multiNodeGraphSelection ? "" : "active"}
                     onClick={() => setInspectorTab("graph")}
                     role="tab"
-                    aria-selected={true}
-                    disabled={!inspectorSelectedNode}
+                    aria-selected={!multiNodeGraphSelection}
+                    disabled={multiNodeGraphSelection || !inspectorSelectedNode}
                   >
                     图形
                   </button>
@@ -31295,7 +31398,7 @@ export function App() {
                     }}
                     role="tab"
                     aria-selected={false}
-                    disabled={!inspectorSelectedNode || isStaticNode(inspectorSelectedNode)}
+                    disabled={multiNodeGraphSelection || !inspectorSelectedNode || isStaticNode(inspectorSelectedNode)}
                   >
                     模型
                   </button>
@@ -31308,12 +31411,29 @@ export function App() {
                     }}
                     role="tab"
                     aria-selected={false}
-                    disabled={!inspectorSelectedNode || isStaticNode(inspectorSelectedNode)}
+                    disabled={multiNodeGraphSelection || !inspectorSelectedNode || isStaticNode(inspectorSelectedNode)}
                   >
                     量测
                   </button>
+                  {multiNodeGraphSelection && (
+                    <button
+                      type="button"
+                      className="active"
+                      role="tab"
+                      aria-selected={true}
+                    >
+                      共同属性
+                    </button>
+                  )}
                 </div>
-                {inspectorSelectedNode ? (
+                {multiNodeGraphSelection ? (
+                  batchCommonParamRows.length > 0 ? renderBatchCommonParamPanel() : (
+                    <div className="empty-state compact">
+                      <FileJson size={24} />
+                      <p>当前选中的图元没有可批量修改的共同属性。</p>
+                    </div>
+                  )
+                ) : inspectorSelectedNode ? (
                   <div className="graph-param-table-wrap">
                   <table className="param-table">
                   <tbody>
@@ -31704,6 +31824,8 @@ export function App() {
                   </div>
                 )}
               </div>
+                );
+              })()
             ) : inspectorSelectedNode ? (
               <div className="device-param-stack">
                 {!isStaticNode(inspectorSelectedNode) && (
@@ -31741,24 +31863,7 @@ export function App() {
                   renderSelectedNodeMeasurementTable(inspectorSelectedNode)
                 ) : (
                   <>
-                    {batchCommonParamRows.length > 0 && (
-                      <section className="batch-param-panel" aria-label="批量修改共同属性">
-                        <div className="batch-param-summary">
-                          <strong>批量修改共同属性</strong>
-                          <span>{activeSelectedNodeIds.length} 个图元，{batchCommonParamRows.length} 个共同属性</span>
-                        </div>
-                        <table className="param-table batch-param-table">
-                          <tbody>
-                            {batchCommonParamRows.map((row) => (
-                              <tr key={row.key}>
-                                {renderParamHeader(row.key, row.key, row.label)}
-                                <td>{renderBatchCommonParamEditor(row)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </section>
-                    )}
+                    {batchCommonParamRows.length > 0 && renderBatchCommonParamPanel()}
                     {selectedContainerParameterViews.length > 0 && (
                       <div className="container-param-tabs" role="tablist" aria-label="容器设备参数切换">
                         {selectedContainerParameterViews.map((view) => (
@@ -31816,7 +31921,7 @@ export function App() {
                                 ? [...eKeys, ...customExtraKeys]
                                 : customKeys.length > 0
                                   ? customKeys
-                                  : Object.keys(inspectorSelectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container");
+                                  : Object.keys(inspectorSelectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container" && key !== ALLOW_RESIZE_TRANSFORM_PARAM);
                             const readonlyKeys = new Set(customDefinitions.filter((definition) => definition.readonly).map((definition) => definition.enName));
                             return keys.map((key) => {
                               const value = eKeys.length > 0 ? getEParamValue(key, inspectorSelectedNode) : key === "name" ? inspectorSelectedNode.name : inspectorSelectedNode.params[key] ?? "";
@@ -32678,35 +32783,28 @@ export function App() {
                       onChange={() => toggleFilterSelectionType(option.typeKey)}
                     />
                     <span>
-                      <strong>{option.label}</strong>
-                      <small>{option.typeKey}</small>
+                      <strong>{filterSelectionTreeLabel(option.label, option.typeKey)}</strong>
                     </span>
                     <em>{option.count}</em>
                   </label>
-                  <div className="filter-selection-node-list" aria-label={`${option.label}具体元件列表`}>
-                    {option.items.map((item) => (
-                      <div key={item.itemKey} className="filter-selection-node-item" title={`${item.label} / ${item.typeKey}`}>
-                        <label className="filter-selection-kind-row">
-                          <input
-                            type="checkbox"
-                            checked={filterSelectionTypeKeys.includes(item.itemKey)}
-                            onChange={() => toggleFilterSelectionItem(item.itemKey)}
-                          />
-                          <span>
-                            <strong>{item.label}</strong>
-                            <small>{item.typeKey}</small>
-                          </span>
-                          <em>{item.count}</em>
-                        </label>
-                        {item.names.length > 0 && (
-                          <div className="filter-selection-node-name-list" aria-label={`${item.label}元件名称`}>
-                            {item.names.map((name) => (
-                              <span key={name} title={name}>{name}</span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                  <div className="filter-selection-tree" aria-label={`${option.label}元件类型树`}>
+                    <div className="filter-selection-tree-children">
+                      {option.items.map((item) => (
+                        <div key={item.itemKey} className="filter-selection-tree-child" title={filterSelectionTreeLabel(item.label, item.typeKey)}>
+                          <label className="filter-selection-kind-row">
+                            <input
+                              type="checkbox"
+                              checked={filterSelectionTypeKeys.includes(item.itemKey)}
+                              onChange={() => toggleFilterSelectionItem(item.itemKey)}
+                            />
+                            <span>
+                              <strong>{filterSelectionTreeLabel(item.label, item.typeKey)}</strong>
+                            </span>
+                            <em>{item.count}</em>
+                          </label>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -32976,6 +33074,10 @@ export function App() {
                       <div>
                         <span>是否容器</span>
                         <strong>{selectedDefinitionTemplate.isContainer ? "是" : "否"}</strong>
+                      </div>
+                      <div>
+                        <span>是否允许变形</span>
+                        <strong>{templateAllowsResizeTransform(selectedDefinitionTemplate) ? "是" : "否"}</strong>
                       </div>
                       <div>
                         <span>能源属性</span>
