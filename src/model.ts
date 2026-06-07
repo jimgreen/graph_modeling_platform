@@ -1560,24 +1560,81 @@ function firstText(values: Array<string | undefined>): string {
   return values.find((value) => value !== undefined && value.trim() !== "") ?? "";
 }
 
-function terminalVoltageDisplay(node: ModelNode, terminal: Terminal): string {
-  return terminalVoltageBaseNumber(firstText([
-    terminal.vbase,
-    node.params.vbase,
-    node.params.highVbase,
-    node.params.mediumVbase,
-    node.params.lowVbase,
-    node.params.sourceVbase,
-    node.params.targetVbase,
-    node.params.voltageLevel,
-    node.params.ratedVoltage,
-    node.params.voltage
-  ]));
-}
-
 function isZeroNumericText(value?: string): boolean {
   const normalized = normalizeVoltageBaseInput(value);
   return normalized !== "" && Number(normalized) === 0;
+}
+
+function nonZeroTerminalVoltageBaseNumber(value?: string): string {
+  const normalized = terminalVoltageBaseNumber(value);
+  return normalized && !isZeroNumericText(normalized) ? normalized : "";
+}
+
+function firstNonZeroVoltageBase(values: Array<string | undefined>): string {
+  for (const value of values) {
+    const normalized = nonZeroTerminalVoltageBaseNumber(value);
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return "";
+}
+
+type VoltageDisplayNode = Pick<ModelNode, "kind" | "params" | "terminals">;
+type VoltageDisplayTerminal = Pick<Terminal, "vbase"> & Partial<Pick<Terminal, "id">>;
+
+function terminalIndexForVoltageDisplay(node: VoltageDisplayNode, terminal?: VoltageDisplayTerminal): number {
+  if (terminal?.id) {
+    return node.terminals.findIndex((candidate) => candidate.id === terminal.id);
+  }
+  return node.terminals.length === 1 ? 0 : -1;
+}
+
+function terminalSideVoltageBase(node: VoltageDisplayNode, terminalIndex: number): string {
+  if (terminalIndex < 0) {
+    return "";
+  }
+  if (isThreeWindingTransformer(node)) {
+    return firstNonZeroVoltageBase([
+      node.params.highVbase,
+      node.params.mediumVbase,
+      node.params.lowVbase,
+      node.params.neutral_vbase
+    ].slice(terminalIndex, terminalIndex + 1));
+  }
+  if (terminalIndex === 0) {
+    return firstNonZeroVoltageBase([node.params.i_vbase, node.params.sourceVbase, node.params.highVbase]);
+  }
+  if (terminalIndex === 1) {
+    return firstNonZeroVoltageBase([node.params.j_vbase, node.params.targetVbase, node.params.lowVbase]);
+  }
+  return "";
+}
+
+function terminalVoltageDisplayValue(node: VoltageDisplayNode, terminal?: VoltageDisplayTerminal): string {
+  const rawTerminalVoltage = terminalVoltageBaseNumber(terminal?.vbase);
+  const terminalVoltage = nonZeroTerminalVoltageBaseNumber(terminal?.vbase);
+  if (terminalVoltage) {
+    return terminalVoltage;
+  }
+  const sideVoltage = terminalSideVoltageBase(node, terminalIndexForVoltageDisplay(node, terminal));
+  if (sideVoltage) {
+    return sideVoltage;
+  }
+  if (rawTerminalVoltage) {
+    return rawTerminalVoltage;
+  }
+  const nodeVoltage = firstNonZeroVoltageBase([
+    node.params.vbase,
+    node.params.voltageLevel,
+    node.params.ratedVoltage,
+    node.params.voltage
+  ]);
+  return nodeVoltage || terminalVoltageBaseNumber(terminal?.vbase);
+}
+
+function terminalVoltageDisplay(node: ModelNode, terminal: Terminal): string {
+  return terminalVoltageDisplayValue(node, terminal);
 }
 
 function shouldAssignVoltageSetpointDefault(value?: string): boolean {
@@ -4140,24 +4197,16 @@ function findDisplayTerminal(
   return node.terminals.find((terminal) => terminal.id === terminalId) ?? node.terminals[0] ?? virtualBusTerminal(node, terminalId);
 }
 
-function terminalVoltageDisplayForColor(node: Pick<ModelNode, "params">, terminal?: Pick<Terminal, "vbase">): string {
-  return terminalVoltageBaseNumber(firstText([
-    terminal?.vbase,
-    node.params.vbase,
-    node.params.highVbase,
-    node.params.mediumVbase,
-    node.params.lowVbase,
-    node.params.sourceVbase,
-    node.params.targetVbase,
-    node.params.voltageLevel,
-    node.params.ratedVoltage,
-    node.params.voltage
-  ]));
+function terminalVoltageDisplayForColor(
+  node: Pick<ModelNode, "kind" | "params" | "terminals">,
+  terminal?: VoltageDisplayTerminal
+): string {
+  return terminalVoltageDisplayValue(node, terminal);
 }
 
 export function getTerminalDisplayColor(
   node: Pick<ModelNode, "kind" | "terminals" | "params">,
-  terminal: Pick<Terminal, "type" | "vbase">,
+  terminal: Pick<Terminal, "id" | "type" | "vbase">,
   mode: ColorDisplayMode = "energy",
   palette: ColorPalette = DEFAULT_COLOR_PALETTE
 ): string {
@@ -8527,7 +8576,7 @@ function collectElectricalIslandVoltageGroups(nodes: ModelNode[], connectivity: 
       group.relatedNodeIds.add(node.id);
       const voltage = terminalVoltageDisplay(node, terminal);
       if (voltage && !isZeroNumericText(voltage)) {
-        group.voltages.set(voltage, terminal.vbase ?? node.params.vbase ?? voltage);
+        group.voltages.set(voltage, voltage);
       }
       groups.set(key, group);
     }
@@ -8738,7 +8787,8 @@ export function getNodeVoltageLevel(node: ModelNode): string {
 }
 
 export function getTerminalVoltageLevel(node: ModelNode, terminalId?: string): string {
-  return normalizeVoltage(getTerminal(node, terminalId)?.vbase ?? getNodeVoltageLevel(node));
+  const terminal = getTerminal(node, terminalId);
+  return normalizeVoltage(terminal ? terminalVoltageDisplay(node, terminal) : getNodeVoltageLevel(node));
 }
 
 export function validateVoltageSetpointDeviations(nodes: ModelNode[], edges: Edge[]): TopologyValidationError[] {
@@ -8814,7 +8864,7 @@ export function validateVoltageSetpointDeviations(nodes: ModelNode[], edges: Edg
       const group = voltageGroups.get(root) ?? { voltages: new Map<string, string>() };
       const voltage = getTerminalVoltageLevel(node, terminal.id);
       if (voltage && !isZeroNumericText(voltage)) {
-        group.voltages.set(voltage, terminal.vbase ?? node.params.vbase ?? voltage);
+        group.voltages.set(voltage, voltage);
       }
       voltageGroups.set(root, group);
     }
@@ -9019,7 +9069,6 @@ export function validateTopology(
     return node.terminals[0];
   };
   const parent = new Map<string, string>();
-  const connectedTerminals = new Set<string>();
   const directVoltageMismatchEdges: Array<{
     source: ModelNode;
     sourceTerminal: Terminal;
@@ -9062,6 +9111,21 @@ export function validateTopology(
     }
   }
 
+  for (const overlappingGroup of getOverlappingTerminalGroups(nodes)) {
+    const [first, ...rest] = overlappingGroup.terminals;
+    if (!first) {
+      continue;
+    }
+    for (const item of rest) {
+      union(terminalKey(first.nodeId, first.terminalId), terminalKey(item.nodeId, item.terminalId));
+    }
+  }
+  for (const contactGroup of getTerminalBusContactGroups(nodes)) {
+    for (const contact of contactGroup.contacts) {
+      union(terminalKey(contact.nodeId, contact.terminalId), terminalKey(contact.busId, contact.busTerminalId));
+    }
+  }
+
   for (const edge of topologyEdges) {
     const source = nodeById.get(edge.sourceId);
     const target = nodeById.get(edge.targetId);
@@ -9083,8 +9147,6 @@ export function validateTopology(
       });
       continue;
     }
-    connectedTerminals.add(`${source.id}:${sourceTerminal.id}`);
-    connectedTerminals.add(`${target.id}:${targetTerminal.id}`);
 
     if (source.id === target.id && isBusNode(source) && isBusNode(target)) {
       errors.push({
@@ -9149,7 +9211,7 @@ export function validateTopology(
       group.relatedNodeIds.add(node.id);
       const voltage = getTerminalVoltageLevel(node, terminal.id);
       if (voltage && !isZeroNumericText(voltage)) {
-        group.voltages.set(voltage, terminal.vbase ?? node.params.vbase ?? voltage);
+        group.voltages.set(voltage, voltage);
       }
       voltageGroups.set(root, group);
     }
@@ -9241,10 +9303,32 @@ export function validateTopology(
     }
   }
 
+  const topologyTerminalRefs = new Set<string>();
+  for (const node of nodes) {
+    if (isStaticNode(node)) {
+      continue;
+    }
+    for (const terminal of node.terminals) {
+      topologyTerminalRefs.add(terminalKey(node.id, terminal.id));
+    }
+  }
+  for (const contactGroup of getTerminalBusContactGroups(nodes)) {
+    for (const contact of contactGroup.contacts) {
+      topologyTerminalRefs.add(terminalKey(contact.nodeId, contact.terminalId));
+      topologyTerminalRefs.add(terminalKey(contact.busId, contact.busTerminalId));
+    }
+  }
+  const topologyDegreeByRoot = new Map<string, number>();
+  for (const key of topologyTerminalRefs) {
+    const root = find(key);
+    topologyDegreeByRoot.set(root, (topologyDegreeByRoot.get(root) ?? 0) + 1);
+  }
+
   for (const node of nodes) {
     if (isBusNode(node) || isStaticNode(node)) continue;
     for (const terminal of node.terminals) {
-      if (!connectedTerminals.has(`${node.id}:${terminal.id}`)) {
+      const root = find(terminalKey(node.id, terminal.id));
+      if ((topologyDegreeByRoot.get(root) ?? 0) <= 1) {
         errors.push({
           id: `floating-terminal:${node.id}:${terminal.id}`,
           type: "floating-terminal",

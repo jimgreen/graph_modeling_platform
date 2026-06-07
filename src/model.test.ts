@@ -9328,6 +9328,39 @@ describe("power system model", () => {
     expect(byId.get(load.id)?.terminals[0].vbase).toBe("10");
   });
 
+  test("does not report floating terminals for overlapping wind source and converter terminals", () => {
+    const wind = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
+    const converter = createDefaultNode("acdc-converter", { x: 320, y: 100 });
+    const load = createDefaultNode("dc-load", { x: 560, y: 100 });
+    wind.name = "交流风机";
+    converter.name = "AC/DC变流器";
+    load.name = "直流负荷";
+    wind.terminals[0].vbase = "10";
+    converter.terminals[0].vbase = "10";
+    converter.terminals[1].vbase = "750";
+    load.terminals[0].vbase = "750";
+
+    const moveTerminalOnto = (node: ModelNode, terminalId: string, point: Point) => {
+      const current = getTerminalPoint(node, terminalId);
+      node.position = {
+        x: node.position.x + point.x - current.x,
+        y: node.position.y + point.y - current.y
+      };
+    };
+    moveTerminalOnto(converter, "t1", getTerminalPoint(wind, "t1"));
+    moveTerminalOnto(load, "t1", getTerminalPoint(converter, "t2"));
+
+    const calculated = calculateElectricalTopology([wind, converter, load], []);
+    const byId = new Map(calculated.map((node) => [node.id, node]));
+    const errors = validateTopology([wind, converter, load], [], { includeVoltageSetpointDeviations: false });
+
+    expect(getTerminalPoint(wind, "t1")).toEqual(getTerminalPoint(converter, "t1"));
+    expect(getTerminalPoint(converter, "t2")).toEqual(getTerminalPoint(load, "t1"));
+    expect(byId.get(wind.id)?.terminals[0].nodeNumber).toBe(byId.get(converter.id)?.terminals[0].nodeNumber);
+    expect(byId.get(converter.id)?.terminals[1].nodeNumber).toBe(byId.get(load.id)?.terminals[0].nodeNumber);
+    expect(errors.filter((error) => error.type === "floating-terminal")).toEqual([]);
+  });
+
   test("reports transformer terminals that fall inside the same topology island", () => {
     const transformer = createDefaultNode("ac-transformer", { x: 100, y: 100 });
     const line = createDefaultNode("ac-line", { x: 240, y: 100 });
@@ -9363,6 +9396,63 @@ describe("power system model", () => {
     expect(threeWindingErrors).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "transformer-island-short", nodeId: threeWinding.id })
     ]));
+  });
+
+  test("allows converter endpoints to use different side voltage bases from params", () => {
+    const cases = [
+      {
+        kind: "acac-converter" as const,
+        sourceKind: "ac-source" as const,
+        targetKind: "ac-load" as const,
+        sourceVoltage: "110",
+        targetVoltage: "35"
+      },
+      {
+        kind: "acdc-converter" as const,
+        sourceKind: "ac-source" as const,
+        targetKind: "dc-load" as const,
+        sourceVoltage: "10",
+        targetVoltage: "750"
+      },
+      {
+        kind: "dcdc-converter" as const,
+        sourceKind: "dc-source" as const,
+        targetKind: "dc-load" as const,
+        sourceVoltage: "1500",
+        targetVoltage: "750"
+      }
+    ];
+
+    for (const item of cases) {
+      const source = createDefaultNode(item.sourceKind, { x: 100, y: 100 });
+      const converter = createDefaultNode(item.kind, { x: 300, y: 100 });
+      const target = createDefaultNode(item.targetKind, { x: 500, y: 100 });
+      source.name = `${item.kind}-source`;
+      converter.name = item.kind;
+      target.name = `${item.kind}-target`;
+      source.terminals[0].vbase = item.sourceVoltage;
+      target.terminals[0].vbase = item.targetVoltage;
+      converter.terminals = converter.terminals.map((terminal) => {
+        const { vbase: _vbase, ...terminalWithoutVoltageBase } = terminal;
+        return terminalWithoutVoltageBase;
+      });
+      converter.params = {
+        ...converter.params,
+        sourceVbase: item.sourceVoltage,
+        targetVbase: item.targetVoltage
+      };
+
+      const errors = validateTopology(
+        [source, converter, target],
+        [
+          { id: `${item.kind}-source`, sourceId: source.id, targetId: converter.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+          { id: `${item.kind}-target`, sourceId: converter.id, targetId: target.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+        ],
+        { includeVoltageSetpointDeviations: false }
+      );
+
+      expect(errors.filter((error) => error.type === "voltage-mismatch" || error.type === "island-voltage-mismatch")).toEqual([]);
+    }
   });
 
   test("validates floating terminals, mixed terminal types, and voltage mismatch before topology", () => {
