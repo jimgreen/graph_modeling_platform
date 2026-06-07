@@ -6536,7 +6536,9 @@ describe("graph inspector panel", () => {
     expect(routingBlock).toContain("routeEdgesForCachedStoredRendering(");
     expect(routingBlock).toContain("routeInput.nodes,");
     expect(routingBlock).toContain("routeInput.edges,");
-    expect(normalCommitBlock).toContain("const movedRouteDirtyIds = dirtyEdgeIdsAfterMove(previousCandidateEdges, committedCandidateEdges, movedNodeIds, edgePatchDirtyIds);");
+    expect(normalCommitBlock).toContain("const movedRouteDirtyResult = dirtyEdgeIdsAfterBulkMove(previousCandidateEdges, committedCandidateEdges, movedNodeIds, routeCachePatchedEdgeIds, edgePatchDirtyIds);");
+    expect(normalCommitBlock).toContain("const movedRouteDirtyIds = movedRouteDirtyResult.dirtyIds;");
+    expect(normalCommitBlock).toContain("legacyRouteDirtyCount: movedRouteDirtyResult.legacyDirtyCount");
     expect(normalCommitBlock).toContain("const storedRouteDirtyIds = storedRouteDirtyIdsForMove(movedRouteDirtyIds, routeCachePatchedEdgeIds);");
     expect(normalCommitBlock).toContain("markRouteEdgesDirty(movedRouteDirtyIds);");
     expect(normalCommitBlock).toContain("markStoredRouteEdgesDirty(storedRouteDirtyIds);");
@@ -6619,10 +6621,27 @@ describe("graph inspector panel", () => {
     expect(helperBlock).toContain("cachedRoutedEdgesRef.current = patchedRouteStore.routes");
     expect(commitBlock).toContain("patchCachedRoutesForHighFanoutMove(");
     expect(commitBlock).toContain("patchCachedRoutesForWholeMove(");
-    expect(commitBlock).toContain("const movedRouteDirtyIds = dirtyEdgeIdsAfterMove(");
+    expect(source).toContain("routeStorePatchRoutesById");
+    expect(commitBlock).toContain("const movedRouteDirtyResult = dirtyEdgeIdsAfterBulkMove(");
+    expect(commitBlock).toContain("const movedRouteDirtyIds = movedRouteDirtyResult.dirtyIds;");
+    expect(commitBlock).toContain("legacyRouteDirtyCount: movedRouteDirtyResult.legacyDirtyCount");
     expect(commitBlock).toContain("const storedRouteDirtyIds = storedRouteDirtyIdsForMove(movedRouteDirtyIds, routeCachePatchedEdgeIds);");
     expect(commitBlock).toContain("markStoredRouteEdgesDirty(storedRouteDirtyIds);");
     expect(commitBlock).not.toContain("markStoredRouteEdgesDirty(movedRouteDirtyIds);");
+    expect(source).toContain("bulkPlanMs: Number(stats.bulkPlanMs.toFixed(2))");
+    expect(source).toContain("canvasBoundsMs: Number(stats.canvasBoundsMs.toFixed(2))");
+    expect(source).toContain("edgePatchMs: Number(stats.edgePatchMs.toFixed(2))");
+    expect(source).toContain("dirtyMs: Number(stats.dirtyMs.toFixed(2))");
+    expect(source).toContain("markDirtyMs: Number(stats.markDirtyMs.toFixed(2))");
+    expect(source).toContain("busSyncMs: Number(stats.busSyncMs.toFixed(2))");
+    expect(source).toContain("syncRepairMs: Number(stats.syncRepairMs.toFixed(2))");
+    expect(commitBlock).toContain("let bulkPlanMs = 0;");
+    expect(commitBlock).toContain("let canvasBoundsMs = 0;");
+    expect(commitBlock).toContain("let edgePatchMs = 0;");
+    expect(commitBlock).toContain("let dirtyMs = 0;");
+    expect(commitBlock).toContain("let markDirtyMs = 0;");
+    expect(commitBlock).toContain("let busSyncMs = 0;");
+    expect(commitBlock).toContain("let syncRepairMs = 0;");
   });
 
   test("keeps whole-layer multi-node moves on the coordinate-translation fast path", async () => {

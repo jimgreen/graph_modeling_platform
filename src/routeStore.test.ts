@@ -4,6 +4,7 @@ import {
   createRouteStore,
   queryRouteSpatialIndex,
   routeSpatialIndexRenderBounds,
+  routeStorePatchRoutesById,
   routeStorePatchRoutes,
   routeStoreSetRoutes
 } from "./routeStore";
@@ -100,6 +101,31 @@ describe("normalized route store", () => {
     expect(queryRouteSpatialIndex(patched.routeSpatialIndex, { left: 0, right: 260, top: 0, bottom: 160 })).toEqual([movedFirst, movedSecond]);
     expect(patched.routeOrder).toBe(store.routeOrder);
     expect(patched.routeIndexById).toBe(store.routeIndexById);
+  });
+
+  test("patches routes by requested ids without scanning unrelated routes", () => {
+    const routes = Array.from({ length: 40 }, (_item, index) => route(`edge-${index}`, index * 20, 80));
+    const store = createRouteStore(routes);
+    const requestedIds = new Set(["edge-3", "edge-9", "edge-15"]);
+
+    const patched = routeStorePatchRoutesById(store, requestedIds, (item) => {
+      const points = item.points.map((point) => ({ x: point.x + 400, y: point.y + 40 }));
+      return {
+        ...item,
+        points,
+        path: `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`
+      };
+    });
+
+    expect(patched.store).not.toBe(store);
+    expect(patched.patchedEdgeIds).toEqual(requestedIds);
+    expect(patched.store.routeOrder).toBe(store.routeOrder);
+    expect(patched.store.routeIndexById).toBe(store.routeIndexById);
+    expect(patched.store.routeMap.get("edge-2")).toBe(routes[2]);
+    expect(patched.store.routeMap.get("edge-3")).not.toBe(routes[3]);
+    expect(queryRouteSpatialIndex(patched.store.routeSpatialIndex, { left: 440, right: 570, top: 110, bottom: 140 }).map((item) => item.edgeId)).toEqual(["edge-3"]);
+    expect(queryRouteSpatialIndex(store.routeSpatialIndex, { left: 60, right: 180, top: 70, bottom: 90 }).map((item) => item.edgeId)).toContain("edge-3");
+    expect(queryRouteSpatialIndex(patched.store.routeSpatialIndex, { left: 60, right: 180, top: 70, bottom: 90 }).map((item) => item.edgeId)).not.toContain("edge-3");
   });
 
   test("batch patches dense route spatial buckets without duplicates or stale moved entries", () => {

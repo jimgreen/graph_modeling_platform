@@ -295,6 +295,7 @@ import {
   routeRenderBounds,
   routeSpatialIndexRenderBounds,
   routeStorePatchRoutes,
+  routeStorePatchRoutesById,
   routeStoreSetRoutes,
   type RouteStore
 } from "./routeStore";
@@ -1134,8 +1135,19 @@ type BulkMoveCommitStats = {
   storedRouteDirtyCount: number;
   routableLineUpdateCount: number;
   durationMs: number;
+  bulkPlanMs: number;
+  canvasBoundsMs: number;
+  edgePatchMs: number;
+  dirtyMs: number;
+  markDirtyMs: number;
+  busSyncMs: number;
+  syncRepairMs: number;
   routeCacheMs: number;
   graphPatchMs: number;
+};
+type BulkMoveDirtyResult = {
+  dirtyIds: Set<string>;
+  legacyDirtyCount: number;
 };
 function isMultiNodeMoveState(dragState: Pick<DraggingState, "nodeIds"> | null | undefined) {
   return (dragState?.nodeIds.length ?? 0) > 1;
@@ -12092,38 +12104,47 @@ export function App() {
     movedNodeIds: Iterable<string>,
     routeCachePatchedEdgeIds: Iterable<string>,
     extraEdgeIds: Iterable<string> = []
-  ) => {
+  ): BulkMoveDirtyResult => {
     const translatedIds = reuseSetOrCreate(routeCachePatchedEdgeIds);
+    if (translatedIds.size === 0) {
+      const dirtyIds = dirtyEdgeIdsAfterMove(previousEdges, nextEdges, movedNodeIds, extraEdgeIds);
+      return { dirtyIds, legacyDirtyCount: dirtyIds.size };
+    }
     const movedIds = reuseSetOrCreate(movedNodeIds);
     const dirty = new Set<string>();
+    const legacyDirty = new Set<string>();
+    const addLegacyAndCurrent = (edgeId: string) => {
+      legacyDirty.add(edgeId);
+      if (!translatedIds.has(edgeId)) {
+        dirty.add(edgeId);
+      }
+    };
     if (edgeListsHaveSameOrder(previousEdges, nextEdges)) {
       for (let index = 0; index < previousEdges.length; index += 1) {
         const previousEdge = previousEdges[index];
         const nextEdge = nextEdges[index];
         const edgeId = nextEdge.id;
-        if (previousEdge !== nextEdge && !translatedIds.has(edgeId)) {
-          dirty.add(edgeId);
+        if (previousEdge !== nextEdge) {
+          addLegacyAndCurrent(edgeId);
         }
-        if ((movedIds.has(previousEdge.sourceId) || movedIds.has(previousEdge.targetId)) && !translatedIds.has(previousEdge.id)) {
-          dirty.add(previousEdge.id);
+        if (movedIds.has(previousEdge.sourceId) || movedIds.has(previousEdge.targetId)) {
+          addLegacyAndCurrent(previousEdge.id);
         }
       }
     } else {
       for (const edgeId of edgeReferenceDiffIds(previousEdges, nextEdges)) {
-        if (!translatedIds.has(edgeId)) {
-          dirty.add(edgeId);
-        }
+        addLegacyAndCurrent(edgeId);
       }
       for (const edge of previousEdges) {
-        if ((movedIds.has(edge.sourceId) || movedIds.has(edge.targetId)) && !translatedIds.has(edge.id)) {
-          dirty.add(edge.id);
+        if (movedIds.has(edge.sourceId) || movedIds.has(edge.targetId)) {
+          addLegacyAndCurrent(edge.id);
         }
       }
     }
     for (const edgeId of extraEdgeIds) {
-      dirty.add(edgeId);
+      addLegacyAndCurrent(edgeId);
     }
-    return dirty;
+    return { dirtyIds: dirty, legacyDirtyCount: legacyDirty.size };
   };
   const logBulkMoveCommitStats = (stats: BulkMoveCommitStats) => {
     if (stats.durationMs < BULK_MOVE_PERF_LOG_THRESHOLD_MS && stats.candidateEdgeCount < CANVAS_BULK_MOVE_EDGE_THRESHOLD) {
@@ -12147,6 +12168,13 @@ export function App() {
       storedRouteDirty: stats.storedRouteDirtyCount,
       routableLineUpdates: stats.routableLineUpdateCount,
       totalMs: Number(stats.durationMs.toFixed(2)),
+      bulkPlanMs: Number(stats.bulkPlanMs.toFixed(2)),
+      canvasBoundsMs: Number(stats.canvasBoundsMs.toFixed(2)),
+      edgePatchMs: Number(stats.edgePatchMs.toFixed(2)),
+      dirtyMs: Number(stats.dirtyMs.toFixed(2)),
+      markDirtyMs: Number(stats.markDirtyMs.toFixed(2)),
+      busSyncMs: Number(stats.busSyncMs.toFixed(2)),
+      syncRepairMs: Number(stats.syncRepairMs.toFixed(2)),
       routeCacheMs: Number(stats.routeCacheMs.toFixed(2)),
       graphPatchMs: Number(stats.graphPatchMs.toFixed(2))
     });
@@ -18004,27 +18032,37 @@ export function App() {
       return { patchedEdgeIds: new Set<string>(), durationMs: 0 };
     }
     const start = performance.now();
-    const patchedEdgeIds = new Set<string>();
-    const routeUpdates: RoutedEdge[] = [];
-    const nextRoutes = routeStore.routes.map((route) => {
-      if (!ids.has(route.edgeId)) {
-        return route;
+    const shouldRebuildRouteStore =
+      ids.size >= ROUTE_BULK_TRANSLATE_REBUILD_THRESHOLD &&
+      ids.size / routeStore.routes.length >= 0.5;
+    if (shouldRebuildRouteStore) {
+      const patchedEdgeIds = new Set<string>();
+      const routeUpdates: RoutedEdge[] = [];
+      const nextRoutes = routeStore.routes.map((route) => {
+        if (!ids.has(route.edgeId)) {
+          return route;
+        }
+        const nextRoute = translateRouteBy(route, delta);
+        patchedEdgeIds.add(route.edgeId);
+        routeUpdates.push(nextRoute);
+        return nextRoute;
+      });
+      if (routeUpdates.length === 0) {
+        return { patchedEdgeIds, durationMs: performance.now() - start };
       }
-      const nextRoute = translateRouteBy(route, delta);
-      patchedEdgeIds.add(route.edgeId);
-      routeUpdates.push(nextRoute);
-      return nextRoute;
-    });
+      const patchedRouteStore = createRouteStore(nextRoutes);
+      cachedRouteStoreRef.current = patchedRouteStore;
+      cachedRoutedEdgesRef.current = patchedRouteStore.routes;
+      return { patchedEdgeIds, durationMs: performance.now() - start };
+    }
+    const { store: patchedRouteStore, patchedEdgeIds } = routeStorePatchRoutesById(
+      routeStore,
+      ids,
+      (route) => translateRouteBy(route, delta)
+    );
     if (patchedEdgeIds.size === 0) {
       return { patchedEdgeIds, durationMs: performance.now() - start };
     }
-    const shouldRebuildRouteStore =
-      routeUpdates.length >= ROUTE_BULK_TRANSLATE_REBUILD_THRESHOLD &&
-      routeUpdates.length / routeStore.routes.length >= 0.5;
-    const patchedRouteStore =
-      shouldRebuildRouteStore
-        ? createRouteStore(nextRoutes)
-        : routeStorePatchRoutes(routeStore, routeUpdates);
     cachedRouteStoreRef.current = patchedRouteStore;
     cachedRoutedEdgesRef.current = patchedRouteStore.routes;
     return { patchedEdgeIds, durationMs: performance.now() - start };
@@ -18175,6 +18213,16 @@ export function App() {
       deferredRoutableLineRouteRepairCancelRef.current?.();
       deferredRoutableLineRouteRepairCancelRef.current = null;
     }
+    const commitStart = performance.now();
+    let bulkPlanMs = 0;
+    let canvasBoundsMs = 0;
+    let edgePatchMs = 0;
+    let dirtyMs = 0;
+    let markDirtyMs = 0;
+    let busSyncMs = 0;
+    let syncRepairMs = 0;
+    let routeCacheMs = 0;
+    let graphPatchMs = 0;
     let committedCandidateEdges = candidateEdges;
     const wholeMoveRoutableLineUpdates =
       wholeLayerMove && wholeLayerMoveDelta
@@ -18194,6 +18242,7 @@ export function App() {
       committedNodeUpdates !== movedNodeUpdates
         ? nextNodesForMovedGraphCommit(graphStore, committedNodeUpdates, committedNodeUpdates.map((node) => node.id))
         : nextNodes;
+    const bulkPlanStart = performance.now();
     const bulkPlan = buildBulkMovePlan(
       committedCandidateEdges,
       internalMovedEdgeIds,
@@ -18205,6 +18254,7 @@ export function App() {
       committedNextNodes,
       originalPositions
     );
+    bulkPlanMs += performance.now() - bulkPlanStart;
     const synchronousRepairCandidateEdges = bulkPlan.boundaryCandidateEdges;
     const routeRepairCandidateEdges = bulkPlan.routeRepairCandidateEdges;
     const deferredRepairCandidateEdges = bulkPlan.deferredRepairCandidateEdges;
@@ -18223,7 +18273,9 @@ export function App() {
       }
     }
     const nonTranslatedInitialStoredRouteDirtyIds = [...initialStoredRouteDirtyIds].filter((edgeId) => !translatedLocalRouteIds.has(edgeId));
+    const initialMarkDirtyStart = performance.now();
     markStoredRouteEdgesDirty(nonTranslatedInitialStoredRouteDirtyIds);
+    markDirtyMs += performance.now() - initialMarkDirtyStart;
     const deferSingleNodeTerminalReconciliation =
       !wholeLayerMove &&
       shouldDeferSingleNodeTerminalReconciliation(
@@ -18234,11 +18286,22 @@ export function App() {
       !wholeLayerMove &&
       movedNodeIds.length > 0 &&
       (deferredRepairCandidateEdges.length > 0 || deferSingleNodeTerminalReconciliation);
-    const commitStart = performance.now();
-    let routeCacheMs = 0;
-    let graphPatchMs = 0;
     const bulkCommitKind = bulkPlan.kind;
+    const timingStats = () => ({
+      durationMs: performance.now() - commitStart,
+      bulkPlanMs,
+      canvasBoundsMs,
+      edgePatchMs,
+      dirtyMs,
+      markDirtyMs,
+      busSyncMs,
+      syncRepairMs,
+      routeCacheMs,
+      graphPatchMs
+    });
+    const originShiftStart = performance.now();
     const originShift = allowAutoExpandCanvas ? leftTopCanvasOriginShiftForContent(committedNodeUpdates, committedCandidateEdges) : { x: 0, y: 0 };
+    canvasBoundsMs += performance.now() - originShiftStart;
     if (hasCanvasOriginShift(originShift)) {
       const candidateEdgeById = new Map(committedCandidateEdges.map((edge) => [edge.id, edge]));
       const rawNextEdges = edges.map((edge) => candidateEdgeById.get(edge.id) ?? edge);
@@ -18247,6 +18310,7 @@ export function App() {
       const shiftedNextEdges = rawNextEdges.map((edge) => translateEdgeBy(edge, originShift));
       const committedNodeIdSet = new Set(committedNodeUpdates.map((node) => node.id));
       const shiftedExpectedNodeUpdates = shiftedNextNodes.filter((node) => committedNodeIdSet.has(node.id));
+      const shiftedCanvasBoundsStart = performance.now();
       const shiftedCanvasBounds = canvasBoundsForGraphContent(
         canvasBoundsWithOriginShift(effectiveCanvasBounds, originShift),
         shiftedNextNodes,
@@ -18255,12 +18319,34 @@ export function App() {
         CANVAS_AUTO_EXPAND_PADDING
       );
       applyCanvasBounds(shiftedCanvasBounds, originShift);
+      canvasBoundsMs += performance.now() - shiftedCanvasBoundsStart;
+      const routeCacheStart = performance.now();
       shiftCachedRoutesForCanvasOrigin(originShift);
+      routeCacheMs += performance.now() - routeCacheStart;
       const candidateEdgeIds = committedCandidateEdges.map((edge) => edge.id);
+      const markDirtyStart = performance.now();
       markRouteEdgesDirty(candidateEdgeIds);
       markStoredRouteEdgesDirty(candidateEdgeIds);
       markGraphDirtyForInteractiveCommit();
+      markDirtyMs += performance.now() - markDirtyStart;
+      const graphPatchStart = performance.now();
       setGraphStore((current) => graphStoreSetGraph(current, shiftedNextNodes, shiftedNextEdges));
+      graphPatchMs += performance.now() - graphPatchStart;
+      logBulkMoveCommitStats({
+        kind: bulkCommitKind,
+        movedNodeCount: movedNodeIds.length,
+        candidateEdgeCount: previousCandidateEdges.length,
+        internalEdgeCount: internalMovedEdgeIds.size,
+        boundaryEdgeCount: synchronousRepairCandidateEdges.length,
+        deferredRepairCandidateCount: deferredRepairCandidateEdges.length,
+        legacyDeferredRepairCandidateCount: bulkPlan.legacyDeferredRepairCandidateCount,
+        routeCachePatchedCount: candidateEdgeIds.length,
+        legacyRouteDirtyCount: candidateEdgeIds.length,
+        routeDirtyCount: candidateEdgeIds.length,
+        storedRouteDirtyCount: candidateEdgeIds.length,
+        routableLineUpdateCount: wholeMoveRoutableLineUpdates.length + internalRoutableLineUpdates.length,
+        ...timingStats()
+      });
       if (!wholeLayerMove) {
         scheduleDeferredRoutableLineRouteRepair(
           previousNodes,
@@ -18272,14 +18358,18 @@ export function App() {
       }
       return;
     }
+    const commitCanvasBoundsStart = performance.now();
     const commitCanvasBounds = canvasBoundsForAutoExpandedGraphContent(effectiveCanvasBounds, committedNodeUpdates, committedCandidateEdges, [], CANVAS_AUTO_EXPAND_PADDING);
+    canvasBoundsMs += performance.now() - commitCanvasBoundsStart;
     if (deferMovedRouteRepair) {
+      const edgePatchStart = performance.now();
       const edgePatch = edgePatchFromCandidateEdges(previousCandidateEdges, committedCandidateEdges);
       const expectedPatch = { nodeUpdates: committedNodeUpdates, edgeUpserts: edgePatch.edgeUpserts, edgeDeleteIds: edgePatch.edgeDeleteIds };
       const edgePatchDirtyIds = [
         ...edgePatch.edgeUpserts.map((edge) => edge.id),
         ...edgePatch.edgeDeleteIds
       ];
+      edgePatchMs += performance.now() - edgePatchStart;
       const routeCacheStart = performance.now();
       const routeCachePatchedEdgeIds = patchCachedRoutesForHighFanoutMove(
         previousCandidateEdges,
@@ -18294,21 +18384,25 @@ export function App() {
         }
       }
       routeCacheMs += performance.now() - routeCacheStart;
-      const nonTranslatedEdgePatchDirtyIds = edgePatchDirtyIds.filter((edgeId) => !routeCachePatchedEdgeIds.has(edgeId));
-      const legacyMovedRouteDirtyIds = dirtyEdgeIdsAfterMove(previousCandidateEdges, committedCandidateEdges, movedNodeIds, edgePatchDirtyIds);
-      const movedRouteDirtyIds = dirtyEdgeIdsAfterBulkMove(previousCandidateEdges, committedCandidateEdges, movedNodeIds, routeCachePatchedEdgeIds, nonTranslatedEdgePatchDirtyIds);
+      const dirtyStart = performance.now();
+      const movedRouteDirtyResult = dirtyEdgeIdsAfterBulkMove(previousCandidateEdges, committedCandidateEdges, movedNodeIds, routeCachePatchedEdgeIds, edgePatchDirtyIds);
+      const movedRouteDirtyIds = movedRouteDirtyResult.dirtyIds;
       const storedRouteDirtyIds = storedRouteDirtyIdsForMove(movedRouteDirtyIds, routeCachePatchedEdgeIds);
+      dirtyMs += performance.now() - dirtyStart;
+      const busSyncStart = performance.now();
+      const busTerminalSyncNodeIds = busTerminalSyncNodeIdsForGraphPatch(
+        movedNodeIds,
+        previousCandidateEdges,
+        edgePatch.edgeUpserts,
+        edgePatch.edgeDeleteIds
+      );
+      busSyncMs += performance.now() - busSyncStart;
+      const markDirtyStart = performance.now();
       markRouteEdgesDirty(movedRouteDirtyIds);
       markStoredRouteEdgesDirty(storedRouteDirtyIds);
-      markBusTerminalSyncDirty(
-        busTerminalSyncNodeIdsForGraphPatch(
-          movedNodeIds,
-          previousCandidateEdges,
-          edgePatch.edgeUpserts,
-          edgePatch.edgeDeleteIds
-        )
-      );
+      markBusTerminalSyncDirty(busTerminalSyncNodeIds);
       markGraphDirtyForInteractiveCommit();
+      markDirtyMs += performance.now() - markDirtyStart;
       const graphPatchStart = performance.now();
       setGraphStore((current) =>
         graphStoreApplyPatch(current, {
@@ -18327,13 +18421,11 @@ export function App() {
         deferredRepairCandidateCount: deferredRepairCandidateEdges.length,
         legacyDeferredRepairCandidateCount: bulkPlan.legacyDeferredRepairCandidateCount,
         routeCachePatchedCount: routeCachePatchedEdgeIds.size,
-        legacyRouteDirtyCount: legacyMovedRouteDirtyIds.size,
+        legacyRouteDirtyCount: movedRouteDirtyResult.legacyDirtyCount,
         routeDirtyCount: movedRouteDirtyIds.size,
         storedRouteDirtyCount: storedRouteDirtyIds.size,
         routableLineUpdateCount: wholeMoveRoutableLineUpdates.length + internalRoutableLineUpdates.length,
-        durationMs: performance.now() - commitStart,
-        routeCacheMs,
-        graphPatchMs
+        ...timingStats()
       });
       scheduleDeferredRoutableLineRouteRepair(
         previousNodes,
@@ -18366,6 +18458,7 @@ export function App() {
       }
       return;
     }
+    const syncRepairStart = performance.now();
     if (
       !wholeLayerMove &&
       shouldRunSynchronousMoveBlockerRepair(
@@ -18417,14 +18510,19 @@ export function App() {
         }
       }
     }
+    syncRepairMs += performance.now() - syncRepairStart;
+    const edgePatchStart = performance.now();
     const edgePatch = edgePatchFromCandidateEdges(previousCandidateEdges, committedCandidateEdges);
     const nextEdgesForBounds = edgePatch.edgeUpserts;
-    expandCanvasToFitGraph(committedNodeUpdates, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);
     const edgePatchDirtyIds = [
       ...edgePatch.edgeUpserts.map((edge) => edge.id),
       ...edgePatch.edgeDeleteIds
     ];
     const expectedPatch = { nodeUpdates: committedNodeUpdates, edgeUpserts: edgePatch.edgeUpserts, edgeDeleteIds: edgePatch.edgeDeleteIds };
+    edgePatchMs += performance.now() - edgePatchStart;
+    const expandCanvasStart = performance.now();
+    expandCanvasToFitGraph(committedNodeUpdates, nextEdgesForBounds, [], CANVAS_AUTO_EXPAND_PADDING, commitCanvasBounds);
+    canvasBoundsMs += performance.now() - expandCanvasStart;
     const routeCacheStart = performance.now();
     const routeCachePatchedEdgeIds =
       wholeLayerMove && wholeLayerMoveDelta
@@ -18447,21 +18545,25 @@ export function App() {
       }
     }
     routeCacheMs += performance.now() - routeCacheStart;
-    const nonTranslatedEdgePatchDirtyIds = edgePatchDirtyIds.filter((edgeId) => !routeCachePatchedEdgeIds.has(edgeId));
-    const legacyMovedRouteDirtyIds = dirtyEdgeIdsAfterMove(previousCandidateEdges, committedCandidateEdges, movedNodeIds, edgePatchDirtyIds);
-    const movedRouteDirtyIds = dirtyEdgeIdsAfterBulkMove(previousCandidateEdges, committedCandidateEdges, movedNodeIds, routeCachePatchedEdgeIds, nonTranslatedEdgePatchDirtyIds);
+    const dirtyStart = performance.now();
+    const movedRouteDirtyResult = dirtyEdgeIdsAfterBulkMove(previousCandidateEdges, committedCandidateEdges, movedNodeIds, routeCachePatchedEdgeIds, edgePatchDirtyIds);
+    const movedRouteDirtyIds = movedRouteDirtyResult.dirtyIds;
     const storedRouteDirtyIds = storedRouteDirtyIdsForMove(movedRouteDirtyIds, routeCachePatchedEdgeIds);
+    dirtyMs += performance.now() - dirtyStart;
+    const busSyncStart = performance.now();
+    const busTerminalSyncNodeIds = busTerminalSyncNodeIdsForGraphPatch(
+      movedNodeIds,
+      previousCandidateEdges,
+      edgePatch.edgeUpserts,
+      edgePatch.edgeDeleteIds
+    );
+    busSyncMs += performance.now() - busSyncStart;
+    const markDirtyStart = performance.now();
     markRouteEdgesDirty(movedRouteDirtyIds);
     markStoredRouteEdgesDirty(storedRouteDirtyIds);
-    markBusTerminalSyncDirty(
-      busTerminalSyncNodeIdsForGraphPatch(
-        movedNodeIds,
-        previousCandidateEdges,
-        edgePatch.edgeUpserts,
-        edgePatch.edgeDeleteIds
-      )
-    );
+    markBusTerminalSyncDirty(busTerminalSyncNodeIds);
     markGraphDirtyForInteractiveCommit();
+    markDirtyMs += performance.now() - markDirtyStart;
     const graphPatchStart = performance.now();
     setGraphStore((current) =>
       graphStoreApplyPatch(current, {
@@ -18480,13 +18582,11 @@ export function App() {
       deferredRepairCandidateCount: deferredRepairCandidateEdges.length,
       legacyDeferredRepairCandidateCount: bulkPlan.legacyDeferredRepairCandidateCount,
       routeCachePatchedCount: routeCachePatchedEdgeIds.size,
-      legacyRouteDirtyCount: legacyMovedRouteDirtyIds.size,
+      legacyRouteDirtyCount: movedRouteDirtyResult.legacyDirtyCount,
       routeDirtyCount: movedRouteDirtyIds.size,
       storedRouteDirtyCount: storedRouteDirtyIds.size,
       routableLineUpdateCount: wholeMoveRoutableLineUpdates.length + internalRoutableLineUpdates.length,
-      durationMs: performance.now() - commitStart,
-      routeCacheMs,
-      graphPatchMs
+      ...timingStats()
     });
     if (!wholeLayerMove) {
       scheduleDeferredRoutableLineRouteRepair(

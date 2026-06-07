@@ -81,6 +81,35 @@ function expandRouteBounds(bounds: RouteRenderBounds, padding: number): RouteRen
   };
 }
 
+function addRouteSpatialEntry(
+  route: RoutedEdge,
+  routeBounds: RouteRenderBounds | null,
+  bucketSize: number,
+  buckets: Map<string, RoutedEdge[]>,
+  routeBucketKeysById: Map<string, string[]>,
+  routeBoundsById: Map<string, RouteRenderBounds | null>
+) {
+  routeBoundsById.set(route.edgeId, routeBounds);
+  const bounds = routeBounds ? expandRouteBounds(routeBounds, 8) : null;
+  const routeBucketKeys: string[] = [];
+  if (bounds) {
+    const range = routeSpatialBucketRange(bounds, bucketSize);
+    for (let x = range.left; x <= range.right; x += 1) {
+      for (let y = range.top; y <= range.bottom; y += 1) {
+        const key = routeSpatialBucketKey(x, y);
+        routeBucketKeys.push(key);
+        const bucket = buckets.get(key);
+        if (bucket) {
+          bucket.push(route);
+        } else {
+          buckets.set(key, [route]);
+        }
+      }
+    }
+  }
+  routeBucketKeysById.set(route.edgeId, routeBucketKeys);
+}
+
 export function routeSpatialIndexRenderBounds(
   index: RouteSpatialIndex,
   edgeId: string,
@@ -106,28 +135,7 @@ export function buildRouteSpatialIndex(
   const routeBucketKeysById = new Map<string, string[]>();
   const routeBoundsById = new Map<string, RouteRenderBounds | null>();
   for (const route of routes) {
-    const routeBounds = routeRenderBounds(route);
-    routeBoundsById.set(route.edgeId, routeBounds);
-    const bounds = routeBounds ? expandRouteBounds(routeBounds, 8) : null;
-    if (!bounds) {
-      routeBucketKeysById.set(route.edgeId, []);
-      continue;
-    }
-    const range = routeSpatialBucketRange(bounds, bucketSize);
-    const routeBucketKeys: string[] = [];
-    for (let x = range.left; x <= range.right; x += 1) {
-      for (let y = range.top; y <= range.bottom; y += 1) {
-        const key = routeSpatialBucketKey(x, y);
-        routeBucketKeys.push(key);
-        const bucket = buckets.get(key);
-        if (bucket) {
-          bucket.push(route);
-        } else {
-          buckets.set(key, [route]);
-        }
-      }
-    }
-    routeBucketKeysById.set(route.edgeId, routeBucketKeys);
+    addRouteSpatialEntry(route, routeRenderBounds(route), bucketSize, buckets, routeBucketKeysById, routeBoundsById);
   }
   return { bucketSize, buckets, routeBucketKeysById, routeBoundsById, queryState: { mark: 0, seenById: new Map() } };
 }
@@ -330,4 +338,32 @@ export function routeStorePatchRoutes(
   return changed
     ? { routeMap, routeOrder, routeIndexById, routeSpatialIndex, routes: routeList }
     : store;
+}
+
+export function routeStorePatchRoutesById(
+  store: RouteStore,
+  routeIds: Iterable<string>,
+  updateRoute: (route: RoutedEdge) => RoutedEdge
+): { store: RouteStore; patchedEdgeIds: Set<string> } {
+  const ids = routeIds instanceof Set ? routeIds : new Set(routeIds);
+  if (ids.size === 0 || store.routes.length === 0) {
+    return { store, patchedEdgeIds: new Set<string>() };
+  }
+  const routeUpdates: RoutedEdge[] = [];
+  const patchedEdgeIds = new Set<string>();
+  for (const edgeId of ids) {
+    const previousRoute = store.routeMap.get(edgeId);
+    if (!previousRoute) {
+      continue;
+    }
+    const nextRoute = updateRoute(previousRoute);
+    if (nextRoute === previousRoute) {
+      continue;
+    }
+    routeUpdates.push(nextRoute);
+    patchedEdgeIds.add(edgeId);
+  }
+  return routeUpdates.length > 0
+    ? { store: routeStorePatchRoutes(store, routeUpdates), patchedEdgeIds }
+    : { store, patchedEdgeIds };
 }
