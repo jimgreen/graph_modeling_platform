@@ -3,9 +3,14 @@ import {
   assignPermanentDeviceIndex,
   calculateNodeVisualBounds,
   createDefaultNode,
+  createRoutableLineDeviceFromEndpoints,
+  DEVICE_LIBRARY,
+  getTerminalPoint,
   isCanvasNodeMovable,
   normalizeDeviceIndexCounters,
   routeEdgesForRendering,
+  routableLineDeviceEndpointRefForNode,
+  routableLineDeviceEndpointRefs,
   type Edge,
   type ModelGroup,
   type ModelNode
@@ -245,6 +250,47 @@ describe("canvas selection actions", () => {
       targetTerminalId: "t1"
     }));
     expect(pasted.edges[0].manualPoints?.length).toBeGreaterThan(0);
+  });
+
+  test("remaps pasted routable line endpoint refs to the copied endpoint devices", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    expect(template).toBeTruthy();
+    const source = { ...createDefaultNode("ac-source", { x: 100, y: 120 }), id: "source-original" };
+    const target = { ...createDefaultNode("ac-load", { x: 420, y: 120 }), id: "target-original" };
+    const line = {
+      ...createRoutableLineDeviceFromEndpoints(
+        template!,
+        getTerminalPoint(source, "t1"),
+        getTerminalPoint(target, "t1"),
+        "layer-a",
+        {
+          source: routableLineDeviceEndpointRefForNode(source, "t1"),
+          target: routableLineDeviceEndpointRefForNode(target, "t1")
+        }
+      ),
+      id: "line-original"
+    };
+    const clipboard = buildCanvasClipboard(
+      [source, target, line],
+      [],
+      [],
+      [source.id, target.id, line.id],
+      []
+    );
+    const nextNodeIds = ["source-copy", "target-copy", "line-copy"];
+
+    const pasted = cloneCanvasClipboard(
+      clipboard,
+      { x: 600, y: 300 },
+      () => nextNodeIds.shift()!,
+      () => "unused-edge"
+    );
+
+    const pastedLine = pasted.nodes.find((node) => node.id === "line-copy");
+    expect(pastedLine).toBeTruthy();
+    const refs = routableLineDeviceEndpointRefs(pastedLine!);
+    expect(refs.source).toMatchObject({ nodeId: "source-copy", terminalId: "t1" });
+    expect(refs.target).toMatchObject({ nodeId: "target-copy", terminalId: "t1" });
   });
 
   test("does not paste a selected connection line when its endpoint devices are not copied", () => {

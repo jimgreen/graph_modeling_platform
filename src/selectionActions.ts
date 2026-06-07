@@ -3,6 +3,8 @@ import {
   type AlignMode,
   calculateNodeBodyBounds,
   calculateNodeVisualBounds,
+  ROUTABLE_LINE_SOURCE_NODE_PARAM,
+  ROUTABLE_LINE_TARGET_NODE_PARAM,
   resetDeviceIndexesForPaste,
   type CanvasBounds,
   type Edge,
@@ -629,6 +631,22 @@ function offsetPoint(point: Point | undefined, dx: number, dy: number): Point | 
   return point ? { x: Math.round(point.x + dx), y: Math.round(point.y + dy) } : undefined;
 }
 
+function remapRoutableLineEndpointNodeRefs(
+  params: Record<string, string>,
+  idMap: ReadonlyMap<string, string>
+): Record<string, string> {
+  const nextParams = { ...params };
+  const remapEndpointNodeParam = (paramName: string) => {
+    const nextNodeId = idMap.get(nextParams[paramName]);
+    if (nextNodeId) {
+      nextParams[paramName] = nextNodeId;
+    }
+  };
+  remapEndpointNodeParam(ROUTABLE_LINE_SOURCE_NODE_PARAM);
+  remapEndpointNodeParam(ROUTABLE_LINE_TARGET_NODE_PARAM);
+  return nextParams;
+}
+
 export function cloneCanvasClipboard(
   clipboard: CanvasClipboard,
   targetTopLeft: Point,
@@ -643,15 +661,17 @@ export function cloneCanvasClipboard(
   const dx = targetTopLeft.x - bounds.left;
   const dy = targetTopLeft.y - bounds.top;
   const idMap = new Map<string, string>();
+  for (const node of clipboard.nodes) {
+    idMap.set(node.id, createNodeId());
+  }
   const nodes = clipboard.nodes.map((node) => {
-    const nextId = createNodeId();
-    idMap.set(node.id, nextId);
+    const nextId = idMap.get(node.id)!;
     return resetDeviceIndexesForPaste({
       ...node,
       id: nextId,
       name: `${node.name} 副本`,
       position: { x: Math.round(node.position.x + dx), y: Math.round(node.position.y + dy) },
-      params: { ...node.params },
+      params: remapRoutableLineEndpointNodeRefs(node.params, idMap),
       terminals: node.terminals.map((terminal) => ({ ...terminal, anchor: { ...terminal.anchor } }))
     });
   });
