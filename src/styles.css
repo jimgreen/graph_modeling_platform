@@ -5863,6 +5863,59 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   border-color: #bfdbfe;
 }
 
+.batch-common-scroll-area {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-width: thin;
+}
+
+.batch-common-table-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.batch-common-table-section {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.batch-common-table-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #334155;
+  font-size: 12px;
+}
+
+.batch-common-table-title strong,
+.batch-common-table-title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-common-table-title span {
+  color: #64748b;
+}
+
+.batch-common-property-table {
+  table-layout: fixed;
+}
+
+.batch-common-name-col {
+  width: 42%;
+}
+
+.batch-common-empty-row td {
+  color: #64748b;
+  background: #ffffff;
+  text-align: left;
+}
+
 .container-param-tabs {
   display: flex;
   flex-wrap: wrap;

@@ -1153,6 +1153,22 @@ type BatchCommonParamRow = {
   value: string;
   mixed: boolean;
 };
+type BatchCommonMeasurementGroupKey =
+  | "visible"
+  | "layout"
+  | "labelVisible"
+  | "unitVisible"
+  | "backgroundVisible"
+  | "backgroundColor"
+  | "borderStyle"
+  | "borderColor"
+  | "borderWidth";
+type BatchCommonMeasurementGroupRow = {
+  key: BatchCommonMeasurementGroupKey;
+  label: string;
+  value: string;
+  mixed: boolean;
+};
 type DraftProjectState = {
   projectName: string;
   activeProjectKey: string;
@@ -2954,6 +2970,133 @@ const canBatchEditParam = (key: string) =>
   !READONLY_E_PARAM_KEYS.has(key) &&
   !/(^|_)node$/i.test(key) &&
   !/_node$/i.test(key);
+
+const BATCH_GRAPH_PARAM_KEYS = new Set([
+  "staticWidth",
+  "staticHeight",
+  "rotation",
+  "scaleX",
+  "scaleY",
+  "backgroundImage",
+  "backgroundImageAssetId",
+  "foregroundColor",
+  "foregroundImage",
+  "foregroundImageAssetId",
+  "fillColor",
+  "strokeColor",
+  "textColor",
+  "lineWidth",
+  "fontSize",
+  "fontFamily",
+  "fontWeight",
+  "fontStyle",
+  "textDecoration",
+  "strokeStyle",
+  "text",
+  "cornerRadius",
+  "accentColor",
+  "shadowEnabled",
+  "padding",
+  "textAlign",
+  "verticalAlign",
+  "markerStart",
+  "markerEnd",
+  "arrowSize",
+  "handleColor",
+  "handleSize",
+  "routeAvoidance"
+]);
+const BATCH_GRAPH_PARAM_PREFIXES = [
+  "_label",
+  "button"
+];
+const isBatchGraphCommonParamKey = (key: string) =>
+  BATCH_GRAPH_PARAM_KEYS.has(key) ||
+  BATCH_GRAPH_PARAM_PREFIXES.some((prefix) => key.startsWith(prefix));
+
+const BATCH_MEASUREMENT_GROUP_KEYS: BatchCommonMeasurementGroupKey[] = [
+  "visible",
+  "layout",
+  "labelVisible",
+  "unitVisible",
+  "backgroundVisible",
+  "backgroundColor",
+  "borderStyle",
+  "borderColor",
+  "borderWidth"
+];
+const BATCH_MEASUREMENT_GROUP_LABELS: Record<BatchCommonMeasurementGroupKey, string> = {
+  visible: "量测显示",
+  layout: "量测布局",
+  labelVisible: "标签显示",
+  unitVisible: "单位显示",
+  backgroundVisible: "背景显示",
+  backgroundColor: "背景颜色",
+  borderStyle: "边框样式",
+  borderColor: "边框颜色",
+  borderWidth: "边框宽度"
+};
+const measurementGroupCommonValue = (group: MeasurementGroup, key: BatchCommonMeasurementGroupKey) => {
+  switch (key) {
+    case "visible":
+      return group.visible ? "1" : "0";
+    case "layout":
+      return group.layout;
+    case "labelVisible":
+      return group.labelVisible === false ? "0" : "1";
+    case "unitVisible":
+      return group.unitVisible === false ? "0" : "1";
+    case "backgroundVisible":
+      return group.backgroundColor === "transparent" ? "0" : "1";
+    case "backgroundColor":
+      return group.backgroundColor && group.backgroundColor !== "transparent" ? group.backgroundColor : "#ffffff";
+    case "borderStyle":
+      return group.borderStyle ?? "solid";
+    case "borderColor":
+      return group.borderColor && group.borderColor !== "transparent" ? group.borderColor : "#64748b";
+    case "borderWidth":
+      return String(group.borderWidth ?? 1);
+    default:
+      return "";
+  }
+};
+const measurementGroupWithCommonSetting = (
+  group: MeasurementGroup,
+  key: BatchCommonMeasurementGroupKey,
+  value: string
+): MeasurementGroup => {
+  switch (key) {
+    case "visible":
+      return { ...group, visible: value === "1" };
+    case "layout":
+      return { ...group, layout: value as MeasurementGroup["layout"] };
+    case "labelVisible":
+      return { ...group, labelVisible: value === "1" };
+    case "unitVisible":
+      return { ...group, unitVisible: value === "1" };
+    case "backgroundVisible":
+      return {
+        ...group,
+        backgroundColor: value === "1"
+          ? group.backgroundColor === "transparent" ? "#ffffff" : group.backgroundColor ?? "#ffffff"
+          : "transparent"
+      };
+    case "backgroundColor":
+      return { ...group, backgroundColor: value || "#ffffff" };
+    case "borderStyle":
+      return {
+        ...group,
+        borderStyle: value as MeasurementGroup["borderStyle"],
+        borderWidth: group.borderWidth ?? 1
+      };
+    case "borderColor":
+      return { ...group, borderColor: value || "#64748b" };
+    case "borderWidth":
+      return { ...group, borderWidth: Math.max(0, Math.min(12, Number(value))) };
+    default:
+      return group;
+  }
+};
 
 function readSavedProjects(): SavedProjectRecord[] {
   try {
@@ -8323,6 +8466,44 @@ export function App() {
       })
       .sort((first, second) => first.label.localeCompare(second.label, "zh-Hans-CN") || first.key.localeCompare(second.key));
   }, [activeSelectedNodeIds, nodeById]);
+  const batchCommonGraphicParamRows = useMemo(
+    () => batchCommonParamRows.filter((row) => isBatchGraphCommonParamKey(row.key)),
+    [batchCommonParamRows]
+  );
+  const batchCommonModelParamRows = useMemo(
+    () => batchCommonParamRows.filter((row) => !isBatchGraphCommonParamKey(row.key)),
+    [batchCommonParamRows]
+  );
+  const selectedNodeIdsWithMeasurementGroups = useMemo(() => new Set(
+    activeSelectedNodeIds.filter((nodeId) => measurementGroupsForNode(projectMeasurements, nodeId).length > 0)
+  ), [activeSelectedNodeIds, projectMeasurements]);
+  const batchCommonMeasurementGroupRows = useMemo<BatchCommonMeasurementGroupRow[]>(() => {
+    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []).filter((node) => !isStaticNode(node));
+    if (selectedNodes.length < 2) {
+      return [];
+    }
+    const measurementGroups = selectedNodes.flatMap((node) => measurementGroupsForNode(projectMeasurements, node.id));
+    if (measurementGroups.length === 0) {
+      return [];
+    }
+    return BATCH_MEASUREMENT_GROUP_KEYS.map((key) => {
+      const values = measurementGroups.map((group) => measurementGroupCommonValue(group, key));
+      return {
+        key,
+        label: BATCH_MEASUREMENT_GROUP_LABELS[key],
+        value: values[0] ?? "",
+        mixed: values.some((value) => value !== values[0])
+      };
+    });
+  }, [activeSelectedNodeIds, nodeById, projectMeasurements]);
+  const hasBatchCommonPropertyRows =
+    batchCommonGraphicParamRows.length > 0 ||
+    batchCommonModelParamRows.length > 0 ||
+    batchCommonMeasurementGroupRows.length > 0;
+  const batchCommonPropertyRowCount =
+    batchCommonGraphicParamRows.length +
+    batchCommonModelParamRows.length +
+    batchCommonMeasurementGroupRows.length;
   const selectedEdge = activeLayerEdgeIdSet.has(selectedEdgeId) ? edgeById.get(selectedEdgeId) : undefined;
   const inspectorSelectedNode = selectedNode;
   const singleSelectedDeviceForInspector = Boolean(
@@ -20254,6 +20435,34 @@ export function App() {
     writeOperationLog(`批量修改共同属性：${PARAM_LABELS[key] ?? key}`);
   };
 
+  const applyBatchCommonMeasurementGroupSetting = (key: BatchCommonMeasurementGroupKey, value: string) => {
+    if (!requireEditMode("批量修改量测属性")) {
+      return;
+    }
+    if (!value || selectedNodeIdsWithMeasurementGroups.size === 0) {
+      return;
+    }
+    const changedGroupIds = new Set(
+      projectMeasurements.groups
+        .filter((group) => selectedNodeIdsWithMeasurementGroups.has(group.nodeId))
+        .filter((group) => measurementGroupCommonValue(group, key) !== value)
+        .map((group) => group.id)
+    );
+    if (changedGroupIds.size === 0) {
+      return;
+    }
+    updateProjectMeasurementsWithUndo(
+      (current) => ({
+        version: 1,
+        groups: current.groups.map((group) => changedGroupIds.has(group.id)
+          ? measurementGroupWithCommonSetting(group, key, value)
+          : group
+        )
+      }),
+      `批量修改量测属性：${BATCH_MEASUREMENT_GROUP_LABELS[key]}`
+    );
+  };
+
   const updateElementTreeNodeIdentity = (nodeId: string, field: "idx" | "name", value: string) => {
     if (!requireEditMode("修改图元树参数")) {
       return;
@@ -20365,22 +20574,143 @@ export function App() {
     );
   };
 
-  const renderBatchCommonParamPanel = () => (
-    <section className="batch-param-panel" aria-label="批量修改共同属性">
-      <div className="batch-param-summary">
-        <strong>批量修改共同属性</strong>
-        <span>{activeSelectedNodeIds.length} 个图元，{batchCommonParamRows.length} 个共同属性</span>
+  const renderBatchCommonColumnGroup = () => (
+    <colgroup>
+      <col className="batch-common-name-col" />
+      <col className="batch-common-value-col" />
+    </colgroup>
+  );
+
+  const renderBatchCommonParamTable = (
+    title: "图形" | "模型",
+    rows: BatchCommonParamRow[],
+    emptyText: string
+  ) => (
+    <section className="batch-common-table-section" aria-label={`${title}共同属性表`}>
+      <div className="batch-common-table-title">
+        <strong>{title}</strong>
+        <span>{rows.length} 个共同属性</span>
       </div>
-      <table className="param-table batch-param-table">
+      <table className="param-table batch-param-table batch-common-property-table">
+        {renderBatchCommonColumnGroup()}
         <tbody>
-          {batchCommonParamRows.map((row) => (
+          {rows.length > 0 ? rows.map((row) => (
             <tr key={row.key}>
               {renderParamHeader(row.key, row.key, row.label)}
               <td>{renderBatchCommonParamEditor(row)}</td>
             </tr>
-          ))}
+          )) : (
+            <tr className="batch-common-empty-row">
+              <td colSpan={2}>{emptyText}</td>
+            </tr>
+          )}
         </tbody>
       </table>
+    </section>
+  );
+
+  const renderBatchCommonMeasurementGroupEditor = (row: BatchCommonMeasurementGroupRow) => {
+    const value = row.mixed ? "" : row.value;
+    if (row.key === "visible" || row.key === "labelVisible" || row.key === "unitVisible") {
+      return (
+        <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value)}>
+          {row.mixed && <option value="">多个不同值</option>}
+          <option value="1">显示</option>
+          <option value="0">隐藏</option>
+        </select>
+      );
+    }
+    if (row.key === "backgroundVisible") {
+      return (
+        <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value)}>
+          {row.mixed && <option value="">多个不同值</option>}
+          <option value="1">显示</option>
+          <option value="0">透明</option>
+        </select>
+      );
+    }
+    if (row.key === "layout") {
+      return (
+        <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value)}>
+          {row.mixed && <option value="">多个不同值</option>}
+          <option value="vertical">竖向</option>
+          <option value="horizontal">横向</option>
+          <option value="grid">两列</option>
+        </select>
+      );
+    }
+    if (row.key === "borderStyle") {
+      return (
+        <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value)}>
+          {row.mixed && <option value="">多个不同值</option>}
+          <option value="solid">实线</option>
+          <option value="dashed">虚线</option>
+          <option value="dotted">点线</option>
+          <option value="none">无边框</option>
+        </select>
+      );
+    }
+    if (row.key === "backgroundColor" || row.key === "borderColor") {
+      const fallback = row.key === "backgroundColor" ? "#ffffff" : "#64748b";
+      return (
+        <input
+          type="color"
+          value={row.mixed ? fallback : row.value || fallback}
+          disabled={isBrowseMode}
+          aria-label={row.label}
+          onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value)}
+        />
+      );
+    }
+    return (
+      <input
+        type="number"
+        min="0"
+        max="12"
+        step="0.5"
+        value={value}
+        disabled={isBrowseMode}
+        placeholder={row.mixed ? "多个不同值" : undefined}
+        onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value)}
+      />
+    );
+  };
+
+  const renderBatchCommonMeasurementGroupTable = () => (
+    <section className="batch-common-table-section" aria-label="量测共同属性表">
+      <div className="batch-common-table-title">
+        <strong>量测</strong>
+        <span>{selectedNodeIdsWithMeasurementGroups.size} 个设备，{batchCommonMeasurementGroupRows.length} 个量测属性</span>
+      </div>
+      <table className="param-table batch-param-table batch-common-property-table selected-node-measurement-table">
+        {renderBatchCommonColumnGroup()}
+        <tbody>
+          {batchCommonMeasurementGroupRows.length > 0 ? batchCommonMeasurementGroupRows.map((row) => (
+            <tr key={row.key}>
+              {renderParamHeader(row.key, row.key, row.label)}
+              <td>{renderBatchCommonMeasurementGroupEditor(row)}</td>
+            </tr>
+          )) : (
+            <tr className="batch-common-empty-row">
+              <td colSpan={2}>选中设备没有可批量修改的量测共同属性。</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </section>
+  );
+
+  const renderBatchCommonPropertyPanel = () => (
+    <section className="batch-param-panel" aria-label="批量修改共同属性">
+      <div className="batch-param-summary">
+        <strong>批量修改共同属性</strong>
+        <span>{activeSelectedNodeIds.length} 个图元，{batchCommonPropertyRowCount} 个共同属性</span>
+      </div>
+      <div className="batch-common-table-stack">
+        {renderBatchCommonParamTable("图形", batchCommonGraphicParamRows, "选中图元没有可批量修改的图形共同属性。")}
+        {renderBatchCommonParamTable("模型", batchCommonModelParamRows, "选中图元没有可批量修改的模型共同属性。")}
+        {renderBatchCommonMeasurementGroupTable()}
+      </div>
     </section>
   );
 
@@ -32828,12 +33158,14 @@ export function App() {
                   )}
                 </div>
                 {multiNodeGraphSelection ? (
-                  batchCommonParamRows.length > 0 ? renderBatchCommonParamPanel() : (
-                    <div className="empty-state compact">
-                      <FileJson size={24} />
-                      <p>当前选中的图元没有可批量修改的共同属性。</p>
-                    </div>
-                  )
+                  <div className="batch-common-scroll-area">
+                    {hasBatchCommonPropertyRows ? renderBatchCommonPropertyPanel() : (
+                      <div className="empty-state compact">
+                        <FileJson size={24} />
+                        <p>当前选中的图元没有可批量修改的共同属性。</p>
+                      </div>
+                    )}
+                  </div>
                 ) : inspectorSelectedNode ? (
                   <div className="graph-param-table-wrap">
                   <table className="param-table">
@@ -33264,7 +33596,6 @@ export function App() {
                   renderSelectedNodeMeasurementTable(inspectorSelectedNode)
                 ) : (
                   <>
-                    {batchCommonParamRows.length > 0 && renderBatchCommonParamPanel()}
                     {selectedContainerParameterViews.length > 0 && (
                       <div className="container-param-tabs" role="tablist" aria-label="容器设备参数切换">
                         {selectedContainerParameterViews.map((view) => (
