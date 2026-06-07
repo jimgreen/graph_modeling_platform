@@ -1563,7 +1563,7 @@ describe("graph inspector panel", () => {
   test("keeps backend SVG bus export square ended", async () => {
     const serverSource = await readServerSource();
     const busExportStart = serverSource.indexOf("if (isBus)");
-    const busExportEnd = serverSource.indexOf("\n      }\n      return", busExportStart);
+    const busExportEnd = serverSource.indexOf("    } else {", busExportStart);
     const busExportBlock = serverSource.slice(busExportStart, busExportEnd);
 
     expect(busExportBlock).toContain("<rect");
@@ -2906,10 +2906,32 @@ describe("graph inspector panel", () => {
     expect(source).toContain('data-export-device-idx="${escapeXml(node.params.idx ?? "")}"');
     expect(source).toContain('data-export-device-name="${escapeXml(node.name)}"');
     expect(source).toContain("const measurementMarkup = measurements.groups");
-    expect(source).toContain("buildExportMeasurementGroupMarkup(node, group, measurementConfig)");
+    expect(source).toContain("buildExportMeasurementGroupMarkup(node, group, measurementConfig, usedSvgIds)");
     expect(exportBlock).not.toContain("routeEdgesForRendering");
     expect(sizeBlock).toContain("routeEdgesForStoredRendering(nodes, edges");
     expect(sizeBlock).not.toContain("routeEdgesForRendering");
+  });
+
+  test("exports SVG devices as positioned groups instead of implicit symbol uses", async () => {
+    const source = await readAppSource();
+    const serverSource = await readServerSource();
+    const exportStart = source.indexOf("export function buildSvgDocument");
+    const exportEnd = source.indexOf("export function App", exportStart);
+    const exportBlock = source.slice(exportStart, exportEnd);
+    const serverExportStart = serverSource.indexOf("function buildSvgFile");
+    const serverExportEnd = serverSource.indexOf("async function listSchemeStoreEntries", serverExportStart);
+    const serverExportBlock = serverSource.slice(serverExportStart, serverExportEnd);
+
+    expect(exportBlock).toContain('class="export-node${exportButtonClass}" transform="translate(');
+    expect(exportBlock).not.toContain("<symbol id=");
+    expect(exportBlock).not.toContain("<use id=");
+    expect(serverExportBlock).toContain('class="export-node" transform="${escapeSvgAttribute(nodeTransform)}"');
+    expect(serverExportBlock).toContain('class="export-node-geometry" transform="${escapeSvgAttribute(geometryTransform)}"');
+    expect(serverExportBlock).toContain("buildServerSvgNodeLabelMarkup(node)");
+    expect(serverExportBlock).toContain("buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, usedIds)");
+    expect(serverSource).toContain('data-export-measurement-source-point="${escapeSvgAttribute(row.item?.sourcePoint ?? "")}"');
+    expect(serverExportBlock).not.toContain("<symbol id=");
+    expect(serverExportBlock).not.toContain("<use id=");
   });
 
   test("resizes the canvas from its edges and expands it for moved or pasted graphics", async () => {

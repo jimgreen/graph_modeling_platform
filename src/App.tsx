@@ -7488,7 +7488,6 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
 </g>`;
     })
     .join("\n");
-  const nodeSymbolMarkup: string[] = [];
   const nodeLayerMarkup = new Map<string, string[]>();
   for (const layerId of nodeTypeLayerIds.values()) {
     nodeLayerMarkup.set(layerId, []);
@@ -7523,9 +7522,8 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
           : "";
       const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
       const labelMarkup = buildSvgNodeLabelMarkup(node);
-      const symbolId = exportSvgUniqueId(`symbol_${exportNodeType(node)}_${node.id}`, usedSvgIds, "device_symbol");
       const useId = exportSvgUniqueId(node.id, usedSvgIds, "device");
-      nodeSymbolMarkup.push(`<symbol id="${escapeXml(symbolId)}" viewBox="${formatSvgNumber(-node.size.width / 2)} ${formatSvgNumber(-node.size.height / 2)} ${formatSvgNumber(node.size.width)} ${formatSvgNumber(node.size.height)}">
+      nodeLayerMarkup.get(typeLayerId)?.push(`<g id="${escapeXml(useId)}" class="export-node${exportButtonClass}" transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})" data-export-node-id="${escapeXml(node.id)}" data-export-layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}>
   <title>${escapeXml(node.name)}</title>
   <g class="export-node-geometry" transform="${geometryTransform}">
   ${glyphMarkup}
@@ -7541,8 +7539,7 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
   ${terminalMarkup}
   </g>
   ${labelMarkup}
-</symbol>`);
-      nodeLayerMarkup.get(typeLayerId)?.push(`<use id="${escapeXml(useId)}" class="export-node${exportButtonClass}" href="#${escapeXml(symbolId)}" xlink:href="#${escapeXml(symbolId)}" transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})" data-export-node-id="${escapeXml(node.id)}" data-export-layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}/>`);
+</g>`);
   });
   const measurementConfig = canvasSize.measurementConfig ?? DEFAULT_MEASUREMENT_CONFIG;
   const measurements = canvasSize.measurements ?? EMPTY_PROJECT_MEASUREMENTS;
@@ -7574,7 +7571,6 @@ ${(nodeLayerMarkup.get(layerId) ?? []).join("\n")}
     .join("\n");
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,${canvasSize.width},${canvasSize.height}" data-export-active-layer-id="${escapeXml(activeExportLayerId)}">
 <defs id="${escapeXml(defsId)}">
-${nodeSymbolMarkup.join("\n")}
 <g class="export-layer-definitions" style="display:none">
 ${exportLayerDefinitionsMarkup}
 </g>

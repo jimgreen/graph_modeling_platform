@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { buildSvgDocument } from "./App";
 import { createDefaultNode, type Edge } from "./model";
+import type { ProjectMeasurementConfig } from "./measurements";
 
 describe("SVG export", () => {
   test("exports template-compatible root, defs, typed layers and unique ids", () => {
@@ -21,8 +22,10 @@ describe("SVG export", () => {
     expect(svg).toContain('<g id="ACLoad_Layer"');
     expect(svg).toContain('<g id="Measurement_Layer">');
     expect(svg).toContain('<g id="Other_Layer">');
-    expect(svg).toMatch(/<symbol id="symbol_ACGenerator_source-1" viewBox="-[\d.]+ -[\d.]+ [\d.]+ [\d.]+">/);
-    expect(svg).toContain('<use id="source-1" class="export-node" href="#symbol_ACGenerator_source-1" xlink:href="#symbol_ACGenerator_source-1" transform="translate(120 140)"');
+    expect(svg).not.toContain('<symbol id="symbol_');
+    expect(svg).not.toMatch(/<use[^>]+href="#symbol_/);
+    expect(svg).toContain('<g id="source-1" class="export-node" transform="translate(120 140)"');
+    expect(svg).toContain('data-export-node-id="source-1"');
     expect(svg.indexOf('<g id="Segment_Layer">')).toBeGreaterThan(svg.indexOf('<g id="root_g">'));
 
     expect(svg.indexOf('<g id="ACGenerator_Layer"')).toBeGreaterThan(svg.indexOf('<g id="root_g">'));
@@ -97,6 +100,60 @@ describe("SVG export", () => {
     expect(svg).toContain('class="export-boundary-bus-internal-connector"');
     expect(svg).toMatch(/class="export-boundary-bus-internal-connector" x1="[\d.-]+" y1="120" x2="[\d.-]+" y2="120"/);
     expect(svg).toContain('stroke="#dc2626"');
+  });
+
+  test("exports device labels and dynamic measurements with positioned refresh metadata", () => {
+    const load = { ...createDefaultNode("ac-load", { x: 140, y: 100 }), id: "load-export", name: "负荷A" };
+    load.params = {
+      ...load.params,
+      idx: "LOAD-1",
+      _labelText: "LOAD-1",
+      _labelX: "10",
+      _labelY: "64",
+      _labelColor: "#111111",
+      _labelFontSize: "14"
+    };
+    const measurements: ProjectMeasurementConfig = {
+      version: 1,
+      groups: [
+        {
+          id: "group-1",
+          nodeId: load.id,
+          visible: true,
+          labelVisible: true,
+          unitVisible: true,
+          backgroundColor: "#ffffff",
+          borderColor: "#94a3b8",
+          borderWidth: 1,
+          borderStyle: "solid",
+          anchor: "custom",
+          offset: { x: 40, y: -30 },
+          layout: "vertical",
+          items: [
+            {
+              id: "m-active",
+              name: "P主",
+              measurementTypeId: "activePower",
+              sourcePoint: "load-export.activePower",
+              visible: true,
+              unitOverride: "kW"
+            }
+          ]
+        }
+      ]
+    };
+
+    const svg = buildSvgDocument([load], [], { width: 320, height: 220, measurements });
+
+    expect(svg).toContain('data-export-device-id="load-export"');
+    expect(svg).toContain('data-export-device-idx="LOAD-1"');
+    expect(svg).toContain('class="export-node-label horizontal" transform="translate(10 64)"');
+    expect(svg).toContain(">LOAD-1</text>");
+    expect(svg).toContain('class="export-measurement-group measurement-group" conn-dev="load-export" transform="translate(180 70)"');
+    expect(svg).toContain('data-export-measurement-name="P主"');
+    expect(svg).toContain('data-export-measurement-source-point="load-export.activePower"');
+    expect(svg).toContain('data-export-measurement-unit="kW"');
+    expect(svg).toContain("P -- kW");
   });
 
   test("exports static layer buttons with standalone SVG layer switching logic", () => {
@@ -261,7 +318,7 @@ describe("SVG export", () => {
     expect(svg).toContain('stroke="#0f766e"');
   });
 
-  test("exports rotated and mirrored device geometry while text and image layers stay upright", () => {
+  test("exports rotated and mirrored device geometry while image and terminal layers follow transforms", () => {
     const generator = createDefaultNode("ac-source", { x: 160, y: 140 });
     generator.rotation = 90;
     generator.scaleX = -1.5;
@@ -269,9 +326,9 @@ describe("SVG export", () => {
 
     const svg = buildSvgDocument([generator], [], { width: 360, height: 260 });
 
-    expect(svg).toMatch(/<use id="[^"]+" class="export-node"[^>]*transform="translate\(160 140\)"/);
+    expect(svg).toMatch(/<g id="[^"]+" class="export-node"[^>]*transform="translate\(160 140\)"/);
     expect(svg).toContain('class="export-node-geometry" transform="rotate(90) scale(-1.5 2)"');
-    expect(svg).toContain('class="export-node-upright-content" transform="scale(1.5 2)"');
+    expect(svg).toContain('class="export-node-upright-content" transform="rotate(90) scale(-1.5 2)"');
     expect(svg).toMatch(/class="export-terminal ac" transform="translate\([\d.]+ 0\) scale\(-0\.6666666666666666 0\.5\)"/);
     expect(svg).toContain('matrix(0 -0.86603 -1.1547 0 0 0)');
     expect(svg).not.toContain('matrix(0 -0.75 -1.33333 0 0 0)');
