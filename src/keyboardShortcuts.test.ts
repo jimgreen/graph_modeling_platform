@@ -32,6 +32,7 @@ describe("keyboard shortcut scope", () => {
     expect(
       resolveKeyboardShortcutScope({
         isCanvasTarget: true,
+        isCanvasPointerUnblocked: false,
         isCanvasInteractionActive: false,
         isProjectListPointerInside: false
       })
@@ -40,6 +41,16 @@ describe("keyboard shortcut scope", () => {
     expect(
       resolveKeyboardShortcutScope({
         isCanvasTarget: false,
+        isCanvasPointerUnblocked: true,
+        isCanvasInteractionActive: false,
+        isProjectListPointerInside: false
+      })
+    ).toBe("canvas");
+
+    expect(
+      resolveKeyboardShortcutScope({
+        isCanvasTarget: false,
+        isCanvasPointerUnblocked: false,
         isCanvasInteractionActive: true,
         isProjectListPointerInside: false
       })
@@ -48,6 +59,7 @@ describe("keyboard shortcut scope", () => {
     expect(
       resolveKeyboardShortcutScope({
         isCanvasTarget: true,
+        isCanvasPointerUnblocked: true,
         isCanvasInteractionActive: true,
         isProjectListPointerInside: true
       })

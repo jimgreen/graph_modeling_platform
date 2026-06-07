@@ -1070,7 +1070,7 @@ describe("graph inspector panel", () => {
     expect(deferredRepairBlock).toContain("options.reconcileTerminalConnections");
     expect(deferredRepairBlock).toContain("finalizeMovedNodeEdgesFast(");
     expect(deferredRepairBlock).toContain("edgePatchFromCandidateEdges(latestCandidateEdges, optimizedEdges)");
-    expect(commitBlock).toContain("const deferSingleNodeTerminalReconciliation = shouldDeferSingleNodeTerminalReconciliation(");
+    expect(commitBlock).toContain("!wholeLayerMove &&\n      shouldDeferSingleNodeTerminalReconciliation(");
     expect(commitBlock).toContain("reconcileTerminalConnections: deferSingleNodeTerminalReconciliation");
   });
 
@@ -1994,8 +1994,11 @@ describe("graph inspector panel", () => {
     expect(syncFinalizeBlock).toContain("candidateEdges.length === 0");
     expect(finishBlock).not.toContain("multiNodeMove || !shouldFinalizeMovedNodeEdgesSynchronously");
     expect(moveBlock).not.toContain("multiNodeMove || !shouldFinalizeMovedNodeEdgesSynchronously");
-    expect(finishBlock).toContain("shouldFinalizeMovedNodeEdgesSynchronously(activeDragging.nodeIds, adjustedAffectedEdges)\n      ? finalizeMovedNodeEdgesFast");
-    expect(moveBlock).toContain("shouldFinalizeMovedNodeEdgesSynchronously(moveNodeIds, adjustedAffectedEdges)\n      ? finalizeMovedNodeEdgesFast");
+    expect(finishBlock).toContain("const terminalFinalizationCandidateEdges =\n      internalMovedEdgeIds.size === 0 ? adjustedAffectedEdges : finalizationCandidateEdges;");
+    expect(finishBlock).toContain("shouldFinalizeMovedNodeEdgesSynchronously(activeDragging.nodeIds, terminalFinalizationCandidateEdges)");
+    expect(finishBlock).toContain("terminalFinalizationCandidateEdges");
+    expect(moveBlock).toContain("const terminalFinalizationCandidateEdges =\n      internalMovedEdgeIds.size === 0 ? adjustedAffectedEdges : finalizationCandidateEdges;");
+    expect(moveBlock).toContain("shouldFinalizeMovedNodeEdgesSynchronously(moveNodeIds, terminalFinalizationCandidateEdges)");
   });
 
   test("keeps connection previews on the lightweight stored-route path", async () => {
@@ -2824,9 +2827,10 @@ describe("graph inspector panel", () => {
     expect(scheduleBlock).toContain("deferredMoveOptimizationCancelRef.current = null");
     expect(scheduleBlock).toContain("scheduleIdleWork");
     expect(scheduleBlock).toContain("graphStorePatchStillCurrent");
-    expect(commitBlock).toContain("const routeRepairCandidateEdges = localRouteOptimizationCandidateEdges");
-    expect(commitBlock).toContain("const deferSingleNodeTerminalReconciliation = shouldDeferSingleNodeTerminalReconciliation(");
-    expect(commitBlock).toContain("movedNodeIds.length > 0 && (routeRepairCandidateEdges.length > 0 || deferSingleNodeTerminalReconciliation)");
+    expect(commitBlock).toContain("const routeRepairCandidateEdges = wholeLayerMove");
+    expect(commitBlock).toContain(": localRouteOptimizationCandidateEdges(");
+    expect(commitBlock).toContain("!wholeLayerMove &&\n      shouldDeferSingleNodeTerminalReconciliation(");
+    expect(commitBlock).toContain("movedNodeIds.length > 0 &&\n      (deferredRepairCandidateEdges.length > 0 || deferSingleNodeTerminalReconciliation)");
     expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(");
     expect(commitBlock).toContain("previousNodes");
     expect(commitBlock).toContain("originalPositions");
@@ -4217,6 +4221,44 @@ describe("graph inspector panel", () => {
     expect(keydownBlock).not.toContain("if (isGlobalSaveShortcut(event))");
   });
 
+  test("routes shortcuts to the canvas only when the pointer is over an unobstructed rendered canvas", async () => {
+    const source = await readAppSource();
+    const refsStart = source.indexOf("const canvasFrameRef");
+    const refsEnd = source.indexOf("const backendSchemesLoadedRef", refsStart);
+    const refsBlock = source.slice(refsStart, refsEnd);
+    const helperStart = source.indexOf("const canvasPointerKeyboardShortcutAvailability = () =>");
+    const helperEnd = source.indexOf("useEffect(() => {\n    const handleGlobalSaveKeyDown", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+    const keydownStart = source.indexOf("const handleKeyDown = (event: KeyboardEvent) => {");
+    const keydownEnd = source.indexOf("const handleKeyUp = (event: KeyboardEvent) => {", keydownStart);
+    const keydownBlock = source.slice(keydownStart, keydownEnd);
+    const pointerMoveStart = source.indexOf("const handlePointerMove = (event: PointerEvent<SVGSVGElement>)");
+    const pointerMoveEnd = source.indexOf("if (libraryPlacement)", pointerMoveStart);
+    const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
+    const canvasSvgStart = source.indexOf("className={`diagram-canvas");
+    const pointerEnterStart = source.indexOf("onPointerEnter={(event) => {", canvasSvgStart);
+    const pointerEnterEnd = source.indexOf("}}\n            onPointerUp", pointerEnterStart);
+    const pointerEnterBlock = source.slice(pointerEnterStart, pointerEnterEnd);
+    const pointerLeaveStart = source.indexOf("onPointerLeave={() => {", pointerEnterEnd);
+    const pointerLeaveEnd = source.indexOf("}}\n            onPointerCancel", pointerLeaveStart);
+    const pointerLeaveBlock = source.slice(pointerLeaveStart, pointerLeaveEnd);
+
+    expect(source).toContain("const CANVAS_KEYBOARD_BLOCKING_SELECTOR = [");
+    expect(source).toContain("function isCanvasKeyboardBlockingTarget(target: EventTarget | null)");
+    expect(refsBlock).toContain("const lastCanvasClientPointerRef = useRef<Point | null>(null);");
+    expect(helperBlock).toContain("const point = lastCanvasClientPointerRef.current;");
+    expect(helperBlock).toContain("document.elementFromPoint(point.x, point.y)");
+    expect(helperBlock).toContain("isCanvasKeyboardBlockingTarget(topElement)");
+    expect(helperBlock).toContain("topElement.closest(\".diagram-canvas\")");
+    expect(keydownBlock).toContain("const canvasPointerShortcutAvailability = canvasPointerKeyboardShortcutAvailability();");
+    expect(keydownBlock).toContain("isCanvasTarget: Boolean(target?.closest(\".diagram-canvas\")) && canvasPointerShortcutAvailability !== \"blocked\"");
+    expect(keydownBlock).toContain("isCanvasPointerUnblocked: canvasPointerShortcutAvailability === \"unblocked\"");
+    expect(keydownBlock).toContain("isCanvasInteractionActive: canvasInteractionRef.current && canvasPointerShortcutAvailability !== \"blocked\"");
+    expect(pointerMoveBlock).toContain("lastCanvasClientPointerRef.current = { x: event.clientX, y: event.clientY };");
+    expect(pointerEnterBlock).toContain("lastCanvasClientPointerRef.current = { x: event.clientX, y: event.clientY };");
+    expect(pointerLeaveBlock).toContain("lastCanvasClientPointerRef.current = null;");
+  });
+
   test("defers selected device parameter view construction until the device tab is active", async () => {
     const source = await readAppSource();
     const paramStart = source.indexOf("const deviceParamPanelActive");
@@ -4579,13 +4621,16 @@ describe("graph inspector panel", () => {
     const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
     const commitBlock = source.slice(commitStart, commitEnd);
 
-    expect(commitBlock).toContain("const routeRepairCandidateEdges = localRouteOptimizationCandidateEdges");
-    expect(commitBlock).toContain("const deferSingleNodeTerminalReconciliation = shouldDeferSingleNodeTerminalReconciliation(");
-    expect(commitBlock).toContain("movedNodeIds.length > 0 && (routeRepairCandidateEdges.length > 0 || deferSingleNodeTerminalReconciliation)");
+    expect(commitBlock).toContain("const routeRepairCandidateEdges = wholeLayerMove");
+    expect(commitBlock).toContain(": localRouteOptimizationCandidateEdges(");
+    expect(commitBlock).toContain("!wholeLayerMove &&\n      shouldDeferSingleNodeTerminalReconciliation(");
+    expect(commitBlock).toContain("movedNodeIds.length > 0 &&\n      (deferredRepairCandidateEdges.length > 0 || deferSingleNodeTerminalReconciliation)");
     expect(commitBlock).toContain("const deferredRepairCandidateEdges =");
-    expect(commitBlock).toContain("routeRepairCandidateEdges.length > 0 ? routeRepairCandidateEdges : committedCandidateEdges");
-    expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(\n            movedNodeIds,\n            deferredRepairCandidateEdges,");
-    expect(commitBlock).toContain("scheduleMovedEdgeOptimization(\n      previousNodes,\n      committedNextNodes,\n      routeRepairCandidateEdges,");
+    expect(commitBlock).toContain("mergeUniqueEdgesById(routeRepairCandidateEdges, internalMovedCandidateEdges)");
+    expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(\n            movedNodeIds,\n            deferredRepairCandidateEdges.length > 0 ? deferredRepairCandidateEdges : synchronousRepairCandidateEdges,");
+    expect(commitBlock).toContain("scheduleMovedEdgeOptimization(");
+    expect(commitBlock).toContain("previousNodes,\n        committedNextNodes,\n        routeRepairCandidateEdges,");
+    expect(commitBlock).toContain("deferredRepairCandidateEdges,\n        expectedPatch");
     expect(commitBlock).not.toContain("const deferMovedRouteRepair = movedNodeIds.length > 0 && candidateEdges.length > 0;");
   });
 
@@ -5149,6 +5194,15 @@ describe("graph inspector panel", () => {
     const renderStart = source.indexOf("{smartAlignmentGuides.map");
     const renderEnd = source.indexOf("{dragging?.historyCaptured", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
+    const clearStart = source.indexOf("const clearDraggingMoveState =");
+    const clearEnd = source.indexOf("const cancelActiveEditInteractions", clearStart);
+    const clearBlock = source.slice(clearStart, clearEnd);
+    const finishDragStart = source.indexOf("const finishNodeDrag = () =>");
+    const finishDragEnd = source.indexOf("const finishTransformDrag", finishDragStart);
+    const finishDragBlock = source.slice(finishDragStart, finishDragEnd);
+    const moveSelectionStart = source.indexOf("const moveSelection =");
+    const moveSelectionEnd = source.indexOf("const updateSelectedNode", moveSelectionStart);
+    const moveSelectionBlock = source.slice(moveSelectionStart, moveSelectionEnd);
 
     expect(source).toContain("type SmartAlignmentGuide =");
     expect(source).toContain("const SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE = 8;");
@@ -5163,6 +5217,10 @@ describe("graph inspector panel", () => {
     expect(previewBlock).toContain("updateSmartAlignmentGuides(smartSnap.guides);");
     expect(previewBlock).toContain("return smartSnap.delta;");
     expect(source).toContain("updateSmartAlignmentGuides([]);");
+    expect(clearBlock).toContain("updateSmartAlignmentGuides([]);");
+    expect(finishDragBlock).toContain("updateSmartAlignmentGuides([]);");
+    expect(finishDragBlock.indexOf("updateSmartAlignmentGuides([]);")).toBeLessThan(finishDragBlock.indexOf("resetMultiNodeDragOverlayTransform();"));
+    expect(moveSelectionBlock).toContain("updateSmartAlignmentGuides([]);");
     expect(renderBlock).toContain("className={`smart-alignment-guide smart-alignment-guide-${guide.orientation}`}");
     expect(renderBlock).toContain("vectorEffect=\"non-scaling-stroke\"");
     expect(styleSource).toContain(".smart-alignment-guide");
@@ -5554,9 +5612,10 @@ describe("graph inspector panel", () => {
     expect(multiMoveBlock).toContain("updateImperativeNodeDragDropHint(multiNodeSnapTarget)");
     expect(multiMoveBlock).toContain("updateMultiNodeDragOverlayTransform(effectivePreviewDelta)");
     expect(multiMoveBlock).not.toContain("setDragging");
-    expect(commitBlock).toContain("const routeRepairCandidateEdges = localRouteOptimizationCandidateEdges");
-    expect(commitBlock).toContain("const deferSingleNodeTerminalReconciliation = shouldDeferSingleNodeTerminalReconciliation(");
-    expect(commitBlock).toContain("movedNodeIds.length > 0 && (routeRepairCandidateEdges.length > 0 || deferSingleNodeTerminalReconciliation)");
+    expect(commitBlock).toContain("const routeRepairCandidateEdges = wholeLayerMove");
+    expect(commitBlock).toContain(": localRouteOptimizationCandidateEdges(");
+    expect(commitBlock).toContain("!wholeLayerMove &&\n      shouldDeferSingleNodeTerminalReconciliation(");
+    expect(commitBlock).toContain("movedNodeIds.length > 0 &&\n      (deferredRepairCandidateEdges.length > 0 || deferSingleNodeTerminalReconciliation)");
     expect(commitBlock).toContain("scheduleDeferredMovedConnectionRepair(");
     expect(commitBlock).toContain("markGraphDirtyForInteractiveCommit()");
     expect(finishBlock).toContain("const activeDragging = draggingRef.current;");
@@ -5567,7 +5626,10 @@ describe("graph inspector panel", () => {
     expect(source).toContain("simplifiedMarkup && showImperativeMultiNodeDragOverlay(simplifiedMarkup)");
     expect(source).toContain("if (imperativeMultiNodeDragActiveRef.current && !dragging)");
     expect(overlayBlock).not.toContain("multiNodeDragDegradedPreview");
-    expect(source).toContain("className={`diagram-canvas ${connectSource ? \"connect-mode\" : \"\"} ${staticDrawing ? \"static-draw-mode\" : \"\"} ${libraryPlacement ? \"library-place-mode\" : \"\"} ${activeDropReady ? \"connect-drop-ready\" : \"\"} ${panning ? \"panning\" : \"\"} ${multiNodeDragging ? \"multi-node-dragging\" : \"\"} ${singleNodeDragging ? \"single-node-dragging\" : \"\"}`}");
+    expect(source).toContain("className={`diagram-canvas");
+    expect(source).toContain("${contextMarqueeSelection ? \"context-marquee-mode\" : \"\"}");
+    expect(source).toContain("${multiNodeDragging ? \"multi-node-dragging\" : \"\"}");
+    expect(source).toContain("${singleNodeDragging ? \"single-node-dragging\" : \"\"}");
     expect(source).toContain("<g className=\"canvas-content\">");
     expect(source).not.toContain("if (multiNodeDragging && draggingNodeIdSet.has(node.id)) {\n                return null;");
     expect(source).toContain("{visibleSelectedGroupLayoutUnits.map");
@@ -6507,7 +6569,7 @@ describe("graph inspector panel", () => {
     expect(finishBlock).not.toContain("const nextNodes = overlayGraphStoreNodes(graphStore, movedNodeUpdates);");
     expect(finishMoveBlock).toContain("nextNodesForMovedGraphCommit(graphStore, movedNodeUpdates, dragNodeIds)");
     expect(finishMoveBlock).not.toContain("const nextNodes = overlayGraphStoreNodes(graphStore, movedNodeUpdates);");
-    expect(commitBlock).toContain("if (shouldRunSynchronousMoveBlockerRepair(movedNodeIds, previousCandidateEdges, committedCandidateEdges))");
+    expect(commitBlock).toContain("shouldRunSynchronousMoveBlockerRepair(\n        movedNodeIds,\n        externalMoveCandidateEdges(previousCandidateEdges, internalMovedEdgeIds),\n        synchronousRepairCandidateEdges");
     expect(commitBlock).toContain("routePointsForMovedEdgesBlockedByStationaryNodes(");
     expect(commitBlock).not.toContain("if (movedNodeIds.length > 0) {\n      const blockedConnectedRoutePoints = routePointsForMovedEdgesBlockedByStationaryNodes");
   });
@@ -6555,11 +6617,120 @@ describe("graph inspector panel", () => {
     expect(helperBlock).toContain("pointsToOrthogonalPath(points)");
     expect(helperBlock).toContain("routeStorePatchRoutes(routeStore, routeUpdates)");
     expect(helperBlock).toContain("cachedRoutedEdgesRef.current = patchedRouteStore.routes");
-    expect(commitBlock).toContain("const routeCachePatchedEdgeIds = patchCachedRoutesForHighFanoutMove(");
+    expect(commitBlock).toContain("patchCachedRoutesForHighFanoutMove(");
+    expect(commitBlock).toContain("patchCachedRoutesForWholeMove(");
     expect(commitBlock).toContain("const movedRouteDirtyIds = dirtyEdgeIdsAfterMove(");
     expect(commitBlock).toContain("const storedRouteDirtyIds = storedRouteDirtyIdsForMove(movedRouteDirtyIds, routeCachePatchedEdgeIds);");
     expect(commitBlock).toContain("markStoredRouteEdgesDirty(storedRouteDirtyIds);");
     expect(commitBlock).not.toContain("markStoredRouteEdgesDirty(movedRouteDirtyIds);");
+  });
+
+  test("keeps whole-layer multi-node moves on the coordinate-translation fast path", async () => {
+    const source = await readAppSource();
+    const draggingTypeStart = source.indexOf("type DraggingState =");
+    const draggingTypeEnd = source.indexOf("type MultiNodeDragOverlayPreview", draggingTypeStart);
+    const draggingTypeBlock = source.slice(draggingTypeStart, draggingTypeEnd);
+    const wholeMoveStart = source.indexOf("const isWholeActiveLayerMove =");
+    const wholeMoveEnd = source.indexOf("const routableLineRouteCandidateIdsForMovedNodes", wholeMoveStart);
+    const wholeMoveBlock = source.slice(wholeMoveStart, wholeMoveEnd);
+    const smartSnapStart = source.indexOf("const computeSmartAlignmentSnap =");
+    const smartSnapEnd = source.indexOf("const computeNodeDragPreviewDelta", smartSnapStart);
+    const smartSnapBlock = source.slice(smartSnapStart, smartSnapEnd);
+    const snapStart = source.indexOf("const findMultiNodeDragSnapTargetAtDelta =");
+    const snapEnd = source.indexOf("const updateSingleNodeDragImperativePreview", snapStart);
+    const snapBlock = source.slice(snapStart, snapEnd);
+    const previewStart = source.indexOf("const buildRoutableLineDragPreviewRoutes =");
+    const previewEnd = source.indexOf("const shiftedDragPreviewPoint", previewStart);
+    const previewBlock = source.slice(previewStart, previewEnd);
+    const finishStart = source.indexOf("const finishNodeDrag = () =>");
+    const finishEnd = source.indexOf("const finishTransformDrag", finishStart);
+    const finishBlock = source.slice(finishStart, finishEnd);
+    const moveStart = source.indexOf("const moveSelection =");
+    const moveEnd = source.indexOf("const updateSelectedNode", moveStart);
+    const moveBlock = source.slice(moveStart, moveEnd);
+    const commitStart = source.indexOf("const commitFastMovedGraphPatches");
+    const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
+
+    expect(draggingTypeBlock).toContain("wholeLayerMove?: boolean;");
+    expect(source).toContain("type FastMovedGraphCommitOptions =");
+    expect(wholeMoveStart).toBeGreaterThan(-1);
+    expect(wholeMoveBlock).toContain("const movedIds = new Set(nodeIds);");
+    expect(wholeMoveBlock).toContain("for (const node of activeLayerNodes)");
+    expect(wholeMoveBlock).toContain("!isCanvasNodeMovable(node.kind)");
+    expect(wholeMoveBlock).toContain("translateWholeMoveCandidateEdges");
+    expect(wholeMoveBlock).toContain("wholeMoveRoutableLineNodeUpdates");
+    expect(smartSnapBlock).toContain("dragState.wholeLayerMove");
+    expect(snapBlock).toContain("if (dragState.wholeLayerMove)");
+    expect(previewBlock).toContain("if (dragState.wholeLayerMove)");
+    expect(source).toContain("routableLineDeviceCanvasPoints(lineNode).map((point) => translatePointBy(point, delta))");
+    expect(finishBlock).toContain("const wholeLayerMove = activeDragging.wholeLayerMove === true;");
+    expect(finishBlock).toContain("translateWholeMoveCandidateEdges(synchronousCandidateEdges, dragNodeIds, dragEdgeIds, finalDelta)");
+    expect(finishBlock).toContain("shouldFinalizeMovedNodeEdgesSynchronously(activeDragging.nodeIds, terminalFinalizationCandidateEdges)");
+    expect(moveBlock).toContain("const wholeLayerMove = isWholeActiveLayerMove(moveNodeIds);");
+    expect(moveBlock).toContain("translateWholeMoveCandidateEdges(synchronousCandidateEdges, selected, selectedMoveEdgeIds, boundedDelta)");
+    expect(commitBlock).toContain("const wholeLayerMove = options.wholeLayerMove === true;");
+    expect(commitBlock).toContain("deferredMoveOptimizationCancelRef.current?.();");
+    expect(commitBlock).toContain("wholeMoveRoutableLineNodeUpdates(movedNodeIds, wholeLayerMoveDelta)");
+    expect(commitBlock).toContain("const routeRepairSeedEdges = wholeLayerMove");
+    expect(commitBlock).toContain("!wholeLayerMove &&\n      shouldRunSynchronousMoveBlockerRepair");
+    expect(commitBlock).toContain("patchCachedRoutesForWholeMove(");
+    expect(commitBlock).toContain("if (!wholeLayerMove) {\n      scheduleDeferredRoutableLineRouteRepair(");
+    expect(commitBlock).toContain("scheduleMovedEdgeOptimization(");
+  });
+
+  test("keeps ordinary multi-node internal connections and routable lines on the translation path until release repair", async () => {
+    const source = await readAppSource();
+    const helperStart = source.indexOf("const internalMoveEdgeIdsForMovedNodes =");
+    const helperEnd = source.indexOf("const routableLineRouteCandidateIdsForMovedNodes", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+    const previewStart = source.indexOf("const buildRoutableLineDragPreviewRoutes =");
+    const previewEnd = source.indexOf("const shiftedDragPreviewPoint", previewStart);
+    const previewBlock = source.slice(previewStart, previewEnd);
+    const finishStart = source.indexOf("const finishNodeDrag = () =>");
+    const finishEnd = source.indexOf("const finishTransformDrag", finishStart);
+    const finishBlock = source.slice(finishStart, finishEnd);
+    const finishMoveStart = source.indexOf("const finishDraggingMove");
+    const finishMoveEnd = source.indexOf("const finishNodeDrag", finishMoveStart);
+    const finishMoveBlock = source.slice(finishMoveStart, finishMoveEnd);
+    const moveStart = source.indexOf("const moveSelection =");
+    const moveEnd = source.indexOf("const updateSelectedNode", moveStart);
+    const moveBlock = source.slice(moveStart, moveEnd);
+    const commitStart = source.indexOf("const commitFastMovedGraphPatches");
+    const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
+
+    expect(helperStart).toBeGreaterThan(-1);
+    expect(source).toContain("internalMovedEdgeIds?: Iterable<string>;");
+    expect(helperBlock).toContain("movedIds.has(edge.sourceId) && movedIds.has(edge.targetId)");
+    expect(helperBlock).toContain("const externalMoveCandidateEdges =");
+    expect(helperBlock).toContain("const translateInternalMoveCandidateEdges =");
+    expect(helperBlock).toContain("translateStoredEdgeGeometryBy(edge, delta)");
+    expect(helperBlock).toContain("const internalRoutableLineNodeUpdatesForMove =");
+    expect(helperBlock).toContain("translateNodeBy(lineNode, delta)");
+    expect(previewBlock).toContain("buildTranslatedInternalRoutableLineDragPreviewRoutes(dragState, delta, movedNodeIds)");
+    expect(finishMoveBlock).toContain("const internalMovedEdgeIds = internalMoveEdgeIdsForMovedNodes(activeDragging.affectedEdges, dragNodeIds);");
+    expect(finishMoveBlock).toContain("const externalSynchronousCandidateEdges = externalMoveCandidateEdges(synchronousCandidateEdges, internalMovedEdgeIds);");
+    expect(finishMoveBlock).toContain("translateInternalMoveCandidateEdges(synchronousCandidateEdges, internalMovedEdgeIds, finalDelta)");
+    expect(finishMoveBlock).toContain("(internalMovedEdgeIds.size === 0 || finalizationCandidateEdges.length > 0)");
+    expect(finishMoveBlock).toContain("finalizationCandidateEdges");
+    expect(finishMoveBlock).toContain("{ wholeLayerMove, moveDelta: finalDelta, internalMovedEdgeIds }");
+    expect(finishBlock).toContain("const internalMovedEdgeIds = internalMoveEdgeIdsForMovedNodes(activeDragging.affectedEdges, dragNodeIds);");
+    expect(finishBlock).toContain("const externalSynchronousCandidateEdges = externalMoveCandidateEdges(synchronousCandidateEdges, internalMovedEdgeIds);");
+    expect(finishBlock).toContain("translateInternalMoveCandidateEdges(synchronousCandidateEdges, internalMovedEdgeIds, finalDelta)");
+    expect(finishBlock).toContain("(internalMovedEdgeIds.size === 0 || finalizationCandidateEdges.length > 0)");
+    expect(finishBlock).toContain("{ wholeLayerMove, moveDelta: finalDelta, internalMovedEdgeIds }");
+    expect(moveBlock).toContain("const internalMovedEdgeIds = internalMoveEdgeIdsForMovedNodes(affectedEdgesForMove, selected);");
+    expect(moveBlock).toContain("const externalSynchronousCandidateEdges = externalMoveCandidateEdges(synchronousCandidateEdges, internalMovedEdgeIds);");
+    expect(moveBlock).toContain("translateInternalMoveCandidateEdges(synchronousCandidateEdges, internalMovedEdgeIds, boundedDelta)");
+    expect(moveBlock).toContain("(internalMovedEdgeIds.size === 0 || finalizationCandidateEdges.length > 0)");
+    expect(moveBlock).toContain("{ wholeLayerMove, moveDelta: boundedDelta, internalMovedEdgeIds }");
+    expect(commitBlock).toContain("const internalMovedEdgeIds = options.internalMovedEdgeIds ? reuseSetOrCreate(options.internalMovedEdgeIds) : new Set<string>();");
+    expect(commitBlock).toContain("internalRoutableLineNodeUpdatesForMove(movedNodeIds, wholeLayerMoveDelta)");
+    expect(commitBlock).toContain("externalMoveCandidateEdges(committedCandidateEdges, internalMovedEdgeIds)");
+    expect(commitBlock).toContain("const internalMovedCandidateEdges =");
+    expect(commitBlock).toContain("const deferredRepairCandidateEdges = mergeUniqueEdgesById(routeRepairCandidateEdges, internalMovedCandidateEdges);");
+    expect(commitBlock).toContain("patchCachedRoutesForInternalMove(");
   });
 
   test("defers routable-line rerouting after node drag release", async () => {

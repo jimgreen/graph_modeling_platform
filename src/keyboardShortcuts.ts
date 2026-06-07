@@ -8,6 +8,7 @@ type KeyboardShortcutKeyInput = {
 
 type KeyboardShortcutScopeInput = {
   isCanvasTarget: boolean;
+  isCanvasPointerUnblocked?: boolean;
   isCanvasInteractionActive: boolean;
   isProjectListPointerInside: boolean;
 };
@@ -17,7 +18,7 @@ export function isGlobalSaveShortcut(input: KeyboardShortcutKeyInput): boolean {
 }
 
 export function resolveKeyboardShortcutScope(input: KeyboardShortcutScopeInput): KeyboardShortcutScope {
-  if (input.isCanvasTarget) {
+  if (input.isCanvasTarget || input.isCanvasPointerUnblocked) {
     return "canvas";
   }
   if (input.isProjectListPointerInside) {
