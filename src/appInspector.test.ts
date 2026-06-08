@@ -202,6 +202,49 @@ describe("graph inspector panel", () => {
     expect(styles).not.toContain(".element-tree-field-secondary");
   });
 
+  test("renders the graph tree as component type, device, and graphic instance levels", async () => {
+    const source = await readAppSource();
+    const modelSource = await readModelSource();
+    const styles = await readStyles();
+    const treeStart = source.indexOf("const renderElementTreePanel = () =>");
+    const treeEnd = source.indexOf("const topologyWarningDisplayMessage", treeStart);
+    const treeBlock = source.slice(treeStart, treeEnd);
+
+    expect(modelSource).toContain("export type ElementTreeDeviceGroup = {");
+    expect(modelSource).toContain("deviceGroups?: ElementTreeDeviceGroup[];");
+    expect(modelSource).toContain("const appendDeviceItem = (");
+    expect(modelSource).toContain("elementTreeComponentTypeLabel(typeEnglishLabel)");
+    expect(treeBlock).toContain("const deviceGroups = group.deviceGroups ?? [];");
+    expect(treeBlock).toContain("deviceGroups.map((deviceGroup)");
+    expect(treeBlock).toContain("className=\"element-tree-device-type\"");
+    expect(treeBlock).toContain("aria-level={2}");
+    expect(treeBlock).toContain("aria-level={3}");
+    expect(treeBlock).toContain("deviceGroup.deviceLabel");
+    expect(treeBlock).toContain("deviceGroup.deviceEnglishLabel");
+    expect(styles).toContain(".element-tree-device-group");
+    expect(styles).toContain(".element-tree-device-type");
+    expect(styles).toContain(".element-tree-device-items");
+  });
+
+  test("opens a delete-only context menu from graph tree instance rows", async () => {
+    const source = await readAppSource();
+    const treeStart = source.indexOf("const renderElementTreePanel = () =>");
+    const treeEnd = source.indexOf("const topologyWarningDisplayMessage", treeStart);
+    const treeBlock = source.slice(treeStart, treeEnd);
+    const contextStart = source.indexOf("{contextMenu && (");
+    const contextEnd = source.indexOf("{projectMenu && (", contextStart);
+    const contextBlock = source.slice(contextStart, contextEnd);
+
+    expect(source).toContain("source?: \"canvas\" | \"element-tree\";");
+    expect(source).toContain("const contextMenuFromElementTree = contextMenu?.source === \"element-tree\";");
+    expect(source).toContain("const openElementTreeItemContextMenu = (event: MouseEvent<HTMLDivElement>, item: ElementTreeItem) => {");
+    expect(source).toContain("source: \"element-tree\"");
+    expect(source).toContain("target: item.kind");
+    expect(treeBlock).toContain("onContextMenu={(event) => openElementTreeItemContextMenu(event, item)}");
+    expect(contextBlock).toContain("{isEditMode && contextMenuFromElementTree && contextMenuForSelection && contextSelectionCount > 0 && (");
+    expect(contextBlock).toContain("{!contextMenuFromElementTree && (");
+  });
+
   test("sets transformer and converter voltage bases through a single selected terminal dropdown", async () => {
     const source = await readAppSource();
     const dialogStart = source.indexOf("{voltageBaseSetDialogOpen && (");
@@ -4819,10 +4862,10 @@ describe("graph inspector panel", () => {
     const updateParamStart = source.indexOf("const updateParam");
     const updateParamEnd = source.indexOf("const renderColorEditor", updateParamStart);
     const updateParamBlock = source.slice(updateParamStart, updateParamEnd);
-    const treeIdentityStart = source.indexOf("const updateElementTreeNodeIdentity");
-    const treeIdentityEnd = source.indexOf("const updateElementTreeContainerChildParam", treeIdentityStart);
+    const treeIdentityStart = source.indexOf("const commitElementTreeNodeIdentity");
+    const treeIdentityEnd = source.indexOf("const commitElementTreeContainerChildParam", treeIdentityStart);
     const treeIdentityBlock = source.slice(treeIdentityStart, treeIdentityEnd);
-    const childParamStart = source.indexOf("const updateElementTreeContainerChildParam");
+    const childParamStart = source.indexOf("const commitElementTreeContainerChildParam");
     const childParamEnd = source.indexOf("const terminalVbaseFallback", childParamStart);
     const childParamBlock = source.slice(childParamStart, childParamEnd);
     const terminalStart = source.indexOf("const updateTerminalVbase");
@@ -4854,7 +4897,7 @@ describe("graph inspector panel", () => {
     const measurementCommonEnd = source.indexOf("const selectedEdge =", measurementCommonStart);
     const measurementCommonBlock = source.slice(measurementCommonStart, measurementCommonEnd);
     const applyStart = source.indexOf("const applyBatchCommonParam =");
-    const applyEnd = source.indexOf("const updateElementTreeNodeIdentity", applyStart);
+    const applyEnd = source.indexOf("const commitElementTreeNodeIdentity", applyStart);
     const applyBlock = source.slice(applyStart, applyEnd);
     const batchColorRenderStart = source.indexOf("const renderBatchCommonColorParamEditor =");
     const batchColorRenderEnd = source.indexOf("const renderBatchCommonParamEditor =", batchColorRenderStart);
@@ -7312,6 +7355,28 @@ describe("graph inspector panel", () => {
     expect(focusBlock).toContain("background: #ffffff");
     expect(focusBlock).toContain("color: #0f172a");
     expect(childBlock).toContain("padding: 2px 4px");
+  });
+
+  test("keeps graph tree edit inputs controlled by local drafts while the tree source is deferred", async () => {
+    const source = await readAppSource();
+    const treeStart = source.indexOf("const renderElementTreePanel = () =>");
+    const treeEnd = source.indexOf("const topologyWarningDisplayMessage", treeStart);
+    const treeBlock = source.slice(treeStart, treeEnd);
+
+    expect(source).toContain("const [elementTreeEditDrafts, setElementTreeEditDrafts] = useState<Record<string, string>>({});");
+    expect(source).toContain("const elementTreeDraftValue = (key: string, fallback: string) =>");
+    expect(source).toContain("const updateElementTreeDraft = (key: string, value: string) =>");
+    expect(source).toContain("const clearElementTreeDraft = (key: string) =>");
+    expect(source).toContain("const commitElementTreeNodeIdentity = (nodeId: string, field: \"idx\" | \"name\", value: string, draftKey?: string) =>");
+    expect(source).toContain("const commitElementTreeContainerChildParam = (nodeId: string, key: string, value: string, draftKey?: string) =>");
+    expect(treeBlock).toContain('const idxDraftKey = `node:${item.id}:idx`;');
+    expect(treeBlock).toContain('const nameDraftKey = `node:${item.id}:name`;');
+    expect(treeBlock).toContain("value={elementTreeDraftValue(nameDraftKey, item.name)}");
+    expect(treeBlock).toContain("onChange={(event) => updateElementTreeDraft(nameDraftKey, event.target.value)}");
+    expect(treeBlock).toContain('onBlur={(event) => commitElementTreeNodeIdentity(item.id, "name", event.currentTarget.value, nameDraftKey)}');
+    expect(treeBlock).toContain('const childNameDraftKey = `node:${item.id}:child:${child.nameKey}:name`;');
+    expect(treeBlock).toContain("value={elementTreeDraftValue(childNameDraftKey, child.name)}");
+    expect(treeBlock).toContain("commitElementTreeInputOnEnter(event)");
   });
 
   test("uses a low-saturation right-panel selection palette", async () => {

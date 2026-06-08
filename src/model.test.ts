@@ -1980,6 +1980,32 @@ describe("power system model", () => {
     }
   });
 
+  test("does not detour routable line-like devices around non-endpoint wire-like devices", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "dc-routable-line");
+    const source = { ...createDefaultNode("dc-breaker", { x: 120, y: 200 }), id: "source-node" };
+    const target = { ...createDefaultNode("dc-breaker", { x: 680, y: 200 }), id: "target-node" };
+    const wireLikeDevice = { ...createDefaultNode("dc-line", { x: 400, y: 200 }), id: "wire-like-device" };
+    const start = getTerminalPoint(source, "t2");
+    const end = getTerminalPoint(target, "t1");
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      start,
+      end,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t2"),
+        target: routableLineDeviceEndpointRefForNode(target, "t1")
+      }
+    );
+
+    const routed = routeRoutableLineDevice(line, [source, wireLikeDevice, target, line], { width: 900, height: 500 });
+    const points = routableLineDeviceCanvasPoints(routed);
+
+    expect(points[0]).toEqual(start);
+    expect(points[points.length - 1]).toEqual(end);
+    expect(new Set(points.map((point) => point.y))).toEqual(new Set([start.y]));
+  });
+
   test("repairs saved routable line-like device paths that cross endpoint device bodies", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
     const source = { ...createDefaultNode("ac-box-breaker", { x: 180, y: 200 }), id: "source-node" };
@@ -7346,11 +7372,13 @@ describe("power system model", () => {
     });
   });
 
-  test("builds a two-level element tree and focus points for canvas elements", () => {
+  test("builds a three-level element tree grouped by component type, device, and graphic instance", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const wind = createDefaultNode("ac-wind-source", { x: 180, y: 100 });
     const load = createDefaultNode("ac-load", { x: 260, y: 100 });
     const text = createDefaultNode("static-text", { x: 180, y: 180 });
     source.name = "电源A";
+    wind.name = "风电A";
     load.name = "负荷A";
     text.name = "说明文字";
     const edge: Edge = {
@@ -7362,17 +7390,27 @@ describe("power system model", () => {
       manualPoints: [{ x: 180, y: 140 }]
     };
 
-    const tree = buildElementTree([source, load, text], [edge]);
+    const tree = buildElementTree([source, wind, load, text], [edge]);
 
-    expect(tree.map((group) => group.typeLabel)).toEqual(["交流电源", "交流负荷", "文字", "联络线"]);
+    expect(tree.map((group) => group.typeLabel)).toEqual(["交流电源", "交流负荷", "静态文本", "联络线"]);
     expect(tree.map((group) => group.typeEnglishLabel)).toEqual(["ACGenerator", "ACLoad", "StaticTextSymbol", "ConnectionLine"]);
-    expect(tree.find((group) => group.typeLabel === "交流电源")?.items).toEqual([
+    const generatorGroup = tree.find((group) => group.typeEnglishLabel === "ACGenerator");
+    expect(generatorGroup?.items.map((item) => item.name)).toEqual(["电源A", "风电A"]);
+    expect(generatorGroup?.deviceGroups?.map((deviceGroup) => ({
+      label: deviceGroup.deviceLabel,
+      english: deviceGroup.deviceEnglishLabel,
+      items: deviceGroup.items.map((item) => item.name)
+    }))).toEqual([
+      { label: "交流电源", english: "ac-source", items: ["电源A"] },
+      { label: "交流风电", english: "ac-wind-source", items: ["风电A"] }
+    ]);
+    expect(generatorGroup?.deviceGroups?.[0]?.items).toEqual([
       { kind: "node", id: source.id, name: "电源A", idx: "", editableDevice: true }
     ]);
-    expect(tree.find((group) => group.typeLabel === "文字")?.items).toEqual([
+    expect(tree.find((group) => group.typeEnglishLabel === "StaticTextSymbol")?.deviceGroups?.[0]?.items).toEqual([
       { kind: "node", id: text.id, name: "说明文字", idx: "", editableDevice: false }
     ]);
-    expect(tree.find((group) => group.typeLabel === "联络线")?.items[0]).toMatchObject({
+    expect(tree.find((group) => group.typeLabel === "联络线")?.deviceGroups?.[0]?.items[0]).toMatchObject({
       kind: "edge",
       id: "edge-a",
       name: "电源A -> 负荷A"
@@ -7532,8 +7570,12 @@ describe("power system model", () => {
     electrolyzer.params.name_ac_load_t1 = "自定义交流负荷";
 
     const tree = buildElementTree([electrolyzer], [], DEVICE_LIBRARY);
-    const item = tree.find((group) => group.typeLabel === "交流电制氢")?.items[0];
+    const typeGroup = tree.find((group) => group.typeEnglishLabel === "AcE2Hydro");
+    const deviceGroup = typeGroup?.deviceGroups?.find((group) => group.deviceEnglishLabel === "ac-electrolyzer");
+    const item = deviceGroup?.items[0];
 
+    expect(typeGroup?.items[0]).toBe(item);
+    expect(deviceGroup?.deviceLabel).toBe("交流电制氢");
     expect(item).toMatchObject({
       kind: "node",
       id: electrolyzer.id,

@@ -442,11 +442,19 @@ export type ElementTreeChildItem = {
   terminalLabels: string;
 };
 
+export type ElementTreeDeviceGroup = {
+  deviceKey: string;
+  deviceLabel: string;
+  deviceEnglishLabel?: string;
+  items: ElementTreeItem[];
+};
+
 export type ElementTreeGroup = {
   typeKey: string;
   typeLabel: string;
   typeEnglishLabel?: string;
   items: ElementTreeItem[];
+  deviceGroups?: ElementTreeDeviceGroup[];
 };
 
 export type ProjectFile = {
@@ -732,8 +740,22 @@ const ROUTABLE_LINE_DEVICE_KINDS = new Set<string>([
   "heat-routable-line"
 ]);
 
+const WIRE_LIKE_ROUTE_DEVICE_KINDS = new Set<string>([
+  "ac-line",
+  "ac-zero-branch",
+  "dc-line",
+  "dc-zero-branch",
+  "hydrogen-pipeline",
+  "heat-pipeline"
+]);
+
 export function isRoutableLineDeviceKind(kind: string): boolean {
   return ROUTABLE_LINE_DEVICE_KINDS.has(baseDeviceKind(kind));
+}
+
+function isWireLikeRouteDeviceKind(kind: string): boolean {
+  const baseKind = baseDeviceKind(kind);
+  return ROUTABLE_LINE_DEVICE_KINDS.has(baseKind) || WIRE_LIKE_ROUTE_DEVICE_KINDS.has(baseKind);
 }
 
 export function isCanvasNodeMovable(kind: string): boolean {
@@ -5421,6 +5443,23 @@ function routableLineDeviceRoutingEdge(
   };
 }
 
+function routableLineRoutingBlockers(
+  candidates: ModelNode[],
+  edge: Edge,
+  blockerNodeIds?: ReadonlySet<string>
+) {
+  const endpointNodeIds = new Set([edge.sourceId, edge.targetId]);
+  return candidates.filter((candidate) => {
+    if (endpointNodeIds.has(candidate.id)) {
+      return true;
+    }
+    if (blockerNodeIds && !blockerNodeIds.has(candidate.id)) {
+      return false;
+    }
+    return !isWireLikeRouteDeviceKind(candidate.kind);
+  });
+}
+
 function routableLineRouteHasBlockingIssue(points: Point[], blockers: ModelNode[], edge: Edge) {
   const nonEndpointBlockers = blockers.filter((blocker) => blocker.id !== edge.sourceId && blocker.id !== edge.targetId);
   return (
@@ -5558,10 +5597,7 @@ export function routeRoutableLineDevice(
   const otherNodes = nodes.filter((candidate) => candidate.id !== node.id);
   const nodeById = new Map(otherNodes.map((candidate) => [candidate.id, candidate]));
   const routeEdge = routableLineDeviceRoutingEdge(node, start, end, nodeById);
-  const endpointNodeIds = new Set([routeEdge.sourceId, routeEdge.targetId]);
-  const blockers = options.blockerNodeIds
-    ? otherNodes.filter((candidate) => endpointNodeIds.has(candidate.id) || options.blockerNodeIds?.has(candidate.id))
-    : otherNodes;
+  const blockers = routableLineRoutingBlockers(otherNodes, routeEdge, options.blockerNodeIds);
   const route = routeEdgesForRendering(blockers, [routeEdge], bounds)[0];
   if (!route || route.points.length < 2) {
     return ensureRoutableLineDevicePathParam(node);
@@ -5649,9 +5685,10 @@ function unsafeRoutableLineStoredPath(node: ModelNode, nodes: ModelNode[]) {
   if (points.length < 2) {
     return true;
   }
-  const blockers = nodes.filter((candidate) => candidate.id !== node.id);
-  const nodeById = new Map(blockers.map((candidate) => [candidate.id, candidate]));
+  const otherNodes = nodes.filter((candidate) => candidate.id !== node.id);
+  const nodeById = new Map(otherNodes.map((candidate) => [candidate.id, candidate]));
   const routeEdge = routableLineDeviceRoutingEdge(node, points[0], points[points.length - 1], nodeById);
+  const blockers = routableLineRoutingBlockers(otherNodes, routeEdge);
   if (routableLineEndpointNormalNeedsRepair(points, routeEdge, nodeById)) {
     return true;
   }
@@ -7453,21 +7490,39 @@ export function buildElementTree(
 ): ElementTreeGroup[] {
   const groups: ElementTreeGroup[] = [];
   const groupByKey = new Map<string, ElementTreeGroup>();
+  const deviceGroupByKey = new Map<string, ElementTreeDeviceGroup>();
   const templateByKind = new Map(templates.map((template) => [template.kind, template]));
   const includeContainerChildren = options.includeContainerChildren !== false;
-  const appendItem = (typeKey: string, typeLabel: string, item: ElementTreeItem, typeEnglishLabel?: string) => {
+  const appendDeviceItem = (
+    typeKey: string,
+    typeLabel: string,
+    typeEnglishLabel: string | undefined,
+    deviceKey: string,
+    deviceLabel: string,
+    deviceEnglishLabel: string | undefined,
+    item: ElementTreeItem
+  ) => {
     let group = groupByKey.get(typeKey);
     if (!group) {
-      group = { typeKey, typeLabel, typeEnglishLabel, items: [] };
+      group = { typeKey, typeLabel, typeEnglishLabel, items: [], deviceGroups: [] };
       groupByKey.set(typeKey, group);
       groups.push(group);
     }
+    let deviceGroup = deviceGroupByKey.get(deviceKey);
+    if (!deviceGroup) {
+      deviceGroup = { deviceKey, deviceLabel, deviceEnglishLabel, items: [] };
+      deviceGroupByKey.set(deviceKey, deviceGroup);
+      group.deviceGroups?.push(deviceGroup);
+    }
     group.items.push(item);
+    deviceGroup.items.push(item);
   };
 
   for (const node of nodes) {
-    const typeLabel = getElementTreeTypeLabel(node, templates);
-    const typeEnglishLabel = inferESection(node.kind, node.params) || node.kind;
+    const deviceLabel = getElementTreeTypeLabel(node, templates);
+    const deviceEnglishLabel = node.kind;
+    const typeEnglishLabel = inferESection(node.kind, node.params) || deviceEnglishLabel;
+    const typeLabel = typeEnglishLabel ? elementTreeComponentTypeLabel(typeEnglishLabel) : deviceLabel;
     const containerChildren = includeContainerChildren
       ? buildContainerDeviceParameterViews(node, templateByKind.get(node.kind))
           .filter((view) => view.kind === "associated")
@@ -7493,16 +7548,25 @@ export function buildElementTree(
     if (containerChildren.length > 0) {
       item.children = containerChildren;
     }
-    appendItem(`node:${node.kind}`, typeLabel, item, typeEnglishLabel);
+    const typeKey = `component:${typeEnglishLabel}`;
+    appendDeviceItem(
+      typeKey,
+      typeLabel,
+      typeEnglishLabel,
+      `${typeKey}:device:${deviceEnglishLabel}`,
+      deviceLabel,
+      deviceEnglishLabel,
+      item
+    );
   }
 
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   for (const edge of edges) {
-    appendItem("edge:connection", "联络线", {
+    appendDeviceItem("edge:connection", "联络线", "ConnectionLine", "edge:connection:device:connection", "联络线", "ConnectionLine", {
       kind: "edge",
       id: edge.id,
       name: edgeDisplayName(edge, nodeById)
-    }, "ConnectionLine");
+    });
   }
 
   return groups;

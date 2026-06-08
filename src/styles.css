@@ -5582,7 +5582,8 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   white-space: nowrap;
 }
 
-.element-tree-type strong {
+.element-tree-type strong,
+.element-tree-device-type strong {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5592,6 +5593,44 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   color: #475569;
   background: #ffffff;
   font-size: 11px;
+}
+
+.element-tree-device-group {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+}
+
+.element-tree-device-type {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 27px;
+  border: 0;
+  border-left: 2px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0 8px 0 7px;
+  color: #334155;
+  background: #f8fafc;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.element-tree-device-type:hover,
+.element-tree-device-type:focus-visible {
+  color: #1e293b;
+  border-left-color: #94a3b8;
+  background: #eef4f7;
+  outline: none;
+}
+
+.element-tree-device-items {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding-left: 12px;
 }
 
 .element-tree-items {

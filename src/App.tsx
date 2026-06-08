@@ -826,6 +826,7 @@ type ContextMenuState = {
   x: number;
   y: number;
   target?: "blank" | "node" | "edge" | "group";
+  source?: "canvas" | "element-tree";
   canvasPoint?: Point;
   nodeId?: string;
   edgeId?: string;
@@ -8074,7 +8075,9 @@ export function App() {
   const libraryFlyoutPositionsRef = useRef<Record<string, { top: number; left: number }>>({});
   const libraryFlyoutCloseTimerRef = useRef<number | null>(null);
   const [collapsedElementTreeGroups, setCollapsedElementTreeGroups] = useState<string[]>([]);
+  const [collapsedElementTreeDeviceGroups, setCollapsedElementTreeDeviceGroups] = useState<string[]>([]);
   const [elementTreeItemLimits, setElementTreeItemLimits] = useState<Record<string, number>>({});
+  const [elementTreeEditDrafts, setElementTreeEditDrafts] = useState<Record<string, string>>({});
   const [customAttributeLibraries, setCustomAttributeLibraries] = useState<AttributeLibrary[]>(() => initialDeviceLibrary.customAttributeLibraries);
   const [customComponentTypes, setCustomComponentTypes] = useState<CustomComponentTypeDefinition[]>(() => initialDeviceLibrary.customComponentTypes);
   const [customDeviceTemplates, setCustomDeviceTemplates] = useState<DeviceTemplate[]>(() => initialDeviceLibrary.customDeviceTemplates);
@@ -10287,6 +10290,80 @@ export function App() {
         terminalLabels: view.terminalLabels ?? view.rows.find((row) => row.key === "terminals")?.value ?? ""
       }));
   };
+  const elementTreeDraftValue = (key: string, fallback: string) =>
+    Object.prototype.hasOwnProperty.call(elementTreeEditDrafts, key) ? elementTreeEditDrafts[key] : fallback;
+  const updateElementTreeDraft = (key: string, value: string) => {
+    setElementTreeEditDrafts((current) =>
+      current[key] === value ? current : { ...current, [key]: value }
+    );
+  };
+  const clearElementTreeDraft = (key: string) => {
+    setElementTreeEditDrafts((current) => {
+      if (!Object.prototype.hasOwnProperty.call(current, key)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  };
+  const elementTreeCommittedDraftValue = (key: string): string | undefined => {
+    if (!key.startsWith("node:")) {
+      return undefined;
+    }
+    const childMarker = ":child:";
+    const childMarkerIndex = key.indexOf(childMarker);
+    if (childMarkerIndex >= 0) {
+      const nodeId = key.slice("node:".length, childMarkerIndex);
+      const tail = key.slice(childMarkerIndex + childMarker.length);
+      const fieldSeparatorIndex = tail.lastIndexOf(":");
+      if (fieldSeparatorIndex < 0) {
+        return undefined;
+      }
+      const paramKey = tail.slice(0, fieldSeparatorIndex);
+      return nodeById.get(nodeId)?.params[paramKey] ?? "";
+    }
+    const fieldSeparatorIndex = key.lastIndexOf(":");
+    if (fieldSeparatorIndex <= "node:".length) {
+      return undefined;
+    }
+    const nodeId = key.slice("node:".length, fieldSeparatorIndex);
+    const field = key.slice(fieldSeparatorIndex + 1);
+    const node = nodeById.get(nodeId);
+    if (!node) {
+      return undefined;
+    }
+    return field === "name" ? node.name : node.params.idx ?? "";
+  };
+  const commitElementTreeInputOnEnter = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    event.stopPropagation();
+    if (event.key !== "Enter") {
+      return;
+    }
+    if (event.nativeEvent.isComposing) {
+      return;
+    }
+    event.preventDefault();
+    event.currentTarget.blur();
+  };
+
+  useEffect(() => {
+    if (Object.keys(elementTreeEditDrafts).length === 0) {
+      return;
+    }
+    setElementTreeEditDrafts((current) => {
+      let changed = false;
+      const next: Record<string, string> = {};
+      for (const [key, value] of Object.entries(current)) {
+        if (elementTreeCommittedDraftValue(key) === value) {
+          changed = true;
+          continue;
+        }
+        next[key] = value;
+      }
+      return changed ? next : current;
+    });
+  }, [elementTreeEditDrafts, graphStore.elementTreeRevision, nodeById]);
 
   useEffect(() => {
     setSelectedEdgeIds((current) => {
@@ -10493,12 +10570,16 @@ export function App() {
       return;
     }
     const existingKeys = new Set(elementTree.map((group) => group.typeKey));
+    const existingDeviceKeys = new Set(elementTree.flatMap((group) => (group.deviceGroups ?? []).map((deviceGroup) => deviceGroup.deviceKey)));
     setCollapsedElementTreeGroups((current) => current.filter((key) => existingKeys.has(key)));
+    setCollapsedElementTreeDeviceGroups((current) => current.filter((key) => existingDeviceKeys.has(key)));
     setElementTreeItemLimits((current) => {
       const next: Record<string, number> = {};
       for (const group of elementTree) {
-        if (current[group.typeKey]) {
-          next[group.typeKey] = current[group.typeKey];
+        for (const deviceGroup of group.deviceGroups ?? []) {
+          if (current[deviceGroup.deviceKey]) {
+            next[deviceGroup.deviceKey] = current[deviceGroup.deviceKey];
+          }
         }
       }
       const changed = Object.keys(current).length !== Object.keys(next).length;
@@ -10511,22 +10592,27 @@ export function App() {
       return;
     }
     for (const group of elementTree) {
-      const selectedIndex = group.items.findIndex((item) => `${item.kind}:${item.id}` === selectedElementTreeItemKey);
-      if (selectedIndex < 0) {
-        continue;
-      }
-      setCollapsedElementTreeGroups((current) =>
-        current.includes(group.typeKey) ? current.filter((key) => key !== group.typeKey) : current
-      );
-      setElementTreeItemLimits((current) => {
-        const currentLimit = current[group.typeKey] ?? ELEMENT_TREE_INITIAL_ITEM_LIMIT;
-        if (selectedIndex < currentLimit) {
-          return current;
+      for (const deviceGroup of group.deviceGroups ?? []) {
+        const selectedIndex = deviceGroup.items.findIndex((item) => `${item.kind}:${item.id}` === selectedElementTreeItemKey);
+        if (selectedIndex < 0) {
+          continue;
         }
-        const nextLimit = Math.ceil((selectedIndex + 1) / ELEMENT_TREE_ITEM_LIMIT_STEP) * ELEMENT_TREE_ITEM_LIMIT_STEP;
-        return { ...current, [group.typeKey]: Math.max(nextLimit, ELEMENT_TREE_INITIAL_ITEM_LIMIT) };
-      });
-      return;
+        setCollapsedElementTreeGroups((current) =>
+          current.includes(group.typeKey) ? current.filter((key) => key !== group.typeKey) : current
+        );
+        setCollapsedElementTreeDeviceGroups((current) =>
+          current.includes(deviceGroup.deviceKey) ? current.filter((key) => key !== deviceGroup.deviceKey) : current
+        );
+        setElementTreeItemLimits((current) => {
+          const currentLimit = current[deviceGroup.deviceKey] ?? ELEMENT_TREE_INITIAL_ITEM_LIMIT;
+          if (selectedIndex < currentLimit) {
+            return current;
+          }
+          const nextLimit = Math.ceil((selectedIndex + 1) / ELEMENT_TREE_ITEM_LIMIT_STEP) * ELEMENT_TREE_ITEM_LIMIT_STEP;
+          return { ...current, [deviceGroup.deviceKey]: Math.max(nextLimit, ELEMENT_TREE_INITIAL_ITEM_LIMIT) };
+        });
+        return;
+      }
     }
   }, [elementTree, graphTreePanelActive, selectedElementTreeItemKey]);
 
@@ -10538,7 +10624,7 @@ export function App() {
       block: "nearest",
       inline: "nearest"
     });
-  }, [collapsedElementTreeGroups, elementTreeItemLimits, graphTreePanelActive, selectedElementTreeItemKey]);
+  }, [collapsedElementTreeDeviceGroups, collapsedElementTreeGroups, elementTreeItemLimits, graphTreePanelActive, selectedElementTreeItemKey]);
 
   useEffect(() => {
     setTopologyWarningPage((current) => Math.min(current, Math.max(0, Math.ceil(inspectorTopologyErrors.length / TOPOLOGY_WARNING_PAGE_SIZE) - 1)));
@@ -21450,12 +21536,29 @@ export function App() {
     );
   };
 
-  const updateElementTreeNodeIdentity = (nodeId: string, field: "idx" | "name", value: string) => {
+  const commitElementTreeNodeIdentity = (nodeId: string, field: "idx" | "name", value: string, draftKey?: string) => {
     if (!requireEditMode("修改图元树参数")) {
       return;
     }
     if (!activeLayerNodeIdSet.has(nodeId)) {
       return;
+    }
+    const node = nodeById.get(nodeId);
+    if (!node) {
+      if (draftKey) {
+        clearElementTreeDraft(draftKey);
+      }
+      return;
+    }
+    const currentValue = field === "name" ? node.name : node.params.idx ?? "";
+    if (currentValue === value) {
+      if (draftKey) {
+        clearElementTreeDraft(draftKey);
+      }
+      return;
+    }
+    if (draftKey) {
+      updateElementTreeDraft(draftKey, value);
     }
     pushNodeOnlyUndoSnapshot(nodeId);
     updateGraphNodeById(nodeId, (node) =>
@@ -21463,15 +21566,34 @@ export function App() {
     );
   };
 
-  const updateElementTreeContainerChildParam = (nodeId: string, key: string, value: string) => {
+  const commitElementTreeContainerChildParam = (nodeId: string, key: string, value: string, draftKey?: string) => {
     if (!requireEditMode("修改图元树参数")) {
       return;
     }
     if (!key) {
+      if (draftKey) {
+        clearElementTreeDraft(draftKey);
+      }
       return;
     }
     if (!activeLayerNodeIdSet.has(nodeId)) {
       return;
+    }
+    const node = nodeById.get(nodeId);
+    if (!node) {
+      if (draftKey) {
+        clearElementTreeDraft(draftKey);
+      }
+      return;
+    }
+    if ((node.params[key] ?? "") === value) {
+      if (draftKey) {
+        clearElementTreeDraft(draftKey);
+      }
+      return;
+    }
+    if (draftKey) {
+      updateElementTreeDraft(draftKey, value);
     }
     pushNodeOnlyUndoSnapshot(nodeId);
     updateGraphNodeById(nodeId, (node) => ({ ...node, params: { ...node.params, [key]: value } }));
@@ -27067,6 +27189,42 @@ export function App() {
     }
   };
 
+  const openElementTreeItemContextMenu = (event: MouseEvent<HTMLDivElement>, item: ElementTreeItem) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const editable = item.kind === "node" ? activeLayerNodeIdSet.has(item.id) : activeLayerEdgeIdSet.has(item.id);
+    if (!isEditMode || !editable) {
+      return;
+    }
+    canvasInteractionRef.current = true;
+    projectListPointerInsideRef.current = false;
+    if (item.kind === "node") {
+      selectCanvasGraphics([item.id], []);
+    } else {
+      selectCanvasGraphics([], [item.id]);
+    }
+    clearRecordSelection();
+    setConnectSource(null);
+    resetConnectPreviewState();
+    setRewiring(null);
+    setRoutableLinePlacement(null);
+    resetRoutableLinePreviewState();
+    setMode("select");
+    setProjectMenu(null);
+    const nextContextMenu: NonNullable<ContextMenuState> = {
+      x: event.clientX,
+      y: event.clientY,
+      target: item.kind,
+      source: "element-tree"
+    };
+    if (item.kind === "node") {
+      nextContextMenu.nodeId = item.id;
+    } else {
+      nextContextMenu.edgeId = item.id;
+    }
+    setContextMenu(nextContextMenu);
+  };
+
   const setEdgeManualPoints = (edgeId: string, manualPoints: Point[]) => {
     if (!requireEditMode("修改连接线路径")) {
       return;
@@ -28686,6 +28844,12 @@ export function App() {
   const toggleElementTreeGroup = (typeKey: string) => {
     setCollapsedElementTreeGroups((current) =>
       current.includes(typeKey) ? current.filter((item) => item !== typeKey) : [...current, typeKey]
+    );
+  };
+
+  const toggleElementTreeDeviceGroup = (deviceKey: string) => {
+    setCollapsedElementTreeDeviceGroups((current) =>
+      current.includes(deviceKey) ? current.filter((item) => item !== deviceKey) : [...current, deviceKey]
     );
   };
 
@@ -30396,9 +30560,7 @@ export function App() {
       ) : (
         elementTree.map((group) => {
           const expanded = !collapsedElementTreeGroups.includes(group.typeKey);
-          const visibleLimit = elementTreeItemLimits[group.typeKey] ?? ELEMENT_TREE_INITIAL_ITEM_LIMIT;
-          const visibleItems = group.items.slice(0, visibleLimit);
-          const hiddenItemCount = Math.max(0, group.items.length - visibleItems.length);
+          const deviceGroups = group.deviceGroups ?? [];
           return (
             <section className="element-tree-group" key={group.typeKey}>
               <button
@@ -30419,129 +30581,172 @@ export function App() {
               </button>
               {expanded && (
                 <div className="element-tree-items" role="group">
-                  {visibleItems.map((item) => {
-                    const editable = item.kind === "node" ? activeLayerNodeIdSet.has(item.id) : activeLayerEdgeIdSet.has(item.id);
-                    const selected = editable && (item.kind === "node" ? selectedNodeIdSet.has(item.id) : activeSelectedEdgeSet.has(item.id));
-                    const itemChildren = elementTreeItemChildren(item);
-                    const treeItemKey = `${item.kind}:${item.id}`;
-                    const selectTreeItem = () => {
-                      if (!editable) {
-                        return;
-                      }
-                      if (item.kind === "node") {
-                        selectCanvasGraphics([item.id], []);
-                        clearRecordSelection();
-                      } else {
-                        selectCanvasGraphics([], [item.id]);
-                      }
-                    };
+                  {deviceGroups.map((deviceGroup) => {
+                    const deviceExpanded = !collapsedElementTreeDeviceGroups.includes(deviceGroup.deviceKey);
+                    const visibleLimit = elementTreeItemLimits[deviceGroup.deviceKey] ?? ELEMENT_TREE_INITIAL_ITEM_LIMIT;
+                    const visibleItems = deviceGroup.items.slice(0, visibleLimit);
+                    const hiddenItemCount = Math.max(0, deviceGroup.items.length - visibleItems.length);
                     return (
-                      <div
-                        role="treeitem"
-                        aria-level={2}
-                        aria-selected={selected}
-                        className={`element-tree-item ${selected ? "selected" : ""}`}
-                        key={treeItemKey}
-                        ref={(element) => {
-                          elementTreeItemRefs.current[treeItemKey] = element;
-                        }}
-                        title="双击定位并选中图元"
-                        tabIndex={0}
-                        onPointerDown={selectTreeItem}
-                        onClick={selectTreeItem}
-                        onDoubleClick={() => focusElementTreeItem(item, true)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault();
-                            focusElementTreeItem(item);
-                          }
-                        }}
-                      >
-                        <div className="element-tree-item-main">
-                          {item.kind === "node" && item.editableDevice ? (
-                            <div className="element-tree-device-fields">
-                              <label>
-                                <span>idx</span>
-                                <input
-                                  value={item.idx ?? ""}
-                                  inputMode="numeric"
-                                  onClick={(event) => event.stopPropagation()}
-                                  onDoubleClick={(event) => event.stopPropagation()}
-                                  onKeyDown={(event) => event.stopPropagation()}
-                                  disabled={!editable}
-                                  onChange={(event) => updateElementTreeNodeIdentity(item.id, "idx", event.target.value)}
-                                />
-                              </label>
-                              <label>
-                                <span>name</span>
-                                <input
-                                  value={item.name}
-                                  onClick={(event) => event.stopPropagation()}
-                                  onDoubleClick={(event) => event.stopPropagation()}
-                                  onKeyDown={(event) => event.stopPropagation()}
-                                  disabled={!editable}
-                                  onChange={(event) => updateElementTreeNodeIdentity(item.id, "name", event.target.value)}
-                                />
-                              </label>
-                            </div>
-                          ) : (
+                      <section className="element-tree-device-group" key={deviceGroup.deviceKey}>
+                        <button
+                          type="button"
+                          className="element-tree-device-type"
+                          role="treeitem"
+                          aria-level={2}
+                          aria-expanded={deviceExpanded}
+                          onClick={() => toggleElementTreeDeviceGroup(deviceGroup.deviceKey)}
+                        >
+                          <span className="element-tree-type-label">
+                            {deviceExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                             <span className="element-tree-bilingual">
-                              <span>{item.name}</span>
+                              <span>{deviceGroup.deviceLabel}</span>
+                              {deviceGroup.deviceEnglishLabel ? <small>{deviceGroup.deviceEnglishLabel}</small> : null}
                             </span>
-                          )}
-                        </div>
-                        {itemChildren.length ? (
-                          <div className="element-tree-child-list" role="group" aria-label={`${item.name}关联子设备`}>
-                            {itemChildren.map((child) => (
-                              <div className="element-tree-child-item" key={child.id}>
-                                <span className="element-tree-child-type" title={child.componentType}>
-                                  <span>{child.componentTypeLabel || child.componentType}</span>
-                                  {child.componentType ? <small>{child.componentType}</small> : null}
-                                </span>
-                                <label>
-                                  <span>idx</span>
-                                  <input
-                                    value={child.idx}
-                                    inputMode="numeric"
-                                    onClick={(event) => event.stopPropagation()}
-                                    onDoubleClick={(event) => event.stopPropagation()}
-                                    onKeyDown={(event) => event.stopPropagation()}
-                                    disabled={!editable}
-                                    onChange={(event) => updateElementTreeContainerChildParam(item.id, child.relationKeys[0] ?? "", event.target.value)}
-                                  />
-                                </label>
-                                <label className="element-tree-child-name-field">
-                                  <span>name</span>
-                                  <input
-                                    value={child.name}
-                                    onClick={(event) => event.stopPropagation()}
-                                    onDoubleClick={(event) => event.stopPropagation()}
-                                    onKeyDown={(event) => event.stopPropagation()}
-                                    disabled={!editable}
-                                    onChange={(event) => updateElementTreeContainerChildParam(item.id, child.nameKey, event.target.value)}
-                                  />
-                                </label>
-                              </div>
-                            ))}
+                          </span>
+                          <strong>{deviceGroup.items.length}</strong>
+                        </button>
+                        {deviceExpanded && (
+                          <div className="element-tree-device-items" role="group">
+                            {visibleItems.map((item) => {
+                              const editable = item.kind === "node" ? activeLayerNodeIdSet.has(item.id) : activeLayerEdgeIdSet.has(item.id);
+                              const selected = editable && (item.kind === "node" ? selectedNodeIdSet.has(item.id) : activeSelectedEdgeSet.has(item.id));
+                              const itemChildren = elementTreeItemChildren(item);
+                              const treeItemKey = `${item.kind}:${item.id}`;
+                              const idxDraftKey = `node:${item.id}:idx`;
+                              const nameDraftKey = `node:${item.id}:name`;
+                              const selectTreeItem = () => {
+                                if (!editable) {
+                                  return;
+                                }
+                                if (item.kind === "node") {
+                                  selectCanvasGraphics([item.id], []);
+                                  clearRecordSelection();
+                                } else {
+                                  selectCanvasGraphics([], [item.id]);
+                                }
+                              };
+                              return (
+                                <div
+                                  role="treeitem"
+                                  aria-level={3}
+                                  aria-selected={selected}
+                                  className={`element-tree-item ${selected ? "selected" : ""}`}
+                                  key={treeItemKey}
+                                  ref={(element) => {
+                                    elementTreeItemRefs.current[treeItemKey] = element;
+                                  }}
+                                  title="双击定位并选中图元"
+                                  tabIndex={0}
+                                  onPointerDown={selectTreeItem}
+                                  onClick={selectTreeItem}
+                                  onDoubleClick={() => focusElementTreeItem(item, true)}
+                                  onContextMenu={(event) => openElementTreeItemContextMenu(event, item)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") {
+                                      event.preventDefault();
+                                      focusElementTreeItem(item);
+                                    }
+                                  }}
+                                >
+                                  <div className="element-tree-item-main">
+                                    {item.kind === "node" && item.editableDevice ? (
+                                      <div className="element-tree-device-fields">
+                                        <label>
+                                          <span>idx</span>
+                                          <input
+                                            value={elementTreeDraftValue(idxDraftKey, item.idx ?? "")}
+                                            inputMode="numeric"
+                                            onClick={(event) => event.stopPropagation()}
+                                            onDoubleClick={(event) => event.stopPropagation()}
+                                            onKeyDown={(event) => commitElementTreeInputOnEnter(event)}
+                                            disabled={!editable}
+                                            onChange={(event) => updateElementTreeDraft(idxDraftKey, event.target.value)}
+                                            onBlur={(event) => commitElementTreeNodeIdentity(item.id, "idx", event.currentTarget.value, idxDraftKey)}
+                                          />
+                                        </label>
+                                        <label>
+                                          <span>name</span>
+                                          <input
+                                            value={elementTreeDraftValue(nameDraftKey, item.name)}
+                                            onClick={(event) => event.stopPropagation()}
+                                            onDoubleClick={(event) => event.stopPropagation()}
+                                            onKeyDown={(event) => commitElementTreeInputOnEnter(event)}
+                                            disabled={!editable}
+                                            onChange={(event) => updateElementTreeDraft(nameDraftKey, event.target.value)}
+                                            onBlur={(event) => commitElementTreeNodeIdentity(item.id, "name", event.currentTarget.value, nameDraftKey)}
+                                          />
+                                        </label>
+                                      </div>
+                                    ) : (
+                                      <span className="element-tree-bilingual">
+                                        <span>{item.name}</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                  {itemChildren.length ? (
+                                    <div className="element-tree-child-list" role="group" aria-label={`${item.name}关联子设备`}>
+                                      {itemChildren.map((child) => {
+                                        const childIdxKey = child.relationKeys[0] ?? "";
+                                        const childIdxDraftKey = `node:${item.id}:child:${childIdxKey}:idx`;
+                                        const childNameDraftKey = `node:${item.id}:child:${child.nameKey}:name`;
+                                        return (
+                                          <div className="element-tree-child-item" key={child.id}>
+                                            <span className="element-tree-child-type" title={child.componentType}>
+                                              <span>{child.componentTypeLabel || child.componentType}</span>
+                                              {child.componentType ? <small>{child.componentType}</small> : null}
+                                            </span>
+                                            <label>
+                                              <span>idx</span>
+                                              <input
+                                                value={elementTreeDraftValue(childIdxDraftKey, child.idx)}
+                                                inputMode="numeric"
+                                                onClick={(event) => event.stopPropagation()}
+                                                onDoubleClick={(event) => event.stopPropagation()}
+                                                onKeyDown={(event) => commitElementTreeInputOnEnter(event)}
+                                                disabled={!editable}
+                                                onChange={(event) => updateElementTreeDraft(childIdxDraftKey, event.target.value)}
+                                                onBlur={(event) => commitElementTreeContainerChildParam(item.id, childIdxKey, event.currentTarget.value, childIdxDraftKey)}
+                                              />
+                                            </label>
+                                            <label className="element-tree-child-name-field">
+                                              <span>name</span>
+                                              <input
+                                                value={elementTreeDraftValue(childNameDraftKey, child.name)}
+                                                onClick={(event) => event.stopPropagation()}
+                                                onDoubleClick={(event) => event.stopPropagation()}
+                                                onKeyDown={(event) => commitElementTreeInputOnEnter(event)}
+                                                disabled={!editable}
+                                                onChange={(event) => updateElementTreeDraft(childNameDraftKey, event.target.value)}
+                                                onBlur={(event) => commitElementTreeContainerChildParam(item.id, child.nameKey, event.currentTarget.value, childNameDraftKey)}
+                                              />
+                                            </label>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
+                            {hiddenItemCount > 0 && (
+                              <button
+                                type="button"
+                                className="element-tree-more"
+                                onClick={() =>
+                                  setElementTreeItemLimits((current) => ({
+                                    ...current,
+                                    [deviceGroup.deviceKey]: visibleLimit + ELEMENT_TREE_ITEM_LIMIT_STEP
+                                  }))
+                                }
+                              >
+                                显示更多（还有 {hiddenItemCount} 个）
+                              </button>
+                            )}
                           </div>
-                        ) : null}
-                      </div>
+                        )}
+                      </section>
                     );
                   })}
-                  {hiddenItemCount > 0 && (
-                    <button
-                      type="button"
-                      className="element-tree-more"
-                      onClick={() =>
-                        setElementTreeItemLimits((current) => ({
-                          ...current,
-                          [group.typeKey]: visibleLimit + ELEMENT_TREE_ITEM_LIMIT_STEP
-                        }))
-                      }
-                    >
-                      显示更多（还有 {hiddenItemCount} 个）
-                    </button>
-                  )}
                 </div>
               )}
             </section>
@@ -30894,6 +31099,7 @@ export function App() {
     nodeLabelRotateDrag
   );
   const contextMenuTarget = contextMenu?.target ?? (contextMenu?.edgeId ? "edge" : "blank");
+  const contextMenuFromElementTree = contextMenu?.source === "element-tree";
   const contextMenuForSelection = contextMenuTarget !== "blank";
   const contextMenuForNode = contextMenuTarget === "node" || contextMenuTarget === "group";
   const contextMenuForEdge = contextMenuTarget === "edge";
@@ -34789,232 +34995,242 @@ export function App() {
       </aside>
       {contextMenu && (
         <div className="context-menu" data-canvas-context-menu="true" style={contextMenuStyle(contextMenu)}>
-          {isEditMode && contextMenuTarget === "blank" && contextMenu.canvasPoint && (
-            <button onClick={() => runContextMenuAction(startContextMarqueeSelection)}>
-              <BoxSelect size={14} />
-              框选
-            </button>
-          )}
-          {isEditMode && contextMenuTarget === "blank" && activeLayerNodes.length > 0 && (
-            <button onClick={() => runContextMenuAction(openFilterSelectionDialog)}>
-              <ScanSearch size={14} />
-              过滤选择
-            </button>
-          )}
-          {isEditMode && undoStack.length > 0 && (
-            <button onClick={() => runContextMenuAction(undoLastOperation)}>
-              <Undo2 size={14} />
-              撤销
-            </button>
-          )}
-          {contextMenuForSelection && contextSelectionCount > 0 && (
-            <button onClick={() => runContextMenuAction(copySelection)}>
-              <Copy size={14} />
-              复制
-            </button>
-          )}
-          {isEditMode && contextMenuForSelection && contextSelectionCount > 0 && (
-            <button onClick={() => runContextMenuAction(cutSelection)}>
-              <Scissors size={14} />
-              剪切
-            </button>
-          )}
-          {isEditMode && saveRequired && (
-            <button onClick={() => runContextMenuAction(() => saveCurrentProject())}>
-              <Save size={14} />
-              保存
-            </button>
-          )}
-          {isEditMode && (canvasClipboard.nodes.length > 0 || canvasClipboard.edges.length > 0) && (
-            <button onClick={() => runContextMenuAction(pasteSelection)}>
-              <FileInput size={14} />
-              粘贴
-            </button>
-          )}
-          {isEditMode && nodes.length > 0 && (
-            <div className="context-menu-submenu">
-              <button type="button" className="context-menu-submenu-trigger">
-                <Zap size={14} />
-                电压基值
-                <ChevronRight size={14} />
-              </button>
-              <div className="context-menu-submenu-panel">
-                <button onClick={() => runContextMenuAction(openVoltageBaseSetDialog)}>
-                  <Zap size={14} />
-                  设置电压基值
-                </button>
-                <button onClick={() => runContextMenuAction(openVoltageBaseClearDialog)}>
-                  <ZapOff size={14} />
-                  清空电压基值
-                </button>
-              </div>
-            </div>
-          )}
-          {isEditMode && contextMenuTarget === "blank" && activeLayerNodes.length > 1 && (
-            <button onClick={() => runContextMenuAction(autoAlignCanvasGraphics)}>
-              <AlignCenterHorizontal size={14} />
-              自动对齐
-            </button>
-          )}
-          {isEditMode && contextMenuTarget === "blank" && activeLayerNodes.length > 1 && (
-            <button onClick={() => runContextMenuAction(autoSpreadCanvasGraphics)}>
-              <ScanSearch size={14} />
-              自动散开
-            </button>
-          )}
-          {contextMenuForEdge && selectedEdge && (
-            isEditMode ? (
-            <button onClick={() => runContextMenuAction(tidySelectedEdgeRoute)}>
-              <Route size={14} />
-              整理连接线
-            </button>
-            ) : null
-          )}
-          {contextMenuForEdge && contextMenu.edgeId && (
-            isEditMode ? (
-            <button onClick={() => runContextMenuAction(addManualBendFromContextMenu)}>
-              <Pencil size={14} />
-              添加拐点
-            </button>
-            ) : null
-          )}
-          {isEditMode && contextMenuTarget === "blank" && (
-            <button onClick={() => runContextMenuAction(openConnectionRedrawDialog)}>
-              <Route size={14} />
-              连接线重绘
-            </button>
-          )}
-          {contextMenuForNode && canGroupSelectedGraphics && (
-            isEditMode ? (
-            <button onClick={() => runContextMenuAction(groupSelectedGraphics)}>
-              <Group size={14} />
-              组合
-            </button>
-            ) : null
-          )}
-          {contextMenuForNode && canUngroupSelectedGraphics && (
-            isEditMode ? (
-            <button onClick={() => runContextMenuAction(ungroupSelectedGraphics)}>
-              <Ungroup size={14} />
-              解散
-            </button>
-            ) : null
-          )}
-          {contextMenuForNode && canAddTemplateFromSelection && (
-            isEditMode ? (
-            <button onClick={() => runContextMenuAction(openAddTemplateDialog)}>
-              <Grid2X2 size={14} />
-              添加到模板库
-            </button>
-            ) : null
-          )}
-          {contextMenuForNode && canAddTemplateFromSelection && (
-            isEditMode ? (
-            <button onClick={() => runContextMenuAction(openGroupDeviceDefinitionDialog)}>
-              <Plus size={14} />
-              定义为元件
-            </button>
-            ) : null
-          )}
-          {isEditMode && contextMeasurementNode && !isStaticNode(contextMeasurementNode) && (
-            <div className="context-menu-submenu">
-              <button type="button" className="context-menu-submenu-trigger">
-                <CircleDot size={14} />
-                量测显示
-                <ChevronRight size={14} />
-              </button>
-              <div className="context-menu-submenu-panel">
-                <button
-                  disabled={Boolean(contextMeasurementGroup)}
-                  onClick={() => runContextMenuAction(() => addDefaultMeasurementsToNode(contextMeasurementNode))}
-                >
-                  <Plus size={14} />
-                  添加量测
-                </button>
-                <button
-                  disabled={!contextMeasurementGroup}
-                  onClick={() => runContextMenuAction(() => openMeasurementEditorForNode(contextMeasurementNode))}
-                >
-                  <Pencil size={14} />
-                  修改量测
-                </button>
-                <button
-                  disabled={!contextMeasurementGroup}
-                  onClick={() => runContextMenuAction(() => removeMeasurementsFromNode(contextMeasurementNode))}
-                >
-                  <Trash2 size={14} />
-                  删除量测
-                </button>
-              </div>
-            </div>
-          )}
-          {contextMenuForNode && activeSelectedNodeIds.length > 0 && (
-            isEditMode ? (
-            <button onClick={() => runContextMenuAction(openLayerAssignmentDialog)}>
-              <Layers size={14} />
-              图层修改
-            </button>
-            ) : null
-          )}
-          {contextMenuForNode && activeSelectedNodeIds.length > 0 && (
-            isEditMode ? (
-            <div className="context-menu-submenu">
-              <button type="button" className="context-menu-submenu-trigger">
-                <Layers2 size={14} />
-                显示层级
-                <ChevronRight size={14} />
-              </button>
-              <div className="context-menu-submenu-panel">
-                <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("raise"))}>
-                  <ArrowUp size={14} />
-                  提升显示层级
-                </button>
-                <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("lower"))}>
-                  <ArrowDown size={14} />
-                  降低显示层级
-                </button>
-                <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("front"))}>
-                  <ChevronsUp size={14} />
-                  顶层显示
-                </button>
-                <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("back"))}>
-                  <ChevronsDown size={14} />
-                  底层显示
-                </button>
-              </div>
-            </div>
-            ) : null
-          )}
-          {contextMenuForNode && activeSelectedNodeIds.length > 0 && (
-            isEditMode ? (
-            <div className="context-menu-submenu">
-              <button type="button" className="context-menu-submenu-trigger">
-                <Type size={14} />
-                标识显示
-                <ChevronRight size={14} />
-              </button>
-              <div className="context-menu-submenu-panel">
-                <button onClick={() => runContextMenuAction(() => setSelectedNodeLabelDisplayMode("always"))}>
-                  <Type size={14} />
-                  标识始终显示
-                </button>
-                <button onClick={() => runContextMenuAction(() => setSelectedNodeLabelDisplayMode("hidden"))}>
-                  <Type size={14} />
-                  标识始终隐藏
-                </button>
-                <button onClick={() => runContextMenuAction(() => setSelectedNodeLabelDisplayMode("follow"))}>
-                  <Type size={14} />
-                  标识跟随显示
-                </button>
-              </div>
-            </div>
-            ) : null
-          )}
-          {isEditMode && contextMenuForSelection && contextSelectionCount > 0 && (
+          {isEditMode && contextMenuFromElementTree && contextMenuForSelection && contextSelectionCount > 0 && (
             <button onClick={() => runContextMenuAction(deleteSelection)}>
               <Trash2 size={14} />
               删除
             </button>
+          )}
+          {!contextMenuFromElementTree && (
+            <>
+              {isEditMode && contextMenuTarget === "blank" && contextMenu.canvasPoint && (
+                <button onClick={() => runContextMenuAction(startContextMarqueeSelection)}>
+                  <BoxSelect size={14} />
+                  框选
+                </button>
+              )}
+              {isEditMode && contextMenuTarget === "blank" && activeLayerNodes.length > 0 && (
+                <button onClick={() => runContextMenuAction(openFilterSelectionDialog)}>
+                  <ScanSearch size={14} />
+                  过滤选择
+                </button>
+              )}
+              {isEditMode && undoStack.length > 0 && (
+                <button onClick={() => runContextMenuAction(undoLastOperation)}>
+                  <Undo2 size={14} />
+                  撤销
+                </button>
+              )}
+              {contextMenuForSelection && contextSelectionCount > 0 && (
+                <button onClick={() => runContextMenuAction(copySelection)}>
+                  <Copy size={14} />
+                  复制
+                </button>
+              )}
+              {isEditMode && contextMenuForSelection && contextSelectionCount > 0 && (
+                <button onClick={() => runContextMenuAction(cutSelection)}>
+                  <Scissors size={14} />
+                  剪切
+                </button>
+              )}
+              {isEditMode && saveRequired && (
+                <button onClick={() => runContextMenuAction(() => saveCurrentProject())}>
+                  <Save size={14} />
+                  保存
+                </button>
+              )}
+              {isEditMode && (canvasClipboard.nodes.length > 0 || canvasClipboard.edges.length > 0) && (
+                <button onClick={() => runContextMenuAction(pasteSelection)}>
+                  <FileInput size={14} />
+                  粘贴
+                </button>
+              )}
+              {isEditMode && nodes.length > 0 && (
+                <div className="context-menu-submenu">
+                  <button type="button" className="context-menu-submenu-trigger">
+                    <Zap size={14} />
+                    电压基值
+                    <ChevronRight size={14} />
+                  </button>
+                  <div className="context-menu-submenu-panel">
+                    <button onClick={() => runContextMenuAction(openVoltageBaseSetDialog)}>
+                      <Zap size={14} />
+                      设置电压基值
+                    </button>
+                    <button onClick={() => runContextMenuAction(openVoltageBaseClearDialog)}>
+                      <ZapOff size={14} />
+                      清空电压基值
+                    </button>
+                  </div>
+                </div>
+              )}
+              {isEditMode && contextMenuTarget === "blank" && activeLayerNodes.length > 1 && (
+                <button onClick={() => runContextMenuAction(autoAlignCanvasGraphics)}>
+                  <AlignCenterHorizontal size={14} />
+                  自动对齐
+                </button>
+              )}
+              {isEditMode && contextMenuTarget === "blank" && activeLayerNodes.length > 1 && (
+                <button onClick={() => runContextMenuAction(autoSpreadCanvasGraphics)}>
+                  <ScanSearch size={14} />
+                  自动散开
+                </button>
+              )}
+              {contextMenuForEdge && selectedEdge && (
+                isEditMode ? (
+                <button onClick={() => runContextMenuAction(tidySelectedEdgeRoute)}>
+                  <Route size={14} />
+                  整理连接线
+                </button>
+                ) : null
+              )}
+              {contextMenuForEdge && contextMenu.edgeId && (
+                isEditMode ? (
+                <button onClick={() => runContextMenuAction(addManualBendFromContextMenu)}>
+                  <Pencil size={14} />
+                  添加拐点
+                </button>
+                ) : null
+              )}
+              {isEditMode && contextMenuTarget === "blank" && (
+                <button onClick={() => runContextMenuAction(openConnectionRedrawDialog)}>
+                  <Route size={14} />
+                  连接线重绘
+                </button>
+              )}
+              {contextMenuForNode && canGroupSelectedGraphics && (
+                isEditMode ? (
+                <button onClick={() => runContextMenuAction(groupSelectedGraphics)}>
+                  <Group size={14} />
+                  组合
+                </button>
+                ) : null
+              )}
+              {contextMenuForNode && canUngroupSelectedGraphics && (
+                isEditMode ? (
+                <button onClick={() => runContextMenuAction(ungroupSelectedGraphics)}>
+                  <Ungroup size={14} />
+                  解散
+                </button>
+                ) : null
+              )}
+              {contextMenuForNode && canAddTemplateFromSelection && (
+                isEditMode ? (
+                <button onClick={() => runContextMenuAction(openAddTemplateDialog)}>
+                  <Grid2X2 size={14} />
+                  添加到模板库
+                </button>
+                ) : null
+              )}
+              {contextMenuForNode && canAddTemplateFromSelection && (
+                isEditMode ? (
+                <button onClick={() => runContextMenuAction(openGroupDeviceDefinitionDialog)}>
+                  <Plus size={14} />
+                  定义为元件
+                </button>
+                ) : null
+              )}
+              {isEditMode && contextMeasurementNode && !isStaticNode(contextMeasurementNode) && (
+                <div className="context-menu-submenu">
+                  <button type="button" className="context-menu-submenu-trigger">
+                    <CircleDot size={14} />
+                    量测显示
+                    <ChevronRight size={14} />
+                  </button>
+                  <div className="context-menu-submenu-panel">
+                    <button
+                      disabled={Boolean(contextMeasurementGroup)}
+                      onClick={() => runContextMenuAction(() => addDefaultMeasurementsToNode(contextMeasurementNode))}
+                    >
+                      <Plus size={14} />
+                      添加量测
+                    </button>
+                    <button
+                      disabled={!contextMeasurementGroup}
+                      onClick={() => runContextMenuAction(() => openMeasurementEditorForNode(contextMeasurementNode))}
+                    >
+                      <Pencil size={14} />
+                      修改量测
+                    </button>
+                    <button
+                      disabled={!contextMeasurementGroup}
+                      onClick={() => runContextMenuAction(() => removeMeasurementsFromNode(contextMeasurementNode))}
+                    >
+                      <Trash2 size={14} />
+                      删除量测
+                    </button>
+                  </div>
+                </div>
+              )}
+              {contextMenuForNode && activeSelectedNodeIds.length > 0 && (
+                isEditMode ? (
+                <button onClick={() => runContextMenuAction(openLayerAssignmentDialog)}>
+                  <Layers size={14} />
+                  图层修改
+                </button>
+                ) : null
+              )}
+              {contextMenuForNode && activeSelectedNodeIds.length > 0 && (
+                isEditMode ? (
+                <div className="context-menu-submenu">
+                  <button type="button" className="context-menu-submenu-trigger">
+                    <Layers2 size={14} />
+                    显示层级
+                    <ChevronRight size={14} />
+                  </button>
+                  <div className="context-menu-submenu-panel">
+                    <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("raise"))}>
+                      <ArrowUp size={14} />
+                      提升显示层级
+                    </button>
+                    <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("lower"))}>
+                      <ArrowDown size={14} />
+                      降低显示层级
+                    </button>
+                    <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("front"))}>
+                      <ChevronsUp size={14} />
+                      顶层显示
+                    </button>
+                    <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("back"))}>
+                      <ChevronsDown size={14} />
+                      底层显示
+                    </button>
+                  </div>
+                </div>
+                ) : null
+              )}
+              {contextMenuForNode && activeSelectedNodeIds.length > 0 && (
+                isEditMode ? (
+                <div className="context-menu-submenu">
+                  <button type="button" className="context-menu-submenu-trigger">
+                    <Type size={14} />
+                    标识显示
+                    <ChevronRight size={14} />
+                  </button>
+                  <div className="context-menu-submenu-panel">
+                    <button onClick={() => runContextMenuAction(() => setSelectedNodeLabelDisplayMode("always"))}>
+                      <Type size={14} />
+                      标识始终显示
+                    </button>
+                    <button onClick={() => runContextMenuAction(() => setSelectedNodeLabelDisplayMode("hidden"))}>
+                      <Type size={14} />
+                      标识始终隐藏
+                    </button>
+                    <button onClick={() => runContextMenuAction(() => setSelectedNodeLabelDisplayMode("follow"))}>
+                      <Type size={14} />
+                      标识跟随显示
+                    </button>
+                  </div>
+                </div>
+                ) : null
+              )}
+              {isEditMode && contextMenuForSelection && contextSelectionCount > 0 && (
+                <button onClick={() => runContextMenuAction(deleteSelection)}>
+                  <Trash2 size={14} />
+                  删除
+                </button>
+              )}
+            </>
           )}
         </div>
       )}
