@@ -90,6 +90,9 @@ import {
   getDeviceGlyphVariant,
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
+  getTemplateStateDefinitions,
+  normalizeDeviceStatusForE,
+  resolveDeviceStateVisual,
   nodeAllowsResizeTransform,
   ALLOW_RESIZE_TRANSFORM_PARAM,
   isCanvasNodeMovable,
@@ -142,6 +145,7 @@ import {
   DEFAULT_MODEL_LAYER_ID,
   filterProjectByVisibleLayers,
   hydrateSavedSchemeRuntimeIds,
+  mergeSavedSchemesForStartup,
   normalizeModelGroups,
   normalizeSavedProjectRecordNames,
   normalizeProjectLayers,
@@ -1114,6 +1118,126 @@ describe("power system model", () => {
     expect(dcPv.params.ratedCapacity).toBe("5 MW");
   });
 
+  test("adds AC diesel generator as an ACGenerator with diesel glyph", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-diesel-source");
+    expect(template).toMatchObject({
+      label: "柴油发电机",
+      attributeLibrary: "交流设备",
+      terminalType: "ac",
+      terminalCount: 1,
+      params: expect.objectContaining({
+        ratedVoltage: "10 kV",
+        ratedPower: "5 MW",
+        sourceType: "柴油"
+      })
+    });
+
+    const node = createDefaultNode("ac-diesel-source", { x: 100, y: 100 });
+    node.name = "柴油发电机1";
+
+    expect(node.terminals).toHaveLength(1);
+    expect(node.terminals[0]).toMatchObject({ type: "ac", label: "交流设备端1" });
+    expect(node.params.ratedCapacity).toBe("5 MW");
+    expect(node.params.controlType).toBe("PV");
+    expect(node.params.sourceType).toBe("柴油");
+    expect(inferESection("ac-diesel-source", node.params)).toBe("ACGenerator");
+    expect(getDeviceGlyphVariant("ac-diesel-source")).toBe("diesel-source");
+
+    const exported = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "柴油发电机测试",
+      nodes: [node],
+      edges: []
+    }));
+
+    expect(exported.ACGenerator.rows).toEqual([
+      expect.objectContaining({
+        idx: "1",
+        name: "柴油发电机1",
+        node: "1",
+        control_type: "PV",
+        p_set: "0",
+        run_stat: "1"
+      })
+    ]);
+  });
+
+  test("defines template device status states separately from run_stat", () => {
+    const switchTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-switch")!;
+    const states = getTemplateStateDefinitions(switchTemplate);
+
+    expect(states.map((state) => ({ value: state.value, name: state.name }))).toEqual([
+      { value: "0", name: "打开/开断" },
+      { value: "1", name: "闭合" }
+    ]);
+
+    const switchNode = createDefaultNode("ac-switch", { x: 100, y: 100 });
+    expect(switchNode.params.status).toBe("1");
+    expect(switchNode.params.run_stat).toBe("运行");
+    expect(switchNode.params).not.toHaveProperty("_stateDefinitions");
+
+    expect(normalizeDeviceStatusForE("0")).toBe("0");
+    expect(normalizeDeviceStatusForE("1")).toBe("1");
+    expect(normalizeDeviceStatusForE("2")).toBe("1");
+    expect(normalizeDeviceStatusForE("打开/开断")).toBe("0");
+    expect(normalizeDeviceStatusForE("闭合")).toBe("1");
+
+    const exportedOpen = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "开关状态导出",
+      nodes: [{ ...switchNode, name: "交流开关1", params: { ...switchNode.params, status: "0", run_stat: "停运" } }],
+      edges: []
+    }));
+
+    expect(exportedOpen.ACSwitch.rows).toEqual([
+      expect.objectContaining({
+        status: "0",
+        run_stat: "0"
+      })
+    ]);
+  });
+
+  test("resolves custom multi-state visual overrides without changing E export shape", () => {
+    const template: DeviceTemplate = {
+      ...DEVICE_LIBRARY.find((item) => item.kind === "ac-switch")!,
+      kind: "custom-state-switch" as DeviceKind,
+      label: "多状态开关",
+      custom: true,
+      params: {
+        component_type: "ACSwitch",
+        foregroundColor: "#111827"
+      },
+      stateDefinitions: [
+        { value: "0", name: "打开", text: "OFF", color: "#ef4444", image: "open.svg" },
+        { value: "1", name: "闭合", text: "ON", color: "#22c55e", image: "closed.svg" },
+        { value: "2", name: "检修", text: "M", color: "#f59e0b", image: "maint.svg" }
+      ]
+    };
+
+    const node = createNodeFromTemplate(template, { x: 100, y: 100 });
+    expect(node.params.status).toBe("0");
+    expect(node.params.run_stat).toBe("运行");
+
+    const visual = resolveDeviceStateVisual(template, { ...node, params: { ...node.params, status: "2" } });
+    expect(visual).toMatchObject({
+      value: "2",
+      name: "检修",
+      text: "M",
+      color: "#f59e0b",
+      image: "maint.svg"
+    });
+
+    const exported = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "多状态开关导出",
+      nodes: [{ ...node, name: "多状态开关1", params: { ...node.params, status: "2" } }],
+      edges: []
+    }));
+
+    expect(exported.ACSwitch.rows).toHaveLength(1);
+    expect(exported.ACSwitch.rows[0]).toEqual(expect.objectContaining({ status: "1", run_stat: "1" }));
+  });
+
   test("creates DC source with exactly one DC terminal and one DC node number", () => {
     const dcSource = createDefaultNode("dc-source", { x: 100, y: 100 });
 
@@ -1235,7 +1359,7 @@ describe("power system model", () => {
       attributeLibrary: "交流设备",
       terminalType: "ac",
       terminalCount: 2,
-      params: expect.objectContaining({ status: "合闸" })
+      params: expect.objectContaining({ status: "1" })
     });
 
     const node = createDefaultNode("ac-box-breaker", { x: 100, y: 100 });
@@ -1513,6 +1637,7 @@ describe("power system model", () => {
   test("places converter elements under AC/DC device library groups", () => {
     expect(DEVICE_LIBRARY.find((item) => item.kind === "acac-converter")).toMatchObject({ attributeLibrary: "交流设备" });
     expect(DEVICE_LIBRARY.find((item) => item.kind === "acdc-converter")).toMatchObject({ attributeLibrary: "直流设备" });
+    expect(DEVICE_LIBRARY.find((item) => item.kind === "dcac-converter")).toMatchObject({ attributeLibrary: "直流设备" });
     expect(DEVICE_LIBRARY.find((item) => item.kind === "dcdc-converter")).toMatchObject({ attributeLibrary: "直流设备" });
   });
 
@@ -1524,14 +1649,14 @@ describe("power system model", () => {
       attributeLibrary: "交流设备",
       terminalType: "ac",
       terminalCount: 1,
-      params: expect.objectContaining({ status: "分闸" })
+      params: expect.objectContaining({ status: "0" })
     });
     expect(verticalTemplate).toMatchObject({
       label: "竖向接地刀闸",
       attributeLibrary: "交流设备",
       terminalType: "ac",
       terminalCount: 1,
-      params: expect.objectContaining({ status: "分闸" })
+      params: expect.objectContaining({ status: "0" })
     });
 
     const node = createDefaultNode("ac-ground-disconnector", { x: 100, y: 100 });
@@ -3162,7 +3287,8 @@ describe("power system model", () => {
     expect(acSwitch.terminals[0].nodeNumber).toMatch(/^N\d+$/);
     expect(acSwitch.terminals[1].nodeNumber).toMatch(/^N\d+$/);
     expect(acSwitch.params.ratedCapacity).toBe("1250 A");
-    expect(acSwitch.params.closedStatus).toBe("闭合");
+    expect(acSwitch.params.status).toBe("1");
+    expect(acSwitch.params.closedStatus).toBeUndefined();
     expect(getSwitchVisualState(acSwitch)).toBe("closed");
     acSwitch.params.status = "0";
     expect(getSwitchVisualState(acSwitch)).toBe("open");
@@ -7558,6 +7684,8 @@ describe("power system model", () => {
     expect(voltageBaseSettingModeForNode(createDefaultNode("ac-three-winding-transformer", { x: 220, y: 100 }))).toBe("terminal");
     expect(voltageBaseSettingModeForNode(createDefaultNode("dcdc-converter", { x: 340, y: 100 }))).toBe("terminal");
     expect(voltageBaseSettingModeForNode(createDefaultNode("acdc-converter", { x: 460, y: 100 }))).toBe("terminal");
+    expect(voltageBaseSettingModeForNode(createDefaultNode("dcac-converter", { x: 520, y: 100 }))).toBe("terminal");
+    expect(voltageBaseSettingModeForNode(createDefaultNode("dcac-converter-vertical", { x: 560, y: 100 }))).toBe("terminal");
     expect(voltageBaseSettingModeForNode(createDefaultNode("acac-converter", { x: 580, y: 100 }))).toBe("terminal");
     expect(voltageBaseSettingModeForNode(createDefaultNode("ac-line", { x: 100, y: 220 }))).toBe("uniform");
     expect(voltageBaseSettingModeForNode(createDefaultNode("ac-switch", { x: 220, y: 220 }))).toBe("uniform");
@@ -7632,9 +7760,10 @@ describe("power system model", () => {
     const converterVariants = new Set([
       getDeviceGlyphVariant("dcdc-converter"),
       getDeviceGlyphVariant("acdc-converter"),
+      getDeviceGlyphVariant("dcac-converter"),
       getDeviceGlyphVariant("acac-converter")
     ]);
-    expect(converterVariants).toEqual(new Set(["dcdc-converter", "acdc-converter", "acac-converter"]));
+    expect(converterVariants).toEqual(new Set(["dcdc-converter", "acdc-converter", "dcac-converter", "acac-converter"]));
   });
 
   test("creates static drawing primitives without electrical terminals", () => {
@@ -7921,6 +8050,11 @@ describe("power system model", () => {
     expect(converter.params.targetVbase).toBe("0");
     expect(converter.terminals.map((terminal) => terminal.type)).toEqual(["ac", "dc"]);
     expect(converter.terminals.map((terminal) => terminal.vbase)).toEqual(["0", "0"]);
+    const dcacConverter = createDefaultNode("dcac-converter", { x: 500, y: 100 });
+    expect(dcacConverter.params.sourceVbase).toBe("0");
+    expect(dcacConverter.params.targetVbase).toBe("0");
+    expect(dcacConverter.terminals.map((terminal) => terminal.type)).toEqual(["dc", "ac"]);
+    expect(dcacConverter.terminals.map((terminal) => terminal.vbase)).toEqual(["0", "0"]);
   });
 
   test("keeps ACDC converter terminal 1 as AC and terminal 2 as DC for connection rules and legacy nodes", () => {
@@ -7940,6 +8074,36 @@ describe("power system model", () => {
     const normalized = normalizeNodeTerminalsByTemplate(legacyConverter);
     expect(normalized.terminals.map((terminal) => terminal.type)).toEqual(["ac", "dc"]);
     expect(normalized.terminals.map((terminal) => terminal.vbase)).toEqual(["10 kV", "0"]);
+  });
+
+  test("adds DCAC converter variants with DC first and AC second terminals", () => {
+    const horizontal = createDefaultNode("dcac-converter", { x: 100, y: 100 });
+    const vertical = createDefaultNode("dcac-converter-vertical", { x: 300, y: 300 });
+    const acLoad = createDefaultNode("ac-load", { x: 500, y: 100 });
+    const dcLoad = createDefaultNode("dc-load", { x: 500, y: 240 });
+
+    expect(DEVICE_LIBRARY.find((item) => item.kind === "dcac-converter")).toMatchObject({
+      label: "DCAC变流器",
+      attributeLibrary: "直流设备",
+      terminalTypes: ["dc", "ac"]
+    });
+    expect(DEVICE_LIBRARY.find((item) => item.kind === "dcac-converter-vertical")).toMatchObject({
+      label: "DCAC变流器（竖向）",
+      terminalTypes: ["dc", "ac"],
+      rotation: 90
+    });
+    expect(inferESection("dcac-converter", horizontal.params)).toBe("DCACConverter");
+    expect(inferESection("dcac-converter-vertical", vertical.params)).toBe("DCACConverter");
+    expect(horizontal.terminals.map((terminal) => terminal.type)).toEqual(["dc", "ac"]);
+    expect(getTerminalPoint(horizontal, "t1")).toEqual({ x: horizontal.position.x - horizontal.size.width / 2 - 12, y: horizontal.position.y });
+    expect(getTerminalPoint(horizontal, "t2")).toEqual({ x: horizontal.position.x + horizontal.size.width / 2 + 12, y: horizontal.position.y });
+    expect(vertical.terminals.map((terminal) => terminal.type)).toEqual(["dc", "ac"]);
+    expect(getTerminalPoint(vertical, "t1")).toEqual({ x: vertical.position.x, y: vertical.position.y - vertical.size.width / 2 - 12 });
+    expect(getTerminalPoint(vertical, "t2")).toEqual({ x: vertical.position.x, y: vertical.position.y + vertical.size.width / 2 + 12 });
+    expect(canConnectTerminals(horizontal, "t1", dcLoad, "t1")).toBe(true);
+    expect(canConnectTerminals(horizontal, "t2", acLoad, "t1")).toBe(true);
+    expect(canConnectTerminals(horizontal, "t1", acLoad, "t1")).toBe(false);
+    expect(canConnectTerminals(horizontal, "t2", dcLoad, "t1")).toBe(false);
   });
 
   test("exports DCDC converter endpoint control types with supported values", () => {
@@ -8015,22 +8179,48 @@ describe("power system model", () => {
 
   test("exports DCAC converter control_type with only supported values", () => {
     const defaultConverter = createDefaultNode("acdc-converter", { x: 100, y: 100 });
+    const dcacConverter = createDefaultNode("dcac-converter", { x: 160, y: 100 });
+    const verticalDcacConverter = createDefaultNode("dcac-converter-vertical", { x: 220, y: 100 });
     const invalidConverter = createDefaultNode("acdc-converter", { x: 240, y: 100 });
     const acVoltageConverter = createDefaultNode("acdc-converter", { x: 380, y: 100 });
+    defaultConverter.name = "ACDC";
+    dcacConverter.name = "DCAC";
+    verticalDcacConverter.name = "DCAC竖向";
+    invalidConverter.name = "ACDC旧控制";
+    acVoltageConverter.name = "ACDC交流定压";
     defaultConverter.params.control_type = "DCV";
+    dcacConverter.params.control_type = "ACP";
+    verticalDcacConverter.params.control_type = "ACV";
     invalidConverter.params.control_type = "PQ";
     invalidConverter.params.acControlType = "定PQ";
     acVoltageConverter.params.control_type = "ACV";
+    const nodes = [defaultConverter, dcacConverter, verticalDcacConverter, invalidConverter, acVoltageConverter];
 
     const payload = parseESections(buildEDeviceParameterFile({
       version: 1,
       name: "DCAC控制类型测试",
-      nodes: [defaultConverter, invalidConverter, acVoltageConverter],
+      nodes,
       edges: []
     }));
     const values = payload.DCACConverter.rows.map((row) => row.control_type);
+    const topologyNodeById = new Map(calculateElectricalTopology(nodes, []).map((node) => [node.id, node]));
+    const topologyNodeNumberForType = (node: ModelNode, type: "ac" | "dc") =>
+      topologyNodeById.get(node.id)?.terminals.find((terminal) => terminal.type === type)?.nodeNumber;
+    const rowByName = new Map(payload.DCACConverter.rows.map((row) => [row.name, row]));
 
-    expect(values).toEqual(["DCV", "ACP", "ACV"]);
+    expect(rowByName.get("ACDC")).toMatchObject({
+      ac_node: topologyNodeNumberForType(defaultConverter, "ac"),
+      dc_node: topologyNodeNumberForType(defaultConverter, "dc")
+    });
+    expect(rowByName.get("DCAC")).toMatchObject({
+      ac_node: topologyNodeNumberForType(dcacConverter, "ac"),
+      dc_node: topologyNodeNumberForType(dcacConverter, "dc")
+    });
+    expect(rowByName.get("DCAC竖向")).toMatchObject({
+      ac_node: topologyNodeNumberForType(verticalDcacConverter, "ac"),
+      dc_node: topologyNodeNumberForType(verticalDcacConverter, "dc")
+    });
+    expect(values).toEqual(["DCV", "ACP", "ACV", "ACP", "ACV"]);
     expect(values.every((value) => (DCAC_CONVERTER_CONTROL_TYPES as readonly string[]).includes(value))).toBe(true);
   });
 
@@ -8498,6 +8688,52 @@ describe("power system model", () => {
     expect(persistedText).not.toContain("scheme-root-legacy");
     expect(persistedText).not.toContain("scheme-child-legacy");
     expect(persistedText).not.toContain("project-legacy");
+  });
+
+  test("merges startup local-only models with backend schemes without dropping unsynced work", () => {
+    const localOnly = createSavedProject("qinling", {
+      version: 1,
+      name: "qinling",
+      canvasWidth: 2400,
+      nodes: [createDefaultNode("ac-bus", { x: 100, y: 100 })],
+      edges: []
+    });
+    const olderBackend = {
+      ...createSavedProject("山西", {
+        version: 1,
+        name: "山西",
+        canvasWidth: 1200,
+        nodes: [],
+        edges: []
+      }),
+      updatedAt: "2026-06-07T12:00:00.000Z"
+    };
+    const newerLocal = {
+      ...createSavedProject("山西", {
+        version: 1,
+        name: "山西",
+        canvasWidth: 1800,
+        nodes: [],
+        edges: []
+      }),
+      updatedAt: "2026-06-08T12:00:00.000Z"
+    };
+    const backendOnly = createSavedProject("test", {
+      version: 1,
+      name: "test",
+      canvasWidth: 1600,
+      nodes: [],
+      edges: []
+    });
+    const local = [createSavedScheme("默认方案", [localOnly, newerLocal])];
+    const backend = [createSavedScheme("默认方案", [olderBackend, backendOnly])];
+
+    const merged = mergeSavedSchemesForStartup(local, backend);
+    const defaultScheme = merged.find((scheme) => scheme.name === "默认方案");
+
+    expect(defaultScheme?.projects.map((project) => project.name).sort()).toEqual(["qinling", "test", "山西"].sort());
+    expect(defaultScheme?.projects.find((project) => project.name === "qinling")?.project.nodes).toHaveLength(1);
+    expect(defaultScheme?.projects.find((project) => project.name === "山西")?.project.canvasWidth).toBe(1800);
   });
 
   test("copies saved project and scheme records with automatic unique names", () => {

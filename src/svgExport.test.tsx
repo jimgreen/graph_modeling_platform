@@ -1,9 +1,35 @@
 import { describe, expect, test } from "vitest";
 import { buildSvgDocument } from "./App";
-import { createDefaultNode, type Edge } from "./model";
+import { createDefaultNode, createNodeFromTemplate, DEVICE_LIBRARY, type DeviceKind, type DeviceTemplate, type Edge } from "./model";
 import type { ProjectMeasurementConfig } from "./measurements";
 
 describe("SVG export", () => {
+  test("exports custom multi-state visual overrides from template definitions", () => {
+    const template: DeviceTemplate = {
+      ...DEVICE_LIBRARY.find((item) => item.kind === "ac-switch")!,
+      kind: "custom-export-state-switch" as DeviceKind,
+      label: "导出多状态开关",
+      custom: true,
+      params: { component_type: "ACSwitch" },
+      stateDefinitions: [
+        { value: "0", name: "打开", text: "OFF", color: "#ef4444" },
+        { value: "1", name: "闭合", text: "ON", color: "#22c55e" },
+        { value: "2", name: "检修", text: "M", color: "#f59e0b", image: "maint.svg" }
+      ]
+    };
+    const node = {
+      ...createNodeFromTemplate(template, { x: 140, y: 120 }),
+      id: "custom-state-node"
+    };
+    node.params.status = "2";
+
+    const svg = buildSvgDocument([node], [], { width: 300, height: 240, deviceTemplates: [template] });
+
+    expect(svg).toContain("#f59e0b");
+    expect(svg).toContain(">M<");
+    expect(svg).toContain('href="maint.svg"');
+  });
+
   test("exports template-compatible root, defs, typed layers and unique ids", () => {
     const generator = { ...createDefaultNode("ac-source", { x: 120, y: 140 }), id: "source-1" };
     const load = { ...createDefaultNode("ac-load", { x: 280, y: 140 }), id: "load-1" };

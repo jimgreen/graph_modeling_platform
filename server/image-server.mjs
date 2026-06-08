@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
-import { extname, join, resolve } from "node:path";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -10,6 +10,7 @@ const imageDataDir = resolve(repoRoot, "data", "images");
 const manifestPath = join(imageDataDir, "manifest.json");
 const imageFoldersPath = join(imageDataDir, "folders.json");
 const schemeDataDir = resolve(repoRoot, "data", "schemes");
+const schemeTrashDir = join(schemeDataDir, "trash");
 const settingsDataDir = resolve(repoRoot, "data", "settings");
 const colorConfigPath = join(settingsDataDir, "color-config.json");
 const measurementConfigPath = join(settingsDataDir, "measurement-config.json");
@@ -835,7 +836,7 @@ function inferESection(kind, params = {}) {
   if (kind === "ac-transformer" || kind === "ac-two-winding-transformer") return "ACTransformer";
   if (kind === "ac-three-winding-transformer" || kind === "ac-three-winding-transformer-neutral") return "ACTransfomer3";
   if (kind === "dcdc-converter") return "DCDCConverter";
-  if (kind === "acdc-converter") return "DCACConverter";
+  if (kind === "acdc-converter" || kind === "dcac-converter" || kind === "dcac-converter-vertical") return "DCACConverter";
   if (kind === "acac-converter") return "ACACConverter";
   return "";
 }
@@ -1579,14 +1580,148 @@ async function listSchemeStoreEntries(root) {
   return { files, dirs };
 }
 
-async function removeStaleSchemeFiles(filesRoot, expectedFiles, expectedDirs) {
+function schemeArchiveId() {
+  return new Date().toISOString().replace(/[.:]/gu, "-");
+}
+
+async function archiveSchemeStoreEntry(entryPath, filesRoot, trashRoot, archiveId) {
+  const relativePath = relative(filesRoot, entryPath);
+  if (!relativePath || relativePath.startsWith("..")) {
+    return;
+  }
+  let targetPath = join(trashRoot, archiveId, relativePath);
+  await mkdir(dirname(targetPath), { recursive: true });
+  for (let index = 2; ; index += 1) {
+    try {
+      await rename(entryPath, targetPath);
+      return;
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        return;
+      }
+      if (error?.code !== "EEXIST") {
+        throw error;
+      }
+      const suffix = `.${index}`;
+      targetPath = join(dirname(targetPath), `${safeFilePart(entryPath.split(/[\\/]/u).pop(), "archived")}${suffix}`);
+    }
+  }
+}
+
+export async function archiveStaleSchemeFiles(filesRoot, expectedFiles, expectedDirs, options = {}) {
   const { files, dirs } = await listSchemeStoreEntries(filesRoot);
-  await Promise.all(files.filter((filePath) => !expectedFiles.has(filePath)).map((filePath) => rm(filePath, { force: true })));
+  const trashRoot = options.trashRoot ?? schemeTrashDir;
+  const archiveId = options.archiveId ?? schemeArchiveId();
+  await Promise.all(files.filter((filePath) => !expectedFiles.has(filePath)).map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, archiveId)));
   for (const dir of dirs.sort((first, second) => second.length - first.length)) {
     if (!expectedDirs.has(dir)) {
       await rm(dir, { recursive: true, force: true });
     }
   }
+}
+
+async function removeStaleSchemeFiles(filesRoot, expectedFiles, expectedDirs) {
+  await archiveStaleSchemeFiles(filesRoot, expectedFiles, expectedDirs);
+}
+
+function schemeDirectoryFromPath(filesRoot, schemePath) {
+  const parts = (Array.isArray(schemePath) ? schemePath : [])
+    .map((part) => safeFilePart(part, "方案"))
+    .filter(Boolean);
+  return parts.reduce((dir, part) => join(dir, part), filesRoot);
+}
+
+function sameSchemePath(first, second) {
+  const firstParts = Array.isArray(first) ? first.map((part) => safeFilePart(part, "方案")) : [];
+  const secondParts = Array.isArray(second) ? second.map((part) => safeFilePart(part, "方案")) : [];
+  return firstParts.length === secondParts.length && firstParts.every((part, index) => part === secondParts[index]);
+}
+
+export async function saveSchemeRecordDirectory(options) {
+  const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
+  const schemePath = Array.isArray(options.schemePath) && options.schemePath.length > 0 ? options.schemePath : ["默认方案"];
+  const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
+  const previousSchemePath = options.previousSchemePath;
+  if (Array.isArray(previousSchemePath) && previousSchemePath.length > 0 && !sameSchemePath(previousSchemePath, schemePath)) {
+    const previousDir = schemeDirectoryFromPath(filesRoot, previousSchemePath);
+    await mkdir(dirname(schemeDir), { recursive: true });
+    try {
+      await rename(previousDir, schemeDir);
+      return;
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        throw error;
+      }
+    }
+  }
+  await mkdir(schemeDir, { recursive: true });
+}
+
+export async function deleteSchemeRecordDirectory(options) {
+  const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
+  const trashRoot = options.trashRoot ?? schemeTrashDir;
+  const schemePath = Array.isArray(options.schemePath) && options.schemePath.length > 0 ? options.schemePath : [];
+  if (schemePath.length === 0) {
+    return;
+  }
+  const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
+  await archiveSchemeStoreEntry(schemeDir, filesRoot, trashRoot, options.archiveId ?? schemeArchiveId());
+}
+
+function projectFilePathsForName(schemeDir, name) {
+  const baseName = safeFilePart(name, "模型");
+  return {
+    jsonPath: join(schemeDir, `${baseName}.json`),
+    ePath: join(schemeDir, `${baseName}.e`),
+    svgPath: join(schemeDir, `${baseName}.svg`)
+  };
+}
+
+export async function saveSchemeProjectRecord(options) {
+  const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
+  const trashRoot = options.trashRoot ?? schemeTrashDir;
+  const schemePath = Array.isArray(options.schemePath) && options.schemePath.length > 0 ? options.schemePath : ["默认方案"];
+  const record = options.record ?? {};
+  const name = storageProjectDisplayName(record.name || record.project?.name);
+  const updatedAt = record.updatedAt || new Date().toISOString();
+  const project = normalizeProjectForStorage({
+    ...(record.project ?? {}),
+    name
+  });
+  const storedRecord = {
+    ...record,
+    name,
+    updatedAt,
+    project: {
+      ...project,
+      name
+    }
+  };
+  const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
+  await mkdir(schemeDir, { recursive: true });
+  if (options.previousName && storageProjectNameKey(options.previousName) !== storageProjectNameKey(name)) {
+    const previousPaths = projectFilePathsForName(schemeDir, options.previousName);
+    await Promise.all(Object.values(previousPaths).map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, schemeArchiveId())));
+  }
+  const { jsonPath, ePath, svgPath } = projectFilePathsForName(schemeDir, name);
+  const measurementConfig = options.measurementConfig ?? { measurementTypes: [], deviceProfiles: [] };
+  await Promise.all([
+    writeTextIfChanged(jsonPath, stringifyJson(storedRecord.project)),
+    writeTextIfChanged(ePath, buildDeviceParameterFile(storedRecord.project)),
+    writeTextIfChanged(svgPath, buildSvgFile(storedRecord.project, measurementConfig))
+  ]);
+  return storedRecord;
+}
+
+export async function deleteSchemeProjectRecord(options) {
+  const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
+  const trashRoot = options.trashRoot ?? schemeTrashDir;
+  const schemePath = Array.isArray(options.schemePath) && options.schemePath.length > 0 ? options.schemePath : ["默认方案"];
+  const name = storageProjectDisplayName(options.name || options.projectName);
+  const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
+  const archiveId = options.archiveId ?? schemeArchiveId();
+  const paths = projectFilePathsForName(schemeDir, name);
+  await Promise.all(Object.values(paths).map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, archiveId)));
 }
 
 async function writeSchemeFiles(schemes) {
@@ -1760,6 +1895,64 @@ async function handleSaveSchemes(request, response) {
   sendJson(response, 200, { ok: true, schemes: normalized, savedAt: new Date().toISOString() });
 }
 
+async function handleSaveSchemeProject(request, response) {
+  const payload = await readJsonBody(request, maxSchemeBodyBytes, "模型数据过大，最大支持 64MB。");
+  const record = payload.record ?? {
+    name: payload.name || payload.project?.name,
+    updatedAt: payload.updatedAt,
+    project: payload.project
+  };
+  if (!record?.project || typeof record.project !== "object") {
+    sendError(response, 400, "缺少模型数据。");
+    return;
+  }
+  const savedRecord = await saveSchemeProjectRecord({
+    schemePath: payload.schemePath,
+    record,
+    previousName: payload.previousName,
+    measurementConfig: await readMeasurementConfig()
+  });
+  sendJson(response, 200, { ok: true, project: savedRecord, savedAt: new Date().toISOString() });
+}
+
+async function handleDeleteSchemeProject(request, response) {
+  const payload = await readJsonBody(request, maxSchemeBodyBytes, "模型数据过大，最大支持 64MB。");
+  if (!payload.name && !payload.projectName) {
+    sendError(response, 400, "缺少模型名称。");
+    return;
+  }
+  await deleteSchemeProjectRecord({
+    schemePath: payload.schemePath,
+    name: payload.name || payload.projectName
+  });
+  sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });
+}
+
+async function handleSaveSchemeRecord(request, response) {
+  const payload = await readJsonBody(request, maxSchemeBodyBytes, "方案数据过大，最大支持 64MB。");
+  if (!Array.isArray(payload.schemePath) || payload.schemePath.length === 0) {
+    sendError(response, 400, "缺少方案路径。");
+    return;
+  }
+  await saveSchemeRecordDirectory({
+    schemePath: payload.schemePath,
+    previousSchemePath: payload.previousSchemePath
+  });
+  sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });
+}
+
+async function handleDeleteSchemeRecord(request, response) {
+  const payload = await readJsonBody(request, maxSchemeBodyBytes, "方案数据过大，最大支持 64MB。");
+  if (!Array.isArray(payload.schemePath) || payload.schemePath.length === 0) {
+    sendError(response, 400, "缺少方案路径。");
+    return;
+  }
+  await deleteSchemeRecordDirectory({
+    schemePath: payload.schemePath
+  });
+  sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });
+}
+
 async function handleSaveColorConfig(request, response) {
   const payload = await readJsonBody(request, maxColorConfigBodyBytes, "配色配置数据过大，最大支持 1MB。");
   const normalized = await writeColorConfig(payload);
@@ -1811,6 +2004,18 @@ export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
     }],
     ["PUT /api/schemes", async ({ request, response }) => {
       await handleSaveSchemes(request, response);
+    }],
+    ["PUT /api/schemes/project", async ({ request, response }) => {
+      await handleSaveSchemeProject(request, response);
+    }],
+    ["DELETE /api/schemes/project", async ({ request, response }) => {
+      await handleDeleteSchemeProject(request, response);
+    }],
+    ["PUT /api/schemes/scheme", async ({ request, response }) => {
+      await handleSaveSchemeRecord(request, response);
+    }],
+    ["DELETE /api/schemes/scheme", async ({ request, response }) => {
+      await handleDeleteSchemeRecord(request, response);
     }],
     ["GET /api/color-config", async ({ response }) => {
       const colorConfig = await readColorConfig();

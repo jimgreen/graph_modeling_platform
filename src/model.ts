@@ -52,6 +52,7 @@ export type DeviceKind =
   | "ac-pv-source"
   | "dc-pv-source"
   | "ac-thermal-source"
+  | "ac-diesel-source"
   | "ac-hydro-source"
   | "ac-nuclear-source"
   | "ac-storage"
@@ -121,6 +122,7 @@ export type DeviceKind =
   | "dc-transformer"
   | "dcdc-converter"
   | "acdc-converter"
+  | "dcac-converter"
   | "acac-converter"
   | (string & {});
 
@@ -131,6 +133,7 @@ export type DeviceGlyphVariant =
   | "wind-source"
   | "pv-source"
   | "thermal-source"
+  | "diesel-source"
   | "hydro-source"
   | "nuclear-source"
   | "battery-storage"
@@ -189,6 +192,7 @@ export type DeviceGlyphVariant =
   | "terminal-transformer-load"
   | "dcdc-converter"
   | "acdc-converter"
+  | "dcac-converter"
   | "acac-converter"
   | "default";
 
@@ -258,6 +262,26 @@ export type DeviceParameterDefinition = {
   readonly?: boolean;
 };
 
+export type DeviceStateDefinition = {
+  value: string;
+  name: string;
+  icon?: string;
+  image?: string;
+  imageAssetId?: string;
+  text?: string;
+  color?: string;
+  fillColor?: string;
+  strokeColor?: string;
+  textColor?: string;
+  backgroundImage?: string;
+  backgroundImageAssetId?: string;
+};
+
+export type DeviceStateVisual = DeviceStateDefinition & {
+  value: string;
+  name: string;
+};
+
 export type Terminal = {
   id: string;
   label: string;
@@ -287,6 +311,7 @@ export type DeviceTemplate = {
   allowResizeTransform?: boolean;
   custom?: boolean;
   parameterDefinitions?: DeviceParameterDefinition[];
+  stateDefinitions?: DeviceStateDefinition[];
   rotation?: number;
 };
 
@@ -304,6 +329,7 @@ export type DeviceTemplateDefinitionOverride = {
   isContainer?: boolean;
   allowResizeTransform?: boolean;
   parameterDefinitions?: DeviceParameterDefinition[];
+  stateDefinitions?: DeviceStateDefinition[];
   updatedAt?: string;
 };
 
@@ -821,9 +847,133 @@ export function inferESection(kind: string, params: Record<string, string> = {})
   if (sectionKind === "ac-transformer" || sectionKind === "ac-two-winding-transformer") return "ACTransformer";
   if (sectionKind === "ac-three-winding-transformer" || sectionKind === "ac-three-winding-transformer-neutral") return "ACTransfomer3";
   if (sectionKind === "dcdc-converter") return "DCDCConverter";
-  if (sectionKind === "acdc-converter") return "DCACConverter";
+  if (sectionKind === "acdc-converter" || sectionKind === "dcac-converter") return "DCACConverter";
   if (sectionKind === "acac-converter") return "ACACConverter";
   return "";
+}
+
+function hasEStatusColumn(kind: string, params: Record<string, string> = {}) {
+  const section = inferESection(kind, params);
+  return Boolean(section && E_SECTION_COLUMNS[section]?.includes("status"));
+}
+
+function isDefaultBinaryStateDeviceKind(kind: string, params: Record<string, string> = {}) {
+  const baseKind = baseDeviceKind(kind);
+  return (
+    hasEStatusColumn(baseKind, params) ||
+    baseKind.includes("switch") ||
+    baseKind.includes("breaker") ||
+    baseKind.includes("disconnector") ||
+    baseKind.includes("valve")
+  );
+}
+
+function cloneDeviceStateDefinition(definition: DeviceStateDefinition): DeviceStateDefinition {
+  return {
+    value: definition.value,
+    name: definition.name,
+    ...(definition.icon ? { icon: definition.icon } : {}),
+    ...(definition.image ? { image: definition.image } : {}),
+    ...(definition.imageAssetId ? { imageAssetId: definition.imageAssetId } : {}),
+    ...(definition.text ? { text: definition.text } : {}),
+    ...(definition.color ? { color: definition.color } : {}),
+    ...(definition.fillColor ? { fillColor: definition.fillColor } : {}),
+    ...(definition.strokeColor ? { strokeColor: definition.strokeColor } : {}),
+    ...(definition.textColor ? { textColor: definition.textColor } : {}),
+    ...(definition.backgroundImage ? { backgroundImage: definition.backgroundImage } : {}),
+    ...(definition.backgroundImageAssetId ? { backgroundImageAssetId: definition.backgroundImageAssetId } : {})
+  };
+}
+
+export function normalizeDeviceStateDefinitions(value: unknown): DeviceStateDefinition[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const seen = new Set<string>();
+  const states: DeviceStateDefinition[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const source = item as Partial<DeviceStateDefinition>;
+    const stateValue = normalizeDeviceStateValue(source.value);
+    if (!stateValue || seen.has(stateValue)) {
+      continue;
+    }
+    seen.add(stateValue);
+    const state: DeviceStateDefinition = {
+      value: stateValue,
+      name: String(source.name ?? stateValue).trim() || stateValue
+    };
+    for (const key of ["icon", "image", "imageAssetId", "text", "color", "fillColor", "strokeColor", "textColor", "backgroundImage", "backgroundImageAssetId"] as const) {
+      const text = String(source[key] ?? "").trim();
+      if (text) {
+        state[key] = text;
+      }
+    }
+    states.push(state);
+  }
+  return states;
+}
+
+function defaultDeviceStateDefinitionsForTemplate(template: Pick<DeviceTemplate, "kind" | "params">): DeviceStateDefinition[] {
+  return isDefaultBinaryStateDeviceKind(template.kind, template.params)
+    ? DEFAULT_BINARY_DEVICE_STATE_DEFINITIONS.map(cloneDeviceStateDefinition)
+    : [];
+}
+
+export function getTemplateStateDefinitions(template: Pick<DeviceTemplate, "kind" | "params"> & Partial<Pick<DeviceTemplate, "stateDefinitions">>): DeviceStateDefinition[] {
+  if (Array.isArray(template.stateDefinitions)) {
+    return normalizeDeviceStateDefinitions(template.stateDefinitions);
+  }
+  return defaultDeviceStateDefinitionsForTemplate(template);
+}
+
+export function defaultDeviceStatusValue(template: Pick<DeviceTemplate, "kind" | "params"> & Partial<Pick<DeviceTemplate, "stateDefinitions">>) {
+  const states = getTemplateStateDefinitions(template);
+  if (states.length === 0) {
+    return "";
+  }
+  const explicitStatus = normalizeDeviceStateValue(template.params?.status);
+  if (explicitStatus) {
+    const exact = states.find((state) => state.value === explicitStatus);
+    if (exact) {
+      return exact.value;
+    }
+    const normalized = normalizeDeviceStatusForE(explicitStatus);
+    const match = states.find((state) => normalizeDeviceStatusForE(state.value) === normalized);
+    if (match) {
+      return match.value;
+    }
+    return normalized;
+  }
+  if (Array.isArray(template.stateDefinitions)) {
+    return states[0]?.value ?? "";
+  }
+  const baseKind = baseDeviceKind(template.kind);
+  if (baseKind.includes("ground-disconnector")) {
+    return "0";
+  }
+  if (isDefaultBinaryStateDeviceKind(baseKind, template.params)) {
+    return "1";
+  }
+  return states[0]?.value ?? "";
+}
+
+export function resolveDeviceStateVisual(
+  template: Pick<DeviceTemplate, "kind" | "params"> & Partial<Pick<DeviceTemplate, "stateDefinitions">>,
+  node: Pick<ModelNode, "params">
+): DeviceStateVisual | null {
+  const states = getTemplateStateDefinitions(template);
+  if (states.length === 0) {
+    return null;
+  }
+  const current = normalizeDeviceStateValue(node.params.status) || defaultDeviceStatusValue(template);
+  const normalizedCurrent = normalizeDeviceStatusForE(current);
+  const state = states.find((item) => item.value === current) ??
+    states.find((item) => normalizeDeviceStatusForE(item.value) === normalizedCurrent) ??
+    states[0];
+  return state ? { ...cloneDeviceStateDefinition(state), value: current || state.value, name: state.name } : null;
 }
 
 export type DeviceIndexCounters = Record<string, number>;
@@ -1226,13 +1376,46 @@ function normalizeRunStatForE(value?: string) {
   return value;
 }
 
+const DEFAULT_BINARY_DEVICE_STATE_DEFINITIONS: DeviceStateDefinition[] = [
+  { value: "0", name: "打开/开断" },
+  { value: "1", name: "闭合" }
+];
+
+function normalizeDeviceStateValue(value?: string) {
+  return String(value ?? "").trim();
+}
+
+export function normalizeDeviceStatusForE(value?: string) {
+  const normalized = normalizeDeviceStateValue(value);
+  if (!normalized) return "";
+  const lower = normalized.toLowerCase();
+  if (
+    normalized === "0" ||
+    normalized === "打开" ||
+    normalized === "开断" ||
+    normalized === "打开/开断" ||
+    normalized === "分闸" ||
+    lower === "open" ||
+    lower === "off" ||
+    lower === "false"
+  ) {
+    return "0";
+  }
+  if (
+    normalized === "1" ||
+    normalized === "闭合" ||
+    normalized === "合闸" ||
+    lower === "closed" ||
+    lower === "on" ||
+    lower === "true"
+  ) {
+    return "1";
+  }
+  return "1";
+}
+
 function normalizeSwitchStatusForE(value?: string) {
-  if (!value) return "";
-  if (value === "闭合") return "1";
-  if (value === "合闸") return "1";
-  if (value === "打开") return "0";
-  if (value === "分闸") return "0";
-  return value;
+  return normalizeDeviceStatusForE(value);
 }
 
 function normalizeControlTypeForE(value?: string) {
@@ -2701,6 +2884,15 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalCount: 1
   },
   {
+    kind: "ac-diesel-source",
+    label: "柴油发电机",
+    attributeLibrary: "交流设备",
+    size: { width: 92, height: 58 },
+    params: { ratedVoltage: "10 kV", ratedPower: "5 MW", sourceType: "柴油" },
+    terminalType: "ac",
+    terminalCount: 1
+  },
+  {
     kind: "ac-hydro-source",
     label: "交流水电",
     attributeLibrary: "交流设备",
@@ -3164,7 +3356,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流开关",
     attributeLibrary: "交流设备",
     size: { width: 72, height: 48 },
-    params: { status: "合闸", ratedCurrent: "1250 A" },
+    params: { status: "1", ratedCurrent: "1250 A" },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -3173,7 +3365,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "接地刀闸",
     attributeLibrary: "交流设备",
     size: { width: 78, height: 58 },
-    params: { status: "分闸", ratedCurrent: "1250 A" },
+    params: { status: "0", ratedCurrent: "1250 A" },
     terminalType: "ac",
     terminalCount: 1,
     terminalLabels: ["交流系统端"],
@@ -3184,7 +3376,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "竖向接地刀闸",
     attributeLibrary: "交流设备",
     size: { width: 58, height: 78 },
-    params: { status: "分闸", ratedCurrent: "1250 A" },
+    params: { status: "0", ratedCurrent: "1250 A" },
     terminalType: "ac",
     terminalCount: 1,
     terminalLabels: ["交流系统端"],
@@ -3204,7 +3396,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "盒型开关",
     attributeLibrary: "交流设备",
     size: { width: 86, height: 44 },
-    params: { status: "合闸", ratedCurrent: "1250 A" },
+    params: { status: "1", ratedCurrent: "1250 A" },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -3349,7 +3541,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流开关",
     attributeLibrary: "直流设备",
     size: { width: 72, height: 48 },
-    params: { status: "合闸", ratedCurrent: "1600 A" },
+    params: { status: "1", ratedCurrent: "1600 A" },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -3390,6 +3582,16 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalType: "ac",
     terminalCount: 2,
     terminalTypes: ["ac", "dc"]
+  },
+  {
+    kind: "dcac-converter",
+    label: "DCAC变流器",
+    attributeLibrary: "直流设备",
+    size: { width: 112, height: 66 },
+    params: { ratedPower: "10 MW", dcVoltage: "750 V", acVoltage: "10 kV" },
+    terminalType: "dc",
+    terminalCount: 2,
+    terminalTypes: ["dc", "ac"]
   },
   {
     kind: "acac-converter",
@@ -3460,6 +3662,7 @@ function createVerticalDeviceTemplate(template: DeviceTemplate): DeviceTemplate 
     terminalRoles: template.terminalRoles ? [...template.terminalRoles] : undefined,
     terminalAssociations: template.terminalAssociations ? [...template.terminalAssociations] : undefined,
     parameterDefinitions: template.parameterDefinitions?.map((definition) => ({ ...definition })),
+    stateDefinitions: template.stateDefinitions?.map(cloneDeviceStateDefinition),
     rotation: 90
   };
 }
@@ -4089,6 +4292,7 @@ export function getDeviceGlyphVariant(kind: DeviceKind): DeviceGlyphVariant {
   if (glyphKind === "heat-shutoff-valve") return "heat-valve";
   if (glyphKind.includes("wind-source")) return "wind-source";
   if (glyphKind.includes("pv-source")) return "pv-source";
+  if (glyphKind.includes("diesel-source")) return "diesel-source";
   if (glyphKind.includes("thermal-source")) return "thermal-source";
   if (glyphKind.includes("hydro-source")) return "hydro-source";
   if (glyphKind.includes("nuclear-source")) return "nuclear-source";
@@ -4108,6 +4312,7 @@ export function getDeviceGlyphVariant(kind: DeviceKind): DeviceGlyphVariant {
   if (glyphKind.includes("load")) return "load";
   if (glyphKind === "dcdc-converter") return "dcdc-converter";
   if (glyphKind === "acdc-converter") return "acdc-converter";
+  if (glyphKind === "dcac-converter") return "dcac-converter";
   if (glyphKind === "acac-converter") return "acac-converter";
   if (glyphKind.startsWith("custom-") || glyphKind.startsWith("custom:")) return "custom-device";
   return "default";
@@ -4306,6 +4511,7 @@ const DEVICE_STROKE_WIDTH_BY_VARIANT: Partial<Record<DeviceGlyphVariant, number>
   "wind-source": 2.4,
   "pv-source": 2.2,
   "thermal-source": 2.3,
+  "diesel-source": 2.3,
   "nuclear-source": 2.2,
   "battery-storage": 2.4,
   "hydrogen-electrolyzer": 2.3,
@@ -4348,6 +4554,7 @@ const DEVICE_STROKE_WIDTH_BY_VARIANT: Partial<Record<DeviceGlyphVariant, number>
   line: 4,
   "dcdc-converter": 2.2,
   "acdc-converter": 2.2,
+  "dcac-converter": 2.2,
   "acac-converter": 2.2
 };
 
@@ -4548,6 +4755,8 @@ export function applyDeviceTemplateDefinitionOverride(
   const parameterDefinitions = (override.parameterDefinitions ?? [])
     .map((definition) => normalizeTemplateDefinition(definition))
     .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
+  const hasStateDefinitionsOverride = Array.isArray(override.stateDefinitions);
+  const stateDefinitions = hasStateDefinitionsOverride ? normalizeDeviceStateDefinitions(override.stateDefinitions) : template.stateDefinitions?.map(cloneDeviceStateDefinition);
   const overrideParams = Object.fromEntries(
     Object.entries(override.params ?? {}).filter(([key]) => key !== ALLOW_RESIZE_TRANSFORM_PARAM)
   );
@@ -4579,7 +4788,8 @@ export function applyDeviceTemplateDefinitionOverride(
     isContainer: override.isContainer ?? template.isContainer,
     allowResizeTransform: override.allowResizeTransform ?? template.allowResizeTransform,
     params,
-    parameterDefinitions
+    parameterDefinitions,
+    ...(stateDefinitions ? { stateDefinitions } : {})
   };
 }
 
@@ -4645,8 +4855,26 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
           _labelRotation: "0",
           ...params
         };
+  const withStatusDefault = (params: Record<string, string>) => {
+    const states = getTemplateStateDefinitions({ ...template, params });
+    const defaultStatus = defaultDeviceStatusValue({ ...template, params });
+    if (!defaultStatus || states.length === 0) {
+      return params;
+    }
+    const explicitStatus = normalizeDeviceStateValue(params.status);
+    if (!explicitStatus) {
+      return { ...params, status: defaultStatus };
+    }
+    const exact = states.find((state) => state.value === explicitStatus);
+    if (exact) {
+      return { ...params, status: exact.value };
+    }
+    const normalized = normalizeDeviceStatusForE(explicitStatus);
+    const mapped = states.find((state) => normalizeDeviceStatusForE(state.value) === normalized);
+    return { ...params, status: mapped?.value ?? normalized };
+  };
   const withTemplateDefinitions = (params: Record<string, string>) =>
-    withDeviceLabelDefaults(applyTemplateDefinitionDefaults(applyContainerRelationDefaults(withoutResizeTransformParam(params), template), template));
+    withDeviceLabelDefaults(withStatusDefault(applyTemplateDefinitionDefaults(applyContainerRelationDefaults(withoutResizeTransformParam(params), template), template)));
   if (isStaticKind(templateKind)) {
     return withTemplateDefinitions({ ...template.params });
   }
@@ -4808,7 +5036,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       j_control_type: "SLACK"
     }));
   }
-  if (templateKind === "acdc-converter") {
+  if (templateKind === "acdc-converter" || templateKind === "dcac-converter") {
     return withTemplateDefinitions(withRunStat({
       sourceVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       targetVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
@@ -4846,8 +5074,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
     const isGroundDisconnector = templateKind === "ac-ground-disconnector" || templateKind === "ac-ground-disconnector-vertical";
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ratedCapacity: template.terminalType === "ac" ? "1250 A" : "1600 A",
-      status: isGroundDisconnector ? "0" : "1",
-      closedStatus: isGroundDisconnector ? "分闸" : "闭合"
+      status: isGroundDisconnector ? "0" : "1"
     })));
   }
   return withTemplateDefinitions(withRunStat(withDefaultVbase({ ...template.params })));
@@ -6258,7 +6485,7 @@ const CONVERTER_TERMINAL_OUTWARD_OFFSET = 12;
 export const CONVERTER_GLYPH_BORDER_INSET = 8;
 const PIPELINE_TERMINAL_OUTWARD_OFFSET = 16;
 const DEVICE_GLYPH_DESIGN_LONGEST_SIDE = 100;
-const CONVERTER_TERMINAL_KINDS = new Set<DeviceKind>(["dcdc-converter", "acdc-converter", "acac-converter"]);
+const CONVERTER_TERMINAL_KINDS = new Set<DeviceKind>(["dcdc-converter", "acdc-converter", "dcac-converter", "acac-converter"]);
 const LONG_STUB_PIPELINE_TERMINAL_KINDS = new Set<DeviceKind>([
   "hydrogen-pipeline",
   "hydrogen-routable-pipeline",
@@ -6310,7 +6537,7 @@ function deviceGlyphScaleForSize(size: Pick<ModelNode["size"], "width" | "height
 }
 
 function isConverterGlyphVariant(glyphVariant: string): boolean {
-  return glyphVariant === "dcdc-converter" || glyphVariant === "acdc-converter" || glyphVariant === "acac-converter";
+  return glyphVariant === "dcdc-converter" || glyphVariant === "acdc-converter" || glyphVariant === "dcac-converter" || glyphVariant === "acac-converter";
 }
 
 function isHeatSourceGlyphVariant(glyphVariant: string): boolean {
@@ -6433,7 +6660,7 @@ function terminalStubVisibleBoundaryDistance(
     if (glyphVariant === "two-port-heat-load") {
       return scaled(Math.max(w / 2 - 10, 31));
     }
-    if (baseKind.includes("wind-source") || baseKind.includes("pv-source") || baseKind.includes("thermal-source") || baseKind.includes("hydro-source")) {
+    if (baseKind.includes("wind-source") || baseKind.includes("pv-source") || baseKind.includes("thermal-source") || baseKind.includes("diesel-source") || baseKind.includes("hydro-source")) {
       return scaled(22);
     }
     if (baseKind.includes("nuclear-source")) {
@@ -6468,6 +6695,9 @@ function terminalStubVisibleBoundaryDistance(
   }
   if (baseKind.includes("thermal-source")) {
     return terminal.anchor.y < 0 ? scaled(32) : scaled(18);
+  }
+  if (baseKind.includes("diesel-source")) {
+    return terminal.anchor.y < 0 ? scaled(26) : scaled(18);
   }
   if (baseKind.includes("hydro-source")) {
     return terminal.anchor.y < 0 ? scaled(24) : scaled(22);
@@ -8134,6 +8364,7 @@ const TERMINAL_VOLTAGE_BASE_SETTING_KINDS = new Set([
   "ac-three-winding-transformer-neutral",
   "dcdc-converter",
   "acdc-converter",
+  "dcac-converter",
   "acac-converter"
 ]);
 
@@ -9952,6 +10183,54 @@ export function normalizeSavedProjectRecordNames(projects: SavedProjectRecord[])
     }
   }
   return changed ? normalized : projects;
+}
+
+function mergeSavedProjectRecordsForStartup(localProjects: SavedProjectRecord[] = [], backendProjects: SavedProjectRecord[] = []) {
+  const merged = new Map<string, SavedProjectRecord>();
+  for (const project of normalizeSavedProjectRecordNames(backendProjects)) {
+    merged.set(savedProjectRecordNameKey(project.name), project);
+  }
+  for (const project of normalizeSavedProjectRecordNames(localProjects)) {
+    const key = savedProjectRecordNameKey(project.name);
+    const existing = merged.get(key);
+    if (!existing || savedRecordTimestamp(project.updatedAt) >= savedRecordTimestamp(existing.updatedAt)) {
+      merged.set(key, project);
+    }
+  }
+  return normalizeSavedProjectRecordNames(Array.from(merged.values()));
+}
+
+function savedSchemeRecordNameKey(name: string): string {
+  return savedSchemeDisplayName(name).toLocaleLowerCase();
+}
+
+function mergeSavedSchemeLevelsForStartup(localSchemes: SavedSchemeRecord[] = [], backendSchemes: SavedSchemeRecord[] = []): SavedSchemeRecord[] {
+  const merged = new Map<string, SavedSchemeRecord>();
+  for (const scheme of normalizeSavedSchemeRecordNames(backendSchemes)) {
+    merged.set(savedSchemeRecordNameKey(scheme.name), scheme);
+  }
+  for (const localScheme of normalizeSavedSchemeRecordNames(localSchemes)) {
+    const key = savedSchemeRecordNameKey(localScheme.name);
+    const backendScheme = merged.get(key);
+    if (!backendScheme) {
+      merged.set(key, localScheme);
+      continue;
+    }
+    const localUpdatedAt = savedRecordTimestamp(localScheme.updatedAt);
+    const backendUpdatedAt = savedRecordTimestamp(backendScheme.updatedAt);
+    merged.set(key, {
+      ...(backendUpdatedAt >= localUpdatedAt ? backendScheme : localScheme),
+      name: backendScheme.name || localScheme.name,
+      updatedAt: backendUpdatedAt >= localUpdatedAt ? backendScheme.updatedAt : localScheme.updatedAt,
+      projects: mergeSavedProjectRecordsForStartup(localScheme.projects, backendScheme.projects),
+      children: mergeSavedSchemeLevelsForStartup(localScheme.children ?? [], backendScheme.children ?? [])
+    });
+  }
+  return normalizeSavedSchemeRecordNames(Array.from(merged.values()));
+}
+
+export function mergeSavedSchemesForStartup(localSchemes: SavedSchemeRecord[] = [], backendSchemes: SavedSchemeRecord[] = []): SavedSchemeRecord[] {
+  return hydrateSavedSchemeRuntimeIds(mergeSavedSchemeLevelsForStartup(localSchemes, backendSchemes));
 }
 
 export function copySavedProjectWithUniqueName(project: SavedProjectRecord, existingNames: string[], suffix = "副本"): SavedProjectRecord {

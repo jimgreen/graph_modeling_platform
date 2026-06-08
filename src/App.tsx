@@ -139,6 +139,7 @@ import {
   flattenSavedProjects,
   flattenSavedSchemes,
   hydrateSavedSchemeRuntimeIds,
+  mergeSavedSchemesForStartup,
   getOverlappingTerminalGroups,
   getRouteEndpointNormal,
   getRouteBlockingCandidates,
@@ -158,6 +159,8 @@ import {
   orderNodesByModelLayer,
   defaultAllowsResizeTransformForKind,
   normalizeSavedProjectRecordNames,
+  getTemplateStateDefinitions,
+  normalizeDeviceStateDefinitions,
   savedProjectRecordNameKey,
   normalizeColorPalette,
   normalizeVoltageBaseInput,
@@ -210,11 +213,14 @@ import {
   validateTwoTerminalVoltageBaseConsistency,
   voltageBaseSettingModeForNode,
   validateVoltageSetpointDeviations,
+  resolveDeviceStateVisual,
   normalizeViewBoxToCanvas,
   type DeviceKind,
   type DeviceIndexCounters,
   type DeviceParameterDefinition,
   type DeviceParameterValueType,
+  type DeviceStateDefinition,
+  type DeviceStateVisual,
   type DeviceTemplate,
   type DeviceTemplateDefinitionOverride,
   type ElementTreeGroup,
@@ -1319,6 +1325,7 @@ type CanvasRenderOptions = CanvasBounds & {
   backgroundImage?: string;
   colorDisplayMode?: ColorDisplayMode;
   colorPalette?: ColorPalette;
+  deviceTemplates?: DeviceTemplate[];
   layers?: ModelLayer[];
   activeLayerId?: string;
   measurements?: ProjectMeasurementConfig;
@@ -1326,6 +1333,11 @@ type CanvasRenderOptions = CanvasBounds & {
 };
 type BackendSchemesResponse = {
   schemes: SavedSchemeRecord[];
+};
+type BackendProjectSaveResponse = {
+  ok?: boolean;
+  project?: SavedProjectRecord;
+  savedAt?: string;
 };
 type BackendColorConfigResponse = {
   colorDisplayMode?: ColorDisplayMode;
@@ -1377,6 +1389,7 @@ type CustomDeviceDraft = {
   terminalAssociations: ContainerTerminalAssociationValue[];
   isContainer: boolean;
   params: CustomParamDraft[];
+  stateDefinitions: DeviceDefinitionStateDraftRow[];
   error: string;
 };
 type DeviceDefinitionVisualDraft = {
@@ -1417,6 +1430,15 @@ type GroupDeviceDefinitionDialogState = {
 } | null;
 type DeviceDefinitionDraftRow = DeviceParameterDefinition & {
   id: string;
+};
+type DeviceDefinitionStateDraftRow = DeviceStateDefinition & {
+  id: string;
+  value: string;
+  name: string;
+  icon: string;
+  image: string;
+  text: string;
+  color: string;
 };
 type VoltageColorVisibility = "all" | "current";
 
@@ -3551,7 +3573,7 @@ async function fetchBackendJson<T>(url: string, fallbackMessage: string, init?: 
   return (await response.json()) as T;
 }
 
-function backendJsonRequest(method: "POST" | "PUT", body: string): RequestInit {
+function backendJsonRequest(method: "POST" | "PUT" | "DELETE", body: string): RequestInit {
   return {
     method,
     headers: backendJsonHeaders,
@@ -3661,23 +3683,6 @@ function serializeSchemesForStorage(schemes: SavedSchemeRecord[]) {
   return JSON.stringify(normalizeSchemesForBackend(schemes));
 }
 
-function shouldPreferLocalSchemesOverBackend(options: {
-  localSchemes: SavedSchemeRecord[];
-  backendSchemes: SavedSchemeRecord[];
-  hadStoredLocalSchemes: boolean;
-}) {
-  if (!options.hadStoredLocalSchemes) {
-    return false;
-  }
-  if (serializeSchemesForStorage(options.localSchemes) === serializeSchemesForStorage(options.backendSchemes)) {
-    return false;
-  }
-  if (options.backendSchemes.length === 0) {
-    return true;
-  }
-  return false;
-}
-
 function findProjectRecordInSchemes(
   schemes: SavedSchemeRecord[],
   projectId: string,
@@ -3758,15 +3763,40 @@ async function fetchBackendSchemes(): Promise<SavedSchemeRecord[]> {
   return hydrateSavedSchemeRuntimeIds(schemes.map(normalizeSavedSchemeIndexes));
 }
 
-async function saveBackendSchemes(schemes: SavedSchemeRecord[]): Promise<void> {
-  return saveBackendSchemesPayload(serializeSchemesForStorage(schemes));
+async function saveBackendProjectRecord(schemePath: string[], record: SavedProjectRecord, previousName = ""): Promise<SavedProjectRecord> {
+  const payload = await fetchBackendJson<BackendProjectSaveResponse>(
+    "/api/schemes/project",
+    "保存模型到后台失败。",
+    backendJsonRequest("PUT", JSON.stringify({
+      schemePath,
+      previousName,
+      record: normalizeSchemesForBackend([createSavedScheme("__single_project__", [record])])[0]?.projects?.[0] ?? record
+    }))
+  );
+  return payload.project ? { ...normalizeSavedProjectIndexes(payload.project), id: record.id } : record;
 }
 
-async function saveBackendSchemesPayload(normalizedSchemesPayload: string): Promise<void> {
+async function deleteBackendProjectRecord(schemePath: string[], name: string): Promise<void> {
   await fetchBackendJson<{ ok?: boolean }>(
-    "/api/schemes",
-    "保存方案/模型到后台失败。",
-    backendJsonRequest("PUT", `{"schemes":${normalizedSchemesPayload}}`)
+    "/api/schemes/project",
+    "删除后台模型失败。",
+    backendJsonRequest("DELETE", JSON.stringify({ schemePath, name }))
+  );
+}
+
+async function saveBackendSchemeRecord(schemePath: string[], previousSchemePath?: string[]): Promise<void> {
+  await fetchBackendJson<{ ok?: boolean }>(
+    "/api/schemes/scheme",
+    "保存方案到后台失败。",
+    backendJsonRequest("PUT", JSON.stringify({ schemePath, previousSchemePath }))
+  );
+}
+
+async function deleteBackendSchemeRecord(schemePath: string[]): Promise<void> {
+  await fetchBackendJson<{ ok?: boolean }>(
+    "/api/schemes/scheme",
+    "删除后台方案失败。",
+    backendJsonRequest("DELETE", JSON.stringify({ schemePath }))
   );
 }
 
@@ -4093,7 +4123,8 @@ function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[] {
         isContainer: Boolean(template.isContainer),
         allowResizeTransform: templateAllowsResizeTransform({ ...template, params: rawParams }),
         custom: true,
-        parameterDefinitions: normalizeDefinitionRows(template.parameterDefinitions ?? [])
+        parameterDefinitions: normalizeDefinitionRows(template.parameterDefinitions ?? []),
+        stateDefinitions: normalizeDeviceStateDefinitions(template.stateDefinitions ?? [])
       };
     })
     .filter((item) => item.kind.trim() && item.label.trim());
@@ -4363,6 +4394,9 @@ function normalizeDeviceDefinitionOverrides(value: unknown): Record<string, Devi
       const terminalCount = Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, Math.round(Number(rawOverride.terminalCount ?? 0) || 0)));
       const terminalTypes = normalizeDefinitionOverrideTerminalTypes(rawOverride.terminalTypes, terminalCount);
       const terminalAnchors = normalizeDefinitionOverrideTerminalAnchors(rawOverride.terminalAnchors, terminalCount || terminalTypes?.length || 0);
+      const stateDefinitions = Array.isArray(rawOverride.stateDefinitions)
+        ? normalizeDeviceStateDefinitions(rawOverride.stateDefinitions)
+        : undefined;
       const normalizedOverride: DeviceTemplateDefinitionOverride = {
         kind: normalizedKind,
         params: Object.fromEntries(
@@ -4387,6 +4421,7 @@ function normalizeDeviceDefinitionOverrides(value: unknown): Record<string, Devi
         isContainer: typeof rawOverride.isContainer === "boolean" ? rawOverride.isContainer : undefined,
         allowResizeTransform: normalizeDefinitionResizePermission(rawOverride.allowResizeTransform),
         parameterDefinitions: normalizeDefinitionRows(override.parameterDefinitions),
+        stateDefinitions,
         updatedAt: typeof override.updatedAt === "string" ? override.updatedAt : undefined
       };
       overrides[normalizedKind] = Object.fromEntries(
@@ -4528,6 +4563,98 @@ function deviceDefinitionRowId() {
   return `def-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function stateDraftRowId() {
+  return `state-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function createStateDraftRow(definition: Partial<DeviceStateDefinition> = {}): DeviceDefinitionStateDraftRow {
+  const value = String(definition.value ?? "").trim();
+  const name = String(definition.name ?? value).trim();
+  return {
+    id: stateDraftRowId(),
+    value,
+    name,
+    icon: String(definition.icon ?? "").trim(),
+    image: String(definition.image ?? "").trim(),
+    imageAssetId: String(definition.imageAssetId ?? "").trim() || undefined,
+    text: String(definition.text ?? "").trim(),
+    color: String(definition.color ?? "").trim()
+  };
+}
+
+function createDefinitionStateDraftRows(template: DeviceTemplate): DeviceDefinitionStateDraftRow[] {
+  return getTemplateStateDefinitions(template).map((definition) => createStateDraftRow(definition));
+}
+
+function normalizeStateDraftRows(rows: readonly DeviceDefinitionStateDraftRow[]): DeviceStateDefinition[] {
+  return normalizeDeviceStateDefinitions(
+    rows.map((row) => ({
+      value: row.value,
+      name: row.name,
+      icon: row.icon,
+      image: row.image,
+      imageAssetId: row.imageAssetId,
+      text: row.text,
+      color: row.color
+    }))
+  );
+}
+
+function validateStateDraftRows(rows: readonly DeviceDefinitionStateDraftRow[]) {
+  const populatedRows = rows.filter((row) =>
+    [row.value, row.name, row.icon, row.image, row.text, row.color].some((value) => String(value ?? "").trim())
+  );
+  for (const row of populatedRows) {
+    if (!row.value.trim() || !row.name.trim()) {
+      return { states: [] as DeviceStateDefinition[], error: "状态值和状态名称不能为空。" };
+    }
+  }
+  const seen = new Set<string>();
+  for (const row of populatedRows) {
+    const key = row.value.trim();
+    if (seen.has(key)) {
+      return { states: [] as DeviceStateDefinition[], error: `状态值重复：${key}` };
+    }
+    seen.add(key);
+  }
+  return { states: normalizeStateDraftRows(populatedRows), error: "" };
+}
+
+function deviceStateVisualToken(visual?: DeviceStateVisual | null) {
+  if (!visual) {
+    return "";
+  }
+  return [
+    visual.value,
+    visual.name,
+    visual.icon ?? "",
+    visual.image ?? "",
+    visual.imageAssetId ?? "",
+    visual.backgroundImage ?? "",
+    visual.backgroundImageAssetId ?? "",
+    visual.text ?? "",
+    visual.color ?? "",
+    visual.fillColor ?? "",
+    visual.strokeColor ?? "",
+    visual.textColor ?? ""
+  ].join("\u001f");
+}
+
+function stateVisualText(visual?: DeviceStateVisual | null) {
+  return String(visual?.text || visual?.icon || "").trim();
+}
+
+function resolveStateVisualImageHref(visual: DeviceStateVisual | null | undefined, assets: Record<string, string>) {
+  if (!visual) {
+    return "";
+  }
+  const assetId = visual.imageAssetId || visual.backgroundImageAssetId;
+  if (assetId && assets[assetId]) {
+    return assets[assetId];
+  }
+  return visual.image || visual.backgroundImage || "";
+}
+
 function fallbackComponentTypeForAttributeLibrary(attributeLibraryName: string) {
   const normalized = normalizeAttributeLibraryName(attributeLibraryName);
   if (normalized.includes("静态")) return "StaticBasicShape";
@@ -4630,6 +4757,7 @@ function createEmptyCustomDeviceDraft(attributeLibraryName = "交流设备"): Cu
     terminalAssociations: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, () => "ac-load") as ContainerTerminalAssociationValue[],
     isContainer: false,
     params: [],
+    stateDefinitions: [],
     error: ""
   };
 }
@@ -4866,6 +4994,7 @@ const SVG_ATTRIBUTE_NAMES: Record<string, string> = {
   fontSize: "font-size",
   fontStyle: "font-style",
   fontWeight: "font-weight",
+  paintOrder: "paint-order",
   strokeDasharray: "stroke-dasharray",
   strokeLinecap: "stroke-linecap",
   strokeLinejoin: "stroke-linejoin",
@@ -4923,6 +5052,7 @@ type DeviceGlyphProps = {
   mode?: DeviceGlyphMode;
   colorDisplayMode?: ColorDisplayMode;
   colorPalette?: ColorPalette;
+  stateVisual?: DeviceStateVisual | null;
 };
 
 function formatSvgNumber(value: number) {
@@ -5519,7 +5649,7 @@ function renderBusGlyphRect(width: number, height: number, color: string) {
   return <rect className="bus-glyph" x={-width / 2} y={-thickness / 2} width={width} height={thickness} fill={color} stroke={color} strokeWidth="0" />;
 }
 
-function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode = "energy", colorPalette = DEFAULT_COLOR_PALETTE }: DeviceGlyphProps) {
+function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode = "energy", colorPalette = DEFAULT_COLOR_PALETTE, stateVisual = null }: DeviceGlyphProps) {
   const rawW = miniature ? 58 : node.size.width;
   const rawH = miniature ? 38 : node.size.height;
   const isStaticGlyph = isStaticNode(node);
@@ -5532,8 +5662,9 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
   const glyphVariant = getDeviceGlyphVariant(node.kind);
   const renderGeometry = mode !== "text";
   const renderText = mode !== "geometry";
-  const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
-  const fill = glyphVariant.includes("converter")
+  const stateColor = stateVisual?.color?.trim();
+  const stroke = stateVisual?.strokeColor || stateColor || getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
+  const baseFill = glyphVariant.includes("converter")
     ? "#ecfeff"
     : glyphVariant === "ac-generator"
       ? "#eff6ff"
@@ -5541,6 +5672,8 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
         ? "#ecfdf5"
         : glyphVariant === "battery-storage"
           ? "#f0fdf4"
+          : glyphVariant === "diesel-source"
+            ? "#fff7ed"
           : glyphVariant.startsWith("hydrogen")
             ? "#faf5ff"
             : glyphVariant.startsWith("heat")
@@ -5556,8 +5689,33 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
                       : glyphVariant === "breaker"
                       ? "#eef2ff"
                       : "#ffffff";
+  const fill = stateVisual?.fillColor || baseFill;
+  const stateText = stateVisualText(stateVisual);
+  const stateTextFill = stateVisual?.textColor || stateColor || stroke;
+  const renderStateTextOverlay = () => stateText
+    ? uprightText(
+        node,
+        0,
+        0,
+        {
+          fill: stateTextFill,
+          fontSize: miniature ? 11 : Math.max(10, Math.min(22, Math.min(w, h) * 0.34)),
+          fontWeight: "800",
+          textAnchor: "middle",
+          dominantBaseline: "middle",
+          paintOrder: "stroke",
+          stroke: "rgba(255,255,255,0.88)",
+          strokeWidth: 3,
+          strokeLinejoin: "round"
+        },
+        stateText
+      )
+    : null;
 
   const renderDeviceGlyphContent = (): ReactNode => {
+    if (stateText && mode === "text") {
+      return renderStateTextOverlay();
+    }
     if (isRoutableLineGlyph) {
       if (mode === "text") {
         return null;
@@ -6753,6 +6911,30 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
     );
   }
 
+  if (node.kind.includes("diesel-source")) {
+    if (mode === "text") {
+      return null;
+    }
+    const bodyWidth = miniature ? 36 : Math.min(w * 0.7, 56);
+    const bodyHeight = miniature ? 22 : Math.min(h * 0.58, 32);
+    const bodyX = -bodyWidth / 2;
+    const bodyY = -bodyHeight / 2 + 4;
+    const wheelRadius = miniature ? 5 : 7;
+    const exhaustX = bodyX + bodyWidth - 9;
+    const exhaustTop = bodyY - (miniature ? 10 : 14);
+    return (
+      <g className="diesel-source-glyph" fill="none" stroke={stroke} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+        <rect x={bodyX} y={bodyY} width={bodyWidth} height={bodyHeight} rx="5" fill={fill} />
+        <circle cx={bodyX + 11} cy={bodyY + bodyHeight / 2} r={wheelRadius} fill={fill} />
+        <path d={`M ${bodyX + 22} ${bodyY + 7} H ${bodyX + bodyWidth - 10} M ${bodyX + 22} ${bodyY + bodyHeight - 7} H ${bodyX + bodyWidth - 14}`} />
+        <path d={`M ${bodyX + 7} ${bodyY + bodyHeight} V ${bodyY + bodyHeight + 6} H ${bodyX + bodyWidth - 6} V ${bodyY + bodyHeight}`} />
+        <path d={`M ${exhaustX} ${bodyY} V ${exhaustTop} H ${exhaustX + 8}`} />
+        <path d={`M ${exhaustX + 8} ${exhaustTop - 2} C ${exhaustX + 13} ${exhaustTop - 8}, ${exhaustX + 20} ${exhaustTop - 7}, ${exhaustX + 23} ${exhaustTop - 13}`} strokeWidth="1.6" />
+        <path d={`M ${bodyX + bodyWidth / 2 - 3} ${bodyY - 4} L ${bodyX + bodyWidth / 2 + 7} ${bodyY - 4} L ${bodyX + bodyWidth / 2 + 1} ${bodyY + 8} H ${bodyX + bodyWidth / 2 + 10} L ${bodyX + bodyWidth / 2 - 4} ${bodyY + bodyHeight - 5} L ${bodyX + bodyWidth / 2 + 1} ${bodyY + 8} H ${bodyX + bodyWidth / 2 - 7} Z`} fill={fill} />
+      </g>
+    );
+  }
+
   if (node.kind.includes("thermal-source")) {
     if (mode === "text") {
       return null;
@@ -7030,7 +7212,7 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
     );
   }
 
-  if (glyphVariant === "dcdc-converter" || glyphVariant === "acdc-converter" || glyphVariant === "acac-converter") {
+  if (glyphVariant === "dcdc-converter" || glyphVariant === "acdc-converter" || glyphVariant === "dcac-converter" || glyphVariant === "acac-converter") {
     if (mode === "text") {
       return null;
     }
@@ -7051,11 +7233,13 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
     const acSymbol = (x: number) => (
       <path d={`M ${x} ${symbolY} C ${x + 3} ${symbolY - 9}, ${x + 8} ${symbolY - 9}, ${x + 11} ${symbolY} C ${x + 14} ${symbolY + 9}, ${x + 19} ${symbolY + 9}, ${x + 22} ${symbolY}`} />
     );
+    const leftSymbol = glyphVariant === "dcdc-converter" || glyphVariant === "dcac-converter" ? dcSymbol(leftX) : acSymbol(leftX - 1);
+    const rightSymbol = glyphVariant === "acdc-converter" || glyphVariant === "dcdc-converter" ? dcSymbol(rightX + 4) : acSymbol(rightX);
     return (
       <g fill="none" stroke={stroke} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
         <rect x={borderX} y={borderY} width={borderWidth} height={borderHeight} rx="6" fill={fill} />
-        {glyphVariant === "dcdc-converter" ? dcSymbol(leftX) : acSymbol(leftX - 1)}
-        {glyphVariant === "acdc-converter" ? dcSymbol(rightX + 4) : glyphVariant === "acac-converter" ? acSymbol(rightX) : dcSymbol(rightX + 4)}
+        {leftSymbol}
+        {rightSymbol}
         <path d={glyphVariant === "acac-converter" ? "M -5 -8 L 0 0 L -5 8 M 5 -8 L 0 0 L 5 8" : "M -7 0 H 7 M 2 -5 L 7 0 L 2 5"} />
       </g>
     );
@@ -7090,7 +7274,10 @@ function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode 
   };
 
   const content = renderDeviceGlyphContent();
-  if (!content || glyphContentScale === 1) {
+  if (!content) {
+    return null;
+  }
+  if (glyphContentScale === 1) {
     return content;
   }
   return (
@@ -7107,7 +7294,8 @@ const MemoDeviceGlyph = memo(
     previous.miniature === next.miniature &&
     previous.mode === next.mode &&
     previous.colorDisplayMode === next.colorDisplayMode &&
-    previous.colorPalette === next.colorPalette
+    previous.colorPalette === next.colorPalette &&
+    deviceStateVisualToken(previous.stateVisual) === deviceStateVisualToken(next.stateVisual)
 );
 
 type SvgMarkupChunkProps = {
@@ -7495,6 +7683,11 @@ function buildExportMeasurementGroupMarkup(
 
 export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: CanvasRenderOptions = { width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT }) {
   const imageAssets = readImageAssets();
+  const svgTemplateByKind = new Map((canvasSize.deviceTemplates ?? DEVICE_LIBRARY).map((template) => [template.kind, template]));
+  const resolveSvgNodeStateVisual = (node: ModelNode) => {
+    const template = svgTemplateByKind.get(node.kind);
+    return template ? resolveDeviceStateVisual(template, node) : null;
+  };
   const backgroundColor = canvasSize.backgroundColor ?? DEFAULT_CANVAS_BACKGROUND;
   const backgroundImage = canvasSize.backgroundImage ?? "";
   const colorDisplayMode = canvasSize.colorDisplayMode ?? "energy";
@@ -7591,11 +7784,12 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
         ? ` data-export-button-action="layer" data-export-button-target-layer-id="${escapeXml(targetLayerIds[0])}" data-export-button-target-layer-ids="${escapeXml(targetLayerIds.join(","))}"`
         : "";
       const exportButtonClass = targetLayerIds.length > 0 ? " export-static-button" : "";
-      const imageHref = resolveNodeImage(node, imageAssets);
+      const stateVisual = resolveSvgNodeStateVisual(node);
+      const imageHref = resolveStateVisualImageHref(stateVisual, imageAssets) || resolveNodeImage(node, imageAssets);
       const foregroundHref = resolveNodeForegroundImage(node, imageAssets);
       const allowNodeImage = !isBusNode(node);
-      const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette }));
-      const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette }));
+      const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, stateVisual }));
+      const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, stateVisual }));
       const deviceMetadataAttributes = exportDeviceMetadataAttributes(node);
       const escapedImageHref = escapeXml(imageHref);
       const escapedForegroundHref = escapeXml(foregroundHref);
@@ -7742,11 +7936,8 @@ export function App() {
   const backendSchemesLoadedRef = useRef(false);
   const suppressNextBackendSchemeSyncRef = useRef(false);
   const lastPersistedSchemesPayloadRef = useRef<string | null>(null);
-  const pendingBackendSchemesPayloadRef = useRef<string | null>(null);
-  const schemeBackendSyncSequenceRef = useRef(0);
   const backendSchemesLoadTokenRef = useRef(0);
   const schemesChangedBeforeBackendLoadRef = useRef(false);
-  const startupHadStoredSchemesRef = useRef(Boolean(initialStoredSchemesPayload));
   const latestSchemesRef = useRef<SavedSchemeRecord[]>(initialSavedSchemes);
   const latestActiveProjectPointerRef = useRef<ActiveProjectPointer | null>(null);
   const backendColorConfigLoadedRef = useRef(false);
@@ -8090,6 +8281,7 @@ export function App() {
   const [templateDraftType, setTemplateDraftType] = useState(DEFAULT_GRAPH_TEMPLATE_TYPES[0]);
   const [templateDraftName, setTemplateDraftName] = useState("");
   const [customDeviceDialogOpen, setCustomDeviceDialogOpen] = useState(false);
+  const [customDeviceDialogView, setCustomDeviceDialogView] = useState<"visual" | "parameters" | "states">("visual");
   const [customComponentTreeSelection, setCustomComponentTreeSelection] = useState<CustomComponentTreeSelection>({ kind: "attributeLibrary", attributeLibraryName: "交流设备" });
   const [customComponentTreeSearchQuery, setCustomComponentTreeSearchQuery] = useState("");
   const [collapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeLibraries] = useState<AttributeLibrary[]>([]);
@@ -8100,7 +8292,7 @@ export function App() {
   const [deviceDefinitionOverrides, setDeviceDefinitionOverrides] = useState<Record<string, DeviceTemplateDefinitionOverride>>(() => initialDeviceLibrary.deviceDefinitionOverrides);
   const [deviceDefinitionDialogOpen, setDeviceDefinitionDialogOpen] = useState(false);
   const [selectedDefinitionKind, setSelectedDefinitionKind] = useState<DeviceKind | "">("");
-  const [deviceDefinitionView, setDeviceDefinitionView] = useState<"visual" | "parameters" | "measurements">("parameters");
+  const [deviceDefinitionView, setDeviceDefinitionView] = useState<"visual" | "parameters" | "states" | "measurements">("parameters");
   const [expandedDefinitionGroups, setExpandedDefinitionGroups] = useState<AttributeLibrary[]>([...DEFAULT_ATTRIBUTE_LIBRARIES]);
   const [collapsedDefinitionComponentTypes, setCollapsedDefinitionComponentTypes] = useState<string[]>([]);
   const [deviceDefinitionSearchQuery, setDeviceDefinitionSearchQuery] = useState("");
@@ -8108,6 +8300,7 @@ export function App() {
   const [definitionDraftSection, setDefinitionDraftSection] = useState("");
   const [definitionDraftSectionEditing, setDefinitionDraftSectionEditing] = useState(false);
   const [definitionDraftError, setDefinitionDraftError] = useState("");
+  const [definitionStateDraftRows, setDefinitionStateDraftRows] = useState<DeviceDefinitionStateDraftRow[]>([]);
   const [definitionVisualDraft, setDefinitionVisualDraft] = useState<DeviceDefinitionVisualDraft | null>(null);
   const [definitionTerminalAnchorDragIndex, setDefinitionTerminalAnchorDragIndex] = useState<number | null>(null);
   const [layerDialogOpen, setLayerDialogOpen] = useState(false);
@@ -9043,8 +9236,8 @@ export function App() {
                 </clipPath>
               )}
               <g className="node-geometry" transform={nodeGeometryTransform(node)}>
-                <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-                <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
+                <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
               </g>
               {!nodeIsBus && (imageHref || foregroundImageHref) && (
                 <g className="node-upright-content" transform={nodeImageContentTransform(node)}>
@@ -9281,8 +9474,8 @@ export function App() {
                   </clipPath>
                 )}
                 <g className="node-geometry" transform={nodeGeometryTransform(node)}>
-                  <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-                  <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                  <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
+                  <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
                 </g>
                 {!nodeIsBus && (imageHref || foregroundImageHref) && (
                   <g className="node-upright-content" transform={nodeImageContentTransform(node)}>
@@ -9410,8 +9603,8 @@ export function App() {
             rx="8"
             className={`node-hitbox ${isBusNode(ghostNode) ? "bus-hitbox" : ""} ${isStaticNode(ghostNode) ? "static-hitbox" : ""}`}
           />
-          <MemoDeviceGlyph node={ghostNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-          <MemoDeviceGlyph node={ghostNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+          <MemoDeviceGlyph node={ghostNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(ghostNode)} />
+          <MemoDeviceGlyph node={ghostNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(ghostNode)} />
         </g>
         {renderNodePreviewImageContent(ghostNode, `rotate-origin-ghost-preview-clip-${ghostNode.id}`)}
       </g>
@@ -9637,6 +9830,21 @@ export function App() {
     [baseLibraryTemplates, deviceDefinitionOverrides]
   );
   const libraryTemplateByKind = useMemo(() => new Map(libraryTemplates.map((template) => [template.kind, template])), [libraryTemplates]);
+  const resolveNodeStateVisual = (node: ModelNode): DeviceStateVisual | null => {
+    const template = libraryTemplateByKind.get(node.kind);
+    return template ? resolveDeviceStateVisual(template, node) : null;
+  };
+  const statusStatesForNode = (node: ModelNode | undefined) => {
+    if (!node) {
+      return [];
+    }
+    const template = libraryTemplateByKind.get(node.kind);
+    return template ? getTemplateStateDefinitions(template) : [];
+  };
+  const statusOptionsForNode = (node: ModelNode | undefined) =>
+    statusStatesForNode(node).map((state) => state.value);
+  const statusOptionLabelsForNode = (node: ModelNode | undefined) =>
+    Object.fromEntries(statusStatesForNode(node).map((state) => [state.value, state.name || state.value]));
   const nodeKindAllowsResizeTransform = (kind: string) => {
     const template = libraryTemplateByKind.get(kind);
     return template ? templateAllowsResizeTransform(template) : defaultAllowsResizeTransformForKind(kind);
@@ -11462,7 +11670,10 @@ export function App() {
       hideLibraryFlyout();
     }
   }, [leftPanelVisible]);
-  const nodeImage = (node: ModelNode) => resolveNodeImage(node, imageAssets);
+  const nodeImage = (node: ModelNode) => {
+    const stateImageHref = resolveStateVisualImageHref(resolveNodeStateVisual(node), imageAssets);
+    return stateImageHref || resolveNodeImage(node, imageAssets);
+  };
   const nodeForegroundImage = (node: ModelNode) => resolveNodeForegroundImage(node, imageAssets);
   const nodeHasUprightBoundsContent = (
     node: ModelNode,
@@ -12992,43 +13203,63 @@ export function App() {
     }
   }, [containerParamViewId, selectedContainerParameterViews]);
 
-  const persistBackendSchemesPayload = (normalizedSchemesPayload: string) => {
-    pendingBackendSchemesPayloadRef.current = normalizedSchemesPayload;
-    const syncSequence = ++schemeBackendSyncSequenceRef.current;
-    void saveBackendSchemesPayload(normalizedSchemesPayload)
-      .then(() => {
-        if (syncSequence !== schemeBackendSyncSequenceRef.current) {
-          return;
-        }
-        lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload;
-        if (pendingBackendSchemesPayloadRef.current === normalizedSchemesPayload) {
-          pendingBackendSchemesPayloadRef.current = null;
-        }
-        writeOperationLog("方案/模型目录已自动保存到后台");
-      })
-      .catch(() => {
-        if (syncSequence !== schemeBackendSyncSequenceRef.current) {
-          return;
-        }
-        pendingBackendSchemesPayloadRef.current = normalizedSchemesPayload;
-        writeOperationLog("方案/模型目录自动保存到后台失败");
-      });
-  };
-
   const persistSchemesPayloadToStorageAndBackend = (normalizedSchemesPayload: string) => {
     try {
       window.localStorage.setItem(SCHEME_STORAGE_KEY, normalizedSchemesPayload);
     } catch {
-      // 浏览器缓存不可写时不阻断当前编辑，后台同步仍会继续尝试。
+      // 浏览器缓存不可写时不阻断当前编辑；后台写入由单方案/单模型接口单独触发。
     }
-    if (!backendSchemesLoadedRef.current) {
-      pendingBackendSchemesPayloadRef.current = normalizedSchemesPayload;
+    lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload;
+  };
+
+  const persistSchemeProjectsToBackend = (schemesToPersist: SavedSchemeRecord[], reason: string) => {
+    const tasks: Promise<unknown>[] = [];
+    const visit = (level: SavedSchemeRecord[], parentPath: string[] = []) => {
+      for (const scheme of level) {
+        const schemePath = [...parentPath, scheme.name];
+        tasks.push(saveBackendSchemeRecord(schemePath));
+        for (const project of scheme.projects) {
+          tasks.push(saveBackendProjectRecord(schemePath, project));
+        }
+        visit(scheme.children ?? [], schemePath);
+      }
+    };
+    visit(schemesToPersist);
+    if (tasks.length === 0) {
       return;
     }
-    if (pendingBackendSchemesPayloadRef.current === normalizedSchemesPayload) {
-      return;
-    }
-    persistBackendSchemesPayload(normalizedSchemesPayload);
+    void Promise.all(tasks)
+      .then(() => writeOperationLog(`${reason}：已按单方案/单模型同步到后台`))
+      .catch(() => writeOperationLog(`${reason}：单方案/单模型后台同步失败`));
+  };
+
+  const saveSchemeTreeToBackend = (scheme: SavedSchemeRecord, parentPath: string[], previousSchemePath?: string[]) => {
+    const tasks: Promise<unknown>[] = [];
+    const visit = (record: SavedSchemeRecord, pathPrefix: string[], previousPath?: string[]) => {
+      const schemePath = [...pathPrefix, record.name];
+      tasks.push(saveBackendSchemeRecord(schemePath, previousPath));
+      for (const project of record.projects) {
+        tasks.push(saveBackendProjectRecord(schemePath, project));
+      }
+      for (const child of record.children ?? []) {
+        visit(child, schemePath);
+      }
+    };
+    visit(scheme, parentPath, previousSchemePath);
+    return Promise.all(tasks);
+  };
+
+  const persistSchemeTreeToBackend = (scheme: SavedSchemeRecord, parentPath: string[], reason: string, previousSchemePath?: string[]) => {
+    void saveSchemeTreeToBackend(scheme, parentPath, previousSchemePath)
+      .then(() => writeOperationLog(`${reason}：已按单方案/单模型同步到后台`))
+      .catch(() => writeOperationLog(`${reason}：后台同步失败`));
+  };
+
+  const replaceSchemeTreeInBackend = (scheme: SavedSchemeRecord, parentPath: string[], previousSchemePath: string[], reason: string) => {
+    void deleteBackendSchemeRecord(previousSchemePath)
+      .then(() => saveSchemeTreeToBackend(scheme, parentPath))
+      .then(() => writeOperationLog(`${reason}：已按单方案/单模型同步到后台`))
+      .catch(() => writeOperationLog(`${reason}：后台同步失败`));
   };
 
   useEffect(() => {
@@ -13043,52 +13274,41 @@ export function App() {
         const currentSchemesPayload = serializeSchemesForStorage(latestSchemesRef.current);
         if (backendSchemes.length > 0) {
           const backendPayload = serializeSchemesForStorage(backendSchemes);
-          const localSchemesShouldWin = shouldPreferLocalSchemesOverBackend({
-            localSchemes: latestSchemesRef.current,
-            backendSchemes,
-            hadStoredLocalSchemes: startupHadStoredSchemesRef.current
-          });
-          lastPersistedSchemesPayloadRef.current = backendPayload;
-          if (localChangedBeforeBackendLoad || localSchemesShouldWin) {
-            suppressNextBackendSchemeSyncRef.current = false;
-            schemesChangedBeforeBackendLoadRef.current = false;
-            const pendingPayload = pendingBackendSchemesPayloadRef.current ?? currentSchemesPayload;
-            if (pendingPayload !== backendPayload) {
-              persistBackendSchemesPayload(pendingPayload);
-            } else {
-              pendingBackendSchemesPayloadRef.current = null;
-            }
-            return;
-          }
-          pendingBackendSchemesPayloadRef.current = null;
+          const mergedSchemes = mergeSavedSchemesForStartup(latestSchemesRef.current, backendSchemes);
+          const mergedPayload = serializeSchemesForStorage(mergedSchemes);
+          lastPersistedSchemesPayloadRef.current = mergedPayload;
           suppressNextBackendSchemeSyncRef.current = true;
-          setSchemesState(backendSchemes);
+          schemesChangedBeforeBackendLoadRef.current = false;
+          setSchemesState(mergedSchemes);
+          if (mergedPayload !== backendPayload || localChangedBeforeBackendLoad) {
+            persistSchemeProjectsToBackend(mergedSchemes, "启动合并方案/模型");
+          }
           if (!saveRequiredRef.current) {
             const activePointer = latestActiveProjectPointerRef.current;
-            const backendActiveProject = findSavedProjectByActivePointer(backendSchemes, activePointer);
+            const backendActiveProject = findSavedProjectByActivePointer(mergedSchemes, activePointer);
             if (backendActiveProject) {
               loadSavedProject(backendActiveProject.project, backendActiveProject.scheme.id);
             }
           }
           setExpandedSchemeIds((current) => {
-            const backendSchemeIds = new Set(backendSchemes.map((scheme) => scheme.id));
+            const backendSchemeIds = new Set(mergedSchemes.map((scheme) => scheme.id));
             const retained = current.filter((schemeId) => backendSchemeIds.has(schemeId));
             if (retained.length > 0) {
               return retained;
             }
             const preferredSchemeId =
               (activeSchemeKey && backendSchemeIds.has(activeSchemeKey) ? activeSchemeKey : "") ||
-              backendSchemes[0]?.id ||
+              mergedSchemes[0]?.id ||
               "";
             return preferredSchemeId ? [preferredSchemeId] : [];
           });
           return;
         }
-        const payloadToPersist = pendingBackendSchemesPayloadRef.current ?? currentSchemesPayload;
-        if (payloadToPersist) {
+        if (currentSchemesPayload) {
           suppressNextBackendSchemeSyncRef.current = false;
           schemesChangedBeforeBackendLoadRef.current = false;
-          persistBackendSchemesPayload(payloadToPersist);
+          lastPersistedSchemesPayloadRef.current = currentSchemesPayload;
+          persistSchemeProjectsToBackend(latestSchemesRef.current, "初始化方案/模型");
         }
       })
       .catch(() => {
@@ -16065,8 +16285,9 @@ export function App() {
       .join("");
     const nodeMarkup = clipboard.nodes
       .map((node) => {
-        const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette }));
-        const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette }));
+        const stateVisual = resolveNodeStateVisual(node);
+        const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, stateVisual }));
+        const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, stateVisual }));
         const imageHref = nodeImage(node);
         const foregroundHref = nodeForegroundImage(node);
         const nodeIsBus = isBusNode(node);
@@ -16284,6 +16505,7 @@ export function App() {
     ensureCustomComponentTreeExpanded(attributeLibraryName, componentType);
     setCustomComponentTreeSelection({ kind: "componentType", attributeLibraryName, section: componentType });
     setEditingCustomDeviceKind("");
+    setCustomDeviceDialogView("visual");
     setCustomDeviceDraft({
       ...createEmptyCustomDeviceDraft(attributeLibraryName),
       componentType,
@@ -18777,8 +18999,9 @@ export function App() {
       return "";
     }
     const nodeIsBus = isBusNode(node);
-    const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette }));
-    const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette }));
+    const stateVisual = resolveNodeStateVisual(node);
+    const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, stateVisual }));
+    const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, stateVisual }));
     const imageMarkup = buildNodePreviewImageMarkup(node, `single-node-drag-preview-clip-${node.id}`);
     const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
     const labelMarkup = buildSvgNodeLabelMarkup(node);
@@ -21634,11 +21857,49 @@ export function App() {
     );
   };
 
+  const withCurrentOption = (options: string[] | undefined, value: string) =>
+    options && value && !options.includes(value) ? [value, ...options] : options;
+
+  const paramOptionsForNode = (key: string, node: ModelNode | undefined, value: string) => {
+    if (key === "status") {
+      const options = statusOptionsForNode(node);
+      return withCurrentOption(options.length > 0 ? options : undefined, value);
+    }
+    return paramOptionsForSection(key, node ? inferESection(node.kind, node.params) : undefined);
+  };
+
+  const paramOptionLabelsForNode = (key: string, node: ModelNode | undefined, value: string) => {
+    if (key === "status") {
+      const labels = statusOptionLabelsForNode(node);
+      return value && !labels[value] ? { ...labels, [value]: value } : labels;
+    }
+    return PARAM_OPTION_LABELS[key] ?? {};
+  };
+
+  const batchStatusOptions = (value: string) => {
+    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []).filter((node) => Object.prototype.hasOwnProperty.call(node.params, "status"));
+    const optionRows = selectedNodes.map((node) => statusStatesForNode(node));
+    if (optionRows.length === 0 || optionRows.some((rows) => rows.length === 0)) {
+      return undefined;
+    }
+    const firstToken = optionRows[0].map((state) => `${state.value}:${state.name}`).join("|");
+    if (!optionRows.every((rows) => rows.map((state) => `${state.value}:${state.name}`).join("|") === firstToken)) {
+      return undefined;
+    }
+    return withCurrentOption(optionRows[0].map((state) => state.value), value);
+  };
+
+  const batchStatusOptionLabels = () => {
+    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []).filter((node) => Object.prototype.hasOwnProperty.call(node.params, "status"));
+    const first = selectedNodes[0];
+    return first ? statusOptionLabelsForNode(first) : {};
+  };
+
   const renderParamEditor = (key: string, value: string, wrapLabel = true) => {
     const label = PARAM_LABELS[key] ?? key;
     const editorNode = inspectorSelectedNode ?? selectedNode;
-    const options = paramOptionsForSection(key, editorNode ? inferESection(editorNode.kind, editorNode.params) : undefined);
-    const optionLabels = PARAM_OPTION_LABELS[key] ?? {};
+    const options = paramOptionsForNode(key, editorNode, value);
+    const optionLabels = paramOptionLabelsForNode(key, editorNode, value);
     const control = options ? (
       <select value={value} disabled={isBrowseMode} onChange={(event) => updateParam(key, event.target.value)}>
         {options.map((option) => (
@@ -21687,8 +21948,8 @@ export function App() {
     if (isColorParamKey(row.key)) {
       return renderBatchCommonColorParamEditor(row);
     }
-    const options = paramOptionsForSection(row.key);
-    const optionLabels = PARAM_OPTION_LABELS[row.key] ?? {};
+    const options = row.key === "status" ? batchStatusOptions(value) : paramOptionsForSection(row.key);
+    const optionLabels = row.key === "status" ? batchStatusOptionLabels() : PARAM_OPTION_LABELS[row.key] ?? {};
     if (options) {
       return (
         <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonParam(row.key, event.target.value)}>
@@ -22173,8 +22434,8 @@ export function App() {
         />
         <g transform={`translate(${formatSvgNumber(previewNode.position.x)} ${formatSvgNumber(previewNode.position.y)})`}>
           <g className="node-geometry" transform={nodeGeometryTransform(previewNode)}>
-            <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-            <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+            <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(previewNode)} />
+            <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(previewNode)} />
           </g>
         </g>
         {staticDrawing.points.map((point, index) => (
@@ -22450,8 +22711,8 @@ export function App() {
         <g className="library-placement-preview library-placement-preview-device">
           <g transform={`translate(${formatSvgNumber(previewNode.position.x)} ${formatSvgNumber(previewNode.position.y)})`}>
             <g transform={nodeGeometryTransform(previewNode)}>
-              <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-              <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+              <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(previewNode)} />
+              <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(previewNode)} />
             </g>
             {renderNodePreviewImageContent(previewNode, `library-placement-preview-clip-${libraryPlacement.template.kind.replace(/[^A-Za-z0-9_-]/g, "-")}`)}
           </g>
@@ -22479,8 +22740,8 @@ export function App() {
         {libraryPlacement.template.clipboard.nodes.map((node) => (
           <g key={node.id} transform={`translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})`}>
             <g transform={nodeGeometryTransform(node)}>
-              <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-              <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+              <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
+              <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
             </g>
             {renderNodePreviewImageContent(node, `library-placement-template-preview-clip-${node.id}`)}
           </g>
@@ -25237,6 +25498,21 @@ export function App() {
       : record;
   };
 
+  const schemePathForScheme = (schemeId: string, sourceSchemes = schemes) => {
+    const scheme = findSavedSchemeById(sourceSchemes, schemeId);
+    return scheme ? savedSchemePathForId(sourceSchemes, scheme.id) ?? [scheme.name] : [];
+  };
+
+  const schemePathForProject = (projectId: string, sourceSchemes = schemes) => {
+    const owner = findSavedProjectRecordInSchemes(sourceSchemes, projectId);
+    return owner ? savedSchemePathForId(sourceSchemes, owner.scheme.id) ?? [owner.scheme.name] : [];
+  };
+
+  const schemePathForRecord = (scheme: SavedSchemeRecord) => {
+    const existingPath = schemePathForScheme(scheme.id);
+    return existingPath.length > 0 ? existingPath : [scheme.name];
+  };
+
   const cloneSchemeRecord = (scheme: SavedSchemeRecord, existingNames = savedChildSchemeNames(schemes), suffix = "副本"): SavedSchemeRecord => {
     return copySavedSchemeWithUniqueName(scheme, existingNames, suffix);
   };
@@ -25387,7 +25663,11 @@ export function App() {
       return;
     }
     const record = createSavedScheme(name);
+    const parentPath = parentSchemeId ? schemePathForScheme(parentSchemeId) : [];
+    const recordPath = [...parentPath, record.name];
     setSchemes((current) => insertChildSavedScheme(current, parentSchemeId, record));
+    void saveBackendSchemeRecord(recordPath)
+      .catch(() => writeOperationLog(`新建方案同步后台失败：${record.name}`));
     if (parentSchemeId) {
       setExpandedSchemeIds((current) => (current.includes(parentSchemeId) ? current : [...current, parentSchemeId]));
     }
@@ -25412,7 +25692,11 @@ export function App() {
       window.alert("方案名称重复，无法修改。");
       return;
     }
+    const previousPath = schemePathForScheme(scheme.id);
+    const nextPath = previousPath.length > 0 ? [...previousPath.slice(0, -1), name] : [name];
     setSchemes((current) => renameSavedScheme(current, scheme.id, nextName));
+    void saveBackendSchemeRecord(nextPath, previousPath)
+      .catch(() => writeOperationLog(`重命名方案同步后台失败：${name}`));
   };
 
   const duplicateSchemeRecord = (scheme: SavedSchemeRecord) => {
@@ -25436,7 +25720,9 @@ export function App() {
     }
     const parentSchemeId = findSavedSchemeParentById(schemes, scheme.id)?.id ?? "";
     const record = cloneSchemeRecordWithName(scheme, name);
+    const parentPath = parentSchemeId ? schemePathForScheme(parentSchemeId) : [];
     setSchemes((current) => insertChildSavedScheme(current, parentSchemeId, record));
+    persistSchemeTreeToBackend(record, parentPath, `复制方案：${record.name}`);
     if (parentSchemeId) {
       setExpandedSchemeIds((current) => (current.includes(parentSchemeId) ? current : [...current, parentSchemeId]));
     }
@@ -25454,10 +25740,15 @@ export function App() {
     if (!window.confirm(`删除方案“${scheme.name}”及其全部模型？`)) {
       return;
     }
+    const schemePath = schemePathForScheme(scheme.id);
     setSchemes((current) => {
       const next = deleteSavedScheme(current, scheme.id);
       return next.length > 0 ? next : [createSavedScheme("默认方案")];
     });
+    if (schemePath.length > 0) {
+      void deleteBackendSchemeRecord(schemePath)
+        .catch(() => writeOperationLog(`删除后台方案失败：${scheme.name}`));
+    }
     if (selectedSchemeId && deletingSchemeIds.has(selectedSchemeId)) {
       clearRecordSelection();
     }
@@ -25495,7 +25786,15 @@ export function App() {
         return;
       }
       const selected = new Set(selectedProjectIds);
+      const backendDeletes = projects
+        .filter((project) => selected.has(project.id))
+        .map((project) => ({ project, schemePath: schemePathForProject(project.id) }))
+        .filter((item) => item.schemePath.length > 0);
       setSchemes((current) => deleteSavedProjectsFromSchemes(current, selected));
+      for (const item of backendDeletes) {
+        void deleteBackendProjectRecord(item.schemePath, item.project.name)
+          .catch(() => writeOperationLog(`删除后台模型失败：${item.project.name}`));
+      }
       clearRecordSelection();
       return;
     }
@@ -25513,10 +25812,17 @@ export function App() {
       if (!window.confirm(`删除选中的 ${selectedSchemeIds.length} 个方案及其全部模型？`)) {
         return;
       }
+      const backendSchemeDeletes = selectedSchemeIds
+        .map((schemeId) => ({ schemeId, schemePath: schemePathForScheme(schemeId), scheme: findSavedSchemeById(schemes, schemeId) }))
+        .filter((item) => item.schemePath.length > 0 && item.scheme);
       setSchemes((current) => {
         const next = selectedSchemeIds.reduce((nextSchemes, schemeId) => deleteSavedScheme(nextSchemes, schemeId), current);
         return next.length > 0 ? next : [createSavedScheme("默认方案")];
       });
+      for (const item of backendSchemeDeletes) {
+        void deleteBackendSchemeRecord(item.schemePath)
+          .catch(() => writeOperationLog(`删除后台方案失败：${item.scheme?.name ?? item.schemeId}`));
+      }
       clearRecordSelection();
     }
   };
@@ -25552,7 +25858,9 @@ export function App() {
       return;
     }
     const record = cloneSchemeRecordForPaste(sourceScheme, sourceScheme.name);
+    const parentPath = parentSchemeId ? schemePathForScheme(parentSchemeId) : [];
     setSchemes((current) => insertChildSavedScheme(current, parentSchemeId, record));
+    persistSchemeTreeToBackend(record, parentPath, `粘贴方案：${record.name}`);
     if (parentSchemeId) {
       setExpandedSchemeIds((current) => (current.includes(parentSchemeId) ? current : [...current, parentSchemeId]));
     }
@@ -25582,7 +25890,11 @@ export function App() {
       });
       return;
     }
-    setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, cloneProjectRecordForPaste(sourceProject, sourceProject.name)));
+    const pastedProject = cloneProjectRecordForPaste(sourceProject, sourceProject.name);
+    const targetPath = schemePathForRecord(targetScheme);
+    setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, pastedProject));
+    void saveBackendProjectRecord(targetPath, pastedProject)
+      .catch(() => writeOperationLog(`粘贴模型同步后台失败：${pastedProject.name}`));
     writeOperationLog(`粘贴模型记录：${sourceProject.name}`);
   };
 
@@ -25610,26 +25922,34 @@ export function App() {
     }
     const targetName = options.targetName?.trim();
     const nextProjectId = options.overwriteProjectId ?? projectId;
+    const sourceRecord = findSavedProjectRecordInSchemes(schemes, projectId);
+    const targetScheme = findSavedSchemeById(schemes, targetSchemeId);
+    const project = sourceRecord?.project;
+    const sourceScheme = sourceRecord?.scheme;
+    if (!sourceScheme || !targetScheme || !project || sourceScheme.id === targetSchemeId) {
+      return;
+    }
+    const now = new Date().toISOString();
+    const movedName = targetName || project.name;
+    const movedProject: SavedProjectRecord = {
+      ...project,
+      id: nextProjectId,
+      name: movedName,
+      updatedAt: now,
+      project: { ...project.project, name: movedName }
+    };
+    const sourcePath = schemePathForRecord(sourceScheme);
+    const targetPath = schemePathForRecord(targetScheme);
+    const overwrittenProject = options.overwriteProjectId
+      ? targetScheme.projects.find((item) => item.id === options.overwriteProjectId)
+      : undefined;
     setSchemes((current) => {
-      const sourceRecord = findSavedProjectRecordInSchemes(current, projectId);
-      const targetScheme = findSavedSchemeById(current, targetSchemeId);
-      const project = sourceRecord?.project;
-      const sourceScheme = sourceRecord?.scheme;
-      if (!sourceScheme || !targetScheme || !project || sourceScheme.id === targetSchemeId) {
-        return current;
-      }
-      const now = new Date().toISOString();
-      const movedName = targetName || project.name;
-      const movedProject: SavedProjectRecord = {
-        ...project,
-        id: nextProjectId,
-        name: movedName,
-        updatedAt: now,
-        project: { ...project.project, name: movedName }
-      };
       const withoutSourceProject = deleteSavedProjectsFromSchemes(current, new Set([projectId]));
       return upsertSavedProjectInScheme(withoutSourceProject, targetScheme.id, movedProject);
     });
+    void saveBackendProjectRecord(targetPath, movedProject, overwrittenProject?.name ?? "")
+      .then(() => deleteBackendProjectRecord(sourcePath, project.name))
+      .catch(() => writeOperationLog(`移动模型同步后台失败：${movedProject.name}`));
     setExpandedSchemeIds((current) => (current.includes(targetSchemeId) ? current : [...current, targetSchemeId]));
     if (
       selectedProjectId === projectId ||
@@ -25675,7 +25995,9 @@ export function App() {
         }
         setPendingRecordPasteConflict(null);
         const record = cloneSchemeRecordForPaste(conflict.sourceScheme, renamed);
+        const parentPath = targetParentSchemeId ? schemePathForScheme(targetParentSchemeId) : [];
         setSchemes((current) => insertChildSavedScheme(current, targetParentSchemeId, record));
+        persistSchemeTreeToBackend(record, parentPath, `新命名粘贴方案：${record.name}`);
         if (targetParentSchemeId) {
           setExpandedSchemeIds((current) => (current.includes(targetParentSchemeId) ? current : [...current, targetParentSchemeId]));
         }
@@ -25683,13 +26005,23 @@ export function App() {
         return;
       }
       setPendingRecordPasteConflict(null);
+      const duplicateScheme = findSavedSchemeById(schemes, conflict.duplicateSchemeId);
+      const parentPath = targetParentSchemeId ? schemePathForScheme(targetParentSchemeId) : [];
+      const replacement = duplicateScheme
+        ? cloneSchemeRecordForPaste(conflict.sourceScheme, duplicateScheme.name, duplicateScheme)
+        : cloneSchemeRecordForPaste(conflict.sourceScheme, conflict.duplicateName);
       setSchemes((current) => {
-        const duplicateScheme = findSavedSchemeById(current, conflict.duplicateSchemeId);
-        if (!duplicateScheme) {
-          return insertChildSavedScheme(current, targetParentSchemeId, cloneSchemeRecordForPaste(conflict.sourceScheme, conflict.duplicateName));
+        if (!findSavedSchemeById(current, conflict.duplicateSchemeId)) {
+          return insertChildSavedScheme(current, targetParentSchemeId, replacement);
         }
-        return replaceSavedSchemeById(current, duplicateScheme.id, cloneSchemeRecordForPaste(conflict.sourceScheme, duplicateScheme.name, duplicateScheme));
+        return replaceSavedSchemeById(current, conflict.duplicateSchemeId, replacement);
       });
+      if (duplicateScheme) {
+        const duplicatePath = schemePathForRecord(duplicateScheme);
+        replaceSchemeTreeInBackend(replacement, parentPath, duplicatePath, `覆盖粘贴方案：${replacement.name}`);
+      } else {
+        persistSchemeTreeToBackend(replacement, parentPath, `覆盖粘贴方案：${replacement.name}`);
+      }
       writeOperationLog(`覆盖粘贴方案记录：${conflict.duplicateName}`);
       return;
     }
@@ -25713,16 +26045,29 @@ export function App() {
           return;
         }
         setPendingRecordPasteConflict(null);
+        const sourcePath = schemePathForRecord(sourceScheme);
+        const targetParentPath = schemePathForRecord(targetScheme);
+        const nextPath = [...targetParentPath, renamed];
         setSchemes((current) => moveSavedSchemeToParent(current, conflict.schemeId, conflict.targetSchemeId, { targetName: renamed }));
+        void saveBackendSchemeRecord(nextPath, sourcePath)
+          .catch(() => writeOperationLog(`拖拽方案同步后台失败：${renamed}`));
         setExpandedSchemeIds((current) => (current.includes(conflict.targetSchemeId) ? current : [...current, conflict.targetSchemeId]));
         writeOperationLog(`新命名拖拽方案记录：${renamed}`);
         return;
       }
       setPendingRecordPasteConflict(null);
+      const sourcePath = schemePathForRecord(sourceScheme);
+      const targetParentPath = schemePathForRecord(targetScheme);
+      const nextPath = [...targetParentPath, conflict.duplicateName];
+      const duplicateScheme = findSavedSchemeById(schemes, conflict.duplicateSchemeId);
       setSchemes((current) => moveSavedSchemeToParent(current, conflict.schemeId, conflict.targetSchemeId, {
         targetName: conflict.duplicateName,
         overwriteSchemeId: conflict.duplicateSchemeId
       }));
+      const backendMove = duplicateScheme
+        ? deleteBackendSchemeRecord(schemePathForRecord(duplicateScheme)).then(() => saveBackendSchemeRecord(nextPath, sourcePath))
+        : saveBackendSchemeRecord(nextPath, sourcePath);
+      void backendMove.catch(() => writeOperationLog(`覆盖拖拽方案同步后台失败：${conflict.duplicateName}`));
       setExpandedSchemeIds((current) => (current.includes(conflict.targetSchemeId) ? current : [...current, conflict.targetSchemeId]));
       writeOperationLog(`覆盖拖拽方案记录：${conflict.duplicateName}`);
       return;
@@ -25780,24 +26125,28 @@ export function App() {
         return;
       }
       setPendingRecordPasteConflict(null);
-      setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, cloneProjectRecordForPaste(conflict.sourceProject, renamed)));
+      const pastedProject = cloneProjectRecordForPaste(conflict.sourceProject, renamed);
+      const targetPath = schemePathForRecord(targetScheme);
+      setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, pastedProject));
+      void saveBackendProjectRecord(targetPath, pastedProject)
+        .catch(() => writeOperationLog(`新命名粘贴模型同步后台失败：${pastedProject.name}`));
       writeOperationLog(`新命名粘贴模型记录：${renamed}`);
       return;
     }
     setPendingRecordPasteConflict(null);
+    const duplicateProject = targetScheme.projects.find((project) => project.id === conflict.duplicateProjectId);
+    const targetName = duplicateProject?.name ?? conflict.duplicateName;
+    const pastedProject = cloneProjectRecordForPaste(conflict.sourceProject, targetName, conflict.duplicateProjectId);
+    const targetPath = schemePathForRecord(targetScheme);
     setSchemes((current) => {
       const currentTargetScheme = findSavedSchemeById(current, targetScheme.id);
       if (!currentTargetScheme) {
         return current;
       }
-      const duplicateProject = currentTargetScheme.projects.find((project) => project.id === conflict.duplicateProjectId);
-        const targetName = duplicateProject?.name ?? conflict.duplicateName;
-      return upsertSavedProjectInScheme(
-        current,
-        currentTargetScheme.id,
-        cloneProjectRecordForPaste(conflict.sourceProject, targetName, conflict.duplicateProjectId)
-      );
+      return upsertSavedProjectInScheme(current, currentTargetScheme.id, pastedProject);
     });
+    void saveBackendProjectRecord(targetPath, pastedProject, duplicateProject?.name ?? "")
+      .catch(() => writeOperationLog(`覆盖粘贴模型同步后台失败：${pastedProject.name}`));
     writeOperationLog(`覆盖粘贴模型记录：${conflict.duplicateName}`);
   };
 
@@ -25854,7 +26203,12 @@ export function App() {
       });
       return;
     }
+    const sourcePath = schemePathForRecord(sourceScheme);
+    const targetParentPath = schemePathForRecord(targetScheme);
+    const nextPath = [...targetParentPath, sourceScheme.name];
     setSchemes((current) => moveSavedSchemeToParent(current, schemeId, targetScheme.id));
+    void saveBackendSchemeRecord(nextPath, sourcePath)
+      .catch(() => writeOperationLog(`移动方案同步后台失败：${sourceScheme.name}`));
     setExpandedSchemeIds((current) => (current.includes(targetScheme.id) ? current : [...current, targetScheme.id]));
     if (selectedSchemeId === schemeId || selectedSchemeIds.includes(schemeId)) {
       setSelectedSchemeId(schemeId);
@@ -26671,6 +27025,11 @@ export function App() {
         savedRecord = findProjectRecordInSchemes(nextSchemes, targetId)?.project ?? record;
         setSchemes(nextSchemes);
         persistSchemesPayloadToStorageAndBackend(serializeSchemesForStorage(nextSchemes));
+        const ownerSchemePath = ownerScheme ? savedSchemePathForId(nextSchemes, ownerScheme.id) ?? [ownerScheme.name] : [];
+        if (ownerSchemePath.length > 0) {
+          void saveBackendProjectRecord(ownerSchemePath, savedRecord, existing.name)
+            .catch(() => writeOperationLog(`保存模型到后台失败：${savedRecord.name}`));
+        }
         setActiveProjectKey(targetId);
         if (savedRecord.name !== projectName) {
           suppressNextGraphDirtyRef.current = true;
@@ -26707,6 +27066,9 @@ export function App() {
       record;
     setSchemes(nextSchemes);
     persistSchemesPayloadToStorageAndBackend(serializeSchemesForStorage(nextSchemes));
+    const targetSchemePath = savedSchemePathForId(nextSchemes, resolvedSchemeId) ?? [targetScheme?.name ?? "默认方案"];
+    void saveBackendProjectRecord(targetSchemePath, savedRecord, recoveredRecord?.name)
+      .catch(() => writeOperationLog(`保存模型到后台失败：${savedRecord.name}`));
     setActiveProjectKey(savedRecord.id);
     setActiveSchemeKey(resolvedSchemeId);
     graphDirtyBaselineRef.current = currentGraphDirtyBaseline();
@@ -26739,6 +27101,11 @@ export function App() {
       const renamedProject = renamedProjects.find((item) => item.id === project.id);
       if (renamedProject) {
         setSchemes((current) => upsertSavedProjectInScheme(current, ownerScheme.id, renamedProject));
+        const ownerPath = schemePathForScheme(ownerScheme.id);
+        if (ownerPath.length > 0) {
+          void saveBackendProjectRecord(ownerPath, renamedProject, project.name)
+            .catch(() => writeOperationLog(`重命名模型同步后台失败：${renamedProject.name}`));
+        }
       }
     }
     if (activeProjectKey === project.id) {
@@ -26764,7 +27131,13 @@ export function App() {
       return;
     }
     if (ownerScheme) {
-      setSchemes((current) => upsertSavedProjectInScheme(current, ownerScheme.id, cloneProjectRecordWithName(project, name)));
+      const clonedProject = cloneProjectRecordWithName(project, name);
+      setSchemes((current) => upsertSavedProjectInScheme(current, ownerScheme.id, clonedProject));
+      const ownerPath = schemePathForScheme(ownerScheme.id);
+      if (ownerPath.length > 0) {
+        void saveBackendProjectRecord(ownerPath, clonedProject)
+          .catch(() => writeOperationLog(`复制模型同步后台失败：${clonedProject.name}`));
+      }
     }
   };
 
@@ -26780,19 +27153,27 @@ export function App() {
       return;
     }
     const selected = new Set(selectedProjectIds);
-    setSchemes((current) =>
-      flattenSavedSchemes(current).reduce((nextSchemes, scheme) => {
-        const selectedProjects = scheme.projects.filter((project) => selected.has(project.id));
-        if (selectedProjects.length === 0) {
-          return nextSchemes;
-        }
-        let nextProjects = scheme.projects;
-        for (const project of selectedProjects) {
-          nextProjects = upsertSavedProject(nextProjects, cloneProjectRecord(project, "副本", nextProjects.map((item) => item.name)));
-        }
-        return nextProjects.reduce((updatedSchemes, project) => upsertSavedProjectInScheme(updatedSchemes, scheme.id, project), nextSchemes);
-      }, current)
-    );
+    const backendSaves: Array<{ schemePath: string[]; project: SavedProjectRecord }> = [];
+    let nextSchemes = schemes;
+    for (const scheme of flattenSavedSchemes(schemes)) {
+      const selectedProjects = scheme.projects.filter((project) => selected.has(project.id));
+      if (selectedProjects.length === 0) {
+        continue;
+      }
+      let nextProjects = scheme.projects;
+      const schemePath = schemePathForRecord(scheme);
+      for (const project of selectedProjects) {
+        const clonedProject = cloneProjectRecord(project, "副本", nextProjects.map((item) => item.name));
+        nextProjects = upsertSavedProject(nextProjects, clonedProject);
+        backendSaves.push({ schemePath, project: clonedProject });
+      }
+      nextSchemes = nextProjects.reduce((updatedSchemes, project) => upsertSavedProjectInScheme(updatedSchemes, scheme.id, project), nextSchemes);
+    }
+    setSchemes(nextSchemes);
+    for (const item of backendSaves) {
+      void saveBackendProjectRecord(item.schemePath, item.project)
+        .catch(() => writeOperationLog(`批量复制模型同步后台失败：${item.project.name}`));
+    }
   };
 
   const duplicateSelectedSchemeRecords = () => {
@@ -26806,19 +27187,24 @@ export function App() {
       }
       return;
     }
-    setSchemes((current) => {
-      let nextSchemes = current;
-      for (const schemeId of selectedSchemeIds) {
-        const scheme = findSavedSchemeById(nextSchemes, schemeId);
-        if (!scheme) {
-          continue;
-        }
-        const parentSchemeId = findSavedSchemeParentById(nextSchemes, scheme.id)?.id ?? "";
-        const siblingNames = savedSchemeSiblingNames(nextSchemes, scheme.id);
-        nextSchemes = insertChildSavedScheme(nextSchemes, parentSchemeId, cloneSchemeRecord(scheme, siblingNames));
+    const backendSaves: Array<{ scheme: SavedSchemeRecord; parentPath: string[] }> = [];
+    let nextSchemes = schemes;
+    for (const schemeId of selectedSchemeIds) {
+      const scheme = findSavedSchemeById(nextSchemes, schemeId);
+      if (!scheme) {
+        continue;
       }
-      return nextSchemes;
-    });
+      const parentSchemeId = findSavedSchemeParentById(nextSchemes, scheme.id)?.id ?? "";
+      const siblingNames = savedSchemeSiblingNames(nextSchemes, scheme.id);
+      const clonedScheme = cloneSchemeRecord(scheme, siblingNames);
+      const parentPath = parentSchemeId ? savedSchemePathForId(nextSchemes, parentSchemeId) ?? [] : [];
+      nextSchemes = insertChildSavedScheme(nextSchemes, parentSchemeId, clonedScheme);
+      backendSaves.push({ scheme: clonedScheme, parentPath });
+    }
+    setSchemes(nextSchemes);
+    for (const item of backendSaves) {
+      persistSchemeTreeToBackend(item.scheme, item.parentPath, `批量复制方案：${item.scheme.name}`);
+    }
   };
 
   const deleteProjectRecord = (project: SavedProjectRecord) => {
@@ -26832,7 +27218,12 @@ export function App() {
     if (!window.confirm(`删除模型“${project.name}”？`)) {
       return;
     }
+    const ownerPath = schemePathForProject(project.id);
     setSchemes((current) => deleteSavedProjectsFromSchemes(current, new Set([project.id])));
+    if (ownerPath.length > 0) {
+      void deleteBackendProjectRecord(ownerPath, project.name)
+        .catch(() => writeOperationLog(`删除后台模型失败：${project.name}`));
+    }
     if (selectedProjectId === project.id) {
       clearRecordSelection();
     }
@@ -26873,6 +27264,11 @@ export function App() {
       edges: []
     });
     setSchemes((current) => upsertSavedProjectInScheme(current, targetSchemeId || current[0]?.id || "", record));
+    const targetSchemePath = schemePathForScheme(targetSchemeId || schemes[0]?.id || "");
+    if (targetSchemePath.length > 0) {
+      void saveBackendProjectRecord(targetSchemePath, record)
+        .catch(() => writeOperationLog(`新建模型同步后台失败：${record.name}`));
+    }
     selectSingleProject(targetSchemeId ?? schemes[0]?.id ?? "", record.id);
     requestLoadSavedProject(record, targetSchemeId ?? schemes[0]?.id ?? "");
     writeOperationLog(`新建模型：${record.name}`);
@@ -27821,6 +28217,7 @@ export function App() {
         backgroundImage: canvasBackgroundImageUrl,
         colorDisplayMode,
         colorPalette,
+        deviceTemplates: libraryTemplates,
         layers,
         activeLayerId,
         measurements: projectMeasurements,
@@ -27993,7 +28390,9 @@ export function App() {
   };
 
   const commitImportedSchemeRecord = (importedScheme: SavedSchemeRecord, parentSchemeId = "") => {
+    const parentPath = parentSchemeId ? schemePathForScheme(parentSchemeId) : [];
     setSchemes((current) => insertChildSavedScheme(current, parentSchemeId, importedScheme));
+    persistSchemeTreeToBackend(importedScheme, parentPath, `导入方案：${importedScheme.name}`);
     if (parentSchemeId) {
       setExpandedSchemeIds((current) => (current.includes(parentSchemeId) ? current : [...current, parentSchemeId]));
     }
@@ -28039,11 +28438,14 @@ export function App() {
   };
 
   const commitImportedModelRecord = (targetScheme: SavedSchemeRecord, importedRecord: SavedProjectRecord) => {
+    const targetPath = schemePathForRecord(targetScheme);
     setSchemes((current) => {
       const fallback = current.length > 0 ? current : [targetScheme];
       const nextSchemes = findSavedSchemeById(fallback, targetScheme.id) ? fallback : [...fallback, targetScheme];
       return upsertSavedProjectInScheme(nextSchemes, targetScheme.id, importedRecord);
     });
+    void saveBackendProjectRecord(targetPath, importedRecord)
+      .catch(() => writeOperationLog(`导入模型同步后台失败：${importedRecord.name}`));
     setExpandedSchemeIds((current) => (current.includes(targetScheme.id) ? current : [...current, targetScheme.id]));
     loadSavedProject(importedRecord, targetScheme.id);
     writeOperationLog(`导入模型文件：${importedRecord.name}`);
@@ -28127,7 +28529,10 @@ export function App() {
     }
     setPendingSchemeImportConflict(null);
     const mergedScheme = mergeImportedSchemeIntoExisting(duplicateScheme, conflict.importedScheme);
+    const duplicatePath = schemePathForRecord(duplicateScheme);
+    const parentPath = duplicatePath.slice(0, -1);
     setSchemes((current) => replaceSavedSchemeById(current, duplicateScheme.id, mergedScheme));
+    persistSchemeTreeToBackend(mergedScheme, parentPath, `合并覆盖导入方案：${mergedScheme.name}`);
     setExpandedSchemeIds((current) => (current.includes(duplicateScheme.id) ? current : [...current, duplicateScheme.id]));
     selectSingleScheme(duplicateScheme.id);
     writeOperationLog(`合并覆盖导入方案：${duplicateScheme.name}`);
@@ -28193,6 +28598,7 @@ export function App() {
             backgroundImage: resolveProjectImage(project.project),
             colorDisplayMode,
             colorPalette,
+            deviceTemplates: libraryTemplates,
             layers: project.project.layers,
             activeLayerId: project.project.activeLayerId,
             measurements: project.project.measurements,
@@ -28691,6 +29097,30 @@ export function App() {
       return { ...current, terminalAnchors, error: "" };
     });
   };
+  const updateCustomDeviceStateDraftRow = (rowId: string, patch: Partial<DeviceDefinitionStateDraftRow>) => {
+    setCustomDeviceDraft((current) => ({
+      ...current,
+      stateDefinitions: current.stateDefinitions.map((row) => (row.id === rowId ? { ...row, ...patch } : row)),
+      error: ""
+    }));
+  };
+  const addCustomDeviceStateDraftRow = () => {
+    setCustomDeviceDraft((current) => ({
+      ...current,
+      stateDefinitions: [
+        ...current.stateDefinitions,
+        createStateDraftRow({ value: String(current.stateDefinitions.length), name: `状态${current.stateDefinitions.length}` })
+      ],
+      error: ""
+    }));
+  };
+  const deleteCustomDeviceStateDraftRow = (rowId: string) => {
+    setCustomDeviceDraft((current) => ({
+      ...current,
+      stateDefinitions: current.stateDefinitions.filter((row) => row.id !== rowId),
+      error: ""
+    }));
+  };
   const updateCustomDeviceTerminalAnchorFromPreview = (index: number, svg: SVGSVGElement, event: PointerEvent<SVGElement>) => {
     const matrix = svg.getScreenCTM();
     if (!matrix) {
@@ -28797,6 +29227,7 @@ export function App() {
     setExpandedDefinitionGroups((current) => (current.includes(group) ? current : [...current, group]));
     setCollapsedDefinitionComponentTypes((current) => current.filter((item) => item !== attributeLibraryComponentTypeKey(group, componentType)));
     setDefinitionDraftRows(createDefinitionDraftRows(template));
+    setDefinitionStateDraftRows(createDefinitionStateDraftRows(template));
     setDefinitionDraftSection(componentType);
     setDefinitionDraftError("");
     setDefinitionVisualDraft(createDefinitionVisualDraft(template));
@@ -28825,6 +29256,7 @@ export function App() {
     setMeasurementConfigDraft(null);
     setMeasurementConfigSaveStatus("idle");
     setDefinitionVisualDraft(null);
+    setDefinitionStateDraftRows([]);
     setDefinitionTerminalAnchorDragIndex(null);
   };
 
@@ -28878,6 +29310,73 @@ export function App() {
     }
     setDefinitionDraftRows((current) => current.filter((row) => row.id !== rowId || row.readonly));
     setDefinitionDraftError("");
+  };
+
+  const updateDefinitionStateDraftRow = (rowId: string, patch: Partial<DeviceDefinitionStateDraftRow>) => {
+    setDefinitionStateDraftRows((current) => current.map((row) => (row.id === rowId ? { ...row, ...patch } : row)));
+    setDefinitionDraftError("");
+  };
+
+  const addDefinitionStateDraftRow = () => {
+    setDefinitionStateDraftRows((current) => [
+      ...current,
+      createStateDraftRow({ value: String(current.length), name: `状态${current.length}` })
+    ]);
+    setDefinitionDraftError("");
+  };
+
+  const deleteDefinitionStateDraftRow = (rowId: string) => {
+    if (!requireEditMode("修改状态定义")) {
+      return;
+    }
+    setDefinitionStateDraftRows((current) => current.filter((row) => row.id !== rowId));
+    setDefinitionDraftError("");
+  };
+
+  const saveDeviceDefinitionStateDraft = () => {
+    if (!requireEditMode("保存状态定义")) {
+      return;
+    }
+    if (!selectedDefinitionTemplate) {
+      return;
+    }
+    const stateValidation = validateStateDraftRows(definitionStateDraftRows);
+    if (stateValidation.error) {
+      setDefinitionDraftError(stateValidation.error);
+      return;
+    }
+    const stateDefinitions = stateValidation.states;
+    if (selectedDefinitionTemplate.custom) {
+      setCustomDeviceTemplates((current) =>
+        current.map((template) =>
+          template.kind === selectedDefinitionTemplate.kind
+            ? { ...template, stateDefinitions }
+            : template
+        )
+      );
+    } else {
+      setDeviceDefinitionOverrides((current) => {
+        const existingOverride = deviceDefinitionOverrideForTemplate(selectedDefinitionTemplate, current);
+        return {
+          ...current,
+          [selectedDefinitionTemplate.kind]: {
+            ...existingOverride,
+            kind: selectedDefinitionTemplate.kind,
+            params: existingOverride?.params ?? {},
+            terminalRoles: existingOverride?.terminalRoles ?? selectedDefinitionTemplate.terminalRoles,
+            terminalAssociations: existingOverride?.terminalAssociations ?? selectedDefinitionTemplate.terminalAssociations,
+            isContainer: existingOverride?.isContainer ?? selectedDefinitionTemplate.isContainer,
+            allowResizeTransform: existingOverride?.allowResizeTransform ?? templateAllowsResizeTransform(selectedDefinitionTemplate),
+            parameterDefinitions: existingOverride?.parameterDefinitions ?? selectedDefinitionTemplate.parameterDefinitions ?? getTemplateParameterDefinitions(selectedDefinitionTemplate),
+            stateDefinitions,
+            updatedAt: new Date().toISOString()
+          }
+        };
+      });
+    }
+    setDefinitionStateDraftRows(stateDefinitions.map((definition) => createStateDraftRow(definition)));
+    setDefinitionDraftError("");
+    writeOperationLog(`修改状态定义：${selectedDefinitionTemplate.label}`);
   };
 
   const updateSelectedDefinitionResizePermission = (value: string) => {
@@ -28988,6 +29487,9 @@ export function App() {
             isContainer: existingOverride?.isContainer ?? selectedDefinitionTemplate.isContainer,
             allowResizeTransform: existingOverride?.allowResizeTransform ?? templateAllowsResizeTransform(selectedDefinitionTemplate),
             parameterDefinitions: existingOverride?.parameterDefinitions ?? selectedDefinitionTemplate.parameterDefinitions ?? getTemplateParameterDefinitions(selectedDefinitionTemplate),
+            stateDefinitions: Array.isArray(existingOverride?.stateDefinitions)
+              ? existingOverride.stateDefinitions
+              : selectedDefinitionTemplate.stateDefinitions,
             updatedAt: new Date().toISOString()
           }
         };
@@ -29054,6 +29556,9 @@ export function App() {
         },
         allowResizeTransform: templateAllowsResizeTransform(selectedDefinitionTemplate),
         parameterDefinitions: normalizedRows,
+        stateDefinitions: Array.isArray(existingOverride?.stateDefinitions)
+          ? existingOverride.stateDefinitions
+          : selectedDefinitionTemplate.stateDefinitions,
         updatedAt: new Date().toISOString()
       };
       return next;
@@ -29287,6 +29792,7 @@ export function App() {
       terminalAssociations: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => terminalAssociations[index] ?? "ac-load") as ContainerTerminalAssociationValue[],
       isContainer: Boolean(template.isContainer),
       params: customParams,
+      stateDefinitions: createDefinitionStateDraftRows(template),
       error: template.custom ? "" : "当前选中的是系统内置元件，可查看并复制为新自定义元件，不能直接覆盖内置定义。"
     });
   };
@@ -29302,6 +29808,7 @@ export function App() {
         : defaultComponentTypeForAttributeLibrary(attributeLibraryName);
     setEditingCustomDeviceKind("");
     setCustomComponentTreeSelection({ kind: "componentType", attributeLibraryName, section });
+    setCustomDeviceDialogView("visual");
     setCustomDeviceDraft({
       ...createEmptyCustomDeviceDraft(attributeLibraryName),
       componentType: section,
@@ -29729,6 +30236,11 @@ export function App() {
       setCustomDeviceDraft((current) => ({ ...current, error: `属性英文名称重复：${duplicateDefinition.enName}` }));
       return;
     }
+    const stateValidation = validateStateDraftRows(customDeviceDraft.stateDefinitions);
+    if (stateValidation.error) {
+      setCustomDeviceDraft((current) => ({ ...current, error: stateValidation.error }));
+      return;
+    }
     const backgroundImage =
       customDeviceDraft.backgroundImage || generateCustomDeviceImage(componentLabel, terminalTypes.length > 0 ? terminalTypes : ["ac"]);
     const backgroundImageAssetId = customDeviceDraft.backgroundImageAssetId && backgroundImage === `/api/images/${customDeviceDraft.backgroundImageAssetId}`
@@ -29759,7 +30271,8 @@ export function App() {
       isContainer: customDeviceDraft.isContainer,
       allowResizeTransform: customDeviceDraft.allowResizeTransform === "1",
       custom: true,
-      parameterDefinitions: definitions
+      parameterDefinitions: definitions,
+      stateDefinitions: stateValidation.states
     };
     setCustomDeviceTemplates((current) => {
       if (editingCustomDeviceKind && current.some((item) => item.kind === editingCustomDeviceKind)) {
@@ -29773,6 +30286,95 @@ export function App() {
     setEditingCustomDeviceKind(customKind);
     setCustomDeviceDraft((current) => ({ ...current, error: "" }));
   };
+
+  const renderStateDefinitionPanel = (
+    rows: DeviceDefinitionStateDraftRow[],
+    handlers: {
+      update: (rowId: string, patch: Partial<DeviceDefinitionStateDraftRow>) => void;
+      add: () => void;
+      remove: (rowId: string) => void;
+      save?: () => void;
+      reset?: () => void;
+      saveLabel?: string;
+      resetLabel?: string;
+    }
+  ) => (
+    <section className="device-state-definition-panel">
+      <div className="custom-param-table-wrap device-state-table-wrap">
+        <table className="custom-param-table device-state-table">
+          <thead>
+            <tr>
+              <th>状态值</th>
+              <th>名称</th>
+              <th>图标</th>
+              <th>图片</th>
+              <th>文字</th>
+              <th>颜色</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length > 0 ? rows.map((row) => (
+              <tr key={row.id}>
+                <td>
+                  <input value={row.value} onChange={(event) => handlers.update(row.id, { value: event.target.value })} />
+                </td>
+                <td>
+                  <input value={row.name} onChange={(event) => handlers.update(row.id, { name: event.target.value })} />
+                </td>
+                <td>
+                  <input value={row.icon} placeholder="如 ON" onChange={(event) => handlers.update(row.id, { icon: event.target.value })} />
+                </td>
+                <td>
+                  <input value={row.image} placeholder="图片URL或后台路径" onChange={(event) => handlers.update(row.id, { image: event.target.value })} />
+                </td>
+                <td>
+                  <input value={row.text} placeholder="覆盖文字" onChange={(event) => handlers.update(row.id, { text: event.target.value })} />
+                </td>
+                <td>
+                  <div className="color-field device-state-color-field">
+                    <input type="color" value={colorInputValue(row.color, "#2563eb")} onChange={(event) => handlers.update(row.id, { color: event.target.value })} />
+                    <input value={row.color} placeholder="#2563eb" onChange={(event) => handlers.update(row.id, { color: event.target.value })} />
+                  </div>
+                </td>
+                <td>
+                  <div className="custom-param-actions">
+                    <button type="button" onClick={() => handlers.remove(row.id)}>删除</button>
+                  </div>
+                </td>
+              </tr>
+            )) : (
+              <tr className="batch-common-empty-row">
+                <td colSpan={7}>没有状态定义时，图元按原有图标和颜色显示。</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className="custom-device-actions">
+        <button type="button" onClick={handlers.add}>新增状态</button>
+        {handlers.save && <button type="button" onClick={handlers.save}>{handlers.saveLabel ?? "保存状态"}</button>}
+        {handlers.reset && <button type="button" onClick={handlers.reset}>{handlers.resetLabel ?? "恢复当前元件状态"}</button>}
+      </div>
+    </section>
+  );
+
+  const renderDeviceDefinitionStatePanel = (template: DeviceTemplate) => (
+    <>
+      {definitionDraftError && <p className="custom-device-error">{definitionDraftError}</p>}
+      {renderStateDefinitionPanel(definitionStateDraftRows, {
+        update: updateDefinitionStateDraftRow,
+        add: addDefinitionStateDraftRow,
+        remove: deleteDefinitionStateDraftRow,
+        save: saveDeviceDefinitionStateDraft,
+        reset: () => {
+          setDefinitionStateDraftRows(createDefinitionStateDraftRows(template));
+          setDefinitionDraftError("");
+        },
+        saveLabel: "保存状态定义"
+      })}
+    </>
+  );
 
   const renderDeviceDefinitionVisualPanel = (template: DeviceTemplate) => {
     if (!definitionVisualDraft) {
@@ -29897,7 +30499,7 @@ export function App() {
                 />
               ) : (
                 <g transform={nodeGeometryTransform(previewNode)}>
-                  <MemoDeviceGlyph node={previewNode} miniature colorPalette={colorPalette} />
+                  <MemoDeviceGlyph node={previewNode} miniature colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(previewNode)} />
                 </g>
               )}
               <rect
@@ -30173,6 +30775,7 @@ export function App() {
             return;
           }
           setCustomDeviceDraft(createEmptyCustomDeviceDraft("交流设备"));
+          setCustomDeviceDialogView("visual");
           setCustomDeviceDialogOpen(true);
         }}
       >
@@ -30216,7 +30819,7 @@ export function App() {
         {template.clipboard.nodes.map((node) => (
           <g key={node.id} transform={`translate(${node.position.x} ${node.position.y})`}>
             <g transform={nodeGeometryTransform(node)}>
-              <MemoDeviceGlyph node={node} miniature colorPalette={colorPalette} />
+              <MemoDeviceGlyph node={node} miniature colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
             </g>
           </g>
         ))}
@@ -30347,7 +30950,7 @@ export function App() {
           )}
           {!libraryPreviewHasImage && (
             <g transform={nodeGeometryTransform(preview)}>
-              <MemoDeviceGlyph node={preview} miniature colorPalette={colorPalette} />
+              <MemoDeviceGlyph node={preview} miniature colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(preview)} />
             </g>
           )}
           {libraryPreviewHasImage && (
@@ -30904,7 +31507,9 @@ export function App() {
         colorDisplayMode,
         colorPalette,
         isEditMode && !activeLayerNodeIdSet.has(node.id),
-        customSingleTerminalAnchorToken(node, libraryTemplateByKind.get(node.kind))
+        customSingleTerminalAnchorToken(node, libraryTemplateByKind.get(node.kind)),
+        deviceStateVisualToken(resolveNodeStateVisual(node)),
+        resolveStateVisualImageHref(resolveNodeStateVisual(node), imageAssets)
       ],
       itemMarkup: (node) => {
       const nodeIsBus = isBusNode(node);
@@ -30914,9 +31519,18 @@ export function App() {
       const transform = `translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)}) ${nodeGeometryTransform(node)}`;
       const deviceMetadataAttributes = exportDeviceMetadataAttributes(node);
       const dataNodeAttributes = `data-node-id="${escapeXml(node.id)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}`;
-      const fill = node.params.backgroundColor || "#ffffff";
-      const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
+      const stateVisual = resolveNodeStateVisual(node);
+      const stateText = stateVisualText(stateVisual);
+      const stateImageHref = resolveStateVisualImageHref(stateVisual, imageAssets);
+      const fill = stateVisual?.fillColor || node.params.backgroundColor || "#ffffff";
+      const stroke = stateVisual?.strokeColor || stateVisual?.color || getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
       const strokeWidth = Math.max(2, getDeviceStrokeWidth(node));
+      const stateImageMarkup = stateImageHref && !nodeIsBus
+        ? `<image class="lod-node-state-image" href="${escapeXml(stateImageHref)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" preserveAspectRatio="xMidYMid slice"/>`
+        : "";
+      const stateTextMarkup = stateText
+        ? `<text class="lod-node-state-text" x="0" y="0" text-anchor="middle" dominant-baseline="middle" fill="${escapeXml(stateVisual?.textColor || stateVisual?.color || stroke)}" font-size="${formatSvgNumber(Math.max(10, Math.min(22, Math.min(node.size.width, node.size.height) * 0.32)))}" font-weight="800" paint-order="stroke" stroke="rgba(255,255,255,0.88)" stroke-width="3" stroke-linejoin="round">${escapeXml(stateText)}</text>`
+        : "";
       if (nodeIsRoutableLineDevice) {
         const path = pointsToOrthogonalPath(routableLineDeviceRenderLocalPoints(node));
         return `<g class="${className}" ${dataNodeAttributes} transform="${escapeXml(transform)}">
@@ -30930,12 +31544,13 @@ export function App() {
         const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
         return `<g class="${className} custom-terminal-lod-node" ${dataNodeAttributes} transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})">
   <rect class="lod-node-body" transform="${escapeXml(geometryTransform)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${nodeIsBus ? 0 : 6}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"><title>${escapeXml(node.name)}</title></rect>
+  <g class="lod-node-state-layer" transform="${escapeXml(geometryTransform)}">${stateImageMarkup}${stateTextMarkup}</g>
   <g class="node-terminal-layer lod-terminal-layer" transform="${escapeXml(geometryTransform)}">
   ${terminalMarkup}
   </g>
 </g>`;
       }
-      return `<rect class="${className}" ${dataNodeAttributes} transform="${escapeXml(transform)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${nodeIsBus ? 0 : 6}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"><title>${escapeXml(node.name)}</title></rect>`;
+      return `<g class="${className}" ${dataNodeAttributes} transform="${escapeXml(transform)}"><rect class="lod-node-body" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${nodeIsBus ? 0 : 6}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"><title>${escapeXml(node.name)}</title></rect>${stateImageMarkup}${stateTextMarkup}</g>`;
       }
     });
   }, [
@@ -30944,6 +31559,7 @@ export function App() {
     colorPalette,
     dragPreviewRoutableLineNodeIdSet,
     groupTransformPreviewNodeIdSet,
+    imageAssets,
     isEditMode,
     libraryTemplateByKind,
     nodeLabelDrag,
@@ -31824,8 +32440,8 @@ export function App() {
                     rx="8"
                     className={`node-hitbox ${nodeIsBus ? "bus-hitbox" : ""} ${isStaticNode(node) ? "static-hitbox" : ""}`}
                   />
-                  <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-                  <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                  <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
+                  <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
                   {staticButtonEnabled && (
                     <rect
                       x={-node.size.width / 2}
@@ -32770,8 +33386,8 @@ export function App() {
                       rx="8"
                       className="node-drag-ghost-box"
                     />
-                    <MemoDeviceGlyph node={ghostNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-                    <MemoDeviceGlyph node={ghostNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                    <MemoDeviceGlyph node={ghostNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(ghostNode)} />
+                    <MemoDeviceGlyph node={ghostNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(ghostNode)} />
                   </g>
                   {renderNodePreviewImageContent(ghostNode, `drag-ghost-preview-clip-${ghostNode.id}`)}
                 </g>
@@ -33239,8 +33855,8 @@ export function App() {
                       rx="8"
                       className={`node-hitbox ${nodeIsBus ? "bus-hitbox" : ""} ${nodeIsStatic ? "static-hitbox" : ""}`}
                     />
-                    <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
-                    <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} />
+                    <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
+                    <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
                     {routableLineDeviceHitPath && (
                       <path
                         className="routable-line-device-hitline"
@@ -36302,6 +36918,13 @@ export function App() {
                       </button>
                       <button
                         type="button"
+                        className={deviceDefinitionView === "states" ? "active" : ""}
+                        onClick={() => setDeviceDefinitionView("states")}
+                      >
+                        状态
+                      </button>
+                      <button
+                        type="button"
                         className={deviceDefinitionView === "measurements" ? "active" : ""}
                         onClick={() => setDeviceDefinitionView("measurements")}
                       >
@@ -36417,6 +37040,8 @@ export function App() {
                           </button>
                         </div>
                       </>
+                    ) : deviceDefinitionView === "states" ? (
+                      renderDeviceDefinitionStatePanel(selectedDefinitionTemplate)
                     ) : (
                       renderDeviceDefinitionMeasurementPanel(selectedDefinitionTemplate)
                     )}
@@ -36540,6 +37165,31 @@ export function App() {
                 />
               </label>
             </div>
+            <div className="device-definition-tabs custom-device-tabs" role="tablist" aria-label="新建元件内容切换">
+              <button
+                type="button"
+                className={customDeviceDialogView === "visual" ? "active" : ""}
+                onClick={() => setCustomDeviceDialogView("visual")}
+              >
+                图标/端子
+              </button>
+              <button
+                type="button"
+                className={customDeviceDialogView === "parameters" ? "active" : ""}
+                onClick={() => setCustomDeviceDialogView("parameters")}
+              >
+                参数定义
+              </button>
+              <button
+                type="button"
+                className={customDeviceDialogView === "states" ? "active" : ""}
+                onClick={() => setCustomDeviceDialogView("states")}
+              >
+                状态
+              </button>
+            </div>
+            {customDeviceDialogView === "visual" ? (
+              <>
             <div className="custom-device-image-row">
               <span>SVG/图片图标</span>
               <button type="button" onClick={() => customDeviceImageInputRef.current?.click()}>上传SVG/图片到后台</button>
@@ -36824,6 +37474,9 @@ export function App() {
                 );
               })}
             </div>
+              </>
+            ) : customDeviceDialogView === "parameters" ? (
+              <>
             <div className="custom-param-table-wrap">
               <table className="custom-param-table">
                 <thead>
@@ -36961,6 +37614,16 @@ export function App() {
               </button>
               <button type="button" onClick={saveCustomDeviceTemplate}>保存自定义设备</button>
             </div>
+              </>
+            ) : (
+              renderStateDefinitionPanel(customDeviceDraft.stateDefinitions, {
+                update: updateCustomDeviceStateDraftRow,
+                add: addCustomDeviceStateDraftRow,
+                remove: deleteCustomDeviceStateDraftRow,
+                save: saveCustomDeviceTemplate,
+                saveLabel: "保存自定义设备"
+              })
+            )}
               </div>
             </div>
           </section>

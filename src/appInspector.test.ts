@@ -178,8 +178,8 @@ describe("graph inspector panel", () => {
     expect(treeBlock).toContain("onPointerDown={selectTreeItem}");
     expect(treeBlock).toContain("ref={(element) => {");
     expect(treeBlock).toContain("elementTreeItemRefs.current[treeItemKey] = element;");
-    expect(selectedRule).toContain("#d7eeee");
-    expect(selectedRule).toContain("#277b83");
+    expect(selectedRule).toContain("background: var(--element-tree-selected-bg)");
+    expect(selectedRule).toContain("box-shadow: inset 3px 0 0 var(--element-tree-selected-accent)");
     expect(selectedRule).toContain("font-weight: 800");
   });
 
@@ -7400,7 +7400,6 @@ describe("graph inspector panel", () => {
     const treeTypeHoverBlock = cssRuleBlock(styles, ".element-tree-type:hover,\n.element-tree-type:focus-visible");
     const treeItemHoverBlock = cssRuleBlock(styles, ".element-tree-item:hover,\n.element-tree-item:focus-visible");
     const selectedItemBlock = cssRuleBlock(styles, ".element-tree-item.selected {");
-    const selectedChildListBlock = cssRuleBlock(styles, ".element-tree-item.selected .element-tree-child-list");
     const selectedChildItemBlock = cssRuleBlock(styles, ".element-tree-item.selected .element-tree-child-item {");
     const treeInputFocusBlock = cssRuleBlock(styles, ".element-tree-device-fields input:focus,\n.element-tree-child-item input:focus");
     const containerParamTabActiveBlock = cssRuleBlock(styles, ".container-param-tabs button.active");
@@ -7449,17 +7448,16 @@ describe("graph inspector panel", () => {
     expect(graphToolbarActiveBlock).toContain("background: #d7eeee");
     expect(graphToolbarActiveBlock).toContain("border-color: #3f8f96");
     expect(graphToolbarActiveBlock).toContain("color: #1f2937");
-    expect(treeTypeHoverBlock).toContain("background: #e8eef5");
-    expect(treeItemHoverBlock).toContain("background: #f1f5f9");
-    expect(selectedItemBlock).toContain("background: #d7eeee");
+    expect(treeTypeHoverBlock).toContain("background: var(--element-tree-row-hover)");
+    expect(treeItemHoverBlock).toContain("background: var(--element-tree-row-hover)");
+    expect(selectedItemBlock).toContain("background: var(--element-tree-selected-bg)");
     expect(selectedItemBlock).toContain("color: #1e293b");
-    expect(selectedItemBlock).toContain("border-color: #3f8f96");
-    expect(selectedItemBlock).toContain("box-shadow: inset 4px 0 0 #277b83");
+    expect(selectedItemBlock).toContain("border-color: transparent");
+    expect(selectedItemBlock).toContain("box-shadow: inset 3px 0 0 var(--element-tree-selected-accent)");
     expect(selectedItemBlock).not.toContain("color: #ffffff");
     expect(selectedItemBlock).not.toContain("#1d4ed8");
-    expect(selectedChildListBlock).toContain("border-left-color: #3f8f96");
     expect(selectedChildItemBlock).toContain("color: #334155");
-    expect(selectedChildItemBlock).toContain("rgba(232, 247, 248, 0.96)");
+    expect(selectedChildItemBlock).toContain("background: transparent");
     expect(containerParamTabActiveBlock).toContain("background: #d7eeee");
     expect(containerParamTabActiveBlock).toContain("border-color: #3f8f96");
     expect(containerParamTabActiveBlock).toContain("color: #1f2937");
@@ -8748,7 +8746,7 @@ describe("graph inspector panel", () => {
     expect(savedProjectNormalizerBlock).not.toContain("assignMissingDeviceIndexes");
   });
 
-  test("persists scheme and model list changes to the backend without swallowing the first edit", async () => {
+  test("persists scheme and model list changes through single-record backend APIs", async () => {
     const source = await readAppSource();
     const setterStart = source.indexOf("const [schemes, setSchemesState] = useState<SavedSchemeRecord[]>(initialSavedSchemes);");
     const setterEnd = source.indexOf("const [activeProjectKey", setterStart);
@@ -8756,65 +8754,64 @@ describe("graph inspector panel", () => {
     const backendLoadStart = source.indexOf("const loadToken = ++backendSchemesLoadTokenRef.current;");
     const backendLoadEnd = source.indexOf("fetchBackendColorConfig()", backendLoadStart);
     const backendLoadBlock = source.slice(backendLoadStart, backendLoadEnd);
-    const persistHelperStart = source.indexOf("const persistBackendSchemesPayload = (normalizedSchemesPayload: string) => {");
-    const persistHelperEnd = source.indexOf("useEffect(() => {\n    fetchBackendSchemes()", persistHelperStart);
-    const persistHelperBlock = source.slice(persistHelperStart, persistHelperEnd);
+    const projectSaveStart = source.indexOf("async function saveBackendProjectRecord");
+    const projectSaveEnd = source.indexOf("async function deleteBackendProjectRecord", projectSaveStart);
+    const projectSaveBlock = source.slice(projectSaveStart, projectSaveEnd);
+    const schemeSaveStart = source.indexOf("async function saveBackendSchemeRecord");
+    const schemeSaveEnd = source.indexOf("async function deleteBackendSchemeRecord", schemeSaveStart);
+    const schemeSaveBlock = source.slice(schemeSaveStart, schemeSaveEnd);
     const schemePersistStart = source.indexOf("const normalizedSchemesPayload = serializeSchemesForStorage(schemes);");
     const schemePersistEnd = source.indexOf("}, [schemes]);", schemePersistStart);
     const schemePersistBlock = source.slice(schemePersistStart, schemePersistEnd);
     const saveStart = source.indexOf("const saveCurrentProject =");
     const saveEnd = source.indexOf("const renameProjectRecord", saveStart);
     const saveBlock = source.slice(saveStart, saveEnd);
-    const saveCallIndex = persistHelperBlock.indexOf("saveBackendSchemesPayload(normalizedSchemesPayload)");
-    const persistedAssignmentIndex = persistHelperBlock.indexOf("lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload");
 
-    expect(source).toContain("const pendingBackendSchemesPayloadRef = useRef<string | null>(null)");
+    expect(source).toContain("async function fetchBackendSchemes()");
+    expect(source).toContain("\"/api/schemes\"");
+    expect(source).toContain("async function saveBackendProjectRecord");
+    expect(source).toContain("async function saveBackendSchemeRecord");
+    expect(projectSaveBlock).toContain("\"/api/schemes/project\"");
+    expect(schemeSaveBlock).toContain("\"/api/schemes/scheme\"");
+    expect(source).not.toContain("saveBackendSchemesPayload");
+    expect(source).not.toContain("persistBackendSchemesPayload");
+    expect(source).not.toContain("pendingBackendSchemesPayloadRef");
+    expect(source).not.toContain("backendJsonRequest(\"PUT\", `{\"schemes\":");
     expect(source).toContain("const backendSchemesLoadTokenRef = useRef(0)");
     expect(source).toContain("const schemesChangedBeforeBackendLoadRef = useRef(false)");
     expect(source).toContain("const latestActiveProjectPointerRef = useRef<ActiveProjectPointer | null>(null)");
-    expect(source).toContain("const startupHadStoredSchemesRef = useRef(Boolean(initialStoredSchemesPayload))");
-    expect(source).toContain("shouldPreferLocalSchemesOverBackend(");
     expect(source).toContain("const latestSchemesRef = useRef<SavedSchemeRecord[]>(initialSavedSchemes)");
     expect(source).toContain("latestActiveProjectPointerRef.current = activeProjectPointerPayload(schemes, activeProjectKey, activeSchemeKey);");
     expect(setterBlock).toContain("schemesChangedBeforeBackendLoadRef.current = true");
     expect(setterBlock).toContain("setSchemesState(value)");
     expect(backendLoadBlock).toContain("const localChangedBeforeBackendLoad = schemesChangedBeforeBackendLoadRef.current");
-    expect(backendLoadBlock).toContain("const localSchemesShouldWin = shouldPreferLocalSchemesOverBackend(");
     expect(backendLoadBlock).toContain("const loadToken = ++backendSchemesLoadTokenRef.current");
     expect(backendLoadBlock).toContain("if (loadToken !== backendSchemesLoadTokenRef.current)");
     expect(backendLoadBlock).toContain("const currentSchemesPayload = serializeSchemesForStorage(latestSchemesRef.current)");
-    expect(backendLoadBlock).toContain("if (localChangedBeforeBackendLoad || localSchemesShouldWin)");
-    expect(backendLoadBlock).toContain("persistBackendSchemesPayload(pendingPayload)");
-    expect(backendLoadBlock).toContain("setSchemesState(backendSchemes)");
+    expect(backendLoadBlock).toContain("const mergedSchemes = mergeSavedSchemesForStartup(latestSchemesRef.current, backendSchemes);");
+    expect(backendLoadBlock).toContain("setSchemesState(mergedSchemes)");
+    expect(backendLoadBlock).toContain("persistSchemeProjectsToBackend(mergedSchemes, \"启动合并方案/模型\")");
     expect(backendLoadBlock).toContain("const activePointer = latestActiveProjectPointerRef.current;");
-    expect(backendLoadBlock).toContain("const backendActiveProject = findSavedProjectByActivePointer(backendSchemes, activePointer);");
+    expect(backendLoadBlock).toContain("const backendActiveProject = findSavedProjectByActivePointer(mergedSchemes, activePointer);");
     expect(backendLoadBlock).toContain("loadSavedProject(backendActiveProject.project, backendActiveProject.scheme.id);");
     expect(source).toContain("const persistSchemesPayloadToStorageAndBackend = (normalizedSchemesPayload: string) => {");
     expect(source).toContain("window.localStorage.setItem(SCHEME_STORAGE_KEY, normalizedSchemesPayload)");
     expect(schemePersistBlock).toContain("suppressNextBackendSchemeSyncRef.current && normalizedSchemesPayload === lastPersistedSchemesPayloadRef.current");
     expect(schemePersistBlock).toContain("suppressNextBackendSchemeSyncRef.current = false;");
-    expect(persistHelperBlock).toContain("pendingBackendSchemesPayloadRef.current = normalizedSchemesPayload");
     expect(schemePersistBlock).toContain("persistSchemesPayloadToStorageAndBackend(normalizedSchemesPayload)");
+    expect(schemePersistBlock).not.toContain("saveBackendProjectRecord(");
+    expect(schemePersistBlock).not.toContain("saveBackendSchemeRecord(");
     expect(saveBlock).toContain("const projectSnapshot = currentProject();");
     expect(saveBlock).toContain("project: projectSnapshot,");
     expect(saveBlock).toContain("upsertSavedProjectInScheme(fallbackSchemes, resolvedSchemeId, record)");
     expect(saveBlock).toContain("setSchemes(nextSchemes);");
     expect(saveBlock).toContain("persistSchemesPayloadToStorageAndBackend(serializeSchemesForStorage(nextSchemes));");
+    expect(saveBlock).toContain("saveBackendProjectRecord(");
     expect(saveBlock).not.toContain("updateProjectInSchemes(");
-    expect(saveCallIndex).toBeGreaterThan(-1);
-    expect(persistedAssignmentIndex).toBeGreaterThan(saveCallIndex);
-    expect(persistHelperBlock).toContain(".then(() => {");
-    expect(persistHelperBlock).toContain("lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload;");
-    expect(persistHelperBlock).toContain("pendingBackendSchemesPayloadRef.current = null");
-    expect(persistHelperBlock).toContain("writeOperationLog(\"方案/模型目录已自动保存到后台\")");
-    expect(schemePersistBlock).not.toContain("if (suppressNextBackendSchemeSyncRef.current) {\n        suppressNextBackendSchemeSyncRef.current = false;\n        return;\n      }\n      void saveBackendSchemesPayload");
   });
 
-  test("keeps page-refresh draft recovery from overwriting backend scheme directories", async () => {
+  test("merges startup local scheme cache with backend schemes instead of overwriting either side", async () => {
     const source = await readAppSource();
-    const preferStart = source.indexOf("function shouldPreferLocalSchemesOverBackend");
-    const preferEnd = source.indexOf("function findProjectRecordInSchemes", preferStart);
-    const preferBlock = source.slice(preferStart, preferEnd);
     const backendLoadStart = source.indexOf("const loadToken = ++backendSchemesLoadTokenRef.current;");
     const backendLoadEnd = source.indexOf("fetchBackendColorConfig()", backendLoadStart);
     const backendLoadBlock = source.slice(backendLoadStart, backendLoadEnd);
@@ -8824,10 +8821,11 @@ describe("graph inspector panel", () => {
 
     expect(initialStateBlock).toContain("const refreshRecovery = readRefreshRecoveryProject();");
     expect(initialStateBlock).toContain("draft: refreshRecovery ?? savedProjectDraft ?? readDraftProject()");
-    expect(preferBlock).not.toContain("recoveredFromRefresh");
-    expect(preferBlock).not.toContain("latestSavedSchemesTimestamp");
-    expect(preferBlock).toContain("if (options.backendSchemes.length === 0)");
-    expect(preferBlock).toContain("return false;");
+    expect(source).toContain("mergeSavedSchemesForStartup");
+    expect(source).not.toContain("function shouldPreferLocalSchemesOverBackend");
+    expect(backendLoadBlock).toContain("const mergedSchemes = mergeSavedSchemesForStartup(latestSchemesRef.current, backendSchemes);");
+    expect(backendLoadBlock).toContain("setSchemesState(mergedSchemes)");
+    expect(backendLoadBlock).toContain("persistSchemeProjectsToBackend(mergedSchemes, \"启动合并方案/模型\")");
     expect(backendLoadBlock).not.toContain("recoveredFromRefresh:");
     expect(source).not.toContain("startupRecoveredFromRefreshRef");
   });
