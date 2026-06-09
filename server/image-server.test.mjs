@@ -2,10 +2,13 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, test } from "vitest";
+import AdmZip from "adm-zip";
 import {
   archiveStaleSchemeFiles,
+  createSchemeArchiveBuffer,
   deleteSchemeProjectRecord,
   deleteSchemeRecordDirectory,
+  importSchemeArchiveBuffer,
   saveSchemeProjectRecord,
   saveSchemeRecordDirectory
 } from "./image-server.mjs";
@@ -147,6 +150,74 @@ describe("scheme file persistence", () => {
       await expect(readFile(join(filesRoot, "默认方案", "山西.json"), "utf-8")).resolves.toContain("山西");
       await expect(readFile(join(filesRoot, "待删方案", "qinling.json"), "utf-8")).rejects.toThrow();
       await expect(readFile(join(trashRoot, "delete-scheme", "待删方案", "qinling.json"), "utf-8")).resolves.toContain("qinling");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("exports one scheme directory as a zip while preserving child scheme folders", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-export-zip-"));
+    try {
+      const filesRoot = join(root, "files");
+      await mkdir(join(filesRoot, "默认方案", "1-1"), { recursive: true });
+      await writeFile(join(filesRoot, "默认方案", "电压等级.json"), "{\"name\":\"电压等级\"}", "utf-8");
+      await writeFile(join(filesRoot, "默认方案", "1-1", "1-1-1.json"), "{\"name\":\"1-1-1\"}", "utf-8");
+
+      const { buffer, filename } = await createSchemeArchiveBuffer({
+        filesRoot,
+        schemePath: ["默认方案"]
+      });
+      const zip = new AdmZip(buffer);
+      const entryNames = zip.getEntries().map((entry) => entry.entryName.replace(/\\/gu, "/"));
+
+      expect(filename).toBe("默认方案.zip");
+      expect(entryNames).toContain("默认方案/电压等级.json");
+      expect(entryNames).toContain("默认方案/1-1/1-1-1.json");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("imports a scheme zip as a directory tree and requires overwrite on duplicate folders", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-import-zip-"));
+    try {
+      const filesRoot = join(root, "files");
+      const trashRoot = join(root, "trash");
+      const zip = new AdmZip();
+      zip.addFile("默认方案/线路.json", Buffer.from("{\"name\":\"线路\"}", "utf-8"));
+      zip.addFile("默认方案/1-1/1-1-1.json", Buffer.from("{\"name\":\"1-1-1\"}", "utf-8"));
+
+      const imported = await importSchemeArchiveBuffer({
+        filesRoot,
+        trashRoot,
+        buffer: zip.toBuffer(),
+        fileName: "默认方案.zip"
+      });
+
+      expect(imported.conflict).toBe(false);
+      await expect(readFile(join(filesRoot, "默认方案", "线路.json"), "utf-8")).resolves.toContain("线路");
+      await expect(readFile(join(filesRoot, "默认方案", "1-1", "1-1-1.json"), "utf-8")).resolves.toContain("1-1-1");
+
+      const conflict = await importSchemeArchiveBuffer({
+        filesRoot,
+        trashRoot,
+        buffer: zip.toBuffer(),
+        fileName: "默认方案.zip"
+      });
+      expect(conflict).toMatchObject({ conflict: true, duplicateSchemeName: "默认方案" });
+
+      const overwriteZip = new AdmZip();
+      overwriteZip.addFile("默认方案/速度.json", Buffer.from("{\"name\":\"速度\"}", "utf-8"));
+      await importSchemeArchiveBuffer({
+        filesRoot,
+        trashRoot,
+        buffer: overwriteZip.toBuffer(),
+        fileName: "默认方案.zip",
+        mode: "overwrite"
+      });
+
+      await expect(readFile(join(filesRoot, "默认方案", "速度.json"), "utf-8")).resolves.toContain("速度");
+      await expect(readFile(join(filesRoot, "默认方案", "线路.json"), "utf-8")).rejects.toThrow();
     } finally {
       await rm(root, { recursive: true, force: true });
     }

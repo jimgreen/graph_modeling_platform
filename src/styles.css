@@ -574,6 +574,7 @@ button:disabled {
 
 .scheme-option,
 .project-option {
+  position: relative;
   display: block;
   width: 100%;
   padding: 8px 8px;
@@ -595,11 +596,12 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-left: calc(8px + var(--scheme-depth, 0) * 14px);
+  min-height: 39px;
+  padding-left: calc(14px + var(--scheme-depth, 0) * 22px);
   color: #0f172a;
-  background: #f8fbff;
+  background: #f8fafc;
   font-weight: 800;
-  box-shadow: inset 4px 0 0 #bfdbfe;
+  box-shadow: inset 3px 0 0 #cbd5e1;
 }
 
 .scheme-toggle-icon {
@@ -616,7 +618,33 @@ button:disabled {
   margin-left: 0;
 }
 
-.scheme-group,
+.scheme-group {
+  position: relative;
+}
+
+.scheme-group.nested::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(24px + var(--scheme-depth, 0) * 22px);
+  width: 1px;
+  background: #d7dee8;
+  pointer-events: none;
+}
+
+.scheme-group.nested > .scheme-option::before,
+.scheme-projects > .project-option::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: calc(24px + var(--scheme-depth, 0) * 22px);
+  width: 9px;
+  height: 1px;
+  background: #d7dee8;
+  pointer-events: none;
+}
+
 .scheme-projects {
   content-visibility: auto;
   contain-intrinsic-size: auto 36px;
@@ -626,9 +654,14 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-left: calc(12px + var(--scheme-depth, 0) * 14px);
+  min-height: 38px;
+  padding-left: calc(36px + var(--scheme-depth, 0) * 22px);
   color: #334155;
   background: #ffffff;
+}
+
+.scheme-projects > .project-empty {
+  padding-left: calc(36px + var(--scheme-depth, 0) * 22px);
 }
 
 .project-item-icon {
@@ -661,7 +694,7 @@ button:disabled {
 
 .scheme-option.selected {
   background: #f1f5f9;
-  box-shadow: inset 3px 0 0 #94a3b8;
+  box-shadow: inset 3px 0 0 #64748b;
 }
 
 .project-option.active {
@@ -682,17 +715,18 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 700;
 }
 
 .scheme-option .project-tree-name {
   color: #0f172a;
-  font-weight: 900;
+  font-size: 13.5px;
+  font-weight: 850;
 }
 
 .project-option .project-tree-name {
-  color: #334155;
+  color: #475569;
   font-weight: 700;
 }
 

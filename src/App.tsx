@@ -862,9 +862,11 @@ type PendingModelImportConflict = {
   duplicateProjectName: string;
 } | null;
 type PendingSchemeImportConflict = {
-  importedScheme: SavedSchemeRecord;
+  importedScheme?: SavedSchemeRecord;
+  importFile?: File;
+  importedPath?: string[];
   importedName: string;
-  duplicateSchemeId: string;
+  duplicateSchemeId?: string;
   duplicateSchemeName: string;
   targetParentSchemeId?: string;
 } | null;
@@ -1389,6 +1391,15 @@ type CanvasRenderOptions = CanvasBounds & {
 };
 type BackendSchemesResponse = {
   schemes: SavedSchemeRecord[];
+};
+type BackendSchemeArchiveImportResponse = BackendSchemesResponse & {
+  ok?: boolean;
+  conflict?: boolean;
+  importedName?: string;
+  duplicateSchemeName?: string;
+  importedPath?: string[];
+  parentPath?: string[];
+  error?: string;
 };
 type BackendProjectSaveResponse = {
   ok?: boolean;
@@ -3825,6 +3836,53 @@ async function fetchBackendSchemes(): Promise<SavedSchemeRecord[]> {
   return hydrateSavedSchemeRuntimeIds(schemes.map(normalizeSavedSchemeIndexes));
 }
 
+function schemePathQueryParam(name: string, path: string[]) {
+  return `${name}=${encodeURIComponent(JSON.stringify(path))}`;
+}
+
+async function downloadBackendSchemeArchive(schemePath: string[], filename: string): Promise<void> {
+  const response = await fetch(`/api/schemes/export?${schemePathQueryParam("schemePath", schemePath)}`);
+  if (!response.ok) {
+    throw new Error(await backendErrorMessage(response, "导出方案压缩包失败。"));
+  }
+  await saveBlobFile({
+    filename,
+    blob: await response.blob(),
+    mime: "application/zip",
+    description: "方案压缩包",
+    extensions: [".zip"],
+    pickerId: SCHEME_EXPORT_DIRECTORY_PICKER_ID
+  });
+}
+
+async function uploadBackendSchemeArchive(
+  file: File,
+  parentPath: string[],
+  options: { mode?: "check" | "overwrite"; targetName?: string } = {}
+): Promise<BackendSchemeArchiveImportResponse> {
+  const params = new URLSearchParams({
+    parentPath: JSON.stringify(parentPath),
+    fileName: file.name,
+    mode: options.mode ?? "check"
+  });
+  if (options.targetName) {
+    params.set("targetName", options.targetName);
+  }
+  const response = await fetch(`/api/schemes/import?${params.toString()}`, {
+    method: "POST",
+    headers: { "content-type": file.type || "application/zip" },
+    body: file
+  });
+  const payload = (await response.json().catch(() => ({}))) as BackendSchemeArchiveImportResponse;
+  if (response.status === 409 && payload.conflict) {
+    return { ...payload, conflict: true };
+  }
+  if (!response.ok) {
+    throw new Error(typeof payload.error === "string" ? payload.error : "导入方案压缩包失败。");
+  }
+  return payload;
+}
+
 async function saveBackendProjectRecord(schemePath: string[], record: SavedProjectRecord, previousName = ""): Promise<SavedProjectRecord> {
   const payload = await fetchBackendJson<BackendProjectSaveResponse>(
     "/api/schemes/project",
@@ -5624,6 +5682,10 @@ function constrainPointToOrthogonalAxis(start: Point, point: Point): Point {
 
 function downloadText(filename: string, text: string, mime: string) {
   const blob = new Blob([text], { type: mime });
+  downloadBlob(filename, blob);
+}
+
+function downloadBlob(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -5674,6 +5736,14 @@ type TextSaveOptions = {
   description: string;
   extensions: string[];
 };
+type BlobSaveOptions = {
+  filename: string;
+  blob: Blob;
+  mime: string;
+  description: string;
+  extensions: string[];
+  pickerId?: string;
+};
 
 const EXPORT_SAVE_PICKER_ID = "model-export";
 const SCHEME_EXPORT_DIRECTORY_PICKER_ID = "scheme-export";
@@ -5712,6 +5782,38 @@ async function saveTextFile(options: TextSaveOptions) {
     }
     window.alert("保存文件失败，已改为浏览器下载。");
     downloadText(options.filename, options.text, options.mime);
+  }
+}
+
+async function saveBlobFile(options: BlobSaveOptions) {
+  const picker = (window as SaveFilePickerWindow).showSaveFilePicker;
+  if (typeof picker !== "function") {
+    downloadBlob(options.filename, options.blob);
+    return;
+  }
+  try {
+    const handle = await picker.call(window, {
+      id: options.pickerId ?? EXPORT_SAVE_PICKER_ID,
+      suggestedName: options.filename,
+      types: [
+        {
+          description: options.description,
+          accept: {
+            [options.mime]: options.extensions
+          }
+        }
+      ],
+      excludeAcceptAllOption: false
+    });
+    const writable = await handle.createWritable();
+    await writable.write(options.blob);
+    await writable.close();
+  } catch (error) {
+    if (isPickerAbort(error)) {
+      return;
+    }
+    window.alert("保存文件失败，已改为浏览器下载。");
+    downloadBlob(options.filename, options.blob);
   }
 }
 
@@ -29182,6 +29284,25 @@ export function App() {
     writeOperationLog(`导入方案：${importedScheme.name}`);
   };
 
+  const applyBackendSchemeArchiveImport = (payload: BackendSchemeArchiveImportResponse, fallbackName: string) => {
+    const importedPath = Array.isArray(payload.importedPath) ? payload.importedPath : [];
+    const backendSchemes = hydrateSavedSchemeRuntimeIds((payload.schemes ?? []).map(normalizeSavedSchemeIndexes));
+    suppressNextBackendSchemeSyncRef.current = true;
+    schemesChangedBeforeBackendLoadRef.current = false;
+    setSchemesState(backendSchemes);
+    const importedScheme = importedPath.length > 0 ? findSavedSchemeByPath(backendSchemes, importedPath) : null;
+    if (importedScheme) {
+      const parentPath = importedPath.slice(0, -1);
+      const parentScheme = parentPath.length > 0 ? findSavedSchemeByPath(backendSchemes, parentPath) : null;
+      if (parentScheme) {
+        setExpandedSchemeIds((current) => (current.includes(parentScheme.id) ? current : [...current, parentScheme.id]));
+      }
+      setExpandedSchemeIds((current) => (current.includes(importedScheme.id) ? current : [...current, importedScheme.id]));
+      selectSingleScheme(importedScheme.id);
+    }
+    writeOperationLog(`导入方案压缩包：${payload.importedName || fallbackName}`);
+  };
+
   const importSchemeFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
     if (!requireEditMode("导入方案")) {
@@ -29194,6 +29315,23 @@ export function App() {
       return;
     }
     try {
+      if (/\.zip$/iu.test(file.name)) {
+        const parentSchemeId = schemeImportParentSchemeIdRef.current;
+        const parentPath = parentSchemeId ? schemePathForScheme(parentSchemeId) : [];
+        const payload = await uploadBackendSchemeArchive(file, parentPath);
+        if (payload.conflict) {
+          setPendingSchemeImportConflict({
+            importFile: file,
+            importedPath: payload.parentPath,
+            importedName: payload.importedName || file.name.replace(/\.zip$/iu, "") || "导入方案",
+            duplicateSchemeName: payload.duplicateSchemeName || payload.importedName || "同名方案",
+            targetParentSchemeId: parentSchemeId
+          });
+          return;
+        }
+        applyBackendSchemeArchiveImport(payload, file.name);
+        return;
+      }
       const text = await file.text();
       const importedScheme = createImportedSchemeRecord(text, file.name);
       const parentSchemeId = schemeImportParentSchemeIdRef.current;
@@ -29285,9 +29423,43 @@ export function App() {
       setPendingSchemeImportConflict(null);
       return;
     }
-    const duplicateScheme = findSavedSchemeById(schemes, conflict.duplicateSchemeId);
+    if (conflict.importFile) {
+      const parentPath = conflict.targetParentSchemeId ? schemePathForScheme(conflict.targetParentSchemeId) : [];
+      const handleZipImport = async (targetName?: string) => {
+        try {
+          const payload = await uploadBackendSchemeArchive(conflict.importFile as File, parentPath, { mode: "overwrite", targetName });
+          applyBackendSchemeArchiveImport(payload, targetName || conflict.importedName);
+        } catch (error) {
+          window.alert(error instanceof Error ? `导入方案压缩包失败：${error.message}` : "导入方案压缩包失败。");
+        }
+      };
+      if (action === "rename") {
+        const siblingNames = savedChildSchemeNames(schemes, conflict.targetParentSchemeId ?? "");
+        const renamed = promptUniqueRecordName(
+          "请输入导入后的方案名称",
+          uniqueRecordName(conflict.importedName, siblingNames, "导入方案"),
+          siblingNames,
+          "方案名称不能为空。",
+          "方案名称重复，无法导入。"
+        );
+        if (!renamed) {
+          return;
+        }
+        setPendingSchemeImportConflict(null);
+        void handleZipImport(renamed);
+        return;
+      }
+      setPendingSchemeImportConflict(null);
+      void handleZipImport();
+      return;
+    }
+    const duplicateScheme = findSavedSchemeById(schemes, conflict.duplicateSchemeId ?? "");
     const targetParentSchemeId = conflict.targetParentSchemeId ?? "";
     const siblingNames = savedChildSchemeNames(schemes, targetParentSchemeId);
+    if (!conflict.importedScheme) {
+      setPendingSchemeImportConflict(null);
+      return;
+    }
     if (action === "rename") {
       const renamed = promptUniqueRecordName(
         "请输入导入后的方案名称",
@@ -29364,44 +29536,9 @@ export function App() {
   };
 
   const exportSchemeRecord = async (scheme: SavedSchemeRecord) => {
-    const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
-    const writeSchemeFiles = async (writer: (filename: string, text: string, mime: string) => Promise<void> | void) => {
-      await writer(`${safeFilePart(scheme.name)}.scheme.json`, serializeSchemeRecordForFile(scheme), "application/json");
-      for (const project of flattenSavedProjects([scheme])) {
-        const prefix = `${safeFilePart(scheme.name)}_${safeFilePart(project.name)}`;
-        await writer(`${prefix}.json`, serializeProject(project.project), "application/json");
-        await writer(
-          `${prefix}.svg`,
-          buildSvgDocument(project.project.nodes, project.project.edges, {
-            width: project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
-            height: project.project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT,
-            backgroundColor: project.project.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND,
-            backgroundImage: resolveProjectImage(project.project),
-            colorDisplayMode,
-            colorPalette,
-            deviceTemplates: libraryTemplates,
-            layers: project.project.layers,
-            activeLayerId: project.project.activeLayerId,
-            measurements: project.project.measurements,
-            measurementConfig
-          }),
-          "image/svg+xml"
-        );
-        await writer(`${prefix}.e`, buildEDeviceParameterFile(project.project), "text/plain");
-      }
-    };
-    if (typeof picker !== "function") {
-      window.alert("当前浏览器不支持目录选择，已改为逐个下载。");
-      await writeSchemeFiles((filename, text, mime) => downloadText(filename, text, mime));
-      writeOperationLog(`导出方案：${scheme.name}`);
-      return;
-    }
     try {
-      const directoryHandle = await picker.call(window, {
-        id: SCHEME_EXPORT_DIRECTORY_PICKER_ID,
-        mode: "readwrite"
-      });
-      await writeSchemeFiles((filename, text, mime) => writeTextFileToDirectory(directoryHandle, filename, text, mime));
+      const schemePath = schemePathForRecord(scheme);
+      await downloadBackendSchemeArchive(schemePath, `${safeFilePart(scheme.name)}.zip`);
       writeOperationLog(`导出方案：${scheme.name}`);
       window.alert(`已导出方案“${scheme.name}”，共 ${flattenSavedProjects([scheme]).length} 个模型。`);
     } catch (error) {
@@ -29611,6 +29748,7 @@ export function App() {
       <div
         className={`scheme-group ${depth > 0 ? "nested" : ""}`}
         key={scheme.id}
+        style={schemeIndentStyle}
       >
         <div
           role="option"
@@ -34282,7 +34420,7 @@ export function App() {
             <input ref={stateVisualImageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseStateVisualImage} />
             <input ref={stateIconDrawingImportInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseStateIconDrawingImport} />
             <input ref={modelImportInputRef} type="file" accept=".json,application/json" hidden onChange={importModelFile} />
-            <input ref={schemeImportInputRef} type="file" accept=".json,application/json" hidden onChange={importSchemeFile} />
+            <input ref={schemeImportInputRef} type="file" accept=".zip,application/zip,.json,application/json" hidden onChange={importSchemeFile} />
             <button
               onClick={exportSvg}
               disabled={!canExportCurrentModel}

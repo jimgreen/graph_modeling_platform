@@ -1,8 +1,9 @@
 import { createServer } from "node:http";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
-import { dirname, extname, join, relative, resolve } from "node:path";
+import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import AdmZip from "adm-zip";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(__dirname, "..");
@@ -18,6 +19,7 @@ const deviceLibraryDataDir = resolve(repoRoot, "data", "device-library");
 const deviceLibraryPath = join(deviceLibraryDataDir, "library.json");
 const maxImageBodyBytes = 16 * 1024 * 1024;
 const maxSchemeBodyBytes = 64 * 1024 * 1024;
+const maxSchemeZipBodyBytes = 256 * 1024 * 1024;
 const maxColorConfigBodyBytes = 1024 * 1024;
 const maxMeasurementConfigBodyBytes = 1024 * 1024;
 const maxDeviceLibraryBodyBytes = 16 * 1024 * 1024;
@@ -628,6 +630,24 @@ function readBody(request, maxBodyBytes = maxImageBodyBytes, oversizeMessage = "
       chunks.push(chunk);
     });
     request.on("end", () => resolveBody(Buffer.concat(chunks).toString("utf-8")));
+    request.on("error", reject);
+  });
+}
+
+function readRawBody(request, maxBodyBytes = maxImageBodyBytes, oversizeMessage = "请求体过大。") {
+  return new Promise((resolveBody, reject) => {
+    const chunks = [];
+    let size = 0;
+    request.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > maxBodyBytes) {
+        request.destroy();
+        reject(new Error(oversizeMessage));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on("end", () => resolveBody(Buffer.concat(chunks)));
     request.on("error", reject);
   });
 }
@@ -1631,6 +1651,133 @@ function schemeDirectoryFromPath(filesRoot, schemePath) {
   return parts.reduce((dir, part) => join(dir, part), filesRoot);
 }
 
+function isInsideDirectory(parentDir, childPath) {
+  const relativePath = relative(parentDir, childPath);
+  return Boolean(relativePath) && !relativePath.startsWith("..") && !isAbsolute(relativePath);
+}
+
+function parseSchemePathParam(value) {
+  if (!value) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map((part) => safeFilePart(part, "方案")).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function zipEntryParts(entryName) {
+  const normalized = String(entryName || "").replace(/\\/gu, "/");
+  if (!normalized || normalized.startsWith("/") || /^[a-z]:/iu.test(normalized)) {
+    throw new Error("zip 文件包含无效路径。");
+  }
+  const parts = normalized.split("/").filter(Boolean);
+  if (parts.some((part) => part === "." || part === "..")) {
+    throw new Error("zip 文件包含不安全路径。");
+  }
+  return parts;
+}
+
+function schemeZipRootName(entries, fallbackName) {
+  const fileParts = entries
+    .filter((entry) => !entry.isDirectory)
+    .map((entry) => zipEntryParts(entry.entryName))
+    .filter((parts) => parts.length > 0);
+  if (fileParts.length === 0) {
+    throw new Error("zip 文件中没有可导入的方案文件。");
+  }
+  const firstRoot = fileParts[0][0];
+  const hasSingleRoot = firstRoot && fileParts.every((parts) => parts.length > 1 && parts[0] === firstRoot);
+  return safeFilePart(hasSingleRoot ? firstRoot : fallbackName, "导入方案");
+}
+
+async function extractSchemeZipToDirectory(zip, targetDir, rootName) {
+  await mkdir(targetDir, { recursive: true });
+  for (const entry of zip.getEntries()) {
+    const parts = zipEntryParts(entry.entryName);
+    const relativeParts = safeFilePart(parts[0], parts[0]) === rootName ? parts.slice(1) : parts;
+    if (relativeParts.length === 0) {
+      continue;
+    }
+    const targetPath = relativeParts.reduce((current, part) => join(current, safeFilePart(part, part)), targetDir);
+    if (!isInsideDirectory(targetDir, targetPath)) {
+      throw new Error("zip 文件包含越界路径。");
+    }
+    if (entry.isDirectory) {
+      await mkdir(targetPath, { recursive: true });
+      continue;
+    }
+    await mkdir(dirname(targetPath), { recursive: true });
+    await writeFile(targetPath, entry.getData());
+  }
+}
+
+export async function createSchemeArchiveBuffer(options) {
+  const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
+  const schemePath = Array.isArray(options.schemePath) ? options.schemePath : [];
+  if (schemePath.length === 0) {
+    throw new Error("缺少方案路径。");
+  }
+  const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
+  const schemeStat = await stat(schemeDir);
+  if (!schemeStat.isDirectory()) {
+    throw new Error("方案路径不是目录。");
+  }
+  const schemeName = safeFilePart(schemePath[schemePath.length - 1], "方案");
+  const zip = new AdmZip();
+  zip.addLocalFolder(schemeDir, schemeName);
+  return {
+    buffer: zip.toBuffer(),
+    filename: `${schemeName}.zip`,
+    schemeName
+  };
+}
+
+export async function importSchemeArchiveBuffer(options) {
+  const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
+  const trashRoot = options.trashRoot ?? schemeTrashDir;
+  await mkdir(filesRoot, { recursive: true });
+  const parentPath = Array.isArray(options.parentPath) ? options.parentPath.map((part) => safeFilePart(part, "方案")).filter(Boolean) : [];
+  const fileName = safeFilePart(options.fileName || "导入方案.zip", "导入方案.zip").replace(/\.zip$/iu, "");
+  const mode = options.mode === "overwrite" ? "overwrite" : "check";
+  const requestedName = safeFilePart(options.targetName || "", "");
+  const zip = options.zip && typeof options.zip.getEntries === "function" ? options.zip : new AdmZip(options.buffer);
+  const entries = zip.getEntries();
+  const zipRootName = schemeZipRootName(entries, fileName);
+  const importName = requestedName || zipRootName;
+  const parentDir = schemeDirectoryFromPath(filesRoot, parentPath);
+  const targetDir = join(parentDir, importName);
+  if (!isInsideDirectory(filesRoot, targetDir)) {
+    throw new Error("目标方案路径无效。");
+  }
+  let targetExists = false;
+  try {
+    targetExists = (await stat(targetDir)).isDirectory();
+  } catch {
+    targetExists = false;
+  }
+  if (targetExists && mode !== "overwrite") {
+    return {
+      conflict: true,
+      importedName: importName,
+      duplicateSchemeName: importName,
+      parentPath
+    };
+  }
+  await mkdir(parentDir, { recursive: true });
+  if (targetExists) {
+    await archiveSchemeStoreEntry(targetDir, filesRoot, trashRoot, schemeArchiveId());
+  }
+  await extractSchemeZipToDirectory(zip, targetDir, zipRootName);
+  return {
+    conflict: false,
+    importedName: importName,
+    importedPath: [...parentPath, importName]
+  };
+}
+
 function sameSchemePath(first, second) {
   const firstParts = Array.isArray(first) ? first.map((part) => safeFilePart(part, "方案")) : [];
   const secondParts = Array.isArray(second) ? second.map((part) => safeFilePart(part, "方案")) : [];
@@ -1953,6 +2100,67 @@ async function handleDeleteSchemeRecord(request, response) {
   sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });
 }
 
+async function handleExportSchemeArchive(url, response) {
+  const filesRoot = join(schemeDataDir, "files");
+  const schemePath = parseSchemePathParam(url.searchParams.get("schemePath"));
+  try {
+    const { buffer, filename } = await createSchemeArchiveBuffer({ filesRoot, schemePath });
+    response.writeHead(200, {
+      "content-type": "application/zip",
+      "content-length": String(buffer.length),
+      "content-disposition": `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      "cache-control": "no-store",
+      ...accessControlHeaders
+    });
+    response.end(buffer);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "导出方案压缩包失败。";
+    if (message.includes("缺少方案路径")) {
+      sendError(response, 400, message);
+      return;
+    }
+    sendError(response, 404, "方案目录不存在。");
+  }
+}
+
+async function handleImportSchemeArchive(url, request, response) {
+  const filesRoot = join(schemeDataDir, "files");
+  const trashRoot = schemeTrashDir;
+  const parentPath = parseSchemePathParam(url.searchParams.get("parentPath"));
+  const fileName = url.searchParams.get("fileName") || "导入方案.zip";
+  const mode = url.searchParams.get("mode") === "overwrite" ? "overwrite" : "check";
+  const targetName = url.searchParams.get("targetName") || "";
+  const buffer = await readRawBody(request, maxSchemeZipBodyBytes, "方案压缩包过大，最大支持 256MB。");
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    sendError(response, 400, "缺少方案压缩包。");
+    return;
+  }
+  let zip;
+  try {
+    zip = new AdmZip(buffer);
+  } catch {
+    sendError(response, 400, "zip 文件格式不正确。");
+    return;
+  }
+  try {
+    const result = await importSchemeArchiveBuffer({ filesRoot, trashRoot, buffer, parentPath, fileName, mode, targetName });
+    if (result.conflict) {
+      sendJson(response, 409, { error: "方案目录已存在。", ...result });
+      return;
+    }
+    const schemes = normalizeSchemesForStorage(await readSchemes());
+    sendJson(response, 200, {
+      ok: true,
+      schemes,
+      importedName: result.importedName,
+      importedPath: result.importedPath,
+      savedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    sendError(response, 400, error instanceof Error ? error.message : "导入方案压缩包失败。");
+  }
+}
+
 async function handleSaveColorConfig(request, response) {
   const payload = await readJsonBody(request, maxColorConfigBodyBytes, "配色配置数据过大，最大支持 1MB。");
   const normalized = await writeColorConfig(payload);
@@ -2001,6 +2209,12 @@ export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
     ["GET /api/schemes", async ({ response }) => {
       const schemes = normalizeSchemesForStorage(await readSchemes());
       sendJson(response, 200, { schemes });
+    }],
+    ["GET /api/schemes/export", async ({ url, response }) => {
+      await handleExportSchemeArchive(url, response);
+    }],
+    ["POST /api/schemes/import", async ({ url, request, response }) => {
+      await handleImportSchemeArchive(url, request, response);
     }],
     ["PUT /api/schemes", async ({ request, response }) => {
       await handleSaveSchemes(request, response);

@@ -3381,7 +3381,7 @@ describe("graph inspector panel", () => {
     expect(projectContextBlock).toContain("模型导出");
   });
 
-  test("exports schemes through a directory picker and keeps imports exports in context menus", async () => {
+  test("exports schemes through backend zip archives and keeps imports exports in context menus", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
     const exportStart = source.indexOf("const exportSchemeRecord = async");
@@ -3394,20 +3394,21 @@ describe("graph inspector panel", () => {
     const projectContextEnd = source.indexOf("{pendingModelImportConflict && (", projectContextStart);
     const projectContextBlock = source.slice(projectContextStart, projectContextEnd);
 
-    expect(source).toContain("type DirectoryPickerWindow");
-    expect(source).toContain("showDirectoryPicker");
-    expect(source).toContain("const writeTextFileToDirectory = async");
+    expect(source).toContain("downloadBackendSchemeArchive");
+    expect(source).toContain("uploadBackendSchemeArchive");
+    expect(source).toContain("applyBackendSchemeArchiveImport");
     expect(source).toContain("const schemeImportInputRef = useRef<HTMLInputElement | null>(null)");
     expect(source).toContain("pendingSchemeImportConflict");
     expect(source).toContain("resolveDuplicateSchemeImport");
     expect(source).toContain("const openSchemeImportFilePicker = (parentSchemeId = \"\")");
     expect(source).toContain("const schemeImportParentSchemeIdRef = useRef<string>(\"\")");
     expect(source).toContain("const importSchemeFile = async");
-    expect(exportBlock).toContain("showDirectoryPicker");
-    expect(exportBlock).toContain("writeTextFileToDirectory(directoryHandle");
-    expect(exportBlock).toContain("serializeProject(project.project)");
-    expect(exportBlock).toContain("buildSvgDocument(project.project.nodes");
-    expect(exportBlock).toContain("buildEDeviceParameterFile(project.project)");
+    expect(source).toContain('accept=".zip,application/zip,.json,application/json"');
+    expect(exportBlock).toContain("downloadBackendSchemeArchive");
+    expect(exportBlock).toContain("schemePathForRecord(scheme)");
+    expect(importBlock).toContain('/\\.zip$/iu.test(file.name)');
+    expect(importBlock).toContain("uploadBackendSchemeArchive(file, parentPath)");
+    expect(importBlock).toContain("applyBackendSchemeArchiveImport(payload, file.name)");
     expect(importBlock).toContain("duplicateScheme");
     expect(importBlock).toContain("setPendingSchemeImportConflict");
     expect(importBlock).not.toContain("promptUniqueRecordName");
