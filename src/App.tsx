@@ -1320,6 +1320,62 @@ type ImageTarget =
   | { kind: "node"; nodeId: string }
   | { kind: "nodeForeground"; nodeId: string }
   | { kind: "canvas" };
+type StateImageUploadTarget = {
+  scope: "definition" | "custom";
+  rowId: string;
+};
+type StateIconDrawingTarget = StateImageUploadTarget;
+type StateVisualShapeKind =
+  | "switch-open"
+  | "switch-closed"
+  | "valve-open"
+  | "valve-closed"
+  | "line"
+  | "point"
+  | "triangle"
+  | "square"
+  | "hexagon"
+  | "polygon"
+  | "circle"
+  | "semicircle"
+  | "ellipse"
+  | "arc"
+  | "text"
+  | "imported-svg"
+  | "image";
+type StateIconDrawingElement = {
+  id: string;
+  kind: StateVisualShapeKind;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  strokeWidth: number;
+  strokeColor: string;
+  fillColor: string;
+  textColor: string;
+  text: string;
+  svgSource?: string;
+  imageHref?: string;
+  imageScale?: number;
+  cropX?: number;
+  cropY?: number;
+};
+type StateIconDrawingDialogState = {
+  target: StateIconDrawingTarget;
+  elements: StateIconDrawingElement[];
+  selectedElementId: string;
+  selectedElementIds: string[];
+};
+type StateIconDrawingDragMode = "move" | "resize" | "rotate";
+type StateIconDrawingDragState = {
+  mode: StateIconDrawingDragMode;
+  elementIds: string[];
+  start: Point;
+  center: Point;
+  startElements: StateIconDrawingElement[];
+};
 type CanvasRenderOptions = CanvasBounds & {
   backgroundColor?: string;
   backgroundImage?: string;
@@ -1437,8 +1493,14 @@ type DeviceDefinitionStateDraftRow = DeviceStateDefinition & {
   name: string;
   icon: string;
   image: string;
+  imageAssetId: string;
   text: string;
   color: string;
+  fillColor: string;
+  strokeColor: string;
+  textColor: string;
+  backgroundImage: string;
+  backgroundImageAssetId: string;
 };
 type VoltageColorVisibility = "all" | "current";
 
@@ -4567,6 +4629,12 @@ function stateDraftRowId() {
   return `state-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+const DEFAULT_STATE_PAGE_ID = "__default-state__";
+
+function isDefaultStatePageId(rowId: string) {
+  return !rowId || rowId === DEFAULT_STATE_PAGE_ID;
+}
+
 function createStateDraftRow(definition: Partial<DeviceStateDefinition> = {}): DeviceDefinitionStateDraftRow {
   const value = String(definition.value ?? "").trim();
   const name = String(definition.name ?? value).trim();
@@ -4575,11 +4643,26 @@ function createStateDraftRow(definition: Partial<DeviceStateDefinition> = {}): D
     value,
     name,
     icon: String(definition.icon ?? "").trim(),
-    image: String(definition.image ?? "").trim(),
-    imageAssetId: String(definition.imageAssetId ?? "").trim() || undefined,
+    image: String(definition.image ?? definition.backgroundImage ?? "").trim(),
+    imageAssetId: String(definition.imageAssetId ?? definition.backgroundImageAssetId ?? "").trim(),
     text: String(definition.text ?? "").trim(),
-    color: String(definition.color ?? "").trim()
+    color: String(definition.color ?? "").trim(),
+    fillColor: String(definition.fillColor ?? "").trim(),
+    strokeColor: String(definition.strokeColor ?? "").trim(),
+    textColor: String(definition.textColor ?? "").trim(),
+    backgroundImage: String(definition.backgroundImage ?? "").trim(),
+    backgroundImageAssetId: String(definition.backgroundImageAssetId ?? "").trim()
   };
+}
+
+function createStateDraftRowFromDefaultVisual(
+  defaultVisual: Partial<DeviceStateDefinition>,
+  definition: Partial<DeviceStateDefinition> = {}
+): DeviceDefinitionStateDraftRow {
+  return createStateDraftRow({
+    ...defaultVisual,
+    ...definition
+  });
 }
 
 function createDefinitionStateDraftRows(template: DeviceTemplate): DeviceDefinitionStateDraftRow[] {
@@ -4595,14 +4678,32 @@ function normalizeStateDraftRows(rows: readonly DeviceDefinitionStateDraftRow[])
       image: row.image,
       imageAssetId: row.imageAssetId,
       text: row.text,
-      color: row.color
+      color: row.color,
+      fillColor: row.fillColor,
+      strokeColor: row.strokeColor,
+      textColor: row.textColor,
+      backgroundImage: row.backgroundImage,
+      backgroundImageAssetId: row.backgroundImageAssetId
     }))
   );
 }
 
 function validateStateDraftRows(rows: readonly DeviceDefinitionStateDraftRow[]) {
   const populatedRows = rows.filter((row) =>
-    [row.value, row.name, row.icon, row.image, row.text, row.color].some((value) => String(value ?? "").trim())
+    [
+      row.value,
+      row.name,
+      row.icon,
+      row.image,
+      row.imageAssetId,
+      row.text,
+      row.color,
+      row.fillColor,
+      row.strokeColor,
+      row.textColor,
+      row.backgroundImage,
+      row.backgroundImageAssetId
+    ].some((value) => String(value ?? "").trim())
   );
   for (const row of populatedRows) {
     if (!row.value.trim() || !row.name.trim()) {
@@ -4618,6 +4719,664 @@ function validateStateDraftRows(rows: readonly DeviceDefinitionStateDraftRow[]) 
     seen.add(key);
   }
   return { states: normalizeStateDraftRows(populatedRows), error: "" };
+}
+
+function stateVisualFromDraftRow(row?: DeviceDefinitionStateDraftRow | null): DeviceStateVisual | null {
+  const [state] = row ? normalizeStateDraftRows([row]) : [];
+  return state ? { ...state, value: state.value, name: state.name } : null;
+}
+
+function activeStateDraftRow(rows: readonly DeviceDefinitionStateDraftRow[], activeRowId: string) {
+  if (isDefaultStatePageId(activeRowId)) {
+    return null;
+  }
+  return rows.find((row) => row.id === activeRowId) ?? null;
+}
+
+function normalizeStatePageId(rows: readonly DeviceDefinitionStateDraftRow[], activeRowId: string) {
+  if (isDefaultStatePageId(activeRowId)) {
+    return DEFAULT_STATE_PAGE_ID;
+  }
+  return rows.some((row) => row.id === activeRowId) ? activeRowId : DEFAULT_STATE_PAGE_ID;
+}
+
+function stateDraftImageValue(row: DeviceDefinitionStateDraftRow) {
+  return row.image || row.backgroundImage;
+}
+
+function stateVisualShapeLabel(kind: StateVisualShapeKind) {
+  switch (kind) {
+    case "switch-open":
+      return "开关开";
+    case "switch-closed":
+      return "开关闭";
+    case "valve-open":
+      return "阀开";
+    case "valve-closed":
+      return "阀关";
+    case "line":
+      return "线";
+    case "point":
+      return "点";
+    case "triangle":
+      return "三角";
+    case "square":
+      return "四方";
+    case "hexagon":
+      return "六角";
+    case "polygon":
+      return "多角";
+    case "circle":
+      return "圆";
+    case "semicircle":
+      return "半圆";
+    case "ellipse":
+      return "椭圆";
+    case "arc":
+      return "圆弧";
+    case "text":
+      return "文字";
+    case "imported-svg":
+      return "SVG";
+    case "image":
+      return "图片";
+    default:
+      return kind;
+  }
+}
+
+function generateStateVisualShapeImage(kind: StateVisualShapeKind, row: DeviceDefinitionStateDraftRow) {
+  const stroke = visibleStateIconColor("#2563eb", row.strokeColor, row.color);
+  const fill = row.fillColor.trim() || "transparent";
+  const textFill = visibleStateIconColor(stroke, row.textColor, row.color);
+  const label = escapeXml(row.text.trim() || row.icon.trim() || row.name.trim() || row.value.trim() || "状态");
+  const common = `fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"`;
+  const text = `<text x="120" y="94" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei" font-size="54" font-weight="800" fill="${escapeXml(textFill)}">${label}</text>`;
+  let body = "";
+  switch (kind) {
+    case "switch-open":
+      body = `<circle cx="70" cy="80" r="14" fill="#fff" stroke="${escapeXml(stroke)}" stroke-width="8"/><circle cx="170" cy="80" r="14" fill="#fff" stroke="${escapeXml(stroke)}" stroke-width="8"/><path d="M 30 80 H 56 M 184 80 H 210 M 84 72 L 154 38" fill="none" stroke="${escapeXml(stroke)}" stroke-width="9" stroke-linecap="round"/>`;
+      break;
+    case "switch-closed":
+      body = `<circle cx="70" cy="80" r="14" fill="#fff" stroke="${escapeXml(stroke)}" stroke-width="8"/><circle cx="170" cy="80" r="14" fill="#fff" stroke="${escapeXml(stroke)}" stroke-width="8"/><path d="M 30 80 H 56 M 84 80 H 156 M 184 80 H 210" fill="none" stroke="${escapeXml(stroke)}" stroke-width="9" stroke-linecap="round"/>`;
+      break;
+    case "valve-open":
+      body = `<path d="M 44 48 L 120 80 L 44 112 Z M 196 48 L 120 80 L 196 112 Z" ${common}/><path d="M 120 34 V 126 M 88 34 H 152" fill="none" stroke="${escapeXml(stroke)}" stroke-width="7" stroke-linecap="round"/>`;
+      break;
+    case "valve-closed":
+      body = `<path d="M 44 48 L 120 80 L 44 112 Z M 196 48 L 120 80 L 196 112 Z" ${common}/><path d="M 76 36 L 164 124 M 164 36 L 76 124" fill="none" stroke="${escapeXml(stroke)}" stroke-width="8" stroke-linecap="round"/>`;
+      break;
+    case "line":
+      body = `<path d="M 42 80 H 198" fill="none" stroke="${escapeXml(stroke)}" stroke-width="10" stroke-linecap="round"/>`;
+      break;
+    case "point":
+      body = `<circle cx="120" cy="80" r="18" fill="${escapeXml(stroke)}"/>`;
+      break;
+    case "triangle":
+      body = `<path d="M 120 34 L 190 122 H 50 Z" ${common}/>`;
+      break;
+    case "square":
+      body = `<rect x="64" y="34" width="112" height="92" rx="4" ${common}/>`;
+      break;
+    case "hexagon":
+      body = `<path d="M 82 34 H 158 L 198 80 L 158 126 H 82 L 42 80 Z" ${common}/>`;
+      break;
+    case "polygon":
+      body = `<path d="M 120 28 L 158 54 L 202 58 L 178 96 L 184 138 L 120 120 L 56 138 L 62 96 L 38 58 L 82 54 Z" ${common}/>`;
+      break;
+    case "circle":
+      body = `<circle cx="120" cy="80" r="48" ${common}/>`;
+      break;
+    case "semicircle":
+      body = `<path d="M 60 104 A 60 60 0 0 1 180 104 Z" ${common}/>`;
+      break;
+    case "ellipse":
+      body = `<ellipse cx="120" cy="80" rx="72" ry="42" ${common}/>`;
+      break;
+    case "arc":
+      body = `<path d="M 58 112 A 72 72 0 0 1 182 112" fill="none" stroke="${escapeXml(stroke)}" stroke-width="10" stroke-linecap="round"/>`;
+      break;
+    case "text":
+      body = text;
+      break;
+    default:
+      body = `<circle cx="120" cy="80" r="48" ${common}/>`;
+      break;
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160"><rect width="240" height="160" fill="none"/>${body}</svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+function stateIconDrawingElementId() {
+  return `state-icon-element-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function visibleStateIconColor(fallback: string, ...values: Array<string | undefined | null>) {
+  for (const value of values) {
+    const normalized = String(value ?? "").trim();
+    if (!normalized) {
+      continue;
+    }
+    const lower = normalized.toLowerCase();
+    if (lower !== "transparent" && lower !== "none") {
+      return normalized;
+    }
+  }
+  return fallback;
+}
+
+function createStateIconDrawingElement(kind: StateVisualShapeKind, row?: DeviceDefinitionStateDraftRow | null): StateIconDrawingElement {
+  const strokeColor = visibleStateIconColor("#2563eb", row?.strokeColor, row?.color);
+  return {
+    id: stateIconDrawingElementId(),
+    kind,
+    x: 120,
+    y: 80,
+    width: kind === "point" ? 28 : kind === "line" || kind === "arc" ? 128 : 76,
+    height: kind === "point" ? 28 : kind === "line" ? 24 : kind === "arc" ? 70 : 58,
+    rotation: 0,
+    strokeWidth: 6,
+    strokeColor,
+    fillColor: kind === "line" || kind === "arc" || kind === "text" ? "transparent" : (row?.fillColor.trim() || "transparent"),
+    textColor: visibleStateIconColor("#111827", row?.textColor, row?.color, strokeColor),
+    text: row?.text.trim() || row?.icon.trim() || stateVisualShapeLabel(kind),
+    svgSource: "",
+    imageHref: "",
+    imageScale: 1,
+    cropX: 0,
+    cropY: 0
+  };
+}
+
+function createImportedStateIconElement(
+  kind: "imported-svg" | "image",
+  source: string,
+  fileName: string
+): StateIconDrawingElement {
+  return {
+    ...createStateIconDrawingElement(kind),
+    width: 120,
+    height: 88,
+    strokeWidth: 0,
+    fillColor: "transparent",
+    text: fileName || stateVisualShapeLabel(kind),
+    svgSource: kind === "imported-svg" ? source : "",
+    imageHref: kind === "image" ? source : "",
+    imageScale: 1,
+    cropX: 0,
+    cropY: 0
+  };
+}
+
+function svgSourceFromDataUrl(dataUrl: string) {
+  const value = dataUrl.trim();
+  if (!value.startsWith("data:image/svg+xml")) {
+    return "";
+  }
+  const commaIndex = value.indexOf(",");
+  if (commaIndex < 0) {
+    return "";
+  }
+  const metadata = value.slice(0, commaIndex).toLowerCase();
+  const payload = value.slice(commaIndex + 1);
+  try {
+    if (metadata.includes(";base64")) {
+      return typeof atob === "function" ? atob(payload) : "";
+    }
+    return decodeURIComponent(payload);
+  } catch {
+    return payload;
+  }
+}
+
+function parseStateIconSvgSource(source: string) {
+  const svgSource = source.trim();
+  if (!svgSource || typeof DOMParser === "undefined") {
+    return null;
+  }
+  try {
+    const document = new DOMParser().parseFromString(svgSource, "image/svg+xml");
+    if (document.querySelector("parsererror")) {
+      return null;
+    }
+    const svg = document.querySelector("svg");
+    if (!svg) {
+      return null;
+    }
+    const width = Number.parseFloat(svg.getAttribute("width") || "") || 240;
+    const height = Number.parseFloat(svg.getAttribute("height") || "") || 160;
+    const viewBox = svg.getAttribute("viewBox") || `0 0 ${formatSvgNumber(width)} ${formatSvgNumber(height)}`;
+    const safeChildren = Array.from(svg.children).filter((child) => !["script", "foreignObject"].includes(child.tagName));
+    const supportChildren = safeChildren.filter((child) => ["defs", "style"].includes(child.tagName));
+    const editableChildren = safeChildren.filter((child) => !["defs", "style", "title", "desc", "metadata"].includes(child.tagName));
+    const supportMarkup = supportChildren.map((child) => child.outerHTML).join("");
+    const body = safeChildren.map((child) => child.outerHTML).join("");
+    return { viewBox, body, supportMarkup, editableChildren };
+  } catch {
+    return null;
+  }
+}
+
+function stateIconSvgElementSource(source: string) {
+  const parsed = parseStateIconSvgSource(source);
+  if (!parsed || !parsed.body) {
+    return "";
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${escapeXml(parsed.viewBox)}">${parsed.body}</svg>`;
+}
+
+function parseSvgStyleAttribute(value: string) {
+  const style: CSSProperties = {};
+  for (const declaration of value.split(";")) {
+    const [rawName, ...rawValue] = declaration.split(":");
+    const name = rawName?.trim();
+    const propertyValue = rawValue.join(":").trim();
+    if (!name || !propertyValue) {
+      continue;
+    }
+    const camelName = name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase()) as keyof CSSProperties;
+    style[camelName] = propertyValue as never;
+  }
+  return style;
+}
+
+function stateIconSvgReactAttributes(element: Element) {
+  const props: Record<string, string | CSSProperties> = {};
+  for (const attribute of Array.from(element.attributes)) {
+    const name = attribute.name;
+    if (name.startsWith("on")) {
+      continue;
+    }
+    if (name === "style") {
+      props.style = parseSvgStyleAttribute(attribute.value);
+      continue;
+    }
+    const propName =
+      name === "class"
+        ? "className"
+        : name === "clip-path"
+          ? "clipPath"
+          : name === "fill-rule"
+            ? "fillRule"
+            : name === "stroke-width"
+              ? "strokeWidth"
+              : name === "stroke-linecap"
+                ? "strokeLinecap"
+                : name === "stroke-linejoin"
+                  ? "strokeLinejoin"
+                  : name === "stroke-dasharray"
+                    ? "strokeDasharray"
+                    : name === "text-anchor"
+                      ? "textAnchor"
+                      : name === "dominant-baseline"
+                        ? "dominantBaseline"
+                        : name === "font-family"
+                          ? "fontFamily"
+                          : name === "font-size"
+                          ? "fontSize"
+                            : name === "font-weight"
+                              ? "fontWeight"
+                              : name === "font-style"
+                                ? "fontStyle"
+                                : name === "text-decoration"
+                                  ? "textDecoration"
+                                  : name === "vector-effect"
+                                    ? "vectorEffect"
+                                    : name === "stop-color"
+                                      ? "stopColor"
+                                      : name === "stop-opacity"
+                                        ? "stopOpacity"
+                                        : name === "fill-opacity"
+                                          ? "fillOpacity"
+                                          : name === "stroke-opacity"
+                                            ? "strokeOpacity"
+                                            : name;
+    props[propName] = attribute.value;
+  }
+  return props;
+}
+
+function stateIconSvgNodeChildren(element: Element, keyPrefix: string): ReactNode[] {
+  return Array.from(element.childNodes).flatMap((child, index) => {
+    if (child.nodeType === Node.TEXT_NODE) {
+      const text = child.textContent ?? "";
+      return text.trim() ? [text] : [];
+    }
+    if (child.nodeType !== Node.ELEMENT_NODE) {
+      return [];
+    }
+    const node = child as Element;
+    if (["script", "foreignObject"].includes(node.tagName)) {
+      return [];
+    }
+    return [stateIconSvgNodeToReact(node, `${keyPrefix}-${index}`)];
+  });
+}
+
+function stateIconSvgNodeToReact(element: Element, key: string): ReactNode {
+  const tag = element.tagName;
+  const props = stateIconSvgReactAttributes(element);
+  const children = stateIconSvgNodeChildren(element, key);
+  switch (tag) {
+    case "svg":
+      return <svg key={key} {...props}>{children}</svg>;
+    case "g":
+      return <g key={key} {...props}>{children}</g>;
+    case "path":
+      return <path key={key} {...props} />;
+    case "circle":
+      return <circle key={key} {...props} />;
+    case "rect":
+      return <rect key={key} {...props} />;
+    case "ellipse":
+      return <ellipse key={key} {...props} />;
+    case "line":
+      return <line key={key} {...props} />;
+    case "polyline":
+      return <polyline key={key} {...props} />;
+    case "polygon":
+      return <polygon key={key} {...props} />;
+    case "text":
+      return <text key={key} {...props}>{children}</text>;
+    case "tspan":
+      return <tspan key={key} {...props}>{children}</tspan>;
+    case "defs":
+      return <defs key={key} {...props}>{children}</defs>;
+    case "clipPath":
+      return <clipPath key={key} {...props}>{children}</clipPath>;
+    case "linearGradient":
+      return <linearGradient key={key} {...props}>{children}</linearGradient>;
+    case "radialGradient":
+      return <radialGradient key={key} {...props}>{children}</radialGradient>;
+    case "stop":
+      return <stop key={key} {...props} />;
+    case "style":
+      return <style key={key} {...props}>{element.textContent ?? ""}</style>;
+    case "image":
+      return <image key={key} {...props} />;
+    default:
+      return <g key={key} {...props}>{children}</g>;
+  }
+}
+
+function stateIconSvgSourceToReactNodes(source: string) {
+  const parsed = parseStateIconSvgSource(source);
+  if (!parsed) {
+    return null;
+  }
+  return parsed.editableChildren.map((child, index) => stateIconSvgNodeToReact(child, `svg-node-${index}`));
+}
+
+function createEditableStateIconElementsFromSvgSource(source: string, fileName: string) {
+  const parsed = parseStateIconSvgSource(source);
+  if (!parsed || parsed.editableChildren.length <= 1) {
+    return [createImportedStateIconElement("imported-svg", stateIconSvgElementSource(source) || source, fileName)];
+  }
+  return parsed.editableChildren.map((child, index) =>
+    createImportedStateIconElement(
+      "imported-svg",
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${escapeXml(parsed.viewBox)}">${parsed.supportMarkup}${child.outerHTML}</svg>`,
+      `${fileName || "SVG"}-${index + 1}`
+    )
+  );
+}
+
+function createStateIconDrawingInitialElements(
+  row: DeviceDefinitionStateDraftRow | null | undefined,
+  assets: Record<string, string>
+) {
+  const visual = stateVisualFromDraftRow(row);
+  const imageHref = resolveStateVisualImageHref(visual, assets).trim();
+  if (imageHref) {
+    const svgSource = svgSourceFromDataUrl(imageHref);
+    return svgSource
+      ? createEditableStateIconElementsFromSvgSource(svgSource, row?.name.trim() || "原始图标")
+      : [createImportedStateIconElement("image", imageHref, row?.name.trim() || "原始图标")];
+  }
+  return [createStateIconDrawingElement("line", row), createStateIconDrawingElement("text", row)];
+}
+
+function svgSourceToDataUrl(source?: string) {
+  const svg = String(source ?? "").trim();
+  return svg ? `data:image/svg+xml;utf8,${encodeURIComponent(svg)}` : "";
+}
+
+function stateIconDrawingSvgElementMarkup(source: string, x: number, y: number, width: number, height: number) {
+  const parsed = parseStateIconSvgSource(source);
+  if (!parsed || !parsed.body) {
+    const href = svgSourceToDataUrl(source);
+    return href
+      ? `<image href="${escapeXml(href)}" x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" preserveAspectRatio="xMidYMid meet"/>`
+      : "";
+  }
+  return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" viewBox="${escapeXml(parsed.viewBox)}" preserveAspectRatio="xMidYMid meet">${parsed.body}</svg>`;
+}
+
+function stateIconDrawingElementMarkup(element: StateIconDrawingElement) {
+  const stroke = escapeXml(element.strokeColor || "#2563eb");
+  const fill = escapeXml(element.fillColor || "transparent");
+  const textFill = escapeXml(element.textColor || element.strokeColor || "#111827");
+  const sw = formatSvgNumber(Math.max(0, element.strokeWidth));
+  const w = Math.max(1, element.width);
+  const h = Math.max(1, element.height);
+  const hw = w / 2;
+  const hh = h / 2;
+  const common = `fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"`;
+  let body = "";
+  switch (element.kind) {
+    case "imported-svg": {
+      body = stateIconDrawingSvgElementMarkup(element.svgSource ?? "", -hw, -hh, w, h);
+      break;
+    }
+    case "image": {
+      const href = element.imageHref || "";
+      const clipId = `clip-${element.id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+      const scale = Math.max(0.05, element.imageScale ?? 1);
+      body = href
+        ? `<defs><clipPath id="${escapeXml(clipId)}"><rect x="${formatSvgNumber(-hw)}" y="${formatSvgNumber(-hh)}" width="${formatSvgNumber(w)}" height="${formatSvgNumber(h)}"/></clipPath></defs><image href="${escapeXml(href)}" x="${formatSvgNumber(-hw + (element.cropX ?? 0))}" y="${formatSvgNumber(-hh + (element.cropY ?? 0))}" width="${formatSvgNumber(w * scale)}" height="${formatSvgNumber(h * scale)}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${escapeXml(clipId)})"/>`
+        : "";
+      break;
+    }
+    case "switch-open":
+      body = `<circle cx="${formatSvgNumber(-hw * 0.46)}" cy="0" r="${formatSvgNumber(Math.min(w, h) * 0.12)}" fill="#fff" stroke="${stroke}" stroke-width="${sw}"/><circle cx="${formatSvgNumber(hw * 0.46)}" cy="0" r="${formatSvgNumber(Math.min(w, h) * 0.12)}" fill="#fff" stroke="${stroke}" stroke-width="${sw}"/><path d="M ${formatSvgNumber(-hw)} 0 H ${formatSvgNumber(-hw * 0.62)} M ${formatSvgNumber(-hw * 0.3)} ${formatSvgNumber(-h * 0.08)} L ${formatSvgNumber(hw * 0.3)} ${formatSvgNumber(-hh)} M ${formatSvgNumber(hw * 0.62)} 0 H ${formatSvgNumber(hw)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>`;
+      break;
+    case "switch-closed":
+      body = `<circle cx="${formatSvgNumber(-hw * 0.46)}" cy="0" r="${formatSvgNumber(Math.min(w, h) * 0.12)}" fill="#fff" stroke="${stroke}" stroke-width="${sw}"/><circle cx="${formatSvgNumber(hw * 0.46)}" cy="0" r="${formatSvgNumber(Math.min(w, h) * 0.12)}" fill="#fff" stroke="${stroke}" stroke-width="${sw}"/><path d="M ${formatSvgNumber(-hw)} 0 H ${formatSvgNumber(hw)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>`;
+      break;
+    case "valve-open":
+      body = `<path d="M ${formatSvgNumber(-hw)} ${formatSvgNumber(-hh)} L 0 0 L ${formatSvgNumber(-hw)} ${formatSvgNumber(hh)} Z M ${formatSvgNumber(hw)} ${formatSvgNumber(-hh)} L 0 0 L ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} Z" ${common}/><path d="M 0 ${formatSvgNumber(-hh * 1.15)} V ${formatSvgNumber(hh * 1.15)} M ${formatSvgNumber(-hw * 0.35)} ${formatSvgNumber(-hh * 1.15)} H ${formatSvgNumber(hw * 0.35)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>`;
+      break;
+    case "valve-closed":
+      body = `<path d="M ${formatSvgNumber(-hw)} ${formatSvgNumber(-hh)} L 0 0 L ${formatSvgNumber(-hw)} ${formatSvgNumber(hh)} Z M ${formatSvgNumber(hw)} ${formatSvgNumber(-hh)} L 0 0 L ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} Z" ${common}/><path d="M ${formatSvgNumber(-hw * 0.55)} ${formatSvgNumber(-hh * 0.9)} L ${formatSvgNumber(hw * 0.55)} ${formatSvgNumber(hh * 0.9)} M ${formatSvgNumber(hw * 0.55)} ${formatSvgNumber(-hh * 0.9)} L ${formatSvgNumber(-hw * 0.55)} ${formatSvgNumber(hh * 0.9)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>`;
+      break;
+    case "line":
+      body = `<path d="M ${formatSvgNumber(-hw)} 0 H ${formatSvgNumber(hw)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>`;
+      break;
+    case "point":
+      body = `<circle cx="0" cy="0" r="${formatSvgNumber(Math.min(w, h) / 2)}" fill="${stroke}"/>`;
+      break;
+    case "triangle":
+      body = `<path d="M 0 ${formatSvgNumber(-hh)} L ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} H ${formatSvgNumber(-hw)} Z" ${common}/>`;
+      break;
+    case "square":
+      body = `<rect x="${formatSvgNumber(-hw)}" y="${formatSvgNumber(-hh)}" width="${formatSvgNumber(w)}" height="${formatSvgNumber(h)}" rx="2" ${common}/>`;
+      break;
+    case "hexagon":
+      body = `<path d="M ${formatSvgNumber(-hw * 0.5)} ${formatSvgNumber(-hh)} H ${formatSvgNumber(hw * 0.5)} L ${formatSvgNumber(hw)} 0 L ${formatSvgNumber(hw * 0.5)} ${formatSvgNumber(hh)} H ${formatSvgNumber(-hw * 0.5)} L ${formatSvgNumber(-hw)} 0 Z" ${common}/>`;
+      break;
+    case "polygon":
+      body = `<path d="M 0 ${formatSvgNumber(-hh)} L ${formatSvgNumber(hw * 0.36)} ${formatSvgNumber(-hh * 0.36)} L ${formatSvgNumber(hw)} ${formatSvgNumber(-hh * 0.25)} L ${formatSvgNumber(hw * 0.52)} ${formatSvgNumber(hh * 0.2)} L ${formatSvgNumber(hw * 0.62)} ${formatSvgNumber(hh)} L 0 ${formatSvgNumber(hh * 0.58)} L ${formatSvgNumber(-hw * 0.62)} ${formatSvgNumber(hh)} L ${formatSvgNumber(-hw * 0.52)} ${formatSvgNumber(hh * 0.2)} L ${formatSvgNumber(-hw)} ${formatSvgNumber(-hh * 0.25)} L ${formatSvgNumber(-hw * 0.36)} ${formatSvgNumber(-hh * 0.36)} Z" ${common}/>`;
+      break;
+    case "circle":
+      body = `<circle cx="0" cy="0" r="${formatSvgNumber(Math.min(w, h) / 2)}" ${common}/>`;
+      break;
+    case "semicircle":
+      body = `<path d="M ${formatSvgNumber(-hw)} ${formatSvgNumber(hh)} A ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} 0 0 1 ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} Z" ${common}/>`;
+      break;
+    case "ellipse":
+      body = `<ellipse cx="0" cy="0" rx="${formatSvgNumber(hw)}" ry="${formatSvgNumber(hh)}" ${common}/>`;
+      break;
+    case "arc":
+      body = `<path d="M ${formatSvgNumber(-hw)} ${formatSvgNumber(hh * 0.6)} A ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} 0 0 1 ${formatSvgNumber(hw)} ${formatSvgNumber(hh * 0.6)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>`;
+      break;
+    case "text":
+      body = `<text x="0" y="0" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei" font-size="${formatSvgNumber(Math.max(8, h))}" font-weight="800" fill="${textFill}">${escapeXml(element.text || "文字")}</text>`;
+      break;
+    default:
+      body = `<circle cx="0" cy="0" r="${formatSvgNumber(Math.min(w, h) / 2)}" ${common}/>`;
+      break;
+  }
+  return `<g transform="translate(${formatSvgNumber(element.x)} ${formatSvgNumber(element.y)}) rotate(${formatSvgNumber(element.rotation)})">${body}</g>`;
+}
+
+function stateIconDrawingToImage(elements: readonly StateIconDrawingElement[]) {
+  const body = elements.map(stateIconDrawingElementMarkup).join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">${body}</svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+function stateIconDrawingElementPreviewImage(element: StateIconDrawingElement) {
+  const w = Math.max(1, element.width);
+  const h = Math.max(1, element.height);
+  const padding = Math.max(18, Math.max(0, element.strokeWidth) * 3);
+  const previewElement = {
+    ...element,
+    x: padding + w / 2,
+    y: padding + h / 2,
+    rotation: 0
+  };
+  const svgWidth = w + padding * 2;
+  const svgHeight = h + padding * 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${formatSvgNumber(svgWidth)}" height="${formatSvgNumber(svgHeight)}" viewBox="0 0 ${formatSvgNumber(svgWidth)} ${formatSvgNumber(svgHeight)}">${stateIconDrawingElementMarkup(previewElement)}</svg>`;
+  return {
+    href: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`,
+    x: -w / 2 - padding,
+    y: -h / 2 - padding,
+    width: svgWidth,
+    height: svgHeight
+  };
+}
+
+function stateIconDrawingElementPreviewNode(element: StateIconDrawingElement) {
+  const stroke = element.strokeColor || "#2563eb";
+  const fill = element.fillColor || "transparent";
+  const textFill = element.textColor || element.strokeColor || "#111827";
+  const sw = Math.max(0, element.strokeWidth);
+  const w = Math.max(1, element.width);
+  const h = Math.max(1, element.height);
+  const hw = w / 2;
+  const hh = h / 2;
+  const common = {
+    fill,
+    stroke,
+    strokeWidth: sw,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    vectorEffect: "non-scaling-stroke" as const
+  };
+  switch (element.kind) {
+    case "imported-svg": {
+      const parsed = parseStateIconSvgSource(element.svgSource ?? "");
+      if (!parsed || !parsed.body) {
+        const href = svgSourceToDataUrl(element.svgSource);
+        return href ? <image href={href} x={-hw} y={-hh} width={w} height={h} preserveAspectRatio="xMidYMid meet" /> : null;
+      }
+      const nodes = stateIconSvgSourceToReactNodes(element.svgSource ?? "");
+      return (
+        <svg
+          x={-hw}
+          y={-hh}
+          width={w}
+          height={h}
+          viewBox={parsed.viewBox}
+          preserveAspectRatio="xMidYMid meet"
+        >
+          {nodes}
+        </svg>
+      );
+    }
+    case "image": {
+      const href = element.imageHref || "";
+      const clipId = `preview-clip-${element.id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+      const scale = Math.max(0.05, element.imageScale ?? 1);
+      return href ? (
+        <>
+          <defs>
+            <clipPath id={clipId}>
+              <rect x={-hw} y={-hh} width={w} height={h} />
+            </clipPath>
+          </defs>
+          <image
+            href={href}
+            x={-hw + (element.cropX ?? 0)}
+            y={-hh + (element.cropY ?? 0)}
+            width={w * scale}
+            height={h * scale}
+            preserveAspectRatio="xMidYMid slice"
+            clipPath={`url(#${clipId})`}
+          />
+        </>
+      ) : null;
+    }
+    case "switch-open":
+      return (
+        <>
+          <circle cx={-hw * 0.46} cy={0} r={Math.min(w, h) * 0.12} fill="#fff" stroke={stroke} strokeWidth={sw} />
+          <circle cx={hw * 0.46} cy={0} r={Math.min(w, h) * 0.12} fill="#fff" stroke={stroke} strokeWidth={sw} />
+          <path d={`M ${-hw} 0 H ${-hw * 0.62} M ${-hw * 0.3} ${-h * 0.08} L ${hw * 0.3} ${-hh} M ${hw * 0.62} 0 H ${hw}`} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />
+        </>
+      );
+    case "switch-closed":
+      return (
+        <>
+          <circle cx={-hw * 0.46} cy={0} r={Math.min(w, h) * 0.12} fill="#fff" stroke={stroke} strokeWidth={sw} />
+          <circle cx={hw * 0.46} cy={0} r={Math.min(w, h) * 0.12} fill="#fff" stroke={stroke} strokeWidth={sw} />
+          <path d={`M ${-hw} 0 H ${hw}`} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />
+        </>
+      );
+    case "valve-open":
+      return (
+        <>
+          <path d={`M ${-hw} ${-hh} L 0 0 L ${-hw} ${hh} Z M ${hw} ${-hh} L 0 0 L ${hw} ${hh} Z`} {...common} />
+          <path d={`M 0 ${-hh * 1.15} V ${hh * 1.15} M ${-hw * 0.35} ${-hh * 1.15} H ${hw * 0.35}`} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />
+        </>
+      );
+    case "valve-closed":
+      return (
+        <>
+          <path d={`M ${-hw} ${-hh} L 0 0 L ${-hw} ${hh} Z M ${hw} ${-hh} L 0 0 L ${hw} ${hh} Z`} {...common} />
+          <path d={`M ${-hw * 0.55} ${-hh * 0.9} L ${hw * 0.55} ${hh * 0.9} M ${hw * 0.55} ${-hh * 0.9} L ${-hw * 0.55} ${hh * 0.9}`} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />
+        </>
+      );
+    case "line":
+      return <path d={`M ${-hw} 0 H ${hw}`} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />;
+    case "point":
+      return <circle cx={0} cy={0} r={Math.min(w, h) / 2} fill={stroke} />;
+    case "triangle":
+      return <path d={`M 0 ${-hh} L ${hw} ${hh} H ${-hw} Z`} {...common} />;
+    case "square":
+      return <rect x={-hw} y={-hh} width={w} height={h} rx={2} {...common} />;
+    case "hexagon":
+      return <path d={`M ${-hw * 0.5} ${-hh} H ${hw * 0.5} L ${hw} 0 L ${hw * 0.5} ${hh} H ${-hw * 0.5} L ${-hw} 0 Z`} {...common} />;
+    case "polygon":
+      return <path d={`M 0 ${-hh} L ${hw * 0.36} ${-hh * 0.36} L ${hw} ${-hh * 0.25} L ${hw * 0.52} ${hh * 0.2} L ${hw * 0.62} ${hh} L 0 ${hh * 0.58} L ${-hw * 0.62} ${hh} L ${-hw * 0.52} ${hh * 0.2} L ${-hw} ${-hh * 0.25} L ${-hw * 0.36} ${-hh * 0.36} Z`} {...common} />;
+    case "circle":
+      return <circle cx={0} cy={0} r={Math.min(w, h) / 2} {...common} />;
+    case "semicircle":
+      return <path d={`M ${-hw} ${hh} A ${hw} ${hh} 0 0 1 ${hw} ${hh} Z`} {...common} />;
+    case "ellipse":
+      return <ellipse cx={0} cy={0} rx={hw} ry={hh} {...common} />;
+    case "arc":
+      return <path d={`M ${-hw} ${hh * 0.6} A ${hw} ${hh} 0 0 1 ${hw} ${hh * 0.6}`} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />;
+    case "text":
+      return (
+        <text x={0} y={0} textAnchor="middle" dominantBaseline="middle" fontFamily="Arial, Microsoft YaHei" fontSize={Math.max(8, h)} fontWeight={800} fill={textFill}>
+          {element.text || "文字"}
+        </text>
+      );
+    default:
+      return <circle cx={0} cy={0} r={Math.min(w, h) / 2} {...common} />;
+  }
 }
 
 function deviceStateVisualToken(visual?: DeviceStateVisual | null) {
@@ -7922,6 +8681,10 @@ export function App() {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const customDeviceImageInputRef = useRef<HTMLInputElement | null>(null);
   const definitionTemplateIconInputRef = useRef<HTMLInputElement | null>(null);
+  const stateVisualImageInputRef = useRef<HTMLInputElement | null>(null);
+  const stateIconDrawingImportInputRef = useRef<HTMLInputElement | null>(null);
+  const stateIconDrawingSvgRef = useRef<SVGSVGElement | null>(null);
+  const stateIconDrawingDragRef = useRef<StateIconDrawingDragState | null>(null);
   const modelImportInputRef = useRef<HTMLInputElement | null>(null);
   const modelImportTargetSchemeIdRef = useRef<string>("");
   const schemeImportInputRef = useRef<HTMLInputElement | null>(null);
@@ -8281,7 +9044,8 @@ export function App() {
   const [templateDraftType, setTemplateDraftType] = useState(DEFAULT_GRAPH_TEMPLATE_TYPES[0]);
   const [templateDraftName, setTemplateDraftName] = useState("");
   const [customDeviceDialogOpen, setCustomDeviceDialogOpen] = useState(false);
-  const [customDeviceDialogView, setCustomDeviceDialogView] = useState<"visual" | "parameters" | "states">("visual");
+  const [customDeviceDialogView, setCustomDeviceDialogView] = useState<"visual" | "parameters">("visual");
+  const [customDeviceStatePageId, setCustomDeviceStatePageId] = useState(DEFAULT_STATE_PAGE_ID);
   const [customComponentTreeSelection, setCustomComponentTreeSelection] = useState<CustomComponentTreeSelection>({ kind: "attributeLibrary", attributeLibraryName: "交流设备" });
   const [customComponentTreeSearchQuery, setCustomComponentTreeSearchQuery] = useState("");
   const [collapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeLibraries] = useState<AttributeLibrary[]>([]);
@@ -8292,7 +9056,7 @@ export function App() {
   const [deviceDefinitionOverrides, setDeviceDefinitionOverrides] = useState<Record<string, DeviceTemplateDefinitionOverride>>(() => initialDeviceLibrary.deviceDefinitionOverrides);
   const [deviceDefinitionDialogOpen, setDeviceDefinitionDialogOpen] = useState(false);
   const [selectedDefinitionKind, setSelectedDefinitionKind] = useState<DeviceKind | "">("");
-  const [deviceDefinitionView, setDeviceDefinitionView] = useState<"visual" | "parameters" | "states" | "measurements">("parameters");
+  const [deviceDefinitionView, setDeviceDefinitionView] = useState<"visual" | "parameters" | "measurements">("parameters");
   const [expandedDefinitionGroups, setExpandedDefinitionGroups] = useState<AttributeLibrary[]>([...DEFAULT_ATTRIBUTE_LIBRARIES]);
   const [collapsedDefinitionComponentTypes, setCollapsedDefinitionComponentTypes] = useState<string[]>([]);
   const [deviceDefinitionSearchQuery, setDeviceDefinitionSearchQuery] = useState("");
@@ -8301,6 +9065,7 @@ export function App() {
   const [definitionDraftSectionEditing, setDefinitionDraftSectionEditing] = useState(false);
   const [definitionDraftError, setDefinitionDraftError] = useState("");
   const [definitionStateDraftRows, setDefinitionStateDraftRows] = useState<DeviceDefinitionStateDraftRow[]>([]);
+  const [definitionStatePageId, setDefinitionStatePageId] = useState(DEFAULT_STATE_PAGE_ID);
   const [definitionVisualDraft, setDefinitionVisualDraft] = useState<DeviceDefinitionVisualDraft | null>(null);
   const [definitionTerminalAnchorDragIndex, setDefinitionTerminalAnchorDragIndex] = useState<number | null>(null);
   const [layerDialogOpen, setLayerDialogOpen] = useState(false);
@@ -8362,6 +9127,9 @@ export function App() {
   latestEdgesRef.current = edges;
   const [recordClipboard, setRecordClipboard] = useState<ClipboardRecord | null>(null);
   const [imageTarget, setImageTarget] = useState<ImageTarget | null>(null);
+  const [stateImageUploadTarget, setStateImageUploadTarget] = useState<StateImageUploadTarget | null>(null);
+  const [stateIconDrawingDialog, setStateIconDrawingDialog] = useState<StateIconDrawingDialogState | null>(null);
+  const [stateIconDrawingImportMode, setStateIconDrawingImportMode] = useState<"svg" | "image">("svg");
   const [imageFolders, setImageFolders] = useState<ImageFolder[]>([{ id: "root", name: "默认文件夹", imageCount: 0 }]);
   const [activeImageFolderId, setActiveImageFolderId] = useState("root");
   const [imageAssetList, setImageAssetList] = useState<ImageAsset[]>([]);
@@ -9834,6 +10602,18 @@ export function App() {
     const template = libraryTemplateByKind.get(node.kind);
     return template ? resolveDeviceStateVisual(template, node) : null;
   };
+  useEffect(() => {
+    const activeId = normalizeStatePageId(customDeviceDraft.stateDefinitions, customDeviceStatePageId);
+    if (activeId !== customDeviceStatePageId) {
+      setCustomDeviceStatePageId(activeId);
+    }
+  }, [customDeviceDraft.stateDefinitions, customDeviceStatePageId]);
+  useEffect(() => {
+    const activeId = normalizeStatePageId(definitionStateDraftRows, definitionStatePageId);
+    if (activeId !== definitionStatePageId) {
+      setDefinitionStatePageId(activeId);
+    }
+  }, [definitionStateDraftRows, definitionStatePageId]);
   const statusStatesForNode = (node: ModelNode | undefined) => {
     if (!node) {
       return [];
@@ -16506,6 +17286,7 @@ export function App() {
     setCustomComponentTreeSelection({ kind: "componentType", attributeLibraryName, section: componentType });
     setEditingCustomDeviceKind("");
     setCustomDeviceDialogView("visual");
+    setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
     setCustomDeviceDraft({
       ...createEmptyCustomDeviceDraft(attributeLibraryName),
       componentType,
@@ -29028,10 +29809,29 @@ export function App() {
     isContainer: customDeviceDraft.isContainer,
     terminalAssociations: customDraftTerminalAssociations
   });
+  const customStatePreviewVisual = stateVisualFromDraftRow(activeStateDraftRow(customDeviceDraft.stateDefinitions, customDeviceStatePageId));
+  const customStatePreviewText = stateVisualText(customStatePreviewVisual);
   const customDevicePreviewLabel = customDeviceDraft.componentName.trim() || customDeviceDraft.componentType || "Unit";
   const customDevicePreviewImage =
+    resolveStateVisualImageHref(customStatePreviewVisual, imageAssets) ||
     customDeviceDraft.backgroundImage ||
     generateCustomDeviceImage(customDevicePreviewLabel, customDraftTerminalTypes.length > 0 ? customDraftTerminalTypes : ["ac"]);
+  const customDefaultStateSelected = isDefaultStatePageId(customDeviceStatePageId);
+  const customDeviceDefaultStateVisualDraft = (): Partial<DeviceStateDefinition> => {
+    const image = customDeviceDraft.backgroundImage ||
+      generateCustomDeviceImage(customDevicePreviewLabel, customDraftTerminalTypes.length > 0 ? customDraftTerminalTypes : ["ac"]);
+    const imageAssetId = customDeviceDraft.backgroundImageAssetId && image === `/api/images/${customDeviceDraft.backgroundImageAssetId}`
+      ? customDeviceDraft.backgroundImageAssetId
+      : "";
+    return {
+      image,
+      imageAssetId,
+      color: "",
+      fillColor: "transparent",
+      strokeColor: "transparent",
+      textColor: ""
+    };
+  };
   const customDevicePreviewWidth = Math.max(1, customDeviceDraft.size.width || 104);
   const customDevicePreviewHeight = Math.max(1, customDeviceDraft.size.height || 64);
   const customDeviceTerminalAnchors = createDefaultCustomDeviceTerminalAnchors(customDeviceDraft.terminalCount, customDeviceDraft.terminalAnchors);
@@ -29105,14 +29905,16 @@ export function App() {
     }));
   };
   const addCustomDeviceStateDraftRow = () => {
+    const row = createStateDraftRowFromDefaultVisual(customDeviceDefaultStateVisualDraft(), {
+      value: String(customDeviceDraft.stateDefinitions.length),
+      name: `状态${customDeviceDraft.stateDefinitions.length}`
+    });
     setCustomDeviceDraft((current) => ({
       ...current,
-      stateDefinitions: [
-        ...current.stateDefinitions,
-        createStateDraftRow({ value: String(current.stateDefinitions.length), name: `状态${current.stateDefinitions.length}` })
-      ],
+      stateDefinitions: [...current.stateDefinitions, row],
       error: ""
     }));
+    setCustomDeviceStatePageId(row.id);
   };
   const deleteCustomDeviceStateDraftRow = (rowId: string) => {
     setCustomDeviceDraft((current) => ({
@@ -29145,7 +29947,22 @@ export function App() {
   const definitionVisualTerminalTypes = definitionVisualDraft
     ? definitionVisualDraft.terminalTypes.slice(0, definitionVisualDraft.terminalCount)
     : [];
-  const definitionVisualPreviewImage = definitionVisualDraft?.backgroundImage ?? "";
+  const definitionStatePreviewVisual = stateVisualFromDraftRow(activeStateDraftRow(definitionStateDraftRows, definitionStatePageId));
+  const definitionVisualPreviewImage =
+    resolveStateVisualImageHref(definitionStatePreviewVisual, imageAssets) ||
+    definitionVisualDraft?.backgroundImage ||
+    "";
+  const definitionDefaultStateVisualDraft = (): Partial<DeviceStateDefinition> => {
+    const params = selectedDefinitionTemplate?.params ?? {};
+    return {
+      image: definitionVisualDraft?.backgroundImage || params.backgroundImage || "",
+      imageAssetId: definitionVisualDraft?.backgroundImageAssetId || params.backgroundImageAssetId || "",
+      color: params.foregroundColor || "",
+      fillColor: params.fillColor || "",
+      strokeColor: params.strokeColor || "",
+      textColor: params.textColor || ""
+    };
+  };
   const snapDefinitionTerminalAnchor = (anchor: Point): Point => {
     const snapAxis = (value: number, tolerance: number) => {
       const normalizedValue = customDeviceTerminalAnchorValue(value);
@@ -29221,13 +30038,15 @@ export function App() {
   };
 
   const loadDefinitionTemplateDraft = (template: DeviceTemplate) => {
+    const stateRows = createDefinitionStateDraftRows(template);
     setSelectedDefinitionKind(template.kind);
     const group = normalizeAttributeLibraryName(template.attributeLibrary);
     const componentType = resolveTemplateComponentType(template);
     setExpandedDefinitionGroups((current) => (current.includes(group) ? current : [...current, group]));
     setCollapsedDefinitionComponentTypes((current) => current.filter((item) => item !== attributeLibraryComponentTypeKey(group, componentType)));
     setDefinitionDraftRows(createDefinitionDraftRows(template));
-    setDefinitionStateDraftRows(createDefinitionStateDraftRows(template));
+    setDefinitionStateDraftRows(stateRows);
+    setDefinitionStatePageId(DEFAULT_STATE_PAGE_ID);
     setDefinitionDraftSection(componentType);
     setDefinitionDraftError("");
     setDefinitionVisualDraft(createDefinitionVisualDraft(template));
@@ -29257,6 +30076,7 @@ export function App() {
     setMeasurementConfigSaveStatus("idle");
     setDefinitionVisualDraft(null);
     setDefinitionStateDraftRows([]);
+    setDefinitionStatePageId(DEFAULT_STATE_PAGE_ID);
     setDefinitionTerminalAnchorDragIndex(null);
   };
 
@@ -29318,10 +30138,12 @@ export function App() {
   };
 
   const addDefinitionStateDraftRow = () => {
-    setDefinitionStateDraftRows((current) => [
-      ...current,
-      createStateDraftRow({ value: String(current.length), name: `状态${current.length}` })
-    ]);
+    const row = createStateDraftRowFromDefaultVisual(definitionDefaultStateVisualDraft(), {
+      value: String(definitionStateDraftRows.length),
+      name: `状态${definitionStateDraftRows.length}`
+    });
+    setDefinitionStateDraftRows((current) => [...current, row]);
+    setDefinitionStatePageId(row.id);
     setDefinitionDraftError("");
   };
 
@@ -29331,52 +30153,6 @@ export function App() {
     }
     setDefinitionStateDraftRows((current) => current.filter((row) => row.id !== rowId));
     setDefinitionDraftError("");
-  };
-
-  const saveDeviceDefinitionStateDraft = () => {
-    if (!requireEditMode("保存状态定义")) {
-      return;
-    }
-    if (!selectedDefinitionTemplate) {
-      return;
-    }
-    const stateValidation = validateStateDraftRows(definitionStateDraftRows);
-    if (stateValidation.error) {
-      setDefinitionDraftError(stateValidation.error);
-      return;
-    }
-    const stateDefinitions = stateValidation.states;
-    if (selectedDefinitionTemplate.custom) {
-      setCustomDeviceTemplates((current) =>
-        current.map((template) =>
-          template.kind === selectedDefinitionTemplate.kind
-            ? { ...template, stateDefinitions }
-            : template
-        )
-      );
-    } else {
-      setDeviceDefinitionOverrides((current) => {
-        const existingOverride = deviceDefinitionOverrideForTemplate(selectedDefinitionTemplate, current);
-        return {
-          ...current,
-          [selectedDefinitionTemplate.kind]: {
-            ...existingOverride,
-            kind: selectedDefinitionTemplate.kind,
-            params: existingOverride?.params ?? {},
-            terminalRoles: existingOverride?.terminalRoles ?? selectedDefinitionTemplate.terminalRoles,
-            terminalAssociations: existingOverride?.terminalAssociations ?? selectedDefinitionTemplate.terminalAssociations,
-            isContainer: existingOverride?.isContainer ?? selectedDefinitionTemplate.isContainer,
-            allowResizeTransform: existingOverride?.allowResizeTransform ?? templateAllowsResizeTransform(selectedDefinitionTemplate),
-            parameterDefinitions: existingOverride?.parameterDefinitions ?? selectedDefinitionTemplate.parameterDefinitions ?? getTemplateParameterDefinitions(selectedDefinitionTemplate),
-            stateDefinitions,
-            updatedAt: new Date().toISOString()
-          }
-        };
-      });
-    }
-    setDefinitionStateDraftRows(stateDefinitions.map((definition) => createStateDraftRow(definition)));
-    setDefinitionDraftError("");
-    writeOperationLog(`修改状态定义：${selectedDefinitionTemplate.label}`);
   };
 
   const updateSelectedDefinitionResizePermission = (value: string) => {
@@ -29417,6 +30193,52 @@ export function App() {
     writeOperationLog(`修改元件变形权限：${selectedDefinitionTemplate.label} ${nextAllowed ? "允许" : "不允许"}`);
   };
 
+  const saveDeviceDefinitionStateVisualDraft = () => {
+    if (!requireEditMode("保存状态样式")) {
+      return;
+    }
+    if (!selectedDefinitionTemplate) {
+      return;
+    }
+    const stateValidation = validateStateDraftRows(definitionStateDraftRows);
+    if (stateValidation.error) {
+      setDefinitionDraftError(stateValidation.error);
+      return;
+    }
+    const stateDefinitions = stateValidation.states;
+    const activeStateValue = activeStateDraftRow(definitionStateDraftRows, definitionStatePageId)?.value.trim() ?? "";
+    if (selectedDefinitionTemplate.custom) {
+      setCustomDeviceTemplates((current) =>
+        current.map((template) =>
+          template.kind === selectedDefinitionTemplate.kind
+            ? {
+                ...template,
+                stateDefinitions
+              }
+            : template
+        )
+      );
+    } else {
+      setDeviceDefinitionOverrides((current) => {
+        const existingOverride = deviceDefinitionOverrideForTemplate(selectedDefinitionTemplate, current);
+        return {
+          ...current,
+          [selectedDefinitionTemplate.kind]: {
+            ...existingOverride,
+            kind: selectedDefinitionTemplate.kind,
+            stateDefinitions,
+            updatedAt: new Date().toISOString()
+          }
+        };
+      });
+    }
+    const nextStateRows = stateDefinitions.map((definition) => createStateDraftRow(definition));
+    setDefinitionStateDraftRows(nextStateRows);
+    setDefinitionStatePageId(nextStateRows.find((row) => row.value === activeStateValue)?.id ?? DEFAULT_STATE_PAGE_ID);
+    setDefinitionDraftError("");
+    writeOperationLog(`保存状态样式：${selectedDefinitionTemplate.label}`);
+  };
+
   const saveDeviceDefinitionVisualDraft = () => {
     if (!requireEditMode("保存元件图标和端子")) {
       return;
@@ -29430,6 +30252,13 @@ export function App() {
       setDefinitionVisualDraft((current) => current ? { ...current, error: message } : current);
       return;
     }
+    const stateValidation = validateStateDraftRows(definitionStateDraftRows);
+    if (stateValidation.error) {
+      setDefinitionDraftError(stateValidation.error);
+      return;
+    }
+    const stateDefinitions = stateValidation.states;
+    const activeStateValue = activeStateDraftRow(definitionStateDraftRows, definitionStatePageId)?.value.trim() ?? "";
     const terminalTypes = definitionVisualDraft.terminalTypes.slice(0, definitionVisualDraft.terminalCount);
     const terminalLabels = definitionVisualDraft.terminalLabels.slice(0, definitionVisualDraft.terminalCount).map((label, index) => {
       const type = terminalTypes[index] ?? selectedDefinitionTemplate.terminalType;
@@ -29459,7 +30288,8 @@ export function App() {
                 terminalCount: definitionVisualDraft.terminalCount,
                 terminalTypes,
                 terminalLabels,
-                terminalAnchors
+                terminalAnchors,
+                stateDefinitions
               }
             : template
         )
@@ -29487,16 +30317,18 @@ export function App() {
             isContainer: existingOverride?.isContainer ?? selectedDefinitionTemplate.isContainer,
             allowResizeTransform: existingOverride?.allowResizeTransform ?? templateAllowsResizeTransform(selectedDefinitionTemplate),
             parameterDefinitions: existingOverride?.parameterDefinitions ?? selectedDefinitionTemplate.parameterDefinitions ?? getTemplateParameterDefinitions(selectedDefinitionTemplate),
-            stateDefinitions: Array.isArray(existingOverride?.stateDefinitions)
-              ? existingOverride.stateDefinitions
-              : selectedDefinitionTemplate.stateDefinitions,
+            stateDefinitions,
             updatedAt: new Date().toISOString()
           }
         };
       });
     }
+    const nextStateRows = stateDefinitions.map((definition) => createStateDraftRow(definition));
     setDefinitionVisualDraft((current) => current ? { ...current, size, terminalLabels, terminalAnchors, error: "" } : current);
+    setDefinitionStateDraftRows(nextStateRows);
+    setDefinitionStatePageId(nextStateRows.find((row) => row.value === activeStateValue)?.id ?? DEFAULT_STATE_PAGE_ID);
     setDefinitionTerminalAnchorDragIndex(null);
+    setDefinitionDraftError("");
     writeOperationLog(`修改元件图标和端子：${selectedDefinitionTemplate.label}`);
   };
 
@@ -29691,6 +30523,328 @@ export function App() {
     reader.readAsDataURL(file);
   };
 
+  const chooseStateVisualImage = (event: ChangeEvent<HTMLInputElement>) => {
+    if (!requireEditMode("上传状态图形")) {
+      event.target.value = "";
+      return;
+    }
+    const file = event.target.files?.[0];
+    const target = stateImageUploadTarget;
+    event.target.value = "";
+    setStateImageUploadTarget(null);
+    if (!file || !target) {
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const imageData = String(reader.result ?? "");
+      let asset: ImageAsset | null = null;
+      try {
+        const uploadedAsset = await uploadBackendImage(file.name, imageData, activeImageFolderId);
+        asset = uploadedAsset;
+        setImageAssetList((current) => [uploadedAsset, ...current.filter((item) => item.id !== uploadedAsset.id)]);
+        setImageAssets((current) => ({ ...current, [uploadedAsset.id]: uploadedAsset.url }));
+        void refreshImageFolders();
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "上传状态图形到后台失败，将仅保留当前本地预览。");
+      }
+      const patch: Partial<DeviceDefinitionStateDraftRow> = {
+        image: asset?.url ?? imageData,
+        imageAssetId: asset?.id ?? "",
+        backgroundImage: "",
+        backgroundImageAssetId: ""
+      };
+      if (target.scope === "definition") {
+        updateDefinitionStateDraftRow(target.rowId, patch);
+      } else {
+        updateCustomDeviceStateDraftRow(target.rowId, patch);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const chooseStateIconDrawingImport = (event: ChangeEvent<HTMLInputElement>) => {
+    if (!requireEditMode("导入绘制图形")) {
+      event.target.value = "";
+      return;
+    }
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    const isSvg = stateIconDrawingImportMode === "svg" || file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
+    const reader = new FileReader();
+    reader.onload = () => {
+      const source = String(reader.result ?? "");
+      const importedElements = isSvg
+        ? createEditableStateIconElementsFromSvgSource(source, file.name)
+        : [createImportedStateIconElement("image", source, file.name)];
+      const selectedElementId = importedElements[0]?.id ?? "";
+      setStateIconDrawingDialog((current) =>
+        current
+          ? {
+              ...current,
+              elements: [...current.elements, ...importedElements],
+              selectedElementId,
+              selectedElementIds: selectedElementId ? [selectedElementId] : []
+            }
+          : current
+      );
+    };
+    if (isSvg) {
+      reader.readAsText(file);
+    } else {
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const updateStateIconDrawingElement = (elementId: string, patch: Partial<StateIconDrawingElement>) => {
+    setStateIconDrawingDialog((current) =>
+      current
+        ? {
+            ...current,
+            elements: current.elements.map((element) => (element.id === elementId ? { ...element, ...patch } : element))
+          }
+        : current
+    );
+  };
+
+  const updateStateIconDrawingElements = (elementIds: readonly string[], updater: (element: StateIconDrawingElement) => StateIconDrawingElement) => {
+    const idSet = new Set(elementIds);
+    setStateIconDrawingDialog((current) =>
+      current
+        ? {
+            ...current,
+            elements: current.elements.map((element) => (idSet.has(element.id) ? updater(element) : element))
+          }
+        : current
+    );
+  };
+
+  const stateIconDrawingPointer = (event: PointerEvent<SVGElement>): Point => {
+    const svg = stateIconDrawingSvgRef.current;
+    if (!svg) {
+      return { x: 0, y: 0 };
+    }
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const matrix = svg.getScreenCTM();
+    if (!matrix) {
+      return { x: 0, y: 0 };
+    }
+    const transformed = point.matrixTransform(matrix.inverse());
+    return { x: transformed.x, y: transformed.y };
+  };
+
+  const stateIconDrawingSelection = (elementId: string, append: boolean) => {
+    setStateIconDrawingDialog((current) => {
+      if (!current) {
+        return current;
+      }
+      const currentIds = current.selectedElementIds.length > 0 ? current.selectedElementIds : [current.selectedElementId].filter(Boolean);
+      const selectedElementIds = append
+        ? currentIds.includes(elementId)
+          ? currentIds.filter((id) => id !== elementId)
+          : [...currentIds, elementId]
+        : [elementId];
+      return {
+        ...current,
+        selectedElementId: selectedElementIds[selectedElementIds.length - 1] ?? "",
+        selectedElementIds
+      };
+    });
+  };
+
+  const startStateIconDrawingDrag = (event: PointerEvent<SVGElement>, elementId: string, mode: StateIconDrawingDragMode) => {
+    event.preventDefault();
+    event.stopPropagation();
+    (event.currentTarget.closest(".state-icon-drawing-dialog") as HTMLElement | null)?.focus();
+    const append = event.shiftKey || event.ctrlKey || event.metaKey;
+    let dragIds: string[] = [elementId];
+    let startElements: StateIconDrawingElement[] = [];
+    let center: Point = { x: 0, y: 0 };
+    const start = stateIconDrawingPointer(event);
+    setStateIconDrawingDialog((current) => {
+      if (!current) {
+        return current;
+      }
+      const existingSelection = current.selectedElementIds.length > 0 ? current.selectedElementIds : [current.selectedElementId].filter(Boolean);
+      const selectedElementIds = append
+        ? existingSelection.includes(elementId)
+          ? existingSelection
+          : [...existingSelection, elementId]
+        : existingSelection.includes(elementId)
+          ? existingSelection
+          : [elementId];
+      dragIds = selectedElementIds;
+      startElements = current.elements.filter((element) => selectedElementIds.includes(element.id)).map((element) => ({ ...element }));
+      center = startElements.length === 1
+        ? { x: startElements[0].x, y: startElements[0].y }
+        : {
+            x: startElements.reduce((sum, element) => sum + element.x, 0) / Math.max(1, startElements.length),
+            y: startElements.reduce((sum, element) => sum + element.y, 0) / Math.max(1, startElements.length)
+          };
+      return {
+        ...current,
+        selectedElementId: selectedElementIds[selectedElementIds.length - 1] ?? "",
+        selectedElementIds
+      };
+    });
+    if (startElements.length === 0) {
+      return;
+    }
+    stateIconDrawingDragRef.current = { mode, elementIds: dragIds, start, center, startElements };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const dragStateIconDrawingSelection = (event: PointerEvent<SVGSVGElement>) => {
+    const drag = stateIconDrawingDragRef.current;
+    if (!drag) {
+      return;
+    }
+    event.preventDefault();
+    const point = stateIconDrawingPointer(event);
+    const dx = point.x - drag.start.x;
+    const dy = point.y - drag.start.y;
+    if (drag.mode === "move") {
+      updateStateIconDrawingElements(drag.elementIds, (element) => {
+        const startElement = drag.startElements.find((item) => item.id === element.id);
+        return startElement ? { ...element, x: startElement.x + dx, y: startElement.y + dy } : element;
+      });
+      return;
+    }
+    if (drag.mode === "resize") {
+      const startDistance = Math.hypot(drag.start.x - drag.center.x, drag.start.y - drag.center.y) || 1;
+      const currentDistance = Math.hypot(point.x - drag.center.x, point.y - drag.center.y) || 1;
+      const scale = Math.max(0.05, currentDistance / startDistance);
+      updateStateIconDrawingElements(drag.elementIds, (element) => {
+        const startElement = drag.startElements.find((item) => item.id === element.id);
+        return startElement
+          ? {
+              ...element,
+              x: drag.center.x + (startElement.x - drag.center.x) * scale,
+              y: drag.center.y + (startElement.y - drag.center.y) * scale,
+              width: Math.max(1, startElement.width * scale),
+              height: Math.max(1, startElement.height * scale)
+            }
+          : element;
+      });
+      return;
+    }
+    const startAngle = Math.atan2(drag.start.y - drag.center.y, drag.start.x - drag.center.x);
+    const currentAngle = Math.atan2(point.y - drag.center.y, point.x - drag.center.x);
+    const deltaAngle = ((currentAngle - startAngle) * 180) / Math.PI;
+    updateStateIconDrawingElements(drag.elementIds, (element) => {
+      const startElement = drag.startElements.find((item) => item.id === element.id);
+      return startElement ? { ...element, rotation: startElement.rotation + deltaAngle } : element;
+    });
+  };
+
+  const stopStateIconDrawingDrag = (event: PointerEvent<SVGSVGElement>) => {
+    stateIconDrawingDragRef.current = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  };
+
+  const deleteSelectedStateIconDrawingElements = () => {
+    setStateIconDrawingDialog((current) => {
+      if (!current) {
+        return current;
+      }
+      const selectedIds = current.selectedElementIds.length > 0 ? current.selectedElementIds : [current.selectedElementId].filter(Boolean);
+      if (selectedIds.length === 0) {
+        return current;
+      }
+      const selectedSet = new Set(selectedIds);
+      const elements = current.elements.filter((element) => !selectedSet.has(element.id));
+      return {
+        ...current,
+        elements,
+        selectedElementId: elements[0]?.id ?? "",
+        selectedElementIds: elements[0]?.id ? [elements[0].id] : []
+      };
+    });
+  };
+
+  const stateIconDrawingKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Delete" && event.key !== "Backspace") {
+      return;
+    }
+    const target = event.target as HTMLElement | null;
+    if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
+      return;
+    }
+    event.preventDefault();
+    deleteSelectedStateIconDrawingElements();
+  };
+
+  const addStateIconDrawingElement = (kind: StateVisualShapeKind) => {
+    setStateIconDrawingDialog((current) => {
+      if (!current) {
+        return current;
+      }
+      const row =
+        current.target.scope === "definition"
+          ? definitionStateDraftRows.find((item) => item.id === current.target.rowId)
+          : customDeviceDraft.stateDefinitions.find((item) => item.id === current.target.rowId);
+      const element = createStateIconDrawingElement(kind, row);
+      return {
+        ...current,
+        elements: [...current.elements, element],
+        selectedElementId: element.id,
+        selectedElementIds: [element.id]
+      };
+    });
+  };
+
+  const deleteStateIconDrawingElement = (elementId: string) => {
+    setStateIconDrawingDialog((current) => {
+      if (!current) {
+        return current;
+      }
+      const elements = current.elements.filter((element) => element.id !== elementId);
+      return {
+        ...current,
+        elements,
+        selectedElementId: elements.some((element) => element.id === current.selectedElementId) ? current.selectedElementId : elements[0]?.id ?? "",
+        selectedElementIds: current.selectedElementIds.filter((id) => elements.some((element) => element.id === id))
+      };
+    });
+  };
+
+  const openStateIconDrawingDialog = (target: StateIconDrawingTarget) => {
+    const row =
+      target.scope === "definition"
+        ? definitionStateDraftRows.find((item) => item.id === target.rowId)
+        : customDeviceDraft.stateDefinitions.find((item) => item.id === target.rowId);
+    const initial = createStateIconDrawingInitialElements(row, imageAssets);
+    setStateIconDrawingDialog({
+      target,
+      elements: initial,
+      selectedElementId: initial[0]?.id ?? "",
+      selectedElementIds: initial[0]?.id ? [initial[0].id] : []
+    });
+  };
+
+  const applyStateIconDrawingDialog = () => {
+    if (!stateIconDrawingDialog || stateIconDrawingDialog.elements.length === 0) {
+      return;
+    }
+    const patch: Partial<DeviceDefinitionStateDraftRow> = {
+      image: stateIconDrawingToImage(stateIconDrawingDialog.elements),
+      imageAssetId: "",
+      backgroundImage: "",
+      backgroundImageAssetId: ""
+    };
+    if (stateIconDrawingDialog.target.scope === "definition") {
+      updateDefinitionStateDraftRow(stateIconDrawingDialog.target.rowId, patch);
+    } else {
+      updateCustomDeviceStateDraftRow(stateIconDrawingDialog.target.rowId, patch);
+    }
+    setStateIconDrawingDialog(null);
+  };
+
   const customComponentTreeTypeKey = (attributeLibraryName: string, componentType: string) =>
     `${normalizeAttributeLibraryName(attributeLibraryName)}::${normalizeComponentTypeName(componentType)}`;
 
@@ -29726,6 +30880,7 @@ export function App() {
     }
     setCustomComponentTreeSelection({ kind: "attributeLibrary", attributeLibraryName: group });
     setEditingCustomDeviceKind("");
+    setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
     setCustomDeviceDraft((current) => ({
       ...current,
       attributeLibraryName: group,
@@ -29743,6 +30898,7 @@ export function App() {
     }
     setCustomComponentTreeSelection({ kind: "componentType", attributeLibraryName: group, section });
     setEditingCustomDeviceKind("");
+    setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
     setCustomDeviceDraft((current) => ({
       ...current,
       attributeLibraryName: group,
@@ -29773,9 +30929,11 @@ export function App() {
         !isReservedDeviceDefinitionParamName(definition.enName)
       )
       .map((definition) => ({ ...definition, id: customParamId() }));
+    const stateRows = createDefinitionStateDraftRows(template);
     ensureCustomComponentTreeExpanded(attributeLibraryName, section);
     setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section, templateKind: template.kind });
     setEditingCustomDeviceKind(template.custom ? template.kind : "");
+    setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
     setCustomDeviceDraft({
       attributeLibraryName,
       componentType: section,
@@ -29792,7 +30950,7 @@ export function App() {
       terminalAssociations: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => terminalAssociations[index] ?? "ac-load") as ContainerTerminalAssociationValue[],
       isContainer: Boolean(template.isContainer),
       params: customParams,
-      stateDefinitions: createDefinitionStateDraftRows(template),
+      stateDefinitions: stateRows,
       error: template.custom ? "" : "当前选中的是系统内置元件，可查看并复制为新自定义元件，不能直接覆盖内置定义。"
     });
   };
@@ -29809,6 +30967,7 @@ export function App() {
     setEditingCustomDeviceKind("");
     setCustomComponentTreeSelection({ kind: "componentType", attributeLibraryName, section });
     setCustomDeviceDialogView("visual");
+    setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
     setCustomDeviceDraft({
       ...createEmptyCustomDeviceDraft(attributeLibraryName),
       componentType: section,
@@ -30287,94 +31446,169 @@ export function App() {
     setCustomDeviceDraft((current) => ({ ...current, error: "" }));
   };
 
-  const renderStateDefinitionPanel = (
+  const renderStateVisualPager = (
     rows: DeviceDefinitionStateDraftRow[],
+    activeRowId: string,
+    setActiveRowId: (rowId: string) => void,
     handlers: {
       update: (rowId: string, patch: Partial<DeviceDefinitionStateDraftRow>) => void;
       add: () => void;
       remove: (rowId: string) => void;
-      save?: () => void;
       reset?: () => void;
-      saveLabel?: string;
       resetLabel?: string;
+      preview?: ReactNode;
+      saveStateVisuals?: () => void;
+      saveStateVisualsLabel?: string;
+      uploadStateImage?: (rowId: string) => void;
+      drawStateIcon?: (rowId: string) => void;
     }
-  ) => (
-    <section className="device-state-definition-panel">
-      <div className="custom-param-table-wrap device-state-table-wrap">
-        <table className="custom-param-table device-state-table">
-          <thead>
-            <tr>
-              <th>状态值</th>
-              <th>名称</th>
-              <th>图标</th>
-              <th>图片</th>
-              <th>文字</th>
-              <th>颜色</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length > 0 ? rows.map((row) => (
-              <tr key={row.id}>
-                <td>
-                  <input value={row.value} onChange={(event) => handlers.update(row.id, { value: event.target.value })} />
-                </td>
-                <td>
-                  <input value={row.name} onChange={(event) => handlers.update(row.id, { name: event.target.value })} />
-                </td>
-                <td>
-                  <input value={row.icon} placeholder="如 ON" onChange={(event) => handlers.update(row.id, { icon: event.target.value })} />
-                </td>
-                <td>
-                  <input value={row.image} placeholder="图片URL或后台路径" onChange={(event) => handlers.update(row.id, { image: event.target.value })} />
-                </td>
-                <td>
-                  <input value={row.text} placeholder="覆盖文字" onChange={(event) => handlers.update(row.id, { text: event.target.value })} />
-                </td>
-                <td>
-                  <div className="color-field device-state-color-field">
-                    <input type="color" value={colorInputValue(row.color, "#2563eb")} onChange={(event) => handlers.update(row.id, { color: event.target.value })} />
-                    <input value={row.color} placeholder="#2563eb" onChange={(event) => handlers.update(row.id, { color: event.target.value })} />
-                  </div>
-                </td>
-                <td>
-                  <div className="custom-param-actions">
-                    <button type="button" onClick={() => handlers.remove(row.id)}>删除</button>
-                  </div>
-                </td>
-              </tr>
-            )) : (
-              <tr className="batch-common-empty-row">
-                <td colSpan={7}>没有状态定义时，图元按原有图标和颜色显示。</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-      <div className="custom-device-actions">
-        <button type="button" onClick={handlers.add}>新增状态</button>
-        {handlers.save && <button type="button" onClick={handlers.save}>{handlers.saveLabel ?? "保存状态"}</button>}
-        {handlers.reset && <button type="button" onClick={handlers.reset}>{handlers.resetLabel ?? "恢复当前元件状态"}</button>}
-      </div>
-    </section>
-  );
-
-  const renderDeviceDefinitionStatePanel = (template: DeviceTemplate) => (
-    <>
-      {definitionDraftError && <p className="custom-device-error">{definitionDraftError}</p>}
-      {renderStateDefinitionPanel(definitionStateDraftRows, {
-        update: updateDefinitionStateDraftRow,
-        add: addDefinitionStateDraftRow,
-        remove: deleteDefinitionStateDraftRow,
-        save: saveDeviceDefinitionStateDraft,
-        reset: () => {
-          setDefinitionStateDraftRows(createDefinitionStateDraftRows(template));
-          setDefinitionDraftError("");
-        },
-        saveLabel: "保存状态定义"
-      })}
-    </>
-  );
+  ) => {
+    const isDefaultStatePage = isDefaultStatePageId(activeRowId);
+    const activeRow = activeStateDraftRow(rows, activeRowId);
+    return (
+      <section className="device-state-pager" aria-label="状态分页">
+        <div className="device-state-pager-header">
+          <div className="device-state-tabs" role="tablist" aria-label="状态分页">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={isDefaultStatePage}
+              className={isDefaultStatePage ? "active" : ""}
+              onClick={() => setActiveRowId(DEFAULT_STATE_PAGE_ID)}
+            >
+              默认状态
+            </button>
+            {rows.map((row, index) => {
+              const active = activeRow?.id === row.id;
+              return (
+                <button
+                  key={row.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  className={active ? "active" : ""}
+                  onClick={() => setActiveRowId(row.id)}
+                >
+                  {row.name.trim() || row.value.trim() || `状态${index}`}
+                </button>
+              );
+            })}
+            <button type="button" className="device-state-add-tab" onClick={handlers.add}>新增状态</button>
+          </div>
+          <span className="device-state-shared-note" title="尺寸大小和端子位置由所有状态分页共享">共享尺寸/端子</span>
+        </div>
+        {isDefaultStatePage ? (
+          <div className="device-state-default-body">
+            <span>默认状态用于维护所有状态共享的尺寸和端子。</span>
+          </div>
+        ) : activeRow ? (
+          <>
+            <div className="device-state-page-fields">
+              <label>
+                状态值
+                <input value={activeRow.value} onChange={(event) => handlers.update(activeRow.id, { value: event.target.value })} />
+              </label>
+              <label>
+                状态名称
+                <input value={activeRow.name} onChange={(event) => handlers.update(activeRow.id, { name: event.target.value })} />
+              </label>
+              <label>
+                状态图标
+                <input value={activeRow.icon} placeholder="如 ON" onChange={(event) => handlers.update(activeRow.id, { icon: event.target.value })} />
+              </label>
+              <label className="device-state-image-field">
+                状态图片
+                <div className="device-state-image-input-row">
+                  <input
+                    value={stateDraftImageValue(activeRow)}
+                    placeholder="图片URL或后台路径"
+                    onChange={(event) =>
+                      handlers.update(activeRow.id, {
+                        image: event.target.value,
+                        imageAssetId: "",
+                        backgroundImage: "",
+                        backgroundImageAssetId: ""
+                      })
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handlers.update(activeRow.id, {
+                        image: "",
+                        imageAssetId: "",
+                        backgroundImage: "",
+                        backgroundImageAssetId: ""
+                      })
+                    }
+                  >
+                    清除
+                  </button>
+                  {handlers.uploadStateImage && (
+                    <button type="button" onClick={() => handlers.uploadStateImage?.(activeRow.id)}>
+                      上传图形
+                    </button>
+                  )}
+                </div>
+              </label>
+              <div className="device-state-shape-field">
+                <span>状态图标绘制</span>
+                <div className="device-state-shape-tools">
+                  <button type="button" onClick={() => handlers.drawStateIcon?.(activeRow.id)}>
+                    绘制图标
+                  </button>
+                  <small>在绘制器中组合线、点、文字和几何图形。</small>
+                </div>
+              </div>
+              <label>
+                状态文字
+                <input value={activeRow.text} placeholder="覆盖文字" onChange={(event) => handlers.update(activeRow.id, { text: event.target.value })} />
+              </label>
+              <label>
+                主颜色
+                <div className="color-field device-state-color-field">
+                  <input type="color" value={colorInputValue(activeRow.color, "#2563eb")} onChange={(event) => handlers.update(activeRow.id, { color: event.target.value })} />
+                  <span className="device-state-color-swatch" title={activeRow.color || "未设置"} style={{ "--state-color": activeRow.color || "#2563eb" } as CSSProperties} />
+                </div>
+              </label>
+              <label>
+                填充色
+                <div className="color-field device-state-color-field">
+                  <input type="color" value={colorInputValue(activeRow.fillColor, "#ffffff")} onChange={(event) => handlers.update(activeRow.id, { fillColor: event.target.value })} />
+                  <span className={`device-state-color-swatch ${activeRow.fillColor === "transparent" ? "transparent" : ""}`} title={activeRow.fillColor || "未设置"} style={{ "--state-color": activeRow.fillColor === "transparent" ? "#ffffff" : activeRow.fillColor || "#ffffff" } as CSSProperties} />
+                </div>
+              </label>
+              <label>
+                边框色
+                <div className="color-field device-state-color-field">
+                  <input type="color" value={colorInputValue(activeRow.strokeColor, "#2563eb")} onChange={(event) => handlers.update(activeRow.id, { strokeColor: event.target.value })} />
+                  <span className={`device-state-color-swatch ${activeRow.strokeColor === "transparent" ? "transparent" : ""}`} title={activeRow.strokeColor || "未设置"} style={{ "--state-color": activeRow.strokeColor === "transparent" ? "#ffffff" : activeRow.strokeColor || "#2563eb" } as CSSProperties} />
+                </div>
+              </label>
+              <label>
+                文字色
+                <div className="color-field device-state-color-field">
+                  <input type="color" value={colorInputValue(activeRow.textColor, "#111827")} onChange={(event) => handlers.update(activeRow.id, { textColor: event.target.value })} />
+                  <span className="device-state-color-swatch" title={activeRow.textColor || "未设置"} style={{ "--state-color": activeRow.textColor || "#111827" } as CSSProperties} />
+                </div>
+              </label>
+            </div>
+            {handlers.preview}
+            <div className="custom-device-actions device-state-actions">
+              {handlers.saveStateVisuals && <button type="button" onClick={handlers.saveStateVisuals}>{handlers.saveStateVisualsLabel ?? "保存状态样式"}</button>}
+              <button type="button" onClick={() => handlers.remove(activeRow.id)}>删除状态</button>
+              {handlers.reset && <button type="button" onClick={handlers.reset}>{handlers.resetLabel ?? "恢复状态页"}</button>}
+            </div>
+          </>
+        ) : (
+          <div className="device-state-empty">
+            <span>暂无状态分页</span>
+            <button type="button" onClick={handlers.add}>新增状态</button>
+          </div>
+        )}
+      </section>
+    );
+  };
 
   const renderDeviceDefinitionVisualPanel = (template: DeviceTemplate) => {
     if (!definitionVisualDraft) {
@@ -30395,74 +31629,162 @@ export function App() {
       terminalAnchors: definitionVisualTerminalAnchors
     };
     const previewNode = createNodeFromTemplate(visualTemplate, { x: 0, y: 0 });
+    const definitionStatePreviewText = stateVisualText(definitionStatePreviewVisual);
+    const definitionDefaultStateSelected = isDefaultStatePageId(definitionStatePageId);
     return (
       <section className="device-definition-visual-panel">
         {definitionVisualDraft.error && <p className="custom-device-error">{definitionVisualDraft.error}</p>}
-        <div className="custom-device-image-row device-definition-image-row">
-          <span>SVG/图片图标</span>
-          <button type="button" onClick={() => definitionTemplateIconInputRef.current?.click()}>上传SVG/图片到后台</button>
-          <button
-            type="button"
-            onClick={() =>
-              setDefinitionVisualDraft((current) =>
-                current
-                  ? {
-                      ...current,
-                      backgroundImage: "",
-                      backgroundImageAssetId: "",
-                      error: ""
-                    }
-                  : current
-              )
-            }
-          >
-            清除图标
-          </button>
-          <strong>{definitionVisualDraft.backgroundImageAssetId ? "后台已保存" : definitionVisualDraft.backgroundImage ? "已设置" : "使用默认图形"}</strong>
-        </div>
-        <div className="device-definition-size-grid">
-          <label>
-            宽度
-            <input
-              type="number"
-              min="1"
-              value={definitionVisualDraft.size.width}
-              onChange={(event) =>
-                setDefinitionVisualDraft((current) =>
-                  current
-                    ? {
-                        ...current,
-                        size: { ...current.size, width: Math.max(1, Math.round(Number(event.target.value) || current.size.width)) },
-                        error: ""
-                      }
-                    : current
-                )
-              }
-            />
-          </label>
-          <label>
-            高度
-            <input
-              type="number"
-              min="1"
-              value={definitionVisualDraft.size.height}
-              onChange={(event) =>
-                setDefinitionVisualDraft((current) =>
-                  current
-                    ? {
-                        ...current,
-                        size: { ...current.size, height: Math.max(1, Math.round(Number(event.target.value) || current.size.height)) },
-                        error: ""
-                      }
-                    : current
-                )
-              }
-            />
-          </label>
-          <span>端子只能拖放到元件四周边框，不能放到元件内部。</span>
-        </div>
-        <div className="custom-device-preview device-definition-visual-preview">
-          <span>图标和端子位置</span>
+        {definitionDraftError && <p className="custom-device-error">{definitionDraftError}</p>}
+        {renderStateVisualPager(definitionStateDraftRows, definitionStatePageId, setDefinitionStatePageId, {
+          update: updateDefinitionStateDraftRow,
+          add: addDefinitionStateDraftRow,
+          remove: deleteDefinitionStateDraftRow,
+          saveStateVisuals: saveDeviceDefinitionStateVisualDraft,
+          saveStateVisualsLabel: "保存状态样式",
+          uploadStateImage: (rowId) => {
+            setStateImageUploadTarget({ scope: "definition", rowId });
+            stateVisualImageInputRef.current?.click();
+          },
+          drawStateIcon: (rowId) => openStateIconDrawingDialog({ scope: "definition", rowId }),
+          preview: !definitionDefaultStateSelected ? (
+            <div className="custom-device-preview device-definition-visual-preview">
+              <span>状态预览</span>
+              <div className="custom-device-preview-stage">
+                <svg
+                  className="custom-device-anchor-preview device-definition-anchor-preview"
+                  viewBox={`${formatSvgNumber(-definitionVisualPreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(-definitionVisualPreviewHeight / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(definitionVisualPreviewWidth + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)} ${formatSvgNumber(definitionVisualPreviewHeight + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)}`}
+                  role="img"
+                  aria-label="状态预览"
+                >
+                  {definitionVisualPreviewImage ? (
+                    <image
+                      href={definitionVisualPreviewImage}
+                      x={-definitionVisualPreviewWidth / 2}
+                      y={-definitionVisualPreviewHeight / 2}
+                      width={definitionVisualPreviewWidth}
+                      height={definitionVisualPreviewHeight}
+                      preserveAspectRatio="xMidYMid slice"
+                    />
+                  ) : (
+                    <g transform={nodeGeometryTransform(previewNode)}>
+                      <MemoDeviceGlyph node={previewNode} miniature colorPalette={colorPalette} stateVisual={definitionStatePreviewVisual ?? resolveNodeStateVisual(previewNode)} />
+                    </g>
+                  )}
+                  {definitionVisualPreviewImage && definitionStatePreviewText && (
+                    <text
+                      className="custom-device-state-preview-text"
+                      x="0"
+                      y="0"
+                      fill={definitionStatePreviewVisual?.textColor || definitionStatePreviewVisual?.color || "#1d4ed8"}
+                    >
+                      {definitionStatePreviewText}
+                    </text>
+                  )}
+                  <rect
+                    className="custom-device-preview-frame"
+                    x={-definitionVisualPreviewWidth / 2}
+                    y={-definitionVisualPreviewHeight / 2}
+                    width={definitionVisualPreviewWidth}
+                    height={definitionVisualPreviewHeight}
+                    rx="8"
+                  />
+                </svg>
+              </div>
+              <small>{definitionStatePreviewVisual && definitionVisualPreviewImage ? "当前显示状态图形" : definitionVisualDraft.backgroundImageAssetId ? "当前显示后台图标预览" : definitionVisualDraft.backgroundImage ? "当前显示本地图标预览" : "当前显示元件默认图形"}</small>
+            </div>
+          ) : undefined,
+          reset: () => {
+            const stateRows = createDefinitionStateDraftRows(template);
+            setDefinitionStateDraftRows(stateRows);
+            setDefinitionStatePageId(DEFAULT_STATE_PAGE_ID);
+            setDefinitionDraftError("");
+          },
+          resetLabel: "恢复状态分页"
+        })}
+        {definitionDefaultStateSelected && (
+          <div className="device-definition-default-toolbar">
+            <div className="custom-device-image-row device-definition-image-row">
+              <span>SVG/图片图标</span>
+              <button type="button" onClick={() => definitionTemplateIconInputRef.current?.click()}>上传到后台</button>
+              <button
+                type="button"
+                onClick={() =>
+                  setDefinitionVisualDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          backgroundImage: "",
+                          backgroundImageAssetId: "",
+                          error: ""
+                        }
+                      : current
+                  )
+                }
+              >
+                清除
+              </button>
+              <strong>{definitionVisualDraft.backgroundImageAssetId ? "后台已保存" : definitionVisualDraft.backgroundImage ? "已设置" : "默认图形"}</strong>
+            </div>
+            <div className="device-definition-size-grid">
+              <label>
+                宽度
+                <input
+                  type="number"
+                  min="1"
+                  value={definitionVisualDraft.size.width}
+                  onChange={(event) =>
+                    setDefinitionVisualDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            size: { ...current.size, width: Math.max(1, Math.round(Number(event.target.value) || current.size.width)) },
+                            error: ""
+                          }
+                        : current
+                    )
+                  }
+                />
+              </label>
+              <label>
+                高度
+                <input
+                  type="number"
+                  min="1"
+                  value={definitionVisualDraft.size.height}
+                  onChange={(event) =>
+                    setDefinitionVisualDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            size: { ...current.size, height: Math.max(1, Math.round(Number(event.target.value) || current.size.height)) },
+                            error: ""
+                          }
+                        : current
+                    )
+                  }
+                />
+              </label>
+              <span>端子拖放到元件四周边框。</span>
+            </div>
+            <div className="custom-device-actions device-definition-visual-actions">
+              <button type="button" onClick={saveDeviceDefinitionVisualDraft}>保存图标和端子</button>
+              <button
+                type="button"
+                onClick={() => {
+                  const stateRows = createDefinitionStateDraftRows(template);
+                  setDefinitionVisualDraft(createDefinitionVisualDraft(template));
+                  setDefinitionStateDraftRows(stateRows);
+                  setDefinitionStatePageId(DEFAULT_STATE_PAGE_ID);
+                  setDefinitionDraftError("");
+                }}
+              >
+                恢复当前元件状态
+              </button>
+            </div>
+          </div>
+        )}
+        {definitionDefaultStateSelected && <div className="custom-device-preview device-definition-visual-preview">
+          <span>{definitionDefaultStateSelected ? "图标和端子位置" : "状态预览"}</span>
           <div className="custom-device-preview-stage">
             <svg
               className="custom-device-anchor-preview device-definition-anchor-preview"
@@ -30470,7 +31792,7 @@ export function App() {
               role="img"
               aria-label="修改元件图标和端子位置预览"
               onPointerMove={(event) => {
-                if (definitionTerminalAnchorDragIndex === null) {
+                if (!definitionDefaultStateSelected || definitionTerminalAnchorDragIndex === null) {
                   return;
                 }
                 updateDefinitionTerminalAnchorFromPreview(definitionTerminalAnchorDragIndex, event.currentTarget, event);
@@ -30499,8 +31821,18 @@ export function App() {
                 />
               ) : (
                 <g transform={nodeGeometryTransform(previewNode)}>
-                  <MemoDeviceGlyph node={previewNode} miniature colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(previewNode)} />
+                  <MemoDeviceGlyph node={previewNode} miniature colorPalette={colorPalette} stateVisual={definitionStatePreviewVisual ?? resolveNodeStateVisual(previewNode)} />
                 </g>
+              )}
+              {definitionVisualPreviewImage && definitionStatePreviewText && (
+                <text
+                  className="custom-device-state-preview-text"
+                  x="0"
+                  y="0"
+                  fill={definitionStatePreviewVisual?.textColor || definitionStatePreviewVisual?.color || "#1d4ed8"}
+                >
+                  {definitionStatePreviewText}
+                </text>
               )}
               <rect
                 className="custom-device-preview-frame"
@@ -30510,7 +31842,7 @@ export function App() {
                 height={definitionVisualPreviewHeight}
                 rx="8"
               />
-              {definitionTerminalAnchorDragIndex !== null && (
+              {definitionDefaultStateSelected && definitionTerminalAnchorDragIndex !== null && (
                 <>
                   {CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES.map((guideValue, guideIndex) => {
                     const activeAnchor = definitionVisualTerminalAnchors[definitionTerminalAnchorDragIndex];
@@ -30554,7 +31886,7 @@ export function App() {
                   })}
                 </>
               )}
-              {definitionVisualTerminalAnchors.map((anchor, index) => {
+              {definitionDefaultStateSelected && definitionVisualTerminalAnchors.map((anchor, index) => {
                 const terminalType = definitionVisualDraft.terminalTypes[index] ?? template.terminalType;
                 const segment = definitionTerminalConnectorSegment(anchor);
                 return (
@@ -30569,7 +31901,7 @@ export function App() {
                   />
                 );
               })}
-              {definitionVisualTerminalAnchors.map((anchor, index) => {
+              {definitionDefaultStateSelected && definitionVisualTerminalAnchors.map((anchor, index) => {
                 const terminalType = definitionVisualDraft.terminalTypes[index] ?? template.terminalType;
                 const segment = definitionTerminalConnectorSegment(anchor);
                 const dragging = definitionTerminalAnchorDragIndex === index;
@@ -30603,8 +31935,8 @@ export function App() {
             </svg>
           </div>
           <small>{definitionVisualDraft.backgroundImageAssetId ? "当前显示后台图标预览" : definitionVisualDraft.backgroundImage ? "当前显示本地图标预览" : "当前显示元件默认图形"}</small>
-        </div>
-        <div className="custom-terminal-grid device-definition-terminal-grid">
+        </div>}
+        {definitionDefaultStateSelected && <div className="custom-terminal-grid device-definition-terminal-grid">
           {Array.from({ length: definitionVisualDraft.terminalCount }).map((_, index) => {
             const terminalType = definitionVisualDraft.terminalTypes[index] ?? template.terminalType;
             const terminalAnchor = definitionVisualTerminalAnchors[index] ?? { x: 0, y: 0 };
@@ -30638,11 +31970,7 @@ export function App() {
               </label>
             );
           })}
-        </div>
-        <div className="custom-device-actions">
-          <button type="button" onClick={saveDeviceDefinitionVisualDraft}>保存图标和端子</button>
-          <button type="button" onClick={() => setDefinitionVisualDraft(createDefinitionVisualDraft(template))}>恢复当前元件状态</button>
-        </div>
+        </div>}
       </section>
     );
   };
@@ -30776,6 +32104,7 @@ export function App() {
           }
           setCustomDeviceDraft(createEmptyCustomDeviceDraft("交流设备"));
           setCustomDeviceDialogView("visual");
+          setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
           setCustomDeviceDialogOpen(true);
         }}
       >
@@ -32950,6 +34279,8 @@ export function App() {
             <input ref={imageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseImage} />
             <input ref={customDeviceImageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseCustomDeviceBackground} />
             <input ref={definitionTemplateIconInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseDefinitionTemplateIcon} />
+            <input ref={stateVisualImageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseStateVisualImage} />
+            <input ref={stateIconDrawingImportInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseStateIconDrawingImport} />
             <input ref={modelImportInputRef} type="file" accept=".json,application/json" hidden onChange={importModelFile} />
             <input ref={schemeImportInputRef} type="file" accept=".json,application/json" hidden onChange={importSchemeFile} />
             <button
@@ -36918,13 +38249,6 @@ export function App() {
                       </button>
                       <button
                         type="button"
-                        className={deviceDefinitionView === "states" ? "active" : ""}
-                        onClick={() => setDeviceDefinitionView("states")}
-                      >
-                        状态
-                      </button>
-                      <button
-                        type="button"
                         className={deviceDefinitionView === "measurements" ? "active" : ""}
                         onClick={() => setDeviceDefinitionView("measurements")}
                       >
@@ -37040,8 +38364,6 @@ export function App() {
                           </button>
                         </div>
                       </>
-                    ) : deviceDefinitionView === "states" ? (
-                      renderDeviceDefinitionStatePanel(selectedDefinitionTemplate)
                     ) : (
                       renderDeviceDefinitionMeasurementPanel(selectedDefinitionTemplate)
                     )}
@@ -37161,6 +38483,7 @@ export function App() {
                   min="0"
                   max={MAX_CUSTOM_DEVICE_TERMINALS}
                   value={customDeviceDraft.terminalCount}
+                  disabled={customDeviceDialogView === "visual" && !customDefaultStateSelected}
                   onChange={(event) => updateCustomDraftTerminalCount(Number(event.target.value))}
                 />
               </label>
@@ -37180,17 +38503,66 @@ export function App() {
               >
                 参数定义
               </button>
-              <button
-                type="button"
-                className={customDeviceDialogView === "states" ? "active" : ""}
-                onClick={() => setCustomDeviceDialogView("states")}
-              >
-                状态
-              </button>
             </div>
             {customDeviceDialogView === "visual" ? (
               <>
-            <div className="custom-device-image-row">
+            {renderStateVisualPager(customDeviceDraft.stateDefinitions, customDeviceStatePageId, setCustomDeviceStatePageId, {
+              update: updateCustomDeviceStateDraftRow,
+              add: addCustomDeviceStateDraftRow,
+              remove: deleteCustomDeviceStateDraftRow,
+              saveStateVisuals: saveCustomDeviceTemplate,
+              saveStateVisualsLabel: "保存自定义设备",
+              uploadStateImage: (rowId) => {
+                setStateImageUploadTarget({ scope: "custom", rowId });
+                stateVisualImageInputRef.current?.click();
+              },
+              drawStateIcon: (rowId) => openStateIconDrawingDialog({ scope: "custom", rowId }),
+              preview: !customDefaultStateSelected ? (
+                <div className="custom-device-preview">
+                  <span>状态预览</span>
+                  <div className="custom-device-preview-stage">
+                    <svg
+                      className="custom-device-anchor-preview"
+                      viewBox={`${formatSvgNumber(-customDevicePreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(-customDevicePreviewHeight / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(customDevicePreviewWidth + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)} ${formatSvgNumber(customDevicePreviewHeight + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)}`}
+                      role="img"
+                      aria-label="自定义元件状态预览"
+                    >
+                      <image
+                        href={customDevicePreviewImage}
+                        x={-customDevicePreviewWidth / 2}
+                        y={-customDevicePreviewHeight / 2}
+                        width={customDevicePreviewWidth}
+                        height={customDevicePreviewHeight}
+                        preserveAspectRatio="xMidYMid slice"
+                      />
+                      {customStatePreviewText && (
+                        <text
+                          className="custom-device-state-preview-text"
+                          x="0"
+                          y="0"
+                          fill={customStatePreviewVisual?.textColor || customStatePreviewVisual?.color || "#1d4ed8"}
+                        >
+                          {customStatePreviewText}
+                        </text>
+                      )}
+                      <rect
+                        className="custom-device-preview-frame"
+                        x={-customDevicePreviewWidth / 2}
+                        y={-customDevicePreviewHeight / 2}
+                        width={customDevicePreviewWidth}
+                        height={customDevicePreviewHeight}
+                        rx="8"
+                      />
+                    </svg>
+                  </div>
+                  <small>{customStatePreviewVisual && customDevicePreviewImage ? "当前显示状态图形" : customDeviceDraft.backgroundImageAssetId ? "当前显示后台图标预览" : customDeviceDraft.backgroundImage ? "当前显示本地图标预览" : "当前显示默认样例预览"}</small>
+                </div>
+              ) : undefined
+            })}
+            {customDefaultStateSelected && <div className="custom-device-actions custom-device-visual-actions">
+              <button type="button" onClick={saveCustomDeviceTemplate}>保存自定义设备</button>
+            </div>}
+            {customDefaultStateSelected && <div className="custom-device-image-row">
               <span>SVG/图片图标</span>
               <button type="button" onClick={() => customDeviceImageInputRef.current?.click()}>上传SVG/图片到后台</button>
               <button
@@ -37211,9 +38583,9 @@ export function App() {
               </button>
               <button type="button" onClick={() => setCustomDeviceDraft((current) => ({ ...current, backgroundImage: "", backgroundImageAssetId: "", error: "" }))}>清除</button>
               <strong>{customDeviceDraft.backgroundImageAssetId ? "后台已保存" : customDeviceDraft.backgroundImage ? "已设置" : "未设置"}</strong>
-            </div>
-            <div className="custom-device-preview">
-              <span>背景预览</span>
+            </div>}
+            {customDefaultStateSelected && <div className="custom-device-preview">
+              <span>{customDefaultStateSelected ? "背景预览" : "状态预览"}</span>
               <div className="custom-device-preview-stage">
                 <svg
                   className="custom-device-anchor-preview"
@@ -37221,7 +38593,7 @@ export function App() {
                   role="img"
                   aria-label="自定义元件图标和端子位置预览"
                   onPointerMove={(event) => {
-                    if (customDeviceTerminalAnchorDragIndex === null) {
+                    if (!customDefaultStateSelected || customDeviceTerminalAnchorDragIndex === null) {
                       return;
                     }
                     updateCustomDeviceTerminalAnchorFromPreview(customDeviceTerminalAnchorDragIndex, event.currentTarget, event);
@@ -37247,6 +38619,16 @@ export function App() {
                     height={customDevicePreviewHeight}
                     preserveAspectRatio="xMidYMid slice"
                   />
+                  {customStatePreviewText && (
+                    <text
+                      className="custom-device-state-preview-text"
+                      x="0"
+                      y="0"
+                      fill={customStatePreviewVisual?.textColor || customStatePreviewVisual?.color || "#1d4ed8"}
+                    >
+                      {customStatePreviewText}
+                    </text>
+                  )}
                   <rect
                     className="custom-device-preview-frame"
                     x={-customDevicePreviewWidth / 2}
@@ -37255,7 +38637,7 @@ export function App() {
                     height={customDevicePreviewHeight}
                     rx="8"
                   />
-                  {customDeviceTerminalAnchorDragIndex !== null && (
+                  {customDefaultStateSelected && customDeviceTerminalAnchorDragIndex !== null && (
                     <>
                       {CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES.map((guideValue, guideIndex) => {
                         const activeAnchor = customDeviceTerminalAnchors[customDeviceTerminalAnchorDragIndex];
@@ -37299,7 +38681,7 @@ export function App() {
                       })}
                     </>
                   )}
-                  {customDeviceTerminalAnchors.map((anchor, index) => {
+                  {customDefaultStateSelected && customDeviceTerminalAnchors.map((anchor, index) => {
                     const terminalType = customDeviceDraft.terminalTypes[index] ?? "ac";
                     const segment = customDeviceTerminalConnectorSegment(anchor);
                     return (
@@ -37314,7 +38696,7 @@ export function App() {
                       />
                     );
                   })}
-                  {customDeviceTerminalAnchors.map((anchor, index) => {
+                  {customDefaultStateSelected && customDeviceTerminalAnchors.map((anchor, index) => {
                     const terminalType = customDeviceDraft.terminalTypes[index] ?? "ac";
                     const segment = customDeviceTerminalConnectorSegment(anchor);
                     const x = segment.to.x;
@@ -37350,8 +38732,8 @@ export function App() {
                 </svg>
               </div>
               <small>{customDeviceDraft.backgroundImageAssetId ? "当前显示后台图标预览" : customDeviceDraft.backgroundImage ? "当前显示本地图标预览" : "当前显示默认样例预览"}</small>
-            </div>
-            <div className="custom-terminal-grid">
+            </div>}
+            {customDefaultStateSelected && <div className="custom-terminal-grid">
               {Array.from({ length: customDeviceDraft.terminalCount }).map((_, index) => {
                 const terminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
                 const terminalAssociations = normalizeContainerTerminalAssociations(
@@ -37473,9 +38855,9 @@ export function App() {
                   </label>
                 );
               })}
-            </div>
+            </div>}
               </>
-            ) : customDeviceDialogView === "parameters" ? (
+            ) : (
               <>
             <div className="custom-param-table-wrap">
               <table className="custom-param-table">
@@ -37615,17 +38997,326 @@ export function App() {
               <button type="button" onClick={saveCustomDeviceTemplate}>保存自定义设备</button>
             </div>
               </>
-            ) : (
-              renderStateDefinitionPanel(customDeviceDraft.stateDefinitions, {
-                update: updateCustomDeviceStateDraftRow,
-                add: addCustomDeviceStateDraftRow,
-                remove: deleteCustomDeviceStateDraftRow,
-                save: saveCustomDeviceTemplate,
-                saveLabel: "保存自定义设备"
-              })
             )}
               </div>
             </div>
+          </section>
+        </div>
+      )}
+      {stateIconDrawingDialog && (
+        <div className="state-icon-drawing-backdrop" onPointerDown={() => setStateIconDrawingDialog(null)}>
+          <section
+            className="state-icon-drawing-dialog"
+            onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={stateIconDrawingKeyDown}
+            tabIndex={-1}
+            aria-label="状态图标绘制器"
+          >
+            <header>
+              <div>
+                <h2>绘制状态图标</h2>
+                <p>多个图案会合成为一个 SVG 状态图标，保存后用于当前状态显示。</p>
+              </div>
+              <button type="button" onClick={() => setStateIconDrawingDialog(null)}>关闭</button>
+            </header>
+            <div className="state-icon-drawing-layout">
+              <div className="state-icon-drawing-canvas">
+                <svg
+                  ref={stateIconDrawingSvgRef}
+                  viewBox="0 0 240 160"
+                  role="img"
+                  aria-label="状态图标绘制预览"
+                  onPointerMove={dragStateIconDrawingSelection}
+                  onPointerUp={stopStateIconDrawingDrag}
+                  onPointerCancel={stopStateIconDrawingDrag}
+                  onPointerDown={(event) => {
+                    (event.currentTarget.closest(".state-icon-drawing-dialog") as HTMLElement | null)?.focus();
+                    setStateIconDrawingDialog((current) =>
+                      current ? { ...current, selectedElementId: "", selectedElementIds: [] } : current
+                    );
+                  }}
+                >
+                  <rect x="0" y="0" width="240" height="160" rx="10" className="state-icon-drawing-canvas-bg" />
+                  <image
+                    href={stateIconDrawingToImage(stateIconDrawingDialog.elements)}
+                    x="0"
+                    y="0"
+                    width="240"
+                    height="160"
+                    preserveAspectRatio="xMidYMid meet"
+                    className="state-icon-drawing-composite-preview"
+                  />
+                  {stateIconDrawingDialog.elements.map((element) => {
+                    const selectedIds = stateIconDrawingDialog.selectedElementIds.length > 0
+                      ? stateIconDrawingDialog.selectedElementIds
+                      : [stateIconDrawingDialog.selectedElementId].filter(Boolean);
+                    const selected = selectedIds.includes(element.id);
+                    const halfWidth = Math.max(1, element.width) / 2;
+                    const halfHeight = Math.max(1, element.height) / 2;
+                    return (
+                      <g
+                        key={element.id}
+                        className={`state-icon-drawing-element ${selected ? "selected" : ""}`}
+                        transform={`translate(${formatSvgNumber(element.x)} ${formatSvgNumber(element.y)}) rotate(${formatSvgNumber(element.rotation)})`}
+                        onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "move")}
+                      >
+                        <rect
+                          x={formatSvgNumber(-halfWidth)}
+                          y={formatSvgNumber(-halfHeight)}
+                          width={formatSvgNumber(element.width)}
+                          height={formatSvgNumber(element.height)}
+                          className="state-icon-drawing-hitbox"
+                        />
+                        {selected && (
+                          <>
+                            <rect
+                              x={formatSvgNumber(-halfWidth)}
+                              y={formatSvgNumber(-halfHeight)}
+                              width={formatSvgNumber(element.width)}
+                              height={formatSvgNumber(element.height)}
+                              className="state-icon-drawing-selection-box"
+                            />
+                            <circle
+                              cx={formatSvgNumber(halfWidth)}
+                              cy={formatSvgNumber(halfHeight)}
+                              r="5"
+                              className="state-icon-drawing-resize-handle"
+                              onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize")}
+                            />
+                            <line
+                              x1="0"
+                              y1={formatSvgNumber(-halfHeight)}
+                              x2="0"
+                              y2={formatSvgNumber(-halfHeight - 16)}
+                              className="state-icon-drawing-rotate-stem"
+                            />
+                            <circle
+                              cx="0"
+                              cy={formatSvgNumber(-halfHeight - 20)}
+                              r="5"
+                              className="state-icon-drawing-rotate-handle"
+                              onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "rotate")}
+                            />
+                          </>
+                        )}
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
+              <div className="state-icon-drawing-side">
+              <div className="state-icon-drawing-library">
+                <span>添加图案</span>
+                <div className="state-icon-drawing-import-actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStateIconDrawingImportMode("svg");
+                      stateIconDrawingImportInputRef.current?.click();
+                    }}
+                  >
+                    导入SVG
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStateIconDrawingImportMode("image");
+                      stateIconDrawingImportInputRef.current?.click();
+                    }}
+                  >
+                    导入图片
+                  </button>
+                </div>
+                <div>
+                  {([
+                    "switch-open",
+                    "switch-closed",
+                    "valve-open",
+                    "valve-closed",
+                    "line",
+                    "point",
+                    "triangle",
+                    "square",
+                    "hexagon",
+                    "polygon",
+                    "circle",
+                    "semicircle",
+                    "ellipse",
+                    "arc",
+                    "text"
+                  ] as StateVisualShapeKind[]).map((kind) => (
+                    <button key={kind} type="button" onClick={() => addStateIconDrawingElement(kind)}>
+                      {stateVisualShapeLabel(kind)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="state-icon-drawing-layers">
+                <span>图案图层</span>
+                <div>
+                  {stateIconDrawingDialog.elements.length === 0 ? (
+                    <p>暂无图案</p>
+                  ) : (
+                    stateIconDrawingDialog.elements.map((element, index) => (
+                      <button
+                        key={element.id}
+                        type="button"
+                        className={(stateIconDrawingDialog.selectedElementIds.length > 0 ? stateIconDrawingDialog.selectedElementIds : [stateIconDrawingDialog.selectedElementId]).includes(element.id) ? "active" : ""}
+                        onClick={(event) => stateIconDrawingSelection(element.id, event.shiftKey || event.ctrlKey || event.metaKey)}
+                      >
+                        {index + 1}. {stateVisualShapeLabel(element.kind)}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div className="state-icon-drawing-properties">
+                {(() => {
+                  const selected = stateIconDrawingDialog.elements.find((element) => element.id === stateIconDrawingDialog.selectedElementId) ?? null;
+                  if (!selected) {
+                    return <p>选择一个图案后调整属性。</p>;
+                  }
+                  const visibleStrokeColor = visibleStateIconColor("#2563eb", selected.strokeColor);
+                  const visibleTextColor = visibleStateIconColor("#111827", selected.textColor, selected.strokeColor);
+                  return (
+                    <>
+                      <div className="state-icon-drawing-property-title">
+                        <strong>{stateVisualShapeLabel(selected.kind)}</strong>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const selectedIds = stateIconDrawingDialog.selectedElementIds.length > 0
+                              ? stateIconDrawingDialog.selectedElementIds
+                              : [selected.id];
+                            if (selectedIds.length > 1) {
+                              deleteSelectedStateIconDrawingElements();
+                            } else {
+                              deleteStateIconDrawingElement(selected.id);
+                            }
+                          }}
+                        >
+                          {stateIconDrawingDialog.selectedElementIds.length > 1 ? "删除选中" : "删除图案"}
+                        </button>
+                      </div>
+                      <div className="state-icon-drawing-property-grid">
+                        <label>
+                          形状
+                          <select value={selected.kind} onChange={(event) => updateStateIconDrawingElement(selected.id, { kind: event.target.value as StateVisualShapeKind, strokeColor: visibleStrokeColor, textColor: visibleTextColor })}>
+                            {([
+                              "switch-open",
+                              "switch-closed",
+                              "valve-open",
+                              "valve-closed",
+                              "line",
+                              "point",
+                              "triangle",
+                              "square",
+                              "hexagon",
+                              "polygon",
+                              "circle",
+                              "semicircle",
+                              "ellipse",
+                              "arc",
+                              "text",
+                              "imported-svg",
+                              "image"
+                            ] as StateVisualShapeKind[]).map((kind) => (
+                              <option key={kind} value={kind}>{stateVisualShapeLabel(kind)}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          X
+                          <input type="number" value={selected.x} onChange={(event) => updateStateIconDrawingElement(selected.id, { x: Number(event.target.value) || 0 })} />
+                        </label>
+                        <label>
+                          Y
+                          <input type="number" value={selected.y} onChange={(event) => updateStateIconDrawingElement(selected.id, { y: Number(event.target.value) || 0 })} />
+                        </label>
+                        <label>
+                          宽
+                          <input type="number" min="1" value={selected.width} onChange={(event) => updateStateIconDrawingElement(selected.id, { width: Math.max(1, Number(event.target.value) || 1) })} />
+                        </label>
+                        <label>
+                          高
+                          <input type="number" min="1" value={selected.height} onChange={(event) => updateStateIconDrawingElement(selected.id, { height: Math.max(1, Number(event.target.value) || 1) })} />
+                        </label>
+                        <label>
+                          角度
+                          <input type="number" value={selected.rotation} onChange={(event) => updateStateIconDrawingElement(selected.id, { rotation: Number(event.target.value) || 0 })} />
+                        </label>
+                        <label>
+                          粗细
+                          <input type="number" min="0" value={selected.strokeWidth} onChange={(event) => updateStateIconDrawingElement(selected.id, { strokeWidth: Math.max(0, Number(event.target.value) || 0) })} />
+                        </label>
+                        <label>
+                          线色
+                          <div className="state-icon-drawing-color-field">
+                            <input type="color" value={colorInputValue(visibleStrokeColor, "#2563eb")} onChange={(event) => updateStateIconDrawingElement(selected.id, { strokeColor: event.target.value })} />
+                            <span className="device-state-color-swatch" title={visibleStrokeColor} style={{ "--state-color": visibleStrokeColor } as CSSProperties} />
+                          </div>
+                        </label>
+                        <label>
+                          填充
+                          <div className="state-icon-drawing-color-field">
+                            <input type="color" value={colorInputValue(selected.fillColor, "#ffffff")} onChange={(event) => updateStateIconDrawingElement(selected.id, { fillColor: event.target.value })} />
+                            <span className={`device-state-color-swatch ${selected.fillColor === "transparent" ? "transparent" : ""}`} title={selected.fillColor || "未设置"} style={{ "--state-color": selected.fillColor === "transparent" ? "#ffffff" : selected.fillColor || "#ffffff" } as CSSProperties} />
+                          </div>
+                        </label>
+                        <label>
+                          文字色
+                          <div className="state-icon-drawing-color-field">
+                            <input type="color" value={colorInputValue(visibleTextColor, "#111827")} onChange={(event) => updateStateIconDrawingElement(selected.id, { textColor: event.target.value })} />
+                            <span className="device-state-color-swatch" title={visibleTextColor} style={{ "--state-color": visibleTextColor } as CSSProperties} />
+                          </div>
+                        </label>
+                        <label className="state-icon-drawing-text-field">
+                          文字
+                          <input value={selected.text} onChange={(event) => updateStateIconDrawingElement(selected.id, { text: event.target.value })} />
+                        </label>
+                        {selected.kind === "imported-svg" && (
+                          <label className="state-icon-drawing-svg-field">
+                            SVG源码
+                            <textarea
+                              value={selected.svgSource ?? ""}
+                              spellCheck={false}
+                              onChange={(event) => updateStateIconDrawingElement(selected.id, { svgSource: event.target.value })}
+                            />
+                          </label>
+                        )}
+                        {selected.kind === "image" && (
+                          <>
+                            <label>
+                              图片缩放
+                              <input
+                                type="number"
+                                min="0.05"
+                                step="0.05"
+                                value={selected.imageScale ?? 1}
+                                onChange={(event) => updateStateIconDrawingElement(selected.id, { imageScale: Math.max(0.05, Number(event.target.value) || 0.05) })}
+                              />
+                            </label>
+                            <label>
+                              裁剪X
+                              <input type="number" value={selected.cropX ?? 0} onChange={(event) => updateStateIconDrawingElement(selected.id, { cropX: Number(event.target.value) || 0 })} />
+                            </label>
+                            <label>
+                              裁剪Y
+                              <input type="number" value={selected.cropY ?? 0} onChange={(event) => updateStateIconDrawingElement(selected.id, { cropY: Number(event.target.value) || 0 })} />
+                            </label>
+                          </>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+              </div>
+            </div>
+            <footer>
+              <button type="button" onClick={() => addStateIconDrawingElement("line")}>添加线</button>
+              <button type="button" onClick={applyStateIconDrawingDialog} disabled={stateIconDrawingDialog.elements.length === 0}>应用到状态图标</button>
+            </footer>
           </section>
         </div>
       )}

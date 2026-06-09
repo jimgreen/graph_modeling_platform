@@ -1226,6 +1226,16 @@ describe("power system model", () => {
       color: "#f59e0b",
       image: "maint.svg"
     });
+    expect(resolveDeviceStateVisual(template, { ...node, params: { ...node.params, status: "未知" } })).toBeNull();
+    expect(resolveDeviceStateVisual({
+      ...template,
+      stateDefinitions: template.stateDefinitions?.filter((state) => state.value !== "2")
+    }, { ...node, params: { ...node.params, status: "2" } })).toBeNull();
+    expect(resolveDeviceStateVisual(template, { ...node, params: { ...node.params, status: "闭合" } })).toMatchObject({
+      value: "闭合",
+      name: "闭合",
+      text: "ON"
+    });
 
     const exported = parseESections(buildEDeviceParameterFile({
       version: 1,

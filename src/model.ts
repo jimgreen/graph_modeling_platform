@@ -969,10 +969,11 @@ export function resolveDeviceStateVisual(
     return null;
   }
   const current = normalizeDeviceStateValue(node.params.status) || defaultDeviceStatusValue(template);
-  const normalizedCurrent = normalizeDeviceStatusForE(current);
+  const normalizedCurrent = normalizeDeviceStatusForDisplayMatch(current);
   const state = states.find((item) => item.value === current) ??
-    states.find((item) => normalizeDeviceStatusForE(item.value) === normalizedCurrent) ??
-    states[0];
+    (normalizedCurrent
+      ? states.find((item) => normalizeDeviceStatusForDisplayMatch(item.value) === normalizedCurrent)
+      : undefined);
   return state ? { ...cloneDeviceStateDefinition(state), value: current || state.value, name: state.name } : null;
 }
 
@@ -1412,6 +1413,35 @@ export function normalizeDeviceStatusForE(value?: string) {
     return "1";
   }
   return "1";
+}
+
+function normalizeDeviceStatusForDisplayMatch(value?: string) {
+  const normalized = normalizeDeviceStateValue(value);
+  if (!normalized) return "";
+  const lower = normalized.toLowerCase();
+  if (
+    normalized === "0" ||
+    normalized === "打开" ||
+    normalized === "开断" ||
+    normalized === "打开/开断" ||
+    normalized === "分闸" ||
+    lower === "open" ||
+    lower === "off" ||
+    lower === "false"
+  ) {
+    return "0";
+  }
+  if (
+    normalized === "1" ||
+    normalized === "闭合" ||
+    normalized === "合闸" ||
+    lower === "closed" ||
+    lower === "on" ||
+    lower === "true"
+  ) {
+    return "1";
+  }
+  return "";
 }
 
 function normalizeSwitchStatusForE(value?: string) {

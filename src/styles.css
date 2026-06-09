@@ -3995,7 +3995,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   gap: 14px;
   width: min(1120px, calc(100vw - 48px));
   max-height: min(780px, calc(100vh - 48px));
-  overflow: hidden;
+  overflow: auto;
   padding: 18px;
   border-radius: 8px;
   background: #ffffff;
@@ -4398,61 +4398,263 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .device-definition-visual-panel {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   min-height: 0;
 }
 
-.device-state-definition-panel {
+.device-state-pager {
   display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.device-state-pager-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  min-height: 0;
+  min-width: 0;
 }
 
-.device-state-table-wrap {
-  max-height: 390px;
+.device-state-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
 }
 
-.device-state-table th:nth-child(1),
-.device-state-table th:nth-child(2),
-.device-state-table th:nth-child(3),
-.device-state-table th:nth-child(5) {
-  min-width: 88px;
+.device-state-tabs button {
+  min-height: 26px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0 8px;
+  color: #334155;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
 }
 
-.device-state-table th:nth-child(4) {
-  min-width: 160px;
+.device-state-tabs button:hover,
+.device-state-tabs button:focus-visible {
+  border-color: #93c5fd;
+  background: #f8fafc;
+  outline: none;
+}
+
+.device-state-tabs button.active {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.device-state-tabs .device-state-add-tab {
+  border-style: dashed;
+  color: #475569;
+}
+
+.device-state-shared-note {
+  flex: 0 0 auto;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.device-state-page-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 6px;
+}
+
+.device-state-page-fields label {
+  display: grid;
+  gap: 3px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.device-state-page-fields input {
+  width: 100%;
+  min-height: 28px;
+  border: 1px solid #d7e0ec;
+  border-radius: 6px;
+  padding: 0 8px;
+  color: #1f2937;
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.device-state-image-field {
+  grid-column: span 2;
+}
+
+.device-state-image-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(2, max-content);
+  gap: 6px;
+}
+
+.device-state-image-field button,
+.device-state-empty button,
+.device-state-shape-tools button {
+  min-height: 28px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  padding: 0 8px;
+  color: #334155;
+  background: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.device-state-actions {
+  justify-content: flex-end;
+}
+
+.device-state-shape-field {
+  display: grid;
+  grid-column: span 2;
+  gap: 3px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.device-state-shape-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.device-state-shape-tools button {
+  min-width: 0;
+  border-style: dashed;
+  padding: 0 7px;
+  white-space: nowrap;
+}
+
+.device-state-shape-tools small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.device-state-default-body {
+  display: flex;
+  align-items: center;
+  min-height: 18px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.device-state-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .device-state-color-field {
-  grid-template-columns: 32px minmax(92px, 1fr);
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
+}
+
+.device-state-color-field input[type="color"],
+.state-icon-drawing-color-field input[type="color"] {
+  width: 32px;
+  min-width: 32px;
+  height: 28px;
+  min-height: 28px;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.device-state-color-swatch {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: var(--state-color, #ffffff);
+}
+
+.device-state-color-swatch.transparent {
+  background:
+    linear-gradient(45deg, #cbd5e1 25%, transparent 25%, transparent 75%, #cbd5e1 75%),
+    linear-gradient(45deg, #cbd5e1 25%, transparent 25%, transparent 75%, #cbd5e1 75%),
+    #ffffff;
+  background-position: 0 0, 6px 6px, 0 0;
+  background-size: 12px 12px;
 }
 
 .custom-device-tabs {
   margin-top: 2px;
 }
 
+.device-definition-visual-actions,
+.custom-device-visual-actions {
+  justify-content: flex-start;
+  padding-bottom: 2px;
+}
+
+.device-definition-default-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(280px, 1.1fr);
+  align-items: end;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.device-definition-default-toolbar .device-definition-visual-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  padding-bottom: 0;
+}
+
 .device-definition-image-row {
+  display: grid;
   grid-template-columns: auto repeat(2, max-content) minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+}
+
+.device-definition-image-row button {
+  min-height: 28px;
+  padding: 0 9px;
+  white-space: nowrap;
 }
 
 .device-definition-size-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(110px, 150px)) minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(88px, 118px)) minmax(130px, 1fr);
   align-items: end;
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .device-definition-size-grid label {
   display: grid;
-  gap: 4px;
+  gap: 3px;
   color: #475569;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
 }
 
 .device-definition-size-grid input {
-  min-height: 30px;
+  min-height: 28px;
   border: 1px solid #d7e0ec;
   border-radius: 6px;
   padding: 0 8px;
@@ -4463,25 +4665,349 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .device-definition-size-grid span {
   color: #64748b;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 
+.device-definition-visual-preview {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 6px;
+  padding: 8px;
+}
+
+.device-definition-visual-preview > span,
+.device-definition-visual-preview > small {
+  line-height: 1.2;
+}
+
 .device-definition-visual-preview .custom-device-preview-stage {
-  min-height: 168px;
+  min-height: 142px;
 }
 
 .device-definition-anchor-preview {
-  height: 176px;
+  height: 150px;
+}
+
+.device-state-pager .custom-device-preview {
+  grid-template-columns: 62px minmax(0, 1fr) auto;
+  gap: 6px;
+  padding: 6px;
+}
+
+.device-state-pager .custom-device-preview .custom-device-preview-stage {
+  min-height: 92px;
+  padding: 6px;
+}
+
+.device-state-pager .custom-device-anchor-preview {
+  height: 104px;
 }
 
 .device-definition-terminal-grid {
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
 }
 
 .device-definition-terminal-grid strong {
   color: #0f172a;
   font-size: 12px;
+}
+
+.state-icon-drawing-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.34);
+}
+
+.state-icon-drawing-dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  width: min(1360px, calc(100vw - 24px));
+  max-height: min(820px, calc(100vh - 24px));
+  overflow: auto;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.state-icon-drawing-dialog header,
+.state-icon-drawing-dialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.state-icon-drawing-dialog h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 17px;
+}
+
+.state-icon-drawing-dialog p {
+  margin: 2px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.state-icon-drawing-dialog button,
+.state-icon-drawing-dialog input,
+.state-icon-drawing-dialog select {
+  min-height: 27px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0 7px;
+  color: #0f172a;
+  background: #ffffff;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.state-icon-drawing-dialog button:hover,
+.state-icon-drawing-dialog button:focus-visible {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  outline: none;
+}
+
+.state-icon-drawing-dialog button:disabled {
+  cursor: not-allowed;
+  color: #94a3b8;
+  background: #f8fafc;
+}
+
+.state-icon-drawing-layout {
+  display: grid;
+  grid-template-columns: minmax(620px, 1fr) minmax(440px, 500px);
+  gap: 8px;
+  min-height: 0;
+}
+
+.state-icon-drawing-canvas {
+  display: grid;
+  place-items: center;
+  min-height: 520px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.state-icon-drawing-canvas svg {
+  width: 100%;
+  max-width: 780px;
+  max-height: calc(100vh - 190px);
+  aspect-ratio: 3 / 2;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.state-icon-drawing-canvas-bg {
+  fill: #ffffff;
+}
+
+.state-icon-drawing-element {
+  cursor: move;
+}
+
+.state-icon-drawing-hitbox {
+  fill: transparent;
+  pointer-events: all;
+}
+
+.state-icon-drawing-composite-preview {
+  pointer-events: none;
+}
+
+.state-icon-drawing-selection-box {
+  fill: none;
+  stroke: #2563eb;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.state-icon-drawing-resize-handle,
+.state-icon-drawing-rotate-handle {
+  fill: #ffffff;
+  stroke: #2563eb;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.state-icon-drawing-resize-handle {
+  cursor: nwse-resize;
+}
+
+.state-icon-drawing-rotate-handle {
+  cursor: grab;
+}
+
+.state-icon-drawing-rotate-stem {
+  stroke: #2563eb;
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.state-icon-drawing-side {
+  display: grid;
+  grid-template-columns: 185px minmax(0, 1fr);
+  grid-template-rows: minmax(118px, auto) minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.state-icon-drawing-library,
+.state-icon-drawing-layers,
+.state-icon-drawing-properties {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px;
+  background: #fbfdff;
+}
+
+.state-icon-drawing-library {
+  grid-row: 1 / -1;
+}
+
+.state-icon-drawing-layers {
+  min-height: 0;
+}
+
+.state-icon-drawing-properties {
+  min-height: 0;
+  overflow: auto;
+}
+
+.state-icon-drawing-library > span,
+.state-icon-drawing-layers > span {
+  color: #334155;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.state-icon-drawing-library > div,
+.state-icon-drawing-layers > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.state-icon-drawing-library > div:not(.state-icon-drawing-import-actions) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.state-icon-drawing-library > .state-icon-drawing-import-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.state-icon-drawing-layers > div {
+  display: grid;
+}
+
+.state-icon-drawing-layers button {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.state-icon-drawing-layers button.active {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.state-icon-drawing-property-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.state-icon-drawing-property-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.state-icon-drawing-property-grid label {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  color: #475569;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.state-icon-drawing-property-grid input,
+.state-icon-drawing-property-grid select,
+.state-icon-drawing-property-grid textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.state-icon-drawing-property-grid textarea {
+  min-height: 78px;
+  resize: vertical;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  padding: 6px 7px;
+  color: #0f172a;
+  background: #ffffff;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.state-icon-drawing-property-grid input[type="color"] {
+  padding: 2px;
+}
+
+.state-icon-drawing-color-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.state-icon-drawing-text-field {
+  grid-column: 1 / -1;
+}
+
+.state-icon-drawing-svg-field {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1120px) {
+  .state-icon-drawing-layout {
+    grid-template-columns: minmax(420px, 1fr) minmax(390px, 430px);
+  }
+
+  .state-icon-drawing-side {
+    grid-template-columns: 160px minmax(0, 1fr);
+  }
+
+  .state-icon-drawing-canvas {
+    min-height: 430px;
+  }
 }
 
 .device-definition-associations {
@@ -4718,7 +5244,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .custom-device-preview-frame {
-  fill: #ffffff;
+  fill: transparent;
   stroke: #cbd5e1;
   stroke-width: 1.5;
   stroke-dasharray: 5 4;
@@ -4798,6 +5324,19 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .custom-device-terminal-anchor.dragging text {
   fill: #ffffff;
+}
+
+.custom-device-state-preview-text {
+  font-size: 18px;
+  font-weight: 800;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.88);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  pointer-events: none;
+  user-select: none;
 }
 
 .custom-device-preview img {
@@ -7294,6 +7833,15 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   .app-shell {
     --left-panel-width: 250px;
     --right-panel-width: min(320px, calc(100vw - 24px));
+  }
+
+  .device-definition-default-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .device-definition-size-grid {
+    grid-template-columns: repeat(2, minmax(88px, 118px)) minmax(0, 1fr);
   }
 }
 
