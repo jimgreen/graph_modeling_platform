@@ -3197,7 +3197,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .node-double-click-dialog {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 14px;
   width: min(640px, calc(100vw - 48px));
   max-height: min(720px, calc(100vh - 48px));
@@ -3219,17 +3219,59 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   --param-table-row-height: 38px;
 }
 
-.node-double-click-param-table textarea {
+.param-table.node-double-click-param-table textarea {
   min-height: 120px;
   resize: vertical;
 }
 
-.node-double-click-param-table td:not(:focus-within) textarea {
-  min-height: 72px;
+.param-table.node-double-click-param-table td:not(:focus-within) textarea {
+  min-height: 120px;
   max-height: none;
   padding: 7px 8px;
   resize: vertical;
   overflow: auto;
+}
+
+.container-param-tabs.node-double-click-container-tabs {
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin-bottom: 8px;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.container-param-tabs.node-double-click-container-tabs button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 9px;
+  white-space: nowrap;
+}
+
+.node-double-click-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.node-double-click-dialog-actions button {
+  min-width: 76px;
+  min-height: 32px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 14px;
+  color: #334155;
+  background: #ffffff;
+  font-size: 13px;
+}
+
+.node-double-click-dialog-actions button.primary {
+  color: #ffffff;
+  border-color: #1d4ed8;
+  background: #1d4ed8;
 }
 
 .image-picker-title {

@@ -237,6 +237,7 @@ import {
   type CanvasBounds,
   type ColorPalette,
   type ColorDisplayMode,
+  type ContainerDeviceParameterView,
   type GeometryBounds,
   type Topology,
   type ContainerTerminalAssociationType,
@@ -1326,6 +1327,11 @@ type NodeDoubleClickDialogKind = "interaction" | "text" | "device";
 type NodeDoubleClickDialogState = {
   kind: NodeDoubleClickDialogKind;
   nodeId: string;
+  containerViewId?: string;
+} | null;
+type NodeDoubleClickDialogDraftState = {
+  nodeId: string;
+  node: ModelNode;
 } | null;
 type StateImageUploadTarget = {
   scope: "definition" | "custom";
@@ -6231,6 +6237,26 @@ const IMAGE_DOUBLE_CLICK_KINDS = new Set<string>([
   "static-web"
 ]);
 
+const NODE_DOUBLE_CLICK_DIALOG_DEDUPE_MS = 350;
+const NODE_DOUBLE_CLICK_CLOSE_SUPPRESS_MS = 900;
+
+const cloneNodeForDoubleClickDraft = (node: ModelNode): ModelNode => ({
+  ...node,
+  position: { ...node.position },
+  size: { ...node.size },
+  params: { ...node.params },
+  terminals: node.terminals.map((terminal) => ({ ...terminal }))
+});
+
+const stringRecordShallowEqual = (first: Record<string, string>, second: Record<string, string>) => {
+  const firstKeys = Object.keys(first);
+  const secondKeys = Object.keys(second);
+  return firstKeys.length === secondKeys.length && firstKeys.every((key) => first[key] === second[key]);
+};
+
+const nodeDoubleClickDraftHasModelChanges = (currentNode: ModelNode, draftNode: ModelNode) =>
+  currentNode.name !== draftNode.name || !stringRecordShallowEqual(currentNode.params, draftNode.params);
+
 const isTextDoubleClickKind = (kind: string) => TEXT_DOUBLE_CLICK_KINDS.has(kind);
 
 const isImageDoubleClickKind = (kind: string) => IMAGE_DOUBLE_CLICK_KINDS.has(kind);
@@ -9294,6 +9320,9 @@ export function App() {
   const [recordClipboard, setRecordClipboard] = useState<ClipboardRecord | null>(null);
   const [imageTarget, setImageTarget] = useState<ImageTarget | null>(null);
   const [nodeDoubleClickDialog, setNodeDoubleClickDialog] = useState<NodeDoubleClickDialogState>(null);
+  const [nodeDoubleClickDraft, setNodeDoubleClickDraft] = useState<NodeDoubleClickDialogDraftState>(null);
+  const nodeDoubleClickOpenGuardRef = useRef<{ key: string; time: number } | null>(null);
+  const nodeDoubleClickCloseSuppressUntilRef = useRef(0);
   const [stateImageUploadTarget, setStateImageUploadTarget] = useState<StateImageUploadTarget | null>(null);
   const [stateIconDrawingDialog, setStateIconDrawingDialog] = useState<StateIconDrawingDialogState | null>(null);
   const [stateIconDrawingImportMode, setStateIconDrawingImportMode] = useState<"svg" | "image">("svg");
@@ -22915,6 +22944,73 @@ export function App() {
     );
   };
 
+  const updateNodeDoubleClickDraftNode = (nodeId: string, updater: (node: ModelNode) => ModelNode) => {
+    setNodeDoubleClickDraft((current) => {
+      if (!current || current.nodeId !== nodeId) {
+        return current;
+      }
+      const nextNode = updater(current.node);
+      return nextNode === current.node ? current : { ...current, node: nextNode };
+    });
+  };
+
+  const updateNodeDoubleClickDraftPatch = (nodeId: string, patch: Partial<ModelNode>) => {
+    updateNodeDoubleClickDraftNode(nodeId, (node) => ({ ...node, ...patch }));
+  };
+
+  const updateNodeDoubleClickDraftParam = (nodeId: string, key: string, value: string) => {
+    updateNodeDoubleClickDraftNode(nodeId, (node) => {
+      if (key !== "_labelDisplayMode" && node.params[key] === value) {
+        return node;
+      }
+      if (key === "_labelDisplayMode") {
+        const mode = normalizeNodeLabelDisplayMode(value);
+        const visible = mode === "hidden" ? "0" : "1";
+        if (node.params._labelDisplayMode === mode && node.params._labelVisible === visible) {
+          return node;
+        }
+        return { ...node, params: { ...node.params, _labelDisplayMode: mode, _labelVisible: visible } };
+      }
+      return { ...node, params: { ...node.params, [key]: value } };
+    });
+  };
+
+  const renderNodeDoubleClickColorEditor = (node: ModelNode, key: string, value: string, fallback = "#ffffff") => {
+    const colorValue = colorInputValue(value, fallback);
+    return (
+      <div className="color-field with-none">
+        <input type="color" value={colorValue} disabled={isBrowseMode} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, key, event.target.value)} />
+        <input value={value === "transparent" ? "无颜色" : value || ""} disabled={isBrowseMode} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, key, event.target.value === "无颜色" ? "transparent" : event.target.value)} />
+        <button type="button" disabled={isBrowseMode} onClick={() => updateNodeDoubleClickDraftParam(node.id, key, "transparent")}>无颜色</button>
+      </div>
+    );
+  };
+
+  const renderNodeDoubleClickParamEditor = (node: ModelNode, key: string, value: string, wrapLabel = true) => {
+    const label = PARAM_LABELS[key] ?? key;
+    const options = paramOptionsForNode(key, node, value);
+    const optionLabels = paramOptionLabelsForNode(key, node, value);
+    const control = options ? (
+      <select value={value} disabled={isBrowseMode} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, key, event.target.value)}>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {optionLabels[option] ?? option}
+          </option>
+        ))}
+      </select>
+    ) : (
+      <input value={value} disabled={isBrowseMode} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, key, event.target.value)} />
+    );
+    return wrapLabel ? (
+      <label key={key}>
+        {label}
+        {control}
+      </label>
+    ) : (
+      control
+    );
+  };
+
   const renderBatchCommonColorParamEditor = (row: BatchCommonParamRow) => {
     const value = row.mixed ? "" : row.value;
     const colorValue = colorInputValue(value, "#334155");
@@ -23120,10 +23216,21 @@ export function App() {
     </section>
   );
 
-  const renderStaticButtonActionEditor = (node: ModelNode) => {
+  const renderStaticButtonActionEditor = (
+    node: ModelNode,
+    editorActions: {
+      updateParam: (key: string, value: string) => void;
+      updateNode: (patch: Partial<ModelNode>) => void;
+    } = {
+      updateParam,
+      updateNode: updateSelectedNode
+    }
+  ) => {
     if (!isStaticButtonCapableKind(node.kind)) {
       return null;
     }
+    const writeParam = editorActions.updateParam;
+    const writeNode = editorActions.updateNode;
     const buttonEnabled = node.params.buttonEnabled === "1";
     const actionType = node.params.buttonActionType || "none";
     const projectOptions = flattenSavedSchemes(schemes).flatMap((scheme) =>
@@ -23141,7 +23248,7 @@ export function App() {
             <select
               value={buttonEnabled ? "1" : "0"}
               disabled={isBrowseMode}
-              onChange={(event) => updateParam("buttonEnabled", event.target.value)}
+              onChange={(event) => writeParam("buttonEnabled", event.target.value)}
             >
               <option value="1">启用</option>
               <option value="0">禁用</option>
@@ -23153,7 +23260,7 @@ export function App() {
             <tr>
               {renderChineseParamHeader("buttonActionType")}
               <td>
-                <select value={actionType} disabled={isBrowseMode} onChange={(event) => updateParam("buttonActionType", event.target.value)}>
+                <select value={actionType} disabled={isBrowseMode} onChange={(event) => writeParam("buttonActionType", event.target.value)}>
                   {Object.entries(STATIC_BUTTON_ACTION_LABELS).map(([value, label]) => (
                     <option key={value} value={value}>{label}</option>
                   ))}
@@ -23169,7 +23276,7 @@ export function App() {
                     disabled={isBrowseMode}
                     onChange={(event) => {
                       const selected = projectOptions.find((item) => item.project.id === event.target.value);
-                      updateSelectedNode({
+                      writeNode({
                         params: {
                           ...node.params,
                           buttonTargetProjectId: selected?.project.id ?? "",
@@ -23204,7 +23311,7 @@ export function App() {
                       const selectedLayers = selectedLayerIds
                         .map((layerId) => layers.find((layer) => layer.id === layerId))
                         .filter((layer): layer is ModelLayer => Boolean(layer));
-                      updateSelectedNode({
+                      writeNode({
                         params: {
                           ...node.params,
                           buttonTargetLayerId: selectedLayers[0]?.id ?? "",
@@ -23226,7 +23333,7 @@ export function App() {
               <tr>
                 {renderChineseParamHeader("buttonCommand")}
                 <td>
-                  <select value={node.params.buttonCommand || "none"} disabled={isBrowseMode} onChange={(event) => updateParam("buttonCommand", event.target.value)}>
+                  <select value={node.params.buttonCommand || "none"} disabled={isBrowseMode} onChange={(event) => writeParam("buttonCommand", event.target.value)}>
                     {Object.entries(STATIC_BUTTON_COMMAND_LABELS).map(([value, label]) => (
                       <option key={value} value={value}>{label}</option>
                     ))}
@@ -23278,16 +23385,94 @@ export function App() {
           {renderParamHeader(key, key, definition?.cnName ?? PARAM_LABELS[key] ?? key)}
           <td>
             {key === "name" ? (
-              <input value={node.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
+              <input value={node.name} onChange={(event) => updateNodeDoubleClickDraftPatch(node.id, { name: event.target.value })} />
             ) : READONLY_E_PARAM_KEYS.has(key) || readonlyKeys.has(key) ? (
               <input value={displayValue} readOnly />
             ) : (
-              renderParamEditor(key, displayValue, false)
+              renderNodeDoubleClickParamEditor(node, key, displayValue, false)
             )}
           </td>
         </tr>
       );
     });
+  };
+
+  const renderNodeDoubleClickContainerParamRows = (node: ModelNode, view: ContainerDeviceParameterView) => (
+    view.rows.map((row) => {
+      const options = paramOptionsForSection(row.key, view.componentType);
+      const displayValue = formatDeviceModelParamDisplayValue(row.key, row.value);
+      return (
+        <tr key={row.key}>
+          {renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
+          <td>
+            {row.key === "name" && view.kind === "container" ? (
+              <input value={node.name} onChange={(event) => updateNodeDoubleClickDraftPatch(node.id, { name: event.target.value })} />
+            ) : row.readonly || !row.paramKey ? (
+              <input value={displayValue} readOnly />
+            ) : options ? (
+              <select value={displayValue} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, row.paramKey!, event.target.value)}>
+                {options.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input value={displayValue} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, row.paramKey!, event.target.value)} />
+            )}
+          </td>
+        </tr>
+      );
+    })
+  );
+
+  const rememberNodeDoubleClickDialogGuard = (dialog: NonNullable<NodeDoubleClickDialogState>) => {
+    const now = typeof performance === "undefined" ? Date.now() : performance.now();
+    nodeDoubleClickOpenGuardRef.current = { key: `${dialog.nodeId}:${dialog.kind}`, time: now };
+    nodeDoubleClickCloseSuppressUntilRef.current = now + NODE_DOUBLE_CLICK_CLOSE_SUPPRESS_MS;
+  };
+
+  const stopNodeDoubleClickDialogEvent = (event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement>) => {
+    event.stopPropagation();
+  };
+
+  const suppressNodeDoubleClickDialogEvent = (event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement>) => {
+    event.stopPropagation();
+    if (nodeDoubleClickDialog) {
+      rememberNodeDoubleClickDialogGuard(nodeDoubleClickDialog);
+    }
+  };
+
+  const cancelNodeDoubleClickDialog = () => {
+    const dialog = nodeDoubleClickDialog;
+    if (dialog) {
+      rememberNodeDoubleClickDialogGuard(dialog);
+    }
+    setNodeDoubleClickDialog(null);
+    setNodeDoubleClickDraft(null);
+  };
+
+  const confirmNodeDoubleClickDialog = () => {
+    const dialog = nodeDoubleClickDialog;
+    if (!dialog) {
+      return;
+    }
+    rememberNodeDoubleClickDialogGuard(dialog);
+    const currentNode = nodeById.get(dialog.nodeId);
+    const draftNode =
+      nodeDoubleClickDraft?.nodeId === dialog.nodeId ? nodeDoubleClickDraft.node : undefined;
+    if (currentNode && draftNode && nodeDoubleClickDraftHasModelChanges(currentNode, draftNode)) {
+      pushNodeOnlyUndoSnapshot(currentNode.id);
+      patchGraphNodes([
+        {
+          ...currentNode,
+          name: draftNode.name,
+          params: { ...draftNode.params }
+        }
+      ]);
+    }
+    setNodeDoubleClickDialog(null);
+    setNodeDoubleClickDraft(null);
   };
 
   const renderNodeDoubleClickDialog = () => {
@@ -23298,7 +23483,14 @@ export function App() {
     if (!node) {
       return null;
     }
-    const closeDialog = () => setNodeDoubleClickDialog(null);
+    const dialogNode =
+      nodeDoubleClickDraft?.nodeId === node.id ? nodeDoubleClickDraft.node : cloneNodeForDoubleClickDraft(node);
+    const containerViews =
+      nodeDoubleClickDialog.kind === "device"
+        ? buildContainerDeviceParameterViews(dialogNode, libraryTemplateByKind.get(dialogNode.kind))
+        : [];
+    const activeContainerView =
+      containerViews.find((view) => view.id === nodeDoubleClickDialog.containerViewId) ?? containerViews[0];
     const title =
       nodeDoubleClickDialog.kind === "interaction"
         ? "修改交互操作"
@@ -23306,10 +23498,13 @@ export function App() {
           ? "修改文本"
           : "修改设备参数";
     return (
-      <div className="image-picker-backdrop" onPointerDown={closeDialog}>
+      <div className="image-picker-backdrop" onPointerDown={cancelNodeDoubleClickDialog}>
         <section
           className="node-double-click-dialog"
-          onPointerDown={(event) => event.stopPropagation()}
+          onPointerDown={stopNodeDoubleClickDialogEvent}
+          onPointerUp={stopNodeDoubleClickDialogEvent}
+          onClick={stopNodeDoubleClickDialogEvent}
+          onDoubleClick={suppressNodeDoubleClickDialogEvent}
           role="dialog"
           aria-modal="true"
           aria-labelledby="node-double-click-dialog-title"
@@ -23317,33 +23512,37 @@ export function App() {
           <div className="image-picker-title">
             <div>
               <h2 id="node-double-click-dialog-title">{title}</h2>
-              <p>{node.name}</p>
+              <p>{dialogNode.name}</p>
             </div>
-            <button type="button" onClick={closeDialog}>关闭</button>
           </div>
           <div className="node-double-click-dialog-body">
             {nodeDoubleClickDialog.kind === "interaction" ? (
               <table className="param-table node-double-click-param-table">
-                <tbody>{renderStaticButtonActionEditor(node)}</tbody>
+                <tbody>
+                  {renderStaticButtonActionEditor(dialogNode, {
+                    updateParam: (key, value) => updateNodeDoubleClickDraftParam(dialogNode.id, key, value),
+                    updateNode: (patch) => updateNodeDoubleClickDraftPatch(dialogNode.id, patch)
+                  })}
+                </tbody>
               </table>
             ) : nodeDoubleClickDialog.kind === "text" ? (
               <table className="param-table node-double-click-param-table">
                 <tbody>
                   <tr>
                     {renderChineseParamHeader("text")}
-                    <td><textarea rows={7} value={node.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} autoFocus /></td>
+                    <td><textarea rows={7} value={dialogNode.params.text || ""} onChange={(event) => updateNodeDoubleClickDraftParam(dialogNode.id, "text", event.target.value)} autoFocus /></td>
                   </tr>
                   <tr>
                     {renderChineseParamHeader("fontFamily")}
-                    <td>{renderParamEditor("fontFamily", node.params.fontFamily || "Arial", false)}</td>
+                    <td>{renderNodeDoubleClickParamEditor(dialogNode, "fontFamily", dialogNode.params.fontFamily || "Arial", false)}</td>
                   </tr>
                   <tr>
                     {renderChineseParamHeader("fontSize")}
-                    <td><input type="number" min="8" max="160" value={node.params.fontSize || "24"} onChange={(event) => updateParam("fontSize", event.target.value)} /></td>
+                    <td><input type="number" min="8" max="160" value={dialogNode.params.fontSize || "24"} onChange={(event) => updateNodeDoubleClickDraftParam(dialogNode.id, "fontSize", event.target.value)} /></td>
                   </tr>
                   <tr>
                     {renderChineseParamHeader("textColor")}
-                    <td>{renderColorEditor("textColor", node.params.textColor || "#111827", "#111827")}</td>
+                    <td>{renderNodeDoubleClickColorEditor(dialogNode, "textColor", dialogNode.params.textColor || "#111827", "#111827")}</td>
                   </tr>
                   <tr>
                     <th>文字样式</th>
@@ -23352,24 +23551,24 @@ export function App() {
                         <label>
                           <input
                             type="checkbox"
-                            checked={(node.params.fontWeight || "400") !== "400"}
-                            onChange={(event) => updateParam("fontWeight", event.target.checked ? "700" : "400")}
+                            checked={(dialogNode.params.fontWeight || "400") !== "400"}
+                            onChange={(event) => updateNodeDoubleClickDraftParam(dialogNode.id, "fontWeight", event.target.checked ? "700" : "400")}
                           />
                           加粗
                         </label>
                         <label>
                           <input
                             type="checkbox"
-                            checked={(node.params.fontStyle || "normal") === "italic"}
-                            onChange={(event) => updateParam("fontStyle", event.target.checked ? "italic" : "normal")}
+                            checked={(dialogNode.params.fontStyle || "normal") === "italic"}
+                            onChange={(event) => updateNodeDoubleClickDraftParam(dialogNode.id, "fontStyle", event.target.checked ? "italic" : "normal")}
                           />
                           斜体
                         </label>
                         <label>
                           <input
                             type="checkbox"
-                            checked={(node.params.textDecoration || "none") === "underline"}
-                            onChange={(event) => updateParam("textDecoration", event.target.checked ? "underline" : "none")}
+                            checked={(dialogNode.params.textDecoration || "none") === "underline"}
+                            onChange={(event) => updateNodeDoubleClickDraftParam(dialogNode.id, "textDecoration", event.target.checked ? "underline" : "none")}
                           />
                           下划线
                         </label>
@@ -23378,19 +23577,68 @@ export function App() {
                   </tr>
                   <tr>
                     {renderChineseParamHeader("textAlign")}
-                    <td>{renderParamEditor("textAlign", node.params.textAlign || "center", false)}</td>
+                    <td>{renderNodeDoubleClickParamEditor(dialogNode, "textAlign", dialogNode.params.textAlign || "center", false)}</td>
                   </tr>
                   <tr>
                     {renderChineseParamHeader("verticalAlign")}
-                    <td>{renderParamEditor("verticalAlign", node.params.verticalAlign || "middle", false)}</td>
+                    <td>{renderNodeDoubleClickParamEditor(dialogNode, "verticalAlign", dialogNode.params.verticalAlign || "middle", false)}</td>
                   </tr>
                 </tbody>
               </table>
+            ) : activeContainerView ? (
+              <>
+                <div className="container-param-tabs node-double-click-container-tabs" role="tablist" aria-label="容器设备参数切换">
+                  {containerViews.map((view) => (
+                    <button
+                      key={view.id}
+                      type="button"
+                      className={activeContainerView.id === view.id ? "active" : ""}
+                      onClick={() => {
+                        setNodeDoubleClickDialog((current) =>
+                          current && current.kind === "device" && current.nodeId === dialogNode.id
+                            ? { ...current, containerViewId: view.id }
+                            : current
+                        );
+                      }}
+                    >
+                      {view.label}
+                    </button>
+                  ))}
+                </div>
+                <table className="param-table node-double-click-param-table">
+                  <tbody>{renderNodeDoubleClickContainerParamRows(dialogNode, activeContainerView)}</tbody>
+                </table>
+              </>
             ) : (
               <table className="param-table node-double-click-param-table">
-                <tbody>{renderNodeDoubleClickDeviceParamRows(node)}</tbody>
+                <tbody>{renderNodeDoubleClickDeviceParamRows(dialogNode)}</tbody>
               </table>
             )}
+          </div>
+          <div className="node-double-click-dialog-actions nodeDoubleClickDialogActions">
+            <button
+              type="button"
+              className="primary"
+              onPointerDown={suppressNodeDoubleClickDialogEvent}
+              onDoubleClick={suppressNodeDoubleClickDialogEvent}
+              onClick={(event) => {
+                suppressNodeDoubleClickDialogEvent(event);
+                confirmNodeDoubleClickDialog();
+              }}
+            >
+              确定
+            </button>
+            <button
+              type="button"
+              onPointerDown={suppressNodeDoubleClickDialogEvent}
+              onDoubleClick={suppressNodeDoubleClickDialogEvent}
+              onClick={(event) => {
+                suppressNodeDoubleClickDialogEvent(event);
+                cancelNodeDoubleClickDialog();
+              }}
+            >
+              取消
+            </button>
           </div>
         </section>
       </div>
@@ -33431,27 +33679,40 @@ export function App() {
     if (!isEditMode || !activeLayerNodeIdSet.has(node.id)) {
       return;
     }
+    const editorKind = doubleClickDialogKindForNode(node);
+    const now = typeof performance === "undefined" ? Date.now() : performance.now();
+    const guardKey = `${node.id}:${editorKind}`;
+    if (now < nodeDoubleClickCloseSuppressUntilRef.current) {
+      return;
+    }
+    if (
+      nodeDoubleClickOpenGuardRef.current?.key === guardKey &&
+      now - nodeDoubleClickOpenGuardRef.current.time < NODE_DOUBLE_CLICK_DIALOG_DEDUPE_MS
+    ) {
+      return;
+    }
+    if (
+      nodeDoubleClickDialog?.kind === editorKind &&
+      nodeDoubleClickDialog.nodeId === node.id
+    ) {
+      nodeDoubleClickOpenGuardRef.current = { key: guardKey, time: now };
+      return;
+    }
+    nodeDoubleClickOpenGuardRef.current = { key: guardKey, time: now };
     flushSync(() => {
       selectCanvasGraphics([node.id], []);
     });
     setContextMenu(null);
     setImageTarget(null);
     setNodeDoubleClickDialog(null);
-    const editorKind = doubleClickDialogKindForNode(node);
-    if (editorKind === "interaction") {
-      setNodeDoubleClickDialog({ kind: "interaction", nodeId: node.id });
-      return;
-    }
-    if (editorKind === "text") {
-      setNodeDoubleClickDialog({ kind: "text", nodeId: node.id });
-      return;
-    }
+    setNodeDoubleClickDraft(null);
     if (editorKind === "image") {
       setImageTarget({ kind: "node", nodeId: node.id });
       return;
     }
-    if (editorKind === "device") {
-      setNodeDoubleClickDialog({ kind: "device", nodeId: node.id });
+    if (editorKind === "interaction" || editorKind === "text" || editorKind === "device") {
+      setNodeDoubleClickDraft({ nodeId: node.id, node: cloneNodeForDoubleClickDraft(node) });
+      setNodeDoubleClickDialog({ kind: editorKind, nodeId: node.id });
       return;
     }
     window.alert("当前图元没有双击定义。");

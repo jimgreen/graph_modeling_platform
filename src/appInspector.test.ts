@@ -1712,6 +1712,21 @@ describe("graph inspector panel", () => {
     expect(mutedInlineBlock).toContain("line-height: var(--param-table-control-height");
   });
 
+  test("keeps the node double-click text editor textarea height stable when focus moves to action buttons", async () => {
+    const styles = await readStyles();
+    const textareaBlock = cssRuleBlock(styles, ".param-table.node-double-click-param-table textarea");
+    const blurTextareaBlock = cssRuleBlock(styles, ".param-table.node-double-click-param-table td:not(:focus-within) textarea");
+
+    expect(textareaBlock).toContain("min-height: 120px");
+    expect(blurTextareaBlock).toContain("min-height: 120px");
+    expect(blurTextareaBlock).toContain("max-height: none");
+    expect(styles.indexOf(".param-table.node-double-click-param-table td:not(:focus-within) textarea")).toBeLessThan(
+      styles.indexOf(".param-table td:not(:focus-within) textarea"),
+    );
+    expect(blurTextareaBlock).not.toContain("min-height: 72px");
+    expect(blurTextareaBlock).not.toContain("max-height: 44px");
+  });
+
   test("uses fuzzy connection drop targets with an animated snap hint", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
@@ -4199,9 +4214,9 @@ describe("graph inspector panel", () => {
     expect(decisionBlock.indexOf("!isStaticNode(node)")).toBeLessThan(decisionBlock.indexOf("nodeHasTextDoubleClickEditor(node)"));
     expect(decisionBlock.indexOf("nodeHasTextDoubleClickEditor(node)")).toBeLessThan(decisionBlock.indexOf("nodeHasImageDoubleClickEditor(node)"));
     expect(openBlock).toContain("selectCanvasGraphics([node.id], [])");
-    expect(openBlock).toContain("setNodeDoubleClickDialog({ kind: \"interaction\", nodeId: node.id })");
-    expect(openBlock).toContain("setNodeDoubleClickDialog({ kind: \"text\", nodeId: node.id })");
-    expect(openBlock).toContain("setNodeDoubleClickDialog({ kind: \"device\", nodeId: node.id })");
+    expect(openBlock).toContain("editorKind === \"interaction\" || editorKind === \"text\" || editorKind === \"device\"");
+    expect(openBlock).toContain("setNodeDoubleClickDraft({ nodeId: node.id, node: cloneNodeForDoubleClickDraft(node) })");
+    expect(openBlock).toContain("setNodeDoubleClickDialog({ kind: editorKind, nodeId: node.id })");
     expect(openBlock).toContain("setImageTarget({ kind: \"node\", nodeId: node.id })");
     expect(openBlock).toContain("window.alert(\"当前图元没有双击定义。\")");
     expect(lodBlock).toContain("openNodeDoubleClickEditor(node)");
@@ -4210,6 +4225,101 @@ describe("graph inspector panel", () => {
     expect(nodeDoubleClickBlock).not.toContain("setImageTarget({ kind: \"node\", nodeId: node.id })");
     expect(source).toContain("renderNodeDoubleClickDialog()");
     expect(source).toContain("id=\"node-double-click-dialog-title\"");
+  });
+
+  test("shows container and associated device parameter tabs in the node double-click device dialog", async () => {
+    const source = await readAppSource();
+    const modelSource = await readModelSource();
+    const styles = await readStyles();
+    const dialogStart = source.indexOf("const renderNodeDoubleClickDialog =");
+    const dialogEnd = source.indexOf("const contextMenuStyle", dialogStart);
+    const dialogBlock = source.slice(dialogStart, dialogEnd);
+    const tabsBlock = cssRuleBlock(styles, ".container-param-tabs.node-double-click-container-tabs");
+    const tabButtonBlock = cssRuleBlock(styles, ".container-param-tabs.node-double-click-container-tabs button");
+
+    expect(source).toContain("containerViewId?: string;");
+    expect(source).toContain("const renderNodeDoubleClickContainerParamRows =");
+    expect(modelSource).toContain('label: "设备本体"');
+    expect(modelSource).not.toContain('label: "容器本体"');
+    expect(dialogBlock).toContain("const dialogNode =");
+    expect(dialogBlock).toContain("buildContainerDeviceParameterViews(dialogNode, libraryTemplateByKind.get(dialogNode.kind))");
+    expect(dialogBlock).toContain("const activeContainerView =");
+    expect(dialogBlock).toContain("className=\"container-param-tabs node-double-click-container-tabs\"");
+    expect(dialogBlock).toContain("setNodeDoubleClickDialog((current) =>");
+    expect(dialogBlock).toContain("containerViewId: view.id");
+    expect(dialogBlock).toContain("renderNodeDoubleClickContainerParamRows(dialogNode, activeContainerView)");
+    expect(dialogBlock).toContain("renderNodeDoubleClickDeviceParamRows(dialogNode)");
+    expect(tabsBlock).toContain("flex-wrap: nowrap");
+    expect(tabsBlock).toContain("overflow-x: auto");
+    expect(tabsBlock).toContain("overflow-y: hidden");
+    expect(styles.indexOf(".container-param-tabs.node-double-click-container-tabs")).toBeLessThan(
+      styles.indexOf(".container-param-tabs {"),
+    );
+    expect(tabButtonBlock).toContain("flex: 0 0 auto");
+    expect(tabButtonBlock).toContain("white-space: nowrap");
+  });
+
+  test("deduplicates repeated node double-click dialog opens from overlapping text hit targets", async () => {
+    const source = await readAppSource();
+    const dialogStart = source.indexOf("const renderNodeDoubleClickDialog =");
+    const dialogEnd = source.indexOf("const contextMenuStyle", dialogStart);
+    const dialogBlock = source.slice(dialogStart, dialogEnd);
+    const openStart = source.indexOf("const openNodeDoubleClickEditor =");
+    const openEnd = source.indexOf("const connectPreviewDom", openStart);
+    const openBlock = source.slice(openStart, openEnd);
+    const confirmStart = source.indexOf("const confirmNodeDoubleClickDialog =");
+    const confirmEnd = source.indexOf("const renderNodeDoubleClickDialog =", confirmStart);
+    const confirmBlock = source.slice(confirmStart, confirmEnd);
+
+    expect(source).toContain("const NODE_DOUBLE_CLICK_DIALOG_DEDUPE_MS");
+    expect(source).toContain("const NODE_DOUBLE_CLICK_CLOSE_SUPPRESS_MS");
+    expect(source).toContain("const nodeDoubleClickOpenGuardRef = useRef");
+    expect(source).toContain("const nodeDoubleClickCloseSuppressUntilRef = useRef");
+    expect(openBlock).toContain("const guardKey = `${node.id}:${editorKind}`;");
+    expect(openBlock).toContain("now < nodeDoubleClickCloseSuppressUntilRef.current");
+    expect(openBlock).toContain("nodeDoubleClickOpenGuardRef.current");
+    expect(openBlock.indexOf("nodeDoubleClickOpenGuardRef.current")).toBeLessThan(openBlock.indexOf("setNodeDoubleClickDialog(null)"));
+    expect(openBlock).toContain("now - nodeDoubleClickOpenGuardRef.current.time < NODE_DOUBLE_CLICK_DIALOG_DEDUPE_MS");
+    expect(openBlock).toContain("nodeDoubleClickDialog?.kind === editorKind");
+    expect(openBlock).toContain("nodeDoubleClickDialog.nodeId === node.id");
+    expect(openBlock.indexOf("nodeDoubleClickDialog?.kind === editorKind")).toBeLessThan(openBlock.indexOf("setNodeDoubleClickDialog(null)"));
+    expect(source).toContain("nodeDoubleClickOpenGuardRef.current = { key: `${dialog.nodeId}:${dialog.kind}`, time: now };");
+    expect(source).toContain("nodeDoubleClickCloseSuppressUntilRef.current = now + NODE_DOUBLE_CLICK_CLOSE_SUPPRESS_MS;");
+    expect(source).toContain("const stopNodeDoubleClickDialogEvent =");
+    expect(source).toContain("const suppressNodeDoubleClickDialogEvent =");
+    expect(dialogBlock).toContain("onPointerDown={stopNodeDoubleClickDialogEvent}");
+    expect(dialogBlock).toContain("onPointerUp={stopNodeDoubleClickDialogEvent}");
+    expect(dialogBlock).toContain("onClick={stopNodeDoubleClickDialogEvent}");
+    expect(dialogBlock).toContain("onDoubleClick={suppressNodeDoubleClickDialogEvent}");
+    expect(dialogBlock).toContain("onPointerDown={suppressNodeDoubleClickDialogEvent}");
+    expect(confirmBlock.indexOf("rememberNodeDoubleClickDialogGuard(dialog);")).toBeLessThan(
+      confirmBlock.indexOf("patchGraphNodes(["),
+    );
+  });
+
+  test("stages node double-click dialog edits until confirm", async () => {
+    const source = await readAppSource();
+    const dialogStart = source.indexOf("const renderNodeDoubleClickDialog =");
+    const dialogEnd = source.indexOf("const contextMenuStyle", dialogStart);
+    const dialogBlock = source.slice(dialogStart, dialogEnd);
+
+    expect(source).toContain("type NodeDoubleClickDialogDraftState");
+    expect(source).toContain("const [nodeDoubleClickDraft, setNodeDoubleClickDraft]");
+    expect(source).toContain("const updateNodeDoubleClickDraftParam =");
+    expect(source).toContain("const confirmNodeDoubleClickDialog =");
+    expect(source).toContain("const cancelNodeDoubleClickDialog =");
+    expect(dialogBlock).toContain("nodeDoubleClickDialogActions");
+    expect(dialogBlock).toContain("确定");
+    expect(dialogBlock).toContain("取消");
+    expect(dialogBlock).toContain("confirmNodeDoubleClickDialog");
+    expect(dialogBlock).toContain("cancelNodeDoubleClickDialog");
+    const actionsStart = dialogBlock.indexOf("node-double-click-dialog-actions nodeDoubleClickDialogActions");
+    const actionsBlock = dialogBlock.slice(actionsStart, actionsStart + 1200);
+    expect(actionsBlock.indexOf("确定")).toBeLessThan(actionsBlock.indexOf("取消"));
+    expect(actionsBlock.indexOf("confirmNodeDoubleClickDialog")).toBeLessThan(
+      actionsBlock.indexOf("cancelNodeDoubleClickDialog"),
+    );
+    expect(dialogBlock).not.toContain("updateParam(\"text\"");
   });
 
   test("fits the whole canvas once when the page is first opened", async () => {

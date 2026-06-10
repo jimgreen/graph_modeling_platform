@@ -4207,7 +4207,7 @@ export function buildContainerDeviceParameterViews(
   return [
     {
       id: "container",
-      label: "容器本体",
+      label: "设备本体",
       kind: "container",
       rows: containerRows
     },
