@@ -5307,6 +5307,43 @@ describe("power system model", () => {
     expect(rerouted[rerouted.length - 2].x).toBeGreaterThan(targetTerminal.x);
   });
 
+  test("keeps an inserted manual bend visible on a straight vertical stored rendering path", () => {
+    const sourceBase = withHiddenDeviceLabel(createDefaultNode("ac-source", { x: 240, y: 360 }));
+    const targetBase = withHiddenDeviceLabel(createDefaultNode("ac-load", { x: 240, y: 120 }));
+    const source = {
+      ...sourceBase,
+      terminals: [{ ...sourceBase.terminals[0], anchor: { x: 0, y: -0.5 } }]
+    };
+    const target = {
+      ...targetBase,
+      terminals: [{ ...targetBase.terminals[0], anchor: { x: 0, y: 0.5 } }]
+    };
+    const edge: Edge = {
+      id: "manual-bend-stored-rendering",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const baseRoute = routeOrthogonalEdge(source, target, [source, target], edge, [], { width: 700, height: 320 });
+    const insertSegmentIndex = Math.max(0, Math.floor((baseRoute.length - 2) / 2));
+    const middleFrom = baseRoute[insertSegmentIndex];
+    const middleTo = baseRoute[insertSegmentIndex + 1];
+    const clickPoint = {
+      x: middleFrom.x,
+      y: Math.round((middleFrom.y + middleTo.y) / 2)
+    };
+    const bendRoute = insertOrthogonalRouteBend(baseRoute, insertSegmentIndex, clickPoint, { width: 700, height: 420 });
+    const manualEdge = { ...edge, manualPoints: bendRoute.slice(2, -2) };
+
+    const rendered = routeEdgesForStoredRendering([source, target], [manualEdge], { width: 700, height: 420 })[0];
+
+    expect(baseRoute.every((point) => point.x === baseRoute[0].x)).toBe(true);
+    expect(bendRoute.some((point) => point.x !== baseRoute[0].x)).toBe(true);
+    expect(rendered.points.some((point) => point.x !== baseRoute[0].x)).toBe(true);
+    expect(rendered.points.length).toBeGreaterThan(baseRoute.length);
+  });
+
   test("repairs a manual bend path around blockers instead of discarding the manual route", () => {
     const source = createDefaultNode("ac-source", { x: 120, y: 120 });
     const target = createDefaultNode("ac-load", { x: 520, y: 120 });

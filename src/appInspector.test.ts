@@ -172,12 +172,30 @@ describe("graph inspector panel", () => {
     const selectedRule = cssRuleBlock(styles, ".element-tree-item.selected {");
 
     expect(source).toContain("const elementTreeItemRefs = useRef<Record<string, HTMLDivElement | null>>({});");
+    expect(source).toContain("const [elementTreeSearchQuery, setElementTreeSearchQuery] = useState(\"\");");
+    expect(source).toContain("const filteredElementTree = useMemo(() => {");
     expect(source).toContain("elementTreeItemRefs.current[selectedElementTreeItemKey]?.scrollIntoView");
     expect(source).toContain("block: \"nearest\"");
     expect(source).toContain("inline: \"nearest\"");
+    expect(treeBlock).toContain("placeholder=\"搜索图元名称\"");
+    expect(treeBlock).toContain("setElementTreeSearchQuery(event.target.value)");
+    expect(treeBlock).toContain("filteredElementTree.map((group)");
+    expect(treeBlock).toContain("elementTreeSearchNeedle ? deviceGroup.items : deviceGroup.items.slice(0, visibleLimit)");
     expect(treeBlock).toContain("onPointerDown={selectTreeItem}");
+    expect(source).toContain("const centerViewOnPointAtZoom = (point: Point, zoomPercent = 100) => {");
+    expect(source).toContain("zoomPercent,\n      zoomPercent");
+    expect(source).toContain("const jumpToElementTreeItem = (item: ElementTreeItem) => {");
+    expect(source).toContain("centerViewOnPointAtZoom(point, 100);");
+    expect(treeBlock).toContain("className=\"element-tree-jump-button\"");
+    expect(treeBlock).toContain("title=\"跳转到画布中心并以 100% 显示\"");
+    expect(treeBlock).toContain("onPointerDown={(event) => event.stopPropagation()}");
+    expect(treeBlock).toContain("jumpToElementTreeItem(item);");
+    expect(treeBlock).toContain("<LocateFixed size={13} />");
     expect(treeBlock).toContain("ref={(element) => {");
     expect(treeBlock).toContain("elementTreeItemRefs.current[treeItemKey] = element;");
+    expect(styles).toContain(".element-tree-search");
+    expect(styles).toContain(".element-tree-jump-button");
+    expect(styles).toContain(".element-tree-item.selected .element-tree-item-main");
     expect(selectedRule).toContain("background: var(--element-tree-selected-bg)");
     expect(selectedRule).toContain("box-shadow: inset 3px 0 0 var(--element-tree-selected-accent)");
     expect(selectedRule).toContain("font-weight: 800");
@@ -1730,6 +1748,7 @@ describe("graph inspector panel", () => {
     const viewportButtonDisabledBlock = cssRuleBlock(styles, ".viewport-controls button:disabled");
 
     expect(source).toContain("const [minimapVisible, setMinimapVisible] = useState(true)");
+    expect(source).toContain("const FIT_SELECTION_MAX_ZOOM_PERCENT = 100;");
     expect(source).toContain("const handleMinimapNavigate");
     expect(source).toContain("fitViewToContent");
     expect(source).toContain("centerSelectedInView");
@@ -1740,6 +1759,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const setViewBoxAtViewportCenter = (nextViewBox: CanvasViewBox, point: Point) =>");
     expect(centerBlock).toContain("setViewBoxAtViewportCenter(");
     expect(fitBoundsBlock).toContain("const viewportAspect = canvasFrameRef.current?.clientWidth");
+    expect(fitBoundsBlock).toContain("maxZoomPercent = 2000");
+    expect(fitBoundsBlock).toContain("clampViewBoxDimensionsForZoom(fitSize, canvasBounds, 5, maxZoomPercent)");
     expect(fitBoundsBlock).toContain("setViewBoxAtViewportCenter(");
     expect(fitBoundsBlock).not.toContain("setViewBox(clampViewBoxToCanvas({");
     expect(viewportActionBlock).toContain("const selectedViewportActionDisabled = !selectedCanvasBounds;");
@@ -1775,6 +1796,7 @@ describe("graph inspector panel", () => {
     expect(controlsBlock).toContain("onClick={centerSelectedInView}");
     expect(controlsBlock).toContain("title={fitSelectedViewportTitle}");
     expect(controlsBlock).toContain("aria-label=\"缩放到选中区域\"");
+    expect(source).toContain("fitViewToBounds(selectedCanvasBounds, 80, FIT_SELECTION_MAX_ZOOM_PERCENT);");
     expect(controlsBlock).toContain("aria-label=\"重置缩放\"");
     expect(controlsBlock).toContain("onClick={resetViewportZoom}");
     expect(source).toContain("ScanSearch");

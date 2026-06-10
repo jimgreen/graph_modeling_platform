@@ -13002,6 +13002,38 @@ function candidateRemovesManualOuterDetour(manualRoute: Point[], candidateRoute:
   );
 }
 
+function routeHasManualBendPocket(route: Point[]) {
+  for (let index = 0; index < route.length - 3; index += 1) {
+    const a = route[index];
+    const b = route[index + 1];
+    const c = route[index + 2];
+    const d = route[index + 3];
+    const verticalPocketOffset = Math.abs(b.x - a.x);
+    const horizontalPocketOffset = Math.abs(b.y - a.y);
+    const maxInsertedPocketOffset = ROUTE_ENDPOINT_STUB_LENGTH + ROUTE_TINY_DOGLEG_LIMIT;
+    const verticalPocket =
+      a.x === d.x &&
+      b.x === c.x &&
+      a.y === b.y &&
+      c.y === d.y &&
+      a.x !== b.x &&
+      a.y !== c.y &&
+      verticalPocketOffset <= maxInsertedPocketOffset;
+    const horizontalPocket =
+      a.y === d.y &&
+      b.y === c.y &&
+      a.x === b.x &&
+      c.x === d.x &&
+      a.y !== b.y &&
+      a.x !== c.x &&
+      horizontalPocketOffset <= maxInsertedPocketOffset;
+    if (verticalPocket || horizontalPocket) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function selectClearlySimplerAutomaticManualRoute(
   manualRoute: Point[],
   start: Point,
@@ -13016,6 +13048,9 @@ function selectClearlySimplerAutomaticManualRoute(
   sourceNormal: Point,
   targetNormal: Point
 ) {
+  if (routeHasManualBendPocket(manualRoute)) {
+    return null;
+  }
   const rawDirectRoute = buildFullRoute(start, startOut, [], endOut, end, bounds);
   const routeBlockers = filterBlockersForRoutePoints(rawDirectRoute, blockers);
   const routeAvoidedSegments = filterSegmentsForRoutePoints(rawDirectRoute, avoidedSegments);
@@ -13377,7 +13412,7 @@ export function routeEdgesForStoredRendering(nodes: ModelNode[], edges: Edge[], 
     );
     let points = simplifyRoutePreservingEndpointStubs(orthogonalizeRouteKeepingCollinear(boundedPoints), {
       blockers: endpointBlockers,
-      reduceTinyDoglegs: true
+      reduceTinyDoglegs: !edge.manualPoints?.length
     });
     if (routeHasImmediateReversal(points) || routeIntersectsBlockers(points, endpointBlockers, ROUTE_BLOCKER_PADDING, 1)) {
       points = simplifyRoutePreservingEndpointStubs(

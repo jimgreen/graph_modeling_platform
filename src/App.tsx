@@ -1583,6 +1583,7 @@ const TOPOLOGY_WARNING_PANEL_MARGIN = 12;
 const CANVAS_MINIMAP_MAX_NODE_MARKS = 360;
 const CANVAS_MINIMAP_MAX_ROUTE_MARKS = 160;
 const CANVAS_MINIMAP_DEFER_SAMPLE_THRESHOLD = 1200;
+const FIT_SELECTION_MAX_ZOOM_PERCENT = 100;
 const TERMINAL_OVERLAP_DEFER_NODE_THRESHOLD = 600;
 const CANVAS_LOD_NODE_DETAIL_LIMIT = 650;
 const CANVAS_LOD_MAX_ZOOM_PERCENT = 120;
@@ -9134,6 +9135,7 @@ export function App() {
   const [collapsedElementTreeDeviceGroups, setCollapsedElementTreeDeviceGroups] = useState<string[]>([]);
   const [elementTreeItemLimits, setElementTreeItemLimits] = useState<Record<string, number>>({});
   const [elementTreeEditDrafts, setElementTreeEditDrafts] = useState<Record<string, string>>({});
+  const [elementTreeSearchQuery, setElementTreeSearchQuery] = useState("");
   const [customAttributeLibraries, setCustomAttributeLibraries] = useState<AttributeLibrary[]>(() => initialDeviceLibrary.customAttributeLibraries);
   const [customComponentTypes, setCustomComponentTypes] = useState<CustomComponentTypeDefinition[]>(() => initialDeviceLibrary.customComponentTypes);
   const [customDeviceTemplates, setCustomDeviceTemplates] = useState<DeviceTemplate[]>(() => initialDeviceLibrary.customDeviceTemplates);
@@ -11380,6 +11382,52 @@ export function App() {
         terminalLabels: view.terminalLabels ?? view.rows.find((row) => row.key === "terminals")?.value ?? ""
       }));
   };
+  const elementTreeSearchNeedle = elementTreeSearchQuery.trim().toLocaleLowerCase();
+  const filteredElementTree = useMemo(() => {
+    if (!elementTreeSearchNeedle) {
+      return elementTree;
+    }
+    return elementTree.flatMap((group) => {
+      const nextDeviceGroups = (group.deviceGroups ?? []).flatMap((deviceGroup) => {
+        const groupText = [
+          group.typeKey,
+          group.typeLabel,
+          group.typeEnglishLabel,
+          deviceGroup.deviceKey,
+          deviceGroup.deviceLabel,
+          deviceGroup.deviceEnglishLabel
+        ].join(" ").toLocaleLowerCase();
+        const nextItems = deviceGroup.items.filter((item) => {
+          const itemChildren = elementTreeItemChildren(item);
+          const itemText = [
+            groupText,
+            item.id,
+            item.name,
+            item.idx,
+            ...itemChildren.flatMap((child) => [
+              child.id,
+              child.label,
+              child.componentType,
+              child.componentTypeLabel,
+              child.idx,
+              child.name,
+              child.terminalLabels
+            ])
+          ].join(" ").toLocaleLowerCase();
+          return itemText.includes(elementTreeSearchNeedle);
+        });
+        return nextItems.length > 0 ? [{ ...deviceGroup, items: nextItems }] : [];
+      });
+      if (nextDeviceGroups.length === 0) {
+        return [];
+      }
+      return [{
+        ...group,
+        deviceGroups: nextDeviceGroups,
+        items: nextDeviceGroups.flatMap((deviceGroup) => deviceGroup.items)
+      }];
+    });
+  }, [elementTree, elementTreeSearchNeedle, libraryTemplateByKind, visibleNodeById]);
   const elementTreeDraftValue = (key: string, fallback: string) =>
     Object.prototype.hasOwnProperty.call(elementTreeEditDrafts, key) ? elementTreeEditDrafts[key] : fallback;
   const updateElementTreeDraft = (key: string, value: string) => {
@@ -28279,6 +28327,22 @@ export function App() {
     }), point);
   };
 
+  const centerViewOnPointAtZoom = (point: Point, zoomPercent = 100) => {
+    const bounds = canvasBoundsRef.current;
+    const { width: nextWidth, height: nextHeight } = clampViewBoxDimensionsForZoom(
+      { width: bounds.width, height: bounds.height },
+      bounds,
+      zoomPercent,
+      zoomPercent
+    );
+    setViewBoxAtViewportCenter(normalizeViewBoxToCanvas({
+      x: point.x - nextWidth / 2,
+      y: point.y - nextHeight / 2,
+      width: nextWidth,
+      height: nextHeight
+    }, bounds), point);
+  };
+
   const zoomViewportAtCenter = (zoomFactor: number) => {
     const frame = canvasFrameRef.current;
     if (!frame) {
@@ -28415,7 +28479,7 @@ export function App() {
     fitWholeCanvasToFrame();
   };
 
-  const fitViewToBounds = (bounds: GeometryBounds | SelectionRect | null, padding = 96) => {
+  const fitViewToBounds = (bounds: GeometryBounds | SelectionRect | null, padding = 96, maxZoomPercent = 2000) => {
     if (!bounds) {
       resetViewportZoom();
       return;
@@ -28430,7 +28494,7 @@ export function App() {
     const fitSize = targetWidth / targetHeight > viewportAspect
       ? { width: targetWidth, height: targetWidth / viewportAspect }
       : { width: targetHeight * viewportAspect, height: targetHeight };
-    const size = clampViewBoxDimensionsForZoom(fitSize, canvasBounds);
+    const size = clampViewBoxDimensionsForZoom(fitSize, canvasBounds, 5, maxZoomPercent);
     const center = {
       x: (bounds.left + bounds.right) / 2,
       y: (bounds.top + bounds.bottom) / 2
@@ -28465,6 +28529,13 @@ export function App() {
     const point = getElementFocusPoint(item, nodes, edges);
     if (point) {
       centerViewOnPoint(point);
+    }
+  };
+
+  const jumpToElementTreeItem = (item: ElementTreeItem) => {
+    const point = getElementFocusPoint(item, nodes, edges);
+    if (point) {
+      centerViewOnPointAtZoom(point, 100);
     }
   };
 
@@ -32622,14 +32693,33 @@ export function App() {
 
   const renderElementTreePanel = () => (
     <div className="element-tree" role="tree" aria-label="图元树">
+      <div className="element-tree-search" role="presentation">
+        <Search size={14} aria-hidden="true" />
+        <input
+          value={elementTreeSearchQuery}
+          onChange={(event) => setElementTreeSearchQuery(event.target.value)}
+          placeholder="搜索图元名称"
+          aria-label="搜索图元树"
+        />
+        {elementTreeSearchQuery && (
+          <button type="button" aria-label="清空图元树搜索" title="清空" onClick={() => setElementTreeSearchQuery("")}>
+            <X size={13} />
+          </button>
+        )}
+      </div>
       {elementTree.length === 0 ? (
         <div className="empty-state compact">
           <Grid2X2 size={24} />
           <p>当前画布暂无图元。</p>
         </div>
+      ) : filteredElementTree.length === 0 ? (
+        <div className="empty-state compact element-tree-search-empty">
+          <Search size={22} />
+          <p>未找到匹配图元。</p>
+        </div>
       ) : (
-        elementTree.map((group) => {
-          const expanded = !collapsedElementTreeGroups.includes(group.typeKey);
+        filteredElementTree.map((group) => {
+          const expanded = Boolean(elementTreeSearchNeedle) || !collapsedElementTreeGroups.includes(group.typeKey);
           const deviceGroups = group.deviceGroups ?? [];
           return (
             <section className="element-tree-group" key={group.typeKey}>
@@ -32652,9 +32742,9 @@ export function App() {
               {expanded && (
                 <div className="element-tree-items" role="group">
                   {deviceGroups.map((deviceGroup) => {
-                    const deviceExpanded = !collapsedElementTreeDeviceGroups.includes(deviceGroup.deviceKey);
+                    const deviceExpanded = Boolean(elementTreeSearchNeedle) || !collapsedElementTreeDeviceGroups.includes(deviceGroup.deviceKey);
                     const visibleLimit = elementTreeItemLimits[deviceGroup.deviceKey] ?? ELEMENT_TREE_INITIAL_ITEM_LIMIT;
-                    const visibleItems = deviceGroup.items.slice(0, visibleLimit);
+                    const visibleItems = elementTreeSearchNeedle ? deviceGroup.items : deviceGroup.items.slice(0, visibleLimit);
                     const hiddenItemCount = Math.max(0, deviceGroup.items.length - visibleItems.length);
                     return (
                       <section className="element-tree-device-group" key={deviceGroup.deviceKey}>
@@ -32794,6 +32884,23 @@ export function App() {
                                         );
                                       })}
                                     </div>
+                                  ) : null}
+                                  {selected ? (
+                                    <button
+                                      type="button"
+                                      className="element-tree-jump-button"
+                                      title="跳转到画布中心并以 100% 显示"
+                                      aria-label={`跳转到图元：${item.name}`}
+                                      onPointerDown={(event) => event.stopPropagation()}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        jumpToElementTreeItem(item);
+                                      }}
+                                      onDoubleClick={(event) => event.stopPropagation()}
+                                    >
+                                      <LocateFixed size={13} />
+                                      <span>跳转</span>
+                                    </button>
                                   ) : null}
                                 </div>
                               );
@@ -33564,7 +33671,7 @@ export function App() {
     centerViewBoxOnPoint(selectionRectCenter(selectedCanvasBounds));
   };
   const fitViewToSelection = () => {
-    fitViewToBounds(selectedCanvasBounds, 80);
+    fitViewToBounds(selectedCanvasBounds, 80, FIT_SELECTION_MAX_ZOOM_PERCENT);
   };
 
   const isStaticButtonEnabledForNode = (node: ModelNode) =>
