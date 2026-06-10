@@ -407,9 +407,12 @@ const CANVAS_WHEEL_ZOOM_EXCLUSION_SELECTOR = [
 ].join(", ");
 const CANVAS_KEYBOARD_BLOCKING_SELECTOR = [
   ".canvas-floating-toolbar",
+  ".library-panel",
+  ".inspector-panel",
   ".floating-side-panel",
   ".side-panel-edge-trigger",
   "[role=\"dialog\"]",
+  "[class*='-dialog']",
   ".image-picker-backdrop",
   ".context-menu",
   ".topbar-dropdown-menu",
@@ -1618,7 +1621,7 @@ const CANVAS_SINGLE_NODE_DRAG_PREVIEW_PADDING = 160;
 const CANVAS_FLOATING_TOOLBAR_GAP = 7;
 const NODE_FLOATING_TOOLBAR_WIDTH = 224;
 const NODE_FLOATING_TOOLBAR_HEIGHT = 38;
-const EDGE_FLOATING_TOOLBAR_WIDTH = 160;
+const EDGE_FLOATING_TOOLBAR_WIDTH = 122;
 const EDGE_FLOATING_TOOLBAR_HEIGHT = 38;
 const CONTEXT_MENU_AUTO_HIDE_MARGIN = 28;
 const TRANSFORM_ROTATE_STEM_START = 12;
@@ -8887,6 +8890,7 @@ export function App() {
   const lastCanvasPointerRef = useRef<Point | null>(null);
   const lastRawCanvasPointerRef = useRef<Point | null>(null);
   const lastCanvasClientPointerRef = useRef<Point | null>(null);
+  const lastKeyboardShortcutClientPointerRef = useRef<Point | null>(null);
   const projectListPointerInsideRef = useRef(false);
   const backendSchemesLoadedRef = useRef(false);
   const suppressNextBackendSchemeSyncRef = useRef(false);
@@ -16266,7 +16270,7 @@ export function App() {
   }, [topologyWarningPanelResize]);
 
   const canvasPointerKeyboardShortcutAvailability = () => {
-    const point = lastCanvasClientPointerRef.current;
+    const point = lastKeyboardShortcutClientPointerRef.current ?? lastCanvasClientPointerRef.current;
     if (!point) {
       return "unknown";
     }
@@ -16282,6 +16286,23 @@ export function App() {
     }
     return topElement.closest(".diagram-canvas") ? "unblocked" : "blocked";
   };
+
+  useEffect(() => {
+    const updateKeyboardShortcutPointerPosition = (event: globalThis.PointerEvent) => {
+      lastKeyboardShortcutClientPointerRef.current = { x: event.clientX, y: event.clientY };
+    };
+    const clearKeyboardShortcutPointerPosition = () => {
+      lastKeyboardShortcutClientPointerRef.current = null;
+    };
+    window.addEventListener("pointermove", updateKeyboardShortcutPointerPosition, { capture: true });
+    window.addEventListener("pointerdown", updateKeyboardShortcutPointerPosition, { capture: true });
+    window.addEventListener("blur", clearKeyboardShortcutPointerPosition);
+    return () => {
+      window.removeEventListener("pointermove", updateKeyboardShortcutPointerPosition, { capture: true });
+      window.removeEventListener("pointerdown", updateKeyboardShortcutPointerPosition, { capture: true });
+      window.removeEventListener("blur", clearKeyboardShortcutPointerPosition);
+    };
+  }, []);
 
   useEffect(() => {
     const handleGlobalSaveKeyDown = (event: KeyboardEvent) => {
@@ -29075,20 +29096,6 @@ export function App() {
     setEdgeManualPoints(selectedEdge.id, nextManualPoints);
   };
 
-  const addManualBendToSelectedEdgeCenter = () => {
-    if (!requireEditMode("添加连接线拐点")) {
-      return;
-    }
-    if (!selectedEdge || !selectedRoutedEdge) {
-      return;
-    }
-    const midpoint = routeMidpoint(selectedRoutedEdge.points);
-    if (!midpoint) {
-      return;
-    }
-    insertManualBendFromPointer(selectedEdge.id, selectedRoutedEdge.points, midpoint);
-  };
-
   const openEdgeContextMenu = (event: MouseEvent<SVGPathElement>, edgeId: string, routePoints?: Point[]) => {
     event.preventDefault();
     event.stopPropagation();
@@ -36496,9 +36503,6 @@ export function App() {
                     >
                       <button type="button" title="复制连接线" aria-label="复制连接线" onClick={copySelection}>
                         <Copy size={floatingToolbarIconSize} />
-                      </button>
-                      <button type="button" title="添加拐点" aria-label="添加拐点" onClick={addManualBendToSelectedEdgeCenter}>
-                        <CircleDot size={floatingToolbarIconSize} />
                       </button>
                       <button type="button" title="整理连接线" aria-label="整理连接线" onClick={tidySelectedEdgeRoute}>
                         <Route size={floatingToolbarIconSize} />

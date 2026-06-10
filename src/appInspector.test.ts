@@ -1830,6 +1830,9 @@ describe("graph inspector panel", () => {
   test("adds selected graphic quick toolbars, edge controls, and resize feedback on top of existing actions", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
+    const edgeToolbarStart = source.indexOf("className=\"canvas-floating-toolbar edge-toolbar\"");
+    const edgeToolbarEnd = source.indexOf("</div>\n                  </div>\n                )}", edgeToolbarStart);
+    const edgeToolbarBlock = source.slice(edgeToolbarStart, edgeToolbarEnd);
 
     expect(source).toContain("className=\"canvas-floating-toolbar node-toolbar\"");
     expect(source).toContain("className=\"canvas-floating-toolbar edge-toolbar\"");
@@ -1840,8 +1843,10 @@ describe("graph inspector panel", () => {
     expect(source).toContain("nodeFloatingToolbarWidth * floatingToolbarScreenScale");
     expect(source).toContain("selectedFloatingToolbarBounds");
     expect(source).toContain("EDGE_FLOATING_TOOLBAR_WIDTH * floatingToolbarScreenScale");
-    expect(source).toContain("addManualBendToSelectedEdgeCenter");
     expect(source).toContain("tidySelectedEdgeRoute");
+    expect(edgeToolbarBlock).not.toContain("title=\"添加拐点\"");
+    expect(edgeToolbarBlock).not.toContain("addManualBendToSelectedEdgeCenter");
+    expect(edgeToolbarBlock).toContain("title=\"整理连接线\" aria-label=\"整理连接线\"");
     expect(source).toContain("toggleSelectedNodeLabelDisplay");
     expect(source).toContain("nodeFloatingToolbarActionCount");
     expect(source).toContain("title=\"剪切\" aria-label=\"剪切\"");
@@ -4385,11 +4390,13 @@ describe("graph inspector panel", () => {
     const helperStart = source.indexOf("const stopSidePanelEventPropagation =");
     const helperEnd = source.indexOf("const setSidePanelMode =");
     const helperBlock = source.slice(helperStart, helperEnd);
-    const leftPanelStart = source.indexOf("<aside\n        ref={leftPanelRef}");
-    const leftPanelEnd = source.indexOf(">\n        <div\n          className=\"side-panel-resize-handle right-edge\"", leftPanelStart);
+    const leftPanelRefIndex = source.indexOf("ref={leftPanelRef}");
+    const leftPanelStart = source.lastIndexOf("<aside", leftPanelRefIndex);
+    const leftPanelEnd = source.indexOf("className=\"side-panel-resize-handle right-edge\"", leftPanelStart);
     const leftPanelBlock = source.slice(leftPanelStart, leftPanelEnd);
-    const rightPanelStart = source.indexOf("<aside\n        ref={rightPanelRef}");
-    const rightPanelEnd = source.indexOf(">\n        <div\n          className=\"side-panel-resize-handle left-edge\"", rightPanelStart);
+    const rightPanelRefIndex = source.indexOf("ref={rightPanelRef}");
+    const rightPanelStart = source.lastIndexOf("<aside", rightPanelRefIndex);
+    const rightPanelEnd = source.indexOf("className=\"side-panel-resize-handle left-edge\"", rightPanelStart);
     const rightPanelBlock = source.slice(rightPanelStart, rightPanelEnd);
     const sidePanelBlock = cssRuleBlock(styles, ".floating-side-panel");
     const canvasResizeHotzoneBlock = cssRuleBlock(styles, ".canvas-resize-hotzones");
@@ -4464,7 +4471,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const CANVAS_KEYBOARD_BLOCKING_SELECTOR = [");
     expect(source).toContain("function isCanvasKeyboardBlockingTarget(target: EventTarget | null)");
     expect(refsBlock).toContain("const lastCanvasClientPointerRef = useRef<Point | null>(null);");
-    expect(helperBlock).toContain("const point = lastCanvasClientPointerRef.current;");
+    expect(helperBlock).toContain("const point = lastKeyboardShortcutClientPointerRef.current ?? lastCanvasClientPointerRef.current;");
     expect(helperBlock).toContain("document.elementFromPoint(point.x, point.y)");
     expect(helperBlock).toContain("isCanvasKeyboardBlockingTarget(topElement)");
     expect(helperBlock).toContain("topElement.closest(\".diagram-canvas\")");
@@ -4475,6 +4482,32 @@ describe("graph inspector panel", () => {
     expect(pointerMoveBlock).toContain("lastCanvasClientPointerRef.current = { x: event.clientX, y: event.clientY };");
     expect(pointerEnterBlock).toContain("lastCanvasClientPointerRef.current = { x: event.clientX, y: event.clientY };");
     expect(pointerLeaveBlock).toContain("lastCanvasClientPointerRef.current = null;");
+  });
+
+  test("blocks canvas clipboard shortcuts while the pointer is over panels or dialogs", async () => {
+    const source = await readAppSource();
+    const blockingSelectorStart = source.indexOf("const CANVAS_KEYBOARD_BLOCKING_SELECTOR = [");
+    const blockingSelectorEnd = source.indexOf("].join(\", \");", blockingSelectorStart);
+    const blockingSelectorBlock = source.slice(blockingSelectorStart, blockingSelectorEnd);
+    const refsStart = source.indexOf("const canvasFrameRef");
+    const refsEnd = source.indexOf("const backendSchemesLoadedRef", refsStart);
+    const refsBlock = source.slice(refsStart, refsEnd);
+    const pointerEffectStart = source.indexOf("const updateKeyboardShortcutPointerPosition = (event: globalThis.PointerEvent) => {");
+    const pointerEffectEnd = source.indexOf("}, []);", pointerEffectStart);
+    const pointerEffectBlock = source.slice(pointerEffectStart, pointerEffectEnd);
+    const helperStart = source.indexOf("const canvasPointerKeyboardShortcutAvailability = () =>");
+    const helperEnd = source.indexOf("useEffect(() => {\n    const handleGlobalSaveKeyDown", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+
+    expect(blockingSelectorBlock).toContain("\".library-panel\"");
+    expect(blockingSelectorBlock).toContain("\".inspector-panel\"");
+    expect(blockingSelectorBlock).toContain("\"[class*='-dialog']\"");
+    expect(refsBlock).toContain("const lastKeyboardShortcutClientPointerRef = useRef<Point | null>(null);");
+    expect(pointerEffectBlock).toContain("lastKeyboardShortcutClientPointerRef.current = { x: event.clientX, y: event.clientY };");
+    expect(pointerEffectBlock).toContain("window.addEventListener(\"pointermove\", updateKeyboardShortcutPointerPosition, { capture: true });");
+    expect(pointerEffectBlock).toContain("window.addEventListener(\"pointerdown\", updateKeyboardShortcutPointerPosition, { capture: true });");
+    expect(helperBlock).toContain("const point = lastKeyboardShortcutClientPointerRef.current ?? lastCanvasClientPointerRef.current;");
+    expect(helperBlock).toContain("isCanvasKeyboardBlockingTarget(topElement)");
   });
 
   test("defers selected device parameter view construction until the device tab is active", async () => {
