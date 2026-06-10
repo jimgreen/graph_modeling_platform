@@ -4170,6 +4170,48 @@ describe("graph inspector panel", () => {
     expect(source).toContain("onDoubleClick={fitWholeCanvasFromBlankDoubleClick}");
   });
 
+  test("routes node double-clicks to interaction, text, image, device parameter, and undefined fallbacks", async () => {
+    const source = await readAppSource();
+    const decisionStart = source.indexOf("const doubleClickDialogKindForNode =");
+    const decisionEnd = source.indexOf("const openNodeDoubleClickEditor =", decisionStart);
+    const decisionBlock = source.slice(decisionStart, decisionEnd);
+    const openStart = source.indexOf("const openNodeDoubleClickEditor =");
+    const openEnd = source.indexOf("const connectPreviewDom", openStart);
+    const openBlock = source.slice(openStart, openEnd);
+    const lodStart = source.indexOf("const handleLodNodeDoubleClick =");
+    const lodEnd = source.indexOf("const connectPreviewDom", lodStart);
+    const lodBlock = source.slice(lodStart, lodEnd);
+    const nodeDoubleClickStart = source.indexOf("onDoubleClick={(event) =>", source.indexOf("className={`diagram-node ${nodeIsBus ?"));
+    const nodeDoubleClickEnd = source.indexOf("}}\n                >", nodeDoubleClickStart);
+    const nodeDoubleClickBlock = source.slice(nodeDoubleClickStart, nodeDoubleClickEnd);
+
+    expect(source).toContain("type NodeDoubleClickDialogKind = \"interaction\" | \"text\" | \"device\";");
+    expect(source).toContain("const [nodeDoubleClickDialog, setNodeDoubleClickDialog]");
+    expect(decisionBlock).toContain("nodeHasInteractionDoubleClickEditor(node)");
+    expect(decisionBlock).toContain("isTextDoubleClickKind(node.kind)");
+    expect(decisionBlock).toContain("isImageDoubleClickKind(node.kind)");
+    expect(decisionBlock).toContain("!isStaticNode(node)");
+    expect(decisionBlock).toContain("nodeHasTextDoubleClickEditor(node)");
+    expect(decisionBlock).toContain("nodeHasImageDoubleClickEditor(node)");
+    expect(decisionBlock.indexOf("nodeHasInteractionDoubleClickEditor(node)")).toBeLessThan(decisionBlock.indexOf("isTextDoubleClickKind(node.kind)"));
+    expect(decisionBlock.indexOf("isTextDoubleClickKind(node.kind)")).toBeLessThan(decisionBlock.indexOf("isImageDoubleClickKind(node.kind)"));
+    expect(decisionBlock.indexOf("isImageDoubleClickKind(node.kind)")).toBeLessThan(decisionBlock.indexOf("!isStaticNode(node)"));
+    expect(decisionBlock.indexOf("!isStaticNode(node)")).toBeLessThan(decisionBlock.indexOf("nodeHasTextDoubleClickEditor(node)"));
+    expect(decisionBlock.indexOf("nodeHasTextDoubleClickEditor(node)")).toBeLessThan(decisionBlock.indexOf("nodeHasImageDoubleClickEditor(node)"));
+    expect(openBlock).toContain("selectCanvasGraphics([node.id], [])");
+    expect(openBlock).toContain("setNodeDoubleClickDialog({ kind: \"interaction\", nodeId: node.id })");
+    expect(openBlock).toContain("setNodeDoubleClickDialog({ kind: \"text\", nodeId: node.id })");
+    expect(openBlock).toContain("setNodeDoubleClickDialog({ kind: \"device\", nodeId: node.id })");
+    expect(openBlock).toContain("setImageTarget({ kind: \"node\", nodeId: node.id })");
+    expect(openBlock).toContain("window.alert(\"当前图元没有双击定义。\")");
+    expect(lodBlock).toContain("openNodeDoubleClickEditor(node)");
+    expect(lodBlock).not.toContain("setImageTarget({ kind: \"node\", nodeId: node.id })");
+    expect(nodeDoubleClickBlock).toContain("openNodeDoubleClickEditor(node)");
+    expect(nodeDoubleClickBlock).not.toContain("setImageTarget({ kind: \"node\", nodeId: node.id })");
+    expect(source).toContain("renderNodeDoubleClickDialog()");
+    expect(source).toContain("id=\"node-double-click-dialog-title\"");
+  });
+
   test("fits the whole canvas once when the page is first opened", async () => {
     const source = await readAppSource();
     const initialFitStart = source.indexOf("const initialCanvasFitAppliedRef");
@@ -7573,26 +7615,41 @@ describe("graph inspector panel", () => {
     expect(serverSource).toContain("[\"PUT /api/color-config\"");
   });
 
-  test("moves model layer definition controls from the inspector table to a topbar dialog", async () => {
+  test("moves model layer management into a combined topbar dropdown", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
     const topbarStart = source.indexOf("<header className=\"topbar\">");
     const topbarEnd = source.indexOf("</header>", topbarStart);
     const topbarBlock = source.slice(topbarStart, topbarEnd);
+    const managerStart = source.indexOf("const renderLayerManager");
+    const managerEnd = source.indexOf("const renderDeviceDefinitionMeasurementPanel", managerStart);
+    const managerBlock = source.slice(managerStart, managerEnd);
 
-    expect(source).toContain("layerDialogOpen");
-    expect(source).toContain("setLayerDialogOpen(true)");
+    expect(source).not.toContain("layerDialogOpen");
+    expect(source).not.toContain("setLayerDialogOpen(true)");
+    expect(source).not.toContain("id=\"layer-dialog-title\"");
+    expect(topbarBlock).toContain("className=\"topbar-dropdown layer-management-dropdown\"");
+    expect(topbarBlock).toContain("className=\"topbar-dropdown-trigger layer-management-trigger\"");
+    expect(topbarBlock).toContain("title={`激活图层：${activeLayer?.name ?? \"默认图层\"}`}");
     expect(topbarBlock).toContain("aria-label=\"图层管理\"");
-    expect(source).toContain("id=\"layer-dialog-title\"");
-    expect(source).toContain("renderLayerManager()");
+    expect(topbarBlock).toContain("<span>{activeLayer?.name ?? \"默认图层\"}</span>");
+    expect(topbarBlock).toContain("role=\"menu\" aria-label=\"图层管理\"");
+    expect(topbarBlock).toContain("{renderLayerManager()}");
     expect(source).toContain("新增图层");
     expect(source).toContain("nextDefaultModelLayerName");
     expect(source).toContain("`图层${index}`");
+    expect(managerBlock).toContain("onClick={addModelLayer}");
+    expect(managerBlock).toContain("onChange={() => setActiveLayer(layer.id)}");
+    expect(managerBlock).toContain("moveModelLayer(layer.id, -1)");
+    expect(managerBlock).toContain("moveModelLayer(layer.id, 1)");
+    expect(managerBlock).toContain("deleteModelLayer(layer.id)");
     expect(source).not.toContain("请输入新图层名称");
     expect(source).not.toContain("重命名图层");
     expect(source).not.toContain("renderChineseParamHeader(\"layers\", \"图层\")");
     expect(source).toContain("renderChineseParamHeader(\"layerId\", \"所属图层\")");
-    expect(styles).toContain(".layer-dialog");
+    expect(styles).toContain(".layer-management-dropdown-menu");
+    expect(styles).toContain(".layer-management-trigger");
+    expect(styles).not.toContain(".layer-dialog");
   });
 
   test("deletes model layer graphics after confirming non-empty layer deletion", async () => {

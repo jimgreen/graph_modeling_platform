@@ -1322,6 +1322,11 @@ type ImageTarget =
   | { kind: "node"; nodeId: string }
   | { kind: "nodeForeground"; nodeId: string }
   | { kind: "canvas" };
+type NodeDoubleClickDialogKind = "interaction" | "text" | "device";
+type NodeDoubleClickDialogState = {
+  kind: NodeDoubleClickDialogKind;
+  nodeId: string;
+} | null;
 type StateImageUploadTarget = {
   scope: "definition" | "custom";
   rowId: string;
@@ -6213,6 +6218,64 @@ function nodeUsesUprightStaticSelectionOutline(
   );
 }
 
+const TEXT_DOUBLE_CLICK_KINDS = new Set<string>([
+  "static-text",
+  "static-date",
+  "static-time",
+  "static-datetime",
+  "static-edge-label"
+]);
+
+const IMAGE_DOUBLE_CLICK_KINDS = new Set<string>([
+  "static-image",
+  "static-web"
+]);
+
+const isTextDoubleClickKind = (kind: string) => TEXT_DOUBLE_CLICK_KINDS.has(kind);
+
+const isImageDoubleClickKind = (kind: string) => IMAGE_DOUBLE_CLICK_KINDS.has(kind);
+
+const nodeHasInteractionDoubleClickEditor = (node: ModelNode) =>
+  isStaticButtonCapableKind(node.kind) &&
+  (
+    node.kind === "static-button" ||
+    node.params.buttonEnabled === "1" ||
+    (node.params.buttonActionType ?? "none") !== "none"
+  );
+
+const nodeHasTextDoubleClickEditor = (node: ModelNode) =>
+  Object.prototype.hasOwnProperty.call(node.params, "text");
+
+const nodeHasImageDoubleClickEditor = (node: ModelNode) =>
+  Boolean(
+    node.params.backgroundImage ||
+    node.params.backgroundImageAssetId ||
+    node.params.foregroundImage ||
+    node.params.foregroundImageAssetId
+  );
+
+const doubleClickDialogKindForNode = (node: ModelNode): NodeDoubleClickDialogKind | "image" | "none" => {
+  if (nodeHasInteractionDoubleClickEditor(node)) {
+    return "interaction";
+  }
+  if (isTextDoubleClickKind(node.kind)) {
+    return "text";
+  }
+  if (isImageDoubleClickKind(node.kind)) {
+    return "image";
+  }
+  if (!isStaticNode(node)) {
+    return "device";
+  }
+  if (nodeHasTextDoubleClickEditor(node)) {
+    return "text";
+  }
+  if (nodeHasImageDoubleClickEditor(node)) {
+    return "image";
+  }
+  return "none";
+};
+
 function nodeUprightSelectionOutlineRect(node: ModelNode) {
   const width = Math.max(1, node.size.width * Math.abs(getNodeScaleX(node)));
   const height = Math.max(1, node.size.height * Math.abs(getNodeScaleY(node)));
@@ -9172,7 +9235,6 @@ export function App() {
   const [definitionStatePageId, setDefinitionStatePageId] = useState(DEFAULT_STATE_PAGE_ID);
   const [definitionVisualDraft, setDefinitionVisualDraft] = useState<DeviceDefinitionVisualDraft | null>(null);
   const [definitionTerminalAnchorDragIndex, setDefinitionTerminalAnchorDragIndex] = useState<number | null>(null);
-  const [layerDialogOpen, setLayerDialogOpen] = useState(false);
   const [layerAssignmentDialogOpen, setLayerAssignmentDialogOpen] = useState(false);
   const [layerAssignmentTargetId, setLayerAssignmentTargetId] = useState("");
   const [reactFlowPreviewOpen, setReactFlowPreviewOpen] = useState(false);
@@ -9231,6 +9293,7 @@ export function App() {
   latestEdgesRef.current = edges;
   const [recordClipboard, setRecordClipboard] = useState<ClipboardRecord | null>(null);
   const [imageTarget, setImageTarget] = useState<ImageTarget | null>(null);
+  const [nodeDoubleClickDialog, setNodeDoubleClickDialog] = useState<NodeDoubleClickDialogState>(null);
   const [stateImageUploadTarget, setStateImageUploadTarget] = useState<StateImageUploadTarget | null>(null);
   const [stateIconDrawingDialog, setStateIconDrawingDialog] = useState<StateIconDrawingDialogState | null>(null);
   const [stateIconDrawingImportMode, setStateIconDrawingImportMode] = useState<"svg" | "image">("svg");
@@ -23194,6 +23257,146 @@ export function App() {
     renderParamHeader(key, key, PARAM_LABELS[key] ?? fallback)
   );
 
+  const renderNodeDoubleClickDeviceParamRows = (node: ModelNode) => {
+    const eKeys = getEParameterKeys(node.kind, node.params);
+    const customDefinitions = parseCustomDefinitions(node.params);
+    const customKeys = customDefinitions.map((definition) => definition.enName);
+    const customExtraKeys = customKeys.filter((key) => !eKeys.includes(key));
+    const keys =
+      eKeys.length > 0
+        ? [...eKeys, ...customExtraKeys]
+        : customKeys.length > 0
+          ? ["name", ...customKeys.filter((key) => key !== "name")]
+          : ["name", ...Object.keys(node.params).filter((key) => !key.startsWith("_") && key !== "is_container" && key !== ALLOW_RESIZE_TRANSFORM_PARAM)];
+    const readonlyKeys = new Set(customDefinitions.filter((definition) => definition.readonly).map((definition) => definition.enName));
+    return keys.map((key) => {
+      const value = eKeys.length > 0 ? getEParamValue(key, node) : key === "name" ? node.name : node.params[key] ?? "";
+      const displayValue = formatDeviceModelParamDisplayValue(key, value);
+      const definition = customDefinitions.find((item) => item.enName === key);
+      return (
+        <tr key={key}>
+          {renderParamHeader(key, key, definition?.cnName ?? PARAM_LABELS[key] ?? key)}
+          <td>
+            {key === "name" ? (
+              <input value={node.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
+            ) : READONLY_E_PARAM_KEYS.has(key) || readonlyKeys.has(key) ? (
+              <input value={displayValue} readOnly />
+            ) : (
+              renderParamEditor(key, displayValue, false)
+            )}
+          </td>
+        </tr>
+      );
+    });
+  };
+
+  const renderNodeDoubleClickDialog = () => {
+    if (!nodeDoubleClickDialog) {
+      return null;
+    }
+    const node = nodeById.get(nodeDoubleClickDialog.nodeId);
+    if (!node) {
+      return null;
+    }
+    const closeDialog = () => setNodeDoubleClickDialog(null);
+    const title =
+      nodeDoubleClickDialog.kind === "interaction"
+        ? "修改交互操作"
+        : nodeDoubleClickDialog.kind === "text"
+          ? "修改文本"
+          : "修改设备参数";
+    return (
+      <div className="image-picker-backdrop" onPointerDown={closeDialog}>
+        <section
+          className="node-double-click-dialog"
+          onPointerDown={(event) => event.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="node-double-click-dialog-title"
+        >
+          <div className="image-picker-title">
+            <div>
+              <h2 id="node-double-click-dialog-title">{title}</h2>
+              <p>{node.name}</p>
+            </div>
+            <button type="button" onClick={closeDialog}>关闭</button>
+          </div>
+          <div className="node-double-click-dialog-body">
+            {nodeDoubleClickDialog.kind === "interaction" ? (
+              <table className="param-table node-double-click-param-table">
+                <tbody>{renderStaticButtonActionEditor(node)}</tbody>
+              </table>
+            ) : nodeDoubleClickDialog.kind === "text" ? (
+              <table className="param-table node-double-click-param-table">
+                <tbody>
+                  <tr>
+                    {renderChineseParamHeader("text")}
+                    <td><textarea rows={7} value={node.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} autoFocus /></td>
+                  </tr>
+                  <tr>
+                    {renderChineseParamHeader("fontFamily")}
+                    <td>{renderParamEditor("fontFamily", node.params.fontFamily || "Arial", false)}</td>
+                  </tr>
+                  <tr>
+                    {renderChineseParamHeader("fontSize")}
+                    <td><input type="number" min="8" max="160" value={node.params.fontSize || "24"} onChange={(event) => updateParam("fontSize", event.target.value)} /></td>
+                  </tr>
+                  <tr>
+                    {renderChineseParamHeader("textColor")}
+                    <td>{renderColorEditor("textColor", node.params.textColor || "#111827", "#111827")}</td>
+                  </tr>
+                  <tr>
+                    <th>文字样式</th>
+                    <td>
+                      <div className="text-style-actions">
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={(node.params.fontWeight || "400") !== "400"}
+                            onChange={(event) => updateParam("fontWeight", event.target.checked ? "700" : "400")}
+                          />
+                          加粗
+                        </label>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={(node.params.fontStyle || "normal") === "italic"}
+                            onChange={(event) => updateParam("fontStyle", event.target.checked ? "italic" : "normal")}
+                          />
+                          斜体
+                        </label>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={(node.params.textDecoration || "none") === "underline"}
+                            onChange={(event) => updateParam("textDecoration", event.target.checked ? "underline" : "none")}
+                          />
+                          下划线
+                        </label>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    {renderChineseParamHeader("textAlign")}
+                    <td>{renderParamEditor("textAlign", node.params.textAlign || "center", false)}</td>
+                  </tr>
+                  <tr>
+                    {renderChineseParamHeader("verticalAlign")}
+                    <td>{renderParamEditor("verticalAlign", node.params.verticalAlign || "middle", false)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            ) : (
+              <table className="param-table node-double-click-param-table">
+                <tbody>{renderNodeDoubleClickDeviceParamRows(node)}</tbody>
+              </table>
+            )}
+          </div>
+        </section>
+      </div>
+    );
+  };
+
   const contextMenuStyle = (menu: ContextMenuState | ProjectMenuState) => {
     const viewportHeight = typeof window === "undefined" ? 720 : window.innerHeight;
     const top = Math.max(8, Math.min(menu?.y ?? 8, Math.max(8, viewportHeight - 180)));
@@ -33224,17 +33427,42 @@ export function App() {
     }
     openGraphicContextMenu({ x: event.clientX, y: event.clientY, target: "node", nodeId: node.id });
   };
+  const openNodeDoubleClickEditor = (node: ModelNode) => {
+    if (!isEditMode || !activeLayerNodeIdSet.has(node.id)) {
+      return;
+    }
+    flushSync(() => {
+      selectCanvasGraphics([node.id], []);
+    });
+    setContextMenu(null);
+    setImageTarget(null);
+    setNodeDoubleClickDialog(null);
+    const editorKind = doubleClickDialogKindForNode(node);
+    if (editorKind === "interaction") {
+      setNodeDoubleClickDialog({ kind: "interaction", nodeId: node.id });
+      return;
+    }
+    if (editorKind === "text") {
+      setNodeDoubleClickDialog({ kind: "text", nodeId: node.id });
+      return;
+    }
+    if (editorKind === "image") {
+      setImageTarget({ kind: "node", nodeId: node.id });
+      return;
+    }
+    if (editorKind === "device") {
+      setNodeDoubleClickDialog({ kind: "device", nodeId: node.id });
+      return;
+    }
+    window.alert("当前图元没有双击定义。");
+  };
   const handleLodNodeDoubleClick = (event: MouseEvent<SVGGElement>) => {
     const node = lodNodeFromEvent(event);
     if (!node) {
       return;
     }
     event.stopPropagation();
-    if (!activeLayerNodeIdSet.has(node.id) || isBusNode(node)) {
-      return;
-    }
-    selectCanvasGraphics([node.id], []);
-    setImageTarget({ kind: "node", nodeId: node.id });
+    openNodeDoubleClickEditor(node);
   };
   const connectPreviewDom = connectPreviewDomRef.current;
   const layerAssignmentUnchanged = activeSelectedNodeIds.length > 0 && activeSelectedNodeIds.every(
@@ -34346,9 +34574,21 @@ export function App() {
             <span>当前模型</span>
             <strong>{activeModelPathName}</strong>
           </div>
-          <div className="active-layer-indicator" title={`激活图层：${activeLayer?.name ?? "默认图层"}`}>
-            <Layers size={15} />
-            <span>{activeLayer?.name ?? "默认图层"}</span>
+          <div className="topbar-dropdown layer-management-dropdown">
+            <button
+              type="button"
+              className="topbar-dropdown-trigger layer-management-trigger"
+              disabled={isBrowseMode}
+              title={`激活图层：${activeLayer?.name ?? "默认图层"}`}
+              aria-label="图层管理"
+            >
+              <Layers size={15} />
+              <span>{activeLayer?.name ?? "默认图层"}</span>
+              <ChevronDown size={13} />
+            </button>
+            <div className="topbar-dropdown-menu layer-management-dropdown-menu" role="menu" aria-label="图层管理">
+              {renderLayerManager()}
+            </div>
           </div>
           <button
             type="button"
@@ -34359,15 +34599,6 @@ export function App() {
           >
             {isEditMode ? <Pencil size={16} /> : <EyeOff size={16} />}
             <span>{isEditMode ? "编辑模式" : "浏览模式"}</span>
-          </button>
-          <button
-            className="topbar-primary-button"
-            onClick={() => setLayerDialogOpen(true)}
-            disabled={isBrowseMode}
-            title="图层管理"
-            aria-label="图层管理"
-          >
-            <Layers2 size={16} />
           </button>
           <button className="topbar-primary-button" onClick={runTopologyCalculation} disabled={isBrowseMode} title="图上拓扑" aria-label="图上拓扑">
             <Grid2X2 size={16} />
@@ -35400,14 +35631,7 @@ export function App() {
                   }}
                   onDoubleClick={(event) => {
                     event.stopPropagation();
-                    if (!editable) {
-                      return;
-                    }
-                    if (isBusNode(node) || isRoutableLineDeviceKind(node.kind)) {
-                      return;
-                    }
-                    selectCanvasGraphics([node.id], []);
-                    setImageTarget({ kind: "node", nodeId: node.id });
+                    openNodeDoubleClickEditor(node);
                   }}
                 >
                   <title>{node.name}</title>
@@ -38025,24 +38249,6 @@ export function App() {
           </section>
         </div>
       )}
-      {layerDialogOpen && (
-        <div className="image-picker-backdrop" onPointerDown={() => setLayerDialogOpen(false)}>
-          <section className="layer-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="layer-dialog-title">
-            <div className="image-picker-title">
-              <div>
-                <h2 id="layer-dialog-title">图层管理</h2>
-                <p>管理模型图层的显示、顺序和激活状态。新建或拖入的图元默认进入当前激活图层。</p>
-              </div>
-              <button type="button" onClick={() => setLayerDialogOpen(false)}>关闭</button>
-            </div>
-            <div className="layer-dialog-status">
-              <span>激活图层</span>
-              <strong>{activeLayer?.name ?? "默认图层"}</strong>
-            </div>
-            {renderLayerManager()}
-          </section>
-        </div>
-      )}
       {layerAssignmentDialogOpen && (
         <div className="image-picker-backdrop" onPointerDown={() => setLayerAssignmentDialogOpen(false)}>
           <section className="layer-assignment-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="layer-assignment-title">
@@ -39565,6 +39771,7 @@ export function App() {
           </section>
         </div>
       )}
+      {renderNodeDoubleClickDialog()}
       {imageTarget && (
         <div className="image-picker-backdrop" onPointerDown={() => setImageTarget(null)}>
           <section className="image-picker-dialog" onPointerDown={(event) => event.stopPropagation()}>
