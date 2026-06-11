@@ -11955,6 +11955,14 @@ export function insertOrthogonalRouteBend(
     const step = Math.min(Math.abs(offset), Math.abs(target - pivot));
     return Math.round(pivot + direction * step);
   };
+  const boundedPointer = bounds ? clampPointToBounds(pointerPoint, bounds) : pointerPoint;
+  const offsetCoordinate = (segmentCoordinate: number, pointerCoordinate: number, adjacentAxis: "x" | "y") => {
+    const roundedPointer = Math.round(pointerCoordinate);
+    if (Math.abs(roundedPointer - segmentCoordinate) > 2) {
+      return roundedPointer;
+    }
+    return Math.round(segmentCoordinate + offsetSide(pointerCoordinate - segmentCoordinate, adjacentAxis) * Math.abs(offset));
+  };
   const clampCoordinate = (value: number, first: number, second: number) => {
     const min = Math.min(first, second);
     const max = Math.max(first, second);
@@ -11962,9 +11970,9 @@ export function insertOrthogonalRouteBend(
     return Math.round(Math.max(min + margin, Math.min(max - margin, value)));
   };
   if (from.y === to.y) {
-    const x = clampCoordinate(pointerPoint.x, from.x, to.x);
+    const x = clampCoordinate(boundedPointer.x, from.x, to.x);
     const y = from.y;
-    const bendOffsetY = Math.round(y + offsetSide(pointerPoint.y - y, "y") * Math.abs(offset));
+    const bendOffsetY = offsetCoordinate(y, boundedPointer.y, "y");
     nextPoints.splice(
       segmentIndex + 1,
       0,
@@ -11973,9 +11981,9 @@ export function insertOrthogonalRouteBend(
       { x: stepTowardTarget(x, to.x), y: bendOffsetY }
     );
   } else {
-    const y = clampCoordinate(pointerPoint.y, from.y, to.y);
+    const y = clampCoordinate(boundedPointer.y, from.y, to.y);
     const x = from.x;
-    const bendOffsetX = Math.round(x + offsetSide(pointerPoint.x - x, "x") * Math.abs(offset));
+    const bendOffsetX = offsetCoordinate(x, boundedPointer.x, "x");
     nextPoints.splice(
       segmentIndex + 1,
       0,
@@ -11987,6 +11995,10 @@ export function insertOrthogonalRouteBend(
   const bounded = bounds ? nextPoints.map((point) => clampPointToBounds(point, bounds)) : nextPoints;
   return orthogonalizeRouteKeepingCollinear(bounded);
 }
+
+type ManualRouteDisplayOptions = {
+  preserveManualRouteDisplay?: boolean;
+};
 
 type PreserveDraggedRouteShapeOptions = {
   routePoints: Point[];
@@ -13347,7 +13359,12 @@ export function refreshCrossingArcPaths(
   });
 }
 
-export function routeEdgesForRendering(nodes: ModelNode[], edges: Edge[], bounds?: CanvasBounds): RoutedEdge[] {
+export function routeEdgesForRendering(
+  nodes: ModelNode[],
+  edges: Edge[],
+  bounds?: CanvasBounds,
+  options: ManualRouteDisplayOptions = {}
+): RoutedEdge[] {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const routed: RoutedEdge[] = [];
   const avoidedSegments: Segment[] = [];
@@ -13358,7 +13375,7 @@ export function routeEdgesForRendering(nodes: ModelNode[], edges: Edge[], bounds
       return;
     }
     const routeIndex = routed.length;
-    const points = routeOrthogonalEdge(source, target, nodes, edge, avoidedSegments, bounds);
+    const points = routeOrthogonalEdge(source, target, nodes, edge, avoidedSegments, bounds, options);
     routed.push({
       edgeId: edge.id,
       points,
@@ -13385,7 +13402,12 @@ function edgeWithProjectedMissingBusEndpointPoints(edge: Edge, source: ModelNode
   return next;
 }
 
-export function routeEdgesForStoredRendering(nodes: ModelNode[], edges: Edge[], bounds?: CanvasBounds): RoutedEdge[] {
+export function routeEdgesForStoredRendering(
+  nodes: ModelNode[],
+  edges: Edge[],
+  bounds?: CanvasBounds,
+  options: ManualRouteDisplayOptions = {}
+): RoutedEdge[] {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const routes = edges.flatMap((edge) => {
     const source = nodeById.get(edge.sourceId) ?? (edge.sourcePoint ? createFloatingEndpointNode(edge.sourcePoint, edge.targetId ? nodeById.get(edge.targetId) : undefined) : undefined);
@@ -13420,7 +13442,7 @@ export function routeEdgesForStoredRendering(nodes: ModelNode[], edges: Edge[], 
         { blockers: endpointBlockers, reduceTinyDoglegs: true }
       );
     }
-    if (edge.manualPoints?.length) {
+    if (edge.manualPoints?.length && !options.preserveManualRouteDisplay) {
       const relevantBlockers = relevantBlockersForRoute(source, target, nodes, startOut, endOut, true);
       const simplificationBlockers = relevantBlockers.length > 0
         ? [...endpointBlockers, ...relevantBlockers]
@@ -13463,7 +13485,7 @@ export function routeEdgesForStoredRendering(nodes: ModelNode[], edges: Edge[], 
   return refreshCrossingArcPaths(routes);
 }
 
-type SavedPathRenderingOptions = {
+type SavedPathRenderingOptions = ManualRouteDisplayOptions & {
   refreshCrossingArcs?: boolean;
 };
 
@@ -13563,15 +13585,16 @@ export function routeEdgesForCachedStoredRendering(
   edges: Edge[],
   affectedEdgeIds: ReadonlySet<string>,
   bounds?: CanvasBounds,
-  previousRoutes: RoutedEdge[] = []
+  previousRoutes: RoutedEdge[] = [],
+  options: ManualRouteDisplayOptions = {}
 ): RoutedEdge[] {
   if (affectedEdgeIds.size === 0 || previousRoutes.length === 0) {
-    return routeEdgesForStoredRendering(nodes, edges, bounds);
+    return routeEdgesForStoredRendering(nodes, edges, bounds, options);
   }
   const previousRouteById = new Map(previousRoutes.map((route) => [route.edgeId, route]));
   const edgesToRefresh = edges.filter((edge) => affectedEdgeIds.has(edge.id) || !previousRouteById.has(edge.id));
   const refreshedRouteById = new Map(
-    routeEdgesForStoredRendering(nodes, edgesToRefresh, bounds).map((route) => [route.edgeId, route])
+    routeEdgesForStoredRendering(nodes, edgesToRefresh, bounds, options).map((route) => [route.edgeId, route])
   );
   const routes = edges.flatMap((edge) => {
     const route = affectedEdgeIds.has(edge.id) || !previousRouteById.has(edge.id)
@@ -13600,7 +13623,8 @@ export function routeEdgesForIncrementalRendering(
   edges: Edge[],
   affectedEdgeIds: ReadonlySet<string>,
   bounds?: CanvasBounds,
-  previousRoutes: RoutedEdge[] = []
+  previousRoutes: RoutedEdge[] = [],
+  options: ManualRouteDisplayOptions = {}
 ): RoutedEdge[] {
   if (affectedEdgeIds.size === 0) {
     if (previousRoutes.length > 0) {
@@ -13618,7 +13642,7 @@ export function routeEdgesForIncrementalRendering(
           return previousRoutes;
         }
         const refreshedRouteById = new Map(
-          routeEdgesForStoredRendering(nodes, endpointRefreshEdges, bounds).map((route) => [route.edgeId, route])
+          routeEdgesForStoredRendering(nodes, endpointRefreshEdges, bounds, options).map((route) => [route.edgeId, route])
         );
         const endpointRefreshIds = new Set(endpointRefreshEdges.map((edge) => edge.id));
         const routes = previousRoutes.map((route) => refreshedRouteById.get(route.edgeId) ?? route);
@@ -13627,7 +13651,7 @@ export function routeEdgesForIncrementalRendering(
       const previousRouteById = new Map(previousRoutes.map((route) => [route.edgeId, route]));
       const missingEdges = edges.filter((edge) => !previousRouteById.has(edge.id));
       const missingRouteById = missingEdges.length > 0
-        ? new Map(routeEdgesForStoredRendering(nodes, missingEdges, bounds).map((route) => [route.edgeId, route]))
+        ? new Map(routeEdgesForStoredRendering(nodes, missingEdges, bounds, options).map((route) => [route.edgeId, route]))
         : new Map<string, RoutedEdge>();
       const routes = edges.flatMap((edge) => {
         const route = previousRouteById.get(edge.id) ?? missingRouteById.get(edge.id);
@@ -13635,7 +13659,7 @@ export function routeEdgesForIncrementalRendering(
       });
       return refreshCrossingArcPaths(routes);
     }
-    return routeEdgesForStoredRendering(nodes, edges, bounds);
+    return routeEdgesForStoredRendering(nodes, edges, bounds, options);
   }
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const previousRouteById = new Map(previousRoutes.map((route) => [route.edgeId, route]));
@@ -13644,7 +13668,7 @@ export function routeEdgesForIncrementalRendering(
     : edges;
   const storedRoutes = [
     ...previousRoutes.filter((route) => !affectedEdgeIds.has(route.edgeId)),
-    ...routeEdgesForStoredRendering(nodes, missingStoredEdges, bounds)
+    ...routeEdgesForStoredRendering(nodes, missingStoredEdges, bounds, options)
   ];
   const storedRouteById = new Map(storedRoutes.map((route) => [route.edgeId, route]));
   const avoidedSegments: Segment[] = [];
@@ -13667,7 +13691,7 @@ export function routeEdgesForIncrementalRendering(
     if (!source || !target) {
       return;
     }
-    const points = simplifyRoutePreservingEndpointStubs(routeOrthogonalEdge(source, target, nodes, edge, avoidedSegments, bounds));
+    const points = simplifyRoutePreservingEndpointStubs(routeOrthogonalEdge(source, target, nodes, edge, avoidedSegments, bounds, options));
     routedRouteById.set(edge.id, {
       edgeId: edge.id,
       points,
@@ -13908,6 +13932,14 @@ function edgeWithoutStoredRouteGeometry(edge: Edge): Edge {
   delete next.targetPoint;
   delete next.routePoints;
   return next;
+}
+
+type ConnectionRouteRebuildOptions = {
+  preserveManualPoints?: boolean;
+};
+
+function shouldPreserveManualPointsForAutomaticRebuild(edge: Edge, options: ConnectionRouteRebuildOptions = {}) {
+  return Boolean(options.preserveManualPoints && edge.manualPoints?.length);
 }
 
 function edgeWithCommitManualPoints(edge: Edge, route: RoutedEdge): Edge {
@@ -14210,7 +14242,8 @@ function resolveManualRouteForContext(
   context: EdgeRoutingContext,
   manualPoints: Point[] | undefined,
   avoidedSegments: Segment[],
-  bounds?: CanvasBounds
+  bounds?: CanvasBounds,
+  options: ManualRouteDisplayOptions = {}
 ) {
   if (!manualPoints?.length) {
     return null;
@@ -14218,11 +14251,17 @@ function resolveManualRouteForContext(
   const boundedManualRoute = buildManualRouteForContext(context, manualPoints, bounds);
   const simplifiedManualRoute = simplifyRoutePreservingEndpointStubs(boundedManualRoute);
   if (!routeHasRenderableIssue(simplifiedManualRoute, context)) {
+    if (options.preserveManualRouteDisplay) {
+      return simplifiedManualRoute;
+    }
     return chooseSimplerAutomaticRouteForContext(simplifiedManualRoute, source, target, context, avoidedSegments, bounds);
   }
   const repairedManualRoute = repairRouteAroundBlockers(boundedManualRoute, context.blockers, bounds, 1);
   const simplifiedRepairedManualRoute = simplifyRoutePreservingEndpointStubs(repairedManualRoute);
   if (!routeHasRenderableIssue(simplifiedRepairedManualRoute, context)) {
+    if (options.preserveManualRouteDisplay) {
+      return simplifiedRepairedManualRoute;
+    }
     return chooseSimplerAutomaticRouteForContext(simplifiedRepairedManualRoute, source, target, context, avoidedSegments, bounds);
   }
   return null;
@@ -14562,10 +14601,14 @@ export function rebuildSingleConnectionRoute(
   nodes: ModelNode[],
   edges: Edge[],
   edgeId: string,
-  bounds?: CanvasBounds
+  bounds?: CanvasBounds,
+  options: ConnectionRouteRebuildOptions = {}
 ): Edge[] {
   const edge = edges.find((item) => item.id === edgeId);
   if (!edge) {
+    return edges;
+  }
+  if (shouldPreserveManualPointsForAutomaticRebuild(edge, options)) {
     return edges;
   }
   const prepared = prepareConnectionEdgeForCommit(nodes, [edgeWithoutManualPoints(edge)], edgeId, bounds);
@@ -14648,14 +14691,18 @@ export function rebuildConnectionRoutesForNodes(
   edges: Edge[],
   nodeIds: Iterable<string>,
   bounds?: CanvasBounds,
-  candidateEdges: Edge[] = edges
+  candidateEdges: Edge[] = edges,
+  options: ConnectionRouteRebuildOptions = {}
 ): Edge[] {
   const changedNodeIds = new Set(nodeIds);
   if (changedNodeIds.size === 0 || edges.length === 0 || candidateEdges.length === 0) {
     return edges;
   }
 
-  const affectedEdges = candidateEdges.filter((edge) => changedNodeIds.has(edge.sourceId) || changedNodeIds.has(edge.targetId));
+  const affectedEdges = candidateEdges.filter((edge) =>
+    !shouldPreserveManualPointsForAutomaticRebuild(edge, options) &&
+    (changedNodeIds.has(edge.sourceId) || changedNodeIds.has(edge.targetId))
+  );
   const affectedEdgeIds = affectedEdges.map((edge) => edge.id);
   if (affectedEdgeIds.length === 0) {
     return edges;
@@ -14680,14 +14727,18 @@ export function rebuildExternalConnectionRoutesForMovedNodes(
   edges: Edge[],
   movedNodeIds: Iterable<string>,
   bounds?: CanvasBounds,
-  candidateEdges: Edge[] = edges
+  candidateEdges: Edge[] = edges,
+  options: ConnectionRouteRebuildOptions = {}
 ): Edge[] {
   const movedIds = new Set(movedNodeIds);
   if (movedIds.size === 0 || edges.length === 0 || candidateEdges.length === 0) {
     return edges;
   }
 
-  const affectedEdges = candidateEdges.filter((edge) => movedIds.has(edge.sourceId) !== movedIds.has(edge.targetId));
+  const affectedEdges = candidateEdges.filter((edge) =>
+    !shouldPreserveManualPointsForAutomaticRebuild(edge, options) &&
+    movedIds.has(edge.sourceId) !== movedIds.has(edge.targetId)
+  );
   if (affectedEdges.length === 0) {
     return edges;
   }
@@ -14716,14 +14767,18 @@ export function rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes(
   edges: Edge[],
   movedNodeIds: Iterable<string>,
   bounds?: CanvasBounds,
-  candidateEdges: Edge[] = edges
+  candidateEdges: Edge[] = edges,
+  options: ConnectionRouteRebuildOptions = {}
 ): Edge[] {
   const movedIds = new Set(movedNodeIds);
   if (movedIds.size === 0 || edges.length === 0 || candidateEdges.length === 0) {
     return edges;
   }
 
-  const internalEdges = candidateEdges.filter((edge) => movedIds.has(edge.sourceId) && movedIds.has(edge.targetId));
+  const internalEdges = candidateEdges.filter((edge) =>
+    !shouldPreserveManualPointsForAutomaticRebuild(edge, options) &&
+    movedIds.has(edge.sourceId) && movedIds.has(edge.targetId)
+  );
   if (internalEdges.length === 0) {
     return edges;
   }
@@ -14846,7 +14901,8 @@ export function rerouteEdgesAroundMovedNodes(
   previousRoutes: RoutedEdge[] = [],
   bounds?: CanvasBounds,
   forceEdgeIds: Iterable<string> = [],
-  searchEdges: Edge[] = edges
+  searchEdges: Edge[] = edges,
+  options: ConnectionRouteRebuildOptions = {}
 ): Edge[] {
   const movedIds = new Set(movedNodeIds);
   if (movedIds.size === 0 || edges.length === 0) {
@@ -14869,9 +14925,10 @@ export function rerouteEdgesAroundMovedNodes(
       }
     }
   }
-  const candidateEdges = previousRoutes.length > 0
+  const candidateEdges = (previousRoutes.length > 0
     ? searchEdges.filter((edge) => previousRouteById.has(edge.id))
-    : searchEdges;
+    : searchEdges
+  ).filter((edge) => !shouldPreserveManualPointsForAutomaticRebuild(edge, options));
   const blockedEdgeIds = candidateEdges
     .filter((edge) => {
       if (forcedEdgeIds.has(edge.id)) {
@@ -14933,7 +14990,15 @@ function createFloatingEndpointNode(point: Point, relatedNode?: ModelNode): Mode
   };
 }
 
-export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes: ModelNode[], edge?: Edge, avoidedSegments: Segment[] = [], bounds?: CanvasBounds): Point[] {
+export function routeOrthogonalEdge(
+  source: ModelNode,
+  target: ModelNode,
+  nodes: ModelNode[],
+  edge?: Edge,
+  avoidedSegments: Segment[] = [],
+  bounds?: CanvasBounds,
+  options: ManualRouteDisplayOptions = {}
+): Point[] {
   const context = buildEdgeRoutingContext(source, target, nodes, edge);
   const manualRoute = resolveManualRouteForContext(
     source,
@@ -14941,7 +15006,8 @@ export function routeOrthogonalEdge(source: ModelNode, target: ModelNode, nodes:
     context,
     edge?.manualPoints,
     avoidedSegments,
-    bounds
+    bounds,
+    options
   );
   if (manualRoute) {
     return manualRoute;

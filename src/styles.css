@@ -2146,10 +2146,19 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
     transform 120ms ease;
 }
 
+.manual-bend-handle.user-manual-bend {
+  fill: #fffbeb;
+  stroke: #f59e0b;
+}
+
 .manual-bend-handle:hover,
 .edge-endpoint-handle:hover,
 .bus-connection-dot:hover {
   filter: drop-shadow(0 0 4px rgba(220, 38, 38, 0.45));
+}
+
+.manual-bend-handle.user-manual-bend:hover {
+  filter: drop-shadow(0 0 5px rgba(245, 158, 11, 0.5));
 }
 
 .connection-group.selected .manual-segment-handle {

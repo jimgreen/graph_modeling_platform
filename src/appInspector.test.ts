@@ -1872,6 +1872,18 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".node-toolbar");
   });
 
+  test("renders manually saved bend points with a distinct edit-mode handle style", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const selectedEdgeStart = source.indexOf("{selectedRoutedEdge &&");
+    const selectedEdgeEnd = source.indexOf("{renderBoundaryBusInternalConnector", selectedEdgeStart);
+    const selectedEdgeBlock = source.slice(selectedEdgeStart, selectedEdgeEnd);
+
+    expect(selectedEdgeBlock).toContain("manualRoutePointKeys");
+    expect(selectedEdgeBlock).toContain("manual-bend-handle user-manual-bend");
+    expect(styles).toContain(".manual-bend-handle.user-manual-bend");
+  });
+
   test("keeps floating toolbars screen-sized and avoids toolbar overlap under zoom", async () => {
     const source = await readAppSource();
     const toolbarStart = source.indexOf("const nodeFloatingToolbarActionCount =");
@@ -2647,17 +2659,17 @@ describe("graph inspector panel", () => {
     expect(helperBlock).toContain("const localEdges = currentEdges === edges");
     expect(helperBlock).toContain("edgeListForNodeIds(changedIds)");
     expect(helperBlock).toContain("routingNodesForConnectionEdges(rerouteEdges, nextNodes, changedIds)");
-    expect(helperBlock).toContain("rebuildConnectionRoutesForNodes(routingNodes, rerouteEdges, changedIds, canvasBounds, rerouteEdges)");
+    expect(helperBlock).toContain("rebuildConnectionRoutesForNodes(routingNodes, rerouteEdges, changedIds, canvasBounds, rerouteEdges, editModeRouteRebuildOptions)");
     expect(helperBlock).toContain("dirtyEdgeIdsAfterMove(rerouteEdges, nextLocalEdges, changedIds)");
     expect(helperBlock).toContain("markRouteEdgesDirty");
     expect(helperBlock).toContain("markStoredRouteEdgesDirty");
     expect(updateBlock).toContain("const geometryPatch");
-    expect(updateBlock).toContain("rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, [selectedNodeId])");
+    expect(updateBlock).toContain("rebuildEdgeUpdatesAfterNodeGeometryChange(finalNextNodes, [selectedNodeId])");
     expect(mirrorBlock).toContain("rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, transformedNodeIds, edges, preservedMirrorEdgeIds)");
     expect(mirrorBlock).toContain("graphStoreApplyPatch(current, {");
     expect(mirrorBlock).not.toContain("setGraphArrays(nextNodes, nextEdges)");
     expect(finishTransformBlock).toContain("transformDragChangedRef.current");
-    expect(finishTransformBlock).toContain("rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, transformedNodeIds, current.edges)");
+    expect(finishTransformBlock).toContain("rebuildEdgeUpdatesAfterNodeGeometryChange(finalNextNodes, transformedNodeIds, current.edges)");
     expect(finishTransformBlock).toContain("graphStoreApplyPatch(current, {");
     expect(finishTransformBlock).toContain("edgeUpserts: edgeUpdates");
     expect(pointerBlock).toContain("transformDragChangedRef.current = true");
@@ -4588,6 +4600,19 @@ describe("graph inspector panel", () => {
     expect(hitlineStyleBlock).toContain("vector-effect: non-scaling-stroke");
   });
 
+  test("adds manual bends through editable middle route segments and preserves edit-mode manual display", async () => {
+    const source = await readAppSource();
+    const insertStart = source.indexOf("const insertManualBendFromPointer =");
+    const insertEnd = source.indexOf("const addManualBendFromContextMenu", insertStart);
+    const insertBlock = source.slice(insertStart, insertEnd);
+    const routeStateStart = source.indexOf("const routedRouteState = useMemo");
+    const routeStateEnd = source.indexOf("const routedEdges = routedRouteState.routes;", routeStateStart);
+    const routeStateBlock = source.slice(routeStateStart, routeStateEnd);
+
+    expect(insertBlock).toContain("findEditableRouteSegmentIndex(routePoints, clickPoint)");
+    expect(routeStateBlock).toContain("preserveManualRouteDisplay: isEditMode");
+  });
+
   test("uses graph store layer and adjacency indexes for active layer graphics", async () => {
     const source = await readAppSource();
     const activeLayerStart = source.indexOf("const activeLayerNodes = useMemo");
@@ -4662,7 +4687,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("routeEdgesForIncrementalRendering");
     expect(source).toContain("pendingRouteEdgeIdsRef");
     expect(source).toContain("pendingStoredRouteEdgeIdsRef");
-    expect(source).toContain("markStoredRouteEdgesDirty(dirtyEdgeIdsForMovedLocalRoutes");
+    expect(source).toContain("const initialStoredRouteDirtyIds = dirtyEdgeIdsForMovedLocalRoutes");
+    expect(source).toContain("markStoredRouteEdgesDirty(nonTranslatedInitialStoredRouteDirtyIds)");
     expect(source).toContain("markRouteEdgesDirty(dirtyEdgeIdsAfterMove");
     expect(routingBlock).not.toContain("manualPathDrag.edgeId");
     expect(routingBlock).not.toContain("rewiring.edgeId");
@@ -6725,7 +6751,8 @@ describe("graph inspector panel", () => {
     expect(boundaryBlock).not.toContain("const nextNodes = nodes.map");
     expect(dirtyBlock).toContain("Object.keys(originalRoutePoints)");
     expect(dirtyBlock).not.toContain("for (const edge of edges)");
-    expect(commitBlock).toContain("markStoredRouteEdgesDirty(dirtyEdgeIdsForMovedLocalRoutes");
+    expect(commitBlock).toContain("const initialStoredRouteDirtyIds = dirtyEdgeIdsForMovedLocalRoutes");
+    expect(commitBlock).toContain("markStoredRouteEdgesDirty(nonTranslatedInitialStoredRouteDirtyIds)");
     expect(commitBlock).not.toContain("markStoredRouteEdgesDirty(dirtyEdgeIdsAfterMove");
     expect(scheduleBlock).toContain("for (const edgeId of dirtyOptimizedEdgeIds)");
     expect(scheduleBlock).not.toContain("for (const edge of optimizationEdges)");
@@ -7071,8 +7098,8 @@ describe("graph inspector panel", () => {
     expect(updateBlock).not.toContain("const previewNodes = nodes.map");
     expect(updateBlock).not.toContain("canvasBoundsForGraphContent(\n          canvasBounds,\n          previewNodes,\n          edges");
     expect(updateBlock).toContain("canvasBoundsForAutoExpandedGraphContent(canvasBounds, [candidateNode], [], [], CANVAS_AUTO_EXPAND_PADDING)");
-    expect(updateBlock).toContain("const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, [selectedNodeId]);");
-    expect(updateBlock).toContain("expandCanvasToFitGraph([nextSelectedNode], edgeUpdates, [], CANVAS_AUTO_EXPAND_PADDING, selectedNodeCanvasBounds);");
+    expect(updateBlock).toContain("const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(finalNextNodes, [selectedNodeId]);");
+    expect(updateBlock).toContain("expandCanvasToFitGraph(nodeUpdates, edgeUpdates, [], CANVAS_AUTO_EXPAND_PADDING, selectedNodeCanvasBounds);");
     expect(updateBlock).toContain("graphStoreApplyPatch(current, {");
     expect(footprintBlock).toContain("const directCandidateEdges = edgeListForNodeIds(changedNodeIds);");
     expect(footprintBlock).toContain("leftTopCanvasOriginShiftForContent(existingUpdates, directCandidateEdges)");

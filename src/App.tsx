@@ -9077,6 +9077,8 @@ export function App() {
   const isBrowseMode = interactionMode === "browse";
   const isEditMode = interactionMode === "edit";
   const isReadonlyCanvasMode = isBrowseMode;
+  const editModeRouteRebuildOptions = { preserveManualPoints: isEditMode };
+  const editModeRouteRenderOptions = { preserveManualRouteDisplay: isEditMode };
 
   useEffect(() => {
     writeStoredInteractionMode(interactionMode);
@@ -13085,7 +13087,7 @@ export function App() {
         continue;
       }
       const routeNodesForEdge = routingNodesForConnectionEdge(edge, routeNodes);
-      const nextRoute = routeEdgesForStoredRendering(routeNodesForEdge, [edge], bounds)[0];
+      const nextRoute = routeEdgesForStoredRendering(routeNodesForEdge, [edge], bounds, editModeRouteRenderOptions)[0];
       if (!nextRoute) {
         changedRouteIds.add(edgeId);
         routeDeleteIds.push(edgeId);
@@ -13118,7 +13120,7 @@ export function App() {
   const routedRouteState = useMemo((): { routes: RoutedEdge[]; store: RouteStore | null } => {
     if (!routeRenderingEnabled) {
       return {
-        routes: routeEdgesForSavedPathRendering(routingNodes, routingEdges, canvasBounds, { refreshCrossingArcs: savedRouteCrossingArcsReady }),
+        routes: routeEdgesForSavedPathRendering(routingNodes, routingEdges, canvasBounds, { refreshCrossingArcs: savedRouteCrossingArcsReady, preserveManualRouteDisplay: isEditMode }),
         store: null
       };
     }
@@ -13139,7 +13141,8 @@ export function App() {
           routeInput.edges,
           committedStoredEdgeIds,
           canvasBounds,
-          cachedRoutedEdgesRef.current
+          cachedRoutedEdgesRef.current,
+          editModeRouteRenderOptions
         ),
         store: null
       };
@@ -13154,11 +13157,12 @@ export function App() {
         routingEdges,
         affectedEdgeIds,
         canvasBounds,
-        cachedRoutedEdgesRef.current
+        cachedRoutedEdgesRef.current,
+        editModeRouteRenderOptions
       ),
       store: null
     };
-  }, [affectedRoutingEdgeIds, canvasBounds, routeInput.edges, routeInput.nodes, routeRenderingEnabled, routingEdges, routingNodes, savedRouteCrossingArcsReady]);
+  }, [affectedRoutingEdgeIds, canvasBounds, isEditMode, routeInput.edges, routeInput.nodes, routeRenderingEnabled, routingEdges, routingNodes, savedRouteCrossingArcsReady]);
   const routedEdges = routedRouteState.routes;
   const routedEdgeStore = useMemo(
     () => routedRouteState.store ?? routeStoreSetRoutes(cachedRouteStoreRef.current, routedEdges),
@@ -13674,7 +13678,7 @@ export function App() {
       return [];
     }
     const routingNodes = routingNodesForConnectionEdges(rerouteEdges, nextNodes, changedIds);
-    const nextLocalEdges = rebuildConnectionRoutesForNodes(routingNodes, rerouteEdges, changedIds, canvasBounds, rerouteEdges);
+    const nextLocalEdges = rebuildConnectionRoutesForNodes(routingNodes, rerouteEdges, changedIds, canvasBounds, rerouteEdges, editModeRouteRebuildOptions);
     const dirtyEdgeIds = dirtyEdgeIdsAfterMove(rerouteEdges, nextLocalEdges, changedIds);
     markRouteEdgesDirty(dirtyEdgeIds);
     markStoredRouteEdgesDirty(dirtyEdgeIds);
@@ -18819,10 +18823,11 @@ export function App() {
         candidateEdges,
         movedNodeIds,
         canvasBounds,
-        [affectedEdge]
+        [affectedEdge],
+        editModeRouteRebuildOptions
       );
     }
-    return rebuildSingleConnectionRoute(routingNodes, candidateEdges, affectedEdgeIds[0], canvasBounds);
+    return rebuildSingleConnectionRoute(routingNodes, candidateEdges, affectedEdgeIds[0], canvasBounds, editModeRouteRebuildOptions);
   };
 
   const synchronousEdgeAdjustmentCandidates = (
@@ -18986,7 +18991,8 @@ export function App() {
         routePointSnapshotToRoutes(routePointsForReroute),
         canvasBounds,
         forcedRerouteEdgeIds,
-        routeSearchEdges
+        routeSearchEdges,
+        editModeRouteRebuildOptions
       )
     };
   };
@@ -19835,7 +19841,8 @@ export function App() {
           committedCandidateEdges,
           movedNodeIds,
           commitCanvasBounds,
-          blockedCandidateEdges
+          blockedCandidateEdges,
+          editModeRouteRebuildOptions
         );
         if (rebuiltEdges !== committedCandidateEdges) {
           const rebuiltDirtyEdgeIds = edgeReferenceDiffIds(committedCandidateEdges, rebuiltEdges);
@@ -19851,7 +19858,8 @@ export function App() {
             committedCandidateEdges,
             movedNodeIds,
             commitCanvasBounds,
-            blockedCandidateEdges
+            blockedCandidateEdges,
+            editModeRouteRebuildOptions
           );
           if (rebuiltInternalEdges !== committedCandidateEdges) {
             const rebuiltDirtyEdgeIds = edgeReferenceDiffIds(committedCandidateEdges, rebuiltInternalEdges);
@@ -29320,7 +29328,7 @@ export function App() {
   };
 
   const insertManualBendFromPointer = (edgeId: string, routePoints: Point[], clickPoint: Point) => {
-    const segmentIndex = findBendInsertRouteSegmentIndex(routePoints, clickPoint);
+    const segmentIndex = findEditableRouteSegmentIndex(routePoints, clickPoint);
     if (segmentIndex >= 0) {
       insertManualBendAtPoint(edgeId, segmentIndex, routePoints, clickPoint);
       return true;
@@ -36309,6 +36317,8 @@ export function App() {
               const sourceBusDotPoint = sourcePoint && sourceNode && isBusNode(sourceNode) ? sourcePoint : undefined;
               const targetBusDotPoint = targetPoint && targetNode && isBusNode(targetNode) ? targetPoint : undefined;
               const movableSegmentIndexes = new Set(getMovableRouteSegmentIndexes(routePoints));
+              const manualRoutePointKey = (point: Point) => `${Math.round(point.x)},${Math.round(point.y)}`;
+              const manualRoutePointKeys = new Set((edge.manualPoints ?? []).map(manualRoutePointKey));
               return (
                 <g className="connection-group selected topmost" style={connectionLineStyle(edge.id)}>
                   <path
@@ -36345,10 +36355,11 @@ export function App() {
                   })}
                   {isEditMode && !isRewiringSelectedEdge && routePoints.slice(2, -2).map((point, index) => {
                     const routePointIndex = index + 2;
+                    const isUserManualBend = manualRoutePointKeys.has(manualRoutePointKey(point));
                     return (
                       <circle
                         key={`bend-${routePointIndex}`}
-                        className="manual-bend-handle"
+                        className={isUserManualBend ? "manual-bend-handle user-manual-bend" : "manual-bend-handle"}
                         cx={point.x}
                         cy={point.y}
                         r={5.5}

@@ -5208,18 +5208,40 @@ describe("power system model", () => {
     expect(horizontalBend.slice(2, 6)).toEqual([
       { x: 80, y: 120 },
       { x: 150, y: 120 },
-      { x: 150, y: 152 },
-      { x: 182, y: 152 }
+      { x: 150, y: 160 },
+      { x: 182, y: 160 }
     ]);
 
     const verticalBend = insertOrthogonalRouteBend(routePoints, 1, { x: 120, y: 72 }, { width: 320, height: 220 });
     expect(verticalBend.slice(1, 5)).toEqual([
       { x: 80, y: 20 },
       { x: 80, y: 72 },
-      { x: 112, y: 72 },
-      { x: 112, y: 104 }
+      { x: 120, y: 72 },
+      { x: 120, y: 104 }
     ]);
 
+    for (const route of [horizontalBend, verticalBend]) {
+      for (let index = 1; index < route.length; index += 1) {
+        expect(route[index - 1].x === route[index].x || route[index - 1].y === route[index].y).toBe(true);
+      }
+    }
+  });
+
+  test("routes an inserted manual bend through an off-segment pointer position", () => {
+    const routePoints: Point[] = [
+      { x: 20, y: 20 },
+      { x: 80, y: 20 },
+      { x: 80, y: 120 },
+      { x: 220, y: 120 },
+      { x: 220, y: 20 },
+      { x: 280, y: 20 }
+    ];
+
+    const horizontalBend = insertOrthogonalRouteBend(routePoints, 2, { x: 150, y: 147 }, { width: 320, height: 220 });
+    const verticalBend = insertOrthogonalRouteBend(routePoints, 1, { x: 113, y: 72 }, { width: 320, height: 220 });
+
+    expect(horizontalBend).toContainEqual({ x: 150, y: 147 });
+    expect(verticalBend).toContainEqual({ x: 113, y: 72 });
     for (const route of [horizontalBend, verticalBend]) {
       for (let index = 1; index < route.length; index += 1) {
         expect(route[index - 1].x === route[index].x || route[index - 1].y === route[index].y).toBe(true);
@@ -5651,6 +5673,76 @@ describe("power system model", () => {
     expect(validation.issues).toEqual([]);
     expect(rebuiltEdge.manualPoints?.length ?? 0).toBeLessThan(edge.manualPoints!.length);
     expect(new Set(route.points.map((point) => point.y))).toEqual(new Set([140]));
+  });
+
+  test("preserves existing manual route points when automatic edit-mode rebuilds are protected", () => {
+    const left = { ...createDefaultNode("ac-line", { x: 160, y: 200 }), id: "left-preserve" };
+    const moved = { ...createDefaultNode("ac-line", { x: 560, y: 200 }), id: "moved-preserve" };
+    const manualPoints = [
+      { x: 280, y: 110 },
+      { x: 420, y: 110 },
+      { x: 420, y: 300 }
+    ];
+    const edge = {
+      id: "preserve-manual-edit-route",
+      sourceId: left.id,
+      targetId: moved.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints
+    };
+
+    const rebuilt = rebuildExternalConnectionRoutesForMovedNodes(
+      [left, moved],
+      [edge],
+      [moved.id],
+      { width: 820, height: 440 },
+      [edge],
+      { preserveManualPoints: true }
+    );
+
+    expect(rebuilt[0]).toBe(edge);
+    expect(rebuilt[0].manualPoints).toEqual(manualPoints);
+  });
+
+  test("preserves manual route display when automatic edit-mode rendering is protected", () => {
+    const source = withHiddenDeviceLabel({ ...createDefaultNode("ac-line", { x: 120, y: 120 }), id: "display-source" });
+    const target = withHiddenDeviceLabel({ ...createDefaultNode("ac-line", { x: 520, y: 120 }), id: "display-target" });
+    const edge: Edge = {
+      id: "preserve-manual-display",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1"
+    };
+    const bounds = { width: 700, height: 320 };
+    const baseRoute = routeOrthogonalEdge(source, target, [source, target], edge, [], bounds);
+    const insertSegmentIndex = getMovableRouteSegmentIndexes(baseRoute).find((index) => {
+      const from = baseRoute[index];
+      const to = baseRoute[index + 1];
+      return Boolean(from && to && (from.x === to.x || from.y === to.y) && Math.abs(from.x - to.x) + Math.abs(from.y - to.y) > 80);
+    });
+    expect(insertSegmentIndex).toBeDefined();
+    const from = baseRoute[insertSegmentIndex!];
+    const to = baseRoute[insertSegmentIndex! + 1];
+    const pointer = from.y === to.y
+      ? { x: Math.round((from.x + to.x) / 2), y: from.y + 70 }
+      : { x: from.x + 70, y: Math.round((from.y + to.y) / 2) };
+    const bendRoute = insertOrthogonalRouteBend(baseRoute, insertSegmentIndex!, pointer, bounds);
+    const manualPoints = bendRoute.length > 4 ? bendRoute.slice(2, -2) : bendRoute.slice(1, -1);
+    const manualEdge = { ...edge, manualPoints };
+
+    const simplifiedRoute = routeEdgesForStoredRendering([source, target], [manualEdge], bounds)[0];
+    const preservedRoute = routeEdgesForStoredRendering(
+      [source, target],
+      [manualEdge],
+      bounds,
+      { preserveManualRouteDisplay: true }
+    )[0];
+
+    expect(bendRoute).toContainEqual(pointer);
+    expect(simplifiedRoute.points).not.toContainEqual(pointer);
+    expect(preservedRoute.points).toContainEqual(pointer);
   });
 
   test("redraws only requested connection routes from scratch", () => {
