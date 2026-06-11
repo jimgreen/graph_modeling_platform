@@ -10392,6 +10392,46 @@ export function deleteSavedProject(projects: SavedProjectRecord[], projectId: st
   return projects.filter((project) => project.id !== projectId);
 }
 
+export type SavedProjectSelection = {
+  scheme: SavedSchemeRecord;
+  project: SavedProjectRecord;
+};
+
+export function nextSavedProjectAfterProjectDeletion(
+  schemes: SavedSchemeRecord[],
+  projectId: string
+): SavedProjectSelection | null {
+  return nextSavedProjectAfterProjectBatchDeletion(schemes, projectId, new Set([projectId]));
+}
+
+export function nextSavedProjectAfterProjectBatchDeletion(
+  schemes: SavedSchemeRecord[],
+  activeProjectId: string,
+  deletingProjectIds: Set<string>
+): SavedProjectSelection | null {
+  const owner = findSavedProjectRecordInSchemes(schemes, activeProjectId);
+  if (!owner) {
+    return null;
+  }
+  const projectIndex = owner.scheme.projects.findIndex((project) => project.id === activeProjectId);
+  if (projectIndex < 0) {
+    return null;
+  }
+  for (let index = projectIndex + 1; index < owner.scheme.projects.length; index += 1) {
+    const project = owner.scheme.projects[index];
+    if (!deletingProjectIds.has(project.id)) {
+      return { scheme: owner.scheme, project };
+    }
+  }
+  for (let index = projectIndex - 1; index >= 0; index -= 1) {
+    const project = owner.scheme.projects[index];
+    if (!deletingProjectIds.has(project.id)) {
+      return { scheme: owner.scheme, project };
+    }
+  }
+  return null;
+}
+
 export function createSavedScheme(
   name: string,
   projects: SavedProjectRecord[] = [],
@@ -10412,6 +10452,31 @@ export function flattenSavedSchemes(schemes: SavedSchemeRecord[]): SavedSchemeRe
 
 export function flattenSavedProjects(schemes: SavedSchemeRecord[]): SavedProjectRecord[] {
   return schemes.flatMap((scheme) => [...scheme.projects, ...flattenSavedProjects(savedSchemeChildren(scheme))]);
+}
+
+export function nextSavedProjectAfterSchemeDeletion(
+  schemes: SavedSchemeRecord[],
+  activeSchemeId: string,
+  deletingSchemeIds: Set<string>
+): SavedProjectSelection | null {
+  const flatSchemes = flattenSavedSchemes(schemes);
+  const activeIndex = flatSchemes.findIndex((scheme) => scheme.id === activeSchemeId);
+  const startIndex = activeIndex >= 0 ? activeIndex : -1;
+  const canSelectScheme = (scheme: SavedSchemeRecord) =>
+    !deletingSchemeIds.has(scheme.id) && scheme.projects.length > 0;
+  for (let index = startIndex + 1; index < flatSchemes.length; index += 1) {
+    const scheme = flatSchemes[index];
+    if (canSelectScheme(scheme)) {
+      return { scheme, project: scheme.projects[0] };
+    }
+  }
+  for (let index = startIndex - 1; index >= 0; index -= 1) {
+    const scheme = flatSchemes[index];
+    if (canSelectScheme(scheme)) {
+      return { scheme, project: scheme.projects[scheme.projects.length - 1] };
+    }
+  }
+  return null;
 }
 
 export type SavedProjectPathOption = {

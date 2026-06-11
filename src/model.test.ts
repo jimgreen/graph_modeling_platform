@@ -61,6 +61,9 @@ import {
   resolveStraightBusSlideEndpointToPoint,
   moveProjectToScheme,
   moveSavedSchemeToParent,
+  nextSavedProjectAfterProjectBatchDeletion,
+  nextSavedProjectAfterProjectDeletion,
+  nextSavedProjectAfterSchemeDeletion,
   savedProjectPathOptions,
   moveOrthogonalRouteSegment,
   modelGeometryInsideCanvasBounds,
@@ -8718,6 +8721,44 @@ describe("power system model", () => {
     const deleted = deleteSavedProject(copied, project.id);
     expect(deleted).toHaveLength(1);
     expect(deleted[0].name).toBe("模型B 副本");
+  });
+
+  test("selects the next or previous project in the same scheme after deleting the active project", () => {
+    const first = createSavedProject("模型A", { version: 1, name: "模型A", nodes: [], edges: [] });
+    const second = createSavedProject("模型B", { version: 1, name: "模型B", nodes: [], edges: [] });
+    const third = createSavedProject("模型C", { version: 1, name: "模型C", nodes: [], edges: [] });
+    const scheme = createSavedScheme("方案A", [first, second, third]);
+
+    expect(nextSavedProjectAfterProjectDeletion([scheme], second.id)?.project.name).toBe("模型C");
+    expect(nextSavedProjectAfterProjectDeletion([scheme], third.id)?.project.name).toBe("模型B");
+    expect(nextSavedProjectAfterProjectDeletion([createSavedScheme("空方案", [first])], first.id)).toBeNull();
+  });
+
+  test("selects the nearest remaining project after deleting a batch that includes the active project", () => {
+    const first = createSavedProject("模型A", { version: 1, name: "模型A", nodes: [], edges: [] });
+    const second = createSavedProject("模型B", { version: 1, name: "模型B", nodes: [], edges: [] });
+    const third = createSavedProject("模型C", { version: 1, name: "模型C", nodes: [], edges: [] });
+    const fourth = createSavedProject("模型D", { version: 1, name: "模型D", nodes: [], edges: [] });
+    const scheme = createSavedScheme("方案A", [first, second, third, fourth]);
+
+    expect(nextSavedProjectAfterProjectBatchDeletion([scheme], second.id, new Set([first.id, second.id]))?.project.name).toBe("模型C");
+    expect(nextSavedProjectAfterProjectBatchDeletion([scheme], second.id, new Set([second.id, third.id]))?.project.name).toBe("模型D");
+    expect(nextSavedProjectAfterProjectBatchDeletion([scheme], second.id, new Set([second.id, third.id, fourth.id]))?.project.name).toBe("模型A");
+    expect(nextSavedProjectAfterProjectBatchDeletion([scheme], second.id, new Set([first.id, second.id, third.id, fourth.id]))).toBeNull();
+  });
+
+  test("selects neighboring scheme projects after deleting the active scheme", () => {
+    const firstProject = createSavedProject("方案A模型", { version: 1, name: "方案A模型", nodes: [], edges: [] });
+    const secondFirstProject = createSavedProject("方案B模型1", { version: 1, name: "方案B模型1", nodes: [], edges: [] });
+    const secondLastProject = createSavedProject("方案B模型2", { version: 1, name: "方案B模型2", nodes: [], edges: [] });
+    const thirdProject = createSavedProject("方案C模型", { version: 1, name: "方案C模型", nodes: [], edges: [] });
+    const first = createSavedScheme("方案A", [firstProject]);
+    const second = createSavedScheme("方案B", [secondFirstProject, secondLastProject]);
+    const third = createSavedScheme("方案C", [thirdProject]);
+
+    expect(nextSavedProjectAfterSchemeDeletion([first, second, third], second.id, new Set([second.id]))?.project.name).toBe("方案C模型");
+    expect(nextSavedProjectAfterSchemeDeletion([first, second], second.id, new Set([second.id]))?.project.name).toBe("方案A模型");
+    expect(nextSavedProjectAfterSchemeDeletion([second], second.id, new Set([second.id]))).toBeNull();
   });
 
   test("merges duplicate project names instead of creating hidden same-name records", () => {

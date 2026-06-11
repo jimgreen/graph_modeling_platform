@@ -1529,6 +1529,7 @@ describe("graph inspector panel", () => {
 
   test("configures static button actions with dropdown enablement and multiple target layers", async () => {
     const source = await readAppSource();
+    const styles = await readStyles();
     const modelSource = await readModelSource();
     const editorStart = source.indexOf("const renderStaticButtonActionEditor");
     const editorEnd = source.indexOf("const renderParamHeader", editorStart);
@@ -1539,18 +1540,32 @@ describe("graph inspector panel", () => {
     const exportStart = source.indexOf("function exportSvgLayerScriptMarkup");
     const exportEnd = source.indexOf("export function buildSvgDocument", exportStart);
     const exportBlock = source.slice(exportStart, exportEnd);
+    const layerMenuStyle = cssRuleBlock(styles, ".static-button-layer-dropdown-menu");
 
     expect(modelSource).toContain("buttonTargetLayerIds: \"\",");
     expect(modelSource).toContain("buttonTargetLayerNames: \"\",");
     expect(source).toContain("const parseStaticButtonTargetLayerValues = (value?: string) =>");
     expect(source).toContain("const serializeStaticButtonTargetLayerIds = (layerIds: string[]) => JSON.stringify(layerIds);");
+    expect(source).toContain("function staticButtonLayerDropdownPlacementForTrigger(trigger: HTMLElement)");
+    expect(source).toContain("function StaticButtonLayerMultiSelect({");
+    expect(source).toContain("createPortal(");
+    expect(source).toContain("window.addEventListener(\"pointerdown\", closeOnOutsidePointerDown, true)");
+    expect(source).toContain("window.addEventListener(\"scroll\", schedulePositionUpdate, true)");
     expect(editorBlock).toContain("value={buttonEnabled ? \"1\" : \"0\"}");
     expect(editorBlock).toContain("<option value=\"1\">启用</option>");
     expect(editorBlock).toContain("<option value=\"0\">禁用</option>");
-    expect(editorBlock).not.toContain("type=\"checkbox\"");
-    expect(editorBlock).toContain("multiple");
-    expect(editorBlock).toContain("value={resolveStaticButtonTargetLayers(node, layers).map((layer) => layer.id)}");
-    expect(editorBlock).toContain("Array.from(event.target.selectedOptions)");
+    expect(editorBlock).toContain("const selectedTargetLayers = resolveStaticButtonTargetLayers(node, layers);");
+    expect(editorBlock).toContain("<StaticButtonLayerMultiSelect");
+    expect(editorBlock).toContain("selectedLayerIds={selectedTargetLayers.map((layer) => layer.id)}");
+    expect(editorBlock).toContain("onChange={writeStaticButtonTargetLayers}");
+    expect(source).toContain("className=\"static-button-layer-dropdown-trigger\"");
+    expect(source).toContain("className=\"static-button-layer-dropdown-menu\"");
+    expect(source).toContain("className=\"static-button-layer-option\"");
+    expect(source).toContain("type=\"checkbox\"");
+    expect(source).toContain("checked={selectedLayerIdSet.has(layer.id)}");
+    expect(source).toContain("onChange={(event) => toggleLayer(layer.id, event.target.checked)}");
+    expect(editorBlock).not.toContain("multiple");
+    expect(editorBlock).not.toContain("Array.from(event.target.selectedOptions)");
     expect(editorBlock).toContain("buttonTargetLayerIds: serializeStaticButtonTargetLayerIds(selectedLayers.map((layer) => layer.id))");
     expect(editorBlock).toContain("buttonTargetLayerNames: serializeStaticButtonTargetLayerIds(selectedLayers.map((layer) => layer.name))");
     expect(runtimeBlock).toContain("const targetLayers = resolveStaticButtonTargetLayers(node, layers);");
@@ -1560,6 +1575,11 @@ describe("graph inspector panel", () => {
     expect(exportBlock).toContain("data-export-button-target-layer-ids");
     expect(exportBlock).toContain("function exportSvgActivateLayers(layerIds)");
     expect(exportBlock).toContain("const targetLayerIds = exportSvgButtonTargetLayerIds(button);");
+    expect(layerMenuStyle).toContain("position: fixed;");
+    expect(layerMenuStyle).toContain("top: 0;");
+    expect(layerMenuStyle).toContain("left: 0;");
+    expect(layerMenuStyle).toContain("width: 240px;");
+    expect(layerMenuStyle).toContain("max-height: 180px;");
   });
 
   test("shows Chinese and English labels in the generic device parameter table", async () => {
@@ -1660,7 +1680,8 @@ describe("graph inspector panel", () => {
     const focusInputBlock = cssRuleBlock(styles, ".param-table td:focus-within input:not([type=\"color\"]):not([type=\"checkbox\"]),");
     const directFocusBlock = cssRuleBlock(styles, ".param-table input:focus,\n.param-table select:focus,\n.param-table textarea:focus");
     const compactUnitBlock = cssRuleBlock(styles, ".param-table .unit-value-field");
-    const textStyleLabelBlock = cssRuleBlock(styles, ".text-style-actions label");
+    const textStyleButtonBlock = cssRuleBlock(styles, ".text-style-toggle-button {");
+    const textStylePressedBlock = cssRuleBlock(styles, ".text-style-toggle-button[aria-pressed=\"true\"]");
 
     expect(tableBlock).toContain("--param-table-row-height: 40px");
     expect(tableBlock).toContain("--param-table-control-height: 26px");
@@ -1678,9 +1699,11 @@ describe("graph inspector panel", () => {
     expect(directFocusBlock).toContain("outline: none");
     expect(compactUnitBlock).toContain("gap: 4px");
     expect(compactUnitBlock).toContain("min-height: var(--param-table-control-height)");
-    expect(textStyleLabelBlock).toContain("border: 0");
-    expect(textStyleLabelBlock).toContain("background: transparent");
-    expect(textStyleLabelBlock).toContain("min-height: var(--param-table-control-height)");
+    expect(textStyleButtonBlock).toContain("width: var(--param-table-control-height)");
+    expect(textStyleButtonBlock).toContain("height: var(--param-table-control-height)");
+    expect(textStyleButtonBlock).toContain("justify-content: center");
+    expect(textStylePressedBlock).toContain("background: #2563eb");
+    expect(textStylePressedBlock).toContain("color: #ffffff");
   });
 
   test("keeps embedded controls inside parameter tables from expanding row height", async () => {
@@ -3441,6 +3464,9 @@ describe("graph inspector panel", () => {
     const exportStart = source.indexOf("const exportSchemeRecord = async");
     const exportEnd = source.indexOf("const chooseImage", exportStart);
     const exportBlock = source.slice(exportStart, exportEnd);
+    const downloadStart = source.indexOf("async function downloadBackendSchemeArchive");
+    const downloadEnd = source.indexOf("async function uploadBackendSchemeArchive", downloadStart);
+    const downloadBlock = source.slice(downloadStart, downloadEnd);
     const importStart = source.indexOf("const importSchemeFile = async");
     const importEnd = source.indexOf("const commitImportedModelRecord", importStart);
     const importBlock = source.slice(importStart, importEnd);
@@ -3458,9 +3484,15 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const schemeImportParentSchemeIdRef = useRef<string>(\"\")");
     expect(source).toContain("const importSchemeFile = async");
     expect(source).toContain('accept=".zip,application/zip,.json,application/json"');
+    expect(downloadBlock).toContain("loadBlob: async () =>");
+    expect(downloadBlock.indexOf("saveLazyBlobFile")).toBeLessThan(downloadBlock.indexOf("fetch(`/api/schemes/export?"));
+    expect(exportBlock).toContain("const saved = await downloadBackendSchemeArchive");
+    expect(exportBlock).toContain("if (!saved) {");
     expect(exportBlock).toContain("downloadBackendSchemeArchive");
     expect(exportBlock).toContain("schemePathForRecord(scheme)");
     expect(importBlock).toContain('/\\.zip$/iu.test(file.name)');
+    expect(importBlock).toContain("schemeImportParentSchemeIdRef.current = \"\";");
+    expect(importBlock).toContain("input.value = \"\";");
     expect(importBlock).toContain("uploadBackendSchemeArchive(file, parentPath)");
     expect(importBlock).toContain("applyBackendSchemeArchiveImport(payload, file.name)");
     expect(importBlock).toContain("duplicateScheme");
@@ -4458,6 +4490,64 @@ describe("graph inspector panel", () => {
     expect(keydownBlock).not.toContain("if (isGlobalSaveShortcut(event))");
   });
 
+  test("refuses Ctrl+S saves when both scheme and model are empty", async () => {
+    const source = await readAppSource();
+    const saveStart = source.indexOf("const saveCurrentProject =");
+    const saveEnd = source.indexOf("const renameProjectRecord", saveStart);
+    const saveBlock = source.slice(saveStart, saveEnd);
+
+    expect(saveBlock).toContain("const existingTargetProject = targetId ? projectById.get(targetId) : undefined;");
+    expect(saveBlock).toContain("if ((!targetId || !existingTargetProject) && schemes.length === 0)");
+    expect(saveBlock).toContain("window.alert(\"没有可保存的方案和模型，请先新建方案或导入方案。\");");
+    expect(saveBlock).toContain("writeOperationLog(\"方案为空、模型为空，无法保存\")");
+    expect(saveBlock).not.toContain("createSavedScheme(\"默认方案\")");
+  });
+
+  test("focuses the canvas shortcut host when the pointer enters the rendered canvas", async () => {
+    const source = await readAppSource();
+    const focusStart = source.indexOf("const focusCanvasKeyboardShortcutHost =");
+    const focusEnd = source.indexOf("const wheelZoomAnchorFromClient", focusStart);
+    const focusBlock = source.slice(focusStart, focusEnd);
+    const canvasFrameStart = source.indexOf("<section\n          className=\"canvas-frame\"");
+    const canvasFrameEnd = source.indexOf(">\n          <div", canvasFrameStart);
+    const canvasFrameBlock = source.slice(canvasFrameStart, canvasFrameEnd);
+
+    expect(source).toContain("const focusCanvasKeyboardShortcutHost =");
+    expect(focusBlock).toContain("lastKeyboardShortcutClientPointerRef.current = { x: event.clientX, y: event.clientY };");
+    expect(focusBlock).toContain("if (!svg || !clientPointInsideRenderedCanvas(event.clientX, event.clientY))");
+    expect(focusBlock).toContain("canvasFrameRef.current?.focus({ preventScroll: true });");
+    expect(focusBlock).toContain("canvasInteractionRef.current = true;");
+    expect(focusBlock).toContain("projectListPointerInsideRef.current = false;");
+    expect(canvasFrameBlock).toContain("tabIndex={-1}");
+    expect(canvasFrameBlock).toContain("onPointerEnter={focusCanvasKeyboardShortcutHost}");
+    expect(canvasFrameBlock).toContain("onPointerMove={focusCanvasKeyboardShortcutHost}");
+  });
+
+  test("captures canvas keyboard shortcuts before side panels can stop keydown bubbling", async () => {
+    const source = await readAppSource();
+    const effectStart = source.indexOf("useEffect(() => {\n    const handleGlobalSaveKeyDown");
+    const effectEnd = source.indexOf("  }, [activeLayerEdges", effectStart);
+    const effectBlock = source.slice(effectStart, effectEnd);
+
+    expect(effectBlock).toContain("window.addEventListener(\"keydown\", handleKeyDown, { capture: true });");
+    expect(effectBlock).toContain("window.removeEventListener(\"keydown\", handleKeyDown, { capture: true });");
+    expect(effectBlock).toContain("if (target && [\"INPUT\", \"TEXTAREA\", \"SELECT\"].includes(target.tagName) && !isCanvasShortcutTarget)");
+  });
+
+  test("does not keep an external control focused after the pointer moves onto the rendered canvas", async () => {
+    const source = await readAppSource();
+    const focusStart = source.indexOf("const focusCanvasKeyboardShortcutHost =");
+    const focusEnd = source.indexOf("const wheelZoomAnchorFromClient", focusStart);
+    const focusBlock = source.slice(focusStart, focusEnd);
+
+    expect(focusBlock).not.toContain("const keepCurrentFocus");
+    expect(focusBlock).not.toContain("if (keepCurrentFocus)");
+    expect(focusBlock).toContain("canvasFrameRef.current?.focus({ preventScroll: true });");
+    expect(focusBlock.indexOf("canvasFrameRef.current?.focus({ preventScroll: true });")).toBeLessThan(
+      focusBlock.indexOf("canvasInteractionRef.current = true;")
+    );
+  });
+
   test("routes shortcuts to the canvas only when the pointer is over an unobstructed rendered canvas", async () => {
     const source = await readAppSource();
     const refsStart = source.indexOf("const canvasFrameRef");
@@ -4486,7 +4576,7 @@ describe("graph inspector panel", () => {
     expect(helperBlock).toContain("const point = lastKeyboardShortcutClientPointerRef.current ?? lastCanvasClientPointerRef.current;");
     expect(helperBlock).toContain("document.elementFromPoint(point.x, point.y)");
     expect(helperBlock).toContain("isCanvasKeyboardBlockingTarget(topElement)");
-    expect(helperBlock).toContain("topElement.closest(\".diagram-canvas\")");
+    expect(helperBlock).toContain("topElement.closest(CANVAS_KEYBOARD_SURFACE_SELECTOR)");
     expect(keydownBlock).toContain("const canvasPointerShortcutAvailability = canvasPointerKeyboardShortcutAvailability();");
     expect(keydownBlock).toContain("isCanvasTarget: Boolean(target?.closest(\".diagram-canvas\")) && canvasPointerShortcutAvailability !== \"blocked\"");
     expect(keydownBlock).toContain("isCanvasPointerUnblocked: canvasPointerShortcutAvailability === \"unblocked\"");
@@ -4494,6 +4584,23 @@ describe("graph inspector panel", () => {
     expect(pointerMoveBlock).toContain("lastCanvasClientPointerRef.current = { x: event.clientX, y: event.clientY };");
     expect(pointerEnterBlock).toContain("lastCanvasClientPointerRef.current = { x: event.clientX, y: event.clientY };");
     expect(pointerLeaveBlock).toContain("lastCanvasClientPointerRef.current = null;");
+  });
+
+  test("treats blank rendered canvas surface hover as a canvas paste shortcut target", async () => {
+    const source = await readAppSource();
+    const helperStart = source.indexOf("const canvasPointerKeyboardShortcutAvailability = () =>");
+    const helperEnd = source.indexOf("useEffect(() => {\n    const handleGlobalSaveKeyDown", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+    const focusStart = source.indexOf("const focusCanvasKeyboardShortcutHost =");
+    const focusEnd = source.indexOf("const wheelZoomAnchorFromClient", focusStart);
+    const focusBlock = source.slice(focusStart, focusEnd);
+
+    expect(source).toContain("const CANVAS_KEYBOARD_SURFACE_SELECTOR = \".diagram-canvas, .canvas-scroll-surface\";");
+    expect(helperBlock).toContain("topElement.closest(CANVAS_KEYBOARD_SURFACE_SELECTOR)");
+    expect(focusBlock).toContain("const rawPointer = screenToSvgPoint(svg, event.clientX, event.clientY);");
+    expect(focusBlock).toContain("lastRawCanvasPointerRef.current = rawPointer;");
+    expect(focusBlock).toContain("lastCanvasPointerRef.current = pointer;");
+    expect(focusBlock).toContain("lastCanvasClientPointerRef.current = { x: event.clientX, y: event.clientY };");
   });
 
   test("blocks canvas clipboard shortcuts while the pointer is over panels or dialogs", async () => {
@@ -5130,13 +5237,13 @@ describe("graph inspector panel", () => {
     const measurementCommonStart = source.indexOf("const batchCommonMeasurementGroupRows = useMemo");
     const measurementCommonEnd = source.indexOf("const selectedEdge =", measurementCommonStart);
     const measurementCommonBlock = source.slice(measurementCommonStart, measurementCommonEnd);
-    const applyStart = source.indexOf("const applyBatchCommonParam =");
+    const applyStart = source.indexOf("const applyBatchCommonParamPatch =");
     const applyEnd = source.indexOf("const commitElementTreeNodeIdentity", applyStart);
     const applyBlock = source.slice(applyStart, applyEnd);
     const batchColorRenderStart = source.indexOf("const renderBatchCommonColorParamEditor =");
     const batchColorRenderEnd = source.indexOf("const renderBatchCommonParamEditor =", batchColorRenderStart);
     const batchColorRenderBlock = source.slice(batchColorRenderStart, batchColorRenderEnd);
-    const renderStart = source.indexOf("const renderBatchCommonParamEditor =");
+    const renderStart = source.indexOf("const batchSavedProjectOptions =");
     const renderEnd = source.indexOf("const renderStaticButtonActionEditor", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
     const paramOptionsStart = source.indexOf("const PARAM_OPTIONS: Record<string, string[]> =");
@@ -5157,6 +5264,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("type BatchCommonMeasurementGroupRow =");
     expect(source).toContain("const BATCH_GRAPH_PARAM_KEYS");
     expect(source).toContain("const isBatchGraphCommonParamKey = (key: string)");
+    expect(source).toContain("layerId: \"所属图层\"");
     expect(source).toContain("const COLOR_PARAM_KEY_PATTERN");
     expect(source).toContain("const isColorParamKey = (key: string)");
     expect(source).toContain("const BATCH_PARAM_EXCLUDED_PREFIXES");
@@ -5172,11 +5280,15 @@ describe("graph inspector panel", () => {
     expect(commonBlock).toContain("selectedNodes.length < 2");
     expect(commonBlock).toContain("canBatchEditParam(key)");
     expect(commonBlock).toContain("selectedNodes.every((node) => Object.prototype.hasOwnProperty.call(node.params, key))");
+    expect(commonBlock).toContain("const layerValues = selectedNodes.map((node) => node.layerId ?? DEFAULT_MODEL_LAYER_ID)");
+    expect(commonBlock).toContain("key: \"layerId\"");
+    expect(commonBlock).toContain("label: PARAM_LABELS.layerId ?? \"所属图层\"");
     expect(commonBlock).toContain("mixed: values.some((value) => value !== values[0])");
+    expect(commonBlock).toContain("const batchCommonParamKeySet = useMemo");
     expect(commonBlock).toContain("const batchCommonGraphicParamRows = useMemo");
-    expect(commonBlock).toContain("batchCommonParamRows.filter((row) => isBatchGraphCommonParamKey(row.key))");
+    expect(commonBlock).toContain("batchCommonParamRows.filter((row) => isBatchGraphCommonParamKey(row.key) && !isRedundantBatchCommonParamRow(row, batchCommonParamKeySet))");
     expect(commonBlock).toContain("const batchCommonModelParamRows = useMemo");
-    expect(commonBlock).toContain("batchCommonParamRows.filter((row) => !isBatchGraphCommonParamKey(row.key))");
+    expect(commonBlock).toContain("batchCommonParamRows.filter((row) => !isBatchGraphCommonParamKey(row.key) && !isRedundantBatchCommonParamRow(row, batchCommonParamKeySet))");
     expect(commonBlock).toContain("const hasBatchCommonPropertyRows =");
     expect(commonBlock).toContain("batchCommonGraphicParamRows.length > 0");
     expect(commonBlock).toContain("batchCommonModelParamRows.length > 0");
@@ -5188,13 +5300,14 @@ describe("graph inspector panel", () => {
     expect(measurementCommonBlock).toContain("measurementGroupCommonValue(group, key)");
     expect(measurementCommonBlock).toContain("mixed: values.some((value) => value !== values[0])");
     expect(applyBlock).toContain("if (!requireEditMode(\"批量修改图元参数\"))");
+    expect(applyBlock).toContain("const applyBatchCommonParamPatch =");
+    expect(applyBlock).toContain("patchForNode: (node: ModelNode) => BatchCommonParamPatch");
+    expect(applyBlock).toContain("Object.fromEntries");
     expect(applyBlock).toContain("const targetNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? [])");
     expect(applyBlock).toContain("const nextNodes = targetNodes");
     expect(applyBlock).toContain("const normalizedLabelDisplayMode = key === \"_labelDisplayMode\" ? normalizeNodeLabelDisplayMode(value) : undefined");
     expect(applyBlock).toContain("const normalizedLabelVisible = normalizedLabelDisplayMode === \"hidden\" ? \"0\" : \"1\"");
-    expect(applyBlock).toContain("node.params._labelDisplayMode !== normalizedLabelDisplayMode || node.params._labelVisible !== normalizedLabelVisible");
-    expect(applyBlock).toContain("node.params[key] !== value");
-    expect(applyBlock).toContain("params: { ...node.params, _labelDisplayMode: normalizedLabelDisplayMode, _labelVisible: normalizedLabelVisible }");
+    expect(applyBlock).toContain("{ _labelDisplayMode: normalizedLabelDisplayMode, _labelVisible: normalizedLabelVisible }");
     expect(applyBlock).toContain("pushUndoSnapshot(true, false");
     expect(applyBlock).toContain("commitNodeFootprintUpdates(nextNodes);");
     expect(applyBlock).toContain("patchGraphNodes(nextNodes);");
@@ -5207,6 +5320,24 @@ describe("graph inspector panel", () => {
     expect(renderBlock).toContain("row.mixed ? \"\" : row.value");
     expect(renderBlock).toContain("placeholder={row.mixed ? \"多个不同值\" : undefined}");
     expect(renderBlock).toContain("applyBatchCommonParam(row.key, event.target.value)");
+    expect(renderBlock).toContain("const renderBatchCommonModelLayerSelect =");
+    expect(renderBlock).toContain("assignSelectedNodesToModelLayer(event.target.value)");
+    expect(renderBlock).toContain("row.key === \"layerId\"");
+    expect(renderBlock).toContain("renderBatchCommonModelLayerSelect(row)");
+    expect(renderBlock).toContain("const renderBatchCommonProjectSelect =");
+    expect(renderBlock).toContain("applyBatchCommonParamPatch(\"目标模型\"");
+    expect(renderBlock).toContain("buttonTargetProjectId: selected?.project.id ?? \"\"");
+    expect(renderBlock).toContain("const renderBatchCommonLayerMultiSelect =");
+    expect(renderBlock).toContain("<StaticButtonLayerMultiSelect");
+    expect(renderBlock).toContain("className=\"batch-static-button-layer-dropdown\"");
+    expect(renderBlock).toContain("onChange={applyBatchStaticButtonTargetLayers}");
+    expect(source).toContain("type=\"checkbox\"");
+    expect(renderBlock).toContain("applyBatchCommonParamPatch(\"目标图层\"");
+    expect(renderBlock).toContain("buttonTargetLayerIds: serializeStaticButtonTargetLayerIds(selectedLayers.map((layer) => layer.id))");
+    expect(renderBlock).toContain("row.key === \"buttonTargetLayerIds\" || row.key === \"buttonTargetLayerNames\"");
+    expect(renderBlock).toContain("renderBatchCommonLayerMultiSelect(row)");
+    expect(renderBlock).toContain("row.key === \"buttonTargetProjectId\" || row.key === \"buttonTargetProjectName\"");
+    expect(renderBlock).toContain("renderBatchCommonProjectSelect(row)");
     expect(renderBlock).toContain("paramOptionsForSection(row.key)");
     expect(renderBlock).toContain("if (isColorParamKey(row.key))");
     expect(renderBlock).toContain("renderBatchCommonColorParamEditor(row)");
@@ -5221,12 +5352,14 @@ describe("graph inspector panel", () => {
     expect(paramOptionsBlock).toContain("_labelFontStyle: [\"normal\", \"italic\"]");
     expect(paramOptionsBlock).toContain("_labelTextDecoration: [\"none\", \"underline\"]");
     expect(paramOptionsBlock).toContain("_labelFontWeight: [\"400\", \"500\", \"700\", \"900\"]");
+    expect(paramOptionsBlock).toContain("routeAvoidance: [\"1\", \"0\"]");
     expect(optionLabelsBlock).toContain("_labelDisplayMode:");
     expect(optionLabelsBlock).toContain("_labelTextAnchor:");
     expect(optionLabelsBlock).toContain("_labelRotation:");
     expect(optionLabelsBlock).toContain("_labelFontStyle:");
     expect(optionLabelsBlock).toContain("_labelTextDecoration:");
     expect(optionLabelsBlock).toContain("_labelFontWeight:");
+    expect(optionLabelsBlock).toContain("routeAvoidance: { \"1\": \"参与\", \"0\": \"不参与\" }");
     expect(renderBlock).toContain("const renderBatchCommonParamTable = (");
     expect(renderBlock).toContain("aria-label={`${title}共同属性表`}");
     expect(renderBlock).toContain("renderBatchCommonParamEditor(row)");
@@ -6589,11 +6722,15 @@ describe("graph inspector panel", () => {
     const graphPanelEnd = source.indexOf("{isStaticNode(inspectorSelectedNode)", graphPanelStart);
     const graphPanelBlock = source.slice(graphPanelStart, graphPanelEnd);
     const styleActionsBlock = cssRuleBlock(styles, ".device-label-style-actions {");
-    const styleLabelBlock = cssRuleBlock(styles, ".device-label-style-actions label");
-    const styleInputBlock = cssRuleBlock(styles, ".device-label-style-actions input");
+    const styleButtonBlock = cssRuleBlock(styles, ".text-style-toggle-button {");
+    const stylePressedBlock = cssRuleBlock(styles, ".text-style-toggle-button[aria-pressed=\"true\"]");
 
     expect(source).toContain("const FONT_FAMILY_OPTIONS");
     expect(source).toContain("device-label-style-actions");
+    expect(source).toContain("function TextStyleToggleButton");
+    expect(source).toContain("<Bold aria-hidden=\"true\" />");
+    expect(source).toContain("<Italic aria-hidden=\"true\" />");
+    expect(source).toContain("<Underline aria-hidden=\"true\" />");
     expect(graphPanelBlock).toContain("_labelDisplayMode");
     expect(graphPanelBlock).toContain("_labelText");
     expect(graphPanelBlock).toContain("_labelColor");
@@ -6609,11 +6746,10 @@ describe("graph inspector panel", () => {
     expect(styleActionsBlock).toContain("display: flex");
     expect(styleActionsBlock).toContain("flex-wrap: nowrap");
     expect(styleActionsBlock).not.toContain("repeat(3");
-    expect(styleLabelBlock).toContain("min-height: var(--param-table-control-height)");
-    expect(styleLabelBlock).toContain("border: 0");
-    expect(styleLabelBlock).toContain("padding: 0 2px");
-    expect(styleInputBlock).toContain("width: 14px");
-    expect(styleInputBlock).toContain("height: 14px");
+    expect(styleButtonBlock).toContain("width: var(--param-table-control-height)");
+    expect(styleButtonBlock).toContain("border: 1px solid #cbd5e1");
+    expect(stylePressedBlock).toContain("border-color: #2563eb");
+    expect(stylePressedBlock).toContain("background: #2563eb");
   });
 
   test("sets selected device label display mode from context menu and graph inspector", async () => {
@@ -7389,6 +7525,16 @@ describe("graph inspector panel", () => {
     expect(renderBlock).not.toContain("<DeviceGlyph node={node} mode=\"geometry\"");
   });
 
+  test("renders viewport nodes from the current node map after non-spatial text edits", async () => {
+    const source = await readAppSource();
+    const viewportNodesStart = source.indexOf("const viewportNodes = useMemo(() => {");
+    const viewportNodesEnd = source.indexOf("const activeLayerRoutedEdges = useMemo", viewportNodesStart);
+    const viewportNodesBlock = source.slice(viewportNodesStart, viewportNodesEnd);
+
+    expect(viewportNodesBlock).toContain("const currentNode = visibleNodeById.get(node.id) ?? node;");
+    expect(viewportNodesBlock).toContain("viewportNodeById.set(node.id, currentNode);");
+  });
+
   test("uses level-of-detail node rendering for large zoomed-out canvases", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
@@ -7473,6 +7619,28 @@ describe("graph inspector panel", () => {
     const lodSelectionLayerEnd = styles.indexOf("}", lodSelectionLayerStart);
     const lodSelectionLayerBlock = styles.slice(lodSelectionLayerStart, lodSelectionLayerEnd);
     expect(lodSelectionLayerBlock).toContain("pointer-events: none");
+  });
+
+  test("keeps static nodes on the detailed renderer in canvas LOD mode", async () => {
+    const source = await readAppSource();
+    const detailedViewportNodesStart = source.indexOf("const detailedViewportNodes = useMemo(() => {");
+    const detailedViewportNodesEnd = source.indexOf("const useSimplifiedCanvasRoutes =", detailedViewportNodesStart);
+    const detailedViewportNodesBlock = source.slice(detailedViewportNodesStart, detailedViewportNodesEnd);
+    const lodCanvasNodeChunksStart = source.indexOf("const lodCanvasNodeChunks = useMemo(() => {");
+    const lodCanvasNodeChunksEnd = source.indexOf("const lodSelectedNodeMarkup = useMemo", lodCanvasNodeChunksStart);
+    const lodCanvasNodeChunksBlock = source.slice(lodCanvasNodeChunksStart, lodCanvasNodeChunksEnd);
+    const lodSelectedNodeMarkupStart = source.indexOf("const lodSelectedNodeMarkup = useMemo", lodCanvasNodeChunksEnd);
+    const lodSelectedNodeMarkupEnd = source.indexOf("const lodNodeFromEvent", lodSelectedNodeMarkupStart);
+    const lodSelectedNodeMarkupBlock = source.slice(lodSelectedNodeMarkupStart, lodSelectedNodeMarkupEnd);
+    const renderSimplifiedStart = source.indexOf("const renderSimplifiedNode =");
+    const renderSimplifiedEnd = source.indexOf("const imageHref = nodeImage(node);", renderSimplifiedStart);
+    const renderSimplifiedBlock = source.slice(renderSimplifiedStart, renderSimplifiedEnd);
+
+    expect(detailedViewportNodesBlock).toContain("if (isStaticNode(node))");
+    expect(detailedViewportNodesBlock).toContain("return true;");
+    expect(lodCanvasNodeChunksBlock).toContain("!isStaticNode(node)");
+    expect(lodSelectedNodeMarkupBlock).toContain("if (isStaticNode(node))");
+    expect(renderSimplifiedBlock).toContain("!nodeIsStatic");
   });
 
   test("keeps left library panels memoized across graph-only drag commits", async () => {
@@ -7798,7 +7966,13 @@ describe("graph inspector panel", () => {
     expect(source).not.toContain("layerDialogOpen");
     expect(source).not.toContain("setLayerDialogOpen(true)");
     expect(source).not.toContain("id=\"layer-dialog-title\"");
+    expect(source).toContain("const layerManagementDropdownRef = useRef<HTMLDivElement | null>(null);");
+    expect(source).toContain("const blurLayerManagementDropdownFocus = () =>");
+    expect(source).toContain("blurLayerManagementDropdownOnOutsidePointerDown");
+    expect(source).toContain("window.addEventListener(\"pointerdown\", blurLayerManagementDropdownOnOutsidePointerDown, true)");
     expect(topbarBlock).toContain("className=\"topbar-dropdown layer-management-dropdown\"");
+    expect(topbarBlock).toContain("ref={layerManagementDropdownRef}");
+    expect(topbarBlock).toContain("onPointerLeave={blurLayerManagementDropdownFocus}");
     expect(topbarBlock).toContain("className=\"topbar-dropdown-trigger layer-management-trigger\"");
     expect(topbarBlock).toContain("title={`激活图层：${activeLayer?.name ?? \"默认图层\"}`}");
     expect(topbarBlock).toContain("aria-label=\"图层管理\"");
@@ -7809,16 +7983,32 @@ describe("graph inspector panel", () => {
     expect(source).toContain("nextDefaultModelLayerName");
     expect(source).toContain("`图层${index}`");
     expect(managerBlock).toContain("onClick={addModelLayer}");
+    expect(source).toContain("const setAllModelLayersVisibility = (visible: boolean)");
+    expect(source).toContain("visible || item.id === activeLayerId");
+    expect(managerBlock).toContain("onClick={() => setAllModelLayersVisibility(true)}");
+    expect(managerBlock).toContain("onClick={() => setAllModelLayersVisibility(false)}");
+    expect(managerBlock).toContain("全部显示");
+    expect(managerBlock).toContain("全部隐藏");
+    expect(managerBlock).toContain("className=\"layer-row-control\"");
     expect(managerBlock).toContain("onChange={() => setActiveLayer(layer.id)}");
+    expect(source).toContain("const [layerNameDrafts, setLayerNameDrafts]");
+    expect(source).toContain("const commitModelLayerName = (layerId: string, draftName: string)");
+    expect(managerBlock).toContain("value={layerNameDrafts[layer.id] ?? layer.name}");
+    expect(managerBlock).toContain("onChange={(event) => setLayerNameDrafts");
+    expect(managerBlock).toContain("onBlur={(event) => commitModelLayerName(layer.id, event.currentTarget.value)}");
+    expect(managerBlock).toContain("onKeyDown={(event) => handleLayerNameInputKeyDown(event, layer)}");
+    expect(managerBlock).not.toContain("readOnly");
     expect(managerBlock).toContain("moveModelLayer(layer.id, -1)");
     expect(managerBlock).toContain("moveModelLayer(layer.id, 1)");
     expect(managerBlock).toContain("deleteModelLayer(layer.id)");
     expect(source).not.toContain("请输入新图层名称");
-    expect(source).not.toContain("重命名图层");
     expect(source).not.toContain("renderChineseParamHeader(\"layers\", \"图层\")");
     expect(source).toContain("renderChineseParamHeader(\"layerId\", \"所属图层\")");
     expect(styles).toContain(".layer-management-dropdown-menu");
     expect(styles).toContain(".layer-management-trigger");
+    expect(styles).toContain(".layer-row-control");
+    expect(styles).toContain("width: 18px;");
+    expect(styles).toContain("height: 18px;");
     expect(styles).not.toContain(".layer-dialog");
   });
 
@@ -9105,8 +9295,9 @@ describe("graph inspector panel", () => {
     const initialStateEnd = source.indexOf("const initialLayeredProject = useMemo", initialStateStart);
     const initialStateBlock = source.slice(initialStateStart, initialStateEnd);
 
-    expect(initialStateBlock).toContain("const refreshRecovery = readRefreshRecoveryProject();");
-    expect(initialStateBlock).toContain("draft: refreshRecovery ?? savedProjectDraft ?? readDraftProject()");
+    expect(initialStateBlock).toContain("const hasInitialSchemes = initialSavedSchemes.length > 0;");
+    expect(initialStateBlock).toContain("const refreshRecovery = hasInitialSchemes ? readRefreshRecoveryProject() : null;");
+    expect(initialStateBlock).toContain("draft: refreshRecovery ?? savedProjectDraft ?? localDraft");
     expect(source).toContain("mergeSavedSchemesForStartup");
     expect(source).not.toContain("function shouldPreferLocalSchemesOverBackend");
     expect(backendLoadBlock).toContain("const mergedSchemes = mergeSavedSchemesForStartup(latestSchemesRef.current, backendSchemes);");
@@ -9114,6 +9305,38 @@ describe("graph inspector panel", () => {
     expect(backendLoadBlock).toContain("persistSchemeProjectsToBackend(mergedSchemes, \"启动合并方案/模型\")");
     expect(backendLoadBlock).not.toContain("recoveredFromRefresh:");
     expect(source).not.toContain("startupRecoveredFromRefreshRef");
+  });
+
+  test("keeps the current model and canvas empty when no schemes exist", async () => {
+    const source = await readAppSource();
+    const readSchemesStart = source.indexOf("function readSavedSchemes");
+    const readSchemesEnd = source.indexOf("function normalizeStoredDraftProject", readSchemesStart);
+    const readSchemesBlock = source.slice(readSchemesStart, readSchemesEnd);
+    const initialStateStart = source.indexOf("const initialProjectSources = useMemo(() => {");
+    const initialStateEnd = source.indexOf("const initialLayeredProject = useMemo", initialStateStart);
+    const initialStateBlock = source.slice(initialStateStart, initialStateEnd);
+    const initialLayeredStart = source.indexOf("const initialLayeredProject = useMemo");
+    const initialLayeredEnd = source.indexOf("const initialIndexedNodes = useMemo", initialLayeredStart);
+    const initialLayeredBlock = source.slice(initialLayeredStart, initialLayeredEnd);
+    const backendLoadStart = source.indexOf("const loadToken = ++backendSchemesLoadTokenRef.current;");
+    const backendLoadEnd = source.indexOf("fetchBackendColorConfig()", backendLoadStart);
+    const backendLoadBlock = source.slice(backendLoadStart, backendLoadEnd);
+
+    expect(readSchemesBlock).toContain("legacyProjects.length > 0 ? [createSavedScheme(\"默认方案\", legacyProjects)] : []");
+    expect(readSchemesBlock).not.toContain("legacyProjects.length > 0 ? [createSavedScheme(\"默认方案\", legacyProjects)] : [createSavedScheme(\"默认方案\")]");
+    expect(initialStateBlock).toContain("const hasInitialSchemes = initialSavedSchemes.length > 0;");
+    expect(initialStateBlock).toContain("const refreshRecovery = hasInitialSchemes ? readRefreshRecoveryProject() : null;");
+    expect(initialStateBlock).toContain("const localDraft = hasInitialSchemes ? readDraftProject() : null;");
+    expect(initialStateBlock).toContain("draft: refreshRecovery ?? savedProjectDraft ?? localDraft");
+    expect(initialLayeredBlock).toContain("name: initialDraft?.projectName ?? \"\"");
+    expect(initialLayeredBlock).toContain("nodes: initialDraft?.nodes ?? []");
+    expect(initialLayeredBlock).toContain("edges: initialDraft?.edges ?? []");
+    expect(source).toContain("const [projectName, setProjectName] = useState(() => initialDraft?.projectName ?? \"\");");
+    expect(source).toContain("const activeModelName = projectName || activeProjectRecord?.name || (activeProjectKey ? \"未命名模型\" : \"未选择模型\");");
+    expect(backendLoadBlock).toContain("const emptySchemesPayload = serializeSchemesForStorage([]);");
+    expect(backendLoadBlock).toContain("setSchemesState([]);");
+    expect(backendLoadBlock).toContain("clearActiveProjectDisplay(\"没有可用方案，画布已清空\");");
+    expect(backendLoadBlock).not.toContain("persistSchemeProjectsToBackend(latestSchemesRef.current, \"初始化方案/模型\")");
   });
 
   test("keeps unsaved page-refresh recovery separate from manual draft saving", async () => {
@@ -9136,8 +9359,10 @@ describe("graph inspector panel", () => {
     expect(source).toContain("function writeRefreshRecoveryProject(state: RefreshRecoveryProjectState)");
     expect(source).toContain("window.sessionStorage.setItem(REFRESH_RECOVERY_STORAGE_KEY");
     expect(source).toContain("window.sessionStorage.removeItem(REFRESH_RECOVERY_STORAGE_KEY)");
-    expect(initialStateBlock).toContain("const refreshRecovery = readRefreshRecoveryProject();");
-    expect(initialStateBlock).toContain("draft: refreshRecovery ?? savedProjectDraft ?? readDraftProject()");
+    expect(initialStateBlock).toContain("const hasInitialSchemes = initialSavedSchemes.length > 0;");
+    expect(initialStateBlock).toContain("const refreshRecovery = hasInitialSchemes ? readRefreshRecoveryProject() : null;");
+    expect(initialStateBlock).toContain("const localDraft = hasInitialSchemes ? readDraftProject() : null;");
+    expect(initialStateBlock).toContain("draft: refreshRecovery ?? savedProjectDraft ?? localDraft");
     expect(initialStateBlock).toContain("readActiveProjectPointer()");
     expect(initialStateBlock).toContain("draftProjectFromSavedSchemes(initialSavedSchemes");
     expect(source).toContain("const [hasUnsavedChanges, setHasUnsavedChanges] = useState(() => initialProjectSources.recoveredFromRefresh);");
@@ -9906,6 +10131,42 @@ describe("graph inspector panel", () => {
     expect(routeHandlersBlock).not.toContain("manifest.filter((item) => (item.folderId || \"root\") === folder.id).length");
     expect(routeHandlersBlock).toContain("dynamicRouteHandlers");
     expect(serverSource).not.toContain("url.pathname ===");
+  });
+
+  test("confirms active scheme or model deletion and switches to a valid remaining model", async () => {
+    const source = await readAppSource();
+    const clearStart = source.indexOf("const clearActiveProjectDisplay =");
+    const clearEnd = source.indexOf("const loadSavedProject =", clearStart);
+    const clearBlock = source.slice(clearStart, clearEnd);
+    const deleteSchemeStart = source.indexOf("const deleteSchemeRecord =");
+    const deleteSchemeEnd = source.indexOf("const copySelectedRecord =", deleteSchemeStart);
+    const deleteSchemeBlock = source.slice(deleteSchemeStart, deleteSchemeEnd);
+    const deleteSelectedStart = source.indexOf("const deleteSelectedRecords =");
+    const deleteSelectedEnd = source.indexOf("const copyProjectRecord =", deleteSelectedStart);
+    const deleteSelectedBlock = source.slice(deleteSelectedStart, deleteSelectedEnd);
+    const deleteProjectStart = source.indexOf("const deleteProjectRecord =");
+    const deleteProjectEnd = source.indexOf("const createBlankProject =", deleteProjectStart);
+    const deleteProjectBlock = source.slice(deleteProjectStart, deleteProjectEnd);
+
+    expect(source).toContain("nextSavedProjectAfterProjectBatchDeletion");
+    expect(source).toContain("nextSavedProjectAfterProjectDeletion");
+    expect(source).toContain("nextSavedProjectAfterSchemeDeletion");
+    expect(clearBlock).toContain("setActiveProjectKey(\"\")");
+    expect(clearBlock).toContain("setActiveSchemeKey(\"\")");
+    expect(clearBlock).toContain("setGraphArrays([], [])");
+    expect(clearBlock).toContain("saveActiveProjectPointer(\"\", \"\")");
+    expect(deleteProjectBlock).toContain("当前加载模型");
+    expect(deleteProjectBlock).toContain("nextSavedProjectAfterProjectDeletion(schemes, project.id)");
+    expect(deleteProjectBlock).not.toContain("当前加载模型不能删除。");
+    expect(deleteSchemeBlock).toContain("当前加载模型所在方案");
+    expect(deleteSchemeBlock).toContain("nextSavedProjectAfterSchemeDeletion(schemes, activeSchemeKey, deletingSchemeIds)");
+    expect(deleteSchemeBlock).not.toContain("当前加载模型所在方案不能删除。");
+    expect(deleteSchemeBlock).not.toContain("createSavedScheme(\"默认方案\")");
+    expect(deleteSelectedBlock).toContain("nextSavedProjectAfterProjectBatchDeletion(schemes, activeProjectKey, selected)");
+    expect(deleteSelectedBlock).toContain("nextSavedProjectAfterSchemeDeletion(schemes, activeSchemeKey, deletingSchemeIds)");
+    expect(deleteSelectedBlock).not.toContain("当前加载模型不能删除。");
+    expect(deleteSelectedBlock).not.toContain("当前加载模型所在方案不能删除。");
+    expect(deleteSelectedBlock).not.toContain("createSavedScheme(\"默认方案\")");
   });
 
   test("stores backend scheme files by visible scheme and model names without hidden id suffixes", async () => {

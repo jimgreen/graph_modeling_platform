@@ -1387,6 +1387,10 @@ button:disabled {
   background: #e5e7eb;
 }
 
+.canvas-frame:focus {
+  outline: none;
+}
+
 .canvas-scroll-surface {
   position: relative;
   min-width: 100%;
@@ -6059,6 +6063,8 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .layer-manager-toolbar {
   display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   justify-content: flex-start;
 }
 
@@ -6111,10 +6117,27 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   white-space: nowrap;
 }
 
+.layer-row-control {
+  min-height: 32px;
+  padding: 0 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
 .layer-row input[type="checkbox"],
 .layer-row input[type="radio"] {
-  width: 14px;
-  min-height: auto;
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #2563eb;
+}
+
+.layer-row input[type="checkbox"]:disabled,
+.layer-row input[type="radio"]:disabled {
+  cursor: not-allowed;
 }
 
 .layer-row .layer-name-input {
@@ -6719,6 +6742,10 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   font-size: 12px;
 }
 
+.param-table:has(.static-button-layer-dropdown.open) {
+  overflow: visible;
+}
+
 .param-table tr {
   height: var(--param-table-row-height);
 }
@@ -7048,32 +7075,46 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .text-style-actions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  align-items: center;
   gap: 6px;
+  min-height: var(--param-table-control-height);
 }
 
-.text-style-actions label {
+.text-style-toggle-button {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 4px;
+  justify-content: center;
+  width: var(--param-table-control-height);
+  min-width: var(--param-table-control-height);
+  height: var(--param-table-control-height);
   min-height: var(--param-table-control-height);
-  border: 0;
-  border-radius: 0;
-  padding: 0 2px;
-  background: transparent;
-  color: #334155;
-  font-size: 12px;
-  font-weight: 700;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0;
+  background: #ffffff;
+  color: #475569;
+  cursor: pointer;
 }
 
-.text-style-actions input {
-  width: auto;
-  min-height: auto;
-  margin: 0;
-  border: 0;
-  box-shadow: none;
+.text-style-toggle-button svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.4;
+}
+
+.text-style-toggle-button:hover,
+.text-style-toggle-button:focus-visible {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+  outline: none;
+}
+
+.text-style-toggle-button[aria-pressed="true"] {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #ffffff;
 }
 
 .inline-checkbox-field {
@@ -7092,9 +7133,129 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   margin: 0;
 }
 
-.static-button-layer-select {
-  min-height: 92px;
-  resize: vertical;
+.static-button-layer-dropdown {
+  position: relative;
+  width: 100%;
+  min-height: var(--param-table-control-height);
+  color: #0f172a;
+}
+
+.static-button-layer-dropdown.open {
+  z-index: 40;
+}
+
+.static-button-layer-dropdown.disabled {
+  color: #94a3b8;
+}
+
+.static-button-layer-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--param-table-control-height);
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 0 8px;
+  background: #ffffff;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.static-button-layer-dropdown-trigger::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 120ms ease;
+}
+
+.static-button-layer-dropdown.open .static-button-layer-dropdown-trigger::after {
+  transform: translateY(2px) rotate(225deg);
+}
+
+.static-button-layer-dropdown-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.static-button-layer-dropdown.disabled .static-button-layer-dropdown-trigger {
+  cursor: not-allowed;
+}
+
+.param-table td:not(:focus-within) .static-button-layer-dropdown-trigger {
+  padding-left: 0;
+  padding-right: 0;
+  background: transparent;
+}
+
+.param-table td:focus-within .static-button-layer-dropdown-trigger,
+.static-button-layer-dropdown.open .static-button-layer-dropdown-trigger {
+  border-color: #bfdbfe;
+  background: #ffffff;
+}
+
+.static-button-layer-dropdown-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 95;
+  display: grid;
+  gap: 2px;
+  width: 240px;
+  max-height: 180px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.16);
+  scrollbar-width: thin;
+}
+
+.static-button-layer-option {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 0 7px;
+  border-radius: 6px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.static-button-layer-option:hover,
+.static-button-layer-option:focus-within {
+  background: #eff6ff;
+}
+
+.static-button-layer-option input[type="checkbox"] {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  min-height: 16px;
+  margin: 0;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+
+.static-button-layer-option span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .device-label-style-actions {
@@ -7102,30 +7263,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   align-items: center;
   flex-wrap: nowrap;
   gap: 6px;
-}
-
-.device-label-style-actions label {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 4px;
-  min-height: var(--param-table-control-height);
-  border: 0;
-  border-radius: 4px;
-  padding: 0 2px;
-  background: transparent;
-  color: #334155;
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.device-label-style-actions input {
-  width: 14px;
-  min-width: 14px;
-  height: 14px;
-  min-height: auto;
-  margin: 0;
 }
 
 .topology-warning-floating-panel {

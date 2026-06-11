@@ -12,6 +12,7 @@ import {
   ArrowDown,
   ArrowUp,
   Bell,
+  Bold,
   BoxSelect,
   Cable,
   ChevronsDown,
@@ -27,6 +28,7 @@ import {
   ChevronDown,
   ChevronRight,
   Group,
+  Italic,
   Scissors,
   EyeOff,
   LocateFixed,
@@ -52,6 +54,7 @@ import {
   Search,
   Trash2,
   Type,
+  Underline,
   Undo2,
   Ungroup,
   X,
@@ -140,6 +143,9 @@ import {
   flattenSavedSchemes,
   hydrateSavedSchemeRuntimeIds,
   mergeSavedSchemesForStartup,
+  nextSavedProjectAfterProjectBatchDeletion,
+  nextSavedProjectAfterProjectDeletion,
+  nextSavedProjectAfterSchemeDeletion,
   getOverlappingTerminalGroups,
   getRouteEndpointNormal,
   getRouteBlockingCandidates,
@@ -419,8 +425,11 @@ const CANVAS_KEYBOARD_BLOCKING_SELECTOR = [
   ".image-picker-backdrop",
   ".context-menu",
   ".topbar-dropdown-menu",
+  ".viewport-controls",
+  ".canvas-minimap",
   ".topology-warning-floating-panel"
 ].join(", ");
+const CANVAS_KEYBOARD_SURFACE_SELECTOR = ".diagram-canvas, .canvas-scroll-surface";
 
 function normalizeInteractionMode(value: unknown): InteractionMode {
   return value === "edit" ? "edit" : "browse";
@@ -586,6 +595,212 @@ function selectionRectCenter(rect: SelectionRect): Point {
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
+}
+
+const STATIC_BUTTON_LAYER_DROPDOWN_VIEWPORT_MARGIN = 12;
+const STATIC_BUTTON_LAYER_DROPDOWN_MAX_HEIGHT = 180;
+const STATIC_BUTTON_LAYER_DROPDOWN_MIN_HEIGHT = 96;
+type StaticButtonLayerDropdownPlacement = {
+  left: number;
+  top: number;
+  width: number;
+  maxHeight: number;
+};
+
+function staticButtonLayerDropdownPlacementForTrigger(trigger: HTMLElement): StaticButtonLayerDropdownPlacement {
+  const rect = trigger.getBoundingClientRect();
+  const viewportMargin = STATIC_BUTTON_LAYER_DROPDOWN_VIEWPORT_MARGIN;
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || rect.right;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || rect.bottom;
+  const width = Math.min(rect.width, Math.max(0, viewportWidth - viewportMargin * 2));
+  const left = clampNumber(rect.left, viewportMargin, Math.max(viewportMargin, viewportWidth - width - viewportMargin));
+  const belowTop = rect.bottom + 4;
+  const aboveBottom = rect.top - 4;
+  const availableBelow = Math.max(0, viewportHeight - belowTop - viewportMargin);
+  const availableAbove = Math.max(0, aboveBottom - viewportMargin);
+  const openAbove = availableBelow < STATIC_BUTTON_LAYER_DROPDOWN_MIN_HEIGHT && availableAbove > availableBelow;
+  const availableHeight = openAbove ? availableAbove : availableBelow;
+  const maxHeight = Math.max(40, Math.min(STATIC_BUTTON_LAYER_DROPDOWN_MAX_HEIGHT, availableHeight));
+  const top = openAbove
+    ? Math.max(viewportMargin, aboveBottom - maxHeight)
+    : Math.min(belowTop, Math.max(viewportMargin, viewportHeight - viewportMargin - maxHeight));
+  return {
+    left: Math.round(left),
+    top: Math.round(top),
+    width: Math.round(width),
+    maxHeight: Math.round(maxHeight)
+  };
+}
+
+type StaticButtonLayerMultiSelectProps = {
+  ariaLabel: string;
+  className?: string;
+  disabled: boolean;
+  layers: ModelLayer[];
+  selectedLayerIds: string[];
+  selectedLayerSummary: string;
+  selectedLayerTitle: string;
+  onChange: (layerIds: string[]) => void;
+};
+
+function StaticButtonLayerMultiSelect({
+  ariaLabel,
+  className = "",
+  disabled,
+  layers,
+  selectedLayerIds,
+  selectedLayerSummary,
+  selectedLayerTitle,
+  onChange
+}: StaticButtonLayerMultiSelectProps) {
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [placement, setPlacement] = useState<StaticButtonLayerDropdownPlacement | null>(null);
+  const selectedLayerIdSet = useMemo(() => new Set(selectedLayerIds), [selectedLayerIds]);
+
+  const updatePlacement = () => {
+    const trigger = triggerRef.current;
+    if (trigger) {
+      setPlacement(staticButtonLayerDropdownPlacementForTrigger(trigger));
+    }
+  };
+
+  useLayoutEffect(() => {
+    if (open) {
+      updatePlacement();
+    }
+  }, [open, selectedLayerSummary, layers.length]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const closeOnOutsidePointerDown = (event: globalThis.PointerEvent) => {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        (triggerRef.current?.contains(target) || menuRef.current?.contains(target))
+      ) {
+        return;
+      }
+      setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    let frameId = 0;
+    const schedulePositionUpdate = () => {
+      if (frameId !== 0) {
+        return;
+      }
+      frameId = window.requestAnimationFrame(() => {
+        frameId = 0;
+        updatePlacement();
+      });
+    };
+    window.addEventListener("pointerdown", closeOnOutsidePointerDown, true);
+    window.addEventListener("keydown", closeOnEscape, true);
+    window.addEventListener("resize", schedulePositionUpdate);
+    window.addEventListener("scroll", schedulePositionUpdate, true);
+    return () => {
+      window.removeEventListener("pointerdown", closeOnOutsidePointerDown, true);
+      window.removeEventListener("keydown", closeOnEscape, true);
+      window.removeEventListener("resize", schedulePositionUpdate);
+      window.removeEventListener("scroll", schedulePositionUpdate, true);
+      if (frameId !== 0) {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (disabled && open) {
+      setOpen(false);
+    }
+  }, [disabled, open]);
+
+  const toggleLayer = (layerId: string, checked: boolean) => {
+    const nextLayerIds = new Set(selectedLayerIds);
+    if (checked) {
+      nextLayerIds.add(layerId);
+    } else {
+      nextLayerIds.delete(layerId);
+    }
+    onChange(layers.filter((layer) => nextLayerIds.has(layer.id)).map((layer) => layer.id));
+  };
+  const menuStyle: CSSProperties | undefined = placement
+    ? {
+        left: placement.left,
+        top: placement.top,
+        width: placement.width,
+        maxHeight: placement.maxHeight
+      }
+    : undefined;
+
+  return (
+    <div className={`static-button-layer-dropdown ${open ? "open" : ""} ${className} ${disabled ? "disabled" : ""}`}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="static-button-layer-dropdown-trigger"
+        aria-label={`${ariaLabel}：${selectedLayerTitle || selectedLayerSummary}`}
+        aria-disabled={disabled}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        onClick={() => {
+          if (disabled) {
+            return;
+          }
+          updatePlacement();
+          setOpen((current) => !current);
+        }}
+      >
+        <span>{selectedLayerSummary}</span>
+      </button>
+      {open && createPortal(
+        <div ref={menuRef} className="static-button-layer-dropdown-menu" style={menuStyle} role="menu" aria-label={ariaLabel}>
+          {layers.map((layer) => (
+            <label key={layer.id} className="static-button-layer-option">
+              <input
+                type="checkbox"
+                checked={selectedLayerIdSet.has(layer.id)}
+                disabled={disabled}
+                onChange={(event) => toggleLayer(layer.id, event.target.checked)}
+              />
+              <span>{layer.name}</span>
+            </label>
+          ))}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+type TextStyleToggleButtonProps = {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+};
+
+function TextStyleToggleButton({ active, label, onClick, children }: TextStyleToggleButtonProps) {
+  return (
+    <button
+      type="button"
+      className="text-style-toggle-button"
+      aria-label={label}
+      aria-pressed={active}
+      title={label}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
 }
 
 function combineSelectionRects(rects: Array<SelectionRect | null | undefined>): SelectionRect | null {
@@ -1264,6 +1479,7 @@ type BatchCommonParamRow = {
   value: string;
   mixed: boolean;
 };
+type BatchCommonParamPatch = Record<string, string>;
 type BatchCommonMeasurementGroupKey =
   | "visible"
   | "layout"
@@ -2947,6 +3163,7 @@ const PARAM_LABELS: Record<string, string> = {
   handleColor: "端口颜色",
   handleSize: "端口大小",
   routeAvoidance: "参与连接线避障",
+  layerId: "所属图层",
   buttonEnabled: "按钮功能",
   buttonActionType: "按钮动作",
   buttonTargetSchemeId: "目标方案",
@@ -3052,7 +3269,8 @@ const PARAM_OPTIONS: Record<string, string[]> = {
   allowResizeTransform: ["1", "0"],
   buttonEnabled: ["1", "0"],
   buttonActionType: ["none", "project", "layer", "command"],
-  buttonCommand: ["none", "save", "fitCanvas", "centerSelected", "fitSelection", "runTopology", "zoomIn", "zoomOut", "resetZoom"]
+  buttonCommand: ["none", "save", "fitCanvas", "centerSelected", "fitSelection", "runTopology", "zoomIn", "zoomOut", "resetZoom"],
+  routeAvoidance: ["1", "0"]
 };
 
 const STATIC_BUTTON_ACTION_LABELS: Record<string, string> = {
@@ -3088,6 +3306,7 @@ const PARAM_OPTION_LABELS: Record<string, Record<string, string>> = {
   buttonEnabled: { "1": "启用", "0": "禁用" },
   buttonActionType: STATIC_BUTTON_ACTION_LABELS,
   buttonCommand: STATIC_BUTTON_COMMAND_LABELS,
+  routeAvoidance: { "1": "参与", "0": "不参与" },
   shadowEnabled: { "1": "启用", "0": "禁用" },
   status: { "1": "闭合", "0": "打开" },
   run_stat: { "1": "投运", "0": "停运" },
@@ -3198,6 +3417,7 @@ const canBatchEditParam = (key: string) =>
   !/_node$/i.test(key);
 
 const BATCH_GRAPH_PARAM_KEYS = new Set([
+  "layerId",
   "staticWidth",
   "staticHeight",
   "rotation",
@@ -3239,6 +3459,22 @@ const BATCH_GRAPH_PARAM_PREFIXES = [
 const isBatchGraphCommonParamKey = (key: string) =>
   BATCH_GRAPH_PARAM_KEYS.has(key) ||
   BATCH_GRAPH_PARAM_PREFIXES.some((prefix) => key.startsWith(prefix));
+
+const isRedundantBatchCommonParamRow = (row: BatchCommonParamRow, availableKeys: Set<string>) => {
+  if (row.key === "buttonTargetSchemeId" || row.key === "buttonTargetProjectName") {
+    return availableKeys.has("buttonTargetProjectId");
+  }
+  if (row.key === "buttonTargetLayerId") {
+    return availableKeys.has("buttonTargetLayerIds");
+  }
+  if (row.key === "buttonTargetLayerName") {
+    return availableKeys.has("buttonTargetLayerIds") || availableKeys.has("buttonTargetLayerId");
+  }
+  if (row.key === "buttonTargetLayerNames") {
+    return availableKeys.has("buttonTargetLayerIds");
+  }
+  return false;
+};
 
 const COLOR_PARAM_KEY_PATTERN = /color$/i;
 const HEX_COLOR_INPUT_PATTERN = /^#[0-9a-f]{6}$/i;
@@ -3389,10 +3625,10 @@ function readSavedSchemes(raw = readStoredSchemesPayload()): SavedSchemeRecord[]
     }
     const legacyProjects = readSavedProjects();
     return hydrateSavedSchemeRuntimeIds(
-      legacyProjects.length > 0 ? [createSavedScheme("默认方案", legacyProjects)] : [createSavedScheme("默认方案")]
+      legacyProjects.length > 0 ? [createSavedScheme("默认方案", legacyProjects)] : []
     );
   } catch {
-    return hydrateSavedSchemeRuntimeIds([createSavedScheme("默认方案")]);
+    return [];
   }
 }
 
@@ -3860,18 +4096,20 @@ function schemePathQueryParam(name: string, path: string[]) {
   return `${name}=${encodeURIComponent(JSON.stringify(path))}`;
 }
 
-async function downloadBackendSchemeArchive(schemePath: string[], filename: string): Promise<void> {
-  const response = await fetch(`/api/schemes/export?${schemePathQueryParam("schemePath", schemePath)}`);
-  if (!response.ok) {
-    throw new Error(await backendErrorMessage(response, "导出方案压缩包失败。"));
-  }
-  await saveBlobFile({
+async function downloadBackendSchemeArchive(schemePath: string[], filename: string): Promise<boolean> {
+  return saveLazyBlobFile({
     filename,
-    blob: await response.blob(),
     mime: "application/zip",
     description: "方案压缩包",
     extensions: [".zip"],
-    pickerId: SCHEME_EXPORT_DIRECTORY_PICKER_ID
+    pickerId: SCHEME_EXPORT_DIRECTORY_PICKER_ID,
+    loadBlob: async () => {
+      const response = await fetch(`/api/schemes/export?${schemePathQueryParam("schemePath", schemePath)}`);
+      if (!response.ok) {
+        throw new Error(await backendErrorMessage(response, "导出方案压缩包失败。"));
+      }
+      return response.blob();
+    }
   });
 }
 
@@ -5764,6 +6002,9 @@ type BlobSaveOptions = {
   extensions: string[];
   pickerId?: string;
 };
+type LazyBlobSaveOptions = Omit<BlobSaveOptions, "blob"> & {
+  loadBlob: () => Promise<Blob>;
+};
 
 const EXPORT_SAVE_PICKER_ID = "model-export";
 const SCHEME_EXPORT_DIRECTORY_PICKER_ID = "scheme-export";
@@ -5772,11 +6013,11 @@ function isPickerAbort(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
-async function saveTextFile(options: TextSaveOptions) {
+async function saveTextFile(options: TextSaveOptions): Promise<boolean> {
   const picker = (window as SaveFilePickerWindow).showSaveFilePicker;
   if (typeof picker !== "function") {
     downloadText(options.filename, options.text, options.mime);
-    return;
+    return true;
   }
   try {
     const handle = await picker.call(window, {
@@ -5796,23 +6037,37 @@ async function saveTextFile(options: TextSaveOptions) {
     const writable = await handle.createWritable();
     await writable.write(new Blob([options.text], { type: options.mime }));
     await writable.close();
+    return true;
   } catch (error) {
     if (isPickerAbort(error)) {
-      return;
+      return false;
     }
     window.alert("保存文件失败，已改为浏览器下载。");
     downloadText(options.filename, options.text, options.mime);
+    return true;
   }
 }
 
-async function saveBlobFile(options: BlobSaveOptions) {
+async function saveBlobFile(options: BlobSaveOptions): Promise<boolean> {
+  return saveLazyBlobFile({
+    filename: options.filename,
+    mime: options.mime,
+    description: options.description,
+    extensions: options.extensions,
+    pickerId: options.pickerId,
+    loadBlob: async () => options.blob
+  });
+}
+
+async function saveLazyBlobFile(options: LazyBlobSaveOptions): Promise<boolean> {
   const picker = (window as SaveFilePickerWindow).showSaveFilePicker;
   if (typeof picker !== "function") {
-    downloadBlob(options.filename, options.blob);
-    return;
+    downloadBlob(options.filename, await options.loadBlob());
+    return true;
   }
+  let handle: Awaited<ReturnType<NonNullable<SaveFilePickerWindow["showSaveFilePicker"]>>>;
   try {
-    const handle = await picker.call(window, {
+    handle = await picker.call(window, {
       id: options.pickerId ?? EXPORT_SAVE_PICKER_ID,
       suggestedName: options.filename,
       types: [
@@ -5825,15 +6080,27 @@ async function saveBlobFile(options: BlobSaveOptions) {
       ],
       excludeAcceptAllOption: false
     });
-    const writable = await handle.createWritable();
-    await writable.write(options.blob);
-    await writable.close();
   } catch (error) {
     if (isPickerAbort(error)) {
-      return;
+      return false;
+    }
+    window.alert("打开保存窗口失败，已改为浏览器下载。");
+    downloadBlob(options.filename, await options.loadBlob());
+    return true;
+  }
+  const blob = await options.loadBlob();
+  try {
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return true;
+  } catch (error) {
+    if (isPickerAbort(error)) {
+      return false;
     }
     window.alert("保存文件失败，已改为浏览器下载。");
-    downloadBlob(options.filename, options.blob);
+    downloadBlob(options.filename, blob);
+    return true;
   }
 }
 
@@ -8846,12 +9113,14 @@ export function App() {
   const initialStoredSchemesPayload = useMemo(() => readStoredSchemesPayload(), []);
   const initialSavedSchemes = useMemo(() => readSavedSchemes(initialStoredSchemesPayload), [initialStoredSchemesPayload]);
   const initialProjectSources = useMemo(() => {
-    const refreshRecovery = readRefreshRecoveryProject();
+    const hasInitialSchemes = initialSavedSchemes.length > 0;
+    const refreshRecovery = hasInitialSchemes ? readRefreshRecoveryProject() : null;
     const activeProjectPointer = readActiveProjectPointer();
     const savedProjectDraft = draftProjectFromSavedSchemes(initialSavedSchemes, activeProjectPointer);
+    const localDraft = hasInitialSchemes ? readDraftProject() : null;
     return {
       recoveredFromRefresh: Boolean(refreshRecovery),
-      draft: refreshRecovery ?? savedProjectDraft ?? readDraftProject()
+      draft: refreshRecovery ?? savedProjectDraft ?? localDraft
     };
   }, [initialSavedSchemes]);
   const initialDraft = initialProjectSources.draft;
@@ -8861,13 +9130,13 @@ export function App() {
   }), [initialDraft]);
   const initialLayeredProject = useMemo(() => normalizeProjectLayers({
     version: 1,
-    name: initialDraft?.projectName ?? "电力能源系统图上模型",
+    name: initialDraft?.projectName ?? "",
     layers: initialDraft?.layers,
     activeLayerId: initialDraft?.activeLayerId,
     groups: initialDraft?.groups,
     measurements: initialDraft?.measurements,
-    nodes: initialDraft?.nodes ?? SAMPLE_NODES,
-    edges: initialDraft?.edges ?? SAMPLE_EDGES
+    nodes: initialDraft?.nodes ?? [],
+    edges: initialDraft?.edges ?? []
   }), [initialDraft]);
   const initialIndexedNodes = useMemo(() => {
     const indexed = assignMissingDeviceIndexes(initialLayeredProject.nodes, initialDraft?.deviceIndexCounters);
@@ -8889,6 +9158,7 @@ export function App() {
   const modelImportTargetSchemeIdRef = useRef<string>("");
   const schemeImportInputRef = useRef<HTMLInputElement | null>(null);
   const schemeImportParentSchemeIdRef = useRef<string>("");
+  const layerManagementDropdownRef = useRef<HTMLDivElement | null>(null);
   const canvasFrameRef = useRef<HTMLDivElement | null>(null);
   const canvasInteractionRef = useRef(false);
   const canvasSelectionShortcutActiveRef = useRef(false);
@@ -9049,8 +9319,9 @@ export function App() {
   );
   const [layers, setLayers] = useState<ModelLayer[]>(() => initialLayeredProject.layers ?? []);
   const [activeLayerId, setActiveLayerId] = useState(() => initialLayeredProject.activeLayerId ?? DEFAULT_MODEL_LAYER_ID);
+  const [layerNameDrafts, setLayerNameDrafts] = useState<Record<string, string>>({});
   const [deviceIndexCounters, setDeviceIndexCounters] = useState<DeviceIndexCounters>(() => initialIndexedNodes.counters);
-  const [projectName, setProjectName] = useState(() => initialDraft?.projectName ?? "电力能源系统图上模型");
+  const [projectName, setProjectName] = useState(() => initialDraft?.projectName ?? "");
   const [canvasWidth, setCanvasWidth] = useState(() => initialDraft?.canvasWidth ?? DEFAULT_CANVAS_WIDTH);
   const [canvasHeight, setCanvasHeight] = useState(() => initialDraft?.canvasHeight ?? DEFAULT_CANVAS_HEIGHT);
   const [canvasSizeDraft, setCanvasSizeDraft] = useState(() => ({
@@ -9784,8 +10055,9 @@ export function App() {
     const commonKeys = Object.keys(firstNode.params)
       .filter((key) => canBatchEditParam(key))
       .filter((key) => selectedNodes.every((node) => Object.prototype.hasOwnProperty.call(node.params, key)));
-    return commonKeys
-      .map((key) => {
+    const layerValues = selectedNodes.map((node) => node.layerId ?? DEFAULT_MODEL_LAYER_ID);
+    const paramRows = commonKeys
+      .map<BatchCommonParamRow>((key) => {
         const values = selectedNodes.map((node) => node.params[key] ?? "");
         const definition = parseCustomDefinitions(firstNode.params).find((item) => item.enName === key);
         return {
@@ -9794,16 +10066,29 @@ export function App() {
           value: values[0] ?? "",
           mixed: values.some((value) => value !== values[0])
         };
-      })
+      });
+    return [
+      {
+        key: "layerId",
+        label: PARAM_LABELS.layerId ?? "所属图层",
+        value: layerValues[0] ?? DEFAULT_MODEL_LAYER_ID,
+        mixed: layerValues.some((value) => value !== layerValues[0])
+      },
+      ...paramRows
+    ]
       .sort((first, second) => first.label.localeCompare(second.label, "zh-Hans-CN") || first.key.localeCompare(second.key));
   }, [activeSelectedNodeIds, nodeById]);
-  const batchCommonGraphicParamRows = useMemo(
-    () => batchCommonParamRows.filter((row) => isBatchGraphCommonParamKey(row.key)),
+  const batchCommonParamKeySet = useMemo(
+    () => new Set(batchCommonParamRows.map((row) => row.key)),
     [batchCommonParamRows]
   );
+  const batchCommonGraphicParamRows = useMemo(
+    () => batchCommonParamRows.filter((row) => isBatchGraphCommonParamKey(row.key) && !isRedundantBatchCommonParamRow(row, batchCommonParamKeySet)),
+    [batchCommonParamKeySet, batchCommonParamRows]
+  );
   const batchCommonModelParamRows = useMemo(
-    () => batchCommonParamRows.filter((row) => !isBatchGraphCommonParamKey(row.key)),
-    [batchCommonParamRows]
+    () => batchCommonParamRows.filter((row) => !isBatchGraphCommonParamKey(row.key) && !isRedundantBatchCommonParamRow(row, batchCommonParamKeySet)),
+    [batchCommonParamKeySet, batchCommonParamRows]
   );
   const selectedNodeIdsWithMeasurementGroups = useMemo(() => new Set(
     activeSelectedNodeIds.filter((nodeId) => measurementGroupsForNode(projectMeasurements, nodeId).length > 0)
@@ -11174,7 +11459,7 @@ export function App() {
   const activeProjectRecord = projectById.get(activeProjectKey);
   const saveRequired = hasUnsavedChanges;
   const canExportCurrentModel = !saveRequired;
-  const activeModelName = projectName || activeProjectRecord?.name || "未命名模型";
+  const activeModelName = projectName || activeProjectRecord?.name || (activeProjectKey ? "未命名模型" : "未选择模型");
   const activeSchemeRecord =
     findSavedSchemeById(schemes, activeSchemeKey) ??
     findProjectRecordInSchemes(schemes, activeProjectKey)?.scheme;
@@ -13254,7 +13539,8 @@ export function App() {
     const viewportNodeById = new Map<string, ModelNode>();
     const addVisibleNode = (node: ModelNode | undefined) => {
       if (node && visibleNodeIdSet.has(node.id)) {
-        viewportNodeById.set(node.id, node);
+        const currentNode = visibleNodeById.get(node.id) ?? node;
+        viewportNodeById.set(node.id, currentNode);
       }
     };
     const addVisibleNodeId = (nodeId: string | undefined) => {
@@ -14356,11 +14642,19 @@ export function App() {
           });
           return;
         }
-        if (currentSchemesPayload) {
-          suppressNextBackendSchemeSyncRef.current = false;
+        const emptySchemesPayload = serializeSchemesForStorage([]);
+        if (localChangedBeforeBackendLoad && currentSchemesPayload !== emptySchemesPayload) {
           schemesChangedBeforeBackendLoadRef.current = false;
           lastPersistedSchemesPayloadRef.current = currentSchemesPayload;
-          persistSchemeProjectsToBackend(latestSchemesRef.current, "初始化方案/模型");
+          return;
+        }
+        suppressNextBackendSchemeSyncRef.current = true;
+        schemesChangedBeforeBackendLoadRef.current = false;
+        persistSchemesPayloadToStorageAndBackend(emptySchemesPayload);
+        setSchemesState([]);
+        setExpandedSchemeIds([]);
+        if (!saveRequiredRef.current) {
+          clearActiveProjectDisplay("没有可用方案，画布已清空");
         }
       })
       .catch(() => {
@@ -14642,6 +14936,34 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const blurLayerManagementDropdownFocus = () => {
+      const dropdown = layerManagementDropdownRef.current;
+      const activeElement = document.activeElement;
+      if (dropdown && activeElement instanceof HTMLElement && dropdown.contains(activeElement)) {
+        activeElement.blur();
+      }
+    };
+    const blurLayerManagementDropdownOnOutsidePointerDown = (event: globalThis.PointerEvent) => {
+      const dropdown = layerManagementDropdownRef.current;
+      if (!dropdown || !(event.target instanceof Node) || dropdown.contains(event.target)) {
+        return;
+      }
+      blurLayerManagementDropdownFocus();
+    };
+    const blurLayerManagementDropdownOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        blurLayerManagementDropdownFocus();
+      }
+    };
+    window.addEventListener("pointerdown", blurLayerManagementDropdownOnOutsidePointerDown, true);
+    window.addEventListener("keydown", blurLayerManagementDropdownOnEscape, true);
+    return () => {
+      window.removeEventListener("pointerdown", blurLayerManagementDropdownOnOutsidePointerDown, true);
+      window.removeEventListener("keydown", blurLayerManagementDropdownOnEscape, true);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!contextMenu || contextMenu.target !== "blank") {
       return;
     }
@@ -14797,6 +15119,14 @@ export function App() {
     setSelectedSchemeId("");
     setSelectedProjectIds([]);
     setSelectedSchemeIds([]);
+  };
+
+  const blurLayerManagementDropdownFocus = () => {
+    const dropdown = layerManagementDropdownRef.current;
+    const activeElement = document.activeElement;
+    if (dropdown && activeElement instanceof HTMLElement && dropdown.contains(activeElement)) {
+      activeElement.blur();
+    }
   };
 
   const selectSingleScheme = (schemeId: string) => {
@@ -16310,7 +16640,7 @@ export function App() {
     if (isCanvasKeyboardBlockingTarget(topElement)) {
       return "blocked";
     }
-    return topElement.closest(".diagram-canvas") ? "unblocked" : "blocked";
+    return topElement.closest(CANVAS_KEYBOARD_SURFACE_SELECTOR) ? "unblocked" : "blocked";
   };
 
   useEffect(() => {
@@ -16511,11 +16841,11 @@ export function App() {
       }
     };
     window.addEventListener("keydown", handleGlobalSaveKeyDown, { capture: true });
-    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
     window.addEventListener("keyup", handleKeyUp);
     return () => {
       window.removeEventListener("keydown", handleGlobalSaveKeyDown, { capture: true });
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown, { capture: true });
       window.removeEventListener("keyup", handleKeyUp);
     };
   }, [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, canvasBounds, canvasClipboard, canvasSelectionScope, deviceIndexCounters, displaySelectedEdgeIds, displaySelectedNodeIds, edges, hasUnsavedChanges, hoveredAttributeLibraryComponentType, isEditMode, libraryPlacement, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, staticDrawing, topologyErrors, viewBox]);
@@ -22763,38 +23093,35 @@ export function App() {
     patchGraphNodes([nextNode]);
   };
 
-  const applyBatchCommonParam = (key: string, value: string) => {
+  const applyBatchCommonParamPatch = (operationLabel: string, patchForNode: (node: ModelNode) => BatchCommonParamPatch) => {
     if (!requireEditMode("批量修改图元参数")) {
       return;
     }
-    if (!canBatchEditParam(key)) {
-      return;
-    }
     const targetNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []);
-    const normalizedLabelDisplayMode = key === "_labelDisplayMode" ? normalizeNodeLabelDisplayMode(value) : undefined;
-    const normalizedLabelVisible = normalizedLabelDisplayMode === "hidden" ? "0" : "1";
+    const changedPatchKeys = new Set<string>();
     const nextNodes = targetNodes
-      .filter((node) => Object.prototype.hasOwnProperty.call(node.params, key))
-      .filter((node) =>
-        normalizedLabelDisplayMode
-          ? node.params._labelDisplayMode !== normalizedLabelDisplayMode || node.params._labelVisible !== normalizedLabelVisible
-          : node.params[key] !== value
-      )
-      .map((node) => normalizedLabelDisplayMode
-        ? {
-            ...node,
-            params: { ...node.params, _labelDisplayMode: normalizedLabelDisplayMode, _labelVisible: normalizedLabelVisible }
-          }
-        : {
-            ...node,
-            params: { ...node.params, [key]: value }
-          }
-      );
+      .map((node) => {
+        const patch = Object.fromEntries(
+          Object.entries(patchForNode(node))
+            .filter(([patchKey]) => canBatchEditParam(patchKey))
+            .filter(([patchKey]) => Object.prototype.hasOwnProperty.call(node.params, patchKey))
+        );
+        if (Object.keys(patch).length === 0) {
+          return node;
+        }
+        if (Object.entries(patch).every(([patchKey, patchValue]) => node.params[patchKey] === patchValue)) {
+          return node;
+        }
+        Object.keys(patch).forEach((patchKey) => changedPatchKeys.add(patchKey));
+        return { ...node, params: { ...node.params, ...patch } };
+      })
+      .filter((node, index) => node !== targetNodes[index]);
     if (nextNodes.length === 0) {
       return;
     }
     const nextNodeIds = nextNodes.map((node) => node.id);
-    if (NODE_LABEL_FOOTPRINT_PARAM_KEYS.has(key)) {
+    const hasFootprintParam = Array.from(changedPatchKeys).some((key) => NODE_LABEL_FOOTPRINT_PARAM_KEYS.has(key));
+    if (hasFootprintParam) {
       const affectedEdges = edgeListForNodeIds(nextNodeIds);
       pushUndoSnapshot(true, false, undoScopeForGraphPatch(nextNodeIds, affectedEdges.map((edge) => edge.id)));
       commitNodeFootprintUpdates(nextNodes);
@@ -22802,7 +23129,21 @@ export function App() {
     }
     pushUndoSnapshot(true, false, undoScopeForGraphPatch(nextNodeIds, []));
     patchGraphNodes(nextNodes);
-    writeOperationLog(`批量修改共同属性：${PARAM_LABELS[key] ?? key}`);
+    writeOperationLog(`批量修改共同属性：${operationLabel}`);
+  };
+
+  const applyBatchCommonParam = (key: string, value: string) => {
+    if (!canBatchEditParam(key)) {
+      return;
+    }
+    const normalizedLabelDisplayMode = key === "_labelDisplayMode" ? normalizeNodeLabelDisplayMode(value) : undefined;
+    const normalizedLabelVisible = normalizedLabelDisplayMode === "hidden" ? "0" : "1";
+    applyBatchCommonParamPatch(
+      PARAM_LABELS[key] ?? key,
+      () => normalizedLabelDisplayMode
+        ? { _labelDisplayMode: normalizedLabelDisplayMode, _labelVisible: normalizedLabelVisible }
+        : { [key]: value }
+    );
   };
 
   const applyBatchCommonMeasurementGroupSetting = (key: BatchCommonMeasurementGroupKey, value: string) => {
@@ -23084,10 +23425,150 @@ export function App() {
     );
   };
 
+  const batchSavedProjectOptions = () => flattenSavedSchemes(schemes).flatMap((scheme) =>
+    scheme.projects.map((project) => ({
+      schemeId: scheme.id,
+      schemeName: scheme.name,
+      project
+    }))
+  );
+
+  const applyBatchStaticButtonTargetProject = (projectId: string) => {
+    const selected = batchSavedProjectOptions().find((item) => item.project.id === projectId);
+    applyBatchCommonParamPatch("目标模型", () => ({
+      buttonTargetProjectId: selected?.project.id ?? "",
+      buttonTargetProjectName: selected?.project.name ?? "",
+      buttonTargetSchemeId: selected?.schemeId ?? ""
+    }));
+  };
+
+  const renderBatchCommonProjectSelect = (row: BatchCommonParamRow) => {
+    const projectOptions = batchSavedProjectOptions();
+    const selectedProjectId = row.mixed
+      ? ""
+      : row.key === "buttonTargetProjectName"
+        ? projectOptions.find((item) => item.project.name === row.value)?.project.id ?? ""
+        : row.value;
+    return (
+      <select value={selectedProjectId} disabled={isBrowseMode} onChange={(event) => applyBatchStaticButtonTargetProject(event.target.value)}>
+        <option value="">{row.mixed ? "多个不同值" : "请选择目标模型"}</option>
+        {projectOptions.map(({ schemeId, schemeName, project }) => (
+          <option key={`${schemeId}:${project.id}`} value={project.id}>
+            {schemeName} / {project.name}
+          </option>
+        ))}
+      </select>
+    );
+  };
+
+  const renderBatchCommonSchemeSelect = (row: BatchCommonParamRow) => (
+    <select value={row.mixed ? "" : row.value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonParam(row.key, event.target.value)}>
+      <option value="">{row.mixed ? "多个不同值" : "请选择目标方案"}</option>
+      {flattenSavedSchemes(schemes).map((scheme) => (
+        <option key={scheme.id} value={scheme.id}>{scheme.name}</option>
+      ))}
+    </select>
+  );
+
+  const renderBatchCommonModelLayerSelect = (row: BatchCommonParamRow) => {
+    const currentLayerId = row.mixed ? "" : row.value || DEFAULT_MODEL_LAYER_ID;
+    const hasCurrentLayer = !currentLayerId || layers.some((layer) => layer.id === currentLayerId);
+    return (
+      <select value={currentLayerId} disabled={isBrowseMode} onChange={(event) => assignSelectedNodesToModelLayer(event.target.value)}>
+        <option value="">{row.mixed ? "多个不同值" : "请选择所属图层"}</option>
+        {!hasCurrentLayer && <option value={currentLayerId}>{currentLayerId}</option>}
+        {layers.map((layer) => (
+          <option key={layer.id} value={layer.id}>{layer.name}</option>
+        ))}
+      </select>
+    );
+  };
+
+  const normalizeBatchTargetLayerIds = (value: string) => {
+    const layerById = new Map(layers.map((layer) => [layer.id, layer]));
+    const layerByName = new Map(layers.map((layer) => [layer.name.trim(), layer]));
+    const layerIds: string[] = [];
+    const usedLayerIds = new Set<string>();
+    for (const token of parseStaticButtonTargetLayerValues(value)) {
+      const layer = layerById.get(token) ?? layerByName.get(token);
+      if (!layer || usedLayerIds.has(layer.id)) {
+        continue;
+      }
+      usedLayerIds.add(layer.id);
+      layerIds.push(layer.id);
+    }
+    return layerIds;
+  };
+
+  const applyBatchStaticButtonTargetLayers = (targetLayerIds: string[]) => {
+    const targetLayerIdSet = new Set(targetLayerIds);
+    const selectedLayers = layers.filter((layer) => targetLayerIdSet.has(layer.id));
+    applyBatchCommonParamPatch("目标图层", () => ({
+      buttonTargetLayerId: selectedLayers[0]?.id ?? "",
+      buttonTargetLayerName: selectedLayers[0]?.name ?? "",
+      buttonTargetLayerIds: serializeStaticButtonTargetLayerIds(selectedLayers.map((layer) => layer.id)),
+      buttonTargetLayerNames: serializeStaticButtonTargetLayerIds(selectedLayers.map((layer) => layer.name))
+    }));
+  };
+
+  const renderBatchCommonLayerSelect = (row: BatchCommonParamRow) => {
+    const selectedLayerId = row.mixed ? "" : normalizeBatchTargetLayerIds(row.value)[0] ?? "";
+    return (
+      <select value={selectedLayerId} disabled={isBrowseMode} onChange={(event) => applyBatchStaticButtonTargetLayers(event.target.value ? [event.target.value] : [])}>
+        <option value="">{row.mixed ? "多个不同值" : "请选择目标图层"}</option>
+        {layers.map((layer) => (
+          <option key={layer.id} value={layer.id}>{layer.name}</option>
+        ))}
+      </select>
+    );
+  };
+
+  const renderBatchCommonLayerMultiSelect = (row: BatchCommonParamRow) => {
+    const selectedLayerIds = row.mixed ? [] : normalizeBatchTargetLayerIds(row.value);
+    const selectedLayerIdSet = new Set(selectedLayerIds);
+    const selectedLayers = layers.filter((layer) => selectedLayerIdSet.has(layer.id));
+    const selectedLayerTitle = selectedLayers.map((layer) => layer.name).join("、");
+    const selectedLayerSummary =
+      row.mixed
+        ? "多个不同值"
+        : selectedLayers.length === 0
+          ? "请选择目标图层"
+          : selectedLayers.length <= 2
+            ? selectedLayerTitle
+            : `已选 ${selectedLayers.length} 个图层：${selectedLayers.slice(0, 2).map((layer) => layer.name).join("、")}...`;
+    return (
+      <StaticButtonLayerMultiSelect
+        ariaLabel="目标图层"
+        className="batch-static-button-layer-dropdown"
+        disabled={isBrowseMode}
+        layers={layers}
+        selectedLayerIds={selectedLayerIds}
+        selectedLayerSummary={selectedLayerSummary}
+        selectedLayerTitle={selectedLayerTitle}
+        onChange={applyBatchStaticButtonTargetLayers}
+      />
+    );
+  };
+
   const renderBatchCommonParamEditor = (row: BatchCommonParamRow) => {
     const value = row.mixed ? "" : row.value;
     if (isColorParamKey(row.key)) {
       return renderBatchCommonColorParamEditor(row);
+    }
+    if (row.key === "layerId") {
+      return renderBatchCommonModelLayerSelect(row);
+    }
+    if (row.key === "buttonTargetProjectId" || row.key === "buttonTargetProjectName") {
+      return renderBatchCommonProjectSelect(row);
+    }
+    if (row.key === "buttonTargetSchemeId") {
+      return renderBatchCommonSchemeSelect(row);
+    }
+    if (row.key === "buttonTargetLayerIds" || row.key === "buttonTargetLayerNames") {
+      return renderBatchCommonLayerMultiSelect(row);
+    }
+    if (row.key === "buttonTargetLayerId" || row.key === "buttonTargetLayerName") {
+      return renderBatchCommonLayerSelect(row);
     }
     const options = row.key === "status" ? batchStatusOptions(value) : paramOptionsForSection(row.key);
     const optionLabels = row.key === "status" ? batchStatusOptionLabels() : PARAM_OPTION_LABELS[row.key] ?? {};
@@ -23291,6 +23772,27 @@ export function App() {
         project
       }))
     );
+    const selectedTargetLayers = resolveStaticButtonTargetLayers(node, layers);
+    const selectedTargetLayerTitle = selectedTargetLayers.map((layer) => layer.name).join("、");
+    const selectedTargetLayerSummary =
+      selectedTargetLayers.length === 0
+        ? "请选择目标图层"
+        : selectedTargetLayers.length <= 2
+          ? selectedTargetLayerTitle
+          : `已选 ${selectedTargetLayers.length} 个图层：${selectedTargetLayers.slice(0, 2).map((layer) => layer.name).join("、")}...`;
+    const writeStaticButtonTargetLayers = (targetLayerIds: string[]) => {
+      const targetLayerIdSet = new Set(targetLayerIds);
+      const selectedLayers = layers.filter((layer) => targetLayerIdSet.has(layer.id));
+      writeNode({
+        params: {
+          ...node.params,
+          buttonTargetLayerId: selectedLayers[0]?.id ?? "",
+          buttonTargetLayerName: selectedLayers[0]?.name ?? "",
+          buttonTargetLayerIds: serializeStaticButtonTargetLayerIds(selectedLayers.map((layer) => layer.id)),
+          buttonTargetLayerNames: serializeStaticButtonTargetLayerIds(selectedLayers.map((layer) => layer.name))
+        }
+      });
+    };
     return (
       <>
         <tr>
@@ -23351,32 +23853,15 @@ export function App() {
               <tr>
                 {renderChineseParamHeader("buttonTargetLayerIds")}
                 <td>
-                  <select
-                    className="static-button-layer-select"
-                    multiple
-                    size={Math.min(Math.max(layers.length, 2), 6)}
-                    value={resolveStaticButtonTargetLayers(node, layers).map((layer) => layer.id)}
+                  <StaticButtonLayerMultiSelect
+                    ariaLabel="目标图层"
                     disabled={isBrowseMode}
-                    onChange={(event) => {
-                      const selectedLayerIds = Array.from(event.target.selectedOptions).map((option) => option.value);
-                      const selectedLayers = selectedLayerIds
-                        .map((layerId) => layers.find((layer) => layer.id === layerId))
-                        .filter((layer): layer is ModelLayer => Boolean(layer));
-                      writeNode({
-                        params: {
-                          ...node.params,
-                          buttonTargetLayerId: selectedLayers[0]?.id ?? "",
-                          buttonTargetLayerName: selectedLayers[0]?.name ?? "",
-                          buttonTargetLayerIds: serializeStaticButtonTargetLayerIds(selectedLayers.map((layer) => layer.id)),
-                          buttonTargetLayerNames: serializeStaticButtonTargetLayerIds(selectedLayers.map((layer) => layer.name))
-                        }
-                      });
-                    }}
-                  >
-                    {layers.map((layer) => (
-                      <option key={layer.id} value={layer.id}>{layer.name}</option>
-                    ))}
-                  </select>
+                    layers={layers}
+                    selectedLayerIds={selectedTargetLayers.map((layer) => layer.id)}
+                    selectedLayerSummary={selectedTargetLayerSummary}
+                    selectedLayerTitle={selectedTargetLayerTitle}
+                    onChange={writeStaticButtonTargetLayers}
+                  />
                 </td>
               </tr>
             )}
@@ -23599,30 +24084,27 @@ export function App() {
                     <th>文字样式</th>
                     <td>
                       <div className="text-style-actions">
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={(dialogNode.params.fontWeight || "400") !== "400"}
-                            onChange={(event) => updateNodeDoubleClickDraftParam(dialogNode.id, "fontWeight", event.target.checked ? "700" : "400")}
-                          />
-                          加粗
-                        </label>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={(dialogNode.params.fontStyle || "normal") === "italic"}
-                            onChange={(event) => updateNodeDoubleClickDraftParam(dialogNode.id, "fontStyle", event.target.checked ? "italic" : "normal")}
-                          />
-                          斜体
-                        </label>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={(dialogNode.params.textDecoration || "none") === "underline"}
-                            onChange={(event) => updateNodeDoubleClickDraftParam(dialogNode.id, "textDecoration", event.target.checked ? "underline" : "none")}
-                          />
-                          下划线
-                        </label>
+                        <TextStyleToggleButton
+                          active={(dialogNode.params.fontWeight || "400") !== "400"}
+                          label="加粗"
+                          onClick={() => updateNodeDoubleClickDraftParam(dialogNode.id, "fontWeight", (dialogNode.params.fontWeight || "400") !== "400" ? "400" : "700")}
+                        >
+                          <Bold aria-hidden="true" />
+                        </TextStyleToggleButton>
+                        <TextStyleToggleButton
+                          active={(dialogNode.params.fontStyle || "normal") === "italic"}
+                          label="斜体"
+                          onClick={() => updateNodeDoubleClickDraftParam(dialogNode.id, "fontStyle", (dialogNode.params.fontStyle || "normal") === "italic" ? "normal" : "italic")}
+                        >
+                          <Italic aria-hidden="true" />
+                        </TextStyleToggleButton>
+                        <TextStyleToggleButton
+                          active={(dialogNode.params.textDecoration || "none") === "underline"}
+                          label="下划线"
+                          onClick={() => updateNodeDoubleClickDraftParam(dialogNode.id, "textDecoration", (dialogNode.params.textDecoration || "none") === "underline" ? "none" : "underline")}
+                        >
+                          <Underline aria-hidden="true" />
+                        </TextStyleToggleButton>
                       </div>
                     </td>
                   </tr>
@@ -26126,6 +26608,26 @@ export function App() {
     );
   };
 
+  const focusCanvasKeyboardShortcutHost = (event: PointerEvent<HTMLElement>) => {
+    lastKeyboardShortcutClientPointerRef.current = { x: event.clientX, y: event.clientY };
+    if (isCanvasKeyboardBlockingTarget(event.target)) {
+      return;
+    }
+    const svg = svgRef.current;
+    if (!svg || !clientPointInsideRenderedCanvas(event.clientX, event.clientY)) {
+      return;
+    }
+    const rawPointer = screenToSvgPoint(svg, event.clientX, event.clientY);
+    const pointer = clampPointToCanvas(rawPointer);
+    lastRawCanvasPointerRef.current = rawPointer;
+    lastCanvasPointerRef.current = pointer;
+    lastCanvasClientPointerRef.current = { x: event.clientX, y: event.clientY };
+    updateMouseStatus(pointer);
+    canvasFrameRef.current?.focus({ preventScroll: true });
+    canvasInteractionRef.current = true;
+    projectListPointerInsideRef.current = false;
+  };
+
   const wheelZoomAnchorFromClient = (clientX: number, clientY: number): WheelZoomAnchor | null => {
     const frame = canvasFrameRef.current;
     const svg = svgRef.current;
@@ -26988,6 +27490,89 @@ export function App() {
     return existingScheme ? { ...record, id: existingScheme.id, name: record.name } : record;
   };
 
+  const clearActiveProjectDisplay = (logMessage: string) => {
+    clearRefreshRecoveryProject();
+    const emptyCanvasBounds = {
+      width: DEFAULT_CANVAS_WIDTH,
+      height: DEFAULT_CANVAS_HEIGHT
+    };
+    clearNodeDragMoveSchedule();
+    draggingRef.current = null;
+    hideImperativeMultiNodeDragOverlay();
+    dragUndoCapturedRef.current = false;
+    cachedRoutedEdgesRef.current = [];
+    pendingRouteEdgeIdsRef.current = new Set();
+    pendingStoredRouteEdgeIdsRef.current = new Set();
+    lastBusTerminalSyncEndpointRevisionRef.current = -1;
+    pendingBusTerminalSyncNodeIdsRef.current = new Set();
+    deferredMoveOptimizationCancelRef.current?.();
+    deferredMoveOptimizationCancelRef.current = null;
+    deferredRoutableLineRouteRepairCancelRef.current?.();
+    deferredRoutableLineRouteRepairCancelRef.current = null;
+    suppressNextGraphDirtyRef.current = true;
+    setUndoStack([]);
+    setProjectName("");
+    setCanvasWidth(emptyCanvasBounds.width);
+    setCanvasHeight(emptyCanvasBounds.height);
+    setCanvasSizeDraft({ width: String(emptyCanvasBounds.width), height: String(emptyCanvasBounds.height) });
+    setAllowAutoExpandCanvas(true);
+    setCanvasBackgroundColor(DEFAULT_CANVAS_BACKGROUND);
+    setCanvasBackgroundImage("");
+    setCanvasBackgroundImageAssetId("");
+    setBackgroundProjectId("");
+    setBackgroundLayerIds([]);
+    setPowerUnit(DEFAULT_POWER_UNIT);
+    setVoltageUnit(DEFAULT_VOLTAGE_UNIT);
+    setCurrentUnit(DEFAULT_CURRENT_UNIT);
+    setPowerBaseValue(DEFAULT_POWER_BASE_VALUE);
+    setViewBox(fitWholeCanvasViewBox(emptyCanvasBounds, canvasFrameRef.current));
+    setCanvasVisibleViewBox(canvasFullViewBoxFromBounds(emptyCanvasBounds));
+    setLayers(normalizeModelLayers());
+    setActiveLayerId(DEFAULT_MODEL_LAYER_ID);
+    setDeviceIndexCounters({});
+    setGraphArrays([], []);
+    setGroups([]);
+    setProjectMeasurements(EMPTY_PROJECT_MEASUREMENTS);
+    setTopology(EMPTY_TOPOLOGY);
+    setTopologyErrors([]);
+    setTopologyStatus(INITIAL_TOPOLOGY_STATUS);
+    setRouteRenderingReady(false);
+    setSavedRouteCrossingArcsReady(false);
+    setActiveProjectKey("");
+    setActiveSchemeKey("");
+    clearRecordSelection();
+    setCanvasSelectionScope("direct");
+    setSelectedNodeIds([]);
+    setSelectedEdgeId("");
+    setSelectedEdgeIds([]);
+    setConnectSource(null);
+    resetConnectPreviewState();
+    setRoutableLinePreview({ path: "", targetPoint: null });
+    setStaticDrawing(null);
+    setLibraryPlacement(null);
+    setRoutableLinePlacement(null);
+    setRoutableLineEndpointDrag(null);
+    setRewiring(null);
+    setTerminalPress(null);
+    setNodeLabelDrag(null);
+    setNodeLabelRotateDrag(null);
+    setManualPathDrag(null);
+    setTransformDrag(null);
+    setCanvasResizeDraft(null);
+    setDragging(null);
+    hideImperativeMultiNodeDragOverlay();
+    setMarquee(null);
+    setContextMarqueeSelection(null);
+    setModifierSelectionPress(null);
+    setCanvasPanning(null);
+    setContextMenu(null);
+    setProjectMenu(null);
+    setHasUnsavedChanges(false);
+    saveActiveProjectPointer("", "");
+    writeOperationLog(logMessage);
+    requestCanvasFrameCenter();
+  };
+
   const loadSavedProject = (project: SavedProjectRecord, schemeId = findSchemeForProject(project.id)?.id ?? "") => {
     clearRefreshRecoveryProject();
     const normalizedNodes = project.project.nodes.map(normalizeNodeTerminalsByTemplate);
@@ -27186,21 +27771,40 @@ export function App() {
       return;
     }
     const deletingSchemeIds = new Set(flattenSavedSchemes([scheme]).map((item) => item.id));
-    if (activeSchemeKey && deletingSchemeIds.has(activeSchemeKey)) {
-      window.alert("当前加载模型所在方案不能删除。");
+    const emptyDisplayMessage = flattenSavedSchemes(schemes).some((item) => !deletingSchemeIds.has(item.id))
+      ? "剩余方案没有可显示模型，画布已清空。"
+      : "所有方案已删除，画布已清空。";
+    const deletingActiveScheme = Boolean(activeSchemeKey && deletingSchemeIds.has(activeSchemeKey));
+    const confirmationMessage = deletingActiveScheme
+      ? `当前加载模型所在方案“${scheme.name}”将被删除。删除后会自动切换到相邻方案的模型；若没有可用模型，将清空画布。是否继续？`
+      : `删除方案“${scheme.name}”及其全部模型？`;
+    if (!window.confirm(confirmationMessage)) {
       return;
     }
-    if (!window.confirm(`删除方案“${scheme.name}”及其全部模型？`)) {
-      return;
-    }
+    const fallbackSelection = deletingActiveScheme
+      ? nextSavedProjectAfterSchemeDeletion(schemes, activeSchemeKey, deletingSchemeIds)
+      : null;
     const schemePath = schemePathForScheme(scheme.id);
-    setSchemes((current) => {
-      const next = deleteSavedScheme(current, scheme.id);
-      return next.length > 0 ? next : [createSavedScheme("默认方案")];
-    });
+    const nextSchemes = deleteSavedScheme(schemes, scheme.id);
+    const noSchemesAfterDeletion = nextSchemes.length === 0;
+    setSchemes(nextSchemes);
     if (schemePath.length > 0) {
       void deleteBackendSchemeRecord(schemePath)
         .catch(() => writeOperationLog(`删除后台方案失败：${scheme.name}`));
+    }
+    if (noSchemesAfterDeletion) {
+      window.alert("所有方案已删除，画布已清空。");
+      clearActiveProjectDisplay("所有方案已删除，画布已清空");
+      return;
+    }
+    if (deletingActiveScheme) {
+      if (fallbackSelection) {
+        loadSavedProject(fallbackSelection.project, fallbackSelection.scheme.id);
+      } else {
+        window.alert(emptyDisplayMessage);
+        clearActiveProjectDisplay("删除当前方案后已清空画布");
+      }
+      return;
     }
     if (selectedSchemeId && deletingSchemeIds.has(selectedSchemeId)) {
       clearRecordSelection();
@@ -27230,15 +27834,18 @@ export function App() {
       return;
     }
     if (selectedProjectIds.length > 0) {
-      if (activeProjectKey && selectedProjectIds.includes(activeProjectKey)) {
-        window.alert("当前加载模型不能删除。");
-        return;
-      }
       const names = projects.filter((project) => selectedProjectIds.includes(project.id)).map((project) => project.name);
-      if (!window.confirm(`删除选中的 ${names.length} 个模型？`)) {
+      const selected = new Set(selectedProjectIds);
+      const deletingActiveProject = Boolean(activeProjectKey && selected.has(activeProjectKey));
+      const confirmationMessage = deletingActiveProject
+        ? `选中的 ${names.length} 个模型包含当前加载模型。删除后会自动切换到同方案的相邻模型；若没有相邻模型，将清空画布。是否继续？`
+        : `删除选中的 ${names.length} 个模型？`;
+      if (!window.confirm(confirmationMessage)) {
         return;
       }
-      const selected = new Set(selectedProjectIds);
+      const fallbackSelection = deletingActiveProject
+        ? nextSavedProjectAfterProjectBatchDeletion(schemes, activeProjectKey, selected)
+        : null;
       const backendDeletes = projects
         .filter((project) => selected.has(project.id))
         .map((project) => ({ project, schemePath: schemePathForProject(project.id) }))
@@ -27247,6 +27854,15 @@ export function App() {
       for (const item of backendDeletes) {
         void deleteBackendProjectRecord(item.schemePath, item.project.name)
           .catch(() => writeOperationLog(`删除后台模型失败：${item.project.name}`));
+      }
+      if (deletingActiveProject) {
+        if (fallbackSelection) {
+          loadSavedProject(fallbackSelection.project, fallbackSelection.scheme.id);
+        } else {
+          window.alert("当前方案已无模型，画布已清空。");
+          clearActiveProjectDisplay("删除当前模型后已清空画布");
+        }
+        return;
       }
       clearRecordSelection();
       return;
@@ -27258,23 +27874,42 @@ export function App() {
           return scheme ? flattenSavedSchemes([scheme]).map((item) => item.id) : [schemeId];
         })
       );
-      if (activeSchemeKey && deletingSchemeIds.has(activeSchemeKey)) {
-        window.alert("当前加载模型所在方案不能删除。");
+      const emptyDisplayMessage = flattenSavedSchemes(schemes).some((item) => !deletingSchemeIds.has(item.id))
+        ? "剩余方案没有可显示模型，画布已清空。"
+        : "所有方案已删除，画布已清空。";
+      const deletingActiveScheme = Boolean(activeSchemeKey && deletingSchemeIds.has(activeSchemeKey));
+      const confirmationMessage = deletingActiveScheme
+        ? `选中的 ${selectedSchemeIds.length} 个方案包含当前加载模型所在方案。删除后会自动切换到相邻方案的模型；若没有可用模型，将清空画布。是否继续？`
+        : `删除选中的 ${selectedSchemeIds.length} 个方案及其全部模型？`;
+      if (!window.confirm(confirmationMessage)) {
         return;
       }
-      if (!window.confirm(`删除选中的 ${selectedSchemeIds.length} 个方案及其全部模型？`)) {
-        return;
-      }
+      const fallbackSelection = deletingActiveScheme
+        ? nextSavedProjectAfterSchemeDeletion(schemes, activeSchemeKey, deletingSchemeIds)
+        : null;
       const backendSchemeDeletes = selectedSchemeIds
         .map((schemeId) => ({ schemeId, schemePath: schemePathForScheme(schemeId), scheme: findSavedSchemeById(schemes, schemeId) }))
         .filter((item) => item.schemePath.length > 0 && item.scheme);
-      setSchemes((current) => {
-        const next = selectedSchemeIds.reduce((nextSchemes, schemeId) => deleteSavedScheme(nextSchemes, schemeId), current);
-        return next.length > 0 ? next : [createSavedScheme("默认方案")];
-      });
+      const nextSchemes = selectedSchemeIds.reduce((updatedSchemes, schemeId) => deleteSavedScheme(updatedSchemes, schemeId), schemes);
+      const noSchemesAfterDeletion = nextSchemes.length === 0;
+      setSchemes(nextSchemes);
       for (const item of backendSchemeDeletes) {
         void deleteBackendSchemeRecord(item.schemePath)
           .catch(() => writeOperationLog(`删除后台方案失败：${item.scheme?.name ?? item.schemeId}`));
+      }
+      if (noSchemesAfterDeletion) {
+        window.alert("所有方案已删除，画布已清空。");
+        clearActiveProjectDisplay("所有方案已删除，画布已清空");
+        return;
+      }
+      if (deletingActiveScheme) {
+        if (fallbackSelection) {
+          loadSavedProject(fallbackSelection.project, fallbackSelection.scheme.id);
+        } else {
+          window.alert(emptyDisplayMessage);
+          clearActiveProjectDisplay("删除当前方案后已清空画布");
+        }
+        return;
       }
       clearRecordSelection();
     }
@@ -27712,6 +28347,55 @@ export function App() {
     writeOperationLog(`新增图层：${layer.name}`);
   };
 
+  const clearLayerNameDraft = (layerId: string) => {
+    setLayerNameDrafts((current) => {
+      if (!(layerId in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[layerId];
+      return next;
+    });
+  };
+
+  const commitModelLayerName = (layerId: string, draftName: string) => {
+    const layer = layers.find((item) => item.id === layerId);
+    if (!layer) {
+      clearLayerNameDraft(layerId);
+      return;
+    }
+    const nextName = uniqueRecordName(
+      draftName.trim() || "未命名图层",
+      layers.filter((item) => item.id !== layerId).map((item) => item.name),
+      "未命名图层"
+    );
+    clearLayerNameDraft(layerId);
+    if (nextName === layer.name) {
+      return;
+    }
+    if (!requireEditMode("重命名图层")) {
+      return;
+    }
+    pushUndoSnapshot();
+    setLayers((current) => current.map((item) => item.id === layerId ? { ...item, name: nextName } : item));
+    writeOperationLog(`重命名图层：${layer.name} -> ${nextName}`);
+  };
+
+  const handleLayerNameInputKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>, layer: ModelLayer) => {
+    event.stopPropagation();
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.currentTarget.blur();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      clearLayerNameDraft(layer.id);
+      event.currentTarget.value = layer.name;
+      event.currentTarget.blur();
+    }
+  };
+
   const toggleModelLayerVisibility = (layerId: string) => {
     if (!requireEditMode("修改图层显示状态")) {
       return;
@@ -27726,6 +28410,22 @@ export function App() {
     }
     pushUndoSnapshot();
     setLayers((current) => current.map((item) => item.id === layerId ? { ...item, visible: !item.visible } : item));
+  };
+
+  const setAllModelLayersVisibility = (visible: boolean) => {
+    if (!requireEditMode(visible ? "显示全部图层" : "隐藏全部图层")) {
+      return;
+    }
+    const nextLayers = layers.map((item) => ({
+      ...item,
+      visible: visible || item.id === activeLayerId
+    }));
+    if (nextLayers.every((item, index) => item.visible === layers[index]?.visible)) {
+      return;
+    }
+    pushUndoSnapshot();
+    setLayers(nextLayers);
+    writeOperationLog(visible ? "显示全部图层" : "隐藏全部非激活图层");
   };
 
   const moveModelLayer = (layerId: string, direction: -1 | 1) => {
@@ -27792,11 +28492,13 @@ export function App() {
     <div className="layer-manager">
       <div className="layer-manager-toolbar">
         <button type="button" onClick={addModelLayer}>新增图层</button>
+        <button type="button" onClick={() => setAllModelLayersVisibility(true)}>全部显示</button>
+        <button type="button" onClick={() => setAllModelLayersVisibility(false)}>全部隐藏</button>
       </div>
       <div className="layer-list">
         {layers.map((layer, index) => (
           <div key={layer.id} className={`layer-row ${layer.id === activeLayerId ? "active" : ""}`}>
-            <label title={layer.id === activeLayerId ? "激活图层必须显示" : "显示/隐藏图层"}>
+            <label className="layer-row-control" title={layer.id === activeLayerId ? "激活图层必须显示" : "显示/隐藏图层"}>
               <input
                 type="checkbox"
                 checked={layer.visible}
@@ -27805,7 +28507,7 @@ export function App() {
               />
               显示
             </label>
-            <label>
+            <label className="layer-row-control">
               <input
                 type="radio"
                 name="active-layer"
@@ -27816,8 +28518,12 @@ export function App() {
             </label>
             <input
               className="layer-name-input"
-              value={layer.name}
-              readOnly
+              aria-label={`图层名称：${layer.name}`}
+              value={layerNameDrafts[layer.id] ?? layer.name}
+              disabled={isBrowseMode}
+              onChange={(event) => setLayerNameDrafts((current) => ({ ...current, [layer.id]: event.target.value }))}
+              onBlur={(event) => commitModelLayerName(layer.id, event.currentTarget.value)}
+              onKeyDown={(event) => handleLayerNameInputKeyDown(event, layer)}
             />
             <button type="button" onClick={() => moveModelLayer(layer.id, -1)} disabled={index === 0} title="图层上移">上移</button>
             <button type="button" onClick={() => moveModelLayer(layer.id, 1)} disabled={index === layers.length - 1} title="图层下移">下移</button>
@@ -28459,46 +29165,55 @@ export function App() {
     if (!requireEditMode("保存模型")) {
       return;
     }
+    const existingTargetProject = targetId ? projectById.get(targetId) : undefined;
+    if ((!targetId || !existingTargetProject) && schemes.length === 0) {
+      window.alert("没有可保存的方案和模型，请先新建方案或导入方案。");
+      writeOperationLog("方案为空、模型为空，无法保存");
+      return;
+    }
     deferredMoveOptimizationCancelRef.current?.();
     deferredMoveOptimizationCancelRef.current = null;
     deferredRoutableLineRouteRepairCancelRef.current?.();
     deferredRoutableLineRouteRepairCancelRef.current = null;
-    if (targetId) {
-      const existing = projectById.get(targetId);
-      if (existing) {
-        const record: SavedProjectRecord = {
-          ...existing,
-          name: projectName,
-          project: currentProject(),
-          updatedAt: new Date().toISOString()
-        };
-        let savedRecord = record;
-        const ownerScheme = findSchemeForProject(targetId);
-        const nextSchemes = ownerScheme ? upsertSavedProjectInScheme(schemes, ownerScheme.id, record) : schemes;
-        savedRecord = findProjectRecordInSchemes(nextSchemes, targetId)?.project ?? record;
-        setSchemes(nextSchemes);
-        persistSchemesPayloadToStorageAndBackend(serializeSchemesForStorage(nextSchemes));
-        const ownerSchemePath = ownerScheme ? savedSchemePathForId(nextSchemes, ownerScheme.id) ?? [ownerScheme.name] : [];
-        if (ownerSchemePath.length > 0) {
-          void saveBackendProjectRecord(ownerSchemePath, savedRecord, existing.name)
-            .catch(() => writeOperationLog(`保存模型到后台失败：${savedRecord.name}`));
-        }
-        setActiveProjectKey(targetId);
-        if (savedRecord.name !== projectName) {
-          suppressNextGraphDirtyRef.current = true;
-          setProjectName(savedRecord.name);
-        }
-        graphDirtyBaselineRef.current = currentGraphDirtyBaseline();
-        setHasUnsavedChanges(false);
-        saveActiveProjectPointer(targetId, activeSchemeKey || findSchemeForProject(targetId)?.id || selectedSchemeId);
-        clearRefreshRecoveryProject();
-        writeOperationLog(`保存模型：${savedRecord.name}`);
-        return;
+    if (targetId && existingTargetProject) {
+      const existing = existingTargetProject;
+      const record: SavedProjectRecord = {
+        ...existing,
+        name: projectName,
+        project: currentProject(),
+        updatedAt: new Date().toISOString()
+      };
+      let savedRecord = record;
+      const ownerScheme = findSchemeForProject(targetId);
+      const nextSchemes = ownerScheme ? upsertSavedProjectInScheme(schemes, ownerScheme.id, record) : schemes;
+      savedRecord = findProjectRecordInSchemes(nextSchemes, targetId)?.project ?? record;
+      setSchemes(nextSchemes);
+      persistSchemesPayloadToStorageAndBackend(serializeSchemesForStorage(nextSchemes));
+      const ownerSchemePath = ownerScheme ? savedSchemePathForId(nextSchemes, ownerScheme.id) ?? [ownerScheme.name] : [];
+      if (ownerSchemePath.length > 0) {
+        void saveBackendProjectRecord(ownerSchemePath, savedRecord, existing.name)
+          .catch(() => writeOperationLog(`保存模型到后台失败：${savedRecord.name}`));
       }
+      setActiveProjectKey(targetId);
+      if (savedRecord.name !== projectName) {
+        suppressNextGraphDirtyRef.current = true;
+        setProjectName(savedRecord.name);
+      }
+      graphDirtyBaselineRef.current = currentGraphDirtyBaseline();
+      setHasUnsavedChanges(false);
+      saveActiveProjectPointer(targetId, activeSchemeKey || findSchemeForProject(targetId)?.id || selectedSchemeId);
+      clearRefreshRecoveryProject();
+      writeOperationLog(`保存模型：${savedRecord.name}`);
+      return;
     }
-    const targetSchemeId = activeSchemeKey || selectedSchemeId || schemes[0]?.id || createSavedScheme("默认方案").id;
-    const fallbackSchemes = schemes.length > 0 ? schemes : [createSavedScheme("默认方案")];
-    const resolvedSchemeId = findSavedSchemeById(fallbackSchemes, targetSchemeId) ? targetSchemeId : fallbackSchemes[0].id;
+    const targetSchemeId = activeSchemeKey || selectedSchemeId || schemes[0]?.id || "";
+    const fallbackSchemes = schemes;
+    const resolvedSchemeId = findSavedSchemeById(fallbackSchemes, targetSchemeId) ? targetSchemeId : fallbackSchemes[0]?.id ?? "";
+    if (!resolvedSchemeId) {
+      window.alert("没有可保存的方案和模型，请先新建方案或导入方案。");
+      writeOperationLog("方案为空、模型为空，无法保存");
+      return;
+    }
     const targetScheme = findSavedSchemeById(fallbackSchemes, resolvedSchemeId);
     const recoveredRecord = findProjectRecordByNameInScheme(targetScheme, projectName);
     const projectSnapshot = currentProject();
@@ -28664,18 +29379,30 @@ export function App() {
     if (!requireEditMode("删除模型")) {
       return;
     }
-    if (project.id === activeProjectKey) {
-      window.alert("当前加载模型不能删除。");
+    const deletingActiveProject = project.id === activeProjectKey;
+    const confirmationMessage = deletingActiveProject
+      ? `当前加载模型“${project.name}”将被删除。删除后会自动切换到同方案的相邻模型；若没有相邻模型，将清空画布。是否继续？`
+      : `删除模型“${project.name}”？`;
+    if (!window.confirm(confirmationMessage)) {
       return;
     }
-    if (!window.confirm(`删除模型“${project.name}”？`)) {
-      return;
-    }
+    const fallbackSelection = deletingActiveProject
+      ? nextSavedProjectAfterProjectDeletion(schemes, project.id)
+      : null;
     const ownerPath = schemePathForProject(project.id);
     setSchemes((current) => deleteSavedProjectsFromSchemes(current, new Set([project.id])));
     if (ownerPath.length > 0) {
       void deleteBackendProjectRecord(ownerPath, project.name)
         .catch(() => writeOperationLog(`删除后台模型失败：${project.name}`));
+    }
+    if (deletingActiveProject) {
+      if (fallbackSelection) {
+        loadSavedProject(fallbackSelection.project, fallbackSelection.scheme.id);
+      } else {
+        window.alert("当前方案已无模型，画布已清空。");
+        clearActiveProjectDisplay("删除当前模型后已清空画布");
+      }
+      return;
     }
     if (selectedProjectId === project.id) {
       clearRecordSelection();
@@ -29973,7 +30700,10 @@ export function App() {
       return;
     }
     schemeImportParentSchemeIdRef.current = parentSchemeId;
-    schemeImportInputRef.current?.click();
+    if (schemeImportInputRef.current) {
+      schemeImportInputRef.current.value = "";
+      schemeImportInputRef.current.click();
+    }
   };
 
   const mergeImportedSchemeIntoExisting = (existingScheme: SavedSchemeRecord, importedScheme: SavedSchemeRecord): SavedSchemeRecord => {
@@ -30040,6 +30770,8 @@ export function App() {
     }
     const file = input.files?.[0];
     if (!file) {
+      schemeImportParentSchemeIdRef.current = "";
+      input.value = "";
       return;
     }
     try {
@@ -30266,7 +30998,10 @@ export function App() {
   const exportSchemeRecord = async (scheme: SavedSchemeRecord) => {
     try {
       const schemePath = schemePathForRecord(scheme);
-      await downloadBackendSchemeArchive(schemePath, `${safeFilePart(scheme.name)}.zip`);
+      const saved = await downloadBackendSchemeArchive(schemePath, `${safeFilePart(scheme.name)}.zip`);
+      if (!saved) {
+        return;
+      }
       writeOperationLog(`导出方案：${scheme.name}`);
       window.alert(`已导出方案“${scheme.name}”，共 ${flattenSavedProjects([scheme]).length} 个模型。`);
     } catch (error) {
@@ -33627,6 +34362,9 @@ export function App() {
       if (isRoutableLineDeviceKind(node.kind)) {
         return true;
       }
+      if (isStaticNode(node)) {
+        return true;
+      }
       if (!selectedNodeIdSet.has(node.id)) {
         return false;
       }
@@ -33727,6 +34465,7 @@ export function App() {
     }
     const items = viewportNodes.filter((node) =>
       !groupTransformPreviewNodeIdSet.has(node.id) &&
+      !isStaticNode(node) &&
       !isRoutableLineDeviceKind(node.kind)
     );
     return stableSvgMarkupChunks(items, lodCanvasNodeChunkCacheRef.current, {
@@ -33809,6 +34548,9 @@ export function App() {
       }
       const node = visibleNodeById.get(nodeId);
       if (!node) {
+        return [];
+      }
+      if (isStaticNode(node)) {
         return [];
       }
       if (nodeUsesUprightStaticSelectionOutline(node)) {
@@ -35055,7 +35797,11 @@ export function App() {
             <span>当前模型</span>
             <strong>{activeModelPathName}</strong>
           </div>
-          <div className="topbar-dropdown layer-management-dropdown">
+          <div
+            ref={layerManagementDropdownRef}
+            className="topbar-dropdown layer-management-dropdown"
+            onPointerLeave={blurLayerManagementDropdownFocus}
+          >
             <button
               type="button"
               className="topbar-dropdown-trigger layer-management-trigger"
@@ -35262,6 +36008,9 @@ export function App() {
         <section
           className="canvas-frame"
           ref={canvasFrameRef}
+          tabIndex={-1}
+          onPointerEnter={focusCanvasKeyboardShortcutHost}
+          onPointerMove={focusCanvasKeyboardShortcutHost}
           style={{
             overflowX: canvasHorizontalScrollbarsActive ? "auto" : "hidden",
             overflowY: canvasVerticalScrollbarsActive ? "auto" : "hidden"
@@ -35998,6 +36747,7 @@ export function App() {
                 : node.position;
               const renderSimplifiedNode =
                 useSimplifiedCanvasNodes &&
+                !nodeIsStatic &&
                 (!selected || (useSimplifiedSelectedCanvasNodes && !focused)) &&
                 !isConnectSource &&
                 !transformDrag &&
@@ -37540,30 +38290,27 @@ export function App() {
                           <th>标识样式</th>
                           <td>
                             <div className="device-label-style-actions">
-                              <label>
-                                <input
-                                  type="checkbox"
-                                  checked={(inspectorSelectedNode.params._labelFontWeight || "500") !== "400"}
-                                  onChange={(event) => updateParam("_labelFontWeight", event.target.checked ? "700" : "400")}
-                                />
-                                加粗
-                              </label>
-                              <label>
-                                <input
-                                  type="checkbox"
-                                  checked={(inspectorSelectedNode.params._labelFontStyle || "normal") === "italic"}
-                                  onChange={(event) => updateParam("_labelFontStyle", event.target.checked ? "italic" : "normal")}
-                                />
-                                斜体
-                              </label>
-                              <label>
-                                <input
-                                  type="checkbox"
-                                  checked={(inspectorSelectedNode.params._labelTextDecoration || "none") === "underline"}
-                                  onChange={(event) => updateParam("_labelTextDecoration", event.target.checked ? "underline" : "none")}
-                                />
-                                下划线
-                              </label>
+                              <TextStyleToggleButton
+                                active={(inspectorSelectedNode.params._labelFontWeight || "500") !== "400"}
+                                label="标识加粗"
+                                onClick={() => updateParam("_labelFontWeight", (inspectorSelectedNode.params._labelFontWeight || "500") !== "400" ? "400" : "700")}
+                              >
+                                <Bold aria-hidden="true" />
+                              </TextStyleToggleButton>
+                              <TextStyleToggleButton
+                                active={(inspectorSelectedNode.params._labelFontStyle || "normal") === "italic"}
+                                label="标识斜体"
+                                onClick={() => updateParam("_labelFontStyle", (inspectorSelectedNode.params._labelFontStyle || "normal") === "italic" ? "normal" : "italic")}
+                              >
+                                <Italic aria-hidden="true" />
+                              </TextStyleToggleButton>
+                              <TextStyleToggleButton
+                                active={(inspectorSelectedNode.params._labelTextDecoration || "none") === "underline"}
+                                label="标识下划线"
+                                onClick={() => updateParam("_labelTextDecoration", (inspectorSelectedNode.params._labelTextDecoration || "none") === "underline" ? "none" : "underline")}
+                              >
+                                <Underline aria-hidden="true" />
+                              </TextStyleToggleButton>
                             </div>
                           </td>
                         </tr>
@@ -37668,18 +38415,27 @@ export function App() {
                           <th>文字样式</th>
                           <td>
                             <div className="text-style-actions">
-                              <label>
-                                <input type="checkbox" checked={(inspectorSelectedNode.params.fontWeight || "400") !== "400"} onChange={(event) => updateParam("fontWeight", event.target.checked ? "700" : "400")} />
-                                加粗
-                              </label>
-                              <label>
-                                <input type="checkbox" checked={(inspectorSelectedNode.params.fontStyle || "normal") === "italic"} onChange={(event) => updateParam("fontStyle", event.target.checked ? "italic" : "normal")} />
-                                斜体
-                              </label>
-                              <label>
-                                <input type="checkbox" checked={(inspectorSelectedNode.params.textDecoration || "none") === "underline"} onChange={(event) => updateParam("textDecoration", event.target.checked ? "underline" : "none")} />
-                                下划线
-                              </label>
+                              <TextStyleToggleButton
+                                active={(inspectorSelectedNode.params.fontWeight || "400") !== "400"}
+                                label="加粗"
+                                onClick={() => updateParam("fontWeight", (inspectorSelectedNode.params.fontWeight || "400") !== "400" ? "400" : "700")}
+                              >
+                                <Bold aria-hidden="true" />
+                              </TextStyleToggleButton>
+                              <TextStyleToggleButton
+                                active={(inspectorSelectedNode.params.fontStyle || "normal") === "italic"}
+                                label="斜体"
+                                onClick={() => updateParam("fontStyle", (inspectorSelectedNode.params.fontStyle || "normal") === "italic" ? "normal" : "italic")}
+                              >
+                                <Italic aria-hidden="true" />
+                              </TextStyleToggleButton>
+                              <TextStyleToggleButton
+                                active={(inspectorSelectedNode.params.textDecoration || "none") === "underline"}
+                                label="下划线"
+                                onClick={() => updateParam("textDecoration", (inspectorSelectedNode.params.textDecoration || "none") === "underline" ? "none" : "underline")}
+                              >
+                                <Underline aria-hidden="true" />
+                              </TextStyleToggleButton>
                             </div>
                           </td>
                         </tr>
