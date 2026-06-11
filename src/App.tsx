@@ -23962,6 +23962,65 @@ export function App() {
     })
   );
 
+  const renderNodeDoubleClickTextParamTable = (dialogNode: ModelNode) => (
+    <table className="param-table node-double-click-param-table">
+      <tbody>
+        <tr>
+          {renderChineseParamHeader("text")}
+          <td><textarea rows={7} value={dialogNode.params.text || ""} onChange={(event) => updateNodeDoubleClickDraftParam(dialogNode.id, "text", event.target.value)} autoFocus /></td>
+        </tr>
+        <tr>
+          {renderChineseParamHeader("fontFamily")}
+          <td>{renderNodeDoubleClickParamEditor(dialogNode, "fontFamily", dialogNode.params.fontFamily || "Arial", false)}</td>
+        </tr>
+        <tr>
+          {renderChineseParamHeader("fontSize")}
+          <td><input type="number" min="8" max="160" value={dialogNode.params.fontSize || "24"} onChange={(event) => updateNodeDoubleClickDraftParam(dialogNode.id, "fontSize", event.target.value)} /></td>
+        </tr>
+        <tr>
+          {renderChineseParamHeader("textColor")}
+          <td>{renderNodeDoubleClickColorEditor(dialogNode, "textColor", dialogNode.params.textColor || "#111827", "#111827")}</td>
+        </tr>
+        <tr>
+          <th>文字样式</th>
+          <td>
+            <div className="text-style-actions">
+              <TextStyleToggleButton
+                active={(dialogNode.params.fontWeight || "400") !== "400"}
+                label="加粗"
+                onClick={() => updateNodeDoubleClickDraftParam(dialogNode.id, "fontWeight", (dialogNode.params.fontWeight || "400") !== "400" ? "400" : "700")}
+              >
+                <Bold aria-hidden="true" />
+              </TextStyleToggleButton>
+              <TextStyleToggleButton
+                active={(dialogNode.params.fontStyle || "normal") === "italic"}
+                label="斜体"
+                onClick={() => updateNodeDoubleClickDraftParam(dialogNode.id, "fontStyle", (dialogNode.params.fontStyle || "normal") === "italic" ? "normal" : "italic")}
+              >
+                <Italic aria-hidden="true" />
+              </TextStyleToggleButton>
+              <TextStyleToggleButton
+                active={(dialogNode.params.textDecoration || "none") === "underline"}
+                label="下划线"
+                onClick={() => updateNodeDoubleClickDraftParam(dialogNode.id, "textDecoration", (dialogNode.params.textDecoration || "none") === "underline" ? "none" : "underline")}
+              >
+                <Underline aria-hidden="true" />
+              </TextStyleToggleButton>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          {renderChineseParamHeader("textAlign")}
+          <td>{renderNodeDoubleClickParamEditor(dialogNode, "textAlign", dialogNode.params.textAlign || "center", false)}</td>
+        </tr>
+        <tr>
+          {renderChineseParamHeader("verticalAlign")}
+          <td>{renderNodeDoubleClickParamEditor(dialogNode, "verticalAlign", dialogNode.params.verticalAlign || "middle", false)}</td>
+        </tr>
+      </tbody>
+    </table>
+  );
+
   const rememberNodeDoubleClickDialogGuard = (dialog: NonNullable<NodeDoubleClickDialogState>) => {
     const now = typeof performance === "undefined" ? Date.now() : performance.now();
     nodeDoubleClickOpenGuardRef.current = { key: `${dialog.nodeId}:${dialog.kind}`, time: now };
@@ -24053,71 +24112,27 @@ export function App() {
           </div>
           <div className="node-double-click-dialog-body">
             {nodeDoubleClickDialog.kind === "interaction" ? (
-              <table className="param-table node-double-click-param-table">
-                <tbody>
-                  {renderStaticButtonActionEditor(dialogNode, {
-                    updateParam: (key, value) => updateNodeDoubleClickDraftParam(dialogNode.id, key, value),
-                    updateNode: (patch) => updateNodeDoubleClickDraftPatch(dialogNode.id, patch)
-                  })}
-                </tbody>
-              </table>
+              <>
+                <div className="node-double-click-dialog-section">
+                  <h3>修改交互操作</h3>
+                  <table className="param-table node-double-click-param-table">
+                    <tbody>
+                      {renderStaticButtonActionEditor(dialogNode, {
+                        updateParam: (key, value) => updateNodeDoubleClickDraftParam(dialogNode.id, key, value),
+                        updateNode: (patch) => updateNodeDoubleClickDraftPatch(dialogNode.id, patch)
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {(nodeHasTextDoubleClickEditor(dialogNode) || isStaticButtonCapableKind(dialogNode.kind)) && (
+                  <div className="node-double-click-dialog-section">
+                    <h3>修改文本</h3>
+                    {renderNodeDoubleClickTextParamTable(dialogNode)}
+                  </div>
+                )}
+              </>
             ) : nodeDoubleClickDialog.kind === "text" ? (
-              <table className="param-table node-double-click-param-table">
-                <tbody>
-                  <tr>
-                    {renderChineseParamHeader("text")}
-                    <td><textarea rows={7} value={dialogNode.params.text || ""} onChange={(event) => updateNodeDoubleClickDraftParam(dialogNode.id, "text", event.target.value)} autoFocus /></td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("fontFamily")}
-                    <td>{renderNodeDoubleClickParamEditor(dialogNode, "fontFamily", dialogNode.params.fontFamily || "Arial", false)}</td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("fontSize")}
-                    <td><input type="number" min="8" max="160" value={dialogNode.params.fontSize || "24"} onChange={(event) => updateNodeDoubleClickDraftParam(dialogNode.id, "fontSize", event.target.value)} /></td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("textColor")}
-                    <td>{renderNodeDoubleClickColorEditor(dialogNode, "textColor", dialogNode.params.textColor || "#111827", "#111827")}</td>
-                  </tr>
-                  <tr>
-                    <th>文字样式</th>
-                    <td>
-                      <div className="text-style-actions">
-                        <TextStyleToggleButton
-                          active={(dialogNode.params.fontWeight || "400") !== "400"}
-                          label="加粗"
-                          onClick={() => updateNodeDoubleClickDraftParam(dialogNode.id, "fontWeight", (dialogNode.params.fontWeight || "400") !== "400" ? "400" : "700")}
-                        >
-                          <Bold aria-hidden="true" />
-                        </TextStyleToggleButton>
-                        <TextStyleToggleButton
-                          active={(dialogNode.params.fontStyle || "normal") === "italic"}
-                          label="斜体"
-                          onClick={() => updateNodeDoubleClickDraftParam(dialogNode.id, "fontStyle", (dialogNode.params.fontStyle || "normal") === "italic" ? "normal" : "italic")}
-                        >
-                          <Italic aria-hidden="true" />
-                        </TextStyleToggleButton>
-                        <TextStyleToggleButton
-                          active={(dialogNode.params.textDecoration || "none") === "underline"}
-                          label="下划线"
-                          onClick={() => updateNodeDoubleClickDraftParam(dialogNode.id, "textDecoration", (dialogNode.params.textDecoration || "none") === "underline" ? "none" : "underline")}
-                        >
-                          <Underline aria-hidden="true" />
-                        </TextStyleToggleButton>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("textAlign")}
-                    <td>{renderNodeDoubleClickParamEditor(dialogNode, "textAlign", dialogNode.params.textAlign || "center", false)}</td>
-                  </tr>
-                  <tr>
-                    {renderChineseParamHeader("verticalAlign")}
-                    <td>{renderNodeDoubleClickParamEditor(dialogNode, "verticalAlign", dialogNode.params.verticalAlign || "middle", false)}</td>
-                  </tr>
-                </tbody>
-              </table>
+              renderNodeDoubleClickTextParamTable(dialogNode)
             ) : activeContainerView ? (
               <>
                 <div className="container-param-tabs node-double-click-container-tabs" role="tablist" aria-label="容器设备参数切换">
@@ -35800,7 +35815,6 @@ export function App() {
           <div
             ref={layerManagementDropdownRef}
             className="topbar-dropdown layer-management-dropdown"
-            onPointerLeave={blurLayerManagementDropdownFocus}
           >
             <button
               type="button"

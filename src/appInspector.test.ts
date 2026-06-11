@@ -4371,6 +4371,24 @@ describe("graph inspector panel", () => {
     expect(dialogBlock).not.toContain("updateParam(\"text\"");
   });
 
+  test("includes text editing inside the double-click interaction dialog for button graphics", async () => {
+    const source = await readAppSource();
+    const dialogStart = source.indexOf("const renderNodeDoubleClickDialog =");
+    const dialogEnd = source.indexOf("const contextMenuStyle", dialogStart);
+    const dialogBlock = source.slice(dialogStart, dialogEnd);
+    const interactionStart = dialogBlock.indexOf("nodeDoubleClickDialog.kind === \"interaction\"");
+    const interactionEnd = dialogBlock.indexOf(") : nodeDoubleClickDialog.kind === \"text\"", interactionStart);
+    const interactionBlock = dialogBlock.slice(interactionStart, interactionEnd);
+    const textStart = dialogBlock.indexOf("nodeDoubleClickDialog.kind === \"text\"");
+    const textEnd = dialogBlock.indexOf(") : activeContainerView", textStart);
+    const textBlock = dialogBlock.slice(textStart, textEnd);
+
+    expect(source).toContain("const renderNodeDoubleClickTextParamTable = (dialogNode: ModelNode)");
+    expect(interactionBlock).toContain("<h3>修改文本</h3>");
+    expect(interactionBlock).toContain("renderNodeDoubleClickTextParamTable(dialogNode)");
+    expect(textBlock).toContain("renderNodeDoubleClickTextParamTable(dialogNode)");
+  });
+
   test("fits the whole canvas once when the page is first opened", async () => {
     const source = await readAppSource();
     const initialFitStart = source.indexOf("const initialCanvasFitAppliedRef");
@@ -7972,7 +7990,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("window.addEventListener(\"pointerdown\", blurLayerManagementDropdownOnOutsidePointerDown, true)");
     expect(topbarBlock).toContain("className=\"topbar-dropdown layer-management-dropdown\"");
     expect(topbarBlock).toContain("ref={layerManagementDropdownRef}");
-    expect(topbarBlock).toContain("onPointerLeave={blurLayerManagementDropdownFocus}");
+    expect(topbarBlock).not.toContain("onPointerLeave={blurLayerManagementDropdownFocus}");
     expect(topbarBlock).toContain("className=\"topbar-dropdown-trigger layer-management-trigger\"");
     expect(topbarBlock).toContain("title={`激活图层：${activeLayer?.name ?? \"默认图层\"}`}");
     expect(topbarBlock).toContain("aria-label=\"图层管理\"");
