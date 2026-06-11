@@ -8406,6 +8406,42 @@ describe("graph inspector panel", () => {
     expect(endpointHoverBlock).not.toContain("stroke-width:");
   });
 
+  test("supports manual bend insertion and segment dragging for routable line-like devices", async () => {
+    const source = await readAppSource();
+    const model = await readModelSource();
+    const styles = await readStyles();
+    const importBlockEnd = source.indexOf("} from \"./model\";");
+    const importBlock = source.slice(0, importBlockEnd);
+    const finishStart = source.indexOf("const finishManualPathDrag =");
+    const finishEnd = source.indexOf("const tidySelectedEdgeRoute =", finishStart);
+    const finishBlock = source.slice(finishStart, finishEnd);
+    const pointerStart = source.indexOf("if (manualPathDrag && svgRef.current)");
+    const pointerEnd = source.indexOf("if (rewiring && svgRef.current)", pointerStart);
+    const pointerBlock = source.slice(pointerStart, pointerEnd);
+    const renderStart = source.indexOf("{selectedRoutableLineManualPathRoute &&");
+    const renderEnd = source.indexOf("{selectedRoutedEdge &&", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+
+    expect(model).toContain("export function insertRoutableLineDeviceBend");
+    expect(model).toContain("export function moveRoutableLineDeviceSegment");
+    expect(importBlock).toContain("insertRoutableLineDeviceBend");
+    expect(importBlock).toContain("moveRoutableLineDeviceSegment");
+    expect(importBlock).toContain("setRoutableLineDeviceCanvasPoints");
+    expect(source).toContain("const startRoutableLineSegmentDrag =");
+    expect(source).toContain("const startRoutableLinePointDrag =");
+    expect(source).toContain("const addRoutableLineBendFromContextMenu =");
+    expect(source).toContain("contextMenuForRoutableLine");
+    expect(source).toContain("routePoints: isRoutableLineDeviceKind(node.kind) ? routableLineDeviceCanvasPoints(node) : undefined");
+    expect(source).toContain("routePoints: nodeIsRoutableLineDevice ? routableLineDeviceCanvasPoints(node) : undefined");
+    expect(finishBlock).toContain("manualPathDrag.nodeId");
+    expect(finishBlock).toContain("setRoutableLineDeviceCanvasPoints");
+    expect(pointerBlock).toContain("moveRoutableLineDeviceSegment");
+    expect(renderBlock).toContain("routable-line-manual-path-layer");
+    expect(renderBlock).toContain("manual-segment-handle");
+    expect(renderBlock).toContain("manual-bend-handle user-manual-bend");
+    expect(styles).toContain(".routable-line-manual-path-layer");
+  });
+
   test("draws box-like static symbols by rectangle and edits their real width and height", async () => {
     const model = await readModelSource();
     const source = await readAppSource();

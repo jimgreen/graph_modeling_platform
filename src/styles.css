@@ -2080,6 +2080,19 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   pointer-events: all;
 }
 
+.routable-line-manual-path-layer {
+  pointer-events: visiblePainted;
+}
+
+.routable-line-manual-path-preview {
+  fill: none;
+  stroke: rgba(245, 158, 11, 0.45);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
 .routable-line-endpoint-handle {
   fill: #ffffff;
   stroke: var(--connection-color, #2563eb);

@@ -5304,6 +5304,60 @@ export function routableLineDeviceCanvasPoints(node: ModelNode, position = node.
   return routableLineDeviceLocalPoints(node).map((point) => nodeLocalPointToCanvasPoint(node, point, position));
 }
 
+export function setRoutableLineDeviceCanvasPoints(node: ModelNode, canvasPoints: readonly Point[]): ModelNode {
+  if (!isRoutableLineDeviceKind(node.kind)) {
+    return node;
+  }
+  const routePoints = orthogonalizeRouteKeepingCollinear(normalizeRoutableLineDevicePoints(canvasPoints));
+  const localPoints = normalizeRoutableLineDevicePoints(
+    routePoints.map((point) => canvasPointToNodeLocalPoint(node, point))
+  );
+  if (localPoints.length < 2) {
+    return ensureRoutableLineDevicePathParam(node);
+  }
+  const currentLocalPoints = routableLineDeviceLocalPoints(node);
+  if (samePointList(currentLocalPoints, localPoints)) {
+    return ensureRoutableLineDevicePathParam(node);
+  }
+  return {
+    ...node,
+    params: {
+      ...node.params,
+      [ROUTABLE_LINE_POINTS_PARAM]: serializeRoutableLineDevicePoints(localPoints)
+    }
+  };
+}
+
+export function insertRoutableLineDeviceBend(
+  node: ModelNode,
+  segmentIndex: number,
+  pointerPoint: Point,
+  bounds?: CanvasBounds
+): ModelNode {
+  if (!isRoutableLineDeviceKind(node.kind)) {
+    return node;
+  }
+  const routePoints = routableLineDeviceCanvasPoints(node);
+  const nextPoints = insertOrthogonalRouteBend(routePoints, segmentIndex, pointerPoint, bounds);
+  return setRoutableLineDeviceCanvasPoints(node, nextPoints);
+}
+
+export function moveRoutableLineDeviceSegment(
+  node: ModelNode,
+  segmentIndex: number,
+  orientation: "horizontal" | "vertical",
+  pointerPoint: Point,
+  bounds?: CanvasBounds
+): ModelNode {
+  if (!isRoutableLineDeviceKind(node.kind)) {
+    return node;
+  }
+  const routePoints = routableLineDeviceCanvasPoints(node);
+  const movedPoints = moveOrthogonalRouteSegment(routePoints, segmentIndex, orientation, pointerPoint, bounds);
+  const nextPoints = orthogonalizeRouteKeepingCollinear(movedPoints);
+  return setRoutableLineDeviceCanvasPoints(node, nextPoints);
+}
+
 function routableLineEndpointAnchorForLocalPoint(local: Point, size: Pick<ModelNode["size"], "width" | "height">): Point {
   const safeWidth = Math.max(1, size.width);
   const safeHeight = Math.max(1, size.height);

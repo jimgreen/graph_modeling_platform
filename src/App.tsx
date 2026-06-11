@@ -182,6 +182,7 @@ import {
   isStaticNode,
   inferESection,
   insertOrthogonalRouteBend,
+  insertRoutableLineDeviceBend,
   insertChildSavedScheme,
   keyboardMoveStepForViewBox,
   lockProjectEdgeTerminals,
@@ -206,6 +207,7 @@ import {
   routableLineDeviceEndpointRefForNode,
   routableLineDeviceEndpointRefs,
   setRoutableLineDeviceEndpoints,
+  setRoutableLineDeviceCanvasPoints,
   syncRoutableLineDeviceEndpointsToRefs,
   synchronizeBusTerminalsWithEdges,
   validateTopology,
@@ -262,6 +264,7 @@ import {
   savedProjectPathOptions,
   savedSchemeSiblingNames,
   moveOrthogonalRouteSegment,
+  moveRoutableLineDeviceSegment,
   terminalRenderLocalPoint,
   terminalStubSegment,
   terminalStubStrokeWidth,
@@ -1040,7 +1043,8 @@ const NODE_LABEL_FOOTPRINT_PARAM_KEYS = new Set([
 
 type ManualPathDrag =
   | {
-      edgeId: string;
+      edgeId?: string;
+      nodeId?: string;
       segmentIndex: number;
       orientation: "horizontal" | "vertical";
       startPoint: Point;
@@ -1050,7 +1054,8 @@ type ManualPathDrag =
       historyCaptured?: boolean;
     }
   | {
-      edgeId: string;
+      edgeId?: string;
+      nodeId?: string;
       pointIndex: number;
       startPoint: Point;
       originalManualPoints: Point[];
@@ -13842,10 +13847,27 @@ export function App() {
     }
     return {
       edgeId: manualPathDrag.edgeId,
+      nodeId: manualPathDrag.nodeId,
       points: manualPathDrag.previewRoutePoints,
       path: pointsToPreviewPath(manualPathDrag.previewRoutePoints)
     };
   }, [manualPathDrag]);
+  const selectedRoutableLineManualPathRoute = useMemo(() => {
+    if (!isEditMode || selectedNodeCount !== 1 || !selectedNode || !activeLayerNodeIdSet.has(selectedNode.id) || !isRoutableLineDeviceKind(selectedNode.kind)) {
+      return null;
+    }
+    const points = manualPathPreviewRoute?.nodeId === selectedNode.id
+      ? manualPathPreviewRoute.points
+      : routableLineDeviceCanvasPoints(selectedNode);
+    if (points.length < 2) {
+      return null;
+    }
+    return {
+      node: selectedNode,
+      points,
+      path: pointsToPreviewPath(points)
+    };
+  }, [activeLayerNodeIdSet, isEditMode, manualPathPreviewRoute, selectedNode, selectedNodeCount]);
   const terminalPressPreviewEdgeRoutes = useMemo(() => {
     if (!terminalPress?.moved) {
       return [];
@@ -25484,6 +25506,13 @@ export function App() {
       return;
     }
     activateInspectorFromCanvas();
+    if (isEditMode && selectedNodeIdSet.has(node.id) && event.detail >= 2 && svgRef.current) {
+      const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      const routePoints = routableLineDeviceCanvasPoints(node);
+      if (insertRoutableLineBendFromPointer(node.id, routePoints, pointer)) {
+        return;
+      }
+    }
     if (hasCanvasSelectionModifier(event)) {
       startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
       return;
@@ -25817,6 +25846,7 @@ export function App() {
         return;
       }
       const nextPoints = originalRoutePoints.map((item) => ({ ...item }));
+      const routableLineNode = nextDrag.nodeId ? nodeById.get(nextDrag.nodeId) : undefined;
       if ("pointIndex" in nextDrag) {
         if (nextDrag.pointIndex > 0 && nextDrag.pointIndex < originalRoutePoints.length - 1) {
           const originalPoint = originalRoutePoints[nextDrag.pointIndex];
@@ -25832,7 +25862,19 @@ export function App() {
           ...moveOrthogonalRouteSegment(originalRoutePoints, nextDrag.segmentIndex, nextDrag.orientation, point, canvasBounds)
         );
       }
-      const previewRoutePoints = nextPoints.map((item) => ({ ...item }));
+      const previewRoutePoints = routableLineNode && isRoutableLineDeviceKind(routableLineNode.kind)
+        ? routableLineDeviceCanvasPoints(
+            "pointIndex" in nextDrag
+              ? setRoutableLineDeviceCanvasPoints(routableLineNode, nextPoints)
+              : moveRoutableLineDeviceSegment(
+                  setRoutableLineDeviceCanvasPoints(routableLineNode, originalRoutePoints),
+                  nextDrag.segmentIndex,
+                  nextDrag.orientation,
+                  point,
+                  canvasBounds
+                )
+          )
+        : nextPoints.map((item) => ({ ...item }));
       if (!modelGeometryInsideCanvasBounds([], [{ points: previewRoutePoints }], canvasBounds, MOVE_BOUNDARY_GUARD)) {
         return;
       }
@@ -29079,7 +29121,18 @@ export function App() {
       return;
     }
     if (manualPathDrag.historyCaptured && manualPathDrag.previewRoutePoints?.length) {
-      setEdgeManualPoints(manualPathDrag.edgeId, routeManualPoints(manualPathDrag.previewRoutePoints));
+      if (manualPathDrag.nodeId) {
+        const lineNode = nodeById.get(manualPathDrag.nodeId);
+        if (lineNode && isRoutableLineDeviceKind(lineNode.kind)) {
+          const nextNode = setRoutableLineDeviceCanvasPoints(lineNode, manualPathDrag.previewRoutePoints);
+          if (nextNode !== lineNode) {
+            patchGraphNodes([nextNode]);
+            writeOperationLog(`调整可变线路路径：${nextNode.name}`);
+          }
+        }
+      } else if (manualPathDrag.edgeId) {
+        setEdgeManualPoints(manualPathDrag.edgeId, routeManualPoints(manualPathDrag.previewRoutePoints));
+      }
     }
     setManualPathDrag(null);
   };
@@ -29346,6 +29399,20 @@ export function App() {
     insertManualBendFromPointer(edgeId, routePoints, point);
   };
 
+  const addRoutableLineBendFromContextMenu = () => {
+    const nodeId = contextMenu?.nodeId;
+    const lineNode = nodeId ? nodeById.get(nodeId) : undefined;
+    const point = contextMenu?.canvasPoint ?? lastCanvasPointerRef.current;
+    if (!nodeId || !lineNode || !isRoutableLineDeviceKind(lineNode.kind) || !point) {
+      return;
+    }
+    const routePoints = contextMenu?.routePoints ?? routableLineDeviceCanvasPoints(lineNode);
+    if (routePoints.length < 2) {
+      return;
+    }
+    insertRoutableLineBendFromPointer(nodeId, routePoints, point);
+  };
+
   const insertManualBendFromEdgePath = (event: MouseEvent<SVGElement>, edgeId: string, routePoints: Point[]) => {
     event.preventDefault();
     event.stopPropagation();
@@ -29438,6 +29505,130 @@ export function App() {
     pushUndoSnapshot();
     const nextPoints = routePoints.filter((_, index) => index !== routePointIndex);
     setEdgeManualPoints(edgeId, routeManualPoints(nextPoints));
+  };
+
+  const setRoutableLineManualPathPoints = (nodeId: string, routePoints: Point[]) => {
+    if (!requireEditMode("修改可变线路路径")) {
+      return;
+    }
+    const lineNode = nodeById.get(nodeId);
+    if (!lineNode || !activeLayerNodeIdSet.has(nodeId) || !isRoutableLineDeviceKind(lineNode.kind)) {
+      return;
+    }
+    const nextNode = setRoutableLineDeviceCanvasPoints(lineNode, routePoints);
+    if (nextNode !== lineNode) {
+      patchGraphNodes([nextNode]);
+    }
+  };
+
+  const insertRoutableLineBendAtPoint = (nodeId: string, segmentIndex: number, routePoints: Point[], clickPoint: Point) => {
+    if (!requireEditMode("添加可变线路拐点")) {
+      return false;
+    }
+    const lineNode = nodeById.get(nodeId);
+    if (!lineNode || !activeLayerNodeIdSet.has(nodeId) || !isRoutableLineDeviceKind(lineNode.kind)) {
+      return false;
+    }
+    const from = routePoints[segmentIndex];
+    const to = routePoints[segmentIndex + 1];
+    if (!from || !to || (from.x !== to.x && from.y !== to.y)) {
+      return false;
+    }
+    pushUndoSnapshot();
+    const baseNode = setRoutableLineDeviceCanvasPoints(lineNode, routePoints);
+    const nextNode = insertRoutableLineDeviceBend(baseNode, segmentIndex, clickPoint, canvasBounds);
+    if (nextNode !== lineNode) {
+      patchGraphNodes([nextNode]);
+      writeOperationLog(`添加可变线路拐点：${nextNode.name}`);
+    }
+    return true;
+  };
+
+  const insertRoutableLineBendFromPointer = (nodeId: string, routePoints: Point[], clickPoint: Point) => {
+    const segmentIndex = findEditableRouteSegmentIndex(routePoints, clickPoint);
+    if (segmentIndex >= 0) {
+      return insertRoutableLineBendAtPoint(nodeId, segmentIndex, routePoints, clickPoint);
+    }
+    return false;
+  };
+
+  const startRoutableLineSegmentDrag = (
+    event: PointerEvent<SVGPathElement>,
+    node: ModelNode,
+    segmentIndex: number,
+    orientation: "horizontal" | "vertical",
+    routePoints: Point[]
+  ) => {
+    event.stopPropagation();
+    if (event.button !== 0 || !svgRef.current || !activeLayerNodeIdSet.has(node.id)) {
+      return;
+    }
+    if (isBrowseMode) {
+      selectCanvasGraphics([node.id], [], { scope: "direct" });
+      return;
+    }
+    if (hasCanvasSelectionModifier(event)) {
+      startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
+      return;
+    }
+    const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+    if (event.detail >= 2) {
+      event.preventDefault();
+      insertRoutableLineBendAtPoint(node.id, segmentIndex, routePoints, pointer);
+      return;
+    }
+    selectCanvasGraphics([node.id], [], { scope: "direct" });
+    setManualPathDrag({
+      nodeId: node.id,
+      segmentIndex,
+      orientation,
+      startPoint: pointer,
+      originalManualPoints: [],
+      originalRoutePoints: routePoints.map((point) => ({ ...point }))
+    });
+    captureCanvasPointer(event.pointerId);
+  };
+
+  const startRoutableLinePointDrag = (event: PointerEvent<SVGCircleElement>, node: ModelNode, pointIndex: number, routePoints: Point[]) => {
+    event.stopPropagation();
+    if (event.button !== 0 || !svgRef.current || !activeLayerNodeIdSet.has(node.id)) {
+      return;
+    }
+    if (isBrowseMode) {
+      selectCanvasGraphics([node.id], [], { scope: "direct" });
+      return;
+    }
+    if (hasCanvasSelectionModifier(event)) {
+      startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
+      return;
+    }
+    const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+    if (event.detail >= 2) {
+      event.preventDefault();
+      insertRoutableLineBendFromPointer(node.id, routePoints, pointer);
+      return;
+    }
+    selectCanvasGraphics([node.id], [], { scope: "direct" });
+    setManualPathDrag({
+      nodeId: node.id,
+      pointIndex,
+      startPoint: pointer,
+      originalManualPoints: [],
+      originalRoutePoints: routePoints.map((point) => ({ ...point }))
+    });
+    captureCanvasPointer(event.pointerId);
+  };
+
+  const deleteRoutableLineBendPoint = (nodeId: string, routePointIndex: number, routePoints: Point[]) => {
+    if (!requireEditMode("删除可变线路拐点")) {
+      return;
+    }
+    if (!activeLayerNodeIdSet.has(nodeId) || routePointIndex <= 0 || routePointIndex >= routePoints.length - 1) {
+      return;
+    }
+    pushUndoSnapshot();
+    const nextPoints = routePoints.filter((_, index) => index !== routePointIndex);
+    setRoutableLineManualPathPoints(nodeId, nextPoints);
   };
 
   const startConnectFromTerminal = (node: ModelNode, terminalId: string, point?: Point) => {
@@ -33668,8 +33859,9 @@ export function App() {
     }
     canvasInteractionRef.current = true;
     projectListPointerInsideRef.current = false;
+    let pointer: Point | undefined;
     if (svgRef.current) {
-      const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+      pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
       lastCanvasPointerRef.current = pointer;
       updateMouseStatus(pointer);
     }
@@ -33688,7 +33880,14 @@ export function App() {
     if (!selectedNodeIdSet.has(node.id)) {
       selectCanvasGraphics([node.id], []);
     }
-    openGraphicContextMenu({ x: event.clientX, y: event.clientY, target: "node", nodeId: node.id });
+    openGraphicContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      target: "node",
+      canvasPoint: pointer,
+      nodeId: node.id,
+      routePoints: isRoutableLineDeviceKind(node.kind) ? routableLineDeviceCanvasPoints(node) : undefined
+    });
   };
   const openNodeDoubleClickEditor = (node: ModelNode) => {
     if (!isEditMode || !activeLayerNodeIdSet.has(node.id)) {
@@ -33797,6 +33996,12 @@ export function App() {
   const contextMenuForSelection = contextMenuTarget !== "blank";
   const contextMenuForNode = contextMenuTarget === "node" || contextMenuTarget === "group";
   const contextMenuForEdge = contextMenuTarget === "edge";
+  const contextRoutableLineNode = contextMenuForNode && contextMenu?.nodeId ? nodeById.get(contextMenu.nodeId) : undefined;
+  const contextMenuForRoutableLine = Boolean(
+    contextRoutableLineNode &&
+    activeLayerNodeIdSet.has(contextRoutableLineNode.id) &&
+    isRoutableLineDeviceKind(contextRoutableLineNode.kind)
+  );
   const contextMeasurementNode = contextMenuForNode && activeSelectedNodeIds.length === 1
     ? nodeById.get(activeSelectedNodeIds[0])
     : undefined;
@@ -35883,8 +36088,9 @@ export function App() {
                     }
                     canvasInteractionRef.current = true;
                     projectListPointerInsideRef.current = false;
+                    let pointer: Point | undefined;
                     if (svgRef.current) {
-                      const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+                      pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
                       lastCanvasPointerRef.current = pointer;
                       updateMouseStatus(pointer);
                     }
@@ -35903,7 +36109,14 @@ export function App() {
                     if (!selectedNodeIdSet.has(node.id)) {
                       selectCanvasGraphics([node.id], []);
                     }
-                    openGraphicContextMenu({ x: event.clientX, y: event.clientY, target: "node", nodeId: node.id });
+                    openGraphicContextMenu({
+                      x: event.clientX,
+                      y: event.clientY,
+                      target: "node",
+                      canvasPoint: pointer,
+                      nodeId: node.id,
+                      routePoints: nodeIsRoutableLineDevice ? routableLineDeviceCanvasPoints(node) : undefined
+                    });
                   }}
                   onDoubleClick={(event) => {
                     event.stopPropagation();
@@ -36276,6 +36489,63 @@ export function App() {
               <circle className="connect-drop-hint-ring" cx="0" cy="0" r="16" />
               <circle className="connect-drop-hint-core" cx="0" cy="0" r="5" />
             </g>
+            {selectedRoutableLineManualPathRoute && (
+              <g className="routable-line-manual-path-layer">
+                <path
+                  d={selectedRoutableLineManualPathRoute.path}
+                  className="routable-line-manual-path-preview"
+                />
+                {selectedRoutableLineManualPathRoute.points.slice(1).map((point, index) => {
+                  const from = selectedRoutableLineManualPathRoute.points[index];
+                  const segmentIndex = index;
+                  if (!from || sameOptionalPoint(from, point) || (from.x !== point.x && from.y !== point.y)) {
+                    return null;
+                  }
+                  const orientation = from.y === point.y ? "horizontal" : "vertical";
+                  return (
+                    <path
+                      key={`routable-line-segment-${segmentIndex}`}
+                      d={`M ${from.x} ${from.y} L ${point.x} ${point.y}`}
+                      className={`manual-segment-handle ${orientation}`}
+                      onPointerDown={(event) => startRoutableLineSegmentDrag(
+                        event,
+                        selectedRoutableLineManualPathRoute.node,
+                        segmentIndex,
+                        orientation,
+                        selectedRoutableLineManualPathRoute.points
+                      )}
+                    />
+                  );
+                })}
+                {selectedRoutableLineManualPathRoute.points.slice(1, -1).map((point, index) => {
+                  const routePointIndex = index + 1;
+                  return (
+                    <circle
+                      key={`routable-line-bend-${routePointIndex}`}
+                      className="manual-bend-handle user-manual-bend"
+                      cx={point.x}
+                      cy={point.y}
+                      r={5.5}
+                      onPointerDown={(event) => startRoutableLinePointDrag(
+                        event,
+                        selectedRoutableLineManualPathRoute.node,
+                        routePointIndex,
+                        selectedRoutableLineManualPathRoute.points
+                      )}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        deleteRoutableLineBendPoint(
+                          selectedRoutableLineManualPathRoute.node.id,
+                          routePointIndex,
+                          selectedRoutableLineManualPathRoute.points
+                        );
+                      }}
+                    />
+                  );
+                })}
+              </g>
+            )}
             {routableLineEndpointHandles.length > 0 && (
               <g className="routable-line-endpoint-handle-layer">
                 {routableLineEndpointHandles.map((handle) => (
@@ -37779,6 +38049,14 @@ export function App() {
               {contextMenuForEdge && contextMenu.edgeId && (
                 isEditMode ? (
                 <button onClick={() => runContextMenuAction(addManualBendFromContextMenu)}>
+                  <Pencil size={14} />
+                  添加拐点
+                </button>
+                ) : null
+              )}
+              {contextMenuForRoutableLine && contextMenu.nodeId && contextMenu.canvasPoint && (
+                isEditMode ? (
+                <button onClick={() => runContextMenuAction(addRoutableLineBendFromContextMenu)}>
                   <Pencil size={14} />
                   添加拐点
                 </button>

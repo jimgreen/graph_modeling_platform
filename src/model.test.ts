@@ -103,6 +103,8 @@ import {
   repairUnsafeRoutableLineDeviceRoutes,
   routeRoutableLineDevice,
   createRoutableLineDeviceFromEndpoints,
+  insertRoutableLineDeviceBend,
+  moveRoutableLineDeviceSegment,
   routableLineDeviceEndpointRefForNode,
   routableLineDeviceEndpointRefs,
   setRoutableLineDeviceEndpoints,
@@ -1909,6 +1911,83 @@ describe("power system model", () => {
     for (let index = 1; index < points.length; index += 1) {
       expect(segmentIntersectsNodeBody(points[index - 1], points[index], blocker)).toBe(false);
     }
+  });
+
+  test("inserts a manual bend into a routable line-like device at the pointer position", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      { x: 80, y: 120 },
+      { x: 520, y: 120 },
+      "layer-a"
+    );
+
+    const bent = insertRoutableLineDeviceBend(line, 0, { x: 260, y: 190 }, { width: 700, height: 360 });
+    const points = routableLineDeviceCanvasPoints(bent);
+
+    expect(bent).not.toBe(line);
+    expect(points).toContainEqual({ x: 260, y: 190 });
+    expect(points[0]).toEqual({ x: 80, y: 120 });
+    expect(points[points.length - 1]).toEqual({ x: 520, y: 120 });
+    expectOrthogonalSegments(points);
+  });
+
+  test("moves any middle segment of a routable line-like device without moving its endpoints", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "dc-routable-line");
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      { x: 80, y: 120 },
+      { x: 520, y: 120 },
+      "layer-a"
+    );
+    const bent = insertRoutableLineDeviceBend(line, 0, { x: 260, y: 190 }, { width: 700, height: 360 });
+    const bendPoints = routableLineDeviceCanvasPoints(bent);
+    const verticalSegmentIndex = bendPoints.findIndex((point, index) => {
+      const next = bendPoints[index + 1];
+      return Boolean(next && point.x === next.x && point.y !== next.y);
+    });
+    expect(verticalSegmentIndex).toBeGreaterThan(0);
+
+    const moved = moveRoutableLineDeviceSegment(
+      bent,
+      verticalSegmentIndex,
+      "vertical",
+      { x: 320, y: 170 },
+      { width: 700, height: 360 }
+    );
+    const movedPoints = routableLineDeviceCanvasPoints(moved);
+
+    expect(moved).not.toBe(bent);
+    expect(movedPoints[0]).toEqual({ x: 80, y: 120 });
+    expect(movedPoints[movedPoints.length - 1]).toEqual({ x: 520, y: 120 });
+    expect(movedPoints).toContainEqual({ x: 320, y: 120 });
+    expect(movedPoints).toContainEqual({ x: 320, y: 190 });
+    expectOrthogonalSegments(movedPoints);
+  });
+
+  test("moves endpoint-adjacent routable line-like device segments while keeping the route orthogonal", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      { x: 80, y: 120 },
+      { x: 520, y: 120 },
+      "layer-a"
+    );
+    const bent = insertRoutableLineDeviceBend(line, 0, { x: 260, y: 190 }, { width: 700, height: 360 });
+
+    const moved = moveRoutableLineDeviceSegment(
+      bent,
+      0,
+      "horizontal",
+      { x: 170, y: 90 },
+      { width: 700, height: 360 }
+    );
+    const movedPoints = routableLineDeviceCanvasPoints(moved);
+
+    expect(movedPoints[0]).toEqual({ x: 80, y: 120 });
+    expect(movedPoints[movedPoints.length - 1]).toEqual({ x: 520, y: 120 });
+    expect(movedPoints).toContainEqual({ x: 260, y: 90 });
+    expectOrthogonalSegments(movedPoints);
   });
 
   test("creates routable line-like devices from snapped endpoint terminal points", () => {
