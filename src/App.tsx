@@ -142,7 +142,6 @@ import {
   flattenSavedProjects,
   flattenSavedSchemes,
   hydrateSavedSchemeRuntimeIds,
-  mergeSavedSchemesForStartup,
   nextSavedProjectAfterProjectBatchDeletion,
   nextSavedProjectAfterProjectDeletion,
   nextSavedProjectAfterSchemeDeletion,
@@ -1070,12 +1069,17 @@ const NODE_LABEL_DISPLAY_MODES: Array<{ value: NodeLabelDisplayMode; label: stri
   { value: "follow", label: "跟随显示" }
 ];
 type ProjectMenuState = { x: number; y: number; schemeId?: string; projectId?: string } | null;
-type UnsavedChangeAction = {
-  kind: "load-project";
-  project: SavedProjectRecord;
-  schemeId: string;
-  label: string;
-};
+type UnsavedChangeAction =
+  | {
+      kind: "load-project";
+      project: SavedProjectRecord;
+      schemeId: string;
+      label: string;
+    }
+  | {
+      kind: "enter-browse";
+      label: string;
+    };
 type PendingModelImportConflict = {
   targetSchemeId: string;
   importedProject: ProjectFile;
@@ -3566,16 +3570,6 @@ const measurementGroupWithCommonSetting = (
   }
 };
 
-function readSavedProjects(): SavedProjectRecord[] {
-  try {
-    const raw = window.localStorage.getItem(PROJECT_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as SavedProjectRecord[]) : [];
-    return Array.isArray(parsed) ? parsed.map(normalizeSavedProjectIndexes) : [];
-  } catch {
-    return [];
-  }
-}
-
 function normalizeLegacyPowerSystemLabel(value: string) {
   return value.replace(/电力系统/g, "电力能源系统");
 }
@@ -3605,31 +3599,6 @@ function normalizeSavedSchemeIndexes(scheme: SavedSchemeRecord): SavedSchemeReco
       ? scheme.children.map(normalizeSavedSchemeIndexes)
       : []
   };
-}
-
-function readStoredSchemesPayload(): string | null {
-  try {
-    return window.localStorage.getItem(SCHEME_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function readSavedSchemes(raw = readStoredSchemesPayload()): SavedSchemeRecord[] {
-  try {
-    if (raw) {
-      const parsed = JSON.parse(raw) as SavedSchemeRecord[];
-      if (Array.isArray(parsed)) {
-        return hydrateSavedSchemeRuntimeIds(parsed.map(normalizeSavedSchemeIndexes));
-      }
-    }
-    const legacyProjects = readSavedProjects();
-    return hydrateSavedSchemeRuntimeIds(
-      legacyProjects.length > 0 ? [createSavedScheme("默认方案", legacyProjects)] : []
-    );
-  } catch {
-    return [];
-  }
 }
 
 function normalizeStoredDraftProject(parsed: DraftProjectState): DraftProjectState | null {
@@ -3665,19 +3634,6 @@ function normalizeStoredDraftProject(parsed: DraftProjectState): DraftProjectSta
     powerBaseValue: parsed.powerBaseValue,
     deviceIndexCounters: parsed.deviceIndexCounters
   };
-}
-
-function readDraftProject(): DraftProjectState | null {
-  try {
-    const raw = window.localStorage.getItem(DRAFT_PROJECT_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw) as DraftProjectState;
-    return normalizeStoredDraftProject(parsed);
-  } catch {
-    return null;
-  }
 }
 
 function readActiveProjectPointer(): ActiveProjectPointer | null {
@@ -9110,19 +9066,14 @@ ${exportSvgLayerScriptMarkup(includeLayerScript)}
 }
 
 export function App() {
-  const initialStoredSchemesPayload = useMemo(() => readStoredSchemesPayload(), []);
-  const initialSavedSchemes = useMemo(() => readSavedSchemes(initialStoredSchemesPayload), [initialStoredSchemesPayload]);
+  const initialSavedSchemes = useMemo<SavedSchemeRecord[]>(() => [], []);
   const initialProjectSources = useMemo(() => {
-    const hasInitialSchemes = initialSavedSchemes.length > 0;
-    const refreshRecovery = hasInitialSchemes ? readRefreshRecoveryProject() : null;
-    const activeProjectPointer = readActiveProjectPointer();
-    const savedProjectDraft = draftProjectFromSavedSchemes(initialSavedSchemes, activeProjectPointer);
-    const localDraft = hasInitialSchemes ? readDraftProject() : null;
+    const refreshRecovery = readRefreshRecoveryProject();
     return {
       recoveredFromRefresh: Boolean(refreshRecovery),
-      draft: refreshRecovery ?? savedProjectDraft ?? localDraft
+      draft: refreshRecovery
     };
-  }, [initialSavedSchemes]);
+  }, []);
   const initialDraft = initialProjectSources.draft;
   const initialCanvasBounds = useMemo(() => ({
     width: initialDraft?.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
@@ -9171,9 +9122,8 @@ export function App() {
   const suppressNextBackendSchemeSyncRef = useRef(false);
   const lastPersistedSchemesPayloadRef = useRef<string | null>(null);
   const backendSchemesLoadTokenRef = useRef(0);
-  const schemesChangedBeforeBackendLoadRef = useRef(false);
-  const latestSchemesRef = useRef<SavedSchemeRecord[]>(initialSavedSchemes);
-  const latestActiveProjectPointerRef = useRef<ActiveProjectPointer | null>(null);
+  const latestSchemesRef = useRef<SavedSchemeRecord[]>([]);
+  const latestActiveProjectPointerRef = useRef<ActiveProjectPointer | null>(readActiveProjectPointer());
   const backendColorConfigLoadedRef = useRef(false);
   const suppressNextBackendColorSyncRef = useRef(false);
   const lastPersistedColorConfigPayloadRef = useRef<string | null>(null);
@@ -9338,12 +9288,9 @@ export function App() {
   const [voltageUnit, setVoltageUnit] = useState(() => initialDraft?.voltageUnit ?? DEFAULT_VOLTAGE_UNIT);
   const [currentUnit, setCurrentUnit] = useState(() => initialDraft?.currentUnit ?? DEFAULT_CURRENT_UNIT);
   const [powerBaseValue, setPowerBaseValue] = useState(() => initialDraft?.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE);
-  const [schemes, setSchemesState] = useState<SavedSchemeRecord[]>(initialSavedSchemes);
+  const [schemes, setSchemesState] = useState<SavedSchemeRecord[]>([]);
   latestSchemesRef.current = schemes;
   const setSchemes = (value: SetStateAction<SavedSchemeRecord[]>) => {
-    if (!backendSchemesLoadedRef.current) {
-      schemesChangedBeforeBackendLoadRef.current = true;
-    }
     setSchemesState(value);
   };
   const [activeProjectKey, setActiveProjectKey] = useState<string>(() => initialDraft?.activeProjectKey ?? "");
@@ -11519,7 +11466,10 @@ export function App() {
     voltageUnit
   ]);
   saveRequiredRef.current = saveRequired;
-  latestActiveProjectPointerRef.current = activeProjectPointerPayload(schemes, activeProjectKey, activeSchemeKey);
+  const currentActiveProjectPointer = activeProjectPointerPayload(schemes, activeProjectKey, activeSchemeKey);
+  if (currentActiveProjectPointer || backendSchemesLoadedRef.current) {
+    latestActiveProjectPointerRef.current = currentActiveProjectPointer;
+  }
   const refreshRecoveryProjectSnapshot = useMemo<RefreshRecoveryProjectState>(() => ({
     dirty: true,
     savedAt: new Date().toISOString(),
@@ -13486,11 +13436,16 @@ export function App() {
     return nextViewportQueryBounds;
   }, [renderViewportBounds]);
   const deferredViewportQueryBounds = useDeferredValue(viewportQueryBounds);
+  const viewportProjectKey = `${activeSchemeKey}:${activeProjectKey}`;
+  const deferredViewportProjectKey = useDeferredValue(viewportProjectKey);
+  const effectiveViewportQueryBounds = deferredViewportProjectKey === viewportProjectKey
+    ? deferredViewportQueryBounds
+    : viewportQueryBounds;
   const routeRenderOrder = (first: RoutedEdge, second: RoutedEdge) =>
     (routedEdgeIndexById.get(first.edgeId) ?? Number.MAX_SAFE_INTEGER) -
     (routedEdgeIndexById.get(second.edgeId) ?? Number.MAX_SAFE_INTEGER);
   const viewportRoutedEdges = useMemo(() => {
-    const viewportQueryCacheKey = viewportBoundsCacheKey(deferredViewportQueryBounds);
+    const viewportQueryCacheKey = viewportBoundsCacheKey(effectiveViewportQueryBounds);
     const cacheOwnerRefs = [routedEdgeStore, routedEdgeSpatialIndex, routedEdgeById, routedEdgeIndexById];
     const cachedRoutes = readViewportResultCache(viewportRoutedEdgesResultCacheRef.current, cacheOwnerRefs, displaySelectedEdgeKey, viewportQueryCacheKey);
     if (cachedRoutes) {
@@ -13498,14 +13453,14 @@ export function App() {
     }
     let routes: RoutedEdge[];
     if (activeSelectedEdgeSet.size === 0) {
-      routes = queryRouteSpatialIndex(routedEdgeSpatialIndex, deferredViewportQueryBounds).sort(routeRenderOrder);
+      routes = queryRouteSpatialIndex(routedEdgeSpatialIndex, effectiveViewportQueryBounds).sort(routeRenderOrder);
       writeViewportResultCache(viewportRoutedEdgesResultCacheRef.current, viewportQueryCacheKey, routes);
       return routes;
     }
     const regularRoutes: RoutedEdge[] = [];
     const selectedRoutes: RoutedEdge[] = [];
     const selectedRouteIds = new Set<string>();
-    for (const route of queryRouteSpatialIndex(routedEdgeSpatialIndex, deferredViewportQueryBounds)) {
+    for (const route of queryRouteSpatialIndex(routedEdgeSpatialIndex, effectiveViewportQueryBounds)) {
       if (activeSelectedEdgeSet.has(route.edgeId)) {
         selectedRoutes.push(route);
         selectedRouteIds.add(route.edgeId);
@@ -13527,9 +13482,9 @@ export function App() {
     routes = selectedRoutes.length > 0 ? [...regularRoutes, ...selectedRoutes] : regularRoutes;
     writeViewportResultCache(viewportRoutedEdgesResultCacheRef.current, viewportQueryCacheKey, routes);
     return routes;
-  }, [activeSelectedEdgeSet, deferredViewportQueryBounds, displaySelectedEdgeKey, routedEdgeById, routedEdgeIndexById, routedEdgeSpatialIndex, routedEdgeStore]);
+  }, [activeSelectedEdgeSet, effectiveViewportQueryBounds, displaySelectedEdgeKey, routedEdgeById, routedEdgeIndexById, routedEdgeSpatialIndex, routedEdgeStore]);
   const viewportNodes = useMemo(() => {
-    const viewportQueryCacheKey = viewportBoundsCacheKey(deferredViewportQueryBounds);
+    const viewportQueryCacheKey = viewportBoundsCacheKey(effectiveViewportQueryBounds);
     const cacheOwnerRefs = [visibleNodeSpatialIndex, visibleNodeById, visibleNodeIdSet, edgeById, graphStore.nodeIndexById, routedEdgeStore];
     const cacheToken = `${displaySelectedNodeKey}/${draggingNodeKey}/${connectSource?.nodeId ?? ""}/${displaySelectedEdgeKey}`;
     const cachedNodes = readViewportResultCache(viewportNodesResultCacheRef.current, cacheOwnerRefs, cacheToken, viewportQueryCacheKey);
@@ -13546,7 +13501,7 @@ export function App() {
     const addVisibleNodeId = (nodeId: string | undefined) => {
       addVisibleNode(nodeId ? visibleNodeById.get(nodeId) : undefined);
     };
-    for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, deferredViewportQueryBounds)) {
+    for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, effectiveViewportQueryBounds)) {
       addVisibleNode(node);
     }
     selectedNodeIdSet.forEach(addVisibleNodeId);
@@ -13566,7 +13521,7 @@ export function App() {
     );
     writeViewportResultCache(viewportNodesResultCacheRef.current, viewportQueryCacheKey, nodes);
     return nodes;
-  }, [connectSource?.nodeId, deferredViewportQueryBounds, displaySelectedEdgeKey, displaySelectedNodeKey, draggingNodeIdSet, draggingNodeKey, edgeById, graphStore.nodeIndexById, routedEdgeStore, selectedNodeIdSet, viewportRoutedEdges, visibleNodeById, visibleNodeIdSet, visibleNodeSpatialIndex]);
+  }, [connectSource?.nodeId, effectiveViewportQueryBounds, displaySelectedEdgeKey, displaySelectedNodeKey, draggingNodeIdSet, draggingNodeKey, edgeById, graphStore.nodeIndexById, routedEdgeStore, selectedNodeIdSet, viewportRoutedEdges, visibleNodeById, visibleNodeIdSet, visibleNodeSpatialIndex]);
   const activeLayerRoutedEdges = useMemo(
     () => activeLayerEdges === visibleEdges ? routedEdges : (() => {
       const routes: RoutedEdge[] = [];
@@ -14541,34 +14496,53 @@ export function App() {
     }
   }, [containerParamViewId, selectedContainerParameterViews]);
 
-  const persistSchemesPayloadToStorageAndBackend = (normalizedSchemesPayload: string) => {
+  const clearLocalSchemeModelCache = () => {
     try {
-      window.localStorage.setItem(SCHEME_STORAGE_KEY, normalizedSchemesPayload);
+      window.localStorage.removeItem(SCHEME_STORAGE_KEY);
+      window.localStorage.removeItem(PROJECT_STORAGE_KEY);
+      window.localStorage.removeItem(DRAFT_PROJECT_STORAGE_KEY);
     } catch {
-      // 浏览器缓存不可写时不阻断当前编辑；后台写入由单方案/单模型接口单独触发。
+      // 浏览器缓存不可写时不阻断目录文件作为唯一数据源。
     }
+  };
+
+  const rememberPersistedSchemesPayload = (normalizedSchemesPayload: string) => {
+    clearLocalSchemeModelCache();
     lastPersistedSchemesPayloadRef.current = normalizedSchemesPayload;
   };
 
-  const persistSchemeProjectsToBackend = (schemesToPersist: SavedSchemeRecord[], reason: string) => {
-    const tasks: Promise<unknown>[] = [];
-    const visit = (level: SavedSchemeRecord[], parentPath: string[] = []) => {
-      for (const scheme of level) {
-        const schemePath = [...parentPath, scheme.name];
-        tasks.push(saveBackendSchemeRecord(schemePath));
-        for (const project of scheme.projects) {
-          tasks.push(saveBackendProjectRecord(schemePath, project));
+  const refreshSchemesFromBackendDirectory = (reason: string) => {
+    void fetchBackendSchemes()
+      .then((backendSchemes) => {
+        const backendPayload = serializeSchemesForStorage(backendSchemes);
+        rememberPersistedSchemesPayload(backendPayload);
+        suppressNextBackendSchemeSyncRef.current = true;
+        setSchemesState(backendSchemes);
+        setExpandedSchemeIds((current) => {
+          const backendSchemeIds = new Set(flattenSavedSchemes(backendSchemes).map((scheme) => scheme.id));
+          const retained = current.filter((schemeId) => backendSchemeIds.has(schemeId));
+          if (retained.length > 0) {
+            return retained;
+          }
+          const preferredSchemeId =
+            (activeSchemeKey && backendSchemeIds.has(activeSchemeKey) ? activeSchemeKey : "") ||
+            backendSchemes[0]?.id ||
+            "";
+          return preferredSchemeId ? [preferredSchemeId] : [];
+        });
+        if (backendSchemes.length === 0 && !saveRequiredRef.current) {
+          clearActiveProjectDisplay("后台目录没有可用方案，画布已清空");
         }
-        visit(scheme.children ?? [], schemePath);
-      }
-    };
-    visit(schemesToPersist);
-    if (tasks.length === 0) {
-      return;
-    }
-    void Promise.all(tasks)
-      .then(() => writeOperationLog(`${reason}：已按单方案/单模型同步到后台`))
-      .catch(() => writeOperationLog(`${reason}：单方案/单模型后台同步失败`));
+        writeOperationLog(`${reason}：已按后台目录刷新方案/模型树`);
+      })
+      .catch(() => writeOperationLog(`${reason}：读取后台目录失败`));
+  };
+
+  const handleBackendSchemeMutationFailure = (reason: string, error: unknown) => {
+    const message = error instanceof Error ? error.message : reason;
+    window.alert(`${reason}失败：${message}\n已按后台目录重新刷新方案/模型树。`);
+    writeOperationLog(`${reason}失败：${message}`);
+    refreshSchemesFromBackendDirectory(`${reason}失败后刷新`);
   };
 
   const saveSchemeTreeToBackend = (scheme: SavedSchemeRecord, parentPath: string[], previousSchemePath?: string[]) => {
@@ -14590,14 +14564,14 @@ export function App() {
   const persistSchemeTreeToBackend = (scheme: SavedSchemeRecord, parentPath: string[], reason: string, previousSchemePath?: string[]) => {
     void saveSchemeTreeToBackend(scheme, parentPath, previousSchemePath)
       .then(() => writeOperationLog(`${reason}：已按单方案/单模型同步到后台`))
-      .catch(() => writeOperationLog(`${reason}：后台同步失败`));
+      .catch((error) => handleBackendSchemeMutationFailure(`${reason}后台同步`, error));
   };
 
   const replaceSchemeTreeInBackend = (scheme: SavedSchemeRecord, parentPath: string[], previousSchemePath: string[], reason: string) => {
     void deleteBackendSchemeRecord(previousSchemePath)
       .then(() => saveSchemeTreeToBackend(scheme, parentPath))
       .then(() => writeOperationLog(`${reason}：已按单方案/单模型同步到后台`))
-      .catch(() => writeOperationLog(`${reason}：后台同步失败`));
+      .catch((error) => handleBackendSchemeMutationFailure(`${reason}后台同步`, error));
   };
 
   useEffect(() => {
@@ -14608,49 +14582,35 @@ export function App() {
           return;
         }
         backendSchemesLoadedRef.current = true;
-        const localChangedBeforeBackendLoad = schemesChangedBeforeBackendLoadRef.current;
-        const currentSchemesPayload = serializeSchemesForStorage(latestSchemesRef.current);
         if (backendSchemes.length > 0) {
           const backendPayload = serializeSchemesForStorage(backendSchemes);
-          const mergedSchemes = mergeSavedSchemesForStartup(latestSchemesRef.current, backendSchemes);
-          const mergedPayload = serializeSchemesForStorage(mergedSchemes);
-          lastPersistedSchemesPayloadRef.current = mergedPayload;
+          rememberPersistedSchemesPayload(backendPayload);
           suppressNextBackendSchemeSyncRef.current = true;
-          schemesChangedBeforeBackendLoadRef.current = false;
-          setSchemesState(mergedSchemes);
-          if (mergedPayload !== backendPayload || localChangedBeforeBackendLoad) {
-            persistSchemeProjectsToBackend(mergedSchemes, "启动合并方案/模型");
-          }
+          setSchemesState(backendSchemes);
           if (!saveRequiredRef.current) {
             const activePointer = latestActiveProjectPointerRef.current;
-            const backendActiveProject = findSavedProjectByActivePointer(mergedSchemes, activePointer);
+            const backendActiveProject = findSavedProjectByActivePointer(backendSchemes, activePointer);
             if (backendActiveProject) {
               loadSavedProject(backendActiveProject.project, backendActiveProject.scheme.id);
             }
           }
           setExpandedSchemeIds((current) => {
-            const backendSchemeIds = new Set(mergedSchemes.map((scheme) => scheme.id));
+            const backendSchemeIds = new Set(flattenSavedSchemes(backendSchemes).map((scheme) => scheme.id));
             const retained = current.filter((schemeId) => backendSchemeIds.has(schemeId));
             if (retained.length > 0) {
               return retained;
             }
             const preferredSchemeId =
               (activeSchemeKey && backendSchemeIds.has(activeSchemeKey) ? activeSchemeKey : "") ||
-              mergedSchemes[0]?.id ||
+              backendSchemes[0]?.id ||
               "";
             return preferredSchemeId ? [preferredSchemeId] : [];
           });
           return;
         }
         const emptySchemesPayload = serializeSchemesForStorage([]);
-        if (localChangedBeforeBackendLoad && currentSchemesPayload !== emptySchemesPayload) {
-          schemesChangedBeforeBackendLoadRef.current = false;
-          lastPersistedSchemesPayloadRef.current = currentSchemesPayload;
-          return;
-        }
         suppressNextBackendSchemeSyncRef.current = true;
-        schemesChangedBeforeBackendLoadRef.current = false;
-        persistSchemesPayloadToStorageAndBackend(emptySchemesPayload);
+        rememberPersistedSchemesPayload(emptySchemesPayload);
         setSchemesState([]);
         setExpandedSchemeIds([]);
         if (!saveRequiredRef.current) {
@@ -14771,7 +14731,7 @@ export function App() {
       if (suppressNextBackendSchemeSyncRef.current) {
         suppressNextBackendSchemeSyncRef.current = false;
       }
-      persistSchemesPayloadToStorageAndBackend(normalizedSchemesPayload);
+      rememberPersistedSchemesPayload(normalizedSchemesPayload);
     }, 150);
     return () => window.clearTimeout(timeoutId);
   }, [schemes]);
@@ -14878,6 +14838,9 @@ export function App() {
 
   useEffect(() => {
     const activePointerPayload = activeProjectPointerPayload(schemes, activeProjectKey, activeSchemeKey);
+    if (!activePointerPayload && !backendSchemesLoadedRef.current) {
+      return;
+    }
     try {
       window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, JSON.stringify(activePointerPayload ?? {}));
     } catch {
@@ -16379,20 +16342,13 @@ export function App() {
     setViewBox((current) => normalizeViewBoxToCanvas(current, canvasBounds));
   }, [canvasBounds]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const frame = canvasFrameRef.current;
     if (!frame) {
       return;
     }
-    const frameId = window.requestAnimationFrame(() => {
-      setCanvasFrameScrollPosition(
-        frame,
-        Math.max(0, (frame.scrollWidth - frame.clientWidth) / 2),
-        Math.max(0, (frame.scrollHeight - frame.clientHeight) / 2)
-      );
-      scheduleCanvasVisibleViewBoxUpdate();
-    });
-    return () => window.cancelAnimationFrame(frameId);
+    centerCanvasFrameScrollPosition(frame);
+    scheduleCanvasVisibleViewBoxUpdate();
   }, [canvasCenterRequest]);
 
   useEffect(() => {
@@ -16669,7 +16625,7 @@ export function App() {
       if (!isEditMode) {
         writeOperationLog("浏览模式下不能保存，请先切换到编辑模式");
       } else {
-        saveCurrentProject();
+        void saveCurrentProject();
       }
     };
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -21803,11 +21759,26 @@ export function App() {
     staticButtonPointerRef.current = null;
   };
 
+  const enterBrowseMode = () => {
+    cancelActiveEditInteractions();
+    setInteractionMode("browse");
+    writeOperationLog("切换到浏览模式");
+  };
+
+  const requestEnterBrowseMode = () => {
+    if (!saveRequired) {
+      enterBrowseMode();
+      return;
+    }
+    setPendingUnsavedAction({
+      kind: "enter-browse",
+      label: "切换到浏览模式"
+    });
+  };
+
   const toggleInteractionMode = () => {
     if (isEditMode) {
-      cancelActiveEditInteractions();
-      setInteractionMode("browse");
-      writeOperationLog("切换到浏览模式");
+      requestEnterBrowseMode();
       return;
     }
     setInteractionMode("edit");
@@ -27668,7 +27639,11 @@ export function App() {
 
   const requestUnsavedChangeAction = (action: UnsavedChangeAction) => {
     if (!saveRequired) {
-      loadSavedProject(action.project, action.schemeId);
+      if (action.kind === "load-project") {
+        loadSavedProject(action.project, action.schemeId);
+      } else if (action.kind === "enter-browse") {
+        enterBrowseMode();
+      }
       return;
     }
     setPendingUnsavedAction(action);
@@ -27683,18 +27658,23 @@ export function App() {
     });
   };
 
-  const resolveUnsavedChangeAction = (resolution: "discard" | "save" | "cancel") => {
+  const resolveUnsavedChangeAction = async (resolution: "discard" | "save" | "cancel") => {
     const action = pendingUnsavedAction;
     if (!action || resolution === "cancel") {
       setPendingUnsavedAction(null);
       return;
     }
     if (resolution === "save") {
-      saveCurrentProject();
+      const saved = await saveCurrentProject();
+      if (!saved) {
+        return;
+      }
     }
     setPendingUnsavedAction(null);
     if (action.kind === "load-project") {
       loadSavedProject(action.project, action.schemeId);
+    } else if (action.kind === "enter-browse") {
+      enterBrowseMode();
     }
   };
 
@@ -27720,7 +27700,7 @@ export function App() {
     const recordPath = [...parentPath, record.name];
     setSchemes((current) => insertChildSavedScheme(current, parentSchemeId, record));
     void saveBackendSchemeRecord(recordPath)
-      .catch(() => writeOperationLog(`新建方案同步后台失败：${record.name}`));
+      .catch((error) => handleBackendSchemeMutationFailure(`新建方案同步后台：${record.name}`, error));
     if (parentSchemeId) {
       setExpandedSchemeIds((current) => (current.includes(parentSchemeId) ? current : [...current, parentSchemeId]));
     }
@@ -27749,7 +27729,7 @@ export function App() {
     const nextPath = previousPath.length > 0 ? [...previousPath.slice(0, -1), name] : [name];
     setSchemes((current) => renameSavedScheme(current, scheme.id, nextName));
     void saveBackendSchemeRecord(nextPath, previousPath)
-      .catch(() => writeOperationLog(`重命名方案同步后台失败：${name}`));
+      .catch((error) => handleBackendSchemeMutationFailure(`重命名方案同步后台：${name}`, error));
   };
 
   const duplicateSchemeRecord = (scheme: SavedSchemeRecord) => {
@@ -27805,7 +27785,7 @@ export function App() {
     setSchemes(nextSchemes);
     if (schemePath.length > 0) {
       void deleteBackendSchemeRecord(schemePath)
-        .catch(() => writeOperationLog(`删除后台方案失败：${scheme.name}`));
+        .catch((error) => handleBackendSchemeMutationFailure(`删除后台方案：${scheme.name}`, error));
     }
     if (noSchemesAfterDeletion) {
       window.alert("所有方案已删除，画布已清空。");
@@ -27868,7 +27848,7 @@ export function App() {
       setSchemes((current) => deleteSavedProjectsFromSchemes(current, selected));
       for (const item of backendDeletes) {
         void deleteBackendProjectRecord(item.schemePath, item.project.name)
-          .catch(() => writeOperationLog(`删除后台模型失败：${item.project.name}`));
+          .catch((error) => handleBackendSchemeMutationFailure(`删除后台模型：${item.project.name}`, error));
       }
       if (deletingActiveProject) {
         if (fallbackSelection) {
@@ -27910,7 +27890,7 @@ export function App() {
       setSchemes(nextSchemes);
       for (const item of backendSchemeDeletes) {
         void deleteBackendSchemeRecord(item.schemePath)
-          .catch(() => writeOperationLog(`删除后台方案失败：${item.scheme?.name ?? item.schemeId}`));
+          .catch((error) => handleBackendSchemeMutationFailure(`删除后台方案：${item.scheme?.name ?? item.schemeId}`, error));
       }
       if (noSchemesAfterDeletion) {
         window.alert("所有方案已删除，画布已清空。");
@@ -27997,7 +27977,7 @@ export function App() {
     const targetPath = schemePathForRecord(targetScheme);
     setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, pastedProject));
     void saveBackendProjectRecord(targetPath, pastedProject)
-      .catch(() => writeOperationLog(`粘贴模型同步后台失败：${pastedProject.name}`));
+      .catch((error) => handleBackendSchemeMutationFailure(`粘贴模型同步后台：${pastedProject.name}`, error));
     writeOperationLog(`粘贴模型记录：${sourceProject.name}`);
   };
 
@@ -28052,7 +28032,7 @@ export function App() {
     });
     void saveBackendProjectRecord(targetPath, movedProject, overwrittenProject?.name ?? "")
       .then(() => deleteBackendProjectRecord(sourcePath, project.name))
-      .catch(() => writeOperationLog(`移动模型同步后台失败：${movedProject.name}`));
+      .catch((error) => handleBackendSchemeMutationFailure(`移动模型同步后台：${movedProject.name}`, error));
     setExpandedSchemeIds((current) => (current.includes(targetSchemeId) ? current : [...current, targetSchemeId]));
     if (
       selectedProjectId === projectId ||
@@ -28153,7 +28133,7 @@ export function App() {
         const nextPath = [...targetParentPath, renamed];
         setSchemes((current) => moveSavedSchemeToParent(current, conflict.schemeId, conflict.targetSchemeId, { targetName: renamed }));
         void saveBackendSchemeRecord(nextPath, sourcePath)
-          .catch(() => writeOperationLog(`拖拽方案同步后台失败：${renamed}`));
+          .catch((error) => handleBackendSchemeMutationFailure(`拖拽方案同步后台：${renamed}`, error));
         setExpandedSchemeIds((current) => (current.includes(conflict.targetSchemeId) ? current : [...current, conflict.targetSchemeId]));
         writeOperationLog(`新命名拖拽方案记录：${renamed}`);
         return;
@@ -28170,7 +28150,7 @@ export function App() {
       const backendMove = duplicateScheme
         ? deleteBackendSchemeRecord(schemePathForRecord(duplicateScheme)).then(() => saveBackendSchemeRecord(nextPath, sourcePath))
         : saveBackendSchemeRecord(nextPath, sourcePath);
-      void backendMove.catch(() => writeOperationLog(`覆盖拖拽方案同步后台失败：${conflict.duplicateName}`));
+      void backendMove.catch((error) => handleBackendSchemeMutationFailure(`覆盖拖拽方案同步后台：${conflict.duplicateName}`, error));
       setExpandedSchemeIds((current) => (current.includes(conflict.targetSchemeId) ? current : [...current, conflict.targetSchemeId]));
       writeOperationLog(`覆盖拖拽方案记录：${conflict.duplicateName}`);
       return;
@@ -28232,7 +28212,7 @@ export function App() {
       const targetPath = schemePathForRecord(targetScheme);
       setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, pastedProject));
       void saveBackendProjectRecord(targetPath, pastedProject)
-        .catch(() => writeOperationLog(`新命名粘贴模型同步后台失败：${pastedProject.name}`));
+        .catch((error) => handleBackendSchemeMutationFailure(`新命名粘贴模型同步后台：${pastedProject.name}`, error));
       writeOperationLog(`新命名粘贴模型记录：${renamed}`);
       return;
     }
@@ -28249,7 +28229,7 @@ export function App() {
       return upsertSavedProjectInScheme(current, currentTargetScheme.id, pastedProject);
     });
     void saveBackendProjectRecord(targetPath, pastedProject, duplicateProject?.name ?? "")
-      .catch(() => writeOperationLog(`覆盖粘贴模型同步后台失败：${pastedProject.name}`));
+      .catch((error) => handleBackendSchemeMutationFailure(`覆盖粘贴模型同步后台：${pastedProject.name}`, error));
     writeOperationLog(`覆盖粘贴模型记录：${conflict.duplicateName}`);
   };
 
@@ -28311,7 +28291,7 @@ export function App() {
     const nextPath = [...targetParentPath, sourceScheme.name];
     setSchemes((current) => moveSavedSchemeToParent(current, schemeId, targetScheme.id));
     void saveBackendSchemeRecord(nextPath, sourcePath)
-      .catch(() => writeOperationLog(`移动方案同步后台失败：${sourceScheme.name}`));
+      .catch((error) => handleBackendSchemeMutationFailure(`移动方案同步后台：${sourceScheme.name}`, error));
     setExpandedSchemeIds((current) => (current.includes(targetScheme.id) ? current : [...current, targetScheme.id]));
     if (selectedSchemeId === schemeId || selectedSchemeIds.includes(schemeId)) {
       setSelectedSchemeId(schemeId);
@@ -28322,8 +28302,8 @@ export function App() {
     writeOperationLog(`移动方案“${sourceScheme.name}”到“${targetScheme.name}”下`);
   };
 
-  const saveActiveProjectPointer = (draftProjectId: string, draftSchemeId: string) => {
-    const pointerPayload = activeProjectPointerPayload(schemes, draftProjectId, draftSchemeId);
+  const saveActiveProjectPointer = (draftProjectId: string, draftSchemeId: string, sourceSchemes = schemes) => {
+    const pointerPayload = activeProjectPointerPayload(sourceSchemes, draftProjectId, draftSchemeId);
     try {
       window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, JSON.stringify(pointerPayload ?? {}));
       window.localStorage.removeItem(DRAFT_PROJECT_STORAGE_KEY);
@@ -29176,15 +29156,15 @@ export function App() {
     );
   };
 
-  const saveCurrentProject = (targetId = activeProjectKey) => {
+  const saveCurrentProject = async (targetId = activeProjectKey) => {
     if (!requireEditMode("保存模型")) {
-      return;
+      return false;
     }
     const existingTargetProject = targetId ? projectById.get(targetId) : undefined;
     if ((!targetId || !existingTargetProject) && schemes.length === 0) {
       window.alert("没有可保存的方案和模型，请先新建方案或导入方案。");
       writeOperationLog("方案为空、模型为空，无法保存");
-      return;
+      return false;
     }
     deferredMoveOptimizationCancelRef.current?.();
     deferredMoveOptimizationCancelRef.current = null;
@@ -29198,17 +29178,25 @@ export function App() {
         project: currentProject(),
         updatedAt: new Date().toISOString()
       };
-      let savedRecord = record;
       const ownerScheme = findSchemeForProject(targetId);
-      const nextSchemes = ownerScheme ? upsertSavedProjectInScheme(schemes, ownerScheme.id, record) : schemes;
-      savedRecord = findProjectRecordInSchemes(nextSchemes, targetId)?.project ?? record;
-      setSchemes(nextSchemes);
-      persistSchemesPayloadToStorageAndBackend(serializeSchemesForStorage(nextSchemes));
-      const ownerSchemePath = ownerScheme ? savedSchemePathForId(nextSchemes, ownerScheme.id) ?? [ownerScheme.name] : [];
-      if (ownerSchemePath.length > 0) {
-        void saveBackendProjectRecord(ownerSchemePath, savedRecord, existing.name)
-          .catch(() => writeOperationLog(`保存模型到后台失败：${savedRecord.name}`));
+      const ownerSchemePath = ownerScheme ? savedSchemePathForId(schemes, ownerScheme.id) ?? [ownerScheme.name] : [];
+      if (!ownerScheme || ownerSchemePath.length === 0) {
+        window.alert("当前模型没有所属方案路径，无法保存到后台目录。");
+        writeOperationLog(`保存模型到后台失败：${record.name}`);
+        return false;
       }
+      let savedRecord: SavedProjectRecord;
+      try {
+        savedRecord = await saveBackendProjectRecord(ownerSchemePath, record, existing.name);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : `保存模型到后台失败：${record.name}`;
+        window.alert(message);
+        writeOperationLog(`保存模型到后台失败：${record.name}`);
+        return false;
+      }
+      const nextSchemes = upsertSavedProjectInScheme(schemes, ownerScheme.id, savedRecord);
+      setSchemes(nextSchemes);
+      rememberPersistedSchemesPayload(serializeSchemesForStorage(nextSchemes));
       setActiveProjectKey(targetId);
       if (savedRecord.name !== projectName) {
         suppressNextGraphDirtyRef.current = true;
@@ -29216,10 +29204,10 @@ export function App() {
       }
       graphDirtyBaselineRef.current = currentGraphDirtyBaseline();
       setHasUnsavedChanges(false);
-      saveActiveProjectPointer(targetId, activeSchemeKey || findSchemeForProject(targetId)?.id || selectedSchemeId);
+      saveActiveProjectPointer(targetId, activeSchemeKey || ownerScheme.id || selectedSchemeId, nextSchemes);
       clearRefreshRecoveryProject();
       writeOperationLog(`保存模型：${savedRecord.name}`);
-      return;
+      return true;
     }
     const targetSchemeId = activeSchemeKey || selectedSchemeId || schemes[0]?.id || "";
     const fallbackSchemes = schemes;
@@ -29227,7 +29215,7 @@ export function App() {
     if (!resolvedSchemeId) {
       window.alert("没有可保存的方案和模型，请先新建方案或导入方案。");
       writeOperationLog("方案为空、模型为空，无法保存");
-      return;
+      return false;
     }
     const targetScheme = findSavedSchemeById(fallbackSchemes, resolvedSchemeId);
     const recoveredRecord = findProjectRecordByNameInScheme(targetScheme, projectName);
@@ -29241,24 +29229,27 @@ export function App() {
           updatedAt: new Date().toISOString()
         }
       : createdRecord;
-    let savedRecord = record;
-    const nextSchemes = upsertSavedProjectInScheme(fallbackSchemes, resolvedSchemeId, record);
-    savedRecord =
-      findProjectRecordInSchemes(nextSchemes, record.id)?.project ??
-      findSavedSchemeById(nextSchemes, resolvedSchemeId)?.projects.find((project) => savedProjectRecordNameKey(project.name) === savedProjectRecordNameKey(record.name)) ??
-      record;
+    const targetSchemePath = savedSchemePathForId(fallbackSchemes, resolvedSchemeId) ?? [targetScheme?.name ?? "默认方案"];
+    let savedRecord: SavedProjectRecord;
+    try {
+      savedRecord = await saveBackendProjectRecord(targetSchemePath, record, recoveredRecord?.name);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : `保存模型到后台失败：${record.name}`;
+      window.alert(message);
+      writeOperationLog(`保存模型到后台失败：${record.name}`);
+      return false;
+    }
+    const nextSchemes = upsertSavedProjectInScheme(fallbackSchemes, resolvedSchemeId, savedRecord);
     setSchemes(nextSchemes);
-    persistSchemesPayloadToStorageAndBackend(serializeSchemesForStorage(nextSchemes));
-    const targetSchemePath = savedSchemePathForId(nextSchemes, resolvedSchemeId) ?? [targetScheme?.name ?? "默认方案"];
-    void saveBackendProjectRecord(targetSchemePath, savedRecord, recoveredRecord?.name)
-      .catch(() => writeOperationLog(`保存模型到后台失败：${savedRecord.name}`));
+    rememberPersistedSchemesPayload(serializeSchemesForStorage(nextSchemes));
     setActiveProjectKey(savedRecord.id);
     setActiveSchemeKey(resolvedSchemeId);
     graphDirtyBaselineRef.current = currentGraphDirtyBaseline();
     setHasUnsavedChanges(false);
-    saveActiveProjectPointer(savedRecord.id, resolvedSchemeId);
+    saveActiveProjectPointer(savedRecord.id, resolvedSchemeId, nextSchemes);
     clearRefreshRecoveryProject();
     writeOperationLog(`保存模型：${savedRecord.name}`);
+    return true;
   };
 
   const renameProjectRecord = (project: SavedProjectRecord) => {
@@ -29287,7 +29278,7 @@ export function App() {
         const ownerPath = schemePathForScheme(ownerScheme.id);
         if (ownerPath.length > 0) {
           void saveBackendProjectRecord(ownerPath, renamedProject, project.name)
-            .catch(() => writeOperationLog(`重命名模型同步后台失败：${renamedProject.name}`));
+            .catch((error) => handleBackendSchemeMutationFailure(`重命名模型同步后台：${renamedProject.name}`, error));
         }
       }
     }
@@ -29319,7 +29310,7 @@ export function App() {
       const ownerPath = schemePathForScheme(ownerScheme.id);
       if (ownerPath.length > 0) {
         void saveBackendProjectRecord(ownerPath, clonedProject)
-          .catch(() => writeOperationLog(`复制模型同步后台失败：${clonedProject.name}`));
+          .catch((error) => handleBackendSchemeMutationFailure(`复制模型同步后台：${clonedProject.name}`, error));
       }
     }
   };
@@ -29355,7 +29346,7 @@ export function App() {
     setSchemes(nextSchemes);
     for (const item of backendSaves) {
       void saveBackendProjectRecord(item.schemePath, item.project)
-        .catch(() => writeOperationLog(`批量复制模型同步后台失败：${item.project.name}`));
+        .catch((error) => handleBackendSchemeMutationFailure(`批量复制模型同步后台：${item.project.name}`, error));
     }
   };
 
@@ -29408,7 +29399,7 @@ export function App() {
     setSchemes((current) => deleteSavedProjectsFromSchemes(current, new Set([project.id])));
     if (ownerPath.length > 0) {
       void deleteBackendProjectRecord(ownerPath, project.name)
-        .catch(() => writeOperationLog(`删除后台模型失败：${project.name}`));
+        .catch((error) => handleBackendSchemeMutationFailure(`删除后台模型：${project.name}`, error));
     }
     if (deletingActiveProject) {
       if (fallbackSelection) {
@@ -29462,7 +29453,7 @@ export function App() {
     const targetSchemePath = schemePathForScheme(targetSchemeId || schemes[0]?.id || "");
     if (targetSchemePath.length > 0) {
       void saveBackendProjectRecord(targetSchemePath, record)
-        .catch(() => writeOperationLog(`新建模型同步后台失败：${record.name}`));
+        .catch((error) => handleBackendSchemeMutationFailure(`新建模型同步后台：${record.name}`, error));
     }
     selectSingleProject(targetSchemeId ?? schemes[0]?.id ?? "", record.id);
     requestLoadSavedProject(record, targetSchemeId ?? schemes[0]?.id ?? "");
@@ -30761,7 +30752,7 @@ export function App() {
     const importedPath = Array.isArray(payload.importedPath) ? payload.importedPath : [];
     const backendSchemes = hydrateSavedSchemeRuntimeIds((payload.schemes ?? []).map(normalizeSavedSchemeIndexes));
     suppressNextBackendSchemeSyncRef.current = true;
-    schemesChangedBeforeBackendLoadRef.current = false;
+    rememberPersistedSchemesPayload(serializeSchemesForStorage(backendSchemes));
     setSchemesState(backendSchemes);
     const importedScheme = importedPath.length > 0 ? findSavedSchemeByPath(backendSchemes, importedPath) : null;
     if (importedScheme) {
@@ -30839,7 +30830,7 @@ export function App() {
       return upsertSavedProjectInScheme(nextSchemes, targetScheme.id, importedRecord);
     });
     void saveBackendProjectRecord(targetPath, importedRecord)
-      .catch(() => writeOperationLog(`导入模型同步后台失败：${importedRecord.name}`));
+      .catch((error) => handleBackendSchemeMutationFailure(`导入模型同步后台：${importedRecord.name}`, error));
     setExpandedSchemeIds((current) => (current.includes(targetScheme.id) ? current : [...current, targetScheme.id]));
     loadSavedProject(importedRecord, targetScheme.id);
     writeOperationLog(`导入模型文件：${importedRecord.name}`);
@@ -31366,8 +31357,21 @@ export function App() {
     );
   };
 
+  const openBlankProjectLibraryContextMenu = (event: MouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest(".scheme-option, .project-option, .library-search")) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (!isEditMode) {
+      return;
+    }
+    setProjectMenu({ x: event.clientX, y: event.clientY });
+  };
+
   const renderProjectPanel = () => (
-    <section className="project-panel">
+    <section className="project-panel" onContextMenu={openBlankProjectLibraryContextMenu}>
       <div className="library-search project-search">
         <Search size={15} aria-hidden="true" />
         <input
@@ -31392,17 +31396,7 @@ export function App() {
         onPointerLeave={() => {
           projectListPointerInsideRef.current = false;
         }}
-        onContextMenu={(event) => {
-          const target = event.target as HTMLElement | null;
-          if (target?.closest(".scheme-option, .project-option")) {
-            return;
-          }
-          event.preventDefault();
-          if (!isEditMode) {
-            return;
-          }
-          setProjectMenu({ x: event.clientX, y: event.clientY });
-        }}
+        onContextMenu={openBlankProjectLibraryContextMenu}
       >
         {schemes.length === 0 ? (
           <p className="project-empty">暂无方案</p>
@@ -35197,7 +35191,7 @@ export function App() {
 
   const executeStaticButtonCommand = (command: string) => {
     if (command === "save") {
-      saveCurrentProject();
+      void saveCurrentProject();
       return true;
     }
     if (command === "fitCanvas") {
@@ -35855,7 +35849,7 @@ export function App() {
           </button>
           <button
             className="topbar-primary-button"
-            onClick={() => saveCurrentProject()}
+            onClick={() => void saveCurrentProject()}
             disabled={isBrowseMode || !saveRequired}
             title={saveRequired ? "保存当前模型" : "当前模型没有新的修改"}
             aria-label="保存"
@@ -38766,7 +38760,7 @@ export function App() {
                 </button>
               )}
               {isEditMode && saveRequired && (
-                <button onClick={() => runContextMenuAction(() => saveCurrentProject())}>
+                <button onClick={() => runContextMenuAction(() => { void saveCurrentProject(); })}>
                   <Save size={14} />
                   保存
                 </button>
@@ -39208,8 +39202,12 @@ export function App() {
               </div>
             </div>
             <div className="unsaved-change-actions">
-              <button type="button" onClick={() => resolveUnsavedChangeAction("discard")}>不保存继续切换/关闭</button>
-              <button type="button" onClick={() => resolveUnsavedChangeAction("save")}>保存后切换/关闭</button>
+              <button type="button" onClick={() => resolveUnsavedChangeAction("discard")}>
+                {pendingUnsavedAction.kind === "enter-browse" ? "不保存直接浏览" : "不保存继续切换/关闭"}
+              </button>
+              <button type="button" onClick={() => resolveUnsavedChangeAction("save")}>
+                {pendingUnsavedAction.kind === "enter-browse" ? "保存后浏览" : "保存后切换/关闭"}
+              </button>
               <button type="button" onClick={() => resolveUnsavedChangeAction("cancel")}>退出操作</button>
             </div>
             <p className="unsaved-change-note">关闭网页时，浏览器也会在离开前提示当前模型未保存。</p>

@@ -1,39 +1,43 @@
 ﻿import { describe, expect, test } from "vitest";
 
+function normalizeSourceText(source: string) {
+  return source.replace(/\r\n/g, "\n");
+}
+
 async function readAppSource() {
   // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
   const { readFile } = await import("node:fs/promises");
-  return readFile(new URL("./App.tsx", import.meta.url), "utf8") as Promise<string>;
+  return normalizeSourceText(await readFile(new URL("./App.tsx", import.meta.url), "utf8"));
 }
 
 async function readStyles() {
   // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
   const { readFile } = await import("node:fs/promises");
-  return readFile(new URL("./styles.css", import.meta.url), "utf8") as Promise<string>;
+  return normalizeSourceText(await readFile(new URL("./styles.css", import.meta.url), "utf8"));
 }
 
 async function readReactFlowPreviewSource() {
   // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
   const { readFile } = await import("node:fs/promises");
-  return readFile(new URL("./ReactFlowPreview.tsx", import.meta.url), "utf8") as Promise<string>;
+  return normalizeSourceText(await readFile(new URL("./ReactFlowPreview.tsx", import.meta.url), "utf8"));
 }
 
 async function readModelSource() {
   // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
   const { readFile } = await import("node:fs/promises");
-  return readFile(new URL("./model.ts", import.meta.url), "utf8") as Promise<string>;
+  return normalizeSourceText(await readFile(new URL("./model.ts", import.meta.url), "utf8"));
 }
 
 async function readServerSource() {
   // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
   const { readFile } = await import("node:fs/promises");
-  return readFile(new URL("../server/image-server.mjs", import.meta.url), "utf8") as Promise<string>;
+  return normalizeSourceText(await readFile(new URL("../server/image-server.mjs", import.meta.url), "utf8"));
 }
 
 async function readViteConfigSource() {
   // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
   const { readFile } = await import("node:fs/promises");
-  return readFile(new URL("../vite.config.ts", import.meta.url), "utf8") as Promise<string>;
+  return normalizeSourceText(await readFile(new URL("../vite.config.ts", import.meta.url), "utf8"));
 }
 
 function selectedTerminalCountRow(source: string) {
@@ -3537,8 +3541,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("nodeIntersectsRenderViewport");
     expect(routeCullBlock).toContain("if (activeSelectedEdgeSet.size === 0)");
     expect(routeCullBlock).toContain("activeSelectedEdgeSet.has(route.edgeId)");
-    expect(routeCullBlock).toContain("queryRouteSpatialIndex(routedEdgeSpatialIndex, deferredViewportQueryBounds)");
-    expect(routeCullBlock).toContain("queryNodeSpatialIndex(visibleNodeSpatialIndex, deferredViewportQueryBounds)");
+    expect(routeCullBlock).toContain("queryRouteSpatialIndex(routedEdgeSpatialIndex, effectiveViewportQueryBounds)");
+    expect(routeCullBlock).toContain("queryNodeSpatialIndex(visibleNodeSpatialIndex, effectiveViewportQueryBounds)");
     expect(routeCullBlock).not.toContain("renderedRoutedEdges.filter");
     expect(routeCullBlock).not.toContain("visibleNodes.filter");
     expect(routeCullBlock).toContain("selectedNodeIdSet.forEach(addVisibleNodeId)");
@@ -3581,7 +3585,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("function writeViewportResultCache<T>(");
     expect(refsBlock).toContain("const viewportRoutedEdgesResultCacheRef = useRef<ViewportResultCache<RoutedEdge[]>>");
     expect(refsBlock).toContain("const viewportNodesResultCacheRef = useRef<ViewportResultCache<ModelNode[]>>");
-    expect(routeCullBlock).toContain("const viewportQueryCacheKey = viewportBoundsCacheKey(deferredViewportQueryBounds);");
+    expect(routeCullBlock).toContain("const viewportQueryCacheKey = viewportBoundsCacheKey(effectiveViewportQueryBounds);");
     expect(routeCullBlock).toContain("readViewportResultCache(viewportRoutedEdgesResultCacheRef.current");
     expect(routeCullBlock).toContain("writeViewportResultCache(viewportRoutedEdgesResultCacheRef.current");
     expect(routeCullBlock).toContain("readViewportResultCache(viewportNodesResultCacheRef.current");
@@ -3641,7 +3645,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("export function canvasViewBoxFromFrameScrollPosition({");
     expect(source).toContain("const canvasFullyVisible = !canvasScrollbarsActiveRef.current && renderedCanvasFullyFitsFrame(frameRect, svgRect)");
     expect(source).toContain("const next = canvasFullyVisible ? fullViewBox : visibleCanvasViewBoxFromRects(frameRect, svgRect, fullViewBox)");
-    expect(source).toContain("if (canvasFullyVisible || !frameScrollWasUserDriven) {\n        return;\n      }");
+    expect(source).toContain("if (canvasFullyVisible || !frameScrollWasUserDriven)");
     expect(canvasRenderBlock).toContain("className=\"canvas-scroll-surface\"");
     expect(source).toContain("overflowX: canvasHorizontalScrollbarsActive ? \"auto\" : \"hidden\"");
     expect(source).toContain("overflowY: canvasVerticalScrollbarsActive ? \"auto\" : \"hidden\"");
@@ -3660,8 +3664,9 @@ describe("graph inspector panel", () => {
     const visibleUpdateStart = source.indexOf("const scheduleCanvasVisibleViewBoxUpdate =");
     const visibleUpdateEnd = source.indexOf("const handleCanvasFrameScroll", visibleUpdateStart);
     const visibleUpdateBlock = source.slice(visibleUpdateStart, visibleUpdateEnd);
-    const listenerStart = source.indexOf("useEffect(() => {\n    const frame = canvasFrameRef.current;");
-    const listenerEnd = source.indexOf("useEffect(() => {\n    setCanvasSizeDraft", listenerStart);
+    const listenerAnchor = source.indexOf("frame.addEventListener(\"scroll\", handleCanvasFrameScroll");
+    const listenerStart = source.lastIndexOf("useEffect(() => {", listenerAnchor);
+    const listenerEnd = source.indexOf("setCanvasSizeDraft({ width: String(canvasWidth), height: String(canvasHeight) });", listenerStart);
     const listenerBlock = source.slice(listenerStart, listenerEnd);
 
     expect(source).toContain("export function canvasFrameScrollTargetForViewBox({");
@@ -3689,11 +3694,12 @@ describe("graph inspector panel", () => {
 
   test("keeps manual canvas scrollbar movement as the scroll source of truth", async () => {
     const source = await readAppSource();
-    const syncEffectStart = source.indexOf("useEffect(() => {\n    updateCanvasFrameViewportAndVisibleBox();");
+    const syncEffectStart = source.lastIndexOf("useEffect(() => {", source.indexOf("updateCanvasFrameViewportAndVisibleBox();"));
     const syncEffectEnd = source.indexOf("useLayoutEffect(() => {", syncEffectStart);
     const syncEffectBlock = source.slice(syncEffectStart, syncEffectEnd);
-    const listenerStart = source.indexOf("useEffect(() => {\n    const frame = canvasFrameRef.current;");
-    const listenerEnd = source.indexOf("useEffect(() => {\n    setCanvasSizeDraft", listenerStart);
+    const listenerAnchor = source.indexOf("frame.addEventListener(\"scroll\", handleCanvasFrameScroll");
+    const listenerStart = source.lastIndexOf("useEffect(() => {", listenerAnchor);
+    const listenerEnd = source.indexOf("setCanvasSizeDraft({ width: String(canvasWidth), height: String(canvasHeight) });", listenerStart);
     const listenerBlock = source.slice(listenerStart, listenerEnd);
     const wheelGuardStart = source.indexOf("const preventPageWheelZoom = (event: WheelEvent) => {");
     const wheelGuardEnd = source.indexOf("window.addEventListener(\"wheel\", preventPageWheelZoom", wheelGuardStart);
@@ -6858,7 +6864,7 @@ describe("graph inspector panel", () => {
 
     expect(manualSaveBlock).toContain("saveActiveProjectPointer(targetId");
     expect(manualSaveBlock).toContain("saveActiveProjectPointer(savedRecord.id");
-    expect(schemePersistBlock).toContain("persistSchemesPayloadToStorageAndBackend(normalizedSchemesPayload)");
+    expect(schemePersistBlock).toContain("rememberPersistedSchemesPayload(normalizedSchemesPayload)");
     expect(source).not.toContain("draftAutosaveProjectId");
     expect(source).not.toContain("saveDraftProject(draftAutosaveProjectId");
     expect(schemePersistBlock).not.toContain("nodes");
@@ -6871,7 +6877,7 @@ describe("graph inspector panel", () => {
       expect(block, `${name} must not call draft save`).not.toContain("saveDraftProject(");
       expect(block, `${name} must not call manual save`).not.toContain("saveCurrentProject(");
       expect(block, `${name} must not persist scheme payload`).not.toContain("persistBackendSchemesPayload(");
-      expect(block, `${name} must not persist scheme payload`).not.toContain("persistSchemesPayloadToStorageAndBackend(");
+      expect(block, `${name} must not persist scheme payload`).not.toContain("rememberPersistedSchemesPayload(");
       expect(block, `${name} must not serialize schemes`).not.toContain("serializeSchemesForStorage(");
       expect(block, `${name} must not mutate scheme records`).not.toContain("setSchemes(");
       expect(block, `${name} must not mutate saved project records`).not.toContain("updateProjectInSchemes(");
@@ -8971,7 +8977,7 @@ describe("graph inspector panel", () => {
       }
     };
 
-    expect(projectPanelBlock).toContain("target?.closest(\".scheme-option, .project-option\")");
+    expect(projectPanelBlock).toContain("target?.closest(\".scheme-option, .project-option, .library-search\")");
     expect(projectPanelBlock).toContain("setProjectMenu({ x: event.clientX, y: event.clientY })");
     expect(projectContextBlock).toContain("{projectMenu.projectId && (");
     expect(projectContextBlock).toContain("{!projectMenu.projectId && projectMenu.schemeId && (");
@@ -9003,6 +9009,25 @@ describe("graph inspector panel", () => {
     expect(projectContextBlock).not.toContain("disabled=");
     expect(sidePanelBlock).toContain("z-index: 70;");
     expect(contextMenuBlock).toContain("z-index: 80;");
+  });
+
+  test("opens the root scheme context menu from blank space anywhere in the model library panel", async () => {
+    const source = await readAppSource();
+    const projectPanelStart = source.indexOf("const renderProjectSchemeNode =");
+    const projectPanelEnd = source.indexOf("const customDraftTerminalTypes", projectPanelStart);
+    const projectPanelBlock = source.slice(projectPanelStart, projectPanelEnd);
+    const projectContextStart = source.indexOf("{projectMenu && (");
+    const projectContextEnd = source.indexOf("{pendingModelImportConflict && (", projectContextStart);
+    const projectContextBlock = source.slice(projectContextStart, projectContextEnd);
+
+    expect(projectPanelBlock).toContain("const openBlankProjectLibraryContextMenu = (event: MouseEvent<HTMLElement>) => {");
+    expect(projectPanelBlock).toContain("target?.closest(\".scheme-option, .project-option, .library-search\")");
+    expect(projectPanelBlock).toContain("setProjectMenu({ x: event.clientX, y: event.clientY })");
+    expect(projectPanelBlock).toContain("<section className=\"project-panel\" onContextMenu={openBlankProjectLibraryContextMenu}>");
+    expect(projectPanelBlock).toContain("onContextMenu={openBlankProjectLibraryContextMenu}");
+    expect(projectContextBlock).toContain("{!projectMenu.projectId && !projectMenu.schemeId && (");
+    expect(projectContextBlock).toContain("runContextMenuAction(pasteSchemeClipboardRecord)");
+    expect(projectContextBlock).toContain("方案粘贴");
   });
 
   test("keeps the left auto panel visible while project context menus are open", async () => {
@@ -9178,6 +9203,35 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".unsaved-change-dialog");
   });
 
+  test("prompts to save before leaving edit mode for browse mode", async () => {
+    const source = await readAppSource();
+    const actionTypeStart = source.indexOf("type UnsavedChangeAction =");
+    const actionTypeEnd = source.indexOf("type PendingModelImportConflict", actionTypeStart);
+    const actionTypeBlock = source.slice(actionTypeStart, actionTypeEnd);
+    const toggleStart = source.indexOf("const toggleInteractionMode = () =>");
+    const toggleEnd = source.indexOf("const finishDraggingMove =", toggleStart);
+    const toggleBlock = source.slice(toggleStart, toggleEnd);
+    const requestStart = source.indexOf("const requestEnterBrowseMode = () =>");
+    const requestEnd = source.indexOf("const requestLoadSavedProject =", requestStart);
+    const requestBlock = source.slice(requestStart, requestEnd);
+    const resolveStart = source.indexOf("const resolveUnsavedChangeAction =");
+    const resolveEnd = source.indexOf("const createSchemeRecord", resolveStart);
+    const resolveBlock = source.slice(resolveStart, resolveEnd);
+
+    expect(actionTypeBlock).toContain("kind: \"enter-browse\";");
+    expect(toggleBlock).toContain("requestEnterBrowseMode();");
+    expect(toggleBlock).not.toContain("setInteractionMode(\"browse\");");
+    expect(requestBlock).toContain("if (!saveRequired)");
+    expect(requestBlock).toContain("enterBrowseMode();");
+    expect(requestBlock).toContain("setPendingUnsavedAction({");
+    expect(requestBlock).toContain("kind: \"enter-browse\"");
+    expect(requestBlock).toContain("label: \"切换到浏览模式\"");
+    expect(resolveBlock).toContain("if (action.kind === \"enter-browse\")");
+    expect(resolveBlock).toContain("enterBrowseMode();");
+    expect(source).toContain("不保存直接浏览");
+    expect(source).toContain("保存后浏览");
+  });
+
   test("marks graph edits dirty and keeps load/save/internal sync from re-dirtying the current model", async () => {
     const source = await readAppSource();
     const dirtyEffectStart = source.indexOf("const currentGraphDirtyBaseline = ()");
@@ -9242,7 +9296,7 @@ describe("graph inspector panel", () => {
 
   test("persists scheme and model list changes through single-record backend APIs", async () => {
     const source = await readAppSource();
-    const setterStart = source.indexOf("const [schemes, setSchemesState] = useState<SavedSchemeRecord[]>(initialSavedSchemes);");
+    const setterStart = source.indexOf("const [schemes, setSchemesState] = useState<SavedSchemeRecord[]>([]);");
     const setterEnd = source.indexOf("const [activeProjectKey", setterStart);
     const setterBlock = source.slice(setterStart, setterEnd);
     const backendLoadStart = source.indexOf("const loadToken = ++backendSchemesLoadTokenRef.current;");
@@ -9272,39 +9326,44 @@ describe("graph inspector panel", () => {
     expect(source).not.toContain("pendingBackendSchemesPayloadRef");
     expect(source).not.toContain("backendJsonRequest(\"PUT\", `{\"schemes\":");
     expect(source).toContain("const backendSchemesLoadTokenRef = useRef(0)");
-    expect(source).toContain("const schemesChangedBeforeBackendLoadRef = useRef(false)");
-    expect(source).toContain("const latestActiveProjectPointerRef = useRef<ActiveProjectPointer | null>(null)");
-    expect(source).toContain("const latestSchemesRef = useRef<SavedSchemeRecord[]>(initialSavedSchemes)");
-    expect(source).toContain("latestActiveProjectPointerRef.current = activeProjectPointerPayload(schemes, activeProjectKey, activeSchemeKey);");
-    expect(setterBlock).toContain("schemesChangedBeforeBackendLoadRef.current = true");
+    expect(source).toContain("const latestActiveProjectPointerRef = useRef<ActiveProjectPointer | null>(readActiveProjectPointer())");
+    expect(source).toContain("const latestSchemesRef = useRef<SavedSchemeRecord[]>([])");
+    expect(source).toContain("const currentActiveProjectPointer = activeProjectPointerPayload(schemes, activeProjectKey, activeSchemeKey);");
+    expect(source).toContain("if (currentActiveProjectPointer || backendSchemesLoadedRef.current)");
     expect(setterBlock).toContain("setSchemesState(value)");
-    expect(backendLoadBlock).toContain("const localChangedBeforeBackendLoad = schemesChangedBeforeBackendLoadRef.current");
     expect(backendLoadBlock).toContain("const loadToken = ++backendSchemesLoadTokenRef.current");
     expect(backendLoadBlock).toContain("if (loadToken !== backendSchemesLoadTokenRef.current)");
-    expect(backendLoadBlock).toContain("const currentSchemesPayload = serializeSchemesForStorage(latestSchemesRef.current)");
-    expect(backendLoadBlock).toContain("const mergedSchemes = mergeSavedSchemesForStartup(latestSchemesRef.current, backendSchemes);");
-    expect(backendLoadBlock).toContain("setSchemesState(mergedSchemes)");
-    expect(backendLoadBlock).toContain("persistSchemeProjectsToBackend(mergedSchemes, \"启动合并方案/模型\")");
+    expect(backendLoadBlock).toContain("const backendPayload = serializeSchemesForStorage(backendSchemes);");
+    expect(backendLoadBlock).toContain("rememberPersistedSchemesPayload(backendPayload);");
+    expect(backendLoadBlock).toContain("setSchemesState(backendSchemes)");
+    expect(backendLoadBlock).not.toContain("mergeSavedSchemesForStartup");
+    expect(backendLoadBlock).not.toContain("persistSchemeProjectsToBackend");
     expect(backendLoadBlock).toContain("const activePointer = latestActiveProjectPointerRef.current;");
-    expect(backendLoadBlock).toContain("const backendActiveProject = findSavedProjectByActivePointer(mergedSchemes, activePointer);");
+    expect(backendLoadBlock).toContain("const backendActiveProject = findSavedProjectByActivePointer(backendSchemes, activePointer);");
     expect(backendLoadBlock).toContain("loadSavedProject(backendActiveProject.project, backendActiveProject.scheme.id);");
-    expect(source).toContain("const persistSchemesPayloadToStorageAndBackend = (normalizedSchemesPayload: string) => {");
-    expect(source).toContain("window.localStorage.setItem(SCHEME_STORAGE_KEY, normalizedSchemesPayload)");
+    expect(source).toContain("const clearLocalSchemeModelCache = () => {");
+    expect(source).toContain("window.localStorage.removeItem(SCHEME_STORAGE_KEY)");
+    expect(source).toContain("window.localStorage.removeItem(PROJECT_STORAGE_KEY)");
+    expect(source).toContain("const rememberPersistedSchemesPayload = (normalizedSchemesPayload: string) => {");
+    expect(source).not.toContain("window.localStorage.setItem(SCHEME_STORAGE_KEY");
     expect(schemePersistBlock).toContain("suppressNextBackendSchemeSyncRef.current && normalizedSchemesPayload === lastPersistedSchemesPayloadRef.current");
     expect(schemePersistBlock).toContain("suppressNextBackendSchemeSyncRef.current = false;");
-    expect(schemePersistBlock).toContain("persistSchemesPayloadToStorageAndBackend(normalizedSchemesPayload)");
+    expect(schemePersistBlock).toContain("rememberPersistedSchemesPayload(normalizedSchemesPayload)");
     expect(schemePersistBlock).not.toContain("saveBackendProjectRecord(");
     expect(schemePersistBlock).not.toContain("saveBackendSchemeRecord(");
+    expect(saveBlock).toContain("const saveCurrentProject = async");
     expect(saveBlock).toContain("const projectSnapshot = currentProject();");
     expect(saveBlock).toContain("project: projectSnapshot,");
-    expect(saveBlock).toContain("upsertSavedProjectInScheme(fallbackSchemes, resolvedSchemeId, record)");
+    expect(saveBlock).toContain("await saveBackendProjectRecord(");
+    expect(saveBlock).toContain("upsertSavedProjectInScheme(fallbackSchemes, resolvedSchemeId, savedRecord)");
     expect(saveBlock).toContain("setSchemes(nextSchemes);");
-    expect(saveBlock).toContain("persistSchemesPayloadToStorageAndBackend(serializeSchemesForStorage(nextSchemes));");
-    expect(saveBlock).toContain("saveBackendProjectRecord(");
+    expect(saveBlock).toContain("rememberPersistedSchemesPayload(serializeSchemesForStorage(nextSchemes));");
+    expect(saveBlock).toContain("return true;");
+    expect(saveBlock).toContain("return false;");
     expect(saveBlock).not.toContain("updateProjectInSchemes(");
   });
 
-  test("merges startup local scheme cache with backend schemes instead of overwriting either side", async () => {
+  test("uses backend scheme directories as the startup source of truth", async () => {
     const source = await readAppSource();
     const backendLoadStart = source.indexOf("const loadToken = ++backendSchemesLoadTokenRef.current;");
     const backendLoadEnd = source.indexOf("fetchBackendColorConfig()", backendLoadStart);
@@ -9313,23 +9372,24 @@ describe("graph inspector panel", () => {
     const initialStateEnd = source.indexOf("const initialLayeredProject = useMemo", initialStateStart);
     const initialStateBlock = source.slice(initialStateStart, initialStateEnd);
 
-    expect(initialStateBlock).toContain("const hasInitialSchemes = initialSavedSchemes.length > 0;");
-    expect(initialStateBlock).toContain("const refreshRecovery = hasInitialSchemes ? readRefreshRecoveryProject() : null;");
-    expect(initialStateBlock).toContain("draft: refreshRecovery ?? savedProjectDraft ?? localDraft");
-    expect(source).toContain("mergeSavedSchemesForStartup");
+    expect(source).toContain("const initialSavedSchemes = useMemo<SavedSchemeRecord[]>(() => [], []);");
+    expect(initialStateBlock).toContain("const refreshRecovery = readRefreshRecoveryProject();");
+    expect(initialStateBlock).toContain("draft: refreshRecovery");
+    expect(initialStateBlock).not.toContain("readSavedSchemes");
+    expect(initialStateBlock).not.toContain("readDraftProject");
+    expect(source).not.toContain("mergeSavedSchemesForStartup");
     expect(source).not.toContain("function shouldPreferLocalSchemesOverBackend");
-    expect(backendLoadBlock).toContain("const mergedSchemes = mergeSavedSchemesForStartup(latestSchemesRef.current, backendSchemes);");
-    expect(backendLoadBlock).toContain("setSchemesState(mergedSchemes)");
-    expect(backendLoadBlock).toContain("persistSchemeProjectsToBackend(mergedSchemes, \"启动合并方案/模型\")");
+    expect(backendLoadBlock).toContain("const backendPayload = serializeSchemesForStorage(backendSchemes);");
+    expect(backendLoadBlock).toContain("setSchemesState(backendSchemes)");
+    expect(backendLoadBlock).toContain("rememberPersistedSchemesPayload(backendPayload);");
+    expect(backendLoadBlock).not.toContain("persistSchemeProjectsToBackend");
+    expect(backendLoadBlock).not.toContain("启动合并方案/模型");
     expect(backendLoadBlock).not.toContain("recoveredFromRefresh:");
     expect(source).not.toContain("startupRecoveredFromRefreshRef");
   });
 
   test("keeps the current model and canvas empty when no schemes exist", async () => {
     const source = await readAppSource();
-    const readSchemesStart = source.indexOf("function readSavedSchemes");
-    const readSchemesEnd = source.indexOf("function normalizeStoredDraftProject", readSchemesStart);
-    const readSchemesBlock = source.slice(readSchemesStart, readSchemesEnd);
     const initialStateStart = source.indexOf("const initialProjectSources = useMemo(() => {");
     const initialStateEnd = source.indexOf("const initialLayeredProject = useMemo", initialStateStart);
     const initialStateBlock = source.slice(initialStateStart, initialStateEnd);
@@ -9340,12 +9400,14 @@ describe("graph inspector panel", () => {
     const backendLoadEnd = source.indexOf("fetchBackendColorConfig()", backendLoadStart);
     const backendLoadBlock = source.slice(backendLoadStart, backendLoadEnd);
 
-    expect(readSchemesBlock).toContain("legacyProjects.length > 0 ? [createSavedScheme(\"默认方案\", legacyProjects)] : []");
-    expect(readSchemesBlock).not.toContain("legacyProjects.length > 0 ? [createSavedScheme(\"默认方案\", legacyProjects)] : [createSavedScheme(\"默认方案\")]");
-    expect(initialStateBlock).toContain("const hasInitialSchemes = initialSavedSchemes.length > 0;");
-    expect(initialStateBlock).toContain("const refreshRecovery = hasInitialSchemes ? readRefreshRecoveryProject() : null;");
-    expect(initialStateBlock).toContain("const localDraft = hasInitialSchemes ? readDraftProject() : null;");
-    expect(initialStateBlock).toContain("draft: refreshRecovery ?? savedProjectDraft ?? localDraft");
+    expect(source).not.toContain("function readSavedSchemes");
+    expect(source).not.toContain("function readStoredSchemesPayload");
+    expect(source).not.toContain("function readSavedProjects");
+    expect(source).not.toContain("legacyProjects.length > 0 ? [createSavedScheme(\"默认方案\", legacyProjects)]");
+    expect(initialStateBlock).not.toContain("const hasInitialSchemes = initialSavedSchemes.length > 0;");
+    expect(initialStateBlock).toContain("const refreshRecovery = readRefreshRecoveryProject();");
+    expect(initialStateBlock).not.toContain("readDraftProject");
+    expect(initialStateBlock).toContain("draft: refreshRecovery");
     expect(initialLayeredBlock).toContain("name: initialDraft?.projectName ?? \"\"");
     expect(initialLayeredBlock).toContain("nodes: initialDraft?.nodes ?? []");
     expect(initialLayeredBlock).toContain("edges: initialDraft?.edges ?? []");
@@ -9354,7 +9416,8 @@ describe("graph inspector panel", () => {
     expect(backendLoadBlock).toContain("const emptySchemesPayload = serializeSchemesForStorage([]);");
     expect(backendLoadBlock).toContain("setSchemesState([]);");
     expect(backendLoadBlock).toContain("clearActiveProjectDisplay(\"没有可用方案，画布已清空\");");
-    expect(backendLoadBlock).not.toContain("persistSchemeProjectsToBackend(latestSchemesRef.current, \"初始化方案/模型\")");
+    expect(backendLoadBlock).toContain("rememberPersistedSchemesPayload(emptySchemesPayload);");
+    expect(backendLoadBlock).not.toContain("persistSchemeProjectsToBackend");
   });
 
   test("keeps unsaved page-refresh recovery separate from manual draft saving", async () => {
@@ -9377,12 +9440,11 @@ describe("graph inspector panel", () => {
     expect(source).toContain("function writeRefreshRecoveryProject(state: RefreshRecoveryProjectState)");
     expect(source).toContain("window.sessionStorage.setItem(REFRESH_RECOVERY_STORAGE_KEY");
     expect(source).toContain("window.sessionStorage.removeItem(REFRESH_RECOVERY_STORAGE_KEY)");
-    expect(initialStateBlock).toContain("const hasInitialSchemes = initialSavedSchemes.length > 0;");
-    expect(initialStateBlock).toContain("const refreshRecovery = hasInitialSchemes ? readRefreshRecoveryProject() : null;");
-    expect(initialStateBlock).toContain("const localDraft = hasInitialSchemes ? readDraftProject() : null;");
-    expect(initialStateBlock).toContain("draft: refreshRecovery ?? savedProjectDraft ?? localDraft");
-    expect(initialStateBlock).toContain("readActiveProjectPointer()");
-    expect(initialStateBlock).toContain("draftProjectFromSavedSchemes(initialSavedSchemes");
+    expect(initialStateBlock).not.toContain("const hasInitialSchemes = initialSavedSchemes.length > 0;");
+    expect(initialStateBlock).toContain("const refreshRecovery = readRefreshRecoveryProject();");
+    expect(initialStateBlock).toContain("draft: refreshRecovery");
+    expect(initialStateBlock).not.toContain("readDraftProject");
+    expect(initialStateBlock).not.toContain("draftProjectFromSavedSchemes(initialSavedSchemes");
     expect(source).toContain("const [hasUnsavedChanges, setHasUnsavedChanges] = useState(() => initialProjectSources.recoveredFromRefresh);");
     expect(recoveryPersistBlock).toContain("if (!saveRequiredRef.current)");
     expect(recoveryPersistBlock).toContain("writeRefreshRecoveryProject(recoveryProject)");
@@ -9422,7 +9484,7 @@ describe("graph inspector panel", () => {
     expect(readPointerBlock).not.toContain("parsed.activeProjectKey");
     expect(readPointerBlock).not.toContain("parsed.activeSchemeKey");
     expect(source).toContain("function activeProjectPointerPayload(");
-    expect(savePointerBlock).toContain("const pointerPayload = activeProjectPointerPayload(schemes, draftProjectId, draftSchemeId);");
+    expect(savePointerBlock).toContain("const pointerPayload = activeProjectPointerPayload(sourceSchemes, draftProjectId, draftSchemeId);");
     expect(savePointerBlock).toContain("window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, JSON.stringify(pointerPayload ?? {}));");
     expect(activePointerEffectBlock).toContain("const activePointerPayload = activeProjectPointerPayload(schemes, activeProjectKey, activeSchemeKey);");
     expect(activePointerEffectBlock).toContain("JSON.stringify(activePointerPayload ?? {})");
@@ -9451,6 +9513,37 @@ describe("graph inspector panel", () => {
     expect(recordBlock).not.toContain("canvasVisibleViewBox");
     expect(recoveryBlock).not.toContain("viewBox");
     expect(recoveryBlock).not.toContain("canvasVisibleViewBox");
+  });
+
+  test("does not reuse deferred viewport culling bounds while switching active models", async () => {
+    const source = await readAppSource();
+    const viewportStart = source.indexOf("const renderViewportBounds = useMemo(() => expandViewBoxForRendering(canvasVisibleViewBox)");
+    const viewportEnd = source.indexOf("const activeLayerRoutedEdges = useMemo", viewportStart);
+    const viewportBlock = source.slice(viewportStart, viewportEnd);
+
+    expect(viewportBlock).toContain("const viewportProjectKey = `${activeSchemeKey}:${activeProjectKey}`;");
+    expect(viewportBlock).toContain("const deferredViewportProjectKey = useDeferredValue(viewportProjectKey);");
+    expect(viewportBlock).toContain("const effectiveViewportQueryBounds = deferredViewportProjectKey === viewportProjectKey");
+    expect(viewportBlock).toContain("? deferredViewportQueryBounds");
+    expect(viewportBlock).toContain(": viewportQueryBounds");
+    expect(viewportBlock).toContain("viewportBoundsCacheKey(effectiveViewportQueryBounds)");
+    expect(viewportBlock).toContain("queryRouteSpatialIndex(routedEdgeSpatialIndex, effectiveViewportQueryBounds)");
+    expect(viewportBlock).toContain("queryNodeSpatialIndex(visibleNodeSpatialIndex, effectiveViewportQueryBounds)");
+    expect(viewportBlock).not.toContain("queryRouteSpatialIndex(routedEdgeSpatialIndex, deferredViewportQueryBounds)");
+    expect(viewportBlock).not.toContain("queryNodeSpatialIndex(visibleNodeSpatialIndex, deferredViewportQueryBounds)");
+  });
+
+  test("centers the canvas frame for model switches before browser paint", async () => {
+    const source = await readAppSource();
+    const requestStart = source.indexOf("const requestCanvasFrameCenter = () =>");
+    const centerEffectStart = source.indexOf("useLayoutEffect(() => {\n    const frame = canvasFrameRef.current;", requestStart);
+    const centerEffectEnd = source.indexOf("useEffect(() => {\n    if (!projectPanelResize)", centerEffectStart);
+    const centerEffectBlock = source.slice(centerEffectStart, centerEffectEnd);
+
+    expect(centerEffectBlock).toContain("centerCanvasFrameScrollPosition(frame);");
+    expect(centerEffectBlock).toContain("scheduleCanvasVisibleViewBoxUpdate();");
+    expect(centerEffectBlock).toContain("[canvasCenterRequest]");
+    expect(centerEffectBlock).not.toContain("useEffect(() => {\n    const frame = canvasFrameRef.current;");
   });
 
   test("normalizes duplicate model names from backend data before rendering and saving", async () => {
