@@ -3536,7 +3536,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const viewportQueryBounds = useMemo");
     expect(source).toContain("snapRenderViewportBoundsForQuery(renderViewportBounds)");
     expect(source).toContain("const deferredViewportQueryBounds = useDeferredValue(viewportQueryBounds)");
-    expect(source).toContain("setCanvasVisibleViewBox(canvasFullViewBoxFromBounds(nextCanvasBounds))");
+    expect(source).toContain("setCanvasVisibleViewBox(nextViewBox)");
     expect(source).not.toContain("expandViewBoxForRendering(viewBox)");
     expect(source).toContain("nodeIntersectsRenderViewport");
     expect(routeCullBlock).toContain("if (activeSelectedEdgeSet.size === 0)");
@@ -9194,8 +9194,9 @@ describe("graph inspector panel", () => {
     expect(loadBlock).toContain("setUndoStack([])");
     expect(loadBlock).toContain("clearNodeDragMoveSchedule()");
     expect(loadBlock).toContain("draggingRef.current = null");
-    expect(loadBlock).toContain("setViewBox(fitWholeCanvasViewBox(nextCanvasBounds, canvasFrameRef.current));");
-    expect(loadBlock).toContain("setCanvasVisibleViewBox(canvasFullViewBoxFromBounds(nextCanvasBounds));");
+    expect(loadBlock).toContain("const nextViewBox = fitWholeCanvasViewBox(nextCanvasBounds, canvasFrameRef.current);");
+    expect(loadBlock).toContain("setViewBox(nextViewBox);");
+    expect(loadBlock).toContain("setCanvasVisibleViewBox(nextViewBox);");
     expect(loadBlock).not.toContain("setViewBox(normalizeViewBoxToCanvas({ x: 0, y: 0, ...nextCanvasBounds }, nextCanvasBounds));");
     expect(loadBlock).toContain("setDragging(null)");
     expect(loadBlock).toContain("setSelectedEdgeIds([])");
@@ -9544,6 +9545,18 @@ describe("graph inspector panel", () => {
     expect(centerEffectBlock).toContain("scheduleCanvasVisibleViewBoxUpdate();");
     expect(centerEffectBlock).toContain("[canvasCenterRequest]");
     expect(centerEffectBlock).not.toContain("useEffect(() => {\n    const frame = canvasFrameRef.current;");
+  });
+
+  test("initializes model switch viewport from the target viewbox without a full-canvas blank frame", async () => {
+    const source = await readAppSource();
+    const loadStart = source.indexOf("const loadSavedProject =");
+    const loadEnd = source.indexOf("const requestUnsavedChangeAction =", loadStart);
+    const loadBlock = source.slice(loadStart, loadEnd);
+
+    expect(loadBlock).toContain("const nextViewBox = fitWholeCanvasViewBox(nextCanvasBounds, canvasFrameRef.current);");
+    expect(loadBlock).toContain("setViewBox(nextViewBox);");
+    expect(loadBlock).toContain("setCanvasVisibleViewBox(nextViewBox);");
+    expect(loadBlock).not.toContain("setCanvasVisibleViewBox(canvasFullViewBoxFromBounds(nextCanvasBounds));");
   });
 
   test("normalizes duplicate model names from backend data before rendering and saving", async () => {

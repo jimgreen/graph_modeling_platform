@@ -27572,6 +27572,7 @@ export function App() {
       width: project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
       height: project.project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT
     };
+    const nextViewBox = fitWholeCanvasViewBox(nextCanvasBounds, canvasFrameRef.current);
     const repairedNodes = repairUnsafeRoutableLineDeviceRoutes(layeredProject.nodes, nextCanvasBounds);
     clearNodeDragMoveSchedule();
     draggingRef.current = null;
@@ -27601,8 +27602,8 @@ export function App() {
     setVoltageUnit(project.project.voltageUnit ?? DEFAULT_VOLTAGE_UNIT);
     setCurrentUnit(project.project.currentUnit ?? DEFAULT_CURRENT_UNIT);
     setPowerBaseValue(project.project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE);
-    setViewBox(fitWholeCanvasViewBox(nextCanvasBounds, canvasFrameRef.current));
-    setCanvasVisibleViewBox(canvasFullViewBoxFromBounds(nextCanvasBounds));
+    setViewBox(nextViewBox);
+    setCanvasVisibleViewBox(nextViewBox);
     setLayers(layeredProject.layers ?? []);
     setActiveLayerId(layeredProject.activeLayerId ?? DEFAULT_MODEL_LAYER_ID);
     setDeviceIndexCounters(indexed.counters);
