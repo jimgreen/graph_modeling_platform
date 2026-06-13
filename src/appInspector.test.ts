@@ -571,7 +571,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("function backgroundPageCanvasTransform");
     expect(source).toContain("const backgroundPageRender = useMemo");
     expect(source).toContain("filterProjectByVisibleLayers(backgroundProject.nodes, backgroundProject.edges, backgroundLayers)");
-    expect(source).toContain("routeEdgesForSavedPathRendering(backgroundNodes, backgroundEdges, backgroundPageFrameRender.backgroundBounds, { refreshCrossingArcs: savedRouteCrossingArcsReady })");
+    expect(source).toContain("routeEdgesForSavedPathRendering(backgroundNodes, backgroundEdges, backgroundPageFrameRender.backgroundBounds, { refreshCrossingArcs: false })");
     expect(source).toContain("savedProjectPathOptions(schemes, activeProjectKey)");
     expect(source).toContain("backgroundColor: backgroundProject.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND");
     expect(source).toContain("backgroundImageUrl: resolveProjectImage(backgroundProject, imageAssets)");
@@ -3044,29 +3044,22 @@ describe("graph inspector panel", () => {
     expect(routingBlock).toContain("routeEdgesForCachedStoredRendering");
     expect(routingBlock).toContain("routeEdgesForIncrementalRendering");
     expect(routingBlock).toContain("cachedRoutedEdgesRef.current");
-    expect(routingBlock).toContain("savedRouteCrossingArcsReady");
-    expect(routingBlock).toContain("routes: routeEdgesForSavedPathRendering(routingNodes, routingEdges, canvasBounds, { refreshCrossingArcs: savedRouteCrossingArcsReady })");
+    expect(source).not.toContain("savedRouteCrossingArcsReady");
+    expect(routingBlock).toContain("routes: routeEdgesForSavedPathRendering(routingNodes, routingEdges, canvasBounds, { refreshCrossingArcs: false, preserveManualRouteDisplay: isEditMode })");
     expect(routingBlock).not.toContain("routeEdgesForRendering(routingNodes, routingEdges");
   });
 
-  test("keeps graph tree and saved-route crossing arcs off the startup render path", async () => {
+  test("keeps graph tree, crossing arcs and viewport rerouting off the startup render path", async () => {
     const source = await readAppSource();
     const routingStart = source.indexOf("const routeInputLayerSignature = useMemo");
     const routingEnd = source.indexOf("const routedEdgeById", routingStart);
     const routingBlock = source.slice(routingStart, routingEnd);
-    const savedArcEffectStart = source.indexOf("useEffect(() => {\n    if (isBrowseMode || routeRenderingReady || savedRouteCrossingArcsReady");
-    const savedArcEffectEnd = source.indexOf("const routeRenderingEnabled = routeRenderingReady", savedArcEffectStart);
-    const savedArcEffectBlock = source.slice(savedArcEffectStart, savedArcEffectEnd);
 
     expect(source).toContain("const [inspectorTab, setInspectorTab] = useState<\"model\" | \"tree\" | \"graph\" | \"device\">(\"graph\");");
-    expect(source).toContain("const [savedRouteCrossingArcsReady, setSavedRouteCrossingArcsReady] = useState(false);");
-    expect(savedArcEffectBlock).toContain("scheduleIdleWork");
-    expect(savedArcEffectBlock).toContain("setSavedRouteCrossingArcsReady(true)");
-    expect(savedArcEffectBlock).toContain("isBrowseMode");
-    expect(savedArcEffectBlock).toContain("routingEdges.length === 0");
-    expect(source).toContain("const renderViewportRoutedEdges = useMemo");
-    expect(source).toContain("return refreshCrossingArcPaths(viewportRoutedEdges);");
-    expect(routingBlock).toContain("routeEdgesForSavedPathRendering(routingNodes, routingEdges, canvasBounds, { refreshCrossingArcs: savedRouteCrossingArcsReady })");
+    expect(source).not.toContain("setSavedRouteCrossingArcsReady");
+    expect(source).toContain("const renderViewportRoutedEdges = viewportRoutedEdges;");
+    expect(source).not.toContain("return refreshCrossingArcPaths(viewportRoutedEdges);");
+    expect(routingBlock).toContain("routeEdgesForSavedPathRendering(routingNodes, routingEdges, canvasBounds, { refreshCrossingArcs: false, preserveManualRouteDisplay: isEditMode })");
     expect(routingBlock).not.toContain("routeEdgesForSavedPathRendering(routingNodes, routingEdges, canvasBounds)");
   });
 
@@ -7306,11 +7299,15 @@ describe("graph inspector panel", () => {
     const moveStart = source.indexOf("const moveSelection =");
     const moveEnd = source.indexOf("const updateSelectedNode", moveStart);
     const moveBlock = source.slice(moveStart, moveEnd);
+    const planStart = source.indexOf("const buildBulkMovePlan =");
+    const planEnd = source.indexOf("const commitFastMovedGraphPatches", planStart);
+    const planBlock = source.slice(planStart, planEnd);
     const commitStart = source.indexOf("const commitFastMovedGraphPatches");
     const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
     const commitBlock = source.slice(commitStart, commitEnd);
 
     expect(helperStart).toBeGreaterThan(-1);
+    expect(planStart).toBeGreaterThan(-1);
     expect(source).toContain("internalMovedEdgeIds?: Iterable<string>;");
     expect(helperBlock).toContain("movedIds.has(edge.sourceId) && movedIds.has(edge.targetId)");
     expect(helperBlock).toContain("const externalMoveCandidateEdges =");
@@ -7335,11 +7332,13 @@ describe("graph inspector panel", () => {
     expect(moveBlock).toContain("translateInternalMoveCandidateEdges(synchronousCandidateEdges, internalMovedEdgeIds, boundedDelta)");
     expect(moveBlock).toContain("(internalMovedEdgeIds.size === 0 || finalizationCandidateEdges.length > 0)");
     expect(moveBlock).toContain("{ wholeLayerMove, moveDelta: boundedDelta, internalMovedEdgeIds }");
+    expect(planBlock).toContain("const boundaryCandidateEdges = externalMoveCandidateEdges(committedCandidateEdges, internalMovedEdgeIds);");
+    expect(planBlock).toContain("const internalRepairCandidateEdges = skipInternalRepair ? [] : internalCandidateEdges;");
+    expect(planBlock).toContain("const deferredRepairCandidateEdges = mergeUniqueEdgesById(routeRepairCandidateEdges, internalRepairCandidateEdges);");
     expect(commitBlock).toContain("const internalMovedEdgeIds = options.internalMovedEdgeIds ? reuseSetOrCreate(options.internalMovedEdgeIds) : new Set<string>();");
     expect(commitBlock).toContain("internalRoutableLineNodeUpdatesForMove(movedNodeIds, wholeLayerMoveDelta)");
-    expect(commitBlock).toContain("externalMoveCandidateEdges(committedCandidateEdges, internalMovedEdgeIds)");
-    expect(commitBlock).toContain("const internalMovedCandidateEdges =");
-    expect(commitBlock).toContain("const deferredRepairCandidateEdges = mergeUniqueEdgesById(routeRepairCandidateEdges, internalMovedCandidateEdges);");
+    expect(commitBlock).toContain("const synchronousRepairCandidateEdges = bulkPlan.boundaryCandidateEdges;");
+    expect(commitBlock).toContain("const deferredRepairCandidateEdges = bulkPlan.deferredRepairCandidateEdges;");
     expect(commitBlock).toContain("patchCachedRoutesForInternalMove(");
   });
 
@@ -8726,8 +8725,11 @@ describe("graph inspector panel", () => {
     expect(source).toContain("function routableLineDeviceRenderLocalPoints(node: ModelNode)");
     expect(detailedViewportNodesBlock).toContain("if (isRoutableLineDeviceKind(node.kind))");
     expect(detailedViewportNodesBlock).toContain("return true;");
-    expect(lodCanvasNodeChunksBlock).toContain("!isRoutableLineDeviceKind(node.kind)");
-    expect(initialNodesBlock).toContain("repairUnsafeRoutableLineDeviceRoutes(indexed.nodes, initialCanvasBounds)");
+    expect(lodCanvasNodeChunksBlock).toContain("const nodeIsRoutableLineDevice = isRoutableLineDeviceKind(node.kind);");
+    expect(lodCanvasNodeChunksBlock).toContain("routableLineDeviceRenderLocalPoints(node)");
+    expect(lodCanvasNodeChunksBlock).toContain("routable-line-device-lod-line");
+    expect(initialNodesBlock).toContain("return indexed;");
+    expect(initialNodesBlock).not.toContain("repairUnsafeRoutableLineDeviceRoutes");
     expect(endpointPreviewNodeUpdatesBlock).toContain("const previewNodes = sourceNodes.map");
     expect(endpointPreviewNodeUpdatesBlock).toContain("const routingNodes = previewNodes.map");
     expect(endpointPreviewNodeUpdatesBlock).toContain("routeRoutableLineDevice(syncedLine, routingNodes, canvasBounds)");

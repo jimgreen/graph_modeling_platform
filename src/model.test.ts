@@ -49,6 +49,7 @@ import {
   routeEdgesForIncrementalRendering,
   routeEdgesForSavedPathRendering,
   routeEdgesForStoredRendering,
+  pointsToOrthogonalPath,
   ACAC_CONVERTER_CONTROL_TYPES,
   AC_GENERATOR_CONTROL_TYPES,
   DCAC_CONVERTER_CONTROL_TYPES,
@@ -362,6 +363,37 @@ describe("power system model", () => {
     const route = routeEdgesForSavedPathRendering([source, target], [edge], { width: 520, height: 320 })[0];
 
     expect(route.points).toEqual(expect.arrayContaining(manualPoints));
+  });
+
+  test("opens saved manual route points without orthogonalizing or rerouting around blockers", () => {
+    const source = withHiddenDeviceLabel(createDefaultNode("ac-source", { x: 100, y: 120 }));
+    const target = withHiddenDeviceLabel(createDefaultNode("ac-load", { x: 420, y: 220 }));
+    const blocker = {
+      ...createDefaultNode("static-rect", { x: 260, y: 160 }),
+      id: "startup-blocker",
+      size: { width: 180, height: 140 }
+    };
+    const manualPoints = [
+      { x: 190, y: 177 },
+      { x: 300, y: 161 }
+    ];
+    const edge: Edge = {
+      id: "saved-manual-through-blocker",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: source.terminals[0].id,
+      targetTerminalId: target.terminals[0].id,
+      manualPoints
+    };
+
+    const route = routeEdgesForSavedPathRendering([source, target, blocker], [edge], { width: 560, height: 360 })[0];
+
+    expect(route.points).toEqual([
+      getTerminalPoint(source, edge.sourceTerminalId),
+      ...manualPoints,
+      getTerminalPoint(target, edge.targetTerminalId)
+    ]);
+    expect(route.path).toBe(pointsToOrthogonalPath(route.points));
   });
 
   test("persists the current rendered route geometry for saved-path reopening", () => {
@@ -8678,7 +8710,7 @@ describe("power system model", () => {
     expect(routes.find((route) => route.edgeId === "horizontal")?.path).not.toContain("Q");
   });
 
-  test("can skip crossing arc refresh on the saved-path startup render", () => {
+  test("does not refresh crossing arcs on the saved-path startup render unless requested", () => {
     const edges: Edge[] = [
       {
         id: "vertical",
@@ -8696,14 +8728,14 @@ describe("power system model", () => {
       }
     ];
 
-    const refreshedRoutes = routeEdgesForSavedPathRendering([], edges, { width: 700, height: 520 });
-    const startupRoutes = routeEdgesForSavedPathRendering([], edges, { width: 700, height: 520 }, {
-      refreshCrossingArcs: false
+    const startupRoutes = routeEdgesForSavedPathRendering([], edges, { width: 700, height: 520 });
+    const refreshedRoutes = routeEdgesForSavedPathRendering([], edges, { width: 700, height: 520 }, {
+      refreshCrossingArcs: true
     });
 
-    expect(refreshedRoutes.find((route) => route.edgeId === "vertical")?.path).toContain("Q");
     expect(startupRoutes.find((route) => route.edgeId === "vertical")?.path).not.toContain("Q");
     expect(startupRoutes.find((route) => route.edgeId === "horizontal")?.path).not.toContain("Q");
+    expect(refreshedRoutes.find((route) => route.edgeId === "vertical")?.path).toContain("Q");
   });
 
   test("opens complete saved route points directly without scanning nodes", () => {
@@ -8734,7 +8766,7 @@ describe("power system model", () => {
     expect(routes[0].points).toBe(edge.routePoints);
   });
 
-  test("only copies saved route points on open when canvas bounds would change them", () => {
+  test("reuses saved route points on open without clamping or copying them", () => {
     const reusableEdge: Edge = {
       id: "inside-saved-direct-route",
       sourceId: "source",
@@ -8744,8 +8776,8 @@ describe("power system model", () => {
         { x: 160, y: 60 }
       ]
     };
-    const clampedEdge: Edge = {
-      id: "clamped-saved-direct-route",
+    const outsideEdge: Edge = {
+      id: "outside-saved-direct-route",
       sourceId: "source",
       targetId: "target",
       routePoints: [
@@ -8757,15 +8789,15 @@ describe("power system model", () => {
     const reusableRoute = routeEdgesForSavedPathRendering([], [reusableEdge], { width: 400, height: 300 }, {
       refreshCrossingArcs: false
     })[0];
-    const clampedRoute = routeEdgesForSavedPathRendering([], [clampedEdge], { width: 400, height: 300 }, {
+    const outsideRoute = routeEdgesForSavedPathRendering([], [outsideEdge], { width: 400, height: 300 }, {
       refreshCrossingArcs: false
     })[0];
 
     expect(reusableRoute.points).toBe(reusableEdge.routePoints);
-    expect(clampedRoute.points).not.toBe(clampedEdge.routePoints);
-    expect(clampedRoute.points).toEqual([
-      { x: 0, y: 60 },
-      { x: 400, y: 300 }
+    expect(outsideRoute.points).toBe(outsideEdge.routePoints);
+    expect(outsideRoute.points).toEqual([
+      { x: -4, y: 60.4 },
+      { x: 460, y: 340 }
     ]);
   });
 

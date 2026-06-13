@@ -199,7 +199,6 @@ import {
   rebuildExternalConnectionRoutesForMovedNodes,
   rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes,
   rebuildRoutableLineDeviceRouteUpdates,
-  repairUnsafeRoutableLineDeviceRoutes,
   rebuildSingleConnectionRoute,
   redrawConnectionRoutesForEdges,
   reconcileOverlappingTerminalConnections,
@@ -9308,10 +9307,7 @@ export function App() {
   }), [initialDraft]);
   const initialIndexedNodes = useMemo(() => {
     const indexed = assignMissingDeviceIndexes(initialLayeredProject.nodes, initialDraft?.deviceIndexCounters);
-    return {
-      ...indexed,
-      nodes: repairUnsafeRoutableLineDeviceRoutes(indexed.nodes, initialCanvasBounds)
-    };
+    return indexed;
   }, [initialCanvasBounds, initialDraft?.deviceIndexCounters, initialLayeredProject.nodes]);
   const initialDeviceLibrary = useMemo(() => readLocalDeviceLibraryPersistencePayload(), []);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -9725,7 +9721,6 @@ export function App() {
   const [topologyStatus, setTopologyStatus] = useState<TopologyRunStatus>(INITIAL_TOPOLOGY_STATUS);
   const topologyWarningPanelRef = useRef<HTMLElement | null>(null);
   const [routeRenderingReady, setRouteRenderingReady] = useState(false);
-  const [savedRouteCrossingArcsReady, setSavedRouteCrossingArcsReady] = useState(false);
   const [initialCanvasLodActive, setInitialCanvasLodActive] = useState(false);
   const [initialCanvasDetailHydrationLimit, setInitialCanvasDetailHydrationLimit] = useState(0);
   const [backgroundPageRenderReady, setBackgroundPageRenderReady] = useState(false);
@@ -13543,14 +13538,6 @@ export function App() {
     const ids = new Set<string>();
     return ids;
   }, []);
-  useEffect(() => {
-    if (isBrowseMode || routeRenderingReady || savedRouteCrossingArcsReady || routingEdges.length === 0) {
-      return;
-    }
-    return scheduleIdleWork(() => {
-      setSavedRouteCrossingArcsReady(true);
-    }, 120, 3000);
-  }, [isBrowseMode, routeInput.routeGeometryRevision, routeRenderingReady, routingEdges.length, savedRouteCrossingArcsReady]);
   const routeRenderingEnabled = routeRenderingReady;
   const patchStoredRouteStoreForEdgeIds = (
     store: RouteStore | null | undefined,
@@ -13632,7 +13619,7 @@ export function App() {
   const routedRouteState = useMemo((): { routes: RoutedEdge[]; store: RouteStore | null } => {
     if (!routeRenderingEnabled) {
       return {
-        routes: routeEdgesForSavedPathRendering(routingNodes, routingEdges, canvasBounds, { refreshCrossingArcs: savedRouteCrossingArcsReady, preserveManualRouteDisplay: isEditMode }),
+        routes: routeEdgesForSavedPathRendering(routingNodes, routingEdges, canvasBounds, { refreshCrossingArcs: false, preserveManualRouteDisplay: isEditMode }),
         store: null
       };
     }
@@ -13674,7 +13661,7 @@ export function App() {
       ),
       store: null
     };
-  }, [affectedRoutingEdgeIds, canvasBounds, isEditMode, routeInput.edges, routeInput.nodes, routeRenderingEnabled, routingEdges, routingNodes, savedRouteCrossingArcsReady]);
+  }, [affectedRoutingEdgeIds, canvasBounds, isEditMode, routeInput.edges, routeInput.nodes, routeRenderingEnabled, routingEdges, routingNodes]);
   const routedEdges = routedRouteState.routes;
   const routedEdgeStore = useMemo(
     () => routedRouteState.store ?? routeStoreSetRoutes(cachedRouteStoreRef.current, routedEdges),
@@ -27871,7 +27858,6 @@ export function App() {
     setTopologyErrors([]);
     setTopologyStatus(INITIAL_TOPOLOGY_STATUS);
     setRouteRenderingReady(false);
-    setSavedRouteCrossingArcsReady(false);
     setInitialCanvasLodActive(false);
     setInitialCanvasDetailHydrationLimit(0);
     setActiveProjectKey("");
@@ -27923,7 +27909,6 @@ export function App() {
       height: project.project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT
     };
     const nextViewBox = fitWholeCanvasViewBox(nextCanvasBounds, canvasFrameRef.current);
-    const repairedNodes = repairUnsafeRoutableLineDeviceRoutes(layeredProject.nodes, nextCanvasBounds);
     clearNodeDragMoveSchedule();
     draggingRef.current = null;
     hideImperativeMultiNodeDragOverlay();
@@ -27957,15 +27942,14 @@ export function App() {
     setLayers(layeredProject.layers ?? []);
     setActiveLayerId(layeredProject.activeLayerId ?? DEFAULT_MODEL_LAYER_ID);
     setDeviceIndexCounters(indexed.counters);
-    setGraphArrays(repairedNodes, layeredProject.edges);
-    setGroups(normalizeModelGroups(layeredProject.groups, repairedNodes, layeredProject.edges));
-    setProjectMeasurements(normalizeProjectMeasurements(layeredProject.measurements, repairedNodes));
+    setGraphArrays(layeredProject.nodes, layeredProject.edges);
+    setGroups(normalizeModelGroups(layeredProject.groups, layeredProject.nodes, layeredProject.edges));
+    setProjectMeasurements(normalizeProjectMeasurements(layeredProject.measurements, layeredProject.nodes));
     setTopology(EMPTY_TOPOLOGY);
     setTopologyErrors([]);
     setTopologyStatus(INITIAL_TOPOLOGY_STATUS);
     setRouteRenderingReady(false);
-    setSavedRouteCrossingArcsReady(false);
-    setInitialCanvasLodActive(repairedNodes.length > CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT);
+    setInitialCanvasLodActive(layeredProject.nodes.length > CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT);
     setInitialCanvasDetailHydrationLimit(0);
     setActiveProjectKey(project.id);
     setActiveSchemeKey(schemeId);
@@ -34890,12 +34874,7 @@ export function App() {
     !rewiring &&
     !manualPathDrag &&
     !terminalPress;
-  const renderViewportRoutedEdges = useMemo(() => {
-    if (!isBrowseMode || savedRouteCrossingArcsReady || useSimplifiedCanvasRoutes || viewportRoutedEdges.length < 2) {
-      return viewportRoutedEdges;
-    }
-    return refreshCrossingArcPaths(viewportRoutedEdges);
-  }, [isBrowseMode, savedRouteCrossingArcsReady, useSimplifiedCanvasRoutes, viewportRoutedEdges]);
+  const renderViewportRoutedEdges = viewportRoutedEdges;
   const useSimplifiedSelectedCanvasEdges =
     useSimplifiedCanvasRoutes &&
     activeSelectedEdgeSet.size > CANVAS_LOD_SELECTED_DETAIL_LIMIT &&
@@ -35815,7 +35794,7 @@ export function App() {
     }
     setBackgroundPageRenderReady(false);
     return scheduleIdleWork(() => setBackgroundPageRenderReady(true), 80, 1500);
-  }, [activeProjectKey, backgroundLayerIds, backgroundProjectId, backgroundProjectRecord, savedRouteCrossingArcsReady]);
+  }, [activeProjectKey, backgroundLayerIds, backgroundProjectId, backgroundProjectRecord]);
 
   const backgroundPageFrameRender = useMemo(() => {
     if (!backgroundProjectId || backgroundProjectId === activeProjectKey || !backgroundProjectRecord) {
@@ -35856,7 +35835,7 @@ export function App() {
     }));
     const { nodes: backgroundNodes, edges: backgroundEdges } =
       filterProjectByVisibleLayers(backgroundProject.nodes, backgroundProject.edges, backgroundLayers);
-    const routes = routeEdgesForSavedPathRendering(backgroundNodes, backgroundEdges, backgroundPageFrameRender.backgroundBounds, { refreshCrossingArcs: savedRouteCrossingArcsReady });
+    const routes = routeEdgesForSavedPathRendering(backgroundNodes, backgroundEdges, backgroundPageFrameRender.backgroundBounds, { refreshCrossingArcs: false });
     return {
       ...backgroundPageFrameRender,
       nodes: backgroundNodes,
@@ -35865,7 +35844,7 @@ export function App() {
       nodeById: new Map(backgroundNodes.map((node) => [node.id, node])),
       edgeById: new Map(backgroundEdges.map((edge) => [edge.id, edge]))
     };
-  }, [backgroundLayerIds, backgroundPageFrameRender, backgroundPageRenderReady, savedRouteCrossingArcsReady]);
+  }, [backgroundLayerIds, backgroundPageFrameRender, backgroundPageRenderReady]);
 
   const beginReadonlyBackgroundStaticButtonPointerFeedback = (event: PointerEvent<SVGGElement>, node: ModelNode) => {
     event.preventDefault();

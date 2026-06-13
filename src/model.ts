@@ -13660,87 +13660,44 @@ type SavedPathRenderingOptions = ManualRouteDisplayOptions & {
   refreshCrossingArcs?: boolean;
 };
 
-function savedRoutePointCanReuse(point: Point, bounds?: CanvasBounds) {
-  if (Math.round(point.x) !== point.x || Math.round(point.y) !== point.y) {
-    return false;
-  }
-  return !bounds || (point.x >= 0 && point.x <= bounds.width && point.y >= 0 && point.y <= bounds.height);
-}
-
-function savedRoutePointsForRendering(points: Point[], bounds?: CanvasBounds): Point[] {
-  if (points.every((point) => savedRoutePointCanReuse(point, bounds))) {
-    return points;
-  }
-  return points.map((point) => (bounds ? clampPointToBounds(point, bounds) : { ...point }));
-}
-
 export function routeEdgesForSavedPathRendering(
   nodes: ModelNode[],
   edges: Edge[],
   bounds?: CanvasBounds,
   options: SavedPathRenderingOptions = {}
 ): RoutedEdge[] {
-  const savedRouteFromEdge = (edge: Edge): RoutedEdge | null => {
-    if (!edge.routePoints || edge.routePoints.length < 2) {
-      return null;
+  let nodeById: Map<string, ModelNode> | null = null;
+  const getNode = (nodeId: string) => {
+    if (!nodeById) {
+      nodeById = new Map(nodes.map((node) => [node.id, node]));
     }
-    const points = savedRoutePointsForRendering(edge.routePoints, bounds);
-    return {
-      edgeId: edge.id,
-      points,
-      path: pointsToOrthogonalPath(points)
-    };
+    return nodeById.get(nodeId);
   };
-  const directRoutes: Array<RoutedEdge | null> = [];
-  let allEdgesHaveSavedRoutes = true;
-  for (const edge of edges) {
-    const savedRoute = savedRouteFromEdge(edge);
-    directRoutes.push(savedRoute);
-    if (!savedRoute) {
-      allEdgesHaveSavedRoutes = false;
+  const directSavedEndpointPoint = (nodeId: string, endpointPoint: Point | undefined, terminalId?: string) => {
+    if (endpointPoint) {
+      return endpointPoint;
     }
-  }
-  if (allEdgesHaveSavedRoutes) {
-    const routes = directRoutes as RoutedEdge[];
-    return options.refreshCrossingArcs === false ? routes : refreshCrossingArcPaths(routes);
-  }
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const node = getNode(nodeId);
+    return node ? getTerminalPoint(node, terminalId) : undefined;
+  };
+  const directSavedRoutePointsFromEdge = (edge: Edge): Point[] | null => {
+    if (!edge.routePoints || edge.routePoints.length < 2) {
+      const source = directSavedEndpointPoint(edge.sourceId, edge.sourcePoint, edge.sourceTerminalId);
+      const target = directSavedEndpointPoint(edge.targetId, edge.targetPoint, edge.targetTerminalId);
+      const points = [
+        ...(source ? [source] : []),
+        ...(edge.manualPoints ?? []),
+        ...(target ? [target] : [])
+      ];
+      return points.length >= 2 ? points : null;
+    }
+    return edge.routePoints;
+  };
   const routes: RoutedEdge[] = [];
-  for (let edgeIndex = 0; edgeIndex < edges.length; edgeIndex += 1) {
-    const edge = edges[edgeIndex];
-    const savedRoute = directRoutes[edgeIndex];
-    if (savedRoute) {
-      routes.push(savedRoute);
+  for (const edge of edges) {
+    const points = directSavedRoutePointsFromEdge(edge);
+    if (!points) {
       continue;
-    }
-    const source = nodeById.get(edge.sourceId) ?? (edge.sourcePoint ? createFloatingEndpointNode(edge.sourcePoint, edge.targetId ? nodeById.get(edge.targetId) : undefined) : undefined);
-    const target = nodeById.get(edge.targetId) ?? (edge.targetPoint ? createFloatingEndpointNode(edge.targetPoint, edge.sourceId ? nodeById.get(edge.sourceId) : undefined) : undefined);
-    if (!source || !target) {
-      continue;
-    }
-    const routingEdge = edgeWithProjectedMissingBusEndpointPoints(edge, source, target);
-    const start = getEdgeEndpointPoint(source, routingEdge.sourcePoint, routingEdge.sourceTerminalId);
-    const end = getEdgeEndpointPoint(target, routingEdge.targetPoint, routingEdge.targetTerminalId);
-    const sourceNormal = routeEndpointNormal(source, start, end, routingEdge.sourceTerminalId);
-    const targetNormal = routeEndpointNormal(target, end, start, routingEdge.targetTerminalId);
-    const endpointBlockers = [source, target];
-    const stubLength = ROUTE_ENDPOINT_STUB_LENGTH;
-    const startOut = endpointStubPoint(start, sourceNormal, source, endpointBlockers, stubLength);
-    const endOut = endpointStubPoint(end, targetNormal, target, endpointBlockers, stubLength);
-    const middle = routingEdge.manualPoints?.length
-      ? routingEdge.manualPoints
-      : startOut.x === endOut.x || startOut.y === endOut.y
-        ? []
-        : [{ x: endOut.x, y: startOut.y }];
-    const boundedPoints = [start, startOut, ...middle, endOut, end].map((point) =>
-      bounds ? clampPointToBounds(point, bounds) : point
-    );
-    let points = simplifyRoutePreservingEndpointStubs(orthogonalizeRouteKeepingCollinear(boundedPoints));
-    if (routeHasImmediateReversal(points) || routeIntersectsBlockers(points, endpointBlockers, ROUTE_BLOCKER_PADDING, 1)) {
-      points = simplifyRoutePreservingEndpointStubs(
-        repairRouteAroundBlockers(points, endpointBlockers, bounds, 1),
-        { blockers: endpointBlockers, reduceTinyDoglegs: true }
-      );
     }
     routes.push({
       edgeId: edge.id,
@@ -13748,7 +13705,7 @@ export function routeEdgesForSavedPathRendering(
       path: pointsToOrthogonalPath(points)
     });
   }
-  return options.refreshCrossingArcs === false ? routes : refreshCrossingArcPaths(routes);
+  return options.refreshCrossingArcs === true ? refreshCrossingArcPaths(routes) : routes;
 }
 
 export function routeEdgesForCachedStoredRendering(
