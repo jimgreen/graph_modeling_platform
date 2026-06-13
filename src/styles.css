@@ -1581,7 +1581,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   pointer-events: none;
 }
 
-.diagram-canvas.single-node-dragging .diagram-node.single-drag-origin {
+.diagram-node.single-drag-origin {
   opacity: 0.24;
 }
 

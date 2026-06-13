@@ -60,6 +60,91 @@ function cssRuleBlock(styles: string, selector: string) {
 }
 
 describe("graph inspector panel", () => {
+  test("buffers custom component definition text inputs to avoid app-wide rerenders while typing", async () => {
+    const source = await readAppSource();
+    const bufferedInputStart = source.indexOf("function BufferedTextInput(");
+    const bufferedInputEnd = source.indexOf("const BATCH_MEASUREMENT_GROUP_KEYS", bufferedInputStart);
+    const bufferedInputBlock = source.slice(bufferedInputStart, bufferedInputEnd);
+    const customDialogStart = source.indexOf("{customDeviceDialogOpen && (");
+    const customDialogEnd = source.indexOf("{stateIconDrawingDialog && (", customDialogStart);
+    const customDialogBlock = source.slice(customDialogStart, customDialogEnd);
+    const definitionDialogStart = source.indexOf("{deviceDefinitionDialogOpen && (");
+    const definitionDialogEnd = source.indexOf("{customDeviceDialogOpen && (", definitionDialogStart);
+    const definitionDialogBlock = source.slice(definitionDialogStart, definitionDialogEnd);
+
+    expect(bufferedInputStart).toBeGreaterThanOrEqual(0);
+    expect(bufferedInputBlock).toContain("const [draftValue, setDraftValue] = useState");
+    expect(bufferedInputBlock).toContain("onChange={(event) => setDraftValue(event.target.value)}");
+    expect(bufferedInputBlock).toContain("onBlur={commitDraft}");
+    expect(bufferedInputBlock).toContain("event.key === \"Enter\"");
+    expect(bufferedInputBlock).toContain("event.key === \"Escape\"");
+    expect(customDialogBlock).toContain("<BufferedTextInput");
+    expect(definitionDialogBlock).toContain("<BufferedTextInput");
+    expect(customDialogBlock).not.toContain("componentName: event.target.value");
+    expect(customDialogBlock).not.toContain("cnName: event.target.value");
+    expect(customDialogBlock).not.toContain("enName: event.target.value");
+    expect(definitionDialogBlock).not.toContain("updateDefinitionDraftRow(row.id, { cnName: event.target.value })");
+    expect(definitionDialogBlock).not.toContain("updateDefinitionDraftRow(row.id, { enName: event.target.value })");
+  });
+
+  test("buffers text-like input and textarea commits instead of updating app state on every keystroke", async () => {
+    const source = await readAppSource();
+    const helperStart = source.indexOf("function DeferredColorInput(");
+    const helperEnd = source.indexOf("const BATCH_MEASUREMENT_GROUP_KEYS", helperStart);
+    const appMarkup = `${source.slice(0, helperStart)}${source.slice(helperEnd)}`;
+    const lineOf = (index: number) => appMarkup.slice(0, index).split("\n").length;
+    const offenders: string[] = [];
+    const collect = (pattern: RegExp) => {
+      for (const match of appMarkup.matchAll(pattern)) {
+        const block = match[0];
+        if (!block.includes("onChange") || !/event\.(target|currentTarget)\.value/.test(block)) {
+          continue;
+        }
+        if (block.includes("搜索")) {
+          continue;
+        }
+        const type = block.match(/\btype=\{?"([^"}]+)"\}?/)?.[1] ?? (block.startsWith("<textarea") ? "textarea" : "text");
+        if (["color", "file", "checkbox", "radio", "range"].includes(type)) {
+          continue;
+        }
+        offenders.push(`${lineOf(match.index ?? 0)}:${block.replace(/\s+/g, " ").slice(0, 180)}`);
+      }
+    };
+
+    collect(/<input\b[\s\S]*?\/>/g);
+    collect(/<textarea\b[\s\S]*?<\/textarea>/g);
+    collect(/<textarea\b[\s\S]*?\/>/g);
+
+    expect(offenders).toEqual([]);
+    expect(source).toContain("function BufferedTextInput(");
+    expect(source).toContain("function BufferedTextarea(");
+  });
+
+  test("keeps custom component tree selection responsive while loading template drafts", async () => {
+    const source = await readAppSource();
+    const selectStart = source.indexOf("const selectCustomComponentTemplate = (");
+    const selectEnd = source.indexOf("const startCustomComponentCreate =", selectStart);
+    const selectBlock = source.slice(selectStart, selectEnd);
+    const selectionIndex = selectBlock.indexOf("setCustomComponentTreeSelection({ kind: \"component\"");
+    const transitionIndex = selectBlock.indexOf("startCustomComponentSelectionTransition");
+    const draftIndex = selectBlock.indexOf("setCustomDeviceDraft(");
+
+    expect(source).toContain("useTransition");
+    expect(source).toContain("startCustomComponentSelectionTransition");
+    expect(source).toContain("customComponentSelectionRequestRef");
+    expect(source).toContain("cancelPendingCustomComponentTemplateLoad");
+    expect(selectionIndex).toBeGreaterThanOrEqual(0);
+    expect(transitionIndex).toBeGreaterThan(selectionIndex);
+    expect(draftIndex).toBeGreaterThan(transitionIndex);
+    expect(selectBlock).toContain("window.requestAnimationFrame");
+    expect(selectBlock).toContain("if (customComponentSelectionRequestRef.current !== requestId)");
+    expect(selectBlock).toContain("return;");
+    expect(selectBlock).toContain("setCustomDeviceDraft((current) =>");
+    expect(source.slice(source.indexOf("const selectCustomAttributeLibrary = ("), source.indexOf("const selectCustomComponentType = ("))).toContain("cancelPendingCustomComponentTemplateLoad();");
+    expect(source.slice(source.indexOf("const selectCustomComponentType = ("), source.indexOf("const selectCustomComponentTemplate = ("))).toContain("cancelPendingCustomComponentTemplateLoad();");
+    expect(source.slice(source.indexOf("const startCustomComponentCreate = ("), source.indexOf("const nextCustomAttributeLibraryName = ("))).toContain("cancelPendingCustomComponentTemplateLoad();");
+  });
+
   test("defers color picker commits until the picker drag settles", async () => {
     const source = await readAppSource();
     const componentStart = source.indexOf("function DeferredColorInput(");
@@ -2404,7 +2489,7 @@ describe("graph inspector panel", () => {
     expect(dragBlock).toContain("let dragSelection = nodeWasSelected");
     expect(dragBlock).toContain("? groupDragSelection");
     expect(dragBlock).toContain("expandActiveGroupSelection([...activeSelectedNodeIds, node.id], activeSelectedEdgeIds)");
-    expect(dragBlock).toContain("const dragNodeIds = dragSelection.nodeIds");
+    expect(dragBlock).toContain("const dragNodeIds = movableCanvasNodeIds(dragSelection.nodeIds)");
     expect(dragBlock).toContain("if (!activeLayerNodeIdSet.has(node.id))");
     expect(source).toContain("const selectedLayoutUnits = useMemo");
     expect(source).toContain("buildCanvasLayoutUnits(activeLayerGroups, activeLayerNodes, activeSelectedNodeIds, activeSelectedEdgeIds, activeLayerEdges, routedEdges)");
@@ -2492,7 +2577,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("type CanvasSelectionSnapshot =");
     expect(source).toContain("selection?: CanvasSelectionSnapshot;");
     expect(source).toContain("const restoreCanvasSelectionSnapshot =");
-    expect(source).toContain("restoreCanvasSelectionSnapshot(activeDragging.selection);");
+    expect(source).toContain("const restoreCanvasSelectionSnapshotWithInspector =");
+    expect(source).toContain("restoreCanvasSelectionSnapshotWithInspector(activeDragging.selection);");
     expect(source).toContain("const [canvasSelectionScope, setCanvasSelectionScope]");
     expect(source).toContain("const displaySelectedNodeIds = canvasSelectionScope === \"direct\" ? groupExpandedCanvasSelection.nodeIds : activeSelectedNodeIds");
     expect(source).toContain("const displaySelectedEdgeIds = canvasSelectionScope === \"direct\" ? groupExpandedCanvasSelection.edgeIds : activeCanvasSelection.edgeIds");
@@ -2508,11 +2594,13 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const visibleSelectedGroupLayoutUnits = focusedGroupedNodeMovesGroup ? [] : selectedGroupLayoutUnits;");
     expect(source).toContain("{visibleSelectedGroupLayoutUnits.map((unit) =>");
     expect(copyCutBlock).toContain("{ expandGroups: canvasSelectionScope === \"group\" }");
-    expect(moveBlock).toContain("const moveNodeIds = canvasSelectionScope === \"direct\" ? displaySelectedNodeIds : activeSelectedNodeIds");
+    expect(moveBlock).toContain("const rawMoveNodeIds = canvasSelectionScope === \"direct\" ? displaySelectedNodeIds : activeSelectedNodeIds");
+    expect(moveBlock).toContain("const moveNodeIds = movableCanvasNodeIds(rawMoveNodeIds);");
     expect(moveBlock).toContain("const moveEdgeIds = canvasSelectionScope === \"direct\" ? displaySelectedEdgeIds : activeSelectedEdgeIds");
     expect(moveBlock).toContain("commitFastMovedGraphPatches(");
     expect(moveBlock).toContain("moveNodeIds");
-    expect(dragMoveBlock).toContain("setDragging(singleNodeDragRenderState(nextDragState));");
+    expect(dragMoveBlock).toContain("updateSingleNodeDragImperativePreview(nextDragState, previewDelta);");
+    expect(dragMoveBlock).not.toContain("setDragging(singleNodeDragRenderState(nextDragState));");
     expect(dragMoveBlock).not.toContain("setDragging((current) =>");
     expect(dragMoveBlock).not.toContain("draggingRef.current = null;\n        return current;");
     expect(updateBlock).toContain("if (patch.position && focusedGroupedNodeMovesGroup && selectedNode)");
@@ -2525,11 +2613,15 @@ describe("graph inspector panel", () => {
     expect(dragBlock).toContain("let dragSelection = nodeWasSelected");
     expect(dragBlock).toContain("? groupDragSelection");
     expect(dragBlock).toContain("selectedGroupMemberNodeIdSet.has(node.id)");
-    expect(dragBlock).toContain("setSelectedNodeIds([node.id])");
-    expect(dragBlock).toContain("setCanvasSelectionScope(\"direct\")");
+    expect(dragBlock).toContain("let applyPointerDownSelectionImmediately = false");
+    expect(dragBlock).toContain("applyPointerDownSelectionImmediately = true");
+    expect(dragBlock).toContain("applyPointerDownSelectionImmediately = hadCanvasSelection");
+    expect(dragBlock).toContain("restoreCanvasSelectionSnapshotWithInspector(dragSelectionSnapshot)");
+    expect(dragBlock).not.toContain("setSelectedNodeIds([node.id])");
+    expect(dragBlock).not.toContain("setCanvasSelectionScope(\"direct\")");
     expect(dragBlock).toContain("dragSelectionSnapshot = createCanvasSelectionSnapshot(\"direct\", [node.id], [], \"\")");
     expect(dragBlock).toContain("selection: dragSelectionSnapshot");
-    expect(dragBlock).toContain("const dragNodeIds = dragSelection.nodeIds");
+    expect(dragBlock).toContain("const dragNodeIds = movableCanvasNodeIds(dragSelection.nodeIds)");
     expect(dragBlock).toContain("const originalPositionsForDrag = Object.fromEntries");
   });
 
@@ -3181,7 +3273,7 @@ describe("graph inspector panel", () => {
     expect(serverExportBlock).toContain('<use id="${escapeSvgAttribute(useId)}" class="export-node" href="#${escapeSvgAttribute(symbolId)}" xlink:href="#${escapeSvgAttribute(symbolId)}" x="');
     expect(serverExportBlock).toContain('class="export-node-geometry" transform="${escapeSvgAttribute(geometryTransform)}"');
     expect(serverExportBlock).toContain('const backgroundColor = project.canvasBackgroundColor ?? "#f8fafc";');
-    expect(serverExportBlock).toContain('const backgroundImage = project.canvasBackgroundImage ?? "";');
+    expect(serverExportBlock).toContain('const backgroundImage = svgImageHref(project.canvasBackgroundImage ?? "", imagePathById);');
     expect(serverExportBlock).toContain('<rect width="100%" height="100%" fill="${escapeSvgAttribute(backgroundColor)}"/>');
     expect(serverExportBlock).toContain('<image href="${escapeSvgAttribute(backgroundImage)}"');
     expect(serverExportBlock).toContain("buildServerSvgNodeLabelMarkup(node)");
@@ -3197,7 +3289,7 @@ describe("graph inspector panel", () => {
     expect(serverSource).toContain('data-export-measurement-value="1"');
   });
 
-  test("exports backend image paths in svg as root-relative image file paths", async () => {
+  test("exports backend images in svg as embedded base64 data urls", async () => {
     const source = await readAppSource();
     const serverSource = await readServerSource();
     const exportStart = source.indexOf("export function buildSvgDocument");
@@ -3211,23 +3303,28 @@ describe("graph inspector panel", () => {
     const saveProjectBlock = serverSource.slice(saveProjectStart, saveProjectEnd);
 
     expect(source).toContain("function exportSvgImageHref(");
-    expect(source).toContain("const ROOT_IMAGE_EXPORT_DIR = \"data/images\";");
+    expect(source).toContain("function imageArrayBufferToDataUrl(");
+    expect(source).toContain("async function fetchBackendImageDataUrl(");
     expect(source).toContain("function imageExportPathByIdFromAssets(");
     expect(exportBlock).toContain("const imageHref = exportSvgImageHref(");
     expect(exportBlock).toContain("const foregroundHref = exportSvgImageHref(");
     expect(exportBlock).toContain("const backgroundImage = exportSvgImageHref(");
     expect(source).toContain("const imageExportPathById = await loadSvgImageExportPathById();");
+    expect(source).toContain("await fetchBackendImageDataUrl(asset)");
     expect(source).toContain("imageExportPathById,");
     expect(source).not.toContain("imageUrlBase: window.location.href");
     expect(serverSource).not.toContain("function publicRequestOrigin(request)");
-    expect(serverSource).toContain("function imageExportPathByIdFromManifest(");
+    expect(serverSource).toContain("async function imageExportPathByIdFromManifest(");
     expect(serverSource).toContain("function svgImageHref(value, imagePathById = {})");
+    expect(serverSource).toContain("function imageFileToDataUrl(item)");
     expect(serverExportBlock).toContain("function buildSvgFile(project, measurementConfig = { measurementTypes: [], deviceProfiles: [] }, options = {})");
     expect(serverExportBlock).toContain("const imagePathById = options.imagePathById ?? {};");
     expect(serverExportBlock).toContain("const backgroundImage = svgImageHref(project.canvasBackgroundImage ?? \"\", imagePathById);");
     expect(serverExportBlock).toContain("const image = svgImageHref(");
-    expect(saveProjectBlock).toContain("imagePathById: imageExportPathByIdFromManifest(await readManifest())");
+    expect(saveProjectBlock).toContain("imagePathById: await imageExportPathByIdFromManifest(await readManifest())");
     expect(serverSource).toContain("filename: item.filename");
+    expect(source).not.toContain("return imageExportPathById[id] || `${ROOT_IMAGE_EXPORT_DIR}");
+    expect(serverSource).not.toContain("return imagePathById[id] || `${rootImageExportDir}");
   });
 
   test("resizes the canvas from its edges and expands it for moved or pasted graphics", async () => {
@@ -6358,15 +6455,20 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const imperativeSingleNodeDragEdgePreviewRef");
     expect(source).toContain("const imperativeNodeDragDropHintRef");
     expect(source).toContain("const imperativeSingleNodeDragActiveRef");
+    expect(source).toContain("const imperativeSingleNodeDragOriginNodeIdRef");
+    expect(source).toContain("const canvasNodeElementRefs");
     expect(source).toContain("const buildSingleNodeDragPreviewNodeMarkup");
     expect(source).toContain("const updateSingleNodeDragImperativePreview");
     expect(source).toContain("const hideImperativeSingleNodeDragPreview");
+    expect(source).toContain("const setImperativeSingleNodeDragOrigin");
+    expect(source).toContain("const bindCanvasNodeElement");
     expect(source).toContain("if (!imperativeSingleNodeDragActiveRef.current) {\n    nodeTerminalSnapTargetRef.current = nodeTerminalSnapTarget;\n  }");
     expect(dragMoveBlock).toContain("renderPreview && !isMultiNodeMoveState(currentDrag)");
     expect(dragMoveBlock).toContain("boundedDeltaForNodes(");
     expect(dragMoveBlock).toContain("computeNodeDragDelta(currentDrag, point, ctrlKey, shiftKey)");
     expect(singleMoveBlock).toContain("updateSingleNodeDragImperativePreview(nextDragState, previewDelta);");
-    expect(singleMoveBlock).toContain("singleNodeDragRenderState(nextDragState)");
+    expect(singleMoveBlock).not.toContain("singleNodeDragRenderState(nextDragState)");
+    expect(singleMoveBlock).not.toContain("setDragging(singleNodeDragRenderState(nextDragState));");
     expect(singleMoveBlock).not.toContain("setDragging((current) =>");
     expect(renderBlock).toContain("singleNodeDragging && dragAffectedEdgeIdSet.has(edge.id)");
     expect(finishBlock).toContain("nodeTerminalSnapTargetRef.current ?? (");
@@ -6377,6 +6479,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("className=\"connect-drop-hint imperative-node-drag-drop-hint\"");
     expect(source).toContain("singleNodeDragging ? \"single-node-dragging\" : \"\"");
     expect(source).toContain("singleNodeDragging && draggingNodeIdSet.has(node.id) ? \"single-drag-origin\" : \"\"");
+    expect(source).toContain("ref={(element) => bindCanvasNodeElement(node.id, element)}");
+    expect(source).toContain("data-node-id={node.id}");
     expect(styles).toContain(".single-node-drag-overlay");
     expect(styles).toContain(".diagram-node.single-drag-origin");
   });

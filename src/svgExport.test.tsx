@@ -16,7 +16,7 @@ describe("SVG export", () => {
     expect(svg).not.toContain('href="data/images/bg?id=1&name=a"b"');
   });
 
-  test("exports backend image hrefs as root-relative image file paths", () => {
+  test("exports backend image hrefs as embedded base64 data urls", () => {
     const node = {
       ...createDefaultNode("static-image", { x: 120, y: 90 }),
       id: "image-node"
@@ -32,20 +32,21 @@ describe("SVG export", () => {
       backgroundColor: "#ffffff",
       backgroundImage: "/api/images/canvas-bg",
       imageExportPathById: {
-        "canvas-bg": "data/images/canvas-bg.png",
-        "node-bg": "data/images/node-bg.jpg",
-        "node-fg": "data/images/node-fg.svg"
+        "canvas-bg": "data:image/png;base64,Y2FudmFzLWJn",
+        "node-bg": "data:image/jpeg;base64,bm9kZS1iZw==",
+        "node-fg": "data:image/svg+xml;base64,PHN2Zy8+"
       }
     });
 
-    expect(svg).toContain('href="data/images/canvas-bg.png"');
-    expect(svg).toContain('href="data/images/node-bg.jpg"');
-    expect(svg).toContain('href="data/images/node-fg.svg"');
+    expect(svg).toContain('href="data:image/png;base64,Y2FudmFzLWJn"');
+    expect(svg).toContain('href="data:image/jpeg;base64,bm9kZS1iZw=="');
+    expect(svg).toContain('href="data:image/svg+xml;base64,PHN2Zy8+"');
     expect(svg).not.toContain("http://127.0.0.1:5173");
     expect(svg).not.toContain('href="/api/images/');
+    expect(svg).not.toContain('href="data/images/');
   });
 
-  test("does not leak backend image api hrefs when export path mapping is unavailable", () => {
+  test("keeps backend image api hrefs when embedded image data is unavailable", () => {
     const svg = buildSvgDocument([], [], {
       width: 320,
       height: 180,
@@ -53,8 +54,8 @@ describe("SVG export", () => {
       backgroundImage: "/api/images/missing-bg?id=1"
     });
 
-    expect(svg).toContain('href="data/images/missing-bg"');
-    expect(svg).not.toContain('href="/api/images/');
+    expect(svg).toContain('href="/api/images/missing-bg?id=1"');
+    expect(svg).not.toContain('href="data/images/');
   });
 
   test("exports custom multi-state visual overrides from template definitions", () => {

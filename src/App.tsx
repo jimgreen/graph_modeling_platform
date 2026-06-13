@@ -1,5 +1,6 @@
 ﻿import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, memo, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, type SetStateAction, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
+import { useTransition } from "react";
 import {
   AlignEndHorizontal,
   AlignEndVertical,
@@ -3605,6 +3606,159 @@ function DeferredColorInput({
   );
 }
 
+type BufferedTextInputProps = {
+  value: string | number;
+  disabled?: boolean;
+  readOnly?: boolean;
+  className?: string;
+  id?: string;
+  name?: string;
+  type?: string;
+  min?: string | number;
+  max?: string | number;
+  step?: string | number;
+  list?: string;
+  placeholder?: string;
+  inputMode?: "none" | "text" | "tel" | "url" | "email" | "numeric" | "decimal" | "search";
+  title?: string;
+  autoFocus?: boolean;
+  style?: CSSProperties;
+  "aria-label"?: string;
+  onClick?: (event: MouseEvent<HTMLInputElement>) => void;
+  onDoubleClick?: (event: MouseEvent<HTMLInputElement>) => void;
+  onKeyDown?: (event: ReactKeyboardEvent<HTMLInputElement>) => void;
+  onCommit: (value: string) => void;
+};
+
+function BufferedTextInput({
+  value,
+  disabled,
+  onCommit,
+  ...inputProps
+}: BufferedTextInputProps) {
+  const normalizedValue = String(value ?? "");
+  const [draftValue, setDraftValue] = useState(normalizedValue);
+  const committedValueRef = useRef(normalizedValue);
+  const onCommitRef = useRef(onCommit);
+
+  const commitValue = (nextValue: string) => {
+    if (disabled) {
+      return;
+    }
+    if (nextValue !== committedValueRef.current) {
+      committedValueRef.current = nextValue;
+      onCommitRef.current(nextValue);
+    }
+  };
+
+  const commitDraft = () => commitValue(draftValue);
+
+  useEffect(() => {
+    onCommitRef.current = onCommit;
+  }, [onCommit]);
+
+  useEffect(() => {
+    committedValueRef.current = normalizedValue;
+    setDraftValue(normalizedValue);
+  }, [normalizedValue]);
+
+  return (
+    <input
+      {...inputProps}
+      value={draftValue}
+      disabled={disabled}
+      onChange={(event) => setDraftValue(event.target.value)}
+      onBlur={commitDraft}
+      onKeyDown={(event) => {
+        inputProps.onKeyDown?.(event);
+        if (event.defaultPrevented) {
+          return;
+        }
+        if (event.key === "Enter") {
+          commitValue(event.currentTarget.value);
+          event.currentTarget.blur();
+        } else if (event.key === "Escape") {
+          setDraftValue(committedValueRef.current);
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+type BufferedTextareaProps = {
+  value: string | number;
+  disabled?: boolean;
+  readOnly?: boolean;
+  className?: string;
+  id?: string;
+  name?: string;
+  rows?: number;
+  placeholder?: string;
+  spellCheck?: boolean;
+  autoFocus?: boolean;
+  style?: CSSProperties;
+  "aria-label"?: string;
+  onKeyDown?: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
+  onCommit: (value: string) => void;
+};
+
+function BufferedTextarea({
+  value,
+  disabled,
+  onCommit,
+  ...textareaProps
+}: BufferedTextareaProps) {
+  const normalizedValue = String(value ?? "");
+  const [draftValue, setDraftValue] = useState(normalizedValue);
+  const committedValueRef = useRef(normalizedValue);
+  const onCommitRef = useRef(onCommit);
+
+  const commitValue = (nextValue: string) => {
+    if (disabled) {
+      return;
+    }
+    if (nextValue !== committedValueRef.current) {
+      committedValueRef.current = nextValue;
+      onCommitRef.current(nextValue);
+    }
+  };
+
+  const commitDraft = () => commitValue(draftValue);
+
+  useEffect(() => {
+    onCommitRef.current = onCommit;
+  }, [onCommit]);
+
+  useEffect(() => {
+    committedValueRef.current = normalizedValue;
+    setDraftValue(normalizedValue);
+  }, [normalizedValue]);
+
+  return (
+    <textarea
+      {...textareaProps}
+      value={draftValue}
+      disabled={disabled}
+      onChange={(event) => setDraftValue(event.target.value)}
+      onBlur={commitDraft}
+      onKeyDown={(event) => {
+        textareaProps.onKeyDown?.(event);
+        if (event.defaultPrevented) {
+          return;
+        }
+        if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+          commitValue(event.currentTarget.value);
+          event.currentTarget.blur();
+        } else if (event.key === "Escape") {
+          setDraftValue(committedValueRef.current);
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
 const BATCH_MEASUREMENT_GROUP_KEYS: BatchCommonMeasurementGroupKey[] = [
   "visible",
   "layout",
@@ -4782,10 +4936,10 @@ const renderTypicalValueEditor = <T extends DeviceParameterDefinition & { id: st
     );
   }
   return (
-    <input
+    <BufferedTextInput
       value={String(row.typicalValue ?? "")}
       disabled={disabled}
-      onChange={(event) => updateRow(row.id, { typicalValue: event.target.value } as Partial<T>)}
+      onCommit={(value) => updateRow(row.id, { typicalValue: value } as Partial<T>)}
     />
   );
 };
@@ -4815,23 +4969,23 @@ const renderEnumValuesEditor = <T extends DeviceParameterDefinition & { id: stri
     <div className="custom-param-enum-values">
       {editorOptions.map((option, index) => (
         <div className="custom-param-enum-row" key={`${row.id}-${index}`}>
-          <input
+          <BufferedTextInput
             value={option.value}
             disabled={disabled}
             inputMode={enumValueType === "number" ? "decimal" : undefined}
-            onChange={(event) => {
-              const nextOptions = editorOptions.map((item, itemIndex) => (itemIndex === index ? { ...item, value: event.target.value } : item));
-              const nextTypicalValue = row.typicalValue === option.value ? event.target.value : row.typicalValue;
+            onCommit={(value) => {
+              const nextOptions = editorOptions.map((item, itemIndex) => (itemIndex === index ? { ...item, value } : item));
+              const nextTypicalValue = row.typicalValue === option.value ? value : row.typicalValue;
               updateValues(nextOptions, nextTypicalValue);
             }}
           />
           {enumValueType === "number" && (
-            <input
+            <BufferedTextInput
               value={option.label ?? ""}
               disabled={disabled}
               placeholder="含义"
-              onChange={(event) => {
-                const nextOptions = editorOptions.map((item, itemIndex) => (itemIndex === index ? { ...item, label: event.target.value } : item));
+              onCommit={(value) => {
+                const nextOptions = editorOptions.map((item, itemIndex) => (itemIndex === index ? { ...item, label: value } : item));
                 const nextTypicalValue = row.typicalValue === option.label ? option.value : row.typicalValue;
                 updateValues(nextOptions, nextTypicalValue);
               }}
@@ -6233,6 +6387,49 @@ function createEmptyCustomDeviceDraft(attributeLibraryName = "交流设备"): Cu
   };
 }
 
+function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, sectionName = resolveTemplateComponentType(template)): CustomDeviceDraft {
+  const attributeLibraryName = normalizeAttributeLibraryName(template.attributeLibrary);
+  const section = normalizeComponentTypeName(sectionName);
+  const terminalCount = Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, template.terminalCount));
+  const terminalTypes = (template.terminalTypes ?? Array.from({ length: template.terminalCount }, () => template.terminalType)).slice(0, MAX_CUSTOM_DEVICE_TERMINALS) as TerminalType[];
+  const terminalAssociations = normalizeContainerTerminalAssociations(
+    terminalTypes,
+    template.terminalAssociations ?? [],
+    terminalCount
+  );
+  const defaultDefinitions = new Set(customDefaultDefinitions(terminalTypes, {
+    isContainer: template.isContainer,
+    terminalAssociations
+  }).map((definition) => definition.enName.toLowerCase()));
+  const customParams = (template.parameterDefinitions ?? parseCustomDefinitions(template.params))
+    .filter((definition) =>
+      !defaultDefinitions.has(definition.enName.toLowerCase()) &&
+      definition.enName !== "component_type" &&
+      !isReservedDeviceDefinitionParamName(definition.enName)
+    )
+    .map((definition) => ({ ...definition, id: customParamId() }));
+  const stateRows = createDefinitionStateDraftRows(template);
+  return {
+    attributeLibraryName,
+    componentType: section,
+    componentName: template.label,
+    backgroundImage: template.params.backgroundImage ?? "",
+    backgroundImageAssetId: template.params.backgroundImageAssetId ?? "",
+    size: { ...template.size },
+    allowResizeTransform: templateResizeTransformValue(template),
+    terminalCount,
+    terminalTypes: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => terminalTypes[index] ?? "ac") as TerminalType[],
+    terminalLabels: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => template.terminalLabels?.[index] ?? ""),
+    terminalAnchors: createDefaultCustomDeviceTerminalAnchors(terminalCount, template.terminalAnchors),
+    terminalRoles: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => template.terminalRoles?.[index] ?? "single-load") as ContainerTerminalRole[],
+    terminalAssociations: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => terminalAssociations[index] ?? "ac-load") as ContainerTerminalAssociationValue[],
+    isContainer: Boolean(template.isContainer),
+    params: customParams,
+    stateDefinitions: stateRows,
+    error: template.custom ? "" : "当前选中的是系统内置元件，可查看并复制为新自定义元件，不能直接覆盖内置定义。"
+  };
+}
+
 function createDefinitionVisualDraft(template: DeviceTemplate): DeviceDefinitionVisualDraft {
   const terminalCount = Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, Math.round(template.terminalCount || 0)));
   const sourceTerminalTypes = (template.terminalTypes ?? Array.from({ length: terminalCount }, () => template.terminalType)).slice(0, terminalCount) as TerminalType[];
@@ -6570,8 +6767,8 @@ function escapeXml(value: string) {
     .replace(/"/g, "&quot;");
 }
 
-const ROOT_IMAGE_EXPORT_DIR = "data/images";
 const BACKEND_IMAGE_HREF_PATTERN = /^\/api\/images\/([^/?#]+)/;
+const IMAGE_DATA_URL_PATTERN = /^data:image\//iu;
 
 function backendImageIdFromHref(value: string) {
   const match = BACKEND_IMAGE_HREF_PATTERN.exec(String(value ?? "").trim());
@@ -6585,28 +6782,47 @@ function backendImageIdFromHref(value: string) {
   }
 }
 
-function safeImageExportFilename(value: string) {
-  const normalized = String(value ?? "").trim().replace(/\\/gu, "/");
-  return normalized.split("/").filter(Boolean).pop() ?? "";
+function isImageDataUrl(value: string) {
+  return IMAGE_DATA_URL_PATTERN.test(String(value ?? "").trim());
 }
 
-function imageExportPathByIdFromAssets(assets: ImageAsset[]) {
+function imageArrayBufferToDataUrl(buffer: ArrayBuffer, mimeType = "image/png") {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return `data:${mimeType};base64,${window.btoa(binary)}`;
+}
+
+async function fetchBackendImageDataUrl(asset: ImageAsset) {
+  const response = await fetch(asset.url || `/api/images/${encodeURIComponent(asset.id)}`);
+  if (!response.ok) {
+    throw new Error("读取后台图片失败。");
+  }
+  const mimeType = response.headers.get("content-type") || asset.mimeType || "image/png";
+  return imageArrayBufferToDataUrl(await response.arrayBuffer(), mimeType);
+}
+
+function imageExportPathByIdFromAssets(assets: ImageAsset[], storedAssets: Record<string, string> = readImageAssets()) {
   return assets.reduce<Record<string, string>>((result, asset) => {
     const id = String(asset.id ?? "").trim();
-    const filename = safeImageExportFilename(asset.filename ?? "");
-    if (id && filename) {
-      result[id] = `${ROOT_IMAGE_EXPORT_DIR}/${filename}`;
+    const dataUrl = storedAssets[id] || asset.url || "";
+    if (id && isImageDataUrl(dataUrl)) {
+      result[id] = dataUrl;
     }
     return result;
   }, {});
 }
 
 function exportSvgImageHref(value: string, imageExportPathById: Record<string, string> = {}) {
-  const id = backendImageIdFromHref(value);
+  const href = String(value ?? "");
+  const id = backendImageIdFromHref(href);
   if (!id) {
-    return value;
+    return href;
   }
-  return imageExportPathById[id] || `${ROOT_IMAGE_EXPORT_DIR}/${safeImageExportFilename(id) || id}`;
+  return imageExportPathById[id] || href;
 }
 
 const SVG_ATTRIBUTE_NAMES: Record<string, string> = {
@@ -9631,6 +9847,7 @@ export function App() {
   const layerManagementDropdownRef = useRef<HTMLDivElement | null>(null);
   const canvasFrameRef = useRef<HTMLDivElement | null>(null);
   const canvasResizeHotzonesRef = useRef<HTMLDivElement | null>(null);
+  const canvasNodeElementRefs = useRef<Map<string, SVGGElement>>(new Map());
   const canvasInteractionRef = useRef(false);
   const canvasSelectionShortcutActiveRef = useRef(false);
   const lastCanvasPointerRef = useRef<Point | null>(null);
@@ -9685,6 +9902,7 @@ export function App() {
   const imperativeSingleNodeDragEdgePreviewRef = useRef<SVGGElement | null>(null);
   const imperativeNodeDragDropHintRef = useRef<SVGGElement | null>(null);
   const imperativeSingleNodeDragActiveRef = useRef(false);
+  const imperativeSingleNodeDragOriginNodeIdRef = useRef<string | null>(null);
   const imperativeNodeDragEdgePreviewPathRefs = useRef<Map<string, SVGPathElement>>(new Map());
   const imperativeNodeDragEdgePreviewKeyRef = useRef("");
   const nodePatchListLookupCacheRef = useRef<WeakMap<ModelNode[], Map<string, ModelNode>>>(new WeakMap());
@@ -9997,6 +10215,9 @@ export function App() {
   const [customDeviceDraft, setCustomDeviceDraft] = useState<CustomDeviceDraft>(() => createEmptyCustomDeviceDraft());
   const [customDeviceSaveMessage, setCustomDeviceSaveMessage] = useState("");
   const [customDeviceTerminalAnchorDragIndex, setCustomDeviceTerminalAnchorDragIndex] = useState<number | null>(null);
+  const [, startCustomComponentSelectionTransition] = useTransition();
+  const customComponentSelectionRequestRef = useRef(0);
+  const customComponentSelectionFrameRef = useRef<number | null>(null);
   const [deviceDefinitionOverrides, setDeviceDefinitionOverrides] = useState<Record<string, DeviceTemplateDefinitionOverride>>(() => initialDeviceLibrary.deviceDefinitionOverrides);
   const [deviceDefinitionDialogOpen, setDeviceDefinitionDialogOpen] = useState(false);
   const [selectedDefinitionKind, setSelectedDefinitionKind] = useState<DeviceKind | "">("");
@@ -16621,7 +16842,7 @@ export function App() {
           <tr>
             <th>边框宽度</th>
             <td>
-              <input
+              <BufferedTextInput
                 type="number"
                 min="0"
                 max="12"
@@ -16629,9 +16850,9 @@ export function App() {
                 value={selectedMeasurementGroupCommonDraft.borderWidth ?? 1}
                 disabled={isBrowseMode || (selectedMeasurementGroupCommonDraft.borderStyle ?? "solid") === "none"}
                 aria-label="量测组边框宽度"
-                onChange={(event) => updateSelectedMeasurementGroups((current) => ({
+                onCommit={(nextValue) => updateSelectedMeasurementGroups((current) => ({
                   ...current,
-                  borderWidth: Math.max(0, Math.min(12, Number(event.target.value)))
+                  borderWidth: Math.max(0, Math.min(12, Number(nextValue)))
                 }), "修改量测组边框宽度")}
               />
             </td>
@@ -16709,11 +16930,11 @@ export function App() {
                 <tr>
                   <th>测点</th>
                   <td>
-                    <input
+                    <BufferedTextInput
                       value={item.sourcePoint}
                       disabled={isBrowseMode}
                       placeholder={group.terminalId ? `${node.id}.${group.terminalId}.${item.measurementTypeId}` : `${node.id}.${item.measurementTypeId}`}
-                      onChange={(event) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, sourcePoint: event.target.value }))}
+                      onCommit={(nextValue) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, sourcePoint: nextValue }))}
                     />
                   </td>
                 </tr>
@@ -16721,21 +16942,21 @@ export function App() {
                   <th>显示</th>
                   <td>
                     <div className="measurement-item-display-grid">
-                      <input
+                      <BufferedTextInput
                         value={item.labelOverride ?? ""}
                         disabled={isBrowseMode}
                         placeholder={type?.shortLabel ?? "标签"}
                         aria-label="量测标签"
-                        onChange={(event) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, labelOverride: event.target.value || undefined }))}
+                        onCommit={(nextValue) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, labelOverride: nextValue || undefined }))}
                       />
-                      <input
+                      <BufferedTextInput
                         value={item.unitOverride ?? ""}
                         disabled={isBrowseMode}
                         placeholder={type?.defaultUnit ?? "单位"}
                         aria-label="量测单位"
-                        onChange={(event) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, unitOverride: event.target.value || undefined }))}
+                        onCommit={(nextValue) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, unitOverride: nextValue || undefined }))}
                       />
-                      <input
+                      <BufferedTextInput
                         type="number"
                         min="0"
                         max="8"
@@ -16743,9 +16964,9 @@ export function App() {
                         disabled={isBrowseMode}
                         placeholder={String(type?.defaultDecimals ?? 3)}
                         aria-label="量测小数位"
-                        onChange={(event) => updateMeasurementItem(group.id, item.id, (current) => ({
+                        onCommit={(nextValue) => updateMeasurementItem(group.id, item.id, (current) => ({
                           ...current,
-                          decimalsOverride: event.target.value === "" ? undefined : Number(event.target.value)
+                          decimalsOverride: nextValue === "" ? undefined : Number(nextValue)
                         }))}
                       />
                       <DeferredColorInput
@@ -16757,16 +16978,16 @@ export function App() {
                           styleOverride: { ...(current.styleOverride ?? {}), color: value }
                         }))}
                       />
-                      <input
+                      <BufferedTextInput
                         type="number"
                         min="6"
                         max="96"
                         value={itemFontSize}
                         disabled={isBrowseMode}
                         aria-label="量测字号"
-                        onChange={(event) => updateMeasurementItem(group.id, item.id, (current) => ({
+                        onCommit={(nextValue) => updateMeasurementItem(group.id, item.id, (current) => ({
                           ...current,
-                          styleOverride: { ...(current.styleOverride ?? {}), fontSize: Number(event.target.value) }
+                          styleOverride: { ...(current.styleOverride ?? {}), fontSize: Number(nextValue) }
                         }))}
                       />
                     </div>
@@ -17836,6 +18057,15 @@ export function App() {
     setSelectedNodeIds(snapshot.nodeIds);
     setSelectedEdgeIds(snapshot.edgeIds);
     setSelectedEdgeId(snapshot.edgeIds.includes(snapshot.edgeId) ? snapshot.edgeId : snapshot.edgeIds[0] ?? "");
+  };
+  const restoreCanvasSelectionSnapshotWithInspector = (
+    snapshot: CanvasSelectionSnapshot | undefined,
+    source: "single" | "marquee" | "blank" = "single"
+  ) => {
+    restoreCanvasSelectionSnapshot(snapshot);
+    if (snapshot) {
+      switchInspectorTabForCanvasSelection(snapshot.nodeIds, snapshot.edgeIds, source);
+    }
   };
 
   const startModifierSelectionPress = (
@@ -21007,8 +21237,32 @@ export function App() {
     clearImperativeNodeDragEdgePreview();
     return true;
   };
+  const setImperativeSingleNodeDragOrigin = (nodeId: string | null) => {
+    const previousNodeId = imperativeSingleNodeDragOriginNodeIdRef.current;
+    if (previousNodeId && previousNodeId !== nodeId) {
+      canvasNodeElementRefs.current.get(previousNodeId)?.classList.remove("single-drag-origin");
+    }
+    imperativeSingleNodeDragOriginNodeIdRef.current = nodeId;
+    svgRef.current?.classList.toggle("single-node-dragging", Boolean(nodeId));
+    if (nodeId) {
+      canvasNodeElementRefs.current.get(nodeId)?.classList.add("single-drag-origin");
+    }
+  };
+  const bindCanvasNodeElement = (nodeId: string, element: SVGGElement | null) => {
+    if (!element) {
+      canvasNodeElementRefs.current.delete(nodeId);
+      return;
+    }
+    canvasNodeElementRefs.current.set(nodeId, element);
+    if (imperativeSingleNodeDragOriginNodeIdRef.current === nodeId) {
+      element.classList.add("single-drag-origin");
+    } else {
+      element.classList.remove("single-drag-origin");
+    }
+  };
   const hideImperativeSingleNodeDragPreview = () => {
     imperativeSingleNodeDragActiveRef.current = false;
+    setImperativeSingleNodeDragOrigin(null);
     const nodeOverlay = imperativeSingleNodeDragNodeOverlayRef.current;
     if (nodeOverlay) {
       nodeOverlay.innerHTML = "";
@@ -21681,7 +21935,10 @@ export function App() {
     }
     hideImperativeMultiNodeDragOverlay();
     if (!isMultiNodeMoveState(nextDragging)) {
-      showImperativeSingleNodeDragPreview(nextDragging);
+      if (showImperativeSingleNodeDragPreview(nextDragging)) {
+        setImperativeSingleNodeDragOrigin(nextDragging.nodeIds[0] ?? null);
+        return;
+      }
     } else {
       hideImperativeSingleNodeDragPreview();
     }
@@ -22271,9 +22528,6 @@ export function App() {
       return;
     }
     updateSingleNodeDragImperativePreview(nextDragState, previewDelta);
-    if (!currentDrag.historyCaptured) {
-      setDragging(singleNodeDragRenderState(nextDragState));
-    }
   };
 
   const scheduleNodeDragMove = (point: Point, ctrlKey: boolean, shiftKey: boolean) => {
@@ -22399,7 +22653,7 @@ export function App() {
     }
     const delta = commitSafeDeltaForDraggingState(activeDragging);
     if (!delta || (delta.x === 0 && delta.y === 0)) {
-      restoreCanvasSelectionSnapshot(activeDragging.selection);
+      restoreCanvasSelectionSnapshotWithInspector(activeDragging.selection);
       canvasInteractionRef.current = true;
       projectListPointerInsideRef.current = false;
       clearDraggingMoveState();
@@ -22434,7 +22688,7 @@ export function App() {
           )
         : delta;
     if (finalDelta.x === 0 && finalDelta.y === 0) {
-      restoreCanvasSelectionSnapshot(activeDragging.selection);
+      restoreCanvasSelectionSnapshotWithInspector(activeDragging.selection);
       canvasInteractionRef.current = true;
       projectListPointerInsideRef.current = false;
       clearDraggingMoveState();
@@ -22503,7 +22757,7 @@ export function App() {
       finalBounds,
       { wholeLayerMove, moveDelta: finalDelta, internalMovedEdgeIds }
     );
-    restoreCanvasSelectionSnapshot(activeDragging.selection);
+    restoreCanvasSelectionSnapshotWithInspector(activeDragging.selection);
     canvasInteractionRef.current = true;
     projectListPointerInsideRef.current = false;
     clearDraggingMoveState();
@@ -22532,7 +22786,7 @@ export function App() {
       hideImperativeSingleNodeDragPreview();
       draggingRef.current = null;
       setDragging(null);
-      restoreCanvasSelectionSnapshot(activeDragging.selection);
+      restoreCanvasSelectionSnapshotWithInspector(activeDragging.selection);
       canvasInteractionRef.current = true;
       projectListPointerInsideRef.current = false;
       return;
@@ -22573,7 +22827,7 @@ export function App() {
       hideImperativeSingleNodeDragPreview();
       draggingRef.current = null;
       setDragging(null);
-      restoreCanvasSelectionSnapshot(activeDragging.selection);
+      restoreCanvasSelectionSnapshotWithInspector(activeDragging.selection);
       canvasInteractionRef.current = true;
       projectListPointerInsideRef.current = false;
       return;
@@ -22648,7 +22902,7 @@ export function App() {
     hideImperativeSingleNodeDragPreview();
     draggingRef.current = null;
     setDragging(null);
-    restoreCanvasSelectionSnapshot(activeDragging.selection);
+    restoreCanvasSelectionSnapshotWithInspector(activeDragging.selection);
     canvasInteractionRef.current = true;
     projectListPointerInsideRef.current = false;
     dragUndoCapturedRef.current = false;
@@ -23841,7 +24095,11 @@ export function App() {
     return (
       <div className="color-field with-none">
         <DeferredColorInput value={colorValue} fallback={fallback} disabled={isBrowseMode} onCommit={(nextValue) => updateParam(key, nextValue)} />
-        <input value={value === "transparent" ? "无颜色" : value || ""} disabled={isBrowseMode} onChange={(event) => updateParam(key, event.target.value === "无颜色" ? "transparent" : event.target.value)} />
+        <BufferedTextInput
+          value={value === "transparent" ? "无颜色" : value || ""}
+          disabled={isBrowseMode}
+          onCommit={(nextValue) => updateParam(key, nextValue === "无颜色" ? "transparent" : nextValue)}
+        />
         <button type="button" disabled={isBrowseMode} onClick={() => updateParam(key, "transparent")}>无颜色</button>
       </div>
     );
@@ -23940,7 +24198,7 @@ export function App() {
         ))}
       </select>
     ) : (
-      <input value={value} disabled={isBrowseMode} onChange={(event) => updateParam(key, event.target.value)} />
+      <BufferedTextInput value={value} disabled={isBrowseMode} onCommit={(nextValue) => updateParam(key, nextValue)} />
     );
     return wrapLabel ? (
       <label key={key}>
@@ -23988,7 +24246,11 @@ export function App() {
     return (
       <div className="color-field with-none">
         <DeferredColorInput value={colorValue} fallback={fallback} disabled={isBrowseMode} onCommit={(nextValue) => updateNodeDoubleClickDraftParam(node.id, key, nextValue)} />
-        <input value={value === "transparent" ? "无颜色" : value || ""} disabled={isBrowseMode} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, key, event.target.value === "无颜色" ? "transparent" : event.target.value)} />
+        <BufferedTextInput
+          value={value === "transparent" ? "无颜色" : value || ""}
+          disabled={isBrowseMode}
+          onCommit={(nextValue) => updateNodeDoubleClickDraftParam(node.id, key, nextValue === "无颜色" ? "transparent" : nextValue)}
+        />
         <button type="button" disabled={isBrowseMode} onClick={() => updateNodeDoubleClickDraftParam(node.id, key, "transparent")}>无颜色</button>
       </div>
     );
@@ -24007,7 +24269,7 @@ export function App() {
         ))}
       </select>
     ) : (
-      <input value={value} disabled={isBrowseMode} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, key, event.target.value)} />
+      <BufferedTextInput value={value} disabled={isBrowseMode} onCommit={(nextValue) => updateNodeDoubleClickDraftParam(node.id, key, nextValue)} />
     );
     return wrapLabel ? (
       <label key={key}>
@@ -24030,11 +24292,11 @@ export function App() {
           disabled={isBrowseMode}
           onCommit={(nextValue) => applyBatchCommonParam(row.key, nextValue)}
         />
-        <input
+        <BufferedTextInput
           value={value === "transparent" ? "无颜色" : value}
           disabled={isBrowseMode}
           placeholder={row.mixed ? "多个不同值" : undefined}
-          onChange={(event) => applyBatchCommonParam(row.key, event.target.value === "无颜色" ? "transparent" : event.target.value)}
+          onCommit={(nextValue) => applyBatchCommonParam(row.key, nextValue === "无颜色" ? "transparent" : nextValue)}
         />
         <button type="button" disabled={isBrowseMode} onClick={() => applyBatchCommonParam(row.key, "transparent")}>无颜色</button>
       </div>
@@ -24201,11 +24463,11 @@ export function App() {
       );
     }
     return (
-      <input
+      <BufferedTextInput
         value={value}
         disabled={isBrowseMode}
         placeholder={row.mixed ? "多个不同值" : undefined}
-        onChange={(event) => applyBatchCommonParam(row.key, event.target.value)}
+        onCommit={(nextValue) => applyBatchCommonParam(row.key, nextValue)}
       />
     );
   };
@@ -24257,11 +24519,11 @@ export function App() {
           aria-label={row.label}
           onCommit={(nextValue) => applyBatchCommonMeasurementGroupSetting(row.key, nextValue)}
         />
-        <input
+        <BufferedTextInput
           value={value === "transparent" ? "无颜色" : value}
           disabled={isBrowseMode}
           placeholder={row.mixed ? "多个不同值" : undefined}
-          onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value === "无颜色" ? "transparent" : event.target.value)}
+          onCommit={(nextValue) => applyBatchCommonMeasurementGroupSetting(row.key, nextValue === "无颜色" ? "transparent" : nextValue)}
         />
         <button type="button" disabled={isBrowseMode} onClick={() => applyBatchCommonMeasurementGroupSetting(row.key, "transparent")}>无颜色</button>
       </div>
@@ -24313,7 +24575,7 @@ export function App() {
       return renderBatchCommonMeasurementGroupColorEditor(row);
     }
     return (
-      <input
+      <BufferedTextInput
         type="number"
         min="0"
         max="12"
@@ -24321,7 +24583,7 @@ export function App() {
         value={value}
         disabled={isBrowseMode}
         placeholder={row.mixed ? "多个不同值" : undefined}
-        onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value)}
+        onCommit={(nextValue) => applyBatchCommonMeasurementGroupSetting(row.key, nextValue)}
       />
     );
   };
@@ -24536,7 +24798,7 @@ export function App() {
           {renderParamHeader(key, key, definition?.cnName ?? PARAM_LABELS[key] ?? key)}
           <td>
             {key === "name" ? (
-              <input value={node.name} onChange={(event) => updateNodeDoubleClickDraftPatch(node.id, { name: event.target.value })} />
+              <BufferedTextInput value={node.name} onCommit={(nextValue) => updateNodeDoubleClickDraftPatch(node.id, { name: nextValue })} />
             ) : READONLY_E_PARAM_KEYS.has(key) || definitionMakesValueReadonly(definition) ? (
               <input value={displayValue} readOnly />
             ) : (
@@ -24557,7 +24819,7 @@ export function App() {
           {renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
           <td>
             {row.key === "name" && view.kind === "container" ? (
-              <input value={node.name} onChange={(event) => updateNodeDoubleClickDraftPatch(node.id, { name: event.target.value })} />
+              <BufferedTextInput value={node.name} onCommit={(nextValue) => updateNodeDoubleClickDraftPatch(node.id, { name: nextValue })} />
             ) : row.readonly || !row.paramKey ? (
               <input value={displayValue} readOnly />
             ) : options ? (
@@ -24569,7 +24831,7 @@ export function App() {
                 ))}
               </select>
             ) : (
-              <input value={displayValue} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, row.paramKey!, event.target.value)} />
+              <BufferedTextInput value={displayValue} onCommit={(nextValue) => updateNodeDoubleClickDraftParam(node.id, row.paramKey!, nextValue)} />
             )}
           </td>
         </tr>
@@ -24582,7 +24844,7 @@ export function App() {
       <tbody>
         <tr>
           {renderChineseParamHeader("text")}
-          <td><textarea rows={7} value={dialogNode.params.text || ""} onChange={(event) => updateNodeDoubleClickDraftParam(dialogNode.id, "text", event.target.value)} autoFocus /></td>
+          <td><BufferedTextarea rows={7} value={dialogNode.params.text || ""} onCommit={(nextValue) => updateNodeDoubleClickDraftParam(dialogNode.id, "text", nextValue)} autoFocus /></td>
         </tr>
         <tr>
           {renderChineseParamHeader("fontFamily")}
@@ -24590,7 +24852,7 @@ export function App() {
         </tr>
         <tr>
           {renderChineseParamHeader("fontSize")}
-          <td><input type="number" min="8" max="160" value={dialogNode.params.fontSize || "24"} onChange={(event) => updateNodeDoubleClickDraftParam(dialogNode.id, "fontSize", event.target.value)} /></td>
+          <td><BufferedTextInput type="number" min="8" max="160" value={dialogNode.params.fontSize || "24"} onCommit={(nextValue) => updateNodeDoubleClickDraftParam(dialogNode.id, "fontSize", nextValue)} /></td>
         </tr>
         <tr>
           {renderChineseParamHeader("textColor")}
@@ -26722,9 +26984,10 @@ export function App() {
       startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
       return;
     }
-    switchInspectorTabForCanvasSelection([node.id], [], "single");
     beginStaticButtonPointerFeedback(event, node);
     const nodeWasSelected = selectedNodeIdSet.has(node.id);
+    const hadCanvasSelection = selectedNodeIds.length > 0 || selectedEdgeIds.length > 0;
+    let applyPointerDownSelectionImmediately = false;
     const clickedSelectedGroupMember =
       !event.ctrlKey &&
       !event.shiftKey &&
@@ -26738,7 +27001,7 @@ export function App() {
       keepEdgeSelection ? selectedEdgeIds : [],
       keepEdgeSelection ? selectedEdgeId : ""
     );
-    if (!keepEdgeSelection) {
+    if (!keepEdgeSelection && nodeWasSelected && activeSelectedEdgeIds.length > 0) {
       setSelectedEdgeId("");
       setSelectedEdgeIds([]);
     }
@@ -26750,29 +27013,21 @@ export function App() {
       ? groupDragSelection
       : expandActiveGroupSelection([node.id], []);
     if (clickedSelectedGroupMember) {
-      setCanvasSelectionScope("direct");
-      setSelectedNodeIds([node.id]);
-      setSelectedEdgeIds([]);
-      setSelectedEdgeId("");
       dragSelectionSnapshot = createCanvasSelectionSnapshot("direct", [node.id], [], "");
+      applyPointerDownSelectionImmediately = true;
     } else if (event.ctrlKey || event.shiftKey || event.metaKey) {
-      setCanvasSelectionScope("group");
       dragSelection = nodeWasSelected
         ? groupDragSelection
         : expandActiveGroupSelection([...activeSelectedNodeIds, node.id], activeSelectedEdgeIds);
-      if (!nodeWasSelected) {
-        setSelectedNodeIds(dragSelection.nodeIds);
-        setSelectedEdgeIds(dragSelection.edgeIds);
-        setSelectedEdgeId(dragSelection.edgeIds[0] ?? "");
-      }
       dragSelectionSnapshot = createCanvasSelectionSnapshot("group", dragSelection.nodeIds, dragSelection.edgeIds, dragSelection.edgeIds[0] ?? "");
+      applyPointerDownSelectionImmediately = true;
     } else if (!nodeWasSelected) {
       dragSelection = expandActiveGroupSelection([node.id], []);
-      setCanvasSelectionScope("group");
-      setSelectedNodeIds(dragSelection.nodeIds);
-      setSelectedEdgeIds(dragSelection.edgeIds);
-      setSelectedEdgeId(dragSelection.edgeIds[0] ?? "");
       dragSelectionSnapshot = createCanvasSelectionSnapshot("group", dragSelection.nodeIds, dragSelection.edgeIds, dragSelection.edgeIds[0] ?? "");
+      applyPointerDownSelectionImmediately = hadCanvasSelection;
+    }
+    if (applyPointerDownSelectionImmediately) {
+      restoreCanvasSelectionSnapshotWithInspector(dragSelectionSnapshot);
     }
     const dragNodeIds = movableCanvasNodeIds(dragSelection.nodeIds);
     if (mode === "connect") {
@@ -29266,14 +29521,13 @@ export function App() {
               />
               激活
             </label>
-            <input
+            <BufferedTextInput
               className="layer-name-input"
               aria-label={`图层名称：${layer.name}`}
-              value={layerNameDrafts[layer.id] ?? layer.name}
+              value={layer.name}
               disabled={isBrowseMode}
-              onChange={(event) => setLayerNameDrafts((current) => ({ ...current, [layer.id]: event.target.value }))}
-              onBlur={(event) => commitModelLayerName(layer.id, event.currentTarget.value)}
-              onKeyDown={(event) => handleLayerNameInputKeyDown(event, layer)}
+              onCommit={(nextValue) => commitModelLayerName(layer.id, nextValue)}
+              onKeyDown={(event) => event.stopPropagation()}
             />
             <button type="button" onClick={() => moveModelLayer(layer.id, -1)} disabled={index === 0} title="图层上移">上移</button>
             <button type="button" onClick={() => moveModelLayer(layer.id, 1)} disabled={index === layers.length - 1} title="图层下移">下移</button>
@@ -29336,11 +29590,11 @@ export function App() {
                   <tr key={`${selectedKind}-${item.measurementTypeId}-${item.position ?? "legacy"}-${item.role ?? "item"}-${itemIndex}`}>
                     <td>{itemIndex + 1}</td>
                     <td>
-                      <input
+                      <BufferedTextInput
                         value={item.name ?? ""}
                         disabled={isBrowseMode}
                         placeholder={currentType?.name ?? "量测名称"}
-                        onChange={(event) => updateMeasurementProfileItem(selectedKind, itemIndex, { name: event.target.value })}
+                        onCommit={(nextValue) => updateMeasurementProfileItem(selectedKind, itemIndex, { name: nextValue })}
                       />
                     </td>
                     <td>
@@ -29489,25 +29743,25 @@ export function App() {
                   {draftConfig.measurementTypes.map((type) => (
                     <tr key={type.id}>
                       <td><input value={type.id} readOnly title="量测类型ID用于保存绑定关系，不能直接修改" /></td>
-                      <td><input value={type.name} onChange={(event) => updateMeasurementType(type.id, { name: event.target.value })} /></td>
-                      <td><input value={type.shortLabel} onChange={(event) => updateMeasurementType(type.id, { shortLabel: event.target.value })} /></td>
-                      <td><input value={type.defaultUnit} onChange={(event) => updateMeasurementType(type.id, { defaultUnit: event.target.value })} /></td>
+                      <td><BufferedTextInput value={type.name} onCommit={(nextValue) => updateMeasurementType(type.id, { name: nextValue })} /></td>
+                      <td><BufferedTextInput value={type.shortLabel} onCommit={(nextValue) => updateMeasurementType(type.id, { shortLabel: nextValue })} /></td>
+                      <td><BufferedTextInput value={type.defaultUnit} onCommit={(nextValue) => updateMeasurementType(type.id, { defaultUnit: nextValue })} /></td>
                       <td>
-                        <input
+                        <BufferedTextInput
                           type="number"
                           min="0"
                           max="8"
                           value={type.defaultDecimals}
-                          onChange={(event) => updateMeasurementType(type.id, { defaultDecimals: Number(event.target.value) })}
+                          onCommit={(nextValue) => updateMeasurementType(type.id, { defaultDecimals: Number(nextValue) })}
                         />
                       </td>
                       <td>
-                        <input
+                        <BufferedTextInput
                           type="number"
                           min="6"
                           max="96"
                           value={type.defaultFontSize}
-                          onChange={(event) => updateMeasurementType(type.id, { defaultFontSize: Number(event.target.value) })}
+                          onCommit={(nextValue) => updateMeasurementType(type.id, { defaultFontSize: Number(nextValue) })}
                         />
                       </td>
                       <td>
@@ -29681,16 +29935,16 @@ export function App() {
             </label>
             <label>
               <span>边框宽度</span>
-              <input
+              <BufferedTextInput
                 type="number"
                 min="0"
                 max="12"
                 step="0.5"
                 value={draft.borderWidth ?? 1}
                 disabled={isBrowseMode || draftBorderHidden}
-                onChange={(event) => updateMeasurementEditorGroupSettings((group) => ({
+                onCommit={(nextValue) => updateMeasurementEditorGroupSettings((group) => ({
                   ...group,
-                  borderWidth: Math.max(0, Math.min(12, Number(event.target.value)))
+                  borderWidth: Math.max(0, Math.min(12, Number(nextValue)))
                 }))}
               />
             </label>
@@ -29758,13 +30012,13 @@ export function App() {
                         </div>
                       </td>
                       <td>
-                        <input
+                        <BufferedTextInput
                           value={measurementEditorItemName(item)}
                           disabled={isBrowseMode}
                           aria-label="量测名称"
-                          onChange={(event) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onCommit={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
-                            name: event.target.value
+                            name: nextValue
                           }))}
                         />
                       </td>
@@ -29817,48 +30071,48 @@ export function App() {
                         </select>
                       </td>
                       <td>
-                        <input
+                        <BufferedTextInput
                           value={item.sourcePoint}
                           disabled={isBrowseMode}
-                          onChange={(event) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onCommit={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
-                            sourcePoint: event.target.value
+                            sourcePoint: nextValue
                           }))}
                         />
                       </td>
                       <td>
-                        <input
+                        <BufferedTextInput
                           value={item.labelOverride ?? ""}
                           disabled={isBrowseMode}
                           placeholder={type?.shortLabel ?? "标签"}
-                          onChange={(event) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onCommit={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
-                            labelOverride: event.target.value || undefined
+                            labelOverride: nextValue || undefined
                           }))}
                         />
                       </td>
                       <td>
-                        <input
+                        <BufferedTextInput
                           value={item.unitOverride ?? ""}
                           disabled={isBrowseMode}
                           placeholder={type?.defaultUnit ?? "单位"}
-                          onChange={(event) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onCommit={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
-                            unitOverride: event.target.value || undefined
+                            unitOverride: nextValue || undefined
                           }))}
                         />
                       </td>
                       <td>
-                        <input
+                        <BufferedTextInput
                           type="number"
                           min="0"
                           max="8"
                           value={item.decimalsOverride ?? ""}
                           disabled={isBrowseMode}
                           placeholder={String(type?.defaultDecimals ?? 3)}
-                          onChange={(event) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onCommit={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
-                            decimalsOverride: event.target.value === "" ? undefined : Number(event.target.value)
+                            decimalsOverride: nextValue === "" ? undefined : Number(nextValue)
                           }))}
                         />
                       </td>
@@ -29873,15 +30127,15 @@ export function App() {
                         />
                       </td>
                       <td>
-                        <input
+                        <BufferedTextInput
                           type="number"
                           min="6"
                           max="96"
                           value={itemFontSize}
                           disabled={isBrowseMode}
-                          onChange={(event) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onCommit={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
-                            styleOverride: { ...(current.styleOverride ?? {}), fontSize: Number(event.target.value) }
+                            styleOverride: { ...(current.styleOverride ?? {}), fontSize: Number(nextValue) }
                           }))}
                         />
                       </td>
@@ -31303,6 +31557,37 @@ export function App() {
     return false;
   };
 
+  const svgExportReferencedImageHrefById = () => {
+    const hrefById = new Map<string, string>();
+    const appendAssetId = (assetId?: string) => {
+      const id = String(assetId ?? "").trim();
+      if (id && !hrefById.has(id)) {
+        hrefById.set(id, `/api/images/${encodeURIComponent(id)}`);
+      }
+    };
+    const appendHref = (href?: string) => {
+      const value = String(href ?? "").trim();
+      const id = backendImageIdFromHref(value);
+      if (id && !hrefById.has(id)) {
+        hrefById.set(id, value);
+      }
+    };
+
+    appendAssetId(canvasBackgroundImageAssetId);
+    appendHref(canvasBackgroundImage);
+    appendHref(canvasBackgroundImageUrl);
+    for (const node of nodes) {
+      appendAssetId(node.params.backgroundImageAssetId);
+      appendAssetId(node.params.foregroundImageAssetId);
+      appendHref(node.params.backgroundImage);
+      appendHref(node.params.foregroundImage);
+      const template = libraryTemplateByKind.get(node.kind);
+      const stateVisual = template ? resolveDeviceStateVisual(template, node) : null;
+      appendHref(resolveStateVisualImageHref(stateVisual, imageAssets));
+    }
+    return hrefById;
+  };
+
   const loadSvgImageExportPathById = async () => {
     let assets = imageAssetList;
     try {
@@ -31319,7 +31604,25 @@ export function App() {
     } catch {
       // 后端图片清单不可用时，保持现有导出逻辑，不影响本地图形导出。
     }
-    return imageExportPathByIdFromAssets(assets);
+    const exportHrefById = imageExportPathByIdFromAssets(assets, imageAssets);
+    const assetById = new Map(assets.map((asset) => [asset.id, asset]));
+    const referencedHrefById = svgExportReferencedImageHrefById();
+    await Promise.all(Array.from(referencedHrefById.entries()).map(async ([id, href]) => {
+      if (exportHrefById[id]) {
+        return;
+      }
+      const asset = { ...(assetById.get(id) ?? { id, name: id, url: href }) };
+      asset.url = asset.url || href;
+      try {
+        const dataUrl = await fetchBackendImageDataUrl(asset);
+        if (isImageDataUrl(dataUrl)) {
+          exportHrefById[id] = dataUrl;
+        }
+      } catch {
+        // 单张图片无法读取时，保留原始 href，避免阻断 SVG 导出。
+      }
+    }));
+    return exportHrefById;
   };
 
   const exportSvg = async () => {
@@ -33267,7 +33570,16 @@ export function App() {
     );
   };
 
+  const cancelPendingCustomComponentTemplateLoad = () => {
+    customComponentSelectionRequestRef.current += 1;
+    if (customComponentSelectionFrameRef.current !== null) {
+      window.cancelAnimationFrame(customComponentSelectionFrameRef.current);
+      customComponentSelectionFrameRef.current = null;
+    }
+  };
+
   const selectCustomAttributeLibrary = (attributeLibraryName: string, options: { expand?: boolean } = {}) => {
+    cancelPendingCustomComponentTemplateLoad();
     const group = normalizeAttributeLibraryName(attributeLibraryName);
     if (options.expand !== false) {
       ensureCustomComponentTreeExpanded(group);
@@ -33285,6 +33597,7 @@ export function App() {
   };
 
   const selectCustomComponentType = (attributeLibraryName: string, sectionName: string, options: { expand?: boolean } = {}) => {
+    cancelPendingCustomComponentTemplateLoad();
     const group = normalizeAttributeLibraryName(attributeLibraryName);
     const section = normalizeComponentTypeName(sectionName);
     if (options.expand !== false) {
@@ -33305,48 +33618,31 @@ export function App() {
   const selectCustomComponentTemplate = (template: DeviceTemplate, sectionName = resolveTemplateComponentType(template)) => {
     const attributeLibraryName = normalizeAttributeLibraryName(template.attributeLibrary);
     const section = normalizeComponentTypeName(sectionName);
-    const terminalCount = Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, template.terminalCount));
-    const terminalTypes = (template.terminalTypes ?? Array.from({ length: template.terminalCount }, () => template.terminalType)).slice(0, MAX_CUSTOM_DEVICE_TERMINALS) as TerminalType[];
-    const terminalAssociations = normalizeContainerTerminalAssociations(
-      terminalTypes,
-      template.terminalAssociations ?? [],
-      terminalCount
-    );
-    const defaultDefinitions = new Set(customDefaultDefinitions(terminalTypes, {
-      isContainer: template.isContainer,
-      terminalAssociations
-    }).map((definition) => definition.enName.toLowerCase()));
-    const customParams = (template.parameterDefinitions ?? parseCustomDefinitions(template.params))
-      .filter((definition) =>
-        !defaultDefinitions.has(definition.enName.toLowerCase()) &&
-        definition.enName !== "component_type" &&
-        !isReservedDeviceDefinitionParamName(definition.enName)
-      )
-      .map((definition) => ({ ...definition, id: customParamId() }));
-    const stateRows = createDefinitionStateDraftRows(template);
+    const requestId = customComponentSelectionRequestRef.current + 1;
+    customComponentSelectionRequestRef.current = requestId;
     setCustomDeviceSaveMessage("");
     ensureCustomComponentTreeExpanded(attributeLibraryName, section);
     setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section, templateKind: template.kind });
-    setEditingCustomDeviceKind(template.custom ? template.kind : "");
-    setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
-    setCustomDeviceDraft({
-      attributeLibraryName,
-      componentType: section,
-      componentName: template.label,
-      backgroundImage: template.params.backgroundImage ?? "",
-      backgroundImageAssetId: template.params.backgroundImageAssetId ?? "",
-      size: { ...template.size },
-      allowResizeTransform: templateResizeTransformValue(template),
-      terminalCount,
-      terminalTypes: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => terminalTypes[index] ?? "ac") as TerminalType[],
-      terminalLabels: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => template.terminalLabels?.[index] ?? ""),
-      terminalAnchors: createDefaultCustomDeviceTerminalAnchors(terminalCount, template.terminalAnchors),
-      terminalRoles: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => template.terminalRoles?.[index] ?? "single-load") as ContainerTerminalRole[],
-      terminalAssociations: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => terminalAssociations[index] ?? "ac-load") as ContainerTerminalAssociationValue[],
-      isContainer: Boolean(template.isContainer),
-      params: customParams,
-      stateDefinitions: stateRows,
-      error: template.custom ? "" : "当前选中的是系统内置元件，可查看并复制为新自定义元件，不能直接覆盖内置定义。"
+    if (customComponentSelectionFrameRef.current !== null) {
+      window.cancelAnimationFrame(customComponentSelectionFrameRef.current);
+    }
+    customComponentSelectionFrameRef.current = window.requestAnimationFrame(() => {
+      customComponentSelectionFrameRef.current = null;
+      if (customComponentSelectionRequestRef.current !== requestId) {
+        return;
+      }
+      const nextDraft = createCustomDeviceDraftFromTemplate(template, section);
+      startCustomComponentSelectionTransition(() => {
+        setEditingCustomDeviceKind((current) =>
+          customComponentSelectionRequestRef.current !== requestId ? current : template.custom ? template.kind : ""
+        );
+        setCustomDeviceStatePageId((current) =>
+          customComponentSelectionRequestRef.current !== requestId ? current : DEFAULT_STATE_PAGE_ID
+        );
+        setCustomDeviceDraft((current) =>
+          customComponentSelectionRequestRef.current !== requestId ? current : nextDraft
+        );
+      });
     });
   };
 
@@ -33354,6 +33650,7 @@ export function App() {
     if (!requireEditMode("新建元件")) {
       return;
     }
+    cancelPendingCustomComponentTemplateLoad();
     const attributeLibraryName = normalizeAttributeLibraryName(customComponentTreeSelection.attributeLibraryName);
     const section =
       customComponentTreeSelection.kind === "componentType" || customComponentTreeSelection.kind === "component"
@@ -33935,25 +34232,25 @@ export function App() {
             <div className="device-state-page-fields">
               <label>
                 状态值
-                <input value={activeRow.value} onChange={(event) => handlers.update(activeRow.id, { value: event.target.value })} />
+                <BufferedTextInput value={activeRow.value} onCommit={(value) => handlers.update(activeRow.id, { value })} />
               </label>
               <label>
                 状态名称
-                <input value={activeRow.name} onChange={(event) => handlers.update(activeRow.id, { name: event.target.value })} />
+                <BufferedTextInput value={activeRow.name} onCommit={(value) => handlers.update(activeRow.id, { name: value })} />
               </label>
               <label>
                 状态图标
-                <input value={activeRow.icon} placeholder="如 ON" onChange={(event) => handlers.update(activeRow.id, { icon: event.target.value })} />
+                <BufferedTextInput value={activeRow.icon} placeholder="如 ON" onCommit={(value) => handlers.update(activeRow.id, { icon: value })} />
               </label>
               <label className="device-state-image-field">
                 状态图片
                 <div className="device-state-image-input-row">
-                  <input
+                  <BufferedTextInput
                     value={stateDraftImageValue(activeRow)}
                     placeholder="图片URL或后台路径"
-                    onChange={(event) =>
+                    onCommit={(value) =>
                       handlers.update(activeRow.id, {
-                        image: event.target.value,
+                        image: value,
                         imageAssetId: "",
                         backgroundImage: "",
                         backgroundImageAssetId: ""
@@ -33991,7 +34288,7 @@ export function App() {
               </div>
               <label>
                 状态文字
-                <input value={activeRow.text} placeholder="覆盖文字" onChange={(event) => handlers.update(activeRow.id, { text: event.target.value })} />
+                <BufferedTextInput value={activeRow.text} placeholder="覆盖文字" onCommit={(value) => handlers.update(activeRow.id, { text: value })} />
               </label>
               <label>
                 主颜色
@@ -34157,16 +34454,16 @@ export function App() {
             <div className="device-definition-size-grid">
               <label>
                 宽度
-                <input
+                <BufferedTextInput
                   type="number"
                   min="1"
                   value={definitionVisualDraft.size.width}
-                  onChange={(event) =>
+                  onCommit={(value) =>
                     setDefinitionVisualDraft((current) =>
                       current
                         ? {
                             ...current,
-                            size: { ...current.size, width: Math.max(1, Math.round(Number(event.target.value) || current.size.width)) },
+                            size: { ...current.size, width: Math.max(1, Math.round(Number(value) || current.size.width)) },
                             error: ""
                           }
                         : current
@@ -34176,16 +34473,16 @@ export function App() {
               </label>
               <label>
                 高度
-                <input
+                <BufferedTextInput
                   type="number"
                   min="1"
                   value={definitionVisualDraft.size.height}
-                  onChange={(event) =>
+                  onCommit={(value) =>
                     setDefinitionVisualDraft((current) =>
                       current
                         ? {
                             ...current,
-                            size: { ...current.size, height: Math.max(1, Math.round(Number(event.target.value) || current.size.height)) },
+                            size: { ...current.size, height: Math.max(1, Math.round(Number(value) || current.size.height)) },
                             error: ""
                           }
                         : current
@@ -34376,23 +34673,23 @@ export function App() {
                 <span>端子位置</span>
                 <div className="custom-terminal-anchor-inputs">
                   <span>X</span>
-                  <input
+                  <BufferedTextInput
                     type="number"
                     min="-0.5"
                     max="0.5"
                     step="0.01"
                     value={formatCustomDeviceTerminalAnchorValue(terminalAnchor.x)}
-                    onChange={(event) => updateDefinitionTerminalAnchor(index, { x: Number(event.target.value) })}
+                    onCommit={(value) => updateDefinitionTerminalAnchor(index, { x: Number(value) })}
                     aria-label={`修改元件端子${index + 1} X位置`}
                   />
                   <span>Y</span>
-                  <input
+                  <BufferedTextInput
                     type="number"
                     min="-0.5"
                     max="0.5"
                     step="0.01"
                     value={formatCustomDeviceTerminalAnchorValue(terminalAnchor.y)}
-                    onChange={(event) => updateDefinitionTerminalAnchor(index, { y: Number(event.target.value) })}
+                    onCommit={(value) => updateDefinitionTerminalAnchor(index, { y: Number(value) })}
                     aria-label={`修改元件端子${index + 1} Y位置`}
                   />
                 </div>
@@ -34992,8 +35289,6 @@ export function App() {
                               const selected = editable && (item.kind === "node" ? selectedNodeIdSet.has(item.id) : activeSelectedEdgeSet.has(item.id));
                               const itemChildren = elementTreeItemChildren(item);
                               const treeItemKey = `${item.kind}:${item.id}`;
-                              const idxDraftKey = `node:${item.id}:idx`;
-                              const nameDraftKey = `node:${item.id}:name`;
                               const selectTreeItem = () => {
                                 if (!editable) {
                                   return;
@@ -35033,27 +35328,25 @@ export function App() {
                                       <div className="element-tree-device-fields">
                                         <label>
                                           <span>idx</span>
-                                          <input
-                                            value={elementTreeDraftValue(idxDraftKey, item.idx ?? "")}
+                                          <BufferedTextInput
+                                            value={item.idx ?? ""}
                                             inputMode="numeric"
                                             onClick={(event) => event.stopPropagation()}
                                             onDoubleClick={(event) => event.stopPropagation()}
-                                            onKeyDown={(event) => commitElementTreeInputOnEnter(event)}
-                                            disabled={!editable}
-                                            onChange={(event) => updateElementTreeDraft(idxDraftKey, event.target.value)}
-                                            onBlur={(event) => commitElementTreeNodeIdentity(item.id, "idx", event.currentTarget.value, idxDraftKey)}
+                                            onKeyDown={(event) => event.stopPropagation()}
+                                            disabled={!editable || isBrowseMode}
+                                            onCommit={(nextValue) => commitElementTreeNodeIdentity(item.id, "idx", nextValue)}
                                           />
                                         </label>
                                         <label>
                                           <span>name</span>
-                                          <input
-                                            value={elementTreeDraftValue(nameDraftKey, item.name)}
+                                          <BufferedTextInput
+                                            value={item.name}
                                             onClick={(event) => event.stopPropagation()}
                                             onDoubleClick={(event) => event.stopPropagation()}
-                                            onKeyDown={(event) => commitElementTreeInputOnEnter(event)}
-                                            disabled={!editable}
-                                            onChange={(event) => updateElementTreeDraft(nameDraftKey, event.target.value)}
-                                            onBlur={(event) => commitElementTreeNodeIdentity(item.id, "name", event.currentTarget.value, nameDraftKey)}
+                                            onKeyDown={(event) => event.stopPropagation()}
+                                            disabled={!editable || isBrowseMode}
+                                            onCommit={(nextValue) => commitElementTreeNodeIdentity(item.id, "name", nextValue)}
                                           />
                                         </label>
                                       </div>
@@ -35067,8 +35360,6 @@ export function App() {
                                     <div className="element-tree-child-list" role="group" aria-label={`${item.name}关联子设备`}>
                                       {itemChildren.map((child) => {
                                         const childIdxKey = child.relationKeys[0] ?? "";
-                                        const childIdxDraftKey = `node:${item.id}:child:${childIdxKey}:idx`;
-                                        const childNameDraftKey = `node:${item.id}:child:${child.nameKey}:name`;
                                         return (
                                           <div className="element-tree-child-item" key={child.id}>
                                             <span className="element-tree-child-type" title={child.componentType}>
@@ -35077,27 +35368,25 @@ export function App() {
                                             </span>
                                             <label>
                                               <span>idx</span>
-                                              <input
-                                                value={elementTreeDraftValue(childIdxDraftKey, child.idx)}
+                                              <BufferedTextInput
+                                                value={child.idx}
                                                 inputMode="numeric"
                                                 onClick={(event) => event.stopPropagation()}
                                                 onDoubleClick={(event) => event.stopPropagation()}
-                                                onKeyDown={(event) => commitElementTreeInputOnEnter(event)}
-                                                disabled={!editable}
-                                                onChange={(event) => updateElementTreeDraft(childIdxDraftKey, event.target.value)}
-                                                onBlur={(event) => commitElementTreeContainerChildParam(item.id, childIdxKey, event.currentTarget.value, childIdxDraftKey)}
+                                                onKeyDown={(event) => event.stopPropagation()}
+                                                disabled={!editable || isBrowseMode}
+                                                onCommit={(nextValue) => commitElementTreeContainerChildParam(item.id, childIdxKey, nextValue)}
                                               />
                                             </label>
                                             <label className="element-tree-child-name-field">
                                               <span>name</span>
-                                              <input
-                                                value={elementTreeDraftValue(childNameDraftKey, child.name)}
+                                              <BufferedTextInput
+                                                value={child.name}
                                                 onClick={(event) => event.stopPropagation()}
                                                 onDoubleClick={(event) => event.stopPropagation()}
-                                                onKeyDown={(event) => commitElementTreeInputOnEnter(event)}
-                                                disabled={!editable}
-                                                onChange={(event) => updateElementTreeDraft(childNameDraftKey, event.target.value)}
-                                                onBlur={(event) => commitElementTreeContainerChildParam(item.id, child.nameKey, event.currentTarget.value, childNameDraftKey)}
+                                                onKeyDown={(event) => event.stopPropagation()}
+                                                disabled={!editable || isBrowseMode}
+                                                onCommit={(nextValue) => commitElementTreeContainerChildParam(item.id, child.nameKey, nextValue)}
                                               />
                                             </label>
                                           </div>
@@ -37712,8 +38001,10 @@ export function App() {
               return (
                 <g
                   key={node.id}
+                  ref={(element) => bindCanvasNodeElement(node.id, element)}
                   className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${nodeIsRoutableLineDevice ? "routable-line-node" : ""} ${isStorageBus ? "storage-node" : ""} ${uprightStaticSelectionOutline ? "static-upright-selection-node" : ""} ${staticButtonEnabled ? "static-button-enabled" : ""} ${staticButtonState ? `static-button-${staticButtonState}` : ""} ${multiNodeDragging && draggingNodeIdSet.has(node.id) ? "multi-drag-origin" : ""} ${singleNodeDragging && draggingNodeIdSet.has(node.id) ? "single-drag-origin" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${isConnectSource ? "connect-source" : ""} ${inactiveLayerGraphic ? "inactive-layer-graphic" : ""}`}
                   transform={`translate(${renderPosition.x} ${renderPosition.y})`}
+                  data-node-id={node.id}
                   data-export-device-id={nodeIsStatic ? undefined : node.id}
                   data-export-device-idx={nodeIsStatic ? undefined : node.params.idx ?? ""}
                   data-export-device-name={nodeIsStatic ? undefined : node.name}
@@ -38743,32 +39034,28 @@ export function App() {
                   <tr>
                     {renderChineseParamHeader("canvasWidth")}
                     <td>
-                      <input
+                      <BufferedTextInput
                         type="number"
                         min={MIN_CANVAS_WIDTH}
                         max={MAX_CANVAS_WIDTH}
                         step="10"
                         value={canvasSizeDraft.width}
                         disabled={isBrowseMode}
-                        onChange={(event) => setCanvasSizeDraft((current) => ({ ...current, width: event.target.value }))}
-                        onBlur={handleCanvasSizeBlur}
-                        onKeyDown={handleCanvasSizeKeyDown}
+                        onCommit={(nextValue) => commitCanvasSizeDraft({ ...canvasSizeDraft, width: nextValue })}
                       />
                     </td>
                   </tr>
                   <tr>
                     {renderChineseParamHeader("canvasHeight")}
                     <td>
-                      <input
+                      <BufferedTextInput
                         type="number"
                         min={MIN_CANVAS_HEIGHT}
                         max={MAX_CANVAS_HEIGHT}
                         step="10"
                         value={canvasSizeDraft.height}
                         disabled={isBrowseMode}
-                        onChange={(event) => setCanvasSizeDraft((current) => ({ ...current, height: event.target.value }))}
-                        onBlur={handleCanvasSizeBlur}
-                        onKeyDown={handleCanvasSizeKeyDown}
+                        onCommit={(nextValue) => commitCanvasSizeDraft({ ...canvasSizeDraft, height: nextValue })}
                       />
                     </td>
                   </tr>
@@ -38801,12 +39088,12 @@ export function App() {
                             setCanvasBackgroundColor(value);
                           }}
                         />
-                        <input
+                        <BufferedTextInput
                           value={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND}
                           disabled={isBrowseMode}
-                          onChange={(event) => {
+                          onCommit={(nextValue) => {
                             pushUndoSnapshot();
-                            setCanvasBackgroundColor(event.target.value || DEFAULT_CANVAS_BACKGROUND);
+                            setCanvasBackgroundColor(nextValue || DEFAULT_CANVAS_BACKGROUND);
                           }}
                         />
                         <button
@@ -38960,16 +39247,16 @@ export function App() {
                     {renderChineseParamHeader("powerBaseValue")}
                     <td>
                       <div className="unit-value-field">
-                        <input
+                        <BufferedTextInput
                           type="number"
                           min="0"
                           step="0.1"
                           value={powerBaseValue}
                           disabled={isBrowseMode}
-                          onChange={(event) => {
+                          onCommit={(nextValue) => {
                             pushUndoSnapshot();
-                            const nextValue = Number(event.target.value);
-                            setPowerBaseValue(Number.isFinite(nextValue) ? nextValue : DEFAULT_POWER_BASE_VALUE);
+                            const numericValue = Number(nextValue);
+                            setPowerBaseValue(Number.isFinite(numericValue) ? numericValue : DEFAULT_POWER_BASE_VALUE);
                           }}
                         />
                         <span>{powerUnit}</span>
@@ -39051,25 +39338,25 @@ export function App() {
                   <tbody>
                     <tr>
                       {renderChineseParamHeader("graph_x", "X坐标")}
-                      <td><input type="number" value={Math.round(inspectorSelectedNode.position.x)} onChange={(event) => updateSelectedNode({ position: { ...inspectorSelectedNode.position, x: Number(event.target.value) } })} /></td>
+                      <td><BufferedTextInput type="number" value={Math.round(inspectorSelectedNode.position.x)} onCommit={(nextValue) => updateSelectedNode({ position: { ...inspectorSelectedNode.position, x: Number(nextValue) } })} /></td>
                     </tr>
                     <tr>
                       {renderChineseParamHeader("graph_y", "Y坐标")}
-                      <td><input type="number" value={Math.round(inspectorSelectedNode.position.y)} onChange={(event) => updateSelectedNode({ position: { ...inspectorSelectedNode.position, y: Number(event.target.value) } })} /></td>
+                      <td><BufferedTextInput type="number" value={Math.round(inspectorSelectedNode.position.y)} onCommit={(nextValue) => updateSelectedNode({ position: { ...inspectorSelectedNode.position, y: Number(nextValue) } })} /></td>
                     </tr>
                     {isStaticBoxLikeNode(inspectorSelectedNode) && (
                       <>
                         <tr>
                           {renderChineseParamHeader("staticWidth", "宽度")}
                           <td>
-                            <input
+                            <BufferedTextInput
                               type="number"
                               min="4"
                               max={MAX_CANVAS_WIDTH}
                               step="1"
                               value={Math.round(inspectorSelectedNode.size.width * 10) / 10}
-                              onChange={(event) => {
-                                const width = normalizeStaticBoxDimension(Number(event.target.value), inspectorSelectedNode.size.width, MAX_CANVAS_WIDTH);
+                              onCommit={(nextValue) => {
+                                const width = normalizeStaticBoxDimension(Number(nextValue), inspectorSelectedNode.size.width, MAX_CANVAS_WIDTH);
                                 updateSelectedNode({ size: { ...inspectorSelectedNode.size, width: width } });
                               }}
                             />
@@ -39078,14 +39365,14 @@ export function App() {
                         <tr>
                           {renderChineseParamHeader("staticHeight", "高度")}
                           <td>
-                            <input
+                            <BufferedTextInput
                               type="number"
                               min="4"
                               max={MAX_CANVAS_HEIGHT}
                               step="1"
                               value={Math.round(inspectorSelectedNode.size.height * 10) / 10}
-                              onChange={(event) => {
-                                const height = normalizeStaticBoxDimension(Number(event.target.value), inspectorSelectedNode.size.height, MAX_CANVAS_HEIGHT);
+                              onCommit={(nextValue) => {
+                                const height = normalizeStaticBoxDimension(Number(nextValue), inspectorSelectedNode.size.height, MAX_CANVAS_HEIGHT);
                                 updateSelectedNode({ size: { ...inspectorSelectedNode.size, height: height } });
                               }}
                             />
@@ -39095,12 +39382,12 @@ export function App() {
                     )}
                     <tr>
                       {renderChineseParamHeader("rotation")}
-                      <td><input type="number" value={inspectorSelectedNode.rotation} onChange={(event) => updateSelectedNode({ rotation: Number(event.target.value) })} /></td>
+                      <td><BufferedTextInput type="number" value={inspectorSelectedNode.rotation} onCommit={(nextValue) => updateSelectedNode({ rotation: Number(nextValue) })} /></td>
                     </tr>
                     <tr>
                       {renderChineseParamHeader("scaleX")}
-                      <td><input type="number" step="0.1" value={formatInspectorScaleValue(getNodeScaleX(inspectorSelectedNode))} onChange={(event) => {
-                        const scaleX = normalizeScale(Number(event.target.value), getNodeScaleX(inspectorSelectedNode));
+                      <td><BufferedTextInput type="number" step="0.1" value={formatInspectorScaleValue(getNodeScaleX(inspectorSelectedNode))} onCommit={(nextValue) => {
+                        const scaleX = normalizeScale(Number(nextValue), getNodeScaleX(inspectorSelectedNode));
                         const nextScaleY = selectedNodeAllowsIndependentScale
                           ? getNodeScaleY(inspectorSelectedNode)
                           : scaleX;
@@ -39109,14 +39396,14 @@ export function App() {
                     </tr>
                     <tr>
                       {renderChineseParamHeader("scaleY")}
-                      <td><input
+                      <td><BufferedTextInput
                         type="number"
                         step="0.1"
                         value={selectedNodeAllowsIndependentScale ? formatInspectorScaleValue(getNodeScaleY(inspectorSelectedNode)) : formatInspectorScaleValue(getNodeScaleX(inspectorSelectedNode))}
                         disabled={!selectedNodeAllowsIndependentScale}
                         title={!selectedNodeAllowsIndependentScale ? "当前图元不允许变形，纵向倍率跟随横向倍率" : undefined}
-                        onChange={(event) => {
-                        const scaleY = normalizeScale(Number(event.target.value), getNodeScaleY(inspectorSelectedNode));
+                        onCommit={(nextValue) => {
+                        const scaleY = normalizeScale(Number(nextValue), getNodeScaleY(inspectorSelectedNode));
                         const scaleX = getNodeScaleX(inspectorSelectedNode);
                         updateSelectedNode({ scale: Math.max(Math.abs(scaleX), Math.abs(scaleY)), scaleX, scaleY });
                       }} /></td>
@@ -39152,9 +39439,9 @@ export function App() {
                         <tr>
                           {renderChineseParamHeader("_labelText")}
                           <td>
-                            <input
+                            <BufferedTextInput
                               value={inspectorSelectedNode.params._labelText ?? inspectorSelectedNode.name}
-                              onChange={(event) => updateParam("_labelText", event.target.value)}
+                              onCommit={(nextValue) => updateParam("_labelText", nextValue)}
                             />
                           </td>
                         </tr>
@@ -39169,12 +39456,12 @@ export function App() {
                         <tr>
                           {renderChineseParamHeader("_labelFontSize")}
                           <td>
-                            <input
+                            <BufferedTextInput
                               type="number"
                               min="6"
                               max="96"
                               value={inspectorSelectedNode.params._labelFontSize || String(DEFAULT_DEVICE_LABEL_FONT_SIZE)}
-                              onChange={(event) => updateParam("_labelFontSize", event.target.value)}
+                              onCommit={(nextValue) => updateParam("_labelFontSize", nextValue)}
                             />
                           </td>
                         </tr>
@@ -39236,22 +39523,22 @@ export function App() {
                         <tr>
                           {renderChineseParamHeader("_labelX")}
                           <td>
-                            <input
+                            <BufferedTextInput
                               type="number"
                               step="0.1"
                               value={nodeLabelOffset(inspectorSelectedNode).x}
-                              onChange={(event) => updateParam("_labelX", event.target.value)}
+                              onCommit={(nextValue) => updateParam("_labelX", nextValue)}
                             />
                           </td>
                         </tr>
                         <tr>
                           {renderChineseParamHeader("_labelY")}
                           <td>
-                            <input
+                            <BufferedTextInput
                               type="number"
                               step="0.1"
                               value={nodeLabelOffset(inspectorSelectedNode).y}
-                              onChange={(event) => updateParam("_labelY", event.target.value)}
+                              onCommit={(nextValue) => updateParam("_labelY", nextValue)}
                             />
                           </td>
                         </tr>
@@ -39277,10 +39564,10 @@ export function App() {
                                 <th title={`${terminal.id}:vbase`}>{`${terminal.label}电压基值`}</th>
                                 <td>
                                   <div className="unit-value-field">
-                                    <input
+                                    <BufferedTextInput
                                       inputMode="decimal"
                                       value={terminalVoltageBaseNumber(terminal.vbase ?? terminalVbaseFallback(inspectorSelectedNode, terminalIndex))}
-                                      onChange={(event) => updateTerminalVbase(terminal.id, event.target.value)}
+                                      onCommit={(nextValue) => updateTerminalVbase(terminal.id, nextValue)}
                                     />
                                     <span>{voltageUnit}</span>
                                   </div>
@@ -39307,7 +39594,7 @@ export function App() {
                         </tr>
                         <tr>
                           {renderChineseParamHeader("text")}
-                          <td><textarea rows={4} value={inspectorSelectedNode.params.text || ""} onChange={(event) => updateParam("text", event.target.value)} /></td>
+                          <td><BufferedTextarea rows={4} value={inspectorSelectedNode.params.text || ""} onCommit={(nextValue) => updateParam("text", nextValue)} /></td>
                         </tr>
                         <tr>
                           {renderChineseParamHeader("fontFamily")}
@@ -39315,7 +39602,7 @@ export function App() {
                         </tr>
                         <tr>
                           <th title="fontSize">字体大小（100%）</th>
-                          <td><input type="number" min="8" max="160" value={inspectorSelectedNode.params.fontSize || "24"} onChange={(event) => updateParam("fontSize", event.target.value)} /></td>
+                          <td><BufferedTextInput type="number" min="8" max="160" value={inspectorSelectedNode.params.fontSize || "24"} onCommit={(nextValue) => updateParam("fontSize", nextValue)} /></td>
                         </tr>
                         <tr>
                           <th>文字样式</th>
@@ -39359,7 +39646,7 @@ export function App() {
                         </tr>
                         <tr>
                           {renderChineseParamHeader("lineWidth")}
-                          <td><input type="number" min="0" max="20" value={inspectorSelectedNode.params.lineWidth || "2"} onChange={(event) => updateParam("lineWidth", event.target.value)} /></td>
+                          <td><BufferedTextInput type="number" min="0" max="20" value={inspectorSelectedNode.params.lineWidth || "2"} onCommit={(nextValue) => updateParam("lineWidth", nextValue)} /></td>
                         </tr>
                         <tr>
                           {renderChineseParamHeader("strokeStyle")}
@@ -39367,7 +39654,7 @@ export function App() {
                         </tr>
                         <tr>
                           {renderChineseParamHeader("cornerRadius")}
-                          <td><input type="number" min="0" max="999" value={inspectorSelectedNode.params.cornerRadius || "8"} onChange={(event) => updateParam("cornerRadius", event.target.value)} /></td>
+                          <td><BufferedTextInput type="number" min="0" max="999" value={inspectorSelectedNode.params.cornerRadius || "8"} onCommit={(nextValue) => updateParam("cornerRadius", nextValue)} /></td>
                         </tr>
                         <tr>
                           {renderChineseParamHeader("accentColor")}
@@ -39379,7 +39666,7 @@ export function App() {
                         </tr>
                         <tr>
                           {renderChineseParamHeader("padding")}
-                          <td><input type="number" min="0" max="120" value={inspectorSelectedNode.params.padding || "12"} onChange={(event) => updateParam("padding", event.target.value)} /></td>
+                          <td><BufferedTextInput type="number" min="0" max="120" value={inspectorSelectedNode.params.padding || "12"} onCommit={(nextValue) => updateParam("padding", nextValue)} /></td>
                         </tr>
                         <tr>
                           {renderChineseParamHeader("textAlign")}
@@ -39399,7 +39686,7 @@ export function App() {
                         </tr>
                         <tr>
                           {renderChineseParamHeader("arrowSize")}
-                          <td><input type="number" min="4" max="80" value={inspectorSelectedNode.params.arrowSize || "10"} onChange={(event) => updateParam("arrowSize", event.target.value)} /></td>
+                          <td><BufferedTextInput type="number" min="4" max="80" value={inspectorSelectedNode.params.arrowSize || "10"} onCommit={(nextValue) => updateParam("arrowSize", nextValue)} /></td>
                         </tr>
                         <tr>
                           {renderChineseParamHeader("handleColor")}
@@ -39407,7 +39694,7 @@ export function App() {
                         </tr>
                         <tr>
                           {renderChineseParamHeader("handleSize")}
-                          <td><input type="number" min="3" max="40" value={inspectorSelectedNode.params.handleSize || "8"} onChange={(event) => updateParam("handleSize", event.target.value)} /></td>
+                          <td><BufferedTextInput type="number" min="3" max="40" value={inspectorSelectedNode.params.handleSize || "8"} onCommit={(nextValue) => updateParam("handleSize", nextValue)} /></td>
                         </tr>
                         {renderStaticButtonActionEditor(inspectorSelectedNode)}
                         <tr>
@@ -39511,10 +39798,10 @@ export function App() {
                             const displayValue = formatDeviceModelParamDisplayValue(row.key, row.value);
                             return (
                               <tr key={row.key}>
-                                {renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
-                                <td>
-                                  {row.key === "name" && selectedContainerParameterView.kind === "container" ? (
-                                    <input value={inspectorSelectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
+                                  {renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
+                                  <td>
+                                    {row.key === "name" && selectedContainerParameterView.kind === "container" ? (
+                                    <BufferedTextInput value={inspectorSelectedNode.name} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })} />
                                   ) : row.readonly || !row.paramKey ? (
                                     <input value={displayValue} readOnly />
                                   ) : options ? (
@@ -39526,7 +39813,7 @@ export function App() {
                                       ))}
                                     </select>
                                   ) : (
-                                    <input value={displayValue} onChange={(event) => updateParam(row.paramKey!, event.target.value)} />
+                                    <BufferedTextInput value={displayValue} onCommit={(nextValue) => updateParam(row.paramKey!, nextValue)} />
                                   )}
                                 </td>
                               </tr>
@@ -39556,7 +39843,7 @@ export function App() {
                                   {renderParamHeader(key, key, definition?.cnName ?? PARAM_LABELS[key] ?? key)}
                                   <td>
                                     {key === "name" ? (
-                                      <input value={inspectorSelectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
+                                      <BufferedTextInput value={inspectorSelectedNode.name} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })} />
                                     ) : READONLY_E_PARAM_KEYS.has(key) || definitionMakesValueReadonly(definition) ? (
                                       <input value={displayValue} readOnly />
                                     ) : (
@@ -40132,10 +40419,10 @@ export function App() {
             {(voltageBaseSetMode === "uniform" || voltageBaseSetMode === "byDevice") && voltageBaseSetHasUniformTargets && (
               <label className="voltage-base-set-value-row">
                 <span>{voltageBaseSetMode === "byDevice" ? "普通设备电压基值" : "电压基值"}</span>
-                <input
+                <BufferedTextInput
                   type="text"
                   value={voltageBaseSetValue}
-                  onChange={(event) => setVoltageBaseSetValue(event.target.value)}
+                  onCommit={setVoltageBaseSetValue}
                   list="voltage-base-set-options"
                   placeholder="例如 110"
                   autoFocus
@@ -40160,10 +40447,10 @@ export function App() {
                 {activeVoltageBaseTerminalRow && (
                   <label className="voltage-base-set-value-row">
                     <span>端子电压基值</span>
-                    <input
+                    <BufferedTextInput
                       type="text"
                       value={activeVoltageBaseTerminalRow.value}
-                      onChange={(event) => setVoltageBaseTerminalValue(activeVoltageBaseTerminalRow.nodeId, activeVoltageBaseTerminalRow.terminalId, event.target.value)}
+                      onCommit={(nextValue) => setVoltageBaseTerminalValue(activeVoltageBaseTerminalRow.nodeId, activeVoltageBaseTerminalRow.terminalId, nextValue)}
                       list="voltage-base-set-options"
                       placeholder="例如 110"
                       autoFocus={voltageBaseSetMode === "terminal"}
@@ -40456,9 +40743,9 @@ export function App() {
                 </label>
                 <label>
                   <span>模板名字</span>
-                  <input
+                  <BufferedTextInput
                     value={templateDraftName}
-                    onChange={(event) => setTemplateDraftName(event.target.value)}
+                    onCommit={setTemplateDraftName}
                     placeholder="请输入模板名字"
                     autoFocus
                   />
@@ -40634,9 +40921,9 @@ export function App() {
                         onCommit={(value) => updateEnergyColor(row.type, value)}
                         aria-label={`${row.label}颜色`}
                       />
-                      <input
+                      <BufferedTextInput
                         value={color}
-                        onChange={(event) => updateEnergyColor(row.type, event.target.value)}
+                        onCommit={(nextValue) => updateEnergyColor(row.type, nextValue)}
                         aria-label={`${row.label}颜色值`}
                       />
                     </label>
@@ -40681,9 +40968,9 @@ export function App() {
                             <option key={type} value={type}>{ELECTRIC_COLOR_TYPE_LABELS[type]}</option>
                           ))}
                         </select>
-                        <input
+                        <BufferedTextInput
                           value={row.voltage}
-                          onChange={(event) => updateVoltageColorRow(row.key, { voltage: event.target.value })}
+                          onCommit={(nextValue) => updateVoltageColorRow(row.key, { voltage: nextValue })}
                           aria-label="电压基值"
                         />
                         <div className="color-field">
@@ -40693,9 +40980,9 @@ export function App() {
                             onCommit={(value) => updateVoltageColorRow(row.key, { color: value })}
                             aria-label={`${row.type.toUpperCase()} ${row.voltage}颜色`}
                           />
-                          <input
+                          <BufferedTextInput
                             value={row.color}
-                            onChange={(event) => updateVoltageColorRow(row.key, { color: event.target.value })}
+                            onCommit={(nextValue) => updateVoltageColorRow(row.key, { color: nextValue })}
                             aria-label={`${row.type.toUpperCase()} ${row.voltage}颜色值`}
                           />
                         </div>
@@ -40986,17 +41273,17 @@ export function App() {
                               {definitionDraftRows.map((row) => (
                                 <tr key={row.id} className={row.readonly ? "readonly-row" : ""}>
                                   <td>
-                                    <input
+                                    <BufferedTextInput
                                       value={row.cnName}
                                       disabled={row.readonly}
-                                      onChange={(event) => updateDefinitionDraftRow(row.id, { cnName: event.target.value })}
+                                      onCommit={(value) => updateDefinitionDraftRow(row.id, { cnName: value })}
                                     />
                                   </td>
                                   <td>
-                                    <input
+                                    <BufferedTextInput
                                       value={row.enName}
                                       disabled={row.readonly}
-                                      onChange={(event) => updateDefinitionDraftRow(row.id, { enName: event.target.value })}
+                                      onCommit={(value) => updateDefinitionDraftRow(row.id, { enName: value })}
                                     />
                                   </td>
                                   <td>
@@ -41124,10 +41411,10 @@ export function App() {
               </label>
               <label className="custom-device-name-field">
                 元件名称
-                <input
+                <BufferedTextInput
                   value={customDeviceDraft.componentName}
                   placeholder="例如 水电、核电、风电、光伏"
-                  onChange={(event) => setCustomDeviceDraft((current) => ({ ...current, componentName: event.target.value, error: "" }))}
+                  onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, componentName: value, error: "" }))}
                 />
               </label>
               <label className="custom-device-container-field">
@@ -41164,13 +41451,13 @@ export function App() {
               </label>
               <label className="custom-device-terminal-count-field">
                 端子数量
-                <input
+                <BufferedTextInput
                   type="number"
                   min="0"
                   max={MAX_CUSTOM_DEVICE_TERMINALS}
                   value={customDeviceDraft.terminalCount}
                   disabled={customDeviceDialogView === "visual" && !customDefaultStateSelected}
-                  onChange={(event) => updateCustomDraftTerminalCount(Number(event.target.value))}
+                  onCommit={(value) => updateCustomDraftTerminalCount(Number(value))}
                 />
               </label>
             </div>
@@ -41466,23 +41753,23 @@ export function App() {
                     <span>端子位置</span>
                     <div className="custom-terminal-anchor-inputs">
                       <span>X</span>
-                      <input
+                      <BufferedTextInput
                         type="number"
                         min="-0.5"
                         max="0.5"
                         step="0.01"
                         value={formatCustomDeviceTerminalAnchorValue(terminalAnchor.x)}
-                        onChange={(event) => updateCustomDeviceTerminalAnchor(index, { x: Number(event.target.value) })}
+                        onCommit={(value) => updateCustomDeviceTerminalAnchor(index, { x: Number(value) })}
                         aria-label={`端子${index + 1} X位置`}
                       />
                       <span>Y</span>
-                      <input
+                      <BufferedTextInput
                         type="number"
                         min="-0.5"
                         max="0.5"
                         step="0.01"
                         value={formatCustomDeviceTerminalAnchorValue(terminalAnchor.y)}
-                        onChange={(event) => updateCustomDeviceTerminalAnchor(index, { y: Number(event.target.value) })}
+                        onCommit={(value) => updateCustomDeviceTerminalAnchor(index, { y: Number(value) })}
                         aria-label={`端子${index + 1} Y位置`}
                       />
                     </div>
@@ -41569,24 +41856,24 @@ export function App() {
                   {customDeviceDraft.params.map((row, index) => (
                     <tr key={row.id}>
                       <td>
-                        <input
+                        <BufferedTextInput
                           value={row.cnName}
-                          onChange={(event) =>
+                          onCommit={(value) =>
                             setCustomDeviceDraft((current) => ({
                               ...current,
-                              params: current.params.map((item) => (item.id === row.id ? { ...item, cnName: event.target.value } : item)),
+                              params: current.params.map((item) => (item.id === row.id ? { ...item, cnName: value } : item)),
                               error: ""
                             }))
                           }
                         />
                       </td>
                       <td>
-                        <input
+                        <BufferedTextInput
                           value={row.enName}
-                          onChange={(event) =>
+                          onCommit={(value) =>
                             setCustomDeviceDraft((current) => ({
                               ...current,
-                              params: current.params.map((item) => (item.id === row.id ? { ...item, enName: event.target.value } : item)),
+                              params: current.params.map((item) => (item.id === row.id ? { ...item, enName: value } : item)),
                               error: ""
                             }))
                           }
@@ -41928,27 +42215,27 @@ export function App() {
                         </label>
                         <label>
                           X
-                          <input type="number" value={selected.x} onChange={(event) => updateStateIconDrawingElement(selected.id, { x: Number(event.target.value) || 0 })} />
+                          <BufferedTextInput type="number" value={selected.x} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { x: Number(nextValue) || 0 })} />
                         </label>
                         <label>
                           Y
-                          <input type="number" value={selected.y} onChange={(event) => updateStateIconDrawingElement(selected.id, { y: Number(event.target.value) || 0 })} />
+                          <BufferedTextInput type="number" value={selected.y} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { y: Number(nextValue) || 0 })} />
                         </label>
                         <label>
                           宽
-                          <input type="number" min="1" value={selected.width} onChange={(event) => updateStateIconDrawingElement(selected.id, { width: Math.max(1, Number(event.target.value) || 1) })} />
+                          <BufferedTextInput type="number" min="1" value={selected.width} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { width: Math.max(1, Number(nextValue) || 1) })} />
                         </label>
                         <label>
                           高
-                          <input type="number" min="1" value={selected.height} onChange={(event) => updateStateIconDrawingElement(selected.id, { height: Math.max(1, Number(event.target.value) || 1) })} />
+                          <BufferedTextInput type="number" min="1" value={selected.height} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { height: Math.max(1, Number(nextValue) || 1) })} />
                         </label>
                         <label>
                           角度
-                          <input type="number" value={selected.rotation} onChange={(event) => updateStateIconDrawingElement(selected.id, { rotation: Number(event.target.value) || 0 })} />
+                          <BufferedTextInput type="number" value={selected.rotation} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { rotation: Number(nextValue) || 0 })} />
                         </label>
                         <label>
                           粗细
-                          <input type="number" min="0" value={selected.strokeWidth} onChange={(event) => updateStateIconDrawingElement(selected.id, { strokeWidth: Math.max(0, Number(event.target.value) || 0) })} />
+                          <BufferedTextInput type="number" min="0" value={selected.strokeWidth} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { strokeWidth: Math.max(0, Number(nextValue) || 0) })} />
                         </label>
                         <label>
                           线色
@@ -41973,15 +42260,15 @@ export function App() {
                         </label>
                         <label className="state-icon-drawing-text-field">
                           文字
-                          <input value={selected.text} onChange={(event) => updateStateIconDrawingElement(selected.id, { text: event.target.value })} />
+                          <BufferedTextInput value={selected.text} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { text: nextValue })} />
                         </label>
                         {selected.kind === "imported-svg" && (
                           <label className="state-icon-drawing-svg-field">
                             SVG源码
-                            <textarea
+                            <BufferedTextarea
                               value={selected.svgSource ?? ""}
                               spellCheck={false}
-                              onChange={(event) => updateStateIconDrawingElement(selected.id, { svgSource: event.target.value })}
+                              onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { svgSource: nextValue })}
                             />
                           </label>
                         )}
@@ -41989,21 +42276,21 @@ export function App() {
                           <>
                             <label>
                               图片缩放
-                              <input
+                              <BufferedTextInput
                                 type="number"
                                 min="0.05"
                                 step="0.05"
                                 value={selected.imageScale ?? 1}
-                                onChange={(event) => updateStateIconDrawingElement(selected.id, { imageScale: Math.max(0.05, Number(event.target.value) || 0.05) })}
+                                onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { imageScale: Math.max(0.05, Number(nextValue) || 0.05) })}
                               />
                             </label>
                             <label>
                               裁剪X
-                              <input type="number" value={selected.cropX ?? 0} onChange={(event) => updateStateIconDrawingElement(selected.id, { cropX: Number(event.target.value) || 0 })} />
+                              <BufferedTextInput type="number" value={selected.cropX ?? 0} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { cropX: Number(nextValue) || 0 })} />
                             </label>
                             <label>
                               裁剪Y
-                              <input type="number" value={selected.cropY ?? 0} onChange={(event) => updateStateIconDrawingElement(selected.id, { cropY: Number(event.target.value) || 0 })} />
+                              <BufferedTextInput type="number" value={selected.cropY ?? 0} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { cropY: Number(nextValue) || 0 })} />
                             </label>
                           </>
                         )}

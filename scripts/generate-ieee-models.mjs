@@ -2,7 +2,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const modulePath = fileURLToPath(import.meta.url);
+const repoRoot = path.resolve(path.dirname(modulePath), "..");
 const outputDir = path.join(repoRoot, "data", "schemes", "files", "IEEE标准算例");
 const layerId = "layer-default";
 const routableLinePointsParam = "_routableLinePoints";
@@ -12,6 +13,8 @@ const routableLineSourceLocalPointParam = "_routableLineSourceLocalPoint";
 const routableLineTargetNodeParam = "_routableLineTargetNodeId";
 const routableLineTargetTerminalParam = "_routableLineTargetTerminalId";
 const routableLineTargetLocalPointParam = "_routableLineTargetLocalPoint";
+const generatorTerminalAnchor = { x: 0.5, y: 0 };
+const loadTerminalAnchor = { x: 0, y: -0.5 };
 
 const cases = [
   {
@@ -483,8 +486,8 @@ const manualLayouts = {
     titlePosition: { x: 2750, y: 70 },
     busScaleX: 1.05,
     buses: ieee118Buses,
-    generators: directionalDevicePositions(ieee118Buses, ieee118GeneratorDirections, 160),
-    loads: directionalDevicePositions(ieee118Buses, ieee118ResolvedLoadDirections, 145),
+    generators: directionalDevicePositions(ieee118Buses, ieee118GeneratorDirections, 160, { terminalAnchor: generatorTerminalAnchor }),
+    loads: directionalDevicePositions(ieee118Buses, ieee118ResolvedLoadDirections, 145, { terminalAnchor: loadTerminalAnchor }),
     branches: {}
   }
 };
@@ -524,6 +527,44 @@ function directionVector(direction) {
   };
 }
 
+function vectorAngleDegrees(vector) {
+  return (Math.atan2(vector.y, vector.x) * 180) / Math.PI;
+}
+
+function normalizeRotation(rotation) {
+  const normalized = ((round(rotation, 2) % 360) + 360) % 360;
+  return normalized > 180 ? normalized - 360 : normalized;
+}
+
+function rotationForBusFacingTerminal(direction, baseAnchor) {
+  const deviceDirection = directionVector(direction);
+  const busFacingVector = { x: -deviceDirection.x, y: -deviceDirection.y };
+  return normalizeRotation(vectorAngleDegrees(busFacingVector) - vectorAngleDegrees(baseAnchor));
+}
+
+function rotationForTerminalAnchor(targetAnchor, baseAnchor) {
+  return normalizeRotation(vectorAngleDegrees(targetAnchor) - vectorAngleDegrees(baseAnchor));
+}
+
+function resolvePeripheralTerminalLayout(layout, baseAnchor) {
+  if (Number.isFinite(layout?.rotation)) {
+    return {
+      anchor: layout?.anchor ?? baseAnchor,
+      rotation: layout.rotation
+    };
+  }
+  if (layout?.anchor) {
+    return {
+      anchor: { ...baseAnchor },
+      rotation: rotationForTerminalAnchor(layout.anchor, baseAnchor)
+    };
+  }
+  return {
+    anchor: { ...baseAnchor },
+    rotation: 0
+  };
+}
+
 function oppositeDirection(direction) {
   const opposites = {
     N: "S",
@@ -547,7 +588,7 @@ function avoidDeviceDirectionCollisions(primaryDirections, blockerDirections) {
   );
 }
 
-function directionalDevicePositions(buses, directions, distance) {
+function directionalDevicePositions(buses, directions, distance, { terminalAnchor = loadTerminalAnchor } = {}) {
   return Object.fromEntries(
     Object.entries(directions)
       .filter(([busNo]) => buses[busNo])
@@ -559,10 +600,9 @@ function directionalDevicePositions(buses, directions, distance) {
           {
             x: round(bus.x + vector.x * distance, 1),
             y: round(bus.y + vector.y * distance, 1),
-            anchor: {
-              x: round(-vector.x * 0.5, 3),
-              y: round(-vector.y * 0.5, 3)
-            }
+            direction,
+            rotation: rotationForBusFacingTerminal(direction, terminalAnchor),
+            anchor: { ...terminalAnchor }
           }
         ];
       })
@@ -823,7 +863,7 @@ function makeBaseNode({ id, kind, name, position, size, rotation = 0, scale = 1,
 function makeBusTerminals(caseName, count, baseKv) {
   return Array.from({ length: count }, (_, index) => {
     const anchorX = count <= 1 ? 0 : -0.48 + (0.96 * index) / Math.max(1, count - 1);
-    return makeTerminal(caseName, `t${index + 1}`, `交流设备端${index + 1}`, "ac", { x: round(anchorX, 4), y: 0 }, baseKv, index + 1);
+    return makeTerminal(caseName, `t${index + 1}`, `交流设备端${index + 1}`, "ac", { x: round(anchorX, 8), y: 0 }, baseKv, index + 1);
   });
 }
 
@@ -969,6 +1009,61 @@ function buildOrthogonalRoutePoints(start, end, via = []) {
   return normalizeRoutePoints(route);
 }
 
+const busPerpendicularStub = 56;
+
+function verticalDirectionFrom(point, fallbackPoint) {
+  const dy = (fallbackPoint?.y ?? point.y) - point.y;
+  if (Math.abs(dy) > 1e-6) {
+    return Math.sign(dy);
+  }
+  return -1;
+}
+
+function enforceStartBusPerpendicular(points) {
+  const route = normalizeRoutePoints(points);
+  if (route.length < 2) {
+    return route;
+  }
+  const first = route[0];
+  const second = route[1];
+  if (first.x === second.x && first.y !== second.y) {
+    return route;
+  }
+  const stubY = second.y !== first.y
+    ? second.y
+    : round(first.y + verticalDirectionFrom(first, route.at(-1)) * busPerpendicularStub, 1);
+  const connector = buildOrthogonalRoutePoints({ x: first.x, y: stubY }, second);
+  return normalizeRoutePoints([first, ...connector, ...route.slice(2)]);
+}
+
+function enforceEndBusPerpendicular(points) {
+  const route = normalizeRoutePoints(points);
+  if (route.length < 2) {
+    return route;
+  }
+  const previous = route[route.length - 2];
+  const last = route[route.length - 1];
+  if (previous.x === last.x && previous.y !== last.y) {
+    return route;
+  }
+  const stubY = previous.y !== last.y
+    ? previous.y
+    : round(last.y + verticalDirectionFrom(last, route[0]) * busPerpendicularStub, 1);
+  const connector = buildOrthogonalRoutePoints(previous, { x: last.x, y: stubY });
+  return normalizeRoutePoints([...route.slice(0, -2), ...connector, last]);
+}
+
+function enforceBusPerpendicularEndpoints(points, { sourceIsBus = false, targetIsBus = false } = {}) {
+  let route = normalizeRoutePoints(points);
+  if (sourceIsBus) {
+    route = enforceStartBusPerpendicular(route);
+  }
+  if (targetIsBus) {
+    route = enforceEndBusPerpendicular(route);
+  }
+  return route;
+}
+
 function makeDeviceTerminals(caseName, type, vbase, count = 2, singleAnchor) {
   if (count === 1) {
     return [makeTerminal(caseName, "t1", "交流设备端1", type, singleAnchor ?? { x: 0.5, y: 0 }, vbase, 1)];
@@ -1035,6 +1130,10 @@ function makeRoutableLineNode({
 function addEdge(edges, id, source, target, sourceTerminalId, targetTerminalId, sourcePoint, targetPoint, routePoints) {
   const start = source.kind === "ac-bus" ? sourcePoint : terminalPoint(source, sourceTerminalId);
   const end = target.kind === "ac-bus" ? targetPoint : terminalPoint(target, targetTerminalId);
+  const route = enforceBusPerpendicularEndpoints(routePoints ?? buildOrthogonalRoutePoints(start, end), {
+    sourceIsBus: source.kind === "ac-bus",
+    targetIsBus: target.kind === "ac-bus"
+  });
   edges.push({
     id,
     sourceId: source.id,
@@ -1043,7 +1142,7 @@ function addEdge(edges, id, source, target, sourceTerminalId, targetTerminalId, 
     targetTerminalId,
     ...(source.kind === "ac-bus" ? { sourcePoint } : {}),
     ...(target.kind === "ac-bus" ? { targetPoint } : {}),
-    routePoints: routePoints ?? buildOrthogonalRoutePoints(start, end)
+    routePoints: route
   });
 }
 
@@ -1149,10 +1248,13 @@ function buildProject(caseDef, parsed) {
     if (!transformer && manualLayout?.branches) {
       const fromEndpoint = takeBusEndpoint(fromBusNo);
       const toEndpoint = takeBusEndpoint(toBusNo);
-      const routePoints = buildOrthogonalRoutePoints(
-        { ...fromNode.position },
-        { ...toNode.position },
-        branchLayout?.via ?? []
+      const routePoints = enforceBusPerpendicularEndpoints(
+        buildOrthogonalRoutePoints(
+          fromEndpoint.point,
+          toEndpoint.point,
+          branchLayout?.via ?? []
+        ),
+        { sourceIsBus: true, targetIsBus: true }
       );
       const lineNode = makeRoutableLineNode({
         caseName: caseDef.modelName,
@@ -1226,6 +1328,7 @@ function buildProject(caseDef, parsed) {
       return;
     }
     const manualGenerator = manualLayout?.generators?.[busNo];
+    const generatorTerminalLayout = resolvePeripheralTerminalLayout(manualGenerator, generatorTerminalAnchor);
     const sameBusIndex = activeGens.slice(0, index).filter((item) => item[genColumns.busNo] === busNo).length;
     const node = makeBaseNode({
       id: `${caseDef.modelName.toLowerCase()}-gen-${index + 1}`,
@@ -1238,7 +1341,8 @@ function buildProject(caseDef, parsed) {
         y: round(busNode.position.y - 42 + sameBusIndex * 72, 1)
       },
       size: { width: 84, height: 56 },
-      terminals: makeDeviceTerminals(caseDef.modelName, "ac", effectiveBaseKv(bus), 1, manualGenerator?.anchor),
+      rotation: generatorTerminalLayout.rotation,
+      terminals: makeDeviceTerminals(caseDef.modelName, "ac", effectiveBaseKv(bus), 1, generatorTerminalLayout.anchor),
       params: baseElectricalParams({
         idx: String(index + 1),
         vbase: numericText(effectiveBaseKv(bus), 3),
@@ -1266,6 +1370,7 @@ function buildProject(caseDef, parsed) {
       return;
     }
     const manualLoad = manualLayout?.loads?.[busNo];
+    const loadTerminalLayout = resolvePeripheralTerminalLayout(manualLoad, loadTerminalAnchor);
     const node = makeBaseNode({
       id: `${caseDef.modelName.toLowerCase()}-load-${busNo}`,
       kind: "ac-load",
@@ -1277,7 +1382,8 @@ function buildProject(caseDef, parsed) {
         y: round(busNode.position.y + 74, 1)
       },
       size: { width: 86, height: 58 },
-      terminals: makeLoadTerminal(caseDef.modelName, effectiveBaseKv(bus), manualLoad?.anchor),
+      rotation: loadTerminalLayout.rotation,
+      terminals: makeLoadTerminal(caseDef.modelName, effectiveBaseKv(bus), loadTerminalLayout.anchor),
       params: baseElectricalParams({
         idx: String(busNo),
         vbase: numericText(effectiveBaseKv(bus), 3),
@@ -1383,4 +1489,17 @@ async function main() {
   }
 }
 
-await main();
+export {
+  buildProject,
+  routableLinePointsParam,
+  routableLineSourceLocalPointParam,
+  routableLineSourceNodeParam,
+  routableLineSourceTerminalParam,
+  routableLineTargetLocalPointParam,
+  routableLineTargetNodeParam,
+  routableLineTargetTerminalParam
+};
+
+if (process.argv[1] && path.resolve(process.argv[1]) === modulePath) {
+  await main();
+}

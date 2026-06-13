@@ -24,7 +24,6 @@ const maxColorConfigBodyBytes = 1024 * 1024;
 const maxMeasurementConfigBodyBytes = 1024 * 1024;
 const maxDeviceLibraryBodyBytes = 16 * 1024 * 1024;
 const maxFilePartLength = 80;
-const rootImageExportDir = "data/images";
 const backendImageHrefPattern = /^\/api\/images\/([^/?#]+)/;
 const accessControlHeaders = {
   "access-control-allow-origin": "*",
@@ -1287,15 +1286,33 @@ function safeImageExportFilename(value) {
   return normalized.split("/").filter(Boolean).pop() ?? "";
 }
 
-function imageExportPathByIdFromManifest(manifest) {
-  return (Array.isArray(manifest) ? manifest : []).reduce((result, item) => {
+async function imageFileToDataUrl(item) {
+  const filename = safeImageExportFilename(item?.filename ?? "");
+  const mimeType = String(item?.mimeType ?? "").trim();
+  if (!filename || !mimeType.startsWith("image/")) {
+    return "";
+  }
+  const bytes = await readFile(join(imageDataDir, filename));
+  return `data:${mimeType};base64,${bytes.toString("base64")}`;
+}
+
+async function imageExportPathByIdFromManifest(manifest) {
+  const result = {};
+  await Promise.all((Array.isArray(manifest) ? manifest : []).map(async (item) => {
     const id = String(item?.id ?? "").trim();
-    const filename = safeImageExportFilename(item?.filename ?? "");
-    if (id && filename) {
-      result[id] = `${rootImageExportDir}/${filename}`;
+    if (!id) {
+      return;
     }
-    return result;
-  }, {});
+    try {
+      const dataUrl = await imageFileToDataUrl(item);
+      if (dataUrl) {
+        result[id] = dataUrl;
+      }
+    } catch {
+      // 单张图片文件丢失不应阻断模型保存；导出时保留原始 href。
+    }
+  }));
+  return result;
 }
 
 function svgImageHref(value, imagePathById = {}) {
@@ -1304,7 +1321,7 @@ function svgImageHref(value, imagePathById = {}) {
   if (!id) {
     return href;
   }
-  return imagePathById[id] || `${rootImageExportDir}/${safeImageExportFilename(id) || id}`;
+  return imagePathById[id] || href;
 }
 
 function svgSafeId(value, fallback) {
@@ -1960,7 +1977,7 @@ export async function saveSchemeProjectRecord(options) {
   }
   const { jsonPath, ePath, svgPath } = projectFilePathsForName(schemeDir, name);
   const measurementConfig = options.measurementConfig ?? { measurementTypes: [], deviceProfiles: [] };
-  const imagePathById = options.imagePathById ?? imageExportPathByIdFromManifest(await readManifest());
+  const imagePathById = options.imagePathById ?? (await imageExportPathByIdFromManifest(await readManifest()));
   await Promise.all([
     writeTextIfChanged(jsonPath, stringifyJson(storedRecord.project)),
     writeTextIfChanged(ePath, buildDeviceParameterFile(storedRecord.project)),
@@ -1987,7 +2004,7 @@ async function writeSchemeFiles(schemes, options = {}) {
   const expectedDirs = new Set([filesRoot]);
   const writeTasks = [];
   const measurementConfig = await readMeasurementConfig();
-  const imagePathById = options.imagePathById ?? imageExportPathByIdFromManifest(await readManifest());
+  const imagePathById = options.imagePathById ?? (await imageExportPathByIdFromManifest(await readManifest()));
 
   const writeSchemeTree = async (scheme, parentDir) => {
     const schemeDir = join(parentDir, safeFilePart(scheme.name, "方案"));
@@ -2186,7 +2203,7 @@ async function handleSaveSchemeProject(request, response) {
     record,
     previousName: payload.previousName,
     measurementConfig: await readMeasurementConfig(),
-    imagePathById: imageExportPathByIdFromManifest(await readManifest())
+    imagePathById: await imageExportPathByIdFromManifest(await readManifest())
   });
   sendJson(response, 200, { ok: true, project: savedRecord, savedAt: new Date().toISOString() });
 }
