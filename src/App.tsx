@@ -225,6 +225,8 @@ import {
   type DeviceKind,
   type DeviceIndexCounters,
   type DeviceParameterDefinition,
+  type DeviceParameterEnumOption,
+  type DeviceParameterEnumValueType,
   type DeviceParameterValueType,
   type DeviceStateDefinition,
   type DeviceStateVisual,
@@ -4574,6 +4576,17 @@ const DEFAULT_PARAMETER_ENUM_VALUES: Record<string, string[]> = {
   run_stat: ["运行", "停运"]
 };
 
+const DEFAULT_PARAMETER_ENUM_OPTIONS: Record<string, DeviceParameterEnumOption[]> = {
+  status: [
+    { value: "1", label: "闭合" },
+    { value: "0", label: "打开/开断" }
+  ],
+  run_stat: [
+    { value: "运行" },
+    { value: "停运" }
+  ]
+};
+
 const normalizeEnumValueList = (values: unknown, typicalValue = ""): string[] => {
   const sourceValues = Array.isArray(values) ? values : [];
   const seen = new Set<string>();
@@ -4593,6 +4606,11 @@ const normalizeEnumValueList = (values: unknown, typicalValue = ""): string[] =>
   return enumValues;
 };
 
+const PARAM_ENUM_VALUE_TYPE_OPTIONS: Array<{ value: DeviceParameterEnumValueType; label: string }> = [
+  { value: "number", label: "数字枚举" },
+  { value: "string", label: "字符串枚举" }
+];
+
 const definitionRowIsEnum = (row: Pick<DeviceParameterDefinition, "valueType">) => {
   return row.valueType === "enum";
 };
@@ -4600,9 +4618,40 @@ const definitionRowIsEnum = (row: Pick<DeviceParameterDefinition, "valueType">) 
 const defaultEnumValuesForDefinitionRow = (row: Pick<DeviceParameterDefinition, "enName">) =>
   DEFAULT_PARAMETER_ENUM_VALUES[row.enName.trim()] ?? [];
 
-const rawEnumValuesForRow = (row: Pick<DeviceParameterDefinition, "enName" | "typicalValue" | "enumValues">): string[] => {
+const defaultEnumOptionsForDefinitionRow = (row: Pick<DeviceParameterDefinition, "enName">) =>
+  DEFAULT_PARAMETER_ENUM_OPTIONS[row.enName.trim()] ?? [];
+
+const normalizeEnumOption = (option: unknown): DeviceParameterEnumOption | null => {
+  if (option && typeof option === "object" && !Array.isArray(option)) {
+    const enumOption = option as Partial<DeviceParameterEnumOption>;
+    const value = String(enumOption.value ?? "").trim();
+    if (!value) {
+      return null;
+    }
+    const label = String(enumOption.label ?? "").trim();
+    return label ? { value, label } : { value };
+  }
+  const value = String(option ?? "").trim();
+  return value ? { value } : null;
+};
+
+const normalizeEnumValueType = (
+  value: unknown,
+  enumOptions: readonly DeviceParameterEnumOption[] = []
+): DeviceParameterEnumValueType => {
+  if (value === "number" || value === "string") {
+    return value;
+  }
+  const optionValues = enumOptions.map((option) => option.value.trim()).filter(Boolean);
+  return optionValues.length > 0 && optionValues.every((optionValue) => /^-?\d+(?:\.\d+)?$/.test(optionValue)) ? "number" : "string";
+};
+
+const rawEnumValuesForRow = (row: Pick<DeviceParameterDefinition, "enName" | "typicalValue" | "enumValues" | "enumOptions">): string[] => {
   if (Array.isArray(row.enumValues) && row.enumValues.length > 0) {
     return row.enumValues.map((value) => String(value ?? ""));
+  }
+  if (Array.isArray(row.enumOptions) && row.enumOptions.length > 0) {
+    return row.enumOptions.map((option) => String(option?.value ?? ""));
   }
   const defaultValues = defaultEnumValuesForDefinitionRow(row);
   if (defaultValues.length > 0) {
@@ -4612,24 +4661,103 @@ const rawEnumValuesForRow = (row: Pick<DeviceParameterDefinition, "enName" | "ty
   return typicalValue ? [typicalValue] : [];
 };
 
-const enumValuesForRow = (row: Pick<DeviceParameterDefinition, "enName" | "typicalValue" | "enumValues">): string[] => {
-  const enumValues = normalizeEnumValueList(rawEnumValuesForRow(row), String(row.typicalValue ?? ""));
+const normalizeEnumOptionsForRow = (
+  row: Pick<DeviceParameterDefinition, "enName" | "typicalValue" | "enumValues" | "enumOptions">
+): DeviceParameterEnumOption[] => {
+  const sourceOptions = Array.isArray(row.enumOptions) && row.enumOptions.length > 0
+    ? row.enumOptions
+    : (defaultEnumOptionsForDefinitionRow(row).length > 0 ? defaultEnumOptionsForDefinitionRow(row) : rawEnumValuesForRow(row));
+  const seen = new Set<string>();
+  const enumOptions: DeviceParameterEnumOption[] = [];
+  const addOption = (option: unknown) => {
+    const normalizedOption = normalizeEnumOption(option);
+    if (!normalizedOption || seen.has(normalizedOption.value)) {
+      return;
+    }
+    seen.add(normalizedOption.value);
+    enumOptions.push(normalizedOption);
+  };
+  sourceOptions.forEach(addOption);
+  if (Array.isArray(row.enumOptions) && row.enumOptions.length > 0) {
+    rawEnumValuesForRow({ ...row, enumOptions: undefined }).forEach(addOption);
+  }
+  const typicalValue = String(row.typicalValue ?? "").trim();
+  const typicalExists = enumOptions.some((option) => option.value === typicalValue || option.label === typicalValue);
+  if (typicalValue && !typicalExists) {
+    addOption(typicalValue);
+  }
+  return enumOptions;
+};
+
+const enumValueFromOptions = (value: string, enumOptions: readonly DeviceParameterEnumOption[]) => {
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return "";
+  }
+  return enumOptions.find((option) => option.value === text)?.value ??
+    enumOptions.find((option) => option.label === text)?.value ??
+    text;
+};
+
+const enumDisplayText = (option: DeviceParameterEnumOption, enumValueType?: DeviceParameterEnumValueType) => {
+  const label = String(option.label ?? "").trim();
+  if (!label || label === option.value) {
+    return option.value;
+  }
+  return enumValueType === "number" ? `${label} (${option.value})` : `${option.value} / ${label}`;
+};
+
+const enumValuesForRow = (row: Pick<DeviceParameterDefinition, "enName" | "typicalValue" | "enumValues" | "enumOptions">): string[] => {
+  const enumValues = normalizeEnumValueList(normalizeEnumOptionsForRow(row).map((option) => option.value), String(row.typicalValue ?? ""));
   return enumValues;
 };
 
 const normalizeDefinitionRowEnumFields = <T extends DeviceParameterDefinition>(row: T): T => {
   if (!definitionRowIsEnum(row)) {
-    return { ...row, enumValues: undefined } as T;
+    return { ...row, enumValues: undefined, enumValueType: undefined, enumOptions: undefined } as T;
   }
-  const enumValues = normalizeEnumValueList(
-    row.enumValues ?? defaultEnumValuesForDefinitionRow(row),
-    String(row.typicalValue ?? "")
-  );
+  const enumOptions = normalizeEnumOptionsForRow(row);
+  const enumValueType = normalizeEnumValueType(row.enumValueType, enumOptions);
+  const enumValues = normalizeEnumValueList(enumOptions.map((option) => option.value), "");
+  const typicalValue = enumValueFromOptions(String(row.typicalValue ?? ""), enumOptions);
   return {
     ...row,
-    typicalValue: String(row.typicalValue ?? "").trim() || enumValues[0] || "",
+    typicalValue: typicalValue || enumValues[0] || "",
+    enumValueType,
+    enumOptions,
     enumValues
   } as T;
+};
+
+const renderEnumValueTypeEditor = <T extends DeviceParameterDefinition & { id: string }>(
+  row: T,
+  updateRow: (rowId: string, patch: Partial<T>) => void,
+  disabled = false
+) => {
+  if (!definitionRowIsEnum(row)) {
+    return <span className="custom-param-enum-placeholder">-</span>;
+  }
+  const enumOptions = normalizeEnumOptionsForRow(row);
+  const enumValueType = normalizeEnumValueType(row.enumValueType, enumOptions);
+  if (disabled) {
+    return PARAM_ENUM_VALUE_TYPE_OPTIONS.find((option) => option.value === enumValueType)?.label ?? enumValueType;
+  }
+  return (
+    <select
+      value={enumValueType}
+      onChange={(event) => updateRow(row.id, {
+        enumValueType: event.target.value as DeviceParameterEnumValueType,
+        enumOptions,
+        enumValues: enumOptions.map((option) => option.value)
+      } as Partial<T>)}
+    >
+      {PARAM_ENUM_VALUE_TYPE_OPTIONS.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
 };
 
 const renderTypicalValueEditor = <T extends DeviceParameterDefinition & { id: string }>(
@@ -4638,17 +4766,19 @@ const renderTypicalValueEditor = <T extends DeviceParameterDefinition & { id: st
   disabled = false
 ) => {
   if (definitionRowIsEnum(row)) {
-    const enumValues = enumValuesForRow(row);
+    const enumOptions = normalizeEnumOptionsForRow(row);
+    const enumValueType = normalizeEnumValueType(row.enumValueType, enumOptions);
+    const selectedTypicalValue = enumValueFromOptions(String(row.typicalValue ?? ""), enumOptions);
     return (
       <select
-        value={String(row.typicalValue ?? "")}
+        value={selectedTypicalValue}
         disabled={disabled}
         onChange={(event) => updateRow(row.id, { typicalValue: event.target.value } as Partial<T>)}
       >
-        {enumValues.length === 0 && <option value="">未设置</option>}
-        {enumValues.map((value) => (
-          <option key={value} value={value}>
-            {value}
+        {enumOptions.length === 0 && <option value="">未设置</option>}
+        {enumOptions.map((option) => (
+          <option key={option.value} value={option.value}>
+            {enumDisplayText(option, enumValueType)}
           </option>
         ))}
       </select>
@@ -4671,37 +4801,57 @@ const renderEnumValuesEditor = <T extends DeviceParameterDefinition & { id: stri
   if (!definitionRowIsEnum(row)) {
     return <span className="custom-param-enum-placeholder">-</span>;
   }
-  const rawValues = rawEnumValuesForRow(row);
-  const editorValues = rawValues.length > 0 ? rawValues : [""];
-  const updateValues = (nextValues: string[], nextTypicalValue = row.typicalValue) => {
+  const enumValueType = normalizeEnumValueType(row.enumValueType, normalizeEnumOptionsForRow(row));
+  const rawOptions = Array.isArray(row.enumOptions) && row.enumOptions.length > 0
+    ? row.enumOptions.map((option) => ({ value: String(option?.value ?? ""), label: String(option?.label ?? "") }))
+    : rawEnumValuesForRow(row).map((value) => ({ value, label: "" }));
+  const editorOptions = rawOptions.length > 0 ? rawOptions : [{ value: "", label: "" }];
+  const updateValues = (nextOptions: DeviceParameterEnumOption[], nextTypicalValue = row.typicalValue) => {
+    const enumValues = normalizeEnumValueList(nextOptions.map((option) => option.value), "");
     updateRow(row.id, {
-      enumValues: nextValues,
-      typicalValue: nextTypicalValue
+      enumValueType,
+      enumOptions: nextOptions,
+      enumValues,
+      typicalValue: enumValueFromOptions(String(nextTypicalValue ?? ""), nextOptions) || enumValues[0] || ""
     } as Partial<T>);
   };
   return (
     <div className="custom-param-enum-values">
-      {editorValues.map((value, index) => (
+      {editorOptions.map((option, index) => (
         <div className="custom-param-enum-row" key={`${row.id}-${index}`}>
           <input
-            value={value}
+            value={option.value}
             disabled={disabled}
+            inputMode={enumValueType === "number" ? "decimal" : undefined}
             onChange={(event) => {
-              const nextValues = editorValues.map((item, itemIndex) => (itemIndex === index ? event.target.value : item));
-              const nextTypicalValue = row.typicalValue === value ? event.target.value : row.typicalValue;
-              updateValues(nextValues, nextTypicalValue);
+              const nextOptions = editorOptions.map((item, itemIndex) => (itemIndex === index ? { ...item, value: event.target.value } : item));
+              const nextTypicalValue = row.typicalValue === option.value ? event.target.value : row.typicalValue;
+              updateValues(nextOptions, nextTypicalValue);
             }}
           />
+          {enumValueType === "number" && (
+            <input
+              value={option.label ?? ""}
+              disabled={disabled}
+              placeholder="含义"
+              onChange={(event) => {
+                const nextOptions = editorOptions.map((item, itemIndex) => (itemIndex === index ? { ...item, label: event.target.value } : item));
+                const nextTypicalValue = row.typicalValue === option.label ? option.value : row.typicalValue;
+                updateValues(nextOptions, nextTypicalValue);
+              }}
+            />
+          )}
           {!disabled && (
             <button
               type="button"
               title="删除枚举值"
-              disabled={editorValues.length <= 1}
+              disabled={editorOptions.length <= 1}
               onClick={() => {
-                const nextValues = editorValues.filter((_, itemIndex) => itemIndex !== index);
-                const normalizedValues = normalizeEnumValueList(nextValues, "");
-                const nextTypicalValue = normalizedValues.includes(row.typicalValue) ? row.typicalValue : normalizedValues[0] ?? "";
-                updateValues(nextValues, nextTypicalValue);
+                const nextOptions = editorOptions.filter((_, itemIndex) => itemIndex !== index);
+                const normalizedValues = normalizeEnumValueList(nextOptions.map((item) => item.value), "");
+                const currentTypical = enumValueFromOptions(String(row.typicalValue ?? ""), editorOptions);
+                const nextTypicalValue = normalizedValues.includes(currentTypical) ? currentTypical : normalizedValues[0] ?? "";
+                updateValues(nextOptions, nextTypicalValue);
               }}
             >
               删除
@@ -4713,7 +4863,7 @@ const renderEnumValuesEditor = <T extends DeviceParameterDefinition & { id: stri
         <button
           type="button"
           className="custom-param-enum-add"
-          onClick={() => updateValues([...editorValues, ""], row.typicalValue)}
+          onClick={() => updateValues([...editorOptions, { value: "", label: "" }], row.typicalValue)}
         >
           新增枚举值
         </button>
@@ -23726,6 +23876,16 @@ export function App() {
     return withCurrentOption(enumValues.length > 0 ? enumValues : undefined, value);
   };
 
+  const enumOptionLabelsForDefinition = (definition: DeviceParameterDefinition | undefined, value: string) => {
+    if (definition?.valueType !== "enum") {
+      return undefined;
+    }
+    const enumOptions = normalizeEnumOptionsForRow(definition);
+    const enumValueType = normalizeEnumValueType(definition.enumValueType, enumOptions);
+    const labels = Object.fromEntries(enumOptions.map((option) => [option.value, enumDisplayText(option, enumValueType)]));
+    return value && !labels[value] ? { ...labels, [value]: value } : labels;
+  };
+
   const paramOptionsForDefinition = (
     key: string,
     node: ModelNode | undefined,
@@ -23743,7 +23903,7 @@ export function App() {
     definition?: DeviceParameterDefinition
   ) => {
     const definitionOptions = key === "status" ? undefined : enumOptionsForDefinition(definition, value);
-    return definitionOptions ? {} : paramOptionLabelsForNode(key, node, value);
+    return definitionOptions ? enumOptionLabelsForDefinition(definition, value) ?? {} : paramOptionLabelsForNode(key, node, value);
   };
 
   const definitionMakesValueReadonly = (definition: DeviceParameterDefinition | undefined) =>
@@ -32590,6 +32750,8 @@ export function App() {
         enName,
         valueType: row.valueType,
         typicalValue: row.typicalValue,
+        enumValueType: row.enumValueType,
+        enumOptions: row.enumOptions,
         enumValues: row.enumValues,
         readonly: Boolean(row.readonly)
       }));
@@ -33608,6 +33770,8 @@ export function App() {
         enName: row.enName.trim(),
         valueType: row.valueType,
         typicalValue: row.typicalValue.trim(),
+        enumValueType: row.enumValueType,
+        enumOptions: row.enumOptions,
         enumValues: row.enumValues
       }))
       .filter((row) => row.cnName || row.enName);
@@ -40817,6 +40981,7 @@ export function App() {
                                 <th>中文名称</th>
                                 <th>英文名称</th>
                                 <th>取值类型</th>
+                                <th>枚举类型</th>
                                 <th>典型取值</th>
                                 <th>枚举值</th>
                                 <th>操作</th>
@@ -40851,6 +41016,8 @@ export function App() {
                                         updateDefinitionDraftRow(row.id, {
                                           valueType: nextRow.valueType,
                                           typicalValue: nextRow.typicalValue,
+                                          enumValueType: nextRow.enumValueType,
+                                          enumOptions: nextRow.enumOptions,
                                           enumValues: nextRow.enumValues
                                         });
                                       }}
@@ -40861,6 +41028,9 @@ export function App() {
                                         </option>
                                       ))}
                                     </select>
+                                  </td>
+                                  <td>
+                                    {renderEnumValueTypeEditor(row, updateDefinitionDraftRow, row.readonly)}
                                   </td>
                                   <td>
                                     {renderTypicalValueEditor(row, updateDefinitionDraftRow, row.readonly)}
@@ -41386,6 +41556,7 @@ export function App() {
                     <th>中文名称</th>
                     <th>英文名称</th>
                     <th>取值类型</th>
+                    <th>枚举类型</th>
                     <th>典型取值</th>
                     <th>枚举值</th>
                     <th>操作</th>
@@ -41399,6 +41570,7 @@ export function App() {
                         <td>{row.cnName}</td>
                         <td>{row.enName}</td>
                         <td>{PARAM_VALUE_TYPE_OPTIONS.find((option) => option.value === row.valueType)?.label ?? row.valueType}</td>
+                        <td>{renderEnumValueTypeEditor(readonlyRow, () => undefined, true)}</td>
                         <td>{renderTypicalValueEditor(readonlyRow, () => undefined, true)}</td>
                         <td>{renderEnumValuesEditor(readonlyRow, () => undefined, true)}</td>
                         <td>默认</td>
@@ -41452,6 +41624,15 @@ export function App() {
                             </option>
                           ))}
                         </select>
+                      </td>
+                      <td>
+                        {renderEnumValueTypeEditor(row, (rowId, patch) =>
+                          setCustomDeviceDraft((current) => ({
+                            ...current,
+                            params: current.params.map((item) => (item.id === rowId ? { ...item, ...patch } : item)),
+                            error: ""
+                          }))
+                        )}
                       </td>
                       <td>
                         {renderTypicalValueEditor(row, (rowId, patch) =>

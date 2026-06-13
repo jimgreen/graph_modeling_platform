@@ -254,12 +254,21 @@ export type ContainerTerminalAssociationValue = ContainerTerminalAssociationType
 
 export type DeviceParameterValueType = "integer" | "float" | "string" | "enum";
 
+export type DeviceParameterEnumValueType = "number" | "string";
+
+export type DeviceParameterEnumOption = {
+  value: string;
+  label?: string;
+};
+
 export type DeviceParameterDefinition = {
   cnName: string;
   enName: string;
   valueType: DeviceParameterValueType;
   typicalValue: string;
   enumValues?: string[];
+  enumValueType?: DeviceParameterEnumValueType;
+  enumOptions?: DeviceParameterEnumOption[];
   readonly?: boolean;
 };
 
@@ -1752,18 +1761,31 @@ export function getEParamValue(
   return mappedLegacyEValue(key, node.params);
 }
 
-function customEParameterKeys(params: Record<string, string>) {
+function customEParameterDefinitions(params: Record<string, string>) {
   try {
     const parsed = JSON.parse(params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]");
     if (!Array.isArray(parsed)) {
       return [];
     }
-    return Array.from(new Set(parsed
-      .map((definition) => String((definition as DeviceParameterDefinition)?.enName ?? "").trim())
-      .filter((key) => key && !key.startsWith("_") && key !== "component_type")));
+    return normalizeTemplateDefinitionList(parsed)
+      .filter((definition) => definition.enName && !definition.enName.startsWith("_") && definition.enName !== "component_type");
   } catch {
     return [];
   }
+}
+
+function customEParameterKeys(params: Record<string, string>) {
+  return Array.from(new Set(customEParameterDefinitions(params).map((definition) => definition.enName)));
+}
+
+function customEParameterDefinitionMap(params: Record<string, string>) {
+  const definitionMap = new Map<string, DeviceParameterDefinition>();
+  for (const definition of customEParameterDefinitions(params)) {
+    if (!definitionMap.has(definition.enName)) {
+      definitionMap.set(definition.enName, definition);
+    }
+  }
+  return definitionMap;
 }
 
 export function getEParameterKeys(kind: string, params: Record<string, string>) {
@@ -1783,8 +1805,11 @@ export function buildEDeviceValues(
   options: EParamValueOptions = {}
 ) {
   const values: Record<string, string> = {};
+  const section = inferESection(node.kind, node.params);
+  const customDefinitionMap = section && !E_SECTION_COLUMNS[section] ? customEParameterDefinitionMap(node.params) : undefined;
   for (const key of getEParameterKeys(node.kind, node.params)) {
-    const value = getEParamValue(key, node, options);
+    const definition = customDefinitionMap?.get(key);
+    const value = definition ? enumExportValueForDefinition(definition, getEParamValue(key, node, options)) : getEParamValue(key, node, options);
     if (value !== "") {
       values[key] = value;
     }
@@ -4716,6 +4741,39 @@ const DEFAULT_TEMPLATE_ENUM_VALUES: Record<string, string[]> = {
   run_stat: ["运行", "停运"]
 };
 
+const DEFAULT_TEMPLATE_ENUM_OPTIONS: Record<string, DeviceParameterEnumOption[]> = {
+  status: [
+    { value: "1", label: "闭合" },
+    { value: "0", label: "打开/开断" }
+  ],
+  run_stat: [
+    { value: "运行" },
+    { value: "停运" }
+  ]
+};
+
+function normalizeTemplateEnumValueType(value: unknown, enumOptions: readonly DeviceParameterEnumOption[] = []): DeviceParameterEnumValueType {
+  if (value === "number" || value === "string") {
+    return value;
+  }
+  const optionValues = enumOptions.map((option) => option.value.trim()).filter(Boolean);
+  return optionValues.length > 0 && optionValues.every((optionValue) => /^-?\d+(?:\.\d+)?$/.test(optionValue)) ? "number" : "string";
+}
+
+function normalizeTemplateEnumOption(rawOption: unknown): DeviceParameterEnumOption | null {
+  if (rawOption && typeof rawOption === "object" && !Array.isArray(rawOption)) {
+    const option = rawOption as Partial<DeviceParameterEnumOption>;
+    const value = String(option.value ?? "").trim();
+    if (!value) {
+      return null;
+    }
+    const label = String(option.label ?? "").trim();
+    return label ? { value, label } : { value };
+  }
+  const value = String(rawOption ?? "").trim();
+  return value ? { value } : null;
+}
+
 function normalizeTemplateEnumValues(values: unknown, typicalValue = ""): string[] {
   const sourceValues = Array.isArray(values) ? values : [];
   const seen = new Set<string>();
@@ -4735,6 +4793,57 @@ function normalizeTemplateEnumValues(values: unknown, typicalValue = ""): string
   return enumValues;
 }
 
+function normalizeTemplateEnumOptions(definition: DeviceParameterDefinition, typicalValue = ""): DeviceParameterEnumOption[] {
+  const rawOptions = Array.isArray(definition.enumOptions) && definition.enumOptions.length > 0
+    ? definition.enumOptions
+    : (DEFAULT_TEMPLATE_ENUM_OPTIONS[definition.enName?.trim()] ?? definition.enumValues ?? DEFAULT_TEMPLATE_ENUM_VALUES[definition.enName?.trim()] ?? []);
+  const seen = new Set<string>();
+  const enumOptions: DeviceParameterEnumOption[] = [];
+  const addOption = (rawOption: unknown) => {
+    const option = normalizeTemplateEnumOption(rawOption);
+    if (!option || seen.has(option.value)) {
+      return;
+    }
+    seen.add(option.value);
+    enumOptions.push(option);
+  };
+  for (const option of rawOptions) {
+    addOption(option);
+  }
+  if (Array.isArray(definition.enumOptions) && definition.enumOptions.length > 0) {
+    for (const value of normalizeTemplateEnumValues(definition.enumValues ?? [], "")) {
+      addOption(value);
+    }
+  }
+  const typical = typicalValue.trim();
+  const typicalMatchesExistingOption = enumOptions.some((option) => option.value === typical || option.label === typical);
+  if (typical && !typicalMatchesExistingOption) {
+    addOption(typical);
+  }
+  return enumOptions;
+}
+
+function enumValueForDefinition(definition: DeviceParameterDefinition, value?: string): string {
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return "";
+  }
+  if (definition.valueType !== "enum") {
+    return text;
+  }
+  const enumOptions = definition.enumOptions ?? normalizeTemplateEnumOptions(definition, definition.typicalValue);
+  const exactValue = enumOptions.find((option) => option.value === text);
+  if (exactValue) {
+    return exactValue.value;
+  }
+  const labelMatch = enumOptions.find((option) => option.label === text);
+  return labelMatch?.value ?? text;
+}
+
+function enumExportValueForDefinition(definition: DeviceParameterDefinition, value?: string): string {
+  return enumValueForDefinition(definition, value);
+}
+
 function normalizeTemplateDefinition(definition: DeviceParameterDefinition): DeviceParameterDefinition | null {
   const enName = String(definition.enName ?? "").trim();
   if (!enName || enName === "is_container" || enName === ALLOW_RESIZE_TRANSFORM_PARAM) {
@@ -4752,10 +4861,18 @@ function normalizeTemplateDefinition(definition: DeviceParameterDefinition): Dev
   if (valueType !== "enum") {
     return normalized;
   }
-  const enumValues = normalizeTemplateEnumValues(definition.enumValues ?? DEFAULT_TEMPLATE_ENUM_VALUES[enName] ?? [], typicalValue);
-  return {
+  const enumOptions = normalizeTemplateEnumOptions(definition, typicalValue);
+  const enumValueType = normalizeTemplateEnumValueType(definition.enumValueType, enumOptions);
+  const normalizedDefinition: DeviceParameterDefinition = {
     ...normalized,
-    typicalValue: typicalValue.trim() || enumValues[0] || "",
+    enumValueType,
+    enumOptions
+  };
+  const normalizedTypicalValue = enumValueForDefinition(normalizedDefinition, typicalValue);
+  const enumValues = enumOptions.map((option) => option.value);
+  return {
+    ...normalizedDefinition,
+    typicalValue: normalizedTypicalValue || enumValues[0] || "",
     enumValues
   };
 }

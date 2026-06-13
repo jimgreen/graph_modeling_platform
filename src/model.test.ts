@@ -7942,6 +7942,90 @@ describe("power system model", () => {
     });
   });
 
+  test("exports numeric enum codes and string enum values from custom E sections", () => {
+    const template: DeviceTemplate = {
+      kind: "custom-CustomEnumUnit",
+      label: "CustomEnumUnit",
+      attributeLibrary: "自定义属性库",
+      size: { width: 104, height: 64 },
+      params: { component_type: "CustomEnumUnit", fillColor: "transparent", strokeColor: "transparent", lineWidth: "0" },
+      terminalType: "ac",
+      terminalCount: 1,
+      custom: true,
+      parameterDefinitions: [
+        { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
+        { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
+        { cnName: "节点", enName: "node", valueType: "integer", typicalValue: "", readonly: true },
+        {
+          cnName: "投运状态",
+          enName: "run_mode",
+          valueType: "enum",
+          enumValueType: "number",
+          typicalValue: "1",
+          enumOptions: [
+            { value: "0", label: "退出" },
+            { value: "1", label: "运行" }
+          ]
+        },
+        {
+          cnName: "发电机类型",
+          enName: "generator_type",
+          valueType: "enum",
+          enumValueType: "string",
+          typicalValue: "PV",
+          enumOptions: [
+            { value: "PV" },
+            { value: "PQ" },
+            { value: "PH" }
+          ]
+        }
+      ]
+    };
+    const node = assignPermanentDeviceIndex(createNodeFromTemplate(template, { x: 100, y: 100 }), {}).node;
+    node.name = "custom_enum_1";
+    node.terminals[0].nodeNumber = "8";
+    node.params.run_mode = "退出";
+    node.params.generator_type = "PH";
+
+    const storedDefinitions = JSON.parse(node.params[CUSTOM_PARAM_DEFINITIONS_KEY]) as DeviceParameterDefinition[];
+    const exported = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "数字字符串枚举导出测试",
+      nodes: [node],
+      edges: []
+    }));
+
+    expect(storedDefinitions.find((definition) => definition.enName === "run_mode")).toMatchObject({
+      valueType: "enum",
+      enumValueType: "number",
+      typicalValue: "1",
+      enumOptions: [
+        { value: "0", label: "退出" },
+        { value: "1", label: "运行" }
+      ],
+      enumValues: ["0", "1"]
+    });
+    expect(storedDefinitions.find((definition) => definition.enName === "generator_type")).toMatchObject({
+      valueType: "enum",
+      enumValueType: "string",
+      typicalValue: "PV",
+      enumOptions: [
+        { value: "PV" },
+        { value: "PQ" },
+        { value: "PH" }
+      ],
+      enumValues: ["PV", "PQ", "PH"]
+    });
+    expect(exported.CustomEnumUnit.columns).toEqual(["idx", "name", "node", "run_mode", "generator_type"]);
+    expect(exported.CustomEnumUnit.rows[0]).toMatchObject({
+      idx: "1",
+      name: "custom_enum_1",
+      node: "1",
+      run_mode: "0",
+      generator_type: "PH"
+    });
+  });
+
   test("infers expected value types for built-in component definitions", () => {
     const definitionTypes = (kind: string) => {
       const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
