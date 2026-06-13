@@ -252,7 +252,7 @@ export type ContainerTerminalAssociationType =
 
 export type ContainerTerminalAssociationValue = ContainerTerminalAssociationType | "";
 
-export type DeviceParameterValueType = "integer" | "float" | "string" | "enum";
+export type DeviceParameterValueType = "integer" | "float" | "string" | "stringEnum" | "numberEnum" | "enum";
 
 export type DeviceParameterEnumValueType = "number" | "string";
 
@@ -2463,7 +2463,7 @@ const readonlyIntegerDefinition = (cnName: string, enName: string, typicalValue 
 const threeWindingTransformerParameterDefinitions: DeviceParameterDefinition[] = [
   readonlyIntegerDefinition("序号", "idx"),
   { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
-  { cnName: "工作状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: true },
+  { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: true },
   readonlyIntegerDefinition("高压绕组双绕组主变idx", "idx_xf_t1"),
   readonlyIntegerDefinition("中压绕组双绕组主变idx", "idx_xf_t2"),
   readonlyIntegerDefinition("低压绕组双绕组主变idx", "idx_xf_t3")
@@ -4252,8 +4252,8 @@ export function buildDefaultDeviceParameterDefinitions(
   const baseDefinitions: DeviceParameterDefinition[] = [
     { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
     { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
-    { cnName: "运行状态", enName: "status", valueType: "enum", typicalValue: "1", enumValues: ["1", "0"], readonly: true },
-    { cnName: "工作状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: true }
+    { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: true },
+    { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: true }
   ];
   if (options.isContainer) {
     const relationDefinitions: DeviceParameterDefinition[] = [];
@@ -4694,8 +4694,8 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   q_set: "float",
   v_set: "float",
   i_set: "float",
-  i_control_type: "enum",
-  j_control_type: "enum",
+  i_control_type: "stringEnum",
+  j_control_type: "stringEnum",
   p_ac_set: "float",
   q_ac_set: "float",
   v_ac_set: "float",
@@ -4758,6 +4758,27 @@ function normalizeTemplateEnumValueType(value: unknown, enumOptions: readonly De
   }
   const optionValues = enumOptions.map((option) => option.value.trim()).filter(Boolean);
   return optionValues.length > 0 && optionValues.every((optionValue) => /^-?\d+(?:\.\d+)?$/.test(optionValue)) ? "number" : "string";
+}
+
+function templateDefinitionValueTypeIsEnum(valueType: unknown): valueType is "stringEnum" | "numberEnum" | "enum" {
+  return valueType === "stringEnum" || valueType === "numberEnum" || valueType === "enum";
+}
+
+function enumValueTypeForTemplateDefinition(
+  definition: Pick<DeviceParameterDefinition, "valueType" | "enumValueType">,
+  enumOptions: readonly DeviceParameterEnumOption[]
+): DeviceParameterEnumValueType {
+  if (definition.valueType === "numberEnum") {
+    return "number";
+  }
+  if (definition.valueType === "stringEnum") {
+    return "string";
+  }
+  return normalizeTemplateEnumValueType(definition.enumValueType, enumOptions);
+}
+
+function enumDefinitionValueTypeForEnumValueType(enumValueType: DeviceParameterEnumValueType): DeviceParameterValueType {
+  return enumValueType === "number" ? "numberEnum" : "stringEnum";
 }
 
 function normalizeTemplateEnumOption(rawOption: unknown): DeviceParameterEnumOption | null {
@@ -4828,7 +4849,7 @@ function enumValueForDefinition(definition: DeviceParameterDefinition, value?: s
   if (!text) {
     return "";
   }
-  if (definition.valueType !== "enum") {
+  if (!templateDefinitionValueTypeIsEnum(definition.valueType)) {
     return text;
   }
   const enumOptions = definition.enumOptions ?? normalizeTemplateEnumOptions(definition, definition.typicalValue);
@@ -4849,7 +4870,7 @@ function normalizeTemplateDefinition(definition: DeviceParameterDefinition): Dev
   if (!enName || enName === "is_container" || enName === ALLOW_RESIZE_TRANSFORM_PARAM) {
     return null;
   }
-  const valueType = TEMPLATE_DEFINITION_VALUE_TYPES[enName] ?? (["integer", "float", "string", "enum"].includes(definition.valueType) ? definition.valueType : "string");
+  const valueType = TEMPLATE_DEFINITION_VALUE_TYPES[enName] ?? (["integer", "float", "string", "stringEnum", "numberEnum", "enum"].includes(definition.valueType) ? definition.valueType : "string");
   const typicalValue = String(definition.typicalValue ?? "");
   const normalized: DeviceParameterDefinition = {
     cnName: String(definition.cnName ?? enName).trim() || enName,
@@ -4858,14 +4879,14 @@ function normalizeTemplateDefinition(definition: DeviceParameterDefinition): Dev
     typicalValue,
     readonly: Boolean(definition.readonly || TEMPLATE_DEFINITION_READONLY_KEYS.has(enName))
   };
-  if (valueType !== "enum") {
+  if (!templateDefinitionValueTypeIsEnum(valueType)) {
     return normalized;
   }
   const enumOptions = normalizeTemplateEnumOptions(definition, typicalValue);
-  const enumValueType = normalizeTemplateEnumValueType(definition.enumValueType, enumOptions);
+  const enumValueType = enumValueTypeForTemplateDefinition({ ...definition, valueType }, enumOptions);
   const normalizedDefinition: DeviceParameterDefinition = {
     ...normalized,
-    enumValueType,
+    valueType: enumDefinitionValueTypeForEnumValueType(enumValueType),
     enumOptions
   };
   const normalizedTypicalValue = enumValueForDefinition(normalizedDefinition, typicalValue);

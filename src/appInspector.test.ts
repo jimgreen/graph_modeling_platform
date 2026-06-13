@@ -1351,12 +1351,14 @@ describe("graph inspector panel", () => {
     const customDialogBlock = source.slice(customDialogStart, customDialogEnd);
 
     expect(source).toContain("enumValues?: string[]");
-    expect(source).toContain("type DeviceParameterEnumValueType");
     expect(source).toContain("type DeviceParameterEnumOption");
+    expect(source).toContain("{ value: \"stringEnum\", label: \"字符串枚举\" }");
+    expect(source).toContain("{ value: \"numberEnum\", label: \"数字枚举\" }");
+    expect(source).not.toContain("{ value: \"enum\", label: \"枚举量\" }");
     expect(helperBlock).toContain("const enumValues = normalizeEnumValueList");
     expect(helperBlock).toContain("const normalizeEnumOptionsForRow =");
-    expect(helperBlock).toContain("return row.valueType === \"enum\"");
-    expect(helperBlock).toContain("const renderEnumValueTypeEditor =");
+    expect(helperBlock).toContain("return row.valueType === \"stringEnum\" || row.valueType === \"numberEnum\" || row.valueType === \"enum\"");
+    expect(helperBlock).not.toContain("const renderEnumValueTypeEditor =");
     expect(helperBlock).toContain("const renderEnumValuesEditor =");
     expect(helperBlock).toContain("数字枚举");
     expect(helperBlock).toContain("字符串枚举");
@@ -1366,13 +1368,13 @@ describe("graph inspector panel", () => {
     expect(helperBlock).toContain("const renderTypicalValueEditor =");
     expect(helperBlock).toContain("<select");
     expect(helperBlock).toContain("enumOptions.map((option");
-    expect(definitionDialogBlock).toContain("<th>枚举类型</th>");
+    expect(definitionDialogBlock).not.toContain("<th>枚举类型</th>");
     expect(definitionDialogBlock).toContain("renderTypicalValueEditor(row");
-    expect(definitionDialogBlock).toContain("renderEnumValueTypeEditor(row");
+    expect(definitionDialogBlock).not.toContain("renderEnumValueTypeEditor(row");
     expect(definitionDialogBlock).toContain("renderEnumValuesEditor(row");
-    expect(customDialogBlock).toContain("<th>枚举类型</th>");
+    expect(customDialogBlock).not.toContain("<th>枚举类型</th>");
     expect(customDialogBlock).toContain("renderTypicalValueEditor(row");
-    expect(customDialogBlock).toContain("renderEnumValueTypeEditor(row");
+    expect(customDialogBlock).not.toContain("renderEnumValueTypeEditor(row");
     expect(customDialogBlock).toContain("renderEnumValuesEditor(row");
     expect(styles).toContain(".custom-param-enum-values");
     expect(styles).toContain(".custom-param-enum-row");
@@ -1394,7 +1396,7 @@ describe("graph inspector panel", () => {
     const batchRowsBlock = source.slice(batchRowsStart, batchRowsEnd);
 
     expect(helperBlock).toContain("const enumOptionsForDefinition =");
-    expect(helperBlock).toContain("definition?.valueType !== \"enum\"");
+    expect(helperBlock).toContain("!definitionRowIsEnum(definition)");
     expect(helperBlock).toContain("enumValuesForRow(definition)");
     expect(helperBlock).toContain("const paramOptionsForDefinition =");
     expect(helperBlock).toContain("enumOptionsForDefinition(definition, value)");

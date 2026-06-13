@@ -7932,14 +7932,16 @@ describe("power system model", () => {
 
     expect(definitions[0]).toMatchObject({
       enName: "owner",
-      valueType: "enum",
+      valueType: "stringEnum",
       typicalValue: "检修班",
       enumValues: ["运维班", "检修班", "调度班"]
     });
     expect(storedDefinitions[0]).toMatchObject({
       enName: "owner",
+      valueType: "stringEnum",
       enumValues: ["运维班", "检修班", "调度班"]
     });
+    expect(storedDefinitions[0]).not.toHaveProperty("enumValueType");
   });
 
   test("exports numeric enum codes and string enum values from custom E sections", () => {
@@ -7959,8 +7961,7 @@ describe("power system model", () => {
         {
           cnName: "投运状态",
           enName: "run_mode",
-          valueType: "enum",
-          enumValueType: "number",
+          valueType: "numberEnum",
           typicalValue: "1",
           enumOptions: [
             { value: "0", label: "退出" },
@@ -7970,8 +7971,7 @@ describe("power system model", () => {
         {
           cnName: "发电机类型",
           enName: "generator_type",
-          valueType: "enum",
-          enumValueType: "string",
+          valueType: "stringEnum",
           typicalValue: "PV",
           enumOptions: [
             { value: "PV" },
@@ -7996,8 +7996,7 @@ describe("power system model", () => {
     }));
 
     expect(storedDefinitions.find((definition) => definition.enName === "run_mode")).toMatchObject({
-      valueType: "enum",
-      enumValueType: "number",
+      valueType: "numberEnum",
       typicalValue: "1",
       enumOptions: [
         { value: "0", label: "退出" },
@@ -8005,9 +8004,9 @@ describe("power system model", () => {
       ],
       enumValues: ["0", "1"]
     });
+    expect(storedDefinitions.find((definition) => definition.enName === "run_mode")).not.toHaveProperty("enumValueType");
     expect(storedDefinitions.find((definition) => definition.enName === "generator_type")).toMatchObject({
-      valueType: "enum",
-      enumValueType: "string",
+      valueType: "stringEnum",
       typicalValue: "PV",
       enumOptions: [
         { value: "PV" },
@@ -8016,6 +8015,7 @@ describe("power system model", () => {
       ],
       enumValues: ["PV", "PQ", "PH"]
     });
+    expect(storedDefinitions.find((definition) => definition.enName === "generator_type")).not.toHaveProperty("enumValueType");
     expect(exported.CustomEnumUnit.columns).toEqual(["idx", "name", "node", "run_mode", "generator_type"]);
     expect(exported.CustomEnumUnit.rows[0]).toMatchObject({
       idx: "1",
@@ -8075,8 +8075,8 @@ describe("power system model", () => {
       j_node: "integer",
       r1: "float",
       r2: "float",
-      i_control_type: "enum",
-      j_control_type: "enum"
+      i_control_type: "stringEnum",
+      j_control_type: "stringEnum"
     });
   });
 
@@ -8614,7 +8614,7 @@ describe("power system model", () => {
   test("adds run_stat operating status to every device type", () => {
     expect(buildDefaultDeviceParameterDefinitions(["ac"]).find((definition) => definition.enName === "run_stat")).toMatchObject({
       cnName: "工作状态",
-      valueType: "enum",
+      valueType: "stringEnum",
       typicalValue: "运行",
       readonly: true
     });
@@ -8627,7 +8627,7 @@ describe("power system model", () => {
   test("adds status as the default graphic running-state property", () => {
     expect(buildDefaultDeviceParameterDefinitions(["ac"]).find((definition) => definition.enName === "status")).toMatchObject({
       cnName: "运行状态",
-      valueType: "enum",
+      valueType: "numberEnum",
       typicalValue: "1",
       readonly: true
     });
