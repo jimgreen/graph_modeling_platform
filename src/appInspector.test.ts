@@ -1367,6 +1367,33 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".custom-param-enum-row");
   });
 
+  test("edits enum parameter values with dropdowns in graph model parameter panels", async () => {
+    const source = await readAppSource();
+    const helperStart = source.indexOf("const enumOptionsForDefinition =");
+    const helperEnd = source.indexOf("const renderParamEditor =", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+    const singleModelPanelStart = source.indexOf("{selectedContainerParameterView ? (");
+    const singleModelPanelEnd = source.indexOf("{singleSelectedDeviceForInspector", singleModelPanelStart);
+    const singleModelPanelBlock = source.slice(singleModelPanelStart, singleModelPanelEnd);
+    const batchEditorStart = source.indexOf("const renderBatchCommonParamEditor =");
+    const batchEditorEnd = source.indexOf("const renderBatchCommonColumnGroup", batchEditorStart);
+    const batchEditorBlock = source.slice(batchEditorStart, batchEditorEnd);
+    const batchRowsStart = source.indexOf("const batchCommonParamRows = useMemo<BatchCommonParamRow[]>(()");
+    const batchRowsEnd = source.indexOf("const batchCommonParamKeySet = useMemo", batchRowsStart);
+    const batchRowsBlock = source.slice(batchRowsStart, batchRowsEnd);
+
+    expect(helperBlock).toContain("const enumOptionsForDefinition =");
+    expect(helperBlock).toContain("definition?.valueType !== \"enum\"");
+    expect(helperBlock).toContain("enumValuesForRow(definition)");
+    expect(helperBlock).toContain("const paramOptionsForDefinition =");
+    expect(helperBlock).toContain("enumOptionsForDefinition(definition, value)");
+    expect(singleModelPanelBlock).toContain("definitionMakesValueReadonly(definition)");
+    expect(singleModelPanelBlock).toContain("renderParamEditor(key, displayValue, false, definition)");
+    expect(batchRowsBlock).toContain("definition: compatibleDefinition");
+    expect(batchEditorBlock).toContain("paramOptionsForDefinition(row.key, undefined, value, row.definition)");
+    expect(batchEditorBlock).toContain("row.definition");
+  });
+
   test("places device measurement bindings inside the component definition dialog", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
@@ -5619,7 +5646,7 @@ describe("graph inspector panel", () => {
     expect(formatterBlock).toContain("formatPowerBaseDisplayValue(key, value)");
     expect(devicePanelBlock).toContain("formatDeviceModelParamDisplayValue(row.key, row.value)");
     expect(devicePanelBlock).toContain("formatDeviceModelParamDisplayValue(key, value)");
-    expect(devicePanelBlock).toContain("renderParamEditor(key, displayValue, false)");
+    expect(devicePanelBlock).toContain("renderParamEditor(key, displayValue, false, definition)");
   });
 
   test("shows topology connection card only for one selected device", async () => {

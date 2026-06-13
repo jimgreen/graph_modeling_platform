@@ -1488,6 +1488,7 @@ type BatchCommonParamRow = {
   label: string;
   value: string;
   mixed: boolean;
+  definition?: DeviceParameterDefinition;
 };
 type BatchCommonParamPatch = Record<string, string>;
 type BatchCommonMeasurementGroupKey =
@@ -10394,6 +10395,7 @@ export function App() {
       return [];
     }
     const firstNode = selectedNodes[0];
+    const customDefinitionsByNode = selectedNodes.map((node) => parseCustomDefinitions(node.params));
     const commonKeys = Object.keys(firstNode.params)
       .filter((key) => canBatchEditParam(key))
       .filter((key) => selectedNodes.every((node) => Object.prototype.hasOwnProperty.call(node.params, key)));
@@ -10401,12 +10403,23 @@ export function App() {
     const paramRows = commonKeys
       .map<BatchCommonParamRow>((key) => {
         const values = selectedNodes.map((node) => node.params[key] ?? "");
-        const definition = parseCustomDefinitions(firstNode.params).find((item) => item.enName === key);
+        const definition = customDefinitionsByNode[0]?.find((item) => item.enName === key);
+        const compatibleDefinition = definition && customDefinitionsByNode.every((definitions) => {
+          const candidate = definitions.find((item) => item.enName === key);
+          return Boolean(
+            candidate &&
+            candidate.valueType === definition.valueType &&
+            enumValuesForRow(candidate).join("\u0000") === enumValuesForRow(definition).join("\u0000")
+          );
+        })
+          ? definition
+          : undefined;
         return {
           key,
           label: definition?.cnName ?? PARAM_LABELS[key] ?? key,
           value: values[0] ?? "",
-          mixed: values.some((value) => value !== values[0])
+          mixed: values.some((value) => value !== values[0]),
+          definition: compatibleDefinition
         };
       });
     return [
@@ -23705,6 +23718,37 @@ export function App() {
     return PARAM_OPTION_LABELS[key] ?? {};
   };
 
+  const enumOptionsForDefinition = (definition: DeviceParameterDefinition | undefined, value: string) => {
+    if (definition?.valueType !== "enum") {
+      return undefined;
+    }
+    const enumValues = enumValuesForRow(definition);
+    return withCurrentOption(enumValues.length > 0 ? enumValues : undefined, value);
+  };
+
+  const paramOptionsForDefinition = (
+    key: string,
+    node: ModelNode | undefined,
+    value: string,
+    definition?: DeviceParameterDefinition
+  ) => {
+    const definitionOptions = key === "status" ? undefined : enumOptionsForDefinition(definition, value);
+    return definitionOptions ?? paramOptionsForNode(key, node, value);
+  };
+
+  const paramOptionLabelsForDefinition = (
+    key: string,
+    node: ModelNode | undefined,
+    value: string,
+    definition?: DeviceParameterDefinition
+  ) => {
+    const definitionOptions = key === "status" ? undefined : enumOptionsForDefinition(definition, value);
+    return definitionOptions ? {} : paramOptionLabelsForNode(key, node, value);
+  };
+
+  const definitionMakesValueReadonly = (definition: DeviceParameterDefinition | undefined) =>
+    Boolean(definition?.readonly && definition.valueType !== "enum");
+
   const batchStatusOptions = (value: string) => {
     const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []).filter((node) => Object.prototype.hasOwnProperty.call(node.params, "status"));
     const optionRows = selectedNodes.map((node) => statusStatesForNode(node));
@@ -23724,11 +23768,11 @@ export function App() {
     return first ? statusOptionLabelsForNode(first) : {};
   };
 
-  const renderParamEditor = (key: string, value: string, wrapLabel = true) => {
+  const renderParamEditor = (key: string, value: string, wrapLabel = true, definition?: DeviceParameterDefinition) => {
     const label = PARAM_LABELS[key] ?? key;
     const editorNode = inspectorSelectedNode ?? selectedNode;
-    const options = paramOptionsForNode(key, editorNode, value);
-    const optionLabels = paramOptionLabelsForNode(key, editorNode, value);
+    const options = paramOptionsForDefinition(key, editorNode, value, definition);
+    const optionLabels = paramOptionLabelsForDefinition(key, editorNode, value, definition);
     const control = options ? (
       <select value={value} disabled={isBrowseMode} onChange={(event) => updateParam(key, event.target.value)}>
         {options.map((option) => (
@@ -23792,10 +23836,10 @@ export function App() {
     );
   };
 
-  const renderNodeDoubleClickParamEditor = (node: ModelNode, key: string, value: string, wrapLabel = true) => {
+  const renderNodeDoubleClickParamEditor = (node: ModelNode, key: string, value: string, wrapLabel = true, definition?: DeviceParameterDefinition) => {
     const label = PARAM_LABELS[key] ?? key;
-    const options = paramOptionsForNode(key, node, value);
-    const optionLabels = paramOptionLabelsForNode(key, node, value);
+    const options = paramOptionsForDefinition(key, node, value, definition);
+    const optionLabels = paramOptionLabelsForDefinition(key, node, value, definition);
     const control = options ? (
       <select value={value} disabled={isBrowseMode} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, key, event.target.value)}>
         {options.map((option) => (
@@ -23984,8 +24028,8 @@ export function App() {
     if (row.key === "buttonTargetLayerId" || row.key === "buttonTargetLayerName") {
       return renderBatchCommonLayerSelect(row);
     }
-    const options = row.key === "status" ? batchStatusOptions(value) : paramOptionsForSection(row.key);
-    const optionLabels = row.key === "status" ? batchStatusOptionLabels() : PARAM_OPTION_LABELS[row.key] ?? {};
+    const options = row.key === "status" ? batchStatusOptions(value) : paramOptionsForDefinition(row.key, undefined, value, row.definition);
+    const optionLabels = row.key === "status" ? batchStatusOptionLabels() : paramOptionLabelsForDefinition(row.key, undefined, value, row.definition);
     if (options) {
       return (
         <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonParam(row.key, event.target.value)}>
@@ -24325,7 +24369,6 @@ export function App() {
         : customKeys.length > 0
           ? ["name", ...customKeys.filter((key) => key !== "name")]
           : ["name", ...Object.keys(node.params).filter((key) => !key.startsWith("_") && key !== "is_container" && key !== ALLOW_RESIZE_TRANSFORM_PARAM)];
-    const readonlyKeys = new Set(customDefinitions.filter((definition) => definition.readonly).map((definition) => definition.enName));
     return keys.map((key) => {
       const value = eKeys.length > 0 ? getEParamValue(key, node) : key === "name" ? node.name : node.params[key] ?? "";
       const displayValue = formatDeviceModelParamDisplayValue(key, value);
@@ -24336,10 +24379,10 @@ export function App() {
           <td>
             {key === "name" ? (
               <input value={node.name} onChange={(event) => updateNodeDoubleClickDraftPatch(node.id, { name: event.target.value })} />
-            ) : READONLY_E_PARAM_KEYS.has(key) || readonlyKeys.has(key) ? (
+            ) : READONLY_E_PARAM_KEYS.has(key) || definitionMakesValueReadonly(definition) ? (
               <input value={displayValue} readOnly />
             ) : (
-              renderNodeDoubleClickParamEditor(node, key, displayValue, false)
+              renderNodeDoubleClickParamEditor(node, key, displayValue, false, definition)
             )}
           </td>
         </tr>
@@ -39344,7 +39387,6 @@ export function App() {
                                   : eKeys.length > 0
                                     ? eKeys
                                     : Object.keys(inspectorSelectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container" && key !== ALLOW_RESIZE_TRANSFORM_PARAM);
-                            const readonlyKeys = new Set(customDefinitions.filter((definition) => definition.readonly).map((definition) => definition.enName));
                             return keys.map((key) => {
                               const value = key === "name" ? inspectorSelectedNode.name : eKeys.includes(key) ? getEParamValue(key, inspectorSelectedNode) : inspectorSelectedNode.params[key] ?? "";
                               const displayValue = formatDeviceModelParamDisplayValue(key, value);
@@ -39355,10 +39397,10 @@ export function App() {
                                   <td>
                                     {key === "name" ? (
                                       <input value={inspectorSelectedNode.name} onChange={(event) => updateSelectedNode({ name: event.target.value })} />
-                                    ) : READONLY_E_PARAM_KEYS.has(key) || readonlyKeys.has(key) ? (
+                                    ) : READONLY_E_PARAM_KEYS.has(key) || definitionMakesValueReadonly(definition) ? (
                                       <input value={displayValue} readOnly />
                                     ) : (
-                                      renderParamEditor(key, displayValue, false)
+                                      renderParamEditor(key, displayValue, false, definition)
                                     )}
                                   </td>
                                 </tr>
