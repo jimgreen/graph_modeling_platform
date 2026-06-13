@@ -4636,6 +4636,49 @@ describe("graph inspector panel", () => {
     expect(tabButtonBlock).toContain("white-space: nowrap");
   });
 
+  test("allows the node double-click dialog to be manually moved and resized", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const dialogStart = source.indexOf("const renderNodeDoubleClickDialog =");
+    const dialogEnd = source.indexOf("const contextMenuStyle", dialogStart);
+    const dialogBlock = source.slice(dialogStart, dialogEnd);
+    const titleBlock = cssRuleBlock(styles, ".node-double-click-dialog-title");
+    const resizeBlock = cssRuleBlock(styles, ".node-double-click-dialog-resize");
+    const floatingBlock = cssRuleBlock(styles, ".node-double-click-dialog.floating");
+
+    expect(source).toContain("type NodeDoubleClickDialogLayout =");
+    expect(source).toContain("type NodeDoubleClickDialogDragState =");
+    expect(source).toContain("type NodeDoubleClickDialogResizeState =");
+    expect(source).toContain("const [nodeDoubleClickDialogLayout, setNodeDoubleClickDialogLayout]");
+    expect(source).toContain("const [nodeDoubleClickDialogDrag, setNodeDoubleClickDialogDrag]");
+    expect(source).toContain("const [nodeDoubleClickDialogResize, setNodeDoubleClickDialogResize]");
+    expect(source).toContain("const nodeDoubleClickDialogRef = useRef<HTMLElement | null>(null);");
+    expect(source).toContain("function clampNodeDoubleClickDialogLayout");
+    expect(source).toContain("const currentNodeDoubleClickDialogRect =");
+    expect(source).toContain("const startNodeDoubleClickDialogDrag =");
+    expect(source).toContain("const startNodeDoubleClickDialogResize =");
+    expect(source).toContain("const finishNodeDoubleClickDialogPointerOperation =");
+    expect(source).toContain("event.type === \"pointerup\"");
+    expect(source).toContain("event.buttons === 0");
+    expect(source).toContain("window.addEventListener(\"pointermove\", handlePointerMove, true);");
+    expect(source).toContain("window.addEventListener(\"pointerup\", handlePointerUp, true);");
+    expect(dialogBlock).toContain("ref={nodeDoubleClickDialogRef}");
+    expect(dialogBlock).toContain("className={`node-double-click-dialog${dialogLayout ? \" floating\" : \"\"}`}");
+    expect(dialogBlock).toContain("style={dialogStyle}");
+    expect(dialogBlock).toContain("onPointerDown={stopNodeDoubleClickDialogEvent}");
+    expect(dialogBlock).toContain("onPointerCancel={stopNodeDoubleClickDialogEvent}");
+    expect(dialogBlock).toContain("onLostPointerCapture={stopNodeDoubleClickDialogEvent}");
+    expect(dialogBlock).toContain("className=\"image-picker-title node-double-click-dialog-title\"");
+    expect(dialogBlock).toContain("onPointerDown={startNodeDoubleClickDialogDrag}");
+    expect(dialogBlock).toContain("className=\"node-double-click-dialog-resize\"");
+    expect(dialogBlock).toContain("onPointerDown={startNodeDoubleClickDialogResize}");
+    expect(styles).toContain(".app-shell.node-double-click-dialog-moving");
+    expect(floatingBlock).toContain("position: fixed");
+    expect(titleBlock).toContain("cursor: move");
+    expect(titleBlock).toContain("touch-action: none");
+    expect(resizeBlock).toContain("cursor: nwse-resize");
+  });
+
   test("deduplicates repeated node double-click dialog opens from overlapping text hit targets", async () => {
     const source = await readAppSource();
     const dialogStart = source.indexOf("const renderNodeDoubleClickDialog =");

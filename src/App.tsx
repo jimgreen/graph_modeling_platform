@@ -1572,6 +1572,28 @@ type NodeDoubleClickDialogDraftState = {
   nodeId: string;
   node: ModelNode;
 } | null;
+type NodeDoubleClickDialogLayout = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+} | null;
+type NodeDoubleClickDialogDragState = {
+  startClientX: number;
+  startClientY: number;
+  startLeft: number;
+  startTop: number;
+  startWidth: number;
+  startHeight: number;
+} | null;
+type NodeDoubleClickDialogResizeState = {
+  startClientX: number;
+  startClientY: number;
+  startLeft: number;
+  startTop: number;
+  startWidth: number;
+  startHeight: number;
+} | null;
 type StateImageUploadTarget = {
   scope: "definition" | "custom";
   rowId: string;
@@ -1834,6 +1856,11 @@ const TOPOLOGY_WARNING_PAGE_SIZE = 50;
 const CANVAS_MINIMAP_WIDTH = 220;
 const CANVAS_MINIMAP_HEIGHT = 142;
 const CANVAS_MINIMAP_PADDING = 9;
+const NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH = 640;
+const NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT = 560;
+const NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH = 420;
+const NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT = 300;
+const NODE_DOUBLE_CLICK_DIALOG_MARGIN = 12;
 const TOPOLOGY_WARNING_PANEL_DEFAULT_WIDTH = 520;
 const TOPOLOGY_WARNING_PANEL_MIN_WIDTH = 360;
 const TOPOLOGY_WARNING_PANEL_MAX_WIDTH = 640;
@@ -5472,6 +5499,39 @@ function readSidePanelMode(storageKey: string): SidePanelMode {
 
 function clampPanelDimension(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function clampNodeDoubleClickDialogLayout(layout: NonNullable<NodeDoubleClickDialogLayout>): NonNullable<NodeDoubleClickDialogLayout> {
+  const viewportWidth = typeof window === "undefined" ? layout.left + layout.width + NODE_DOUBLE_CLICK_DIALOG_MARGIN : window.innerWidth;
+  const viewportHeight = typeof window === "undefined" ? layout.top + layout.height + NODE_DOUBLE_CLICK_DIALOG_MARGIN : window.innerHeight;
+  const maxWidth = Math.max(NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH, viewportWidth - NODE_DOUBLE_CLICK_DIALOG_MARGIN * 2);
+  const maxHeight = Math.max(NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT, viewportHeight - NODE_DOUBLE_CLICK_DIALOG_MARGIN * 2);
+  const width = clampPanelDimension(
+    Number.isFinite(layout.width) ? layout.width : NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH,
+    NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH,
+    maxWidth
+  );
+  const height = clampPanelDimension(
+    Number.isFinite(layout.height) ? layout.height : NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT,
+    NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT,
+    maxHeight
+  );
+  const left = clampNumber(
+    Number.isFinite(layout.left) ? layout.left : (viewportWidth - width) / 2,
+    NODE_DOUBLE_CLICK_DIALOG_MARGIN,
+    Math.max(NODE_DOUBLE_CLICK_DIALOG_MARGIN, viewportWidth - width - NODE_DOUBLE_CLICK_DIALOG_MARGIN)
+  );
+  const top = clampNumber(
+    Number.isFinite(layout.top) ? layout.top : (viewportHeight - height) / 2,
+    NODE_DOUBLE_CLICK_DIALOG_MARGIN,
+    Math.max(NODE_DOUBLE_CLICK_DIALOG_MARGIN, viewportHeight - height - NODE_DOUBLE_CLICK_DIALOG_MARGIN)
+  );
+  return {
+    left: Math.round(left),
+    top: Math.round(top),
+    width,
+    height
+  };
 }
 
 function readStoredPanelDimension(storageKey: string, fallback: number, min: number, max: number) {
@@ -10417,6 +10477,10 @@ export function App() {
   const [imageTarget, setImageTarget] = useState<ImageTarget | null>(null);
   const [nodeDoubleClickDialog, setNodeDoubleClickDialog] = useState<NodeDoubleClickDialogState>(null);
   const [nodeDoubleClickDraft, setNodeDoubleClickDraft] = useState<NodeDoubleClickDialogDraftState>(null);
+  const [nodeDoubleClickDialogLayout, setNodeDoubleClickDialogLayout] = useState<NodeDoubleClickDialogLayout>(null);
+  const [nodeDoubleClickDialogDrag, setNodeDoubleClickDialogDrag] = useState<NodeDoubleClickDialogDragState>(null);
+  const [nodeDoubleClickDialogResize, setNodeDoubleClickDialogResize] = useState<NodeDoubleClickDialogResizeState>(null);
+  const nodeDoubleClickDialogRef = useRef<HTMLElement | null>(null);
   const nodeDoubleClickOpenGuardRef = useRef<{ key: string; time: number } | null>(null);
   const nodeDoubleClickCloseSuppressUntilRef = useRef(0);
   const [stateImageUploadTarget, setStateImageUploadTarget] = useState<StateImageUploadTarget | null>(null);
@@ -17526,6 +17590,84 @@ export function App() {
       window.removeEventListener("pointercancel", handlePointerUp);
     };
   }, [topologyWarningPanelResize]);
+
+  useEffect(() => {
+    if (!nodeDoubleClickDialogDrag) {
+      return;
+    }
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      if (event.buttons === 0) {
+        setNodeDoubleClickDialogDrag(null);
+        return;
+      }
+      event.preventDefault();
+      setNodeDoubleClickDialogLayout(clampNodeDoubleClickDialogLayout({
+        left: nodeDoubleClickDialogDrag.startLeft + event.clientX - nodeDoubleClickDialogDrag.startClientX,
+        top: nodeDoubleClickDialogDrag.startTop + event.clientY - nodeDoubleClickDialogDrag.startClientY,
+        width: nodeDoubleClickDialogDrag.startWidth,
+        height: nodeDoubleClickDialogDrag.startHeight
+      }));
+    };
+    const handlePointerUp = () => {
+      setNodeDoubleClickDialogDrag(null);
+    };
+    window.addEventListener("pointermove", handlePointerMove, true);
+    window.addEventListener("pointerup", handlePointerUp, true);
+    window.addEventListener("pointercancel", handlePointerUp, true);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove, true);
+      window.removeEventListener("pointerup", handlePointerUp, true);
+      window.removeEventListener("pointercancel", handlePointerUp, true);
+    };
+  }, [nodeDoubleClickDialogDrag]);
+
+  useEffect(() => {
+    if (!nodeDoubleClickDialogResize) {
+      return;
+    }
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      if (event.buttons === 0) {
+        setNodeDoubleClickDialogResize(null);
+        return;
+      }
+      event.preventDefault();
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      const maxWidth = Math.max(
+        NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH,
+        viewportWidth - nodeDoubleClickDialogResize.startLeft - NODE_DOUBLE_CLICK_DIALOG_MARGIN
+      );
+      const maxHeight = Math.max(
+        NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT,
+        viewportHeight - nodeDoubleClickDialogResize.startTop - NODE_DOUBLE_CLICK_DIALOG_MARGIN
+      );
+      setNodeDoubleClickDialogLayout(clampNodeDoubleClickDialogLayout({
+        left: nodeDoubleClickDialogResize.startLeft,
+        top: nodeDoubleClickDialogResize.startTop,
+        width: clampPanelDimension(
+          nodeDoubleClickDialogResize.startWidth + event.clientX - nodeDoubleClickDialogResize.startClientX,
+          NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH,
+          maxWidth
+        ),
+        height: clampPanelDimension(
+          nodeDoubleClickDialogResize.startHeight + event.clientY - nodeDoubleClickDialogResize.startClientY,
+          NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT,
+          maxHeight
+        )
+      }));
+    };
+    const handlePointerUp = () => {
+      setNodeDoubleClickDialogResize(null);
+    };
+    window.addEventListener("pointermove", handlePointerMove, true);
+    window.addEventListener("pointerup", handlePointerUp, true);
+    window.addEventListener("pointercancel", handlePointerUp, true);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove, true);
+      window.removeEventListener("pointerup", handlePointerUp, true);
+      window.removeEventListener("pointercancel", handlePointerUp, true);
+    };
+  }, [nodeDoubleClickDialogResize]);
 
   const canvasPointerKeyboardShortcutAvailability = () => {
     const point = lastKeyboardShortcutClientPointerRef.current ?? lastCanvasClientPointerRef.current;
@@ -25025,10 +25167,6 @@ export function App() {
     nodeDoubleClickCloseSuppressUntilRef.current = now + NODE_DOUBLE_CLICK_CLOSE_SUPPRESS_MS;
   };
 
-  const stopNodeDoubleClickDialogEvent = (event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement>) => {
-    event.stopPropagation();
-  };
-
   const suppressNodeDoubleClickDialogEvent = (event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement>) => {
     event.stopPropagation();
     if (nodeDoubleClickDialog) {
@@ -25036,11 +25174,86 @@ export function App() {
     }
   };
 
+  const finishNodeDoubleClickDialogPointerOperation = () => {
+    setNodeDoubleClickDialogDrag(null);
+    setNodeDoubleClickDialogResize(null);
+  };
+
+  const stopNodeDoubleClickDialogEvent = (event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement>) => {
+    event.stopPropagation();
+    if (
+      event.type === "pointerup" ||
+      event.type === "pointercancel" ||
+      event.type === "lostpointercapture"
+    ) {
+      finishNodeDoubleClickDialogPointerOperation();
+    }
+  };
+
+  const currentNodeDoubleClickDialogRect = () => {
+    const rect = nodeDoubleClickDialogRef.current?.getBoundingClientRect();
+    if (rect) {
+      return clampNodeDoubleClickDialogLayout({
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height
+      });
+    }
+    const viewportWidth = typeof window === "undefined" ? NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH : window.innerWidth;
+    const viewportHeight = typeof window === "undefined" ? NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT : window.innerHeight;
+    return clampNodeDoubleClickDialogLayout(nodeDoubleClickDialogLayout ?? {
+      left: (viewportWidth - NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH) / 2,
+      top: (viewportHeight - NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT) / 2,
+      width: NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH,
+      height: NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT
+    });
+  };
+
+  const startNodeDoubleClickDialogDrag = (event: PointerEvent<HTMLElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = currentNodeDoubleClickDialogRect();
+    setNodeDoubleClickDialogLayout(rect);
+    setNodeDoubleClickDialogDrag({
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startLeft: rect.left,
+      startTop: rect.top,
+      startWidth: rect.width,
+      startHeight: rect.height
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const startNodeDoubleClickDialogResize = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = currentNodeDoubleClickDialogRect();
+    setNodeDoubleClickDialogLayout(rect);
+    setNodeDoubleClickDialogResize({
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startLeft: rect.left,
+      startTop: rect.top,
+      startWidth: rect.width,
+      startHeight: rect.height
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
   const cancelNodeDoubleClickDialog = () => {
     const dialog = nodeDoubleClickDialog;
     if (dialog) {
       rememberNodeDoubleClickDialogGuard(dialog);
     }
+    finishNodeDoubleClickDialogPointerOperation();
     setNodeDoubleClickDialog(null);
     setNodeDoubleClickDraft(null);
   };
@@ -25064,6 +25277,7 @@ export function App() {
         }
       ]);
     }
+    finishNodeDoubleClickDialogPointerOperation();
     setNodeDoubleClickDialog(null);
     setNodeDoubleClickDraft(null);
   };
@@ -25090,19 +25304,32 @@ export function App() {
         : nodeDoubleClickDialog.kind === "text"
           ? "修改文本"
           : "修改设备参数";
+    const dialogLayout = nodeDoubleClickDialogLayout ? clampNodeDoubleClickDialogLayout(nodeDoubleClickDialogLayout) : null;
+    const dialogStyle = dialogLayout
+      ? {
+          left: `${dialogLayout.left}px`,
+          top: `${dialogLayout.top}px`,
+          width: `${dialogLayout.width}px`,
+          height: `${dialogLayout.height}px`
+        } as CSSProperties
+      : undefined;
     return (
       <div className="image-picker-backdrop" onPointerDown={cancelNodeDoubleClickDialog}>
         <section
-          className="node-double-click-dialog"
+          ref={nodeDoubleClickDialogRef}
+          className={`node-double-click-dialog${dialogLayout ? " floating" : ""}`}
+          style={dialogStyle}
           onPointerDown={stopNodeDoubleClickDialogEvent}
           onPointerUp={stopNodeDoubleClickDialogEvent}
+          onPointerCancel={stopNodeDoubleClickDialogEvent}
+          onLostPointerCapture={stopNodeDoubleClickDialogEvent}
           onClick={stopNodeDoubleClickDialogEvent}
           onDoubleClick={suppressNodeDoubleClickDialogEvent}
           role="dialog"
           aria-modal="true"
           aria-labelledby="node-double-click-dialog-title"
         >
-          <div className="image-picker-title">
+          <div className="image-picker-title node-double-click-dialog-title" onPointerDown={startNodeDoubleClickDialogDrag}>
             <div>
               <h2 id="node-double-click-dialog-title">{title}</h2>
               <p>{dialogNode.name}</p>
@@ -25186,6 +25413,14 @@ export function App() {
               取消
             </button>
           </div>
+          <div
+            className="node-double-click-dialog-resize"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="调整双击编辑窗口大小"
+            title="拖拽调整窗口大小"
+            onPointerDown={startNodeDoubleClickDialogResize}
+          />
         </section>
       </div>
     );
@@ -37049,7 +37284,7 @@ export function App() {
 
   return (
     <div
-      className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${topologyWarningPanelResize ? "topology-warning-panel-resizing" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`}
+      className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${topologyWarningPanelResize ? "topology-warning-panel-resizing" : ""} ${nodeDoubleClickDialogDrag || nodeDoubleClickDialogResize ? "node-double-click-dialog-moving" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`}
       style={appShellStyle}
     >
       {renderSidePanelEdgeTrigger("left")}

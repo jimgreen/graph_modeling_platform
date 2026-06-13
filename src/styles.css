@@ -3236,6 +3236,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .node-double-click-dialog {
+  position: relative;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 14px;
@@ -3246,6 +3247,48 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   border-radius: 8px;
   background: #ffffff;
   box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.node-double-click-dialog.floating {
+  position: fixed;
+  max-width: none;
+  max-height: none;
+}
+
+.node-double-click-dialog-title {
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+
+.app-shell.node-double-click-dialog-moving {
+  user-select: none;
+}
+
+.app-shell.node-double-click-dialog-moving .node-double-click-dialog-title {
+  cursor: grabbing;
+}
+
+.node-double-click-dialog-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.node-double-click-dialog-resize::after {
+  content: "";
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid #64748b;
+  border-bottom: 2px solid #64748b;
+  opacity: 0.7;
 }
 
 .node-double-click-dialog-body {
