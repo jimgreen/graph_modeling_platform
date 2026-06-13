@@ -1337,6 +1337,36 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".custom-device-dialog-footer");
   });
 
+  test("edits enum parameter values and uses dropdown typical values in definition dialogs", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const helperStart = source.indexOf("const normalizeEnumValueList =");
+    const helperEnd = source.indexOf("function normalizeCustomDeviceTemplates", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+    const definitionDialogStart = source.indexOf("{deviceDefinitionDialogOpen && (");
+    const definitionDialogEnd = source.indexOf("{customDeviceDialogOpen && (", definitionDialogStart);
+    const definitionDialogBlock = source.slice(definitionDialogStart, definitionDialogEnd);
+    const customDialogStart = source.indexOf("{customDeviceDialogOpen && (");
+    const customDialogEnd = source.indexOf("{imageTarget && (", customDialogStart);
+    const customDialogBlock = source.slice(customDialogStart, customDialogEnd);
+
+    expect(source).toContain("enumValues?: string[]");
+    expect(helperBlock).toContain("const enumValues = normalizeEnumValueList");
+    expect(helperBlock).toContain("return row.valueType === \"enum\"");
+    expect(helperBlock).toContain("const renderEnumValuesEditor =");
+    expect(helperBlock).toContain("新增枚举值");
+    expect(helperBlock).toContain("删除枚举值");
+    expect(helperBlock).toContain("const renderTypicalValueEditor =");
+    expect(helperBlock).toContain("<select");
+    expect(helperBlock).toContain("enumValues.map((value) => (");
+    expect(definitionDialogBlock).toContain("renderTypicalValueEditor(row");
+    expect(definitionDialogBlock).toContain("renderEnumValuesEditor(row");
+    expect(customDialogBlock).toContain("renderTypicalValueEditor(row");
+    expect(customDialogBlock).toContain("renderEnumValuesEditor(row");
+    expect(styles).toContain(".custom-param-enum-values");
+    expect(styles).toContain(".custom-param-enum-row");
+  });
+
   test("places device measurement bindings inside the component definition dialog", async () => {
     const source = await readAppSource();
     const styles = await readStyles();

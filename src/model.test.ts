@@ -7,6 +7,7 @@ import {
   buildEDeviceParameterFile,
   calculateElectricalTopology,
   clearVoltageBaseValuesForScope,
+  DeviceParameterDefinition,
   DeviceTemplateDefinitionOverride,
   setVoltageBaseTerminalValuesForScope,
   setVoltageBaseValuesForScope,
@@ -7905,7 +7906,40 @@ describe("power system model", () => {
     const node = createNodeFromTemplate(template, { x: 100, y: 100 });
 
     expect(node.params.owner).toBe("运维班");
-    expect(JSON.parse(node.params[CUSTOM_PARAM_DEFINITIONS_KEY])).toEqual(template.parameterDefinitions);
+    expect(JSON.parse(node.params[CUSTOM_PARAM_DEFINITIONS_KEY])).toEqual(getTemplateParameterDefinitions(template));
+  });
+
+  test("preserves editable enum values in template parameter definitions", () => {
+    const baseTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-line");
+    expect(baseTemplate).toBeDefined();
+    const template: DeviceTemplate = {
+      ...baseTemplate!,
+      params: { ...baseTemplate!.params, owner: "检修班" },
+      parameterDefinitions: [
+        {
+          cnName: "巡视单位",
+          enName: "owner",
+          valueType: "enum",
+          typicalValue: "检修班",
+          enumValues: ["运维班", "检修班", "调度班", "检修班", ""]
+        }
+      ]
+    };
+
+    const definitions = getTemplateParameterDefinitions(template);
+    const node = createNodeFromTemplate(template, { x: 100, y: 100 });
+    const storedDefinitions = JSON.parse(node.params[CUSTOM_PARAM_DEFINITIONS_KEY]) as DeviceParameterDefinition[];
+
+    expect(definitions[0]).toMatchObject({
+      enName: "owner",
+      valueType: "enum",
+      typicalValue: "检修班",
+      enumValues: ["运维班", "检修班", "调度班"]
+    });
+    expect(storedDefinitions[0]).toMatchObject({
+      enName: "owner",
+      enumValues: ["运维班", "检修班", "调度班"]
+    });
   });
 
   test("infers expected value types for built-in component definitions", () => {

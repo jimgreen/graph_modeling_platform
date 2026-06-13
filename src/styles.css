@@ -5630,7 +5630,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .custom-param-table {
   width: 100%;
-  min-width: 780px;
+  min-width: 940px;
   border-collapse: collapse;
   font-size: 12px;
 }
@@ -5683,6 +5683,41 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .custom-param-actions button:disabled {
   background: #f8fafc;
+}
+
+.custom-param-enum-values {
+  display: grid;
+  gap: 4px;
+  min-width: 150px;
+}
+
+.custom-param-enum-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.custom-param-enum-row input {
+  width: 100%;
+}
+
+.custom-param-enum-row button,
+.custom-param-enum-add {
+  height: 26px;
+  min-height: 26px;
+  padding: 0 7px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.custom-param-enum-add {
+  justify-self: start;
+}
+
+.custom-param-enum-placeholder {
+  color: #94a3b8;
 }
 
 .color-field,

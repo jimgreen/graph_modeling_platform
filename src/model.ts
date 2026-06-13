@@ -259,6 +259,7 @@ export type DeviceParameterDefinition = {
   enName: string;
   valueType: DeviceParameterValueType;
   typicalValue: string;
+  enumValues?: string[];
   readonly?: boolean;
 };
 
@@ -2437,7 +2438,7 @@ const readonlyIntegerDefinition = (cnName: string, enName: string, typicalValue 
 const threeWindingTransformerParameterDefinitions: DeviceParameterDefinition[] = [
   readonlyIntegerDefinition("序号", "idx"),
   { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
-  { cnName: "工作状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true },
+  { cnName: "工作状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: true },
   readonlyIntegerDefinition("高压绕组双绕组主变idx", "idx_xf_t1"),
   readonlyIntegerDefinition("中压绕组双绕组主变idx", "idx_xf_t2"),
   readonlyIntegerDefinition("低压绕组双绕组主变idx", "idx_xf_t3")
@@ -4226,8 +4227,8 @@ export function buildDefaultDeviceParameterDefinitions(
   const baseDefinitions: DeviceParameterDefinition[] = [
     { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
     { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
-    { cnName: "运行状态", enName: "status", valueType: "enum", typicalValue: "1", readonly: true },
-    { cnName: "工作状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true }
+    { cnName: "运行状态", enName: "status", valueType: "enum", typicalValue: "1", enumValues: ["1", "0"], readonly: true },
+    { cnName: "工作状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: true }
   ];
   if (options.isContainer) {
     const relationDefinitions: DeviceParameterDefinition[] = [];
@@ -4710,18 +4711,52 @@ function inferDefinitionValueType(key: string, value: string): DeviceParameterVa
   return "string";
 }
 
+const DEFAULT_TEMPLATE_ENUM_VALUES: Record<string, string[]> = {
+  status: ["1", "0"],
+  run_stat: ["运行", "停运"]
+};
+
+function normalizeTemplateEnumValues(values: unknown, typicalValue = ""): string[] {
+  const sourceValues = Array.isArray(values) ? values : [];
+  const seen = new Set<string>();
+  const enumValues: string[] = [];
+  for (const value of sourceValues) {
+    const text = String(value ?? "").trim();
+    if (!text || seen.has(text)) {
+      continue;
+    }
+    seen.add(text);
+    enumValues.push(text);
+  }
+  const typical = typicalValue.trim();
+  if (typical && !seen.has(typical)) {
+    enumValues.push(typical);
+  }
+  return enumValues;
+}
+
 function normalizeTemplateDefinition(definition: DeviceParameterDefinition): DeviceParameterDefinition | null {
   const enName = String(definition.enName ?? "").trim();
   if (!enName || enName === "is_container" || enName === ALLOW_RESIZE_TRANSFORM_PARAM) {
     return null;
   }
   const valueType = TEMPLATE_DEFINITION_VALUE_TYPES[enName] ?? (["integer", "float", "string", "enum"].includes(definition.valueType) ? definition.valueType : "string");
-  return {
+  const typicalValue = String(definition.typicalValue ?? "");
+  const normalized: DeviceParameterDefinition = {
     cnName: String(definition.cnName ?? enName).trim() || enName,
     enName,
     valueType,
-    typicalValue: String(definition.typicalValue ?? ""),
+    typicalValue,
     readonly: Boolean(definition.readonly || TEMPLATE_DEFINITION_READONLY_KEYS.has(enName))
+  };
+  if (valueType !== "enum") {
+    return normalized;
+  }
+  const enumValues = normalizeTemplateEnumValues(definition.enumValues ?? DEFAULT_TEMPLATE_ENUM_VALUES[enName] ?? [], typicalValue);
+  return {
+    ...normalized,
+    typicalValue: typicalValue.trim() || enumValues[0] || "",
+    enumValues
   };
 }
 
@@ -4825,7 +4860,7 @@ export function applyDeviceTemplateDefinitionOverride(
 }
 
 function applyTemplateDefinitionDefaults(params: Record<string, string>, template: DeviceTemplate): Record<string, string> {
-  const parameterDefinitions = template.parameterDefinitions ?? [];
+  const parameterDefinitions = normalizeTemplateDefinitionList(template.parameterDefinitions);
   if (parameterDefinitions.length === 0) {
     return params;
   }
