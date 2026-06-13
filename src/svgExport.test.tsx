@@ -4,6 +4,59 @@ import { createDefaultNode, createNodeFromTemplate, DEVICE_LIBRARY, type DeviceK
 import type { ProjectMeasurementConfig } from "./measurements";
 
 describe("SVG export", () => {
+  test("escapes custom canvas background image href", () => {
+    const svg = buildSvgDocument([], [], {
+      width: 320,
+      height: 180,
+      backgroundColor: "#ffffff",
+      backgroundImage: 'data/images/bg?id=1&name=a"b'
+    });
+
+    expect(svg).toContain('href="data/images/bg?id=1&amp;name=a&quot;b"');
+    expect(svg).not.toContain('href="data/images/bg?id=1&name=a"b"');
+  });
+
+  test("exports backend image hrefs as root-relative image file paths", () => {
+    const node = {
+      ...createDefaultNode("static-image", { x: 120, y: 90 }),
+      id: "image-node"
+    };
+    node.params = {
+      ...node.params,
+      backgroundImage: "/api/images/node-bg",
+      foregroundImage: "/api/images/node-fg"
+    };
+    const svg = buildSvgDocument([node], [], {
+      width: 320,
+      height: 180,
+      backgroundColor: "#ffffff",
+      backgroundImage: "/api/images/canvas-bg",
+      imageExportPathById: {
+        "canvas-bg": "data/images/canvas-bg.png",
+        "node-bg": "data/images/node-bg.jpg",
+        "node-fg": "data/images/node-fg.svg"
+      }
+    });
+
+    expect(svg).toContain('href="data/images/canvas-bg.png"');
+    expect(svg).toContain('href="data/images/node-bg.jpg"');
+    expect(svg).toContain('href="data/images/node-fg.svg"');
+    expect(svg).not.toContain("http://127.0.0.1:5173");
+    expect(svg).not.toContain('href="/api/images/');
+  });
+
+  test("does not leak backend image api hrefs when export path mapping is unavailable", () => {
+    const svg = buildSvgDocument([], [], {
+      width: 320,
+      height: 180,
+      backgroundColor: "#ffffff",
+      backgroundImage: "/api/images/missing-bg?id=1"
+    });
+
+    expect(svg).toContain('href="data/images/missing-bg"');
+    expect(svg).not.toContain('href="/api/images/');
+  });
+
   test("exports custom multi-state visual overrides from template definitions", () => {
     const template: DeviceTemplate = {
       ...DEVICE_LIBRARY.find((item) => item.kind === "ac-switch")!,

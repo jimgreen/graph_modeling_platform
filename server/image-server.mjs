@@ -24,6 +24,8 @@ const maxColorConfigBodyBytes = 1024 * 1024;
 const maxMeasurementConfigBodyBytes = 1024 * 1024;
 const maxDeviceLibraryBodyBytes = 16 * 1024 * 1024;
 const maxFilePartLength = 80;
+const rootImageExportDir = "data/images";
+const backendImageHrefPattern = /^\/api\/images\/([^/?#]+)/;
 const accessControlHeaders = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
@@ -298,7 +300,23 @@ async function readSchemeProjectFile(filePath, fileName) {
   }
 }
 
-async function readSchemeDirectory(dirent, parentDir) {
+async function readSchemeProjectSummaryFile(filePath, fileName) {
+  const fileBaseName = fileName.replace(/\.json$/iu, "");
+  const name = storageProjectDisplayName(storedProjectFilePartDisplayName(fileBaseName));
+  return {
+    name,
+    updatedAt: await fileUpdatedAt(filePath),
+    project: {
+      version: 1,
+      name,
+      nodes: [],
+      edges: [],
+      __summaryOnly: true
+    }
+  };
+}
+
+async function readSchemeDirectory(dirent, parentDir, options = {}) {
   const schemeDir = join(parentDir, dirent.name);
   const legacyMeta = await readLegacySchemeDirectoryMeta(schemeDir);
   let entries = [];
@@ -312,7 +330,7 @@ async function readSchemeDirectory(dirent, parentDir) {
   for (const entry of entries) {
     const entryPath = join(schemeDir, entry.name);
     if (entry.isDirectory()) {
-      const child = await readSchemeDirectory(entry, schemeDir);
+      const child = await readSchemeDirectory(entry, schemeDir, options);
       if (child) {
         children.push(child);
       }
@@ -321,7 +339,9 @@ async function readSchemeDirectory(dirent, parentDir) {
     if (!entry.isFile() || !/\.json$/iu.test(entry.name) || entry.name.toLocaleLowerCase() === "scheme.json") {
       continue;
     }
-    const project = await readSchemeProjectFile(entryPath, entry.name);
+    const project = options.includeProjects
+      ? await readSchemeProjectFile(entryPath, entry.name)
+      : await readSchemeProjectSummaryFile(entryPath, entry.name);
     if (project) {
       projects.push(project);
     }
@@ -335,8 +355,8 @@ async function readSchemeDirectory(dirent, parentDir) {
   };
 }
 
-async function readSchemesFromFiles() {
-  const filesRoot = join(schemeDataDir, "files");
+export async function readSchemesFromFiles(options = {}) {
+  const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
   await mkdir(filesRoot, { recursive: true });
   const entries = await readdir(filesRoot, { withFileTypes: true });
   const schemes = [];
@@ -344,7 +364,7 @@ async function readSchemesFromFiles() {
     if (!entry.isDirectory()) {
       continue;
     }
-    const scheme = await readSchemeDirectory(entry, filesRoot);
+    const scheme = await readSchemeDirectory(entry, filesRoot, options);
     if (scheme) {
       schemes.push(scheme);
     }
@@ -360,13 +380,13 @@ async function ensureSchemeStore() {
   await mkdir(join(schemeDataDir, "files"), { recursive: true });
 }
 
-async function readSchemes() {
-  return readSchemesFromFiles();
+async function readSchemes(options = {}) {
+  return readSchemesFromFiles(options);
 }
 
-async function writeSchemes(schemes) {
+async function writeSchemes(schemes, options = {}) {
   await ensureSchemeStore();
-  await writeSchemeFiles(schemes);
+  await writeSchemeFiles(schemes, options);
   await removeLegacySchemeManifest();
 }
 
@@ -1250,6 +1270,43 @@ function escapeSvgText(value) {
     .replace(/>/g, "&gt;");
 }
 
+function backendImageIdFromHref(value) {
+  const match = backendImageHrefPattern.exec(String(value ?? "").trim());
+  if (!match) {
+    return "";
+  }
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
+function safeImageExportFilename(value) {
+  const normalized = String(value ?? "").trim().replace(/\\/gu, "/");
+  return normalized.split("/").filter(Boolean).pop() ?? "";
+}
+
+function imageExportPathByIdFromManifest(manifest) {
+  return (Array.isArray(manifest) ? manifest : []).reduce((result, item) => {
+    const id = String(item?.id ?? "").trim();
+    const filename = safeImageExportFilename(item?.filename ?? "");
+    if (id && filename) {
+      result[id] = `${rootImageExportDir}/${filename}`;
+    }
+    return result;
+  }, {});
+}
+
+function svgImageHref(value, imagePathById = {}) {
+  const href = String(value ?? "");
+  const id = backendImageIdFromHref(href);
+  if (!id) {
+    return href;
+  }
+  return imagePathById[id] || `${rootImageExportDir}/${safeImageExportFilename(id) || id}`;
+}
+
 function svgSafeId(value, fallback) {
   const normalized = String(value ?? "").trim().replace(/[^A-Za-z0-9_.:-]+/g, "_").replace(/^[^A-Za-z_]+/, "");
   return normalized || fallback;
@@ -1474,11 +1531,14 @@ ${rowsMarkup}
 </g>`;
 }
 
-function buildSvgFile(project, measurementConfig = { measurementTypes: [], deviceProfiles: [] }) {
+function buildSvgFile(project, measurementConfig = { measurementTypes: [], deviceProfiles: [] }, options = {}) {
   const width = Number(project.canvasWidth ?? 1920);
   const height = Number(project.canvasHeight ?? 1024);
   const nodes = Array.isArray(project.nodes) ? project.nodes : [];
   const edges = Array.isArray(project.edges) ? project.edges : [];
+  const backgroundColor = project.canvasBackgroundColor ?? "#f8fafc";
+  const imagePathById = options.imagePathById ?? {};
+  const backgroundImage = svgImageHref(project.canvasBackgroundImage ?? "", imagePathById);
   const usedIds = new Set(["root_g"]);
   const backgroundLayerId = uniqueSvgId(svgLayerId("Background", "Background"), usedIds, "Background_Layer");
   const segmentLayerId = uniqueSvgId(svgLayerId("Segment", "Segment"), usedIds, "Segment_Layer");
@@ -1512,7 +1572,7 @@ function buildSvgFile(project, measurementConfig = { measurementTypes: [], devic
     const nodeHeight = node.size?.height ?? 48;
     const stroke = String(node.kind ?? "").startsWith("dc") || String(node.kind ?? "").includes("dcdc") ? "#0f766e" : "#2563eb";
     const isBus = String(node.kind ?? "").includes("bus");
-    const image = node.params?.backgroundImageAssetId ? `/api/images/${node.params.backgroundImageAssetId}` : node.params?.backgroundImage ?? "";
+    const image = svgImageHref(node.params?.backgroundImageAssetId ? `/api/images/${node.params.backgroundImageAssetId}` : node.params?.backgroundImage ?? "", imagePathById);
     const rotate = Number(node.rotation ?? 0);
     const normalizedRotate = Number.isFinite(rotate) ? rotate : 0;
     const scaleX = nodeScaleX(node);
@@ -1553,13 +1613,15 @@ ${(nodeMarkupByLayer.get(layerId) ?? []).join("\n")}
     })
     .filter(Boolean)
     .join("\n");
+  const backgroundMarkup = `<rect width="100%" height="100%" fill="${escapeSvgAttribute(backgroundColor)}"/>
+${backgroundImage ? `<image href="${escapeSvgAttribute(backgroundImage)}" x="0" y="0" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" preserveAspectRatio="xMidYMid slice"/>` : ""}`;
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,${width},${height}">
 <defs>
 ${symbolMarkup.join("\n")}
 </defs>
 <g id="root_g">
 <g id="${escapeSvgAttribute(backgroundLayerId)}">
-<rect width="100%" height="100%" fill="#f8fafc"/>
+${backgroundMarkup}
 </g>
 <g id="${escapeSvgAttribute(segmentLayerId)}">
 ${edgeMarkup}
@@ -1824,6 +1886,52 @@ function projectFilePathsForName(schemeDir, name) {
   };
 }
 
+async function projectJsonFileForName(schemeDir, name) {
+  const exactPath = projectFilePathsForName(schemeDir, name).jsonPath;
+  try {
+    await stat(exactPath);
+    return {
+      filePath: exactPath,
+      fileName: `${safeFilePart(name, "模型")}.json`
+    };
+  } catch {
+    // Fall through to filename-based lookup for legacy files with storage suffixes.
+  }
+  const targetKey = storageProjectNameKey(name);
+  let entries = [];
+  try {
+    entries = await readdir(schemeDir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const entry of entries) {
+    if (!entry.isFile() || !/\.json$/iu.test(entry.name) || entry.name.toLocaleLowerCase() === "scheme.json") {
+      continue;
+    }
+    const fileBaseName = entry.name.replace(/\.json$/iu, "");
+    const displayName = storageProjectDisplayName(storedProjectFilePartDisplayName(fileBaseName));
+    if (storageProjectNameKey(displayName) === targetKey) {
+      return {
+        filePath: join(schemeDir, entry.name),
+        fileName: entry.name
+      };
+    }
+  }
+  return null;
+}
+
+export async function readSchemeProjectRecord(options = {}) {
+  const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
+  const schemePath = Array.isArray(options.schemePath) && options.schemePath.length > 0 ? options.schemePath : ["默认方案"];
+  const name = storageProjectDisplayName(options.name || options.projectName);
+  const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
+  const projectFile = await projectJsonFileForName(schemeDir, name);
+  if (!projectFile) {
+    return null;
+  }
+  return readSchemeProjectFile(projectFile.filePath, projectFile.fileName);
+}
+
 export async function saveSchemeProjectRecord(options) {
   const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
   const trashRoot = options.trashRoot ?? schemeTrashDir;
@@ -1852,10 +1960,11 @@ export async function saveSchemeProjectRecord(options) {
   }
   const { jsonPath, ePath, svgPath } = projectFilePathsForName(schemeDir, name);
   const measurementConfig = options.measurementConfig ?? { measurementTypes: [], deviceProfiles: [] };
+  const imagePathById = options.imagePathById ?? imageExportPathByIdFromManifest(await readManifest());
   await Promise.all([
     writeTextIfChanged(jsonPath, stringifyJson(storedRecord.project)),
     writeTextIfChanged(ePath, buildDeviceParameterFile(storedRecord.project)),
-    writeTextIfChanged(svgPath, buildSvgFile(storedRecord.project, measurementConfig))
+    writeTextIfChanged(svgPath, buildSvgFile(storedRecord.project, measurementConfig, { imagePathById }))
   ]);
   return storedRecord;
 }
@@ -1871,13 +1980,14 @@ export async function deleteSchemeProjectRecord(options) {
   await Promise.all(Object.values(paths).map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, archiveId)));
 }
 
-async function writeSchemeFiles(schemes) {
+async function writeSchemeFiles(schemes, options = {}) {
   const filesRoot = join(schemeDataDir, "files");
   await mkdir(filesRoot, { recursive: true });
   const expectedFiles = new Set();
   const expectedDirs = new Set([filesRoot]);
   const writeTasks = [];
   const measurementConfig = await readMeasurementConfig();
+  const imagePathById = options.imagePathById ?? imageExportPathByIdFromManifest(await readManifest());
 
   const writeSchemeTree = async (scheme, parentDir) => {
     const schemeDir = join(parentDir, safeFilePart(scheme.name, "方案"));
@@ -1894,7 +2004,7 @@ async function writeSchemeFiles(schemes) {
       writeTasks.push(
         writeTextIfChanged(jsonPath, stringifyJson(record.project)),
         writeTextIfChanged(ePath, buildDeviceParameterFile(record.project)),
-        writeTextIfChanged(svgPath, buildSvgFile(record.project, measurementConfig))
+        writeTextIfChanged(svgPath, buildSvgFile(record.project, measurementConfig, { imagePathById }))
       );
     }
     for (const childScheme of scheme.children ?? []) {
@@ -1913,6 +2023,7 @@ function publicAsset(item) {
   return {
     id: item.id,
     name: item.name,
+    filename: item.filename,
     folderId: item.folderId || "root",
     mimeType: item.mimeType,
     size: item.size,
@@ -2042,6 +2153,23 @@ async function handleSaveSchemes(request, response) {
   sendJson(response, 200, { ok: true, schemes: normalized, savedAt: new Date().toISOString() });
 }
 
+async function handleReadSchemeProject(url, response) {
+  const name = url.searchParams.get("name") || url.searchParams.get("projectName") || "";
+  if (!name.trim()) {
+    sendError(response, 400, "缺少模型名称。");
+    return;
+  }
+  const project = await readSchemeProjectRecord({
+    schemePath: parseSchemePathParam(url.searchParams.get("schemePath")),
+    name
+  });
+  if (!project) {
+    sendError(response, 404, "模型文件不存在。");
+    return;
+  }
+  sendJson(response, 200, { ok: true, project });
+}
+
 async function handleSaveSchemeProject(request, response) {
   const payload = await readJsonBody(request, maxSchemeBodyBytes, "模型数据过大，最大支持 64MB。");
   const record = payload.record ?? {
@@ -2057,7 +2185,8 @@ async function handleSaveSchemeProject(request, response) {
     schemePath: payload.schemePath,
     record,
     previousName: payload.previousName,
-    measurementConfig: await readMeasurementConfig()
+    measurementConfig: await readMeasurementConfig(),
+    imagePathById: imageExportPathByIdFromManifest(await readManifest())
   });
   sendJson(response, 200, { ok: true, project: savedRecord, savedAt: new Date().toISOString() });
 }
@@ -2206,8 +2335,9 @@ export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
     ["POST /api/image-folders", async ({ request, response }) => {
       await handleCreateImageFolder(request, response);
     }],
-    ["GET /api/schemes", async ({ response }) => {
-      const schemes = normalizeSchemesForStorage(await readSchemes());
+    ["GET /api/schemes", async ({ url, response }) => {
+      const includeProjects = url.searchParams.get("includeProjects") === "1";
+      const schemes = normalizeSchemesForStorage(await readSchemes({ includeProjects }));
       sendJson(response, 200, { schemes });
     }],
     ["GET /api/schemes/export", async ({ url, response }) => {
@@ -2218,6 +2348,9 @@ export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
     }],
     ["PUT /api/schemes", async ({ request, response }) => {
       await handleSaveSchemes(request, response);
+    }],
+    ["GET /api/schemes/project", async ({ url, response }) => {
+      await handleReadSchemeProject(url, response);
     }],
     ["PUT /api/schemes/project", async ({ request, response }) => {
       await handleSaveSchemeProject(request, response);

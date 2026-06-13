@@ -2281,6 +2281,49 @@ describe("power system model", () => {
     }
   });
 
+  test("does not bulk-reroute stored routable lines solely for endpoint stub direction", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "dc-routable-line");
+    const source = { ...createDefaultNode("dc-source", { x: 100, y: 160 }), id: "source-node" };
+    const target = { ...createDefaultNode("dc-load", { x: 480, y: 160 }), id: "target-node" };
+    const start = getTerminalPoint(source, "t1");
+    const end = getTerminalPoint(target, "t1");
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      start,
+      end,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: routableLineDeviceEndpointRefForNode(target, "t1")
+      }
+    );
+    const yLane = Math.max(start.y, end.y) + 220;
+    const storedCanvasPoints = [
+      start,
+      { x: start.x, y: yLane },
+      { x: end.x, y: yLane },
+      end
+    ];
+    const storedLine = {
+      ...line,
+      params: {
+        ...line.params,
+        [ROUTABLE_LINE_POINTS_PARAM]: JSON.stringify(
+          storedCanvasPoints.map((point) => ({
+            x: point.x - line.position.x,
+            y: point.y - line.position.y
+          }))
+        )
+      }
+    };
+
+    const repairedNodes = repairUnsafeRoutableLineDeviceRoutes([source, target, storedLine], { width: 760, height: 420 });
+    const repairedLine = repairedNodes.find((node) => node.id === storedLine.id)!;
+
+    expect(repairedLine).toBe(storedLine);
+    expect(routableLineDeviceCanvasPoints(repairedLine)).toEqual(storedCanvasPoints);
+  });
+
   test("infers missing routable line-like device endpoint refs before syncing moved terminals", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "dc-routable-line");
     const source = { ...createDefaultNode("dc-source", { x: 100, y: 120 }), id: "source-node" };
@@ -2336,6 +2379,38 @@ describe("power system model", () => {
     expect(points.length).toBeGreaterThan(2);
     expect(points[0]).toEqual(sourcePoint);
     expect(firstSegmentNormal).toEqual(expectedNormal);
+  });
+
+  test("keeps routable line-like bus endpoint fixed when rerouting after the opposite device moves", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = { ...createDefaultNode("ac-source", { x: 100, y: 120 }), id: "source-node" };
+    const movedSource = { ...source, position: { x: 180, y: 220 } };
+    const bus = { ...createDefaultNode("ac-bus", { x: 520, y: 80 }), id: "target-bus" };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const targetPoint = projectPointToBusCenterline(bus, { x: 480, y: 80 });
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      sourcePoint,
+      targetPoint,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: routableLineDeviceEndpointRefForNode(bus, "t1", targetPoint)
+      }
+    );
+    const originalTargetRef = routableLineDeviceEndpointRefs(line).target;
+
+    const updates = rebuildRoutableLineDeviceRouteUpdates(
+      [movedSource, bus, line],
+      [line.id],
+      { width: 760, height: 480 },
+      [source, bus, line]
+    );
+
+    expect(updates.map((node) => node.id)).toEqual([line.id]);
+    expect(getTerminalPoint(updates[0], "t1")).toEqual(getTerminalPoint(movedSource, "t1"));
+    expect(getTerminalPoint(updates[0], "t2")).toEqual(targetPoint);
+    expect(routableLineDeviceEndpointRefs(updates[0]).target).toEqual(originalTargetRef);
   });
 
   test("routes routable line-like devices around attached endpoint device bodies", () => {
@@ -3890,6 +3965,107 @@ describe("power system model", () => {
     expect(validation.ok).toBe(true);
     expect(validation.issues).toEqual([]);
     expect(route?.points[route.points.length - 2].y).toBeGreaterThan(bus.position.y + bus.size.height / 2);
+  });
+
+  test("commits a clear vertical load-to-bus connection without treating the endpoint label as a blocker", () => {
+    const load = {
+      ...createDefaultNode("ac-load", { x: 260, y: 120 }),
+      id: "load-33",
+      name: "Load @ Bus 33",
+      params: {
+        ...createDefaultNode("ac-load", { x: 260, y: 120 }).params,
+        _labelVisible: "1",
+        _labelX: "0",
+        _labelY: "50",
+        _labelText: "Load @ Bus 33"
+      }
+    };
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 260, y: 320 }),
+      id: "bus-33",
+      name: "Bus 33",
+      scaleX: 1.25
+    };
+    const busPoint = projectPointToBusCenterline(bus, getTerminalPoint(load, "t1"));
+    const edge: Edge = {
+      id: "load-33-to-bus-33",
+      sourceId: load.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: busPoint
+    };
+
+    const prepared = prepareConnectionEdgeForCommit([load, bus], [edge], edge.id, { width: 640, height: 520 });
+    const validation = prepared.edge
+      ? validateConnectionEdgeRoute([load, bus], [prepared.edge], edge.id, { width: 640, height: 520 })
+      : prepared;
+
+    expect(prepared.ok).toBe(true);
+    expect(prepared.issues).toEqual([]);
+    expect(validation.ok).toBe(true);
+    expect(validation.issues).toEqual([]);
+  });
+
+  test("commits a connection through empty space inside a routable line bounding box", () => {
+    const source = withHiddenDeviceLabel({
+      ...createDefaultNode("ac-source", { x: 200, y: 300 }),
+      id: "source",
+      size: { width: 40, height: 40 },
+      terminals: [
+        {
+          ...createDefaultNode("ac-source", { x: 200, y: 300 }).terminals[0],
+          id: "t1",
+          anchor: { x: 0, y: -0.5 }
+        }
+      ]
+    });
+    const target = withHiddenDeviceLabel({
+      ...createDefaultNode("ac-load", { x: 200, y: 100 }),
+      id: "target",
+      size: { width: 40, height: 40 },
+      terminals: [
+        {
+          ...createDefaultNode("ac-load", { x: 200, y: 100 }).terminals[0],
+          id: "t1",
+          anchor: { x: 0, y: 0.5 }
+        }
+      ]
+    });
+    const blocker = withHiddenDeviceLabel({
+      ...createDefaultNode("ac-routable-line", { x: 0, y: 0 }),
+      id: "routable-line-blocker",
+      name: "Line 15-33",
+      position: { x: 0, y: 0 },
+      size: { width: 1, height: 1 },
+      params: {
+        ...createDefaultNode("ac-routable-line", { x: 0, y: 0 }).params,
+        lineWidth: "4",
+        [ROUTABLE_LINE_POINTS_PARAM]: JSON.stringify([
+          { x: 0, y: 300 },
+          { x: 0, y: 100 },
+          { x: 400, y: 100 },
+          { x: 400, y: 300 }
+        ])
+      }
+    });
+    const edge: Edge = {
+      id: "clear-inside-routable-line-bounds",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+
+    const prepared = prepareConnectionEdgeForCommit([source, target, blocker], [edge], edge.id, { width: 480, height: 360 });
+    const validation = prepared.edge
+      ? validateConnectionEdgeRoute([source, target, blocker], [prepared.edge], edge.id, { width: 480, height: 360 })
+      : prepared;
+
+    expect(prepared.ok).toBe(true);
+    expect(prepared.issues).toEqual([]);
+    expect(validation.ok).toBe(true);
+    expect(validation.issues).toEqual([]);
   });
 
   test("commits a clear horizontal connection from a vertical dc bus to a breaker terminal", () => {
@@ -5867,7 +6043,7 @@ describe("power system model", () => {
     expect(new Set(redrawnRoute?.points.map((point) => point.y))).toEqual(new Set([140]));
   });
 
-  test("redraws connection routes by releasing stale bus endpoint points", () => {
+  test("redraws connection routes while preserving explicit bus endpoint points", () => {
     const source = { ...createDefaultNode("ac-load", { x: 220, y: 160 }), id: "source-load" };
     const bus = { ...createDefaultNode("ac-bus", { x: 520, y: 160 }), id: "target-bus" };
     const edge: Edge = {
@@ -5876,10 +6052,10 @@ describe("power system model", () => {
       targetId: bus.id,
       sourceTerminalId: "t1",
       targetTerminalId: "t1",
-      targetPoint: { x: 640, y: 160 },
+      targetPoint: { x: 560, y: 160 },
       manualPoints: [
         { x: 220, y: 300 },
-        { x: 640, y: 300 }
+        { x: 560, y: 300 }
       ]
     };
 
@@ -5888,7 +6064,7 @@ describe("power system model", () => {
     const route = routeEdgesForRendering([source, bus], redrawn, { width: 760, height: 360 })[0];
 
     expect(redrawnEdge).not.toBe(edge);
-    expect(redrawnEdge.targetPoint?.x).toBeLessThan(edge.targetPoint!.x);
+    expect(redrawnEdge.targetPoint).toEqual(edge.targetPoint);
     expect(redrawnEdge.manualPoints?.length ?? 0).toBeLessThan(edge.manualPoints!.length);
     expect(route.points[route.points.length - 1]).toEqual(redrawnEdge.targetPoint);
   });
@@ -6326,7 +6502,7 @@ describe("power system model", () => {
     expect(beforeFinal.y).not.toBe(busPoint.y);
   });
 
-  test("optimizes a committed bus endpoint to reduce bends and total length", () => {
+  test("preserves an explicit bus endpoint when committing an optimized route", () => {
     const source = createDefaultNode("ac-line", { x: 160, y: 120 });
     const bus = createDefaultNode("ac-bus", { x: 420, y: 220 });
     const initialBusPoint = { x: 480, y: 220 };
@@ -6339,26 +6515,16 @@ describe("power system model", () => {
       targetPoint: initialBusPoint
     };
     const nodes = [source, bus];
-    const beforeRoute = routeEdgesForRendering(nodes, [edge], { width: 700, height: 320 })[0].points;
-    const lengthOf = (points: Point[]) =>
-      points.slice(1).reduce((total, point, index) => total + Math.abs(point.x - points[index].x) + Math.abs(point.y - points[index].y), 0);
-    const bendsOf = (points: Point[]) =>
-      points.slice(2).filter((point, index) => {
-        const previous = points[index + 1];
-        const beforePrevious = points[index];
-        return (beforePrevious.x === previous.x) !== (previous.x === point.x);
-      }).length;
-
     const prepared = prepareConnectionEdgeForCommit(nodes, [edge], edge.id, { width: 700, height: 320 });
 
     expect(prepared.ok).toBe(true);
-    expect(prepared.edge?.targetPoint).toEqual(projectPointToBusCenterline(bus, getTerminalPoint(source, "t2")));
+    expect(prepared.edge?.targetPoint).toEqual(initialBusPoint);
     const afterRoute = routeEdgesForRendering(nodes, [prepared.edge!], { width: 700, height: 320 })[0].points;
-    expect(bendsOf(afterRoute)).toBeLessThanOrEqual(bendsOf(beforeRoute));
-    expect(lengthOf(afterRoute)).toBeLessThan(lengthOf(beforeRoute));
+    expect(afterRoute[afterRoute.length - 1]).toEqual(initialBusPoint);
+    expectOrthogonalSegments(afterRoute);
   });
 
-  test("optimizes a lower bus endpoint under a single-terminal source outward stub", () => {
+  test("preserves a lower explicit bus endpoint under a single-terminal source", () => {
     const source = { ...createDefaultNode("ac-source", { x: 400, y: 260 }), id: "source" };
     const bus = {
       ...createDefaultNode("ac-bus", { x: 620, y: 680 }),
@@ -6382,13 +6548,13 @@ describe("power system model", () => {
       : [];
 
     expect(prepared.ok).toBe(true);
-    expect(prepared.edge?.targetPoint).toEqual(projectPointToBusCenterline(bus, { x: sourcePoint.x + 28, y: bus.position.y }));
-    expect(routeBendCountForTest(route)).toBe(1);
+    expect(prepared.edge?.targetPoint).toEqual(initialBusPoint);
     expect(route[0]).toEqual(sourcePoint);
     expect(route[route.length - 1]).toEqual(prepared.edge?.targetPoint);
+    expectOrthogonalSegments(route);
   });
 
-  test("slides the bus endpoint when the opposite device moves so a straight line remains straight", () => {
+  test("does not slide the bus endpoint when the opposite device moves", () => {
     const load = createRightTerminalLoad({ x: 200, y: 100 });
     const movedLoad = { ...load, position: { x: 260, y: 100 } };
     const bus = createDefaultNode("ac-bus", { x: 300, y: 100 });
@@ -6412,10 +6578,10 @@ describe("power system model", () => {
       nextNodes: [movedLoad, bus]
     });
 
-    expect(patch).toEqual({ targetPoint: projectPointToBusCenterline(bus, getTerminalPoint(movedLoad, "t1")) });
+    expect(patch).toBeNull();
   });
 
-  test("slides bus endpoints for manual routes when the terminal segment stays outward", () => {
+  test("does not slide bus endpoints for manual routes when the opposite device moves", () => {
     const load = createRightTerminalLoad({ x: 200, y: 100 });
     const movedLoad = { ...load, position: { x: 260, y: 100 } };
     const bus = createDefaultNode("ac-bus", { x: 300, y: 100 });
@@ -6443,10 +6609,10 @@ describe("power system model", () => {
       nextNodes: [movedLoad, bus]
     });
 
-    expect(patch).toEqual({ targetPoint: projectPointToBusCenterline(bus, getTerminalPoint(movedLoad, "t1")) });
+    expect(patch).toBeNull();
   });
 
-  test("slides a lower bus endpoint to a moved single-terminal source outward stub", () => {
+  test("does not slide a lower bus endpoint to a moved single-terminal source outward stub", () => {
     const source = { ...createDefaultNode("ac-source", { x: 400, y: 260 }), id: "source" };
     const movedSource = { ...source, position: { x: 470, y: 260 } };
     const bus = {
@@ -6455,7 +6621,6 @@ describe("power system model", () => {
       size: { width: 900, height: 28 }
     };
     const originalSourcePoint = getTerminalPoint(source, "t1");
-    const movedSourcePoint = getTerminalPoint(movedSource, "t1");
     const edge: Edge = {
       id: "slide-single-source-lower-bus",
       sourceId: source.id,
@@ -6476,15 +6641,10 @@ describe("power system model", () => {
       nextNodes: [movedSource, bus]
     });
 
-    expect(patch).toEqual({
-      targetPoint: projectPointToBusCenterline(bus, { x: movedSourcePoint.x + 28, y: bus.position.y })
-    });
-    const nextEdge = { ...edge, ...patch };
-    const route = routeEdgesForStoredRendering([movedSource, bus], [nextEdge], { width: 1200, height: 900 })[0].points;
-    expect(routeBendCountForTest(route)).toBe(1);
+    expect(patch).toBeNull();
   });
 
-  test("slides a bus endpoint through an outward stub when the direct terminal segment would be sideways", () => {
+  test("does not slide a bus endpoint through an outward stub when the direct terminal segment would be sideways", () => {
     const load = createRightTerminalLoad({ x: 200, y: 100 });
     const movedLoad = { ...load, position: { x: 260, y: 140 } };
     const bus = createDefaultNode("ac-bus", { x: 300, y: 100 });
@@ -6508,10 +6668,7 @@ describe("power system model", () => {
       nextNodes: [movedLoad, bus]
     });
 
-    const movedLoadPoint = getTerminalPoint(movedLoad, "t1");
-    expect(patch).toEqual({
-      targetPoint: projectPointToBusCenterline(bus, { x: movedLoadPoint.x + 28, y: bus.position.y })
-    });
+    expect(patch).toBeNull();
   });
 
   test("does not clamp a bus endpoint behind the moved device terminal", () => {
@@ -6541,7 +6698,7 @@ describe("power system model", () => {
     expect(patch).toBeNull();
   });
 
-  test("slides both bus endpoints for a moved two-terminal device connected through outward stubs", () => {
+  test("does not slide either bus endpoint for a moved two-terminal device connected through outward stubs", () => {
     const upperBus = {
       ...createDefaultNode("ac-bus", { x: 300, y: 100 }),
       id: "upper-bus",
@@ -6575,15 +6732,6 @@ describe("power system model", () => {
     };
     const nodes = [upperBus, lowerBus, branch];
     const nextNodes = [upperBus, lowerBus, movedBranch];
-    const projectedEndpointStubPoint = (bus: ModelNode, node: ModelNode, terminalId: string) => {
-      const terminalPoint = getTerminalPoint(node, terminalId);
-      const normal = getTerminalNormal(node, terminalId);
-      return projectPointToBusCenterline(bus, {
-        x: Math.round(terminalPoint.x + normal.x * 28),
-        y: Math.round(terminalPoint.y + normal.y * 28)
-      });
-    };
-
     const upperPatch = resolveStraightBusSlideEndpoint({
       edge: upperEdge,
       sourceNode: upperBus,
@@ -6605,11 +6753,11 @@ describe("power system model", () => {
       nextNodes
     });
 
-    expect(upperPatch).toEqual({ sourcePoint: projectedEndpointStubPoint(upperBus, movedBranch, "t1") });
-    expect(lowerPatch).toEqual({ targetPoint: projectedEndpointStubPoint(lowerBus, movedBranch, "t2") });
+    expect(upperPatch).toBeNull();
+    expect(lowerPatch).toBeNull();
   });
 
-  test("slides the opposite bus endpoint while a connection endpoint is being rewired or dragged", () => {
+  test("does not slide the opposite bus endpoint while a connection endpoint is being rewired or dragged", () => {
     const bus = createDefaultNode("ac-bus", { x: 300, y: 100 });
     const load = createDefaultNode("ac-load", { x: 460, y: 180 });
     const edge: Edge = {
@@ -6634,7 +6782,7 @@ describe("power system model", () => {
       nodes: [bus, load]
     });
 
-    expect(patch).toEqual({ sourcePoint: { x: 330, y: 100 } });
+    expect(patch).toBeNull();
   });
 
   test("connects to thermal storage tank boundary with a perpendicular movable middle segment", () => {

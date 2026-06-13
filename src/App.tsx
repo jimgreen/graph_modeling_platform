@@ -1059,6 +1059,7 @@ type ContextMenuState = {
   edgeId?: string;
   routePoints?: Point[];
 } | null;
+type ContextMenuSize = { width: number; height: number };
 type ContextMarqueeSelectionState = {
   start: Point;
 } | null;
@@ -1069,6 +1070,11 @@ const NODE_LABEL_DISPLAY_MODES: Array<{ value: NodeLabelDisplayMode; label: stri
   { value: "follow", label: "跟随显示" }
 ];
 type ProjectMenuState = { x: number; y: number; schemeId?: string; projectId?: string } | null;
+const CONTEXT_MENU_VIEWPORT_PADDING = 8;
+const CONTEXT_MENU_FALLBACK_WIDTH = 220;
+const CONTEXT_MENU_FALLBACK_HEIGHT = 180;
+const CONTEXT_MENU_SUBMENU_FALLBACK_WIDTH = 172;
+const CONTEXT_MENU_SUBMENU_FALLBACK_HEIGHT = 156;
 type UnsavedChangeAction =
   | {
       kind: "load-project";
@@ -1535,6 +1541,7 @@ type RefreshRecoveryProjectState = DraftProjectState & {
 type ImageAsset = {
   id: string;
   name: string;
+  filename?: string;
   folderId?: string;
   mimeType?: string;
   size?: number;
@@ -1620,6 +1627,7 @@ type StateIconDrawingDragState = {
 type CanvasRenderOptions = CanvasBounds & {
   backgroundColor?: string;
   backgroundImage?: string;
+  imageExportPathById?: Record<string, string>;
   colorDisplayMode?: ColorDisplayMode;
   colorPalette?: ColorPalette;
   deviceTemplates?: DeviceTemplate[];
@@ -1630,6 +1638,11 @@ type CanvasRenderOptions = CanvasBounds & {
 };
 type BackendSchemesResponse = {
   schemes: SavedSchemeRecord[];
+};
+type BackendProjectLoadResponse = {
+  ok?: boolean;
+  project?: SavedProjectRecord;
+  error?: string;
 };
 type BackendSchemeArchiveImportResponse = BackendSchemesResponse & {
   ok?: boolean;
@@ -1825,11 +1838,15 @@ const CANVAS_MINIMAP_DEFER_SAMPLE_THRESHOLD = 1200;
 const FIT_SELECTION_MAX_ZOOM_PERCENT = 100;
 const TERMINAL_OVERLAP_DEFER_NODE_THRESHOLD = 600;
 const CANVAS_LOD_NODE_DETAIL_LIMIT = 650;
+const CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT = 320;
 const CANVAS_LOD_MAX_ZOOM_PERCENT = 120;
 const CANVAS_LOD_MAX_NODE_SCREEN_SIZE = 18;
 const CANVAS_LOD_NODE_SCREEN_SAMPLE_LIMIT = 96;
 const CANVAS_LOD_SELECTED_DETAIL_LIMIT = 12;
 const CANVAS_LOD_MARKUP_CHUNK_SIZE = 64;
+const CANVAS_INITIAL_LOD_DETAIL_CHUNK_SIZE = 192;
+const CANVAS_INITIAL_LOD_FIRST_DETAIL_DELAY_MS = 360;
+const CANVAS_INITIAL_LOD_NEXT_DETAIL_DELAY_MS = 90;
 const CONNECTION_HIT_SCREEN_TOLERANCE = 18;
 const CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT = 24;
 const CANVAS_MULTI_NODE_DRAG_PREVIEW_EDGE_LIMIT = 32;
@@ -2304,6 +2321,10 @@ type WheelZoomAnchor = {
   point: Point;
   cursorOffsetX: number;
   cursorOffsetY: number;
+};
+type PendingWheelZoomRequest = {
+  anchor: WheelZoomAnchor;
+  zoomFactor: number;
 };
 type FloatingToolbarPlacement = {
   x: number;
@@ -3485,6 +3506,98 @@ const HEX_COLOR_INPUT_PATTERN = /^#[0-9a-f]{6}$/i;
 const isColorParamKey = (key: string) => COLOR_PARAM_KEY_PATTERN.test(key);
 const colorInputValue = (value: string, fallback = "#ffffff") =>
   HEX_COLOR_INPUT_PATTERN.test(value) ? value : fallback;
+const COLOR_INPUT_COMMIT_DELAY_MS = 220;
+
+type DeferredColorInputProps = {
+  value: string;
+  fallback?: string;
+  disabled?: boolean;
+  className?: string;
+  title?: string;
+  "aria-label"?: string;
+  onCommit: (value: string) => void;
+};
+
+function DeferredColorInput({
+  value,
+  fallback = "#ffffff",
+  disabled,
+  className,
+  title,
+  "aria-label": ariaLabel,
+  onCommit
+}: DeferredColorInputProps) {
+  const normalizedValue = colorInputValue(value, fallback);
+  const [draft, setDraft] = useState(normalizedValue);
+  const draftRef = useRef(normalizedValue);
+  const committedRef = useRef(normalizedValue);
+  const onCommitRef = useRef(onCommit);
+  const commitTimerRef = useRef<number | null>(null);
+
+  const clearCommitTimer = () => {
+    if (commitTimerRef.current !== null) {
+      window.clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = null;
+    }
+  };
+
+  const commitDraft = (nextValue: string) => {
+    clearCommitTimer();
+    const nextColor = colorInputValue(nextValue, normalizedValue);
+    draftRef.current = nextColor;
+    setDraft(nextColor);
+    if (nextColor !== committedRef.current) {
+      committedRef.current = nextColor;
+      onCommitRef.current(nextColor);
+    }
+  };
+
+  const queueDraftCommit = (event: { currentTarget: HTMLInputElement }) => {
+    const nextValue = event.currentTarget.value;
+    draftRef.current = nextValue;
+    setDraft(nextValue);
+    clearCommitTimer();
+    if (!disabled) {
+      commitTimerRef.current = window.setTimeout(() => commitDraft(nextValue), COLOR_INPUT_COMMIT_DELAY_MS);
+    }
+  };
+
+  useEffect(() => {
+    onCommitRef.current = onCommit;
+  }, [onCommit]);
+
+  useEffect(() => {
+    clearCommitTimer();
+    committedRef.current = normalizedValue;
+    draftRef.current = normalizedValue;
+    setDraft(normalizedValue);
+  }, [normalizedValue]);
+
+  useEffect(() => () => clearCommitTimer(), []);
+
+  return (
+    <input
+      type="color"
+      value={draft}
+      disabled={disabled}
+      className={className}
+      title={title}
+      aria-label={ariaLabel}
+      onInput={queueDraftCommit}
+      onChange={queueDraftCommit}
+      onBlur={() => commitDraft(draftRef.current)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          commitDraft(event.currentTarget.value);
+        } else if (event.key === "Escape") {
+          clearCommitTimer();
+          draftRef.current = committedRef.current;
+          setDraft(committedRef.current);
+        }
+      }}
+    />
+  );
+}
 
 const BATCH_MEASUREMENT_GROUP_KEYS: BatchCommonMeasurementGroupKey[] = [
   "visible",
@@ -3896,6 +4009,10 @@ async function fetchBackendImages(folderId = "root"): Promise<ImageAsset[]> {
   return fetchBackendJson<ImageAsset[]>(`/api/images?folderId=${encodeURIComponent(folderId)}`, "读取后台图片列表失败。");
 }
 
+async function fetchAllBackendImages(): Promise<ImageAsset[]> {
+  return fetchBackendJson<ImageAsset[]>("/api/images", "读取后台图片列表失败。");
+}
+
 async function uploadBackendImage(fileName: string, dataUrl: string, folderId = "root"): Promise<ImageAsset> {
   return fetchBackendJson<ImageAsset>(
     "/api/images",
@@ -4052,6 +4169,21 @@ function schemePathQueryParam(name: string, path: string[]) {
   return `${name}=${encodeURIComponent(JSON.stringify(path))}`;
 }
 
+function savedProjectRecordIsSummary(record: SavedProjectRecord | null | undefined) {
+  return Boolean((record?.project as ProjectFile & { __summaryOnly?: boolean } | undefined)?.__summaryOnly);
+}
+
+async function fetchBackendProjectRecord(schemePath: string[], name: string): Promise<SavedProjectRecord> {
+  const payload = await fetchBackendJson<BackendProjectLoadResponse>(
+    `/api/schemes/project?${schemePathQueryParam("schemePath", schemePath)}&name=${encodeURIComponent(name)}`,
+    "读取后台模型失败。"
+  );
+  if (!payload.project) {
+    throw new Error(payload.error || "后台未返回模型数据。");
+  }
+  return normalizeSavedProjectIndexes(payload.project);
+}
+
 async function downloadBackendSchemeArchive(schemePath: string[], filename: string): Promise<boolean> {
   return saveLazyBlobFile({
     filename,
@@ -4098,6 +4230,9 @@ async function uploadBackendSchemeArchive(
 }
 
 async function saveBackendProjectRecord(schemePath: string[], record: SavedProjectRecord, previousName = ""): Promise<SavedProjectRecord> {
+  if (savedProjectRecordIsSummary(record)) {
+    throw new Error(`模型“${record.name}”仍是目录摘要，尚未读取完整内容，不能写回后台。`);
+  }
   const payload = await fetchBackendJson<BackendProjectSaveResponse>(
     "/api/schemes/project",
     "保存模型到后台失败。",
@@ -5864,6 +5999,46 @@ function generateCustomDeviceImage(label: string, terminalTypes: TerminalType[])
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
+const customDeviceGeneratedDefaultImageCandidates = (
+  componentLabel: string,
+  componentType: string,
+  terminalTypes: TerminalType[]
+) => {
+  const safeTerminalTypes = terminalTypes.length > 0 ? terminalTypes : (["ac"] as TerminalType[]);
+  const labels = Array.from(new Set([componentLabel, componentType, "Unit"].map((label) => label.trim()).filter(Boolean)));
+  return new Set(labels.map((label) => generateCustomDeviceImage(label, safeTerminalTypes)));
+};
+
+const syncInheritedCustomDeviceStateVisuals = (
+  states: DeviceStateDefinition[],
+  defaultVisual: { backgroundImage: string; backgroundImageAssetId: string },
+  generatedDefaultImageCandidates: ReadonlySet<string>
+): DeviceStateDefinition[] => {
+  if (!defaultVisual.backgroundImage || generatedDefaultImageCandidates.size === 0) {
+    return states;
+  }
+  return states.map((state) => {
+    const image = state.image || state.backgroundImage || "";
+    const assetId = state.imageAssetId || state.backgroundImageAssetId || "";
+    if (assetId || !image || image === defaultVisual.backgroundImage || !generatedDefaultImageCandidates.has(image)) {
+      return state;
+    }
+    const next: DeviceStateDefinition = {
+      ...state,
+      image: defaultVisual.backgroundImage,
+      backgroundImage: defaultVisual.backgroundImage
+    };
+    if (defaultVisual.backgroundImageAssetId) {
+      next.imageAssetId = defaultVisual.backgroundImageAssetId;
+      next.backgroundImageAssetId = defaultVisual.backgroundImageAssetId;
+    } else {
+      delete next.imageAssetId;
+      delete next.backgroundImageAssetId;
+    }
+    return next;
+  });
+};
+
 function parseCustomDefinitions(params: Record<string, string>): DeviceParameterDefinition[] {
   try {
     const parsed = JSON.parse(params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]");
@@ -6088,6 +6263,45 @@ function escapeXml(value: string) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+const ROOT_IMAGE_EXPORT_DIR = "data/images";
+const BACKEND_IMAGE_HREF_PATTERN = /^\/api\/images\/([^/?#]+)/;
+
+function backendImageIdFromHref(value: string) {
+  const match = BACKEND_IMAGE_HREF_PATTERN.exec(String(value ?? "").trim());
+  if (!match) {
+    return "";
+  }
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
+function safeImageExportFilename(value: string) {
+  const normalized = String(value ?? "").trim().replace(/\\/gu, "/");
+  return normalized.split("/").filter(Boolean).pop() ?? "";
+}
+
+function imageExportPathByIdFromAssets(assets: ImageAsset[]) {
+  return assets.reduce<Record<string, string>>((result, asset) => {
+    const id = String(asset.id ?? "").trim();
+    const filename = safeImageExportFilename(asset.filename ?? "");
+    if (id && filename) {
+      result[id] = `${ROOT_IMAGE_EXPORT_DIR}/${filename}`;
+    }
+    return result;
+  }, {});
+}
+
+function exportSvgImageHref(value: string, imageExportPathById: Record<string, string> = {}) {
+  const id = backendImageIdFromHref(value);
+  if (!id) {
+    return value;
+  }
+  return imageExportPathById[id] || `${ROOT_IMAGE_EXPORT_DIR}/${safeImageExportFilename(id) || id}`;
 }
 
 const SVG_ATTRIBUTE_NAMES: Record<string, string> = {
@@ -8865,13 +9079,16 @@ function buildExportMeasurementGroupMarkup(
 
 export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: CanvasRenderOptions = { width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT }) {
   const imageAssets = readImageAssets();
+  const imageExportPathById = canvasSize.imageExportPathById ?? {};
   const svgTemplateByKind = new Map((canvasSize.deviceTemplates ?? DEVICE_LIBRARY).map((template) => [template.kind, template]));
   const resolveSvgNodeStateVisual = (node: ModelNode) => {
     const template = svgTemplateByKind.get(node.kind);
     return template ? resolveDeviceStateVisual(template, node) : null;
   };
   const backgroundColor = canvasSize.backgroundColor ?? DEFAULT_CANVAS_BACKGROUND;
-  const backgroundImage = canvasSize.backgroundImage ?? "";
+  const backgroundImage = exportSvgImageHref(canvasSize.backgroundImage ?? "", imageExportPathById);
+  const escapedBackgroundColor = escapeXml(backgroundColor);
+  const escapedBackgroundImage = escapeXml(backgroundImage);
   const colorDisplayMode = canvasSize.colorDisplayMode ?? "energy";
   const colorPalette = normalizeColorPalette(canvasSize.colorPalette ?? DEFAULT_COLOR_PALETTE);
   const normalizedLayers = normalizeModelLayers(canvasSize.layers, nodes, canvasSize.activeLayerId);
@@ -8967,8 +9184,8 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
         : "";
       const exportButtonClass = targetLayerIds.length > 0 ? " export-static-button" : "";
       const stateVisual = resolveSvgNodeStateVisual(node);
-      const imageHref = resolveStateVisualImageHref(stateVisual, imageAssets) || resolveNodeImage(node, imageAssets);
-      const foregroundHref = resolveNodeForegroundImage(node, imageAssets);
+      const imageHref = exportSvgImageHref(resolveStateVisualImageHref(stateVisual, imageAssets) || resolveNodeImage(node, imageAssets), imageExportPathById);
+      const foregroundHref = exportSvgImageHref(resolveNodeForegroundImage(node, imageAssets), imageExportPathById);
       const allowNodeImage = !isBusNode(node);
       const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, stateVisual }));
       const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, stateVisual }));
@@ -9031,8 +9248,8 @@ ${groupMarkup}
     })
     .filter(Boolean)
     .join("\n");
-  const backgroundMarkup = `<rect width="100%" height="100%" fill="${backgroundColor}"/>
-${backgroundImage ? `<image href="${backgroundImage}" x="0" y="0" width="${canvasSize.width}" height="${canvasSize.height}" preserveAspectRatio="xMidYMid slice"/>` : ""}`;
+  const backgroundMarkup = `<rect width="100%" height="100%" fill="${escapedBackgroundColor}"/>
+${backgroundImage ? `<image href="${escapedBackgroundImage}" x="0" y="0" width="${canvasSize.width}" height="${canvasSize.height}" preserveAspectRatio="xMidYMid slice"/>` : ""}`;
   const deviceLayerMarkup = Array.from(nodeTypeLayerIds.entries())
     .map(([layerKey, layerId]) => `<g id="${escapeXml(layerId)}" data-export-device-type="${escapeXml(layerKey)}">
 ${(nodeLayerMarkup.get(layerId) ?? []).join("\n")}
@@ -9111,6 +9328,7 @@ export function App() {
   const schemeImportParentSchemeIdRef = useRef<string>("");
   const layerManagementDropdownRef = useRef<HTMLDivElement | null>(null);
   const canvasFrameRef = useRef<HTMLDivElement | null>(null);
+  const canvasResizeHotzonesRef = useRef<HTMLDivElement | null>(null);
   const canvasInteractionRef = useRef(false);
   const canvasSelectionShortcutActiveRef = useRef(false);
   const lastCanvasPointerRef = useRef<Point | null>(null);
@@ -9363,6 +9581,7 @@ export function App() {
   const [canvasCenterRequest, setCanvasCenterRequest] = useState(0);
   const [panning, setPanning] = useState<CanvasPanningState>(null);
   const panningRef = useRef<CanvasPanningState>(null);
+  const pendingCanvasNoScrollOffsetRef = useRef<Point | null>(null);
   const setCanvasPanning = (next: CanvasPanningState) => {
     panningRef.current = next;
     setPanning(next);
@@ -9474,6 +9693,7 @@ export function App() {
   const [collapsedCustomComponentTreeTypes, setCollapsedCustomComponentTreeTypes] = useState<string[]>([]);
   const [editingCustomDeviceKind, setEditingCustomDeviceKind] = useState("");
   const [customDeviceDraft, setCustomDeviceDraft] = useState<CustomDeviceDraft>(() => createEmptyCustomDeviceDraft());
+  const [customDeviceSaveMessage, setCustomDeviceSaveMessage] = useState("");
   const [customDeviceTerminalAnchorDragIndex, setCustomDeviceTerminalAnchorDragIndex] = useState<number | null>(null);
   const [deviceDefinitionOverrides, setDeviceDefinitionOverrides] = useState<Record<string, DeviceTemplateDefinitionOverride>>(() => initialDeviceLibrary.deviceDefinitionOverrides);
   const [deviceDefinitionDialogOpen, setDeviceDefinitionDialogOpen] = useState(false);
@@ -9506,6 +9726,8 @@ export function App() {
   const topologyWarningPanelRef = useRef<HTMLElement | null>(null);
   const [routeRenderingReady, setRouteRenderingReady] = useState(false);
   const [savedRouteCrossingArcsReady, setSavedRouteCrossingArcsReady] = useState(false);
+  const [initialCanvasLodActive, setInitialCanvasLodActive] = useState(false);
+  const [initialCanvasDetailHydrationLimit, setInitialCanvasDetailHydrationLimit] = useState(0);
   const [backgroundPageRenderReady, setBackgroundPageRenderReady] = useState(false);
   const [minimapSamplingReady, setMinimapSamplingReady] = useState(false);
   const [staticTerminalOverlapReadyKey, setStaticTerminalOverlapReadyKey] = useState("");
@@ -9541,6 +9763,8 @@ export function App() {
     return preferredSchemeId ? [preferredSchemeId] : [];
   });
   const [projectMenu, setProjectMenu] = useState<ProjectMenuState>(null);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
+  const [contextMenuSize, setContextMenuSize] = useState<ContextMenuSize | null>(null);
   const [projectPanelHeight, setProjectPanelHeight] = useState(PROJECT_PANEL_DEFAULT_HEIGHT);
   const [projectPanelResize, setProjectPanelResize] = useState<{ startY: number; startHeight: number } | null>(null);
   const [undoStack, setUndoStack] = useState<UndoSnapshot[]>([]);
@@ -9559,6 +9783,25 @@ export function App() {
   const [activeImageFolderId, setActiveImageFolderId] = useState("root");
   const [imageAssetList, setImageAssetList] = useState<ImageAsset[]>([]);
   const [imageAssets, setImageAssets] = useState<Record<string, string>>(() => imageAssetsToMap(imageAssetList));
+
+  useLayoutEffect(() => {
+    if (!contextMenu && !projectMenu) {
+      setContextMenuSize((current) => (current === null ? current : null));
+      return;
+    }
+    const element = contextMenuRef.current;
+    if (!element) {
+      return;
+    }
+    const rect = element.getBoundingClientRect();
+    const nextSize = {
+      width: Math.ceil(rect.width),
+      height: Math.ceil(rect.height)
+    };
+    setContextMenuSize((current) =>
+      current?.width === nextSize.width && current.height === nextSize.height ? current : nextSize
+    );
+  });
 
   const nodeById = graphStore.nodeMap;
   const edgeById = graphStore.edgeMap;
@@ -12219,15 +12462,41 @@ export function App() {
   const canvasBoundsScrollSyncPendingFrameRef = useRef<number | null>(null);
   const pendingCanvasBoundsScrollAnchorRef = useRef<CanvasBoundsScrollAnchor | null>(null);
   const pendingWheelZoomAnchorRef = useRef<WheelZoomAnchor | null>(null);
+  const pendingWheelZoomRequestRef = useRef<PendingWheelZoomRequest | null>(null);
+  const wheelZoomFrameRef = useRef<number | null>(null);
   const pendingCanvasResizeCommitAnchorRef = useRef<CanvasResizeCommitAnchor | null>(null);
   canvasBoundsRef.current = canvasBounds;
   canvasFullViewBoxRef.current = canvasFullViewBox;
   canvasScrollScaleRef.current = canvasScrollScale;
-  canvasNoScrollOffsetRef.current = clampedCanvasNoScrollOffset;
+  canvasNoScrollOffsetRef.current = pendingCanvasNoScrollOffsetRef.current ?? clampedCanvasNoScrollOffset;
   canvasScrollbarsActiveRef.current = canvasScrollbarsActive;
   canvasHorizontalScrollbarsActiveRef.current = canvasHorizontalScrollbarsActive;
   canvasVerticalScrollbarsActiveRef.current = canvasVerticalScrollbarsActive;
   canvasVisibleViewBoxRef.current = canvasVisibleViewBox;
+  const applyCanvasPanningVisualOffset = (nextOffset: Point) => {
+    const left = canvasResizeAnchoredDisplayOffset(
+      Math.round(canvasBaseDisplayOffsetX + nextOffset.x),
+      canvasResizeDrag,
+      "x",
+      canvasDisplayWidth
+    );
+    const top = canvasResizeAnchoredDisplayOffset(
+      Math.round(canvasBaseDisplayOffsetY + nextOffset.y),
+      canvasResizeDrag,
+      "y",
+      canvasDisplayHeight
+    );
+    const svg = svgRef.current;
+    if (svg) {
+      svg.style.left = `${left}px`;
+      svg.style.top = `${top}px`;
+    }
+    const hotzones = canvasResizeHotzonesRef.current;
+    if (hotzones) {
+      hotzones.style.left = `${left}px`;
+      hotzones.style.top = `${top}px`;
+    }
+  };
   const clampCanvasBounds = (bounds: CanvasBounds): CanvasBounds => ({
     width: clampCanvasDimension(bounds.width, MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH, canvasWidth),
     height: clampCanvasDimension(bounds.height, MIN_CANVAS_HEIGHT, MAX_CANVAS_HEIGHT, canvasHeight)
@@ -12899,6 +13168,9 @@ export function App() {
       boundsScrollSyncPending: canvasBoundsScrollSyncPendingRef.current
     })) {
       canvasFrameUserScrollRef.current = true;
+    }
+    if (panningRef.current) {
+      return;
     }
     scheduleCanvasVisibleViewBoxUpdate();
   };
@@ -14591,7 +14863,7 @@ export function App() {
             const activePointer = latestActiveProjectPointerRef.current;
             const backendActiveProject = findSavedProjectByActivePointer(backendSchemes, activePointer);
             if (backendActiveProject) {
-              loadSavedProject(backendActiveProject.project, backendActiveProject.scheme.id);
+              void loadSavedProjectRecord(backendActiveProject.project, backendActiveProject.scheme.id, backendSchemes);
             }
           }
           setExpandedSchemeIds((current) => {
@@ -14980,6 +15252,11 @@ export function App() {
         window.cancelAnimationFrame(canvasVisibleViewBoxFrameRef.current);
         canvasVisibleViewBoxFrameRef.current = null;
       }
+      if (wheelZoomFrameRef.current !== null) {
+        window.cancelAnimationFrame(wheelZoomFrameRef.current);
+        wheelZoomFrameRef.current = null;
+      }
+      pendingWheelZoomRequestRef.current = null;
       keyboardMoveCommitCancelRef.current?.();
       keyboardMoveCommitCancelRef.current = null;
       if (keyboardMoveFrameRef.current !== null) {
@@ -15973,12 +16250,12 @@ export function App() {
           <tr>
             <th>背景颜色</th>
             <td>
-              <input
-                type="color"
-                value={measurementGroupColorInputValue(selectedMeasurementGroupCommonDraft.backgroundColor, "#ffffff")}
+              <DeferredColorInput
+                value={selectedMeasurementGroupCommonDraft.backgroundColor ?? ""}
+                fallback="#ffffff"
                 disabled={isBrowseMode || measurementGroupBackgroundColor(selectedMeasurementGroupCommonDraft) === "transparent"}
                 aria-label="量测组背景颜色"
-                onChange={(event) => updateSelectedMeasurementGroups((current) => ({ ...current, backgroundColor: event.target.value }), "修改量测组背景颜色")}
+                onCommit={(value) => updateSelectedMeasurementGroups((current) => ({ ...current, backgroundColor: value }), "修改量测组背景颜色")}
               />
             </td>
           </tr>
@@ -16004,12 +16281,12 @@ export function App() {
           <tr>
             <th>边框颜色</th>
             <td>
-              <input
-                type="color"
-                value={measurementGroupColorInputValue(selectedMeasurementGroupCommonDraft.borderColor, "#64748b")}
+              <DeferredColorInput
+                value={selectedMeasurementGroupCommonDraft.borderColor ?? ""}
+                fallback="#64748b"
                 disabled={isBrowseMode || (selectedMeasurementGroupCommonDraft.borderStyle ?? "solid") === "none"}
                 aria-label="量测组边框颜色"
-                onChange={(event) => updateSelectedMeasurementGroups((current) => ({ ...current, borderColor: event.target.value }), "修改量测组边框颜色")}
+                onCommit={(value) => updateSelectedMeasurementGroups((current) => ({ ...current, borderColor: value }), "修改量测组边框颜色")}
               />
             </td>
           </tr>
@@ -16143,14 +16420,13 @@ export function App() {
                           decimalsOverride: event.target.value === "" ? undefined : Number(event.target.value)
                         }))}
                       />
-                      <input
-                        type="color"
+                      <DeferredColorInput
                         value={itemColor}
                         disabled={isBrowseMode}
                         aria-label="量测颜色"
-                        onChange={(event) => updateMeasurementItem(group.id, item.id, (current) => ({
+                        onCommit={(value) => updateMeasurementItem(group.id, item.id, (current) => ({
                           ...current,
-                          styleOverride: { ...(current.styleOverride ?? {}), color: event.target.value }
+                          styleOverride: { ...(current.styleOverride ?? {}), color: value }
                         }))}
                       />
                       <input
@@ -23236,7 +23512,7 @@ export function App() {
     const colorValue = colorInputValue(value, fallback);
     return (
       <div className="color-field with-none">
-        <input type="color" value={colorValue} disabled={isBrowseMode} onChange={(event) => updateParam(key, event.target.value)} />
+        <DeferredColorInput value={colorValue} fallback={fallback} disabled={isBrowseMode} onCommit={(nextValue) => updateParam(key, nextValue)} />
         <input value={value === "transparent" ? "无颜色" : value || ""} disabled={isBrowseMode} onChange={(event) => updateParam(key, event.target.value === "无颜色" ? "transparent" : event.target.value)} />
         <button type="button" disabled={isBrowseMode} onClick={() => updateParam(key, "transparent")}>无颜色</button>
       </div>
@@ -23342,7 +23618,7 @@ export function App() {
     const colorValue = colorInputValue(value, fallback);
     return (
       <div className="color-field with-none">
-        <input type="color" value={colorValue} disabled={isBrowseMode} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, key, event.target.value)} />
+        <DeferredColorInput value={colorValue} fallback={fallback} disabled={isBrowseMode} onCommit={(nextValue) => updateNodeDoubleClickDraftParam(node.id, key, nextValue)} />
         <input value={value === "transparent" ? "无颜色" : value || ""} disabled={isBrowseMode} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, key, event.target.value === "无颜色" ? "transparent" : event.target.value)} />
         <button type="button" disabled={isBrowseMode} onClick={() => updateNodeDoubleClickDraftParam(node.id, key, "transparent")}>无颜色</button>
       </div>
@@ -23379,11 +23655,11 @@ export function App() {
     const colorValue = colorInputValue(value, "#334155");
     return (
       <div className="color-field with-none">
-        <input
-          type="color"
+        <DeferredColorInput
           value={colorValue}
+          fallback="#334155"
           disabled={isBrowseMode}
-          onChange={(event) => applyBatchCommonParam(row.key, event.target.value)}
+          onCommit={(nextValue) => applyBatchCommonParam(row.key, nextValue)}
         />
         <input
           value={value === "transparent" ? "无颜色" : value}
@@ -23605,12 +23881,12 @@ export function App() {
     const fallback = row.key === "backgroundColor" ? "#ffffff" : "#64748b";
     return (
       <div className="color-field with-none">
-        <input
-          type="color"
+        <DeferredColorInput
           value={colorInputValue(value, fallback)}
+          fallback={fallback}
           disabled={isBrowseMode}
           aria-label={row.label}
-          onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value)}
+          onCommit={(nextValue) => applyBatchCommonMeasurementGroupSetting(row.key, nextValue)}
         />
         <input
           value={value === "transparent" ? "无颜色" : value}
@@ -24164,14 +24440,48 @@ export function App() {
     );
   };
 
-  const contextMenuStyle = (menu: ContextMenuState | ProjectMenuState) => {
+  const contextMenuPlacement = (menu: ContextMenuState | ProjectMenuState) => {
+    const viewportWidth = typeof window === "undefined" ? 1280 : window.innerWidth;
     const viewportHeight = typeof window === "undefined" ? 720 : window.innerHeight;
-    const top = Math.max(8, Math.min(menu?.y ?? 8, Math.max(8, viewportHeight - 180)));
+    const maxWidth = Math.max(128, viewportWidth - CONTEXT_MENU_VIEWPORT_PADDING * 2);
+    const maxHeight = Math.max(120, viewportHeight - CONTEXT_MENU_VIEWPORT_PADDING * 2);
+    const menuWidth = Math.min(contextMenuSize?.width ?? CONTEXT_MENU_FALLBACK_WIDTH, maxWidth);
+    const menuHeight = Math.min(contextMenuSize?.height ?? CONTEXT_MENU_FALLBACK_HEIGHT, maxHeight);
+    const left = clampNumber(
+      menu?.x ?? CONTEXT_MENU_VIEWPORT_PADDING,
+      CONTEXT_MENU_VIEWPORT_PADDING,
+      Math.max(CONTEXT_MENU_VIEWPORT_PADDING, viewportWidth - menuWidth - CONTEXT_MENU_VIEWPORT_PADDING)
+    );
+    const top = clampNumber(
+      menu?.y ?? CONTEXT_MENU_VIEWPORT_PADDING,
+      CONTEXT_MENU_VIEWPORT_PADDING,
+      Math.max(CONTEXT_MENU_VIEWPORT_PADDING, viewportHeight - menuHeight - CONTEXT_MENU_VIEWPORT_PADDING)
+    );
+    const submenuOpensLeft =
+      left + menuWidth + CONTEXT_MENU_SUBMENU_FALLBACK_WIDTH + CONTEXT_MENU_VIEWPORT_PADDING > viewportWidth;
+    const submenuOpensUp =
+      top + menuHeight + CONTEXT_MENU_SUBMENU_FALLBACK_HEIGHT + CONTEXT_MENU_VIEWPORT_PADDING > viewportHeight;
+    return { left, top, maxWidth, maxHeight, submenuOpensLeft, submenuOpensUp };
+  };
+
+  const contextMenuStyle = (menu: ContextMenuState | ProjectMenuState): CSSProperties => {
+    const placement = contextMenuPlacement(menu);
     return {
-      left: menu?.x ?? 8,
-      top,
-      maxHeight: Math.max(120, viewportHeight - top - 8)
+      left: placement.left,
+      top: placement.top,
+      maxWidth: placement.maxWidth,
+      maxHeight: placement.maxHeight,
+      overflowY: contextMenuSize && contextMenuSize.height > placement.maxHeight ? "auto" : "visible"
     };
+  };
+
+  const contextMenuClassName = (menu: ContextMenuState | ProjectMenuState) => {
+    const placement = contextMenuPlacement(menu);
+    return [
+      "context-menu",
+      placement.submenuOpensLeft ? "context-menu--submenu-left" : "",
+      placement.submenuOpensUp ? "context-menu--submenu-up" : ""
+    ].filter(Boolean).join(" ");
   };
 
   const stopSidePanelEventPropagation = (event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLElement>) => {
@@ -26170,6 +26480,55 @@ export function App() {
     ) {
       staticButtonPointerRef.current = { ...staticButtonPointer, moved: true };
     }
+    const activePanning = panningRef.current ?? panning;
+    if (activePanning && svgRef.current) {
+      const frame = canvasFrameRef.current;
+      const useHorizontalScrollPanning = Boolean(frame && activePanning.horizontalScrollMode);
+      const useVerticalScrollPanning = Boolean(frame && activePanning.verticalScrollMode);
+      if (frame) {
+        const maxLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
+        const maxTop = Math.max(0, frame.scrollHeight - frame.clientHeight);
+        let scrollChanged = false;
+        if (useHorizontalScrollPanning) {
+          const nextLeft = clampNumber(activePanning.scrollLeft - (event.clientX - activePanning.clientX), 0, maxLeft);
+          if (Math.abs(frame.scrollLeft - nextLeft) > 0.5) {
+            frame.scrollLeft = nextLeft;
+            scrollChanged = true;
+          }
+        }
+        if (useVerticalScrollPanning) {
+          const nextTop = clampNumber(activePanning.scrollTop - (event.clientY - activePanning.clientY), 0, maxTop);
+          if (Math.abs(frame.scrollTop - nextTop) > 0.5) {
+            frame.scrollTop = nextTop;
+            scrollChanged = true;
+          }
+        }
+        const nextOffset = clampCanvasNoScrollOffsetPoint({
+          x: useHorizontalScrollPanning ? activePanning.canvasOffset.x : activePanning.canvasOffset.x + event.clientX - activePanning.clientX,
+          y: useVerticalScrollPanning ? activePanning.canvasOffset.y : activePanning.canvasOffset.y + event.clientY - activePanning.clientY
+        });
+        pendingCanvasNoScrollOffsetRef.current = nextOffset;
+        canvasNoScrollOffsetRef.current = nextOffset;
+        applyCanvasPanningVisualOffset(nextOffset);
+        if (scrollChanged) {
+          canvasFrameUserScrollRef.current = true;
+        }
+        return;
+      }
+      const rect = svgRef.current.getBoundingClientRect();
+      const dx = rect.width > 0 ? ((event.clientX - activePanning.clientX) / rect.width) * canvasBounds.width : 0;
+      const dy = rect.height > 0 ? ((event.clientY - activePanning.clientY) / rect.height) * canvasBounds.height : 0;
+      const nextViewBox = clampViewBoxToCanvas({ ...activePanning.viewBox, x: activePanning.viewBox.x - dx, y: activePanning.viewBox.y - dy });
+      setViewBox((current) =>
+        current.x === nextViewBox.x &&
+        current.y === nextViewBox.y &&
+        current.width === nextViewBox.width &&
+        current.height === nextViewBox.height
+          ? current
+          : nextViewBox
+      );
+      return;
+    }
     if (svgRef.current) {
       const rawPointer = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
       const pointer = draggingRef.current ? rawPointer : clampPointToCanvas(rawPointer);
@@ -26369,56 +26728,6 @@ export function App() {
       );
       return;
     }
-    const activePanning = panningRef.current ?? panning;
-    if (activePanning && svgRef.current) {
-      const frame = canvasFrameRef.current;
-      const useHorizontalScrollPanning = Boolean(frame && activePanning.horizontalScrollMode);
-      const useVerticalScrollPanning = Boolean(frame && activePanning.verticalScrollMode);
-      if (frame) {
-        const maxLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
-        const maxTop = Math.max(0, frame.scrollHeight - frame.clientHeight);
-        let scrollChanged = false;
-        if (useHorizontalScrollPanning) {
-          const nextLeft = clampNumber(activePanning.scrollLeft - (event.clientX - activePanning.clientX), 0, maxLeft);
-          if (Math.abs(frame.scrollLeft - nextLeft) > 0.5) {
-            frame.scrollLeft = nextLeft;
-            scrollChanged = true;
-          }
-        }
-        if (useVerticalScrollPanning) {
-          const nextTop = clampNumber(activePanning.scrollTop - (event.clientY - activePanning.clientY), 0, maxTop);
-          if (Math.abs(frame.scrollTop - nextTop) > 0.5) {
-            frame.scrollTop = nextTop;
-            scrollChanged = true;
-          }
-        }
-        const nextOffset = clampCanvasNoScrollOffsetPoint({
-          x: useHorizontalScrollPanning ? activePanning.canvasOffset.x : activePanning.canvasOffset.x + event.clientX - activePanning.clientX,
-          y: useVerticalScrollPanning ? activePanning.canvasOffset.y : activePanning.canvasOffset.y + event.clientY - activePanning.clientY
-        });
-        setCanvasNoScrollOffset((current) =>
-          current.x === nextOffset.x && current.y === nextOffset.y ? current : nextOffset
-        );
-        if (scrollChanged) {
-          canvasFrameUserScrollRef.current = true;
-        }
-        scheduleCanvasVisibleViewBoxUpdate();
-        return;
-      }
-      const rect = svgRef.current.getBoundingClientRect();
-      const dx = rect.width > 0 ? ((event.clientX - activePanning.clientX) / rect.width) * canvasBounds.width : 0;
-      const dy = rect.height > 0 ? ((event.clientY - activePanning.clientY) / rect.height) * canvasBounds.height : 0;
-      const nextViewBox = clampViewBoxToCanvas({ ...activePanning.viewBox, x: activePanning.viewBox.x - dx, y: activePanning.viewBox.y - dy });
-      setViewBox((current) =>
-        current.x === nextViewBox.x &&
-        current.y === nextViewBox.y &&
-        current.width === nextViewBox.width &&
-        current.height === nextViewBox.height
-          ? current
-          : nextViewBox
-      );
-      return;
-    }
     if (transformDrag && svgRef.current) {
       const rawPoint = lastRawCanvasPointerRef.current ?? screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
       const point = transformDrag.kind === "rotate" ? clampPointToCanvas(rawPoint) : rawPoint;
@@ -26531,6 +26840,23 @@ export function App() {
     scheduleNodeDragMove(point, event.ctrlKey, event.shiftKey);
   };
 
+  const finishCanvasPanning = () => {
+    if (!panningRef.current && !pendingCanvasNoScrollOffsetRef.current) {
+      return;
+    }
+    const pendingOffset = pendingCanvasNoScrollOffsetRef.current;
+    pendingCanvasNoScrollOffsetRef.current = null;
+    if (pendingOffset) {
+      canvasNoScrollOffsetRef.current = pendingOffset;
+      applyCanvasPanningVisualOffset(pendingOffset);
+      setCanvasNoScrollOffset((current) =>
+        current.x === pendingOffset.x && current.y === pendingOffset.y ? current : pendingOffset
+      );
+    }
+    scheduleCanvasVisibleViewBoxUpdate();
+    setCanvasPanning(null);
+  };
+
   const startCanvasPanning = (event: PointerEvent<Element>) => {
     const svg = svgRef.current;
     if (event.button !== 0 || !svg) {
@@ -26551,6 +26877,7 @@ export function App() {
     setRewiring(null);
     const frame = canvasFrameRef.current;
     const panningViewBox = currentViewBoxFromCanvasFrameScroll();
+    pendingCanvasNoScrollOffsetRef.current = null;
     setCanvasPanning({
       clientX: event.clientX,
       clientY: event.clientY,
@@ -26651,6 +26978,42 @@ export function App() {
     };
   };
 
+  const flushPendingWheelZoom = () => {
+    const request = pendingWheelZoomRequestRef.current;
+    wheelZoomFrameRef.current = null;
+    if (!request) {
+      return;
+    }
+    pendingWheelZoomRequestRef.current = null;
+    pendingWheelZoomAnchorRef.current = request.anchor;
+    setViewBox((current) => {
+      const bounds = canvasBoundsRef.current;
+      const { width: nextWidth, height: nextHeight } = clampViewBoxDimensionsForZoom(
+        { width: current.width * request.zoomFactor, height: current.height * request.zoomFactor },
+        bounds
+      );
+      const nextScaleX = bounds.width / Math.max(1, nextWidth);
+      const nextScaleY = bounds.height / Math.max(1, nextHeight);
+      return normalizeViewBoxToCanvas({
+        x: request.anchor.point.x - request.anchor.cursorOffsetX / nextScaleX,
+        y: request.anchor.point.y - request.anchor.cursorOffsetY / nextScaleY,
+        width: nextWidth,
+        height: nextHeight
+      }, bounds);
+    });
+  };
+
+  const scheduleWheelZoom = (anchor: WheelZoomAnchor, zoomFactor: number) => {
+    const current = pendingWheelZoomRequestRef.current;
+    pendingWheelZoomRequestRef.current = current
+      ? { anchor, zoomFactor: current.zoomFactor * zoomFactor }
+      : { anchor, zoomFactor };
+    if (wheelZoomFrameRef.current !== null) {
+      return;
+    }
+    wheelZoomFrameRef.current = window.requestAnimationFrame(flushPendingWheelZoom);
+  };
+
   const zoomCanvasFromWheelEvent = (event: CanvasWheelZoomEvent) => {
     if (!shouldZoomCanvasFromWheelEvent(event)) {
       return false;
@@ -26664,22 +27027,7 @@ export function App() {
       return true;
     }
     const zoomFactor = event.deltaY > 0 ? 1.12 : 0.88;
-    pendingWheelZoomAnchorRef.current = anchor;
-    setViewBox((current) => {
-      const bounds = canvasBoundsRef.current;
-      const { width: nextWidth, height: nextHeight } = clampViewBoxDimensionsForZoom(
-        { width: current.width * zoomFactor, height: current.height * zoomFactor },
-        bounds
-      );
-      const nextScaleX = bounds.width / Math.max(1, nextWidth);
-      const nextScaleY = bounds.height / Math.max(1, nextHeight);
-      return normalizeViewBoxToCanvas({
-        x: anchor.point.x - anchor.cursorOffsetX / nextScaleX,
-        y: anchor.point.y - anchor.cursorOffsetY / nextScaleY,
-        width: nextWidth,
-        height: nextHeight
-      }, bounds);
-    });
+    scheduleWheelZoom(anchor, zoomFactor);
     return true;
   };
 
@@ -27524,6 +27872,8 @@ export function App() {
     setTopologyStatus(INITIAL_TOPOLOGY_STATUS);
     setRouteRenderingReady(false);
     setSavedRouteCrossingArcsReady(false);
+    setInitialCanvasLodActive(false);
+    setInitialCanvasDetailHydrationLimit(0);
     setActiveProjectKey("");
     setActiveSchemeKey("");
     clearRecordSelection();
@@ -27615,6 +27965,8 @@ export function App() {
     setTopologyStatus(INITIAL_TOPOLOGY_STATUS);
     setRouteRenderingReady(false);
     setSavedRouteCrossingArcsReady(false);
+    setInitialCanvasLodActive(repairedNodes.length > CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT);
+    setInitialCanvasDetailHydrationLimit(0);
     setActiveProjectKey(project.id);
     setActiveSchemeKey(schemeId);
     selectSingleProject(schemeId, project.id);
@@ -27638,10 +27990,47 @@ export function App() {
     requestCanvasFrameCenter();
   };
 
+  const loadSavedProjectRecord = async (
+    project: SavedProjectRecord,
+    schemeId = findSchemeForProject(project.id)?.id ?? "",
+    sourceSchemes: SavedSchemeRecord[] = schemes
+  ) => {
+    const resolvedSchemeId = schemeId || findSchemeForProject(project.id)?.id || "";
+    let projectToLoad = project;
+    if (savedProjectRecordIsSummary(project)) {
+      const ownerSchemePath = resolvedSchemeId ? schemePathForScheme(resolvedSchemeId, sourceSchemes) : [];
+      const schemePath = ownerSchemePath.length > 0 ? ownerSchemePath : schemePathForProject(project.id, sourceSchemes);
+      if (schemePath.length === 0) {
+        window.alert(`无法读取模型“${project.name}”：未找到所属方案路径。`);
+        writeOperationLog(`读取模型失败：${project.name}`);
+        return false;
+      }
+      try {
+        const loadedProject = await fetchBackendProjectRecord(schemePath, project.name);
+        projectToLoad = {
+          ...loadedProject,
+          id: project.id || loadedProject.id,
+          name: loadedProject.name || project.name
+        };
+        if (resolvedSchemeId) {
+          suppressNextBackendSchemeSyncRef.current = true;
+          setSchemes((current) => upsertSavedProjectInScheme(current, resolvedSchemeId, projectToLoad));
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : `读取模型失败：${project.name}`;
+        window.alert(message);
+        writeOperationLog(`读取模型失败：${project.name}`);
+        return false;
+      }
+    }
+    loadSavedProject(projectToLoad, resolvedSchemeId);
+    return true;
+  };
+
   const requestUnsavedChangeAction = (action: UnsavedChangeAction) => {
     if (!saveRequired) {
       if (action.kind === "load-project") {
-        loadSavedProject(action.project, action.schemeId);
+        void loadSavedProjectRecord(action.project, action.schemeId);
       } else if (action.kind === "enter-browse") {
         enterBrowseMode();
       }
@@ -27673,7 +28062,7 @@ export function App() {
     }
     setPendingUnsavedAction(null);
     if (action.kind === "load-project") {
-      loadSavedProject(action.project, action.schemeId);
+      void loadSavedProjectRecord(action.project, action.schemeId);
     } else if (action.kind === "enter-browse") {
       enterBrowseMode();
     }
@@ -27795,7 +28184,7 @@ export function App() {
     }
     if (deletingActiveScheme) {
       if (fallbackSelection) {
-        loadSavedProject(fallbackSelection.project, fallbackSelection.scheme.id);
+        void loadSavedProjectRecord(fallbackSelection.project, fallbackSelection.scheme.id);
       } else {
         window.alert(emptyDisplayMessage);
         clearActiveProjectDisplay("删除当前方案后已清空画布");
@@ -27853,7 +28242,7 @@ export function App() {
       }
       if (deletingActiveProject) {
         if (fallbackSelection) {
-          loadSavedProject(fallbackSelection.project, fallbackSelection.scheme.id);
+          void loadSavedProjectRecord(fallbackSelection.project, fallbackSelection.scheme.id);
         } else {
           window.alert("当前方案已无模型，画布已清空。");
           clearActiveProjectDisplay("删除当前模型后已清空画布");
@@ -27900,7 +28289,7 @@ export function App() {
       }
       if (deletingActiveScheme) {
         if (fallbackSelection) {
-          loadSavedProject(fallbackSelection.project, fallbackSelection.scheme.id);
+          void loadSavedProjectRecord(fallbackSelection.project, fallbackSelection.scheme.id);
         } else {
           window.alert(emptyDisplayMessage);
           clearActiveProjectDisplay("删除当前方案后已清空画布");
@@ -28757,7 +29146,7 @@ export function App() {
                         />
                       </td>
                       <td>
-                        <input type="color" value={type.defaultColor} onChange={(event) => updateMeasurementType(type.id, { defaultColor: event.target.value })} />
+                        <DeferredColorInput value={type.defaultColor} fallback="#334155" onCommit={(value) => updateMeasurementType(type.id, { defaultColor: value })} />
                       </td>
                       <td>
                         <select
@@ -28892,11 +29281,11 @@ export function App() {
             </label>
             <label>
               <span>背景颜色</span>
-              <input
-                type="color"
-                value={measurementGroupColorInputValue(draft.backgroundColor, "#ffffff")}
+              <DeferredColorInput
+                value={draft.backgroundColor ?? ""}
+                fallback="#ffffff"
                 disabled={isBrowseMode || draftBackgroundHidden}
-                onChange={(event) => updateMeasurementEditorGroupSettings((group) => ({ ...group, backgroundColor: event.target.value }))}
+                onCommit={(value) => updateMeasurementEditorGroupSettings((group) => ({ ...group, backgroundColor: value }))}
               />
             </label>
             <label>
@@ -28918,11 +29307,11 @@ export function App() {
             </label>
             <label>
               <span>边框颜色</span>
-              <input
-                type="color"
-                value={measurementGroupColorInputValue(draft.borderColor, "#64748b")}
+              <DeferredColorInput
+                value={draft.borderColor ?? ""}
+                fallback="#64748b"
                 disabled={isBrowseMode || draftBorderHidden}
-                onChange={(event) => updateMeasurementEditorGroupSettings((group) => ({ ...group, borderColor: event.target.value }))}
+                onCommit={(value) => updateMeasurementEditorGroupSettings((group) => ({ ...group, borderColor: value }))}
               />
             </label>
             <label>
@@ -29109,13 +29498,12 @@ export function App() {
                         />
                       </td>
                       <td>
-                        <input
-                          type="color"
+                        <DeferredColorInput
                           value={itemColor}
                           disabled={isBrowseMode}
-                          onChange={(event) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onCommit={(value) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
-                            styleOverride: { ...(current.styleOverride ?? {}), color: event.target.value }
+                            styleOverride: { ...(current.styleOverride ?? {}), color: value }
                           }))}
                         />
                       </td>
@@ -29404,7 +29792,7 @@ export function App() {
     }
     if (deletingActiveProject) {
       if (fallbackSelection) {
-        loadSavedProject(fallbackSelection.project, fallbackSelection.scheme.id);
+        void loadSavedProjectRecord(fallbackSelection.project, fallbackSelection.scheme.id);
       } else {
         window.alert("当前方案已无模型，画布已清空。");
         clearActiveProjectDisplay("删除当前模型后已清空画布");
@@ -30550,16 +30938,37 @@ export function App() {
     return false;
   };
 
+  const loadSvgImageExportPathById = async () => {
+    let assets = imageAssetList;
+    try {
+      const backendAssets = await fetchAllBackendImages();
+      const mergedById = new Map<string, ImageAsset>();
+      for (const asset of assets) {
+        mergedById.set(asset.id, asset);
+      }
+      for (const asset of backendAssets) {
+        const existing = mergedById.get(asset.id);
+        mergedById.set(asset.id, existing ? { ...existing, ...asset } : asset);
+      }
+      assets = Array.from(mergedById.values());
+    } catch {
+      // 后端图片清单不可用时，保持现有导出逻辑，不影响本地图形导出。
+    }
+    return imageExportPathByIdFromAssets(assets);
+  };
+
   const exportSvg = async () => {
     if (!ensureSavedBeforeExport()) {
       return;
     }
+    const imageExportPathById = await loadSvgImageExportPathById();
     await saveTextFile({
       filename: `${safeFilePart(projectName)}.svg`,
       text: buildSvgDocument(nodes, edges, {
         ...canvasBounds,
         backgroundColor: canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND,
         backgroundImage: canvasBackgroundImageUrl,
+        imageExportPathById,
         colorDisplayMode,
         colorPalette,
         deviceTemplates: libraryTemplates,
@@ -32093,6 +32502,7 @@ export function App() {
         backgroundImageAssetId: asset?.id ?? "",
         error: ""
       }));
+      setCustomDeviceSaveMessage(asset ? "图标已上传到后台，保存自定义设备后生效。" : "图标已设置为本地预览，保存自定义设备后生效。");
     };
     reader.readAsDataURL(file);
   };
@@ -32541,6 +32951,7 @@ export function App() {
       )
       .map((definition) => ({ ...definition, id: customParamId() }));
     const stateRows = createDefinitionStateDraftRows(template);
+    setCustomDeviceSaveMessage("");
     ensureCustomComponentTreeExpanded(attributeLibraryName, section);
     setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section, templateKind: template.kind });
     setEditingCustomDeviceKind(template.custom ? template.kind : "");
@@ -32579,6 +32990,7 @@ export function App() {
     setCustomComponentTreeSelection({ kind: "componentType", attributeLibraryName, section });
     setCustomDeviceDialogView("visual");
     setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
+    setCustomDeviceSaveMessage("");
     setCustomDeviceDraft({
       ...createEmptyCustomDeviceDraft(attributeLibraryName),
       componentType: section,
@@ -32944,6 +33356,7 @@ export function App() {
     if (!requireEditMode("保存元件")) {
       return;
     }
+    setCustomDeviceSaveMessage("");
     const attributeLibraryName = normalizeAttributeLibraryName(customDeviceDraft.attributeLibraryName);
     const componentType = normalizeComponentTypeName(customDeviceDraft.componentType);
     const componentLabel = customDeviceDraft.componentName.trim() || componentType;
@@ -33016,6 +33429,19 @@ export function App() {
     const backgroundImageAssetId = customDeviceDraft.backgroundImageAssetId && backgroundImage === `/api/images/${customDeviceDraft.backgroundImageAssetId}`
       ? customDeviceDraft.backgroundImageAssetId
       : "";
+    const defaultImageCandidates = customDeviceGeneratedDefaultImageCandidates(
+      componentLabel,
+      customDeviceDraft.componentType,
+      terminalTypes
+    );
+    const stateDefinitions = syncInheritedCustomDeviceStateVisuals(
+      stateValidation.states,
+      {
+        backgroundImage,
+        backgroundImageAssetId,
+      },
+      defaultImageCandidates
+    );
     const customKind = editingCustomDeviceKind || nextCustomTemplateKind(componentType);
     const template: DeviceTemplate = {
       kind: customKind,
@@ -33042,19 +33468,23 @@ export function App() {
       allowResizeTransform: customDeviceDraft.allowResizeTransform === "1",
       custom: true,
       parameterDefinitions: definitions,
-      stateDefinitions: stateValidation.states
+      stateDefinitions,
     };
-    setCustomDeviceTemplates((current) => {
-      if (editingCustomDeviceKind && current.some((item) => item.kind === editingCustomDeviceKind)) {
-        return current.map((item) => item.kind === editingCustomDeviceKind ? template : item);
-      }
-      return [...current, template];
+    const nextTemplates = editingCustomDeviceKind && customDeviceTemplates.some((item) => item.kind === editingCustomDeviceKind)
+      ? customDeviceTemplates.map((item) => item.kind === editingCustomDeviceKind ? template : item)
+      : [...customDeviceTemplates, template];
+    setCustomDeviceTemplates(nextTemplates);
+    persistDeviceLibraryChange({ customDeviceTemplates: nextTemplates }, {
+      success: `自定义元件已保存到后台：${componentLabel}`,
+      failure: `自定义元件已保存到本地，后台保存失败：${componentLabel}`
     });
     setExpandedAttributeLibraries((current) => Array.from(new Set([...current, attributeLibraryName])));
     ensureCustomComponentTreeExpanded(attributeLibraryName, componentType);
     setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section: componentType, templateKind: customKind });
     setEditingCustomDeviceKind(customKind);
     setCustomDeviceDraft((current) => ({ ...current, error: "" }));
+    setCustomDeviceSaveMessage(`自定义元件已保存：${componentLabel}`);
+    writeOperationLog(`保存自定义元件：${componentLabel}`);
   };
 
   const renderStateVisualPager = (
@@ -33178,28 +33608,28 @@ export function App() {
               <label>
                 主颜色
                 <div className="color-field device-state-color-field">
-                  <input type="color" value={colorInputValue(activeRow.color, "#2563eb")} onChange={(event) => handlers.update(activeRow.id, { color: event.target.value })} />
+                  <DeferredColorInput value={activeRow.color} fallback="#2563eb" onCommit={(value) => handlers.update(activeRow.id, { color: value })} />
                   <span className="device-state-color-swatch" title={activeRow.color || "未设置"} style={{ "--state-color": activeRow.color || "#2563eb" } as CSSProperties} />
                 </div>
               </label>
               <label>
                 填充色
                 <div className="color-field device-state-color-field">
-                  <input type="color" value={colorInputValue(activeRow.fillColor, "#ffffff")} onChange={(event) => handlers.update(activeRow.id, { fillColor: event.target.value })} />
+                  <DeferredColorInput value={activeRow.fillColor} fallback="#ffffff" onCommit={(value) => handlers.update(activeRow.id, { fillColor: value })} />
                   <span className={`device-state-color-swatch ${activeRow.fillColor === "transparent" ? "transparent" : ""}`} title={activeRow.fillColor || "未设置"} style={{ "--state-color": activeRow.fillColor === "transparent" ? "#ffffff" : activeRow.fillColor || "#ffffff" } as CSSProperties} />
                 </div>
               </label>
               <label>
                 边框色
                 <div className="color-field device-state-color-field">
-                  <input type="color" value={colorInputValue(activeRow.strokeColor, "#2563eb")} onChange={(event) => handlers.update(activeRow.id, { strokeColor: event.target.value })} />
+                  <DeferredColorInput value={activeRow.strokeColor} fallback="#2563eb" onCommit={(value) => handlers.update(activeRow.id, { strokeColor: value })} />
                   <span className={`device-state-color-swatch ${activeRow.strokeColor === "transparent" ? "transparent" : ""}`} title={activeRow.strokeColor || "未设置"} style={{ "--state-color": activeRow.strokeColor === "transparent" ? "#ffffff" : activeRow.strokeColor || "#2563eb" } as CSSProperties} />
                 </div>
               </label>
               <label>
                 文字色
                 <div className="color-field device-state-color-field">
-                  <input type="color" value={colorInputValue(activeRow.textColor, "#111827")} onChange={(event) => handlers.update(activeRow.id, { textColor: event.target.value })} />
+                  <DeferredColorInput value={activeRow.textColor} fallback="#111827" onCommit={(value) => handlers.update(activeRow.id, { textColor: value })} />
                   <span className="device-state-color-swatch" title={activeRow.textColor || "未设置"} style={{ "--state-color": activeRow.textColor || "#111827" } as CSSProperties} />
                 </div>
               </label>
@@ -34349,12 +34779,71 @@ export function App() {
     () => estimatedViewportNodeScreenSize(viewportNodes, canvasScrollScale),
     [canvasScrollScale.x, canvasScrollScale.y, viewportNodes]
   );
-  const useSimplifiedCanvasNodes =
+  const useInitialCanvasLod =
+    initialCanvasLodActive &&
+    viewportNodes.length > CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT &&
+    currentZoomPercent <= CANVAS_LOD_MAX_ZOOM_PERCENT &&
+    !connectSource &&
+    !staticDrawing;
+  const usePersistentCanvasLod =
     viewportNodes.length > CANVAS_LOD_NODE_DETAIL_LIMIT &&
     currentZoomPercent <= CANVAS_LOD_MAX_ZOOM_PERCENT &&
     viewportNodeLodScreenSize <= CANVAS_LOD_MAX_NODE_SCREEN_SIZE &&
     !connectSource &&
     !staticDrawing;
+  const useSimplifiedCanvasNodes =
+    usePersistentCanvasLod || useInitialCanvasLod;
+  const initialCanvasDetailHydrationTarget = initialCanvasLodActive
+    ? Math.max(viewportNodes.length, viewportRoutedEdges.length)
+    : 0;
+  useEffect(() => {
+    if (!initialCanvasLodActive) {
+      return;
+    }
+    if (initialCanvasDetailHydrationTarget <= 0) {
+      return;
+    }
+    if (initialCanvasDetailHydrationLimit >= initialCanvasDetailHydrationTarget) {
+      return scheduleIdleWork(() => {
+        setInitialCanvasLodActive(false);
+      }, CANVAS_INITIAL_LOD_NEXT_DETAIL_DELAY_MS, 1500);
+    }
+    return scheduleIdleWork(() => {
+      setInitialCanvasDetailHydrationLimit((limit) => {
+        const nextLimit = Math.min(
+          limit + CANVAS_INITIAL_LOD_DETAIL_CHUNK_SIZE,
+          initialCanvasDetailHydrationTarget
+        );
+        return nextLimit === limit ? limit : nextLimit;
+      });
+    }, initialCanvasDetailHydrationLimit === 0 ? CANVAS_INITIAL_LOD_FIRST_DETAIL_DELAY_MS : CANVAS_INITIAL_LOD_NEXT_DETAIL_DELAY_MS, 1200);
+  }, [
+    activeProjectKey,
+    initialCanvasDetailHydrationLimit,
+    initialCanvasDetailHydrationTarget,
+    initialCanvasLodActive
+  ]);
+  const initialCanvasDetailedNodeIdSet = useMemo(() => {
+    if (!useInitialCanvasLod || initialCanvasDetailHydrationLimit <= 0) {
+      return new Set<string>();
+    }
+    const ids = new Set<string>();
+    for (const node of viewportNodes) {
+      if (groupTransformPreviewNodeIdSet.has(node.id) || isStaticNode(node)) {
+        continue;
+      }
+      ids.add(node.id);
+      if (ids.size >= initialCanvasDetailHydrationLimit) {
+        break;
+      }
+    }
+    return ids;
+  }, [
+    groupTransformPreviewNodeIdSet,
+    initialCanvasDetailHydrationLimit,
+    useInitialCanvasLod,
+    viewportNodes
+  ]);
   const useSimplifiedSelectedCanvasNodes =
     useSimplifiedCanvasNodes &&
     selectedNodeIdSet.size > CANVAS_LOD_SELECTED_DETAIL_LIMIT &&
@@ -34369,10 +34858,14 @@ export function App() {
       if (groupTransformPreviewNodeIdSet.has(node.id)) {
         return false;
       }
+      const detailedByInitialHydration = initialCanvasDetailedNodeIdSet.has(node.id);
       if (isRoutableLineDeviceKind(node.kind)) {
-        return true;
+        return detailedByInitialHydration || selectedNodeIdSet.has(node.id);
       }
       if (isStaticNode(node)) {
+        return true;
+      }
+      if (detailedByInitialHydration) {
         return true;
       }
       if (!selectedNodeIdSet.has(node.id)) {
@@ -34382,6 +34875,7 @@ export function App() {
     });
   }, [
     groupTransformPreviewNodeIdSet,
+    initialCanvasDetailedNodeIdSet,
     nodeLabelDrag,
     nodeLabelRotateDrag,
     selectedNodeId,
@@ -34416,6 +34910,19 @@ export function App() {
       ? new Set([selectedEdgeId])
       : new Set<string>();
   }, [activeSelectedEdgeSet, selectedEdgeId, useSimplifiedSelectedCanvasEdges]);
+  const initialCanvasDetailedEdgeIdSet = useMemo(() => {
+    if (!useInitialCanvasLod || initialCanvasDetailHydrationLimit <= 0) {
+      return new Set<string>();
+    }
+    const ids = new Set<string>();
+    for (const route of viewportRoutedEdges) {
+      ids.add(route.edgeId);
+      if (ids.size >= initialCanvasDetailHydrationLimit) {
+        break;
+      }
+    }
+    return ids;
+  }, [initialCanvasDetailHydrationLimit, useInitialCanvasLod, viewportRoutedEdges]);
   const lodCanvasRouteChunks = useMemo(() => {
     if (!useSimplifiedCanvasRoutes) {
       lodCanvasRouteChunkCacheRef.current.chunks = [];
@@ -34424,6 +34931,9 @@ export function App() {
     const items = viewportRoutedEdges.flatMap((route) => {
       const edge = edgeById.get(route.edgeId);
       if (!edge) {
+        return [];
+      }
+      if (initialCanvasDetailedEdgeIdSet.has(edge.id)) {
         return [];
       }
       const selected = activeSelectedEdgeSet.has(edge.id);
@@ -34460,6 +34970,7 @@ export function App() {
     draggingDelta,
     edgeById,
     groupTransformPreviewEdgeIdSet,
+    initialCanvasDetailedEdgeIdSet,
     isEditMode,
     multiNodeDragging,
     nodeById,
@@ -34476,7 +34987,7 @@ export function App() {
     const items = viewportNodes.filter((node) =>
       !groupTransformPreviewNodeIdSet.has(node.id) &&
       !isStaticNode(node) &&
-      !isRoutableLineDeviceKind(node.kind)
+      !initialCanvasDetailedNodeIdSet.has(node.id)
     );
     return stableSvgMarkupChunks(items, lodCanvasNodeChunkCacheRef.current, {
       chunkSize: CANVAS_LOD_MARKUP_CHUNK_SIZE,
@@ -34540,6 +35051,7 @@ export function App() {
     dragPreviewRoutableLineNodeIdSet,
     groupTransformPreviewNodeIdSet,
     imageAssets,
+    initialCanvasDetailedNodeIdSet,
     isEditMode,
     libraryTemplateByKind,
     nodeLabelDrag,
@@ -36062,15 +36574,15 @@ export function App() {
             }}
             onPointerUp={(event) => {
               finishModifierSelectionPress(event.pointerId);
-              setCanvasPanning(null);
+              finishCanvasPanning();
             }}
             onPointerCancel={() => {
               cancelModifierSelectionPress();
-              setCanvasPanning(null);
+              finishCanvasPanning();
             }}
             onLostPointerCapture={() => {
               cancelModifierSelectionPress();
-              setCanvasPanning(null);
+              finishCanvasPanning();
             }}
             onDoubleClick={(event) => {
               if (event.button !== 0 || event.target !== event.currentTarget) {
@@ -36124,7 +36636,7 @@ export function App() {
               finishNodeDrag();
               finishManualPathDrag();
               finishTransformDrag();
-              setCanvasPanning(null);
+              finishCanvasPanning();
             }}
             onPointerLeave={() => {
               clearLibraryPlacementPreview();
@@ -36175,7 +36687,7 @@ export function App() {
               setRoutableLineEndpointDrag(null);
               finishManualPathDrag();
               finishTransformDrag();
-              setCanvasPanning(null);
+              finishCanvasPanning();
               setContextMarqueeSelection(null);
               setMarquee(null);
               setRewiring(null);
@@ -36190,6 +36702,7 @@ export function App() {
               setRoutableLineEndpointDrag(null);
               finishManualPathDrag();
               finishTransformDrag();
+              finishCanvasPanning();
               setContextMarqueeSelection(null);
             }}
             onPointerDown={(event) => {
@@ -36449,14 +36962,15 @@ export function App() {
                 (multiNodeDragging && dragOverlayEdgeIdSet.has(edge.id)) ||
                 groupTransformPreviewEdgeIdSet.has(edge.id) ||
                 terminalPressPreviewEdgeIdSet.has(edge.id) ||
-                rewiring?.edgeId === edge.id
+                  rewiring?.edgeId === edge.id
               ) {
                 return null;
               }
-              if (useSimplifiedCanvasRoutes && !selected) {
+              const detailedByInitialHydration = initialCanvasDetailedEdgeIdSet.has(edge.id);
+              if (useSimplifiedCanvasRoutes && !selected && !detailedByInitialHydration) {
                 return null;
               }
-              if (useSimplifiedCanvasRoutes && selected && !detailedSelectedEdgeIdSet.has(edge.id)) {
+              if (useSimplifiedCanvasRoutes && selected && !detailedSelectedEdgeIdSet.has(edge.id) && !detailedByInitialHydration) {
                 return null;
               }
               const sourcePoint = getEdgeEndpointPoint(edge, "source");
@@ -37469,7 +37983,7 @@ export function App() {
               />
             )}
             {isEditMode && (
-              <div className="canvas-resize-hotzones" style={canvasResizeHotzoneStyle} aria-hidden="true">
+              <div ref={canvasResizeHotzonesRef} className="canvas-resize-hotzones" style={canvasResizeHotzoneStyle} aria-hidden="true">
                 <div className="canvas-resize-hotzone canvas-resize-hotzone-left" onPointerDown={(event) => startCanvasResize(event, "left")} />
                 <div className="canvas-resize-hotzone canvas-resize-hotzone-top" onPointerDown={(event) => startCanvasResize(event, "top")} />
                 <div className="canvas-resize-hotzone canvas-resize-hotzone-right" onPointerDown={(event) => startCanvasResize(event, "right")} />
@@ -37895,13 +38409,13 @@ export function App() {
                     {renderChineseParamHeader("canvasBackgroundColor")}
                     <td>
                       <div className="color-field with-clear">
-                        <input
-                          type="color"
+                        <DeferredColorInput
                           value={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND}
+                          fallback={DEFAULT_CANVAS_BACKGROUND}
                           disabled={isBrowseMode}
-                          onChange={(event) => {
+                          onCommit={(value) => {
                             pushUndoSnapshot();
-                            setCanvasBackgroundColor(event.target.value);
+                            setCanvasBackgroundColor(value);
                           }}
                         />
                         <input
@@ -38721,7 +39235,12 @@ export function App() {
         )}
       </aside>
       {contextMenu && (
-        <div className="context-menu" data-canvas-context-menu="true" style={contextMenuStyle(contextMenu)}>
+        <div
+          ref={contextMenuRef}
+          className={contextMenuClassName(contextMenu)}
+          data-canvas-context-menu="true"
+          style={contextMenuStyle(contextMenu)}
+        >
           {isEditMode && contextMenuFromElementTree && contextMenuForSelection && contextSelectionCount > 0 && (
             <button onClick={() => runContextMenuAction(deleteSelection)}>
               <Trash2 size={14} />
@@ -38970,7 +39489,7 @@ export function App() {
         </div>
       )}
       {projectMenu && (
-        <div className="context-menu" style={contextMenuStyle(projectMenu)}>
+        <div ref={contextMenuRef} className={contextMenuClassName(projectMenu)} style={contextMenuStyle(projectMenu)}>
           {projectMenu.projectId && (
             <>
               {isEditMode && (
@@ -39728,10 +40247,10 @@ export function App() {
                   return (
                     <label className="color-palette-row" key={row.type}>
                       <span>{row.label}</span>
-                      <input
-                        type="color"
-                        value={color.startsWith("#") ? color : DEFAULT_COLOR_PALETTE.energy[row.type]}
-                        onChange={(event) => updateEnergyColor(row.type, event.target.value)}
+                      <DeferredColorInput
+                        value={color}
+                        fallback={DEFAULT_COLOR_PALETTE.energy[row.type]}
+                        onCommit={(value) => updateEnergyColor(row.type, value)}
                         aria-label={`${row.label}颜色`}
                       />
                       <input
@@ -39787,10 +40306,10 @@ export function App() {
                           aria-label="电压基值"
                         />
                         <div className="color-field">
-                          <input
-                            type="color"
-                            value={row.color.startsWith("#") ? row.color : "#64748b"}
-                            onChange={(event) => updateVoltageColorRow(row.key, { color: event.target.value })}
+                          <DeferredColorInput
+                            value={row.color}
+                            fallback="#64748b"
+                            onCommit={(value) => updateVoltageColorRow(row.key, { color: value })}
                             aria-label={`${row.type.toUpperCase()} ${row.voltage}颜色`}
                           />
                           <input
@@ -40164,6 +40683,7 @@ export function App() {
               <button onClick={() => setCustomDeviceDialogOpen(false)}>关闭</button>
             </div>
             {customDeviceDraft.error && <p className="custom-device-error">{customDeviceDraft.error}</p>}
+            {customDeviceSaveMessage && <p className="custom-device-save-status">{customDeviceSaveMessage}</p>}
             <div className="custom-device-dialog-layout">
               {renderCustomComponentManagerTree()}
               <div className="custom-device-editor-panel">
@@ -41026,21 +41546,21 @@ export function App() {
                         <label>
                           线色
                           <div className="state-icon-drawing-color-field">
-                            <input type="color" value={colorInputValue(visibleStrokeColor, "#2563eb")} onChange={(event) => updateStateIconDrawingElement(selected.id, { strokeColor: event.target.value })} />
+                            <DeferredColorInput value={visibleStrokeColor} fallback="#2563eb" onCommit={(value) => updateStateIconDrawingElement(selected.id, { strokeColor: value })} />
                             <span className="device-state-color-swatch" title={visibleStrokeColor} style={{ "--state-color": visibleStrokeColor } as CSSProperties} />
                           </div>
                         </label>
                         <label>
                           填充
                           <div className="state-icon-drawing-color-field">
-                            <input type="color" value={colorInputValue(selected.fillColor, "#ffffff")} onChange={(event) => updateStateIconDrawingElement(selected.id, { fillColor: event.target.value })} />
+                            <DeferredColorInput value={selected.fillColor} fallback="#ffffff" onCommit={(value) => updateStateIconDrawingElement(selected.id, { fillColor: value })} />
                             <span className={`device-state-color-swatch ${selected.fillColor === "transparent" ? "transparent" : ""}`} title={selected.fillColor || "未设置"} style={{ "--state-color": selected.fillColor === "transparent" ? "#ffffff" : selected.fillColor || "#ffffff" } as CSSProperties} />
                           </div>
                         </label>
                         <label>
                           文字色
                           <div className="state-icon-drawing-color-field">
-                            <input type="color" value={colorInputValue(visibleTextColor, "#111827")} onChange={(event) => updateStateIconDrawingElement(selected.id, { textColor: event.target.value })} />
+                            <DeferredColorInput value={visibleTextColor} fallback="#111827" onCommit={(value) => updateStateIconDrawingElement(selected.id, { textColor: value })} />
                             <span className="device-state-color-swatch" title={visibleTextColor} style={{ "--state-color": visibleTextColor } as CSSProperties} />
                           </div>
                         </label>

@@ -5991,32 +5991,61 @@ function routableLineEndpointNormalNeedsRepair(points: Point[], edge: Edge, node
   return false;
 }
 
-function unsafeRoutableLineStoredPath(node: ModelNode, nodes: ModelNode[]) {
+type RoutableLineStoredPathSafetyContext = {
+  nodeById?: Map<string, ModelNode>;
+  routeBlockingCandidates?: Array<{ node: ModelNode; box: ReturnType<typeof boxFor> }>;
+};
+
+function routableLineStoredPathSafety(
+  node: ModelNode,
+  nodes: ModelNode[],
+  context: RoutableLineStoredPathSafetyContext = {}
+) {
   const points = routableLineDeviceCanvasPoints(node);
   if (points.length < 2) {
-    return true;
+    return { unsafe: true, blockerNodeIds: undefined as Set<string> | undefined };
   }
-  const otherNodes = nodes.filter((candidate) => candidate.id !== node.id);
-  const nodeById = new Map(otherNodes.map((candidate) => [candidate.id, candidate]));
+  const nodeById = context.nodeById ?? new Map(nodes.map((candidate) => [candidate.id, candidate]));
   const routeEdge = routableLineDeviceRoutingEdge(node, points[0], points[points.length - 1], nodeById);
-  const blockers = routableLineRoutingBlockers(otherNodes, routeEdge);
-  if (routableLineEndpointNormalNeedsRepair(points, routeEdge, nodeById)) {
-    return true;
+  let blockers: ModelNode[];
+  let blockerNodeIds: Set<string> | undefined;
+  if (context.routeBlockingCandidates) {
+    const nearbyBlockers = getRouteBlockingCandidateNodesFromBoxes(points, routeEdge, context.routeBlockingCandidates);
+    const endpointBlockers = [nodeById.get(routeEdge.sourceId), nodeById.get(routeEdge.targetId)]
+      .filter((candidate): candidate is ModelNode => Boolean(candidate && staticNodeParticipatesInRoutingAvoidance(candidate)));
+    blockers = [...endpointBlockers, ...nearbyBlockers];
+    blockerNodeIds = new Set(nearbyBlockers.map((candidate) => candidate.id));
+  } else {
+    const otherNodes = nodes.filter((candidate) => candidate.id !== node.id);
+    blockers = routableLineRoutingBlockers(otherNodes, routeEdge);
   }
-  if (routableLineRouteHasBlockingIssue(points, blockers, routeEdge)) {
-    return true;
-  }
-  return routeHasEndpointAwareBlockingIssue(
+  const hasBlockingIssue =
+    routableLineRouteHasBlockingIssue(points, blockers, routeEdge) ||
+    routeHasEndpointAwareBlockingIssue(
     points,
     filterBlockersForRoutePoints(points, blockers),
     routeEdge.sourceId,
     routeEdge.targetId
-  );
+    );
+  if (hasBlockingIssue) {
+    return { unsafe: true, blockerNodeIds };
+  }
+  return {
+    unsafe: !context.routeBlockingCandidates && routableLineEndpointNormalNeedsRepair(points, routeEdge, nodeById),
+    blockerNodeIds
+  };
+}
+
+function unsafeRoutableLineStoredPath(node: ModelNode, nodes: ModelNode[]) {
+  return routableLineStoredPathSafety(node, nodes).unsafe;
 }
 
 export function repairUnsafeRoutableLineDeviceRoutes(nodes: ModelNode[], bounds?: CanvasBounds): ModelNode[] {
   let nextNodes = nodes;
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const routeBlockingCandidates = getRouteBlockingCandidates(
+    nodes.filter((candidate) => !isWireLikeRouteDeviceKind(candidate.kind))
+  );
   for (let index = 0; index < nodes.length; index += 1) {
     const node = nextNodes[index];
     if (!node || !isRoutableLineDeviceKind(node.kind)) {
@@ -6030,10 +6059,19 @@ export function repairUnsafeRoutableLineDeviceRoutes(nodes: ModelNode[], bounds?
       nextNodes[index] = syncedNode;
       nodeById.set(syncedNode.id, syncedNode);
     }
-    if (!unsafeRoutableLineStoredPath(syncedNode, nextNodes)) {
+    const pathSafety = routableLineStoredPathSafety(syncedNode, nextNodes, {
+      nodeById,
+      routeBlockingCandidates
+    });
+    if (!pathSafety.unsafe) {
       continue;
     }
-    const routedNode = routeRoutableLineDevice(syncedNode, nextNodes, bounds);
+    const routedNode = routeRoutableLineDevice(
+      syncedNode,
+      nextNodes,
+      bounds,
+      pathSafety.blockerNodeIds ? { blockerNodeIds: pathSafety.blockerNodeIds } : undefined
+    );
     if (routedNode !== syncedNode) {
       if (nextNodes === nodes) {
         nextNodes = nodes.slice();
@@ -11206,11 +11244,56 @@ function segmentIntersectsBox(a: Point, b: Point, box: ReturnType<typeof boxFor>
   return false;
 }
 
-export function segmentIntersectsNodeBody(a: Point, b: Point, node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
-  if (!staticNodeParticipatesInRoutingAvoidance(node)) {
-    return false;
+function routableLineDeviceRouteSegmentIntersectionBox(a: Point, b: Point, node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
+  const points = routableLineDeviceCanvasPoints(node);
+  if (points.length < 2) {
+    return null;
   }
-  return segmentIntersectsBox(a, b, routeBlockerBox(node, padding));
+  const strokePadding = getDeviceStrokeWidth(node) / 2 + padding;
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1];
+    const point = points[index];
+    if (samePoint(previous, point)) {
+      continue;
+    }
+    const segmentCorridor = routeCorridor(previous, point, strokePadding);
+    if (segmentIntersectsBox(a, b, segmentCorridor)) {
+      return segmentCorridor;
+    }
+  }
+  return null;
+}
+
+function routableLineDeviceLabelIntersectionBox(a: Point, b: Point, node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
+  const effectivePadding = routeBlockerPadding(node, padding);
+  const labelBox = nodeLabelRouteBlockerBox(node, effectivePadding);
+  if (!labelBox) {
+    return null;
+  }
+  if (segmentIntersectsBox(a, b, labelBox)) {
+    return labelBox;
+  }
+  const bodyBox = bodyVisualBoxForNode(node, effectivePadding);
+  const bridgeBox = nodeLabelBridgeBlockerBox(node, bodyBox, labelBox, effectivePadding);
+  return bridgeBox && segmentIntersectsBox(a, b, bridgeBox) ? bridgeBox : null;
+}
+
+function routeSegmentBlockerIntersectionBox(a: Point, b: Point, node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
+  if (!staticNodeParticipatesInRoutingAvoidance(node)) {
+    return null;
+  }
+  if (isRoutableLineDeviceKind(node.kind)) {
+    return (
+      routableLineDeviceRouteSegmentIntersectionBox(a, b, node, padding) ??
+      routableLineDeviceLabelIntersectionBox(a, b, node, padding)
+    );
+  }
+  const box = routeBlockerBox(node, padding);
+  return segmentIntersectsBox(a, b, box) ? box : null;
+}
+
+export function segmentIntersectsNodeBody(a: Point, b: Point, node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
+  return Boolean(routeSegmentBlockerIntersectionBox(a, b, node, padding));
 }
 
 type EdgeSide = "source" | "target";
@@ -11308,50 +11391,9 @@ export function resolveStraightBusSlideEndpointToPoint(options: {
   movingTerminalId?: string;
   originalMovingPoint?: Point;
 }): Pick<Edge, "sourcePoint"> | Pick<Edge, "targetPoint"> | null {
-  const { edge, movingEndpoint } = options;
-  const busEndpoint = oppositeEdgeSide(movingEndpoint);
-  const sourceBySide = {
-    source: options.sourceNode,
-    target: options.targetNode
-  };
-  const originalBusNode = sourceBySide[busEndpoint];
-  const busNode = options.busNode ?? originalBusNode;
-  const movingNode = options.movingNode;
-  if (!isBusNode(busNode) || !isBusNode(originalBusNode) || (movingNode && isBusNode(movingNode))) {
-    return null;
-  }
-  const candidateBusPoint = projectPointToBusCenterline(busNode, options.movingPoint);
-  if (!candidateBusPoint) {
-    return null;
-  }
-  let resolvedBusPoint = candidateBusPoint;
-  if (movingNode && !isBusNode(movingNode)) {
-    const movingTerminalId = options.movingTerminalId ?? edgeTerminalId(edge, movingEndpoint);
-    const excludedNodeIds = new Set([busNode.id, originalBusNode.id, movingNode.id]);
-    if (
-      directSegmentMatchesTerminalNormal(options.movingPoint, candidateBusPoint, movingNode, movingTerminalId) &&
-      directSegmentClearOfNodeBodies(options.movingPoint, candidateBusPoint, options.nextNodes ?? options.nodes, excludedNodeIds)
-    ) {
-      resolvedBusPoint = candidateBusPoint;
-    } else {
-      const routedBusPoint = routedBusSlideEndpointPoint({
-        busNode,
-        originalBusNode,
-        movingNode,
-        movingTerminalId,
-        movingPoint: options.movingPoint,
-        nodes: options.nodes,
-        nextNodes: options.nextNodes
-      });
-      if (!routedBusPoint) {
-        return null;
-      }
-      resolvedBusPoint = routedBusPoint;
-    }
-  }
-  return busEndpoint === "source"
-    ? { sourcePoint: resolvedBusPoint }
-    : { targetPoint: resolvedBusPoint };
+  // Bus endpoint positions are user-controlled; automatic rerouting must not slide them.
+  void options;
+  return null;
 }
 
 export function resolveStraightBusSlideEndpoint(options: {
@@ -11478,7 +11520,7 @@ function routeIntersectsBlockers(points: Point[], blockers: ModelNode[], padding
     }
     const a = points[index - 1];
     const b = points[index];
-    if (routeBlockers.some((blocker) => segmentIntersectsBox(a, b, routeBlockerBox(blocker, padding)))) {
+    if (routeBlockers.some((blocker) => segmentIntersectsNodeBody(a, b, blocker, padding))) {
       return true;
     }
   }
@@ -11603,8 +11645,8 @@ function firstRouteBlockerIntersection(points: Point[], blockers: ModelNode[], p
     const a = points[segmentIndex - 1];
     const b = points[segmentIndex];
     for (const blocker of routeBlockers) {
-      const box = routeBlockerBox(blocker, padding);
-      if (segmentIntersectsBox(a, b, box)) {
+      const box = routeSegmentBlockerIntersectionBox(a, b, blocker, padding);
+      if (box) {
         return { segmentIndex: segmentIndex - 1, box };
       }
     }
@@ -11720,7 +11762,7 @@ function scoreRoute(points: Point[], blockers: ModelNode[], avoidedSegments: Seg
     }
     score += Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
     for (const blocker of routeBlockers) {
-      if (segmentIntersectsBox(a, b, routeBlockerBox(blocker, ROUTE_BLOCKER_PADDING))) {
+      if (segmentIntersectsNodeBody(a, b, blocker, ROUTE_BLOCKER_PADDING)) {
         score += 10000000;
       }
     }
@@ -12750,8 +12792,18 @@ function firstEndpointAwareBlockerIntersection(
     const a = points[segmentIndex - 1];
     const b = points[segmentIndex];
     for (const blocker of routeBlockers) {
-      if (segmentIntersectsRouteBlocker(a, b, routeSegmentIndex, lastSegmentIndex, blocker, sourceId, targetId, points)) {
-        return { segmentIndex: routeSegmentIndex, box: routeBlockerBox(blocker, ROUTE_BLOCKER_PADDING) };
+      const box = routeSegmentBlockerIntersectionBoxWithEndpointAwareness(
+        a,
+        b,
+        routeSegmentIndex,
+        lastSegmentIndex,
+        blocker,
+        sourceId,
+        targetId,
+        points
+      );
+      if (box) {
+        return { segmentIndex: routeSegmentIndex, box };
       }
     }
   }
@@ -13881,19 +13933,41 @@ function segmentIntersectsRouteBlocker(
   targetId: string,
   routePoints?: Point[]
 ) {
+  return Boolean(routeSegmentBlockerIntersectionBoxWithEndpointAwareness(
+    a,
+    b,
+    segmentIndex,
+    lastSegmentIndex,
+    node,
+    sourceId,
+    targetId,
+    routePoints
+  ));
+}
+
+function routeSegmentBlockerIntersectionBoxWithEndpointAwareness(
+  a: Point,
+  b: Point,
+  segmentIndex: number,
+  lastSegmentIndex: number,
+  node: ModelNode,
+  sourceId: string,
+  targetId: string,
+  routePoints?: Point[]
+) {
   if (node.id.startsWith("floating-")) {
-    return false;
+    return null;
   }
   if (node.id === sourceId && segmentIndex <= 1) {
-    return false;
+    return null;
   }
   if (node.id === targetId && segmentIndex >= lastSegmentIndex - 1) {
-    return false;
+    return null;
   }
   if (routePoints && routeSegmentIsContinuousEndpointBusOverlap(routePoints, segmentIndex, node, sourceId, targetId)) {
-    return false;
+    return null;
   }
-  return segmentIntersectsNodeBody(a, b, node);
+  return routeSegmentBlockerIntersectionBox(a, b, node);
 }
 
 function routeSegmentIsContinuousEndpointBusOverlap(
@@ -14047,8 +14121,6 @@ function edgeWithoutManualPoints(edge: Edge): Edge {
 
 function edgeWithoutStoredRouteGeometry(edge: Edge): Edge {
   const next = edgeWithoutManualPoints(edge);
-  delete next.sourcePoint;
-  delete next.targetPoint;
   delete next.routePoints;
   return next;
 }
@@ -14573,6 +14645,9 @@ function busOptimizedEdgeCandidates(edge: Edge, source: ModelNode, target: Model
   let candidates = [edge];
   const expandSide = (side: EdgeSide, bus: ModelNode, preferredPoints: Point[]) => {
     if (!isBusNode(bus)) {
+      return;
+    }
+    if ((side === "source" && edge.sourcePoint) || (side === "target" && edge.targetPoint)) {
       return;
     }
     const points = busEndpointCandidatePoints(bus, preferredPoints);

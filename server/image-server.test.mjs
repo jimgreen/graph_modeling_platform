@@ -9,11 +9,78 @@ import {
   deleteSchemeProjectRecord,
   deleteSchemeRecordDirectory,
   importSchemeArchiveBuffer,
+  readSchemeProjectRecord,
+  readSchemesFromFiles,
   saveSchemeProjectRecord,
   saveSchemeRecordDirectory
 } from "./image-server.mjs";
 
 describe("scheme file persistence", () => {
+  test("reads scheme directories as lightweight project summaries by default", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-summary-read-"));
+    try {
+      const filesRoot = join(root, "files");
+      await mkdir(join(filesRoot, "IEEE标准算例"), { recursive: true });
+      await writeFile(join(filesRoot, "IEEE标准算例", "IEEE118.json"), "{ this is intentionally not parsed", "utf-8");
+
+      const schemes = await readSchemesFromFiles({ filesRoot });
+
+      expect(schemes).toHaveLength(1);
+      expect(schemes[0].name).toBe("IEEE标准算例");
+      expect(schemes[0].projects).toHaveLength(1);
+      expect(schemes[0].projects[0].name).toBe("IEEE118");
+      expect(schemes[0].projects[0].project).toMatchObject({
+        name: "IEEE118",
+        nodes: [],
+        edges: [],
+        __summaryOnly: true
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("reads one full project file on demand", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-project-read-"));
+    try {
+      const filesRoot = join(root, "files");
+      await mkdir(join(filesRoot, "IEEE标准算例"), { recursive: true });
+      await writeFile(
+        join(filesRoot, "IEEE标准算例", "IEEE118.json"),
+        JSON.stringify({
+          version: 1,
+          name: "IEEE118",
+          nodes: [
+            {
+              id: "bus-1",
+              kind: "ac-bus",
+              name: "母线1",
+              position: { x: 0, y: 0 },
+              size: { width: 120, height: 16 },
+              params: {},
+              terminals: []
+            }
+          ],
+          edges: []
+        }),
+        "utf-8"
+      );
+
+      const record = await readSchemeProjectRecord({
+        filesRoot,
+        schemePath: ["IEEE标准算例"],
+        name: "IEEE118"
+      });
+
+      expect(record?.name).toBe("IEEE118");
+      expect(record?.project.nodes).toHaveLength(1);
+      expect(record?.project.nodes[0].id).toBe("bus-1");
+      expect(record?.project.__summaryOnly).toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("moves stale scheme files into trash instead of permanently deleting them", async () => {
     const root = await mkdtemp(join(tmpdir(), "scheme-persistence-"));
     try {
@@ -72,6 +139,89 @@ describe("scheme file persistence", () => {
 
       await expect(readFile(siblingFile, "utf-8")).resolves.toContain("qinling");
       await expect(readFile(projectFile, "utf-8")).resolves.toContain("山西");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("writes saved project svg image hrefs as root-relative image file paths", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-svg-image-paths-"));
+    try {
+      const filesRoot = join(root, "files");
+      const trashRoot = join(root, "trash");
+      await saveSchemeProjectRecord({
+        filesRoot,
+        trashRoot,
+        schemePath: ["默认方案"],
+        record: {
+          name: "图片模型",
+          updatedAt: "2026-06-12T00:00:00.000Z",
+          project: {
+            version: 1,
+            name: "图片模型",
+            canvasBackgroundImage: "/api/images/canvas-bg",
+            nodes: [
+              {
+                id: "image-node",
+                kind: "static-image",
+                name: "图片",
+                position: { x: 100, y: 80 },
+                size: { width: 80, height: 60 },
+                params: {
+                  backgroundImageAssetId: "node-bg",
+                  backgroundImage: "/api/images/node-bg"
+                },
+                terminals: []
+              }
+            ],
+            edges: []
+          }
+        },
+        measurementConfig: {},
+        imagePathById: {
+          "canvas-bg": "data/images/canvas-bg.png",
+          "node-bg": "data/images/node-bg.jpg"
+        }
+      });
+
+      const svg = await readFile(join(filesRoot, "默认方案", "图片模型.svg"), "utf-8");
+      expect(svg).toContain('href="data/images/canvas-bg.png"');
+      expect(svg).toContain('href="data/images/node-bg.jpg"');
+      expect(svg).not.toContain('href="/api/images/');
+      expect(svg).not.toContain('href="http://');
+      expect(svg).not.toContain('href="https://');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("writes saved project svg image href fallbacks without backend api paths", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-svg-image-path-fallback-"));
+    try {
+      const filesRoot = join(root, "files");
+      const trashRoot = join(root, "trash");
+      await saveSchemeProjectRecord({
+        filesRoot,
+        trashRoot,
+        schemePath: ["默认方案"],
+        record: {
+          name: "缺失图片清单",
+          updatedAt: "2026-06-12T00:00:00.000Z",
+          project: {
+            version: 1,
+            name: "缺失图片清单",
+            canvasBackgroundImage: "/api/images/missing-bg?id=1",
+            nodes: [],
+            edges: []
+          }
+        },
+        measurementConfig: {},
+        imagePathById: {}
+      });
+
+      const svg = await readFile(join(filesRoot, "默认方案", "缺失图片清单.svg"), "utf-8");
+      expect(svg).toContain('href="data/images/missing-bg"');
+      expect(svg).not.toContain('href="/api/images/');
     } finally {
       await rm(root, { recursive: true, force: true });
     }
