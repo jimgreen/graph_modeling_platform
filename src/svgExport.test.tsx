@@ -16,7 +16,7 @@ describe("SVG export", () => {
     expect(svg).not.toContain('href="data/images/bg?id=1&name=a"b"');
   });
 
-  test("exports backend image hrefs as embedded base64 data urls", () => {
+  test("exports backend image hrefs as embedded base64 data urls while keeping svg images inline", () => {
     const node = {
       ...createDefaultNode("static-image", { x: 120, y: 90 }),
       id: "image-node"
@@ -34,16 +34,42 @@ describe("SVG export", () => {
       imageExportPathById: {
         "canvas-bg": "data:image/png;base64,Y2FudmFzLWJn",
         "node-bg": "data:image/jpeg;base64,bm9kZS1iZw==",
-        "node-fg": "data:image/svg+xml;base64,PHN2Zy8+"
+        "node-fg": "data:image/svg+xml;utf8,%3Csvg%20viewBox%3D%220%200%2010%2010%22%3E%3Cpath%20class%3D%22inline-fg-shape%22%20d%3D%22M0%200H10V10H0Z%22%2F%3E%3C%2Fsvg%3E"
       }
     });
 
     expect(svg).toContain('href="data:image/png;base64,Y2FudmFzLWJn"');
     expect(svg).toContain('href="data:image/jpeg;base64,bm9kZS1iZw=="');
-    expect(svg).toContain('href="data:image/svg+xml;base64,PHN2Zy8+"');
+    expect(svg).toContain('class="export-inline-svg-image node-foreground-image"');
+    expect(svg).toContain('class="inline-fg-shape"');
+    expect(svg).not.toContain('href="data:image/svg+xml');
     expect(svg).not.toContain("http://127.0.0.1:5173");
     expect(svg).not.toContain('href="/api/images/');
     expect(svg).not.toContain('href="data/images/');
+  });
+
+  test("keeps svg node background images as svg markup in exported svg", () => {
+    const node = {
+      ...createDefaultNode("static-image", { x: 120, y: 90 }),
+      id: "svg-background-node"
+    };
+    node.params = {
+      ...node.params,
+      backgroundImage: "/api/images/vector-bg"
+    };
+    const svg = buildSvgDocument([node], [], {
+      width: 320,
+      height: 180,
+      backgroundColor: "#ffffff",
+      imageExportPathById: {
+        "vector-bg": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAxNiI+PGcgY2xhc3M9InZlY3Rvci1kZXZpY2UtYmciPjxwYXRoIGQ9Ik0xIDFIMjNWMTVIMVoiLz48L2c+PC9zdmc+"
+      }
+    });
+
+    expect(svg).toContain('class="export-inline-svg-image node-background-image"');
+    expect(svg).toContain('class="vector-device-bg"');
+    expect(svg).toContain('viewBox="0 0 24 16"');
+    expect(svg).not.toContain('href="data:image/svg+xml');
   });
 
   test("keeps backend image api hrefs when embedded image data is unavailable", () => {

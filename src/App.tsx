@@ -6825,6 +6825,112 @@ function exportSvgImageHref(value: string, imageExportPathById: Record<string, s
   return imageExportPathById[id] || href;
 }
 
+function decodeBase64Text(value: string) {
+  try {
+    const decoder = globalThis.atob;
+    if (typeof decoder !== "function") {
+      return "";
+    }
+    const binary = decoder(value.replace(/\s+/g, ""));
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return typeof TextDecoder === "undefined" ? binary : new TextDecoder().decode(bytes);
+  } catch {
+    return "";
+  }
+}
+
+function decodeSvgImageSource(value: string) {
+  const source = String(value ?? "").trim();
+  if (source.startsWith("<svg")) {
+    return source;
+  }
+  if (!/^data:image\/svg\+xml\b/iu.test(source)) {
+    return "";
+  }
+  const commaIndex = source.indexOf(",");
+  if (commaIndex < 0) {
+    return "";
+  }
+  const metadata = source.slice(0, commaIndex).toLowerCase();
+  const payload = source.slice(commaIndex + 1);
+  if (metadata.includes(";base64")) {
+    return decodeBase64Text(payload).trim();
+  }
+  try {
+    return decodeURIComponent(payload).trim();
+  } catch {
+    return payload.trim();
+  }
+}
+
+function svgRootAttributeValue(attributes: string, name: string) {
+  const pattern = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "iu");
+  const match = pattern.exec(attributes);
+  return match?.[1] ?? match?.[2] ?? "";
+}
+
+function svgLengthNumber(value: string) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function stripUnsafeInlineSvgMarkup(value: string) {
+  return value
+    .replace(/<script\b[\s\S]*?<\/script>/giu, "")
+    .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/giu, "")
+    .replace(/\s+(?:href|xlink:href)\s*=\s*(?:"javascript:[^"]*"|'javascript:[^']*')/giu, "");
+}
+
+function inlineSvgRootMarkup(
+  href: string,
+  options: { x: number; y: number; width: number; height: number; className: string; preserveAspectRatio?: string }
+) {
+  const source = stripUnsafeInlineSvgMarkup(
+    decodeSvgImageSource(href)
+      .replace(/^\uFEFF/u, "")
+      .replace(/^\s*<\?xml[\s\S]*?\?>/iu, "")
+      .replace(/^\s*<!doctype[\s\S]*?>/iu, "")
+      .trim()
+  );
+  const match = source.match(/<svg\b([^>]*)>([\s\S]*?)<\/svg\s*>/iu);
+  if (!match) {
+    return "";
+  }
+  const rootAttributes = match[1] ?? "";
+  const body = match[2] ?? "";
+  const filteredRootAttributes = rootAttributes
+    .replace(/\s+(?:x|y|width|height|preserveAspectRatio|class|id)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/giu, "")
+    .trim();
+  const width = svgLengthNumber(svgRootAttributeValue(rootAttributes, "width"));
+  const height = svgLengthNumber(svgRootAttributeValue(rootAttributes, "height"));
+  const viewBoxAttribute =
+    /\bviewBox\s*=/iu.test(rootAttributes) || width <= 0 || height <= 0
+      ? ""
+      : ` viewBox="0 0 ${formatSvgNumber(width)} ${formatSvgNumber(height)}"`;
+  const preservedAttributes = filteredRootAttributes ? ` ${filteredRootAttributes}` : "";
+  const inlineClassName = ["export-inline-svg-image", options.className].filter(Boolean).join(" ");
+  return `<svg class="${escapeXml(inlineClassName)}" x="${formatSvgNumber(options.x)}" y="${formatSvgNumber(options.y)}" width="${formatSvgNumber(options.width)}" height="${formatSvgNumber(options.height)}" preserveAspectRatio="${escapeXml(options.preserveAspectRatio ?? "xMidYMid slice")}"${viewBoxAttribute}${preservedAttributes}>${body}</svg>`;
+}
+
+function svgImageContentMarkup(
+  href: string,
+  options: { x: number; y: number; width: number; height: number; className?: string; preserveAspectRatio?: string }
+) {
+  if (!href) {
+    return "";
+  }
+  const className = options.className ?? "";
+  const inlineSvg = className ? inlineSvgRootMarkup(href, { ...options, className }) : "";
+  if (inlineSvg) {
+    return inlineSvg;
+  }
+  const classAttribute = className ? ` class="${escapeXml(className)}"` : "";
+  return `<image href="${escapeXml(href)}" x="${formatSvgNumber(options.x)}" y="${formatSvgNumber(options.y)}" width="${formatSvgNumber(options.width)}" height="${formatSvgNumber(options.height)}" preserveAspectRatio="${escapeXml(options.preserveAspectRatio ?? "xMidYMid slice")}"${classAttribute}/>`;
+}
+
 const SVG_ATTRIBUTE_NAMES: Record<string, string> = {
   className: "class",
   dominantBaseline: "dominant-baseline",
@@ -9609,7 +9715,6 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
   const backgroundColor = canvasSize.backgroundColor ?? DEFAULT_CANVAS_BACKGROUND;
   const backgroundImage = exportSvgImageHref(canvasSize.backgroundImage ?? "", imageExportPathById);
   const escapedBackgroundColor = escapeXml(backgroundColor);
-  const escapedBackgroundImage = escapeXml(backgroundImage);
   const colorDisplayMode = canvasSize.colorDisplayMode ?? "energy";
   const colorPalette = normalizeColorPalette(canvasSize.colorPalette ?? DEFAULT_COLOR_PALETTE);
   const normalizedLayers = normalizeModelLayers(canvasSize.layers, nodes, canvasSize.activeLayerId);
@@ -9711,15 +9816,25 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
       const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, stateVisual }));
       const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, stateVisual }));
       const deviceMetadataAttributes = exportDeviceMetadataAttributes(node);
-      const escapedImageHref = escapeXml(imageHref);
-      const escapedForegroundHref = escapeXml(foregroundHref);
       const geometryTransform = nodeGeometryTransform(node);
       const imageContentTransform = nodeImageContentTransform(node);
       const imageMarkup = imageHref
-        ? `<image href="${escapedImageHref}" x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" preserveAspectRatio="xMidYMid slice"/>`
+        ? svgImageContentMarkup(imageHref, {
+            x: -node.size.width / 2,
+            y: -node.size.height / 2,
+            width: node.size.width,
+            height: node.size.height,
+            className: "node-background-image"
+          })
         : "";
       const foregroundMarkup = foregroundHref
-        ? `<image href="${escapedForegroundHref}" x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" preserveAspectRatio="xMidYMid slice"/>`
+        ? svgImageContentMarkup(foregroundHref, {
+            x: -node.size.width / 2,
+            y: -node.size.height / 2,
+            width: node.size.width,
+            height: node.size.height,
+            className: "node-foreground-image"
+          })
         : "";
       const imageCoverMarkup =
         imageHref && allowNodeImage && !isStaticNode(node)
@@ -9770,7 +9885,13 @@ ${groupMarkup}
     .filter(Boolean)
     .join("\n");
   const backgroundMarkup = `<rect width="100%" height="100%" fill="${escapedBackgroundColor}"/>
-${backgroundImage ? `<image href="${escapedBackgroundImage}" x="0" y="0" width="${canvasSize.width}" height="${canvasSize.height}" preserveAspectRatio="xMidYMid slice"/>` : ""}`;
+${backgroundImage ? svgImageContentMarkup(backgroundImage, {
+    x: 0,
+    y: 0,
+    width: canvasSize.width,
+    height: canvasSize.height,
+    className: "export-canvas-background-image"
+  }) : ""}`;
   const deviceLayerMarkup = Array.from(nodeTypeLayerIds.entries())
     .map(([layerKey, layerId]) => `<g id="${escapeXml(layerId)}" data-export-device-type="${escapeXml(layerKey)}">
 ${(nodeLayerMarkup.get(layerId) ?? []).join("\n")}

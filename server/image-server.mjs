@@ -1324,6 +1324,92 @@ function svgImageHref(value, imagePathById = {}) {
   return imagePathById[id] || href;
 }
 
+function decodeSvgImageSource(value) {
+  const source = String(value ?? "").trim();
+  if (source.startsWith("<svg")) {
+    return source;
+  }
+  if (!/^data:image\/svg\+xml\b/iu.test(source)) {
+    return "";
+  }
+  const commaIndex = source.indexOf(",");
+  if (commaIndex < 0) {
+    return "";
+  }
+  const metadata = source.slice(0, commaIndex).toLowerCase();
+  const payload = source.slice(commaIndex + 1);
+  if (metadata.includes(";base64")) {
+    try {
+      return Buffer.from(payload.replace(/\s+/g, ""), "base64").toString("utf8").trim();
+    } catch {
+      return "";
+    }
+  }
+  try {
+    return decodeURIComponent(payload).trim();
+  } catch {
+    return payload.trim();
+  }
+}
+
+function svgRootAttributeValue(attributes, name) {
+  const pattern = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "iu");
+  const match = pattern.exec(attributes);
+  return match?.[1] ?? match?.[2] ?? "";
+}
+
+function svgLengthNumber(value) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function stripUnsafeInlineSvgMarkup(value) {
+  return value
+    .replace(/<script\b[\s\S]*?<\/script>/giu, "")
+    .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/giu, "")
+    .replace(/\s+(?:href|xlink:href)\s*=\s*(?:"javascript:[^"]*"|'javascript:[^']*')/giu, "");
+}
+
+function inlineSvgRootMarkup(href, { x, y, width, height, className = "", preserveAspectRatio = "xMidYMid slice" }) {
+  const source = stripUnsafeInlineSvgMarkup(
+    decodeSvgImageSource(href)
+      .replace(/^\uFEFF/u, "")
+      .replace(/^\s*<\?xml[\s\S]*?\?>/iu, "")
+      .replace(/^\s*<!doctype[\s\S]*?>/iu, "")
+      .trim()
+  );
+  const match = source.match(/<svg\b([^>]*)>([\s\S]*?)<\/svg\s*>/iu);
+  if (!match) {
+    return "";
+  }
+  const rootAttributes = match[1] ?? "";
+  const body = match[2] ?? "";
+  const filteredRootAttributes = rootAttributes
+    .replace(/\s+(?:x|y|width|height|preserveAspectRatio|class|id)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/giu, "")
+    .trim();
+  const svgWidth = svgLengthNumber(svgRootAttributeValue(rootAttributes, "width"));
+  const svgHeight = svgLengthNumber(svgRootAttributeValue(rootAttributes, "height"));
+  const viewBoxAttribute =
+    /\bviewBox\s*=/iu.test(rootAttributes) || svgWidth <= 0 || svgHeight <= 0
+      ? ""
+      : ` viewBox="0 0 ${formatSvgNumber(svgWidth)} ${formatSvgNumber(svgHeight)}"`;
+  const preservedAttributes = filteredRootAttributes ? ` ${filteredRootAttributes}` : "";
+  const inlineClassName = ["export-inline-svg-image", className].filter(Boolean).join(" ");
+  return `<svg class="${escapeSvgAttribute(inlineClassName)}" x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" preserveAspectRatio="${escapeSvgAttribute(preserveAspectRatio)}"${viewBoxAttribute}${preservedAttributes}>${body}</svg>`;
+}
+
+function svgImageContentMarkup(href, { x, y, width, height, className = "", preserveAspectRatio = "xMidYMid slice" }) {
+  if (!href) {
+    return "";
+  }
+  const inlineSvg = inlineSvgRootMarkup(href, { x, y, width, height, className, preserveAspectRatio });
+  if (inlineSvg) {
+    return inlineSvg;
+  }
+  const classAttribute = className ? ` class="${escapeSvgAttribute(className)}"` : "";
+  return `<image href="${escapeSvgAttribute(href)}" x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" preserveAspectRatio="${escapeSvgAttribute(preserveAspectRatio)}"${classAttribute}/>`;
+}
+
 function svgSafeId(value, fallback) {
   const normalized = String(value ?? "").trim().replace(/[^A-Za-z0-9_.:-]+/g, "_").replace(/^[^A-Za-z_]+/, "");
   return normalized || fallback;
@@ -1602,7 +1688,13 @@ function buildSvgFile(project, measurementConfig = { measurementTypes: [], devic
       nodeBodyMarkup = `<rect class="bus-glyph" x="${-nodeWidth / 2}" y="${-thickness / 2}" width="${nodeWidth}" height="${thickness}" fill="${stroke}" stroke="none"/>`;
     } else {
       nodeBodyMarkup = `<rect x="${-nodeWidth / 2}" y="${-nodeHeight / 2}" width="${nodeWidth}" height="${nodeHeight}" rx="8" fill="#ffffff" stroke="#94a3b8"/>
-${image ? `<image href="${escapeSvgAttribute(image)}" x="${-nodeWidth / 2}" y="${-nodeHeight / 2}" width="${nodeWidth}" height="${nodeHeight}" preserveAspectRatio="xMidYMid slice"/>` : ""}`;
+${image ? svgImageContentMarkup(image, {
+        x: -nodeWidth / 2,
+        y: -nodeHeight / 2,
+        width: nodeWidth,
+        height: nodeHeight,
+        className: "node-background-image"
+      }) : ""}`;
     }
     const layerId = layerIdsByType.get(nodeLayerKey(node)) ?? otherLayerId;
     const geometryTransform = `rotate(${formatSvgNumber(normalizedRotate)}) scale(${formatSvgNumber(scaleX)} ${formatSvgNumber(scaleY)})`;
@@ -1631,7 +1723,13 @@ ${(nodeMarkupByLayer.get(layerId) ?? []).join("\n")}
     .filter(Boolean)
     .join("\n");
   const backgroundMarkup = `<rect width="100%" height="100%" fill="${escapeSvgAttribute(backgroundColor)}"/>
-${backgroundImage ? `<image href="${escapeSvgAttribute(backgroundImage)}" x="0" y="0" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" preserveAspectRatio="xMidYMid slice"/>` : ""}`;
+${backgroundImage ? svgImageContentMarkup(backgroundImage, {
+    x: 0,
+    y: 0,
+    width,
+    height,
+    className: "export-canvas-background-image"
+  }) : ""}`;
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,${width},${height}">
 <defs>
 ${symbolMarkup.join("\n")}

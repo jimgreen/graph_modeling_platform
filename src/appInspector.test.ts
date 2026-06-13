@@ -3275,7 +3275,7 @@ describe("graph inspector panel", () => {
     expect(serverExportBlock).toContain('const backgroundColor = project.canvasBackgroundColor ?? "#f8fafc";');
     expect(serverExportBlock).toContain('const backgroundImage = svgImageHref(project.canvasBackgroundImage ?? "", imagePathById);');
     expect(serverExportBlock).toContain('<rect width="100%" height="100%" fill="${escapeSvgAttribute(backgroundColor)}"/>');
-    expect(serverExportBlock).toContain('<image href="${escapeSvgAttribute(backgroundImage)}"');
+    expect(serverExportBlock).toContain("svgImageContentMarkup(backgroundImage");
     expect(serverExportBlock).toContain("buildServerSvgNodeLabelMarkup(node)");
     expect(serverExportBlock).toContain("buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, usedIds)");
     expect(serverSource).toContain('data-export-measurement-source-point="${escapeSvgAttribute(row.item?.sourcePoint ?? "")}"');
@@ -3316,11 +3316,13 @@ describe("graph inspector panel", () => {
     expect(serverSource).not.toContain("function publicRequestOrigin(request)");
     expect(serverSource).toContain("async function imageExportPathByIdFromManifest(");
     expect(serverSource).toContain("function svgImageHref(value, imagePathById = {})");
+    expect(serverSource).toContain("function svgImageContentMarkup(");
     expect(serverSource).toContain("function imageFileToDataUrl(item)");
     expect(serverExportBlock).toContain("function buildSvgFile(project, measurementConfig = { measurementTypes: [], deviceProfiles: [] }, options = {})");
     expect(serverExportBlock).toContain("const imagePathById = options.imagePathById ?? {};");
     expect(serverExportBlock).toContain("const backgroundImage = svgImageHref(project.canvasBackgroundImage ?? \"\", imagePathById);");
     expect(serverExportBlock).toContain("const image = svgImageHref(");
+    expect(serverExportBlock).toContain("svgImageContentMarkup(");
     expect(saveProjectBlock).toContain("imagePathById: await imageExportPathByIdFromManifest(await readManifest())");
     expect(serverSource).toContain("filename: item.filename");
     expect(source).not.toContain("return imageExportPathById[id] || `${ROOT_IMAGE_EXPORT_DIR}");
