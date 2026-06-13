@@ -2437,7 +2437,7 @@ const readonlyIntegerDefinition = (cnName: string, enName: string, typicalValue 
 const threeWindingTransformerParameterDefinitions: DeviceParameterDefinition[] = [
   readonlyIntegerDefinition("序号", "idx"),
   { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
-  { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true },
+  { cnName: "工作状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true },
   readonlyIntegerDefinition("高压绕组双绕组主变idx", "idx_xf_t1"),
   readonlyIntegerDefinition("中压绕组双绕组主变idx", "idx_xf_t2"),
   readonlyIntegerDefinition("低压绕组双绕组主变idx", "idx_xf_t3")
@@ -4226,7 +4226,8 @@ export function buildDefaultDeviceParameterDefinitions(
   const baseDefinitions: DeviceParameterDefinition[] = [
     { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
     { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
-    { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true }
+    { cnName: "运行状态", enName: "status", valueType: "enum", typicalValue: "1", readonly: true },
+    { cnName: "工作状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true }
   ];
   if (options.isContainer) {
     const relationDefinitions: DeviceParameterDefinition[] = [];
@@ -4842,6 +4843,81 @@ function applyTemplateDefinitionDefaults(params: Record<string, string>, templat
   return next;
 }
 
+const TEMPLATE_DEFINITION_PARAM_METADATA_KEYS = new Set([
+  "name",
+  "component_type",
+  "is_container",
+  ALLOW_RESIZE_TRANSFORM_PARAM,
+  CUSTOM_DEVICE_TEMPLATE_KEY,
+  CUSTOM_PARAM_DEFINITIONS_KEY
+]);
+
+function normalizeTemplateDefinitionList(definitions?: readonly DeviceParameterDefinition[]): DeviceParameterDefinition[] {
+  return (definitions ?? [])
+    .map((definition) => normalizeTemplateDefinition(definition))
+    .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
+}
+
+function parseStoredTemplateParameterDefinitions(params: Record<string, string>): DeviceParameterDefinition[] {
+  try {
+    const parsed = JSON.parse(params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]");
+    return Array.isArray(parsed) ? normalizeTemplateDefinitionList(parsed) : [];
+  } catch {
+    return [];
+  }
+}
+
+function isTemplateDefinitionStoredParam(enName: string) {
+  return Boolean(enName) && !TEMPLATE_DEFINITION_PARAM_METADATA_KEYS.has(enName);
+}
+
+export function reconcileNodeParamsWithTemplateDefinitions(
+  node: ModelNode,
+  template: Pick<DeviceTemplate, "parameterDefinitions">,
+  previousDefinitions?: readonly DeviceParameterDefinition[]
+): ModelNode {
+  const nextDefinitions = normalizeTemplateDefinitionList(template.parameterDefinitions);
+  const previousDefinitionList = previousDefinitions
+    ? normalizeTemplateDefinitionList(previousDefinitions)
+    : parseStoredTemplateParameterDefinitions(node.params);
+  const nextDefinitionKeys = new Set(nextDefinitions.map((definition) => definition.enName));
+  let changed = false;
+  const nextParams: Record<string, string> = { ...node.params };
+
+  for (const definition of previousDefinitionList) {
+    if (!isTemplateDefinitionStoredParam(definition.enName) || nextDefinitionKeys.has(definition.enName)) {
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(nextParams, definition.enName)) {
+      delete nextParams[definition.enName];
+      changed = true;
+    }
+  }
+
+  for (const definition of nextDefinitions) {
+    if (!isTemplateDefinitionStoredParam(definition.enName)) {
+      continue;
+    }
+    if (!Object.prototype.hasOwnProperty.call(nextParams, definition.enName)) {
+      nextParams[definition.enName] = definition.typicalValue;
+      changed = true;
+    }
+  }
+
+  const serializedDefinitions = JSON.stringify(nextDefinitions);
+  if (nextDefinitions.length > 0) {
+    if (nextParams[CUSTOM_PARAM_DEFINITIONS_KEY] !== serializedDefinitions) {
+      nextParams[CUSTOM_PARAM_DEFINITIONS_KEY] = serializedDefinitions;
+      changed = true;
+    }
+  } else if (Object.prototype.hasOwnProperty.call(nextParams, CUSTOM_PARAM_DEFINITIONS_KEY)) {
+    delete nextParams[CUSTOM_PARAM_DEFINITIONS_KEY];
+    changed = true;
+  }
+
+  return changed ? { ...node, params: nextParams } : node;
+}
+
 function applyContainerRelationDefaults(params: Record<string, string>, template: DeviceTemplate): Record<string, string> {
   if (!template.isContainer) {
     return params;
@@ -4886,14 +4962,17 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
           ...params
         };
   const withStatusDefault = (params: Record<string, string>) => {
-    const states = getTemplateStateDefinitions({ ...template, params });
-    const defaultStatus = defaultDeviceStatusValue({ ...template, params });
-    if (!defaultStatus || states.length === 0) {
+    if (isStaticKind(templateKind)) {
       return params;
     }
+    const states = getTemplateStateDefinitions({ ...template, params });
+    const defaultStatus = defaultDeviceStatusValue({ ...template, params }) || "1";
     const explicitStatus = normalizeDeviceStateValue(params.status);
     if (!explicitStatus) {
       return { ...params, status: defaultStatus };
+    }
+    if (states.length === 0) {
+      return { ...params, status: explicitStatus };
     }
     const exact = states.find((state) => state.value === explicitStatus);
     if (exact) {

@@ -1246,7 +1246,7 @@ describe("graph inspector panel", () => {
   test("manages English device types from the former export-section dropdown", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
-    const customTemplateStart = source.indexOf("const template: DeviceTemplate = {", source.indexOf("const saveCustomDeviceTemplate = () =>"));
+    const customTemplateStart = source.indexOf("const template: DeviceTemplate = {", source.indexOf("const saveCustomDeviceTemplate = (options"));
     const customTemplateEnd = source.indexOf("setCustomDeviceTemplates((current) =>", customTemplateStart);
     const customTemplateBlock = source.slice(customTemplateStart, customTemplateEnd);
 
@@ -1308,7 +1308,7 @@ describe("graph inspector panel", () => {
   test("saves custom device icons immediately and keeps inherited state visuals in sync", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
-    const saveStart = source.indexOf("const saveCustomDeviceTemplate = () => {");
+    const saveStart = source.indexOf("const saveCustomDeviceTemplate = (options");
     const saveEnd = source.indexOf("const renderStateVisualPager = (", saveStart);
     const saveBlock = source.slice(saveStart, saveEnd);
     const dialogStart = source.indexOf("{customDeviceDialogOpen && (");
@@ -1326,8 +1326,15 @@ describe("graph inspector panel", () => {
     expect(saveBlock).toContain("const nextTemplates =");
     expect(saveBlock).toContain("persistDeviceLibraryChange({ customDeviceTemplates: nextTemplates }");
     expect(saveBlock).toContain("setCustomDeviceSaveMessage(`自定义元件已保存：${componentLabel}`);");
+    expect(saveBlock).toContain("if (options.closeAfterSave)");
+    expect(saveBlock).toContain("setCustomDeviceDialogOpen(false);");
     expect(dialogBlock).toContain("customDeviceSaveMessage && <p className=\"custom-device-save-status\"");
+    expect(dialogBlock).toContain("className=\"custom-device-dialog-footer\"");
+    expect(dialogBlock).toContain("saveCustomDeviceTemplate({ closeAfterSave: true })");
+    expect(dialogBlock).not.toContain("saveStateVisuals: saveCustomDeviceTemplate");
+    expect((dialogBlock.match(/保存自定义设备/g) ?? []).length).toBe(1);
     expect(styles).toContain(".custom-device-save-status");
+    expect(styles).toContain(".custom-device-dialog-footer");
   });
 
   test("places device measurement bindings inside the component definition dialog", async () => {
@@ -5435,6 +5442,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const BATCH_GRAPH_PARAM_KEYS");
     expect(source).toContain("const isBatchGraphCommonParamKey = (key: string)");
     expect(source).toContain("layerId: \"所属图层\"");
+    expect(source).toContain("status: \"运行状态\"");
+    expect(source).toContain("run_stat: \"工作状态\"");
     expect(source).toContain("const COLOR_PARAM_KEY_PATTERN");
     expect(source).toContain("const isColorParamKey = (key: string)");
     expect(source).toContain("const BATCH_PARAM_EXCLUDED_PREFIXES");
@@ -8399,7 +8408,7 @@ describe("graph inspector panel", () => {
   test("preserves custom device terminal anchors and size from group icon drafts", async () => {
     const source = await readAppSource();
     const styles = await readStyles();
-    const customTemplateStart = source.indexOf("const template: DeviceTemplate = {", source.indexOf("const saveCustomDeviceTemplate = () =>"));
+    const customTemplateStart = source.indexOf("const template: DeviceTemplate = {", source.indexOf("const saveCustomDeviceTemplate = (options"));
     const customTemplateEnd = source.indexOf("setCustomDeviceTemplates((current) =>", customTemplateStart);
     const customTemplateBlock = source.slice(customTemplateStart, customTemplateEnd);
 
@@ -10381,9 +10390,10 @@ describe("graph inspector panel", () => {
     expect(definitionVisualBlock).toContain("saveStateVisuals: saveDeviceDefinitionStateVisualDraft");
     expect(definitionVisualBlock).toContain("保存图标和端子");
     expect(customDialogBlock).toContain("preview: !customDefaultStateSelected ? (");
-    expect(customDialogBlock).toContain("saveStateVisuals: saveCustomDeviceTemplate");
-    expect(customDialogBlock).toContain('saveStateVisualsLabel: "保存自定义设备"');
-    expect(customDialogBlock).toContain('customDefaultStateSelected && <div className="custom-device-actions custom-device-visual-actions">');
+    expect(customDialogBlock).not.toContain("saveStateVisuals: saveCustomDeviceTemplate");
+    expect(customDialogBlock).not.toContain('saveStateVisualsLabel: "保存自定义设备"');
+    expect(customDialogBlock).not.toContain('customDefaultStateSelected && <div className="custom-device-actions custom-device-visual-actions">');
+    expect(customDialogBlock).toContain("className=\"custom-device-dialog-footer\"");
     expect(customDialogBlock).toContain('customDefaultStateSelected && <div className="custom-device-preview">');
     expect(definitionStateSaveBlock).toContain("validateStateDraftRows(definitionStateDraftRows)");
     expect(definitionStateSaveBlock).toContain("stateDefinitions");

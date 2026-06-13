@@ -199,6 +199,7 @@ import {
   rebuildExternalConnectionRoutesForMovedNodes,
   rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes,
   rebuildRoutableLineDeviceRouteUpdates,
+  reconcileNodeParamsWithTemplateDefinitions,
   rebuildSingleConnectionRoute,
   redrawConnectionRoutesForEdges,
   reconcileOverlappingTerminalConnections,
@@ -3157,8 +3158,8 @@ const PARAM_LABELS: Record<string, string> = {
   acControlType: "AC端控制类型",
   dcControlType: "DC端控制类型",
   closedStatus: "闭合状态",
-  status: "开关状态",
-  run_stat: "运行状态",
+  status: "运行状态",
+  run_stat: "工作状态",
   backgroundImage: "背景图片",
   backgroundImageAssetId: "背景图片资产",
   foregroundColor: "前景色",
@@ -15562,6 +15563,29 @@ export function App() {
 
   const pushNodeOnlyUndoSnapshot = (nodeId: string) => {
     pushUndoSnapshot(true, false, undoScopeForGraphPatch([nodeId], []));
+  };
+
+  const syncExistingNodesWithTemplateDefinitions = (
+    template: Pick<DeviceTemplate, "parameterDefinitions">,
+    previousDefinitions: readonly DeviceParameterDefinition[] | undefined,
+    matchesNode: (node: ModelNode) => boolean
+  ) => {
+    const nodeUpdates: ModelNode[] = [];
+    for (const node of nodes) {
+      if (!matchesNode(node)) {
+        continue;
+      }
+      const reconciled = reconcileNodeParamsWithTemplateDefinitions(node, template, previousDefinitions);
+      if (reconciled !== node) {
+        nodeUpdates.push(reconciled);
+      }
+    }
+    if (nodeUpdates.length === 0) {
+      return 0;
+    }
+    pushUndoSnapshot(true, false, undoScopeForGraphPatch(nodeUpdates.map((node) => node.id), []));
+    patchGraphNodes(nodeUpdates);
+    return nodeUpdates.length;
   };
 
   const updateMeasurementConfig = (updater: (current: PlatformMeasurementConfig) => PlatformMeasurementConfig) => {
@@ -32379,6 +32403,12 @@ export function App() {
     }, {
       component_type: definitionKey
     });
+    const previousDefinitions = getTemplateParameterDefinitions(selectedDefinitionTemplate);
+    syncExistingNodesWithTemplateDefinitions(
+      { parameterDefinitions: normalizedRows },
+      previousDefinitions,
+      (node) => node.kind === selectedDefinitionTemplate.kind
+    );
     setDeviceDefinitionOverrides((current) => {
       const next = { ...current };
       const existingOverride = deviceDefinitionOverrideForTemplate(selectedDefinitionTemplate, current);
@@ -33336,7 +33366,7 @@ export function App() {
     return `${base}-${Date.now()}`;
   };
 
-  const saveCustomDeviceTemplate = () => {
+  const saveCustomDeviceTemplate = (options: { closeAfterSave?: boolean } = {}) => {
     if (!requireEditMode("保存元件")) {
       return;
     }
@@ -33427,6 +33457,9 @@ export function App() {
       defaultImageCandidates
     );
     const customKind = editingCustomDeviceKind || nextCustomTemplateKind(componentType);
+    const previousCustomTemplate = editingCustomDeviceKind
+      ? customDeviceTemplates.find((item) => item.kind === editingCustomDeviceKind)
+      : undefined;
     const template: DeviceTemplate = {
       kind: customKind,
       label: componentLabel,
@@ -33458,6 +33491,13 @@ export function App() {
       ? customDeviceTemplates.map((item) => item.kind === editingCustomDeviceKind ? template : item)
       : [...customDeviceTemplates, template];
     setCustomDeviceTemplates(nextTemplates);
+    if (editingCustomDeviceKind) {
+      syncExistingNodesWithTemplateDefinitions(
+        template,
+        previousCustomTemplate?.parameterDefinitions,
+        (node) => node.kind === customKind
+      );
+    }
     persistDeviceLibraryChange({ customDeviceTemplates: nextTemplates }, {
       success: `自定义元件已保存到后台：${componentLabel}`,
       failure: `自定义元件已保存到本地，后台保存失败：${componentLabel}`
@@ -33469,6 +33509,9 @@ export function App() {
     setCustomDeviceDraft((current) => ({ ...current, error: "" }));
     setCustomDeviceSaveMessage(`自定义元件已保存：${componentLabel}`);
     writeOperationLog(`保存自定义元件：${componentLabel}`);
+    if (options.closeAfterSave) {
+      setCustomDeviceDialogOpen(false);
+    }
   };
 
   const renderStateVisualPager = (
@@ -39137,16 +39180,15 @@ export function App() {
                             const eKeys = getEParameterKeys(inspectorSelectedNode.kind, inspectorSelectedNode.params);
                             const customDefinitions = parseCustomDefinitions(inspectorSelectedNode.params);
                             const customKeys = customDefinitions.map((definition) => definition.enName);
-                            const customExtraKeys = customKeys.filter((key) => !eKeys.includes(key));
                             const keys =
-                              eKeys.length > 0
-                                ? [...eKeys, ...customExtraKeys]
-                                : customKeys.length > 0
+                              customKeys.length > 0
                                   ? customKeys
-                                  : Object.keys(inspectorSelectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container" && key !== ALLOW_RESIZE_TRANSFORM_PARAM);
+                                  : eKeys.length > 0
+                                    ? eKeys
+                                    : Object.keys(inspectorSelectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container" && key !== ALLOW_RESIZE_TRANSFORM_PARAM);
                             const readonlyKeys = new Set(customDefinitions.filter((definition) => definition.readonly).map((definition) => definition.enName));
                             return keys.map((key) => {
-                              const value = eKeys.length > 0 ? getEParamValue(key, inspectorSelectedNode) : key === "name" ? inspectorSelectedNode.name : inspectorSelectedNode.params[key] ?? "";
+                              const value = key === "name" ? inspectorSelectedNode.name : eKeys.includes(key) ? getEParamValue(key, inspectorSelectedNode) : inspectorSelectedNode.params[key] ?? "";
                               const displayValue = formatDeviceModelParamDisplayValue(key, value);
                               const definition = customDefinitions.find((item) => item.enName === key);
                               return (
@@ -40783,8 +40825,6 @@ export function App() {
               update: updateCustomDeviceStateDraftRow,
               add: addCustomDeviceStateDraftRow,
               remove: deleteCustomDeviceStateDraftRow,
-              saveStateVisuals: saveCustomDeviceTemplate,
-              saveStateVisualsLabel: "保存自定义设备",
               uploadStateImage: (rowId) => {
                 setStateImageUploadTarget({ scope: "custom", rowId });
                 stateVisualImageInputRef.current?.click();
@@ -40832,9 +40872,6 @@ export function App() {
                 </div>
               ) : undefined
             })}
-            {customDefaultStateSelected && <div className="custom-device-actions custom-device-visual-actions">
-              <button type="button" onClick={saveCustomDeviceTemplate}>保存自定义设备</button>
-            </div>}
             {customDefaultStateSelected && <div className="custom-device-image-row">
               <span>SVG/图片图标</span>
               <button type="button" onClick={() => customDeviceImageInputRef.current?.click()}>上传SVG/图片到后台</button>
@@ -41267,12 +41304,17 @@ export function App() {
               >
                 新增参数
               </button>
-              <button type="button" onClick={saveCustomDeviceTemplate}>保存自定义设备</button>
             </div>
               </>
             )}
               </div>
             </div>
+            <footer className="custom-device-dialog-footer">
+              <button type="button" onClick={() => setCustomDeviceDialogOpen(false)}>取消</button>
+              <button type="button" className="primary" onClick={() => saveCustomDeviceTemplate({ closeAfterSave: true })}>
+                保存自定义设备
+              </button>
+            </footer>
           </section>
         </div>
       )}

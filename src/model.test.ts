@@ -103,6 +103,7 @@ import {
   isRoutableLineDeviceKind,
   getConnectionStrokeColor,
   getTerminalDisplayColor,
+  reconcileNodeParamsWithTemplateDefinitions,
   rebuildRoutableLineDeviceRouteUpdates,
   repairUnsafeRoutableLineDeviceRoutes,
   routeRoutableLineDevice,
@@ -1601,7 +1602,7 @@ describe("power system model", () => {
       terminalLabels: ["端1", "端2"],
       custom: true,
       parameterDefinitions: [
-        { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行" }
+        { cnName: "工作状态", enName: "run_stat", valueType: "enum", typicalValue: "运行" }
       ]
     };
     const overriddenTemplate = applyDeviceTemplateDefinitionOverride(template, {
@@ -1611,7 +1612,7 @@ describe("power system model", () => {
         run_stat: "运行"
       },
       parameterDefinitions: [
-        { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行" }
+        { cnName: "工作状态", enName: "run_stat", valueType: "enum", typicalValue: "运行" }
       ],
       updatedAt: "2026-06-07T00:00:00.000Z"
     });
@@ -1641,7 +1642,7 @@ describe("power system model", () => {
         { x: 0.5, y: 0 }
       ],
       parameterDefinitions: [
-        { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行" }
+        { cnName: "工作状态", enName: "run_stat", valueType: "enum", typicalValue: "运行" }
       ]
     };
     const overriddenTemplate = applyDeviceTemplateDefinitionOverride(template, {
@@ -1661,7 +1662,7 @@ describe("power system model", () => {
         { x: 0, y: 0.5 }
       ],
       parameterDefinitions: [
-        { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行" }
+        { cnName: "工作状态", enName: "run_stat", valueType: "enum", typicalValue: "运行" }
       ],
       updatedAt: "2026-06-07T00:00:00.000Z"
     } as DeviceTemplateDefinitionOverride & Partial<DeviceTemplate>);
@@ -7168,7 +7169,7 @@ describe("power system model", () => {
       parameterDefinitions: [
         { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
         { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
-        { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true },
+        { cnName: "工作状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true },
         { cnName: "额定效率", enName: "eta", valueType: "float", typicalValue: "0.95" }
       ]
     };
@@ -7190,6 +7191,65 @@ describe("power system model", () => {
     expect(secondIndexed.node.params.idx).toBe("2");
   });
 
+  test("reconciles existing device params when template definitions change", () => {
+    const originalTemplate: DeviceTemplate = {
+      kind: "custom-DefinitionSyncUnit",
+      label: "DefinitionSyncUnit",
+      attributeLibrary: "自定义属性库",
+      size: { width: 104, height: 64 },
+      params: { component_type: "DefinitionSyncUnit", fillColor: "transparent", strokeColor: "transparent", lineWidth: "0" },
+      terminalType: "ac",
+      terminalCount: 1,
+      custom: true,
+      parameterDefinitions: [
+        { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
+        { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
+        { cnName: "运行状态", enName: "status", valueType: "enum", typicalValue: "1", readonly: true },
+        { cnName: "投运状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true },
+        { cnName: "旧参数", enName: "old_param", valueType: "string", typicalValue: "old-default" }
+      ]
+    };
+    const updatedTemplate: DeviceTemplate = {
+      ...originalTemplate,
+      parameterDefinitions: [
+        { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
+        { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
+        { cnName: "运行状态", enName: "status", valueType: "enum", typicalValue: "1", readonly: true },
+        { cnName: "投运状态", enName: "run_stat", valueType: "enum", typicalValue: "运行", readonly: true },
+        { cnName: "新参数", enName: "new_param", valueType: "float", typicalValue: "12.5" }
+      ]
+    };
+    const node = createNodeFromTemplate(originalTemplate, { x: 100, y: 120 });
+    const editedNode: ModelNode = {
+      ...node,
+      name: "用户命名",
+      params: {
+        ...node.params,
+        old_param: "user-old",
+        status: "0",
+        run_stat: "停运",
+        _labelText: "保留标签",
+        free_note: "非定义参数"
+      }
+    };
+
+    const reconciled = reconcileNodeParamsWithTemplateDefinitions(
+      editedNode,
+      updatedTemplate,
+      originalTemplate.parameterDefinitions
+    );
+
+    expect(reconciled).not.toBe(editedNode);
+    expect(reconciled.name).toBe("用户命名");
+    expect(reconciled.params.old_param).toBeUndefined();
+    expect(reconciled.params.new_param).toBe("12.5");
+    expect(reconciled.params.status).toBe("0");
+    expect(reconciled.params.run_stat).toBe("停运");
+    expect(reconciled.params._labelText).toBe("保留标签");
+    expect(reconciled.params.free_note).toBe("非定义参数");
+    expect(JSON.parse(reconciled.params[CUSTOM_PARAM_DEFINITIONS_KEY])).toEqual(getTemplateParameterDefinitions(updatedTemplate));
+  });
+
   test("exports user-defined English device types as custom E sections", () => {
     const template: DeviceTemplate = {
       kind: "custom-CustomEnergyUnit",
@@ -7204,7 +7264,7 @@ describe("power system model", () => {
         { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
         { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
         { cnName: "节点", enName: "node", valueType: "integer", typicalValue: "", readonly: true },
-        { cnName: "运行状态", enName: "run_stat", valueType: "enum", typicalValue: "1", readonly: true },
+        { cnName: "工作状态", enName: "run_stat", valueType: "enum", typicalValue: "1", readonly: true },
         { cnName: "设定值", enName: "p_set", valueType: "float", typicalValue: "3.5" }
       ]
     };
@@ -7245,6 +7305,7 @@ describe("power system model", () => {
     expect(definitions.map((definition) => definition.enName)).toEqual([
       "idx",
       "name",
+      "status",
       "run_stat",
       "idx_ac_load_t1",
       "idx_dc_unit_t2",
@@ -7292,6 +7353,7 @@ describe("power system model", () => {
     expect(definitions.map((definition) => definition.enName)).toEqual([
       "idx",
       "name",
+      "status",
       "run_stat",
       "idx_ac_unit_t1",
       "idx_dc_load_t2",
@@ -7444,7 +7506,7 @@ describe("power system model", () => {
 
     const views = buildContainerDeviceParameterViews(node, template);
 
-    expect(views.map((view) => view.label)).toEqual(["容器本体", "交流设备端交流电负荷", "氢能设备端氢源"]);
+    expect(views.map((view) => view.label)).toEqual(["设备本体", "交流设备端交流电负荷", "氢能设备端氢源"]);
     expect(views[0]).toMatchObject({ id: "container", kind: "container" });
     expect(views[1]).toMatchObject({
       kind: "associated",
@@ -7666,7 +7728,7 @@ describe("power system model", () => {
 
     const views = buildContainerDeviceParameterViews(node, template);
 
-    expect(views.map((view) => view.label)).toEqual(["容器本体", "交流设备端交流电负荷", "热能设备供水端双端热源"]);
+    expect(views.map((view) => view.label)).toEqual(["设备本体", "交流设备端交流电负荷", "热能设备供水端双端热源"]);
     expect(views[2]).toMatchObject({
       kind: "associated",
       componentType: "HeatSource2",
@@ -7691,7 +7753,7 @@ describe("power system model", () => {
 
     const views = buildContainerDeviceParameterViews(node, template);
 
-    expect(views.map((view) => view.label)).toEqual(["容器本体", "交流设备端1双绕组主变首端", "交流设备端2双绕组主变首端", "交流设备端3双绕组主变首端"]);
+    expect(views.map((view) => view.label)).toEqual(["设备本体", "交流设备端1双绕组主变首端", "交流设备端2双绕组主变首端", "交流设备端3双绕组主变首端"]);
     expect(views[1]).toMatchObject({
       kind: "associated",
       componentType: "ACTransformer",
@@ -7716,6 +7778,7 @@ describe("power system model", () => {
     expect(definitions.map((definition) => definition.enName)).toEqual([
       "idx",
       "name",
+      "status",
       "run_stat",
       "idx_heat2_unit_t1",
       "idx_heat2_unit_t3"
@@ -8431,9 +8494,28 @@ describe("power system model", () => {
   });
 
   test("adds run_stat operating status to every device type", () => {
+    expect(buildDefaultDeviceParameterDefinitions(["ac"]).find((definition) => definition.enName === "run_stat")).toMatchObject({
+      cnName: "工作状态",
+      valueType: "enum",
+      typicalValue: "运行",
+      readonly: true
+    });
     for (const template of DEVICE_LIBRARY.filter((item) => !item.kind.startsWith("static-"))) {
       const node = createDefaultNode(template.kind, { x: 100, y: 100 });
       expect(node.params.run_stat).toBe("运行");
+    }
+  });
+
+  test("adds status as the default graphic running-state property", () => {
+    expect(buildDefaultDeviceParameterDefinitions(["ac"]).find((definition) => definition.enName === "status")).toMatchObject({
+      cnName: "运行状态",
+      valueType: "enum",
+      typicalValue: "1",
+      readonly: true
+    });
+    for (const template of DEVICE_LIBRARY.filter((item) => !item.kind.startsWith("static-"))) {
+      const node = createDefaultNode(template.kind, { x: 100, y: 100 });
+      expect(node.params.status, template.kind).toBeTruthy();
     }
   });
 

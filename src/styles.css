@@ -3916,6 +3916,13 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   min-width: 0;
 }
 
+.custom-device-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
 .custom-component-manager-panel {
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr);
@@ -5583,6 +5590,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .custom-device-image-row button,
+.custom-device-dialog-footer button,
 .custom-device-actions button,
 .custom-param-actions button {
   min-height: 30px;
@@ -5595,10 +5603,22 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .custom-device-image-row button:hover,
+.custom-device-dialog-footer button:hover,
 .custom-device-actions button:hover,
 .custom-param-actions button:hover {
   border-color: #93c5fd;
   background: #eff6ff;
+}
+
+.custom-device-dialog-footer button.primary {
+  border-color: #2563eb;
+  color: #ffffff;
+  background: #2563eb;
+}
+
+.custom-device-dialog-footer button.primary:hover {
+  border-color: #1d4ed8;
+  background: #1d4ed8;
 }
 
 .custom-param-table-wrap {
