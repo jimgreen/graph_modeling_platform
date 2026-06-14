@@ -533,6 +533,8 @@ type CustomComponentTreeSelection =
   | { kind: "attributeLibrary"; attributeLibraryName: AttributeLibrary }
   | { kind: "componentType"; attributeLibraryName: AttributeLibrary; section: string }
   | { kind: "component"; attributeLibraryName: AttributeLibrary; section: string; templateKind: string };
+type CustomDeviceDialogView = "terminals" | "icon" | "parameters" | "measurements";
+type CustomDeviceDefinitionMode = "create" | "edit";
 type EdgeEndpoint = "source" | "target";
 type ComponentLibraryDisplayMode = "expanded" | "right";
 type ScaleHandleKind = "scale-x" | "scale-y" | "scale-both";
@@ -1572,13 +1574,13 @@ type NodeDoubleClickDialogDraftState = {
   nodeId: string;
   node: ModelNode;
 } | null;
-type NodeDoubleClickDialogLayout = {
+type FloatingDialogLayout = {
   left: number;
   top: number;
   width: number;
   height: number;
 } | null;
-type NodeDoubleClickDialogDragState = {
+type FloatingDialogPointerState = {
   startClientX: number;
   startClientY: number;
   startLeft: number;
@@ -1586,14 +1588,14 @@ type NodeDoubleClickDialogDragState = {
   startWidth: number;
   startHeight: number;
 } | null;
-type NodeDoubleClickDialogResizeState = {
-  startClientX: number;
-  startClientY: number;
-  startLeft: number;
-  startTop: number;
-  startWidth: number;
-  startHeight: number;
-} | null;
+type NodeDoubleClickDialogLayout = FloatingDialogLayout;
+type NodeDoubleClickDialogDragState = FloatingDialogPointerState;
+type NodeDoubleClickDialogResizeState = FloatingDialogPointerState;
+type DeviceLibraryDialogKind = "definition" | "custom" | "measurementConfig";
+type DeviceLibraryDialogLayouts = Partial<Record<DeviceLibraryDialogKind, FloatingDialogLayout>>;
+type DeviceLibraryDialogPointerState = (NonNullable<FloatingDialogPointerState> & {
+  kind: DeviceLibraryDialogKind;
+}) | null;
 type StateImageUploadTarget = {
   scope: "definition" | "custom";
   rowId: string;
@@ -1748,6 +1750,12 @@ type DeviceDefinitionVisualDraft = {
   terminalAnchors: Point[];
   error: string;
 };
+type DeviceDefinitionMeasurementPanelTarget = {
+  deviceKind: string;
+  label: string;
+  terminalCount: number;
+  terminalLabels?: readonly string[];
+};
 type TemplateDialogState = {
   sourceGroupId: string;
   clipboard: CanvasClipboard;
@@ -1861,6 +1869,44 @@ const NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT = 560;
 const NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH = 420;
 const NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT = 300;
 const NODE_DOUBLE_CLICK_DIALOG_MARGIN = 12;
+const DEVICE_DEFINITION_DIALOG_DEFAULT_WIDTH = 1120;
+const DEVICE_DEFINITION_DIALOG_DEFAULT_HEIGHT = 780;
+const CUSTOM_DEVICE_DIALOG_DEFAULT_WIDTH = 1180;
+const CUSTOM_DEVICE_DIALOG_DEFAULT_HEIGHT = 760;
+const MEASUREMENT_CONFIG_DIALOG_DEFAULT_WIDTH = 1180;
+const MEASUREMENT_CONFIG_DIALOG_DEFAULT_HEIGHT = 760;
+const DEVICE_LIBRARY_DIALOG_MIN_WIDTH = 720;
+const DEVICE_LIBRARY_DIALOG_MIN_HEIGHT = 420;
+const DEVICE_LIBRARY_DIALOG_MARGIN = 12;
+const DEVICE_LIBRARY_DIALOG_CONFIG: Record<DeviceLibraryDialogKind, {
+  defaultWidth: number;
+  defaultHeight: number;
+  minWidth: number;
+  minHeight: number;
+  margin: number;
+}> = {
+  definition: {
+    defaultWidth: DEVICE_DEFINITION_DIALOG_DEFAULT_WIDTH,
+    defaultHeight: DEVICE_DEFINITION_DIALOG_DEFAULT_HEIGHT,
+    minWidth: DEVICE_LIBRARY_DIALOG_MIN_WIDTH,
+    minHeight: DEVICE_LIBRARY_DIALOG_MIN_HEIGHT,
+    margin: DEVICE_LIBRARY_DIALOG_MARGIN
+  },
+  custom: {
+    defaultWidth: CUSTOM_DEVICE_DIALOG_DEFAULT_WIDTH,
+    defaultHeight: CUSTOM_DEVICE_DIALOG_DEFAULT_HEIGHT,
+    minWidth: DEVICE_LIBRARY_DIALOG_MIN_WIDTH,
+    minHeight: DEVICE_LIBRARY_DIALOG_MIN_HEIGHT,
+    margin: DEVICE_LIBRARY_DIALOG_MARGIN
+  },
+  measurementConfig: {
+    defaultWidth: MEASUREMENT_CONFIG_DIALOG_DEFAULT_WIDTH,
+    defaultHeight: MEASUREMENT_CONFIG_DIALOG_DEFAULT_HEIGHT,
+    minWidth: DEVICE_LIBRARY_DIALOG_MIN_WIDTH,
+    minHeight: DEVICE_LIBRARY_DIALOG_MIN_HEIGHT,
+    margin: DEVICE_LIBRARY_DIALOG_MARGIN
+  }
+};
 const TOPOLOGY_WARNING_PANEL_DEFAULT_WIDTH = 520;
 const TOPOLOGY_WARNING_PANEL_MIN_WIDTH = 360;
 const TOPOLOGY_WARNING_PANEL_MAX_WIDTH = 640;
@@ -4993,7 +5039,7 @@ const renderEnumValuesEditor = <T extends DeviceParameterDefinition & { id: stri
     } as Partial<T>);
   };
   return (
-    <div className="custom-param-enum-values">
+    <div className={`custom-param-enum-values ${enumValueType === "number" ? "with-label" : ""}`}>
       {editorOptions.map((option, index) => (
         <div className="custom-param-enum-row" key={`${row.id}-${index}`}>
           <BufferedTextInput
@@ -5037,13 +5083,17 @@ const renderEnumValuesEditor = <T extends DeviceParameterDefinition & { id: stri
         </div>
       ))}
       {!disabled && (
-        <button
-          type="button"
-          className="custom-param-enum-add"
-          onClick={() => updateValues([...editorOptions, { value: "", label: "" }], row.typicalValue)}
-        >
-          新增枚举值
-        </button>
+        <div className="custom-param-enum-row custom-param-enum-add-row">
+          <span className="custom-param-enum-spacer" aria-hidden="true" />
+          {enumValueType === "number" && <span className="custom-param-enum-spacer" aria-hidden="true" />}
+          <button
+            type="button"
+            className="custom-param-enum-add"
+            onClick={() => updateValues([...editorOptions, { value: "", label: "" }], row.typicalValue)}
+          >
+            新增枚举值
+          </button>
+        </div>
       )}
     </div>
   );
@@ -5501,30 +5551,33 @@ function clampPanelDimension(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.round(value)));
 }
 
-function clampNodeDoubleClickDialogLayout(layout: NonNullable<NodeDoubleClickDialogLayout>): NonNullable<NodeDoubleClickDialogLayout> {
-  const viewportWidth = typeof window === "undefined" ? layout.left + layout.width + NODE_DOUBLE_CLICK_DIALOG_MARGIN : window.innerWidth;
-  const viewportHeight = typeof window === "undefined" ? layout.top + layout.height + NODE_DOUBLE_CLICK_DIALOG_MARGIN : window.innerHeight;
-  const maxWidth = Math.max(NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH, viewportWidth - NODE_DOUBLE_CLICK_DIALOG_MARGIN * 2);
-  const maxHeight = Math.max(NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT, viewportHeight - NODE_DOUBLE_CLICK_DIALOG_MARGIN * 2);
+function clampFloatingDialogLayout(
+  layout: NonNullable<FloatingDialogLayout>,
+  config: { defaultWidth: number; defaultHeight: number; minWidth: number; minHeight: number; margin: number }
+): NonNullable<FloatingDialogLayout> {
+  const viewportWidth = typeof window === "undefined" ? layout.left + layout.width + config.margin : window.innerWidth;
+  const viewportHeight = typeof window === "undefined" ? layout.top + layout.height + config.margin : window.innerHeight;
+  const maxWidth = Math.max(config.minWidth, viewportWidth - config.margin * 2);
+  const maxHeight = Math.max(config.minHeight, viewportHeight - config.margin * 2);
   const width = clampPanelDimension(
-    Number.isFinite(layout.width) ? layout.width : NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH,
-    NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH,
+    Number.isFinite(layout.width) ? layout.width : config.defaultWidth,
+    config.minWidth,
     maxWidth
   );
   const height = clampPanelDimension(
-    Number.isFinite(layout.height) ? layout.height : NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT,
-    NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT,
+    Number.isFinite(layout.height) ? layout.height : config.defaultHeight,
+    config.minHeight,
     maxHeight
   );
   const left = clampNumber(
     Number.isFinite(layout.left) ? layout.left : (viewportWidth - width) / 2,
-    NODE_DOUBLE_CLICK_DIALOG_MARGIN,
-    Math.max(NODE_DOUBLE_CLICK_DIALOG_MARGIN, viewportWidth - width - NODE_DOUBLE_CLICK_DIALOG_MARGIN)
+    config.margin,
+    Math.max(config.margin, viewportWidth - width - config.margin)
   );
   const top = clampNumber(
     Number.isFinite(layout.top) ? layout.top : (viewportHeight - height) / 2,
-    NODE_DOUBLE_CLICK_DIALOG_MARGIN,
-    Math.max(NODE_DOUBLE_CLICK_DIALOG_MARGIN, viewportHeight - height - NODE_DOUBLE_CLICK_DIALOG_MARGIN)
+    config.margin,
+    Math.max(config.margin, viewportHeight - height - config.margin)
   );
   return {
     left: Math.round(left),
@@ -5532,6 +5585,23 @@ function clampNodeDoubleClickDialogLayout(layout: NonNullable<NodeDoubleClickDia
     width,
     height
   };
+}
+
+function clampNodeDoubleClickDialogLayout(layout: NonNullable<NodeDoubleClickDialogLayout>): NonNullable<NodeDoubleClickDialogLayout> {
+  return clampFloatingDialogLayout(layout, {
+    defaultWidth: NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH,
+    defaultHeight: NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT,
+    minWidth: NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH,
+    minHeight: NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT,
+    margin: NODE_DOUBLE_CLICK_DIALOG_MARGIN
+  });
+}
+
+function clampDeviceLibraryDialogLayout(
+  kind: DeviceLibraryDialogKind,
+  layout: NonNullable<FloatingDialogLayout>
+): NonNullable<FloatingDialogLayout> {
+  return clampFloatingDialogLayout(layout, DEVICE_LIBRARY_DIALOG_CONFIG[kind]);
 }
 
 function readStoredPanelDimension(storageKey: string, fallback: number, min: number, max: number) {
@@ -10386,7 +10456,8 @@ export function App() {
   const [templateDraftType, setTemplateDraftType] = useState(DEFAULT_GRAPH_TEMPLATE_TYPES[0]);
   const [templateDraftName, setTemplateDraftName] = useState("");
   const [customDeviceDialogOpen, setCustomDeviceDialogOpen] = useState(false);
-  const [customDeviceDialogView, setCustomDeviceDialogView] = useState<"visual" | "parameters">("visual");
+  const [customDeviceDialogView, setCustomDeviceDialogView] = useState<CustomDeviceDialogView>("terminals");
+  const [customDeviceDefinitionMode, setCustomDeviceDefinitionMode] = useState<CustomDeviceDefinitionMode>("create");
   const [customDeviceStatePageId, setCustomDeviceStatePageId] = useState(DEFAULT_STATE_PAGE_ID);
   const [customComponentTreeSelection, setCustomComponentTreeSelection] = useState<CustomComponentTreeSelection>({ kind: "attributeLibrary", attributeLibraryName: "交流设备" });
   const [customComponentTreeSearchQuery, setCustomComponentTreeSearchQuery] = useState("");
@@ -10414,6 +10485,12 @@ export function App() {
   const [definitionStatePageId, setDefinitionStatePageId] = useState(DEFAULT_STATE_PAGE_ID);
   const [definitionVisualDraft, setDefinitionVisualDraft] = useState<DeviceDefinitionVisualDraft | null>(null);
   const [definitionTerminalAnchorDragIndex, setDefinitionTerminalAnchorDragIndex] = useState<number | null>(null);
+  const [deviceLibraryDialogLayouts, setDeviceLibraryDialogLayouts] = useState<DeviceLibraryDialogLayouts>({});
+  const [deviceLibraryDialogDrag, setDeviceLibraryDialogDrag] = useState<DeviceLibraryDialogPointerState>(null);
+  const [deviceLibraryDialogResize, setDeviceLibraryDialogResize] = useState<DeviceLibraryDialogPointerState>(null);
+  const deviceDefinitionDialogRef = useRef<HTMLElement | null>(null);
+  const customDeviceDialogRef = useRef<HTMLElement | null>(null);
+  const measurementConfigDialogRef = useRef<HTMLElement | null>(null);
   const [layerAssignmentDialogOpen, setLayerAssignmentDialogOpen] = useState(false);
   const [layerAssignmentTargetId, setLayerAssignmentTargetId] = useState("");
   const [reactFlowPreviewOpen, setReactFlowPreviewOpen] = useState(false);
@@ -12322,6 +12399,10 @@ export function App() {
     return currentSection && !options.some((item) => item.toLowerCase() === currentSection.toLowerCase()) ? [currentSection, ...options] : options;
   }, [customDeviceDraft.componentType, customDeviceDraft.attributeLibraryName, componentTypeOptionsByAttributeLibrary]);
   const selectedDefinitionTemplate = selectedDefinitionKind ? libraryTemplateByKind.get(selectedDefinitionKind) ?? libraryTemplates[0] : libraryTemplates[0];
+  const selectedCustomComponentTemplate =
+    customComponentTreeSelection.kind === "component"
+      ? libraryTemplateByKind.get(customComponentTreeSelection.templateKind)
+      : undefined;
   const definitionAttributeLibraryComponentTypeOptions = useMemo(() => {
     const group = normalizeAttributeLibraryName(selectedDefinitionTemplate?.attributeLibrary ?? customDeviceDraft.attributeLibraryName);
     const options = componentTypeOptionsByAttributeLibrary[group] ?? [];
@@ -16319,11 +16400,16 @@ export function App() {
     setMeasurementConfigSaveStatus("idle");
   };
 
-  const openMeasurementConfigDialog = () => {
+  const prepareMeasurementConfigDraft = () => {
     const nextDraft = normalizeMeasurementConfig(measurementConfig);
     measurementConfigDraftRef.current = nextDraft;
     setMeasurementConfigDraft(nextDraft);
     setMeasurementConfigSaveStatus("idle");
+    return nextDraft;
+  };
+
+  const openMeasurementConfigDialog = () => {
+    prepareMeasurementConfigDraft();
     setMeasurementConfigDialogOpen(true);
   };
 
@@ -16424,6 +16510,7 @@ export function App() {
       name: type.name,
       measurementTypeId: type.id,
       position: "device",
+      associatedField: type.id,
       defaultVisible: type.defaultVisible
     };
   };
@@ -16544,12 +16631,12 @@ export function App() {
 
   const measurementSourcePointForNodeItem = (
     node: ModelNode,
-    item: Pick<MeasurementItemBinding, "measurementTypeId" | "role">,
+    item: Pick<DeviceMeasurementProfileItem, "measurementTypeId" | "role" | "associatedField">,
     terminalId?: string
-  ) =>
-    terminalId
-      ? `${node.id}.${terminalId}.${item.role ? `${item.role}.` : ""}${item.measurementTypeId}`
-      : `${node.id}.${item.role ? `${item.role}.` : ""}${item.measurementTypeId}`;
+  ) => {
+    const sourceKey = item.associatedField || `${item.role ? `${item.role}.` : ""}${item.measurementTypeId}`;
+    return terminalId ? `${node.id}.${terminalId}.${sourceKey}` : `${node.id}.${sourceKey}`;
+  };
 
   const measurementProfileItemsForMeasurementGroup = (node: ModelNode, terminalId?: string) =>
     measurementProfileItemsForNodePosition(node, measurementConfig, terminalId);
@@ -16581,7 +16668,7 @@ export function App() {
     }
     const sourcePoint = measurementSourcePointForNodeItem(
       node,
-      { measurementTypeId: type.id, role: profileItem?.role },
+      { measurementTypeId: type.id, role: profileItem?.role, associatedField: profileItem?.associatedField },
       terminalId
     );
     return {
@@ -17668,6 +17755,93 @@ export function App() {
       window.removeEventListener("pointercancel", handlePointerUp, true);
     };
   }, [nodeDoubleClickDialogResize]);
+
+  useEffect(() => {
+    if (!deviceLibraryDialogDrag) {
+      return;
+    }
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      if (event.buttons === 0) {
+        setDeviceLibraryDialogDrag(null);
+        return;
+      }
+      event.preventDefault();
+      const nextLayout = clampDeviceLibraryDialogLayout(deviceLibraryDialogDrag.kind, {
+        left: deviceLibraryDialogDrag.startLeft + event.clientX - deviceLibraryDialogDrag.startClientX,
+        top: deviceLibraryDialogDrag.startTop + event.clientY - deviceLibraryDialogDrag.startClientY,
+        width: deviceLibraryDialogDrag.startWidth,
+        height: deviceLibraryDialogDrag.startHeight
+      });
+      setDeviceLibraryDialogLayouts((current) => ({
+        ...current,
+        [deviceLibraryDialogDrag.kind]: nextLayout
+      }));
+    };
+    const handlePointerUp = () => {
+      setDeviceLibraryDialogDrag(null);
+    };
+    window.addEventListener("pointermove", handlePointerMove, true);
+    window.addEventListener("pointerup", handlePointerUp, true);
+    window.addEventListener("pointercancel", handlePointerUp, true);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove, true);
+      window.removeEventListener("pointerup", handlePointerUp, true);
+      window.removeEventListener("pointercancel", handlePointerUp, true);
+    };
+  }, [deviceLibraryDialogDrag]);
+
+  useEffect(() => {
+    if (!deviceLibraryDialogResize) {
+      return;
+    }
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      if (event.buttons === 0) {
+        setDeviceLibraryDialogResize(null);
+        return;
+      }
+      event.preventDefault();
+      const config = DEVICE_LIBRARY_DIALOG_CONFIG[deviceLibraryDialogResize.kind];
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      const maxWidth = Math.max(
+        config.minWidth,
+        viewportWidth - deviceLibraryDialogResize.startLeft - config.margin
+      );
+      const maxHeight = Math.max(
+        config.minHeight,
+        viewportHeight - deviceLibraryDialogResize.startTop - config.margin
+      );
+      const nextLayout = clampDeviceLibraryDialogLayout(deviceLibraryDialogResize.kind, {
+        left: deviceLibraryDialogResize.startLeft,
+        top: deviceLibraryDialogResize.startTop,
+        width: clampPanelDimension(
+          deviceLibraryDialogResize.startWidth + event.clientX - deviceLibraryDialogResize.startClientX,
+          config.minWidth,
+          maxWidth
+        ),
+        height: clampPanelDimension(
+          deviceLibraryDialogResize.startHeight + event.clientY - deviceLibraryDialogResize.startClientY,
+          config.minHeight,
+          maxHeight
+        )
+      });
+      setDeviceLibraryDialogLayouts((current) => ({
+        ...current,
+        [deviceLibraryDialogResize.kind]: nextLayout
+      }));
+    };
+    const handlePointerUp = () => {
+      setDeviceLibraryDialogResize(null);
+    };
+    window.addEventListener("pointermove", handlePointerMove, true);
+    window.addEventListener("pointerup", handlePointerUp, true);
+    window.addEventListener("pointercancel", handlePointerUp, true);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove, true);
+      window.removeEventListener("pointerup", handlePointerUp, true);
+      window.removeEventListener("pointercancel", handlePointerUp, true);
+    };
+  }, [deviceLibraryDialogResize]);
 
   const canvasPointerKeyboardShortcutAvailability = () => {
     const point = lastKeyboardShortcutClientPointerRef.current ?? lastCanvasClientPointerRef.current;
@@ -18957,7 +19131,9 @@ export function App() {
     ensureCustomComponentTreeExpanded(attributeLibraryName, componentType);
     setCustomComponentTreeSelection({ kind: "componentType", attributeLibraryName, section: componentType });
     setEditingCustomDeviceKind("");
-    setCustomDeviceDialogView("visual");
+    setSelectedDefinitionKind("");
+    setCustomDeviceDefinitionMode("create");
+    setCustomDeviceDialogView("terminals");
     setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
     setCustomDeviceDraft({
       ...createEmptyCustomDeviceDraft(attributeLibraryName),
@@ -18978,6 +19154,7 @@ export function App() {
       error: ""
     });
     setGroupDeviceDefinitionDialog(null);
+    prepareMeasurementConfigDraft();
     setCustomDeviceDialogOpen(true);
     writeOperationLog("从图元组合生成新元件草稿");
   };
@@ -29894,15 +30071,15 @@ export function App() {
     </div>
   );
 
-  const renderDeviceDefinitionMeasurementPanel = (template: DeviceTemplate) => {
+  const renderDeviceDefinitionMeasurementPanel = (target: DeviceDefinitionMeasurementPanelTarget) => {
     const draftConfig = measurementConfigDraft ?? measurementConfig;
-    const selectedKind = normalizeComponentTypeName(definitionDraftSection) || deviceDefinitionKeyForTemplate(template);
+    const selectedKind = normalizeComponentTypeName(target.deviceKind);
     const selectedProfileItems = editableMeasurementProfileByKind.get(selectedKind)?.items ?? [];
-    const terminalCount = Math.max(0, template.terminalCount ?? template.terminalLabels?.length ?? 0);
+    const terminalCount = Math.max(0, target.terminalCount ?? target.terminalLabels?.length ?? 0);
     const measurementProfilePositionOptions = [
       { value: "device", label: "设备层" },
       ...Array.from({ length: terminalCount }, (_, index) => {
-        const terminalLabel = template.terminalLabels?.[index] ?? `端子${index + 1}`;
+        const terminalLabel = target.terminalLabels?.[index] ?? `端子${index + 1}`;
         return { value: `t${index + 1}`, label: `${terminalLabel}端子层` };
       })
     ];
@@ -29914,18 +30091,18 @@ export function App() {
           ? "已保存到本地和后台。"
           : measurementConfigSaveStatus === "error"
             ? "后台保存失败，请检查后台服务。"
-            : "修改量测定义后，需要点击保存量测定义才会生效。";
+            : "量测定义会随右下角保存元件定义一并生效。";
     return (
       <section className="device-definition-measurement-panel measurement-config-panel measurement-profile-panel">
         <div className="measurement-profile-toolbar">
           <button
             type="button"
-            disabled={isBrowseMode || draftConfig.measurementTypes.length === 0}
+            disabled={isBrowseMode || draftConfig.measurementTypes.length === 0 || !selectedKind}
             onClick={() => addMeasurementProfileItem(selectedKind)}
           >
             添加量测
           </button>
-          <span>元件类型 {selectedKind} / 参考图元 {template.label}</span>
+          <span>元件类型 {selectedKind || "未设置"} / 参考图元 {target.label}</span>
         </div>
         <div className="measurement-table-wrap">
           <table className="measurement-table measurement-profile-table">
@@ -29935,6 +30112,7 @@ export function App() {
                 <th>量测名称</th>
                 <th>量测类型</th>
                 <th>量测位置</th>
+                <th>关联字段</th>
                 <th>默认显示</th>
                 <th>操作</th>
               </tr>
@@ -29988,6 +30166,14 @@ export function App() {
                       </select>
                     </td>
                     <td>
+                      <BufferedTextInput
+                        value={item.associatedField ?? ""}
+                        disabled={isBrowseMode}
+                        placeholder={item.measurementTypeId}
+                        onCommit={(nextValue) => updateMeasurementProfileItem(selectedKind, itemIndex, { associatedField: nextValue })}
+                      />
+                    </td>
+                    <td>
                       <select
                         value={item.defaultVisible === undefined ? "type" : item.defaultVisible ? "1" : "0"}
                         disabled={isBrowseMode}
@@ -30029,7 +30215,7 @@ export function App() {
                 );
               }) : (
                 <tr>
-                  <td colSpan={6}>当前元件类型还没有默认量测模板。</td>
+                  <td colSpan={7}>当前元件类型还没有默认量测模板。</td>
                 </tr>
               )}
             </tbody>
@@ -30039,15 +30225,6 @@ export function App() {
           <span className={`measurement-config-status ${measurementConfigSaveStatus === "error" ? "error" : ""}`}>
             {measurementConfigStatusText}
           </span>
-          <button
-            type="button"
-            className="primary"
-            disabled={isBrowseMode || measurementConfigSaveStatus === "saving"}
-            onClick={() => void saveMeasurementConfigDialog()}
-          >
-            <Save size={14} />
-            保存量测定义
-          </button>
         </footer>
       </section>
     );
@@ -30068,9 +30245,20 @@ export function App() {
             : "未点击保存前，本次修改只保留在当前窗口。";
     return (
       <div className="image-picker-backdrop measurement-config-backdrop" onPointerDown={closeMeasurementConfigDialog}>
-        <section className="measurement-config-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="measurement-config-title">
+        <section
+          ref={measurementConfigDialogRef}
+          className={`measurement-config-dialog${deviceLibraryDialogLayouts.measurementConfig ? " floating" : ""}`}
+          style={deviceLibraryDialogStyle("measurementConfig")}
+          onPointerDown={stopDeviceLibraryDialogEvent}
+          onPointerUp={stopDeviceLibraryDialogEvent}
+          onPointerCancel={stopDeviceLibraryDialogEvent}
+          onLostPointerCapture={stopDeviceLibraryDialogEvent}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="measurement-config-title"
+        >
           <header>
-            <div>
+            <div className="device-library-dialog-title" onPointerDown={(event) => startDeviceLibraryDialogDrag("measurementConfig", event)}>
               <h2 id="measurement-config-title">动态量测配置</h2>
               <p>配置全平台统一的量测类型、单位、小数位和默认显示样式。</p>
             </div>
@@ -30154,6 +30342,14 @@ export function App() {
               保存
             </button>
           </footer>
+          <div
+            className="device-library-dialog-resize"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="调整动态量测配置窗口大小"
+            title="拖拽调整窗口大小"
+            onPointerDown={(event) => startDeviceLibraryDialogResize("measurementConfig", event)}
+          />
         </section>
       </div>
     );
@@ -32853,6 +33049,14 @@ export function App() {
     isContainer: customDeviceDraft.isContainer,
     terminalAssociations: customDraftTerminalAssociations
   });
+  const customDeviceMeasurementTarget: DeviceDefinitionMeasurementPanelTarget = {
+    deviceKind:
+      normalizeComponentTypeName(customDeviceDraft.componentType) ||
+      (selectedCustomComponentTemplate ? deviceDefinitionKeyForTemplate(selectedCustomComponentTemplate) : ""),
+    label: customDeviceDraft.componentName.trim() || selectedCustomComponentTemplate?.label || customDeviceDraft.componentType || "未命名元件",
+    terminalCount: Math.max(0, customDeviceDraft.terminalCount),
+    terminalLabels: customDeviceDraft.terminalLabels
+  };
   const customStatePreviewVisual = stateVisualFromDraftRow(activeStateDraftRow(customDeviceDraft.stateDefinitions, customDeviceStatePageId));
   const customStatePreviewText = stateVisualText(customStatePreviewVisual);
   const customDevicePreviewLabel = customDeviceDraft.componentName.trim() || customDeviceDraft.componentType || "Unit";
@@ -33097,23 +33301,132 @@ export function App() {
     setDefinitionTerminalAnchorDragIndex(null);
   };
 
-  const openDeviceDefinitionDialog = () => {
-    if (!requireEditMode("修改元件")) {
+  const finishDeviceLibraryDialogPointerOperation = () => {
+    setDeviceLibraryDialogDrag(null);
+    setDeviceLibraryDialogResize(null);
+  };
+
+  const deviceLibraryDialogRefForKind = (kind: DeviceLibraryDialogKind) =>
+    kind === "definition"
+      ? deviceDefinitionDialogRef
+      : kind === "measurementConfig"
+        ? measurementConfigDialogRef
+        : customDeviceDialogRef;
+
+  const currentDeviceLibraryDialogRect = (kind: DeviceLibraryDialogKind) => {
+    const config = DEVICE_LIBRARY_DIALOG_CONFIG[kind];
+    const rect = deviceLibraryDialogRefForKind(kind).current?.getBoundingClientRect();
+    if (rect) {
+      return clampDeviceLibraryDialogLayout(kind, {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height
+      });
+    }
+    const viewportWidth = typeof window === "undefined" ? config.defaultWidth : window.innerWidth;
+    const viewportHeight = typeof window === "undefined" ? config.defaultHeight : window.innerHeight;
+    return clampDeviceLibraryDialogLayout(kind, deviceLibraryDialogLayouts[kind] ?? {
+      left: (viewportWidth - config.defaultWidth) / 2,
+      top: (viewportHeight - config.defaultHeight) / 2,
+      width: config.defaultWidth,
+      height: config.defaultHeight
+    });
+  };
+
+  const deviceLibraryDialogStyle = (kind: DeviceLibraryDialogKind) => {
+    const layout = deviceLibraryDialogLayouts[kind];
+    if (!layout) {
+      return undefined;
+    }
+    const clampedLayout = clampDeviceLibraryDialogLayout(kind, layout);
+    return {
+      left: `${clampedLayout.left}px`,
+      top: `${clampedLayout.top}px`,
+      width: `${clampedLayout.width}px`,
+      height: `${clampedLayout.height}px`
+    } as CSSProperties;
+  };
+
+  const startDeviceLibraryDialogDrag = (kind: DeviceLibraryDialogKind, event: PointerEvent<HTMLElement>) => {
+    if (event.button !== 0) {
       return;
     }
-    const template = selectedDefinitionTemplate ?? libraryTemplates[0];
-    if (template) {
-      loadDefinitionTemplateDraft(template);
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = currentDeviceLibraryDialogRect(kind);
+    setDeviceLibraryDialogLayouts((current) => ({ ...current, [kind]: rect }));
+    setDeviceLibraryDialogDrag({
+      kind,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startLeft: rect.left,
+      startTop: rect.top,
+      startWidth: rect.width,
+      startHeight: rect.height
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const startDeviceLibraryDialogResize = (kind: DeviceLibraryDialogKind, event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
+      return;
     }
-    setDeviceDefinitionView("parameters");
-    const nextMeasurementDraft = normalizeMeasurementConfig(measurementConfig);
-    measurementConfigDraftRef.current = nextMeasurementDraft;
-    setMeasurementConfigDraft(nextMeasurementDraft);
-    setMeasurementConfigSaveStatus("idle");
-    setDeviceDefinitionDialogOpen(true);
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = currentDeviceLibraryDialogRect(kind);
+    setDeviceLibraryDialogLayouts((current) => ({ ...current, [kind]: rect }));
+    setDeviceLibraryDialogResize({
+      kind,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startLeft: rect.left,
+      startTop: rect.top,
+      startWidth: rect.width,
+      startHeight: rect.height
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const stopDeviceLibraryDialogEvent = (event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement>) => {
+    event.stopPropagation();
+    if (
+      event.type === "pointerup" ||
+      event.type === "pointercancel" ||
+      event.type === "lostpointercapture"
+    ) {
+      finishDeviceLibraryDialogPointerOperation();
+    }
+  };
+
+  const openDeviceDefinitionDialog = () => {
+    if (!requireEditMode("元件定义")) {
+      return;
+    }
+    const template = selectedCustomComponentTemplate ?? selectedDefinitionTemplate ?? libraryTemplates[0];
+    if (template) {
+      const attributeLibraryName = normalizeAttributeLibraryName(template.attributeLibrary);
+      const section = resolveTemplateComponentType(template);
+      cancelPendingCustomComponentTemplateLoad();
+      ensureCustomComponentTreeExpanded(attributeLibraryName, section);
+      setSelectedDefinitionKind(template.kind);
+      setDefinitionDraftSection(section);
+      setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section, templateKind: template.kind });
+      setEditingCustomDeviceKind(template.custom ? template.kind : "");
+      setCustomDeviceDefinitionMode("edit");
+      setCustomDeviceDialogView("terminals");
+      setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
+      setCustomDeviceSaveMessage("");
+      const nextDraft = createCustomDeviceDraftFromTemplate(template, section);
+      setCustomDeviceDraft(template.custom ? nextDraft : { ...nextDraft, error: "" });
+    }
+    prepareMeasurementConfigDraft();
+    setDeviceDefinitionDialogOpen(false);
+    setCustomDeviceDialogOpen(true);
   };
 
   const closeDeviceDefinitionDialog = () => {
+    finishDeviceLibraryDialogPointerOperation();
     setDeviceDefinitionDialogOpen(false);
     measurementConfigDraftRef.current = null;
     setMeasurementConfigDraft(null);
@@ -33122,6 +33435,15 @@ export function App() {
     setDefinitionStateDraftRows([]);
     setDefinitionStatePageId(DEFAULT_STATE_PAGE_ID);
     setDefinitionTerminalAnchorDragIndex(null);
+  };
+
+  const closeCustomDeviceDialog = () => {
+    finishDeviceLibraryDialogPointerOperation();
+    setCustomDeviceDialogOpen(false);
+    measurementConfigDraftRef.current = null;
+    setMeasurementConfigDraft(null);
+    setMeasurementConfigSaveStatus("idle");
+    setCustomDeviceTerminalAnchorDragIndex(null);
   };
 
   const toggleDefinitionGroup = (attributeLibrary: AttributeLibrary) => {
@@ -33979,6 +34301,8 @@ export function App() {
     setCustomDeviceSaveMessage("");
     ensureCustomComponentTreeExpanded(attributeLibraryName, section);
     setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section, templateKind: template.kind });
+    setSelectedDefinitionKind(template.kind);
+    setDefinitionDraftSection(section);
     if (customComponentSelectionFrameRef.current !== null) {
       window.cancelAnimationFrame(customComponentSelectionFrameRef.current);
     }
@@ -33988,6 +34312,9 @@ export function App() {
         return;
       }
       const nextDraft = createCustomDeviceDraftFromTemplate(template, section);
+      const editableDraft = customDeviceDefinitionMode === "edit" && !template.custom
+        ? { ...nextDraft, error: "" }
+        : nextDraft;
       startCustomComponentSelectionTransition(() => {
         setEditingCustomDeviceKind((current) =>
           customComponentSelectionRequestRef.current !== requestId ? current : template.custom ? template.kind : ""
@@ -33996,7 +34323,7 @@ export function App() {
           customComponentSelectionRequestRef.current !== requestId ? current : DEFAULT_STATE_PAGE_ID
         );
         setCustomDeviceDraft((current) =>
-          customComponentSelectionRequestRef.current !== requestId ? current : nextDraft
+          customComponentSelectionRequestRef.current !== requestId ? current : editableDraft
         );
       });
     });
@@ -34012,9 +34339,11 @@ export function App() {
       customComponentTreeSelection.kind === "componentType" || customComponentTreeSelection.kind === "component"
         ? customComponentTreeSelection.section
         : defaultComponentTypeForAttributeLibrary(attributeLibraryName);
+    setCustomDeviceDefinitionMode("create");
     setEditingCustomDeviceKind("");
+    setSelectedDefinitionKind("");
     setCustomComponentTreeSelection({ kind: "componentType", attributeLibraryName, section });
-    setCustomDeviceDialogView("visual");
+    setCustomDeviceDialogView("terminals");
     setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
     setCustomDeviceSaveMessage("");
     setCustomDeviceDraft({
@@ -34524,8 +34853,164 @@ export function App() {
     setCustomDeviceSaveMessage(`自定义元件已保存：${componentLabel}`);
     writeOperationLog(`保存自定义元件：${componentLabel}`);
     if (options.closeAfterSave) {
-      setCustomDeviceDialogOpen(false);
+      closeCustomDeviceDialog();
     }
+  };
+
+  const saveBuiltinDeviceDefinitionFromCustomDraft = (template: DeviceTemplate, options: { closeAfterSave?: boolean } = {}) => {
+    if (!requireEditMode("保存元件定义")) {
+      return;
+    }
+    setCustomDeviceSaveMessage("");
+    const componentType = normalizeComponentTypeName(customDeviceDraft.componentType);
+    if (!componentType) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "请选择元件类型。" }));
+      return;
+    }
+    if (!isValidComponentTypeName(componentType)) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "元件类型必须是英文名称，只能包含英文字母、数字和下划线，并且必须以英文字母开头。" }));
+      return;
+    }
+    const terminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
+    const terminalAssociations = normalizeContainerTerminalAssociations(
+      terminalTypes,
+      customDeviceDraft.terminalAssociations,
+      customDeviceDraft.terminalCount
+    );
+    if (customDeviceDraft.isContainer) {
+      const terminalAssociationValidation = validateContainerTerminalAssociations(terminalTypes, terminalAssociations);
+      if (!terminalAssociationValidation.valid) {
+        window.alert(terminalAssociationValidation.message);
+        setCustomDeviceDraft((current) => ({ ...current, terminalAssociations, error: terminalAssociationValidation.message }));
+        return;
+      }
+    }
+    if (hasOverlappingCustomDeviceTerminalAnchors(customDeviceTerminalAnchors)) {
+      const message = "不同端子位置不能重叠，请调整端子位置后再保存。";
+      window.alert(message);
+      setCustomDeviceDraft((current) => ({ ...current, error: message }));
+      return;
+    }
+    const customRows: DeviceParameterDefinition[] = customDeviceDraft.params
+      .map((row) => normalizeDefinitionRowEnumFields({
+        cnName: row.cnName.trim(),
+        enName: row.enName.trim(),
+        valueType: row.valueType,
+        typicalValue: row.typicalValue.trim(),
+        enumOptions: row.enumOptions,
+        enumValues: row.enumValues
+      }))
+      .filter((row) => row.cnName || row.enName);
+    if (customRows.some((row) => !row.cnName || !row.enName)) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "属性行的中文名称和英文名称不能为空。" }));
+      return;
+    }
+    const reservedCustomRow = customRows.find((row) => isReservedDeviceDefinitionParamName(row.enName));
+    if (reservedCustomRow) {
+      setCustomDeviceDraft((current) => ({
+        ...current,
+        error: reservedCustomRow.enName === ALLOW_RESIZE_TRANSFORM_PARAM ? "是否允许变形是元件属性，不能在参数定义表中新增。" : "是否容器是元件属性，不能在参数定义表中新增。"
+      }));
+      return;
+    }
+    const definitions = [...customDefaultDefinitions(terminalTypes, {
+      isContainer: customDeviceDraft.isContainer,
+      terminalAssociations
+    }), ...customRows];
+    const duplicateDefinition = definitions.find(
+      (definition, index) => definitions.findIndex((item) => item.enName.toLowerCase() === definition.enName.toLowerCase()) !== index
+    );
+    if (duplicateDefinition) {
+      setCustomDeviceDraft((current) => ({ ...current, error: `属性英文名称重复：${duplicateDefinition.enName}` }));
+      return;
+    }
+    const stateValidation = validateStateDraftRows(customDeviceDraft.stateDefinitions);
+    if (stateValidation.error) {
+      setCustomDeviceDraft((current) => ({ ...current, error: stateValidation.error }));
+      return;
+    }
+    const backgroundImage = customDeviceDraft.backgroundImage;
+    const backgroundImageAssetId = customDeviceDraft.backgroundImageAssetId && backgroundImage === `/api/images/${customDeviceDraft.backgroundImageAssetId}`
+      ? customDeviceDraft.backgroundImageAssetId
+      : "";
+    const defaultImageCandidates = customDeviceGeneratedDefaultImageCandidates(
+      customDeviceDraft.componentName.trim() || template.label,
+      customDeviceDraft.componentType,
+      terminalTypes
+    );
+    const stateDefinitions = syncInheritedCustomDeviceStateVisuals(
+      stateValidation.states,
+      {
+        backgroundImage,
+        backgroundImageAssetId,
+      },
+      defaultImageCandidates
+    );
+    const size = {
+      width: Math.max(1, Math.round(customDeviceDraft.size.width || template.size.width || 104)),
+      height: Math.max(1, Math.round(customDeviceDraft.size.height || template.size.height || 64))
+    };
+    const terminalLabels = customDeviceDraft.terminalLabels.slice(0, terminalTypes.length).map(
+      (label, index) => label.trim() || `${TERMINAL_TYPE_LIBRARY_LABELS[terminalTypes[index]] ?? terminalTypes[index]}端${index + 1}`
+    );
+    const previousDefinitions = getTemplateParameterDefinitions(template);
+    syncExistingNodesWithTemplateDefinitions(
+      { parameterDefinitions: definitions },
+      previousDefinitions,
+      (node) => node.kind === template.kind
+    );
+    const existingOverride = deviceDefinitionOverrideForTemplate(template, deviceDefinitionOverrides);
+    const nextDeviceDefinitionOverrides: Record<string, DeviceTemplateDefinitionOverride> = {
+      ...deviceDefinitionOverrides,
+      [template.kind]: {
+        ...existingOverride,
+        kind: template.kind,
+        params: {
+          ...(existingOverride?.params ?? {}),
+          component_type: componentType,
+          backgroundImage,
+          backgroundImageAssetId
+        },
+        size,
+        terminalType: terminalTypes[0] ?? template.terminalType,
+        terminalCount: terminalTypes.length,
+        terminalTypes,
+        terminalLabels,
+        terminalAnchors: customDeviceTerminalAnchors.slice(0, terminalTypes.length).map((anchor) => ({ ...anchor })),
+        terminalRoles: customDeviceDraft.terminalRoles.slice(0, terminalTypes.length),
+        terminalAssociations: customDeviceDraft.isContainer ? terminalAssociations : undefined,
+        isContainer: customDeviceDraft.isContainer,
+        allowResizeTransform: customDeviceDraft.allowResizeTransform === "1",
+        parameterDefinitions: definitions,
+        stateDefinitions,
+        updatedAt: new Date().toISOString()
+      }
+    };
+    setDeviceDefinitionOverrides(nextDeviceDefinitionOverrides);
+    persistDeviceLibraryChange({ deviceDefinitionOverrides: nextDeviceDefinitionOverrides }, {
+      success: `元件定义已保存到后台：${template.label}`,
+      failure: `元件定义已保存到本地，后台保存失败：${template.label}`
+    });
+    setCustomDeviceDraft((current) => ({ ...current, size, terminalLabels, error: "" }));
+    setCustomDeviceSaveMessage(`元件定义已保存：${template.label}`);
+    writeOperationLog(`保存元件定义：${template.label}`);
+    if (options.closeAfterSave) {
+      closeCustomDeviceDialog();
+    }
+  };
+
+  const saveCustomDeviceDefinitionDialog = (options: { closeAfterSave?: boolean } = {}) => {
+    const targetTemplate = selectedDefinitionTemplate && selectedDefinitionTemplate.kind === selectedDefinitionKind
+      ? selectedDefinitionTemplate
+      : selectedCustomComponentTemplate;
+    if (measurementConfigDraftRef.current ?? measurementConfigDraft) {
+      void saveMeasurementConfigDialog();
+    }
+    if (customDeviceDefinitionMode === "edit" && targetTemplate && !targetTemplate.custom && editingCustomDeviceKind === "") {
+      saveBuiltinDeviceDefinitionFromCustomDraft(targetTemplate, options);
+      return;
+    }
+    saveCustomDeviceTemplate(options);
   };
 
   const renderStateVisualPager = (
@@ -35176,24 +35661,8 @@ export function App() {
       >
         量测定义
       </button>
-      <button
-        type="button"
-        className="custom-device-create-button"
-        disabled={isBrowseMode}
-        onClick={() => {
-          if (!requireEditMode("新建元件")) {
-            return;
-          }
-          setCustomDeviceDraft(createEmptyCustomDeviceDraft("交流设备"));
-          setCustomDeviceDialogView("visual");
-          setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
-          setCustomDeviceDialogOpen(true);
-        }}
-      >
-        新建元件
-      </button>
       <button type="button" className="custom-device-create-button" disabled={isBrowseMode} onClick={openDeviceDefinitionDialog}>
-        修改元件
+        元件定义
       </button>
     </div>
   );
@@ -37284,7 +37753,7 @@ export function App() {
 
   return (
     <div
-      className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${topologyWarningPanelResize ? "topology-warning-panel-resizing" : ""} ${nodeDoubleClickDialogDrag || nodeDoubleClickDialogResize ? "node-double-click-dialog-moving" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`}
+      className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${topologyWarningPanelResize ? "topology-warning-panel-resizing" : ""} ${nodeDoubleClickDialogDrag || nodeDoubleClickDialogResize ? "node-double-click-dialog-moving" : ""} ${deviceLibraryDialogDrag || deviceLibraryDialogResize ? "device-library-dialog-moving" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`}
       style={appShellStyle}
     >
       {renderSidePanelEdgeTrigger("left")}
@@ -41365,9 +41834,18 @@ export function App() {
       )}
       {deviceDefinitionDialogOpen && (
         <div className="image-picker-backdrop" onPointerDown={closeDeviceDefinitionDialog}>
-          <section className="device-definition-dialog" onPointerDown={(event) => event.stopPropagation()}>
+          <section
+            ref={deviceDefinitionDialogRef}
+            className={`device-definition-dialog${deviceLibraryDialogLayouts.definition ? " floating" : ""}`}
+            style={deviceLibraryDialogStyle("definition")}
+            onPointerDown={stopDeviceLibraryDialogEvent}
+            onPointerUp={stopDeviceLibraryDialogEvent}
+            onPointerCancel={stopDeviceLibraryDialogEvent}
+            onLostPointerCapture={stopDeviceLibraryDialogEvent}
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="image-picker-title">
-              <div>
+              <div className="device-library-dialog-title" onPointerDown={(event) => startDeviceLibraryDialogDrag("definition", event)}>
                 <h2>修改元件</h2>
                 <p>查看内置和自定义元件定义，维护新建图元时使用的设备属性。</p>
               </div>
@@ -41462,55 +41940,8 @@ export function App() {
                   <>
                     <div className="device-definition-summary">
                       <div>
-                        <span>元件名称</span>
-                        <strong>{selectedDefinitionTemplate.label}</strong>
-                      </div>
-                      <div>
-                        <span>图元类型</span>
-                        <strong>{selectedDefinitionTemplate.kind}</strong>
-                      </div>
-                      <div>
                         <span>属性库</span>
                         <strong>{normalizeAttributeLibraryName(selectedDefinitionTemplate.attributeLibrary)}</strong>
-                      </div>
-                      <div>
-                        <span>来源</span>
-                        <strong>{selectedDefinitionTemplate.custom ? "自定义" : "内置"}</strong>
-                      </div>
-                      <div>
-                        <span>端子数量</span>
-                        <strong>{selectedDefinitionTemplate.terminalCount}</strong>
-                      </div>
-                      <div>
-                        <span>是否容器</span>
-                        <strong>{selectedDefinitionTemplate.isContainer ? "是" : "否"}</strong>
-                      </div>
-                      <div>
-                        <span>是否允许变形</span>
-                        <select
-                          className="device-definition-summary-value"
-                          value={templateResizeTransformValue(selectedDefinitionTemplate)}
-                          onChange={(event) => updateSelectedDefinitionResizePermission(event.target.value)}
-                        >
-                          <option value="0">否</option>
-                          <option value="1">是</option>
-                        </select>
-                      </div>
-                      <div>
-                        <span>能源属性</span>
-                        <strong>
-                          {(selectedDefinitionTemplate.terminalTypes ?? Array.from({ length: selectedDefinitionTemplate.terminalCount }, () => selectedDefinitionTemplate.terminalType))
-                            .map((type) => TERMINAL_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? type)
-                            .join(" / ") || "无端子"}
-                        </strong>
-                      </div>
-                      <div>
-                        <span>默认尺寸</span>
-                        <strong>{selectedDefinitionTemplate.size.width} x {selectedDefinitionTemplate.size.height}</strong>
-                      </div>
-                      <div>
-                        <span>定义状态</span>
-                        <strong>{deviceDefinitionOverrideForTemplate(selectedDefinitionTemplate, deviceDefinitionOverrides)?.updatedAt ? "已自定义" : "默认"}</strong>
                       </div>
                       <div>
                         <span>元件类型</span>
@@ -41548,6 +41979,45 @@ export function App() {
                           </button>
                         )}
                       </div>
+                      <div>
+                        <span>元件名称</span>
+                        <strong>{selectedDefinitionTemplate.label}</strong>
+                      </div>
+                      <div>
+                        <span>图元类型</span>
+                        <strong>{selectedDefinitionTemplate.kind}</strong>
+                      </div>
+                      <div>
+                        <span>来源</span>
+                        <strong>{selectedDefinitionTemplate.custom ? "自定义" : "内置"}</strong>
+                      </div>
+                      <div>
+                        <span>端子数量</span>
+                        <strong>{selectedDefinitionTemplate.terminalCount}</strong>
+                      </div>
+                      <div>
+                        <span>是否容器</span>
+                        <strong>{selectedDefinitionTemplate.isContainer ? "是" : "否"}</strong>
+                      </div>
+                      <div>
+                        <span>是否允许变形</span>
+                        <select
+                          className="device-definition-summary-value"
+                          value={templateResizeTransformValue(selectedDefinitionTemplate)}
+                          onChange={(event) => updateSelectedDefinitionResizePermission(event.target.value)}
+                        >
+                          <option value="0">否</option>
+                          <option value="1">是</option>
+                        </select>
+                      </div>
+                      <div>
+                        <span>能源属性</span>
+                        <strong>
+                          {(selectedDefinitionTemplate.terminalTypes ?? Array.from({ length: selectedDefinitionTemplate.terminalCount }, () => selectedDefinitionTemplate.terminalType))
+                            .map((type) => TERMINAL_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? type)
+                            .join(" / ") || "无端子"}
+                        </strong>
+                      </div>
                     </div>
                     <div className="device-definition-tabs" role="tablist" aria-label="元件修改内容切换">
                       <button
@@ -41555,7 +42025,7 @@ export function App() {
                         className={deviceDefinitionView === "visual" ? "active" : ""}
                         onClick={() => setDeviceDefinitionView("visual")}
                       >
-                        图标/端子
+                        端子定义
                       </button>
                       <button
                         type="button"
@@ -41693,7 +42163,12 @@ export function App() {
                         </div>
                       </>
                     ) : (
-                      renderDeviceDefinitionMeasurementPanel(selectedDefinitionTemplate)
+                      renderDeviceDefinitionMeasurementPanel({
+                        deviceKind: normalizeComponentTypeName(definitionDraftSection) || deviceDefinitionKeyForTemplate(selectedDefinitionTemplate),
+                        label: selectedDefinitionTemplate.label,
+                        terminalCount: selectedDefinitionTemplate.terminalCount,
+                        terminalLabels: selectedDefinitionTemplate.terminalLabels
+                      })
                     )}
                   </>
                 ) : (
@@ -41704,18 +42179,35 @@ export function App() {
                 )}
               </section>
             </div>
+            <div
+              className="device-library-dialog-resize"
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="调整修改元件窗口大小"
+              title="拖拽调整窗口大小"
+              onPointerDown={(event) => startDeviceLibraryDialogResize("definition", event)}
+            />
           </section>
         </div>
       )}
       {customDeviceDialogOpen && (
-        <div className="image-picker-backdrop" onPointerDown={() => setCustomDeviceDialogOpen(false)}>
-          <section className="custom-device-dialog" onPointerDown={(event) => event.stopPropagation()}>
+        <div className="image-picker-backdrop" onPointerDown={closeCustomDeviceDialog}>
+          <section
+            ref={customDeviceDialogRef}
+            className={`custom-device-dialog${deviceLibraryDialogLayouts.custom ? " floating" : ""}`}
+            style={deviceLibraryDialogStyle("custom")}
+            onPointerDown={stopDeviceLibraryDialogEvent}
+            onPointerUp={stopDeviceLibraryDialogEvent}
+            onPointerCancel={stopDeviceLibraryDialogEvent}
+            onLostPointerCapture={stopDeviceLibraryDialogEvent}
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="image-picker-title">
-              <div>
-                <h2>新建元件</h2>
-                <p>定义后会出现在左侧图元库，可拖拽到画布建模。</p>
+              <div className="device-library-dialog-title" onPointerDown={(event) => startDeviceLibraryDialogDrag("custom", event)}>
+                <h2>元件定义</h2>
+                <p>维护元件图标、端子、参数和量测绑定，保存后用于图元库和画布建模。</p>
               </div>
-              <button onClick={() => setCustomDeviceDialogOpen(false)}>关闭</button>
+              <button onClick={closeCustomDeviceDialog}>关闭</button>
             </div>
             {customDeviceDraft.error && <p className="custom-device-error">{customDeviceDraft.error}</p>}
             {customDeviceSaveMessage && <p className="custom-device-save-status">{customDeviceSaveMessage}</p>}
@@ -41812,18 +42304,25 @@ export function App() {
                   min="0"
                   max={MAX_CUSTOM_DEVICE_TERMINALS}
                   value={customDeviceDraft.terminalCount}
-                  disabled={customDeviceDialogView === "visual" && !customDefaultStateSelected}
+                  disabled={customDeviceDialogView === "terminals" && !customDefaultStateSelected}
                   onCommit={(value) => updateCustomDraftTerminalCount(Number(value))}
                 />
               </label>
             </div>
-            <div className="device-definition-tabs custom-device-tabs" role="tablist" aria-label="新建元件内容切换">
+            <div className="device-definition-tabs custom-device-tabs" role="tablist" aria-label="元件定义内容切换">
               <button
                 type="button"
-                className={customDeviceDialogView === "visual" ? "active" : ""}
-                onClick={() => setCustomDeviceDialogView("visual")}
+                className={customDeviceDialogView === "terminals" ? "active" : ""}
+                onClick={() => setCustomDeviceDialogView("terminals")}
               >
-                图标/端子
+                端子定义
+              </button>
+              <button
+                type="button"
+                className={customDeviceDialogView === "icon" ? "active" : ""}
+                onClick={() => setCustomDeviceDialogView("icon")}
+              >
+                图标定义
               </button>
               <button
                 type="button"
@@ -41832,10 +42331,18 @@ export function App() {
               >
                 参数定义
               </button>
+              <button
+                type="button"
+                className={customDeviceDialogView === "measurements" ? "active" : ""}
+                onClick={() => setCustomDeviceDialogView("measurements")}
+              >
+                量测定义
+              </button>
             </div>
-            {customDeviceDialogView === "visual" ? (
+            <div className="custom-device-tab-panel">
+            {customDeviceDialogView === "terminals" || customDeviceDialogView === "icon" ? (
               <>
-            {renderStateVisualPager(customDeviceDraft.stateDefinitions, customDeviceStatePageId, setCustomDeviceStatePageId, {
+            {customDeviceDialogView === "icon" && renderStateVisualPager(customDeviceDraft.stateDefinitions, customDeviceStatePageId, setCustomDeviceStatePageId, {
               update: updateCustomDeviceStateDraftRow,
               add: addCustomDeviceStateDraftRow,
               remove: deleteCustomDeviceStateDraftRow,
@@ -41886,7 +42393,7 @@ export function App() {
                 </div>
               ) : undefined
             })}
-            {customDefaultStateSelected && <div className="custom-device-image-row">
+            {customDeviceDialogView === "icon" && customDefaultStateSelected && <div className="custom-device-image-row">
               <span>SVG/图片图标</span>
               <button type="button" onClick={() => customDeviceImageInputRef.current?.click()}>上传SVG/图片到后台</button>
               <button
@@ -41908,8 +42415,8 @@ export function App() {
               <button type="button" onClick={() => setCustomDeviceDraft((current) => ({ ...current, backgroundImage: "", backgroundImageAssetId: "", error: "" }))}>清除</button>
               <strong>{customDeviceDraft.backgroundImageAssetId ? "后台已保存" : customDeviceDraft.backgroundImage ? "已设置" : "未设置"}</strong>
             </div>}
-            {customDefaultStateSelected && <div className="custom-device-preview">
-              <span>{customDefaultStateSelected ? "背景预览" : "状态预览"}</span>
+            {customDefaultStateSelected && customDeviceDialogView === "terminals" && <div className="custom-device-preview">
+              <span>端子位置预览</span>
               <div className="custom-device-preview-stage">
                 <svg
                   className="custom-device-anchor-preview"
@@ -42057,7 +42564,46 @@ export function App() {
               </div>
               <small>{customDeviceDraft.backgroundImageAssetId ? "当前显示后台图标预览" : customDeviceDraft.backgroundImage ? "当前显示本地图标预览" : "当前显示默认样例预览"}</small>
             </div>}
-            {customDefaultStateSelected && <div className="custom-terminal-grid">
+            {customDeviceDialogView === "icon" && customDefaultStateSelected && <div className="custom-device-preview">
+              <span>背景预览</span>
+              <div className="custom-device-preview-stage">
+                <svg
+                  className="custom-device-anchor-preview"
+                  viewBox={`${formatSvgNumber(-customDevicePreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(-customDevicePreviewHeight / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(customDevicePreviewWidth + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)} ${formatSvgNumber(customDevicePreviewHeight + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)}`}
+                  role="img"
+                  aria-label="自定义元件图标预览"
+                >
+                  <image
+                    href={customDevicePreviewImage}
+                    x={-customDevicePreviewWidth / 2}
+                    y={-customDevicePreviewHeight / 2}
+                    width={customDevicePreviewWidth}
+                    height={customDevicePreviewHeight}
+                    preserveAspectRatio="xMidYMid slice"
+                  />
+                  {customStatePreviewText && (
+                    <text
+                      className="custom-device-state-preview-text"
+                      x="0"
+                      y="0"
+                      fill={customStatePreviewVisual?.textColor || customStatePreviewVisual?.color || "#1d4ed8"}
+                    >
+                      {customStatePreviewText}
+                    </text>
+                  )}
+                  <rect
+                    className="custom-device-preview-frame"
+                    x={-customDevicePreviewWidth / 2}
+                    y={-customDevicePreviewHeight / 2}
+                    width={customDevicePreviewWidth}
+                    height={customDevicePreviewHeight}
+                    rx="8"
+                  />
+                </svg>
+              </div>
+              <small>{customDeviceDraft.backgroundImageAssetId ? "当前显示后台图标预览" : customDeviceDraft.backgroundImage ? "当前显示本地图标预览" : "当前显示默认样例预览"}</small>
+            </div>}
+            {customDefaultStateSelected && customDeviceDialogView === "terminals" && <div className="custom-terminal-grid">
               {Array.from({ length: customDeviceDraft.terminalCount }).map((_, index) => {
                 const terminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
                 const terminalAssociations = normalizeContainerTerminalAssociations(
@@ -42181,7 +42727,7 @@ export function App() {
               })}
             </div>}
               </>
-            ) : (
+            ) : customDeviceDialogView === "parameters" ? (
               <>
             <div className="custom-param-table-wrap">
               <table className="custom-param-table">
@@ -42335,15 +42881,26 @@ export function App() {
               </button>
             </div>
               </>
+            ) : (
+              renderDeviceDefinitionMeasurementPanel(customDeviceMeasurementTarget)
             )}
+            </div>
               </div>
             </div>
             <footer className="custom-device-dialog-footer">
-              <button type="button" onClick={() => setCustomDeviceDialogOpen(false)}>取消</button>
-              <button type="button" className="primary" onClick={() => saveCustomDeviceTemplate({ closeAfterSave: true })}>
-                保存自定义设备
+              <button type="button" onClick={closeCustomDeviceDialog}>取消</button>
+              <button type="button" className="primary" onClick={() => saveCustomDeviceDefinitionDialog({ closeAfterSave: true })}>
+                {customDeviceDefinitionMode === "edit" ? "保存元件定义" : "保存自定义设备"}
               </button>
             </footer>
+            <div
+              className="device-library-dialog-resize"
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="调整新建元件窗口大小"
+              title="拖拽调整窗口大小"
+              onPointerDown={(event) => startDeviceLibraryDialogResize("custom", event)}
+            />
           </section>
         </div>
       )}

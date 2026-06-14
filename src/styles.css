@@ -3694,7 +3694,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .library-definition-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   flex: 0 0 auto;
   padding: 10px 14px 12px;
@@ -3716,15 +3716,64 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .custom-device-dialog {
-  display: grid;
+  position: relative;
+  display: flex;
+  flex-direction: column;
   gap: 14px;
   width: min(1180px, calc(100vw - 48px));
+  height: min(760px, calc(100vh - 48px));
   max-height: min(760px, calc(100vh - 48px));
-  overflow: auto;
+  overflow: hidden;
   padding: 18px;
   border-radius: 8px;
   background: #ffffff;
   box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.custom-device-dialog.floating,
+.device-definition-dialog.floating,
+.measurement-config-dialog.floating {
+  position: fixed;
+  max-width: none;
+  max-height: none;
+}
+
+.device-library-dialog-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+
+.app-shell.device-library-dialog-moving {
+  user-select: none;
+}
+
+.app-shell.device-library-dialog-moving .device-library-dialog-title {
+  cursor: grabbing;
+}
+
+.device-library-dialog-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.device-library-dialog-resize::after {
+  content: "";
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid #64748b;
+  border-bottom: 2px solid #64748b;
+  opacity: 0.7;
 }
 
 .template-dialog {
@@ -3947,16 +3996,24 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .custom-device-dialog-layout {
   display: grid;
   grid-template-columns: minmax(250px, 310px) minmax(0, 1fr);
-  align-items: start;
+  align-items: stretch;
   gap: 14px;
+  flex: 1 1 auto;
   min-height: 0;
 }
 
 .custom-device-editor-panel {
   display: grid;
-  align-content: start;
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 14px;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.custom-device-tab-panel {
+  min-height: 0;
+  overflow: auto;
 }
 
 .custom-device-dialog-footer {
@@ -3971,7 +4028,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 8px;
   min-height: 0;
-  max-height: 650px;
+  height: 100%;
   padding: 8px;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
@@ -4243,6 +4300,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .device-definition-dialog {
+  position: relative;
   display: grid;
   gap: 14px;
   width: min(1120px, calc(100vw - 48px));
@@ -4637,15 +4695,21 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .device-definition-measurement-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
   min-height: 0;
+  height: 100%;
 }
 
 .device-definition-measurement-panel .measurement-table-wrap {
-  max-height: 390px;
+  min-height: 0;
+  max-height: none;
 }
 
 .device-definition-measurement-actions {
   margin-top: 2px;
+  justify-content: flex-start;
 }
 
 .device-definition-visual-panel {
@@ -5730,19 +5794,24 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .custom-param-enum-values {
   display: grid;
+  grid-template-columns: minmax(58px, 1fr) max-content;
+  align-items: center;
   gap: 4px;
-  min-width: 150px;
+  min-width: 190px;
+  white-space: nowrap;
+}
+
+.custom-param-enum-values.with-label {
+  grid-template-columns: minmax(58px, 0.9fr) minmax(58px, 1fr) max-content;
 }
 
 .custom-param-enum-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 4px;
+  display: contents;
 }
 
 .custom-param-enum-row input {
   width: 100%;
+  min-width: 58px;
 }
 
 .custom-param-enum-row button,
@@ -5756,7 +5825,15 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .custom-param-enum-add {
-  justify-self: start;
+  justify-self: stretch;
+}
+
+.custom-param-enum-add-row {
+  margin-top: 2px;
+}
+
+.custom-param-enum-spacer {
+  min-width: 0;
 }
 
 .custom-param-enum-placeholder {
@@ -7908,6 +7985,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .measurement-config-dialog {
+  position: relative;
   width: min(980px, calc(100vw - 48px));
   max-height: calc(100vh - 64px);
   display: grid;

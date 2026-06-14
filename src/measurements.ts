@@ -37,6 +37,7 @@ export type DeviceMeasurementProfileItem = {
   name?: string;
   measurementTypeId: string;
   position?: string;
+  associatedField?: string;
   role?: string;
   defaultVisible?: boolean;
   labelOverride?: string;
@@ -272,6 +273,14 @@ function normalizedProfilePosition(value: unknown): string | undefined {
   return position ? position : undefined;
 }
 
+function normalizedAssociatedField(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  const associatedField = String(value).trim();
+  return associatedField ? associatedField : undefined;
+}
+
 function baseDeviceKind(kind: string): string {
   return kind.endsWith("-vertical") && kind !== "ac-ground-disconnector-vertical"
     ? kind.slice(0, -"-vertical".length)
@@ -434,6 +443,7 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
         name: item.name !== undefined ? String(item.name) : undefined,
         measurementTypeId,
         position: normalizedProfilePosition(item.position),
+        associatedField: normalizedAssociatedField(item.associatedField),
         role: item.role ? String(item.role) : undefined,
         defaultVisible: item.defaultVisible,
         labelOverride: item.labelOverride ? String(item.labelOverride) : undefined,
@@ -572,6 +582,11 @@ export function measurementProfileItemsForNodePosition(
   );
 }
 
+function measurementSourcePointForProfileItem(nodeId: string, item: Pick<DeviceMeasurementProfileItem, "measurementTypeId" | "role" | "associatedField">, terminalId?: string): string {
+  const sourceKey = item.associatedField || `${item.role ? `${item.role}.` : ""}${item.measurementTypeId}`;
+  return terminalId ? `${nodeId}.${terminalId}.${sourceKey}` : `${nodeId}.${sourceKey}`;
+}
+
 function defaultMeasurementGroupOffsetForNode(node: ModelNode, terminal?: ModelNode["terminals"][number]): { x: number; y: number } {
   const rotateOffset = (offset: { x: number; y: number }) => {
     const radians = (node.rotation * Math.PI) / 180;
@@ -633,9 +648,7 @@ export function createDefaultMeasurementGroupsForNode(
           : `measurement-${node.id}-${item.measurementTypeId}-${item.role ?? index}`,
         measurementTypeId: item.measurementTypeId,
         role: item.role,
-        sourcePoint: terminal
-          ? `${node.id}.${terminal.id}.${item.role ? `${item.role}.` : ""}${item.measurementTypeId}`
-          : `${node.id}.${item.role ? `${item.role}.` : ""}${item.measurementTypeId}`,
+        sourcePoint: measurementSourcePointForProfileItem(node.id, item, terminal?.id),
         visible: item.defaultVisible,
         labelOverride: item.name ?? item.labelOverride,
         unitOverride: item.unitOverride,

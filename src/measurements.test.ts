@@ -87,14 +87,14 @@ describe("measurement domain", () => {
       deviceProfiles: [{
         deviceKind: "ac-transformer",
         items: [
-          { name: "整机状态", measurementTypeId: "status", position: "device" },
+          { name: "整机状态", measurementTypeId: "status", position: "device", associatedField: "device.status" },
           { name: "高压侧电压", measurementTypeId: "voltage", position: "t1" }
         ]
       }]
     });
 
     expect(config.deviceProfiles.find((item) => item.deviceKind === "ac-transformer")?.items).toEqual([
-      expect.objectContaining({ name: "整机状态", measurementTypeId: "status", position: "device" }),
+      expect.objectContaining({ name: "整机状态", measurementTypeId: "status", position: "device", associatedField: "device.status" }),
       expect.objectContaining({ name: "高压侧电压", measurementTypeId: "voltage", position: "t1" })
     ]);
   });
@@ -144,6 +144,26 @@ describe("measurement domain", () => {
         labelOverride: "低压U"
       })
     ]);
+  });
+
+  test("uses the associated field as the generated measurement source point key", () => {
+    const config = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{
+        deviceKind: "ac-load",
+        items: [
+          { name: "负荷有功", measurementTypeId: "activePower", position: "device", associatedField: "load.p" }
+        ]
+      }]
+    });
+
+    const group = createDefaultMeasurementGroupForNode(node("node-2", "ac-load"), config);
+
+    expect(group?.items[0]).toMatchObject({
+      measurementTypeId: "activePower",
+      sourcePoint: "node-2.load.p",
+      labelOverride: "负荷有功"
+    });
   });
 
   test("filters profile items strictly by device or terminal measurement position", () => {
