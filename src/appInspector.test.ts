@@ -9297,6 +9297,64 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".routable-line-manual-path-layer");
   });
 
+  test("supports manual bend previews and ctrl-axis locking while drawing routable line-like devices", async () => {
+    const source = await readAppSource();
+    const placementTypeStart = source.indexOf("type RoutableLinePlacementState =");
+    const placementTypeEnd = source.indexOf("type AttributeLibrary", placementTypeStart);
+    const placementTypeBlock = source.slice(placementTypeStart, placementTypeEnd);
+    const previewStart = source.indexOf("const buildRoutableLinePreviewPath =");
+    const previewEnd = source.indexOf("const routableLinePlacementColor", previewStart);
+    const previewBlock = source.slice(previewStart, previewEnd);
+    const appendStart = source.indexOf("const appendRoutableLinePreviewManualPoint =");
+    const appendEnd = source.indexOf("const resolveRoutableLinePreviewPoint", appendStart);
+    const appendBlock = source.slice(appendStart, appendEnd);
+    const resolveStart = source.indexOf("const resolveRoutableLinePreviewPoint =");
+    const resolveEnd = source.indexOf("const resetRoutableLinePreviewState", resolveStart);
+    const resolveBlock = source.slice(resolveStart, resolveEnd);
+    const commitStart = source.indexOf("const commitRoutableLineDevice =");
+    const commitEnd = source.indexOf("const startRoutableLineFromTerminal", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
+    const pointerMoveStart = source.indexOf("const handlePointerMove = (event: PointerEvent<SVGSVGElement>)");
+    const pointerMoveEnd = source.indexOf("if (staticDrawing && !connectSource)", pointerMoveStart);
+    const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
+    const canvasPointerStart = source.indexOf("if (routableLinePlacement) {", source.indexOf("className={`diagram-canvas"));
+    const canvasPointerEnd = source.indexOf("if (libraryPlacement)", canvasPointerStart);
+    const canvasPointerBlock = source.slice(canvasPointerStart, canvasPointerEnd);
+    const keyStart = source.indexOf("const handleKeyDown =");
+    const keyEnd = source.indexOf("window.addEventListener(\"keydown\", handleGlobalSaveKeyDown", keyStart);
+    const keyBlock = source.slice(keyStart, keyEnd);
+    const keyUpStart = source.indexOf("const handleKeyUp =");
+    const keyUpEnd = source.indexOf("window.addEventListener(\"keydown\", handleGlobalSaveKeyDown", keyUpStart);
+    const keyUpBlock = source.slice(keyUpStart, keyUpEnd);
+    const renderStart = source.indexOf("{routableLinePlacement && routableLinePreview.path && (");
+    const renderEnd = source.indexOf("{routableLineEndpointDragPreviewRoute &&", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+
+    expect(placementTypeBlock).toContain("manualPoints?: Point[];");
+    expect(source).toContain("const routableLinePreviewAxisLockRef");
+    expect(previewBlock).toContain("placement.manualPoints?.length");
+    expect(previewBlock).toContain("buildManualConnectionPreviewPath(sourcePoint, placement.manualPoints, endPoint, canvasBounds)");
+    expect(appendBlock).toContain("pendingRoutableLinePreviewRef.current = null");
+    expect(appendBlock).toContain("window.cancelAnimationFrame(routableLinePreviewFrameRef.current)");
+    expect(appendBlock).toContain("manualPoints: [...(routableLinePlacement.manualPoints ?? []), { ...point }]");
+    expect(resolveBlock).toContain("lockRoutableLinePreviewAxis(point)");
+    expect(resolveBlock).toContain("constrainPointToOrthogonalAxis(referencePoint, point, axis)");
+    expect(pointerMoveBlock).toContain("const previewPoint = resolveRoutableLinePreviewPoint(pointer, event)");
+    expect(pointerMoveBlock).toContain("scheduleRoutableLinePreviewPoint(previewPoint)");
+    expect(canvasPointerBlock).toContain("const previewPoint = resolveRoutableLinePreviewPoint(pointer, event)");
+    expect(canvasPointerBlock).toContain("const nextPlacement = appendRoutableLinePreviewManualPoint(previewPoint)");
+    expect(canvasPointerBlock).toContain("nextPlacement ?? routableLinePlacement");
+    expect(commitBlock).toContain("manualPoints?: Point[]");
+    expect(commitBlock).toContain("buildManualConnectionPreviewRoute(sourcePoint, manualPoints, targetPoint, canvasBounds)");
+    expect(commitBlock).toContain("setRoutableLineDeviceCanvasPoints(rawLine, manualRoutePoints)");
+    expect(source).toContain("finishRoutableLineToTarget(target, routableLinePlacement.manualPoints)");
+    expect(keyBlock).toContain("event.key === \"Control\" && routableLinePlacement?.source");
+    expect(keyBlock).toContain("lockRoutableLinePreviewAxis(lockPoint)");
+    expect(keyUpBlock).toContain("releaseRoutableLinePreviewAxisLock()");
+    expect(renderBlock).toContain("routableLinePlacement.manualPoints?.map");
+    expect(renderBlock).toContain("routable-line-preview-bend-point");
+  });
+
   test("draws box-like static symbols by rectangle and edits their real width and height", async () => {
     const model = await readModelSource();
     const source = await readAppSource();

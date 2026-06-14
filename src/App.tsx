@@ -263,6 +263,7 @@ import {
   routeEdgesForSavedPathRendering,
   routeEdgesForStoredRendering,
   modelGeometryInsideCanvasBounds,
+  buildManualConnectionPreviewRoute,
   buildManualConnectionPreviewPath,
   mirrorNodes,
   moveSavedSchemeToParent,
@@ -521,6 +522,7 @@ type LibraryPlacementState =
 type RoutableLinePlacementState = {
   template: DeviceTemplate;
   source: ConnectTarget | null;
+  manualPoints?: Point[];
 } | null;
 type AttributeLibrary = string;
 type CustomComponentTypeDefinition = {
@@ -10145,6 +10147,7 @@ export function App() {
   const pendingConnectPreviewRef = useRef<{ point: Point | null; ready: boolean; targetPoint: Point | null; target: ConnectTarget | null } | null>(null);
   const connectPreviewFrameRef = useRef<number | null>(null);
   const routableLinePreviewPointRef = useRef<Point | null>(null);
+  const routableLinePreviewAxisLockRef = useRef<{ axis: OrthogonalAxis; nodeId: string; terminalId: string } | null>(null);
   const routableLineDropTargetPointRef = useRef<Point | null>(null);
   const routableLineDropTargetRef = useRef<ConnectTarget | null>(null);
   const pendingRoutableLinePreviewRef = useRef<{ point: Point | null } | null>(null);
@@ -14292,6 +14295,9 @@ export function App() {
     }
     const sourcePoint = connectTargetPoint(placement.source);
     const endPoint = targetPoint ?? point;
+    if (placement.manualPoints?.length) {
+      return buildManualConnectionPreviewPath(sourcePoint, placement.manualPoints, endPoint, canvasBounds);
+    }
     const route = routeEdgesForStoredRendering(
       compactPreviewNodes(placement.source.node, target?.node),
       [{
@@ -17942,6 +17948,12 @@ export function App() {
           lockConnectPreviewAxis(lockPoint);
         }
       }
+      if (event.key === "Control" && routableLinePlacement?.source) {
+        const lockPoint = routableLinePreviewPointRef.current ?? lastCanvasPointerRef.current;
+        if (lockPoint) {
+          lockRoutableLinePreviewAxis(lockPoint);
+        }
+      }
       if (!isEditMode) {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a" && isCanvasShortcutTarget) {
           event.preventDefault();
@@ -18077,6 +18089,7 @@ export function App() {
     const handleKeyUp = (event: KeyboardEvent) => {
       if (event.key === "Control") {
         releaseConnectPreviewAxisLock();
+        releaseRoutableLinePreviewAxisLock();
       }
       if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "ArrowUp" || event.key === "ArrowDown") {
         releaseKeyboardMoveKey(event.key);
@@ -22528,7 +22541,74 @@ export function App() {
       );
     });
   };
+  const releaseRoutableLinePreviewAxisLock = () => {
+    routableLinePreviewAxisLockRef.current = null;
+  };
+  const routableLinePreviewAxisReferencePoint = () =>
+    routableLinePlacement?.manualPoints?.[routableLinePlacement.manualPoints.length - 1] ??
+    (routableLinePlacement?.source ? connectTargetPoint(routableLinePlacement.source) : null);
+  const lockRoutableLinePreviewAxis = (point: Point) => {
+    if (!routableLinePlacement?.source) {
+      return null;
+    }
+    const referencePoint = routableLinePreviewAxisReferencePoint();
+    if (!referencePoint) {
+      return null;
+    }
+    const locked = routableLinePreviewAxisLockRef.current;
+    if (locked && locked.nodeId === routableLinePlacement.source.node.id && locked.terminalId === routableLinePlacement.source.terminalId) {
+      return locked.axis;
+    }
+    if (referencePoint.x === point.x && referencePoint.y === point.y) {
+      return null;
+    }
+    const axis = primaryOrthogonalAxis(referencePoint, point);
+    routableLinePreviewAxisLockRef.current = {
+      axis,
+      nodeId: routableLinePlacement.source.node.id,
+      terminalId: routableLinePlacement.source.terminalId
+    };
+    return axis;
+  };
+  const appendRoutableLinePreviewManualPoint = (point: Point) => {
+    if (!routableLinePlacement?.source) {
+      return null;
+    }
+    const referencePoint = routableLinePreviewAxisReferencePoint();
+    if (!referencePoint || sameOptionalPoint(referencePoint, point)) {
+      return routableLinePlacement;
+    }
+    pendingRoutableLinePreviewRef.current = null;
+    if (routableLinePreviewFrameRef.current !== null) {
+      window.cancelAnimationFrame(routableLinePreviewFrameRef.current);
+      routableLinePreviewFrameRef.current = null;
+    }
+    const nextPlacement = {
+      ...routableLinePlacement,
+      manualPoints: [...(routableLinePlacement.manualPoints ?? []), { ...point }]
+    };
+    setRoutableLinePlacement(nextPlacement);
+    releaseRoutableLinePreviewAxisLock();
+    return nextPlacement;
+  };
+  const resolveRoutableLinePreviewPoint = (point: Point, event: { shiftKey: boolean; ctrlKey: boolean }) => {
+    if (!routableLinePlacement?.source) {
+      releaseRoutableLinePreviewAxisLock();
+      return point;
+    }
+    const referencePoint = routableLinePreviewAxisReferencePoint();
+    if (!referencePoint) {
+      return point;
+    }
+    if (event.ctrlKey) {
+      const axis = lockRoutableLinePreviewAxis(point);
+      return axis ? clampPointToCanvas(constrainPointToOrthogonalAxis(referencePoint, point, axis)) : point;
+    }
+    releaseRoutableLinePreviewAxisLock();
+    return event.shiftKey ? clampPointToCanvas(constrainPointToOrthogonalAxis(referencePoint, point)) : point;
+  };
   const resetRoutableLinePreviewState = () => {
+    releaseRoutableLinePreviewAxisLock();
     pendingRoutableLinePreviewRef.current = null;
     if (routableLinePreviewFrameRef.current !== null) {
       window.cancelAnimationFrame(routableLinePreviewFrameRef.current);
@@ -27179,7 +27259,7 @@ export function App() {
     return null;
   };
 
-  const commitRoutableLineDevice = (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget) => {
+  const commitRoutableLineDevice = (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[]) => {
     const sourcePoint = connectTargetPoint(source);
     const targetPoint = connectTargetPoint(target);
     const rawLine = createRoutableLineDeviceFromEndpoints(
@@ -27192,7 +27272,12 @@ export function App() {
         target: routableLineDeviceEndpointRefForNode(target.node, target.terminalId, target.point)
       }
     );
-    const routedLine = routeRoutableLineDevice(rawLine, [...nodes, rawLine], canvasBounds);
+    const manualRoutePoints = manualPoints?.length
+      ? buildManualConnectionPreviewRoute(sourcePoint, manualPoints, targetPoint, canvasBounds)
+      : null;
+    const routedLine = manualRoutePoints
+      ? setRoutableLineDeviceCanvasPoints(rawLine, manualRoutePoints)
+      : routeRoutableLineDevice(rawLine, [...nodes, rawLine], canvasBounds);
     if (rejectAutoCanvasExpansionForContent([...nodes, routedLine], edges)) {
       return false;
     }
@@ -27253,14 +27338,14 @@ export function App() {
     return true;
   };
 
-  const finishRoutableLineToTarget = (target: ConnectTarget) => {
+  const finishRoutableLineToTarget = (target: ConnectTarget, manualPoints = routableLinePlacement?.manualPoints) => {
     if (!routableLinePlacement?.source) {
       return false;
     }
     if (connectTargetTerminalType(target) !== routableLineTemplateTerminalType(routableLinePlacement.template)) {
       return false;
     }
-    const committed = commitRoutableLineDevice(routableLinePlacement.template, routableLinePlacement.source, target);
+    const committed = commitRoutableLineDevice(routableLinePlacement.template, routableLinePlacement.source, target, manualPoints);
     if (committed) {
       writeOperationLog(`线路终点：${target.node.name}`);
     }
@@ -27784,7 +27869,8 @@ export function App() {
         updateLibraryPlacementPreview(pointer);
       }
       if (routableLinePlacement) {
-        scheduleRoutableLinePreviewPoint(pointer);
+        const previewPoint = resolveRoutableLinePreviewPoint(pointer, event);
+        scheduleRoutableLinePreviewPoint(previewPoint);
       }
       const activeContextMarqueeSelection = contextMarqueeSelectionRef.current;
       if (activeContextMarqueeSelection) {
@@ -32087,7 +32173,7 @@ export function App() {
       const target: ConnectTarget = { node, terminalId, point: busPoint };
       if (routableLinePlacement.source) {
         if (connectTargetTerminalType(target) === routableLineTemplateTerminalType(routableLinePlacement.template)) {
-          finishRoutableLineToTarget(target);
+          finishRoutableLineToTarget(target, routableLinePlacement.manualPoints);
         }
       } else {
         startRoutableLineFromTerminal(node, terminalId, busPoint);
@@ -38226,7 +38312,8 @@ export function App() {
                 updateLibraryPlacementPreview(pointer);
               }
               if (routableLinePlacement) {
-                scheduleRoutableLinePreviewPoint(pointer);
+                const previewPoint = resolveRoutableLinePreviewPoint(pointer, event);
+                scheduleRoutableLinePreviewPoint(previewPoint);
               }
             }}
             onPointerUp={(event) => {
@@ -38328,14 +38415,18 @@ export function App() {
               lastCanvasClientPointerRef.current = { x: event.clientX, y: event.clientY };
               updateMouseStatus(pointer);
               if (routableLinePlacement) {
-                const target = findRoutableLineEndpointTargetAtPoint(pointer);
-                applyRoutableLinePreviewState(pointer, target ? connectTargetPoint(target) : null, target);
+                const previewPoint = resolveRoutableLinePreviewPoint(pointer, event);
+                const target = findRoutableLineEndpointTargetAtPoint(previewPoint);
+                applyRoutableLinePreviewState(previewPoint, target ? connectTargetPoint(target) : null, target);
                 if (target) {
                   if (routableLinePlacement.source) {
-                    finishRoutableLineToTarget(target);
+                    finishRoutableLineToTarget(target, routableLinePlacement.manualPoints);
                   } else {
                     startRoutableLineFromTerminal(target.node, target.terminalId, target.point);
                   }
+                } else if (routableLinePlacement.source) {
+                  const nextPlacement = appendRoutableLinePreviewManualPoint(previewPoint);
+                  applyRoutableLinePreviewState(previewPoint, null, null, nextPlacement ?? routableLinePlacement);
                 }
                 return;
               }
@@ -39335,6 +39426,20 @@ export function App() {
                 className="routable-line-drawing-preview"
                 style={routableLinePlacementColor ? ({ "--connection-color": routableLinePlacementColor } as CSSProperties) : undefined}
               />
+            )}
+            {routableLinePlacement && (
+              <>
+                {routableLinePlacement.manualPoints?.map((point, index) => (
+                  <circle
+                    key={`routable-line-preview-bend-${index}`}
+                    className="connection-preview-bend-point routable-line-preview-bend-point"
+                    cx={point.x}
+                    cy={point.y}
+                    r={5}
+                    style={routableLinePlacementColor ? ({ "--connection-color": routableLinePlacementColor } as CSSProperties) : undefined}
+                  />
+                ))}
+              </>
             )}
             {routableLineEndpointDragPreviewRoute && (
               <path
