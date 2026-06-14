@@ -498,6 +498,7 @@ type CanvasWheelZoomEvent = {
   stopPropagation: () => void;
 };
 const CANVAS_SELECTION_DRAG_THRESHOLD = 4;
+type OrthogonalAxis = "x" | "y";
 function hasCanvasSelectionModifier(event: { ctrlKey: boolean; shiftKey: boolean; metaKey?: boolean }) {
   return event.ctrlKey || event.shiftKey || Boolean(event.metaKey);
 }
@@ -1543,6 +1544,12 @@ type ActiveProjectPointer = {
 type RefreshRecoveryProjectState = DraftProjectState & {
   dirty: true;
   savedAt: string;
+};
+type ConnectSourceState = {
+  nodeId: string;
+  terminalId: string;
+  point?: Point;
+  manualPoints?: Point[];
 };
 type ImageAsset = {
   id: string;
@@ -6692,13 +6699,14 @@ function screenToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number):
   return { x: Math.round(transformed.x), y: Math.round(transformed.y) };
 }
 
-function constrainPointToOrthogonalAxis(start: Point, point: Point): Point {
+function primaryOrthogonalAxis(start: Point, point: Point): OrthogonalAxis {
   const dx = point.x - start.x;
   const dy = point.y - start.y;
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    return { x: point.x, y: start.y };
-  }
-  return { x: start.x, y: point.y };
+  return Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
+}
+
+function constrainPointToOrthogonalAxis(start: Point, point: Point, axis: OrthogonalAxis = primaryOrthogonalAxis(start, point)): Point {
+  return axis === "x" ? { x: point.x, y: start.y } : { x: start.x, y: point.y };
 }
 
 function downloadText(filename: string, text: string, mime: string) {
@@ -7787,7 +7795,7 @@ function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorDisplayM
       const strokeWidth = terminalStubStrokeWidth(node, terminal);
       const terminalColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
       const label = `${terminal.label} / ${terminal.type.toUpperCase()}`;
-      return `<g class="export-terminal ${terminal.type}" transform="translate(${formatSvgNumber(renderPoint.x)} ${formatSvgNumber(renderPoint.y)}) scale(${inverseScaleX} ${inverseScaleY})">
+      return `<g class="export-terminal ${terminal.type}" data-terminal-id="${escapeXml(terminal.id)}" transform="translate(${formatSvgNumber(renderPoint.x)} ${formatSvgNumber(renderPoint.y)}) scale(${inverseScaleX} ${inverseScaleY})">
   <line class="export-terminal-stub ${terminal.type}" x1="${stub.from.x}" y1="${stub.from.y}" x2="${stub.to.x}" y2="${stub.to.y}" stroke="${terminalColor}" stroke-width="${formatSvgNumber(strokeWidth)}" stroke-linecap="round"${dashAttribute}/>
   <circle class="export-terminal-dot ${terminal.type}" cx="0" cy="0" r="6" fill="${terminalColor}" stroke="#ffffff" stroke-width="2" vector-effect="non-scaling-stroke"><title>${escapeXml(label)}</title></circle>
 </g>`;
@@ -10129,6 +10137,7 @@ export function App() {
   const connectDropHintElementRef = useRef<SVGGElement | null>(null);
   const connectPreviewDomRef = useRef<{ path: string; targetPoint: Point | null }>({ path: "", targetPoint: null });
   const connectPreviewPointRef = useRef<Point | null>(null);
+  const connectPreviewAxisLockRef = useRef<{ axis: OrthogonalAxis; nodeId: string; terminalId: string } | null>(null);
   const connectDropTargetPointRef = useRef<Point | null>(null);
   const connectDropTargetRef = useRef<ConnectTarget | null>(null);
   const connectDropReadyRef = useRef(false);
@@ -10312,7 +10321,7 @@ export function App() {
   const [connectionRedrawScope, setConnectionRedrawScope] = useState<ConnectionRedrawScope>("selected");
   const [filterSelectionDialogOpen, setFilterSelectionDialogOpen] = useState(false);
   const [filterSelectionTypeKeys, setFilterSelectionTypeKeys] = useState<string[]>([]);
-  const [connectSource, setConnectSource] = useState<{ nodeId: string; terminalId: string; point?: Point } | null>(null);
+  const [connectSource, setConnectSource] = useState<ConnectSourceState | null>(null);
   const [staticDrawing, setStaticDrawing] = useState<StaticDrawingState | null>(null);
   const [libraryPlacement, setLibraryPlacement] = useState<LibraryPlacementState | null>(null);
   const [routableLinePlacement, setRoutableLinePlacement] = useState<RoutableLinePlacementState>(null);
@@ -14233,13 +14242,15 @@ export function App() {
         sourceTerminalId: source.terminalId,
         targetTerminalId: previewTarget?.terminalId ?? "t1",
         sourcePoint,
+        manualPoints: source.manualPoints,
         targetPoint: previewTarget
           ? isBusNode(previewTarget.node)
             ? previewTarget.point ?? endPoint
             : previewTarget.point
           : endPoint
       }],
-      canvasBounds
+      canvasBounds,
+      { preserveManualRouteDisplay: Boolean(source.manualPoints?.length) }
     )[0];
     return route?.path ?? "";
   };
@@ -17921,6 +17932,12 @@ export function App() {
       if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) && !isCanvasShortcutTarget) {
         return;
       }
+      if (event.key === "Control" && connectSource) {
+        const lockPoint = connectPreviewPointRef.current ?? lastCanvasPointerRef.current;
+        if (lockPoint) {
+          lockConnectPreviewAxis(lockPoint);
+        }
+      }
       if (!isEditMode) {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a" && isCanvasShortcutTarget) {
           event.preventDefault();
@@ -18054,6 +18071,9 @@ export function App() {
       }
     };
     const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key === "Control") {
+        releaseConnectPreviewAxisLock();
+      }
       if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "ArrowUp" || event.key === "ArrowDown") {
         releaseKeyboardMoveKey(event.key);
       }
@@ -18066,7 +18086,7 @@ export function App() {
       window.removeEventListener("keydown", handleKeyDown, { capture: true });
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, canvasBounds, canvasClipboard, canvasSelectionScope, deviceIndexCounters, displaySelectedEdgeIds, displaySelectedNodeIds, edges, hasUnsavedChanges, hoveredAttributeLibraryComponentType, isEditMode, libraryPlacement, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, staticDrawing, topologyErrors, viewBox]);
+  }, [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, canvasBounds, canvasClipboard, canvasSelectionScope, connectSource, deviceIndexCounters, displaySelectedEdgeIds, displaySelectedNodeIds, edges, hasUnsavedChanges, hoveredAttributeLibraryComponentType, isEditMode, libraryPlacement, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, staticDrawing, topologyErrors, viewBox]);
 
   useEffect(() => {
     if (isBrowseMode && leftPanelTab !== "projects") {
@@ -22542,6 +22562,7 @@ export function App() {
     });
   };
   const resetConnectPreviewState = () => {
+    releaseConnectPreviewAxisLock();
     pendingConnectPreviewRef.current = null;
     if (connectPreviewFrameRef.current !== null) {
       window.cancelAnimationFrame(connectPreviewFrameRef.current);
@@ -22549,16 +22570,77 @@ export function App() {
     }
     applyConnectPreviewState(null, false);
   };
-  const resolveConnectPreviewPoint = (point: Point, event: { shiftKey: boolean; ctrlKey: boolean }) => {
-    if (!connectSource || (!event.shiftKey && !event.ctrlKey)) {
-      return point;
+  const releaseConnectPreviewAxisLock = () => {
+    connectPreviewAxisLockRef.current = null;
+  };
+  const connectSourceEndpointPoint = () => {
+    if (!connectSource) {
+      return null;
     }
     const sourceNode = visibleNodeById.get(connectSource.nodeId);
-    if (!sourceNode) {
+    return sourceNode
+      ? connectSource.point ?? getModelEdgeEndpointPoint(sourceNode, undefined, connectSource.terminalId)
+      : null;
+  };
+  const connectPreviewAxisReferencePoint = () =>
+    connectSource?.manualPoints?.[connectSource.manualPoints.length - 1] ?? connectSourceEndpointPoint();
+  const lockConnectPreviewAxis = (point: Point) => {
+    if (!connectSource) {
+      return null;
+    }
+    const referencePoint = connectPreviewAxisReferencePoint();
+    if (!referencePoint) {
+      return null;
+    }
+    const locked = connectPreviewAxisLockRef.current;
+    if (locked && locked.nodeId === connectSource.nodeId && locked.terminalId === connectSource.terminalId) {
+      return locked.axis;
+    }
+    if (referencePoint.x === point.x && referencePoint.y === point.y) {
+      return null;
+    }
+    const axis = primaryOrthogonalAxis(referencePoint, point);
+    connectPreviewAxisLockRef.current = { axis, nodeId: connectSource.nodeId, terminalId: connectSource.terminalId };
+    return axis;
+  };
+  const appendConnectPreviewManualPoint = (point: Point) => {
+    if (!connectSource) {
+      return null;
+    }
+    const referencePoint = connectPreviewAxisReferencePoint();
+    if (!referencePoint || sameOptionalPoint(referencePoint, point)) {
+      return connectSource;
+    }
+    pendingConnectPreviewRef.current = null;
+    if (connectPreviewFrameRef.current !== null) {
+      window.cancelAnimationFrame(connectPreviewFrameRef.current);
+      connectPreviewFrameRef.current = null;
+    }
+    const nextConnectSource = {
+      ...connectSource,
+      manualPoints: [...(connectSource.manualPoints ?? []), { ...point }]
+    };
+    setConnectSource(nextConnectSource);
+    releaseConnectPreviewAxisLock();
+    return nextConnectSource;
+  };
+  const resolveConnectPreviewPoint = (point: Point, event: { shiftKey: boolean; ctrlKey: boolean }) => {
+    if (!connectSource) {
+      releaseConnectPreviewAxisLock();
       return point;
     }
-    const start = connectSource.point ?? getModelEdgeEndpointPoint(sourceNode, undefined, connectSource.terminalId);
-    return clampPointToCanvas(constrainPointToOrthogonalAxis(start, point));
+    const start = connectSourceEndpointPoint();
+    if (!start) {
+      return point;
+    }
+    if (event.ctrlKey) {
+      const referencePoint = connectPreviewAxisReferencePoint() ?? start;
+      const axis = lockConnectPreviewAxis(point);
+      return axis ? clampPointToCanvas(constrainPointToOrthogonalAxis(referencePoint, point, axis)) : point;
+    }
+    releaseConnectPreviewAxisLock();
+    const referencePoint = connectPreviewAxisReferencePoint() ?? start;
+    return event.shiftKey ? clampPointToCanvas(constrainPointToOrthogonalAxis(referencePoint, point)) : point;
   };
   const axisLockedDelta = (dx: number, dy: number): Point => (
     Math.abs(dx) >= Math.abs(dy) ? { x: dx, y: 0 } : { x: 0, y: dy }
@@ -27295,7 +27377,8 @@ export function App() {
       [newEdge],
       newEdge.id,
       canvasBounds,
-      routedEdges
+      routedEdges,
+      { preserveManualRouteDisplay: Boolean(newEdge.manualPoints?.length) }
     );
     if (!prepared.ok || !prepared.edge) {
       const message = connectionCommitFailureMessage(prepared.issues);
@@ -27334,6 +27417,7 @@ export function App() {
       targetId: target.node.id,
       sourceTerminalId: connectSource.terminalId,
       sourcePoint: connectSource.point,
+      manualPoints: connectSource.manualPoints,
       targetTerminalId: target.terminalId,
       targetPoint: isBusNode(target.node)
         ? target.point ?? busAnchorFromPoint(target.node, endpointPoint ?? getTerminalPoint(target.node, target.terminalId))
@@ -32006,6 +32090,28 @@ export function App() {
       }
       return;
     }
+    if (event.button === 0 && svgRef.current && !rewiring) {
+      event.preventDefault();
+      const busPoint = busAnchorFromEvent(node, event);
+      if (connectSource) {
+        const target: ConnectTarget = { node, terminalId, point: busPoint };
+        finishConnectToTarget(target, busPoint ?? getTerminalPoint(node, terminalId));
+      } else if (event.ctrlKey) {
+        startConnectFromTerminal(node, terminalId, busPoint);
+      } else {
+        const point = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+        setTerminalPress({
+          nodeId: node.id,
+          terminalId,
+          pointerId: event.pointerId,
+          startPoint: point,
+          currentPoint: point,
+          moved: false
+        });
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
+      return;
+    }
     if (event.button === 0 && hasCanvasSelectionModifier(event)) {
       startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
       return;
@@ -32070,16 +32176,6 @@ export function App() {
       return;
     }
     if (!connectSource) {
-      const point = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-      setTerminalPress({
-        nodeId: node.id,
-        terminalId,
-        pointerId: event.pointerId,
-        startPoint: point,
-        currentPoint: point,
-        moved: false
-      });
-      event.currentTarget.setPointerCapture(event.pointerId);
       return;
     }
     const sourceNode = visibleNodeById.get(connectSource.nodeId);
@@ -32095,6 +32191,7 @@ export function App() {
       targetId: node.id,
       sourceTerminalId: connectSource.terminalId,
       sourcePoint: connectSource.point,
+      manualPoints: connectSource.manualPoints,
       targetTerminalId: terminalId,
       targetPoint: isBusNode(node) ? busAnchorFromPoint(node, connectPreviewPointRef.current ?? busPoint ?? getTerminalPoint(node, terminalId)) : busPoint
     };
@@ -36598,9 +36695,20 @@ export function App() {
     const nodeId = target?.getAttribute("data-node-id") ?? "";
     return nodeId ? nodeById.get(nodeId) : undefined;
   };
+  const lodTerminalIdFromEvent = (event: PointerEvent<SVGGElement> | MouseEvent<SVGGElement>) => {
+    const target = event.target instanceof Element
+      ? event.target.closest("[data-terminal-id]")
+      : null;
+    return target?.closest(".lod-node[data-node-id]") ? target.getAttribute("data-terminal-id") ?? "" : "";
+  };
   const handleLodNodePointerDown = (event: PointerEvent<SVGGElement>) => {
     const node = lodNodeFromEvent(event);
     if (node) {
+      const terminalId = lodTerminalIdFromEvent(event);
+      if (event.button === 0 && terminalId) {
+        handleTerminalPointerDown(event as unknown as PointerEvent<SVGCircleElement>, node, terminalId);
+        return;
+      }
       if (isRoutableLineDeviceKind(node.kind)) {
         handleRoutableLineNodePointerDown(event, node);
         return;
@@ -38242,7 +38350,8 @@ export function App() {
                 if (target) {
                   finishConnectToTarget(target, previewPoint);
                 } else {
-                  applyConnectPreviewState(previewPoint, false);
+                  const nextConnectSource = appendConnectPreviewManualPoint(previewPoint);
+                  applyConnectPreviewState(previewPoint, false, null, null, nextConnectSource ?? connectSource);
                 }
                 return;
               }
@@ -39201,6 +39310,20 @@ export function App() {
                 className="connection-preview-line"
                 style={connectPreviewColor ? ({ "--connection-color": connectPreviewColor } as CSSProperties) : undefined}
               />
+            )}
+            {connectSource && (
+              <>
+                {connectSource.manualPoints?.map((point, index) => (
+                  <circle
+                    key={`connect-preview-bend-${index}`}
+                    className="connection-preview-bend-point"
+                    cx={point.x}
+                    cy={point.y}
+                    r={5}
+                    style={connectPreviewColor ? ({ "--connection-color": connectPreviewColor } as CSSProperties) : undefined}
+                  />
+                ))}
+              </>
             )}
             {routableLinePlacement && routableLinePreview.path && (
               <path

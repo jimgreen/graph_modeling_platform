@@ -2430,6 +2430,121 @@ describe("graph inspector panel", () => {
     expect(schedulerBlock).toContain("target ?? null");
   });
 
+  test("routes terminal left-clicks into connection handling before changing node selection", async () => {
+    const source = await readAppSource();
+    const terminalStart = source.indexOf("const handleTerminalPointerDown =");
+    const terminalEnd = source.indexOf("const handleNodePointerDown", terminalStart);
+    const terminalBlock = source.slice(terminalStart, terminalEnd);
+    const ctrlStartIndex = terminalBlock.indexOf("} else if (event.ctrlKey) {");
+    const terminalLeftPressIndex = terminalBlock.indexOf("event.button === 0 && svgRef.current && !rewiring");
+    const routablePlacementIndex = terminalBlock.indexOf("if (routableLinePlacement");
+    const selectionModifierIndex = terminalBlock.indexOf("hasCanvasSelectionModifier(event)");
+    const selectionIndex = terminalBlock.indexOf('setCanvasSelectionScope("direct")', terminalLeftPressIndex);
+
+    expect(ctrlStartIndex).toBeGreaterThanOrEqual(0);
+    expect(terminalLeftPressIndex).toBeGreaterThanOrEqual(0);
+    expect(routablePlacementIndex).toBeGreaterThanOrEqual(0);
+    expect(selectionModifierIndex).toBeGreaterThanOrEqual(0);
+    expect(selectionIndex).toBeGreaterThanOrEqual(0);
+    expect(routablePlacementIndex).toBeLessThan(terminalLeftPressIndex);
+    expect(terminalLeftPressIndex).toBeLessThan(ctrlStartIndex);
+    expect(terminalLeftPressIndex).toBeLessThan(selectionModifierIndex);
+    expect(terminalLeftPressIndex).toBeLessThan(selectionIndex);
+    expect(terminalBlock).toContain("if (connectSource) {");
+    expect(terminalBlock).toContain("finishConnectToTarget(target, busPoint ?? getTerminalPoint(node, terminalId))");
+    expect(terminalBlock).toContain("startConnectFromTerminal(node, terminalId, busPoint)");
+    expect(terminalBlock).toContain("setTerminalPress({");
+    expect(terminalBlock).toContain("event.currentTarget.setPointerCapture(event.pointerId)");
+    expect(terminalBlock).toContain("event.preventDefault()");
+  });
+
+  test("routes ctrl-clicks on lod terminal markup through terminal connection handling", async () => {
+    const source = await readAppSource();
+    const terminalMarkupStart = source.indexOf("function buildSvgTerminalMarkup");
+    const terminalMarkupEnd = source.indexOf("const DEVICE_GLYPH_DESIGN_LONGEST_SIDE", terminalMarkupStart);
+    const terminalMarkupBlock = source.slice(terminalMarkupStart, terminalMarkupEnd);
+    const lodPointerStart = source.indexOf("const handleLodNodePointerDown =");
+    const lodPointerEnd = source.indexOf("const handleLodNodeContextMenu", lodPointerStart);
+    const lodPointerBlock = source.slice(lodPointerStart, lodPointerEnd);
+    const terminalRouteIndex = lodPointerBlock.indexOf("handleTerminalPointerDown(event as unknown as PointerEvent<SVGCircleElement>, node, terminalId)");
+    const nodeRouteIndex = lodPointerBlock.indexOf("handleNodePointerDown(event, node)");
+
+    expect(terminalMarkupBlock).toContain('data-terminal-id="${escapeXml(terminal.id)}"');
+    expect(source).toContain("const lodTerminalIdFromEvent =");
+    expect(lodPointerBlock).toContain("event.button === 0 && terminalId");
+    expect(terminalRouteIndex).toBeGreaterThanOrEqual(0);
+    expect(nodeRouteIndex).toBeGreaterThanOrEqual(0);
+    expect(terminalRouteIndex).toBeLessThan(nodeRouteIndex);
+  });
+
+  test("locks connection preview movement to the ctrl-press axis until ctrl is released", async () => {
+    const source = await readAppSource();
+    const refStart = source.indexOf("const connectPreviewAxisLockRef");
+    const resetStart = source.indexOf("const resetConnectPreviewState =");
+    const resetEnd = source.indexOf("const resolveConnectPreviewPoint", resetStart);
+    const resetBlock = source.slice(resetStart, resetEnd);
+    const resolveStart = source.indexOf("const resolveConnectPreviewPoint =");
+    const resolveEnd = source.indexOf("const axisLockedDelta", resolveStart);
+    const resolveBlock = source.slice(resolveStart, resolveEnd);
+    const keyStart = source.indexOf("const handleKeyDown =");
+    const keyEnd = source.indexOf("window.addEventListener(\"keydown\", handleGlobalSaveKeyDown", keyStart);
+    const keyBlock = source.slice(keyStart, keyEnd);
+
+    expect(refStart).toBeGreaterThanOrEqual(0);
+    expect(source).toContain("const lockConnectPreviewAxis =");
+    expect(source).toContain("const releaseConnectPreviewAxisLock =");
+    expect(source).toContain("const connectPreviewAxisReferencePoint =");
+    expect(source).toContain("connectSource?.manualPoints?.[connectSource.manualPoints.length - 1] ?? connectSourceEndpointPoint()");
+    expect(resolveBlock).toContain("if (event.ctrlKey)");
+    expect(resolveBlock).toContain("lockConnectPreviewAxis(point)");
+    expect(resolveBlock).toContain("constrainPointToOrthogonalAxis(referencePoint, point, axis)");
+    expect(resolveBlock).toContain("releaseConnectPreviewAxisLock()");
+    expect(resetBlock).toContain("releaseConnectPreviewAxisLock()");
+    expect(keyBlock).toContain('event.key === "Control" && connectSource');
+    expect(keyBlock).toContain("lockConnectPreviewAxis(lockPoint)");
+    expect(keyBlock).toContain('if (event.key === "Control")');
+    expect(keyBlock).toContain("releaseConnectPreviewAxisLock()");
+  });
+
+  test("adds manual bend points while drawing a connection before the target terminal is chosen", async () => {
+    const source = await readAppSource();
+    const styles = await readStyles();
+    const previewStart = source.indexOf("const buildConnectPreviewPath = (");
+    const previewEnd = source.indexOf("const connectPreviewColor", previewStart);
+    const previewBlock = source.slice(previewStart, previewEnd);
+    const appendStart = source.indexOf("const appendConnectPreviewManualPoint =");
+    const appendEnd = source.indexOf("const resolveConnectPreviewPoint", appendStart);
+    const appendBlock = source.slice(appendStart, appendEnd);
+    const canvasPointerStart = source.indexOf("if (connectSource) {", source.indexOf("className={`diagram-canvas"));
+    const canvasPointerEnd = source.indexOf("if (contextMarqueeSelectionRef.current)", canvasPointerStart);
+    const canvasPointerBlock = source.slice(canvasPointerStart, canvasPointerEnd);
+    const commitStart = source.indexOf("const commitNewConnectionEdge =");
+    const commitEnd = source.indexOf("const finishConnectToTarget", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
+    const finishStart = source.indexOf("const finishConnectToTarget =");
+    const finishEnd = source.indexOf("const finishRewiring", finishStart);
+    const finishBlock = source.slice(finishStart, finishEnd);
+    const renderStart = source.indexOf("{connectSource && (", source.indexOf("connection-preview-line"));
+    const renderEnd = source.indexOf("{routableLinePlacement && routableLinePreview.path", renderStart);
+    const renderBlock = source.slice(renderStart, renderEnd);
+
+    expect(previewBlock).toContain("manualPoints: source.manualPoints");
+    expect(previewBlock).toContain("{ preserveManualRouteDisplay: Boolean(source.manualPoints?.length) }");
+    expect(source).toContain("manualPoints?: Point[];");
+    expect(appendBlock).toContain("const nextConnectSource =");
+    expect(appendBlock).toContain("pendingConnectPreviewRef.current = null");
+    expect(appendBlock).toContain("window.cancelAnimationFrame(connectPreviewFrameRef.current)");
+    expect(appendBlock).toContain("manualPoints: [...(connectSource.manualPoints ?? []), { ...point }]");
+    expect(appendBlock).toContain("releaseConnectPreviewAxisLock()");
+    expect(canvasPointerBlock).toContain("const nextConnectSource = appendConnectPreviewManualPoint(previewPoint)");
+    expect(canvasPointerBlock).toContain("nextConnectSource ?? connectSource");
+    expect(renderBlock).toContain("connectSource.manualPoints?.map");
+    expect(renderBlock).toContain("connection-preview-bend-point");
+    expect(finishBlock).toContain("manualPoints: connectSource.manualPoints");
+    expect(commitBlock).toContain("{ preserveManualRouteDisplay: Boolean(newEdge.manualPoints?.length) }");
+    expect(styles).toContain(".connection-preview-bend-point");
+  });
+
   test("keeps endpoint rewire previews on the lightweight stored-route path", async () => {
     const source = await readAppSource();
     const previewStart = source.indexOf("const rewiringPreviewRoute = useMemo");

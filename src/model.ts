@@ -13917,8 +13917,33 @@ export function routeEdgesForStoredRendering(
     const routingEdge = edgeWithProjectedMissingBusEndpointPoints(edge, source, target);
     const start = getEdgeEndpointPoint(source, routingEdge.sourcePoint, routingEdge.sourceTerminalId);
     const end = getEdgeEndpointPoint(target, routingEdge.targetPoint, routingEdge.targetTerminalId);
+    const sourceIsFloating = !nodeById.has(edge.sourceId) && Boolean(edge.sourcePoint);
+    const targetIsFloating = !nodeById.has(edge.targetId) && Boolean(edge.targetPoint);
+    const hasManualRoute = Boolean(edge.manualPoints?.length);
+    if (!hasManualRoute && (sourceIsFloating || targetIsFloating) && isOrthogonalDirectSegment(start, end)) {
+      const directRoute = [start, end];
+      const nonEndpointBlockers = nodes.filter((node) => node.id !== source.id && node.id !== target.id);
+      if (!routeIntersectsBlockers(directRoute, nonEndpointBlockers, ROUTE_BLOCKER_PADDING, 0)) {
+        return [{
+          edgeId: edge.id,
+          points: directRoute,
+          path: pointsToOrthogonalPath(directRoute)
+        }];
+      }
+    }
     const sourceNormal = routeEndpointNormal(source, start, end, routingEdge.sourceTerminalId);
     const targetNormal = routeEndpointNormal(target, end, start, routingEdge.targetTerminalId);
+    const alignedDirectRoute = buildAlignedOpposedDirectRoute(start, end, sourceNormal, targetNormal, bounds);
+    if (!hasManualRoute && alignedDirectRoute) {
+      const nonEndpointBlockers = nodes.filter((node) => node.id !== source.id && node.id !== target.id);
+      if (!routeIntersectsBlockers(alignedDirectRoute, nonEndpointBlockers, ROUTE_BLOCKER_PADDING, 0)) {
+        return [{
+          edgeId: edge.id,
+          points: alignedDirectRoute,
+          path: pointsToOrthogonalPath(alignedDirectRoute)
+        }];
+      }
+    }
     const stubLength = ROUTE_ENDPOINT_STUB_LENGTH;
     const endpointBlockers = [source, target];
     const startOut = endpointStubPoint(start, sourceNormal, source, endpointBlockers, stubLength);
@@ -14412,6 +14437,10 @@ function edgeWithoutStoredRouteGeometry(edge: Edge): Edge {
 
 type ConnectionRouteRebuildOptions = {
   preserveManualPoints?: boolean;
+};
+
+type ConnectionEdgeCommitOptions = {
+  preserveManualRouteDisplay?: boolean;
 };
 
 function shouldPreserveManualPointsForAutomaticRebuild(edge: Edge, options: ConnectionRouteRebuildOptions = {}) {
@@ -15043,12 +15072,24 @@ export function prepareConnectionEdgeForCommit(
   edges: Edge[],
   edgeId: string,
   bounds?: CanvasBounds,
-  previousRoutes: RoutedEdge[] = []
+  previousRoutes: RoutedEdge[] = [],
+  options: ConnectionEdgeCommitOptions = {}
 ): PreparedConnectionEdgeCommit {
   const edge = edges.find((item) => item.id === edgeId);
   if (!edge) {
     const validation = validateConnectionEdgeRoute(nodes, edges, edgeId, bounds, previousRoutes);
     return { ...validation };
+  }
+
+  if (options.preserveManualRouteDisplay && edge.manualPoints?.length) {
+    const route = routeEdgesForStoredRendering(nodes, [edge], bounds, { preserveManualRouteDisplay: true })[0];
+    if (route) {
+      const manualEdge = edgeWithCommitManualPoints(edge, route);
+      const validation = validateConnectionEdgeRoute(nodes, [manualEdge], edgeId, bounds, previousRoutes);
+      if (validation.ok) {
+        return { ...validation, edge: manualEdge };
+      }
+    }
   }
 
   const edgeForDesign = edgeWithoutManualPoints(edge);

@@ -1857,6 +1857,16 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   pointer-events: none;
 }
 
+.connection-preview-bend-point {
+  fill: #fffbeb;
+  stroke: var(--connection-color, #dc2626);
+  stroke-width: 2.5;
+  opacity: 0.95;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.35));
+}
+
 .routable-line-drawing-preview {
   fill: none;
   stroke: var(--connection-color, #2563eb);

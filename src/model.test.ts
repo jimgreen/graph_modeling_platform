@@ -540,6 +540,26 @@ describe("power system model", () => {
     expect(route.path).toContain("L");
   });
 
+  test("renders axis-locked floating connection previews as direct straight segments", () => {
+    const source = withHiddenDeviceLabel(createDefaultNode("ac-source", { x: 160, y: 120 }));
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const targetPoint = { x: sourcePoint.x + 360, y: sourcePoint.y };
+    const edge: Edge = {
+      id: "axis-locked-preview",
+      sourceId: source.id,
+      targetId: "floating-connect-preview-target",
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      sourcePoint,
+      targetPoint
+    };
+
+    const route = routeEdgesForStoredRendering([source], [edge], { width: 720, height: 320 })[0];
+
+    expect(route.points).toEqual([sourcePoint, targetPoint]);
+    expect(route.path).toBe(`M ${sourcePoint.x} ${sourcePoint.y} L ${targetPoint.x} ${targetPoint.y}`);
+  });
+
   test("renders unstored bus endpoint connections without folded backtracking", () => {
     const switchNode = { ...createDefaultNode("ac-switch", { x: 360, y: 210 }), id: "switch" };
     const bus = { ...createDefaultNode("ac-bus", { x: 540, y: 210 }), id: "bus" };
@@ -3950,6 +3970,48 @@ describe("power system model", () => {
     expect(route?.points[route.points.length - 1]).toEqual(targetTerminal);
     expect(routeBendCountForTest(route?.points ?? [])).toBe(0);
     expect(new Set(route?.points.map((point) => point.y))).toEqual(new Set([sourceTerminal.y]));
+  });
+
+  test("preserves manually clicked bends when committing a newly drawn connection", () => {
+    const source = withHiddenDeviceLabel({ ...createDefaultNode("ac-line", { x: 100, y: 120 }), id: "source" });
+    const target = withHiddenDeviceLabel({ ...createDefaultNode("ac-switch", { x: 460, y: 120 }), id: "target" });
+    const sourceTerminal = getTerminalPoint(source, "t2");
+    const targetTerminal = getTerminalPoint(target, "t1");
+    const manualPoints = [
+      { x: sourceTerminal.x + 64, y: sourceTerminal.y },
+      { x: sourceTerminal.x + 64, y: sourceTerminal.y + 72 },
+      { x: targetTerminal.x - 64, y: sourceTerminal.y + 72 },
+      { x: targetTerminal.x - 64, y: targetTerminal.y }
+    ];
+    const edge: Edge = {
+      id: "manual-clicked-bends",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      manualPoints
+    };
+
+    const prepared = prepareConnectionEdgeForCommit(
+      [source, target],
+      [edge],
+      edge.id,
+      { width: 720, height: 320 },
+      [],
+      { preserveManualRouteDisplay: true }
+    );
+    const savedRoute = prepared.edge
+      ? routeEdgesForSavedPathRendering([source, target], [prepared.edge], { width: 720, height: 320 })[0]
+      : undefined;
+
+    expect(sourceTerminal.y).toBe(targetTerminal.y);
+    expect(prepared.ok).toBe(true);
+    expect(prepared.issues).toEqual([]);
+    expect(savedRoute?.points[0]).toEqual(sourceTerminal);
+    expect(savedRoute?.points[savedRoute.points.length - 1]).toEqual(targetTerminal);
+    expect(savedRoute?.points).toEqual(expect.arrayContaining(manualPoints));
+    expect(routeBendCountForTest(savedRoute?.points ?? [])).toBeGreaterThan(0);
+    expect(new Set(savedRoute?.points.map((point) => point.y))).toContain(sourceTerminal.y + 72);
   });
 
   test("commits nearby aligned opposed terminals as a direct zero-bend route when endpoint stubs would overlap", () => {
