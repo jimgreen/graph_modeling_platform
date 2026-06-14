@@ -2,6 +2,7 @@
 import { createPortal, flushSync } from "react-dom";
 import { useTransition } from "react";
 import {
+  AlignCenter,
   AlignEndHorizontal,
   AlignEndVertical,
   AlignHorizontalDistributeCenter,
@@ -10485,6 +10486,8 @@ export function App() {
   const isReadonlyCanvasMode = isBrowseMode;
   const editModeRouteRebuildOptions = { preserveManualPoints: isEditMode };
   const editModeRouteRenderOptions = { preserveManualRouteDisplay: isEditMode };
+  // 智能对齐开关，默认开启
+  const [smartAlignmentEnabled, setSmartAlignmentEnabled] = useState(true);
 
   useEffect(() => {
     writeStoredInteractionMode(interactionMode);
@@ -10517,8 +10520,14 @@ export function App() {
   const [dragging, setDragging] = useState<DraggingState | null>(null);
   const [smartAlignmentGuides, setSmartAlignmentGuides] = useState<SmartAlignmentGuide[]>([]);
   const smartAlignmentGuidesRef = useRef<SmartAlignmentGuide[]>([]);
+  // 缓存候选节点的对齐信息，避免每次鼠标移动重新计算
+  const smartAlignmentCandidateCacheRef = useRef<Map<string, SmartAlignmentAxisCandidate> | null>(null);
+  // 缓存排序的锚点值列表，用于快速二分查找
+  const smartAlignmentSortedAnchorsRef = useRef<{ x: number[]; y: number[] } | null>(null);
+  // 缓存锚点位置对应的节点边界（用于计算标线范围）
+  const smartAlignmentAnchorBoundsRef = useRef<Map<number, { minTop: number; maxBottom: number; minLeft: number; maxRight: number }> | null>(null);
   const smartAlignmentGuideSignature = (guides: SmartAlignmentGuide[]) =>
-    guides.map((guide) => `${guide.id}:${Math.round(guide.position)}:${Math.round(guide.start)}:${Math.round(guide.end)}`).join("|");
+    guides.map((guide) => `${guide.orientation}:${Math.round(guide.position)}`).join("|");
   const updateSmartAlignmentGuides = (guides: SmartAlignmentGuide[]) => {
     if (smartAlignmentGuideSignature(smartAlignmentGuidesRef.current) === smartAlignmentGuideSignature(guides)) {
       return;
@@ -22585,6 +22594,10 @@ export function App() {
   const startDraggingState = (nextDragging: DraggingState) => {
     draggingRef.current = nextDragging;
     updateSmartAlignmentGuides([]);
+    // 清空所有对齐缓存，将在首次需要时计算
+    smartAlignmentCandidateCacheRef.current = null;
+    smartAlignmentSortedAnchorsRef.current = null;
+    smartAlignmentAnchorBoundsRef.current = null;
     resetMultiNodeDragOverlayTransform();
     const simplifiedMarkup = isMultiNodeMoveState(nextDragging) ? nextDragging.overlayPreview?.simplifiedMarkup : "";
     if (simplifiedMarkup && showImperativeMultiNodeDragOverlay(simplifiedMarkup)) {
@@ -23155,59 +23168,183 @@ export function App() {
   };
 
   const computeSmartAlignmentSnap = (dragState: DraggingState, movementDelta: Point, axisLocked: boolean) => {
-    if (axisLocked || !isEditMode || dragState.nodeIds.length === 0 || dragState.wholeLayerMove) {
+    // 对齐功能关闭时直接返回无对齐结果
+    if (!smartAlignmentEnabled || axisLocked || !isEditMode || dragState.nodeIds.length === 0 || dragState.wholeLayerMove) {
       return { delta: movementDelta, guides: [] as SmartAlignmentGuide[] };
     }
     const draggedBounds = dragBoundsForSmartAlignment(dragState, movementDelta);
     if (!draggedBounds) {
       return { delta: movementDelta, guides: [] as SmartAlignmentGuide[] };
     }
-    const visible = canvasVisibleViewBoxRef.current.width > 0 && canvasVisibleViewBoxRef.current.height > 0
-      ? canvasVisibleViewBoxRef.current
-      : viewBoxRef.current;
     const snapThreshold = SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE / Math.max(0.2, Math.max(canvasScrollScaleRef.current.x, canvasScrollScaleRef.current.y));
-    const verticalSearchBounds: RenderViewportBounds = {
-      left: draggedBounds.left - snapThreshold,
-      right: draggedBounds.right + snapThreshold,
-      top: visible.y,
-      bottom: visible.y + visible.height
-    };
-    const horizontalSearchBounds: RenderViewportBounds = {
-      left: visible.x,
-      right: visible.x + visible.width,
-      top: draggedBounds.top - snapThreshold,
-      bottom: draggedBounds.bottom + snapThreshold
-    };
     const draggedNodeIds = new Set(dragState.nodeIds);
-    const candidatesById = new Map<string, SmartAlignmentAxisCandidate>();
-    const includeCandidate = (candidate: ModelNode) => {
-      if (draggedNodeIds.has(candidate.id) || candidatesById.has(candidate.id)) {
-        return;
+
+    // 首次调用时构建排序锚点缓存
+    if (!smartAlignmentSortedAnchorsRef.current) {
+      const xAnchorSet = new Set<number>();
+      const yAnchorSet = new Set<number>();
+      const boundsMap = new Map<number, { minTop: number; maxBottom: number; minLeft: number; maxRight: number }>();
+
+      for (const [id, node] of nodeById) {
+        if (!visibleNodeById.has(id) || draggedNodeIds.has(id)) {
+          continue;
+        }
+        const bounds = nodeSmartAlignmentBounds(node, node.position, nodeHasUprightBoundsContent(node));
+        const anchors = nodeTerminalOutflowSmartAlignmentAnchors(node, node.position);
+
+        // X轴锚点：left, center, right + 端子x坐标
+        const xValues = [bounds.left, (bounds.left + bounds.right) / 2, bounds.right, ...anchors.x.map(a => a.value)];
+        for (const x of xValues) {
+          const rounded = Math.round(x * 1000); // 用整数避免浮点精度问题
+          xAnchorSet.add(rounded);
+          const existing = boundsMap.get(rounded);
+          if (existing) {
+            existing.minTop = Math.min(existing.minTop, bounds.top);
+            existing.maxBottom = Math.max(existing.maxBottom, bounds.bottom);
+            existing.minLeft = Math.min(existing.minLeft, bounds.left);
+            existing.maxRight = Math.max(existing.maxRight, bounds.right);
+          } else {
+            boundsMap.set(rounded, { minTop: bounds.top, maxBottom: bounds.bottom, minLeft: bounds.left, maxRight: bounds.right });
+          }
+        }
+
+        // Y轴锚点：top, center, bottom + 端子y坐标
+        const yValues = [bounds.top, (bounds.top + bounds.bottom) / 2, bounds.bottom, ...anchors.y.map(a => a.value)];
+        for (const y of yValues) {
+          const rounded = Math.round(y * 1000);
+          yAnchorSet.add(rounded);
+          const existing = boundsMap.get(rounded);
+          if (existing) {
+            existing.minTop = Math.min(existing.minTop, bounds.top);
+            existing.maxBottom = Math.max(existing.maxBottom, bounds.bottom);
+            existing.minLeft = Math.min(existing.minLeft, bounds.left);
+            existing.maxRight = Math.max(existing.maxRight, bounds.right);
+          } else {
+            boundsMap.set(rounded, { minTop: bounds.top, maxBottom: bounds.bottom, minLeft: bounds.left, maxRight: bounds.right });
+          }
+        }
       }
-      candidatesById.set(candidate.id, {
-        id: candidate.id,
-        bounds: nodeSmartAlignmentBounds(candidate, candidate.position, nodeHasUprightBoundsContent(candidate)),
-        anchors: nodeTerminalOutflowSmartAlignmentAnchors(candidate, candidate.position)
-      });
-    };
-    for (const candidate of queryNodeSpatialIndex(visibleNodeSpatialIndex, verticalSearchBounds)) {
-      includeCandidate(candidate);
+
+      // 排序锚点值
+      const xSorted = Array.from(xAnchorSet).sort((a, b) => a - b);
+      const ySorted = Array.from(yAnchorSet).sort((a, b) => a - b);
+
+      smartAlignmentSortedAnchorsRef.current = { x: xSorted, y: ySorted };
+      smartAlignmentAnchorBoundsRef.current = boundsMap;
     }
-    for (const candidate of queryNodeSpatialIndex(visibleNodeSpatialIndex, horizontalSearchBounds)) {
-      includeCandidate(candidate);
-    }
-    const candidates = Array.from(candidatesById.values());
-    if (candidates.length === 0) {
+
+    const sortedAnchors = smartAlignmentSortedAnchorsRef.current;
+    const boundsMap = smartAlignmentAnchorBoundsRef.current;
+    if (!sortedAnchors || !boundsMap) {
       return { delta: movementDelta, guides: [] as SmartAlignmentGuide[] };
     }
+
+    // 计算拖动节点的锚点值
     const draggedTerminalAnchors = terminalOutflowAnchorsForSmartAlignmentDrag(dragState, movementDelta);
-    const xSnap = bestSmartAlignmentAxisSnap("x", draggedBounds, draggedTerminalAnchors.x, candidates, snapThreshold);
-    const ySnap = bestSmartAlignmentAxisSnap("y", draggedBounds, draggedTerminalAnchors.y, candidates, snapThreshold);
-    const guides = [xSnap?.guide, ySnap?.guide].filter((guide): guide is SmartAlignmentGuide => Boolean(guide));
+    const draggedXAnchors = [
+      draggedBounds.left,
+      (draggedBounds.left + draggedBounds.right) / 2,
+      draggedBounds.right,
+      ...draggedTerminalAnchors.x.map(a => a.value)
+    ];
+    const draggedYAnchors = [
+      draggedBounds.top,
+      (draggedBounds.top + draggedBounds.bottom) / 2,
+      draggedBounds.bottom,
+      ...draggedTerminalAnchors.y.map(a => a.value)
+    ];
+
+    // 二分查找最近的锚点
+    const findNearestAnchor = (value: number, sorted: number[], threshold: number): { anchorValue: number; distance: number } | null => {
+      const rounded = Math.round(value * 1000);
+      const scaledThreshold = Math.round(threshold * 1000);
+
+      // 二分查找
+      let left = 0;
+      let right = sorted.length - 1;
+      while (left <= right) {
+        const mid = Math.floor((left + right) / 2);
+        if (sorted[mid] < rounded - scaledThreshold) {
+          left = mid + 1;
+        } else if (sorted[mid] > rounded + scaledThreshold) {
+          right = mid - 1;
+        } else {
+          // 找到在范围内的值，检查是否是最近的
+          const candidate = sorted[mid];
+          const distance = Math.abs(candidate - rounded);
+          // 检查左右邻居是否更近
+          let bestValue = candidate;
+          let bestDistance = distance;
+          if (mid > 0 && Math.abs(sorted[mid - 1] - rounded) < bestDistance) {
+            bestValue = sorted[mid - 1];
+            bestDistance = Math.abs(sorted[mid - 1] - rounded);
+          }
+          if (mid < sorted.length - 1 && Math.abs(sorted[mid + 1] - rounded) < bestDistance) {
+            bestValue = sorted[mid + 1];
+            bestDistance = Math.abs(sorted[mid + 1] - rounded);
+          }
+          if (bestDistance <= scaledThreshold) {
+            return { anchorValue: bestValue / 1000, distance: bestDistance / 1000 };
+          }
+          return null;
+        }
+      }
+      return null;
+    };
+
+    // 找最佳X对齐
+    let xAdjustment = 0;
+    let xGuidePosition: number | null = null;
+    for (const draggedX of draggedXAnchors) {
+      const nearest = findNearestAnchor(draggedX, sortedAnchors.x, snapThreshold);
+      if (nearest && (xGuidePosition === null || nearest.distance < Math.abs(xAdjustment))) {
+        xAdjustment = nearest.anchorValue - draggedX;
+        xGuidePosition = nearest.anchorValue;
+      }
+    }
+
+    // 找最佳Y对齐
+    let yAdjustment = 0;
+    let yGuidePosition: number | null = null;
+    for (const draggedY of draggedYAnchors) {
+      const nearest = findNearestAnchor(draggedY, sortedAnchors.y, snapThreshold);
+      if (nearest && (yGuidePosition === null || nearest.distance < Math.abs(yAdjustment))) {
+        yAdjustment = nearest.anchorValue - draggedY;
+        yGuidePosition = nearest.anchorValue;
+      }
+    }
+
+    // 构建合并的标线（相同位置只显示一条）
+    const guides: SmartAlignmentGuide[] = [];
+    if (xGuidePosition !== null) {
+      const bounds = boundsMap.get(Math.round(xGuidePosition * 1000));
+      if (bounds) {
+        guides.push({
+          id: `vertical:${Math.round(xGuidePosition)}`,
+          orientation: "vertical",
+          position: xGuidePosition,
+          start: Math.min(draggedBounds.top, bounds.minTop) - SMART_ALIGNMENT_GUIDE_PADDING,
+          end: Math.max(draggedBounds.bottom, bounds.maxBottom) + SMART_ALIGNMENT_GUIDE_PADDING
+        });
+      }
+    }
+    if (yGuidePosition !== null) {
+      const bounds = boundsMap.get(Math.round(yGuidePosition * 1000));
+      if (bounds) {
+        guides.push({
+          id: `horizontal:${Math.round(yGuidePosition)}`,
+          orientation: "horizontal",
+          position: yGuidePosition,
+          start: Math.min(draggedBounds.left, bounds.minLeft) - SMART_ALIGNMENT_GUIDE_PADDING,
+          end: Math.max(draggedBounds.right, bounds.maxRight) + SMART_ALIGNMENT_GUIDE_PADDING
+        });
+      }
+    }
+
     return {
       delta: {
-        x: movementDelta.x + (xSnap?.adjustment ?? 0),
-        y: movementDelta.y + (ySnap?.adjustment ?? 0)
+        x: movementDelta.x + xAdjustment,
+        y: movementDelta.y + yAdjustment
       },
       guides
     };
@@ -38157,6 +38294,18 @@ export function App() {
           >
             {isEditMode ? <Pencil size={16} /> : <EyeOff size={16} />}
             <span>{isEditMode ? "编辑模式" : "浏览模式"}</span>
+          </button>
+          <button
+            type="button"
+            className={`topbar-primary-button ${smartAlignmentEnabled ? "active" : ""}`}
+            onClick={() => setSmartAlignmentEnabled((current) => !current)}
+            title={smartAlignmentEnabled ? "对齐到标线已开启，点击关闭" : "对齐到标线已关闭，点击开启"}
+            aria-label={smartAlignmentEnabled ? "关闭对齐到标线" : "开启对齐到标线"}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <rect x="2" y="5" width="12" height="6" rx="1" />
+              <line x1="8" y1="0" x2="8" y2="16" strokeDasharray="2 2" />
+            </svg>
           </button>
           <button className="topbar-primary-button" onClick={runTopologyCalculation} disabled={isBrowseMode} title="图上拓扑" aria-label="图上拓扑">
             <Grid2X2 size={16} />
