@@ -115,6 +115,7 @@ import {
   routableLineDeviceEndpointRefForNode,
   routableLineDeviceEndpointRefs,
   setRoutableLineDeviceEndpoints,
+  setRoutableLineDeviceCanvasPoints,
   routableLineDeviceCanvasPoints,
   routableLineDeviceLocalPoints,
   ROUTABLE_LINE_POINTS_PARAM,
@@ -2171,6 +2172,55 @@ describe("power system model", () => {
     expect(getTerminalPoint(updates[0], "t2")).toEqual(getTerminalPoint(movedTarget, "t1"));
   });
 
+  test("preserves routable line-like manual bends when only the device endpoint moves against a bus", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = { ...createDefaultNode("ac-source", { x: 120, y: 260 }), id: "manual-line-source" };
+    const movedSource = { ...source, position: { x: 180, y: 340 } };
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 560, y: 120 }),
+      id: "manual-line-bus",
+      size: { width: 420, height: 16 }
+    };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const movedSourcePoint = getTerminalPoint(movedSource, "t1");
+    const busPoint = projectPointToBusCenterline(bus, { x: 520, y: bus.position.y });
+    const preservedLanePoint = { x: busPoint.x - 120, y: sourcePoint.y - 80 };
+    const manualRoutePoints = [
+      sourcePoint,
+      { x: sourcePoint.x + 64, y: sourcePoint.y },
+      { x: sourcePoint.x + 64, y: preservedLanePoint.y },
+      preservedLanePoint,
+      { x: preservedLanePoint.x, y: busPoint.y },
+      busPoint
+    ];
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      sourcePoint,
+      busPoint,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: routableLineDeviceEndpointRefForNode(bus, "t1", busPoint)
+      }
+    );
+    const manualLine = setRoutableLineDeviceCanvasPoints(line, manualRoutePoints);
+
+    const updates = rebuildRoutableLineDeviceRouteUpdates(
+      [movedSource, bus, manualLine],
+      [manualLine.id],
+      { width: 900, height: 560 },
+      [source, bus, manualLine],
+      { movedNodeIds: [source.id] }
+    );
+    const routePoints = routableLineDeviceCanvasPoints(updates[0]);
+
+    expect(updates.map((node) => node.id)).toEqual([manualLine.id]);
+    expect(routePoints[0]).toEqual(movedSourcePoint);
+    expect(routePoints[routePoints.length - 1]).toEqual(busPoint);
+    expect(routePoints.some((point) => point.y === preservedLanePoint.y)).toBe(true);
+    expect(routeBendCountForTest(routePoints)).toBeGreaterThan(1);
+  });
+
   test("syncs routable line-like device endpoints when both attached devices move", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "dc-routable-line");
     const source = { ...createDefaultNode("dc-source", { x: 120, y: 140 }), id: "source-node" };
@@ -4054,6 +4104,107 @@ describe("power system model", () => {
     expect(savedRoute?.points).toEqual(expect.arrayContaining(manualPoints));
     expect(routeBendCountForTest(savedRoute?.points ?? [])).toBeGreaterThan(0);
     expect(new Set(savedRoute?.points.map((point) => point.y))).toContain(sourceTerminal.y + 72);
+  });
+
+  test("preserves manually clicked bends when committing a newly drawn device-to-bus connection", () => {
+    const source = withHiddenDeviceLabel({ ...createDefaultNode("ac-source", { x: 120, y: 320 }), id: "source" });
+    const bus = withHiddenDeviceLabel({
+      ...createDefaultNode("ac-bus", { x: 360, y: 120 }),
+      id: "target-bus",
+      size: { width: 360, height: 16 }
+    });
+    const sourceTerminal = getTerminalPoint(source, "t1");
+    const busPoint = projectPointToBusCenterline(bus, { x: sourceTerminal.x + 240, y: bus.position.y });
+    const manualPoints = [
+      { x: sourceTerminal.x + 80, y: sourceTerminal.y },
+      { x: sourceTerminal.x + 80, y: busPoint.y + 120 },
+      { x: busPoint.x, y: busPoint.y + 120 }
+    ];
+    const edge: Edge = {
+      id: "manual-clicked-device-to-bus",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: busPoint,
+      manualPoints
+    };
+
+    const prepared = prepareConnectionEdgeForCommit(
+      [source, bus],
+      [edge],
+      edge.id,
+      { width: 900, height: 520 },
+      [],
+      { preserveManualRouteDisplay: true }
+    );
+    const savedRoute = prepared.edge
+      ? routeEdgesForSavedPathRendering([source, bus], [prepared.edge], { width: 900, height: 520 })[0]
+      : undefined;
+    const liveRoute = prepared.edge
+      ? routeEdgesForStoredRendering(
+          [source, bus],
+          [prepared.edge],
+          { width: 900, height: 520 },
+          { preserveManualRouteDisplay: true }
+        )[0]
+      : undefined;
+
+    expect(prepared.ok).toBe(true);
+    expect(prepared.issues).toEqual([]);
+    expect(savedRoute?.points[0]).toEqual(sourceTerminal);
+    expect(savedRoute?.points[savedRoute.points.length - 1]).toEqual(busPoint);
+    expect(savedRoute?.points).toEqual(expect.arrayContaining(manualPoints));
+    expect(liveRoute?.points).toEqual(expect.arrayContaining(manualPoints));
+    expect(routeBendCountForTest(savedRoute?.points ?? [])).toBeGreaterThan(0);
+  });
+
+  test("preserves a single manually clicked bend when committing a newly drawn device-to-bus connection", () => {
+    const source = withHiddenDeviceLabel({ ...createDefaultNode("ac-source", { x: 120, y: 360 }), id: "single-bend-source" });
+    const bus = withHiddenDeviceLabel({
+      ...createDefaultNode("ac-bus", { x: 360, y: 120 }),
+      id: "single-bend-bus",
+      size: { width: 360, height: 16 }
+    });
+    const sourceTerminal = getTerminalPoint(source, "t1");
+    const busPoint = projectPointToBusCenterline(bus, { x: sourceTerminal.x + 260, y: bus.position.y });
+    const manualPoint = { x: sourceTerminal.x + 96, y: busPoint.y + 110 };
+    const previewRoute = buildManualConnectionPreviewRoute(sourceTerminal, [manualPoint], busPoint, { width: 900, height: 560 });
+    const edge: Edge = {
+      id: "single-manual-clicked-device-to-bus",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: busPoint,
+      manualPoints: [manualPoint],
+      routePoints: previewRoute
+    };
+
+    const prepared = prepareConnectionEdgeForCommit(
+      [source, bus],
+      [edge],
+      edge.id,
+      { width: 900, height: 560 },
+      [],
+      { preserveManualRouteDisplay: true }
+    );
+    const liveRoute = prepared.edge
+      ? routeEdgesForStoredRendering(
+          [source, bus],
+          [prepared.edge],
+          { width: 900, height: 560 },
+          { preserveManualRouteDisplay: true }
+        )[0]
+      : undefined;
+
+    expect(previewRoute).toContainEqual(manualPoint);
+    expect(prepared.ok).toBe(true);
+    expect(prepared.issues).toEqual([]);
+    expect(prepared.edge?.manualPoints ?? []).toContainEqual(manualPoint);
+    expect(liveRoute?.points).toContainEqual(manualPoint);
+    expect(liveRoute?.points).toEqual(previewRoute);
+    expect(routeBendCountForTest(liveRoute?.points ?? [])).toBeGreaterThan(0);
   });
 
   test("commits nearby aligned opposed terminals as a direct zero-bend route when endpoint stubs would overlap", () => {
@@ -6173,6 +6324,54 @@ describe("power system model", () => {
 
     expect(rebuilt[0]).toBe(edge);
     expect(rebuilt[0].manualPoints).toEqual(manualPoints);
+  });
+
+  test("preserves connection manual route geometry when only the device endpoint moves against a bus", () => {
+    const source = withHiddenDeviceLabel({ ...createDefaultNode("ac-source", { x: 140, y: 340 }), id: "manual-edge-source" });
+    const movedSource = withHiddenDeviceLabel({ ...source, position: { x: 220, y: 420 } });
+    const bus = withHiddenDeviceLabel({
+      ...createDefaultNode("ac-bus", { x: 560, y: 140 }),
+      id: "manual-edge-bus",
+      size: { width: 440, height: 16 }
+    });
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const movedSourcePoint = getTerminalPoint(movedSource, "t1");
+    const busPoint = projectPointToBusCenterline(bus, { x: 520, y: bus.position.y });
+    const preservedLanePoint = { x: busPoint.x - 120, y: sourcePoint.y - 150 };
+    const routePoints = [
+      sourcePoint,
+      { x: sourcePoint.x + 64, y: sourcePoint.y },
+      { x: sourcePoint.x + 64, y: preservedLanePoint.y },
+      preservedLanePoint,
+      { x: preservedLanePoint.x, y: busPoint.y },
+      busPoint
+    ];
+    const edge: Edge = {
+      id: "manual-device-to-bus-move",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: busPoint,
+      manualPoints: routePoints.slice(1, -1).map((point) => ({ ...point })),
+      routePoints: routePoints.map((point) => ({ ...point }))
+    };
+
+    const rebuilt = rebuildExternalConnectionRoutesForMovedNodes(
+      [movedSource, bus],
+      [edge],
+      [source.id],
+      { width: 920, height: 620 },
+      [edge],
+      { preserveManualPoints: true }
+    );
+    const rebuiltRoutePoints = rebuilt[0].routePoints;
+
+    expect(rebuilt[0].id).toBe(edge.id);
+    expect(rebuiltRoutePoints?.[0]).toEqual(movedSourcePoint);
+    expect(rebuiltRoutePoints?.[rebuiltRoutePoints.length - 1]).toEqual(busPoint);
+    expect(rebuiltRoutePoints?.some((point) => point.y === preservedLanePoint.y)).toBe(true);
+    expect(rebuilt[0].manualPoints?.some((point) => point.y === preservedLanePoint.y)).toBe(true);
   });
 
   test("preserves manual route display when automatic edit-mode rendering is protected", () => {

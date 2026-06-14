@@ -194,6 +194,7 @@ import {
   keyboardMoveStepForViewBox,
   lockProjectEdgeTerminals,
   pointsToOrthogonalPath,
+  preserveConnectionEdgeRouteShape,
   preserveDraggedRouteShape,
   prepareConnectionEdgeForCommit,
   projectPointToBusCenterline,
@@ -214,6 +215,7 @@ import {
   routableLineDeviceEndpointRefForNode,
   routableLineDeviceEndpointRefs,
   setRoutableLineDeviceEndpoints,
+  setRoutableLineDeviceEndpointsPreservingRoute,
   setRoutableLineDeviceCanvasPoints,
   syncRoutableLineDeviceEndpointsToRefs,
   synchronizeBusTerminalsWithEdges,
@@ -1312,6 +1314,7 @@ type SingleNodeDragPreviewEndpoint = {
   end: Point;
   startMoves: boolean;
   endMoves: boolean;
+  routePoints?: Point[];
 };
 type SingleNodeDragCache = {
   movedNodeIds: Set<string>;
@@ -10878,7 +10881,8 @@ export function App() {
         start: getModelEdgeEndpointPoint(sourceNode, edge.sourcePoint, edge.sourceTerminalId),
         end: getModelEdgeEndpointPoint(targetNode, edge.targetPoint, edge.targetTerminalId),
         startMoves: sourceMoves,
-        endMoves: targetMoves
+        endMoves: targetMoves,
+        routePoints: currentStoredRoutePointsForEdge(edge)
       });
     }
     return {
@@ -15171,7 +15175,8 @@ export function App() {
               originalMovingPoint
             })
           : null;
-        return slidePatch ? { ...edge, ...slidePatch } : edge;
+        const nextEdge = slidePatch ? { ...edge, ...slidePatch } : edge;
+        return preserveConnectionEdgeRouteShape(nextNodes, nextEdge, currentStoredRoutePointsForEdge(edge), canvasBounds);
       });
       return graphStoreApplyPatch(current, {
         nodeUpdates: [nextNode],
@@ -15261,6 +15266,20 @@ export function App() {
       ];
     });
   }, [activeLayerNodeIdSet, activeSelectedNodeIds, isEditMode, routableLineEndpointDrag, visibleNodeById]);
+  const previewStoredRoutePointsForEdge = (edge: Edge, start?: Point, end?: Point) => {
+    const cachedPoints = routedEdgeById.get(edge.id)?.points;
+    if (cachedPoints?.length) {
+      return cachedPoints.map((point) => ({ ...point }));
+    }
+    if (edge.routePoints?.length) {
+      return edge.routePoints.map((point) => ({ ...point }));
+    }
+    return [
+      start,
+      ...(edge.manualPoints ?? []),
+      end
+    ].filter((point): point is Point => Boolean(point)).map((point) => ({ ...point }));
+  };
   const rewiringPreviewRoute = useMemo(() => {
     if (!rewiring) {
       return null;
@@ -15319,12 +15338,20 @@ export function App() {
       rewiring.endpoint === "source" ? movingTarget?.node : sourceNode,
       rewiring.endpoint === "target" ? movingTarget?.node : targetNode
     );
-    const route = routeEdgesForStoredRendering(previewNodes, [previewRouteEdge], canvasBounds)[0];
+    const previewStoredPoints = previewStoredRoutePointsForEdge(edge);
+    const preservedPreviewEdge = preserveConnectionEdgeRouteShape(previewNodes, previewRouteEdge, previewStoredPoints, canvasBounds);
+    const route = preservedPreviewEdge.routePoints?.length
+      ? {
+          edgeId: edge.id,
+          points: preservedPreviewEdge.routePoints,
+          path: pointsToPreviewPath(preservedPreviewEdge.routePoints)
+        }
+      : routeEdgesForStoredRendering(previewNodes, [previewRouteEdge], canvasBounds)[0];
     return {
       edgeId: edge.id,
       path: route?.path ?? ""
     };
-  }, [canvasBounds, edgeById, nodeById, rewiring]);
+  }, [canvasBounds, edgeById, nodeById, previewStoredRoutePointsForEdge, rewiring]);
   const routableLineEndpointDragPreviewRoute = useMemo(() => {
     if (!routableLineEndpointDrag) {
       return null;
@@ -15348,10 +15375,19 @@ export function App() {
       source: routableLineEndpointDrag.endpoint === "source" ? movingRef : refs.source,
       target: routableLineEndpointDrag.endpoint === "target" ? movingRef : refs.target
     };
-    const rawLine = setRoutableLineDeviceEndpoints(lineNode, nextStart, nextEnd, previewRefs);
-    const nextNodesForRouting = nodes.map((node) => (node.id === rawLine.id ? rawLine : node));
-    const routedLine = routeRoutableLineDevice(rawLine, nextNodesForRouting, canvasBounds);
-    const routePoints = routableLineDeviceCanvasPoints(routedLine);
+    const previewNodeById = new Map(nodes.map((node) => [node.id, node]));
+    if (movingTarget) {
+      previewNodeById.set(movingTarget.node.id, movingTarget.node);
+    }
+    const rawLine = setRoutableLineDeviceEndpointsPreservingRoute(
+      lineNode,
+      nextStart,
+      nextEnd,
+      previewRefs,
+      previewNodeById,
+      canvasBounds
+    );
+    const routePoints = routableLineDeviceCanvasPoints(rawLine);
     return {
       nodeId: lineNode.id,
       path: pointsToPreviewPath(routePoints)
@@ -15412,13 +15448,21 @@ export function App() {
       });
       const previewEdge = slidePatch ? { ...edge, ...slidePatch } : edge;
       const previewNodes = compactPreviewNodes(sourceNode, targetNode);
-      const route = routeEdgesForStoredRendering(previewNodes, [previewEdge], canvasBounds)[0];
+      const previewStoredPoints = previewStoredRoutePointsForEdge(edge);
+      const preservedPreviewEdge = preserveConnectionEdgeRouteShape(previewNodes, previewEdge, previewStoredPoints, canvasBounds);
+      const route = preservedPreviewEdge.routePoints?.length
+        ? {
+            edgeId: edge.id,
+            points: preservedPreviewEdge.routePoints,
+            path: pointsToPreviewPath(preservedPreviewEdge.routePoints)
+          }
+        : routeEdgesForStoredRendering(previewNodes, [previewEdge], canvasBounds)[0];
       return route ? [{
         edgeId: edge.id,
         path: route.path
       }] : [];
     });
-  }, [canvasBounds, nodeById, terminalPress, visibleEdgesByTerminalRef, visibleNodes]);
+  }, [canvasBounds, nodeById, previewStoredRoutePointsForEdge, terminalPress, visibleEdgesByTerminalRef, visibleNodes]);
   const terminalPressPreviewEdgeIdSet = useMemo(
     () => new Set(terminalPressPreviewEdgeRoutes.map((route) => route.edgeId)),
     [terminalPressPreviewEdgeRoutes]
@@ -20574,23 +20618,8 @@ export function App() {
       );
       const nextEdge = shouldPreserveRoute && nextSource && nextTarget
         ? (() => {
-            const nextStart = getModelEdgeEndpointPoint(nextSource, nextEdgeWithSlide.sourcePoint, nextEdgeWithSlide.sourceTerminalId);
-            const nextEnd = getModelEdgeEndpointPoint(nextTarget, nextEdgeWithSlide.targetPoint, nextEdgeWithSlide.targetTerminalId);
-            const originalStart = originalRoute[0];
-            const originalEnd = originalRoute[originalRoute.length - 1];
-            const sourceNormal = getRouteEndpointNormal(nextSource, nextStart, nextEnd, nextEdgeWithSlide.sourceTerminalId);
-            const targetNormal = getRouteEndpointNormal(nextTarget, nextEnd, nextStart, nextEdgeWithSlide.targetTerminalId);
-            const preservedRoute = preserveDraggedRouteShape({
-              routePoints: originalRoute,
-              nextStart,
-              nextEnd,
-              sourceDelta: { x: nextStart.x - originalStart.x, y: nextStart.y - originalStart.y },
-              targetDelta: { x: nextEnd.x - originalEnd.x, y: nextEnd.y - originalEnd.y },
-              routeDelta: preserveRouteEdgeIds.has(edge.id) ? manualPointDeltaForEdge(edge, deltasByNode) ?? undefined : undefined,
-              sourceNormal,
-              targetNormal
-            });
-            return { ...nextEdgeWithSlide, manualPoints: preservedRoute.slice(1, -1).map((point) => ({ ...point })) };
+            const routeDelta = preserveRouteEdgeIds.has(edge.id) ? manualPointDeltaForEdge(edge, deltasByNode) ?? undefined : undefined;
+            return preserveConnectionEdgeRouteShape(nextSlideNodes, nextEdgeWithSlide, originalRoute, bounds, { routeDelta });
           })()
         : nextEdgeWithSlide;
       const boundedNextEdge = clampEdgeGeometryToExpandableBounds(nextEdge, bounds);
@@ -22088,7 +22117,7 @@ export function App() {
       if (!start || !end) {
         continue;
       }
-      const previewPoints = routeFully ? points : simpleOrthogonalDragPreviewPoints(start, end);
+      const previewPoints = routeFully || points.length > 2 ? points : simpleOrthogonalDragPreviewPoints(start, end);
       routes.push({
         edgeId: `routable-line:${lineNode.id}`,
         routableLineNodeId: lineNode.id,
@@ -22206,9 +22235,21 @@ export function App() {
       }
       const start = shiftPreviewEndpointForDelta(endpoint.start, endpoint.startMoves, delta);
       const end = shiftPreviewEndpointForDelta(endpoint.end, endpoint.endMoves, delta);
+      const previewPoints = endpoint.routePoints?.length
+        ? preserveDraggedRouteShape({
+            routePoints: endpoint.routePoints,
+            nextStart: start,
+            nextEnd: end,
+            sourceDelta: { x: start.x - endpoint.routePoints[0].x, y: start.y - endpoint.routePoints[0].y },
+            targetDelta: {
+              x: end.x - endpoint.routePoints[endpoint.routePoints.length - 1].x,
+              y: end.y - endpoint.routePoints[endpoint.routePoints.length - 1].y
+            }
+          })
+        : simpleOrthogonalDragPreviewPoints(start, end);
       routes.push({
         edgeId: endpoint.edgeId,
-        path: pointsToPreviewPath(simpleOrthogonalDragPreviewPoints(start, end)),
+        path: pointsToPreviewPath(previewPoints),
         color: endpoint.color
       });
     }
@@ -22292,9 +22333,22 @@ export function App() {
         return [];
       }
       const color = cachedConnectionStrokeColor(edge);
+      const originalRoute = dragState.originalRoutePoints[edge.id];
+      const previewPoints = originalRoute?.length
+        ? preserveDraggedRouteShape({
+            routePoints: originalRoute,
+            nextStart: endpoints.start,
+            nextEnd: endpoints.end,
+            sourceDelta: { x: endpoints.start.x - originalRoute[0].x, y: endpoints.start.y - originalRoute[0].y },
+            targetDelta: {
+              x: endpoints.end.x - originalRoute[originalRoute.length - 1].x,
+              y: endpoints.end.y - originalRoute[originalRoute.length - 1].y
+            }
+          })
+        : simpleOrthogonalDragPreviewPoints(endpoints.start, endpoints.end);
       return [{
         edgeId: edge.id,
-        path: pointsToPreviewPath(simpleOrthogonalDragPreviewPoints(endpoints.start, endpoints.end)),
+        path: pointsToPreviewPath(previewPoints),
         color
       }];
     });
@@ -27754,9 +27808,16 @@ export function App() {
                 source: refs.source,
                 target: routableLineDeviceEndpointRefForNode(target.node, target.terminalId, target.point)
               };
-        const rawLine = setRoutableLineDeviceEndpoints(lineNode, nextStart, nextEnd, nextRefs);
-        const nextNodesForRouting = nodes.map((node) => (node.id === rawLine.id ? rawLine : node));
-        const routedLine = routeRoutableLineDevice(rawLine, nextNodesForRouting, canvasBounds);
+        const commitNodeById = new Map(nodes.map((node) => [node.id, node]));
+        commitNodeById.set(target.node.id, target.node);
+        const routedLine = setRoutableLineDeviceEndpointsPreservingRoute(
+          lineNode,
+          nextStart,
+          nextEnd,
+          nextRefs,
+          commitNodeById,
+          canvasBounds
+        );
         pushUndoSnapshot();
         patchGraphNodes([routedLine]);
         setCanvasSelectionScope("group");
@@ -27773,19 +27834,42 @@ export function App() {
   };
 
   const commitNewConnectionEdge = (newEdge: Edge, sourceName: string, targetName: string) => {
-    const endpointRuleMessage = connectionEndpointRuleFailureMessage(newEdge);
+    const routeNodes = routingNodesForConnectionEdge(newEdge);
+    const edgeForCommit = (() => {
+      if (!newEdge.manualPoints?.length) {
+        return newEdge;
+      }
+      const routeNodeById = new Map(routeNodes.map((node) => [node.id, node]));
+      const sourceNode = routeNodeById.get(newEdge.sourceId);
+      const targetNode = routeNodeById.get(newEdge.targetId);
+      if (!sourceNode || !targetNode) {
+        return newEdge;
+      }
+      const sourcePoint = getModelEdgeEndpointPoint(sourceNode, newEdge.sourcePoint, newEdge.sourceTerminalId);
+      const targetPoint = getModelEdgeEndpointPoint(targetNode, newEdge.targetPoint, newEdge.targetTerminalId);
+      const manualPreviewRoutePoints = buildManualConnectionPreviewRoute(
+        sourcePoint,
+        newEdge.manualPoints,
+        targetPoint,
+        canvasBounds
+      );
+      return manualPreviewRoutePoints.length >= 2
+        ? { ...newEdge, routePoints: manualPreviewRoutePoints }
+        : newEdge;
+    })();
+    const endpointRuleMessage = connectionEndpointRuleFailureMessage(edgeForCommit);
     if (endpointRuleMessage) {
       window.alert(`联络线绘制失败：${endpointRuleMessage}`);
       writeOperationLog(`联络线绘制失败：${endpointRuleMessage}`);
       return false;
     }
     const prepared = prepareConnectionEdgeForCommit(
-      routingNodesForConnectionEdge(newEdge),
-      [newEdge],
-      newEdge.id,
+      routeNodes,
+      [edgeForCommit],
+      edgeForCommit.id,
       canvasBounds,
       routedEdges,
-      { preserveManualRouteDisplay: Boolean(newEdge.manualPoints?.length) }
+      { preserveManualRouteDisplay: Boolean(edgeForCommit.manualPoints?.length) }
     );
     if (!prepared.ok || !prepared.edge) {
       const message = connectionCommitFailureMessage(prepared.issues);
@@ -27985,10 +28069,14 @@ export function App() {
       return;
     }
     if (routableLinePlacement && isBusNode(node)) {
+      event.preventDefault();
+      event.stopPropagation();
       handleTerminalPointerDown(event as unknown as PointerEvent<SVGCircleElement>, node, node.terminals[0]?.id ?? "t1");
       return;
     }
     if (connectSource && svgRef.current) {
+      event.preventDefault();
+      event.stopPropagation();
       const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
       lastCanvasPointerRef.current = pointer;
       updateMouseStatus(pointer);
@@ -32557,15 +32645,23 @@ export function App() {
             })
           : null;
         const candidateEdge = slidePatch ? { ...rewiredEdge, ...slidePatch } : rewiredEdge;
-        const endpointRuleMessage = connectionEndpointRuleFailureMessage(candidateEdge);
+        const routingNodes = routingNodesForConnectionEdge(candidateEdge, nodes);
+        const edgeForCommit = preserveConnectionEdgeRouteShape(
+          routingNodes,
+          candidateEdge,
+          previewStoredRoutePointsForEdge(edge),
+          canvasBounds
+        );
+        const endpointRuleMessage = connectionEndpointRuleFailureMessage(edgeForCommit);
         const prepared = endpointRuleMessage
           ? null
           : prepareConnectionEdgeForCommit(
-          routingNodesForConnectionEdge(candidateEdge, nodes),
-          [candidateEdge],
+          routingNodes,
+          [edgeForCommit],
           edge.id,
           canvasBounds,
-          routedEdges
+          routedEdges,
+          { preserveManualRouteDisplay: Boolean(edgeForCommit.manualPoints?.length) }
         );
         if (prepared?.ok && prepared.edge) {
           const preparedEdge = prepared.edge;
@@ -39757,7 +39853,9 @@ export function App() {
               <circle className="connect-drop-hint-ring" cx="0" cy="0" r="16" />
               <circle className="connect-drop-hint-core" cx="0" cy="0" r="5" />
             </g>
-            {selectedRoutableLineManualPathRoute && (
+            {selectedRoutableLineManualPathRoute &&
+              !routableLineEndpointDrag &&
+              !dragPreviewRoutableLineNodeIdSet.has(selectedRoutableLineManualPathRoute.node.id) && (
               <g className="routable-line-manual-path-layer">
                 <path
                   d={selectedRoutableLineManualPathRoute.path}

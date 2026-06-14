@@ -2543,8 +2543,30 @@ describe("graph inspector panel", () => {
     expect(renderBlock).toContain("connectSource.manualPoints?.map");
     expect(renderBlock).toContain("connection-preview-bend-point");
     expect(finishBlock).toContain("manualPoints: connectSource.manualPoints");
-    expect(commitBlock).toContain("{ preserveManualRouteDisplay: Boolean(newEdge.manualPoints?.length) }");
+    expect(commitBlock).toContain("routePoints: manualPreviewRoutePoints");
+    expect(commitBlock).toContain("{ preserveManualRouteDisplay: Boolean(edgeForCommit.manualPoints?.length) }");
     expect(styles).toContain(".connection-preview-bend-point");
+  });
+
+  test("commits manually previewed device-to-bus connection route geometry instead of redrawing it", async () => {
+    const source = await readAppSource();
+    const commitStart = source.indexOf("const commitNewConnectionEdge =");
+    const commitEnd = source.indexOf("const finishConnectToTarget", commitStart);
+    const commitBlock = source.slice(commitStart, commitEnd);
+    const nodePointerStart = source.indexOf("const handleNodePointerDown =");
+    const nodePointerEnd = source.indexOf("const handlePointerMove = (event: PointerEvent<SVGSVGElement>)", nodePointerStart);
+    const nodePointerBlock = source.slice(nodePointerStart, nodePointerEnd);
+    const connectBranchStart = nodePointerBlock.indexOf("if (connectSource && svgRef.current)");
+    const connectBranchEnd = nodePointerBlock.indexOf("if (isRoutableLineDeviceKind", connectBranchStart);
+    const connectBranch = nodePointerBlock.slice(connectBranchStart, connectBranchEnd);
+
+    expect(commitBlock).toContain("manualPreviewRoutePoints");
+    expect(commitBlock).toContain("buildManualConnectionPreviewRoute");
+    expect(commitBlock).toContain("routePoints: manualPreviewRoutePoints");
+    expect(commitBlock.indexOf("manualPreviewRoutePoints")).toBeLessThan(commitBlock.indexOf("prepareConnectionEdgeForCommit"));
+    expect(connectBranch).toContain("event.preventDefault()");
+    expect(connectBranch).toContain("event.stopPropagation()");
+    expect(connectBranch.indexOf("event.stopPropagation()")).toBeLessThan(connectBranch.indexOf("finishConnectToTarget(target, previewPoint)"));
   });
 
   test("keeps endpoint rewire previews on the lightweight stored-route path", async () => {
@@ -3013,14 +3035,15 @@ describe("graph inspector panel", () => {
     const terminalBlock = source.slice(terminalStart, terminalEnd);
 
     expect(commitBlock).toContain("prepareConnectionEdgeForCommit");
-    expect(commitBlock).toContain("connectionEndpointRuleFailureMessage(newEdge)");
-    expect(commitBlock).toContain("routingNodesForConnectionEdge(newEdge)");
+    expect(commitBlock).toContain("connectionEndpointRuleFailureMessage(edgeForCommit)");
+    expect(commitBlock).toContain("const routeNodes = routingNodesForConnectionEdge(newEdge)");
+    expect(commitBlock).toContain("routeNodes,");
     expect(commitBlock).toContain("canvasBounds");
     expect(commitBlock).toContain("routedEdges");
     expect(commitBlock).toContain("联络线绘制失败");
     expect(commitBlock).toContain("prepared.edge");
     expect(commitBlock).toContain("graphStoreApplyPatch(current, { edgeUpserts: [preparedEdge] })");
-    expect(commitBlock.indexOf("connectionEndpointRuleFailureMessage(newEdge)")).toBeLessThan(commitBlock.indexOf("prepareConnectionEdgeForCommit"));
+    expect(commitBlock.indexOf("connectionEndpointRuleFailureMessage(edgeForCommit)")).toBeLessThan(commitBlock.indexOf("prepareConnectionEdgeForCommit"));
     expect(commitBlock.indexOf("prepareConnectionEdgeForCommit")).toBeLessThan(commitBlock.indexOf("graphStoreApplyPatch"));
     expect(finishBlock).toContain("return commitNewConnectionEdge(newEdge");
     expect(terminalBlock).toContain("commitNewConnectionEdge(newEdge");
@@ -6822,7 +6845,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const singleNodeDragPreviewEdges =");
     expect(source).toContain("const singleNodeDragSnapEdges =");
     expect(previewBlock).toContain("const previewEdges = scopedPreviewEdges ?? (");
-    expect(previewBlock).toContain("return previewEdges.flatMap((edge) =>");
+    expect(previewBlock).toContain("const edgePreviewRoutes = previewEdges.flatMap((edge) =>");
     expect(previewBlock).not.toContain("return dragState.affectedEdges.flatMap((edge)");
     expect(interactionBlock).toContain("const snapEdges = scopedSnapEdges ?? singleNodeDragSnapEdges(dragState, delta);");
     expect(interactionBlock).toContain("for (const edge of snapEdges)");
@@ -6940,9 +6963,9 @@ describe("graph inspector panel", () => {
     expect(previewBlock).toContain("const cachedSingleNodePreviewRoutes =");
     expect(previewBlock).toContain("buildCachedSingleNodeDragPreviewRoutes(dragCache, delta, previewEdges)");
     expect(previewBlock).toContain("if (cachedSingleNodePreviewRoutes) {");
-    expect(previewBlock).toContain("return cachedSingleNodePreviewRoutes;");
+    expect(previewBlock).toContain("return [...cachedSingleNodePreviewRoutes, ...routableLinePreviewRoutes];");
     expect(previewBlock.indexOf("buildCachedSingleNodeDragPreviewRoutes(dragCache, delta, previewEdges)"))
-      .toBeLessThan(previewBlock.indexOf("return previewEdges.flatMap((edge) =>"));
+      .toBeLessThan(previewBlock.indexOf("const edgePreviewRoutes = previewEdges.flatMap((edge) =>"));
   });
 
   test("updates node drag preview paths in place instead of rebuilding svg markup every frame", async () => {
@@ -6988,11 +7011,14 @@ describe("graph inspector panel", () => {
     expect(lodBlock).not.toContain("const color = getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette);");
   });
 
-  test("uses lightweight orthogonal node-drag route previews without preserving or rerouting during drag frames", async () => {
+  test("uses lightweight node-drag route previews while preserving stored manual bends during drag frames", async () => {
     const source = await readAppSource();
     const lightweightStart = source.indexOf("const buildLightweightNodeDragPreviewRoutes");
     const lightweightEnd = source.indexOf("const buildLightweightNodeDragPreviewRouteMarkup", lightweightStart);
     const lightweightBlock = source.slice(lightweightStart, lightweightEnd);
+    const cachedPreviewStart = source.indexOf("const buildCachedSingleNodeDragPreviewRoutes =");
+    const cachedPreviewEnd = source.indexOf("const buildDragPreviewEndpointPoints", cachedPreviewStart);
+    const cachedPreviewBlock = source.slice(cachedPreviewStart, cachedPreviewEnd);
     const markupStart = source.indexOf("const buildLightweightNodeDragPreviewRouteMarkup");
     const markupEnd = source.indexOf("const singleNodeDragInteractionNodes", markupStart);
     const markupBlock = source.slice(markupStart, markupEnd);
@@ -7006,14 +7032,16 @@ describe("graph inspector panel", () => {
     expect(lightweightStart).toBeGreaterThan(-1);
     expect(lightweightBlock).toContain("simpleOrthogonalDragPreviewPoints");
     expect(lightweightBlock).toContain("buildDragPreviewEndpointPoints");
+    expect(lightweightBlock).toContain("preserveDraggedRouteShape");
+    expect(lightweightBlock).toContain("originalRoute");
+    expect(cachedPreviewBlock).toContain("endpoint.routePoints");
+    expect(cachedPreviewBlock).toContain("preserveDraggedRouteShape");
     expect(lightweightBlock).toContain("if (multiNodeMove && sourceMoved && targetMoved)");
-    expect(lightweightBlock).not.toContain("preserveDraggedRouteShape");
     expect(lightweightBlock).not.toContain("resolveStraightBusSlideEndpoint");
     expect(lightweightBlock).not.toContain("routeEdgesForStoredRendering");
     expect(markupBlock).toContain("buildLightweightNodeDragPreviewRoutes(dragState, delta, previewEdges)");
     expect(updateBlock).toContain("updateNodeDragLightweightEdgePreview(dragState, visualDelta, scopedEdges.previewEdges)");
     expect(fallbackBlock).toContain("buildLightweightNodeDragPreviewRoutes(dragging, draggingDelta, previewEdges)");
-    expect(fallbackBlock).not.toContain("preserveDraggedRouteShape");
     expect(fallbackBlock).not.toContain("resolveStraightBusSlideEndpoint");
   });
 
@@ -7098,9 +7126,9 @@ describe("graph inspector panel", () => {
     expect(syncHelperBlock).toContain("candidateEdges.length <= CANVAS_SINGLE_NODE_DRAG_SYNC_EDGE_LIMIT");
     expect(finishBlock).toContain("const synchronousCandidateEdges = synchronousEdgeAdjustmentCandidates(");
     expect(finishBlock).toContain("const adjustedAffectedEdges = mergeAdjustedCandidateEdges(activeDragging.affectedEdges, adjustedSynchronousEdges);");
-    expect(finishBlock).toContain("shouldFinalizeMovedNodeEdgesSynchronously(activeDragging.nodeIds, adjustedAffectedEdges)");
+    expect(finishBlock).toContain("shouldFinalizeMovedNodeEdgesSynchronously(activeDragging.nodeIds, terminalFinalizationCandidateEdges)");
     expect(finishMoveBlock).toContain("const synchronousCandidateEdges = synchronousEdgeAdjustmentCandidates(");
-    expect(finishMoveBlock).toContain("shouldFinalizeMovedNodeEdgesSynchronously(activeDragging.nodeIds, adjustedAffectedEdges)");
+    expect(finishMoveBlock).toContain("shouldFinalizeMovedNodeEdgesSynchronously(activeDragging.nodeIds, terminalFinalizationCandidateEdges)");
   });
 
   test("snapshots node-drag route points from the routed-edge cache before recomputing paths", async () => {

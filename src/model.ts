@@ -5664,6 +5664,53 @@ export function setRoutableLineDeviceEndpoints(
   };
 }
 
+function routableLineEndpointNormalFromRef(
+  ref: RoutableLineDeviceEndpointRef | undefined,
+  endpointPoint: Point,
+  otherPoint: Point,
+  nodeById: Map<string, ModelNode>
+): Point | undefined {
+  const node = ref ? nodeById.get(ref.nodeId) : undefined;
+  return node ? routeEndpointNormal(node, endpointPoint, otherPoint, ref?.terminalId) : undefined;
+}
+
+export function setRoutableLineDeviceEndpointsPreservingRoute(
+  node: ModelNode,
+  start: Point,
+  end: Point,
+  endpointRefs?: RoutableLineDeviceEndpointRefs,
+  nodeById: Map<string, ModelNode> = new Map(),
+  bounds?: CanvasBounds
+): ModelNode {
+  const baseNode = setRoutableLineDeviceEndpoints(node, start, end, endpointRefs);
+  if (!isRoutableLineDeviceKind(node.kind)) {
+    return baseNode;
+  }
+  const currentPoints = routableLineDeviceCanvasPoints(node);
+  if (currentPoints.length < 3) {
+    return baseNode;
+  }
+  const currentStart = currentPoints[0];
+  const currentEnd = currentPoints[currentPoints.length - 1];
+  if (!currentStart || !currentEnd) {
+    return baseNode;
+  }
+  const refs = endpointRefs ?? routableLineDeviceEndpointRefs(node);
+  const preserved = preserveDraggedRouteShape({
+    routePoints: currentPoints,
+    nextStart: start,
+    nextEnd: end,
+    sourceDelta: { x: start.x - currentStart.x, y: start.y - currentStart.y },
+    targetDelta: { x: end.x - currentEnd.x, y: end.y - currentEnd.y },
+    sourceNormal: routableLineEndpointNormalFromRef(refs.source, start, end, nodeById),
+    targetNormal: routableLineEndpointNormalFromRef(refs.target, end, start, nodeById)
+  });
+  const bounded = bounds
+    ? orthogonalizeRouteKeepingCollinear(preserved.map((point) => clampPointToBounds(point, bounds)))
+    : preserved;
+  return setRoutableLineDeviceCanvasPoints(baseNode, bounded);
+}
+
 export function createRoutableLineDeviceFromEndpoints(
   template: DeviceTemplate,
   start: Point,
@@ -6169,7 +6216,7 @@ export function syncRoutableLineDeviceEndpointsToRefs(
   if (nextStart.x === currentStart.x && nextStart.y === currentStart.y && nextEnd.x === currentEnd.x && nextEnd.y === currentEnd.y) {
     return nodeWithRefs;
   }
-  return setRoutableLineDeviceEndpoints(nodeWithRefs, nextStart, nextEnd);
+  return setRoutableLineDeviceEndpointsPreservingRoute(nodeWithRefs, nextStart, nextEnd, refs, nodeById);
 }
 
 function routableLineDeviceTopologyEdges(nodes: ModelNode[]): Edge[] {
@@ -6281,12 +6328,22 @@ export function rebuildRoutableLineDeviceRouteUpdates(
     const blockerNodeIds = movedNodeIds
       ? routableLineBlockerNodeIdsForMovedInterference(syncedNode, routingNodes, movedNodeIds)
       : undefined;
-    const nextNode = routeRoutableLineDevice(
-      syncedNode,
-      routingNodes,
-      bounds,
-      blockerNodeIds ? { blockerNodeIds } : undefined
-    );
+    const syncedRoutePoints = routableLineDeviceCanvasPoints(syncedNode);
+    if (syncedRoutePoints.length > 2) {
+      if (syncedNode !== node) {
+        updates.push(syncedNode);
+      }
+      continue;
+    }
+    const pathSafety = routableLineStoredPathSafety(syncedNode, routingNodes);
+    const nextNode = pathSafety.unsafe
+      ? routeRoutableLineDevice(
+          syncedNode,
+          routingNodes,
+          bounds,
+          blockerNodeIds ? { blockerNodeIds } : undefined
+        )
+      : syncedNode;
     if (nextNode !== node) {
       updates.push(nextNode);
     }
@@ -12679,6 +12736,54 @@ export function preserveDraggedRouteShape(options: PreserveDraggedRouteShapeOpti
   return orthogonalizeRouteKeepingCollinear(translated);
 }
 
+export function preserveConnectionEdgeRouteShape(
+  nodes: ModelNode[],
+  edge: Edge,
+  routePoints: Point[] | undefined,
+  bounds?: CanvasBounds,
+  options: { routeDelta?: Point } = {}
+): Edge {
+  if (!routePoints || routePoints.length < 2) {
+    return edge;
+  }
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const source = nodeById.get(edge.sourceId) ?? (edge.sourcePoint ? createFloatingEndpointNode(edge.sourcePoint, edge.targetId ? nodeById.get(edge.targetId) : undefined) : undefined);
+  const target = nodeById.get(edge.targetId) ?? (edge.targetPoint ? createFloatingEndpointNode(edge.targetPoint, edge.sourceId ? nodeById.get(edge.sourceId) : undefined) : undefined);
+  if (!source || !target) {
+    return edge;
+  }
+  const nextStart = getEdgeEndpointPoint(source, edge.sourcePoint, edge.sourceTerminalId);
+  const nextEnd = getEdgeEndpointPoint(target, edge.targetPoint, edge.targetTerminalId);
+  const originalStart = routePoints[0];
+  const originalEnd = routePoints[routePoints.length - 1];
+  if (!originalStart || !originalEnd) {
+    return edge;
+  }
+  const sourceNormal = routeEndpointNormal(source, nextStart, nextEnd, edge.sourceTerminalId);
+  const targetNormal = routeEndpointNormal(target, nextEnd, nextStart, edge.targetTerminalId);
+  const preserved = preserveDraggedRouteShape({
+    routePoints,
+    nextStart,
+    nextEnd,
+    sourceDelta: { x: nextStart.x - originalStart.x, y: nextStart.y - originalStart.y },
+    targetDelta: { x: nextEnd.x - originalEnd.x, y: nextEnd.y - originalEnd.y },
+    routeDelta: options.routeDelta,
+    sourceNormal,
+    targetNormal
+  });
+  const bounded = bounds
+    ? orthogonalizeRouteKeepingCollinear(preserved.map((point) => clampPointToBounds(point, bounds)))
+    : preserved;
+  if (samePointList(edge.routePoints ?? [], bounded)) {
+    return edge;
+  }
+  return edgeWithCommitManualPoints(edge, {
+    edgeId: edge.id,
+    points: bounded,
+    path: pointsToOrthogonalPath(bounded)
+  });
+}
+
 export function getMovableRouteSegmentIndexes(routePoints: Point[]): number[] {
   const segments: Array<{ index: number; length: number }> = [];
   for (let segmentIndex = 1; segmentIndex < routePoints.length - 2; segmentIndex += 1) {
@@ -13922,6 +14027,36 @@ function edgeWithProjectedMissingBusEndpointPoints(edge: Edge, source: ModelNode
   return next;
 }
 
+function preservedStoredRoutePointsForDisplay(
+  routePoints: Point[] | undefined,
+  start: Point,
+  end: Point,
+  bounds?: CanvasBounds
+): Point[] | null {
+  if (!routePoints || routePoints.length < 2) {
+    return null;
+  }
+  const points = routePoints.map((point) => ({ ...point }));
+  if (!samePoint(points[0], start) || !samePoint(points[points.length - 1], end)) {
+    return null;
+  }
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1];
+    const current = points[index];
+    if (previous.x !== current.x && previous.y !== current.y) {
+      return null;
+    }
+    if (
+      bounds &&
+      (current.x < 0 || current.x > bounds.width || current.y < 0 || current.y > bounds.height ||
+        previous.x < 0 || previous.x > bounds.width || previous.y < 0 || previous.y > bounds.height)
+    ) {
+      return null;
+    }
+  }
+  return points;
+}
+
 export function routeEdgesForStoredRendering(
   nodes: ModelNode[],
   edges: Edge[],
@@ -13941,6 +14076,16 @@ export function routeEdgesForStoredRendering(
     const sourceIsFloating = !nodeById.has(edge.sourceId) && Boolean(edge.sourcePoint);
     const targetIsFloating = !nodeById.has(edge.targetId) && Boolean(edge.targetPoint);
     const hasManualRoute = Boolean(edge.manualPoints?.length);
+    const preservedRoutePoints = options.preserveManualRouteDisplay
+      ? preservedStoredRoutePointsForDisplay(edge.routePoints, start, end, bounds)
+      : null;
+    if (preservedRoutePoints) {
+      return [{
+        edgeId: edge.id,
+        points: preservedRoutePoints,
+        path: pointsToOrthogonalPath(preservedRoutePoints)
+      }];
+    }
     if (!hasManualRoute && (sourceIsFloating || targetIsFloating) && isOrthogonalDirectSegment(start, end)) {
       const directRoute = [start, end];
       const nonEndpointBlockers = nodes.filter((node) => node.id !== source.id && node.id !== target.id);
@@ -15150,7 +15295,10 @@ export function rebuildSingleConnectionRoute(
     return edges;
   }
   if (shouldPreserveManualPointsForAutomaticRebuild(edge, options)) {
-    return edges;
+    const preservedEdge = preserveConnectionEdgeRouteShape(nodes, edge, edge.routePoints, bounds);
+    return preservedEdge === edge
+      ? edges
+      : edges.map((item) => item.id === edgeId ? preservedEdge : item);
   }
   const prepared = prepareConnectionEdgeForCommit(nodes, [edgeWithoutManualPoints(edge)], edgeId, bounds);
   if (!prepared.ok || !prepared.edge) {
@@ -15241,8 +15389,7 @@ export function rebuildConnectionRoutesForNodes(
   }
 
   const affectedEdges = candidateEdges.filter((edge) =>
-    !shouldPreserveManualPointsForAutomaticRebuild(edge, options) &&
-    (changedNodeIds.has(edge.sourceId) || changedNodeIds.has(edge.targetId))
+    changedNodeIds.has(edge.sourceId) || changedNodeIds.has(edge.targetId)
   );
   const affectedEdgeIds = affectedEdges.map((edge) => edge.id);
   if (affectedEdgeIds.length === 0) {
@@ -15251,6 +15398,13 @@ export function rebuildConnectionRoutesForNodes(
 
   const updates = new Map<string, Edge>();
   for (const edge of affectedEdges) {
+    if (shouldPreserveManualPointsForAutomaticRebuild(edge, options)) {
+      const preservedEdge = preserveConnectionEdgeRouteShape(nodes, updates.get(edge.id) ?? edge, edge.routePoints, bounds);
+      if (preservedEdge !== edge) {
+        updates.set(edge.id, preservedEdge);
+      }
+      continue;
+    }
     const edgeForDesign = edgeWithoutManualPoints(updates.get(edge.id) ?? edge);
     const routeNodes = routeNodesForMovedInterference(nodes, edgeForDesign, changedNodeIds);
     const prepared = prepareConnectionEdgeForCommit(routeNodes, [edgeForDesign], edge.id, bounds);
@@ -15277,7 +15431,6 @@ export function rebuildExternalConnectionRoutesForMovedNodes(
   }
 
   const affectedEdges = candidateEdges.filter((edge) =>
-    !shouldPreserveManualPointsForAutomaticRebuild(edge, options) &&
     movedIds.has(edge.sourceId) !== movedIds.has(edge.targetId)
   );
   if (affectedEdges.length === 0) {
@@ -15289,6 +15442,14 @@ export function rebuildExternalConnectionRoutesForMovedNodes(
   for (const affectedEdge of affectedEdges) {
     const edge = updates.get(affectedEdge.id) ?? edgeById.get(affectedEdge.id);
     if (!edge) {
+      continue;
+    }
+    if (shouldPreserveManualPointsForAutomaticRebuild(edge, options)) {
+      const routeNodes = routeNodesForMovedInterference(nodes, edge, movedIds, true);
+      const preservedEdge = preserveConnectionEdgeRouteShape(routeNodes, edge, edge.routePoints, bounds);
+      if (preservedEdge !== edge) {
+        updates.set(affectedEdge.id, preservedEdge);
+      }
       continue;
     }
     const edgeForDesign = edgeWithoutManualPoints(edge);
