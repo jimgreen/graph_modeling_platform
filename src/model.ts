@@ -6051,6 +6051,67 @@ type RoutableLineDeviceRouteUpdateOptions = {
   movedNodeIds?: Iterable<string>;
 };
 
+function localOpposedBusRoutableLineRoute(
+  edge: Edge,
+  start: Point,
+  end: Point,
+  nodeById: Map<string, ModelNode>,
+  blockers: ModelNode[]
+): Point[] | null {
+  const source = nodeById.get(edge.sourceId);
+  const target = nodeById.get(edge.targetId);
+  if (!source || !target || !isBusNode(source) || !isBusNode(target)) {
+    return null;
+  }
+  const sourceNormal = routeEndpointNormal(source, start, end, edge.sourceTerminalId);
+  const targetNormal = routeEndpointNormal(target, end, start, edge.targetTerminalId);
+  if (!endpointNormalsAreOpposedOnSameAxis(sourceNormal, targetNormal)) {
+    return null;
+  }
+  if (normalAxisDistance(start, end, sourceNormal) <= 0) {
+    return null;
+  }
+  const nonEndpointBlockers = blockers.filter((blocker) => blocker.id !== source.id && blocker.id !== target.id);
+  if (endpointsAreAlignedThroughOpposedNormals(start, end, sourceNormal, targetNormal)) {
+    return directSegmentClearOfNodeBodies(start, end, nonEndpointBlockers, new Set()) ? [start, end] : null;
+  }
+  const startOut = {
+    x: Math.round(start.x + sourceNormal.x * ROUTE_ENDPOINT_STUB_LENGTH),
+    y: Math.round(start.y + sourceNormal.y * ROUTE_ENDPOINT_STUB_LENGTH)
+  };
+  const endOut = {
+    x: Math.round(end.x + targetNormal.x * ROUTE_ENDPOINT_STUB_LENGTH),
+    y: Math.round(end.y + targetNormal.y * ROUTE_ENDPOINT_STUB_LENGTH)
+  };
+  const middleY = Math.round((startOut.y + endOut.y) / 2);
+  const middleX = Math.round((startOut.x + endOut.x) / 2);
+  const route = sourceNormal.y !== 0
+    ? simplifyRoutePreservingEndpointStubs([
+        start,
+        startOut,
+        { x: startOut.x, y: middleY },
+        { x: endOut.x, y: middleY },
+        endOut,
+        end
+      ], { blockers: nonEndpointBlockers, reduceTinyDoglegs: true })
+    : simplifyRoutePreservingEndpointStubs([
+        start,
+        startOut,
+        { x: middleX, y: startOut.y },
+        { x: middleX, y: endOut.y },
+        endOut,
+        end
+      ], { blockers: nonEndpointBlockers, reduceTinyDoglegs: true });
+  if (
+    routeHasImmediateReversal(route) ||
+    !routeEndpointSegmentsMatchNormals(route, sourceNormal, targetNormal) ||
+    routeIntersectsBlockers(route, nonEndpointBlockers, ROUTE_BLOCKER_PADDING, 0)
+  ) {
+    return null;
+  }
+  return route;
+}
+
 function routableLineMovesWithNodeIds(node: ModelNode, movedNodeIds: ReadonlySet<string>) {
   if (movedNodeIds.has(node.id)) {
     return true;
@@ -6161,6 +6222,21 @@ export function routeRoutableLineDevice(
   const nodeById = new Map(otherNodes.map((candidate) => [candidate.id, candidate]));
   const routeEdge = routableLineDeviceRoutingEdge(node, start, end, nodeById);
   const blockers = routableLineRoutingBlockers(otherNodes, routeEdge, options.blockerNodeIds);
+  const localOpposedBusRoute = localOpposedBusRoutableLineRoute(routeEdge, start, end, nodeById, blockers);
+  if (localOpposedBusRoute) {
+    const nextLocalPoints = normalizeRoutableLineDevicePoints(localOpposedBusRoute.map((point) => canvasPointToNodeLocalPoint(node, point)));
+    const currentLocalPoints = routableLineDeviceLocalPoints(node);
+    if (samePointList(currentLocalPoints, nextLocalPoints)) {
+      return ensureRoutableLineDevicePathParam(node);
+    }
+    return {
+      ...node,
+      params: {
+        ...node.params,
+        [ROUTABLE_LINE_POINTS_PARAM]: serializeRoutableLineDevicePoints(nextLocalPoints)
+      }
+    };
+  }
   const route = routeEdgesForRendering(blockers, [routeEdge], bounds)[0];
   if (!route || route.points.length < 2) {
     return ensureRoutableLineDevicePathParam(node);

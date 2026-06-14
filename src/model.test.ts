@@ -2415,6 +2415,80 @@ describe("power system model", () => {
     expect(firstSegmentNormal).toEqual(expectedNormal);
   });
 
+  test("keeps vertical routable lines between parallel buses from detouring around the bus ends", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const topBus = {
+      ...createDefaultNode("ac-bus", { x: 620, y: 120 }),
+      id: "top-bus",
+      size: { width: 720, height: 14 }
+    };
+    const bottomBus = {
+      ...createDefaultNode("ac-bus", { x: 620, y: 420 }),
+      id: "bottom-bus",
+      size: { width: 360, height: 14 }
+    };
+    const topPoint = projectPointToBusCenterline(topBus, { x: 560, y: 120 });
+    const bottomPoint = projectPointToBusCenterline(bottomBus, { x: 560, y: 420 });
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      topPoint,
+      bottomPoint,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(topBus, "t1", topPoint),
+        target: routableLineDeviceEndpointRefForNode(bottomBus, "t1", bottomPoint)
+      }
+    );
+
+    const routed = routeRoutableLineDevice(line, [topBus, bottomBus, line], { width: 1200, height: 760 });
+    const points = routableLineDeviceCanvasPoints(routed);
+
+    expectOrthogonalSegments(points);
+    expect(points[0]).toEqual(topPoint);
+    expect(points[points.length - 1]).toEqual(bottomPoint);
+    expect(routeBendCountForTest(points)).toBeLessThanOrEqual(2);
+    expect(Math.max(...points.map((point) => point.x))).toBeLessThanOrEqual(topPoint.x + 32);
+    expect(Math.min(...points.map((point) => point.x))).toBeGreaterThanOrEqual(topPoint.x - 32);
+  });
+
+  test("keeps offset routable line endpoints between parallel buses on a local middle lane", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const topBus = {
+      ...createDefaultNode("ac-bus", { x: 760, y: 120 }),
+      id: "top-bus",
+      size: { width: 900, height: 14 }
+    };
+    const bottomBus = {
+      ...createDefaultNode("ac-bus", { x: 720, y: 420 }),
+      id: "bottom-bus",
+      size: { width: 360, height: 14 }
+    };
+    const topPoint = projectPointToBusCenterline(topBus, { x: 850, y: 120 });
+    const bottomPoint = projectPointToBusCenterline(bottomBus, { x: 620, y: 420 });
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      topPoint,
+      bottomPoint,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(topBus, "t1", topPoint),
+        target: routableLineDeviceEndpointRefForNode(bottomBus, "t1", bottomPoint)
+      }
+    );
+
+    const routed = routeRoutableLineDevice(line, [topBus, bottomBus, line], { width: 1400, height: 760 });
+    const points = routableLineDeviceCanvasPoints(routed);
+    const minEndpointX = Math.min(topPoint.x, bottomPoint.x);
+    const maxEndpointX = Math.max(topPoint.x, bottomPoint.x);
+
+    expectOrthogonalSegments(points);
+    expect(points[0]).toEqual(topPoint);
+    expect(points[points.length - 1]).toEqual(bottomPoint);
+    expect(routeBendCountForTest(points)).toBeLessThanOrEqual(4);
+    expect(Math.max(...points.map((point) => point.x))).toBeLessThanOrEqual(maxEndpointX + 32);
+    expect(Math.min(...points.map((point) => point.x))).toBeGreaterThanOrEqual(minEndpointX - 32);
+  });
+
   test("keeps routable line-like bus endpoint fixed when rerouting after the opposite device moves", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
     const source = { ...createDefaultNode("ac-source", { x: 100, y: 120 }), id: "source-node" };
