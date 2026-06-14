@@ -12349,6 +12349,27 @@ export function pointsToOrthogonalPath(points: Point[]): string {
   return path;
 }
 
+export function buildManualConnectionPreviewRoute(
+  sourcePoint: Point,
+  manualPoints: Point[],
+  targetPoint: Point,
+  bounds?: CanvasBounds
+): Point[] {
+  const points = [sourcePoint, ...manualPoints, targetPoint].map((point) =>
+    bounds ? clampPointToBounds(point, bounds) : point
+  );
+  return simplifyRoutePreservingEndpointStubs(orthogonalizeRouteKeepingCollinear(points));
+}
+
+export function buildManualConnectionPreviewPath(
+  sourcePoint: Point,
+  manualPoints: Point[],
+  targetPoint: Point,
+  bounds?: CanvasBounds
+): string {
+  return pointsToOrthogonalPath(buildManualConnectionPreviewRoute(sourcePoint, manualPoints, targetPoint, bounds));
+}
+
 export type EdgePointerClick = {
   edgeId: string;
   clientX: number;

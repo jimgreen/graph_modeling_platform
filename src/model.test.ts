@@ -79,6 +79,7 @@ import {
   upsertSavedProject,
   rerouteEdgesAroundMovedNodes,
   routeIntersectsSpecificNodes,
+  buildManualConnectionPreviewRoute,
   validateConnectionEdgeRoute,
   validateConnectionEndpointRules,
   voltageBaseSettingModeForNode,
@@ -258,6 +259,30 @@ function routeBendCountForTest(points: Point[]) {
     previousOrientation = orientation;
   }
   return bends;
+}
+
+function pointLiesOnRouteSegments(point: Point, route: Point[]) {
+  for (let index = 1; index < route.length; index += 1) {
+    const previous = route[index - 1];
+    const current = route[index];
+    if (
+      previous.y === current.y &&
+      point.y === previous.y &&
+      point.x >= Math.min(previous.x, current.x) &&
+      point.x <= Math.max(previous.x, current.x)
+    ) {
+      return true;
+    }
+    if (
+      previous.x === current.x &&
+      point.x === previous.x &&
+      point.y >= Math.min(previous.y, current.y) &&
+      point.y <= Math.max(previous.y, current.y)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function expectOrthogonalSegments(points: Point[]) {
@@ -558,6 +583,23 @@ describe("power system model", () => {
 
     expect(route.points).toEqual([sourcePoint, targetPoint]);
     expect(route.path).toBe(`M ${sourcePoint.x} ${sourcePoint.y} L ${targetPoint.x} ${targetPoint.y}`);
+  });
+
+  test("renders floating connection previews through manually clicked bend points", () => {
+    const source = withHiddenDeviceLabel(createDefaultNode("ac-source", { x: 160, y: 180 }));
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const manualPoints = [
+      { x: sourcePoint.x + 120, y: sourcePoint.y },
+      { x: sourcePoint.x + 120, y: sourcePoint.y - 92 },
+      { x: sourcePoint.x + 320, y: sourcePoint.y - 92 }
+    ];
+    const targetPoint = { x: sourcePoint.x + 420, y: sourcePoint.y + 56 };
+    const route = buildManualConnectionPreviewRoute(sourcePoint, manualPoints, targetPoint, { width: 900, height: 420 });
+
+    expectOrthogonalSegments(route);
+    expect(manualPoints.every((point) => pointLiesOnRouteSegments(point, route))).toBe(true);
+    expect(pointsToOrthogonalPath(route)).toContain(`L ${manualPoints[1].x} ${manualPoints[1].y}`);
+    expect(new Set(route.map((point) => point.y))).toContain(sourcePoint.y - 92);
   });
 
   test("renders unstored bus endpoint connections without folded backtracking", () => {

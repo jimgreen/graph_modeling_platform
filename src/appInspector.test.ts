@@ -2528,8 +2528,10 @@ describe("graph inspector panel", () => {
     const renderEnd = source.indexOf("{routableLinePlacement && routableLinePreview.path", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
 
-    expect(previewBlock).toContain("manualPoints: source.manualPoints");
-    expect(previewBlock).toContain("{ preserveManualRouteDisplay: Boolean(source.manualPoints?.length) }");
+    expect(source).toContain("buildManualConnectionPreviewPath");
+    expect(previewBlock).toContain("if (source.manualPoints?.length)");
+    expect(previewBlock).toContain("return buildManualConnectionPreviewPath(sourcePoint, source.manualPoints, endPoint, canvasBounds)");
+    expect(previewBlock.indexOf("buildManualConnectionPreviewPath")).toBeLessThan(previewBlock.indexOf("routeEdgesForStoredRendering"));
     expect(source).toContain("manualPoints?: Point[];");
     expect(appendBlock).toContain("const nextConnectSource =");
     expect(appendBlock).toContain("pendingConnectPreviewRef.current = null");

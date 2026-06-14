@@ -263,6 +263,7 @@ import {
   routeEdgesForSavedPathRendering,
   routeEdgesForStoredRendering,
   modelGeometryInsideCanvasBounds,
+  buildManualConnectionPreviewPath,
   mirrorNodes,
   moveSavedSchemeToParent,
   renameSavedScheme,
@@ -14229,6 +14230,9 @@ export function App() {
       return "";
     }
     const sourcePoint = source.point ?? getModelEdgeEndpointPoint(sourceNode, undefined, source.terminalId);
+    if (source.manualPoints?.length) {
+      return buildManualConnectionPreviewPath(sourcePoint, source.manualPoints, endPoint, canvasBounds);
+    }
     const previewTarget = target;
     const previewNodes = previewTarget?.node && previewTarget.node.id !== sourceNode.id
       ? [sourceNode, previewTarget.node]
