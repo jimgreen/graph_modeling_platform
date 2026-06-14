@@ -1,4 +1,4 @@
-﻿import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, memo, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, type SetStateAction, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+﻿import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, memo, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, type SetStateAction, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { useTransition } from "react";
 import {
@@ -9471,6 +9471,187 @@ const SvgMarkupChunk = memo(function SvgMarkupChunk({ className, markup }: SvgMa
   return <g className={className} dangerouslySetInnerHTML={{ __html: markup }} />;
 });
 
+type CustomComponentTreeProps = {
+  libraries: string[];
+  filteredByComponentType: Record<string, { section: string; templates: DeviceTemplate[] }[]>;
+  initialCollapsedLibraries: Set<string>;
+  initialCollapsedTypes: Set<string>;
+  initialSelection: CustomComponentTreeSelection;
+  searchQuery: string;
+  onSelectComponent: (template: DeviceTemplate, section: string) => void;
+  onSearchChange: (query: string) => void;
+  onCollapseChange: (libraries: Set<string>, types: Set<string>) => void;
+  onSelectionChange: (selection: CustomComponentTreeSelection) => void;
+};
+
+const CustomComponentManagerTree = memo(function CustomComponentManagerTree({
+  libraries,
+  filteredByComponentType,
+  initialCollapsedLibraries,
+  initialCollapsedTypes,
+  initialSelection,
+  searchQuery,
+  onSelectComponent,
+  onSearchChange,
+  onCollapseChange,
+  onSelectionChange
+}: CustomComponentTreeProps) {
+  // 内部管理 collapsed 状态，展开/收缩不触发父组件重渲染
+  const [collapsedLibraries, setCollapsedLibraries] = useState<Set<string>>(initialCollapsedLibraries);
+  const [collapsedTypes, setCollapsedTypes] = useState<Set<string>>(initialCollapsedTypes);
+  // 内部管理 selection 状态，点击立即显示选中效果
+  const [selection, setSelection] = useState<CustomComponentTreeSelection>(initialSelection);
+
+  // 同步 collapsed 到父组件（用于删除、重命名等操作）
+  useEffect(() => {
+    onCollapseChange(collapsedLibraries, collapsedTypes);
+  }, [collapsedLibraries, collapsedTypes, onCollapseChange]);
+
+  // 同步 selection 到父组件（用于右侧面板更新）
+  useEffect(() => {
+    onSelectionChange(selection);
+  }, [selection, onSelectionChange]);
+
+  const handleToggleLibrary = useCallback((name: string) => {
+    setCollapsedLibraries((current) => {
+      const next = new Set(current);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleToggleType = useCallback((library: string, type: string) => {
+    const typeKey = `${library}::${type}`;
+    setCollapsedTypes((current) => {
+      const next = new Set(current);
+      if (next.has(typeKey)) {
+        next.delete(typeKey);
+      } else {
+        next.add(typeKey);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSelectComponent = useCallback((template: DeviceTemplate, section: string) => {
+    const attributeLibraryName = normalizeAttributeLibraryName(template.attributeLibrary);
+    // 立即更新内部 selection，显示选中效果
+    setSelection({ kind: "component", attributeLibraryName, section, templateKind: template.kind });
+    // 调用父组件回调（更新右侧面板，已延迟处理）
+    onSelectComponent(template, section);
+  }, [onSelectComponent]);
+
+  const searchNeedle = normalizeLibrarySearchText(searchQuery);
+  return (
+    <aside className="custom-component-manager-panel" aria-label="属性库元件类型元件管理">
+      <div className="custom-component-manager-title">
+        <strong>元件结构</strong>
+        <span>属性库 / 元件类型 / 元件</span>
+      </div>
+      <div className="custom-component-manager-actions">
+        <span className="custom-component-tree-actions-note">选择元件类型后点击新建</span>
+      </div>
+      <div className="dialog-tree-search">
+        <Search size={14} aria-hidden="true" />
+        <input
+          value={searchQuery}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="搜索属性库/元件类型/元件"
+          aria-label="搜索元件结构"
+        />
+        {searchQuery && (
+          <button type="button" aria-label="清空元件结构搜索" title="清空" onClick={() => onSearchChange("")}>
+            <X size={13} />
+          </button>
+        )}
+      </div>
+      <div className="custom-component-manager-tree dialog-compact-tree" role="tree">
+        {libraries.length > 0 ? libraries.map((group) => {
+          const typeGroups = filteredByComponentType[group] ?? [];
+          const librarySelected = selection.kind === "attributeLibrary" && selection.attributeLibraryName === group;
+          const libraryCollapsed = searchNeedle ? false : collapsedLibraries.has(group);
+          return (
+            <section className="custom-component-tree-library" key={group}>
+              <button
+                type="button"
+                className={`custom-component-tree-row library ${librarySelected ? "active" : ""}`}
+                role="treeitem"
+                aria-selected={librarySelected}
+                aria-expanded={!libraryCollapsed}
+                onClick={() => handleToggleLibrary(group)}
+              >
+                {libraryCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                <span>{group}</span>
+                <strong>{typeGroups.reduce((sum, typeGroup) => sum + typeGroup.templates.length, 0)}</strong>
+              </button>
+              {!libraryCollapsed && <div className="custom-component-tree-type-list" role="group">
+                {typeGroups.map((typeGroup) => {
+                  const typeKey = `${group}::${typeGroup.section}`;
+                  const typeCollapsed = searchNeedle ? false : collapsedTypes.has(typeKey);
+                  const typeDisplay = componentTypeDisplayParts(typeGroup.section);
+                  const typeSelected =
+                    selection.kind === "componentType" &&
+                    selection.attributeLibraryName === group &&
+                    selection.section === typeGroup.section;
+                  return (
+                    <section className="custom-component-tree-type" key={`${group}-${typeGroup.section}`}>
+                      <button
+                        type="button"
+                        className={`custom-component-tree-row type ${typeSelected ? "active" : ""}`}
+                        role="treeitem"
+                        aria-selected={typeSelected}
+                        aria-expanded={!typeCollapsed}
+                        onClick={() => handleToggleType(group, typeGroup.section)}
+                      >
+                        {typeCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                        <span className="dialog-tree-bilingual" title={typeDisplay.title}>
+                          <span>{typeDisplay.chinese}</span>
+                          <small>{typeDisplay.english}</small>
+                        </span>
+                        <strong>{typeGroup.templates.length}</strong>
+                      </button>
+                      {!typeCollapsed && <div className="custom-component-tree-components" role="group" aria-label={`${group}/${typeGroup.section}元件列表`}>
+                        {typeGroup.templates.map((template) => {
+                          const componentSelected =
+                            selection.kind === "component" &&
+                            selection.templateKind === template.kind;
+                          return (
+                            <button
+                              type="button"
+                              key={template.kind}
+                              className={`custom-component-tree-row component ${componentSelected ? "active" : ""}`}
+                              role="treeitem"
+                              aria-selected={componentSelected}
+                              title={`${template.label} / ${typeGroup.section} / ${template.custom ? "自定义" : "系统内置"}`}
+                              onClick={() => handleSelectComponent(template, typeGroup.section)}
+                            >
+                              <span className="dialog-tree-bilingual dialog-tree-component-label" title={`${template.label} / ${template.kind}`}>
+                                <span>{template.label}</span>
+                                <small>{template.kind}</small>
+                              </span>
+                              <small>{template.custom ? "自定义" : "内置"}</small>
+                            </button>
+                          );
+                        })}
+                      </div>}
+                    </section>
+                  );
+                })}
+              </div>}
+            </section>
+          );
+        }) : (
+          <div className="dialog-tree-empty">未找到匹配元件</div>
+        )}
+      </div>
+    </aside>
+  );
+});
+
 type StableSvgMarkupChunk = {
   key: string;
   markup: string;
@@ -10474,8 +10655,8 @@ export function App() {
   const [customDeviceStatePageId, setCustomDeviceStatePageId] = useState(DEFAULT_STATE_PAGE_ID);
   const [customComponentTreeSelection, setCustomComponentTreeSelection] = useState<CustomComponentTreeSelection>({ kind: "attributeLibrary", attributeLibraryName: "交流设备" });
   const [customComponentTreeSearchQuery, setCustomComponentTreeSearchQuery] = useState("");
-  const [collapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeLibraries] = useState<AttributeLibrary[]>([]);
-  const [collapsedCustomComponentTreeTypes, setCollapsedCustomComponentTreeTypes] = useState<string[]>([]);
+  const [collapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeLibraries] = useState<Set<string>>(new Set());
+  const [collapsedCustomComponentTreeTypes, setCollapsedCustomComponentTreeTypes] = useState<Set<string>>(new Set());
   const [editingCustomDeviceKind, setEditingCustomDeviceKind] = useState("");
   const [customDeviceDraft, setCustomDeviceDraft] = useState<CustomDeviceDraft>(() => createEmptyCustomDeviceDraft());
   const [customDeviceSaveMessage, setCustomDeviceSaveMessage] = useState("");
@@ -34410,29 +34591,27 @@ export function App() {
   const customComponentTreeTypeKey = (attributeLibraryName: string, componentType: string) =>
     `${normalizeAttributeLibraryName(attributeLibraryName)}::${normalizeComponentTypeName(componentType)}`;
 
+  // 同步树组件内部的 collapsed 状态（用于删除、重命名等操作）
+  const handleTreeCollapseChange = useCallback((libraries: Set<string>, types: Set<string>) => {
+    setCollapsedCustomComponentTreeLibraries(libraries);
+    setCollapsedCustomComponentTreeTypes(types);
+  }, []);
+
   const ensureCustomComponentTreeExpanded = (attributeLibraryName: string, componentType?: string) => {
     const normalizedLibrary = normalizeAttributeLibraryName(attributeLibraryName);
-    setCollapsedCustomComponentTreeLibraries((current) => current.filter((item) => normalizeAttributeLibraryName(item) !== normalizedLibrary));
+    setCollapsedCustomComponentTreeLibraries((current) => {
+      const next = new Set(current);
+      next.delete(normalizedLibrary);
+      return next;
+    });
     if (componentType) {
       const typeKey = customComponentTreeTypeKey(normalizedLibrary, componentType);
-      setCollapsedCustomComponentTreeTypes((current) => current.filter((item) => item !== typeKey));
+      setCollapsedCustomComponentTreeTypes((current) => {
+        const next = new Set(current);
+        next.delete(typeKey);
+        return next;
+      });
     }
-  };
-
-  const toggleCustomComponentTreeLibrary = (attributeLibraryName: string) => {
-    const normalizedLibrary = normalizeAttributeLibraryName(attributeLibraryName);
-    setCollapsedCustomComponentTreeLibraries((current) =>
-      current.some((item) => normalizeAttributeLibraryName(item) === normalizedLibrary)
-        ? current.filter((item) => normalizeAttributeLibraryName(item) !== normalizedLibrary)
-        : [...current, normalizedLibrary]
-    );
-  };
-
-  const toggleCustomComponentTreeType = (attributeLibraryName: string, componentType: string) => {
-    const typeKey = customComponentTreeTypeKey(attributeLibraryName, componentType);
-    setCollapsedCustomComponentTreeTypes((current) =>
-      current.includes(typeKey) ? current.filter((item) => item !== typeKey) : [...current, typeKey]
-    );
   };
 
   const cancelPendingCustomComponentTemplateLoad = () => {
@@ -34487,7 +34666,7 @@ export function App() {
     customComponentSelectionRequestRef.current = requestId;
     setCustomDeviceSaveMessage("");
     ensureCustomComponentTreeExpanded(attributeLibraryName, section);
-    setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section, templateKind: template.kind });
+    // 树组件内部已管理 selection，这里只在 transition 中更新右侧面板的状态
     setSelectedDefinitionKind(template.kind);
     setDefinitionDraftSection(section);
     if (customComponentSelectionFrameRef.current !== null) {
@@ -34503,6 +34682,8 @@ export function App() {
         ? { ...nextDraft, error: "" }
         : nextDraft;
       startCustomComponentSelectionTransition(() => {
+        // 合并所有状态更新，减少重渲染
+        setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section, templateKind: template.kind });
         setEditingCustomDeviceKind((current) =>
           customComponentSelectionRequestRef.current !== requestId ? current : template.custom ? template.kind : ""
         );
@@ -34619,8 +34800,20 @@ export function App() {
     setCustomAttributeLibraries((current) => current.filter((group) => normalizeAttributeLibraryName(group) !== attributeLibraryName));
     setExpandedAttributeLibraries((current) => current.filter((group) => normalizeAttributeLibraryName(group) !== attributeLibraryName));
     setExpandedDefinitionGroups((current) => current.filter((group) => normalizeAttributeLibraryName(group) !== attributeLibraryName));
-    setCollapsedCustomComponentTreeLibraries((current) => current.filter((group) => normalizeAttributeLibraryName(group) !== attributeLibraryName));
-    setCollapsedCustomComponentTreeTypes((current) => current.filter((key) => !key.startsWith(`${attributeLibraryName}::`)));
+    setCollapsedCustomComponentTreeLibraries((current) => {
+      const next = new Set(current);
+      next.delete(attributeLibraryName);
+      return next;
+    });
+    setCollapsedCustomComponentTreeTypes((current) => {
+      const next = new Set(current);
+      for (const key of current) {
+        if (key.startsWith(`${attributeLibraryName}::`)) {
+          next.delete(key);
+        }
+      }
+      return next;
+    });
     setSelectedDefinitionKind((current) => (deletedKinds.has(current) ? "" : current));
     setCustomComponentTreeSelection({ kind: "attributeLibrary", attributeLibraryName: "交流设备" });
     setEditingCustomDeviceKind("");
@@ -34705,7 +34898,15 @@ export function App() {
     setCustomDeviceTemplates((current) => current.filter((template) => !deletedKinds.has(template.kind)));
     setSelectedDefinitionKind((current) => (deletedKinds.has(current) ? "" : current));
     setEditingCustomDeviceKind((current) => (deletedKinds.has(current) ? "" : current));
-    setCollapsedCustomComponentTreeTypes((current) => current.filter((key) => !key.endsWith(`::${componentType}`)));
+    setCollapsedCustomComponentTreeTypes((current) => {
+      const next = new Set(current);
+      for (const key of current) {
+        if (key.endsWith(`::${componentType}`)) {
+          next.delete(key);
+        }
+      }
+      return next;
+    });
     if (deletedKinds.size > 0) {
       setDeviceDefinitionOverrides((current) => {
         const next = { ...current };
@@ -34754,8 +34955,24 @@ export function App() {
       setCustomDeviceTemplates((current) => current.map((template) => normalizeAttributeLibraryName(template.attributeLibrary) === oldAttributeLibraryName ? { ...template, attributeLibrary: newAttributeLibraryName } : template));
       setExpandedAttributeLibraries((current) => current.map((group) => normalizeAttributeLibraryName(group) === oldAttributeLibraryName ? newAttributeLibraryName : group));
       setExpandedDefinitionGroups((current) => current.map((group) => normalizeAttributeLibraryName(group) === oldAttributeLibraryName ? newAttributeLibraryName : group));
-      setCollapsedCustomComponentTreeLibraries((current) => current.map((group) => normalizeAttributeLibraryName(group) === oldAttributeLibraryName ? newAttributeLibraryName : group));
-      setCollapsedCustomComponentTreeTypes((current) => current.map((key) => key.startsWith(`${oldAttributeLibraryName}::`) ? key.replace(`${oldAttributeLibraryName}::`, `${newAttributeLibraryName}::`) : key));
+      setCollapsedCustomComponentTreeLibraries((current) => {
+      const next = new Set(current);
+      if (next.has(oldAttributeLibraryName)) {
+        next.delete(oldAttributeLibraryName);
+        next.add(newAttributeLibraryName);
+      }
+      return next;
+    });
+    setCollapsedCustomComponentTreeTypes((current) => {
+      const next = new Set(current);
+      for (const key of current) {
+        if (key.startsWith(`${oldAttributeLibraryName}::`)) {
+          next.delete(key);
+          next.add(key.replace(`${oldAttributeLibraryName}::`, `${newAttributeLibraryName}::`));
+        }
+      }
+      return next;
+    });
       setCustomComponentTreeSelection({ kind: "attributeLibrary", attributeLibraryName: newAttributeLibraryName });
       setCustomDeviceDraft((current) => ({
         ...current,
@@ -34792,9 +35009,16 @@ export function App() {
       setCustomComponentTypes((current) => current.map((componentType) =>
         componentType.name.toLowerCase() === oldSection.toLowerCase() ? { ...componentType, name: newSection, attributeLibraryName } : componentType
       ));
-      setCollapsedCustomComponentTreeTypes((current) => current.map((key) =>
-        key === customComponentTreeTypeKey(attributeLibraryName, oldSection) ? customComponentTreeTypeKey(attributeLibraryName, newSection) : key
-      ));
+      setCollapsedCustomComponentTreeTypes((current) => {
+        const next = new Set(current);
+        const oldKey = customComponentTreeTypeKey(attributeLibraryName, oldSection);
+        const newKey = customComponentTreeTypeKey(attributeLibraryName, newSection);
+        if (next.has(oldKey)) {
+          next.delete(oldKey);
+          next.add(newKey);
+        }
+        return next;
+      });
       setCustomDeviceTemplates((current) => current.map((template) =>
         affectedKinds.has(template.kind)
           ? { ...template, params: { ...template.params, component_type: newSection } }
@@ -35728,115 +35952,6 @@ export function App() {
       </section>
     );
   };
-
-  const renderCustomComponentManagerTree = () => (
-    <aside className="custom-component-manager-panel" aria-label="属性库元件类型元件管理">
-      <div className="custom-component-manager-title">
-        <strong>元件结构</strong>
-        <span>属性库 / 元件类型 / 元件</span>
-      </div>
-      <div className="custom-component-manager-actions">
-        <button type="button" onClick={createCustomAttributeLibrary}>新建属性库</button>
-        <button type="button" onClick={createCustomComponentType}>新建元件类型</button>
-        <button type="button" onClick={startCustomComponentCreate}>新建元件</button>
-        <button type="button" onClick={renameSelectedCustomDeviceTreeItem}>重命名</button>
-        <button type="button" onClick={deleteSelectedCustomDeviceTreeItem}>删除</button>
-      </div>
-      <div className="dialog-tree-search">
-        <Search size={14} aria-hidden="true" />
-        <input
-          value={customComponentTreeSearchQuery}
-          onChange={(event) => setCustomComponentTreeSearchQuery(event.target.value)}
-          placeholder="搜索属性库/元件类型/元件"
-          aria-label="搜索元件结构"
-        />
-        {customComponentTreeSearchQuery && (
-          <button type="button" aria-label="清空元件结构搜索" title="清空" onClick={() => setCustomComponentTreeSearchQuery("")}>
-            <X size={13} />
-          </button>
-        )}
-      </div>
-      <div className="custom-component-manager-tree dialog-compact-tree" role="tree">
-        {displayedCustomComponentTreeLibraries.length > 0 ? displayedCustomComponentTreeLibraries.map((group) => {
-          const typeGroups = filteredCustomComponentTreeByComponentType[group] ?? [];
-          const librarySelected = customComponentTreeSelection.kind === "attributeLibrary" && customComponentTreeSelection.attributeLibraryName === group;
-          const libraryCollapsed = customComponentTreeSearchNeedle ? false : collapsedCustomComponentTreeLibraries.some((item) => normalizeAttributeLibraryName(item) === group);
-          return (
-            <section className="custom-component-tree-library" key={group}>
-              <button
-                type="button"
-                className={`custom-component-tree-row library ${librarySelected ? "active" : ""}`}
-                role="treeitem"
-                aria-selected={librarySelected}
-                aria-expanded={!libraryCollapsed}
-                onClick={() => toggleCustomComponentTreeLibrary(group)}
-              >
-                {libraryCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
-                <span>{group}</span>
-                <strong>{typeGroups.reduce((sum, typeGroup) => sum + typeGroup.templates.length, 0)}</strong>
-              </button>
-              {!libraryCollapsed && <div className="custom-component-tree-type-list" role="group">
-                {typeGroups.map((typeGroup) => {
-                  const typeKey = customComponentTreeTypeKey(group, typeGroup.section);
-                  const typeCollapsed = customComponentTreeSearchNeedle ? false : collapsedCustomComponentTreeTypes.includes(typeKey);
-                  const typeDisplay = componentTypeDisplayParts(typeGroup.section);
-                  const typeSelected =
-                    customComponentTreeSelection.kind === "componentType" &&
-                    customComponentTreeSelection.attributeLibraryName === group &&
-                    customComponentTreeSelection.section === typeGroup.section;
-                  return (
-                    <section className="custom-component-tree-type" key={`${group}-${typeGroup.section}`}>
-                      <button
-                        type="button"
-                        className={`custom-component-tree-row type ${typeSelected ? "active" : ""}`}
-                        role="treeitem"
-                        aria-selected={typeSelected}
-                        aria-expanded={!typeCollapsed}
-                        onClick={() => toggleCustomComponentTreeType(group, typeGroup.section)}
-                      >
-                        {typeCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
-                        <span className="dialog-tree-bilingual" title={typeDisplay.title}>
-                          <span>{typeDisplay.chinese}</span>
-                          <small>{typeDisplay.english}</small>
-                        </span>
-                        <strong>{typeGroup.templates.length}</strong>
-                      </button>
-                      {!typeCollapsed && <div className="custom-component-tree-components" role="group" aria-label={`${group}/${typeGroup.section}元件列表`}>
-                        {typeGroup.templates.map((template) => {
-                          const componentSelected =
-                            customComponentTreeSelection.kind === "component" &&
-                            customComponentTreeSelection.templateKind === template.kind;
-                          return (
-                            <button
-                              type="button"
-                              key={template.kind}
-                              className={`custom-component-tree-row component ${componentSelected ? "active" : ""}`}
-                              role="treeitem"
-                              aria-selected={componentSelected}
-                              title={`${template.label} / ${typeGroup.section} / ${template.custom ? "自定义" : "系统内置"}`}
-                              onClick={() => selectCustomComponentTemplate(template, typeGroup.section)}
-                            >
-                              <span className="dialog-tree-bilingual dialog-tree-component-label" title={`${template.label} / ${template.kind}`}>
-                                <span>{template.label}</span>
-                                <small>{template.kind}</small>
-                              </span>
-                              <small>{template.custom ? "自定义" : "内置"}</small>
-                            </button>
-                          );
-                        })}
-                      </div>}
-                    </section>
-                  );
-                })}
-              </div>}
-            </section>
-          );
-        }) : (
-          <div className="dialog-tree-empty">未找到匹配元件</div>
-        )}
-      </div>
-    </aside>
-  );
 
   const renderLibraryDefinitionActions = () => (
     <div className="library-definition-actions">
@@ -42444,7 +42559,18 @@ export function App() {
             {customDeviceDraft.error && <p className="custom-device-error">{customDeviceDraft.error}</p>}
             {customDeviceSaveMessage && <p className="custom-device-save-status">{customDeviceSaveMessage}</p>}
             <div className="custom-device-dialog-layout">
-              {renderCustomComponentManagerTree()}
+              <CustomComponentManagerTree
+                libraries={displayedCustomComponentTreeLibraries}
+                filteredByComponentType={filteredCustomComponentTreeByComponentType}
+                initialCollapsedLibraries={collapsedCustomComponentTreeLibraries}
+                initialCollapsedTypes={collapsedCustomComponentTreeTypes}
+                initialSelection={customComponentTreeSelection}
+                searchQuery={customComponentTreeSearchQuery}
+                onSelectComponent={selectCustomComponentTemplate}
+                onSearchChange={setCustomComponentTreeSearchQuery}
+                onCollapseChange={handleTreeCollapseChange}
+                onSelectionChange={setCustomComponentTreeSelection}
+              />
               <div className="custom-device-editor-panel">
             <div className="custom-device-form-grid">
               <label className="custom-attribute-library-field">
