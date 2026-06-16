@@ -70,12 +70,14 @@ import {
   moveOrthogonalRouteSegment,
   modelGeometryInsideCanvasBounds,
   insertOrthogonalRouteBend,
+  preserveConnectionEdgeRouteShape,
   preserveDraggedRouteShape,
   rebuildConnectionRoutesForNodes,
   rebuildExternalConnectionRoutesForMovedNodes,
   rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes,
   rebuildSingleConnectionRoute,
   redrawConnectionRoutesForEdges,
+  redrawRoutableLineDeviceRoutes,
   upsertSavedProject,
   rerouteEdgesAroundMovedNodes,
   routeIntersectsSpecificNodes,
@@ -115,6 +117,7 @@ import {
   routableLineDeviceEndpointRefForNode,
   routableLineDeviceEndpointRefs,
   setRoutableLineDeviceEndpoints,
+  setRoutableLineDeviceEndpointsPreservingRoute,
   setRoutableLineDeviceCanvasPoints,
   routableLineDeviceCanvasPoints,
   routableLineDeviceLocalPoints,
@@ -2221,6 +2224,102 @@ describe("power system model", () => {
     expect(routeBendCountForTest(routePoints)).toBeGreaterThan(1);
   });
 
+  test("adds endpoint stubs when a two-point routable line moves against a bus", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = { ...createDefaultNode("ac-source", { x: 120, y: 260 }), id: "short-line-source" };
+    const movedSource = { ...source, position: { x: 180, y: 420 } };
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 560, y: 260 }),
+      id: "short-line-bus",
+      size: { width: 420, height: 16 }
+    };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const movedSourcePoint = getTerminalPoint(movedSource, "t1");
+    const busPoint = projectPointToBusCenterline(bus, { x: 520, y: bus.position.y });
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      sourcePoint,
+      busPoint,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: routableLineDeviceEndpointRefForNode(bus, "t1", busPoint)
+      }
+    );
+
+    const updated = setRoutableLineDeviceEndpointsPreservingRoute(
+      line,
+      movedSourcePoint,
+      busPoint,
+      routableLineDeviceEndpointRefs(line),
+      new Map([
+        [movedSource.id, movedSource],
+        [bus.id, bus]
+      ]),
+      { width: 900, height: 640 }
+    );
+    const updatedPoints = routableLineDeviceCanvasPoints(updated);
+
+    expect(updatedPoints.length).toBeGreaterThan(2);
+    expect(updatedPoints[0]).toEqual(movedSourcePoint);
+    expect(updatedPoints[1]).toEqual({ x: movedSourcePoint.x + 28, y: movedSourcePoint.y });
+    expect(updatedPoints[updatedPoints.length - 2]).toEqual({ x: busPoint.x, y: busPoint.y + 28 });
+    expect(updatedPoints[updatedPoints.length - 1]).toEqual(busPoint);
+    expectOrthogonalSegments(updatedPoints);
+  });
+
+  test("reroutes a preserved routable line route when the moved endpoint path hits a stationary device", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = { ...createDefaultNode("ac-source", { x: 120, y: 260 }), id: "blocked-manual-line-source" };
+    const movedSource = { ...source, position: { x: 180, y: 340 } };
+    const blocker = { ...createDefaultNode("ac-source", { x: 360, y: 250 }), id: "blocked-manual-line-stationary" };
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 560, y: 120 }),
+      id: "blocked-manual-line-bus",
+      size: { width: 420, height: 16 }
+    };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const busPoint = projectPointToBusCenterline(bus, { x: 520, y: bus.position.y });
+    const blockedLanePoint = { x: busPoint.x - 120, y: sourcePoint.y - 80 };
+    const manualRoutePoints = [
+      sourcePoint,
+      { x: sourcePoint.x + 64, y: sourcePoint.y },
+      { x: sourcePoint.x + 64, y: blockedLanePoint.y },
+      blockedLanePoint,
+      { x: blockedLanePoint.x, y: busPoint.y },
+      busPoint
+    ];
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      sourcePoint,
+      busPoint,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: routableLineDeviceEndpointRefForNode(bus, "t1", busPoint)
+      }
+    );
+    const manualLine = setRoutableLineDeviceCanvasPoints(line, manualRoutePoints);
+
+    const updates = rebuildRoutableLineDeviceRouteUpdates(
+      [movedSource, bus, blocker, manualLine],
+      [manualLine.id],
+      { width: 900, height: 560 },
+      [source, bus, blocker, manualLine],
+      { movedNodeIds: [source.id] }
+    );
+    const routePoints = routableLineDeviceCanvasPoints(updates[0]);
+
+    expect(updates.map((node) => node.id)).toEqual([manualLine.id]);
+    expect(routePoints[0]).toEqual(getTerminalPoint(movedSource, "t1"));
+    expect(routePoints[routePoints.length - 1]).toEqual(busPoint);
+    expect(routeIntersectsSpecificNodes(routePoints, {
+      id: "blocked-routable-line-route",
+      sourceId: source.id,
+      targetId: bus.id
+    }, [blocker])).toBe(false);
+  });
+
   test("syncs routable line-like device endpoints when both attached devices move", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "dc-routable-line");
     const source = { ...createDefaultNode("dc-source", { x: 120, y: 140 }), id: "source-node" };
@@ -2633,6 +2732,44 @@ describe("power system model", () => {
     expect(routableLineDeviceEndpointRefs(updates[0]).target).toEqual(originalTargetRef);
   });
 
+  test("keeps legacy routable line-like bus endpoints fixed when the bus ref has no local point", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = { ...createDefaultNode("ac-source", { x: 100, y: 120 }), id: "legacy-ref-source" };
+    const movedSource = { ...source, position: { x: 180, y: 220 } };
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 520, y: 80 }),
+      id: "legacy-ref-bus",
+      size: { width: 420, height: 16 }
+    };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const targetPoint = projectPointToBusCenterline(bus, { x: 430, y: 80 });
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      sourcePoint,
+      targetPoint,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: {
+          nodeId: bus.id,
+          terminalId: "t1"
+        }
+      }
+    );
+
+    const updates = rebuildRoutableLineDeviceRouteUpdates(
+      [movedSource, bus, line],
+      [line.id],
+      { width: 760, height: 480 },
+      [source, bus, line]
+    );
+    const routePoints = routableLineDeviceCanvasPoints(updates[0]);
+
+    expect(updates.map((node) => node.id)).toEqual([line.id]);
+    expect(routePoints[0]).toEqual(getTerminalPoint(movedSource, "t1"));
+    expect(routePoints[routePoints.length - 1]).toEqual(targetPoint);
+  });
+
   test("routes routable line-like devices around attached endpoint device bodies", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
     const bus = { ...createDefaultNode("ac-bus", { x: 260, y: 140 }), id: "source-bus" };
@@ -2833,6 +2970,55 @@ describe("power system model", () => {
     expect(routableLineDeviceCanvasPoints(updates[0]).length).toBeGreaterThan(2);
   });
 
+  test("redraws requested routable line-like devices from endpoints", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = { ...createDefaultNode("ac-source", { x: 120, y: 260 }), id: "redraw-line-source" };
+    const target = { ...createDefaultNode("ac-load", { x: 820, y: 260 }), id: "redraw-line-target" };
+    const blocker = { ...createDefaultNode("ac-box-breaker", { x: 470, y: 190 }), id: "redraw-line-blocker" };
+    const untouched = { ...createDefaultNode("dc-routable-line", { x: 320, y: 420 }), id: "untouched-routable-line" };
+    const start = getTerminalPoint(source, "t1");
+    const end = getTerminalPoint(target, "t1");
+    const oldManualLane = { x: 360, y: 420 };
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      start,
+      end,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: routableLineDeviceEndpointRefForNode(target, "t1")
+      }
+    );
+    const manualLine = setRoutableLineDeviceCanvasPoints(line, [
+      start,
+      { x: 260, y: start.y },
+      { x: 260, y: oldManualLane.y },
+      oldManualLane,
+      { x: end.x - 140, y: oldManualLane.y },
+      { x: end.x - 140, y: end.y },
+      end
+    ]);
+
+    const updates = redrawRoutableLineDeviceRoutes(
+      [source, target, blocker, manualLine, untouched],
+      [manualLine.id],
+      { width: 1000, height: 560 }
+    );
+    const routePoints = routableLineDeviceCanvasPoints(updates[0]);
+
+    expect(updates.map((node) => node.id)).toEqual([manualLine.id]);
+    expect(routableLineDeviceEndpointRefs(updates[0])).toEqual(routableLineDeviceEndpointRefs(manualLine));
+    expect(routePoints[0]).toEqual(start);
+    expect(routePoints[routePoints.length - 1]).toEqual(end);
+    expect(routePoints).not.toContainEqual(oldManualLane);
+    expect(routeIntersectsSpecificNodes(routePoints, {
+      id: "redrawn-routable-line-route",
+      sourceId: source.id,
+      targetId: target.id
+    }, [blocker])).toBe(false);
+    expectOrthogonalSegments(routePoints);
+  });
+
   test("does not reroute stationary routable line-like devices around stationary blockers during a move repair", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
     const source = { ...createDefaultNode("ac-source", { x: 120, y: 180 }), id: "stationary-source" };
@@ -2877,6 +3063,48 @@ describe("power system model", () => {
     expect(routableLineDeviceCanvasPoints(updates[0] ?? line)).not.toEqual(
       routableLineDeviceCanvasPoints(fullBlockerUpdates[0] ?? line)
     );
+  });
+
+  test("reroutes stationary routable line-like devices when a moved blocker crosses their stored route", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = { ...createDefaultNode("ac-source", { x: 120, y: 180 }), id: "blocked-stationary-source" };
+    const target = { ...createDefaultNode("ac-load", { x: 820, y: 180 }), id: "blocked-stationary-target" };
+    const movedBlocker = { ...createDefaultNode("ac-box-breaker", { x: 470, y: 300 }), id: "moved-routable-blocker" };
+    const start = getTerminalPoint(source, "t1");
+    const end = getTerminalPoint(target, "t1");
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      start,
+      end,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: routableLineDeviceEndpointRefForNode(target, "t1")
+      }
+    );
+    const storedLine = setRoutableLineDeviceCanvasPoints(line, [
+      start,
+      { x: start.x, y: 300 },
+      { x: end.x, y: 300 },
+      end
+    ]);
+
+    const updates = rebuildRoutableLineDeviceRouteUpdates(
+      [source, target, movedBlocker, storedLine],
+      [storedLine.id],
+      { width: 1000, height: 520 },
+      [source, target, movedBlocker, storedLine],
+      { movedNodeIds: [movedBlocker.id] }
+    );
+    const routePoints = routableLineDeviceCanvasPoints(updates[0]);
+
+    expect(updates.map((node) => node.id)).toEqual([storedLine.id]);
+    expect(routePoints).not.toEqual(routableLineDeviceCanvasPoints(storedLine));
+    expect(routeIntersectsSpecificNodes(routePoints, {
+      id: "blocked-stationary-routable-line-route",
+      sourceId: source.id,
+      targetId: target.id
+    }, [movedBlocker])).toBe(false);
   });
 
   test("initializes editable terminal voltage bases to zero", () => {
@@ -4863,6 +5091,71 @@ describe("power system model", () => {
     expect(hasImmediateRouteReversal(route?.points ?? [])).toBe(false);
   });
 
+  test("keeps the stationary device endpoint fixed while rewiring a bus endpoint preview", () => {
+    const source = { ...createDefaultNode("ac-source", { x: 164, y: 500 }), id: "source" };
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 720, y: 138 }),
+      id: "bus",
+      size: { width: 980, height: 24 }
+    };
+    const sourceTerminal = getTerminalPoint(source, "t1");
+    const initialBusPoint = projectPointToBusCenterline(bus, sourceTerminal);
+    const initialEdge = {
+      id: "device-to-bus-rewire-preview",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: initialBusPoint
+    };
+    const initialRoute = routeEdgesForStoredRendering([source, bus], [initialEdge], { width: 1400, height: 900 })[0];
+    const draggedBusPoint = projectPointToBusCenterline(bus, { x: 965, y: 663 });
+    const previewEdge = {
+      ...initialEdge,
+      targetPoint: draggedBusPoint
+    };
+
+    const preserved = preserveConnectionEdgeRouteShape([source, bus], previewEdge, initialRoute.points, { width: 1400, height: 900 });
+    const previewPoints = preserved.routePoints ?? [];
+
+    expect(previewPoints[0]).toEqual(sourceTerminal);
+    expect(previewPoints[previewPoints.length - 1]).toEqual(draggedBusPoint);
+    expect(previewPoints.some((point) => point.x === sourceTerminal.x && point.y === sourceTerminal.y)).toBe(true);
+  });
+
+  test("keeps the stationary device endpoint fixed while dragging a bus endpoint into blank preview space", () => {
+    const source = { ...createDefaultNode("ac-source", { x: 164, y: 500 }), id: "source" };
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 720, y: 138 }),
+      id: "bus",
+      size: { width: 980, height: 24 }
+    };
+    const sourceTerminal = getTerminalPoint(source, "t1");
+    const initialBusPoint = projectPointToBusCenterline(bus, sourceTerminal);
+    const initialEdge = {
+      id: "device-to-floating-rewire-preview",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: initialBusPoint
+    };
+    const initialRoute = routeEdgesForStoredRendering([source, bus], [initialEdge], { width: 1400, height: 900 })[0];
+    const floatingPreviewPoint = { x: 965, y: 663 };
+    const previewEdge = {
+      ...initialEdge,
+      targetId: "floating-rewire-target",
+      targetPoint: floatingPreviewPoint
+    };
+
+    const preserved = preserveConnectionEdgeRouteShape([source], previewEdge, initialRoute.points, { width: 1400, height: 900 });
+    const previewPoints = preserved.routePoints ?? [];
+
+    expect(previewPoints[0]).toEqual(sourceTerminal);
+    expect(previewPoints[previewPoints.length - 1]).toEqual(floatingPreviewPoint);
+    expect(previewPoints.some((point) => point.x === sourceTerminal.x && point.y === sourceTerminal.y)).toBe(true);
+  });
+
   test("repairs stored bus-move routes that immediately reverse near the moved bus endpoint", () => {
     const bus = {
       ...createDefaultNode("ac-bus", { x: 360, y: 260 }),
@@ -6067,6 +6360,95 @@ describe("power system model", () => {
     expect(preserved[preserved.length - 1]).toEqual({ x: 200, y: 100 });
   });
 
+  test("adds endpoint stubs when preserving a two-point device-to-bus drag preview", () => {
+    const preserved = preserveDraggedRouteShape({
+      routePoints: [
+        { x: 180, y: 260 },
+        { x: 340, y: 260 }
+      ],
+      nextStart: { x: 220, y: 420 },
+      nextEnd: { x: 340, y: 260 },
+      sourceDelta: { x: 40, y: 160 },
+      targetDelta: { x: 0, y: 0 },
+      sourceNormal: { x: 1, y: 0 },
+      targetNormal: { x: 0, y: 1 }
+    });
+
+    expect(preserved[1]).toEqual({ x: 248, y: 420 });
+    expect(preserved[preserved.length - 2]).toEqual({ x: 340, y: 288 });
+    expectOrthogonalSegments(preserved);
+  });
+
+  test("turns immediately after the source stub for a two-point device-to-bus drag preview", () => {
+    const preserved = preserveDraggedRouteShape({
+      routePoints: [
+        { x: 1380, y: 560 },
+        { x: 1650, y: 210 }
+      ],
+      nextStart: { x: 1480, y: 555 },
+      nextEnd: { x: 1650, y: 210 },
+      sourceDelta: { x: 100, y: -5 },
+      targetDelta: { x: 0, y: 0 },
+      sourceNormal: { x: 1, y: 0 },
+      targetNormal: { x: 0, y: 1 }
+    });
+
+    expect(preserved).toEqual([
+      { x: 1480, y: 555 },
+      { x: 1508, y: 555 },
+      { x: 1508, y: 238 },
+      { x: 1650, y: 238 },
+      { x: 1650, y: 210 }
+    ]);
+    expectOrthogonalSegments(preserved);
+  });
+
+  test("preserves a three-point single-corner drag preview without endpoint-stub rerouting", () => {
+    const preserved = preserveDraggedRouteShape({
+      routePoints: [
+        { x: 248.3, y: 255 },
+        { x: 268.5, y: 255 },
+        { x: 268.5, y: 373 }
+      ],
+      nextStart: { x: 288.3, y: 295 },
+      nextEnd: { x: 268.5, y: 373 },
+      sourceDelta: { x: 40, y: 40 },
+      targetDelta: { x: 0, y: 0 },
+      sourceNormal: { x: 0, y: 1 },
+      targetNormal: { x: 0, y: -1 }
+    });
+
+    expect(preserved).toEqual([
+      { x: 288, y: 295 },
+      { x: 269, y: 295 },
+      { x: 269, y: 373 }
+    ]);
+    expectOrthogonalSegments(preserved);
+  });
+
+  test("preserves a vertical-then-horizontal three-point drag preview when the target moves", () => {
+    const preserved = preserveDraggedRouteShape({
+      routePoints: [
+        { x: 420, y: 180 },
+        { x: 420, y: 260 },
+        { x: 560, y: 260 }
+      ],
+      nextStart: { x: 420, y: 180 },
+      nextEnd: { x: 610, y: 320 },
+      sourceDelta: { x: 0, y: 0 },
+      targetDelta: { x: 50, y: 60 },
+      sourceNormal: { x: 0, y: 1 },
+      targetNormal: { x: -1, y: 0 }
+    });
+
+    expect(preserved).toEqual([
+      { x: 420, y: 180 },
+      { x: 420, y: 320 },
+      { x: 610, y: 320 }
+    ]);
+    expectOrthogonalSegments(preserved);
+  });
+
   test("marks every non-end route segment as movable", () => {
     const routePoints: Point[] = [
       { x: 20, y: 20 },
@@ -6178,6 +6560,56 @@ describe("power system model", () => {
     expect(validation.ok).toBe(true);
     expect(validation.issues).toEqual([]);
     expect(validation.route?.points).not.toEqual(beforeRoutes[0].points);
+  });
+
+  test("reroutes saved manual connection lines when a moved graphic blocks their preserved path", () => {
+    const source = { ...createDefaultNode("ac-source", { x: 160, y: 140 }), id: "manual-source" };
+    const target = { ...createDefaultNode("ac-load", { x: 900, y: 140 }), id: "manual-target" };
+    const blocker = { ...createDefaultNode("ac-pv-source", { x: 1000, y: 140 }), id: "manual-moved-pv", name: "交流光伏" };
+    const edge: Edge = {
+      id: "manual-blocked-after-move",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+    const beforeRoutes = routeEdgesForRendering([source, target, blocker], [edge], { width: 1100, height: 420 });
+    const savedEdge = edgeWithSavedRouteGeometry(edge, beforeRoutes[0], source, target);
+    const longMiddleSegment = beforeRoutes[0].points
+      .slice(1, -1)
+      .map((_point, index) => ({ a: beforeRoutes[0].points[index + 1], b: beforeRoutes[0].points[index + 2] }))
+      .find(({ a, b }) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) > 160);
+    expect(savedEdge.manualPoints?.length ?? 0).toBeGreaterThan(0);
+    expect(longMiddleSegment).toBeTruthy();
+    const movedBlocker = {
+      ...blocker,
+      position: {
+        x: Math.round((longMiddleSegment!.a.x + longMiddleSegment!.b.x) / 2),
+        y: Math.round((longMiddleSegment!.a.y + longMiddleSegment!.b.y) / 2)
+      }
+    };
+
+    const nextEdges = rerouteEdgesAroundMovedNodes(
+      [source, target, movedBlocker],
+      [savedEdge],
+      [movedBlocker.id],
+      beforeRoutes,
+      { width: 1100, height: 420 },
+      [],
+      [savedEdge],
+      { preserveManualPoints: true }
+    );
+    const route = routeEdgesForStoredRendering([source, target, movedBlocker], nextEdges, { width: 1100, height: 420 })[0];
+    const validation = validateConnectionEdgeRoute(
+      [source, target, movedBlocker],
+      nextEdges,
+      edge.id,
+      { width: 1100, height: 420 }
+    );
+
+    expect(nextEdges[0]).not.toBe(savedEdge);
+    expect(validation.ok).toBe(true);
+    expect(routeIntersectsSpecificNodes(route.points, nextEdges[0], [movedBlocker])).toBe(false);
   });
 
   test("moves unrelated connection lines into and out of local obstacle avoidance", () => {
@@ -6372,6 +6804,95 @@ describe("power system model", () => {
     expect(rebuiltRoutePoints?.[rebuiltRoutePoints.length - 1]).toEqual(busPoint);
     expect(rebuiltRoutePoints?.some((point) => point.y === preservedLanePoint.y)).toBe(true);
     expect(rebuilt[0].manualPoints?.some((point) => point.y === preservedLanePoint.y)).toBe(true);
+  });
+
+  test("freezes an implicit bus endpoint from the stored route when the opposite device endpoint moves", () => {
+    const source = withHiddenDeviceLabel({ ...createDefaultNode("ac-source", { x: 140, y: 340 }), id: "implicit-bus-source" });
+    const movedSource = withHiddenDeviceLabel({ ...source, position: { x: 260, y: 420 } });
+    const bus = withHiddenDeviceLabel({
+      ...createDefaultNode("ac-bus", { x: 560, y: 140 }),
+      id: "implicit-target-bus",
+      size: { width: 440, height: 16 }
+    });
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const movedSourcePoint = getTerminalPoint(movedSource, "t1");
+    const busPoint = projectPointToBusCenterline(bus, { x: 480, y: bus.position.y });
+    const routePoints = [
+      sourcePoint,
+      { x: sourcePoint.x + 64, y: sourcePoint.y },
+      { x: sourcePoint.x + 64, y: busPoint.y },
+      busPoint
+    ];
+    const edge: Edge = {
+      id: "implicit-device-to-bus-move",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1"
+    };
+
+    const preserved = preserveConnectionEdgeRouteShape(
+      [movedSource, bus],
+      edge,
+      routePoints,
+      { width: 920, height: 620 }
+    );
+    const preservedRoutePoints = preserved.routePoints ?? [];
+
+    expect(preserved.targetPoint).toEqual(busPoint);
+    expect(preservedRoutePoints[0]).toEqual(movedSourcePoint);
+    expect(preservedRoutePoints[preservedRoutePoints.length - 1]).toEqual(busPoint);
+  });
+
+  test("reroutes a preserved device-to-bus manual route when the moved endpoint path hits a stationary device", () => {
+    const source = withHiddenDeviceLabel({ ...createDefaultNode("ac-source", { x: 140, y: 340 }), id: "blocked-manual-source" });
+    const movedSource = withHiddenDeviceLabel({ ...source, position: { x: 220, y: 420 } });
+    const blocker = withHiddenDeviceLabel({ ...createDefaultNode("ac-source", { x: 284, y: 270 }), id: "stationary-route-blocker" });
+    const bus = withHiddenDeviceLabel({
+      ...createDefaultNode("ac-bus", { x: 560, y: 140 }),
+      id: "blocked-manual-bus",
+      size: { width: 440, height: 16 }
+    });
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const busPoint = projectPointToBusCenterline(bus, { x: 520, y: bus.position.y });
+    const routePoints = [
+      sourcePoint,
+      { x: sourcePoint.x + 64, y: sourcePoint.y },
+      { x: sourcePoint.x + 64, y: sourcePoint.y - 150 },
+      { x: busPoint.x - 120, y: sourcePoint.y - 150 },
+      { x: busPoint.x - 120, y: busPoint.y },
+      busPoint
+    ];
+    const edge: Edge = {
+      id: "blocked-preserved-device-to-bus",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: busPoint,
+      manualPoints: routePoints.slice(1, -1).map((point) => ({ ...point })),
+      routePoints: routePoints.map((point) => ({ ...point }))
+    };
+
+    const rebuilt = rebuildExternalConnectionRoutesForMovedNodes(
+      [movedSource, bus, blocker],
+      [edge],
+      [source.id],
+      { width: 920, height: 620 },
+      [edge],
+      { preserveManualPoints: true }
+    );
+    const route = routeEdgesForStoredRendering(
+      [movedSource, bus, blocker],
+      rebuilt,
+      { width: 920, height: 620 },
+      { preserveManualRouteDisplay: true }
+    )[0];
+    const validation = validateConnectionEdgeRoute([movedSource, bus, blocker], rebuilt, edge.id, { width: 920, height: 620 });
+
+    expect(rebuilt[0]).not.toBe(edge);
+    expect(validation.ok).toBe(true);
+    expect(routeIntersectsSpecificNodes(route.points, rebuilt[0], [blocker])).toBe(false);
   });
 
   test("preserves manual route display when automatic edit-mode rendering is protected", () => {

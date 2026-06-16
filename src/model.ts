@@ -5687,7 +5687,7 @@ export function setRoutableLineDeviceEndpointsPreservingRoute(
     return baseNode;
   }
   const currentPoints = routableLineDeviceCanvasPoints(node);
-  if (currentPoints.length < 3) {
+  if (currentPoints.length < 2) {
     return baseNode;
   }
   const currentStart = currentPoints[0];
@@ -5991,7 +5991,8 @@ function applyRoutableLineEndpointRefs(
 
 function routableLineEndpointPointFromRef(
   ref: RoutableLineDeviceEndpointRef | undefined,
-  nodeById: Map<string, ModelNode>
+  nodeById: Map<string, ModelNode>,
+  currentPoint?: Point
 ): Point | undefined {
   if (!ref) {
     return undefined;
@@ -6001,7 +6002,7 @@ function routableLineEndpointPointFromRef(
     return undefined;
   }
   if (isBusNode(node)) {
-    const referencePoint = ref.localPoint ? nodeLocalToPoint(node, ref.localPoint) : getTerminalPoint(node, ref.terminalId);
+    const referencePoint = ref.localPoint ? nodeLocalToPoint(node, ref.localPoint) : currentPoint ?? getTerminalPoint(node, ref.terminalId);
     return projectPointToBusCenterline(node, referencePoint);
   }
   return getTerminalPoint(node, ref.terminalId);
@@ -6078,12 +6079,12 @@ function routableLineRouteHasBlockingIssue(points: Point[], blockers: ModelNode[
   );
 }
 
-function repairRoutableLineRouteAroundBlockers(points: Point[], blockers: ModelNode[], bounds?: CanvasBounds) {
+function repairRoutableLineRouteAroundBlockers(points: Point[], blockers: ModelNode[], edge: Edge, bounds?: CanvasBounds) {
   const routeBlockers = filterBlockersForRoutePoints(points, blockers);
-  if (!routeIntersectsBlockers(points, routeBlockers, ROUTE_BLOCKER_PADDING, 1)) {
+  if (!routeIntersectsEndpointAwareBlockers(points, routeBlockers, edge.sourceId, edge.targetId)) {
     return points;
   }
-  const repaired = repairRouteAroundBlockers(points, routeBlockers, bounds, 1);
+  const repaired = repairEndpointAwareRouteAroundBlockers(points, routeBlockers, edge.sourceId, edge.targetId, bounds);
   return simplifyRoutePreservingEndpointStubs(repaired, {
     blockers: routeBlockers,
     reduceTinyDoglegs: true
@@ -6211,8 +6212,8 @@ export function syncRoutableLineDeviceEndpointsToRefs(
   if (!currentStart || !currentEnd) {
     return nodeWithRefs;
   }
-  const nextStart = routableLineEndpointPointFromRef(refs.source, nodeById) ?? currentStart;
-  const nextEnd = routableLineEndpointPointFromRef(refs.target, nodeById) ?? currentEnd;
+  const nextStart = routableLineEndpointPointFromRef(refs.source, nodeById, currentStart) ?? currentStart;
+  const nextEnd = routableLineEndpointPointFromRef(refs.target, nodeById, currentEnd) ?? currentEnd;
   if (nextStart.x === currentStart.x && nextStart.y === currentStart.y && nextEnd.x === currentEnd.x && nextEnd.y === currentEnd.y) {
     return nodeWithRefs;
   }
@@ -6289,7 +6290,7 @@ export function routeRoutableLineDevice(
     return ensureRoutableLineDevicePathParam(node);
   }
   const routePoints = routableLineRouteHasBlockingIssue(route.points, blockers, routeEdge)
-    ? repairRoutableLineRouteAroundBlockers(route.points, blockers, bounds)
+    ? repairRoutableLineRouteAroundBlockers(route.points, blockers, routeEdge, bounds)
     : route.points;
   const nextLocalPoints = normalizeRoutableLineDevicePoints(routePoints.map((point) => canvasPointToNodeLocalPoint(node, point)));
   const currentLocalPoints = routableLineDeviceLocalPoints(node);
@@ -6329,13 +6330,13 @@ export function rebuildRoutableLineDeviceRouteUpdates(
       ? routableLineBlockerNodeIdsForMovedInterference(syncedNode, routingNodes, movedNodeIds)
       : undefined;
     const syncedRoutePoints = routableLineDeviceCanvasPoints(syncedNode);
-    if (syncedRoutePoints.length > 2) {
+    const pathSafety = routableLineStoredPathSafetyForRouteUpdate(syncedNode, routingNodes, blockerNodeIds);
+    if (syncedRoutePoints.length > 2 && !pathSafety.unsafe) {
       if (syncedNode !== node) {
         updates.push(syncedNode);
       }
       continue;
     }
-    const pathSafety = routableLineStoredPathSafety(syncedNode, routingNodes);
     const nextNode = pathSafety.unsafe
       ? routeRoutableLineDevice(
           syncedNode,
@@ -6344,6 +6345,40 @@ export function rebuildRoutableLineDeviceRouteUpdates(
           blockerNodeIds ? { blockerNodeIds } : undefined
         )
       : syncedNode;
+    if (nextNode !== node) {
+      updates.push(nextNode);
+    }
+  }
+  return updates;
+}
+
+export function redrawRoutableLineDeviceRoutes(
+  nodes: ModelNode[],
+  lineNodeIds: Iterable<string>,
+  bounds?: CanvasBounds,
+  referenceNodes: readonly ModelNode[] = nodes
+): ModelNode[] {
+  const requestedIds = new Set(lineNodeIds);
+  if (requestedIds.size === 0) {
+    return [];
+  }
+  const updates: ModelNode[] = [];
+  const nodeById = new Map(nodes.map((item) => [item.id, item]));
+  for (const node of nodes) {
+    if (!requestedIds.has(node.id) || !isRoutableLineDeviceKind(node.kind)) {
+      continue;
+    }
+    const syncedNode = syncRoutableLineDeviceEndpointsToRefs(node, nodes, nodeById, referenceNodes);
+    const routePoints = routableLineDeviceCanvasPoints(syncedNode);
+    const start = routePoints[0];
+    const end = routePoints[routePoints.length - 1];
+    if (!start || !end) {
+      continue;
+    }
+    const endpointRefs = routableLineDeviceEndpointRefs(syncedNode);
+    const baseNode = setRoutableLineDeviceEndpoints(syncedNode, start, end, endpointRefs);
+    const routingNodes = nodes.map((item) => (item.id === node.id ? baseNode : item));
+    const nextNode = routeRoutableLineDevice(baseNode, routingNodes, bounds);
     if (nextNode !== node) {
       updates.push(nextNode);
     }
@@ -6379,6 +6414,7 @@ function routableLineEndpointNormalNeedsRepair(points: Point[], edge: Edge, node
 type RoutableLineStoredPathSafetyContext = {
   nodeById?: Map<string, ModelNode>;
   routeBlockingCandidates?: Array<{ node: ModelNode; box: ReturnType<typeof boxFor> }>;
+  includeEndpointBlockers?: boolean;
 };
 
 function routableLineStoredPathSafety(
@@ -6396,8 +6432,10 @@ function routableLineStoredPathSafety(
   let blockerNodeIds: Set<string> | undefined;
   if (context.routeBlockingCandidates) {
     const nearbyBlockers = getRouteBlockingCandidateNodesFromBoxes(points, routeEdge, context.routeBlockingCandidates);
-    const endpointBlockers = [nodeById.get(routeEdge.sourceId), nodeById.get(routeEdge.targetId)]
-      .filter((candidate): candidate is ModelNode => Boolean(candidate && staticNodeParticipatesInRoutingAvoidance(candidate)));
+    const endpointBlockers = context.includeEndpointBlockers === false
+      ? []
+      : [nodeById.get(routeEdge.sourceId), nodeById.get(routeEdge.targetId)]
+        .filter((candidate): candidate is ModelNode => Boolean(candidate && staticNodeParticipatesInRoutingAvoidance(candidate)));
     blockers = [...endpointBlockers, ...nearbyBlockers];
     blockerNodeIds = new Set(nearbyBlockers.map((candidate) => candidate.id));
   } else {
@@ -6419,6 +6457,22 @@ function routableLineStoredPathSafety(
     unsafe: !context.routeBlockingCandidates && routableLineEndpointNormalNeedsRepair(points, routeEdge, nodeById),
     blockerNodeIds
   };
+}
+
+function routableLineStoredPathSafetyForRouteUpdate(
+  node: ModelNode,
+  nodes: ModelNode[],
+  blockerNodeIds?: ReadonlySet<string>
+) {
+  if (!blockerNodeIds) {
+    return routableLineStoredPathSafety(node, nodes);
+  }
+  return routableLineStoredPathSafety(node, nodes, {
+    includeEndpointBlockers: false,
+    routeBlockingCandidates: getRouteBlockingCandidates(
+      nodes.filter((candidate) => candidate.id !== node.id && blockerNodeIds.has(candidate.id))
+    )
+  });
 }
 
 function unsafeRoutableLineStoredPath(node: ModelNode, nodes: ModelNode[]) {
@@ -12696,7 +12750,71 @@ function alignSegmentAdjacentToMovedEndpoint(points: Point[], original: Point[],
   }
 }
 
+function endpointStubPointFromNormal(endpointPoint: Point, normal?: Point): Point | null {
+  if (!normal || (normal.x === 0 && normal.y === 0)) {
+    return null;
+  }
+  if (normal.x !== 0) {
+    return {
+      x: Math.round(endpointPoint.x + Math.sign(normal.x) * ROUTE_ENDPOINT_STUB_LENGTH),
+      y: endpointPoint.y
+    };
+  }
+  return {
+    x: endpointPoint.x,
+    y: Math.round(endpointPoint.y + Math.sign(normal.y) * ROUTE_ENDPOINT_STUB_LENGTH)
+  };
+}
+
+function preserveShortEndpointRouteShape(options: PreserveDraggedRouteShapeOptions): Point[] {
+  const start = roundPoint(options.nextStart);
+  const end = roundPoint(options.nextEnd);
+  const points = [start];
+  const sourceStub = endpointStubPointFromNormal(start, options.sourceNormal);
+  const targetStub = endpointStubPointFromNormal(end, options.targetNormal);
+  if (sourceStub && !samePoint(points[points.length - 1], sourceStub)) {
+    points.push(sourceStub);
+  }
+  if (sourceStub && targetStub && sourceStub.x !== targetStub.x && sourceStub.y !== targetStub.y) {
+    const bridgePoint =
+      options.sourceNormal?.x !== 0
+        ? { x: sourceStub.x, y: targetStub.y }
+        : { x: targetStub.x, y: sourceStub.y };
+    if (!samePoint(points[points.length - 1], bridgePoint)) {
+      points.push(bridgePoint);
+    }
+  }
+  if (targetStub && !samePoint(points[points.length - 1], targetStub)) {
+    points.push(targetStub);
+  }
+  if (!samePoint(points[points.length - 1], end)) {
+    points.push(end);
+  }
+  return orthogonalizeRouteKeepingCollinear(points);
+}
+
+function preserveSingleCornerRouteShape(options: PreserveDraggedRouteShapeOptions): Point[] {
+  const start = roundPoint(options.nextStart);
+  const end = roundPoint(options.nextEnd);
+  const originalStart = options.routePoints[0];
+  const originalCorner = options.routePoints[1];
+  if (!originalStart || !originalCorner || start.x === end.x || start.y === end.y) {
+    return orthogonalizeRouteKeepingCollinear([start, end]);
+  }
+  const firstSegmentHorizontal = Math.round(originalStart.y) === Math.round(originalCorner.y);
+  const corner = firstSegmentHorizontal
+    ? { x: end.x, y: start.y }
+    : { x: start.x, y: end.y };
+  return orthogonalizeRouteKeepingCollinear([start, corner, end]);
+}
+
 function preserveEndpointLocalRouteShape(options: PreserveDraggedRouteShapeOptions, sourceMoved: boolean, targetMoved: boolean): Point[] {
+  if (options.routePoints.length === 2 && (options.sourceNormal || options.targetNormal)) {
+    return preserveShortEndpointRouteShape(options);
+  }
+  if (options.routePoints.length === 3) {
+    return preserveSingleCornerRouteShape(options);
+  }
   const points = options.routePoints.map(roundPoint);
   points[0] = roundPoint(options.nextStart);
   points[points.length - 1] = roundPoint(options.nextEnd);
@@ -12752,13 +12870,18 @@ export function preserveConnectionEdgeRouteShape(
   if (!source || !target) {
     return edge;
   }
-  const nextStart = getEdgeEndpointPoint(source, edge.sourcePoint, edge.sourceTerminalId);
-  const nextEnd = getEdgeEndpointPoint(target, edge.targetPoint, edge.targetTerminalId);
   const originalStart = routePoints[0];
   const originalEnd = routePoints[routePoints.length - 1];
   if (!originalStart || !originalEnd) {
     return edge;
   }
+  const routeEdge: Edge = {
+    ...edge,
+    sourcePoint: isBusNode(source) && !edge.sourcePoint ? { ...originalStart } : edge.sourcePoint,
+    targetPoint: isBusNode(target) && !edge.targetPoint ? { ...originalEnd } : edge.targetPoint
+  };
+  const nextStart = getEdgeEndpointPoint(source, routeEdge.sourcePoint, routeEdge.sourceTerminalId);
+  const nextEnd = getEdgeEndpointPoint(target, routeEdge.targetPoint, routeEdge.targetTerminalId);
   const sourceNormal = routeEndpointNormal(source, nextStart, nextEnd, edge.sourceTerminalId);
   const targetNormal = routeEndpointNormal(target, nextEnd, nextStart, edge.targetTerminalId);
   const preserved = preserveDraggedRouteShape({
@@ -12777,7 +12900,7 @@ export function preserveConnectionEdgeRouteShape(
   if (samePointList(edge.routePoints ?? [], bounded)) {
     return edge;
   }
-  return edgeWithCommitManualPoints(edge, {
+  return edgeWithCommitManualPoints(routeEdge, {
     edgeId: edge.id,
     points: bounded,
     path: pointsToOrthogonalPath(bounded)
@@ -15000,6 +15123,50 @@ function routeIsSafeForCommit(
   );
 }
 
+function preservedConnectionRouteIsSafeForCommit(nodes: ModelNode[], edge: Edge, bounds?: CanvasBounds) {
+  const routePoints = edge.routePoints && edge.routePoints.length >= 2
+    ? edge.routePoints
+    : edge.manualPoints?.length
+      ? routeEdgesForStoredRendering(nodes, [edge], bounds, { preserveManualRouteDisplay: true })[0]?.points
+      : null;
+  if (!routePoints || routePoints.length < 2) {
+    return true;
+  }
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const source = nodeById.get(edge.sourceId);
+  const target = nodeById.get(edge.targetId);
+  if (!source || !target) {
+    return true;
+  }
+  const routingEdge = edgeWithProjectedMissingBusEndpointPoints(edge, source, target);
+  return routeIsSafeForCommit(routePoints, nodes, source, target, routingEdge, bounds);
+}
+
+function prepareRebuiltConnectionEdge(
+  nodes: ModelNode[],
+  edge: Edge,
+  bounds?: CanvasBounds,
+  previousRoutes: RoutedEdge[] = []
+) {
+  const edgeForDesign = edgeWithoutStoredRouteGeometry(edge);
+  const prepared = prepareConnectionEdgeForCommit(nodes, [edgeForDesign], edge.id, bounds, previousRoutes);
+  return prepared.ok && prepared.edge ? prepared.edge : null;
+}
+
+function preserveOrRebuildConnectionRoute(
+  nodes: ModelNode[],
+  edge: Edge,
+  routePoints: Point[] | undefined,
+  bounds?: CanvasBounds,
+  previousRoutes: RoutedEdge[] = []
+) {
+  const preservedEdge = preserveConnectionEdgeRouteShape(nodes, edge, routePoints, bounds);
+  if (preservedConnectionRouteIsSafeForCommit(nodes, preservedEdge, bounds)) {
+    return preservedEdge;
+  }
+  return prepareRebuiltConnectionEdge(nodes, preservedEdge, bounds, previousRoutes) ?? preservedEdge;
+}
+
 function routeSignature(points: Point[]) {
   return points.map((point) => `${Math.round(point.x)},${Math.round(point.y)}`).join(";");
 }
@@ -15295,16 +15462,16 @@ export function rebuildSingleConnectionRoute(
     return edges;
   }
   if (shouldPreserveManualPointsForAutomaticRebuild(edge, options)) {
-    const preservedEdge = preserveConnectionEdgeRouteShape(nodes, edge, edge.routePoints, bounds);
+    const preservedEdge = preserveOrRebuildConnectionRoute(nodes, edge, edge.routePoints, bounds);
     return preservedEdge === edge
       ? edges
       : edges.map((item) => item.id === edgeId ? preservedEdge : item);
   }
-  const prepared = prepareConnectionEdgeForCommit(nodes, [edgeWithoutManualPoints(edge)], edgeId, bounds);
-  if (!prepared.ok || !prepared.edge) {
+  const preparedEdge = prepareRebuiltConnectionEdge(nodes, edge, bounds);
+  if (!preparedEdge) {
     return edges;
   }
-  return edges.map((item) => item.id === edgeId ? prepared.edge! : item);
+  return edges.map((item) => item.id === edgeId ? preparedEdge : item);
 }
 
 export function redrawConnectionRoutesForEdges(
@@ -15399,19 +15566,21 @@ export function rebuildConnectionRoutesForNodes(
   const updates = new Map<string, Edge>();
   for (const edge of affectedEdges) {
     if (shouldPreserveManualPointsForAutomaticRebuild(edge, options)) {
-      const preservedEdge = preserveConnectionEdgeRouteShape(nodes, updates.get(edge.id) ?? edge, edge.routePoints, bounds);
-      if (preservedEdge !== edge) {
-        updates.set(edge.id, preservedEdge);
+      const currentEdge = updates.get(edge.id) ?? edge;
+      const routeNodes = routeNodesForMovedInterference(nodes, currentEdge, changedNodeIds);
+      const nextEdge = preserveOrRebuildConnectionRoute(routeNodes, currentEdge, currentEdge.routePoints, bounds);
+      if (nextEdge !== edge) {
+        updates.set(edge.id, nextEdge);
       }
       continue;
     }
     const edgeForDesign = edgeWithoutManualPoints(updates.get(edge.id) ?? edge);
     const routeNodes = routeNodesForMovedInterference(nodes, edgeForDesign, changedNodeIds);
-    const prepared = prepareConnectionEdgeForCommit(routeNodes, [edgeForDesign], edge.id, bounds);
-    if (!prepared.ok || !prepared.edge) {
+    const preparedEdge = prepareRebuiltConnectionEdge(routeNodes, edgeForDesign, bounds);
+    if (!preparedEdge) {
       continue;
     }
-    updates.set(edge.id, prepared.edge);
+    updates.set(edge.id, preparedEdge);
   }
 
   return applyEdgeUpdateMap(edges, updates);
@@ -15446,19 +15615,19 @@ export function rebuildExternalConnectionRoutesForMovedNodes(
     }
     if (shouldPreserveManualPointsForAutomaticRebuild(edge, options)) {
       const routeNodes = routeNodesForMovedInterference(nodes, edge, movedIds, true);
-      const preservedEdge = preserveConnectionEdgeRouteShape(routeNodes, edge, edge.routePoints, bounds);
-      if (preservedEdge !== edge) {
-        updates.set(affectedEdge.id, preservedEdge);
+      const nextEdge = preserveOrRebuildConnectionRoute(routeNodes, edge, edge.routePoints, bounds);
+      if (nextEdge !== edge) {
+        updates.set(affectedEdge.id, nextEdge);
       }
       continue;
     }
     const edgeForDesign = edgeWithoutManualPoints(edge);
     const routeNodes = routeNodesForMovedInterference(nodes, edgeForDesign, movedIds, true);
-    const prepared = prepareConnectionEdgeForCommit(routeNodes, [edgeForDesign], affectedEdge.id, bounds);
-    if (!prepared.ok || !prepared.edge) {
+    const preparedEdge = prepareRebuiltConnectionEdge(routeNodes, edgeForDesign, bounds);
+    if (!preparedEdge) {
       continue;
     }
-    updates.set(affectedEdge.id, prepared.edge);
+    updates.set(affectedEdge.id, preparedEdge);
   }
 
   return applyEdgeUpdateMap(edges, updates);
@@ -15477,10 +15646,7 @@ export function rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes(
     return edges;
   }
 
-  const internalEdges = candidateEdges.filter((edge) =>
-    !shouldPreserveManualPointsForAutomaticRebuild(edge, options) &&
-    movedIds.has(edge.sourceId) && movedIds.has(edge.targetId)
-  );
+  const internalEdges = candidateEdges.filter((edge) => movedIds.has(edge.sourceId) && movedIds.has(edge.targetId));
   if (internalEdges.length === 0) {
     return edges;
   }
@@ -15513,13 +15679,13 @@ export function rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes(
     if (!edge) {
       continue;
     }
-    const edgeForDesign = edgeWithoutManualPoints(edge);
+    const edgeForDesign = edgeWithoutStoredRouteGeometry(edge);
     const routeNodes = routeNodesForMovedInterference(nodes, edgeForDesign, movedIds, true);
-    const prepared = prepareConnectionEdgeForCommit(routeNodes, [edgeForDesign], edgeId, bounds);
-    if (!prepared.ok || !prepared.edge) {
+    const preparedEdge = prepareRebuiltConnectionEdge(routeNodes, edgeForDesign, bounds);
+    if (!preparedEdge) {
       continue;
     }
-    updates.set(edgeId, prepared.edge);
+    updates.set(edgeId, preparedEdge);
   }
 
   return applyEdgeUpdateMap(edges, updates);
@@ -15630,7 +15796,7 @@ export function rerouteEdgesAroundMovedNodes(
   const candidateEdges = (previousRoutes.length > 0
     ? searchEdges.filter((edge) => previousRouteById.has(edge.id))
     : searchEdges
-  ).filter((edge) => !shouldPreserveManualPointsForAutomaticRebuild(edge, options));
+  );
   const blockedEdgeIds = candidateEdges
     .filter((edge) => {
       if (forcedEdgeIds.has(edge.id)) {
@@ -15656,13 +15822,13 @@ export function rerouteEdgesAroundMovedNodes(
     if (!edge) {
       continue;
     }
-    const edgeForDesign = edgeWithoutManualPoints(edge);
+    const edgeForDesign = edgeWithoutStoredRouteGeometry(edge);
     const routeNodes = routeNodesForMovedInterference(nodes, edgeForDesign, movedIds);
-    const prepared = prepareConnectionEdgeForCommit(routeNodes, [edgeForDesign], edgeId, bounds, previousRoutes);
-    if (!prepared.ok || !prepared.edge) {
+    const preparedEdge = prepareRebuiltConnectionEdge(routeNodes, edgeForDesign, bounds, previousRoutes);
+    if (!preparedEdge) {
       continue;
     }
-    updates.set(edgeId, prepared.edge);
+    updates.set(edgeId, preparedEdge);
   }
 
   return applyEdgeUpdateMap(edges, updates);

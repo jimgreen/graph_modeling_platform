@@ -1840,10 +1840,14 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .connection-line.drag-ghost {
   stroke: var(--connection-color, #64748b);
-  stroke-width: 3;
-  stroke-dasharray: 5 5;
-  opacity: 0.34;
+  stroke-width: 2.5;
+  stroke-linecap: butt;
+  stroke-dasharray: 12 10;
+  stroke-opacity: 0.55;
+  opacity: 0.24;
+  mix-blend-mode: multiply;
   pointer-events: none;
+  vector-effect: non-scaling-stroke;
 }
 
 .connection-preview-line {
@@ -1865,6 +1869,15 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   pointer-events: none;
   vector-effect: non-scaling-stroke;
   filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.35));
+}
+
+.connection-preview-active-endpoint {
+  fill: #ffffff;
+  stroke: var(--connection-color, #dc2626);
+  stroke-width: 3;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 8px rgba(220, 38, 38, 0.45));
 }
 
 .routable-line-drawing-preview {
@@ -2052,6 +2065,30 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   stroke-width: 4;
 }
 
+.connection-group.single-drag-origin-line .connection-line,
+.connection-line.single-drag-origin-line,
+.diagram-node.routable-line-node.single-drag-origin-line .routable-line-device-glyph path,
+.diagram-node.routable-line-node.single-drag-origin-line .routable-line-device-lod-line,
+.routable-line-manual-path-layer.single-drag-origin-line .routable-line-manual-path-preview {
+  stroke-width: 2.5;
+  stroke-linecap: butt;
+  stroke-dasharray: 12 10;
+  stroke-opacity: 0.55;
+  opacity: 0.24;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+  filter: none;
+}
+
+.routable-line-manual-path-layer.single-drag-origin-line .manual-segment-handle,
+.routable-line-manual-path-layer.single-drag-origin-line .manual-bend-handle,
+.routable-line-endpoint-handle.single-drag-origin-line {
+  opacity: 0.24;
+  pointer-events: none;
+  filter: none;
+}
+
 .diagram-node.routable-line-node:hover .routable-line-device-glyph path {
   filter: drop-shadow(0 0 6px rgba(220, 38, 38, 0.28));
 }
@@ -2131,6 +2168,13 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .edge-endpoint-handle:active {
   cursor: grabbing;
+}
+
+.edge-endpoint-handle.active-drag-handle,
+.routable-line-endpoint-handle.active-drag-handle {
+  cursor: grabbing;
+  pointer-events: none;
+  filter: drop-shadow(0 0 8px rgba(220, 38, 38, 0.45));
 }
 
 .connection-group.topmost {
