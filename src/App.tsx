@@ -355,6 +355,35 @@ import {
   type DisplayLayerAction
 } from "./selectionActions";
 import {
+  clampNumber,
+  canvasResizeEdgeAnchorsStart,
+  canvasResizeOriginShiftForBounds,
+  canvasResizePreviewRectForDraft,
+  canvasResizeScrollTargetForCommitAnchor,
+  canvasVisualRectScrollTarget,
+  canvasFrameScrollTargetForViewBox,
+  canvasViewBoxFromFrameScrollPosition,
+  canvasRenderViewBoxAfterBoundsDraft,
+  viewBoxAfterCanvasBoundsChange,
+  canvasBoundsChangeIsMeaningful,
+  canvasFrameScrollIsUserDriven,
+  canvasScrollSyncShouldRun,
+  canvasBoundsScrollSyncTarget,
+  scrollPositionToViewBoxStart,
+  canvasResizeAnchoredDisplayOffset,
+  canvasResizeKeepsScrollRange,
+  clampCanvasNoScrollOffset,
+  canvasFullViewBoxFromBounds,
+  CANVAS_FRAME_INSET,
+  CANVAS_SCROLL_EDGE_VIEWPORT_RATIO,
+  CANVAS_FIT_SCROLLBAR_GUARD,
+  type CanvasResizeEdge,
+  type CanvasResizePreviewMetrics,
+  type CanvasResizePreviewRect,
+  type CanvasResizeCommitScrollTarget,
+  type CanvasViewBox,
+} from "./canvasViewport";
+import {
   isSidePanelVisible,
   nextSidePanelAutoVisible,
   normalizeSidePanelMode,
@@ -385,6 +414,101 @@ import {
   type PlatformMeasurementConfig,
   type ProjectMeasurementConfig
 } from "./measurements";
+
+import {
+  StaticButtonLayerMultiSelect,
+  TextStyleToggleButton,
+  type StaticButtonLayerMultiSelectProps,
+  type TextStyleToggleButtonProps,
+} from "./components/StaticButtonComponents";
+import {
+  normalizeRotationDegrees,
+  formatStatusNumber,
+  formatInspectorScaleValue,
+  formatStatusScalePercent,
+  formatStatusRotationDegrees
+} from "./formatUtils";
+import {
+  downloadText,
+  downloadBlob,
+  saveTextFile,
+  saveBlobFile,
+  saveLazyBlobFile,
+  writeTextFileToDirectory,
+  isPickerAbort,
+  type TextSaveOptions,
+  type BlobSaveOptions,
+  type LazyBlobSaveOptions,
+  type WritableDirectoryHandle
+} from "./fileIO";
+import {
+  svgStrokeDashArray,
+  escapeXml,
+  formatSvgNumber,
+  backendImageIdFromHref,
+  isImageDataUrl,
+  imageArrayBufferToDataUrl,
+  decodeBase64Text,
+  decodeSvgImageSource,
+  svgRootAttributeValue,
+  svgLengthNumber,
+  stripUnsafeInlineSvgMarkup,
+  inlineSvgRootMarkup,
+  svgImageContentMarkup,
+  styleObjectToSvgAttribute,
+  renderSvgElementMarkup
+} from "./svgUtils";
+import {
+  DeferredColorInput,
+  BufferedTextInput,
+  BufferedTextarea,
+  colorInputValue,
+  type DeferredColorInputProps,
+  type BufferedTextInputProps,
+  type BufferedTextareaProps
+} from "./components/InputComponents";
+import {
+  numericNodeParam,
+  nodeLabelOffset,
+  nodeLabelText,
+  nodeLabelVisible,
+  normalizeNodeLabelDisplayMode,
+  nodeLabelDisplayMode,
+  nodeLabelShouldRender,
+  normalizeNodeLabelRotation,
+  nodeLabelVertical,
+  nodeLabelVerticalSegments,
+  nodeLabelVerticalTokenY,
+  nodeLabelTransform,
+  nodeLabelCanvasCenter,
+  nodeLabelRotationFromPoint,
+  nodeLabelTextAnchor,
+  nodeLabelFontSize,
+  nodeLabelTextStyle,
+  nodeLabelVerticalTokenStyle,
+  type NodeLabelDisplayMode
+} from "./nodeLabelUtils";
+import {
+  nodeCounterTransformMatrix,
+  uprightText,
+  staticNumericParam,
+  staticSymbolShadowStyle,
+  staticSymbolTextValue,
+  staticSymbolMiniatureTextValue,
+  staticShapeText,
+  estimateSvgTextWidth,
+  staticConnectorMarker,
+  staticConnectorPath,
+  staticDrawPointsForNode,
+  staticHandleDot,
+  staticFrameHandles,
+  DEVICE_GLYPH_DESIGN_LONGEST_SIDE,
+  renderBusGlyphRect,
+  deviceStateVisualToken,
+  stateVisualText,
+  resolveStateVisualImageHref,
+  routableLineDeviceRenderLocalPoints,
+} from "./staticRenderUtils";
 
 const ENABLE_REACT_FLOW_PREVIEW = import.meta.env.DEV;
 const ReactFlowPreview = ENABLE_REACT_FLOW_PREVIEW ? lazy(() => import("./ReactFlowPreview")) : null;
@@ -504,7 +628,7 @@ type CanvasWheelZoomEvent = {
   stopPropagation: () => void;
 };
 const CANVAS_SELECTION_DRAG_THRESHOLD = 4;
-type OrthogonalAxis = "x" | "y";
+export type OrthogonalAxis = "x" | "y";
 function hasCanvasSelectionModifier(event: { ctrlKey: boolean; shiftKey: boolean; metaKey?: boolean }) {
   return event.ctrlKey || event.shiftKey || Boolean(event.metaKey);
 }
@@ -605,215 +729,7 @@ function selectionRectCenter(rect: SelectionRect): Point {
   };
 }
 
-function clampNumber(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
-}
-
-const STATIC_BUTTON_LAYER_DROPDOWN_VIEWPORT_MARGIN = 12;
-const STATIC_BUTTON_LAYER_DROPDOWN_MAX_HEIGHT = 180;
-const STATIC_BUTTON_LAYER_DROPDOWN_MIN_HEIGHT = 96;
-type StaticButtonLayerDropdownPlacement = {
-  left: number;
-  top: number;
-  width: number;
-  maxHeight: number;
-};
-
-function staticButtonLayerDropdownPlacementForTrigger(trigger: HTMLElement): StaticButtonLayerDropdownPlacement {
-  const rect = trigger.getBoundingClientRect();
-  const viewportMargin = STATIC_BUTTON_LAYER_DROPDOWN_VIEWPORT_MARGIN;
-  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || rect.right;
-  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || rect.bottom;
-  const width = Math.min(rect.width, Math.max(0, viewportWidth - viewportMargin * 2));
-  const left = clampNumber(rect.left, viewportMargin, Math.max(viewportMargin, viewportWidth - width - viewportMargin));
-  const belowTop = rect.bottom + 4;
-  const aboveBottom = rect.top - 4;
-  const availableBelow = Math.max(0, viewportHeight - belowTop - viewportMargin);
-  const availableAbove = Math.max(0, aboveBottom - viewportMargin);
-  const openAbove = availableBelow < STATIC_BUTTON_LAYER_DROPDOWN_MIN_HEIGHT && availableAbove > availableBelow;
-  const availableHeight = openAbove ? availableAbove : availableBelow;
-  const maxHeight = Math.max(40, Math.min(STATIC_BUTTON_LAYER_DROPDOWN_MAX_HEIGHT, availableHeight));
-  const top = openAbove
-    ? Math.max(viewportMargin, aboveBottom - maxHeight)
-    : Math.min(belowTop, Math.max(viewportMargin, viewportHeight - viewportMargin - maxHeight));
-  return {
-    left: Math.round(left),
-    top: Math.round(top),
-    width: Math.round(width),
-    maxHeight: Math.round(maxHeight)
-  };
-}
-
-type StaticButtonLayerMultiSelectProps = {
-  ariaLabel: string;
-  className?: string;
-  disabled: boolean;
-  layers: ModelLayer[];
-  selectedLayerIds: string[];
-  selectedLayerSummary: string;
-  selectedLayerTitle: string;
-  onChange: (layerIds: string[]) => void;
-};
-
-function StaticButtonLayerMultiSelect({
-  ariaLabel,
-  className = "",
-  disabled,
-  layers,
-  selectedLayerIds,
-  selectedLayerSummary,
-  selectedLayerTitle,
-  onChange
-}: StaticButtonLayerMultiSelectProps) {
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const [open, setOpen] = useState(false);
-  const [placement, setPlacement] = useState<StaticButtonLayerDropdownPlacement | null>(null);
-  const selectedLayerIdSet = useMemo(() => new Set(selectedLayerIds), [selectedLayerIds]);
-
-  const updatePlacement = () => {
-    const trigger = triggerRef.current;
-    if (trigger) {
-      setPlacement(staticButtonLayerDropdownPlacementForTrigger(trigger));
-    }
-  };
-
-  useLayoutEffect(() => {
-    if (open) {
-      updatePlacement();
-    }
-  }, [open, selectedLayerSummary, layers.length]);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const closeOnOutsidePointerDown = (event: globalThis.PointerEvent) => {
-      const target = event.target;
-      if (
-        target instanceof Node &&
-        (triggerRef.current?.contains(target) || menuRef.current?.contains(target))
-      ) {
-        return;
-      }
-      setOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpen(false);
-        triggerRef.current?.focus();
-      }
-    };
-    let frameId = 0;
-    const schedulePositionUpdate = () => {
-      if (frameId !== 0) {
-        return;
-      }
-      frameId = window.requestAnimationFrame(() => {
-        frameId = 0;
-        updatePlacement();
-      });
-    };
-    window.addEventListener("pointerdown", closeOnOutsidePointerDown, true);
-    window.addEventListener("keydown", closeOnEscape, true);
-    window.addEventListener("resize", schedulePositionUpdate);
-    window.addEventListener("scroll", schedulePositionUpdate, true);
-    return () => {
-      window.removeEventListener("pointerdown", closeOnOutsidePointerDown, true);
-      window.removeEventListener("keydown", closeOnEscape, true);
-      window.removeEventListener("resize", schedulePositionUpdate);
-      window.removeEventListener("scroll", schedulePositionUpdate, true);
-      if (frameId !== 0) {
-        window.cancelAnimationFrame(frameId);
-      }
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (disabled && open) {
-      setOpen(false);
-    }
-  }, [disabled, open]);
-
-  const toggleLayer = (layerId: string, checked: boolean) => {
-    const nextLayerIds = new Set(selectedLayerIds);
-    if (checked) {
-      nextLayerIds.add(layerId);
-    } else {
-      nextLayerIds.delete(layerId);
-    }
-    onChange(layers.filter((layer) => nextLayerIds.has(layer.id)).map((layer) => layer.id));
-  };
-  const menuStyle: CSSProperties | undefined = placement
-    ? {
-        left: placement.left,
-        top: placement.top,
-        width: placement.width,
-        maxHeight: placement.maxHeight
-      }
-    : undefined;
-
-  return (
-    <div className={`static-button-layer-dropdown ${open ? "open" : ""} ${className} ${disabled ? "disabled" : ""}`}>
-      <button
-        ref={triggerRef}
-        type="button"
-        className="static-button-layer-dropdown-trigger"
-        aria-label={`${ariaLabel}：${selectedLayerTitle || selectedLayerSummary}`}
-        aria-disabled={disabled}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        onClick={() => {
-          if (disabled) {
-            return;
-          }
-          updatePlacement();
-          setOpen((current) => !current);
-        }}
-      >
-        <span>{selectedLayerSummary}</span>
-      </button>
-      {open && createPortal(
-        <div ref={menuRef} className="static-button-layer-dropdown-menu" style={menuStyle} role="menu" aria-label={ariaLabel}>
-          {layers.map((layer) => (
-            <label key={layer.id} className="static-button-layer-option">
-              <input
-                type="checkbox"
-                checked={selectedLayerIdSet.has(layer.id)}
-                disabled={disabled}
-                onChange={(event) => toggleLayer(layer.id, event.target.checked)}
-              />
-              <span>{layer.name}</span>
-            </label>
-          ))}
-        </div>,
-        document.body
-      )}
-    </div>
-  );
-}
-
-type TextStyleToggleButtonProps = {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-  children: ReactNode;
-};
-
-function TextStyleToggleButton({ active, label, onClick, children }: TextStyleToggleButtonProps) {
-  return (
-    <button
-      type="button"
-      className="text-style-toggle-button"
-      aria-label={label}
-      aria-pressed={active}
-      title={label}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  );
-}
+// StaticButtonLayerMultiSelect and TextStyleToggleButton moved to components/StaticButtonComponents.tsx
 
 function combineSelectionRects(rects: Array<SelectionRect | null | undefined>): SelectionRect | null {
   const validRects = rects.filter((rect): rect is SelectionRect => Boolean(rect));
@@ -857,53 +773,6 @@ function routeMidpoint(points: Point[]): Point | null {
   }
   return points[points.length - 1];
 }
-
-function normalizeRotationDegrees(value: number) {
-  return ((Math.round(value) % 360) + 360) % 360;
-}
-
-export function snapSingleTerminalAnchorToNearestSide(node: ModelNode, point: Point): Point {
-  const radians = (-normalizeRotationDegrees(node.rotation) * Math.PI) / 180;
-  const dx = point.x - node.position.x;
-  const dy = point.y - node.position.y;
-  const local = {
-    x: dx * Math.cos(radians) - dy * Math.sin(radians),
-    y: dx * Math.sin(radians) + dy * Math.cos(radians)
-  };
-  const signedWidth = node.size.width * (getNodeScaleX(node) || 1);
-  const signedHeight = node.size.height * (getNodeScaleY(node) || 1);
-  const candidates: Point[] = [
-    { x: 0.5, y: 0 },
-    { x: -0.5, y: 0 },
-    { x: 0, y: 0.5 },
-    { x: 0, y: -0.5 }
-  ];
-  let best = candidates[0];
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (const candidate of candidates) {
-    const candidateLocal = {
-      x: candidate.x * signedWidth,
-      y: candidate.y * signedHeight
-    };
-    const distance = (local.x - candidateLocal.x) ** 2 + (local.y - candidateLocal.y) ** 2;
-    if (distance < bestDistance) {
-      best = candidate;
-      bestDistance = distance;
-    }
-  }
-  return { ...best };
-}
-
-const formatStatusNumber = (value: number) => {
-  const rounded = Math.round(value * 10) / 10;
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
-};
-
-const formatInspectorScaleValue = (value: number) => Number.isFinite(value) ? value.toFixed(3) : "1.000";
-
-const formatStatusScalePercent = (value: number) => `${formatStatusNumber(value * 100)}%`;
-
-const formatStatusRotationDegrees = (value: number) => `${formatStatusNumber(normalizeRotationDegrees(value))}°`;
 
 function rotatePointAround(point: Point, center: Point, degrees: number): Point {
   const radians = (degrees * Math.PI) / 180;
@@ -969,36 +838,13 @@ function localScaleKindForScreenHandle(kind: ScaleHandleKind, rotation: number):
   return Math.abs(localVector.x) >= Math.abs(localVector.y) ? "scale-x" : "scale-y";
 }
 
-export function projectedProportionalScaleFromHandleDelta({
-  currentScale,
-  width,
-  height,
-  handleXDirection,
-  handleYDirection,
-  deltaX,
-  deltaY
-}: {
-  currentScale: number;
-  width: number;
-  height: number;
-  handleXDirection?: -1 | 0 | 1;
-  handleYDirection?: -1 | 0 | 1;
-  deltaX: number;
-  deltaY: number;
-}) {
-  const safeCurrentScale = Math.abs(normalizeScaleValue(currentScale, 1));
-  const projectionVector = {
-    x: handleXDirection ? (handleXDirection * Math.max(1, width)) / 2 : 0,
-    y: handleYDirection ? (handleYDirection * Math.max(1, height)) / 2 : 0
-  };
-  const projectionLengthSquared = projectionVector.x ** 2 + projectionVector.y ** 2;
-  if (projectionLengthSquared <= 0) {
-    return safeCurrentScale;
-  }
-  const scaleDelta =
-    (deltaX * projectionVector.x + deltaY * projectionVector.y) / projectionLengthSquared;
-  return normalizeScaleValue(Math.max(0, safeCurrentScale + scaleDelta), safeCurrentScale);
-}
+export { snapSingleTerminalAnchorToNearestSide, projectedProportionalScaleFromHandleDelta } from "./transformUtils";
+import { snapSingleTerminalAnchorToNearestSide, projectedProportionalScaleFromHandleDelta } from "./transformUtils";
+import { DeviceGlyph, MemoDeviceGlyph, SvgMarkupChunk } from "./DeviceGlyph";
+import { buildSvgNodeLabelMarkup, svgDisplayAttribute, exportSvgSafeId, exportSvgLayerId, exportSvgUniqueId, exportSvgLayerScriptMarkup, exportDeviceMetadataAttributes, exportMeasurementGroupMetadataAttributes, exportMeasurementItemMetadataAttributes, exportMeasurementGroupBackgroundColor, exportMeasurementGroupBorderColor, exportMeasurementGroupBorderWidth, exportMeasurementGroupBorderDashArray, exportMeasurementGroupAnchorPoint, exportMeasurementGroupLocalOffset, exportMeasurementGroupMetrics, buildExportMeasurementGroupMarkup } from "./svgExportUtils";
+import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "./stateIconDrawing";
+import { fallbackComponentTypeForAttributeLibrary, resolveTemplateComponentType, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "./customDeviceUtils";
+import { useBatchEditors } from "./hooks/useBatchEditors";
 
 function groupTransformGeometry(drag: GroupTransformDrag, point: Point, options?: { snapRotation?: boolean }): GroupTransformGeometry {
   if (drag.kind === "rotate") {
@@ -1076,7 +922,6 @@ type ContextMenuSize = { width: number; height: number };
 type ContextMarqueeSelectionState = {
   start: Point;
 } | null;
-type NodeLabelDisplayMode = "always" | "hidden" | "follow";
 const NODE_LABEL_DISPLAY_MODES: Array<{ value: NodeLabelDisplayMode; label: string }> = [
   { value: "always", label: "始终显示" },
   { value: "hidden", label: "始终隐藏" },
@@ -1162,16 +1007,6 @@ type TopologyWarningPanelResizeState = {
   startWidth: number;
   startHeight: number;
 } | null;
-export type CanvasResizeEdge = "right" | "bottom" | "corner" | "left" | "top" | "top-left" | "top-right" | "bottom-left";
-export type CanvasResizePreviewMetrics = {
-  edge: CanvasResizeEdge;
-  startWidth: number;
-  startHeight: number;
-  startDisplayWidth: number;
-  startDisplayHeight: number;
-  startDisplayOffsetX: number;
-  startDisplayOffsetY: number;
-};
 type CanvasResizeState = {
   edge: CanvasResizeEdge;
   startClientX: number;
@@ -1193,7 +1028,6 @@ type CanvasResizeState = {
   minBounds: CanvasBounds;
   historyCaptured?: boolean;
 } | null;
-export type CanvasResizePreviewRect = { left: number; top: number; width: number; height: number };
 type CanvasResizeCommitAnchor = {
   edge: CanvasResizeEdge;
   desiredRect: CanvasResizePreviewRect;
@@ -1202,14 +1036,6 @@ type CanvasBoundsScrollAnchor = {
   left: number;
   top: number;
   visualRect?: CanvasResizePreviewRect;
-};
-type CanvasResizeCommitScrollTarget = {
-  left: number;
-  top: number;
-  deltaX: number;
-  deltaY: number;
-  affectsX: boolean;
-  affectsY: boolean;
 };
 type RewiringState = {
   edgeId: string;
@@ -1508,15 +1334,15 @@ type UndoGraphPatchScope = {
 type UndoGraphSnapshotPatchPlan =
   | { mode: "full"; dirtyEdgeIds: Set<string> }
   | { mode: "patch"; nodeIds: string[]; edgeIds: string[]; dirtyEdgeIds: Set<string> };
-type BatchCommonParamRow = {
+export type BatchCommonParamRow = {
   key: string;
   label: string;
   value: string;
   mixed: boolean;
   definition?: DeviceParameterDefinition;
 };
-type BatchCommonParamPatch = Record<string, string>;
-type BatchCommonMeasurementGroupKey =
+export type BatchCommonParamPatch = Record<string, string>;
+export type BatchCommonMeasurementGroupKey =
   | "visible"
   | "layout"
   | "labelVisible"
@@ -1526,7 +1352,7 @@ type BatchCommonMeasurementGroupKey =
   | "borderStyle"
   | "borderColor"
   | "borderWidth";
-type BatchCommonMeasurementGroupRow = {
+export type BatchCommonMeasurementGroupRow = {
   key: BatchCommonMeasurementGroupKey;
   label: string;
   value: string;
@@ -1570,7 +1396,7 @@ type ConnectSourceState = {
   point?: Point;
   manualPoints?: Point[];
 };
-type ImageAsset = {
+export type ImageAsset = {
   id: string;
   name: string;
   filename?: string;
@@ -1627,43 +1453,7 @@ type StateImageUploadTarget = {
   rowId: string;
 };
 type StateIconDrawingTarget = StateImageUploadTarget;
-type StateVisualShapeKind =
-  | "switch-open"
-  | "switch-closed"
-  | "valve-open"
-  | "valve-closed"
-  | "line"
-  | "point"
-  | "triangle"
-  | "square"
-  | "hexagon"
-  | "polygon"
-  | "circle"
-  | "semicircle"
-  | "ellipse"
-  | "arc"
-  | "text"
-  | "imported-svg"
-  | "image";
-type StateIconDrawingElement = {
-  id: string;
-  kind: StateVisualShapeKind;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  rotation: number;
-  strokeWidth: number;
-  strokeColor: string;
-  fillColor: string;
-  textColor: string;
-  text: string;
-  svgSource?: string;
-  imageHref?: string;
-  imageScale?: number;
-  cropX?: number;
-  cropY?: number;
-};
+
 type StateIconDrawingDialogState = {
   target: StateIconDrawingTarget;
   elements: StateIconDrawingElement[];
@@ -1747,7 +1537,7 @@ type CustomParamDraft = DeviceParameterDefinition & {
   id: string;
   enumValues?: string[];
 };
-type CustomDeviceDraft = {
+export type CustomDeviceDraft = {
   attributeLibraryName: string;
   componentType: string;
   componentName: string;
@@ -1766,7 +1556,7 @@ type CustomDeviceDraft = {
   stateDefinitions: DeviceDefinitionStateDraftRow[];
   error: string;
 };
-type DeviceDefinitionVisualDraft = {
+export type DeviceDefinitionVisualDraft = {
   backgroundImage: string;
   backgroundImageAssetId: string;
   size: { width: number; height: number };
@@ -1808,28 +1598,13 @@ type GroupDeviceDefinitionDialogState = {
   componentType: string;
   targetKind: string;
 } | null;
-type DeviceDefinitionDraftRow = DeviceParameterDefinition & {
+export type DeviceDefinitionDraftRow = DeviceParameterDefinition & {
   id: string;
   enumValues?: string[];
 };
-type DeviceDefinitionStateDraftRow = DeviceStateDefinition & {
-  id: string;
-  value: string;
-  name: string;
-  icon: string;
-  image: string;
-  imageAssetId: string;
-  text: string;
-  color: string;
-  fillColor: string;
-  strokeColor: string;
-  textColor: string;
-  backgroundImage: string;
-  backgroundImageAssetId: string;
-};
 type VoltageColorVisibility = "all" | "current";
 
-const terminalColor = terminalTypeColor;
+export const terminalColor = terminalTypeColor;
 const busEndpointColor = (node: ModelNode, colorPalette?: ColorPalette) => terminalColor(node.terminals[0]?.type, colorPalette);
 const ENERGY_COLOR_ROWS: Array<{ type: TerminalType; label: string }> = [
   { type: "ac", label: "交流电" },
@@ -1871,9 +1646,7 @@ const MAX_CANVAS_HEIGHT = 50000;
 const DEFAULT_CANVAS_BACKGROUND = "#f1f5f9";
 const MOVE_BOUNDARY_GUARD = 8;
 const CANVAS_AUTO_EXPAND_PADDING = 96;
-const CANVAS_FRAME_INSET = 16;
-const CANVAS_SCROLL_EDGE_VIEWPORT_RATIO = 1 / 3;
-const CANVAS_FIT_SCROLLBAR_GUARD = 4;
+// CANVAS_FRAME_INSET, CANVAS_SCROLL_EDGE_VIEWPORT_RATIO, CANVAS_FIT_SCROLLBAR_GUARD moved to canvasViewport.ts
 const CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE = 2;
 const CANVAS_RESIZE_HANDLE_SIZE = 18;
 const MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES = 5;
@@ -2062,11 +1835,11 @@ const DEFAULT_ATTRIBUTE_LIBRARIES: AttributeLibrary[] = ["静态图元", "交流
 const CUSTOM_ATTRIBUTE_LIBRARY_BASES: AttributeLibrary[] = ["交流设备", "直流设备", "氢能设备", "热能设备"];
 const PROTECTED_ATTRIBUTE_LIBRARIES = new Set(CUSTOM_ATTRIBUTE_LIBRARY_BASES);
 const DEVICE_TYPE_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/;
-const MAX_CUSTOM_DEVICE_TERMINALS = 8;
+export const MAX_CUSTOM_DEVICE_TERMINALS = 8;
 const CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES = [-0.25, -1 / 6, 0, 1 / 6, 0.25];
 const CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS = ["1/4", "1/3", "1/2", "2/3", "3/4"];
 const CUSTOM_DEVICE_TERMINAL_ANCHOR_SNAP_SCREEN_TOLERANCE = 8;
-const CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION = 1000;
+export const CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION = 1000;
 const CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET = 14;
 const CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN = 30;
 const TERMINAL_TYPE_OPTIONS: Array<{ value: TerminalType; label: string }> = [
@@ -2075,7 +1848,7 @@ const TERMINAL_TYPE_OPTIONS: Array<{ value: TerminalType; label: string }> = [
   { value: "h2", label: TERMINAL_TYPE_LIBRARY_LABELS.h2 },
   { value: "heat", label: TERMINAL_TYPE_LIBRARY_LABELS.heat }
 ];
-const CONTAINER_TERMINAL_ASSOCIATION_OPTIONS: Record<TerminalType, Array<{ value: ContainerTerminalAssociationType; label: string }>> = {
+export const CONTAINER_TERMINAL_ASSOCIATION_OPTIONS: Record<TerminalType, Array<{ value: ContainerTerminalAssociationType; label: string }>> = {
   ac: [
     { value: "ac-generator", label: "交流电源 / ACGenerator" },
     { value: "ac-load", label: "交流电负荷 / ACLoad" }
@@ -2375,12 +2148,7 @@ type RenderViewportBounds = {
   top: number;
   bottom: number;
 };
-type CanvasViewBox = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
+// CanvasViewBox moved to canvasViewport.ts
 type CanvasPanningState = {
   clientX: number;
   clientY: number;
@@ -2569,309 +2337,7 @@ function canvasDisplayOffset(displaySize: number, surfaceSize: number, viewportS
     ? canvasScrollEdgeInset(viewportSize)
     : Math.max(CANVAS_FRAME_INSET, Math.round((surfaceSize - displaySize) / 2));
 }
-function canvasResizeEdgeAnchorsAxis(edge: CanvasResizeEdge, axis: "x" | "y") {
-  return axis === "x"
-    ? edge === "right" || edge === "corner" || edge === "left" || edge === "top-left" || edge === "top-right" || edge === "bottom-left"
-    : edge === "bottom" || edge === "corner" || edge === "top" || edge === "top-left" || edge === "top-right" || edge === "bottom-left";
-}
-function canvasResizeRectSide(rect: CanvasResizePreviewRect, side: "left" | "right" | "top" | "bottom") {
-  switch (side) {
-    case "left":
-      return rect.left;
-    case "right":
-      return rect.left + rect.width;
-    case "top":
-      return rect.top;
-    case "bottom":
-      return rect.top + rect.height;
-  }
-}
-function canvasResizeEdgeAnchorsStart(edge: CanvasResizeEdge, axis: "x" | "y") {
-  return axis === "x"
-    ? edge === "left" || edge === "top-left" || edge === "bottom-left"
-    : edge === "top" || edge === "top-left" || edge === "top-right";
-}
-function canvasResizeOriginShiftForBounds(edge: CanvasResizeEdge, startBounds: CanvasBounds, nextBounds: CanvasBounds): Point {
-  return {
-    x: canvasResizeEdgeAnchorsStart(edge, "x") ? Math.round(nextBounds.width - startBounds.width) : 0,
-    y: canvasResizeEdgeAnchorsStart(edge, "y") ? Math.round(nextBounds.height - startBounds.height) : 0
-  };
-}
-export function canvasResizePreviewRectForDraft(drag: CanvasResizePreviewMetrics, draftBounds: CanvasBounds): CanvasResizePreviewRect {
-  const scaleX = drag.startWidth > 0 ? drag.startDisplayWidth / drag.startWidth : 1;
-  const scaleY = drag.startHeight > 0 ? drag.startDisplayHeight / drag.startHeight : 1;
-  const width = Math.max(1, Math.round(draftBounds.width * scaleX));
-  const height = Math.max(1, Math.round(draftBounds.height * scaleY));
-  const left = canvasResizeEdgeAnchorsStart(drag.edge, "x")
-    ? Math.round(drag.startDisplayOffsetX + drag.startDisplayWidth - width)
-    : Math.round(drag.startDisplayOffsetX);
-  const top = canvasResizeEdgeAnchorsStart(drag.edge, "y")
-    ? Math.round(drag.startDisplayOffsetY + drag.startDisplayHeight - height)
-    : Math.round(drag.startDisplayOffsetY);
-  return { left, top, width, height };
-}
-export function canvasResizeScrollTargetForCommitAnchor({
-  edge,
-  desiredRect,
-  currentRect,
-  currentScrollLeft,
-  currentScrollTop,
-  maxScrollLeft,
-  maxScrollTop
-}: {
-  edge: CanvasResizeEdge;
-  desiredRect: CanvasResizePreviewRect;
-  currentRect: CanvasResizePreviewRect;
-  currentScrollLeft: number;
-  currentScrollTop: number;
-  maxScrollLeft: number;
-  maxScrollTop: number;
-}): CanvasResizeCommitScrollTarget {
-  const affectsX = canvasResizeEdgeAnchorsAxis(edge, "x");
-  const affectsY = canvasResizeEdgeAnchorsAxis(edge, "y");
-  const anchorX = canvasResizeEdgeAnchorsStart(edge, "x") ? "right" : "left";
-  const anchorY = canvasResizeEdgeAnchorsStart(edge, "y") ? "bottom" : "top";
-  const deltaX = affectsX
-    ? canvasResizeRectSide(currentRect, anchorX) - canvasResizeRectSide(desiredRect, anchorX)
-    : 0;
-  const deltaY = affectsY
-    ? canvasResizeRectSide(currentRect, anchorY) - canvasResizeRectSide(desiredRect, anchorY)
-    : 0;
-  return {
-    left: affectsX ? clampNumber(currentScrollLeft + deltaX, 0, maxScrollLeft) : currentScrollLeft,
-    top: affectsY ? clampNumber(currentScrollTop + deltaY, 0, maxScrollTop) : currentScrollTop,
-    deltaX,
-    deltaY,
-    affectsX,
-    affectsY
-  };
-}
-export function canvasVisualRectScrollTarget({
-  desiredRect,
-  currentRect,
-  currentScrollLeft,
-  currentScrollTop,
-  maxScrollLeft,
-  maxScrollTop,
-  affectsX = true,
-  affectsY = true
-}: {
-  desiredRect: CanvasResizePreviewRect;
-  currentRect: CanvasResizePreviewRect;
-  currentScrollLeft: number;
-  currentScrollTop: number;
-  maxScrollLeft: number;
-  maxScrollTop: number;
-  affectsX?: boolean;
-  affectsY?: boolean;
-}): CanvasResizeCommitScrollTarget {
-  const deltaX = affectsX ? currentRect.left - desiredRect.left : 0;
-  const deltaY = affectsY ? currentRect.top - desiredRect.top : 0;
-  return {
-    left: affectsX ? clampNumber(currentScrollLeft + deltaX, 0, maxScrollLeft) : currentScrollLeft,
-    top: affectsY ? clampNumber(currentScrollTop + deltaY, 0, maxScrollTop) : currentScrollTop,
-    deltaX,
-    deltaY,
-    affectsX,
-    affectsY
-  };
-}
-function canvasResizeAnchoredDisplayOffset(offset: number, drag: CanvasResizeState, axis: "x" | "y", displaySize: number) {
-  if (!drag) {
-    return Math.round(offset);
-  }
-  if (canvasResizeEdgeAnchorsStart(drag.edge, axis)) {
-    const startDisplaySize = axis === "x" ? drag.startDisplayWidth : drag.startDisplayHeight;
-    const startDisplayOffset = axis === "x" ? drag.startDisplayOffsetX : drag.startDisplayOffsetY;
-    return Math.round(startDisplayOffset - (displaySize - startDisplaySize));
-  }
-  return Math.round(axis === "x" ? drag.startDisplayOffsetX : drag.startDisplayOffsetY);
-}
-function canvasResizeKeepsScrollRange(drag: CanvasResizeState, axis: "x" | "y") {
-  if (!drag) {
-    return false;
-  }
-  return axis === "x" ? drag.startHorizontalScrollbarsActive : drag.startVerticalScrollbarsActive;
-}
-function clampCanvasNoScrollOffset(
-  offset: number,
-  displaySize: number,
-  viewportSize: number,
-  baseOffset: number,
-  scrollActive: boolean
-) {
-  if (scrollActive || viewportSize <= 0 || displaySize <= 0) {
-    return 0;
-  }
-  const firstEdgePosition = viewportSize * CANVAS_SCROLL_EDGE_VIEWPORT_RATIO;
-  const secondEdgePosition = viewportSize * (1 - CANVAS_SCROLL_EDGE_VIEWPORT_RATIO) - displaySize;
-  const minLeft = Math.min(firstEdgePosition, secondEdgePosition);
-  const maxLeft = Math.max(firstEdgePosition, secondEdgePosition);
-  return clampNumber(baseOffset + offset, minLeft, maxLeft) - baseOffset;
-}
-function viewBoxStartToScrollPosition(viewStart: number, viewSize: number, boundSize: number, maxScroll: number) {
-  const maxViewStart = Math.max(0, boundSize - viewSize);
-  return maxScroll > 1 && maxViewStart > 0 ? clampNumber((viewStart / maxViewStart) * maxScroll, 0, maxScroll) : 0;
-}
-export function canvasFrameScrollTargetForViewBox({
-  targetViewBox,
-  canvasBounds,
-  maxScrollLeft,
-  maxScrollTop,
-  horizontalScrollbarsActive,
-  verticalScrollbarsActive
-}: {
-  targetViewBox: CanvasViewBox;
-  canvasBounds: CanvasBounds;
-  maxScrollLeft: number;
-  maxScrollTop: number;
-  horizontalScrollbarsActive: boolean;
-  verticalScrollbarsActive: boolean;
-}) {
-  const syncHorizontal = horizontalScrollbarsActive || maxScrollLeft > 1;
-  const syncVertical = verticalScrollbarsActive || maxScrollTop > 1;
-  return {
-    left: syncHorizontal
-      ? viewBoxStartToScrollPosition(targetViewBox.x, targetViewBox.width, canvasBounds.width, maxScrollLeft)
-      : 0,
-    top: syncVertical
-      ? viewBoxStartToScrollPosition(targetViewBox.y, targetViewBox.height, canvasBounds.height, maxScrollTop)
-      : 0
-  };
-}
-export function canvasViewBoxFromFrameScrollPosition({
-  currentViewBox,
-  canvasBounds,
-  scrollLeft,
-  scrollTop,
-  maxScrollLeft,
-  maxScrollTop,
-  horizontalScrollbarsActive,
-  verticalScrollbarsActive
-}: {
-  currentViewBox: CanvasViewBox;
-  canvasBounds: CanvasBounds;
-  scrollLeft: number;
-  scrollTop: number;
-  maxScrollLeft: number;
-  maxScrollTop: number;
-  horizontalScrollbarsActive: boolean;
-  verticalScrollbarsActive: boolean;
-}) {
-  const syncHorizontal = horizontalScrollbarsActive || maxScrollLeft > 1;
-  const syncVertical = verticalScrollbarsActive || maxScrollTop > 1;
-  return normalizeViewBoxToCanvas({
-    ...currentViewBox,
-    x: syncHorizontal
-      ? scrollPositionToViewBoxStart(scrollLeft, currentViewBox.width, canvasBounds.width, maxScrollLeft, currentViewBox.x)
-      : currentViewBox.x,
-    y: syncVertical
-      ? scrollPositionToViewBoxStart(scrollTop, currentViewBox.height, canvasBounds.height, maxScrollTop, currentViewBox.y)
-      : currentViewBox.y
-  }, canvasBounds);
-}
-function scrollPositionToViewBoxStart(scrollPosition: number, viewSize: number, boundSize: number, maxScroll: number, fallbackStart: number) {
-  const maxViewStart = Math.max(0, boundSize - viewSize);
-  return maxScroll > 1 && maxViewStart > 0
-    ? clampNumber((scrollPosition / maxScroll) * maxViewStart, 0, maxViewStart)
-    : fallbackStart;
-}
-function canvasFullViewBoxFromBounds(bounds: CanvasBounds): CanvasViewBox {
-  return { x: 0, y: 0, width: bounds.width, height: bounds.height };
-}
-function viewBoxSizePreservingCanvasUnitScale(
-  current: Pick<CanvasViewBox, "width" | "height">,
-  currentBounds: CanvasBounds | undefined,
-  nextBounds: CanvasBounds
-) {
-  if (!currentBounds || currentBounds.width <= 0 || currentBounds.height <= 0) {
-    return clampViewBoxDimensionsForZoom(current, nextBounds);
-  }
-  return clampViewBoxDimensionsForZoom({
-    width: Math.round(current.width * (nextBounds.width / currentBounds.width)),
-    height: Math.round(current.height * (nextBounds.height / currentBounds.height))
-  }, nextBounds);
-}
-
-export function canvasRenderViewBoxAfterBoundsDraft(
-  current: CanvasViewBox,
-  currentBounds: CanvasBounds,
-  nextBounds: CanvasBounds
-): CanvasViewBox {
-  return normalizeViewBoxToCanvas({
-    ...current,
-    ...viewBoxSizePreservingCanvasUnitScale(current, currentBounds, nextBounds)
-  }, nextBounds);
-}
-export function viewBoxAfterCanvasBoundsChange(
-  current: CanvasViewBox,
-  nextBounds: CanvasBounds,
-  originShift: Point = { x: 0, y: 0 },
-  currentBounds?: CanvasBounds
-): CanvasViewBox {
-  return normalizeViewBoxToCanvas({
-    ...current,
-    x: current.x + originShift.x,
-    y: current.y + originShift.y,
-    ...viewBoxSizePreservingCanvasUnitScale(current, currentBounds, nextBounds)
-  }, nextBounds);
-}
-export function canvasBoundsChangeIsMeaningful(
-  currentBounds: CanvasBounds,
-  nextBounds: CanvasBounds,
-  originShift: Point = { x: 0, y: 0 }
-) {
-  return (
-    nextBounds.width !== currentBounds.width ||
-    nextBounds.height !== currentBounds.height ||
-    originShift.x !== 0 ||
-    originShift.y !== 0
-  );
-}
-export function canvasFrameScrollIsUserDriven({
-  programmaticScroll,
-  boundsScrollSyncPending
-}: {
-  programmaticScroll: boolean;
-  boundsScrollSyncPending: boolean;
-}) {
-  return !programmaticScroll && !boundsScrollSyncPending;
-}
-export function canvasScrollSyncShouldRun({
-  skipNextScrollSync,
-  boundsScrollSyncPending
-}: {
-  skipNextScrollSync: boolean;
-  boundsScrollSyncPending: boolean;
-}) {
-  return boundsScrollSyncPending || !skipNextScrollSync;
-}
-export function canvasBoundsScrollSyncTarget({
-  anchorScrollLeft,
-  anchorScrollTop,
-  targetScrollLeft,
-  targetScrollTop,
-  maxScrollLeft,
-  maxScrollTop,
-  targetViewBox,
-  canvasBounds
-}: {
-  anchorScrollLeft: number;
-  anchorScrollTop: number;
-  targetScrollLeft: number;
-  targetScrollTop: number;
-  maxScrollLeft: number;
-  maxScrollTop: number;
-  targetViewBox: CanvasViewBox;
-  canvasBounds: CanvasBounds;
-}) {
-  const useHorizontalAnchor = targetViewBox.width >= canvasBounds.width - 1;
-  const useVerticalAnchor = targetViewBox.height >= canvasBounds.height - 1;
-  return {
-    left: useHorizontalAnchor ? clampNumber(anchorScrollLeft, 0, maxScrollLeft) : targetScrollLeft,
-    top: useVerticalAnchor ? clampNumber(anchorScrollTop, 0, maxScrollTop) : targetScrollTop
-  };
-}
+// Viewport utility functions moved to canvasViewport.ts (imported at top)
 function canvasFramePaddingOffset(frame: HTMLElement, svg?: SVGSVGElement | null) {
   if (svg) {
     const frameRect = frame.getBoundingClientRect();
@@ -3170,7 +2636,7 @@ const compactPreviewNodes = (...nodes: Array<ModelNode | null | undefined>): Mod
   }
   return Array.from(compacted.values());
 };
-const PARAM_LABELS: Record<string, string> = {
+export const PARAM_LABELS: Record<string, string> = {
   name: "名称",
   schemeName: "所属方案",
   updatedAt: "更新时间",
@@ -3404,14 +2870,14 @@ const PARAM_OPTIONS: Record<string, string[]> = {
   routeAvoidance: ["1", "0"]
 };
 
-const STATIC_BUTTON_ACTION_LABELS: Record<string, string> = {
+export const STATIC_BUTTON_ACTION_LABELS: Record<string, string> = {
   none: "无动作",
   project: "模型切换",
   layer: "图层切换",
   command: "命令执行"
 };
 
-const STATIC_BUTTON_COMMAND_LABELS: Record<string, string> = {
+export const STATIC_BUTTON_COMMAND_LABELS: Record<string, string> = {
   none: "无命令",
   save: "保存模型",
   fitCanvas: "适配全画布",
@@ -3423,7 +2889,7 @@ const STATIC_BUTTON_COMMAND_LABELS: Record<string, string> = {
   resetZoom: "重置缩放"
 };
 
-const PARAM_OPTION_LABELS: Record<string, Record<string, string>> = {
+export const PARAM_OPTION_LABELS: Record<string, Record<string, string>> = {
   fontFamily: FONT_FAMILY_OPTION_LABELS,
   _labelFontFamily: FONT_FAMILY_OPTION_LABELS,
   _labelDisplayMode: { always: "始终显示", hidden: "始终隐藏", follow: "跟随显示" },
@@ -3450,7 +2916,7 @@ const PARAM_OPTION_LABELS: Record<string, Record<string, string>> = {
   markerEnd: { none: "无", arrow: "箭头", dot: "圆点" }
 };
 
-const parseStaticButtonTargetLayerValues = (value?: string) => {
+export const parseStaticButtonTargetLayerValues = (value?: string) => {
   const text = value?.trim();
   if (!text) {
     return [];
@@ -3468,9 +2934,9 @@ const parseStaticButtonTargetLayerValues = (value?: string) => {
   return Array.from(new Set(text.split(/[,\n;|]/).map((item) => item.trim()).filter(Boolean)));
 };
 
-const serializeStaticButtonTargetLayerIds = (layerIds: string[]) => JSON.stringify(layerIds);
+export const serializeStaticButtonTargetLayerIds = (layerIds: string[]) => JSON.stringify(layerIds);
 
-const resolveStaticButtonTargetLayers = (node: ModelNode, availableLayers: ModelLayer[]) => {
+export const resolveStaticButtonTargetLayers = (node: ModelNode, availableLayers: ModelLayer[]) => {
   const layerById = new Map(availableLayers.map((layer) => [layer.id, layer]));
   const layerByName = new Map(availableLayers.map((layer) => [layer.name.trim(), layer]));
   const targetLayerIds = parseStaticButtonTargetLayerValues(node.params.buttonTargetLayerIds);
@@ -3497,7 +2963,7 @@ const resolveStaticButtonTargetLayers = (node: ModelNode, availableLayers: Model
   return selectedLayers;
 };
 
-function paramOptionsForSection(key: string, section?: string) {
+export function paramOptionsForSection(key: string, section?: string) {
   if (key === "control_type" && section === "ACGenerator") {
     return [...AC_GENERATOR_CONTROL_TYPES];
   }
@@ -3539,7 +3005,7 @@ const BATCH_PARAM_EXCLUDED_PREFIXES = [
   "_routableLine",
   "idx_"
 ];
-const canBatchEditParam = (key: string) =>
+export const canBatchEditParam = (key: string) =>
   Boolean(key) &&
   !BATCH_PARAM_EXCLUDED_KEYS.has(key) &&
   !BATCH_PARAM_EXCLUDED_PREFIXES.some((prefix) => key.startsWith(prefix)) &&
@@ -3587,11 +3053,11 @@ const BATCH_GRAPH_PARAM_PREFIXES = [
   "_label",
   "button"
 ];
-const isBatchGraphCommonParamKey = (key: string) =>
+export const isBatchGraphCommonParamKey = (key: string) =>
   BATCH_GRAPH_PARAM_KEYS.has(key) ||
   BATCH_GRAPH_PARAM_PREFIXES.some((prefix) => key.startsWith(prefix));
 
-const isRedundantBatchCommonParamRow = (row: BatchCommonParamRow, availableKeys: Set<string>) => {
+export const isRedundantBatchCommonParamRow = (row: BatchCommonParamRow, availableKeys: Set<string>) => {
   if (row.key === "buttonTargetSchemeId" || row.key === "buttonTargetProjectName") {
     return availableKeys.has("buttonTargetProjectId");
   }
@@ -3608,255 +3074,7 @@ const isRedundantBatchCommonParamRow = (row: BatchCommonParamRow, availableKeys:
 };
 
 const COLOR_PARAM_KEY_PATTERN = /color$/i;
-const HEX_COLOR_INPUT_PATTERN = /^#[0-9a-f]{6}$/i;
-const isColorParamKey = (key: string) => COLOR_PARAM_KEY_PATTERN.test(key);
-const colorInputValue = (value: string, fallback = "#ffffff") =>
-  HEX_COLOR_INPUT_PATTERN.test(value) ? value : fallback;
-const COLOR_INPUT_COMMIT_DELAY_MS = 220;
-
-type DeferredColorInputProps = {
-  value: string;
-  fallback?: string;
-  disabled?: boolean;
-  className?: string;
-  title?: string;
-  "aria-label"?: string;
-  onCommit: (value: string) => void;
-};
-
-function DeferredColorInput({
-  value,
-  fallback = "#ffffff",
-  disabled,
-  className,
-  title,
-  "aria-label": ariaLabel,
-  onCommit
-}: DeferredColorInputProps) {
-  const normalizedValue = colorInputValue(value, fallback);
-  const [draft, setDraft] = useState(normalizedValue);
-  const draftRef = useRef(normalizedValue);
-  const committedRef = useRef(normalizedValue);
-  const onCommitRef = useRef(onCommit);
-  const commitTimerRef = useRef<number | null>(null);
-
-  const clearCommitTimer = () => {
-    if (commitTimerRef.current !== null) {
-      window.clearTimeout(commitTimerRef.current);
-      commitTimerRef.current = null;
-    }
-  };
-
-  const commitDraft = (nextValue: string) => {
-    clearCommitTimer();
-    const nextColor = colorInputValue(nextValue, normalizedValue);
-    draftRef.current = nextColor;
-    setDraft(nextColor);
-    if (nextColor !== committedRef.current) {
-      committedRef.current = nextColor;
-      onCommitRef.current(nextColor);
-    }
-  };
-
-  const queueDraftCommit = (event: { currentTarget: HTMLInputElement }) => {
-    const nextValue = event.currentTarget.value;
-    draftRef.current = nextValue;
-    setDraft(nextValue);
-    clearCommitTimer();
-    if (!disabled) {
-      commitTimerRef.current = window.setTimeout(() => commitDraft(nextValue), COLOR_INPUT_COMMIT_DELAY_MS);
-    }
-  };
-
-  useEffect(() => {
-    onCommitRef.current = onCommit;
-  }, [onCommit]);
-
-  useEffect(() => {
-    clearCommitTimer();
-    committedRef.current = normalizedValue;
-    draftRef.current = normalizedValue;
-    setDraft(normalizedValue);
-  }, [normalizedValue]);
-
-  useEffect(() => () => clearCommitTimer(), []);
-
-  return (
-    <input
-      type="color"
-      value={draft}
-      disabled={disabled}
-      className={className}
-      title={title}
-      aria-label={ariaLabel}
-      onInput={queueDraftCommit}
-      onChange={queueDraftCommit}
-      onBlur={() => commitDraft(draftRef.current)}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") {
-          commitDraft(event.currentTarget.value);
-        } else if (event.key === "Escape") {
-          clearCommitTimer();
-          draftRef.current = committedRef.current;
-          setDraft(committedRef.current);
-        }
-      }}
-    />
-  );
-}
-
-type BufferedTextInputProps = {
-  value: string | number;
-  disabled?: boolean;
-  readOnly?: boolean;
-  className?: string;
-  id?: string;
-  name?: string;
-  type?: string;
-  min?: string | number;
-  max?: string | number;
-  step?: string | number;
-  list?: string;
-  placeholder?: string;
-  inputMode?: "none" | "text" | "tel" | "url" | "email" | "numeric" | "decimal" | "search";
-  title?: string;
-  autoFocus?: boolean;
-  style?: CSSProperties;
-  "aria-label"?: string;
-  onClick?: (event: MouseEvent<HTMLInputElement>) => void;
-  onDoubleClick?: (event: MouseEvent<HTMLInputElement>) => void;
-  onKeyDown?: (event: ReactKeyboardEvent<HTMLInputElement>) => void;
-  onCommit: (value: string) => void;
-};
-
-function BufferedTextInput({
-  value,
-  disabled,
-  onCommit,
-  ...inputProps
-}: BufferedTextInputProps) {
-  const normalizedValue = String(value ?? "");
-  const [draftValue, setDraftValue] = useState(normalizedValue);
-  const committedValueRef = useRef(normalizedValue);
-  const onCommitRef = useRef(onCommit);
-
-  const commitValue = (nextValue: string) => {
-    if (disabled) {
-      return;
-    }
-    if (nextValue !== committedValueRef.current) {
-      committedValueRef.current = nextValue;
-      onCommitRef.current(nextValue);
-    }
-  };
-
-  const commitDraft = () => commitValue(draftValue);
-
-  useEffect(() => {
-    onCommitRef.current = onCommit;
-  }, [onCommit]);
-
-  useEffect(() => {
-    committedValueRef.current = normalizedValue;
-    setDraftValue(normalizedValue);
-  }, [normalizedValue]);
-
-  return (
-    <input
-      {...inputProps}
-      value={draftValue}
-      disabled={disabled}
-      onChange={(event) => setDraftValue(event.target.value)}
-      onBlur={commitDraft}
-      onKeyDown={(event) => {
-        inputProps.onKeyDown?.(event);
-        if (event.defaultPrevented) {
-          return;
-        }
-        if (event.key === "Enter") {
-          commitValue(event.currentTarget.value);
-          event.currentTarget.blur();
-        } else if (event.key === "Escape") {
-          setDraftValue(committedValueRef.current);
-          event.currentTarget.blur();
-        }
-      }}
-    />
-  );
-}
-
-type BufferedTextareaProps = {
-  value: string | number;
-  disabled?: boolean;
-  readOnly?: boolean;
-  className?: string;
-  id?: string;
-  name?: string;
-  rows?: number;
-  placeholder?: string;
-  spellCheck?: boolean;
-  autoFocus?: boolean;
-  style?: CSSProperties;
-  "aria-label"?: string;
-  onKeyDown?: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
-  onCommit: (value: string) => void;
-};
-
-function BufferedTextarea({
-  value,
-  disabled,
-  onCommit,
-  ...textareaProps
-}: BufferedTextareaProps) {
-  const normalizedValue = String(value ?? "");
-  const [draftValue, setDraftValue] = useState(normalizedValue);
-  const committedValueRef = useRef(normalizedValue);
-  const onCommitRef = useRef(onCommit);
-
-  const commitValue = (nextValue: string) => {
-    if (disabled) {
-      return;
-    }
-    if (nextValue !== committedValueRef.current) {
-      committedValueRef.current = nextValue;
-      onCommitRef.current(nextValue);
-    }
-  };
-
-  const commitDraft = () => commitValue(draftValue);
-
-  useEffect(() => {
-    onCommitRef.current = onCommit;
-  }, [onCommit]);
-
-  useEffect(() => {
-    committedValueRef.current = normalizedValue;
-    setDraftValue(normalizedValue);
-  }, [normalizedValue]);
-
-  return (
-    <textarea
-      {...textareaProps}
-      value={draftValue}
-      disabled={disabled}
-      onChange={(event) => setDraftValue(event.target.value)}
-      onBlur={commitDraft}
-      onKeyDown={(event) => {
-        textareaProps.onKeyDown?.(event);
-        if (event.defaultPrevented) {
-          return;
-        }
-        if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-          commitValue(event.currentTarget.value);
-          event.currentTarget.blur();
-        } else if (event.key === "Escape") {
-          setDraftValue(committedValueRef.current);
-          event.currentTarget.blur();
-        }
-      }}
-    />
-  );
-}
+export const isColorParamKey = (key: string) => COLOR_PARAM_KEY_PATTERN.test(key);
 
 const BATCH_MEASUREMENT_GROUP_KEYS: BatchCommonMeasurementGroupKey[] = [
   "visible",
@@ -4705,7 +3923,7 @@ function filterAttributeLibraryComponentTypeGroups(
   return Object.fromEntries(filteredEntries);
 }
 
-function normalizeAttributeLibraryName(attributeLibraryName: string): string {
+export function normalizeAttributeLibraryName(attributeLibraryName: string): string {
   if (attributeLibraryName === "交流系统") {
     return "交流设备";
   }
@@ -4739,7 +3957,7 @@ function normalizeCustomAttributeLibraries(value: unknown, reservedGroups: reado
     });
 }
 
-function normalizeComponentTypeName(name: string): string {
+export function normalizeComponentTypeName(name: string): string {
   return name.trim();
 }
 
@@ -4814,7 +4032,7 @@ function normalizeCustomComponentTypes(value: unknown, reservedTypes: readonly s
     });
 }
 
-const templateResizeTransformValue = (template: Pick<DeviceTemplate, "kind" | "params" | "allowResizeTransform">) => {
+export const templateResizeTransformValue = (template: Pick<DeviceTemplate, "kind" | "params" | "allowResizeTransform">) => {
   if (template.allowResizeTransform !== undefined) {
     return template.allowResizeTransform ? "1" : "0";
   }
@@ -4860,7 +4078,7 @@ const normalizeEnumValueList = (values: unknown, typicalValue = ""): string[] =>
   return enumValues;
 };
 
-const definitionRowIsEnum = (row: Pick<DeviceParameterDefinition, "valueType"> | undefined) => {
+export const definitionRowIsEnum = (row: Pick<DeviceParameterDefinition, "valueType"> | undefined) => {
   if (!row) {
     return false;
   }
@@ -4898,7 +4116,7 @@ const normalizeEnumValueType = (
   return optionValues.length > 0 && optionValues.every((optionValue) => /^-?\d+(?:\.\d+)?$/.test(optionValue)) ? "number" : "string";
 };
 
-const enumValueTypeForDefinitionRow = (
+export const enumValueTypeForDefinitionRow = (
   row: Pick<DeviceParameterDefinition, "valueType" | "enumValueType">,
   enumOptions: readonly DeviceParameterEnumOption[] = []
 ): DeviceParameterEnumValueType => {
@@ -4940,7 +4158,7 @@ const rawEnumValuesForRow = (row: Pick<DeviceParameterDefinition, "enName" | "ty
   return typicalValue ? [typicalValue] : [];
 };
 
-const normalizeEnumOptionsForRow = (
+export const normalizeEnumOptionsForRow = (
   row: Pick<DeviceParameterDefinition, "enName" | "typicalValue" | "enumValues" | "enumOptions">
 ): DeviceParameterEnumOption[] => {
   const sourceOptions = Array.isArray(row.enumOptions) && row.enumOptions.length > 0
@@ -4978,7 +4196,7 @@ const enumValueFromOptions = (value: string, enumOptions: readonly DeviceParamet
     text;
 };
 
-const enumDisplayText = (option: DeviceParameterEnumOption, enumValueType?: DeviceParameterEnumValueType) => {
+export const enumDisplayText = (option: DeviceParameterEnumOption, enumValueType?: DeviceParameterEnumValueType) => {
   const label = String(option.label ?? "").trim();
   if (!label || label === option.value) {
     return option.value;
@@ -4986,7 +4204,7 @@ const enumDisplayText = (option: DeviceParameterEnumOption, enumValueType?: Devi
   return enumValueType === "number" ? `${label} (${option.value})` : `${option.value} / ${label}`;
 };
 
-const enumValuesForRow = (row: Pick<DeviceParameterDefinition, "enName" | "typicalValue" | "enumValues" | "enumOptions">): string[] => {
+export const enumValuesForRow = (row: Pick<DeviceParameterDefinition, "enName" | "typicalValue" | "enumValues" | "enumOptions">): string[] => {
   const enumValues = normalizeEnumValueList(normalizeEnumOptionsForRow(row).map((option) => option.value), String(row.typicalValue ?? ""));
   return enumValues;
 };
@@ -5317,7 +4535,7 @@ function uniqueGraphTemplateName(baseName: string, typeName: string, templates: 
   return `${normalizedBase}-${Date.now()}`;
 }
 
-function normalizeDefinitionRows(value: unknown): DeviceParameterDefinition[] {
+export function normalizeDefinitionRows(value: unknown): DeviceParameterDefinition[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -5639,1319 +4857,7 @@ function readStoredPanelDimension(storageKey: string, fallback: number, min: num
   }
 }
 
-function customParamId() {
-  return `param-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function deviceDefinitionRowId() {
-  return `def-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function stateDraftRowId() {
-  return `state-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-const DEFAULT_STATE_PAGE_ID = "__default-state__";
-
-function isDefaultStatePageId(rowId: string) {
-  return !rowId || rowId === DEFAULT_STATE_PAGE_ID;
-}
-
-function createStateDraftRow(definition: Partial<DeviceStateDefinition> = {}): DeviceDefinitionStateDraftRow {
-  const value = String(definition.value ?? "").trim();
-  const name = String(definition.name ?? value).trim();
-  return {
-    id: stateDraftRowId(),
-    value,
-    name,
-    icon: String(definition.icon ?? "").trim(),
-    image: String(definition.image ?? definition.backgroundImage ?? "").trim(),
-    imageAssetId: String(definition.imageAssetId ?? definition.backgroundImageAssetId ?? "").trim(),
-    text: String(definition.text ?? "").trim(),
-    color: String(definition.color ?? "").trim(),
-    fillColor: String(definition.fillColor ?? "").trim(),
-    strokeColor: String(definition.strokeColor ?? "").trim(),
-    textColor: String(definition.textColor ?? "").trim(),
-    backgroundImage: String(definition.backgroundImage ?? "").trim(),
-    backgroundImageAssetId: String(definition.backgroundImageAssetId ?? "").trim()
-  };
-}
-
-function createStateDraftRowFromDefaultVisual(
-  defaultVisual: Partial<DeviceStateDefinition>,
-  definition: Partial<DeviceStateDefinition> = {}
-): DeviceDefinitionStateDraftRow {
-  return createStateDraftRow({
-    ...defaultVisual,
-    ...definition
-  });
-}
-
-function createDefinitionStateDraftRows(template: DeviceTemplate): DeviceDefinitionStateDraftRow[] {
-  return getTemplateStateDefinitions(template).map((definition) => createStateDraftRow(definition));
-}
-
-function normalizeStateDraftRows(rows: readonly DeviceDefinitionStateDraftRow[]): DeviceStateDefinition[] {
-  return normalizeDeviceStateDefinitions(
-    rows.map((row) => ({
-      value: row.value,
-      name: row.name,
-      icon: row.icon,
-      image: row.image,
-      imageAssetId: row.imageAssetId,
-      text: row.text,
-      color: row.color,
-      fillColor: row.fillColor,
-      strokeColor: row.strokeColor,
-      textColor: row.textColor,
-      backgroundImage: row.backgroundImage,
-      backgroundImageAssetId: row.backgroundImageAssetId
-    }))
-  );
-}
-
-function validateStateDraftRows(rows: readonly DeviceDefinitionStateDraftRow[]) {
-  const populatedRows = rows.filter((row) =>
-    [
-      row.value,
-      row.name,
-      row.icon,
-      row.image,
-      row.imageAssetId,
-      row.text,
-      row.color,
-      row.fillColor,
-      row.strokeColor,
-      row.textColor,
-      row.backgroundImage,
-      row.backgroundImageAssetId
-    ].some((value) => String(value ?? "").trim())
-  );
-  for (const row of populatedRows) {
-    if (!row.value.trim() || !row.name.trim()) {
-      return { states: [] as DeviceStateDefinition[], error: "状态值和状态名称不能为空。" };
-    }
-  }
-  const seen = new Set<string>();
-  for (const row of populatedRows) {
-    const key = row.value.trim();
-    if (seen.has(key)) {
-      return { states: [] as DeviceStateDefinition[], error: `状态值重复：${key}` };
-    }
-    seen.add(key);
-  }
-  return { states: normalizeStateDraftRows(populatedRows), error: "" };
-}
-
-function stateVisualFromDraftRow(row?: DeviceDefinitionStateDraftRow | null): DeviceStateVisual | null {
-  const [state] = row ? normalizeStateDraftRows([row]) : [];
-  return state ? { ...state, value: state.value, name: state.name } : null;
-}
-
-function activeStateDraftRow(rows: readonly DeviceDefinitionStateDraftRow[], activeRowId: string) {
-  if (isDefaultStatePageId(activeRowId)) {
-    return null;
-  }
-  return rows.find((row) => row.id === activeRowId) ?? null;
-}
-
-function normalizeStatePageId(rows: readonly DeviceDefinitionStateDraftRow[], activeRowId: string) {
-  if (isDefaultStatePageId(activeRowId)) {
-    return DEFAULT_STATE_PAGE_ID;
-  }
-  return rows.some((row) => row.id === activeRowId) ? activeRowId : DEFAULT_STATE_PAGE_ID;
-}
-
-function stateDraftImageValue(row: DeviceDefinitionStateDraftRow) {
-  return row.image || row.backgroundImage;
-}
-
-function stateVisualShapeLabel(kind: StateVisualShapeKind) {
-  switch (kind) {
-    case "switch-open":
-      return "开关开";
-    case "switch-closed":
-      return "开关闭";
-    case "valve-open":
-      return "阀开";
-    case "valve-closed":
-      return "阀关";
-    case "line":
-      return "线";
-    case "point":
-      return "点";
-    case "triangle":
-      return "三角";
-    case "square":
-      return "四方";
-    case "hexagon":
-      return "六角";
-    case "polygon":
-      return "多角";
-    case "circle":
-      return "圆";
-    case "semicircle":
-      return "半圆";
-    case "ellipse":
-      return "椭圆";
-    case "arc":
-      return "圆弧";
-    case "text":
-      return "文字";
-    case "imported-svg":
-      return "SVG";
-    case "image":
-      return "图片";
-    default:
-      return kind;
-  }
-}
-
-function generateStateVisualShapeImage(kind: StateVisualShapeKind, row: DeviceDefinitionStateDraftRow) {
-  const stroke = visibleStateIconColor("#2563eb", row.strokeColor, row.color);
-  const fill = row.fillColor.trim() || "transparent";
-  const textFill = visibleStateIconColor(stroke, row.textColor, row.color);
-  const label = escapeXml(row.text.trim() || row.icon.trim() || row.name.trim() || row.value.trim() || "状态");
-  const common = `fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"`;
-  const text = `<text x="120" y="94" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei" font-size="54" font-weight="800" fill="${escapeXml(textFill)}">${label}</text>`;
-  let body = "";
-  switch (kind) {
-    case "switch-open":
-      body = `<circle cx="70" cy="80" r="14" fill="#fff" stroke="${escapeXml(stroke)}" stroke-width="8"/><circle cx="170" cy="80" r="14" fill="#fff" stroke="${escapeXml(stroke)}" stroke-width="8"/><path d="M 30 80 H 56 M 184 80 H 210 M 84 72 L 154 38" fill="none" stroke="${escapeXml(stroke)}" stroke-width="9" stroke-linecap="round"/>`;
-      break;
-    case "switch-closed":
-      body = `<circle cx="70" cy="80" r="14" fill="#fff" stroke="${escapeXml(stroke)}" stroke-width="8"/><circle cx="170" cy="80" r="14" fill="#fff" stroke="${escapeXml(stroke)}" stroke-width="8"/><path d="M 30 80 H 56 M 84 80 H 156 M 184 80 H 210" fill="none" stroke="${escapeXml(stroke)}" stroke-width="9" stroke-linecap="round"/>`;
-      break;
-    case "valve-open":
-      body = `<path d="M 44 48 L 120 80 L 44 112 Z M 196 48 L 120 80 L 196 112 Z" ${common}/><path d="M 120 34 V 126 M 88 34 H 152" fill="none" stroke="${escapeXml(stroke)}" stroke-width="7" stroke-linecap="round"/>`;
-      break;
-    case "valve-closed":
-      body = `<path d="M 44 48 L 120 80 L 44 112 Z M 196 48 L 120 80 L 196 112 Z" ${common}/><path d="M 76 36 L 164 124 M 164 36 L 76 124" fill="none" stroke="${escapeXml(stroke)}" stroke-width="8" stroke-linecap="round"/>`;
-      break;
-    case "line":
-      body = `<path d="M 42 80 H 198" fill="none" stroke="${escapeXml(stroke)}" stroke-width="10" stroke-linecap="round"/>`;
-      break;
-    case "point":
-      body = `<circle cx="120" cy="80" r="18" fill="${escapeXml(stroke)}"/>`;
-      break;
-    case "triangle":
-      body = `<path d="M 120 34 L 190 122 H 50 Z" ${common}/>`;
-      break;
-    case "square":
-      body = `<rect x="64" y="34" width="112" height="92" rx="4" ${common}/>`;
-      break;
-    case "hexagon":
-      body = `<path d="M 82 34 H 158 L 198 80 L 158 126 H 82 L 42 80 Z" ${common}/>`;
-      break;
-    case "polygon":
-      body = `<path d="M 120 28 L 158 54 L 202 58 L 178 96 L 184 138 L 120 120 L 56 138 L 62 96 L 38 58 L 82 54 Z" ${common}/>`;
-      break;
-    case "circle":
-      body = `<circle cx="120" cy="80" r="48" ${common}/>`;
-      break;
-    case "semicircle":
-      body = `<path d="M 60 104 A 60 60 0 0 1 180 104 Z" ${common}/>`;
-      break;
-    case "ellipse":
-      body = `<ellipse cx="120" cy="80" rx="72" ry="42" ${common}/>`;
-      break;
-    case "arc":
-      body = `<path d="M 58 112 A 72 72 0 0 1 182 112" fill="none" stroke="${escapeXml(stroke)}" stroke-width="10" stroke-linecap="round"/>`;
-      break;
-    case "text":
-      body = text;
-      break;
-    default:
-      body = `<circle cx="120" cy="80" r="48" ${common}/>`;
-      break;
-  }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160"><rect width="240" height="160" fill="none"/>${body}</svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
-
-function stateIconDrawingElementId() {
-  return `state-icon-element-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function visibleStateIconColor(fallback: string, ...values: Array<string | undefined | null>) {
-  for (const value of values) {
-    const normalized = String(value ?? "").trim();
-    if (!normalized) {
-      continue;
-    }
-    const lower = normalized.toLowerCase();
-    if (lower !== "transparent" && lower !== "none") {
-      return normalized;
-    }
-  }
-  return fallback;
-}
-
-function createStateIconDrawingElement(kind: StateVisualShapeKind, row?: DeviceDefinitionStateDraftRow | null): StateIconDrawingElement {
-  const strokeColor = visibleStateIconColor("#2563eb", row?.strokeColor, row?.color);
-  return {
-    id: stateIconDrawingElementId(),
-    kind,
-    x: 120,
-    y: 80,
-    width: kind === "point" ? 28 : kind === "line" || kind === "arc" ? 128 : 76,
-    height: kind === "point" ? 28 : kind === "line" ? 24 : kind === "arc" ? 70 : 58,
-    rotation: 0,
-    strokeWidth: 6,
-    strokeColor,
-    fillColor: kind === "line" || kind === "arc" || kind === "text" ? "transparent" : (row?.fillColor.trim() || "transparent"),
-    textColor: visibleStateIconColor("#111827", row?.textColor, row?.color, strokeColor),
-    text: row?.text.trim() || row?.icon.trim() || stateVisualShapeLabel(kind),
-    svgSource: "",
-    imageHref: "",
-    imageScale: 1,
-    cropX: 0,
-    cropY: 0
-  };
-}
-
-function createImportedStateIconElement(
-  kind: "imported-svg" | "image",
-  source: string,
-  fileName: string
-): StateIconDrawingElement {
-  return {
-    ...createStateIconDrawingElement(kind),
-    width: 120,
-    height: 88,
-    strokeWidth: 0,
-    fillColor: "transparent",
-    text: fileName || stateVisualShapeLabel(kind),
-    svgSource: kind === "imported-svg" ? source : "",
-    imageHref: kind === "image" ? source : "",
-    imageScale: 1,
-    cropX: 0,
-    cropY: 0
-  };
-}
-
-function svgSourceFromDataUrl(dataUrl: string) {
-  const value = dataUrl.trim();
-  if (!value.startsWith("data:image/svg+xml")) {
-    return "";
-  }
-  const commaIndex = value.indexOf(",");
-  if (commaIndex < 0) {
-    return "";
-  }
-  const metadata = value.slice(0, commaIndex).toLowerCase();
-  const payload = value.slice(commaIndex + 1);
-  try {
-    if (metadata.includes(";base64")) {
-      return typeof atob === "function" ? atob(payload) : "";
-    }
-    return decodeURIComponent(payload);
-  } catch {
-    return payload;
-  }
-}
-
-function parseStateIconSvgSource(source: string) {
-  const svgSource = source.trim();
-  if (!svgSource || typeof DOMParser === "undefined") {
-    return null;
-  }
-  try {
-    const document = new DOMParser().parseFromString(svgSource, "image/svg+xml");
-    if (document.querySelector("parsererror")) {
-      return null;
-    }
-    const svg = document.querySelector("svg");
-    if (!svg) {
-      return null;
-    }
-    const width = Number.parseFloat(svg.getAttribute("width") || "") || 240;
-    const height = Number.parseFloat(svg.getAttribute("height") || "") || 160;
-    const viewBox = svg.getAttribute("viewBox") || `0 0 ${formatSvgNumber(width)} ${formatSvgNumber(height)}`;
-    const safeChildren = Array.from(svg.children).filter((child) => !["script", "foreignObject"].includes(child.tagName));
-    const supportChildren = safeChildren.filter((child) => ["defs", "style"].includes(child.tagName));
-    const editableChildren = safeChildren.filter((child) => !["defs", "style", "title", "desc", "metadata"].includes(child.tagName));
-    const supportMarkup = supportChildren.map((child) => child.outerHTML).join("");
-    const body = safeChildren.map((child) => child.outerHTML).join("");
-    return { viewBox, body, supportMarkup, editableChildren };
-  } catch {
-    return null;
-  }
-}
-
-function stateIconSvgElementSource(source: string) {
-  const parsed = parseStateIconSvgSource(source);
-  if (!parsed || !parsed.body) {
-    return "";
-  }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${escapeXml(parsed.viewBox)}">${parsed.body}</svg>`;
-}
-
-function parseSvgStyleAttribute(value: string) {
-  const style: CSSProperties = {};
-  for (const declaration of value.split(";")) {
-    const [rawName, ...rawValue] = declaration.split(":");
-    const name = rawName?.trim();
-    const propertyValue = rawValue.join(":").trim();
-    if (!name || !propertyValue) {
-      continue;
-    }
-    const camelName = name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase()) as keyof CSSProperties;
-    style[camelName] = propertyValue as never;
-  }
-  return style;
-}
-
-function stateIconSvgReactAttributes(element: Element) {
-  const props: Record<string, string | CSSProperties> = {};
-  for (const attribute of Array.from(element.attributes)) {
-    const name = attribute.name;
-    if (name.startsWith("on")) {
-      continue;
-    }
-    if (name === "style") {
-      props.style = parseSvgStyleAttribute(attribute.value);
-      continue;
-    }
-    const propName =
-      name === "class"
-        ? "className"
-        : name === "clip-path"
-          ? "clipPath"
-          : name === "fill-rule"
-            ? "fillRule"
-            : name === "stroke-width"
-              ? "strokeWidth"
-              : name === "stroke-linecap"
-                ? "strokeLinecap"
-                : name === "stroke-linejoin"
-                  ? "strokeLinejoin"
-                  : name === "stroke-dasharray"
-                    ? "strokeDasharray"
-                    : name === "text-anchor"
-                      ? "textAnchor"
-                      : name === "dominant-baseline"
-                        ? "dominantBaseline"
-                        : name === "font-family"
-                          ? "fontFamily"
-                          : name === "font-size"
-                          ? "fontSize"
-                            : name === "font-weight"
-                              ? "fontWeight"
-                              : name === "font-style"
-                                ? "fontStyle"
-                                : name === "text-decoration"
-                                  ? "textDecoration"
-                                  : name === "vector-effect"
-                                    ? "vectorEffect"
-                                    : name === "stop-color"
-                                      ? "stopColor"
-                                      : name === "stop-opacity"
-                                        ? "stopOpacity"
-                                        : name === "fill-opacity"
-                                          ? "fillOpacity"
-                                          : name === "stroke-opacity"
-                                            ? "strokeOpacity"
-                                            : name;
-    props[propName] = attribute.value;
-  }
-  return props;
-}
-
-function stateIconSvgNodeChildren(element: Element, keyPrefix: string): ReactNode[] {
-  return Array.from(element.childNodes).flatMap((child, index) => {
-    if (child.nodeType === Node.TEXT_NODE) {
-      const text = child.textContent ?? "";
-      return text.trim() ? [text] : [];
-    }
-    if (child.nodeType !== Node.ELEMENT_NODE) {
-      return [];
-    }
-    const node = child as Element;
-    if (["script", "foreignObject"].includes(node.tagName)) {
-      return [];
-    }
-    return [stateIconSvgNodeToReact(node, `${keyPrefix}-${index}`)];
-  });
-}
-
-function stateIconSvgNodeToReact(element: Element, key: string): ReactNode {
-  const tag = element.tagName;
-  const props = stateIconSvgReactAttributes(element);
-  const children = stateIconSvgNodeChildren(element, key);
-  switch (tag) {
-    case "svg":
-      return <svg key={key} {...props}>{children}</svg>;
-    case "g":
-      return <g key={key} {...props}>{children}</g>;
-    case "path":
-      return <path key={key} {...props} />;
-    case "circle":
-      return <circle key={key} {...props} />;
-    case "rect":
-      return <rect key={key} {...props} />;
-    case "ellipse":
-      return <ellipse key={key} {...props} />;
-    case "line":
-      return <line key={key} {...props} />;
-    case "polyline":
-      return <polyline key={key} {...props} />;
-    case "polygon":
-      return <polygon key={key} {...props} />;
-    case "text":
-      return <text key={key} {...props}>{children}</text>;
-    case "tspan":
-      return <tspan key={key} {...props}>{children}</tspan>;
-    case "defs":
-      return <defs key={key} {...props}>{children}</defs>;
-    case "clipPath":
-      return <clipPath key={key} {...props}>{children}</clipPath>;
-    case "linearGradient":
-      return <linearGradient key={key} {...props}>{children}</linearGradient>;
-    case "radialGradient":
-      return <radialGradient key={key} {...props}>{children}</radialGradient>;
-    case "stop":
-      return <stop key={key} {...props} />;
-    case "style":
-      return <style key={key} {...props}>{element.textContent ?? ""}</style>;
-    case "image":
-      return <image key={key} {...props} />;
-    default:
-      return <g key={key} {...props}>{children}</g>;
-  }
-}
-
-function stateIconSvgSourceToReactNodes(source: string) {
-  const parsed = parseStateIconSvgSource(source);
-  if (!parsed) {
-    return null;
-  }
-  return parsed.editableChildren.map((child, index) => stateIconSvgNodeToReact(child, `svg-node-${index}`));
-}
-
-function createEditableStateIconElementsFromSvgSource(source: string, fileName: string) {
-  const parsed = parseStateIconSvgSource(source);
-  if (!parsed || parsed.editableChildren.length <= 1) {
-    return [createImportedStateIconElement("imported-svg", stateIconSvgElementSource(source) || source, fileName)];
-  }
-  return parsed.editableChildren.map((child, index) =>
-    createImportedStateIconElement(
-      "imported-svg",
-      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${escapeXml(parsed.viewBox)}">${parsed.supportMarkup}${child.outerHTML}</svg>`,
-      `${fileName || "SVG"}-${index + 1}`
-    )
-  );
-}
-
-function createStateIconDrawingInitialElements(
-  row: DeviceDefinitionStateDraftRow | null | undefined,
-  assets: Record<string, string>
-) {
-  const visual = stateVisualFromDraftRow(row);
-  const imageHref = resolveStateVisualImageHref(visual, assets).trim();
-  if (imageHref) {
-    const svgSource = svgSourceFromDataUrl(imageHref);
-    return svgSource
-      ? createEditableStateIconElementsFromSvgSource(svgSource, row?.name.trim() || "原始图标")
-      : [createImportedStateIconElement("image", imageHref, row?.name.trim() || "原始图标")];
-  }
-  return [createStateIconDrawingElement("line", row), createStateIconDrawingElement("text", row)];
-}
-
-function svgSourceToDataUrl(source?: string) {
-  const svg = String(source ?? "").trim();
-  return svg ? `data:image/svg+xml;utf8,${encodeURIComponent(svg)}` : "";
-}
-
-function stateIconDrawingSvgElementMarkup(source: string, x: number, y: number, width: number, height: number) {
-  const parsed = parseStateIconSvgSource(source);
-  if (!parsed || !parsed.body) {
-    const href = svgSourceToDataUrl(source);
-    return href
-      ? `<image href="${escapeXml(href)}" x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" preserveAspectRatio="xMidYMid meet"/>`
-      : "";
-  }
-  return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" viewBox="${escapeXml(parsed.viewBox)}" preserveAspectRatio="xMidYMid meet">${parsed.body}</svg>`;
-}
-
-function stateIconDrawingElementMarkup(element: StateIconDrawingElement) {
-  const stroke = escapeXml(element.strokeColor || "#2563eb");
-  const fill = escapeXml(element.fillColor || "transparent");
-  const textFill = escapeXml(element.textColor || element.strokeColor || "#111827");
-  const sw = formatSvgNumber(Math.max(0, element.strokeWidth));
-  const w = Math.max(1, element.width);
-  const h = Math.max(1, element.height);
-  const hw = w / 2;
-  const hh = h / 2;
-  const common = `fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"`;
-  let body = "";
-  switch (element.kind) {
-    case "imported-svg": {
-      body = stateIconDrawingSvgElementMarkup(element.svgSource ?? "", -hw, -hh, w, h);
-      break;
-    }
-    case "image": {
-      const href = element.imageHref || "";
-      const clipId = `clip-${element.id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
-      const scale = Math.max(0.05, element.imageScale ?? 1);
-      body = href
-        ? `<defs><clipPath id="${escapeXml(clipId)}"><rect x="${formatSvgNumber(-hw)}" y="${formatSvgNumber(-hh)}" width="${formatSvgNumber(w)}" height="${formatSvgNumber(h)}"/></clipPath></defs><image href="${escapeXml(href)}" x="${formatSvgNumber(-hw + (element.cropX ?? 0))}" y="${formatSvgNumber(-hh + (element.cropY ?? 0))}" width="${formatSvgNumber(w * scale)}" height="${formatSvgNumber(h * scale)}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${escapeXml(clipId)})"/>`
-        : "";
-      break;
-    }
-    case "switch-open":
-      body = `<circle cx="${formatSvgNumber(-hw * 0.46)}" cy="0" r="${formatSvgNumber(Math.min(w, h) * 0.12)}" fill="#fff" stroke="${stroke}" stroke-width="${sw}"/><circle cx="${formatSvgNumber(hw * 0.46)}" cy="0" r="${formatSvgNumber(Math.min(w, h) * 0.12)}" fill="#fff" stroke="${stroke}" stroke-width="${sw}"/><path d="M ${formatSvgNumber(-hw)} 0 H ${formatSvgNumber(-hw * 0.62)} M ${formatSvgNumber(-hw * 0.3)} ${formatSvgNumber(-h * 0.08)} L ${formatSvgNumber(hw * 0.3)} ${formatSvgNumber(-hh)} M ${formatSvgNumber(hw * 0.62)} 0 H ${formatSvgNumber(hw)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>`;
-      break;
-    case "switch-closed":
-      body = `<circle cx="${formatSvgNumber(-hw * 0.46)}" cy="0" r="${formatSvgNumber(Math.min(w, h) * 0.12)}" fill="#fff" stroke="${stroke}" stroke-width="${sw}"/><circle cx="${formatSvgNumber(hw * 0.46)}" cy="0" r="${formatSvgNumber(Math.min(w, h) * 0.12)}" fill="#fff" stroke="${stroke}" stroke-width="${sw}"/><path d="M ${formatSvgNumber(-hw)} 0 H ${formatSvgNumber(hw)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>`;
-      break;
-    case "valve-open":
-      body = `<path d="M ${formatSvgNumber(-hw)} ${formatSvgNumber(-hh)} L 0 0 L ${formatSvgNumber(-hw)} ${formatSvgNumber(hh)} Z M ${formatSvgNumber(hw)} ${formatSvgNumber(-hh)} L 0 0 L ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} Z" ${common}/><path d="M 0 ${formatSvgNumber(-hh * 1.15)} V ${formatSvgNumber(hh * 1.15)} M ${formatSvgNumber(-hw * 0.35)} ${formatSvgNumber(-hh * 1.15)} H ${formatSvgNumber(hw * 0.35)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>`;
-      break;
-    case "valve-closed":
-      body = `<path d="M ${formatSvgNumber(-hw)} ${formatSvgNumber(-hh)} L 0 0 L ${formatSvgNumber(-hw)} ${formatSvgNumber(hh)} Z M ${formatSvgNumber(hw)} ${formatSvgNumber(-hh)} L 0 0 L ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} Z" ${common}/><path d="M ${formatSvgNumber(-hw * 0.55)} ${formatSvgNumber(-hh * 0.9)} L ${formatSvgNumber(hw * 0.55)} ${formatSvgNumber(hh * 0.9)} M ${formatSvgNumber(hw * 0.55)} ${formatSvgNumber(-hh * 0.9)} L ${formatSvgNumber(-hw * 0.55)} ${formatSvgNumber(hh * 0.9)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>`;
-      break;
-    case "line":
-      body = `<path d="M ${formatSvgNumber(-hw)} 0 H ${formatSvgNumber(hw)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>`;
-      break;
-    case "point":
-      body = `<circle cx="0" cy="0" r="${formatSvgNumber(Math.min(w, h) / 2)}" fill="${stroke}"/>`;
-      break;
-    case "triangle":
-      body = `<path d="M 0 ${formatSvgNumber(-hh)} L ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} H ${formatSvgNumber(-hw)} Z" ${common}/>`;
-      break;
-    case "square":
-      body = `<rect x="${formatSvgNumber(-hw)}" y="${formatSvgNumber(-hh)}" width="${formatSvgNumber(w)}" height="${formatSvgNumber(h)}" rx="2" ${common}/>`;
-      break;
-    case "hexagon":
-      body = `<path d="M ${formatSvgNumber(-hw * 0.5)} ${formatSvgNumber(-hh)} H ${formatSvgNumber(hw * 0.5)} L ${formatSvgNumber(hw)} 0 L ${formatSvgNumber(hw * 0.5)} ${formatSvgNumber(hh)} H ${formatSvgNumber(-hw * 0.5)} L ${formatSvgNumber(-hw)} 0 Z" ${common}/>`;
-      break;
-    case "polygon":
-      body = `<path d="M 0 ${formatSvgNumber(-hh)} L ${formatSvgNumber(hw * 0.36)} ${formatSvgNumber(-hh * 0.36)} L ${formatSvgNumber(hw)} ${formatSvgNumber(-hh * 0.25)} L ${formatSvgNumber(hw * 0.52)} ${formatSvgNumber(hh * 0.2)} L ${formatSvgNumber(hw * 0.62)} ${formatSvgNumber(hh)} L 0 ${formatSvgNumber(hh * 0.58)} L ${formatSvgNumber(-hw * 0.62)} ${formatSvgNumber(hh)} L ${formatSvgNumber(-hw * 0.52)} ${formatSvgNumber(hh * 0.2)} L ${formatSvgNumber(-hw)} ${formatSvgNumber(-hh * 0.25)} L ${formatSvgNumber(-hw * 0.36)} ${formatSvgNumber(-hh * 0.36)} Z" ${common}/>`;
-      break;
-    case "circle":
-      body = `<circle cx="0" cy="0" r="${formatSvgNumber(Math.min(w, h) / 2)}" ${common}/>`;
-      break;
-    case "semicircle":
-      body = `<path d="M ${formatSvgNumber(-hw)} ${formatSvgNumber(hh)} A ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} 0 0 1 ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} Z" ${common}/>`;
-      break;
-    case "ellipse":
-      body = `<ellipse cx="0" cy="0" rx="${formatSvgNumber(hw)}" ry="${formatSvgNumber(hh)}" ${common}/>`;
-      break;
-    case "arc":
-      body = `<path d="M ${formatSvgNumber(-hw)} ${formatSvgNumber(hh * 0.6)} A ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} 0 0 1 ${formatSvgNumber(hw)} ${formatSvgNumber(hh * 0.6)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>`;
-      break;
-    case "text":
-      body = `<text x="0" y="0" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei" font-size="${formatSvgNumber(Math.max(8, h))}" font-weight="800" fill="${textFill}">${escapeXml(element.text || "文字")}</text>`;
-      break;
-    default:
-      body = `<circle cx="0" cy="0" r="${formatSvgNumber(Math.min(w, h) / 2)}" ${common}/>`;
-      break;
-  }
-  return `<g transform="translate(${formatSvgNumber(element.x)} ${formatSvgNumber(element.y)}) rotate(${formatSvgNumber(element.rotation)})">${body}</g>`;
-}
-
-function stateIconDrawingToImage(elements: readonly StateIconDrawingElement[]) {
-  const body = elements.map(stateIconDrawingElementMarkup).join("");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">${body}</svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
-
-function stateIconDrawingElementPreviewImage(element: StateIconDrawingElement) {
-  const w = Math.max(1, element.width);
-  const h = Math.max(1, element.height);
-  const padding = Math.max(18, Math.max(0, element.strokeWidth) * 3);
-  const previewElement = {
-    ...element,
-    x: padding + w / 2,
-    y: padding + h / 2,
-    rotation: 0
-  };
-  const svgWidth = w + padding * 2;
-  const svgHeight = h + padding * 2;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${formatSvgNumber(svgWidth)}" height="${formatSvgNumber(svgHeight)}" viewBox="0 0 ${formatSvgNumber(svgWidth)} ${formatSvgNumber(svgHeight)}">${stateIconDrawingElementMarkup(previewElement)}</svg>`;
-  return {
-    href: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`,
-    x: -w / 2 - padding,
-    y: -h / 2 - padding,
-    width: svgWidth,
-    height: svgHeight
-  };
-}
-
-function stateIconDrawingElementPreviewNode(element: StateIconDrawingElement) {
-  const stroke = element.strokeColor || "#2563eb";
-  const fill = element.fillColor || "transparent";
-  const textFill = element.textColor || element.strokeColor || "#111827";
-  const sw = Math.max(0, element.strokeWidth);
-  const w = Math.max(1, element.width);
-  const h = Math.max(1, element.height);
-  const hw = w / 2;
-  const hh = h / 2;
-  const common = {
-    fill,
-    stroke,
-    strokeWidth: sw,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    vectorEffect: "non-scaling-stroke" as const
-  };
-  switch (element.kind) {
-    case "imported-svg": {
-      const parsed = parseStateIconSvgSource(element.svgSource ?? "");
-      if (!parsed || !parsed.body) {
-        const href = svgSourceToDataUrl(element.svgSource);
-        return href ? <image href={href} x={-hw} y={-hh} width={w} height={h} preserveAspectRatio="xMidYMid meet" /> : null;
-      }
-      const nodes = stateIconSvgSourceToReactNodes(element.svgSource ?? "");
-      return (
-        <svg
-          x={-hw}
-          y={-hh}
-          width={w}
-          height={h}
-          viewBox={parsed.viewBox}
-          preserveAspectRatio="xMidYMid meet"
-        >
-          {nodes}
-        </svg>
-      );
-    }
-    case "image": {
-      const href = element.imageHref || "";
-      const clipId = `preview-clip-${element.id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
-      const scale = Math.max(0.05, element.imageScale ?? 1);
-      return href ? (
-        <>
-          <defs>
-            <clipPath id={clipId}>
-              <rect x={-hw} y={-hh} width={w} height={h} />
-            </clipPath>
-          </defs>
-          <image
-            href={href}
-            x={-hw + (element.cropX ?? 0)}
-            y={-hh + (element.cropY ?? 0)}
-            width={w * scale}
-            height={h * scale}
-            preserveAspectRatio="xMidYMid slice"
-            clipPath={`url(#${clipId})`}
-          />
-        </>
-      ) : null;
-    }
-    case "switch-open":
-      return (
-        <>
-          <circle cx={-hw * 0.46} cy={0} r={Math.min(w, h) * 0.12} fill="#fff" stroke={stroke} strokeWidth={sw} />
-          <circle cx={hw * 0.46} cy={0} r={Math.min(w, h) * 0.12} fill="#fff" stroke={stroke} strokeWidth={sw} />
-          <path d={`M ${-hw} 0 H ${-hw * 0.62} M ${-hw * 0.3} ${-h * 0.08} L ${hw * 0.3} ${-hh} M ${hw * 0.62} 0 H ${hw}`} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />
-        </>
-      );
-    case "switch-closed":
-      return (
-        <>
-          <circle cx={-hw * 0.46} cy={0} r={Math.min(w, h) * 0.12} fill="#fff" stroke={stroke} strokeWidth={sw} />
-          <circle cx={hw * 0.46} cy={0} r={Math.min(w, h) * 0.12} fill="#fff" stroke={stroke} strokeWidth={sw} />
-          <path d={`M ${-hw} 0 H ${hw}`} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />
-        </>
-      );
-    case "valve-open":
-      return (
-        <>
-          <path d={`M ${-hw} ${-hh} L 0 0 L ${-hw} ${hh} Z M ${hw} ${-hh} L 0 0 L ${hw} ${hh} Z`} {...common} />
-          <path d={`M 0 ${-hh * 1.15} V ${hh * 1.15} M ${-hw * 0.35} ${-hh * 1.15} H ${hw * 0.35}`} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />
-        </>
-      );
-    case "valve-closed":
-      return (
-        <>
-          <path d={`M ${-hw} ${-hh} L 0 0 L ${-hw} ${hh} Z M ${hw} ${-hh} L 0 0 L ${hw} ${hh} Z`} {...common} />
-          <path d={`M ${-hw * 0.55} ${-hh * 0.9} L ${hw * 0.55} ${hh * 0.9} M ${hw * 0.55} ${-hh * 0.9} L ${-hw * 0.55} ${hh * 0.9}`} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />
-        </>
-      );
-    case "line":
-      return <path d={`M ${-hw} 0 H ${hw}`} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />;
-    case "point":
-      return <circle cx={0} cy={0} r={Math.min(w, h) / 2} fill={stroke} />;
-    case "triangle":
-      return <path d={`M 0 ${-hh} L ${hw} ${hh} H ${-hw} Z`} {...common} />;
-    case "square":
-      return <rect x={-hw} y={-hh} width={w} height={h} rx={2} {...common} />;
-    case "hexagon":
-      return <path d={`M ${-hw * 0.5} ${-hh} H ${hw * 0.5} L ${hw} 0 L ${hw * 0.5} ${hh} H ${-hw * 0.5} L ${-hw} 0 Z`} {...common} />;
-    case "polygon":
-      return <path d={`M 0 ${-hh} L ${hw * 0.36} ${-hh * 0.36} L ${hw} ${-hh * 0.25} L ${hw * 0.52} ${hh * 0.2} L ${hw * 0.62} ${hh} L 0 ${hh * 0.58} L ${-hw * 0.62} ${hh} L ${-hw * 0.52} ${hh * 0.2} L ${-hw} ${-hh * 0.25} L ${-hw * 0.36} ${-hh * 0.36} Z`} {...common} />;
-    case "circle":
-      return <circle cx={0} cy={0} r={Math.min(w, h) / 2} {...common} />;
-    case "semicircle":
-      return <path d={`M ${-hw} ${hh} A ${hw} ${hh} 0 0 1 ${hw} ${hh} Z`} {...common} />;
-    case "ellipse":
-      return <ellipse cx={0} cy={0} rx={hw} ry={hh} {...common} />;
-    case "arc":
-      return <path d={`M ${-hw} ${hh * 0.6} A ${hw} ${hh} 0 0 1 ${hw} ${hh * 0.6}`} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />;
-    case "text":
-      return (
-        <text x={0} y={0} textAnchor="middle" dominantBaseline="middle" fontFamily="Arial, Microsoft YaHei" fontSize={Math.max(8, h)} fontWeight={800} fill={textFill}>
-          {element.text || "文字"}
-        </text>
-      );
-    default:
-      return <circle cx={0} cy={0} r={Math.min(w, h) / 2} {...common} />;
-  }
-}
-
-function deviceStateVisualToken(visual?: DeviceStateVisual | null) {
-  if (!visual) {
-    return "";
-  }
-  return [
-    visual.value,
-    visual.name,
-    visual.icon ?? "",
-    visual.image ?? "",
-    visual.imageAssetId ?? "",
-    visual.backgroundImage ?? "",
-    visual.backgroundImageAssetId ?? "",
-    visual.text ?? "",
-    visual.color ?? "",
-    visual.fillColor ?? "",
-    visual.strokeColor ?? "",
-    visual.textColor ?? ""
-  ].join("\u001f");
-}
-
-function stateVisualText(visual?: DeviceStateVisual | null) {
-  return String(visual?.text || visual?.icon || "").trim();
-}
-
-function resolveStateVisualImageHref(visual: DeviceStateVisual | null | undefined, assets: Record<string, string>) {
-  if (!visual) {
-    return "";
-  }
-  const assetId = visual.imageAssetId || visual.backgroundImageAssetId;
-  if (assetId && assets[assetId]) {
-    return assets[assetId];
-  }
-  return visual.image || visual.backgroundImage || "";
-}
-
-function fallbackComponentTypeForAttributeLibrary(attributeLibraryName: string) {
-  const normalized = normalizeAttributeLibraryName(attributeLibraryName);
-  if (normalized.includes("静态")) return "StaticBasicShape";
-  if (normalized.includes("直流")) return "DCLoad";
-  if (normalized.includes("变流")) return "DCDCConverter";
-  if (normalized.includes("氢")) return "HydroLoad";
-  if (normalized.includes("热")) return "HeatLoad";
-  return "ACLoad";
-}
-
-function resolveTemplateComponentType(template: DeviceTemplate) {
-  const inferred = inferESection(template.kind, template.params);
-  if (inferred) {
-    return inferred;
-  }
-  return fallbackComponentTypeForAttributeLibrary(template.attributeLibrary);
-}
-
-function deviceDefinitionKeyForTemplate(template: DeviceTemplate) {
-  return normalizeComponentTypeName(resolveTemplateComponentType(template)) || template.kind;
-}
-
-function deviceDefinitionOverrideForTemplate(
-  template: DeviceTemplate,
-  overrides: Record<string, DeviceTemplateDefinitionOverride>
-) {
-  return overrides[template.kind] ?? overrides[deviceDefinitionKeyForTemplate(template)];
-}
-
-const isReservedDeviceDefinitionParamName = (enName: string) =>
-  enName.trim() === "is_container" || enName.trim() === ALLOW_RESIZE_TRANSFORM_PARAM;
-
-function createDefinitionDraftRows(template: DeviceTemplate): DeviceDefinitionDraftRow[] {
-  return getTemplateParameterDefinitions(template)
-    .filter((definition) => definition.enName !== "component_type" && !isReservedDeviceDefinitionParamName(definition.enName))
-    .map((definition) => ({
-      ...definition,
-      cnName: definition.cnName === definition.enName ? PARAM_LABELS[definition.enName] ?? definition.cnName : definition.cnName,
-      id: deviceDefinitionRowId()
-    }));
-}
-
-const normalizeCustomDeviceTerminalAnchorCoordinate = (value: number) =>
-  Math.round(clampNumber(Number.isFinite(value) ? value : 0, -0.5, 0.5) * CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION) /
-  CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION;
-
-const projectCustomDeviceTerminalAnchorToBoundary = (anchor: Point): Point => {
-  const x = normalizeCustomDeviceTerminalAnchorCoordinate(anchor.x);
-  const y = normalizeCustomDeviceTerminalAnchorCoordinate(anchor.y);
-  if (Math.abs(x) >= Math.abs(y)) {
-    return {
-      x: x < 0 ? -0.5 : 0.5,
-      y
-    };
-  }
-  return {
-    x,
-    y: y < 0 ? -0.5 : 0.5
-  };
-};
-
-const customDeviceTerminalAnchorKey = (anchor: Point) =>
-  `${normalizeCustomDeviceTerminalAnchorCoordinate(anchor.x)}:${normalizeCustomDeviceTerminalAnchorCoordinate(anchor.y)}`;
-
-const hasOverlappingCustomDeviceTerminalAnchors = (anchors: readonly Point[]) =>
-  new Set(anchors.map(customDeviceTerminalAnchorKey)).size !== anchors.length;
-
-function createDefaultCustomDeviceTerminalAnchors(count: number, sourceAnchors: readonly Point[] = []): Point[] {
-  const fallbackAnchors: Point[] = [
-    { x: -0.5, y: 0 },
-    { x: 0.5, y: 0 },
-    { x: 0, y: -0.5 },
-    { x: 0, y: 0.5 },
-    { x: -0.5, y: -0.25 },
-    { x: 0.5, y: -0.25 },
-    { x: -0.5, y: 0.25 },
-    { x: 0.5, y: 0.25 }
-  ];
-  const safeCount = Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, Math.round(count || 0)));
-  return Array.from({ length: safeCount }, (_, index) => {
-    const source = sourceAnchors[index] ?? fallbackAnchors[index] ?? { x: 0, y: 0 };
-    return projectCustomDeviceTerminalAnchorToBoundary(source);
-  });
-}
-
-function createEmptyCustomDeviceDraft(attributeLibraryName = "交流设备"): CustomDeviceDraft {
-  return {
-    attributeLibraryName,
-    componentType: fallbackComponentTypeForAttributeLibrary(attributeLibraryName),
-    componentName: "",
-    backgroundImage: "",
-    backgroundImageAssetId: "",
-    size: { width: 104, height: 64 },
-    allowResizeTransform: "0",
-    terminalCount: 2,
-    terminalTypes: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, () => "ac") as TerminalType[],
-    terminalLabels: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, () => ""),
-    terminalAnchors: createDefaultCustomDeviceTerminalAnchors(2),
-    terminalRoles: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, () => "single-load") as ContainerTerminalRole[],
-    terminalAssociations: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, () => "ac-load") as ContainerTerminalAssociationValue[],
-    isContainer: false,
-    params: [],
-    stateDefinitions: [],
-    error: ""
-  };
-}
-
-function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, sectionName = resolveTemplateComponentType(template)): CustomDeviceDraft {
-  const attributeLibraryName = normalizeAttributeLibraryName(template.attributeLibrary);
-  const section = normalizeComponentTypeName(sectionName);
-  const terminalCount = Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, template.terminalCount));
-  const terminalTypes = (template.terminalTypes ?? Array.from({ length: template.terminalCount }, () => template.terminalType)).slice(0, MAX_CUSTOM_DEVICE_TERMINALS) as TerminalType[];
-  const terminalAssociations = normalizeContainerTerminalAssociations(
-    terminalTypes,
-    template.terminalAssociations ?? [],
-    terminalCount
-  );
-  const defaultDefinitions = new Set(customDefaultDefinitions(terminalTypes, {
-    isContainer: template.isContainer,
-    terminalAssociations
-  }).map((definition) => definition.enName.toLowerCase()));
-  const customParams = (template.parameterDefinitions ?? parseCustomDefinitions(template.params))
-    .filter((definition) =>
-      !defaultDefinitions.has(definition.enName.toLowerCase()) &&
-      definition.enName !== "component_type" &&
-      !isReservedDeviceDefinitionParamName(definition.enName)
-    )
-    .map((definition) => ({ ...definition, id: customParamId() }));
-  const stateRows = createDefinitionStateDraftRows(template);
-  return {
-    attributeLibraryName,
-    componentType: section,
-    componentName: template.label,
-    backgroundImage: template.params.backgroundImage ?? "",
-    backgroundImageAssetId: template.params.backgroundImageAssetId ?? "",
-    size: { ...template.size },
-    allowResizeTransform: templateResizeTransformValue(template),
-    terminalCount,
-    terminalTypes: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => terminalTypes[index] ?? "ac") as TerminalType[],
-    terminalLabels: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => template.terminalLabels?.[index] ?? ""),
-    terminalAnchors: createDefaultCustomDeviceTerminalAnchors(terminalCount, template.terminalAnchors),
-    terminalRoles: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => template.terminalRoles?.[index] ?? "single-load") as ContainerTerminalRole[],
-    terminalAssociations: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => terminalAssociations[index] ?? "ac-load") as ContainerTerminalAssociationValue[],
-    isContainer: Boolean(template.isContainer),
-    params: customParams,
-    stateDefinitions: stateRows,
-    error: template.custom ? "" : "当前选中的是系统内置元件，可查看并复制为新自定义元件，不能直接覆盖内置定义。"
-  };
-}
-
-function createDefinitionVisualDraft(template: DeviceTemplate): DeviceDefinitionVisualDraft {
-  const terminalCount = Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, Math.round(template.terminalCount || 0)));
-  const sourceTerminalTypes = (template.terminalTypes ?? Array.from({ length: terminalCount }, () => template.terminalType)).slice(0, terminalCount) as TerminalType[];
-  const terminalTypes = Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => sourceTerminalTypes[index] ?? template.terminalType ?? "ac") as TerminalType[];
-  return {
-    backgroundImage: template.params.backgroundImage ?? "",
-    backgroundImageAssetId: template.params.backgroundImageAssetId ?? "",
-    size: {
-      width: Math.max(1, Math.round(template.size.width || 104)),
-      height: Math.max(1, Math.round(template.size.height || 64))
-    },
-    terminalCount,
-    terminalTypes,
-    terminalLabels: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => {
-      const type = terminalTypes[index] ?? template.terminalType ?? "ac";
-      return template.terminalLabels?.[index] ?? `${TERMINAL_TYPE_LIBRARY_LABELS[type] ?? type}端${index + 1}`;
-    }),
-    terminalAnchors: createDefaultCustomDeviceTerminalAnchors(terminalCount, template.terminalAnchors),
-    error: ""
-  };
-}
-
-function defaultContainerAssociationForTerminalType(type: TerminalType): ContainerTerminalAssociationType {
-  return CONTAINER_TERMINAL_ASSOCIATION_OPTIONS[type][0].value;
-}
-
-function isAssociationAllowedForTerminal(type: TerminalType, association: ContainerTerminalAssociationValue): association is ContainerTerminalAssociationType {
-  return Boolean(association && CONTAINER_TERMINAL_ASSOCIATION_OPTIONS[type].some((option) => option.value === association));
-}
-
-function normalizeContainerTerminalAssociations(
-  terminalTypes: TerminalType[],
-  terminalAssociations: ContainerTerminalAssociationValue[],
-  terminalCount: number
-): ContainerTerminalAssociationValue[] {
-  const next = terminalAssociations.slice(0, terminalCount);
-  while (next.length < terminalCount) {
-    next.push(defaultContainerAssociationForTerminalType(terminalTypes[next.length] ?? "ac"));
-  }
-  for (let index = 0; index < terminalCount; index += 1) {
-    if (index > 0 && isDoubleContainerTerminalAssociation(next[index - 1])) {
-      next[index] = "";
-      continue;
-    }
-    const type = terminalTypes[index] ?? "ac";
-    if (!isAssociationAllowedForTerminal(type, next[index])) {
-      next[index] = defaultContainerAssociationForTerminalType(type);
-    }
-  }
-  return next;
-}
-
-function customDefaultDefinitions(
-  terminalTypes: TerminalType[],
-  options: {
-    isContainer?: boolean;
-    terminalRoles?: ContainerTerminalRole[];
-    terminalAssociations?: ContainerTerminalAssociationValue[];
-  } = {}
-): DeviceParameterDefinition[] {
-  return buildDefaultDeviceParameterDefinitions(terminalTypes, options);
-}
-
-function generateCustomDeviceImage(label: string, terminalTypes: TerminalType[]) {
-  const first = terminalTypes[0] ?? "ac";
-  const color = terminalColor(first);
-  const safeLabel = escapeXml(label || "Unit");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160"><rect width="240" height="160" rx="18" fill="#f8fafc"/><circle cx="70" cy="80" r="38" fill="${color}" fill-opacity="0.14"/><path d="M48 80h44M70 58v44" stroke="${color}" stroke-width="9" stroke-linecap="round"/><text x="132" y="77" font-family="Arial, Microsoft YaHei" font-size="22" font-weight="700" fill="#0f172a">${safeLabel}</text><text x="132" y="104" font-family="Arial" font-size="15" fill="${color}">${terminalTypes.map((type) => type.toUpperCase()).join(" / ")}</text></svg>`;
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
-const customDeviceGeneratedDefaultImageCandidates = (
-  componentLabel: string,
-  componentType: string,
-  terminalTypes: TerminalType[]
-) => {
-  const safeTerminalTypes = terminalTypes.length > 0 ? terminalTypes : (["ac"] as TerminalType[]);
-  const labels = Array.from(new Set([componentLabel, componentType, "Unit"].map((label) => label.trim()).filter(Boolean)));
-  return new Set(labels.map((label) => generateCustomDeviceImage(label, safeTerminalTypes)));
-};
-
-const syncInheritedCustomDeviceStateVisuals = (
-  states: DeviceStateDefinition[],
-  defaultVisual: { backgroundImage: string; backgroundImageAssetId: string },
-  generatedDefaultImageCandidates: ReadonlySet<string>
-): DeviceStateDefinition[] => {
-  if (!defaultVisual.backgroundImage || generatedDefaultImageCandidates.size === 0) {
-    return states;
-  }
-  return states.map((state) => {
-    const image = state.image || state.backgroundImage || "";
-    const assetId = state.imageAssetId || state.backgroundImageAssetId || "";
-    if (assetId || !image || image === defaultVisual.backgroundImage || !generatedDefaultImageCandidates.has(image)) {
-      return state;
-    }
-    const next: DeviceStateDefinition = {
-      ...state,
-      image: defaultVisual.backgroundImage,
-      backgroundImage: defaultVisual.backgroundImage
-    };
-    if (defaultVisual.backgroundImageAssetId) {
-      next.imageAssetId = defaultVisual.backgroundImageAssetId;
-      next.backgroundImageAssetId = defaultVisual.backgroundImageAssetId;
-    } else {
-      delete next.imageAssetId;
-      delete next.backgroundImageAssetId;
-    }
-    return next;
-  });
-};
-
-function parseCustomDefinitions(params: Record<string, string>): DeviceParameterDefinition[] {
-  try {
-    const parsed = JSON.parse(params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]");
-    return normalizeDefinitionRows(parsed);
-  } catch {
-    return [];
-  }
-}
-
-function screenToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number): Point {
-  const point = svg.createSVGPoint();
-  point.x = clientX;
-  point.y = clientY;
-  const matrix = svg.getScreenCTM();
-  if (!matrix) {
-    return { x: clientX, y: clientY };
-  }
-  const transformed = point.matrixTransform(matrix.inverse());
-  return { x: Math.round(transformed.x), y: Math.round(transformed.y) };
-}
-
-function primaryOrthogonalAxis(start: Point, point: Point): OrthogonalAxis {
-  const dx = point.x - start.x;
-  const dy = point.y - start.y;
-  return Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
-}
-
-function constrainPointToOrthogonalAxis(start: Point, point: Point, axis: OrthogonalAxis = primaryOrthogonalAxis(start, point)): Point {
-  return axis === "x" ? { x: point.x, y: start.y } : { x: start.x, y: point.y };
-}
-
-function downloadText(filename: string, text: string, mime: string) {
-  const blob = new Blob([text], { type: mime });
-  downloadBlob(filename, blob);
-}
-
-function downloadBlob(filename: string, blob: Blob) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-type SaveFilePickerWindow = Window & {
-  showSaveFilePicker?: (options?: {
-    id?: string;
-    suggestedName?: string;
-    types?: Array<{
-      description?: string;
-      accept: Record<string, string[]>;
-    }>;
-    excludeAcceptAllOption?: boolean;
-  }) => Promise<{
-    createWritable: () => Promise<{
-      write: (data: Blob) => Promise<void>;
-      close: () => Promise<void>;
-    }>;
-  }>;
-};
-
-type DirectoryFileHandle = {
-  createWritable: () => Promise<{
-    write: (data: Blob) => Promise<void> | void;
-    close: () => Promise<void> | void;
-  }>;
-};
-
-type WritableDirectoryHandle = {
-  getFileHandle: (name: string, options?: { create?: boolean }) => Promise<DirectoryFileHandle>;
-};
-
-type DirectoryPickerWindow = Window & {
-  showDirectoryPicker?: (options?: {
-    id?: string;
-    mode?: "read" | "readwrite";
-  }) => Promise<WritableDirectoryHandle>;
-};
-
-type TextSaveOptions = {
-  filename: string;
-  text: string;
-  mime: string;
-  description: string;
-  extensions: string[];
-};
-type BlobSaveOptions = {
-  filename: string;
-  blob: Blob;
-  mime: string;
-  description: string;
-  extensions: string[];
-  pickerId?: string;
-};
-type LazyBlobSaveOptions = Omit<BlobSaveOptions, "blob"> & {
-  loadBlob: () => Promise<Blob>;
-};
-
-const EXPORT_SAVE_PICKER_ID = "model-export";
 const SCHEME_EXPORT_DIRECTORY_PICKER_ID = "scheme-export";
-
-function isPickerAbort(error: unknown) {
-  return error instanceof DOMException && error.name === "AbortError";
-}
-
-async function saveTextFile(options: TextSaveOptions): Promise<boolean> {
-  const picker = (window as SaveFilePickerWindow).showSaveFilePicker;
-  if (typeof picker !== "function") {
-    downloadText(options.filename, options.text, options.mime);
-    return true;
-  }
-  try {
-    const handle = await picker.call(window, {
-      // Chromium uses this id to reopen the save dialog in the last directory used for this export purpose.
-      id: EXPORT_SAVE_PICKER_ID,
-      suggestedName: options.filename,
-      types: [
-        {
-          description: options.description,
-          accept: {
-            [options.mime]: options.extensions
-          }
-        }
-      ],
-      excludeAcceptAllOption: false
-    });
-    const writable = await handle.createWritable();
-    await writable.write(new Blob([options.text], { type: options.mime }));
-    await writable.close();
-    return true;
-  } catch (error) {
-    if (isPickerAbort(error)) {
-      return false;
-    }
-    window.alert("保存文件失败，已改为浏览器下载。");
-    downloadText(options.filename, options.text, options.mime);
-    return true;
-  }
-}
-
-async function saveBlobFile(options: BlobSaveOptions): Promise<boolean> {
-  return saveLazyBlobFile({
-    filename: options.filename,
-    mime: options.mime,
-    description: options.description,
-    extensions: options.extensions,
-    pickerId: options.pickerId,
-    loadBlob: async () => options.blob
-  });
-}
-
-async function saveLazyBlobFile(options: LazyBlobSaveOptions): Promise<boolean> {
-  const picker = (window as SaveFilePickerWindow).showSaveFilePicker;
-  if (typeof picker !== "function") {
-    downloadBlob(options.filename, await options.loadBlob());
-    return true;
-  }
-  let handle: Awaited<ReturnType<NonNullable<SaveFilePickerWindow["showSaveFilePicker"]>>>;
-  try {
-    handle = await picker.call(window, {
-      id: options.pickerId ?? EXPORT_SAVE_PICKER_ID,
-      suggestedName: options.filename,
-      types: [
-        {
-          description: options.description,
-          accept: {
-            [options.mime]: options.extensions
-          }
-        }
-      ],
-      excludeAcceptAllOption: false
-    });
-  } catch (error) {
-    if (isPickerAbort(error)) {
-      return false;
-    }
-    window.alert("打开保存窗口失败，已改为浏览器下载。");
-    downloadBlob(options.filename, await options.loadBlob());
-    return true;
-  }
-  const blob = await options.loadBlob();
-  try {
-    const writable = await handle.createWritable();
-    await writable.write(blob);
-    await writable.close();
-    return true;
-  } catch (error) {
-    if (isPickerAbort(error)) {
-      return false;
-    }
-    window.alert("保存文件失败，已改为浏览器下载。");
-    downloadBlob(options.filename, blob);
-    return true;
-  }
-}
-
-const writeTextFileToDirectory = async (
-  directoryHandle: WritableDirectoryHandle,
-  filename: string,
-  text: string,
-  mime: string
-) => {
-  const fileHandle = await directoryHandle.getFileHandle(filename, { create: true });
-  const writable = await fileHandle.createWritable();
-  await writable.write(new Blob([text], { type: mime }));
-  await writable.close();
-};
-
-function svgStrokeDashArray(style?: string) {
-  if (style === "dashed") {
-    return "10 6";
-  }
-  if (style === "dotted") {
-    return "2 6";
-  }
-  return undefined;
-}
-
-function escapeXml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-const BACKEND_IMAGE_HREF_PATTERN = /^\/api\/images\/([^/?#]+)/;
-const IMAGE_DATA_URL_PATTERN = /^data:image\//iu;
-
-function backendImageIdFromHref(value: string) {
-  const match = BACKEND_IMAGE_HREF_PATTERN.exec(String(value ?? "").trim());
-  if (!match) {
-    return "";
-  }
-  try {
-    return decodeURIComponent(match[1]);
-  } catch {
-    return match[1];
-  }
-}
-
-function isImageDataUrl(value: string) {
-  return IMAGE_DATA_URL_PATTERN.test(String(value ?? "").trim());
-}
-
-function imageArrayBufferToDataUrl(buffer: ArrayBuffer, mimeType = "image/png") {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = "";
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
-  }
-  return `data:${mimeType};base64,${window.btoa(binary)}`;
-}
 
 async function fetchBackendImageDataUrl(asset: ImageAsset) {
   const response = await fetch(asset.url || `/api/images/${encodeURIComponent(asset.id)}`);
@@ -6982,198 +4888,12 @@ function exportSvgImageHref(value: string, imageExportPathById: Record<string, s
   return imageExportPathById[id] || href;
 }
 
-function decodeBase64Text(value: string) {
-  try {
-    const decoder = globalThis.atob;
-    if (typeof decoder !== "function") {
-      return "";
-    }
-    const binary = decoder(value.replace(/\s+/g, ""));
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index);
-    }
-    return typeof TextDecoder === "undefined" ? binary : new TextDecoder().decode(bytes);
-  } catch {
-    return "";
-  }
-}
-
-function decodeSvgImageSource(value: string) {
-  const source = String(value ?? "").trim();
-  if (source.startsWith("<svg")) {
-    return source;
-  }
-  if (!/^data:image\/svg\+xml\b/iu.test(source)) {
-    return "";
-  }
-  const commaIndex = source.indexOf(",");
-  if (commaIndex < 0) {
-    return "";
-  }
-  const metadata = source.slice(0, commaIndex).toLowerCase();
-  const payload = source.slice(commaIndex + 1);
-  if (metadata.includes(";base64")) {
-    return decodeBase64Text(payload).trim();
-  }
-  try {
-    return decodeURIComponent(payload).trim();
-  } catch {
-    return payload.trim();
-  }
-}
-
-function svgRootAttributeValue(attributes: string, name: string) {
-  const pattern = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "iu");
-  const match = pattern.exec(attributes);
-  return match?.[1] ?? match?.[2] ?? "";
-}
-
-function svgLengthNumber(value: string) {
-  const parsed = Number.parseFloat(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-}
-
-function stripUnsafeInlineSvgMarkup(value: string) {
-  return value
-    .replace(/<script\b[\s\S]*?<\/script>/giu, "")
-    .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/giu, "")
-    .replace(/\s+(?:href|xlink:href)\s*=\s*(?:"javascript:[^"]*"|'javascript:[^']*')/giu, "");
-}
-
-function inlineSvgRootMarkup(
-  href: string,
-  options: { x: number; y: number; width: number; height: number; className: string; preserveAspectRatio?: string }
-) {
-  const source = stripUnsafeInlineSvgMarkup(
-    decodeSvgImageSource(href)
-      .replace(/^\uFEFF/u, "")
-      .replace(/^\s*<\?xml[\s\S]*?\?>/iu, "")
-      .replace(/^\s*<!doctype[\s\S]*?>/iu, "")
-      .trim()
-  );
-  const match = source.match(/<svg\b([^>]*)>([\s\S]*?)<\/svg\s*>/iu);
-  if (!match) {
-    return "";
-  }
-  const rootAttributes = match[1] ?? "";
-  const body = match[2] ?? "";
-  const filteredRootAttributes = rootAttributes
-    .replace(/\s+(?:x|y|width|height|preserveAspectRatio|class|id)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/giu, "")
-    .trim();
-  const width = svgLengthNumber(svgRootAttributeValue(rootAttributes, "width"));
-  const height = svgLengthNumber(svgRootAttributeValue(rootAttributes, "height"));
-  const viewBoxAttribute =
-    /\bviewBox\s*=/iu.test(rootAttributes) || width <= 0 || height <= 0
-      ? ""
-      : ` viewBox="0 0 ${formatSvgNumber(width)} ${formatSvgNumber(height)}"`;
-  const preservedAttributes = filteredRootAttributes ? ` ${filteredRootAttributes}` : "";
-  const inlineClassName = ["export-inline-svg-image", options.className].filter(Boolean).join(" ");
-  return `<svg class="${escapeXml(inlineClassName)}" x="${formatSvgNumber(options.x)}" y="${formatSvgNumber(options.y)}" width="${formatSvgNumber(options.width)}" height="${formatSvgNumber(options.height)}" preserveAspectRatio="${escapeXml(options.preserveAspectRatio ?? "xMidYMid slice")}"${viewBoxAttribute}${preservedAttributes}>${body}</svg>`;
-}
-
-function svgImageContentMarkup(
-  href: string,
-  options: { x: number; y: number; width: number; height: number; className?: string; preserveAspectRatio?: string }
-) {
-  if (!href) {
-    return "";
-  }
-  const className = options.className ?? "";
-  const inlineSvg = className ? inlineSvgRootMarkup(href, { ...options, className }) : "";
-  if (inlineSvg) {
-    return inlineSvg;
-  }
-  const classAttribute = className ? ` class="${escapeXml(className)}"` : "";
-  return `<image href="${escapeXml(href)}" x="${formatSvgNumber(options.x)}" y="${formatSvgNumber(options.y)}" width="${formatSvgNumber(options.width)}" height="${formatSvgNumber(options.height)}" preserveAspectRatio="${escapeXml(options.preserveAspectRatio ?? "xMidYMid slice")}"${classAttribute}/>`;
-}
-
-const SVG_ATTRIBUTE_NAMES: Record<string, string> = {
-  className: "class",
-  dominantBaseline: "dominant-baseline",
-  fillOpacity: "fill-opacity",
-  fontFamily: "font-family",
-  fontSize: "font-size",
-  fontStyle: "font-style",
-  fontWeight: "font-weight",
-  paintOrder: "paint-order",
-  strokeDasharray: "stroke-dasharray",
-  strokeLinecap: "stroke-linecap",
-  strokeLinejoin: "stroke-linejoin",
-  strokeWidth: "stroke-width",
-  textAnchor: "text-anchor",
-  textDecoration: "text-decoration"
-};
-
-function styleObjectToSvgAttribute(style: Record<string, string | number>) {
-  return Object.entries(style)
-    .map(([key, value]) => `${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}:${String(value)}`)
-    .join(";");
-}
-
-function renderSvgElementMarkup(value: unknown): string {
-  if (value === null || value === undefined || typeof value === "boolean") {
-    return "";
-  }
-  if (typeof value === "string" || typeof value === "number") {
-    return escapeXml(String(value));
-  }
-  if (Array.isArray(value)) {
-    return value.map(renderSvgElementMarkup).join("");
-  }
-  if (!isValidElement(value)) {
-    return "";
-  }
-  const props = value.props as Record<string, unknown>;
-  if (value.type === Fragment) {
-    return renderSvgElementMarkup(props.children);
-  }
-  if (typeof value.type !== "string") {
-    return "";
-  }
-  const attrs = Object.entries(props)
-    .filter(([key, attrValue]) => key !== "children" && key !== "key" && key !== "ref" && attrValue !== undefined && attrValue !== null && attrValue !== false)
-    .map(([key, attrValue]) => {
-      const attrName = SVG_ATTRIBUTE_NAMES[key] ?? key;
-      const renderedValue =
-        key === "style" && typeof attrValue === "object" && !Array.isArray(attrValue)
-          ? styleObjectToSvgAttribute(attrValue as Record<string, string | number>)
-          : attrValue === true
-            ? "true"
-            : String(attrValue);
-      return ` ${attrName}="${escapeXml(renderedValue)}"`;
-    })
-    .join("");
-  return `<${value.type}${attrs}>${renderSvgElementMarkup(props.children)}</${value.type}>`;
-}
-
-type DeviceGlyphMode = "full" | "geometry" | "text";
-type DeviceGlyphProps = {
-  node: ModelNode;
-  miniature?: boolean;
-  mode?: DeviceGlyphMode;
-  colorDisplayMode?: ColorDisplayMode;
-  colorPalette?: ColorPalette;
-  stateVisual?: DeviceStateVisual | null;
-};
-
-function formatSvgNumber(value: number) {
-  const rounded = Math.round(value * 100000) / 100000;
-  return String(Object.is(rounded, -0) ? 0 : rounded);
-}
 
 function nodeGeometryTransform(node: ModelNode) {
   if (isRoutableLineDeviceKind(node.kind)) {
     return "rotate(0) scale(1 1)";
   }
   return `rotate(${formatSvgNumber(node.rotation)}) scale(${formatSvgNumber(getNodeScaleX(node))} ${formatSvgNumber(getNodeScaleY(node))})`;
-}
-
-function routableLineDeviceRenderLocalPoints(node: ModelNode) {
-  return routableLineDeviceCanvasPoints(node).map((point) => ({
-    x: Number(formatSvgNumber(point.x - node.position.x)),
-    y: Number(formatSvgNumber(point.y - node.position.y))
-  }));
 }
 
 function nodeUprightScaleTransform(node: ModelNode) {
@@ -7200,133 +4920,6 @@ function backgroundPageCanvasTransform(sourceBounds: CanvasBounds, targetBounds:
   const x = (targetWidth - sourceWidth * safeScale) / 2;
   const y = (targetHeight - sourceHeight * safeScale) / 2;
   return `translate(${formatSvgNumber(x)} ${formatSvgNumber(y)}) scale(${formatSvgNumber(safeScale)})`;
-}
-
-function numericNodeParam(node: ModelNode, key: string, fallback: number) {
-  const parsed = Number(node.params[key]);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function nodeLabelOffset(node: ModelNode): Point {
-  return {
-    x: numericNodeParam(node, "_labelX", 0),
-    y: numericNodeParam(node, "_labelY", Math.round(node.size.height / 2 + 22))
-  };
-}
-
-const nodeLabelText = (node: ModelNode) => node.params._labelText ?? node.name;
-
-const nodeLabelVisible = (node: ModelNode) => !isStaticNode(node) && node.params._labelVisible !== "0";
-
-function normalizeNodeLabelDisplayMode(value: string | undefined): NodeLabelDisplayMode {
-  return value === "always" || value === "hidden" || value === "follow" ? value : "follow";
-}
-
-const nodeLabelDisplayMode = (node: ModelNode): NodeLabelDisplayMode => {
-  const mode = node.params._labelDisplayMode;
-  if (mode === "always" || mode === "hidden" || mode === "follow") {
-    return mode;
-  }
-  return node.params._labelVisible === "0" ? "hidden" : "follow";
-};
-
-const nodeLabelShouldRender = (node: ModelNode, globalVisible: boolean) => {
-  if (!nodeLabelVisible(node)) {
-    return false;
-  }
-  const mode = nodeLabelDisplayMode(node);
-  return mode === "always" || (mode === "follow" && globalVisible);
-};
-
-function normalizeNodeLabelRotation(value: string | number | undefined) {
-  const parsed = typeof value === "number" ? value : Number(value ?? 0);
-  const snapped = Math.round((Number.isFinite(parsed) ? parsed : 0) / 90) * 90;
-  return ((snapped % 360) + 360) % 360;
-}
-
-const nodeLabelVertical = (node: ModelNode) => {
-  const rotation = normalizeNodeLabelRotation(node.params._labelRotation);
-  return rotation === 90 || rotation === 270;
-};
-
-const nodeLabelNumericTokenPattern = String.raw`\d+(?:[./:：-]\d+)*`;
-const nodeLabelNumericTokenRegex = new RegExp(`^${nodeLabelNumericTokenPattern}`);
-
-function nodeLabelVerticalSegments(text: string) {
-  const segments: Array<{ text: string; numeric: boolean }> = [];
-  let remaining = text;
-  while (remaining) {
-    const numericMatch = remaining.match(nodeLabelNumericTokenRegex);
-    if (numericMatch?.[0]) {
-      segments.push({ text: numericMatch[0], numeric: true });
-      remaining = remaining.slice(numericMatch[0].length);
-      continue;
-    }
-    const [char] = Array.from(remaining);
-    if (!char) {
-      break;
-    }
-    segments.push({ text: char, numeric: false });
-    remaining = remaining.slice(char.length);
-  }
-  return segments;
-}
-
-function nodeLabelVerticalTokenY(index: number, count: number, node: ModelNode) {
-  const step = nodeLabelFontSize(node) * 1.2;
-  return (index - (count - 1) / 2) * step;
-}
-
-const nodeLabelTransform = (node: ModelNode) => {
-  const offset = nodeLabelOffset(node);
-  const scaleX = Math.abs(getNodeScaleX(node)) || 1;
-  const scaleY = Math.abs(getNodeScaleY(node)) || 1;
-  return `translate(${formatSvgNumber(offset.x * scaleX)} ${formatSvgNumber(offset.y * scaleY)})`;
-};
-
-function nodeLabelCanvasCenter(node: ModelNode): Point {
-  const offset = nodeLabelOffset(node);
-  return {
-    x: node.position.x + offset.x * (Math.abs(getNodeScaleX(node)) || 1),
-    y: node.position.y + offset.y * (Math.abs(getNodeScaleY(node)) || 1)
-  };
-}
-
-const nodeLabelRotationFromPoint = (center: Point, point: Point) =>
-  normalizeNodeLabelRotation((Math.atan2(point.y - center.y, point.x - center.x) * 180) / Math.PI + 90);
-
-function nodeLabelTextAnchor(node: ModelNode) {
-  const anchor = node.params._labelTextAnchor;
-  return anchor === "start" || anchor === "end" || anchor === "middle" ? anchor : "middle";
-}
-
-function nodeLabelFontSize(node: ModelNode) {
-  const baseSize = numericNodeParam(node, "_labelFontSize", DEFAULT_DEVICE_LABEL_FONT_SIZE);
-  const scaleX = Math.abs(getNodeScaleX(node)) || 1;
-  const scaleY = Math.abs(getNodeScaleY(node)) || 1;
-  return baseSize * Math.sqrt(scaleX * scaleY);
-}
-
-function nodeLabelTextStyle(node: ModelNode): CSSProperties {
-  return {
-    fill: node.params._labelColor || "#334155",
-    fontFamily: node.params._labelFontFamily || "Arial",
-    fontSize: nodeLabelFontSize(node),
-    fontWeight: node.params._labelFontWeight || "500",
-    fontStyle: node.params._labelFontStyle || "normal",
-    textDecoration: node.params._labelTextDecoration || "none",
-    writingMode: nodeLabelVertical(node) ? "vertical-rl" : "horizontal-tb",
-    textOrientation: nodeLabelVertical(node) ? "upright" : undefined,
-    userSelect: "none"
-  };
-}
-
-function nodeLabelVerticalTokenStyle(node: ModelNode): CSSProperties {
-  return {
-    ...nodeLabelTextStyle(node),
-    writingMode: "horizontal-tb",
-    textOrientation: "mixed"
-  };
 }
 
 function nodeTransformedHalfExtents(node: ModelNode, includeUprightContent = false) {
@@ -7616,187 +5209,6 @@ function nodeVisualInteractionBounds(
   });
 }
 
-function nodeCounterTransformMatrix(node: ModelNode, preserveScale = true) {
-  const scaleX = getNodeScaleX(node) || 1;
-  const scaleY = getNodeScaleY(node) || 1;
-  const desiredScale = preserveScale ? Math.sqrt((Math.abs(scaleX) || 1) * (Math.abs(scaleY) || 1)) : 1;
-  const desiredScaleX = desiredScale;
-  const desiredScaleY = desiredScale;
-  const radians = (node.rotation * Math.PI) / 180;
-  const cos = Math.cos(radians);
-  const sin = Math.sin(radians);
-  const a = (cos * desiredScaleX) / scaleX;
-  const b = (-sin * desiredScaleX) / scaleY;
-  const c = (sin * desiredScaleY) / scaleX;
-  const d = (cos * desiredScaleY) / scaleY;
-  return `matrix(${formatSvgNumber(a)} ${formatSvgNumber(b)} ${formatSvgNumber(c)} ${formatSvgNumber(d)} 0 0)`;
-}
-
-function uprightText(
-  node: ModelNode,
-  x: number,
-  y: number,
-  props: Record<string, string | number | CSSProperties | undefined>,
-  children: ReactNode
-) {
-  const { style, ...textProps } = props;
-  return (
-    <g transform={`translate(${formatSvgNumber(x)} ${formatSvgNumber(y)}) ${nodeCounterTransformMatrix(node)}`}>
-      <text x="0" y="0" {...textProps} style={style as CSSProperties | undefined}>
-        {children}
-      </text>
-    </g>
-  );
-}
-
-function staticNumericParam(node: ModelNode, key: string, fallback: number, min = 0): number {
-  const parsed = Number(node.params[key]);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  return Math.max(min, parsed);
-}
-
-function staticSymbolShadowStyle(node: ModelNode): CSSProperties | undefined {
-  return node.params.shadowEnabled === "1"
-    ? { filter: "drop-shadow(0 4px 8px rgba(15, 23, 42, 0.18))" }
-    : undefined;
-}
-
-function staticSymbolTextValue(node: ModelNode, fallback: string): string {
-  return node.params.text ?? fallback;
-}
-
-function staticSymbolMiniatureTextValue(node: ModelNode, fallback: string): string {
-  return node.params.text === undefined ? fallback : node.params.text.slice(0, 2);
-}
-
-function staticShapeText(node: ModelNode, width: number, height: number, miniature = false) {
-  const fontSize = miniature ? 12 : staticNumericParam(node, "fontSize", 16, 8);
-  const padding = Math.min(staticNumericParam(node, "padding", 12, 0), Math.max(0, Math.min(width, height) / 2 - 2));
-  const align = node.params.textAlign || "center";
-  const verticalAlign = node.params.verticalAlign || "middle";
-  const textAnchor = align === "left" ? "start" : align === "right" ? "end" : "middle";
-  const x = align === "left" ? -width / 2 + padding : align === "right" ? width / 2 - padding : 0;
-  const y =
-    verticalAlign === "top"
-      ? -height / 2 + padding + fontSize / 2
-      : verticalAlign === "bottom"
-        ? height / 2 - padding - fontSize / 2
-        : 0;
-  const text = miniature ? staticSymbolMiniatureTextValue(node, "图元") : staticSymbolTextValue(node, node.name);
-  const lines = text.split(/\r?\n/);
-  return uprightText(
-    node,
-    x,
-    y - ((lines.length - 1) * fontSize * 0.6),
-    {
-      fill: node.params.textColor || "#111827",
-      fontSize,
-      fontFamily: node.params.fontFamily || "Arial",
-      fontWeight: node.params.fontWeight || "500",
-      fontStyle: node.params.fontStyle || "normal",
-      textDecoration: node.params.textDecoration || "none",
-      textAnchor,
-      dominantBaseline: "middle",
-      style: { userSelect: "none", pointerEvents: "none" }
-    },
-    <>
-      {lines.map((line, index) => (
-        <tspan key={index} x="0" dy={index === 0 ? 0 : fontSize * 1.2}>
-          {line || " "}
-        </tspan>
-      ))}
-    </>
-  );
-}
-
-function estimateSvgTextWidth(text: string, fontSize: number): number {
-  return Array.from(text).reduce((total, char) => total + (/^[\u0000-\u00ff]$/.test(char) ? 0.56 : 1), 0) * fontSize;
-}
-
-function staticConnectorMarker(
-  marker: string,
-  x: number,
-  y: number,
-  directionX: number,
-  directionY: number,
-  size: number,
-  color: string,
-  lineWidth: number
-): ReactNode {
-  if (marker === "dot") {
-    return <circle cx={x} cy={y} r={Math.max(size * 0.36, lineWidth * 1.4)} fill={color} stroke={color} />;
-  }
-  if (marker !== "arrow") {
-    return null;
-  }
-  const length = Math.hypot(directionX, directionY) || 1;
-  const ux = directionX / length;
-  const uy = directionY / length;
-  const px = -uy;
-  const py = ux;
-  const baseX = x - ux * size;
-  const baseY = y - uy * size;
-  const halfWidth = size * 0.42;
-  const points = `${x},${y} ${baseX + px * halfWidth},${baseY + py * halfWidth} ${baseX - px * halfWidth},${baseY - py * halfWidth}`;
-  return <polygon points={points} fill={color} stroke={color} strokeLinejoin="round" />;
-}
-
-function staticConnectorPath(
-  node: ModelNode,
-  points: Point[],
-  stroke: string,
-  lineWidth: number,
-  dashArray: string | undefined
-) {
-  const markerStart = node.params.markerStart || "none";
-  const markerEnd = node.params.markerEnd || "none";
-  const arrowSize = staticNumericParam(node, "arrowSize", 10, 4);
-  const pathData = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
-  const first = points[0];
-  const second = points[1] ?? first;
-  const previous = points[points.length - 2] ?? first;
-  const last = points[points.length - 1] ?? first;
-  return (
-    <g>
-      <path d={pathData} fill="none" stroke={stroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" strokeLinejoin="round" />
-      {staticConnectorMarker(markerStart, first.x, first.y, first.x - second.x, first.y - second.y, arrowSize, stroke, lineWidth)}
-      {staticConnectorMarker(markerEnd, last.x, last.y, last.x - previous.x, last.y - previous.y, arrowSize, stroke, lineWidth)}
-    </g>
-  );
-}
-
-function staticDrawPointsForNode(node: ModelNode, fallback: Point[]) {
-  const customPoints = parseStaticDrawPoints(node.params[STATIC_DRAW_POINTS_PARAM]);
-  return customPoints.length >= 2 ? customPoints : fallback;
-}
-
-function staticHandleDot(node: ModelNode, x: number, y: number, stroke = "#ffffff") {
-  const size = staticNumericParam(node, "handleSize", 8, 3);
-  const color = node.params.handleColor || node.params.accentColor || "#2563eb";
-  return <circle cx={x} cy={y} r={size / 2} fill={color} stroke={stroke} strokeWidth="2" />;
-}
-
-function staticFrameHandles(node: ModelNode, width: number, height: number) {
-  return (
-    <>
-      {[
-        [-width / 2, -height / 2],
-        [0, -height / 2],
-        [width / 2, -height / 2],
-        [width / 2, 0],
-        [width / 2, height / 2],
-        [0, height / 2],
-        [-width / 2, height / 2],
-        [-width / 2, 0]
-      ].map(([x, y], index) => (
-        <g key={index}>{staticHandleDot(node, x, y, node.params.accentColor || "#2563eb")}</g>
-      ))}
-    </>
-  );
-}
-
 function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorDisplayMode = "energy", colorPalette: ColorPalette = DEFAULT_COLOR_PALETTE) {
   if (isBusNode(node) || isStaticNode(node) || isRoutableLineDeviceKind(node.kind)) {
     return "";
@@ -7822,1670 +5234,6 @@ function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorDisplayM
     .join("\n");
 }
 
-const DEVICE_GLYPH_DESIGN_LONGEST_SIDE = 100;
-
-function renderBusGlyphRect(width: number, height: number, color: string) {
-  const thickness = Math.max(8, height / 3);
-  return <rect className="bus-glyph" x={-width / 2} y={-thickness / 2} width={width} height={thickness} fill={color} stroke={color} strokeWidth="0" />;
-}
-
-function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode = "energy", colorPalette = DEFAULT_COLOR_PALETTE, stateVisual = null }: DeviceGlyphProps) {
-  const rawW = miniature ? 58 : node.size.width;
-  const rawH = miniature ? 38 : node.size.height;
-  const isStaticGlyph = isStaticNode(node);
-  const isRoutableLineGlyph = isRoutableLineDeviceKind(node.kind);
-  const glyphContentScale = miniature || isStaticGlyph || isRoutableLineGlyph
-    ? 1
-    : Math.max(1, Math.max(rawW, rawH) / DEVICE_GLYPH_DESIGN_LONGEST_SIDE);
-  const w = rawW / glyphContentScale;
-  const h = rawH / glyphContentScale;
-  const glyphVariant = getDeviceGlyphVariant(node.kind);
-  const renderGeometry = mode !== "text";
-  const renderText = mode !== "geometry";
-  const stateColor = stateVisual?.color?.trim();
-  const stroke = stateVisual?.strokeColor || stateColor || getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
-  const baseFill = glyphVariant.includes("converter")
-    ? "#ecfeff"
-    : glyphVariant === "ac-generator"
-      ? "#eff6ff"
-      : glyphVariant === "dc-generator"
-        ? "#ecfdf5"
-        : glyphVariant === "battery-storage"
-          ? "#f0fdf4"
-          : glyphVariant === "diesel-source"
-            ? "#fff7ed"
-          : glyphVariant.startsWith("hydrogen")
-            ? "#faf5ff"
-            : glyphVariant.startsWith("heat")
-              ? "#fff1f2"
-              : glyphVariant === "switch" || glyphVariant === "disconnector"
-                ? "#fff7ed"
-                : glyphVariant === "ground-disconnector" || glyphVariant === "ground-disconnector-vertical"
-                  ? "#fff7ed"
-                  : glyphVariant === "terminal-transformer-load"
-                    ? "#f8fafc"
-                    : glyphVariant === "box-breaker"
-                      ? "#f8fafc"
-                      : glyphVariant === "breaker"
-                      ? "#eef2ff"
-                      : "#ffffff";
-  const fill = stateVisual?.fillColor || baseFill;
-  const stateText = stateVisualText(stateVisual);
-  const stateTextFill = stateVisual?.textColor || stateColor || stroke;
-  const renderStateTextOverlay = () => stateText
-    ? uprightText(
-        node,
-        0,
-        0,
-        {
-          fill: stateTextFill,
-          fontSize: miniature ? 11 : Math.max(10, Math.min(22, Math.min(w, h) * 0.34)),
-          fontWeight: "800",
-          textAnchor: "middle",
-          dominantBaseline: "middle",
-          paintOrder: "stroke",
-          stroke: "rgba(255,255,255,0.88)",
-          strokeWidth: 3,
-          strokeLinejoin: "round"
-        },
-        stateText
-      )
-    : null;
-
-  const renderDeviceGlyphContent = (): ReactNode => {
-    if (stateText && mode === "text") {
-      return renderStateTextOverlay();
-    }
-    if (isRoutableLineGlyph) {
-      if (mode === "text") {
-        return null;
-      }
-      const routePoints = miniature
-        ? [{ x: -w / 2 + 6, y: 0 }, { x: w / 2 - 6, y: 0 }]
-        : routableLineDeviceRenderLocalPoints(node);
-      if (routePoints.length < 2) {
-        return null;
-      }
-      const inverseGlyphScaleTransform = glyphContentScale === 1 || miniature
-        ? undefined
-        : `scale(${formatSvgNumber(1 / glyphContentScale)})`;
-      return (
-        <g
-          className="routable-line-device-glyph"
-          transform={inverseGlyphScaleTransform}
-          fill="none"
-          stroke={stroke}
-          strokeWidth={getDeviceStrokeWidth(node)}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d={pointsToOrthogonalPath(routePoints)} />
-        </g>
-      );
-    }
-    if (isStaticGlyph) {
-    const staticStroke = node.params.strokeColor || stroke;
-    const staticFill = node.params.fillColor || "transparent";
-    const lineWidth = Number(node.params.lineWidth || 2);
-    const dashArray = svgStrokeDashArray(node.params.strokeStyle);
-    const cornerRadius = staticNumericParam(node, "cornerRadius", 8, 0);
-    const accentColor = node.params.accentColor || staticStroke;
-    const hasStaticText = Boolean(node.params.text?.trim());
-    if (node.kind === "static-text") {
-      if (!renderText) {
-        return null;
-      }
-      const fontSize = miniature ? 18 : Number(node.params.fontSize || 24);
-      const textLines = (miniature ? "文" : staticSymbolTextValue(node, node.name)).split(/\r?\n/);
-      return uprightText(
-        node,
-        0,
-        -((textLines.length - 1) * fontSize * 0.6),
-        {
-          fill: node.params.textColor || staticStroke,
-          fontSize,
-          fontFamily: node.params.fontFamily || "Arial",
-          fontWeight: node.params.fontWeight || "400",
-          fontStyle: node.params.fontStyle || "normal",
-          textDecoration: node.params.textDecoration || "none",
-          textAnchor: "middle",
-          dominantBaseline: "middle",
-          style: { userSelect: "none" }
-        },
-        <>
-          {textLines.map((line, index) => (
-            <tspan key={index} x="0" dy={index === 0 ? 0 : fontSize * 1.2}>
-              {line || " "}
-            </tspan>
-          ))}
-        </>
-      );
-    }
-    if (node.kind === "static-line") {
-      const points = staticDrawPointsForNode(node, [{ x: -w / 2, y: 0 }, { x: w / 2, y: 0 }]);
-      return renderGeometry ? staticConnectorPath(node, points, staticStroke, lineWidth, dashArray) : null;
-    }
-    if (node.kind === "static-polyline") {
-      const points = staticDrawPointsForNode(node, [
-        { x: -w / 2, y: h / 3 },
-        { x: 0, y: -h / 3 },
-        { x: w / 2, y: h / 3 }
-      ]);
-      return renderGeometry ? staticConnectorPath(node, points, staticStroke, lineWidth, dashArray) : null;
-    }
-    if (node.kind === "static-circle") {
-      return renderGeometry ? <circle cx="0" cy="0" r={Math.min(w, h) / 2} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} /> : null;
-    }
-    if (node.kind === "static-ellipse") {
-      return renderGeometry ? <ellipse cx="0" cy="0" rx={w / 2} ry={h / 2} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} /> : null;
-    }
-    if (node.kind === "static-image") {
-      if (mode === "text") {
-        return !node.params.backgroundImage
-          ? uprightText(
-              node,
-              0,
-              0,
-              {
-                fill: node.params.textColor || "#64748b",
-                fontSize: miniature ? 14 : Number(node.params.fontSize || 16),
-                textAnchor: "middle",
-                dominantBaseline: "middle"
-              },
-              "图片"
-            )
-          : null;
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      return (
-        <g>
-          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="4" fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          {renderText && !node.params.backgroundImage && uprightText(node, 0, 0, { fill: node.params.textColor || "#64748b", fontSize: miniature ? 14 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, "图片")}
-        </g>
-      );
-    }
-    if (node.kind === "static-rounded-rect") {
-      if (mode === "text") {
-        return staticShapeText(node, w, h, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      return (
-        <g style={staticSymbolShadowStyle(node)}>
-          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          {renderText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-diamond") {
-      if (mode === "text") {
-        return staticShapeText(node, w, h, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const points = `0,${-h / 2} ${w / 2},0 0,${h / 2} ${-w / 2},0`;
-      return (
-        <g style={staticSymbolShadowStyle(node)}>
-          <polygon points={points} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinejoin="round" />
-          {renderText && staticShapeText(node, w * 0.7, h * 0.7, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-pill") {
-      if (mode === "text") {
-        return staticShapeText(node, w, h, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      return (
-        <g style={staticSymbolShadowStyle(node)}>
-          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={h / 2} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          {renderText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-database") {
-      if (mode === "text") {
-        return staticShapeText(node, w, h * 0.72, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const capHeight = Math.max(14, h * 0.22);
-      return (
-        <g style={staticSymbolShadowStyle(node)} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinejoin="round">
-          <path d={`M ${-w / 2} ${-h / 2 + capHeight / 2} V ${h / 2 - capHeight / 2} C ${-w / 2} ${h / 2 + capHeight * 0.22}, ${w / 2} ${h / 2 + capHeight * 0.22}, ${w / 2} ${h / 2 - capHeight / 2} V ${-h / 2 + capHeight / 2}`} />
-          <ellipse cx="0" cy={-h / 2 + capHeight / 2} rx={w / 2} ry={capHeight / 2} />
-          <path d={`M ${-w / 2} ${-h / 2 + capHeight / 2} C ${-w / 2} ${-h / 2 + capHeight * 1.22}, ${w / 2} ${-h / 2 + capHeight * 1.22}, ${w / 2} ${-h / 2 + capHeight / 2}`} fill="none" stroke={accentColor} />
-          {renderText && staticShapeText(node, w, h * 0.68, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-document") {
-      if (mode === "text") {
-        return staticShapeText(node, w, h, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const fold = Math.min(24, Math.min(w, h) * 0.22);
-      return (
-        <g style={staticSymbolShadowStyle(node)} strokeLinejoin="round">
-          <path d={`M ${-w / 2} ${-h / 2} H ${w / 2 - fold} L ${w / 2} ${-h / 2 + fold} V ${h / 2} H ${-w / 2} Z`} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          <path d={`M ${w / 2 - fold} ${-h / 2} V ${-h / 2 + fold} H ${w / 2}`} fill="none" stroke={accentColor} strokeWidth={lineWidth} />
-          <path d={`M ${-w / 2 + 16} ${-h / 2 + 34} H ${w / 2 - 16} M ${-w / 2 + 16} ${-h / 2 + 50} H ${w / 2 - 16} M ${-w / 2 + 16} ${-h / 2 + 66} H ${w / 2 - 28}`} stroke={accentColor} strokeWidth={Math.max(1, lineWidth * 0.8)} strokeLinecap="round" />
-          {renderText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-note") {
-      if (mode === "text") {
-        return staticShapeText(node, w, h, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const fold = Math.min(22, Math.min(w, h) * 0.24);
-      return (
-        <g style={staticSymbolShadowStyle(node)} strokeLinejoin="round">
-          <path d={`M ${-w / 2} ${-h / 2} H ${w / 2} V ${h / 2 - fold} L ${w / 2 - fold} ${h / 2} H ${-w / 2} Z`} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          <path d={`M ${w / 2} ${h / 2 - fold} H ${w / 2 - fold} V ${h / 2}`} fill="none" stroke={accentColor} strokeWidth={lineWidth} />
-          {renderText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-group-box") {
-      if (mode === "text") {
-        return staticShapeText(node, w, h, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const fontSize = miniature ? 12 : staticNumericParam(node, "fontSize", 16, 8);
-      const padding = Math.min(staticNumericParam(node, "padding", 12, 0), Math.max(0, Math.min(w, h) / 2 - 2));
-      const title = (miniature ? staticSymbolMiniatureTextValue(node, "图元") : staticSymbolTextValue(node, node.name)).split(/\r?\n/)[0]?.trim() ?? "";
-      const titleWidth = title ? estimateSvgTextWidth(title, fontSize) : 0;
-      const ruleLeft = -w / 2 + padding + titleWidth + Math.max(12, fontSize * 0.6);
-      const ruleRight = w / 2 - 12;
-      const ruleY = -h / 2 + 24;
-      return (
-        <g>
-          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray || "6 4"} />
-          {ruleLeft < ruleRight - 8 && (
-            <path className="static-group-box-header-rule" d={`M ${ruleLeft} ${ruleY} H ${ruleRight}`} stroke={accentColor} strokeWidth={Math.max(1, lineWidth)} strokeLinecap="round" />
-          )}
-          {renderText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-swimlane") {
-      if (mode === "text") {
-        return staticShapeText(node, w, h, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const headerHeight = Math.max(28, Math.min(h * 0.32, 42));
-      return (
-        <g style={staticSymbolShadowStyle(node)}>
-          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          <rect x={-w / 2} y={-h / 2} width={w} height={headerHeight} rx={cornerRadius} fill={accentColor} stroke="none" />
-          <path d={`M ${-w / 2} ${-h / 2 + headerHeight} H ${w / 2}`} stroke={staticStroke} strokeWidth={lineWidth} />
-          {renderText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-point") {
-      if (mode === "text") {
-        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const radius = Math.max(4, Math.min(w, h) / 2 - lineWidth / 2);
-      return (
-        <g>
-          <circle cx="0" cy="0" r={radius} fill={staticFill || accentColor} stroke={staticStroke} strokeWidth={lineWidth} />
-          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-ring") {
-      if (mode === "text") {
-        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const radius = Math.max(5, Math.min(w, h) / 2 - lineWidth / 2);
-      return (
-        <g>
-          <circle cx="0" cy="0" r={radius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          <circle cx="0" cy="0" r={Math.max(1.8, radius * 0.28)} fill={accentColor} stroke="none" />
-          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-circle-node") {
-      if (mode === "text") {
-        return staticShapeText(node, Math.min(w, h), Math.min(w, h), miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const radius = Math.max(8, Math.min(w, h) / 2 - lineWidth / 2);
-      return (
-        <g style={staticSymbolShadowStyle(node)}>
-          <circle cx="0" cy="0" r={radius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          {renderText && staticShapeText(node, radius * 1.45, radius * 1.45, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-straight-connector") {
-      if (mode === "text") {
-        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const points = staticDrawPointsForNode(node, [{ x: -w / 2, y: 0 }, { x: w / 2, y: 0 }]);
-      return (
-        <g>
-          {staticConnectorPath(node, points, staticStroke, lineWidth, dashArray)}
-          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-arrow-connector") {
-      if (mode === "text") {
-        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const points = staticDrawPointsForNode(node, [{ x: -w / 2, y: 0 }, { x: w / 2, y: 0 }]);
-      return (
-        <g>
-          {staticConnectorPath(node, points, staticStroke, lineWidth, dashArray)}
-          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-double-arrow-connector") {
-      if (mode === "text") {
-        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const points = staticDrawPointsForNode(node, [{ x: -w / 2, y: 0 }, { x: w / 2, y: 0 }]);
-      return (
-        <g>
-          {staticConnectorPath(node, points, staticStroke, lineWidth, dashArray)}
-          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-elbow-connector") {
-      if (mode === "text") {
-        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const points = staticDrawPointsForNode(node, [
-        { x: -w / 2, y: h / 3 },
-        { x: -w / 6, y: h / 3 },
-        { x: -w / 6, y: -h / 3 },
-        { x: w / 2, y: -h / 3 }
-      ]);
-      return (
-        <g>
-          {staticConnectorPath(node, points, staticStroke, lineWidth, dashArray)}
-          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-hexagon") {
-      if (mode === "text") {
-        return staticShapeText(node, w * 0.78, h, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const inset = w * 0.18;
-      const points = `${-w / 2 + inset},${-h / 2} ${w / 2 - inset},${-h / 2} ${w / 2},0 ${w / 2 - inset},${h / 2} ${-w / 2 + inset},${h / 2} ${-w / 2},0`;
-      return (
-        <g style={staticSymbolShadowStyle(node)}>
-          <polygon points={points} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinejoin="round" />
-          {renderText && staticShapeText(node, w * 0.78, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-parallelogram") {
-      if (mode === "text") {
-        return staticShapeText(node, w * 0.76, h, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const skew = w * 0.18;
-      const points = `${-w / 2 + skew},${-h / 2} ${w / 2},${-h / 2} ${w / 2 - skew},${h / 2} ${-w / 2},${h / 2}`;
-      return (
-        <g style={staticSymbolShadowStyle(node)}>
-          <polygon points={points} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinejoin="round" />
-          {renderText && staticShapeText(node, w * 0.72, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-triangle") {
-      if (mode === "text") {
-        return staticShapeText(node, w * 0.66, h * 0.66, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const points = `0,${-h / 2} ${w / 2},${h / 2} ${-w / 2},${h / 2}`;
-      return (
-        <g style={staticSymbolShadowStyle(node)}>
-          <polygon points={points} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinejoin="round" />
-          {renderText && staticShapeText(node, w * 0.66, h * 0.58, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-callout") {
-      if (mode === "text") {
-        return staticShapeText(node, w, h * 0.82, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const tail = Math.min(24, h * 0.26);
-      const bodyBottom = h / 2 - tail;
-      const path = `M ${-w / 2 + cornerRadius} ${-h / 2} H ${w / 2 - cornerRadius} Q ${w / 2} ${-h / 2} ${w / 2} ${-h / 2 + cornerRadius} V ${bodyBottom - cornerRadius} Q ${w / 2} ${bodyBottom} ${w / 2 - cornerRadius} ${bodyBottom} H ${w * 0.1} L ${-w * 0.08} ${h / 2} L ${-w * 0.08} ${bodyBottom} H ${-w / 2 + cornerRadius} Q ${-w / 2} ${bodyBottom} ${-w / 2} ${bodyBottom - cornerRadius} V ${-h / 2 + cornerRadius} Q ${-w / 2} ${-h / 2} ${-w / 2 + cornerRadius} ${-h / 2} Z`;
-      return (
-        <g style={staticSymbolShadowStyle(node)}>
-          <path d={path} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinejoin="round" />
-          <path d={`M ${-w / 2 + 14} ${-h / 2 + 24} H ${w / 2 - 14}`} stroke={accentColor} strokeWidth={Math.max(1, lineWidth)} strokeLinecap="round" />
-          {renderText && staticShapeText(node, w, h * 0.82, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-default-node") {
-      if (mode === "text") {
-        return staticShapeText(node, w, h, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      return (
-        <g style={staticSymbolShadowStyle(node)}>
-          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          {staticHandleDot(node, -w / 2, 0)}
-          {staticHandleDot(node, w / 2, 0)}
-          {renderText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-input-node") {
-      if (mode === "text") {
-        return staticShapeText(node, w, h, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      return (
-        <g style={staticSymbolShadowStyle(node)}>
-          <path d={`M ${-w / 2 + 14} ${-h / 2} H ${w / 2} V ${h / 2} H ${-w / 2 + 14} L ${-w / 2} 0 Z`} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinejoin="round" />
-          {staticHandleDot(node, w / 2, 0)}
-          {renderText && staticShapeText(node, w * 0.78, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-output-node") {
-      if (mode === "text") {
-        return staticShapeText(node, w, h, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      return (
-        <g style={staticSymbolShadowStyle(node)}>
-          <path d={`M ${-w / 2} ${-h / 2} H ${w / 2 - 14} L ${w / 2} 0 L ${w / 2 - 14} ${h / 2} H ${-w / 2} Z`} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinejoin="round" />
-          {staticHandleDot(node, -w / 2, 0)}
-          {renderText && staticShapeText(node, w * 0.78, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-port-node") {
-      if (mode === "text") {
-        return staticShapeText(node, w, h, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      return (
-        <g style={staticSymbolShadowStyle(node)}>
-          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          {staticHandleDot(node, -w / 2, 0)}
-          {staticHandleDot(node, w / 2, 0)}
-          {staticHandleDot(node, 0, -h / 2)}
-          {staticHandleDot(node, 0, h / 2)}
-          {renderText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-card-node") {
-      if (mode === "text") {
-        return staticShapeText(node, w, h, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const headerHeight = Math.max(24, Math.min(36, h * 0.32));
-      return (
-        <g style={staticSymbolShadowStyle(node)}>
-          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          <rect x={-w / 2} y={-h / 2} width={w} height={headerHeight} rx={cornerRadius} fill={accentColor} opacity="0.14" stroke="none" />
-          <path d={`M ${-w / 2 + 12} ${-h / 2 + headerHeight + 14} H ${w / 2 - 12} M ${-w / 2 + 12} ${-h / 2 + headerHeight + 30} H ${w / 2 - 32}`} stroke={accentColor} strokeWidth={Math.max(1, lineWidth * 0.75)} strokeLinecap="round" />
-          {renderText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-toolbar-node") {
-      if (mode === "text") {
-        return staticShapeText(node, w, h * 0.7, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const toolbarY = -h / 2 - 18;
-      return (
-        <g style={staticSymbolShadowStyle(node)}>
-          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          <rect x={-52} y={toolbarY} width="104" height="24" rx="6" fill={accentColor} stroke={staticStroke} strokeWidth="1" opacity="0.92" />
-          <circle cx="-28" cy={toolbarY + 12} r="4" fill="#ffffff" />
-          <rect x="-4" y={toolbarY + 8} width="8" height="8" rx="2" fill="#ffffff" />
-          <path d={`M 24 ${toolbarY + 16} L 32 ${toolbarY + 8} M 24 ${toolbarY + 8} L 32 ${toolbarY + 16}`} stroke="#ffffff" strokeWidth="2" strokeLinecap="round" />
-          {renderText && staticShapeText(node, w, h * 0.7, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-resizer-frame") {
-      if (mode === "text") {
-        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      return (
-        <g>
-          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray || "6 4"} />
-          {staticFrameHandles(node, w, h)}
-          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-subflow-box") {
-      if (mode === "text") {
-        return staticShapeText(node, w, h, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const headerHeight = Math.max(26, Math.min(38, h * 0.28));
-      return (
-        <g>
-          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          <rect x={-w / 2} y={-h / 2} width={w} height={headerHeight} rx={cornerRadius} fill={accentColor} stroke="none" />
-          <path d={`M ${-w / 2} ${-h / 2 + headerHeight} H ${w / 2}`} stroke={staticStroke} strokeWidth={lineWidth} />
-          <rect x={-w / 2 + 16} y={-h / 2 + headerHeight + 22} width={w * 0.34} height={h * 0.28} rx="6" fill="#ffffff" stroke={accentColor} strokeWidth="1.5" />
-          <rect x={w / 2 - w * 0.34 - 16} y={h / 2 - h * 0.28 - 16} width={w * 0.34} height={h * 0.28} rx="6" fill="#ffffff" stroke={accentColor} strokeWidth="1.5" />
-          <path d={`M ${-w * 0.08} ${-h * 0.02} H ${w * 0.08}`} stroke={accentColor} strokeWidth="2" strokeLinecap="round" />
-          {renderText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-bezier-connector") {
-      if (mode === "text") {
-        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const points = staticDrawPointsForNode(node, [{ x: -w / 2, y: h / 4 }, { x: w / 2, y: -h / 4 }]);
-      const start = points[0];
-      const end = points[points.length - 1];
-      const controlDx = Math.max(24, Math.abs(end.x - start.x) * 0.5);
-      const direction = end.x >= start.x ? 1 : -1;
-      return (
-        <g>
-          <path d={`M ${start.x} ${start.y} C ${start.x + controlDx * direction} ${start.y}, ${end.x - controlDx * direction} ${end.y}, ${end.x} ${end.y}`} fill="none" stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" />
-          {staticConnectorMarker(node.params.markerStart || "none", start.x, start.y, -1, 0.4, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
-          {staticConnectorMarker(node.params.markerEnd || "none", end.x, end.y, 1, -0.4, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
-          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-smoothstep-connector") {
-      if (mode === "text") {
-        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const points = staticDrawPointsForNode(node, [{ x: -w / 2, y: h / 4 }, { x: w / 2, y: -h / 2 }]);
-      const start = points[0];
-      const end = points[points.length - 1];
-      const midX = (start.x + end.x) / 2;
-      const path = points.length > 2
-        ? points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ")
-        : `M ${start.x} ${start.y} H ${midX} V ${end.y} H ${end.x}`;
-      return (
-        <g>
-          <path d={path} fill="none" stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" strokeLinejoin="round" />
-          {staticConnectorMarker(node.params.markerStart || "none", start.x, start.y, -1, 0, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
-          {staticConnectorMarker(node.params.markerEnd || "none", end.x, end.y, 1, 0, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
-          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-self-loop") {
-      if (mode === "text") {
-        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      const rx = w * 0.32;
-      const ry = h * 0.32;
-      const endX = w * 0.18;
-      const endY = h * 0.2;
-      return (
-        <g>
-          <path d={`M ${-endX} ${endY} C ${-w / 2} ${h / 2}, ${-w / 2} ${-h / 2}, 0 ${-h / 2} C ${w / 2} ${-h / 2}, ${w / 2} ${h / 2}, ${endX} ${endY}`} fill="none" stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" />
-          <ellipse cx="0" cy="-3" rx={rx} ry={ry} fill="none" stroke={accentColor} strokeWidth="1" opacity="0.16" />
-          {staticConnectorMarker(node.params.markerEnd || "arrow", endX, endY, 0.7, 0.7, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
-          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-edge-label") {
-      if (mode === "text") {
-        return staticShapeText(node, w, h, miniature);
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      return (
-        <g style={staticSymbolShadowStyle(node)}>
-          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={h / 2} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          <path d={`M ${-w / 2 - 22} 0 H ${-w / 2} M ${w / 2} 0 H ${w / 2 + 22}`} stroke={accentColor} strokeWidth={Math.max(1, lineWidth)} strokeLinecap="round" />
-          {renderText && staticShapeText(node, w, h, miniature)}
-        </g>
-      );
-    }
-    if (node.kind === "static-web") {
-      if (mode === "text") {
-        return uprightText(node, 0, 12, { fill: node.params.textColor || "#334155", fontSize: miniature ? 10 : 13, textAnchor: "middle" }, miniature ? "WEB" : staticSymbolTextValue(node, "https://"));
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      return (
-        <g>
-          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="4" fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          <rect x={-w / 2} y={-h / 2} width={w} height="22" rx="4" fill="#e2e8f0" />
-          {renderText && uprightText(node, 0, 12, { fill: node.params.textColor || "#334155", fontSize: miniature ? 10 : 13, textAnchor: "middle" }, miniature ? "WEB" : staticSymbolTextValue(node, "https://"))}
-        </g>
-      );
-    }
-    if (["static-date", "static-time", "static-datetime", "static-input"].includes(node.kind)) {
-      if (mode === "text") {
-        return uprightText(node, -w / 2 + 10, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 11 : Number(node.params.fontSize || 16), dominantBaseline: "middle" }, miniature ? "控件" : staticSymbolTextValue(node, node.name));
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      return (
-        <g>
-          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="5" fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          {renderText && uprightText(node, -w / 2 + 10, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 11 : Number(node.params.fontSize || 16), dominantBaseline: "middle" }, miniature ? "控件" : staticSymbolTextValue(node, node.name))}
-        </g>
-      );
-    }
-    if (node.kind === "static-button") {
-      if (mode === "text") {
-        return uprightText(node, 0, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 12 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, miniature ? "按钮" : staticSymbolTextValue(node, node.name));
-      }
-      if (!renderGeometry) {
-        return null;
-      }
-      return (
-        <g>
-          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="6" fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
-          {renderText && uprightText(node, 0, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 12 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, miniature ? "按钮" : staticSymbolTextValue(node, node.name))}
-        </g>
-      );
-    }
-    return renderGeometry ? <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="4" fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} /> : null;
-  }
-
-  if (glyphVariant === "ac-generator" || glyphVariant === "dc-generator") {
-    const radius = miniature ? 15 : Math.min(w, h) * 0.37;
-    const markerTextSize = miniature ? 7 : 10;
-    const symbolY = miniature ? 2 : 1;
-    const markerText = glyphVariant === "ac-generator" ? "AC" : "DC";
-    if (mode === "text") {
-      return uprightText(node, radius + 9, -radius * 0.42, { fill: stroke, stroke: "none", fontSize: markerTextSize, fontWeight: "800", textAnchor: "middle" }, markerText);
-    }
-    if (!renderGeometry) {
-      return null;
-    }
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="0" cy="0" r={radius} fill={fill} />
-        {glyphVariant === "ac-generator" ? (
-          <>
-            <path d={`M ${-radius * 0.58} ${symbolY} C ${-radius * 0.35} ${symbolY - radius * 0.42}, ${-radius * 0.12} ${symbolY - radius * 0.42}, 0 ${symbolY} C ${radius * 0.14} ${symbolY + radius * 0.42}, ${radius * 0.38} ${symbolY + radius * 0.42}, ${radius * 0.6} ${symbolY}`} />
-            {renderText && uprightText(node, radius + 9, -radius * 0.42, { fill: stroke, stroke: "none", fontSize: markerTextSize, fontWeight: "800", textAnchor: "middle" }, "AC")}
-          </>
-        ) : (
-          <>
-            <path d={`M ${-radius * 0.58} ${symbolY - radius * 0.18} H ${radius * 0.58} M ${-radius * 0.42} ${symbolY + radius * 0.28} H ${radius * 0.42} M ${radius * 0.24} ${symbolY + radius * 0.12} V ${symbolY + radius * 0.44}`} />
-            {renderText && uprightText(node, radius + 9, -radius * 0.42, { fill: stroke, stroke: "none", fontSize: markerTextSize, fontWeight: "800", textAnchor: "middle" }, "DC")}
-          </>
-        )}
-        <path d={`M ${radius * 0.58} ${-radius * 0.76} L ${radius * 0.96} ${-radius * 0.76} L ${radius * 0.72} ${-radius * 0.28} L ${radius * 1.08} ${-radius * 0.28}`} />
-      </g>
-    );
-  }
-
-  if (glyphVariant === "battery-storage") {
-    if (mode === "text") {
-      return null;
-    }
-    const bodyWidth = miniature ? 34 : Math.min(w * 0.68, 56);
-    const bodyHeight = miniature ? 20 : Math.min(h * 0.58, 32);
-    const capWidth = miniature ? 4 : 6;
-    const capHeight = bodyHeight * 0.44;
-    const cellGap = bodyWidth / 6;
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <rect x={-bodyWidth / 2} y={-bodyHeight / 2} width={bodyWidth} height={bodyHeight} rx="4" fill={fill} />
-        <rect x={bodyWidth / 2} y={-capHeight / 2} width={capWidth} height={capHeight} rx="1.5" fill={fill} />
-        <path d={`M ${-bodyWidth / 2 + cellGap * 2} ${-bodyHeight / 2 + 5} V ${bodyHeight / 2 - 5}`} />
-        <path d={`M ${-bodyWidth / 2 + cellGap * 4} ${-bodyHeight / 2 + 5} V ${bodyHeight / 2 - 5}`} />
-        <path d={`M ${-bodyWidth / 2 + 7} 0 H ${-bodyWidth / 2 + 15} M ${bodyWidth / 2 - 15} 0 H ${bodyWidth / 2 - 7} M ${bodyWidth / 2 - 11} -4 V 4`} />
-      </g>
-    );
-  }
-
-  if (glyphVariant === "hydrogen-source") {
-    const radius = miniature ? 15 : Math.min(w, h) * 0.35;
-    if (mode === "text") {
-      return uprightText(node, 0, 1, { fill: stroke, stroke: "none", fontSize: miniature ? 9 : 13, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2");
-    }
-    if (!renderGeometry) {
-      return null;
-    }
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="0" cy="0" r={radius} fill={fill} />
-        {renderText && uprightText(node, 0, 1, { fill: stroke, stroke: "none", fontSize: miniature ? 9 : 13, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2")}
-        <path d={`M ${radius * 0.8} ${-radius * 0.65} H ${radius * 1.22} M ${radius * 1.02} ${-radius * 0.85} L ${radius * 1.22} ${-radius * 0.65} L ${radius * 1.02} ${-radius * 0.45}`} />
-      </g>
-    );
-  }
-
-  if (glyphVariant === "hydrogen-load") {
-    if (mode === "text") {
-      return uprightText(node, 0, miniature ? -2 : -3, { fill: stroke, stroke: "none", fontSize: miniature ? 11 : 18, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2");
-    }
-    if (!renderGeometry) {
-      return null;
-    }
-    const bodyWidth = (w * 2) / 9;
-    const bodyHeight = (h * 2) / 9;
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <path d={`M ${-bodyWidth} ${-bodyHeight} L ${bodyWidth} ${-bodyHeight} L 0 ${bodyHeight} Z`} fill={fill} />
-        {renderText && uprightText(node, 0, miniature ? -2 : -3, { fill: stroke, stroke: "none", fontSize: miniature ? 11 : 18, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2")}
-      </g>
-    );
-  }
-
-  if (
-    glyphVariant === "hydrogen-electrolyzer" ||
-    glyphVariant === "ac-hydrogen-electrolyzer" ||
-    glyphVariant === "dc-hydrogen-electrolyzer"
-  ) {
-    if (mode === "text") {
-      return uprightText(node, 11, 1, { fill: stroke, stroke: "none", fontSize: miniature ? 9 : 13, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2");
-    }
-    if (!renderGeometry) {
-      return null;
-    }
-    const electrolyzerClass =
-      glyphVariant === "ac-hydrogen-electrolyzer"
-        ? "ac-electrolyzer-glyph"
-        : glyphVariant === "dc-hydrogen-electrolyzer"
-          ? "dc-electrolyzer-glyph"
-          : "hydrogen-electrolyzer-glyph";
-    return (
-      <g className={electrolyzerClass} fill="none" stroke={stroke} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
-        <rect x={-w / 2 + 6} y={-h / 2 + 5} width={w - 12} height={h - 10} rx="6" fill={fill} />
-        <path d="M -24 0 H -12 M 12 0 H 24" />
-        {glyphVariant === "ac-hydrogen-electrolyzer" && (
-          <path className="ac-wave-marker" d="M -29 -13 C -25 -19 -20 -19 -16 -13 S -7 -7 -3 -13" />
-        )}
-        {glyphVariant === "dc-hydrogen-electrolyzer" && (
-          <g className="dc-battery-marker">
-            <rect x="-32" y="-18" width="20" height="12" rx="2" />
-            <path d="M -10 -14 H -7" />
-            <path d="M -28 -12 H -24 M -26 -14 V -10 M -20 -12 H -15" />
-          </g>
-        )}
-        <path d="M -7 -12 L -1 -2 H -7 L -1 12" />
-        {renderText && uprightText(node, 11, 1, { fill: stroke, stroke: "none", fontSize: miniature ? 9 : 13, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2")}
-      </g>
-    );
-  }
-
-  if (
-    glyphVariant === "hydrogen-fuel-cell" ||
-    glyphVariant === "ac-hydrogen-fuel-cell" ||
-    glyphVariant === "dc-hydrogen-fuel-cell"
-  ) {
-    if (mode === "text") {
-      return uprightText(node, -20, -12, { fill: stroke, stroke: "none", fontSize: miniature ? 7 : 10, fontWeight: "800", textAnchor: "middle" }, "H2");
-    }
-    if (!renderGeometry) {
-      return null;
-    }
-    const fuelCellClass =
-      glyphVariant === "ac-hydrogen-fuel-cell"
-        ? "ac-fuel-cell-glyph"
-        : glyphVariant === "dc-hydrogen-fuel-cell"
-          ? "dc-fuel-cell-glyph"
-          : "hydrogen-fuel-cell-glyph";
-    return (
-      <g className={fuelCellClass} fill="none" stroke={stroke} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
-        <rect x={-w / 2 + 7} y={-h / 2 + 6} width={w - 14} height={h - 12} rx="6" fill={fill} />
-        <path d="M -24 0 H -12 M 12 0 H 24" />
-        {glyphVariant === "ac-hydrogen-fuel-cell" && (
-          <path className="fuel-cell-ac-wave-marker" d="M -35 -13 C -31 -19 -26 -19 -22 -13 S -13 -7 -9 -13" />
-        )}
-        {glyphVariant === "dc-hydrogen-fuel-cell" && (
-          <g className="fuel-cell-dc-battery-marker">
-            <rect x="-36" y="-18" width="20" height="12" rx="2" />
-            <path d="M -14 -14 H -11" />
-            <path d="M -32 -12 H -28 M -30 -14 V -10 M -24 -12 H -19" />
-          </g>
-        )}
-        <path d="M -10 -10 H 8 M -10 0 H 8 M -10 10 H 8" />
-        <path d="M 13 -8 L 20 0 L 13 8" />
-        {renderText && uprightText(node, -20, -12, { fill: stroke, stroke: "none", fontSize: miniature ? 7 : 10, fontWeight: "800", textAnchor: "middle" }, "H2")}
-      </g>
-    );
-  }
-
-  if (glyphVariant === "hydrogen-storage") {
-    if (mode === "text") {
-      return uprightText(node, 0, 4, { fill: stroke, stroke: "none", fontSize: miniature ? 9 : 13, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2");
-    }
-    if (!renderGeometry) {
-      return null;
-    }
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <path d={`M ${-w / 2 + 10} ${-h / 4} C ${-w / 3} ${-h / 2}, ${w / 3} ${-h / 2}, ${w / 2 - 10} ${-h / 4} V ${h / 4} C ${w / 3} ${h / 2}, ${-w / 3} ${h / 2}, ${-w / 2 + 10} ${h / 4} Z`} fill={fill} />
-        <path d={`M ${-w / 2 + 10} ${-h / 4} C ${-w / 3} 0, ${w / 3} 0, ${w / 2 - 10} ${-h / 4}`} />
-        {renderText && uprightText(node, 0, 4, { fill: stroke, stroke: "none", fontSize: miniature ? 9 : 13, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2")}
-      </g>
-    );
-  }
-
-  if (glyphVariant === "hydrogen-storage-horizontal") {
-    if (mode === "text") {
-      return uprightText(node, 0, 4, { fill: stroke, stroke: "none", fontSize: miniature ? 9 : 13, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2");
-    }
-    if (!renderGeometry) {
-      return null;
-    }
-    const radius = Math.min(h / 2, w / 4);
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={radius} fill={fill} />
-        <path d={`M ${-w / 2 + radius} ${-h / 2} C ${-w / 2 + radius * 0.35} ${-h / 2} ${-w / 2} ${-h / 4} ${-w / 2} 0 C ${-w / 2} ${h / 4} ${-w / 2 + radius * 0.35} ${h / 2} ${-w / 2 + radius} ${h / 2}`} />
-        <path d={`M ${w / 2 - radius} ${-h / 2} C ${w / 2 - radius * 0.35} ${-h / 2} ${w / 2} ${-h / 4} ${w / 2} 0 C ${w / 2} ${h / 4} ${w / 2 - radius * 0.35} ${h / 2} ${w / 2 - radius} ${h / 2}`} />
-        <path d={`M ${-w / 2 + radius + 8} ${-h / 4} H ${w / 2 - radius - 8} M ${-w / 2 + radius + 8} ${h / 4} H ${w / 2 - radius - 8}`} opacity="0.7" />
-        {renderText && uprightText(node, 0, 4, { fill: stroke, stroke: "none", fontSize: miniature ? 9 : 13, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2")}
-      </g>
-    );
-  }
-
-  if (glyphVariant === "hydrogen-storage-container") {
-    if (mode === "text") {
-      return uprightText(node, 0, 4, { fill: stroke, stroke: "none", fontSize: miniature ? 8 : 12, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2");
-    }
-    if (!renderGeometry) {
-      return null;
-    }
-    const innerLeft = -w / 2 + 9;
-    const innerRight = w / 2 - 9;
-    const tankTop = -h / 2 + 14;
-    const tankGap = miniature ? 8 : 10;
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="2" fill={fill} />
-        <path d={`M ${-w / 2 + 8} ${-h / 2} V ${h / 2} M ${w / 2 - 8} ${-h / 2} V ${h / 2}`} />
-        <path d={`M ${innerLeft} ${tankTop} H ${innerRight} M ${innerLeft} ${tankTop + tankGap} H ${innerRight} M ${innerLeft} ${tankTop + tankGap * 2} H ${innerRight}`} />
-        <path d={`M ${-w / 2 + 18} ${-h / 2 + 8} V ${h / 2 - 8} M ${w / 2 - 18} ${-h / 2 + 8} V ${h / 2 - 8}`} opacity="0.65" />
-        {renderText && uprightText(node, 0, h / 2 - (miniature ? 9 : 12), { fill: stroke, stroke: "none", fontSize: miniature ? 7 : 10, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, "H2")}
-      </g>
-    );
-  }
-
-  if (glyphVariant === "hydrogen-bus") {
-    if (mode === "text") {
-      return null;
-    }
-    return renderBusGlyphRect(w, h, stroke);
-  }
-
-  if (glyphVariant === "hydrogen-pipeline") {
-    if (mode === "text") {
-      return null;
-    }
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
-        <line x1={-w / 2 + 8} y1="-5" x2={w / 2 - 8} y2="-5" />
-        <line x1={-w / 2 + 8} y1="5" x2={w / 2 - 8} y2="5" />
-        <path d="M -20 -10 V 10 M 0 -10 V 10 M 20 -10 V 10" strokeWidth="1.6" />
-      </g>
-    );
-  }
-
-  if (glyphVariant === "hydrogen-compressor") {
-    if (mode === "text") {
-      return null;
-    }
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="0" cy="0" r={miniature ? 15 : 20} fill={fill} />
-        <path d="M -24 0 H -9 M 10 0 H 24" />
-        <path d="M -5 -10 L 10 0 L -5 10 Z" fill={fill} />
-      </g>
-    );
-  }
-
-  if (glyphVariant === "hydrogen-regulator" || glyphVariant === "hydrogen-valve") {
-    if (mode === "text") {
-      return null;
-    }
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M -28 0 H -12 M 12 0 H 28" />
-        <path d="M -12 -12 L 0 0 L -12 12 Z M 12 -12 L 0 0 L 12 12 Z" fill={fill} />
-        {glyphVariant === "hydrogen-regulator" ? <path d="M 0 -20 V -8 M -6 -14 H 6 M -5 10 H 5" /> : <path d="M 0 -18 V -3 M -8 -18 H 8" />}
-      </g>
-    );
-  }
-
-  if (
-    glyphVariant === "heat-boiler" ||
-    glyphVariant === "single-heat-boiler" ||
-    glyphVariant === "two-port-heat-boiler" ||
-    glyphVariant === "heat-source" ||
-    glyphVariant === "single-heat-source" ||
-    glyphVariant === "two-port-heat-source"
-  ) {
-    if (mode === "text") {
-      return null;
-    }
-    const isSourceGlyph = glyphVariant === "heat-source" || glyphVariant === "single-heat-source" || glyphVariant === "two-port-heat-source";
-    const isTwoPortGlyph = glyphVariant === "two-port-heat-boiler" || glyphVariant === "two-port-heat-source";
-    const heatGlyphClass =
-      glyphVariant === "two-port-heat-boiler"
-        ? "two-port-heat-boiler-glyph"
-        : glyphVariant === "two-port-heat-source"
-          ? "two-port-heat-source-glyph"
-          : isSourceGlyph
-            ? "single-heat-source-glyph"
-            : "single-heat-boiler-glyph";
-    const bodyWidth = miniature ? 34 : Math.min(w * 0.66, 58);
-    const bodyHeight = miniature ? 26 : Math.min(h * 0.66, 40);
-    const sourceRadius = miniature ? 15 : Math.min(w, h) * 0.27;
-    return (
-      <g className={heatGlyphClass} fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        {isSourceGlyph ? (
-          <circle cx="0" cy="2" r={sourceRadius} fill={fill} />
-        ) : (
-          <rect x={-bodyWidth / 2} y={-bodyHeight / 2 + 5} width={bodyWidth} height={bodyHeight} rx="6" fill={fill} />
-        )}
-        <path d="M -8 2 C -16 -8 -2 -13 -6 -24 C 4 -17 13 -10 6 2 C 3 8 -4 8 -8 2 Z" fill={fill} />
-        {isSourceGlyph ? <path d="M -11 16 H 11" /> : <path d="M -18 18 H 18" />}
-        {isTwoPortGlyph ? (
-          <>
-            <path className="two-port-heat-flow-marker" d="M -30 -12 H -18 M -25 -16 L -31 -12 L -25 -8" />
-            <path className="two-port-heat-return-marker" d="M 18 12 H 30 M 25 8 L 19 12 L 25 16" />
-          </>
-        ) : (
-          <path d="M 20 -8 H 30 M 26 -12 L 31 -8 L 26 -4" />
-        )}
-      </g>
-    );
-  }
-
-  if (
-    glyphVariant === "heat-electric-heater" ||
-    glyphVariant === "ac-heat-electric-heater" ||
-    glyphVariant === "ac-two-port-heat-electric-heater" ||
-    glyphVariant === "dc-heat-electric-heater" ||
-    glyphVariant === "dc-two-port-heat-electric-heater"
-  ) {
-    if (mode === "text") {
-      return null;
-    }
-    const isAcHeater = glyphVariant === "ac-heat-electric-heater" || glyphVariant === "ac-two-port-heat-electric-heater";
-    const isDcHeater = glyphVariant === "dc-heat-electric-heater" || glyphVariant === "dc-two-port-heat-electric-heater";
-    const isTwoPortHeater = glyphVariant === "ac-two-port-heat-electric-heater" || glyphVariant === "dc-two-port-heat-electric-heater";
-    const heaterClass =
-      glyphVariant === "ac-heat-electric-heater"
-        ? "ac-heat-electric-heater-glyph"
-        : glyphVariant === "ac-two-port-heat-electric-heater"
-          ? "ac-two-port-heat-electric-heater-glyph"
-          : glyphVariant === "dc-heat-electric-heater"
-            ? "dc-heat-electric-heater-glyph"
-            : glyphVariant === "dc-two-port-heat-electric-heater"
-              ? "dc-two-port-heat-electric-heater-glyph"
-              : "heat-electric-heater-glyph";
-    const heaterPortY = miniature ? 13 : h * 0.25;
-    return (
-      <g className={heaterClass} fill="none" stroke={stroke} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
-        <rect x={-w / 2 + 7} y={-h / 2 + 6} width={w - 14} height={h - 12} rx="6" fill={fill} />
-        <path d="M -28 0 H -16 M 16 0 H 28" />
-        {isAcHeater && <path className="heater-ac-wave-marker" d="M -36 -14 C -32 -20 -27 -20 -23 -14 S -14 -8 -10 -14" />}
-        {isDcHeater && (
-          <g className="heater-dc-battery-marker">
-            <rect x="-37" y="-19" width="20" height="12" rx="2" />
-            <path d="M -15 -15 H -12" />
-            <path d="M -33 -13 H -29 M -31 -15 V -11 M -25 -13 H -20" />
-          </g>
-        )}
-        <path d="M -8 -13 L -1 -2 H -8 L -1 13" />
-        <path d="M 9 -12 C 15 -7 15 -2 9 3 C 15 8 15 13 9 18" />
-        {isTwoPortHeater ? (
-          <g className="heater-two-port-heat-marker">
-            <path className="heater-two-port-supply-marker" d={`M 23 ${-heaterPortY} H 34 M 29 ${-heaterPortY - 4} L 35 ${-heaterPortY} L 29 ${-heaterPortY + 4}`} />
-            <path className="heater-two-port-return-marker" d={`M 23 ${heaterPortY} H 34 M 29 ${heaterPortY - 4} L 23 ${heaterPortY} L 29 ${heaterPortY + 4}`} />
-          </g>
-        ) : (
-          <path d="M 25 -11 H 34 M 30 -15 L 35 -11 L 30 -7" />
-        )}
-      </g>
-    );
-  }
-
-  if (glyphVariant === "heat-exchanger-two" || glyphVariant === "heat-exchanger-three" || glyphVariant === "heat-exchanger-four") {
-    const exchangerKind = glyphVariant === "heat-exchanger-two" ? "two" : glyphVariant === "heat-exchanger-three" ? "three" : "four";
-    const tag = exchangerKind === "two" ? "2" : exchangerKind === "three" ? "3" : "4";
-    if (mode === "text") {
-      return uprightText(node, 0, miniature ? 15 : 23, { fill: stroke, stroke: "none", fontSize: miniature ? 7 : 10, fontWeight: "800", textAnchor: "middle" }, `${tag}P`);
-    }
-    if (!renderGeometry) {
-      return null;
-    }
-    const coilRadius = miniature ? 10 : 16;
-    const branchY = miniature ? 11 : h * 0.25;
-    return (
-      <g className={`heat-exchanger-${exchangerKind}-glyph`} fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="-13" cy="0" r={coilRadius} fill={fill} />
-        <circle cx="13" cy="0" r={coilRadius} fill={fill} />
-        {exchangerKind === "two" && <path d="M -28 0 H -23 M 23 0 H 28" />}
-        {exchangerKind === "three" && (
-          <>
-            <path d="M -30 0 H -23" />
-            <path className="three-port-heat-exchanger-branch" d={`M 23 0 H 30 V ${-branchY} H 36 M 30 0 V ${branchY} H 36`} />
-            <path className="three-port-heat-exchanger-supply-arrow" d={`M 31 ${-branchY} H 38 M 32 ${-branchY - 4} L 38 ${-branchY} L 32 ${-branchY + 4}`} />
-            <path className="three-port-heat-exchanger-return-arrow" d={`M 31 ${branchY} H 38 M 34 ${branchY - 4} L 28 ${branchY} L 34 ${branchY + 4}`} />
-          </>
-        )}
-        {exchangerKind === "four" && (
-          <>
-            <path className="four-port-heat-exchanger-left-branch" d={`M -23 0 H -30 V ${-branchY} H -36 M -30 0 V ${branchY} H -36`} />
-            <path className="four-port-heat-exchanger-right-branch" d={`M 23 0 H 30 V ${-branchY} H 36 M 30 0 V ${branchY} H 36`} />
-            <path className="four-port-heat-exchanger-left-supply-arrow" d={`M -38 ${-branchY} H -31 M -37 ${-branchY - 4} L -31 ${-branchY} L -37 ${-branchY + 4}`} />
-            <path className="four-port-heat-exchanger-left-return-arrow" d={`M -31 ${branchY} H -38 M -32 ${branchY - 4} L -38 ${branchY} L -32 ${branchY + 4}`} />
-            <path className="four-port-heat-exchanger-right-supply-arrow" d={`M 31 ${-branchY} H 38 M 32 ${-branchY - 4} L 38 ${-branchY} L 32 ${-branchY + 4}`} />
-            <path className="four-port-heat-exchanger-right-return-arrow" d={`M 31 ${branchY} H 38 M 34 ${branchY - 4} L 28 ${branchY} L 34 ${branchY + 4}`} />
-          </>
-        )}
-        <path d="M -15 -9 C -6 -3 -22 3 -13 9 M 15 -9 C 6 -3 22 3 13 9" />
-        {renderText && uprightText(node, 0, miniature ? 15 : 23, { fill: stroke, stroke: "none", fontSize: miniature ? 7 : 10, fontWeight: "800", textAnchor: "middle" }, `${tag}P`)}
-      </g>
-    );
-  }
-
-  if (glyphVariant === "heat-storage") {
-    if (mode === "text") {
-      return null;
-    }
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <path d={`M ${-w / 2 + 10} ${-h / 4} C ${-w / 3} ${-h / 2}, ${w / 3} ${-h / 2}, ${w / 2 - 10} ${-h / 4} V ${h / 4} C ${w / 3} ${h / 2}, ${-w / 3} ${h / 2}, ${-w / 2 + 10} ${h / 4} Z`} fill={fill} />
-        <path d={`M ${-w / 2 + 10} ${-h / 4} C ${-w / 3} 0, ${w / 3} 0, ${w / 2 - 10} ${-h / 4}`} />
-        <path d="M -10 -1 C -4 4 -4 9 -10 14 M 3 -1 C 9 4 9 9 3 14" />
-      </g>
-    );
-  }
-
-  if (glyphVariant === "heat-load" || glyphVariant === "single-heat-load" || glyphVariant === "two-port-heat-load") {
-    if (mode === "text") {
-      return null;
-    }
-    const isTwoPortLoad = glyphVariant === "two-port-heat-load";
-    const loadClass =
-      glyphVariant === "two-port-heat-load"
-        ? "two-port-heat-load-glyph"
-        : glyphVariant === "single-heat-load"
-          ? "single-heat-load-glyph"
-          : "heat-load-glyph";
-    const singleBodyWidth = (w * 2) / 9;
-    const singleBodyHeight = (h * 2) / 9;
-    const twoPortBodyWidth = (w - 20) * 2 / 3;
-    const twoPortBodyHeight = (h - 16) * 2 / 3;
-    return (
-      <g className={loadClass} fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        {isTwoPortLoad ? (
-          <rect x={-twoPortBodyWidth / 2} y={-twoPortBodyHeight / 2} width={twoPortBodyWidth} height={twoPortBodyHeight} rx="5" fill={fill} />
-        ) : (
-          <path d={`M ${-singleBodyWidth} ${-singleBodyHeight} L ${singleBodyWidth} ${-singleBodyHeight} L 0 ${singleBodyHeight} Z`} fill={fill} />
-        )}
-        <path d="M -9 -4 H 9 M -7 2 H 7 M -5 8 H 5" />
-        {isTwoPortLoad ? (
-          <path className="heat-load-two-port-marker" d="M -30 -13 H -17 M -23 -17 L -17 -13 L -23 -9 M 17 13 H 30 M 24 9 L 31 13 L 24 17" />
-        ) : (
-          <path className="heat-load-single-marker" d="M 20 -18 V -6 M 15 -11 L 20 -6 L 25 -11" />
-        )}
-      </g>
-    );
-  }
-
-  if (glyphVariant === "heat-bus") {
-    if (mode === "text") {
-      return null;
-    }
-    return renderBusGlyphRect(w, h, stroke);
-  }
-
-  if (glyphVariant === "heat-pipeline") {
-    if (mode === "text") {
-      return null;
-    }
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
-        <line x1={-w / 2 + 8} y1="-5" x2={w / 2 - 8} y2="-5" />
-        <line x1={-w / 2 + 8} y1="5" x2={w / 2 - 8} y2="5" />
-        <path d="M -24 0 C -18 -8 -12 8 -6 0 C 0 -8 6 8 12 0 C 18 -8 24 8 30 0" strokeWidth="1.6" />
-      </g>
-    );
-  }
-
-  if (glyphVariant === "heat-pump") {
-    if (mode === "text") {
-      return null;
-    }
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="0" cy="0" r={miniature ? 15 : 20} fill={fill} />
-        <path d="M -24 0 H -10 M 10 0 H 24" />
-        <path d="M -5 -11 L 12 0 L -5 11 Z" fill={fill} />
-        <path d="M -3 -15 C 5 -20 15 -13 15 -4" />
-      </g>
-    );
-  }
-
-  if (glyphVariant === "heat-valve") {
-    if (mode === "text") {
-      return null;
-    }
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M -28 0 H -12 M 12 0 H 28" />
-        <path d="M -12 -12 L 0 0 L -12 12 Z M 12 -12 L 0 0 L 12 12 Z" fill={fill} />
-        <path d="M 0 -18 V -3 M -8 -18 H 8" />
-      </g>
-    );
-  }
-
-  if (node.kind.includes("wind-source")) {
-    if (mode === "text") {
-      return null;
-    }
-    return (
-      <g fill={fill} stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="0" cy="0" r={miniature ? 4 : 6} />
-        <path d="M 0 0 L 0 -18 M 0 0 L 16 10 M 0 0 L -16 10" />
-        <path d="M 0 6 V 22" />
-      </g>
-    );
-  }
-
-  if (node.kind.includes("pv-source")) {
-    if (mode === "text") {
-      return null;
-    }
-    return (
-      <g fill={fill} stroke={stroke} strokeWidth="2.2" strokeLinejoin="round">
-        <path d="M -22 -12 H 22 V 14 H -22 Z" />
-        <path d="M -7 -12 V 14 M 8 -12 V 14 M -22 1 H 22" />
-        <path d="M 0 -22 V -17 M -18 -20 L -14 -16 M 18 -20 L 14 -16" />
-      </g>
-    );
-  }
-
-  if (node.kind.includes("diesel-source")) {
-    if (mode === "text") {
-      return null;
-    }
-    const bodyWidth = miniature ? 36 : Math.min(w * 0.7, 56);
-    const bodyHeight = miniature ? 22 : Math.min(h * 0.58, 32);
-    const bodyX = -bodyWidth / 2;
-    const bodyY = -bodyHeight / 2 + 4;
-    const wheelRadius = miniature ? 5 : 7;
-    const exhaustX = bodyX + bodyWidth - 9;
-    const exhaustTop = bodyY - (miniature ? 10 : 14);
-    return (
-      <g className="diesel-source-glyph" fill="none" stroke={stroke} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
-        <rect x={bodyX} y={bodyY} width={bodyWidth} height={bodyHeight} rx="5" fill={fill} />
-        <circle cx={bodyX + 11} cy={bodyY + bodyHeight / 2} r={wheelRadius} fill={fill} />
-        <path d={`M ${bodyX + 22} ${bodyY + 7} H ${bodyX + bodyWidth - 10} M ${bodyX + 22} ${bodyY + bodyHeight - 7} H ${bodyX + bodyWidth - 14}`} />
-        <path d={`M ${bodyX + 7} ${bodyY + bodyHeight} V ${bodyY + bodyHeight + 6} H ${bodyX + bodyWidth - 6} V ${bodyY + bodyHeight}`} />
-        <path d={`M ${exhaustX} ${bodyY} V ${exhaustTop} H ${exhaustX + 8}`} />
-        <path d={`M ${exhaustX + 8} ${exhaustTop - 2} C ${exhaustX + 13} ${exhaustTop - 8}, ${exhaustX + 20} ${exhaustTop - 7}, ${exhaustX + 23} ${exhaustTop - 13}`} strokeWidth="1.6" />
-        <path d={`M ${bodyX + bodyWidth / 2 - 3} ${bodyY - 4} L ${bodyX + bodyWidth / 2 + 7} ${bodyY - 4} L ${bodyX + bodyWidth / 2 + 1} ${bodyY + 8} H ${bodyX + bodyWidth / 2 + 10} L ${bodyX + bodyWidth / 2 - 4} ${bodyY + bodyHeight - 5} L ${bodyX + bodyWidth / 2 + 1} ${bodyY + 8} H ${bodyX + bodyWidth / 2 - 7} Z`} fill={fill} />
-      </g>
-    );
-  }
-
-  if (node.kind.includes("thermal-source")) {
-    if (mode === "text") {
-      return null;
-    }
-    return (
-      <g fill={fill} stroke={stroke} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M -20 18 H 20 V -4 L 8 4 V -4 L -4 4 V -4 L -20 8 Z" />
-        <path d="M -6 -12 C -12 -22 6 -22 0 -32 M 10 -12 C 4 -22 22 -22 16 -32" fill="none" />
-      </g>
-    );
-  }
-
-  if (node.kind.includes("hydro-source")) {
-    if (mode === "text") {
-      return null;
-    }
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M -20 -12 C -8 -24 8 -24 20 -12 C 12 10 4 20 0 22 C -4 20 -12 10 -20 -12 Z" fill={fill} />
-        <path d="M -16 6 C -8 0 -2 12 6 6 C 12 1 15 5 18 8" />
-      </g>
-    );
-  }
-
-  if (node.kind.includes("nuclear-source")) {
-    if (mode === "text") {
-      return null;
-    }
-    return (
-      <g fill={fill} stroke={stroke} strokeWidth="2.2">
-        <circle cx="0" cy="0" r={miniature ? 16 : 22} />
-        <ellipse cx="0" cy="0" rx="6" ry="20" fill="none" transform="rotate(0)" />
-        <ellipse cx="0" cy="0" rx="6" ry="20" fill="none" transform="rotate(60)" />
-        <ellipse cx="0" cy="0" rx="6" ry="20" fill="none" transform="rotate(120)" />
-        <circle cx="0" cy="0" r="3" fill={stroke} />
-      </g>
-    );
-  }
-
-  if (node.kind.includes("bus")) {
-    if (mode === "text") {
-      return null;
-    }
-    return renderBusGlyphRect(w, h, stroke);
-  }
-
-  if (glyphVariant === "ac-line") {
-    if (mode === "text") {
-      return null;
-    }
-    const left = -w / 2 + 8;
-    const right = w / 2 - 8;
-    const symbolWidth = Math.min(Math.max(w - 24, 34), miniature ? 36 : 54);
-    const symbolLeft = -symbolWidth / 2;
-    const resistorWidth = symbolWidth * 0.34;
-    const resistorLeft = symbolLeft;
-    const resistorRight = resistorLeft + resistorWidth;
-    const coilGap = 4;
-    const coilStart = resistorRight + coilGap;
-    const coilEnd = symbolLeft + symbolWidth;
-    const loopWidth = (coilEnd - coilStart) / 3;
-    const resistorHeight = miniature ? 9 : 12;
-    const coilHeight = miniature ? 8 : 11;
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round">
-        <line x1={left} y1="0" x2={resistorLeft} y2="0" />
-        <rect x={resistorLeft} y={-resistorHeight / 2} width={resistorWidth} height={resistorHeight} rx="1.5" />
-        <line x1={resistorRight} y1="0" x2={coilStart} y2="0" />
-        <path
-          d={[
-            `M ${coilStart} 0`,
-            `C ${coilStart + loopWidth * 0.25} ${-coilHeight} ${coilStart + loopWidth * 0.75} ${-coilHeight} ${coilStart + loopWidth} 0`,
-            `C ${coilStart + loopWidth * 1.25} ${-coilHeight} ${coilStart + loopWidth * 1.75} ${-coilHeight} ${coilStart + loopWidth * 2} 0`,
-            `C ${coilStart + loopWidth * 2.25} ${-coilHeight} ${coilStart + loopWidth * 2.75} ${-coilHeight} ${coilEnd} 0`
-          ].join(" ")}
-        />
-        <line x1={coilEnd} y1="0" x2={right} y2="0" />
-      </g>
-    );
-  }
-
-  if (glyphVariant === "dc-line") {
-    if (mode === "text") {
-      return null;
-    }
-    const left = -w / 2 + 8;
-    const right = w / 2 - 8;
-    const resistorWidth = Math.min(Math.max(w * 0.32, 20), miniature ? 22 : 34);
-    const resistorLeft = -resistorWidth / 2;
-    const resistorHeight = miniature ? 9 : 12;
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round">
-        <line x1={left} y1="0" x2={resistorLeft} y2="0" />
-        <rect x={resistorLeft} y={-resistorHeight / 2} width={resistorWidth} height={resistorHeight} rx="1.5" />
-        <line x1={resistorWidth / 2} y1="0" x2={right} y2="0" />
-      </g>
-    );
-  }
-
-  if (glyphVariant === "line") {
-    if (mode === "text") {
-      return null;
-    }
-    return (
-      <g stroke={stroke} strokeWidth="4" strokeLinecap="round">
-        <line x1={-w / 2 + 8} y1="0" x2={w / 2 - 8} y2="0" />
-        <line x1={-w / 4} y1="-10" x2={w / 4} y2="10" />
-      </g>
-    );
-  }
-
-  if (node.kind === "ac-three-winding-transformer" || node.kind === "ac-three-winding-transformer-neutral") {
-    if (mode === "text") {
-      return null;
-    }
-    const hasNeutralTerminal = node.kind === "ac-three-winding-transformer-neutral";
-    const windingRadius = miniature ? 9 : hasNeutralTerminal ? 14 : 15;
-    const topY = miniature ? -5 : -8;
-    const bottomY = miniature ? 10 : hasNeutralTerminal ? 16 : 14;
-    const sideX = miniature ? 10 : hasNeutralTerminal ? 17 : 16;
-    const neutralLeadTop = topY - windingRadius - (miniature ? 6 : 20);
-    return (
-      <g className={`three-winding-transformer-glyph${hasNeutralTerminal ? " three-winding-transformer-neutral-glyph" : ""}`} fill={fill} stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <circle className="transformer-winding" cx={-sideX} cy={topY} r={windingRadius} />
-        <circle className="transformer-winding" cx={sideX} cy={topY} r={windingRadius} />
-        <circle className="transformer-winding" cx="0" cy={bottomY} r={windingRadius} />
-        <path d={`M ${-sideX - windingRadius - 8} ${topY} H ${-sideX - windingRadius} M ${sideX + windingRadius} ${topY} H ${sideX + windingRadius + 8} M 0 ${bottomY + windingRadius} V ${bottomY + windingRadius + 10}`} />
-        <path d={`M ${-sideX + windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${-windingRadius * 0.28} ${bottomY - windingRadius * 0.72} M ${sideX - windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${windingRadius * 0.28} ${bottomY - windingRadius * 0.72}`} strokeWidth="1.6" />
-        {hasNeutralTerminal && (
-          <>
-            <path d={`M 0 ${neutralLeadTop} V ${topY - windingRadius}`} />
-            <circle cx="0" cy={topY - windingRadius} r={miniature ? 2.2 : 3.2} fill={stroke} stroke="none" />
-          </>
-        )}
-      </g>
-    );
-  }
-
-  if (glyphVariant === "terminal-transformer-load") {
-    if (mode === "text") {
-      return null;
-    }
-    const windingRadius = miniature ? 11 : 18;
-    const leftCoilX = miniature ? -11 : -14;
-    const rightCoilX = miniature ? 11 : 14;
-    const loadTop = miniature ? 1 : 5;
-    const loadWidth = miniature ? 11 : 15;
-    const loadHeight = miniature ? 10 : 13;
-    return (
-      <g className="terminal-transformer-load-glyph" fill={fill} stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx={leftCoilX} cy="0" r={windingRadius} />
-        <circle cx={rightCoilX} cy="0" r={windingRadius} />
-        <path
-          d={`M ${-loadWidth / 2} ${loadTop} H ${loadWidth / 2} L 0 ${loadTop + loadHeight} Z`}
-          fill="#ffffff"
-        />
-      </g>
-    );
-  }
-
-  if (node.kind.includes("transformer")) {
-    if (mode === "text") {
-      return null;
-    }
-    return (
-      <g fill={fill} stroke={stroke} strokeWidth="2.5">
-        <circle cx="-14" cy="0" r={miniature ? 11 : 18} />
-        <circle cx="14" cy="0" r={miniature ? 11 : 18} />
-      </g>
-    );
-  }
-
-  if (glyphVariant === "switch" || glyphVariant === "disconnector") {
-    if (mode === "text") {
-      return null;
-    }
-    const closed = getSwitchVisualState(node) === "closed";
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <line x1={-w / 2 + 8} y1="0" x2="-13" y2="0" />
-        <line x1="13" y1="0" x2={w / 2 - 8} y2="0" />
-        <circle cx="-13" cy="0" r="3.2" fill="#ffffff" />
-        <circle cx="13" cy="0" r="3.2" fill="#ffffff" />
-        <line x1="-13" y1="0" x2={closed ? "13" : "10"} y2={closed ? "0" : "-15"} />
-        {!closed && <line x1="8" y1="-15" x2="16" y2="-15" />}
-      </g>
-    );
-  }
-
-  if (glyphVariant === "ground-disconnector") {
-    if (mode === "text") {
-      return null;
-    }
-    const closed = getSwitchVisualState(node) === "closed";
-    return (
-      <g className="ground-disconnector-glyph" fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <line x1={-w / 2 + 8} y1="0" x2="-18" y2="0" />
-        <circle cx="-18" cy="0" r="3.2" fill="#ffffff" />
-        <circle cx="8" cy="0" r="3.2" fill="#ffffff" />
-        <line x1="-18" y1="0" x2={closed ? "8" : "2"} y2={closed ? "0" : "-15"} />
-        {!closed && <line x1="0" y1="-15" x2="12" y2="-15" />}
-        <path d="M 8 0 H 18 V 15 M 18 15 V 20 M 8 20 H 28 M 11 24 H 25 M 14 28 H 22" />
-      </g>
-    );
-  }
-
-  if (glyphVariant === "ground-disconnector-vertical") {
-    if (mode === "text") {
-      return null;
-    }
-    const closed = getSwitchVisualState(node) === "closed";
-    return (
-      <g className="ground-disconnector-vertical-glyph" fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="0" y1={-h / 2 + 8} x2="0" y2="-18" />
-        <circle cx="0" cy="-18" r="3.2" fill="#ffffff" />
-        <circle cx="0" cy="8" r="3.2" fill="#ffffff" />
-        <line x1="0" y1="-18" x2={closed ? "0" : "14"} y2={closed ? "8" : "-6"} />
-        {!closed && <line x1="14" y1="-8" x2="14" y2="0" />}
-        <path d="M 0 8 V 18 M 0 18 V 24 M -10 24 H 10 M -7 28 H 7 M -4 32 H 4" />
-      </g>
-    );
-  }
-
-  if (glyphVariant === "breaker") {
-    if (mode === "text") {
-      return null;
-    }
-    const closed = getSwitchVisualState(node) === "closed";
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <line x1={-w / 2 + 8} y1="0" x2="-20" y2="0" />
-        <line x1="20" y1="0" x2={w / 2 - 8} y2="0" />
-        <rect x="-20" y="-15" width="40" height="30" rx="5" fill={fill} />
-        <path d="M -10 -8 V 8 M 10 -8 V 8" />
-        {closed ? <path d="M -10 0 H 10" /> : <path d="M -8 8 L 8 -8" />}
-      </g>
-    );
-  }
-
-  if (glyphVariant === "box-breaker") {
-    if (mode === "text") {
-      return null;
-    }
-    const closed = getSwitchVisualState(node) === "closed";
-    const boxWidth = Math.min(Math.max(w * 0.42, 34), miniature ? 36 : 48);
-    const boxHeight = miniature ? 16 : 20;
-    const leftWireEnd = -boxWidth / 2;
-    const rightWireStart = boxWidth / 2;
-    return (
-      <g className="box-breaker-glyph" fill="none" stroke={stroke} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
-        <line x1={-w / 2 + 8} y1="0" x2={leftWireEnd} y2="0" />
-        <line x1={rightWireStart} y1="0" x2={w / 2 - 8} y2="0" />
-        <rect
-          x={-boxWidth / 2}
-          y={-boxHeight / 2}
-          width={boxWidth}
-          height={boxHeight}
-          rx="2"
-          fill={closed ? stroke : "#ffffff"}
-        />
-      </g>
-    );
-  }
-
-  if (glyphVariant === "load") {
-    if (mode === "text") {
-      return null;
-    }
-    const bodyHalfWidth = w * 2 / 9;
-    const bodyHalfHeight = h * 2 / 9;
-    return (
-      <g className="electric-load-glyph" fill={fill} stroke={stroke} strokeWidth="2.5" strokeLinejoin="round">
-        <path d={`M ${-bodyHalfWidth} ${-bodyHalfHeight} L ${bodyHalfWidth} ${-bodyHalfHeight} L 0 ${bodyHalfHeight} Z`} />
-      </g>
-    );
-  }
-
-  if (glyphVariant === "dcdc-converter" || glyphVariant === "acdc-converter" || glyphVariant === "dcac-converter" || glyphVariant === "acac-converter") {
-    if (mode === "text") {
-      return null;
-    }
-    const borderInset = CONVERTER_GLYPH_BORDER_INSET;
-    const borderX = -w / 2 + borderInset;
-    const borderY = -h / 2 + borderInset;
-    const borderWidth = Math.max(2, w - borderInset * 2);
-    const borderHeight = Math.max(2, h - borderInset * 2);
-    const leftX = -w / 2 + borderInset + 2;
-    const rightX = w / 2 - borderInset - 24;
-    const symbolY = 0;
-    const dcSymbol = (x: number) => (
-      <g>
-        <path d={`M ${x} ${symbolY - 7} H ${x + 14} M ${x + 3} ${symbolY + 7} H ${x + 11}`} />
-        <path d={`M ${x + 7} ${symbolY - 7} V ${symbolY + 7}`} strokeWidth="1.4" />
-      </g>
-    );
-    const acSymbol = (x: number) => (
-      <path d={`M ${x} ${symbolY} C ${x + 3} ${symbolY - 9}, ${x + 8} ${symbolY - 9}, ${x + 11} ${symbolY} C ${x + 14} ${symbolY + 9}, ${x + 19} ${symbolY + 9}, ${x + 22} ${symbolY}`} />
-    );
-    const leftSymbol = glyphVariant === "dcdc-converter" || glyphVariant === "dcac-converter" ? dcSymbol(leftX) : acSymbol(leftX - 1);
-    const rightSymbol = glyphVariant === "acdc-converter" || glyphVariant === "dcdc-converter" ? dcSymbol(rightX + 4) : acSymbol(rightX);
-    return (
-      <g fill="none" stroke={stroke} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x={borderX} y={borderY} width={borderWidth} height={borderHeight} rx="6" fill={fill} />
-        {leftSymbol}
-        {rightSymbol}
-        <path d={glyphVariant === "acac-converter" ? "M -5 -8 L 0 0 L -5 8 M 5 -8 L 0 0 L 5 8" : "M -7 0 H 7 M 2 -5 L 7 0 L 2 5"} />
-      </g>
-    );
-  }
-
-  if (glyphVariant === "custom-device" || node.params[CUSTOM_DEVICE_TEMPLATE_KEY] === "1") {
-    const label = node.name || node.kind;
-    const abbreviation = label.slice(0, 4).toUpperCase();
-    if (mode === "text") {
-      return uprightText(node, 0, -2, { fill: stroke, fontSize: miniature ? 10 : 15, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, abbreviation);
-    }
-    if (!renderGeometry) {
-      return null;
-    }
-    return (
-      <g fill="none" stroke="none">
-        <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="6" fill={node.params.fillColor || "#f8fafc"} />
-        {renderText && uprightText(node, 0, -2, { fill: stroke, fontSize: miniature ? 10 : 15, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, abbreviation)}
-      </g>
-    );
-  }
-
-  if (mode === "text") {
-    return null;
-  }
-  return (
-    <g>
-      <circle cx="0" cy="0" r={miniature ? 16 : 24} fill={fill} stroke={stroke} strokeWidth="2.5" />
-      <path d="M -10 0 H 10 M 0 -10 V 10" stroke={stroke} strokeWidth="2.5" strokeLinecap="round" />
-    </g>
-  );
-  };
-
-  const content = renderDeviceGlyphContent();
-  if (!content) {
-    return null;
-  }
-  if (glyphContentScale === 1) {
-    return content;
-  }
-  return (
-    <g transform={`scale(${formatSvgNumber(glyphContentScale)})`}>
-      {content}
-    </g>
-  );
-}
-
-const MemoDeviceGlyph = memo(
-  DeviceGlyph,
-  (previous, next) =>
-    previous.node === next.node &&
-    previous.miniature === next.miniature &&
-    previous.mode === next.mode &&
-    previous.colorDisplayMode === next.colorDisplayMode &&
-    previous.colorPalette === next.colorPalette &&
-    deviceStateVisualToken(previous.stateVisual) === deviceStateVisualToken(next.stateVisual)
-);
-
-type SvgMarkupChunkProps = {
-  className: string;
-  markup: string;
-};
-
-const SvgMarkupChunk = memo(function SvgMarkupChunk({ className, markup }: SvgMarkupChunkProps) {
-  return <g className={className} dangerouslySetInnerHTML={{ __html: markup }} />;
-});
 
 type CustomComponentTreeProps = {
   libraries: string[];
@@ -9765,282 +5513,9 @@ function stableSvgMarkupChunks<T>(
   return nextChunks.map(({ key, markup }) => ({ key, markup }));
 }
 
-function buildSvgNodeLabelTextMarkup(node: ModelNode) {
-  const text = nodeLabelText(node);
-  if (!text) {
-    return "";
-  }
-  const baseAttributes = `dominant-baseline="middle" fill="${escapeXml(node.params._labelColor || "#334155")}" font-family="${escapeXml(node.params._labelFontFamily || "Arial")}" font-size="${formatSvgNumber(nodeLabelFontSize(node))}" font-weight="${escapeXml(node.params._labelFontWeight || "500")}" font-style="${escapeXml(node.params._labelFontStyle || "normal")}" text-decoration="${escapeXml(node.params._labelTextDecoration || "none")}" paint-order="stroke" stroke="rgba(255,255,255,0.85)" stroke-width="3" stroke-linejoin="round"`;
-  if (nodeLabelVertical(node)) {
-    return nodeLabelVerticalSegments(text)
-      .map(
-        (segment, index) =>
-          `<text class="node-label-vertical-token ${segment.numeric ? "numeric" : ""}" x="0" y="${formatSvgNumber(nodeLabelVerticalTokenY(index, nodeLabelVerticalSegments(text).length, node))}" text-anchor="middle" ${baseAttributes} style="writing-mode: horizontal-tb; text-orientation: mixed; letter-spacing: 0;">${escapeXml(segment.text)}</text>`
-      )
-      .join("");
-  }
-  return `<text x="0" y="0" text-anchor="${escapeXml(nodeLabelTextAnchor(node))}" ${baseAttributes} style="writing-mode: horizontal-tb;">${escapeXml(text)}</text>`;
-}
+// SVG export helper functions moved to svgExportUtils.ts
 
-function buildSvgNodeLabelMarkup(node: ModelNode) {
-  const text = nodeLabelText(node);
-  if (!nodeLabelShouldRender(node, true) || !text) {
-    return "";
-  }
-  return `<g class="export-node-label ${nodeLabelVertical(node) ? "vertical" : "horizontal"}" transform="${nodeLabelTransform(node)}">${buildSvgNodeLabelTextMarkup(node)}</g>`;
-}
 
-function svgDisplayAttribute(visible: boolean) {
-  return visible ? "" : ' style="display:none"';
-}
-
-function exportSvgSafeId(value: string, fallback: string) {
-  const normalized = value.trim().replace(/[^A-Za-z0-9_.:-]+/g, "_").replace(/^[^A-Za-z_]+/, "");
-  return normalized || fallback;
-}
-
-function exportSvgLayerId(value: string, fallback: string) {
-  return `${exportSvgSafeId(value, fallback)}_Layer`;
-}
-
-function exportSvgUniqueId(rawId: string, usedIds: Set<string>, fallback: string) {
-  const baseId = exportSvgSafeId(rawId, fallback);
-  let candidate = baseId;
-  let index = 2;
-  while (usedIds.has(candidate)) {
-    candidate = `${baseId}_${index}`;
-    index += 1;
-  }
-  usedIds.add(candidate);
-  return candidate;
-}
-
-function exportSvgLayerScriptMarkup(includeScript: boolean) {
-  if (!includeScript) {
-    return "";
-  }
-  return `<style><![CDATA[
-.export-static-button { cursor: pointer; }
-.export-static-button.export-active-layer-button { filter: drop-shadow(0 0 5px rgba(37, 99, 235, 0.42)); }
-]]></style>
-<script><![CDATA[
-(function () {
-  const root = document.currentScript && document.currentScript.ownerSVGElement;
-  if (!root) {
-    return;
-  }
-  const layerState = Object.create(null);
-  const layerDefs = root.querySelectorAll("[data-export-layer-def]");
-  layerDefs.forEach((layer) => {
-    const id = layer.getAttribute("data-export-layer-def");
-    if (id) {
-      layerState[id] = layer.getAttribute("data-export-layer-visible") !== "0";
-    }
-  });
-  function exportSvgLayerVisible(layerId) {
-    return !layerId || layerState[layerId] !== false;
-  }
-  function exportSvgApplyLayerVisibility() {
-    root.querySelectorAll("[data-export-node-id][data-export-layer-id]").forEach((node) => {
-      const layerId = node.getAttribute("data-export-layer-id") || "";
-      node.style.display = exportSvgLayerVisible(layerId) ? "" : "none";
-    });
-    root.querySelectorAll("[data-export-edge-id]").forEach((edge) => {
-      const sourceLayerId = edge.getAttribute("data-export-source-layer-id") || "";
-      const targetLayerId = edge.getAttribute("data-export-target-layer-id") || "";
-      edge.style.display = exportSvgLayerVisible(sourceLayerId) && exportSvgLayerVisible(targetLayerId) ? "" : "none";
-    });
-    const activeLayerId = root.getAttribute("data-export-active-layer-id") || "";
-    root.querySelectorAll("[data-export-button-action='layer']").forEach((button) => {
-      const targetLayerIds = exportSvgButtonTargetLayerIds(button);
-      button.classList.toggle("export-active-layer-button", targetLayerIds.includes(activeLayerId));
-    });
-  }
-  function exportSvgButtonTargetLayerIds(button) {
-    const encodedLayerIds = button.getAttribute("data-export-button-target-layer-ids") || button.getAttribute("data-export-button-target-layer-id") || "";
-    return encodedLayerIds.split(",").map((id) => id.trim()).filter(Boolean);
-  }
-  function exportSvgActivateLayers(layerIds) {
-    const validLayerIds = layerIds.filter((layerId) => layerId && layerId in layerState);
-    if (validLayerIds.length === 0) {
-      return;
-    }
-    const targetLayerIdSet = new Set(validLayerIds);
-    Object.keys(layerState).forEach((layerId) => {
-      layerState[layerId] = targetLayerIdSet.has(layerId);
-    });
-    root.setAttribute("data-export-active-layer-id", validLayerIds[0]);
-    exportSvgApplyLayerVisibility();
-  }
-  function exportSvgActivateLayer(layerId) {
-    exportSvgActivateLayers([layerId]);
-  }
-  root.exportSvgApplyLayerVisibility = exportSvgApplyLayerVisibility;
-  root.exportSvgActivateLayer = exportSvgActivateLayer;
-  root.exportSvgActivateLayers = exportSvgActivateLayers;
-  root.querySelectorAll("[data-export-button-action='layer']").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const targetLayerIds = exportSvgButtonTargetLayerIds(button);
-      exportSvgActivateLayers(targetLayerIds);
-    });
-  });
-  exportSvgApplyLayerVisibility();
-})();
-]]></script>`;
-}
-
-function exportDeviceMetadataAttributes(node: ModelNode) {
-  if (isStaticNode(node)) {
-    return "";
-  }
-  return [
-    `idx="${escapeXml(node.params.idx ?? "")}"`,
-    `name="${escapeXml(node.name)}"`,
-    `data-export-device-id="${escapeXml(node.id)}"`,
-    `data-export-device-idx="${escapeXml(node.params.idx ?? "")}"`,
-    `data-export-device-name="${escapeXml(node.name)}"`,
-    `data-export-device-kind="${escapeXml(node.kind)}"`
-  ].join(" ");
-}
-
-function exportMeasurementGroupMetadataAttributes(node: ModelNode, group: MeasurementGroup) {
-  return [
-    `data-export-measurement-group-id="${escapeXml(group.id)}"`,
-    `data-export-device-id="${escapeXml(node.id)}"`,
-    `data-export-device-idx="${escapeXml(node.params.idx ?? "")}"`,
-    `data-export-device-name="${escapeXml(node.name)}"`,
-    `data-export-device-kind="${escapeXml(node.kind)}"`,
-    `data-export-measurement-terminal-id="${escapeXml(group.terminalId ?? "")}"`
-  ].join(" ");
-}
-
-function exportMeasurementItemMetadataAttributes(
-  node: ModelNode,
-  group: MeasurementGroup,
-  item: MeasurementItemBinding,
-  display: { label: string; unit: string }
-) {
-  const measurementName = (item.name ?? display.label ?? item.measurementTypeId).trim();
-  return [
-    `data-export-measurement-item-id="${escapeXml(item.id)}"`,
-    `data-export-measurement-name="${escapeXml(measurementName)}"`,
-    `data-export-measurement-type-id="${escapeXml(item.measurementTypeId)}"`,
-    `data-export-measurement-source-point="${escapeXml(item.sourcePoint)}"`,
-    `data-export-measurement-role="${escapeXml(item.role ?? "")}"`,
-    `data-export-measurement-unit="${escapeXml(display.unit)}"`,
-    `data-export-measurement-group-id="${escapeXml(group.id)}"`,
-    `conn-dev="${escapeXml(node.id)}"`,
-    `dev_idx="${escapeXml(node.params.idx ?? "")}"`,
-    `dev_name="${escapeXml(node.name)}"`,
-    `data-export-device-id="${escapeXml(node.id)}"`,
-    `data-export-device-idx="${escapeXml(node.params.idx ?? "")}"`,
-    `data-export-device-name="${escapeXml(node.name)}"`,
-    `data-export-device-kind="${escapeXml(node.kind)}"`
-  ].join(" ");
-}
-
-const exportMeasurementGroupBackgroundColor = (group: MeasurementGroup) => group.backgroundColor ?? "rgba(255, 255, 255, 0.84)";
-const exportMeasurementGroupBorderColor = (group: MeasurementGroup) => group.borderColor ?? "rgba(100, 116, 139, 0.36)";
-const exportMeasurementGroupBorderWidth = (group: MeasurementGroup) =>
-  group.borderStyle === "none" ? 0 : Math.max(0, Math.min(12, Number(group.borderWidth ?? 1)));
-const exportMeasurementGroupBorderDashArray = (group: MeasurementGroup) =>
-  exportMeasurementGroupBorderWidth(group) <= 0 || group.borderStyle === "none"
-    ? undefined
-    : svgStrokeDashArray(group.borderStyle);
-
-function exportMeasurementGroupAnchorPoint(node: ModelNode, group: MeasurementGroup): Point {
-  if (group.terminalId && node.terminals.some((terminal) => terminal.id === group.terminalId)) {
-    return getTerminalPoint(node, group.terminalId);
-  }
-  return node.position;
-}
-
-function exportMeasurementGroupLocalOffset(node: ModelNode, group: MeasurementGroup): Point {
-  const offsetScale = measurementOffsetScaleForNode(node);
-  return {
-    x: group.offset.x * offsetScale.x,
-    y: group.offset.y * offsetScale.y
-  };
-}
-
-function exportMeasurementGroupMetrics(node: ModelNode, group: MeasurementGroup, measurementConfig: PlatformMeasurementConfig) {
-  if (!group.visible) {
-    return null;
-  }
-  const measurementFontScale = measurementFontScaleForNode(node);
-  const rows = group.items.flatMap((item) => {
-    const display = resolveMeasurementItemDisplay({ config: measurementConfig, node, group, item });
-    if (!display.visible) {
-      return [];
-    }
-    const label = group.labelVisible === false ? "" : display.label;
-    const unit = group.unitVisible === false ? "" : display.unit;
-    const valueText = "--";
-    const text = [label, valueText, unit].filter(Boolean).join(" ");
-    return [{ item, display, labelText: label, valueText, unitText: unit, text, fontSize: display.fontSize * measurementFontScale }];
-  });
-  if (rows.length === 0) {
-    return null;
-  }
-  const maxFontSize = Math.max(...rows.map((row) => row.fontSize));
-  const lineHeight = Math.max(16, maxFontSize + 6);
-  const columnWidth = Math.max(72, Math.max(...rows.map((row) => row.text.length * row.fontSize * 0.58)) + 12);
-  const columns = group.layout === "grid" ? 2 : group.layout === "horizontal" ? rows.length : 1;
-  const width = Math.max(64, columnWidth * columns);
-  const height = Math.max(lineHeight, Math.ceil(rows.length / columns) * lineHeight);
-  return { rows, maxFontSize, lineHeight, columnWidth, columns, width, height };
-}
-
-function buildExportMeasurementGroupMarkup(
-  node: ModelNode,
-  group: MeasurementGroup,
-  measurementConfig: PlatformMeasurementConfig,
-  usedSvgIds?: Set<string>
-) {
-  const metrics = exportMeasurementGroupMetrics(node, group, measurementConfig);
-  if (!metrics) {
-    return "";
-  }
-  const anchor = exportMeasurementGroupAnchorPoint(node, group);
-  const localOffset = exportMeasurementGroupLocalOffset(node, group);
-  const position = { x: anchor.x + localOffset.x, y: anchor.y + localOffset.y };
-  const borderDashArray = exportMeasurementGroupBorderDashArray(group);
-  const borderDashAttribute = borderDashArray ? ` stroke-dasharray="${escapeXml(borderDashArray)}"` : "";
-  const rowsMarkup = metrics.rows.map((row, index) => {
-    const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
-    const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
-    const textX = -metrics.width / 2 + col * metrics.columnWidth + 7;
-    const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
-    const textGap = Math.max(4, row.fontSize * 0.36);
-    const textWidth = (text: string) => text.length * row.fontSize * 0.58;
-    const labelWidth = row.labelText ? textWidth(row.labelText) : 0;
-    const valueWidth = textWidth(row.valueText);
-    const valueX = textX + labelWidth + (row.labelText ? textGap : 0);
-    const unitX = valueX + valueWidth + (row.unitText ? textGap : 0);
-    const itemBaseId = `measurement_${row.item.id}`;
-    const itemMetadata = exportMeasurementItemMetadataAttributes(node, group, row.item, row.display);
-    const commonAttributes = `measure_type="${escapeXml(row.item.measurementTypeId)}" ${itemMetadata} y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
-    const textIdAttribute = (suffix: string, fallback: string) => {
-      const textId = usedSvgIds ? exportSvgUniqueId(`${itemBaseId}_${suffix}`, usedSvgIds, fallback) : "";
-      return textId ? ` id="${escapeXml(textId)}"` : "";
-    };
-    const labelMarkup = row.labelText
-      ? `<text${textIdAttribute("label", "measurement_label")} class="export-measurement-label measurement-label" data-export-measurement-text-role="label" ${commonAttributes} x="${formatSvgNumber(textX)}">${escapeXml(row.labelText)}</text>`
-      : "";
-    const valueMarkup = `<text${textIdAttribute("value", "measurement_value")} class="export-measurement-value measurement-value" data-export-measurement-text-role="value" data-export-measurement-value="1" ${commonAttributes} x="${formatSvgNumber(valueX)}">${escapeXml(row.valueText)}</text>`;
-    const unitMarkup = row.unitText
-      ? `<text${textIdAttribute("unit", "measurement_unit")} class="export-measurement-unit measurement-unit" data-export-measurement-text-role="unit" ${commonAttributes} x="${formatSvgNumber(unitX)}">${escapeXml(row.unitText)}</text>`
-      : "";
-    return `${labelMarkup}${valueMarkup}${unitMarkup}`;
-  }).join("");
-  return `<g class="export-measurement-group measurement-group" conn-dev="${escapeXml(node.id)}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>
-  <title>${escapeXml(`${node.name} 动态量测`)}</title>
-  <rect class="measurement-group-bg" x="${formatSvgNumber(-metrics.width / 2)}" y="${formatSvgNumber(-metrics.height / 2)}" width="${formatSvgNumber(metrics.width)}" height="${formatSvgNumber(metrics.height)}" rx="4" fill="${escapeXml(exportMeasurementGroupBackgroundColor(group))}" stroke="${escapeXml(exportMeasurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(exportMeasurementGroupBorderWidth(group))}"${borderDashAttribute}/>
-  ${rowsMarkup}
-</g>`;
-}
 
 export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: CanvasRenderOptions = { width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT }) {
   const imageAssets = readImageAssets();
@@ -25295,6 +20770,32 @@ export function App() {
     );
   };
 
+  const batchEditors = useBatchEditors({
+    isBrowseMode,
+    activeSelectedNodeIds,
+    nodeById,
+    selectedNode,
+    inspectorSelectedNode,
+    selectedNodeIdsWithMeasurementGroups,
+    batchCommonGraphicParamRows,
+    batchCommonModelParamRows,
+    batchCommonMeasurementGroupRows,
+    batchCommonPropertyRowCount,
+    layers,
+    schemes,
+    projectMeasurements,
+    nodeDoubleClickDraft,
+    setNodeDoubleClickDraft,
+    updateParam,
+    applyBatchCommonParam,
+    applyBatchCommonParamPatch,
+    applyBatchCommonMeasurementGroupSetting,
+    assignSelectedNodesToModelLayer,
+    updateSelectedNode,
+    requireEditMode,
+    libraryTemplateByKind,
+  });
+
   const commitElementTreeNodeIdentity = (nodeId: string, field: "idx" | "name", value: string, draftKey?: string) => {
     if (!requireEditMode("修改图元树参数")) {
       return;
@@ -25382,676 +20883,6 @@ export function App() {
   const formatDeviceModelParamDisplayValue = (key: string, value: string) =>
     formatPowerBaseDisplayValue(key, value);
 
-  const renderColorEditor = (key: string, value: string, fallback = "#ffffff") => {
-    const colorValue = colorInputValue(value, fallback);
-    return (
-      <div className="color-field with-none">
-        <DeferredColorInput value={colorValue} fallback={fallback} disabled={isBrowseMode} onCommit={(nextValue) => updateParam(key, nextValue)} />
-        <BufferedTextInput
-          value={value === "transparent" ? "无颜色" : value || ""}
-          disabled={isBrowseMode}
-          onCommit={(nextValue) => updateParam(key, nextValue === "无颜色" ? "transparent" : nextValue)}
-        />
-        <button type="button" disabled={isBrowseMode} onClick={() => updateParam(key, "transparent")}>无颜色</button>
-      </div>
-    );
-  };
-
-  const withCurrentOption = (options: string[] | undefined, value: string) =>
-    options && value && !options.includes(value) ? [value, ...options] : options;
-
-  const paramOptionsForNode = (key: string, node: ModelNode | undefined, value: string) => {
-    if (key === "status") {
-      const options = statusOptionsForNode(node);
-      return withCurrentOption(options.length > 0 ? options : undefined, value);
-    }
-    return paramOptionsForSection(key, node ? inferESection(node.kind, node.params) : undefined);
-  };
-
-  const paramOptionLabelsForNode = (key: string, node: ModelNode | undefined, value: string) => {
-    if (key === "status") {
-      const labels = statusOptionLabelsForNode(node);
-      return value && !labels[value] ? { ...labels, [value]: value } : labels;
-    }
-    return PARAM_OPTION_LABELS[key] ?? {};
-  };
-
-  const enumOptionsForDefinition = (definition: DeviceParameterDefinition | undefined, value: string) => {
-    if (!definition || !definitionRowIsEnum(definition)) {
-      return undefined;
-    }
-    const enumValues = enumValuesForRow(definition);
-    return withCurrentOption(enumValues.length > 0 ? enumValues : undefined, value);
-  };
-
-  const enumOptionLabelsForDefinition = (definition: DeviceParameterDefinition | undefined, value: string) => {
-    if (!definition || !definitionRowIsEnum(definition)) {
-      return undefined;
-    }
-    const enumOptions = normalizeEnumOptionsForRow(definition);
-    const enumValueType = enumValueTypeForDefinitionRow(definition, enumOptions);
-    const labels = Object.fromEntries(enumOptions.map((option) => [option.value, enumDisplayText(option, enumValueType)]));
-    return value && !labels[value] ? { ...labels, [value]: value } : labels;
-  };
-
-  const paramOptionsForDefinition = (
-    key: string,
-    node: ModelNode | undefined,
-    value: string,
-    definition?: DeviceParameterDefinition
-  ) => {
-    const definitionOptions = key === "status" ? undefined : enumOptionsForDefinition(definition, value);
-    return definitionOptions ?? paramOptionsForNode(key, node, value);
-  };
-
-  const paramOptionLabelsForDefinition = (
-    key: string,
-    node: ModelNode | undefined,
-    value: string,
-    definition?: DeviceParameterDefinition
-  ) => {
-    const definitionOptions = key === "status" ? undefined : enumOptionsForDefinition(definition, value);
-    return definitionOptions ? enumOptionLabelsForDefinition(definition, value) ?? {} : paramOptionLabelsForNode(key, node, value);
-  };
-
-  const definitionMakesValueReadonly = (definition: DeviceParameterDefinition | undefined) =>
-    Boolean(definition?.readonly && !definitionRowIsEnum(definition));
-
-  const batchStatusOptions = (value: string) => {
-    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []).filter((node) => Object.prototype.hasOwnProperty.call(node.params, "status"));
-    const optionRows = selectedNodes.map((node) => statusStatesForNode(node));
-    if (optionRows.length === 0 || optionRows.some((rows) => rows.length === 0)) {
-      return undefined;
-    }
-    const firstToken = optionRows[0].map((state) => `${state.value}:${state.name}`).join("|");
-    if (!optionRows.every((rows) => rows.map((state) => `${state.value}:${state.name}`).join("|") === firstToken)) {
-      return undefined;
-    }
-    return withCurrentOption(optionRows[0].map((state) => state.value), value);
-  };
-
-  const batchStatusOptionLabels = () => {
-    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []).filter((node) => Object.prototype.hasOwnProperty.call(node.params, "status"));
-    const first = selectedNodes[0];
-    return first ? statusOptionLabelsForNode(first) : {};
-  };
-
-  const renderParamEditor = (key: string, value: string, wrapLabel = true, definition?: DeviceParameterDefinition) => {
-    const label = PARAM_LABELS[key] ?? key;
-    const editorNode = inspectorSelectedNode ?? selectedNode;
-    const options = paramOptionsForDefinition(key, editorNode, value, definition);
-    const optionLabels = paramOptionLabelsForDefinition(key, editorNode, value, definition);
-    const control = options ? (
-      <select value={value} disabled={isBrowseMode} onChange={(event) => updateParam(key, event.target.value)}>
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {optionLabels[option] ?? option}
-          </option>
-        ))}
-      </select>
-    ) : (
-      <BufferedTextInput value={value} disabled={isBrowseMode} onCommit={(nextValue) => updateParam(key, nextValue)} />
-    );
-    return wrapLabel ? (
-      <label key={key}>
-        {label}
-        {control}
-      </label>
-    ) : (
-      control
-    );
-  };
-
-  const updateNodeDoubleClickDraftNode = (nodeId: string, updater: (node: ModelNode) => ModelNode) => {
-    setNodeDoubleClickDraft((current) => {
-      if (!current || current.nodeId !== nodeId) {
-        return current;
-      }
-      const nextNode = updater(current.node);
-      return nextNode === current.node ? current : { ...current, node: nextNode };
-    });
-  };
-
-  const updateNodeDoubleClickDraftPatch = (nodeId: string, patch: Partial<ModelNode>) => {
-    updateNodeDoubleClickDraftNode(nodeId, (node) => ({ ...node, ...patch }));
-  };
-
-  const updateNodeDoubleClickDraftParam = (nodeId: string, key: string, value: string) => {
-    updateNodeDoubleClickDraftNode(nodeId, (node) => {
-      if (key !== "_labelDisplayMode" && node.params[key] === value) {
-        return node;
-      }
-      if (key === "_labelDisplayMode") {
-        const mode = normalizeNodeLabelDisplayMode(value);
-        const visible = mode === "hidden" ? "0" : "1";
-        if (node.params._labelDisplayMode === mode && node.params._labelVisible === visible) {
-          return node;
-        }
-        return { ...node, params: { ...node.params, _labelDisplayMode: mode, _labelVisible: visible } };
-      }
-      return { ...node, params: { ...node.params, [key]: value } };
-    });
-  };
-
-  const renderNodeDoubleClickColorEditor = (node: ModelNode, key: string, value: string, fallback = "#ffffff") => {
-    const colorValue = colorInputValue(value, fallback);
-    return (
-      <div className="color-field with-none">
-        <DeferredColorInput value={colorValue} fallback={fallback} disabled={isBrowseMode} onCommit={(nextValue) => updateNodeDoubleClickDraftParam(node.id, key, nextValue)} />
-        <BufferedTextInput
-          value={value === "transparent" ? "无颜色" : value || ""}
-          disabled={isBrowseMode}
-          onCommit={(nextValue) => updateNodeDoubleClickDraftParam(node.id, key, nextValue === "无颜色" ? "transparent" : nextValue)}
-        />
-        <button type="button" disabled={isBrowseMode} onClick={() => updateNodeDoubleClickDraftParam(node.id, key, "transparent")}>无颜色</button>
-      </div>
-    );
-  };
-
-  const renderNodeDoubleClickParamEditor = (node: ModelNode, key: string, value: string, wrapLabel = true, definition?: DeviceParameterDefinition) => {
-    const label = PARAM_LABELS[key] ?? key;
-    const options = paramOptionsForDefinition(key, node, value, definition);
-    const optionLabels = paramOptionLabelsForDefinition(key, node, value, definition);
-    const control = options ? (
-      <select value={value} disabled={isBrowseMode} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, key, event.target.value)}>
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {optionLabels[option] ?? option}
-          </option>
-        ))}
-      </select>
-    ) : (
-      <BufferedTextInput value={value} disabled={isBrowseMode} onCommit={(nextValue) => updateNodeDoubleClickDraftParam(node.id, key, nextValue)} />
-    );
-    return wrapLabel ? (
-      <label key={key}>
-        {label}
-        {control}
-      </label>
-    ) : (
-      control
-    );
-  };
-
-  const renderBatchCommonColorParamEditor = (row: BatchCommonParamRow) => {
-    const value = row.mixed ? "" : row.value;
-    const colorValue = colorInputValue(value, "#334155");
-    return (
-      <div className="color-field with-none">
-        <DeferredColorInput
-          value={colorValue}
-          fallback="#334155"
-          disabled={isBrowseMode}
-          onCommit={(nextValue) => applyBatchCommonParam(row.key, nextValue)}
-        />
-        <BufferedTextInput
-          value={value === "transparent" ? "无颜色" : value}
-          disabled={isBrowseMode}
-          placeholder={row.mixed ? "多个不同值" : undefined}
-          onCommit={(nextValue) => applyBatchCommonParam(row.key, nextValue === "无颜色" ? "transparent" : nextValue)}
-        />
-        <button type="button" disabled={isBrowseMode} onClick={() => applyBatchCommonParam(row.key, "transparent")}>无颜色</button>
-      </div>
-    );
-  };
-
-  const batchSavedProjectOptions = () => flattenSavedSchemes(schemes).flatMap((scheme) =>
-    scheme.projects.map((project) => ({
-      schemeId: scheme.id,
-      schemeName: scheme.name,
-      project
-    }))
-  );
-
-  const applyBatchStaticButtonTargetProject = (projectId: string) => {
-    const selected = batchSavedProjectOptions().find((item) => item.project.id === projectId);
-    applyBatchCommonParamPatch("目标模型", () => ({
-      buttonTargetProjectId: selected?.project.id ?? "",
-      buttonTargetProjectName: selected?.project.name ?? "",
-      buttonTargetSchemeId: selected?.schemeId ?? ""
-    }));
-  };
-
-  const renderBatchCommonProjectSelect = (row: BatchCommonParamRow) => {
-    const projectOptions = batchSavedProjectOptions();
-    const selectedProjectId = row.mixed
-      ? ""
-      : row.key === "buttonTargetProjectName"
-        ? projectOptions.find((item) => item.project.name === row.value)?.project.id ?? ""
-        : row.value;
-    return (
-      <select value={selectedProjectId} disabled={isBrowseMode} onChange={(event) => applyBatchStaticButtonTargetProject(event.target.value)}>
-        <option value="">{row.mixed ? "多个不同值" : "请选择目标模型"}</option>
-        {projectOptions.map(({ schemeId, schemeName, project }) => (
-          <option key={`${schemeId}:${project.id}`} value={project.id}>
-            {schemeName} / {project.name}
-          </option>
-        ))}
-      </select>
-    );
-  };
-
-  const renderBatchCommonSchemeSelect = (row: BatchCommonParamRow) => (
-    <select value={row.mixed ? "" : row.value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonParam(row.key, event.target.value)}>
-      <option value="">{row.mixed ? "多个不同值" : "请选择目标方案"}</option>
-      {flattenSavedSchemes(schemes).map((scheme) => (
-        <option key={scheme.id} value={scheme.id}>{scheme.name}</option>
-      ))}
-    </select>
-  );
-
-  const renderBatchCommonModelLayerSelect = (row: BatchCommonParamRow) => {
-    const currentLayerId = row.mixed ? "" : row.value || DEFAULT_MODEL_LAYER_ID;
-    const hasCurrentLayer = !currentLayerId || layers.some((layer) => layer.id === currentLayerId);
-    return (
-      <select value={currentLayerId} disabled={isBrowseMode} onChange={(event) => assignSelectedNodesToModelLayer(event.target.value)}>
-        <option value="">{row.mixed ? "多个不同值" : "请选择所属图层"}</option>
-        {!hasCurrentLayer && <option value={currentLayerId}>{currentLayerId}</option>}
-        {layers.map((layer) => (
-          <option key={layer.id} value={layer.id}>{layer.name}</option>
-        ))}
-      </select>
-    );
-  };
-
-  const normalizeBatchTargetLayerIds = (value: string) => {
-    const layerById = new Map(layers.map((layer) => [layer.id, layer]));
-    const layerByName = new Map(layers.map((layer) => [layer.name.trim(), layer]));
-    const layerIds: string[] = [];
-    const usedLayerIds = new Set<string>();
-    for (const token of parseStaticButtonTargetLayerValues(value)) {
-      const layer = layerById.get(token) ?? layerByName.get(token);
-      if (!layer || usedLayerIds.has(layer.id)) {
-        continue;
-      }
-      usedLayerIds.add(layer.id);
-      layerIds.push(layer.id);
-    }
-    return layerIds;
-  };
-
-  const applyBatchStaticButtonTargetLayers = (targetLayerIds: string[]) => {
-    const targetLayerIdSet = new Set(targetLayerIds);
-    const selectedLayers = layers.filter((layer) => targetLayerIdSet.has(layer.id));
-    applyBatchCommonParamPatch("目标图层", () => ({
-      buttonTargetLayerId: selectedLayers[0]?.id ?? "",
-      buttonTargetLayerName: selectedLayers[0]?.name ?? "",
-      buttonTargetLayerIds: serializeStaticButtonTargetLayerIds(selectedLayers.map((layer) => layer.id)),
-      buttonTargetLayerNames: serializeStaticButtonTargetLayerIds(selectedLayers.map((layer) => layer.name))
-    }));
-  };
-
-  const renderBatchCommonLayerSelect = (row: BatchCommonParamRow) => {
-    const selectedLayerId = row.mixed ? "" : normalizeBatchTargetLayerIds(row.value)[0] ?? "";
-    return (
-      <select value={selectedLayerId} disabled={isBrowseMode} onChange={(event) => applyBatchStaticButtonTargetLayers(event.target.value ? [event.target.value] : [])}>
-        <option value="">{row.mixed ? "多个不同值" : "请选择目标图层"}</option>
-        {layers.map((layer) => (
-          <option key={layer.id} value={layer.id}>{layer.name}</option>
-        ))}
-      </select>
-    );
-  };
-
-  const renderBatchCommonLayerMultiSelect = (row: BatchCommonParamRow) => {
-    const selectedLayerIds = row.mixed ? [] : normalizeBatchTargetLayerIds(row.value);
-    const selectedLayerIdSet = new Set(selectedLayerIds);
-    const selectedLayers = layers.filter((layer) => selectedLayerIdSet.has(layer.id));
-    const selectedLayerTitle = selectedLayers.map((layer) => layer.name).join("、");
-    const selectedLayerSummary =
-      row.mixed
-        ? "多个不同值"
-        : selectedLayers.length === 0
-          ? "请选择目标图层"
-          : selectedLayers.length <= 2
-            ? selectedLayerTitle
-            : `已选 ${selectedLayers.length} 个图层：${selectedLayers.slice(0, 2).map((layer) => layer.name).join("、")}...`;
-    return (
-      <StaticButtonLayerMultiSelect
-        ariaLabel="目标图层"
-        className="batch-static-button-layer-dropdown"
-        disabled={isBrowseMode}
-        layers={layers}
-        selectedLayerIds={selectedLayerIds}
-        selectedLayerSummary={selectedLayerSummary}
-        selectedLayerTitle={selectedLayerTitle}
-        onChange={applyBatchStaticButtonTargetLayers}
-      />
-    );
-  };
-
-  const renderBatchCommonParamEditor = (row: BatchCommonParamRow) => {
-    const value = row.mixed ? "" : row.value;
-    if (isColorParamKey(row.key)) {
-      return renderBatchCommonColorParamEditor(row);
-    }
-    if (row.key === "layerId") {
-      return renderBatchCommonModelLayerSelect(row);
-    }
-    if (row.key === "buttonTargetProjectId" || row.key === "buttonTargetProjectName") {
-      return renderBatchCommonProjectSelect(row);
-    }
-    if (row.key === "buttonTargetSchemeId") {
-      return renderBatchCommonSchemeSelect(row);
-    }
-    if (row.key === "buttonTargetLayerIds" || row.key === "buttonTargetLayerNames") {
-      return renderBatchCommonLayerMultiSelect(row);
-    }
-    if (row.key === "buttonTargetLayerId" || row.key === "buttonTargetLayerName") {
-      return renderBatchCommonLayerSelect(row);
-    }
-    const options = row.key === "status" ? batchStatusOptions(value) : paramOptionsForDefinition(row.key, undefined, value, row.definition);
-    const optionLabels = row.key === "status" ? batchStatusOptionLabels() : paramOptionLabelsForDefinition(row.key, undefined, value, row.definition);
-    if (options) {
-      return (
-        <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonParam(row.key, event.target.value)}>
-          {row.mixed && <option value="">多个不同值</option>}
-          {options.map((option) => (
-            <option key={option} value={option}>
-              {optionLabels[option] ?? option}
-            </option>
-          ))}
-        </select>
-      );
-    }
-    return (
-      <BufferedTextInput
-        value={value}
-        disabled={isBrowseMode}
-        placeholder={row.mixed ? "多个不同值" : undefined}
-        onCommit={(nextValue) => applyBatchCommonParam(row.key, nextValue)}
-      />
-    );
-  };
-
-  const renderBatchCommonColumnGroup = () => (
-    <colgroup>
-      <col className="batch-common-name-col" />
-      <col className="batch-common-value-col" />
-    </colgroup>
-  );
-
-  const renderBatchCommonParamTable = (
-    title: "图形" | "模型",
-    rows: BatchCommonParamRow[],
-    emptyText: string
-  ) => (
-    <section className="batch-common-table-section" aria-label={`${title}共同属性表`}>
-      <div className="batch-common-table-title">
-        <strong>{title}</strong>
-        <span>{rows.length} 个共同属性</span>
-      </div>
-      <table className="param-table batch-param-table batch-common-property-table">
-        {renderBatchCommonColumnGroup()}
-        <tbody>
-          {rows.length > 0 ? rows.map((row) => (
-            <tr key={row.key}>
-              {renderParamHeader(row.key, row.key, row.label)}
-              <td>{renderBatchCommonParamEditor(row)}</td>
-            </tr>
-          )) : (
-            <tr className="batch-common-empty-row">
-              <td colSpan={2}>{emptyText}</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </section>
-  );
-
-  const renderBatchCommonMeasurementGroupColorEditor = (row: BatchCommonMeasurementGroupRow) => {
-    const value = row.mixed ? "" : row.value;
-    const fallback = row.key === "backgroundColor" ? "#ffffff" : "#64748b";
-    return (
-      <div className="color-field with-none">
-        <DeferredColorInput
-          value={colorInputValue(value, fallback)}
-          fallback={fallback}
-          disabled={isBrowseMode}
-          aria-label={row.label}
-          onCommit={(nextValue) => applyBatchCommonMeasurementGroupSetting(row.key, nextValue)}
-        />
-        <BufferedTextInput
-          value={value === "transparent" ? "无颜色" : value}
-          disabled={isBrowseMode}
-          placeholder={row.mixed ? "多个不同值" : undefined}
-          onCommit={(nextValue) => applyBatchCommonMeasurementGroupSetting(row.key, nextValue === "无颜色" ? "transparent" : nextValue)}
-        />
-        <button type="button" disabled={isBrowseMode} onClick={() => applyBatchCommonMeasurementGroupSetting(row.key, "transparent")}>无颜色</button>
-      </div>
-    );
-  };
-
-  const renderBatchCommonMeasurementGroupEditor = (row: BatchCommonMeasurementGroupRow) => {
-    const value = row.mixed ? "" : row.value;
-    if (row.key === "visible" || row.key === "labelVisible" || row.key === "unitVisible") {
-      return (
-        <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value)}>
-          {row.mixed && <option value="">多个不同值</option>}
-          <option value="1">显示</option>
-          <option value="0">隐藏</option>
-        </select>
-      );
-    }
-    if (row.key === "backgroundVisible") {
-      return (
-        <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value)}>
-          {row.mixed && <option value="">多个不同值</option>}
-          <option value="1">显示</option>
-          <option value="0">透明</option>
-        </select>
-      );
-    }
-    if (row.key === "layout") {
-      return (
-        <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value)}>
-          {row.mixed && <option value="">多个不同值</option>}
-          <option value="vertical">竖向</option>
-          <option value="horizontal">横向</option>
-          <option value="grid">两列</option>
-        </select>
-      );
-    }
-    if (row.key === "borderStyle") {
-      return (
-        <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value)}>
-          {row.mixed && <option value="">多个不同值</option>}
-          <option value="solid">实线</option>
-          <option value="dashed">虚线</option>
-          <option value="dotted">点线</option>
-          <option value="none">无边框</option>
-        </select>
-      );
-    }
-    if (row.key === "backgroundColor" || row.key === "borderColor") {
-      return renderBatchCommonMeasurementGroupColorEditor(row);
-    }
-    return (
-      <BufferedTextInput
-        type="number"
-        min="0"
-        max="12"
-        step="0.5"
-        value={value}
-        disabled={isBrowseMode}
-        placeholder={row.mixed ? "多个不同值" : undefined}
-        onCommit={(nextValue) => applyBatchCommonMeasurementGroupSetting(row.key, nextValue)}
-      />
-    );
-  };
-
-  const renderBatchCommonMeasurementGroupTable = () => (
-    <section className="batch-common-table-section" aria-label="量测共同属性表">
-      <div className="batch-common-table-title">
-        <strong>量测</strong>
-        <span>{selectedNodeIdsWithMeasurementGroups.size} 个设备，{batchCommonMeasurementGroupRows.length} 个量测属性</span>
-      </div>
-      <table className="param-table batch-param-table batch-common-property-table selected-node-measurement-table">
-        {renderBatchCommonColumnGroup()}
-        <tbody>
-          {batchCommonMeasurementGroupRows.length > 0 ? batchCommonMeasurementGroupRows.map((row) => (
-            <tr key={row.key}>
-              {renderParamHeader(row.key, row.key, row.label)}
-              <td>{renderBatchCommonMeasurementGroupEditor(row)}</td>
-            </tr>
-          )) : (
-            <tr className="batch-common-empty-row">
-              <td colSpan={2}>选中设备没有可批量修改的量测共同属性。</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </section>
-  );
-
-  const renderBatchCommonPropertyPanel = () => (
-    <section className="batch-param-panel" aria-label="批量修改共同属性">
-      <div className="batch-param-summary">
-        <strong>批量修改共同属性</strong>
-        <span>{activeSelectedNodeIds.length} 个图元，{batchCommonPropertyRowCount} 个共同属性</span>
-      </div>
-      <div className="batch-common-table-stack">
-        {renderBatchCommonParamTable("图形", batchCommonGraphicParamRows, "选中图元没有可批量修改的图形共同属性。")}
-        {renderBatchCommonParamTable("模型", batchCommonModelParamRows, "选中图元没有可批量修改的模型共同属性。")}
-        {renderBatchCommonMeasurementGroupTable()}
-      </div>
-    </section>
-  );
-
-  const renderStaticButtonActionEditor = (
-    node: ModelNode,
-    editorActions: {
-      updateParam: (key: string, value: string) => void;
-      updateNode: (patch: Partial<ModelNode>) => void;
-    } = {
-      updateParam,
-      updateNode: updateSelectedNode
-    }
-  ) => {
-    if (!isStaticButtonCapableKind(node.kind)) {
-      return null;
-    }
-    const writeParam = editorActions.updateParam;
-    const writeNode = editorActions.updateNode;
-    const buttonEnabled = node.params.buttonEnabled === "1";
-    const actionType = node.params.buttonActionType || "none";
-    const projectOptions = flattenSavedSchemes(schemes).flatMap((scheme) =>
-      scheme.projects.map((project) => ({
-        schemeId: scheme.id,
-        schemeName: scheme.name,
-        project
-      }))
-    );
-    const selectedTargetLayers = resolveStaticButtonTargetLayers(node, layers);
-    const selectedTargetLayerTitle = selectedTargetLayers.map((layer) => layer.name).join("、");
-    const selectedTargetLayerSummary =
-      selectedTargetLayers.length === 0
-        ? "请选择目标图层"
-        : selectedTargetLayers.length <= 2
-          ? selectedTargetLayerTitle
-          : `已选 ${selectedTargetLayers.length} 个图层：${selectedTargetLayers.slice(0, 2).map((layer) => layer.name).join("、")}...`;
-    const writeStaticButtonTargetLayers = (targetLayerIds: string[]) => {
-      const targetLayerIdSet = new Set(targetLayerIds);
-      const selectedLayers = layers.filter((layer) => targetLayerIdSet.has(layer.id));
-      writeNode({
-        params: {
-          ...node.params,
-          buttonTargetLayerId: selectedLayers[0]?.id ?? "",
-          buttonTargetLayerName: selectedLayers[0]?.name ?? "",
-          buttonTargetLayerIds: serializeStaticButtonTargetLayerIds(selectedLayers.map((layer) => layer.id)),
-          buttonTargetLayerNames: serializeStaticButtonTargetLayerIds(selectedLayers.map((layer) => layer.name))
-        }
-      });
-    };
-    return (
-      <>
-        <tr>
-          {renderChineseParamHeader("buttonEnabled")}
-          <td>
-            <select
-              value={buttonEnabled ? "1" : "0"}
-              disabled={isBrowseMode}
-              onChange={(event) => writeParam("buttonEnabled", event.target.value)}
-            >
-              <option value="1">启用</option>
-              <option value="0">禁用</option>
-            </select>
-          </td>
-        </tr>
-        {buttonEnabled && (
-          <>
-            <tr>
-              {renderChineseParamHeader("buttonActionType")}
-              <td>
-                <select value={actionType} disabled={isBrowseMode} onChange={(event) => writeParam("buttonActionType", event.target.value)}>
-                  {Object.entries(STATIC_BUTTON_ACTION_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
-              </td>
-            </tr>
-            {actionType === "project" && (
-              <tr>
-                {renderChineseParamHeader("buttonTargetProjectId")}
-                <td>
-                  <select
-                    value={node.params.buttonTargetProjectId || ""}
-                    disabled={isBrowseMode}
-                    onChange={(event) => {
-                      const selected = projectOptions.find((item) => item.project.id === event.target.value);
-                      writeNode({
-                        params: {
-                          ...node.params,
-                          buttonTargetProjectId: selected?.project.id ?? "",
-                          buttonTargetProjectName: selected?.project.name ?? "",
-                          buttonTargetSchemeId: selected?.schemeId ?? ""
-                        }
-                      });
-                    }}
-                  >
-                    <option value="">请选择目标模型</option>
-                    {projectOptions.map(({ schemeId, schemeName, project }) => (
-                      <option key={`${schemeId}:${project.id}`} value={project.id}>
-                        {schemeName} / {project.name}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-              </tr>
-            )}
-            {actionType === "layer" && (
-              <tr>
-                {renderChineseParamHeader("buttonTargetLayerIds")}
-                <td>
-                  <StaticButtonLayerMultiSelect
-                    ariaLabel="目标图层"
-                    disabled={isBrowseMode}
-                    layers={layers}
-                    selectedLayerIds={selectedTargetLayers.map((layer) => layer.id)}
-                    selectedLayerSummary={selectedTargetLayerSummary}
-                    selectedLayerTitle={selectedTargetLayerTitle}
-                    onChange={writeStaticButtonTargetLayers}
-                  />
-                </td>
-              </tr>
-            )}
-            {actionType === "command" && (
-              <tr>
-                {renderChineseParamHeader("buttonCommand")}
-                <td>
-                  <select value={node.params.buttonCommand || "none"} disabled={isBrowseMode} onChange={(event) => writeParam("buttonCommand", event.target.value)}>
-                    {Object.entries(STATIC_BUTTON_COMMAND_LABELS).map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </select>
-                </td>
-              </tr>
-            )}
-          </>
-        )}
-      </>
-    );
-  };
 
   const renderParamHeader = (key: string, displayName = key, title = PARAM_LABELS[key] ?? displayName) => {
     const visibleLabel = displayName === key ? title : displayName;
@@ -26067,7 +20898,7 @@ export function App() {
   };
 
   const renderChineseParamHeader = (key: string, fallback = key) => (
-    renderParamHeader(key, key, PARAM_LABELS[key] ?? fallback)
+    batchEditors.renderParamHeader(key, key, PARAM_LABELS[key] ?? fallback)
   );
 
   const renderNodeDoubleClickDeviceParamRows = (node: ModelNode) => {
@@ -26087,14 +20918,14 @@ export function App() {
       const definition = customDefinitions.find((item) => item.enName === key);
       return (
         <tr key={key}>
-          {renderParamHeader(key, key, definition?.cnName ?? PARAM_LABELS[key] ?? key)}
+          {batchEditors.renderParamHeader(key, key, definition?.cnName ?? PARAM_LABELS[key] ?? key)}
           <td>
             {key === "name" ? (
-              <BufferedTextInput value={node.name} onCommit={(nextValue) => updateNodeDoubleClickDraftPatch(node.id, { name: nextValue })} />
-            ) : READONLY_E_PARAM_KEYS.has(key) || definitionMakesValueReadonly(definition) ? (
+              <BufferedTextInput value={node.name} onCommit={(nextValue) => batchEditors.updateNodeDoubleClickDraftPatch(node.id, { name: nextValue })} />
+            ) : READONLY_E_PARAM_KEYS.has(key) || batchEditors.definitionMakesValueReadonly(definition) ? (
               <input value={displayValue} readOnly />
             ) : (
-              renderNodeDoubleClickParamEditor(node, key, displayValue, false, definition)
+              batchEditors.renderNodeDoubleClickParamEditor(node, key, displayValue, false, definition)
             )}
           </td>
         </tr>
@@ -26108,14 +20939,14 @@ export function App() {
       const displayValue = formatDeviceModelParamDisplayValue(row.key, row.value);
       return (
         <tr key={row.key}>
-          {renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
+          {batchEditors.renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
           <td>
             {row.key === "name" && view.kind === "container" ? (
-              <BufferedTextInput value={node.name} onCommit={(nextValue) => updateNodeDoubleClickDraftPatch(node.id, { name: nextValue })} />
+              <BufferedTextInput value={node.name} onCommit={(nextValue) => batchEditors.updateNodeDoubleClickDraftPatch(node.id, { name: nextValue })} />
             ) : row.readonly || !row.paramKey ? (
               <input value={displayValue} readOnly />
             ) : options ? (
-              <select value={displayValue} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, row.paramKey!, event.target.value)}>
+              <select value={displayValue} onChange={(event) => batchEditors.updateNodeDoubleClickDraftParam(node.id, row.paramKey!, event.target.value)}>
                 {options.map((option) => (
                   <option key={option} value={option}>
                     {option}
@@ -26123,7 +20954,7 @@ export function App() {
                 ))}
               </select>
             ) : (
-              <BufferedTextInput value={displayValue} onCommit={(nextValue) => updateNodeDoubleClickDraftParam(node.id, row.paramKey!, nextValue)} />
+              <BufferedTextInput value={displayValue} onCommit={(nextValue) => batchEditors.updateNodeDoubleClickDraftParam(node.id, row.paramKey!, nextValue)} />
             )}
           </td>
         </tr>
@@ -26135,20 +20966,20 @@ export function App() {
     <table className="param-table node-double-click-param-table">
       <tbody>
         <tr>
-          {renderChineseParamHeader("text")}
-          <td><BufferedTextarea rows={7} value={dialogNode.params.text || ""} onCommit={(nextValue) => updateNodeDoubleClickDraftParam(dialogNode.id, "text", nextValue)} autoFocus /></td>
+          {batchEditors.renderChineseParamHeader("text")}
+          <td><BufferedTextarea rows={7} value={dialogNode.params.text || ""} onCommit={(nextValue) => batchEditors.updateNodeDoubleClickDraftParam(dialogNode.id, "text", nextValue)} autoFocus /></td>
         </tr>
         <tr>
-          {renderChineseParamHeader("fontFamily")}
-          <td>{renderNodeDoubleClickParamEditor(dialogNode, "fontFamily", dialogNode.params.fontFamily || "Arial", false)}</td>
+          {batchEditors.renderChineseParamHeader("fontFamily")}
+          <td>{batchEditors.renderNodeDoubleClickParamEditor(dialogNode, "fontFamily", dialogNode.params.fontFamily || "Arial", false)}</td>
         </tr>
         <tr>
-          {renderChineseParamHeader("fontSize")}
-          <td><BufferedTextInput type="number" min="8" max="160" value={dialogNode.params.fontSize || "24"} onCommit={(nextValue) => updateNodeDoubleClickDraftParam(dialogNode.id, "fontSize", nextValue)} /></td>
+          {batchEditors.renderChineseParamHeader("fontSize")}
+          <td><BufferedTextInput type="number" min="8" max="160" value={dialogNode.params.fontSize || "24"} onCommit={(nextValue) => batchEditors.updateNodeDoubleClickDraftParam(dialogNode.id, "fontSize", nextValue)} /></td>
         </tr>
         <tr>
-          {renderChineseParamHeader("textColor")}
-          <td>{renderNodeDoubleClickColorEditor(dialogNode, "textColor", dialogNode.params.textColor || "#111827", "#111827")}</td>
+          {batchEditors.renderChineseParamHeader("textColor")}
+          <td>{batchEditors.renderNodeDoubleClickColorEditor(dialogNode, "textColor", dialogNode.params.textColor || "#111827", "#111827")}</td>
         </tr>
         <tr>
           <th>文字样式</th>
@@ -26157,21 +20988,21 @@ export function App() {
               <TextStyleToggleButton
                 active={(dialogNode.params.fontWeight || "400") !== "400"}
                 label="加粗"
-                onClick={() => updateNodeDoubleClickDraftParam(dialogNode.id, "fontWeight", (dialogNode.params.fontWeight || "400") !== "400" ? "400" : "700")}
+                onClick={() => batchEditors.updateNodeDoubleClickDraftParam(dialogNode.id, "fontWeight", (dialogNode.params.fontWeight || "400") !== "400" ? "400" : "700")}
               >
                 <Bold aria-hidden="true" />
               </TextStyleToggleButton>
               <TextStyleToggleButton
                 active={(dialogNode.params.fontStyle || "normal") === "italic"}
                 label="斜体"
-                onClick={() => updateNodeDoubleClickDraftParam(dialogNode.id, "fontStyle", (dialogNode.params.fontStyle || "normal") === "italic" ? "normal" : "italic")}
+                onClick={() => batchEditors.updateNodeDoubleClickDraftParam(dialogNode.id, "fontStyle", (dialogNode.params.fontStyle || "normal") === "italic" ? "normal" : "italic")}
               >
                 <Italic aria-hidden="true" />
               </TextStyleToggleButton>
               <TextStyleToggleButton
                 active={(dialogNode.params.textDecoration || "none") === "underline"}
                 label="下划线"
-                onClick={() => updateNodeDoubleClickDraftParam(dialogNode.id, "textDecoration", (dialogNode.params.textDecoration || "none") === "underline" ? "none" : "underline")}
+                onClick={() => batchEditors.updateNodeDoubleClickDraftParam(dialogNode.id, "textDecoration", (dialogNode.params.textDecoration || "none") === "underline" ? "none" : "underline")}
               >
                 <Underline aria-hidden="true" />
               </TextStyleToggleButton>
@@ -26179,12 +21010,12 @@ export function App() {
           </td>
         </tr>
         <tr>
-          {renderChineseParamHeader("textAlign")}
-          <td>{renderNodeDoubleClickParamEditor(dialogNode, "textAlign", dialogNode.params.textAlign || "center", false)}</td>
+          {batchEditors.renderChineseParamHeader("textAlign")}
+          <td>{batchEditors.renderNodeDoubleClickParamEditor(dialogNode, "textAlign", dialogNode.params.textAlign || "center", false)}</td>
         </tr>
         <tr>
-          {renderChineseParamHeader("verticalAlign")}
-          <td>{renderNodeDoubleClickParamEditor(dialogNode, "verticalAlign", dialogNode.params.verticalAlign || "middle", false)}</td>
+          {batchEditors.renderChineseParamHeader("verticalAlign")}
+          <td>{batchEditors.renderNodeDoubleClickParamEditor(dialogNode, "verticalAlign", dialogNode.params.verticalAlign || "middle", false)}</td>
         </tr>
       </tbody>
     </table>
@@ -26371,9 +21202,9 @@ export function App() {
                   <h3>修改交互操作</h3>
                   <table className="param-table node-double-click-param-table">
                     <tbody>
-                      {renderStaticButtonActionEditor(dialogNode, {
-                        updateParam: (key, value) => updateNodeDoubleClickDraftParam(dialogNode.id, key, value),
-                        updateNode: (patch) => updateNodeDoubleClickDraftPatch(dialogNode.id, patch)
+                      {batchEditors.renderStaticButtonActionEditor(dialogNode, {
+                        updateParam: (key, value) => batchEditors.updateNodeDoubleClickDraftParam(dialogNode.id, key, value),
+                        updateNode: (patch) => batchEditors.updateNodeDoubleClickDraftPatch(dialogNode.id, patch)
                       })}
                     </tbody>
                   </table>
@@ -40925,19 +35756,19 @@ export function App() {
               <table className="param-table">
                 <tbody>
                   <tr>
-                    {renderChineseParamHeader("name", "模型名称")}
+                    {batchEditors.renderChineseParamHeader("name", "模型名称")}
                     <td><input value={currentModelRecord.name} readOnly /></td>
                   </tr>
                   <tr>
-                    {renderChineseParamHeader("schemeName")}
+                    {batchEditors.renderChineseParamHeader("schemeName")}
                     <td><input value={selectedSchemeRecord?.name ?? "未选择方案"} readOnly /></td>
                   </tr>
                   <tr>
-                    {renderChineseParamHeader("updatedAt", "模型更新时间")}
+                    {batchEditors.renderChineseParamHeader("updatedAt", "模型更新时间")}
                     <td><input value={new Date(currentModelRecord.updatedAt).toLocaleString()} readOnly /></td>
                   </tr>
                   <tr>
-                    {renderChineseParamHeader("canvasWidth")}
+                    {batchEditors.renderChineseParamHeader("canvasWidth")}
                     <td>
                       <BufferedTextInput
                         type="number"
@@ -40951,7 +35782,7 @@ export function App() {
                     </td>
                   </tr>
                   <tr>
-                    {renderChineseParamHeader("canvasHeight")}
+                    {batchEditors.renderChineseParamHeader("canvasHeight")}
                     <td>
                       <BufferedTextInput
                         type="number"
@@ -40965,7 +35796,7 @@ export function App() {
                     </td>
                   </tr>
                   <tr>
-                    {renderChineseParamHeader("allowAutoExpandCanvas")}
+                    {batchEditors.renderChineseParamHeader("allowAutoExpandCanvas")}
                     <td>
                       <select
                         value={allowAutoExpandCanvas ? "allow" : "deny"}
@@ -40981,7 +35812,7 @@ export function App() {
                     </td>
                   </tr>
                   <tr>
-                    {renderChineseParamHeader("canvasBackgroundColor")}
+                    {batchEditors.renderChineseParamHeader("canvasBackgroundColor")}
                     <td>
                       <div className="color-field with-clear">
                         <DeferredColorInput
@@ -41015,7 +35846,7 @@ export function App() {
                     </td>
                   </tr>
                   <tr>
-                    {renderChineseParamHeader("canvasBackgroundImage")}
+                    {batchEditors.renderChineseParamHeader("canvasBackgroundImage")}
                     <td>
                       <div className="image-field-actions">
                         <input value={canvasBackgroundImage ? "已设置" : "未设置"} readOnly />
@@ -41035,7 +35866,7 @@ export function App() {
                     </td>
                   </tr>
                   <tr>
-                    {renderChineseParamHeader("backgroundProjectId")}
+                    {batchEditors.renderChineseParamHeader("backgroundProjectId")}
                     <td>
                       <div className="background-page-field">
                         <select
@@ -41075,7 +35906,7 @@ export function App() {
                     </td>
                   </tr>
                   <tr>
-                    {renderChineseParamHeader("backgroundLayerIds")}
+                    {batchEditors.renderChineseParamHeader("backgroundLayerIds")}
                     <td>
                       {backgroundProjectRecord ? (
                         <div className="background-layer-checklist">
@@ -41098,7 +35929,7 @@ export function App() {
                     </td>
                   </tr>
                   <tr>
-                    {renderChineseParamHeader("powerUnit")}
+                    {batchEditors.renderChineseParamHeader("powerUnit")}
                     <td>
                       <select
                         value={powerUnit}
@@ -41115,7 +35946,7 @@ export function App() {
                     </td>
                   </tr>
                   <tr>
-                    {renderChineseParamHeader("voltageUnit")}
+                    {batchEditors.renderChineseParamHeader("voltageUnit")}
                     <td>
                       <select
                         value={voltageUnit}
@@ -41132,7 +35963,7 @@ export function App() {
                     </td>
                   </tr>
                   <tr>
-                    {renderChineseParamHeader("currentUnit")}
+                    {batchEditors.renderChineseParamHeader("currentUnit")}
                     <td>
                       <select
                         value={currentUnit}
@@ -41149,7 +35980,7 @@ export function App() {
                     </td>
                   </tr>
                   <tr>
-                    {renderChineseParamHeader("powerBaseValue")}
+                    {batchEditors.renderChineseParamHeader("powerBaseValue")}
                     <td>
                       <div className="unit-value-field">
                         <BufferedTextInput
@@ -41230,7 +36061,7 @@ export function App() {
                 </div>
                 {multiNodeGraphSelection ? (
                   <div className="batch-common-scroll-area">
-                    {hasBatchCommonPropertyRows ? renderBatchCommonPropertyPanel() : (
+                    {hasBatchCommonPropertyRows ? batchEditors.renderBatchCommonPropertyPanel() : (
                       <div className="empty-state compact">
                         <FileJson size={24} />
                         <p>当前选中的图元没有可批量修改的共同属性。</p>
@@ -41242,17 +36073,17 @@ export function App() {
                   <table className="param-table">
                   <tbody>
                     <tr>
-                      {renderChineseParamHeader("graph_x", "X坐标")}
+                      {batchEditors.renderChineseParamHeader("graph_x", "X坐标")}
                       <td><BufferedTextInput type="number" value={Math.round(inspectorSelectedNode.position.x)} onCommit={(nextValue) => updateSelectedNode({ position: { ...inspectorSelectedNode.position, x: Number(nextValue) } })} /></td>
                     </tr>
                     <tr>
-                      {renderChineseParamHeader("graph_y", "Y坐标")}
+                      {batchEditors.renderChineseParamHeader("graph_y", "Y坐标")}
                       <td><BufferedTextInput type="number" value={Math.round(inspectorSelectedNode.position.y)} onCommit={(nextValue) => updateSelectedNode({ position: { ...inspectorSelectedNode.position, y: Number(nextValue) } })} /></td>
                     </tr>
                     {isStaticBoxLikeNode(inspectorSelectedNode) && (
                       <>
                         <tr>
-                          {renderChineseParamHeader("staticWidth", "宽度")}
+                          {batchEditors.renderChineseParamHeader("staticWidth", "宽度")}
                           <td>
                             <BufferedTextInput
                               type="number"
@@ -41268,7 +36099,7 @@ export function App() {
                           </td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("staticHeight", "高度")}
+                          {batchEditors.renderChineseParamHeader("staticHeight", "高度")}
                           <td>
                             <BufferedTextInput
                               type="number"
@@ -41286,11 +36117,11 @@ export function App() {
                       </>
                     )}
                     <tr>
-                      {renderChineseParamHeader("rotation")}
+                      {batchEditors.renderChineseParamHeader("rotation")}
                       <td><BufferedTextInput type="number" value={inspectorSelectedNode.rotation} onCommit={(nextValue) => updateSelectedNode({ rotation: Number(nextValue) })} /></td>
                     </tr>
                     <tr>
-                      {renderChineseParamHeader("scaleX")}
+                      {batchEditors.renderChineseParamHeader("scaleX")}
                       <td><BufferedTextInput type="number" step="0.1" value={formatInspectorScaleValue(getNodeScaleX(inspectorSelectedNode))} onCommit={(nextValue) => {
                         const scaleX = normalizeScale(Number(nextValue), getNodeScaleX(inspectorSelectedNode));
                         const nextScaleY = selectedNodeAllowsIndependentScale
@@ -41300,7 +36131,7 @@ export function App() {
                       }} /></td>
                     </tr>
                     <tr>
-                      {renderChineseParamHeader("scaleY")}
+                      {batchEditors.renderChineseParamHeader("scaleY")}
                       <td><BufferedTextInput
                         type="number"
                         step="0.1"
@@ -41314,7 +36145,7 @@ export function App() {
                       }} /></td>
                     </tr>
                     <tr>
-                      {renderChineseParamHeader("layerId", "所属图层")}
+                      {batchEditors.renderChineseParamHeader("layerId", "所属图层")}
                       <td>
                         <select
                           value={inspectorSelectedNode.layerId ?? DEFAULT_MODEL_LAYER_ID}
@@ -41329,7 +36160,7 @@ export function App() {
                     {!isStaticNode(inspectorSelectedNode) && (
                       <>
                         <tr>
-                          {renderChineseParamHeader("_labelDisplayMode")}
+                          {batchEditors.renderChineseParamHeader("_labelDisplayMode")}
                           <td>
                             <select
                               value={nodeLabelDisplayMode(inspectorSelectedNode)}
@@ -41342,7 +36173,7 @@ export function App() {
                           </td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("_labelText")}
+                          {batchEditors.renderChineseParamHeader("_labelText")}
                           <td>
                             <BufferedTextInput
                               value={inspectorSelectedNode.params._labelText ?? inspectorSelectedNode.name}
@@ -41351,15 +36182,15 @@ export function App() {
                           </td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("_labelColor")}
-                          <td>{renderColorEditor("_labelColor", inspectorSelectedNode.params._labelColor || "#334155", "#334155")}</td>
+                          {batchEditors.renderChineseParamHeader("_labelColor")}
+                          <td>{batchEditors.renderColorEditor("_labelColor", inspectorSelectedNode.params._labelColor || "#334155", "#334155")}</td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("_labelFontFamily")}
-                          <td>{renderParamEditor("_labelFontFamily", inspectorSelectedNode.params._labelFontFamily || "Arial", false)}</td>
+                          {batchEditors.renderChineseParamHeader("_labelFontFamily")}
+                          <td>{batchEditors.renderParamEditor("_labelFontFamily", inspectorSelectedNode.params._labelFontFamily || "Arial", false)}</td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("_labelFontSize")}
+                          {batchEditors.renderChineseParamHeader("_labelFontSize")}
                           <td>
                             <BufferedTextInput
                               type="number"
@@ -41371,7 +36202,7 @@ export function App() {
                           </td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("_labelRotation")}
+                          {batchEditors.renderChineseParamHeader("_labelRotation")}
                           <td>
                             <select
                               value={String(normalizeNodeLabelRotation(inspectorSelectedNode.params._labelRotation))}
@@ -41413,7 +36244,7 @@ export function App() {
                           </td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("_labelTextAnchor")}
+                          {batchEditors.renderChineseParamHeader("_labelTextAnchor")}
                           <td>
                             <select
                               value={nodeLabelTextAnchor(inspectorSelectedNode)}
@@ -41426,7 +36257,7 @@ export function App() {
                           </td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("_labelX")}
+                          {batchEditors.renderChineseParamHeader("_labelX")}
                           <td>
                             <BufferedTextInput
                               type="number"
@@ -41437,7 +36268,7 @@ export function App() {
                           </td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("_labelY")}
+                          {batchEditors.renderChineseParamHeader("_labelY")}
                           <td>
                             <BufferedTextInput
                               type="number"
@@ -41448,7 +36279,7 @@ export function App() {
                           </td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("terminalCount")}
+                          {batchEditors.renderChineseParamHeader("terminalCount")}
                           <td>
                             <span
                               className="graph-readonly-value"
@@ -41486,7 +36317,7 @@ export function App() {
                     {isStaticNode(inspectorSelectedNode) && (
                       <>
                         <tr>
-                          {renderChineseParamHeader(STATIC_ROUTE_AVOIDANCE_PARAM)}
+                          {batchEditors.renderChineseParamHeader(STATIC_ROUTE_AVOIDANCE_PARAM)}
                           <td>
                             <select
                               value={staticNodeParticipatesInRoutingAvoidance(inspectorSelectedNode) ? "1" : "0"}
@@ -41498,12 +36329,12 @@ export function App() {
                           </td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("text")}
+                          {batchEditors.renderChineseParamHeader("text")}
                           <td><BufferedTextarea rows={4} value={inspectorSelectedNode.params.text || ""} onCommit={(nextValue) => updateParam("text", nextValue)} /></td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("fontFamily")}
-                          <td>{renderParamEditor("fontFamily", inspectorSelectedNode.params.fontFamily || "Arial", false)}</td>
+                          {batchEditors.renderChineseParamHeader("fontFamily")}
+                          <td>{batchEditors.renderParamEditor("fontFamily", inspectorSelectedNode.params.fontFamily || "Arial", false)}</td>
                         </tr>
                         <tr>
                           <th title="fontSize">字体大小（100%）</th>
@@ -41538,72 +36369,72 @@ export function App() {
                           </td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("fillColor")}
-                          <td>{renderColorEditor("fillColor", inspectorSelectedNode.params.fillColor || "transparent", "#ffffff")}</td>
+                          {batchEditors.renderChineseParamHeader("fillColor")}
+                          <td>{batchEditors.renderColorEditor("fillColor", inspectorSelectedNode.params.fillColor || "transparent", "#ffffff")}</td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("strokeColor")}
-                          <td>{renderColorEditor("strokeColor", inspectorSelectedNode.params.strokeColor || "transparent", "#334155")}</td>
+                          {batchEditors.renderChineseParamHeader("strokeColor")}
+                          <td>{batchEditors.renderColorEditor("strokeColor", inspectorSelectedNode.params.strokeColor || "transparent", "#334155")}</td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("textColor")}
-                          <td>{renderColorEditor("textColor", inspectorSelectedNode.params.textColor || "#111827", "#111827")}</td>
+                          {batchEditors.renderChineseParamHeader("textColor")}
+                          <td>{batchEditors.renderColorEditor("textColor", inspectorSelectedNode.params.textColor || "#111827", "#111827")}</td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("lineWidth")}
+                          {batchEditors.renderChineseParamHeader("lineWidth")}
                           <td><BufferedTextInput type="number" min="0" max="20" value={inspectorSelectedNode.params.lineWidth || "2"} onCommit={(nextValue) => updateParam("lineWidth", nextValue)} /></td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("strokeStyle")}
-                          <td>{renderParamEditor("strokeStyle", inspectorSelectedNode.params.strokeStyle || "solid", false)}</td>
+                          {batchEditors.renderChineseParamHeader("strokeStyle")}
+                          <td>{batchEditors.renderParamEditor("strokeStyle", inspectorSelectedNode.params.strokeStyle || "solid", false)}</td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("cornerRadius")}
+                          {batchEditors.renderChineseParamHeader("cornerRadius")}
                           <td><BufferedTextInput type="number" min="0" max="999" value={inspectorSelectedNode.params.cornerRadius || "8"} onCommit={(nextValue) => updateParam("cornerRadius", nextValue)} /></td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("accentColor")}
-                          <td>{renderColorEditor("accentColor", inspectorSelectedNode.params.accentColor || "#2563eb", "#2563eb")}</td>
+                          {batchEditors.renderChineseParamHeader("accentColor")}
+                          <td>{batchEditors.renderColorEditor("accentColor", inspectorSelectedNode.params.accentColor || "#2563eb", "#2563eb")}</td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("shadowEnabled")}
-                          <td>{renderParamEditor("shadowEnabled", inspectorSelectedNode.params.shadowEnabled || "0", false)}</td>
+                          {batchEditors.renderChineseParamHeader("shadowEnabled")}
+                          <td>{batchEditors.renderParamEditor("shadowEnabled", inspectorSelectedNode.params.shadowEnabled || "0", false)}</td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("padding")}
+                          {batchEditors.renderChineseParamHeader("padding")}
                           <td><BufferedTextInput type="number" min="0" max="120" value={inspectorSelectedNode.params.padding || "12"} onCommit={(nextValue) => updateParam("padding", nextValue)} /></td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("textAlign")}
-                          <td>{renderParamEditor("textAlign", inspectorSelectedNode.params.textAlign || "center", false)}</td>
+                          {batchEditors.renderChineseParamHeader("textAlign")}
+                          <td>{batchEditors.renderParamEditor("textAlign", inspectorSelectedNode.params.textAlign || "center", false)}</td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("verticalAlign")}
-                          <td>{renderParamEditor("verticalAlign", inspectorSelectedNode.params.verticalAlign || "middle", false)}</td>
+                          {batchEditors.renderChineseParamHeader("verticalAlign")}
+                          <td>{batchEditors.renderParamEditor("verticalAlign", inspectorSelectedNode.params.verticalAlign || "middle", false)}</td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("markerStart")}
-                          <td>{renderParamEditor("markerStart", inspectorSelectedNode.params.markerStart || "none", false)}</td>
+                          {batchEditors.renderChineseParamHeader("markerStart")}
+                          <td>{batchEditors.renderParamEditor("markerStart", inspectorSelectedNode.params.markerStart || "none", false)}</td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("markerEnd")}
-                          <td>{renderParamEditor("markerEnd", inspectorSelectedNode.params.markerEnd || "none", false)}</td>
+                          {batchEditors.renderChineseParamHeader("markerEnd")}
+                          <td>{batchEditors.renderParamEditor("markerEnd", inspectorSelectedNode.params.markerEnd || "none", false)}</td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("arrowSize")}
+                          {batchEditors.renderChineseParamHeader("arrowSize")}
                           <td><BufferedTextInput type="number" min="4" max="80" value={inspectorSelectedNode.params.arrowSize || "10"} onCommit={(nextValue) => updateParam("arrowSize", nextValue)} /></td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("handleColor")}
-                          <td>{renderColorEditor("handleColor", inspectorSelectedNode.params.handleColor || "#2563eb", "#2563eb")}</td>
+                          {batchEditors.renderChineseParamHeader("handleColor")}
+                          <td>{batchEditors.renderColorEditor("handleColor", inspectorSelectedNode.params.handleColor || "#2563eb", "#2563eb")}</td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("handleSize")}
+                          {batchEditors.renderChineseParamHeader("handleSize")}
                           <td><BufferedTextInput type="number" min="3" max="40" value={inspectorSelectedNode.params.handleSize || "8"} onCommit={(nextValue) => updateParam("handleSize", nextValue)} /></td>
                         </tr>
-                        {renderStaticButtonActionEditor(inspectorSelectedNode)}
+                        {batchEditors.renderStaticButtonActionEditor(inspectorSelectedNode)}
                         <tr>
-                          {renderChineseParamHeader("backgroundImage")}
+                          {batchEditors.renderChineseParamHeader("backgroundImage")}
                           <td>
                             <div className="image-field-actions">
                               <input value={inspectorSelectedNode.params.backgroundImage ? "已设置" : "未设置"} readOnly />
@@ -41617,11 +36448,11 @@ export function App() {
                     {!isStaticNode(inspectorSelectedNode) && (
                       <>
                         <tr>
-                          {renderChineseParamHeader("foregroundColor")}
-                          <td>{renderColorEditor("foregroundColor", inspectorSelectedNode.params.foregroundColor || "", terminalColor(inspectorSelectedNode.terminals[0]?.type, colorPalette))}</td>
+                          {batchEditors.renderChineseParamHeader("foregroundColor")}
+                          <td>{batchEditors.renderColorEditor("foregroundColor", inspectorSelectedNode.params.foregroundColor || "", terminalColor(inspectorSelectedNode.terminals[0]?.type, colorPalette))}</td>
                         </tr>
                         <tr>
-                          {renderChineseParamHeader("foregroundImage")}
+                          {batchEditors.renderChineseParamHeader("foregroundImage")}
                           <td>
                             <div className="image-field-actions">
                               <input value={inspectorSelectedNode.params.foregroundImage ? "已设置" : "未设置"} readOnly />
@@ -41703,7 +36534,7 @@ export function App() {
                             const displayValue = formatDeviceModelParamDisplayValue(row.key, row.value);
                             return (
                               <tr key={row.key}>
-                                  {renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
+                                  {batchEditors.renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
                                   <td>
                                     {row.key === "name" && selectedContainerParameterView.kind === "container" ? (
                                     <BufferedTextInput value={inspectorSelectedNode.name} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })} />
@@ -41745,14 +36576,14 @@ export function App() {
                               const definition = customDefinitions.find((item) => item.enName === key);
                               return (
                                 <tr key={key}>
-                                  {renderParamHeader(key, key, definition?.cnName ?? PARAM_LABELS[key] ?? key)}
+                                  {batchEditors.renderParamHeader(key, key, definition?.cnName ?? PARAM_LABELS[key] ?? key)}
                                   <td>
                                     {key === "name" ? (
                                       <BufferedTextInput value={inspectorSelectedNode.name} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })} />
-                                    ) : READONLY_E_PARAM_KEYS.has(key) || definitionMakesValueReadonly(definition) ? (
+                                    ) : READONLY_E_PARAM_KEYS.has(key) || batchEditors.definitionMakesValueReadonly(definition) ? (
                                       <input value={displayValue} readOnly />
                                     ) : (
-                                      renderParamEditor(key, displayValue, false, definition)
+                                      batchEditors.renderParamEditor(key, displayValue, false, definition)
                                     )}
                                   </td>
                                 </tr>

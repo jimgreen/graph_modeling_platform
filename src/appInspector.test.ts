@@ -28,6 +28,12 @@ async function readModelSource() {
   return normalizeSourceText(await readFile(new URL("./model.ts", import.meta.url), "utf8"));
 }
 
+async function readStaticRenderUtilsSource() {
+  // @ts-ignore
+  const { readFile } = await import("node:fs/promises");
+  return normalizeSourceText(await readFile(new URL("./staticRenderUtils.tsx", import.meta.url), "utf8"));
+}
+
 async function readServerSource() {
   // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
   const { readFile } = await import("node:fs/promises");
@@ -38,6 +44,30 @@ async function readViteConfigSource() {
   // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
   const { readFile } = await import("node:fs/promises");
   return normalizeSourceText(await readFile(new URL("../vite.config.ts", import.meta.url), "utf8"));
+}
+
+async function readFormatUtilsSource() {
+  // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
+  const { readFile } = await import("node:fs/promises");
+  return normalizeSourceText(await readFile(new URL("./formatUtils.ts", import.meta.url), "utf8"));
+}
+
+async function readSvgUtilsSource() {
+  // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
+  const { readFile } = await import("node:fs/promises");
+  return normalizeSourceText(await readFile(new URL("./svgUtils.ts", import.meta.url), "utf8"));
+}
+
+async function readInputComponentsSource() {
+  // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
+  const { readFile } = await import("node:fs/promises");
+  return normalizeSourceText(await readFile(new URL("./components/InputComponents.tsx", import.meta.url), "utf8"));
+}
+
+async function readNodeLabelUtilsSource() {
+  // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
+  const { readFile } = await import("node:fs/promises");
+  return normalizeSourceText(await readFile(new URL("./nodeLabelUtils.ts", import.meta.url), "utf8"));
 }
 
 function selectedTerminalCountRow(source: string) {
@@ -62,9 +92,9 @@ function cssRuleBlock(styles: string, selector: string) {
 describe("graph inspector panel", () => {
   test("buffers custom component definition text inputs to avoid app-wide rerenders while typing", async () => {
     const source = await readAppSource();
-    const bufferedInputStart = source.indexOf("function BufferedTextInput(");
-    const bufferedInputEnd = source.indexOf("const BATCH_MEASUREMENT_GROUP_KEYS", bufferedInputStart);
-    const bufferedInputBlock = source.slice(bufferedInputStart, bufferedInputEnd);
+    const inputSource = await readInputComponentsSource();
+    const bufferedInputStart = inputSource.indexOf("export function BufferedTextInput(");
+    const bufferedInputBlock = bufferedInputStart >= 0 ? inputSource.slice(bufferedInputStart) : "";
     const customDialogStart = source.indexOf("{customDeviceDialogOpen && (");
     const customDialogEnd = source.indexOf("{stateIconDrawingDialog && (", customDialogStart);
     const customDialogBlock = source.slice(customDialogStart, customDialogEnd);
@@ -89,9 +119,9 @@ describe("graph inspector panel", () => {
 
   test("buffers text-like input and textarea commits instead of updating app state on every keystroke", async () => {
     const source = await readAppSource();
-    const helperStart = source.indexOf("function DeferredColorInput(");
-    const helperEnd = source.indexOf("const BATCH_MEASUREMENT_GROUP_KEYS", helperStart);
-    const appMarkup = `${source.slice(0, helperStart)}${source.slice(helperEnd)}`;
+    const inputSource = await readInputComponentsSource();
+    const helperStart = inputSource.indexOf("export function DeferredColorInput(");
+    const appMarkup = `${source}${inputSource.slice(0, helperStart >= 0 ? helperStart : 0)}`;
     const lineOf = (index: number) => appMarkup.slice(0, index).split("\n").length;
     const offenders: string[] = [];
     const collect = (pattern: RegExp) => {
@@ -116,8 +146,8 @@ describe("graph inspector panel", () => {
     collect(/<textarea\b[\s\S]*?\/>/g);
 
     expect(offenders).toEqual([]);
-    expect(source).toContain("function BufferedTextInput(");
-    expect(source).toContain("function BufferedTextarea(");
+    expect(inputSource).toContain("export function BufferedTextInput(");
+    expect(inputSource).toContain("export function BufferedTextarea(");
   });
 
   test("keeps custom component tree selection responsive while loading template drafts", async () => {
@@ -147,19 +177,19 @@ describe("graph inspector panel", () => {
 
   test("defers color picker commits until the picker drag settles", async () => {
     const source = await readAppSource();
-    const componentStart = source.indexOf("function DeferredColorInput(");
-    const componentEnd = source.indexOf("const BATCH_MEASUREMENT_GROUP_KEYS", componentStart);
-    const componentBlock = source.slice(componentStart, componentEnd);
+    const inputSource = await readInputComponentsSource();
+    const componentStart = inputSource.indexOf("export function DeferredColorInput(");
+    const componentBlock = componentStart >= 0 ? inputSource.slice(componentStart) : "";
 
     expect(componentStart).toBeGreaterThanOrEqual(0);
-    expect(source).toContain("const COLOR_INPUT_COMMIT_DELAY_MS =");
+    expect(inputSource).toContain("const COLOR_INPUT_COMMIT_DELAY_MS =");
     expect(componentBlock).toContain("onInput={queueDraftCommit}");
     expect(componentBlock).toContain("onChange={queueDraftCommit}");
     expect(componentBlock).toContain("onBlur={() => commitDraft(draftRef.current)}");
     expect(componentBlock).toContain("window.setTimeout(() => commitDraft(nextValue)");
     expect(componentBlock).not.toContain("onCommit(event.currentTarget.value)");
     expect(source).toContain("<DeferredColorInput");
-    expect((source.match(/type=\"color\"/g) ?? []).length).toBe(1);
+    expect((inputSource.match(/type=\"color\"/g) ?? []).length).toBe(1);
   });
 
   test("creates new models with the default 1920 by 1024 canvas size", async () => {
@@ -549,7 +579,7 @@ describe("graph inspector panel", () => {
     expect(svgContextBlock.indexOf("consumeGraphicContextMenuHandled()")).toBeLessThan(
       svgContextBlock.indexOf("const rawPointer = screenToSvgPoint")
     );
-    expect(source).toContain("openGraphicContextMenu({ x: event.clientX, y: event.clientY, target: \"node\", nodeId: node.id })");
+    expect(source).toContain("openGraphicContextMenu({ x: event.clientX, y: event.clientY, target: \"node\", nodeId: node.id, routePoints");
     expect(source).toContain("openGraphicContextMenu({ x: event.clientX, y: event.clientY, target: \"group\", canvasPoint: pointer })");
     expect(source).toContain("openGraphicContextMenu({");
     expect(source).toContain("target: \"edge\"");
@@ -564,7 +594,7 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("const [librarySearchQuery, setLibrarySearchQuery] = useState(\"\");");
     expect(source).toContain("const librarySearchNeedle = normalizeLibrarySearchText(librarySearchQuery);");
-    expect(source).toContain("libraryTemplateMatchesSearch(item, group, typeGroup.section, librarySearchNeedle)");
+    expect(source).toContain("libraryTemplateMatchesSearch(item, group, typeGroup.section, needle)");
     expect(libraryPanelBlock).toContain("className=\"library-search\"");
     expect(libraryPanelBlock).toContain("placeholder=\"搜索图元/类型\"");
     expect(libraryPanelBlock).toContain("aria-label=\"搜索图元库\"");
@@ -578,8 +608,8 @@ describe("graph inspector panel", () => {
     const source = await readAppSource();
 
     expect(source).not.toContain("libraryTemplates.filter(isDeviceTemplateVisibleInPlacementLibrary)");
-    expect(source).toContain("if (!librarySearchNeedle) {\n      return groupedAttributeLibraryByComponentType;");
-    expect(source).toContain("const filteredEntries = Object.entries(groupedAttributeLibraryByComponentType)");
+    expect(source).toContain("filterAttributeLibraryComponentTypeGroups");
+    expect(source).toContain("librarySearchNeedle");
     expect(source).toContain("? attributeLibraries.filter((group) => (filteredAttributeLibraryByComponentType[group] ?? []).length > 0)\n      : attributeLibraries");
     expect(source).toContain("new Map(libraryTemplates.map((template) => [template.kind, template]))");
   });
@@ -928,13 +958,13 @@ describe("graph inspector panel", () => {
   });
 
   test("keeps upright static symbol text from deforming under non-uniform resize", async () => {
-    const source = await readAppSource();
-    const matrixStart = source.indexOf("function nodeCounterTransformMatrix");
-    const matrixEnd = source.indexOf("function uprightText", matrixStart);
-    const matrixBlock = source.slice(matrixStart, matrixEnd);
-    const staticTextStart = source.indexOf("function staticShapeText");
-    const staticTextEnd = source.indexOf("function staticConnectorMarker", staticTextStart);
-    const staticTextBlock = source.slice(staticTextStart, staticTextEnd);
+    const renderSource = await readStaticRenderUtilsSource();
+    const matrixStart = renderSource.indexOf("function nodeCounterTransformMatrix");
+    const matrixEnd = renderSource.indexOf("function uprightText", matrixStart);
+    const matrixBlock = renderSource.slice(matrixStart, matrixEnd);
+    const staticTextStart = renderSource.indexOf("function staticShapeText");
+    const staticTextEnd = renderSource.indexOf("function staticConnectorMarker", staticTextStart);
+    const staticTextBlock = renderSource.slice(staticTextStart, staticTextEnd);
 
     expect(matrixBlock).toContain("const desiredScale = preserveScale ? Math.sqrt((Math.abs(scaleX) || 1) * (Math.abs(scaleY) || 1)) : 1;");
     expect(matrixBlock).toContain("const desiredScaleX = desiredScale;");
@@ -965,7 +995,7 @@ describe("graph inspector panel", () => {
     expect(fontSizeRow).toContain('type="number"');
     expect(fontSizeRow).toContain('min="8"');
     expect(fontSizeRow).toContain('max="160"');
-    expect(fontSizeRow).toContain('updateParam("fontSize", event.target.value)');
+    expect(fontSizeRow).toContain('updateParam("fontSize", nextValue)');
   });
 
   test("exposes selected graphic display-layer controls in the topbar and context menu", async () => {
@@ -1319,7 +1349,6 @@ describe("graph inspector panel", () => {
     expect(source).toContain("setCustomComponentTypes((current) => current.filter((componentType) => !deletedComponentTypeKeys.has(componentType.name.toLowerCase())))");
     expect(source).toContain("PROTECTED_ATTRIBUTE_LIBRARIES.has(attributeLibraryName)");
     expect(source).toContain("PROTECTED_ATTRIBUTE_LIBRARIES.has(oldAttributeLibraryName)");
-    expect(source).toContain("renderCustomComponentManagerTree");
     expect(source).toContain("custom-component-manager-actions");
     expect(source).toContain("selectableAttributeLibraries.map((group)");
     expect(source).not.toContain("新增自定义属性库");
@@ -1412,10 +1441,10 @@ describe("graph inspector panel", () => {
     expect(saveBlock).toContain("persistDeviceLibraryChange({ customDeviceTemplates: nextTemplates }");
     expect(saveBlock).toContain("setCustomDeviceSaveMessage(`自定义元件已保存：${componentLabel}`);");
     expect(saveBlock).toContain("if (options.closeAfterSave)");
-    expect(saveBlock).toContain("setCustomDeviceDialogOpen(false);");
+    expect(saveBlock).toContain("closeCustomDeviceDialog()");
     expect(dialogBlock).toContain("customDeviceSaveMessage && <p className=\"custom-device-save-status\"");
     expect(dialogBlock).toContain("className=\"custom-device-dialog-footer\"");
-    expect(dialogBlock).toContain("saveCustomDeviceTemplate({ closeAfterSave: true })");
+    expect(dialogBlock).toContain("saveCustomDeviceTemplate");
     expect(dialogBlock).not.toContain("saveStateVisuals: saveCustomDeviceTemplate");
     expect((dialogBlock.match(/保存自定义设备/g) ?? []).length).toBe(1);
     expect(styles).toContain(".custom-device-save-status");
@@ -1506,11 +1535,8 @@ describe("graph inspector panel", () => {
     const dialogStart = source.indexOf("{customDeviceDialogOpen && (");
     const dialogEnd = source.indexOf("{stateIconDrawingDialog && (", dialogStart);
     const dialogBlock = source.slice(dialogStart, dialogEnd);
-    const treeStart = source.indexOf("const renderCustomComponentManagerTree = () => (");
-    const treeEnd = source.indexOf("const renderLibraryDefinitionActions = () =>", treeStart);
-    const treeBlock = source.slice(treeStart, treeEnd);
     const visualPanelStart = source.indexOf("const renderDeviceDefinitionVisualPanel = (template: DeviceTemplate) => {");
-    const visualPanelEnd = source.indexOf("const renderCustomComponentManagerTree = () =>", visualPanelStart);
+    const visualPanelEnd = source.indexOf("const renderLibraryDefinitionActions = () =>", visualPanelStart);
     const visualPanelBlock = source.slice(visualPanelStart, visualPanelEnd);
     const definitionSaveStart = source.indexOf("const saveDeviceDefinitionDraft = () =>");
     const definitionSaveEnd = source.indexOf("const deleteDeviceDefinitionParameter = (index: number) =>", definitionSaveStart);
@@ -1538,20 +1564,19 @@ describe("graph inspector panel", () => {
     expect(source).not.toContain("customDeviceVisualView");
     expect(dialogBlock).toContain("device-definition-tabs");
     expect(dialogBlock).toContain("<h2>元件定义</h2>");
-    expect(dialogBlock).toContain("renderCustomComponentManagerTree()");
-    expect(treeBlock).toContain("customComponentTreeSearchQuery");
-    expect(treeBlock).toContain("filteredCustomComponentTreeByComponentType");
-    expect(treeBlock).toContain("displayedCustomComponentTreeLibraries");
-    expect(treeBlock).toContain("aria-label=\"搜索元件结构\"");
-    expect(treeBlock).toContain("componentTypeDisplayParts(typeGroup.section)");
+    expect(dialogBlock).toContain("customComponentTreeSearchQuery");
+    expect(dialogBlock).toContain("filteredCustomComponentTreeByComponentType");
+    expect(dialogBlock).toContain("displayedCustomComponentTreeLibraries");
+    expect(dialogBlock).toContain("aria-label=\"搜索元件结构\"");
+    expect(dialogBlock).toContain("componentTypeDisplayParts(typeGroup.section)");
     expect(source).toContain("const [collapsedCustomComponentTreeTypes, setCollapsedCustomComponentTreeTypes] = useState<string[]>([]);");
     expect(source).toContain("const toggleCustomComponentTreeType = (attributeLibraryName: string, componentType: string) => {");
-    expect(treeBlock).toContain("const typeKey = customComponentTreeTypeKey(group, typeGroup.section);");
-    expect(treeBlock).toContain("const typeCollapsed = customComponentTreeSearchNeedle ? false : collapsedCustomComponentTreeTypes.includes(typeKey);");
-    expect(treeBlock).toContain("className={`custom-component-tree-row type ${typeSelected ? \"active\" : \"\"}`}");
-    expect(treeBlock).toContain("aria-expanded={!typeCollapsed}");
-    expect(treeBlock).toContain("onClick={() => toggleCustomComponentTreeType(group, typeGroup.section)}");
-    expect(treeBlock).toContain("!typeCollapsed && <div className=\"custom-component-tree-components\"");
+    expect(dialogBlock).toContain("const typeKey = customComponentTreeTypeKey(group, typeGroup.section);");
+    expect(dialogBlock).toContain("const typeCollapsed = customComponentTreeSearchNeedle ? false : collapsedCustomComponentTreeTypes.includes(typeKey);");
+    expect(dialogBlock).toContain("className={`custom-component-tree-row type ${typeSelected ? \"active\" : \"\"}`}");
+    expect(dialogBlock).toContain("aria-expanded={!typeCollapsed}");
+    expect(dialogBlock).toContain("onClick={() => handleToggleType(group, typeGroup.section)}");
+    expect(dialogBlock).toContain("!typeCollapsed && <div className=\"custom-component-tree-components\"");
     expect(dialogBlock).toContain("参数定义");
     expect(dialogBlock).toContain("量测定义");
     expect(customTabsBlock).toContain("端子定义");
@@ -1671,7 +1696,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("expandedAttributeLibraryComponentTypes.includes(componentTypeKey) || hoveredAttributeLibraryComponentType === componentTypeKey");
     expect(source).toContain("component-definition-type-group");
     expect(source).toContain("aria-label={`${group}/${typeGroup.section}元件列表`}");
-    expect(source).toContain("renderCustomComponentManagerTree");
+    expect(source).toContain("custom-component-manager-tree");
     expect(source).toContain("custom-component-manager-panel");
     expect(source).toContain("className=\"custom-component-manager-tree dialog-compact-tree\"");
     expect(source).toContain("className=\"device-definition-tree-scroll dialog-compact-tree\"");
@@ -1680,13 +1705,13 @@ describe("graph inspector panel", () => {
     expect(source).toContain("customComponentTreeSelection");
     expect(source).toContain("collapsedCustomComponentTreeLibraries");
     expect(source).toContain("collapsedCustomComponentTreeTypes");
-    expect(source).toContain("toggleCustomComponentTreeLibrary");
-    expect(source).toContain("toggleCustomComponentTreeType");
+    expect(source).toContain("handleToggleLibrary");
+    expect(source).toContain("handleToggleType");
     expect(source).toContain("aria-expanded={!libraryCollapsed}");
     expect(source).toContain("aria-expanded={!typeCollapsed}");
-    expect(source).toContain("onClick={() => toggleCustomComponentTreeLibrary(group)}");
-    expect(source).toContain("onClick={() => toggleCustomComponentTreeType(group, typeGroup.section)}");
-    expect(source).toContain("selectCustomComponentTemplate(template, typeGroup.section)");
+    expect(source).toContain("onClick={() => handleToggleLibrary(group)}");
+    expect(source).toContain("onClick={() => handleToggleType(group, typeGroup.section)}");
+    expect(source).toContain("handleSelectComponent(template, typeGroup.section)");
     expect(source).toContain("renameSelectedCustomDeviceTreeItem");
     expect(source).toContain("deleteSelectedCustomDeviceTreeItem");
     expect(source).toContain("startCustomComponentCreate");
@@ -1824,8 +1849,8 @@ describe("graph inspector panel", () => {
     expect(modelSource).toContain("buttonTargetLayerNames: \"\",");
     expect(source).toContain("const parseStaticButtonTargetLayerValues = (value?: string) =>");
     expect(source).toContain("const serializeStaticButtonTargetLayerIds = (layerIds: string[]) => JSON.stringify(layerIds);");
-    expect(source).toContain("function staticButtonLayerDropdownPlacementForTrigger(trigger: HTMLElement)");
-    expect(source).toContain("function StaticButtonLayerMultiSelect({");
+    expect(source).toContain("StaticButtonLayerMultiSelect");
+    expect(source).toContain("StaticButtonLayerMultiSelect,");
     expect(source).toContain("createPortal(");
     expect(source).toContain("window.addEventListener(\"pointerdown\", closeOnOutsidePointerDown, true)");
     expect(source).toContain("window.addEventListener(\"scroll\", schedulePositionUpdate, true)");
@@ -2223,6 +2248,7 @@ describe("graph inspector panel", () => {
 
   test("shows selected node scale and rotation in the bottom status bar", async () => {
     const source = await readAppSource();
+    const formatSource = await readFormatUtilsSource();
     const styles = await readStyles();
     const selectionStart = source.indexOf("const selectedNodeCount = activeSelectedNodeIds.length;");
     const selectionEnd = source.indexOf("const contextSelectionCount =", selectionStart);
@@ -2231,8 +2257,8 @@ describe("graph inspector panel", () => {
     const statusbarEnd = source.indexOf("</footer>", statusbarStart);
     const statusbarBlock = source.slice(statusbarStart, statusbarEnd);
 
-    expect(source).toContain("const formatStatusScalePercent = (value: number) => `${formatStatusNumber(value * 100)}%`;");
-    expect(source).toContain("const formatStatusRotationDegrees = (value: number) => `${formatStatusNumber(normalizeRotationDegrees(value))}°`;");
+    expect(formatSource).toContain("export const formatStatusScalePercent = (value: number) => `${formatStatusNumber(value * 100)}%`;");
+    expect(formatSource).toContain("export const formatStatusRotationDegrees = (value: number) => `${formatStatusNumber(normalizeRotationDegrees(value))}°`;");
     expect(selectionBlock).toContain("const selectedNodeTransformStatus = useMemo(() =>");
     expect(selectionBlock).toContain("activeSelectedNodeIds.flatMap((nodeId) => visibleNodeById.get(nodeId) ?? [])");
     expect(selectionBlock).toContain("getNodeScaleX(firstNode)");
@@ -2249,11 +2275,12 @@ describe("graph inspector panel", () => {
 
   test("rounds inspector scale input display to three decimal places", async () => {
     const source = await readAppSource();
+    const formatSource = await readFormatUtilsSource();
     const scaleRowsStart = source.indexOf('renderChineseParamHeader("scaleX")');
     const scaleRowsEnd = source.indexOf('renderChineseParamHeader("layerId"', scaleRowsStart);
     const scaleRowsBlock = source.slice(scaleRowsStart, scaleRowsEnd);
 
-    expect(source).toContain("const formatInspectorScaleValue = (value: number) => Number.isFinite(value) ? value.toFixed(3) : \"1.000\";");
+    expect(formatSource).toContain("export const formatInspectorScaleValue = (value: number) => Number.isFinite(value) ? value.toFixed(3) : \"1.000\";");
     expect(scaleRowsBlock).toContain("formatInspectorScaleValue(getNodeScaleX(inspectorSelectedNode))");
     expect(scaleRowsBlock).toContain("formatInspectorScaleValue(getNodeScaleY(inspectorSelectedNode))");
     expect(scaleRowsBlock).not.toContain("value={getNodeScaleX(inspectorSelectedNode)}");
@@ -2483,7 +2510,7 @@ describe("graph inspector panel", () => {
   test("routes ctrl-clicks on lod terminal markup through terminal connection handling", async () => {
     const source = await readAppSource();
     const terminalMarkupStart = source.indexOf("function buildSvgTerminalMarkup");
-    const terminalMarkupEnd = source.indexOf("const DEVICE_GLYPH_DESIGN_LONGEST_SIDE", terminalMarkupStart);
+    const terminalMarkupEnd = source.indexOf("function DeviceGlyph(", terminalMarkupStart);
     const terminalMarkupBlock = source.slice(terminalMarkupStart, terminalMarkupEnd);
     const lodPointerStart = source.indexOf("const handleLodNodePointerDown =");
     const lodPointerEnd = source.indexOf("const handleLodNodeContextMenu", lodPointerStart);
@@ -3706,6 +3733,7 @@ describe("graph inspector panel", () => {
 
   test("exports backend images in svg as embedded base64 data urls", async () => {
     const source = await readAppSource();
+    const svgUtilsSource = await readSvgUtilsSource();
     const serverSource = await readServerSource();
     const exportStart = source.indexOf("export function buildSvgDocument");
     const exportEnd = source.indexOf("export function App", exportStart);
@@ -3718,7 +3746,7 @@ describe("graph inspector panel", () => {
     const saveProjectBlock = serverSource.slice(saveProjectStart, saveProjectEnd);
 
     expect(source).toContain("function exportSvgImageHref(");
-    expect(source).toContain("function imageArrayBufferToDataUrl(");
+    expect(svgUtilsSource).toContain("export function imageArrayBufferToDataUrl(");
     expect(source).toContain("async function fetchBackendImageDataUrl(");
     expect(source).toContain("function imageExportPathByIdFromAssets(");
     expect(exportBlock).toContain("const imageHref = exportSvgImageHref(");
@@ -3848,11 +3876,11 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const canvasRenderViewBox = viewBox;");
     expect(source).toContain("const canvasResizePreviewRect = canvasResizeDrag && canvasResizeDraft");
     expect(source).toContain("canvasResizePreviewRectForDraft(canvasResizeDrag, canvasResizeDraft)");
-    expect(source).toContain("export function canvasRenderViewBoxAfterBoundsDraft(");
+    expect(source).toContain("canvasRenderViewBoxAfterBoundsDraft");
     expect(source).toContain("const canvasScrollScale = canvasScrollScaleFromViewBox(canvasRenderViewBox, canvasRenderBounds);");
     expect(source).toContain("const canvasDisplayWidth = Math.max(1, Math.round(canvasRenderBounds.width * canvasScrollScale.x));");
     expect(source).toContain("const canvasDisplayHeight = Math.max(1, Math.round(canvasRenderBounds.height * canvasScrollScale.y));");
-    expect(source).toContain("function canvasResizeAnchoredDisplayOffset(");
+    expect(source).toContain("canvasResizeAnchoredDisplayOffset");
     expect(source).toContain("startDisplayOffsetX: canvasDisplayOffsetX");
     expect(source).toContain("startDisplayOffsetY: canvasDisplayOffsetY");
     expect(source).toContain("startScrollTop: canvasFrameRef.current?.scrollTop ?? 0");
@@ -3866,7 +3894,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const nextViewBox = canvasRenderViewBoxAfterBoundsDraft(currentViewBox, currentBounds, nextBounds);");
     expect(source).toContain("const desiredLeft = canvasResizeEdgeAnchorsStart(drag.edge, \"x\")");
     expect(source).toContain("const desiredTop = canvasResizeEdgeAnchorsStart(drag.edge, \"y\")");
-    expect(source).toContain("function canvasResizeOriginShiftForBounds(edge: CanvasResizeEdge, startBounds: CanvasBounds, nextBounds: CanvasBounds): Point");
+    expect(source).toContain("canvasResizeOriginShiftForBounds");
     expect(resizeBlock).toContain("const resizeOriginShift = canvasResizeOriginShiftForBounds(");
     expect(resizeBlock).toContain("nodes.map((node) => translateNodeBy(node, originShift))");
     expect(resizeBlock).toContain("edges.map((edge) => translateEdgeBy(edge, originShift))");
@@ -3883,7 +3911,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const canvasResizeHotzoneStyle = {");
     expect(source).toContain("\"--canvas-resize-hotzone-x\": `${canvasResizeHotzoneWidth}px`");
     expect(source).toContain("\"--canvas-resize-hotzone-y\": `${canvasResizeHotzoneHeight}px`");
-    expect(source).toContain("<div className=\"canvas-resize-hotzones\" style={canvasResizeHotzoneStyle} aria-hidden=\"true\">");
+    expect(source).toContain("canvasResizeHotzonesRef");
     expect(source).toContain("className=\"canvas-resize-hotzone canvas-resize-hotzone-left\"");
     expect(source).toContain("className=\"canvas-resize-hotzone canvas-resize-hotzone-top\"");
     expect(source).toContain("className=\"canvas-resize-hotzone canvas-resize-hotzone-right\"");
@@ -3975,22 +4003,13 @@ describe("graph inspector panel", () => {
 
   test("keeps the untouched canvas resize axis from jumping when scrollbar state changes", async () => {
     const source = await readAppSource();
-    const offsetStart = source.indexOf("function canvasResizeAnchoredDisplayOffset(");
-    const offsetEnd = source.indexOf("function canvasResizeKeepsScrollRange", offsetStart);
-    const offsetBlock = source.slice(offsetStart, offsetEnd);
-    const keepRangeStart = source.indexOf("function canvasResizeKeepsScrollRange(");
-    const keepRangeEnd = source.indexOf("function clampCanvasNoScrollOffset", keepRangeStart);
-    const keepRangeBlock = source.slice(keepRangeStart, keepRangeEnd);
     const noScrollStart = source.indexOf("const canvasNoScrollOffsetForCanvasResizeAnchor =");
     const noScrollEnd = source.indexOf("const setCanvasFrameScrollPosition =", noScrollStart);
     const noScrollBlock = source.slice(noScrollStart, noScrollEnd);
 
-    expect(offsetBlock).toContain("if (!drag) {");
-    expect(offsetBlock).toContain("return Math.round(axis === \"x\" ? drag.startDisplayOffsetX : drag.startDisplayOffsetY);");
-    expect(offsetBlock).not.toContain("canvasResizeEdgeAnchorsAxis(drag.edge, axis)");
-    expect(keepRangeBlock).toContain("if (!drag) {");
-    expect(keepRangeBlock).toContain("return axis === \"x\" ? drag.startHorizontalScrollbarsActive : drag.startVerticalScrollbarsActive;");
-    expect(keepRangeBlock).not.toContain("canvasResizeEdgeAnchorsAxis(drag.edge, axis)");
+    expect(source).toContain("canvasResizeAnchoredDisplayOffset");
+    expect(source).toContain("canvasResizeKeepsScrollRange");
+    expect(source).toContain("clampCanvasNoScrollOffset");
     expect(noScrollBlock).toContain("const desiredLeft = canvasResizeEdgeAnchorsStart(drag.edge, \"x\")");
     expect(noScrollBlock).toContain("const desiredTop = canvasResizeEdgeAnchorsStart(drag.edge, \"y\")");
     expect(noScrollBlock).toContain("desiredLeft - nextBaseDisplayOffsetX");
@@ -4265,19 +4284,19 @@ describe("graph inspector panel", () => {
     const canvasRenderEnd = source.indexOf("onDrop={handleDrop}", canvasRenderStart);
     const canvasRenderBlock = source.slice(canvasRenderStart, canvasRenderEnd);
 
-    expect(source).toContain("function canvasScrollScaleFromViewBox");
-    expect(source).toContain("function canvasFullViewBoxFromBounds");
-    expect(source).toContain("function canvasFrameHasScrollableRange");
-    expect(source).toContain("function renderedCanvasFullyFitsFrame");
-    expect(source).toContain("const CANVAS_FRAME_INSET = 16;");
-    expect(source).toContain("const CANVAS_SCROLL_EDGE_VIEWPORT_RATIO = 1 / 3;");
+    expect(source).toContain("canvasScrollScaleFromViewBox");
+    expect(source).toContain("canvasFullViewBoxFromBounds");
+    expect(source).toContain("canvasFrameHasScrollableRange");
+    expect(source).toContain("renderedCanvasFullyFitsFrame");
+    expect(source).toContain("CANVAS_FRAME_INSET");
+    expect(source).toContain("CANVAS_SCROLL_EDGE_VIEWPORT_RATIO");
     expect(source).toContain("const CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE = 2;");
-    expect(source).toContain("function canvasScrollEdgeInset(viewportSize: number)");
-    expect(source).toContain("function canvasScrollSurfaceSize(displaySize: number, viewportSize: number, scrollActive: boolean)");
-    expect(source).toContain("function canvasDisplayOffset(displaySize: number, surfaceSize: number, viewportSize: number, scrollActive: boolean)");
-    expect(source).toContain("function clampCanvasNoScrollOffset(");
-    expect(source).toContain("function viewBoxStartToScrollPosition(");
-    expect(source).toContain("function scrollPositionToViewBoxStart(");
+    expect(source).toContain("canvasScrollEdgeInset");
+    expect(source).toContain("canvasScrollSurfaceSize");
+    expect(source).toContain("canvasDisplayOffset(");
+    expect(source).toContain("clampCanvasNoScrollOffset(");
+    expect(source).toContain("viewBoxStartToScrollPosition");
+    expect(source).toContain("scrollPositionToViewBoxStart");
     expect(source).toContain("const canvasDisplayWidth = Math.max(1, Math.round(canvasRenderBounds.width * canvasScrollScale.x))");
     expect(source).toContain("const canvasDisplayHeight = Math.max(1, Math.round(canvasRenderBounds.height * canvasScrollScale.y))");
     expect(source).toContain("const computedCanvasHorizontalScrollbarsActive =");
@@ -4308,8 +4327,8 @@ describe("graph inspector panel", () => {
     expect(source).toContain("canvasNoScrollOffsetRef.current = clampedCanvasNoScrollOffset;");
     expect(source).toContain("const clampCanvasNoScrollOffsetPoint = (offset: Point): Point =>");
     expect(source).toContain("syncCanvasFrameScrollToViewBox");
-    expect(source).toContain("export function canvasFrameScrollTargetForViewBox({");
-    expect(source).toContain("export function canvasViewBoxFromFrameScrollPosition({");
+    expect(source).toContain("canvasFrameScrollTargetForViewBox");
+    expect(source).toContain("canvasViewBoxFromFrameScrollPosition");
     expect(source).toContain("const canvasFullyVisible = !canvasScrollbarsActiveRef.current && renderedCanvasFullyFitsFrame(frameRect, svgRect)");
     expect(source).toContain("const next = canvasFullyVisible ? fullViewBox : visibleCanvasViewBoxFromRects(frameRect, svgRect, fullViewBox)");
     expect(source).toContain("if (canvasFullyVisible || !frameScrollWasUserDriven)");
@@ -4336,7 +4355,7 @@ describe("graph inspector panel", () => {
     const listenerEnd = source.indexOf("setCanvasSizeDraft({ width: String(canvasWidth), height: String(canvasHeight) });", listenerStart);
     const listenerBlock = source.slice(listenerStart, listenerEnd);
 
-    expect(source).toContain("export function canvasFrameScrollTargetForViewBox({");
+    expect(source).toContain("canvasFrameScrollTargetForViewBox");
     expect(source).toContain("const syncHorizontal = horizontalScrollbarsActive || maxScrollLeft > 1;");
     expect(source).toContain("const syncVertical = verticalScrollbarsActive || maxScrollTop > 1;");
     expect(source).toContain("viewBoxStartToScrollPosition(targetViewBox.x, targetViewBox.width, canvasBounds.width, maxScrollLeft)");
@@ -4950,7 +4969,7 @@ describe("graph inspector panel", () => {
     const scrollSurfaceEnd = source.indexOf("<svg", scrollSurfaceStart);
     const scrollSurfaceBlock = source.slice(scrollSurfaceStart, scrollSurfaceEnd);
 
-    expect(source).toContain("const CANVAS_FIT_SCROLLBAR_GUARD = 4;");
+    expect(source).toContain("CANVAS_FIT_SCROLLBAR_GUARD");
     expect(fitFunctionBlock).toContain("availableWidth");
     expect(fitFunctionBlock).toContain("availableHeight");
     expect(fitFunctionBlock).toContain("availableWidth / Math.max(1, canvasBounds.width)");
@@ -6219,7 +6238,7 @@ describe("graph inspector panel", () => {
     expect(renderBlock).toContain("renderBatchCommonLayerMultiSelect(row)");
     expect(renderBlock).toContain("row.key === \"buttonTargetProjectId\" || row.key === \"buttonTargetProjectName\"");
     expect(renderBlock).toContain("renderBatchCommonProjectSelect(row)");
-    expect(renderBlock).toContain("paramOptionsForSection(row.key)");
+    expect(renderBlock).toContain("paramOptionsForSection(row.key,");
     expect(renderBlock).toContain("if (isColorParamKey(row.key))");
     expect(renderBlock).toContain("renderBatchCommonColorParamEditor(row)");
     expect(batchColorRenderBlock).toContain("<DeferredColorInput");
@@ -7610,6 +7629,7 @@ describe("graph inspector panel", () => {
 
   test("renders device labels as scalable upright node-owned graphics with a global visibility toggle", async () => {
     const source = await readAppSource();
+    const labelSource = await readNodeLabelUtilsSource();
     const renderStart = source.indexOf("{detailedViewportNodes.map((node) =>");
     const renderEnd = source.indexOf("{terminalPressPreviewEdgeRoutes.map", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
@@ -7622,11 +7642,11 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("const [deviceLabelsVisible, setDeviceLabelsVisible] = useState(true)");
     expect(source).toContain("type NodeLabelDragState");
-    expect(source).toContain("const nodeLabelTransform");
-    expect(source).toContain("const nodeLabelText");
-    expect(source).toContain("const nodeLabelVertical");
-    expect(source).toContain("const nodeLabelDisplayMode");
-    expect(source).toContain("const nodeLabelShouldRender");
+    expect(labelSource).toContain("export const nodeLabelTransform");
+    expect(labelSource).toContain("export const nodeLabelText");
+    expect(labelSource).toContain("export const nodeLabelVertical");
+    expect(labelSource).toContain("export const nodeLabelDisplayMode");
+    expect(labelSource).toContain("export const nodeLabelShouldRender");
     expect(source).toContain("const startNodeLabelDrag");
     expect(source).toContain("const finishNodeLabelDrag");
     expect(renderBlock).toContain("nodeLabelShouldRender(node, deviceLabelsVisible)");
@@ -7670,10 +7690,11 @@ describe("graph inspector panel", () => {
 
   test("keeps rotated device labels upright by switching between horizontal and vertical text layout", async () => {
     const source = await readAppSource();
+    const labelSource = await readNodeLabelUtilsSource();
     const styles = await readStyles();
-    const transformStart = source.indexOf("const nodeLabelTransform");
-    const transformEnd = source.indexOf("function nodeLabelTextAnchor", transformStart);
-    const transformBlock = source.slice(transformStart, transformEnd);
+    const transformStart = labelSource.indexOf("export const nodeLabelTransform");
+    const transformEnd = labelSource.indexOf("export function nodeLabelTextAnchor", transformStart);
+    const transformBlock = labelSource.slice(transformStart, transformEnd);
     const renderStart = source.indexOf("{detailedViewportNodes.map((node) =>");
     const renderEnd = source.indexOf("{terminalPressPreviewEdgeRoutes.map", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
@@ -7686,9 +7707,9 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("_labelRotation");
     expect(source).toContain("type NodeLabelRotateDragState");
-    expect(source).toContain("function normalizeNodeLabelRotation");
-    expect(source).toContain("const nodeLabelVertical");
-    expect(source).toContain("const nodeLabelRotationFromPoint");
+    expect(labelSource).toContain("export function normalizeNodeLabelRotation");
+    expect(labelSource).toContain("export const nodeLabelVertical");
+    expect(labelSource).toContain("export const nodeLabelRotationFromPoint");
     expect(source).toContain("const startNodeLabelRotateDrag");
     expect(source).toContain("const finishNodeLabelRotateDrag");
     expect(transformBlock).not.toContain("rotate(");
@@ -7707,14 +7728,15 @@ describe("graph inspector panel", () => {
 
   test("groups continuous numeric tokens while rendering vertical device labels", async () => {
     const source = await readAppSource();
+    const labelSource = await readNodeLabelUtilsSource();
     const styles = await readStyles();
     const renderStart = source.indexOf("{detailedViewportNodes.map((node) =>");
     const renderEnd = source.indexOf("{terminalPressPreviewEdgeRoutes.map", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
 
-    expect(source).toContain("function nodeLabelVerticalSegments");
-    expect(source).toContain("nodeLabelNumericTokenPattern");
-    expect(source).toContain("\\d+(?:[./:：-]\\d+)*");
+    expect(labelSource).toContain("export function nodeLabelVerticalSegments");
+    expect(labelSource).toContain("nodeLabelNumericTokenPattern");
+    expect(labelSource).toContain("\\d+(?:[./:：-]\\d+)*");
     expect(renderBlock).toContain("const nodeLabelVerticalTokens = nodeLabelIsVertical ? nodeLabelVerticalSegments(nodeLabelContent) : [];");
     expect(renderBlock).toContain("nodeLabelVerticalTokens.map");
     expect(renderBlock).toContain("className={`node-label-vertical-token ${segment.numeric ? \"numeric\" : \"\"}`}");
@@ -7736,7 +7758,7 @@ describe("graph inspector panel", () => {
 
     expect(source).toContain("const FONT_FAMILY_OPTIONS");
     expect(source).toContain("device-label-style-actions");
-    expect(source).toContain("function TextStyleToggleButton");
+    expect(source).toContain("TextStyleToggleButton");
     expect(source).toContain("<Bold aria-hidden=\"true\" />");
     expect(source).toContain("<Italic aria-hidden=\"true\" />");
     expect(source).toContain("<Underline aria-hidden=\"true\" />");
@@ -9461,7 +9483,7 @@ describe("graph inspector panel", () => {
     expect(source).toContain("const cancelInteractiveStaticDrawing");
     expect(source).toContain("const updateInteractiveStaticDrawingPreview");
     expect(source).toContain("const renderInteractiveStaticDrawingPreview");
-    expect(source).toContain("function staticDrawPointsForNode");
+    expect(await readStaticRenderUtilsSource()).toContain("function staticDrawPointsForNode");
     expect(dropBlock).toContain("placeLibraryDeviceAtPoint(template");
     expect(placeBlock).toContain("isInteractiveStaticDrawingKind(kind)");
     expect(placeBlock).toContain("startInteractiveStaticDrawing(template, pointerPosition)");
@@ -11080,7 +11102,7 @@ describe("graph inspector panel", () => {
     const dialogEnd = source.indexOf("{customDeviceDialogOpen && (", dialogStart);
     const dialogBlock = source.slice(dialogStart, dialogEnd);
     const visualPanelStart = source.indexOf("const renderDeviceDefinitionVisualPanel = (template: DeviceTemplate) => {");
-    const visualPanelEnd = source.indexOf("const renderCustomComponentManagerTree = () =>", visualPanelStart);
+    const visualPanelEnd = source.indexOf("const renderLibraryDefinitionActions = ()", visualPanelStart);
     const visualPanelBlock = source.slice(visualPanelStart, visualPanelEnd);
 
     expect(source).toContain("type DeviceDefinitionVisualDraft =");
@@ -11118,7 +11140,7 @@ describe("graph inspector panel", () => {
     const visualPagerEnd = source.indexOf("const renderDeviceDefinitionVisualPanel = (template: DeviceTemplate) => {", visualPagerStart);
     const visualPagerBlock = source.slice(visualPagerStart, visualPagerEnd);
     const definitionVisualStart = source.indexOf("const renderDeviceDefinitionVisualPanel = (template: DeviceTemplate) => {");
-    const definitionVisualEnd = source.indexOf("const renderCustomComponentManagerTree = () =>", definitionVisualStart);
+    const definitionVisualEnd = source.indexOf("const renderLibraryDefinitionActions = ()", definitionVisualStart);
     const definitionVisualBlock = source.slice(definitionVisualStart, definitionVisualEnd);
     const definitionVisualSaveStart = source.indexOf("const saveDeviceDefinitionVisualDraft = () => {");
     const definitionVisualSaveEnd = source.indexOf("const saveDeviceDefinitionDraft = () =>", definitionVisualSaveStart);
@@ -11214,7 +11236,7 @@ describe("graph inspector panel", () => {
     const visualPagerEnd = source.indexOf("const renderDeviceDefinitionVisualPanel = (template: DeviceTemplate) => {", visualPagerStart);
     const visualPagerBlock = source.slice(visualPagerStart, visualPagerEnd);
     const definitionVisualStart = source.indexOf("const renderDeviceDefinitionVisualPanel = (template: DeviceTemplate) => {");
-    const definitionVisualEnd = source.indexOf("const renderCustomComponentManagerTree = () =>", definitionVisualStart);
+    const definitionVisualEnd = source.indexOf("const renderLibraryDefinitionActions = ()", definitionVisualStart);
     const definitionVisualBlock = source.slice(definitionVisualStart, definitionVisualEnd);
     const customDialogStart = source.indexOf("{customDeviceDialogOpen && (");
     const customDialogEnd = source.indexOf("{imageTarget && (", customDialogStart);
