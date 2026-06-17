@@ -514,6 +514,7 @@ import { buildSvgNodeLabelMarkup, svgDisplayAttribute, exportSvgSafeId, exportSv
 import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "./stateIconDrawing";
 import { fallbackComponentTypeForAttributeLibrary, resolveTemplateComponentType, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "./customDeviceUtils";
 import { useBatchEditors } from "./hooks/useBatchEditors";
+import { APP_STATIC_SCOPE } from "./appExtracted/appStaticScope";
 export * from "./appExtracted/appCoreCanvasUtilities";
 export * from "./appExtracted/appPersistenceLibraryExport";
 import { ENABLE_REACT_FLOW_PREVIEW, ReactFlowPreview, INTERACTION_MODE_STORAGE_KEY, CANVAS_GRAPHIC_CONTEXT_MENU_TARGET_SELECTOR, CANVAS_WHEEL_ZOOM_EXCLUSION_SELECTOR, CANVAS_KEYBOARD_BLOCKING_SELECTOR, CANVAS_KEYBOARD_SURFACE_SELECTOR, normalizeInteractionMode, isCanvasGraphicContextMenuTarget, isCanvasWheelZoomExcludedTarget, canvasWheelTargetIsRenderedCanvas, isCanvasKeyboardBlockingTarget, readStoredInteractionMode, writeStoredInteractionMode, CANVAS_SELECTION_DRAG_THRESHOLD, hasCanvasSelectionModifier, canvasWheelEventHasNoModifier, shouldZoomCanvasFromWheelEvent, isGroupTransformDrag, selectionRectCenter, combineSelectionRects, routeMidpoint, rotatePointAround, snapRotationDeltaToRightAngle, normalizedRotationDelta, transformPointAngle, rotationDeltaFromTransformPoint, rotationDeltaBetweenTransformPoints, rotationTrajectoryArcPath, mirrorPointAcrossAxis, localScaleKindForScreenHandle, groupTransformGeometry, transformGroupPoint, groupTransformSvgTransform, NODE_LABEL_DISPLAY_MODES, CONTEXT_MENU_VIEWPORT_PADDING, CONTEXT_MENU_FALLBACK_WIDTH, CONTEXT_MENU_FALLBACK_HEIGHT, CONTEXT_MENU_SUBMENU_FALLBACK_WIDTH, CONTEXT_MENU_SUBMENU_FALLBACK_HEIGHT, NODE_LABEL_FOOTPRINT_PARAM_KEYS, isMultiNodeMoveState, reuseSetOrCreate, cloneMeasurementGroupForDraft, terminalColor, busEndpointColor, ENERGY_COLOR_ROWS, ELECTRIC_COLOR_TYPES, ELECTRIC_COLOR_TYPE_LABELS, isElectricPaletteType, terminalVbaseFallbackValue, voltageColorKeyForTerminal, DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT, MIN_CANVAS_WIDTH, MIN_CANVAS_HEIGHT, MAX_CANVAS_WIDTH, MAX_CANVAS_HEIGHT, DEFAULT_CANVAS_BACKGROUND, MOVE_BOUNDARY_GUARD, CANVAS_AUTO_EXPAND_PADDING, CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE, CANVAS_RESIZE_HANDLE_SIZE, MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES, ORIGINAL_POSITION_REROUTE_PADDING, MOVE_ROUTE_LOCAL_SEARCH_PADDING, MAX_DEFERRED_MOVE_REPAIR_MOVED_NODES, MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES, KEYBOARD_MOVE_COMMIT_DELAY_MS, KEYBOARD_MOVE_REPEAT_RATE_PER_SECOND, KEYBOARD_MOVE_FRAME_INTERVAL_MS, ELEMENT_TREE_INITIAL_ITEM_LIMIT, ELEMENT_TREE_ITEM_LIMIT_STEP, TOPOLOGY_WARNING_PAGE_SIZE, CANVAS_MINIMAP_WIDTH, CANVAS_MINIMAP_HEIGHT, CANVAS_MINIMAP_PADDING, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH, NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MARGIN, DEVICE_DEFINITION_DIALOG_DEFAULT_WIDTH, DEVICE_DEFINITION_DIALOG_DEFAULT_HEIGHT, CUSTOM_DEVICE_DIALOG_DEFAULT_WIDTH, CUSTOM_DEVICE_DIALOG_DEFAULT_HEIGHT, MEASUREMENT_CONFIG_DIALOG_DEFAULT_WIDTH, MEASUREMENT_CONFIG_DIALOG_DEFAULT_HEIGHT, DEVICE_LIBRARY_DIALOG_MIN_WIDTH, DEVICE_LIBRARY_DIALOG_MIN_HEIGHT, DEVICE_LIBRARY_DIALOG_MARGIN, DEVICE_LIBRARY_DIALOG_CONFIG, TOPOLOGY_WARNING_PANEL_DEFAULT_WIDTH, TOPOLOGY_WARNING_PANEL_MIN_WIDTH, TOPOLOGY_WARNING_PANEL_MAX_WIDTH, TOPOLOGY_WARNING_PANEL_MARGIN, CANVAS_MINIMAP_MAX_NODE_MARKS, CANVAS_MINIMAP_MAX_ROUTE_MARKS, CANVAS_MINIMAP_DEFER_SAMPLE_THRESHOLD, FIT_SELECTION_MAX_ZOOM_PERCENT, TERMINAL_OVERLAP_DEFER_NODE_THRESHOLD, CANVAS_LOD_NODE_DETAIL_LIMIT, CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, CANVAS_LOD_MAX_ZOOM_PERCENT, CANVAS_LOD_MAX_NODE_SCREEN_SIZE, CANVAS_LOD_NODE_SCREEN_SAMPLE_LIMIT, CANVAS_LOD_SELECTED_DETAIL_LIMIT, CANVAS_LOD_MARKUP_CHUNK_SIZE, CANVAS_INITIAL_LOD_DETAIL_CHUNK_SIZE, CANVAS_INITIAL_LOD_FIRST_DETAIL_DELAY_MS, CANVAS_INITIAL_LOD_NEXT_DETAIL_DELAY_MS, CONNECTION_HIT_SCREEN_TOLERANCE, CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT, CANVAS_MULTI_NODE_DRAG_PREVIEW_EDGE_LIMIT, CANVAS_MULTI_NODE_DRAG_SNAP_NODE_LIMIT, CANVAS_BULK_MOVE_EDGE_THRESHOLD, ROUTE_BULK_TRANSLATE_REBUILD_THRESHOLD, BULK_MOVE_PERF_LOG_THRESHOLD_MS, SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE, SMART_ALIGNMENT_GUIDE_PADDING, CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_SNAP_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_SYNC_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_PREVIEW_PADDING, CANVAS_FLOATING_TOOLBAR_GAP, NODE_FLOATING_TOOLBAR_WIDTH, NODE_FLOATING_TOOLBAR_HEIGHT, EDGE_FLOATING_TOOLBAR_WIDTH, EDGE_FLOATING_TOOLBAR_HEIGHT, CONTEXT_MENU_AUTO_HIDE_MARGIN, TRANSFORM_ROTATE_STEM_START, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_HANDLE_GAP, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, E_SECTION_OPTIONS, COMPONENT_TYPE_LABELS, SCALE_HANDLE_CONFIGS, GROUP_SCALE_HANDLE_CONFIGS, POWER_UNIT_OPTIONS, VOLTAGE_UNIT_OPTIONS, CURRENT_UNIT_OPTIONS, DEFAULT_ATTRIBUTE_LIBRARIES, CUSTOM_ATTRIBUTE_LIBRARY_BASES, PROTECTED_ATTRIBUTE_LIBRARIES, DEVICE_TYPE_NAME_PATTERN, MAX_CUSTOM_DEVICE_TERMINALS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_SNAP_SCREEN_TOLERANCE, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET, CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN, TERMINAL_TYPE_OPTIONS, CONTAINER_TERMINAL_ASSOCIATION_OPTIONS, PARAM_VALUE_TYPE_OPTIONS, PROJECT_PANEL_MIN_HEIGHT, PROJECT_PANEL_MAX_HEIGHT, PROJECT_PANEL_DEFAULT_HEIGHT, LEFT_PANEL_DEFAULT_WIDTH, RIGHT_PANEL_DEFAULT_WIDTH, SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH, STATUSBAR_DEFAULT_HEIGHT, STATUSBAR_MIN_HEIGHT, STATUSBAR_MAX_HEIGHT, VALIDATION_PANEL_DEFAULT_HEIGHT, VALIDATION_PANEL_MIN_HEIGHT, VALIDATION_PANEL_MAX_HEIGHT, CONNECT_TERMINAL_SNAP_TOLERANCE, CONNECT_BUS_SNAP_TOLERANCE, connectTargetSearchBounds, findNodeTerminalSnapTarget, applyNodeTerminalSnap, pointOnBusForSnap, findNodeBusSnapTarget, SAMPLE_NODES, SAMPLE_EDGES, PROJECT_STORAGE_KEY, SCHEME_STORAGE_KEY, ACTIVE_PROJECT_STORAGE_KEY, DRAFT_PROJECT_STORAGE_KEY, REFRESH_RECOVERY_STORAGE_KEY, EMPTY_VOLTAGE_COLOR_KEY_SET, EMPTY_ID_LIST, EMPTY_EDGE_ID_LIST, EMPTY_MODEL_GROUPS, EMPTY_MODEL_GROUP_BY_ID, EMPTY_CANVAS_LAYOUT_UNITS, EMPTY_CANVAS_SELECTION, IMAGE_STORAGE_KEY, CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY, CUSTOM_COMPONENT_TYPES_STORAGE_KEY, DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, COLOR_DISPLAY_MODE_STORAGE_KEY, COLOR_PALETTE_STORAGE_KEY, MEASUREMENT_CONFIG_STORAGE_KEY, LEFT_PANEL_MODE_STORAGE_KEY, RIGHT_PANEL_MODE_STORAGE_KEY, LEFT_PANEL_WIDTH_STORAGE_KEY, RIGHT_PANEL_WIDTH_STORAGE_KEY, STATUSBAR_HEIGHT_STORAGE_KEY, VALIDATION_PANEL_HEIGHT_STORAGE_KEY, DEFAULT_GRAPH_TEMPLATE_TYPES, scheduleIdleWork, elementTreeCacheSignature, CONNECTION_REDRAW_SCOPE_LABELS, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VOLTAGE_BASE_SET_PRESETS, VIEWPORT_RENDER_PADDING_RATIO, VIEWPORT_RENDER_MIN_PADDING, CANVAS_VIEWPORT_QUERY_SNAP_SIZE, NODE_SPATIAL_BUCKET_SIZE, nextSpatialQueryMark, expandViewBoxForRendering, snapRenderViewportBoundsForQuery, sameCanvasViewBox, canvasFrameHasHorizontalScrollableRange, canvasFrameHasVerticalScrollableRange, canvasFrameHasScrollableRange, renderedCanvasFullyFitsFrame, canvasFrameViewportSizeChanged, visibleCanvasViewBoxFromRects, canvasScrollScaleFromViewBox, estimatedViewportNodeScreenSize, canvasScrollEdgeInset, canvasScrollSurfaceSize, canvasDisplayOffset, canvasFramePaddingOffset, anchoredCanvasScrollPosition, anchoredCanvasNoScrollOffset, initialVisibleCanvasViewBox, fitWholeCanvasViewBox, boxesIntersect, sameRenderViewportBounds, VIEWPORT_RESULT_CACHE_LIMIT, viewportBoundsCacheKey, viewportResultCacheOwnersEqual, resetViewportResultCache, readViewportResultCache, writeViewportResultCache, mergeRenderViewportBounds, smartAlignmentAxisAnchors, bestSmartAlignmentAxisSnap, nodeRenderBounds, nodeIntersectsRenderViewport, spatialBucketKey, spatialBucketRange, buildNodeSpatialIndex, queryNodeSpatialIndex, compactPreviewNodes, PARAM_LABELS, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, PARAM_OPTIONS, STATIC_BUTTON_ACTION_LABELS, STATIC_BUTTON_COMMAND_LABELS, PARAM_OPTION_LABELS, parseStaticButtonTargetLayerValues, serializeStaticButtonTargetLayerIds, resolveStaticButtonTargetLayers, paramOptionsForSection, READONLY_E_PARAM_KEYS, BATCH_PARAM_EXCLUDED_KEYS, BATCH_PARAM_EXCLUDED_PREFIXES, canBatchEditParam, BATCH_GRAPH_PARAM_KEYS, BATCH_GRAPH_PARAM_PREFIXES, isBatchGraphCommonParamKey, isRedundantBatchCommonParamRow, COLOR_PARAM_KEY_PATTERN, isColorParamKey, BATCH_MEASUREMENT_GROUP_KEYS, BATCH_MEASUREMENT_GROUP_LABELS, measurementGroupCommonValue, measurementGroupWithCommonSetting, normalizeLegacyPowerSystemLabel, normalizeSavedProjectIndexes, normalizeSavedSchemeIndexes, normalizeStoredDraftProject, readActiveProjectPointer, savedSchemePathForId, findSavedSchemeByPath, findSavedProjectByActivePointer, activeProjectPointerPayload, draftProjectFromSavedSchemes, readRefreshRecoveryProject, writeRefreshRecoveryProject, clearRefreshRecoveryProject, readImageAssets, saveImageAsset, resolveNodeImage, resolveNodeForegroundImage, resolveProjectImage, imageAssetsToMap, localImageAssetsFromStorage, pointsToPreviewPath, backendJsonHeaders, backendErrorMessage, fetchBackendJson, backendJsonRequest, fetchBackendImageFolders, createBackendImageFolder, renameBackendImageFolder, deleteBackendImageFolder, fetchBackendImages, fetchAllBackendImages, uploadBackendImage } from "./appExtracted/appCoreCanvasUtilities";
@@ -527,6 +528,7 @@ import { createOpenNodeDoubleClickEditor, createHandleLodNodeDoubleClick, create
 import { renderAppView } from "./appExtracted/appView";
 export function App() {
   const __appScope: Record<string, any> = {};
+Object.assign(__appScope, APP_STATIC_SCOPE);
 const initialSavedSchemes = useMemo<SavedSchemeRecord[]>(() => [], []); Object.assign(__appScope, { initialSavedSchemes });
 const initialProjectSources = useMemo(createAppHookCallback1(__appScope), []);
 const initialDraft = initialProjectSources.draft; Object.assign(__appScope, { initialDraft });
@@ -1196,6 +1198,7 @@ const edgeById = graphStore.edgeMap; Object.assign(__appScope, { edgeById });
 const edgesByNodeId = graphStore.edgesByNodeId; Object.assign(__appScope, { edgesByNodeId });
 const busNodeIdSet = graphStore.busNodeIdSet; Object.assign(__appScope, { busNodeIdSet });
 const routableLineNodeIdsByEndpointNodeId = useMemo(createAppHookCallback5(__appScope), [nodes]);
+Object.assign(__appScope, { routableLineNodeIdsByEndpointNodeId });
 const edgeListForNodeIds = createEdgeListForNodeIds(__appScope); Object.assign(__appScope, { edgeListForNodeIds });
 const snapshotRouteBounds = (routePointsByEdgeId: Record<string, Point[]>) =>
     Object.fromEntries(
@@ -1230,7 +1233,9 @@ const addRoutingNodesForConnectionEdge = createAddRoutingNodesForConnectionEdge(
 const routingNodesForConnectionEdge = createRoutingNodesForConnectionEdge(__appScope); Object.assign(__appScope, { routingNodesForConnectionEdge });
 const routingNodesForConnectionEdges = createRoutingNodesForConnectionEdges(__appScope); Object.assign(__appScope, { routingNodesForConnectionEdges });
 const visibleEdgesByTerminalRef = useMemo(createAppHookCallback7(__appScope), [edges, graphStore.edgesByTerminalRef, visibleEdges]);
+Object.assign(__appScope, { visibleEdgesByTerminalRef });
 const activeLayerNodes = useMemo(createAppHookCallback8(__appScope), [activeLayer?.visible, activeLayerId, graphStore.nodesByLayerId, nodes, visibleNodeIdSet, visibleNodes]);
+Object.assign(__appScope, { activeLayerNodes });
 const filterSelectionTemplateLabelByKind = useMemo(
     () => new Map([...DEVICE_LIBRARY, ...customDeviceTemplates].map((template) => [template.kind, template.label])),
     [customDeviceTemplates]
@@ -1252,6 +1257,7 @@ const filterSelectionItemKey = (node: ModelNode) =>
     `${filterSelectionComponentTypeKey(node)}::${filterSelectionSpecificTypeKey(node)}`;
 Object.assign(__appScope, { filterSelectionItemKey });
 const filterSelectionTypeOptions = useMemo(createAppHookCallback9(__appScope), [activeLayerNodes, filterSelectionTemplateComponentTypeByKind, filterSelectionTemplateLabelByKind]);
+Object.assign(__appScope, { filterSelectionTypeOptions });
 const activeLayerNodeIdSet = useMemo(
     () => (activeLayerNodes === visibleNodes ? visibleNodeIdSet : new Set(activeLayerNodes.map((node) => node.id))),
     [activeLayerNodes, visibleNodeIdSet, visibleNodes]
@@ -1301,10 +1307,12 @@ const activeCanvasSelection = useMemo(
     createAppHookCallback10(__appScope),
     [activeLayerGroups, canvasSelectionScope, isEditMode, rawActiveSelectedEdgeIds, rawActiveSelectedNodeIds]
   );
+Object.assign(__appScope, { activeCanvasSelection });
 const groupExpandedCanvasSelection = useMemo(
     createAppHookCallback11(__appScope),
     [activeCanvasSelection, activeLayerGroups, isEditMode, rawActiveSelectedEdgeIds, rawActiveSelectedNodeIds]
   );
+Object.assign(__appScope, { groupExpandedCanvasSelection });
 const activeSelectedNodeIds = activeCanvasSelection.nodeIds; Object.assign(__appScope, { activeSelectedNodeIds });
 const selectedNodeId = activeSelectedNodeIds[0] ?? ""; Object.assign(__appScope, { selectedNodeId });
 const displaySelectedNodeIds = canvasSelectionScope === "direct" ? groupExpandedCanvasSelection.nodeIds : activeSelectedNodeIds; Object.assign(__appScope, { displaySelectedNodeIds });
@@ -1627,6 +1635,7 @@ const selectableAttributeLibraries = useMemo<AttributeLibrary[]>(
   );
 Object.assign(__appScope, { selectableAttributeLibraries });
 const componentTypeOptionsByAttributeLibrary = useMemo<Record<string, string[]>>(createAppHookCallback21(__appScope), [customComponentTypes, attributeLibraries, libraryTemplates]);
+Object.assign(__appScope, { componentTypeOptionsByAttributeLibrary });
 const componentTypeOptions = useMemo(
     () => Array.from(new Set([
       ...E_SECTION_OPTIONS,
@@ -1637,6 +1646,7 @@ const componentTypeOptions = useMemo(
   );
 Object.assign(__appScope, { componentTypeOptions });
 const currentAttributeLibraryComponentTypeOptions = useMemo(createAppHookCallback22(__appScope), [customDeviceDraft.componentType, customDeviceDraft.attributeLibraryName, componentTypeOptionsByAttributeLibrary]);
+Object.assign(__appScope, { currentAttributeLibraryComponentTypeOptions });
 const selectedDefinitionTemplate = selectedDefinitionKind ? libraryTemplateByKind.get(selectedDefinitionKind) ?? libraryTemplates[0] : libraryTemplates[0]; Object.assign(__appScope, { selectedDefinitionTemplate });
 const selectedCustomComponentTemplate =
     customComponentTreeSelection.kind === "component"
@@ -1644,6 +1654,7 @@ const selectedCustomComponentTemplate =
       : undefined;
 Object.assign(__appScope, { selectedCustomComponentTemplate });
 const definitionAttributeLibraryComponentTypeOptions = useMemo(createAppHookCallback23(__appScope), [customDeviceDraft.attributeLibraryName, definitionDraftSection, componentTypeOptionsByAttributeLibrary, selectedDefinitionTemplate?.attributeLibrary]);
+Object.assign(__appScope, { definitionAttributeLibraryComponentTypeOptions });
 const defaultComponentTypeForAttributeLibrary = (attributeLibraryName: string) => (
     componentTypeOptionsByAttributeLibrary[normalizeAttributeLibraryName(attributeLibraryName)]?.[0] ?? fallbackComponentTypeForAttributeLibrary(attributeLibraryName)
   );
@@ -1807,6 +1818,7 @@ const selectedCount = selectedNodeCount + activeSelectedEdgeIds.length; Object.a
 const previousAutoInspectorSelectionKeyRef = useRef(activeSelectionKey); Object.assign(__appScope, { previousAutoInspectorSelectionKeyRef });
 useEffect(createAppHookCallback26(__appScope), [activeSelectionKey, selectedCount]);
 const selectedNodeTransformStatus = useMemo(createAppHookCallback27(__appScope), [activeSelectedNodeIds, visibleNodeById]);
+Object.assign(__appScope, { selectedNodeTransformStatus });
 const contextSelectionCount = activeSelectedNodeIds.length + activeSelectedEdgeIds.length; Object.assign(__appScope, { contextSelectionCount });
 const activeSelectedGroupIds = useMemo(
     () => isEditMode
@@ -1882,7 +1894,9 @@ const elementTreeSignature = useMemo(
   );
 Object.assign(__appScope, { elementTreeSignature });
 const elementTree = useMemo(createAppHookCallback29(__appScope), [deferredElementTreeSource, elementTreeSignature, graphTreePanelActive, libraryTemplates]);
+Object.assign(__appScope, { elementTree });
 const selectedElementTreeItemKey = useMemo(createAppHookCallback30(__appScope), [activeLayerEdgeIdSet, activeLayerNodeIdSet, activeSelectedEdgeIds, activeSelectedNodeIds, graphTreePanelActive]);
+Object.assign(__appScope, { selectedElementTreeItemKey });
 const elementTreeItemChildren = createElementTreeItemChildren(__appScope); Object.assign(__appScope, { elementTreeItemChildren });
 const elementTreeSearchNeedle = elementTreeSearchQuery.trim().toLocaleLowerCase(); Object.assign(__appScope, { elementTreeSearchNeedle });
 const filteredElementTree = useMemo(createAppHookCallback31(__appScope), [elementTree, elementTreeSearchNeedle, libraryTemplateByKind, visibleNodeById]);
@@ -2236,6 +2250,7 @@ useEffect(createAppHookCallback45(__appScope), []);
 useEffect(createAppHookCallback46(__appScope), [canvasHeight, canvasWidth]);
 const buildConnectPreviewPath = createBuildConnectPreviewPath(__appScope); Object.assign(__appScope, { buildConnectPreviewPath });
 const connectPreviewColor = useMemo(createAppHookCallback47(__appScope), [colorDisplayMode, colorPalette, connectSource, visibleNodeById]);
+Object.assign(__appScope, { connectPreviewColor });
 const routableLineTemplateTerminalType = (template: DeviceTemplate): TerminalType =>
     template.terminalTypes?.[0] ?? template.terminalType;
 Object.assign(__appScope, { routableLineTemplateTerminalType });
@@ -2249,7 +2264,9 @@ const connectTargetPoint = (target: ConnectTarget): Point =>
 Object.assign(__appScope, { connectTargetPoint });
 const buildRoutableLinePreviewPath = createBuildRoutableLinePreviewPath(__appScope); Object.assign(__appScope, { buildRoutableLinePreviewPath });
 const routableLinePlacementColor = useMemo(createAppHookCallback48(__appScope), [colorPalette, routableLinePlacement]);
+Object.assign(__appScope, { routableLinePlacementColor });
 const routableLineEndpointDragColor = useMemo(createAppHookCallback49(__appScope), [colorPalette, nodeById, routableLineEndpointDrag]);
+Object.assign(__appScope, { routableLineEndpointDragColor });
 useEffect(createAppHookCallback50(__appScope), [connectSource, dragging, hasUnsavedChanges, manualPathDrag, rewiring, routableLineEndpointDrag, routableLinePlacement, routeRenderingReady, terminalPress?.moved]);
 const routeInputLayerSignature = useMemo(
     () => layers.map((layer) => `${layer.id}:${layer.visible !== false ? "1" : "0"}`).join("|"),
@@ -2257,9 +2274,11 @@ const routeInputLayerSignature = useMemo(
   );
 Object.assign(__appScope, { routeInputLayerSignature });
 const routeInput = useMemo(createAppHookCallback51(__appScope), [graphStore.routeGeometryRevision, routeInputLayerSignature, visibleEdges, visibleNodes]);
+Object.assign(__appScope, { routeInput });
 const routingNodes = routeInput.nodes; Object.assign(__appScope, { routingNodes });
 const routingEdges = routeInput.edges; Object.assign(__appScope, { routingEdges });
 const affectedRoutingEdgeIds = useMemo(createAppHookCallback52(__appScope), []);
+Object.assign(__appScope, { affectedRoutingEdgeIds });
 const routeRenderingEnabled = routeRenderingReady; Object.assign(__appScope, { routeRenderingEnabled });
 const patchStoredRouteStoreForEdgeIds = createPatchStoredRouteStoreForEdgeIds(__appScope); Object.assign(__appScope, { patchStoredRouteStoreForEdgeIds });
 const routedRouteState = useMemo(createAppHookCallback53(__appScope), [affectedRoutingEdgeIds, canvasBounds, isEditMode, routeInput.edges, routeInput.nodes, routeRenderingEnabled, routingEdges, routingNodes]);
@@ -2288,7 +2307,9 @@ const routeRenderOrder = (first: RoutedEdge, second: RoutedEdge) =>
     (routedEdgeIndexById.get(second.edgeId) ?? Number.MAX_SAFE_INTEGER);
 Object.assign(__appScope, { routeRenderOrder });
 const viewportRoutedEdges = useMemo(createAppHookCallback56(__appScope), [activeSelectedEdgeSet, effectiveViewportQueryBounds, displaySelectedEdgeKey, routedEdgeById, routedEdgeIndexById, routedEdgeSpatialIndex, routedEdgeStore]);
+Object.assign(__appScope, { viewportRoutedEdges });
 const viewportNodes = useMemo(createAppHookCallback57(__appScope), [connectSource?.nodeId, effectiveViewportQueryBounds, displaySelectedEdgeKey, displaySelectedNodeKey, draggingNodeIdSet, draggingNodeKey, edgeById, graphStore.nodeIndexById, routedEdgeStore, selectedNodeIdSet, viewportRoutedEdges, visibleNodeById, visibleNodeIdSet, visibleNodeSpatialIndex]);
+Object.assign(__appScope, { viewportNodes });
 const activeLayerRoutedEdges = useMemo(
     () => activeLayerEdges === visibleEdges ? routedEdges : (() => {
       const routes: RoutedEdge[] = [];
@@ -2315,6 +2336,7 @@ const selectedLayoutUnits = useMemo(
     createAppHookCallback58(__appScope),
     [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, editHotInteractionActive, isEditMode, routedEdges, transformableActiveSelectedNodeIds]
   );
+Object.assign(__appScope, { selectedLayoutUnits });
 const selectedGroupLayoutUnits = useMemo(
     () => selectedLayoutUnits.length === 0 ? EMPTY_CANVAS_LAYOUT_UNITS : selectedLayoutUnits.filter((unit) => unit.kind === "group"),
     [selectedLayoutUnits]
@@ -2346,6 +2368,7 @@ const rebuildEdgeUpdatesAfterNodeGeometryChange = createRebuildEdgeUpdatesAfterN
 const rebuildEdgesAfterNodeGeometryChange = createRebuildEdgesAfterNodeGeometryChange(__appScope); Object.assign(__appScope, { rebuildEdgesAfterNodeGeometryChange });
 const selectedRoutedEdge = selectedEdge ? routedEdgeById.get(selectedEdge.id) : undefined; Object.assign(__appScope, { selectedRoutedEdge });
 const routableLineEndpointHandles = useMemo(createAppHookCallback59(__appScope), [activeLayerNodeIdSet, activeSelectedNodeIds, isEditMode, routableLineEndpointDrag, visibleNodeById]);
+Object.assign(__appScope, { routableLineEndpointHandles });
 const sameStoredRouteEndpointPoint = (first?: Point, second?: Point) =>
     (!first && !second) || (Boolean(first && second) && first?.x === second?.x && first?.y === second?.y);
 Object.assign(__appScope, { sameStoredRouteEndpointPoint });
@@ -2357,10 +2380,15 @@ Object.assign(__appScope, { endpointMatchedStoredRoutePoints });
 const edgeWithFrozenBusEndpointPoints = createEdgeWithFrozenBusEndpointPoints(__appScope); Object.assign(__appScope, { edgeWithFrozenBusEndpointPoints });
 const previewStoredRoutePointsForEdge = createPreviewStoredRoutePointsForEdge(__appScope); Object.assign(__appScope, { previewStoredRoutePointsForEdge });
 const rewiringPreviewRoute = useMemo(createAppHookCallback60(__appScope), [canvasBounds, edgeById, nodeById, previewStoredRoutePointsForEdge, routedEdgeById, rewiring]);
+Object.assign(__appScope, { rewiringPreviewRoute });
 const routableLineEndpointDragPreviewRoute = useMemo(createAppHookCallback61(__appScope), [canvasBounds, nodeById, nodes, routableLineEndpointDrag]);
+Object.assign(__appScope, { routableLineEndpointDragPreviewRoute });
 const manualPathPreviewRoute = useMemo(createAppHookCallback62(__appScope), [manualPathDrag]);
+Object.assign(__appScope, { manualPathPreviewRoute });
 const selectedRoutableLineManualPathRoute = useMemo(createAppHookCallback63(__appScope), [activeLayerNodeIdSet, isEditMode, manualPathPreviewRoute, selectedNode, selectedNodeCount]);
+Object.assign(__appScope, { selectedRoutableLineManualPathRoute });
 const terminalPressPreviewEdgeRoutes = useMemo(createAppHookCallback64(__appScope), [canvasBounds, nodeById, previewStoredRoutePointsForEdge, terminalPress, visibleEdgesByTerminalRef, visibleNodes]);
+Object.assign(__appScope, { terminalPressPreviewEdgeRoutes });
 const terminalPressPreviewEdgeIdSet = useMemo(
     () => new Set(terminalPressPreviewEdgeRoutes.map((route) => route.edgeId)),
     [terminalPressPreviewEdgeRoutes]
@@ -2381,8 +2409,10 @@ const dragOverlayEdgeIdSet = useMemo(
   );
 Object.assign(__appScope, { dragOverlayEdgeIdSet });
 const dragPreviewMovedNodeById = useMemo(createAppHookCallback65(__appScope), [dragging, draggingDelta, nodeById]);
+Object.assign(__appScope, { dragPreviewMovedNodeById });
 const dragPreviewNodeFor = (nodeId: string) => dragPreviewMovedNodeById.get(nodeId) ?? nodeById.get(nodeId); Object.assign(__appScope, { dragPreviewNodeFor });
 const dragInteractionBounds = useMemo<RenderViewportBounds | null>(createAppHookCallback66(__appScope), [dragPreviewMovedNodeById, dragging, draggingDelta, draggingNodeIdSet, nodeById]);
+Object.assign(__appScope, { dragInteractionBounds });
 const candidateNodeIntersectsInteractionBounds = (node: ModelNode) =>
     !dragInteractionBounds || nodeIntersectsRenderViewport(node, dragInteractionBounds);
 Object.assign(__appScope, { candidateNodeIntersectsInteractionBounds });
@@ -2418,6 +2448,7 @@ const overlappedTerminalKeys = useMemo(
     createAppHookCallback69(__appScope),
     [isReadonlyCanvasMode, suppressDragTerminalInteraction, terminalOverlapAffectedNodeIds, terminalOverlapCalculationReady, terminalOverlapNodes]
   );
+Object.assign(__appScope, { overlappedTerminalKeys });
 const nodeTerminalSnapTarget = useMemo(
     () => (
       !isReadonlyCanvasMode && dragging && draggingDelta && !isMultiNodeMoveState(dragging)
@@ -2481,19 +2512,23 @@ const groupTransformPreviewNodeIdSet = useMemo(
   );
 Object.assign(__appScope, { groupTransformPreviewNodeIdSet });
 const groupTransformPreviewEdgeRoutes = useMemo(createAppHookCallback72(__appScope), [transformDrag, visibleEdgeIdSet]);
+Object.assign(__appScope, { groupTransformPreviewEdgeRoutes });
 const groupTransformPreviewEdgeIdSet = useMemo(
     () => new Set(groupTransformPreviewEdgeRoutes.map((route) => route.edgeId)),
     [groupTransformPreviewEdgeRoutes]
   );
 Object.assign(__appScope, { groupTransformPreviewEdgeIdSet });
 const groupTransformPreviewRoutableLineNodeIdSet = useMemo(createAppHookCallback73(__appScope), [routableLineNodeIdsByEndpointNodeId, transformDrag]);
+Object.assign(__appScope, { groupTransformPreviewRoutableLineNodeIdSet });
 const dragPreviewEdgeRoutes = useMemo(createAppHookCallback74(__appScope), [canvasBounds, colorDisplayMode, colorPalette, dragging, draggingDelta, nodeById, routableLineNodeIdsByEndpointNodeId, visibleEdgeIdSet, visibleNodeIdSet]);
+Object.assign(__appScope, { dragPreviewEdgeRoutes });
 const dragPreviewEdgeIdSet = useMemo(
     () => new Set(dragPreviewEdgeRoutes.map((route) => route.edgeId)),
     [dragPreviewEdgeRoutes]
   );
 Object.assign(__appScope, { dragPreviewEdgeIdSet });
 const dragGhostEdgeRoutes = useMemo(createAppHookCallback75(__appScope), [dragging, draggingDelta, draggingNodeIdSet, nodeById, visibleEdgeIdSet]);
+Object.assign(__appScope, { dragGhostEdgeRoutes });
 const dragGhostEdgeIdSet = useMemo(
     () => new Set(dragGhostEdgeRoutes.map((route) => route.edgeId)),
     [dragGhostEdgeRoutes]
@@ -3471,8 +3506,10 @@ const applySelectedNodeLayout = createApplySelectedNodeLayout(__appScope); Objec
 const autoSpreadCanvasGraphics = createAutoSpreadCanvasGraphics(__appScope); Object.assign(__appScope, { autoSpreadCanvasGraphics });
 const autoAlignCanvasGraphics = createAutoAlignCanvasGraphics(__appScope); Object.assign(__appScope, { autoAlignCanvasGraphics });
 const voltageBaseSetOptions = useMemo(createAppHookCallback121(__appScope), [nodes]);
+Object.assign(__appScope, { voltageBaseSetOptions });
 const defaultVoltageBaseSetValue = createDefaultVoltageBaseSetValue(__appScope); Object.assign(__appScope, { defaultVoltageBaseSetValue });
 const voltageBaseSetCandidateNodes = useMemo(createAppHookCallback122(__appScope), [activeSelectedNodeIds, nodes]);
+Object.assign(__appScope, { voltageBaseSetCandidateNodes });
 const voltageBaseSetHasUniformTargets = voltageBaseSetCandidateNodes.some((node) => voltageBaseSettingModeForNode(node) === "uniform"); Object.assign(__appScope, { voltageBaseSetHasUniformTargets });
 const voltageBaseSetHasTerminalTargets = voltageBaseSetCandidateNodes.some((node) => voltageBaseSettingModeForNode(node) === "terminal"); Object.assign(__appScope, { voltageBaseSetHasTerminalTargets });
 const recommendedVoltageBaseSetMode = createRecommendedVoltageBaseSetMode(__appScope); Object.assign(__appScope, { recommendedVoltageBaseSetMode });
@@ -3484,6 +3521,7 @@ const voltageBaseSetModeLabel =
         : "统一设置";
 Object.assign(__appScope, { voltageBaseSetModeLabel });
 const voltageBaseSetTerminalRows = useMemo(createAppHookCallback123(__appScope), [voltageBaseSetCandidateNodes, voltageBaseTerminalValues]);
+Object.assign(__appScope, { voltageBaseSetTerminalRows });
 const voltageBaseTerminalRowKey = (row: { nodeId: string; terminalId: string }) => `${row.nodeId}:${row.terminalId}`;
 Object.assign(__appScope, { voltageBaseTerminalRowKey });
 const activeVoltageBaseTerminalRow =
@@ -3504,6 +3542,7 @@ const emptyVoltageBaseSetResult = () => ({ nodes, nodeUpdates: [], targetNodeIds
 const mergeVoltageBaseSetResults = createMergeVoltageBaseSetResults(__appScope); Object.assign(__appScope, { mergeVoltageBaseSetResults });
 const voltageBaseSetReady = createVoltageBaseSetReady(__appScope); Object.assign(__appScope, { voltageBaseSetReady });
 const voltageBaseSetPreviewByScope = useMemo<Partial<Record<VoltageBaseSetScope, ReturnType<typeof setVoltageBaseValuesForScope>>>>(createAppHookCallback124(__appScope), [activeSelectedNodeIds, activeVoltageBaseTerminalKey, edges, nodes, voltageBaseSetDialogOpen, voltageBaseSetHasTerminalTargets, voltageBaseSetHasUniformTargets, voltageBaseSetMode, voltageBaseSetValue, voltageBaseTerminalValues]);
+Object.assign(__appScope, { voltageBaseSetPreviewByScope });
 const voltageBaseSetResultForScope = createVoltageBaseSetResultForScope(__appScope); Object.assign(__appScope, { voltageBaseSetResultForScope });
 const openVoltageBaseSetDialog = createOpenVoltageBaseSetDialog(__appScope); Object.assign(__appScope, { openVoltageBaseSetDialog });
 useEffect(createAppHookCallback125(__appScope), [activeVoltageBaseTerminalKey, voltageBaseSetDialogOpen, voltageBaseSetTerminalRows]);
@@ -3898,6 +3937,7 @@ const customComponentTreeTypeKey = (attributeLibraryName: string, componentType:
     `${normalizeAttributeLibraryName(attributeLibraryName)}::${normalizeComponentTypeName(componentType)}`;
 Object.assign(__appScope, { customComponentTreeTypeKey });
 const handleTreeCollapseChange = useCallback(createAppHookCallback127(__appScope), []);
+Object.assign(__appScope, { handleTreeCollapseChange });
 const ensureCustomComponentTreeExpanded = createEnsureCustomComponentTreeExpanded(__appScope); Object.assign(__appScope, { ensureCustomComponentTreeExpanded });
 const cancelPendingCustomComponentTemplateLoad = createCancelPendingCustomComponentTemplateLoad(__appScope); Object.assign(__appScope, { cancelPendingCustomComponentTemplateLoad });
 const selectCustomAttributeLibrary = createSelectCustomAttributeLibrary(__appScope); Object.assign(__appScope, { selectCustomAttributeLibrary });
@@ -4436,6 +4476,7 @@ const initialCanvasDetailedNodeIdSet = useMemo(createAppHookCallback129(__appSco
     useInitialCanvasLod,
     viewportNodes
   ]);
+Object.assign(__appScope, { initialCanvasDetailedNodeIdSet });
 const useSimplifiedSelectedCanvasNodes =
     useSimplifiedCanvasNodes &&
     selectedNodeIdSet.size > CANVAS_LOD_SELECTED_DETAIL_LIMIT &&
@@ -4455,6 +4496,7 @@ const detailedViewportNodes = useMemo(createAppHookCallback130(__appScope), [
     useSimplifiedSelectedCanvasNodes,
     viewportNodes
   ]);
+Object.assign(__appScope, { detailedViewportNodes });
 const useSimplifiedCanvasRoutes =
     useSimplifiedCanvasNodes &&
     !rewiring &&
@@ -4470,7 +4512,9 @@ const useSimplifiedSelectedCanvasEdges =
     !terminalPress;
 Object.assign(__appScope, { useSimplifiedSelectedCanvasEdges });
 const detailedSelectedEdgeIdSet = useMemo(createAppHookCallback131(__appScope), [activeSelectedEdgeSet, selectedEdgeId, useSimplifiedSelectedCanvasEdges]);
+Object.assign(__appScope, { detailedSelectedEdgeIdSet });
 const initialCanvasDetailedEdgeIdSet = useMemo(createAppHookCallback132(__appScope), [initialCanvasDetailHydrationLimit, useInitialCanvasLod, viewportRoutedEdges]);
+Object.assign(__appScope, { initialCanvasDetailedEdgeIdSet });
 const lodCanvasRouteChunks = useMemo(createAppHookCallback133(__appScope), [
     activeLayerEdgeIdSet,
     activeSelectedEdgeSet,
@@ -4489,6 +4533,7 @@ const lodCanvasRouteChunks = useMemo(createAppHookCallback133(__appScope), [
     useSimplifiedCanvasRoutes,
     viewportRoutedEdges
   ]);
+Object.assign(__appScope, { lodCanvasRouteChunks });
 const lodCanvasNodeChunks = useMemo(createAppHookCallback134(__appScope), [
     activeLayerNodeIdSet,
     colorDisplayMode,
@@ -4506,6 +4551,7 @@ const lodCanvasNodeChunks = useMemo(createAppHookCallback134(__appScope), [
     useSimplifiedCanvasNodes,
     viewportNodes
   ]);
+Object.assign(__appScope, { lodCanvasNodeChunks });
 const lodSelectedNodeMarkup = useMemo(createAppHookCallback135(__appScope), [
     displaySelectedNodeIds,
     groupTransformPreviewNodeIdSet,
@@ -4513,6 +4559,7 @@ const lodSelectedNodeMarkup = useMemo(createAppHookCallback135(__appScope), [
     useSimplifiedSelectedCanvasNodes,
     visibleNodeById
   ]);
+Object.assign(__appScope, { lodSelectedNodeMarkup });
 const lodNodeFromEvent = createLodNodeFromEvent(__appScope); Object.assign(__appScope, { lodNodeFromEvent });
 const lodTerminalIdFromEvent = createLodTerminalIdFromEvent(__appScope); Object.assign(__appScope, { lodTerminalIdFromEvent });
 const handleLodNodePointerDown = createHandleLodNodePointerDown(__appScope); Object.assign(__appScope, { handleLodNodePointerDown });
@@ -4759,7 +4806,9 @@ const minimapOffsetY = (CANVAS_MINIMAP_HEIGHT - minimapContentHeight) / 2; Objec
 const minimapNodeStep = Math.max(1, Math.ceil(visibleNodes.length / CANVAS_MINIMAP_MAX_NODE_MARKS)); Object.assign(__appScope, { minimapNodeStep });
 const minimapRouteStep = Math.max(1, Math.ceil(routedEdges.length / CANVAS_MINIMAP_MAX_ROUTE_MARKS)); Object.assign(__appScope, { minimapRouteStep });
 const minimapNodes = useMemo(createAppHookCallback138(__appScope), [editHotInteractionActive, minimapNodeStep, minimapSamplingReady, visibleNodes]);
+Object.assign(__appScope, { minimapNodes });
 const minimapRoutes = useMemo(createAppHookCallback139(__appScope), [editHotInteractionActive, minimapRouteStep, minimapSamplingReady, routedEdges]);
+Object.assign(__appScope, { minimapRoutes });
 const mapPointToMinimap = (point: Point) => ({
     x: minimapOffsetX + point.x * minimapScale,
     y: minimapOffsetY + point.y * minimapScale
@@ -4785,7 +4834,9 @@ const executeStaticButtonAction = createExecuteStaticButtonAction(__appScope); O
 const handleStaticButtonClick = createHandleStaticButtonClick(__appScope); Object.assign(__appScope, { handleStaticButtonClick });
 useEffect(createAppHookCallback140(__appScope), [activeProjectKey, backgroundLayerIds, backgroundProjectId, backgroundProjectRecord]);
 const backgroundPageFrameRender = useMemo(createAppHookCallback141(__appScope), [activeProjectKey, backgroundProjectId, backgroundProjectRecord, canvasHeight, canvasWidth, imageAssets]);
+Object.assign(__appScope, { backgroundPageFrameRender });
 const backgroundPageRender = useMemo(createAppHookCallback142(__appScope), [backgroundLayerIds, backgroundPageFrameRender, backgroundPageRenderReady]);
+Object.assign(__appScope, { backgroundPageRender });
 const beginReadonlyBackgroundStaticButtonPointerFeedback = createBeginReadonlyBackgroundStaticButtonPointerFeedback(__appScope); Object.assign(__appScope, { beginReadonlyBackgroundStaticButtonPointerFeedback });
 const renderReadonlyBackgroundPage = createRenderReadonlyBackgroundPage(__appScope); Object.assign(__appScope, { renderReadonlyBackgroundPage });
 const viewportOverlayStyle = {
