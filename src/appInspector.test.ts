@@ -6,8 +6,16 @@ function normalizeSourceText(source: string) {
 
 async function readAppSource() {
   // @ts-ignore - tests run in Node, while the app tsconfig intentionally stays browser-focused.
-  const { readFile } = await import("node:fs/promises");
-  return normalizeSourceText(await readFile(new URL("./App.tsx", import.meta.url), "utf8"));
+  const { readdir, readFile } = await import("node:fs/promises");
+  const appSource = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
+  const extractedDir = new URL("./appExtracted/", import.meta.url);
+  const extractedFiles = (await readdir(extractedDir))
+    .filter((file) => file.endsWith(".ts") || file.endsWith(".tsx"))
+    .sort();
+  const extractedSources = await Promise.all(
+    extractedFiles.map((file) => readFile(new URL(`./appExtracted/${file}`, import.meta.url), "utf8"))
+  );
+  return normalizeSourceText([appSource, ...extractedSources].join("\n"));
 }
 
 async function readStyles() {
