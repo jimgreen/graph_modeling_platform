@@ -733,9 +733,11 @@ export function createAppHookCallback3(__appScope: Record<string, any>) {
 
 export function createAppHookCallback4(__appScope: Record<string, any>) {
   return () => {
-  const { contextMenu, contextMenuRef, projectMenu, setContextMenuSize } = __appScope;
+  const { contextMenu, contextMenuRef, contextMenuSize, projectMenu, setContextMenuSize } = __appScope;
     if (!contextMenu && !projectMenu) {
-      setContextMenuSize((current) => (current === null ? current : null));
+      if (contextMenuSize !== null) {
+        setContextMenuSize(null);
+      }
       return;
     }
     const element = contextMenuRef.current;

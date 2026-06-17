@@ -2260,11 +2260,34 @@ export type CustomComponentTreeProps = {
   initialCollapsedTypes: Set<string>;
   initialSelection: CustomComponentTreeSelection;
   searchQuery: string;
+  onSelectAttributeLibrary: (attributeLibraryName: string) => void;
   onSelectComponent: (template: DeviceTemplate, section: string) => void;
+  onSelectComponentType: (attributeLibraryName: string, sectionName: string, options?: { expand?: boolean }) => void;
+  onCreateAttributeLibrary: () => void;
+  onCreateComponentType: () => void;
+  onCreateComponent: () => void;
+  onRenameSelection: () => void;
+  onDeleteSelection: () => void;
   onSearchChange: (query: string) => void;
   onCollapseChange: (libraries: Set<string>, types: Set<string>) => void;
   onSelectionChange: (selection: CustomComponentTreeSelection) => void;
 };
+
+function customComponentTreeSelectionsEqual(first: CustomComponentTreeSelection, second: CustomComponentTreeSelection) {
+  if (first.kind !== second.kind || first.attributeLibraryName !== second.attributeLibraryName) {
+    return false;
+  }
+  if (first.kind === "attributeLibrary" || second.kind === "attributeLibrary") {
+    return true;
+  }
+  if (first.section !== second.section) {
+    return false;
+  }
+  if (first.kind === "component" || second.kind === "component") {
+    return first.kind === second.kind && first.templateKind === second.templateKind;
+  }
+  return true;
+}
 
 export const CustomComponentManagerTree = memo(function CustomComponentManagerTree({
   libraries,
@@ -2273,7 +2296,14 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
   initialCollapsedTypes,
   initialSelection,
   searchQuery,
+  onSelectAttributeLibrary,
   onSelectComponent,
+  onSelectComponentType,
+  onCreateAttributeLibrary,
+  onCreateComponentType,
+  onCreateComponent,
+  onRenameSelection,
+  onDeleteSelection,
   onSearchChange,
   onCollapseChange,
   onSelectionChange
@@ -2294,6 +2324,10 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
     onSelectionChange(selection);
   }, [selection, onSelectionChange]);
 
+  useEffect(() => {
+    setSelection((current) => customComponentTreeSelectionsEqual(current, initialSelection) ? current : initialSelection);
+  }, [initialSelection]);
+
   const handleToggleLibrary = useCallback((name: string) => {
     setCollapsedLibraries((current) => {
       const next = new Set(current);
@@ -2305,6 +2339,12 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
       return next;
     });
   }, []);
+
+  const handleSelectAttributeLibrary = useCallback((attributeLibraryName: string) => {
+    const selection = { kind: "attributeLibrary" as const, attributeLibraryName };
+    setSelection(selection);
+    onSelectAttributeLibrary(attributeLibraryName);
+  }, [onSelectAttributeLibrary]);
 
   const handleToggleType = useCallback((library: string, type: string) => {
     const typeKey = `${library}::${type}`;
@@ -2318,6 +2358,12 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
       return next;
     });
   }, []);
+
+  const handleSelectComponentType = useCallback((attributeLibraryName: string, section: string) => {
+    const selection = { kind: "componentType" as const, attributeLibraryName, section };
+    setSelection(selection);
+    onSelectComponentType(attributeLibraryName, section, { expand: false });
+  }, [onSelectComponentType]);
 
   const handleSelectComponent = useCallback((template: DeviceTemplate, section: string) => {
     const attributeLibraryName = normalizeAttributeLibraryName(template.attributeLibrary);
@@ -2335,7 +2381,27 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
         <span>属性库 / 元件类型 / 元件</span>
       </div>
       <div className="custom-component-manager-actions">
-        <span className="custom-component-tree-actions-note">选择元件类型后点击新建</span>
+        <button type="button" onClick={onCreateAttributeLibrary} title="新建属性库">
+          <Plus size={12} aria-hidden="true" />
+          <span>新建属性</span>
+        </button>
+        <button type="button" onClick={onCreateComponentType} title="在当前属性库下新建元件类型">
+          <Plus size={12} aria-hidden="true" />
+          <span>新建类型</span>
+        </button>
+        <button type="button" className="custom-component-manager-primary-action" onClick={onCreateComponent} title="在当前元件类型下新建元件">
+          <Plus size={13} aria-hidden="true" />
+          <span>新建元件</span>
+        </button>
+        <button type="button" onClick={onRenameSelection} title="重命名当前选中的自定义条目">
+          <Pencil size={12} aria-hidden="true" />
+          <span>重命名</span>
+        </button>
+        <button type="button" className="danger" onClick={onDeleteSelection} title="删除当前选中的自定义条目">
+          <Trash2 size={12} aria-hidden="true" />
+          <span>删除</span>
+        </button>
+        <span className="custom-component-tree-actions-note">先选属性/类型/元件</span>
       </div>
       <div className="dialog-tree-search">
         <Search size={14} aria-hidden="true" />
@@ -2364,7 +2430,10 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
                 role="treeitem"
                 aria-selected={librarySelected}
                 aria-expanded={!libraryCollapsed}
-                onClick={() => handleToggleLibrary(group)}
+                onClick={() => {
+                  handleSelectAttributeLibrary(group);
+                  handleToggleLibrary(group);
+                }}
               >
                 {libraryCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                 <span>{group}</span>
@@ -2387,7 +2456,10 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
                         role="treeitem"
                         aria-selected={typeSelected}
                         aria-expanded={!typeCollapsed}
-                        onClick={() => handleToggleType(group, typeGroup.section)}
+                        onClick={() => {
+                          handleSelectComponentType(group, typeGroup.section);
+                          handleToggleType(group, typeGroup.section);
+                        }}
                       >
                         {typeCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                         <span className="dialog-tree-bilingual" title={typeDisplay.title}>

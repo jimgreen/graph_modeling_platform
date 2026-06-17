@@ -4108,18 +4108,23 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .custom-component-manager-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 
 .custom-component-manager-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
   min-height: 30px;
   border: 1px solid #cbd5e1;
   border-radius: 7px;
   color: #334155;
   background: #ffffff;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .custom-component-manager-actions button:hover,
@@ -4127,6 +4132,24 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   border-color: #93c5fd;
   background: #eff6ff;
   outline: none;
+}
+
+.custom-component-manager-actions button.danger {
+  color: #991b1b;
+}
+
+.custom-component-manager-actions button.danger:hover,
+.custom-component-manager-actions button.danger:focus-visible {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.custom-component-tree-actions-note {
+  grid-column: 1 / -1;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .dialog-tree-search {
