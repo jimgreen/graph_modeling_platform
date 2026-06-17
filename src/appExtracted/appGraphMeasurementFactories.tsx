@@ -290,8 +290,11 @@ export function createAddRoutingNodesForConnectionEdge(__appScope: Record<string
 }
 
 export function createRoutingNodesForConnectionEdge(__appScope: Record<string, any>) {
-  return (edge: Edge, sourceNodes: ModelNode[] = visibleNodes) => {
+  return (edge: Edge, sourceNodes?: ModelNode[]) => {
   const { addRoutingNodesForConnectionEdge, visibleNodes } = __appScope;
+    if (sourceNodes === undefined) {
+      sourceNodes = visibleNodes;
+    }
     const scopedNodes = new Map<string, ModelNode>();
     addRoutingNodesForConnectionEdge(edge, sourceNodes, scopedNodes);
     return scopedNodes.size > 0 ? Array.from(scopedNodes.values()) : sourceNodes;
@@ -1154,8 +1157,11 @@ export function createRenderBoundaryBusInternalConnector(__appScope: Record<stri
 }
 
 export function createCollectCurrentModelVoltageColorKeys(__appScope: Record<string, any>) {
-  return (sourceNodes: ModelNode[] = nodes) => {
+  return (sourceNodes?: ModelNode[]) => {
   const { nodes, voltageColorKeyForTerminal } = __appScope;
+    if (sourceNodes === undefined) {
+      sourceNodes = nodes;
+    }
     const keys = new Set<string>();
     for (const node of sourceNodes) {
       node.terminals.forEach((terminal, terminalIndex) => {
@@ -1192,8 +1198,11 @@ export function createNearestVoltageColor(__appScope: Record<string, any>) {
 }
 
 export function createFillMissingVoltageColorRows(__appScope: Record<string, any>) {
-  return (palette: ColorPalette, sourceKeys = collectCurrentModelVoltageColorKeys()) => {
+  return (palette: ColorPalette, sourceKeys?: Set<string>) => {
   const { collectCurrentModelVoltageColorKeys, nearestVoltageColor } = __appScope;
+    if (sourceKeys === undefined) {
+      sourceKeys = collectCurrentModelVoltageColorKeys();
+    }
     const missingKeys = Array.from(sourceKeys).filter((key) => !palette.voltage[key]);
     if (missingKeys.length === 0) {
       return { palette, missingKeys };
@@ -1869,12 +1878,24 @@ export function createMarkCanvasBoundsScrollSyncPending(__appScope: Record<strin
 export function createCanvasBoundsForGraphContent(__appScope: Record<string, any>) {
   return (
     baseBounds: CanvasBounds,
-    contentNodes: ModelNode[] = nodes,
-    contentEdges: Edge[] = edges,
-    contentRoutes: RoutedEdge[] = routedEdges,
-    padding = MOVE_BOUNDARY_GUARD
+    contentNodes?: ModelNode[],
+    contentEdges?: Edge[],
+    contentRoutes?: RoutedEdge[],
+    padding?: number
   ): CanvasBounds => {
   const { MOVE_BOUNDARY_GUARD, calculateModelContentSize, clampCanvasBounds, edges, nodes, routedEdges } = __appScope;
+    if (contentNodes === undefined) {
+      contentNodes = nodes;
+    }
+    if (contentEdges === undefined) {
+      contentEdges = edges;
+    }
+    if (contentRoutes === undefined) {
+      contentRoutes = routedEdges;
+    }
+    if (padding === undefined) {
+      padding = MOVE_BOUNDARY_GUARD;
+    }
     const contentSize = calculateModelContentSize(contentNodes, contentEdges, contentRoutes, padding);
     return clampCanvasBounds({
       width: Math.max(baseBounds.width, contentSize.width),
@@ -1914,9 +1935,12 @@ export function createRejectAutoCanvasExpansionForContent(__appScope: Record<str
     contentNodes: ModelNode[],
     contentEdges: Edge[] = [],
     contentRoutes: Pick<RoutedEdge, "points">[] = [],
-    bounds = canvasBounds
+    bounds?: CanvasBounds
   ) => {
   const { allowAutoExpandCanvas, autoCanvasExpansionBlockedMessage, canvasBounds, graphContentFitsFixedCanvasBounds, writeOperationLog } = __appScope;
+    if (bounds === undefined) {
+      bounds = canvasBounds;
+    }
     if (allowAutoExpandCanvas || graphContentFitsFixedCanvasBounds(contentNodes, contentEdges, contentRoutes, bounds)) {
       return false;
     }
@@ -1928,12 +1952,24 @@ export function createRejectAutoCanvasExpansionForContent(__appScope: Record<str
 export function createCanvasBoundsForAutoExpandedGraphContent(__appScope: Record<string, any>) {
   return (
     baseBounds: CanvasBounds,
-    contentNodes: ModelNode[] = nodes,
-    contentEdges: Edge[] = edges,
-    contentRoutes: RoutedEdge[] = routedEdges,
-    padding = CANVAS_AUTO_EXPAND_PADDING
+    contentNodes?: ModelNode[],
+    contentEdges?: Edge[],
+    contentRoutes?: RoutedEdge[],
+    padding?: number
   ): CanvasBounds => {
   const { CANVAS_AUTO_EXPAND_PADDING, allowAutoExpandCanvas, canvasBoundsForGraphContent, edges, nodes, routedEdges } = __appScope;
+    if (contentNodes === undefined) {
+      contentNodes = nodes;
+    }
+    if (contentEdges === undefined) {
+      contentEdges = edges;
+    }
+    if (contentRoutes === undefined) {
+      contentRoutes = routedEdges;
+    }
+    if (padding === undefined) {
+      padding = CANVAS_AUTO_EXPAND_PADDING;
+    }
     if (!allowAutoExpandCanvas) {
       return baseBounds;
     }
@@ -2161,10 +2197,13 @@ export function createCenterCanvasFrameScrollPosition(__appScope: Record<string,
 
 export function createSyncCanvasFrameScrollToViewBox(__appScope: Record<string, any>) {
   return (
-    targetViewBox = viewBoxRef.current,
+    targetViewBox?: CanvasViewBox,
     boundsScrollAnchor: CanvasBoundsScrollAnchor | null = null
   ) => {
   const { canvasBoundsRef, canvasBoundsScrollSyncTarget, canvasFrameRef, canvasFrameScrollTargetForViewBox, canvasHorizontalScrollbarsActiveRef, canvasVerticalScrollbarsActiveRef, canvasVisualRectScrollTarget, clampCanvasNoScrollOffsetPoint, left, setCanvasFrameScrollPosition, setCanvasNoScrollOffset, skipNextCanvasScrollSyncRef, top, viewBoxRef } = __appScope;
+    if (targetViewBox === undefined) {
+      targetViewBox = viewBoxRef.current;
+    }
     const frame = canvasFrameRef.current;
     if (!frame) {
       return;
@@ -2965,9 +3004,12 @@ export function createBuildMovedNodeUpdates(__appScope: Record<string, any>) {
     nodeIds: Iterable<string>,
     originalPositions: Record<string, Point>,
     delta: Point,
-    bounds: CanvasBounds = canvasBounds
+    bounds?: CanvasBounds
   ) => {
   const { canvasBounds, clampNodePositionToExpandableBounds, isCanvasNodeMovable, nodeById } = __appScope;
+    if (bounds === undefined) {
+      bounds = canvasBounds;
+    }
     const updates: ModelNode[] = [];
     for (const nodeId of nodeIds) {
       const node = nodeById.get(nodeId);
@@ -3146,10 +3188,13 @@ export function createRebuildEdgeUpdatesAfterNodeGeometryChange(__appScope: Reco
   return (
     nextNodes: ModelNode[],
     changedNodeIds: Iterable<string>,
-    currentEdges: Edge[] = edges,
+    currentEdges?: Edge[],
     preservedEdgeIds = new Set<string>()
   ) => {
   const { canvasBounds, dirtyEdgeIdsAfterMove, edgeListForNodeIds, edges, editModeRouteRebuildOptions, markRouteEdgesDirty, markStoredRouteEdgesDirty, rebuildConnectionRoutesForNodes, routingNodesForConnectionEdges } = __appScope;
+    if (currentEdges === undefined) {
+      currentEdges = edges;
+    }
     const changedIds = Array.from(new Set(changedNodeIds));
     if (changedIds.length === 0) {
       return [];
@@ -3180,10 +3225,13 @@ export function createRebuildEdgesAfterNodeGeometryChange(__appScope: Record<str
   return (
     nextNodes: ModelNode[],
     changedNodeIds: Iterable<string>,
-    currentEdges: Edge[] = edges,
+    currentEdges?: Edge[],
     preservedEdgeIds = new Set<string>()
   ) => {
   const { edges, rebuildEdgeUpdatesAfterNodeGeometryChange } = __appScope;
+    if (currentEdges === undefined) {
+      currentEdges = edges;
+    }
     const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, changedNodeIds, currentEdges, preservedEdgeIds);
     if (edgeUpdates.length === 0) {
       return currentEdges;

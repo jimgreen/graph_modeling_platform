@@ -108,9 +108,12 @@ export function createApplyConnectPreviewState(__appScope: Record<string, any>) 
     ready: boolean,
     targetPoint: Point | null = null,
     target: ConnectTarget | null = null,
-    sourceOverride: typeof connectSource = connectSource
+    sourceOverride?: ConnectSourceState | null
   ) => {
   const { buildConnectPreviewPath, connectDropReadyRef, connectDropTargetPointRef, connectDropTargetRef, connectPreviewPointRef, connectSource, sameConnectTarget, sameOptionalPoint, setConnectDropReady, setConnectPreviewDom } = __appScope;
+    if (sourceOverride === undefined) {
+      sourceOverride = connectSource;
+    }
     const previousPoint = connectPreviewPointRef.current;
     if (!sameOptionalPoint(previousPoint ?? undefined, point ?? undefined)) {
       connectPreviewPointRef.current = point;
@@ -163,9 +166,12 @@ export function createApplyRoutableLinePreviewState(__appScope: Record<string, a
     point: Point | null,
     targetPoint: Point | null = null,
     target: ConnectTarget | null = null,
-    placementOverride: RoutableLinePlacementState = routableLinePlacement
+    placementOverride?: RoutableLinePlacementState
   ) => {
   const { buildRoutableLinePreviewPath, routableLineDropTargetPointRef, routableLineDropTargetRef, routableLinePlacement, routableLinePreviewPointRef, sameConnectTarget, sameOptionalPoint, setRoutableLinePreview } = __appScope;
+    if (placementOverride === undefined) {
+      placementOverride = routableLinePlacement;
+    }
     if (!sameOptionalPoint(routableLinePreviewPointRef.current ?? undefined, point ?? undefined)) {
       routableLinePreviewPointRef.current = point;
     }
@@ -442,9 +448,12 @@ export function createBoundedDeltaForNodes(__appScope: Record<string, any>) {
     originalPositions: Record<string, Point>,
     dx: number,
     dy: number,
-    bounds: CanvasBounds = canvasBounds
+    bounds?: CanvasBounds
   ) => {
   const { canvasBounds, clampNodePositionToExpandableBounds, nodes, orderedNodesForIds } = __appScope;
+    if (bounds === undefined) {
+      bounds = canvasBounds;
+    }
     let boundedDx = dx;
     let boundedDy = dy;
     const selected = new Set(nodeIds);
@@ -491,9 +500,12 @@ export function createNodeMoveGeometryInsideCanvas(__appScope: Record<string, an
     originalEdgePoints: DraggingState["originalEdgePoints"],
     originalRoutePoints: DraggingState["originalRoutePoints"],
     delta: Point,
-    bounds: CanvasBounds = canvasBounds
+    bounds?: CanvasBounds
   ) => {
   const { MOVE_BOUNDARY_GUARD, adjustEdgesAfterNodeMove, allowAutoExpandCanvas, canvasBounds, canvasBoundsWithOriginShift, clampNodePositionToExpandableBounds, hasCanvasOriginShift, leftTopCanvasOriginShiftForContent, modelGeometryInsideCanvasBounds, nodes, orderedNodesForIds, routeEdgesForStoredRendering, routePreserveEdgeIdsForMovedNodes, translateNodeBy, translateRouteBy } = __appScope;
+    if (bounds === undefined) {
+      bounds = canvasBounds;
+    }
     const movedNodeIds = new Set(nodeIds);
     const selectedEdgeIds = new Set(edgeIds);
     const relevantNodeIds = new Set(nodeIds);
@@ -583,9 +595,12 @@ export function createBoundedDeltaForMoveGeometry(__appScope: Record<string, any
     dx: number,
     dy: number,
     fallbackDelta?: Point,
-    bounds: CanvasBounds = canvasBounds
+    bounds?: CanvasBounds
   ) => {
   const { boundedDeltaForNodes, canvasBounds, nearestBoundarySafeDelta, nodeMoveGeometryInsideCanvas } = __appScope;
+    if (bounds === undefined) {
+      bounds = canvasBounds;
+    }
     const nodeBoundedDelta = boundedDeltaForNodes(nodeIds, originalPositions, dx, dy, bounds);
     return nearestBoundarySafeDelta(
       nodeBoundedDelta,
@@ -2403,8 +2418,11 @@ export function createUpdateCanvasSize(__appScope: Record<string, any>) {
 }
 
 export function createCommitCanvasSizeDraft(__appScope: Record<string, any>) {
-  return (draft = canvasSizeDraft) => {
+  return (draft?: typeof canvasSizeDraft) => {
   const { MAX_CANVAS_HEIGHT, MAX_CANVAS_WIDTH, MIN_CANVAS_HEIGHT, MIN_CANVAS_WIDTH, calculateModelContentSize, canvasHeight, canvasSizeDraft, canvasWidth, clampCanvasDimension, edges, nodes, routeEdgesForStoredRendering, routedEdges, setCanvasSizeDraft, updateCanvasSize, writeOperationLog } = __appScope;
+    if (draft === undefined) {
+      draft = canvasSizeDraft;
+    }
     const nextWidth = draft.width.trim() === "" ? canvasWidth : Number(draft.width);
     const nextHeight = draft.height.trim() === "" ? canvasHeight : Number(draft.height);
     const requestedWidth = clampCanvasDimension(nextWidth, MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH, canvasWidth);
@@ -2692,8 +2710,11 @@ export function createUpdateTerminalVbase(__appScope: Record<string, any>) {
 }
 
 export function createRenderParamHeader(__appScope: Record<string, any>) {
-  return (key: string, displayName = key, title = PARAM_LABELS[key] ?? displayName) => {
+  return (key: string, displayName = key, title?: string) => {
   const { PARAM_LABELS, small, span, th } = __appScope;
+    if (title === undefined) {
+      title = PARAM_LABELS[key] ?? displayName;
+    }
     const visibleLabel = displayName === key ? title : displayName;
     const englishLabel = key.trim();
     return (
@@ -4077,8 +4098,11 @@ export function createProportionalSignedScaleFromUprightHandleDelta(__appScope: 
 }
 
 export function createCurrentStoredRoutePointsForEdge(__appScope: Record<string, any>) {
-  return (edge: Edge | undefined, bounds: CanvasBounds = canvasBounds) => {
+  return (edge: Edge | undefined, bounds?: CanvasBounds) => {
   const { canvasBounds, compactPreviewNodes, edgeSnapshotFallbackPoints, endpointMatchedRoutePointsForEdge, endpointMatchedStoredRoutePoints, nodeById, pendingRouteEdgeIdsRef, pendingStoredRouteEdgeIdsRef, routeEdgesForStoredRendering, routedEdgeById } = __appScope;
+    if (bounds === undefined) {
+      bounds = canvasBounds;
+    }
     if (!edge) {
       return [];
     }
@@ -4430,9 +4454,12 @@ export function createRotateLayoutUnitNodeUpdates(__appScope: Record<string, any
   return (
     units: CanvasLayoutUnit[],
     degrees: number,
-    store: GraphStore = graphStore
+    store?: GraphStore
   ) => {
   const { graphStore, normalizeRotationDegrees, rotatePointAround, selectionRectCenter } = __appScope;
+    if (store === undefined) {
+      store = graphStore;
+    }
     const updates = new Map<string, ModelNode>();
     for (const unit of units) {
       const center = selectionRectCenter(unit.bounds);
@@ -4459,9 +4486,12 @@ export function createMirrorLayoutUnitNodeUpdates(__appScope: Record<string, any
   return (
     units: CanvasLayoutUnit[],
     axis: "horizontal" | "vertical",
-    store: GraphStore = graphStore
+    store?: GraphStore
   ) => {
   const { getNodeScaleX, getNodeScaleY, graphStore, mirrorPointAcrossAxis, normalizeRotationDegrees, selectionRectCenter } = __appScope;
+    if (store === undefined) {
+      store = graphStore;
+    }
     const updates = new Map<string, ModelNode>();
     for (const unit of units) {
       const center = selectionRectCenter(unit.bounds);

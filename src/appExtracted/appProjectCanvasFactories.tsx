@@ -86,8 +86,11 @@ export function createStartRoutableLineFromTerminal(__appScope: Record<string, a
 }
 
 export function createFinishRoutableLineToTarget(__appScope: Record<string, any>) {
-  return (target: ConnectTarget, manualPoints = routableLinePlacement?.manualPoints) => {
+  return (target: ConnectTarget, manualPoints?: Point[]) => {
   const { commitRoutableLineDevice, connectTargetTerminalType, routableLinePlacement, routableLineTemplateTerminalType, writeOperationLog } = __appScope;
+    if (manualPoints === undefined) {
+      manualPoints = routableLinePlacement?.manualPoints;
+    }
     if (!routableLinePlacement?.source) {
       return false;
     }
@@ -285,8 +288,11 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
 }
 
 export function createFinishConnectToTarget(__appScope: Record<string, any>) {
-  return (target: NonNullable<ReturnType<typeof findConnectTargetAtPoint>>, endpointPoint = connectPreviewPointRef.current) => {
+  return (target: NonNullable<ReturnType<typeof findConnectTargetAtPoint>>, endpointPoint?: Point | null) => {
   const { busAnchorFromPoint, canConnectTerminals, commitNewConnectionEdge, connectPreviewPointRef, connectSource, getTerminalPoint, isBusNode, visibleNodeById } = __appScope;
+    if (endpointPoint === undefined) {
+      endpointPoint = connectPreviewPointRef.current;
+    }
     if (!connectSource) {
       return false;
     }
@@ -2005,16 +2011,22 @@ export function createCloneProjectRecordForPaste(__appScope: Record<string, any>
 }
 
 export function createSchemePathForScheme(__appScope: Record<string, any>) {
-  return (schemeId: string, sourceSchemes = schemes) => {
+  return (schemeId: string, sourceSchemes?: SavedSchemeRecord[]) => {
   const { findSavedSchemeById, savedSchemePathForId, schemes } = __appScope;
+    if (sourceSchemes === undefined) {
+      sourceSchemes = schemes;
+    }
     const scheme = findSavedSchemeById(sourceSchemes, schemeId);
     return scheme ? savedSchemePathForId(sourceSchemes, scheme.id) ?? [scheme.name] : [];
   };
 }
 
 export function createSchemePathForProject(__appScope: Record<string, any>) {
-  return (projectId: string, sourceSchemes = schemes) => {
+  return (projectId: string, sourceSchemes?: SavedSchemeRecord[]) => {
   const { findSavedProjectRecordInSchemes, savedSchemePathForId, schemes } = __appScope;
+    if (sourceSchemes === undefined) {
+      sourceSchemes = schemes;
+    }
     const owner = findSavedProjectRecordInSchemes(sourceSchemes, projectId);
     return owner ? savedSchemePathForId(sourceSchemes, owner.scheme.id) ?? [owner.scheme.name] : [];
   };
@@ -2029,8 +2041,11 @@ export function createSchemePathForRecord(__appScope: Record<string, any>) {
 }
 
 export function createCloneSchemeRecord(__appScope: Record<string, any>) {
-  return (scheme: SavedSchemeRecord, existingNames = savedChildSchemeNames(schemes), suffix = "副本"): SavedSchemeRecord => {
+  return (scheme: SavedSchemeRecord, existingNames?: string[], suffix = "副本"): SavedSchemeRecord => {
   const { copySavedSchemeWithUniqueName, savedChildSchemeNames, schemes } = __appScope;
+    if (existingNames === undefined) {
+      existingNames = savedChildSchemeNames(schemes);
+    }
     return copySavedSchemeWithUniqueName(scheme, existingNames, suffix);
   };
 }
@@ -2147,8 +2162,11 @@ export function createClearActiveProjectDisplay(__appScope: Record<string, any>)
 }
 
 export function createLoadSavedProject(__appScope: Record<string, any>) {
-  return (project: SavedProjectRecord, schemeId = findSchemeForProject(project.id)?.id ?? "") => {
+  return (project: SavedProjectRecord, schemeId?: string) => {
   const { CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, DEFAULT_CANVAS_BACKGROUND, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_MODEL_LAYER_ID, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, assignMissingDeviceIndexes, cachedRoutedEdgesRef, canvasFrameRef, clearNodeDragMoveSchedule, clearRefreshRecoveryProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, dragUndoCapturedRef, draggingRef, findSchemeForProject, fitWholeCanvasViewBox, hideImperativeMultiNodeDragOverlay, lastBusTerminalSyncEndpointRevisionRef, lockProjectEdgeTerminals, normalizeModelGroups, normalizeNodeTerminalsByTemplate, normalizeProjectLayers, normalizeProjectMeasurements, pendingBusTerminalSyncNodeIdsRef, pendingRouteEdgeIdsRef, pendingStoredRouteEdgeIdsRef, requestCanvasFrameCenter, resetConnectPreviewState, resolveConfiguredBackgroundLayerIds, selectSingleProject, setActiveLayerId, setActiveProjectKey, setActiveSchemeKey, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasHeight, setCanvasPanning, setCanvasSelectionScope, setCanvasVisibleViewBox, setCanvasWidth, setConnectSource, setCurrentUnit, setDeviceIndexCounters, setDragging, setGraphArrays, setGroups, setHasUnsavedChanges, setInitialCanvasDetailHydrationLimit, setInitialCanvasLodActive, setLayers, setManualPathDrag, setMarquee, setModifierSelectionPress, setPowerBaseValue, setPowerUnit, setProjectMeasurements, setProjectName, setRewiring, setRouteRenderingReady, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setTerminalPress, setTopology, setTopologyErrors, setTopologyStatus, setTransformDrag, setUndoStack, setViewBox, setVoltageUnit, suppressNextGraphDirtyRef, writeOperationLog } = __appScope;
+    if (schemeId === undefined) {
+      schemeId = findSchemeForProject(project.id)?.id ?? "";
+    }
     clearRefreshRecoveryProject();
     const normalizedNodes = project.project.nodes.map(normalizeNodeTerminalsByTemplate);
     const indexed = assignMissingDeviceIndexes(normalizedNodes, project.project.deviceIndexCounters);
@@ -2231,10 +2249,16 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
 export function createLoadSavedProjectRecord(__appScope: Record<string, any>) {
   return async (
     project: SavedProjectRecord,
-    schemeId = findSchemeForProject(project.id)?.id ?? "",
-    sourceSchemes: SavedSchemeRecord[] = schemes
+    schemeId?: string,
+    sourceSchemes?: SavedSchemeRecord[]
   ) => {
   const { fetchBackendProjectRecord, findSchemeForProject, loadSavedProject, savedProjectRecordIsSummary, schemePathForProject, schemePathForScheme, schemes, setSchemes, suppressNextBackendSchemeSyncRef, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+    if (schemeId === undefined) {
+      schemeId = findSchemeForProject(project.id)?.id ?? "";
+    }
+    if (sourceSchemes === undefined) {
+      sourceSchemes = schemes;
+    }
     const resolvedSchemeId = schemeId || findSchemeForProject(project.id)?.id || "";
     let projectToLoad = project;
     if (savedProjectRecordIsSummary(project)) {
@@ -2284,8 +2308,11 @@ export function createRequestUnsavedChangeAction(__appScope: Record<string, any>
 }
 
 export function createRequestLoadSavedProject(__appScope: Record<string, any>) {
-  return (project: SavedProjectRecord, schemeId = findSchemeForProject(project.id)?.id ?? "") => {
+  return (project: SavedProjectRecord, schemeId?: string) => {
   const { findSchemeForProject, requestUnsavedChangeAction } = __appScope;
+    if (schemeId === undefined) {
+      schemeId = findSchemeForProject(project.id)?.id ?? "";
+    }
     requestUnsavedChangeAction({
       kind: "load-project",
       project,
@@ -2618,8 +2645,11 @@ export function createPasteSchemeClipboardRecord(__appScope: Record<string, any>
 }
 
 export function createPasteProjectClipboardRecord(__appScope: Record<string, any>) {
-  return (targetSchemeId = selectedSchemeId || activeSchemeKey || schemes[0]?.id) => {
+  return (targetSchemeId?: string) => {
   const { activeSchemeKey, cloneProjectRecordForPaste, findSavedSchemeById, handleBackendSchemeMutationFailure, hasSameName, recordClipboard, requireEditMode, saveBackendProjectRecord, schemePathForRecord, schemes, selectedSchemeId, setPendingRecordPasteConflict, setSchemes, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+    if (targetSchemeId === undefined) {
+      targetSchemeId = selectedSchemeId || activeSchemeKey || schemes[0]?.id;
+    }
     if (!requireEditMode("粘贴模型")) {
       return;
     }
@@ -2988,8 +3018,11 @@ export function createMoveSchemeRecordToScheme(__appScope: Record<string, any>) 
 }
 
 export function createSaveActiveProjectPointer(__appScope: Record<string, any>) {
-  return (draftProjectId: string, draftSchemeId: string, sourceSchemes = schemes) => {
+  return (draftProjectId: string, draftSchemeId: string, sourceSchemes?: SavedSchemeRecord[]) => {
   const { ACTIVE_PROJECT_STORAGE_KEY, DRAFT_PROJECT_STORAGE_KEY, activeProjectPointerPayload, schemes } = __appScope;
+    if (sourceSchemes === undefined) {
+      sourceSchemes = schemes;
+    }
     const pointerPayload = activeProjectPointerPayload(sourceSchemes, draftProjectId, draftSchemeId);
     try {
       window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, JSON.stringify(pointerPayload ?? {}));
@@ -3856,8 +3889,11 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
 }
 
 export function createSaveCurrentProject(__appScope: Record<string, any>) {
-  return async (targetId = activeProjectKey) => {
+  return async (targetId?: string) => {
   const { activeProjectKey, activeSchemeKey, clearRefreshRecoveryProject, createSavedProject, currentGraphDirtyBaseline, currentProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, graphDirtyBaselineRef, projectById, projectName, rememberPersistedSchemesPayload, requireEditMode, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, schemes, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+    if (targetId === undefined) {
+      targetId = activeProjectKey;
+    }
     if (!requireEditMode("保存模型")) {
       return false;
     }
@@ -4133,8 +4169,11 @@ export function createDeleteProjectRecord(__appScope: Record<string, any>) {
 }
 
 export function createCreateBlankProject(__appScope: Record<string, any>) {
-  return (preferredSchemeId = selectedSchemeId || activeSchemeKey || schemes[0]?.id || "") => {
+  return (preferredSchemeId?: string) => {
   const { DEFAULT_CANVAS_BACKGROUND, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, activeSchemeKey, createSavedProject, findSavedSchemeById, handleBackendSchemeMutationFailure, hasSameName, requestLoadSavedProject, requireEditMode, saveBackendProjectRecord, schemePathForScheme, schemes, selectSingleProject, selectedSchemeId, setSchemes, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+    if (preferredSchemeId === undefined) {
+      preferredSchemeId = selectedSchemeId || activeSchemeKey || schemes[0]?.id || "";
+    }
     if (!requireEditMode("新建模型")) {
       return;
     }

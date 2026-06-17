@@ -3093,8 +3093,11 @@ export function createSelectCustomComponentType(__appScope: Record<string, any>)
 }
 
 export function createSelectCustomComponentTemplate(__appScope: Record<string, any>) {
-  return (template: DeviceTemplate, sectionName = resolveTemplateComponentType(template)) => {
+  return (template: DeviceTemplate, sectionName?: string) => {
   const { DEFAULT_STATE_PAGE_ID, createCustomDeviceDraftFromTemplate, customComponentSelectionFrameRef, customComponentSelectionRequestRef, customDeviceDefinitionMode, ensureCustomComponentTreeExpanded, normalizeAttributeLibraryName, normalizeComponentTypeName, resolveTemplateComponentType, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setDefinitionDraftSection, setEditingCustomDeviceKind, setSelectedDefinitionKind, startCustomComponentSelectionTransition } = __appScope;
+    if (sectionName === undefined) {
+      sectionName = resolveTemplateComponentType(template);
+    }
     const attributeLibraryName = normalizeAttributeLibraryName(template.attributeLibrary);
     const section = normalizeComponentTypeName(sectionName);
     const requestId = customComponentSelectionRequestRef.current + 1;
@@ -3209,8 +3212,11 @@ export function createCreateCustomAttributeLibrary(__appScope: Record<string, an
 }
 
 export function createDeleteCustomAttributeLibrary(__appScope: Record<string, any>) {
-  return (targetAttributeLibraryName = customDeviceDraft.attributeLibraryName) => {
+  return (targetAttributeLibraryName?: string) => {
   const { PROTECTED_ATTRIBUTE_LIBRARIES, customComponentTypes, customDeviceDraft, customDeviceTemplates, defaultComponentTypeForAttributeLibrary, isBuiltInComponentType, normalizeAttributeLibraryName, requireEditMode, resolveTemplateComponentType, setCollapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeTypes, setCustomAttributeLibraries, setCustomComponentTreeSelection, setCustomComponentTypes, setCustomDeviceDraft, setCustomDeviceTemplates, setDefinitionDraftSection, setDeviceDefinitionOverrides, setEditingCustomDeviceKind, setExpandedAttributeLibraries, setExpandedDefinitionGroups, setSelectedDefinitionKind } = __appScope;
+    if (targetAttributeLibraryName === undefined) {
+      targetAttributeLibraryName = customDeviceDraft.attributeLibraryName;
+    }
     if (!requireEditMode("删除属性库")) {
       return;
     }
@@ -3332,8 +3338,11 @@ export function createCreateCustomComponentType(__appScope: Record<string, any>)
 }
 
 export function createDeleteCustomComponentType(__appScope: Record<string, any>) {
-  return (targetSection = customDeviceDraft.componentType) => {
+  return (targetSection?: string) => {
   const { E_SECTION_OPTIONS, customComponentTreeSelection, customDeviceDraft, defaultComponentTypeForAttributeLibrary, libraryTemplates, normalizeAttributeLibraryName, normalizeComponentTypeName, requireEditMode, resolveTemplateComponentType, setCollapsedCustomComponentTreeTypes, setCustomComponentTreeSelection, setCustomComponentTypes, setCustomDeviceDraft, setCustomDeviceTemplates, setDefinitionDraftSection, setDeviceDefinitionOverrides, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
+    if (targetSection === undefined) {
+      targetSection = customDeviceDraft.componentType;
+    }
     if (!requireEditMode("删除元件类型")) {
       return;
     }

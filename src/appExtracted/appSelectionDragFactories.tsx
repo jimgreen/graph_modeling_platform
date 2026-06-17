@@ -2179,9 +2179,12 @@ export function createRoutePointsForMovedEdgesBlockedByStationaryNodes(__appScop
     candidateEdges: Edge[],
     movedNodeIds: Iterable<string>,
     baseRoutePoints: DraggingState["originalRoutePoints"],
-    bounds: CanvasBounds = canvasBounds
+    bounds?: CanvasBounds
   ): DraggingState["originalRoutePoints"] => {
   const { canvasBounds, getRouteBlockingCandidateNodesFromBoxes, getRouteBlockingCandidates, routeEdgesForStoredRendering, routeIntersectsSpecificNodes, routingNodesForConnectionEdges } = __appScope;
+    if (bounds === undefined) {
+      bounds = canvasBounds;
+    }
     const movedIds = new Set(movedNodeIds);
     if (movedIds.size === 0 || candidateEdges.length === 0) {
       return baseRoutePoints;
@@ -2294,9 +2297,12 @@ export function createAdjustEdgesAfterNodeMove(__appScope: Record<string, any>) 
     deltasByNode: Record<string, Point>,
     originalRoutePoints: DraggingState["originalRoutePoints"] = {},
     preserveRouteEdgeIds = new Set<string>(),
-    bounds: CanvasBounds = canvasBounds
+    bounds?: CanvasBounds
   ) => {
   const { allowAutoExpandCanvas, canvasBounds, clampEdgeGeometryToExpandableBounds, clampNodePositionToExpandableBounds, hasCanvasOriginShift, isBusNode, leftTopCanvasOriginShiftForContent, manualPointDeltaForEdge, nodeById, nodes, preserveConnectionEdgeRouteShape, resolveStraightBusSlideEndpoint, routingNodesForConnectionEdge, sameOptionalPoint, sameOptionalPointList } = __appScope;
+    if (bounds === undefined) {
+      bounds = canvasBounds;
+    }
     const movedBusIds = new Set<string>();
     const movedNextNodeById = new Map<string, ModelNode>();
     for (const movedNodeId of movedNodeIds) {
@@ -2740,7 +2746,7 @@ export function createScheduleDeferredMovedConnectionRepair(__appScope: Record<s
     movedNodeIds: string[],
     candidateEdges: Edge[],
     expectedPatch: { nodeUpdates: ModelNode[]; edgeUpserts: Edge[]; edgeDeleteIds: string[] },
-    effectiveCanvasBounds: CanvasBounds = canvasBounds,
+    effectiveCanvasBounds?: CanvasBounds,
     previousNodesForMove: ModelNode[] = [],
     originalPositions?: Record<string, Point>,
     originalRoutePoints: DraggingState["originalRoutePoints"] = {},
@@ -2748,6 +2754,9 @@ export function createScheduleDeferredMovedConnectionRepair(__appScope: Record<s
     options: SingleNodeDeferredRepairOptions = {}
   ) => {
   const { CANVAS_AUTO_EXPAND_PADDING, MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES, MAX_DEFERRED_MOVE_REPAIR_MOVED_NODES, busTerminalSyncNodeIdsForGraphPatch, canvasBounds, canvasBoundsForAutoExpandedGraphContent, deferredMoveOptimizationCancelRef, edgePatchFromCandidateEdges, finalizeMovedNodeEdgesFast, graphStoreApplyPatch, graphStorePatchStillCurrent, latestGraphStoreRef, markBusTerminalSyncDirty, markGraphDirtyForInteractiveCommit, markRouteEdgesDirty, markStoredRouteEdgesDirty, optimizeMovedNodeEdgeRoutes, routePointsForMovedEdgesBlockedByStationaryNodes, routePointsForMovedNodeBlockers, routePointsNearOriginalMovedNodes, scheduleIdleWork, setGraphStore } = __appScope;
+    if (effectiveCanvasBounds === undefined) {
+      effectiveCanvasBounds = canvasBounds;
+    }
     deferredMoveOptimizationCancelRef.current?.();
     if (movedNodeIds.length === 0 || candidateEdges.length === 0) {
       deferredMoveOptimizationCancelRef.current = null;
@@ -3183,11 +3192,17 @@ export function createCommitFastMovedGraphPatches(__appScope: Record<string, any
     originalRoutePoints: DraggingState["originalRoutePoints"],
     selectedEdgeIds = new Set<string>(),
     originalPositions?: Record<string, Point>,
-    previousNodes: ModelNode[] = nodes,
-    effectiveCanvasBounds: CanvasBounds = canvasBounds,
+    previousNodes?: ModelNode[],
+    effectiveCanvasBounds?: CanvasBounds,
     options: FastMovedGraphCommitOptions = {}
   ) => {
   const { CANVAS_AUTO_EXPAND_PADDING, allowAutoExpandCanvas, applyCanvasBounds, buildBulkMovePlan, busTerminalSyncNodeIdsForGraphPatch, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsForGraphContent, canvasBoundsWithOriginShift, deferredMoveOptimizationCancelRef, deferredMoveRepairFrameRef, deferredRoutableLineRouteRepairCancelRef, dirtyEdgeIdsAfterBulkMove, dirtyEdgeIdsForMovedLocalRoutes, edgePatchFromCandidateEdges, edgeReferenceDiffIds, edges, editModeRouteRebuildOptions, expandCanvasToFitGraph, externalMoveCandidateEdges, graphStore, graphStoreApplyPatch, graphStoreSetGraph, hasCanvasOriginShift, internalRoutableLineNodeUpdatesForMove, leftTopCanvasOriginShiftForContent, logBulkMoveCommitStats, markBusTerminalSyncDirty, markGraphDirtyForInteractiveCommit, markRouteEdgesDirty, markStoredRouteEdgesDirty, mergeNodeUpdateLists, nextNodesForMovedGraphCommit, nodes, overlayGraphStoreNodes, patchCachedRoutesForHighFanoutMove, patchCachedRoutesForInternalMove, patchCachedRoutesForWholeMove, rebuildExternalConnectionRoutesForMovedNodes, rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes, reuseSetOrCreate, routePointsForMovedEdgesBlockedByStationaryNodes, routingNodesForConnectionEdges, scheduleDeferredMovedConnectionRepair, scheduleDeferredRoutableLineRouteRepair, scheduleMovedEdgeOptimization, setGraphStore, shiftCachedRoutesForCanvasOrigin, shouldDeferSingleNodeTerminalReconciliation, shouldRunSynchronousMoveBlockerRepair, storedRouteDirtyIdsForMove, translateEdgeBy, translateNodeBy, wholeMoveRoutableLineNodeUpdates } = __appScope;
+    if (previousNodes === undefined) {
+      previousNodes = nodes;
+    }
+    if (effectiveCanvasBounds === undefined) {
+      effectiveCanvasBounds = canvasBounds;
+    }
     const wholeLayerMove = options.wholeLayerMove === true;
     const wholeLayerMoveDelta = options.moveDelta;
     const internalMovedEdgeIds = options.internalMovedEdgeIds ? reuseSetOrCreate(options.internalMovedEdgeIds) : new Set<string>();
