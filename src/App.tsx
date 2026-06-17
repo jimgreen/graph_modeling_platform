@@ -527,6 +527,9 @@ import { createOpenEdgeContextMenu, createCaptureCanvasPointer, createStartManua
 import { createOpenNodeDoubleClickEditor, createHandleLodNodeDoubleClick, createClampFloatingToolbarPosition, createToolbarOverlapArea, createCanvasRectToSurfaceCssRect, createRotateControlAvoidRectFromCanvasPoints, createPlaceFloatingToolbar, createRenderMeasurementGroup, createHandleMinimapNavigate, createCenterSelectedInView, createFitViewToSelection, createClearStaticButtonFeedbackTimer, createSetStaticButtonFeedback, createClearStaticButtonFeedback, createBeginStaticButtonPointerFeedback, createResolveStaticButtonTargetProject, createExecuteStaticButtonCommand, createExecuteStaticButtonAction, createHandleStaticButtonClick, createBeginReadonlyBackgroundStaticButtonPointerFeedback, createRenderReadonlyBackgroundPage, createOpenTopologyWarningPanel, createAppHookCallback1, createAppHookCallback2, createAppHookCallback3, createAppHookCallback4, createAppHookCallback5, createAppHookCallback6, createAppHookCallback7, createAppHookCallback8, createAppHookCallback9, createAppHookCallback10, createAppHookCallback11, createAppHookCallback12, createAppHookCallback13, createAppHookCallback14, createAppHookCallback15, createAppHookCallback16, createAppHookCallback17, createAppHookCallback18, createAppHookCallback19, createAppHookCallback20, createAppHookCallback21, createAppHookCallback22, createAppHookCallback23, createAppHookCallback24, createAppHookCallback25, createAppHookCallback26, createAppHookCallback27, createAppHookCallback28, createAppHookCallback29, createAppHookCallback30, createAppHookCallback31, createAppHookCallback32, createAppHookCallback33, createAppHookCallback34, createAppHookCallback35, createAppHookCallback36, createAppHookCallback37, createAppHookCallback38, createAppHookCallback39, createAppHookCallback40, createAppHookCallback41, createAppHookCallback42, createAppHookCallback43, createAppHookCallback44, createAppHookCallback45, createAppHookCallback46, createAppHookCallback47, createAppHookCallback48, createAppHookCallback49, createAppHookCallback50, createAppHookCallback51, createAppHookCallback52, createAppHookCallback53, createAppHookCallback54, createAppHookCallback55, createAppHookCallback56, createAppHookCallback57, createAppHookCallback58, createAppHookCallback59, createAppHookCallback60, createAppHookCallback61, createAppHookCallback62, createAppHookCallback63, createAppHookCallback64, createAppHookCallback65, createAppHookCallback66, createAppHookCallback67, createAppHookCallback68, createAppHookCallback69, createAppHookCallback70, createAppHookCallback71, createAppHookCallback72, createAppHookCallback73, createAppHookCallback74, createAppHookCallback75, createAppHookCallback76, createAppHookCallback77, createAppHookCallback78, createAppHookCallback79, createAppHookCallback80, createAppHookCallback81, createAppHookCallback82, createAppHookCallback83, createAppHookCallback84, createAppHookCallback85, createAppHookCallback86, createAppHookCallback87, createAppHookCallback88, createAppHookCallback89, createAppHookCallback90, createAppHookCallback91, createAppHookCallback92, createAppHookCallback93, createAppHookCallback94, createAppHookCallback95, createAppHookCallback96, createAppHookCallback97, createAppHookCallback98, createAppHookCallback99, createAppHookCallback100, createAppHookCallback101, createAppHookCallback102, createAppHookCallback103, createAppHookCallback104, createAppHookCallback105, createAppHookCallback106, createAppHookCallback107, createAppHookCallback108, createAppHookCallback109, createAppHookCallback110, createAppHookCallback111, createAppHookCallback112, createAppHookCallback113, createAppHookCallback114, createAppHookCallback115, createAppHookCallback116, createAppHookCallback117, createAppHookCallback118, createAppHookCallback119, createAppHookCallback120, createAppHookCallback121, createAppHookCallback122, createAppHookCallback123, createAppHookCallback124, createAppHookCallback125, createAppHookCallback126, createAppHookCallback127, createAppHookCallback128, createAppHookCallback129, createAppHookCallback130, createAppHookCallback131, createAppHookCallback132, createAppHookCallback133, createAppHookCallback134, createAppHookCallback135, createAppHookCallback136, createAppHookCallback137, createAppHookCallback138, createAppHookCallback139, createAppHookCallback140, createAppHookCallback141, createAppHookCallback142 } from "./appExtracted/appToolbarHookFactories";
 import { renderAppView } from "./appExtracted/appView";
 export function App() {
+  const __renderCount = useRef(0);
+  __renderCount.current++;
+  const __currentRender = __renderCount.current;
   const __appScope: Record<string, any> = {};
 Object.assign(__appScope, APP_STATIC_SCOPE);
 const initialSavedSchemes = useMemo<SavedSchemeRecord[]>(() => [], []); Object.assign(__appScope, { initialSavedSchemes });
@@ -1667,7 +1670,7 @@ Object.assign(__appScope, { selectedDefinitionTerminalAssociations });
 const deviceParamPanelActive = inspectorTab === "device"; Object.assign(__appScope, { deviceParamPanelActive });
 const selectedNodeTemplate = deviceParamPanelActive && inspectorSelectedNode ? libraryTemplateByKind.get(inspectorSelectedNode.kind) : undefined; Object.assign(__appScope, { selectedNodeTemplate });
 const selectedContainerParameterViews = useMemo(
-    () => (deviceParamPanelActive && inspectorSelectedNode ? buildContainerDeviceParameterViews(inspectorSelectedNode, selectedNodeTemplate) : []),
+    () => { const t0 = performance.now(); const r = deviceParamPanelActive && inspectorSelectedNode ? buildContainerDeviceParameterViews(inspectorSelectedNode, selectedNodeTemplate) : []; console.log(`[perf] useMemo selectedContainerParameterViews (deviceParamPanelActive=${deviceParamPanelActive}): ${(performance.now() - t0).toFixed(2)}ms`); return r; },
     [deviceParamPanelActive, inspectorSelectedNode, selectedNodeTemplate]
   );
 Object.assign(__appScope, { selectedContainerParameterViews });
@@ -1884,7 +1887,7 @@ const elementTreeLayerSignature = useMemo(
     [layers]
   );
 Object.assign(__appScope, { elementTreeLayerSignature });
-const elementTreeSource = useMemo(createAppHookCallback28(__appScope), [editHotInteractionActive, elementTreeLayerSignature, graphStore.elementTreeRevision, graphTreePanelActive, visibleEdges, visibleNodes]);
+const elementTreeSource = useMemo(() => { const t0 = performance.now(); const fn = createAppHookCallback28(__appScope); const r = fn(); console.log(`[perf] useMemo elementTreeSource (graphTreePanelActive=${graphTreePanelActive}): ${(performance.now() - t0).toFixed(2)}ms`); return r; }, [editHotInteractionActive, elementTreeLayerSignature, graphStore.elementTreeRevision, graphTreePanelActive, visibleEdges, visibleNodes]);
 const deferredElementTreeSource = useDeferredValue(elementTreeSource); Object.assign(__appScope, { deferredElementTreeSource });
 const elementTreeSignature = useMemo(
     () => graphTreePanelActive
@@ -1893,7 +1896,7 @@ const elementTreeSignature = useMemo(
     [deferredElementTreeSource, graphTreePanelActive, libraryTemplates]
   );
 Object.assign(__appScope, { elementTreeSignature });
-const elementTree = useMemo(createAppHookCallback29(__appScope), [deferredElementTreeSource, elementTreeSignature, graphTreePanelActive, libraryTemplates]);
+const elementTree = useMemo(() => { const t0 = performance.now(); const fn = createAppHookCallback29(__appScope); const r = fn(); console.log(`[perf] useMemo elementTree (graphTreePanelActive=${graphTreePanelActive}): ${(performance.now() - t0).toFixed(2)}ms`); return r; }, [deferredElementTreeSource, elementTreeSignature, graphTreePanelActive, libraryTemplates]);
 Object.assign(__appScope, { elementTree });
 const selectedElementTreeItemKey = useMemo(createAppHookCallback30(__appScope), [activeLayerEdgeIdSet, activeLayerNodeIdSet, activeSelectedEdgeIds, activeSelectedNodeIds, graphTreePanelActive]);
 Object.assign(__appScope, { selectedElementTreeItemKey });
@@ -1915,9 +1918,9 @@ const markBusTerminalSyncDirtyForEdges = createMarkBusTerminalSyncDirtyForEdges(
 const busTerminalSyncNodeIdsForGraphPatch = createBusTerminalSyncNodeIdsForGraphPatch(__appScope); Object.assign(__appScope, { busTerminalSyncNodeIdsForGraphPatch });
 const synchronizePendingBusTerminalsWithGraphStore = createSynchronizePendingBusTerminalsWithGraphStore(__appScope); Object.assign(__appScope, { synchronizePendingBusTerminalsWithGraphStore });
 useEffect(createAppHookCallback34(__appScope), [busNodeIdSet, connectSource, dragging, graphStore.edgeEndpointRevision, manualPathDrag, rewiring, terminalPress?.moved]);
-useEffect(createAppHookCallback35(__appScope), [elementTree, graphTreePanelActive]);
-useEffect(createAppHookCallback36(__appScope), [elementTree, graphTreePanelActive, selectedElementTreeItemKey]);
-useLayoutEffect(createAppHookCallback37(__appScope), [collapsedElementTreeDeviceGroups, collapsedElementTreeGroups, elementTreeItemLimits, graphTreePanelActive, selectedElementTreeItemKey]);
+useEffect(() => { const t0 = performance.now(); createAppHookCallback35(__appScope)(); console.log(`[perf] useEffect35 (graphTreePanelActive=${graphTreePanelActive}): ${(performance.now() - t0).toFixed(2)}ms`); }, [elementTree, graphTreePanelActive]);
+useEffect(() => { const t0 = performance.now(); createAppHookCallback36(__appScope)(); console.log(`[perf] useEffect36 (graphTreePanelActive=${graphTreePanelActive}): ${(performance.now() - t0).toFixed(2)}ms`); }, [elementTree, graphTreePanelActive, selectedElementTreeItemKey]);
+useLayoutEffect(() => { const t0 = performance.now(); createAppHookCallback37(__appScope)(); console.log(`[perf] useLayoutEffect37 (graphTreePanelActive=${graphTreePanelActive}): ${(performance.now() - t0).toFixed(2)}ms`); }, [collapsedElementTreeDeviceGroups, collapsedElementTreeGroups, elementTreeItemLimits, graphTreePanelActive, selectedElementTreeItemKey]);
 useEffect(createAppHookCallback38(__appScope), [inspectorTopologyErrors.length]);
 useEffect(createAppHookCallback39(__appScope), [inspectorTopologyErrors.length]);
 const canvasBounds = useMemo<CanvasBounds>(() => ({ width: canvasWidth, height: canvasHeight }), [canvasHeight, canvasWidth]); Object.assign(__appScope, { canvasBounds });
@@ -5017,5 +5020,9 @@ const canvasResizeHandles = (
     </g>
   );
 Object.assign(__appScope, { canvasResizeHandles });
-return renderAppView(__appScope);
+const __renderT0 = performance.now();
+const __appView = renderAppView(__appScope);
+const __renderElapsed = (performance.now() - __renderT0).toFixed(2);
+console.log(`[perf] App render #${__currentRender} renderAppView=${__renderElapsed}ms tab=${inspectorTab}\n${new Error().stack?.split('\n').slice(1, 5).join('\n')}`);
+return __appView;
 }
