@@ -10,6 +10,37 @@ export function renderAppView(__appScope: Record<string, any>) {
     startCustomComponentCreate
   } = __appScope;
   const { dragging } = __appScope;
+  const { customDevicePreviewImageHref, customDevicePreviewNode } = __appScope;
+  const customDevicePreviewStatusText = customStatePreviewVisual && customDevicePreviewImageHref
+    ? "当前显示状态图形"
+    : customStatePreviewVisual && customDevicePreviewNode
+      ? "当前显示状态样式"
+      : customDeviceDraft.backgroundImageAssetId
+        ? "当前显示后台图标预览"
+        : customDeviceDraft.backgroundImage
+          ? "当前显示本地图标预览"
+          : customDevicePreviewNode
+            ? "当前显示元件默认图形"
+            : "当前显示默认样例预览";
+  const renderCustomDevicePreviewContent = () => {
+    if (customDevicePreviewNode) {
+      const previewStateVisual = customStatePreviewVisual ?? resolveNodeStateVisual(customDevicePreviewNode);
+      return (
+        <g transform={nodeGeometryTransform(customDevicePreviewNode)}>
+          <MemoDeviceGlyph node={customDevicePreviewNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={previewStateVisual}/>
+          <MemoDeviceGlyph node={customDevicePreviewNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={previewStateVisual}/>
+        </g>
+      );
+    }
+    return (
+      <>
+        <image href={customDevicePreviewImage} x={-customDevicePreviewWidth / 2} y={-customDevicePreviewHeight / 2} width={customDevicePreviewWidth} height={customDevicePreviewHeight} preserveAspectRatio="xMidYMid slice"/>
+        {customStatePreviewText && (<text className="custom-device-state-preview-text" x="0" y="0" fill={customStatePreviewVisual?.textColor || customStatePreviewVisual?.color || "#1d4ed8"}>
+            {customStatePreviewText}
+          </text>)}
+      </>
+    );
+  };
   return (<div className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${topologyWarningPanelResize ? "topology-warning-panel-resizing" : ""} ${nodeDoubleClickDialogDrag || nodeDoubleClickDialogResize ? "node-double-click-dialog-moving" : ""} ${deviceLibraryDialogDrag || deviceLibraryDialogResize ? "device-library-dialog-moving" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`} style={appShellStyle}>
       {renderSidePanelEdgeTrigger("left")}
       {renderSidePanelEdgeTrigger("right")}
@@ -3028,14 +3059,11 @@ export function renderAppView(__appScope: Record<string, any>) {
                   <span>状态预览</span>
                   <div className="custom-device-preview-stage">
                     <svg className="custom-device-anchor-preview" viewBox={`${formatSvgNumber(-customDevicePreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(-customDevicePreviewHeight / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(customDevicePreviewWidth + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)} ${formatSvgNumber(customDevicePreviewHeight + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)}`} role="img" aria-label="自定义元件状态预览">
-                      <image href={customDevicePreviewImage} x={-customDevicePreviewWidth / 2} y={-customDevicePreviewHeight / 2} width={customDevicePreviewWidth} height={customDevicePreviewHeight} preserveAspectRatio="xMidYMid slice"/>
-                      {customStatePreviewText && (<text className="custom-device-state-preview-text" x="0" y="0" fill={customStatePreviewVisual?.textColor || customStatePreviewVisual?.color || "#1d4ed8"}>
-                          {customStatePreviewText}
-                        </text>)}
+                      {renderCustomDevicePreviewContent()}
                       <rect className="custom-device-preview-frame" x={-customDevicePreviewWidth / 2} y={-customDevicePreviewHeight / 2} width={customDevicePreviewWidth} height={customDevicePreviewHeight} rx="8"/>
                     </svg>
                   </div>
-                  <small>{customStatePreviewVisual && customDevicePreviewImage ? "当前显示状态图形" : customDeviceDraft.backgroundImageAssetId ? "当前显示后台图标预览" : customDeviceDraft.backgroundImage ? "当前显示本地图标预览" : "当前显示默认样例预览"}</small>
+                  <small>{customDevicePreviewStatusText}</small>
                 </div>) : undefined
             })}
             {customDeviceDialogView === "icon" && customDefaultStateSelected && <div className="custom-device-image-row">
@@ -3071,10 +3099,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                     }
                     setCustomDeviceTerminalAnchorDragIndex(null);
                 }}>
-                  <image href={customDevicePreviewImage} x={-customDevicePreviewWidth / 2} y={-customDevicePreviewHeight / 2} width={customDevicePreviewWidth} height={customDevicePreviewHeight} preserveAspectRatio="xMidYMid slice"/>
-                  {customStatePreviewText && (<text className="custom-device-state-preview-text" x="0" y="0" fill={customStatePreviewVisual?.textColor || customStatePreviewVisual?.color || "#1d4ed8"}>
-                      {customStatePreviewText}
-                    </text>)}
+                  {renderCustomDevicePreviewContent()}
                   <rect className="custom-device-preview-frame" x={-customDevicePreviewWidth / 2} y={-customDevicePreviewHeight / 2} width={customDevicePreviewWidth} height={customDevicePreviewHeight} rx="8"/>
                   {customDefaultStateSelected && customDeviceTerminalAnchorDragIndex !== null && (<>
                       {CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES.map((guideValue, guideIndex) => {
@@ -3124,20 +3149,17 @@ export function renderAppView(__appScope: Record<string, any>) {
                 })}
                 </svg>
               </div>
-              <small>{customDeviceDraft.backgroundImageAssetId ? "当前显示后台图标预览" : customDeviceDraft.backgroundImage ? "当前显示本地图标预览" : "当前显示默认样例预览"}</small>
+              <small>{customDevicePreviewStatusText}</small>
             </div>}
             {customDeviceDialogView === "icon" && customDefaultStateSelected && <div className="custom-device-preview">
               <span>背景预览</span>
               <div className="custom-device-preview-stage">
                 <svg className="custom-device-anchor-preview" viewBox={`${formatSvgNumber(-customDevicePreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(-customDevicePreviewHeight / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(customDevicePreviewWidth + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)} ${formatSvgNumber(customDevicePreviewHeight + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)}`} role="img" aria-label="自定义元件图标预览">
-                  <image href={customDevicePreviewImage} x={-customDevicePreviewWidth / 2} y={-customDevicePreviewHeight / 2} width={customDevicePreviewWidth} height={customDevicePreviewHeight} preserveAspectRatio="xMidYMid slice"/>
-                  {customStatePreviewText && (<text className="custom-device-state-preview-text" x="0" y="0" fill={customStatePreviewVisual?.textColor || customStatePreviewVisual?.color || "#1d4ed8"}>
-                      {customStatePreviewText}
-                    </text>)}
+                  {renderCustomDevicePreviewContent()}
                   <rect className="custom-device-preview-frame" x={-customDevicePreviewWidth / 2} y={-customDevicePreviewHeight / 2} width={customDevicePreviewWidth} height={customDevicePreviewHeight} rx="8"/>
                 </svg>
               </div>
-              <small>{customDeviceDraft.backgroundImageAssetId ? "当前显示后台图标预览" : customDeviceDraft.backgroundImage ? "当前显示本地图标预览" : "当前显示默认样例预览"}</small>
+              <small>{customDevicePreviewStatusText}</small>
             </div>}
             {customDefaultStateSelected && customDeviceDialogView === "terminals" && <div className="custom-terminal-grid">
               {Array.from({ length: customDeviceDraft.terminalCount }).map((_, index) => {

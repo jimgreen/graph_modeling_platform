@@ -3839,15 +3839,61 @@ Object.assign(__appScope, { customDeviceMeasurementTarget });
 const customStatePreviewVisual = stateVisualFromDraftRow(activeStateDraftRow(customDeviceDraft.stateDefinitions, customDeviceStatePageId)); Object.assign(__appScope, { customStatePreviewVisual });
 const customStatePreviewText = stateVisualText(customStatePreviewVisual); Object.assign(__appScope, { customStatePreviewText });
 const customDevicePreviewLabel = customDeviceDraft.componentName.trim() || customDeviceDraft.componentType || "Unit"; Object.assign(__appScope, { customDevicePreviewLabel });
-const customDevicePreviewImage =
+const customDevicePreviewImageHref =
     resolveStateVisualImageHref(customStatePreviewVisual, imageAssets) ||
-    customDeviceDraft.backgroundImage ||
+    customDeviceDraft.backgroundImage;
+Object.assign(__appScope, { customDevicePreviewImageHref });
+const customDevicePreviewImage =
+    customDevicePreviewImageHref ||
     generateCustomDeviceImage(customDevicePreviewLabel, customDraftTerminalTypes.length > 0 ? customDraftTerminalTypes : ["ac"]);
 Object.assign(__appScope, { customDevicePreviewImage });
 const customDefaultStateSelected = isDefaultStatePageId(customDeviceStatePageId); Object.assign(__appScope, { customDefaultStateSelected });
 const customDeviceDefaultStateVisualDraft = createCustomDeviceDefaultStateVisualDraft(__appScope); Object.assign(__appScope, { customDeviceDefaultStateVisualDraft });
 const customDevicePreviewWidth = Math.max(1, customDeviceDraft.size.width || 104); Object.assign(__appScope, { customDevicePreviewWidth });
 const customDevicePreviewHeight = Math.max(1, customDeviceDraft.size.height || 64); Object.assign(__appScope, { customDevicePreviewHeight });
+const customDevicePreviewSourceTemplate =
+    customDeviceDefinitionMode === "edit"
+      ? selectedCustomComponentTemplate ?? (selectedDefinitionKind ? selectedDefinitionTemplate : undefined)
+      : undefined;
+Object.assign(__appScope, { customDevicePreviewSourceTemplate });
+const customDevicePreviewNode = useMemo(() => {
+    if (!customDevicePreviewSourceTemplate || customDevicePreviewImageHref) {
+      return null;
+    }
+    const terminalCount = Math.max(0, customDeviceDraft.terminalCount);
+    const terminalTypes = customDeviceDraft.terminalTypes.slice(0, terminalCount);
+    const visualTemplate = {
+      ...customDevicePreviewSourceTemplate,
+      label: customDevicePreviewLabel || customDevicePreviewSourceTemplate.label,
+      size: { ...customDeviceDraft.size },
+      params: {
+        ...customDevicePreviewSourceTemplate.params,
+        backgroundImage: "",
+        backgroundImageAssetId: ""
+      },
+      terminalType: terminalTypes[0] ?? customDevicePreviewSourceTemplate.terminalType,
+      terminalCount,
+      terminalTypes,
+      terminalLabels: customDeviceDraft.terminalLabels.slice(0, terminalCount),
+      terminalAnchors: createDefaultCustomDeviceTerminalAnchors(terminalCount, customDeviceDraft.terminalAnchors)
+    };
+    const previewNode = createNodeFromTemplate(visualTemplate, { x: 0, y: 0 });
+    return {
+      ...previewNode,
+      id: `custom-device-preview-${customDevicePreviewSourceTemplate.kind}`,
+      name: customDevicePreviewLabel
+    };
+  }, [
+    customDevicePreviewSourceTemplate,
+    customDevicePreviewImageHref,
+    customDevicePreviewLabel,
+    customDeviceDraft.size,
+    customDeviceDraft.terminalCount,
+    customDeviceDraft.terminalTypes,
+    customDeviceDraft.terminalLabels,
+    customDeviceDraft.terminalAnchors
+  ]);
+Object.assign(__appScope, { customDevicePreviewNode });
 const customDeviceTerminalAnchors = createDefaultCustomDeviceTerminalAnchors(customDeviceDraft.terminalCount, customDeviceDraft.terminalAnchors); Object.assign(__appScope, { customDeviceTerminalAnchors });
 const customDeviceTerminalAnchorValue = (value: number) =>
     normalizeCustomDeviceTerminalAnchorCoordinate(value);
