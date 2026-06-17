@@ -1544,7 +1544,7 @@ export function createFinishSchemeRecordDrag(__appScope: Record<string, any>) {
 
 export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
   return (scheme: SavedSchemeRecord, depth = 0): ReactNode => {
-  const { ChevronDown, ChevronRight, FileJson, FolderOpen, activeProjectKey, div, expandedSchemeIds, finishProjectRecordDrag, finishSchemeRecordDrag, isEditMode, moveProjectRecordToScheme, moveSchemeRecordToScheme, p, projectSearchNeedle, requestLoadSavedProject, selectSingleProject, selectSingleScheme, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setInspectorTab, setProjectMenu, span, startProjectRecordDrag, startSchemeRecordDrag, toggleProjectSelection, toggleSchemeExpanded, toggleSchemeSelection } = __appScope;
+  const { ChevronDown, ChevronRight, FileJson, FolderOpen, activeProjectKey, div, expandedSchemeIds, finishProjectRecordDrag, finishSchemeRecordDrag, isEditMode, moveProjectRecordToScheme, moveSchemeRecordToScheme, p, projectSearchNeedle, renderProjectSchemeNode, requestLoadSavedProject, selectSingleProject, selectSingleScheme, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setInspectorTab, setProjectMenu, span, startProjectRecordDrag, startSchemeRecordDrag, toggleProjectSelection, toggleSchemeExpanded, toggleSchemeSelection } = __appScope;
     const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id);
     const children = scheme.children ?? [];
     const hasContent = scheme.projects.length > 0 || children.length > 0;
