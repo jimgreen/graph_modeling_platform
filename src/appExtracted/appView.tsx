@@ -11,18 +11,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     startCustomComponentCreate
   } = __appScope;
   const { dragging } = __appScope;
-  const { customDevicePreviewImageHref, customDevicePreviewNode } = __appScope;
-  const customDevicePreviewStatusText = customStatePreviewVisual && customDevicePreviewImageHref
-    ? "当前显示状态图形"
-    : customStatePreviewVisual && customDevicePreviewNode
-      ? "当前显示状态样式"
-      : customDeviceDraft.backgroundImageAssetId
-        ? "当前显示后台图标预览"
-        : customDeviceDraft.backgroundImage
-          ? "当前显示本地图标预览"
-          : customDevicePreviewNode
-            ? "当前显示元件默认图形"
-            : "当前显示默认样例预览";
+  const { customDevicePreviewNode } = __appScope;
   const renderCustomDevicePreviewContent = () => {
     if (customDevicePreviewNode) {
       const previewStateVisual = customStatePreviewVisual ?? resolveNodeStateVisual(customDevicePreviewNode);
@@ -2016,14 +2005,12 @@ export function renderAppView(__appScope: Record<string, any>) {
                 },
                 drawStateIcon: (rowId) => openStateIconDrawingDialog({ scope: "custom", rowId }),
                 preview: !customDefaultStateSelected ? (<div className="custom-device-preview">
-                  <span>状态预览</span>
                   <div className="custom-device-preview-stage">
                     <svg className="custom-device-anchor-preview" viewBox={`${formatSvgNumber(-customDevicePreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(-customDevicePreviewHeight / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(customDevicePreviewWidth + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)} ${formatSvgNumber(customDevicePreviewHeight + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)}`} role="img" aria-label="自定义元件状态预览">
                       {renderCustomDevicePreviewContent()}
                       <rect className="custom-device-preview-frame" x={-customDevicePreviewWidth / 2} y={-customDevicePreviewHeight / 2} width={customDevicePreviewWidth} height={customDevicePreviewHeight} rx="8"/>
                     </svg>
                   </div>
-                  <small>{customDevicePreviewStatusText}</small>
                 </div>) : undefined
             })}
             {customDeviceDialogView === "icon" && customDefaultStateSelected && <div className="custom-device-image-row">
@@ -2041,7 +2028,6 @@ export function renderAppView(__appScope: Record<string, any>) {
               <strong>{customDeviceDraft.backgroundImageAssetId ? "后台已保存" : customDeviceDraft.backgroundImage ? "已设置" : "未设置"}</strong>
             </div>}
             {customDefaultStateSelected && customDeviceDialogView === "terminals" && <div className="custom-device-preview">
-              <span>端子位置预览</span>
               <div className="custom-device-preview-stage">
                 <svg className="custom-device-anchor-preview" viewBox={`${formatSvgNumber(-customDevicePreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(-customDevicePreviewHeight / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(customDevicePreviewWidth + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)} ${formatSvgNumber(customDevicePreviewHeight + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)}`} role="img" aria-label="自定义元件图标和端子位置预览" onPointerMove={(event) => {
                     if (!customDefaultStateSelected || customDeviceTerminalAnchorDragIndex === null) {
@@ -2109,17 +2095,14 @@ export function renderAppView(__appScope: Record<string, any>) {
                 })}
                 </svg>
               </div>
-              <small>{customDevicePreviewStatusText}</small>
             </div>}
             {customDeviceDialogView === "icon" && customDefaultStateSelected && <div className="custom-device-preview">
-              <span>背景预览</span>
               <div className="custom-device-preview-stage">
                 <svg className="custom-device-anchor-preview" viewBox={`${formatSvgNumber(-customDevicePreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(-customDevicePreviewHeight / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(customDevicePreviewWidth + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)} ${formatSvgNumber(customDevicePreviewHeight + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)}`} role="img" aria-label="自定义元件图标预览">
                   {renderCustomDevicePreviewContent()}
                   <rect className="custom-device-preview-frame" x={-customDevicePreviewWidth / 2} y={-customDevicePreviewHeight / 2} width={customDevicePreviewWidth} height={customDevicePreviewHeight} rx="8"/>
                 </svg>
               </div>
-              <small>{customDevicePreviewStatusText}</small>
             </div>}
             {customDefaultStateSelected && customDeviceDialogView === "terminals" && <div className="custom-terminal-grid">
               {Array.from({ length: customDeviceDraft.terminalCount }).map((_, index) => {

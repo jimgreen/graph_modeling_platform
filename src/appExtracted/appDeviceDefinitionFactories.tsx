@@ -4105,7 +4105,6 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
           drawStateIcon: (rowId) => openStateIconDrawingDialog({ scope: "definition", rowId }),
           preview: !definitionDefaultStateSelected ? (
             <div className="custom-device-preview device-definition-visual-preview">
-              <span>状态预览</span>
               <div className="custom-device-preview-stage">
                 <svg
                   className="custom-device-anchor-preview device-definition-anchor-preview"
@@ -4147,7 +4146,6 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
                   />
                 </svg>
               </div>
-              <small>{definitionStatePreviewVisual && definitionVisualPreviewImage ? "当前显示状态图形" : definitionVisualDraft.backgroundImageAssetId ? "当前显示后台图标预览" : definitionVisualDraft.backgroundImage ? "当前显示本地图标预览" : "当前显示元件默认图形"}</small>
             </div>
           ) : undefined,
           reset: () => {
@@ -4241,7 +4239,6 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
           </div>
         )}
         {definitionDefaultStateSelected && <div className="custom-device-preview device-definition-visual-preview">
-          <span>{definitionDefaultStateSelected ? "图标和端子位置" : "状态预览"}</span>
           <div className="custom-device-preview-stage">
             <svg
               className="custom-device-anchor-preview device-definition-anchor-preview"
@@ -4391,7 +4388,6 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
               })}
             </svg>
           </div>
-          <small>{definitionVisualDraft.backgroundImageAssetId ? "当前显示后台图标预览" : definitionVisualDraft.backgroundImage ? "当前显示本地图标预览" : "当前显示元件默认图形"}</small>
         </div>}
         {definitionDefaultStateSelected && <div className="custom-terminal-grid device-definition-terminal-grid">
           {Array.from({ length: definitionVisualDraft.terminalCount }).map((_, index) => {

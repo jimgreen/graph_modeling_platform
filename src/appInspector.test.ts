@@ -11216,6 +11216,7 @@ describe("graph inspector panel", () => {
     const parameterPanelBlock = styles.slice(parameterPanelStart, parameterPanelEnd);
     const parameterTableBlock = cssRuleBlock(styles, ".custom-device-tab-panel-parameters > .custom-param-table-wrap");
     const visualPreviewBlock = cssRuleBlock(styles, ".custom-device-tab-panel-terminals > .custom-device-preview .custom-device-preview-stage,\n.custom-device-tab-panel-icon > .custom-device-preview .custom-device-preview-stage,\n.device-definition-visual-panel > .custom-device-preview .custom-device-preview-stage");
+    const visualStatePreviewGridBlock = cssRuleBlock(styles, ".device-state-pager .custom-device-preview.device-definition-visual-preview,\n.custom-device-tab-panel-icon .device-state-pager .custom-device-preview");
 
     expect(dialogBlock).toContain("display: flex;");
     expect(dialogBlock).toContain("flex-direction: column;");
@@ -11232,6 +11233,13 @@ describe("graph inspector panel", () => {
     expect(parameterPanelBlock).toContain("grid-template-rows: minmax(0, 1fr) auto;");
     expect(parameterTableBlock).toContain("height: 100%;");
     expect(parameterTableBlock).toContain("max-height: none;");
+    expect(source).not.toContain("<span>端子位置预览</span>");
+    expect(source).not.toContain("<span>背景预览</span>");
+    expect(source).not.toContain("<span>状态预览</span>");
+    expect(source).not.toContain('<span>{definitionDefaultStateSelected ? "图标和端子位置" : "状态预览"}</span>');
+    expect(source).not.toContain("当前显示后台图标预览");
+    expect(styles).toContain(".custom-device-tab-panel-terminals > .custom-device-preview,\n.custom-device-tab-panel-icon > .custom-device-preview {\n  grid-template-columns: minmax(0, 1fr);");
+    expect(visualStatePreviewGridBlock).toContain("grid-template-columns: minmax(0, 1fr);");
     expect(visualPreviewBlock).toContain("min-height: clamp(260px, 42vh, 520px);");
     expect(measurementPanelBlock).toContain("height: 100%;");
     expect(formBlock).toContain("minmax(0, 1.05fr)");

@@ -5103,11 +5103,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   padding: 8px;
 }
 
-.device-definition-visual-preview > span,
-.device-definition-visual-preview > small {
-  line-height: 1.2;
-}
-
 .device-definition-visual-preview .custom-device-preview-stage {
   min-height: 142px;
 }
@@ -5120,6 +5115,11 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   grid-template-columns: 62px minmax(0, 1fr) auto;
   gap: 6px;
   padding: 6px;
+}
+
+.device-state-pager .custom-device-preview.device-definition-visual-preview,
+.custom-device-tab-panel-icon .device-state-pager .custom-device-preview {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .device-state-pager .custom-device-preview .custom-device-preview-stage {
@@ -5687,6 +5687,11 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   align-self: stretch;
   align-items: stretch;
   box-sizing: border-box;
+}
+
+.custom-device-tab-panel-terminals > .custom-device-preview,
+.custom-device-tab-panel-icon > .custom-device-preview {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .custom-device-tab-panel-terminals > .custom-device-preview .custom-device-preview-stage,
