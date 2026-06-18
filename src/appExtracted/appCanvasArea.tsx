@@ -161,6 +161,8 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     nodeLabelTextStyle, nodeLabelTransform,
     nodeUsesUprightStaticSelectionOutline, nodeUprightSelectionOutlineRect,
     isBusNode, isStaticNode, isRoutableLineDeviceKind,
+    canConnectTerminals,
+    isCanvasGraphicContextMenuTarget,
     isStaticButtonEnabledForNode, isStaticBoxLikeNode,
     resolveNodeStateVisual, resolveConnectPreviewPoint, resolveRoutableLinePreviewPoint,
     sameOptionalPoint, pointsToOrthogonalPath,

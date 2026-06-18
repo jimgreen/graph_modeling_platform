@@ -622,19 +622,9 @@ export function createHandleTerminalPointerDown(__appScope: Record<string, any>)
       if (connectSource) {
         const target: ConnectTarget = { node, terminalId, point: busPoint };
         finishConnectToTarget(target, busPoint ?? getTerminalPoint(node, terminalId));
-      } else if (event.ctrlKey) {
-        startConnectFromTerminal(node, terminalId, busPoint);
       } else {
-        const point = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-        setTerminalPress({
-          nodeId: node.id,
-          terminalId,
-          pointerId: event.pointerId,
-          startPoint: point,
-          currentPoint: point,
-          moved: false
-        });
-        event.currentTarget.setPointerCapture(event.pointerId);
+        // 普通点击直接启动连接预览，无需Ctrl键
+        startConnectFromTerminal(node, terminalId, busPoint);
       }
       return;
     }

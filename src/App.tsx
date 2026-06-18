@@ -3126,6 +3126,17 @@ const resolveRoutableLinePreviewPoint = createResolveRoutableLinePreviewPoint(__
 const resetRoutableLinePreviewState = createResetRoutableLinePreviewState(__appScope); Object.assign(__appScope, { resetRoutableLinePreviewState });
 const scheduleRewirePreviewPoint = createScheduleRewirePreviewPoint(__appScope); Object.assign(__appScope, { scheduleRewirePreviewPoint });
 const resetConnectPreviewState = createResetConnectPreviewState(__appScope); Object.assign(__appScope, { resetConnectPreviewState });
+// ESC 键取消连接预览
+useEffect(() => {
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && connectSource) {
+      setConnectSource(null);
+      resetConnectPreviewState();
+    }
+  };
+  window.addEventListener("keydown", handleKeyDown);
+  return () => window.removeEventListener("keydown", handleKeyDown);
+}, [connectSource]);
 const releaseConnectPreviewAxisLock = createReleaseConnectPreviewAxisLock(__appScope); Object.assign(__appScope, { releaseConnectPreviewAxisLock });
 const connectSourceEndpointPoint = createConnectSourceEndpointPoint(__appScope); Object.assign(__appScope, { connectSourceEndpointPoint });
 const connectPreviewAxisReferencePoint = () =>
