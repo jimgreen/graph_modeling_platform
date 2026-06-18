@@ -1,4 +1,5 @@
 import { getNodeScaleX, getNodeScaleY, inferESection, type ModelNode } from "./model";
+import { finiteNumber } from "./formatUtils";
 
 export type MeasurementValueType = "number" | "string" | "boolean";
 export type MeasurementQuality = "good" | "bad" | "stale" | "missing";
@@ -212,11 +213,6 @@ export function measurementOffsetScaleForNode(node: ModelNode): { x: number; y: 
     x: Math.abs(getNodeScaleX(node)) || 1,
     y: Math.abs(getNodeScaleY(node)) || 1
   };
-}
-
-function finiteNumber(value: unknown, fallback: number): number {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : fallback;
 }
 
 function normalizedFontWeight(value: unknown, fallback: MeasurementFontWeight): MeasurementFontWeight {

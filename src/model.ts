@@ -6597,6 +6597,16 @@ export function getNodeScaleY(node: ModelNode): number {
   return node.scaleY ?? node.scale ?? 1;
 }
 
+/** 安全获取节点 X 缩放值（绝对值 + fallback） */
+export function getSafeNodeScaleX(node: ModelNode): number {
+  return Math.abs(getNodeScaleX(node)) || 1;
+}
+
+/** 安全获取节点 Y 缩放值（绝对值 + fallback） */
+export function getSafeNodeScaleY(node: ModelNode): number {
+  return Math.abs(getNodeScaleY(node)) || 1;
+}
+
 export function normalizeScaleValue(value: number, fallback = 1) {
   return Number.isFinite(value) ? value : fallback;
 }

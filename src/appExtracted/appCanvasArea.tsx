@@ -6,6 +6,14 @@
  */
 import { memo } from "react";
 
+/** Storage bus 设备类型集合 */
+const STORAGE_BUS_KINDS = new Set([
+  "hydrogen-tank",
+  "hydrogen-tank-horizontal",
+  "hydrogen-tank-container",
+  "thermal-storage-tank"
+]);
+
 /**
  * 自定义比较器：深度比较画布相关的所有值。
  * 只有当画布实际使用的值发生变化时，才触发重渲染。
@@ -760,16 +768,14 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         const nodeIsBus = isBusNode(node);
         const nodeIsStatic = isStaticNode(node);
         const nodeIsRoutableLineDevice = isRoutableLineDeviceKind(node.kind);
+        const nodeStateVisual = resolveNodeStateVisual(node);
         if (nodeIsRoutableLineDevice &&
             (dragGhostRoutableLineNodeIdSet.has(node.id) ||
                 groupTransformPreviewRoutableLineNodeIdSet.has(node.id) ||
                 routableLineEndpointDrag?.nodeId === node.id)) {
             return null;
         }
-        const isStorageBus = node.kind === "hydrogen-tank" ||
-            node.kind === "hydrogen-tank-horizontal" ||
-            node.kind === "hydrogen-tank-container" ||
-            node.kind === "thermal-storage-tank";
+        const isStorageBus = STORAGE_BUS_KINDS.has(node.kind);
         const isConnectSource = node.id === connectSource?.nodeId;
         const originalDragPosition = dragging?.originalPositions[node.id];
         const renderPosition = draggingDelta && originalDragPosition
@@ -895,8 +901,8 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                     </clipPath>)}
                   <g className="node-geometry" transform={nodeGeometryTransformValue}>
                     <rect x={-node.size.width / 2} y={-node.size.height / 2} width={node.size.width} height={node.size.height} rx="8" className={`node-hitbox ${nodeIsBus ? "bus-hitbox" : ""} ${nodeIsStatic ? "static-hitbox" : ""}`}/>
-                    <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)}/>
-                    <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)}/>
+                    <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={nodeStateVisual}/>
+                    <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={nodeStateVisual}/>
                     {routableLineDeviceHitPath && (<path className="routable-line-device-hitline" d={routableLineDeviceHitPath} onPointerDown={(event) => handleRoutableLineNodePathPointerDown(event, node)}/>)}
                     {staticButtonEnabled && (<rect x={-node.size.width / 2} y={-node.size.height / 2} width={node.size.width} height={node.size.height} rx={staticButtonCornerRadius} className="static-button-feedback-surface"/>)}
                     {showStaticSelectionFrame && (<g className="node-static-selection-frame">

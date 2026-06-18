@@ -1,9 +1,11 @@
-import { getNodeScaleX, getNodeScaleY, normalizeScaleValue, type ModelNode, type Point } from "./model";
-
-/** 将角度值规范化为 0-360 范围 */
-function normalizeRotationDegrees(value: number) {
-  return ((Math.round(value) % 360) + 360) % 360;
-}
+import {
+  getNodeScaleX,
+  getNodeScaleY,
+  normalizeScaleValue,
+  type ModelNode,
+  type Point
+} from "./model";
+import { normalizeRotationDegrees } from "./formatUtils";
 
 /** 将终端锚点吸附到设备最近的边中点 */
 export function snapSingleTerminalAnchorToNearestSide(node: ModelNode, point: Point): Point {
