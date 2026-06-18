@@ -6805,6 +6805,11 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   border-left: 1px solid var(--element-tree-guide);
 }
 
+.element-tree-virtual-spacer {
+  width: 100%;
+  pointer-events: none;
+}
+
 .element-tree-items {
   display: grid;
   align-content: start;

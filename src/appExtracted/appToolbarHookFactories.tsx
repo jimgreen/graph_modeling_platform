@@ -1481,7 +1481,7 @@ export function createAppHookCallback35(__appScope: Record<string, any>) {
 
 export function createAppHookCallback36(__appScope: Record<string, any>) {
   return () => {
-  const { ELEMENT_TREE_INITIAL_ITEM_LIMIT, ELEMENT_TREE_ITEM_LIMIT_STEP, elementTree, graphTreePanelActive, selectedElementTreeItemKey, setCollapsedElementTreeDeviceGroups, setCollapsedElementTreeGroups, setElementTreeItemLimits } = __appScope;
+  const { ELEMENT_TREE_INITIAL_ITEM_LIMIT, ELEMENT_TREE_ITEM_LIMIT_STEP, elementTree, graphTreePanelActive, selectedElementTreeItemKey, setCollapsedElementTreeDeviceGroups, setCollapsedElementTreeGroups, setElementTreeItemLimits, setElementTreeItemWindows } = __appScope;
     if (!graphTreePanelActive || !selectedElementTreeItemKey) {
       return;
     }
@@ -1505,6 +1505,24 @@ export function createAppHookCallback36(__appScope: Record<string, any>) {
           const nextLimit = Math.ceil((selectedIndex + 1) / ELEMENT_TREE_ITEM_LIMIT_STEP) * ELEMENT_TREE_ITEM_LIMIT_STEP;
           return { ...current, [deviceGroup.deviceKey]: Math.max(nextLimit, ELEMENT_TREE_INITIAL_ITEM_LIMIT) };
         });
+        // 虚拟化窗口：保证选中项落在窗口内
+        const total = deviceGroup.items.length;
+        const ESTIMATED_ITEM_HEIGHT = 30;
+        const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 600;
+        const N = Math.max(8, Math.floor(viewportHeight / ESTIMATED_ITEM_HEIGHT));
+        const WINDOW = 2 * N;
+        if (total > WINDOW) {
+          setElementTreeItemWindows((current: Record<string, { start: number; end: number }>) => {
+            const cur = current[deviceGroup.deviceKey] ?? { start: 0, end: Math.min(total, WINDOW) };
+            if (selectedIndex >= cur.start && selectedIndex < cur.end) {
+              return current;
+            }
+            let newStart = Math.max(0, selectedIndex - N);
+            const newEnd = Math.min(total, newStart + WINDOW);
+            newStart = Math.max(0, newEnd - WINDOW);
+            return { ...current, [deviceGroup.deviceKey]: { start: newStart, end: newEnd } };
+          });
+        }
         return;
       }
     }

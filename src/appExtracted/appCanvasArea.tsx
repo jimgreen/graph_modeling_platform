@@ -16,7 +16,6 @@ function areCanvasPropsEqual(prevProps: any, nextProps: any) {
 
   // 快速路径：如果引用相同，直接返回 true
   if (prev === next) {
-    console.log('[memo] scope 引用相同，跳过');
     return true;
   }
 
@@ -31,7 +30,6 @@ function areCanvasPropsEqual(prevProps: any, nextProps: any) {
 
   for (const key of stateKeys) {
     if (prev[key] !== next[key]) {
-      console.log(`[memo] 状态变化: ${key}`, prev[key], '→', next[key]);
       return false;
     }
   }
@@ -46,7 +44,6 @@ function areCanvasPropsEqual(prevProps: any, nextProps: any) {
 
   for (const key of displayKeys) {
     if (prev[key] !== next[key]) {
-      console.log(`[memo] 显示参数变化: ${key}`, prev[key], '→', next[key]);
       return false;
     }
   }
@@ -60,7 +57,6 @@ function areCanvasPropsEqual(prevProps: any, nextProps: any) {
 
   for (const key of dataKeys) {
     if (prev[key] !== next[key]) {
-      console.log(`[memo] 数据变化: ${key}`);
       return false;
     }
   }
@@ -73,12 +69,10 @@ function areCanvasPropsEqual(prevProps: any, nextProps: any) {
 
   for (const key of overlayKeys) {
     if (prev[key] !== next[key]) {
-      console.log(`[memo] 覆盖层变化: ${key}`);
       return false;
     }
   }
 
-  console.log('[memo] ✅ 所有值相同，跳过重渲染');
   return true;
 }
 
@@ -86,7 +80,6 @@ function areCanvasPropsEqual(prevProps: any, nextProps: any) {
  * MemoizedCanvasArea - 接收整个 __appScope，内部解构使用。
  */
 export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { scope: Record<string, any> }) {
-  console.log(`[perf] MemoizedCanvasArea render at ${performance.now().toFixed(2)}ms`);
   // 从 scope 解构所有画布需要的变量
   const {
     svgRef, canvasFrameRef, canvasInteractionRef, projectListPointerInsideRef,

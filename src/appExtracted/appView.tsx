@@ -310,13 +310,13 @@ export function renderAppView(__appScope: Record<string, any>) {
         </div>
         {inspectorSelectedNode || currentModelRecord ? (<div className={`form-stack ${inspectorTab === "tree" ? "graph-form-stack" : ""}`}>
             <div className="inspector-tabs">
-              <button className={inspectorTab === "model" ? "active" : ""} onClick={() => { const t0 = performance.now(); console.log(`[perf] 点击"基础" tab, 当前=${inspectorTab}`); setInspectorTab("model"); queueMicrotask(() => console.log(`[perf] "基础" tab setState 后微任务耗时: ${(performance.now() - t0).toFixed(2)}ms`)); requestAnimationFrame(() => console.log(`[perf] "基础" tab 下一帧耗时: ${(performance.now() - t0).toFixed(2)}ms`)); }} disabled={!currentModelRecord}>
+              <button className={inspectorTab === "model" ? "active" : ""} onClick={() => setInspectorTab("model")} disabled={!currentModelRecord}>
                 基础
               </button>
-              <button className={inspectorTab === "tree" ? "active" : ""} onClick={() => { const t0 = performance.now(); console.log(`[perf] 点击"图元树" tab, 当前=${inspectorTab}`); setInspectorTab("tree"); queueMicrotask(() => console.log(`[perf] "图元树" tab setState 后微任务耗时: ${(performance.now() - t0).toFixed(2)}ms`)); requestAnimationFrame(() => console.log(`[perf] "图元树" tab 下一帧耗时: ${(performance.now() - t0).toFixed(2)}ms`)); }}>
+              <button className={inspectorTab === "tree" ? "active" : ""} onClick={() => setInspectorTab("tree")}>
                 图元树
               </button>
-              <button className={inspectorTab === "graph" || inspectorTab === "device" ? "active" : ""} onClick={() => { const t0 = performance.now(); console.log(`[perf] 点击"图元" tab, 当前=${inspectorTab}`); setInspectorTab("graph"); queueMicrotask(() => console.log(`[perf] "图元" tab setState 后微任务耗时: ${(performance.now() - t0).toFixed(2)}ms`)); requestAnimationFrame(() => console.log(`[perf] "图元" tab 下一帧耗时: ${(performance.now() - t0).toFixed(2)}ms`)); }}>
+              <button className={inspectorTab === "graph" || inspectorTab === "device" ? "active" : ""} onClick={() => setInspectorTab("graph")}>
                 图元
               </button>
             </div>

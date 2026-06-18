@@ -982,6 +982,12 @@ const [collapsedElementTreeDeviceGroups, setCollapsedElementTreeDeviceGroups] = 
 Object.assign(__appScope, { collapsedElementTreeDeviceGroups, setCollapsedElementTreeDeviceGroups });
 const [elementTreeItemLimits, setElementTreeItemLimits] = useState<Record<string, number>>({});
 Object.assign(__appScope, { elementTreeItemLimits, setElementTreeItemLimits });
+// 图元树虚拟化窗口：每 deviceGroup 维护 [start, end) 可见区间，按可视高度动态滑动
+const [elementTreeItemWindows, setElementTreeItemWindows] = useState<Record<string, { start: number; end: number }>>({});
+Object.assign(__appScope, { elementTreeItemWindows, setElementTreeItemWindows });
+// 每 deviceGroup 实测 item 平均高度（含 child 列表），供 render 计算 spacer 高度
+const [elementTreeItemHeights, setElementTreeItemHeights] = useState<Record<string, number>>({});
+Object.assign(__appScope, { elementTreeItemHeights, setElementTreeItemHeights });
 const [elementTreeEditDrafts, setElementTreeEditDrafts] = useState<Record<string, string>>({});
 Object.assign(__appScope, { elementTreeEditDrafts, setElementTreeEditDrafts });
 const [elementTreeSearchQuery, setElementTreeSearchQuery] = useState("");
@@ -1672,7 +1678,7 @@ Object.assign(__appScope, { selectedDefinitionTerminalAssociations });
 const deviceParamPanelActive = inspectorTab === "device"; Object.assign(__appScope, { deviceParamPanelActive });
 const selectedNodeTemplate = deviceParamPanelActive && inspectorSelectedNode ? libraryTemplateByKind.get(inspectorSelectedNode.kind) : undefined; Object.assign(__appScope, { selectedNodeTemplate });
 const selectedContainerParameterViews = useMemo(
-    () => { const t0 = performance.now(); const r = deviceParamPanelActive && inspectorSelectedNode ? buildContainerDeviceParameterViews(inspectorSelectedNode, selectedNodeTemplate) : []; console.log(`[perf] useMemo selectedContainerParameterViews (deviceParamPanelActive=${deviceParamPanelActive}): ${(performance.now() - t0).toFixed(2)}ms`); return r; },
+    () => deviceParamPanelActive && inspectorSelectedNode ? buildContainerDeviceParameterViews(inspectorSelectedNode, selectedNodeTemplate) : [],
     [deviceParamPanelActive, inspectorSelectedNode, selectedNodeTemplate]
   );
 Object.assign(__appScope, { selectedContainerParameterViews });
@@ -1889,7 +1895,7 @@ const elementTreeLayerSignature = useMemo(
     [layers]
   );
 Object.assign(__appScope, { elementTreeLayerSignature });
-const elementTreeSource = useMemo(() => { const t0 = performance.now(); const fn = createAppHookCallback28(__appScope); const r = fn(); console.log(`[perf] useMemo elementTreeSource (graphTreePanelActive=${graphTreePanelActive}): ${(performance.now() - t0).toFixed(2)}ms`); return r; }, [editHotInteractionActive, elementTreeLayerSignature, graphStore.elementTreeRevision, graphTreePanelActive, visibleEdges, visibleNodes]);
+const elementTreeSource = useMemo(() => createAppHookCallback28(__appScope)(), [editHotInteractionActive, elementTreeLayerSignature, graphStore.elementTreeRevision, graphTreePanelActive, visibleEdges, visibleNodes]);
 const deferredElementTreeSource = useDeferredValue(elementTreeSource); Object.assign(__appScope, { deferredElementTreeSource });
 const elementTreeSignature = useMemo(
     () => graphTreePanelActive
@@ -1898,7 +1904,7 @@ const elementTreeSignature = useMemo(
     [deferredElementTreeSource, graphTreePanelActive, libraryTemplates]
   );
 Object.assign(__appScope, { elementTreeSignature });
-const elementTree = useMemo(() => { const t0 = performance.now(); const fn = createAppHookCallback29(__appScope); const r = fn(); console.log(`[perf] useMemo elementTree (graphTreePanelActive=${graphTreePanelActive}): ${(performance.now() - t0).toFixed(2)}ms`); return r; }, [deferredElementTreeSource, elementTreeSignature, graphTreePanelActive, libraryTemplates]);
+const elementTree = useMemo(() => createAppHookCallback29(__appScope)(), [deferredElementTreeSource, elementTreeSignature, graphTreePanelActive, libraryTemplates]);
 Object.assign(__appScope, { elementTree });
 const selectedElementTreeItemKey = useMemo(createAppHookCallback30(__appScope), [activeLayerEdgeIdSet, activeLayerNodeIdSet, activeSelectedEdgeIds, activeSelectedNodeIds, graphTreePanelActive]);
 Object.assign(__appScope, { selectedElementTreeItemKey });
@@ -1920,11 +1926,151 @@ const markBusTerminalSyncDirtyForEdges = createMarkBusTerminalSyncDirtyForEdges(
 const busTerminalSyncNodeIdsForGraphPatch = createBusTerminalSyncNodeIdsForGraphPatch(__appScope); Object.assign(__appScope, { busTerminalSyncNodeIdsForGraphPatch });
 const synchronizePendingBusTerminalsWithGraphStore = createSynchronizePendingBusTerminalsWithGraphStore(__appScope); Object.assign(__appScope, { synchronizePendingBusTerminalsWithGraphStore });
 useEffect(createAppHookCallback34(__appScope), [busNodeIdSet, connectSource, dragging, graphStore.edgeEndpointRevision, manualPathDrag, rewiring, terminalPress?.moved]);
-useEffect(() => { const t0 = performance.now(); createAppHookCallback35(__appScope)(); console.log(`[perf] useEffect35 (graphTreePanelActive=${graphTreePanelActive}): ${(performance.now() - t0).toFixed(2)}ms`); }, [elementTree, graphTreePanelActive]);
-useEffect(() => { const t0 = performance.now(); createAppHookCallback36(__appScope)(); console.log(`[perf] useEffect36 (graphTreePanelActive=${graphTreePanelActive}): ${(performance.now() - t0).toFixed(2)}ms`); }, [elementTree, graphTreePanelActive, selectedElementTreeItemKey]);
-useLayoutEffect(() => { const t0 = performance.now(); createAppHookCallback37(__appScope)(); console.log(`[perf] useLayoutEffect37 (graphTreePanelActive=${graphTreePanelActive}): ${(performance.now() - t0).toFixed(2)}ms`); }, [collapsedElementTreeDeviceGroups, collapsedElementTreeGroups, elementTreeItemLimits, graphTreePanelActive, selectedElementTreeItemKey]);
+useEffect(createAppHookCallback35(__appScope), [elementTree, graphTreePanelActive]);
+useEffect(createAppHookCallback36(__appScope), [elementTree, graphTreePanelActive, selectedElementTreeItemKey]);
+useLayoutEffect(createAppHookCallback37(__appScope), [collapsedElementTreeDeviceGroups, collapsedElementTreeGroups, elementTreeItemLimits, graphTreePanelActive, selectedElementTreeItemKey]);
 useEffect(createAppHookCallback38(__appScope), [inspectorTopologyErrors.length]);
 useEffect(createAppHookCallback39(__appScope), [inspectorTopologyErrors.length]);
+// 图元树虚拟化：按实际 item 高度算 N，窗口含缓冲区，rAF 节流滚动
+useEffect(() => {
+  if (!graphTreePanelActive || elementTreeSearchNeedle) {
+    return;
+  }
+  const container = document.querySelector(".element-tree");
+  if (!container) {
+    return;
+  }
+  // 实测每 group 紧凑 item 高度：取该组 item 高度的下四分位（P25），
+  // 避免少数展开 child 列表的特高 item 拉偏 spacer 估算
+  const measureGroupItemHeight = (groupEl: HTMLElement): number => {
+    const samples = groupEl.querySelectorAll<HTMLElement>(":scope > .element-tree-item");
+    const heights: number[] = [];
+    samples.forEach((el) => {
+      if (el.offsetHeight > 0) heights.push(el.offsetHeight);
+    });
+    if (heights.length === 0) return 32;
+    heights.sort((a, b) => a - b);
+    // P25：偏紧凑，多数无 child 的 item 高度
+    const idx = Math.max(0, Math.floor(heights.length * 0.25));
+    return heights[idx] + 2; // +gap
+  };
+  // 典型紧凑 item 高度（无 child 列表），用于算 N/WINDOW/STEP
+  const measureTypicalItemHeight = (): number => {
+    const all = container.querySelectorAll<HTMLElement>(".element-tree-item");
+    const heights: number[] = [];
+    all.forEach((el) => {
+      if (el.offsetHeight > 0) heights.push(el.offsetHeight);
+    });
+    if (heights.length === 0) return 32;
+    heights.sort((a, b) => a - b);
+    // 取下四分位作为典型紧凑高度
+    const idx = Math.max(0, Math.floor(heights.length * 0.25));
+    return heights[idx] + 2;
+  };
+  const typicalH = measureTypicalItemHeight();
+  const viewportHeight = container.clientHeight || 600;
+  // N = 可视范围能容纳的 item 数（基于典型紧凑高度）
+  const N = Math.max(8, Math.floor(viewportHeight / typicalH));
+  // 窗口 = 视口N + 前后各0.75N缓冲，保证滑动时视口内不增删
+  const BUFFER = Math.ceil(0.75 * N);
+  const WINDOW = N + 2 * BUFFER;
+  // 滑动阈值：可视区进入缓冲区 0.4N 时移窗，步长 0.5N（小步减少单次增删量）
+  const STEP = Math.max(4, Math.floor(0.5 * N));
+
+  let rafId: number | null = null;
+  let pending = false;
+  const scheduleUpdate = () => {
+    if (pending) {
+      return;
+    }
+    pending = true;
+    rafId = window.requestAnimationFrame(() => {
+      pending = false;
+      updateWindows();
+    });
+  };
+
+  const updateWindows = () => {
+    const containerRect = container.getBoundingClientRect();
+    const scrollTop = container.scrollTop;
+    const viewTop = scrollTop;
+    const viewBottom = scrollTop + viewportHeight;
+    // 先收集本轮各 group 实测高度
+    const groupHeights: Record<string, number> = {};
+    container.querySelectorAll<HTMLElement>(".element-tree-device-items").forEach((groupEl) => {
+      const deviceKey = groupEl.dataset.deviceKey;
+      if (deviceKey) groupHeights[deviceKey] = measureGroupItemHeight(groupEl);
+    });
+    if (Object.keys(groupHeights).length > 0) {
+      setElementTreeItemHeights((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const [key, h] of Object.entries(groupHeights)) {
+          if (current[key] !== h) {
+            next[key] = h;
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+    }
+    setElementTreeItemWindows((current) => {
+      let changed = false;
+      const next: Record<string, { start: number; end: number }> = { ...current };
+      const groups = container.querySelectorAll<HTMLElement>(".element-tree-device-items");
+      groups.forEach((groupEl) => {
+        const deviceKey = groupEl.dataset.deviceKey;
+        const total = Number(groupEl.dataset.totalItems ?? 0);
+        if (!deviceKey || total <= WINDOW) {
+          if (next[deviceKey]) {
+            delete next[deviceKey];
+            changed = true;
+          }
+          return;
+        }
+        const groupRect = groupEl.getBoundingClientRect();
+        const groupTop = groupRect.top - containerRect.top + scrollTop;
+        // 用该 group 实测高度（而非全局），保证 spacer/索引对齐
+        const itemH = groupHeights[deviceKey] ?? 32;
+        const cur = next[deviceKey] ?? { start: 0, end: Math.min(total, WINDOW) };
+        // 视口对应 item 索引：直接用像素算，不依赖 spacer（避免 spacer 失真→索引算偏→循环）
+        const visibleTopInGroup = viewTop - groupTop;
+        const visibleBottomInGroup = viewBottom - groupTop;
+        const firstVisibleIndex = Math.floor(visibleTopInGroup / itemH);
+        const lastVisibleIndex = Math.ceil(visibleBottomInGroup / itemH);
+        // 视口像素驱动：窗口中心对齐视口中心，保证视口内始终有真实 item
+        // 仅当视口索引移出当前窗口"安全区"（留 buffer 个 item 缓冲）时才移窗
+        const safeStart = cur.start + Math.floor(0.25 * WINDOW);
+        const safeEnd = cur.end - Math.floor(0.25 * WINDOW);
+        let newStart = cur.start;
+        let newEnd = cur.end;
+        if (firstVisibleIndex < safeStart || lastVisibleIndex > safeEnd) {
+          const center = Math.floor((firstVisibleIndex + lastVisibleIndex) / 2);
+          let targetStart = center - Math.floor(WINDOW / 2);
+          targetStart = Math.max(0, Math.min(total - WINDOW, targetStart));
+          if (total <= WINDOW) targetStart = 0;
+          newStart = targetStart;
+          newEnd = Math.min(total, newStart + WINDOW);
+        }
+        if (newStart !== cur.start || newEnd !== cur.end) {
+          next[deviceKey] = { start: newStart, end: newEnd };
+          changed = true;
+        }
+      });
+      return changed ? next : current;
+    });
+  };
+  updateWindows();
+  container.addEventListener("scroll", scheduleUpdate, { passive: true });
+  window.addEventListener("resize", scheduleUpdate);
+  return () => {
+    if (rafId !== null) {
+      window.cancelAnimationFrame(rafId);
+    }
+    container.removeEventListener("scroll", scheduleUpdate);
+    window.removeEventListener("resize", scheduleUpdate);
+  };
+}, [graphTreePanelActive, elementTreeSearchNeedle, elementTree, collapsedElementTreeGroups, collapsedElementTreeDeviceGroups]);
 const canvasBounds = useMemo<CanvasBounds>(() => ({ width: canvasWidth, height: canvasHeight }), [canvasHeight, canvasWidth]); Object.assign(__appScope, { canvasBounds });
 const canvasFullViewBox = useMemo<CanvasViewBox>(() => canvasFullViewBoxFromBounds(canvasBounds), [canvasBounds]); Object.assign(__appScope, { canvasFullViewBox });
 const canvasRenderBounds = canvasBounds; Object.assign(__appScope, { canvasRenderBounds });
@@ -4309,8 +4455,32 @@ const renderElementTreePanel = () => (
                   {deviceGroups.map((deviceGroup) => {
                     const deviceExpanded = Boolean(elementTreeSearchNeedle) || !collapsedElementTreeDeviceGroups.includes(deviceGroup.deviceKey);
                     const visibleLimit = elementTreeItemLimits[deviceGroup.deviceKey] ?? ELEMENT_TREE_INITIAL_ITEM_LIMIT;
-                    const visibleItems = elementTreeSearchNeedle ? deviceGroup.items : deviceGroup.items.slice(0, visibleLimit);
-                    const hiddenItemCount = Math.max(0, deviceGroup.items.length - visibleItems.length);
+                    // 虚拟化窗口：搜索时全量显示；否则按 [start,end) 滑窗
+                    // windowState 由 effect 仅在 total > WINDOW 时设置，故存在即生效
+                    const windowState = elementTreeItemWindows[deviceGroup.deviceKey];
+                    const totalItems = deviceGroup.items.length;
+                    let windowStart = 0;
+                    let windowEnd = totalItems;
+                    const windowEffective = !elementTreeSearchNeedle && Boolean(windowState);
+                    if (windowEffective) {
+                      windowStart = Math.max(0, Math.min(windowState!.start, totalItems));
+                      windowEnd = Math.min(totalItems, Math.max(windowStart + 1, windowState!.end));
+                    }
+                    // 窗口生效且非全显时由滚动接管，不显示"显示更多"
+                    const windowActive = windowEffective && !(windowStart === 0 && windowEnd === totalItems);
+                    const visibleItems = elementTreeSearchNeedle
+                      ? deviceGroup.items
+                      : (windowEffective
+                          ? (windowStart === 0 && windowEnd === totalItems
+                              ? deviceGroup.items
+                              : deviceGroup.items.slice(windowStart, windowEnd))
+                          : deviceGroup.items.slice(0, visibleLimit));
+                    // 窗口激活时不显示"显示更多"（滚动已接管）；仅在非窗口回退模式下统计隐藏数
+                    const hiddenItemCount = windowActive ? 0 : Math.max(0, deviceGroup.items.length - visibleItems.length);
+                    // 前后占位高度：用该 group 实测高度，避免跨组高度差导致 spacer 失真
+                    const ESTIMATED_ITEM_HEIGHT = elementTreeItemHeights[deviceGroup.deviceKey] ?? 32;
+                    const spacerBeforeHeight = windowStart * ESTIMATED_ITEM_HEIGHT;
+                    const spacerAfterHeight = Math.max(0, totalItems - windowEnd) * ESTIMATED_ITEM_HEIGHT;
                     return (
                       <section className="element-tree-device-group" key={deviceGroup.deviceKey}>
                         <button
@@ -4331,7 +4501,10 @@ const renderElementTreePanel = () => (
                           <strong>{deviceGroup.items.length}</strong>
                         </button>
                         {deviceExpanded && (
-                          <div className="element-tree-device-items" role="group">
+                          <div className="element-tree-device-items" role="group" data-device-key={deviceGroup.deviceKey} data-total-items={totalItems}>
+                            {spacerBeforeHeight > 0 && (
+                              <div className="element-tree-virtual-spacer" aria-hidden="true" style={{ height: spacerBeforeHeight }} />
+                            )}
                             {visibleItems.map((item) => {
                               const editable = item.kind === "node" ? activeLayerNodeIdSet.has(item.id) : activeLayerEdgeIdSet.has(item.id);
                               const selected = editable && (item.kind === "node" ? selectedNodeIdSet.has(item.id) : activeSelectedEdgeSet.has(item.id));
@@ -4462,6 +4635,9 @@ const renderElementTreePanel = () => (
                                 </div>
                               );
                             })}
+                            {spacerAfterHeight > 0 && (
+                              <div className="element-tree-virtual-spacer" aria-hidden="true" style={{ height: spacerAfterHeight }} />
+                            )}
                             {hiddenItemCount > 0 && (
                               <button
                                 type="button"
@@ -5037,6 +5213,5 @@ Object.assign(__appScope, { canvasResizeHandles });
 const __renderT0 = performance.now();
 const __appView = renderAppView(__appScope);
 const __renderElapsed = (performance.now() - __renderT0).toFixed(2);
-console.log(`[perf] App render #${__currentRender} renderAppView=${__renderElapsed}ms tab=${inspectorTab}\n${new Error().stack?.split('\n').slice(1, 5).join('\n')}`);
 return __appView;
 }
