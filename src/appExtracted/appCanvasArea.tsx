@@ -124,6 +124,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     fitWholeCanvasToFrame, zoomViewportAtCenter, tidySelectedEdgeRoute,
     cancelLibraryPlacement, cancelModifierSelectionPress,
     setCanvasSelectionScope, setConnectSource, setContextMarqueeSelection,
+    setContextMenu,
     setMarquee, setMinimapVisible, setMode, setRewiring,
     setRoutableLineEndpointDrag, setRoutableLinePlacement,
     setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds,
