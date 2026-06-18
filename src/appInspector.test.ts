@@ -1592,8 +1592,9 @@ describe("graph inspector panel", () => {
     expect(customTabsBlock).not.toContain("图标/端子");
     expect(dialogBlock).not.toContain('aria-label="图标和端子内容切换"');
     expect(terminalDefinitionIndex).toBeGreaterThanOrEqual(0);
-    expect(iconDefinitionIndex).toBeGreaterThan(terminalDefinitionIndex);
-    expect(parameterDefinitionIndex).toBeGreaterThan(iconDefinitionIndex);
+    expect(iconDefinitionIndex).toBeGreaterThanOrEqual(0);
+    expect(terminalDefinitionIndex).toBeGreaterThan(iconDefinitionIndex);
+    expect(parameterDefinitionIndex).toBeGreaterThan(terminalDefinitionIndex);
     expect(measurementDefinitionIndex).toBeGreaterThan(parameterDefinitionIndex);
     expect(customTabsBlock).toContain('className={customDeviceDialogView === "terminals" ? "active" : ""}');
     expect(customTabsBlock).toContain('className={customDeviceDialogView === "icon" ? "active" : ""}');

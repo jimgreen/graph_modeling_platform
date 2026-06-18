@@ -1991,11 +1991,11 @@ export function renderAppView(__appScope: Record<string, any>) {
               </label>
             </div>
             <div className="device-definition-tabs custom-device-tabs" role="tablist" aria-label="元件定义内容切换">
-              <button type="button" className={customDeviceDialogView === "terminals" ? "active" : ""} onClick={() => setCustomDeviceDialogView("terminals")}>
-                端子定义
-              </button>
               <button type="button" className={customDeviceDialogView === "icon" ? "active" : ""} onClick={() => setCustomDeviceDialogView("icon")}>
                 图标定义
+              </button>
+              <button type="button" className={customDeviceDialogView === "terminals" ? "active" : ""} onClick={() => setCustomDeviceDialogView("terminals")}>
+                端子定义
               </button>
               <button type="button" className={customDeviceDialogView === "parameters" ? "active" : ""} onClick={() => setCustomDeviceDialogView("parameters")}>
                 参数定义
