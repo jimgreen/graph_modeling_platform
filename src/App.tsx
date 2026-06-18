@@ -4373,7 +4373,7 @@ const renderLibraryPanel = () => (
                           onClick={() => toggleAttributeLibraryComponentType(group, typeGroup.section)}
                         >
                           <span className="component-type-title">
-                            {componentTypeExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                            {!libraryFlyout && (componentTypeExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />)}
                             <span className="component-type-name" title={componentTypeDisplay.title}>
                               <span className="component-type-name-cn">{componentTypeDisplay.chinese}</span>
                               <span className="component-type-name-en">{componentTypeDisplay.english}</span>
