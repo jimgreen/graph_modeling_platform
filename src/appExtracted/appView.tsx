@@ -31,6 +31,36 @@ export function renderAppView(__appScope: Record<string, any>) {
       </>
     );
   };
+  const customDeviceTerminalPreviewPadding = Math.min(
+    CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN,
+    Math.max(8, Math.min(customDevicePreviewWidth, customDevicePreviewHeight) * 0.04)
+  );
+  const customDeviceTerminalPreviewAnchorRadius = 8;
+  const customDeviceTerminalPreviewBounds = customDeviceTerminalAnchors.reduce(
+    (bounds, anchor) => {
+      const segment = customDeviceTerminalConnectorSegment(anchor);
+      return {
+        minX: Math.min(bounds.minX, segment.from.x, segment.to.x - customDeviceTerminalPreviewAnchorRadius),
+        minY: Math.min(bounds.minY, segment.from.y, segment.to.y - customDeviceTerminalPreviewAnchorRadius),
+        maxX: Math.max(bounds.maxX, segment.from.x, segment.to.x + customDeviceTerminalPreviewAnchorRadius),
+        maxY: Math.max(bounds.maxY, segment.from.y, segment.to.y + customDeviceTerminalPreviewAnchorRadius)
+      };
+    },
+    {
+      minX: -customDevicePreviewWidth / 2,
+      minY: -customDevicePreviewHeight / 2,
+      maxX: customDevicePreviewWidth / 2,
+      maxY: customDevicePreviewHeight / 2
+    }
+  );
+  const customDeviceTerminalPreviewViewBox = {
+    x: customDeviceTerminalPreviewBounds.minX - customDeviceTerminalPreviewPadding,
+    y: customDeviceTerminalPreviewBounds.minY - customDeviceTerminalPreviewPadding,
+    width: Math.max(1, customDeviceTerminalPreviewBounds.maxX - customDeviceTerminalPreviewBounds.minX + customDeviceTerminalPreviewPadding * 2),
+    height: Math.max(1, customDeviceTerminalPreviewBounds.maxY - customDeviceTerminalPreviewBounds.minY + customDeviceTerminalPreviewPadding * 2)
+  };
+  const customDeviceHasTerminals = customDeviceDraft.terminalCount > 0;
+  const visibleCustomDeviceDialogView = customDeviceDialogView === "terminals" && !customDeviceHasTerminals ? "icon" : customDeviceDialogView;
   return (<div className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${topologyWarningPanelResize ? "topology-warning-panel-resizing" : ""} ${nodeDoubleClickDialogDrag || nodeDoubleClickDialogResize ? "node-double-click-dialog-moving" : ""} ${deviceLibraryDialogDrag || deviceLibraryDialogResize ? "device-library-dialog-moving" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`} style={appShellStyle}>
       {renderSidePanelEdgeTrigger("left")}
       {renderSidePanelEdgeTrigger("right")}
@@ -1976,34 +2006,34 @@ export function renderAppView(__appScope: Record<string, any>) {
               </label>
               <label className="custom-device-terminal-count-field">
                 端子数量
-                <BufferedTextInput type="number" min="0" max={MAX_CUSTOM_DEVICE_TERMINALS} value={customDeviceDraft.terminalCount} disabled={customDeviceDialogView === "terminals" && !customDefaultStateSelected} onCommit={(value) => updateCustomDraftTerminalCount(Number(value))}/>
+                <BufferedTextInput type="number" min="0" max={MAX_CUSTOM_DEVICE_TERMINALS} value={customDeviceDraft.terminalCount} disabled={visibleCustomDeviceDialogView === "terminals" && !customDefaultStateSelected} onCommit={(value) => updateCustomDraftTerminalCount(Number(value))}/>
               </label>
             </div>
             <div className="device-definition-tabs custom-device-tabs" role="tablist" aria-label="元件定义内容切换">
-              <button type="button" className={customDeviceDialogView === "icon" ? "active" : ""} onClick={() => setCustomDeviceDialogView("icon")}>
+              <button type="button" className={visibleCustomDeviceDialogView === "icon" ? "active" : ""} onClick={() => setCustomDeviceDialogView("icon")}>
                 图标定义
               </button>
-              <button type="button" className={customDeviceDialogView === "terminals" ? "active" : ""} onClick={() => setCustomDeviceDialogView("terminals")}>
+              {customDeviceHasTerminals && <button type="button" className={visibleCustomDeviceDialogView === "terminals" ? "active" : ""} onClick={() => {
+                setCustomDeviceDialogView("terminals");
+                setCustomDeviceStatePageId("");
+              }}>
                 端子定义
-              </button>
-              <button type="button" className={customDeviceDialogView === "parameters" ? "active" : ""} onClick={() => setCustomDeviceDialogView("parameters")}>
+              </button>}
+              <button type="button" className={visibleCustomDeviceDialogView === "parameters" ? "active" : ""} onClick={() => setCustomDeviceDialogView("parameters")}>
                 参数定义
               </button>
-              <button type="button" className={customDeviceDialogView === "measurements" ? "active" : ""} onClick={() => setCustomDeviceDialogView("measurements")}>
+              <button type="button" className={visibleCustomDeviceDialogView === "measurements" ? "active" : ""} onClick={() => setCustomDeviceDialogView("measurements")}>
                 量测定义
               </button>
             </div>
-            <div className={`custom-device-tab-panel custom-device-tab-panel-${customDeviceDialogView}`}>
-            {customDeviceDialogView === "terminals" || customDeviceDialogView === "icon" ? (<>
-            {customDeviceDialogView === "icon" && renderStateVisualPager(customDeviceDraft.stateDefinitions, customDeviceStatePageId, setCustomDeviceStatePageId, {
+            <div className={`custom-device-tab-panel custom-device-tab-panel-${visibleCustomDeviceDialogView}`}>
+            {visibleCustomDeviceDialogView === "terminals" || visibleCustomDeviceDialogView === "icon" ? (<>
+            {visibleCustomDeviceDialogView === "icon" && renderStateVisualPager(customDeviceDraft.stateDefinitions, customDeviceStatePageId, setCustomDeviceStatePageId, {
                 update: updateCustomDeviceStateDraftRow,
                 add: addCustomDeviceStateDraftRow,
                 remove: deleteCustomDeviceStateDraftRow,
-                uploadStateImage: (rowId) => {
-                    setStateImageUploadTarget({ scope: "custom", rowId });
-                    stateVisualImageInputRef.current?.click();
-                },
-                drawStateIcon: (rowId) => openStateIconDrawingDialog({ scope: "custom", rowId }),
+                hideDefaultPage: true,
+                drawingScope: "custom",
                 preview: !customDefaultStateSelected ? (<div className="custom-device-preview">
                   <div className="custom-device-preview-stage">
                     <svg className="custom-device-anchor-preview" viewBox={`${formatSvgNumber(-customDevicePreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(-customDevicePreviewHeight / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(customDevicePreviewWidth + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)} ${formatSvgNumber(customDevicePreviewHeight + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)}`} role="img" aria-label="自定义元件状态预览">
@@ -2013,23 +2043,9 @@ export function renderAppView(__appScope: Record<string, any>) {
                   </div>
                 </div>) : undefined
             })}
-            {customDeviceDialogView === "icon" && customDefaultStateSelected && <div className="custom-device-image-row">
-              <span>SVG/图片图标</span>
-              <button type="button" onClick={() => customDeviceImageInputRef.current?.click()}>上传SVG/图片到后台</button>
-              <button type="button" onClick={() => setCustomDeviceDraft((current) => ({
-                    ...current,
-                    backgroundImage: generateCustomDeviceImage(current.componentName.trim() || current.componentType || "Unit", current.terminalTypes.slice(0, current.terminalCount)),
-                    backgroundImageAssetId: "",
-                    error: ""
-                }))}>
-                程序自动生成
-              </button>
-              <button type="button" onClick={() => setCustomDeviceDraft((current) => ({ ...current, backgroundImage: "", backgroundImageAssetId: "", error: "" }))}>清除</button>
-              <strong>{customDeviceDraft.backgroundImageAssetId ? "后台已保存" : customDeviceDraft.backgroundImage ? "已设置" : "未设置"}</strong>
-            </div>}
-            {customDefaultStateSelected && customDeviceDialogView === "terminals" && <div className="custom-device-preview">
+            {customDefaultStateSelected && visibleCustomDeviceDialogView === "terminals" && <div className="custom-device-preview">
               <div className="custom-device-preview-stage">
-                <svg className="custom-device-anchor-preview" viewBox={`${formatSvgNumber(-customDevicePreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(-customDevicePreviewHeight / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(customDevicePreviewWidth + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)} ${formatSvgNumber(customDevicePreviewHeight + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)}`} role="img" aria-label="自定义元件图标和端子位置预览" onPointerMove={(event) => {
+                <svg className="custom-device-anchor-preview" viewBox={`${formatSvgNumber(customDeviceTerminalPreviewViewBox.x)} ${formatSvgNumber(customDeviceTerminalPreviewViewBox.y)} ${formatSvgNumber(customDeviceTerminalPreviewViewBox.width)} ${formatSvgNumber(customDeviceTerminalPreviewViewBox.height)}`} role="img" aria-label="自定义元件图标和端子位置预览" onPointerMove={(event) => {
                     if (!customDefaultStateSelected || customDeviceTerminalAnchorDragIndex === null) {
                         return;
                     }
@@ -2056,12 +2072,6 @@ export function renderAppView(__appScope: Record<string, any>) {
                         return (<Fragment key={`custom-terminal-guide-${guideIndex}`}>
                             <line className={`custom-device-terminal-guide ${active ? "active" : ""}`} x1={guideValue * customDevicePreviewWidth} y1={-customDevicePreviewHeight / 2} x2={guideValue * customDevicePreviewWidth} y2={customDevicePreviewHeight / 2}/>
                             <line className={`custom-device-terminal-guide ${active ? "active" : ""}`} x1={-customDevicePreviewWidth / 2} y1={guideValue * customDevicePreviewHeight} x2={customDevicePreviewWidth / 2} y2={guideValue * customDevicePreviewHeight}/>
-                            <text className="custom-device-terminal-guide-label" x={guideValue * customDevicePreviewWidth} y={-customDevicePreviewHeight / 2 - 5}>
-                              {CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS[guideIndex]}
-                            </text>
-                            <text className="custom-device-terminal-guide-label horizontal" x={-customDevicePreviewWidth / 2 - 5} y={guideValue * customDevicePreviewHeight}>
-                              {CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS[guideIndex]}
-                            </text>
                           </Fragment>);
                     })}
                     </>)}
@@ -2096,15 +2106,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                 </svg>
               </div>
             </div>}
-            {customDeviceDialogView === "icon" && customDefaultStateSelected && <div className="custom-device-preview">
-              <div className="custom-device-preview-stage">
-                <svg className="custom-device-anchor-preview" viewBox={`${formatSvgNumber(-customDevicePreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(-customDevicePreviewHeight / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(customDevicePreviewWidth + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)} ${formatSvgNumber(customDevicePreviewHeight + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)}`} role="img" aria-label="自定义元件图标预览">
-                  {renderCustomDevicePreviewContent()}
-                  <rect className="custom-device-preview-frame" x={-customDevicePreviewWidth / 2} y={-customDevicePreviewHeight / 2} width={customDevicePreviewWidth} height={customDevicePreviewHeight} rx="8"/>
-                </svg>
-              </div>
-            </div>}
-            {customDefaultStateSelected && customDeviceDialogView === "terminals" && <div className="custom-terminal-grid">
+            {customDefaultStateSelected && visibleCustomDeviceDialogView === "terminals" && <div className="custom-terminal-grid" style={{ "--custom-terminal-count": Math.max(1, customDeviceDraft.terminalCount) } as CSSProperties}>
               {Array.from({ length: customDeviceDraft.terminalCount }).map((_, index) => {
                     const terminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
                     const terminalAssociations = normalizeContainerTerminalAssociations(terminalTypes, customDeviceDraft.terminalAssociations, customDeviceDraft.terminalCount);
@@ -2180,7 +2182,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                   </label>);
                 })}
             </div>}
-              </>) : customDeviceDialogView === "parameters" ? (<>
+              </>) : visibleCustomDeviceDialogView === "parameters" ? (<>
             <div className="custom-param-table-wrap">
               <table className="custom-param-table">
                 <thead>
@@ -2298,218 +2300,6 @@ export function renderAppView(__appScope: Record<string, any>) {
               </button>
             </footer>
             <div className="device-library-dialog-resize" role="separator" aria-orientation="horizontal" aria-label="调整新建元件窗口大小" title="拖拽调整窗口大小" onPointerDown={(event) => startDeviceLibraryDialogResize("custom", event)}/>
-          </section>
-        </div>)}
-      {stateIconDrawingDialog && (<div className="state-icon-drawing-backdrop" onPointerDown={() => setStateIconDrawingDialog(null)}>
-          <section className="state-icon-drawing-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={stateIconDrawingKeyDown} tabIndex={-1} aria-label="状态图标绘制器">
-            <header>
-              <div>
-                <h2>绘制状态图标</h2>
-                <p>多个图案会合成为一个 SVG 状态图标，保存后用于当前状态显示。</p>
-              </div>
-              <button type="button" onClick={() => setStateIconDrawingDialog(null)}>关闭</button>
-            </header>
-            <div className="state-icon-drawing-layout">
-              <div className="state-icon-drawing-canvas">
-                <svg ref={stateIconDrawingSvgRef} viewBox="0 0 240 160" role="img" aria-label="状态图标绘制预览" onPointerMove={dragStateIconDrawingSelection} onPointerUp={stopStateIconDrawingDrag} onPointerCancel={stopStateIconDrawingDrag} onPointerDown={(event) => {
-            (event.currentTarget.closest(".state-icon-drawing-dialog") as HTMLElement | null)?.focus();
-            setStateIconDrawingDialog((current) => current ? { ...current, selectedElementId: "", selectedElementIds: [] } : current);
-        }}>
-                  <rect x="0" y="0" width="240" height="160" rx="10" className="state-icon-drawing-canvas-bg"/>
-                  <image href={stateIconDrawingToImage(stateIconDrawingDialog.elements)} x="0" y="0" width="240" height="160" preserveAspectRatio="xMidYMid meet" className="state-icon-drawing-composite-preview"/>
-                  {stateIconDrawingDialog.elements.map((element) => {
-            const selectedIds = stateIconDrawingDialog.selectedElementIds.length > 0
-                ? stateIconDrawingDialog.selectedElementIds
-                : [stateIconDrawingDialog.selectedElementId].filter(Boolean);
-            const selected = selectedIds.includes(element.id);
-            const halfWidth = Math.max(1, element.width) / 2;
-            const halfHeight = Math.max(1, element.height) / 2;
-            return (<g key={element.id} className={`state-icon-drawing-element ${selected ? "selected" : ""}`} transform={`translate(${formatSvgNumber(element.x)} ${formatSvgNumber(element.y)}) rotate(${formatSvgNumber(element.rotation)})`} onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "move")}>
-                        <rect x={formatSvgNumber(-halfWidth)} y={formatSvgNumber(-halfHeight)} width={formatSvgNumber(element.width)} height={formatSvgNumber(element.height)} className="state-icon-drawing-hitbox"/>
-                        {selected && (<>
-                            <rect x={formatSvgNumber(-halfWidth)} y={formatSvgNumber(-halfHeight)} width={formatSvgNumber(element.width)} height={formatSvgNumber(element.height)} className="state-icon-drawing-selection-box"/>
-                            <circle cx={formatSvgNumber(halfWidth)} cy={formatSvgNumber(halfHeight)} r="5" className="state-icon-drawing-resize-handle" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize")}/>
-                            <line x1="0" y1={formatSvgNumber(-halfHeight)} x2="0" y2={formatSvgNumber(-halfHeight - 16)} className="state-icon-drawing-rotate-stem"/>
-                            <circle cx="0" cy={formatSvgNumber(-halfHeight - 20)} r="5" className="state-icon-drawing-rotate-handle" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "rotate")}/>
-                          </>)}
-                      </g>);
-        })}
-                </svg>
-              </div>
-              <div className="state-icon-drawing-side">
-              <div className="state-icon-drawing-library">
-                <span>添加图案</span>
-                <div className="state-icon-drawing-import-actions">
-                  <button type="button" onClick={() => {
-            setStateIconDrawingImportMode("svg");
-            stateIconDrawingImportInputRef.current?.click();
-        }}>
-                    导入SVG
-                  </button>
-                  <button type="button" onClick={() => {
-            setStateIconDrawingImportMode("image");
-            stateIconDrawingImportInputRef.current?.click();
-        }}>
-                    导入图片
-                  </button>
-                </div>
-                <div>
-                  {([
-            "switch-open",
-            "switch-closed",
-            "valve-open",
-            "valve-closed",
-            "line",
-            "point",
-            "triangle",
-            "square",
-            "hexagon",
-            "polygon",
-            "circle",
-            "semicircle",
-            "ellipse",
-            "arc",
-            "text"
-        ] as StateVisualShapeKind[]).map((kind) => (<button key={kind} type="button" onClick={() => addStateIconDrawingElement(kind)}>
-                      {stateVisualShapeLabel(kind)}
-                    </button>))}
-                </div>
-              </div>
-              <div className="state-icon-drawing-layers">
-                <span>图案图层</span>
-                <div>
-                  {stateIconDrawingDialog.elements.length === 0 ? (<p>暂无图案</p>) : (stateIconDrawingDialog.elements.map((element, index) => (<button key={element.id} type="button" className={(stateIconDrawingDialog.selectedElementIds.length > 0 ? stateIconDrawingDialog.selectedElementIds : [stateIconDrawingDialog.selectedElementId]).includes(element.id) ? "active" : ""} onClick={(event) => stateIconDrawingSelection(element.id, event.shiftKey || event.ctrlKey || event.metaKey)}>
-                        {index + 1}. {stateVisualShapeLabel(element.kind)}
-                      </button>)))}
-                </div>
-              </div>
-              <div className="state-icon-drawing-properties">
-                {(() => {
-            const selected = stateIconDrawingDialog.elements.find((element) => element.id === stateIconDrawingDialog.selectedElementId) ?? null;
-            if (!selected) {
-                return <p>选择一个图案后调整属性。</p>;
-            }
-            const visibleStrokeColor = visibleStateIconColor("#2563eb", selected.strokeColor);
-            const visibleTextColor = visibleStateIconColor("#111827", selected.textColor, selected.strokeColor);
-            return (<>
-                      <div className="state-icon-drawing-property-title">
-                        <strong>{stateVisualShapeLabel(selected.kind)}</strong>
-                        <button type="button" onClick={() => {
-                    const selectedIds = stateIconDrawingDialog.selectedElementIds.length > 0
-                        ? stateIconDrawingDialog.selectedElementIds
-                        : [selected.id];
-                    if (selectedIds.length > 1) {
-                        deleteSelectedStateIconDrawingElements();
-                    }
-                    else {
-                        deleteStateIconDrawingElement(selected.id);
-                    }
-                }}>
-                          {stateIconDrawingDialog.selectedElementIds.length > 1 ? "删除选中" : "删除图案"}
-                        </button>
-                      </div>
-                      <div className="state-icon-drawing-property-grid">
-                        <label>
-                          形状
-                          <select value={selected.kind} onChange={(event) => updateStateIconDrawingElement(selected.id, { kind: event.target.value as StateVisualShapeKind, strokeColor: visibleStrokeColor, textColor: visibleTextColor })}>
-                            {([
-                    "switch-open",
-                    "switch-closed",
-                    "valve-open",
-                    "valve-closed",
-                    "line",
-                    "point",
-                    "triangle",
-                    "square",
-                    "hexagon",
-                    "polygon",
-                    "circle",
-                    "semicircle",
-                    "ellipse",
-                    "arc",
-                    "text",
-                    "imported-svg",
-                    "image"
-                ] as StateVisualShapeKind[]).map((kind) => (<option key={kind} value={kind}>{stateVisualShapeLabel(kind)}</option>))}
-                          </select>
-                        </label>
-                        <label>
-                          X
-                          <BufferedTextInput type="number" value={selected.x} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { x: Number(nextValue) || 0 })}/>
-                        </label>
-                        <label>
-                          Y
-                          <BufferedTextInput type="number" value={selected.y} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { y: Number(nextValue) || 0 })}/>
-                        </label>
-                        <label>
-                          宽
-                          <BufferedTextInput type="number" min="1" value={selected.width} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { width: Math.max(1, Number(nextValue) || 1) })}/>
-                        </label>
-                        <label>
-                          高
-                          <BufferedTextInput type="number" min="1" value={selected.height} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { height: Math.max(1, Number(nextValue) || 1) })}/>
-                        </label>
-                        <label>
-                          角度
-                          <BufferedTextInput type="number" value={selected.rotation} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { rotation: Number(nextValue) || 0 })}/>
-                        </label>
-                        <label>
-                          粗细
-                          <BufferedTextInput type="number" min="0" value={selected.strokeWidth} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { strokeWidth: Math.max(0, Number(nextValue) || 0) })}/>
-                        </label>
-                        <label>
-                          线色
-                          <div className="state-icon-drawing-color-field">
-                            <DeferredColorInput value={visibleStrokeColor} fallback="#2563eb" onCommit={(value) => updateStateIconDrawingElement(selected.id, { strokeColor: value })}/>
-                            <span className="device-state-color-swatch" title={visibleStrokeColor} style={{ "--state-color": visibleStrokeColor } as CSSProperties}/>
-                          </div>
-                        </label>
-                        <label>
-                          填充
-                          <div className="state-icon-drawing-color-field">
-                            <DeferredColorInput value={selected.fillColor} fallback="#ffffff" onCommit={(value) => updateStateIconDrawingElement(selected.id, { fillColor: value })}/>
-                            <span className={`device-state-color-swatch ${selected.fillColor === "transparent" ? "transparent" : ""}`} title={selected.fillColor || "未设置"} style={{ "--state-color": selected.fillColor === "transparent" ? "#ffffff" : selected.fillColor || "#ffffff" } as CSSProperties}/>
-                          </div>
-                        </label>
-                        <label>
-                          文字色
-                          <div className="state-icon-drawing-color-field">
-                            <DeferredColorInput value={visibleTextColor} fallback="#111827" onCommit={(value) => updateStateIconDrawingElement(selected.id, { textColor: value })}/>
-                            <span className="device-state-color-swatch" title={visibleTextColor} style={{ "--state-color": visibleTextColor } as CSSProperties}/>
-                          </div>
-                        </label>
-                        <label className="state-icon-drawing-text-field">
-                          文字
-                          <BufferedTextInput value={selected.text} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { text: nextValue })}/>
-                        </label>
-                        {selected.kind === "imported-svg" && (<label className="state-icon-drawing-svg-field">
-                            SVG源码
-                            <BufferedTextarea value={selected.svgSource ?? ""} spellCheck={false} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { svgSource: nextValue })}/>
-                          </label>)}
-                        {selected.kind === "image" && (<>
-                            <label>
-                              图片缩放
-                              <BufferedTextInput type="number" min="0.05" step="0.05" value={selected.imageScale ?? 1} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { imageScale: Math.max(0.05, Number(nextValue) || 0.05) })}/>
-                            </label>
-                            <label>
-                              裁剪X
-                              <BufferedTextInput type="number" value={selected.cropX ?? 0} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { cropX: Number(nextValue) || 0 })}/>
-                            </label>
-                            <label>
-                              裁剪Y
-                              <BufferedTextInput type="number" value={selected.cropY ?? 0} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { cropY: Number(nextValue) || 0 })}/>
-                            </label>
-                          </>)}
-                      </div>
-                    </>);
-        })()}
-              </div>
-              </div>
-            </div>
-            <footer>
-              <button type="button" onClick={() => addStateIconDrawingElement("line")}>添加线</button>
-              <button type="button" onClick={applyStateIconDrawingDialog} disabled={stateIconDrawingDialog.elements.length === 0}>应用到状态图标</button>
-            </footer>
           </section>
         </div>)}
       {renderNodeDoubleClickDialog()}

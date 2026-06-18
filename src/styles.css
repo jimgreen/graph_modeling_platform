@@ -4082,15 +4082,15 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .custom-device-tab-panel-terminals {
-  grid-template-rows: minmax(min-content, 1fr) auto;
-  gap: 10px;
-  overflow: auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  overflow: hidden;
 }
 
 .custom-device-tab-panel-icon {
-  grid-template-rows: auto auto minmax(min-content, 1fr);
-  gap: 10px;
-  overflow: auto;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 8px;
+  overflow: hidden;
 }
 
 .custom-device-tab-panel-parameters > .custom-param-table-wrap {
@@ -4832,10 +4832,18 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   display: grid;
   align-content: start;
   gap: 6px;
+  min-height: 0;
   padding: 8px 10px;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   background: #ffffff;
+}
+
+.custom-device-tab-panel-icon > .device-state-pager {
+  align-content: stretch;
+  height: 100%;
+  overflow: hidden;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
 }
 
 .device-state-pager-header {
@@ -4883,6 +4891,12 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   color: #475569;
 }
 
+.device-state-tabs .device-state-delete-tab {
+  border-color: #fecaca;
+  color: #b91c1c;
+  background: #fff7f7;
+}
+
 .device-state-shared-note {
   flex: 0 0 auto;
   color: #64748b;
@@ -4892,7 +4906,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .device-state-page-fields {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
   gap: 6px;
 }
 
@@ -4915,19 +4929,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   font-size: 12px;
 }
 
-.device-state-image-field {
-  grid-column: span 2;
-}
-
-.device-state-image-input-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) repeat(2, max-content);
-  gap: 6px;
-}
-
-.device-state-image-field button,
-.device-state-empty button,
-.device-state-shape-tools button {
+.device-state-empty button {
   min-height: 28px;
   border: 1px solid #cbd5e1;
   border-radius: 7px;
@@ -4940,36 +4942,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .device-state-actions {
   justify-content: flex-end;
-}
-
-.device-state-shape-field {
-  display: grid;
-  grid-column: span 2;
-  gap: 3px;
-  color: #475569;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.device-state-shape-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
-
-.device-state-shape-tools button {
-  min-width: 0;
-  border-style: dashed;
-  padding: 0 7px;
-  white-space: nowrap;
-}
-
-.device-state-shape-tools small {
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 700;
 }
 
 .device-state-default-body {
@@ -5141,53 +5113,32 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   font-size: 12px;
 }
 
-.state-icon-drawing-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
+.state-icon-drawing-inline {
   display: grid;
-  place-items: center;
-  padding: 18px;
-  background: rgba(15, 23, 42, 0.34);
-}
-
-.state-icon-drawing-dialog {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 8px;
-  width: min(1360px, calc(100vw - 24px));
-  max-height: min(820px, calc(100vh - 24px));
-  overflow: auto;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
   border-radius: 8px;
-  padding: 12px;
-  background: #ffffff;
-  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+  padding: 8px;
+  background: #f8fafc;
 }
 
-.state-icon-drawing-dialog header,
-.state-icon-drawing-dialog footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.state-icon-drawing-dialog h2 {
-  margin: 0;
-  color: #0f172a;
-  font-size: 17px;
-}
-
-.state-icon-drawing-dialog p {
-  margin: 2px 0 0;
+.state-icon-drawing-inline.pending {
+  place-items: center;
+  min-height: 260px;
   color: #64748b;
   font-size: 12px;
   font-weight: 700;
 }
 
-.state-icon-drawing-dialog button,
-.state-icon-drawing-dialog input,
-.state-icon-drawing-dialog select {
+.state-icon-drawing-inline button,
+.state-icon-drawing-inline input,
+.state-icon-drawing-inline select,
+.state-icon-drawing-library button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 27px;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
@@ -5198,14 +5149,17 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   font-weight: 750;
 }
 
-.state-icon-drawing-dialog button:hover,
-.state-icon-drawing-dialog button:focus-visible {
+.state-icon-drawing-inline button:hover,
+.state-icon-drawing-inline button:focus-visible,
+.state-icon-drawing-library button:hover,
+.state-icon-drawing-library button:focus-visible {
   border-color: #93c5fd;
   background: #eff6ff;
   outline: none;
 }
 
-.state-icon-drawing-dialog button:disabled {
+.state-icon-drawing-inline button:disabled,
+.state-icon-drawing-library button:disabled {
   cursor: not-allowed;
   color: #94a3b8;
   background: #f8fafc;
@@ -5213,15 +5167,17 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .state-icon-drawing-layout {
   display: grid;
-  grid-template-columns: minmax(620px, 1fr) minmax(440px, 500px);
+  grid-template-columns: minmax(560px, 1fr) minmax(320px, 380px);
   gap: 8px;
   min-height: 0;
+  height: 100%;
 }
 
 .state-icon-drawing-canvas {
   display: grid;
   place-items: center;
-  min-height: 520px;
+  min-height: 0;
+  height: 100%;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 10px;
@@ -5230,8 +5186,9 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .state-icon-drawing-canvas svg {
   width: 100%;
+  height: 100%;
   max-width: 780px;
-  max-height: calc(100vh - 190px);
+  max-height: none;
   aspect-ratio: 3 / 2;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
@@ -5289,8 +5246,8 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .state-icon-drawing-side {
   display: grid;
-  grid-template-columns: 185px minmax(0, 1fr);
-  grid-template-rows: minmax(118px, auto) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
   min-width: 0;
   min-height: 0;
@@ -5307,10 +5264,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   border-radius: 8px;
   padding: 8px;
   background: #fbfdff;
-}
-
-.state-icon-drawing-library {
-  grid-row: 1 / -1;
 }
 
 .state-icon-drawing-layers {
@@ -5342,9 +5295,50 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .state-icon-drawing-library > .state-icon-drawing-import-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+
+.device-state-pager > .state-icon-drawing-library {
+  grid-row: auto;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: #f8fbff;
+}
+
+.device-state-pager > .state-icon-drawing-library > span {
+  white-space: nowrap;
+}
+
+.device-state-pager > .state-icon-drawing-library > div:not(.state-icon-drawing-import-actions) {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.state-icon-drawing-library .state-icon-import-button,
+.state-icon-drawing-library .state-icon-tool-button {
+  width: 30px;
+  min-width: 30px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+}
+
+.state-icon-tool-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
 }
 
 .state-icon-drawing-layers > div {
@@ -5425,11 +5419,11 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 @media (max-width: 1120px) {
   .state-icon-drawing-layout {
-    grid-template-columns: minmax(420px, 1fr) minmax(390px, 430px);
+    grid-template-columns: minmax(420px, 1fr) minmax(300px, 340px);
   }
 
   .state-icon-drawing-side {
-    grid-template-columns: 160px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .state-icon-drawing-canvas {
@@ -5692,6 +5686,45 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .custom-device-tab-panel-terminals > .custom-device-preview,
 .custom-device-tab-panel-icon > .custom-device-preview {
   grid-template-columns: minmax(0, 1fr);
+  height: 100%;
+  overflow: hidden;
+}
+
+.custom-device-tab-panel-terminals > .custom-terminal-grid {
+  order: 1;
+  grid-template-columns: repeat(var(--custom-terminal-count, 1), minmax(0, 1fr));
+  gap: 5px 6px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.custom-device-tab-panel-terminals > .custom-terminal-grid label {
+  gap: 3px;
+  font-size: 11px;
+}
+
+.custom-device-tab-panel-terminals > .custom-terminal-grid select {
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 7px;
+  font-size: 12px;
+}
+
+.custom-device-tab-panel-terminals .custom-terminal-anchor-inputs {
+  grid-template-columns: auto minmax(42px, 1fr) auto minmax(42px, 1fr);
+  gap: 3px;
+}
+
+.custom-device-tab-panel-terminals .custom-terminal-anchor-inputs input {
+  min-height: 26px;
+  padding: 0 4px;
+  font-size: 11px;
+}
+
+.custom-device-tab-panel-terminals > .custom-device-preview {
+  order: 2;
+  height: 100%;
+  overflow: hidden;
 }
 
 .custom-device-tab-panel-terminals > .custom-device-preview .custom-device-preview-stage,
@@ -5705,6 +5738,26 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .custom-device-tab-panel-icon > .custom-device-preview .custom-device-anchor-preview,
 .device-definition-visual-panel > .custom-device-preview .custom-device-anchor-preview {
   height: clamp(260px, 42vh, 520px);
+}
+
+.custom-device-tab-panel-terminals > .custom-device-preview .custom-device-preview-stage {
+  height: 100%;
+  min-height: 0;
+}
+
+.custom-device-tab-panel-terminals > .custom-device-preview .custom-device-anchor-preview {
+  height: 100%;
+  min-height: 0;
+}
+
+.custom-device-tab-panel-icon > .custom-device-preview .custom-device-preview-stage {
+  height: 100%;
+  min-height: 0;
+}
+
+.custom-device-tab-panel-icon > .custom-device-preview .custom-device-anchor-preview {
+  height: 100%;
+  min-height: 0;
 }
 
 .custom-device-preview-frame {
@@ -5730,21 +5783,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .custom-device-terminal-guide.active {
   stroke: rgba(14, 116, 144, 0.78);
   stroke-width: 1.8;
-}
-
-.custom-device-terminal-guide-label {
-  fill: #0f766e;
-  font-size: 7px;
-  font-weight: 800;
-  text-anchor: middle;
-  dominant-baseline: auto;
-  pointer-events: none;
-  user-select: none;
-}
-
-.custom-device-terminal-guide-label.horizontal {
-  text-anchor: end;
-  dominant-baseline: middle;
 }
 
 .custom-device-terminal-connector {

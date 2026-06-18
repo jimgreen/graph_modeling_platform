@@ -563,6 +563,7 @@ const stateVisualImageInputRef = useRef<HTMLInputElement | null>(null); Object.a
 const stateIconDrawingImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { stateIconDrawingImportInputRef });
 const stateIconDrawingSvgRef = useRef<SVGSVGElement | null>(null); Object.assign(__appScope, { stateIconDrawingSvgRef });
 const stateIconDrawingDragRef = useRef<StateIconDrawingDragState | null>(null); Object.assign(__appScope, { stateIconDrawingDragRef });
+const stateIconDrawingInitialImageRef = useRef<{ key: string; image: string } | null>(null);
 const modelImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { modelImportInputRef });
 const modelImportTargetSchemeIdRef = useRef<string>(""); Object.assign(__appScope, { modelImportTargetSchemeIdRef });
 const schemeImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { schemeImportInputRef });
@@ -3999,7 +4000,11 @@ const customDeviceMeasurementTarget: DeviceDefinitionMeasurementPanelTarget = {
     terminalLabels: customDeviceDraft.terminalLabels
   };
 Object.assign(__appScope, { customDeviceMeasurementTarget });
-const customStatePreviewVisual = stateVisualFromDraftRow(activeStateDraftRow(customDeviceDraft.stateDefinitions, customDeviceStatePageId)); Object.assign(__appScope, { customStatePreviewVisual });
+const customIconStatePageId = isDefaultStatePageId(customDeviceStatePageId)
+    ? customDeviceDraft.stateDefinitions[0]?.id ?? customDeviceStatePageId
+    : customDeviceStatePageId;
+Object.assign(__appScope, { customIconStatePageId });
+const customStatePreviewVisual = stateVisualFromDraftRow(activeStateDraftRow(customDeviceDraft.stateDefinitions, customIconStatePageId)); Object.assign(__appScope, { customStatePreviewVisual });
 const customStatePreviewText = stateVisualText(customStatePreviewVisual); Object.assign(__appScope, { customStatePreviewText });
 const customDevicePreviewLabel = customDeviceDraft.componentName.trim() || customDeviceDraft.componentType || "Unit"; Object.assign(__appScope, { customDevicePreviewLabel });
 const customDevicePreviewImageHref =
@@ -4142,6 +4147,101 @@ const addStateIconDrawingElement = createAddStateIconDrawingElement(__appScope);
 const deleteStateIconDrawingElement = createDeleteStateIconDrawingElement(__appScope); Object.assign(__appScope, { deleteStateIconDrawingElement });
 const openStateIconDrawingDialog = createOpenStateIconDrawingDialog(__appScope); Object.assign(__appScope, { openStateIconDrawingDialog });
 const applyStateIconDrawingDialog = createApplyStateIconDrawingDialog(__appScope); Object.assign(__appScope, { applyStateIconDrawingDialog });
+const stateIconDrawingInlineTarget =
+    deviceDefinitionDialogOpen && deviceDefinitionView === "visual" && !isDefaultStatePageId(definitionStatePageId)
+      ? { scope: "definition" as const, rowId: definitionStatePageId }
+      : customDeviceDialogOpen &&
+          (customDeviceDialogView === "icon" || (customDeviceDialogView === "terminals" && customDeviceDraft.terminalCount <= 0)) &&
+          !isDefaultStatePageId(customIconStatePageId)
+        ? { scope: "custom" as const, rowId: customIconStatePageId }
+        : null;
+Object.assign(__appScope, { stateIconDrawingInlineTarget });
+const stateIconDrawingInlineImage = stateIconDrawingDialog
+    ? stateIconDrawingDialog.elements.length > 0
+      ? stateIconDrawingToImage(stateIconDrawingDialog.elements)
+      : ""
+    : "";
+Object.assign(__appScope, { stateIconDrawingInlineImage });
+useEffect(() => {
+    if (!stateIconDrawingInlineTarget) {
+      stateIconDrawingInitialImageRef.current = null;
+      setStateIconDrawingDialog((current) => (current ? null : current));
+      return;
+    }
+    const targetKey = `${stateIconDrawingInlineTarget.scope}:${stateIconDrawingInlineTarget.rowId}`;
+    setStateIconDrawingDialog((current) => {
+      if (
+        current?.target.scope === stateIconDrawingInlineTarget.scope &&
+        current.target.rowId === stateIconDrawingInlineTarget.rowId
+      ) {
+        return current;
+      }
+      const row =
+        stateIconDrawingInlineTarget.scope === "definition"
+          ? definitionStateDraftRows.find((item) => item.id === stateIconDrawingInlineTarget.rowId)
+          : customDeviceDraft.stateDefinitions.find((item) => item.id === stateIconDrawingInlineTarget.rowId);
+      const initial = createStateIconDrawingInitialElements(row, imageAssets);
+      stateIconDrawingInitialImageRef.current = {
+        key: targetKey,
+        image: initial.length > 0 ? stateIconDrawingToImage(initial) : ""
+      };
+      return {
+        target: stateIconDrawingInlineTarget,
+        elements: initial,
+        selectedElementId: initial[0]?.id ?? "",
+        selectedElementIds: initial[0]?.id ? [initial[0].id] : []
+      };
+    });
+  }, [
+    customDeviceDialogOpen,
+    customDeviceDialogView,
+    customDeviceDraft.stateDefinitions,
+    customDeviceDraft.terminalCount,
+    customIconStatePageId,
+    customDeviceStatePageId,
+    definitionStateDraftRows,
+    definitionStatePageId,
+    deviceDefinitionDialogOpen,
+    deviceDefinitionView,
+    imageAssets,
+    stateIconDrawingInlineTarget?.rowId,
+    stateIconDrawingInlineTarget?.scope
+  ]);
+useEffect(() => {
+    if (!stateIconDrawingDialog) {
+      return;
+    }
+    const targetKey = `${stateIconDrawingDialog.target.scope}:${stateIconDrawingDialog.target.rowId}`;
+    if (stateIconDrawingInitialImageRef.current?.key === targetKey && stateIconDrawingInitialImageRef.current.image === stateIconDrawingInlineImage) {
+      return;
+    }
+    const row =
+      stateIconDrawingDialog.target.scope === "definition"
+        ? definitionStateDraftRows.find((item) => item.id === stateIconDrawingDialog.target.rowId)
+        : customDeviceDraft.stateDefinitions.find((item) => item.id === stateIconDrawingDialog.target.rowId);
+    if (!row) {
+      return;
+    }
+    const imageFieldsAlreadySynced =
+      (row.image ?? "") === stateIconDrawingInlineImage &&
+      !row.imageAssetId &&
+      !row.backgroundImage &&
+      !row.backgroundImageAssetId;
+    if (imageFieldsAlreadySynced) {
+      return;
+    }
+    const stateIconDrawingInlinePatch: Partial<DeviceDefinitionStateDraftRow> = {
+      image: stateIconDrawingInlineImage,
+      imageAssetId: "",
+      backgroundImage: "",
+      backgroundImageAssetId: ""
+    };
+    if (stateIconDrawingDialog.target.scope === "definition") {
+      updateDefinitionStateDraftRow(stateIconDrawingDialog.target.rowId, stateIconDrawingInlinePatch);
+    } else {
+      updateCustomDeviceStateDraftRow(stateIconDrawingDialog.target.rowId, stateIconDrawingInlinePatch);
+    }
+  }, [stateIconDrawingDialog, stateIconDrawingInlineImage]);
 const customComponentTreeTypeKey = (attributeLibraryName: string, componentType: string) =>
     `${normalizeAttributeLibraryName(attributeLibraryName)}::${normalizeComponentTypeName(componentType)}`;
 Object.assign(__appScope, { customComponentTreeTypeKey });
