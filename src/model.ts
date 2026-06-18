@@ -6222,6 +6222,60 @@ export function syncRoutableLineDeviceEndpointsToRefs(
   return setRoutableLineDeviceEndpointsPreservingRoute(nodeWithRefs, nextStart, nextEnd, refs, nodeById);
 }
 
+export function realignRoutableLineDeviceBusEndpointPoints(
+  node: ModelNode,
+  nodes: ModelNode[]
+): ModelNode {
+  if (!isRoutableLineDeviceKind(node.kind)) {
+    return node;
+  }
+  const nodeWithRefs = inferMissingRoutableLineDeviceEndpointRefs(node, nodes);
+  const refs = routableLineDeviceEndpointRefs(nodeWithRefs);
+  if (!refs.source && !refs.target) {
+    return nodeWithRefs;
+  }
+  const nodeById = new Map(nodes.map((item) => [item.id, item]));
+  const currentPoints = routableLineDeviceCanvasPoints(nodeWithRefs);
+  const currentStart = currentPoints[0];
+  const currentEnd = currentPoints[currentPoints.length - 1];
+  if (!currentStart || !currentEnd) {
+    return nodeWithRefs;
+  }
+  const sourceNode = refs.source ? nodeById.get(refs.source.nodeId) : undefined;
+  const targetNode = refs.target ? nodeById.get(refs.target.nodeId) : undefined;
+  let nextStart = routableLineEndpointPointFromRef(refs.source, nodeById, currentStart) ?? currentStart;
+  let nextEnd = routableLineEndpointPointFromRef(refs.target, nodeById, currentEnd) ?? currentEnd;
+  const nextRefs: RoutableLineDeviceEndpointRefs = { ...refs };
+
+  if (refs.source && sourceNode && isBusNode(sourceNode) && targetNode && !isBusNode(targetNode)) {
+    const targetNormal = routeEndpointNormal(targetNode, nextEnd, nextStart, refs.target?.terminalId);
+    nextStart = alignBusEndpointPointToRouteSegmentExtension(sourceNode, currentPoints, "source") ?? projectPointToBusCenterline(sourceNode, {
+      x: Math.round(nextEnd.x + targetNormal.x * ROUTE_ENDPOINT_STUB_LENGTH),
+      y: Math.round(nextEnd.y + targetNormal.y * ROUTE_ENDPOINT_STUB_LENGTH)
+    });
+    nextRefs.source = routableLineDeviceEndpointRefForNode(sourceNode, refs.source.terminalId, nextStart);
+  }
+  if (refs.target && targetNode && isBusNode(targetNode) && sourceNode && !isBusNode(sourceNode)) {
+    const sourceNormal = routeEndpointNormal(sourceNode, nextStart, nextEnd, refs.source?.terminalId);
+    nextEnd = alignBusEndpointPointToRouteSegmentExtension(targetNode, currentPoints, "target") ?? projectPointToBusCenterline(targetNode, {
+      x: Math.round(nextStart.x + sourceNormal.x * ROUTE_ENDPOINT_STUB_LENGTH),
+      y: Math.round(nextStart.y + sourceNormal.y * ROUTE_ENDPOINT_STUB_LENGTH)
+    });
+    nextRefs.target = routableLineDeviceEndpointRefForNode(targetNode, refs.target.terminalId, nextEnd);
+  }
+
+  const startChanged = nextStart.x !== currentStart.x || nextStart.y !== currentStart.y;
+  const endChanged = nextEnd.x !== currentEnd.x || nextEnd.y !== currentEnd.y;
+  const refsChanged =
+    nextRefs.source?.localPoint?.x !== refs.source?.localPoint?.x ||
+    nextRefs.source?.localPoint?.y !== refs.source?.localPoint?.y ||
+    nextRefs.target?.localPoint?.x !== refs.target?.localPoint?.x ||
+    nextRefs.target?.localPoint?.y !== refs.target?.localPoint?.y;
+  return startChanged || endChanged || refsChanged
+    ? setRoutableLineDeviceEndpoints(nodeWithRefs, nextStart, nextEnd, nextRefs)
+    : nodeWithRefs;
+}
+
 function routableLineDeviceTopologyEdges(nodes: ModelNode[]): Edge[] {
   const edges: Edge[] = [];
   for (const node of nodes) {
@@ -8214,6 +8268,80 @@ export function projectPointToBusCenterlineIfInRange(node: ModelNode, point: Poi
     return null;
   }
   return projectPointToBusCenterline(node, point);
+}
+
+export function alignBusEndpointPointToRouteSegmentExtension(
+  busNode: ModelNode,
+  routePoints: Point[],
+  endpoint: "source" | "target"
+): Point | null {
+  if (!isBusNode(busNode) || routePoints.length < 2) {
+    return null;
+  }
+  const endpointPoint = endpoint === "source" ? routePoints[0] : routePoints[routePoints.length - 1];
+  if (!endpointPoint) {
+    return null;
+  }
+  const currentEndpointPoint = projectPointToBusCenterline(busNode, endpointPoint);
+  const segmentIndexes =
+    endpoint === "source"
+      ? Array.from({ length: routePoints.length - 1 }, (_, index) => index)
+      : Array.from({ length: routePoints.length - 1 }, (_, index) => routePoints.length - 2 - index);
+  let nearestProjection: Point | null = null;
+  for (const segmentIndex of segmentIndexes) {
+    const segmentStart = routePoints[segmentIndex];
+    const segmentEnd = routePoints[segmentIndex + 1];
+    if (!segmentStart || !segmentEnd || (segmentStart.x === segmentEnd.x && segmentStart.y === segmentEnd.y)) {
+      continue;
+    }
+    const projection = projectBusEndpointPointToRouteSegmentExtension(busNode, segmentStart, segmentEnd, endpointPoint);
+    if (!projection) {
+      continue;
+    }
+    if (!nearestProjection) {
+      nearestProjection = projection;
+    }
+    if (!samePoint(projection, currentEndpointPoint)) {
+      return projection;
+    }
+  }
+  return nearestProjection;
+}
+
+function projectBusEndpointPointToRouteSegmentExtension(
+  busNode: ModelNode,
+  segmentStart: Point,
+  segmentEnd: Point,
+  endpointPoint: Point
+): Point | null {
+  if (!isBoundaryBusNode(busNode)) {
+    const rotationRadians = degreesToRadians(busNode.rotation);
+    const cos = Math.cos(rotationRadians);
+    const sin = Math.sin(rotationRadians);
+    const halfWidth = (busNode.size.width * Math.abs(getNodeScaleX(busNode))) / 2;
+    const distance =
+      segmentStart.x === segmentEnd.x
+        ? Math.abs(cos) > 1e-6
+          ? (segmentStart.x - busNode.position.x) / cos
+          : null
+        : segmentStart.y === segmentEnd.y && Math.abs(sin) > 1e-6
+          ? (segmentStart.y - busNode.position.y) / sin
+          : null;
+    if (distance !== null) {
+      const clampedDistance = clampNumber(distance, -halfWidth, halfWidth);
+      return {
+        x: Math.round(busNode.position.x + clampedDistance * cos),
+        y: Math.round(busNode.position.y + clampedDistance * sin)
+      };
+    }
+  }
+  const referencePoint =
+    segmentStart.x === segmentEnd.x
+      ? { x: segmentStart.x, y: endpointPoint.y }
+      : segmentStart.y === segmentEnd.y
+        ? { x: endpointPoint.x, y: segmentStart.y }
+        : null;
+  return referencePoint ? projectPointToBusCenterline(busNode, referencePoint) : null;
 }
 
 export function getEdgeEndpointPoint(node: ModelNode, endpointPoint?: Point, terminalId?: string): Point {
@@ -14160,6 +14288,38 @@ function edgeWithProjectedMissingBusEndpointPoints(edge: Edge, source: ModelNode
     next = { ...next, targetPoint: end };
   }
   return next;
+}
+
+export function realignConnectionEdgeBusEndpointPoints(nodes: ModelNode[], edge: Edge): Edge {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const source = nodeById.get(edge.sourceId);
+  const target = nodeById.get(edge.targetId);
+  if (!source || !target) {
+    return edge;
+  }
+  if (isBusNode(source) && !isBusNode(target)) {
+    const targetPoint = getEdgeEndpointPoint(target, edge.targetPoint, edge.targetTerminalId);
+    const targetNormal = routeEndpointNormal(target, targetPoint, getEdgeEndpointPoint(source, edge.sourcePoint, edge.sourceTerminalId), edge.targetTerminalId);
+    const sourcePoint = alignBusEndpointPointToRouteSegmentExtension(source, edge.routePoints ?? [], "source") ?? projectPointToBusCenterline(source, {
+      x: Math.round(targetPoint.x + targetNormal.x * ROUTE_ENDPOINT_STUB_LENGTH),
+      y: Math.round(targetPoint.y + targetNormal.y * ROUTE_ENDPOINT_STUB_LENGTH)
+    });
+    return edge.sourcePoint && samePoint(projectPointToBusCenterline(source, edge.sourcePoint), sourcePoint)
+      ? edge
+      : { ...edge, sourcePoint };
+  }
+  if (isBusNode(target) && !isBusNode(source)) {
+    const sourcePoint = getEdgeEndpointPoint(source, edge.sourcePoint, edge.sourceTerminalId);
+    const sourceNormal = routeEndpointNormal(source, sourcePoint, getEdgeEndpointPoint(target, edge.targetPoint, edge.targetTerminalId), edge.sourceTerminalId);
+    const targetPoint = alignBusEndpointPointToRouteSegmentExtension(target, edge.routePoints ?? [], "target") ?? projectPointToBusCenterline(target, {
+      x: Math.round(sourcePoint.x + sourceNormal.x * ROUTE_ENDPOINT_STUB_LENGTH),
+      y: Math.round(sourcePoint.y + sourceNormal.y * ROUTE_ENDPOINT_STUB_LENGTH)
+    });
+    return edge.targetPoint && samePoint(projectPointToBusCenterline(target, edge.targetPoint), targetPoint)
+      ? edge
+      : { ...edge, targetPoint };
+  }
+  return edge;
 }
 
 function preservedStoredRoutePointsForDisplay(

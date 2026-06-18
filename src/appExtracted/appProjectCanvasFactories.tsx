@@ -107,8 +107,8 @@ export function createFinishRoutableLineToTarget(__appScope: Record<string, any>
 }
 
 export function createUpdateRoutableLineEndpointDrag(__appScope: Record<string, any>) {
-  return (point: Point) => {
-  const { connectTargetPoint, findRoutableLineEndpointTargetAtPoint, nodeById, routableLineEndpointDrag, sameConnectTarget, sameOptionalPoint, setRoutableLineEndpointDrag } = __appScope;
+  return (point: Point, ctrlKey = false) => {
+  const { alignBusEndpointPointToRouteSegmentExtension, connectTargetPoint, findRoutableLineEndpointTargetAtPoint, isBusNode, nodeById, routableLineDeviceCanvasPoints, routableLineEndpointDrag, sameConnectTarget, sameOptionalPoint, setRoutableLineEndpointDrag } = __appScope;
     if (!routableLineEndpointDrag) {
       return;
     }
@@ -121,18 +121,24 @@ export function createUpdateRoutableLineEndpointDrag(__appScope: Record<string, 
     const target = terminalType
       ? findRoutableLineEndpointTargetAtPoint(point, { terminalType, excludedNodeId: lineNode.id })
       : null;
-    const snappedPoint = target ? connectTargetPoint(target) : point;
+    const routePoints = routableLineDeviceCanvasPoints(lineNode);
+    const alignedPoint =
+      target && ctrlKey && isBusNode(target.node)
+        ? alignBusEndpointPointToRouteSegmentExtension(target.node, routePoints, routableLineEndpointDrag.endpoint)
+        : null;
+    const effectiveTarget = target && alignedPoint ? { ...target, point: alignedPoint } : target;
+    const snappedPoint = effectiveTarget ? connectTargetPoint(effectiveTarget) : point;
     setRoutableLineEndpointDrag((current) =>
       current && current.nodeId === routableLineEndpointDrag.nodeId && current.endpoint === routableLineEndpointDrag.endpoint
         ? sameOptionalPoint(current.previewPoint, snappedPoint) &&
-          sameOptionalPoint(current.dropTargetPoint, target ? snappedPoint : undefined) &&
-          sameConnectTarget(current.dropTarget, target)
+          sameOptionalPoint(current.dropTargetPoint, effectiveTarget ? snappedPoint : undefined) &&
+          sameConnectTarget(current.dropTarget, effectiveTarget)
           ? current
           : {
               ...current,
               previewPoint: snappedPoint,
-              dropTargetPoint: target ? snappedPoint : undefined,
-              dropTarget: target ?? undefined
+              dropTargetPoint: effectiveTarget ? snappedPoint : undefined,
+              dropTarget: effectiveTarget ?? undefined
             }
         : current
     );
@@ -741,7 +747,7 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
         return;
       }
       if (routableLineEndpointDrag) {
-        updateRoutableLineEndpointDrag(pointer);
+        updateRoutableLineEndpointDrag(pointer, event.ctrlKey);
       }
       if (connectSource) {
         const previewPoint = resolveConnectPreviewPoint(pointer, event);
@@ -907,7 +913,7 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
     }
     if (rewiring && svgRef.current) {
       const previewPoint = lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-      scheduleRewirePreviewPoint(previewPoint, rewiring);
+      scheduleRewirePreviewPoint(previewPoint, rewiring, event.ctrlKey);
       return;
     }
     if (marquee && svgRef.current) {
@@ -1290,7 +1296,7 @@ export function createReadjustMovedBusConnectionRoutes(__appScope: Record<string
     movedNodeIds: Iterable<string>,
     bounds: CanvasBounds
   ) => {
-  const { isBusNode, redrawConnectionRoutesForEdges } = __appScope;
+  const { isBusNode, realignConnectionEdgeBusEndpointPoints, redrawConnectionRoutesForEdges } = __appScope;
     const movedIds = new Set(movedNodeIds);
     if (movedIds.size === 0 || candidateEdges.length === 0) {
       return candidateEdges;
@@ -1308,9 +1314,15 @@ export function createReadjustMovedBusConnectionRoutes(__appScope: Record<string
       }
       busConnectedEdgeIds.push(edge.id);
     }
-    return busConnectedEdgeIds.length > 0
-      ? redrawConnectionRoutesForEdges(nextNodes, candidateEdges, busConnectedEdgeIds, bounds)
-      : candidateEdges;
+    if (busConnectedEdgeIds.length === 0) {
+      return candidateEdges;
+    }
+    const redrawnCandidateEdges = redrawConnectionRoutesForEdges(nextNodes, candidateEdges, busConnectedEdgeIds, bounds);
+    const busConnectedEdgeIdSet = new Set(busConnectedEdgeIds);
+    const realignedCandidateEdges = redrawnCandidateEdges.map((edge) =>
+      busConnectedEdgeIdSet.has(edge.id) ? realignConnectionEdgeBusEndpointPoints(nextNodes, edge) : edge
+    );
+    return redrawConnectionRoutesForEdges(nextNodes, realignedCandidateEdges, busConnectedEdgeIds, bounds);
   };
 }
 
@@ -1320,7 +1332,7 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
     arranged: ModelNode[],
     options: { readjustBusEndpoints?: boolean } = {}
   ) => {
-  const { CANVAS_AUTO_EXPAND_PADDING, adjustEdgesAfterNodeMove, applyCanvasBounds, canvasBounds, canvasBoundsForAutoExpandedGraphContent, commitFastMovedGraphPatches, currentStoredRoutePointsForEdge, edgeListForNodeIds, edges, finalizeMovedNodeEdgesFast, nodeById, nodes, orderedNodeFromList, pushUndoSnapshot, readjustMovedBusConnectionRoutes, rejectAutoCanvasExpansionForContent, snapshotEdgePoints, undoScopeForGraphPatch } = __appScope;
+  const { CANVAS_AUTO_EXPAND_PADDING, adjustEdgesAfterNodeMove, applyCanvasBounds, canvasBounds, canvasBoundsForAutoExpandedGraphContent, commitFastMovedGraphPatches, currentStoredRoutePointsForEdge, edgeListForNodeIds, edges, finalizeMovedNodeEdgesFast, isRoutableLineDeviceKind, mergeNodeUpdateLists, nodeById, nodes, orderedNodeFromList, pushUndoSnapshot, readjustMovedBusConnectionRoutes, realignRoutableLineDeviceBusEndpointPoints, redrawRoutableLineDeviceRoutes, rejectAutoCanvasExpansionForContent, routableLineIdsConnectedToNodeIds, snapshotEdgePoints, undoScopeForGraphPatch } = __appScope;
     const uniqueLayoutNodeIds = Array.from(new Set(layoutNodeIds));
     if (uniqueLayoutNodeIds.length === 0) {
       return 0;
@@ -1339,10 +1351,20 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
     const movedNodeIds = movedNodeUpdates.map((node) => node.id);
     const movedNodeIdSet = new Set(movedNodeIds);
     const affectedEdgesForLayout = edgeListForNodeIds(movedNodeIds);
+    const busConnectedLineNodeIds = options.readjustBusEndpoints
+      ? routableLineIdsConnectedToNodeIds(movedNodeIds)
+      : new Set<string>();
     if (rejectAutoCanvasExpansionForContent(movedNodeUpdates, affectedEdgesForLayout)) {
       return 0;
     }
-    pushUndoSnapshot(true, false, undoScopeForGraphPatch(movedNodeIds, affectedEdgesForLayout.map((edge) => edge.id)));
+    pushUndoSnapshot(
+      true,
+      false,
+      undoScopeForGraphPatch(
+        busConnectedLineNodeIds.size > 0 ? [...movedNodeIds, ...busConnectedLineNodeIds] : movedNodeIds,
+        affectedEdgesForLayout.map((edge) => edge.id)
+      )
+    );
     const layoutCanvasBounds = canvasBoundsForAutoExpandedGraphContent(
       canvasBounds,
       arranged,
@@ -1405,9 +1427,55 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
           layoutCanvasBounds
         )
       : finalizedCandidateEdges;
+    let committedNodeUpdates = movedNodeUpdates;
+    let committedArrangedNodes = arranged;
+    if (options.readjustBusEndpoints && busConnectedLineNodeIds.size > 0) {
+      const initiallyRedrawnLineNodes = redrawRoutableLineDeviceRoutes(
+        committedArrangedNodes,
+        busConnectedLineNodeIds,
+        layoutCanvasBounds
+      );
+      const initiallyRedrawnLineById = new Map(initiallyRedrawnLineNodes.map((node) => [node.id, node]));
+      const arrangedWithInitialRedrawnLines = initiallyRedrawnLineNodes.length > 0
+        ? committedArrangedNodes.map((node) => initiallyRedrawnLineById.get(node.id) ?? node)
+        : committedArrangedNodes;
+      const realignedLineNodes: ModelNode[] = [];
+      for (const lineNodeId of busConnectedLineNodeIds) {
+        const lineNode = orderedNodeFromList(arrangedWithInitialRedrawnLines, lineNodeId) ?? nodeById.get(lineNodeId);
+        if (!lineNode || !isRoutableLineDeviceKind(lineNode.kind)) {
+          continue;
+        }
+        const realignedLineNode = realignRoutableLineDeviceBusEndpointPoints(lineNode, arrangedWithInitialRedrawnLines);
+        if (realignedLineNode !== lineNode) {
+          realignedLineNodes.push(realignedLineNode);
+        }
+      }
+      const realignedLineNodeById = new Map(realignedLineNodes.map((node) => [node.id, node]));
+      const arrangedWithRealignedLines = realignedLineNodes.length > 0
+        ? arrangedWithInitialRedrawnLines.map((node) => realignedLineNodeById.get(node.id) ?? node)
+        : arrangedWithInitialRedrawnLines;
+      const redrawnLineNodes = realignedLineNodes.length > 0
+        ? redrawRoutableLineDeviceRoutes(
+            arrangedWithRealignedLines,
+            busConnectedLineNodeIds,
+            layoutCanvasBounds
+          )
+        : [];
+      const lineNodeUpdates = mergeNodeUpdateLists(
+        initiallyRedrawnLineNodes,
+        mergeNodeUpdateLists(realignedLineNodes, redrawnLineNodes)
+      );
+      if (lineNodeUpdates.length > 0) {
+        const lineNodeUpdateById = new Map(lineNodeUpdates.map((node) => [node.id, node]));
+        committedNodeUpdates = mergeNodeUpdateLists(movedNodeUpdates, lineNodeUpdates);
+        committedArrangedNodes = committedArrangedNodes.map((node) =>
+          lineNodeUpdateById.get(node.id) ?? node
+        );
+      }
+    }
     commitFastMovedGraphPatches(
-      movedNodeUpdates,
-      arranged,
+      committedNodeUpdates,
+      committedArrangedNodes,
       committedCandidateEdges,
       affectedEdgesForLayout,
       movedNodeIds,

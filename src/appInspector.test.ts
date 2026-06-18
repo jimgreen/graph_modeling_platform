@@ -2685,6 +2685,28 @@ describe("graph inspector panel", () => {
     expect(previewBlock).toContain(": previewStoredRoutePointsForEdge(edge, currentSourcePoint, currentTargetPoint);");
   });
 
+  test("aligns dragged bus endpoint targets to previous route segment extensions while ctrl is held", async () => {
+    const source = await readAppSource();
+    const pointerMoveStart = source.indexOf("export function createHandlePointerMove");
+    const pointerMoveEnd = source.indexOf("export function createDeleteSelected", pointerMoveStart);
+    const pointerMoveBlock = source.slice(pointerMoveStart, pointerMoveEnd);
+    const rewireScheduleStart = source.indexOf("export function createScheduleRewirePreviewPoint");
+    const rewireScheduleEnd = source.indexOf("export function createResetConnectPreviewState", rewireScheduleStart);
+    const rewireScheduleBlock = source.slice(rewireScheduleStart, rewireScheduleEnd);
+    const routableUpdateStart = source.indexOf("export function createUpdateRoutableLineEndpointDrag");
+    const routableUpdateEnd = source.indexOf("export function createStartRoutableLineEndpointDrag", routableUpdateStart);
+    const routableUpdateBlock = source.slice(routableUpdateStart, routableUpdateEnd);
+
+    expect(pointerMoveBlock).toContain("scheduleRewirePreviewPoint(previewPoint, rewiring, event.ctrlKey)");
+    expect(pointerMoveBlock).toContain("updateRoutableLineEndpointDrag(pointer, event.ctrlKey)");
+    expect(rewireScheduleBlock).toContain("alignBusEndpointPointToRouteSegmentExtension");
+    expect(rewireScheduleBlock).toContain("next.ctrlKey && isBusNode(target.node)");
+    expect(rewireScheduleBlock).toContain("{ ...target, point: alignedPoint }");
+    expect(routableUpdateBlock).toContain("alignBusEndpointPointToRouteSegmentExtension");
+    expect(routableUpdateBlock).toContain("ctrlKey && isBusNode(target.node)");
+    expect(routableUpdateBlock).toContain("{ ...target, point: alignedPoint }");
+  });
+
   test("hides selected connection endpoint handles while an endpoint rewire preview is active", async () => {
     const source = await readAppSource();
     const selectedEdgeStart = source.indexOf("{selectedRoutedEdge &&");
@@ -9934,31 +9956,40 @@ describe("graph inspector panel", () => {
     expect(source).toContain("AUTO_ALIGN_MIN_THRESHOLD_PX");
     expect(source).toContain("AUTO_ALIGN_MAX_THRESHOLD_PX");
     expect(source).toContain("window.prompt");
-    expect(source).toContain("Math.max(AUTO_ALIGN_MIN_THRESHOLD_PX, Math.min(AUTO_ALIGN_MAX_THRESHOLD_PX");
+    expect(source).toContain("clampNumber(Math.round(parsedThreshold), AUTO_ALIGN_MIN_THRESHOLD_PX, AUTO_ALIGN_MAX_THRESHOLD_PX)");
     expect(contextBlock).toContain("自动对齐");
     expect(contextBlock).toContain("runContextMenuAction(autoAlignCanvasGraphics)");
   });
 
   test("readjusts bus endpoint landing points after automatic alignment", async () => {
     const source = await readAppSource();
-    const helperStart = source.indexOf("const readjustMovedBusConnectionRoutes");
-    const helperEnd = source.indexOf("const commitLayoutNodePositions", helperStart);
+    const helperStart = source.indexOf("export function createReadjustMovedBusConnectionRoutes");
+    const helperEnd = source.indexOf("export function createCommitLayoutNodePositions", helperStart);
     const helperBlock = source.slice(helperStart, helperEnd);
-    const commitStart = source.indexOf("const commitLayoutNodePositions =");
-    const commitEnd = source.indexOf("const applySelectedNodeLayout", commitStart);
+    const commitStart = source.indexOf("export function createCommitLayoutNodePositions");
+    const commitEnd = source.indexOf("export function createApplySelectedNodeLayout", commitStart);
     const commitBlock = source.slice(commitStart, commitEnd);
-    const autoAlignStart = source.indexOf("const autoAlignCanvasGraphics =");
-    const autoAlignEnd = source.indexOf("const connectionRedrawViewportBounds", autoAlignStart);
+    const autoAlignStart = source.indexOf("export function createAutoAlignCanvasGraphics");
+    const autoAlignEnd = source.indexOf("export function createDefaultVoltageBaseSetValue", autoAlignStart);
     const autoAlignBlock = source.slice(autoAlignStart, autoAlignEnd);
 
     expect(helperStart).toBeGreaterThan(-1);
     expect(helperBlock).toContain("isBusNode(source)");
     expect(helperBlock).toContain("isBusNode(target)");
     expect(helperBlock).toContain("movedIds.has(edge.sourceId) || movedIds.has(edge.targetId)");
-    expect(helperBlock).toContain("redrawConnectionRoutesForEdges(nextNodes, candidateEdges, busConnectedEdgeIds, bounds)");
+    expect(helperBlock).toContain("const redrawnCandidateEdges = redrawConnectionRoutesForEdges(nextNodes, candidateEdges, busConnectedEdgeIds, bounds)");
+    expect(helperBlock).toContain("realignConnectionEdgeBusEndpointPoints(nextNodes, edge)");
+    expect(helperBlock).toContain("redrawConnectionRoutesForEdges(nextNodes, realignedCandidateEdges, busConnectedEdgeIds, bounds)");
     expect(commitBlock).toContain("options: { readjustBusEndpoints?: boolean } = {}");
     expect(commitBlock).toContain("options.readjustBusEndpoints");
     expect(commitBlock).toContain("readjustMovedBusConnectionRoutes(");
+    expect(commitBlock).toContain("routableLineIdsConnectedToNodeIds(movedNodeIds)");
+    expect(commitBlock).toContain("const initiallyRedrawnLineNodes = redrawRoutableLineDeviceRoutes(");
+    expect(commitBlock).toContain("realignRoutableLineDeviceBusEndpointPoints(lineNode, arrangedWithInitialRedrawnLines)");
+    expect(commitBlock).toContain("redrawRoutableLineDeviceRoutes(");
+    expect(commitBlock).toContain("commitFastMovedGraphPatches(");
+    expect(commitBlock).toContain("committedNodeUpdates");
+    expect(commitBlock).toContain("committedArrangedNodes");
     expect(autoAlignBlock).toContain("commitLayoutNodePositions(");
     expect(autoAlignBlock).toContain("{ readjustBusEndpoints: true }");
   });

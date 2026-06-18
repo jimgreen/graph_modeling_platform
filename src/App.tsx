@@ -619,7 +619,7 @@ const routableLineDropTargetPointRef = useRef<Point | null>(null); Object.assign
 const routableLineDropTargetRef = useRef<ConnectTarget | null>(null); Object.assign(__appScope, { routableLineDropTargetRef });
 const pendingRoutableLinePreviewRef = useRef<{ point: Point | null } | null>(null); Object.assign(__appScope, { pendingRoutableLinePreviewRef });
 const routableLinePreviewFrameRef = useRef<number | null>(null); Object.assign(__appScope, { routableLinePreviewFrameRef });
-const pendingRewirePreviewRef = useRef<{ point: Point; rewiring: Exclude<RewiringState, null> } | null>(null);
+const pendingRewirePreviewRef = useRef<{ point: Point; rewiring: Exclude<RewiringState, null>; ctrlKey?: boolean } | null>(null);
 Object.assign(__appScope, { pendingRewirePreviewRef });
 const rewirePreviewFrameRef = useRef<number | null>(null); Object.assign(__appScope, { rewirePreviewFrameRef });
 const draggingRef = useRef<DraggingState | null>(null); Object.assign(__appScope, { draggingRef });

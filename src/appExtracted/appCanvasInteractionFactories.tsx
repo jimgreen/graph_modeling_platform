@@ -311,9 +311,9 @@ export function createResetRoutableLinePreviewState(__appScope: Record<string, a
 }
 
 export function createScheduleRewirePreviewPoint(__appScope: Record<string, any>) {
-  return (point: Point, rewiring: Exclude<RewiringState, null>) => {
-  const { connectTargetSnapPoint, findRewireTargetAtPoint, pendingRewirePreviewRef, rewirePreviewFrameRef, sameConnectTarget, sameOptionalPoint, setRewiring } = __appScope;
-    pendingRewirePreviewRef.current = { point, rewiring };
+  return (point: Point, rewiring: Exclude<RewiringState, null>, ctrlKey = false) => {
+  const { alignBusEndpointPointToRouteSegmentExtension, connectTargetSnapPoint, edgeById, endpointMatchedRoutePointsForEdge, findRewireTargetAtPoint, isBusNode, pendingRewirePreviewRef, previewStoredRoutePointsForEdge, rewirePreviewFrameRef, routedEdgeById, sameConnectTarget, sameOptionalPoint, setRewiring } = __appScope;
+    pendingRewirePreviewRef.current = { point, rewiring, ctrlKey };
     if (rewirePreviewFrameRef.current !== null) {
       return;
     }
@@ -325,15 +325,27 @@ export function createScheduleRewirePreviewPoint(__appScope: Record<string, any>
         return;
       }
       const target = findRewireTargetAtPoint(next.point, next.rewiring);
-      const snappedPreviewPoint = target ? connectTargetSnapPoint(target) : next.point;
-      const dropTargetPoint = target ? connectTargetSnapPoint(target) : undefined;
+      const edge = edgeById.get(next.rewiring.edgeId);
+      const cachedRoutePoints = edge ? endpointMatchedRoutePointsForEdge(edge, routedEdgeById.get(edge.id)?.points) : [];
+      const routePoints = edge
+        ? cachedRoutePoints.length
+          ? cachedRoutePoints
+          : previewStoredRoutePointsForEdge(edge)
+        : [];
+      const alignedPoint =
+        target && next.ctrlKey && isBusNode(target.node)
+          ? alignBusEndpointPointToRouteSegmentExtension(target.node, routePoints, next.rewiring.endpoint)
+          : null;
+      const effectiveTarget = target && alignedPoint ? { ...target, point: alignedPoint } : target;
+      const snappedPreviewPoint = effectiveTarget ? connectTargetSnapPoint(effectiveTarget) : next.point;
+      const dropTargetPoint = effectiveTarget ? connectTargetSnapPoint(effectiveTarget) : undefined;
       setRewiring((current) =>
         current && current.edgeId === next.rewiring.edgeId && current.endpoint === next.rewiring.endpoint
           ? sameOptionalPoint(current.previewPoint, snappedPreviewPoint) &&
             sameOptionalPoint(current.dropTargetPoint, dropTargetPoint) &&
-            sameConnectTarget(current.dropTarget, target)
+            sameConnectTarget(current.dropTarget, effectiveTarget)
             ? current
-            : { ...current, previewPoint: snappedPreviewPoint, dropTargetPoint, dropTarget: target ?? undefined }
+            : { ...current, previewPoint: snappedPreviewPoint, dropTargetPoint, dropTarget: effectiveTarget ?? undefined }
           : current
       );
     });
