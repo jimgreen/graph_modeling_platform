@@ -504,7 +504,7 @@ export function createFinishModifierSelectionPress(__appScope: Record<string, an
 
 export function createStartNodeLabelDrag(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGGElement>, node: ModelNode) => {
-  const { activateInspectorFromCanvas, activeLayerNodeIdSet, clampPointToCanvas, getNodeScaleX, getNodeScaleY, hasCanvasSelectionModifier, isBrowseMode, nodeLabelOffset, screenToSvgPoint, selectCanvasGraphics, setInspectorTab, setNodeLabelDrag, startModifierSelectionPress, svgRef } = __appScope;
+  const { activateInspectorFromCanvas, activeLayerNodeIdSet, clampPointToCanvas, getNodeScaleX, getNodeScaleY, getSafeNodeScaleX, getSafeNodeScaleY, hasCanvasSelectionModifier, isBrowseMode, nodeLabelOffset, screenToSvgPoint, selectCanvasGraphics, setInspectorTab, setNodeLabelDrag, startModifierSelectionPress, svgRef } = __appScope;
     if (!event.nativeEvent.defaultPrevented) {
       event.preventDefault();
     }
@@ -530,8 +530,8 @@ export function createStartNodeLabelDrag(__appScope: Record<string, any>) {
       pointerId: event.pointerId,
       startPoint: point,
       startOffset: nodeLabelOffset(node),
-      scaleX: Math.abs(getNodeScaleX(node)) || 1,
-      scaleY: Math.abs(getNodeScaleY(node)) || 1
+      scaleX: getSafeNodeScaleX(node),
+      scaleY: getSafeNodeScaleY(node)
     });
     event.currentTarget.setPointerCapture(event.pointerId);
   };

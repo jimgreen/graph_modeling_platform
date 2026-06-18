@@ -195,6 +195,7 @@ import {
   type Point,
   type ProjectFile
 } from "./model";
+import { degreesToRadians } from "./formatUtils";
 
 type ParsedESection = {
   columns: string[];
@@ -7278,7 +7279,7 @@ describe("power system model", () => {
     const route = routeEdgesForRendering([source, target, blocker], [edge], { width: 900, height: 360 })[0];
     const blockerHalfWidth = (blocker.size.width * Math.abs(getNodeScaleX(blocker))) / 2;
     const blockerHalfHeight = (blocker.size.height * Math.abs(getNodeScaleY(blocker))) / 2;
-    const blockerRadians = (blocker.rotation * Math.PI) / 180;
+    const blockerRadians = degreesToRadians(blocker.rotation);
     const blockerVisualHalfWidth = blockerHalfWidth * Math.abs(Math.cos(blockerRadians)) + blockerHalfHeight * Math.abs(Math.sin(blockerRadians));
     const blockerVisualHalfHeight = blockerHalfWidth * Math.abs(Math.sin(blockerRadians)) + blockerHalfHeight * Math.abs(Math.cos(blockerRadians));
     const blockerBox = {

@@ -5,6 +5,8 @@ import {
   DEFAULT_DEVICE_LABEL_FONT_SIZE,
   getNodeScaleX,
   getNodeScaleY,
+  getSafeNodeScaleX,
+  getSafeNodeScaleY,
   isStaticNode,
   type ModelNode,
   type Point
@@ -100,16 +102,16 @@ export function nodeLabelVerticalTokenY(index: number, count: number, node: Mode
 
 export const nodeLabelTransform = (node: ModelNode) => {
   const offset = nodeLabelOffset(node);
-  const scaleX = Math.abs(getNodeScaleX(node)) || 1;
-  const scaleY = Math.abs(getNodeScaleY(node)) || 1;
+  const scaleX = getSafeNodeScaleX(node);
+  const scaleY = getSafeNodeScaleY(node);
   return `translate(${formatSvgNumber(offset.x * scaleX)} ${formatSvgNumber(offset.y * scaleY)})`;
 };
 
 export function nodeLabelCanvasCenter(node: ModelNode): Point {
   const offset = nodeLabelOffset(node);
   return {
-    x: node.position.x + offset.x * (Math.abs(getNodeScaleX(node)) || 1),
-    y: node.position.y + offset.y * (Math.abs(getNodeScaleY(node)) || 1)
+    x: node.position.x + offset.x * getSafeNodeScaleX(node),
+    y: node.position.y + offset.y * getSafeNodeScaleY(node)
   };
 }
 
@@ -125,8 +127,8 @@ export function nodeLabelTextAnchor(node: ModelNode) {
 
 export function nodeLabelFontSize(node: ModelNode) {
   const baseSize = numericNodeParam(node, "_labelFontSize", DEFAULT_DEVICE_LABEL_FONT_SIZE);
-  const scaleX = Math.abs(getNodeScaleX(node)) || 1;
-  const scaleY = Math.abs(getNodeScaleY(node)) || 1;
+  const scaleX = getSafeNodeScaleX(node);
+  const scaleY = getSafeNodeScaleY(node);
   return baseSize * Math.sqrt(scaleX * scaleY);
 }
 

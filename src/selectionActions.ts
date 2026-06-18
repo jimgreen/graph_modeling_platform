@@ -13,6 +13,7 @@ import {
   type Point,
   type RoutedEdge
 } from "./model";
+import { clampNumber } from "./canvasViewport";
 
 export const CANVAS_EMPTY_SELECTION_MESSAGE = "当前没有被选中图元。";
 const GROUP_LAYOUT_BOUNDS_PADDING = 4;
@@ -1198,14 +1199,14 @@ function clampSpreadOrigin(value: number, size: number, limit: number | undefine
   if (limit === undefined || size >= limit) {
     return Math.round(value);
   }
-  return Math.round(Math.max(0, Math.min(limit - size, value)));
+  return Math.round(clampNumber(value, 0, limit - size));
 }
 
 function balancedGridShape(component: readonly AutoSpreadLayoutItem[], minSeparation: number, bounds: CanvasBounds | undefined) {
   const count = component.length;
   const maxWidth = Math.max(...component.map((item) => rectWidth(item.baseRect)));
   const maxHeight = Math.max(...component.map((item) => rectHeight(item.baseRect)));
-  const targetAspect = bounds ? Math.max(0.75, Math.min(1.5, bounds.width / Math.max(1, bounds.height))) : 1;
+  const targetAspect = bounds ? clampNumber(bounds.width / Math.max(1, bounds.height), 0.75, 1.5) : 1;
   let best = {
     columns: 1,
     rows: count,

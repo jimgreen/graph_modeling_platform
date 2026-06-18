@@ -1429,7 +1429,7 @@ const connectionLineStyle = createConnectionLineStyle(__appScope); Object.assign
 const measurementGroupBackgroundColor = (group: MeasurementGroup) => group.backgroundColor ?? "rgba(255, 255, 255, 0.84)"; Object.assign(__appScope, { measurementGroupBackgroundColor });
 const measurementGroupBorderColor = (group: MeasurementGroup) => group.borderColor ?? "rgba(100, 116, 139, 0.36)"; Object.assign(__appScope, { measurementGroupBorderColor });
 const measurementGroupBorderWidth = (group: MeasurementGroup) =>
-    group.borderStyle === "none" ? 0 : Math.max(0, Math.min(12, Number(group.borderWidth ?? 1)));
+    group.borderStyle === "none" ? 0 : clampNumber(Number(group.borderWidth ?? 1), 0, 12);
 Object.assign(__appScope, { measurementGroupBorderWidth });
 const measurementGroupBorderDashArray = (group: MeasurementGroup) =>
     measurementGroupBorderWidth(group) <= 0 || group.borderStyle === "none"
@@ -2047,7 +2047,7 @@ useEffect(() => {
         if (firstVisibleIndex < safeStart || lastVisibleIndex > safeEnd) {
           const center = Math.floor((firstVisibleIndex + lastVisibleIndex) / 2);
           let targetStart = center - Math.floor(WINDOW / 2);
-          targetStart = Math.max(0, Math.min(total - WINDOW, targetStart));
+          targetStart = clampNumber(targetStart, 0, total - WINDOW);
           if (total <= WINDOW) targetStart = 0;
           newStart = targetStart;
           newEnd = Math.min(total, newStart + WINDOW);
@@ -4463,7 +4463,7 @@ const renderElementTreePanel = () => (
                     let windowEnd = totalItems;
                     const windowEffective = !elementTreeSearchNeedle && Boolean(windowState);
                     if (windowEffective) {
-                      windowStart = Math.max(0, Math.min(windowState!.start, totalItems));
+                      windowStart = clampNumber(totalItems, 0, windowState!.start);
                       windowEnd = Math.min(totalItems, Math.max(windowStart + 1, windowState!.end));
                     }
                     // 窗口生效且非全显时由滚动接管，不显示"显示更多"

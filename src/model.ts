@@ -1,5 +1,7 @@
 import { normalizeProjectMeasurements } from "./measurements";
 import type { ProjectMeasurementConfig } from "./measurements";
+import { degreesToRadians } from "./formatUtils";
+import { clampNumber } from "./canvasViewport";
 
 export type DeviceKind =
   | "static-text"
@@ -5525,7 +5527,7 @@ function nodeLocalPointToCanvasPoint(node: ModelNode, local: Point, position = n
     x: local.x * scaleX,
     y: local.y * scaleY
   };
-  const radians = (node.rotation * Math.PI) / 180;
+  const radians = degreesToRadians(node.rotation);
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
   return {
@@ -5537,7 +5539,7 @@ function nodeLocalPointToCanvasPoint(node: ModelNode, local: Point, position = n
 function canvasPointToNodeLocalPoint(node: ModelNode, point: Point): Point {
   const dx = point.x - node.position.x;
   const dy = point.y - node.position.y;
-  const radians = (-node.rotation * Math.PI) / 180;
+  const radians = degreesToRadians(-node.rotation);
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
   const scaleX = getNodeScaleX(node) || 1;
@@ -5613,7 +5615,7 @@ export function moveRoutableLineDeviceSegment(
 function routableLineEndpointAnchorForLocalPoint(local: Point, size: Pick<ModelNode["size"], "width" | "height">): Point {
   const safeWidth = Math.max(1, size.width);
   const safeHeight = Math.max(1, size.height);
-  const clampAnchor = (value: number) => Math.max(-0.48, Math.min(0.48, value));
+  const clampAnchor = (value: number) => clampNumber(value, -0.48, 0.48);
   return {
     x: clampAnchor(local.x / safeWidth),
     y: clampAnchor(local.y / safeHeight)
@@ -6630,8 +6632,8 @@ export function mirrorNodes(nodes: ModelNode[], nodeIds: string[], axis: "horizo
 
 export function clampPointToBounds(point: Point, bounds: CanvasBounds): Point {
   return {
-    x: Math.round(Math.max(0, Math.min(bounds.width, point.x))),
-    y: Math.round(Math.max(0, Math.min(bounds.height, point.y)))
+    x: Math.round(clampNumber(point.x, 0, bounds.width)),
+    y: Math.round(clampNumber(point.y, 0, bounds.height))
   };
 }
 
@@ -6667,7 +6669,7 @@ export function clampNodePositionToBounds(node: ModelNode, bounds: CanvasBounds,
   const minY = -topOffset;
   const maxY = bounds.height - bottomOffset;
   const clampAxis = (value: number, min: number, max: number) =>
-    min <= max ? Math.max(min, Math.min(max, value)) : (min + max) / 2;
+    min <= max ? clampNumber(value, min, max) : (min + max) / 2;
   return {
     x: Math.round(clampAxis(position.x, minX, maxX)),
     y: Math.round(clampAxis(position.y, minY, maxY))
@@ -6761,8 +6763,8 @@ export function normalizeViewBoxToCanvas(box: ViewBox, bounds: CanvasBounds): Vi
   const maxY = bounds.height - box.height / 2;
   return {
     ...box,
-    x: Math.max(minX, Math.min(maxX, box.x)),
-    y: Math.max(minY, Math.min(maxY, box.y))
+    x: clampNumber(box.x, minX, maxX),
+    y: clampNumber(box.y, minY, maxY)
   };
 }
 
@@ -6871,8 +6873,8 @@ export function clampViewBoxDimensionsForZoom(
   const minRatio = 100 / safeMaxZoom;
   const maxRatio = 100 / safeMinZoom;
   return {
-    width: Math.max(bounds.width * minRatio, Math.min(bounds.width * maxRatio, size.width)),
-    height: Math.max(bounds.height * minRatio, Math.min(bounds.height * maxRatio, size.height))
+    width: clampNumber(size.width, bounds.width * minRatio, bounds.width * maxRatio),
+    height: clampNumber(size.height, bounds.height * minRatio, bounds.height * maxRatio)
   };
 }
 
@@ -6880,7 +6882,7 @@ export function createTerminals(type: TerminalType, count: number): Terminal[] {
   if (count <= 0) {
     return [];
   }
-  const safeCount = Math.max(1, Math.min(8, Math.round(count)));
+  const safeCount = clampNumber(Math.round(count), 1, 8);
   if (safeCount === 1) {
     return [{ id: "t1", label: terminalLabelForType(type, 0), type, anchor: { x: 0.5, y: 0 }, nodeNumber: makeNodeNumber(), vbase: defaultTerminalVbase(type) }];
   }
@@ -7389,7 +7391,7 @@ export function getTerminalPoint(node: ModelNode, terminalId?: string): Point {
     x: terminal.anchor.x * width,
     y: terminal.anchor.y * height
   };
-  const radians = (node.rotation * Math.PI) / 180;
+  const radians = degreesToRadians(node.rotation);
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
   const outwardOffset = !isBusNode(node) ? terminalOutwardOffsetLength(terminal, node.kind) : 0;
@@ -8054,7 +8056,7 @@ export function synchronizeBusTerminalsWithEdges(
 }
 
 function pointToNodeLocal(node: ModelNode, point: Point): Point {
-  const radians = (-node.rotation * Math.PI) / 180;
+  const radians = degreesToRadians(-node.rotation);
   const dx = point.x - node.position.x;
   const dy = point.y - node.position.y;
   return {
@@ -8064,7 +8066,7 @@ function pointToNodeLocal(node: ModelNode, point: Point): Point {
 }
 
 function nodeLocalToPoint(node: ModelNode, local: Point): Point {
-  const radians = (node.rotation * Math.PI) / 180;
+  const radians = degreesToRadians(node.rotation);
   return {
     x: Math.round(node.position.x + local.x * Math.cos(radians) - local.y * Math.sin(radians)),
     y: Math.round(node.position.y + local.x * Math.sin(radians) + local.y * Math.cos(radians))
@@ -8081,10 +8083,10 @@ function projectPointToNodeBoundary(node: ModelNode, point: Point): Point {
     xRatio >= yRatio
       ? {
           x: local.x >= 0 ? halfWidth : -halfWidth,
-          y: Math.max(-halfHeight, Math.min(halfHeight, local.y))
+          y: clampNumber(local.y, -halfHeight, halfHeight)
         }
       : {
-          x: Math.max(-halfWidth, Math.min(halfWidth, local.x)),
+          x: clampNumber(local.x, -halfWidth, halfWidth),
           y: local.y >= 0 ? halfHeight : -halfHeight
         };
   return nodeLocalToPoint(node, projected);
@@ -8097,7 +8099,7 @@ function closestPointOnSegment(point: Point, start: Point, end: Point): Point {
   if (lengthSquared === 0) {
     return start;
   }
-  const ratio = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared));
+  const ratio = clampNumber(((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared, 0, 1);
   return {
     x: start.x + dx * ratio,
     y: start.y + dy * ratio
@@ -8183,7 +8185,7 @@ export function projectPointToBusCenterline(node: ModelNode, point: Point): Poin
   if (isBoundaryBusNode(node)) {
     return projectPointToNodeBoundary(node, point);
   }
-  const radians = (-node.rotation * Math.PI) / 180;
+  const radians = degreesToRadians(-node.rotation);
   const dx = point.x - node.position.x;
   const dy = point.y - node.position.y;
   const local = {
@@ -8191,8 +8193,8 @@ export function projectPointToBusCenterline(node: ModelNode, point: Point): Poin
     y: dx * Math.sin(radians) + dy * Math.cos(radians)
   };
   const halfWidth = (node.size.width * Math.abs(getNodeScaleX(node))) / 2;
-  const clampedX = Math.max(-halfWidth, Math.min(halfWidth, local.x));
-  const forwardRadians = (node.rotation * Math.PI) / 180;
+  const clampedX = clampNumber(local.x, -halfWidth, halfWidth);
+  const forwardRadians = degreesToRadians(node.rotation);
   return {
     x: Math.round(node.position.x + clampedX * Math.cos(forwardRadians)),
     y: Math.round(node.position.y + clampedX * Math.sin(forwardRadians))
@@ -8412,7 +8414,7 @@ export function getTerminalNormal(node: ModelNode, terminalId?: string): Point {
     Math.abs(scaledAnchor.x) >= Math.abs(scaledAnchor.y)
       ? { x: Math.sign(scaledAnchor.x || 1), y: 0 }
       : { x: 0, y: Math.sign(scaledAnchor.y || 1) };
-  const radians = (node.rotation * Math.PI) / 180;
+  const radians = degreesToRadians(node.rotation);
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
   return {
@@ -8422,7 +8424,7 @@ export function getTerminalNormal(node: ModelNode, terminalId?: string): Point {
 }
 
 function getBusNormalToward(node: ModelNode, otherPoint: Point): Point {
-  const radians = (node.rotation * Math.PI) / 180;
+  const radians = degreesToRadians(node.rotation);
   const normal = { x: -Math.sin(radians), y: Math.cos(radians) };
   const vector = { x: otherPoint.x - node.position.x, y: otherPoint.y - node.position.y };
   const dot = normal.x * vector.x + normal.y * vector.y;
@@ -8444,7 +8446,7 @@ function getBoundaryNormalAtPoint(node: ModelNode, point: Point): Point {
   const raw = xRatio >= yRatio
     ? { x: Math.sign(local.x || 1), y: 0 }
     : { x: 0, y: Math.sign(local.y || 1) };
-  const radians = (node.rotation * Math.PI) / 180;
+  const radians = degreesToRadians(node.rotation);
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
   return {
@@ -11334,7 +11336,7 @@ function hasUprightVisualContent(node: ModelNode) {
 function visualHalfExtentsForNode(node: ModelNode) {
   const halfWidth = (node.size.width * Math.abs(getNodeScaleX(node))) / 2;
   const halfHeight = (node.size.height * Math.abs(getNodeScaleY(node))) / 2;
-  const radians = (node.rotation * Math.PI) / 180;
+  const radians = degreesToRadians(node.rotation);
   const cos = Math.abs(Math.cos(radians));
   const sin = Math.abs(Math.sin(radians));
   const rotatedHalfWidth = halfWidth * cos + halfHeight * sin;
@@ -11467,15 +11469,15 @@ function routeNodeLabelVerticalSegments(text: string) {
 
 function routeNodeLabelFontSize(node: ModelNode) {
   const baseSize = numericNodeParamForRoute(node, "_labelFontSize", DEFAULT_DEVICE_LABEL_FONT_SIZE);
-  const scaleX = Math.abs(getNodeScaleX(node)) || 1;
-  const scaleY = Math.abs(getNodeScaleY(node)) || 1;
+  const scaleX = getSafeNodeScaleX(node);
+  const scaleY = getSafeNodeScaleY(node);
   return baseSize * Math.sqrt(scaleX * scaleY);
 }
 
 function routeNodeLabelCanvasCenter(node: ModelNode, position = node.position): Point {
   const offset = routeNodeLabelOffset(node);
-  const scaleX = Math.abs(getNodeScaleX(node)) || 1;
-  const scaleY = Math.abs(getNodeScaleY(node)) || 1;
+  const scaleX = getSafeNodeScaleX(node);
+  const scaleY = getSafeNodeScaleY(node);
   return {
     x: position.x + offset.x * scaleX,
     y: position.y + offset.y * scaleY
@@ -11913,12 +11915,12 @@ function relevantBlockersForRoute(source: ModelNode, target: ModelNode, nodes: M
 
 function segmentOverlapAmount(a: Point, b: Point, segment: Segment) {
   if (a.x === b.x && segment.orientation === "vertical" && a.x === segment.a.x) {
-    const top = Math.max(Math.min(a.y, b.y), Math.min(segment.a.y, segment.b.y));
+    const top = clampNumber(segment.b.y, Math.min(a.y, b.y), segment.a.y);
     const bottom = Math.min(Math.max(a.y, b.y), Math.max(segment.a.y, segment.b.y));
     return Math.max(0, bottom - top);
   }
   if (a.y === b.y && segment.orientation === "horizontal" && a.y === segment.a.y) {
-    const left = Math.max(Math.min(a.x, b.x), Math.min(segment.a.x, segment.b.x));
+    const left = clampNumber(segment.b.x, Math.min(a.x, b.x), segment.a.x);
     const right = Math.min(Math.max(a.x, b.x), Math.max(segment.a.x, segment.b.x));
     return Math.max(0, right - left);
   }
@@ -12107,7 +12109,7 @@ function clampLane(value: number, min: number, max: number, bounds?: CanvasBound
   if (!bounds) {
     return value;
   }
-  return Math.max(min, Math.min(max, value));
+  return clampNumber(value, min, max);
 }
 
 function repairRouteAroundBlockers(points: Point[], blockers: ModelNode[], bounds?: CanvasBounds, protectedEndpointSegments = 0) {
@@ -12598,7 +12600,7 @@ export function insertOrthogonalRouteBend(
     const min = Math.min(first, second);
     const max = Math.max(first, second);
     const margin = Math.min(preferredMargin, Math.max(0, (max - min) / 2));
-    return Math.round(Math.max(min + margin, Math.min(max - margin, value)));
+    return Math.round(clampNumber(value, min + margin, max - margin));
   };
   if (from.y === to.y) {
     const x = clampCoordinate(boundedPointer.x, from.x, to.x);
@@ -13028,12 +13030,12 @@ function overlapAmount(a: Segment, b: Segment) {
     return 0;
   }
   if (a.orientation === "horizontal" && a.a.y === b.a.y) {
-    const left = Math.max(Math.min(a.a.x, a.b.x), Math.min(b.a.x, b.b.x));
+    const left = clampNumber(b.b.x, Math.min(a.a.x, a.b.x), b.a.x);
     const right = Math.min(Math.max(a.a.x, a.b.x), Math.max(b.a.x, b.b.x));
     return Math.max(0, right - left);
   }
   if (a.orientation === "vertical" && a.a.x === b.a.x) {
-    const top = Math.max(Math.min(a.a.y, a.b.y), Math.min(b.a.y, b.b.y));
+    const top = clampNumber(b.b.y, Math.min(a.a.y, a.b.y), b.a.y);
     const bottom = Math.min(Math.max(a.a.y, a.b.y), Math.max(b.a.y, b.b.y));
     return Math.max(0, bottom - top);
   }
@@ -13177,8 +13179,8 @@ function candidateLanes(
   const laneAvoidedSegments = avoidedSegments.filter((segment) =>
     boxesOverlap(segmentBox(segment, ROUTE_LANE_SEGMENT_MARGIN), laneCorridor)
   );
-  const clampX = (value: number) => bounds ? Math.max(0, Math.min(bounds.width, value)) : value;
-  const clampY = (value: number) => bounds ? Math.max(0, Math.min(bounds.height, value)) : value;
+  const clampX = (value: number) => bounds ? clampNumber(value, 0, bounds.width) : value;
+  const clampY = (value: number) => bounds ? clampNumber(value, 0, bounds.height) : value;
   const xLaneOffsets = blockerBoxes.flatMap((box) =>
     ROUTE_LANE_OFFSETS.flatMap((offset) => [box.left - offset, box.right + offset])
   );
@@ -13251,8 +13253,8 @@ function expandedCandidateLanes(
       )
     )
     .map(({ box }) => box);
-  const clampX = (value: number) => bounds ? Math.max(0, Math.min(bounds.width, value)) : value;
-  const clampY = (value: number) => bounds ? Math.max(0, Math.min(bounds.height, value)) : value;
+  const clampX = (value: number) => bounds ? clampNumber(value, 0, bounds.width) : value;
+  const clampY = (value: number) => bounds ? clampNumber(value, 0, bounds.height) : value;
   const xBoundaryLanes = bounds
     ? [32, 64, 96, bounds.width - 96, bounds.width - 64, bounds.width - 32].map(clampX)
     : [];
@@ -14903,8 +14905,8 @@ function endpointEscapeLaneValues(
       return value;
     }
     return axis === "x"
-      ? Math.max(0, Math.min(bounds.width, value))
-      : Math.max(0, Math.min(bounds.height, value));
+      ? clampNumber(value, 0, bounds.width)
+      : clampNumber(value, 0, bounds.height);
   };
   return prioritizeLaneValues([...anchors, ...bodyLanes, ...boundaryLanes].map(clamp), anchors, ROUTE_MAX_LANES_PER_AXIS * 2);
 }
@@ -15259,7 +15261,7 @@ function busEndpointCandidatePoints(bus: ModelNode, preferredPoints: Point[]): P
   const localXValues = preferredPoints.map((point) => pointToNodeLocal(bus, point).x);
   return uniquePoints(localXValues.map((localX) =>
     nodeLocalToPoint(bus, {
-      x: Math.max(-halfWidth, Math.min(halfWidth, localX)),
+      x: clampNumber(localX, -halfWidth, halfWidth),
       y: 0
     })
   )).slice(0, ROUTE_MAX_BUS_ENDPOINT_POINTS_PER_SIDE);

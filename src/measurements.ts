@@ -1,5 +1,6 @@
-import { getNodeScaleX, getNodeScaleY, inferESection, type ModelNode } from "./model";
-import { finiteNumber } from "./formatUtils";
+import { getNodeScaleX, getNodeScaleY, getSafeNodeScaleX, getSafeNodeScaleY, inferESection, type ModelNode } from "./model";
+import { finiteNumber, degreesToRadians } from "./formatUtils";
+import { clampNumber } from "./canvasViewport";
 
 export type MeasurementValueType = "number" | "string" | "boolean";
 export type MeasurementQuality = "good" | "bad" | "stale" | "missing";
@@ -133,7 +134,7 @@ const DEFAULT_TYPE_VALUES = {
 const LEGACY_DEFAULT_MEASUREMENT_FONT_SIZE = 12;
 
 function normalizedDefaultMeasurementFontSize(value: unknown, fallback?: MeasurementTypeDefinition) {
-  const next = Math.max(6, Math.min(96, finiteNumber(value, fallback?.defaultFontSize ?? DEFAULT_TYPE_VALUES.defaultFontSize)));
+  const next = clampNumber(finiteNumber(value, fallback?.defaultFontSize ?? DEFAULT_TYPE_VALUES.defaultFontSize), 6, 96);
   return fallback?.defaultFontSize === DEFAULT_TYPE_VALUES.defaultFontSize && next === LEGACY_DEFAULT_MEASUREMENT_FONT_SIZE
     ? DEFAULT_TYPE_VALUES.defaultFontSize
     : next;
@@ -203,15 +204,15 @@ export const EMPTY_PROJECT_MEASUREMENTS: ProjectMeasurementConfig = {
 const typeById = (types: readonly MeasurementTypeDefinition[]) => new Map(types.map((item) => [item.id, item]));
 
 export function measurementFontScaleForNode(node: ModelNode): number {
-  const scaleX = Math.abs(getNodeScaleX(node)) || 1;
-  const scaleY = Math.abs(getNodeScaleY(node)) || 1;
+  const scaleX = getSafeNodeScaleX(node);
+  const scaleY = getSafeNodeScaleY(node);
   return Math.sqrt(scaleX * scaleY);
 }
 
 export function measurementOffsetScaleForNode(node: ModelNode): { x: number; y: number } {
   return {
-    x: Math.abs(getNodeScaleX(node)) || 1,
-    y: Math.abs(getNodeScaleY(node)) || 1
+    x: getSafeNodeScaleX(node),
+    y: getSafeNodeScaleY(node)
   };
 }
 
@@ -258,7 +259,7 @@ function normalizedGroupBorderWidth(value: unknown): number | undefined {
   if (value === undefined || value === null || value === "") {
     return undefined;
   }
-  return Math.max(0, Math.min(12, finiteNumber(value, 1)));
+  return clampNumber(finiteNumber(value, 1), 0, 12);
 }
 
 function normalizedProfilePosition(value: unknown): string | undefined {
@@ -413,7 +414,7 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
       shortLabel: String(item.shortLabel ?? fallback?.shortLabel ?? name).trim() || name,
       defaultUnit: String(item.defaultUnit ?? fallback?.defaultUnit ?? DEFAULT_TYPE_VALUES.defaultUnit),
       valueType: normalizedValueType(item.valueType, fallback?.valueType ?? DEFAULT_TYPE_VALUES.valueType),
-      defaultDecimals: Math.max(0, Math.min(8, finiteNumber(item.defaultDecimals, fallback?.defaultDecimals ?? DEFAULT_TYPE_VALUES.defaultDecimals))),
+      defaultDecimals: clampNumber(finiteNumber(item.defaultDecimals, fallback?.defaultDecimals ?? DEFAULT_TYPE_VALUES.defaultDecimals), 0, 8),
       defaultColor: String(item.defaultColor ?? fallback?.defaultColor ?? DEFAULT_TYPE_VALUES.defaultColor),
       defaultFontFamily: String(item.defaultFontFamily ?? fallback?.defaultFontFamily ?? DEFAULT_TYPE_VALUES.defaultFontFamily),
       defaultFontSize: normalizedDefaultMeasurementFontSize(item.defaultFontSize, fallback),
@@ -444,7 +445,7 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
         defaultVisible: item.defaultVisible,
         labelOverride: item.labelOverride ? String(item.labelOverride) : undefined,
         unitOverride: item.unitOverride ? String(item.unitOverride) : undefined,
-        decimalsOverride: item.decimalsOverride === undefined ? undefined : Math.max(0, Math.min(8, finiteNumber(item.decimalsOverride, 3))),
+        decimalsOverride: item.decimalsOverride === undefined ? undefined : clampNumber(finiteNumber(item.decimalsOverride, 3), 0, 8),
         styleOverride: normalizeStyleOverride(item.styleOverride)
       }];
     });
@@ -468,7 +469,7 @@ function normalizeMeasurementItem(item: Partial<MeasurementItemBinding>, validTy
     visible: item.visible,
     labelOverride: item.labelOverride !== undefined ? String(item.labelOverride) : undefined,
     unitOverride: item.unitOverride !== undefined ? String(item.unitOverride) : undefined,
-    decimalsOverride: item.decimalsOverride === undefined ? undefined : Math.max(0, Math.min(8, finiteNumber(item.decimalsOverride, 3))),
+    decimalsOverride: item.decimalsOverride === undefined ? undefined : clampNumber(finiteNumber(item.decimalsOverride, 3), 0, 8),
     styleOverride: normalizeStyleOverride(item.styleOverride)
   };
 }
@@ -585,7 +586,7 @@ function measurementSourcePointForProfileItem(nodeId: string, item: Pick<DeviceM
 
 function defaultMeasurementGroupOffsetForNode(node: ModelNode, terminal?: ModelNode["terminals"][number]): { x: number; y: number } {
   const rotateOffset = (offset: { x: number; y: number }) => {
-    const radians = (node.rotation * Math.PI) / 180;
+    const radians = degreesToRadians(node.rotation);
     const cos = Math.cos(radians);
     const sin = Math.sin(radians);
     return {
@@ -694,7 +695,7 @@ export function formatMeasurementDisplayValue(
     return unit ? `-- ${unit}` : "--";
   }
   const rendered = typeof value.value === "number"
-    ? value.value.toFixed(Math.max(0, Math.min(8, decimals)))
+    ? value.value.toFixed(clampNumber(decimals, 0, 8))
     : String(value.value);
   return unit ? `${rendered} ${unit}` : rendered;
 }

@@ -113,7 +113,7 @@ export function createDefaultCustomDeviceTerminalAnchors(count: number, sourceAn
     { x: -0.5, y: 0.25 },
     { x: 0.5, y: 0.25 }
   ];
-  const safeCount = Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, Math.round(count || 0)));
+  const safeCount = clampNumber(Math.round(count || 0), 0, MAX_CUSTOM_DEVICE_TERMINALS);
   return Array.from({ length: safeCount }, (_, index) => {
     const source = sourceAnchors[index] ?? fallbackAnchors[index] ?? { x: 0, y: 0 };
     return projectCustomDeviceTerminalAnchorToBoundary(source);
@@ -145,7 +145,7 @@ export function createEmptyCustomDeviceDraft(attributeLibraryName = "交流设�
 export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, sectionName = resolveTemplateComponentType(template)): CustomDeviceDraft {
   const attributeLibraryName = normalizeAttributeLibraryName(template.attributeLibrary);
   const section = normalizeComponentTypeName(sectionName);
-  const terminalCount = Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, template.terminalCount));
+  const terminalCount = clampNumber(template.terminalCount, 0, MAX_CUSTOM_DEVICE_TERMINALS);
   const terminalTypes = (template.terminalTypes ?? Array.from({ length: template.terminalCount }, () => template.terminalType)).slice(0, MAX_CUSTOM_DEVICE_TERMINALS) as TerminalType[];
   const terminalAssociations = normalizeContainerTerminalAssociations(
     terminalTypes,
@@ -186,7 +186,7 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
 }
 
 export function createDefinitionVisualDraft(template: DeviceTemplate): DeviceDefinitionVisualDraft {
-  const terminalCount = Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, Math.round(template.terminalCount || 0)));
+  const terminalCount = clampNumber(Math.round(template.terminalCount || 0), 0, MAX_CUSTOM_DEVICE_TERMINALS);
   const sourceTerminalTypes = (template.terminalTypes ?? Array.from({ length: terminalCount }, () => template.terminalType)).slice(0, terminalCount) as TerminalType[];
   const terminalTypes = Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => sourceTerminalTypes[index] ?? template.terminalType ?? "ac") as TerminalType[];
   return {

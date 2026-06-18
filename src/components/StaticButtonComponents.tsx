@@ -44,7 +44,7 @@ function staticButtonLayerDropdownPlacementForTrigger(trigger: HTMLElement): Sta
   const availableAbove = Math.max(0, aboveBottom - viewportMargin);
   const openAbove = availableBelow < STATIC_BUTTON_LAYER_DROPDOWN_MIN_HEIGHT && availableAbove > availableBelow;
   const availableHeight = openAbove ? availableAbove : availableBelow;
-  const maxHeight = Math.max(40, Math.min(STATIC_BUTTON_LAYER_DROPDOWN_MAX_HEIGHT, availableHeight));
+  const maxHeight = clampNumber(availableHeight, 40, STATIC_BUTTON_LAYER_DROPDOWN_MAX_HEIGHT);
   const top = openAbove
     ? Math.max(viewportMargin, aboveBottom - maxHeight)
     : Math.min(belowTop, Math.max(viewportMargin, viewportHeight - viewportMargin - maxHeight));

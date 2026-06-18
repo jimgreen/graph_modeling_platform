@@ -1,4 +1,6 @@
 // @ts-nocheck
+import { clampNumber } from "../canvasViewport";
+import { degreesToRadians } from "../formatUtils";
 
 export function createSetNodes(__appScope: Record<string, any>) {
   return (value: SetStateAction<ModelNode[]>) => {
@@ -3990,7 +3992,7 @@ export function createRemoveMeasurementsFromNode(__appScope: Record<string, any>
 export function createMeasurementGroupShellOffsetForNode(__appScope: Record<string, any>) {
   return (node: ModelNode, terminalId?: string): Point => {
     const rotateOffset = (offset: Point): Point => {
-      const radians = (node.rotation * Math.PI) / 180;
+      const radians = degreesToRadians(node.rotation);
       const cos = Math.cos(radians);
       const sin = Math.sin(radians);
       return {
@@ -4545,7 +4547,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                 aria-label="量测组边框宽度"
                 onCommit={(nextValue) => updateSelectedMeasurementGroups((current) => ({
                   ...current,
-                  borderWidth: Math.max(0, Math.min(12, Number(nextValue)))
+                  borderWidth: clampNumber(Number(nextValue), 0, 12)
                 }), "修改量测组边框宽度")}
               />
             </td>

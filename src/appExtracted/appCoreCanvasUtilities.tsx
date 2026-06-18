@@ -426,7 +426,8 @@ import {
   formatStatusNumber,
   formatInspectorScaleValue,
   formatStatusScalePercent,
-  formatStatusRotationDegrees
+  formatStatusRotationDegrees,
+  degreesToRadians
 } from "../formatUtils";
 import {
   downloadText,
@@ -812,7 +813,7 @@ export function routeMidpoint(points: Point[]): Point | null {
 }
 
 export function rotatePointAround(point: Point, center: Point, degrees: number): Point {
-  const radians = (degrees * Math.PI) / 180;
+  const radians = degreesToRadians(degrees);
   const dx = point.x - center.x;
   const dy = point.y - center.y;
   return {
@@ -867,7 +868,7 @@ export function localScaleKindForScreenHandle(kind: ScaleHandleKind, rotation: n
     return kind;
   }
   const screenAxis = kind === "scale-x" ? { x: 1, y: 0 } : { x: 0, y: 1 };
-  const radians = (-normalizeRotationDegrees(rotation) * Math.PI) / 180;
+  const radians = degreesToRadians(-normalizeRotationDegrees(rotation));
   const localVector = {
     x: screenAxis.x * Math.cos(radians) - screenAxis.y * Math.sin(radians),
     y: screenAxis.x * Math.sin(radians) + screenAxis.y * Math.cos(radians)
@@ -2247,7 +2248,7 @@ export const pointOnBusForSnap = (bus: ModelNode, point: Point, tolerance = CONN
   if (!isBusNode(bus)) {
     return null;
   }
-  const radians = (-bus.rotation * Math.PI) / 180;
+  const radians = degreesToRadians(-bus.rotation);
   const dx = point.x - bus.position.x;
   const dy = point.y - bus.position.y;
   const local = {
@@ -2607,10 +2608,10 @@ export function visibleCanvasViewBoxFromRects(frameRect: RectLike, svgRect: Rect
   if (svgRect.width <= 0 || svgRect.height <= 0 || viewBox.width <= 0 || viewBox.height <= 0) {
     return viewBox;
   }
-  const leftCss = Math.max(0, Math.min(svgRect.width, frameRect.left - svgRect.left));
-  const rightCss = Math.max(0, Math.min(svgRect.width, frameRect.right - svgRect.left));
-  const topCss = Math.max(0, Math.min(svgRect.height, frameRect.top - svgRect.top));
-  const bottomCss = Math.max(0, Math.min(svgRect.height, frameRect.bottom - svgRect.top));
+  const leftCss = clampNumber(frameRect.left - svgRect.left, 0, svgRect.width);
+  const rightCss = clampNumber(frameRect.right - svgRect.left, 0, svgRect.width);
+  const topCss = clampNumber(frameRect.top - svgRect.top, 0, svgRect.height);
+  const bottomCss = clampNumber(frameRect.bottom - svgRect.top, 0, svgRect.height);
   if (rightCss <= leftCss || bottomCss <= topCss) {
     return viewBox;
   }
@@ -3521,7 +3522,7 @@ export const measurementGroupWithCommonSetting = (
     case "borderColor":
       return { ...group, borderColor: value || "#64748b" };
     case "borderWidth":
-      return { ...group, borderWidth: Math.max(0, Math.min(12, Number(value))) };
+      return { ...group, borderWidth: clampNumber(Number(value), 0, 12) };
     default:
       return group;
   }

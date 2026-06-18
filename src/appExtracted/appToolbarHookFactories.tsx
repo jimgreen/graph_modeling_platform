@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { clampNumber } from "../canvasViewport";
 
 export function createOpenNodeDoubleClickEditor(__appScope: Record<string, any>) {
   return (node: ModelNode) => {
@@ -3087,7 +3088,7 @@ export function createAppHookCallback100(__appScope: Record<string, any>) {
       return;
     }
     const handlePointerMove = (event: globalThis.PointerEvent) => {
-      const viewportMax = Math.max(SIDE_PANEL_MIN_WIDTH, Math.min(SIDE_PANEL_MAX_WIDTH, window.innerWidth - 96));
+      const viewportMax = clampNumber(window.innerWidth - 96, SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH);
       const deltaX = event.clientX - sidePanelResize.startX;
       const nextWidth =
         sidePanelResize.side === "left"
@@ -3271,8 +3272,8 @@ export function createAppHookCallback104(__appScope: Record<string, any>) {
       return;
     }
     const handlePointerMove = (event: globalThis.PointerEvent) => {
-      const maxWidth = Math.max(TOPOLOGY_WARNING_PANEL_MIN_WIDTH, Math.min(TOPOLOGY_WARNING_PANEL_MAX_WIDTH, window.innerWidth - topologyWarningPanelResize.startLeft - TOPOLOGY_WARNING_PANEL_MARGIN));
-      const maxHeight = Math.max(VALIDATION_PANEL_MIN_HEIGHT, Math.min(VALIDATION_PANEL_MAX_HEIGHT, window.innerHeight - topologyWarningPanelResize.startTop - TOPOLOGY_WARNING_PANEL_MARGIN));
+      const maxWidth = clampNumber(window.innerWidth - topologyWarningPanelResize.startLeft - TOPOLOGY_WARNING_PANEL_MARGIN, TOPOLOGY_WARNING_PANEL_MIN_WIDTH, TOPOLOGY_WARNING_PANEL_MAX_WIDTH);
+      const maxHeight = clampNumber(window.innerHeight - topologyWarningPanelResize.startTop - TOPOLOGY_WARNING_PANEL_MARGIN, VALIDATION_PANEL_MIN_HEIGHT, VALIDATION_PANEL_MAX_HEIGHT);
       setTopologyWarningPanelWidth(clampPanelDimension(
         topologyWarningPanelResize.startWidth + event.clientX - topologyWarningPanelResize.startClientX,
         TOPOLOGY_WARNING_PANEL_MIN_WIDTH,
@@ -4153,7 +4154,7 @@ export function createAppHookCallback134(__appScope: Record<string, any>) {
         ? `<image class="lod-node-state-image" href="${escapeXml(stateImageHref)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" preserveAspectRatio="xMidYMid slice"/>`
         : "";
       const stateTextMarkup = stateText
-        ? `<text class="lod-node-state-text" x="0" y="0" text-anchor="middle" dominant-baseline="middle" fill="${escapeXml(stateVisual?.textColor || stateVisual?.color || stroke)}" font-size="${formatSvgNumber(Math.max(10, Math.min(22, Math.min(node.size.width, node.size.height) * 0.32)))}" font-weight="800" paint-order="stroke" stroke="rgba(255,255,255,0.88)" stroke-width="3" stroke-linejoin="round">${escapeXml(stateText)}</text>`
+        ? `<text class="lod-node-state-text" x="0" y="0" text-anchor="middle" dominant-baseline="middle" fill="${escapeXml(stateVisual?.textColor || stateVisual?.color || stroke)}" font-size="${formatSvgNumber(clampNumber(Math.min(node.size.width, node.size.height) * 0.32, 10, 22))}" font-weight="800" paint-order="stroke" stroke="rgba(255,255,255,0.88)" stroke-width="3" stroke-linejoin="round">${escapeXml(stateText)}</text>`
         : "";
       if (nodeIsRoutableLineDevice) {
         const path = pointsToOrthogonalPath(routableLineDeviceRenderLocalPoints(node));

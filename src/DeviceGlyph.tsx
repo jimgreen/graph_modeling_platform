@@ -43,6 +43,7 @@ import {
   staticSymbolTextValue,
   uprightText
 } from "./staticRenderUtils";
+import { clampNumber } from "./canvasViewport";
 
 export type DeviceGlyphMode = "full" | "geometry" | "text";
 export type DeviceGlyphProps = {
@@ -104,7 +105,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         0,
         {
           fill: stateTextFill,
-          fontSize: miniature ? 11 : Math.max(10, Math.min(22, Math.min(w, h) * 0.34)),
+          fontSize: miniature ? 11 : clampNumber(Math.min(w, h) * 0.34, 10, 22),
           fontWeight: "800",
           textAnchor: "middle",
           dominantBaseline: "middle",
@@ -355,7 +356,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       if (!renderGeometry) {
         return null;
       }
-      const headerHeight = Math.max(28, Math.min(h * 0.32, 42));
+      const headerHeight = clampNumber(h * 0.32, 28, 42);
       return (
         <g style={staticSymbolShadowStyle(node)}>
           <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
@@ -612,7 +613,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       if (!renderGeometry) {
         return null;
       }
-      const headerHeight = Math.max(24, Math.min(36, h * 0.32));
+      const headerHeight = clampNumber(h * 0.32, 24, 36);
       return (
         <g style={staticSymbolShadowStyle(node)}>
           <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
@@ -663,7 +664,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       if (!renderGeometry) {
         return null;
       }
-      const headerHeight = Math.max(26, Math.min(38, h * 0.28));
+      const headerHeight = clampNumber(h * 0.28, 26, 38);
       return (
         <g>
           <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />

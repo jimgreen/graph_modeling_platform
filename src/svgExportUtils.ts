@@ -4,6 +4,7 @@ import type { MeasurementGroup, MeasurementItemBinding, PlatformMeasurementConfi
 import { measurementFontScaleForNode, measurementOffsetScaleForNode, resolveMeasurementItemDisplay } from "./measurements";
 import { escapeXml, formatSvgNumber, svgStrokeDashArray } from "./svgUtils";
 import { nodeLabelText, nodeLabelFontSize, nodeLabelShouldRender, nodeLabelTextAnchor, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenY } from "./nodeLabelUtils";
+import { clampNumber } from "./canvasViewport";
 
 function buildSvgNodeLabelTextMarkup(node: ModelNode) {
   const text = nodeLabelText(node);
@@ -184,7 +185,7 @@ export function exportMeasurementItemMetadataAttributes(
 export const exportMeasurementGroupBackgroundColor = (group: MeasurementGroup) => group.backgroundColor ?? "rgba(255, 255, 255, 0.84)";
 export const exportMeasurementGroupBorderColor = (group: MeasurementGroup) => group.borderColor ?? "rgba(100, 116, 139, 0.36)";
 export const exportMeasurementGroupBorderWidth = (group: MeasurementGroup) =>
-  group.borderStyle === "none" ? 0 : Math.max(0, Math.min(12, Number(group.borderWidth ?? 1)));
+  group.borderStyle === "none" ? 0 : clampNumber(Number(group.borderWidth ?? 1), 0, 12);
 export const exportMeasurementGroupBorderDashArray = (group: MeasurementGroup) =>
   exportMeasurementGroupBorderWidth(group) <= 0 || group.borderStyle === "none"
     ? undefined

@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { degreesToRadians } from "../formatUtils";
 
 export function createUpdateSingleNodeDragImperativePreview(__appScope: Record<string, any>) {
   return (dragState: DraggingState, previewDelta: Point) => {
@@ -3970,7 +3971,7 @@ export function createNormalizeStaticBoxDimension(__appScope: Record<string, any
 
 export function createToLocalNodePoint(__appScope: Record<string, any>) {
   return (node: ModelNode, point: Point): Point => {
-    const radians = (-node.rotation * Math.PI) / 180;
+    const radians = degreesToRadians(-node.rotation);
     const dx = point.x - node.position.x;
     const dy = point.y - node.position.y;
     return {

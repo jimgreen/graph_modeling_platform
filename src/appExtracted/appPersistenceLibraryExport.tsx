@@ -297,7 +297,9 @@ import {
   viewBoxZoomPercent,
   type PersistedSavedSchemeRecord,
   type SavedSchemeRecord,
-  type SavedProjectRecord
+  type SavedProjectRecord,
+  getSafeNodeScaleX,
+  getSafeNodeScaleY
 } from "../model";
 import { isGlobalSaveShortcut, resolveKeyboardShortcutScope } from "../keyboardShortcuts";
 import {
@@ -426,7 +428,8 @@ import {
   formatStatusNumber,
   formatInspectorScaleValue,
   formatStatusScalePercent,
-  formatStatusRotationDegrees
+  formatStatusRotationDegrees,
+  degreesToRadians
 } from "../formatUtils";
 import {
   downloadText,
@@ -652,7 +655,7 @@ export function cloneTopologyErrorsForUndo(errors: TopologyValidationError[]): T
 }
 
 export function clampCanvasDimension(value: number, min: number, max: number, fallback: number) {
-  return Math.round(Math.max(min, Math.min(max, Number.isFinite(value) ? value : fallback)));
+  return Math.round(clampNumber(Number.isFinite(value) ? value : fallback, min, max));
 }
 
 export async function fetchBackendSchemes(): Promise<SavedSchemeRecord[]> {
@@ -1380,7 +1383,7 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
         size: template.size ?? { width: 96, height: 62 },
         params,
         terminalType: (template.terminalType ?? "ac") as TerminalType,
-        terminalCount: Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, Number(template.terminalCount ?? 0))),
+        terminalCount: clampNumber(Number(template.terminalCount ?? 0), 0, MAX_CUSTOM_DEVICE_TERMINALS),
         terminalTypes: (template.terminalTypes ?? []).slice(0, MAX_CUSTOM_DEVICE_TERMINALS) as TerminalType[],
         terminalLabels: (template.terminalLabels ?? []).slice(0, MAX_CUSTOM_DEVICE_TERMINALS),
         terminalRoles: (template.terminalRoles ?? []).slice(0, MAX_CUSTOM_DEVICE_TERMINALS) as ContainerTerminalRole[],
@@ -1617,7 +1620,7 @@ export function normalizeDefinitionOverrideTerminalTypes(value: unknown, count: 
     return undefined;
   }
   const normalized = value
-    .slice(0, Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, count || value.length)))
+    .slice(0, clampNumber(count || value.length, 0, MAX_CUSTOM_DEVICE_TERMINALS))
     .map(normalizeDefinitionOverrideTerminalType)
     .filter((type): type is TerminalType => Boolean(type));
   return normalized.length > 0 ? normalized : undefined;
@@ -1628,7 +1631,7 @@ export function normalizeDefinitionOverrideTerminalAnchors(value: unknown, count
     return undefined;
   }
   const anchors = value
-    .slice(0, Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, count || value.length)))
+    .slice(0, clampNumber(count || value.length, 0, MAX_CUSTOM_DEVICE_TERMINALS))
     .map((item) => {
       if (!item || typeof item !== "object" || Array.isArray(item)) {
         return null;
@@ -1659,7 +1662,7 @@ export function normalizeDeviceDefinitionOverrides(value: unknown): Record<strin
         return overrides;
       }
       const rawOverride = override as DeviceTemplateDefinitionOverride & Partial<DeviceTemplate>;
-      const terminalCount = Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, Math.round(Number(rawOverride.terminalCount ?? 0) || 0)));
+      const terminalCount = clampNumber(Math.round(Number(rawOverride.terminalCount ?? 0) || 0), 0, MAX_CUSTOM_DEVICE_TERMINALS);
       const terminalTypes = normalizeDefinitionOverrideTerminalTypes(rawOverride.terminalTypes, terminalCount);
       const terminalAnchors = normalizeDefinitionOverrideTerminalAnchors(rawOverride.terminalAnchors, terminalCount || terminalTypes?.length || 0);
       const stateDefinitions = Array.isArray(rawOverride.stateDefinitions)
@@ -1811,7 +1814,7 @@ export function readSidePanelMode(storageKey: string): SidePanelMode {
 }
 
 export function clampPanelDimension(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, Math.round(value)));
+  return clampNumber(Math.round(value), min, max);
 }
 
 export function clampFloatingDialogLayout(
@@ -1915,7 +1918,7 @@ export function nodeGeometryTransform(node: ModelNode) {
 }
 
 export function nodeUprightScaleTransform(node: ModelNode) {
-  return `scale(${formatSvgNumber(Math.abs(getNodeScaleX(node)) || 1)} ${formatSvgNumber(Math.abs(getNodeScaleY(node)) || 1)})`;
+  return `scale(${formatSvgNumber(getSafeNodeScaleX(node))} ${formatSvgNumber(getSafeNodeScaleY(node))})`;
 }
 
 export function nodeImageContentTransform(node: ModelNode) {
@@ -1943,7 +1946,7 @@ export function backgroundPageCanvasTransform(sourceBounds: CanvasBounds, target
 export function nodeTransformedHalfExtents(node: ModelNode, includeUprightContent = false) {
   const halfWidth = (node.size.width * Math.abs(getNodeScaleX(node))) / 2;
   const halfHeight = (node.size.height * Math.abs(getNodeScaleY(node))) / 2;
-  const radians = (node.rotation * Math.PI) / 180;
+  const radians = degreesToRadians(node.rotation);
   const cos = Math.abs(Math.cos(radians));
   const sin = Math.abs(Math.sin(radians));
   const rotatedHalfWidth = halfWidth * cos + halfHeight * sin;

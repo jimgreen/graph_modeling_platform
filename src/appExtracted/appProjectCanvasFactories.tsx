@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { clampNumber } from "../canvasViewport";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[]) => {
@@ -1494,7 +1495,7 @@ export function createAutoAlignCanvasGraphics(__appScope: Record<string, any>) {
       writeOperationLog("自动对齐判定门槛无效");
       return;
     }
-    const threshold = Math.max(AUTO_ALIGN_MIN_THRESHOLD_PX, Math.min(AUTO_ALIGN_MAX_THRESHOLD_PX, Math.round(parsedThreshold)));
+    const threshold = clampNumber(Math.round(parsedThreshold), AUTO_ALIGN_MIN_THRESHOLD_PX, AUTO_ALIGN_MAX_THRESHOLD_PX);
     const layoutUnits = buildCanvasLayoutUnits(
       activeLayerGroups,
       activeLayerNodes,
@@ -3667,7 +3668,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                 disabled={isBrowseMode || draftBorderHidden}
                 onCommit={(nextValue) => updateMeasurementEditorGroupSettings((group) => ({
                   ...group,
-                  borderWidth: Math.max(0, Math.min(12, Number(nextValue)))
+                  borderWidth: clampNumber(Number(nextValue), 0, 12)
                 }))}
               />
             </label>

@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { clampNumber } from "../canvasViewport";
 
 export function createOpenEdgeContextMenu(__appScope: Record<string, any>) {
   return (event: MouseEvent<SVGPathElement>, edgeId: string, routePoints?: Point[]) => {
@@ -2527,7 +2528,7 @@ export function createResetDeviceDefinitionDraft(__appScope: Record<string, any>
 export function createUpdateCustomDraftTerminalCount(__appScope: Record<string, any>) {
   return (value: number) => {
   const { MAX_CUSTOM_DEVICE_TERMINALS, TERMINAL_TYPE_LIBRARY_LABELS, createDefaultCustomDeviceTerminalAnchors, normalizeContainerTerminalAssociations, setCustomDeviceDraft } = __appScope;
-    const count = Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, Math.round(value || 0)));
+    const count = clampNumber(Math.round(value || 0), 0, MAX_CUSTOM_DEVICE_TERMINALS);
     setCustomDeviceDraft((current) => {
       const fallback = current.attributeLibraryName.includes("直流")
         ? "dc"
