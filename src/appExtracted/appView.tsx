@@ -2004,7 +2004,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                 量测定义
               </button>
             </div>
-            <div className="custom-device-tab-panel">
+            <div className={`custom-device-tab-panel custom-device-tab-panel-${customDeviceDialogView}`}>
             {customDeviceDialogView === "terminals" || customDeviceDialogView === "icon" ? (<>
             {customDeviceDialogView === "icon" && renderStateVisualPager(customDeviceDraft.stateDefinitions, customDeviceStatePageId, setCustomDeviceStatePageId, {
                 update: updateCustomDeviceStateDraftRow,

@@ -3720,10 +3720,64 @@ export function createCloseMeasurementConfigDialog(__appScope: Record<string, an
   };
 }
 
+export function createFlushMeasurementConfigDialogDraftInputs(__appScope: Record<string, any>) {
+  return () => {
+  const { flushSync, measurementConfigDialogRef } = __appScope;
+    if (typeof document === "undefined") {
+      return;
+    }
+    const activeElement = document.activeElement;
+    const dialog = measurementConfigDialogRef?.current;
+    if (!dialog || !activeElement || !dialog.contains(activeElement) || typeof activeElement.blur !== "function") {
+      return;
+    }
+    const blurFocusedElement = () => activeElement.blur();
+    if (typeof flushSync === "function") {
+      flushSync(blurFocusedElement);
+      return;
+    }
+    blurFocusedElement();
+  };
+}
+
+const duplicateMeasurementTypeValues = (measurementTypes: MeasurementTypeDefinition[], field: "id" | "name") => {
+  const counts = new Map<string, number>();
+  for (const type of measurementTypes) {
+    const value = String(type[field] ?? "").trim();
+    if (!value) {
+      continue;
+    }
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .filter(([, count]) => count > 1)
+    .map(([value]) => value);
+};
+
+const measurementTypeDuplicateMessage = (measurementTypes: MeasurementTypeDefinition[]) => {
+  const duplicateIds = duplicateMeasurementTypeValues(measurementTypes, "id");
+  const duplicateNames = duplicateMeasurementTypeValues(measurementTypes, "name");
+  const messages: string[] = [];
+  if (duplicateIds.length > 0) {
+    messages.push(`量测类型ID不能重复：${duplicateIds.join("、")}`);
+  }
+  if (duplicateNames.length > 0) {
+    messages.push(`量测类型名称不能重复：${duplicateNames.join("、")}`);
+  }
+  return messages.join("\n");
+};
+
 export function createSaveMeasurementConfigDialog(__appScope: Record<string, any>) {
   return async () => {
-  const { backendMeasurementConfigLoadedRef, lastPersistedMeasurementConfigPayloadRef, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeMeasurementConfig, saveBackendMeasurementConfigPayload, serializeMeasurementConfigForStorage, setMeasurementConfig, setMeasurementConfigDraft, setMeasurementConfigSaveStatus, writeMeasurementConfig, writeOperationLog } = __appScope;
+  const { backendMeasurementConfigLoadedRef, flushMeasurementConfigDialogDraftInputs, lastPersistedMeasurementConfigPayloadRef, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeMeasurementConfig, saveBackendMeasurementConfigPayload, serializeMeasurementConfigForStorage, setMeasurementConfig, setMeasurementConfigDraft, setMeasurementConfigSaveStatus, writeMeasurementConfig, writeOperationLog } = __appScope;
+    flushMeasurementConfigDialogDraftInputs?.();
     const normalizedMeasurementConfig = normalizeMeasurementConfig(measurementConfigDraftRef.current ?? measurementConfigDraft ?? measurementConfig);
+    const duplicateMessage = measurementTypeDuplicateMessage(normalizedMeasurementConfig.measurementTypes);
+    if (duplicateMessage) {
+      setMeasurementConfigSaveStatus("error");
+      window.alert(duplicateMessage);
+      return;
+    }
     const normalizedMeasurementConfigPayload = serializeMeasurementConfigForStorage(normalizedMeasurementConfig);
     setMeasurementConfigSaveStatus("saving");
     writeMeasurementConfig(normalizedMeasurementConfig);
@@ -3755,13 +3809,26 @@ export function createUpdateMeasurementType(__appScope: Record<string, any>) {
 
 export function createAddMeasurementType(__appScope: Record<string, any>) {
   return () => {
-  const { updateMeasurementConfig } = __appScope;
+  const { measurementConfig, measurementConfigDraft, measurementConfigDraftRef, updateMeasurementConfig } = __appScope;
     const name = window.prompt("请输入量测类型名称", "新量测");
     const normalizedName = name?.trim();
     if (!normalizedName) {
       return;
     }
-    const id = `customMeasurement${Date.now().toString(36)}`;
+    const currentMeasurementConfig = measurementConfigDraftRef.current ?? measurementConfigDraft ?? measurementConfig;
+    const existingNames = new Set(currentMeasurementConfig.measurementTypes.map((type) => String(type.name ?? "").trim()).filter(Boolean));
+    if (existingNames.has(normalizedName)) {
+      window.alert(`量测类型名称不能重复：${normalizedName}`);
+      return;
+    }
+    const existingIds = new Set(currentMeasurementConfig.measurementTypes.map((type) => String(type.id ?? "").trim()).filter(Boolean));
+    const idBase = `customMeasurement${Date.now().toString(36)}`;
+    let id = idBase;
+    let suffix = 1;
+    while (existingIds.has(id)) {
+      id = `${idBase}_${suffix}`;
+      suffix += 1;
+    }
     updateMeasurementConfig((current) => ({
       ...current,
       measurementTypes: [

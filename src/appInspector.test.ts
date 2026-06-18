@@ -1556,7 +1556,7 @@ describe("graph inspector panel", () => {
     const customVisualEnd = dialogBlock.indexOf('customDeviceDialogView === "parameters"', customVisualStart);
     const customVisualBlock = dialogBlock.slice(customVisualStart, customVisualEnd);
     const measurementPanelStart = source.indexOf("const renderDeviceDefinitionMeasurementPanel = (target: DeviceDefinitionMeasurementPanelTarget) => {");
-    const measurementPanelEnd = source.indexOf("const renderMeasurementConfigDialog = () =>", measurementPanelStart);
+    const measurementPanelEnd = source.indexOf("export function createRenderMeasurementConfigDialog", measurementPanelStart);
     const measurementPanelBlock = source.slice(measurementPanelStart, measurementPanelEnd);
     const customSaveStart = source.indexOf("const saveCustomDeviceDefinitionDialog =");
     const customSaveEnd = source.indexOf("const renderStateVisualPager = (", customSaveStart);
@@ -5130,9 +5130,12 @@ describe("graph inspector panel", () => {
     const customDialogStart = source.indexOf("{customDeviceDialogOpen && (");
     const customDialogEnd = source.indexOf("{stateIconDrawingDialog && (", customDialogStart);
     const customDialogBlock = source.slice(customDialogStart, customDialogEnd);
-    const measurementConfigDialogStart = source.indexOf("const renderMeasurementConfigDialog = () =>");
-    const measurementConfigDialogEnd = source.indexOf("const renderMeasurementEditorDialog = () =>", measurementConfigDialogStart);
+    const measurementConfigDialogStart = source.indexOf("export function createRenderMeasurementConfigDialog");
+    const measurementConfigDialogEnd = source.indexOf("export function createRenderMeasurementEditorDialog", measurementConfigDialogStart);
     const measurementConfigDialogBlock = source.slice(measurementConfigDialogStart, measurementConfigDialogEnd);
+    const measurementConfigDialogHeaderStart = measurementConfigDialogBlock.indexOf("<header>");
+    const measurementConfigDialogHeaderEnd = measurementConfigDialogBlock.indexOf('<div className="measurement-config-panel">', measurementConfigDialogHeaderStart);
+    const measurementConfigDialogHeaderBlock = measurementConfigDialogBlock.slice(measurementConfigDialogHeaderStart, measurementConfigDialogHeaderEnd);
     const titleBlock = cssRuleBlock(styles, ".device-library-dialog-title");
     const resizeBlock = cssRuleBlock(styles, ".device-library-dialog-resize");
     const floatingBlock = cssRuleBlock(styles, ".custom-device-dialog.floating,");
@@ -10756,8 +10759,8 @@ describe("graph inspector panel", () => {
     const selectedPanelStart = source.indexOf("{!isStaticNode(inspectorSelectedNode) && (");
     const selectedPanelEnd = source.indexOf("{isStaticNode(inspectorSelectedNode) && (", selectedPanelStart);
     const selectedPanelBlock = source.slice(selectedPanelStart, selectedPanelEnd);
-    const selectedMeasurementTableStart = source.indexOf("const renderSelectedNodeMeasurementTable = (node: ModelNode)");
-    const selectedMeasurementTableEnd = source.indexOf("const renderMeasurementConfigDialog = () =>", selectedMeasurementTableStart);
+    const selectedMeasurementTableStart = source.indexOf("export function createRenderSelectedNodeMeasurementTable");
+    const selectedMeasurementTableEnd = source.indexOf("export function createBeginMeasurementDrag", selectedMeasurementTableStart);
     const selectedMeasurementTableBlock = source.slice(selectedMeasurementTableStart, selectedMeasurementTableEnd);
     const devicePanelStart = source.indexOf('<div className="device-param-stack">');
     const devicePanelEnd = source.indexOf("{inspectorSelectedNode && inspectorTab === \"graph\" && (", devicePanelStart);
@@ -10765,12 +10768,15 @@ describe("graph inspector panel", () => {
     const contextMeasurementMenuStart = source.indexOf("{isEditMode && contextMeasurementNode && !isStaticNode(contextMeasurementNode) && (");
     const contextMeasurementMenuEnd = source.indexOf("{contextMenuForNode && activeSelectedNodeIds.length > 0 && (", contextMeasurementMenuStart);
     const contextMeasurementMenuBlock = source.slice(contextMeasurementMenuStart, contextMeasurementMenuEnd);
-    const measurementEditorStart = source.indexOf("const openMeasurementEditorForNode = (node: ModelNode) => {");
-    const measurementEditorEnd = source.indexOf("const hideAutoPanelsFromWorkspace", measurementEditorStart);
+    const measurementEditorStart = source.indexOf("export function createOpenMeasurementEditorForNode");
+    const measurementEditorEnd = source.indexOf("export function createHandleSidePanelPointerLeave", measurementEditorStart);
     const measurementEditorBlock = source.slice(measurementEditorStart, measurementEditorEnd);
-    const measurementConfigDialogStart = source.indexOf("const renderMeasurementConfigDialog = () =>");
-    const measurementConfigDialogEnd = source.indexOf("const renderMeasurementEditorDialog = () =>", measurementConfigDialogStart);
+    const measurementConfigDialogStart = source.indexOf("export function createRenderMeasurementConfigDialog");
+    const measurementConfigDialogEnd = source.indexOf("export function createRenderMeasurementEditorDialog", measurementConfigDialogStart);
     const measurementConfigDialogBlock = source.slice(measurementConfigDialogStart, measurementConfigDialogEnd);
+    const measurementConfigDialogHeaderStart = measurementConfigDialogBlock.indexOf("<header>");
+    const measurementConfigDialogHeaderEnd = measurementConfigDialogBlock.indexOf('<div className="measurement-config-panel">', measurementConfigDialogHeaderStart);
+    const measurementConfigDialogHeaderBlock = measurementConfigDialogBlock.slice(measurementConfigDialogHeaderStart, measurementConfigDialogHeaderEnd);
     const serverMeasurementNormalizerStart = serverSource.indexOf("function normalizeMeasurementConfig(payload)");
     const serverMeasurementNormalizerEnd = serverSource.indexOf("async function readMeasurementConfig", serverMeasurementNormalizerStart);
     const serverMeasurementNormalizerBlock = serverSource.slice(serverMeasurementNormalizerStart, serverMeasurementNormalizerEnd);
@@ -10804,8 +10810,10 @@ describe("graph inspector panel", () => {
     expect(source).toContain("deleteMeasurementProfileItem");
     expect(source).toContain("openMeasurementConfigDialog");
     expect(source).toContain("closeMeasurementConfigDialog");
+    expect(source).toContain("flushMeasurementConfigDialogDraftInputs");
     expect(source).toContain("saveMeasurementConfigDialog");
     expect(source).toContain("const currentMeasurementConfig = measurementConfigDraftRef.current ?? measurementConfigDraft ?? measurementConfig;");
+    expect(source).toContain("flushMeasurementConfigDialogDraftInputs?.();");
     expect(source).toContain("normalizeMeasurementConfig(measurementConfigDraftRef.current ?? measurementConfigDraft ?? measurementConfig)");
     expect(source).toContain("const selectedMeasurementGroups = useMemo");
     expect(source).toContain("selectedMeasurementGroups.length");
@@ -10829,11 +10837,13 @@ describe("graph inspector panel", () => {
     expect(measurementConfigDialogBlock).not.toContain("下移");
     expect(measurementConfigDialogBlock).toContain("保存");
     expect(measurementConfigDialogBlock).toContain("取消");
+    expect(measurementConfigDialogHeaderBlock).not.toContain("closeMeasurementConfigDialog");
     expect(measurementConfigDialogBlock).toContain("device-library-dialog-title");
     expect(measurementConfigDialogBlock).toContain("device-library-dialog-resize");
     expect(measurementConfigDialogBlock).toContain("调整动态量测配置窗口大小");
     expect(measurementConfigDialogBlock).toContain("measurementConfigDraft");
     expect(measurementConfigDialogBlock).toContain("saveMeasurementConfigDialog");
+    expect(measurementConfigDialogBlock).toContain("onPointerDown={flushMeasurementConfigDialogDraftInputs}");
     expect(measurementConfigDialogBlock).not.toContain("setMeasurementConfigDialogOpen(false)");
     expect(measurementConfigDialogBlock).not.toContain("measurement-profile-grid");
     expect(measurementConfigDialogBlock).not.toContain("measurement-profile-option");
@@ -10876,7 +10886,7 @@ describe("graph inspector panel", () => {
     expect(deviceInfoTabsBlock).toBe(graphToolbarBlock.replace(".graph-info-toolbar", ".device-info-tabs"));
     expect(deviceInfoTabsButtonBlock).toBe(graphToolbarButtonBlock.replace(".graph-info-toolbar", ".device-info-tabs"));
     expect(deviceInfoTabsActiveBlock).toBe(graphToolbarActiveBlock.replace(".graph-info-toolbar", ".device-info-tabs"));
-    expect(source).toContain("const renderSelectedNodeMeasurementTable = (node: ModelNode)");
+    expect(source).toContain("export function createRenderSelectedNodeMeasurementTable");
     expect(source).toContain("动态量测");
     expect(source).toContain("添加默认量测");
     expect(source).toContain("添加量测项");
@@ -10950,7 +10960,7 @@ describe("graph inspector panel", () => {
     expect(source).not.toContain("measurement-editor-readonly-value");
     expect(measurementEditorBlock).not.toContain("setSelectedDeviceInfoView(\"measurement\")");
     expect(source).toContain("const cloneMeasurementGroupForDraft = (group: MeasurementGroup): MeasurementGroup");
-    expect(source).toContain("const renderMeasurementEditorDialog = () =>");
+    expect(source).toContain("export function createRenderMeasurementEditorDialog");
     expect(source).toContain("measurement-editor-dialog");
     expect(source).toContain("measurement-editor-table");
     expect(source).toContain("labelVisible");
@@ -11180,6 +11190,7 @@ describe("graph inspector panel", () => {
   });
 
   test("stretches custom device editor tab pages to the available dialog height", async () => {
+    const source = await readAppSource();
     const styles = await readStyles();
     const dialogStart = styles.indexOf(".custom-device-dialog {");
     const dialogEnd = styles.indexOf(".custom-device-dialog.floating", dialogStart);
@@ -11199,6 +11210,11 @@ describe("graph inspector panel", () => {
     const measurementPanelStart = styles.indexOf(".device-definition-measurement-panel {");
     const measurementPanelEnd = styles.indexOf(".device-definition-measurement-panel .measurement-table-wrap", measurementPanelStart);
     const measurementPanelBlock = styles.slice(measurementPanelStart, measurementPanelEnd);
+    const parameterPanelStart = styles.indexOf(".custom-device-tab-panel-parameters {");
+    const parameterPanelEnd = styles.indexOf(".custom-device-tab-panel-parameters > .custom-device-actions", parameterPanelStart);
+    const parameterPanelBlock = styles.slice(parameterPanelStart, parameterPanelEnd);
+    const parameterTableBlock = cssRuleBlock(styles, ".custom-device-tab-panel-parameters > .custom-param-table-wrap");
+    const visualPreviewBlock = cssRuleBlock(styles, ".custom-device-tab-panel-terminals > .custom-device-preview .custom-device-preview-stage,\n.custom-device-tab-panel-icon > .custom-device-preview .custom-device-preview-stage,\n.device-definition-visual-panel > .custom-device-preview .custom-device-preview-stage");
 
     expect(dialogBlock).toContain("display: flex;");
     expect(dialogBlock).toContain("flex-direction: column;");
@@ -11208,7 +11224,14 @@ describe("graph inspector panel", () => {
     expect(layoutBlock).toContain("align-items: stretch;");
     expect(editorBlock).toContain("grid-template-rows: auto auto minmax(0, 1fr);");
     expect(editorBlock).toContain("overflow: hidden;");
-    expect(tabPanelBlock).toContain("overflow: auto;");
+    expect(source).toContain('className={`custom-device-tab-panel custom-device-tab-panel-${customDeviceDialogView}`}');
+    expect(tabPanelBlock).toContain("display: grid;");
+    expect(tabPanelBlock).toContain("height: 100%;");
+    expect(tabPanelBlock).toContain("overflow: hidden;");
+    expect(parameterPanelBlock).toContain("grid-template-rows: minmax(0, 1fr) auto;");
+    expect(parameterTableBlock).toContain("height: 100%;");
+    expect(parameterTableBlock).toContain("max-height: none;");
+    expect(visualPreviewBlock).toContain("min-height: clamp(260px, 42vh, 520px);");
     expect(measurementPanelBlock).toContain("height: 100%;");
     expect(formBlock).toContain("minmax(0, 1.05fr)");
     expect(formBlock).not.toContain("92px");

@@ -3398,7 +3398,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
 
 export function createRenderMeasurementConfigDialog(__appScope: Record<string, any>) {
   return () => {
-  const { BufferedTextInput, DeferredColorInput, Save, addMeasurementType, button, closeMeasurementConfigDialog, deleteMeasurementType, deviceLibraryDialogLayouts, deviceLibraryDialogStyle, div, footer, h2, header, input, isBrowseMode, measurementConfig, measurementConfigDialogOpen, measurementConfigDialogRef, measurementConfigDraft, measurementConfigSaveStatus, option, p, saveMeasurementConfigDialog, section, select, span, startDeviceLibraryDialogDrag, startDeviceLibraryDialogResize, stopDeviceLibraryDialogEvent, table, tbody, td, th, thead, tr, updateMeasurementType } = __appScope;
+  const { BufferedTextInput, DeferredColorInput, Save, addMeasurementType, button, closeMeasurementConfigDialog, deleteMeasurementType, deviceLibraryDialogLayouts, deviceLibraryDialogStyle, div, flushMeasurementConfigDialogDraftInputs, footer, h2, header, input, isBrowseMode, measurementConfig, measurementConfigDialogOpen, measurementConfigDialogRef, measurementConfigDraft, measurementConfigSaveStatus, option, p, saveMeasurementConfigDialog, section, select, span, startDeviceLibraryDialogDrag, startDeviceLibraryDialogResize, stopDeviceLibraryDialogEvent, table, tbody, td, th, thead, tr, updateMeasurementType } = __appScope;
     if (!measurementConfigDialogOpen) {
       return null;
     }
@@ -3430,7 +3430,6 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
               <h2 id="measurement-config-title">动态量测配置</h2>
               <p>配置全平台统一的量测类型、单位、小数位和默认显示样式。</p>
             </div>
-            <button type="button" onClick={closeMeasurementConfigDialog}>取消</button>
           </header>
           <div className="measurement-config-panel">
             <div className="measurement-config-toolbar">
@@ -3504,6 +3503,7 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
               type="button"
               className="primary"
               disabled={isBrowseMode || measurementConfigSaveStatus === "saving"}
+              onPointerDown={flushMeasurementConfigDialogDraftInputs}
               onClick={() => void saveMeasurementConfigDialog()}
             >
               <Save size={14} />
