@@ -417,6 +417,36 @@ describe("default device state draft rows", () => {
     expect(restored?.svgSource).not.toContain('viewBox="0 0 240 160"');
   });
 
+  test("restores a single generated state icon layer without shrinking it", () => {
+    const importedElement = {
+      ...createImportedStateIconElement(
+        "imported-svg",
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-72 -32 144 64"><rect x="-72" y="-32" width="144" height="64" rx="8" fill="#f8fafc"/><text x="0" y="0">默认图标</text></svg>',
+        "默认图标"
+      ),
+      x: 120,
+      y: 80,
+      width: 120,
+      height: 88,
+      rotation: 0
+    };
+    const imageSource = decodeURIComponent(stateIconDrawingToImage([importedElement]).split(",")[1] ?? "");
+
+    const restored = createEditableStateIconElementsFromSvgSource(imageSource, "状态0");
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({
+      kind: "imported-svg",
+      x: 120,
+      y: 80,
+      width: 120,
+      height: 88,
+      rotation: 0
+    });
+    expect(restored[0].svgSource).toContain('viewBox="-72 -32 144 64"');
+    expect(restored[0].svgSource).not.toContain('viewBox="0 0 240 160"');
+  });
+
   test("keeps externally imported SVG as one drawing element", () => {
     const imported = createEditableStateIconElementsFromSvgSource(
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="4" y="4" width="56" height="56"/><circle cx="32" cy="32" r="16"/><text x="32" y="36">A</text></svg>',

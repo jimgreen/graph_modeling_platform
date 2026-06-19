@@ -480,6 +480,35 @@ function firstSvgMarkupInGeneratedGroup(markup: string) {
   return /<svg\b[\s\S]*<\/svg>/i.exec(markup)?.[0] ?? "";
 }
 
+function generatedStateIconRootOpenMarkup(source: string) {
+  const svgOpen = /<svg\b([^>]*)>/i.exec(source)?.[1] ?? "";
+  if (!svgOpen) {
+    return "";
+  }
+  const width = readSvgMarkupNumber(svgOpen, "width", 0);
+  const height = readSvgMarkupNumber(svgOpen, "height", 0);
+  const viewBox = readSvgMarkupAttribute(svgOpen, "viewBox").replace(/\s+/g, " ").trim();
+  return (width === 240 && height === 160) || viewBox === "0 0 240 160" ? svgOpen : "";
+}
+
+function generatedStateIconTopLevelGroupMarkups(source: string) {
+  if (!generatedStateIconRootOpenMarkup(source)) {
+    return [];
+  }
+  return source.match(/<g\b[^>]*\btransform\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)[\s\S]*?<\/g>/gi) ?? [];
+}
+
+function createStateIconDrawingElementsFromGeneratedSvgSource(source: string, fileName: string) {
+  const groups = generatedStateIconTopLevelGroupMarkups(source);
+  if (groups.length === 0) {
+    return null;
+  }
+  const restored = groups.map((group, index) =>
+    createStateIconDrawingElementFromGeneratedGroupMarkup(group, `${fileName || "SVG"}-${index + 1}`)
+  );
+  return restored.every(Boolean) ? (restored as StateIconDrawingElement[]) : null;
+}
+
 export function createStateIconDrawingElementFromGeneratedGroupMarkup(
   markup: string,
   fileName: string
@@ -751,8 +780,9 @@ export function createEditableStateIconElementsFromSvgSource(
     return [createImportedStateIconElement("imported-svg", stateIconSvgElementSource(source) || source, fileName)];
   }
   const parsed = parseStateIconSvgSource(source);
-  if (!parsed || parsed.editableChildren.length <= 1) {
-    return [createImportedStateIconElement("imported-svg", stateIconSvgElementSource(source) || source, fileName)];
+  if (!parsed) {
+    return createStateIconDrawingElementsFromGeneratedSvgSource(source, fileName) ??
+      [createImportedStateIconElement("imported-svg", stateIconSvgElementSource(source) || source, fileName)];
   }
   const generatedElements = parsed.editableChildren.map((child, index) =>
     createStateIconDrawingElementFromGeneratedGroupMarkup(child.outerHTML, `${fileName || "SVG"}-${index + 1}`)
@@ -765,6 +795,9 @@ export function createEditableStateIconElementsFromSvgSource(
         `${fileName || "SVG"}-${index + 1}`
       )
     );
+  }
+  if (parsed.editableChildren.length <= 1) {
+    return [createImportedStateIconElement("imported-svg", stateIconSvgElementSource(source) || source, fileName)];
   }
   return parsed.editableChildren.map((child, index) =>
     createImportedStateIconElement(
