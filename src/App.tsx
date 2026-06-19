@@ -511,7 +511,7 @@ import {
 } from "./staticRenderUtils";
 import { DeviceGlyph, MemoDeviceGlyph, SvgMarkupChunk } from "./DeviceGlyph";
 import { buildSvgNodeLabelMarkup, svgDisplayAttribute, exportSvgSafeId, exportSvgLayerId, exportSvgUniqueId, exportSvgLayerScriptMarkup, exportDeviceMetadataAttributes, exportMeasurementGroupMetadataAttributes, exportMeasurementItemMetadataAttributes, exportMeasurementGroupBackgroundColor, exportMeasurementGroupBorderColor, exportMeasurementGroupBorderWidth, exportMeasurementGroupBorderDashArray, exportMeasurementGroupAnchorPoint, exportMeasurementGroupLocalOffset, exportMeasurementGroupMetrics, buildExportMeasurementGroupMarkup } from "./svgExportUtils";
-import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "./stateIconDrawing";
+import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, upsertDefaultStateDraftRow, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "./stateIconDrawing";
 import { fallbackComponentTypeForAttributeLibrary, resolveTemplateComponentType, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "./customDeviceUtils";
 import { useBatchEditors } from "./hooks/useBatchEditors";
 import { APP_STATIC_SCOPE } from "./appExtracted/appStaticScope";
@@ -4146,12 +4146,10 @@ const addStateIconDrawingElement = createAddStateIconDrawingElement(__appScope);
 const deleteStateIconDrawingElement = createDeleteStateIconDrawingElement(__appScope); Object.assign(__appScope, { deleteStateIconDrawingElement });
 const openStateIconDrawingDialog = createOpenStateIconDrawingDialog(__appScope); Object.assign(__appScope, { openStateIconDrawingDialog });
 const applyStateIconDrawingDialog = createApplyStateIconDrawingDialog(__appScope); Object.assign(__appScope, { applyStateIconDrawingDialog });
-const stateIconDrawingDefaultDraftRow = (scope: StateIconDrawingTarget["scope"]): DeviceDefinitionStateDraftRow => ({
-    ...createStateDraftRow(scope === "definition" ? definitionDefaultStateVisualDraft() : customDeviceDefaultStateVisualDraft()),
-    id: DEFAULT_STATE_PAGE_ID,
-    value: "",
-    name: "默认状态"
-  });
+const stateIconDrawingDefaultDraftRow = (scope: StateIconDrawingTarget["scope"]): DeviceDefinitionStateDraftRow =>
+    scope === "definition"
+      ? defaultStateDraftRow(definitionStateDraftRows, definitionDefaultStateVisualDraft())
+      : defaultStateDraftRow(customDeviceDraft.stateDefinitions, customDeviceDefaultStateVisualDraft());
 Object.assign(__appScope, { stateIconDrawingDefaultDraftRow });
 const stateIconDrawingDraftRowForTarget = (target: StateIconDrawingTarget): DeviceDefinitionStateDraftRow | null => {
     if (isDefaultStatePageId(target.rowId)) {
@@ -4231,13 +4229,25 @@ useEffect(() => {
       return;
     }
     if (isDefaultStatePageId(stateIconDrawingDialog.target.rowId)) {
+      const defaultStateIconPatch: Partial<DeviceDefinitionStateDraftRow> = {
+        image: stateIconDrawingInlineImage,
+        imageAssetId: "",
+        backgroundImage: "",
+        backgroundImageAssetId: ""
+      };
       if (stateIconDrawingDialog.target.scope === "definition") {
         if (!definitionVisualDraft) {
           return;
         }
+        const defaultStateRow = definitionStateDraftRows[0];
         const imageFieldsAlreadySynced =
           definitionVisualDraft.backgroundImage === stateIconDrawingInlineImage &&
-          !definitionVisualDraft.backgroundImageAssetId;
+          !definitionVisualDraft.backgroundImageAssetId &&
+          defaultStateRow &&
+          (defaultStateRow.image ?? "") === stateIconDrawingInlineImage &&
+          !defaultStateRow.imageAssetId &&
+          !defaultStateRow.backgroundImage &&
+          !defaultStateRow.backgroundImageAssetId;
         if (imageFieldsAlreadySynced) {
           return;
         }
@@ -4251,10 +4261,19 @@ useEffect(() => {
               }
             : current
         );
+        setDefinitionStateDraftRows((current) =>
+          upsertDefaultStateDraftRow(current, definitionDefaultStateVisualDraft(), defaultStateIconPatch)
+        );
       } else {
+        const defaultStateRow = customDeviceDraft.stateDefinitions[0];
         const imageFieldsAlreadySynced =
           customDeviceDraft.backgroundImage === stateIconDrawingInlineImage &&
-          !customDeviceDraft.backgroundImageAssetId;
+          !customDeviceDraft.backgroundImageAssetId &&
+          defaultStateRow &&
+          (defaultStateRow.image ?? "") === stateIconDrawingInlineImage &&
+          !defaultStateRow.imageAssetId &&
+          !defaultStateRow.backgroundImage &&
+          !defaultStateRow.backgroundImageAssetId;
         if (imageFieldsAlreadySynced) {
           return;
         }
@@ -4262,6 +4281,7 @@ useEffect(() => {
           ...current,
           backgroundImage: stateIconDrawingInlineImage,
           backgroundImageAssetId: "",
+          stateDefinitions: upsertDefaultStateDraftRow(current.stateDefinitions, customDeviceDefaultStateVisualDraft(), defaultStateIconPatch),
           error: ""
         }));
       }

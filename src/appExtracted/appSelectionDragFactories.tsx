@@ -2195,8 +2195,8 @@ export function createRoutePointsForMovedEdgesBlockedByStationaryNodes(__appScop
     }
     const routingNodes = routingNodesForConnectionEdges(movedCandidateEdges, nextNodes, movedIds);
     const stationaryNodes = routingNodes.filter((node) => !movedIds.has(node.id));
-    const movedEndpointNodes = routingNodes.filter((node) => movedIds.has(node.id));
-    if (stationaryNodes.length === 0 && movedEndpointNodes.length === 0) {
+    const endpointNodeById = new Map(routingNodes.map((node) => [node.id, node]));
+    if (stationaryNodes.length === 0 && endpointNodeById.size === 0) {
       return baseRoutePoints;
     }
     const stationaryCandidates = getRouteBlockingCandidates(stationaryNodes);
@@ -2215,8 +2215,8 @@ export function createRoutePointsForMovedEdgesBlockedByStationaryNodes(__appScop
       if (!route) {
         continue;
       }
-      const movedEndpointBlockers = movedEndpointNodes.filter((node) => node.id === edge.sourceId || node.id === edge.targetId);
-      if (routeIntersectsEndpointNodeBodies(route.points, edge, movedEndpointBlockers)) {
+      const endpointBlockers = [endpointNodeById.get(edge.sourceId), endpointNodeById.get(edge.targetId)].filter(Boolean);
+      if (routeIntersectsEndpointNodeBodies(route.points, edge, endpointBlockers)) {
         if (nextRoutePoints === baseRoutePoints) {
           nextRoutePoints = { ...baseRoutePoints };
         }

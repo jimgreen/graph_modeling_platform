@@ -1793,10 +1793,12 @@ export function createUpdateCustomDeviceTerminalAnchor(__appScope: Record<string
 
 export function createUpdateCustomDeviceStateDraftRow(__appScope: Record<string, any>) {
   return (rowId: string, patch: Partial<DeviceDefinitionStateDraftRow>) => {
-  const { setCustomDeviceDraft } = __appScope;
+  const { customDeviceDefaultStateVisualDraft, isDefaultStatePageId, setCustomDeviceDraft, upsertDefaultStateDraftRow } = __appScope;
     setCustomDeviceDraft((current) => ({
       ...current,
-      stateDefinitions: current.stateDefinitions.map((row) => (row.id === rowId ? { ...row, ...patch } : row)),
+      stateDefinitions: isDefaultStatePageId(rowId)
+        ? upsertDefaultStateDraftRow(current.stateDefinitions, customDeviceDefaultStateVisualDraft(), patch)
+        : current.stateDefinitions.map((row) => (row.id === rowId ? { ...row, ...patch } : row)),
       error: ""
     }));
   };
@@ -1804,14 +1806,16 @@ export function createUpdateCustomDeviceStateDraftRow(__appScope: Record<string,
 
 export function createAddCustomDeviceStateDraftRow(__appScope: Record<string, any>) {
   return () => {
-  const { createStateDraftRowFromDefaultVisual, customDeviceDefaultStateVisualDraft, customDeviceDraft, setCustomDeviceDraft, setCustomDeviceStatePageId } = __appScope;
-    const row = createStateDraftRowFromDefaultVisual(customDeviceDefaultStateVisualDraft(), {
-      value: String(customDeviceDraft.stateDefinitions.length),
-      name: `状态${customDeviceDraft.stateDefinitions.length}`
+  const { appendNonDefaultStateDraftRow, createStateDraftRowFromDefaultVisual, customDeviceDefaultStateVisualDraft, customDeviceDraft, defaultStateDraftRow, nextNonDefaultStateIndex, setCustomDeviceDraft, setCustomDeviceStatePageId } = __appScope;
+    const defaultVisual = customDeviceDefaultStateVisualDraft();
+    const nextIndex = nextNonDefaultStateIndex(customDeviceDraft.stateDefinitions);
+    const row = createStateDraftRowFromDefaultVisual(defaultStateDraftRow(customDeviceDraft.stateDefinitions, defaultVisual), {
+      value: String(nextIndex),
+      name: `状态${nextIndex}`
     });
     setCustomDeviceDraft((current) => ({
       ...current,
-      stateDefinitions: [...current.stateDefinitions, row],
+      stateDefinitions: appendNonDefaultStateDraftRow(current.stateDefinitions, defaultVisual, row),
       error: ""
     }));
     setCustomDeviceStatePageId(row.id);
@@ -1823,7 +1827,7 @@ export function createDeleteCustomDeviceStateDraftRow(__appScope: Record<string,
   const { setCustomDeviceDraft } = __appScope;
     setCustomDeviceDraft((current) => ({
       ...current,
-      stateDefinitions: current.stateDefinitions.filter((row) => row.id !== rowId),
+      stateDefinitions: current.stateDefinitions.filter((row, index) => index === 0 || row.id !== rowId),
       error: ""
     }));
   };
@@ -2211,20 +2215,26 @@ export function createDeleteDefinitionDraftRow(__appScope: Record<string, any>) 
 
 export function createUpdateDefinitionStateDraftRow(__appScope: Record<string, any>) {
   return (rowId: string, patch: Partial<DeviceDefinitionStateDraftRow>) => {
-  const { setDefinitionDraftError, setDefinitionStateDraftRows } = __appScope;
-    setDefinitionStateDraftRows((current) => current.map((row) => (row.id === rowId ? { ...row, ...patch } : row)));
+  const { definitionDefaultStateVisualDraft, isDefaultStatePageId, setDefinitionDraftError, setDefinitionStateDraftRows, upsertDefaultStateDraftRow } = __appScope;
+    setDefinitionStateDraftRows((current) =>
+      isDefaultStatePageId(rowId)
+        ? upsertDefaultStateDraftRow(current, definitionDefaultStateVisualDraft(), patch)
+        : current.map((row) => (row.id === rowId ? { ...row, ...patch } : row))
+    );
     setDefinitionDraftError("");
   };
 }
 
 export function createAddDefinitionStateDraftRow(__appScope: Record<string, any>) {
   return () => {
-  const { createStateDraftRowFromDefaultVisual, definitionDefaultStateVisualDraft, definitionStateDraftRows, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId } = __appScope;
-    const row = createStateDraftRowFromDefaultVisual(definitionDefaultStateVisualDraft(), {
-      value: String(definitionStateDraftRows.length),
-      name: `状态${definitionStateDraftRows.length}`
+  const { appendNonDefaultStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionStateDraftRows, nextNonDefaultStateIndex, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId } = __appScope;
+    const defaultVisual = definitionDefaultStateVisualDraft();
+    const nextIndex = nextNonDefaultStateIndex(definitionStateDraftRows);
+    const row = createStateDraftRowFromDefaultVisual(defaultStateDraftRow(definitionStateDraftRows, defaultVisual), {
+      value: String(nextIndex),
+      name: `状态${nextIndex}`
     });
-    setDefinitionStateDraftRows((current) => [...current, row]);
+    setDefinitionStateDraftRows((current) => appendNonDefaultStateDraftRow(current, defaultVisual, row));
     setDefinitionStatePageId(row.id);
     setDefinitionDraftError("");
   };
@@ -2236,7 +2246,7 @@ export function createDeleteDefinitionStateDraftRow(__appScope: Record<string, a
     if (!requireEditMode("修改状态定义")) {
       return;
     }
-    setDefinitionStateDraftRows((current) => current.filter((row) => row.id !== rowId));
+    setDefinitionStateDraftRows((current) => current.filter((row, index) => index === 0 || row.id !== rowId));
     setDefinitionDraftError("");
   };
 }
@@ -2298,12 +2308,17 @@ export function createSaveDeviceDefinitionStateVisualDraft(__appScope: Record<st
     }
     const stateDefinitions = stateValidation.states;
     const activeStateValue = activeStateDraftRow(definitionStateDraftRows, definitionStatePageId)?.value.trim() ?? "";
+    const defaultStatusValue = stateDefinitions[0]?.value ?? "";
     if (selectedDefinitionTemplate.custom) {
       setCustomDeviceTemplates((current) =>
         current.map((template) =>
           template.kind === selectedDefinitionTemplate.kind
             ? {
                 ...template,
+                params: {
+                  ...template.params,
+                  ...(defaultStatusValue ? { status: defaultStatusValue } : {})
+                },
                 stateDefinitions
               }
             : template
@@ -2317,6 +2332,10 @@ export function createSaveDeviceDefinitionStateVisualDraft(__appScope: Record<st
           [selectedDefinitionTemplate.kind]: {
             ...existingOverride,
             kind: selectedDefinitionTemplate.kind,
+            params: {
+              ...(existingOverride?.params ?? {}),
+              ...(defaultStatusValue ? { status: defaultStatusValue } : {})
+            },
             stateDefinitions,
             updatedAt: new Date().toISOString()
           }
@@ -2353,6 +2372,7 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
     }
     const stateDefinitions = stateValidation.states;
     const activeStateValue = activeStateDraftRow(definitionStateDraftRows, definitionStatePageId)?.value.trim() ?? "";
+    const defaultStatusValue = stateDefinitions[0]?.value ?? "";
     const terminalTypes = definitionVisualDraft.terminalTypes.slice(0, definitionVisualDraft.terminalCount);
     const terminalLabels = definitionVisualDraft.terminalLabels.slice(0, definitionVisualDraft.terminalCount).map((label, index) => {
       const type = terminalTypes[index] ?? selectedDefinitionTemplate.terminalType;
@@ -2365,7 +2385,8 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
     };
     const backgroundParams = {
       backgroundImage: definitionVisualDraft.backgroundImage,
-      backgroundImageAssetId: definitionVisualDraft.backgroundImageAssetId
+      backgroundImageAssetId: definitionVisualDraft.backgroundImageAssetId,
+      ...(defaultStatusValue ? { status: defaultStatusValue } : {})
     };
     if (selectedDefinitionTemplate.custom) {
       setCustomDeviceTemplates((current) =>
@@ -2936,23 +2957,16 @@ export function createStateIconDrawingKeyDown(__appScope: Record<string, any>) {
 
 export function createAddStateIconDrawingElement(__appScope: Record<string, any>) {
   return (kind: StateVisualShapeKind) => {
-  const { DEFAULT_STATE_PAGE_ID, createStateDraftRow, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, definitionDefaultStateVisualDraft, definitionStateDraftRows, isDefaultStatePageId, setStateIconDrawingDialog } = __appScope;
+  const { createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionStateDraftRows, isDefaultStatePageId, setStateIconDrawingDialog } = __appScope;
     setStateIconDrawingDialog((current) => {
       if (!current) {
         return current;
       }
       const row =
         isDefaultStatePageId(current.target.rowId)
-          ? {
-              ...createStateDraftRow(
-                current.target.scope === "definition"
-                  ? definitionDefaultStateVisualDraft()
-                  : customDeviceDefaultStateVisualDraft()
-              ),
-              id: DEFAULT_STATE_PAGE_ID,
-              value: "",
-              name: "默认状态"
-            }
+          ? current.target.scope === "definition"
+            ? defaultStateDraftRow(definitionStateDraftRows, definitionDefaultStateVisualDraft())
+            : defaultStateDraftRow(customDeviceDraft.stateDefinitions, customDeviceDefaultStateVisualDraft())
           : current.target.scope === "definition"
             ? definitionStateDraftRows.find((item) => item.id === current.target.rowId)
             : customDeviceDraft.stateDefinitions.find((item) => item.id === current.target.rowId);
@@ -3708,7 +3722,8 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         strokeColor: "transparent",
         lineWidth: "0",
         backgroundImage,
-        backgroundImageAssetId
+        backgroundImageAssetId,
+        ...(stateDefinitions[0]?.value ? { status: stateDefinitions[0].value } : {})
       },
       terminalType: terminalTypes[0] ?? "ac",
       terminalCount: terminalTypes.length,
@@ -3866,7 +3881,8 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
           ...(existingOverride?.params ?? {}),
           component_type: componentType,
           backgroundImage,
-          backgroundImageAssetId
+          backgroundImageAssetId,
+          ...(stateDefinitions[0]?.value ? { status: stateDefinitions[0].value } : {})
         },
         size,
         terminalType: terminalTypes[0] ?? template.terminalType,
@@ -3932,11 +3948,16 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       hideDefaultPage?: boolean;
     }
   ) => {
-  const { BufferedTextarea, BufferedTextInput, DEFAULT_STATE_PAGE_ID, DeferredColorInput, activeStateDraftRow, addStateIconDrawingElement, button, circle, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, image, isDefaultStatePageId, label, line, rect, setStateIconDrawingDialog, setStateIconDrawingImportMode, small, span, stateIconDrawingDialog, stateIconDrawingImportInputRef, stateIconDrawingKeyDown, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, text, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
+  const { BufferedTextarea, BufferedTextInput, DEFAULT_STATE_PAGE_ID, DeferredColorInput, activeStateDraftRow, addStateIconDrawingElement, button, circle, customDeviceDefaultStateVisualDraft, defaultStateDraftRow, definitionDefaultStateVisualDraft, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, image, isDefaultStatePageId, label, line, nonDefaultStateDraftRows, rect, setStateIconDrawingDialog, setStateIconDrawingImportMode, small, span, stateIconDrawingDialog, stateIconDrawingImportInputRef, stateIconDrawingKeyDown, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, text, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
     const hideDefaultPage = handlers.hideDefaultPage === true;
-    const effectiveActiveRowId = hideDefaultPage && isDefaultStatePageId(activeRowId) ? rows[0]?.id ?? activeRowId : activeRowId;
+    const displayRows = hideDefaultPage ? rows : nonDefaultStateDraftRows(rows);
+    const defaultVisual = handlers.drawingScope === "definition"
+      ? definitionDefaultStateVisualDraft()
+      : customDeviceDefaultStateVisualDraft();
+    const defaultRow = hideDefaultPage ? null : defaultStateDraftRow(rows, defaultVisual);
+    const effectiveActiveRowId = hideDefaultPage && isDefaultStatePageId(activeRowId) ? displayRows[0]?.id ?? activeRowId : activeRowId;
     const isDefaultStatePage = !hideDefaultPage && isDefaultStatePageId(effectiveActiveRowId);
-    const activeRow = activeStateDraftRow(rows, effectiveActiveRowId);
+    const activeRow = activeStateDraftRow(displayRows, effectiveActiveRowId);
     const activeDrawingTarget = handlers.drawingScope && (activeRow || isDefaultStatePage)
       ? { scope: handlers.drawingScope, rowId: isDefaultStatePage ? DEFAULT_STATE_PAGE_ID : activeRow.id }
       : null;
@@ -4145,7 +4166,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         </div>
       );
     };
-    const renderStateIconDrawingInline = () => {
+    const renderStateIconDrawingInline = (stateFields?: ReactNode) => {
       if (!activeDrawingTarget) {
         return null;
       }
@@ -4159,77 +4180,92 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       const selectedIds = stateIconDrawingDialog.selectedElementIds.length > 0
         ? stateIconDrawingDialog.selectedElementIds
         : [stateIconDrawingDialog.selectedElementId].filter(Boolean);
+      const selectedLayerId = stateIconDrawingDialog.selectedElementId || selectedIds[0] || "";
       return (
         <div className="state-icon-drawing-inline" onKeyDown={stateIconDrawingKeyDown} tabIndex={-1} aria-label="图案编辑区">
           <div className="state-icon-drawing-layout">
-            <div className="state-icon-drawing-canvas">
-              <svg
-                ref={stateIconDrawingSvgRef}
-                viewBox="0 0 240 160"
-                role="img"
-                aria-label="图案绘制预览"
-                onPointerMove={dragStateIconDrawingSelection}
-                onPointerUp={stopStateIconDrawingDrag}
-                onPointerCancel={stopStateIconDrawingDrag}
-                onPointerDown={(event) => {
-                  (event.currentTarget.closest(".state-icon-drawing-inline") as HTMLElement | null)?.focus();
-                  setStateIconDrawingDialog((current) => current ? { ...current, selectedElementId: "", selectedElementIds: [] } : current);
-                }}
-              >
-                <rect x="0" y="0" width="240" height="160" rx="10" className="state-icon-drawing-canvas-bg" />
-                <image
-                  href={stateIconDrawingToImage(stateIconDrawingDialog.elements)}
-                  x="0"
-                  y="0"
-                  width="240"
-                  height="160"
-                  preserveAspectRatio="xMidYMid meet"
-                  className="state-icon-drawing-composite-preview"
-                />
-                {stateIconDrawingDialog.elements.map((element) => {
-                  const selected = selectedIds.includes(element.id);
-                  const halfWidth = Math.max(1, element.width) / 2;
-                  const halfHeight = Math.max(1, element.height) / 2;
-                  return (
-                    <g
-                      key={element.id}
-                      className={`state-icon-drawing-element ${selected ? "selected" : ""}`}
-                      transform={`translate(${formatSvgNumber(element.x)} ${formatSvgNumber(element.y)}) rotate(${formatSvgNumber(element.rotation)})`}
-                      onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "move")}
-                    >
-                      <rect x={formatSvgNumber(-halfWidth)} y={formatSvgNumber(-halfHeight)} width={formatSvgNumber(element.width)} height={formatSvgNumber(element.height)} className="state-icon-drawing-hitbox" />
-                      {selected && (
-                        <>
-                          <rect x={formatSvgNumber(-halfWidth)} y={formatSvgNumber(-halfHeight)} width={formatSvgNumber(element.width)} height={formatSvgNumber(element.height)} className="state-icon-drawing-selection-box" />
-                          <circle cx={formatSvgNumber(halfWidth)} cy={formatSvgNumber(halfHeight)} r="5" className="state-icon-drawing-resize-handle" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize")} />
-                          <line x1="0" y1={formatSvgNumber(-halfHeight)} x2="0" y2={formatSvgNumber(-halfHeight - 16)} className="state-icon-drawing-rotate-stem" />
-                          <circle cx="0" cy={formatSvgNumber(-halfHeight - 20)} r="5" className="state-icon-drawing-rotate-handle" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "rotate")} />
-                        </>
-                      )}
-                    </g>
-                  );
-                })}
-              </svg>
+            <div className="state-icon-drawing-main">
+              {stateFields}
+              <div className="state-icon-drawing-canvas">
+                <svg
+                  ref={stateIconDrawingSvgRef}
+                  viewBox="0 0 240 160"
+                  role="img"
+                  aria-label="图案绘制预览"
+                  onPointerMove={dragStateIconDrawingSelection}
+                  onPointerUp={stopStateIconDrawingDrag}
+                  onPointerCancel={stopStateIconDrawingDrag}
+                  onPointerDown={(event) => {
+                    (event.currentTarget.closest(".state-icon-drawing-inline") as HTMLElement | null)?.focus();
+                    setStateIconDrawingDialog((current) => current ? { ...current, selectedElementId: "", selectedElementIds: [] } : current);
+                  }}
+                >
+                  <rect x="0" y="0" width="240" height="160" rx="10" className="state-icon-drawing-canvas-bg" />
+                  <image
+                    href={stateIconDrawingToImage(stateIconDrawingDialog.elements)}
+                    x="0"
+                    y="0"
+                    width="240"
+                    height="160"
+                    preserveAspectRatio="xMidYMid meet"
+                    className="state-icon-drawing-composite-preview"
+                  />
+                  {stateIconDrawingDialog.elements.map((element) => {
+                    const selected = selectedIds.includes(element.id);
+                    const halfWidth = Math.max(1, element.width) / 2;
+                    const halfHeight = Math.max(1, element.height) / 2;
+                    return (
+                      <g
+                        key={element.id}
+                        className={`state-icon-drawing-element ${selected ? "selected" : ""}`}
+                        transform={`translate(${formatSvgNumber(element.x)} ${formatSvgNumber(element.y)}) rotate(${formatSvgNumber(element.rotation)})`}
+                        onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "move")}
+                      >
+                        <rect x={formatSvgNumber(-halfWidth)} y={formatSvgNumber(-halfHeight)} width={formatSvgNumber(element.width)} height={formatSvgNumber(element.height)} className="state-icon-drawing-hitbox" />
+                        {selected && (
+                          <>
+                            <rect x={formatSvgNumber(-halfWidth)} y={formatSvgNumber(-halfHeight)} width={formatSvgNumber(element.width)} height={formatSvgNumber(element.height)} className="state-icon-drawing-selection-box" />
+                            <circle cx={formatSvgNumber(halfWidth)} cy={formatSvgNumber(halfHeight)} r="5" className="state-icon-drawing-resize-handle" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize")} />
+                            <line x1="0" y1={formatSvgNumber(-halfHeight)} x2="0" y2={formatSvgNumber(-halfHeight - 16)} className="state-icon-drawing-rotate-stem" />
+                            <circle cx="0" cy={formatSvgNumber(-halfHeight - 20)} r="5" className="state-icon-drawing-rotate-handle" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "rotate")} />
+                          </>
+                        )}
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
             </div>
             <div className="state-icon-drawing-side">
               <div className="state-icon-drawing-layers">
-                <span>图案图层</span>
-                <div>
-                  {stateIconDrawingDialog.elements.length === 0 ? (
-                    <p>暂无图案</p>
-                  ) : (
-                    stateIconDrawingDialog.elements.map((element, index) => (
-                      <button
-                        key={element.id}
-                        type="button"
-                        className={selectedIds.includes(element.id) ? "active" : ""}
-                        onClick={(event) => stateIconDrawingSelection(element.id, event.shiftKey || event.ctrlKey || event.metaKey)}
-                      >
-                        {index + 1}. {stateVisualShapeLabel(element.kind)}
-                      </button>
-                    ))
-                  )}
-                </div>
+                <label>
+                  <span>图案图层</span>
+                  <select
+                    value={selectedLayerId}
+                    disabled={stateIconDrawingDialog.elements.length === 0}
+                    onChange={(event) => {
+                      const elementId = event.target.value;
+                      if (elementId) {
+                        stateIconDrawingSelection(elementId, false);
+                        return;
+                      }
+                      setStateIconDrawingDialog((current) => current ? { ...current, selectedElementId: "", selectedElementIds: [] } : current);
+                    }}
+                  >
+                    {stateIconDrawingDialog.elements.length === 0 ? (
+                      <option value="">暂无图案</option>
+                    ) : (
+                      <>
+                        <option value="">未选择图案</option>
+                        {stateIconDrawingDialog.elements.map((element, index) => (
+                          <option key={element.id} value={element.id}>
+                            {index + 1}. {stateVisualShapeLabel(element.kind)}
+                          </option>
+                        ))}
+                      </>
+                    )}
+                  </select>
+                </label>
               </div>
               <div className="state-icon-drawing-properties">
                 {(() => {
@@ -4381,7 +4417,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                 默认状态
               </button>
             )}
-            {rows.map((row, index) => {
+            {displayRows.map((row, index) => {
               const active = activeRow?.id === row.id;
               return (
                 <button
@@ -4392,7 +4428,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                   className={active ? "active" : ""}
                   onClick={() => setActiveRowId(row.id)}
                 >
-                  {row.name.trim() || row.value.trim() || `状态${index}`}
+                  {row.name.trim() || row.value.trim() || `状态${index + 1}`}
                 </button>
               );
             })}
@@ -4405,26 +4441,36 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         </div>
         {isDefaultStatePage ? (
           <>
-            <div className="device-state-default-body">
-              <span>默认状态用于维护元件的默认图标；尺寸和端子在端子定义页统一维护。</span>
-            </div>
-            {renderStateIconDrawingInline()}
-            {handlers.preview}
+            {defaultRow && (
+              renderStateIconDrawingInline(
+                <div className="device-state-page-fields device-state-default-fields">
+                  <label>
+                    状态值
+                    <BufferedTextInput value={defaultRow.value} onCommit={(value) => handlers.update(DEFAULT_STATE_PAGE_ID, { value })} />
+                  </label>
+                  <label>
+                    状态名称
+                    <BufferedTextInput value={defaultRow.name} onCommit={(value) => handlers.update(DEFAULT_STATE_PAGE_ID, { name: value })} />
+                  </label>
+                </div>
+              )
+            )}
+            {!defaultRow && renderStateIconDrawingInline()}
           </>
         ) : activeRow ? (
           <>
-            <div className="device-state-page-fields">
-              <label>
-                状态值
-                <BufferedTextInput value={activeRow.value} onCommit={(value) => handlers.update(activeRow.id, { value })} />
-              </label>
-              <label>
-                状态名称
-                <BufferedTextInput value={activeRow.name} onCommit={(value) => handlers.update(activeRow.id, { name: value })} />
-              </label>
-            </div>
-            {renderStateIconDrawingInline()}
-            {handlers.preview}
+            {renderStateIconDrawingInline(
+              <div className="device-state-page-fields">
+                <label>
+                  状态值
+                  <BufferedTextInput value={activeRow.value} onCommit={(value) => handlers.update(activeRow.id, { value })} />
+                </label>
+                <label>
+                  状态名称
+                  <BufferedTextInput value={activeRow.name} onCommit={(value) => handlers.update(activeRow.id, { name: value })} />
+                </label>
+              </div>
+            )}
             <div className="custom-device-actions device-state-actions">
               {handlers.saveStateVisuals && <button type="button" onClick={handlers.saveStateVisuals}>{handlers.saveStateVisualsLabel ?? "保存状态样式"}</button>}
               {handlers.reset && <button type="button" onClick={handlers.reset}>{handlers.resetLabel ?? "恢复状态页"}</button>}

@@ -76,6 +76,8 @@ export function stateDraftRowId() {
 }
 
 export const DEFAULT_STATE_PAGE_ID = "__default-state__";
+export const DEFAULT_STATE_VALUE = "0";
+export const DEFAULT_STATE_NAME = "状态0";
 
 export function isDefaultStatePageId(rowId: string) {
   return !rowId || rowId === DEFAULT_STATE_PAGE_ID;
@@ -109,6 +111,93 @@ export function createStateDraftRowFromDefaultVisual(
     ...defaultVisual,
     ...definition
   });
+}
+
+export function defaultStateDraftRow(
+  rows: readonly DeviceDefinitionStateDraftRow[],
+  defaultVisual: Partial<DeviceStateDefinition> = {}
+): DeviceDefinitionStateDraftRow {
+  const row = rows[0];
+  const base = createStateDraftRow(defaultVisual);
+  if (row) {
+    return {
+      ...row,
+      icon: row.icon || base.icon,
+      image: row.image || base.image,
+      imageAssetId: row.imageAssetId || base.imageAssetId,
+      text: row.text || base.text,
+      color: row.color || base.color,
+      fillColor: row.fillColor || base.fillColor,
+      strokeColor: row.strokeColor || base.strokeColor,
+      textColor: row.textColor || base.textColor,
+      backgroundImage: row.backgroundImage || base.backgroundImage,
+      backgroundImageAssetId: row.backgroundImageAssetId || base.backgroundImageAssetId
+    };
+  }
+  return {
+    ...base,
+    id: DEFAULT_STATE_PAGE_ID,
+    value: DEFAULT_STATE_VALUE,
+    name: DEFAULT_STATE_NAME
+  };
+}
+
+export function nonDefaultStateDraftRows(rows: readonly DeviceDefinitionStateDraftRow[]) {
+  return rows.slice(1);
+}
+
+export function nextNonDefaultStateIndex(rows: readonly DeviceDefinitionStateDraftRow[]) {
+  const used = new Set<string>();
+  for (const row of nonDefaultStateDraftRows(rows)) {
+    const value = row.value.trim();
+    const name = row.name.trim();
+    if (/^\d+$/.test(value)) {
+      used.add(value);
+    }
+    const nameMatch = /^状态(\d+)$/.exec(name);
+    if (nameMatch) {
+      used.add(nameMatch[1]);
+    }
+  }
+  for (let index = 1; index <= rows.length + 1; index += 1) {
+    if (!used.has(String(index))) {
+      return index;
+    }
+  }
+  return Math.max(1, rows.length);
+}
+
+export function upsertDefaultStateDraftRow(
+  rows: readonly DeviceDefinitionStateDraftRow[],
+  defaultVisual: Partial<DeviceStateDefinition>,
+  patch: Partial<DeviceDefinitionStateDraftRow>
+): DeviceDefinitionStateDraftRow[] {
+  const current = rows[0];
+  const nextDefault = current
+    ? { ...defaultStateDraftRow(rows, defaultVisual), ...patch, id: current.id }
+    : createStateDraftRowFromDefaultVisual(defaultVisual, {
+        value: DEFAULT_STATE_VALUE,
+        name: DEFAULT_STATE_NAME,
+        ...patch
+      });
+  return [nextDefault, ...rows.slice(1)];
+}
+
+export function appendNonDefaultStateDraftRow(
+  rows: readonly DeviceDefinitionStateDraftRow[],
+  defaultVisual: Partial<DeviceStateDefinition>,
+  row: DeviceDefinitionStateDraftRow
+): DeviceDefinitionStateDraftRow[] {
+  if (rows.length > 0) {
+    return [...rows, row];
+  }
+  return [
+    createStateDraftRowFromDefaultVisual(defaultVisual, {
+      value: DEFAULT_STATE_VALUE,
+      name: DEFAULT_STATE_NAME
+    }),
+    row
+  ];
 }
 
 export function createDefinitionStateDraftRows(template: DeviceTemplate): DeviceDefinitionStateDraftRow[] {
@@ -181,6 +270,9 @@ export function activeStateDraftRow(rows: readonly DeviceDefinitionStateDraftRow
 
 export function normalizeStatePageId(rows: readonly DeviceDefinitionStateDraftRow[], activeRowId: string) {
   if (isDefaultStatePageId(activeRowId)) {
+    return DEFAULT_STATE_PAGE_ID;
+  }
+  if (rows[0]?.id === activeRowId) {
     return DEFAULT_STATE_PAGE_ID;
   }
   return rows.some((row) => row.id === activeRowId) ? activeRowId : DEFAULT_STATE_PAGE_ID;

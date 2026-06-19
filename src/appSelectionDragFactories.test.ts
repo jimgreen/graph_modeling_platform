@@ -211,4 +211,71 @@ describe("selection drag route cache patches", () => {
 
     expect(blockedRoutePoints[edge.id]).toEqual(crossingRoute);
   });
+
+  test("marks moved endpoint routes that cross the stationary endpoint device body for repair", () => {
+    const sourceBase = createDefaultNode("ac-box-breaker", { x: 120, y: 220 });
+    const source = {
+      ...sourceBase,
+      id: "moved-box-breaker",
+      params: {
+        ...sourceBase.params,
+        _labelVisible: "0",
+        _labelDisplayMode: "hidden"
+      }
+    };
+    const breakerBase = createDefaultNode("ac-breaker", { x: 360, y: 300 });
+    const breaker = {
+      ...breakerBase,
+      id: "stationary-vertical-breaker",
+      rotation: 90,
+      params: {
+        ...breakerBase.params,
+        _labelVisible: "0",
+        _labelDisplayMode: "hidden"
+      }
+    };
+    const sourcePoint = getTerminalPoint(source, "t2");
+    const targetPoint = getTerminalPoint(breaker, "t2");
+    const crossingRoute = [
+      sourcePoint,
+      { x: breaker.position.x, y: sourcePoint.y },
+      targetPoint
+    ];
+    const edge: Edge = {
+      id: "moved-source-to-stationary-breaker",
+      sourceId: source.id,
+      targetId: breaker.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t2",
+      routePoints: crossingRoute,
+      manualPoints: crossingRoute.slice(1, -1)
+    };
+    const routePointsForMovedEdgesBlockedByStationaryNodes = createRoutePointsForMovedEdgesBlockedByStationaryNodes({
+      canvasBounds: { width: 800, height: 600 },
+      getRouteBlockingCandidateNodesFromBoxes,
+      getRouteBlockingCandidates,
+      routeEdgesForStoredRendering,
+      routeIntersectsEndpointNodeBodies,
+      routeIntersectsSpecificNodes,
+      routingNodesForConnectionEdges: (_candidateEdges: Edge[], nextNodes: ModelNode[]) => nextNodes
+    });
+
+    expect(routeIntersectsEndpointNodeBodies(crossingRoute, edge, [breaker])).toBe(true);
+    expect(routeEdgesForStoredRendering(
+      [source, breaker],
+      [edge],
+      { width: 800, height: 600 },
+      { preserveManualRouteDisplay: true }
+    )[0]?.points).toEqual(crossingRoute);
+
+    const blockedRoutePoints = routePointsForMovedEdgesBlockedByStationaryNodes(
+      [source, breaker],
+      [edge],
+      [source.id],
+      {},
+      { width: 800, height: 600 }
+    );
+
+    expect(blockedRoutePoints[edge.id]).toEqual(crossingRoute);
+  });
 });
