@@ -4352,9 +4352,9 @@ export function createCreateBlankProject(__appScope: Record<string, any>) {
 
 export function createLocateTopologyError(__appScope: Record<string, any>) {
   return (error: TopologyValidationError) => {
-  const { activateInspectorFromCanvas, activeLayerEdgeIdSet, activeLayerNodeIdSet, clampViewBoxToCanvas, clearRecordSelection, nodeById, setCanvasSelectionScope, setInspectorTab, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setViewBox, viewBox } = __appScope;
+    const { activateInspectorFromCanvas, activeLayerEdgeIdSet, activeLayerNodeIdSet, centerViewOnPoint, centerViewOnPointAtZoom, clearRecordSelection, currentZoomPercent, edges, getElementFocusPoint, nodeById, nodes, setCanvasSelectionScope, setInspectorTab, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds } = __appScope;
     activateInspectorFromCanvas();
-    const firstNodeId = error.relatedNodeIds[0] ?? error.nodeId;
+    const firstNodeId = error.nodeId ?? error.relatedNodeIds[0];
     const node = firstNodeId ? nodeById.get(firstNodeId) : undefined;
     const editableNode = Boolean(firstNodeId && activeLayerNodeIdSet.has(firstNodeId));
     const editableEdge = Boolean(error.edgeId && activeLayerEdgeIdSet.has(error.edgeId));
@@ -4362,13 +4362,20 @@ export function createLocateTopologyError(__appScope: Record<string, any>) {
     setSelectedNodeIds(editableNode && firstNodeId ? [firstNodeId] : []);
     setSelectedEdgeId(editableEdge && error.edgeId ? error.edgeId : "");
     setSelectedEdgeIds(editableEdge && error.edgeId ? [error.edgeId] : []);
+    const point = node
+      ? getElementFocusPoint({ kind: "node", id: node.id }, nodes, edges)
+      : error.edgeId
+        ? getElementFocusPoint({ kind: "edge", id: error.edgeId }, nodes, edges)
+        : null;
+    if (point) {
+      const focusZoomPercent = Math.max(Number(currentZoomPercent) || 0, 120);
+      if (centerViewOnPointAtZoom) {
+        centerViewOnPointAtZoom(point, focusZoomPercent);
+      } else {
+        centerViewOnPoint(point);
+      }
+    }
     if (node) {
-      setViewBox(clampViewBoxToCanvas({
-        x: node.position.x - viewBox.width / 2,
-        y: node.position.y - viewBox.height / 2,
-        width: viewBox.width,
-        height: viewBox.height
-      }));
       setInspectorTab("device");
       clearRecordSelection();
     }

@@ -7822,6 +7822,14 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   font-weight: 800;
 }
 
+.topology-warning-table tr.topology-warning-row {
+  cursor: pointer;
+}
+
+.topology-warning-table tr.topology-warning-row:hover td {
+  background: #fff1f2;
+}
+
 .topology-warning-table button {
   display: block;
   width: 100%;

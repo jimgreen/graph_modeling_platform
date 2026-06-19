@@ -2936,15 +2936,26 @@ export function createStateIconDrawingKeyDown(__appScope: Record<string, any>) {
 
 export function createAddStateIconDrawingElement(__appScope: Record<string, any>) {
   return (kind: StateVisualShapeKind) => {
-  const { createStateIconDrawingElement, customDeviceDraft, definitionStateDraftRows, setStateIconDrawingDialog } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, createStateDraftRow, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, definitionDefaultStateVisualDraft, definitionStateDraftRows, isDefaultStatePageId, setStateIconDrawingDialog } = __appScope;
     setStateIconDrawingDialog((current) => {
       if (!current) {
         return current;
       }
       const row =
-        current.target.scope === "definition"
-          ? definitionStateDraftRows.find((item) => item.id === current.target.rowId)
-          : customDeviceDraft.stateDefinitions.find((item) => item.id === current.target.rowId);
+        isDefaultStatePageId(current.target.rowId)
+          ? {
+              ...createStateDraftRow(
+                current.target.scope === "definition"
+                  ? definitionDefaultStateVisualDraft()
+                  : customDeviceDefaultStateVisualDraft()
+              ),
+              id: DEFAULT_STATE_PAGE_ID,
+              value: "",
+              name: "默认状态"
+            }
+          : current.target.scope === "definition"
+            ? definitionStateDraftRows.find((item) => item.id === current.target.rowId)
+            : customDeviceDraft.stateDefinitions.find((item) => item.id === current.target.rowId);
       const element = createStateIconDrawingElement(kind, row);
       return {
         ...current,
@@ -3926,8 +3937,8 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
     const effectiveActiveRowId = hideDefaultPage && isDefaultStatePageId(activeRowId) ? rows[0]?.id ?? activeRowId : activeRowId;
     const isDefaultStatePage = !hideDefaultPage && isDefaultStatePageId(effectiveActiveRowId);
     const activeRow = activeStateDraftRow(rows, effectiveActiveRowId);
-    const activeDrawingTarget = activeRow && handlers.drawingScope
-      ? { scope: handlers.drawingScope, rowId: activeRow.id }
+    const activeDrawingTarget = handlers.drawingScope && (activeRow || isDefaultStatePage)
+      ? { scope: handlers.drawingScope, rowId: isDefaultStatePage ? DEFAULT_STATE_PAGE_ID : activeRow.id }
       : null;
     const drawingReady =
       activeDrawingTarget &&
@@ -4135,7 +4146,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       );
     };
     const renderStateIconDrawingInline = () => {
-      if (!activeRow || !activeDrawingTarget) {
+      if (!activeDrawingTarget) {
         return null;
       }
       if (!drawingReady) {
@@ -4393,9 +4404,13 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
           <span className="device-state-shared-note" title="尺寸大小和端子位置由所有状态分页共享">共享尺寸/端子</span>
         </div>
         {isDefaultStatePage ? (
-          <div className="device-state-default-body">
-            <span>默认状态用于维护所有状态共享的尺寸和端子。</span>
-          </div>
+          <>
+            <div className="device-state-default-body">
+              <span>默认状态用于维护元件的默认图标；尺寸和端子在端子定义页统一维护。</span>
+            </div>
+            {renderStateIconDrawingInline()}
+            {handlers.preview}
+          </>
         ) : activeRow ? (
           <>
             <div className="device-state-page-fields">

@@ -273,10 +273,16 @@ export function renderAppView(__appScope: Record<string, any>) {
                 <tbody>
                   {visibleTopologyErrors.map((error) => {
             const blocking = isBlockingTopologyValidationError(error);
-            return (<tr key={error.id} className={blocking ? "error" : "warning"}>
+            return (<tr key={error.id} className={`${blocking ? "error" : "warning"} topology-warning-row`} onClick={() => locateTopologyError(error)}>
                         <td>{blocking ? "错误" : "告警"}</td>
                         <td>
-                          <button type="button" onClick={() => locateTopologyError(error)} onDoubleClick={() => locateTopologyError(error)}>
+                          <button type="button" onClick={(event) => {
+                    event.stopPropagation();
+                    locateTopologyError(error);
+                  }} onDoubleClick={(event) => {
+                    event.stopPropagation();
+                    locateTopologyError(error);
+                  }}>
                             {topologyWarningDisplayMessage(error.message)}
                           </button>
                         </td>

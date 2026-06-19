@@ -4146,12 +4146,27 @@ const addStateIconDrawingElement = createAddStateIconDrawingElement(__appScope);
 const deleteStateIconDrawingElement = createDeleteStateIconDrawingElement(__appScope); Object.assign(__appScope, { deleteStateIconDrawingElement });
 const openStateIconDrawingDialog = createOpenStateIconDrawingDialog(__appScope); Object.assign(__appScope, { openStateIconDrawingDialog });
 const applyStateIconDrawingDialog = createApplyStateIconDrawingDialog(__appScope); Object.assign(__appScope, { applyStateIconDrawingDialog });
+const stateIconDrawingDefaultDraftRow = (scope: StateIconDrawingTarget["scope"]): DeviceDefinitionStateDraftRow => ({
+    ...createStateDraftRow(scope === "definition" ? definitionDefaultStateVisualDraft() : customDeviceDefaultStateVisualDraft()),
+    id: DEFAULT_STATE_PAGE_ID,
+    value: "",
+    name: "默认状态"
+  });
+Object.assign(__appScope, { stateIconDrawingDefaultDraftRow });
+const stateIconDrawingDraftRowForTarget = (target: StateIconDrawingTarget): DeviceDefinitionStateDraftRow | null => {
+    if (isDefaultStatePageId(target.rowId)) {
+      return stateIconDrawingDefaultDraftRow(target.scope);
+    }
+    return target.scope === "definition"
+      ? definitionStateDraftRows.find((item) => item.id === target.rowId) ?? null
+      : customDeviceDraft.stateDefinitions.find((item) => item.id === target.rowId) ?? null;
+  };
+Object.assign(__appScope, { stateIconDrawingDraftRowForTarget });
 const stateIconDrawingInlineTarget =
-    deviceDefinitionDialogOpen && deviceDefinitionView === "visual" && !isDefaultStatePageId(definitionStatePageId)
+    deviceDefinitionDialogOpen && deviceDefinitionView === "visual"
       ? { scope: "definition" as const, rowId: definitionStatePageId }
       : customDeviceDialogOpen &&
-          (customDeviceDialogView === "icon" || (customDeviceDialogView === "terminals" && customDeviceDraft.terminalCount <= 0)) &&
-          !isDefaultStatePageId(customIconStatePageId)
+          (customDeviceDialogView === "icon" || (customDeviceDialogView === "terminals" && customDeviceDraft.terminalCount <= 0))
         ? { scope: "custom" as const, rowId: customIconStatePageId }
         : null;
 Object.assign(__appScope, { stateIconDrawingInlineTarget });
@@ -4175,10 +4190,7 @@ useEffect(() => {
       ) {
         return current;
       }
-      const row =
-        stateIconDrawingInlineTarget.scope === "definition"
-          ? definitionStateDraftRows.find((item) => item.id === stateIconDrawingInlineTarget.rowId)
-          : customDeviceDraft.stateDefinitions.find((item) => item.id === stateIconDrawingInlineTarget.rowId);
+      const row = stateIconDrawingDraftRowForTarget(stateIconDrawingInlineTarget);
       const initial = createStateIconDrawingInitialElements(row, imageAssets);
       stateIconDrawingInitialImageRef.current = {
         key: targetKey,
@@ -4194,10 +4206,14 @@ useEffect(() => {
   }, [
     customDeviceDialogOpen,
     customDeviceDialogView,
+    customDeviceDraft.backgroundImage,
+    customDeviceDraft.backgroundImageAssetId,
     customDeviceDraft.stateDefinitions,
     customDeviceDraft.terminalCount,
     customIconStatePageId,
     customDeviceStatePageId,
+    definitionVisualDraft?.backgroundImage,
+    definitionVisualDraft?.backgroundImageAssetId,
     definitionStateDraftRows,
     definitionStatePageId,
     deviceDefinitionDialogOpen,
@@ -4212,6 +4228,43 @@ useEffect(() => {
     }
     const targetKey = `${stateIconDrawingDialog.target.scope}:${stateIconDrawingDialog.target.rowId}`;
     if (stateIconDrawingInitialImageRef.current?.key === targetKey && stateIconDrawingInitialImageRef.current.image === stateIconDrawingInlineImage) {
+      return;
+    }
+    if (isDefaultStatePageId(stateIconDrawingDialog.target.rowId)) {
+      if (stateIconDrawingDialog.target.scope === "definition") {
+        if (!definitionVisualDraft) {
+          return;
+        }
+        const imageFieldsAlreadySynced =
+          definitionVisualDraft.backgroundImage === stateIconDrawingInlineImage &&
+          !definitionVisualDraft.backgroundImageAssetId;
+        if (imageFieldsAlreadySynced) {
+          return;
+        }
+        setDefinitionVisualDraft((current) =>
+          current
+            ? {
+                ...current,
+                backgroundImage: stateIconDrawingInlineImage,
+                backgroundImageAssetId: "",
+                error: ""
+              }
+            : current
+        );
+      } else {
+        const imageFieldsAlreadySynced =
+          customDeviceDraft.backgroundImage === stateIconDrawingInlineImage &&
+          !customDeviceDraft.backgroundImageAssetId;
+        if (imageFieldsAlreadySynced) {
+          return;
+        }
+        setCustomDeviceDraft((current) => ({
+          ...current,
+          backgroundImage: stateIconDrawingInlineImage,
+          backgroundImageAssetId: "",
+          error: ""
+        }));
+      }
       return;
     }
     const row =
