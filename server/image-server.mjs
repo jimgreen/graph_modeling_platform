@@ -3,6 +3,9 @@ import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/p
 import { createReadStream } from "node:fs";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzip } from "node:zlib";
+import { promisify } from "node:util";
+import { createHash } from "node:crypto";
 import AdmZip from "adm-zip";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -633,6 +636,73 @@ function sendJson(response, status, data) {
 
 function sendError(response, status, message) {
   sendJson(response, status, { error: message });
+}
+
+const gzipAsync = promisify(gzip);
+const GZIP_MIN_BYTES = 1024;
+const cacheableJsonHeaders = {
+  "content-type": "application/json; charset=utf-8",
+  // no-cache：允许客户端缓存，但每次须带 If-None-Match 重新校验 → 命中则 304，永不返回过期数据。
+  "cache-control": "no-cache",
+  ...accessControlHeaders
+};
+// 单文件 JSON 响应的内存缓存：按文件 mtime 命中，跳过重复的读盘 / 解析 / 序列化 / gzip。
+const preparedJsonFileCache = new Map();
+
+function prepareJsonPayload(data) {
+  const raw = Buffer.from(JSON.stringify(data), "utf-8");
+  const etag = `"${createHash("sha1").update(raw).digest("base64")}"`;
+  return { raw, etag, gzip: undefined };
+}
+
+async function sendPreparedJson(request, response, prepared) {
+  const ifNoneMatch = request.headers["if-none-match"];
+  if (ifNoneMatch && ifNoneMatch === prepared.etag) {
+    response.writeHead(304, { ...cacheableJsonHeaders, etag: prepared.etag });
+    response.end();
+    return;
+  }
+  const acceptsGzip = /\bgzip\b/iu.test(String(request.headers["accept-encoding"] ?? ""));
+  if (acceptsGzip && prepared.raw.length >= GZIP_MIN_BYTES) {
+    if (!prepared.gzip) {
+      prepared.gzip = await gzipAsync(prepared.raw);
+    }
+    response.writeHead(200, {
+      ...cacheableJsonHeaders,
+      etag: prepared.etag,
+      "content-encoding": "gzip",
+      vary: "Accept-Encoding",
+      "content-length": prepared.gzip.length
+    });
+    response.end(prepared.gzip);
+    return;
+  }
+  response.writeHead(200, { ...cacheableJsonHeaders, etag: prepared.etag, "content-length": prepared.raw.length });
+  response.end(prepared.raw);
+}
+
+// 多来源 / 即时计算的 GET：提供 gzip + ETag/304，但不做按文件缓存。
+async function sendJsonCacheable(request, response, data) {
+  await sendPreparedJson(request, response, prepareJsonPayload(data));
+}
+
+// 单文件 GET：按 mtime 缓存已准备好的响应（含 gzip），命中时仅需 stat + 发送缓冲。
+async function sendCachedJsonFile(request, response, filePath, produce) {
+  let version = 0;
+  try {
+    version = (await stat(filePath)).mtimeMs;
+  } catch {
+    version = 0;
+  }
+  const cached = preparedJsonFileCache.get(filePath);
+  let prepared;
+  if (cached && cached.version === version) {
+    prepared = cached.prepared;
+  } else {
+    prepared = prepareJsonPayload(await produce());
+    preparedJsonFileCache.set(filePath, { version, prepared });
+  }
+  await sendPreparedJson(request, response, prepared);
 }
 
 function readBody(request, maxBodyBytes = maxImageBodyBytes, oversizeMessage = "请求体过大。") {
@@ -2425,22 +2495,22 @@ async function handleSaveDeviceLibrary(request, response) {
 
 export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
   const exactRouteHandlers = new Map([
-    ["GET /api/images", async ({ url, response }) => {
+    ["GET /api/images", async ({ url, request, response }) => {
       const manifest = await readManifest();
       const folderId = url.searchParams.get("folderId");
       const filtered = folderId ? manifest.filter((item) => (item.folderId || "root") === folderId) : manifest;
-      sendJson(response, 200, filtered.map(publicAsset));
+      await sendJsonCacheable(request, response, filtered.map(publicAsset));
     }],
     ["POST /api/images", async ({ request, response }) => {
       await handleUpload(request, response);
     }],
-    ["GET /api/image-folders", async ({ response }) => {
+    ["GET /api/image-folders", async ({ request, response }) => {
       const folders = await readImageFolders();
       const manifest = await readManifest();
       const counts = imageCountsByFolder(manifest);
-      sendJson(
+      await sendJsonCacheable(
+        request,
         response,
-        200,
         folders.map((folder) => ({
           ...folder,
           imageCount: counts.get(folder.id) ?? 0
@@ -2450,10 +2520,10 @@ export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
     ["POST /api/image-folders", async ({ request, response }) => {
       await handleCreateImageFolder(request, response);
     }],
-    ["GET /api/schemes", async ({ url, response }) => {
+    ["GET /api/schemes", async ({ url, request, response }) => {
       const includeProjects = url.searchParams.get("includeProjects") === "1";
       const schemes = normalizeSchemesForStorage(await readSchemes({ includeProjects }));
-      sendJson(response, 200, { schemes });
+      await sendJsonCacheable(request, response, { schemes });
     }],
     ["GET /api/schemes/export", async ({ url, response }) => {
       await handleExportSchemeArchive(url, response);
@@ -2479,23 +2549,20 @@ export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
     ["DELETE /api/schemes/scheme", async ({ request, response }) => {
       await handleDeleteSchemeRecord(request, response);
     }],
-    ["GET /api/color-config", async ({ response }) => {
-      const colorConfig = await readColorConfig();
-      sendJson(response, 200, colorConfig);
+    ["GET /api/color-config", async ({ request, response }) => {
+      await sendCachedJsonFile(request, response, colorConfigPath, readColorConfig);
     }],
     ["PUT /api/color-config", async ({ request, response }) => {
       await handleSaveColorConfig(request, response);
     }],
-    ["GET /api/measurement-config", async ({ response }) => {
-      const measurementConfig = await readMeasurementConfig();
-      sendJson(response, 200, measurementConfig);
+    ["GET /api/measurement-config", async ({ request, response }) => {
+      await sendCachedJsonFile(request, response, measurementConfigPath, readMeasurementConfig);
     }],
     ["PUT /api/measurement-config", async ({ request, response }) => {
       await handleSaveMeasurementConfig(request, response);
     }],
-    ["GET /api/device-library", async ({ response }) => {
-      const deviceLibraryConfig = await readDeviceLibraryConfig();
-      sendJson(response, 200, deviceLibraryConfig);
+    ["GET /api/device-library", async ({ request, response }) => {
+      await sendCachedJsonFile(request, response, deviceLibraryPath, readDeviceLibraryConfig);
     }],
     ["PUT /api/device-library", async ({ request, response }) => {
       await handleSaveDeviceLibrary(request, response);

@@ -1029,7 +1029,7 @@ function stripGeneratedDeviceName(name?: string): string {
 }
 
 function deviceDefaultNameBase(node: Pick<ModelNode, "kind" | "name" | "params">): string {
-  const template = DEVICE_LIBRARY.find((item) => item.kind === node.kind);
+  const template = DEVICE_LIBRARY_BY_KIND.get(node.kind);
   return template?.label || stripGeneratedDeviceName(node.name) || inferESection(node.kind, node.params) || node.kind;
 }
 
@@ -3733,6 +3733,11 @@ export const DEVICE_LIBRARY: DeviceTemplate[] = [
   ...NORMALIZED_BASE_DEVICE_LIBRARY.filter(shouldCreateVerticalDeviceTemplate).map(createVerticalDeviceTemplate)
 ];
 
+/** kind → 模板的 O(1) 查找索引。DEVICE_LIBRARY 为静态内置库，构建后不再变更，故可在模块级缓存。 */
+export const DEVICE_LIBRARY_BY_KIND: ReadonlyMap<string, DeviceTemplate> = new Map<string, DeviceTemplate>(
+  DEVICE_LIBRARY.map((template) => [template.kind, template])
+);
+
 let nodeNumberSeed = 1;
 const makeId = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 const makeNodeNumber = () => `N${nodeNumberSeed++}`;
@@ -5366,7 +5371,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
 }
 
 export function getTemplate(kind: DeviceKind): DeviceTemplate {
-  const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
+  const template = DEVICE_LIBRARY_BY_KIND.get(kind);
   if (!template) {
     throw new Error(`Unknown device kind: ${kind}`);
   }
@@ -7044,7 +7049,7 @@ function virtualBusTerminal(node: Pick<ModelNode, "kind" | "terminals">, termina
 
 export function normalizeNodeTerminalsByTemplate(node: ModelNode): ModelNode {
   const normalizedNode = normalizeRoutableLineDeviceStrokeWidthParam(node);
-  const template = DEVICE_LIBRARY.find((item) => item.kind === normalizedNode.kind);
+  const template = DEVICE_LIBRARY_BY_KIND.get(normalizedNode.kind);
   if (!template || normalizedNode.terminals.length === 0) {
     return normalizedNode;
   }
@@ -8360,8 +8365,8 @@ export function getEdgeEndpointPoint(node: ModelNode, endpointPoint?: Point, ter
   return endpointPoint && isBusNode(node) ? projectPointToBusCenterline(node, endpointPoint) : getTerminalPoint(node, terminalId);
 }
 
-function getElementTreeTypeLabel(node: ModelNode, templates: readonly DeviceTemplate[] = DEVICE_LIBRARY): string {
-  return templates.find((template) => template.kind === node.kind)?.label ?? node.kind;
+function getElementTreeTypeLabel(node: ModelNode, templateByKind: ReadonlyMap<string, DeviceTemplate>): string {
+  return templateByKind.get(node.kind)?.label ?? node.kind;
 }
 
 const ELEMENT_TREE_COMPONENT_TYPE_LABELS: Record<string, string> = {
@@ -8434,7 +8439,7 @@ export function buildElementTree(
   const groups: ElementTreeGroup[] = [];
   const groupByKey = new Map<string, ElementTreeGroup>();
   const deviceGroupByKey = new Map<string, ElementTreeDeviceGroup>();
-  const templateByKind = new Map(templates.map((template) => [template.kind, template]));
+  const templateByKind = new Map<string, DeviceTemplate>(templates.map((template) => [template.kind, template]));
   const includeContainerChildren = options.includeContainerChildren !== false;
   const appendDeviceItem = (
     typeKey: string,
@@ -8462,7 +8467,7 @@ export function buildElementTree(
   };
 
   for (const node of nodes) {
-    const deviceLabel = getElementTreeTypeLabel(node, templates);
+    const deviceLabel = getElementTreeTypeLabel(node, templateByKind);
     const deviceEnglishLabel = node.kind;
     const typeEnglishLabel = inferESection(node.kind, node.params) || deviceEnglishLabel;
     const typeLabel = typeEnglishLabel ? elementTreeComponentTypeLabel(typeEnglishLabel) : deviceLabel;
@@ -13155,15 +13160,111 @@ function segmentBox(segment: Segment, padding = 0) {
   };
 }
 
+// ── 路由相交测试的空间网格索引（A2/A3）──────────────────────────────────────
+// filterBlockersForRoutePoints / filterSegmentsForRoutePoints 原先对全集做线性 boxesOverlap，
+// 在候选路径搜索中按 O(候选数 × 全集) 反复执行。这里用均匀网格把全集预筛成"路由框附近"的子集，
+// 再套用完全相同的谓词 → 结果集与顺序逐元素一致，仅减少检查数量。
+// 缓存：context.blockers 每条边稳定（按数组引用）；avoidedSegments 仅追加（按数组引用 + 长度失效）。
+// 集合小于阈值时走原线性路径，零额外开销，保证小图/测试与原行为完全相同。
+type RouteAabb = { left: number; right: number; top: number; bottom: number };
+const SPATIAL_FILTER_MIN_ITEMS = 24;
+const SPATIAL_GRID_CELL = 256;
+
+class RouteBoxGrid<T> {
+  private readonly buckets = new Map<string, { item: T; index: number; box: RouteAabb }[]>();
+  constructor(private readonly cell: number) {}
+  insert(item: T, index: number, box: RouteAabb): void {
+    const entry = { item, index, box };
+    const x0 = Math.floor(box.left / this.cell);
+    const x1 = Math.floor(box.right / this.cell);
+    const y0 = Math.floor(box.top / this.cell);
+    const y1 = Math.floor(box.bottom / this.cell);
+    for (let cx = x0; cx <= x1; cx += 1) {
+      for (let cy = y0; cy <= y1; cy += 1) {
+        const key = `${cx}:${cy}`;
+        const bucket = this.buckets.get(key);
+        if (bucket) {
+          bucket.push(entry);
+        } else {
+          this.buckets.set(key, [entry]);
+        }
+      }
+    }
+  }
+  // 返回查询框附近的候选，按原始 index 升序去重（与线性 filter 顺序一致）。
+  collect(queryBox: RouteAabb): { item: T; box: RouteAabb }[] {
+    const x0 = Math.floor(queryBox.left / this.cell);
+    const x1 = Math.floor(queryBox.right / this.cell);
+    const y0 = Math.floor(queryBox.top / this.cell);
+    const y1 = Math.floor(queryBox.bottom / this.cell);
+    const seen = new Set<number>();
+    const entries: { item: T; index: number; box: RouteAabb }[] = [];
+    for (let cx = x0; cx <= x1; cx += 1) {
+      for (let cy = y0; cy <= y1; cy += 1) {
+        const bucket = this.buckets.get(`${cx}:${cy}`);
+        if (!bucket) {
+          continue;
+        }
+        for (const entry of bucket) {
+          if (!seen.has(entry.index)) {
+            seen.add(entry.index);
+            entries.push(entry);
+          }
+        }
+      }
+    }
+    entries.sort((a, b) => a.index - b.index);
+    return entries;
+  }
+}
+
+const blockerGridCache = new WeakMap<ModelNode[], Map<number, RouteBoxGrid<ModelNode>>>();
+function blockerGridFor(blockers: ModelNode[], padding: number): RouteBoxGrid<ModelNode> {
+  let byPadding = blockerGridCache.get(blockers);
+  if (!byPadding) {
+    byPadding = new Map();
+    blockerGridCache.set(blockers, byPadding);
+  }
+  const existing = byPadding.get(padding);
+  if (existing) {
+    return existing;
+  }
+  const grid = new RouteBoxGrid<ModelNode>(SPATIAL_GRID_CELL);
+  blockers.forEach((blocker, index) => grid.insert(blocker, index, routeBlockerBox(blocker, padding)));
+  byPadding.set(padding, grid);
+  return grid;
+}
+
+const segmentGridCache = new WeakMap<Segment[], { length: number; padding: number; grid: RouteBoxGrid<Segment> }>();
+function segmentGridFor(segments: Segment[], padding: number): RouteBoxGrid<Segment> {
+  const cached = segmentGridCache.get(segments);
+  if (cached && cached.length === segments.length && cached.padding === padding) {
+    return cached.grid;
+  }
+  const grid = new RouteBoxGrid<Segment>(SPATIAL_GRID_CELL);
+  segments.forEach((segment, index) => grid.insert(segment, index, segmentBox(segment, padding)));
+  segmentGridCache.set(segments, { length: segments.length, padding, grid });
+  return grid;
+}
+
 function filterBlockersForRoutePoints(points: Point[], blockers: ModelNode[], padding = ROUTE_BLOCKER_PADDING) {
   if (points.length < 2 || blockers.length === 0) {
     return [];
   }
   const routeBox = routeBoundsForPoints(points, padding);
-  return blockers.filter((blocker) =>
-    staticNodeParticipatesInRoutingAvoidance(blocker) &&
-    boxesOverlap(routeBlockerBox(blocker, padding), routeBox)
-  );
+  if (blockers.length < SPATIAL_FILTER_MIN_ITEMS) {
+    return blockers.filter((blocker) =>
+      staticNodeParticipatesInRoutingAvoidance(blocker) &&
+      boxesOverlap(routeBlockerBox(blocker, padding), routeBox)
+    );
+  }
+  const result: ModelNode[] = [];
+  for (const candidate of blockerGridFor(blockers, padding).collect(routeBox)) {
+    if (staticNodeParticipatesInRoutingAvoidance(candidate.item) && boxesOverlap(candidate.box, routeBox)) {
+      result.push(candidate.item);
+    }
+  }
+  return result;
 }
 
 function filterSegmentsForRoutePoints(points: Point[], segments: Segment[], padding = ROUTE_LANE_SEGMENT_MARGIN) {
@@ -13171,7 +13272,16 @@ function filterSegmentsForRoutePoints(points: Point[], segments: Segment[], padd
     return [];
   }
   const routeBox = routeBoundsForPoints(points, padding);
-  return segments.filter((segment) => boxesOverlap(segmentBox(segment, padding), routeBox));
+  if (segments.length < SPATIAL_FILTER_MIN_ITEMS) {
+    return segments.filter((segment) => boxesOverlap(segmentBox(segment, padding), routeBox));
+  }
+  const result: Segment[] = [];
+  for (const candidate of segmentGridFor(segments, padding).collect(routeBox)) {
+    if (boxesOverlap(candidate.box, routeBox)) {
+      result.push(candidate.item);
+    }
+  }
+  return result;
 }
 
 const CROSSING_TERMINAL_MARGIN = ROUTE_ENDPOINT_STUB_LENGTH + 2;
