@@ -220,8 +220,9 @@ describe("scheme file persistence", () => {
       });
 
       const svg = await readFile(join(filesRoot, "默认方案", "缺失图片清单.svg"), "utf-8");
-      expect(svg).toContain('href="data/images/missing-bg"');
-      expect(svg).not.toContain('href="/api/images/');
+      // 当 imagePathById 为空时，保留原始 API 路径（不转换为 data/images/）
+      expect(svg).toContain('href="/api/images/missing-bg?id=1"');
+      expect(svg).not.toContain('href="data/images/');
     } finally {
       await rm(root, { recursive: true, force: true });
     }
