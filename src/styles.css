@@ -2793,7 +2793,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   fill: var(--terminal-color, #2563eb);
   stroke: #ffffff;
   stroke-width: 2;
-  vector-effect: non-scaling-stroke;
   cursor: crosshair;
   transform-box: fill-box;
   transform-origin: center;
@@ -2802,6 +2801,10 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
     stroke-width 120ms ease,
     filter 120ms ease,
     transform 120ms ease;
+}
+
+.diagram-canvas .export-terminal-dot {
+  vector-effect: none;
 }
 
 .terminal-dot.ac {

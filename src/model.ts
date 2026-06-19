@@ -16029,6 +16029,51 @@ export function routeIntersectsSpecificNodes(points: Point[], edge: Edge, blocke
   return false;
 }
 
+export function routeIntersectsEndpointNodeBodies(points: Point[], edge: Edge, endpointNodes: ModelNode[]) {
+  if (points.length < 2 || endpointNodes.length === 0) {
+    return false;
+  }
+  const lastPointIndex = points.length - 1;
+  const lastSegmentIndex = points.length - 2;
+  for (const node of endpointNodes) {
+    const sides: EdgeSide[] = [];
+    if (node.id === edge.sourceId) {
+      sides.push("source");
+    }
+    if (node.id === edge.targetId) {
+      sides.push("target");
+    }
+    for (const side of sides) {
+      const endpointIndex = side === "source" ? 0 : lastPointIndex;
+      const adjacentIndex = side === "source" ? 1 : lastPointIndex - 1;
+      const protectedSegmentIndex = side === "source" ? 0 : lastSegmentIndex;
+      const endpoint = points[endpointIndex];
+      const adjacent = points[adjacentIndex];
+      const otherEndpoint = side === "source" ? points[lastPointIndex] : points[0];
+      const terminalId = edgeTerminalId(edge, side);
+      const normal = routeEndpointNormal(node, endpoint, otherEndpoint, terminalId);
+      if (!routeSegmentMatchesNormal(endpoint, adjacent, normal)) {
+        return true;
+      }
+      for (let index = 1; index < points.length; index += 1) {
+        const segmentIndex = index - 1;
+        if (segmentIndex === protectedSegmentIndex) {
+          continue;
+        }
+        const a = points[index - 1];
+        const b = points[index];
+        if (a.x !== b.x && a.y !== b.y) {
+          return true;
+        }
+        if (segmentIntersectsNodeBody(a, b, node)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 export function rerouteEdgesAroundMovedNodes(
   nodes: ModelNode[],
   edges: Edge[],

@@ -1,10 +1,16 @@
 import { describe, expect, test } from "vitest";
-import { createLightweightMovedEndpointRoute } from "./appExtracted/appSelectionDragFactories";
+import {
+  createLightweightMovedEndpointRoute,
+  createRoutePointsForMovedEdgesBlockedByStationaryNodes,
+  createShouldRunDeferredMoveOptimization
+} from "./appExtracted/appSelectionDragFactories";
 import {
   calculateNodeBodyBounds,
   clampPointToBounds,
   createDefaultNode,
   getEdgeEndpointPoint,
+  getRouteBlockingCandidateNodesFromBoxes,
+  getRouteBlockingCandidates,
   getRouteEndpointNormal,
   getTerminalPoint,
   isBusNode,
@@ -12,9 +18,11 @@ import {
   preserveDraggedRouteShape,
   projectPointToBusCenterline,
   routeEdgesForStoredRendering,
+  routeIntersectsEndpointNodeBodies,
   type Edge,
   type ModelNode,
   type Point,
+  routeIntersectsSpecificNodes,
   type RoutedEdge
 } from "./model";
 
@@ -112,5 +120,95 @@ describe("selection drag route cache patches", () => {
 
     expect(route).not.toBeNull();
     expect(routeIntersectsTestBox(route?.points ?? [], calculateNodeBodyBounds(movedSource))).toBe(false);
+  });
+
+  test("keeps deferred blocker repair enabled for nearby unrelated routes after multi-connection moves", () => {
+    const shouldRunDeferredMoveOptimization = createShouldRunDeferredMoveOptimization({});
+    const connectedA: Edge = {
+      id: "connected-a",
+      sourceId: "left",
+      targetId: "moved"
+    };
+    const connectedB: Edge = {
+      id: "connected-b",
+      sourceId: "moved",
+      targetId: "right"
+    };
+    const nearbyUnrelated: Edge = {
+      id: "nearby-unrelated",
+      sourceId: "top",
+      targetId: "bottom"
+    };
+
+    expect(
+      shouldRunDeferredMoveOptimization([connectedA, connectedB], ["moved"], new Set())
+    ).toBe(false);
+    expect(
+      shouldRunDeferredMoveOptimization([connectedA, connectedB, nearbyUnrelated], ["moved"], new Set())
+    ).toBe(true);
+  });
+
+  test("marks moved endpoint routes that cross the moved endpoint device body for repair", () => {
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 340, y: 120 }),
+      id: "endpoint-body-bus",
+      size: { width: 520, height: 16 }
+    };
+    const groundDisconnectorBase = createDefaultNode("ac-ground-disconnector", { x: 340, y: 300 });
+    const groundDisconnector = {
+      ...groundDisconnectorBase,
+      id: "moved-ground-disconnector",
+      params: {
+        ...groundDisconnectorBase.params,
+        _labelVisible: "0",
+        _labelDisplayMode: "hidden"
+      }
+    };
+    const targetPoint = getTerminalPoint(groundDisconnector, "t1");
+    const sourcePoint = projectPointToBusCenterline(bus, { x: groundDisconnector.position.x + 84, y: bus.position.y });
+    const crossingRoute = [
+      sourcePoint,
+      { x: sourcePoint.x, y: targetPoint.y },
+      targetPoint
+    ];
+    const edge: Edge = {
+      id: "bus-to-moved-ground-disconnector",
+      sourceId: bus.id,
+      targetId: groundDisconnector.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      sourcePoint,
+      targetPoint,
+      routePoints: crossingRoute,
+      manualPoints: crossingRoute.slice(1, -1)
+    };
+    const routePointsForMovedEdgesBlockedByStationaryNodes = createRoutePointsForMovedEdgesBlockedByStationaryNodes({
+      canvasBounds: { width: 720, height: 480 },
+      getRouteBlockingCandidateNodesFromBoxes,
+      getRouteBlockingCandidates,
+      routeEdgesForStoredRendering,
+      routeIntersectsEndpointNodeBodies,
+      routeIntersectsSpecificNodes,
+      routingNodesForConnectionEdges: (_candidateEdges: Edge[], nextNodes: ModelNode[]) => nextNodes
+    });
+
+    expect(routeIntersectsTestBox(crossingRoute, calculateNodeBodyBounds(groundDisconnector))).toBe(true);
+    expect(routeIntersectsEndpointNodeBodies(crossingRoute, edge, [groundDisconnector])).toBe(true);
+    expect(routeEdgesForStoredRendering(
+      [bus, groundDisconnector],
+      [edge],
+      { width: 720, height: 480 },
+      { preserveManualRouteDisplay: true }
+    )[0]?.points).toEqual(crossingRoute);
+
+    const blockedRoutePoints = routePointsForMovedEdgesBlockedByStationaryNodes(
+      [bus, groundDisconnector],
+      [edge],
+      [groundDisconnector.id],
+      {},
+      { width: 720, height: 480 }
+    );
+
+    expect(blockedRoutePoints[edge.id]).toEqual(crossingRoute);
   });
 });

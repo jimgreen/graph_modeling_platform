@@ -83,6 +83,7 @@ import {
   realignRoutableLineDeviceBusEndpointPoints,
   upsertSavedProject,
   rerouteEdgesAroundMovedNodes,
+  routeIntersectsEndpointNodeBodies,
   routeIntersectsSpecificNodes,
   buildManualConnectionPreviewRoute,
   validateConnectionEdgeRoute,
@@ -7107,6 +7108,57 @@ describe("power system model", () => {
     expect(rebuilt[0]).not.toBe(edge);
     expect(routeIntersectsSpecificNodes(route.points, rebuilt[0], [source])).toBe(false);
     expect(validateConnectionEdgeRoute([source, bus], rebuilt, edge.id, { width: 900, height: 620 }).ok).toBe(true);
+  });
+
+  test("reroutes a moved target endpoint connection when the route enters the endpoint device body", () => {
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 340, y: 120 }),
+      id: "bus-for-ground-disconnector-body-cross",
+      size: { width: 520, height: 16 }
+    };
+    const target = withHiddenDeviceLabel({
+      ...createDefaultNode("ac-ground-disconnector", { x: 340, y: 300 }),
+      id: "moved-ground-disconnector-body-cross"
+    });
+    const targetPoint = getTerminalPoint(target, "t1");
+    const sourcePoint = projectPointToBusCenterline(bus, { x: target.position.x + 84, y: bus.position.y });
+    const crossingRoute = [
+      sourcePoint,
+      { x: sourcePoint.x, y: targetPoint.y },
+      targetPoint
+    ];
+    const edge: Edge = {
+      id: "bus-to-moved-ground-disconnector-body-cross",
+      sourceId: bus.id,
+      targetId: target.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      sourcePoint,
+      targetPoint,
+      routePoints: crossingRoute,
+      manualPoints: crossingRoute.slice(1, -1)
+    };
+
+    expect(routeIntersectsEndpointNodeBodies(crossingRoute, edge, [target])).toBe(true);
+
+    const rebuilt = rebuildExternalConnectionRoutesForMovedNodes(
+      [bus, target],
+      [edge],
+      [target.id],
+      { width: 720, height: 480 },
+      [edge],
+      { preserveManualPoints: true }
+    );
+    const route = routeEdgesForStoredRendering(
+      [bus, target],
+      rebuilt,
+      { width: 720, height: 480 },
+      { preserveManualRouteDisplay: true }
+    )[0];
+
+    expect(rebuilt[0]).not.toBe(edge);
+    expect(routeIntersectsEndpointNodeBodies(route.points, rebuilt[0], [target])).toBe(false);
+    expect(validateConnectionEdgeRoute([bus, target], rebuilt, edge.id, { width: 720, height: 480 }).ok).toBe(true);
   });
 
   test("redraws connection routes by replacing stale explicit bus endpoint points", () => {

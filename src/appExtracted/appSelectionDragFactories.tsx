@@ -2181,7 +2181,7 @@ export function createRoutePointsForMovedEdgesBlockedByStationaryNodes(__appScop
     baseRoutePoints: DraggingState["originalRoutePoints"],
     bounds?: CanvasBounds
   ): DraggingState["originalRoutePoints"] => {
-  const { canvasBounds, getRouteBlockingCandidateNodesFromBoxes, getRouteBlockingCandidates, routeEdgesForStoredRendering, routeIntersectsSpecificNodes, routingNodesForConnectionEdges } = __appScope;
+  const { canvasBounds, getRouteBlockingCandidateNodesFromBoxes, getRouteBlockingCandidates, routeEdgesForStoredRendering, routeIntersectsEndpointNodeBodies, routeIntersectsSpecificNodes, routingNodesForConnectionEdges } = __appScope;
     if (bounds === undefined) {
       bounds = canvasBounds;
     }
@@ -2195,11 +2195,17 @@ export function createRoutePointsForMovedEdgesBlockedByStationaryNodes(__appScop
     }
     const routingNodes = routingNodesForConnectionEdges(movedCandidateEdges, nextNodes, movedIds);
     const stationaryNodes = routingNodes.filter((node) => !movedIds.has(node.id));
-    if (stationaryNodes.length === 0) {
+    const movedEndpointNodes = routingNodes.filter((node) => movedIds.has(node.id));
+    if (stationaryNodes.length === 0 && movedEndpointNodes.length === 0) {
       return baseRoutePoints;
     }
     const stationaryCandidates = getRouteBlockingCandidates(stationaryNodes);
-    const routeByEdgeId = new Map(routeEdgesForStoredRendering(routingNodes, movedCandidateEdges, bounds).map((route) => [route.edgeId, route]));
+    const routeByEdgeId = new Map(routeEdgesForStoredRendering(
+      routingNodes,
+      movedCandidateEdges,
+      bounds,
+      { preserveManualRouteDisplay: true }
+    ).map((route) => [route.edgeId, route]));
     let nextRoutePoints = baseRoutePoints;
     for (const edge of movedCandidateEdges) {
       if (baseRoutePoints[edge.id]) {
@@ -2207,6 +2213,14 @@ export function createRoutePointsForMovedEdgesBlockedByStationaryNodes(__appScop
       }
       const route = routeByEdgeId.get(edge.id);
       if (!route) {
+        continue;
+      }
+      const movedEndpointBlockers = movedEndpointNodes.filter((node) => node.id === edge.sourceId || node.id === edge.targetId);
+      if (routeIntersectsEndpointNodeBodies(route.points, edge, movedEndpointBlockers)) {
+        if (nextRoutePoints === baseRoutePoints) {
+          nextRoutePoints = { ...baseRoutePoints };
+        }
+        nextRoutePoints[edge.id] = route.points;
         continue;
       }
       const blockers = getRouteBlockingCandidateNodesFromBoxes(route.points, edge, stationaryCandidates);
@@ -2610,6 +2624,11 @@ export function createShouldRunDeferredMoveOptimization(__appScope: Record<strin
       return true;
     }
     const movedIds = new Set(movedNodeIds);
+    if (candidateEdges.some((edge) =>
+      !movedIds.has(edge.sourceId) && !movedIds.has(edge.targetId) && !selectedEdgeIds.has(edge.id)
+    )) {
+      return true;
+    }
     let affectedConnectionCount = 0;
     for (const edge of candidateEdges) {
       if (movedIds.has(edge.sourceId) || movedIds.has(edge.targetId) || selectedEdgeIds.has(edge.id)) {

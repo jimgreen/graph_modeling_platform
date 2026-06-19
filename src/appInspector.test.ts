@@ -972,11 +972,15 @@ describe("graph inspector panel", () => {
     expect(source).not.toContain("修改属性");
   });
 
-  test("lets terminal stubs scale with the view like device glyph strokes", async () => {
+  test("lets terminal stubs and terminal dots scale with the view like device glyph strokes", async () => {
     const styles = await readStyles();
     const terminalStubBlock = cssRuleBlock(styles, ".terminal-stub");
+    const terminalDotBlock = cssRuleBlock(styles, ".terminal-dot");
+    const exportTerminalDotBlock = cssRuleBlock(styles, ".diagram-canvas .export-terminal-dot");
 
     expect(terminalStubBlock).not.toContain("vector-effect");
+    expect(terminalDotBlock).not.toContain("vector-effect");
+    expect(exportTerminalDotBlock).toContain("vector-effect: none");
   });
 
   test("keeps upright static symbol text from deforming under non-uniform resize", async () => {
