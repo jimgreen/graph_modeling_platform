@@ -5,17 +5,27 @@ import {
   DEFAULT_STATE_PAGE_ID,
   DEFAULT_STATE_VALUE,
   appendNonDefaultStateDraftRow,
+  createEditableStateIconElementsFromSvgSource,
+  createImportedStateIconElement,
   createStateDraftRow,
   createStateDraftRowFromDefaultVisual,
+  createStateIconDrawingElementFromGeneratedGroupMarkup,
   defaultStateDraftRow,
+  isDefaultStatePageId,
   nextNonDefaultStateIndex,
   nonDefaultStateDraftRows,
   normalizeStatePageId,
+  stateIconDrawingToImage,
   upsertDefaultStateDraftRow
 } from "./stateIconDrawing";
 import { DEVICE_LIBRARY } from "./model";
 import { APP_STATIC_SCOPE } from "./appExtracted/appStaticScope";
-import { createCustomDeviceDefaultStateVisualDraft, createSelectCustomComponentTemplate } from "./appExtracted/appDeviceDefinitionFactories";
+import {
+  createAddCustomDeviceStateDraftRow,
+  createAddDefinitionStateDraftRow,
+  createCustomDeviceDefaultStateVisualDraft,
+  createSelectCustomComponentTemplate
+} from "./appExtracted/appDeviceDefinitionFactories";
 import { createCustomDeviceDraftFromTemplate, generateCustomDeviceImage, resolveTemplateComponentType } from "./customDeviceUtils";
 
 describe("default device state draft rows", () => {
@@ -208,5 +218,219 @@ describe("default device state draft rows", () => {
         (globalThis as any).window = previousWindow;
       }
     }
+  });
+
+  test("adds a custom component state from the latest default state icon", () => {
+    const staleDefaultRow = createStateDraftRow({ value: "0", name: "状态0", image: "old-default.svg" });
+    const latestDefaultRow = createStateDraftRow({ value: "0", name: "状态0", image: "latest-default.svg" });
+    let draft: any = {
+      stateDefinitions: [latestDefaultRow],
+      error: "old error"
+    };
+    let activePageId = "";
+    const addState = createAddCustomDeviceStateDraftRow({
+      appendNonDefaultStateDraftRow,
+      createStateDraftRowFromDefaultVisual,
+      customDeviceDefaultStateVisualDraft: () => ({ image: "fallback-default.svg" }),
+      customDeviceDraft: {
+        stateDefinitions: [staleDefaultRow]
+      },
+      defaultStateDraftRow,
+      nextNonDefaultStateIndex,
+      setCustomDeviceDraft: (updater: any) => {
+        draft = updater(draft);
+      },
+      setCustomDeviceStatePageId: (rowId: string) => {
+        activePageId = rowId;
+      },
+      stateDraftRowId: () => "state-new"
+    });
+
+    addState();
+
+    expect(draft.stateDefinitions).toHaveLength(2);
+    expect(draft.stateDefinitions[1]).toMatchObject({
+      id: "state-new",
+      value: "1",
+      name: "状态1",
+      image: "latest-default.svg"
+    });
+    expect(draft.error).toBe("");
+    expect(activePageId).toBe("state-new");
+  });
+
+  test("adds a definition state from the latest default state icon", () => {
+    const staleDefaultRow = createStateDraftRow({ value: "0", name: "状态0", image: "old-definition.svg" });
+    const latestDefaultRow = createStateDraftRow({ value: "0", name: "状态0", image: "latest-definition.svg" });
+    let rows = [latestDefaultRow];
+    let activePageId = "";
+    let draftError = "old error";
+    const addState = createAddDefinitionStateDraftRow({
+      appendNonDefaultStateDraftRow,
+      createStateDraftRowFromDefaultVisual,
+      defaultStateDraftRow,
+      definitionDefaultStateVisualDraft: () => ({ image: "fallback-definition.svg" }),
+      definitionStateDraftRows: [staleDefaultRow],
+      nextNonDefaultStateIndex,
+      setDefinitionDraftError: (next: string) => {
+        draftError = next;
+      },
+      setDefinitionStateDraftRows: (updater: any) => {
+        rows = updater(rows);
+      },
+      setDefinitionStatePageId: (rowId: string) => {
+        activePageId = rowId;
+      },
+      stateDraftRowId: () => "definition-state-new"
+    });
+
+    addState();
+
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toMatchObject({
+      id: "definition-state-new",
+      value: "1",
+      name: "状态1",
+      image: "latest-definition.svg"
+    });
+    expect(draftError).toBe("");
+    expect(activePageId).toBe("definition-state-new");
+  });
+
+  test("adds a custom component state from the active default icon drawing", () => {
+    const oldDefaultRow = createStateDraftRow({ value: "0", name: "状态0", image: "old-default.svg" });
+    let draft: any = {
+      stateDefinitions: [oldDefaultRow],
+      error: "old error"
+    };
+    let activePageId = "";
+    const addState = createAddCustomDeviceStateDraftRow({
+      appendNonDefaultStateDraftRow,
+      createStateDraftRowFromDefaultVisual,
+      customDeviceDefaultStateVisualDraft: () => ({ image: "fallback-default.svg" }),
+      defaultStateDraftRow,
+      isDefaultStatePageId,
+      nextNonDefaultStateIndex,
+      setCustomDeviceDraft: (updater: any) => {
+        draft = updater(draft);
+      },
+      setCustomDeviceStatePageId: (rowId: string) => {
+        activePageId = rowId;
+      },
+      stateDraftRowId: () => "state-from-inline",
+      stateIconDrawingDialog: {
+        target: { scope: "custom", rowId: DEFAULT_STATE_PAGE_ID }
+      },
+      stateIconDrawingInlineImage: "inline-default.svg",
+      upsertDefaultStateDraftRow
+    });
+
+    addState();
+
+    expect(draft.stateDefinitions).toHaveLength(2);
+    expect(draft.stateDefinitions[0]).toMatchObject({
+      image: "inline-default.svg",
+      imageAssetId: "",
+      backgroundImage: "",
+      backgroundImageAssetId: ""
+    });
+    expect(draft.stateDefinitions[1]).toMatchObject({
+      id: "state-from-inline",
+      value: "1",
+      name: "状态1",
+      image: "inline-default.svg"
+    });
+    expect(activePageId).toBe("state-from-inline");
+  });
+
+  test("adds a definition state from the active default icon drawing", () => {
+    const oldDefaultRow = createStateDraftRow({ value: "0", name: "状态0", image: "old-definition.svg" });
+    let rows = [oldDefaultRow];
+    let activePageId = "";
+    const addState = createAddDefinitionStateDraftRow({
+      appendNonDefaultStateDraftRow,
+      createStateDraftRowFromDefaultVisual,
+      defaultStateDraftRow,
+      definitionDefaultStateVisualDraft: () => ({ image: "fallback-definition.svg" }),
+      isDefaultStatePageId,
+      nextNonDefaultStateIndex,
+      setDefinitionDraftError: () => {},
+      setDefinitionStateDraftRows: (updater: any) => {
+        rows = updater(rows);
+      },
+      setDefinitionStatePageId: (rowId: string) => {
+        activePageId = rowId;
+      },
+      stateDraftRowId: () => "definition-state-from-inline",
+      stateIconDrawingDialog: {
+        target: { scope: "definition", rowId: DEFAULT_STATE_PAGE_ID }
+      },
+      stateIconDrawingInlineImage: "inline-definition.svg",
+      upsertDefaultStateDraftRow
+    });
+
+    addState();
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      image: "inline-definition.svg",
+      imageAssetId: "",
+      backgroundImage: "",
+      backgroundImageAssetId: ""
+    });
+    expect(rows[1]).toMatchObject({
+      id: "definition-state-from-inline",
+      value: "1",
+      name: "状态1",
+      image: "inline-definition.svg"
+    });
+    expect(activePageId).toBe("definition-state-from-inline");
+  });
+
+  test("restores generated imported SVG layers without wrapping the full state canvas", () => {
+    const importedElement = {
+      ...createImportedStateIconElement(
+        "imported-svg",
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-72 -32 144 64"><rect x="-72" y="-32" width="144" height="64" rx="8" fill="#f8fafc"/><text x="0" y="0">默认图标</text></svg>',
+        "默认图标"
+      ),
+      x: 120,
+      y: 80,
+      width: 120,
+      height: 88,
+      rotation: 0
+    };
+    const imageSource = decodeURIComponent(stateIconDrawingToImage([importedElement]).split(",")[1] ?? "");
+    const groupMarkup = imageSource.match(/<g\b[\s\S]*<\/g>/)?.[0] ?? "";
+
+    const restored = createStateIconDrawingElementFromGeneratedGroupMarkup(groupMarkup, "状态0-1");
+
+    expect(restored).toMatchObject({
+      kind: "imported-svg",
+      x: 120,
+      y: 80,
+      width: 120,
+      height: 88,
+      rotation: 0
+    });
+    expect(restored?.svgSource).toContain('viewBox="-72 -32 144 64"');
+    expect(restored?.svgSource).not.toContain('viewBox="0 0 240 160"');
+  });
+
+  test("keeps externally imported SVG as one drawing element", () => {
+    const imported = createEditableStateIconElementsFromSvgSource(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="4" y="4" width="56" height="56"/><circle cx="32" cy="32" r="16"/><text x="32" y="36">A</text></svg>',
+      "external.svg",
+      { preserveImportedSvg: true }
+    );
+
+    expect(imported).toHaveLength(1);
+    expect(imported[0]).toMatchObject({
+      kind: "imported-svg",
+      text: "external.svg"
+    });
+    expect(imported[0].svgSource).toContain("<rect");
+    expect(imported[0].svgSource).toContain("<circle");
+    expect(imported[0].svgSource).toContain("<text");
   });
 });

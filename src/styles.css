@@ -5245,6 +5245,15 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   pointer-events: none;
 }
 
+.state-icon-drawing-icon-frame {
+  fill: none;
+  stroke: #94a3b8;
+  stroke-width: 1.2;
+  stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
 .state-icon-drawing-selection-box {
   fill: none;
   stroke: #2563eb;

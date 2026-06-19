@@ -1862,19 +1862,39 @@ export function createUpdateCustomDeviceStateDraftRow(__appScope: Record<string,
 
 export function createAddCustomDeviceStateDraftRow(__appScope: Record<string, any>) {
   return () => {
-  const { appendNonDefaultStateDraftRow, createStateDraftRowFromDefaultVisual, customDeviceDefaultStateVisualDraft, customDeviceDraft, defaultStateDraftRow, nextNonDefaultStateIndex, setCustomDeviceDraft, setCustomDeviceStatePageId } = __appScope;
+  const { appendNonDefaultStateDraftRow, createStateDraftRowFromDefaultVisual, customDeviceDefaultStateVisualDraft, defaultStateDraftRow, isDefaultStatePageId, nextNonDefaultStateIndex, setCustomDeviceDraft, setCustomDeviceStatePageId, stateDraftRowId, stateIconDrawingDialog, stateIconDrawingInlineImage, upsertDefaultStateDraftRow } = __appScope;
     const defaultVisual = customDeviceDefaultStateVisualDraft();
-    const nextIndex = nextNonDefaultStateIndex(customDeviceDraft.stateDefinitions);
-    const row = createStateDraftRowFromDefaultVisual(defaultStateDraftRow(customDeviceDraft.stateDefinitions, defaultVisual), {
-      value: String(nextIndex),
-      name: `状态${nextIndex}`
-    });
+    const rowId = stateDraftRowId();
+    const inlineDefaultStateIconPatch =
+      stateIconDrawingDialog?.target.scope === "custom" && isDefaultStatePageId(stateIconDrawingDialog.target.rowId)
+        ? {
+            image: stateIconDrawingInlineImage,
+            imageAssetId: "",
+            backgroundImage: "",
+            backgroundImageAssetId: ""
+          }
+        : null;
     setCustomDeviceDraft((current) => ({
       ...current,
-      stateDefinitions: appendNonDefaultStateDraftRow(current.stateDefinitions, defaultVisual, row),
+      backgroundImage: inlineDefaultStateIconPatch ? stateIconDrawingInlineImage : current.backgroundImage,
+      backgroundImageAssetId: inlineDefaultStateIconPatch ? "" : current.backgroundImageAssetId,
+      stateDefinitions: (() => {
+        const sourceRows = inlineDefaultStateIconPatch
+          ? upsertDefaultStateDraftRow(current.stateDefinitions, defaultVisual, inlineDefaultStateIconPatch)
+          : current.stateDefinitions;
+        const nextIndex = nextNonDefaultStateIndex(sourceRows);
+        const row = {
+          ...createStateDraftRowFromDefaultVisual(defaultStateDraftRow(sourceRows, defaultVisual), {
+            value: String(nextIndex),
+            name: `状态${nextIndex}`
+          }),
+          id: rowId
+        };
+        return appendNonDefaultStateDraftRow(sourceRows, defaultVisual, row);
+      })(),
       error: ""
     }));
-    setCustomDeviceStatePageId(row.id);
+    setCustomDeviceStatePageId(rowId);
   };
 }
 
@@ -2298,15 +2318,33 @@ export function createUpdateDefinitionStateDraftRow(__appScope: Record<string, a
 
 export function createAddDefinitionStateDraftRow(__appScope: Record<string, any>) {
   return () => {
-  const { appendNonDefaultStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionStateDraftRows, nextNonDefaultStateIndex, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId } = __appScope;
+  const { appendNonDefaultStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, definitionDefaultStateVisualDraft, isDefaultStatePageId, nextNonDefaultStateIndex, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, stateDraftRowId, stateIconDrawingDialog, stateIconDrawingInlineImage, upsertDefaultStateDraftRow } = __appScope;
     const defaultVisual = definitionDefaultStateVisualDraft();
-    const nextIndex = nextNonDefaultStateIndex(definitionStateDraftRows);
-    const row = createStateDraftRowFromDefaultVisual(defaultStateDraftRow(definitionStateDraftRows, defaultVisual), {
-      value: String(nextIndex),
-      name: `状态${nextIndex}`
+    const rowId = stateDraftRowId();
+    const inlineDefaultStateIconPatch =
+      stateIconDrawingDialog?.target.scope === "definition" && isDefaultStatePageId(stateIconDrawingDialog.target.rowId)
+        ? {
+            image: stateIconDrawingInlineImage,
+            imageAssetId: "",
+            backgroundImage: "",
+            backgroundImageAssetId: ""
+          }
+        : null;
+    setDefinitionStateDraftRows((current) => {
+      const sourceRows = inlineDefaultStateIconPatch
+        ? upsertDefaultStateDraftRow(current, defaultVisual, inlineDefaultStateIconPatch)
+        : current;
+      const nextIndex = nextNonDefaultStateIndex(sourceRows);
+      const row = {
+        ...createStateDraftRowFromDefaultVisual(defaultStateDraftRow(sourceRows, defaultVisual), {
+          value: String(nextIndex),
+          name: `状态${nextIndex}`
+        }),
+        id: rowId
+      };
+      return appendNonDefaultStateDraftRow(sourceRows, defaultVisual, row);
     });
-    setDefinitionStateDraftRows((current) => appendNonDefaultStateDraftRow(current, defaultVisual, row));
-    setDefinitionStatePageId(row.id);
+    setDefinitionStatePageId(rowId);
     setDefinitionDraftError("");
   };
 }
@@ -2797,7 +2835,7 @@ export function createChooseStateIconDrawingImport(__appScope: Record<string, an
     reader.onload = () => {
       const source = String(reader.result ?? "");
       const importedElements = isSvg
-        ? createEditableStateIconElementsFromSvgSource(source, file.name)
+        ? createEditableStateIconElementsFromSvgSource(source, file.name, { preserveImportedSvg: true })
         : [createImportedStateIconElement("image", source, file.name)];
       const selectedElementId = importedElements[0]?.id ?? "";
       setStateIconDrawingDialog((current) =>
@@ -4264,6 +4302,14 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                     height="160"
                     preserveAspectRatio="xMidYMid meet"
                     className="state-icon-drawing-composite-preview"
+                  />
+                  <rect
+                    x="0"
+                    y="0"
+                    width="240"
+                    height="160"
+                    rx="6"
+                    className="state-icon-drawing-icon-frame"
                   />
                   {stateIconDrawingDialog.elements.map((element) => {
                     const selected = selectedIds.includes(element.id);

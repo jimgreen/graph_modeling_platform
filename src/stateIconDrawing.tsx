@@ -446,6 +446,103 @@ export function createImportedStateIconElement(
   };
 }
 
+function readSvgMarkupAttribute(markup: string, name: string) {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`\\b${escapedName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(markup);
+  return (match?.[1] ?? match?.[2] ?? match?.[3] ?? "")
+    .replace(/&quot;/g, "\"")
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+function readSvgMarkupNumber(markup: string, name: string, fallback: number) {
+  const parsed = Number.parseFloat(readSvgMarkupAttribute(markup, name));
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseStateIconDrawingGeneratedTransform(markup: string) {
+  const transform = readSvgMarkupAttribute(markup, "transform");
+  const translateMatch = /translate\(\s*([-+]?\d*\.?\d+(?:e[-+]?\d+)?)\s*(?:,|\s)\s*([-+]?\d*\.?\d+(?:e[-+]?\d+)?)?\s*\)/i.exec(transform);
+  if (!translateMatch) {
+    return null;
+  }
+  const rotationMatch = /rotate\(\s*([-+]?\d*\.?\d+(?:e[-+]?\d+)?)\s*\)/i.exec(transform);
+  return {
+    x: Number.parseFloat(translateMatch[1]),
+    y: Number.parseFloat(translateMatch[2] ?? "0"),
+    rotation: rotationMatch ? Number.parseFloat(rotationMatch[1]) : 0
+  };
+}
+
+function firstSvgMarkupInGeneratedGroup(markup: string) {
+  return /<svg\b[\s\S]*<\/svg>/i.exec(markup)?.[0] ?? "";
+}
+
+export function createStateIconDrawingElementFromGeneratedGroupMarkup(
+  markup: string,
+  fileName: string
+): StateIconDrawingElement | null {
+  const trimmed = markup.trim();
+  if (!/^<g\b/i.test(trimmed)) {
+    return null;
+  }
+  const transform = parseStateIconDrawingGeneratedTransform(trimmed);
+  if (!transform) {
+    return null;
+  }
+  const svgMarkup = firstSvgMarkupInGeneratedGroup(trimmed);
+  if (svgMarkup) {
+    const svgOpen = /<svg\b([^>]*)>/i.exec(svgMarkup)?.[1] ?? "";
+    const width = Math.max(1, readSvgMarkupNumber(svgOpen, "width", 120));
+    const height = Math.max(1, readSvgMarkupNumber(svgOpen, "height", 88));
+    return {
+      ...createImportedStateIconElement(
+        "imported-svg",
+        stateIconSvgElementSource(svgMarkup) || svgMarkup,
+        fileName
+      ),
+      x: transform.x,
+      y: transform.y,
+      width,
+      height,
+      rotation: transform.rotation
+    };
+  }
+  const imageOpen = /<image\b([^>]*)>/i.exec(trimmed)?.[1] ?? "";
+  if (imageOpen) {
+    const href = readSvgMarkupAttribute(imageOpen, "href") || readSvgMarkupAttribute(imageOpen, "xlink:href");
+    const width = Math.max(1, readSvgMarkupNumber(imageOpen, "width", 120));
+    const height = Math.max(1, readSvgMarkupNumber(imageOpen, "height", 88));
+    const svgSource = svgSourceFromDataUrl(href);
+    return {
+      ...createImportedStateIconElement(svgSource ? "imported-svg" : "image", svgSource || href, fileName),
+      x: transform.x,
+      y: transform.y,
+      width,
+      height,
+      rotation: transform.rotation
+    };
+  }
+  const circleOpen = /<circle\b([^>]*)>/i.exec(trimmed)?.[1] ?? "";
+  if (circleOpen) {
+    const radius = Math.max(1, readSvgMarkupNumber(circleOpen, "r", 29));
+    return {
+      ...createStateIconDrawingElement("circle"),
+      x: transform.x,
+      y: transform.y,
+      width: radius * 2,
+      height: radius * 2,
+      rotation: transform.rotation,
+      strokeWidth: Math.max(0, readSvgMarkupNumber(circleOpen, "stroke-width", 6)),
+      strokeColor: readSvgMarkupAttribute(circleOpen, "stroke") || "#2563eb",
+      fillColor: readSvgMarkupAttribute(circleOpen, "fill") || "transparent"
+    };
+  }
+  return null;
+}
+
 export function svgSourceFromDataUrl(dataUrl: string) {
   const value = dataUrl.trim();
   if (!value.startsWith("data:image/svg+xml")) {
@@ -645,10 +742,29 @@ export function stateIconSvgSourceToReactNodes(source: string) {
   return parsed.editableChildren.map((child, index) => stateIconSvgNodeToReact(child, `svg-node-${index}`));
 }
 
-export function createEditableStateIconElementsFromSvgSource(source: string, fileName: string) {
+export function createEditableStateIconElementsFromSvgSource(
+  source: string,
+  fileName: string,
+  options: { preserveImportedSvg?: boolean } = {}
+) {
+  if (options.preserveImportedSvg) {
+    return [createImportedStateIconElement("imported-svg", stateIconSvgElementSource(source) || source, fileName)];
+  }
   const parsed = parseStateIconSvgSource(source);
   if (!parsed || parsed.editableChildren.length <= 1) {
     return [createImportedStateIconElement("imported-svg", stateIconSvgElementSource(source) || source, fileName)];
+  }
+  const generatedElements = parsed.editableChildren.map((child, index) =>
+    createStateIconDrawingElementFromGeneratedGroupMarkup(child.outerHTML, `${fileName || "SVG"}-${index + 1}`)
+  );
+  if (generatedElements.some(Boolean)) {
+    return parsed.editableChildren.map((child, index) =>
+      generatedElements[index] ?? createImportedStateIconElement(
+        "imported-svg",
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${escapeXml(parsed.viewBox)}">${parsed.supportMarkup}${child.outerHTML}</svg>`,
+        `${fileName || "SVG"}-${index + 1}`
+      )
+    );
   }
   return parsed.editableChildren.map((child, index) =>
     createImportedStateIconElement(
