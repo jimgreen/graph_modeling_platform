@@ -104,6 +104,14 @@ function cssRuleBlock(styles: string, selector: string) {
 }
 
 describe("graph inspector panel", () => {
+  test("imports selected scheme duplication factory used during app initialization", async () => {
+    const source = await readAppSource();
+    const projectCanvasImport = source.match(/import \{[^}]*\} from "\.\/appExtracted\/appProjectCanvasFactories";/)?.[0] ?? "";
+
+    expect(source).toContain("const duplicateSelectedSchemeRecords = createDuplicateSelectedSchemeRecords(__appScope);");
+    expect(projectCanvasImport).toContain("createDuplicateSelectedSchemeRecords");
+  });
+
   test("buffers custom component definition text inputs to avoid app-wide rerenders while typing", async () => {
     const source = await readAppSource();
     const inputSource = await readInputComponentsSource();
@@ -1606,8 +1614,10 @@ describe("graph inspector panel", () => {
     expect(measurementDefinitionIndex).toBeGreaterThan(parameterDefinitionIndex);
     expect(customTabsBlock).toContain('className={visibleCustomDeviceDialogView === "terminals" ? "active" : ""}');
     expect(customTabsBlock).toContain('className={visibleCustomDeviceDialogView === "icon" ? "active" : ""}');
-    expect(source.indexOf("const customIconStatePageId = isDefaultStatePageId(customDeviceStatePageId)")).toBeGreaterThanOrEqual(0);
-    expect(source.indexOf("const customIconStatePageId = isDefaultStatePageId(customDeviceStatePageId)")).toBeLessThan(source.indexOf("const customStatePreviewVisual ="));
+    expect(source.indexOf("const customIconStatePageId = customDeviceStatePageId;")).toBeGreaterThanOrEqual(0);
+    expect(source.indexOf("const customIconStatePageId = customDeviceStatePageId;")).toBeLessThan(source.indexOf("const customStatePreviewVisual ="));
+    expect(source).not.toContain("const customIconStatePageId = isDefaultStatePageId(customDeviceStatePageId)");
+    expect(source).not.toContain("customDeviceDraft.stateDefinitions[0]?.id ?? customDeviceStatePageId");
     expect(source).toContain("stateVisualFromDraftRow(activeStateDraftRow(customDeviceDraft.stateDefinitions, customIconStatePageId))");
     expect(customVisualBlock).toContain('visibleCustomDeviceDialogView === "terminals"');
     expect(customVisualBlock).toContain('visibleCustomDeviceDialogView === "icon"');
@@ -6541,23 +6551,23 @@ describe("graph inspector panel", () => {
   test("shows smart alignment guides and snaps node drag deltas to visible nearby nodes", async () => {
     const source = await readAppSource();
     const styleSource = await readStyles();
-    const dragStart = source.indexOf("const computeSmartAlignmentSnap =");
-    const dragEnd = source.indexOf("const computeNodeDragPreviewDelta =", dragStart);
+    const dragStart = source.indexOf("export function createComputeSmartAlignmentSnap");
+    const dragEnd = source.indexOf("export function createComputeNodeDragPreviewDelta", dragStart);
     const smartAlignBlock = source.slice(dragStart, dragEnd);
-    const previewStart = source.indexOf("const computeNodeDragPreviewDelta =");
-    const previewEnd = source.indexOf("const computeNodeDragDelta =", previewStart);
+    const previewStart = source.indexOf("export function createComputeNodeDragPreviewDelta");
+    const previewEnd = source.indexOf("export function createComputeNodeDragDelta", previewStart);
     const previewBlock = source.slice(previewStart, previewEnd);
     const renderStart = source.indexOf("{smartAlignmentGuides.map");
     const renderEnd = source.indexOf("{dragging?.historyCaptured", renderStart);
     const renderBlock = source.slice(renderStart, renderEnd);
-    const clearStart = source.indexOf("const clearDraggingMoveState =");
-    const clearEnd = source.indexOf("const cancelActiveEditInteractions", clearStart);
+    const clearStart = source.indexOf("export function createClearDraggingMoveState");
+    const clearEnd = source.indexOf("export function createCancelActiveEditInteractions", clearStart);
     const clearBlock = source.slice(clearStart, clearEnd);
-    const finishDragStart = source.indexOf("const finishNodeDrag = () =>");
-    const finishDragEnd = source.indexOf("const finishTransformDrag", finishDragStart);
+    const finishDragStart = source.indexOf("export function createFinishNodeDrag");
+    const finishDragEnd = source.indexOf("export function createFinishTransformDrag", finishDragStart);
     const finishDragBlock = source.slice(finishDragStart, finishDragEnd);
-    const moveSelectionStart = source.indexOf("const moveSelection =");
-    const moveSelectionEnd = source.indexOf("const updateSelectedNode", moveSelectionStart);
+    const moveSelectionStart = source.indexOf("export function createMoveSelection");
+    const moveSelectionEnd = source.indexOf("export function createUndoScopeForNodeFootprintPatch", moveSelectionStart);
     const moveSelectionBlock = source.slice(moveSelectionStart, moveSelectionEnd);
 
     expect(source).toContain("type SmartAlignmentGuide =");
@@ -6589,8 +6599,8 @@ describe("graph inspector panel", () => {
     const helperStart = source.indexOf("function nodeTerminalOutflowSmartAlignmentAnchors");
     const helperEnd = source.indexOf("function nodeSmartAlignmentBounds", helperStart);
     const helperBlock = source.slice(helperStart, helperEnd);
-    const computeStart = source.indexOf("const computeSmartAlignmentSnap =");
-    const computeEnd = source.indexOf("const computeNodeDragPreviewDelta =", computeStart);
+    const computeStart = source.indexOf("export function createComputeSmartAlignmentSnap");
+    const computeEnd = source.indexOf("export function createComputeNodeDragPreviewDelta", computeStart);
     const computeBlock = source.slice(computeStart, computeEnd);
 
     expect(helperStart).toBeGreaterThan(-1);
@@ -6612,11 +6622,11 @@ describe("graph inspector panel", () => {
     const helperStart = source.indexOf("function nodeSmartAlignmentBounds");
     const helperEnd = source.indexOf("function nodeVisualInteractionBounds", helperStart);
     const helperBlock = source.slice(helperStart, helperEnd);
-    const dragStart = source.indexOf("const dragBoundsForSmartAlignment =");
-    const dragEnd = source.indexOf("const computeSmartAlignmentSnap =", dragStart);
+    const dragStart = source.indexOf("export function createDragBoundsForSmartAlignment");
+    const dragEnd = source.indexOf("export function createTerminalOutflowAnchorsForSmartAlignmentDrag", dragStart);
     const dragBoundsBlock = source.slice(dragStart, dragEnd);
-    const computeStart = source.indexOf("const computeSmartAlignmentSnap =");
-    const computeEnd = source.indexOf("const computeNodeDragPreviewDelta =", computeStart);
+    const computeStart = source.indexOf("export function createComputeSmartAlignmentSnap");
+    const computeEnd = source.indexOf("export function createComputeNodeDragPreviewDelta", computeStart);
     const computeBlock = source.slice(computeStart, computeEnd);
 
     expect(helperStart).toBeGreaterThan(-1);
@@ -7157,6 +7167,12 @@ describe("graph inspector panel", () => {
     expect(styles).toContain(".diagram-node.routable-line-node.single-drag-origin-line .routable-line-device-lod-line");
     expect(styles).toContain(".routable-line-manual-path-layer.single-drag-origin-line .routable-line-manual-path-preview");
     expect(styles).toContain(".routable-line-endpoint-handle.single-drag-origin-line");
+  });
+
+  test("ghosts original bus endpoint dots during single-node drag previews", async () => {
+    const styles = await readStyles();
+
+    expect(styles).toContain(".connection-group.single-drag-origin-line .bus-connection-dot");
   });
 
   test("keeps moved bus endpoint slide checks local during drag and move commits", async () => {
@@ -8140,26 +8156,26 @@ describe("graph inspector panel", () => {
     const draggingTypeStart = source.indexOf("type DraggingState =");
     const draggingTypeEnd = source.indexOf("type MultiNodeDragOverlayPreview", draggingTypeStart);
     const draggingTypeBlock = source.slice(draggingTypeStart, draggingTypeEnd);
-    const wholeMoveStart = source.indexOf("const isWholeActiveLayerMove =");
-    const wholeMoveEnd = source.indexOf("const routableLineRouteCandidateIdsForMovedNodes", wholeMoveStart);
+    const wholeMoveStart = source.indexOf("export function createIsWholeActiveLayerMove");
+    const wholeMoveEnd = source.indexOf("export function createInternalMoveEdgeIdsForMovedNodes", wholeMoveStart);
     const wholeMoveBlock = source.slice(wholeMoveStart, wholeMoveEnd);
-    const smartSnapStart = source.indexOf("const computeSmartAlignmentSnap =");
-    const smartSnapEnd = source.indexOf("const computeNodeDragPreviewDelta", smartSnapStart);
+    const smartSnapStart = source.indexOf("export function createComputeSmartAlignmentSnap");
+    const smartSnapEnd = source.indexOf("export function createComputeNodeDragPreviewDelta", smartSnapStart);
     const smartSnapBlock = source.slice(smartSnapStart, smartSnapEnd);
-    const snapStart = source.indexOf("const findMultiNodeDragSnapTargetAtDelta =");
-    const snapEnd = source.indexOf("const updateSingleNodeDragImperativePreview", snapStart);
+    const snapStart = source.indexOf("export function createFindMultiNodeDragSnapTargetAtDelta");
+    const snapEnd = source.indexOf("export function createSingleNodeDragInteractionNodes", snapStart);
     const snapBlock = source.slice(snapStart, snapEnd);
-    const previewStart = source.indexOf("const buildRoutableLineDragPreviewRoutes =");
-    const previewEnd = source.indexOf("const shiftedDragPreviewPoint", previewStart);
+    const previewStart = source.indexOf("export function createBuildRoutableLineDragPreviewRoutes");
+    const previewEnd = source.indexOf("export function createShiftedDragPreviewPoint", previewStart);
     const previewBlock = source.slice(previewStart, previewEnd);
-    const finishStart = source.indexOf("const finishNodeDrag = () =>");
-    const finishEnd = source.indexOf("const finishTransformDrag", finishStart);
+    const finishStart = source.indexOf("export function createFinishNodeDrag");
+    const finishEnd = source.indexOf("export function createFinishTransformDrag", finishStart);
     const finishBlock = source.slice(finishStart, finishEnd);
-    const moveStart = source.indexOf("const moveSelection =");
-    const moveEnd = source.indexOf("const updateSelectedNode", moveStart);
+    const moveStart = source.indexOf("export function createMoveSelection");
+    const moveEnd = source.indexOf("export function createUndoScopeForNodeFootprintPatch", moveStart);
     const moveBlock = source.slice(moveStart, moveEnd);
-    const commitStart = source.indexOf("const commitFastMovedGraphPatches");
-    const commitEnd = source.indexOf("const clampPointToCanvas", commitStart);
+    const commitStart = source.indexOf("export function createCommitFastMovedGraphPatches");
+    const commitEnd = source.indexOf("export function createUpdateMouseStatus", commitStart);
     const commitBlock = source.slice(commitStart, commitEnd);
 
     expect(draggingTypeBlock).toContain("wholeLayerMove?: boolean;");
@@ -8168,8 +8184,6 @@ describe("graph inspector panel", () => {
     expect(wholeMoveBlock).toContain("const movedIds = new Set(nodeIds);");
     expect(wholeMoveBlock).toContain("for (const node of activeLayerNodes)");
     expect(wholeMoveBlock).toContain("!isCanvasNodeMovable(node.kind)");
-    expect(wholeMoveBlock).toContain("translateWholeMoveCandidateEdges");
-    expect(wholeMoveBlock).toContain("wholeMoveRoutableLineNodeUpdates");
     expect(smartSnapBlock).toContain("dragState.wholeLayerMove");
     expect(snapBlock).toContain("if (dragState.wholeLayerMove)");
     expect(previewBlock).toContain("if (dragState.wholeLayerMove)");
@@ -8182,7 +8196,7 @@ describe("graph inspector panel", () => {
     expect(commitBlock).toContain("const wholeLayerMove = options.wholeLayerMove === true;");
     expect(commitBlock).toContain("deferredMoveOptimizationCancelRef.current?.();");
     expect(commitBlock).toContain("wholeMoveRoutableLineNodeUpdates(movedNodeIds, wholeLayerMoveDelta)");
-    expect(commitBlock).toContain("const routeRepairSeedEdges = wholeLayerMove");
+    expect(commitBlock).toContain("const routeRepairCandidateEdges = bulkPlan.routeRepairCandidateEdges;");
     expect(commitBlock).toContain("!wholeLayerMove &&\n      shouldRunSynchronousMoveBlockerRepair");
     expect(commitBlock).toContain("patchCachedRoutesForWholeMove(");
     expect(commitBlock).toContain("if (!wholeLayerMove) {\n      scheduleDeferredRoutableLineRouteRepair(");
@@ -9966,6 +9980,9 @@ describe("graph inspector panel", () => {
     const helperStart = source.indexOf("export function createReadjustMovedBusConnectionRoutes");
     const helperEnd = source.indexOf("export function createCommitLayoutNodePositions", helperStart);
     const helperBlock = source.slice(helperStart, helperEnd);
+    const activeHelperStart = source.indexOf("export function createReadjustActiveLayerBusEndpointRoutes");
+    const activeHelperEnd = source.indexOf("export function createCommitLayoutNodePositions", activeHelperStart);
+    const activeHelperBlock = source.slice(activeHelperStart, activeHelperEnd);
     const commitStart = source.indexOf("export function createCommitLayoutNodePositions");
     const commitEnd = source.indexOf("export function createApplySelectedNodeLayout", commitStart);
     const commitBlock = source.slice(commitStart, commitEnd);
@@ -9980,6 +9997,13 @@ describe("graph inspector panel", () => {
     expect(helperBlock).toContain("const redrawnCandidateEdges = redrawConnectionRoutesForEdges(nextNodes, candidateEdges, busConnectedEdgeIds, bounds)");
     expect(helperBlock).toContain("realignConnectionEdgeBusEndpointPoints(nextNodes, edge)");
     expect(helperBlock).toContain("redrawConnectionRoutesForEdges(nextNodes, realignedCandidateEdges, busConnectedEdgeIds, bounds)");
+    expect(activeHelperStart).toBeGreaterThan(-1);
+    expect(activeHelperBlock).toContain("activeLayerEdges");
+    expect(activeHelperBlock).toContain("activeLayerNodes");
+    expect(activeHelperBlock).toContain("redrawConnectionRoutesForEdges(nodes, edges, edgeIds, canvasBounds)");
+    expect(activeHelperBlock).toContain("redrawRoutableLineDeviceRoutes(nodes, lineNodeIds, canvasBounds)");
+    expect(activeHelperBlock).toContain("patchGraphEdges(changedEdges)");
+    expect(activeHelperBlock).toContain("patchGraphNodes(changedLineNodes)");
     expect(commitBlock).toContain("options: { readjustBusEndpoints?: boolean } = {}");
     expect(commitBlock).toContain("options.readjustBusEndpoints");
     expect(commitBlock).toContain("readjustMovedBusConnectionRoutes(");
@@ -9992,6 +10016,8 @@ describe("graph inspector panel", () => {
     expect(commitBlock).toContain("committedArrangedNodes");
     expect(autoAlignBlock).toContain("commitLayoutNodePositions(");
     expect(autoAlignBlock).toContain("{ readjustBusEndpoints: true }");
+    expect(autoAlignBlock).toContain("readjustActiveLayerBusEndpointRoutes()");
+    expect(autoAlignBlock).toContain("movedCount === 0");
   });
 
   test("opens a scoped connection-redraw dialog from the blank canvas context menu", async () => {
@@ -10000,8 +10026,8 @@ describe("graph inspector panel", () => {
     const contextStart = source.indexOf("{contextMenu && (");
     const contextEnd = source.indexOf("{projectMenu && (", contextStart);
     const contextBlock = source.slice(contextStart, contextEnd);
-    const redrawStart = source.indexOf("const connectionRedrawViewportBounds = () =>");
-    const redrawEnd = source.indexOf("const alignSelected =", redrawStart);
+    const redrawStart = source.indexOf("export function createConnectionRedrawViewportBounds");
+    const redrawEnd = source.indexOf("export function createOpenConnectionRedrawDialog", redrawStart);
     const redrawBlock = source.slice(redrawStart, redrawEnd);
     const dialogStart = source.indexOf("{connectionRedrawDialogOpen && (");
     const dialogEnd = source.indexOf("{templateDialog && (", dialogStart);
@@ -11531,7 +11557,8 @@ describe("graph inspector panel", () => {
     expect(definitionVisualBlock).toContain("saveStateVisuals: saveDeviceDefinitionStateVisualDraft");
     expect(definitionVisualBlock).toContain("保存图标和端子");
     expect(customDialogBlock).toContain("preview: !customDefaultStateSelected ? (");
-    expect(customDialogBlock).toContain("hideDefaultPage: true");
+    expect(customDialogBlock).not.toContain("hideDefaultPage: true");
+    expect(customDialogBlock).not.toContain("hideDefaultPage:");
     expect(customDialogBlock).toContain('setCustomDeviceStatePageId("");');
     expect(customDialogBlock).not.toContain("saveStateVisuals: saveCustomDeviceTemplate");
     expect(customDialogBlock).not.toContain('saveStateVisualsLabel: "保存自定义设备"');

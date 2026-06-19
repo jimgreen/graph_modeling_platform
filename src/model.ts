@@ -2410,6 +2410,7 @@ export type ConnectionEndpointRuleIssueType =
   | "duplicate-terminal-pair"
   | "duplicate-terminal-bus"
   | "same-device-terminals"
+  | "same-device-same-bus-endpoints"
   | "shared-opposite-terminal";
 
 export type ConnectionEndpointRuleIssue = {
@@ -6425,14 +6426,21 @@ export function redrawRoutableLineDeviceRoutes(
       continue;
     }
     const syncedNode = syncRoutableLineDeviceEndpointsToRefs(node, nodes, nodeById, referenceNodes);
-    const routePoints = routableLineDeviceCanvasPoints(syncedNode);
+    const syncedRoutingNodes = syncedNode === node
+      ? nodes
+      : nodes.map((item) => (item.id === syncedNode.id ? syncedNode : item));
+    const syncedRoutePoints = routableLineDeviceCanvasPoints(syncedNode);
+    const nodeForRedraw = syncedRoutePoints.length > 2
+      ? realignRoutableLineDeviceBusEndpointPoints(syncedNode, syncedRoutingNodes)
+      : syncedNode;
+    const routePoints = routableLineDeviceCanvasPoints(nodeForRedraw);
     const start = routePoints[0];
     const end = routePoints[routePoints.length - 1];
     if (!start || !end) {
       continue;
     }
-    const endpointRefs = routableLineDeviceEndpointRefs(syncedNode);
-    const baseNode = setRoutableLineDeviceEndpoints(syncedNode, start, end, endpointRefs);
+    const endpointRefs = routableLineDeviceEndpointRefs(nodeForRedraw);
+    const baseNode = setRoutableLineDeviceEndpoints(nodeForRedraw, start, end, endpointRefs);
     const routingNodes = nodes.map((item) => (item.id === node.id ? baseNode : item));
     const nextNode = routeRoutableLineDevice(baseNode, routingNodes, bounds);
     if (nextNode !== node) {
@@ -7797,6 +7805,8 @@ export function reconcileOverlappingTerminalConnections(
     }
     removedEdgeIds.push(edge.id);
   }
+  const removedEdgeIdSet = new Set(removedEdgeIds);
+  const retainedEdges = removedEdgeIdSet.size > 0 ? edges.filter((edge) => !removedEdgeIdSet.has(edge.id)) : edges;
   let usedEdgeIds: Set<string> | null = null;
   const allocateEdgeId = (baseId: string) => {
     if (!usedEdgeIds) {
@@ -7849,22 +7859,24 @@ export function reconcileOverlappingTerminalConnections(
       { nodeId: contact.busId, terminalId: contact.busTerminalId, type: contact.type, point: busPoint },
       addedIndex
     );
-    const edgeId = allocateEdgeId(baseId);
-    addedIndex += 1;
-    addedEdges.push({
-      id: edgeId,
+    const candidateEdge: Edge = {
+      id: baseId,
       sourceId: contact.nodeId,
       targetId: contact.busId,
       sourceTerminalId: contact.terminalId,
       targetTerminalId: contact.busTerminalId,
       targetPoint: busPoint
-    });
+    };
+    if (validateConnectionEndpointRules(nextNodes, [...retainedEdges, ...addedEdges], candidateEdge).length > 0) {
+      continue;
+    }
+    const edgeId = allocateEdgeId(baseId);
+    addedIndex += 1;
+    addedEdges.push({ ...candidateEdge, id: edgeId });
   }
   if (removedEdgeIds.length === 0 && addedEdges.length === 0) {
     return { edges, addedEdgeIds: [], removedEdgeIds: [] };
   }
-  const removedEdgeIdSet = new Set(removedEdgeIds);
-  const retainedEdges = removedEdgeIdSet.size > 0 ? edges.filter((edge) => !removedEdgeIdSet.has(edge.id)) : edges;
   return {
     edges: [...retainedEdges, ...addedEdges],
     addedEdgeIds: addedEdges.map((edge) => edge.id),
@@ -8653,6 +8665,41 @@ function endpointBelongsToMultiTerminalDevice(endpoint: ConnectionEndpointRef): 
   return !endpoint.isBus && endpoint.node.terminals.length > 1;
 }
 
+function deviceBusEndpointPair(
+  first: ConnectionEndpointRef,
+  second: ConnectionEndpointRef
+): { device: ConnectionEndpointRef; bus: ConnectionEndpointRef } | null {
+  if (first.isBus === second.isBus) {
+    return null;
+  }
+  const device = first.isBus ? second : first;
+  const bus = first.isBus ? first : second;
+  if (!endpointBelongsToMultiTerminalDevice(device)) {
+    return null;
+  }
+  return { device, bus };
+}
+
+function hasSameDeviceSameBusEndpointConflict(
+  candidateFirst: ConnectionEndpointRef,
+  candidateSecond: ConnectionEndpointRef,
+  existingFirst: ConnectionEndpointRef,
+  existingSecond: ConnectionEndpointRef
+): { device: ConnectionEndpointRef; bus: ConnectionEndpointRef } | null {
+  const candidate = deviceBusEndpointPair(candidateFirst, candidateSecond);
+  const existing = deviceBusEndpointPair(existingFirst, existingSecond);
+  if (
+    candidate &&
+    existing &&
+    candidate.device.nodeId === existing.device.nodeId &&
+    candidate.device.terminalId !== existing.device.terminalId &&
+    candidate.bus.nodeId === existing.bus.nodeId
+  ) {
+    return candidate;
+  }
+  return null;
+}
+
 function hasSharedOppositeTerminalConflict(
   candidateLocal: ConnectionEndpointRef,
   candidateRemote: ConnectionEndpointRef,
@@ -8716,6 +8763,16 @@ export function validateConnectionEndpointRules(
         edgeId: candidateEdge.id,
         conflictingEdgeId: existingEdge.id,
         message: "该端子与该母线类设备之间已存在联络线，不能重复连接。"
+      });
+      return issues;
+    }
+    const sameDeviceSameBus = hasSameDeviceSameBusEndpointConflict(candidateSource, candidateTarget, existingSource, existingTarget);
+    if (sameDeviceSameBus) {
+      issues.push({
+        type: "same-device-same-bus-endpoints",
+        edgeId: candidateEdge.id,
+        conflictingEdgeId: existingEdge.id,
+        message: `同一个设备的两个端点不能落在同一个母线上（${sameDeviceSameBus.device.node.name} / ${sameDeviceSameBus.bus.node.name}）。`
       });
       return issues;
     }
@@ -14322,6 +14379,22 @@ export function realignConnectionEdgeBusEndpointPoints(nodes: ModelNode[], edge:
   return edge;
 }
 
+function manualConnectionRoutePointsForBusEndpointAlignment(nodes: ModelNode[], edge: Edge): Point[] | undefined {
+  if (!edge.manualPoints?.length) {
+    return undefined;
+  }
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const source = nodeById.get(edge.sourceId);
+  const target = nodeById.get(edge.targetId);
+  if (!source || !target) {
+    return undefined;
+  }
+  const routingEdge = edgeWithProjectedMissingBusEndpointPoints(edge, source, target);
+  const start = getEdgeEndpointPoint(source, routingEdge.sourcePoint, routingEdge.sourceTerminalId);
+  const end = getEdgeEndpointPoint(target, routingEdge.targetPoint, routingEdge.targetTerminalId);
+  return [start, ...edge.manualPoints.map((point) => ({ ...point })), end];
+}
+
 function preservedStoredRoutePointsForDisplay(
   routePoints: Point[] | undefined,
   start: Point,
@@ -14729,16 +14802,30 @@ function routeSegmentBlockerIntersectionBoxWithEndpointAwareness(
   if (node.id.startsWith("floating-")) {
     return null;
   }
-  if (node.id === sourceId && segmentIndex <= 1) {
+  if (node.id === sourceId && segmentIndex === 0) {
     return null;
   }
-  if (node.id === targetId && segmentIndex >= lastSegmentIndex - 1) {
+  if (node.id === sourceId && segmentIndex === 1 && routeSegmentTouchesOnlyEndpointClearance(a, b, node)) {
+    return null;
+  }
+  if (node.id === targetId && segmentIndex === lastSegmentIndex) {
+    return null;
+  }
+  if (
+    node.id === targetId &&
+    segmentIndex === lastSegmentIndex - 1 &&
+    routeSegmentTouchesOnlyEndpointClearance(a, b, node)
+  ) {
     return null;
   }
   if (routePoints && routeSegmentIsContinuousEndpointBusOverlap(routePoints, segmentIndex, node, sourceId, targetId)) {
     return null;
   }
   return routeSegmentBlockerIntersectionBox(a, b, node);
+}
+
+function routeSegmentTouchesOnlyEndpointClearance(a: Point, b: Point, node: ModelNode) {
+  return !segmentIntersectsBox(a, b, routeBodyBlockerBox(node, 0));
 }
 
 function routeSegmentIsContinuousEndpointBusOverlap(
@@ -15662,7 +15749,15 @@ export function redrawConnectionRoutesForEdges(
     if (!requestedEdgeIds.has(edge.id)) {
       continue;
     }
-    const prepared = prepareConnectionEdgeForCommit(nodes, [edgeWithoutStoredRouteGeometry(edge)], edge.id, bounds);
+    const busAlignmentRoutePoints = edge.routePoints && edge.routePoints.length > 2
+      ? edge.routePoints
+      : edge.manualPoints?.length
+        ? manualConnectionRoutePointsForBusEndpointAlignment(nodes, edge)
+        : undefined;
+    const edgeForRedraw = busAlignmentRoutePoints && busAlignmentRoutePoints.length > 2
+      ? realignConnectionEdgeBusEndpointPoints(nodes, { ...edge, routePoints: busAlignmentRoutePoints })
+      : edge;
+    const prepared = prepareConnectionEdgeForCommit(nodes, [edgeWithoutStoredRouteGeometry(edgeForRedraw)], edge.id, bounds);
     if (!prepared.ok || !prepared.edge) {
       continue;
     }

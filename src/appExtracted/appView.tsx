@@ -2032,7 +2032,6 @@ export function renderAppView(__appScope: Record<string, any>) {
                 update: updateCustomDeviceStateDraftRow,
                 add: addCustomDeviceStateDraftRow,
                 remove: deleteCustomDeviceStateDraftRow,
-                hideDefaultPage: true,
                 drawingScope: "custom",
                 preview: !customDefaultStateSelected ? (<div className="custom-device-preview">
                   <div className="custom-device-preview-stage">

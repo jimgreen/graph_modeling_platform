@@ -2915,7 +2915,7 @@ export function createLightweightMovedEndpointRoute(__appScope: Record<string, a
     movedNodeIds: Set<string>,
     bounds: CanvasBounds
   ): RoutedEdge | null => {
-  const { clampPointToBounds, getModelEdgeEndpointPoint, getRouteEndpointNormal, isBusNode, nodeForRoutingList, pointsToOrthogonalPath, preserveDraggedRouteShape, sameOptionalPointList } = __appScope;
+  const { clampPointToBounds, getModelEdgeEndpointPoint, getRouteEndpointNormal, isBusNode, nodeForRoutingList, pointsToOrthogonalPath, preserveDraggedRouteShape, routeEdgesForStoredRendering, sameOptionalPointList } = __appScope;
     if (previousRoute.points.length < 2) {
       return null;
     }
@@ -2940,7 +2940,7 @@ export function createLightweightMovedEndpointRoute(__appScope: Record<string, a
     const nextEnd = getModelEdgeEndpointPoint(target, targetEndpointPoint, edge.targetTerminalId);
     const sourceNormal = getRouteEndpointNormal(source, nextStart, nextEnd, edge.sourceTerminalId);
     const targetNormal = getRouteEndpointNormal(target, nextEnd, nextStart, edge.targetTerminalId);
-    const points = preserveDraggedRouteShape({
+    const preservedPoints = preserveDraggedRouteShape({
       routePoints: previousRoute.points,
       nextStart,
       nextEnd,
@@ -2949,6 +2949,15 @@ export function createLightweightMovedEndpointRoute(__appScope: Record<string, a
       sourceNormal,
       targetNormal
     }).map((point) => clampPointToBounds(point, bounds));
+    const routeEdge = {
+      ...edge,
+      sourcePoint: isBusNode(source) ? sourceEndpointPoint ?? nextStart : edge.sourcePoint,
+      targetPoint: isBusNode(target) ? targetEndpointPoint ?? nextEnd : edge.targetPoint,
+      routePoints: preservedPoints,
+      manualPoints: preservedPoints.length > 2 ? preservedPoints.slice(1, -1) : undefined
+    };
+    const repairedRoute = routeEdgesForStoredRendering([source, target], [routeEdge], bounds)[0];
+    const points = (repairedRoute?.points ?? preservedPoints).map((point) => clampPointToBounds(point, bounds));
     const path = pointsToOrthogonalPath(points);
     return sameOptionalPointList(points, previousRoute.points) && path === previousRoute.path
       ? previousRoute

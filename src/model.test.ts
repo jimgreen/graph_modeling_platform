@@ -1162,6 +1162,36 @@ describe("power system model", () => {
     }).map((issue) => issue.type)).toEqual(["shared-opposite-terminal"]);
   });
 
+  test("rejects different terminals from the same device landing on one bus", () => {
+    const branch = createDefaultNode("ac-line", { x: 160, y: 100 });
+    const bus = createDefaultNode("ac-bus", { x: 360, y: 100 });
+    const existing: Edge = {
+      id: "existing-bus-terminal",
+      sourceId: branch.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: { x: 320, y: 100 }
+    };
+
+    const issues = validateConnectionEndpointRules([branch, bus], [existing], {
+      id: "same-device-same-bus",
+      sourceId: bus.id,
+      targetId: branch.id,
+      sourceTerminalId: "t2",
+      sourcePoint: { x: 400, y: 100 },
+      targetTerminalId: "t2"
+    });
+
+    expect(issues).toEqual([
+      expect.objectContaining({
+        type: "same-device-same-bus-endpoints",
+        conflictingEdgeId: existing.id,
+        message: expect.stringContaining("同一个设备的两个端点不能落在同一个母线上")
+      })
+    ]);
+  });
+
   test("sizes each bus terminal list from the number of connected line endpoints", () => {
     const bus = createDefaultNode("ac-bus", { x: 500, y: 100 });
     const loadA = createDefaultNode("ac-load", { x: 180, y: 100 });
@@ -6979,9 +7009,113 @@ describe("power system model", () => {
     expect(new Set(redrawnRoute?.points.map((point) => point.y))).toEqual(new Set([140]));
   });
 
-  test("redraws connection routes while preserving explicit bus endpoint points", () => {
+  test("rebuilds a moved endpoint connection when the preserved route crosses the endpoint device body", () => {
+    const source = withHiddenDeviceLabel({
+      ...createDefaultNode("ac-source", { x: 360, y: 420 }),
+      id: "moved-source-body-cross"
+    });
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 360, y: 120 }),
+      id: "bus-for-body-cross",
+      size: { width: 720, height: 16 }
+    };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const busPoint = projectPointToBusCenterline(bus, sourcePoint);
+    const crossingRoute = [
+      sourcePoint,
+      { x: sourcePoint.x, y: busPoint.y },
+      busPoint
+    ];
+    const edge: Edge = {
+      id: "moved-source-crossing-route",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: busPoint,
+      routePoints: crossingRoute,
+      manualPoints: crossingRoute.slice(1, -1)
+    };
+
+    const rebuilt = rebuildExternalConnectionRoutesForMovedNodes(
+      [source, bus],
+      [edge],
+      [source.id],
+      { width: 900, height: 620 },
+      [edge],
+      { preserveManualPoints: true }
+    );
+    const route = routeEdgesForStoredRendering(
+      [source, bus],
+      rebuilt,
+      { width: 900, height: 620 },
+      { preserveManualRouteDisplay: true }
+    )[0];
+
+    expect(rebuilt[0]).not.toBe(edge);
+    expect(validateConnectionEdgeRoute([source, bus], rebuilt, edge.id, { width: 900, height: 620 }).ok).toBe(true);
+  });
+
+  test("reroutes a moved endpoint connection when the second source segment crosses the endpoint device body", () => {
+    const source = withHiddenDeviceLabel({
+      ...createDefaultNode("ac-line", { x: 360, y: 420 }),
+      id: "moved-line-body-cross"
+    });
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 360, y: 120 }),
+      id: "bus-for-moved-line-body-cross",
+      size: { width: 720, height: 16 }
+    };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const leftLane = { x: sourcePoint.x - 80, y: sourcePoint.y };
+    const rightLane = { x: source.position.x + source.size.width / 2 + 120, y: sourcePoint.y };
+    const busPoint = projectPointToBusCenterline(bus, { x: rightLane.x, y: bus.position.y });
+    const crossingRoute = [
+      sourcePoint,
+      leftLane,
+      rightLane,
+      busPoint
+    ];
+    const edge: Edge = {
+      id: "moved-line-second-segment-crossing-route",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: busPoint,
+      routePoints: crossingRoute,
+      manualPoints: crossingRoute.slice(1, -1)
+    };
+
+    expect(routeIntersectsSpecificNodes(crossingRoute, edge, [source])).toBe(true);
+
+    const rebuilt = rebuildExternalConnectionRoutesForMovedNodes(
+      [source, bus],
+      [edge],
+      [source.id],
+      { width: 900, height: 620 },
+      [edge],
+      { preserveManualPoints: true }
+    );
+    const route = routeEdgesForStoredRendering(
+      [source, bus],
+      rebuilt,
+      { width: 900, height: 620 },
+      { preserveManualRouteDisplay: true }
+    )[0];
+
+    expect(rebuilt[0]).not.toBe(edge);
+    expect(routeIntersectsSpecificNodes(route.points, rebuilt[0], [source])).toBe(false);
+    expect(validateConnectionEdgeRoute([source, bus], rebuilt, edge.id, { width: 900, height: 620 }).ok).toBe(true);
+  });
+
+  test("redraws connection routes by replacing stale explicit bus endpoint points", () => {
     const source = { ...createDefaultNode("ac-load", { x: 220, y: 160 }), id: "source-load" };
     const bus = { ...createDefaultNode("ac-bus", { x: 520, y: 160 }), id: "target-bus" };
+    const expectedBusPoint = projectPointToBusCenterline(bus, {
+      x: getTerminalPoint(source, "t1").x,
+      y: bus.position.y
+    });
     const edge: Edge = {
       id: "bus-redraw-edge",
       sourceId: source.id,
@@ -7000,7 +7134,8 @@ describe("power system model", () => {
     const route = routeEdgesForRendering([source, bus], redrawn, { width: 760, height: 360 })[0];
 
     expect(redrawnEdge).not.toBe(edge);
-    expect(redrawnEdge.targetPoint).toEqual(edge.targetPoint);
+    expect(redrawnEdge.targetPoint).toEqual(expectedBusPoint);
+    expect(redrawnEdge.targetPoint).not.toEqual(edge.targetPoint);
     expect(redrawnEdge.manualPoints?.length ?? 0).toBeLessThan(edge.manualPoints!.length);
     expect(route.points[route.points.length - 1]).toEqual(redrawnEdge.targetPoint);
   });
@@ -7045,6 +7180,75 @@ describe("power system model", () => {
     expectOrthogonalSegments(route.points);
   });
 
+  test("redraws connection routes and realigns bus landing points to previous segment extensions", () => {
+    const source = { ...createDefaultNode("ac-source", { x: 280, y: 300 }), id: "redraw-align-source" };
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 520, y: 120 }),
+      id: "redraw-align-bus",
+      size: { width: 520, height: 16 }
+    };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const staleBusPoint = projectPointToBusCenterline(bus, { x: sourcePoint.x + 120, y: bus.position.y });
+    const extensionX = sourcePoint.x - 80;
+    const expectedBusPoint = projectPointToBusCenterline(bus, { x: extensionX, y: bus.position.y });
+    const edge: Edge = {
+      id: "redraw-align-bus-landing",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: staleBusPoint,
+      routePoints: [
+        sourcePoint,
+        { x: extensionX, y: sourcePoint.y },
+        { x: extensionX, y: bus.position.y + 60 },
+        { x: staleBusPoint.x, y: bus.position.y + 60 },
+        staleBusPoint
+      ]
+    };
+
+    const redrawn = redrawConnectionRoutesForEdges([source, bus], [edge], [edge.id], { width: 900, height: 460 });
+    const route = routeEdgesForRendering([source, bus], redrawn, { width: 900, height: 460 })[0];
+
+    expect(redrawn[0].targetPoint).toEqual(expectedBusPoint);
+    expect(route.points[route.points.length - 1]).toEqual(expectedBusPoint);
+    expect(route.points).not.toContainEqual(staleBusPoint);
+    expectOrthogonalSegments(route.points);
+  });
+
+  test("redraws manually stored connection routes by realigning bus landing points to the main extension", () => {
+    const source = { ...createDefaultNode("ac-source", { x: 280, y: 360 }), id: "manual-redraw-align-source" };
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 520, y: 120 }),
+      id: "manual-redraw-align-bus",
+      size: { width: 560, height: 16 }
+    };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const staleBusPoint = projectPointToBusCenterline(bus, { x: sourcePoint.x + 170, y: bus.position.y });
+    const extensionX = sourcePoint.x;
+    const expectedBusPoint = projectPointToBusCenterline(bus, { x: extensionX, y: bus.position.y });
+    const edge: Edge = {
+      id: "manual-redraw-align-bus-landing",
+      sourceId: source.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: staleBusPoint,
+      manualPoints: [
+        { x: extensionX, y: bus.position.y + 180 },
+        { x: staleBusPoint.x, y: bus.position.y + 180 }
+      ]
+    };
+
+    const redrawn = redrawConnectionRoutesForEdges([source, bus], [edge], [edge.id], { width: 900, height: 520 });
+    const route = routeEdgesForRendering([source, bus], redrawn, { width: 900, height: 520 })[0];
+
+    expect(redrawn[0].targetPoint).toEqual(expectedBusPoint);
+    expect(route.points[route.points.length - 1]).toEqual(expectedBusPoint);
+    expect(route.points).not.toContainEqual(staleBusPoint);
+    expectOrthogonalSegments(route.points);
+  });
+
   test("realigns a routable line bus endpoint to the previous segment extension before automatic alignment redraw", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
     const source = { ...createDefaultNode("ac-source", { x: 280, y: 320 }), id: "aligned-line-source" };
@@ -7085,6 +7289,89 @@ describe("power system model", () => {
     expect(finalRoutePoints).not.toContainEqual(staleBusPoint);
     expect(Math.abs(expectedBusPoint.x - sourcePoint.x)).toBeLessThan(Math.abs(staleBusPoint.x - sourcePoint.x));
     expect(routableLineDeviceEndpointRefs(redrawn[0] ?? realigned).target?.localPoint).toEqual(
+      routableLineDeviceEndpointRefForNode(bus, "t1", expectedBusPoint).localPoint
+    );
+    expectOrthogonalSegments(finalRoutePoints);
+  });
+
+  test("redraws routable line routes and realigns bus endpoints to previous segment extensions", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = { ...createDefaultNode("ac-source", { x: 280, y: 320 }), id: "redraw-align-line-source" };
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 560, y: 120 }),
+      id: "redraw-align-line-bus",
+      size: { width: 560, height: 16 }
+    };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const staleBusPoint = projectPointToBusCenterline(bus, { x: sourcePoint.x + 140, y: bus.position.y });
+    const extensionX = sourcePoint.x - 90;
+    const expectedBusPoint = projectPointToBusCenterline(bus, { x: extensionX, y: bus.position.y });
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      sourcePoint,
+      staleBusPoint,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: routableLineDeviceEndpointRefForNode(bus, "t1", staleBusPoint)
+      }
+    );
+    const routedLine = setRoutableLineDeviceCanvasPoints(line, [
+      sourcePoint,
+      { x: extensionX, y: sourcePoint.y },
+      { x: extensionX, y: bus.position.y + 70 },
+      { x: staleBusPoint.x, y: bus.position.y + 70 },
+      staleBusPoint
+    ]);
+
+    const redrawn = redrawRoutableLineDeviceRoutes([source, bus, routedLine], [line.id], { width: 940, height: 500 });
+    const finalRoutePoints = routableLineDeviceCanvasPoints(redrawn[0] ?? routedLine);
+
+    expect(finalRoutePoints[0]).toEqual(sourcePoint);
+    expect(finalRoutePoints[finalRoutePoints.length - 1]).toEqual(expectedBusPoint);
+    expect(finalRoutePoints).not.toContainEqual(staleBusPoint);
+    expect(routableLineDeviceEndpointRefs(redrawn[0] ?? routedLine).target?.localPoint).toEqual(
+      routableLineDeviceEndpointRefForNode(bus, "t1", expectedBusPoint).localPoint
+    );
+    expectOrthogonalSegments(finalRoutePoints);
+  });
+
+  test("redraws manually stored routable line routes by realigning bus endpoints to the main extension", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const source = { ...createDefaultNode("ac-source", { x: 280, y: 360 }), id: "manual-redraw-align-line-source" };
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 560, y: 120 }),
+      id: "manual-redraw-align-line-bus",
+      size: { width: 560, height: 16 }
+    };
+    const sourcePoint = getTerminalPoint(source, "t1");
+    const staleBusPoint = projectPointToBusCenterline(bus, { x: sourcePoint.x + 170, y: bus.position.y });
+    const extensionX = sourcePoint.x;
+    const expectedBusPoint = projectPointToBusCenterline(bus, { x: extensionX, y: bus.position.y });
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      sourcePoint,
+      staleBusPoint,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, "t1"),
+        target: routableLineDeviceEndpointRefForNode(bus, "t1", staleBusPoint)
+      }
+    );
+    const routedLine = setRoutableLineDeviceCanvasPoints(line, [
+      sourcePoint,
+      { x: extensionX, y: bus.position.y + 180 },
+      { x: staleBusPoint.x, y: bus.position.y + 180 },
+      staleBusPoint
+    ]);
+
+    const redrawn = redrawRoutableLineDeviceRoutes([source, bus, routedLine], [line.id], { width: 940, height: 520 });
+    const finalRoutePoints = routableLineDeviceCanvasPoints(redrawn[0] ?? routedLine);
+
+    expect(finalRoutePoints[0]).toEqual(sourcePoint);
+    expect(finalRoutePoints[finalRoutePoints.length - 1]).toEqual(expectedBusPoint);
+    expect(finalRoutePoints).not.toContainEqual(staleBusPoint);
+    expect(routableLineDeviceEndpointRefs(redrawn[0] ?? routedLine).target?.localPoint).toEqual(
       routableLineDeviceEndpointRefForNode(bus, "t1", expectedBusPoint).localPoint
     );
     expectOrthogonalSegments(finalRoutePoints);
@@ -10753,6 +11040,31 @@ describe("power system model", () => {
       targetTerminalId: "t1",
       targetPoint: expectedBusPoint
     }));
+  });
+
+  test("does not create an implicit bus edge when another terminal of the same device already lands on that bus", () => {
+    const branch = createDefaultNode("ac-line", { x: 240, y: 100 });
+    const branchEndPoint = getTerminalPoint(branch, "t2");
+    const bus = createDefaultNode("ac-bus", branchEndPoint);
+    const movedBus = { ...bus, position: { x: bus.position.x, y: bus.position.y + 160 } };
+    const existing: Edge = {
+      id: "existing-bus-edge",
+      sourceId: branch.id,
+      targetId: bus.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      targetPoint: { x: bus.position.x - 40, y: bus.position.y }
+    };
+
+    const result = reconcileOverlappingTerminalConnections(
+      [branch, bus],
+      [branch, movedBus],
+      [existing],
+      () => "invalid-second-bus-edge"
+    );
+
+    expect(result.addedEdgeIds).toEqual([]);
+    expect(result.edges).toEqual([existing]);
   });
 
   test("removes an explicit bus connection when the device terminal touches the bus again", () => {

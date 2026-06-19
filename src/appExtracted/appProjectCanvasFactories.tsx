@@ -1326,6 +1326,63 @@ export function createReadjustMovedBusConnectionRoutes(__appScope: Record<string
   };
 }
 
+export function createReadjustActiveLayerBusEndpointRoutes(__appScope: Record<string, any>) {
+  return () => {
+  const { activeLayerEdges, activeLayerNodes, canvasBounds, edges, isBusNode, isRoutableLineDeviceKind, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodeById, nodes, patchGraphEdges, patchGraphNodes, pushUndoSnapshot, redrawConnectionRoutesForEdges, redrawRoutableLineDeviceRoutes, routableLineDeviceEndpointRefs, undoScopeForGraphPatch } = __appScope;
+    const edgeIds = activeLayerEdges
+      .filter((edge: Edge) => {
+        const source = nodeById.get(edge.sourceId);
+        const target = nodeById.get(edge.targetId);
+        return source && target && (isBusNode(source) || isBusNode(target));
+      })
+      .map((edge: Edge) => edge.id);
+    const lineNodeIds = activeLayerNodes
+      .filter((node: ModelNode) => {
+        if (!isRoutableLineDeviceKind(node.kind)) {
+          return false;
+        }
+        const refs = routableLineDeviceEndpointRefs(node);
+        const sourceNode = refs.source ? nodeById.get(refs.source.nodeId) : undefined;
+        const targetNode = refs.target ? nodeById.get(refs.target.nodeId) : undefined;
+        return Boolean((sourceNode && isBusNode(sourceNode)) || (targetNode && isBusNode(targetNode)));
+      })
+      .map((node: ModelNode) => node.id);
+
+    if (edgeIds.length === 0 && lineNodeIds.length === 0) {
+      return 0;
+    }
+
+    const nextEdges = edgeIds.length > 0
+      ? redrawConnectionRoutesForEdges(nodes, edges, edgeIds, canvasBounds)
+      : edges;
+    const changedEdges: Edge[] = [];
+    for (let index = 0; index < nextEdges.length; index += 1) {
+      if (nextEdges[index] !== edges[index]) {
+        changedEdges.push(nextEdges[index]);
+      }
+    }
+    const changedLineNodes = lineNodeIds.length > 0
+      ? redrawRoutableLineDeviceRoutes(nodes, lineNodeIds, canvasBounds)
+      : [];
+    if (changedEdges.length === 0 && changedLineNodes.length === 0) {
+      return 0;
+    }
+
+    const changedEdgeIds = changedEdges.map((edge) => edge.id);
+    const changedNodeIds = changedLineNodes.map((node) => node.id);
+    pushUndoSnapshot(true, false, undoScopeForGraphPatch(changedNodeIds, changedEdgeIds));
+    if (changedEdges.length > 0) {
+      markRouteEdgesDirty(changedEdgeIds);
+      markStoredRouteEdgesDirty(changedEdgeIds);
+      patchGraphEdges(changedEdges);
+    }
+    if (changedLineNodes.length > 0) {
+      patchGraphNodes(changedLineNodes);
+    }
+    return changedEdges.length + changedLineNodes.length;
+  };
+}
+
 export function createCommitLayoutNodePositions(__appScope: Record<string, any>) {
   return (
     layoutNodeIds: string[],
@@ -1542,7 +1599,7 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
 
 export function createAutoAlignCanvasGraphics(__appScope: Record<string, any>) {
   return () => {
-  const { AUTO_ALIGN_DEFAULT_THRESHOLD_PX, AUTO_ALIGN_MAX_THRESHOLD_PX, AUTO_ALIGN_MIN_THRESHOLD_PX, activeLayerEdges, activeLayerGroups, activeLayerNodes, autoAlignNodeLayoutUnits, buildCanvasLayoutUnits, commitLayoutNodePositions, isCanvasNodeMovable, nodes, requireEditMode, routedEdges, writeOperationLog } = __appScope;
+  const { AUTO_ALIGN_DEFAULT_THRESHOLD_PX, AUTO_ALIGN_MAX_THRESHOLD_PX, AUTO_ALIGN_MIN_THRESHOLD_PX, activeLayerEdges, activeLayerGroups, activeLayerNodes, autoAlignNodeLayoutUnits, buildCanvasLayoutUnits, commitLayoutNodePositions, isCanvasNodeMovable, nodes, readjustActiveLayerBusEndpointRoutes, requireEditMode, routedEdges, writeOperationLog } = __appScope;
     if (!requireEditMode("自动对齐")) {
       return;
     }
@@ -1583,7 +1640,12 @@ export function createAutoAlignCanvasGraphics(__appScope: Record<string, any>) {
       arranged,
       { readjustBusEndpoints: true }
     );
-    writeOperationLog(movedCount > 0 ? `自动对齐 ${movedCount} 个图元，门槛 ${threshold}px` : `自动对齐未发现坐标相近图元，门槛 ${threshold}px`);
+    const readjustedRouteCount = movedCount === 0 ? readjustActiveLayerBusEndpointRoutes() : 0;
+    writeOperationLog(movedCount > 0
+      ? `自动对齐 ${movedCount} 个图元，门槛 ${threshold}px`
+      : readjustedRouteCount > 0
+        ? `自动对齐未移动图元，已整理 ${readjustedRouteCount} 条母线连接落点，门槛 ${threshold}px`
+        : `自动对齐未发现坐标相近图元，门槛 ${threshold}px`);
   };
 }
 

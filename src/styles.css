@@ -2081,6 +2081,15 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   filter: none;
 }
 
+.connection-group.single-drag-origin-line .bus-connection-dot {
+  opacity: 0.24;
+  fill-opacity: 0.55;
+  stroke-opacity: 0.55;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  filter: none;
+}
+
 .routable-line-manual-path-layer.single-drag-origin-line .manual-segment-handle,
 .routable-line-manual-path-layer.single-drag-origin-line .manual-bend-handle,
 .routable-line-endpoint-handle.single-drag-origin-line {
