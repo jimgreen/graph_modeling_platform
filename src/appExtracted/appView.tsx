@@ -1936,9 +1936,7 @@ export function renderAppView(__appScope: Record<string, any>) {
             <div className="image-picker-title">
               <div className="device-library-dialog-title" onPointerDown={(event) => startDeviceLibraryDialogDrag("custom", event)}>
                 <h2>元件定义</h2>
-                <p>维护元件图标、端子、参数和量测绑定，保存后用于图元库和画布建模。</p>
               </div>
-              <button onClick={closeCustomDeviceDialog}>关闭</button>
             </div>
             {customDeviceDraft.error && <p className="custom-device-error">{customDeviceDraft.error}</p>}
             {customDeviceSaveMessage && <p className="custom-device-save-status">{customDeviceSaveMessage}</p>}

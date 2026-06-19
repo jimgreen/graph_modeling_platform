@@ -4297,30 +4297,6 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                       </div>
                       <div className="state-icon-drawing-property-grid">
                         <label>
-                          形状
-                          <select value={selected.kind} onChange={(event) => updateStateIconDrawingElement(selected.id, { kind: event.target.value as StateVisualShapeKind, strokeColor: visibleStrokeColor, textColor: visibleTextColor })}>
-                            {([
-                              "switch-open",
-                              "switch-closed",
-                              "valve-open",
-                              "valve-closed",
-                              "line",
-                              "point",
-                              "triangle",
-                              "square",
-                              "hexagon",
-                              "polygon",
-                              "circle",
-                              "semicircle",
-                              "ellipse",
-                              "arc",
-                              "text",
-                              "imported-svg",
-                              "image"
-                            ] as StateVisualShapeKind[]).map((kind) => <option key={kind} value={kind}>{stateVisualShapeLabel(kind)}</option>)}
-                          </select>
-                        </label>
-                        <label>
                           X
                           <BufferedTextInput type="number" value={selected.x} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { x: Number(nextValue) || 0 })} />
                         </label>
@@ -4328,7 +4304,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                           Y
                           <BufferedTextInput type="number" value={selected.y} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { y: Number(nextValue) || 0 })} />
                         </label>
-                        <label>
+                        <label className="state-icon-drawing-compact-field">
                           宽
                           <BufferedTextInput type="number" min="1" value={selected.width} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { width: Math.max(1, Number(nextValue) || 1) })} />
                         </label>
@@ -4340,7 +4316,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                           角度
                           <BufferedTextInput type="number" value={selected.rotation} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { rotation: Number(nextValue) || 0 })} />
                         </label>
-                        <label>
+                        <label className="state-icon-drawing-compact-field">
                           粗细
                           <BufferedTextInput type="number" min="0" value={selected.strokeWidth} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { strokeWidth: Math.max(0, Number(nextValue) || 0) })} />
                         </label>
@@ -4348,7 +4324,6 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                           线色
                           <div className="state-icon-drawing-color-field">
                             <DeferredColorInput value={visibleStrokeColor} fallback="#2563eb" onCommit={(value) => updateStateIconDrawingElement(selected.id, { strokeColor: value })} />
-                            <span className="device-state-color-swatch" title={visibleStrokeColor} style={{ "--state-color": visibleStrokeColor } as CSSProperties} />
                           </div>
                         </label>
                         <label>
@@ -4362,7 +4337,6 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                           文本颜色
                           <div className="state-icon-drawing-color-field">
                             <DeferredColorInput value={visibleTextColor} fallback="#111827" onCommit={(value) => updateStateIconDrawingElement(selected.id, { textColor: value })} />
-                            <span className="device-state-color-swatch" title={visibleTextColor} style={{ "--state-color": visibleTextColor } as CSSProperties} />
                           </div>
                         </label>
                         <label className="state-icon-drawing-text-field">
