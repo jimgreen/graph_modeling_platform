@@ -1,6 +1,50 @@
 // @ts-nocheck
 import { clampNumber } from "../canvasViewport";
 
+function createTemplateDefaultStateIconImage(__appScope: Record<string, any>, template: any, options: Record<string, any> = {}) {
+  if (!template) {
+    return "";
+  }
+  const { DeviceGlyph, MAX_CUSTOM_DEVICE_TERMINALS, createNodeFromTemplate, escapeXml, formatSvgNumber, nodeGeometryTransform, renderSvgElementMarkup, colorDisplayMode, colorPalette } = __appScope;
+  if (!DeviceGlyph || !createNodeFromTemplate || !renderSvgElementMarkup) {
+    return "";
+  }
+  const width = Math.max(1, Math.round(options.size?.width ?? template.size?.width ?? 104));
+  const height = Math.max(1, Math.round(options.size?.height ?? template.size?.height ?? 64));
+  const terminalCount = clampNumber(Math.round(options.terminalCount ?? template.terminalCount ?? 0), 0, MAX_CUSTOM_DEVICE_TERMINALS ?? 64);
+  const sourceTerminalTypes = (
+    options.terminalTypes ??
+    template.terminalTypes ??
+    Array.from({ length: terminalCount }, () => template.terminalType ?? "ac")
+  ).slice(0, terminalCount);
+  const terminalTypes = sourceTerminalTypes.length > 0 ? sourceTerminalTypes : [template.terminalType ?? "ac"];
+  const visualTemplate = {
+    ...template,
+    label: options.label || template.label,
+    size: { width, height },
+    params: {
+      ...template.params,
+      backgroundImage: "",
+      backgroundImageAssetId: ""
+    },
+    terminalType: terminalTypes[0] ?? template.terminalType,
+    terminalCount,
+    terminalTypes,
+    terminalLabels: (options.terminalLabels ?? template.terminalLabels ?? []).slice(0, terminalCount),
+    terminalAnchors: (options.terminalAnchors ?? template.terminalAnchors ?? []).slice(0, terminalCount)
+  };
+  const node = createNodeFromTemplate(visualTemplate, { x: 0, y: 0 });
+  const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, stateVisual: null }));
+  const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, stateVisual: null }));
+  const padding = 12;
+  const viewBoxX = -width / 2 - padding;
+  const viewBoxY = -height / 2 - padding;
+  const viewBoxWidth = width + padding * 2;
+  const viewBoxHeight = height + padding * 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="${formatSvgNumber(viewBoxX)} ${formatSvgNumber(viewBoxY)} ${formatSvgNumber(viewBoxWidth)} ${formatSvgNumber(viewBoxHeight)}"><g transform="${escapeXml(nodeGeometryTransform(node))}">${glyphMarkup}${glyphTextMarkup}</g></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
 export function createOpenEdgeContextMenu(__appScope: Record<string, any>) {
   return (event: MouseEvent<SVGPathElement>, edgeId: string, routePoints?: Point[]) => {
   const { activateInspectorFromCanvas, activeLayerEdgeIdSet, canvasInteractionRef, clampPointToCanvas, lastCanvasPointerRef, lastRawCanvasPointerRef, openGraphicContextMenu, projectListPointerInsideRef, screenToSvgPoint, selectCanvasGraphics, svgRef, updateMouseStatus } = __appScope;
@@ -1704,8 +1748,20 @@ export function createOpenBlankProjectLibraryContextMenu(__appScope: Record<stri
 
 export function createCustomDeviceDefaultStateVisualDraft(__appScope: Record<string, any>) {
   return (): Partial<DeviceStateDefinition> => {
-  const { customDeviceDraft, customDevicePreviewLabel, customDraftTerminalTypes, generateCustomDeviceImage } = __appScope;
+  const { customDeviceDraft, customDevicePreviewLabel, customDevicePreviewSourceTemplate, customDraftTerminalTypes, generateCustomDeviceImage, selectedCustomComponentTemplate, selectedDefinitionTemplate } = __appScope;
+    const sourceTemplate = customDevicePreviewSourceTemplate ?? selectedCustomComponentTemplate ?? selectedDefinitionTemplate;
+    const templateImage = !customDeviceDraft.backgroundImage && !customDeviceDraft.backgroundImageAssetId
+      ? createTemplateDefaultStateIconImage(__appScope, sourceTemplate, {
+          label: customDevicePreviewLabel,
+          size: customDeviceDraft.size,
+          terminalCount: customDeviceDraft.terminalCount,
+          terminalTypes: customDraftTerminalTypes,
+          terminalLabels: customDeviceDraft.terminalLabels,
+          terminalAnchors: customDeviceDraft.terminalAnchors
+        })
+      : "";
     const image = customDeviceDraft.backgroundImage ||
+      templateImage ||
       generateCustomDeviceImage(customDevicePreviewLabel, customDraftTerminalTypes.length > 0 ? customDraftTerminalTypes : ["ac"]);
     const imageAssetId = customDeviceDraft.backgroundImageAssetId && image === `/api/images/${customDeviceDraft.backgroundImageAssetId}`
       ? customDeviceDraft.backgroundImageAssetId
@@ -1856,9 +1912,20 @@ export function createDefinitionDefaultStateVisualDraft(__appScope: Record<strin
   return (): Partial<DeviceStateDefinition> => {
   const { definitionVisualDraft, selectedDefinitionTemplate } = __appScope;
     const params = selectedDefinitionTemplate?.params ?? {};
+    const sourceImage = definitionVisualDraft?.backgroundImage || params.backgroundImage || "";
+    const sourceImageAssetId = definitionVisualDraft?.backgroundImageAssetId || params.backgroundImageAssetId || "";
+    const templateImage = !sourceImage && !sourceImageAssetId
+      ? createTemplateDefaultStateIconImage(__appScope, selectedDefinitionTemplate, {
+          size: definitionVisualDraft?.size,
+          terminalCount: definitionVisualDraft?.terminalCount,
+          terminalTypes: definitionVisualDraft?.terminalTypes,
+          terminalLabels: definitionVisualDraft?.terminalLabels,
+          terminalAnchors: definitionVisualDraft?.terminalAnchors
+        })
+      : "";
     return {
-      image: definitionVisualDraft?.backgroundImage || params.backgroundImage || "",
-      imageAssetId: definitionVisualDraft?.backgroundImageAssetId || params.backgroundImageAssetId || "",
+      image: sourceImage || templateImage,
+      imageAssetId: sourceImageAssetId && sourceImage === `/api/images/${sourceImageAssetId}` ? sourceImageAssetId : sourceImage ? "" : sourceImageAssetId,
       color: params.foregroundColor || "",
       fillColor: params.fillColor || "",
       strokeColor: params.strokeColor || "",
@@ -2086,7 +2153,7 @@ export function createStopDeviceLibraryDialogEvent(__appScope: Record<string, an
 
 export function createOpenDeviceDefinitionDialog(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, createCustomDeviceDraftFromTemplate, ensureCustomComponentTreeExpanded, libraryTemplates, normalizeAttributeLibraryName, prepareMeasurementConfigDraft, requireEditMode, resolveTemplateComponentType, selectedCustomComponentTemplate, selectedDefinitionTemplate, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogOpen, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setDefinitionDraftSection, setDeviceDefinitionDialogOpen, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, createCustomDeviceDraftFromTemplate, ensureCustomComponentTreeExpanded, libraryTemplates, normalizeAttributeLibraryName, prepareMeasurementConfigDraft, requireEditMode, resolveTemplateComponentType, selectedCustomComponentTemplate, selectedDefinitionTemplate, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogOpen, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setDefinitionDraftSection, setDeviceDefinitionDialogOpen, setDeviceLibraryDialogLayouts, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
     if (!requireEditMode("元件定义")) {
       return;
     }
@@ -2109,6 +2176,10 @@ export function createOpenDeviceDefinitionDialog(__appScope: Record<string, any>
     }
     prepareMeasurementConfigDraft();
     setDeviceDefinitionDialogOpen(false);
+    setDeviceLibraryDialogLayouts((current: Record<string, any>) => {
+      const { custom: _custom, ...rest } = current;
+      return rest;
+    });
     setCustomDeviceDialogOpen(true);
   };
 }
@@ -3113,45 +3184,29 @@ export function createSelectCustomComponentType(__appScope: Record<string, any>)
 
 export function createSelectCustomComponentTemplate(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, sectionName?: string) => {
-  const { DEFAULT_STATE_PAGE_ID, createCustomDeviceDraftFromTemplate, customComponentSelectionFrameRef, customComponentSelectionRequestRef, customDeviceDefinitionMode, ensureCustomComponentTreeExpanded, normalizeAttributeLibraryName, normalizeComponentTypeName, resolveTemplateComponentType, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setDefinitionDraftSection, setEditingCustomDeviceKind, setSelectedDefinitionKind, startCustomComponentSelectionTransition } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, createCustomDeviceDraftFromTemplate, customComponentSelectionFrameRef, customComponentSelectionRequestRef, customDeviceDefinitionMode, ensureCustomComponentTreeExpanded, normalizeAttributeLibraryName, normalizeComponentTypeName, resolveTemplateComponentType, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setDefinitionDraftSection, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
     if (sectionName === undefined) {
       sectionName = resolveTemplateComponentType(template);
     }
     const attributeLibraryName = normalizeAttributeLibraryName(template.attributeLibrary);
     const section = normalizeComponentTypeName(sectionName);
-    const requestId = customComponentSelectionRequestRef.current + 1;
-    customComponentSelectionRequestRef.current = requestId;
+    customComponentSelectionRequestRef.current += 1;
     setCustomDeviceSaveMessage("");
     ensureCustomComponentTreeExpanded(attributeLibraryName, section);
-    // 树组件内部已管理 selection，这里只在 transition 中更新右侧面板的状态
-    setSelectedDefinitionKind(template.kind);
-    setDefinitionDraftSection(section);
     if (customComponentSelectionFrameRef.current !== null) {
       window.cancelAnimationFrame(customComponentSelectionFrameRef.current);
-    }
-    customComponentSelectionFrameRef.current = window.requestAnimationFrame(() => {
       customComponentSelectionFrameRef.current = null;
-      if (customComponentSelectionRequestRef.current !== requestId) {
-        return;
-      }
-      const nextDraft = createCustomDeviceDraftFromTemplate(template, section);
-      const editableDraft = customDeviceDefinitionMode === "edit" && !template.custom
-        ? { ...nextDraft, error: "" }
-        : nextDraft;
-      startCustomComponentSelectionTransition(() => {
-        // 合并所有状态更新，减少重渲染
-        setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section, templateKind: template.kind });
-        setEditingCustomDeviceKind((current) =>
-          customComponentSelectionRequestRef.current !== requestId ? current : template.custom ? template.kind : ""
-        );
-        setCustomDeviceStatePageId((current) =>
-          customComponentSelectionRequestRef.current !== requestId ? current : DEFAULT_STATE_PAGE_ID
-        );
-        setCustomDeviceDraft((current) =>
-          customComponentSelectionRequestRef.current !== requestId ? current : editableDraft
-        );
-      });
-    });
+    }
+    const nextDraft = createCustomDeviceDraftFromTemplate(template, section);
+    const editableDraft = customDeviceDefinitionMode === "edit" && !template.custom
+      ? { ...nextDraft, error: "" }
+      : nextDraft;
+    setSelectedDefinitionKind(template.kind);
+    setDefinitionDraftSection(section);
+    setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section, templateKind: template.kind });
+    setEditingCustomDeviceKind(template.custom ? template.kind : "");
+    setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
+    setCustomDeviceDraft(editableDraft);
   };
 }
 
@@ -3948,7 +4003,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       hideDefaultPage?: boolean;
     }
   ) => {
-  const { BufferedTextarea, BufferedTextInput, DEFAULT_STATE_PAGE_ID, DeferredColorInput, activeStateDraftRow, addStateIconDrawingElement, button, circle, customDeviceDefaultStateVisualDraft, defaultStateDraftRow, definitionDefaultStateVisualDraft, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, image, isDefaultStatePageId, label, line, nonDefaultStateDraftRows, rect, setStateIconDrawingDialog, setStateIconDrawingImportMode, small, span, stateIconDrawingDialog, stateIconDrawingImportInputRef, stateIconDrawingKeyDown, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, text, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
+  const { BufferedTextInput, DEFAULT_STATE_PAGE_ID, DeferredColorInput, activeStateDraftRow, addStateIconDrawingElement, button, circle, customDeviceDefaultStateVisualDraft, defaultStateDraftRow, definitionDefaultStateVisualDraft, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, image, isDefaultStatePageId, label, line, nonDefaultStateDraftRows, rect, setStateIconDrawingDialog, setStateIconDrawingImportMode, small, span, stateIconDrawingDialog, stateIconDrawingImportInputRef, stateIconDrawingKeyDown, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, text, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
     const hideDefaultPage = handlers.hideDefaultPage === true;
     const displayRows = hideDefaultPage ? rows : nonDefaultStateDraftRows(rows);
     const defaultVisual = handlers.drawingScope === "definition"
@@ -4296,11 +4351,11 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         </button>
                       </div>
                       <div className="state-icon-drawing-property-grid">
-                        <label>
+                        <label className="state-icon-drawing-compact-field">
                           X
                           <BufferedTextInput type="number" value={selected.x} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { x: Number(nextValue) || 0 })} />
                         </label>
-                        <label>
+                        <label className="state-icon-drawing-compact-field">
                           Y
                           <BufferedTextInput type="number" value={selected.y} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { y: Number(nextValue) || 0 })} />
                         </label>
@@ -4308,11 +4363,11 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                           宽
                           <BufferedTextInput type="number" min="1" value={selected.width} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { width: Math.max(1, Number(nextValue) || 1) })} />
                         </label>
-                        <label>
+                        <label className="state-icon-drawing-compact-field">
                           高
                           <BufferedTextInput type="number" min="1" value={selected.height} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { height: Math.max(1, Number(nextValue) || 1) })} />
                         </label>
-                        <label>
+                        <label className="state-icon-drawing-compact-field">
                           角度
                           <BufferedTextInput type="number" value={selected.rotation} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { rotation: Number(nextValue) || 0 })} />
                         </label>
@@ -4330,7 +4385,6 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                           填充
                           <div className="state-icon-drawing-color-field">
                             <DeferredColorInput value={selected.fillColor} fallback="#ffffff" onCommit={(value) => updateStateIconDrawingElement(selected.id, { fillColor: value })} />
-                            <span className={`device-state-color-swatch ${selected.fillColor === "transparent" ? "transparent" : ""}`} title={selected.fillColor || "未设置"} style={{ "--state-color": selected.fillColor === "transparent" ? "#ffffff" : selected.fillColor || "#ffffff" } as CSSProperties} />
                           </div>
                         </label>
                         <label>
@@ -4339,16 +4393,10 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                             <DeferredColorInput value={visibleTextColor} fallback="#111827" onCommit={(value) => updateStateIconDrawingElement(selected.id, { textColor: value })} />
                           </div>
                         </label>
-                        <label className="state-icon-drawing-text-field">
+                        <label className="state-icon-drawing-text-field state-icon-drawing-text-compact-field">
                           文字
                           <BufferedTextInput value={selected.text} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { text: nextValue })} />
                         </label>
-                        {selected.kind === "imported-svg" && (
-                          <label className="state-icon-drawing-svg-field">
-                            SVG源码
-                            <BufferedTextarea value={selected.svgSource ?? ""} spellCheck={false} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { svgSource: nextValue })} />
-                          </label>
-                        )}
                         {selected.kind === "image" && (
                           <>
                             <label>

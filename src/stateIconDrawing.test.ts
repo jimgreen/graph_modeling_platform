@@ -13,6 +13,10 @@ import {
   normalizeStatePageId,
   upsertDefaultStateDraftRow
 } from "./stateIconDrawing";
+import { DEVICE_LIBRARY } from "./model";
+import { APP_STATIC_SCOPE } from "./appExtracted/appStaticScope";
+import { createCustomDeviceDefaultStateVisualDraft, createSelectCustomComponentTemplate } from "./appExtracted/appDeviceDefinitionFactories";
+import { createCustomDeviceDraftFromTemplate, generateCustomDeviceImage, resolveTemplateComponentType } from "./customDeviceUtils";
 
 describe("default device state draft rows", () => {
   test("uses a synthetic default row when no state definitions exist", () => {
@@ -90,5 +94,119 @@ describe("default device state draft rows", () => {
     expect(firstState.text).toBe("默认");
     expect(firstState.strokeColor).toBe("#0f172a");
     expect(secondIndex).toBe(2);
+  });
+
+  test("uses the selected template glyph instead of the generated placeholder for an edited component default state", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-load");
+    expect(template).toBeTruthy();
+    if (!template) {
+      return;
+    }
+    const customDeviceDraft = createCustomDeviceDraftFromTemplate(template);
+    const terminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
+    const placeholderImage = generateCustomDeviceImage(template.label, terminalTypes);
+    const defaultVisual = createCustomDeviceDefaultStateVisualDraft({
+      ...APP_STATIC_SCOPE,
+      customDeviceDraft,
+      customDevicePreviewLabel: template.label,
+      customDraftTerminalTypes: terminalTypes,
+      selectedCustomComponentTemplate: template,
+      selectedDefinitionTemplate: template,
+      colorDisplayMode: "energy"
+    })();
+
+    expect(defaultVisual.image).toMatch(/^data:image\/svg\+xml/);
+    expect(defaultVisual.image).not.toBe(placeholderImage);
+  });
+
+  test("selecting a component template immediately replaces the edited device draft", () => {
+    const staticTextTemplate = DEVICE_LIBRARY.find((item) => item.kind === "static-text");
+    const hydrogenCompressorTemplate = DEVICE_LIBRARY.find((item) => item.kind === "hydrogen-compressor");
+    expect(staticTextTemplate).toBeTruthy();
+    expect(hydrogenCompressorTemplate).toBeTruthy();
+    if (!staticTextTemplate || !hydrogenCompressorTemplate) {
+      return;
+    }
+
+    let draft = createCustomDeviceDraftFromTemplate(staticTextTemplate);
+    let treeSelection: any = { kind: "component", attributeLibraryName: staticTextTemplate.attributeLibrary, section: "StaticTextSymbol", templateKind: staticTextTemplate.kind };
+    let selectedDefinitionKind = staticTextTemplate.kind;
+    let definitionDraftSection = "StaticTextSymbol";
+    let editingCustomDeviceKind = "";
+    let customDeviceStatePageId = "old";
+    let saveMessage = "old message";
+    const expandedRequests: Array<[string, string]> = [];
+    const pendingFrames: Array<() => void> = [];
+    const previousWindow = (globalThis as any).window;
+    (globalThis as any).window = {
+      requestAnimationFrame: (callback: () => void) => {
+        pendingFrames.push(callback);
+        return pendingFrames.length;
+      },
+      cancelAnimationFrame: () => {}
+    };
+
+    try {
+      const selectTemplate = createSelectCustomComponentTemplate({
+        DEFAULT_STATE_PAGE_ID,
+        createCustomDeviceDraftFromTemplate,
+        customComponentSelectionFrameRef: { current: null },
+        customComponentSelectionRequestRef: { current: 0 },
+        customDeviceDefinitionMode: "edit",
+        ensureCustomComponentTreeExpanded: (attributeLibraryName: string, section: string) => {
+          expandedRequests.push([attributeLibraryName, section]);
+        },
+        normalizeAttributeLibraryName: (value: string) => value,
+        normalizeComponentTypeName: (value: string) => value,
+        resolveTemplateComponentType,
+        setCustomComponentTreeSelection: (next: any) => {
+          treeSelection = next;
+        },
+        setCustomDeviceDraft: (next: any) => {
+          draft = typeof next === "function" ? next(draft) : next;
+        },
+        setCustomDeviceSaveMessage: (next: string) => {
+          saveMessage = next;
+        },
+        setCustomDeviceStatePageId: (next: any) => {
+          customDeviceStatePageId = typeof next === "function" ? next(customDeviceStatePageId) : next;
+        },
+        setDefinitionDraftSection: (next: string) => {
+          definitionDraftSection = next;
+        },
+        setEditingCustomDeviceKind: (next: any) => {
+          editingCustomDeviceKind = typeof next === "function" ? next(editingCustomDeviceKind) : next;
+        },
+        setSelectedDefinitionKind: (next: any) => {
+          selectedDefinitionKind = next;
+        },
+        startCustomComponentSelectionTransition: (callback: () => void) => callback()
+      });
+
+      selectTemplate(hydrogenCompressorTemplate);
+
+      expect(pendingFrames).toHaveLength(0);
+      expect(saveMessage).toBe("");
+      expect(expandedRequests).toEqual([["氢能设备", "HydroCompressor"]]);
+      expect(selectedDefinitionKind).toBe("hydrogen-compressor");
+      expect(definitionDraftSection).toBe("HydroCompressor");
+      expect(treeSelection).toEqual({
+        kind: "component",
+        attributeLibraryName: "氢能设备",
+        section: "HydroCompressor",
+        templateKind: "hydrogen-compressor"
+      });
+      expect(editingCustomDeviceKind).toBe("");
+      expect(customDeviceStatePageId).toBe(DEFAULT_STATE_PAGE_ID);
+      expect(draft.componentName).toBe("氢压机");
+      expect(draft.componentType).toBe("HydroCompressor");
+      expect(draft.terminalCount).toBe(2);
+    } finally {
+      if (previousWindow === undefined) {
+        delete (globalThis as any).window;
+      } else {
+        (globalThis as any).window = previousWindow;
+      }
+    }
   });
 });

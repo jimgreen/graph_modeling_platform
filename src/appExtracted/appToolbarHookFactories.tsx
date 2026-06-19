@@ -4111,7 +4111,7 @@ export function createAppHookCallback133(__appScope: Record<string, any>) {
 
 export function createAppHookCallback134(__appScope: Record<string, any>) {
   return () => {
-  const { CANVAS_LOD_MARKUP_CHUNK_SIZE, activeLayerNodeIdSet, buildSvgTerminalMarkup, colorDisplayMode, colorPalette, customSingleTerminalAnchorToken, deviceStateVisualToken, dragGhostRoutableLineNodeIdSet, escapeXml, exportDeviceMetadataAttributes, formatSvgNumber, getDeviceStrokeColor, getDeviceStrokeWidth, groupTransformPreviewNodeIdSet, imageAssets, initialCanvasDetailedNodeIdSet, isBusNode, isEditMode, isRoutableLineDeviceKind, isStaticNode, libraryTemplateByKind, lodCanvasNodeChunkCacheRef, nodeGeometryTransform, nodeLabelDrag, nodeLabelRotateDrag, pointsToOrthogonalPath, resolveNodeStateVisual, resolveStateVisualImageHref, routableLineDeviceRenderLocalPoints, routableLineEndpointDrag, stableSvgMarkupChunks, stateVisualText, transformDrag, useSimplifiedCanvasNodes, viewportNodes } = __appScope;
+  const { CANVAS_LOD_MARKUP_CHUNK_SIZE, DeviceGlyph, activeLayerNodeIdSet, buildSvgTerminalMarkup, colorDisplayMode, colorPalette, customSingleTerminalAnchorToken, deviceStateVisualToken, dragGhostRoutableLineNodeIdSet, escapeXml, exportDeviceMetadataAttributes, formatSvgNumber, getDeviceStrokeColor, getDeviceStrokeWidth, groupTransformPreviewNodeIdSet, imageAssets, initialCanvasDetailedNodeIdSet, isBusNode, isEditMode, isRoutableLineDeviceKind, isStaticNode, libraryTemplateByKind, lodCanvasNodeChunkCacheRef, nodeGeometryTransform, nodeLabelDrag, nodeLabelRotateDrag, pointsToOrthogonalPath, renderSvgElementMarkup, resolveNodeStateVisual, resolveStateVisualImageHref, routableLineDeviceRenderLocalPoints, routableLineEndpointDrag, stableSvgMarkupChunks, stateVisualText, transformDrag, useSimplifiedCanvasNodes, viewportNodes } = __appScope;
     if (!useSimplifiedCanvasNodes || transformDrag || nodeLabelDrag || nodeLabelRotateDrag) {
       lodCanvasNodeChunkCacheRef.current.chunks = [];
       return [];
@@ -4175,7 +4175,9 @@ export function createAppHookCallback134(__appScope: Record<string, any>) {
   </g>
 </g>`;
       }
-      return `<g class="${className}" ${dataNodeAttributes} transform="${escapeXml(transform)}"><rect class="lod-node-body" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="${nodeIsBus ? 0 : 6}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"><title>${escapeXml(node.name)}</title></rect>${stateImageMarkup}${stateTextMarkup}</g>`;
+      const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, stateVisual }));
+      const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, stateVisual }));
+      return `<g class="${className}" ${dataNodeAttributes} transform="${escapeXml(transform)}"><title>${escapeXml(node.name)}</title>${glyphMarkup}${stateImageMarkup}${glyphTextMarkup}</g>`;
       }
     });
   };

@@ -5190,10 +5190,12 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .state-icon-drawing-layout {
   display: grid;
-  grid-template-columns: minmax(560px, 1fr) minmax(430px, 500px);
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 320px);
   gap: 7px;
+  min-width: 0;
   min-height: 0;
   height: 100%;
+  overflow: hidden;
 }
 
 .state-icon-drawing-main {
@@ -5282,6 +5284,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   gap: 6px;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 .state-icon-drawing-library,
@@ -5303,7 +5306,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .state-icon-drawing-properties {
   min-height: 0;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .state-icon-drawing-library > span,
@@ -5416,8 +5419,9 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .state-icon-drawing-property-grid {
   display: grid;
-  grid-template-columns: 1.35fr repeat(2, minmax(76px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px 5px;
+  min-width: 0;
 }
 
 .state-icon-drawing-property-grid label {
@@ -5430,7 +5434,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .state-icon-drawing-property-grid .state-icon-drawing-compact-field {
-  width: 84px;
+  width: 68px;
   max-width: 100%;
   justify-self: start;
 }
@@ -5457,6 +5461,10 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .state-icon-drawing-property-grid input[type="color"] {
+  width: 28px;
+  min-width: 28px;
+  height: 24px;
+  min-height: 24px;
   padding: 2px;
 }
 
@@ -5470,13 +5478,15 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   grid-column: span 2;
 }
 
-.state-icon-drawing-svg-field {
-  grid-column: 1 / -1;
+.state-icon-drawing-property-grid .state-icon-drawing-text-compact-field {
+  width: 150px;
+  max-width: 100%;
+  justify-self: start;
 }
 
 @media (max-width: 1280px) {
   .state-icon-drawing-layout {
-    grid-template-columns: minmax(420px, 1fr) minmax(360px, 420px);
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 300px);
   }
 
   .state-icon-drawing-side {

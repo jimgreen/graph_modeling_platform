@@ -1082,7 +1082,7 @@ export function createOpenGroupDeviceDefinitionDialog(__appScope: Record<string,
 
 export function createConfirmCreateDeviceFromGroup(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_STATE_PAGE_ID, MAX_CUSTOM_DEVICE_TERMINALS, activeGroupById, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, ensureCustomComponentTreeExpanded, groupDeviceDefinitionDialog, isValidComponentTypeName, normalizeAttributeLibraryName, normalizeComponentTypeName, normalizeContainerTerminalAssociations, prepareMeasurementConfigDraft, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogOpen, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceStatePageId, setEditingCustomDeviceKind, setGroupDeviceDefinitionDialog, setSelectedDefinitionKind, writeOperationLog } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, MAX_CUSTOM_DEVICE_TERMINALS, activeGroupById, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, ensureCustomComponentTreeExpanded, groupDeviceDefinitionDialog, isValidComponentTypeName, normalizeAttributeLibraryName, normalizeComponentTypeName, normalizeContainerTerminalAssociations, prepareMeasurementConfigDraft, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogOpen, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceStatePageId, setDeviceLibraryDialogLayouts, setEditingCustomDeviceKind, setGroupDeviceDefinitionDialog, setSelectedDefinitionKind, writeOperationLog } = __appScope;
     if (!groupDeviceDefinitionDialog) {
       return;
     }
@@ -1130,6 +1130,10 @@ export function createConfirmCreateDeviceFromGroup(__appScope: Record<string, an
     });
     setGroupDeviceDefinitionDialog(null);
     prepareMeasurementConfigDraft();
+    setDeviceLibraryDialogLayouts((current: Record<string, any>) => {
+      const { custom: _custom, ...rest } = current;
+      return rest;
+    });
     setCustomDeviceDialogOpen(true);
     writeOperationLog("从图元组合生成新元件草稿");
   };

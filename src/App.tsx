@@ -4168,6 +4168,32 @@ const stateIconDrawingInlineTarget =
         ? { scope: "custom" as const, rowId: customIconStatePageId }
         : null;
 Object.assign(__appScope, { stateIconDrawingInlineTarget });
+const stateIconDrawingInlineTargetKey = stateIconDrawingInlineTarget
+    ? [
+        stateIconDrawingInlineTarget.scope,
+        stateIconDrawingInlineTarget.rowId,
+        isDefaultStatePageId(stateIconDrawingInlineTarget.rowId)
+          ? stateIconDrawingInlineTarget.scope === "definition"
+            ? [
+                selectedDefinitionTemplate?.kind ?? selectedDefinitionKind ?? "",
+                definitionVisualDraft?.backgroundImageAssetId ?? "",
+                definitionVisualDraft?.size.width ?? "",
+                definitionVisualDraft?.size.height ?? "",
+                definitionVisualDraft?.terminalCount ?? "",
+                definitionVisualTerminalTypes.join(",")
+              ].join("/")
+            : [
+                customDevicePreviewSourceTemplate?.kind ?? selectedCustomComponentTemplate?.kind ?? selectedDefinitionTemplate?.kind ?? editingCustomDeviceKind ?? "",
+                customDeviceDraft.backgroundImageAssetId,
+                customDeviceDraft.size.width,
+                customDeviceDraft.size.height,
+                customDeviceDraft.terminalCount,
+                customDraftTerminalTypes.join(",")
+              ].join("/")
+          : ""
+      ].join(":")
+    : "";
+Object.assign(__appScope, { stateIconDrawingInlineTargetKey });
 const stateIconDrawingInlineImage = stateIconDrawingDialog
     ? stateIconDrawingDialog.elements.length > 0
       ? stateIconDrawingToImage(stateIconDrawingDialog.elements)
@@ -4180,11 +4206,12 @@ useEffect(() => {
       setStateIconDrawingDialog((current) => (current ? null : current));
       return;
     }
-    const targetKey = `${stateIconDrawingInlineTarget.scope}:${stateIconDrawingInlineTarget.rowId}`;
+    const targetKey = stateIconDrawingInlineTargetKey;
     setStateIconDrawingDialog((current) => {
       if (
         current?.target.scope === stateIconDrawingInlineTarget.scope &&
-        current.target.rowId === stateIconDrawingInlineTarget.rowId
+        current.target.rowId === stateIconDrawingInlineTarget.rowId &&
+        stateIconDrawingInitialImageRef.current?.key === targetKey
       ) {
         return current;
       }
@@ -4217,6 +4244,7 @@ useEffect(() => {
     deviceDefinitionDialogOpen,
     deviceDefinitionView,
     imageAssets,
+    stateIconDrawingInlineTargetKey,
     stateIconDrawingInlineTarget?.rowId,
     stateIconDrawingInlineTarget?.scope
   ]);
@@ -4224,7 +4252,12 @@ useEffect(() => {
     if (!stateIconDrawingDialog) {
       return;
     }
-    const targetKey = `${stateIconDrawingDialog.target.scope}:${stateIconDrawingDialog.target.rowId}`;
+    const targetKey =
+      stateIconDrawingInlineTarget &&
+      stateIconDrawingDialog.target.scope === stateIconDrawingInlineTarget.scope &&
+      stateIconDrawingDialog.target.rowId === stateIconDrawingInlineTarget.rowId
+        ? stateIconDrawingInlineTargetKey
+        : `${stateIconDrawingDialog.target.scope}:${stateIconDrawingDialog.target.rowId}`;
     if (stateIconDrawingInitialImageRef.current?.key === targetKey && stateIconDrawingInitialImageRef.current.image === stateIconDrawingInlineImage) {
       return;
     }
@@ -4313,7 +4346,13 @@ useEffect(() => {
     } else {
       updateCustomDeviceStateDraftRow(stateIconDrawingDialog.target.rowId, stateIconDrawingInlinePatch);
     }
-  }, [stateIconDrawingDialog, stateIconDrawingInlineImage]);
+  }, [
+    stateIconDrawingDialog,
+    stateIconDrawingInlineImage,
+    stateIconDrawingInlineTarget?.rowId,
+    stateIconDrawingInlineTarget?.scope,
+    stateIconDrawingInlineTargetKey
+  ]);
 const customComponentTreeTypeKey = (attributeLibraryName: string, componentType: string) =>
     `${normalizeAttributeLibraryName(attributeLibraryName)}::${normalizeComponentTypeName(componentType)}`;
 Object.assign(__appScope, { customComponentTreeTypeKey });
