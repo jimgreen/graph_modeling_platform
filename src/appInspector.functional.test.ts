@@ -1,7 +1,4 @@
 import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import React from "react";
 
 // 真正的功能测试 - 使用 React Testing Library 验证用户交互和业务规则
 
@@ -116,14 +113,15 @@ describe("graph modeling platform - functional tests", () => {
   describe("selection and clipboard", () => {
     test("selects graphics in marquee rectangle", () => {
       // 功能验证：框选图形
+      type MarqueeNode = { id: string; position: { x: number; y: number }; size: { width: number; height: number } };
       const nodes = [
         { id: "node-1", position: { x: 100, y: 100 }, size: { width: 50, height: 50 } },
         { id: "node-2", position: { x: 300, y: 100 }, size: { width: 50, height: 50 } },
         { id: "node-3", position: { x: 500, y: 300 }, size: { width: 50, height: 50 } }
       ];
 
-      const selectInRect = (nodes: typeof nodes, rect: { left: number; right: number; top: number; bottom: number }) => {
-        return nodes.filter(node => {
+      const selectInRect = (items: MarqueeNode[], rect: { left: number; right: number; top: number; bottom: number }) => {
+        return items.filter(node => {
           const left = node.position.x - node.size.width / 2;
           const right = node.position.x + node.size.width / 2;
           const top = node.position.y - node.size.height / 2;
@@ -139,13 +137,14 @@ describe("graph modeling platform - functional tests", () => {
 
     test("copies and pastes selected nodes with relative positions preserved", () => {
       // 功能验证：复制粘贴保持相对位置
+      type ClipboardNode = { id: string; position: { x: number; y: number } };
       const nodes = [
         { id: "node-1", position: { x: 100, y: 100 } },
         { id: "node-2", position: { x: 200, y: 100 } }
       ];
 
-      const cloneNodes = (nodes: typeof nodes, offset: { x: number; y: number }) => {
-        return nodes.map(node => ({
+      const cloneNodes = (items: ClipboardNode[], offset: { x: number; y: number }) => {
+        return items.map(node => ({
           ...node,
           id: `${node.id}-copy`,
           position: {
