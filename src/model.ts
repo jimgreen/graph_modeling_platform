@@ -11885,8 +11885,16 @@ function segmentIntersectsBox(a: Point, b: Point, box: ReturnType<typeof boxFor>
   return false;
 }
 
+// 路由相交测试会对同一个 routable-line 阻挡物反复取其画布折线（每次都 JSON.parse + 三角变换）。
+// 节点不可变（改动会生成新对象），故按节点引用缓存；本函数仅只读遍历该数组，缓存无副作用风险。
+const routableLineBlockerCanvasPointsCache = new WeakMap<ModelNode, Point[]>();
+
 function routableLineDeviceRouteSegmentIntersectionBox(a: Point, b: Point, node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
-  const points = routableLineDeviceCanvasPoints(node);
+  let points = routableLineBlockerCanvasPointsCache.get(node);
+  if (!points) {
+    points = routableLineDeviceCanvasPoints(node);
+    routableLineBlockerCanvasPointsCache.set(node, points);
+  }
   if (points.length < 2) {
     return null;
   }
@@ -11905,17 +11913,38 @@ function routableLineDeviceRouteSegmentIntersectionBox(a: Point, b: Point, node:
   return null;
 }
 
-function routableLineDeviceLabelIntersectionBox(a: Point, b: Point, node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
+// 标签避让框（含文本宽度测量）是 (node, padding) 的纯函数，但会对每个 (a,b) 线段重复计算。
+// 节点不可变，按 node→padding 缓存盒子，只读使用，无副作用。
+type RoutableLineLabelBoxes = { labelBox: RouteBlockerBox | null; bridgeBox: RouteBlockerBox | null };
+const routableLineLabelBoxCache = new WeakMap<ModelNode, Map<number, RoutableLineLabelBoxes>>();
+
+function routableLineDeviceLabelBoxes(node: ModelNode, padding: number): RoutableLineLabelBoxes {
+  let byPadding = routableLineLabelBoxCache.get(node);
+  if (!byPadding) {
+    byPadding = new Map();
+    routableLineLabelBoxCache.set(node, byPadding);
+  }
+  const cached = byPadding.get(padding);
+  if (cached) {
+    return cached;
+  }
   const effectivePadding = routeBlockerPadding(node, padding);
   const labelBox = nodeLabelRouteBlockerBox(node, effectivePadding);
+  const boxes: RoutableLineLabelBoxes = labelBox
+    ? { labelBox, bridgeBox: nodeLabelBridgeBlockerBox(node, bodyVisualBoxForNode(node, effectivePadding), labelBox, effectivePadding) }
+    : { labelBox: null, bridgeBox: null };
+  byPadding.set(padding, boxes);
+  return boxes;
+}
+
+function routableLineDeviceLabelIntersectionBox(a: Point, b: Point, node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {
+  const { labelBox, bridgeBox } = routableLineDeviceLabelBoxes(node, padding);
   if (!labelBox) {
     return null;
   }
   if (segmentIntersectsBox(a, b, labelBox)) {
     return labelBox;
   }
-  const bodyBox = bodyVisualBoxForNode(node, effectivePadding);
-  const bridgeBox = nodeLabelBridgeBlockerBox(node, bodyBox, labelBox, effectivePadding);
   return bridgeBox && segmentIntersectsBox(a, b, bridgeBox) ? bridgeBox : null;
 }
 
