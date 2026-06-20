@@ -2820,7 +2820,7 @@ export function createChooseStateVisualImage(__appScope: Record<string, any>) {
 
 export function createChooseStateIconDrawingImport(__appScope: Record<string, any>) {
   return (event: ChangeEvent<HTMLInputElement>) => {
-  const { createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, requireEditMode, setStateIconDrawingDialog, stateIconDrawingImportMode } = __appScope;
+  const { activeImageFolderId, createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, refreshImageFolders, requireEditMode, setImageAssetList, setImageAssets, setStateIconDrawingDialog, stateIconDrawingImportMode, uploadBackendImage } = __appScope;
     if (!requireEditMode("导入绘制图形")) {
       event.target.value = "";
       return;
@@ -2831,12 +2831,7 @@ export function createChooseStateIconDrawingImport(__appScope: Record<string, an
       return;
     }
     const isSvg = stateIconDrawingImportMode === "svg" || file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
-    const reader = new FileReader();
-    reader.onload = () => {
-      const source = String(reader.result ?? "");
-      const importedElements = isSvg
-        ? createEditableStateIconElementsFromSvgSource(source, file.name, { preserveImportedSvg: true })
-        : [createImportedStateIconElement("image", source, file.name)];
+    const appendImportedElements = (importedElements: StateIconDrawingElement[]) => {
       const selectedElementId = importedElements[0]?.id ?? "";
       setStateIconDrawingDialog((current) =>
         current
@@ -2848,6 +2843,26 @@ export function createChooseStateIconDrawingImport(__appScope: Record<string, an
             }
           : current
       );
+    };
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const source = String(reader.result ?? "");
+      if (isSvg) {
+        appendImportedElements(createEditableStateIconElementsFromSvgSource(source, file.name, { preserveImportedSvg: true }));
+        return;
+      }
+      // 位图：上传到图片库并引用 /api/images，避免把 base64 位图内联进状态图标 SVG（library.json 膨胀根因）。
+      let href = source;
+      try {
+        const uploadedAsset = await uploadBackendImage(file.name, source, activeImageFolderId);
+        href = uploadedAsset.url;
+        setImageAssetList((current) => [uploadedAsset, ...current.filter((item) => item.id !== uploadedAsset.id)]);
+        setImageAssets((current) => ({ ...current, [uploadedAsset.id]: uploadedAsset.url }));
+        void refreshImageFolders();
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "上传图片到后台失败，将以本地预览嵌入。");
+      }
+      appendImportedElements([createImportedStateIconElement("image", href, file.name)]);
     };
     if (isSvg) {
       reader.readAsText(file);
