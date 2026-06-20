@@ -1282,10 +1282,11 @@ export function createDeleteSelected(__appScope: Record<string, any>) {
 
 export function createRunContextMenuAction(__appScope: Record<string, any>) {
   return (action: () => void) => {
-  const { setContextMenu, setProjectMenu } = __appScope;
+  const { setContextMenu, setProjectMenu, setTemplateMenu } = __appScope;
     action();
     setContextMenu(null);
     setProjectMenu(null);
+    setTemplateMenu(null);
   };
 }
 

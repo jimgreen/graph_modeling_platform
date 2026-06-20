@@ -1538,6 +1538,32 @@ export function groupGraphTemplatesByType(templates: readonly GraphTemplate[], t
   return grouped;
 }
 
+export function graphTemplateMatchesSearch(template: GraphTemplate, typeName: string, needle: string) {
+  if (!needle) {
+    return true;
+  }
+  return [typeName, template.typeName, template.name, template.id]
+    .some((value) => normalizeLibrarySearchText(value).includes(needle));
+}
+
+export function filterGraphTemplatesByType(grouped: Record<string, GraphTemplate[]>, searchQuery: string) {
+  const needle = normalizeLibrarySearchText(searchQuery);
+  if (!needle) {
+    return grouped;
+  }
+  return Object.fromEntries(
+    Object.entries(grouped)
+      .map(([typeName, templates]) => {
+        const typeMatches = normalizeLibrarySearchText(typeName).includes(needle);
+        const filteredTemplates = typeMatches
+          ? templates
+          : templates.filter((template) => graphTemplateMatchesSearch(template, typeName, needle));
+        return [typeName, filteredTemplates] as const;
+      })
+      .filter(([, templates]) => templates.length > 0)
+  );
+}
+
 export function uniqueGraphTemplateName(baseName: string, typeName: string, templates: readonly GraphTemplate[]) {
   const normalizedBase = baseName.trim() || "自定义模板";
   const existing = new Set(

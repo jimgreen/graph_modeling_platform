@@ -1377,10 +1377,11 @@ export function createClearLibraryFlyoutCloseTimer(__appScope: Record<string, an
 
 export function createHideLibraryFlyout(__appScope: Record<string, any>) {
   return () => {
-  const { clearLibraryFlyoutCloseTimer, libraryFlyoutPositionsRef, setHoveredAttributeLibrary, setHoveredAttributeLibraryComponentType, setLibraryFlyoutPositions } = __appScope;
+  const { clearLibraryFlyoutCloseTimer, libraryFlyoutPositionsRef, setHoveredAttributeLibrary, setHoveredAttributeLibraryComponentType, setHoveredGraphTemplateType, setLibraryFlyoutPositions } = __appScope;
     clearLibraryFlyoutCloseTimer();
     setHoveredAttributeLibrary("");
     setHoveredAttributeLibraryComponentType("");
+    setHoveredGraphTemplateType("");
     if (Object.keys(libraryFlyoutPositionsRef.current).length > 0) {
       setLibraryFlyoutPositions({});
     }

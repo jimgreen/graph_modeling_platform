@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
+  createDeleteGraphTemplate,
+  createDeleteGraphTemplateType,
   createLightweightMovedEndpointRoute,
   createRoutePointsForMovedEdgesBlockedByStationaryNodes,
   createShouldRunDeferredMoveOptimization
@@ -27,6 +29,16 @@ import {
 } from "./model";
 
 type TestBox = { left: number; right: number; top: number; bottom: number };
+
+const sampleGraphTemplate = (id: string, name: string, typeName = "常用模板") => ({
+  id,
+  typeName,
+  name,
+  sourceSize: { width: 120, height: 80 },
+  clipboard: { nodes: [], edges: [], groups: [] },
+  createdAt: "2026-06-20T00:00:00.000Z",
+  updatedAt: "2026-06-20T00:00:00.000Z"
+});
 
 function routeIntersectsTestBox(points: Point[], box: TestBox) {
   for (let index = 1; index < points.length; index += 1) {
@@ -63,6 +75,84 @@ function sameOptionalPointList(first: Point[] | undefined, second: Point[] | und
 function nodeForRoutingList(nodes: ModelNode[], nodeId: string) {
   return nodes.find((node) => node.id === nodeId);
 }
+
+describe("graph template library actions", () => {
+  test("deletes a graph template and persists the template library", () => {
+    const remaining = sampleGraphTemplate("template-keep", "保留模板");
+    const deleted = sampleGraphTemplate("template-delete", "删除模板");
+    const setCustomGraphTemplatesCalls: any[] = [];
+    const persistTemplateLibraryChangeCalls: any[] = [];
+    const operationLogs: string[] = [];
+    let templateMenu: any = { templateId: deleted.id };
+    const deleteGraphTemplate = createDeleteGraphTemplate({
+      customGraphTemplateTypes: ["常用模板"],
+      customGraphTemplates: [remaining, deleted],
+      persistTemplateLibraryChange: (payload: any) => persistTemplateLibraryChangeCalls.push(payload),
+      setCustomGraphTemplates: (templates: any[]) => setCustomGraphTemplatesCalls.push(templates),
+      setTemplateMenu: (next: any) => { templateMenu = next; },
+      writeOperationLog: (message: string) => operationLogs.push(message)
+    });
+
+    deleteGraphTemplate(deleted);
+
+    expect(setCustomGraphTemplatesCalls).toEqual([[remaining]]);
+    expect(persistTemplateLibraryChangeCalls).toEqual([{
+      customGraphTemplateTypes: ["常用模板"],
+      customGraphTemplates: [remaining]
+    }]);
+    expect(templateMenu).toBeNull();
+    expect(operationLogs).toContain("删除模板：常用模板 / 删除模板");
+  });
+
+  test("deletes a graph template type and all templates under it", () => {
+    const firstDeleted = sampleGraphTemplate("template-delete-1", "删除模板1", "自定义类型");
+    const secondDeleted = sampleGraphTemplate("template-delete-2", "删除模板2", "自定义类型");
+    const remaining = sampleGraphTemplate("template-keep", "保留模板", "其他类型");
+    const setCustomGraphTemplateTypesCalls: any[] = [];
+    const setCustomGraphTemplatesCalls: any[] = [];
+    const persistTemplateLibraryChangeCalls: any[] = [];
+    const operationLogs: string[] = [];
+    let templateMenu: any = { typeName: "自定义类型" };
+    const originalWindow = (globalThis as any).window;
+    (globalThis as any).window = {
+      ...(originalWindow ?? {}),
+      confirm: (message: string) => {
+        expect(message).toContain("自定义类型");
+        expect(message).toContain("2");
+        return true;
+      }
+    };
+    const deleteGraphTemplateType = createDeleteGraphTemplateType({
+      customGraphTemplateTypes: ["自定义类型", "其他类型"],
+      customGraphTemplates: [firstDeleted, remaining, secondDeleted],
+      persistTemplateLibraryChange: (payload: any) => persistTemplateLibraryChangeCalls.push(payload),
+      requireEditMode: () => true,
+      setCustomGraphTemplateTypes: (types: string[]) => setCustomGraphTemplateTypesCalls.push(types),
+      setCustomGraphTemplates: (templates: any[]) => setCustomGraphTemplatesCalls.push(templates),
+      setTemplateMenu: (next: any) => { templateMenu = next; },
+      writeOperationLog: (message: string) => operationLogs.push(message)
+    });
+
+    try {
+      deleteGraphTemplateType("自定义类型");
+    } finally {
+      if (originalWindow === undefined) {
+        delete (globalThis as any).window;
+      } else {
+        (globalThis as any).window = originalWindow;
+      }
+    }
+
+    expect(setCustomGraphTemplateTypesCalls).toEqual([["其他类型"]]);
+    expect(setCustomGraphTemplatesCalls).toEqual([[remaining]]);
+    expect(persistTemplateLibraryChangeCalls).toEqual([{
+      customGraphTemplateTypes: ["其他类型"],
+      customGraphTemplates: [remaining]
+    }]);
+    expect(templateMenu).toBeNull();
+    expect(operationLogs).toContain("删除模板类型：自定义类型（2 个模板）");
+  });
+});
 
 describe("selection drag route cache patches", () => {
   test("keeps lightweight moved endpoint cache routes out of the endpoint device body", () => {

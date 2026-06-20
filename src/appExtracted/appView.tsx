@@ -6,9 +6,13 @@ export function renderAppView(__appScope: Record<string, any>) {
   const {
     createCustomAttributeLibrary,
     createCustomComponentType,
+    customGraphTemplates,
+    deleteGraphTemplate,
+    deleteGraphTemplateType,
     deleteSelectedCustomDeviceTreeItem,
     renameSelectedCustomDeviceTreeItem,
-    startCustomComponentCreate
+    startCustomComponentCreate,
+    templateMenu
   } = __appScope;
   const { dragging } = __appScope;
   const { customDevicePreviewNode } = __appScope;
@@ -1235,6 +1239,27 @@ export function renderAppView(__appScope: Record<string, any>) {
               </button>)}
             </>)}
         </div>)}
+      {templateMenu && (() => {
+        if ("typeName" in templateMenu) {
+          return (
+            <div ref={contextMenuRef} className={contextMenuClassName(templateMenu)} style={contextMenuStyle(templateMenu)}>
+              {isEditMode && (<button onClick={() => runContextMenuAction(() => deleteGraphTemplateType(templateMenu.typeName))}>
+                <Trash2 size={14}/>
+                删除类型
+              </button>)}
+            </div>
+          );
+        }
+        const template = customGraphTemplates.find((item: any) => item.id === templateMenu.templateId);
+        return template ? (
+          <div ref={contextMenuRef} className={contextMenuClassName(templateMenu)} style={contextMenuStyle(templateMenu)}>
+            {isEditMode && (<button onClick={() => runContextMenuAction(() => deleteGraphTemplate(template))}>
+              <Trash2 size={14}/>
+              删除
+            </button>)}
+          </div>
+        ) : null;
+      })()}
       {renderMeasurementConfigDialog()}
       {renderMeasurementEditorDialog()}
       {pendingRecordPasteConflict && (<div className="image-picker-backdrop" onPointerDown={() => resolveRecordPasteConflict("cancel")}>

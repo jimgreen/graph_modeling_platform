@@ -1271,6 +1271,52 @@ export function createConfirmAddGraphTemplate(__appScope: Record<string, any>) {
   };
 }
 
+export function createDeleteGraphTemplate(__appScope: Record<string, any>) {
+  return (template: GraphTemplate) => {
+    const { customGraphTemplateTypes, customGraphTemplates, persistTemplateLibraryChange, setCustomGraphTemplates, setTemplateMenu, writeOperationLog } = __appScope;
+    const nextTemplates = customGraphTemplates.filter((item: GraphTemplate) => item.id !== template.id);
+    if (nextTemplates.length === customGraphTemplates.length) {
+      setTemplateMenu(null);
+      return;
+    }
+    setCustomGraphTemplates(nextTemplates);
+    setTemplateMenu(null);
+    persistTemplateLibraryChange({
+      customGraphTemplateTypes,
+      customGraphTemplates: nextTemplates
+    });
+    writeOperationLog(`删除模板：${template.typeName} / ${template.name}`);
+  };
+}
+
+export function createDeleteGraphTemplateType(__appScope: Record<string, any>) {
+  return (typeName: string) => {
+    const { customGraphTemplateTypes, customGraphTemplates, persistTemplateLibraryChange, requireEditMode, setCustomGraphTemplateTypes, setCustomGraphTemplates, setTemplateMenu, writeOperationLog } = __appScope;
+    if (!requireEditMode("删除模板类型")) {
+      return;
+    }
+    const deletingTemplates = customGraphTemplates.filter((template: GraphTemplate) => template.typeName === typeName);
+    const nextTypes = customGraphTemplateTypes.filter((item: string) => item !== typeName);
+    const nextTemplates = customGraphTemplates.filter((template: GraphTemplate) => template.typeName !== typeName);
+    if (nextTypes.length === customGraphTemplateTypes.length && nextTemplates.length === customGraphTemplates.length) {
+      setTemplateMenu(null);
+      return;
+    }
+    if (!window.confirm(`删除模板类型“${typeName}”及其下 ${deletingTemplates.length} 个模板？`)) {
+      setTemplateMenu(null);
+      return;
+    }
+    setCustomGraphTemplateTypes(nextTypes);
+    setCustomGraphTemplates(nextTemplates);
+    setTemplateMenu(null);
+    persistTemplateLibraryChange({
+      customGraphTemplateTypes: nextTypes,
+      customGraphTemplates: nextTemplates
+    });
+    writeOperationLog(`删除模板类型：${typeName}（${deletingTemplates.length} 个模板）`);
+  };
+}
+
 export function createDropGraphTemplate(__appScope: Record<string, any>) {
   return (template: GraphTemplate, pointerPosition: Point) => {
   const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, clampNodePositionToBounds, clampPointToBounds, cloneCanvasClipboard, deviceIndexCounters, edges, hasCanvasOriginShift, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, markStoredRouteEdgesDirty, nodes, normalizeDeviceIndexCounters, normalizeModelGroups, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, requireEditMode, resetConnectPreviewState, setCanvasSelectionScope, setConnectSource, setDeviceIndexCounters, setGraphArrays, setGroups, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;

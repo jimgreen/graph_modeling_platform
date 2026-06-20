@@ -968,6 +968,11 @@ export const NODE_LABEL_DISPLAY_MODES: Array<{ value: NodeLabelDisplayMode; labe
 
 export type ProjectMenuState = { x: number; y: number; schemeId?: string; projectId?: string } | null;
 
+export type TemplateMenuState =
+  | { x: number; y: number; templateId: string }
+  | { x: number; y: number; typeName: string }
+  | null;
+
 export const CONTEXT_MENU_VIEWPORT_PADDING = 8;
 
 export const CONTEXT_MENU_FALLBACK_WIDTH = 220;

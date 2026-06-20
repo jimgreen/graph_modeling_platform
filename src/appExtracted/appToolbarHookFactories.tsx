@@ -734,8 +734,8 @@ export function createAppHookCallback3(__appScope: Record<string, any>) {
 
 export function createAppHookCallback4(__appScope: Record<string, any>) {
   return () => {
-  const { contextMenu, contextMenuRef, contextMenuSize, projectMenu, setContextMenuSize } = __appScope;
-    if (!contextMenu && !projectMenu) {
+  const { contextMenu, contextMenuRef, contextMenuSize, projectMenu, setContextMenuSize, templateMenu } = __appScope;
+    if (!contextMenu && !projectMenu && !templateMenu) {
       if (contextMenuSize !== null) {
         setContextMenuSize(null);
       }
@@ -1086,12 +1086,13 @@ export function createAppHookCallback17(__appScope: Record<string, any>) {
 
 export function createAppHookCallback18(__appScope: Record<string, any>) {
   return () => {
-  const { componentLibraryDisplayMode, fitLibraryFlyoutsToVisibleArea, leftPanelTab, libraryFlyoutPositionsRef, setLibraryFlyoutPositions } = __appScope;
-    if (leftPanelTab !== "library") {
+  const { componentLibraryDisplayMode, fitLibraryFlyoutsToVisibleArea, leftPanelTab, libraryFlyoutPositionsRef, setLibraryFlyoutPositions, templateLibraryDisplayMode } = __appScope;
+    if (leftPanelTab !== "library" && leftPanelTab !== "templates") {
       return;
     }
+    const activeDisplayMode = leftPanelTab === "templates" ? templateLibraryDisplayMode : componentLibraryDisplayMode;
     const frame = window.requestAnimationFrame(() => {
-      if (componentLibraryDisplayMode === "right") {
+      if (activeDisplayMode === "right") {
         fitLibraryFlyoutsToVisibleArea();
         return;
       }
@@ -1105,8 +1106,10 @@ export function createAppHookCallback18(__appScope: Record<string, any>) {
 
 export function createAppHookCallback19(__appScope: Record<string, any>) {
   return () => {
-  const { componentLibraryDisplayMode, hideLibraryFlyout, leftPanelTab, librarySearchNeedle } = __appScope;
-    if (leftPanelTab !== "library" || componentLibraryDisplayMode !== "right" || librarySearchNeedle) {
+  const { componentLibraryDisplayMode, hideLibraryFlyout, leftPanelTab, librarySearchNeedle, templateLibraryDisplayMode, templateLibrarySearchNeedle } = __appScope;
+    const keepComponentFlyout = leftPanelTab === "library" && componentLibraryDisplayMode === "right" && !librarySearchNeedle;
+    const keepTemplateFlyout = leftPanelTab === "templates" && templateLibraryDisplayMode === "right" && !templateLibrarySearchNeedle;
+    if (!keepComponentFlyout && !keepTemplateFlyout) {
       hideLibraryFlyout();
     }
   };
@@ -1114,8 +1117,10 @@ export function createAppHookCallback19(__appScope: Record<string, any>) {
 
 export function createAppHookCallback20(__appScope: Record<string, any>) {
   return () => {
-  const { componentLibraryDisplayMode, hideLibraryFlyout, hoveredAttributeLibraryComponentType, leftPanelTab } = __appScope;
-    if (leftPanelTab !== "library" || componentLibraryDisplayMode !== "right" || !hoveredAttributeLibraryComponentType) {
+  const { componentLibraryDisplayMode, hideLibraryFlyout, hoveredAttributeLibraryComponentType, hoveredGraphTemplateType, leftPanelTab, templateLibraryDisplayMode } = __appScope;
+    const componentFlyoutActive = leftPanelTab === "library" && componentLibraryDisplayMode === "right" && Boolean(hoveredAttributeLibraryComponentType);
+    const templateFlyoutActive = leftPanelTab === "templates" && templateLibraryDisplayMode === "right" && Boolean(hoveredGraphTemplateType);
+    if (!componentFlyoutActive && !templateFlyoutActive) {
       return;
     }
     const hideLibraryFlyoutOnOutsidePointerDown = (event: globalThis.PointerEvent) => {
@@ -1125,7 +1130,7 @@ export function createAppHookCallback20(__appScope: Record<string, any>) {
       }
       const targetElement = target instanceof Element ? target : target.parentElement;
       const flyoutElement = document.querySelector(".flyout-library-group");
-      const activeTypeSection = targetElement?.closest(".attribute-library-component-type-section.flyout-mode");
+      const activeTypeSection = targetElement?.closest(".attribute-library-component-type-section.flyout-mode, .template-library-type-section.flyout-mode");
       if (flyoutElement?.contains(target) || activeTypeSection) {
         return;
       }
@@ -2835,7 +2840,7 @@ export function createAppHookCallback87(__appScope: Record<string, any>) {
 
 export function createAppHookCallback88(__appScope: Record<string, any>) {
   return () => {
-  const { setContextMenu, setProjectMenu } = __appScope;
+  const { setContextMenu, setProjectMenu, setTemplateMenu } = __appScope;
     const closeContextMenus = (event: globalThis.PointerEvent) => {
       if (event.button !== 0) {
         return;
@@ -2846,6 +2851,7 @@ export function createAppHookCallback88(__appScope: Record<string, any>) {
       }
       setContextMenu(null);
       setProjectMenu(null);
+      setTemplateMenu(null);
     };
     window.addEventListener("pointerdown", closeContextMenus, { capture: true });
     return () => window.removeEventListener("pointerdown", closeContextMenus, { capture: true });

@@ -987,6 +987,10 @@ button:disabled {
   min-width: 0;
 }
 
+.template-library-type-section.flyout-mode {
+  position: relative;
+}
+
 .template-library-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
@@ -1057,6 +1061,17 @@ button:disabled {
 
 .template-library-empty {
   padding: 8px 12px 12px 24px;
+}
+
+.template-library-flyout {
+  grid-template-columns: repeat(3, minmax(78px, 1fr));
+  width: 282px;
+  max-height: min(560px, calc(100vh - 24px));
+  overflow: auto;
+}
+
+.template-library-flyout .template-library-item {
+  min-height: 104px;
 }
 
 .workspace {
