@@ -1036,10 +1036,6 @@ function rectsOverlap(first: SelectionRect, second: SelectionRect) {
   return overlap.x > 0 && overlap.y > 0;
 }
 
-function rectOverlapsAny(rect: SelectionRect, candidates: readonly SelectionRect[]) {
-  return candidates.some((candidate) => rectsOverlap(rect, candidate));
-}
-
 function rectCanvasOverflow(rect: SelectionRect, bounds: CanvasBounds | undefined) {
   if (!bounds) {
     return 0;
@@ -1089,19 +1085,66 @@ function uniqueNearestValues(values: number[], limit: number) {
     .slice(0, limit);
 }
 
+const SPREAD_GRID_CELL = 256;
+
+// 已放置矩形的均匀网格索引:overlapsAny 与线性 rectOverlapsAny 结果完全一致(几何重叠、布尔判定),
+// 仅把每次检查从 O(已放置数) 降到查询邻近格子。rects 按插入顺序保留 → 候选生成逻辑与顺序不变。
+class PlacedRectGrid {
+  readonly rects: SelectionRect[] = [];
+  private readonly buckets = new Map<string, SelectionRect[]>();
+  add(rect: SelectionRect): void {
+    this.rects.push(rect);
+    const x0 = Math.floor(rect.left / SPREAD_GRID_CELL);
+    const x1 = Math.floor(rect.right / SPREAD_GRID_CELL);
+    const y0 = Math.floor(rect.top / SPREAD_GRID_CELL);
+    const y1 = Math.floor(rect.bottom / SPREAD_GRID_CELL);
+    for (let cx = x0; cx <= x1; cx += 1) {
+      for (let cy = y0; cy <= y1; cy += 1) {
+        const key = `${cx}:${cy}`;
+        const bucket = this.buckets.get(key);
+        if (bucket) {
+          bucket.push(rect);
+        } else {
+          this.buckets.set(key, [rect]);
+        }
+      }
+    }
+  }
+  overlapsAny(rect: SelectionRect): boolean {
+    const x0 = Math.floor(rect.left / SPREAD_GRID_CELL);
+    const x1 = Math.floor(rect.right / SPREAD_GRID_CELL);
+    const y0 = Math.floor(rect.top / SPREAD_GRID_CELL);
+    const y1 = Math.floor(rect.bottom / SPREAD_GRID_CELL);
+    for (let cx = x0; cx <= x1; cx += 1) {
+      for (let cy = y0; cy <= y1; cy += 1) {
+        const bucket = this.buckets.get(`${cx}:${cy}`);
+        if (!bucket) {
+          continue;
+        }
+        for (const candidate of bucket) {
+          if (rectsOverlap(rect, candidate)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+}
+
 function nearestNonOverlappingDelta(
   baseRect: SelectionRect,
-  placedRects: readonly SelectionRect[],
+  placedGrid: PlacedRectGrid,
   minSeparation: number,
   bounds: CanvasBounds | undefined
 ) {
-  if (!rectOverlapsAny(baseRect, placedRects)) {
+  if (!placedGrid.overlapsAny(baseRect)) {
     return { x: 0, y: 0 };
   }
-  const axisValueLimit = placedRects.length < 80 ? Math.max(1, placedRects.length * 2 + 1) : 48;
+  const axisValueLimit = placedGrid.rects.length < 80 ? Math.max(1, placedGrid.rects.length * 2 + 1) : 48;
   const xValues = [0];
   const yValues = [0];
-  for (const placed of placedRects) {
+  for (const placed of placedGrid.rects) {
     xValues.push(placed.right - baseRect.left + minSeparation);
     xValues.push(placed.left - baseRect.right - minSeparation);
     yValues.push(placed.bottom - baseRect.top + minSeparation);
@@ -1113,7 +1156,7 @@ function nearestNonOverlappingDelta(
   let bestScore = Number.POSITIVE_INFINITY;
   const consider = (delta: Point) => {
     const rect = offsetRect(baseRect, delta);
-    if (rectOverlapsAny(rect, placedRects)) {
+    if (placedGrid.overlapsAny(rect)) {
       return;
     }
     const overflow = rectCanvasOverflow(rect, bounds);
@@ -1143,7 +1186,7 @@ function nearestNonOverlappingDelta(
   const height = Math.max(1, baseRect.bottom - baseRect.top);
   const stepX = width + minSeparation;
   const stepY = height + minSeparation;
-  const maxRing = Math.max(8, Math.ceil(Math.sqrt(placedRects.length)) + 8);
+  const maxRing = Math.max(8, Math.ceil(Math.sqrt(placedGrid.rects.length)) + 8);
   for (let ring = 1; ring <= maxRing; ring += 1) {
     for (let ix = -ring; ix <= ring; ix += 1) {
       for (let iy = -ring; iy <= ring; iy += 1) {
@@ -1233,7 +1276,7 @@ function balancedGridShape(component: readonly AutoSpreadLayoutItem[], minSepara
 
 function balancedGridDeltasForComponent(
   component: readonly AutoSpreadLayoutItem[],
-  placedRects: readonly SelectionRect[],
+  placedGrid: PlacedRectGrid,
   minSeparation: number,
   bounds: CanvasBounds | undefined
 ) {
@@ -1265,7 +1308,7 @@ function balancedGridDeltasForComponent(
   });
   const clusterDelta = nearestNonOverlappingDelta(
     boundsForRects(proposedRects),
-    placedRects,
+    placedGrid,
     minSeparation,
     bounds
   );
@@ -1322,20 +1365,22 @@ export function autoSpreadNodeLayoutUnits(
       firstBounds.top - secondBounds.top ||
       firstBounds.left - secondBounds.left;
   });
-  const placedRects: SelectionRect[] = [];
+  const placed = new PlacedRectGrid();
   const deltas = new Map<string, Point>();
   for (const component of orderedComponents) {
     if (component.length >= 4) {
-      const gridLayout = balancedGridDeltasForComponent(component, placedRects, minSeparation, options.bounds);
+      const gridLayout = balancedGridDeltasForComponent(component, placed, minSeparation, options.bounds);
       for (const [unitId, delta] of gridLayout.deltas) {
         deltas.set(unitId, delta);
       }
-      placedRects.push(...gridLayout.rects);
+      for (const rect of gridLayout.rects) {
+        placed.add(rect);
+      }
       continue;
     }
     for (const item of component) {
-      const delta = nearestNonOverlappingDelta(item.baseRect, placedRects, minSeparation, options.bounds);
-      placedRects.push(offsetRect(item.baseRect, delta));
+      const delta = nearestNonOverlappingDelta(item.baseRect, placed, minSeparation, options.bounds);
+      placed.add(offsetRect(item.baseRect, delta));
       if (delta.x !== 0 || delta.y !== 0) {
         deltas.set(item.unit.id, delta);
       }
