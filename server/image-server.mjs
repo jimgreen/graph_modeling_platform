@@ -20,7 +20,6 @@ const colorConfigPath = join(settingsDataDir, "color-config.json");
 const measurementConfigPath = join(settingsDataDir, "measurement-config.json");
 const deviceLibraryDataDir = resolve(repoRoot, "data", "device-library");
 const deviceLibraryPath = join(deviceLibraryDataDir, "library.json");
-const graphTemplatesPath = join(deviceLibraryDataDir, "graph-templates.json");
 const maxImageBodyBytes = 16 * 1024 * 1024;
 const maxSchemeBodyBytes = 64 * 1024 * 1024;
 const maxSchemeZipBodyBytes = 256 * 1024 * 1024;
@@ -609,37 +608,25 @@ function normalizeDeviceLibraryConfig(payload) {
 
 async function readDeviceLibraryConfig() {
   const parsed = await readOptionalJsonStoreFile(deviceLibraryDataDir, deviceLibraryPath);
-  const graphParsed = await readOptionalJsonStoreFile(deviceLibraryDataDir, graphTemplatesPath);
-  const base = normalizeDeviceLibraryConfig(parsed ?? {});
-  // 模板库(图模板)优先取独立文件;独立文件不存在时回退 library.json 内的旧字段(兼容未迁移数据)。
-  if (graphParsed) {
-    const graph = normalizeDeviceLibraryConfig(graphParsed);
-    base.customGraphTemplateTypes = graph.customGraphTemplateTypes;
-    base.customGraphTemplates = graph.customGraphTemplates;
+  if (parsed) {
+    return {
+      exists: true,
+      ...normalizeDeviceLibraryConfig(parsed)
+    };
   }
   return {
-    exists: Boolean(parsed) || Boolean(graphParsed),
-    ...base
+    exists: false,
+    ...normalizeDeviceLibraryConfig({})
   };
 }
 
 async function writeDeviceLibraryConfig(config) {
-  const normalized = normalizeDeviceLibraryConfig(config);
-  const savedAt = new Date().toISOString();
-  // 设备/元件定义写 library.json;模板库(图模板)写独立文件 graph-templates.json。
-  await writeJsonStoreFile(deviceLibraryDataDir, deviceLibraryPath, {
-    customDeviceTemplates: normalized.customDeviceTemplates,
-    customAttributeLibraries: normalized.customAttributeLibraries,
-    customComponentTypes: normalized.customComponentTypes,
-    deviceDefinitionOverrides: normalized.deviceDefinitionOverrides,
-    savedAt
-  });
-  await writeJsonStoreFile(deviceLibraryDataDir, graphTemplatesPath, {
-    customGraphTemplateTypes: normalized.customGraphTemplateTypes,
-    customGraphTemplates: normalized.customGraphTemplates,
-    savedAt
-  });
-  return { ...normalized, savedAt };
+  const normalized = {
+    ...normalizeDeviceLibraryConfig(config),
+    savedAt: new Date().toISOString()
+  };
+  await writeJsonStoreFile(deviceLibraryDataDir, deviceLibraryPath, normalized);
+  return normalized;
 }
 
 function sendJson(response, status, data) {
@@ -700,24 +687,20 @@ async function sendJsonCacheable(request, response, data) {
 }
 
 // 单文件 GET：按 mtime 缓存已准备好的响应（含 gzip），命中时仅需 stat + 发送缓冲。
-async function sendCachedJsonFile(request, response, filePaths, produce) {
-  const paths = Array.isArray(filePaths) ? filePaths : [filePaths];
-  const versions = await Promise.all(paths.map(async (path) => {
-    try {
-      return String((await stat(path)).mtimeMs);
-    } catch {
-      return "0";
-    }
-  }));
-  const version = versions.join("|");
-  const cacheKey = paths[0];
-  const cached = preparedJsonFileCache.get(cacheKey);
+async function sendCachedJsonFile(request, response, filePath, produce) {
+  let version = 0;
+  try {
+    version = (await stat(filePath)).mtimeMs;
+  } catch {
+    version = 0;
+  }
+  const cached = preparedJsonFileCache.get(filePath);
   let prepared;
   if (cached && cached.version === version) {
     prepared = cached.prepared;
   } else {
     prepared = prepareJsonPayload(await produce());
-    preparedJsonFileCache.set(cacheKey, { version, prepared });
+    preparedJsonFileCache.set(filePath, { version, prepared });
   }
   await sendPreparedJson(request, response, prepared);
 }
@@ -2579,7 +2562,7 @@ export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
       await handleSaveMeasurementConfig(request, response);
     }],
     ["GET /api/device-library", async ({ request, response }) => {
-      await sendCachedJsonFile(request, response, [deviceLibraryPath, graphTemplatesPath], readDeviceLibraryConfig);
+      await sendCachedJsonFile(request, response, deviceLibraryPath, readDeviceLibraryConfig);
     }],
     ["PUT /api/device-library", async ({ request, response }) => {
       await handleSaveDeviceLibrary(request, response);
