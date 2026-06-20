@@ -6,11 +6,14 @@ export function renderAppView(__appScope: Record<string, any>) {
   const {
     createCustomAttributeLibrary,
     createCustomComponentType,
+    clearLibraryFlyoutCloseTimer,
     customGraphTemplates,
     deleteGraphTemplate,
     deleteGraphTemplateType,
     deleteSelectedCustomDeviceTreeItem,
     renameSelectedCustomDeviceTreeItem,
+    scheduleGraphTemplateFlyoutClose,
+    setHoveredGraphTemplateType,
     startCustomComponentCreate,
     templateMenu
   } = __appScope;
@@ -39,6 +42,13 @@ export function renderAppView(__appScope: Record<string, any>) {
     CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN,
     Math.max(8, Math.min(customDevicePreviewWidth, customDevicePreviewHeight) * 0.04)
   );
+  const keepTemplateContextMenuFlyoutOpen = (typeName?: string) => {
+    if (!typeName) {
+      return;
+    }
+    clearLibraryFlyoutCloseTimer();
+    setHoveredGraphTemplateType(typeName);
+  };
   const customDeviceTerminalPreviewAnchorRadius = 8;
   const customDeviceTerminalPreviewBounds = customDeviceTerminalAnchors.reduce(
     (bounds, anchor) => {
@@ -1242,7 +1252,13 @@ export function renderAppView(__appScope: Record<string, any>) {
       {templateMenu && (() => {
         if ("typeName" in templateMenu) {
           return (
-            <div ref={contextMenuRef} className={contextMenuClassName(templateMenu)} style={contextMenuStyle(templateMenu)}>
+            <div
+              ref={contextMenuRef}
+              className={contextMenuClassName(templateMenu)}
+              style={contextMenuStyle(templateMenu)}
+              onMouseEnter={() => keepTemplateContextMenuFlyoutOpen(templateMenu.typeName)}
+              onMouseLeave={() => scheduleGraphTemplateFlyoutClose(templateMenu.typeName)}
+            >
               {isEditMode && (<button onClick={() => runContextMenuAction(() => deleteGraphTemplateType(templateMenu.typeName))}>
                 <Trash2 size={14}/>
                 删除类型
@@ -1252,7 +1268,13 @@ export function renderAppView(__appScope: Record<string, any>) {
         }
         const template = customGraphTemplates.find((item: any) => item.id === templateMenu.templateId);
         return template ? (
-          <div ref={contextMenuRef} className={contextMenuClassName(templateMenu)} style={contextMenuStyle(templateMenu)}>
+          <div
+            ref={contextMenuRef}
+            className={contextMenuClassName(templateMenu)}
+            style={contextMenuStyle(templateMenu)}
+            onMouseEnter={() => keepTemplateContextMenuFlyoutOpen(template.typeName)}
+            onMouseLeave={() => scheduleGraphTemplateFlyoutClose(template.typeName)}
+          >
             {isEditMode && (<button onClick={() => runContextMenuAction(() => deleteGraphTemplate(template))}>
               <Trash2 size={14}/>
               删除

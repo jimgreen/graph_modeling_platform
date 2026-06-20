@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import {
   filterGraphTemplatesByType,
@@ -31,5 +32,38 @@ describe("graph template library filtering", () => {
     expect(filterGraphTemplatesByType(grouped, "量测")).toEqual({
       量测模板: [templates[2]]
     });
+  });
+
+  test("opens the right-floating template group flyout when the pointer enters the type row", () => {
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const sectionMatch = appSource.match(
+      /className=\{`library-group-section template-library-type-section[\s\S]*?onMouseLeave=\{\(\) => \{/u
+    );
+
+    expect(sectionMatch?.[0]).toContain('templateLibraryDisplayMode === "right"');
+    expect(sectionMatch?.[0]).toContain("setHoveredGraphTemplateType(typeName)");
+  });
+
+  test("keeps the right-floating template flyout open while the template context menu is hovered", () => {
+    const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const templateMenuMatch = appViewSource.match(
+      /\{templateMenu && \(\(\) => \{[\s\S]*?\{renderMeasurementConfigDialog\(\)\}/u
+    );
+
+    expect(appViewSource).toContain("const keepTemplateContextMenuFlyoutOpen");
+    expect(appViewSource).toContain("clearLibraryFlyoutCloseTimer()");
+    expect(appViewSource).toContain("setHoveredGraphTemplateType(typeName)");
+    expect(templateMenuMatch?.[0]).toContain("onMouseEnter");
+    expect(templateMenuMatch?.[0]).toContain("keepTemplateContextMenuFlyoutOpen");
+  });
+
+  test("keeps the right-floating template flyout open when opening a template item context menu", () => {
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const templateButtonMatch = appSource.match(
+      /const renderGraphTemplateButton = \(template: GraphTemplate\) => \([\s\S]*?onDragStart=\{\(event\) => \{/u
+    );
+
+    expect(templateButtonMatch?.[0]).toContain("clearLibraryFlyoutCloseTimer()");
+    expect(templateButtonMatch?.[0]).toContain("setHoveredGraphTemplateType(template.typeName)");
   });
 });

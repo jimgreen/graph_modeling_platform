@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
 import {
+  createHideAutoPanelsFromWorkspace,
+  createUpdateAutoPanelVisibility
+} from "./appExtracted/appCanvasInteractionFactories";
+import {
   isSidePanelVisible,
   nextSidePanelAutoVisible,
   normalizeSidePanelMode,
@@ -52,5 +56,64 @@ describe("floating side panel visibility", () => {
     expect(shouldIgnoreWorkspaceAutoHide(true, true)).toBe(true);
     expect(shouldIgnoreWorkspaceAutoHide(false, false, true)).toBe(true);
     expect(shouldIgnoreWorkspaceAutoHide(false, false)).toBe(false);
+  });
+
+  test("left auto panel stays visible while a template context menu is open", () => {
+    let leftVisible = true;
+    let rightVisible = false;
+    const updateAutoPanelVisibility = createUpdateAutoPanelVisibility({
+      leftPanelMode: "auto",
+      nextSidePanelAutoVisible,
+      projectMenu: null,
+      projectRecordDragActiveRef: { current: false },
+      rightPanelMode: "auto",
+      schemeRecordDragActiveRef: { current: false },
+      setLeftPanelAutoVisible: (updater: boolean | ((current: boolean) => boolean)) => {
+        leftVisible = typeof updater === "function" ? updater(leftVisible) : updater;
+      },
+      setRightPanelAutoVisible: (updater: boolean | ((current: boolean) => boolean)) => {
+        rightVisible = typeof updater === "function" ? updater(rightVisible) : updater;
+      },
+      sidePanelResize: null,
+      templateMenu: { x: 100, y: 120, templateId: "template-1" },
+      topologyWarningPanelDrag: null,
+      topologyWarningPanelResize: null
+    });
+
+    updateAutoPanelVisibility("left", "panel-leave");
+
+    expect(leftVisible).toBe(true);
+    expect(rightVisible).toBe(false);
+  });
+
+  test("workspace auto-hide ignores pointer movement while a template context menu is open", () => {
+    let leftVisible = true;
+    let rightVisible = true;
+    const hideAutoPanelsFromWorkspace = createHideAutoPanelsFromWorkspace({
+      leftPanelMode: "auto",
+      pointerClientTargetInside: () => false,
+      pointerInsideFloatingPanelBounds: () => false,
+      pointerRelatedTargetInside: () => false,
+      projectMenu: null,
+      projectRecordDragActiveRef: { current: false },
+      rightPanelMode: "auto",
+      schemeRecordDragActiveRef: { current: false },
+      setLeftPanelAutoVisible: (visible: boolean) => {
+        leftVisible = visible;
+      },
+      setRightPanelAutoVisible: (visible: boolean) => {
+        rightVisible = visible;
+      },
+      shouldIgnoreWorkspaceAutoHide,
+      sidePanelResize: null,
+      templateMenu: { x: 100, y: 120, templateId: "template-1" },
+      topologyWarningPanelDrag: null,
+      topologyWarningPanelResize: null
+    });
+
+    hideAutoPanelsFromWorkspace({} as any);
+
+    expect(leftVisible).toBe(true);
+    expect(rightVisible).toBe(true);
   });
 });

@@ -3044,11 +3044,14 @@ export function createPointerInsideElementRect(__appScope: Record<string, any>) 
 
 export function createUpdateAutoPanelVisibility(__appScope: Record<string, any>) {
   return (side: SidePanelSide, event: Parameters<typeof nextSidePanelAutoVisible>[3]) => {
-  const { leftPanelMode, nextSidePanelAutoVisible, projectMenu, projectRecordDragActiveRef, rightPanelMode, schemeRecordDragActiveRef, setLeftPanelAutoVisible, setRightPanelAutoVisible, sidePanelResize, topologyWarningPanelDrag, topologyWarningPanelResize } = __appScope;
+  const { leftPanelMode, nextSidePanelAutoVisible, projectMenu, projectRecordDragActiveRef, rightPanelMode, schemeRecordDragActiveRef, setLeftPanelAutoVisible, setRightPanelAutoVisible, sidePanelResize, templateMenu, topologyWarningPanelDrag, topologyWarningPanelResize } = __appScope;
     if (sidePanelResize || topologyWarningPanelDrag || topologyWarningPanelResize) {
       return;
     }
     if (side === "left" && event === "panel-leave" && projectMenu) {
+      return;
+    }
+    if (side === "left" && event === "panel-leave" && templateMenu) {
       return;
     }
     if (side === "left" && event === "panel-leave" && projectRecordDragActiveRef.current) {
@@ -3110,7 +3113,7 @@ export function createHandleSidePanelPointerLeave(__appScope: Record<string, any
 
 export function createHideAutoPanelsFromWorkspace(__appScope: Record<string, any>) {
   return (event: PointerEvent<HTMLElement>) => {
-  const { leftPanelMode, pointerClientTargetInside, pointerInsideFloatingPanelBounds, pointerRelatedTargetInside, projectMenu, projectRecordDragActiveRef, rightPanelMode, schemeRecordDragActiveRef, setLeftPanelAutoVisible, setRightPanelAutoVisible, shouldIgnoreWorkspaceAutoHide, sidePanelResize, topologyWarningPanelDrag, topologyWarningPanelResize } = __appScope;
+  const { leftPanelMode, pointerClientTargetInside, pointerInsideFloatingPanelBounds, pointerRelatedTargetInside, projectMenu, projectRecordDragActiveRef, rightPanelMode, schemeRecordDragActiveRef, setLeftPanelAutoVisible, setRightPanelAutoVisible, shouldIgnoreWorkspaceAutoHide, sidePanelResize, templateMenu, topologyWarningPanelDrag, topologyWarningPanelResize } = __appScope;
     if (sidePanelResize || topologyWarningPanelDrag || topologyWarningPanelResize) {
       return;
     }
@@ -3128,6 +3131,9 @@ export function createHideAutoPanelsFromWorkspace(__appScope: Record<string, any
       return;
     }
     if (projectMenu) {
+      return;
+    }
+    if (templateMenu) {
       return;
     }
     if (leftPanelMode === "auto") {

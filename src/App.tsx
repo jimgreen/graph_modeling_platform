@@ -4453,6 +4453,10 @@ const renderGraphTemplateButton = (template: GraphTemplate) => (
         cancelLibraryPlacement();
         setContextMenu(null);
         setProjectMenu(null);
+        if (templateLibraryDisplayMode === "right") {
+          clearLibraryFlyoutCloseTimer();
+          setHoveredGraphTemplateType(template.typeName);
+        }
         setTemplateMenu({
           x: event.clientX,
           y: event.clientY,
@@ -4559,8 +4563,9 @@ const renderTemplateLibraryPanel = () => (
               className={`library-group-section template-library-type-section ${templateLibraryDisplayMode === "right" ? "flyout-mode" : ""}`}
               key={typeName}
               onMouseEnter={() => {
-                if (templateLibraryDisplayMode === "right") {
+                if (templateLibraryDisplayMode === "right" && !templateLibrarySearchNeedle) {
                   clearLibraryFlyoutCloseTimer();
+                  setHoveredGraphTemplateType(typeName);
                 }
               }}
               onMouseLeave={() => {
@@ -4590,7 +4595,7 @@ const renderTemplateLibraryPanel = () => (
                 onClick={() => {
                   if (templateLibraryDisplayMode === "right" && !templateLibrarySearchNeedle) {
                     clearLibraryFlyoutCloseTimer();
-                    setHoveredGraphTemplateType((current) => current === typeName ? "" : typeName);
+                    setHoveredGraphTemplateType(typeName);
                     return;
                   }
                   setExpandedGraphTemplateTypes((current) =>
