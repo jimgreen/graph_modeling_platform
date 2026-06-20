@@ -440,7 +440,7 @@ export function createIncludeMeasurementGroupBounds(__appScope: Record<string, a
 }
 
 export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any>) {
-  return (node: ModelNode, group: MeasurementGroup, options: { absolute?: boolean } = {}) => {
+  return (node: ModelNode, group: MeasurementGroup, options: { absolute?: boolean; className?: string } = {}) => {
   const { escapeXml, exportMeasurementGroupMetadataAttributes, exportMeasurementItemMetadataAttributes, formatSvgNumber, measurementGroupAnchorPoint, measurementGroupBackgroundColor, measurementGroupBorderColor, measurementGroupBorderDashArray, measurementGroupBorderWidth, measurementGroupLocalOffset, measurementGroupRenderMetrics, selectedMeasurementGroupIdSet } = __appScope;
     const metrics = measurementGroupRenderMetrics(node, group);
     if (!metrics) {
@@ -459,7 +459,8 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
       const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
       return `<text class="measurement-item" ${exportMeasurementItemMetadataAttributes(node, group, row.item, row.display)} x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}">${escapeXml(row.text)}</text>`;
     }).join("");
-    return `<g class="measurement-group drag-preview-measurement-group${selectedClass}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>
+    const extraClass = options.className ? ` ${escapeXml(options.className)}` : "";
+    return `<g class="measurement-group drag-preview-measurement-group${selectedClass}${extraClass}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>
   <rect class="measurement-group-bg" x="${formatSvgNumber(-metrics.width / 2)}" y="${formatSvgNumber(-metrics.height / 2)}" width="${formatSvgNumber(metrics.width)}" height="${formatSvgNumber(metrics.height)}" rx="4" fill="${escapeXml(measurementGroupBackgroundColor(group))}" stroke="${escapeXml(measurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(measurementGroupBorderWidth(group))}"${borderDashAttribute}/>
   ${rowsMarkup}
 </g>`;
@@ -4746,12 +4747,13 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
 
 export function createBeginMeasurementDrag(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGGElement>, group: MeasurementGroup) => {
-  const { isBrowseMode, screenToSvgPoint, setMeasurementDrag, svgRef } = __appScope;
+  const { isBrowseMode, screenToSvgPoint, selectCanvasGraphics, setMeasurementDrag, svgRef } = __appScope;
     if (isBrowseMode || event.button !== 0 || !svgRef.current) {
       return;
     }
     event.preventDefault();
     event.stopPropagation();
+    selectCanvasGraphics([group.nodeId], [], { scope: "direct" });
     const startPoint = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
     setMeasurementDrag({
       groupId: group.id,

@@ -145,9 +145,13 @@ export function createPlaceFloatingToolbar(__appScope: Record<string, any>) {
 
 export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
   return (group: MeasurementGroup) => {
-  const { beginMeasurementDrag, draggingNodeIdSet, formatSvgNumber, g, measurementGroupBackgroundColor, measurementGroupBorderColor, measurementGroupBorderDashArray, measurementGroupBorderWidth, measurementGroupCanvasPosition, measurementGroupRenderMetrics, rect, selectedMeasurementGroup, text, title, visibleNodeById } = __appScope;
+  const { beginMeasurementDrag, dragging, draggingNodeIdSet, formatSvgNumber, g, measurementGroupBackgroundColor, measurementGroupBorderColor, measurementGroupBorderDashArray, measurementGroupBorderWidth, measurementGroupCanvasPosition, measurementGroupRenderMetrics, rect, selectedMeasurementGroup, text, title, visibleNodeById } = __appScope;
     const node = visibleNodeById.get(group.nodeId);
     if (!node || !group.visible) {
+      return null;
+    }
+    const draggingOrigin = draggingNodeIdSet.has(group.nodeId);
+    if (dragging?.historyCaptured && draggingOrigin) {
       return null;
     }
     const metrics = measurementGroupRenderMetrics(node, group);
@@ -155,7 +159,6 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
       return null;
     }
     const position = measurementGroupCanvasPosition(node, group);
-    const draggingOrigin = draggingNodeIdSet.has(group.nodeId);
     return (
       <g
         key={group.id}

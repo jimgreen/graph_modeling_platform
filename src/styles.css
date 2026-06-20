@@ -8229,7 +8229,31 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .measurement-group.drag-origin {
-  opacity: 0.24;
+  opacity: 0.34;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+.measurement-group.drag-origin .measurement-group-bg {
+  filter: none;
+  fill-opacity: 0.42;
+  stroke-opacity: 0.75;
+  stroke-dasharray: 8 6;
+  vector-effect: non-scaling-stroke;
+}
+
+.measurement-group.drag-origin .measurement-item {
+  opacity: 0.5;
+  stroke-opacity: 0.45;
+}
+
+.drag-origin-measurement-layer {
+  pointer-events: none;
+}
+
+.drag-origin-measurement-layer .measurement-group.drag-origin {
+  opacity: 0.3;
+  mix-blend-mode: multiply;
 }
 
 .drag-preview-measurement-group {

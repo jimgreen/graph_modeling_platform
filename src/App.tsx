@@ -152,6 +152,7 @@ import {
   getRouteEndpointNormal,
   getRouteBlockingCandidates,
   getRouteBlockingCandidateNodesFromBoxes,
+  routeIntersectsEndpointNodeBodies,
   routeIntersectsSpecificNodes,
   staticNodeParticipatesInRoutingAvoidance,
   getTerminalBusContactGroups,
@@ -1452,7 +1453,7 @@ const measurementGroupCanvasPosition = createMeasurementGroupCanvasPosition(__ap
 const measurementGroupRenderMetrics = createMeasurementGroupRenderMetrics(__appScope); Object.assign(__appScope, { measurementGroupRenderMetrics });
 const includeMeasurementGroupBounds = createIncludeMeasurementGroupBounds(__appScope); Object.assign(__appScope, { includeMeasurementGroupBounds });
 const buildMeasurementGroupMarkup = createBuildMeasurementGroupMarkup(__appScope); Object.assign(__appScope, { buildMeasurementGroupMarkup });
-const buildMeasurementGroupsMarkup = (node: ModelNode, options: { absolute?: boolean } = {}) =>
+const buildMeasurementGroupsMarkup = (node: ModelNode, options: { absolute?: boolean; className?: string } = {}) =>
     measurementGroupsForNode(projectMeasurements, node.id)
       .map((group) => buildMeasurementGroupMarkup(node, group, options))
       .join("");

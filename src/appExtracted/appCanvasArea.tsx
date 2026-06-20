@@ -151,7 +151,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     getNodeScaleX, getNodeScaleY, getTerminalDisplayColor,
     renderViewportRoutedEdges, renderBoundaryBusInternalConnector,
     renderGroupTransformPhotoPreview, renderInteractiveStaticDrawingPreview,
-    renderLibraryPlacementPreview, renderMeasurementGroup,
+    renderLibraryPlacementPreview, renderMeasurementGroup, buildMeasurementGroupsMarkup,
     renderMultiNodeDragOverlay, renderNodePreviewImageContent,
     renderReadonlyBackgroundPage, renderSingleTransformRotateOriginGhost,
     renderTransformRotationTrajectory,
@@ -969,6 +969,18 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                     </g>) : null)}
                 </g>);
     })}
+            {dragging?.historyCaptured && dragging.nodeIds.length > 0 && (<g className="drag-origin-measurement-layer" pointerEvents="none">
+                {dragging.nodeIds.map((nodeId) => {
+            const node = nodeById.get(nodeId);
+            const originalPosition = dragging.originalPositions[nodeId];
+            if (!node || !originalPosition) {
+                return null;
+            }
+            const ghostNode = { ...node, position: originalPosition };
+            const ghostMeasurementMarkup = buildMeasurementGroupsMarkup(ghostNode, { absolute: true, className: "drag-origin" });
+            return ghostMeasurementMarkup ? (<g key={`drag-origin-measurements-${nodeId}`} dangerouslySetInnerHTML={{ __html: ghostMeasurementMarkup }}/>) : null;
+        })}
+              </g>)}
             {visibleMeasurementGroups.length > 0 && (<g className="measurement-layer" pointerEvents={isBrowseMode ? "none" : "auto"}>
                 {visibleMeasurementGroups.map(renderMeasurementGroup)}
               </g>)}

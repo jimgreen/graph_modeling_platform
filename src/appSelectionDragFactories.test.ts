@@ -18,14 +18,18 @@ import {
   isBusNode,
   pointsToOrthogonalPath,
   preserveDraggedRouteShape,
+  rebuildRoutableLineDeviceRouteUpdates,
   projectPointToBusCenterline,
   routeEdgesForStoredRendering,
   routeIntersectsEndpointNodeBodies,
   type Edge,
   type ModelNode,
   type Point,
+  routableLineDeviceCanvasPoints,
   routeIntersectsSpecificNodes,
-  type RoutedEdge
+  type RoutedEdge,
+  setRoutableLineDeviceCanvasPoints,
+  setRoutableLineDeviceEndpoints
 } from "./model";
 
 type TestBox = { left: number; right: number; top: number; bottom: number };
@@ -191,12 +195,16 @@ describe("selection drag route cache patches", () => {
     const lightweightMovedEndpointRoute = createLightweightMovedEndpointRoute({
       clampPointToBounds,
       getModelEdgeEndpointPoint: getEdgeEndpointPoint,
+      getRouteBlockingCandidateNodesFromBoxes,
+      getRouteBlockingCandidates,
       getRouteEndpointNormal,
       isBusNode,
       nodeForRoutingList,
       pointsToOrthogonalPath,
       preserveDraggedRouteShape,
       routeEdgesForStoredRendering,
+      routeIntersectsEndpointNodeBodies,
+      routeIntersectsSpecificNodes,
       sameOptionalPointList
     });
 
@@ -208,8 +216,123 @@ describe("selection drag route cache patches", () => {
       { width: 900, height: 620 }
     );
 
-    expect(route).not.toBeNull();
-    expect(routeIntersectsTestBox(route?.points ?? [], calculateNodeBodyBounds(movedSource))).toBe(false);
+    expect(route === null || !routeIntersectsTestBox(route.points, calculateNodeBodyBounds(movedSource))).toBe(true);
+  });
+
+  test("skips lightweight moved endpoint cache patches that still cross nearby device blockers", () => {
+    const source = {
+      ...createDefaultNode("ac-box-breaker", { x: 160, y: 220 }),
+      id: "moved-source-for-unsafe-cache"
+    };
+    const target = {
+      ...createDefaultNode("ac-box-breaker", { x: 420, y: 220 }),
+      id: "stationary-target-for-unsafe-cache"
+    };
+    const blocker = {
+      ...createDefaultNode("ac-box-breaker", { x: 280, y: 220 }),
+      id: "nearby-blocker-for-unsafe-cache"
+    };
+    const unsafeRoutePoints = [
+      { x: 180, y: 220 },
+      { x: 280, y: 220 },
+      { x: 400, y: 220 }
+    ];
+    const previousRoute: RoutedEdge = {
+      edgeId: "unsafe-cache-route",
+      points: [
+        { x: 140, y: 220 },
+        { x: 260, y: 220 },
+        { x: 400, y: 220 }
+      ],
+      path: ""
+    };
+    const edge: Edge = {
+      id: "unsafe-cache-route",
+      sourceId: source.id,
+      targetId: target.id
+    };
+    const lightweightMovedEndpointRoute = createLightweightMovedEndpointRoute({
+      clampPointToBounds,
+      getModelEdgeEndpointPoint: (node: ModelNode) => node.id === source.id ? unsafeRoutePoints[0] : unsafeRoutePoints[unsafeRoutePoints.length - 1],
+      getRouteBlockingCandidateNodesFromBoxes,
+      getRouteBlockingCandidates,
+      getRouteEndpointNormal: () => ({ x: 1, y: 0 }),
+      isBusNode: () => false,
+      nodeForRoutingList,
+      pointsToOrthogonalPath,
+      preserveDraggedRouteShape: () => unsafeRoutePoints,
+      routeEdgesForStoredRendering: () => [{
+        edgeId: edge.id,
+        points: unsafeRoutePoints,
+        path: pointsToOrthogonalPath(unsafeRoutePoints)
+      }],
+      routeIntersectsEndpointNodeBodies,
+      routeIntersectsSpecificNodes,
+      sameOptionalPointList
+    });
+
+    expect(routeIntersectsSpecificNodes(unsafeRoutePoints, edge, [blocker])).toBe(true);
+
+    const route = lightweightMovedEndpointRoute(
+      edge,
+      previousRoute,
+      [source, target, blocker],
+      new Set([source.id]),
+      { width: 640, height: 480 }
+    );
+
+    expect(route).toBeNull();
+  });
+
+  test("repairs routable line routes that turn back through a moved endpoint device body", () => {
+    const source = {
+      ...createDefaultNode("ac-box-breaker", { x: 180, y: 260 }),
+      id: "moved-routable-source"
+    };
+    const target = {
+      ...createDefaultNode("ac-box-breaker", { x: 460, y: 260 }),
+      id: "stationary-routable-target"
+    };
+    const sourcePoint = getTerminalPoint(source, "t2");
+    const targetPoint = getTerminalPoint(target, "t1");
+    const baseLine = setRoutableLineDeviceEndpoints(
+      {
+        ...createDefaultNode("ac-zero-routable-branch", { x: 320, y: 260 }),
+        id: "endpoint-body-routable-line"
+      },
+      sourcePoint,
+      targetPoint,
+      {
+        source: { nodeId: source.id, terminalId: "t2" },
+        target: { nodeId: target.id, terminalId: "t1" }
+      }
+    );
+    const unsafeLine = setRoutableLineDeviceCanvasPoints(baseLine, [
+      sourcePoint,
+      { x: source.position.x, y: sourcePoint.y },
+      { x: targetPoint.x, y: sourcePoint.y },
+      targetPoint
+    ]);
+    const unsafePoints = routableLineDeviceCanvasPoints(unsafeLine);
+    const routeEdge: Edge = {
+      id: "endpoint-body-routable-line-route",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1"
+    };
+
+    expect(routeIntersectsEndpointNodeBodies(unsafePoints, routeEdge, [source, target])).toBe(true);
+
+    const updates = rebuildRoutableLineDeviceRouteUpdates(
+      [source, target, unsafeLine],
+      [unsafeLine.id],
+      { width: 760, height: 520 },
+      [source, target, unsafeLine],
+      { movedNodeIds: [source.id] }
+    );
+
+    expect(updates.some((node) => node.id === unsafeLine.id)).toBe(true);
   });
 
   test("keeps deferred blocker repair enabled for nearby unrelated routes after multi-connection moves", () => {

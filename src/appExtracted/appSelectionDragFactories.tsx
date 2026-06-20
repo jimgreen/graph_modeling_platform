@@ -2984,7 +2984,7 @@ export function createLightweightMovedEndpointRoute(__appScope: Record<string, a
     movedNodeIds: Set<string>,
     bounds: CanvasBounds
   ): RoutedEdge | null => {
-  const { clampPointToBounds, getModelEdgeEndpointPoint, getRouteEndpointNormal, isBusNode, nodeForRoutingList, pointsToOrthogonalPath, preserveDraggedRouteShape, routeEdgesForStoredRendering, sameOptionalPointList } = __appScope;
+  const { clampPointToBounds, getModelEdgeEndpointPoint, getRouteBlockingCandidateNodesFromBoxes, getRouteBlockingCandidates, getRouteEndpointNormal, isBusNode, nodeForRoutingList, pointsToOrthogonalPath, preserveDraggedRouteShape, routeEdgesForStoredRendering, routeIntersectsEndpointNodeBodies, routeIntersectsSpecificNodes, sameOptionalPointList } = __appScope;
     if (previousRoute.points.length < 2) {
       return null;
     }
@@ -3027,6 +3027,14 @@ export function createLightweightMovedEndpointRoute(__appScope: Record<string, a
     };
     const repairedRoute = routeEdgesForStoredRendering([source, target], [routeEdge], bounds)[0];
     const points = (repairedRoute?.points ?? preservedPoints).map((point) => clampPointToBounds(point, bounds));
+    const endpointBlockers = [source, target];
+    if (routeIntersectsEndpointNodeBodies(points, routeEdge, endpointBlockers)) {
+      return null;
+    }
+    const blockers = getRouteBlockingCandidateNodesFromBoxes(points, routeEdge, getRouteBlockingCandidates(nextNodes));
+    if (blockers.length > 0 && routeIntersectsSpecificNodes(points, routeEdge, blockers)) {
+      return null;
+    }
     const path = pointsToOrthogonalPath(points);
     return sameOptionalPointList(points, previousRoute.points) && path === previousRoute.path
       ? previousRoute
@@ -3922,10 +3930,24 @@ export function createSetImperativeSingleNodeDragOriginLines(__appScope: Record<
 
 export function createSetImperativeSingleNodeDragOrigin(__appScope: Record<string, any>) {
   return (nodeId: string | null) => {
-  const { canvasNodeElementRefs, clearImperativeSingleNodeDragOriginLines, imperativeSingleNodeDragOriginNodeIdRef, svgRef } = __appScope;
+  const { canvasNodeElementRefs, clearImperativeSingleNodeDragOriginLines, cssSelectorEscape, imperativeSingleNodeDragOriginNodeIdRef, svgRef } = __appScope;
+    const setMeasurementOriginClass = (originNodeId: string, enabled: boolean) => {
+      const svg = svgRef.current;
+      if (!svg) {
+        return;
+      }
+      svg.querySelectorAll<SVGElement>(`.measurement-group[data-export-device-id="${cssSelectorEscape(originNodeId)}"]`).forEach((element) => {
+        if (enabled) {
+          element.classList.add("drag-origin");
+        } else {
+          element.classList.remove("drag-origin");
+        }
+      });
+    };
     const previousNodeId = imperativeSingleNodeDragOriginNodeIdRef.current;
     if (previousNodeId && previousNodeId !== nodeId) {
       canvasNodeElementRefs.current.get(previousNodeId)?.classList.remove("single-drag-origin");
+      setMeasurementOriginClass(previousNodeId, false);
     }
     imperativeSingleNodeDragOriginNodeIdRef.current = nodeId;
     svgRef.current?.classList.toggle("single-node-dragging", Boolean(nodeId));
@@ -3934,6 +3956,7 @@ export function createSetImperativeSingleNodeDragOrigin(__appScope: Record<strin
     }
     if (nodeId) {
       canvasNodeElementRefs.current.get(nodeId)?.classList.add("single-drag-origin");
+      setMeasurementOriginClass(nodeId, true);
     }
   };
 }
